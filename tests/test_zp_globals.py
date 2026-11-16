@@ -169,10 +169,14 @@ class TestPlacement(unittest.TestCase):
 class TestCodegen(unittest.TestCase):
 
     def test_pointer_is_indirect_base(self) -> None:
+        # `p` gets its value from a global, so the compiler doesn't
+        # know it holds `buf`'s address (when it does, `p[2]` reads
+        # `buf+2`).
         asm = _codegen(
             "unsigned char buf[4] = {1, 2, 3, 4};\n"
+            "unsigned char *src = buf;\n"
             "unsigned char *p [[c6502::zeropage]];\n"
-            "int main(void) { p = buf; return p[2]; }\n"
+            "int main(void) { p = src; return p[2]; }\n"
         )
         self.assertIn("(p),Y", asm)
         self.assertNotIn("DPTR", asm.split("main:")[1])

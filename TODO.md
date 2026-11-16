@@ -257,6 +257,29 @@ Zork's 190. The separator tests, `is_dict_separator`,
   `c` around the call, and the `BEQ` at the top of its loop tests the
   `PLA` the first time and the `DEX` after that.
 
+## Make Zork's numbers.c smaller
+
+`examples/zork/interpreter/numbers.c` is 528 bytes, where Zork's code
+for it is 436. `divu16` (64 against 78) and `mulu16` (42 against 69)
+are already smaller. What's left:
+
+- `instr_mul` is 82 bytes against 53 and `instr_div` 85 against 50.
+  Zork tests `b`'s high byte once, compares the low byte with 2 and
+  then 4, and lets the `* 4` path fall into the `* 2` one. The C tests
+  the high byte again for `b == 4`, and each path ends in a `JMP` to
+  the join.
+- `check_sign` and `store_with_sign` each negate inline, where Zork's
+  call one `negate`.
+- The register allocator gives `instr_mul`'s result of `check_sign`
+  and its product one local, so only one of the two copies into a
+  callee's slot can go (`slot_coalescing`).
+- `kills_a` and `a_dead_at` take `Mov(Imm, mem)` to leave A alone,
+  where it's emitted as `LDA #imm; STA mem` and `redundant_load` takes
+  it that way. So `divu16` keeps a dead `LDA dividend_0` at its
+  entry.
+- `print_number` is 92 bytes against 65. Zork pushes the digits on
+  the 6502's stack.
+
 ## Keep hot branches from crossing pages
 
 A taken branch that crosses a page takes a cycle more, so where the

@@ -128,6 +128,7 @@ from passes.zp_local_allocation import (
 )
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization.pool import Pool
+from passes.slot_coalescing import apply_slot_coalescing
 import tac_ast
 from passes.slot_sharing import (
     changed_param_slots, check_shares, find_shares, pinned_param_copies,
@@ -359,6 +360,9 @@ class OptimizedAsm:
     zp_records: list
     shares: list = field(default_factory=list)
     bindings: dict = field(default_factory=dict)
+    # The parameter slots `slot_coalescing` made their functions
+    # write, by function, for the link metadata.
+    coalesced_params: dict = field(default_factory=dict)
 
 
 def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
@@ -571,6 +575,15 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # front of a loop whose back edges have it (passes/carry_known.py).
     # After the peepholes, several of which match a SEC or CLC.
     asm3 = apply_carry_known(asm3)
+    # A local holding a copy of a parameter gets the parameter's own
+    # slot when the two are never live with different values
+    # (passes/slot_coalescing.py). After the promotions and peepholes
+    # that look for `__local_*` slots, and before the fixed points
+    # after the loop rotation, which drop the copies it leaves as
+    # `LDA P; STA P`.
+    asm3, coalesced_params = apply_slot_coalescing(
+        asm3, abi, shares, all_slot_symbols,
+    )
     # Keep a loop-invariant compare key in A across its loop
     # (see passes/loop_invariant_a.py). Runs after the
     # peepholes have settled the layout it inspects.
@@ -580,6 +593,19 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # Move each loop's test to its bottom (passes/rotate_loop_test.py).
     # After loop_invariant_a, which looks for the test at the top.
     asm3 = apply_rotate_loop_test(asm3)
+    # The rotation leaves shapes the peepholes and the counter
+    # promotion look for, such as `DEC i; LDA i; BNE` at a loop's new
+    # bottom, so both run again, and carry_known after them.
+    asm3 = _peephole_fixedpoint(
+        asm3, zp_slot_symbols=all_slot_symbols,
+        zp_global_symbols=zp.addrs,
+    )
+    asm3 = apply_counter_to_index_reg(asm3)
+    asm3 = _peephole_fixedpoint(
+        asm3, zp_slot_symbols=all_slot_symbols,
+        zp_global_symbols=zp.addrs,
+    )
+    asm3 = apply_carry_known(asm3)
     asm4 = expand_long_branches(asm3)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
@@ -591,7 +617,18 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         asm=asm4, tac=tac, abi=abi, local_pools=local_pools,
         slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
         zp_records=zp_records, shares=shares, bindings=bindings,
+        coalesced_params=coalesced_params,
     )
+
+
+def _with_coalesced(changes: dict, coalesced: dict) -> dict:
+    """The parameter slots each function assigns: `changes`, from its
+    TAC, and the ones `slot_coalescing` made it write."""
+    out = {f: list(syms) for f, syms in changes.items()}
+    for f, syms in coalesced.items():
+        out.setdefault(f, [])
+        out[f] += [s for s in syms if s not in out[f]]
+    return out
 
 
 def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
@@ -636,7 +673,10 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         link_meta = build_metadata(
             opt.tac, abi, local_pools,
             slot_names_by_fn=opt.slot_names_by_fn,
-            changes=changed_param_slots(opt.tac, abi, symbols, types),
+            changes=_with_coalesced(
+                changed_param_slots(opt.tac, abi, symbols, types),
+                opt.coalesced_params,
+            ),
         )
         link_meta.shares = opt.shares
         link_meta.zp_objects = opt.zp_records

@@ -241,7 +241,6 @@ main:
    STA   __local_main__i
    CMP   #$14
    BCC   .main@rot@0
-.loop@2_break:
    LDA   #$00
    STA   zchar_scratch2
    STA   zchar_scratch2+1

@@ -198,5 +198,50 @@ class TestBranchTargetAndLoad(unittest.TestCase):
                          instrs)
 
 
+class TestLowBitThroughCarry(unittest.TestCase):
+    """`AND #$01; BEQ` as `LSR; BCC` when A, C, N, and Z are dead on
+    both paths, as in Zork's `store_with_sign`."""
+
+    def _and1(self, cond, after=()):
+        return _wrap([
+            asm_ast.Mov(src=asm_ast.Data(name="x", offset=0), dst=_A),
+            asm_ast.And(src=asm_ast.Imm(value=0x01), dst=_A),
+            asm_ast.Branch(cond=cond, target=".target"),
+            *after,
+            _ret(),
+        ])
+
+    def test_beq_becomes_lsr_bcc(self):
+        out = _instrs(apply_and_sign_bit_branch(self._and1(asm_ast.EQ())))
+        self.assertEqual(out[1:3], [
+            asm_ast.LogicalShiftRight(dst=_A),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".target"),
+        ])
+
+    def test_bne_becomes_lsr_bcs(self):
+        out = _instrs(apply_and_sign_bit_branch(self._and1(asm_ast.NE())))
+        self.assertEqual(
+            out[2], asm_ast.Branch(cond=asm_ast.CS(), target=".target"),
+        )
+
+    def test_left_alone_when_c_is_read_after(self):
+        # The ADC reads the C that the AND left alone.
+        prog = self._and1(asm_ast.EQ(), after=[
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=_A),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="y", offset=0)),
+        ])
+        before = list(prog.top_level[0].instructions)
+        out = apply_and_sign_bit_branch(prog).top_level[0].instructions
+        self.assertEqual(out, before)
+
+    def test_left_alone_when_a_is_read_after(self):
+        prog = self._and1(asm_ast.EQ(), after=[
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="y", offset=0)),
+        ])
+        before = list(prog.top_level[0].instructions)
+        out = apply_and_sign_bit_branch(prog).top_level[0].instructions
+        self.assertEqual(out, before)
+
+
 if __name__ == "__main__":
     unittest.main()

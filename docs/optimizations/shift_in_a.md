@@ -146,6 +146,28 @@ known.
 - A shift of a byte that wasn't just stored from A, such as an
   in-place `w <<= 1`, which is already one instruction per byte.
 
+### A shift loaded from and stored back to the same byte
+
+The converse goes the other way. `LDA M; ASL; STA M` is `ASL M` when
+A is dead after the store, for one or two shifts of a non-volatile
+zero-page or absolute byte:
+
+```
+   LDA   g                             ASL   g
+   ASL                           ->
+   STA   g
+```
+
+That's 2 bytes and 5 cycles against 5 bytes and 8 cycles for one
+shift of a zero-page byte. Two shifts take the same cycles either way
+and 2 bytes fewer, and three would take more cycles, so the rule
+stops at two. The flags come out the same, from the last shift. A
+volatile byte is left alone, since a read-modify-write instruction on
+the NMOS 6502 writes the old value back before the new one, which
+matters for an I/O register. That's why Zork's `instr_random`
+(examples/zork/interpreter/numbers.c) still shifts `RND`'s high byte
+in A.
+
 ## Related
 
 [Narrowing widened arithmetic](narrow_widened_arith.md) removes a

@@ -27,6 +27,7 @@ a user variable.
 
 ## Alphabetical list
 
+- [A parameter's copy in the parameter's slot](slot_coalescing.md). Renames a zero-page local that copies a parameter to the parameter's own slot, or that's copied into a callee's slot for the call, when they're never live with different values.
 - [Address of a zero-page local](lower_data_load_address.md). Splits a fixed-address LoadAddress into two immediate stores so peepholes can fold them.
 - [Address-taken locals in zero page](address_taken_zp.md). Puts address-taken locals in free private-pool bytes instead of the frame.
 - [AND jump fold](and_zero_jump_fold.md). Turns `if (byte & mask)` into a one-byte `JumpIfMasked` test with no temporaries.
@@ -90,7 +91,7 @@ a user variable.
 - [Members of a static object computed in place](in_place_member_update.md). Computes a value stored into a static struct's member in the member's bytes, and turns `s.m++` into INC.
 - [Memory constant propagation](mem_const_prop.md). Replaces reads of bytes known to hold a constant in a block with immediates.
 - [Memory value propagation](memory_value_propagation.md). Rewrites reads of staged zero-page bytes, and `(DPTR),Y`, to their original source.
-- [Memory-to-memory move splitting](split_mem_to_mem.md). Splits memory-to-memory moves into LDA and STA atoms that other peepholes rewrite.
+- [Memory-to-memory move splitting](split_mem_to_mem.md). Splits memory-to-memory moves into LDA and STA atoms that other peepholes rewrite, and X-to-Y moves into the two transfers through A.
 - [Move coalescing](coalescing.md). Merges copy-joined values in the interference graph so both share one byte.
 - [Moving a constant out of an offset](reassoc_offset.md). Rewrites `p + (x + k)` as `(p + x) + k` so subscripts share `p + x`.
 - [Multi-byte INC](inc_peephole.md). Rewrites an in-place add of 1 to memory as an INC and BNE chain.
@@ -101,7 +102,7 @@ a user variable.
 - [Private local pools](zp_local_pools.md). Gives each eligible function body-local zero-page bytes that no coexisting function uses.
 - [Prologue synthesis](prologue_synthesis.md). Adds a soft-stack prologue and epilogue only to functions that need a frame.
 - [Reads of X's save slot](x_save_slot_load.md). Rewrites loads of X's spill byte as TXA or STX.
-- [Redundant compare](redundant_compare.md). Deletes a compare reached only by a branch after an identical compare.
+- [Redundant compare](redundant_compare.md). Deletes a compare reached only through the branches after an identical compare, and a compare with 0 whose flags are already set.
 - [Redundant LDY setup](y_peephole.md). Drops `LDY #n`, or makes it INY or DEY, when Y's value is known.
 - [Redundant load elimination](redundant_load.md). Drops loads into A, X, or Y when the register already holds the value.
 - [Redundant store elimination](redundant_store.md). Drops a repeated `LDA S; STA D` copy when D still holds S.
@@ -109,9 +110,10 @@ a user variable.
 - [Round-trip load drop](round_trip_load.md). Deletes `LDA M` after `STA M` when the flags already reflect A.
 - [Saves around a recursive call](recursion_saves.md). Pushes the values live across a marked recursive call so the function can have a private pool.
 - [Second index in Y](dual_index_promotion.md). Loads a byte reloaded into X several times into Y once at entry.
-- [Shift in A](shift_in_a.md). Turns `STA t; ASL t; LDA t` into `ASL A; STA t`, for any run of shifts and rotates.
+- [Shift in A](shift_in_a.md). Turns `STA t; ASL t; LDA t` into `ASL A; STA t`, for any run of shifts and rotates, and `LDA g; ASL; STA g` into `ASL g`.
 - [Self-store drop](self_store_drop.md). Deletes the `STA M` of an adjacent `LDA M; STA M` pair.
-- [Sign-bit test without AND](and_sign_bit_branch.md). Turns `LDA M; AND #$80; BEQ/BNE` into `LDA M; BPL/BMI`.
+- [Sign-bit test without AND](and_sign_bit_branch.md). Turns `LDA M; AND #$80; BEQ/BNE` into `LDA M; BPL/BMI`, and `AND #$01; BEQ/BNE` into `LSR; BCC/BCS`.
+- [Shifting a bit in through the carry](rotate_in.md). Lowers `(x << 1) | b`, with `b` 0 or 1, as `LDA b; LSR` and a `ROL` of each byte, or just the `ROL`s when C already holds `b`.
 - [Signed countdown loop rotation](loop_rotate.md). Moves the `i >= 0` test of a signed countdown for loop to the bottom.
 - [Sinking an AND past a bit test](sink_and_past_branch.md). Moves a byte AND past a bit-7 test into both successor blocks.
 - [Sinking increments](sink_increment.md). Moves `Y = X ± c` past X's last read so X and Y share a register.
@@ -194,8 +196,9 @@ them whenever a pass is added or moved.
    then [values kept in a callee's parameter
    bytes](slot_sharing.md), then parameter slot allocation.
 5. Translation to asm, with [saves around a recursive
-   call](recursion_saves.md) and [members of a static object computed in
-   place](in_place_member_update.md).
+   call](recursion_saves.md), [members of a static object computed in
+   place](in_place_member_update.md), and [shifting a bit in through
+   the carry](rotate_in.md).
 6. Asm SSA optimizer, run once to measure each function's local
    bytes. Its output is discarded. The steps are the same as in step
    8.
@@ -234,11 +237,19 @@ them whenever a pass is added or moved.
 19. [Second index in Y](dual_index_promotion.md)
 20. Peephole fixed point, third run.
 21. [Carry already known](carry_known.md)
-22. [Loop-invariant compare key in A](loop_invariant_a.md)
-23. [Loop test at the bottom](rotate_loop_test.md)
-24. Long-branch expansion, zero-page global placement, and lowering
+22. [A parameter's copy in the parameter's slot](slot_coalescing.md)
+23. [Loop-invariant compare key in A](loop_invariant_a.md)
+24. [Loop test at the bottom](rotate_loop_test.md)
+25. Peephole fixed point, fourth run, since the rotation leaves
+    shapes such as `DEC i; LDA i; BNE` at a loop's new bottom.
+26. [Count-down counter in X or Y](counter_to_index_reg.md), once
+    more, for a counter whose test the rotation moved next to its
+    `DEC`.
+27. Peephole fixed point, fifth run.
+28. [Carry already known](carry_known.md), once more.
+29. Long-branch expansion, zero-page global placement, and lowering
     to `asm2_ast`.
-25. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+30. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

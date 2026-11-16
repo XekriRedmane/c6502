@@ -53,9 +53,6 @@ __zpabi_draw_sprite__sprite_y	EQU	$94
 __zpabi_draw_sprite__tile_src_0	EQU	$95
 __zpabi_draw_sprite__tile_src_1	EQU	$96
 __zpabi_draw_sprite__page_flag	EQU	$97
-__local_companion_update__0	EQU	$98
-__local_companion_update__1	EQU	$99
-__local_companion_update__2	EQU	$9A
 __local_companion_update__3	EQU	$9B
 __local_companion_update__slot	EQU	$9C
 __local_companion_update__sprite_y	EQU	$9D
@@ -166,7 +163,6 @@ find_active_entity:
 .loop@0_start:
    TXA
    BPL   .find_active_entity@rot@0
-.loop@0_break:
    CLC
    RTS
 
@@ -513,21 +509,15 @@ companion_update:
    STA   __local_companion_update__3
    LDX   __local_companion_update__3
    LDA   proj_screen_col,X
-   STA   __local_companion_update__2
+   STA   __zpabi_smc_body_draw__sprite_x
    LDA   proj_frame_idx,X
-   STA   __local_companion_update__1
+   STA   __zpabi_smc_body_draw__frame_idx
    LDX   __local_companion_update__slot
    LDA   companion_state,X
-   STA   __local_companion_update__0
+   STA   __zpabi_smc_body_draw__state
    STX   __zpabi_smc_body_draw__slot
-   LDA   __local_companion_update__2
-   STA   __zpabi_smc_body_draw__sprite_x
    LDA   __local_companion_update__sprite_y
    STA   __zpabi_smc_body_draw__sprite_y
-   LDA   __local_companion_update__1
-   STA   __zpabi_smc_body_draw__frame_idx
-   LDA   __local_companion_update__0
-   STA   __zpabi_smc_body_draw__state
    LDA   __zpabi_companion_update__page_flag
    STA   __zpabi_smc_body_draw__page_flag
    JSR   smc_body_draw
@@ -559,9 +549,7 @@ companion_update:
    JSR   active_pos_step
 .cond_end@46:
    ORA   #$00
-   BNE   .lb_skip@1
-   JMP   .loop@1_continue
-.lb_skip@1:
+   BEQ   .loop@1_continue
 .if_end@43:
    LDA   __local_companion_update__slot
    STA   __zpabi_compute_screen_x__slot
@@ -570,10 +558,10 @@ companion_update:
    LDA   __zpabi_companion_update__sprite_xref
    STA   __zpabi_compute_screen_x__sprite_xref
    JSR   compute_screen_x
-   STA   __local_companion_update__1
+   STA   __zpabi_smc_body_draw__frame_idx
    TXA
    BNE   .loop@1_continue
-   LDA   __local_companion_update__1
+   LDA   __zpabi_smc_body_draw__frame_idx
    STA   __zpabi_entity_proximity__screen_x
    CMP   #$9A
    BCS   .loop@1_continue
@@ -587,21 +575,15 @@ companion_update:
    STA   __local_companion_update__3
    LDX   __zpabi_entity_proximity__screen_x
    LDA   proj_screen_col,X
-   STA   __local_companion_update__2
+   STA   __zpabi_smc_body_draw__sprite_x
    LDA   proj_frame_idx,X
-   STA   __local_companion_update__1
+   STA   __zpabi_smc_body_draw__frame_idx
    LDX   __local_companion_update__slot
    LDA   companion_state,X
-   STA   __local_companion_update__0
+   STA   __zpabi_smc_body_draw__state
    STX   __zpabi_smc_body_draw__slot
-   LDA   __local_companion_update__2
-   STA   __zpabi_smc_body_draw__sprite_x
    LDA   __local_companion_update__3
    STA   __zpabi_smc_body_draw__sprite_y
-   LDA   __local_companion_update__1
-   STA   __zpabi_smc_body_draw__frame_idx
-   LDA   __local_companion_update__0
-   STA   __zpabi_smc_body_draw__state
    LDA   __zpabi_companion_update__page_flag
    STA   __zpabi_smc_body_draw__page_flag
    JSR   smc_body_draw

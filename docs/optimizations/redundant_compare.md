@@ -101,6 +101,30 @@ reached only by falling through them:
 [Byte-by-byte three-way compare](three_way_compare.md) writes a `<`
 and a `!=` of the same bytes in a row, which lower to that shape.
 
+## A compare with 0
+
+A compare of a register with 0 sets N and Z from the register's
+value, and sets C. When the instruction that wrote the register set N
+and Z from the same value, and C is dead after the compare, the
+compare goes too, saving 2 bytes and 2 cycles:
+
+```
+   LDA   __zpabi_check_sign__b_1       LDA   __zpabi_check_sign__b_1
+   CMP   #$00                    ->    BNE   .if_else@6
+   BNE   .if_else@6
+```
+
+That's the high byte of `b == 2` in Zork's `instr_mul`
+(examples/zork/interpreter/numbers.c). The instructions that count
+are a load or transfer into the register, an `ADC`, `SBC`, `AND`,
+`ORA`, `EOR`, or shift on A, an `INX` / `DEX` style step, and a
+`PLA`. Stores may come between that instruction and the compare,
+except a store lowered with an `LDY #off` setup, since the `LDY` sets
+N and Z from Y. These compares go in a sweep of their own, which
+returns before the other rule runs, since a compare with 0 that one
+rule drops may be the one an identical compare after it relies on
+for C.
+
 The pass doesn't check for a volatile operand. According to the
 module docstring, none can reach it, because `volatile_void_read_cmp`
 turns a volatile read into a compare only when the flags are dead, so

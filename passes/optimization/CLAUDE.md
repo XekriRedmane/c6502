@@ -249,7 +249,8 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   from a successor (whose only predecessor is the compare's block) to
   just before the ordering `JumpIfCmp` that compares `a` with `b`,
   for operands of 2 bytes or more; `tac_to_asm._fused_subtract` then
-  branches on the subtraction's flags instead of comparing. An
+  branches on the subtraction's flags instead of comparing, with any
+  copies SSA destruction puts between them. An
   operand may be a second read of the same memory as the compare's
   (`ZeroExtend(g)` in both blocks), which it replaces with the
   compare's. 1-byte operands are left to the asm `cmp_sbc_fusion`.

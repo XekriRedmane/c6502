@@ -75,5 +75,79 @@ class TestCounterToIndexReg(unittest.TestCase):
         self.assertEqual(out[0], asm_ast.Mov(src=_N, dst=_X, is_volatile=False))
 
 
+class TestInitFromARegister(unittest.TestCase):
+    """An init stored from X or Y. The 6502 has no TXY or TYX."""
+
+    def _loop_from(self, reg, after=()):
+        return [
+            asm_ast.Mov(src=asm_ast.Imm(value=17), dst=reg, is_volatile=False),
+            asm_ast.Mov(src=reg, dst=_COUNT, is_volatile=False),
+            asm_ast.Label(name=".loop"),
+            asm_ast.Inc(dst=asm_ast.Data(name="t", offset=0)),
+            asm_ast.Dec(dst=_COUNT),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop"),
+            *after,
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_counter_stays_in_the_register_it_came_from(self):
+        out = _run(self._loop_from(_Y))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Imm(value=17), dst=_Y, is_volatile=False),
+            asm_ast.Label(name=".loop"),
+            asm_ast.Inc(dst=asm_ast.Data(name="t", offset=0)),
+            asm_ast.Dec(dst=_Y),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop"),
+            asm_ast.Return(save_a=False),
+        ])
+
+    def test_never_moved_between_x_and_y(self):
+        # Y is read after the loop, so the counter can't count it
+        # down, and X would take `Mov(Y, X)`, which is `TYA; TAX`.
+        instrs = self._loop_from(_Y, after=[
+            asm_ast.Mov(src=_Y, dst=asm_ast.Data(name="u", offset=0),
+                        is_volatile=False),
+        ])
+        out = _run(list(instrs))
+        self.assertNotIn(
+            asm_ast.Mov(src=_Y, dst=_X, is_volatile=False), out,
+        )
+        self.assertEqual(out, instrs)
+
+
+class TestOutOfLineBlock(unittest.TestCase):
+    """A loop with one of its blocks after the function's return, as
+    SSA destruction leaves for one side of an `if`, is still one loop."""
+
+    def _loop(self, jump_in_from_outside=False):
+        t = asm_ast.Data(name="t", offset=0)
+        out = [
+            asm_ast.Mov(src=asm_ast.Imm(value=17), dst=_COUNT, is_volatile=False),
+            asm_ast.Label(name=".loop"),
+            asm_ast.Mov(src=t, dst=_A, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".split"),
+            asm_ast.Inc(dst=t),
+            asm_ast.Label(name=".join"),
+            asm_ast.Dec(dst=_COUNT),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop"),
+            asm_ast.Return(save_a=False),
+            asm_ast.Label(name=".split"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A, is_volatile=False),
+            asm_ast.Jump(target=".join", reg_args=[]),
+        ]
+        if jump_in_from_outside:
+            out = [asm_ast.Jump(target=".join", reg_args=[])] + out
+        return out
+
+    def test_counter_moves_to_x(self):
+        out = _run(self._loop())
+        self.assertIn(asm_ast.Dec(dst=_X), out)
+
+    def test_jump_into_the_loop_from_outside(self):
+        # The counter would arrive at .join without its init.
+        instrs = self._loop(jump_in_from_outside=True)
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

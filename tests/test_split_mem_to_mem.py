@@ -157,5 +157,31 @@ class TestSequenceFromAscFloor(unittest.TestCase):
         self.assertEqual(out[5].dst, d3)
 
 
+class TestIndexRegisterMove(unittest.TestCase):
+    """`Mov(X, Y)` is emitted as `TXA; TAY`, so it's split to show the
+    write to A."""
+
+    _X = asm_ast.Reg(reg=asm_ast.X())
+    _Y = asm_ast.Reg(reg=asm_ast.Y())
+
+    def test_x_to_y(self):
+        out = _run([asm_ast.Mov(src=self._X, dst=self._Y, is_volatile=False)])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=self._X, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=self._Y, is_volatile=False),
+        ])
+
+    def test_y_to_x(self):
+        out = _run([asm_ast.Mov(src=self._Y, dst=self._X, is_volatile=False)])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=self._Y, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=self._X, is_volatile=False),
+        ])
+
+    def test_transfer_with_a_left_alone(self):
+        instrs = [asm_ast.Mov(src=A, dst=self._X, is_volatile=False)]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

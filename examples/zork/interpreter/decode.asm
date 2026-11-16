@@ -134,7 +134,6 @@ __local_instr_call__3	EQU	$FF
 BUFF_AREA	EQU	$0200
 __local_branch_to_offset__0	EQU	$0200
 __local_return_value__0	EQU	$0200
-__local_branch_to_offset__pages_0	EQU	$0201
 __local_return_value__1	EQU	$0201
 __local_branch_to_offset__1	EQU	$0202
 __local_return_value__x	EQU	$0202
@@ -159,7 +158,7 @@ COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
 ; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__condition indirect=false in_cycle=false param_regs=A
-; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false
+; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false changes=__zpabi_branch_to_offset__offset_1
 ; def dec_var params= locals=__local_dec_var__0,__local_dec_var__1,__local_dec_var__2 indirect=false in_cycle=false
 ; def do_0op params=__zpabi_do_0op__n locals=__local_do_0op__n indirect=false in_cycle=false param_regs=A
 ; def do_1op params=__zpabi_do_1op__n locals=__local_do_1op__0,__local_do_1op__1,__local_do_1op__n indirect=false in_cycle=false param_regs=A
@@ -707,8 +706,6 @@ branch_to_offset:
    CLC
    ADC   #$01
    STA   __local_branch_to_offset__pages_1
-   LDA   __zpabi_branch_to_offset__offset_1
-   STA   __local_branch_to_offset__pages_0
 .if_end@10:
    LDA   Z_PC
    STA   __local_branch_to_offset__0
@@ -717,19 +714,19 @@ branch_to_offset:
    STA   __local_branch_to_offset__2
    CMP   __local_branch_to_offset__0
    BCS   .if_end@11
-   INC   __local_branch_to_offset__pages_0
+   INC   __zpabi_branch_to_offset__offset_1
    BNE   .inc_done@0
    INC   __local_branch_to_offset__pages_1
 .inc_done@0:
 .if_end@11:
-   LDA   __local_branch_to_offset__pages_0
+   LDA   __zpabi_branch_to_offset__offset_1
    ORA   __local_branch_to_offset__pages_1
    BNE   .if_end@12
    LDA   Z_PC
-   STA   __local_branch_to_offset__pages_0
+   STA   __zpabi_branch_to_offset__offset_1
    LDA   Z_PC+1
    STA   __local_branch_to_offset__0
-   LDA   __local_branch_to_offset__pages_0
+   LDA   __zpabi_branch_to_offset__offset_1
    AND   #$00
    ORA   __local_branch_to_offset__2
    STA   Z_PC
@@ -743,14 +740,14 @@ branch_to_offset:
    STA   __local_branch_to_offset__1
    LDA   __local_branch_to_offset__0
    CLC
-   ADC   __local_branch_to_offset__pages_0
-   STA   __local_branch_to_offset__pages_0
+   ADC   __zpabi_branch_to_offset__offset_1
+   STA   __zpabi_branch_to_offset__offset_1
    LDA   __local_branch_to_offset__1
    ADC   __local_branch_to_offset__pages_1
    STA   __local_branch_to_offset__0
    LDA   __local_branch_to_offset__2
    STA   Z_PC
-   LDA   __local_branch_to_offset__pages_0
+   LDA   __zpabi_branch_to_offset__offset_1
    STA   Z_PC+1
    LDA   __local_branch_to_offset__0
    AND   #$01
@@ -759,7 +756,6 @@ branch_to_offset:
    STA   ZCODE_PAGE_VALID
    RTS
 .branch_to_offset@asm_ssa_split@0:
-   STA   __local_branch_to_offset__pages_0
    LDA   #$00
    STA   __local_branch_to_offset__pages_1
    JMP   .if_end@10
@@ -815,7 +811,6 @@ branch:
    JMP   return_value
 .if_end@18:
    LDA   __local_branch__offset_1
-   CMP   #$00
    BNE   .if_end@19
    LDA   __local_branch__offset_0
    CMP   #$01
@@ -937,7 +932,6 @@ instr_call:
 .loop@2_continue:
    LDA   __local_instr_call__args
    BNE   .instr_call@rot@0
-.loop@2_break:
    LDA   __local_instr_call__3
    STA   __zpabi_push__value_0
    LDA   #$00

@@ -66,6 +66,17 @@ an `LDX` would think it set the flags: `dead_a_arith` dropped the
 `BMI` tested `p0`. (`asm_liveness.sets_flags` doesn't count one
 either.)
 
+# A move between X and Y
+
+The 6502 has no `TXY` or `TYX`, and `asm_emit` writes `Mov(Reg(X),
+Reg(Y))` as `TXA; TAY`, so it changes A too, which `kills_a` and the
+A tracker in `redundant_load` don't see in the one atom. This pass
+splits it into `Mov(Reg(X), Reg(A)); Mov(Reg(A), Reg(Y))`, the same
+instructions, so they do. `counter_to_index_reg` had turned `STY i`
+into `Mov(Reg(Y), Reg(X))` before the loop in Zork's `divu16`, and
+`redundant_load` then dropped the loop's first `LDA`, taking A to
+hold a byte the `TYA` had overwritten.
+
 # Volatile skip
 
 `Mov(src_mem, dst_mem, is_volatile=True)` is NOT split. The
@@ -90,7 +101,8 @@ Everything outside the (mem, mem) shape stays unchanged:
     are easier to spot at the original shape.
   * `Mov(Reg, mem)` and `Mov(mem, Reg)` — single-atom loads /
     stores; nothing to split.
-  * `Mov(Reg, Reg)` — register transfer; nothing to split.
+  * `Mov(Reg, Reg)` with A at one end — a register transfer;
+    nothing to split.
 
 # Where it runs
 
@@ -141,6 +153,17 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             # parameter kept in the register it arrives in: it emits
             # nothing, and a pass that took it for an `LDX` would think
             # it set the flags.
+            changed = True
+            continue
+        if (isinstance(instr, asm_ast.Mov)
+                and isinstance(instr.src, asm_ast.Reg)
+                and isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.src.reg, (asm_ast.X, asm_ast.Y))
+                and isinstance(instr.dst.reg, (asm_ast.X, asm_ast.Y))):
+            # X to Y or Y to X, which is emitted through A.
+            a = asm_ast.Reg(reg=asm_ast.A())
+            out.append(asm_ast.Mov(src=instr.src, dst=a, is_volatile=False))
+            out.append(asm_ast.Mov(src=a, dst=instr.dst, is_volatile=False))
             changed = True
             continue
         if (isinstance(instr, asm_ast.Mov)

@@ -48,7 +48,9 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                (Int). For multi-byte operands the
                                negate / complement / logical-not
                                lowerings fan out per byte (see
-                               translate_unop).
+                               translate_unop). A multi-byte integer
+                               negate is `0 - x`: SEC, then `LDA #0;
+                               SBC x_k; STA` per byte.
   Binary(Add, …)            -> Int: Mov src1→A; CLC; Add(src2, A);
                                Mov A→dst. Multi-byte: same pattern,
                                once per byte, with no CLC after the
@@ -1202,6 +1204,16 @@ def _array_bytes(t, types) -> int:
     return 1
 
 
+def _defs_by_name(instrs) -> dict[str, list]:
+    """Each name's defining instructions in `instrs`."""
+    from passes.recursion_saves import defs_in
+    out: dict[str, list] = {}
+    for ins in instrs:
+        for d in defs_in(ins):
+            out.setdefault(d.name, []).append(ins)
+    return out
+
+
 class Translator:
     """One Translator per program (so the `make_label` counter is
     program-global). Holds the type-checker's symbol table so it can
@@ -1584,11 +1596,16 @@ class Translator:
                     fn, self._symbols, self._size_of,
                 )
                 in_place = self._in_place_members(fn, renames)
+                from passes.optimization.var_visit import count_uses
+                self._tac_defs = _defs_by_name(instrs)
+                self._tac_uses = count_uses(instrs)
+                self._rotations, rotate_skip = self._plan_rotations(instrs)
                 for i, instr in enumerate(instrs):
                     self._prev_tac = instrs[i - 1] if i else None
+                    self._tac_list, self._tac_index = instrs, i
                     if plan is not None:
                         out.extend(self._push_saved(plan.push_before.get(i, ())))
-                    if i in in_place:
+                    if i in in_place or i in rotate_skip:
                         pass
                     elif plan is None or i not in plan.skip:
                         out.extend(self.translate_instruction(instr))
@@ -1829,6 +1846,11 @@ class Translator:
             case tac_ast.Unary(op=op, src=src, dst=dst):
                 return self._translate_unary(op, src, dst)
             case tac_ast.Binary(op=op, src1=src1, src2=src2, dst=dst):
+                rotation = getattr(self, "_rotations", {}).get(
+                    getattr(self, "_tac_index", -1),
+                )
+                if rotation is not None:
+                    return self._rotate_in(dst, *rotation)
                 return self.translate_binary(op, src1, src2, dst)
             case tac_ast.Copy(src=src, dst=dst):
                 return self._translate_copy(src, dst)
@@ -2310,27 +2332,16 @@ class Translator:
                 ))
                 out_fp.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, size - 1)))
                 return out_fp
-            # Integer Negate: -X = (~X) + 1, two's complement at the
-            # operand width. Complement each byte; for the low byte,
-            # CLC + ADC #1; for each higher byte, ADC #0 (propagates
-            # the carry from the previous ADC). LDA / EOR preserve C,
-            # so the carry threads naturally across bytes.
-            out2: list[asm_ast.Type_instruction] = []
+            # Integer Negate: -X = 0 - X at the operand width, SEC
+            # and then `LDA #0; SBC x_k` for each byte, the borrow
+            # threading from the low byte up. That's 3 bytes and 4
+            # cycles shorter for 2 bytes than complementing each byte
+            # and adding 1 (`EOR #$FF; CLC; ADC #1`, then `EOR #$FF;
+            # ADC #0`).
+            out2: list[asm_ast.Type_instruction] = [asm_ast.SetCarry()]
             for k in range(size):
-                out2.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
-                out2.append(asm_ast.Xor(
-                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
-                    dst=_REG_A,
-                ))
-                if k == 0:
-                    out2.append(asm_ast.ClearCarry())
-                    out2.append(asm_ast.Add(
-                        src=asm_ast.Imm(value=0x01), dst=_REG_A,
-                    ))
-                else:
-                    out2.append(asm_ast.Add(
-                        src=asm_ast.Imm(value=0x00), dst=_REG_A,
-                    ))
+                out2.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+                out2.append(asm_ast.Sub(src=_byte_at(src_op, k), dst=_REG_A))
                 out2.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
             return out2
         raise TypeError(f"unexpected unary operator: {op!r}")
@@ -3175,6 +3186,170 @@ class Translator:
     # Binary ops
     # ------------------------------------------------------------------
 
+    def _plan_rotations(self, instrs):
+        """The rotate-ins of a function: `{i: (x, b, carried)}` for each
+        `instrs[i]` that is `(x << 1) | b` with `b` a byte that's 0 or
+        1, and the indices of the shift and the extend it reads, which
+        aren't lowered on their own. `carried` is True when C already
+        holds `b`: `b` is the top bit of the value the previous
+        rotate-in shifted, `(uint8_t)(y >> 15)` read before it, with
+        only those skipped instructions in between. Only under
+        `--optimize`, where these patterns come out of the TAC
+        optimizer whole."""
+        rotations: dict[int, tuple] = {}
+        skip: set[int] = set()
+        if not self._bare_exit:
+            return rotations, skip
+        index = {id(ins): k for k, ins in enumerate(instrs)}
+        last = None
+        for i, ins in enumerate(instrs):
+            found = self._rotation_at(ins)
+            if found is None:
+                continue
+            x, b, shift, ext = found
+            between = set(range(last[0] + 1, i)) if last else set()
+            mine = {index[id(shift)], index[id(ext)]}
+            carried = (last is not None and between <= mine
+                       and self._top_bit_of(b, last[1], instrs, index, last[0]))
+            rotations[i] = (x, b, carried)
+            skip |= mine
+            last = (i, x)
+        return rotations, skip
+
+    def _rotation_at(self, ins):
+        """`(x, b, shift, extend)` when `ins` is `(x << 1) | b`: an OR of
+        a temporary `x << 1` and the zero extension of a byte `b` that's
+        0 or 1, each temporary read only by the OR."""
+        if not (isinstance(ins, tac_ast.Binary)
+                and isinstance(ins.op, tac_ast.BitwiseOr)
+                and isinstance(ins.dst, tac_ast.Var)):
+            return None
+        for shifted, ext in ((ins.src1, ins.src2), (ins.src2, ins.src1)):
+            x = self._single_def_operand(shifted, tac_ast.Binary)
+            z = self._single_def_operand(ext, tac_ast.ZeroExtend)
+            if x is None or z is None:
+                continue
+            if not (isinstance(x.op, tac_ast.LeftShift)
+                    and isinstance(x.src2, tac_ast.Constant)
+                    and x.src2.const.value == 1
+                    and isinstance(x.src1, tac_ast.Var)):
+                continue
+            if not (self._size_of(x.src1) == self._size_of(ins.dst)
+                    and self._size_of(z.src) == 1 and self._is_bit(z.src)):
+                continue
+            return x.src1, z.src, x, z
+        return None
+
+    def _top_bit_of(self, b, y, instrs, index, j) -> bool:
+        """True when `b` is `(uint8_t)(y >> (8n - 1))` of the n-byte `y`,
+        read before `instrs[j]` with nothing in between writing `y`."""
+        from passes.recursion_saves import defs_in
+        if not isinstance(b, tac_ast.Var):
+            return False
+        defs = self._tac_defs.get(b.name, [])
+        if len(defs) != 1 or not isinstance(defs[0], tac_ast.Truncate):
+            return False
+        src = defs[0].src
+        sdefs = self._tac_defs.get(getattr(src, "name", None), [])
+        if len(sdefs) != 1 or not self._is_top_bit(src):
+            return False
+        shift = sdefs[0]
+        if shift.src1 != y:
+            return False
+        k = index[id(shift)]
+        return k < j and not any(
+            d == y for ins in instrs[k + 1:j] for d in defs_in(ins)
+        )
+
+    def _rotate_in(self, dst, x, b, carried):
+        """`(x << 1) | b`, with `b` a byte that's 0 or 1, as `LDA b; LSR`
+        and then a `ROL` of each byte of `x` into `dst`. The `LSR` puts
+        `b` in C, and the rotates shift it into bit 0, so the result is
+        the same, and C comes out as the top bit shifted out, as an
+        `ASL` / `ROL` chain leaves it. That's 7 bytes in place against
+        the shift's and the `ORA`'s 10. When C already holds `b`, the
+        top bit the previous rotate-in shifted out, the `LDA b; LSR`
+        goes too. Zork's `divu16` (examples/zork/interpreter/numbers.c)
+        shifts each step's bit into its quotient, and the quotient's
+        top bit into its remainder, this way. See `_plan_rotations`."""
+        size = self._size_of(dst)
+        src_op = translate_val(x)
+        dst_op = translate_val(dst)
+        out: list[asm_ast.Type_instruction] = []
+        if not carried:
+            out += [
+                asm_ast.Mov(src=translate_val(b), dst=_REG_A),
+                asm_ast.LogicalShiftRight(dst=_REG_A),
+            ]
+        for k in range(size):
+            out += [
+                asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A),
+                asm_ast.RotateLeft(dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)),
+            ]
+        return out
+
+    def _single_def_operand(self, v, kind):
+        """The instruction of type `kind` that defines the temporary
+        `v`, when it's `v`'s only definition and `v` is read once, or
+        None."""
+        if not (isinstance(v, tac_ast.Var) and v.name.startswith("%")):
+            return None
+        defs = self._tac_defs.get(v.name, [])
+        if len(defs) != 1 or self._tac_uses.get(v.name, 0) != 1:
+            return None
+        return defs[0] if isinstance(defs[0], kind) else None
+
+    def _is_bit(self, v, depth: int = 0) -> bool:
+        """True when every definition of the byte `v` leaves it 0 or 1:
+        the constant 0 or 1, a comparison, a logical not, `& 1`, the
+        top bit of an unsigned value (`(uint8_t)(x >> 15)`), or a copy
+        or extend of such a byte."""
+        if isinstance(v, tac_ast.Constant):
+            return v.const.value in (0, 1)
+        if not isinstance(v, tac_ast.Var) or depth > 4:
+            return False
+        defs = self._tac_defs.get(v.name, [])
+        if not defs:
+            return False
+        compares = (tac_ast.Equal, tac_ast.NotEqual, tac_ast.LessThan,
+                    tac_ast.LessOrEqual, tac_ast.GreaterThan,
+                    tac_ast.GreaterOrEqual)
+        for d in defs:
+            match d:
+                case tac_ast.Copy(src=src) | tac_ast.ZeroExtend(src=src):
+                    if not self._is_bit(src, depth + 1):
+                        return False
+                case tac_ast.Binary(op=bop) if isinstance(bop, compares):
+                    pass
+                case tac_ast.Unary(op=tac_ast.LogicalNot()):
+                    pass
+                case tac_ast.Binary(op=tac_ast.BitwiseAnd(), src2=c) if (
+                    isinstance(c, tac_ast.Constant) and c.const.value == 1
+                ):
+                    pass
+                case tac_ast.Truncate(src=src):
+                    if not self._is_top_bit(src):
+                        return False
+                case _:
+                    return False
+        return True
+
+    def _is_top_bit(self, v) -> bool:
+        """True when `v`'s only definition is `x >> (8n - 1)` of an
+        unsigned n-byte `x`."""
+        if not isinstance(v, tac_ast.Var):
+            return False
+        defs = self._tac_defs.get(v.name, [])
+        if len(defs) != 1:
+            return False
+        d = defs[0]
+        return (isinstance(d, tac_ast.Binary)
+                and isinstance(d.op, tac_ast.RightShift)
+                and isinstance(d.src2, tac_ast.Constant)
+                and d.src2.const.value == 8 * self._size_of(d.src1) - 1
+                and self._is_unsigned_val(d.src1))
+
     def translate_binary(
         self,
         op: tac_ast.Type_binary_operator,
@@ -3991,8 +4166,23 @@ class Translator:
             tac_ast.GreaterThan, tac_ast.LessOrEqual,
         )):
             return None
-        prev = self._prev_tac
         a, b = compared_difference(op, src1, src2)
+        # Copies may come between, as SSA destruction puts a Phi's
+        # copies at the end of the compare's block: their loads and
+        # stores leave C and V as the subtract set them. None of them
+        # may write an operand, which the compare reads after them, or
+        # the difference, whose top byte the signed case reads.
+        instrs = getattr(self, "_tac_list", None) or []
+        k = getattr(self, "_tac_index", 0) - 1
+        between: list[tac_ast.Copy] = []
+        while k >= 0 and isinstance(instrs[k], tac_ast.Copy):
+            between.append(instrs[k])
+            k -= 1
+        prev = instrs[k] if k >= 0 else None
+        if any(c.dst in (a, b) or (isinstance(prev, tac_ast.Binary)
+                                   and c.dst == prev.dst)
+               for c in between):
+            return None
         if not (isinstance(prev, tac_ast.Binary)
                 and isinstance(prev.op, tac_ast.Subtract)
                 and prev.src1 == a and prev.src2 == b

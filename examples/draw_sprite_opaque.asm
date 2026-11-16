@@ -13,13 +13,12 @@ __local_draw_sprite_opaque__x	EQU	$88
 __local_draw_sprite_opaque__row_remain	EQU	$89
 __local_draw_sprite_opaque__1	EQU	$8A
 __local_draw_sprite_opaque__2	EQU	$8B
-__local_draw_sprite_opaque__h	EQU	$8C
 __local_draw_sprite_opaque__y	EQU	$8D
 __local_draw_sprite_opaque__3	EQU	$8E
 __local_draw_sprite_opaque__4	EQU	$8F
 
 ; @zp-link-meta-begin
-; def draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1,__zpabi_draw_sprite_opaque__page_flag locals=__local_draw_sprite_opaque__0,__local_draw_sprite_opaque__x,__local_draw_sprite_opaque__row_remain,__local_draw_sprite_opaque__1,__local_draw_sprite_opaque__2,__local_draw_sprite_opaque__h,__local_draw_sprite_opaque__y,__local_draw_sprite_opaque__3,__local_draw_sprite_opaque__4 indirect=false in_cycle=false
+; def draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1,__zpabi_draw_sprite_opaque__page_flag locals=__local_draw_sprite_opaque__0,__local_draw_sprite_opaque__x,__local_draw_sprite_opaque__row_remain,__local_draw_sprite_opaque__1,__local_draw_sprite_opaque__2,__local_draw_sprite_opaque__h,__local_draw_sprite_opaque__y,__local_draw_sprite_opaque__3,__local_draw_sprite_opaque__4 indirect=false in_cycle=false changes=__zpabi_draw_sprite_opaque__height
 ; item draw_sprite_opaque section=.text local=false zero=false
 ; item screen_row_addr_hi section=.rodata local=true zero=false
 ; item screen_row_addr_lo section=.rodata local=true zero=false
@@ -45,8 +44,6 @@ draw_sprite_opaque:
 .cond_end@1:
    LDA   #$00
    STA   __local_draw_sprite_opaque__y
-   LDA   __zpabi_draw_sprite_opaque__height
-   STA   __local_draw_sprite_opaque__h
    LDX   __zpabi_draw_sprite_opaque__sprite_y
    JMP   .loop@0_start
 .draw_sprite_opaque@rot@1:
@@ -76,13 +73,11 @@ draw_sprite_opaque:
 .loop@1_start:
    LDA   __local_draw_sprite_opaque__row_remain
    BPL   .draw_sprite_opaque@rot@0
-.loop@1_break:
-   DEC   __local_draw_sprite_opaque__h
+   DEC   __zpabi_draw_sprite_opaque__height
    INX
 .loop@0_start:
-   LDA   __local_draw_sprite_opaque__h
+   LDA   __zpabi_draw_sprite_opaque__height
    BNE   .draw_sprite_opaque@rot@1
-.loop@0_break:
    RTS
 
 screen_row_addr_hi:

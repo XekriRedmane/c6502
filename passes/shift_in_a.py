@@ -83,6 +83,22 @@ dead after the load. Zork's `parse[1]++` reads the byte through a
 pointer into A, and `INC` has no `(zp),Y` mode, so the byte went
 through a slot to be incremented.
 
+# The converse: a shift loaded from and stored back to the same byte
+
+    Mov(M, Reg(A))            # LDA M
+    <op>(Reg(A))              # one or two shifts of A
+    Mov(Reg(A), M)            # STA M
+
+becomes the shifts on M, `ASL M` (`_shift_in_place`), when A is dead
+after the store. That's 2 bytes and 5 cycles against 5 and 8 for one
+shift of a zero-page byte, and 3 and 6 against 7 and 10 for an
+absolute one. Two shifts take the same cycles either way and 2 bytes
+fewer. Three would take more cycles, and as many bytes for an
+absolute byte, so the rule stops at two. The flags come out the same, from the last shift.
+`g <<= 1;` on a `uint8_t g` had kept the byte in A. A volatile byte
+is left alone, since a read-modify-write instruction on the NMOS 6502
+writes the old value back before the new one.
+
 # Where it comes from
 
 A 1-byte constant shift is already lowered in A by `tac_to_asm`. A
@@ -112,7 +128,9 @@ def apply_shift_in_a(prog: asm_ast.Program) -> asm_ast.Program:
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_steps(_rewrite_function(tl)))
+            new_top.append(
+                _shift_in_place(_rewrite_steps(_rewrite_function(tl)))
+            )
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
@@ -267,6 +285,40 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             i += len(pairs)
         changed = True
         i += len(shifts) + 1
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _shift_in_place(fn: asm_ast.Function) -> asm_ast.Function:
+    """`LDA M; ASL; STA M` as `ASL M`, for one or two shifts, when M is
+    a non-volatile zero-page or absolute byte and A is dead after."""
+    instrs = list(fn.instructions)
+    changed = False
+    i = 0
+    while i < len(instrs):
+        load = instrs[i]
+        if not (isinstance(load, asm_ast.Mov) and _is_reg_a(load.dst)
+                and not load.is_volatile and _mem(load.src)):
+            i += 1
+            continue
+        k = i + 1
+        while (k < len(instrs) and k - i <= 2
+               and isinstance(instrs[k], _SHIFTS)
+               and _is_reg_a(instrs[k].dst)):
+            k += 1
+        store = instrs[k] if k < len(instrs) else None
+        if not (k > i + 1 and isinstance(store, asm_ast.Mov)
+                and _is_reg_a(store.src) and not store.is_volatile
+                and store.dst == load.src and a_dead_at(instrs, k + 1)):
+            i += 1
+            continue
+        instrs[i:k + 1] = [type(op)(dst=load.src) for op in instrs[i + 1:k]]
+        changed = True
+        i += 1
     if not changed:
         return fn
     return asm_ast.Function(

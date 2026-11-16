@@ -313,7 +313,6 @@ main:
    INX
    CPX   #$1E
    BNE   .main@rot@0
-.loop@1_break:
    STA   FRAME_Z_SP
    STA   FRAME_Z_SP+1
    STA   FRAME_STACK_COUNT
@@ -416,11 +415,10 @@ main:
    LDA   __local_main__sector
    CMP   NUM_IMAGE_PAGES
    BNE   .main@rot@1
-.loop@3_break:
    LDY   #$01
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@4
+   LSR
+   BCC   .if_end@4
    JSR   internal_error
 .if_end@4:
    LDY   #$06

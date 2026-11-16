@@ -146,9 +146,16 @@ A pass that borrows nothing from the high byte is 15 cycles.
   in a temporary.
 - The difference is an SSA value of the operands' type.
 
-In `tac_to_asm` the subtract has to come right before the compare,
-and its destination can't be one of the compare's operands, which the
-compare reads after it.
+In `tac_to_asm` the subtract has to come before the compare with
+nothing in between but copies, and its destination can't be one of
+the compare's operands, which the compare reads after it. SSA
+destruction puts a Phi's copies at the end of the compare's block,
+between the two, as `if (partial >= divisor) { partial -= divisor;
+fits = 1; }` in Zork's `divu16` (examples/zork/interpreter/numbers.c)
+leaves `partial` and `fits` for the side that skips the body. A copy
+is a load and a store, which leave C and V as the subtract set them.
+None of the copies may write an operand of the compare, or the
+difference, whose top byte the signed case loads.
 
 ## What it leaves alone
 

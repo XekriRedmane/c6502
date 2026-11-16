@@ -348,7 +348,6 @@ A_mod_3:
 .loop@1_continue:
    CMP   #$03
    BCS   .A_mod_3@rot@0
-.loop@1_break:
    RTS
 
 get_alphabet:

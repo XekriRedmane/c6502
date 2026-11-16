@@ -113,6 +113,9 @@ this directory:
   through such a run, since A, the operand, and the flags are all
   unchanged. That's the second of `if (k < e) ...; if (k == e) ...`,
   and the second compare of each byte `three_way_compare` writes.
+  Also a compare of a register with 0 right after the instruction
+  that set N and Z from it (stores may come between), when C is dead
+  (`_drop_compares_with_zero`, in a sweep of its own).
 - `tail_merge.py` — `apply_tail_merge`. Turns `Bcc L; <tail>; L:`
   into `B!cc T` when the same return tail (2 to 4 instructions
   ending in `Return`, such as `LDX #0; TXA; RTS`) appears later at
@@ -235,7 +238,10 @@ this directory:
   linker doesn't move (not a `__zpabi_*` or `__local_*` slot) reads
   that byte, when every read of the slot's web can, so the store
   goes (`_fixed_source`, `_allowed_slot_reads`). A tail call is an
-  exit of the CFG (`redundant_load._build_cfg_tolerant`).
+  exit of the CFG (`redundant_load._build_cfg_tolerant`). A `(zp),Y`
+  pointer whose bytes hold a label's address halves reads or writes
+  the label directly, `name,Y` (`_label_pointer_operand`), which is
+  how a pooled function's local array is indexed.
 - `label_resolution.py` — pass 4 (see below).
 - `linker.py` — `compile.py --link` driver; multi-TU re-allocates
   `__zpabi_*` and `__local_*` symbols across per-TU outputs. A
@@ -296,7 +302,10 @@ this directory:
   can't be reached again (an exit path). A call to a routine that
   preserves the register, and doesn't take it as an argument,
   doesn't count as touching it. Runs after `loop_counter_to_x`,
-  which handles counters that are also an index.
+  which handles counters that are also an index, and again after
+  `rotate_loop_test`. An init from the register itself keeps the
+  counter there, and one from the other index register is left
+  alone, since there's no TXY or TYX.
 - `rotate_loop_test.py` — `apply_rotate_loop_test`. A loop that
   tests at its top and ends with `JMP L` gets its test at the bottom,
   inverted to branch back to the body, and is entered with a `JMP` to
@@ -337,7 +346,9 @@ this directory:
   peephole sees the LDA + STA pair as separate atoms instead of one
   opaque compound. Volatile mem-to-mem is skipped (the conservative
   is_volatile bit doesn't tell which operand is volatile). Self-Movs
-  `Mov(M, M)` are dropped entirely. See "Mem-to-mem splitting" below.
+  `Mov(M, M)` are dropped entirely. `Mov(X, Y)` / `Mov(Y, X)` is
+  split into the two transfers through A that `asm_emit` writes. See
+  "Mem-to-mem splitting" below.
 - `self_store_drop.py` — `apply_self_store_drop`.
 - `shift_in_a.py` — `apply_shift_in_a`. Rewrites `STA M; <ASL / LSR /
   ROL / ROR M>+; LDA M` as the shifts on A followed by `STA M`, and
@@ -348,7 +359,9 @@ this directory:
   so a widened byte's `(unsigned int)c << 3` shifts its low byte in A
   and rotates the high byte in memory. `STA M; INC M; LDA M` becomes
   `CLC; ADC #1; STA M` (`DEC`: `SEC; SBC #1`) when C and V are dead
-  after (`_rewrite_steps`).
+  after (`_rewrite_steps`). And the converse, `LDA M; ASL; STA M` →
+  `ASL M` for one or two shifts when A is dead after and M isn't
+  volatile (`_shift_in_place`).
 - `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
   the rule for when a constant shift is lowered inline (at most 8
   one-bit shift instructions after the byte moves, or any count of
@@ -368,6 +381,24 @@ this directory:
   `tac_to_asm` computes just the low byte of a constant right shift
   into one of them (`_inline_right_shift_to_byte`), so
   `(uint8_t)(w >> 5)` doesn't call `lsr16`.
+- `slot_coalescing.py` — `apply_slot_coalescing`. Renames a
+  function's `__local_F__*` byte that holds a copy of one of its own
+  parameter bytes to the parameter's slot, when the two never
+  interfere (no write of one while the other is live, except a copy
+  of one into the other) and neither is shared, volatile, reached by
+  address (`ZP`, a `(zp),Y` base) or by pointer, indexed, or in a
+  `LoadAddress`. Liveness and the copies are its own, over the
+  function's instructions, with which register holds which byte
+  followed forward through labels; after the rename it drops a store
+  of a byte into itself. A local copied into a callee's slot for the
+  call takes that slot the same way, when it isn't live across a call
+  or a store into another function's slot (the linker may give two
+  functions' slots one byte), and only one callee's slots take locals
+  in each function. Returns the own slots it made each function
+  write, which `compile.py` adds to the link metadata's `changes=`.
+  Runs once after the third peephole fixed point and `carry_known`,
+  after the passes that look for `__local_*` slots. User guide:
+  docs/optimizations/slot_coalescing.md.
 - `slot_sharing.py` — `find_shares`: values kept in a callee's
   parameter bytes across calls. A parameter passed on unchanged
   aliases the callee's slot (a share *member*), and a local a caller
@@ -1193,7 +1224,9 @@ document says whether it fires there.
 - `apply_and_sign_bit_branch` — `Mov(M, A); And(Imm(0x80), A);
   Branch(EQ|NE, _)` → `BitTest(M); Branch(PL|MI, _)` when M is BIT-
   addressable (`Data` / `ZP`) AND A is dead after. Pays 1 byte / 3+
-  cycles per occurrence and preserves A for downstream use.
+  cycles per occurrence and preserves A for downstream use. Also
+  `AND #$01; BEQ/BNE` → `LSR; BCC/BCS` when A, C, N, and Z are dead
+  on both paths.
 - `apply_self_store_drop` — `Mov(M, A); ...; Mov(A, M)` where the body
   doesn't modify M and A reads M → drop the trailing self-store.
 - `apply_cmp_through_tmp_fold` — `Mov(src, A); Mov(A, tmp); Mov(other,
@@ -1210,7 +1243,8 @@ document says whether it fires there.
   eligibility / aliasing rules.
 - `apply_redundant_compare` — drops the second of two identical
   compares when the only way to it is through the branches right
-  after the first.
+  after the first, and a `CMP #$00` (or `CPX` / `CPY`) after the
+  instruction that set N and Z from the register, when C is dead.
 - `apply_tail_merge` — branches to one shared copy of a repeated
   return tail instead of branching over each copy.
 - `apply_carry_return_tails`, `apply_carry_const_fold`,

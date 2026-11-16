@@ -174,5 +174,43 @@ class TestShiftInA(unittest.TestCase):
                 ])
 
 
+class TestShiftInPlace(unittest.TestCase):
+    """`LDA M; ASL; STA M` as `ASL M` when A is dead after."""
+
+    def test_one_shift(self):
+        out = _run([_mov(_M, _A), asm_ast.ArithmeticShiftLeft(dst=_A),
+                    _mov(_A, _M), _RTS])
+        self.assertEqual(out, [asm_ast.ArithmeticShiftLeft(dst=_M), _RTS])
+
+    def test_two_shifts(self):
+        out = _run([_mov(_M, _A), asm_ast.LogicalShiftRight(dst=_A),
+                    asm_ast.RotateRight(dst=_A), _mov(_A, _M), _RTS])
+        self.assertEqual(out, [asm_ast.LogicalShiftRight(dst=_M),
+                               asm_ast.RotateRight(dst=_M), _RTS])
+
+    def test_three_shifts_left_alone(self):
+        instrs = ([_mov(_M, _A)] + [asm_ast.ArithmeticShiftLeft(dst=_A)] * 3
+                  + [_mov(_A, _M), _RTS])
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_a_read_after(self):
+        instrs = [_mov(_M, _A), asm_ast.ArithmeticShiftLeft(dst=_A),
+                  _mov(_A, _M), _RTS_A]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_another_byte_left_alone(self):
+        instrs = [_mov(_M, _A), asm_ast.ArithmeticShiftLeft(dst=_A),
+                  _mov(_A, _N), _RTS]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_volatile_left_alone(self):
+        # An NMOS 6502 read-modify-write writes the old value back
+        # first.
+        instrs = [_mov(_M, _A, volatile=True),
+                  asm_ast.ArithmeticShiftLeft(dst=_A),
+                  _mov(_A, _M, volatile=True), _RTS]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

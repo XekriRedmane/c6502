@@ -693,6 +693,15 @@ def sets_flags(instr: asm_ast.Type_instruction) -> bool:
         # Mov(Reg(A), Data | ZP) → STA only, so no flag change.
         if is_reg_a(instr.src):
             return False
+        # Mov(Reg(X|Y), Data | ZP) → STX / STY, which leave the flags
+        # alone too. (To a soft-stack or indirect operand it's TXA /
+        # TYA and then STA, and the transfer sets them.) Counting STY
+        # as a flag setter let `via_a_store_fold` drop the TYA whose Z
+        # a BNE after the STY read, once `redundant_compare` had
+        # dropped the CMP #$00 between them.
+        if (isinstance(instr.src, asm_ast.Reg)
+                and isinstance(instr.dst, (asm_ast.Data, asm_ast.ZP))):
+            return False
         # Mov(non-A, memory) emits LDA src; STA dst — LDA sets flags.
         return True
     if isinstance(instr, (

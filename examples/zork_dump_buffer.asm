@@ -91,7 +91,6 @@ dump_buffer_to_screen:
 .loop@0_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_screen@rot@0
-.loop@0_break:
    LDA   #$00
    STA   BUFF_END
    RTS
@@ -133,7 +132,6 @@ dump_buffer_to_printer:
 .loop@1_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_printer@rot@1
-.loop@1_break:
    LDA   CSW
    STA   PRINTER_CSW
    LDA   CSW+1

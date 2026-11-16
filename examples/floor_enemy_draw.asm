@@ -47,7 +47,6 @@ floor_enemy_draw:
    LDA   proj_frame_idx,Y
    TAY
    TXA
-   CMP   #$00
    BEQ   .dispatch@0@case@0
    CMP   #$01
    BEQ   .dispatch@0@case@1
@@ -69,7 +68,6 @@ floor_enemy_draw:
    STA   __local_floor_enemy_draw__1
 .dispatch@0@end:
    TXA
-   CMP   #$00
    BEQ   .dispatch@1@case@0
    CMP   #$01
    BEQ   .dispatch@1@case@1

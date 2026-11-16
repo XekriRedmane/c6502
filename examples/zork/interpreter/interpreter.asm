@@ -14,24 +14,17 @@ props	EQU	$13
 sign_bit	EQU	$15
 remainder	EQU	$16
 attr_ptr	EQU	$18
-__local_branch_to_offset__0	EQU	$1A
-__local_mulu16__b_0	EQU	$1A
 __local_print_status_line__1	EQU	$1A
 __local_return_value__0	EQU	$1A
-__local_branch_to_offset__pages_0	EQU	$1B
-__local_mulu16__b_1	EQU	$1B
 __local_print_status_line__2	EQU	$1B
 __local_return_value__1	EQU	$1B
-__local_branch_to_offset__1	EQU	$1C
-__local_mulu16__a_0	EQU	$1C
+__local_divu16__partial_1	EQU	$1C
 __local_print_obj__obj	EQU	$1C
 __local_return_value__x	EQU	$1C
-__local_branch_to_offset__pages_1	EQU	$1D
-__local_mulu16__a_1	EQU	$1D
+__local_divu16__partial_0	EQU	$1D
 __local_print_obj__0	EQU	$1D
 __local_return_value__count	EQU	$1D
-__local_branch_to_offset__2	EQU	$1E
-__local_mulu16__product	EQU	$1E
+__local_divu16__0	EQU	$1E
 __local_print_obj__1	EQU	$1E
 __local_store_result__0	EQU	$1E
 __monitor_zp_1f	EQU	$1F
@@ -64,65 +57,46 @@ __local_ascii_to_zchar__z	EQU	$50
 __local_do_2op__equal	EQU	$50
 __local_instr_call__0	EQU	$50
 __local_match_dictionary_word__0	EQU	$50
-__local_print_number__0	EQU	$50
 __local_print_zstring__ch	EQU	$50
 __local_ascii_to_zchar__dest	EQU	$51
 __local_do_2op__0	EQU	$51
 __local_instr_call__1	EQU	$51
 __local_match_dictionary_word__count_0	EQU	$51
-__local_print_number__1	EQU	$51
 __local_print_zstring__c_0	EQU	$51
 __local_ascii_to_zchar__left	EQU	$52
 __local_do_2op__left	EQU	$52
 __local_instr_call__2	EQU	$52
 __local_match_dictionary_word__5	EQU	$52
-__local_print_number__count	EQU	$52
 __local_print_zstring__0	EQU	$52
 __local_ascii_to_zchar__0	EQU	$53
 __local_do_2op__2	EQU	$53
 __local_instr_call__i	EQU	$53
 __local_match_dictionary_word__6	EQU	$53
-__local_print_number__2	EQU	$53
 __local_ascii_to_zchar__1	EQU	$54
 __local_do_2op__3	EQU	$54
 __local_instr_call__args	EQU	$54
 __local_match_dictionary_word__count_1	EQU	$54
-__local_print_number__n_1	EQU	$54
 __local_ascii_to_zchar__2	EQU	$55
 __local_do_2op__4	EQU	$55
 __local_instr_call__3	EQU	$55
 __local_match_dictionary_word__8	EQU	$55
-__local_print_number__n_0	EQU	$55
 __local_ascii_to_zchar__index	EQU	$56
 __local_do_2op__5	EQU	$56
 __local_match_dictionary_word__entry_0	EQU	$56
-__local_print_number__digits	EQU	$56
 __local_get_object_addr__0	EQU	$57
 __local_match_dictionary_word__entry_1	EQU	$57
 __local_print_ascii_string__count	EQU	$57
-__local_print_number__4	EQU	$57
 __local_get_object_addr__1	EQU	$58
 __local_print_ascii_string__i	EQU	$58
-__local_print_number__5	EQU	$58
+__local_buffer_char__0	EQU	$59
 __local_get_object_addr__2	EQU	$59
-__local_print_number__6	EQU	$59
+__local_dump_buffer_with_more__0	EQU	$5A
 __local_get_object_addr__3	EQU	$5A
-__local_print_number__7	EQU	$5A
-__local_buffer_char__0	EQU	$5B
-__local_divu16__partial_0	EQU	$5B
+__local_dump_buffer_with_more__end	EQU	$5B
 __local_get_object_addr__obj	EQU	$5B
-__local_divu16__partial_1	EQU	$5C
-__local_dump_buffer_with_more__0	EQU	$5C
-__local_divu16__quotient_0	EQU	$5D
-__local_dump_buffer_with_more__end	EQU	$5D
-__local_divu16__quotient_1	EQU	$5E
-__local_dump_buffer_to_printer__x	EQU	$5E
-__local_divu16__0	EQU	$5F
-__local_dump_buffer_to_printer__1	EQU	$5F
-__local_divu16__1	EQU	$60
-__local_dump_buffer_to_printer__2	EQU	$60
-__local_divu16__2	EQU	$61
-__local_divu16__i	EQU	$62
+__local_dump_buffer_to_printer__x	EQU	$5C
+__local_dump_buffer_to_printer__1	EQU	$5D
+__local_dump_buffer_to_printer__2	EQU	$5E
 SECTORS_PER_TRACK	EQU	$7F
 CURR_OPCODE	EQU	$80
 OPERAND_COUNT	EQU	$81
@@ -161,8 +135,8 @@ __local_get_const_word__1	EQU	$E0
 __local_get_next_zchar__compound_literal_1	EQU	$E0
 __local_instr_get_next_prop__y	EQU	$E0
 __local_instr_get_parent__0	EQU	$E0
-__local_instr_random__0	EQU	$E0
 __local_is_dict_separator__1	EQU	$E0
+__local_mulu16__product	EQU	$E0
 __local_please_insert_save_diskette__0	EQU	$E0
 __local_var_get__var	EQU	$E0
 __local_write_to_sector__1	EQU	$E0
@@ -182,7 +156,6 @@ __zpabi_var_put__value_0	EQU	$E0
 __local_get_next_code_word__1	EQU	$E1
 __local_instr_get_next_prop__1	EQU	$E1
 __local_instr_get_parent__1	EQU	$E1
-__local_instr_random__1	EQU	$E1
 __local_is_dict_separator__2	EQU	$E1
 __local_please_insert_save_diskette__1	EQU	$E1
 __local_search_nonalpha_table__0	EQU	$E1
@@ -228,7 +201,7 @@ __local_instr_restore__1	EQU	$E5
 __local_instr_sread__1	EQU	$E5
 __local_locate_last_ram_page__3	EQU	$E5
 __zpabi_check_sign__b_1	EQU	$E5
-__local_check_sign__a	EQU	$E6
+__local_branch_to_offset__0	EQU	$E6
 __local_dec_var__2	EQU	$E6
 __local_get_dictionary_addr__0	EQU	$E6
 __local_get_next_code_byte2__page	EQU	$E6
@@ -244,6 +217,7 @@ __zpabi_divu16__dividend_0	EQU	$E6
 __zpabi_mulu16__a_0	EQU	$E6
 __zpabi_store_result__value_0	EQU	$E6
 __local_attr_ptr_and_mask__attr	EQU	$E7
+__local_branch_to_offset__1	EQU	$E7
 __local_get_dictionary_addr__1	EQU	$E7
 __local_get_nonstack_var__var	EQU	$E7
 __local_get_prompted_number_from_user__1	EQU	$E7
@@ -256,6 +230,7 @@ __zpabi_divu16__dividend_1	EQU	$E7
 __zpabi_mulu16__a_1	EQU	$E7
 __zpabi_store_result__value_1	EQU	$E7
 __local_attr_ptr_and_mask__mask_1	EQU	$E8
+__local_branch_to_offset__pages_1	EQU	$E8
 __local_get_nonstack_var__0	EQU	$E8
 __local_get_property_ptr__0	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
@@ -269,6 +244,7 @@ __zpabi_mulu16__b_0	EQU	$E8
 __zpabi_push__value_0	EQU	$E8
 __zpabi_set_nonstack_var__value_0	EQU	$E8
 __local_attr_ptr_and_mask__n	EQU	$E9
+__local_branch_to_offset__2	EQU	$E9
 __local_get_nonstack_var__1	EQU	$E9
 __local_get_property_len__0	EQU	$E9
 __local_get_property_ptr__1	EQU	$E9
@@ -283,14 +259,15 @@ __zpabi_set_nonstack_var__value_1	EQU	$E9
 __local_get_nonstack_var__2	EQU	$EA
 __local_get_property_ptr__2	EQU	$EA
 __local_store_and_branch_on__related	EQU	$EA
-__local_store_with_sign__n_0	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
 __local_get_next_code_byte__page	EQU	$F0
+__local_print_number__count	EQU	$F0
 __local_set_nonstack_var__var	EQU	$F0
 __zpabi_print_ascii_string__s_0	EQU	$F0
+__local_print_number__digits	EQU	$F1
 __local_set_nonstack_var__0	EQU	$F1
 __local_set_page_first__0	EQU	$F1
 __zpabi_print_ascii_string__s_1	EQU	$F1
@@ -307,19 +284,15 @@ __local_do_instruction__forms	EQU	$F9
 __local_do_instruction__1	EQU	$FA
 __local_branch__offset_1	EQU	$FB
 __local_do_var__n	EQU	$FB
-__local_instr_div__quotient	EQU	$FB
 __local_instr_get_prop__0	EQU	$FB
 __local_instr_get_prop_addr__0	EQU	$FB
 __local_instr_get_prop_len__0	EQU	$FB
-__local_instr_mul__product	EQU	$FB
 __local_remove_obj__0	EQU	$FB
 __local_branch__offset_0	EQU	$FC
 __local_do_var__0	EQU	$FC
-__local_instr_div__0	EQU	$FC
 __local_instr_get_prop__1	EQU	$FC
 __local_instr_get_prop_addr__y	EQU	$FC
 __local_instr_get_prop_len__1	EQU	$FC
-__local_instr_mul__0	EQU	$FC
 __local_remove_obj__1	EQU	$FC
 __local_branch__condition	EQU	$FD
 __local_do_var__1	EQU	$FD
@@ -351,14 +324,14 @@ COUT1	EQU	$FDF0
 ; def ascii_to_zchar params= locals=__local_ascii_to_zchar__z,__local_ascii_to_zchar__dest,__local_ascii_to_zchar__left,__local_ascii_to_zchar__0,__local_ascii_to_zchar__1,__local_ascii_to_zchar__2,__local_ascii_to_zchar__index indirect=false in_cycle=false
 ; def attr_ptr_and_mask params= locals=__local_attr_ptr_and_mask__attr,__local_attr_ptr_and_mask__mask_1,__local_attr_ptr_and_mask__n indirect=false in_cycle=false
 ; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__condition indirect=false in_cycle=false param_regs=A
-; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false
+; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false changes=__zpabi_branch_to_offset__offset_1
 ; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
-; def check_sign params=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1,__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 locals=__local_check_sign__a indirect=false in_cycle=false
+; def check_sign params=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1,__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 locals= indirect=false in_cycle=false changes=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1
 ; def copy_data_from_buff params=__zpabi_copy_data_from_buff__dest_0,__zpabi_copy_data_from_buff__dest_1,__zpabi_copy_data_from_buff__x,__zpabi_copy_data_from_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X
 ; def dec_var params= locals=__local_dec_var__0,__local_dec_var__1,__local_dec_var__2 indirect=false in_cycle=false
-; def divu16 params=__zpabi_divu16__dividend_0,__zpabi_divu16__dividend_1,__zpabi_divu16__divisor_0,__zpabi_divu16__divisor_1 locals=__local_divu16__partial_0,__local_divu16__partial_1,__local_divu16__quotient_0,__local_divu16__quotient_1,__local_divu16__0,__local_divu16__1,__local_divu16__2,__local_divu16__i indirect=false in_cycle=false
+; def divu16 params=__zpabi_divu16__dividend_0,__zpabi_divu16__dividend_1,__zpabi_divu16__divisor_0,__zpabi_divu16__divisor_1 locals=__local_divu16__partial_1,__local_divu16__partial_0,__local_divu16__0 indirect=false in_cycle=false changes=__zpabi_divu16__dividend_0
 ; def do_0op params=__zpabi_do_0op__n locals= indirect=false in_cycle=false param_regs=A
 ; def do_1op params=__zpabi_do_1op__n locals= indirect=false in_cycle=false param_regs=A
 ; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__left,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4,__local_do_2op__5 indirect=false in_cycle=false param_regs=A
@@ -391,7 +364,7 @@ COUT1	EQU	$FDF0
 ; def inc_var params= locals=__local_inc_var__0,__local_inc_var__1,__local_inc_var__2 indirect=false in_cycle=false
 ; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__2,__local_instr_call__i,__local_instr_call__args,__local_instr_call__3 indirect=false in_cycle=false
 ; def instr_clear_attr params= locals=__local_instr_clear_attr__0,__local_instr_clear_attr__1,__local_instr_clear_attr__3 indirect=false in_cycle=false
-; def instr_div params= locals=__local_instr_div__quotient,__local_instr_div__0 indirect=false in_cycle=false
+; def instr_div params= locals= indirect=false in_cycle=false
 ; def instr_get_child params= locals=__local_instr_get_child__0,__local_instr_get_child__1 indirect=false in_cycle=false
 ; def instr_get_next_prop params= locals=__local_instr_get_next_prop__y,__local_instr_get_next_prop__1 indirect=false in_cycle=false
 ; def instr_get_parent params= locals=__local_instr_get_parent__0,__local_instr_get_parent__1 indirect=false in_cycle=false
@@ -402,10 +375,10 @@ COUT1	EQU	$FDF0
 ; def instr_insert_obj params= locals=__local_instr_insert_obj__0,__local_instr_insert_obj__1,__local_instr_insert_obj__2,__local_instr_insert_obj__3,__local_instr_insert_obj__4,__local_instr_insert_obj__5 indirect=false in_cycle=false
 ; def instr_jin params= locals=__local_instr_jin__2,__local_instr_jin__3 indirect=false in_cycle=false
 ; def instr_mod params= locals= indirect=false in_cycle=false
-; def instr_mul params= locals=__local_instr_mul__product,__local_instr_mul__0 indirect=false in_cycle=false
+; def instr_mul params= locals= indirect=false in_cycle=false
 ; def instr_put_prop params= locals=__local_instr_put_prop__0,__local_instr_put_prop__y,__local_instr_put_prop__1,__local_instr_put_prop__2 indirect=false in_cycle=false
 ; def instr_quit params= locals= indirect=false in_cycle=false
-; def instr_random params= locals=__local_instr_random__0,__local_instr_random__1 indirect=false in_cycle=false
+; def instr_random params= locals= indirect=false in_cycle=false
 ; def instr_remove_obj params= locals= indirect=false in_cycle=false
 ; def instr_restart params= locals= indirect=false in_cycle=false
 ; def instr_restore params= locals=__local_instr_restore__pages,__local_instr_restore__1 indirect=false in_cycle=false
@@ -422,14 +395,14 @@ COUT1	EQU	$FDF0
 ; def locate_last_ram_page params= locals=__local_locate_last_ram_page__2,__local_locate_last_ram_page__3,__local_locate_last_ram_page__page indirect=false in_cycle=false
 ; def main params= locals=__local_main__0,__local_main__sector indirect=false in_cycle=false
 ; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__count_0,__local_match_dictionary_word__5,__local_match_dictionary_word__6,__local_match_dictionary_word__count_1,__local_match_dictionary_word__8,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
-; def mulu16 params=__zpabi_mulu16__a_0,__zpabi_mulu16__a_1,__zpabi_mulu16__b_0,__zpabi_mulu16__b_1 locals=__local_mulu16__b_0,__local_mulu16__b_1,__local_mulu16__a_0,__local_mulu16__a_1,__local_mulu16__product indirect=false in_cycle=false
+; def mulu16 params=__zpabi_mulu16__a_0,__zpabi_mulu16__a_1,__zpabi_mulu16__b_0,__zpabi_mulu16__b_1 locals=__local_mulu16__product indirect=false in_cycle=false changes=__zpabi_mulu16__a_0,__zpabi_mulu16__a_1,__zpabi_mulu16__b_0,__zpabi_mulu16__b_1
 ; def new_line params= locals= indirect=false in_cycle=false
 ; def next_property params=__zpabi_next_property__y locals=__local_next_property__y indirect=false in_cycle=false param_regs=A
 ; def please_insert_save_diskette params= locals=__local_please_insert_save_diskette__0,__local_please_insert_save_diskette__1 indirect=false in_cycle=false
 ; def please_reinsert_game_diskette params= locals= indirect=false in_cycle=false
 ; def pop params= locals=__local_pop__1,__local_pop__2 indirect=false in_cycle=false
 ; def print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count locals=__local_print_ascii_string__count,__local_print_ascii_string__i indirect=false in_cycle=false param_regs=,,X
-; def print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 locals=__local_print_number__0,__local_print_number__1,__local_print_number__count,__local_print_number__2,__local_print_number__n_1,__local_print_number__n_0,__local_print_number__digits,__local_print_number__4,__local_print_number__5,__local_print_number__6,__local_print_number__7 indirect=false in_cycle=false
+; def print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 locals=__local_print_number__count,__local_print_number__digits indirect=false in_cycle=false changes=__zpabi_print_number__n_0,__zpabi_print_number__n_1
 ; def print_obj params=__zpabi_print_obj__obj locals=__local_print_obj__obj,__local_print_obj__0,__local_print_obj__1 indirect=false in_cycle=false param_regs=A
 ; def print_status_line params= locals=__local_print_status_line__1,__local_print_status_line__2 indirect=false in_cycle=false
 ; def print_string_literal params= locals= indirect=false in_cycle=false
@@ -448,7 +421,7 @@ COUT1	EQU	$FDF0
 ; def skip_separators params= locals= indirect=false in_cycle=false
 ; def store_and_branch_on params=__zpabi_store_and_branch_on__related locals=__local_store_and_branch_on__related indirect=false in_cycle=false param_regs=A
 ; def store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 locals=__local_store_result__0 indirect=false in_cycle=false
-; def store_with_sign params=__zpabi_store_with_sign__n_0,__zpabi_store_with_sign__n_1 locals=__local_store_with_sign__n_0 indirect=false in_cycle=false
+; def store_with_sign params=__zpabi_store_with_sign__n_0,__zpabi_store_with_sign__n_1 locals= indirect=false in_cycle=false changes=__zpabi_store_with_sign__n_0
 ; def var_get params=__zpabi_var_get__var locals=__local_var_get__var,__local_var_get__0 indirect=false in_cycle=false param_regs=A
 ; def var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 locals=__local_var_put__var indirect=false in_cycle=false param_regs=A,,
 ; def write_next_sector params= locals= indirect=false in_cycle=false
@@ -895,7 +868,6 @@ main:
    INX
    CPX   #$1E
    BNE   .main@rot@0
-.loop@1_break:
    STA   FRAME_Z_SP
    STA   FRAME_Z_SP+1
    STA   FRAME_STACK_COUNT
@@ -998,11 +970,10 @@ main:
    LDA   __local_main__sector
    CMP   NUM_IMAGE_PAGES
    BNE   .main@rot@1
-.loop@3_break:
    LDY   #$01
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@4
+   LSR
+   BCC   .if_end@4
    JSR   internal_error
 .if_end@4:
    LDY   #$06
@@ -1450,7 +1421,6 @@ instr_call:
 .loop@2_continue:
    LDA   __local_instr_call__args
    BNE   .instr_call@rot@0
-.loop@2_break:
    LDA   __local_instr_call__3
    STA   __zpabi_push__value_0
    LDA   #$00
@@ -2634,7 +2604,6 @@ A_mod_3:
 .loop@1_continue:
    CMP   #$03
    BCS   .A_mod_3@rot@0
-.loop@1_break:
    RTS
 
 get_alphabet:
@@ -2734,8 +2703,8 @@ dump_buffer_line:
 
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@9
+   LSR
+   BCC   .if_end@9
    JSR   dump_buffer_to_printer
 .if_end@9:
 
@@ -2751,7 +2720,6 @@ dump_buffer_to_screen:
 .loop@3_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_screen@rot@1
-.loop@3_break:
    LDA   #$00
    STA   BUFF_END
    RTS
@@ -2793,7 +2761,6 @@ dump_buffer_to_printer:
 .loop@2_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_printer@rot@0
-.loop@2_break:
    LDA   CSW
    STA   PRINTER_CSW
    LDA   CSW+1
@@ -2843,8 +2810,8 @@ dump_buffer_with_more:
 .if_end@12:
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@13
+   LSR
+   BCC   .if_end@13
    LDA   CSW
    STA   __local_dump_buffer_with_more__end
    LDA   CSW+1
@@ -3350,7 +3317,6 @@ branch:
    JMP   return_value
 .if_end@18:
    LDA   __local_branch__offset_1
-   CMP   #$00
    BNE   .if_end@19
    LDA   __local_branch__offset_0
    CMP   #$01
@@ -3380,8 +3346,6 @@ branch_to_offset:
    CLC
    ADC   #$01
    STA   __local_branch_to_offset__pages_1
-   LDA   __zpabi_branch_to_offset__offset_1
-   STA   __local_branch_to_offset__pages_0
 .if_end@10:
    LDA   Z_PC
    STA   __local_branch_to_offset__0
@@ -3390,19 +3354,19 @@ branch_to_offset:
    STA   __local_branch_to_offset__2
    CMP   __local_branch_to_offset__0
    BCS   .if_end@11
-   INC   __local_branch_to_offset__pages_0
+   INC   __zpabi_branch_to_offset__offset_1
    BNE   .inc_done@0
    INC   __local_branch_to_offset__pages_1
 .inc_done@0:
 .if_end@11:
-   LDA   __local_branch_to_offset__pages_0
+   LDA   __zpabi_branch_to_offset__offset_1
    ORA   __local_branch_to_offset__pages_1
    BNE   .if_end@12
    LDA   Z_PC
-   STA   __local_branch_to_offset__pages_0
+   STA   __zpabi_branch_to_offset__offset_1
    LDA   Z_PC+1
    STA   __local_branch_to_offset__0
-   LDA   __local_branch_to_offset__pages_0
+   LDA   __zpabi_branch_to_offset__offset_1
    AND   #$00
    ORA   __local_branch_to_offset__2
    STA   Z_PC
@@ -3416,14 +3380,14 @@ branch_to_offset:
    STA   __local_branch_to_offset__1
    LDA   __local_branch_to_offset__0
    CLC
-   ADC   __local_branch_to_offset__pages_0
-   STA   __local_branch_to_offset__pages_0
+   ADC   __zpabi_branch_to_offset__offset_1
+   STA   __zpabi_branch_to_offset__offset_1
    LDA   __local_branch_to_offset__1
    ADC   __local_branch_to_offset__pages_1
    STA   __local_branch_to_offset__0
    LDA   __local_branch_to_offset__2
    STA   Z_PC
-   LDA   __local_branch_to_offset__pages_0
+   LDA   __zpabi_branch_to_offset__offset_1
    STA   Z_PC+1
    LDA   __local_branch_to_offset__0
    AND   #$01
@@ -3432,7 +3396,6 @@ branch_to_offset:
    STA   ZCODE_PAGE_VALID
    RTS
 .branch_to_offset@asm_ssa_split@0:
-   STA   __local_branch_to_offset__pages_0
    LDA   #$00
    STA   __local_branch_to_offset__pages_1
    JMP   .if_end@10
@@ -3517,7 +3480,6 @@ attr_ptr_and_mask:
 .loop@1_start:
    LDA   __local_attr_ptr_and_mask__n
    BNE   .attr_ptr_and_mask@rot@0
-.loop@1_break:
    LDA   __local_attr_ptr_and_mask__attr
    STA   attr_mask
    LDA   __local_attr_ptr_and_mask__mask_1
@@ -3691,7 +3653,6 @@ instr_get_prop:
    JSR   get_property_num
    CMP   __local_instr_get_prop__3
    BNE   .instr_get_prop@rot@1
-.loop@2_break:
    LDA   __local_instr_get_prop__y
    JSR   get_property_len
    STA   __local_instr_get_prop__1
@@ -3870,7 +3831,6 @@ instr_put_prop:
    JSR   get_property_num
    CMP   __local_instr_put_prop__1
    BNE   .instr_put_prop@rot@2
-.loop@5_break:
    LDA   __local_instr_put_prop__y
    JSR   get_property_len
    STA   __local_instr_put_prop__2
@@ -3912,36 +3872,27 @@ mulu16:
    LDA   #$00
    STA   __local_mulu16__product
    LDX   #$00
-   LDA   __zpabi_mulu16__a_0
-   STA   __local_mulu16__a_0
-   LDA   __zpabi_mulu16__a_1
-   STA   __local_mulu16__a_1
-   LDA   __zpabi_mulu16__b_0
-   STA   __local_mulu16__b_0
-   LDA   __zpabi_mulu16__b_1
-   STA   __local_mulu16__b_1
    JMP   .loop@0_continue
 .mulu16@rot@0:
-   LDA   __local_mulu16__b_0
-   AND   #$01
-   BEQ   .if_end@0
+   LDA   __zpabi_mulu16__b_0
+   LSR
+   BCC   .if_end@0
    LDA   __local_mulu16__product
    CLC
-   ADC   __local_mulu16__a_0
+   ADC   __zpabi_mulu16__a_0
    STA   __local_mulu16__product
    TXA
-   ADC   __local_mulu16__a_1
+   ADC   __zpabi_mulu16__a_1
    TAX
 .if_end@0:
-   ASL   __local_mulu16__a_0
-   ROL   __local_mulu16__a_1
-   LSR   __local_mulu16__b_1
-   ROR   __local_mulu16__b_0
+   ASL   __zpabi_mulu16__a_0
+   ROL   __zpabi_mulu16__a_1
+   LSR   __zpabi_mulu16__b_1
+   ROR   __zpabi_mulu16__b_0
 .loop@0_continue:
-   LDA   __local_mulu16__b_0
-   ORA   __local_mulu16__b_1
+   LDA   __zpabi_mulu16__b_0
+   ORA   __zpabi_mulu16__b_1
    BNE   .mulu16@rot@0
-.loop@0_break:
    LDA   __local_mulu16__product
    RTS
 
@@ -3949,70 +3900,44 @@ divu16:
    SUBROUTINE
 
    LDA   __zpabi_divu16__dividend_0
-   STA   __local_divu16__quotient_0
-   LDA   __zpabi_divu16__dividend_1
-   STA   __local_divu16__quotient_1
+   LDX   __zpabi_divu16__dividend_1
    LDA   #$00
    STA   __local_divu16__partial_0
    STA   __local_divu16__partial_1
-   LDA   #$11
-   STA   __local_divu16__i
+   LDY   #$11
 .divu16@rot@1:
    LDA   __local_divu16__partial_0
    SEC
    SBC   __zpabi_divu16__divisor_0
-   LDA   __local_divu16__partial_1
-   SBC   __zpabi_divu16__divisor_1
-   BCS   .cmp_true@0
-   LDA   #$00
-   JMP   .cmp_end@1
-.cmp_true@0:
-   LDA   #$01
-.cmp_end@1:
-   STA   __local_divu16__2
-   ORA   #$00
-   BEQ   .if_end@1
-   LDA   __local_divu16__partial_0
-   SEC
-   SBC   __zpabi_divu16__divisor_0
-   STA   __local_divu16__partial_0
-   LDA   __local_divu16__partial_1
-   SBC   __zpabi_divu16__divisor_1
-   STA   __local_divu16__partial_1
-.if_end@1:
-   LDA   __local_divu16__quotient_0
-   AND   #$00
-   STA   __local_divu16__1
-   LDA   __local_divu16__quotient_1
-   AND   #$80
-   ORA   __local_divu16__1
-   BEQ   .cmp_end@2
-   LDA   #$01
-.cmp_end@2:
    STA   __local_divu16__0
-   ASL   __local_divu16__quotient_0
-   ROL   __local_divu16__quotient_1
-   LDA   __local_divu16__quotient_0
-   ORA   __local_divu16__2
-   STA   __local_divu16__quotient_0
-   ASL   __local_divu16__partial_0
-   ROL   __local_divu16__partial_1
-   LDA   __local_divu16__partial_0
-   ORA   __local_divu16__0
+   LDA   __local_divu16__partial_1
+   SBC   __zpabi_divu16__divisor_1
+   BCC   .divu16@asm_ssa_split@0
+   STA   __local_divu16__partial_1
+   LDA   __local_divu16__0
    STA   __local_divu16__partial_0
-   DEC   __local_divu16__i
-   LDA   __local_divu16__i
+   LDA   #$01
+.if_end@1:
+   LSR
+   ROL   __zpabi_divu16__dividend_0
+   TXA
+   ROL
+   TAX
+   ROL   __local_divu16__partial_0
+   ROL   __local_divu16__partial_1
+   DEY
    BNE   .divu16@rot@1
-.loop@1_break:
    LDA   __local_divu16__partial_1
    LSR
    STA   remainder+1
    LDA   __local_divu16__partial_0
    ROR
    STA   remainder
-   LDX   __local_divu16__quotient_1
-   LDA   __local_divu16__quotient_0
+   LDA   __zpabi_divu16__dividend_0
    RTS
+.divu16@asm_ssa_split@0:
+   LDA   #$00
+   JMP   .if_end@1
 
 check_sign:
    SUBROUTINE
@@ -4020,38 +3945,30 @@ check_sign:
    LDA   #$00
    STA   sign_bit
    LDA   __zpabi_check_sign__a_1
-   BPL   .check_sign@asm_ssa_split@0
+   BPL   .if_end@2
    INC   sign_bit
-   LDA   __zpabi_check_sign__a_0
-   EOR   #$FF
-   CLC
-   ADC   #$01
-   STA   __local_check_sign__a
-   LDA   __zpabi_check_sign__a_1
-   EOR   #$FF
-   ADC   #$00
-   TAX
+   SEC
+   LDA   #$00
+   SBC   __zpabi_check_sign__a_0
+   STA   __zpabi_check_sign__a_0
+   LDA   #$00
+   SBC   __zpabi_check_sign__a_1
+   STA   __zpabi_check_sign__a_1
 .if_end@2:
    LDA   __zpabi_check_sign__b_1
    BPL   .if_end@3
    INC   sign_bit
-   LDA   __local_check_sign__a
-   EOR   #$FF
-   CLC
-   ADC   #$01
-   STA   __local_check_sign__a
-   TXA
-   EOR   #$FF
-   ADC   #$00
-   TAX
+   SEC
+   LDA   #$00
+   SBC   __zpabi_check_sign__a_0
+   STA   __zpabi_check_sign__a_0
+   LDA   #$00
+   SBC   __zpabi_check_sign__a_1
+   STA   __zpabi_check_sign__a_1
 .if_end@3:
-   LDA   __local_check_sign__a
-   RTS
-.check_sign@asm_ssa_split@0:
-   LDA   __zpabi_check_sign__a_0
-   STA   __local_check_sign__a
    LDX   __zpabi_check_sign__a_1
-   JMP   .if_end@2
+   LDA   __zpabi_check_sign__a_0
+   RTS
 
 instr_mul:
    SUBROUTINE
@@ -4065,31 +3982,29 @@ instr_mul:
    LDA   OPERANDS+1
    STA   __zpabi_check_sign__a_1
    JSR   check_sign
-   STA   __local_instr_mul__product
-   STX   __local_instr_mul__0
+   STA   __zpabi_store_with_sign__n_0
+   STX   __zpabi_store_with_sign__n_1
    LDA   __zpabi_check_sign__b_1
-   CMP   #$00
    BNE   .if_else@6
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
    BNE   .if_else@6
-   ASL   __local_instr_mul__product
-   ROL   __local_instr_mul__0
+   ASL   __zpabi_store_with_sign__n_0
+   ROL   __zpabi_store_with_sign__n_1
    JMP   .if_end@5
 .if_else@6:
    LDA   __zpabi_check_sign__b_1
-   CMP   #$00
    BNE   .if_else@8
    LDA   __zpabi_check_sign__b_0
    CMP   #$04
    BNE   .if_else@8
-   ASL   __local_instr_mul__product
-   ROL   __local_instr_mul__0
-   ASL   __local_instr_mul__product
-   ROL   __local_instr_mul__0
+   ASL   __zpabi_store_with_sign__n_0
+   ROL   __zpabi_store_with_sign__n_1
+   ASL   __zpabi_store_with_sign__n_0
+   ROL   __zpabi_store_with_sign__n_1
    JMP   .if_end@7
 .if_else@8:
-   LDA   __local_instr_mul__product
+   LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_mulu16__a_0
    STX   __zpabi_mulu16__a_1
    LDA   __zpabi_check_sign__b_0
@@ -4097,37 +4012,28 @@ instr_mul:
    LDA   __zpabi_check_sign__b_1
    STA   __zpabi_mulu16__b_1
    JSR   mulu16
-   STA   __local_instr_mul__product
-   STX   __local_instr_mul__0
+   STA   __zpabi_store_with_sign__n_0
+   STX   __zpabi_store_with_sign__n_1
 .if_end@7:
 .if_end@5:
-   LDA   __local_instr_mul__product
-   STA   __zpabi_store_with_sign__n_0
-   LDA   __local_instr_mul__0
-   STA   __zpabi_store_with_sign__n_1
 
 store_with_sign:
    SUBROUTINE
 
    LDA   sign_bit
-   AND   #$01
-   BEQ   .store_with_sign@asm_ssa_split@0
-   LDA   __zpabi_store_with_sign__n_0
-   EOR   #$FF
-   CLC
-   ADC   #$01
-   STA   __local_store_with_sign__n_0
-   LDA   __zpabi_store_with_sign__n_1
-   EOR   #$FF
-   ADC   #$00
+   LSR
+   BCC   .store_with_sign@asm_ssa_split@0
+   LDA   #$00
+   SBC   __zpabi_store_with_sign__n_0
+   STA   __zpabi_store_with_sign__n_0
+   LDA   #$00
+   SBC   __zpabi_store_with_sign__n_1
 .if_end@4:
    STA   __zpabi_store_result__value_1
-   LDA   __local_store_with_sign__n_0
+   LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_store_result__value_0
    JMP   store_result
 .store_with_sign@asm_ssa_split@0:
-   LDA   __zpabi_store_with_sign__n_0
-   STA   __local_store_with_sign__n_0
    LDA   __zpabi_store_with_sign__n_1
    JMP   .if_end@4
 
@@ -4143,31 +4049,29 @@ instr_div:
    LDA   OPERANDS+1
    STA   __zpabi_check_sign__a_1
    JSR   check_sign
-   STA   __local_instr_div__quotient
-   STX   __local_instr_div__0
+   STA   __zpabi_store_with_sign__n_0
+   STX   __zpabi_store_with_sign__n_1
    LDA   __zpabi_check_sign__b_1
-   CMP   #$00
    BNE   .if_else@10
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
    BNE   .if_else@10
-   LSR   __local_instr_div__0
-   ROR   __local_instr_div__quotient
+   LSR   __zpabi_store_with_sign__n_1
+   ROR   __zpabi_store_with_sign__n_0
    JMP   .if_end@9
 .if_else@10:
    LDA   __zpabi_check_sign__b_1
-   CMP   #$00
    BNE   .if_else@12
    LDA   __zpabi_check_sign__b_0
    CMP   #$04
    BNE   .if_else@12
-   LSR   __local_instr_div__0
-   ROR   __local_instr_div__quotient
-   LSR   __local_instr_div__0
-   ROR   __local_instr_div__quotient
+   LSR   __zpabi_store_with_sign__n_1
+   ROR   __zpabi_store_with_sign__n_0
+   LSR   __zpabi_store_with_sign__n_1
+   ROR   __zpabi_store_with_sign__n_0
    JMP   .if_end@11
 .if_else@12:
-   LDA   __local_instr_div__quotient
+   LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_divu16__dividend_0
    STX   __zpabi_divu16__dividend_1
    LDA   __zpabi_check_sign__b_0
@@ -4175,14 +4079,10 @@ instr_div:
    LDA   __zpabi_check_sign__b_1
    STA   __zpabi_divu16__divisor_1
    JSR   divu16
-   STA   __local_instr_div__quotient
-   STX   __local_instr_div__0
+   STA   __zpabi_store_with_sign__n_0
+   STX   __zpabi_store_with_sign__n_1
 .if_end@11:
 .if_end@9:
-   LDA   __local_instr_div__quotient
-   STA   __zpabi_store_with_sign__n_0
-   LDA   __local_instr_div__0
-   STA   __zpabi_store_with_sign__n_1
    JMP   store_with_sign
 
 instr_mod:
@@ -4213,16 +4113,8 @@ instr_mod:
 instr_random:
    SUBROUTINE
 
-   LDA   RND
    LDA   RND+1
    ASL
-   STA   __local_instr_random__0
-   LDA   RND
-   STA   __local_instr_random__1
-   LDA   RND+1
-   LDA   __local_instr_random__1
-   STA   RND
-   LDA   __local_instr_random__0
    STA   RND+1
    LDA   RND
    STA   __zpabi_divu16__dividend_0
@@ -4246,49 +4138,40 @@ print_number:
    SUBROUTINE
 
    LDA   __zpabi_print_number__n_1
-   BMI   .lb_skip@0
-   JMP   .print_number@asm_ssa_split@0
-.lb_skip@0:
+   BPL   .if_end@13
    LDA   #$2D
    JSR   buffer_char
-   LDA   __zpabi_print_number__n_0
-   EOR   #$FF
-   CLC
-   ADC   #$01
-   STA   __local_print_number__n_0
-   LDA   __zpabi_print_number__n_1
-   EOR   #$FF
-   ADC   #$00
-   STA   __local_print_number__n_1
+   SEC
+   LDA   #$00
+   SBC   __zpabi_print_number__n_0
+   STA   __zpabi_print_number__n_0
+   LDA   #$00
+   SBC   __zpabi_print_number__n_1
+   STA   __zpabi_print_number__n_1
 .if_end@13:
    LDA   #$00
    STA   __local_print_number__count
    JMP   .loop@2_continue
 .print_number@rot@2:
-   LDA   __local_print_number__n_0
+   LDA   __zpabi_print_number__n_0
    STA   __zpabi_divu16__dividend_0
-   LDA   __local_print_number__n_1
+   LDA   __zpabi_print_number__n_1
    STA   __zpabi_divu16__dividend_1
    LDA   #$0A
    STA   __zpabi_divu16__divisor_0
    LDA   #$00
    STA   __zpabi_divu16__divisor_1
    JSR   divu16
-   STA   __local_print_number__n_0
-   STX   __local_print_number__n_1
-   LDA   #<__local_print_number__digits
-   STA   __local_print_number__0
-   LDA   #>__local_print_number__digits
-   STA   __local_print_number__1
+   STA   __zpabi_print_number__n_0
+   STX   __zpabi_print_number__n_1
    LDA   remainder
    LDY   __local_print_number__count
-   STA   (__local_print_number__0),Y
+   STA   __local_print_number__digits,Y
    INC   __local_print_number__count
 .loop@2_continue:
-   LDA   __local_print_number__n_0
-   ORA   __local_print_number__n_1
+   LDA   __zpabi_print_number__n_0
+   ORA   __zpabi_print_number__n_1
    BNE   .print_number@rot@2
-.loop@2_break:
    LDA   __local_print_number__count
    BNE   .if_end@14
    LDA   #$30
@@ -4296,23 +4179,14 @@ print_number:
 .if_end@14:
 .loop@3_start:
    DEC   __local_print_number__count
-   LDA   #<__local_print_number__digits
-   STA   __local_print_number__0
-   LDA   #>__local_print_number__digits
-   STA   __local_print_number__1
    LDY   __local_print_number__count
-   LDA   (__local_print_number__0),Y
+   LDA   __local_print_number__digits,Y
    CLC
    ADC   #$30
    JSR   buffer_char
    LDA   __local_print_number__count
    BNE   .loop@3_start
    RTS
-.print_number@asm_ssa_split@0:
-   STA   __local_print_number__n_1
-   LDA   __zpabi_print_number__n_0
-   STA   __local_print_number__n_0
-   JMP   .if_end@13
 __text_end:
 __text_load	EQU	__text_start
    IF    __text_end > $2200
@@ -4450,13 +4324,12 @@ read_line:
    LDA   BUFF_AREA,X
    CMP   #$8D
    BNE   .read_line@rot@0
-.loop@0_break:
    INX
    STX   __local_read_line__n
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@0
+   LSR
+   BCC   .if_end@0
    STX   BUFF_END
    JSR   dump_buffer_to_printer
    LDA   #$00
@@ -4563,7 +4436,6 @@ is_std_separator:
    INX
    CPX   #$08
    BNE   .is_std_separator@rot@1
-.loop@3_break:
    CLC
    RTS
 
@@ -4585,7 +4457,6 @@ skip_separators:
 .loop@4_continue:
    LDA   input_count
    BNE   .skip_separators@rot@2
-.loop@4_break:
    RTS
 
 get_alphabet_for_char:
@@ -4657,7 +4528,6 @@ ascii_to_zchar:
    INX
    CPX   #$06
    BNE   .ascii_to_zchar@rot@3
-.loop@6_break:
    LDA   #$06
    STA   __local_ascii_to_zchar__left
    LDA   #$00
@@ -5005,7 +4875,6 @@ instr_sread:
    INX
    CPX   #$06
    BNE   .instr_sread@rot@4
-.loop@11_break:
    LDA   token_idx
    CLC
    ADC   #$03

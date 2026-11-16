@@ -42,10 +42,19 @@ the same flags.
   and doesn't take it as an argument. An exit path (one that
   returns or leaves the loop for good) may use the register, since
   the counter is dead there.
-- Nothing outside that range jumps into it, so every path to the
-  `DEC` passes through the init.
+- Nothing outside the loop jumps into it, so every path to the
+  `DEC` passes through the init. The loop is every instruction the
+  code after the init reaches and that reaches the `DEC` again, so a
+  block of it placed out of line counts, as the `ssa_split` block
+  that `divu16` (examples/zork/interpreter/numbers.c) leaves after its
+  `RTS` for the path where the divisor doesn't fit.
 - The register is dead at the init (`x_dead_at` / `y_dead_at`), so
-  overwriting it there can't change a later read.
+  overwriting it there can't change a later read. An init from the
+  register itself, `STY M` with the counter going in Y, is dropped
+  instead, when Y is dead after it. An init from the other index
+  register is left alone, since the 6502 has no `TXY` or `TYX`, and
+  `asm_emit` writes `Mov(Reg(Y), Reg(X))` as `TYA; TAX`, which
+  changes A behind the backs of the passes that run after this one.
 
 X is tried first, then Y.
 
@@ -172,6 +181,57 @@ def _reaches(instrs, start: int, goal: int, label_at) -> bool:
     return False
 
 
+def _successors(instrs, i: int, label_at) -> list[int]:
+    ins = instrs[i]
+    if isinstance(ins, (asm_ast.Return, asm_ast.Ret)):
+        return []
+    t = _target(ins)
+    if isinstance(ins, asm_ast.Jump):
+        return [label_at[t]] if t in label_at else []
+    out = [i + 1] if i + 1 < len(instrs) else []
+    if t is not None and t in label_at:
+        out.append(label_at[t])
+    return out
+
+
+def _loop_region(instrs, init_i: int, dec_i: int, label_at):
+    """The instructions the code after the init reaches and that reach
+    the DEC again: the loop, with any block of it placed out of line
+    (as `ssa_split` blocks are, after the function's return). None
+    when an instruction outside it, other than the init, jumps or
+    falls into it, since the counter would arrive there without its
+    init."""
+    succ = [_successors(instrs, i, label_at) for i in range(len(instrs))]
+    forward: set[int] = set()
+    stack = [init_i + 1]
+    while stack:
+        i = stack.pop()
+        if i in forward or i >= len(instrs):
+            continue
+        forward.add(i)
+        stack.extend(succ[i])
+    if dec_i not in forward:
+        return None
+    preds: dict[int, list[int]] = {}
+    for i in range(len(instrs)):
+        for s2 in succ[i]:
+            preds.setdefault(s2, []).append(i)
+    loop: set[int] = set()
+    stack = [dec_i]
+    while stack:
+        i = stack.pop()
+        if i in loop or i not in forward:
+            continue
+        loop.add(i)
+        stack.extend(preds.get(i, ()))
+    for i in range(len(instrs)):
+        if i in loop or i == init_i:
+            continue
+        if any(s2 in loop for s2 in succ[i]):
+            return None
+    return loop
+
+
 def _rewrite_one(instrs):
     refs: dict[tuple, list[int]] = {}
     for i, ins in enumerate(instrs):
@@ -208,15 +268,8 @@ def _rewrite_one(instrs):
             and init_i < label_at[br.target] <= dec_i
         ):
             continue
-        lo, hi = init_i, dec_i + 1
-        names_in = {
-            instrs[i].name for i in range(lo + 1, hi + 1)
-            if isinstance(instrs[i], asm_ast.Label)
-        }
-        if any(
-            _target(ins) in names_in
-            for i, ins in enumerate(instrs) if not (lo <= i <= hi)
-        ):
+        loop = _loop_region(instrs, init_i, dec_i, label_at)
+        if loop is None:
             continue
         for reg_cls, dead_at in ((asm_ast.X, x_dead_at), (asm_ast.Y, y_dead_at)):
             # The register may only be touched where the counter is
@@ -224,15 +277,29 @@ def _rewrite_one(instrs):
             # again (an exit path out of the loop).
             if any(
                 _touches_reg(instrs[i], reg_cls)
-                and _reaches(instrs, i, dec_i, label_at)
-                for i in range(lo + 1, hi + 1) if i != dec_i
+                for i in loop if i != dec_i
             ):
                 continue
-            # LDX / LDY must be able to load the init's source:
-            # not the register itself, and no `abs,X` into X
-            # (`abs,Y` into Y).
+            # LDX / LDY must be able to load the init's source: no
+            # `abs,X` into X (`abs,Y` into Y), and not the other index
+            # register, since the 6502 has no TXY or TYX. `asm_emit`
+            # would write `Mov(Y, X)` as `TYA; TAX`, which changes A
+            # where the passes after this one take A to be unchanged.
+            # The register itself already holds the init's value, and
+            # its store goes, when nothing after the store reads the
+            # value the register held, which the DEC now changes.
             src = init.src
+            reg = asm_ast.Reg(reg=reg_cls())
+            out = list(instrs)
             if isinstance(src, asm_ast.Reg) and isinstance(src.reg, reg_cls):
+                if not dead_at(instrs, init_i + 1):
+                    continue
+                out[dec_i] = asm_ast.Dec(dst=reg)
+                del out[init_i]
+                return out
+            if isinstance(src, asm_ast.Reg) and isinstance(
+                src.reg, (asm_ast.X, asm_ast.Y),
+            ):
                 continue
             if isinstance(src, asm_ast.IndexedData) and isinstance(
                 src.index, reg_cls,
@@ -240,8 +307,6 @@ def _rewrite_one(instrs):
                 continue
             if not dead_at(instrs, init_i):
                 continue
-            reg = asm_ast.Reg(reg=reg_cls())
-            out = list(instrs)
             out[init_i] = asm_ast.Mov(src=init.src, dst=reg, is_volatile=False)
             out[dec_i] = asm_ast.Dec(dst=reg)
             return out

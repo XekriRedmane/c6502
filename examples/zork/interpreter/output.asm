@@ -340,8 +340,8 @@ dump_buffer_line:
 
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@9
+   LSR
+   BCC   .if_end@9
    JSR   dump_buffer_to_printer
 .if_end@9:
    JMP   dump_buffer_to_screen
@@ -383,7 +383,6 @@ dump_buffer_to_printer:
 .loop@2_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_printer@rot@0
-.loop@2_break:
    LDA   CSW
    STA   PRINTER_CSW
    LDA   CSW+1
@@ -406,7 +405,6 @@ dump_buffer_to_screen:
 .loop@3_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_screen@rot@1
-.loop@3_break:
    LDA   #$00
    STA   BUFF_END
    RTS
@@ -450,8 +448,8 @@ dump_buffer_with_more:
 .if_end@12:
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@13
+   LSR
+   BCC   .if_end@13
    LDA   CSW
    STA   __local_dump_buffer_with_more__end
    LDA   CSW+1

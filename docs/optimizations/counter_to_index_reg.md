@@ -89,11 +89,16 @@ counter goes in X and the loop is `LDA speaker; DEX; BNE`.
 - The `DEC` is directly followed by a `BNE` or `BEQ` whose target
   label lies after the store and at or before the `DEC`. That branch
   is the back edge.
-- No jump or branch from outside the range between the store and the
-  back edge targets a label inside it, so every path to the `DEC`
-  passes through the store.
-- Between the store and the back edge, no instruction from which the
-  `DEC` can still be reached reads or writes the register. That
+- The loop is every instruction that the code after the store
+  reaches and that reaches the `DEC` again, so a block of it placed
+  out of line counts, such as the block SSA destruction puts after
+  the function's `RTS` for one side of an `if`. No instruction outside
+  the loop, other than the store, jumps or falls into it, so every
+  path to the `DEC` passes through the store. In Zork's `divu16`
+  (examples/zork/interpreter/numbers.c), the side where the divisor
+  doesn't fit is such a block.
+- No instruction in the loop other than the `DEC` reads or writes
+  the register. That
   includes an index use of it, and for Y the `LDY` that a soft-stack
   or `(zp),Y` operand implies. A call counts as a use unless the
   callee is declared `preserves_x` or `preserves_y` and doesn't take
@@ -106,6 +111,22 @@ counter goes in X and the loop is `LDA speaker; DEX; BNE`.
   into X (or `abs,Y` into Y).
 
 X is tried first, then Y.
+
+An init stored from the register itself, as in `LDY #$11; STY i`,
+keeps the counter in that register and drops the store, when the
+register's value isn't read after the store. An init stored from the
+other index register is left alone for that register. The 6502 has
+no `TXY` or `TYX`, and `asm_emit` writes `Mov(Reg(Y), Reg(X))` as
+`TYA; TAX`, which changes A. In Zork's `divu16`
+(examples/zork/interpreter/numbers.c), `STY i` had become that move
+when the pass ran again after [loop test at the bottom](rotate_loop_test.md),
+and the first `LDA` of the loop then went as a redundant load,
+which left the interpreter looping forever.
+
+The pass runs twice: after [loop counter in X](loop_counter_to_x.md),
+and after [loop test at the bottom](rotate_loop_test.md), which
+leaves `DEC i; LDA i; BNE` at a loop's new bottom. The peephole fixed
+point in between drops the `LDA`.
 
 ## What it leaves alone
 

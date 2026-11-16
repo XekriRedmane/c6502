@@ -86,7 +86,14 @@ on it.
   but [rematerialization](asm_remat.md) and memory value propagation
   match it more easily in its compound form.
 - A move with a register on either side, which is already one
-  instruction.
+  instruction, unless the move is between X and Y.
+
+A move between X and Y is split into `Mov(Reg(X), Reg(A)); Mov(Reg(A),
+Reg(Y))`, which is how `asm_emit` writes it, since the 6502 has no
+`TXY` or `TYX`. In one atom, the write to A is invisible to `kills_a`
+and to the A tracker in [redundant load](redundant_load.md), which
+then dropped a load that the `TYA` had made necessary. See [count-down
+counter in X or Y](counter_to_index_reg.md).
 
 The module docstring says the `is_volatile` bit is copied to both
 halves of the split. Since a volatile move is never split, the copied

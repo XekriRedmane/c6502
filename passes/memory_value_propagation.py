@@ -11,7 +11,14 @@ directly. Milestone 1 emits a single rewrite: indirect-via-DPTR
 accesses (`Indirect(off)` / `IndirectY()` operands) get rewritten
 to `IndirectZp(N, off)` / `IndirectZpY(N)` whenever the dataflow
 proves DPTR currently holds the bytes of a stable ZP pair at
-address `N`. Later milestones add the `apply_remat`-style rewrite
+address `N`. When the pair at `N` holds the two halves of a label's
+address, `#<name` and `#>name`, the access goes to the label
+directly: `(N),Y` becomes `name,Y` (`IndexedData`) and the
+constant-Y `IndirectZp(N, k)` becomes `Data(name, k)`. That's a
+local array of a function with a private pool, which has a fixed
+address, as Zork's `print_number` keeps its digits in
+(examples/zork/interpreter/numbers.c). The pointer's stores then go
+when nothing else reads it. Later milestones add the `apply_remat`-style rewrite
 (reads of a stage cell whose source is a recomputable
 `Imm`/`Data`/`IndexedData`) and the X-save-slot rewrite (reads of
 `M` rewritten to `TXA`/`STX` when M tracks X across DEX/INX).
@@ -839,8 +846,73 @@ def _rewrite_instr(
     base = _dptr_base(state)
     if base is not None:
         instr = _rewrite_operands_for_dptr(instr, base)
+    # A `(zp),Y` access through a pointer that holds a label's
+    # address reads or writes the label's bytes directly.
+    instr = _rewrite_operands(
+        instr, lambda op: _label_pointer_operand(op, state),
+    )
     # Second pass: substitute cell-reads with their tracked Expr.
     return _rewrite_cell_reads(instr, state, ctx)
+
+
+def _label_pointer_operand(op, state: State):
+    """`name+off,Y` for `(N),Y`, and `name+off+k` for the constant-Y
+    `IndirectZp(N, k)`, when the bytes at `N` and `N + 1` hold the low
+    and high bytes of the address `name + off`. Adding Y carries into
+    the high byte in both addressing modes, so they reach the same
+    byte. Otherwise `op`."""
+    if not isinstance(op, (asm_ast.IndirectZpY, asm_ast.IndirectZp)):
+        return op
+    lo = state.cells.get(op.address)
+    hi = state.cells.get(op.address + 1)
+    if not (isinstance(lo, ImmLabelLowExpr) and isinstance(hi, ImmLabelHighExpr)
+            and (lo.name, lo.offset) == (hi.name, hi.offset)):
+        return op
+    if isinstance(op, asm_ast.IndirectZpY):
+        return asm_ast.IndexedData(
+            name=lo.name, offset=lo.offset, index=asm_ast.Y(),
+        )
+    return asm_ast.Data(name=lo.name, offset=lo.offset + op.offset)
+
+
+def _rewrite_operands(instr, fn):
+    """`instr` with each memory operand of a load, store, ALU
+    operation, or compare replaced by `fn(op)`. A register load or
+    store whose register has no `abs,Y` mode (`LDY`, `STX`, `STY`) is
+    left alone."""
+    if isinstance(instr, asm_ast.Mov):
+        new_src = instr.src
+        new_dst = instr.dst
+        reg_dst = isinstance(instr.dst, asm_ast.Reg)
+        reg_src = isinstance(instr.src, asm_ast.Reg)
+        if not (reg_dst and isinstance(instr.dst.reg, asm_ast.Y)):
+            new_src = fn(instr.src)
+        if not (reg_src and isinstance(instr.src.reg, (asm_ast.X, asm_ast.Y))):
+            new_dst = fn(instr.dst)
+        if (isinstance(new_src, asm_ast.IndexedData)
+                and isinstance(new_dst, asm_ast.IndexedData)):
+            return instr
+        if new_src is instr.src and new_dst is instr.dst:
+            return instr
+        return asm_ast.Mov(
+            src=new_src, dst=new_dst, is_volatile=instr.is_volatile,
+        )
+    if isinstance(instr, (asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or)):
+        new_src = fn(instr.src)
+        if new_src is instr.src:
+            return instr
+        return type(instr)(src=new_src, dst=instr.dst)
+    if isinstance(instr, asm_ast.Xor):
+        new_s1, new_s2 = fn(instr.src1), fn(instr.src2)
+        if new_s1 is instr.src1 and new_s2 is instr.src2:
+            return instr
+        return asm_ast.Xor(src1=new_s1, src2=new_s2, dst=instr.dst)
+    if isinstance(instr, asm_ast.Compare):
+        new_right = fn(instr.right)
+        if new_right is instr.right:
+            return instr
+        return asm_ast.Compare(left=instr.left, right=new_right)
+    return instr
 
 
 def _rewrite_cell_reads(

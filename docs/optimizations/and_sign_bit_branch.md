@@ -88,10 +88,30 @@ unsigned char top_bit(void) {
 the branch's target returns `t` in A, so the code stays `LDA flags;
 AND #$80; BEQ .if_end@0`.
 
+## The low bit
+
+Bit 0 maps onto C through `LSR A`, which is 1 byte to the `AND`'s 2
+and takes the same 2 cycles:
+
+```
+   LDA   sign_bit                      LDA   sign_bit
+   AND   #$01                    ->    LSR
+   BEQ   .if_else                      BCC   .if_else
+```
+
+`BEQ` becomes `BCC` and `BNE` becomes `BCS`. The `LSR` leaves A
+shifted where the `AND` left it masked, writes C, which the `AND`
+left alone, and sets N and Z from the shifted value, so A, C, N, and
+Z must all be dead on both paths after the branch. Any instruction
+may put the value in A. That's the test of `sign_bit & 0x01` in
+Zork's `store_with_sign` (examples/zork/interpreter/numbers.c), of
+the transcript bit in `read_line` and twice in `output.c`, and of a
+header flag in `main`.
+
 ## What it leaves alone
 
-- A mask other than `$80`, as in `flags & 0x40`, since only bit 7
-  maps onto a flag.
+- A mask other than `$80` or `$01`, as in `flags & 0x40`, since only
+  bits 7 and 0 map onto a flag.
 - A read of the masked value after the branch on the fall-through
   path. `unsigned char t = flags & 0x80; if (t) hits = t;` keeps its
   `AND #$80`, because the `STA hits` after the `BEQ` reads A.

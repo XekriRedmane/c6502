@@ -176,6 +176,39 @@ pass at the join, so the slot had to be stored and loaded again
 there, 2 bytes more. A web is a slot byte's stores and the reads they
 reach, found by reaching definitions over the control-flow graph.
 
+## A pointer to a label
+
+When the two bytes of a `(zp),Y` pointer hold the low and high bytes
+of one label's address, `#<name` and `#>name`, the access goes to the
+label directly. `(N),Y` becomes `name,Y` (`IndexedData`), and the
+constant-Y `IndirectZp(N, k)` becomes `Data(name, k)`. Adding Y
+carries into the high byte in both addressing modes, so they reach
+the same byte. A local array of a function with a private pool has a
+fixed address, so Zork's `print_number` (examples/zork/interpreter/
+numbers.c), which keeps its digits in one, had loaded the array's
+address into a pointer before each of its two loops:
+
+```
+   LDA   #<__local_print_number__digits       LDA   remainder
+   STA   __local_print_number__0               LDY   __local_print_number__count
+   LDA   #>__local_print_number__digits  ->    STA   __local_print_number__digits,Y
+   STA   __local_print_number__1
+   LDA   remainder
+   LDY   __local_print_number__count
+   STA   (__local_print_number__0),Y
+```
+
+The pointer's stores go when nothing else reads it. A load into Y,
+and a store from X or Y, keep their `(zp),Y` form, since the 6502 has
+no `LDY abs,Y`, `STX abs,Y`, or `STY abs,Y`.
+
+Such an access names a zero-page slot in an `IndexedData`, which
+nothing did before. `asm_aliasing.may_alias` counts it as reaching
+every byte of that name and any `ZP` operand. Without that,
+`asm_dead_store` dropped the stores of `long x = 100;` in
+`tests/chapter_16/valid/chars/access_through_char_pointer.c` once its
+reads became `x,Y`.
+
 ## When it applies
 
 - A tail call, a `JMP` to another function, ends the facts like a

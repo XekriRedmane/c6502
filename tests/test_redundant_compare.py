@@ -96,5 +96,53 @@ class TestRedundantCompare(unittest.TestCase):
         self.assertEqual(_run(instrs), instrs)
 
 
+def _lda(addr=0x80):
+    return asm_ast.Mov(src=asm_ast.ZP(address=addr, offset=0), dst=_A,
+                       is_volatile=False)
+
+
+class TestCompareWithZero(unittest.TestCase):
+    """`CMP #$00` after the instruction that set N and Z from the same
+    register, when C is dead."""
+
+    _ZERO = asm_ast.Compare(left=_A, right=asm_ast.Imm(value=0))
+
+    def test_after_a_load(self):
+        bne = asm_ast.Branch(cond=asm_ast.NE(), target="L")
+        out = _run([_lda(), self._ZERO, bne, _ret(),
+                    asm_ast.Label(name="L"), _ret()])
+        self.assertEqual(out[:2], [_lda(), bne])
+
+    def test_after_a_store_between(self):
+        sta = asm_ast.Mov(src=_A, dst=asm_ast.ZP(address=0x81, offset=0),
+                          is_volatile=False)
+        bne = asm_ast.Branch(cond=asm_ast.NE(), target="L")
+        out = _run([_lda(), sta, self._ZERO, bne, _ret(),
+                    asm_ast.Label(name="L"), _ret()])
+        self.assertEqual(out[:3], [_lda(), sta, bne])
+
+    def test_kept_when_c_is_read(self):
+        instrs = [_lda(), self._ZERO,
+                  asm_ast.Branch(cond=asm_ast.CS(), target="L"), _ret(),
+                  asm_ast.Label(name="L"), _ret()]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_kept_after_a_store_with_a_y_setup(self):
+        # `STA (FP),Y` loads Y first, which sets N and Z from Y.
+        sta = asm_ast.Mov(src=_A, dst=asm_ast.Frame(offset=3),
+                          is_volatile=False)
+        instrs = [_lda(), sta, self._ZERO,
+                  asm_ast.Branch(cond=asm_ast.NE(), target="L"), _ret(),
+                  asm_ast.Label(name="L"), _ret()]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_kept_after_a_label(self):
+        instrs = [_lda(), asm_ast.Label(name="M"), self._ZERO,
+                  asm_ast.Branch(cond=asm_ast.NE(), target="L"), _ret(),
+                  asm_ast.Label(name="L"),
+                  asm_ast.Jump(target="M", reg_args=[])]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

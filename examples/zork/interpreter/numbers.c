@@ -235,10 +235,12 @@ static uint16_t divu16(uint16_t dividend, uint16_t divisor) {
     uint16_t quotient = dividend;
     uint16_t partial = 0;
     for (uint8_t i = 17; i != 0; i--) {
-        bool fits = partial >= divisor;
-        if (fits)
+        uint8_t fits = 0;
+        if (partial >= divisor) {
             partial -= divisor;
-        bool out = (quotient & 0x8000) != 0;
+            fits = 1;
+        }
+        uint8_t out = (uint8_t)(quotient >> 15);
         quotient = (quotient << 1) | fits;
         partial = (partial << 1) | out;
     }
@@ -304,8 +306,8 @@ void instr_mod(void) {
 /* Stores a random number from 1 to OPERAND0. The Monitor's KEYIN
  * counts RND up while it waits for a key. */
 void instr_random(void) {
-    uint8_t hi = (uint8_t)(RND >> 8) << 1;
-    RND = ((uint16_t)hi << 8) | (uint8_t)RND;
+    /* RNDH, RND's high byte, alone. */
+    ((volatile uint8_t *)&RND)[1] <<= 1;
     divu16(RND, OPERANDS[0]);
     store_result(remainder + 1);
 }

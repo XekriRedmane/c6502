@@ -291,9 +291,19 @@ def may_alias(
     # addresses ≥ $0100 whose offset exceeds the ZP range). An
     # indexed access to a user zero-page array does reach zero page.
     if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.IndexedData):
-        return b.name in _USER_ZP_GLOBALS
+        return b.name in _USER_ZP_GLOBALS or _is_zp_symbol(b.name)
     if isinstance(b, asm_ast.ZP) and isinstance(a, asm_ast.IndexedData):
-        return a.name in _USER_ZP_GLOBALS
+        return a.name in _USER_ZP_GLOBALS or _is_zp_symbol(a.name)
+    # An indexed access to a zero-page slot's object, a local array of
+    # a function with a private pool, which `memory_value_propagation`
+    # spells `name,Y` when a pointer holds its address, may reach any
+    # of its bytes.
+    if (isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.IndexedData)
+            and a.name == b.name):
+        return True
+    if (isinstance(b, asm_ast.Data) and isinstance(a, asm_ast.IndexedData)
+            and a.name == b.name):
+        return True
     # ZP-symbol Data (`__local_*`, `__zpabi_*`) vs IndexedData:
     # these symbols resolve to ZP byte addresses via EQU
     # bindings at link time. IndexedData operands either target

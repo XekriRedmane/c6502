@@ -43,6 +43,25 @@ elimination, what's left in the loop tail is:
 
 → `LDA x; BPL continue`. 2 bytes / 2 cycles saved per occurrence.
 
+# The low bit
+
+The same goes for bit 0, through the carry:
+
+    And(Imm(0x01), Reg(A))      # AND #$01
+    Branch(EQ | NE, target)     # BEQ/BNE
+
+→
+
+    LogicalShiftRight(Reg(A))   # LSR A — C = bit0(A)
+    Branch(CC | CS, target)     # BCC = "bit0(A) == 0"; BCS = "== 1"
+
+`LSR A` is 1 byte to the AND's 2, and both take 2 cycles. It leaves
+A shifted where the AND left it masked, and it writes C, which the
+AND didn't, and sets N and Z from the shifted value, so A, C, N, and
+Z must all be dead on both paths after the branch. Zork's
+`store_with_sign` (examples/zork/interpreter/numbers.c) tests
+`sign_bit & 0x01` this way.
+
 # Where to run
 
 Inside the asm-peephole fixed-point loop. Earlier passes (mem-const-
@@ -55,7 +74,7 @@ within the fixed-point loop is not critical."""
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at
+from passes.asm_liveness import a_dead_at, c_dead_at, flags_dead_at
 
 
 def apply_and_sign_bit_branch(prog: asm_ast.Program) -> asm_ast.Program:
@@ -109,6 +128,19 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             out.append(asm_ast.Branch(cond=new_cond, target=br.target))
             i += 4
             continue
+        if (i + 1 < len(instrs)
+                and isinstance(instrs[i], asm_ast.And)
+                and isinstance(instrs[i].src, asm_ast.Imm)
+                and (instrs[i].src.value & 0xFF) == 0x01
+                and _is_reg_a(instrs[i].dst)
+                and _is_eq_ne_branch(instrs[i + 1])
+                and _dead_both_ways(instrs, i + 1)):
+            br = instrs[i + 1]
+            new_cond = asm_ast.CC() if isinstance(br.cond, asm_ast.EQ) else asm_ast.CS()
+            out.append(asm_ast.LogicalShiftRight(dst=instrs[i].dst))
+            out.append(asm_ast.Branch(cond=new_cond, target=br.target))
+            i += 2
+            continue
         out.append(instrs[i])
         i += 1
     return asm_ast.Function(
@@ -128,6 +160,21 @@ def _a_dead_both_ways(instrs, branch_idx: int) -> bool:
     for k, ins in enumerate(instrs):
         if isinstance(ins, asm_ast.Label) and ins.name == target:
             return a_dead_at(instrs, k)
+    return False
+
+
+def _dead_both_ways(instrs, branch_idx: int) -> bool:
+    """True iff A, C, N, and Z are all dead on both paths after the
+    branch at `branch_idx`."""
+    def dead(k):
+        return (a_dead_at(instrs, k) and c_dead_at(instrs, k)
+                and flags_dead_at(instrs, k))
+    if not dead(branch_idx + 1):
+        return False
+    target = instrs[branch_idx].target
+    for k, ins in enumerate(instrs):
+        if isinstance(ins, asm_ast.Label) and ins.name == target:
+            return dead(k)
     return False
 
 

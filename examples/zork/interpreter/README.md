@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1E38`. The other units, the constants,
+on every instruction, up to `$1D8E`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -154,18 +154,18 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 473 |
-| `decode.c` | 1859 | 2495 |
+| `main.c` | 391 | 472 |
+| `decode.c` | 1859 | 2487 |
 | `objects.c` | 788 | 996 |
-| `numbers.c` | 436 | 687 |
-| `input.c` | 1018 | 1110 |
+| `numbers.c` | 436 | 528 |
+| `input.c` | 1018 | 1109 |
 | `pages.c` | 384 | 385 |
 | `zstring.c` | 383 | 407 |
-| `output.c` | 387 | 405 |
+| `output.c` | 387 | 403 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7967** |
+| **Total** | **6643** | **7796** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -185,13 +185,13 @@ cache 64 slots in 48K where Zork has 76.
 The four dispatch switches take 1,325 bytes with the handlers written
 into their cases (`do_2op` alone is 680), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
-`divu16` is 114 bytes against Zork's 78. `match_dictionary_word` is
-181 against 190, and `mulu16` is 59 against 69, since it computes only
-the low 16 bits of the product.
+`divu16` is 64 bytes against Zork's 78, `match_dictionary_word` 181
+against 190, and `mulu16` 42 against 69, since it computes only the
+low 16 bits of the product.
 
-**Speed.** The first session takes 38,167,027 cycles against Zork's
-38,490,260, 0.8% fewer, and the second 7,347,938 against 7,434,428,
-1.2% fewer. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 37,866,099 cycles against Zork's
+38,490,260, 1.6% fewer, and the second 7,316,132 against 7,434,428,
+1.6% fewer. The stand-ins for the Monitor and RWTS take no cycles.
 Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
 shrank by 24 bytes, `branch` and `print_zstring`, which the linker
@@ -285,5 +285,54 @@ the smaller code saved.
   `SEC` or `CLC` when only C is read after
   ([carry_return.md](../../../docs/optimizations/carry_return.md)).
   `return false;` in `is_dict_separator` had become `CPY #1`.
+- A 2-byte negate is `0 - x`, `SEC; LDA #0; SBC`, 3 bytes shorter
+  than complementing and adding 1
+  (`tac_to_asm.py`). `check_sign`, `store_with_sign`, and
+  `print_number` negate.
+- A `CMP #$00` right after the instruction that set N and Z from the
+  register goes, when C is dead
+  ([redundant_compare.md](../../../docs/optimizations/redundant_compare.md)),
+  and `AND #$01; BEQ` is `LSR; BCC`
+  ([and_sign_bit_branch.md](../../../docs/optimizations/and_sign_bit_branch.md)).
+  `instr_mul` and `instr_div` had compared each `b`'s high byte with 0.
+- The peepholes and the counter promotion run again after a loop's
+  test moves to its bottom
+  ([counter_to_index_reg.md](../../../docs/optimizations/counter_to_index_reg.md)),
+  so `divu16`'s counter is `DEY; BNE`. A counter whose initial value
+  comes from the other index register isn't moved, since the 6502 has
+  no `TYX`: the move had become `TYA; TAX` before the loop, and the
+  loop's first load then went as redundant, which left the
+  interpreter looping forever. A move between X and Y is now split
+  into its two transfers for the passes that follow A
+  ([split_mem_to_mem.md](../../../docs/optimizations/split_mem_to_mem.md)).
+- A local that copies a parameter, or that's copied into a callee's
+  parameter slot for the call, is that slot when the two are never
+  live with different values
+  ([slot_coalescing.md](../../../docs/optimizations/slot_coalescing.md)).
+  `mulu16` had copied both its parameters, `divu16` its dividend, and
+  `check_sign`, `store_with_sign`, and `print_number` the parameter
+  they change; `instr_mul` and `instr_div` now compute the product
+  and quotient in `store_with_sign`'s bytes.
+- A `(zp),Y` pointer that holds a label's address is `label,Y`
+  ([memory_value_propagation.md](../../../docs/optimizations/memory_value_propagation.md)),
+  so `print_number` indexes its `digits` array directly.
+- A compare branches on the flags of the subtract before it with
+  copies in between
+  ([compare_subtract.md](../../../docs/optimizations/compare_subtract.md)),
+  and `(x << 1) | b` for a `b` of 0 or 1 is `LSR` and a `ROL` chain,
+  with no `LSR` when C already holds `b`
+  ([rotate_in.md](../../../docs/optimizations/rotate_in.md)).
+  `divu16`'s loop is now one subtract and the `ROL`s of the quotient
+  and remainder, as Zork's is. The C sets `fits` on each side of the
+  `if`, which makes the subtract the `if`'s body.
+- `LDA M; ASL; STA M` is `ASL M` when A is dead after
+  ([shift_in_a.md](../../../docs/optimizations/shift_in_a.md)).
+  `instr_random` shifts `RND`'s high byte through a byte view of it,
+  which keeps the shift in A, since `RND` is `volatile`.
+- `asm_liveness.sets_flags` no longer takes `STX` / `STY` for an
+  instruction that sets the flags, and `asm_aliasing.may_alias` takes
+  an indexed access to a zero-page local to reach its bytes. Each had
+  let a peephole miscompile a program once the changes above gave it
+  the shape (`tests/test_divide_shapes.py`).
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

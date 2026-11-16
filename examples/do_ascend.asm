@@ -66,7 +66,6 @@ do_ascend:
 .loop@0_start:
    TXA
    BPL   .do_ascend@rot@0
-.loop@0_break:
 .if_end@2:
    LDA   #$04
    STA   __zpabi_snd_delay_up__pitch

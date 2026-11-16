@@ -36,6 +36,20 @@ nothing falls through, and exactly one `Branch` or `Jump` in the
 function may target a label in the run. A label whose address is
 taken (`ImmLabelLow` / `ImmLabelHigh`) disqualifies the run.
 
+A compare of a register with 0 sets N and Z from the register's
+value and sets C. When the instruction that wrote the register set N
+and Z from the same value, as a load, a transfer, or an ALU operation
+on A does, and C is dead after the compare, the compare goes too:
+
+    LDA   b+1                 LDA   b+1
+    CMP   #$00         ->     BNE   .if_else
+    BNE   .if_else
+
+That's the high byte of `b == 2` in Zork's `instr_mul`
+(examples/zork/interpreter/numbers.c). Stores may come between the
+two, since they leave the flags and the register alone, except one
+lowered with an `LDY #off` setup.
+
 A compare of a volatile read is never followed by a branch
 (`volatile_void_read_cmp` makes that rewrite only when the flags
 are dead), so dropping one of a pair never drops a volatile access.
@@ -79,10 +93,67 @@ def _compare_before(instrs, b: int):
     return instrs[b] if b >= 0 else None
 
 
+_A = asm_ast.Reg(reg=asm_ast.A())
+# Instructions that set N and Z from the value they leave in their dst
+# register.
+_SETS_NZ_FROM_DST = (
+    asm_ast.Mov, asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    asm_ast.Xor, asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight, asm_ast.Inc, asm_ast.Dec,
+    asm_ast.Pop,
+)
+
+
+def _flags_from(instrs, c: int, reg) -> bool:
+    """True when N and Z at `instrs[c]` were set from `reg`'s current
+    value by the instruction that last wrote it, with only stores in
+    between."""
+    from passes.asm_liveness import sets_up_y
+    for k in range(c - 1, -1, -1):
+        ins = instrs[k]
+        dst = getattr(ins, "dst", None)
+        if (isinstance(ins, asm_ast.Mov) and not isinstance(dst, asm_ast.Reg)
+                and isinstance(ins.src, asm_ast.Reg) and not sets_up_y(ins)):
+            continue
+        if not isinstance(ins, _SETS_NZ_FROM_DST) or dst != reg:
+            return False
+        if isinstance(ins, asm_ast.Mov) and (
+            isinstance(ins.src, asm_ast.Reg) and ins.src == reg
+            or not isinstance(ins.src, (asm_ast.Reg, asm_ast.Imm))
+            and sets_up_y(ins) and isinstance(reg.reg, asm_ast.Y)
+        ):
+            return False
+        return True
+    return False
+
+
+def _drop_compares_with_zero(instrs) -> set[int]:
+    from passes.asm_liveness import c_dead_at
+    drop: set[int] = set()
+    for c, ins in enumerate(instrs):
+        if (isinstance(ins, asm_ast.Compare)
+                and isinstance(ins.left, asm_ast.Reg)
+                and isinstance(ins.right, asm_ast.Imm)
+                and ins.right.value & 0xFF == 0
+                and _flags_from(instrs, c, ins.left)
+                and c_dead_at(instrs, c + 1)):
+            drop.add(c)
+    return drop
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
     refs = _label_refs(instrs)
-    drop: set[int] = set()
+    # The compares with 0 go in a sweep of their own, since one of
+    # them may be the compare that a later identical one relies on for
+    # C. The peephole fixed point runs this again.
+    drop: set[int] = _drop_compares_with_zero(instrs)
+    if drop:
+        return asm_ast.Function(
+            name=fn.name, is_global=fn.is_global, params=list(fn.params),
+            instructions=[ins for i, ins in enumerate(instrs)
+                          if i not in drop],
+        )
     for c, cmp in enumerate(instrs):
         if not isinstance(cmp, asm_ast.Compare):
             continue

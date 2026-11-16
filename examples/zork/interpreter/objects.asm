@@ -643,7 +643,6 @@ attr_ptr_and_mask:
 .loop@1_start:
    LDA   __local_attr_ptr_and_mask__n
    BNE   .attr_ptr_and_mask@rot@0
-.loop@1_break:
    LDA   __local_attr_ptr_and_mask__attr
    STA   attr_mask
    LDA   __local_attr_ptr_and_mask__mask_1
@@ -818,7 +817,6 @@ instr_get_prop:
    JSR   get_property_num
    CMP   __local_instr_get_prop__3
    BNE   .instr_get_prop@rot@1
-.loop@2_break:
    LDA   __local_instr_get_prop__y
    JSR   get_property_len
    STA   __local_instr_get_prop__1
@@ -997,7 +995,6 @@ instr_put_prop:
    JSR   get_property_num
    CMP   __local_instr_put_prop__1
    BNE   .instr_put_prop@rot@2
-.loop@5_break:
    LDA   __local_instr_put_prop__y
    JSR   get_property_len
    STA   __local_instr_put_prop__2

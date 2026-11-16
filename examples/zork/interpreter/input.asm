@@ -415,13 +415,12 @@ read_line:
    LDA   BUFF_AREA,X
    CMP   #$8D
    BNE   .read_line@rot@0
-.loop@0_break:
    INX
    STX   __local_read_line__n
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@0
+   LSR
+   BCC   .if_end@0
    STX   BUFF_END
    JSR   dump_buffer_to_printer
    LDA   #$00
@@ -520,7 +519,6 @@ is_std_separator:
    INX
    CPX   #$08
    BNE   .is_std_separator@rot@1
-.loop@3_break:
    CLC
    RTS
 
@@ -551,7 +549,6 @@ skip_separators:
 .loop@4_continue:
    LDA   input_count
    BNE   .skip_separators@rot@2
-.loop@4_break:
    RTS
 
 get_alphabet_for_char:
@@ -677,7 +674,6 @@ ascii_to_zchar:
    INX
    CPX   #$06
    BNE   .ascii_to_zchar@rot@3
-.loop@6_break:
    LDA   #$06
    STA   __local_ascii_to_zchar__left
    LDA   #$00
@@ -972,7 +968,6 @@ instr_sread:
    INX
    CPX   #$06
    BNE   .instr_sread@rot@4
-.loop@11_break:
    LDA   token_idx
    CLC
    ADC   #$03

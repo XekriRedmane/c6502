@@ -254,10 +254,12 @@ them whenever a pass is added or moved.
 27. Peephole fixed point, fifth run.
 28. [Carry already known](carry_known.md), once more.
 29. [Jump tables](jump_table.md)
-30. Long-branch expansion.
-31. [Shorter jumps](short_jumps.md)
-32. Zero-page global placement, and lowering to `asm2_ast`.
-33. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+30. [Store X or Y directly](via_a_store_fold.md), for a byte copied
+    through X or Y while A is busy.
+31. Long-branch expansion.
+32. [Shorter jumps](short_jumps.md)
+33. Zero-page global placement, and lowering to `asm2_ast`.
+34. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

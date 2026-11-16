@@ -160,5 +160,34 @@ class TestBitTestIndexRegisters(unittest.TestCase):
         self.assertTrue(y_dead_at([plain, ret], 0))
 
 
+class TestJumpTable(unittest.TestCase):
+    """A `JumpTable` reads A, writes its index register, and goes to
+    each of its targets."""
+
+    def _instrs(self, case_reads_x):
+        x = asm_ast.Reg(reg=asm_ast.X())
+        body = ([asm_ast.Mov(src=x, dst=asm_ast.Data(name="g", offset=0))]
+                if case_reads_x else [])
+        return [
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=x),
+            asm_ast.JumpTable(table=".jtab@0", index="Y", base=0,
+                              targets=[".c0", "elsewhere"]),
+            asm_ast.Label(name=".c0"),
+            *body,
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_x_live_into_a_case(self):
+        from passes.asm_liveness import x_dead_at
+        self.assertFalse(x_dead_at(self._instrs(True), 1))
+        self.assertTrue(x_dead_at(self._instrs(False), 1))
+
+    def test_reads_a_and_writes_its_index(self):
+        from passes.asm_liveness import y_dead_at
+        instrs = self._instrs(False)
+        self.assertFalse(a_dead_at(instrs, 1))
+        self.assertTrue(y_dead_at(instrs, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

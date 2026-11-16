@@ -1518,10 +1518,8 @@ do_1op:
 do_var:
    SUBROUTINE
 
-   STA   __local_do_var__n
-   LDA   OPERANDS
-   STA   __local_do_var__3
-   LDA   __local_do_var__n
+   LDX   OPERANDS
+   STX   __local_do_var__3
    CMP   #$0A
    BCC   .lb_skip@2
    JMP   internal_error

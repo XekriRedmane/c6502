@@ -96,5 +96,61 @@ class TestSkips(unittest.TestCase):
         self.assertEqual(len(out), 3)
 
 
+class TestCopyThroughIndex(unittest.TestCase):
+    """`STA t; LDA M; STA D; LDA t` as `LDX M; STX D`, as at the entry
+    of Zork's `do_var`."""
+
+    T = asm_ast.Data(name="__local_f__t", offset=0)
+    M = asm_ast.Data(name="OPERANDS", offset=0)
+    D = asm_ast.Data(name="__local_f__d", offset=0)
+
+    def _copy(self, after):
+        return [
+            asm_ast.Mov(src=A, dst=self.T),
+            asm_ast.Mov(src=self.M, dst=A),
+            asm_ast.Mov(src=A, dst=self.D),
+            asm_ast.Mov(src=self.T, dst=A),
+            *after,
+            asm_ast.Return(save_a=False),
+        ]
+
+    def _run(self, instrs):
+        from passes.via_a_store_fold import apply_copy_through_index
+        fn = asm_ast.Function(
+            name="f", is_global=True, params=[], instructions=instrs,
+        )
+        out = apply_copy_through_index(asm_ast.Program(top_level=[fn]))
+        return out.top_level[0].instructions
+
+    def test_through_x(self):
+        cmp = asm_ast.Compare(left=A, right=asm_ast.Imm(value=10))
+        out = self._run(self._copy([cmp]))
+        self.assertEqual(out[:3], [
+            asm_ast.Mov(src=self.M, dst=X),
+            asm_ast.Mov(src=X, dst=self.D),
+            cmp,
+        ])
+
+    def test_through_y_when_x_is_read(self):
+        out = self._run(self._copy([
+            asm_ast.Compare(left=A, right=asm_ast.Imm(value=10)),
+            asm_ast.Mov(src=X, dst=self.D),
+        ]))
+        self.assertEqual(out[0], asm_ast.Mov(src=self.M, dst=Y))
+
+    def test_kept_when_the_flags_are_read(self):
+        instrs = self._copy([asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
+                             asm_ast.Label(name=".l")])
+        self.assertEqual(self._run(list(instrs)), instrs)
+
+    def test_kept_when_the_slot_is_read_later(self):
+        instrs = self._copy([
+            asm_ast.Compare(left=A, right=asm_ast.Imm(value=10)),
+            asm_ast.Mov(src=self.T, dst=A),
+            asm_ast.Mov(src=A, dst=asm_ast.Data(name="g", offset=0)),
+        ])
+        self.assertEqual(self._run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

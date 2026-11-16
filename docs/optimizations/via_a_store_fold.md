@@ -59,6 +59,34 @@ fetch:
 - A is dead after the store, by `a_dead_at`.
 - N and Z are dead after the store, by `flags_dead_at`.
 
+## A copy while A is busy
+
+`apply_copy_through_index`, in the same module, copies a byte through
+X or Y when the code parks A in a slot to make the copy:
+
+```
+   STA   __local_do_var__n          LDX   OPERANDS
+   LDA   OPERANDS            ->     STX   __local_do_var__3
+   STA   __local_do_var__3
+   LDA   __local_do_var__n
+```
+
+That's the entry of `do_var` in `examples/zork/interpreter/decode.c`,
+which copies `OPERANDS[0]` into a slot while A holds the opcode it
+dispatches on, and it saves 4 bytes. It applies when the slot is one
+of the function's own `__local_*` slots that nothing reads after the
+`LDA` back, the source is a byte or a constant `LDX` can load, the
+destination a byte `STX` can store, and N and Z are dead after, since
+they now come from the source. X must be dead from the `STA` on, or
+else Y, which takes its place. A ends with the value it had.
+
+It runs once, after the last peephole run, `carry_known`, and the
+[jump tables](jump_table.md). Inside the peephole fixed point it took
+the `LDA` of copies that other folds remove outright, and Zork's
+`branch_to_offset` came out 6 bytes longer. Before the jump table,
+`do_var`'s dispatch began with a `BEQ` that read the Z from the `LDA`
+back, and the jump table's bounds check makes those flags dead.
+
 ## What it leaves alone
 
 - A read of A afterward. If `fetch` ends with `return idx;`, the

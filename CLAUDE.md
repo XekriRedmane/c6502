@@ -258,9 +258,10 @@ and `--codegen`):
   11. `loop_invariant_a` (a loop-invariant compare key kept in A),
       `apply_jump_tables` (a switch's compare chain dispatched through
       a table of case addresses, the `JumpTable` asm instruction),
-      `expand_long_branches`, `apply_short_jumps` (jumps to tail-call
-      stubs go to the function, and `LDA #k; JMP` becomes a branch in
-      reach), `asm_to_asm2`, `emit_program`.
+      `apply_copy_through_index` (a byte copied through X or Y while
+      A is busy), `expand_long_branches`, `apply_short_jumps` (jumps
+      to tail-call stubs go to the function, and `LDA #k; JMP` becomes
+      a branch in reach), `asm_to_asm2`, `emit_program`.
 
   Also enables the default zp_abi calling convention: every function
   that is eligible (no IndirectCall, not in a call-graph cycle,

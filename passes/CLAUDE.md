@@ -40,7 +40,9 @@ this directory:
   `kills_x` / `kills_y` use it, and so does every pass that keeps a
   value in X or Y across a call. The flag walks take a `JMP` to
   another function, a tail call, to write C and V as a `Call` does,
-  since the callee reads no flag it's given. `kills_a` counts every move
+  since the callee reads no flag it's given. The register walks
+  (`a_dead_at`, `x_dead_at`, `y_dead_at`) take a `JumpTable` to read A,
+  write its index register, and go to each of its targets. `kills_a` counts every move
   `asm_emit` writes through A: a load into A, a move from memory or a
   constant into memory (`LDA src; STA dst`), and a move between X and
   Y (`TXA; TAY`).
@@ -492,6 +494,10 @@ this directory:
   Data|ZP)` (TXA;STA → STX), same shape for Y. Recovers what
   `x_save_slot_load`'s Pass 3 mem-to-mem case used to do directly
   before `split_mem_to_mem` started breaking the mem-to-mem apart.
+  `apply_copy_through_index`, run once after the jump tables, turns
+  `STA t; LDA M; STA D; LDA t` into `LDX M; STX D` (or Y) when `t` is
+  the function's own slot, dead after, X (or Y) is dead, and N/Z are
+  dead after.
 - `index_inc_cmp_y.py` — `apply_index_inc_cmp_y`. Promotes the
   5-atom `Mov(IndexedData(_, index=X), Reg(A)); Mov(Reg(A),
   <tmp>); Inc/Dec(<tmp>); Mov(<tmp>, Reg(A)); Compare(Reg(A),

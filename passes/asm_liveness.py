@@ -185,6 +185,20 @@ def _path_dead_from(
             if tgt is not None:
                 stack.append(tgt)
             return True
+        if isinstance(instr, asm_ast.JumpTable):
+            # `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS`: reads A,
+            # writes its index register and A, and goes to one of its
+            # targets. A target outside the function is a tail call
+            # with no register arguments.
+            if reg == "A":
+                return False
+            if reg == instr.index:
+                return True
+            for t in instr.targets:
+                tgt = label_to_index.get(t)
+                if tgt is not None:
+                    stack.append(tgt)
+            return True
         if isinstance(instr, asm_ast.Label):
             idx += 1
             continue

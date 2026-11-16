@@ -143,6 +143,26 @@ shapes:
    ADC   entry
 ```
 
+### A step stored and loaded into an index register
+
+When the stepped byte is stored back and then loaded into an index
+register, the step can be made in the register:
+
+```
+   LDA   __local_return_value__x          LDX   __local_return_value__x
+   SEC                                    DEX
+   SBC   #$02                   ->        DEX
+   STA   __local_return_value__x          STX   __local_return_value__x
+   LDX   __local_return_value__x
+```
+
+for a step of 1 or 2, `CLC; ADC #k` with `INX`, and the Y forms, when
+A, C, and V are dead after (`_rewrite_step_then_reload`). X and the
+byte end up with the same value as before, and N and Z come out the
+same, from the last step. That's `x -= 2` in Zork's `return_value`
+(examples/zork/interpreter/decode.c), and it saves 3 bytes there, 4
+for a step of 1.
+
 ## What it leaves alone
 
 - A read of the original register afterward. In

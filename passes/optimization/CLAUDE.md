@@ -296,7 +296,8 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   chain's short-circuit jumps retarget to the consumer's destination, the
   5-instruction tail and 1-instruction consumer are deleted, and the
   "flipped" sub-case emits `Jump(T); Label(.<fn>@scfold@<N>)` to
-  materialize the fall-through. Covers all four `(C_ft, C_sc) ×
+  materialize the fall-through. Copies on the short-circuit arm alone
+  (before `Copy(C_sc, %t)`) go first on the chain's path. Covers all four `(C_ft, C_sc) ×
   consumer-kind` combinations and nested short-circuits (`(a && b) || c`
   style) via transitive closure on the retarget map.
 - `dispatch_pointer_array.py` — `dispatch_const_pointer_arrays`

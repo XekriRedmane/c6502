@@ -62,6 +62,27 @@ Z must all be dead on both paths after the branch. Zork's
 `store_with_sign` (examples/zork/interpreter/numbers.c) tests
 `sign_bit & 0x01` this way.
 
+# Bit 6
+
+`BIT M` copies bit 6 of M into V, so a test of bit 6 needn't load A:
+
+    Mov(M, Reg(A))              # LDA M
+    And(Imm(0x40), Reg(A))      # AND #$40
+    Branch(EQ | NE, target)     # BEQ/BNE
+
+→
+
+    BitTest(M)                  # BIT M — V = bit6(M)
+    Branch(VC | VS, target)     # BVC = "bit6(M) == 0"; BVS = "== 1"
+
+M is a `Data` or `ZP` byte, which `BIT` can address, and isn't
+volatile. `BIT` leaves A as it was, sets N from bit 7 of M and Z from
+A AND M, and writes V, where the load and the AND left V alone. So A,
+N, Z, and the V from before must all be dead on both paths after the
+branch. That saves 2 bytes and 2 cycles. Zork's `branch`
+(examples/zork/interpreter/decode.c) tests bit 6 of its offset byte
+twice.
+
 # Where to run
 
 Inside the asm-peephole fixed-point loop. Earlier passes (mem-const-
@@ -74,7 +95,9 @@ within the fixed-point loop is not critical."""
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at, c_dead_at, flags_dead_at
+from passes.asm_liveness import (
+    a_dead_at, c_dead_at, flags_dead_at, v_dead_at,
+)
 
 
 def apply_and_sign_bit_branch(prog: asm_ast.Program) -> asm_ast.Program:
@@ -128,6 +151,22 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             out.append(asm_ast.Branch(cond=new_cond, target=br.target))
             i += 4
             continue
+        if (i + 2 < len(instrs)
+                and isinstance(instrs[i], asm_ast.Mov)
+                and not instrs[i].is_volatile
+                and isinstance(instrs[i].src, (asm_ast.Data, asm_ast.ZP))
+                and _is_reg_a(instrs[i].dst)
+                and isinstance(instrs[i + 1], asm_ast.And)
+                and instrs[i + 1].src == asm_ast.Imm(value=0x40)
+                and _is_reg_a(instrs[i + 1].dst)
+                and _is_eq_ne_branch(instrs[i + 2])
+                and _bit6_dead_both_ways(instrs, i + 2)):
+            br = instrs[i + 2]
+            new_cond = asm_ast.VC() if isinstance(br.cond, asm_ast.EQ) else asm_ast.VS()
+            out.append(asm_ast.BitTest(src=instrs[i].src))
+            out.append(asm_ast.Branch(cond=new_cond, target=br.target))
+            i += 3
+            continue
         if (i + 1 < len(instrs)
                 and isinstance(instrs[i], asm_ast.And)
                 and isinstance(instrs[i].src, asm_ast.Imm)
@@ -169,6 +208,21 @@ def _dead_both_ways(instrs, branch_idx: int) -> bool:
     def dead(k):
         return (a_dead_at(instrs, k) and c_dead_at(instrs, k)
                 and flags_dead_at(instrs, k))
+    if not dead(branch_idx + 1):
+        return False
+    target = instrs[branch_idx].target
+    for k, ins in enumerate(instrs):
+        if isinstance(ins, asm_ast.Label) and ins.name == target:
+            return dead(k)
+    return False
+
+
+def _bit6_dead_both_ways(instrs, branch_idx: int) -> bool:
+    """True iff A, N, Z, and V are all dead on both paths after the
+    branch at `branch_idx`, as `BIT M; BVC/BVS` needs."""
+    def dead(k):
+        return (a_dead_at(instrs, k) and flags_dead_at(instrs, k)
+                and v_dead_at(instrs, k))
     if not dead(branch_idx + 1):
         return False
     target = instrs[branch_idx].target

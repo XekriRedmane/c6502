@@ -108,6 +108,19 @@ skips an assignment. `if (c >= 0x60 && c < 0x80) c -= 0x20;` leaves
     Copy(@0.c, @0.c.2)          ; the phi's copy for the skipped arm
     JumpIfFalse(%4.3, .if_end@4)
 
+The short-circuit arm may have copies of its own too, between
+`branch_label` and `Copy(C_sc, %t)`, as SSA destruction leaves for a
+phi of a name the chain changes, such as the `--left` in Zork's `je`
+(examples/zork/interpreter/decode.c), `!equal && --left != 0`:
+
+    Label(.and_false@23)
+    Copy(@77.left.3, @77.left.4)  ; only on the chain's path
+    Copy(0, %417.3)
+    Label(.and_end@24)
+
+Those run only on the chain's path, so they go first in its stub, or
+right after the flipped case's new label.
+
 The copies run on every path through the consumer, so the rewrite
 keeps them on both: in place for the path that falls through, and for
 the path the chain takes, in a stub `Label(L); <copies>; Jump(D_sc)`
@@ -184,18 +197,19 @@ def fold_short_circuit_jump(
     i = 0
     while i < len(fn.instructions):
         fold = _try_fold(fn, i, use_count, jump_target_count)
-        if fold is not None and fold[3] and fold[0] == "natural" \
-                and not ends_in_terminator:
+        if fold is not None and (fold[3] or fold[4]) \
+                and fold[0] == "natural" and not ends_in_terminator:
             fold = None
         if fold is None:
             new_instrs.append(fn.instructions[i])
             i += 1
             continue
-        kind, branch_label, target, copies = fold
+        kind, branch_label, target, copies, sc_copies = fold
         if kind == "natural":
-            if copies:
+            if copies or sc_copies:
                 stub = fresh_label()
                 stubs.append(tac_ast.Label(name=stub))
+                stubs.extend(sc_copies)
                 stubs.extend(copies)
                 stubs.append(tac_ast.Jump(target=target))
                 retarget_map[branch_label] = stub
@@ -208,8 +222,10 @@ def fold_short_circuit_jump(
             new_instrs.extend(copies)
             new_instrs.append(tac_ast.Jump(target=target))
             new_instrs.append(tac_ast.Label(name=new_label))
+            new_instrs.extend(sc_copies)
             new_instrs.extend(copies)
-        i += 6 + len(copies)  # tail (5), copies, consumer (1)
+        # The tail (5), both arms' copies, and the consumer (1).
+        i += 6 + len(copies) + len(sc_copies)
     new_instrs.extend(stubs)
 
     if not retarget_map:
@@ -248,23 +264,31 @@ def _try_fold(
 ) -> tuple[str, str, str] | None:
     """If `fn.instructions[i:i+6]` is `Copy / Jump / Label / Copy /
     Label / JumpIf{True,False}` in the short-circuit shape, with
-    `Copy`s that don't touch `%t` allowed before the consumer, return
-    `(kind, branch_label, T, copies)` where `kind` is `"natural"` or
-    `"flipped"`. Otherwise None."""
+    `Copy`s that don't touch `%t` allowed before the consumer and
+    before the short-circuit arm's `Copy`, return `(kind,
+    branch_label, T, copies, sc_copies)` where `kind` is `"natural"`
+    or `"flipped"`. Otherwise None."""
     instrs = fn.instructions
     if i + 5 >= len(instrs):
         return None
     cp_ft = instrs[i]
     jump_in_tail = instrs[i + 1]
     label_branch = instrs[i + 2]
-    cp_sc = instrs[i + 3]
-    label_end = instrs[i + 4]
-    j = i + 5
+    # The short-circuit arm's own copies, then its `Copy(C_sc, %t)`.
+    k = i + 3
+    while k < len(instrs) and isinstance(instrs[k], tac_ast.Copy):
+        k += 1
+    if k == i + 3 or k >= len(instrs):
+        return None
+    sc_copies = list(instrs[i + 3:k - 1])
+    cp_sc = instrs[k - 1]
+    label_end = instrs[k]
+    j = k + 1
     while j < len(instrs) and isinstance(instrs[j], tac_ast.Copy):
         j += 1
     if j >= len(instrs):
         return None
-    copies = list(instrs[i + 5:j])
+    copies = list(instrs[k + 1:j])
     consumer = instrs[j]
 
     if not isinstance(cp_ft, tac_ast.Copy):
@@ -304,7 +328,7 @@ def _try_fold(
         return None
     if consumer.condition.name != t_name:
         return None
-    for cp in copies:
+    for cp in copies + sc_copies:
         if any(isinstance(v, tac_ast.Var) and v.name == t_name
                for v in (cp.src, cp.dst)):
             return None
@@ -319,8 +343,8 @@ def _try_fold(
     )
     target = consumer.target
     if c_sc == consumer_branch_value:
-        return ("natural", branch_label, target, copies)
-    return ("flipped", branch_label, target, copies)
+        return ("natural", branch_label, target, copies, sc_copies)
+    return ("flipped", branch_label, target, copies, sc_copies)
 
 
 def _retarget_instruction(

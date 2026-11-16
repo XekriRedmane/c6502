@@ -485,6 +485,34 @@ class TestCopiesBeforeConsumer(unittest.TestCase):
         self.assertEqual(out[1], copy)
         self.assertNotIn(tac_ast.Label(name=".and_end"), out)
 
+    def test_copies_on_the_short_circuit_arm(self):
+        # `!equal && --left != 0` in Zork's `je` leaves a phi's copy on
+        # each arm of the tail. The chain's own copy goes first in its
+        # stub.
+        own = tac_ast.Copy(src=_var("l.3"), dst=_var("l.4"))
+        fn = _fn(
+            tac_ast.JumpIfFalse(condition=_var("a"), target=".and_false"),
+            tac_ast.Copy(src=_var("l.2"), dst=_var("l.4")),
+            tac_ast.Copy(src=_cint(1), dst=_var("t")),
+            tac_ast.Jump(target=".and_end"),
+            tac_ast.Label(name=".and_false"),
+            own,
+            tac_ast.Copy(src=_cint(0), dst=_var("t")),
+            tac_ast.Label(name=".and_end"),
+            tac_ast.JumpIfFalse(condition=_var("t"), target=".if_end"),
+            tac_ast.Copy(src=_cint(9), dst=_var("l.4")),
+            tac_ast.Label(name=".if_end"),
+            tac_ast.Ret(val=_var("l.4")),
+        )
+        out = fold_short_circuit_jump(fn).instructions
+        stub = out[0].target
+        k = out.index(tac_ast.Label(name=stub))
+        self.assertEqual(out[k + 1:], [own, tac_ast.Jump(target=".if_end")])
+        self.assertNotIn(tac_ast.Label(name=".and_end"), out)
+        self.assertEqual(out[1:3], [
+            fn.instructions[1], tac_ast.Copy(src=_cint(9), dst=_var("l.4")),
+        ])
+
     def test_copy_of_the_temporary_blocks(self):
         fn = _fn(
             tac_ast.JumpIfFalse(condition=_var("a"), target=".and_false"),

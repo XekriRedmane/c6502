@@ -441,5 +441,40 @@ class TestStepAcrossTransfer(unittest.TestCase):
         ])
 
 
+class TestStepThenReload(unittest.TestCase):
+    """`LDA M; SEC; SBC #2; STA M; LDX M` as `LDX M; DEX; DEX; STX M`,
+    as in Zork's `return_value` stepping the index of the local it
+    restores."""
+
+    M = asm_ast.Data(name="__local_f__x", offset=0)
+
+    def _step(self, after):
+        return [
+            asm_ast.Mov(src=self.M, dst=A),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=asm_ast.Imm(value=2), dst=A),
+            asm_ast.Mov(src=A, dst=self.M),
+            asm_ast.Mov(src=self.M, dst=X),
+            *after,
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_step_in_x(self):
+        out = _run(self._step([
+            asm_ast.Mov(src=asm_ast.Data(name="v", offset=0), dst=A),
+        ]))
+        self.assertEqual(out[:4], [
+            asm_ast.Mov(src=self.M, dst=X),
+            asm_ast.Dec(dst=X), asm_ast.Dec(dst=X),
+            asm_ast.Mov(src=X, dst=self.M),
+        ])
+
+    def test_kept_when_a_is_read_after(self):
+        instrs = self._step([
+            asm_ast.Mov(src=A, dst=asm_ast.Data(name="v", offset=0)),
+        ])
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

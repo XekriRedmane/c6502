@@ -50,6 +50,25 @@ That's the high byte of `b == 2` in Zork's `instr_mul`
 two, since they leave the flags and the register alone, except one
 lowered with an `LDY #off` setup.
 
+A compare with the byte an add started from is the add's carry:
+
+    LDA   Z_PC                LDA   Z_PC
+    CLC                       CLC
+    ADC   offset       ->     ADC   offset
+    STA   new_lo              STA   new_lo
+    CMP   Z_PC                BCC   .if_end
+    BCS   .if_end
+
+The sum `m + x` wraps below `m` exactly when the add carries out, so
+`CMP m` sets C to the opposite of the add's carry, and the branch on C
+takes the opposite condition with the compare gone
+(`_carry_of_add`). Only stores from A may come between the add and
+the compare, none to `m`, and N and Z must be dead after the branch
+on both paths, since the add sets them from the sum. That's `if
+(new_lo < lo)` after `new_lo = lo + offset`, the C for the carry of a
+byte add, in Zork's `branch_to_offset`
+(examples/zork/interpreter/decode.c).
+
 A compare of a volatile read is never followed by a branch
 (`volatile_void_read_cmp` makes that rewrite only when the flags
 are dead), so dropping one of a pair never drops a volatile access.
@@ -141,8 +160,69 @@ def _drop_compares_with_zero(instrs) -> set[int]:
     return drop
 
 
+def _carry_of_add(instrs) -> dict[int, asm_ast.Type_instruction | None]:
+    """The rewrites of `LDA m; CLC; ADC x; [STA r ...]; CMP m; BCC/BCS
+    L`: the compare's index to None and the branch's to the branch on
+    the opposite condition. See the module docstring."""
+    from passes.asm_aliasing import may_alias
+    from passes.asm_liveness import flags_dead_at
+    labels = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    out: dict[int, asm_ast.Type_instruction | None] = {}
+    for i, load in enumerate(instrs):
+        if not (isinstance(load, asm_ast.Mov) and not load.is_volatile
+                and isinstance(load.src, (asm_ast.Data, asm_ast.ZP))
+                and _is_a(load.dst)
+                and i + 4 < len(instrs)
+                and isinstance(instrs[i + 1], asm_ast.ClearCarry)
+                and isinstance(instrs[i + 2], asm_ast.Add)
+                and _is_a(instrs[i + 2].dst)
+                and not isinstance(instrs[i + 2].src, asm_ast.Reg)):
+            continue
+        m = load.src
+        c = i + 3
+        while (c < len(instrs) and isinstance(instrs[c], asm_ast.Mov)
+               and _is_a(instrs[c].src) and not instrs[c].is_volatile
+               and not isinstance(instrs[c].dst, asm_ast.Reg)
+               and not may_alias(instrs[c].dst, m)):
+            c += 1
+        if not (c + 1 < len(instrs)
+                and instrs[c] == asm_ast.Compare(
+                    left=asm_ast.Reg(reg=asm_ast.A()), right=m)
+                and isinstance(instrs[c + 1], asm_ast.Branch)
+                and isinstance(instrs[c + 1].cond, (asm_ast.CC, asm_ast.CS))
+                and instrs[c + 1].target in labels
+                and flags_dead_at(instrs, c + 2)
+                and flags_dead_at(instrs, labels[instrs[c + 1].target])):
+            continue
+        branch = instrs[c + 1]
+        flipped = asm_ast.CS() if isinstance(branch.cond, asm_ast.CC) else asm_ast.CC()
+        out[c] = None
+        out[c + 1] = asm_ast.Branch(cond=flipped, target=branch.target)
+    return out
+
+
+def _is_a(op) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
+    carry = _carry_of_add(instrs)
+    if carry:
+        out = []
+        for i, ins in enumerate(instrs):
+            if i in carry:
+                if carry[i] is not None:
+                    out.append(carry[i])
+            else:
+                out.append(ins)
+        return asm_ast.Function(
+            name=fn.name, is_global=fn.is_global, params=list(fn.params),
+            instructions=out,
+        )
     refs = _label_refs(instrs)
     # The compares with 0 go in a sweep of their own, since one of
     # them may be the compare that a later identical one relies on for

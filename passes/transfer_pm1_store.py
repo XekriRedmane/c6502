@@ -106,6 +106,20 @@ of separators with `y++` and adds the last step to the dictionary's
 address, the first and second forms. Each saves 2 bytes and 2 cycles
 for a step of 1, and 1 byte for a step of 2.
 
+# A step stored and loaded into an index register
+
+`_rewrite_step_then_reload` steps a byte in an index register when the
+stepped byte is stored back and then loaded into that register:
+
+    LDA M; SEC; SBC #2; STA M; LDX M     ->     LDX M; DEX; DEX; STX M
+
+for a step `k` of 1 or 2, `CLC; ADC #k` with `INX`, and the Y forms,
+when A, C, and V are dead after. X and M end up with the same value
+as before, and N and Z come out the same, from the last step. Zork's
+`return_value` (examples/zork/interpreter/decode.c) steps the index
+of the local it restores this way, `x -= 2`. That saves 3 bytes for a
+step of 2 in zero page, and 4 for a step of 1.
+
 # Where to run
 
 Inside the asm-peephole fixedpoint, after `replace_pseudoregisters`
@@ -129,9 +143,11 @@ def apply_transfer_pm1_store(prog: asm_ast.Program) -> asm_ast.Program:
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             new_top.append(
-                _rewrite_steps_across_transfer(_rewrite_index_steps(
-                    _rewrite_function(tl), unaliased,
-                ))
+                _rewrite_step_then_reload(
+                    _rewrite_steps_across_transfer(_rewrite_index_steps(
+                        _rewrite_function(tl), unaliased,
+                    ))
+                )
             )
         else:
             new_top.append(tl)
@@ -268,6 +284,48 @@ def _rewrite_steps_across_transfer(fn: asm_ast.Function) -> asm_ast.Function:
         instrs[i:after] = rewritten
         changed = True
         i += len(rewritten)
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _rewrite_step_then_reload(fn: asm_ast.Function) -> asm_ast.Function:
+    """`LDA M; SEC; SBC #k; STA M; LDX M` as `LDX M; DEX; [DEX;] STX
+    M` (k of 1 or 2, `ADC` as `INX`, and the Y forms). See "A step
+    stored and loaded into an index register" above."""
+    instrs = list(fn.instructions)
+    changed = False
+    i = 0
+    while i + 4 < len(instrs):
+        load, carry, arith, store, reload = instrs[i:i + 5]
+        found = _small_step(carry, arith)
+        if not (found is not None
+                and isinstance(load, asm_ast.Mov) and not load.is_volatile
+                and isinstance(load.src, (asm_ast.Data, asm_ast.ZP))
+                and isinstance(load.dst, asm_ast.Reg)
+                and isinstance(load.dst.reg, asm_ast.A)
+                and store == asm_ast.Mov(src=load.dst, dst=load.src)
+                and isinstance(reload, asm_ast.Mov)
+                and not reload.is_volatile and reload.src == load.src
+                and isinstance(reload.dst, asm_ast.Reg)
+                and isinstance(reload.dst.reg, (asm_ast.X, asm_ast.Y))):
+            i += 1
+            continue
+        after = i + 5
+        if not (a_dead_at(instrs, after) and c_dead_at(instrs, after)
+                and v_dead_at(instrs, after)):
+            i += 1
+            continue
+        step, k = found
+        reg = reload.dst
+        instrs[i:after] = [reload] + [step(dst=reg)] * k + [
+            asm_ast.Mov(src=reg, dst=load.src),
+        ]
+        changed = True
+        i += k + 2
     if not changed:
         return fn
     return asm_ast.Function(

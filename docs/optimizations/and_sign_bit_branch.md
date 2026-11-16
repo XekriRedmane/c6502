@@ -108,10 +108,31 @@ Zork's `store_with_sign` (examples/zork/interpreter/numbers.c), of
 the transcript bit in `read_line` and twice in `output.c`, and of a
 header flag in `main`.
 
+## Bit 6
+
+`BIT m` copies bit 6 of `m` into V, so a test of bit 6 of a byte in
+memory needn't load it:
+
+```
+   LDA   __local_branch__offset_0      BIT   __local_branch__offset_0
+   AND   #$40                    ->    BVC   .if_else@16
+   BEQ   .if_else@16
+```
+
+`BEQ` becomes `BVC` and `BNE` becomes `BVS`. `m` is a `Data` or `ZP`
+byte, which `BIT` can address, and isn't volatile. `BIT` leaves A as
+it was, sets N from bit 7 of `m` and Z from A AND `m`, and writes V,
+where the load and the `AND` left V alone, so A, N, Z, and the earlier
+V must all be dead on both paths after the branch. It saves 2 bytes
+and 2 cycles. Zork's `branch` (examples/zork/interpreter/decode.c)
+tests bit 6 of its offset byte twice this way.
+
 ## What it leaves alone
 
-- A mask other than `$80` or `$01`, as in `flags & 0x40`, since only
-  bits 7 and 0 map onto a flag.
+- A mask other than `$80`, `$40`, or `$01`, as in `flags & 0x20`,
+  since only bits 7, 6, and 0 map onto a flag.
+- A test of bit 6 of a value that isn't a byte in memory, since `BIT`
+  has no immediate or register form on the 6502.
 - A read of the masked value after the branch on the fall-through
   path. `unsigned char t = flags & 0x80; if (t) hits = t;` keeps its
   `AND #$80`, because the `STA hits` after the `BEQ` reads A.

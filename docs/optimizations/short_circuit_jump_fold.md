@@ -106,6 +106,14 @@ stub is a bare `JMP`, which branch threading removes. `buffer_char`'s
 test became `CMP #$60; BCC; CMP #$80; BCS; SEC; SBC #$20`, with `c`
 kept in A, as in Zork's code.
 
+The short-circuit arm may also have copies of its own, between
+`branch` and `Copy(C_sc, %t)`, when the chain changes a variable a
+phi joins. Zork's `je` (examples/zork/interpreter/decode.c) tests
+`!equal && --left != 0`, and SSA destruction leaves `Copy(@77.left.3,
+@77.left.4)` after `.and_false`. Those copies run only on the chain's
+path, so they go first in its stub, or right after the new label in
+the flipped case. That case of `do_2op` is 6 bytes shorter.
+
 Any number of jumps may target `branch`, since those are the chain.
 A nested expression such as `(a && b) || c` produces two tails. One
 retargets its chain to the other's `branch` label, which is itself
@@ -119,8 +127,9 @@ that stays.
   `h`, so the 0 or 1 has to exist.
 - A value that isn't tested by a jump right after the tail, such as
   `return a && b;`.
-- A tail with anything between its instructions, or anything but
-  copies that don't touch `%t` between it and the jump.
+- A tail with anything between its instructions, other than copies
+  that don't touch `%t` before `Copy(C_sc, %t)` and between `end` and
+  the jump.
 - Constants of another type than `int`, since the `c99_to_tac`
   lowering always uses `int` 0 and 1.
 

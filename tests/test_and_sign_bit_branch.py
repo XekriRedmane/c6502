@@ -87,10 +87,10 @@ class TestAndSignBitBranch(unittest.TestCase):
         self.assertEqual(out[1], asm_ast.And(src=asm_ast.Imm(value=0x80), dst=_A))
 
     def test_other_and_mask_doesnt_fire(self):
-        # The peephole is specific to mask = 0x80 (sign bit).
+        # Only bits 7, 6, and 0 map onto a flag.
         prog = _wrap([
             asm_ast.Mov(src=asm_ast.Data(name="x", offset=0), dst=_A),
-            asm_ast.And(src=asm_ast.Imm(value=0x40), dst=_A),
+            asm_ast.And(src=asm_ast.Imm(value=0x20), dst=_A),
             asm_ast.Branch(cond=asm_ast.EQ(), target=".target"),
             _ret(),
         ])
@@ -241,6 +241,49 @@ class TestLowBitThroughCarry(unittest.TestCase):
         before = list(prog.top_level[0].instructions)
         out = apply_and_sign_bit_branch(prog).top_level[0].instructions
         self.assertEqual(out, before)
+
+
+class TestBitSix(unittest.TestCase):
+    """`LDA m; AND #$40; BEQ` → `BIT m; BVC`, as in Zork's `branch`."""
+
+    M = asm_ast.Data(name="__local_f__b", offset=0)
+
+    def _test(self, cond=None, after=None):
+        return [
+            asm_ast.Mov(src=self.M, dst=_A),
+            asm_ast.And(src=asm_ast.Imm(value=0x40), dst=_A),
+            asm_ast.Branch(cond=cond or asm_ast.EQ(), target=".t"),
+            *(after or [asm_ast.Mov(src=self.M, dst=_A)]),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_bit_and_bvc(self):
+        out = _instrs(apply_and_sign_bit_branch(_wrap(self._test())))
+        self.assertEqual(out[:2], [
+            asm_ast.BitTest(src=self.M),
+            asm_ast.Branch(cond=asm_ast.VC(), target=".t"),
+        ])
+
+    def test_bne_is_bvs(self):
+        out = _instrs(apply_and_sign_bit_branch(
+            _wrap(self._test(cond=asm_ast.NE())),
+        ))
+        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.VS(), target=".t"))
+
+    def test_kept_when_a_is_read_after(self):
+        instrs = self._test(after=[
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="g", offset=0)),
+        ])
+        out = _instrs(apply_and_sign_bit_branch(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+    def test_kept_when_v_is_read_after(self):
+        instrs = self._test(after=[
+            asm_ast.Branch(cond=asm_ast.VS(), target=".u"),
+            asm_ast.Mov(src=self.M, dst=_A),
+        ])
+        out = _instrs(apply_and_sign_bit_branch(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
 
 
 if __name__ == "__main__":

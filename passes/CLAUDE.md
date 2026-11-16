@@ -131,7 +131,10 @@ this directory:
   and the second compare of each byte `three_way_compare` writes.
   Also a compare of a register with 0 right after the instruction
   that set N and Z from it (stores may come between), when C is dead
-  (`_drop_compares_with_zero`, in a sweep of its own).
+  (`_drop_compares_with_zero`, in a sweep of its own), and `CMP m`
+  after `LDA m; CLC; ADC x` (stores from A between), which sets C
+  opposite to the add's carry: the compare goes and the `BCC` / `BCS`
+  after it flips, when N/Z are dead on both paths (`_carry_of_add`).
 - `jump_table.py` — `apply_jump_tables`. A chain of `CMP #k; BEQ
   case` on A (at least four, constants 0 to 127, the case for 0 maybe
   a `BEQ` right after the load) becomes `CMP #max+1; BCS default`
@@ -533,7 +536,9 @@ this directory:
   takes (`asm_aliasing.unreachable_by_pointer`). And `CLC; ADC #k;
   TAY` → `TAY; INY` (A, C, V dead), `TYA; CLC; ADC #k` → `INY; TYA`
   (Y, C, V dead), and `TXA; CLC; ADC #1; TAX` → `INX`
-  (`_rewrite_steps_across_transfer`).
+  (`_rewrite_steps_across_transfer`). And `LDA M; SEC; SBC #k; STA M;
+  LDX M` → `LDX M; DEX; [DEX;] STX M` (k of 1 or 2, `ADC` / `INX`, and
+  Y) when A, C, and V are dead (`_rewrite_step_then_reload`).
 - `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
   Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
   `Compare(Reg(A), <indirect>)` when A and N/Z are dead after the
@@ -1289,7 +1294,8 @@ document says whether it fires there.
   addressable (`Data` / `ZP`) AND A is dead after. Pays 1 byte / 3+
   cycles per occurrence and preserves A for downstream use. Also
   `AND #$01; BEQ/BNE` → `LSR; BCC/BCS` when A, C, N, and Z are dead
-  on both paths.
+  on both paths, and `LDA M; AND #$40; BEQ/BNE` → `BIT M; BVC/BVS`
+  when A, N, Z, and V are dead on both paths.
 - `apply_self_store_drop` — `Mov(M, A); ...; Mov(A, M)` where the body
   doesn't modify M and A reads M → drop the trailing self-store.
 - `apply_cmp_through_tmp_fold` — `Mov(src, A); Mov(A, tmp); Mov(other,

@@ -125,6 +125,31 @@ returns before the other rule runs, since a compare with 0 that one
 rule drops may be the one an identical compare after it relies on
 for C.
 
+## A compare with the byte an add started from
+
+After `LDA m; CLC; ADC x`, the sum wraps below `m` exactly when the
+add carries out, so `CMP m` sets C to the opposite of the add's
+carry. A `BCC` or `BCS` right after the compare takes the opposite
+condition, and the compare goes:
+
+```
+   LDA   Z_PC                       LDA   Z_PC
+   CLC                              CLC
+   ADC   offset_0          ->       ADC   offset_0
+   STA   new_lo                     STA   new_lo
+   CMP   Z_PC                       BCC   .if_end@11
+   BCS   .if_end@11
+```
+
+That's `if (new_lo < lo) pages++;` after `new_lo = lo + offset`, the
+C for the carry of a byte add, in Zork's `branch_to_offset`
+(examples/zork/interpreter/decode.c). Stores from A may come between
+the add and the compare, as long as none writes `m`. The add sets N
+and Z from the sum where the compare set them from the difference, so
+N and Z must be dead after the branch on both paths
+(`_carry_of_add`). V comes out the same, since `CMP` leaves it alone.
+It saves 2 bytes and 3 cycles with `m` in zero page.
+
 The pass doesn't check for a volatile operand. According to the
 module docstring, none can reach it, because `volatile_void_read_cmp`
 turns a volatile read into a compare only when the flags are dead, so

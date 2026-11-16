@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1B48`. The other units, the constants,
+on every instruction, up to `$1B35`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -155,7 +155,7 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 465 |
-| `decode.c` | 1859 | 1985 |
+| `decode.c` | 1859 | 1966 |
 | `objects.c` | 788 | 981 |
 | `numbers.c` | 436 | 475 |
 | `input.c` | 1018 | 1106 |
@@ -165,7 +165,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7211** |
+| **Total** | **6643** | **7192** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -190,9 +190,9 @@ Each switch now dispatches through a table too.
 against 190, and `mulu16` 42 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 35,527,406 cycles against Zork's
-38,490,260, 7.7% fewer, and the second 6,914,991 against 7,434,428,
-7.0% fewer. Most of the difference is the jump tables, which reach
+**Speed.** The first session takes 35,332,868 cycles against Zork's
+38,490,260, 8.2% fewer, and the second 6,882,313 against 7,434,428,
+7.4% fewer. Most of the difference is the jump tables, which reach
 each instruction's case in the same few cycles where the compare
 chains had passed one compare after another. `print_number` divides
 0 by 10 once, where Zork's prints it without dividing. The stand-ins
@@ -422,5 +422,20 @@ the smaller code saved.
   ([noreturn_call.md](../../../docs/optimizations/noreturn_call.md)).
   `do_2op` reads `a` from `OPERANDS`, where it had copied it on entry
   because `je` calls `internal_error` before reading it.
+- `x -= 2` on an index that's then loaded into X is `LDX x; DEX; DEX;
+  STX x`
+  ([transfer_pm1_store.md](../../../docs/optimizations/transfer_pm1_store.md)),
+  7 bytes in `return_value` with the store swap it allows. `if (new_lo
+  < lo)` after `new_lo = lo + offset` branches on the add's carry
+  without a compare
+  ([redundant_compare.md](../../../docs/optimizations/redundant_compare.md)),
+  2 bytes in `branch_to_offset`. And `je`'s `!equal && --left != 0`
+  branches directly, where the copy of `left` on one arm had kept it
+  a 0 or 1
+  ([short_circuit_jump_fold.md](../../../docs/optimizations/short_circuit_jump_fold.md)),
+  6 bytes.
+- A test of bit 6 of a byte in memory is `BIT m; BVC`
+  ([and_sign_bit_branch.md](../../../docs/optimizations/and_sign_bit_branch.md)),
+  4 bytes in `branch`.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

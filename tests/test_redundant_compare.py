@@ -144,5 +144,45 @@ class TestCompareWithZero(unittest.TestCase):
         self.assertEqual(_run(list(instrs)), instrs)
 
 
+class TestCarryOfAdd(unittest.TestCase):
+    """`CMP m` after `LDA m; CLC; ADC x` sets C opposite to the add's
+    carry, so a branch on C takes the opposite condition without it.
+    That's `if (new_lo < lo)` after `new_lo = lo + offset` in Zork's
+    `branch_to_offset`."""
+
+    M = asm_ast.ZP(address=0x8A, offset=0)
+
+    def _instrs(self, store=asm_ast.ZP(address=0x90, offset=0), tail=None):
+        return [
+            asm_ast.Mov(src=self.M, dst=_A),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.ZP(address=0x91, offset=0), dst=_A),
+            asm_ast.Mov(src=_A, dst=store),
+            asm_ast.Compare(left=_A, right=self.M),
+            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
+            asm_ast.Inc(dst=asm_ast.ZP(address=0x92, offset=0)),
+            asm_ast.Label(name=".l"),
+            *(tail or []),
+            _ret(),
+        ]
+
+    def test_compare_goes_and_branch_flips(self):
+        instrs = self._instrs()
+        self.assertEqual(_run(list(instrs)), instrs[:4] + [
+            asm_ast.Branch(cond=asm_ast.CC(), target=".l"),
+        ] + instrs[6:])
+
+    def test_kept_when_the_store_writes_m(self):
+        instrs = self._instrs(store=self.M)
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_kept_when_z_is_read_after(self):
+        instrs = self._instrs(tail=[
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".m"),
+            asm_ast.Label(name=".m"),
+        ])
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

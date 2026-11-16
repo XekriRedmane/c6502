@@ -4,6 +4,9 @@ FP	EQU	$07
 DPTR	EQU	$09
 remainder	EQU	$0B
 sign_bit	EQU	$0D
+__local_divu16__partial_1	EQU	$0F
+__local_divu16__partial_0	EQU	$10
+__local_divu16__0	EQU	$11
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -105,9 +108,6 @@ __local_print_number__count	EQU	$F2
 __local_print_number__digits	EQU	$F6
 __local_mulu16__product	EQU	$F7
 BUFF_AREA	EQU	$0200
-__local_divu16__partial_1	EQU	$0201
-__local_divu16__partial_0	EQU	$0202
-__local_divu16__0	EQU	$0203
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
 RWTS	EQU	$2900
@@ -129,7 +129,7 @@ COUT1	EQU	$FDF0
 ; def instr_random params= locals=__local_instr_random__0,__local_instr_random__1 indirect=false in_cycle=false
 ; def mulu16 params=__zpabi_mulu16__a_0,__zpabi_mulu16__a_1,__zpabi_mulu16__b_0,__zpabi_mulu16__b_1 locals=__local_mulu16__b_0,__local_mulu16__b_1,__local_mulu16__a_0,__local_mulu16__a_1,__local_mulu16__product indirect=false in_cycle=false changes=__zpabi_mulu16__a_0,__zpabi_mulu16__a_1,__zpabi_mulu16__b_0,__zpabi_mulu16__b_1
 ; def print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 locals=__local_print_number__0,__local_print_number__1,__local_print_number__count,__local_print_number__2,__local_print_number__n_1,__local_print_number__n_0,__local_print_number__digits,__local_print_number__4,__local_print_number__5,__local_print_number__6,__local_print_number__7 indirect=false in_cycle=false changes=__zpabi_print_number__n_0,__zpabi_print_number__n_1
-; def store_with_sign params=__zpabi_store_with_sign__n_0,__zpabi_store_with_sign__n_1 locals=__local_store_with_sign__n_1,__local_store_with_sign__n_0 indirect=false in_cycle=false changes=__zpabi_store_with_sign__n_0
+; def store_with_sign params=__zpabi_store_with_sign__n_0,__zpabi_store_with_sign__n_1 locals=__local_store_with_sign__n_1,__local_store_with_sign__n_0 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -397,15 +397,15 @@ store_with_sign:
    SEC
    LDA   #$00
    SBC   __zpabi_store_with_sign__n_0
-   STA   __zpabi_store_with_sign__n_0
+   STA   __zpabi_store_result__value_0
    LDA   #$00
    SBC   __zpabi_store_with_sign__n_1
 .if_end@3:
    STA   __zpabi_store_result__value_1
-   LDA   __zpabi_store_with_sign__n_0
-   STA   __zpabi_store_result__value_0
    JMP   store_result
 .store_with_sign@asm_ssa_split@0:
+   LDA   __zpabi_store_with_sign__n_0
+   STA   __zpabi_store_result__value_0
    LDA   __zpabi_store_with_sign__n_1
    JMP   .if_end@3
 

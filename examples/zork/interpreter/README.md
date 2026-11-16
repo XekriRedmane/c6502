@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1BB7`. The other units, the constants,
+on every instruction, up to `$1B48`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -154,8 +154,8 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 472 |
-| `decode.c` | 1859 | 2089 |
+| `main.c` | 391 | 465 |
+| `decode.c` | 1859 | 1985 |
 | `objects.c` | 788 | 981 |
 | `numbers.c` | 436 | 475 |
 | `input.c` | 1018 | 1106 |
@@ -165,7 +165,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7322** |
+| **Total** | **6643** | **7211** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -190,9 +190,9 @@ Each switch now dispatches through a table too.
 against 190, and `mulu16` 42 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 36,781,544 cycles against Zork's
-38,490,260, 4.4% fewer, and the second 7,131,010 against 7,434,428,
-4.1% fewer. Most of the difference is the jump tables, which reach
+**Speed.** The first session takes 35,527,406 cycles against Zork's
+38,490,260, 7.7% fewer, and the second 6,914,991 against 7,434,428,
+7.0% fewer. Most of the difference is the jump tables, which reach
 each instruction's case in the same few cycles where the compare
 chains had passed one compare after another. `print_number` divides
 0 by 10 once, where Zork's prints it without dividing. The stand-ins
@@ -388,5 +388,39 @@ the smaller code saved.
   #0` or `LDA #1`, 32 bytes in `do_2op`'s `jl`, `jg`, `dec_chk`, and
   `inc_chk`. A tail call no longer counts as reading C, which the
   tables needed at the cases that end in one.
+- A constant added to a byte index of a static array goes in the
+  address, so `LOCAL_ZVARS[x + 1]` is `LDA LOCAL_ZVARS+1,X` and
+  `OPERANDS[i + 1]` is `LDA OPERANDS+2,X`
+  ([static_indexed_access.md](../../../docs/optimizations/static_indexed_access.md)).
+  CSE matches a shift by an `unsigned char` 1 with a shift by an `int`
+  1 ([cse.md](../../../docs/optimizations/cse.md)), so `instr_call`
+  shifts `i` once for both `OPERANDS[i + 1]` and the `i << 1` it
+  indexes `LOCAL_ZVARS` with. Two stores through `name,X` and `name+1,X` swap places when A
+  already holds the second value
+  ([redundant_load.md](../../../docs/optimizations/redundant_load.md)).
+  Together they take 32 bytes off `instr_call`, which copies a
+  routine's locals and arguments with them.
+- A value each arm of a `?:` leaves in a slot, which the join copies
+  into memory, is stored there by each arm
+  ([join_store.md](../../../docs/optimizations/join_store.md)), 16
+  bytes in `do_instruction`'s operands.
+- A unit compiled on its own puts a slot that doesn't fit in `$80`-`$FF`
+  in the free bytes below `$80`, as `--link` does, where it had put it
+  at `$0200`
+  ([zp_local_pools.md](../../../docs/optimizations/zp_local_pools.md)).
+  `decode.c`'s zero-page globals fill most of `$80`-`$FF`, and memory
+  value propagation, which follows only zero-page bytes, then reads
+  `Z_PC` where `branch_to_offset` had copied it into slots, 24 bytes
+  in it and `set_nonstack_var`.
+- `AND #$00` is `LDA #$00`, and `LDA #k1; CLC; ADC #k2` is `LDA` of the
+  sum when C and V aren't read after
+  ([const_arith_fold.md](../../../docs/optimizations/const_arith_fold.md)),
+  22 bytes in `branch_to_offset`.
+- `zork.h` declares `internal_error`, `instr_quit`, `instr_restart`,
+  and `restart` `[[noreturn]]`, and nothing after a call to one of
+  them has to survive the call
+  ([noreturn_call.md](../../../docs/optimizations/noreturn_call.md)).
+  `do_2op` reads `a` from `OPERANDS`, where it had copied it on entry
+  because `je` calls `internal_error` before reading it.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

@@ -1223,6 +1223,42 @@ class TestSwapPairs(unittest.TestCase):
             _rewritten(list(instrs)), instrs[:4] + instrs[5:],
         )
 
+    def _indexed_join(self, index, m):
+        """The join storing a slot and then `m` to two bytes of `z`
+        indexed by `index`, as `instr_call` stores a local's two
+        bytes. The slots are the function's own, which an indexed
+        store can't reach."""
+        z = lambda k: asm_ast.IndexedData(name="z", offset=k, index=index)
+        t = _d("__local_f__t")
+        return [
+            asm_ast.Mov(src=_d("hi"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=t),
+            asm_ast.Mov(src=_d("__local_f__lo"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=z(0)),
+            asm_ast.Mov(src=m or t, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=z(1)),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_swapped_for_bytes_of_one_indexed_array(self):
+        # `z,X` and `z+1,X` are different bytes, since X is the same
+        # at both stores.
+        instrs = self._indexed_join(asm_ast.X(), None)
+        self.assertEqual(_rewritten(list(instrs)), [
+            *instrs[:2], instrs[5], instrs[2], instrs[3], *instrs[6:],
+        ])
+
+    def test_indexed_bytes_through_y_setup(self):
+        # The `LDY #off` of a soft-stack load between the stores
+        # changes Y, so `z,Y` and `z+1,Y` may be one byte.
+        from passes.redundant_load import _same_index_apart
+        z = lambda k: asm_ast.IndexedData(name="z", offset=k, index=asm_ast.Y())
+        plain = self._indexed_join(asm_ast.Y(), None)[2:6]
+        self.assertTrue(_same_index_apart(z(0), z(1), plain))
+        setup = self._indexed_join(asm_ast.Y(), asm_ast.Frame(offset=3))[2:6]
+        self.assertFalse(_same_index_apart(z(0), z(1), setup))
+
     def test_kept_when_the_second_store_writes_x(self):
         instrs = self._join(_d("p0"), _d("t"), _d("lo"))
         self.assertEqual(_rewritten(list(instrs)), instrs)

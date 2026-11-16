@@ -27,6 +27,7 @@ a user variable.
 
 ## Alphabetical list
 
+- [A call that doesn't return](noreturn_call.md). Ends the path at a call to a `[[noreturn]]` function, so nothing after it has to survive the call.
 - [A parameter's copy in the parameter's slot](slot_coalescing.md). Renames a zero-page local that copies a parameter to the parameter's own slot, or that's copied into a callee's slot for the call, when they're never live with different values.
 - [Address of a zero-page local](lower_data_load_address.md). Splits a fixed-address LoadAddress into two immediate stores so peepholes can fold them.
 - [Address-taken locals in zero page](address_taken_zp.md). Puts address-taken locals in free private-pool bytes instead of the frame.
@@ -81,11 +82,12 @@ a user variable.
 - [Indexed store to a fixed address](recognize_indexed_store.md). Turns a byte store through a constant address plus a byte index into `STA C,X`.
 - [Indirect-indexed access through a pointer](recognize_indirect_indexed.md). Turns a byte access through a pointer plus a byte index or constant into `(zp),Y`.
 - [INY and CPY for an incremented table byte](index_inc_cmp_y.md). Does table-byte plus or minus one and its compare in Y instead of a temporary.
+- [Join store](join_store.md). Stores a value each arm of a branch leaves in a slot straight into the memory the join copies it to.
+- [Jump tables](jump_table.md). Dispatches a switch's chain of compares through a table of its cases' addresses.
 - [Load after read-modify-write](redundant_load_after_rmw.md). Deletes an unused load right after INC, DEC, or a shift of the same byte.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
 - [Link-time address arithmetic](label_offset_fold.md). Turns an add of a label's address and a constant into one immediate, `#<(name+k)`.
 - [Loop counter in X](loop_counter_to_x.md). Moves an index loop counter into X, moving other index loads to Y.
-- [Jump tables](jump_table.md). Dispatches a switch's chain of compares through a table of its cases' addresses.
 - [Loop test at the bottom](rotate_loop_test.md). Moves a loop's test to its bottom, and drops the first test when it's known to pass.
 - [Loop unrolling](unroll.md). Replaces a pragma-marked counted for loop with one body copy per iteration.
 - [Loop-carried value in A](promote_loop_carried_to_a.md). Keeps an incremented register parameter in A across its loop.
@@ -157,9 +159,10 @@ them whenever a pass is added or moved.
    3. [Zero-page promotion](zp_promotion.md)
 2. TAC optimizer, once per function:
    1. [Signed countdown loop rotation](loop_rotate.md)
-   2. SSA construction.
-   3. [Static const reads](static_const_fold.md)
-   4. *Fixed point*:
+   2. [A call that doesn't return](noreturn_call.md)
+   3. SSA construction.
+   4. [Static const reads](static_const_fold.md)
+   5. *Fixed point*:
       1. [Constant folding](constant_folding.md)
       2. [Strength reduction](strength_reduction.md)
       3. The three jump folds, run as one rule set. They are the
@@ -183,13 +186,13 @@ them whenever a pass is added or moved.
       17. [Sinking increments](sink_increment.md)
       18. [Sinking an AND past a bit test](sink_and_past_branch.md)
       19. [Narrowing widened arithmetic](narrow_widened_arith.md)
-   5. [Indexed access to a static array of structs](static_indexed_access.md)
-   6. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
-   7. [Compare and subtract of the same operands](compare_subtract.md)
-   8. SSA destruction.
-   9. [Copy folding](copy_folding.md), once more.
-   10. [Byte-by-byte three-way compare](three_way_compare.md)
-   11. *Fixed point*: [branching directly on `&&` and
+   6. [Indexed access to a static array of structs](static_indexed_access.md)
+   7. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
+   8. [Compare and subtract of the same operands](compare_subtract.md)
+   9. SSA destruction.
+   10. [Copy folding](copy_folding.md), once more.
+   11. [Byte-by-byte three-way compare](three_way_compare.md)
+   12. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    over the whole program.
@@ -273,40 +276,41 @@ reaching the cap raises an error.
 12. [Load after read-modify-write](redundant_load_after_rmw.md)
 13. [Redundant load elimination](redundant_load.md)
 14. [Redundant store elimination](redundant_store.md)
-15. [Rematerialization of staged values](asm_remat.md)
-16. [Asm dead-store elimination](asm_dead_store.md)
-17. [Dead A arithmetic](dead_a_arith.md)
-18. [Dead label drop](dead_label_drop.md)
-19. [Unreachable code drop](unreachable_drop.md)
-20. [Branch inversion](branch_invert.md)
-21. [Branch to next label](branch_to_next_drop.md)
-22. [Branch through jump](branch_through_jump.md)
-23. [Branch threading on a known flag](branch_thread.md)
-24. [Branch threading on known values](branch_value_thread.md)
-25. [DEX and DEY for a register counter](dec_register_peephole.md)
-26. [TXA past a branch](transfer_past_branch.md)
-27. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
-28. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
-29. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
-30. [Memory constant propagation](mem_const_prop.md)
-31. [Constant AND and ORA fold](const_arith_fold.md)
-32. [Link-time address arithmetic](label_offset_fold.md)
-33. [Carry set again by a shift](carry_recompute.md)
-34. [Carry-flag return peepholes](carry_return.md), which are three
+15. [Join store](join_store.md)
+16. [Rematerialization of staged values](asm_remat.md)
+17. [Asm dead-store elimination](asm_dead_store.md)
+18. [Dead A arithmetic](dead_a_arith.md)
+19. [Dead label drop](dead_label_drop.md)
+20. [Unreachable code drop](unreachable_drop.md)
+21. [Branch inversion](branch_invert.md)
+22. [Branch to next label](branch_to_next_drop.md)
+23. [Branch through jump](branch_through_jump.md)
+24. [Branch threading on a known flag](branch_thread.md)
+25. [Branch threading on known values](branch_value_thread.md)
+26. [DEX and DEY for a register counter](dec_register_peephole.md)
+27. [TXA past a branch](transfer_past_branch.md)
+28. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
+29. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
+30. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
+31. [Memory constant propagation](mem_const_prop.md)
+32. [Constant AND and ORA fold](const_arith_fold.md)
+33. [Link-time address arithmetic](label_offset_fold.md)
+34. [Carry set again by a shift](carry_recompute.md)
+35. [Carry-flag return peepholes](carry_return.md), which are three
     passes run back to back.
-35. [Round-trip load drop](round_trip_load.md)
-36. [Sign-bit test without AND](and_sign_bit_branch.md)
-37. [Self-store drop](self_store_drop.md)
-38. [Redundant compare](redundant_compare.md)
-39. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-40. [Commuted ADC, AND, and ORA](adc_commute.md)
-41. [CMP and SBC fusion](cmp_sbc_fusion.md)
-42. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-43. [Tail call](tail_call.md)
-44. [Tail merge](tail_merge.md)
-45. [Cross jumping](cross_jump.md)
-46. [Store X or Y directly](via_a_store_fold.md)
-47. [Transfer plus or minus one](transfer_pm1_store.md)
+36. [Round-trip load drop](round_trip_load.md)
+37. [Sign-bit test without AND](and_sign_bit_branch.md)
+38. [Self-store drop](self_store_drop.md)
+39. [Redundant compare](redundant_compare.md)
+40. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+41. [Commuted ADC, AND, and ORA](adc_commute.md)
+42. [CMP and SBC fusion](cmp_sbc_fusion.md)
+43. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+44. [Tail call](tail_call.md)
+45. [Tail merge](tail_merge.md)
+46. [Cross jumping](cross_jump.md)
+47. [Store X or Y directly](via_a_store_fold.md)
+48. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `--optimize`
 

@@ -228,11 +228,12 @@ bool RWTS(struct iob *iob [[c6502::in_ya]]);
  * back there to start over. restart() is a jump to it, declared like a
  * ROM routine so that the compiler's call graph has no cycle through
  * `main`. It
- * doesn't return. */
-[[c6502::zp_abi, c6502::address(0x0800)]] void restart(void);
-void internal_error(void);
-void instr_restart(void);
-void instr_quit(void);
+ * doesn't return, and neither do the other three, which end in
+ * restart() or an endless loop. */
+[[noreturn, c6502::zp_abi, c6502::address(0x0800)]] void restart(void);
+[[noreturn]] void internal_error(void);
+[[noreturn]] void instr_restart(void);
+[[noreturn]] void instr_quit(void);
 
 /* ---- decode.c -------------------------------------------------------- */
 

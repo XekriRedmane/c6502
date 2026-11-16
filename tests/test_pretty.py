@@ -69,6 +69,7 @@ class TestPretty(unittest.TestCase):
                     address=None,
                     preserves=[],
                     section=None,
+                    noreturn=False,
                   ),
                 ),
               ],

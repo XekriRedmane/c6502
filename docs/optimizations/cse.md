@@ -96,7 +96,11 @@ be a Constant or an SSA value. The match key contains the instruction
 kind, the operator, the operands, and the dst's C type, so
 `ZeroExtend(c)` to `int` and to `long` aren't merged. The operands of
 `+`, `*`, `&`, `|`, `^`, `==`, and `!=` are sorted first, so `a + b`
-matches `b + a`.
+matches `b + a`. A constant shift count goes in the key as its value
+alone, because its type doesn't change the result. Strength reduction
+writes `i * 2` as a shift by an `unsigned char` 1, and C's `i << 1`
+shifts by an `int` 1, so in Zork's `instr_call` the index of
+`OPERANDS[i + 1]` and the `i << 1` beside it are one shift.
 
 - A pure computation is reused from any earlier instruction in the
   same block or in a block that dominates this one.

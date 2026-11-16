@@ -9,7 +9,8 @@ once, after the TAC fixed point and before
 [indirect-indexed access through a pointer](recognize_indirect_indexed.md),
 under `--optimize`.
 
-Two other changes make the index a byte for it to work with:
+Three other changes make the index a byte for it to work with, and
+put a constant part of it in the offset:
 
 - `c99_to_tac` scales an index into an array object at byte width
   when the array spans at most 255 bytes and has at least two
@@ -24,6 +25,16 @@ Two other changes make the index a byte for it to work with:
 - The TAC `IndexedLoad` and `IndexedSymbolStore` carry a constant
   `offset`, added to the address of every byte they access. Every
   pass that rebuilds one keeps it.
+- `c99_to_tac` writes `arr[x + k]` on a static array of at most 256
+  bytes, with `x` an unsigned byte and `k` a constant from 0 to the
+  last index, as `IndexedLoad(arr, x, offset=k)` (scaled by the
+  element size), and the same for a store (`_split_index_addend`).
+  The sum can't wrap, since `x` is at most 255 and the add is at
+  least 16 bits wide, and an index C defines leaves `x` times the
+  element size within a byte. Zork's `instr_call` reads
+  `LOCAL_ZVARS[x + 1]` as `LDA LOCAL_ZVARS+1,X`, where it computed
+  `x + 1` in A and kept it in a slot. `(uint8_t)(x + 1)` wraps at 255,
+  and the cast keeps the add in place.
 
 The rewrite is exact for any size of object: `abs,X` adds the index
 to the full 16-bit address `o+m`, as the `Load` through `o + i + m`

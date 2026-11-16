@@ -48,10 +48,15 @@ without its prefix. Each of these is a compile error that names the
 declaration. GCC's `__attribute__((...))` isn't accepted; the error
 for it shows the C23 form.
 
-C23's standard attributes are accepted where C23 allows them, and
-otherwise change nothing: `deprecated`, `maybe_unused`, `nodiscard`,
-`noreturn`, and `fallthrough`, the last as `[[fallthrough]];` in a
-switch. `unsequenced` and `reproducible` go after a parameter list,
+C23's standard attributes are accepted where C23 allows them:
+`deprecated`, `maybe_unused`, `nodiscard`, `noreturn`, and
+`fallthrough`, the last as `[[fallthrough]];` in a switch. Only
+`noreturn` (or `_Noreturn`) changes anything. Under `--optimize`, the
+code after a call to a function that any declaration marks with it is
+dropped, and the call becomes a `JMP`
+([docs/optimizations/noreturn_call.md](optimizations/noreturn_call.md)).
+A `[[noreturn]]` function that returns anyway, which C23 leaves
+undefined, returns to code that may not be there. `unsequenced` and `reproducible` go after a parameter list,
 so c6502 rejects them. An attribute with any other prefix, such as
 `[[gnu::cold]]`, is ignored, as C23 says it should be, and so are its
 arguments. Those arguments can't contain braces.

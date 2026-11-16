@@ -1220,6 +1220,48 @@ def _byte_offset_scale(array: c99_ast.Type_exp, types=None) -> int | None:
     return elem
 
 
+def _split_index_addend(
+    index: c99_ast.Type_exp, total: int, elem_size: int,
+) -> tuple[c99_ast.Type_exp, int] | None:
+    """`(e, k)` when the subscript `index` into a static array of
+    `total` bytes (at most 256) is `e + k` or `k + e`, with `e` an
+    unsigned byte widened to at least 2 bytes and `k` a constant from
+    0 up to the last element, else None.
+
+    The sum is at most 510, so the add can't wrap, and an index C
+    defines leaves `e * elem_size` within a byte. The access then
+    reads `arr + k * elem_size` indexed by `e * elem_size`, and
+    `LOCAL_ZVARS[x + 1]` is `LDA LOCAL_ZVARS+1,X` where it was `x + 1`
+    computed in A. A byte add written as `(uint8_t)(x + 1)` wraps at
+    255, and the narrowing cast leaves it alone."""
+    while (isinstance(index, c99_ast.Cast)
+           and _is_integer_type_c99(_strip_quals_c99(index.target_type))
+           and _sizeof(index.target_type) >= 2):
+        index = index.exp
+    if not (isinstance(index, c99_ast.Binary)
+            and isinstance(index.op, c99_ast.Add)
+            and index.data_type is not None
+            and _sizeof(index.data_type) >= 2):
+        return None
+    for e, k in ((index.left, index.right), (index.right, index.left)):
+        if not (isinstance(k, c99_ast.Constant)
+                and isinstance(k.const, (
+                    c99_ast.ConstInt, c99_ast.ConstLong,
+                    c99_ast.ConstLongLong, c99_ast.ConstUInt,
+                    c99_ast.ConstULong, c99_ast.ConstULongLong))
+                and 0 <= k.const.value
+                and k.const.value * elem_size < total):
+            continue
+        if not (isinstance(e, c99_ast.Cast)
+                and _sizeof(e.target_type) >= 2
+                and e.exp.data_type is not None
+                and isinstance(_strip_quals_c99(e.exp.data_type), (
+                    c99_ast.UChar, c99_ast.Char, c99_ast.Bool))):
+            continue
+        return e, k.const.value
+    return None
+
+
 def _is_char_element(t: c99_ast.Type_data_type) -> bool:
     """True iff `t` is one of the three char element types (Char /
     SChar / UChar). Mirrors `passes.type_checking._is_char_element`
@@ -3348,8 +3390,12 @@ class Translator:
 
         # Single-dim path with possibly-runtime index.
         # Compute the 1-byte index. The type checker widened idx to
-        # Long; we evaluate at that width and Truncate.
-        idx_val = self.translate_exp(indices_outer_to_inner[0], instrs)
+        # Long; we evaluate at that width and Truncate. A constant
+        # added to the index goes in the offset.
+        idx_exp, addend = _split_index_addend(
+            indices_outer_to_inner[0], total, elem_size,
+        ) or (indices_outer_to_inner[0], 0)
+        idx_val = self.translate_exp(idx_exp, instrs)
         byte_idx = tac_ast.Var(
             name=self.make_temporary_variable_name(c99_ast.UChar()),
         )
@@ -3376,6 +3422,7 @@ class Translator:
         instrs.append(tac_ast.IndexedLoad(
             name=base_var.name, index=scaled_byte, dst=dst,
             is_volatile=_is_volatile_quals_c99(exp.data_type),
+            offset=addend * elem_size,
         ))
         return dst
 
@@ -3465,7 +3512,11 @@ class Translator:
 
         # Single-dim with possibly-runtime index: Truncate to UChar,
         # optionally multiply by elem_size, emit IndexedSymbolStore.
-        idx_val = self.translate_exp(indices_outer_to_inner[0], instrs)
+        # A constant added to the index goes in the offset.
+        idx_exp, addend = _split_index_addend(
+            indices_outer_to_inner[0], total, elem_size,
+        ) or (indices_outer_to_inner[0], 0)
+        idx_val = self.translate_exp(idx_exp, instrs)
         byte_idx = tac_ast.Var(
             name=self.make_temporary_variable_name(c99_ast.UChar()),
         )
@@ -3491,6 +3542,7 @@ class Translator:
             index=scaled_byte,
             src=rval_val,
             is_volatile=is_volatile,
+            offset=addend * elem_size,
         ))
         return True
 

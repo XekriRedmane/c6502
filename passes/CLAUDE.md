@@ -142,6 +142,14 @@ this directory:
   chain. Runs once after the last `carry_known`, before
   `expand_long_branches`, so no pass that follows control flow sees
   it. `ir_check` checks its targets.
+- `join_store.py` — `apply_join_store`. A join's `LDA t; STA M`, with
+  `t` one of the function's own `__local_*` slots and `M` a byte with
+  no index, goes into each way in: the last store to `t` on each of at
+  most three `JMP`s and fall-throughs (from a register or of a
+  constant) becomes a store to `M`. Nothing between those stores and
+  the copy may touch `t` or `M`, call, or branch, and `t`, A, and N/Z
+  must be dead after. `OPERANDS[0] = c ? f() : g();` stores the high
+  byte straight into `OPERANDS+1` on each arm.
 - `tail_call.py` — `apply_tail_call`. `JSR f; RTS` becomes `JMP f`,
   and a `JMP` to a label whose first instruction is a bare `RTS`
   becomes that `RTS`, so a switch case ending in a call and `break`
@@ -1213,11 +1221,16 @@ document says whether it fires there.
   which the analysis runs again, it turns a store through A,
   `Mov(M, D)`, into `STA D` when A holds M, and swaps `LDA X; STA
   D1; LDA M; STA D2` to `LDA M; STA D2; LDA X; STA D1` when A holds
-  M (a phi left in A at a join). Heaviest after loop unrolling.
+  M (a phi left in A at a join), where `name+k1,X` and `name+k2,X`
+  count as different bytes when X doesn't change between them
+  (`_same_index_apart`). Heaviest after loop unrolling.
 - `apply_redundant_store_elimination` — drops STAs whose written cell
   is overwritten before any read. Memory-to-memory transfer redundancy
   (e.g. the unrolled DPTR-staging sequences `redundant_load`'s A-
   tracking can't see across an intervening A clobber).
+- `apply_join_store` — a join's copy of a slot into memory, `LDA t;
+  STA M`, made by each arm's store instead. See the module docstring
+  in `join_store.py`.
 - `apply_asm_dead_store` — CFG-wide forward dead-store elimination on
   Mov-into-memory atoms. Drops or morphs (to LDA-only) STAs whose
   target byte isn't observed by any reachable instruction. Treats
@@ -1263,7 +1276,9 @@ document says whether it fires there.
 - `apply_const_arith_fold` — folds `LDA #C1; ALU #C2` chains that
   produce a compile-time-known A value, replacing the sequence with
   `LDA #folded`. Most useful for the high-byte branch of an int-typed
-  AND of a uchar value (`(uchar & 0x80)` after promotion).
+  AND of a uchar value (`(uchar & 0x80)` after promotion). Also `AND
+  #$00` / `ORA #$FF` → `LDA #$00` / `LDA #$FF`, and `LDA #C1; CLC; ADC
+  #C2` (or `SEC; SBC`) → `LDA #folded` when C and V are dead after.
 - `apply_round_trip_load_drop` — drops `STA M; LDA M` where the LDA's
   only observable side effect is re-loading A with A's already-current
   value. After an instruction that doesn't set N/Z from A (a `JSR`),
@@ -1663,7 +1678,11 @@ other recursion is a link error.
 - `slot_sharing.find_shares` runs between `select_abi` and
   `allocate_zp_slots`; see its roster entry.
 - When every function defined in the unit is pool-eligible, both
-  allocators use the whole pool, `$80`-`$FF`, as the linker does.
+  allocators use the whole pool, `$80`-`$FF`, as the linker does, and
+  the free bytes below `$80` (around the runtime's block and the
+  zero-page objects) as their `fallback` before the spill region, so
+  that `memory_value_propagation`, which follows only zero-page
+  bytes, sees the unit's slots.
 
 ### Allocation algorithm (shared between param and local passes)
 

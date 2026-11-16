@@ -93,6 +93,42 @@ class TestConstArithFold(unittest.TestCase):
         out = _instrs(apply_const_arith_fold(prog))
         self.assertEqual(len(out), 2)
 
+    def test_and_zero_is_a_load_of_zero(self):
+        # `(w & 0xFF00) | b` keeps nothing of `w`'s low byte.
+        m = asm_ast.Data(name="m", offset=0)
+        prog = _wrap([
+            asm_ast.Mov(src=m, dst=_A),
+            asm_ast.And(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Mov(src=_A, dst=m),
+            asm_ast.Return(),
+        ])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(out[1], asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A))
+
+    def _add(self, after):
+        return _wrap([
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=_A),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="m", offset=0)),
+            *after,
+            asm_ast.Return(),
+        ])
+
+    def test_constant_add_folds_when_carry_is_dead(self):
+        out = _instrs(apply_const_arith_fold(self._add([
+            asm_ast.ClearCarry(),
+        ])))
+        self.assertEqual(out[0], asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A))
+        self.assertNotIn(asm_ast.Add(src=asm_ast.Imm(value=1), dst=_A), out)
+
+    def test_constant_add_kept_when_carry_is_read(self):
+        prog = self._add([
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Add(src=asm_ast.Imm(value=0), dst=_A),
+        ])
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
 
 if __name__ == "__main__":
     unittest.main()

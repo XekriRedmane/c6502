@@ -19,6 +19,7 @@ Coverage:
 """
 from __future__ import annotations
 
+import shutil
 import unittest
 
 import tac_ast
@@ -226,6 +227,47 @@ class TestSpill(unittest.TestCase):
         self.assertEqual(out["f31"], [0xBE, 0xBF])
         # f32 spills into the fallback region.
         self.assertGreaterEqual(out["f32"][0], 0x0200)
+
+
+_FULL_POOL = """
+#include <stdint.h>
+uint8_t pool [[c6502::zeropage(0x80)]][128];
+static uint8_t g(uint8_t x) { return x + 1; }
+uint8_t f(uint8_t a, uint8_t b) {
+    uint8_t s = g(a);
+    uint8_t t = g(b);
+    return s + t + a + b;
+}
+int main(void) { pool[0] = f(3, 4); return pool[0]; }
+"""
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestUnitFallback(unittest.TestCase):
+    """A unit compiled on its own takes the free bytes below the pool,
+    around the runtime's block, before it spills out of zero page, as
+    `--link` does. The asm passes that follow values through zero page
+    then see its slots."""
+
+    def test_slots_below_the_pool(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(_FULL_POOL), optimize=True)
+        equs = dict(
+            (line.split("\t")[0], int(line.split("$")[1], 16))
+            for line in asm.splitlines() if "\tEQU\t$" in line
+        )
+        runtime = set(range(equs["SSP"], equs["DPTR"] + 2))
+        for name in ("__zpabi_f__a", "__zpabi_f__b", "__zpabi_g__x"):
+            with self.subTest(name=name):
+                self.assertLess(equs[name], 0x80)
+                self.assertNotIn(equs[name], runtime)
+
+    def test_runs(self) -> None:
+        from sim.harness import build_sim
+        self.assertEqual(
+            build_sim(_FULL_POOL, optimize=True).run().return_int(), 16,
+        )
 
 
 if __name__ == "__main__":

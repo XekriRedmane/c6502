@@ -38,8 +38,19 @@ of that many bytes in `$80`-`$BF` that avoids all of these.
 - Its own parameter bytes.
 - The bytes of the zero-page globals.
 
-When no run in `$80`-`$BF` is long enough, the pool goes at `$0200`
-or above, and its accesses assemble as absolute instructions. The
+When every function in the unit has a private pool, the runs come
+from all of `$80`-`$FF`, as they do when linking, since none keeps a
+value in the callee-saved half across a call. In that case, when no
+run there is long enough, the pool takes free bytes below `$80`,
+around the runtime's block and the zero-page globals, as `--link`
+does too, and so do the zp_abi parameter slots.
+Memory value propagation follows values only through zero page, so a
+pool at an absolute address would leave copies in the unit's code
+that the linker can't take out when it moves the pool. In Zork's
+`decode.c`, whose zero-page globals take most of `$80`-`$FF`, that
+saved 24 bytes. When no run is long enough even there, the pool goes
+at `$0200` or above, and its accesses assemble as absolute
+instructions. The
 final run of the asm optimizer colors each function's values from
 its pool alone, and the output names each pool byte
 `__local_<function>__<name>` with an `EQU` line.

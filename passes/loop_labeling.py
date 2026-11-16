@@ -167,6 +167,7 @@ class LoopLabeler:
             address=fd.address,
             preserves=list(fd.preserves),
             section=fd.section,
+            noreturn=fd.noreturn,
         )
 
     def label_function(

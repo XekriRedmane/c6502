@@ -65,6 +65,7 @@ position is consistent with other peepholes)."""
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import c_dead_at, v_dead_at
 
 
 def apply_const_arith_fold(prog: asm_ast.Program) -> asm_ast.Program:
@@ -83,6 +84,16 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     i = 0
     while i + 1 < len(instrs):
         a, b = instrs[i], instrs[i + 1]
+        const = _constant_result(a)
+        if const is not None:
+            out.append(const)
+            i += 1
+            continue
+        summed = _try_fold_add(instrs, i)
+        if summed is not None:
+            out.append(summed)
+            i += 3
+            continue
         folded = _try_fold(a, b)
         if folded is not None:
             out.append(folded)
@@ -107,6 +118,49 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _constant_result(a):
+    """`Mov(Imm(0), A)` for `And(Imm(0), A)`, and `Mov(Imm(0xFF), A)`
+    for `Or(Imm(0xFF), A)`, whose result doesn't depend on A, else
+    None. Each sets N and Z as the load does. The byte of `(w & 0xFF00)
+    | b` that keeps nothing of `w` is one."""
+    if not (isinstance(a, (asm_ast.And, asm_ast.Or))
+            and isinstance(a.src, asm_ast.Imm) and _is_reg_a(a.dst)):
+        return None
+    v = a.src.value & 0xFF
+    if isinstance(a, asm_ast.And) and v == 0:
+        return asm_ast.Mov(src=asm_ast.Imm(value=0), dst=a.dst)
+    if isinstance(a, asm_ast.Or) and v == 0xFF:
+        return asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=a.dst)
+    return None
+
+
+def _try_fold_add(instrs, i):
+    """`Mov(Imm(k1 + k2), A)` for `LDA #k1; CLC; ADC #k2` at
+    `instrs[i]`, and `Mov(Imm(k1 - k2), A)` for `LDA #k1; SEC; SBC
+    #k2`, when C and V are dead after, else None. N and Z come out as
+    the add left them. `if (w & 0x8000) pages += 0x100;` on a `pages`
+    whose high byte is 0 adds 1 to 0 so."""
+    if i + 2 >= len(instrs):
+        return None
+    a, flag, op = instrs[i:i + 3]
+    if not (isinstance(a, asm_ast.Mov) and isinstance(a.src, asm_ast.Imm)
+            and _is_reg_a(a.dst)):
+        return None
+    if not (isinstance(op, (asm_ast.Add, asm_ast.Sub))
+            and isinstance(op.src, asm_ast.Imm) and _is_reg_a(op.dst)):
+        return None
+    k1, k2 = a.src.value & 0xFF, op.src.value & 0xFF
+    if isinstance(op, asm_ast.Add) and isinstance(flag, asm_ast.ClearCarry):
+        value = (k1 + k2) & 0xFF
+    elif isinstance(op, asm_ast.Sub) and isinstance(flag, asm_ast.SetCarry):
+        value = (k1 - k2) & 0xFF
+    else:
+        return None
+    if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
+        return None
+    return asm_ast.Mov(src=asm_ast.Imm(value=value), dst=a.dst)
 
 
 def _try_absorb_zero_load(a, b):

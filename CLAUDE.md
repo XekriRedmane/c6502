@@ -632,8 +632,12 @@ checks the standard ones against the kind of entity
 (`_STANDARD_ATTRIBUTES`) and hands the c6502 ones to the per-kind
 helpers: `_extract_function_attributes`, `_extract_object_placement`,
 `_extract_section`, `_register_marker` (parameters), and
-`_enum_is_packed`. Attributes after a parameter list, `*`, `]`, or the
-type specifiers (which C23 applies to a type) aren't in the grammar.
+`_enum_is_packed`. Of the standard ones only `noreturn` / `_Noreturn`
+is kept, as `function_decl.noreturn` (`_is_noreturn`), which the type
+checker ORs into `FunAttr.noreturn` and every pass that rebuilds a
+`function_decl` copies. Attributes after a parameter list, `*`, `]`,
+or the type specifiers (which C23 applies to a type) aren't in the
+grammar.
 
 ### Lexer & preprocessor
 

@@ -112,6 +112,7 @@ from passes.asm_remat import apply_remat
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.jump_table import apply_jump_tables
+from passes.join_store import apply_join_store
 from passes.loop_labeling import label_program as label_loops
 from passes import ir_check
 from passes.abi_selection import (
@@ -123,6 +124,7 @@ from passes.function_local_sizing import (
 from passes.address_taken_zp import (
     compute_address_taken_assignments, slot_symbols as _addr_taken_slot_symbols,
 )
+from passes.runtime_layout import current as runtime_layout_current
 from passes.runtime_layout import hargs_need
 from passes.sections import items as section_items
 from passes.zp_link_metadata import build_metadata, format_metadata
@@ -251,6 +253,9 @@ def _peephole_fixedpoint(
         new_prog = apply_redundant_load_after_rmw(new_prog)
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)
+        new_prog = apply_join_store(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
         new_prog = apply_remat(new_prog, zp_slot_symbols=zp_slot_symbols)
         new_prog = apply_asm_dead_store(
             new_prog, zp_slot_symbols=zp_slot_symbols,
@@ -416,8 +421,20 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
                if isinstance(tl, tac_ast.Function))
         else None
     )
+    # And, as when linking, the free bytes below the pool, around the
+    # runtime's block and the zero-page objects, take what doesn't fit
+    # there before anything spills out of zero page. The asm passes
+    # that follow values through zero page (memory value propagation)
+    # don't follow a slot spilled to an absolute address, though the
+    # linker puts it back in zero page.
+    fallback = range(0, Pool().start) if window is not None else None
+    low_reserved = (
+        zp.reserved | runtime_layout_current().bytes()
+        if fallback is not None else zp.reserved
+    )
     abi, zp_slot_symbols = allocate_zp_slots(
-        tac, abi, reserved=zp.reserved, shares=shares, window=window,
+        tac, abi, reserved=low_reserved, shares=shares, window=window,
+        fallback=fallback,
     )
     # A `zeropage(addr)` parameter that something the function calls
     # might overwrite is copied into a local at entry.
@@ -467,8 +484,8 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # or with non-zp_abi extern callees) fall back to the
     # conservative pool.
     local_pools = allocate_function_locals(
-        tac, abi, combined_local_bytes, reserved=zp.reserved,
-        shares=shares, window=window,
+        tac, abi, combined_local_bytes, reserved=low_reserved,
+        shares=shares, window=window, fallback=fallback,
     )
     # Final optimizer pass with private pools threaded
     # through to the regalloc.

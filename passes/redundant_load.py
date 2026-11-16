@@ -130,6 +130,7 @@ from passes.asm_liveness import x_dead_at as _x_dead_at
 from passes.asm_liveness import y_dead_at as _y_dead_at
 from passes.asm_liveness import call_preserves as _call_preserves
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
+from passes.asm_liveness import sets_up_y as _sets_up_y
 from passes.optimization_asm.cfg import (
     CFG, ENTRY_ID, EXIT_ID, BasicBlock, build_cfg,
 )
@@ -809,9 +810,32 @@ def _swap_pairs_ok(
     if any(_operands_equal(c, load_x.src) for c in state.a):
         return False
     d1, d2, x, m = store_1.dst, store_2.dst, load_x.src, load_m.src
-    if _may_alias(d1, m) or _may_alias(d1, d2) or _may_alias(d2, x):
+    if (_may_alias(d1, m) or _may_alias(d2, x)
+            or (_may_alias(d1, d2) and not _same_index_apart(
+                d1, d2, instrs[i:i + 4]))):
         return False
     return _a_dead_at(instrs, i + 4) and _flags_dead_at(instrs, i + 4)
+
+
+def _same_index_apart(
+    a: asm_ast.Type_operand, b: asm_ast.Type_operand,
+    window: list[asm_ast.Type_instruction],
+) -> bool:
+    """Whether `a` and `b` are `name+k1,R` and `name+k2,R` with `k1`
+    and `k2` different and less than 256 apart, and nothing in
+    `window` writes R, so the two stores in it reach different bytes.
+    The four instructions `_swap_pairs_ok` looks at write no register
+    but A, except the `LDY #off` of an operand lowered through Y.
+    `hi, lo` stored to `LOCAL_ZVARS[x]` and `LOCAL_ZVARS[x + 1]` in
+    Zork's `instr_call` are this."""
+    if not (isinstance(a, asm_ast.IndexedData)
+            and isinstance(b, asm_ast.IndexedData)
+            and a.name == b.name and a.index == b.index
+            and a.offset != b.offset and abs(a.offset - b.offset) < 256):
+        return False
+    if isinstance(a.index, asm_ast.Y):
+        return not any(_sets_up_y(ins) for ins in window)
+    return isinstance(a.index, asm_ast.X)
 
 
 def _store_from_a(

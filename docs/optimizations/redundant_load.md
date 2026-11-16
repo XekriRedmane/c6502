@@ -54,6 +54,23 @@ The pass has five more rewrites that use the same lists.
   The cases' stores of the high byte to `__local_floor_enemy_draw__0`
   are then dead, and `asm_dead_store` drops them.
 
+  Two stores through one index, `name+k1,X` and `name+k2,X` with
+  different offsets, reach different bytes, since nothing in the four
+  instructions changes X. The same goes for Y when none of the four
+  has the `LDY #off` of a soft-stack or indirect operand
+  (`_same_index_apart`). Zork's `instr_call` stores a local's two
+  bytes that way, and its second byte no longer goes through a slot:
+
+  ```
+     JSR   get_next_code_byte              JSR   get_next_code_byte
+     STA   __local_instr_call__0           LDX   __local_instr_call__args
+     LDX   __local_instr_call__args        STA   LOCAL_ZVARS+1,X
+     LDA   __local_instr_call__1           LDA   __local_instr_call__1
+     STA   LOCAL_ZVARS,X                   STA   LOCAL_ZVARS,X
+     LDA   __local_instr_call__0
+     STA   LOCAL_ZVARS+1,X
+  ```
+
 - `LDA #k; STA M`, or the one atom `Mov(#k, M)`, becomes `LDY #k;
   STY M` (or `LDX` / `STX`) when A holds a value from memory that's
   loaded again after the store, `k` isn't read afterwards, and Y (or

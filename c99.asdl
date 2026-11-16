@@ -76,7 +76,7 @@ module C99 {
     -- preserves lists the registers ("X", "Y") that
     -- `[[c6502::preserves_x]]` / `preserves_y` say the function
     -- leaves unchanged. Only a function with an address may carry them.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves, string? section)
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves, string? section, bool noreturn)
     -- `section` (on both declarations) is the name from
     -- `[[c6502::section("name")]]`, or None. It only matters to
     -- `compile.py --link -T`, which places each section where the

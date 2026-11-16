@@ -360,7 +360,11 @@ class FunAttr(IdAttr):
     `returns_bool` is True when the function returns `_Bool`.
     `c99_to_tac` sets it when it replaces `_Bool` with `unsigned char`
     in the types, so that `passes/carry_return_choice.py` can still
-    tell such a function apart."""
+    tell such a function apart.
+
+    `noreturn` is True when a declaration carries `[[noreturn]]` (or
+    `[[_Noreturn]]`), so a call to the function doesn't come back
+    (C23 §6.7.13.7). It accumulates across declarations."""
     defined: bool
     is_global: bool
     carry_return: bool = False
@@ -369,6 +373,7 @@ class FunAttr(IdAttr):
     section: str | None = None
     param_zeropage: tuple[int | None, ...] = ()
     returns_bool: bool = False
+    noreturn: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -2288,6 +2293,7 @@ class TypeChecker:
             preserves=frozenset(fd.preserves),
             section=fd.section,
             param_zeropage=_param_zeropage(fd.param_registers),
+            noreturn=fd.noreturn,
         )
         # Per C99 §6.7.5.3.4, a parameter shall not have void type
         # (the `f(void)` form for empty params is handled by the
@@ -2641,6 +2647,7 @@ class TypeChecker:
         preserves: frozenset[str] = frozenset(),
         section: str | None = None,
         param_zeropage: tuple[int | None, ...] = (),
+        noreturn: bool = False,
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
@@ -2652,7 +2659,7 @@ class TypeChecker:
                     defined=defined, is_global=is_global,
                     carry_return=carry_return, address=address,
                     preserves=preserves, section=section,
-                    param_zeropage=param_zeropage,
+                    param_zeropage=param_zeropage, noreturn=noreturn,
                 ),
             )
             return
@@ -2716,6 +2723,7 @@ class TypeChecker:
                 param_zeropage=(
                     param_zeropage or existing.attrs.param_zeropage
                 ),
+                noreturn=noreturn or existing.attrs.noreturn,
             ),
         )
 

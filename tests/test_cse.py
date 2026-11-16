@@ -94,6 +94,20 @@ class TestCseUnit(unittest.TestCase):
                             "y": c99_ast.ULong()})
         self.assertEqual(out, instrs)
 
+    def test_shift_counts_of_different_types_match(self) -> None:
+        # Strength reduction writes `i * 2` as a shift by an unsigned
+        # char 1, where C's `i << 1` shifts by an int 1.
+        shl = lambda k, d: tac_ast.Binary(
+            op=tac_ast.LeftShift(), src1=_var("i"), src2=k, dst=_var(d),
+        )
+        out = _run(
+            [shl(tac_ast.Constant(const=tac_ast.ConstUChar(value=1)), "x"),
+             shl(tac_ast.Constant(const=tac_ast.ConstInt(value=1)), "y"),
+             tac_ast.Ret(val=_var("y"))],
+            {n: c99_ast.UChar() for n in ("i", "x", "y")},
+        )
+        self.assertEqual(out[1], tac_ast.Copy(src=_var("x"), dst=_var("y")))
+
     def test_load_reused_without_store_between(self) -> None:
         load = lambda d: tac_ast.Load(
             src_ptr=_var("p"), dst=_var(d), is_volatile=False,

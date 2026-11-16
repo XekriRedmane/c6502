@@ -11,7 +11,6 @@ __zpabi_draw_sprite_opaque__sprite_x	EQU	$85
 __zpabi_draw_sprite_opaque__sprite_y	EQU	$86
 __zpabi_draw_sprite_opaque__tile_src_0	EQU	$87
 __zpabi_draw_sprite_opaque__tile_src_1	EQU	$88
-__local_refresh_hit_entities__hi	EQU	$8A
 __local_refresh_hit_entities__0	EQU	$8B
 __local_refresh_hit_entities__x	EQU	$8C
 
@@ -46,18 +45,16 @@ refresh_hit_entities:
    BPL   .if_else@3
    LDY   __zpabi_refresh_hit_entities__sprite_xref
    LDA   hit_spr_neg_hi,Y
-   STA   __local_refresh_hit_entities__hi
+   STA   __zpabi_draw_sprite_opaque__tile_src_1
    LDA   hit_spr_neg_lo,Y
    JMP   .if_end@2
 .if_else@3:
    LDY   __zpabi_refresh_hit_entities__sprite_xref
    LDA   hit_spr_pos_hi,Y
-   STA   __local_refresh_hit_entities__hi
+   STA   __zpabi_draw_sprite_opaque__tile_src_1
    LDA   hit_spr_pos_lo,Y
 .if_end@2:
    STA   __zpabi_draw_sprite_opaque__tile_src_0
-   LDA   __local_refresh_hit_entities__hi
-   STA   __zpabi_draw_sprite_opaque__tile_src_1
    LDA   #$07
    STA   __zpabi_draw_sprite_opaque__width
    LDA   #$05

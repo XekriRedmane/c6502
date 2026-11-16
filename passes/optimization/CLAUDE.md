@@ -38,6 +38,12 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   constant init must be written after the last label before the
   loop, so it reaches the loop on every path, and the counter's
   address must never be taken.
+- `noreturn_call.py` — `noreturn_calls` (`NoreturnCalls`, PreSsaPass).
+  After a `FunctionCall` to a function with `FunAttr.noreturn` (from
+  `[[noreturn]]` on any declaration), a `Ret(val=None)` replaces the
+  instructions up to the next label, so values read after the `if`
+  around the call needn't survive it. The `Ret` has no value in any
+  function, so `JSR f; RTS` becomes `JMP f`.
 - `static_const_fold.py` — `fold_static_const_reads`
   (`FoldStaticConstReads`, PreFixedpointPass wrapping an internal
   `OperandRewritePass`). One-shot post-SSA.
@@ -116,7 +122,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   only along a chain of single-predecessor blocks with no store, call,
   volatile access, or write to a non-SSA name in between. Keys include
   the dst type and the whole constant node (the FP constants keep
-  their value in `bits`).
+  their value in `bits`), except a constant shift count, which is
+  keyed by its value alone, so `i << (uchar)1` from strength reduction
+  matches C's `i << 1`.
 - `licm.py` — `hoist_loop_invariants` (`HoistLoopInvariants`, raw
   FixedpointPass). Moves a loop-invariant extend or `Truncate` to the
   loop's preheader. Adds aren't moved, since one used once on a
@@ -243,7 +251,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   index into an array object of at most 255 bytes at byte width
   (`_byte_offset_scale`), which is what makes `b` a byte for
   `o[i].m`. The `offset` field of `IndexedLoad` / `IndexedSymbolStore`
-  is kept by every pass that rebuilds one.
+  is kept by every pass that rebuilds one. `c99_to_tac` itself puts a
+  constant added to an unsigned byte index of a static array there
+  (`_split_index_addend`), so `t[x + 1]` is `LDA t+1,X`.
 - `compare_subtract.py` — `hoist_subtract_to_compare`
   (`HoistSubtractToCompare`, PostFixedpointPass). Moves `t = a - b`
   from a successor (whose only predecessor is the compare's block) to
@@ -309,6 +319,7 @@ The pipeline is run by `_DRIVER` (`PhaseDriver`) in `optimizer.py`.
 
 ```
 fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
+   → noreturn_calls                (PreSsaPass, one-shot)
    → to_ssa                        (owned by PhaseDriver)
    → fold_static_const_reads       (PreFixedpointPass, one-shot)
    → [constant_fold → reduce_strength → fold_producer_jumps

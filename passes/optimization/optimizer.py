@@ -81,6 +81,7 @@ from __future__ import annotations
 import tac_ast
 from passes.optimization.framework import PhaseDriver, PassContext, RuleSet
 from passes.optimization.loop_rotate import RotateSignedCountdownLoops
+from passes.optimization.noreturn_call import NoreturnCalls
 from passes.optimization.static_const_fold import FoldStaticConstReads
 from passes.optimization.constant_folding import ConstantFold
 from passes.optimization.strength_reduction import STRENGTH_RULES
@@ -123,6 +124,8 @@ _DRIVER = PhaseDriver(
         # where x_var carries one name across init, body, and post.
         # After this, `to_ssa` rebuilds Phis for the rotated control flow.
         RotateSignedCountdownLoops(),
+        # Nothing runs after a call to a `[[noreturn]]` function.
+        NoreturnCalls(),
     ],
     pre_fixedpoint=[
         # One-shot: replace `Var(static_const_scalar)` USE-position

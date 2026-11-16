@@ -979,7 +979,7 @@ instr_put_prop:
    JMP   .loop@5_start
 .instr_put_prop@rot@2:
    BCS   .if_end@17
-   JSR   internal_error
+   JMP   internal_error
 .if_end@17:
    LDA   __local_instr_put_prop__y
    JSR   next_property

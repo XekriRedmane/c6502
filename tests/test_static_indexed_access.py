@@ -107,6 +107,38 @@ class TestStaticIndexedAccess(unittest.TestCase):
         """
         self._check(src, 90 + 0 + 7 + 5)
 
+    def test_constant_added_to_index(self) -> None:
+        # `t[x + 1]` reads `t+1,X`, and `w[x + 1]` reads `w+2,X` and
+        # `w+3,X`. `(uint8_t)(x + 1)` wraps at 255, so `u` keeps the
+        # add.
+        src = """
+        unsigned char t[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+        unsigned int w[4] = {100, 200, 300, 400};
+        unsigned char s[4];
+        unsigned char f(unsigned char x) { return t[x + 1] + t[2 + x]; }
+        unsigned int g(unsigned char x) { return w[x + 1]; }
+        void h(unsigned char x, unsigned char v) { s[x + 1] = v; }
+        unsigned char u(unsigned char x) {
+            return t[(unsigned char)(x + 1)];
+        }
+        int main(void) {
+            h(2, 9);
+            return f(0) + f(5) + g(2) + s[3] + u(255) + u(6);
+        }
+        """
+        self._check(src, (2 + 3) + (7 + 8) + 400 + 9 + 1 + 8)
+        asm = _codegen(src)
+        f = asm.split("\nf:\n")[1].split("\ng:\n")[0]
+        self.assertIn("t+1,X", f)
+        self.assertIn("t+2,", f)
+        g = asm.split("\ng:\n")[1].split("\nh:\n")[0]
+        self.assertIn("w+2,X", g)
+        self.assertIn("w+3,X", g)
+        h = asm.split("\nh:\n")[1].split("\nu:\n")[0]
+        self.assertIn("s+1,X", h)
+        u = asm.split("\nu:\n")[1].split("\nmain:\n")[0]
+        self.assertNotIn("t+1,", u)
+
 
 if __name__ == "__main__":
     unittest.main()

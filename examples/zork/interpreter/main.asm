@@ -382,14 +382,13 @@ main:
    STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@2
-   JSR   restart
+   JMP   restart
 .if_end@2:
    LDA   #$FF
    LDY   #$05
    STA   (Z_HEADER_ADDR),Y
    DEY
    LDA   (Z_HEADER_ADDR),Y
-   CLC
    ADC   #$01
    STA   NUM_IMAGE_PAGES
    LDA   #$01
@@ -408,7 +407,7 @@ main:
    STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@3
-   JSR   restart
+   JMP   restart
 .if_end@3:
    INC   __local_main__sector
 .loop@3_start:
@@ -419,7 +418,7 @@ main:
    LDA   (Z_HEADER_ADDR),Y
    LSR
    BCC   .if_end@4
-   JSR   internal_error
+   JMP   internal_error
 .if_end@4:
    LDY   #$06
    LDA   (Z_HEADER_ADDR),Y
@@ -436,7 +435,6 @@ main:
    STA   __local_main__0
    INY
    LDA   (Z_HEADER_ADDR),Y
-   CLC
    ADC   Z_HEADER_ADDR
    STA   GLOBAL_ZVARS_ADDR
    LDA   Z_HEADER_ADDR+1
@@ -462,13 +460,10 @@ main:
    STA   HIGH_MEM_ADDR+1
    STA   __local_main__sector
    JSR   locate_last_ram_page
-   STA   __local_main__0
    CMP   __local_main__sector
    BCS   .if_end@5
-   JSR   internal_error
+   JMP   internal_error
 .if_end@5:
-   LDA   __local_main__0
-   SEC
    SBC   __local_main__sector
    TAY
    STY   LAST_Z_PAGE

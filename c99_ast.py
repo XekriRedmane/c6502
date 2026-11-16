@@ -201,6 +201,7 @@ class Type_function_decl:
     address: int | None = None
     preserves: list[str] = field(default_factory=list)
     section: str | None = None
+    noreturn: bool = False
 
 
 @dataclass

@@ -110,6 +110,14 @@ def eliminate_common_subexpressions(
                     return None, None
                 if isinstance(instr.op, _COMMUTATIVE):
                     a, b = sorted((a, b), key=repr)
+                # A shift count's type doesn't change the result, and
+                # strength reduction writes `i * 2` as `i << (uchar)1`
+                # where C's `i << 1` has an int count.
+                if (isinstance(instr.op, (tac_ast.LeftShift,
+                                          tac_ast.RightShift))
+                        and isinstance(instr.src2, tac_ast.Constant)
+                        and isinstance(instr.src2.const.value, int)):
+                    b = ("count", instr.src2.const.value)
                 ops = (type(instr.op).__name__, a, b)
             else:
                 s = operand_key(instr.src)

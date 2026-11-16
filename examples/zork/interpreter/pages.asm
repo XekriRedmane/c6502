@@ -383,7 +383,7 @@ get_next_code_byte:
    STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@15
-   JSR   restart
+   JMP   restart
 .if_end@15:
    LDA   __local_get_next_code_byte__page
    LDY   PAGE_TABLE_INDEX
@@ -496,7 +496,7 @@ get_next_code_byte2:
    STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@25
-   JSR   restart
+   JMP   restart
 .if_end@25:
    LDA   __local_get_next_code_byte2__page
    LDY   PAGE_TABLE_INDEX2

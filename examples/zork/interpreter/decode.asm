@@ -2,6 +2,17 @@ HARGS	EQU	$00
 SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
+__local_branch_to_offset__0	EQU	$0B
+__local_return_value__0	EQU	$0B
+__local_return_value__1	EQU	$0C
+__local_return_value__x	EQU	$0D
+__local_branch_to_offset__pages_1	EQU	$0E
+__local_return_value__count	EQU	$0E
+__local_branch_to_offset__2	EQU	$0F
+__local_store_result__0	EQU	$0F
+__local_set_nonstack_var__var	EQU	$10
+__local_set_nonstack_var__0	EQU	$11
+__local_set_nonstack_var__1	EQU	$12
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -99,7 +110,6 @@ BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
-__local_do_instruction__v_1	EQU	$F0
 __local_do_instruction__0	EQU	$F1
 __local_do_instruction__v_0	EQU	$F2
 __local_do_instruction__forms	EQU	$F3
@@ -114,36 +124,20 @@ __local_do_var__2	EQU	$F8
 __local_do_2op__2	EQU	$F9
 __local_do_var__3	EQU	$F9
 __local_do_2op__3	EQU	$FA
-__local_instr_call__0	EQU	$FA
-__local_do_2op__4	EQU	$FB
 __local_instr_call__1	EQU	$FB
-__local_do_2op__5	EQU	$FC
-__local_instr_call__2	EQU	$FC
+__local_instr_call__i	EQU	$FC
 __local_branch__offset_1	EQU	$FD
 __local_dec_var__0	EQU	$FD
 __local_inc_var__0	EQU	$FD
-__local_instr_call__i	EQU	$FD
+__local_instr_call__args	EQU	$FD
 __local_branch__offset_0	EQU	$FE
 __local_dec_var__1	EQU	$FE
 __local_inc_var__1	EQU	$FE
-__local_instr_call__args	EQU	$FE
+__local_instr_call__2	EQU	$FE
 __local_branch__condition	EQU	$FF
 __local_dec_var__2	EQU	$FF
 __local_inc_var__2	EQU	$FF
-__local_instr_call__3	EQU	$FF
 BUFF_AREA	EQU	$0200
-__local_branch_to_offset__0	EQU	$0200
-__local_return_value__0	EQU	$0200
-__local_return_value__1	EQU	$0201
-__local_branch_to_offset__1	EQU	$0202
-__local_return_value__x	EQU	$0202
-__local_branch_to_offset__pages_1	EQU	$0203
-__local_return_value__count	EQU	$0203
-__local_branch_to_offset__2	EQU	$0204
-__local_store_result__0	EQU	$0204
-__local_set_nonstack_var__var	EQU	$0205
-__local_set_nonstack_var__0	EQU	$0206
-__local_set_nonstack_var__1	EQU	$0207
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
 RWTS	EQU	$2900
@@ -169,7 +163,7 @@ COUT1	EQU	$FDF0
 ; def get_nonstack_var params=__zpabi_get_nonstack_var__var locals=__local_get_nonstack_var__var,__local_get_nonstack_var__0,__local_get_nonstack_var__1,__local_get_nonstack_var__2 indirect=false in_cycle=false param_regs=A
 ; def get_var_content params= locals=__local_get_var_content__0 indirect=false in_cycle=false
 ; def inc_var params= locals=__local_inc_var__0,__local_inc_var__1,__local_inc_var__2 indirect=false in_cycle=false
-; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__2,__local_instr_call__i,__local_instr_call__args,__local_instr_call__3 indirect=false in_cycle=false
+; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__i,__local_instr_call__args,__local_instr_call__2 indirect=false in_cycle=false
 ; def pop params= locals=__local_pop__0,__local_pop__1,__local_pop__2 indirect=false in_cycle=false
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals=__local_push__0 indirect=false in_cycle=false
 ; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count indirect=false in_cycle=false
@@ -450,7 +444,7 @@ push:
    LDA   STACK_COUNT
    CMP   #$B4
    BCC   .if_end@0
-   JSR   internal_error
+   JMP   internal_error
 .if_end@0:
    RTS
 
@@ -472,7 +466,7 @@ pop:
 .carry_inc@2:
    DEC   STACK_COUNT
    BNE   .if_end@1
-   JSR   internal_error
+   JMP   internal_error
 .if_end@1:
    LDA   __local_pop__1
    LDX   __local_pop__2
@@ -488,11 +482,11 @@ get_nonstack_var:
    LDA   __local_get_nonstack_var__var
    ASL
    TAX
+   LDA   LOCAL_ZVARS+1,X
+   STA   __local_get_nonstack_var__var
    LDA   LOCAL_ZVARS,X
-   STA   __local_get_nonstack_var__0
-   INX
-   LDA   LOCAL_ZVARS,X
-   LDX   __local_get_nonstack_var__0
+   TAX
+   LDA   __local_get_nonstack_var__var
    RTS
 .if_end@2:
    SBC   #$10
@@ -528,9 +522,8 @@ set_nonstack_var:
    TAX
    LDA   __zpabi_set_nonstack_var__value_1
    STA   LOCAL_ZVARS,X
-   INX
    LDA   __zpabi_set_nonstack_var__value_0
-   STA   LOCAL_ZVARS,X
+   STA   LOCAL_ZVARS+1,X
    RTS
 .if_end@3:
    SBC   #$10
@@ -546,19 +539,12 @@ set_nonstack_var:
    LDA   GLOBAL_ZVARS_ADDR+1
    ADC   __local_set_nonstack_var__1
    STA   __local_set_nonstack_var__0
-   STA   DPTR+1
-   LDA   __local_set_nonstack_var__var
-   STA   DPTR
    LDA   __zpabi_set_nonstack_var__value_1
    LDY   #$00
-   STA   (DPTR),Y
-   LDA   __local_set_nonstack_var__var
-   STA   DPTR
-   LDA   __local_set_nonstack_var__0
-   STA   DPTR+1
+   STA   (__local_set_nonstack_var__var),Y
    LDA   __zpabi_set_nonstack_var__value_0
    INY
-   STA   (DPTR),Y
+   STA   (__local_set_nonstack_var__var),Y
    RTS
 
 var_get:
@@ -663,9 +649,8 @@ return_value:
    LDX   __local_return_value__x
    LDA   __local_return_value__0
    STA   LOCAL_ZVARS,X
-   INX
    LDA   __local_return_value__1
-   STA   LOCAL_ZVARS,X
+   STA   LOCAL_ZVARS+1,X
    DEC   __local_return_value__count
    BNE   .loop@0_start
 .if_end@9:
@@ -696,20 +681,15 @@ branch_to_offset:
    SUBROUTINE
 
    LDA   __zpabi_branch_to_offset__offset_1
-   BMI   .lb_skip@0
-   JMP   .branch_to_offset@asm_ssa_split@0
-.lb_skip@0:
-   LDA   #$00
-   CLC
-   ADC   #$01
-   STA   __local_branch_to_offset__pages_1
+   BPL   .branch_to_offset@asm_ssa_split@0
+   LDY   #$01
+   STY   __local_branch_to_offset__pages_1
 .if_end@10:
    LDA   Z_PC
-   STA   __local_branch_to_offset__0
    CLC
    ADC   __zpabi_branch_to_offset__offset_0
    STA   __local_branch_to_offset__2
-   CMP   __local_branch_to_offset__0
+   CMP   Z_PC
    BCS   .if_end@11
    INC   __zpabi_branch_to_offset__offset_1
    BNE   .inc_done@0
@@ -719,27 +699,15 @@ branch_to_offset:
    LDA   __zpabi_branch_to_offset__offset_1
    ORA   __local_branch_to_offset__pages_1
    BNE   .if_end@12
-   LDA   Z_PC
-   STA   __zpabi_branch_to_offset__offset_1
-   LDA   Z_PC+1
-   STA   __local_branch_to_offset__0
-   LDA   __zpabi_branch_to_offset__offset_1
-   AND   #$00
-   ORA   __local_branch_to_offset__2
+   LDA   __local_branch_to_offset__2
    STA   Z_PC
-   LDA   __local_branch_to_offset__0
-   STA   Z_PC+1
    RTS
 .if_end@12:
    LDA   Z_PC+1
-   STA   __local_branch_to_offset__0
-   LDA   Z_PC+2
-   STA   __local_branch_to_offset__1
-   LDA   __local_branch_to_offset__0
    CLC
    ADC   __zpabi_branch_to_offset__offset_1
    STA   __zpabi_branch_to_offset__offset_1
-   LDA   __local_branch_to_offset__1
+   LDA   Z_PC+2
    ADC   __local_branch_to_offset__pages_1
    STA   __local_branch_to_offset__0
    LDA   __local_branch_to_offset__2
@@ -866,7 +834,7 @@ instr_call:
    ROL
    STA   Z_PC+2
    JSR   get_next_code_byte
-   STA   __local_instr_call__3
+   STA   __local_instr_call__2
    ORA   #$00
    BEQ   .if_end@21
    LDY   #$00
@@ -875,26 +843,20 @@ instr_call:
 .loop@1_start:
    LDX   __local_instr_call__args
    LDA   LOCAL_ZVARS,X
-   INX
-   STX   __local_instr_call__2
    STA   __zpabi_push__value_1
-   LDA   LOCAL_ZVARS,X
+   LDA   LOCAL_ZVARS+1,X
    STA   __zpabi_push__value_0
    JSR   push
    JSR   get_next_code_byte
    STA   __local_instr_call__1
    JSR   get_next_code_byte
-   STA   __local_instr_call__0
    LDX   __local_instr_call__args
+   STA   LOCAL_ZVARS+1,X
    LDA   __local_instr_call__1
    STA   LOCAL_ZVARS,X
-   LDX   __local_instr_call__2
-   LDA   __local_instr_call__0
-   STA   LOCAL_ZVARS,X
-   LDA   __local_instr_call__args
-   CLC
-   ADC   #$02
-   STA   __local_instr_call__args
+   INX
+   INX
+   STX   __local_instr_call__args
    DEC   __local_instr_call__i
    BNE   .loop@1_start
 .if_end@21:
@@ -907,30 +869,18 @@ instr_call:
    JMP   .loop@2_continue
 .instr_call@rot@0:
    LDA   __local_instr_call__i
-   CLC
-   ADC   #$01
-   STA   __local_instr_call__2
    ASL
    TAX
-   LDA   OPERANDS,X
-   STA   __local_instr_call__1
-   LDA   OPERANDS+1,X
-   STA   __local_instr_call__0
-   LDA   __local_instr_call__i
-   ASL
-   TAX
-   LDA   __local_instr_call__0
+   LDA   OPERANDS+3,X
    STA   LOCAL_ZVARS,X
-   INX
-   LDA   __local_instr_call__1
-   STA   LOCAL_ZVARS,X
+   LDA   OPERANDS+2,X
+   STA   LOCAL_ZVARS+1,X
+   INC   __local_instr_call__i
    DEC   __local_instr_call__args
-   LDA   __local_instr_call__2
-   STA   __local_instr_call__i
 .loop@2_continue:
    LDA   __local_instr_call__args
    BNE   .instr_call@rot@0
-   LDA   __local_instr_call__3
+   LDA   __local_instr_call__2
    STA   __zpabi_push__value_0
    LDA   #$00
    STA   __zpabi_push__value_1
@@ -1049,7 +999,7 @@ do_0op:
 .case@15:
    JMP   new_line
 .default@16:
-   JSR   internal_error
+   JMP   internal_error
 .switch@3_break:
    RTS
 
@@ -1059,9 +1009,9 @@ do_1op:
    ORA   #$00
    BEQ   .case@18
    CMP   #$10
-   BCC   .lb_skip@1
+   BCC   .lb_skip@0
    JMP   .default@33
-.lb_skip@1:
+.lb_skip@0:
    ASL
    TAY
    LDA   .jtab@1+1,Y
@@ -1163,19 +1113,15 @@ do_2op:
    SUBROUTINE
 
    STA   __local_do_2op__equal
-   LDA   OPERANDS
-   STA   __local_do_2op__5
-   LDA   OPERANDS+1
-   STA   __local_do_2op__4
    LDA   OPERANDS+2
    STA   __local_do_2op__2
    LDA   OPERANDS+3
    STA   __local_do_2op__3
    LDA   __local_do_2op__equal
    CMP   #$19
-   BCC   .lb_skip@2
+   BCC   .lb_skip@1
    JMP   .default@59
-.lb_skip@2:
+.lb_skip@1:
    ASL
    TAY
    LDA   .jtab@2+1,Y
@@ -1215,12 +1161,12 @@ do_2op:
    SBC   #$01
    STA   __local_do_2op__left
    BNE   .if_end@22
-   JSR   internal_error
+   JMP   internal_error
 .if_end@22:
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    CMP   __local_do_2op__3
    BNE   .thread@0
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    CMP   __local_do_2op__2
    BEQ   .cmp_true@3
 .thread@0:
@@ -1241,10 +1187,10 @@ do_2op:
 .and_end@24:
    ORA   #$00
    BEQ   .if_end@25
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    CMP   OPERANDS+5
    BNE   .thread@1
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    CMP   OPERANDS+4
    BEQ   .cmp_true@6
 .thread@1:
@@ -1260,10 +1206,10 @@ do_2op:
    SEC
    SBC   #$01
    BEQ   .if_end@28
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    CMP   OPERANDS+7
    BNE   .thread@2
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    CMP   OPERANDS+6
    BEQ   .cmp_true@9
 .thread@2:
@@ -1278,10 +1224,10 @@ do_2op:
    LDA   __local_do_2op__equal
    JMP   branch
 .case@36:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    SEC
    SBC   __local_do_2op__2
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    SBC   __local_do_2op__3
    BVC   .cmp_novf@12
    EOR   #$80
@@ -1293,9 +1239,9 @@ do_2op:
 .case@37:
    LDA   __local_do_2op__2
    SEC
-   SBC   __local_do_2op__5
+   SBC   OPERANDS
    LDA   __local_do_2op__3
-   SBC   __local_do_2op__4
+   SBC   OPERANDS+1
    BVC   .cmp_novf@12
    EOR   #$80
    JMP   .cmp_novf@12
@@ -1323,10 +1269,10 @@ do_2op:
 .case@40:
    JMP   instr_jin
 .case@41:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    AND   __local_do_2op__2
    STA   __local_do_2op__0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    AND   __local_do_2op__3
    CMP   __local_do_2op__3
    BNE   .thread@3
@@ -1341,18 +1287,18 @@ do_2op:
 .cmp_end@17:
    JMP   branch
 .case@42:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    ORA   __local_do_2op__2
    STA   __zpabi_store_result__value_0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    ORA   __local_do_2op__3
    STA   __zpabi_store_result__value_1
    JMP   store_result
 .case@43:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    AND   __local_do_2op__2
    STA   __zpabi_store_result__value_0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    AND   __local_do_2op__3
    STA   __zpabi_store_result__value_1
    JMP   store_result
@@ -1367,18 +1313,18 @@ do_2op:
    STA   __zpabi_var_put__value_0
    LDA   __local_do_2op__3
    STA   __zpabi_var_put__value_1
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    JMP   var_put
 .case@48:
    JMP   instr_insert_obj
 .case@49:
    ASL   __local_do_2op__2
    ROL   __local_do_2op__3
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    CLC
    ADC   __local_do_2op__2
    STA   __zpabi_load_address__addr_0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    ADC   __local_do_2op__3
    STA   __zpabi_load_address__addr_1
    JSR   load_address
@@ -1387,11 +1333,11 @@ do_2op:
    STX   __zpabi_store_result__value_1
    JMP   store_result
 .case@50:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    CLC
    ADC   __local_do_2op__2
    STA   __zpabi_load_address__addr_0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    ADC   __local_do_2op__3
    STA   __zpabi_load_address__addr_1
    JSR   load_address
@@ -1407,20 +1353,20 @@ do_2op:
 .case@53:
    JMP   instr_get_next_prop
 .case@54:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    CLC
    ADC   __local_do_2op__2
    STA   __zpabi_store_result__value_0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    ADC   __local_do_2op__3
    STA   __zpabi_store_result__value_1
    JMP   store_result
 .case@55:
-   LDA   __local_do_2op__5
+   LDA   OPERANDS
    SEC
    SBC   __local_do_2op__2
    STA   __zpabi_store_result__value_0
-   LDA   __local_do_2op__4
+   LDA   OPERANDS+1
    SBC   __local_do_2op__3
    STA   __zpabi_store_result__value_1
    JMP   store_result
@@ -1441,9 +1387,9 @@ do_var:
    STA   __local_do_var__3
    LDA   __local_do_var__n
    CMP   #$0A
-   BCC   .lb_skip@3
+   BCC   .lb_skip@2
    JMP   .default@71
-.lb_skip@3:
+.lb_skip@2:
    ASL
    TAY
    LDA   .jtab@3+1,Y
@@ -1554,30 +1500,26 @@ do_instruction:
    AND   #$40
    BEQ   .cond_else@30
    JSR   get_var_content
-   STX   __local_do_instruction__v_1
+   STX   OPERANDS+1
    JMP   .cond_end@31
 .cond_else@30:
    JSR   get_next_code_byte
    LDY   #$00
-   STY   __local_do_instruction__v_1
+   STY   OPERANDS+1
 .cond_end@31:
    STA   OPERANDS
-   LDA   __local_do_instruction__v_1
-   STA   OPERANDS+1
    LDA   __local_do_instruction__1
    AND   #$20
    BEQ   .cond_else@32
    JSR   get_var_content
-   STX   __local_do_instruction__v_1
+   STX   OPERANDS+3
    JMP   .cond_end@33
 .cond_else@32:
    JSR   get_next_code_byte
    LDY   #$00
-   STY   __local_do_instruction__v_1
+   STY   OPERANDS+3
 .cond_end@33:
    STA   OPERANDS+2
-   LDA   __local_do_instruction__v_1
-   STA   OPERANDS+3
    LDA   #$02
    STA   OPERAND_COUNT
    LDA   __local_do_instruction__1
@@ -1589,29 +1531,25 @@ do_instruction:
    AND   #$30
    BNE   .if_else@36
    JSR   get_const_word
-   STA   __local_do_instruction__0
-   STX   __local_do_instruction__v_1
+   STA   OPERANDS
+   STX   OPERANDS+1
    JMP   .if_end@35
 .if_else@36:
    CMP   #$10
    BNE   .if_else@38
    JSR   get_next_code_byte
-   STA   __local_do_instruction__0
+   STA   OPERANDS
    LDA   #$00
-   STA   __local_do_instruction__v_1
+   STA   OPERANDS+1
    JMP   .if_end@37
 .if_else@38:
    JSR   get_var_content
-   STA   __local_do_instruction__0
-   STX   __local_do_instruction__v_1
+   STA   OPERANDS
+   STX   OPERANDS+1
 .if_end@37:
 .if_end@35:
    LDA   #$01
    STA   OPERAND_COUNT
-   LDA   __local_do_instruction__0
-   STA   OPERANDS
-   LDA   __local_do_instruction__v_1
-   STA   OPERANDS+1
    LDA   __local_do_instruction__1
    AND   #$0F
    JMP   do_1op

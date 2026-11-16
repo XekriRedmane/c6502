@@ -68,15 +68,31 @@ All three rewrites look at two adjacent instructions that write A.
 - `LDA #$00; ORA m` or `LDA #$FF; AND m` becomes `LDA m`, for any
   operand `m`.
 
+Two more look at one instruction or three.
+
+- `AND #$00` becomes `LDA #$00`, and `ORA #$FF` becomes `LDA #$FF`,
+  after any instruction, since the result doesn't depend on A and N
+  and Z come out the same. Zork's `branch_to_offset` keeps the high
+  byte of `Z_PC.lo` with `(Z_PC.lo & 0xFF00) | new_lo`, whose low byte
+  was `LDA Z_PC; AND #$00; ORA new_lo`. That's now `LDA #$00; ORA
+  new_lo`, and then `LDA new_lo` by the rule before.
+- `LDA #c1; CLC; ADC #c2` becomes `LDA` of `c1 + c2`, and `LDA #c1;
+  SEC; SBC #c2` becomes `LDA` of `c1 - c2`, both modulo 256, when C
+  and V are dead after (`asm_liveness.c_dead_at`, `v_dead_at`). N and
+  Z come out as the add left them. `if (offset & 0x8000) pages +=
+  0x100;` on a `pages` whose high byte is 0 adds 1 to 0 this way.
+
 After a fold the pass moves on past both instructions, so a chain
 such as `LDA #1; AND #3; ORA #4` takes a second call to fold
 completely.
 
 ## What it leaves alone
 
-- `ADC` and `SBC` on constants, as in the high byte `LDA #$00; ADC
-  #$00` of `g = a + 1;` with an `int g`. The result depends on C,
-  which can't be known from the two instructions alone.
+- `ADC` and `SBC` on constants without a `CLC` or `SEC` right before
+  them, as in the high byte `LDA #$00; ADC #$00` of `g = a + 1;` with
+  an `int g`. The result depends on C, which can't be known from the
+  instructions alone. With the `CLC` or `SEC`, the fold waits for C
+  and V to be dead.
 - `EOR`, whose IR form has two sources.
 - An identity operation after an instruction outside that list, such
   as a label, a store, or `PLA`. After a label or a store, N and Z

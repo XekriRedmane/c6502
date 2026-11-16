@@ -232,6 +232,7 @@ class StringLifter:
             address=fd.address,
             preserves=list(fd.preserves),
             section=fd.section,
+            noreturn=fd.noreturn,
         )
 
     # ------------------------------------------------------------------

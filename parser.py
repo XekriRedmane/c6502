@@ -921,6 +921,14 @@ def _c6502_attributes(attrs: _Attributes | None, kind: str, where: str):
     return attrs.c6502 or None
 
 
+def _is_noreturn(attrs: _Attributes | None) -> bool:
+    """Whether `attrs` hold `[[noreturn]]` or `[[_Noreturn]]`, which
+    say a call to the function doesn't come back (C23 §6.7.13.7)."""
+    return attrs is not None and any(
+        name in ("noreturn", "_Noreturn") for name, _arg in attrs.standard
+    )
+
+
 def _no_c6502_attributes(attrs: _Attributes | None, kind: str, where: str):
     """Checks `attrs` for `kind` of entity, which none of c6502's
     attributes apply to."""
@@ -2765,6 +2773,7 @@ class _ASTBuilder(Transformer):
                 prefix_abi, carry_return, address, preserves = (
                     _extract_function_attributes(attr_specs, where=where)
                 )
+                noreturn = _is_noreturn(attrs)
                 if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
                         f"storage class 'register' isn't permitted on "
@@ -2789,6 +2798,7 @@ class _ASTBuilder(Transformer):
                         address=address,
                         preserves=preserves,
                         section=_extract_section(attr_specs, where),
+                        noreturn=noreturn,
                     )
                 ))
             else:
@@ -2906,10 +2916,10 @@ class _ASTBuilder(Transformer):
             _apply_declarator(decl_tree, base_type)
         )
         where = f"function definition {name!r}"
-        attr_specs = _c6502_attributes(
-            _merge_attributes(prefix_attrs, _declarator_attributes(decl_tree)),
-            "function", where,
+        def_attrs = _merge_attributes(
+            prefix_attrs, _declarator_attributes(decl_tree),
         )
+        attr_specs = _c6502_attributes(def_attrs, "function", where)
         prefix_abi, carry_return, address, preserves = (
             _extract_function_attributes(attr_specs, where=where)
         )
@@ -2957,6 +2967,7 @@ class _ASTBuilder(Transformer):
             param_registers=list(param_regs),
             carry_return=carry_return,
             section=_extract_section(attr_specs, where),
+            noreturn=_is_noreturn(def_attrs),
         ))
         return struct_decls + [tail]
 

@@ -248,11 +248,6 @@ class TestConventionErrors(unittest.TestCase):
                 "void f(register unsigned char a, unsigned char b);\n"
                 "void g(void) { f(1, 2); }\n"
             ),
-            "pointer result": (
-                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
-                "unsigned char *f(void);\n"
-                "void g(void) { f(); }\n"
-            ),
             "4-byte result": (
                 "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
                 "unsigned long f(void);\n"
@@ -329,6 +324,23 @@ class TestSim(unittest.TestCase):
                 sim = build_sim(src, optimize=optimize)
                 sim.mpu.memory[0xD000:0xD008] = self._SWAP_ROUTINE
                 self.assertEqual(sim.run().return_int(), 0x3412 + 1)
+
+    def test_pointer_result(self) -> None:
+        # A pointer comes back as an `unsigned int` does, low byte in
+        # A and high byte in X:
+        #   LDA #$34 ; LDX #$12 ; RTS
+        src = (
+            "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
+            "extern unsigned char *where(void);\n"
+            "int main(void) { return (int)(unsigned int)where(); }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                sim.mpu.memory[0xD000:0xD005] = bytes(
+                    [0xA9, 0x34, 0xA2, 0x12, 0x60],
+                )
+                self.assertEqual(sim.run().return_int(), 0x1234)
 
     def test_fixed_objects(self) -> None:
         src = (

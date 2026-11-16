@@ -921,8 +921,8 @@ SSP/FP arithmetic.
 
 | return type | location                                                |
 | ----------- | ------------------------------------------------------- |
-| `int` / `unsigned int` / `char` (1B)              | `A`                |
-| `long` / `unsigned long` / pointer (2B)           | `HARGS+0..1`       |
+| `char` (1B)                                       | `A`                |
+| `int` / `unsigned int` / pointer (2B)             | `A` (low), `X` (high) |
 | `long long` / `unsigned long long` / `float` (4B) | `HARGS+8..11`      |
 | `double` (8B)                                     | `HARGS+16..23`     |
 

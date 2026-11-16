@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 23% larger than the
+(see "Compared with Zork's own code"). It is 21% larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1E80`. The other units, the constants,
+on every instruction, up to `$1E3E`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -156,16 +156,16 @@ file and the original code it translates:
 |---|---:|---:|
 | `main.c` | 391 | 477 |
 | `decode.c` | 1859 | 2495 |
-| `objects.c` | 788 | 1067 |
+| `objects.c` | 788 | 1003 |
 | `numbers.c` | 436 | 687 |
-| `input.c` | 1018 | 1222 |
-| `pages.c` | 384 | 387 |
+| `input.c` | 1018 | 1177 |
+| `pages.c` | 384 | 385 |
 | `zstring.c` | 383 | 407 |
 | `output.c` | 387 | 405 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **8156** |
+| **Total** | **6643** | **8045** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -186,12 +186,12 @@ The four dispatch switches take 1,325 bytes with the handlers written
 into their cases (`do_2op` alone is 680), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
 `divu16` is 114 bytes against Zork's 78, and `match_dictionary_word`
-240 against 190. `mulu16` is 59 against 69, since it computes only
+235 against 190. `mulu16` is 59 against 69, since it computes only
 the low 16 bits of the product.
 
-**Speed.** The first session takes 38,391,464 cycles against Zork's
-38,490,260, 0.3% fewer, and the second 7,389,651 against 7,434,428,
-0.6% fewer. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 38,229,970 cycles against Zork's
+38,490,260, 0.7% fewer, and the second 7,360,779 against 7,434,428,
+1.0% fewer. The stand-ins for the Monitor and RWTS take no cycles.
 Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
 shrank by 24 bytes, `branch` and `print_zstring`, which the linker
@@ -242,5 +242,21 @@ the smaller code saved.
   first time ([rotate_loop_test.md](../../../docs/optimizations/rotate_loop_test.md)).
   The 30-byte clear in `main` and the 6-byte clears in `instr_sread`
   and `ascii_to_zchar` had tested and jumped back on every pass.
+- A `static` function returning `bool` returns it in the carry flag,
+  without `return_bool_in_carry`, when every call branches on it or
+  passes it on ([carry_return_choice.md](../../../docs/optimizations/carry_return_choice.md)).
+  `input.c`'s separator tests return in the carry as Zork's do, and
+  each call had followed its `JSR` with `ORA #$00`.
+- A function returning a pointer returns it in A and X, as an
+  `unsigned int` comes back, where it had used `HARGS`
+  ([calling_conventions.md](../../../docs/calling_conventions.md)).
+  Each call to `get_object_addr` and `get_dictionary_addr` had
+  copied the pointer out of `HARGS`.
+- `STA t; INC t; LDA t` is `CLC; ADC #1`
+  ([shift_in_a.md](../../../docs/optimizations/shift_in_a.md)), a value
+  pushed around `TXA; TAY` is loaded again instead
+  ([dead_pha_pla.md](../../../docs/optimizations/dead_pha_pla.md)), and
+  `LDA M; CLC; ADC #1; TAY` is `INY` when Y holds M
+  ([transfer_pm1_store.md](../../../docs/optimizations/transfer_pm1_store.md)).
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

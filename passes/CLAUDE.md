@@ -46,7 +46,9 @@ this directory:
   indirect-indexed-store lowering emits a conservative
   save/restore around the idx-into-Y stage, which becomes pure
   overhead once `direct_index_load` fuses the `LDA idx; TAY` into
-  a flag-preserving `LDY idx`.
+  a flag-preserving `LDY idx`. Also `LDA M; PHA; TXA; TAY; PLA` →
+  `TXA; TAY; LDA M` when M is a non-volatile byte and the body only
+  moves values into registers (`_find_reload_pop`).
 - `branch_invert.py` — `apply_branch_invert` peephole.
 - `branch_to_next_drop.py` — `apply_branch_to_next_drop` peephole.
   Drops `Branch(_, L); Label(L)` adjacency (the Branch is a no-op
@@ -180,6 +182,13 @@ this directory:
   it: `TXA; SBC #0; TAX` becomes `BCS skip; CPX #1; DEX` and `TXA;
   ADC #0; TAX` becomes `BCC skip; INX; BEQ skip; CLC`, which leave C
   as the ADC / SBC did.
+- `carry_return_choice.py` — `choose_carry_returns`. Sets
+  `FunAttr.carry_return` on a `static` `bool` function (one
+  `FunAttr.returns_bool` marks) whose address isn't taken and whose
+  every call's result is unused, branched on right after the call, or
+  returned right after it by another chosen function, with at least
+  one branched on or returned. Runs on the optimized TAC in
+  `compile.optimized_asm`, before `select_abi`.
 - `carry_return.py` — peepholes for `return_bool_in_carry`, whose
   callee returns `e != 0` in C. `apply_carry_return_tails` copies a
   `CMP #c; RTS` return tail into each `LDA #k; JMP tail` and in front
@@ -331,7 +340,9 @@ this directory:
   of other bytes may be mixed in (they stay), and constant stores
   right after the `STA` move up in front of the load that computed A,
   so a widened byte's `(unsigned int)c << 3` shifts its low byte in A
-  and rotates the high byte in memory.
+  and rotates the high byte in memory. `STA M; INC M; LDA M` becomes
+  `CLC; ADC #1; STA M` (`DEC`: `SEC; SBC #1`) when C and V are dead
+  after (`_rewrite_steps`).
 - `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
   the rule for when a constant shift is lowered inline (at most 8
   one-bit shift instructions after the byte moves, or any count of
@@ -389,7 +400,9 @@ this directory:
   occurrence. Gated on Y dead at entry, A dead post-CMP, and
   the staging tmp being compiler-owned scratch (a `__local_<fn>__*`
   slot or a regalloc-pool ZP byte) that no path reads after the
-  CMP, back edges included.
+  CMP, back edges included. Also takes the step done in A, `LDA
+  m,X; CLC; ADC #1; CMP n`, which `shift_in_a` makes of the
+  five-atom shape, when V is dead after (`_match_in_a`).
   Headline source: the chase-branch target computation in
   `beam_target_tick` — `floor_ceil[idx]+1` compared to
   `beam_y` lowers to the 5-atom shape because the regalloc
@@ -420,7 +433,12 @@ this directory:
   `asm_dead_store` have collapsed through-temp routing into the
   canonical `STA M` shape — otherwise this pass would rewrite
   to `STX __local; LDA __local; STA M`, which no downstream
-  collapser can simplify.
+  collapser can simplify. Also `LDA M; CLC; ADC #k; TAY` → `INY`
+  (k of 1 or 2, `SBC` → `DEY`, and the X forms) when the register
+  still holds M from an `LDY M` / `LDX M` in the block and A, C,
+  and V are dead (`_rewrite_index_steps`). A store through a pointer
+  in between is allowed only for a `static` whose address the unit
+  never takes (`_unaliased_statics`).
 - `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
   Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
   `Compare(Reg(A), <indirect>)` when A and N/Z are dead after the

@@ -28,8 +28,9 @@ Mapping highlights (full per-op detail in `translate_binary` /
   Function(name, …)         -> Function(name, …, flat-mapped instrs)
   StaticVariable(name, …)   -> StaticVariable(name, …, init-rewrapped)
   Ret(val)                  -> stage `val` in A (and X for the high
-                               byte of a Long return), or in HARGS
-                               for wider returns; then Ret.
+                               byte of a 2-byte return, a pointer
+                               included), or in HARGS for wider
+                               returns; then Ret.
   Copy(src, dst)            -> N× Mov per byte for an N-byte type.
   SignExtend(src, dst)      -> Copy each source byte to the matching
                                dst byte; the last LDA's N flag is the
@@ -426,8 +427,10 @@ _HARGS = "HARGS"
 # Return-slot HARGS offset, keyed by return-type width in bytes.
 # 1-byte returns ride in A and don't appear here; everything else
 # lives in a fixed HARGS offset that both the callee's Ret and the
-# caller's FunctionCall capture agree on. Long / ULong / Pointer (2B)
-# share HARGS+0..1 — different from the helper outputs at
+# caller's FunctionCall capture agree on. The 2-byte slot, HARGS+0..1,
+# is for a 2-byte return without a symbol table (`_reg_return_bytes`),
+# since an `int` and a pointer come back in A and X — different from
+# the helper outputs at
 # HARGS+2..7, so capturing a Long return doesn't conflict with the
 # HARGS layout for `mul8`/`divmod8`/`asl8`/`asr8`/`lsr8`. LongLong /
 # Float (4B) sit in the FP-arithmetic helpers' output slot at
@@ -1964,16 +1967,18 @@ class Translator:
     def _return_reg_bytes(ret_type) -> int:
         """Number of bytes a return of type `ret_type` passes in
         6502 registers: 1 (low byte in A) for a 1-byte integer, 2
-        (low in A, high in X) for Int / UInt. 0 — rides HARGS — for
-        a pointer, a >2-byte type, void, or anything else. Pointers
-        are excluded because a pointer can't live in a register per
-        the c6502 register-passing rules."""
+        (low in A, high in X) for Int / UInt and a pointer. 0 — rides
+        HARGS — for a >2-byte type, void, or anything else. A pointer
+        comes back as an `unsigned int` does. The rule against a
+        positional `register` parameter that's a pointer is about
+        passing arguments, and the caller stores the result in memory
+        anyway, as a `(zp),Y` base wants it."""
         t = ret_type
         while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
             t = t.referenced_type
         if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
             return 1
-        if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+        if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
             return 2
         return 0
 
@@ -1982,15 +1987,14 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         """Stage the return value, then Ret. Convention by return type:
           Char / SChar / UChar (1B) → A.
-          Int / UInt (2B)           → low byte A, high byte X.
-          Pointer (2B)              → HARGS+0..1.
+          Int / UInt / Pointer (2B) → low byte A, high byte X.
           Long / ULong / Float (4B) → HARGS+8..11.
           LongLong / ULongLong /
             Double (8B)             → HARGS+16..23.
-        A non-pointer return of <=2 bytes rides in registers (A, and
-        X for the high byte of a 2-byte return); the epilogue
-        preserves them across the SSP/FP teardown (controlled by
-        `save_a` / `save_x`). Pointer and wider returns leave their
+        A return of <=2 bytes rides in registers (A, and X for the
+        high byte of a 2-byte return); the epilogue preserves them
+        across the SSP/FP teardown (controlled by `save_a` /
+        `save_x`). Wider returns leave their
         result in zero-page HARGS slots, which the SSP/FP arithmetic
         doesn't touch (`save_a=save_x=False`). FP arithmetic helpers
         `fadd`/`fsub`/`fmul`/`fdiv` write HARGS+8..11;
@@ -2062,7 +2066,7 @@ class Translator:
             seq.append(asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A))
             seq.append(self._exit(save_a=True, save_x=reg_bytes >= 2))
             return seq
-        # Pointer / wider returns: write src bytes into the HARGS slot
+        # Wider returns: write src bytes into the HARGS slot
         # for this width and exit without register preservation.
         out_off = _RET_HARGS_OFFSET[size]
         seq = []
@@ -2486,10 +2490,10 @@ class Translator:
           that.
 
         Return-value capture is identical for both conventions:
-          Int (1B)              ← A.
-          Long / ULong /
-            Pointer (2B)        ← HARGS+0..1.
-          LongLong / Float (4B) ← HARGS+8..11.
+          Char (1B)             ← A.
+          Int / UInt /
+            Pointer (2B)        ← A (low), X (high).
+          Long / Float (4B)     ← HARGS+8..11.
           Double (8B)           ← HARGS+16..23.
         See `_translate_ret` for the matching callee-side write.
         """
@@ -2554,7 +2558,7 @@ class Translator:
                     self._capture_reg_return(dst_op, reg_bytes),
                 )
             else:
-                # Pointer / wider returns: read back byte-by-byte
+                # Wider returns: read back byte-by-byte
                 # through A from the HARGS slot for this width. 2B at
                 # +0..1, 4B at +8..11, 8B at +16..23.
                 in_off = _RET_HARGS_OFFSET[dst_size]

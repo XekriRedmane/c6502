@@ -241,6 +241,14 @@ Every declaration of the function has to carry the attribute, since a
 caller compiled without it would read A. You can't take the
 function's address, because a call through a pointer reads A.
 
+Under `--optimize`, a `static` function returning `bool` gets the same
+convention without the attribute when every call to it branches on
+the result or returns it from another such function, and its address
+isn't taken
+([carry_return_choice.md](optimizations/carry_return_choice.md)). A
+function with external linkage needs the attribute, since a caller
+in another unit couldn't tell.
+
 #### A value and a flag
 
 Many assembly routines return a value in A and a flag in the carry,
@@ -282,10 +290,9 @@ because loading A (and X) leaves the carry alone:
    RTS
 ```
 
-The value member can't be a pointer. A pointer result comes
-back in `HARGS`, in zero page, because a pointer is only usable from
-zero page, as "Arguments in registers" in
-[calling_conventions.md](calling_conventions.md) explains.
+The value member can't be a pointer. A function that returns
+only a pointer returns it in A and X, but the carry-flag struct's
+value member is limited to integers.
 
 ### `zeropage` and `zeropage(addr)`
 
@@ -722,7 +729,7 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | A pair on a 1-byte parameter, or one register on a 2-byte one | Each byte needs its own register. |
 | `in_*` on a struct, a union, or an array | Only an integer or a pointer is passed in registers. |
 | A pointer declared `register` without `in_*` | A `register` parameter by position takes A, then X, for numbers; name the registers for a pointer. |
-| A `zp_abi` routine with `address` that returns a pointer, or more than 2 bytes | Those come back in `HARGS`, where the routine doesn't put them. Declare a pointer result as `uint16_t`. |
+| A `zp_abi` routine with `address` that returns more than 2 bytes | Those come back in `HARGS`, where the routine doesn't put them. A pointer comes back in A and X, as a 2-byte integer does. |
 | Taking the address of a `zp_abi` routine with `address` | A call through a pointer passes its arguments on the soft stack. |
 | `preserves_x` or `preserves_y` on a function without `address`, or on a function definition | The compiler can't check that code it compiles keeps the promise. |
 | `preserves_x` on a routine that returns an `int` or `unsigned int` | The high byte of the result comes back in X. |

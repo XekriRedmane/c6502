@@ -71,10 +71,33 @@ them from something else, such as the `LDY`. So N and Z must be dead
 after the `PLA`, as `asm_liveness.flags_dead_at` checks along every
 path. `PHA` and `PLA` don't touch C or V, so those aren't checked.
 
+### Loading again in place of the pair
+
+When the index is in X, the body is `TXA; TAY`, which writes A, so the
+pair is needed. But when the `PHA` saves a value just loaded from a
+zero-page or static byte, and the body only moves values into
+registers without reading the pushed A, the load can move to where
+the `PLA` was:
+
+```
+   LDA   __local_read_line__c          TXA
+   PHA                                 TAY
+   TXA                         ->      LDA   __local_read_line__c
+   TAY                                 STA   (text),Y
+   PLA
+   STA   (text),Y
+```
+
+That's 2 bytes and 5 cycles less, in Zork's `read_line` and
+`set_page_first` (examples/zork/interpreter). The load sets N and Z as
+the `PLA` did. The byte can't be volatile, and the body can't write
+memory.
+
 ## What it leaves alone
 
 - A body that loads A, such as `LDA i; TAY` when `i` is on the soft
-  stack and can't be loaded straight into Y.
+  stack and can't be loaded straight into Y, unless A was just loaded
+  from a byte as above.
 - A body with a call, a branch, or a label in it.
 - A pair whose `PLA` sets flags that a branch reads.
 

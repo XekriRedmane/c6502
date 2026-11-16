@@ -23,6 +23,10 @@ sound combination: `LDY abs,X` exists, `LDY abs,Y` does NOT (the
 6502 lacks an `LDY` mode that reads via Y), so we can't mirror
 the rewrite for Y-indexed sources into X-pivoted results either.
 
+`shift_in_a` turns `STA tmp; INC tmp; LDA tmp` into `CLC; ADC #1`
+when C and V are dead, which leaves `LDA m,X; CLC; ADC #1; CMP
+other`. `_match_in_a` takes that form too.
+
 # Soundness
 
 Original net effect (5 atoms):
@@ -92,7 +96,7 @@ from passes.asm_dead_store import (
     _collect_address_taken_names, _is_dead_at_tail_call, _reads,
     _successors, _writes_same,
 )
-from passes.asm_liveness import a_dead_at, y_dead_at
+from passes.asm_liveness import a_dead_at, v_dead_at, y_dead_at
 
 
 _CPY_ADDRESSABLE = (asm_ast.Imm, asm_ast.Data, asm_ast.ZP)
@@ -115,6 +119,10 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     changed = False
     while i < len(instrs):
         match = _match_pattern(instrs, i, fn.name)
+        width = 5
+        if match is None:
+            match = _match_in_a(instrs, i)
+            width = 4
         if match is not None:
             src, is_dec, other = match
             out.append(asm_ast.Mov(
@@ -130,7 +138,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 left=asm_ast.Reg(reg=asm_ast.Y()),
                 right=other,
             ))
-            i += 5
+            i += width
             changed = True
             continue
         out.append(instrs[i])
@@ -207,6 +215,47 @@ def _match_pattern(
     if not _tmp_dead_after(instrs, i + 4, tmp, fn_name):
         return None
     return indexed_src, is_dec, e.right
+
+
+def _match_in_a(instrs: list[asm_ast.Type_instruction], i: int):
+    """The same step done in A, which `shift_in_a` makes of `STA tmp;
+    INC tmp; LDA tmp` when C and V are dead:
+
+        LDA m,X; CLC; ADC #1; CMP other   ->   LDY m,X; INY; CPY other
+
+    and the `SEC; SBC #1` form with `DEY`. Y must be dead before and A
+    after, as for the five-atom shape. `CMP` and `CPY` set N, Z, and C
+    alike, and the `ADC`'s V, which `CPY` doesn't set, must be dead.
+    Returns what `_match_pattern` does, or None."""
+    if i + 3 >= len(instrs):
+        return None
+    a, b, c, e = instrs[i:i + 4]
+    if not (isinstance(a, asm_ast.Mov) and not a.is_volatile
+            and isinstance(a.src, asm_ast.IndexedData)
+            and isinstance(a.src.index, asm_ast.X)
+            and isinstance(a.dst, asm_ast.Reg)
+            and isinstance(a.dst.reg, asm_ast.A)):
+        return None
+    if isinstance(c, asm_ast.Add) and isinstance(b, asm_ast.ClearCarry):
+        is_dec = False
+    elif isinstance(c, asm_ast.Sub) and isinstance(b, asm_ast.SetCarry):
+        is_dec = True
+    else:
+        return None
+    if not (isinstance(c.src, asm_ast.Imm) and c.src.value == 1
+            and isinstance(c.dst, asm_ast.Reg)
+            and isinstance(c.dst.reg, asm_ast.A)):
+        return None
+    if not (isinstance(e, asm_ast.Compare)
+            and isinstance(e.left, asm_ast.Reg)
+            and isinstance(e.left.reg, asm_ast.A)
+            and isinstance(e.right, _CPY_ADDRESSABLE)):
+        return None
+    after = i + 4
+    if not (a_dead_at(instrs, after) and v_dead_at(instrs, after)
+            and y_dead_at(instrs, i)):
+        return None
+    return a.src, is_dec, e.right
 
 
 def _tmp_dead_after(

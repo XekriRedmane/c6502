@@ -277,5 +277,69 @@ class TestBranchOnResult(unittest.TestCase):
         ]
         self.assertEqual(_run(list(instrs)), instrs)
 
+
+class TestIndexStep(unittest.TestCase):
+    """`LDA M; CLC; ADC #k; TAY` as `INY` k times where Y still holds
+    M, as in Zork's `parse[(uint8_t)(token_idx + 1)]` after
+    `LDY token_idx`."""
+
+    _M = asm_ast.Data(name="idx", offset=0)
+
+    def _run(self, instrs, static=True):
+        # `idx` is a static whose address the unit never takes, unless
+        # `static` is false, when it's a global another unit may point
+        # at.
+        fn = asm_ast.Function(
+            name="f", is_global=True, params=[], instructions=instrs,
+        )
+        var = asm_ast.StaticVariable(
+            name="idx", is_global=not static,
+            init=[asm_ast.ZeroInit(bytes=1)],
+        )
+        out = apply_transfer_pm1_store(asm_ast.Program(top_level=[fn, var]))
+        return out.top_level[0].instructions
+
+    def _step(self, k=1, between=(), reg=Y):
+        p = asm_ast.IndirectZpY(address=0x90)
+        return [
+            asm_ast.Mov(src=self._M, dst=reg, is_volatile=False),
+            asm_ast.Mov(src=A, dst=p, is_volatile=False),
+            *between,
+            asm_ast.Mov(src=self._M, dst=A, is_volatile=False),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=k), dst=A),
+            asm_ast.Mov(src=A, dst=reg, is_volatile=False),
+            asm_ast.Mov(src=X, dst=p, is_volatile=False),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_iny(self):
+        out = self._run(self._step())
+        self.assertEqual(out[2], asm_ast.Inc(dst=Y))
+        self.assertEqual(len(out), 5)
+
+    def test_two_inys(self):
+        out = self._run(self._step(k=2))
+        self.assertEqual(out[2:4], [asm_ast.Inc(dst=Y)] * 2)
+
+    def test_store_through_pointer_may_change_a_global(self):
+        # The store through ($90),Y could write a global's byte.
+        instrs = self._step()
+        self.assertEqual(self._run(list(instrs), static=False), instrs)
+
+    def test_register_changed_since_load(self):
+        # INX changes X after `LDX idx`, which `kills_x` doesn't count
+        # since INX also reads X. beam_target_tick read the wrong input
+        # when this rewrote `LDA m; CLC; ADC #2; TAX` to `INX; INX`.
+        instrs = self._step(k=2, reg=X, between=[asm_ast.Inc(dst=X)])
+        self.assertEqual(self._run(list(instrs)), instrs)
+
+    def test_byte_written_since_load(self):
+        instrs = self._step(between=[
+            asm_ast.Mov(src=A, dst=self._M, is_volatile=False),
+        ])
+        self.assertEqual(self._run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

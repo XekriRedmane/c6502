@@ -288,11 +288,9 @@ set_page_first:
    TAX
    LDA   #$FF
    STA   (PREV_PAGE_TABLE),Y
-   LDA   __local_set_page_first__0
-   PHA
    TXA
    TAY
-   PLA
+   LDA   __local_set_page_first__0
    STA   (NEXT_PAGE_TABLE),Y
    LDA   FIRST_Z_PAGE
    LDY   __local_set_page_first__prev_first

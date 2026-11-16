@@ -355,7 +355,12 @@ class FunAttr(IdAttr):
     `param_zeropage` has one entry per parameter: the zero-page
     address `[[c6502::zeropage(addr)]]` gives it, which only a
     function with an address may have, or None. Empty when no
-    parameter has one."""
+    parameter has one.
+
+    `returns_bool` is True when the function returns `_Bool`.
+    `c99_to_tac` sets it when it replaces `_Bool` with `unsigned char`
+    in the types, so that `passes/carry_return_choice.py` can still
+    tell such a function apart."""
     defined: bool
     is_global: bool
     carry_return: bool = False
@@ -363,6 +368,7 @@ class FunAttr(IdAttr):
     preserves: frozenset[str] = frozenset()
     section: str | None = None
     param_zeropage: tuple[int | None, ...] = ()
+    returns_bool: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -73,6 +73,16 @@ whole thing becomes
 
 17 bytes and 32 cycles instead of 19 and 38 in zero page.
 
+# An increment or decrement
+
+`STA M; INC M; LDA M` becomes `CLC; ADC #1; STA M`, and `DEC M`
+becomes `SEC; SBC #1` (`_rewrite_steps`), 3 bytes and 7 cycles less
+in zero page. Both set N and Z from the new value, but `ADC` and `SBC`
+also set C and V, which `INC` and `DEC` leave alone, so both must be
+dead after the load. Zork's `parse[1]++` reads the byte through a
+pointer into A, and `INC` has no `(zp),Y` mode, so the byte went
+through a slot to be incremented.
+
 # Where it comes from
 
 A 1-byte constant shift is already lowered in A by `tac_to_asm`. A
@@ -88,7 +98,7 @@ Inside the asm-peephole fixed-point loop."""
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at
+from passes.asm_liveness import a_dead_at, c_dead_at, v_dead_at
 
 _SHIFTS = (
     asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
@@ -102,7 +112,7 @@ def apply_shift_in_a(prog: asm_ast.Program) -> asm_ast.Program:
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(_rewrite_steps(_rewrite_function(tl)))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
@@ -257,6 +267,42 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             i += len(pairs)
         changed = True
         i += len(shifts) + 1
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _rewrite_steps(fn: asm_ast.Function) -> asm_ast.Function:
+    """`STA M; INC M; LDA M` as `CLC; ADC #1; STA M`, and the same with
+    `DEC` and `SEC; SBC #1`, when M is a non-volatile zero-page or
+    absolute byte and C and V are dead after the load. The `STA` that
+    is left goes when M isn't read again (`asm_dead_store`)."""
+    instrs = list(fn.instructions)
+    changed = False
+    i = 0
+    while i + 2 < len(instrs):
+        store, step, load = instrs[i:i + 3]
+        if (isinstance(store, asm_ast.Mov) and _is_reg_a(store.src)
+                and not store.is_volatile and _mem(store.dst)
+                and isinstance(step, (asm_ast.Inc, asm_ast.Dec))
+                and step.dst == store.dst
+                and isinstance(load, asm_ast.Mov) and _is_reg_a(load.dst)
+                and not load.is_volatile and load.src == store.dst
+                and c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
+            if isinstance(step, asm_ast.Inc):
+                arith = [asm_ast.ClearCarry(),
+                         asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A)]
+            else:
+                arith = [asm_ast.SetCarry(),
+                         asm_ast.Sub(src=asm_ast.Imm(value=1), dst=_REG_A)]
+            instrs[i:i + 3] = [*arith, store]
+            changed = True
+            i += 3
+            continue
+        i += 1
     if not changed:
         return fn
     return asm_ast.Function(

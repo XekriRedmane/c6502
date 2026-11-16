@@ -88,6 +88,22 @@ STA next` into `INX; STX next`.
   24-bit struct, whose increment is `INC`; see [members computed in
   place](in_place_member_update.md).)
 
+### An index register that already holds the byte
+
+The converse shape steps a byte into the register that already holds
+it. After `LDY token_idx; STA (parse),Y`, Zork's
+`parse[(uint8_t)(token_idx + 1)]` computed `LDA token_idx; CLC; ADC
+#$01; TAY`, which is `INY`. The rule takes `ADC #1` and `ADC #2`
+(one or two `INY`), `SBC` for `DEY`, and the X forms, when the last
+write to the register in the block is a load of the byte and nothing
+since writes the byte or might. A store through a pointer might,
+unless the byte is a `static` whose address the unit never takes,
+which no pointer can point to. A, C, and V must be dead after. Any
+write to the register stops the walk, `INX` included, which
+`kills_x` doesn't count since it reads X too. Missing that turned
+`LDA m; CLC; ADC #2; TAX` into `INX; INX` after an `INX` in
+`tests/test_beam_target_tick_diff.py`'s program.
+
 ## What it leaves alone
 
 - A read of the original register afterward. In

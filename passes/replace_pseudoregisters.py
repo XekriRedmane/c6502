@@ -532,8 +532,8 @@ class Replacer:
                 # Patch arg_bytes / local_bytes from the function's
                 # totals; carry save_a / save_x through unchanged —
                 # tac_to_asm set them based on which return bytes ride
-                # in A / X (a non-pointer <=2-byte return) vs. HARGS
-                # (pointer / wider). Pass through the function's
+                # in A / X (a return of <=2 bytes) vs. HARGS
+                # (wider). Pass through the function's
                 # callee-saved address list so the epilogue can
                 # restore them before SSP/FP teardown.
                 return asm_ast.Ret(

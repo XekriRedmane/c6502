@@ -383,7 +383,7 @@ COUT1	EQU	$FDF0
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
 ; zp disk_buffer size=2 at=auto def=false init=
 ; zp disk_sector size=2 at=auto def=false init=
-; runtime hargs_size=5 hargs_need=2
+; runtime hargs_size=5 hargs_need=0
 ; @zp-link-meta-end
 
 get_object_addr:
@@ -417,19 +417,18 @@ get_object_addr:
    STA   __local_get_object_addr__0
    LDA   __local_get_object_addr__2
    ADC   __local_get_object_addr__1
-   STA   __local_get_object_addr__1
+   TAX
    LDA   __local_get_object_addr__0
    CLC
    ADC   __local_get_object_addr__obj
    BCC   .carry_inc@0
-   INC   __local_get_object_addr__1
+   INX
    CLC
 .carry_inc@0:
    ADC   #$35
-   STA   HARGS
-   LDA   __local_get_object_addr__1
-   ADC   #$00
-   STA   HARGS+1
+   BCC   .carry_inc@1
+   INX
+.carry_inc@1:
    RTS
 
 remove_obj:
@@ -438,14 +437,11 @@ remove_obj:
    LDA   OPERANDS
    STA   __local_remove_obj__4
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_remove_obj__2
-   LDA   HARGS+1
-   STA   __local_remove_obj__3
-   LDA   HARGS
+   STX   __local_remove_obj__3
    CLC
    ADC   #$04
-   LDA   HARGS+1
+   TXA
    ADC   #$00
    LDY   #$04
    LDA   (__local_remove_obj__2),Y
@@ -453,10 +449,8 @@ remove_obj:
    RTS
 .if_end@0:
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_remove_obj__0
-   LDA   HARGS+1
-   STA   __local_remove_obj__1
+   STX   __local_remove_obj__1
    LDY   #$06
    LDA   (__local_remove_obj__0),Y
    CMP   __local_remove_obj__4
@@ -469,10 +463,8 @@ remove_obj:
 .if_else@2:
 .loop@0_start:
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_remove_obj__0
-   LDA   HARGS+1
-   STA   __local_remove_obj__1
+   STX   __local_remove_obj__1
    LDY   #$05
    LDA   (__local_remove_obj__0),Y
    CMP   __local_remove_obj__4
@@ -502,23 +494,18 @@ instr_insert_obj:
    STA   __local_instr_insert_obj__0
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_insert_obj__3
-   LDA   HARGS+1
-   STA   __local_instr_insert_obj__4
+   STX   __local_instr_insert_obj__4
    LDA   __local_instr_insert_obj__0
    LDY   #$04
    STA   (__local_instr_insert_obj__3),Y
    LDA   __local_instr_insert_obj__0
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_insert_obj__1
-   LDA   HARGS+1
-   STA   __local_instr_insert_obj__2
-   LDA   HARGS
+   STX   __local_instr_insert_obj__2
    CLC
    ADC   #$06
-   LDA   HARGS+1
+   TXA
    ADC   #$00
    LDY   #$06
    LDA   (__local_instr_insert_obj__1),Y
@@ -536,10 +523,8 @@ print_obj:
    SUBROUTINE
 
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_print_obj__0
-   LDA   HARGS+1
-   STA   __local_print_obj__1
+   STX   __local_print_obj__1
    LDY   #$07
    LDA   (__local_print_obj__0),Y
    STA   __local_print_obj__obj
@@ -573,10 +558,8 @@ instr_get_sibling:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_get_sibling__0
-   LDA   HARGS+1
-   STA   __local_instr_get_sibling__1
+   STX   __local_instr_get_sibling__1
    LDY   #$05
    LDA   (__local_instr_get_sibling__0),Y
    JMP   store_and_branch_on
@@ -586,10 +569,8 @@ instr_get_child:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_get_child__0
-   LDA   HARGS+1
-   STA   __local_instr_get_child__1
+   STX   __local_instr_get_child__1
    LDY   #$06
    LDA   (__local_instr_get_child__0),Y
    JMP   store_and_branch_on
@@ -599,10 +580,8 @@ instr_get_parent:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_get_parent__0
-   LDA   HARGS+1
-   STA   __local_instr_get_parent__1
+   STX   __local_instr_get_parent__1
    LDY   #$04
    LDA   (__local_instr_get_parent__0),Y
    STA   __zpabi_store_result__value_0
@@ -615,10 +594,8 @@ instr_jin:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_jin__2
-   LDA   HARGS+1
-   STA   __local_instr_jin__3
+   STX   __local_instr_jin__3
    LDY   #$04
    LDA   OPERANDS+2
    CMP   (__local_instr_jin__2),Y
@@ -635,10 +612,8 @@ attr_ptr_and_mask:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   attr_ptr
-   LDA   HARGS+1
-   STA   attr_ptr+1
+   STX   attr_ptr+1
    LDA   OPERANDS+2
    STA   __local_attr_ptr_and_mask__attr
    CMP   #$10
@@ -649,9 +624,9 @@ attr_ptr_and_mask:
    CLC
    ADC   #$02
    STA   attr_ptr
-   BCC   .carry_inc@1
+   BCC   .carry_inc@2
    INC   attr_ptr+1
-.carry_inc@1:
+.carry_inc@2:
 .if_end@4:
    LDA   #$0F
    SEC
@@ -742,10 +717,8 @@ get_property_ptr:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_get_property_ptr__1
-   LDA   HARGS+1
-   STA   __local_get_property_ptr__2
+   STX   __local_get_property_ptr__2
    LDY   #$07
    LDA   (__local_get_property_ptr__1),Y
    STA   __local_get_property_ptr__0
@@ -760,9 +733,8 @@ get_property_ptr:
    LDY   #$00
    LDA   (props),Y
    ASL
-   STA   __local_get_property_ptr__0
-   INC   __local_get_property_ptr__0
-   LDA   __local_get_property_ptr__0
+   CLC
+   ADC   #$01
    RTS
 
 get_property_num:
@@ -985,9 +957,9 @@ instr_get_prop_len:
    SEC
    SBC   #$01
    STA   __local_instr_get_prop_len__0
-   BCS   .carry_inc@2
+   BCS   .carry_inc@3
    DEC   __local_instr_get_prop_len__1
-.carry_inc@2:
+.carry_inc@3:
    LDY   #$00
    LDA   (__local_instr_get_prop_len__0),Y
    LSR

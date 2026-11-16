@@ -10,13 +10,13 @@ each is timed from entry to RTS, including the call to
 words that aren't there: below the first entry, between two entries,
 and past the last.
 
-The compiled function is 112 instructions against the original's 107,
-and takes 0.2% fewer cycles over these lookups. `z_header_addr` and
+The compiled function is 107 instructions, as many as the original,
+and takes 2.5% fewer cycles over these lookups. `z_header_addr` and
 `zchar_scratch2` are placed in zero page at the original's $BA and
-$DA. Most of the instructions left over:
+$DA. Where the two still differ:
 
-- `get_dictionary_addr` returns the pointer in HARGS, and the caller
-  copies it to a zero-page pair before using it as a `(zp),Y` base.
+- `get_dictionary_addr` returns the pointer in A and X, and the caller
+  stores it to a zero-page pair before using it as a `(zp),Y` base.
   The original leaves it in SCRATCH2.
 - The original reads the entry length and count with Y = n + 1 ..
   n + 3, where the C adds n to the pointer once and uses `LDY #1` ..

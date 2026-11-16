@@ -2268,11 +2268,11 @@ class TestPointerDeclarations(unittest.TestCase):
         self.assertIn("prologue: 0 arg bytes, 2 local bytes", text)
         self.assertIn("SBC   #$04", text)
 
-    def test_pointer_function_returns_long_style(self):
-        # A function returning `int *` uses the same 2-byte return
-        # convention as `long`: bytes written to HARGS+0..1.
-        # No PHA/PLA wrap (save_a=False) since no register holds the
-        # return.
+    def test_pointer_function_returns_in_a_and_x(self):
+        # A function returning `int *` returns it as an `int`: the low
+        # byte in A and the high byte in X, which the soft-stack
+        # epilogue keeps on the hardware stack while it tears down
+        # the frame.
         from compile import _run_stage
         text = _run_stage(
             "codegen",
@@ -2280,9 +2280,8 @@ class TestPointerDeclarations(unittest.TestCase):
             "int main(void) { return 0; }\n",
         )
         self.assertIn("foo:", text)
-        # The return sequence writes the two bytes into HARGS+0/+1.
-        self.assertIn("STA   HARGS\n", text)
-        self.assertIn("STA   HARGS+1\n", text)
+        self.assertNotIn("STA   HARGS", text)
+        self.assertIn("   PLA\n   TAX\n   PLA\n   RTS\n", text)
         # Prologue allocates 0 local bytes (pointer param sits in
         # the caller's pushed args, not in our locals).
         self.assertIn("prologue: 2 arg bytes, 0 local bytes", text)

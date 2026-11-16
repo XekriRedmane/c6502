@@ -27,8 +27,6 @@
       ascii_to_zchar's and match_dictionary_word's counts and indexes
       are arguments, return values, and locals, where the original
       keeps them in SCRATCH1, SCRATCH2, and SCRATCH3.
-    - The separator tests return a bool where the original returns the
-      carry.
     - GETLN1 returns the line's length in X, which C can't read. The
       line ends with the $8D that GETLN1 stores after it, so read_line
       finds the length by looking for that byte. The original stores
@@ -687,7 +685,9 @@ static bool is_std_separator(uint8_t c) {
 }
 
 static bool is_separator(uint8_t c) {
-    return is_dict_separator(c) || is_std_separator(c);
+    if (is_dict_separator(c))
+        return true;
+    return is_std_separator(c);
 }
 
 /* Skips the rest of a word longer than six characters, counting it. */

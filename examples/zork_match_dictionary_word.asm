@@ -15,6 +15,7 @@ __local_match_dictionary_word__3	EQU	$8A
 __local_match_dictionary_word__entry_0	EQU	$8B
 __local_match_dictionary_word__entry_1	EQU	$8C
 __local_get_dictionary_addr__0	EQU	$8D
+__local_get_dictionary_addr__1	EQU	$8E
 z_header_addr	EQU	$BA
 zchar_scratch2	EQU	$DA
 
@@ -31,7 +32,7 @@ zchar_scratch2	EQU	$DA
 ; item __zp_init section=.text local=false zero=false
 ; zp z_header_addr size=2 at=$BA def=true init=$00,$00
 ; zp zchar_scratch2 size=6 at=$DA def=true init=$00,$00,$00,$00,$00,$00
-; runtime hargs_size=32 hargs_need=2
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 get_dictionary_addr:
@@ -39,29 +40,28 @@ get_dictionary_addr:
 
    LDY   #$08
    LDA   (z_header_addr),Y
-   STA   __local_get_dictionary_addr__0
+   STA   __local_get_dictionary_addr__1
    INY
    LDA   (z_header_addr),Y
    CLC
    ADC   z_header_addr
-   STA   HARGS
+   STA   __local_get_dictionary_addr__0
    LDA   z_header_addr+1
-   ADC   __local_get_dictionary_addr__0
-   STA   HARGS+1
+   ADC   __local_get_dictionary_addr__1
+   TAX
+   LDA   __local_get_dictionary_addr__0
    RTS
 
 match_dictionary_word:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   LDA   HARGS
    STA   __local_match_dictionary_word__entry_0
-   LDA   HARGS+1
-   STA   __local_match_dictionary_word__entry_1
+   STX   __local_match_dictionary_word__entry_1
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
    CLC
-   ADC   HARGS
+   ADC   __local_match_dictionary_word__entry_0
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@0
    INC   __local_match_dictionary_word__entry_1

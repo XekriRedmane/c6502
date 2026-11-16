@@ -160,8 +160,8 @@ class ZpLayout:
 
     The return value's register placement is NOT recorded here — it's
     type-driven and computed identically on both sides in tac_to_asm
-    (a non-pointer return of <=2 bytes returns low byte in A, high
-    byte in X).
+    (a return of <=2 bytes, a pointer included, returns low byte in
+    A, high byte in X).
 
     `pinned` is parallel to `slot_symbols` too, or empty: the fixed
     zero-page address of each byte of a parameter declared
@@ -783,9 +783,9 @@ def _names_used_as_values(prog: tac_ast.Program, names: set[str]) -> set[str]:
 def _fits_return_registers(ret) -> bool:
     """True iff a return of type `ret` comes back in A (and X), or
     there's no return value. This mirrors
-    `tac_to_asm._return_reg_bytes`: a 1-byte integer comes back in A
-    and an `int` / `unsigned int` in A and X. A pointer and anything
-    wider come back in HARGS. A struct reaching here belongs to a
+    `tac_to_asm._return_reg_bytes`: a 1-byte integer comes back in A,
+    and an `int` / `unsigned int` or a pointer in A and X. Anything
+    wider comes back in HARGS. A struct reaching here belongs to a
     `return_bool_in_carry` function, which the type checker already
     limited to a value in A (and X) and a flag in C."""
     t = _strip_quals(ret)
@@ -793,7 +793,7 @@ def _fits_return_registers(ret) -> bool:
         return True
     return isinstance(t, (
         c99_ast.Void, c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
-        c99_ast.Int, c99_ast.UInt,
+        c99_ast.Int, c99_ast.UInt, c99_ast.Pointer,
     ))
 
 
@@ -855,9 +855,8 @@ def fixed_address_layouts(
         if not _fits_return_registers(fun_type.ret):
             raise AbiSelectionError(
                 f"zp_abi function `{name}` has a fixed address but "
-                f"returns a value that doesn't fit in A and X; a "
-                f"pointer and anything wider than 2 bytes come back in "
-                f"HARGS (declare a pointer result as `uint16_t`)"
+                f"returns a value that doesn't fit in A and X; "
+                f"anything wider than 2 bytes comes back in HARGS"
             )
         layout = _validate_zp_abi_extern(name, fn_decl, set(), pool, types)
         pinned = layout.pinned or [None] * len(layout.param_registers)

@@ -604,6 +604,13 @@ def _erase_short(prog, symbols, types) -> None:
             ]
 
 
+def _strip_bool_quals(t):
+    """`t` without the `const` and `volatile` around it."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    return t
+
+
 def _erase_bool(decls, symbols, types) -> None:
     """Replace `_Bool` with `unsigned char` everywhere the passes after
     this one read c99 types: the symbol table, the struct and union
@@ -613,7 +620,12 @@ def _erase_bool(decls, symbols, types) -> None:
     holding 0 or 1, so the back end needs no `_Bool` of its own. The
     expression nodes keep their `_Bool`, so translating the program
     again still lowers its conversions."""
+    from passes.type_checking import FunAttr
     for _, sym in symbols.items():
+        if (isinstance(sym.attrs, FunAttr)
+                and isinstance(sym.type, c99_ast.FunType)
+                and isinstance(_strip_bool_quals(sym.type.ret), c99_ast.Bool)):
+            sym.attrs = dataclasses.replace(sym.attrs, returns_bool=True)
         sym.type = _bool_to_uchar(sym.type)
     if types is not None:
         for _, layout in types.items():

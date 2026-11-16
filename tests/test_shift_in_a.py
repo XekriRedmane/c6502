@@ -1,5 +1,6 @@
 """Unit tests for `passes.shift_in_a`: `STA M; <shifts of M>; LDA M`
-becomes the shifts on A and one `STA M`."""
+becomes the shifts on A and one `STA M`, and `STA M; INC M; LDA M`
+becomes `CLC; ADC #1; STA M`."""
 from __future__ import annotations
 
 import unittest
@@ -145,12 +146,32 @@ class TestShiftInA(unittest.TestCase):
                 asm_ast.ArithmeticShiftLeft(dst=_N),
                 _mov(_N, _A), _RTS_A,
             ]),
-            ("INC", [
-                _mov(_A, _M), asm_ast.Inc(dst=_M), _mov(_M, _A), _RTS_A,
+            ("INC with C read after", [
+                _mov(_A, _M), asm_ast.Inc(dst=_M), _mov(_M, _A),
+                asm_ast.Add(src=_N, dst=_A), _RTS_A,
+            ]),
+            ("INC with no reload", [
+                _mov(_A, _M), asm_ast.Inc(dst=_M), _RTS,
             ]),
         ):
             with self.subTest(name):
                 self.assertEqual(_run(instrs), instrs)
+
+    def test_increment_in_a(self) -> None:
+        # `STA M; INC M; LDA M` with C and V dead after is `CLC; ADC
+        # #1; STA M`, and the DEC form `SEC; SBC #1`.
+        for step, carry, arith in (
+            (asm_ast.Inc, asm_ast.ClearCarry, asm_ast.Add),
+            (asm_ast.Dec, asm_ast.SetCarry, asm_ast.Sub),
+        ):
+            with self.subTest(step.__name__):
+                out = _run([
+                    _mov(_A, _M), step(dst=_M), _mov(_M, _A), _RTS_A,
+                ])
+                self.assertEqual(out, [
+                    carry(), arith(src=asm_ast.Imm(value=1), dst=_A),
+                    _mov(_A, _M), _RTS_A,
+                ])
 
 
 if __name__ == "__main__":

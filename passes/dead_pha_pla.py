@@ -69,6 +69,14 @@ After:  body              → A=original (body preserved it),
 The A / Y / X / memory state is identical. The N/Z state may differ,
 but the flag-dead check guarantees no observer reads the difference.
 
+# Reloading in place of the pair
+
+When the `PHA` saves a value just loaded from a byte the body doesn't
+change, and the body only moves values into registers,
+`LDA M; PHA; TXA; TAY; PLA` becomes `TXA; TAY; LDA M`
+(`_find_reload_pop`), 2 bytes and 5 cycles less. That's a `(zp),Y`
+store of `M` at an index that's in X, as in Zork's `read_line`.
+
 # Where to run
 
 In `_peephole_fixedpoint`, after `direct_index_load` (which is what
@@ -105,6 +113,8 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     # Collect indices to drop. Two-pass shape mirrors direct_index_
     # load: pass 1 identifies droppable pairs, pass 2 rebuilds.
     drop: set[int] = set()
+    # A Pop to replace with the load it restores (`_find_reload_pop`).
+    reload: dict[int, asm_ast.Type_instruction] = {}
     i = 0
     while i < len(instrs):
         first = instrs[i]
@@ -118,10 +128,19 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 # this iteration (they aren't, but staying tidy).
                 i = j + 1
                 continue
+            j = _find_reload_pop(instrs, i)
+            if j is not None:
+                # The load moves from in front of the PHA to the PLA.
+                drop.update((i - 1, i))
+                reload[j] = instrs[i - 1]
+                i = j + 1
+                continue
         i += 1
     if not drop:
         return fn
-    out = [ins for k, ins in enumerate(instrs) if k not in drop]
+    out = [
+        reload.get(k, ins) for k, ins in enumerate(instrs) if k not in drop
+    ]
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
@@ -152,4 +171,42 @@ def _find_matching_pop(
             return None
         if _reads_a(instr) or _kills_a(instr):
             return None
+    return None
+
+
+def _find_reload_pop(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> int | None:
+    """The index of the `Pop(Reg(A))` that restores the value the
+    `Push(Reg(A))` at `i` saves, when that value was just loaded from
+    a byte the body can't change, so that the `Pop` can load it again
+    and the `PHA` / `PLA` pair go. That's the shape
+
+        LDA M; PHA; TXA; TAY; PLA       ->      TXA; TAY; LDA M
+
+    which `_translate_indirect_indexed_store` leaves for a `(zp),Y`
+    store of `M` at an index that's in X. M is a non-volatile `Data`
+    or `ZP` operand, and every instruction of the body moves a value
+    into a register, never reading the pushed A before writing A
+    itself. A load sets N and Z from M as the `PLA` did, and neither
+    touches C or V."""
+    if i == 0:
+        return None
+    load = instrs[i - 1]
+    if not (isinstance(load, asm_ast.Mov) and _is_reg_a(load.dst)
+            and not load.is_volatile
+            and isinstance(load.src, (asm_ast.Data, asm_ast.ZP))):
+        return None
+    a_written = False
+    for j in range(i + 1, len(instrs)):
+        instr = instrs[j]
+        if isinstance(instr, asm_ast.Pop):
+            return j if _is_reg_a(instr.dst) and a_written else None
+        if not (isinstance(instr, asm_ast.Mov)
+                and isinstance(instr.dst, asm_ast.Reg)):
+            return None
+        if _reads_a(instr) and not a_written:
+            return None
+        if _is_reg_a(instr.dst):
+            a_written = True
     return None

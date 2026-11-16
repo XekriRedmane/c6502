@@ -235,34 +235,28 @@ probably not worth it.
 
 ## Make Zork's input.c smaller
 
-`examples/zork/interpreter/input.c` is 1,222 bytes, where Zork's
-code for it is 1,018. These are the differences found in its
-compiled code, with the bytes each one costs in the linked
-interpreter. Most of them recur elsewhere in the program.
+`examples/zork/interpreter/input.c` is 1,177 bytes, where Zork's
+code for it is 1,018. These are the differences left in its compiled
+code.
 
-- **Pointer returns.** A function returning a pointer leaves it in
-  `HARGS`, and each caller copies it out with `LDA HARGS; STA p; LDA
-  HARGS+1; STA p+1`. Zork has 11 such calls, including both of
-  `get_dictionary_addr`. Returning a pointer in A and X, as a 2-byte
-  integer is, would save about 4 bytes a call, but it changes the
-  calling convention.
-- **Bool results.** Nine calls are followed by `ORA #$00` to set the
-  flags from a `bool` result in A. Declaring the separator tests
-  `return_bool_in_carry` in the C would remove those. `is_separator`
-  returns `is_dict_separator(c) || is_std_separator(c)` by building 0
-  or 1, where it could return 1 when the first is true and otherwise
-  end with `JMP is_std_separator`.
-- **An index in X for a `(zp),Y` store.** Twice a store indexed by a
-  value in X goes through `LDA v; PHA; TXA; TAY; PLA; STA (p),Y`,
-  as in `read_line`. When `v` is in memory and unchanged, `TXA; TAY;
-  LDA v; STA (p),Y` does the same and saves 2 bytes.
-- **An index one more than Y.** `parse[(uint8_t)(token_idx + 1)]`
-  right after `LDY token_idx; STA (parse),Y` computes `LDA
-  token_idx; CLC; ADC #$01; TAY`, where Y already holds `token_idx`
-  and `INY` would do, 4 bytes less.
-- **An increment through a slot.** `parse[1]++` is `LDA (parse),Y;
-  STA t; INC t; LDA t; STA (parse),Y`. With C dead, `CLC; ADC #1` in
-  A would do, 3 bytes less.
+- **A byte compared as a value.** `return x < 10;` on a `uint8_t x`
+  is a 16-bit signed compare, `SEC; SBC #$0A; LDA #$00; SBC #$00;
+  BVC; EOR #$80; BMI`, where `CMP #$0A; BCS` would do. A compare that
+  a jump tests narrows through the `ZeroExtend`s
+  (`cmp_zero_jump_fold`), and one whose result is truncated gets a
+  1-byte result (`narrow_widened_arith._narrow_compare`), but the
+  operands of a compare kept as a value stay 16 bits.
+- **A load again after a store through a pointer.** `read_line`
+  stores `c` with `LDA c; STA (text),Y` and loads `c` again right
+  after. `c` is a `__local_*` slot whose address isn't taken, so the
+  store can't change it, but `redundant_load` counts a store through
+  a pointer as a write to any byte.
+- **An argument copied from one callee to another.** `is_separator`
+  passes its `c` to `is_dict_separator` and then `is_std_separator`,
+  and copies it from the first one's parameter slot to the second
+  one's. Slot sharing could give the three functions' `c` one byte.
+  Zork passes `c` in A, which `register` would also do, but
+  `is_dict_separator` keeps it across a call.
 
 ## Keep hot branches from crossing pages
 

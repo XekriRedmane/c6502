@@ -34,8 +34,8 @@ Results come back the same way under both conventions.
 | Result | Where |
 |---|---|
 | 1 byte (`char`, `bool`) | A |
-| 2 bytes (`int`, `unsigned int`) | low byte in A, high byte in X |
-| a pointer, or anything wider than 2 bytes | the zero-page block `HARGS` |
+| 2 bytes (`int`, `unsigned int`, a pointer) | low byte in A, high byte in X |
+| anything wider than 2 bytes | the zero-page block `HARGS` |
 | `bool` from a `return_bool_in_carry` function | the carry flag |
 | a struct of a value and a `bool` from a `return_bool_in_carry` function | the value in A (and X), the `bool` in the carry flag |
 | nothing (`void`) | nothing |

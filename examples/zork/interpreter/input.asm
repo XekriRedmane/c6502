@@ -93,15 +93,14 @@ __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __zpabi_is_dict_separator__c	EQU	$E4
 __zpabi_is_separator__c	EQU	$E4
-__local_instr_sread__0	EQU	$E5
 __local_instr_sread__1	EQU	$E6
-__local_print_status_line__0	EQU	$E7
 __local_read_line__c	EQU	$E7
 __local_z_compress__0	EQU	$E7
 __local_get_dictionary_addr__0	EQU	$E8
 __local_print_status_line__1	EQU	$E8
 __local_read_line__left	EQU	$E8
 __local_z_compress__1	EQU	$E8
+__local_get_dictionary_addr__1	EQU	$E9
 __local_print_status_line__2	EQU	$E9
 __local_read_line__n	EQU	$E9
 __local_z_compress__2	EQU	$E9
@@ -346,7 +345,7 @@ COUT1	EQU	$FDF0
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
 ; zp disk_buffer size=2 at=auto def=false init=
 ; zp disk_sector size=2 at=auto def=false init=
-; runtime hargs_size=5 hargs_need=2
+; runtime hargs_size=5 hargs_need=0
 ; @zp-link-meta-end
 
 print_status_line:
@@ -377,9 +376,8 @@ print_status_line:
    LDX   #$06
    JSR   cout_string
    LDA   CH
-   STA   __local_print_status_line__0
-   INC   __local_print_status_line__0
-   LDA   __local_print_status_line__0
+   CLC
+   ADC   #$01
    STA   CH
    LDA   #$11
    JSR   var_get
@@ -455,11 +453,9 @@ read_line:
    STA   __local_read_line__c
 .if_end@5:
    INX
-   LDA   __local_read_line__c
-   PHA
    TXA
    TAY
-   PLA
+   LDA   __local_read_line__c
    STA   (text),Y
    LDA   __local_read_line__c
    CMP   #$0D
@@ -476,43 +472,42 @@ get_dictionary_addr:
 
    LDY   #$08
    LDA   (Z_HEADER_ADDR),Y
-   STA   __local_get_dictionary_addr__0
+   STA   __local_get_dictionary_addr__1
    INY
    LDA   (Z_HEADER_ADDR),Y
    CLC
    ADC   Z_HEADER_ADDR
-   STA   HARGS
+   STA   __local_get_dictionary_addr__0
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_get_dictionary_addr__0
-   STA   HARGS+1
+   ADC   __local_get_dictionary_addr__1
+   TAX
+   LDA   __local_get_dictionary_addr__0
    RTS
 
 is_dict_separator:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   LDA   HARGS
    STA   __local_is_dict_separator__1
-   LDA   HARGS+1
-   STA   __local_is_dict_separator__2
+   STX   __local_is_dict_separator__2
    LDY   #$00
    LDA   (__local_is_dict_separator__1),Y
    TAX
    LDA   __zpabi_is_dict_separator__c
    BNE   .if_end@7
-   TYA
+   CPY   #$01
    RTS
 .if_end@7:
 .loop@2_start:
    INY
    CMP   (__local_is_dict_separator__1),Y
    BNE   .if_end@8
-   LDA   #$01
+   SEC
    RTS
 .if_end@8:
    DEX
    BNE   .loop@2_start
-   LDA   #$00
+   CLC
    RTS
 
 is_std_separator:
@@ -523,33 +518,26 @@ is_std_separator:
    LDA   __zpabi_is_std_separator__c
    CMP   SEPARATORS_TABLE,X
    BNE   .if_end@10
-   LDA   #$01
+   SEC
    RTS
 .if_end@10:
    INX
    CPX   #$08
    BNE   .is_std_separator@rot@1
 .loop@3_break:
-   LDA   #$00
+   CLC
    RTS
 
 is_separator:
    SUBROUTINE
 
    JSR   is_dict_separator
-   ORA   #$00
-   BNE   .or_true@11
+   BCC   .if_end@11
+   RTS
+.if_end@11:
    LDA   __zpabi_is_dict_separator__c
    STA   __zpabi_is_std_separator__c
-   JSR   is_std_separator
-   ORA   #$00
-   BNE   .or_true@11
-   LDA   #$00
-   JMP   .or_end@12
-.or_true@11:
-   LDA   #$01
-.or_end@12:
-   RTS
+   JMP   is_std_separator
 
 skip_separators:
    SUBROUTINE
@@ -560,10 +548,9 @@ skip_separators:
    LDA   (text),Y
    STA   __zpabi_is_separator__c
    JSR   is_separator
-   ORA   #$00
-   BEQ   .if_end@13
+   BCC   .if_end@12
    RTS
-.if_end@13:
+.if_end@12:
    INC   input_ptr
    DEC   input_count
    INC   char_count
@@ -578,30 +565,30 @@ get_alphabet_for_char:
 
    LDA   __zpabi_get_alphabet_for_char__c
    CMP   #$61
-   BCC   .if_end@16
+   BCC   .if_end@15
    LDA   #$7A
    CMP   __zpabi_get_alphabet_for_char__c
-   BCC   .if_end@16
+   BCC   .if_end@15
    LDA   #$00
    RTS
-.if_end@16:
+.if_end@15:
    LDA   __zpabi_get_alphabet_for_char__c
    CMP   #$41
-   BCC   .if_end@19
+   BCC   .if_end@18
    LDA   #$5A
    CMP   __zpabi_get_alphabet_for_char__c
-   BCC   .if_end@19
+   BCC   .if_end@18
    LDA   #$01
    RTS
-.if_end@19:
+.if_end@18:
    LDA   __zpabi_get_alphabet_for_char__c
    BEQ   .get_alphabet_for_char@scfold@0
    AND   #$80
-   BEQ   .if_end@22
+   BEQ   .if_end@21
 .get_alphabet_for_char@scfold@0:
    LDA   __zpabi_get_alphabet_for_char__c
    RTS
-.if_end@22:
+.if_end@21:
    LDA   #$02
    RTS
 
@@ -612,12 +599,12 @@ search_nonalpha_table:
 .loop@5_start:
    LDA   __zpabi_search_nonalpha_table__c
    CMP   a2_table,X
-   BNE   .if_end@23
+   BNE   .if_end@22
    TXA
    CLC
    ADC   #$08
    RTS
-.if_end@23:
+.if_end@22:
    TXA
    SEC
    SBC   #$01
@@ -708,15 +695,15 @@ ascii_to_zchar:
    STA   __local_ascii_to_zchar__2
    INC   __local_ascii_to_zchar__index
    ORA   #$00
-   BNE   .if_else@25
+   BNE   .if_else@24
    LDA   #$05
-   JMP   .if_end@24
-.if_else@25:
+   JMP   .if_end@23
+.if_else@24:
    STA   __zpabi_get_alphabet_for_char__c
    JSR   get_alphabet_for_char
    STA   __local_ascii_to_zchar__1
    CMP   LOCKED_ALPHABET
-   BEQ   .if_end@26
+   BEQ   .if_end@25
    SEC
    SBC   LOCKED_ALPHABET
    CLC
@@ -728,50 +715,52 @@ ascii_to_zchar:
    STA   __zpabi_get_alphabet_for_char__c
    JSR   get_alphabet_for_char
    CMP   __local_ascii_to_zchar__1
-   BNE   .if_else@28
+   BNE   .if_else@27
    LDA   __local_ascii_to_zchar__0
    CLC
    ADC   #$03
    STA   __local_ascii_to_zchar__z
    LDA   __local_ascii_to_zchar__1
    STA   LOCKED_ALPHABET
-   JMP   .if_end@27
-.if_else@28:
+   JMP   .if_end@26
+.if_else@27:
    LDA   __local_ascii_to_zchar__0
    CLC
    ADC   #$01
    STA   __local_ascii_to_zchar__z
-.if_end@27:
+.if_end@26:
    LDX   __local_ascii_to_zchar__dest
    LDA   __local_ascii_to_zchar__z
    STA   ZCHAR_SCRATCH2,X
    INC   __local_ascii_to_zchar__dest
    DEC   __local_ascii_to_zchar__left
    BEQ   .loop@7_break
-.if_end@26:
+.if_end@25:
    LDA   __local_ascii_to_zchar__2
    STA   __zpabi_get_alphabet_for_char__c
    JSR   get_alphabet_for_char
+   SEC
+   SBC   #$01
    STA   __local_ascii_to_zchar__z
-   DEC   __local_ascii_to_zchar__z
-   BPL   .if_else@31
+   AND   #$80
+   BEQ   .if_else@30
    LDA   __local_ascii_to_zchar__2
    SEC
    SBC   #$5B
-   JMP   .if_end@30
-.if_else@31:
+   JMP   .if_end@29
+.if_else@30:
    LDA   __local_ascii_to_zchar__z
-   BNE   .if_else@33
+   BNE   .if_else@32
    LDA   __local_ascii_to_zchar__2
    SEC
    SBC   #$3B
-   JMP   .if_end@32
-.if_else@33:
+   JMP   .if_end@31
+.if_else@32:
    LDA   __local_ascii_to_zchar__2
    STA   __zpabi_search_nonalpha_table__c
    JSR   search_nonalpha_table
    ORA   #$00
-   BNE   .if_end@34
+   BNE   .if_end@33
    LDX   __local_ascii_to_zchar__dest
    LDA   #$06
    STA   ZCHAR_SCRATCH2,X
@@ -800,10 +789,10 @@ ascii_to_zchar:
    BEQ   .loop@7_break
    LDA   __local_ascii_to_zchar__2
    AND   #$1F
-.if_end@34:
-.if_end@32:
-.if_end@30:
-.if_end@24:
+.if_end@33:
+.if_end@31:
+.if_end@29:
+.if_end@23:
    LDX   __local_ascii_to_zchar__dest
    STA   ZCHAR_SCRATCH2,X
    INC   __local_ascii_to_zchar__dest
@@ -818,19 +807,17 @@ match_dictionary_word:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   LDA   HARGS
    STA   __local_match_dictionary_word__entry_0
-   LDA   HARGS+1
-   STA   __local_match_dictionary_word__entry_1
+   STX   __local_match_dictionary_word__entry_1
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
    CLC
    ADC   #$01
    STA   __local_match_dictionary_word__3
    CLC
-   ADC   HARGS
+   ADC   __local_match_dictionary_word__entry_0
    STA   __local_match_dictionary_word__1
-   LDA   HARGS+1
+   TXA
    ADC   #$00
    STA   __local_match_dictionary_word__count_0
    LDA   (__local_match_dictionary_word__1),Y
@@ -852,7 +839,7 @@ match_dictionary_word:
    CLC
    ADC   #$03
    CLC
-   ADC   HARGS
+   ADC   __local_match_dictionary_word__entry_0
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@0
    INC   __local_match_dictionary_word__entry_1
@@ -908,10 +895,10 @@ match_dictionary_word:
    BCC   .tail@0
    LDA   ZCHAR_SCRATCH2+1
    CMP   __local_match_dictionary_word__0
-   BNE   .if_end@42
+   BNE   .if_end@41
    LDA   ZCHAR_SCRATCH2
    CMP   __local_match_dictionary_word__1
-   BNE   .if_end@42
+   BNE   .if_end@41
    INY
    LDA   (__local_match_dictionary_word__entry_0),Y
    STA   __local_match_dictionary_word__0
@@ -926,10 +913,10 @@ match_dictionary_word:
    BCC   .tail@0
    LDA   ZCHAR_SCRATCH2+3
    CMP   __local_match_dictionary_word__0
-   BNE   .if_end@44
+   BNE   .if_end@43
    LDA   ZCHAR_SCRATCH2+2
    CMP   __local_match_dictionary_word__1
-   BNE   .if_end@44
+   BNE   .if_end@43
    LDA   __local_match_dictionary_word__entry_0
    SEC
    SBC   Z_HEADER_ADDR
@@ -939,8 +926,8 @@ match_dictionary_word:
    TAX
    LDA   __local_match_dictionary_word__0
    RTS
-.if_end@44:
-.if_end@42:
+.if_end@43:
+.if_end@41:
    LDA   __local_match_dictionary_word__entry_0
    CLC
    ADC   __local_match_dictionary_word__6
@@ -997,22 +984,22 @@ instr_sread:
    LDA   (parse),Y
    INY
    CMP   (parse),Y
-   BNE   .if_end@46
+   BNE   .if_end@45
    RTS
-.if_end@46:
+.if_end@45:
    LDA   input_count
-   BNE   .if_end@49
+   BNE   .if_end@48
    LDA   char_count
-   BNE   .if_end@49
+   BNE   .if_end@48
    RTS
-.if_end@49:
+.if_end@48:
    LDA   char_count
    CMP   #$06
-   BNE   .if_end@50
+   BNE   .if_end@49
    JSR   skip_separators
-.if_end@50:
+.if_end@49:
    LDA   char_count
-   BNE   .if_end@51
+   BNE   .if_end@50
    LDX   #$00
 .instr_sread@rot@4:
    LDA   #$00
@@ -1031,34 +1018,31 @@ instr_sread:
    LDA   (text),Y
    STA   __zpabi_is_dict_separator__c
    JSR   is_dict_separator
-   ORA   #$00
-   BEQ   .if_end@52
+   BCC   .if_end@51
    LDA   __zpabi_is_dict_separator__c
    STA   ZCHAR_SCRATCH1
    INC   char_count
    DEC   input_count
    INC   input_ptr
    JMP   .instr_sread@search
-.if_end@52:
+.if_end@51:
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_std_separator__c
    JSR   is_std_separator
-   ORA   #$00
-   BEQ   .if_end@53
+   BCC   .if_end@52
    INC   input_ptr
    DEC   input_count
    JMP   .loop@10_start
-.if_end@53:
-.if_end@51:
+.if_end@52:
+.if_end@50:
    LDA   input_count
-   BEQ   .if_end@56
+   BEQ   .if_end@55
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_separator__c
    JSR   is_separator
-   ORA   #$00
-   BNE   .if_end@56
+   BCS   .if_end@55
    LDY   input_ptr
    LDA   (text),Y
    LDX   char_count
@@ -1067,7 +1051,7 @@ instr_sread:
    INC   char_count
    INC   input_ptr
    JMP   .loop@10_start
-.if_end@56:
+.if_end@55:
 .instr_sread@search:
    LDA   char_count
    BNE   .lb_skip@2
@@ -1085,21 +1069,17 @@ instr_sread:
    TXA
    LDY   token_idx
    STA   (parse),Y
-   LDA   token_idx
-   CLC
-   ADC   #$01
-   TAY
+   INY
    LDA   __local_instr_sread__1
    STA   (parse),Y
    LDA   token_idx
    CLC
    ADC   #$04
    STA   token_idx
+   CLC
    LDY   #$01
    LDA   (parse),Y
-   STA   __local_instr_sread__0
-   INC   __local_instr_sread__0
-   LDA   __local_instr_sread__0
+   ADC   #$01
    STA   (parse),Y
    LDA   #$00
    STA   char_count

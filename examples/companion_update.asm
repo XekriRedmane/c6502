@@ -159,7 +159,7 @@ find_active_entity:
    SBC   #$08
    LDY   #$00
    STA   (__zpabi_find_active_entity__out_row_0),Y
-   LDA   #$01
+   SEC
    RTS
 .if_end@0:
    DEX
@@ -167,7 +167,7 @@ find_active_entity:
    TXA
    BPL   .find_active_entity@rot@0
 .loop@0_break:
-   LDA   #$00
+   CLC
    RTS
 
 entity_proximity:
@@ -178,8 +178,7 @@ entity_proximity:
    LDA   #>__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
-   ORA   #$00
-   BNE   .if_end@1
+   BCS   .if_end@1
    RTS
 .if_end@1:
    LDX   __zpabi_entity_proximity__slot

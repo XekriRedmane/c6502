@@ -23,6 +23,47 @@ def _indexed_x(name):
     return asm_ast.IndexedData(name=name, index=asm_ast.X())
 
 
+class TestStepInA(unittest.TestCase):
+    """The step done in A, as `shift_in_a` leaves `STA tmp; INC tmp;
+    LDA tmp`: `LDA m,X; CLC; ADC #1; CMP n` -> `LDY m,X; INY; CPY n`."""
+
+    def _shape(self, step):
+        carry, arith = (
+            (asm_ast.ClearCarry(), asm_ast.Add)
+            if step is asm_ast.Inc else (asm_ast.SetCarry(), asm_ast.Sub)
+        )
+        return [
+            asm_ast.Mov(src=_indexed_x("floor_ceil"), dst=A,
+                        is_volatile=False),
+            carry,
+            arith(src=asm_ast.Imm(value=1), dst=A),
+            asm_ast.Compare(left=A, right=asm_ast.Data(name="beam_y")),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_folds(self):
+        for step in (asm_ast.Inc, asm_ast.Dec):
+            with self.subTest(step.__name__):
+                out = _run(self._shape(step))
+                self.assertEqual(out[:3], [
+                    asm_ast.Mov(src=_indexed_x("floor_ceil"), dst=Y,
+                                is_volatile=False),
+                    step(dst=Y),
+                    asm_ast.Compare(left=Y,
+                                    right=asm_ast.Data(name="beam_y")),
+                ])
+
+    def test_v_read_after_left_alone(self):
+        # The ADC's V is read after, and CPY doesn't set V.
+        instrs = self._shape(asm_ast.Inc)
+        instrs[-1:] = [
+            asm_ast.Branch(cond=asm_ast.VS(), target=".l"),
+            asm_ast.Label(name=".l"),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 class TestInc(unittest.TestCase):
     def test_5_atom_inc_pattern_folds_to_3(self):
         tmp = asm_ast.Data(name="__local_f__0", offset=0)

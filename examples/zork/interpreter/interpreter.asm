@@ -1,25 +1,39 @@
 HARGS	EQU	$00
-SSP	EQU	$02
-FP	EQU	$04
-DPTR	EQU	$06
-disk_buffer	EQU	$08
-disk_sector	EQU	$0A
-input_ptr	EQU	$0C
-char_count	EQU	$0D
-input_count	EQU	$0E
-token_idx	EQU	$0F
-parse	EQU	$10
-text	EQU	$12
-props	EQU	$14
-sign_bit	EQU	$16
-remainder	EQU	$17
-attr_ptr	EQU	$19
-__local_instr_sread__0	EQU	$1B
-__local_return_value__0	EQU	$1B
-__local_instr_sread__1	EQU	$1C
-__local_return_value__1	EQU	$1C
-__local_return_value__x	EQU	$1D
-__local_return_value__count	EQU	$1E
+SSP	EQU	$01
+FP	EQU	$03
+DPTR	EQU	$05
+disk_buffer	EQU	$07
+disk_sector	EQU	$09
+input_ptr	EQU	$0B
+char_count	EQU	$0C
+input_count	EQU	$0D
+token_idx	EQU	$0E
+parse	EQU	$0F
+text	EQU	$11
+props	EQU	$13
+sign_bit	EQU	$15
+remainder	EQU	$16
+attr_ptr	EQU	$18
+__local_branch_to_offset__0	EQU	$1A
+__local_mulu16__b_0	EQU	$1A
+__local_print_status_line__1	EQU	$1A
+__local_return_value__0	EQU	$1A
+__local_branch_to_offset__pages_0	EQU	$1B
+__local_mulu16__b_1	EQU	$1B
+__local_print_status_line__2	EQU	$1B
+__local_return_value__1	EQU	$1B
+__local_branch_to_offset__1	EQU	$1C
+__local_mulu16__a_0	EQU	$1C
+__local_print_obj__obj	EQU	$1C
+__local_return_value__x	EQU	$1C
+__local_branch_to_offset__pages_1	EQU	$1D
+__local_mulu16__a_1	EQU	$1D
+__local_print_obj__0	EQU	$1D
+__local_return_value__count	EQU	$1D
+__local_branch_to_offset__2	EQU	$1E
+__local_mulu16__product	EQU	$1E
+__local_print_obj__1	EQU	$1E
+__local_store_result__0	EQU	$1E
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -50,80 +64,66 @@ __local_ascii_to_zchar__z	EQU	$50
 __local_do_2op__equal	EQU	$50
 __local_instr_call__0	EQU	$50
 __local_match_dictionary_word__0	EQU	$50
-__local_print_status_line__0	EQU	$50
+__local_print_number__0	EQU	$50
+__local_print_zstring__ch	EQU	$50
 __local_ascii_to_zchar__dest	EQU	$51
 __local_do_2op__0	EQU	$51
 __local_instr_call__1	EQU	$51
 __local_match_dictionary_word__1	EQU	$51
-__local_print_status_line__1	EQU	$51
+__local_print_number__1	EQU	$51
+__local_print_zstring__c_0	EQU	$51
 __local_ascii_to_zchar__left	EQU	$52
 __local_do_2op__left	EQU	$52
 __local_instr_call__2	EQU	$52
 __local_match_dictionary_word__count_0	EQU	$52
-__local_print_status_line__2	EQU	$52
+__local_print_number__count	EQU	$52
+__local_print_zstring__0	EQU	$52
 __local_ascii_to_zchar__0	EQU	$53
 __local_do_2op__2	EQU	$53
 __local_instr_call__i	EQU	$53
 __local_match_dictionary_word__2	EQU	$53
-__local_print_number__0	EQU	$53
-__local_print_zstring__ch	EQU	$53
+__local_print_number__2	EQU	$53
 __local_ascii_to_zchar__1	EQU	$54
 __local_do_2op__3	EQU	$54
 __local_instr_call__args	EQU	$54
 __local_match_dictionary_word__3	EQU	$54
-__local_print_number__1	EQU	$54
-__local_print_zstring__c_0	EQU	$54
+__local_print_number__n_1	EQU	$54
 __local_ascii_to_zchar__2	EQU	$55
 __local_do_2op__4	EQU	$55
 __local_instr_call__3	EQU	$55
 __local_match_dictionary_word__count_1	EQU	$55
-__local_print_number__count	EQU	$55
-__local_print_zstring__0	EQU	$55
+__local_print_number__n_0	EQU	$55
 __local_ascii_to_zchar__index	EQU	$56
 __local_do_2op__5	EQU	$56
 __local_match_dictionary_word__6	EQU	$56
-__local_print_number__2	EQU	$56
-__local_branch_to_offset__0	EQU	$57
+__local_print_number__digits	EQU	$56
 __local_get_object_addr__0	EQU	$57
 __local_match_dictionary_word__entry_0	EQU	$57
-__local_mulu16__b_0	EQU	$57
-__local_print_number__n_1	EQU	$57
-__local_store_result__0	EQU	$57
-__local_branch_to_offset__pages_0	EQU	$58
+__local_print_ascii_string__count	EQU	$57
+__local_print_number__4	EQU	$57
 __local_get_object_addr__1	EQU	$58
 __local_match_dictionary_word__entry_1	EQU	$58
-__local_mulu16__b_1	EQU	$58
-__local_print_ascii_string__count	EQU	$58
-__local_print_number__n_0	EQU	$58
-__local_branch_to_offset__1	EQU	$59
+__local_print_ascii_string__i	EQU	$58
+__local_print_number__5	EQU	$58
 __local_get_object_addr__2	EQU	$59
-__local_mulu16__a_0	EQU	$59
-__local_print_ascii_string__i	EQU	$59
-__local_print_number__digits	EQU	$59
-__local_branch_to_offset__pages_1	EQU	$5A
+__local_print_number__6	EQU	$59
 __local_get_object_addr__3	EQU	$5A
-__local_mulu16__a_1	EQU	$5A
-__local_print_number__4	EQU	$5A
-__local_branch_to_offset__2	EQU	$5B
+__local_print_number__7	EQU	$5A
+__local_buffer_char__0	EQU	$5B
+__local_divu16__partial_0	EQU	$5B
 __local_get_object_addr__obj	EQU	$5B
-__local_mulu16__product	EQU	$5B
-__local_print_number__5	EQU	$5B
-__local_print_number__6	EQU	$5C
-__local_print_number__7	EQU	$5D
-__local_buffer_char__0	EQU	$5E
-__local_divu16__partial_0	EQU	$5E
-__local_divu16__partial_1	EQU	$5F
-__local_dump_buffer_with_more__0	EQU	$5F
-__local_divu16__quotient_0	EQU	$60
-__local_dump_buffer_with_more__end	EQU	$60
-__local_divu16__quotient_1	EQU	$61
-__local_dump_buffer_to_printer__x	EQU	$61
-__local_divu16__0	EQU	$62
-__local_dump_buffer_to_printer__1	EQU	$62
-__local_divu16__1	EQU	$63
-__local_dump_buffer_to_printer__2	EQU	$63
-__local_divu16__2	EQU	$64
-__local_divu16__i	EQU	$65
+__local_divu16__partial_1	EQU	$5C
+__local_dump_buffer_with_more__0	EQU	$5C
+__local_divu16__quotient_0	EQU	$5D
+__local_dump_buffer_with_more__end	EQU	$5D
+__local_divu16__quotient_1	EQU	$5E
+__local_dump_buffer_to_printer__x	EQU	$5E
+__local_divu16__0	EQU	$5F
+__local_dump_buffer_to_printer__1	EQU	$5F
+__local_divu16__1	EQU	$60
+__local_dump_buffer_to_printer__2	EQU	$60
+__local_divu16__2	EQU	$61
+__local_divu16__i	EQU	$62
 SECTORS_PER_TRACK	EQU	$7F
 CURR_OPCODE	EQU	$80
 OPERAND_COUNT	EQU	$81
@@ -218,7 +218,6 @@ __zpabi_check_sign__b_0	EQU	$E4
 __zpabi_is_dict_separator__c	EQU	$E4
 __zpabi_is_separator__c	EQU	$E4
 __local_dec_var__1	EQU	$E5
-__local_get_dictionary_addr__0	EQU	$E5
 __local_inc_var__1	EQU	$E5
 __local_instr_clear_attr__1	EQU	$E5
 __local_instr_get_child__1	EQU	$E5
@@ -227,35 +226,34 @@ __local_instr_insert_obj__1	EQU	$E5
 __local_instr_jin__3	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
 __local_instr_restore__1	EQU	$E5
+__local_instr_sread__1	EQU	$E5
 __local_locate_last_ram_page__2	EQU	$E5
-__local_print_obj__obj	EQU	$E5
-__local_read_line__c	EQU	$E5
-__local_z_compress__0	EQU	$E5
 __zpabi_check_sign__b_1	EQU	$E5
 __local_check_sign__a	EQU	$E6
 __local_dec_var__2	EQU	$E6
+__local_get_dictionary_addr__0	EQU	$E6
+__local_get_next_code_byte2__page	EQU	$E6
 __local_get_prompted_number_from_user__key	EQU	$E6
 __local_inc_var__2	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E6
 __local_instr_insert_obj__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
 __local_locate_last_ram_page__3	EQU	$E6
-__local_print_obj__0	EQU	$E6
-__local_read_line__left	EQU	$E6
-__local_z_compress__1	EQU	$E6
+__local_read_line__c	EQU	$E6
+__local_z_compress__0	EQU	$E6
 __zpabi_divu16__dividend_0	EQU	$E6
 __zpabi_mulu16__a_0	EQU	$E6
 __zpabi_store_result__value_0	EQU	$E6
 __local_attr_ptr_and_mask__attr	EQU	$E7
+__local_get_dictionary_addr__1	EQU	$E7
 __local_get_nonstack_var__var	EQU	$E7
 __local_get_prompted_number_from_user__1	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
 __local_instr_put_prop__2	EQU	$E7
 __local_locate_last_ram_page__page	EQU	$E7
-__local_print_obj__1	EQU	$E7
-__local_read_line__n	EQU	$E7
+__local_read_line__left	EQU	$E7
 __local_var_put__var	EQU	$E7
-__local_z_compress__2	EQU	$E7
+__local_z_compress__1	EQU	$E7
 __zpabi_divu16__dividend_1	EQU	$E7
 __zpabi_mulu16__a_1	EQU	$E7
 __zpabi_store_result__value_1	EQU	$E7
@@ -265,7 +263,8 @@ __local_get_property_ptr__0	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
 __local_next_property__y	EQU	$E8
 __local_pop__1	EQU	$E8
-__local_z_compress__3	EQU	$E8
+__local_read_line__n	EQU	$E8
+__local_z_compress__2	EQU	$E8
 __zpabi_divu16__divisor_0	EQU	$E8
 __zpabi_find_index_of_page_table__page_0	EQU	$E8
 __zpabi_mulu16__b_0	EQU	$E8
@@ -277,12 +276,12 @@ __local_get_property_len__0	EQU	$E9
 __local_get_property_ptr__1	EQU	$E9
 __local_instr_insert_obj__5	EQU	$E9
 __local_pop__2	EQU	$E9
+__local_z_compress__3	EQU	$E9
 __zpabi_divu16__divisor_1	EQU	$E9
 __zpabi_find_index_of_page_table__page_1	EQU	$E9
 __zpabi_mulu16__b_1	EQU	$E9
 __zpabi_push__value_1	EQU	$E9
 __zpabi_set_nonstack_var__value_1	EQU	$E9
-__local_get_next_code_byte2__page	EQU	$EA
 __local_get_nonstack_var__2	EQU	$EA
 __local_get_property_ptr__2	EQU	$EA
 __local_store_and_branch_on__related	EQU	$EA
@@ -376,7 +375,7 @@ COUT1	EQU	$FDF0
 ; def get_alphabet params= locals= indirect=false in_cycle=false
 ; def get_alphabet_for_char params=__zpabi_get_alphabet_for_char__c locals= indirect=false in_cycle=false
 ; def get_const_word params= locals=__local_get_const_word__1 indirect=false in_cycle=false
-; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0 indirect=false in_cycle=false
+; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
 ; def get_next_code_byte params= locals=__local_get_next_code_byte__page indirect=false in_cycle=false
 ; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__page indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__1 indirect=false in_cycle=false
@@ -414,7 +413,7 @@ COUT1	EQU	$FDF0
 ; def instr_restore params= locals=__local_instr_restore__pages,__local_instr_restore__1 indirect=false in_cycle=false
 ; def instr_save params= locals=__local_instr_save__pages indirect=false in_cycle=false
 ; def instr_set_attr params= locals= indirect=false in_cycle=false
-; def instr_sread params= locals=__local_instr_sread__0,__local_instr_sread__1 indirect=false in_cycle=false
+; def instr_sread params= locals=__local_instr_sread__1 indirect=false in_cycle=false
 ; def instr_test_attr params= locals=__local_instr_test_attr__1 indirect=false in_cycle=false
 ; def internal_error params= locals= indirect=false in_cycle=false
 ; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__1,__local_is_dict_separator__2 indirect=false in_cycle=false
@@ -434,7 +433,7 @@ COUT1	EQU	$FDF0
 ; def print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count locals=__local_print_ascii_string__count,__local_print_ascii_string__i indirect=false in_cycle=false param_regs=,,X
 ; def print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 locals=__local_print_number__0,__local_print_number__1,__local_print_number__count,__local_print_number__2,__local_print_number__n_1,__local_print_number__n_0,__local_print_number__digits,__local_print_number__4,__local_print_number__5,__local_print_number__6,__local_print_number__7 indirect=false in_cycle=false
 ; def print_obj params=__zpabi_print_obj__obj locals=__local_print_obj__obj,__local_print_obj__0,__local_print_obj__1 indirect=false in_cycle=false param_regs=A
-; def print_status_line params= locals=__local_print_status_line__0,__local_print_status_line__1,__local_print_status_line__2 indirect=false in_cycle=false
+; def print_status_line params= locals=__local_print_status_line__1,__local_print_status_line__2 indirect=false in_cycle=false
 ; def print_string_literal params= locals= indirect=false in_cycle=false
 ; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals= indirect=false in_cycle=false
@@ -794,18 +793,18 @@ COUT1	EQU	$FDF0
 ; share member=check_sign:__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 holder=instr_div holder=instr_mod holder=instr_mul live=instr_div:check_sign live=instr_mod:check_sign live=instr_mul:check_sign forward=instr_div>check_sign forward=instr_mod>check_sign forward=instr_mul>check_sign writer=instr_div writer=instr_mod writer=instr_mul
 ; share member=is_dict_separator:__zpabi_is_dict_separator__c member=is_separator:__zpabi_is_separator__c holder=instr_sread live=instr_sread:is_dict_separator live=is_separator:is_dict_separator forward=instr_sread>is_dict_separator forward=is_separator>is_dict_separator writer=instr_sread
 ; share member=find_index_of_page_table:__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 holder=get_next_code_byte holder=get_next_code_byte2 live=get_next_code_byte:find_index_of_page_table live=get_next_code_byte2:find_index_of_page_table forward=get_next_code_byte>find_index_of_page_table forward=get_next_code_byte2>find_index_of_page_table writer=get_next_code_byte writer=get_next_code_byte2
-; zp disk_buffer size=2 at=$08 def=true init=$00,$00
-; zp disk_sector size=2 at=$0A def=true init=$00,$00
-; zp input_ptr size=1 at=$0C def=true init=$00
-; zp char_count size=1 at=$0D def=true init=$00
-; zp input_count size=1 at=$0E def=true init=$00
-; zp token_idx size=1 at=$0F def=true init=$00
-; zp parse size=2 at=$10 def=true init=$00,$00
-; zp text size=2 at=$12 def=true init=$00,$00
-; zp props size=2 at=$14 def=true init=$00,$00
-; zp sign_bit size=1 at=$16 def=true init=$00
-; zp remainder size=2 at=$17 def=true init=$00,$00
-; zp attr_ptr size=2 at=$19 def=true init=$00,$00
+; zp disk_buffer size=2 at=$07 def=true init=$00,$00
+; zp disk_sector size=2 at=$09 def=true init=$00,$00
+; zp input_ptr size=1 at=$0B def=true init=$00
+; zp char_count size=1 at=$0C def=true init=$00
+; zp input_count size=1 at=$0D def=true init=$00
+; zp token_idx size=1 at=$0E def=true init=$00
+; zp parse size=2 at=$0F def=true init=$00,$00
+; zp text size=2 at=$11 def=true init=$00,$00
+; zp props size=2 at=$13 def=true init=$00,$00
+; zp sign_bit size=1 at=$15 def=true init=$00
+; zp remainder size=2 at=$16 def=true init=$00,$00
+; zp attr_ptr size=2 at=$18 def=true init=$00,$00
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -871,7 +870,7 @@ COUT1	EQU	$FDF0
 ; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
 ; zp CURR_LINE size=1 at=$ED def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
-; runtime hargs_size=2 hargs_need=2
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 
@@ -2395,11 +2394,9 @@ set_page_first:
    TAX
    LDA   #$FF
    STA   (PREV_PAGE_TABLE),Y
-   LDA   __local_set_page_first__0
-   PHA
    TXA
    TAY
-   PLA
+   LDA   __local_set_page_first__0
    STA   (NEXT_PAGE_TABLE),Y
    LDA   FIRST_Z_PAGE
    LDY   __local_set_page_first__prev_first
@@ -3019,19 +3016,18 @@ get_object_addr:
    STA   __local_get_object_addr__0
    LDA   __local_get_object_addr__2
    ADC   __local_get_object_addr__1
-   STA   __local_get_object_addr__1
+   TAX
    LDA   __local_get_object_addr__0
    CLC
    ADC   __local_get_object_addr__obj
    BCC   .carry_inc@0
-   INC   __local_get_object_addr__1
+   INX
    CLC
 .carry_inc@0:
    ADC   #$35
-   STA   HARGS
-   LDA   __local_get_object_addr__1
-   ADC   #$00
-   STA   HARGS+1
+   BCC   .carry_inc@1
+   INX
+.carry_inc@1:
    RTS
 
 instr_remove_obj:
@@ -3044,14 +3040,11 @@ remove_obj:
    LDA   OPERANDS
    STA   __local_remove_obj__4
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_remove_obj__2
-   LDA   HARGS+1
-   STA   __local_remove_obj__3
-   LDA   HARGS
+   STX   __local_remove_obj__3
    CLC
    ADC   #$04
-   LDA   HARGS+1
+   TXA
    ADC   #$00
    LDY   #$04
    LDA   (__local_remove_obj__2),Y
@@ -3059,10 +3052,8 @@ remove_obj:
    RTS
 .if_end@0:
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_remove_obj__0
-   LDA   HARGS+1
-   STA   __local_remove_obj__1
+   STX   __local_remove_obj__1
    LDY   #$06
    LDA   (__local_remove_obj__0),Y
    CMP   __local_remove_obj__4
@@ -3075,10 +3066,8 @@ remove_obj:
 .if_else@2:
 .loop@0_start:
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_remove_obj__0
-   LDA   HARGS+1
-   STA   __local_remove_obj__1
+   STX   __local_remove_obj__1
    LDY   #$05
    LDA   (__local_remove_obj__0),Y
    CMP   __local_remove_obj__4
@@ -3103,23 +3092,18 @@ instr_insert_obj:
    STA   __local_instr_insert_obj__0
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_insert_obj__3
-   LDA   HARGS+1
-   STA   __local_instr_insert_obj__4
+   STX   __local_instr_insert_obj__4
    LDA   __local_instr_insert_obj__0
    LDY   #$04
    STA   (__local_instr_insert_obj__3),Y
    LDA   __local_instr_insert_obj__0
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_insert_obj__1
-   LDA   HARGS+1
-   STA   __local_instr_insert_obj__2
-   LDA   HARGS
+   STX   __local_instr_insert_obj__2
    CLC
    ADC   #$06
-   LDA   HARGS+1
+   TXA
    ADC   #$00
    LDY   #$06
    LDA   (__local_instr_insert_obj__1),Y
@@ -3137,10 +3121,8 @@ print_obj:
    SUBROUTINE
 
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_print_obj__0
-   LDA   HARGS+1
-   STA   __local_print_obj__1
+   STX   __local_print_obj__1
    LDY   #$07
    LDA   (__local_print_obj__0),Y
    STA   __local_print_obj__obj
@@ -3302,10 +3284,8 @@ instr_get_sibling:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_get_sibling__0
-   LDA   HARGS+1
-   STA   __local_instr_get_sibling__1
+   STX   __local_instr_get_sibling__1
    LDY   #$05
    LDA   (__local_instr_get_sibling__0),Y
 
@@ -3465,10 +3445,8 @@ instr_get_child:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_get_child__0
-   LDA   HARGS+1
-   STA   __local_instr_get_child__1
+   STX   __local_instr_get_child__1
    LDY   #$06
    LDA   (__local_instr_get_child__0),Y
    JMP   store_and_branch_on
@@ -3478,10 +3456,8 @@ instr_get_parent:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_get_parent__0
-   LDA   HARGS+1
-   STA   __local_instr_get_parent__1
+   STX   __local_instr_get_parent__1
    LDY   #$04
    LDA   (__local_instr_get_parent__0),Y
    STA   __zpabi_store_result__value_0
@@ -3494,10 +3470,8 @@ instr_jin:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_instr_jin__2
-   LDA   HARGS+1
-   STA   __local_instr_jin__3
+   STX   __local_instr_jin__3
    LDY   #$04
    LDA   OPERANDS+2
    CMP   (__local_instr_jin__2),Y
@@ -3514,10 +3488,8 @@ attr_ptr_and_mask:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   attr_ptr
-   LDA   HARGS+1
-   STA   attr_ptr+1
+   STX   attr_ptr+1
    LDA   OPERANDS+2
    STA   __local_attr_ptr_and_mask__attr
    CMP   #$10
@@ -3528,9 +3500,9 @@ attr_ptr_and_mask:
    CLC
    ADC   #$02
    STA   attr_ptr
-   BCC   .carry_inc@1
+   BCC   .carry_inc@2
    INC   attr_ptr+1
-.carry_inc@1:
+.carry_inc@2:
 .if_end@4:
    LDA   #$0F
    SEC
@@ -3620,10 +3592,8 @@ get_property_ptr:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   LDA   HARGS
    STA   __local_get_property_ptr__1
-   LDA   HARGS+1
-   STA   __local_get_property_ptr__2
+   STX   __local_get_property_ptr__2
    LDY   #$07
    LDA   (__local_get_property_ptr__1),Y
    STA   __local_get_property_ptr__0
@@ -3638,9 +3608,8 @@ get_property_ptr:
    LDY   #$00
    LDA   (props),Y
    ASL
-   STA   __local_get_property_ptr__0
-   INC   __local_get_property_ptr__0
-   LDA   __local_get_property_ptr__0
+   CLC
+   ADC   #$01
    RTS
 
 get_property_num:
@@ -3863,9 +3832,9 @@ instr_get_prop_len:
    SEC
    SBC   #$01
    STA   __local_instr_get_prop_len__0
-   BCS   .carry_inc@2
+   BCS   .carry_inc@3
    DEC   __local_instr_get_prop_len__1
-.carry_inc@2:
+.carry_inc@3:
    LDY   #$00
    LDA   (__local_instr_get_prop_len__0),Y
    LSR
@@ -4448,9 +4417,8 @@ print_status_line:
    LDX   #$06
    JSR   cout_string
    LDA   CH
-   STA   __local_print_status_line__0
-   INC   __local_print_status_line__0
-   LDA   __local_print_status_line__0
+   CLC
+   ADC   #$01
    STA   CH
    LDA   #$11
    JSR   var_get
@@ -4526,11 +4494,9 @@ read_line:
    STA   __local_read_line__c
 .if_end@5:
    INX
-   LDA   __local_read_line__c
-   PHA
    TXA
    TAY
-   PLA
+   LDA   __local_read_line__c
    STA   (text),Y
    LDA   __local_read_line__c
    CMP   #$0D
@@ -4547,44 +4513,53 @@ get_dictionary_addr:
 
    LDY   #$08
    LDA   (Z_HEADER_ADDR),Y
-   STA   __local_get_dictionary_addr__0
+   STA   __local_get_dictionary_addr__1
    INY
    LDA   (Z_HEADER_ADDR),Y
    CLC
    ADC   Z_HEADER_ADDR
-   STA   HARGS
+   STA   __local_get_dictionary_addr__0
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_get_dictionary_addr__0
-   STA   HARGS+1
+   ADC   __local_get_dictionary_addr__1
+   TAX
+   LDA   __local_get_dictionary_addr__0
    RTS
 
 is_dict_separator:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   LDA   HARGS
    STA   __local_is_dict_separator__1
-   LDA   HARGS+1
-   STA   __local_is_dict_separator__2
+   STX   __local_is_dict_separator__2
    LDY   #$00
    LDA   (__local_is_dict_separator__1),Y
    TAX
    LDA   __zpabi_is_dict_separator__c
    BNE   .if_end@7
-   TYA
+   CPY   #$01
    RTS
 .if_end@7:
 .loop@2_start:
    INY
    CMP   (__local_is_dict_separator__1),Y
    BNE   .if_end@8
-   LDA   #$01
+   SEC
    RTS
 .if_end@8:
    DEX
    BNE   .loop@2_start
-   LDA   #$00
+   CLC
    RTS
+
+is_separator:
+   SUBROUTINE
+
+   JSR   is_dict_separator
+   BCC   .if_end@11
+   RTS
+.if_end@11:
+   LDA   __zpabi_is_dict_separator__c
+   STA   __zpabi_is_std_separator__c
 
 is_std_separator:
    SUBROUTINE
@@ -4594,32 +4569,14 @@ is_std_separator:
    LDA   __zpabi_is_std_separator__c
    CMP   SEPARATORS_TABLE,X
    BNE   .if_end@10
-   LDA   #$01
+   SEC
    RTS
 .if_end@10:
    INX
    CPX   #$08
    BNE   .is_std_separator@rot@1
 .loop@3_break:
-   LDA   #$00
-   RTS
-
-is_separator:
-   SUBROUTINE
-
-   JSR   is_dict_separator
-   ORA   #$00
-   BNE   .or_true@11
-   LDA   __zpabi_is_dict_separator__c
-   STA   __zpabi_is_std_separator__c
-   JSR   is_std_separator
-   ORA   #$00
-   BNE   .or_true@11
-   LDA   #$00
-   JMP   .or_end@12
-.or_true@11:
-   LDA   #$01
-.or_end@12:
+   CLC
    RTS
 
 skip_separators:
@@ -4631,10 +4588,9 @@ skip_separators:
    LDA   (text),Y
    STA   __zpabi_is_separator__c
    JSR   is_separator
-   ORA   #$00
-   BEQ   .if_end@13
+   BCC   .if_end@12
    RTS
-.if_end@13:
+.if_end@12:
    INC   input_ptr
    DEC   input_count
    INC   char_count
@@ -4649,30 +4605,30 @@ get_alphabet_for_char:
 
    LDA   __zpabi_get_alphabet_for_char__c
    CMP   #$61
-   BCC   .if_end@16
+   BCC   .if_end@15
    LDA   #$7A
    CMP   __zpabi_get_alphabet_for_char__c
-   BCC   .if_end@16
+   BCC   .if_end@15
    LDA   #$00
    RTS
-.if_end@16:
+.if_end@15:
    LDA   __zpabi_get_alphabet_for_char__c
    CMP   #$41
-   BCC   .if_end@19
+   BCC   .if_end@18
    LDA   #$5A
    CMP   __zpabi_get_alphabet_for_char__c
-   BCC   .if_end@19
+   BCC   .if_end@18
    LDA   #$01
    RTS
-.if_end@19:
+.if_end@18:
    LDA   __zpabi_get_alphabet_for_char__c
    BEQ   .get_alphabet_for_char@scfold@0
    AND   #$80
-   BEQ   .if_end@22
+   BEQ   .if_end@21
 .get_alphabet_for_char@scfold@0:
    LDA   __zpabi_get_alphabet_for_char__c
    RTS
-.if_end@22:
+.if_end@21:
    LDA   #$02
    RTS
 
@@ -4683,12 +4639,12 @@ search_nonalpha_table:
 .loop@5_start:
    LDA   __zpabi_search_nonalpha_table__c
    CMP   a2_table,X
-   BNE   .if_end@23
+   BNE   .if_end@22
    TXA
    CLC
    ADC   #$08
    RTS
-.if_end@23:
+.if_end@22:
    TXA
    SEC
    SBC   #$01
@@ -4725,15 +4681,15 @@ ascii_to_zchar:
    STA   __local_ascii_to_zchar__2
    INC   __local_ascii_to_zchar__index
    ORA   #$00
-   BNE   .if_else@25
+   BNE   .if_else@24
    LDA   #$05
-   JMP   .if_end@24
-.if_else@25:
+   JMP   .if_end@23
+.if_else@24:
    STA   __zpabi_get_alphabet_for_char__c
    JSR   get_alphabet_for_char
    STA   __local_ascii_to_zchar__1
    CMP   LOCKED_ALPHABET
-   BEQ   .if_end@26
+   BEQ   .if_end@25
    SEC
    SBC   LOCKED_ALPHABET
    CLC
@@ -4745,50 +4701,52 @@ ascii_to_zchar:
    STA   __zpabi_get_alphabet_for_char__c
    JSR   get_alphabet_for_char
    CMP   __local_ascii_to_zchar__1
-   BNE   .if_else@28
+   BNE   .if_else@27
    LDA   __local_ascii_to_zchar__0
    CLC
    ADC   #$03
    STA   __local_ascii_to_zchar__z
    LDA   __local_ascii_to_zchar__1
    STA   LOCKED_ALPHABET
-   JMP   .if_end@27
-.if_else@28:
+   JMP   .if_end@26
+.if_else@27:
    LDA   __local_ascii_to_zchar__0
    CLC
    ADC   #$01
    STA   __local_ascii_to_zchar__z
-.if_end@27:
+.if_end@26:
    LDX   __local_ascii_to_zchar__dest
    LDA   __local_ascii_to_zchar__z
    STA   ZCHAR_SCRATCH2,X
    INC   __local_ascii_to_zchar__dest
    DEC   __local_ascii_to_zchar__left
    BEQ   .loop@7_break
-.if_end@26:
+.if_end@25:
    LDA   __local_ascii_to_zchar__2
    STA   __zpabi_get_alphabet_for_char__c
    JSR   get_alphabet_for_char
+   SEC
+   SBC   #$01
    STA   __local_ascii_to_zchar__z
-   DEC   __local_ascii_to_zchar__z
-   BPL   .if_else@31
+   AND   #$80
+   BEQ   .if_else@30
    LDA   __local_ascii_to_zchar__2
    SEC
    SBC   #$5B
-   JMP   .if_end@30
-.if_else@31:
+   JMP   .if_end@29
+.if_else@30:
    LDA   __local_ascii_to_zchar__z
-   BNE   .if_else@33
+   BNE   .if_else@32
    LDA   __local_ascii_to_zchar__2
    SEC
    SBC   #$3B
-   JMP   .if_end@32
-.if_else@33:
+   JMP   .if_end@31
+.if_else@32:
    LDA   __local_ascii_to_zchar__2
    STA   __zpabi_search_nonalpha_table__c
    JSR   search_nonalpha_table
    ORA   #$00
-   BNE   .if_end@34
+   BNE   .if_end@33
    LDX   __local_ascii_to_zchar__dest
    LDA   #$06
    STA   ZCHAR_SCRATCH2,X
@@ -4817,10 +4775,10 @@ ascii_to_zchar:
    BEQ   .loop@7_break
    LDA   __local_ascii_to_zchar__2
    AND   #$1F
-.if_end@34:
-.if_end@32:
-.if_end@30:
-.if_end@24:
+.if_end@33:
+.if_end@31:
+.if_end@29:
+.if_end@23:
    LDX   __local_ascii_to_zchar__dest
    STA   ZCHAR_SCRATCH2,X
    INC   __local_ascii_to_zchar__dest
@@ -4888,19 +4846,17 @@ match_dictionary_word:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   LDA   HARGS
    STA   __local_match_dictionary_word__entry_0
-   LDA   HARGS+1
-   STA   __local_match_dictionary_word__entry_1
+   STX   __local_match_dictionary_word__entry_1
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
    CLC
    ADC   #$01
    STA   __local_match_dictionary_word__3
    CLC
-   ADC   HARGS
+   ADC   __local_match_dictionary_word__entry_0
    STA   __local_match_dictionary_word__1
-   LDA   HARGS+1
+   TXA
    ADC   #$00
    STA   __local_match_dictionary_word__count_0
    LDA   (__local_match_dictionary_word__1),Y
@@ -4922,7 +4878,7 @@ match_dictionary_word:
    CLC
    ADC   #$03
    CLC
-   ADC   HARGS
+   ADC   __local_match_dictionary_word__entry_0
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@0
    INC   __local_match_dictionary_word__entry_1
@@ -4978,10 +4934,10 @@ match_dictionary_word:
    BCC   .tail@0
    LDA   ZCHAR_SCRATCH2+1
    CMP   __local_match_dictionary_word__0
-   BNE   .if_end@42
+   BNE   .if_end@41
    LDA   ZCHAR_SCRATCH2
    CMP   __local_match_dictionary_word__1
-   BNE   .if_end@42
+   BNE   .if_end@41
    INY
    LDA   (__local_match_dictionary_word__entry_0),Y
    STA   __local_match_dictionary_word__0
@@ -4996,10 +4952,10 @@ match_dictionary_word:
    BCC   .tail@0
    LDA   ZCHAR_SCRATCH2+3
    CMP   __local_match_dictionary_word__0
-   BNE   .if_end@44
+   BNE   .if_end@43
    LDA   ZCHAR_SCRATCH2+2
    CMP   __local_match_dictionary_word__1
-   BNE   .if_end@44
+   BNE   .if_end@43
    LDA   __local_match_dictionary_word__entry_0
    SEC
    SBC   Z_HEADER_ADDR
@@ -5009,8 +4965,8 @@ match_dictionary_word:
    TAX
    LDA   __local_match_dictionary_word__0
    RTS
-.if_end@44:
-.if_end@42:
+.if_end@43:
+.if_end@41:
    LDA   __local_match_dictionary_word__entry_0
    CLC
    ADC   __local_match_dictionary_word__6
@@ -5067,22 +5023,22 @@ instr_sread:
    LDA   (parse),Y
    INY
    CMP   (parse),Y
-   BNE   .if_end@46
+   BNE   .if_end@45
    RTS
-.if_end@46:
+.if_end@45:
    LDA   input_count
-   BNE   .if_end@49
+   BNE   .if_end@48
    LDA   char_count
-   BNE   .if_end@49
+   BNE   .if_end@48
    RTS
-.if_end@49:
+.if_end@48:
    LDA   char_count
    CMP   #$06
-   BNE   .if_end@50
+   BNE   .if_end@49
    JSR   skip_separators
-.if_end@50:
+.if_end@49:
    LDA   char_count
-   BNE   .if_end@51
+   BNE   .if_end@50
    LDX   #$00
 .instr_sread@rot@4:
    LDA   #$00
@@ -5101,34 +5057,31 @@ instr_sread:
    LDA   (text),Y
    STA   __zpabi_is_dict_separator__c
    JSR   is_dict_separator
-   ORA   #$00
-   BEQ   .if_end@52
+   BCC   .if_end@51
    LDA   __zpabi_is_dict_separator__c
    STA   ZCHAR_SCRATCH1
    INC   char_count
    DEC   input_count
    INC   input_ptr
    JMP   .instr_sread@search
-.if_end@52:
+.if_end@51:
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_std_separator__c
    JSR   is_std_separator
-   ORA   #$00
-   BEQ   .if_end@53
+   BCC   .if_end@52
    INC   input_ptr
    DEC   input_count
    JMP   .loop@10_start
-.if_end@53:
-.if_end@51:
+.if_end@52:
+.if_end@50:
    LDA   input_count
-   BEQ   .if_end@56
+   BEQ   .if_end@55
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_separator__c
    JSR   is_separator
-   ORA   #$00
-   BNE   .if_end@56
+   BCS   .if_end@55
    LDY   input_ptr
    LDA   (text),Y
    LDX   char_count
@@ -5137,7 +5090,7 @@ instr_sread:
    INC   char_count
    INC   input_ptr
    JMP   .loop@10_start
-.if_end@56:
+.if_end@55:
 .instr_sread@search:
    LDA   char_count
    BNE   .lb_skip@2
@@ -5155,21 +5108,17 @@ instr_sread:
    TXA
    LDY   token_idx
    STA   (parse),Y
-   LDA   token_idx
-   CLC
-   ADC   #$01
-   TAY
+   INY
    LDA   __local_instr_sread__1
    STA   (parse),Y
    LDA   token_idx
    CLC
    ADC   #$04
    STA   token_idx
+   CLC
    LDY   #$01
    LDA   (parse),Y
-   STA   __local_instr_sread__0
-   INC   __local_instr_sread__0
-   LDA   __local_instr_sread__0
+   ADC   #$01
    STA   (parse),Y
    LDA   #$00
    STA   char_count

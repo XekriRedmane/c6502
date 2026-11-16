@@ -69,6 +69,23 @@ modes STX / STY don't support — skip those.
 The Mov atom must not be volatile (preserves the existing peephole
 convention of leaving volatile mem-to-A traffic alone).
 
+# An index register that already holds the byte
+
+The converse shape steps a byte into an index register that already
+holds it:
+
+    LDY M; ...; LDA M; CLC; ADC #1; TAY     ->     LDY M; ...; INY
+
+`_rewrite_index_steps` turns `LDA M; CLC; ADC #k; TAY` into `INY`
+once or twice for `k` of 1 or 2, `SEC; SBC #k` into `DEY`, and the
+same with `TAX`, `INX`, and `DEX`, when the register still holds M:
+its last write in the block is `LDY M` (or `LDX M`), and nothing
+since writes M or might. A store through a pointer might, except to
+a byte no pointer can point to, which is a `static` whose address the
+unit never takes (`_unaliased_statics`), such as Zork's `token_idx`
+in examples/zork/interpreter/input.c. A, C, and V must be dead
+after. N and Z come out the same, from M plus or minus `k`.
+
 # Where to run
 
 Inside the asm-peephole fixedpoint, after `replace_pseudoregisters`
@@ -86,13 +103,157 @@ from passes.asm_liveness import (
 
 
 def apply_transfer_pm1_store(prog: asm_ast.Program) -> asm_ast.Program:
+    unaliased = _unaliased_statics(prog)
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(
+                _rewrite_index_steps(_rewrite_function(tl), unaliased)
+            )
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
+
+
+def _unaliased_statics(prog: asm_ast.Program) -> frozenset[str]:
+    """The `static` objects of `prog` whose address nothing in the
+    unit takes, so that no pointer can point into them: no
+    `LoadAddress` of them, no `#<name` or `#>name`, and no static
+    initialized with their address. Other units can't name them."""
+    statics = {
+        tl.name for tl in prog.top_level
+        if isinstance(tl, asm_ast.StaticVariable) and not tl.is_global
+    }
+    taken: set[str] = set()
+    for tl in prog.top_level:
+        if isinstance(tl, asm_ast.StaticVariable):
+            for init in tl.init:
+                name = getattr(init, "name", None)
+                if isinstance(init, asm_ast.AddressInit) and name:
+                    taken.add(name)
+        elif isinstance(tl, asm_ast.Function):
+            for ins in tl.instructions:
+                for op in _operands(ins):
+                    if isinstance(op, (asm_ast.ImmLabelLow,
+                                       asm_ast.ImmLabelHigh)):
+                        taken.add(op.name)
+                if isinstance(ins, asm_ast.LoadAddress) and isinstance(
+                    ins.src, asm_ast.Data,
+                ):
+                    taken.add(ins.src.name)
+    return frozenset(statics - taken)
+
+
+def _operands(ins):
+    for field in ("src", "dst", "src1", "src2", "left", "right"):
+        op = getattr(ins, field, None)
+        if op is not None:
+            yield op
+
+
+_INDIRECT = (
+    asm_ast.Indirect, asm_ast.IndirectY, asm_ast.IndirectZp,
+    asm_ast.IndirectZpY, asm_ast.Frame, asm_ast.Stack,
+    asm_ast.IndexedData,
+)
+
+
+def _rewrite_index_steps(
+    fn: asm_ast.Function, unaliased: frozenset[str],
+) -> asm_ast.Function:
+    """`LDA M; CLC; ADC #k; TAY` as `INY` k times (and the `SBC`, X
+    forms) where Y still holds M. See "An index register that already
+    holds the byte" above."""
+    instrs = list(fn.instructions)
+    changed = False
+    i = 0
+    while i + 3 < len(instrs):
+        load, carry, arith, move = instrs[i:i + 4]
+        if not (isinstance(load, asm_ast.Mov) and not load.is_volatile
+                and isinstance(load.dst, asm_ast.Reg)
+                and isinstance(load.dst.reg, asm_ast.A)
+                and isinstance(load.src, (asm_ast.Data, asm_ast.ZP))
+                and isinstance(move, asm_ast.Mov)
+                and isinstance(move.src, asm_ast.Reg)
+                and isinstance(move.src.reg, asm_ast.A)
+                and isinstance(move.dst, asm_ast.Reg)
+                and isinstance(move.dst.reg, (asm_ast.X, asm_ast.Y))):
+            i += 1
+            continue
+        if isinstance(arith, asm_ast.Add) and isinstance(
+            carry, asm_ast.ClearCarry,
+        ):
+            step = asm_ast.Inc
+        elif isinstance(arith, asm_ast.Sub) and isinstance(
+            carry, asm_ast.SetCarry,
+        ):
+            step = asm_ast.Dec
+        else:
+            i += 1
+            continue
+        if not (isinstance(arith.src, asm_ast.Imm)
+                and arith.src.value in (1, 2)
+                and isinstance(arith.dst, asm_ast.Reg)
+                and isinstance(arith.dst.reg, asm_ast.A)):
+            i += 1
+            continue
+        reg = move.dst
+        after = i + 4
+        if not (_holds(instrs, i, reg, load.src, unaliased)
+                and a_dead_at(instrs, after) and c_dead_at(instrs, after)
+                and v_dead_at(instrs, after)):
+            i += 1
+            continue
+        instrs[i:i + 4] = [step(dst=reg)] * arith.src.value
+        changed = True
+        i += 1
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _holds(instrs, i: int, reg, mem, unaliased) -> bool:
+    """True when `reg` (X or Y) holds the byte `mem` at `instrs[i]`:
+    walking back through the block, the last write to `reg` is a load
+    of `mem`, and nothing after it writes `mem` or might."""
+    from passes.asm_aliasing import may_alias
+    from passes.asm_liveness import kills_x, kills_y, sets_up_y
+    is_y = isinstance(reg.reg, asm_ast.Y)
+    kills = kills_y if is_y else kills_x
+    private = isinstance(mem, asm_ast.Data) and mem.name in unaliased
+    for k in range(i - 1, -1, -1):
+        ins = instrs[k]
+        # A LoadAddress writes two bytes, which the check of `dst`
+        # below would compare only the first of.
+        if isinstance(ins, (asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
+                            asm_ast.Return, asm_ast.Ret, asm_ast.Call,
+                            asm_ast.FunctionPrologue,
+                            asm_ast.AllocateStack, asm_ast.LoadAddress)):
+            return False
+        if (isinstance(ins, asm_ast.Mov) and ins.dst == reg
+                and ins.src == mem and not ins.is_volatile):
+            return True
+        # Any write to the register, including `INX` / `DEX`, which
+        # `kills_x` doesn't count since they read X too.
+        if (kills(ins) or (is_y and sets_up_y(ins))
+                or getattr(ins, "dst", None) == reg):
+            return False
+        dst = getattr(ins, "dst", None)
+        if dst is None or isinstance(dst, asm_ast.Reg):
+            continue
+        if isinstance(dst, _INDIRECT):
+            # Only an indexed store into `mem`'s own object reaches a
+            # byte no pointer can.
+            if not private or getattr(dst, "name", None) == mem.name:
+                return False
+            continue
+        if dst == mem or may_alias(dst, mem):
+            return False
+    return False
+
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:

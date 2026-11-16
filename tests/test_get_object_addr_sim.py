@@ -7,7 +7,7 @@ multiply as `8x + x` (three ASL / ROL pairs and an add). It's run with
 py65 on the same header and object numbers as the compiled function,
 and both are timed from entry to RTS.
 
-The compiled function is 44 instructions and 842 cycles over the six
+The compiled function is 40 instructions and 639 cycles over the six
 calls, against the original's 30 and 580, so the 5% comparisons are
 expected failures. The multiply is now `(x << 3) + x` inline, as in
 the original, and its high byte takes the carry with `BCC` / `INC`
@@ -20,11 +20,8 @@ original's $BA (`[[c6502::zeropage(0xBA)]]`), so it's read as the
 - The original adds `+ 53` and the table offset into SCRATCH2 in
   place, carrying with `BCC` / `INC` and keeping the low byte in A
   between adds. c6502 adds the table offset and the product as full
-  16-bit adds, and the `+ 53` reads the sum from a temp and writes
-  it to HARGS, so its high byte isn't in place and keeps the `ADC
-  #0` form. Putting that sum in HARGS from the start would need the
-  return value's bytes assigned to HARGS before register
-  allocation.
+  16-bit adds through temps. The `+ 53` is done on the pointer it
+  returns in A and X, carrying into X with `BCC` / `INX`.
 
 `test_no_regression` holds the current numbers as ceilings."""
 
@@ -94,8 +91,8 @@ class TestGetObjectAddr(unittest.TestCase):
         mem[sym["z_header_addr"] + 1] = _HEADER_PAGE
         mem[self.zp_symbols["__zpabi_get_object_addr__obj"]] = obj
         cycles = call(mpu, sym["get_object_addr"])
-        hargs = self.sim.runtime.symbols.get("HARGS", 0x04)
-        return cycles, mem[hargs] | (mem[hargs + 1] << 8)
+        # A pointer comes back with its low byte in A, its high in X.
+        return cycles, mpu.a | (mpu.x << 8)
 
     def test_results_match_original(self) -> None:
         for obj in _OBJECTS:
@@ -121,8 +118,8 @@ class TestGetObjectAddr(unittest.TestCase):
 
     def test_no_regression(self) -> None:
         compiled = sum(self._run_compiled(o)[0] for o in _OBJECTS)
-        self.assertLessEqual(self.compiled_count, 44)
-        self.assertLessEqual(compiled, 842)
+        self.assertLessEqual(self.compiled_count, 40)
+        self.assertLessEqual(compiled, 639)
 
 
 if __name__ == "__main__":

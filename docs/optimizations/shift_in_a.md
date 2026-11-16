@@ -116,10 +116,31 @@ two byte shifts in A (see [strength reduction](strength_reduction.md)).
   rewrite leaves the shifted value in A, not the value that was
   stored.
 
+### An increment
+
+`STA M; INC M; LDA M` becomes `CLC; ADC #1; STA M`, and the `DEC` form
+`SEC; SBC #1; STA M`, which is 3 bytes and 7 cycles less in zero
+page. The NMOS 6502 has no `INC A`. The `ADC` and `SBC` set C and V,
+which `INC` and `DEC` leave alone, so both must be dead after the
+load. Zork's `parse[1]++` reads its byte through a pointer, and since
+`INC` has no `(zp),Y` mode, it went through a slot:
+
+```
+   LDY   #$01                          LDY   #$01
+   LDA   (parse),Y                     LDA   (parse),Y
+   STA   __local_instr_sread__0  ->    CLC
+   INC   __local_instr_sread__0        ADC   #$01
+   LDA   __local_instr_sread__0        STA   (parse),Y
+   STA   (parse),Y
+```
+
+`carry_known` then moves the `CLC` in front of the `LDY`, where C is
+known.
+
 ## What it leaves alone
 
-- `INC` and `DEC`. The NMOS 6502 has no form of them that works on
-  A.
+- An `INC` or `DEC` whose C or V a later instruction reads, or one
+  without the `LDA M` after it.
 - A shift with anything other than shifts of other bytes, or the
   constant stores above, between it and the store.
 - A shift of a byte that wasn't just stored from A, such as an

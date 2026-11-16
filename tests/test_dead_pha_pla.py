@@ -210,3 +210,57 @@ class TestDeadPhaPla(unittest.TestCase):
         self.assertFalse(any(
             isinstance(ins, (asm_ast.Push, asm_ast.Pop)) for ins in out
         ))
+
+
+class TestReload(unittest.TestCase):
+    """`LDA M; PHA; TXA; TAY; PLA` as `TXA; TAY; LDA M`, the store of
+    `M` through `(p),Y` at an index in X (Zork's `read_line`)."""
+
+    _M = asm_ast.Data(name="__local_f__c", offset=0)
+
+    def _shape(self, load=None, body=None):
+        load = load or asm_ast.Mov(src=self._M, dst=_REG_A, is_volatile=False)
+        body = body if body is not None else [
+            asm_ast.Mov(src=_REG_X, dst=_REG_A, is_volatile=False),
+            asm_ast.Mov(src=_REG_A, dst=_REG_Y, is_volatile=False),
+        ]
+        return [
+            load, asm_ast.Push(src=_REG_A), *body, asm_ast.Pop(dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90),
+                        is_volatile=False),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_reloads(self) -> None:
+        out = _rewrite(self._shape())
+        self.assertEqual(out[:3], [
+            asm_ast.Mov(src=_REG_X, dst=_REG_A, is_volatile=False),
+            asm_ast.Mov(src=_REG_A, dst=_REG_Y, is_volatile=False),
+            asm_ast.Mov(src=self._M, dst=_REG_A, is_volatile=False),
+        ])
+        self.assertFalse(any(
+            isinstance(i, (asm_ast.Push, asm_ast.Pop)) for i in out
+        ))
+
+    def test_left_alone(self) -> None:
+        for name, instrs in (
+            ("volatile load", self._shape(load=asm_ast.Mov(
+                src=self._M, dst=_REG_A, is_volatile=True))),
+            ("loaded through a pointer", self._shape(load=asm_ast.Mov(
+                src=asm_ast.IndirectZpY(address=0x92), dst=_REG_A,
+                is_volatile=False))),
+            ("body reads the pushed A", self._shape(body=[
+                asm_ast.Mov(src=_REG_A, dst=_REG_Y, is_volatile=False),
+                asm_ast.Mov(src=_REG_X, dst=_REG_A, is_volatile=False),
+            ])),
+            ("body writes memory", self._shape(body=[
+                asm_ast.Mov(src=_REG_X, dst=_REG_A, is_volatile=False),
+                asm_ast.Mov(src=_REG_A, dst=self._M, is_volatile=False),
+            ])),
+        ):
+            with self.subTest(name):
+                self.assertEqual(_rewrite(list(instrs)), instrs)
+
+
+if __name__ == "__main__":
+    unittest.main()

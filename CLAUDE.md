@@ -132,7 +132,12 @@ Two key runtime conventions:
   comes back in A (and X) and the flag in C, with no sret pointer,
   so the function stays zp_abi-eligible. The callee does `LDA flag;
   CMP #1; [LDX hi;] LDA lo`, and the caller stores A (and X) and then
-  `LDA #0; ROL A` into the flag byte.
+  `LDA #0; ROL A` into the flag byte. Under `--optimize`, a `static`
+  `bool` function whose address isn't taken, and whose every call
+  branches on the result or returns it from another such function,
+  gets the convention without the annotation
+  (`passes/carry_return_choice.py`; `FunAttr.returns_bool` records
+  the `bool` before `c99_to_tac` erases it).
 - **`#pragma c6502 call save(hardware_stack)`** before an expression
   statement, a `return`, or a block-scope declaration marks the calls
   in it (`hw_stack_save` on the c99 and TAC `FunctionCall`, set by the
@@ -161,8 +166,8 @@ Two key runtime conventions:
   letters. A `register` local uses **Y** only — exactly one byte. **A
   positional `register` parameter or local can't be a pointer.**
   Return values are type-driven
-  (no keyword): any non-pointer return of ≤2 bytes comes back low
-  byte in A, high byte in X; pointer / wider returns ride HARGS.
+  (no keyword): any return of ≤2 bytes, a pointer included, comes
+  back low byte in A, high byte in X; wider returns ride HARGS.
   Requires zp_abi eligibility (no IndirectCall, no recursion, address
   not taken, params fit) — a `register` param/local on an ineligible
   function is a hard error. `&x` on a `register` object is a hard

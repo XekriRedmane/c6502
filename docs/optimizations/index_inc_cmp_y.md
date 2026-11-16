@@ -94,6 +94,11 @@ for (uint8_t i = 0; i < 8; i++) {
 
 the store to `prev` stays, and `out[i]` gets the previous sum.
 
+[Shift in A](shift_in_a.md) turns `STA tmp; INC tmp; LDA tmp` into
+`CLC; ADC #1` in A when C and V are dead, so the pass also takes `LDA
+m,X; CLC; ADC #1; CMP other` (and `SEC; SBC #1`), with the same
+result. The `ADC`'s V must be dead there, since `CPY` doesn't set V.
+
 ## What it leaves alone
 
 - A Y-indexed table load. The 6502 has `LDY abs,X` but no `LDY abs,Y`.

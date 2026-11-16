@@ -18,6 +18,18 @@ of the same operands in a row, such as
 which `tac_to_asm` lowers as two `LDA key; CMP entry` pairs, and
 whose second `LDA key` is already dropped as redundant.
 
+The same is true of a compare reached by falling through one or more
+branches right after an identical compare,
+
+    Compare(A, M)          CMP M
+    Branch(CC, L1)         BCC L1
+    Branch(NE, L2)         BNE L2
+    Compare(A, M)          CMP M       <- dropped
+
+which `three_way_compare` leaves when it splits `key < e` and `key ==
+e` into a compare of each byte, and the first compare may likewise be
+followed by a run of branches before the one that reaches L.
+
 L must have no other way in. The instruction before the run of labels
 that ends at the compare has to be a `Jump`, `Return`, or `Ret`, so
 nothing falls through, and exactly one `Branch` or `Jump` in the
@@ -59,12 +71,24 @@ def _label_refs(instrs) -> dict[str, list[int]]:
     return refs
 
 
+def _compare_before(instrs, b: int):
+    """The instruction before the run of branches that ends with the
+    branch at `b`, or None at the start of the function."""
+    while b >= 0 and isinstance(instrs[b], asm_ast.Branch):
+        b -= 1
+    return instrs[b] if b >= 0 else None
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
     refs = _label_refs(instrs)
     drop: set[int] = set()
     for c, cmp in enumerate(instrs):
         if not isinstance(cmp, asm_ast.Compare):
+            continue
+        if c > 0 and isinstance(instrs[c - 1], asm_ast.Branch):
+            if _compare_before(instrs, c - 1) == cmp:
+                drop.add(c)
             continue
         s = c
         while s > 0 and isinstance(instrs[s - 1], asm_ast.Label):
@@ -81,7 +105,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         b = sources[0]
         if b < 1 or not isinstance(instrs[b], asm_ast.Branch):
             continue
-        if instrs[b - 1] != cmp:
+        if _compare_before(instrs, b) != cmp:
             continue
         drop.add(c)
     if not drop:

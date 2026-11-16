@@ -17,6 +17,7 @@ Pipeline shape (now driven by PhaseDriver):
        → recognize_indirect_indexed (one-shot, post-fixedpoint)
        → SSA destruction
        → CopyFold (post-destruction)
+       → split_three_way_compares (post-destruction)
        → fold_short_circuit_jump* (post-destruction, until converged)
        → fn'
 
@@ -111,6 +112,7 @@ from passes.optimization.recognize_indirect_indexed import RecognizeIndirectInde
 from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
 from passes.optimization.compare_subtract import HoistSubtractToCompare
 from passes.optimization.static_indexed_access import StaticIndexedAccess
+from passes.optimization.three_way_compare import SplitThreeWayCompares
 
 
 # Module-level driver instance, reused across all optimize_function calls.
@@ -210,6 +212,10 @@ _DRIVER = PhaseDriver(
         # fixed-point loop) is enough because nothing later in the TAC
         # pipeline produces fresh fusable patterns.
         FoldCopiesPostDestruction(),
+        # `a < b` and `a == b` on the same 2-byte values as a compare
+        # of the high bytes and then the low ones. After destruction,
+        # since the new edges would require Phi arguments.
+        SplitThreeWayCompares(),
     ],
     post_destruction_fixedpoint=[
         # Post-destruction short-circuit fold: the `&&` / `||` 0-or-1

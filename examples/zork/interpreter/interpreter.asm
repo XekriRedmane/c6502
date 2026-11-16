@@ -69,40 +69,39 @@ __local_print_zstring__ch	EQU	$50
 __local_ascii_to_zchar__dest	EQU	$51
 __local_do_2op__0	EQU	$51
 __local_instr_call__1	EQU	$51
-__local_match_dictionary_word__1	EQU	$51
+__local_match_dictionary_word__count_0	EQU	$51
 __local_print_number__1	EQU	$51
 __local_print_zstring__c_0	EQU	$51
 __local_ascii_to_zchar__left	EQU	$52
 __local_do_2op__left	EQU	$52
 __local_instr_call__2	EQU	$52
-__local_match_dictionary_word__count_0	EQU	$52
+__local_match_dictionary_word__5	EQU	$52
 __local_print_number__count	EQU	$52
 __local_print_zstring__0	EQU	$52
 __local_ascii_to_zchar__0	EQU	$53
 __local_do_2op__2	EQU	$53
 __local_instr_call__i	EQU	$53
-__local_match_dictionary_word__2	EQU	$53
+__local_match_dictionary_word__6	EQU	$53
 __local_print_number__2	EQU	$53
 __local_ascii_to_zchar__1	EQU	$54
 __local_do_2op__3	EQU	$54
 __local_instr_call__args	EQU	$54
-__local_match_dictionary_word__3	EQU	$54
+__local_match_dictionary_word__count_1	EQU	$54
 __local_print_number__n_1	EQU	$54
 __local_ascii_to_zchar__2	EQU	$55
 __local_do_2op__4	EQU	$55
 __local_instr_call__3	EQU	$55
-__local_match_dictionary_word__count_1	EQU	$55
+__local_match_dictionary_word__8	EQU	$55
 __local_print_number__n_0	EQU	$55
 __local_ascii_to_zchar__index	EQU	$56
 __local_do_2op__5	EQU	$56
-__local_match_dictionary_word__6	EQU	$56
+__local_match_dictionary_word__entry_0	EQU	$56
 __local_print_number__digits	EQU	$56
 __local_get_object_addr__0	EQU	$57
-__local_match_dictionary_word__entry_0	EQU	$57
+__local_match_dictionary_word__entry_1	EQU	$57
 __local_print_ascii_string__count	EQU	$57
 __local_print_number__4	EQU	$57
 __local_get_object_addr__1	EQU	$58
-__local_match_dictionary_word__entry_1	EQU	$58
 __local_print_ascii_string__i	EQU	$58
 __local_print_number__5	EQU	$58
 __local_get_object_addr__2	EQU	$59
@@ -422,7 +421,7 @@ COUT1	EQU	$FDF0
 ; def load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 locals= indirect=false in_cycle=false
 ; def locate_last_ram_page params= locals=__local_locate_last_ram_page__2,__local_locate_last_ram_page__3,__local_locate_last_ram_page__page indirect=false in_cycle=false
 ; def main params= locals=__local_main__0,__local_main__sector indirect=false in_cycle=false
-; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__1,__local_match_dictionary_word__count_0,__local_match_dictionary_word__2,__local_match_dictionary_word__3,__local_match_dictionary_word__count_1,__local_match_dictionary_word__6,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
+; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__count_0,__local_match_dictionary_word__5,__local_match_dictionary_word__6,__local_match_dictionary_word__count_1,__local_match_dictionary_word__8,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
 ; def mulu16 params=__zpabi_mulu16__a_0,__zpabi_mulu16__a_1,__zpabi_mulu16__b_0,__zpabi_mulu16__b_1 locals=__local_mulu16__b_0,__local_mulu16__b_1,__local_mulu16__a_0,__local_mulu16__a_1,__local_mulu16__product indirect=false in_cycle=false
 ; def new_line params= locals= indirect=false in_cycle=false
 ; def next_property params=__zpabi_next_property__y locals=__local_next_property__y indirect=false in_cycle=false param_regs=A
@@ -3656,7 +3655,6 @@ instr_get_prop:
    STA   __local_instr_get_prop__y
    JMP   .loop@2_start
 .instr_get_prop@rot@1:
-   CMP   __local_instr_get_prop__3
    BCS   .if_end@6
    LDY   #$0A
    LDA   (Z_HEADER_ADDR),Y
@@ -3671,9 +3669,9 @@ instr_get_prop:
    LDA   __local_instr_get_prop__3
    ASL
    STA   __local_instr_get_prop__1
-   SEC
-   SBC   #$02
    TAY
+   DEY
+   DEY
    LDA   (__local_instr_get_prop__y),Y
    STA   __local_instr_get_prop__0
    LDA   __local_instr_get_prop__1
@@ -3862,7 +3860,6 @@ instr_put_prop:
    STA   __local_instr_put_prop__y
    JMP   .loop@5_start
 .instr_put_prop@rot@2:
-   CMP   __local_instr_put_prop__1
    BCS   .if_end@17
    JSR   internal_error
 .if_end@17:
@@ -4530,10 +4527,7 @@ is_dict_separator:
    LDA   (__local_is_dict_separator__1),Y
    TAX
    LDA   __zpabi_is_dict_separator__c
-   BNE   .if_end@7
-   CPY   #$01
-   RTS
-.if_end@7:
+   BEQ   .tail@1
 .loop@2_start:
    INY
    CMP   (__local_is_dict_separator__1),Y
@@ -4543,6 +4537,7 @@ is_dict_separator:
 .if_end@8:
    DEX
    BNE   .loop@2_start
+.tail@1:
    CLC
    RTS
 
@@ -4843,31 +4838,23 @@ match_dictionary_word:
    STX   __local_match_dictionary_word__entry_1
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
-   CLC
-   ADC   #$01
-   STA   __local_match_dictionary_word__3
-   CLC
-   ADC   __local_match_dictionary_word__entry_0
-   STA   __local_match_dictionary_word__1
-   TXA
-   ADC   #$00
-   STA   __local_match_dictionary_word__count_0
-   LDA   (__local_match_dictionary_word__1),Y
-   STA   __local_match_dictionary_word__6
-   ASL
-   ASL
-   ASL
-   ASL
-   STA   __local_match_dictionary_word__2
+   TAY
    INY
-   LDA   (__local_match_dictionary_word__1),Y
+   LDA   (__local_match_dictionary_word__entry_0),Y
+   STA   __local_match_dictionary_word__8
+   ASL
+   ASL
+   ASL
+   ASL
+   STA   __local_match_dictionary_word__6
+   INY
+   LDA   (__local_match_dictionary_word__entry_0),Y
    INY
    STA   __local_match_dictionary_word__count_1
-   LDA   (__local_match_dictionary_word__1),Y
-   STA   __local_match_dictionary_word__count_0
-   LDA   __local_match_dictionary_word__3
-   CLC
-   ADC   #$03
+   LDA   (__local_match_dictionary_word__entry_0),Y
+   STA   __local_match_dictionary_word__5
+   INY
+   TYA
    CLC
    ADC   __local_match_dictionary_word__entry_0
    STA   __local_match_dictionary_word__entry_0
@@ -4877,15 +4864,15 @@ match_dictionary_word:
 .loop@8_start:
    LDA   __local_match_dictionary_word__entry_0
    CLC
-   ADC   __local_match_dictionary_word__2
+   ADC   __local_match_dictionary_word__6
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@1
    INC   __local_match_dictionary_word__entry_1
 .carry_inc@1:
-   LDA   __local_match_dictionary_word__count_0
+   LDA   __local_match_dictionary_word__5
    SEC
    SBC   #$10
-   STA   __local_match_dictionary_word__count_0
+   STA   __local_match_dictionary_word__5
    BCS   .carry_inc@2
    DEC   __local_match_dictionary_word__count_1
 .carry_inc@2:
@@ -4898,12 +4885,12 @@ match_dictionary_word:
 .loop@8_break:
    LDA   __local_match_dictionary_word__entry_0
    SEC
-   SBC   __local_match_dictionary_word__2
+   SBC   __local_match_dictionary_word__6
    STA   __local_match_dictionary_word__entry_0
    BCS   .carry_inc@3
    DEC   __local_match_dictionary_word__entry_1
 .carry_inc@3:
-   LDA   __local_match_dictionary_word__count_0
+   LDA   __local_match_dictionary_word__5
    CLC
    ADC   #$10
    STA   __local_match_dictionary_word__count_0
@@ -4912,43 +4899,26 @@ match_dictionary_word:
 .carry_inc@4:
 .loop@9_start:
    LDY   #$00
-   LDA   (__local_match_dictionary_word__entry_0),Y
-   STA   __local_match_dictionary_word__0
-   INY
-   LDA   (__local_match_dictionary_word__entry_0),Y
-   STA   __local_match_dictionary_word__1
-   LDA   ZCHAR_SCRATCH2
-   SEC
-   SBC   __local_match_dictionary_word__1
    LDA   ZCHAR_SCRATCH2+1
-   SBC   __local_match_dictionary_word__0
+   CMP   (__local_match_dictionary_word__entry_0),Y
    BCC   .tail@0
-   LDA   ZCHAR_SCRATCH2+1
-   CMP   __local_match_dictionary_word__0
-   BNE   .if_end@41
-   LDA   ZCHAR_SCRATCH2
-   CMP   __local_match_dictionary_word__1
    BNE   .if_end@41
    INY
-   LDA   (__local_match_dictionary_word__entry_0),Y
-   STA   __local_match_dictionary_word__0
-   INY
-   LDA   (__local_match_dictionary_word__entry_0),Y
-   STA   __local_match_dictionary_word__1
-   LDA   ZCHAR_SCRATCH2+2
-   SEC
-   SBC   __local_match_dictionary_word__1
-   LDA   ZCHAR_SCRATCH2+3
-   SBC   __local_match_dictionary_word__0
+   LDA   ZCHAR_SCRATCH2
+   CMP   (__local_match_dictionary_word__entry_0),Y
    BCC   .tail@0
+   BNE   .if_end@41
+   INY
    LDA   ZCHAR_SCRATCH2+3
-   CMP   __local_match_dictionary_word__0
+   CMP   (__local_match_dictionary_word__entry_0),Y
+   BCC   .tail@0
    BNE   .if_end@43
+   INY
    LDA   ZCHAR_SCRATCH2+2
-   CMP   __local_match_dictionary_word__1
+   CMP   (__local_match_dictionary_word__entry_0),Y
+   BCC   .tail@0
    BNE   .if_end@43
    LDA   __local_match_dictionary_word__entry_0
-   SEC
    SBC   Z_HEADER_ADDR
    STA   __local_match_dictionary_word__0
    LDA   __local_match_dictionary_word__entry_1
@@ -4960,7 +4930,7 @@ match_dictionary_word:
 .if_end@41:
    LDA   __local_match_dictionary_word__entry_0
    CLC
-   ADC   __local_match_dictionary_word__6
+   ADC   __local_match_dictionary_word__8
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@5
    INC   __local_match_dictionary_word__entry_1
@@ -4973,9 +4943,7 @@ match_dictionary_word:
    DEC   __local_match_dictionary_word__count_1
 .carry_inc@6:
    ORA   __local_match_dictionary_word__count_1
-   BEQ   .lb_skip@1
-   JMP   .loop@9_start
-.lb_skip@1:
+   BNE   .loop@9_start
 .tail@0:
    LDX   #$00
    TXA
@@ -5084,14 +5052,12 @@ instr_sread:
 .if_end@55:
 .instr_sread@search:
    LDA   char_count
-   BNE   .lb_skip@2
+   BNE   .lb_skip@1
    JMP   .loop@10_start
-.lb_skip@2:
-   LDA   token_idx
-   CLC
-   ADC   #$02
-   TAY
-   LDA   char_count
+.lb_skip@1:
+   LDY   token_idx
+   INY
+   INY
    STA   (parse),Y
    JSR   ascii_to_zchar
    JSR   match_dictionary_word

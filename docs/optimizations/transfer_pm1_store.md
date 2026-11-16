@@ -105,6 +105,44 @@ write to the register stops the walk, `INX` included, which
 `LDA m; CLC; ADC #2; TAX` into `INX; INX` after an `INX` in
 `tests/test_beam_target_tick_diff.py`'s program.
 
+### A step on either side of a transfer
+
+When the register doesn't hold the byte, the step can still move
+from A to the register on the other side of the transfer:
+
+```
+   CLC                              TAY
+   ADC   #$01             ->        INY
+   TAY
+
+   TYA                              INY
+   CLC                    ->        TYA
+   ADC   #$01
+```
+
+The first requires A, C, and V to be dead after it, since A keeps its
+old value. The second requires Y, C, and V to be dead after it, since
+Y ends up with the sum too. A `TAY` back after the second makes all four
+instructions one `INY`, when A, C, and V are dead after it. N and Z
+come out the same in each, from the sum. Each saves 2 bytes and 2
+cycles for a step of 1, and 1 byte for a step of 2. Zork's
+`match_dictionary_word` (examples/zork/interpreter/input.c) steps its
+index through the dictionary's header with `y++`, which gave both
+shapes:
+
+```
+   LDA   (entry),Y                  LDA   (entry),Y
+   CLC                              TAY
+   ADC   #$01             ->        INY
+   TAY                              ...
+   ...                              INY
+   TYA                              TYA
+   CLC                              CLC
+   ADC   #$01                       ADC   entry
+   CLC
+   ADC   entry
+```
+
 ## What it leaves alone
 
 - A read of the original register afterward. In

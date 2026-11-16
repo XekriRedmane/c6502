@@ -18,7 +18,12 @@ compare, where `apply_carry_const_fold` can fold it.
 
 `apply_carry_const_fold` turns `LDA #k; CMP #c` into `SEC` (when
 k >= c, unsigned) or `CLC`, when A and N/Z are dead after it. Only C
-reaches the next reader, and C is known at compile time.
+reaches the next reader, and C is known at compile time. It does the
+same for a compare of A, X, or Y with a constant when the register
+holds a constant from earlier in the block, such as the `CPY #1`
+that `return false;` becomes after an `LDY #0`, when `redundant_load`
+has loaded the 0 with `TYA` and `cpx_cpy_peephole` has folded `TYA;
+CMP #1`. The register keeps its value, so only N/Z must be dead.
 
 `apply_carry_branch_fold` reads the caller's captured carry
 directly:
@@ -177,7 +182,47 @@ def _fold_const_compares(instrs):
             changed = True
             continue
         i += 1
+    for i, ins in enumerate(out):
+        if not (isinstance(ins, asm_ast.Compare)
+                and isinstance(ins.right, asm_ast.Imm)
+                and isinstance(ins.left, asm_ast.Reg)
+                and flags_dead_at(out, i + 1)):
+            continue
+        k = _known_constant(out, i, ins.left)
+        if k is None:
+            continue
+        out[i] = (asm_ast.SetCarry() if k >= ins.right.value & 0xFF
+                  else asm_ast.ClearCarry())
+        changed = True
     return out if changed else None
+
+
+def _known_constant(instrs, i, reg) -> int | None:
+    """The constant `reg` holds at `instrs[i]`, from an immediate load
+    earlier in the block (through register transfers), or None."""
+    from passes.asm_liveness import kills_x, kills_y, sets_up_y
+    for k in range(i - 1, -1, -1):
+        ins = instrs[k]
+        if isinstance(ins, (asm_ast.Label, asm_ast.Call, asm_ast.Return,
+                            asm_ast.Ret, asm_ast.Jump,
+                            asm_ast.FunctionPrologue,
+                            asm_ast.AllocateStack, asm_ast.Pop)):
+            return None
+        if isinstance(reg.reg, asm_ast.Y) and sets_up_y(ins):
+            return None
+        if getattr(ins, "dst", None) != reg:
+            if (isinstance(reg.reg, asm_ast.X) and kills_x(ins)
+                    or isinstance(reg.reg, asm_ast.Y) and kills_y(ins)):
+                return None
+            continue
+        if isinstance(ins, asm_ast.Mov) and not ins.is_volatile:
+            if isinstance(ins.src, asm_ast.Imm):
+                return ins.src.value & 0xFF
+            if isinstance(ins.src, asm_ast.Reg):
+                reg = ins.src
+                continue
+        return None
+    return None
 
 
 # ---------------------------------------------------------------------

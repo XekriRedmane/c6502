@@ -80,11 +80,26 @@ classify:
   instruction before that run is a `Jump`, `Return`, or `Ret`, so
   nothing falls through into it.
 - Exactly one `Branch` or `Jump` in the function targets any label
-  in the run. It must be a `Branch`, and the instruction just before
-  it must be a compare equal to the one being deleted, with the same
-  register and the same operand.
+  in the run. It must be a `Branch`, and the instruction before it,
+  past any other branches right before it, must be a compare equal
+  to the one being deleted, with the same register and the same
+  operand.
 - No label in the run has its address taken by an `ImmLabelLow` or
   `ImmLabelHigh` operand.
+
+The pass also deletes a compare that follows one or more branches
+right after an identical compare, with no label in between, so it's
+reached only by falling through them:
+
+```
+   CMP   (entry),Y
+   BCC   .tail@0
+   BNE   .if_end@41
+   CMP   (entry),Y          <- deleted
+```
+
+[Byte-by-byte three-way compare](three_way_compare.md) writes a `<`
+and a `!=` of the same bytes in a row, which lower to that shape.
 
 The pass doesn't check for a volatile operand. According to the
 module docstring, none can reach it, because `volatile_void_read_cmp`

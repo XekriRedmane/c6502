@@ -246,8 +246,41 @@ class TestPeepholes(unittest.TestCase):
         self.assertEqual(out, [asm_ast.ClearCarry(), _ret_c()])
 
     def test_const_fold_keeps_live_a(self):
+        # A is returned too, so the load stays and only the compare
+        # folds, from the 1 the register holds.
         ret = asm_ast.Return(save_a=True, save_x=False, save_c=True)
         instrs = [_lda(1), _cmp(1), ret]
+        self.assertEqual(_body(apply_carry_const_fold(_prog(instrs))),
+                         [_lda(1), asm_ast.SetCarry(), ret])
+
+    def test_const_fold_from_register(self):
+        # `return false;` after `LDY #0`, as `CPY #1` once the 0 is
+        # loaded with TYA and `TYA; CMP #1` is folded.
+        y = asm_ast.Reg(reg=asm_ast.Y())
+        ldy = asm_ast.Mov(src=asm_ast.Imm(value=0), dst=y, is_volatile=False)
+        cpy = asm_ast.Compare(left=y, right=asm_ast.Imm(value=1))
+        out = _body(apply_carry_const_fold(_prog([ldy, cpy, _ret_c()])))
+        self.assertEqual(out, [ldy, asm_ast.ClearCarry(), _ret_c()])
+
+    def test_const_fold_not_across_a_label(self):
+        # Another path into the label may bring a different Y.
+        y = asm_ast.Reg(reg=asm_ast.Y())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=y, is_volatile=False),
+            asm_ast.Label(name=".l"),
+            asm_ast.Compare(left=y, right=asm_ast.Imm(value=1)),
+            _ret_c(),
+        ]
+        self.assertEqual(_body(apply_carry_const_fold(_prog(instrs))), instrs)
+
+    def test_const_fold_not_after_a_register_change(self):
+        y = asm_ast.Reg(reg=asm_ast.Y())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=y, is_volatile=False),
+            asm_ast.Inc(dst=y),
+            asm_ast.Compare(left=y, right=asm_ast.Imm(value=1)),
+            _ret_c(),
+        ]
         self.assertEqual(_body(apply_carry_const_fold(_prog(instrs))), instrs)
 
     def test_tail_copy_through_jump_and_fall_through(self):

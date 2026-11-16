@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1E3C`. The other units, the constants,
+on every instruction, up to `$1E38`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -156,16 +156,16 @@ file and the original code it translates:
 |---|---:|---:|
 | `main.c` | 391 | 473 |
 | `decode.c` | 1859 | 2495 |
-| `objects.c` | 788 | 1001 |
+| `objects.c` | 788 | 996 |
 | `numbers.c` | 436 | 687 |
-| `input.c` | 1018 | 1167 |
+| `input.c` | 1018 | 1110 |
 | `pages.c` | 384 | 385 |
 | `zstring.c` | 383 | 407 |
 | `output.c` | 387 | 405 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **8029** |
+| **Total** | **6643** | **7967** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -185,13 +185,13 @@ cache 64 slots in 48K where Zork has 76.
 The four dispatch switches take 1,325 bytes with the handlers written
 into their cases (`do_2op` alone is 680), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
-`divu16` is 114 bytes against Zork's 78, and `match_dictionary_word`
-231 against 190. `mulu16` is 59 against 69, since it computes only
+`divu16` is 114 bytes against Zork's 78. `match_dictionary_word` is
+181 against 190, and `mulu16` is 59 against 69, since it computes only
 the low 16 bits of the product.
 
-**Speed.** The first session takes 38,224,130 cycles against Zork's
-38,490,260, 0.7% fewer, and the second 7,359,339 against 7,434,428,
-1.0% fewer. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 38,167,027 cycles against Zork's
+38,490,260, 0.8% fewer, and the second 7,347,938 against 7,434,428,
+1.2% fewer. The stand-ins for the Monitor and RWTS take no cycles.
 Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
 shrank by 24 bytes, `branch` and `print_zstring`, which the linker
@@ -266,5 +266,24 @@ the smaller code saved.
   function's own zero-page slots, when the unit never takes their
   address ([redundant_load.md](../../../docs/optimizations/redundant_load.md)).
   `read_line` had loaded `c` again after storing it into the line.
+- A 2-byte unsigned `<` and `==` of the same values compare the high
+  bytes and then the low ones
+  ([three_way_compare.md](../../../docs/optimizations/three_way_compare.md)),
+  a branch to a copy of a return tail goes to the copy the function
+  keeps ([tail_merge.md](../../../docs/optimizations/tail_merge.md)),
+  and a compare right after the branches of an identical one goes
+  ([redundant_compare.md](../../../docs/optimizations/redundant_compare.md)).
+  `match_dictionary_word` had subtracted the two bytes of each half
+  of the word from the entry's and then compared them again for
+  equality.
+- `CLC; ADC #1; TAY` is `TAY; INY`, and `TYA; CLC; ADC #1` is `INY;
+  TYA`, when the value left behind in the other register isn't read
+  ([transfer_pm1_store.md](../../../docs/optimizations/transfer_pm1_store.md)).
+  `match_dictionary_word` steps its index through the dictionary's
+  header with `y++`, as the original steps Y.
+- A compare with a constant of a register that holds a constant is
+  `SEC` or `CLC` when only C is read after
+  ([carry_return.md](../../../docs/optimizations/carry_return.md)).
+  `return false;` in `is_dict_separator` had become `CPY #1`.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

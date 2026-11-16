@@ -95,6 +95,31 @@ targets that label instead.
   make `expand_long_branches` emit an inverted branch over a `JMP`,
   which saves nothing.
 
+A branch or jump to a label in front of a tail goes to the kept copy
+instead, when that's another copy and a branch is still in reach. The
+label then has one reference fewer, and once it has none, [dead label
+drop](dead_label_drop.md) removes it. If a branch skipped over that
+tail, the branch and tail now match the rule above. [Byte-by-byte
+three-way compare](three_way_compare.md) leaves both shapes for the
+`return 0` of each 2-byte compare in Zork's `match_dictionary_word`
+(examples/zork/interpreter/input.c):
+
+```
+   BCC   .cmp3@1
+   BNE   .if_end@41
+   ...
+   BCS   .cmp3@2
+.cmp3@1:
+   LDX   #$00
+   TXA
+   RTS
+.cmp3@2:
+```
+
+The `BCC` goes to the copy at the end of the function, `.cmp3@1` goes,
+and the `BCS` over the tail becomes `BCC` to the same copy, which every
+`return 0` in the function then shares.
+
 ## What it leaves alone
 
 - A lone `RTS`. In a `void` function with two early `return;`

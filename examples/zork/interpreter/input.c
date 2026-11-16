@@ -808,11 +808,19 @@ static void ascii_to_zchar(void) {
  * entry from sixteen back. */
 static uint16_t match_dictionary_word(void) {
     uint8_t *d = get_dictionary_addr();
-    uint8_t y = d[0] + 1;
+    /* `y` steps through the header in Y as the original's does, so
+     * each byte is read with `INY` and the index wraps at 256 as Y
+     * does. */
+    uint8_t y = d[0];
+    y++;
     uint8_t len = d[y];
     uint8_t stride = (uint8_t)(len << 4);
-    int16_t count = (int16_t)(((uint16_t)d[y + 1] << 8) | d[y + 2]);
-    uint8_t *entry = d + (uint8_t)(y + 3);
+    y++;
+    uint8_t count_hi = d[y];
+    y++;
+    int16_t count = (int16_t)(((uint16_t)count_hi << 8) | d[y]);
+    y++;
+    uint8_t *entry = d + y;
     uint8_t key_hi = ZCHAR_SCRATCH2[1];
     for (;;) {
         entry += stride;

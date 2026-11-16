@@ -40,6 +40,7 @@ a user variable.
 - [Branch through jump](branch_through_jump.md). Points a branch straight past a label that holds only a JMP.
 - [Branch to next label](branch_to_next_drop.md). Deletes a branch or JMP whose target is the label right after it.
 - [Branching directly on `&&` and `||`](short_circuit_jump_fold.md). Removes the 0-or-1 value of `&&` and `||` and branches straight to the target.
+- [Byte-by-byte three-way compare](three_way_compare.md). Splits `a < b` and `a == b` on the same 2-byte values into a compare of the high bytes and then the low ones.
 - [Byte-granular dead-code elimination](byte_dce.md). Drops each Mov or Phi that writes a temporary byte nothing reads.
 - [Byte-granular register allocation](regalloc.md). Puts each SSA byte value in a zero-page byte, X, or Y.
 - [Carry already known](carry_known.md). Drops a SEC or CLC where C already has that value, or moves it in front of a loop whose back edges have it.
@@ -182,7 +183,8 @@ them whenever a pass is added or moved.
    7. [Compare and subtract of the same operands](compare_subtract.md)
    8. SSA destruction.
    9. [Copy folding](copy_folding.md), once more.
-   10. *Fixed point*: [branching directly on `&&` and
+   10. [Byte-by-byte three-way compare](three_way_compare.md)
+   11. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    over the whole program, then the [carry-flag return without the

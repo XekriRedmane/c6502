@@ -782,7 +782,6 @@ instr_get_prop:
    STA   __local_instr_get_prop__y
    JMP   .loop@2_start
 .instr_get_prop@rot@1:
-   CMP   __local_instr_get_prop__3
    BCS   .if_end@6
    LDY   #$0A
    LDA   (Z_HEADER_ADDR),Y
@@ -797,9 +796,9 @@ instr_get_prop:
    LDA   __local_instr_get_prop__3
    ASL
    STA   __local_instr_get_prop__1
-   SEC
-   SBC   #$02
    TAY
+   DEY
+   DEY
    LDA   (__local_instr_get_prop__y),Y
    STA   __local_instr_get_prop__0
    LDA   __local_instr_get_prop__1
@@ -988,7 +987,6 @@ instr_put_prop:
    STA   __local_instr_put_prop__y
    JMP   .loop@5_start
 .instr_put_prop@rot@2:
-   CMP   __local_instr_put_prop__1
    BCS   .if_end@17
    JSR   internal_error
 .if_end@17:

@@ -235,12 +235,27 @@ probably not worth it.
 
 ## Make Zork's input.c smaller
 
-`examples/zork/interpreter/input.c` is 1,167 bytes, where Zork's
-code for it is 1,018. The items found by comparing the two are done.
-What's left is mostly `match_dictionary_word`, 231 bytes against 190,
-and the separator tests, which Zork shares code between
-(`separator_found` and `separator_not_found`) where each C function
-has its own `SEC; RTS` and `CLC; RTS`.
+`examples/zork/interpreter/input.c` is 1,110 bytes, where Zork's
+code for it is 1,018. `match_dictionary_word` is 181 bytes against
+Zork's 190. The separator tests, `is_dict_separator`,
+`is_std_separator`, and `is_separator`, are 52 bytes against Zork's
+44:
+
+- Zork's `is_dict_separator` branches to `is_std_separator`'s `SEC;
+  RTS` and `CLC; RTS`. A branch from one C function into another
+  works only if the linker keeps the two functions together and
+  within a branch's reach, and `link_layout.fall_through` can move a
+  function. That would save about 2 bytes here. Each function
+  branches over its `SEC; RTS`, and one of those branches could go to
+  the other function's copy. Each `CLC; RTS` ends its function, where
+  a branch to another copy saves nothing.
+- `get_dictionary_addr` returns the dictionary's address in A and X,
+  and `is_dict_separator` and `match_dictionary_word` each store it
+  into a zero-page pair to use as a `(zp),Y` base, 4 bytes in each.
+  Zork's leaves it in `SCRATCH2`.
+- `is_dict_separator` tests `c` for 0 before its loop. Zork's pushes
+  `c` around the call, and the `BEQ` at the top of its loop tests the
+  `PLA` the first time and the `DEX` after that.
 
 ## Keep hot branches from crossing pages
 

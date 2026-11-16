@@ -258,6 +258,22 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   successor gets `a.exit = t + b` instead (re-reading `b` from memory
   when it's a read of a global), so `a` dies at the subtract and the
   loop updates it in place.
+- `three_way_compare.py` — `split_three_way_compares`
+  (`SplitThreeWayCompares`, PostDestructionPass, after the
+  post-destruction `fold_copies`). A 2-byte unsigned ordering
+  `JumpIfCmp` and an equality `JumpIfCmp` of the same values, in a
+  row or with the equality at the ordering one's target, become a
+  `<` and a `!=` of the high bytes and then a compare of the low
+  bytes, each outcome going where the two compares sent it. The bytes
+  are a constant's, the `h` and `l` of a value built as
+  `(ZeroExtend(h) << 8) | ZeroExtend(l)` in one block (a load of
+  either moves down to its compare when nothing in between writes
+  memory), or new `Truncate(a >> 8)` / `Truncate(a)` temporaries.
+  When the equality compare is at the target, the less outcome's code
+  must end in a `Ret` or `Jump`, and the low bytes branch over it so
+  the asm `tail_merge` can share it. It runs after destruction
+  because the new edges would require Phi arguments in SSA form. Zork's
+  `match_dictionary_word` compares its word with each entry this way.
 - `short_circuit_jump_fold.py` — `fold_short_circuit_jump`
   (`FoldShortCircuitJump`, raw PostDestructionFixedpointPass — multi-
   block retarget map with transitive closure). Post-destruction fixedpoint.
@@ -307,6 +323,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)
    → from_ssa                      (owned by PhaseDriver)
    → fold_copies                   (PostDestructionPass, one-shot)
+   → split_three_way_compares      (PostDestructionPass, one-shot)
    → fold_short_circuit_jump*      (PostDestructionFixedpointPass)
    → fn'
 ```
@@ -364,6 +381,9 @@ stage:
    - **`fold_copies`** (`copy_folding.py`) — fuses the Copy round
      trip emitted at predecessor block ends to feed Phi sources
      into Phi dsts (covered above).
+   - **`split_three_way_compares`** (`three_way_compare.py`) — a
+     2-byte `<` and `==` of the same values as byte compares
+     (covered above).
    - **`fold_short_circuit_jump`** (`short_circuit_jump_fold.py`,
      iterated to fixed point) — recognizes the 5-instruction
      short-circuit tail (`Copy(C_ft, %t); Jump(end);

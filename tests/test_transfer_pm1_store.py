@@ -100,10 +100,14 @@ class TestSkips(unittest.TestCase):
             asm_ast.Mov(src=A, dst=n, is_volatile=False),
             asm_ast.Return(save_a=False),
         ])
-        self.assertEqual(len(out), 6)
-        self.assertIsInstance(out[0], asm_ast.Mov)
-        self.assertEqual(out[0].src, X)
-        self.assertEqual(out[0].dst, A)
+        # The STA m stays, and the step moves to X before the TXA, so A
+        # holds X - 1 for both stores.
+        self.assertEqual(out[:3], [
+            asm_ast.Dec(dst=X),
+            asm_ast.Mov(src=X, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=m, is_volatile=False),
+        ])
+        self.assertEqual(len(out), 5)
 
     def test_skips_when_x_live(self):
         # `IndexedData(_, index=X)` reads X downstream.
@@ -146,6 +150,7 @@ class TestSkips(unittest.TestCase):
 
     def test_skips_when_dst_is_indirect(self):
         # STX has no indirect-Y addressing mode.
+        # The step moves to X before the TXA, and the STA stays.
         m = asm_ast.Indirect(offset=0)
         out = _run([
             asm_ast.Mov(src=X, dst=A, is_volatile=False),
@@ -154,10 +159,15 @@ class TestSkips(unittest.TestCase):
             asm_ast.Mov(src=A, dst=m, is_volatile=False),
             asm_ast.Return(save_a=False),
         ])
-        self.assertEqual(len(out), 5)
+        self.assertEqual(out[:3], [
+            asm_ast.Dec(dst=X),
+            asm_ast.Mov(src=X, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=m, is_volatile=False),
+        ])
 
     def test_skips_when_dst_is_frame(self):
         # STX has no Frame (indirect-FP-relative) addressing mode.
+        # The step moves to X before the TXA, and the STA stays.
         m = asm_ast.Frame(offset=1)
         out = _run([
             asm_ast.Mov(src=X, dst=A, is_volatile=False),
@@ -166,7 +176,11 @@ class TestSkips(unittest.TestCase):
             asm_ast.Mov(src=A, dst=m, is_volatile=False),
             asm_ast.Return(save_a=False),
         ])
-        self.assertEqual(len(out), 5)
+        self.assertEqual(out[:3], [
+            asm_ast.Dec(dst=X),
+            asm_ast.Mov(src=X, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=m, is_volatile=False),
+        ])
 
     def test_skips_with_mismatched_carry(self):
         # CLC before SBC #1 doesn't decrement. Not the pattern.
@@ -201,7 +215,14 @@ class TestSkips(unittest.TestCase):
             asm_ast.Mov(src=A, dst=m, is_volatile=True),
             asm_ast.Return(save_a=False),
         ])
-        self.assertEqual(len(out), 5)
+        # The store stays a volatile STA from A. The step moves to X
+        # before the TXA, which doesn't touch the store.
+        self.assertEqual(out, [
+            asm_ast.Dec(dst=X),
+            asm_ast.Mov(src=X, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=m, is_volatile=True),
+            asm_ast.Return(save_a=False),
+        ])
 
 
 class TestCascade(unittest.TestCase):
@@ -313,6 +334,18 @@ class TestIndexStep(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ]
 
+    @staticmethod
+    def _stepped_after_transfer(instrs):
+        """`instrs` with `CLC; ADC #k; TAY` as `TAY; INY` k times, the
+        rewrite for a register that doesn't hold M."""
+        out = list(instrs)
+        for n in range(len(out) - 2):
+            if isinstance(out[n], asm_ast.ClearCarry):
+                k, move = out[n + 1].src.value, out[n + 2]
+                return (out[:n] + [move] + [asm_ast.Inc(dst=move.dst)] * k
+                        + out[n + 3:])
+        raise AssertionError("no step")
+
     def test_iny(self):
         out = self._run(self._step())
         self.assertEqual(out[2], asm_ast.Inc(dst=Y))
@@ -325,20 +358,87 @@ class TestIndexStep(unittest.TestCase):
     def test_store_through_pointer_may_change_a_global(self):
         # The store through ($90),Y could write a global's byte.
         instrs = self._step()
-        self.assertEqual(self._run(list(instrs), static=False), instrs)
+        self.assertEqual(self._run(list(instrs), static=False),
+                         self._stepped_after_transfer(instrs))
 
     def test_register_changed_since_load(self):
         # INX changes X after `LDX idx`, which `kills_x` doesn't count
         # since INX also reads X. beam_target_tick read the wrong input
         # when this rewrote `LDA m; CLC; ADC #2; TAX` to `INX; INX`.
         instrs = self._step(k=2, reg=X, between=[asm_ast.Inc(dst=X)])
-        self.assertEqual(self._run(list(instrs)), instrs)
+        self.assertEqual(self._run(list(instrs)),
+                         self._stepped_after_transfer(instrs))
 
     def test_byte_written_since_load(self):
         instrs = self._step(between=[
             asm_ast.Mov(src=A, dst=self._M, is_volatile=False),
         ])
-        self.assertEqual(self._run(list(instrs)), instrs)
+        self.assertEqual(self._run(list(instrs)),
+                         self._stepped_after_transfer(instrs))
+
+
+class TestStepAcrossTransfer(unittest.TestCase):
+    """`CLC; ADC #k; TAY` as `TAY; INY`, and `TYA; CLC; ADC #k` as
+    `INY; TYA`, as in Zork's `match_dictionary_word` stepping its index
+    through the dictionary's header."""
+
+    def _clc_adc(self, k=1):
+        return [asm_ast.ClearCarry(),
+                asm_ast.Add(src=asm_ast.Imm(value=k), dst=A)]
+
+    def test_step_after_tay(self):
+        out = _run(self._clc_adc() + [
+            asm_ast.Mov(src=A, dst=Y, is_volatile=False),
+            asm_ast.Return(save_a=False),
+        ])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=A, dst=Y, is_volatile=False),
+            asm_ast.Inc(dst=Y),
+            asm_ast.Return(save_a=False),
+        ])
+
+    def test_step_after_tay_needs_a_dead(self):
+        instrs = self._clc_adc() + [
+            asm_ast.Mov(src=A, dst=Y, is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_step_before_tya(self):
+        m = asm_ast.Data(name="m", offset=0)
+        out = _run([asm_ast.Mov(src=Y, dst=A, is_volatile=False)]
+                   + self._clc_adc(2)
+                   + [asm_ast.Mov(src=A, dst=m, is_volatile=False),
+                      asm_ast.Return(save_a=False)])
+        self.assertEqual(out, [
+            asm_ast.Inc(dst=Y), asm_ast.Inc(dst=Y),
+            asm_ast.Mov(src=Y, dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=m, is_volatile=False),
+            asm_ast.Return(save_a=False),
+        ])
+
+    def test_step_before_tya_needs_y_dead(self):
+        m = asm_ast.Data(name="m", offset=0)
+        instrs = ([asm_ast.Mov(src=Y, dst=A, is_volatile=False)]
+                  + self._clc_adc()
+                  + [asm_ast.Mov(src=A, dst=m, is_volatile=False),
+                     asm_ast.Mov(src=Y, dst=m, is_volatile=False),
+                     asm_ast.Return(save_a=False)])
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_transfer_back_is_one_step(self):
+        # `TXA; CLC; ADC #1; TAX` is `INX`.
+        tbl = asm_ast.IndexedData(name="tbl", offset=0, index=asm_ast.X())
+        out = _run([asm_ast.Mov(src=X, dst=A, is_volatile=False)]
+                   + self._clc_adc()
+                   + [asm_ast.Mov(src=A, dst=X, is_volatile=False),
+                      asm_ast.Mov(src=tbl, dst=A, is_volatile=False),
+                      asm_ast.Return(save_a=True)])
+        self.assertEqual(out, [
+            asm_ast.Inc(dst=X),
+            asm_ast.Mov(src=tbl, dst=A, is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ])
 
 
 if __name__ == "__main__":

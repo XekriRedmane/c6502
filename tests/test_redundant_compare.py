@@ -36,6 +36,39 @@ class TestRedundantCompare(unittest.TestCase):
         out = _run(instrs)
         self.assertEqual(out[:5], instrs[:4] + [instrs[5]])
 
+    def test_compare_after_branches_dropped(self):
+        # CMP M; BCC L1; BNE L2; CMP M: falling through the branches
+        # changes nothing, so the second CMP goes.
+        instrs = [
+            _cmp(), asm_ast.Branch(cond=asm_ast.CC(), target="L1"),
+            asm_ast.Branch(cond=asm_ast.NE(), target="L2"), _cmp(),
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L1"), _ret(),
+            asm_ast.Label(name="L1"), _ret(),
+            asm_ast.Label(name="L2"), _ret(),
+        ]
+        out = _run(instrs)
+        self.assertEqual(out, instrs[:3] + instrs[4:])
+
+    def test_compare_after_branch_of_another_compare_kept(self):
+        instrs = [
+            _cmp(0x80), asm_ast.Branch(cond=asm_ast.CC(), target="L1"),
+            _cmp(0x81), _ret(), asm_ast.Label(name="L1"), _ret(),
+        ]
+        self.assertEqual(_run(instrs), instrs)
+
+    def test_label_reached_by_second_of_two_branches(self):
+        # CMP M; BCC L1; BCS L; ... L: CMP M: the second CMP goes,
+        # since the run of branches after the first compare reaches L.
+        instrs = [
+            _cmp(), asm_ast.Branch(cond=asm_ast.CC(), target="L1"),
+            asm_ast.Branch(cond=asm_ast.CS(), target="L"), _ret(),
+            asm_ast.Label(name="L"), _cmp(),
+            asm_ast.Branch(cond=asm_ast.NE(), target="L1"), _ret(),
+            asm_ast.Label(name="L1"), _ret(),
+        ]
+        out = _run(instrs)
+        self.assertEqual(out, instrs[:5] + instrs[6:])
+
     def test_fall_through_into_label_kept(self):
         # The label is also reached by falling through, where the
         # flags may differ.

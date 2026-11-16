@@ -50,6 +50,36 @@ class TestTailMerge(unittest.TestCase):
         self.assertEqual(out[4], asm_ast.Label(name=".tail@0"))
         self.assertEqual(out[5:], _ret0())
 
+    def test_branch_to_labeled_copy_goes_to_kept_copy(self):
+        # BCC M where M starts a copy of the tail: the branch goes to
+        # the last copy, and M is left with no reference.
+        instrs = (
+            [_cmp(), asm_ast.Branch(cond=asm_ast.CC(), target="M"),
+             asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
+                         is_volatile=False),
+             asm_ast.Return(save_a=True, save_x=True),
+             asm_ast.Label(name="M")]
+            + _ret0()
+            + [asm_ast.Label(name="N")]
+            + _ret0()
+        )
+        out = _run(instrs)
+        self.assertEqual(out[1], asm_ast.Branch(
+            cond=asm_ast.CC(), target="N",
+        ))
+        self.assertEqual(out[4:], instrs[4:])
+
+    def test_branch_to_kept_copy_left_alone(self):
+        instrs = (
+            [_cmp(), asm_ast.Branch(cond=asm_ast.CC(), target="M"),
+             asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
+                         is_volatile=False),
+             asm_ast.Return(save_a=True, save_x=True),
+             asm_ast.Label(name="M")]
+            + _ret0()
+        )
+        self.assertEqual(_run(instrs), instrs)
+
     def test_existing_label_reused(self):
         instrs = (
             [asm_ast.Branch(cond=asm_ast.EQ(), target="L")]

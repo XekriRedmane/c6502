@@ -108,13 +108,17 @@ this directory:
   where to push and pull each value live across such a call (see
   "Recursion with hardware-stack saves" below).
 - `redundant_compare.py` — `apply_redundant_compare`. Drops a
-  `Compare` at a label reached only by the `Branch` right after an
-  identical `Compare`, since A, the operand, and the flags are all
-  unchanged. That's the second of `if (k < e) ...; if (k == e) ...`.
+  `Compare` at a label reached only by a `Branch` in the run of
+  branches right after an identical `Compare`, or reached by falling
+  through such a run, since A, the operand, and the flags are all
+  unchanged. That's the second of `if (k < e) ...; if (k == e) ...`,
+  and the second compare of each byte `three_way_compare` writes.
 - `tail_merge.py` — `apply_tail_merge`. Turns `Bcc L; <tail>; L:`
   into `B!cc T` when the same return tail (2 to 4 instructions
   ending in `Return`, such as `LDX #0; TXA; RTS`) appears later at
-  label `T`, and the branch is within estimated reach.
+  label `T`, and the branch is within estimated reach. A branch or
+  jump to a label in front of another copy of a tail goes to `T`
+  first (`_retarget_function`), so that copy's label can go.
 - `cmp_through_tmp_fold.py` — `apply_cmp_through_tmp_fold`. Folds
   the 4-instr `Mov(src, A); Mov(A, tmp); Mov(other, A); Compare(A,
   tmp)` shape (LDA src; STA tmp; LDA other; CMP tmp) to the 2-instr
@@ -194,7 +198,9 @@ this directory:
   `CMP #c; RTS` return tail into each `LDA #k; JMP tail` and in front
   of the tail's label after a fall-through `LDA #k`, and
   `apply_carry_const_fold` turns `LDA #k; CMP #c` into `SEC` / `CLC`
-  when only C is read after. Together they make `return true;` in a
+  when only C is read after, and does the same for a `CMP` / `CPX` /
+  `CPY #c` of a register that holds a constant from earlier in the
+  block. Together they make `return true;` in a
   loop `SEC; RTS`. `apply_carry_branch_fold` turns the caller's
   capture `LDA #0; ROL A; BEQ / BNE` into `BCC` / `BCS` when A and
   every flag are dead on both sides, and drops `LDA #0; ROL A; CMP
@@ -439,7 +445,10 @@ this directory:
   and V are dead (`_rewrite_index_steps`). A store through a pointer
   in between is allowed only for a byte no pointer can reach, a
   `static` or the function's own slot whose address the unit never
-  takes (`asm_aliasing.unreachable_by_pointer`).
+  takes (`asm_aliasing.unreachable_by_pointer`). And `CLC; ADC #k;
+  TAY` → `TAY; INY` (A, C, V dead), `TYA; CLC; ADC #k` → `INY; TYA`
+  (Y, C, V dead), and `TXA; CLC; ADC #1; TAX` → `INX`
+  (`_rewrite_steps_across_transfer`).
 - `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
   Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
   `Compare(Reg(A), <indirect>)` when A and N/Z are dead after the
@@ -1200,7 +1209,8 @@ document says whether it fires there.
   in Zork's `do_rwts_on_sector`). See module docstring for the
   eligibility / aliasing rules.
 - `apply_redundant_compare` — drops the second of two identical
-  compares when the only way to it is a branch right after the first.
+  compares when the only way to it is through the branches right
+  after the first.
 - `apply_tail_merge` — branches to one shared copy of a repeated
   return tail instead of branching over each copy.
 - `apply_carry_return_tails`, `apply_carry_const_fold`,

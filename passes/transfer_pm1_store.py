@@ -87,6 +87,25 @@ own zero-page slots whose address the unit never takes
 in examples/zork/interpreter/input.c. A, C, and V must be dead
 after. N and Z come out the same, from M plus or minus `k`.
 
+# A step on either side of a transfer
+
+`_rewrite_steps_across_transfer` moves a step of 1 or 2 from A to
+the index register on the other side of a transfer:
+
+    CLC; ADC #1; TAY      ->     TAY; INY        (A, C, V dead after)
+    TYA; CLC; ADC #1      ->     INY; TYA        (Y, C, V dead after)
+
+and the same for `SEC; SBC #k` with `DEY`, and for X. When the
+second is followed by a `TAY` back, all four are `INY` (A, C, V dead
+after). In the first,
+Y ends up with A's sum and A keeps its old value. In the second, A
+ends up with the sum and Y with it too. N and Z come out the same,
+from the sum. Zork's `match_dictionary_word`
+(examples/zork/interpreter/input.c) steps its index past the count
+of separators with `y++` and adds the last step to the dictionary's
+address, the first and second forms. Each saves 2 bytes and 2 cycles
+for a step of 1, and 1 byte for a step of 2.
+
 # Where to run
 
 Inside the asm-peephole fixedpoint, after `replace_pseudoregisters`
@@ -110,7 +129,9 @@ def apply_transfer_pm1_store(prog: asm_ast.Program) -> asm_ast.Program:
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             new_top.append(
-                _rewrite_index_steps(_rewrite_function(tl), unaliased)
+                _rewrite_steps_across_transfer(_rewrite_index_steps(
+                    _rewrite_function(tl), unaliased,
+                ))
             )
         else:
             new_top.append(tl)
@@ -173,6 +194,80 @@ def _rewrite_index_steps(
         instrs[i:i + 4] = [step(dst=reg)] * arith.src.value
         changed = True
         i += 1
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _small_step(carry, arith):
+    """`(step, k)` when `carry; arith` is `CLC; ADC #k` (`Inc`) or `SEC;
+    SBC #k` (`Dec`) on A with k of 1 or 2, else None."""
+    if isinstance(arith, asm_ast.Add) and isinstance(carry, asm_ast.ClearCarry):
+        step = asm_ast.Inc
+    elif isinstance(arith, asm_ast.Sub) and isinstance(carry, asm_ast.SetCarry):
+        step = asm_ast.Dec
+    else:
+        return None
+    if not (isinstance(arith.src, asm_ast.Imm) and arith.src.value in (1, 2)
+            and isinstance(arith.dst, asm_ast.Reg)
+            and isinstance(arith.dst.reg, asm_ast.A)):
+        return None
+    return step, arith.src.value
+
+
+def _transfer(ins, src_cls, dst_cls) -> bool:
+    return (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+            and isinstance(ins.src, asm_ast.Reg)
+            and isinstance(ins.src.reg, src_cls)
+            and isinstance(ins.dst, asm_ast.Reg)
+            and isinstance(ins.dst.reg, dst_cls))
+
+
+def _rewrite_steps_across_transfer(fn: asm_ast.Function) -> asm_ast.Function:
+    """`CLC; ADC #k; TAY` as `TAY; INY`, and `TYA; CLC; ADC #k` as
+    `INY; TYA` (k of 1 or 2, `SBC` as `DEY`, and the X forms). See
+    "A step on either side of a transfer" above."""
+    instrs = list(fn.instructions)
+    changed = False
+    i = 0
+    while i + 2 < len(instrs):
+        first, second, third = instrs[i:i + 3]
+        after = i + 3
+        rewritten = None
+        found = _small_step(first, second)
+        if (found is not None
+                and _transfer(third, asm_ast.A, (asm_ast.X, asm_ast.Y))
+                and a_dead_at(instrs, after) and c_dead_at(instrs, after)
+                and v_dead_at(instrs, after)):
+            step, k = found
+            rewritten = [third] + [step(dst=third.dst)] * k
+        found = _small_step(second, third)
+        if (rewritten is None and found is not None
+                and _transfer(first, (asm_ast.X, asm_ast.Y), asm_ast.A)):
+            reg = first.src
+            reg_dead = (x_dead_at if isinstance(reg.reg, asm_ast.X)
+                        else y_dead_at)
+            back = instrs[after] if after < len(instrs) else None
+            step, k = found
+            if (_transfer(back, asm_ast.A, type(reg.reg))
+                    and a_dead_at(instrs, after + 1)
+                    and c_dead_at(instrs, after + 1)
+                    and v_dead_at(instrs, after + 1)):
+                # `TXA; CLC; ADC #1; TAX` is `INX`.
+                rewritten = [step(dst=reg)] * k
+                after += 1
+            elif (reg_dead(instrs, after) and c_dead_at(instrs, after)
+                    and v_dead_at(instrs, after)):
+                rewritten = [step(dst=reg)] * k + [first]
+        if rewritten is None:
+            i += 1
+            continue
+        instrs[i:after] = rewritten
+        changed = True
+        i += len(rewritten)
     if not changed:
         return fn
     return asm_ast.Function(

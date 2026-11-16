@@ -233,6 +233,14 @@ class Branch(Type_instruction):
 
 
 @dataclass
+class JumpTable(Type_instruction):
+    table: str = ''
+    index: str = ''
+    base: int = 0
+    targets: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Compare(Type_instruction):
     left: Type_operand
     right: Type_operand

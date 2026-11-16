@@ -67,6 +67,10 @@ module ASM2 {
         | Label(identifier name)
         | Jump(identifier target)
         | Branch(condition cond, identifier target)
+        -- A dispatch on A through a table of target addresses; see
+        -- asm.asdl.
+        | JumpTable(identifier table, string index, int base,
+                    identifier* targets)
         | Compare(operand left, operand right)
         -- `BIT src` — sets N/V from bit 7/6 of src; sets Z from
         -- (A & src) == 0. Doesn't modify A. src is Data / ZP only

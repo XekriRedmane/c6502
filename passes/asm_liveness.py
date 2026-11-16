@@ -634,6 +634,10 @@ def _one_flag_dead(instrs, idx, readers, branches, writers) -> bool:
                 if x.target in labels:
                     stack.append(labels[x.target])
                     break
+                # A tail call. The callee reads no flag it's given, as
+                # with a `Call`, which every writer list holds.
+                if asm_ast.Call in writers:
+                    break
                 return False
             if isinstance(x, writers):
                 break

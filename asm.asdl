@@ -157,6 +157,18 @@ module ASM {
         -- — those have no reg-arg semantics.
         | Jump(identifier target, string* reg_args)
         | Branch(condition cond, identifier target)
+        -- JumpTable(table, index, base, targets) — a dispatch on the
+        -- value in A, which must be between `base` and `base +
+        -- len(targets) - 1`: `ASL; TAY` (or `TAX` for `index` "X"),
+        -- then `LDA table-2*base+1,Y; PHA; LDA table-2*base,Y; PHA;
+        -- RTS`, which goes to the target for the value, and then the
+        -- table, at label `table`, one word per target, its address
+        -- minus one (`DC.W target-1`). A, the index register, and
+        -- N/Z are clobbered. `passes/jump_table.py` makes it from a
+        -- chain of compares, after every pass that follows control
+        -- flow.
+        | JumpTable(identifier table, string index, int base,
+                    identifier* targets)
         | Compare(operand left, operand right)
         -- BitTest(src) — emits `BIT src` (NMOS 6502: zp and abs
         -- addressing only). Sets N to bit 7 of src, V to bit 6 of

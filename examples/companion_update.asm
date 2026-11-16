@@ -204,7 +204,7 @@ entity_proximity:
    BCS   .if_end@6
    LDA   #$00
    STA   companion_state,X
-   JMP   .if_end@6
+   RTS
 .if_else@7:
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$50
@@ -470,14 +470,13 @@ drift_step:
    STA   companion_pos_lo,X
    LDA   __local_drift_step__pos_1
    STA   companion_pos_hi,X
-   JMP   .if_end@37
+   RTS
 .if_else@38:
    CLC
    ADC   #$04
    STA   companion_row,X
    LDY   #$00
    STA   (__zpabi_drift_step__out_sprite_y_0),Y
-.if_end@37:
    RTS
 
 companion_update:

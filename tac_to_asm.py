@@ -67,11 +67,14 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                short-circuit on each except the
                                lowest; the final low-byte CMP's Z is
                                the answer. 0/1 select after.
-  Binary(LessThan/GE/GT/LE) -> Int: SBC with V-correction + Branch.
-                               Multi-byte: chained SBCs (carry threads
-                               low→high), V-correction on the final
-                               high-byte result, branch on MI/PL. Same
+  Binary(LessThan/GE/GT/LE) -> Int: SBC with V-correction, then the
+                               corrected sign as the 0 or 1 (`ASL; LDA
+                               #0; ROL`). Multi-byte: chained SBCs
+                               (carry threads low→high), V-correction
+                               on the final high-byte result. Same
                                operand-swap trick used for `>` / `<=`.
+                               Unsigned: C after the SBCs, `LDA #0;
+                               ROL`.
   Binary(Multiply/Divide/   -> Runtime helper Calls. Operands and
     Modulo/LeftShift/         results are exchanged through the
     RightShift)               shared zero-page slot block `HARGS`
@@ -227,8 +230,11 @@ the 6502's CMP / SBC + branch atoms cover these):
     for NotEqual, ends `BEQ end; LDA #1; end:`.
 
   LessThan / GreaterOrEqual: `Mov(src1, A); SetCarry; Sub(src2, A);
-    Branch(VC, novf); Eor(0x80, A); Label(novf); Branch(MI|PL,
-    true); … 0/1 select …`. CMP can't be used for signed ordering
+    Branch(VC, novf); Eor(0x80, A); Label(novf); ArithmeticShiftLeft
+    A; Mov(#0, A); RotateLeft A` (`Xor(#1)` after for PL), since bit 7
+    of A is the corrected N on both paths into `novf`. An unsigned
+    compare takes C as it is (`_carry_to_value`). CMP can't be used
+    for signed ordering
     because it leaves V untouched, and the N flag lies when the
     signed subtraction overflows — the `BVC novf; EOR #$80` pair
     corrects N. Multi-byte: chained SBCs (carry threads low→high)
@@ -331,6 +337,22 @@ from passes.type_checking import FunAttr, StaticAttr, SymbolTable
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
+
+
+def _carry_to_value(
+    set_c: list, invert: bool,
+) -> list[asm_ast.Type_instruction]:
+    """`set_c`, which leaves an answer in C, then `LDA #0; ROL A`, which
+    makes A that answer as 0 or 1, and `EOR #1` when `invert`."""
+    out = list(set_c) + [
+        asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+        asm_ast.RotateLeft(dst=_REG_A),
+    ]
+    if invert:
+        out.append(asm_ast.Xor(
+            src1=_REG_A, src2=asm_ast.Imm(value=1), dst=_REG_A,
+        ))
+    return out
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
 _REG_Y = asm_ast.Reg(reg=asm_ast.Y())
 
@@ -3984,8 +4006,6 @@ class Translator:
                 dst_size,
             )
         novf_label = self.make_label("cmp_novf")
-        true_label = self.make_label("cmp_true")
-        end_label = self.make_label("cmp_end")
         out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),
             asm_ast.SetCarry(),
@@ -3999,18 +4019,20 @@ class Translator:
                 asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A),
                 asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A),
             ])
+        # Bit 7 of A is N, corrected for overflow on both paths into
+        # `novf`, so `ASL` moves the sign of the difference into C and
+        # `ROL` into bit 0 of a zero: 4 bytes where `BMI true; LDA #0;
+        # JMP end; true: LDA #1` took 9.
         out.extend([
             asm_ast.Branch(cond=asm_ast.VC(), target=novf_label),
             asm_ast.Xor(
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
             asm_ast.Label(name=novf_label),
-            asm_ast.Branch(cond=cond, target=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Jump(target=end_label),
-            asm_ast.Label(name=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=end_label),
+            *_carry_to_value(
+                [asm_ast.ArithmeticShiftLeft(dst=_REG_A)],
+                isinstance(cond, asm_ast.PL),
+            ),
         ])
         self._store_compare_result(out, dst_op, dst_size)
         return out
@@ -4031,16 +4053,10 @@ class Translator:
 
         The subtract and the overflow correction of
         `_translate_signed_ordering` take 13 bytes or more."""
-        out: list[asm_ast.Type_instruction] = [
+        out = _carry_to_value([
             asm_ast.Mov(src=_byte_at(src_op, size - 1), dst=_REG_A),
             asm_ast.ArithmeticShiftLeft(dst=_REG_A),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.RotateLeft(dst=_REG_A),
-        ]
-        if non_negative:
-            out.append(asm_ast.Xor(
-                src1=_REG_A, src2=asm_ast.Imm(value=1), dst=_REG_A,
-            ))
+        ], non_negative)
         self._store_compare_result(out, dst_op, dst_size)
         return out
 
@@ -4064,10 +4080,9 @@ class Translator:
         borrow threads through the per-byte SBCs, so the final
         carry reflects the whole-value unsigned subtraction. Caller
         picks operand order and BCC/BCS to select among <, >=, >,
-        <=.
+        <=. `LDA #0; ROL A` turns C into the 0 or 1, with `EOR #1`
+        after it for BCC.
         """
-        true_label = self.make_label("cmp_true")
-        end_label = self.make_label("cmp_end")
         out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),
             asm_ast.SetCarry(),
@@ -4078,14 +4093,7 @@ class Translator:
                 asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A),
                 asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A),
             ])
-        out.extend([
-            asm_ast.Branch(cond=cond, target=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Jump(target=end_label),
-            asm_ast.Label(name=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=end_label),
-        ])
+        out.extend(_carry_to_value([], isinstance(cond, asm_ast.CC)))
         self._store_compare_result(out, dst_op, dst_size)
         return out
 

@@ -133,5 +133,32 @@ class TestTailCall(unittest.TestCase):
         )
 
 
+class TestJumpToReturn(unittest.TestCase):
+    """A jump to a label whose first instruction is a bare return
+    becomes the return."""
+
+    def test_case_then_break(self) -> None:
+        # A switch case ending in a call and `break`: the jump to the
+        # RTS becomes the RTS, and the call and RTS a tail call.
+        out = _rewrite([
+            asm_ast.Call(name="g"),
+            asm_ast.Jump(target=".break"),
+            asm_ast.Label(name=".other"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Label(name=".break"),
+            asm_ast.Return(save_a=False),
+        ])
+        self.assertEqual(out[0], asm_ast.Jump(target="g"))
+        self.assertEqual(out[1], asm_ast.Label(name=".other"))
+
+    def test_frame_teardown_not_copied(self) -> None:
+        instrs = [
+            asm_ast.Jump(target=".end"),
+            asm_ast.Label(name=".end"),
+            asm_ast.Ret(arg_bytes=2, local_bytes=0, save_a=False),
+        ]
+        self.assertEqual(_rewrite(instrs), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

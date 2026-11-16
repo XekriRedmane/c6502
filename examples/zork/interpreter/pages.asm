@@ -299,12 +299,11 @@ set_page_first:
    CMP   #$FF
    BNE   .if_else@2
    STX   LAST_Z_PAGE
-   JMP   .if_end@1
+   RTS
 .if_else@2:
    TXA
    LDY   __local_set_page_first__0
    STA   (PREV_PAGE_TABLE),Y
-.if_end@1:
    RTS
 
 find_index_of_page_table:

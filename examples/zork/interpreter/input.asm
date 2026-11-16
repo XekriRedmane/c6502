@@ -772,10 +772,8 @@ ascii_to_zchar:
    ORA   __local_ascii_to_zchar__z
    AND   #$03
    STA   ZCHAR_SCRATCH2,X
-   TXA
-   CLC
-   ADC   #$01
-   STA   __local_ascii_to_zchar__dest
+   INX
+   STX   __local_ascii_to_zchar__dest
    DEC   __local_ascii_to_zchar__left
    BEQ   .loop@7_break
    LDA   __local_ascii_to_zchar__2

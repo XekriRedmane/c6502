@@ -256,6 +256,8 @@ and `--codegen`):
   10. Peephole fixed-point loop — see the peephole catalog in
       [passes/CLAUDE.md](passes/CLAUDE.md).
   11. `loop_invariant_a` (a loop-invariant compare key kept in A),
+      `apply_jump_tables` (a switch's compare chain dispatched through
+      a table of case addresses, the `JumpTable` asm instruction),
       `expand_long_branches`, `asm_to_asm2`, `emit_program`.
 
   Also enables the default zp_abi calling convention: every function

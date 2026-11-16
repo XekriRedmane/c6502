@@ -484,6 +484,10 @@ def _xlate_instruction(
             return [asm2_ast.Label(name=n)]
         case asm_ast.Jump(target=t):
             return [asm2_ast.Jump(target=t)]
+        case asm_ast.JumpTable(table=t, index=i, base=b, targets=ts):
+            return [asm2_ast.JumpTable(
+                table=t, index=i, base=b, targets=list(ts),
+            )]
         case asm_ast.Branch(cond=c, target=t):
             return [asm2_ast.Branch(cond=_xlate_cond(c), target=t)]
         case asm_ast.Compare(left=lt, right=rt):

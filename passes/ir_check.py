@@ -265,6 +265,10 @@ def _asm_problems(fn, pseudos, phis) -> list[str]:
             and instr.target not in labels
         ):
             problems.append(f"jump to missing label {instr.target}")
+        if isinstance(instr, asm_ast.JumpTable):
+            for t in instr.targets:
+                if t.startswith(".") and t not in labels:
+                    problems.append(f"jump table to missing label {t}")
         if not phis and isinstance(instr, asm_ast.Phi):
             problems.append("Phi outside SSA form")
         if not pseudos and any(

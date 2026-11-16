@@ -111,6 +111,7 @@ from passes.redundant_store import apply_redundant_store_elimination
 from passes.asm_remat import apply_remat
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
+from passes.jump_table import apply_jump_tables
 from passes.loop_labeling import label_program as label_loops
 from passes import ir_check
 from passes.abi_selection import (
@@ -616,6 +617,10 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         zp_global_symbols=zp.addrs,
     )
     asm3 = apply_carry_known(asm3)
+    # A chain of compares of A with constants becomes a jump table
+    # (passes/jump_table.py), after every pass that follows control
+    # flow.
+    asm3 = apply_jump_tables(asm3)
     asm4 = expand_long_branches(asm3)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).

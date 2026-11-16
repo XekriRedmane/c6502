@@ -800,10 +800,8 @@ instr_get_prop:
    DEY
    LDA   (__local_instr_get_prop__y),Y
    STA   __local_instr_get_prop__0
-   LDA   __local_instr_get_prop__1
-   SEC
-   SBC   #$01
-   TAY
+   LDY   __local_instr_get_prop__1
+   DEY
    LDA   (__local_instr_get_prop__y),Y
    STA   __zpabi_store_result__value_0
    LDA   __local_instr_get_prop__0
@@ -831,8 +829,7 @@ instr_get_prop:
    STA   __zpabi_store_result__value_0
    LDA   #$00
    STA   __zpabi_store_result__value_1
-   JSR   store_result
-   JMP   .if_end@7
+   JMP   store_result
 .if_else@8:
    CMP   #$01
    BNE   .if_else@10
@@ -851,13 +848,9 @@ instr_get_prop:
    STA   __zpabi_store_result__value_0
    LDA   __local_instr_get_prop__y
    STA   __zpabi_store_result__value_1
-   JSR   store_result
-   JMP   .if_end@9
+   JMP   store_result
 .if_else@10:
-   JSR   internal_error
-.if_end@9:
-.if_end@7:
-   RTS
+   JMP   internal_error
 
 instr_get_prop_addr:
    SUBROUTINE
@@ -1006,7 +999,7 @@ instr_put_prop:
    LDA   __local_instr_put_prop__1
    LDY   __local_instr_put_prop__y
    STA   (props),Y
-   JMP   .if_end@18
+   RTS
 .if_else@19:
    CMP   #$01
    BNE   .if_else@21
@@ -1023,12 +1016,9 @@ instr_put_prop:
    LDA   __local_instr_put_prop__1
    LDY   #$01
    STA   (__local_instr_put_prop__0),Y
-   JMP   .if_end@20
-.if_else@21:
-   JSR   internal_error
-.if_end@20:
-.if_end@18:
    RTS
+.if_else@21:
+   JMP   internal_error
 
 attr_mask:
    DS.B  2

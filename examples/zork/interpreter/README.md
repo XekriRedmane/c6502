@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1D29`. The other units, the constants,
+on every instruction, up to `$1BB7`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -155,17 +155,17 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 472 |
-| `decode.c` | 1859 | 2442 |
-| `objects.c` | 788 | 996 |
+| `decode.c` | 1859 | 2089 |
+| `objects.c` | 788 | 981 |
 | `numbers.c` | 436 | 475 |
-| `input.c` | 1018 | 1109 |
-| `pages.c` | 384 | 385 |
+| `input.c` | 1018 | 1106 |
+| `pages.c` | 384 | 383 |
 | `zstring.c` | 383 | 404 |
 | `output.c` | 387 | 403 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7695** |
+| **Total** | **6643** | **7322** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -182,18 +182,21 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 1,281 bytes with the handlers written
-into their cases (`do_2op` alone is 661), where Zork's four tables
+The four dispatch switches take 944 bytes with the handlers written
+into their cases (`do_2op` alone is 472), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
+Each switch now dispatches through a table too.
 `divu16` is 62 bytes against Zork's 78, `match_dictionary_word` 181
 against 190, and `mulu16` 42 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 37,883,751 cycles against Zork's
-38,490,260, 1.6% fewer, and the second 7,337,330 against 7,434,428,
-1.3% fewer. The second prints many zeros, which `print_number`
-divides by 10 once where Zork's prints them without dividing. The stand-ins for the Monitor and RWTS take no cycles.
-Where a function is placed matters to these counts, since a taken
+**Speed.** The first session takes 36,781,544 cycles against Zork's
+38,490,260, 4.4% fewer, and the second 7,131,010 against 7,434,428,
+4.1% fewer. Most of the difference is the jump tables, which reach
+each instruction's case in the same few cycles where the compare
+chains had passed one compare after another. `print_number` divides
+0 by 10 once, where Zork's prints it without dividing. The stand-ins
+for the Monitor and RWTS take no cycles. Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
 shrank by 24 bytes, `branch` and `print_zstring`, which the linker
 places after functions of `objects.c` that fall into them, moved,
@@ -373,5 +376,17 @@ the smaller code saved.
 - `print_number` divides at least once, so 0 prints as `0` with no
   test of its own, 12 bytes shorter. Zork's tests for 0 after the
   loop, and pushes the digits on the 6502's stack, which C can't.
+- A switch's chain of compares dispatches through a table of its
+  cases' addresses, `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS`
+  ([jump_table.md](../../../docs/optimizations/jump_table.md)), as
+  Zork's dispatch does, 151 bytes shorter in `decode.c`'s four
+  switches. A `JMP` to an `RTS` is that `RTS`, so a case that ends in
+  a call and `break` is `JMP f`
+  ([tail_call.md](../../../docs/optimizations/tail_call.md)), 174
+  bytes there. And a signed or unsigned compare kept as a value is
+  `ASL; LDA #0; ROL` or `LDA #0; ROL` where it had branched to `LDA
+  #0` or `LDA #1`, 32 bytes in `do_2op`'s `jl`, `jg`, `dec_chk`, and
+  `inc_chk`. A tail call no longer counts as reading C, which the
+  tables needed at the cases that end in one.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

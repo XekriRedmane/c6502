@@ -85,6 +85,7 @@ a user variable.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
 - [Link-time address arithmetic](label_offset_fold.md). Turns an add of a label's address and a constant into one immediate, `#<(name+k)`.
 - [Loop counter in X](loop_counter_to_x.md). Moves an index loop counter into X, moving other index loads to Y.
+- [Jump tables](jump_table.md). Dispatches a switch's chain of compares through a table of its cases' addresses.
 - [Loop test at the bottom](rotate_loop_test.md). Moves a loop's test to its bottom, and drops the first test when it's known to pass.
 - [Loop unrolling](unroll.md). Replaces a pragma-marked counted for loop with one body copy per iteration.
 - [Loop-carried value in A](promote_loop_carried_to_a.md). Keeps an incremented register parameter in A across its loop.
@@ -123,7 +124,7 @@ a user variable.
 - [Store X or Y directly](via_a_store_fold.md). Turns `TXA; STA M` into `STX M` (and TYA into STY) when A is dead.
 - [Strength reduction](strength_reduction.md). Rewrites multiply, divide, and modulo by constants as shifts, masks, adds, or copies.
 - [Subtract-and-test fusion](sub1_test_zero_peephole.md). Drops `LDA #0; CMP i` after `SBC #1` and branches on the inverted carry.
-- [Tail call](tail_call.md). Turns `JSR f; RTS` into `JMP f` in frameless functions.
+- [Tail call](tail_call.md). Turns `JSR f; RTS` into `JMP f` in frameless functions, and a jump to an RTS into the RTS.
 - [Tail merge](tail_merge.md). Branches to one shared copy of a repeated return sequence.
 - [Testing the low byte after an INC chain](inc_low_byte_test.md). Sends an INC chain's first BNE where a test of the incremented low byte would go.
 - [Transfer plus or minus one](transfer_pm1_store.md). Turns `TXA; SEC; SBC #1; STA M` into `DEX; STX M`, and the +1 and Y forms.
@@ -248,9 +249,10 @@ them whenever a pass is added or moved.
     `DEC`.
 27. Peephole fixed point, fifth run.
 28. [Carry already known](carry_known.md), once more.
-29. Long-branch expansion, zero-page global placement, and lowering
+29. [Jump tables](jump_table.md)
+30. Long-branch expansion, zero-page global placement, and lowering
     to `asm2_ast`.
-30. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+31. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

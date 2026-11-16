@@ -335,13 +335,12 @@ set_page_first:
    BNE   .if_else@12
    LDA   __local_set_page_first__0
    STA   LAST_Z_PAGE
-   JMP   .if_end@11
+   RTS
 .if_else@12:
    TXA
    TAY
    LDA   __local_set_page_first__0
    STA   (PREV_PAGE_TABLE),Y
-.if_end@11:
    RTS
 
 find_index_of_page_table:

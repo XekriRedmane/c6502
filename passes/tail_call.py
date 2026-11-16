@@ -1,4 +1,5 @@
-"""Tail-call peephole: `Call(name); Return(_)` → `Jump(name)`.
+"""Tail-call peephole: `Call(name); Return(_)` → `Jump(name)`, and a
+jump to a return becomes the return.
 
 # Pattern
 
@@ -56,6 +57,18 @@ pipeline's `--bare-exit` path is where tail-call fires most often,
 since every zp_abi leaf / non-recursive function ends in
 `Return(_)`.
 
+# A jump to a return
+
+A `Jump(L)` whose label `L` is followed (after any further labels) by
+a bare `Return` becomes a copy of that `Return`: `RTS` is 1 byte and
+3 cycles less than `JMP`, and does what the jump would have done next.
+A `switch` whose cases end in `break` leaves this shape, each case
+jumping to the `RTS` after the switch, and a case that ends in a call,
+`JSR f; JMP .break`, then becomes `JSR f; RTS`, which the rule above
+makes `JMP f`. Zork's `do_2op` (examples/zork/interpreter/decode.c)
+has a dozen such cases. A `Ret`, which tears down a frame, isn't
+copied.
+
 # Where to run
 
 Inside the asm-peephole fixed-point loop. Composition: turning a
@@ -85,8 +98,28 @@ def apply_tail_call(prog: asm_ast.Program) -> asm_ast.Program:
     return asm_ast.Program(top_level=new_top)
 
 
+def _return_at(instrs, labels: dict[str, int], target: str):
+    """The bare `Return` a jump to `target` reaches first, or None."""
+    k = labels.get(target)
+    if k is None:
+        return None
+    while k < len(instrs) and isinstance(instrs[k], asm_ast.Label):
+        k += 1
+    if k < len(instrs) and isinstance(instrs[k], asm_ast.Return):
+        return instrs[k]
+    return None
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
-    instrs = fn.instructions
+    labels = {
+        ins.name: k for k, ins in enumerate(fn.instructions)
+        if isinstance(ins, asm_ast.Label)
+    }
+    instrs = [
+        _return_at(fn.instructions, labels, ins.target) or ins
+        if isinstance(ins, asm_ast.Jump) else ins
+        for ins in fn.instructions
+    ]
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):

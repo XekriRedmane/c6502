@@ -862,12 +862,14 @@ class TestTranslateComparisons(unittest.TestCase):
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
             asm_ast.Label(name=".cmp_novf@0"),
-            asm_ast.Branch(cond=cond, target=".cmp_true@1"),
+            # Bit 7 of A is the corrected N: ASL moves it into C, and
+            # ROL into bit 0 of a zero, inverted for PL.
+            asm_ast.ArithmeticShiftLeft(dst=_REG_A),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Jump(target=".cmp_end@2"),
-            asm_ast.Label(name=".cmp_true@1"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=".cmp_end@2"),
+            asm_ast.RotateLeft(dst=_REG_A),
+            *([asm_ast.Xor(src1=_REG_A, src2=asm_ast.Imm(value=1),
+                           dst=_REG_A)]
+              if isinstance(cond, asm_ast.PL) else []),
             asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
         ]
 
@@ -1306,22 +1308,22 @@ class TestTranslatePointerOrdering(unittest.TestCase):
         return asm_ast.Pseudo(name=name, offset=k)
 
     def _expected(self, left_name, right_name, cond):
-        # Two-byte SBC pair (carry threads), then BCC/BCS + 0/1
-        # select. No V-correction (no .cmp_novf label). The result
-        # store fills both bytes of %r (Int = 2 bytes): low byte
-        # gets the 0/1 value from A, high byte gets a literal 0.
+        # Two-byte SBC pair (carry threads), then C as the 0/1 value:
+        # `LDA #0; ROL A`, inverted with `EOR #1` for `<` (BCC). No
+        # V-correction (no .cmp_novf label). The result store fills
+        # both bytes of %r (Int = 2 bytes): low byte gets the 0/1
+        # value from A, high byte gets a literal 0.
         return [
             asm_ast.Mov(src=self._byte(left_name, 0), dst=_REG_A),
             asm_ast.SetCarry(),
             asm_ast.Sub(src=self._byte(right_name, 0), dst=_REG_A),
             asm_ast.Mov(src=self._byte(left_name, 1), dst=_REG_A),
             asm_ast.Sub(src=self._byte(right_name, 1), dst=_REG_A),
-            asm_ast.Branch(cond=cond, target=".cmp_true@0"),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Jump(target=".cmp_end@1"),
-            asm_ast.Label(name=".cmp_true@0"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=".cmp_end@1"),
+            asm_ast.RotateLeft(dst=_REG_A),
+            *([asm_ast.Xor(src1=_REG_A, src2=asm_ast.Imm(value=1),
+                           dst=_REG_A)]
+              if isinstance(cond, asm_ast.CC) else []),
             asm_ast.Mov(src=_REG_A, dst=self._byte("%r", 0)),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=self._byte("%r", 1)),
         ]

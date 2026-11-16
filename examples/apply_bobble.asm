@@ -23,7 +23,7 @@ apply_bobble:
    CLC
    ADC   entity_floor_pos,Y
    STA   entity_floor_pos,Y
-   JMP   .if_end@0
+   RTS
 .if_else@1:
    AND   #$7F
    STA   __local_apply_bobble__1
@@ -31,5 +31,4 @@ apply_bobble:
    SEC
    SBC   __local_apply_bobble__1
    STA   entity_floor_pos,Y
-.if_end@0:
    RTS

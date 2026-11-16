@@ -280,6 +280,27 @@ def _pick_symbol(address: int) -> str | None:
     return candidates[0]
 
 
+def _emit_jump_table(
+    table: str, index: str, base: int, targets: list[str],
+) -> list[str]:
+    """A dispatch on A through a table of addresses minus one: the
+    value doubled is the index, the target's address minus one goes on
+    the stack high byte first, and `RTS` pulls it and adds one."""
+    at = table if base == 0 else f"{table}-{2 * base}"
+    out = [
+        _instr_line("ASL"),
+        _instr_line(f"TA{index}"),
+        _instr_line("LDA", f"{at}+1,{index}"),
+        _instr_line("PHA"),
+        _instr_line("LDA", f"{at},{index}"),
+        _instr_line("PHA"),
+        _instr_line("RTS"),
+        f"{table}:",
+    ]
+    out += [_instr_line("DC.W", f"{t}-1") for t in targets]
+    return out
+
+
 def _instr_line(opcode: str, operand: str = "") -> str:
     line = " " * _OPCODE_COL + opcode.upper()
     if operand:
@@ -1049,6 +1070,10 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return [_instr_line("JSR", name)]
         case asm_ast.Jump(target=target):
             return [_instr_line("JMP", target)]
+        case asm_ast.JumpTable(
+            table=table, index=index, base=base, targets=targets,
+        ):
+            return _emit_jump_table(table, index, base, targets)
         case asm_ast.Branch(cond=cond, target=target):
             return [_instr_line(f"B{_cond_suffix(cond)}", target)]
         case asm_ast.Label(name=name):

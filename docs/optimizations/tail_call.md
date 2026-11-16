@@ -46,6 +46,17 @@ set_mode:
    JMP   redraw
 ```
 
+## A jump to a return
+
+A `JMP` to a label whose first instruction is a bare `RTS` becomes
+that `RTS`, which is 2 bytes and 3 cycles less, and does what the
+jump would have done next. A `switch` whose cases end in `break`
+leaves this shape, each case jumping to the `RTS` after the switch.
+A case that ends in a call, `JSR f; JMP .break`, then becomes `JSR f;
+RTS`, and so `JMP f`. In Zork's `decode.c`
+(examples/zork/interpreter), this took 174 bytes off the four
+dispatch switches. A `Ret`, which tears down a frame, isn't copied.
+
 ## When it applies
 
 A `Call` is directly followed by a `Return`, anywhere in the

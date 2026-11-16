@@ -38,7 +38,9 @@ this directory:
   says whether a `Call` leaves X or Y alone (its `preserves` list,
   from `preserves_x` / `preserves_y` on a routine with an address);
   `kills_x` / `kills_y` use it, and so does every pass that keeps a
-  value in X or Y across a call. `kills_a` counts every move
+  value in X or Y across a call. The flag walks take a `JMP` to
+  another function, a tail call, to write C and V as a `Call` does,
+  since the callee reads no flag it's given. `kills_a` counts every move
   `asm_emit` writes through A: a load into A, a move from memory or a
   constant into memory (`LDA src; STA dst`), and a move between X and
   Y (`TXA; TAY`).
@@ -130,6 +132,20 @@ this directory:
   Also a compare of a register with 0 right after the instruction
   that set N and Z from it (stores may come between), when C is dead
   (`_drop_compares_with_zero`, in a sweep of its own).
+- `jump_table.py` — `apply_jump_tables`. A chain of `CMP #k; BEQ
+  case` on A (at least four, constants 0 to 127, the case for 0 maybe
+  a `BEQ` right after the load) becomes `CMP #max+1; BCS default`
+  and a `JumpTable`: `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS` and
+  a table of case addresses minus one, which `asm_emit` and the sim's
+  assembler write out. A, N/Z, C, and the index (Y, else X) must be
+  dead at every case and the default, and the table shorter than the
+  chain. Runs once after the last `carry_known`, before
+  `expand_long_branches`, so no pass that follows control flow sees
+  it. `ir_check` checks its targets.
+- `tail_call.py` — `apply_tail_call`. `JSR f; RTS` becomes `JMP f`,
+  and a `JMP` to a label whose first instruction is a bare `RTS`
+  becomes that `RTS`, so a switch case ending in a call and `break`
+  becomes `JMP f`.
 - `tail_merge.py` — `apply_tail_merge`. Turns `Bcc L; <tail>; L:`
   into `B!cc T` when the same return tail (2 to 4 instructions
   ending in `Return`, such as `LDX #0; TXA; RTS`) appears later at

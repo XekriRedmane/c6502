@@ -342,6 +342,8 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return 3   # JSR abs
         case asm_ast.Jump():
             return 3   # JMP abs
+        case asm_ast.JumpTable(targets=targets):
+            return _JUMP_TABLE_CODE + 2 * len(targets)
         case asm_ast.Branch():
             return 2   # Bxx rel
         case asm_ast.Label():
@@ -507,6 +509,10 @@ def _emit_instr(
             return _emit_jsr(name, syms)
         case asm_ast.Jump(target=target):
             return _emit_jmp(target, syms)
+        case asm_ast.JumpTable(
+            table=table, index=index, base=base, targets=targets,
+        ):
+            return _emit_jump_table(addr, table, index, base, targets, syms)
         case asm_ast.Branch(cond=cond, target=target):
             return _emit_branch(cond, target, addr, syms)
         case asm_ast.AllocateStack(bytes=n):
@@ -1273,6 +1279,37 @@ def _emit_jsr(name: str, syms: dict[str, int]) -> bytes:
         raise AssemblerError(f"undefined symbol {name!r}")
     lo, hi = _abs_word(syms[name])
     return bytes([_ABS["JSR"], lo, hi])
+
+
+# `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS`, before the table.
+_JUMP_TABLE_CODE = 11
+
+
+def _emit_jump_table(
+    addr: int, table: str, index: str, base: int, targets: list[str],
+    syms: dict[str, int],
+) -> bytes:
+    """The dispatch `asm_emit._emit_jump_table` writes, and its table,
+    which starts right after it. `table` names that address; the sim's
+    pass 1 doesn't see the label inside the instruction, so it's
+    computed from `addr` here."""
+    start = addr + _JUMP_TABLE_CODE
+    if table in syms and syms[table] != start:
+        raise AssemblerError(f"jump table {table!r} isn't where expected")
+    at = start - 2 * base
+    reg = asm_ast.X() if index == "X" else asm_ast.Y()
+    out = bytes([
+        _IMPLIED["ASL_A"], _IMPLIED[f"TA{index}"],
+    ]) + _emit_abs_indexed("LDA", at + 1, reg) + bytes([_IMPLIED["PHA"]])
+    out += _emit_abs_indexed("LDA", at, reg) + bytes([
+        _IMPLIED["PHA"], _IMPLIED["RTS"],
+    ])
+    for t in targets:
+        if t not in syms:
+            raise AssemblerError(f"undefined symbol {t!r}")
+        lo, hi = _abs_word((syms[t] - 1) & 0xFFFF)
+        out += bytes([lo, hi])
+    return out
 
 
 def _emit_jmp(target: str, syms: dict[str, int]) -> bytes:

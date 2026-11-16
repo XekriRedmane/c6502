@@ -609,17 +609,14 @@ store_result:
    STA   __zpabi_push__value_0
    LDA   __zpabi_store_result__value_1
    STA   __zpabi_push__value_1
-   JSR   push
-   JMP   .if_end@6
+   JMP   push
 .if_else@7:
    LDA   __zpabi_store_result__value_0
    STA   __zpabi_set_nonstack_var__value_0
    LDA   __zpabi_store_result__value_1
    STA   __zpabi_set_nonstack_var__value_1
    LDA   __local_store_result__0
-   JSR   set_nonstack_var
-.if_end@6:
-   RTS
+   JMP   set_nonstack_var
 
 get_const_word:
    SUBROUTINE
@@ -995,73 +992,62 @@ do_0op:
 
    ORA   #$00
    BEQ   .case@4
-   CMP   #$01
-   BEQ   .case@5
-   CMP   #$02
-   BEQ   .case@6
-   CMP   #$03
-   BEQ   .case@7
-   CMP   #$04
-   BEQ   .switch@3_break
-   CMP   #$05
-   BEQ   .case@9
-   CMP   #$06
-   BEQ   .case@10
-   CMP   #$07
-   BEQ   .case@11
-   CMP   #$08
-   BEQ   .case@12
-   CMP   #$09
-   BEQ   .case@13
-   CMP   #$0A
-   BEQ   .case@14
-   CMP   #$0B
-   BEQ   .case@15
-   JMP   .default@16
+   CMP   #$0C
+   BCS   .default@16
+   ASL
+   TAY
+   LDA   .jtab@0+1,Y
+   PHA
+   LDA   .jtab@0,Y
+   PHA
+   RTS
+.jtab@0:
+   DC.W  .default@16-1
+   DC.W  .case@5-1
+   DC.W  .case@6-1
+   DC.W  .case@7-1
+   DC.W  .switch@3_break-1
+   DC.W  .case@9-1
+   DC.W  .case@10-1
+   DC.W  .case@11-1
+   DC.W  .case@12-1
+   DC.W  .case@13-1
+   DC.W  .case@14-1
+   DC.W  .case@15-1
 .case@4:
    LDA   #$01
    STA   __zpabi_return_value__value_0
    LDA   #$00
    STA   __zpabi_return_value__value_1
-   JSR   return_value
-   JMP   .switch@3_break
+   JMP   return_value
 .case@5:
    LDA   #$00
    STA   __zpabi_return_value__value_0
-.xjump@0:
    STA   __zpabi_return_value__value_1
-   JSR   return_value
-   JMP   .switch@3_break
+   JMP   return_value
 .case@6:
-   JSR   print_string_literal
-   JMP   .switch@3_break
+   JMP   print_string_literal
 .case@7:
    JSR   print_string_literal
    JSR   new_line
    JMP   .case@4
 .case@9:
-   JSR   instr_save
-   JMP   .switch@3_break
+   JMP   instr_save
 .case@10:
-   JSR   instr_restore
-   JMP   .switch@3_break
+   JMP   instr_restore
 .case@11:
-   JSR   instr_restart
-   JMP   .switch@3_break
+   JMP   instr_restart
 .case@12:
    JSR   pop
    STA   __zpabi_return_value__value_0
-   TXA
-   JMP   .xjump@0
+   STX   __zpabi_return_value__value_1
+   JMP   return_value
 .case@13:
-   JSR   pop
-   JMP   .switch@3_break
+   JMP   pop
 .case@14:
-   JSR   instr_quit
-   JMP   .switch@3_break
+   JMP   instr_quit
 .case@15:
-   JSR   new_line
-   JMP   .switch@3_break
+   JMP   new_line
 .default@16:
    JSR   internal_error
 .switch@3_break:
@@ -1072,43 +1058,34 @@ do_1op:
 
    ORA   #$00
    BEQ   .case@18
-   CMP   #$01
-   BEQ   .case@19
-   CMP   #$02
-   BEQ   .case@20
-   CMP   #$03
-   BEQ   .case@21
-   CMP   #$04
-   BEQ   .case@22
-   CMP   #$05
-   BEQ   .case@23
-   CMP   #$06
-   BEQ   .case@24
-   CMP   #$07
-   BEQ   .case@25
-   CMP   #$09
-   BEQ   .case@26
-   CMP   #$0A
-   BEQ   .case@27
-   CMP   #$0B
-   BEQ   .case@28
-   CMP   #$0C
-   BNE   .lb_skip@4
-   JMP   .case@29
-.lb_skip@4:
-   CMP   #$0D
-   BNE   .lb_skip@3
-   JMP   .case@30
-.lb_skip@3:
-   CMP   #$0E
-   BNE   .lb_skip@2
-   JMP   .case@31
-.lb_skip@2:
-   CMP   #$0F
-   BNE   .lb_skip@1
-   JMP   .case@32
-.lb_skip@1:
+   CMP   #$10
+   BCC   .lb_skip@1
    JMP   .default@33
+.lb_skip@1:
+   ASL
+   TAY
+   LDA   .jtab@1+1,Y
+   PHA
+   LDA   .jtab@1,Y
+   PHA
+   RTS
+.jtab@1:
+   DC.W  .default@33-1
+   DC.W  .case@19-1
+   DC.W  .case@20-1
+   DC.W  .case@21-1
+   DC.W  .case@22-1
+   DC.W  .case@23-1
+   DC.W  .case@24-1
+   DC.W  .case@25-1
+   DC.W  .default@33-1
+   DC.W  .case@26-1
+   DC.W  .case@27-1
+   DC.W  .case@28-1
+   DC.W  .case@29-1
+   DC.W  .case@30-1
+   DC.W  .case@31-1
+   DC.W  .case@32-1
 .case@18:
    LDA   OPERANDS+1
    ORA   OPERANDS
@@ -1118,48 +1095,37 @@ do_1op:
 .cmp_true@2:
    LDA   #$01
 .cmp_end@1:
-   JSR   branch
-   JMP   .switch@17_break
+   JMP   branch
 .case@19:
-   JSR   instr_get_sibling
-   JMP   .switch@17_break
+   JMP   instr_get_sibling
 .case@20:
-   JSR   instr_get_child
-   JMP   .switch@17_break
+   JMP   instr_get_child
 .case@21:
-   JSR   instr_get_parent
-   JMP   .switch@17_break
+   JMP   instr_get_parent
 .case@22:
-   JSR   instr_get_prop_len
-   JMP   .switch@17_break
+   JMP   instr_get_prop_len
 .case@23:
-   JSR   inc_var
-   JMP   .switch@17_break
+   JMP   inc_var
 .case@24:
-   JSR   dec_var
-   JMP   .switch@17_break
+   JMP   dec_var
 .case@25:
    LDA   OPERANDS
    STA   __zpabi_load_address__addr_0
    LDA   OPERANDS+1
    STA   __zpabi_load_address__addr_1
    JSR   load_address
-   JSR   print_zstring
-   JMP   .switch@17_break
+   JMP   print_zstring
 .case@26:
-   JSR   instr_remove_obj
-   JMP   .switch@17_break
+   JMP   instr_remove_obj
 .case@27:
    LDA   OPERANDS
-   JSR   print_obj
-   JMP   .switch@17_break
+   JMP   print_obj
 .case@28:
    LDA   OPERANDS
    STA   __zpabi_return_value__value_0
    LDA   OPERANDS+1
    STA   __zpabi_return_value__value_1
-   JSR   return_value
-   JMP   .switch@17_break
+   JMP   return_value
 .case@29:
    LDA   OPERANDS
    SEC
@@ -1168,36 +1134,30 @@ do_1op:
    LDA   OPERANDS+1
    SBC   #$00
    STA   __zpabi_branch_to_offset__offset_1
-   JSR   branch_to_offset
-   JMP   .switch@17_break
+   JMP   branch_to_offset
 .case@30:
    LDA   OPERANDS
    STA   __zpabi_load_packed_address__addr_0
    LDA   OPERANDS+1
    STA   __zpabi_load_packed_address__addr_1
    JSR   load_packed_address
-   JSR   print_zstring
-   JMP   .switch@17_break
+   JMP   print_zstring
 .case@31:
    LDA   OPERANDS
    JSR   var_get
    STA   __zpabi_store_result__value_0
-   TXA
-.xjump@1:
-   STA   __zpabi_store_result__value_1
-   JSR   store_result
-   JMP   .switch@17_break
+   STX   __zpabi_store_result__value_1
+   JMP   store_result
 .case@32:
    LDA   OPERANDS
    EOR   #$FF
    STA   __zpabi_store_result__value_0
    LDA   OPERANDS+1
    EOR   #$FF
-   JMP   .xjump@1
+   STA   __zpabi_store_result__value_1
+   JMP   store_result
 .default@33:
-   JSR   internal_error
-.switch@17_break:
-   RTS
+   JMP   internal_error
 
 do_2op:
    SUBROUTINE
@@ -1212,103 +1172,43 @@ do_2op:
    LDA   OPERANDS+3
    STA   __local_do_2op__3
    LDA   __local_do_2op__equal
-   CMP   #$01
-   BNE   .lb_skip@28
-   JMP   .case@35
-.lb_skip@28:
-   CMP   #$02
-   BNE   .lb_skip@27
-   JMP   .case@36
-.lb_skip@27:
-   CMP   #$03
-   BNE   .lb_skip@26
-   JMP   .case@37
-.lb_skip@26:
-   CMP   #$04
-   BNE   .lb_skip@25
-   JMP   .case@38
-.lb_skip@25:
-   CMP   #$05
-   BNE   .lb_skip@24
-   JMP   .case@39
-.lb_skip@24:
-   CMP   #$06
-   BNE   .lb_skip@23
-   JMP   .case@40
-.lb_skip@23:
-   CMP   #$07
-   BNE   .lb_skip@22
-   JMP   .case@41
-.lb_skip@22:
-   CMP   #$08
-   BNE   .lb_skip@21
-   JMP   .case@42
-.lb_skip@21:
-   CMP   #$09
-   BNE   .lb_skip@20
-   JMP   .case@43
-.lb_skip@20:
-   CMP   #$0A
-   BNE   .lb_skip@19
-   JMP   .case@44
-.lb_skip@19:
-   CMP   #$0B
-   BNE   .lb_skip@18
-   JMP   .case@45
-.lb_skip@18:
-   CMP   #$0C
-   BNE   .lb_skip@17
-   JMP   .case@46
-.lb_skip@17:
-   CMP   #$0D
-   BNE   .lb_skip@16
-   JMP   .case@47
-.lb_skip@16:
-   CMP   #$0E
-   BNE   .lb_skip@15
-   JMP   .case@48
-.lb_skip@15:
-   CMP   #$0F
-   BNE   .lb_skip@14
-   JMP   .case@49
-.lb_skip@14:
-   CMP   #$10
-   BNE   .lb_skip@13
-   JMP   .case@50
-.lb_skip@13:
-   CMP   #$11
-   BNE   .lb_skip@12
-   JMP   .case@51
-.lb_skip@12:
-   CMP   #$12
-   BNE   .lb_skip@11
-   JMP   .case@52
-.lb_skip@11:
-   CMP   #$13
-   BNE   .lb_skip@10
-   JMP   .case@53
-.lb_skip@10:
-   CMP   #$14
-   BNE   .lb_skip@9
-   JMP   .case@54
-.lb_skip@9:
-   CMP   #$15
-   BNE   .lb_skip@8
-   JMP   .case@55
-.lb_skip@8:
-   CMP   #$16
-   BNE   .lb_skip@7
-   JMP   .case@56
-.lb_skip@7:
-   CMP   #$17
-   BNE   .lb_skip@6
-   JMP   .case@57
-.lb_skip@6:
-   CMP   #$18
-   BNE   .lb_skip@5
-   JMP   .case@58
-.lb_skip@5:
+   CMP   #$19
+   BCC   .lb_skip@2
    JMP   .default@59
+.lb_skip@2:
+   ASL
+   TAY
+   LDA   .jtab@2+1,Y
+   PHA
+   LDA   .jtab@2,Y
+   PHA
+   RTS
+.jtab@2:
+   DC.W  .default@59-1
+   DC.W  .case@35-1
+   DC.W  .case@36-1
+   DC.W  .case@37-1
+   DC.W  .case@38-1
+   DC.W  .case@39-1
+   DC.W  .case@40-1
+   DC.W  .case@41-1
+   DC.W  .case@42-1
+   DC.W  .case@43-1
+   DC.W  .case@44-1
+   DC.W  .case@45-1
+   DC.W  .case@46-1
+   DC.W  .case@47-1
+   DC.W  .case@48-1
+   DC.W  .case@49-1
+   DC.W  .case@50-1
+   DC.W  .case@51-1
+   DC.W  .case@52-1
+   DC.W  .case@53-1
+   DC.W  .case@54-1
+   DC.W  .case@55-1
+   DC.W  .case@56-1
+   DC.W  .case@57-1
+   DC.W  .case@58-1
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1376,8 +1276,7 @@ do_2op:
 .if_end@28:
 .if_end@25:
    LDA   __local_do_2op__equal
-   JSR   branch
-   JMP   .switch@34_break
+   JMP   branch
 .case@36:
    LDA   __local_do_2op__5
    SEC
@@ -1387,48 +1286,28 @@ do_2op:
    BVC   .cmp_novf@12
    EOR   #$80
 .cmp_novf@12:
-   BMI   .cmp_true@13
+   ASL
    LDA   #$00
-   JMP   .cmp_end@14
-.cmp_true@13:
-   LDA   #$01
-.cmp_end@14:
-   JSR   branch
-   JMP   .switch@34_break
+   ROL
+   JMP   branch
 .case@37:
    LDA   __local_do_2op__2
    SEC
    SBC   __local_do_2op__5
    LDA   __local_do_2op__3
    SBC   __local_do_2op__4
-   BVC   .cmp_novf@15
+   BVC   .cmp_novf@12
    EOR   #$80
-.cmp_novf@15:
-   BMI   .cmp_true@16
-   LDA   #$00
-   JMP   .cmp_end@17
-.cmp_true@16:
-   LDA   #$01
-.cmp_end@17:
-   JSR   branch
-   JMP   .switch@34_break
+   JMP   .cmp_novf@12
 .case@38:
    JSR   dec_var
    SEC
    SBC   __local_do_2op__2
    TXA
    SBC   __local_do_2op__3
-   BVC   .cmp_novf@18
+   BVC   .cmp_novf@12
    EOR   #$80
-.cmp_novf@18:
-   BMI   .cmp_true@19
-   LDA   #$00
-   JMP   .cmp_end@20
-.cmp_true@19:
-   LDA   #$01
-.cmp_end@20:
-   JSR   branch
-   JMP   .switch@34_break
+   JMP   .cmp_novf@12
 .case@39:
    JSR   inc_var
    STA   __local_do_2op__0
@@ -1438,20 +1317,11 @@ do_2op:
    SBC   __local_do_2op__0
    LDA   __local_do_2op__3
    SBC   __local_do_2op__equal
-   BVC   .cmp_novf@21
+   BVC   .cmp_novf@12
    EOR   #$80
-.cmp_novf@21:
-   BMI   .cmp_true@22
-   LDA   #$00
-   JMP   .cmp_end@23
-.cmp_true@22:
-   LDA   #$01
-.cmp_end@23:
-   JSR   branch
-   JMP   .switch@34_break
+   JMP   .cmp_novf@12
 .case@40:
-   JSR   instr_jin
-   JMP   .switch@34_break
+   JMP   instr_jin
 .case@41:
    LDA   __local_do_2op__5
    AND   __local_do_2op__2
@@ -1462,52 +1332,45 @@ do_2op:
    BNE   .thread@3
    LDA   __local_do_2op__0
    CMP   __local_do_2op__2
-   BEQ   .cmp_true@24
+   BEQ   .cmp_true@16
 .thread@3:
    LDA   #$00
-   JMP   .cmp_end@25
-.cmp_true@24:
+   JMP   .cmp_end@17
+.cmp_true@16:
    LDA   #$01
-.cmp_end@25:
-   JSR   branch
-   JMP   .switch@34_break
+.cmp_end@17:
+   JMP   branch
 .case@42:
    LDA   __local_do_2op__5
    ORA   __local_do_2op__2
    STA   __zpabi_store_result__value_0
    LDA   __local_do_2op__4
    ORA   __local_do_2op__3
-.xjump@2:
    STA   __zpabi_store_result__value_1
-   JSR   store_result
-   JMP   .switch@34_break
+   JMP   store_result
 .case@43:
    LDA   __local_do_2op__5
    AND   __local_do_2op__2
    STA   __zpabi_store_result__value_0
    LDA   __local_do_2op__4
    AND   __local_do_2op__3
-   JMP   .xjump@2
+   STA   __zpabi_store_result__value_1
+   JMP   store_result
 .case@44:
-   JSR   instr_test_attr
-   JMP   .switch@34_break
+   JMP   instr_test_attr
 .case@45:
-   JSR   instr_set_attr
-   JMP   .switch@34_break
+   JMP   instr_set_attr
 .case@46:
-   JSR   instr_clear_attr
-   JMP   .switch@34_break
+   JMP   instr_clear_attr
 .case@47:
    LDA   __local_do_2op__2
    STA   __zpabi_var_put__value_0
    LDA   __local_do_2op__3
    STA   __zpabi_var_put__value_1
    LDA   __local_do_2op__5
-   JSR   var_put
-   JMP   .switch@34_break
+   JMP   var_put
 .case@48:
-   JSR   instr_insert_obj
-   JMP   .switch@34_break
+   JMP   instr_insert_obj
 .case@49:
    ASL   __local_do_2op__2
    ROL   __local_do_2op__3
@@ -1521,8 +1384,8 @@ do_2op:
    JSR   load_address
    JSR   get_next_code_word
    STA   __zpabi_store_result__value_0
-   TXA
-   JMP   .xjump@2
+   STX   __zpabi_store_result__value_1
+   JMP   store_result
 .case@50:
    LDA   __local_do_2op__5
    CLC
@@ -1536,17 +1399,13 @@ do_2op:
    STA   __zpabi_store_result__value_0
    LDA   #$00
    STA   __zpabi_store_result__value_1
-   JSR   store_result
-   JMP   .switch@34_break
+   JMP   store_result
 .case@51:
-   JSR   instr_get_prop
-   JMP   .switch@34_break
+   JMP   instr_get_prop
 .case@52:
-   JSR   instr_get_prop_addr
-   JMP   .switch@34_break
+   JMP   instr_get_prop_addr
 .case@53:
-   JSR   instr_get_next_prop
-   JMP   .switch@34_break
+   JMP   instr_get_next_prop
 .case@54:
    LDA   __local_do_2op__5
    CLC
@@ -1554,7 +1413,8 @@ do_2op:
    STA   __zpabi_store_result__value_0
    LDA   __local_do_2op__4
    ADC   __local_do_2op__3
-   JMP   .xjump@2
+   STA   __zpabi_store_result__value_1
+   JMP   store_result
 .case@55:
    LDA   __local_do_2op__5
    SEC
@@ -1562,20 +1422,16 @@ do_2op:
    STA   __zpabi_store_result__value_0
    LDA   __local_do_2op__4
    SBC   __local_do_2op__3
-   JMP   .xjump@2
+   STA   __zpabi_store_result__value_1
+   JMP   store_result
 .case@56:
-   JSR   instr_mul
-   JMP   .switch@34_break
+   JMP   instr_mul
 .case@57:
-   JSR   instr_div
-   JMP   .switch@34_break
+   JMP   instr_div
 .case@58:
-   JSR   instr_mod
-   JMP   .switch@34_break
+   JMP   instr_mod
 .default@59:
-   JSR   internal_error
-.switch@34_break:
-   RTS
+   JMP   internal_error
 
 do_var:
    SUBROUTINE
@@ -1584,45 +1440,30 @@ do_var:
    LDA   OPERANDS
    STA   __local_do_var__3
    LDA   __local_do_var__n
-   BEQ   .case@61
-   CMP   #$01
-   BEQ   .case@62
-   CMP   #$02
-   BNE   .lb_skip@36
-   JMP   .case@63
-.lb_skip@36:
-   CMP   #$03
-   BNE   .lb_skip@35
-   JMP   .case@64
-.lb_skip@35:
-   CMP   #$04
-   BNE   .lb_skip@34
-   JMP   .case@65
-.lb_skip@34:
-   CMP   #$05
-   BNE   .lb_skip@33
-   JMP   .case@66
-.lb_skip@33:
-   CMP   #$06
-   BNE   .lb_skip@32
-   JMP   .case@67
-.lb_skip@32:
-   CMP   #$07
-   BNE   .lb_skip@31
-   JMP   .case@68
-.lb_skip@31:
-   CMP   #$08
-   BNE   .lb_skip@30
-   JMP   .case@69
-.lb_skip@30:
-   CMP   #$09
-   BNE   .lb_skip@29
-   JMP   .case@70
-.lb_skip@29:
+   CMP   #$0A
+   BCC   .lb_skip@3
    JMP   .default@71
+.lb_skip@3:
+   ASL
+   TAY
+   LDA   .jtab@3+1,Y
+   PHA
+   LDA   .jtab@3,Y
+   PHA
+   RTS
+.jtab@3:
+   DC.W  .case@61-1
+   DC.W  .case@62-1
+   DC.W  .case@63-1
+   DC.W  .case@64-1
+   DC.W  .case@65-1
+   DC.W  .case@66-1
+   DC.W  .case@67-1
+   DC.W  .case@68-1
+   DC.W  .case@69-1
+   DC.W  .case@70-1
 .case@61:
-   JSR   instr_call
-   JMP   .switch@60_break
+   JMP   instr_call
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1650,7 +1491,7 @@ do_var:
    LDA   OPERANDS+4
    INY
    STA   (__local_do_var__0),Y
-   JMP   .switch@60_break
+   RTS
 .case@63:
    LDA   __local_do_var__3
    CLC
@@ -1669,45 +1510,36 @@ do_var:
    LDA   OPERANDS+4
    LDY   #$00
    STA   (__local_do_var__n),Y
-   JMP   .switch@60_break
+   RTS
 .case@64:
-   JSR   instr_put_prop
-   JMP   .switch@60_break
+   JMP   instr_put_prop
 .case@65:
-   JSR   instr_sread
-   JMP   .switch@60_break
+   JMP   instr_sread
 .case@66:
    LDA   __local_do_var__3
-   JSR   buffer_char
-   JMP   .switch@60_break
+   JMP   buffer_char
 .case@67:
    LDA   __local_do_var__3
    STA   __zpabi_print_number__n_0
    LDA   OPERANDS+1
    STA   __zpabi_print_number__n_1
-   JSR   print_number
-   JMP   .switch@60_break
+   JMP   print_number
 .case@68:
-   JSR   instr_random
-   JMP   .switch@60_break
+   JMP   instr_random
 .case@69:
    LDA   __local_do_var__3
    STA   __zpabi_push__value_0
    LDA   OPERANDS+1
    STA   __zpabi_push__value_1
-   JSR   push
-   JMP   .switch@60_break
+   JMP   push
 .case@70:
    JSR   pop
    STA   __zpabi_var_put__value_0
    STX   __zpabi_var_put__value_1
    LDA   __local_do_var__3
-   JSR   var_put
-   JMP   .switch@60_break
+   JMP   var_put
 .default@71:
-   JSR   internal_error
-.switch@60_break:
-   RTS
+   JMP   internal_error
 
 do_instruction:
    SUBROUTINE
@@ -1796,7 +1628,7 @@ do_instruction:
    AND   #$C0
    BNE   .if_else@41
    JSR   get_const_word
-.xjump@3:
+.xjump@0:
    STA   __local_do_instruction__v_0
    STX   __local_do_instruction__0
    JMP   .if_end@40
@@ -1804,7 +1636,7 @@ do_instruction:
    CMP   #$80
    BNE   .if_else@43
    JSR   get_var_content
-   JMP   .xjump@3
+   JMP   .xjump@0
 .if_else@43:
    CMP   #$40
    BNE   .loop@72_break
@@ -1832,10 +1664,7 @@ do_instruction:
    CMP   #$E0
    BCC   .if_else@47
    SBC   #$E0
-   JSR   do_var
-   JMP   .if_end@46
+   JMP   do_var
 .if_else@47:
    AND   #$1F
-   JSR   do_2op
-.if_end@46:
-   RTS
+   JMP   do_2op

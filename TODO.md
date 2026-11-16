@@ -168,33 +168,28 @@ software uses, from its listing, so a program that includes one keeps
 those bytes free. `examples/zork/instr_save/zork.h` declares the bytes
 in `$26`-`$4F` that RWTS uses by hand.
 
-## Rotate top-tested loops
+## Rotate loops with tests of more than one branch
 
-`for` and `while` loops test at the top and end with a `JMP` back to
-the test, which costs 3 cycles per iteration. Rotating them to a
-guard plus a test at the bottom removes that `JMP`. A first version
-(Nov 2026, while adding `examples/zork_find_index_of_page_table.c`)
-copied the test in front of the loop as a guard, moved it to the
-bottom as `JumpIfTrue`, and let constant folding drop the guard when
-the first test is constant. On the natural `for` version of the Zork
-page-table search it cut a non-matching entry from 21 cycles to 19,
-and with `loop_invariant_a` to 16.
+`passes/rotate_loop_test.py` moves a loop's test to its bottom in the
+asm, after register allocation, when the test is one branch to just
+after the loop's `JMP` back. A test with more than one branch, such
+as a 16-bit compare that branches on its high byte first, keeps its
+place, and so does a loop whose test leaves to somewhere else, such
+as a `return` inside the loop. The test at the bottom could keep each
+branch, inverting the last one to go back to the body.
 
-It was taken out because it made other examples worse:
-`draw_sprite_opaque` went from 47 instructions to 89 and gained a
-soft-stack frame, and `snd_delay_up` and `sfx_tone` grew by about a
-third. In `draw_sprite_opaque` the frame holds a variable that is
-read on the way into the loop but never written, so it gets no
-zero-page byte. The rotated loop's Phis at both the header and the
-exit seem to produce it somewhere in the asm-level SSA round trip;
-that's the thing to find first. A register-pinned local in a rotated
-loop also lost its Y placement for one of its versions.
-
-Rotation also exposed two bugs that are fixed: `from_ssa` placed the
-copies for both successors of a conditional block in front of its
-jump (wrong for a do/while's bottom test, which already had this
-shape), and a soft-stack prologue overwrote a `register` parameter
-arriving in A.
+An earlier rotation in TAC (Nov 2026) was taken out because it made
+other examples worse: `draw_sprite_opaque` went from 47 instructions
+to 89 and gained a soft-stack frame, and `snd_delay_up` and
+`sfx_tone` grew by about a third. The rotated loop's Phis at both the
+header and the exit seemed to produce a frame variable somewhere in
+the asm-level SSA round trip, and a register-pinned local lost its Y
+placement for one of its versions. Rotating after register
+allocation sidesteps both. That attempt also exposed two bugs that
+are fixed: `from_ssa` placed the copies for both successors of a
+conditional block in front of its jump (wrong for a do/while's
+bottom test, which already had this shape), and a soft-stack
+prologue overwrote a `register` parameter arriving in A.
 
 ## Catch a sim program that grows into the soft stack
 
@@ -240,20 +235,11 @@ probably not worth it.
 
 ## Make Zork's input.c smaller
 
-`examples/zork/interpreter/input.c` is 1,231 bytes, where Zork's
+`examples/zork/interpreter/input.c` is 1,222 bytes, where Zork's
 code for it is 1,018. These are the differences found in its
 compiled code, with the bytes each one costs in the linked
 interpreter. Most of them recur elsewhere in the program.
 
-- **Loops tested at the top.** Thirteen loops end with a `JMP` back
-  to their test, such as the 6-byte clear in `instr_sread` (`LDX #0;
-  loop: CPX #6; BEQ done; LDA #0; STA ZCHAR_SCRATCH1,X; INX; JMP
-  loop`) and the search in `is_std_separator`. When the start value
-  passes the test, as a constant start and bound show, the loop can
-  test at the bottom, which saves the `JMP`, 3 bytes and 3 cycles a
-  pass. `loop_rotate.py` rotates only signed count-down loops, and
-  rotating more loops exposed the bugs recorded in "Rotate
-  top-tested loops" above.
 - **Pointer returns.** A function returning a pointer leaves it in
   `HARGS`, and each caller copies it out with `LDA HARGS; STA p; LDA
   HARGS+1; STA p+1`. Zork has 11 such calls, including both of

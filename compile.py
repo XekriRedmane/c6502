@@ -92,6 +92,7 @@ from passes.counter_to_index_reg import apply_counter_to_index_reg
 from passes.x_save_slot_load import apply_x_save_slot_load
 from passes.asm_licm import apply_licm
 from passes.loop_invariant_a import apply_loop_invariant_a
+from passes.rotate_loop_test import apply_rotate_loop_test
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
@@ -572,6 +573,9 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm3 = apply_loop_invariant_a(
         asm3, zp_slot_symbols=all_slot_symbols,
     )
+    # Move each loop's test to its bottom (passes/rotate_loop_test.py).
+    # After loop_invariant_a, which looks for the test at the top.
+    asm3 = apply_rotate_loop_test(asm3)
     asm4 = expand_long_branches(asm3)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).

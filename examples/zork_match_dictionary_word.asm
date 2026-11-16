@@ -206,9 +206,7 @@ main:
    STA   story+70
    LDA   #$00
    STA   __local_main__i
-.loop@2_start:
-   CMP   #$14
-   BCS   .loop@2_break
+.main@rot@0:
    ADC   #$01
    STA   __local_main__3
    ASL
@@ -243,7 +241,8 @@ main:
    STA   (__local_main__0),Y
    LDA   __local_main__3
    STA   __local_main__i
-   JMP   .loop@2_start
+   CMP   #$14
+   BCC   .main@rot@0
 .loop@2_break:
    LDA   #$00
    STA   zchar_scratch2

@@ -411,12 +411,13 @@ read_line:
    JSR   GETLN1
    INC   CURR_LINE
    LDX   #$00
+   JMP   .loop@0_continue
+.read_line@rot@0:
+   INX
 .loop@0_continue:
    LDA   BUFF_AREA,X
    CMP   #$8D
-   BEQ   .loop@0_break
-   INX
-   JMP   .loop@0_continue
+   BNE   .read_line@rot@0
 .loop@0_break:
    INX
    STX   __local_read_line__n
@@ -518,9 +519,7 @@ is_std_separator:
    SUBROUTINE
 
    LDX   #$00
-.loop@3_start:
-   CPX   #$08
-   BEQ   .loop@3_break
+.is_std_separator@rot@1:
    LDA   __zpabi_is_std_separator__c
    CMP   SEPARATORS_TABLE,X
    BNE   .if_end@10
@@ -528,7 +527,8 @@ is_std_separator:
    RTS
 .if_end@10:
    INX
-   JMP   .loop@3_start
+   CPX   #$08
+   BNE   .is_std_separator@rot@1
 .loop@3_break:
    LDA   #$00
    RTS
@@ -554,9 +554,8 @@ is_separator:
 skip_separators:
    SUBROUTINE
 
-.loop@4_continue:
-   LDA   input_count
-   BEQ   .loop@4_break
+   JMP   .loop@4_continue
+.skip_separators@rot@2:
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_separator__c
@@ -568,7 +567,9 @@ skip_separators:
    INC   input_ptr
    DEC   input_count
    INC   char_count
-   JMP   .loop@4_continue
+.loop@4_continue:
+   LDA   input_count
+   BNE   .skip_separators@rot@2
 .loop@4_break:
    RTS
 
@@ -689,13 +690,12 @@ ascii_to_zchar:
    LDA   #$00
    STA   LOCKED_ALPHABET
    LDX   #$00
-.loop@6_start:
-   CPX   #$06
-   BEQ   .loop@6_break
+.ascii_to_zchar@rot@3:
    LDA   #$05
    STA   ZCHAR_SCRATCH2,X
    INX
-   JMP   .loop@6_start
+   CPX   #$06
+   BNE   .ascii_to_zchar@rot@3
 .loop@6_break:
    LDA   #$06
    STA   __local_ascii_to_zchar__left
@@ -1014,13 +1014,12 @@ instr_sread:
    LDA   char_count
    BNE   .if_end@51
    LDX   #$00
-.loop@11_start:
-   CPX   #$06
-   BEQ   .loop@11_break
+.instr_sread@rot@4:
    LDA   #$00
    STA   ZCHAR_SCRATCH1,X
    INX
-   JMP   .loop@11_start
+   CPX   #$06
+   BNE   .instr_sread@rot@4
 .loop@11_break:
    LDA   token_idx
    CLC

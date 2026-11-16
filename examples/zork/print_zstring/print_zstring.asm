@@ -612,11 +612,12 @@ print_zstring:
 A_mod_3:
    SUBROUTINE
 
+   JMP   .loop@1_continue
+.A_mod_3@rot@0:
+   SBC   #$03
 .loop@1_continue:
    CMP   #$03
-   BCC   .loop@1_break
-   SBC   #$03
-   JMP   .loop@1_continue
+   BCS   .A_mod_3@rot@0
 .loop@1_break:
    RTS
 
@@ -771,13 +772,14 @@ dump_buffer_to_screen:
    SUBROUTINE
 
    LDX   #$00
-.loop@3_start:
-   CPX   BUFF_END
-   BEQ   .loop@3_break
+   JMP   .loop@3_start
+.dump_buffer_to_screen@rot@1:
    LDA   BUFF_AREA,X
    JSR   COUT1
    INX
-   JMP   .loop@3_start
+.loop@3_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_screen@rot@1
 .loop@3_break:
    LDA   #$00
    STA   BUFF_END
@@ -810,15 +812,16 @@ dump_buffer_to_printer:
    JSR   COUT
 .if_end@10:
    LDX   #$00
-.loop@2_start:
-   CPX   BUFF_END
-   BEQ   .loop@2_break
+   JMP   .loop@2_start
+.dump_buffer_to_printer@rot@0:
    LDA   BUFF_AREA,X
    STX   __local_dump_buffer_to_printer__x
    JSR   COUT
    LDX   __local_dump_buffer_to_printer__x
    INX
-   JMP   .loop@2_start
+.loop@2_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_printer@rot@0
 .loop@2_break:
    LDA   CSW
    STA   PRINTER_CSW

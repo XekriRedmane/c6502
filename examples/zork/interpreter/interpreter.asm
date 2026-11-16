@@ -893,12 +893,11 @@ main:
    STA   PAGE_TABLE_INDEX2
    STA   BUFF_END
    LDX   #$00
-.loop@1_start:
-   CPX   #$1E
-   BEQ   .loop@1_break
+.main@rot@0:
    STA   LOCAL_ZVARS,X
    INX
-   JMP   .loop@1_start
+   CPX   #$1E
+   BNE   .main@rot@0
 .loop@1_break:
    STA   FRAME_Z_SP
    STA   FRAME_Z_SP+1
@@ -981,10 +980,8 @@ main:
    STA   NUM_IMAGE_PAGES
    LDA   #$01
    STA   __local_main__sector
-.loop@3_start:
-   LDA   __local_main__sector
-   CMP   NUM_IMAGE_PAGES
-   BEQ   .loop@3_break
+   JMP   .loop@3_start
+.main@rot@1:
    STA   disk_sector
    LDA   #$00
    STA   disk_sector+1
@@ -1000,7 +997,10 @@ main:
    JSR   restart
 .if_end@3:
    INC   __local_main__sector
-   JMP   .loop@3_start
+.loop@3_start:
+   LDA   __local_main__sector
+   CMP   NUM_IMAGE_PAGES
+   BNE   .main@rot@1
 .loop@3_break:
    LDY   #$01
    LDA   (Z_HEADER_ADDR),Y
@@ -1427,9 +1427,8 @@ instr_call:
    STA   __local_instr_call__args
    LDY   #$00
    STY   __local_instr_call__i
-.loop@2_continue:
-   LDA   __local_instr_call__args
-   BEQ   .loop@2_break
+   JMP   .loop@2_continue
+.instr_call@rot@0:
    LDA   __local_instr_call__i
    CLC
    ADC   #$01
@@ -1451,7 +1450,9 @@ instr_call:
    DEC   __local_instr_call__args
    LDA   __local_instr_call__2
    STA   __local_instr_call__i
-   JMP   .loop@2_continue
+.loop@2_continue:
+   LDA   __local_instr_call__args
+   BNE   .instr_call@rot@0
 .loop@2_break:
    LDA   __local_instr_call__3
    STA   __zpabi_push__value_0
@@ -2632,11 +2633,12 @@ get_next_code_byte2:
 A_mod_3:
    SUBROUTINE
 
+   JMP   .loop@1_continue
+.A_mod_3@rot@0:
+   SBC   #$03
 .loop@1_continue:
    CMP   #$03
-   BCC   .loop@1_break
-   SBC   #$03
-   JMP   .loop@1_continue
+   BCS   .A_mod_3@rot@0
 .loop@1_break:
    RTS
 
@@ -2746,13 +2748,14 @@ dump_buffer_to_screen:
    SUBROUTINE
 
    LDX   #$00
-.loop@3_start:
-   CPX   BUFF_END
-   BEQ   .loop@3_break
+   JMP   .loop@3_start
+.dump_buffer_to_screen@rot@1:
    LDA   BUFF_AREA,X
    JSR   COUT1
    INX
-   JMP   .loop@3_start
+.loop@3_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_screen@rot@1
 .loop@3_break:
    LDA   #$00
    STA   BUFF_END
@@ -2785,15 +2788,16 @@ dump_buffer_to_printer:
    JSR   COUT
 .if_end@10:
    LDX   #$00
-.loop@2_start:
-   CPX   BUFF_END
-   BEQ   .loop@2_break
+   JMP   .loop@2_start
+.dump_buffer_to_printer@rot@0:
    LDA   BUFF_AREA,X
    STX   __local_dump_buffer_to_printer__x
    JSR   COUT
    LDX   __local_dump_buffer_to_printer__x
    INX
-   JMP   .loop@2_start
+.loop@2_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_printer@rot@0
 .loop@2_break:
    LDA   CSW
    STA   PRINTER_CSW
@@ -3536,13 +3540,14 @@ attr_ptr_and_mask:
    STA   __local_attr_ptr_and_mask__attr
    LDA   #$00
    STA   __local_attr_ptr_and_mask__mask_1
-.loop@1_start:
-   LDA   __local_attr_ptr_and_mask__n
-   BEQ   .loop@1_break
+   JMP   .loop@1_start
+.attr_ptr_and_mask@rot@0:
    ASL   __local_attr_ptr_and_mask__attr
    ROL   __local_attr_ptr_and_mask__mask_1
    DEC   __local_attr_ptr_and_mask__n
-   JMP   .loop@1_start
+.loop@1_start:
+   LDA   __local_attr_ptr_and_mask__n
+   BNE   .attr_ptr_and_mask@rot@0
 .loop@1_break:
    LDA   __local_attr_ptr_and_mask__attr
    STA   attr_mask
@@ -3682,10 +3687,8 @@ instr_get_prop:
    STA   __local_instr_get_prop__3
    JSR   get_property_ptr
    STA   __local_instr_get_prop__y
-.loop@2_start:
-   JSR   get_property_num
-   CMP   __local_instr_get_prop__3
-   BEQ   .loop@2_break
+   JMP   .loop@2_start
+.instr_get_prop@rot@1:
    CMP   __local_instr_get_prop__3
    BCS   .if_end@6
    LDY   #$0A
@@ -3719,7 +3722,10 @@ instr_get_prop:
    LDA   __local_instr_get_prop__y
    JSR   next_property
    STA   __local_instr_get_prop__y
-   JMP   .loop@2_start
+.loop@2_start:
+   JSR   get_property_num
+   CMP   __local_instr_get_prop__3
+   BNE   .instr_get_prop@rot@1
 .loop@2_break:
    LDA   __local_instr_get_prop__y
    JSR   get_property_len
@@ -3887,10 +3893,8 @@ instr_put_prop:
    STA   __local_instr_put_prop__1
    JSR   get_property_ptr
    STA   __local_instr_put_prop__y
-.loop@5_start:
-   JSR   get_property_num
-   CMP   __local_instr_put_prop__1
-   BEQ   .loop@5_break
+   JMP   .loop@5_start
+.instr_put_prop@rot@2:
    CMP   __local_instr_put_prop__1
    BCS   .if_end@17
    JSR   internal_error
@@ -3898,7 +3902,10 @@ instr_put_prop:
    LDA   __local_instr_put_prop__y
    JSR   next_property
    STA   __local_instr_put_prop__y
-   JMP   .loop@5_start
+.loop@5_start:
+   JSR   get_property_num
+   CMP   __local_instr_put_prop__1
+   BNE   .instr_put_prop@rot@2
 .loop@5_break:
    LDA   __local_instr_put_prop__y
    JSR   get_property_len
@@ -3949,10 +3956,8 @@ mulu16:
    STA   __local_mulu16__b_0
    LDA   __zpabi_mulu16__b_1
    STA   __local_mulu16__b_1
-.loop@0_continue:
-   LDA   __local_mulu16__b_0
-   ORA   __local_mulu16__b_1
-   BEQ   .loop@0_break
+   JMP   .loop@0_continue
+.mulu16@rot@0:
    LDA   __local_mulu16__b_0
    AND   #$01
    BEQ   .if_end@0
@@ -3968,7 +3973,10 @@ mulu16:
    ROL   __local_mulu16__a_1
    LSR   __local_mulu16__b_1
    ROR   __local_mulu16__b_0
-   JMP   .loop@0_continue
+.loop@0_continue:
+   LDA   __local_mulu16__b_0
+   ORA   __local_mulu16__b_1
+   BNE   .mulu16@rot@0
 .loop@0_break:
    LDA   __local_mulu16__product
    RTS
@@ -3985,9 +3993,7 @@ divu16:
    STA   __local_divu16__partial_1
    LDA   #$11
    STA   __local_divu16__i
-.loop@1_start:
-   LDA   __local_divu16__i
-   BEQ   .loop@1_break
+.divu16@rot@1:
    LDA   __local_divu16__partial_0
    SEC
    SBC   __zpabi_divu16__divisor_0
@@ -4031,7 +4037,8 @@ divu16:
    ORA   __local_divu16__0
    STA   __local_divu16__partial_0
    DEC   __local_divu16__i
-   JMP   .loop@1_start
+   LDA   __local_divu16__i
+   BNE   .divu16@rot@1
 .loop@1_break:
    LDA   __local_divu16__partial_1
    LSR
@@ -4292,10 +4299,8 @@ print_number:
 .if_end@13:
    LDA   #$00
    STA   __local_print_number__count
-.loop@2_continue:
-   LDA   __local_print_number__n_0
-   ORA   __local_print_number__n_1
-   BEQ   .loop@2_break
+   JMP   .loop@2_continue
+.print_number@rot@2:
    LDA   __local_print_number__n_0
    STA   __zpabi_divu16__dividend_0
    LDA   __local_print_number__n_1
@@ -4315,7 +4320,10 @@ print_number:
    LDY   __local_print_number__count
    STA   (__local_print_number__0),Y
    INC   __local_print_number__count
-   JMP   .loop@2_continue
+.loop@2_continue:
+   LDA   __local_print_number__n_0
+   ORA   __local_print_number__n_1
+   BNE   .print_number@rot@2
 .loop@2_break:
    LDA   __local_print_number__count
    BNE   .if_end@14
@@ -4474,12 +4482,13 @@ read_line:
    JSR   GETLN1
    INC   CURR_LINE
    LDX   #$00
+   JMP   .loop@0_continue
+.read_line@rot@0:
+   INX
 .loop@0_continue:
    LDA   BUFF_AREA,X
    CMP   #$8D
-   BEQ   .loop@0_break
-   INX
-   JMP   .loop@0_continue
+   BNE   .read_line@rot@0
 .loop@0_break:
    INX
    STX   __local_read_line__n
@@ -4581,9 +4590,7 @@ is_std_separator:
    SUBROUTINE
 
    LDX   #$00
-.loop@3_start:
-   CPX   #$08
-   BEQ   .loop@3_break
+.is_std_separator@rot@1:
    LDA   __zpabi_is_std_separator__c
    CMP   SEPARATORS_TABLE,X
    BNE   .if_end@10
@@ -4591,7 +4598,8 @@ is_std_separator:
    RTS
 .if_end@10:
    INX
-   JMP   .loop@3_start
+   CPX   #$08
+   BNE   .is_std_separator@rot@1
 .loop@3_break:
    LDA   #$00
    RTS
@@ -4617,9 +4625,8 @@ is_separator:
 skip_separators:
    SUBROUTINE
 
-.loop@4_continue:
-   LDA   input_count
-   BEQ   .loop@4_break
+   JMP   .loop@4_continue
+.skip_separators@rot@2:
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_separator__c
@@ -4631,7 +4638,9 @@ skip_separators:
    INC   input_ptr
    DEC   input_count
    INC   char_count
-   JMP   .loop@4_continue
+.loop@4_continue:
+   LDA   input_count
+   BNE   .skip_separators@rot@2
 .loop@4_break:
    RTS
 
@@ -4698,13 +4707,12 @@ ascii_to_zchar:
    LDA   #$00
    STA   LOCKED_ALPHABET
    LDX   #$00
-.loop@6_start:
-   CPX   #$06
-   BEQ   .loop@6_break
+.ascii_to_zchar@rot@3:
    LDA   #$05
    STA   ZCHAR_SCRATCH2,X
    INX
-   JMP   .loop@6_start
+   CPX   #$06
+   BNE   .ascii_to_zchar@rot@3
 .loop@6_break:
    LDA   #$06
    STA   __local_ascii_to_zchar__left
@@ -5076,13 +5084,12 @@ instr_sread:
    LDA   char_count
    BNE   .if_end@51
    LDX   #$00
-.loop@11_start:
-   CPX   #$06
-   BEQ   .loop@11_break
+.instr_sread@rot@4:
    LDA   #$00
    STA   ZCHAR_SCRATCH1,X
    INX
-   JMP   .loop@11_start
+   CPX   #$06
+   BNE   .instr_sread@rot@4
 .loop@11_break:
    LDA   token_idx
    CLC

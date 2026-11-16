@@ -302,14 +302,12 @@ class TestCoalescingEndToEnd(unittest.TestCase):
             "}\n"
         )
         asm = self._compile(src)
-        # The loop's tail (between .loop@0_start: and the
-        # back-edge JMP / loop_break) should contain a single
-        # `INC` for `i++`, not the LDA-CLC-ADC-STA-LDA-STA chain.
-        # Use .loop@0_start: as the anchor — that label is always
-        # referenced by the back-edge jump and survives the
-        # unreferenced-label cleanup; .loop@0_continue: gets
-        # dropped when no `continue` statement targets it.
-        start_idx = asm.find(".loop@0_start:")
+        # The loop (from the body's label, `.main@rot@0`, which the
+        # bottom test branches back to, to `.loop@0_break:`) should
+        # contain a single `INC` for `i++`, not the
+        # LDA-CLC-ADC-STA-LDA-STA chain. The test is known to pass on
+        # entry, so passes/rotate_loop_test.py leaves no `JMP` to it.
+        start_idx = asm.find(".main@rot@0:")
         self.assertNotEqual(start_idx, -1)
         rest = asm[start_idx:]
         # Match `.loop@0_break:` (with colon) — the label, not the

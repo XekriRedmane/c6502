@@ -911,9 +911,8 @@ instr_call:
    STA   __local_instr_call__args
    LDY   #$00
    STY   __local_instr_call__i
-.loop@2_continue:
-   LDA   __local_instr_call__args
-   BEQ   .loop@2_break
+   JMP   .loop@2_continue
+.instr_call@rot@0:
    LDA   __local_instr_call__i
    CLC
    ADC   #$01
@@ -935,7 +934,9 @@ instr_call:
    DEC   __local_instr_call__args
    LDA   __local_instr_call__2
    STA   __local_instr_call__i
-   JMP   .loop@2_continue
+.loop@2_continue:
+   LDA   __local_instr_call__args
+   BNE   .instr_call@rot@0
 .loop@2_break:
    LDA   __local_instr_call__3
    STA   __zpabi_push__value_0

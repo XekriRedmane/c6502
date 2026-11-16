@@ -69,7 +69,8 @@ clear_page1:
    JMP   .loop@0_start
 .loop@0_break:
    LDX   #$27
-.loop@1_start:
+.clear_page1@rot@0:
+   DEX
    LDA   $0300,X
    STA   $3028,X
    STA   $3428,X
@@ -84,9 +85,7 @@ clear_page1:
    STA   $3950,X
    STA   $3D50,X
    TXA
-   BEQ   .loop@1_break
-   DEX
-   JMP   .loop@1_start
+   BNE   .clear_page1@rot@0
 .loop@1_break:
    RTS
 

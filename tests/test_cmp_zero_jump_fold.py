@@ -598,7 +598,8 @@ class TestNarrowOrderingAsmShape(unittest.TestCase):
     def test_uchar_lt_const_uses_8bit_cmp_bcs(self):
         # The loop test in `for (uint8_t i = 0; i < 105; i++)` should
         # compile to a 1-byte unsigned compare-and-branch:
-        #     LDA <i>; CMP #105; BCS <break>
+        #     LDA <i>; CMP #105; BCC <body>
+        # at the bottom of the loop (passes/rotate_loop_test.py).
         src = (
             "#include <stdint.h>\n"
             "int main(void) {\n"
@@ -612,10 +613,9 @@ class TestNarrowOrderingAsmShape(unittest.TestCase):
         # The 16-bit signed-compare V-correction sequence must be
         # absent for this loop test.
         self.assertNotIn("BVC   .jcmp_novf", asm)
-        # And we should see CMP #$69 (105 in hex) followed by a BCS
-        # to the loop break label.
-        self.assertIn("CMP   #$69", asm)
-        self.assertIn("BCS   .loop", asm)
+        # And we should see CMP #$69 (105 in hex) followed by a BCC
+        # back to the loop's body.
+        self.assertIn("CMP   #$69\n   BCC   .main@rot@", asm)
 
     def test_uchar_loop_returns_correct_count(self):
         # End-to-end: the loop must terminate with sum == 105.

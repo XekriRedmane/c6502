@@ -80,6 +80,7 @@ a user variable.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
 - [Link-time address arithmetic](label_offset_fold.md). Turns an add of a label's address and a constant into one immediate, `#<(name+k)`.
 - [Loop counter in X](loop_counter_to_x.md). Moves an index loop counter into X, moving other index loads to Y.
+- [Loop test at the bottom](rotate_loop_test.md). Moves a loop's test to its bottom, and drops the first test when it's known to pass.
 - [Loop unrolling](unroll.md). Replaces a pragma-marked counted for loop with one body copy per iteration.
 - [Loop-carried value in A](promote_loop_carried_to_a.md). Keeps an incremented register parameter in A across its loop.
 - [Loop-invariant compare key in A](loop_invariant_a.md). Keeps a loop's compare key in A and swaps the compare operands.
@@ -228,9 +229,10 @@ them whenever a pass is added or moved.
 20. Peephole fixed point, third run.
 21. [Carry already known](carry_known.md)
 22. [Loop-invariant compare key in A](loop_invariant_a.md)
-23. Long-branch expansion, zero-page global placement, and lowering
+23. [Loop test at the bottom](rotate_loop_test.md)
+24. Long-branch expansion, zero-page global placement, and lowering
     to `asm2_ast`.
-24. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+25. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

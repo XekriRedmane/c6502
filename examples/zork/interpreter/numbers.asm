@@ -331,10 +331,8 @@ mulu16:
    STA   __local_mulu16__b_0
    LDA   __zpabi_mulu16__b_1
    STA   __local_mulu16__b_1
-.loop@0_continue:
-   LDA   __local_mulu16__b_0
-   ORA   __local_mulu16__b_1
-   BEQ   .loop@0_break
+   JMP   .loop@0_continue
+.mulu16@rot@0:
    LDA   __local_mulu16__b_0
    AND   #$01
    BEQ   .if_end@0
@@ -350,7 +348,10 @@ mulu16:
    ROL   __local_mulu16__a_1
    LSR   __local_mulu16__b_1
    ROR   __local_mulu16__b_0
-   JMP   .loop@0_continue
+.loop@0_continue:
+   LDA   __local_mulu16__b_0
+   ORA   __local_mulu16__b_1
+   BNE   .mulu16@rot@0
 .loop@0_break:
    LDA   __local_mulu16__product
    RTS
@@ -367,9 +368,7 @@ divu16:
    STA   __local_divu16__partial_1
    LDA   #$11
    STA   __local_divu16__i
-.loop@1_start:
-   LDA   __local_divu16__i
-   BEQ   .loop@1_break
+.divu16@rot@1:
    LDA   __local_divu16__partial_0
    SEC
    SBC   __zpabi_divu16__divisor_0
@@ -413,7 +412,8 @@ divu16:
    ORA   __local_divu16__0
    STA   __local_divu16__partial_0
    DEC   __local_divu16__i
-   JMP   .loop@1_start
+   LDA   __local_divu16__i
+   BNE   .divu16@rot@1
 .loop@1_break:
    LDA   __local_divu16__partial_1
    LSR
@@ -675,10 +675,8 @@ print_number:
 .if_end@13:
    LDA   #$00
    STA   __local_print_number__count
-.loop@2_continue:
-   LDA   __local_print_number__n_0
-   ORA   __local_print_number__n_1
-   BEQ   .loop@2_break
+   JMP   .loop@2_continue
+.print_number@rot@2:
    LDA   __local_print_number__n_0
    STA   __zpabi_divu16__dividend_0
    LDA   __local_print_number__n_1
@@ -698,7 +696,10 @@ print_number:
    LDY   __local_print_number__count
    STA   (__local_print_number__0),Y
    INC   __local_print_number__count
-   JMP   .loop@2_continue
+.loop@2_continue:
+   LDA   __local_print_number__n_0
+   ORA   __local_print_number__n_1
+   BNE   .print_number@rot@2
 .loop@2_break:
    LDA   __local_print_number__count
    BNE   .if_end@14

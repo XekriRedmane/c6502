@@ -144,8 +144,8 @@ which `dump_buffer_with_more` jumps to. The data is the same: the IOB
 and DCT, the printer flag, `[MORE]`, and alphabet 2's 24 characters.
 
 **Speed.** Counting the cycles from the call to `print_string_literal`
-to its return (the stand-ins take none), the string takes 41,543
-cycles against Zork's 39,980, 3.9% more; with a transcript, 45,998
+to its return (the stand-ins take none), the string takes 41,415
+cycles against Zork's 39,980, 3.6% more; with a transcript, 45,626
 against 43,687; and to the failed read, 2,376 against 2,283. When the
 example was first linked, the string took 55,570 cycles, 39% more than
 Zork's, and the code was 1,122 bytes.
@@ -154,11 +154,10 @@ Zork's, and the code was 1,122 bytes.
 scenario:
 
 - `get_alphabet`, `get_next_zchar`, `get_next_code_word`, `A_mod_3`,
-  `find_index_of_page_table`, `cout_string`, and the disk routines
-  take as many cycles as Zork's or fewer. `dump_buffer_to_screen` is
-  Zork's code and takes 8 more, one each time its loop ends, because
-  the `BEQ` at `$1BF7` that leaves the loop goes to `$1C03`, across
-  a page. `get_alphabet` is Zork's own
+  `dump_buffer_to_screen`, `find_index_of_page_table`, `cout_string`,
+  and the disk routines take as many cycles as Zork's or fewer.
+  `dump_buffer_to_screen` and `A_mod_3` test their loops at the
+  bottom, where Zork tests at the top and jumps back. `get_alphabet` is Zork's own
   code, and `get_next_code_byte2`'s path for a byte in the current
   page is Zork's but for one branch: `LDY Z_PC2; INC Z_PC2; BNE`
   branches past the code for a new page, where Zork falls through

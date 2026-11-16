@@ -58,13 +58,14 @@ do_ascend:
    LDA   #$FF
    STA   ent_rescued
    LDX   __zpabi_do_ascend__hit_max
-.loop@0_start:
-   TXA
-   BMI   .loop@0_break
+   JMP   .loop@0_start
+.do_ascend@rot@0:
    LDA   #$FF
    STA   entity_hit_state,X
    DEX
-   JMP   .loop@0_start
+.loop@0_start:
+   TXA
+   BPL   .do_ascend@rot@0
 .loop@0_break:
 .if_end@2:
    LDA   #$04

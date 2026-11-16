@@ -83,13 +83,14 @@ dump_buffer_to_screen:
    SUBROUTINE
 
    LDX   #$00
-.loop@0_start:
-   CPX   BUFF_END
-   BEQ   .loop@0_break
+   JMP   .loop@0_start
+.dump_buffer_to_screen@rot@0:
    LDA   BUFF_AREA,X
    JSR   COUT1
    INX
-   JMP   .loop@0_start
+.loop@0_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_screen@rot@0
 .loop@0_break:
    LDA   #$00
    STA   BUFF_END
@@ -122,15 +123,16 @@ dump_buffer_to_printer:
    JSR   COUT
 .if_end@0:
    LDX   #$00
-.loop@1_start:
-   CPX   BUFF_END
-   BEQ   .loop@1_break
+   JMP   .loop@1_start
+.dump_buffer_to_printer@rot@1:
    LDA   BUFF_AREA,X
    STX   __local_dump_buffer_to_printer__x
    JSR   COUT
    LDX   __local_dump_buffer_to_printer__x
    INX
-   JMP   .loop@1_start
+.loop@1_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_printer@rot@1
 .loop@1_break:
    LDA   CSW
    STA   PRINTER_CSW

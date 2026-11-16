@@ -48,9 +48,8 @@ draw_sprite_opaque:
    LDA   __zpabi_draw_sprite_opaque__height
    STA   __local_draw_sprite_opaque__h
    LDX   __zpabi_draw_sprite_opaque__sprite_y
-.loop@0_start:
-   LDA   __local_draw_sprite_opaque__h
-   BEQ   .loop@0_break
+   JMP   .loop@0_start
+.draw_sprite_opaque@rot@1:
    TXA
    TAY
    LDA   (__local_draw_sprite_opaque__3),Y
@@ -61,9 +60,8 @@ draw_sprite_opaque:
    STA   __local_draw_sprite_opaque__row_remain
    LDA   __zpabi_draw_sprite_opaque__sprite_x
    STA   __local_draw_sprite_opaque__x
-.loop@1_start:
-   LDA   __local_draw_sprite_opaque__row_remain
-   BMI   .loop@1_break
+   JMP   .loop@1_start
+.draw_sprite_opaque@rot@0:
    LDA   __local_draw_sprite_opaque__x
    CMP   #$28
    BCS   .if_end@2
@@ -75,11 +73,15 @@ draw_sprite_opaque:
    DEC   __local_draw_sprite_opaque__row_remain
    DEC   __local_draw_sprite_opaque__x
    INC   __local_draw_sprite_opaque__y
-   JMP   .loop@1_start
+.loop@1_start:
+   LDA   __local_draw_sprite_opaque__row_remain
+   BPL   .draw_sprite_opaque@rot@0
 .loop@1_break:
    DEC   __local_draw_sprite_opaque__h
    INX
-   JMP   .loop@0_start
+.loop@0_start:
+   LDA   __local_draw_sprite_opaque__h
+   BNE   .draw_sprite_opaque@rot@1
 .loop@0_break:
    RTS
 

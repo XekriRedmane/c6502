@@ -150,9 +150,8 @@ find_active_entity:
    SUBROUTINE
 
    LDX   __zpabi_find_active_entity__hit_max
-.loop@0_start:
-   TXA
-   BMI   .loop@0_break
+   JMP   .loop@0_start
+.find_active_entity@rot@0:
    LDA   entity_hit_state,X
    BMI   .if_end@0
    LDA   entity_hit_row,X
@@ -164,7 +163,9 @@ find_active_entity:
    RTS
 .if_end@0:
    DEX
-   JMP   .loop@0_start
+.loop@0_start:
+   TXA
+   BPL   .find_active_entity@rot@0
 .loop@0_break:
    LDA   #$00
    RTS

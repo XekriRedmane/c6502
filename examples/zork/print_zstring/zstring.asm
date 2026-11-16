@@ -342,11 +342,12 @@ print_zstring:
 A_mod_3:
    SUBROUTINE
 
+   JMP   .loop@1_continue
+.A_mod_3@rot@0:
+   SBC   #$03
 .loop@1_continue:
    CMP   #$03
-   BCC   .loop@1_break
-   SBC   #$03
-   JMP   .loop@1_continue
+   BCS   .A_mod_3@rot@0
 .loop@1_break:
    RTS
 

@@ -311,12 +311,11 @@ main:
    STA   PAGE_TABLE_INDEX2
    STA   BUFF_END
    LDX   #$00
-.loop@1_start:
-   CPX   #$1E
-   BEQ   .loop@1_break
+.main@rot@0:
    STA   LOCAL_ZVARS,X
    INX
-   JMP   .loop@1_start
+   CPX   #$1E
+   BNE   .main@rot@0
 .loop@1_break:
    STA   FRAME_Z_SP
    STA   FRAME_Z_SP+1
@@ -399,10 +398,8 @@ main:
    STA   NUM_IMAGE_PAGES
    LDA   #$01
    STA   __local_main__sector
-.loop@3_start:
-   LDA   __local_main__sector
-   CMP   NUM_IMAGE_PAGES
-   BEQ   .loop@3_break
+   JMP   .loop@3_start
+.main@rot@1:
    STA   disk_sector
    LDA   #$00
    STA   disk_sector+1
@@ -418,7 +415,10 @@ main:
    JSR   restart
 .if_end@3:
    INC   __local_main__sector
-   JMP   .loop@3_start
+.loop@3_start:
+   LDA   __local_main__sector
+   CMP   NUM_IMAGE_PAGES
+   BNE   .main@rot@1
 .loop@3_break:
    LDY   #$01
    LDA   (Z_HEADER_ADDR),Y

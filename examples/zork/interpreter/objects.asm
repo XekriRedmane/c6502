@@ -661,13 +661,14 @@ attr_ptr_and_mask:
    STA   __local_attr_ptr_and_mask__attr
    LDA   #$00
    STA   __local_attr_ptr_and_mask__mask_1
-.loop@1_start:
-   LDA   __local_attr_ptr_and_mask__n
-   BEQ   .loop@1_break
+   JMP   .loop@1_start
+.attr_ptr_and_mask@rot@0:
    ASL   __local_attr_ptr_and_mask__attr
    ROL   __local_attr_ptr_and_mask__mask_1
    DEC   __local_attr_ptr_and_mask__n
-   JMP   .loop@1_start
+.loop@1_start:
+   LDA   __local_attr_ptr_and_mask__n
+   BNE   .attr_ptr_and_mask@rot@0
 .loop@1_break:
    LDA   __local_attr_ptr_and_mask__attr
    STA   attr_mask
@@ -808,10 +809,8 @@ instr_get_prop:
    STA   __local_instr_get_prop__3
    JSR   get_property_ptr
    STA   __local_instr_get_prop__y
-.loop@2_start:
-   JSR   get_property_num
-   CMP   __local_instr_get_prop__3
-   BEQ   .loop@2_break
+   JMP   .loop@2_start
+.instr_get_prop@rot@1:
    CMP   __local_instr_get_prop__3
    BCS   .if_end@6
    LDY   #$0A
@@ -845,7 +844,10 @@ instr_get_prop:
    LDA   __local_instr_get_prop__y
    JSR   next_property
    STA   __local_instr_get_prop__y
-   JMP   .loop@2_start
+.loop@2_start:
+   JSR   get_property_num
+   CMP   __local_instr_get_prop__3
+   BNE   .instr_get_prop@rot@1
 .loop@2_break:
    LDA   __local_instr_get_prop__y
    JSR   get_property_len
@@ -1013,10 +1015,8 @@ instr_put_prop:
    STA   __local_instr_put_prop__1
    JSR   get_property_ptr
    STA   __local_instr_put_prop__y
-.loop@5_start:
-   JSR   get_property_num
-   CMP   __local_instr_put_prop__1
-   BEQ   .loop@5_break
+   JMP   .loop@5_start
+.instr_put_prop@rot@2:
    CMP   __local_instr_put_prop__1
    BCS   .if_end@17
    JSR   internal_error
@@ -1024,7 +1024,10 @@ instr_put_prop:
    LDA   __local_instr_put_prop__y
    JSR   next_property
    STA   __local_instr_put_prop__y
-   JMP   .loop@5_start
+.loop@5_start:
+   JSR   get_property_num
+   CMP   __local_instr_put_prop__1
+   BNE   .instr_put_prop@rot@2
 .loop@5_break:
    LDA   __local_instr_put_prop__y
    JSR   get_property_len

@@ -34,7 +34,8 @@
       is the sign of a product or quotient, where SIGN_BIT counts the
       negative operands and set_sign tests the count's bit 0.
     - print_number keeps its digits in a local array where the
-      original pushes them on the 6502's stack.
+      original pushes them on the 6502's stack, and divides by 10 at
+      least once, so 0 prints as "0" without a test of its own.
     - get_random rotates RNDH left through the carry, which is always
       clear when instr_random calls it. Here that's a shift.
 
@@ -339,17 +340,14 @@ void print_number(uint16_t n) {
         buffer_char('-');
         n = -n;
     }
+    /* At least one digit, so 0 prints as "0". */
     uint8_t digits[5];
     uint8_t count = 0;
-    while (n != 0) {
+    do {
         n = divu16(n, 10);
         digits[count] = (uint8_t)remainder;
         count++;
-    }
-    if (count == 0) {
-        buffer_char('0');
-        return;
-    }
+    } while (n != 0);
     do {
         count--;
         buffer_char(digits[count] + '0');

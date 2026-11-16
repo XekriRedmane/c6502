@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1D35`. The other units, the constants,
+on every instruction, up to `$1D29`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -157,7 +157,7 @@ file and the original code it translates:
 | `main.c` | 391 | 472 |
 | `decode.c` | 1859 | 2442 |
 | `objects.c` | 788 | 996 |
-| `numbers.c` | 436 | 487 |
+| `numbers.c` | 436 | 475 |
 | `input.c` | 1018 | 1109 |
 | `pages.c` | 384 | 385 |
 | `zstring.c` | 383 | 404 |
@@ -165,7 +165,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7707** |
+| **Total** | **6643** | **7695** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -182,16 +182,17 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 1,325 bytes with the handlers written
-into their cases (`do_2op` alone is 680), where Zork's four tables
+The four dispatch switches take 1,281 bytes with the handlers written
+into their cases (`do_2op` alone is 661), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
 `divu16` is 62 bytes against Zork's 78, `match_dictionary_word` 181
 against 190, and `mulu16` 42 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 37,877,853 cycles against Zork's
-38,490,260, 1.6% fewer, and the second 7,318,539 against 7,434,428,
-1.6% fewer. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 37,883,751 cycles against Zork's
+38,490,260, 1.6% fewer, and the second 7,337,330 against 7,434,428,
+1.3% fewer. The second prints many zeros, which `print_number`
+divides by 10 once where Zork's prints them without dividing. The stand-ins for the Monitor and RWTS take no cycles.
 Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
 shrank by 24 bytes, `branch` and `print_zstring`, which the linker
@@ -369,5 +370,8 @@ the smaller code saved.
   writes them through it. `divu16` had kept a dead `LDA dividend` at
   its entry, before the `LDA #$00` of the store that clears
   `partial`.
+- `print_number` divides at least once, so 0 prints as `0` with no
+  test of its own, 12 bytes shorter. Zork's tests for 0 after the
+  loop, and pushes the digits on the 6502's stack, which C can't.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

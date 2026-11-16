@@ -245,7 +245,7 @@ Zork's 190. The separator tests, `is_dict_separator`,
 
 ## Make Zork's numbers.c smaller
 
-`examples/zork/interpreter/numbers.c` is 487 bytes, where Zork's code
+`examples/zork/interpreter/numbers.c` is 475 bytes, where Zork's code
 for it is 436. `divu16` (62 against 78) and `mulu16` (42 against 69)
 are already smaller. What's left:
 
@@ -282,8 +282,14 @@ are already smaller. What's left:
   result of `check_sign` and its product share is the right
   allocation: the `* 2` and `* 4` paths shift it in place and pass it
   on, so a local of its own for the product would need a copy there.
-- `print_number` is 92 bytes against 65. Zork pushes the digits on
-  the 6502's stack.
+- `print_number` is 82 bytes against 65. Zork pushes the digits on
+  the 6502's stack, which C can't, and a recursive digit printer
+  under `#pragma c6502 call save(hardware_stack)` would push them but
+  take its parameter on the soft stack. Each pass through the loop
+  also copies `n` into `divu16`'s dividend slot and its quotient back
+  (12 bytes), and stores the divisor 10 again (8), since nothing
+  tells the caller that `divu16` leaves its divisor alone. Zork's
+  `divu16` works on `SCRATCH1` and `SCRATCH2` in place.
 
 ## Keep hot branches from crossing pages
 

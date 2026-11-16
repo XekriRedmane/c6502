@@ -4114,8 +4114,7 @@ print_number:
 .if_end@12:
    LDA   #$00
    STA   __local_print_number__count
-   JMP   .loop@2_continue
-.print_number@rot@2:
+.loop@2_start:
    LDA   __zpabi_print_number__n_0
    STA   __zpabi_divu16__dividend_0
    LDA   __zpabi_print_number__n_1
@@ -4131,15 +4130,9 @@ print_number:
    LDY   __local_print_number__count
    STA   __local_print_number__digits,Y
    INC   __local_print_number__count
-.loop@2_continue:
    LDA   __zpabi_print_number__n_0
    ORA   __zpabi_print_number__n_1
-   BNE   .print_number@rot@2
-   LDA   __local_print_number__count
-   BNE   .if_end@13
-   LDA   #$30
-   JMP   buffer_char
-.if_end@13:
+   BNE   .loop@2_start
 .loop@3_start:
    DEC   __local_print_number__count
    LDY   __local_print_number__count

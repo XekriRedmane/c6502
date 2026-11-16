@@ -267,9 +267,21 @@ are already smaller. What's left:
   local into a callee's slot that a member share holds, when the
   local is that callee's argument, would recover those 8 bytes, which
   still leaves the shared `negate` about even with the inline ones.
-- The register allocator gives `instr_mul`'s result of `check_sign`
-  and its product one local, so only one of the two copies into a
-  callee's slot can go (`slot_coalescing`).
+- `instr_mul` copies `b` from `check_sign`'s slot into `mulu16`'s, 8
+  bytes, and `instr_div` and `instr_mod` copy it into `divu16`'s.
+  Zork's code leaves it in `SCRATCH1` for both. `slot_sharing` keeps
+  a local passed to two callees in the first one's bytes only, and
+  `mulu16` assigns its `b`, which `_param_slots` keeps out of every
+  share. Keeping `b` in one set of bytes for `check_sign`, `mulu16`,
+  and `divu16` would take a member whose owner writes it: a share
+  member's owner would become one of the share's writers, which no
+  holder may keep its value across, in place of the rule that it
+  never assigns the parameter. `check_shares` and
+  `check_linked_shares` enforce that rule now, and the cross-unit
+  `const` promise rests on it. The one local that `instr_mul`'s
+  result of `check_sign` and its product share is the right
+  allocation: the `* 2` and `* 4` paths shift it in place and pass it
+  on, so a local of its own for the product would need a copy there.
 - `kills_a` and `a_dead_at` take `Mov(Imm, mem)` to leave A alone,
   where it's emitted as `LDA #imm; STA mem` and `redundant_load` takes
   it that way. So `divu16` keeps a dead `LDA dividend_0` at its

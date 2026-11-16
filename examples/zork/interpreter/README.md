@@ -246,7 +246,12 @@ the smaller code saved.
   without `return_bool_in_carry`, when every call branches on it or
   passes it on ([carry_return_choice.md](../../../docs/optimizations/carry_return_choice.md)).
   `input.c`'s separator tests return in the carry as Zork's do, and
-  each call had followed its `JSR` with `ORA #$00`.
+  each call had followed its `JSR` with `ORA #$00`. Every `bool`
+  function with external linkage returns in the carry too, so
+  `disk.c`'s sector routines need no annotation. The `static`
+  `do_rwts_on_sector` keeps it, because `write_to_sector` stores its
+  result while it restores the motor's spin-up time, and the carry
+  survives the `LDA` and `STA` in between.
 - A function returning a pointer returns it in A and X, as an
   `unsigned int` comes back, where it had used `HARGS`
   ([calling_conventions.md](../../../docs/calling_conventions.md)).

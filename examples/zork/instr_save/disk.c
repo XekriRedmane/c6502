@@ -61,7 +61,11 @@ struct iob iob = {
 
 /* Reads or writes (`command`) the 256-byte sector numbered SCRATCH1,
  * counting from the start of track 3, to or from `buffer`. Returns
- * true if the operation failed. */
+ * true if the operation failed. The annotation keeps the result in
+ * the carry: inc_sector_and_write stores it in `failed` while it
+ * restores the motor's spin-up time, which the compiler's choice for
+ * a static function takes for a value it keeps
+ * (docs/optimizations/carry_return_choice.md). */
 [[c6502::return_bool_in_carry]]
 static bool do_rwts_on_sector(register uint8_t command,
                               uint8_t *const buffer) {
@@ -79,7 +83,6 @@ static bool do_rwts_on_sector(register uint8_t command,
 
 /* Writes the sector after SCRATCH1 from `buffer`, with the motor's
  * spin-up time set for a write. Returns true if the write failed. */
-[[c6502::return_bool_in_carry]]
 bool inc_sector_and_write(uint8_t *const buffer) {
     SCRATCH1++;
     uint16_t motor = dct.motor_on_time_count;
@@ -90,7 +93,6 @@ bool inc_sector_and_write(uint8_t *const buffer) {
 }
 
 /* Writes the sector after SCRATCH1 from the line buffer. */
-[[c6502::return_bool_in_carry]]
 bool write_next_sector(void) {
     return inc_sector_and_write(BUFF_AREA);
 }

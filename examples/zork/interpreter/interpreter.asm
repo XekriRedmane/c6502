@@ -336,13 +336,13 @@ COUT1	EQU	$FDF0
 ; def do_1op params=__zpabi_do_1op__n locals= indirect=false in_cycle=false param_regs=A
 ; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__left,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4,__local_do_2op__5 indirect=false in_cycle=false param_regs=A
 ; def do_instruction params= locals=__local_do_instruction__v_1,__local_do_instruction__0,__local_do_instruction__v_0,__local_do_instruction__forms,__local_do_instruction__1 indirect=false in_cycle=false
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals= indirect=false in_cycle=false param_regs=A
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals= indirect=false in_cycle=false param_regs=A carry=true
 ; def do_var params=__zpabi_do_var__n locals=__local_do_var__n,__local_do_var__0,__local_do_var__1,__local_do_var__2,__local_do_var__3 indirect=false in_cycle=false param_regs=A
 ; def dump_buffer_line params= locals= indirect=false in_cycle=false
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
 ; def dump_buffer_to_screen params= locals= indirect=false in_cycle=false
 ; def dump_buffer_with_more params= locals=__local_dump_buffer_with_more__0,__local_dump_buffer_with_more__end indirect=false in_cycle=false
-; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals= indirect=false in_cycle=false
+; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals= indirect=false in_cycle=false carry=true
 ; def get_alphabet params= locals= indirect=false in_cycle=false
 ; def get_alphabet_for_char params=__zpabi_get_alphabet_for_char__c locals= indirect=false in_cycle=false
 ; def get_const_word params= locals=__local_get_const_word__1 indirect=false in_cycle=false
@@ -350,7 +350,7 @@ COUT1	EQU	$FDF0
 ; def get_next_code_byte params= locals=__local_get_next_code_byte__page indirect=false in_cycle=false
 ; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__page indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__1 indirect=false in_cycle=false
-; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1 indirect=false in_cycle=false
+; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1 indirect=false in_cycle=false carry=true
 ; def get_nonstack_var params=__zpabi_get_nonstack_var__var locals=__local_get_nonstack_var__var,__local_get_nonstack_var__0,__local_get_nonstack_var__1,__local_get_nonstack_var__2 indirect=false in_cycle=false param_regs=A
 ; def get_object_addr params=__zpabi_get_object_addr__obj locals=__local_get_object_addr__0,__local_get_object_addr__1,__local_get_object_addr__2,__local_get_object_addr__3,__local_get_object_addr__obj indirect=false in_cycle=false param_regs=A
 ; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
@@ -359,8 +359,8 @@ COUT1	EQU	$FDF0
 ; def get_property_ptr params= locals=__local_get_property_ptr__0,__local_get_property_ptr__1,__local_get_property_ptr__2 indirect=false in_cycle=false
 ; def get_var_content params= locals= indirect=false in_cycle=false
 ; def home params= locals= indirect=false in_cycle=false
-; def inc_sector_and_read params= locals= indirect=false in_cycle=false
-; def inc_sector_and_write params= locals= indirect=false in_cycle=false
+; def inc_sector_and_read params= locals= indirect=false in_cycle=false carry=true
+; def inc_sector_and_write params= locals= indirect=false in_cycle=false carry=true
 ; def inc_var params= locals=__local_inc_var__0,__local_inc_var__1,__local_inc_var__2 indirect=false in_cycle=false
 ; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__2,__local_instr_call__i,__local_instr_call__args,__local_instr_call__3 indirect=false in_cycle=false
 ; def instr_clear_attr params= locals=__local_instr_clear_attr__0,__local_instr_clear_attr__1,__local_instr_clear_attr__3 indirect=false in_cycle=false
@@ -387,9 +387,9 @@ COUT1	EQU	$FDF0
 ; def instr_sread params= locals=__local_instr_sread__1 indirect=false in_cycle=false
 ; def instr_test_attr params= locals=__local_instr_test_attr__1 indirect=false in_cycle=false
 ; def internal_error params= locals= indirect=false in_cycle=false
-; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__1,__local_is_dict_separator__2 indirect=false in_cycle=false
-; def is_separator params=__zpabi_is_separator__c locals= indirect=false in_cycle=false
-; def is_std_separator params=__zpabi_is_std_separator__c locals= indirect=false in_cycle=false
+; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__1,__local_is_dict_separator__2 indirect=false in_cycle=false carry=true
+; def is_separator params=__zpabi_is_separator__c locals= indirect=false in_cycle=false carry=true
+; def is_std_separator params=__zpabi_is_std_separator__c locals= indirect=false in_cycle=false carry=true
 ; def load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 locals= indirect=false in_cycle=false
 ; def load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 locals= indirect=false in_cycle=false
 ; def locate_last_ram_page params= locals=__local_locate_last_ram_page__2,__local_locate_last_ram_page__3,__local_locate_last_ram_page__page indirect=false in_cycle=false
@@ -408,9 +408,9 @@ COUT1	EQU	$FDF0
 ; def print_string_literal params= locals= indirect=false in_cycle=false
 ; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals= indirect=false in_cycle=false
-; def read_from_sector params= locals= indirect=false in_cycle=false
+; def read_from_sector params= locals= indirect=false in_cycle=false carry=true
 ; def read_line params= locals=__local_read_line__c,__local_read_line__left,__local_read_line__n indirect=false in_cycle=false
-; def read_next_sector params= locals= indirect=false in_cycle=false
+; def read_next_sector params= locals= indirect=false in_cycle=false carry=true
 ; def remove_obj params= locals=__local_remove_obj__0,__local_remove_obj__1,__local_remove_obj__2,__local_remove_obj__3,__local_remove_obj__4 indirect=false in_cycle=false
 ; def reset_window params= locals= indirect=false in_cycle=false
 ; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count indirect=false in_cycle=false
@@ -424,8 +424,8 @@ COUT1	EQU	$FDF0
 ; def store_with_sign params=__zpabi_store_with_sign__n_0,__zpabi_store_with_sign__n_1 locals= indirect=false in_cycle=false changes=__zpabi_store_with_sign__n_0
 ; def var_get params=__zpabi_var_get__var locals=__local_var_get__var,__local_var_get__0 indirect=false in_cycle=false param_regs=A
 ; def var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 locals=__local_var_put__var indirect=false in_cycle=false param_regs=A,,
-; def write_next_sector params= locals= indirect=false in_cycle=false
-; def write_to_sector params= locals=__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false
+; def write_next_sector params= locals= indirect=false in_cycle=false carry=true
+; def write_to_sector params= locals=__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false carry=true
 ; def z_compress params= locals=__local_z_compress__0,__local_z_compress__1,__local_z_compress__2,__local_z_compress__3 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -434,7 +434,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=__zpabi_branch__condition param_regs=A
@@ -449,11 +449,11 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_byte params=
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
-; ext inc_sector_and_read params=
-; ext inc_sector_and_write params=
+; ext inc_sector_and_read params= carry=true
+; ext inc_sector_and_write params= carry=true
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -491,16 +491,16 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=
-; ext read_next_sector params=
+; ext read_from_sector params= carry=true
+; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_next_sector params=
-; ext write_to_sector params=
+; ext write_next_sector params= carry=true
+; ext write_to_sector params= carry=true
 ; call ascii_to_zchar -> A_mod_3
 ; call ascii_to_zchar -> get_alphabet_for_char
 ; call ascii_to_zchar -> search_nonalpha_table

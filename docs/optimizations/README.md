@@ -48,7 +48,7 @@ a user variable.
 - [Carry INC](carry_inc.md). Turns in-place `ADC #0` carry bytes into BCC/INC chains and `SBC #0` into BCS/DEC.
 - [Carry set again by a shift](carry_recompute.md). Deletes a load and shift that only set C to the value it already holds.
 - [Carry-flag return peepholes](carry_return.md). Turns carry-flag returns into SEC/CLC and carry captures into BCC/BCS.
-- [Carry-flag return without the annotation](carry_return_choice.md). Returns a static function's `bool` in C when every call branches on it or passes it on.
+- [Carry-flag return without the annotation](carry_return_choice.md). Returns a static function's `bool` in C when every call branches on it or passes it on, and a zp_abi function's with external linkage always.
 - [CMP and SBC fusion](cmp_sbc_fusion.md). Moves `SEC; SBC N` ahead of a branch so it replaces `CMP N`.
 - [CMP for a discarded volatile read](volatile_void_read_cmp.md). Turns a discarded volatile pointer load into CMP, so A keeps its value.
 - [Combining added constants](reassoc_const.md). Rewrites `(v + C2) + C1` as `v + (C1+C2)`, removing one add.
@@ -189,11 +189,10 @@ them whenever a pass is added or moved.
    11. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
-   over the whole program, then the [carry-flag return without the
-   annotation](carry_return_choice.md) for the functions whose calls
-   branch on it.
+   over the whole program.
 4. [Default zp_abi calling convention](zp_abi.md): ABI selection,
-   then [values kept in a callee's parameter
+   then the [carry-flag return without the
+   annotation](carry_return_choice.md), then [values kept in a callee's parameter
    bytes](slot_sharing.md), then parameter slot allocation.
 5. Translation to asm, with [saves around a recursive
    call](recursion_saves.md), [members of a static object computed in

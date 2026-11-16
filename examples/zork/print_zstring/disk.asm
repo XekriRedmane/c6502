@@ -82,8 +82,8 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector indirect=false in_cycle=false param_regs=A
-; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector indirect=false in_cycle=false param_regs=A carry=true
+; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false carry=true
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -91,7 +91,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
@@ -100,11 +100,11 @@ COUT1	EQU	$FDF0
 ; ext dump_buffer_to_printer params=
 ; ext dump_buffer_to_screen params=
 ; ext dump_buffer_with_more params=
-; ext find_index_of_page_table params=
+; ext find_index_of_page_table params= carry=true
 ; ext get_alphabet params=
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext invalidate_zcode_page2 params=
 ; ext load_packed_address params=
 ; ext print_string_literal params=

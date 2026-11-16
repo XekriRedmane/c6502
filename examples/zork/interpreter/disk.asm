@@ -103,13 +103,13 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__s indirect=false in_cycle=false param_regs=A
-; def inc_sector_and_read params= locals=__local_inc_sector_and_read__0 indirect=false in_cycle=false
-; def inc_sector_and_write params= locals=__local_inc_sector_and_write__0 indirect=false in_cycle=false
-; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false
-; def read_next_sector params= locals=__local_read_next_sector__0 indirect=false in_cycle=false
-; def write_next_sector params= locals=__local_write_next_sector__0 indirect=false in_cycle=false
-; def write_to_sector params= locals=__local_write_to_sector__0,__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__s indirect=false in_cycle=false param_regs=A carry=true
+; def inc_sector_and_read params= locals=__local_inc_sector_and_read__0 indirect=false in_cycle=false carry=true
+; def inc_sector_and_write params= locals=__local_inc_sector_and_write__0 indirect=false in_cycle=false carry=true
+; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false carry=true
+; def read_next_sector params= locals=__local_read_next_sector__0 indirect=false in_cycle=false carry=true
+; def write_next_sector params= locals=__local_write_next_sector__0 indirect=false in_cycle=false carry=true
+; def write_to_sector params= locals=__local_write_to_sector__0,__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false carry=true
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -117,7 +117,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=__zpabi_branch__condition param_regs=A
@@ -132,7 +132,7 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_byte params=
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
 ; ext instr_clear_attr params=

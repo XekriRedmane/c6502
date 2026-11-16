@@ -154,8 +154,7 @@ void buffer_char(register uint8_t c);
 /* disk.c. inc_sector_and_write's parameter is `const`: it leaves the
  * pointer where it is, so instr_save can keep its page pointer there
  * across the call. */
-[[c6502::return_bool_in_carry]] bool write_next_sector(void);
-[[c6502::return_bool_in_carry]]
+bool write_next_sector(void);
 bool inc_sector_and_write(uint8_t *const buffer);
 
 /* prompts.c */

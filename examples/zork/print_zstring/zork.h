@@ -170,9 +170,8 @@ bool RWTS(struct iob *iob [[c6502::in_ya]]);
 
 extern struct iob iob;
 extern struct dct dct;
-[[c6502::return_bool_in_carry]]
 bool do_rwts_on_sector(register uint8_t command);
-[[c6502::return_bool_in_carry]] bool read_from_sector(void);
+bool read_from_sector(void);
 
 /* ---- pages.c --------------------------------------------------------- */
 

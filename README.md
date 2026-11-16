@@ -1441,6 +1441,12 @@ caller turns C into 0 or 1 with `LDA #0; ROL A`, or branches on it
 with `BCC` / `BCS` when the result is only tested. Nothing else in
 c6502 reads a flag across a call.
 
+Under `--optimize`, a function gets the convention without the
+attribute when it returns `bool` and either has external linkage and
+is zp_abi, or is `static` and every call branches on its result
+([carry_return_choice.md](docs/optimizations/carry_return_choice.md)).
+`--link` checks that every unit made the same choice for a function.
+
 ## Status
 
 End-to-end through `compile.py --codegen` to runnable 6502 asm:

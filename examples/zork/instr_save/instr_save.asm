@@ -81,21 +81,21 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals= indirect=false in_cycle=false param_regs=A,,
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals= indirect=false in_cycle=false param_regs=A,, carry=true
 ; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
-; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false
+; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false carry=true
 ; def instr_save params= locals=__local_instr_save__pages indirect=false in_cycle=false
 ; def please_insert_save_diskette params= locals=__local_please_insert_save_diskette__0,__local_please_insert_save_diskette__1 indirect=false in_cycle=false
 ; def please_reinsert_game_diskette params= locals= indirect=false in_cycle=false
 ; def print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count locals=__local_print_ascii_string__count,__local_print_ascii_string__i indirect=false in_cycle=false param_regs=,,X
-; def write_next_sector params= locals= indirect=false in_cycle=false
+; def write_next_sector params= locals= indirect=false in_cycle=false carry=true
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=
@@ -103,12 +103,12 @@ COUT1	EQU	$FDF0
 ; ext dump_buffer_line params=
 ; ext dump_buffer_with_more params=
 ; ext home params=
-; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1
+; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 carry=true
 ; ext instr_save params=
 ; ext negated_branch params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
-; ext write_next_sector params=
+; ext write_next_sector params= carry=true
 ; call cout_string -> COUT1
 ; call do_rwts_on_sector -> RWTS
 ; call get_prompted_number_from_user -> CLREOL

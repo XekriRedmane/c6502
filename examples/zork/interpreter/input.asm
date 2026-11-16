@@ -144,9 +144,9 @@ COUT1	EQU	$FDF0
 ; def get_alphabet_for_char params=__zpabi_get_alphabet_for_char__c locals= indirect=false in_cycle=false
 ; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
 ; def instr_sread params= locals=__local_instr_sread__0,__local_instr_sread__1 indirect=false in_cycle=false
-; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__0,__local_is_dict_separator__n,__local_is_dict_separator__1,__local_is_dict_separator__2 indirect=false in_cycle=false
-; def is_separator params=__zpabi_is_separator__c locals=__local_is_separator__0 indirect=false in_cycle=false
-; def is_std_separator params=__zpabi_is_std_separator__c locals=__local_is_std_separator__0 indirect=false in_cycle=false
+; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__0,__local_is_dict_separator__n,__local_is_dict_separator__1,__local_is_dict_separator__2 indirect=false in_cycle=false carry=true
+; def is_separator params=__zpabi_is_separator__c locals=__local_is_separator__0 indirect=false in_cycle=false carry=true
+; def is_std_separator params=__zpabi_is_std_separator__c locals=__local_is_std_separator__0 indirect=false in_cycle=false carry=true
 ; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__1,__local_match_dictionary_word__2,__local_match_dictionary_word__3,__local_match_dictionary_word__count_0,__local_match_dictionary_word__4,__local_match_dictionary_word__5,__local_match_dictionary_word__6,__local_match_dictionary_word__7,__local_match_dictionary_word__count_1,__local_match_dictionary_word__8,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
 ; def print_status_line params= locals=__local_print_status_line__0,__local_print_status_line__1,__local_print_status_line__2 indirect=false in_cycle=false
 ; def read_line params= locals=__local_read_line__c,__local_read_line__left,__local_read_line__n indirect=false in_cycle=false
@@ -160,7 +160,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=__zpabi_branch__condition param_regs=A
@@ -175,11 +175,11 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_byte params=
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
-; ext inc_sector_and_read params=
-; ext inc_sector_and_write params=
+; ext inc_sector_and_read params= carry=true
+; ext inc_sector_and_write params= carry=true
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -215,16 +215,16 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=
-; ext read_next_sector params=
+; ext read_from_sector params= carry=true
+; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_next_sector params=
-; ext write_to_sector params=
+; ext write_next_sector params= carry=true
+; ext write_to_sector params= carry=true
 ; call ascii_to_zchar -> A_mod_3
 ; call ascii_to_zchar -> get_alphabet_for_char
 ; call ascii_to_zchar -> search_nonalpha_table

@@ -176,9 +176,11 @@ class TestLowering(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
     def test_conversion_is_a_zero_test(self) -> None:
+        # Static, so that they return in A: main keeps their results
+        # as values (passes/carry_return_choice.py).
         asm = _codegen(
-            "_Bool f(unsigned char x) { return x; }"
-            "_Bool g(int x) { return x; }"
+            "static _Bool f(unsigned char x) { return x; }"
+            "static _Bool g(int x) { return x; }"
             "int main(void) { return f(3) + g(256); }"
         )
         self.assertEqual(_function_text(asm, "f").split(), [

@@ -216,6 +216,8 @@ def _merge(metadatas: list[LinkMetadata]) -> LinkMetadata:
                         f"addresses; every declaration has to give the "
                         f"same calling convention"
                     )
+                if other is not None and other.carry != e.carry:
+                    raise LinkError(_carry_conflict(e.name))
     seen_edges: set[tuple[str, str]] = set()
     saved_edges: set[tuple[str, str]] = set()
     for m in metadatas:
@@ -240,6 +242,19 @@ def _merge(metadatas: list[LinkMetadata]) -> LinkMetadata:
             f"{sorted(set(extern_param_conflicts))}",
         )
     return merged
+
+
+def _carry_conflict(name: str) -> str:
+    """The error for units that disagree on whether `name` returns
+    its `bool` in the carry flag."""
+    return (
+        f"the units disagree on whether `{name}` returns its `bool` in "
+        f"the carry flag. Under --optimize, a `bool` function with "
+        f"external linkage does when it's zp_abi, so a unit that takes "
+        f"its address, or one that can't give it zp_abi, sees it "
+        f"differently from the others. A function that returns "
+        f"`unsigned char` returns it in A in every unit"
+    )
 
 
 def _arrivals(meta) -> tuple:

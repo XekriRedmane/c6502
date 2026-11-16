@@ -80,7 +80,10 @@ call to the owner passes its own value there, and `writer=<fn>` for a
 holder that assigns its value. A `def` or `ext` line's `pinned` list
 gives the address of each byte of a `zeropage(addr)` parameter, with
 an empty entry for the others, and a `def` line's `changes` list the
-slots of the parameters the function assigns.
+slots of the parameters the function assigns. `carry=true` on a `def`
+or `ext` line marks a function that returns a `bool` in the carry
+flag, by `[[c6502::return_bool_in_carry]]` or by the compiler's
+choice (`passes/carry_return_choice.py`).
 """
 from __future__ import annotations
 
@@ -116,6 +119,8 @@ class FunctionMeta:
     param_regs: list[str] = field(default_factory=list)
     pinned: list[int | None] = field(default_factory=list)
     changes: list[str] = field(default_factory=list)
+    # Whether the function returns a `bool` in the carry flag.
+    carry: bool = False
 
     @property
     def param_bytes(self) -> int:
@@ -137,6 +142,9 @@ class ExternMeta:
     params: list[str]
     param_regs: list[str] = field(default_factory=list)
     pinned: list[int | None] = field(default_factory=list)
+    # Whether the unit calls it as returning a `bool` in the carry
+    # flag.
+    carry: bool = False
 
     @property
     def param_bytes(self) -> int:
@@ -205,6 +213,7 @@ def build_metadata(
     *,
     slot_names_by_fn: dict[str, list[str]] | None = None,
     changes: dict[str, list[str]] | None = None,
+    carry: set[str] | None = None,
 ) -> LinkMetadata:
     """Collect link metadata from the TAC program + per-function
     allocator outputs. Run after `select_abi`,
@@ -215,7 +224,9 @@ def build_metadata(
     asm-SSA regalloc + naming logic produced. The linker reads
     these strings from metadata and reuses them verbatim when
     minting the global EQU block. When absent (e.g. callers that
-    don't run the optimizer), we fall back to numeric temp names."""
+    don't run the optimizer), we fall back to numeric temp names.
+    `carry` names the functions that return a `bool` in the carry
+    flag."""
     in_tu_names = {
         tl.name for tl in prog.top_level
         if isinstance(tl, tac_ast.Function)
@@ -270,6 +281,7 @@ def build_metadata(
             param_regs=param_regs_for.get(name, []),
             pinned=list(getattr(abi.get(name), "pinned", [])),
             changes=list((changes or {}).get(name, [])),
+            carry=name in (carry or ()),
         ))
     # zp_abi extern declarations: ZpLayout entries in `abi` whose
     # name isn't defined in this TU.
@@ -283,6 +295,7 @@ def build_metadata(
                 params=list(layout.slot_symbols),
                 param_regs=param_regs_for.get(name, []),
                 pinned=list(layout.pinned),
+                carry=name in (carry or ()),
             ))
     # Call edges. Sorted for deterministic output.
     seen_calls: set[tuple[str, str]] = set()
@@ -381,6 +394,8 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
             parts.append(f"pinned={_format_pinned(d.pinned)}")
         if d.changes:
             parts.append(f"changes={','.join(d.changes)}")
+        if d.carry:
+            parts.append("carry=true")
         lines.append(" ".join(parts))
     for e in meta.externs:
         parts = [
@@ -391,6 +406,8 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
             parts.append(f"param_regs={','.join(e.param_regs)}")
         if any(a is not None for a in e.pinned):
             parts.append(f"pinned={_format_pinned(e.pinned)}")
+        if e.carry:
+            parts.append("carry=true")
         lines.append(" ".join(parts))
     saved_calls = set(meta.saved_calls)
     for caller, callee in meta.calls:
@@ -486,6 +503,7 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             param_regs=_split_csv(kvs.get("param_regs", "")),
             pinned=_parse_pinned(kvs.get("pinned", "")),
             changes=_split_csv(kvs.get("changes", "")),
+            carry=kvs.get("carry") == "true",
         ))
     elif kind == "ext":
         if len(parts) < 3:
@@ -497,6 +515,7 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             params=_split_csv(kvs["params"]),
             param_regs=_split_csv(kvs.get("param_regs", "")),
             pinned=_parse_pinned(kvs.get("pinned", "")),
+            carry=kvs.get("carry") == "true",
         ))
     elif kind == "share":
         from passes.slot_sharing import SlotShare

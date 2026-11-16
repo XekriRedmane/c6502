@@ -327,17 +327,11 @@ extern uint8_t *disk_buffer [[c6502::zeropage]];
  * write_next_sector use BUFF_AREA as the buffer, and they and the
  * inc_sector_and_* routines step disk_sector before reading or
  * writing. */
-[[c6502::return_bool_in_carry]]
 bool read_from_sector(void);
-[[c6502::return_bool_in_carry]]
 bool inc_sector_and_read(void);
-[[c6502::return_bool_in_carry]]
 bool read_next_sector(void);
-[[c6502::return_bool_in_carry]]
 bool write_to_sector(void);
-[[c6502::return_bool_in_carry]]
 bool inc_sector_and_write(void);
-[[c6502::return_bool_in_carry]]
 bool write_next_sector(void);
 
 /* ---- prompts.c ------------------------------------------------------- */

@@ -85,12 +85,14 @@ function called through a pointer in some seeds (both stay on the
 soft stack), `register` parameters and locals on the functions that
 will get zp_abi, pointer parameters to callers' locals, calls inside
 loops, and globals updated across calls. Locals stay live across the
-calls on purpose. About 30% of the functions carry
-`[[c6502::return_bool_in_carry]]`, and half the calls to them
-are `if` conditions, so the carry-flag return is checked both as a
-value and as a branch. Those choices come from a second random
-stream (`crng`), so adding them left the rest of each older seed's
-program as it was.
+calls on purpose. About 30% of the functions return `bool`, and half
+the calls to them are `if` conditions, so the carry-flag return is
+checked both as a value and as a branch. Half of those functions
+carry `[[c6502::return_bool_in_carry]]`, and the rest return in the
+carry flag under `--optimize` when they're zp_abi, by the compiler's
+choice (passes/carry_return_choice.py). Those choices come from
+random streams of their own (`crng`, and `arng` for the attribute),
+so adding them left the rest of each older seed's program as it was.
 
 In half the seeds that have `rec`, it keeps a 1-byte and a 4-byte
 local live across its recursive call under `#pragma c6502 call

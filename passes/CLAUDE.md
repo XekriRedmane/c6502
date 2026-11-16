@@ -194,8 +194,17 @@ this directory:
   `FunAttr.returns_bool` marks) whose address isn't taken and whose
   every call's result is unused, branched on right after the call, or
   returned right after it by another chosen function, with at least
-  one branched on or returned. Runs on the optimized TAC in
-  `compile.optimized_asm`, before `select_abi`.
+  one branched on or returned, where a function that already returns
+  in C (annotated, or chosen by the next rule) passes the carry on.
+  Runs on the optimized TAC in `compile.optimized_asm`, after
+  `select_abi` and `choose_global_carry_returns`.
+  `choose_global_carry_returns`, right after `select_abi`, sets it on
+  every `bool` function with external linkage, defined or only
+  declared, that is zp_abi in the unit and has no `address`, since
+  every unit can decide that from the declaration. `compile.py`
+  passes the set of carry functions to `build_metadata` (`carry=true`
+  on `def` and `ext` lines), and `linker._merge` rejects units that
+  disagree.
 - `carry_return.py` — peepholes for `return_bool_in_carry`, whose
   callee returns `e != 0` in C. `apply_carry_return_tails` copies a
   `CMP #c; RTS` return tail into each `LDA #k; JMP tail` and in front

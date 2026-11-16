@@ -104,7 +104,11 @@ uint16_t disk_sector [[c6502::zeropage]];
 uint8_t *disk_buffer [[c6502::zeropage]];
 
 /* Reads or writes (`command`, 1 or 2) sector disk_sector to or from
- * disk_buffer. Returns true if the operation failed. */
+ * disk_buffer. Returns true if the operation failed. The annotation
+ * keeps the result in the carry: write_to_sector stores it in
+ * `failed` while it restores the motor's spin-up time, which the
+ * compiler's choice for a static function takes for a value it keeps
+ * (docs/optimizations/carry_return_choice.md). */
 [[c6502::return_bool_in_carry]]
 static bool do_rwts_on_sector(register uint8_t command) {
     iob.command = command;
@@ -119,18 +123,15 @@ static bool do_rwts_on_sector(register uint8_t command) {
     return RWTS(&iob);
 }
 
-[[c6502::return_bool_in_carry]]
 bool read_from_sector(void) {
     return do_rwts_on_sector(1);
 }
 
-[[c6502::return_bool_in_carry]]
 bool inc_sector_and_read(void) {
     disk_sector++;
     return read_from_sector();
 }
 
-[[c6502::return_bool_in_carry]]
 bool read_next_sector(void) {
     disk_buffer = BUFF_AREA;
     return inc_sector_and_read();
@@ -138,7 +139,6 @@ bool read_next_sector(void) {
 
 /* Writes sector disk_sector from disk_buffer, with the motor's spin-up
  * time set for a write. Returns true if the write failed. */
-[[c6502::return_bool_in_carry]]
 bool write_to_sector(void) {
     uint16_t motor = dct.motor_on_time_count;
     dct.motor_on_time_count = 0xD8EF;
@@ -147,13 +147,11 @@ bool write_to_sector(void) {
     return failed;
 }
 
-[[c6502::return_bool_in_carry]]
 bool inc_sector_and_write(void) {
     disk_sector++;
     return write_to_sector();
 }
 
-[[c6502::return_bool_in_carry]]
 bool write_next_sector(void) {
     disk_buffer = BUFF_AREA;
     return inc_sector_and_write();

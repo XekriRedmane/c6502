@@ -246,8 +246,10 @@ convention without the attribute when every call to it branches on
 the result or returns it from another such function, and its address
 isn't taken
 ([carry_return_choice.md](optimizations/carry_return_choice.md)). A
-function with external linkage needs the attribute, since a caller
-in another unit couldn't tell.
+`bool` function with external linkage gets it whenever it's zp_abi,
+since every unit can make that choice from the declaration, and
+`--link` checks that the units agree. Such a function returns
+`unsigned char` to keep its result in A.
 
 #### A value and a flag
 

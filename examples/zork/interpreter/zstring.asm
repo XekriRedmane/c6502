@@ -105,7 +105,7 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
 ; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
-; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false
+; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false carry=true
 ; def print_string_literal params= locals= indirect=false in_cycle=false
 ; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
 ; ext CLREOL params=
@@ -114,7 +114,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=__zpabi_branch__condition param_regs=A
@@ -130,8 +130,8 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_word params=
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
-; ext inc_sector_and_read params=
-; ext inc_sector_and_write params=
+; ext inc_sector_and_read params= carry=true
+; ext inc_sector_and_write params= carry=true
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -167,16 +167,16 @@ COUT1	EQU	$FDF0
 ; ext print_obj params=__zpabi_print_obj__obj param_regs=A
 ; ext print_status_line params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=
-; ext read_next_sector params=
+; ext read_from_sector params= carry=true
+; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_next_sector params=
-; ext write_to_sector params=
+; ext write_next_sector params= carry=true
+; ext write_to_sector params= carry=true
 ; call get_next_zchar -> get_next_code_word
 ; call print_string_literal -> print_zstring
 ; call print_zstring -> A_mod_3

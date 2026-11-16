@@ -191,7 +191,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=__zpabi_branch__condition param_regs=A
@@ -206,10 +206,10 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_byte params=
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext home params=
-; ext inc_sector_and_read params=
-; ext inc_sector_and_write params=
+; ext inc_sector_and_read params= carry=true
+; ext inc_sector_and_write params= carry=true
 ; ext instr_div params=
 ; ext instr_mod params=
 ; ext instr_mul params=
@@ -232,16 +232,16 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=
-; ext read_next_sector params=
+; ext read_from_sector params= carry=true
+; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_next_sector params=
-; ext write_to_sector params=
+; ext write_next_sector params= carry=true
+; ext write_to_sector params= carry=true
 ; call attr_ptr_and_mask -> get_object_addr
 ; call get_property_ptr -> get_object_addr
 ; call instr_clear_attr -> attr_ptr_and_mask

@@ -73,7 +73,7 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=
@@ -81,11 +81,11 @@ COUT1	EQU	$FDF0
 ; ext dump_buffer_line params=
 ; ext dump_buffer_with_more params=
 ; ext home params=
-; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1
+; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 carry=true
 ; ext negated_branch params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
-; ext write_next_sector params=
+; ext write_next_sector params= carry=true
 ; call instr_save -> branch
 ; call instr_save -> copy_data_to_buff
 ; call instr_save -> inc_sector_and_write

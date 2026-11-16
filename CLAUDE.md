@@ -135,9 +135,12 @@ Two key runtime conventions:
   `LDA #0; ROL A` into the flag byte. Under `--optimize`, a `static`
   `bool` function whose address isn't taken, and whose every call
   branches on the result or returns it from another such function,
-  gets the convention without the annotation
-  (`passes/carry_return_choice.py`; `FunAttr.returns_bool` records
-  the `bool` before `c99_to_tac` erases it).
+  gets the convention without the annotation, and so does every
+  zp_abi `bool` function with external linkage, which every unit
+  decides from the declaration alone (`passes/carry_return_choice.py`;
+  `FunAttr.returns_bool` records the `bool` before `c99_to_tac` erases
+  it). The link metadata marks each such function `carry=true`, and
+  `--link` rejects units that disagree.
 - **`#pragma c6502 call save(hardware_stack)`** before an expression
   statement, a `return`, or a block-scope declaration marks the calls
   in it (`hw_stack_save` on the c99 and TAC `FunctionCall`, set by the

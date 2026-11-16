@@ -88,7 +88,7 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
 ; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
-; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false
+; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false carry=true
 ; def print_string_literal params= locals= indirect=false in_cycle=false
 ; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
 ; ext CLREOL params=
@@ -97,22 +97,22 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X pinned=$E6,$E7,
-; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A
+; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A carry=true
 ; ext dump_buffer_line params=
 ; ext dump_buffer_to_printer params=
 ; ext dump_buffer_to_screen params=
 ; ext dump_buffer_with_more params=
-; ext find_index_of_page_table params=
+; ext find_index_of_page_table params= carry=true
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
 ; ext invalidate_zcode_page2 params=
 ; ext load_packed_address params=
-; ext read_from_sector params=
+; ext read_from_sector params= carry=true
 ; ext restart params=
 ; ext set_page_first params=__zpabi_set_page_first__slot param_regs=A
 ; call get_next_zchar -> get_next_code_word

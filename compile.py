@@ -92,7 +92,9 @@ from passes.counter_to_index_reg import apply_counter_to_index_reg
 from passes.x_save_slot_load import apply_x_save_slot_load
 from passes.asm_licm import apply_licm
 from passes.loop_invariant_a import apply_loop_invariant_a
-from passes.carry_return_choice import choose_carry_returns
+from passes.carry_return_choice import (
+    choose_carry_returns, choose_global_carry_returns,
+)
 from passes.rotate_loop_test import apply_rotate_loop_test
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
@@ -380,10 +382,14 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # optimize_tac), so the dispatched cases can each
     # write to the same dst without Phi insertion.
     tac = dispatch_const_pointer_arrays(tac, symbols)
-    # A static `bool` function whose calls all branch on its result
-    # returns it in the carry flag (passes/carry_return_choice.py).
-    choose_carry_returns(tac, symbols)
     abi = select_abi(tac, prog, types)
+    # Every zp_abi `bool` function with external linkage returns it in
+    # the carry flag, which every unit decides from the declaration
+    # alone, and so does a static one whose calls all branch on its
+    # result or return it from a function that does too
+    # (passes/carry_return_choice.py).
+    choose_global_carry_returns(tac, symbols, abi)
+    choose_carry_returns(tac, symbols)
     # Functions on a cycle whose recursive calls are all under
     # `#pragma c6502 call save(hardware_stack)` get private pools too,
     # and save their live values around those calls
@@ -631,6 +637,17 @@ def _with_coalesced(changes: dict, coalesced: dict) -> dict:
     return out
 
 
+def _carry_functions(symbols) -> set[str]:
+    """The functions that return a `bool` in the carry flag, by the
+    annotation or by the compiler's choice (passes/carry_return_choice.py),
+    for the link metadata."""
+    from passes.type_checking import FunAttr
+    return {
+        name for name, sym in symbols.items()
+        if isinstance(sym.attrs, FunAttr) and sym.attrs.carry_return
+    }
+
+
 def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
     """The `--codegen` stage after translation to TAC (`tac`). `zp` is
     the translation unit's zero-page globals and runtime layout
@@ -677,6 +694,7 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
                 changed_param_slots(opt.tac, abi, symbols, types),
                 opt.coalesced_params,
             ),
+            carry=_carry_functions(symbols),
         )
         link_meta.shares = opt.shares
         link_meta.zp_objects = opt.zp_records

@@ -101,20 +101,20 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A
-; ext find_index_of_page_table params=
+; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A carry=true
+; ext find_index_of_page_table params= carry=true
 ; ext get_alphabet params=
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext invalidate_zcode_page2 params=
 ; ext load_packed_address params=
 ; ext print_string_literal params=
 ; ext print_zstring params=
-; ext read_from_sector params=
+; ext read_from_sector params= carry=true
 ; ext restart params=
 ; ext set_page_first params=__zpabi_set_page_first__slot param_regs=A
 ; call buffer_char -> dump_buffer_with_more

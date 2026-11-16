@@ -23,18 +23,47 @@ whose every call uses the result in a way the carry suits.
 - uses each call's result in one of three ways: not at all, as the
   condition of a `JumpIfTrue` / `JumpIfFalse` right after the call
   (past any label nothing jumps to), or as the value of a `Ret`
-  right after it in a function that is chosen too, which then passes
-  the carry on;
+  right after it in a function that returns in C too, chosen here,
+  by `choose_global_carry_returns`, or by the annotation, which then
+  passes the carry on;
 - and uses at least one call's result in one of the last two ways.
 
 The conditions are decided for all the candidates together, since
 dropping one can drop the candidates whose result it returns.
 
+# Functions with external linkage
+
+Another unit can call a function with external linkage, so the unit
+that defines it can't see every call, and a unit that calls it can't
+see the others. Each unit has to make the same choice from what they
+all see, which is the declaration. `choose_global_carry_returns`
+gives the carry return to every function that
+
+- returns `bool`, has external linkage, and has no fixed address
+  (`[[c6502::address]]`, whose convention its declaration gives);
+- isn't already declared `return_bool_in_carry`;
+- and is zp_abi in this unit (a `ZpLayout` in `select_abi`'s result),
+  which also means its address isn't taken here.
+
+The unit that defines the function and every unit that calls it each
+record the choice in the link metadata (`carry=true` on the `def` and
+`ext` lines, from `zp_link_metadata`), and `compile.py --link` rejects
+units that disagree. They can disagree when one unit takes the
+function's address, or when the defining unit can't give it zp_abi.
+
+A caller that branches on the result saves its `ORA #$00`, and the
+function itself usually gets shorter, since a comparison it returns
+leaves its answer in C. A caller that keeps the result as a value pays
+`LDA #0; ROL A`.
+
 # Where to run
 
 On the optimized TAC, before `tac_to_asm`, which lowers the returns
 of a function whose `FunAttr.carry_return` is set, and the calls to
-it, the way it does for the annotation. Only under `--optimize`.
+it, the way it does for the annotation. `choose_global_carry_returns`
+runs right after `select_abi`, and `choose_carry_returns` after it,
+so that a static function can pass its carry through a function with
+external linkage. Only under `--optimize`.
 """
 from __future__ import annotations
 
@@ -52,6 +81,14 @@ def choose_carry_returns(prog: tac_ast.Program, symbols) -> set[str]:
         tl for tl in prog.top_level if isinstance(tl, tac_ast.Function)
     ]
     taken = _taken_names(prog)
+    # Functions that already return in C, by the annotation or by
+    # `choose_global_carry_returns`. A call returned by one of them
+    # passes its carry on, as one returned by a chosen function does.
+    carrying = {
+        name for name, sym in symbols.items()
+        if isinstance(getattr(sym, "attrs", None), FunAttr)
+        and sym.attrs.carry_return
+    }
     candidates: set[str] = set()
     for fn in functions:
         sym = symbols.get(fn.name)
@@ -93,12 +130,14 @@ def choose_carry_returns(prog: tac_ast.Program, symbols) -> set[str]:
         changed = False
         for name in list(chosen):
             uses = calls[name]
+            passes_on = chosen | carrying
             fits = all(
-                u in ("none", "branch") or (u == "return" and c in chosen)
+                u in ("none", "branch")
+                or (u == "return" and c in passes_on)
                 for c, u in uses
             )
             gains = any(
-                u == "branch" or (u == "return" and c in chosen)
+                u == "branch" or (u == "return" and c in passes_on)
                 for c, u in uses
             )
             if not (fits and gains):
@@ -107,6 +146,28 @@ def choose_carry_returns(prog: tac_ast.Program, symbols) -> set[str]:
     for name in chosen:
         sym = symbols[name]
         sym.attrs = dataclasses.replace(sym.attrs, carry_return=True)
+    return chosen
+
+
+def choose_global_carry_returns(
+    prog: tac_ast.Program, symbols, abi,
+) -> set[str]:
+    """Sets `carry_return` on each function with external linkage that
+    returns `bool` and is zp_abi in `abi` (see "Functions with external
+    linkage" above), whether this unit defines it or only declares it,
+    and returns their names."""
+    from passes.abi_selection import ZpLayout
+    from passes.type_checking import FunAttr
+    taken = _taken_names(prog)
+    chosen: set[str] = set()
+    for name, sym in symbols.items():
+        attrs = getattr(sym, "attrs", None)
+        if (isinstance(attrs, FunAttr) and attrs.returns_bool
+                and attrs.is_global and not attrs.carry_return
+                and attrs.address is None and name not in taken
+                and isinstance(abi.get(name), ZpLayout)):
+            sym.attrs = dataclasses.replace(attrs, carry_return=True)
+            chosen.add(name)
     return chosen
 
 

@@ -14,9 +14,11 @@ only calls fj with j > i), plus extras chosen per seed:
     local (Y), on functions that will get zp_abi,
   * pointer parameters that receive the address of a caller's local,
   * calls inside loops, and globals updated across calls,
-  * functions marked `[[c6502::return_bool_in_carry]]`, which
-    return `e != 0` in the carry flag, called for their value or as
-    an `if` condition.
+  * functions returning `bool`, half of them marked
+    `[[c6502::return_bool_in_carry]]`, called for their value or as
+    an `if` condition. Under `--optimize`, the unmarked ones return
+    in the carry flag too when they're zp_abi
+    (passes/carry_return_choice.py).
 Function bodies compute random integer expressions over parameters,
 locals, and call results, and keep earlier locals live across the
 calls. Every bug this fuzzer found involved a value live across a
@@ -127,6 +129,9 @@ def make_program(seed: int) -> tuple[str, None]:
     }
     for i in carry:
         sigs[i] = ("_Bool", sigs[i][1])
+    # Which of them carry the attribute, from a stream of its own too.
+    arng = random.Random(seed * 15485863 + 5)
+    marked = {i for i in sorted(carry) if arng.random() < 0.5}
 
     # Which functions end up on the soft stack under --optimize: the
     # pointer-called one, each caller through the pointer, each
@@ -201,7 +206,7 @@ def make_program(seed: int) -> tuple[str, None]:
             body.append(f"    {dst} += rec(3, (int)({_expr(rng, vars_, 1)}));")
         body.append(f"    return {_expr(rng, vars_)};")
         attr = ("[[c6502::return_bool_in_carry]] "
-                if i in carry else "")
+                if i in marked else "")
         ret = sigs[i][0]
         lines.append(f"{attr}{ret} f{i}({', '.join(decl) or 'void'}) {{")
         lines.extend(body)

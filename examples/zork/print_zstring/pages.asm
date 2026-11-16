@@ -87,7 +87,7 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def find_index_of_page_table params= locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false
+; def find_index_of_page_table params= locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false carry=true
 ; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page,__local_get_next_code_byte2__found_0,__local_get_next_code_byte2__0 indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
 ; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
@@ -100,21 +100,21 @@ COUT1	EQU	$FDF0
 ; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X pinned=$E6,$E7,
-; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A
+; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A carry=true
 ; ext dump_buffer_line params=
 ; ext dump_buffer_to_printer params=
 ; ext dump_buffer_to_screen params=
 ; ext dump_buffer_with_more params=
 ; ext get_alphabet params=
-; ext get_next_zchar params=
+; ext get_next_zchar params= carry=true
 ; ext print_string_literal params=
 ; ext print_zstring params=
-; ext read_from_sector params=
+; ext read_from_sector params= carry=true
 ; ext restart params=
 ; call get_next_code_byte2 -> find_index_of_page_table
 ; call get_next_code_byte2 -> read_from_sector

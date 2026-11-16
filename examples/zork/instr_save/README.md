@@ -74,9 +74,17 @@ in registers where the original passes them that way:
 `print_ascii_string`'s and `cout_string`'s count in X,
 `copy_data_to_buff`'s index in X and count in Y, and
 `do_rwts_on_sector`'s command in A. A register parameter takes no
-zero-page byte of its own. Functions that return "failed" in the carry
-are `return_bool_in_carry`, so `if (write_next_sector()) goto fail;`
-is a `JSR` and a `BCS`, as in the original.
+zero-page byte of its own. Functions that return "failed" return it
+in the carry, so `if (write_next_sector()) goto fail;` is a `JSR` and
+a `BCS`, as in the original. `inc_sector_and_write` and
+`write_next_sector` do so without an annotation, as every `bool`
+function with external linkage does under `--optimize`
+([carry_return_choice.md](../../../docs/optimizations/carry_return_choice.md)).
+`do_rwts_on_sector` is `static` and keeps `return_bool_in_carry`: its
+caller stores the result while it restores the motor's spin-up time,
+and the compiler's choice for a `static` function takes that for a
+value it keeps, where the carry survives the `LDA` and `STA` in
+between.
 
 **Pointers as arguments.** Zork passes the address of the bytes to
 print, copy, or write in its global `SCRATCH2`. Here each routine

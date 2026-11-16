@@ -77,20 +77,6 @@ with values live across calls) is the way to check it, because
 every bug found in this area showed up only with a value live
 across a call into a different calling convention.
 
-## Return a boolean in the carry flag without an annotation
-
-`[[c6502::return_bool_in_carry]]` (README, "Returning a bool in
-the carry flag") gives a function the convention explicitly. The
-other way to opt in was **under zp_abi, for a `bool` return**: every
-caller of a zp_abi function is known and compiled with it, so the
-convention could change without an annotation.
-
-A `_Bool` return type tells a `bool` return from an `unsigned char`
-one, and its value is always 0 or 1. It also changes what the function's
-callers do with the result, so it has to be decided before
-`tac_to_asm` lowers any call to it, and the multi-TU linker would need
-the choice in its metadata.
-
 ## Optimizations found by Zork's string printer
 
 `examples/zork/print_zstring` is 1,042 bytes of code against Zork's

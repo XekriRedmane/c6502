@@ -253,8 +253,20 @@ are already smaller. What's left:
   They test `b` as Zork's do, and the `* 4` path shares the `* 2`
   path's shift, but with a `JMP` where Zork's falls into it, since
   `cross_jump` doesn't move blocks.
-- `check_sign` and `store_with_sign` each negate inline, where Zork's
-  call one `negate`.
+- `check_sign`, `store_with_sign`, and `print_number` each negate
+  inline, 10 to 12 bytes, where Zork's call one `negate`. A C
+  `negate` called by all three came out 9 to 22 bytes longer. The
+  function is 15 bytes, and each caller copies its value into
+  `negate`'s slot or out of the returned A and X. `check_sign` gains
+  12 bytes as a tail call, `return negate(a);`, with `a` in `negate`'s
+  slot (`slot_sharing`). But once `store_with_sign` calls it, its
+  parameter shares a slot, which `slot_coalescing` leaves alone, so
+  `instr_mul` and `instr_div` copy their result into it, 4 bytes
+  each. Zork's `negate` works on `SCRATCH2` in place, where every
+  caller already keeps its number. Letting `slot_coalescing` merge a
+  local into a callee's slot that a member share holds, when the
+  local is that callee's argument, would recover those 8 bytes, which
+  still leaves the shared `negate` about even with the inline ones.
 - The register allocator gives `instr_mul`'s result of `check_sign`
   and its product one local, so only one of the two copies into a
   callee's slot can go (`slot_coalescing`).

@@ -94,7 +94,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_liveness import (
-    a_dead_at, all_flags_dead_at, flags_dead_at, is_reg_a,
+    a_dead_at, c_dead_at, flags_dead_at, is_reg_a, v_dead_at,
     x_dead_at, y_dead_at,
     sets_flags,
 )
@@ -139,9 +139,14 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             # carry without an intervening CLC/SEC). For non-C-
             # writing A-arithmetic (Mov/And/Or/Xor — LDA/TXA/TYA/
             # AND/ORA/EOR), the C/V flags carry through unchanged,
-            # so only N/Z liveness matters.
+            # so only N/Z liveness matters. Each flag is checked on its
+            # own, since a later `BEQ` after a load reads only the Z
+            # the load set, and leaves C and V dead.
             if isinstance(instr, _C_WRITERS):
-                if not all_flags_dead_at(instrs, after):
+                if not (flags_dead_at(instrs, after)
+                        and c_dead_at(instrs, after)
+                        and (not isinstance(instr, (asm_ast.Add, asm_ast.Sub))
+                             or v_dead_at(instrs, after))):
                     continue
             else:
                 if not flags_dead_at(instrs, after):

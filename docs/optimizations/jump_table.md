@@ -86,7 +86,9 @@ cases on the opcode's low five bits.
 - At least four compares of A with constants from 0 to 127, one
   after another, each followed by a `BEQ` to its case, with no label
   in the chain and no constant twice. The case for 0 may be a `BEQ`
-  right after the load of A, with no compare.
+  right after the load of A, or after an `ORA #$00` that tests a
+  register parameter already in A, with no compare. That `ORA` goes,
+  since the bounds check's `CMP` sets the flags again.
 - After the chain, a `JMP` to the default, or code that is the
   default, which gets a label (`.jtdef@N`).
 - At every case and at the default, A, N, Z, and C are dead, since
@@ -110,6 +112,9 @@ IRs, which `asm_emit` and the simulator's assembler write out.
 - The unoptimized pipeline.
 
 ## Related
+
+[Shorter jumps](short_jumps.md) points each entry for a case that
+only jumps to another function at that function, and drops the case.
 
 [Tail call](tail_call.md) makes each case that ends in a call and a
 `break` a `JMP` to the function it calls.

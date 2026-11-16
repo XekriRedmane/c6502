@@ -933,8 +933,6 @@ dec_var:
 do_0op:
    SUBROUTINE
 
-   ORA   #$00
-   BEQ   .case@4
    CMP   #$0C
    BCS   .default@16
    ASL
@@ -945,18 +943,18 @@ do_0op:
    PHA
    RTS
 .jtab@0:
-   DC.W  .default@16-1
+   DC.W  .case@4-1
    DC.W  .case@5-1
-   DC.W  .case@6-1
+   DC.W  print_string_literal-1
    DC.W  .case@7-1
    DC.W  .switch@3_break-1
-   DC.W  .case@9-1
-   DC.W  .case@10-1
-   DC.W  .case@11-1
+   DC.W  instr_save-1
+   DC.W  instr_restore-1
+   DC.W  instr_restart-1
    DC.W  .case@12-1
-   DC.W  .case@13-1
-   DC.W  .case@14-1
-   DC.W  .case@15-1
+   DC.W  pop-1
+   DC.W  instr_quit-1
+   DC.W  new_line-1
 .case@4:
    LDA   #$01
    STA   __zpabi_return_value__value_0
@@ -968,29 +966,15 @@ do_0op:
    STA   __zpabi_return_value__value_0
    STA   __zpabi_return_value__value_1
    JMP   return_value
-.case@6:
-   JMP   print_string_literal
 .case@7:
    JSR   print_string_literal
    JSR   new_line
    JMP   .case@4
-.case@9:
-   JMP   instr_save
-.case@10:
-   JMP   instr_restore
-.case@11:
-   JMP   instr_restart
 .case@12:
    JSR   pop
    STA   __zpabi_return_value__value_0
    STX   __zpabi_return_value__value_1
    JMP   return_value
-.case@13:
-   JMP   pop
-.case@14:
-   JMP   instr_quit
-.case@15:
-   JMP   new_line
 .default@16:
    JMP   internal_error
 .switch@3_break:
@@ -999,11 +983,9 @@ do_0op:
 do_1op:
    SUBROUTINE
 
-   ORA   #$00
-   BEQ   .case@18
    CMP   #$10
    BCC   .lb_skip@0
-   JMP   .default@33
+   JMP   internal_error
 .lb_skip@0:
    ASL
    TAY
@@ -1013,16 +995,16 @@ do_1op:
    PHA
    RTS
 .jtab@1:
-   DC.W  .default@33-1
-   DC.W  .case@19-1
-   DC.W  .case@20-1
-   DC.W  .case@21-1
-   DC.W  .case@22-1
-   DC.W  .case@23-1
-   DC.W  .case@24-1
+   DC.W  .case@18-1
+   DC.W  instr_get_sibling-1
+   DC.W  instr_get_child-1
+   DC.W  instr_get_parent-1
+   DC.W  instr_get_prop_len-1
+   DC.W  inc_var-1
+   DC.W  dec_var-1
    DC.W  .case@25-1
-   DC.W  .default@33-1
-   DC.W  .case@26-1
+   DC.W  internal_error-1
+   DC.W  instr_remove_obj-1
    DC.W  .case@27-1
    DC.W  .case@28-1
    DC.W  .case@29-1
@@ -1034,23 +1016,11 @@ do_1op:
    ORA   OPERANDS
    BEQ   .cmp_true@2
    LDA   #$00
-   JMP   .cmp_end@1
+   BEQ   .cmp_end@1
 .cmp_true@2:
    LDA   #$01
 .cmp_end@1:
    JMP   branch
-.case@19:
-   JMP   instr_get_sibling
-.case@20:
-   JMP   instr_get_child
-.case@21:
-   JMP   instr_get_parent
-.case@22:
-   JMP   instr_get_prop_len
-.case@23:
-   JMP   inc_var
-.case@24:
-   JMP   dec_var
 .case@25:
    LDA   OPERANDS
    STA   __zpabi_load_address__addr_0
@@ -1058,8 +1028,6 @@ do_1op:
    STA   __zpabi_load_address__addr_1
    JSR   load_address
    JMP   print_zstring
-.case@26:
-   JMP   instr_remove_obj
 .case@27:
    LDA   OPERANDS
    JMP   print_obj
@@ -1099,8 +1067,6 @@ do_1op:
    EOR   #$FF
    STA   __zpabi_store_result__value_1
    JMP   store_result
-.default@33:
-   JMP   internal_error
 
 do_2op:
    SUBROUTINE
@@ -1113,7 +1079,7 @@ do_2op:
    LDA   __local_do_2op__equal
    CMP   #$19
    BCC   .lb_skip@1
-   JMP   .default@59
+   JMP   internal_error
 .lb_skip@1:
    ASL
    TAY
@@ -1123,31 +1089,31 @@ do_2op:
    PHA
    RTS
 .jtab@2:
-   DC.W  .default@59-1
+   DC.W  internal_error-1
    DC.W  .case@35-1
    DC.W  .case@36-1
    DC.W  .case@37-1
    DC.W  .case@38-1
    DC.W  .case@39-1
-   DC.W  .case@40-1
+   DC.W  instr_jin-1
    DC.W  .case@41-1
    DC.W  .case@42-1
    DC.W  .case@43-1
-   DC.W  .case@44-1
-   DC.W  .case@45-1
-   DC.W  .case@46-1
+   DC.W  instr_test_attr-1
+   DC.W  instr_set_attr-1
+   DC.W  instr_clear_attr-1
    DC.W  .case@47-1
-   DC.W  .case@48-1
+   DC.W  instr_insert_obj-1
    DC.W  .case@49-1
    DC.W  .case@50-1
-   DC.W  .case@51-1
-   DC.W  .case@52-1
-   DC.W  .case@53-1
+   DC.W  instr_get_prop-1
+   DC.W  instr_get_prop_addr-1
+   DC.W  instr_get_next_prop-1
    DC.W  .case@54-1
    DC.W  .case@55-1
-   DC.W  .case@56-1
-   DC.W  .case@57-1
-   DC.W  .case@58-1
+   DC.W  instr_mul-1
+   DC.W  instr_div-1
+   DC.W  instr_mod-1
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1164,7 +1130,7 @@ do_2op:
    BEQ   .cmp_true@3
 .thread@0:
    LDA   #$00
-   JMP   .cmp_end@4
+   BEQ   .cmp_end@4
 .cmp_true@3:
    LDA   #$01
 .cmp_end@4:
@@ -1184,7 +1150,7 @@ do_2op:
    BEQ   .cmp_true@6
 .thread@1:
    LDA   #$00
-   JMP   .cmp_end@7
+   BEQ   .cmp_end@7
 .cmp_true@6:
    LDA   #$01
 .cmp_end@7:
@@ -1203,7 +1169,7 @@ do_2op:
    BEQ   .cmp_true@9
 .thread@2:
    LDA   #$00
-   JMP   .cmp_end@10
+   BEQ   .cmp_end@10
 .cmp_true@9:
    LDA   #$01
 .cmp_end@10:
@@ -1255,8 +1221,6 @@ do_2op:
    BVC   .cmp_novf@12
    EOR   #$80
    JMP   .cmp_novf@12
-.case@40:
-   JMP   instr_jin
 .case@41:
    LDA   OPERANDS
    AND   __local_do_2op__1
@@ -1270,7 +1234,7 @@ do_2op:
    BEQ   .cmp_true@16
 .thread@3:
    LDA   #$00
-   JMP   .cmp_end@17
+   BEQ   .cmp_end@17
 .cmp_true@16:
    LDA   #$01
 .cmp_end@17:
@@ -1291,12 +1255,6 @@ do_2op:
    AND   __local_do_2op__2
    STA   __zpabi_store_result__value_1
    JMP   store_result
-.case@44:
-   JMP   instr_test_attr
-.case@45:
-   JMP   instr_set_attr
-.case@46:
-   JMP   instr_clear_attr
 .case@47:
    LDA   __local_do_2op__1
    STA   __zpabi_var_put__value_0
@@ -1304,8 +1262,6 @@ do_2op:
    STA   __zpabi_var_put__value_1
    LDA   OPERANDS
    JMP   var_put
-.case@48:
-   JMP   instr_insert_obj
 .case@49:
    ASL   __local_do_2op__1
    ROL   __local_do_2op__2
@@ -1335,12 +1291,6 @@ do_2op:
    LDA   #$00
    STA   __zpabi_store_result__value_1
    JMP   store_result
-.case@51:
-   JMP   instr_get_prop
-.case@52:
-   JMP   instr_get_prop_addr
-.case@53:
-   JMP   instr_get_next_prop
 .case@54:
    LDA   OPERANDS
    CLC
@@ -1359,14 +1309,6 @@ do_2op:
    SBC   __local_do_2op__2
    STA   __zpabi_store_result__value_1
    JMP   store_result
-.case@56:
-   JMP   instr_mul
-.case@57:
-   JMP   instr_div
-.case@58:
-   JMP   instr_mod
-.default@59:
-   JMP   internal_error
 
 do_var:
    SUBROUTINE
@@ -1377,7 +1319,7 @@ do_var:
    LDA   __local_do_var__n
    CMP   #$0A
    BCC   .lb_skip@2
-   JMP   .default@71
+   JMP   internal_error
 .lb_skip@2:
    ASL
    TAY
@@ -1387,18 +1329,16 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.W  .case@61-1
+   DC.W  instr_call-1
    DC.W  .case@62-1
    DC.W  .case@63-1
-   DC.W  .case@64-1
-   DC.W  .case@65-1
+   DC.W  instr_put_prop-1
+   DC.W  instr_sread-1
    DC.W  .case@66-1
    DC.W  .case@67-1
-   DC.W  .case@68-1
+   DC.W  instr_random-1
    DC.W  .case@69-1
    DC.W  .case@70-1
-.case@61:
-   JMP   instr_call
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1446,10 +1386,6 @@ do_var:
    LDY   #$00
    STA   (__local_do_var__n),Y
    RTS
-.case@64:
-   JMP   instr_put_prop
-.case@65:
-   JMP   instr_sread
 .case@66:
    LDA   __local_do_var__3
    JMP   buffer_char
@@ -1459,8 +1395,6 @@ do_var:
    LDA   OPERANDS+1
    STA   __zpabi_print_number__n_1
    JMP   print_number
-.case@68:
-   JMP   instr_random
 .case@69:
    LDA   __local_do_var__3
    STA   __zpabi_push__value_0
@@ -1473,8 +1407,6 @@ do_var:
    STX   __zpabi_var_put__value_1
    LDA   __local_do_var__3
    JMP   var_put
-.default@71:
-   JMP   internal_error
 
 do_instruction:
    SUBROUTINE

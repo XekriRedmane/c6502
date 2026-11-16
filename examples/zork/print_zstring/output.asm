@@ -298,7 +298,7 @@ dump_buffer_to_printer:
    JSR   COUT
 .if_end@10:
    LDX   #$00
-   JMP   .loop@2_start
+   BEQ   .loop@2_start
 .dump_buffer_to_printer@rot@0:
    LDA   BUFF_AREA,X
    STX   __local_dump_buffer_to_printer__x
@@ -322,7 +322,7 @@ dump_buffer_to_screen:
    SUBROUTINE
 
    LDX   #$00
-   JMP   .loop@3_start
+   BEQ   .loop@3_start
 .dump_buffer_to_screen@rot@1:
    LDA   BUFF_AREA,X
    JSR   COUT1

@@ -182,6 +182,34 @@ class TestDeadAArithLiveness(unittest.TestCase):
         out = _rewritten(instrs)
         self.assertEqual(out, instrs)
 
+    def test_adc_before_a_load_and_beq_drops(self) -> None:
+        # The `BEQ` reads only the Z the `LDA` sets, so C and V from
+        # the `ADC` are dead too. `instr_insert_obj` in Zork's
+        # objects.c had kept the dead high byte of `d + 6` this way.
+        g = asm_ast.Data(name="g", offset=0)
+        instrs = [
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),
+            asm_ast.Add(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=g, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Mov(src=_REG_A, dst=g),
+            asm_ast.Label(name="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs[2:])
+
+    def test_adc_kept_when_c_is_read(self) -> None:
+        g = asm_ast.Data(name="g", offset=0)
+        instrs = [
+            asm_ast.Add(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=g, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.CS(), target="L"),
+            asm_ast.Label(name="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        # The `LDA g` goes, since the `BCS` reads only C.
+        self.assertEqual(_rewritten(list(instrs)), [instrs[0]] + instrs[2:])
+
     def test_save_a_return_blocks_drop(self) -> None:
         # save_a=True epilogue does PHA — reads A.
         instrs = [
@@ -351,8 +379,8 @@ class TestDeadAArithRedundantFlag(unittest.TestCase):
         # `LDX M; ADC #0; TXA; BMI .L` — ADC clobbers N/Z. After
         # ADC the flags reflect A (the ADC result), not X. Dropping
         # the TXA would leave BMI reading the wrong flags. Keep.
-        # The fall-through LDA/STA keeps A alive so the ADC also
-        # survives (otherwise dead_a_arith would drop it).
+        # The store of the ADC's result keeps the ADC, whose flags are
+        # then the ones the TXA replaces.
         m = asm_ast.Data(name="m", offset=0)
         kill = asm_ast.Data(name="kill", offset=0)
         dst = asm_ast.Data(name="dst", offset=0)
@@ -360,6 +388,7 @@ class TestDeadAArithRedundantFlag(unittest.TestCase):
             asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),  # LDA #0
             asm_ast.Add(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="sum", offset=0)),
             asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — keep
             asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
             asm_ast.Mov(src=kill, dst=_REG_A),
@@ -368,9 +397,9 @@ class TestDeadAArithRedundantFlag(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        # TXA must remain at index 3.
+        # TXA must remain at index 4.
         self.assertEqual(
-            out[3], asm_ast.Mov(src=_REG_X, dst=_REG_A),
+            out[4], asm_ast.Mov(src=_REG_X, dst=_REG_A),
         )
 
     def test_txa_with_a_live_on_fallthrough_keeps(self) -> None:

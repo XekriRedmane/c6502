@@ -115,6 +115,7 @@ a user variable.
 - [Round-trip load drop](round_trip_load.md). Deletes `LDA M` after `STA M` when the flags already reflect A.
 - [Saves around a recursive call](recursion_saves.md). Pushes the values live across a marked recursive call so the function can have a private pool.
 - [Second index in Y](dual_index_promotion.md). Loads a byte reloaded into X several times into Y once at entry.
+- [Shorter jumps](short_jumps.md). Sends jumps and jump-table entries for a stub that jumps to another function there, drops the stub, and makes a JMP after a constant load a branch.
 - [Shift in A](shift_in_a.md). Turns `STA t; ASL t; LDA t` into `ASL A; STA t`, for any run of shifts and rotates, and `LDA g; ASL; STA g` into `ASL g`.
 - [Self-store drop](self_store_drop.md). Deletes the `STA M` of an adjacent `LDA M; STA M` pair.
 - [Sign-bit test without AND](and_sign_bit_branch.md). Turns `LDA M; AND #$80; BEQ/BNE` into `LDA M; BPL/BMI`, and `AND #$01; BEQ/BNE` into `LSR; BCC/BCS`.
@@ -253,9 +254,10 @@ them whenever a pass is added or moved.
 27. Peephole fixed point, fifth run.
 28. [Carry already known](carry_known.md), once more.
 29. [Jump tables](jump_table.md)
-30. Long-branch expansion, zero-page global placement, and lowering
-    to `asm2_ast`.
-31. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+30. Long-branch expansion.
+31. [Shorter jumps](short_jumps.md)
+32. Zero-page global placement, and lowering to `asm2_ast`.
+33. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

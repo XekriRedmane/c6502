@@ -368,7 +368,7 @@ print_zstring:
    CMP   #$01
    BNE   .if_else@12
    LDA   #$3B
-   JMP   .xjump@0
+   BNE   .xjump@0
 .if_else@12:
    LDA   __local_print_zstring__c_0
    CMP   #$06
@@ -389,7 +389,7 @@ print_zstring:
    LDA   #$0D
    JSR   buffer_char
    LDA   #$0A
-   JMP   .if_end@15
+   BNE   .if_end@15
 .if_else@16:
    SEC
    SBC   #$08
@@ -467,7 +467,7 @@ get_next_zchar:
    LDA   ZCHARS+1
    BPL   .cond_else@23
    LDA   #$FF
-   JMP   .cond_end@24
+   BNE   .cond_end@24
 .cond_else@23:
    LDA   #$00
 .cond_end@24:

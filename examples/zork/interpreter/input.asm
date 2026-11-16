@@ -408,7 +408,7 @@ read_line:
    JSR   GETLN1
    INC   CURR_LINE
    LDX   #$00
-   JMP   .loop@0_continue
+   BEQ   .loop@0_continue
 .read_line@rot@0:
    INX
 .loop@0_continue:

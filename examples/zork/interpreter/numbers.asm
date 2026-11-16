@@ -302,7 +302,7 @@ mulu16:
    LDA   #$00
    STA   __local_mulu16__product
    LDX   #$00
-   JMP   .loop@0_continue
+   BEQ   .loop@0_continue
 .mulu16@rot@0:
    LDA   __zpabi_mulu16__b_0
    LSR
@@ -366,7 +366,7 @@ divu16:
    RTS
 .divu16@asm_ssa_split@0:
    LDA   #$00
-   JMP   .if_end@1
+   BEQ   .if_end@1
 
 check_sign:
    SUBROUTINE
@@ -431,7 +431,7 @@ instr_mul:
 .xjump@0:
    ASL   __zpabi_store_with_sign__n_0
    ROL   __zpabi_store_with_sign__n_1
-   JMP   .if_end@4
+   JMP   store_with_sign
 .vthread@0:
    CMP   #$04
    BNE   .if_else@7
@@ -474,7 +474,7 @@ instr_div:
 .xjump@1:
    LSR   __zpabi_store_with_sign__n_1
    ROR   __zpabi_store_with_sign__n_0
-   JMP   .if_end@8
+   JMP   store_with_sign
 .vthread@1:
    CMP   #$04
    BNE   .if_else@11

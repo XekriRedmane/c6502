@@ -137,7 +137,7 @@ this directory:
   after it flips, when N/Z are dead on both paths (`_carry_of_add`).
 - `jump_table.py` — `apply_jump_tables`. A chain of `CMP #k; BEQ
   case` on A (at least four, constants 0 to 127, the case for 0 maybe
-  a `BEQ` right after the load) becomes `CMP #max+1; BCS default`
+  a `BEQ` right after the load or after an `ORA #$00`, which goes) becomes `CMP #max+1; BCS default`
   and a `JumpTable`: `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS` and
   a table of case addresses minus one, which `asm_emit` and the sim's
   assembler write out. A, N/Z, C, and the index (Y, else X) must be
@@ -153,6 +153,14 @@ this directory:
   the copy may touch `t` or `M`, call, or branch, and `t`, A, and N/Z
   must be dead after. `OPERANDS[0] = c ? f() : g();` stores the high
   byte straight into `OPERANDS+1` on each arm.
+- `short_jumps.py` — `apply_short_jumps`. Runs once right after
+  `expand_long_branches`. A `JMP .L` or a `JumpTable` entry `.L`
+  whose first instruction is a `JMP f` out of the function (no
+  `reg_args` on either) goes to `f`; a label nothing names after a
+  terminator goes, with its code up to the next label; and `LDA` /
+  `LDX` / `LDY #k; JMP .L` becomes `BEQ` (k = 0) or `BNE .L` when the
+  branch reaches with a byte to spare each way. Each change only
+  removes bytes, so no branch falls out of reach.
 - `tail_call.py` — `apply_tail_call`. `JSR f; RTS` becomes `JMP f`,
   and a `JMP` to a label whose first instruction is a bare `RTS`
   becomes that `RTS`, so a switch case ending in a call and `break`
@@ -1254,8 +1262,11 @@ document says whether it fires there.
 - `apply_dead_a_arith_elimination` — drops instructions whose only
   observable effect is a write to `Reg(A)` and the N/Z/C/V flags, when
   both A and the flags are dead afterward. That includes `ASL` / `LSR`
-  / `ROL` / `ROR A`, which need every flag dead since they write C.
-  Also a dead `LDX` / `LDY` of an immediate or a `Data` / `ZP` byte.
+  / `ROL` / `ROR A`, which need every flag they write dead since they
+  write C. Each flag is checked on its own (`flags_dead_at`,
+  `c_dead_at`, `v_dead_at`), so a `BEQ` after a later `LDA` doesn't
+  keep an `ADC`. Also a dead `LDX` / `LDY` of an immediate or a
+  `Data` / `ZP` byte.
 - `apply_branch_invert` — `Branch(cond, L); Jump(target); L:` →
   `Branch(inverted_cond, target)` when L is the immediate next
   instruction.

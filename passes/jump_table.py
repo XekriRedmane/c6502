@@ -43,7 +43,8 @@ it passed. Zork's own code dispatches through tables the same way.
 - At least four compares of A with constants from 0 to 127, each
   right after the one before and followed by a `BEQ` to its case,
   with no label in the chain, and no constant twice. The case for 0
-  may be a `BEQ` right after the load of A, with no compare.
+  may be a `BEQ` right after the load of A, or after an `ORA #$00`
+  that tests A, with no compare. The `ORA` goes with the chain.
 - Then a `JMP` to the default, or code that is the default, which gets
   a label (`.jtdef@N`).
 - At every case and the default, A, N, Z, and C are dead, since the
@@ -103,6 +104,19 @@ def _is_a(op) -> bool:
     return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
 
 
+def _loads_a(ins) -> bool:
+    """Whether `ins` loads A from memory or a constant, setting Z."""
+    return (isinstance(ins, asm_ast.Mov) and _is_a(ins.dst)
+            and not isinstance(ins.src, asm_ast.Reg))
+
+
+def _tests_a(ins) -> bool:
+    """Whether `ins` is `ORA #$00`, which sets Z from A and leaves it
+    as it was, as before a switch on a register parameter."""
+    return (isinstance(ins, asm_ast.Or) and _is_a(ins.dst)
+            and ins.src == asm_ast.Imm(value=0))
+
+
 def _chain_at(instrs, i):
     """The `(constant, target)` pairs of the chain starting at
     `instrs[i]`, and how many instructions the chain takes. A case for
@@ -112,9 +126,7 @@ def _chain_at(instrs, i):
     pairs = []
     if (0 < i < len(instrs) and isinstance(instrs[i], asm_ast.Branch)
             and isinstance(instrs[i].cond, asm_ast.EQ)
-            and isinstance(instrs[i - 1], asm_ast.Mov)
-            and _is_a(instrs[i - 1].dst)
-            and not isinstance(instrs[i - 1].src, asm_ast.Reg)):
+            and (_loads_a(instrs[i - 1]) or _tests_a(instrs[i - 1]))):
         pairs.append((0, instrs[i].target))
         i += 1
     while i + 1 < len(instrs):
@@ -224,4 +236,8 @@ def _table_for(instrs, i, end, pairs, counter):
     ]
     if new_label is not None:
         code.append(new_label)
+    # The `ORA #$00` that set Z for the case for 0 has no use left, since
+    # the bounds check's `CMP` sets the flags again.
+    if i > 0 and 0 in by_key and _tests_a(instrs[i - 1]):
+        i -= 1
     return instrs[:i] + code + instrs[rest:], counter

@@ -91,11 +91,17 @@ function ends up as `LDA s; EOR #$FF; CLC; ADC #$01; STA s; RTS`.
   both arms of every branch and the target of every jump, and A is
   dead on a path that writes A without reading it, or returns without
   a value in A, before anything reads A.
-- For `ADC`, `SBC`, and the shifts, which also write C, every flag is
-  dead (`all_flags_dead_at`). That walk fails at any branch, at a
-  later `ADC`, `SBC`, `ROL`, or `ROR`, and at a carry-flag return. For
-  the other instructions only N and Z have to be dead
-  (`flags_dead_at`), and that walk fails at any branch.
+- For `ADC`, `SBC`, and the shifts, which also write C, N and Z are
+  dead (`flags_dead_at`), C is dead (`c_dead_at`), and for `ADC` and
+  `SBC` V is dead (`v_dead_at`). Each walk stops at an instruction
+  that writes its flag, so a `BEQ` after an `LDA` reads only the Z the
+  `LDA` set, and C and V from an `ADC` before the `LDA` are dead there.
+  Zork's `instr_insert_obj` and `remove_obj`
+  (examples/zork/interpreter/objects.c) had each kept a dead `CLC; ADC
+  #k; TXA; ADC #$00`, an object's address plus a member's offset that
+  `LDY #k` had replaced, 6 bytes, until the pass
+  stopped counting such a branch as a read of every flag. For the
+  other instructions only N and Z have to be dead (`flags_dead_at`).
 - A `TXA` or `TYA` whose flags a branch reads can still go when the
   last flag-setting instruction before it, in the same block, wrote
   the same register. In `LDX m; TXA; BMI L` the `LDX` already set N

@@ -439,10 +439,6 @@ remove_obj:
    JSR   get_object_addr
    STA   __local_remove_obj__2
    STX   __local_remove_obj__3
-   CLC
-   ADC   #$04
-   TXA
-   ADC   #$00
    LDY   #$04
    LDA   (__local_remove_obj__2),Y
    BNE   .if_end@0
@@ -502,10 +498,6 @@ instr_insert_obj:
    JSR   get_object_addr
    STA   __local_instr_insert_obj__1
    STX   __local_instr_insert_obj__2
-   CLC
-   ADC   #$06
-   TXA
-   ADC   #$00
    LDY   #$06
    LDA   (__local_instr_insert_obj__1),Y
    STA   __local_instr_insert_obj__0
@@ -600,7 +592,7 @@ instr_jin:
    CMP   (__local_instr_jin__2),Y
    BEQ   .cmp_true@1
    LDA   #$00
-   JMP   .cmp_end@2
+   BEQ   .cmp_end@2
 .cmp_true@1:
    LDA   #$01
 .cmp_end@2:

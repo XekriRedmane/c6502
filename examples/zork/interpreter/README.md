@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1B35`. The other units, the constants,
+on every instruction, up to `$1AB1`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -155,17 +155,17 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 465 |
-| `decode.c` | 1859 | 1966 |
-| `objects.c` | 788 | 981 |
-| `numbers.c` | 436 | 475 |
-| `input.c` | 1018 | 1106 |
+| `decode.c` | 1859 | 1854 |
+| `objects.c` | 788 | 968 |
+| `numbers.c` | 436 | 473 |
+| `input.c` | 1018 | 1105 |
 | `pages.c` | 384 | 383 |
-| `zstring.c` | 383 | 404 |
-| `output.c` | 387 | 403 |
+| `zstring.c` | 383 | 401 |
+| `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7192** |
+| **Total** | **6643** | **7059** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -182,17 +182,18 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 944 bytes with the handlers written
-into their cases (`do_2op` alone is 472), where Zork's four tables
+The four dispatch switches take 816 bytes with the handlers written
+into their cases (`do_2op` alone is 418), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
-Each switch now dispatches through a table too.
-`divu16` is 62 bytes against Zork's 78, `match_dictionary_word` 181
-against 190, and `mulu16` 42 against 69, since it computes only the
+Each switch now dispatches through a table too, and a case that only
+calls a handler is the handler's address in the table, as in Zork's.
+`divu16` is 61 bytes against Zork's 78, `match_dictionary_word` 181
+against 190, and `mulu16` 41 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 35,332,868 cycles against Zork's
-38,490,260, 8.2% fewer, and the second 6,882,313 against 7,434,428,
-7.4% fewer. Most of the difference is the jump tables, which reach
+**Speed.** The first session takes 35,401,138 cycles against Zork's
+38,490,260, 8.0% fewer, and the second 6,894,874 against 7,434,428,
+7.3% fewer. Most of the difference is the jump tables, which reach
 each instruction's case in the same few cycles where the compare
 chains had passed one compare after another. `print_number` divides
 0 by 10 once, where Zork's prints it without dividing. The stand-ins
@@ -437,5 +438,19 @@ the smaller code saved.
 - A test of bit 6 of a byte in memory is `BIT m; BVC`
   ([and_sign_bit_branch.md](../../../docs/optimizations/and_sign_bit_branch.md)),
   4 bytes in `branch`.
+- A jump table's entry for a case that only jumps to another function
+  is that function, and the case goes, as does a default that only
+  calls `internal_error`. `LDA #0; JMP end` is `LDA #0; BEQ end` when
+  `end` is in reach
+  ([short_jumps.md](../../../docs/optimizations/short_jumps.md)). The
+  jump table takes in the case for 0 after the `ORA #$00` that tests a
+  switch's register parameter
+  ([jump_table.md](../../../docs/optimizations/jump_table.md)).
+  Together they take 112 bytes off the four dispatch switches and 9
+  off the rest.
+- Dead-A elimination checks each flag an `ADC` writes on its own, so a
+  `BEQ` after a later `LDA` no longer keeps it
+  ([dead_a_arith.md](../../../docs/optimizations/dead_a_arith.md)), 12
+  bytes in `remove_obj` and `instr_insert_obj`.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

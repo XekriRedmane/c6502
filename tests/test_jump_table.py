@@ -59,6 +59,23 @@ class TestTable(unittest.TestCase):
         ])
         self.assertNotIn(asm_ast.Jump(target=".def"), out)
 
+    def test_case_for_zero_after_ora(self):
+        # A switch on a register parameter tests it with `ORA #$00`
+        # and then `BEQ` for the case for 0, which joins the table,
+        # and the `ORA` goes.
+        instrs = _chain(list(range(1, 9)), _store)
+        instrs[0:1] = [
+            asm_ast.Or(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".c0"),
+        ]
+        instrs[-2:-2] = [asm_ast.Label(name=".c0"), *_store(0),
+                         asm_ast.Return(save_a=False)]
+        out = _run(instrs)
+        t = next(i for i in out if isinstance(i, asm_ast.JumpTable))
+        self.assertEqual(t.targets[0], ".c0")
+        self.assertNotIn(asm_ast.Or(src=asm_ast.Imm(value=0), dst=_A), out)
+        self.assertIsInstance(out[0], asm_ast.Compare)
+
     def test_lower_bound(self):
         out = _run(_chain(list(range(10, 19)), _store))
         t = next(i for i in out if isinstance(i, asm_ast.JumpTable))

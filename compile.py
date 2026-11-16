@@ -111,6 +111,7 @@ from passes.redundant_store import apply_redundant_store_elimination
 from passes.asm_remat import apply_remat
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
+from passes.short_jumps import apply_short_jumps
 from passes.jump_table import apply_jump_tables
 from passes.join_store import apply_join_store
 from passes.loop_labeling import label_program as label_loops
@@ -639,6 +640,9 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # flow.
     asm3 = apply_jump_tables(asm3)
     asm4 = expand_long_branches(asm3)
+    # Jumps to tail-call stubs and jumps after a constant load, with
+    # the branches' final reach (passes/short_jumps.py).
+    asm4 = apply_short_jumps(asm4)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     zp_records = link_records(asm4, zp)

@@ -76,12 +76,10 @@ match_dictionary_word:
    STA   __local_match_dictionary_word__2
    INY
    LDA   (__local_match_dictionary_word__entry_0),Y
-   STA   __local_match_dictionary_word__0
    INY
+   STA   __local_match_dictionary_word__entry_index_1
    LDA   (__local_match_dictionary_word__entry_0),Y
    STA   __local_match_dictionary_word__entry_index_0
-   LDA   __local_match_dictionary_word__0
-   STA   __local_match_dictionary_word__entry_index_1
    LDA   __local_match_dictionary_word__entry_0
    CLC
    ADC   #$04

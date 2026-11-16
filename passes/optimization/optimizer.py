@@ -83,7 +83,9 @@ from passes.optimization.loop_rotate import RotateSignedCountdownLoops
 from passes.optimization.static_const_fold import FoldStaticConstReads
 from passes.optimization.constant_folding import ConstantFold
 from passes.optimization.strength_reduction import STRENGTH_RULES
-from passes.optimization.cmp_zero_jump_fold import CMP_ZERO_RULE
+from passes.optimization.cmp_zero_jump_fold import (
+    CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE,
+)
 from passes.optimization.and_zero_jump_fold import AND_ZERO_RULE
 from passes.optimization.lnot_jump_fold import LNOT_RULE
 from passes.optimization.dead_loop_elimination import EliminateDeadLoops
@@ -140,8 +142,11 @@ _DRIVER = PhaseDriver(
         # window and the single-use gate, and their producer opcodes
         # are disjoint, so one sweep applies whichever rule matches
         # each position instead of three separate sweeps.
-        RuleSet(CMP_ZERO_RULE, AND_ZERO_RULE, LNOT_RULE,
-                name="fold_producer_jumps"),
+        # A compare kept as a value narrows its operands, when the
+        # comparison fold, tried first at the same position, finds no
+        # jump on its result.
+        RuleSet(CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE, AND_ZERO_RULE,
+                LNOT_RULE, name="fold_producer_jumps"),
         EliminateDeadLoops(),
         EliminateUnreachableCode(),
         # Replaces a repeated computation or load with a Copy from the

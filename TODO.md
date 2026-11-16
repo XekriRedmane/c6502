@@ -235,28 +235,12 @@ probably not worth it.
 
 ## Make Zork's input.c smaller
 
-`examples/zork/interpreter/input.c` is 1,177 bytes, where Zork's
-code for it is 1,018. These are the differences left in its compiled
-code.
-
-- **A byte compared as a value.** `return x < 10;` on a `uint8_t x`
-  is a 16-bit signed compare, `SEC; SBC #$0A; LDA #$00; SBC #$00;
-  BVC; EOR #$80; BMI`, where `CMP #$0A; BCS` would do. A compare that
-  a jump tests narrows through the `ZeroExtend`s
-  (`cmp_zero_jump_fold`), and one whose result is truncated gets a
-  1-byte result (`narrow_widened_arith._narrow_compare`), but the
-  operands of a compare kept as a value stay 16 bits.
-- **A load again after a store through a pointer.** `read_line`
-  stores `c` with `LDA c; STA (text),Y` and loads `c` again right
-  after. `c` is a `__local_*` slot whose address isn't taken, so the
-  store can't change it, but `redundant_load` counts a store through
-  a pointer as a write to any byte.
-- **An argument copied from one callee to another.** `is_separator`
-  passes its `c` to `is_dict_separator` and then `is_std_separator`,
-  and copies it from the first one's parameter slot to the second
-  one's. Slot sharing could give the three functions' `c` one byte.
-  Zork passes `c` in A, which `register` would also do, but
-  `is_dict_separator` keeps it across a call.
+`examples/zork/interpreter/input.c` is 1,167 bytes, where Zork's
+code for it is 1,018. The items found by comparing the two are done.
+What's left is mostly `match_dictionary_word`, 231 bytes against 190,
+and the separator tests, which Zork shares code between
+(`separator_found` and `separator_not_found`) where each C function
+has its own `SEC; RTS` and `CLC; RTS`.
 
 ## Keep hot branches from crossing pages
 

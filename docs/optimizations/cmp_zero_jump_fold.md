@@ -68,6 +68,60 @@ so the `JumpIfCmp` always jumps when its operator holds.
   .if_end@0)` at full width, which lowers to a 2-byte `SBC` chain
   with the overflow correction and one `BPL`.
 
+## A comparison kept as a value
+
+`NARROW_VALUE_COMPARE_RULE`, in the same module and the same rule
+set, narrows the operands of a comparison whose result isn't a jump's
+condition, by the same rule as the ordering compares above. The
+result keeps its width, since it is 0 or 1 at any width. It comes
+after `CMP_ZERO_RULE` in the rule set, so a comparison followed by a
+jump on its result becomes a `JumpIfCmp` first.
+
+```c
+#include <stdint.h>
+uint8_t g, h;
+static uint8_t small(uint8_t x) { return x < 10; }
+int main(void) { h = small(g); return h; }
+```
+
+Without the rule, `small` compares two bytes with the overflow
+correction:
+
+```
+small:
+   LDA   __zpabi_small__x
+   SEC
+   SBC   #$0A
+   LDA   #$00
+   SBC   #$00
+   BVC   .cmp_novf@0
+   EOR   #$80
+.cmp_novf@0:
+   BMI   .cmp_true@1
+   LDA   #$00
+   JMP   .cmp_end@2
+.cmp_true@1:
+   LDA   #$01
+.cmp_end@2:
+   RTS
+```
+
+With it, the compare is one unsigned byte:
+
+```
+small:
+   LDA   __zpabi_small__x
+   SEC
+   SBC   #$0A
+   BCC   .cmp_true@0
+   LDA   #$00
+   JMP   .cmp_end@1
+.cmp_true@0:
+   LDA   #$01
+.cmp_end@1:
+   RTS
+```
+
 ## When it applies
 
 - A `Binary` with one of `==`, `!=`, `<`, `>`, `<=`, `>=` is followed
@@ -109,9 +163,10 @@ The extend's own result must be SSA-renamed too.
 ## What it leaves alone
 
 - A comparison whose result has another use. In
-  `int t = a < 5; if (t) seen = 1; return t;` the run reports 0
-  changes, and the final code materializes `t` with `LDA #$00` /
-  `LDA #$01` and then tests it again with `ORA #$00; BEQ`.
+  `int t = a < 5; if (t) seen = 1; return t;` the final code
+  materializes `t` with `LDA #$00` / `LDA #$01` and then tests it
+  again with `ORA #$00; BEQ`. The value-compare rule still narrows
+  the compare to `SEC; SBC #$05; BCC`.
 - A comparison that isn't adjacent to its jump. Copy propagation and
   dead-store elimination usually close the gap, and the fold fires on
   a later round of the fixed point.

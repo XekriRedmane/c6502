@@ -70,7 +70,6 @@ ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_get_alphabet_for_char__c	EQU	$E0
-__zpabi_is_std_separator__c	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
@@ -93,17 +92,18 @@ __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __zpabi_is_dict_separator__c	EQU	$E4
 __zpabi_is_separator__c	EQU	$E4
+__zpabi_is_std_separator__c	EQU	$E4
 __local_instr_sread__1	EQU	$E6
 __local_read_line__c	EQU	$E7
 __local_z_compress__0	EQU	$E7
-__local_get_dictionary_addr__0	EQU	$E8
 __local_print_status_line__1	EQU	$E8
 __local_read_line__left	EQU	$E8
 __local_z_compress__1	EQU	$E8
-__local_get_dictionary_addr__1	EQU	$E9
+__local_is_dict_separator__1	EQU	$E9
 __local_print_status_line__2	EQU	$E9
 __local_read_line__n	EQU	$E9
 __local_z_compress__2	EQU	$E9
+__local_is_dict_separator__2	EQU	$EA
 __local_z_compress__3	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
@@ -114,10 +114,8 @@ __local_match_dictionary_word__0	EQU	$F0
 __local_ascii_to_zchar__dest	EQU	$F1
 __local_match_dictionary_word__1	EQU	$F1
 __local_ascii_to_zchar__left	EQU	$F2
-__local_is_dict_separator__1	EQU	$F2
 __local_match_dictionary_word__count_0	EQU	$F2
 __local_ascii_to_zchar__0	EQU	$F3
-__local_is_dict_separator__2	EQU	$F3
 __local_match_dictionary_word__2	EQU	$F3
 __local_ascii_to_zchar__1	EQU	$F4
 __local_match_dictionary_word__3	EQU	$F4
@@ -127,6 +125,8 @@ __local_match_dictionary_word__count_1	EQU	$F7
 __local_match_dictionary_word__6	EQU	$F8
 __local_match_dictionary_word__entry_0	EQU	$F9
 __local_match_dictionary_word__entry_1	EQU	$FA
+__local_get_dictionary_addr__0	EQU	$FB
+__local_get_dictionary_addr__1	EQU	$FC
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -255,7 +255,7 @@ COUT1	EQU	$FDF0
 ; call read_line -> dump_buffer_line
 ; call read_line -> dump_buffer_to_printer
 ; call skip_separators -> is_separator
-; share member=is_dict_separator:__zpabi_is_dict_separator__c member=is_separator:__zpabi_is_separator__c holder=instr_sread live=instr_sread:is_dict_separator live=is_separator:is_dict_separator forward=instr_sread>is_dict_separator forward=is_separator>is_dict_separator writer=instr_sread
+; share member=is_dict_separator:__zpabi_is_dict_separator__c member=is_separator:__zpabi_is_separator__c member=is_std_separator:__zpabi_is_std_separator__c holder=instr_sread live=instr_sread:is_dict_separator live=is_separator:is_dict_separator forward=instr_sread>is_dict_separator forward=is_separator>is_dict_separator forward=is_separator>is_std_separator writer=instr_sread
 ; item print_status_line section=.text local=false zero=false
 ; item read_line section=.text local=true zero=false
 ; item get_dictionary_addr section=.text local=true zero=false
@@ -457,7 +457,6 @@ read_line:
    TAY
    LDA   __local_read_line__c
    STA   (text),Y
-   LDA   __local_read_line__c
    CMP   #$0D
    BEQ   .loop@1_break
    DEC   __local_read_line__left
@@ -535,8 +534,6 @@ is_separator:
    BCC   .if_end@11
    RTS
 .if_end@11:
-   LDA   __zpabi_is_dict_separator__c
-   STA   __zpabi_is_std_separator__c
    JMP   is_std_separator
 
 skip_separators:
@@ -829,12 +826,10 @@ match_dictionary_word:
    STA   __local_match_dictionary_word__2
    INY
    LDA   (__local_match_dictionary_word__1),Y
-   STA   __local_match_dictionary_word__0
    INY
+   STA   __local_match_dictionary_word__count_1
    LDA   (__local_match_dictionary_word__1),Y
    STA   __local_match_dictionary_word__count_0
-   LDA   __local_match_dictionary_word__0
-   STA   __local_match_dictionary_word__count_1
    LDA   __local_match_dictionary_word__3
    CLC
    ADC   #$03

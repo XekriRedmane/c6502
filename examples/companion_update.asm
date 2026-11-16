@@ -449,7 +449,6 @@ drift_step:
    SBC   #$04
    LDY   #$00
    STA   (__zpabi_drift_step__out_sprite_y_0),Y
-   LDX   __zpabi_drift_step__slot
    LDA   #$01
    STA   companion_state,X
    LDA   companion_pos_hi,X

@@ -910,5 +910,104 @@ class TestMultiUseSsaExtend(unittest.TestCase):
             )
 
 
+class TestValueCompareNarrowing(unittest.TestCase):
+    """A comparison kept as a value narrows its operands through their
+    ZeroExtends (`NARROW_VALUE_COMPARE_RULE`), so `(int)x < 10` on a
+    `uint8_t x` subtracts one byte."""
+
+    _VALUES = (0, 9, 10, 11, 127, 128, 200, 255)
+
+    def _src(self, expr: str) -> str:
+        table = ", ".join(str(v) for v in self._VALUES)
+        return (
+            "#include <stdint.h>\n"
+            f"uint8_t g[{len(self._VALUES)}] = {{{table}}};\n"
+            "static uint8_t test(uint8_t x) { return " + expr + "; }\n"
+            "int main(void) {\n"
+            "    uint16_t n = 0;\n"
+            f"    for (uint8_t i = 0; i < {len(self._VALUES)}; i++)\n"
+            "        n = (uint16_t)(n << 1) | test(g[i]);\n"
+            "    return n;\n"
+            "}\n"
+        )
+
+    def _expected(self, pred) -> int:
+        n = 0
+        for v in self._VALUES:
+            n = ((n << 1) | int(pred(v))) & 0xFFFF
+        return n
+
+    _CASES = (
+        ("x < 10", lambda x: x < 10),
+        ("x <= 10", lambda x: x <= 10),
+        ("x > 127", lambda x: x > 127),
+        ("x >= 200", lambda x: x >= 200),
+        ("10 < x", lambda x: 10 < x),
+        ("255 > x", lambda x: 255 > x),
+        ("x < 256", lambda x: True),
+        ("x > -1", lambda x: True),
+    )
+
+    def test_runs(self):
+        for expr, pred in self._CASES:
+            for optimize in (False, True):
+                with self.subTest(expr=expr, optimize=optimize):
+                    r = build_sim(self._src(expr), optimize=optimize).run()
+                    self.assertEqual(r.return_int(), self._expected(pred))
+
+    def test_one_byte_compare(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._src("x < 10")),
+                         optimize=True)
+        body = asm[asm.index("\ntest:"):asm.index("\nmain:")]
+        self.assertNotIn("BVC", body)
+        self.assertNotIn("SBC   #$00", body)
+        self.assertIn("#$0A", body)
+
+    def test_rule_keeps_the_dst(self):
+        # The narrowed compare writes the same dst, and the extend is
+        # left for DSE.
+        from passes.optimization.cmp_zero_jump_fold import (
+            NARROW_VALUE_COMPARE_RULE,
+        )
+        from passes.optimization.framework import PassContext, RuleSet
+        syms = _symbols(("x", c99_ast.UChar()), ("t", c99_ast.Int()),
+                        ("r", c99_ast.Int()))
+        fn = _fn(
+            tac_ast.ZeroExtend(src=_var("x"), dst=_var("t")),
+            tac_ast.Binary(op=tac_ast.LessThan(), src1=_var("t"),
+                           src2=_const_int(10), dst=_var("r")),
+            tac_ast.Ret(val=_var("r")),
+        )
+        out = RuleSet(NARROW_VALUE_COMPARE_RULE).run(
+            fn, PassContext(symbols=syms, ssa_dsts={"t", "r"}),
+        )
+        self.assertEqual(out.instructions[1], tac_ast.Binary(
+            op=tac_ast.LessThan(), src1=_var("x"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=10)),
+            dst=_var("r"),
+        ))
+
+    def test_constant_out_of_byte_range_left_alone(self):
+        from passes.optimization.cmp_zero_jump_fold import (
+            NARROW_VALUE_COMPARE_RULE,
+        )
+        from passes.optimization.framework import PassContext, RuleSet
+        syms = _symbols(("x", c99_ast.UChar()), ("t", c99_ast.Int()),
+                        ("r", c99_ast.Int()))
+        for k in (256, -1):
+            fn = _fn(
+                tac_ast.ZeroExtend(src=_var("x"), dst=_var("t")),
+                tac_ast.Binary(op=tac_ast.LessThan(), src1=_var("t"),
+                               src2=_const_int(k), dst=_var("r")),
+                tac_ast.Ret(val=_var("r")),
+            )
+            out = RuleSet(NARROW_VALUE_COMPARE_RULE).run(
+                fn, PassContext(symbols=syms, ssa_dsts={"t", "r"}),
+            )
+            self.assertEqual(out.instructions, fn.instructions)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -81,8 +81,9 @@ once or twice for `k` of 1 or 2, `SEC; SBC #k` into `DEY`, and the
 same with `TAX`, `INX`, and `DEX`, when the register still holds M:
 its last write in the block is `LDY M` (or `LDX M`), and nothing
 since writes M or might. A store through a pointer might, except to
-a byte no pointer can point to, which is a `static` whose address the
-unit never takes (`_unaliased_statics`), such as Zork's `token_idx`
+a byte no pointer can point to, a `static` or one of the function's
+own zero-page slots whose address the unit never takes
+(`asm_aliasing.unreachable_by_pointer`), such as Zork's `token_idx`
 in examples/zork/interpreter/input.c. A, C, and V must be dead
 after. N and Z come out the same, from M plus or minus `k`.
 
@@ -97,13 +98,14 @@ safe in the fixed point.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import unreachable_by_pointer
 from passes.asm_liveness import (
     a_dead_at, c_dead_at, v_dead_at, x_dead_at, y_dead_at,
 )
 
 
 def apply_transfer_pm1_store(prog: asm_ast.Program) -> asm_ast.Program:
-    unaliased = _unaliased_statics(prog)
+    unaliased = unreachable_by_pointer(prog)
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
@@ -113,42 +115,6 @@ def apply_transfer_pm1_store(prog: asm_ast.Program) -> asm_ast.Program:
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
-
-
-def _unaliased_statics(prog: asm_ast.Program) -> frozenset[str]:
-    """The `static` objects of `prog` whose address nothing in the
-    unit takes, so that no pointer can point into them: no
-    `LoadAddress` of them, no `#<name` or `#>name`, and no static
-    initialized with their address. Other units can't name them."""
-    statics = {
-        tl.name for tl in prog.top_level
-        if isinstance(tl, asm_ast.StaticVariable) and not tl.is_global
-    }
-    taken: set[str] = set()
-    for tl in prog.top_level:
-        if isinstance(tl, asm_ast.StaticVariable):
-            for init in tl.init:
-                name = getattr(init, "name", None)
-                if isinstance(init, asm_ast.AddressInit) and name:
-                    taken.add(name)
-        elif isinstance(tl, asm_ast.Function):
-            for ins in tl.instructions:
-                for op in _operands(ins):
-                    if isinstance(op, (asm_ast.ImmLabelLow,
-                                       asm_ast.ImmLabelHigh)):
-                        taken.add(op.name)
-                if isinstance(ins, asm_ast.LoadAddress) and isinstance(
-                    ins.src, asm_ast.Data,
-                ):
-                    taken.add(ins.src.name)
-    return frozenset(statics - taken)
-
-
-def _operands(ins):
-    for field in ("src", "dst", "src1", "src2", "left", "right"):
-        op = getattr(ins, field, None)
-        if op is not None:
-            yield op
 
 
 _INDIRECT = (

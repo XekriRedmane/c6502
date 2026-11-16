@@ -82,6 +82,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
     `extend_source_unchanged` requires an SSA-renamed source, or else
     no label, jump, store, call, or write to the source between the
     extend and the compare. `AND_ZERO_RULE` uses the same check.
+  - `NARROW_VALUE_COMPARE_RULE` (same module, right after
+    `CMP_ZERO_RULE` in the rule set): a comparison whose result isn't
+    a jump's condition gets the same operand narrowing, into the same
+    dst, so `return x < 10;` on a `uint8_t x` is a 1-byte compare.
   - `fold_narrow_and_jump` (`AND_ZERO_RULE`): folds `(ZeroExtend(uchar);
     BitwiseAnd(_, 0x80); JumpIf*)` to `JumpIfMasked` when the operand
     narrows to 1 byte — direct `LDA / BPL/BMI` at asm lowering instead

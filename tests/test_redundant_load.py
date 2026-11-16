@@ -1291,5 +1291,73 @@ class TestStoreConstViaIndex(unittest.TestCase):
         ]
         self.assertEqual(_rewritten(list(instrs)), instrs)
 
+
+class TestStoreThroughPointer(unittest.TestCase):
+    """A store through a pointer can't change a byte no pointer can
+    point to (`asm_aliasing.unreachable_by_pointer`): an internal
+    static, or the function's own zero-page slot, whose address the
+    unit never takes. Anything else may be the byte stored to."""
+
+    _C = asm_ast.Data(name="__local_f__c", offset=0)
+
+    def _shape(self, mem, extra=(), fns=()):
+        # `LDX M; LDA #9; STA (p),Y; LDX M`: the last load goes when
+        # the store can't reach M.
+        body = [
+            asm_ast.Mov(src=mem, dst=_REG_X, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Imm(value=9), dst=_REG_A,
+                        is_volatile=False),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90),
+                        is_volatile=False),
+            asm_ast.Mov(src=mem, dst=_REG_X, is_volatile=False),
+            asm_ast.Mov(src=_REG_X, dst=asm_ast.Data(name="out", offset=0),
+                        is_volatile=False),
+            asm_ast.Return(save_a=False, save_x=False, save_c=False),
+        ]
+        top = [asm_ast.Function(name="f", is_global=True, params=[],
+                                instructions=list(extra) + body)]
+        top += [asm_ast.Function(name=n, is_global=False, params=[],
+                                 instructions=[asm_ast.Return(save_a=False, 
+                                     save_c=False, save_x=False)])
+                for n in fns]
+        top += [asm_ast.StaticVariable(name="s", is_global=False,
+                                       init=[]),
+                asm_ast.StaticVariable(name="g", is_global=True, init=[])]
+        out = apply_redundant_load_elimination(
+            asm_ast.Program(top_level=top),
+        ).top_level[0].instructions
+        return len(out) - len(extra)
+
+    def test_own_slot_reload_dropped(self):
+        self.assertEqual(self._shape(self._C), 5)
+
+    def test_internal_static_reload_dropped(self):
+        self.assertEqual(self._shape(asm_ast.Data(name="s", offset=0)), 5)
+
+    def test_global_kept(self):
+        self.assertEqual(self._shape(asm_ast.Data(name="g", offset=0)), 6)
+
+    def test_address_taken_slot_kept(self):
+        # `address_taken_zp` puts an address-taken local in a slot.
+        take = asm_ast.LoadAddress(
+            src=self._C, dst=asm_ast.Data(name="__local_f__p", offset=0),
+        )
+        self.assertEqual(self._shape(self._C, extra=[take]), 6)
+
+    def test_address_as_immediate_kept(self):
+        take = asm_ast.Mov(src=asm_ast.ImmLabelLow(name="__local_f__c", offset=0),
+                           dst=_REG_A, is_volatile=False)
+        self.assertEqual(self._shape(self._C, extra=[take]), 6)
+
+    def test_slot_of_function_defined_elsewhere_kept(self):
+        mem = asm_ast.Data(name="__zpabi_h__c", offset=0)
+        self.assertEqual(self._shape(mem), 6)
+
+    def test_slot_whose_owner_is_ambiguous_kept(self):
+        # `__local_f__x__c` might be `f__x`'s local `c`.
+        mem = asm_ast.Data(name="__local_f__x__c", offset=0)
+        self.assertEqual(self._shape(mem, fns=["f__x"]), 6)
+
+
 if __name__ == "__main__":
     unittest.main()

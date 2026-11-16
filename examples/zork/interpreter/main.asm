@@ -83,7 +83,6 @@ __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_main__0	EQU	$E4
 __local_main__sector	EQU	$E5
-__local_locate_last_ram_page__1	EQU	$E7
 __local_locate_last_ram_page__2	EQU	$E8
 __local_locate_last_ram_page__3	EQU	$E9
 __local_locate_last_ram_page__page	EQU	$EA
@@ -287,9 +286,7 @@ locate_last_ram_page:
    CMP   (__local_locate_last_ram_page__2),Y
    BNE   .loop@0_start
    EOR   #$FF
-   STA   __local_locate_last_ram_page__1
    STA   (__local_locate_last_ram_page__2),Y
-   LDA   __local_locate_last_ram_page__1
    CMP   (__local_locate_last_ram_page__2),Y
    BNE   .loop@0_start
    EOR   #$FF

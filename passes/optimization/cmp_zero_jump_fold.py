@@ -50,6 +50,15 @@ Two flavors of fold, depending on the comparison shape:
 The cmp's dst becomes dead in both cases; standard DSE picks it up
 along with any preceding ZeroExtend whose dst was only used by it.
 
+A comparison whose result is kept as a value, `return x < 10;` or
+`n += c < 20;`, narrows its operands the same way
+(`NARROW_VALUE_COMPARE_RULE`), and its dst keeps its width, since it
+holds 0 or 1 whatever the operands' width. `(int)x < 10` on a
+`uint8_t x` then lowers to `LDA x; CMP #$0A; BCC` where it had
+lowered to `SEC; SBC #$0A; LDA #$00; SBC #$00; BVC; EOR #$80; BMI`.
+The rule comes after `CMP_ZERO_RULE` in the same rule set, so a
+compare that a jump tests becomes a `JumpIfCmp` first.
+
 "Single-use" gating. SSA TAC has single-def for free; the use-count
 of `cond` must be exactly 1 (the JumpIf's read). If it had additional
 uses (e.g. also returned), removing the Binary would break those.
@@ -138,6 +147,36 @@ CMP_ZERO_RULE = Rule(
     ),
     where=[single_use('cond_dst')],
     build=_build_cmp_zero_jump,
+)
+
+
+def _build_narrow_value_compare(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """`a op b` with each operand narrowed to 1-byte unsigned through
+    its ZeroExtend (`_try_narrow_compare`), into the same dst."""
+    binop = m.bindings['binop']
+    instrs = env.instructions
+    use_idx = env.def_idx.get(m.bindings['cmp_dst'].name, -1)
+    if use_idx < 0 or instrs[use_idx] is not binop:
+        use_idx = -1
+    narrowed = _try_narrow_compare(
+        binop.src1, binop.src2, instrs, env.def_idx, env.use_count,
+        ctx.symbols, use_idx, ctx.ssa_dsts,
+    )
+    if narrowed is None:
+        return None
+    return [tac_ast.Binary(
+        op=binop.op, src1=narrowed[0], src2=narrowed[1], dst=binop.dst,
+    )]
+
+
+NARROW_VALUE_COMPARE_RULE = Rule(
+    name="narrow_value_compare",
+    pattern=m_Binary(
+        op=_CMP_OPS, dst=m_Var(capture='cmp_dst'), capture='binop',
+    ),
+    build=_build_narrow_value_compare,
 )
 
 

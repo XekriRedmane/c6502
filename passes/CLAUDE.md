@@ -437,8 +437,9 @@ this directory:
   (k of 1 or 2, `SBC` → `DEY`, and the X forms) when the register
   still holds M from an `LDY M` / `LDX M` in the block and A, C,
   and V are dead (`_rewrite_index_steps`). A store through a pointer
-  in between is allowed only for a `static` whose address the unit
-  never takes (`_unaliased_statics`).
+  in between is allowed only for a byte no pointer can reach, a
+  `static` or the function's own slot whose address the unit never
+  takes (`asm_aliasing.unreachable_by_pointer`).
 - `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
   Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
   `Compare(Reg(A), <indirect>)` when A and N/Z are dead after the

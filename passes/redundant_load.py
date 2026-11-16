@@ -124,6 +124,7 @@ from dataclasses import dataclass, field
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
+from passes.asm_aliasing import pointer_proof, unreachable_by_pointer
 from passes.asm_liveness import a_dead_at as _a_dead_at
 from passes.asm_liveness import x_dead_at as _x_dead_at
 from passes.asm_liveness import y_dead_at as _y_dead_at
@@ -153,11 +154,12 @@ def apply_redundant_load_elimination(
     prog: asm_ast.Program,
 ) -> asm_ast.Program:
     new_top: list[asm_ast.Type_top_level] = []
-    for tl in prog.top_level:
-        if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
-        else:
-            new_top.append(tl)
+    with pointer_proof(unreachable_by_pointer(prog)):
+        for tl in prog.top_level:
+            if isinstance(tl, asm_ast.Function):
+                new_top.append(_rewrite_function(tl))
+            else:
+                new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
 

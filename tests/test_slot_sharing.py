@@ -598,3 +598,51 @@ class TestRegisterParams(unittest.TestCase):
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 self.assertEqual(_run(src, optimize), 64)
+
+
+@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+class TestPassedToTwoCallees(unittest.TestCase):
+    """A parameter passed on to two callees shares both callees'
+    bytes, so the function copies it for neither, as Zork's
+    `is_separator(c)` passes `c` to `is_dict_separator` and then to
+    `is_std_separator`."""
+
+    _SRC = """
+    #include <stdint.h>
+    #include <stdbool.h>
+    uint8_t calls;
+    static bool is_a(uint8_t c) { calls++; return c == 'a'; }
+    static bool is_b(uint8_t c) { calls++; return c == 'b'; }
+    static bool is_ab(uint8_t c) {
+        if (is_a(c)) return true;
+        return is_b(c);
+    }
+    int main(void) {
+        uint8_t n = 0;
+        for (uint8_t c = 'a'; c != 'e'; c++)
+            n = (uint8_t)(n << 1) | is_ab(c);
+        return n * 16 + calls;
+    }
+    """
+
+    def test_one_share(self):
+        asm = _codegen(self._SRC)
+        shares = _shares(asm)
+        self.assertEqual(len(shares), 1, shares)
+        for f in ("is_a", "is_b", "is_ab"):
+            self.assertIn(f"member={f}:", shares[0])
+        equs = _equs(asm)
+        self.assertEqual(equs["__zpabi_is_a__c"], equs["__zpabi_is_b__c"])
+        self.assertEqual(equs["__zpabi_is_ab__c"], equs["__zpabi_is_b__c"])
+        # Nothing is copied between the calls.
+        self.assertFalse(any("__zpabi_" in line
+                             for line in _body(asm, "is_ab")),
+                         _body(asm, "is_ab"))
+
+    def test_runs(self):
+        # 'a' and 'b' are separators, 'c' and 'd' aren't. is_ab('a')
+        # calls once, the others twice.
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(_run(self._SRC, optimize),
+                                 0b1100 * 16 + 7)

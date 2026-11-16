@@ -157,7 +157,8 @@ them whenever a pass is added or moved.
       1. [Constant folding](constant_folding.md)
       2. [Strength reduction](strength_reduction.md)
       3. The three jump folds, run as one rule set. They are the
-         [comparison and jump fold](cmp_zero_jump_fold.md), the
+         [comparison and jump fold](cmp_zero_jump_fold.md), with
+         its narrowing of a comparison kept as a value, the
          [AND jump fold](and_zero_jump_fold.md), and the
          [logical-not jump fold](lnot_jump_fold.md).
       4. [Dead loop elimination](dead_loop_elimination.md)

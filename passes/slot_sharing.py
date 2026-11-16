@@ -38,7 +38,8 @@ Two kinds of value qualify:
   of `G`. `F`'s slot for `p` gets the same address as `G`'s slot for
   `q`, so `F`'s callers write the value where `G` reads it and `F`
   copies nothing. `F`'s slot is then a *member* of the bytes, as `G`'s
-  is.
+  is. A parameter passed on to several callees joins each one's
+  bytes, so all their slots are members of one share.
 
 A set of such slots and holders is a `SlotShare`. The value goes in
 one set of bytes for every function in it. Members join before any
@@ -239,6 +240,10 @@ def find_shares(
 
     cands: list[_Binding] = []
     bound: set[tuple[str, str]] = set()
+    # A parameter passed on to several callees joins each one's bytes,
+    # so `is_separator(c)`, which passes `c` to two functions, copies
+    # it for neither. A local has one home, the first callee's.
+    passed_on: set[tuple[str, str, str, int]] = set()
     for fname in sorted(ok):
         fn = fns[fname]
         in_memory = _in_memory(fn)
@@ -252,7 +257,12 @@ def find_shares(
                 if not isinstance(arg, tac_ast.Var):
                     continue
                 v = arg.name
-                if (fname, v) in bound or j >= len(slots[g]):
+                if j >= len(slots[g]):
+                    continue
+                if v in fn.params:
+                    if (fname, v, g, j) in passed_on:
+                        continue
+                elif (fname, v) in bound:
                     continue
                 target = slots[g][j]
                 if target is None:
@@ -273,6 +283,8 @@ def find_shares(
                     alias = False
                 cands.append(_Binding(fname, v, g, j, alias))
                 bound.add((fname, v))
+                if alias:
+                    passed_on.add((fname, v, g, j))
     # Each local candidate's copy group shares its home. A later
     # candidate of the same function in that group joins it rather than
     # taking a home of its own, as each value of `write(++sector)` does.

@@ -499,7 +499,6 @@ instr_insert_obj:
    LDA   __local_instr_insert_obj__0
    LDY   #$04
    STA   (__local_instr_insert_obj__3),Y
-   LDA   __local_instr_insert_obj__0
    JSR   get_object_addr
    STA   __local_instr_insert_obj__1
    STX   __local_instr_insert_obj__2

@@ -10,8 +10,8 @@ each is timed from entry to RTS, including the call to
 words that aren't there: below the first entry, between two entries,
 and past the last.
 
-The compiled function is 107 instructions, as many as the original,
-and takes 2.5% fewer cycles over these lookups. `z_header_addr` and
+The compiled function is 105 instructions against the original's 107,
+and takes 3.3% fewer cycles over these lookups. `z_header_addr` and
 `zchar_scratch2` are placed in zero page at the original's $BA and
 $DA. Where the two still differ:
 
@@ -21,7 +21,6 @@ $DA. Where the two still differ:
 - The original reads the entry length and count with Y = n + 1 ..
   n + 3, where the C adds n to the pointer once and uses `LDY #1` ..
   `LDY #3`.
-- The high byte of the entry count goes through a temp.
 - The result comes back in A and X, so the found path subtracts into
   a temp and loads it back. The original leaves it in SCRATCH1."""
 

@@ -138,7 +138,25 @@ unrolled iteration.
   that delete one of those instructions don't track the dependence.
 
 A write to memory removes from every list each operand the write
-may alias (`asm_aliasing.may_alias`). Changing X or Y, by a load,
+may alias (`asm_aliasing.may_alias`). A store through a pointer
+leaves a byte no pointer can point to
+(`asm_aliasing.unreachable_by_pointer`), which is a `static` whose
+address the unit never takes or a function's own zero-page slot
+(`__local_f__*`, `__zpabi_f__*`) whose address the unit never takes.
+Zork's `read_line` (examples/zork/interpreter/input.c) stores its
+`c` through `text` and then compares it, and the second `LDA
+__local_read_line__c` goes:
+
+```
+   LDA   __local_read_line__c          LDA   __local_read_line__c
+   STA   (text),Y              ->      STA   (text),Y
+   LDA   __local_read_line__c          CMP   #$0D
+   CMP   #$0D
+```
+
+The slots aren't all out of reach, since `address_taken_zp` can put
+an address-taken local in one, and only that function's code can take
+its address. Changing X or Y, by a load,
 `INX` / `DEX`, or the `LDY #off` that sets up a `Frame`, `Stack`, or
 `Indirect` access, also removes every indexed operand whose address
 depends on that register.

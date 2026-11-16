@@ -76,6 +76,9 @@ naive "anything-indirect-may-alias-anything" model:
     frames (SSP=top of current arg pack, FP=bottom of frame); even
     if their ranges adjoin, distinct offsets within each map to
     distinct frames.
+  * Indirect family vs a `Data` name in `unreachable_by_pointer`:
+    no alias. The set is empty unless a pass installs one with
+    `pointer_proof` (see `unreachable_by_pointer` below).
   * Indirect vs Indirect: alias iff same offset (both via DPTR).
   * IndirectZp vs IndirectZp: alias iff same base and same offset.
     Through different bases they may alias, since two pointer
@@ -95,6 +98,8 @@ correct for everything c6502 ships today.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import asm_ast
 
@@ -117,6 +122,10 @@ DEFAULT_POOL_HI = 0x100
 _USER_ZP_GLOBALS: dict[str, int] = {}
 _USER_ZP_BYTES: frozenset[int] = frozenset()
 
+# Names of bytes no pointer can point to, which `pointer_proof`
+# installs for the program a pass is rewriting. Empty otherwise.
+_POINTER_PROOF: frozenset[str] = frozenset()
+
 
 def set_user_zp_globals(
     addrs: dict[str, int], reserved: frozenset[int] = frozenset(),
@@ -131,6 +140,98 @@ def set_user_zp_globals(
 def is_user_zp_byte(addr: int) -> bool:
     """True iff byte `addr` belongs to a user zero-page global."""
     return addr in _USER_ZP_BYTES
+
+
+def unreachable_by_pointer(prog: asm_ast.Program) -> frozenset[str]:
+    """The `Data` names in `prog` that no pointer can point to, since
+    nothing in the unit takes their address: no `LoadAddress` of
+    them, no `#<name` or `#>name`, and no static initialized with
+    their address. Two kinds qualify.
+
+    - A `static` object (not `is_global`). Other units can't name it.
+    - A zero-page slot of a function `F` defined in the unit,
+      `__local_F__*` or `__zpabi_F__*`. Only `F`'s body can take the
+      address of its own local or parameter. A slot that might
+      belong to another function, whose name `F`'s prefix also
+      begins (a function named `F__x`), is left out.
+
+    `address_taken_zp` puts an address-taken local in a `__local_*`
+    slot, so the slots aren't all out of reach. The address-taking
+    of such a local is in this unit, which is what the check reads.
+    A pointer to some other function's slot that shares the byte
+    could only be followed while that function is active, and
+    functions active together have disjoint bytes."""
+    defined = {
+        tl.name for tl in prog.top_level if isinstance(tl, asm_ast.Function)
+    }
+    named = set(defined)
+    statics: set[str] = set()
+    taken: set[str] = set()
+    seen: set[str] = set()
+    for tl in prog.top_level:
+        if isinstance(tl, asm_ast.StaticVariable):
+            if not tl.is_global:
+                statics.add(tl.name)
+            for init in tl.init:
+                if isinstance(init, asm_ast.AddressInit):
+                    taken.add(init.name)
+        elif isinstance(tl, asm_ast.Function):
+            for ins in tl.instructions:
+                if isinstance(ins, asm_ast.Call):
+                    named.add(ins.name)
+                if isinstance(ins, asm_ast.LoadAddress):
+                    name = getattr(ins.src, "name", None)
+                    if name is not None:
+                        taken.add(name)
+                for op in _instruction_operands(ins):
+                    if isinstance(op, (asm_ast.ImmLabelLow,
+                                       asm_ast.ImmLabelHigh)):
+                        taken.add(op.name)
+                    elif isinstance(op, asm_ast.Data):
+                        seen.add(op.name)
+
+    def own_slot(name: str) -> bool:
+        owners = [
+            f for f in named
+            for prefix in (f"__local_{f}__", f"__zpabi_{f}__")
+            if name.startswith(prefix)
+        ]
+        return len(owners) == 1 and owners[0] in defined
+
+    slots = {n for n in seen if own_slot(n)}
+    return frozenset((statics | slots) - taken)
+
+
+def _instruction_operands(ins):
+    """Every operand in `ins`, in any field, including those inside a
+    list (a `Phi`'s arguments)."""
+    for f in dataclasses.fields(ins):
+        value = getattr(ins, f.name)
+        for v in value if isinstance(value, list) else (value,):
+            if isinstance(v, asm_ast.Type_operand):
+                yield v
+            elif dataclasses.is_dataclass(v):
+                yield from _instruction_operands(v)
+
+
+class pointer_proof:
+    """Installs `names` (from `unreachable_by_pointer`) as the bytes
+    `may_alias` treats as out of reach of the indirect operands, for
+    the duration of a `with` block."""
+
+    def __init__(self, names: frozenset[str]):
+        self.names = names
+
+    def __enter__(self):
+        global _POINTER_PROOF
+        self.saved = _POINTER_PROOF
+        _POINTER_PROOF = self.names
+        return self
+
+    def __exit__(self, *exc):
+        global _POINTER_PROOF
+        _POINTER_PROOF = self.saved
+        return False
 
 
 def may_alias(
@@ -248,6 +349,12 @@ def may_alias(
     # `Data("DPTR", _)` — otherwise DSE would drop a live STA DPTR
     # that subsequent LDA (DPTR),Y reads observe. The rule below
     # is intentionally scoped to the IndirectZp* kinds only.
+    if (isinstance(a, _indy_indirect_kinds) and isinstance(b, asm_ast.Data)
+            and b.name in _POINTER_PROOF):
+        return False
+    if (isinstance(b, _indy_indirect_kinds) and isinstance(a, asm_ast.Data)
+            and a.name in _POINTER_PROOF):
+        return False
     _zp_indirect_kinds = (asm_ast.IndirectZp, asm_ast.IndirectZpY)
     if isinstance(a, _zp_indirect_kinds) and isinstance(b, asm_ast.Data):
         if b.name in _RUNTIME_ZP_NAMES:

@@ -35,7 +35,12 @@ are spelled differently but get one address
 (`slot_sharing.slot_aliases`). A function's parameter passed on
 unchanged joins its callee's bytes before any caller is made a holder,
 so a caller that passes its value to both functions keeps it in one
-set of bytes. The allocators then give each set of shared
+set of bytes. A parameter passed on to two callees joins both, so
+Zork's `is_separator(c)` (examples/zork/interpreter/input.c), which
+passes `c` to `is_dict_separator` and then to `is_std_separator`,
+gives the three functions' `c` one byte and copies nothing between
+the calls. A local variable passed to two callees is kept in the
+first one's bytes. The allocators then give each set of shared
 slots one address, kept off the bytes of every function that can be
 on the call stack with any function using it.
 

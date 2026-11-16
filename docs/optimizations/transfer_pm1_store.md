@@ -97,8 +97,9 @@ it. After `LDY token_idx; STA (parse),Y`, Zork's
 (one or two `INY`), `SBC` for `DEY`, and the X forms, when the last
 write to the register in the block is a load of the byte and nothing
 since writes the byte or might. A store through a pointer might,
-unless the byte is a `static` whose address the unit never takes,
-which no pointer can point to. A, C, and V must be dead after. Any
+unless the byte is one no pointer can point to, a `static` or one of
+the function's own zero-page slots whose address the unit never takes
+(`asm_aliasing.unreachable_by_pointer`). A, C, and V must be dead after. Any
 write to the register stops the walk, `INX` included, which
 `kills_x` doesn't count since it reads X too. Missing that turned
 `LDA m; CLC; ADC #2; TAX` into `INX; INX` after an `INX` in

@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1D8E`. The other units, the constants,
+on every instruction, up to `$1D7B`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -157,7 +157,7 @@ file and the original code it translates:
 | `main.c` | 391 | 472 |
 | `decode.c` | 1859 | 2487 |
 | `objects.c` | 788 | 996 |
-| `numbers.c` | 436 | 528 |
+| `numbers.c` | 436 | 509 |
 | `input.c` | 1018 | 1109 |
 | `pages.c` | 384 | 385 |
 | `zstring.c` | 383 | 407 |
@@ -165,7 +165,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7796** |
+| **Total** | **6643** | **7777** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -189,8 +189,8 @@ take 126 bytes and the handlers are counted with their own files.
 against 190, and `mulu16` 42 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 37,866,099 cycles against Zork's
-38,490,260, 1.6% fewer, and the second 7,316,132 against 7,434,428,
+**Speed.** The first session takes 37,864,127 cycles against Zork's
+38,490,260, 1.6% fewer, and the second 7,315,984 against 7,434,428,
 1.6% fewer. The stand-ins for the Monitor and RWTS take no cycles.
 Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
@@ -334,5 +334,19 @@ the smaller code saved.
   an indexed access to a zero-page local to reach its bytes. Each had
   let a peephole miscompile a program once the changes above gave it
   the shape (`tests/test_divide_shapes.py`).
+- `check_sign` negates `a` when the signs of `a` and `b` differ and
+  keeps the XOR of their high bytes in `sign_bit`, whose bit 7 is
+  then the result's sign. Zork negates `a` once for each negative
+  operand and counts them, which comes to the same. A compare whose
+  result goes to a static or an address-taken variable no longer
+  folds into the jump that tests it
+  ([framework/rules.py](../../../passes/optimization/framework/rules.py)
+  `single_use`). With `sign_bit` a `bool` set by `(int16_t)(a ^ b) <
+  0`, the store had been dropped, and `store_with_sign` never
+  negated (`tests/test_cmp_zero_jump_fold.py`). A signed `x < 0` or
+  `x >= 0` kept as a value is now `LDA x+1; ASL; LDA #0; ROL`, where
+  it had been a 2-byte subtract with the overflow correction
+  (`tests/test_sign_test_lowering.py`). The `bool` is still 4 bytes
+  longer than keeping the high byte, so `sign_bit` is an `int8_t`.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

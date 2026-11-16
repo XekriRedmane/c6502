@@ -232,7 +232,9 @@ the 6502's CMP / SBC + branch atoms cover these):
     because it leaves V untouched, and the N flag lies when the
     signed subtraction overflows — the `BVC novf; EOR #$80` pair
     corrects N. Multi-byte: chained SBCs (carry threads low→high)
-    then V-correction on the high byte.
+    then V-correction on the high byte. A signed `x < 0` or `x >= 0`
+    is x's sign bit, `LDA x+N-1; ASL; LDA #0; ROL` (and `EOR #1` for
+    `>=`), with no subtract (`_translate_sign_test`).
 
   GreaterThan / LessOrEqual: reuse the LessThan / GreaterOrEqual
     sequence with operands swapped (`>` → `src2 < src1`, `<=` →
@@ -3969,7 +3971,18 @@ class Translator:
         then sub each higher byte in turn; the V flag from the
         FINAL (high-byte) SBC reflects the whole value's overflow,
         and N reflects the whole value's sign. Caller picks operand
-        order and branch condition to select among <, >=, >, <=."""
+        order and branch condition to select among <, >=, >, <=.
+
+        `x < 0` and `x >= 0` (the right operand 0, `cond` MI or PL)
+        go to `_translate_sign_test`, since the result is x's sign
+        bit."""
+        if (isinstance(right_op, asm_ast.Imm) and right_op.value == 0
+                and not isinstance(left_op, asm_ast.Imm)
+                and isinstance(cond, (asm_ast.MI, asm_ast.PL))):
+            return self._translate_sign_test(
+                left_op, dst_op, size, isinstance(cond, asm_ast.PL),
+                dst_size,
+            )
         novf_label = self.make_label("cmp_novf")
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
@@ -3999,6 +4012,35 @@ class Translator:
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
         ])
+        self._store_compare_result(out, dst_op, dst_size)
+        return out
+
+    def _translate_sign_test(
+        self,
+        src_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+        non_negative: bool,
+        dst_size: int,
+    ) -> list[asm_ast.Type_instruction]:
+        """`src < 0` (or `src >= 0` when `non_negative`) for a signed
+        `src`, as a 0 or 1 in `dst`. The answer is bit 7 of the high
+        byte, which `ASL` moves into C and `ROL` into bit 0 of a zero:
+
+            LDA src+N-1; ASL; LDA #0; ROL [; EOR #1]; STA dst
+
+        The subtract and the overflow correction of
+        `_translate_signed_ordering` take 13 bytes or more."""
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_byte_at(src_op, size - 1), dst=_REG_A),
+            asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.RotateLeft(dst=_REG_A),
+        ]
+        if non_negative:
+            out.append(asm_ast.Xor(
+                src1=_REG_A, src2=asm_ast.Imm(value=1), dst=_REG_A,
+            ))
         self._store_compare_result(out, dst_op, dst_size)
         return out
 

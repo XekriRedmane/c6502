@@ -11,9 +11,9 @@ token_idx	EQU	$0E
 parse	EQU	$0F
 text	EQU	$11
 props	EQU	$13
-sign_bit	EQU	$15
-remainder	EQU	$16
-attr_ptr	EQU	$18
+remainder	EQU	$15
+attr_ptr	EQU	$17
+sign_bit	EQU	$19
 __local_print_status_line__1	EQU	$1A
 __local_return_value__0	EQU	$1A
 __local_print_status_line__2	EQU	$1B
@@ -326,7 +326,7 @@ COUT1	EQU	$FDF0
 ; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__condition indirect=false in_cycle=false param_regs=A
 ; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false changes=__zpabi_branch_to_offset__offset_1
 ; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
-; def check_sign params=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1,__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 locals= indirect=false in_cycle=false changes=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1
+; def check_sign params=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1,__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 locals= indirect=false in_cycle=false changes=__zpabi_check_sign__a_0
 ; def copy_data_from_buff params=__zpabi_copy_data_from_buff__dest_0,__zpabi_copy_data_from_buff__dest_1,__zpabi_copy_data_from_buff__x,__zpabi_copy_data_from_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X
@@ -773,9 +773,9 @@ COUT1	EQU	$FDF0
 ; zp parse size=2 at=$0F def=true init=$00,$00
 ; zp text size=2 at=$11 def=true init=$00,$00
 ; zp props size=2 at=$13 def=true init=$00,$00
-; zp sign_bit size=1 at=$15 def=true init=$00
-; zp remainder size=2 at=$16 def=true init=$00,$00
-; zp attr_ptr size=2 at=$18 def=true init=$00,$00
+; zp remainder size=2 at=$15 def=true init=$00,$00
+; zp attr_ptr size=2 at=$17 def=true init=$00,$00
+; zp sign_bit size=1 at=$19 def=true init=$00
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -3942,33 +3942,23 @@ divu16:
 check_sign:
    SUBROUTINE
 
-   LDA   #$00
-   STA   sign_bit
    LDA   __zpabi_check_sign__a_1
-   BPL   .if_end@2
-   INC   sign_bit
+   EOR   __zpabi_check_sign__b_1
+   STA   sign_bit
+   BPL   .check_sign@asm_ssa_split@0
    SEC
    LDA   #$00
    SBC   __zpabi_check_sign__a_0
    STA   __zpabi_check_sign__a_0
    LDA   #$00
    SBC   __zpabi_check_sign__a_1
-   STA   __zpabi_check_sign__a_1
+   TAX
 .if_end@2:
-   LDA   __zpabi_check_sign__b_1
-   BPL   .if_end@3
-   INC   sign_bit
-   SEC
-   LDA   #$00
-   SBC   __zpabi_check_sign__a_0
-   STA   __zpabi_check_sign__a_0
-   LDA   #$00
-   SBC   __zpabi_check_sign__a_1
-   STA   __zpabi_check_sign__a_1
-.if_end@3:
-   LDX   __zpabi_check_sign__a_1
    LDA   __zpabi_check_sign__a_0
    RTS
+.check_sign@asm_ssa_split@0:
+   LDX   __zpabi_check_sign__a_1
+   JMP   .if_end@2
 
 instr_mul:
    SUBROUTINE
@@ -3985,25 +3975,25 @@ instr_mul:
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
    LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@6
+   BNE   .if_else@5
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
-   BNE   .if_else@6
+   BNE   .if_else@5
    ASL   __zpabi_store_with_sign__n_0
    ROL   __zpabi_store_with_sign__n_1
-   JMP   .if_end@5
-.if_else@6:
+   JMP   .if_end@4
+.if_else@5:
    LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@8
+   BNE   .if_else@7
    LDA   __zpabi_check_sign__b_0
    CMP   #$04
-   BNE   .if_else@8
+   BNE   .if_else@7
    ASL   __zpabi_store_with_sign__n_0
    ROL   __zpabi_store_with_sign__n_1
    ASL   __zpabi_store_with_sign__n_0
    ROL   __zpabi_store_with_sign__n_1
-   JMP   .if_end@7
-.if_else@8:
+   JMP   .if_end@6
+.if_else@7:
    LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_mulu16__a_0
    STX   __zpabi_mulu16__a_1
@@ -4014,28 +4004,28 @@ instr_mul:
    JSR   mulu16
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
-.if_end@7:
-.if_end@5:
+.if_end@6:
+.if_end@4:
 
 store_with_sign:
    SUBROUTINE
 
    LDA   sign_bit
-   LSR
-   BCC   .store_with_sign@asm_ssa_split@0
+   BPL   .store_with_sign@asm_ssa_split@0
+   SEC
    LDA   #$00
    SBC   __zpabi_store_with_sign__n_0
    STA   __zpabi_store_with_sign__n_0
    LDA   #$00
    SBC   __zpabi_store_with_sign__n_1
-.if_end@4:
+.if_end@3:
    STA   __zpabi_store_result__value_1
    LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_store_result__value_0
    JMP   store_result
 .store_with_sign@asm_ssa_split@0:
    LDA   __zpabi_store_with_sign__n_1
-   JMP   .if_end@4
+   JMP   .if_end@3
 
 instr_div:
    SUBROUTINE
@@ -4052,25 +4042,25 @@ instr_div:
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
    LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@10
+   BNE   .if_else@9
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
-   BNE   .if_else@10
+   BNE   .if_else@9
    LSR   __zpabi_store_with_sign__n_1
    ROR   __zpabi_store_with_sign__n_0
-   JMP   .if_end@9
-.if_else@10:
+   JMP   .if_end@8
+.if_else@9:
    LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@12
+   BNE   .if_else@11
    LDA   __zpabi_check_sign__b_0
    CMP   #$04
-   BNE   .if_else@12
+   BNE   .if_else@11
    LSR   __zpabi_store_with_sign__n_1
    ROR   __zpabi_store_with_sign__n_0
    LSR   __zpabi_store_with_sign__n_1
    ROR   __zpabi_store_with_sign__n_0
-   JMP   .if_end@11
-.if_else@12:
+   JMP   .if_end@10
+.if_else@11:
    LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_divu16__dividend_0
    STX   __zpabi_divu16__dividend_1
@@ -4081,8 +4071,8 @@ instr_div:
    JSR   divu16
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
-.if_end@11:
-.if_end@9:
+.if_end@10:
+.if_end@8:
    JMP   store_with_sign
 
 instr_mod:
@@ -4138,7 +4128,7 @@ print_number:
    SUBROUTINE
 
    LDA   __zpabi_print_number__n_1
-   BPL   .if_end@13
+   BPL   .if_end@12
    LDA   #$2D
    JSR   buffer_char
    SEC
@@ -4148,7 +4138,7 @@ print_number:
    LDA   #$00
    SBC   __zpabi_print_number__n_1
    STA   __zpabi_print_number__n_1
-.if_end@13:
+.if_end@12:
    LDA   #$00
    STA   __local_print_number__count
    JMP   .loop@2_continue
@@ -4173,10 +4163,10 @@ print_number:
    ORA   __zpabi_print_number__n_1
    BNE   .print_number@rot@2
    LDA   __local_print_number__count
-   BNE   .if_end@14
+   BNE   .if_end@13
    LDA   #$30
    JMP   buffer_char
-.if_end@14:
+.if_end@13:
 .loop@3_start:
    DEC   __local_print_number__count
    LDY   __local_print_number__count
@@ -5417,11 +5407,11 @@ __zp_init:
    STA   text+1
    STA   props
    STA   props+1
-   STA   sign_bit
    STA   remainder
    STA   remainder+1
    STA   attr_ptr
    STA   attr_ptr+1
+   STA   sign_bit
    RTS
 __text_rest_end:
 __text_rest_load	EQU	__text_rest_start

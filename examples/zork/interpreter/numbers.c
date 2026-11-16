@@ -12,10 +12,14 @@
     SCRATCH1, counting the negative ones in SIGN_BIT. But its helper
     flip_sign negates SCRATCH2 whichever operand it checked, so a
     negative second operand negates the first again and keeps its own
-    sign. A product is still right, since a product's low 16 bits
-    don't depend on whether the operands are read as signed. A
-    quotient isn't: 7 / -2 divides -7 by -2 as unsigned numbers and
-    gives 0. mod, which sets no sign, gives the remainder of the
+    sign. Since negating a number twice gives it back, the first
+    operand ends up negated exactly when the operands' signs differ,
+    and SIGN_BIT's bit 0 is set exactly then too. So check_sign here
+    takes bit 7 of the operands' high bytes XORed, and negates the
+    first operand when it's set. A product is still right, since a
+    product's low 16 bits don't depend on whether the operands are
+    read as signed. A quotient by a negative divisor isn't (see
+    instr_div). mod, which sets no sign, gives the remainder of the
     magnitudes for a negative first operand: -7 % 2 is 1.
 
     Departures from the original:
@@ -26,6 +30,9 @@
     - mulu16 computes only the product's low 16 bits, which is all
       that's used, and stops when no bits of the multiplier are left.
       The original also computes the high 16 bits, in SCRATCH1.
+    - sign_bit holds the XOR of the operands' high bytes, whose bit 7
+      is the sign of a product or quotient, where SIGN_BIT counts the
+      negative operands and set_sign tests the count's bit 0.
     - print_number keeps its digits in a local array where the
       original pushes them on the 6502's stack.
     - get_random rotates RNDH left through the carry, which is always
@@ -207,9 +214,9 @@
 */
 #include "zork.h"
 
-/* How many of mul's, div's, or mod's operands check_sign found
- * negative. */
-static uint8_t sign_bit;
+/* Negative when exactly one of mul's, div's, or mod's operands is
+ * negative: the XOR of their high bytes, from check_sign. */
+static int8_t sign_bit;
 /* The remainder of the last divu16. */
 static uint16_t remainder;
 
@@ -248,25 +255,19 @@ static uint16_t divu16(uint16_t dividend, uint16_t divisor) {
     return quotient;
 }
 
-/* Returns `a` with its sign taken off, counting the negative operands
- * in sign_bit, with the original's quirk: a negative `b` negates `a`
- * again, and stays negative. */
+/* Returns `a` negated when the signs of `a` and `b` differ, and sets
+ * sign_bit. That's the original's quirk: it negates `a` once for each
+ * negative operand, and leaves `b` alone. */
 static uint16_t check_sign(uint16_t a, uint16_t b) {
-    sign_bit = 0;
-    if ((int16_t)a < 0) {
-        sign_bit++;
+    sign_bit = (int8_t)((a ^ b) >> 8);
+    if (sign_bit < 0)
         a = -a;
-    }
-    if ((int16_t)b < 0) {
-        sign_bit++;
-        a = -a;
-    }
     return a;
 }
 
-/* Stores `n`, negated if an odd number of operands were negative. */
+/* Stores `n`, negated if exactly one operand was negative. */
 static void store_with_sign(uint16_t n) {
-    if (sign_bit & 0x01)
+    if (sign_bit < 0)
         n = -n;
     store_result(n);
 }
@@ -284,6 +285,26 @@ void instr_mul(void) {
     store_with_sign(product);
 }
 
+/* Stores OPERAND0 / OPERAND1. The quotient is signed and rounded toward
+ * zero, as C's is, when the divisor is positive. A negative divisor
+ * gives a wrong quotient, a bug in the original that this keeps, so
+ * that the interpreter computes what Zork's does.
+ *
+ * Zork's flip_sign gets only the high byte of the operand it checks,
+ * and when that's negative it jumps to negate, which always negates
+ * SCRATCH2, the dividend. So a negative divisor is never made
+ * positive, and it negates the dividend a second time. divu16 then
+ * divides as unsigned numbers by a divisor of $8000 or more, which
+ * gives a quotient of 0 or 1, and set_sign (store_with_sign here)
+ * gives that the sign. This is how 7 / -2 goes.
+ *
+ *     check_sign       a = -7 ($FFF9), b = -2 ($FFFE), sign_bit negative
+ *     divu16           $FFF9 / $FFFE = 0, unsigned
+ *     store_with_sign  -0 = 0, where C's 7 / -2 is -3
+ *
+ * -100 / -7 gives 0 the same way, where C gives 14, and 100 / -1
+ * gives 0, where C gives -100. Negating `b` in check_sign when it's
+ * negative would fix the quotient. */
 void instr_div(void) {
     uint16_t b = OPERANDS[1];
     uint16_t a = check_sign(OPERANDS[0], b);

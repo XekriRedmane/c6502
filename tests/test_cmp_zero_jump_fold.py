@@ -141,6 +141,39 @@ class TestRewriteSenseTable(unittest.TestCase):
 class TestRewriteGuards(unittest.TestCase):
     """Cases that should NOT be rewritten."""
 
+    def test_static_cond_not_folded(self):
+        # Another function can read a static `cond`, so its one use
+        # here doesn't make the store dead.
+        from passes.type_checking import StaticAttr, Initial
+        symbols = SymbolTable()
+        symbols["g"] = Symbol(
+            type=c99_ast.Int(),
+            attrs=StaticAttr(initial_value=Initial(0), is_global=True),
+        )
+        symbols["%x"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        fn = _fn(
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%x"), src2=_const_int(0), dst=_var("g"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("g"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        self.assertEqual(out.instructions, fn.instructions)
+
+    def test_address_taken_cond_not_folded(self):
+        # A Load through the pointer can read `%c`.
+        fn = _fn(
+            tac_ast.GetAddress(operand=_var("%c"), dst=_var("%p")),
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%x"), src2=_const_int(0), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn)
+        self.assertEqual(out.instructions, fn.instructions)
+
     def test_non_zero_constant_folds_to_jumpifcmp(self):
         # `Binary(Equal, x, 5, %c); JumpIfFalse(%c, t)` doesn't have
         # the optimal `LDA x; BNE/BEQ` shape (need a CMP), but folds
@@ -284,6 +317,30 @@ class TestEndToEnd(unittest.TestCase):
         no_opt = run_c_program(src).return_int_signed()
         opt = build_sim(src, optimize=True).run().return_int_signed()
         return no_opt, opt
+
+    def test_static_cond_kept(self):
+        # The compare's result goes to a static that another function
+        # reads. Its one use in `check` is the jump, but the store
+        # must stay. The fold had dropped it, so `apply` never
+        # negated and returned -7.
+        src = (
+            "#include <stdint.h>\n"
+            "#include <stdbool.h>\n"
+            "static bool neg;\n"
+            "uint16_t r;\n"
+            "static uint16_t check(uint16_t a, uint16_t b) {\n"
+            "    neg = (int16_t)(a ^ b) < 0;\n"
+            "    if (neg) a = -a;\n"
+            "    return a;\n"
+            "}\n"
+            "static void apply(uint16_t n) {\n"
+            "    if (neg) n = -n;\n"
+            "    r = n;\n"
+            "}\n"
+            "int main(void) { apply(check(7, 0xFFFE)); return (int)r; }\n"
+        )
+        a, b = self._both_paths(src)
+        self.assertEqual((a, b), (7, 7))
 
     def test_uint8_eq_zero(self):
         src = (

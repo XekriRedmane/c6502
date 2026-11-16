@@ -441,7 +441,9 @@ Components:
   the helpers `def_of(var)` and `is_single_use(var)`. The `build`
   callable reads these instead of computing its own.
 - **Guard combinators** — `single_use(capture)` (the producer-dst-dead
-  gate, ~6 passes used to hand-roll it), `have_symbols()` (skip when
+  gate, ~6 passes used to hand-roll it; it also refuses a static or
+  an address-taken name, which can be read without a use in the
+  function), `have_symbols()` (skip when
   no symbol table). Guards are the *declarative* part; `build` stays a
   callable so computational rewrites (constant folding, width
   narrowing, def-chain walks) keep their real Python logic rather than

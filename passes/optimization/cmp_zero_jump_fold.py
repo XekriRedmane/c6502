@@ -62,6 +62,9 @@ compare that a jump tests becomes a `JumpIfCmp` first.
 "Single-use" gating. SSA TAC has single-def for free; the use-count
 of `cond` must be exactly 1 (the JumpIf's read). If it had additional
 uses (e.g. also returned), removing the Binary would break those.
+`cond` also can't be a static or a local whose address is taken,
+since other functions or a load through a pointer read those without
+a use in this function (`framework.rules.single_use`).
 The pass runs inside the SSA-bracketed fixed-point loop, so the SSA
 invariant holds.
 

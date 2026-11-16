@@ -259,7 +259,7 @@ Zork's 190. The separator tests, `is_dict_separator`,
 
 ## Make Zork's numbers.c smaller
 
-`examples/zork/interpreter/numbers.c` is 528 bytes, where Zork's code
+`examples/zork/interpreter/numbers.c` is 509 bytes, where Zork's code
 for it is 436. `divu16` (64 against 78) and `mulu16` (42 against 69)
 are already smaller. What's left:
 

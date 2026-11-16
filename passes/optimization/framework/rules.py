@@ -78,6 +78,9 @@ class RuleEnv:
     use_count: Counter[str]
     def_idx: dict[str, int]
     instructions: list
+    # The names a use count doesn't cover (`_observable_names`),
+    # filled in on first need.
+    observable: set[str] | None = None
 
     def def_of(self, var: object):
         """The instruction defining ``var``'s name, or None."""
@@ -204,9 +207,48 @@ def _def_index(instrs) -> dict[str, int]:
 
 def single_use(capture: str) -> Guard:
     """Allow the rule only if the Var bound at ``capture`` is used
-    exactly once across the function. The standard fold gate: the
-    producer's dst is dead once its sole consumer is folded away."""
-    return lambda m, env, ctx: env.is_single_use(m.bindings.get(capture))
+    exactly once across the function, and nothing outside the
+    function's instructions can read it. The standard fold gate: the
+    producer's dst is dead once its sole consumer is folded away.
+
+    The use count misses two kinds of reads. Other functions read a
+    static, and a `Load` through a pointer reads a local whose address
+    is taken. `neg = x < 0; if (neg) ...` with a static `neg` read by
+    another function had become a compare and jump with no store to
+    `neg`."""
+    def guard(m, env, ctx):
+        var = m.bindings.get(capture)
+        if not env.is_single_use(var):
+            return False
+        if ctx.ssa_dsts is not None and var.name in ctx.ssa_dsts:
+            return True
+        return var.name not in _observable_names(env, ctx)
+    return guard
+
+
+def _observable_names(env: RuleEnv, ctx: PassContext) -> set[str]:
+    """The names in ``env.instructions`` that can be read without a
+    Var use there: the statics, and every name whose address is taken.
+    Computed once per sweep. Without a symbol table, which only the
+    synthetic unit tests run with, the statics can't be told apart and
+    only the taken addresses count."""
+    if env.observable is None:
+        from passes.type_checking import StaticAttr
+        from passes.optimization.var_visit import uses_in
+        names: set[str] = set()
+        for ins in env.instructions:
+            if isinstance(ins, tac_ast.GetAddress) and isinstance(
+                ins.operand, tac_ast.Var,
+            ):
+                names.add(ins.operand.name)
+            if ctx.symbols is None:
+                continue
+            for v in [*uses_in(ins), *defs_in(ins)]:
+                sym = ctx.symbols.get(v.name)
+                if sym is not None and isinstance(sym.attrs, StaticAttr):
+                    names.add(v.name)
+        env.observable = names
+    return env.observable
 
 
 def have_symbols() -> Guard:

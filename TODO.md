@@ -245,8 +245,8 @@ Zork's 190. The separator tests, `is_dict_separator`,
 
 ## Make Zork's numbers.c smaller
 
-`examples/zork/interpreter/numbers.c` is 489 bytes, where Zork's code
-for it is 436. `divu16` (64 against 78) and `mulu16` (42 against 69)
+`examples/zork/interpreter/numbers.c` is 487 bytes, where Zork's code
+for it is 436. `divu16` (62 against 78) and `mulu16` (42 against 69)
 are already smaller. What's left:
 
 - `instr_mul` is 72 bytes against 53 and `instr_div` 75 against 50.
@@ -282,10 +282,6 @@ are already smaller. What's left:
   result of `check_sign` and its product share is the right
   allocation: the `* 2` and `* 4` paths shift it in place and pass it
   on, so a local of its own for the product would need a copy there.
-- `kills_a` and `a_dead_at` take `Mov(Imm, mem)` to leave A alone,
-  where it's emitted as `LDA #imm; STA mem` and `redundant_load` takes
-  it that way. So `divu16` keeps a dead `LDA dividend_0` at its
-  entry.
 - `print_number` is 92 bytes against 65. Zork pushes the digits on
   the 6502's stack.
 

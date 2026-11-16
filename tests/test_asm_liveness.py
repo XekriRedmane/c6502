@@ -5,7 +5,9 @@ from __future__ import annotations
 import unittest
 
 import asm_ast
-from passes.asm_liveness import all_flags_dead_at, flags_dead_at, sets_flags
+from passes.asm_liveness import (
+    a_dead_at, all_flags_dead_at, flags_dead_at, kills_a, sets_flags,
+)
 
 
 _A = asm_ast.Reg(reg=asm_ast.A())
@@ -80,6 +82,43 @@ class TestFlagsDeadAt(unittest.TestCase):
         instrs = [asm_ast.Label(name=".l"), asm_ast.Return(save_a=True)]
         self.assertTrue(flags_dead_at(instrs, 0))
         self.assertTrue(all_flags_dead_at(instrs, 0))
+
+
+class TestKillsA(unittest.TestCase):
+    """A move `asm_emit` writes through A kills A."""
+
+    def test_constant_into_memory(self):
+        # `LDA #$00; STA m`.
+        d = asm_ast.Data(name="m", offset=0)
+        self.assertTrue(kills_a(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=d)))
+        self.assertTrue(kills_a(asm_ast.Mov(
+            src=asm_ast.Data(name="n", offset=0), dst=d,
+        )))
+
+    def test_between_x_and_y(self):
+        x, y = asm_ast.Reg(reg=asm_ast.X()), asm_ast.Reg(reg=asm_ast.Y())
+        self.assertTrue(kills_a(asm_ast.Mov(src=y, dst=x)))
+        self.assertTrue(kills_a(asm_ast.Mov(src=x, dst=y)))
+
+    def test_moves_that_leave_a(self):
+        d = asm_ast.Data(name="m", offset=0)
+        x = asm_ast.Reg(reg=asm_ast.X())
+        self.assertFalse(kills_a(asm_ast.Mov(src=x, dst=d)))      # STX
+        self.assertFalse(kills_a(asm_ast.Mov(src=_A, dst=d)))     # STA
+        self.assertFalse(kills_a(asm_ast.Mov(src=d, dst=d)))      # nothing
+        self.assertFalse(kills_a(asm_ast.Mov(src=d, dst=x)))      # LDX
+
+    def test_load_before_a_constant_store_is_dead(self):
+        # divu16's entry: the first load is overwritten by the `LDA
+        # #$00` of the constant store before anything reads A.
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Data(name="d", offset=0), dst=_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=0),
+                        dst=asm_ast.Data(name="p", offset=0)),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="p", offset=1)),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertTrue(a_dead_at(instrs, 1))
 
 
 class TestSetsFlags(unittest.TestCase):

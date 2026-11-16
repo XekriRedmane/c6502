@@ -329,7 +329,6 @@ mulu16:
 divu16:
    SUBROUTINE
 
-   LDA   __zpabi_divu16__dividend_0
    LDX   __zpabi_divu16__dividend_1
    LDA   #$00
    STA   __local_divu16__partial_0

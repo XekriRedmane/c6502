@@ -263,6 +263,16 @@ def kills_a(instr: asm_ast.Type_instruction) -> bool:
     if isinstance(instr, asm_ast.Mov):
         if is_reg_a(instr.dst) and not is_reg_a(instr.src):
             return True
+        # `asm_emit` writes a move from memory or a constant into
+        # memory as `LDA src; STA dst`, and a move between X and Y as
+        # `TXA; TAY` or `TYA; TAX`. A move of a byte to itself emits
+        # nothing.
+        src_reg = isinstance(instr.src, asm_ast.Reg)
+        dst_reg = isinstance(instr.dst, asm_ast.Reg)
+        if instr.src != instr.dst and src_reg == dst_reg:
+            return not src_reg or not (
+                is_reg_a(instr.src) or is_reg_a(instr.dst)
+            )
     if isinstance(instr, asm_ast.Pop):
         if is_reg_a(instr.dst):
             return True

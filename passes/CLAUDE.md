@@ -38,7 +38,10 @@ this directory:
   says whether a `Call` leaves X or Y alone (its `preserves` list,
   from `preserves_x` / `preserves_y` on a routine with an address);
   `kills_x` / `kills_y` use it, and so does every pass that keeps a
-  value in X or Y across a call.
+  value in X or Y across a call. `kills_a` counts every move
+  `asm_emit` writes through A: a load into A, a move from memory or a
+  constant into memory (`LDA src; STA dst`), and a move between X and
+  Y (`TXA; TAY`).
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
 - `dead_pha_pla.py` — `apply_dead_pha_pla`. Drops `Push(Reg(A)) /
   body / Pop(Reg(A))` triples when the body preserves A and the

@@ -232,5 +232,3 @@ fuzz_out/
 *.o
 a.out
 examples/zork/interpreter/interpreter
-examples/zork/instr_save/instr_save
-examples/zork/print_zstring/print_zstring

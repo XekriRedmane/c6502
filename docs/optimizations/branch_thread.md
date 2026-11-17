@@ -17,7 +17,7 @@ took the first branch then skips the second, which is 2 cycles.
 
 ## Example
 
-From `do_rwts_on_sector` in `examples/zork/instr_save/disk.c`, after
+From `do_rwts_on_sector` in `examples/zork/interpreter/disk.c`, after
 [carry INC](carry_inc.md) has rewritten the borrow out of the high
 byte, which is in X:
 

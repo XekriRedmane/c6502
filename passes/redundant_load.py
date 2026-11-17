@@ -701,7 +701,7 @@ def _store_const_via_index(
     STY M` (`LDX #k; STX M`), which leaves A alone, and how many
     instructions it replaces. Otherwise None.
 
-    `get_alphabet` in examples/zork/print_zstring/zstring.c returns
+    `get_alphabet` in examples/zork/interpreter/zstring.c returns
     the alphabet it loaded after `SHIFT_ALPHABET = 0xFF`, which then
     needs no copy of it in a local: `LDY #$FF; STY SHIFT_ALPHABET`, as
     in Zork's code. The two forms are the same size and speed, so

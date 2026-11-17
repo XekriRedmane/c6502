@@ -104,8 +104,9 @@ compiles to
 ```
 
 and the function no longer saves anything when it starts or ends. In
-`examples/zork/print_zstring/zstring.c` this makes `print_zstring` 180
-bytes smaller, and faster on every call.
+Zork's `print_zstring` (examples/zork/interpreter/zstring.c) this made
+the function 180 bytes smaller, measured in the example it came from,
+and faster on every call.
 
 ### Where it goes
 
@@ -135,7 +136,7 @@ stack, where each call has its own copy. They aren't pushed.
 
 The calls have to be in one source file. The linker accepts
 such a cycle, which the link metadata marks call by call, and reports
-any other recursion as an error. examples/zork/print_zstring links
+any other recursion as an error. examples/zork/interpreter links
 `print_zstring` this way.
 
 ### Cautions

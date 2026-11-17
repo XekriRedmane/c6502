@@ -10,15 +10,16 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 1% larger than the
+(see "Compared with Zork's own code"). It is 17 bytes larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
-`../print_zstring` and `../instr_save` translated pieces of the same
-code. This example starts from their `print_zstring`, page cache, line
-buffer, prompts, and `instr_save`, and passes values as arguments
-where those pieces had to keep Zork's `SCRATCH1` and `SCRATCH2`,
-since here no assembly code calls them. The disk routines are the
+Two earlier examples, since removed, translated pieces of the same
+code, Zork's z-string printer and its `save` instruction. This example
+started from their `print_zstring`, page cache, line buffer, prompts,
+and `instr_save`, and passes values as arguments where those pieces
+had to keep Zork's `SCRATCH1` and `SCRATCH2`, since here no assembly
+code calls them. The disk routines are the
 exception. They read the sector and the buffer from two globals,
 `disk_sector` and `disk_buffer`, as Zork's read them from `SCRATCH1`
 and `SCRATCH2`, so that `save` and `restore` step the sector inside
@@ -200,12 +201,12 @@ calls a handler is the handler's address in the table, as in Zork's.
 against 190, and `mulu16` 41 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** These counts were measured before the compiler changes
-listed below from the 1-byte right shift on, which haven't been timed
-yet, since the sessions need the game's disk image. The first session
-takes 35,373,347 cycles against Zork's
-38,490,260, 8.1% fewer, and the second 6,888,843 against 7,434,428,
-7.3% fewer. Most of the difference is the jump tables, which reach
+**Speed.** The first session takes 35,510,387 cycles against Zork's
+38,490,260, 7.7% fewer, and the second 6,913,737 against 7,434,428,
+7.0% fewer. Before the compiler changes listed below from the 1-byte
+right shift on, the two took 35,373,347 and 6,888,843. Of those
+changes, the shared tails and the outlined runs add a `JMP`, or a
+`JSR` and an `RTS`, where they share code. Most of the difference is the jump tables, which reach
 each instruction's case in the same few cycles where the compare
 chains had passed one compare after another. `print_number` divides
 0 by 10 once, where Zork's prints it without dividing. The stand-ins

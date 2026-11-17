@@ -68,7 +68,7 @@ The final output is `JSR sample; CLC; ADC total; STA total; RTS`.
   `abs,X` / `abs,Y` operand, optionally followed by `CLC` or `SEC`.
 - Then comes an `ADC`, `AND`, or `ORA` of `temp` into A. A store of
   the result back to `mem`, as `mem += v` makes, may follow, but
-  needn't: in `print_zstring` (examples/zork/print_zstring/zstring.c),
+  needn't: in `print_zstring` (examples/zork/interpreter/zstring.c),
   `get_alphabet() + z` was `STA t; LDA z; CLC; ADC t` and is `CLC;
   ADC z`.
 

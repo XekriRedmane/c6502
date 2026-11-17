@@ -25,7 +25,7 @@ BMI` or `BPL`).
 
 ## Example
 
-From `do_rwts_on_sector` in `examples/zork/instr_save/disk.c`:
+From `do_rwts_on_sector` in `examples/zork/interpreter/disk.c`:
 
 ```c
 uint16_t sector = SCRATCH1;

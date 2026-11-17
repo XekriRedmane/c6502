@@ -75,7 +75,7 @@ The pass has five more rewrites that use the same lists.
   STY M` (or `LDX` / `STX`) when A holds a value from memory that's
   loaded again after the store, `k` isn't read afterwards, and Y (or
   X) is dead. The reload then goes in the second phase. `get_alphabet`
-  (examples/zork/print_zstring/zstring.c) returns the alphabet it
+  (examples/zork/interpreter/zstring.c) returns the alphabet it
   loaded after `SHIFT_ALPHABET = 0xFF`, and became Zork's own `LDY
   #$FF; STY SHIFT_ALPHABET; RTS` with no copy in a local.
 

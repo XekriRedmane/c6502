@@ -100,7 +100,7 @@ C still set. Otherwise `CPX #1` sets C exactly when X isn't zero,
 which is when the decrement borrows nothing, and `DEX` leaves C
 alone. An `INX` that wraps X to zero carries out, and any other
 leaves C clear. In `do_rwts_on_sector`
-(`examples/zork/instr_save/disk.c`) that's the `BCS; CPX #$01; DEX`
+(`examples/zork/interpreter/disk.c`) that's the `BCS; CPX #$01; DEX`
 in front of the loop's `BCC`, which a pass with no borrow skips with
 one taken branch, as Zork's `BCS .inc_track` does. A, N, Z, and V
 must still be dead.

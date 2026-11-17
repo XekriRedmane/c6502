@@ -17,7 +17,7 @@ instruction after it (a label is added there when there isn't one).
 Labels between L and the second branch don't change the flags.
 
 That saves a branch, 2 cycles, on that path. `carry_inc` leaves the
-shape in `do_rwts_on_sector` (`examples/zork/instr_save/disk.c`):
+shape in `do_rwts_on_sector` (`examples/zork/interpreter/disk.c`):
 
     BCS   .carry_inc@0       ; no borrow out of the low byte
     CPX   #$01

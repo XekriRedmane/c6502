@@ -385,7 +385,8 @@ void COUT1(register uint8_t c);
 ```
 
 Here is Zork's loop that prints its output buffer, from
-`examples/zork_dump_buffer.c`. It keeps the index in X.
+`dump_buffer_to_screen` in `examples/zork/interpreter/output.c`. It
+keeps the index in X.
 
 ```c
 for (uint8_t x = 0; x != BUFF_END; x++)

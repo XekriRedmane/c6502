@@ -13,50 +13,43 @@ one, it's loaded again, 2 bytes and 2 cycles each time.
 
 ## Example
 
-`main` in [examples/zork_match_dictionary_word.c](../../examples/zork_match_dictionary_word.c)
-fills in a small story's header and dictionary.
+Zork's `main` (examples/zork/interpreter/main.c) sets the printer's
+`CSW` to `$C100` and then clears several of the interpreter's bytes.
 
 ### Before
 
 ```
    LDA   #$00
-   STA   story+8
-   LDA   #$40
-   STA   story+9
-   ...
-   LDA   #$07
-   STA   story+68
+   STA   PRINTER_CSW
+   LDA   #$C1
+   STA   PRINTER_CSW+1
    LDA   #$00
-   STA   story+69
-   LDA   #$14
-   STA   story+70
-   LDA   #$00
-   STA   __local_main__i
+   STA   ZCODE_PAGE_VALID
+   STA   ZCODE_PAGE_VALID2
+   STA   PAGE_TABLE_INDEX
+   STA   PAGE_TABLE_INDEX2
+   STA   BUFF_END
 ```
 
 ### After
 
 ```
-   LDA   #$40
-   STA   story+9
-   ...
-   LDA   #$07
-   STA   story+68
-   LDA   #$14
-   STA   story+70
+   LDA   #$C1
+   STA   PRINTER_CSW+1
    LDA   #$00
-   STA   story+8
-   STA   story+69
-   STA   __local_main__i
+   STA   PRINTER_CSW
+   STA   ZCODE_PAGE_VALID
+   STA   ZCODE_PAGE_VALID2
+   STA   PAGE_TABLE_INDEX
+   STA   PAGE_TABLE_INDEX2
+   STA   BUFF_END
 ```
 
-These are two complete compiles, before and after the pass was added,
-and `...` marks the lines they share. The three stores of 0 share one
-load. In Zork's interpreter (examples/zork/interpreter), `main` loaded
-0 again after setting the printer's `CSW` to `$C100`, and loaded
-`#<page_tables` a second time for the third of the page cache's four
-table pointers, which starts 256 bytes after the first, 4 bytes in
-all.
+These are two compiles of the unit, with the pass turned off and on.
+The stores of 0 share one load. Further on, with the pass off, `main`
+loads `#<page_tables` a second time for the third of the page cache's
+four table pointers, which starts 256 bytes after the first. The pass
+takes 4 bytes off `main` in all.
 
 ## When it applies
 

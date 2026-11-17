@@ -93,7 +93,7 @@ such as a `JSR`, the `LDA M` is there for its flags. It becomes `ORA
 #$00`, which sets N and Z from A, equal to M, leaves C and V alone
 like the load, and takes 2 cycles where the load takes 3 or 4. When
 nothing reads the flags it goes with no `ORA`. In `print_zstring`
-(examples/zork/print_zstring/zstring.c), `JSR get_alphabet; STA t;
+(examples/zork/interpreter/zstring.c), `JSR get_alphabet; STA t;
 LDA t; BNE` became `JSR get_alphabet; ORA #$00; BNE`, as in Zork's
 code, once `asm_dead_store` dropped the store.
 

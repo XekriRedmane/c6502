@@ -11,7 +11,12 @@ loops, register allocation), read
 Most listings were captured from a compile by wrapping the one pass
 the file describes and printing its input and output. The rest
 compare two complete compiles, or come from the pass's unit test, and
-their files say so. Lines the pass doesn't touch are sometimes left
+their files say so. A listing from one of Zork's routines may have been
+captured from an example that `examples/zork/interpreter` grew out of
+(`examples/zork/print_zstring`, `examples/zork/instr_save`, or a
+single-routine `examples/zork_<routine>.c`), which were removed on 16
+Nov 2026. The file names the interpreter's copy of the routine, which
+can compile a little differently. Lines the pass doesn't touch are sometimes left
 out, and `...` marks the place. Asm after pseudoregister replacement is shown as the
 6502 text the compiler emits. TAC, and asm from before pseudoregister
 replacement, are shown one IR instruction per line, as the

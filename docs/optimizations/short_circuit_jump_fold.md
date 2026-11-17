@@ -94,7 +94,7 @@ Otherwise the jumps to `branch` go to a new label
 `Copy`s may sit between `end` and the consumer when they neither
 read nor write `%t`. SSA destruction puts a phi's copies there when
 the consumer skips an assignment: `if (c >= 0x60 && c < 0x80) c -=
-0x20;` in `buffer_char` (examples/zork/print_zstring/output.c) has
+0x20;` in `buffer_char` (examples/zork/interpreter/output.c) has
 `Copy(@0.c, @0.c.2)` between `.and_end` and the test. The copies run
 on every path through the consumer, so they stay on both: in place
 for the path that falls through, and for the chain, in a stub

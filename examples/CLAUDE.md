@@ -26,51 +26,29 @@ HUD strip painting, sprite blitting, audio tone generation, enemy AI
 advancement, hit-entity refresh. Many use `[[c6502::zp_abi]]`
 on the leaf helpers to exercise the call-graph-disjoint ZP allocator.
 
-Examples translated from the Zork I (r15) interpreter, as
-reverse-engineered in https://github.com/XekriRedmane/zorki-r15-reveng,
-are named `zork_<routine>`. Each one quotes the original 6502 code in
-its header comment. `zork_dump_buffer.c` calls the Monitor's `COUT`
-and `COUT1` through `<apple2/monitor_io.h>`, and
-`tests/test_zork_dump_buffer_sim.py` runs it against stand-ins at the
-ROM's addresses.
-
-`zork/instr_save/` is a multi-unit example: Zork's `save` instruction
-and the routines it reaches, in three C files and a shared header,
-linked by a linker script into the addresses the original occupies.
-Its README describes it and compares it with Zork's code, and
-`tests/test_zork_instr_save.py` checks its outputs (each unit's, and
-the listing of the linked executable, `objdump.py -D`, which
-`tests/test_example_outputs.py` doesn't cover)
-and runs it, and Zork's own code when `ZORK_MAIN_BIN` is set, against
-stand-ins for DOS, the Monitor, and the rest of Zork.
-
-`zork/print_zstring/` is another: Zork's z-string printer and
-print_string_literal, with the page cache, the line buffer, and the
-disk routines they reach, in four C files and a shared header. Its
-linker script puts each file at the address of the original routines,
-and print_string_literal, in a section of its own, among Zork's
-instruction handlers. Its README compares it with Zork's code, and
-`tests/test_zork_print_zstring.py` checks its outputs and runs it on
-a small story file, with a transcript, and with a failing disk read,
-comparing it with Zork's own code when `ZORK_MAIN_BIN` is set.
-
-`zork/interpreter/` is all of `output/main.asm`, Zork's whole
+`zork/interpreter/` is all of `output/main.asm` of
+https://github.com/XekriRedmane/zorki-r15-reveng, Zork I's (r15) whole
 interpreter, in eleven C files and a shared header, linked by a linker
 script into a program that runs from `$0800` around DOS's RWTS and
-loads the story after itself. It reuses the two examples above, with
-values passed as arguments where they had to keep Zork's `SCRATCH`
-bytes. Its README compares it with Zork's code, and
-`tests/test_zork_interpreter.py` checks its outputs and, when
-`ZORK_DSK` names the game's disk image, plays two sessions on it and on
-Zork's own interpreter (read from the same image) and compares every
-Monitor and RWTS call. Each `.c` file's header quotes the lines of
-`main.asm` it translates.
+loads the story after itself. Its README compares it with Zork's code,
+and `tests/test_zork_interpreter.py` checks its outputs (each unit's,
+and the listing of the linked executable, `objdump.py -D`, which
+`tests/test_example_outputs.py` doesn't cover) and, when `ZORK_DSK`
+names the game's disk image, `Zork I r15 (4am crack).dsk` from that
+repository, plays two sessions on it and on Zork's own interpreter
+(read from the same image) and compares every Monitor and RWTS call.
+Each `.c` file's header quotes the lines of `main.asm` it translates.
+The interpreter grew out of smaller examples of single routines
+(`zork_<routine>.c`) and of Zork's `save` instruction and z-string
+printer (`zork/instr_save/`, `zork/print_zstring/`), which were removed
+on 16 Nov 2026. Some documents in `docs/optimizations/` show listings
+captured from them.
 
 ## Translating Zork's code
 
-Zork's program counters are 24-bit byte addresses, and the multi-unit
-examples declare them as `uint24_t`, a `struct { uint16_t lo; uint8_t
-hi; }` in each `zork.h`, rather than as the separate bytes
+Zork's program counters are 24-bit byte addresses, and the interpreter
+declares them as `uint24_t`, a `struct { uint16_t lo; uint8_t hi; }`
+in its `zork.h`, rather than as the separate bytes
 `output/main.asm` names. Keep that in mind when translating more of
 Zork, and declare these the same way in a new example, so that units
 agree and code that reads them stays plain C:
@@ -81,7 +59,7 @@ agree and code that reads them stays plain C:
   three bytes (`instr_save`, `instr_restore`), unchanged.
 - `Z_PC2` (`$91`) is in a different order from Zork's. Zork keeps it
   high byte first: `Z_PC2_H` at `$91`, `Z_PC2_HH` at `$92`, and
-  `Z_PC2_L` at `$93`. The examples keep it low byte first like
+  `Z_PC2_L` at `$93`. The interpreter keeps it low byte first like
   `Z_PC`: low at `$91`, high at `$92`, top at `$93`. So:
   - `Z_PC2_L` is `(uint8_t)Z_PC2.lo`,
   - `Z_PC2_H` is `(uint8_t)(Z_PC2.lo >> 8)`,
@@ -98,11 +76,9 @@ agree and code that reads them stays plain C:
   order once its three `EQU`s are changed, but Zork's binary as it is
   doesn't: its `load_address` would write the bytes where the C
   doesn't look for them. `Z_PC2` isn't in a save file.
-  `tests/test_zork_print_zstring.py` compares `Z_PC2` with Zork's as a
-  number, reading each program's bytes in its own order.
 - `TMP_Z_PC` (`$F0`) is copied from `Z_PC` in the same order (`MOVW
   Z_PC, TMP_Z_PC; MOVB Z_PC+2, TMP_Z_PC+2`), so it would be a
-  `uint24_t` with Zork's addresses. The examples only reserve it.
+  `uint24_t` with Zork's addresses. The interpreter only reserves it.
 
 Zork's `INY; STY Z_PC2_L; BEQ` to step the low byte and carry into
 the rest is `Z_PC2.lo++; if ((uint8_t)Z_PC2.lo == 0) { ...; if

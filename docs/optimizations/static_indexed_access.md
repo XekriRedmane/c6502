@@ -49,7 +49,7 @@ constant part is one link-time address, which
 ## Example
 
 From `get_prompted_number_from_user` in
-`examples/zork/instr_save/prompts.c`:
+`examples/zork/interpreter/prompts.c`:
 
 ```c
 cout_string(&prompts[which].answer, 1);

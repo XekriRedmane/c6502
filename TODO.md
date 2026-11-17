@@ -77,14 +77,15 @@ with values live across calls) is the way to check it, because
 every bug found in this area showed up only with a value live
 across a call into a different calling convention.
 
-## Optimizations found by Zork's string printer
+## Optimizations found by Zork's string printer and save instruction
 
-`examples/zork/print_zstring` is 1,042 bytes of code against Zork's
-981, and printing its test string takes 41,567 cycles against Zork's
-39,980 (4.0% more). Roughly in order of payoff:
+These were found in `examples/zork/print_zstring` and
+`examples/zork/instr_save`, which were removed on 16 Nov 2026. The same
+routines are in `examples/zork/interpreter`, whose README compares it
+with Zork's code.
 
 - **Branch layout in an `if` / `else if` chain.** `print_zstring`
-  takes about 3 more cycles per z-character than Zork's, 1,427 in all.
+  (`zstring.c`) took about 3 more cycles per z-character than Zork's.
   `c99_to_tac` lowers each test as a jump past its case, so a letter,
   the common case, takes four branches (`BNE`, `BNE`, `BCS`, `BCS`)
   past the space, abbreviation, and shift cases, where Zork branches
@@ -94,43 +95,18 @@ across a call into a different calling convention.
   case ends `JMP .if_end`, which falls into `JSR buffer_char; JMP
   .loop`. Copying those 6 bytes over the 3-byte `JMP` saves 3 cycles
   a character, as Zork's layout does.
-- **Value ranges across a call.** `get_next_zchar().code` is at most
-  31, so in `print_zstring` `Z_ABBREV_TABLE[i + 1]` with `i = code <<
-  1` could be `INY; LDA (Z_ABBREV_TABLE),Y` where it computes a
-  pointer, and `get_alphabet() + 2 + z` (at most 2 + 2 + 3) needs no
-  second `CLC`. Both need the callee's result range, which `& 0x1F`
-  in `get_next_zchar` gives.
+- **Value ranges across a call.** `get_alphabet() + 2 + z` in
+  `print_zstring` (at most 2 + 2 + 3) needs no second `CLC`, which
+  takes the callee's result range.
 - **A global copied to a local before a loop that doesn't write it.**
-  `find_index_of_page_table` copies `SCRATCH2`'s bytes into locals
-  and compares against those, where Zork reads `SCRATCH2` in the loop
-  (8 bytes, 59 cycles in the test).
-- **`buffer_char`'s word wrap.** The loop that moves the next word to
-  the start of the buffer keeps `++BUFF_LINE_LEN` in a local and
-  computes `BUFF_AREA[BUFF_END++]` through A, where Zork does `INC
-  BUFF_LINE_LEN; LDX BUFF_LINE_LEN` and `LDX BUFF_END; STA
-  BUFF_AREA,X; INC BUFF_END` (6 bytes).
-- **Not yet looked at.** `dump_buffer_to_printer` is 10 bytes longer
-  than Zork's, `set_page_first` 5, and `dump_buffer_with_more` 7.
-
-## Optimizations found by Zork's save instruction
-
-`examples/zork/instr_save` is 626 bytes of code against Zork's 627,
-and both saves take fewer cycles than Zork's (19,386 against 19,561,
-and 12,982 against 13,012). The two write routines are 7 bytes longer
-and `instr_save` 1, while `do_rwts_on_sector`,
-`get_prompted_number_from_user`, and `please_insert_save_diskette` are
-9 shorter. Roughly in order of payoff:
-
-- **Falling into a tail call.** `write_next_sector` ends in `JMP
-  inc_sector_and_write`. Placing a function just before the one it
-  tail-calls would drop the `JMP`, which is how Zork chains these
-  routines.
-- **A callee that leaves its parameter alone.** `instr_save` stores
-  `#$80` into `copy_data_to_buff`'s pointer again before the second
-  call, though `copy_data_to_buff` never writes it.
-  `memory_value_propagation` forgets everything at a `Call`, but a
-  callee's own parameter bytes survive when the callee doesn't change
-  them, which `slot_sharing` already works out.
+  `find_index_of_page_table` (`pages.c`) copied `SCRATCH2`'s bytes
+  into locals and compared against those, where Zork reads `SCRATCH2`
+  in the loop.
+- **`buffer_char`'s word wrap** (`output.c`). The loop that moves the
+  next word to the start of the buffer kept `++BUFF_LINE_LEN` in a
+  local and computed `BUFF_AREA[BUFF_END++]` through A, where Zork
+  does `INC BUFF_LINE_LEN; LDX BUFF_LINE_LEN` and `LDX BUFF_END; STA
+  BUFF_AREA,X; INC BUFF_END`.
 
 ## Volatile structs
 
@@ -151,8 +127,8 @@ Monitor's zero page, and the runtime's block moves around it
 (`passes/runtime_layout.py`). Headers for DOS 3.3, ProDOS, and
 Applesoft would do the same: each declares the zero-page bytes that
 software uses, from its listing, so a program that includes one keeps
-those bytes free. `examples/zork/instr_save/zork.h` declares the bytes
-in `$26`-`$4F` that RWTS uses by hand.
+those bytes free. `examples/zork/interpreter/zork.h` declares the
+bytes that RWTS uses by hand.
 
 ## Rotate loops with tests of more than one branch
 

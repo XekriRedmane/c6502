@@ -121,8 +121,8 @@ __zpabi_refresh__n`, since the `STX` before the call writes `i`
 before anything reads it.
 
 A loop that counts up and tests the counter at the top is promoted
-the same way, with `INC M` becoming `INX`. In
-`examples/zork_dump_buffer.c` the test `LDA M; CMP BUFF_END` becomes
+the same way, with `INC M` becoming `INX`. In `dump_buffer_to_screen`
+(`examples/zork/interpreter/output.c`) the test `LDA M; CMP BUFF_END` becomes
 `CPX BUFF_END`, which is done whenever the `CMP` operand is an
 immediate or a direct memory operand and A is dead after it. Any
 other `LDA M` becomes `TXA`. The call in that loop is to `COUT1`,

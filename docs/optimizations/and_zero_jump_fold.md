@@ -87,7 +87,7 @@ which `tac_to_asm` lowers as a byte move) and tests it with
 `JumpIfMasked`. The operand may be any `int`, `unsigned int`, `long`,
 `unsigned long`, or `long long` type, signed or not, since byte `k`
 is the same either way. `get_next_zchar`'s `(ZCHARS & 0x8000) ? 0xFF
-: 0x00` (examples/zork/print_zstring/zstring.c) went from two ANDs,
+: 0x00` (examples/zork/interpreter/zstring.c) went from two ANDs,
 two stores, and an `ORA` to `LDA ZCHARS+1; BPL`.
 
 ## What it leaves alone

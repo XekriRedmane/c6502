@@ -19,7 +19,7 @@ it unknown. Then:
     fall-through path, the way into a loop, then runs it.
 
 The second is the shape of `do_rwts_on_sector`'s loop
-(`examples/zork/instr_save/disk.c`) once its high byte is in X:
+(`examples/zork/interpreter/disk.c`) once its high byte is in X:
 
     LDX   SCRATCH1+1
     .loop@0_continue:

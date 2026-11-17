@@ -41,7 +41,7 @@ and the second as redundant after the first. The way in from above then
 
 ## Example
 
-From `do_rwts_on_sector` in `examples/zork/instr_save/disk.c`:
+From `do_rwts_on_sector` in `examples/zork/interpreter/disk.c`:
 
 ### Before
 

@@ -143,8 +143,9 @@ its `JMP`:
   is `*` for every input, or a pattern matched against an input
   file's name without its directory, so `zstring.o(.text)` takes
   only that unit's code. A C source or `.asm` file given to the link
-  goes by its object's name, `zstring.o` for `zstring.c`. examples/zork/print_zstring/print_zstring.ld
-  places each unit where Zork keeps the original routines this way.
+  goes by its object's name, `zstring.o` for `zstring.c`.
+  examples/zork/interpreter/interpreter.ld puts the six units that run
+  on every Z-machine instruction in the low region this way.
 - Symbol assignments `sym = expr;` and `PROVIDE(sym = expr);`, inside
   output sections or between them.
 - Expressions: numbers (`0x` hex, decimal, `K` and `M` suffixes),

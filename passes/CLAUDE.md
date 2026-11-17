@@ -446,7 +446,7 @@ this directory:
   header with A overwritten. Needs A and N / C dead after the branch
   and a reload stub spot after a `JMP` / `RTS` for taken-edge
   reloads. Runs just before `expand_long_branches`. Headline case:
-  `examples/zork_find_index_of_page_table.c`.
+  `find_index_of_page_table` in `examples/zork/interpreter/pages.c`.
 - `promote_loop_carried_to_a.py` —
   `apply_promote_loop_carried_to_a`. Scalar promotion of a
   function-entry-saved reg('A') param's body-local to live in A

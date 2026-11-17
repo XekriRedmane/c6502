@@ -77,10 +77,10 @@ The extend of `key` has no reader and is removed later by dead-store
 elimination.
 
 For this function, and for every C file in `examples/`, the final
-assembly is the same with the pass disabled. The pass moves the
-`search_size` extend in `examples/zork_match_dictionary_word.c`, which
-was its motivating case, and that function's output is also unchanged
-without it.
+assembly is the same with the pass disabled. The pass moved the
+`search_size` extend in an example since removed, a C version of
+Zork's `match_dictionary_word`, which was its motivating case, and
+that function's output was also unchanged without it.
 
 ## When it applies
 

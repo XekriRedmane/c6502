@@ -45,17 +45,20 @@ where it departs from it.
 
 ```sh
 cd examples/zork/instr_save
-uv run python ../../../compile.py disk.c -S -O -o disk.asm
-uv run python ../../../compile.py prompts.c -S -O -o prompts.asm
-uv run python ../../../compile.py save.c -S -O -o save.asm
+for f in disk prompts save; do
+    uv run python ../../../compile.py $f.c -S -O -o $f.asm
+    uv run python ../../../compile.py $f.c -c -O
+done
 uv run python ../../../compile.py -T instr_save.ld \
-    disk.asm prompts.asm save.asm -o instr_save
+    disk.o prompts.o save.o -o instr_save
 uv run python ../../../objdump.py -D --no-show-raw-insn --no-addresses \
     instr_save > instr_save.asm
 ```
 
-The link assembles each unit's `.asm` and writes the ELF executable
-`instr_save`, which isn't checked in, and `instr_save.asm` is its
+Each unit is compiled twice from the same source: to its `.asm`, which
+is checked in, and to its object, which the link reads. The link
+writes the ELF executable `instr_save`. Neither the objects nor the
+executable are checked in, and `instr_save.asm` is the executable's
 listing in dasm's syntax. It has no `main`, since it's a piece of
 Zork. `tests/test_zork_instr_save.py` links it with a `main`
 that calls `instr_save`, runs it, and checks the outputs above

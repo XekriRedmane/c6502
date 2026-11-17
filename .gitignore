@@ -226,3 +226,11 @@ __marimo__/
 
 # Failing programs written by the fuzzers in fuzz/.
 fuzz_out/
+
+# Objects and executables from compile.py, such as the ones the
+# examples' build instructions write.
+*.o
+a.out
+examples/zork/interpreter/interpreter
+examples/zork/instr_save/instr_save
+examples/zork/print_zstring/print_zstring

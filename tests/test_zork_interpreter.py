@@ -70,12 +70,18 @@ _PRINTER = [
 _PRINTER_KEYS = [ord(c) for c in "362\r" "562\r" "362\r"]
 
 
-def _compile(unit: str, out: Path) -> None:
+def _compile(unit: str, out: Path) -> Path:
+    """Compiles the unit as its README does: to its assembly at `out`,
+    which the test compares with the checked-in file, and to an object
+    beside it, which it returns for the link."""
     from compile import main as compile_main
-    assert compile_main([
-        "compile.py", str(_DIR / f"{unit}.c"), "-S", "-O",
-        "-o", str(out),
-    ]) == 0
+    obj = out.with_suffix(".o")
+    for stage, path in (("-S", out), ("-c", obj)):
+        assert compile_main([
+            "compile.py", str(_DIR / f"{unit}.c"), stage, "-O",
+            "-o", str(path),
+        ]) == 0
+    return obj
 
 
 def _link(paths: list[Path], out: Path) -> None:
@@ -90,8 +96,7 @@ def _build(tmp: str) -> tuple[list[Path], Path]:
     paths = []
     for unit in _UNITS:
         path = Path(tmp) / f"{unit}.asm"
-        _compile(unit, path)
-        paths.append(path)
+        paths.append(_compile(unit, path))
     linked = Path(tmp) / "interpreter"
     _link(paths, linked)
     return paths, linked
@@ -109,7 +114,7 @@ class TestGoldOutputs(unittest.TestCase):
             for unit, path in zip(_UNITS, paths):
                 with self.subTest(unit=unit):
                     self.assertEqual(
-                        path.read_text(),
+                        path.with_suffix(".asm").read_text(),
                         (_DIR / f"{unit}.asm").read_text(),
                     )
             from tests.link_helpers import listing

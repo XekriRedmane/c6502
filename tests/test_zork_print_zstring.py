@@ -70,12 +70,18 @@ int main(void) { print_string_literal(); return 0; }
 """
 
 
-def _compile(unit: str, out: Path) -> None:
+def _compile(unit: str, out: Path) -> Path:
+    """Compiles the unit as its README does: to its assembly at `out`,
+    which the test compares with the checked-in file, and to an object
+    beside it, which it returns for the link."""
     from compile import main as compile_main
-    assert compile_main([
-        "compile.py", str(_DIR / f"{unit}.c"), "-S", "-O",
-        "-o", str(out),
-    ]) == 0
+    obj = out.with_suffix(".o")
+    for stage, path in (("-S", out), ("-c", obj)):
+        assert compile_main([
+            "compile.py", str(_DIR / f"{unit}.c"), stage, "-O",
+            "-o", str(path),
+        ]) == 0
+    return obj
 
 
 def _link(paths: list[Path], out: Path) -> None:
@@ -97,8 +103,7 @@ class TestGoldOutputs(unittest.TestCase):
             paths = []
             for unit in _UNITS:
                 path = Path(tmp) / f"{unit}.asm"
-                _compile(unit, path)
-                paths.append(path)
+                paths.append(_compile(unit, path))
                 with self.subTest(unit=unit):
                     self.assertEqual(
                         path.read_text(),
@@ -348,10 +353,10 @@ def _linked_text() -> str:
             path = Path(tmp) / f"{unit}.asm"
             _compile(unit, path)
             paths.append(path)
-        driver = Path(tmp) / "driver.asm"
+        driver = Path(tmp) / "driver.o"
         with patch("sys.stdin", io.StringIO(_DRIVER)):
             assert compile_main([
-                "compile.py", "-", "-S", "-O",
+                "compile.py", "-", "-c", "-O",
                 "-I", str(_DIR), "-o", str(driver),
             ]) == 0
         linked = Path(tmp) / "linked"

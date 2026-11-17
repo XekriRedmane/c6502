@@ -47,16 +47,19 @@ departs from it.
 cd examples/zork/print_zstring
 for f in disk pages output zstring; do
     uv run python ../../../compile.py $f.c -S -O -o $f.asm
+    uv run python ../../../compile.py $f.c -c -O
 done
 uv run python ../../../compile.py -T print_zstring.ld \
-    disk.asm pages.asm output.asm zstring.asm -o print_zstring
+    disk.o pages.o output.o zstring.o -o print_zstring
 uv run python ../../../objdump.py -D --no-show-raw-insn --no-addresses \
     print_zstring > print_zstring.asm
 ```
 
-The link assembles each unit's `.asm` and writes the ELF executable
-`print_zstring`, which isn't checked in, and `print_zstring.asm` is
-its listing in dasm's syntax. It has no `main`, since it's a piece of
+Each unit is compiled twice from the same source: to its `.asm`, which
+is checked in, and to its object, which the link reads. The link
+writes the ELF executable `print_zstring`. Neither the objects nor the
+executable are checked in, and `print_zstring.asm` is the
+executable's listing in dasm's syntax. It has no `main`, since it's a piece of
 Zork. `tests/test_zork_print_zstring.py` links it with a
 `main` that calls `print_string_literal`, runs it, and checks the
 outputs above against fresh compiles.

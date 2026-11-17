@@ -54,16 +54,19 @@ then quotes the original code it translates.
 cd examples/zork/interpreter
 for f in main decode objects numbers input pages zstring output disk prompts save; do
     uv run python ../../../compile.py $f.c -S -O -o $f.asm
+    uv run python ../../../compile.py $f.c -c -O
 done
 uv run python ../../../compile.py -T interpreter.ld \
-    main.asm decode.asm objects.asm numbers.asm input.asm pages.asm \
-    zstring.asm output.asm disk.asm prompts.asm save.asm -o interpreter
+    main.o decode.o objects.o numbers.o input.o pages.o \
+    zstring.o output.o disk.o prompts.o save.o -o interpreter
 uv run python ../../../objdump.py -D --no-show-raw-insn --no-addresses \
     interpreter > interpreter.asm
 ```
 
-The link assembles each unit's `.asm` and writes the ELF executable
-`interpreter`, which isn't checked in. `interpreter.asm` is its
+Each unit is compiled twice from the same source: to its `.asm`, which
+is checked in, and to its object, which the link reads. The link
+writes the ELF executable `interpreter`. Neither the objects nor the
+executable are checked in. `interpreter.asm` is the executable's
 listing in dasm's syntax, with a `SEG` and an `ORG` for each output
 section, and `sim/linked.py` runs the executable.
 `tests/test_zork_interpreter.py` checks

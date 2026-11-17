@@ -22,21 +22,14 @@
       carry that nothing reads, and its branch goes to the next
       instruction either way, so it has no C counterpart.
     - The code at $6000, which the reset vector reaches, is cold_start.
-    - The polling loop, from .poll_inputs, is poll_inputs, which
-      returns what it saw in `key` instead of jumping to what acts on
-      it. respond_to_input then acts on it. MAIN and LONG_DELAY each
-      call both. MAIN enters the loop at CHECK_FOR_BUTTON_DOWN with
+    - The polling loop, from .poll_inputs, and the code it jumps to
+      when the time runs out are poll_inputs, which MAIN and LONG_DELAY
+      call. MAIN enters the loop at CHECK_FOR_BUTTON_DOWN with
       JOYSTICK_MODE in A, and LONG_DELAY at .poll_inputs, which loads
-      INPUT_MODE, and poll_inputs takes that first input mode and the
+      INPUT_MODE, so poll_inputs takes that first input mode and the
       first values of the counters in X and Y as its arguments.
-    - .key_pressed reads the key from A, and key_pressed reads it from
-      `key`. key_pressed is in a cycle of calls through the functions
-      that never return (init_game_data calls it, and it calls
-      init_game_data), and the compiler passes the arguments of a
-      function in a cycle on the soft stack. For the same reason, the
-      counting is done in poll_inputs, which returns and so isn't in
-      the cycle, and the splash screen is drawn by draw_splash_screen,
-      whose locals would otherwise be saved on the soft stack.
+    - .key_pressed reads the key from A, and key_pressed takes it as
+      its argument.
     - The splash screen is drawn with a local row counter where the
       original counts in GAME_ROWNUM. LONG_DELAY sets GAME_ROWNUM
       before anything reads it. HGR_PAGE, which ROW_TO_ADDR reads, is
@@ -521,44 +514,7 @@ static const uint8_t DIED_TUNE[] = {
  * .restore_enable_sound. */
 static uint8_t saved_enable_sound = 0x00;
 
-/* What the polling loop saw: the KBD value of a key, with bit 7 set,
- * KEY_BUTTON for a paddle button, or KEY_TIMED_OUT when it gave up.
- * After the demo or GAME OVER, it's the KBD value the game read,
- * whose bit 7 may be clear. */
-static uint8_t key;
-
-enum {
-    KEY_TIMED_OUT = 0,
-    KEY_BUTTON = 1,
-};
-
-[[noreturn]] static void key_pressed(void);
-
-/* Polls the paddle buttons and the keyboard until one is pressed, and
- * sets `key` to what it saw. The buttons are skipped in KEYBOARD_MODE.
- * `mode` is the input mode of the first pass, and INPUT_MODE that of
- * every later one. The passes are counted down by three counters, the
- * inner one starting at `x`, the middle one at `y`, and the outer one
- * at GAME_ROWNUM. Each counter takes 256 passes of the one inside it
- * after its first, since it goes on from 0. */
-static void poll_inputs(uint8_t mode, uint8_t x, uint8_t y) {
-    for (;;) {
-        if (mode != KEYBOARD_MODE && ((BUTN1 & 0x80) || (BUTN0 & 0x80))) {
-            key = KEY_BUTTON;
-            return;
-        }
-        uint8_t k = KBD;
-        if (k & 0x80) {
-            key = k;
-            return;
-        }
-        if (--x == 0 && --y == 0 && --GAME_ROWNUM == 0) {
-            key = KEY_TIMED_OUT;
-            return;
-        }
-        mode = INPUT_MODE;
-    }
-}
+[[noreturn]] static void key_pressed(uint8_t key);
 
 /* Starts a game at level 1, read from the disk. */
 [[noreturn]] static void start_at_level_1(void) {
@@ -576,15 +532,29 @@ static void poll_inputs(uint8_t mode, uint8_t x, uint8_t y) {
     long_delay();
 }
 
-/* Acts on what poll_inputs saw. A key or a button starts a game. When
- * the time runs out, the splash screen goes on to the demo, the demo
- * to the high scores, and the high scores (GAME_MODE 2) back to the
- * splash screen. */
-[[noreturn]] static void respond_to_input(void) {
-    if (key & 0x80)
-        key_pressed();
-    if (key == KEY_BUTTON)
-        start_at_level_1();
+/* Polls the paddle buttons and the keyboard until one is pressed, and
+ * acts on what it sees. A key or a button starts a game. When the
+ * time runs out, the splash screen goes on to the demo, the demo to
+ * the high scores, and the high scores (GAME_MODE 2) back to the
+ * splash screen.
+ *
+ * The buttons are skipped in KEYBOARD_MODE. `mode` is the input mode
+ * of the first pass, and INPUT_MODE that of every later one. The
+ * passes are counted down by three counters, the inner one starting at
+ * `x`, the middle one at `y`, and the outer one at GAME_ROWNUM. Each
+ * counter takes 256 passes of the one inside it after its first,
+ * since it goes on from 0. */
+[[noreturn]] static void poll_inputs(uint8_t mode, uint8_t x, uint8_t y) {
+    for (;;) {
+        if (mode != KEYBOARD_MODE && ((BUTN1 & 0x80) || (BUTN0 & 0x80)))
+            start_at_level_1();
+        uint8_t key = KBD;
+        if (key & 0x80)
+            key_pressed(key);
+        if (--x == 0 && --y == 0 && --GAME_ROWNUM == 0)
+            break;
+        mode = INPUT_MODE;
+    }
     if (GAME_MODE == GAME_MODE_SPLASH_SCREEN) {
         GAME_MODE = GAME_MODE_ATTRACT_MODE;
         LEVELNUM = 1;
@@ -600,9 +570,11 @@ static void poll_inputs(uint8_t mode, uint8_t x, uint8_t y) {
     reset_game();
 }
 
-/* Acts on the key in `key`. Ctrl-E starts the level editor, Return
- * reads and shows the high scores, and any other key starts a game. */
-[[noreturn]] static void key_pressed(void) {
+/* Acts on `key`, a KBD value. Ctrl-E starts the level editor, Return
+ * reads and shows the high scores, and any other key starts a game.
+ * After the demo or GAME OVER, `key` is the KBD value the game read,
+ * whose bit 7 may be clear. */
+[[noreturn]] static void key_pressed(uint8_t key) {
     KBDSTRB = key;
     if (key == 0x85)
         level_editor();
@@ -625,7 +597,6 @@ int main(void) {
     (void)HIRES;
     (void)KBDSTRB;
     poll_inputs(JOYSTICK_MODE, 0x22, 2);
-    respond_to_input();
 }
 
 /* Starts the game from the reset vector. Reads the high scores, and
@@ -636,13 +607,18 @@ int main(void) {
     reset_game();
 }
 
-/* Draws the splash screen on page 1 from SPLASH_SCREEN.
+/* Draws the splash screen on page 1 from SPLASH_SCREEN, shows it, and
+ * waits.
  *
  * Each of the screen's 192 lines is a run of bytes ending in 0. A
  * byte with bit 7 set is stored at the next place in the line, and
  * any other byte moves the place to that byte. A line also ends after
  * a store moves the place to 0x80, without reading its 0. */
-static void draw_splash_screen(void) {
+void reset_game(void) {
+    clear_hgr1();
+    GAME_MODE = GAME_MODE_SPLASH_SCREEN;
+    DISK_LEVEL_LOC = 0;
+    DRAW_PAGE = 0x20;
     const uint8_t *p = SPLASH_SCREEN;
     for (uint8_t row = 0; row < 192; row++) {
         uint8_t *line = row_to_addr(row, 0x20);
@@ -657,15 +633,6 @@ static void draw_splash_screen(void) {
             }
         }
     }
-}
-
-/* Draws the splash screen, shows it, and waits. */
-void reset_game(void) {
-    clear_hgr1();
-    GAME_MODE = GAME_MODE_SPLASH_SCREEN;
-    DISK_LEVEL_LOC = 0;
-    DRAW_PAGE = 0x20;
-    draw_splash_screen();
     TXTPAGE1 = 0;
     HIRES = 0;
     MIXCLR = 0;
@@ -679,7 +646,6 @@ void long_delay(void) {
     wait_key();
     GAME_ROWNUM = 3;
     poll_inputs(INPUT_MODE, 0xFF, 0xFF);
-    respond_to_input();
 }
 
 /* Queues and plays a note of the level-cleared tune. The note's
@@ -791,16 +757,15 @@ void init_game_data(void) {
             /* The demo is over. A key pressed during it, which stopped
              * DEMO_RUNNING, acts as it would at the splash screen. */
             ENABLE_SOUND = saved_enable_sound;
-            key = KBD;
+            uint8_t key = KBD;
             if (!DEMO_RUNNING)
-                key_pressed();
+                key_pressed(key);
             long_delay();
         }
         if (LIVES == 0) {
             record_hi_score_data_to_disk();
             if (spinning_game_over()) {
-                key = game_over_key;
-                key_pressed();
+                key_pressed(game_over_key);
             }
             long_delay();
         }

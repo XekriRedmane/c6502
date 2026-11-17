@@ -367,7 +367,12 @@ this directory:
   renamed `name.k` in the metadata and the symbols
   (`_rename_locals`), and a renamed function's slots, call edges, and
   shares with it (`_rename_meta`), so two units' `static` functions of
-  one name are two functions to the allocators. `_choose_layout` picks the runtime's block for
+  one name are two functions to the allocators. The items marked
+  `merge` (the halves of tables of row addresses) whose sections hold
+  the same bytes and relocations are kept once (`_merge_identical`,
+  after `ld.relax`): the first copy's symbol becomes global, and each
+  other copy's section goes and its symbol becomes an undefined
+  reference to the first. `_choose_layout` picks the runtime's block for
   the program (`choose_layout` over every unit's fixed zero-page
   bytes and the largest `hargs_need`, the classic block's for a unit
   without one), and the slots come from the whole pool, `$80`-`$FF`
@@ -561,7 +566,8 @@ this directory:
 - `sections.py` — `items`: the section of each function and object in
   the finished asm (`[[c6502::section("name")]]`, else `.text`,
   `.rodata` for `const` objects and string literals, `.bss` for
-  all-zero objects, `.data`), for the link metadata's `item` lines.
+  all-zero objects, `.data`), for the link metadata's `item` lines,
+  with `merge=true` on an object whose symbol is `StaticAttr.mergeable`.
 - `string_lifting.py` — pass 3 (see below).
 - `sub1_test_zero_peephole.py` — `apply_sub1_test_zero_peephole`.
 - `type_checking.py` — pass 6 (see below).

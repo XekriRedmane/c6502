@@ -438,7 +438,10 @@ void record_hi_score_data_to_disk(void) {
     /* Move entries n-9 down one place, which drops entry 10. The
      * table is copied a byte at a time, from the last byte of entry 9
      * back to the first byte of entry n. An entry is 8 bytes, so entry
-     * n starts at (n - 1) << 3. */
+     * n starts at (n - 1) << 3. HI_SCORES[e] = HI_SCORES[e - 1] for
+     * each entry took 110 bytes more, because the compiler copies each
+     * entry through eight bytes of temporaries, and `i-- != first` as
+     * the test took 6 bytes more than the decrement in the body. */
     uint8_t first = (uint8_t)((n - 1) << 3);
     for (uint8_t i = 9 << 3; i != first;) {
         i--;

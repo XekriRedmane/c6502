@@ -240,6 +240,34 @@ functions do. A function that the compiler makes from code several
 functions of a file share, a shared tail (`f@tail0`) or an outlined run
 (`f@run0`), is an internal name of its file as well.
 
+## Tables several files make
+
+Under `-O`, a file that indexes a 2-D array makes tables of the
+array's row addresses, one of their low bytes (`A@lo`) and one of
+their high bytes (`A@hi`)
+([optimizations/row_address_tables.md](optimizations/row_address_tables.md)).
+Every file that indexes the array makes the same tables, so the linker
+keeps one copy of each. Two tables are the same when they have the
+same bytes and their relocations name the same things, an external
+name by its spelling and an internal one only within its own file. So
+two files' tables of one `extern` array become one table, and the
+tables of two files' `static` arrays of one name stay two. The copy
+the linker keeps is the first, in the order of the files on the
+command line, and it stays where the script puts that file's items.
+Every other file's references to its own copy go to the kept one,
+with their offsets (`A@hi+1,X`).
+
+Only tables the compiler marks in the file's link metadata
+(`merge=true` on the `item` line) are merged. C requires distinct
+objects to have distinct addresses, so the linker never merges a
+program's own objects, even ones with the same bytes. Nothing takes
+the address of a table of row addresses, and nothing writes one, so a
+program behaves the same whichever copy its lookups read.
+
+Lode Runner (examples/lode_runner) indexes `LEVEL_MAP` and `LEVEL_BG`
+in five files, which made 238 bytes of these tables, and the linked
+program keeps the 51 bytes of `level.c`'s.
+
 ## Related
 
 [passes/link_script.py](../passes/link_script.py) parses scripts,

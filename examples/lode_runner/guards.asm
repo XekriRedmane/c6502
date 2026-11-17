@@ -487,7 +487,9 @@ DISK_IO	EQU	$C088
 ; item GUARD_ANIM_SPRITES section=.rodata local=true zero=false
 ; item GUARD_X_ADJ_TABLE section=.rodata local=true zero=false
 ; item guard_in_hole_tune section=.rodata local=true zero=false
-; item LEVEL_BG@rows section=.rodata local=true zero=false
+; item LEVEL_BG@lo section=.rodata local=true zero=false merge=true
+; item LEVEL_BG@hi section=.rodata local=true zero=false merge=true
+; item LEVEL_MAP@hi section=.rodata local=true zero=false merge=true
 ; item __zp_init section=.text local=false zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
@@ -729,9 +731,9 @@ check_for_gold_picked_up_by_guard:
    LDA   GUARD_LOC_COL
    STA   __local_check_for_gold_picked_up_by_guard__col
    LDX   GUARD_LOC_ROW
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_check_for_gold_picked_up_by_guard__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_check_for_gold_picked_up_by_guard__1
    LDY   GUARD_LOC_COL
    LDA   (__local_check_for_gold_picked_up_by_guard__0),Y
@@ -746,9 +748,9 @@ check_for_gold_picked_up_by_guard:
    SEC
    SBC   GUARD_RESURRECT_COL
    STA   GUARD_GOLD_TIMER
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_check_for_gold_picked_up_by_guard__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_check_for_gold_picked_up_by_guard__1
    LDA   #$00
    STA   (__local_check_for_gold_picked_up_by_guard__0),Y
@@ -782,9 +784,9 @@ guard_drop_gold:
    LDA   GUARD_LOC_COL
    STX   GAME_ROWNUM
    STA   GAME_COLNUM
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_drop_gold__2
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    CLC
    ADC   GUARD_LOC_COL
    STA   __local_guard_drop_gold__1
@@ -858,7 +860,7 @@ leave_cell:
 
    JSR   leave_cell@run4
    STA   __local_leave_cell__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_leave_cell__1
    LDY   __zpabi_leave_cell__col
    LDA   (__local_leave_cell__0),Y
@@ -868,9 +870,9 @@ leave_cell:
    LDA   #$00
    STA   __local_leave_cell__2
 .cond_else@24:
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_leave_cell__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_leave_cell__1
    LDA   __local_leave_cell__2
    STA   (__local_leave_cell__0),Y
@@ -880,16 +882,16 @@ leave_cell@run4:
    SUBROUTINE
 
    LDX   __zpabi_leave_cell__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    RTS
 
 enter_cell:
    SUBROUTINE
 
    LDX   __zpabi_enter_cell__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_enter_cell__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_enter_cell__1
    LDY   __zpabi_enter_cell__col
    LDA   (__local_enter_cell__0),Y
@@ -897,9 +899,9 @@ enter_cell:
    BNE   .if_end@26
    LSR   ALIVE
 .if_end@26:
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_enter_cell__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_enter_cell__1
    LDA   #$08
    STA   (__local_enter_cell__0),Y
@@ -926,9 +928,9 @@ guard_is_supported:
 
    LDX   GUARD_LOC_ROW
    LDY   GUARD_LOC_COL
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_is_supported__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_is_supported__1
    LDA   (__local_guard_is_supported__0),Y
    CMP   #$03
@@ -947,9 +949,9 @@ guard_is_supported:
    BCC   .guard_is_supported@scfold@0
    CPX   #$0F
    BEQ   .tail@0
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_is_supported__0
-   LDA   LEVEL_BG@rows+35,X
+   LDA   LEVEL_MAP@hi+1,X
    STA   __local_guard_is_supported__1
    LDA   (__local_guard_is_supported__0),Y
    BEQ   .guard_is_supported@scfold@0
@@ -965,9 +967,9 @@ guard_is_supported:
    SEC
    RTS
 .if_end@40:
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_is_supported__0
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_is_supported__1
    LDA   (__local_guard_is_supported__0),Y
    STA   __zpabi_is_floor__sprite
@@ -987,9 +989,9 @@ guard_fall_into_row_below:
    STA   __local_guard_fall_into_row_below__2
    STA   GUARD_LOC_ROW
    LDX   __local_guard_fall_into_row_below__2
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_fall_into_row_below__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_fall_into_row_below__1
    LDY   __zpabi_leave_cell__col
    LDA   (__local_guard_fall_into_row_below__0),Y
@@ -1000,21 +1002,21 @@ guard_fall_into_row_below:
    DEX
    STX   GAME_ROWNUM
    STY   GAME_COLNUM
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_fall_into_row_below__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_fall_into_row_below__1
    LDA   (__local_guard_fall_into_row_below__0),Y
    BNE   .if_else@45
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_fall_into_row_below__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_guard_fall_into_row_below__1
    LDA   #$07
    STA   (__local_guard_fall_into_row_below__0),Y
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_fall_into_row_below__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_fall_into_row_below__1
    LDA   #$07
    STA   (__local_guard_fall_into_row_below__0),Y
@@ -1062,9 +1064,9 @@ guard_fall:
    BNE   .if_end@50
    JSR   check_for_gold_picked_up_by_guard
    LDX   GUARD_LOC_ROW
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_fall__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_fall__1
    LDY   GUARD_LOC_COL
    LDA   (__local_guard_fall__0),Y
@@ -1111,9 +1113,9 @@ guard_blocked_above:
 
    LDX   GUARD_LOC_ROW
    BEQ   .or_true@55
-   LDA   LEVEL_BG@rows-1,X
+   LDA   LEVEL_BG@lo-1,X
    STA   __local_guard_blocked_above__0
-   LDA   LEVEL_BG@rows+33,X
+   LDA   LEVEL_MAP@hi-1,X
    STA   __local_guard_blocked_above__1
    LDY   GUARD_LOC_COL
    LDA   (__local_guard_blocked_above__0),Y
@@ -1195,9 +1197,9 @@ try_guard_move_down:
    BCC   .if_end@67
    RTS
 .if_end@67:
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_try_guard_move_down__0
-   LDA   LEVEL_BG@rows+35,X
+   LDA   LEVEL_MAP@hi+1,X
    STA   __local_try_guard_move_down__1
    LDY   __zpabi_leave_cell__col
    LDA   (__local_try_guard_move_down__0),Y
@@ -1242,7 +1244,7 @@ try_guard_move_left:
 .if_end@76:
    JSR   leave_cell@run4
    STA   __local_try_guard_move_left__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_try_guard_move_left__1
    LDY   GUARD_LOC_COL
    DEY
@@ -1253,9 +1255,9 @@ try_guard_move_left:
    BEQ   .try_guard_move_left@scfold@0
    CMP   #$01
    BEQ   .try_guard_move_left@scfold@0
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_guard_move_left__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_left__1
    LDA   (__local_try_guard_move_left__0),Y
    CMP   #$05
@@ -1281,7 +1283,7 @@ try_guard_move_left:
 .if_end@84:
    JSR   leave_cell@run4
    STA   __local_try_guard_move_left__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_left__1
    LDY   GUARD_LOC_COL
    LDA   (__local_try_guard_move_left__0),Y
@@ -1333,7 +1335,7 @@ try_guard_move_right:
 .if_end@89:
    JSR   leave_cell@run4
    STA   __local_try_guard_move_right__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_try_guard_move_right__1
    LDY   GUARD_LOC_COL
    INY
@@ -1344,9 +1346,9 @@ try_guard_move_right:
    BEQ   .try_guard_move_right@scfold@0
    CMP   #$01
    BEQ   .try_guard_move_right@scfold@0
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_guard_move_right__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_right__1
    LDA   (__local_try_guard_move_right__0),Y
    CMP   #$05
@@ -1374,7 +1376,7 @@ try_guard_move_right:
 .if_end@97:
    JSR   leave_cell@run4
    STA   __local_try_guard_move_right__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_right__1
    LDY   GUARD_LOC_COL
    LDA   (__local_try_guard_move_right__0),Y
@@ -1507,9 +1509,9 @@ guard_find_candidate_row_above:
    STA   __local_guard_find_candidate_row_above__row
 .loop@6_start:
    LDX   __local_guard_find_candidate_row_above__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__4
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_above__5
    LDY   __zpabi_guard_find_candidate_row_above__col
    LDA   (__local_guard_find_candidate_row_above__4),Y
@@ -1530,9 +1532,9 @@ guard_find_candidate_row_above:
    JSR   guard_find_candidate_row_above@run0
    BCS   .guard_find_candidate_row_above@scfold@0
    LDX   __local_guard_find_candidate_row_above__3
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_above__1
    LDY   __local_guard_find_candidate_row_above__2
    LDA   (__local_guard_find_candidate_row_above__0),Y
@@ -1547,9 +1549,9 @@ guard_find_candidate_row_above:
    CMP   #$1B
    BEQ   .if_end@125
    LDX   __local_guard_find_candidate_row_above__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_above__1
    LDA   __zpabi_guard_find_candidate_row_above__col
    CLC
@@ -1560,9 +1562,9 @@ guard_find_candidate_row_above:
    JSR   guard_find_candidate_row_above@run0
    BCS   .guard_find_candidate_row_above@scfold@1
    LDX   __local_guard_find_candidate_row_above__3
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_above__1
    LDY   __local_guard_find_candidate_row_above__2
    LDA   (__local_guard_find_candidate_row_above__0),Y
@@ -1602,9 +1604,9 @@ guard_find_candidate_row_below:
    JMP   .loop@7_break
 .lb_skip@1:
    LDX   __local_guard_find_candidate_row_below__row
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_find_candidate_row_below__right_row
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_find_candidate_row_below__0
    LDY   __zpabi_guard_find_candidate_row_below__col
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
@@ -1616,9 +1618,9 @@ guard_find_candidate_row_below:
    TXA
    RTS
 .if_end@130:
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_below__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_below__1
    LDA   (__local_guard_find_candidate_row_below__0),Y
    BEQ   .loop@7_continue
@@ -1638,9 +1640,9 @@ guard_find_candidate_row_below:
    STA   __local_guard_find_candidate_row_below__right_row
    JMP   .if_end@133
 .if_else@134:
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_find_candidate_row_below__0
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_find_candidate_row_below__1
    INX
    STX   __local_guard_find_candidate_row_below__right_row
@@ -1659,9 +1661,9 @@ guard_find_candidate_row_below:
    CMP   #$1B
    BCS   .if_end@142
    LDX   __local_guard_find_candidate_row_below__right_row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_below__right_row
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_below__0
    LDY   __zpabi_guard_find_candidate_row_below__col
    INY
@@ -1669,9 +1671,9 @@ guard_find_candidate_row_below:
    CMP   #$04
    BEQ   .guard_find_candidate_row_below@scfold@1
    LDX   __local_guard_find_candidate_row_below__row
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_find_candidate_row_below__right_row
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_find_candidate_row_below__0
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
    JSR   guard_find_candidate_row_above@run0
@@ -1701,9 +1703,9 @@ guard_left_col_limit:
    JMP   .loop@8_continue
 .guard_left_col_limit@rot@0:
    LDX   __zpabi_guard_left_col_limit__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_left_col_limit__2
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_guard_left_col_limit__3
    LDA   __local_guard_left_col_limit__col
    SEC
@@ -1721,9 +1723,9 @@ guard_left_col_limit:
    BEQ   .if_end@151
    CPX   #$0F
    BEQ   .if_end@151
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_left_col_limit__col
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_left_col_limit__0
    LDA   (__local_guard_left_col_limit__col),Y
    JSR   guard_find_candidate_row_above@run0
@@ -1749,9 +1751,9 @@ guard_right_col_limit:
    JMP   .loop@9_continue
 .guard_right_col_limit@rot@1:
    LDX   __zpabi_guard_right_col_limit__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_right_col_limit__2
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_guard_right_col_limit__3
    LDA   __local_guard_right_col_limit__col
    CLC
@@ -1769,9 +1771,9 @@ guard_right_col_limit:
    BEQ   .if_end@160
    CPX   #$0F
    BEQ   .if_end@160
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_right_col_limit__col
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_right_col_limit__0
    LDA   (__local_guard_right_col_limit__col),Y
    JSR   guard_find_candidate_row_above@run0
@@ -1809,9 +1811,9 @@ consider_column:
    CMP   #$0F
    BEQ   .vthread@2
    LDX   __zpabi_guard_find_candidate_row_above__row
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_consider_column__0
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_consider_column__1
    LDY   __zpabi_guard_find_candidate_row_above__col
    LDA   (__local_consider_column__0),Y
@@ -1829,9 +1831,9 @@ consider_column:
    BEQ   .if_end@169
 .vthread@2:
    LDX   __zpabi_guard_find_candidate_row_above__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_consider_column__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_consider_column__1
    LDY   __zpabi_guard_find_candidate_row_above__col
    LDA   (__local_consider_column__0),Y
@@ -1851,9 +1853,9 @@ guard_can_cross:
    SUBROUTINE
 
    LDX   __zpabi_guard_can_cross__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_can_cross__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_guard_can_cross__1
    LDY   __zpabi_guard_can_cross__col
    LDA   (__local_guard_can_cross__0),Y
@@ -1863,9 +1865,9 @@ guard_can_cross:
    BEQ   .tail@2
    CPX   #$0F
    BEQ   .tail@2
-   LDA   LEVEL_BG@rows+1,X
+   LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_can_cross__0
-   LDA   LEVEL_BG@rows+18,X
+   LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_can_cross__1
    LDA   (__local_guard_can_cross__0),Y
    BEQ   .and_false@175
@@ -1920,9 +1922,9 @@ determine_guard_move:
    LDA   GUARD_LOC_ROW
    STA   __zpabi_guard_run_at_player__row
    LDX   __zpabi_guard_run_at_player__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_determine_guard_move__c
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_determine_guard_move__0
    LDY   __zpabi_guard_run_at_player__col
    LDA   (__local_determine_guard_move__c),Y
@@ -2011,11 +2013,17 @@ GUARD_X_ADJ_TABLE:
 guard_in_hole_tune:
    DC.B  $06, $20, $04, $30, $02, $40, $00
 
-LEVEL_BG@rows:
+LEVEL_BG@lo:
    DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
-   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
-   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
-   DC.B  $09, $09, $09
+   DC.B  $C0
+
+LEVEL_BG@hi:
+   DC.B  $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B
+
+LEVEL_MAP@hi:
+   DC.B  $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09, $09
+   DC.B  $09
 
 __zp_init:
    SUBROUTINE

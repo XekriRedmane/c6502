@@ -379,7 +379,8 @@ DISK_IO	EQU	$C088
 ; item editor_level_entry section=.data local=true zero=false
 ; item saved_vtoc_data section=.data local=true zero=false
 ; item SAVED_FILE_DESCRIPTIVE_ENTRY_DATA section=.rodata local=true zero=false
-; item LEVEL_MAP@rows section=.rodata local=true zero=false
+; item LEVEL_MAP@lo section=.rodata local=true zero=false merge=true
+; item LEVEL_MAP@hi section=.rodata local=true zero=false merge=true
 ; item __zp_init section=.text local=false zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
@@ -1090,11 +1091,11 @@ cursor_cell:
    SUBROUTINE
 
    LDX   GAME_ROWNUM
-   LDA   LEVEL_MAP@rows,X
+   LDA   LEVEL_MAP@lo,X
    CLC
    ADC   GAME_COLNUM
    STA   cursor_cell@ret
-   LDA   LEVEL_MAP@rows+17,X
+   LDA   LEVEL_MAP@hi,X
    ADC   #$00
    STA   cursor_cell@ret+1
    RTS
@@ -1348,10 +1349,13 @@ SAVED_FILE_DESCRIPTIVE_ENTRY_DATA:
    DC.B  $D5, $CE, $CE, $C5, $D2, $A0, $C4, $C1, $D4, $C1, $A0, $C4, $C9, $D3, $CB, $A0
    DC.B  $A0
 
-LEVEL_MAP@rows:
+LEVEL_MAP@lo:
    DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
-   DC.B  $C0, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09
-   DC.B  $09, $09
+   DC.B  $C0
+
+LEVEL_MAP@hi:
+   DC.B  $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09, $09
+   DC.B  $09
 
 __zp_init:
    SUBROUTINE

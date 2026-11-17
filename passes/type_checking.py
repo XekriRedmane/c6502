@@ -324,13 +324,24 @@ class StaticAttr(IdAttr):
     and `zp_address`, which reserves the bytes the way an `extern`
     `zeropage(addr)` declaration does. `section` is the name from
     `[[c6502::section("name")]]`, or None for the default
-    (passes/sections.py)."""
+    (passes/sections.py).
+
+    `planes` and `mergeable` are only set on the tables of row
+    addresses that `-O` makes (passes/optimization/row_address_tables.py).
+    `planes` names the objects that hold each byte plane of such a
+    table, which `tac_to_asm` emits in place of the table itself.
+    `mergeable` marks one of those objects. Only the table's lookups
+    read it, so a program behaves the same when they read another
+    unit's object with the same bytes, and the linker keeps one copy
+    of the two (passes/linker.py)."""
     initial_value: InitialValue
     is_global: bool
     zeropage: bool = False
     zp_address: int | None = None
     address: int | None = None
     section: str | None = None
+    planes: tuple[str, ...] | None = None
+    mergeable: bool = False
 
 
 @dataclass(frozen=True)

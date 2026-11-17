@@ -8,8 +8,7 @@ HARGS	EQU	$06
 SSP	EQU	$07
 FP	EQU	$09
 DPTR	EQU	$0B
-key	EQU	$0D
-saved_enable_sound	EQU	$0E
+saved_enable_sound	EQU	$0D
 GUARD_LOC_COL	EQU	$12
 GUARD_LOC_ROW	EQU	$13
 GUARD_ANIM_STATE	EQU	$14
@@ -26,7 +25,6 @@ GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
 __zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
 __zpabi_add_and_update_score__bcd_points_0	EQU	$80
 __zpabi_append_note__pitch	EQU	$80
 __zpabi_bcd_to_decimal2__bcd	EQU	$80
@@ -67,6 +65,8 @@ __zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
 __zpabi_play_note__y	EQU	$82
 __zpabi_poll_inputs__y	EQU	$82
+__zpabi_key_pressed__key	EQU	$83
+__zpabi_access_hi_score_data_from_disk__command	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -99,12 +99,12 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_draw_splash_screen__0	EQU	$AE
-__local_draw_splash_screen__p_0	EQU	$AF
-__local_draw_splash_screen__p_1	EQU	$B0
-__local_draw_splash_screen__1	EQU	$B1
-__local_draw_splash_screen__2	EQU	$B2
-__local_draw_splash_screen__row	EQU	$B3
+__local_reset_game__0	EQU	$AE
+__local_reset_game__p_0	EQU	$AF
+__local_reset_game__p_1	EQU	$B0
+__local_reset_game__1	EQU	$B1
+__local_reset_game__2	EQU	$B2
+__local_reset_game__row	EQU	$B3
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -166,16 +166,14 @@ DISK_IO	EQU	$C088
 ; @zp-link-meta-begin
 ; def append_level_cleared_note params=__zpabi_append_level_cleared_note__n locals= indirect=false in_cycle=false
 ; def cold_start params= locals= indirect=false in_cycle=false
-; def draw_splash_screen params= locals=__local_draw_splash_screen__0,__local_draw_splash_screen__p_0,__local_draw_splash_screen__p_1,__local_draw_splash_screen__1,__local_draw_splash_screen__2,__local_draw_splash_screen__row indirect=false in_cycle=false
 ; def init_game_data params= locals=__local_init_game_data__0 indirect=false in_cycle=false
-; def key_pressed params= locals= indirect=false in_cycle=false
+; def key_pressed params=__zpabi_key_pressed__key locals= indirect=false in_cycle=false
 ; def level_cleared params= locals= indirect=false in_cycle=false
 ; def long_delay params= locals= indirect=false in_cycle=false
 ; def main params= locals= indirect=false in_cycle=false
 ; def play_level params= locals= indirect=false in_cycle=false carry=true
 ; def poll_inputs params=__zpabi_poll_inputs__mode,__zpabi_poll_inputs__x,__zpabi_poll_inputs__y locals=__local_poll_inputs__mode,__local_poll_inputs__y,__local_poll_inputs__x indirect=false in_cycle=false changes=__zpabi_poll_inputs__x,__zpabi_poll_inputs__y
-; def reset_game params= locals= indirect=false in_cycle=false
-; def respond_to_input params= locals= indirect=false in_cycle=false
+; def reset_game params= locals=__local_reset_game__0,__local_reset_game__p_0,__local_reset_game__p_1,__local_reset_game__1,__local_reset_game__2,__local_reset_game__row indirect=false in_cycle=false
 ; def show_hi_scores params= locals= indirect=false in_cycle=false
 ; def start_at_level_1 params= locals= indirect=false in_cycle=false
 ; def start_level params= locals=__local_start_level__0 indirect=false in_cycle=false
@@ -239,9 +237,9 @@ DISK_IO	EQU	$C088
 ; call append_level_cleared_note -> play_sound
 ; call cold_start -> access_hi_score_data_from_disk
 ; call cold_start -> detect_lack_of_joystick
-; call draw_splash_screen -> row_to_addr
 ; call init_game_data -> access_hi_score_data_from_disk
 ; call init_game_data -> bad_data_disk
+; call init_game_data -> key_pressed
 ; call init_game_data -> level_cleared
 ; call init_game_data -> load_sound_data
 ; call init_game_data -> play_level
@@ -262,22 +260,21 @@ DISK_IO	EQU	$C088
 ; call play_level -> move_guards
 ; call play_level -> move_player
 ; call play_level -> play_sound
+; call poll_inputs -> key_pressed
 ; call reset_game -> clear_hgr1
-; call reset_game -> draw_splash_screen
+; call reset_game -> row_to_addr
 ; call show_hi_scores -> hi_score_screen
 ; call start_level -> load_level
 ; call start_level -> wait_for_key_with_cursor_page_1
 ; call start_level -> wait_key
 ; share member=append_level_cleared_note:__zpabi_append_level_cleared_note__n holder=level_cleared live=level_cleared:add_and_update_score,append_level_cleared_note forward=level_cleared>append_level_cleared_note writer=level_cleared
-; item poll_inputs section=.text local=true zero=false
 ; item start_at_level_1 section=.text local=true zero=false
 ; item show_hi_scores section=.text local=true zero=false
-; item respond_to_input section=.text local=true zero=false
+; item poll_inputs section=.text local=true zero=false
 ; item key_pressed section=.text local=true zero=false
 ; item key_pressed@run0 section=.text local=true zero=false
 ; item main section=.text local=false zero=false
 ; item cold_start section=.text local=false zero=false
-; item draw_splash_screen section=.text local=true zero=false
 ; item reset_game section=.text local=false zero=false
 ; item long_delay section=.text local=false zero=false
 ; item append_level_cleared_note section=.text local=true zero=false
@@ -295,7 +292,6 @@ DISK_IO	EQU	$C088
 ; zp PLAYER_Y_ADJ size=1 at=$03 def=false init=
 ; zp PLAYER_ANIM_STATE size=1 at=$04 def=false init=
 ; zp PLAYER_FACING_DIRECTION size=1 at=$05 def=false init=
-; zp key size=1 at=auto def=true init=$00 weight=45 local=true
 ; zp saved_enable_sound size=1 at=auto def=true init=$00 weight=9 local=true
 ; zp GUARD_LOC_COL size=1 at=$12 def=false init=
 ; zp GUARD_LOC_ROW size=1 at=$13 def=false init=
@@ -348,40 +344,6 @@ DISK_IO	EQU	$C088
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
-poll_inputs:
-   SUBROUTINE
-
-   LDA   __zpabi_poll_inputs__mode
-.loop@0_start:
-   CMP   #$CB
-   BEQ   .if_end@4
-   LDA   BUTN1
-   BMI   .poll_inputs@scfold@0
-   LDA   BUTN0
-   BPL   .if_end@4
-.poll_inputs@scfold@0:
-   LDA   #$01
-   STA   key
-   RTS
-.if_end@4:
-   LDA   KBD
-   BPL   .if_end@5
-   STA   key
-   RTS
-.if_end@5:
-   DEC   __zpabi_poll_inputs__x
-   BNE   .if_end@10
-   DEC   __zpabi_poll_inputs__y
-   BNE   .if_end@10
-   DEC   GAME_ROWNUM
-   BNE   .if_end@10
-   LDA   #$00
-   STA   key
-   RTS
-.if_end@10:
-   LDA   INPUT_MODE
-   JMP   .loop@0_start
-
 start_at_level_1:
    SUBROUTINE
 
@@ -402,19 +364,37 @@ show_hi_scores:
    STA   GAME_MODE
    JMP   long_delay
 
-respond_to_input:
+poll_inputs:
    SUBROUTINE
 
-   LDA   key
-   BPL   .if_end@11
-   JMP   key_pressed
-.if_end@11:
-   CMP   #$01
-   BNE   .if_end@12
+   LDA   __zpabi_poll_inputs__mode
+.loop@0_start:
+   CMP   #$CB
+   BEQ   .if_end@4
+   LDA   BUTN1
+   BMI   .poll_inputs@scfold@0
+   LDA   BUTN0
+   BPL   .if_end@4
+.poll_inputs@scfold@0:
    JMP   start_at_level_1
-.if_end@12:
+.if_end@4:
+   LDA   KBD
+   BPL   .if_end@5
+   STA   __zpabi_key_pressed__key
+   JMP   key_pressed
+.if_end@5:
+   DEC   __zpabi_poll_inputs__x
+   BNE   .if_end@10
+   DEC   __zpabi_poll_inputs__y
+   BNE   .if_end@10
+   DEC   GAME_ROWNUM
+   BEQ   .loop@0_break
+.if_end@10:
+   LDA   INPUT_MODE
+   JMP   .loop@0_start
+.loop@0_break:
    LDA   GAME_MODE
-   BNE   .if_end@13
+   BNE   .if_end@11
    LDA   #$01
    STA   GAME_MODE
    STA   LEVELNUM
@@ -425,27 +405,27 @@ respond_to_input:
    LDA   #$00
    STA   ENABLE_SOUND
    JMP   init_game_data
-.if_end@13:
+.if_end@11:
    CMP   #$01
-   BNE   .if_end@14
+   BNE   .if_end@12
    JMP   show_hi_scores
-.if_end@14:
+.if_end@12:
    JMP   reset_game
 
 key_pressed:
    SUBROUTINE
 
-   LDA   key
+   LDA   __zpabi_key_pressed__key
    STA   KBDSTRB
    CMP   #$85
-   BNE   .if_end@15
+   BNE   .if_end@13
    JMP   level_editor
-.if_end@15:
+.if_end@13:
    CMP   #$8D
-   BNE   .if_end@16
+   BNE   .if_end@14
    JSR   key_pressed@run0
    JMP   show_hi_scores
-.if_end@16:
+.if_end@14:
    JMP   start_at_level_1
 
 key_pressed@run0:
@@ -471,8 +451,7 @@ main:
    STA   __zpabi_poll_inputs__x
    LDA   #$02
    STA   __zpabi_poll_inputs__y
-   JSR   poll_inputs
-   JMP   respond_to_input
+   JMP   poll_inputs
 
 cold_start:
    SUBROUTINE
@@ -481,63 +460,56 @@ cold_start:
    JSR   key_pressed@run0
    JMP   reset_game
 
-draw_splash_screen:
-   SUBROUTINE
-
-   LDA   #<SPLASH_SCREEN
-   STA   __local_draw_splash_screen__p_0
-   LDA   #>SPLASH_SCREEN
-   STA   __local_draw_splash_screen__p_1
-   LDA   #$00
-   STA   __local_draw_splash_screen__row
-   JMP   .loop@1_start
-.draw_splash_screen@rot@0:
-   STA   __zpabi_row_to_addr__row
-   LDA   #$20
-   STA   __zpabi_row_to_addr__page
-   JSR   row_to_addr
-   STA   __local_draw_splash_screen__1
-   STX   __local_draw_splash_screen__2
-   LDX   #$00
-.loop@2_start:
-   LDY   #$00
-   LDA   (__local_draw_splash_screen__p_0),Y
-   STA   __local_draw_splash_screen__0
-   INC   __local_draw_splash_screen__p_0
-   BNE   .inc_done@0
-   INC   __local_draw_splash_screen__p_1
-.inc_done@0:
-   ORA   #$00
-   BEQ   .loop@2_break
-   BPL   .if_else@18
-   TXA
-   TAY
-   LDA   __local_draw_splash_screen__0
-   STA   (__local_draw_splash_screen__1),Y
-   INX
-   BMI   .loop@2_break
-   JMP   .loop@2_start
-.if_else@18:
-   LDX   __local_draw_splash_screen__0
-   JMP   .loop@2_start
-.loop@2_break:
-   INC   __local_draw_splash_screen__row
-.loop@1_start:
-   LDA   __local_draw_splash_screen__row
-   CMP   #$C0
-   BCC   .draw_splash_screen@rot@0
-   RTS
-
 reset_game:
    SUBROUTINE
 
    JSR   clear_hgr1
+   LDA   #$20
+   STA   DRAW_PAGE
+   LDA   #<SPLASH_SCREEN
+   STA   __local_reset_game__p_0
+   LDA   #>SPLASH_SCREEN
+   STA   __local_reset_game__p_1
    LDA   #$00
    STA   GAME_MODE
    STA   DISK_LEVEL_LOC
+   STA   __local_reset_game__row
+   JMP   .loop@1_start
+.reset_game@rot@0:
+   STA   __zpabi_row_to_addr__row
    LDA   #$20
-   STA   DRAW_PAGE
-   JSR   draw_splash_screen
+   STA   __zpabi_row_to_addr__page
+   JSR   row_to_addr
+   STA   __local_reset_game__1
+   STX   __local_reset_game__2
+   LDX   #$00
+.loop@2_start:
+   LDY   #$00
+   LDA   (__local_reset_game__p_0),Y
+   STA   __local_reset_game__0
+   INC   __local_reset_game__p_0
+   BNE   .inc_done@0
+   INC   __local_reset_game__p_1
+.inc_done@0:
+   ORA   #$00
+   BEQ   .loop@2_break
+   BPL   .if_else@16
+   TXA
+   TAY
+   LDA   __local_reset_game__0
+   STA   (__local_reset_game__1),Y
+   INX
+   BMI   .loop@2_break
+   JMP   .loop@2_start
+.if_else@16:
+   LDX   __local_reset_game__0
+   JMP   .loop@2_start
+.loop@2_break:
+   INC   __local_reset_game__row
+.loop@1_start:
+   LDA   __local_reset_game__row
+   CMP   #$C0
+   BCC   .reset_game@rot@0
    LDA   #$00
    STA   TXTPAGE1
    STA   HIRES
@@ -556,8 +528,7 @@ long_delay:
    LDA   #$FF
    STA   __zpabi_poll_inputs__x
    STA   __zpabi_poll_inputs__y
-   JSR   poll_inputs
-   JMP   respond_to_input
+   JMP   poll_inputs
 
 append_level_cleared_note:
    SUBROUTINE
@@ -584,7 +555,7 @@ start_level:
    STA   KEY_COMMAND_LR
    LDA   GAME_MODE
    CMP   #$02
-   BCC   .if_end@20
+   BCC   .if_end@18
    JSR   wait_key
    LDA   PLAYER_COL
    STA   GAME_COLNUM
@@ -593,7 +564,7 @@ start_level:
    LDA   #$09
    STA   __zpabi_wait_for_key_with_cursor_page_1__cursor
    JSR   wait_for_key_with_cursor_page_1
-.if_end@20:
+.if_end@18:
    LDA   #$00
    STA   DIG_DIRECTION
    STA   NOTE_INDEX
@@ -622,22 +593,22 @@ play_level:
    BEQ   .tail@0
    JSR   play_sound
    LDA   GOLD_COUNT
-   BNE   .if_end@22
+   BNE   .if_end@20
    JSR   enable_next_level_ladders
-.if_end@22:
+.if_end@20:
    LDA   PLAYER_ROW
-   BNE   .if_end@29
+   BNE   .if_end@27
    LDA   PLAYER_Y_ADJ
    CMP   #$02
-   BNE   .if_end@29
+   BNE   .if_end@27
    LDA   GOLD_COUNT
    BEQ   .play_level@scfold@0
    CMP   #$FF
-   BNE   .if_end@29
+   BNE   .if_end@27
 .play_level@scfold@0:
    SEC
    RTS
-.if_end@29:
+.if_end@27:
    JSR   handle_timers
    LDA   ALIVE
    BEQ   .tail@0
@@ -656,9 +627,9 @@ level_cleared:
    INC   DISK_LEVEL_LOC
    LDA   LIVES
    CMP   #$FF
-   BEQ   .if_end@32
+   BEQ   .if_end@30
    INC   LIVES
-.if_end@32:
+.if_end@30:
    LDA   #$0F
    STA   __zpabi_append_level_cleared_note__n
 .level_cleared@rot@1:
@@ -695,13 +666,13 @@ init_game_data:
    STA   LIVES
    LDA   GAME_MODE
    CMP   #$02
-   BCC   .if_end@35
+   BCC   .if_end@33
    JSR   key_pressed@run0
    ORA   #$00
-   BNE   .if_end@35
+   BNE   .if_end@33
    JSR   bad_data_disk
    JMP   reset_game
-.if_end@35:
+.if_end@33:
    JSR   put_status
    LDA   #$00
    STA   TXTPAGE1
@@ -724,26 +695,26 @@ init_game_data:
    BCS   .loop@6_continue
    LDA   GAME_MODE
    CMP   #$02
-   BCS   .if_end@37
+   BCS   .if_end@35
    LDA   saved_enable_sound
    STA   ENABLE_SOUND
    LDA   KBD
-   STA   key
+   STA   __zpabi_key_pressed__key
    LDA   DEMO_RUNNING
-   BNE   .if_end@38
+   BNE   .if_end@36
    JMP   key_pressed
-.if_end@38:
+.if_end@36:
    JMP   long_delay
-.if_end@37:
+.if_end@35:
    LDA   LIVES
    BNE   .loop@5_start
    JSR   record_hi_score_data_to_disk
    JSR   spinning_game_over
-   BCC   .if_end@40
+   BCC   .if_end@38
    LDA   game_over_key
-   STA   key
+   STA   __zpabi_key_pressed__key
    JMP   key_pressed
-.if_end@40:
+.if_end@38:
    JMP   long_delay
 
 TIMES_3_TABLE:
@@ -763,5 +734,4 @@ __zp_init:
 
    LDA   #$00
    STA   saved_enable_sound
-   STA   key
    RTS

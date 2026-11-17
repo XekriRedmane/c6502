@@ -116,6 +116,15 @@ class TestRowAddressTablesUnit(unittest.TestCase):
             bytes=34,
         )])
         self.assertEqual(symbols["M@rows"].type.size, 34)
+        # The halves are objects of their own, which tac_to_asm emits
+        # in the table's place.
+        self.assertEqual(symbols["M@rows"].attrs.planes, ("M@lo", "M@hi"))
+        self.assertEqual(
+            symbols["M@hi"].attrs.initial_value.value,
+            tuple(a >> 8 for a in addresses),
+        )
+        self.assertTrue(symbols["M@hi"].attrs.mergeable)
+        self.assertFalse(symbols["M@rows"].attrs.mergeable)
 
     def test_static_array_rows_are_address_bytes(self):
         symbols = _symbols(S=_array(20, 14))
@@ -147,9 +156,16 @@ class TestRowAddressTablesUnit(unittest.TestCase):
                  if isinstance(i, tac_ast.IndexedLoad)]
         self.assertEqual(
             [(i.name, i.offset, i.plane) for i in loads],
-            [("B@rows", 0, 34), ("B@rows", 0, 17)],
+            [("M@rows", 0, 17), ("B@rows", 0, 17)],
         )
-        self.assertEqual(symbols["B@rows"].type.size, 51)
+        # Each array's table holds its own two halves, and the low half
+        # they share is one object, named after B, which sorts first.
+        self.assertEqual(symbols["B@rows"].attrs.planes, ("B@lo", "B@hi"))
+        self.assertEqual(symbols["M@rows"].attrs.planes, ("B@lo", "M@hi"))
+        self.assertNotIn("M@lo", symbols)
+        for half in ("B@lo", "B@hi", "M@hi"):
+            self.assertTrue(symbols[half].attrs.mergeable)
+            self.assertEqual(symbols[half].type.size, 17)
 
     def test_cost_model(self):
         # One access saves 40 bytes, and 16 rows cost 34.
@@ -224,7 +240,7 @@ class TestRowAddressTablesSim(unittest.TestCase):
 
     def _check(self, src: str, expected: int, table: str) -> None:
         with _ALWAYS:
-            self.assertIn(f"{table}@rows", _codegen(src))
+            self.assertIn(f"\n{table}@lo:\n", _codegen(src))
             for optimize in (False, True):
                 with self.subTest(optimize=optimize):
                     got = build_sim(src, optimize=optimize).run().return_int()
@@ -329,8 +345,11 @@ class TestRowAddressTablesSim(unittest.TestCase):
         self._check(src, 300 + 3, "B")
         with _ALWAYS:
             text = _codegen(src)
-        table = text.split("\nB@rows:\n")[1]
-        self.assertEqual(table.count("$"), 51)
+        self.assertNotIn("M@lo", text)
+        tables = text.split("\nB@lo:\n")[1]
+        self.assertIn("\nB@hi:\n", tables)
+        self.assertIn("\nM@hi:\n", tables)
+        self.assertEqual(tables.count("$"), 51)
 
 
 if __name__ == "__main__":

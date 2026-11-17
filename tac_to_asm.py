@@ -1589,8 +1589,18 @@ class Translator:
         match prog:
             case tac_ast.Program(top_level=top_levels):
                 out: list[asm_ast.Type_top_level] = []
+                emitted: set[str] = set()
                 for tl in top_levels:
-                    if isinstance(tl, tac_ast.StaticVariable):
+                    planes = self._planes(tl.name)
+                    if isinstance(tl, tac_ast.StaticVariable) and planes:
+                        # A table of row addresses: its planes are
+                        # objects of their own, which several tables
+                        # may share.
+                        for name in planes:
+                            if name not in emitted:
+                                emitted.add(name)
+                                out.append(self._plane_object(name))
+                    elif isinstance(tl, tac_ast.StaticVariable):
                         out.append(asm_ast.StaticVariable(
                             name=tl.name,
                             is_global=tl.is_global,
@@ -1600,6 +1610,28 @@ class Translator:
                         out.append(self.translate_function(tl))
                 return asm_ast.Program(top_level=out)
         raise TypeError(f"unexpected program node: {prog!r}")
+
+    def _planes(self, name: str) -> tuple[str, ...] | None:
+        """The objects that hold the byte planes of the table `name`,
+        when it's a table of row addresses
+        (passes/optimization/row_address_tables.py), else None."""
+        if self._symbols is None:
+            return None
+        sym = self._symbols.get(name)
+        if sym is None:
+            return None
+        return getattr(sym.attrs, "planes", None)
+
+    def _plane_object(self, name: str) -> asm_ast.StaticVariable:
+        """The object `name` that holds one plane of a table of row
+        addresses, from the bytes its symbol gives."""
+        from passes.optimization.split_tables import plane_init
+        cells = self._symbols[name].attrs.initial_value.value
+        init, _ = plane_init([list(cells)])
+        return asm_ast.StaticVariable(
+            name=name, is_global=False,
+            init=[_to_asm_static_init(i) for i in init],
+        )
 
     def translate_function(
         self, fn: tac_ast.Type_top_level,
@@ -2988,17 +3020,28 @@ class Translator:
 
         `offset` is the node's constant offset, added to every byte's
         address: `LDA name+offset+k,X`. A table split into byte planes
-        (`plane` nonzero) has byte k at `name+offset+k*plane,X`."""
+        (`plane` nonzero) has byte k at `name+offset+k*plane,X`. A table
+        of row addresses has its planes in objects of their own
+        (`_planes`), and byte k is at `plane_k+offset,X`."""
         index_op = translate_val(index)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
         step = plane or 1
+        planes = self._planes(name)
+
+        def byte(k: int, base: int) -> tuple[str, int]:
+            """The object and offset of byte k of the element at
+            `base`."""
+            if planes:
+                return planes[k], base
+            return name, base + k * step
+
         if isinstance(index_op, asm_ast.Imm) and is_volatile:
             base = (index_op.value & 0xFF) + offset
             out = []
             for k in range(n):
                 out.append(asm_ast.Mov(
-                    src=self._named_byte(name, base + k * step),
+                    src=self._named_byte(*byte(k, base)),
                     dst=_REG_A, is_volatile=True,
                 ))
                 out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
@@ -3007,7 +3050,7 @@ class Translator:
             base = (index_op.value & 0xFF) + offset
             return [
                 asm_ast.Mov(
-                    src=self._named_byte(name, base + k * step),
+                    src=self._named_byte(*byte(k, base)),
                     dst=_byte_at(dst_op, k),
                     is_volatile=is_volatile,
                 )
@@ -3018,9 +3061,10 @@ class Translator:
             asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),
         ]
         for k in range(n):
+            plane_name, plane_offset = byte(k, offset)
             out.append(asm_ast.Mov(
                 src=asm_ast.IndexedData(
-                    name=name, offset=offset + k * step, index=asm_ast.X(),
+                    name=plane_name, offset=plane_offset, index=asm_ast.X(),
                 ),
                 dst=_byte_at(dst_op, k),
                 is_volatile=is_volatile,

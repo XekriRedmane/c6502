@@ -1334,7 +1334,10 @@ static void editor_initialize_disk(void) {
     access_compressed_level_data(DISK_ACCESS_WRITE);
 
     /* Level 0xEF is track 17, sector 15, the catalog's first sector.
-     * Its first file entry is at byte 11. */
+     * Its first file entry is at byte 11. The casts of sizeof here and
+     * in editor_clear_high_scores make each test a one-byte compare.
+     * The compiler compares `i < sizeof X` at the width of size_t,
+     * which made this unit 83 bytes larger. */
     DISK_LEVEL_LOC = 0xEF;
     access_compressed_level_data(DISK_ACCESS_READ);
     for (uint8_t i = 0; i < (uint8_t)sizeof SAVED_FILE_DESCRIPTIVE_ENTRY_DATA; i++)

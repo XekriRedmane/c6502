@@ -98,31 +98,27 @@ DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
 __local_compress_and_save_level_data__0	EQU	$AE
-__local_load_level__sprite	EQU	$AE
-__local_compress_and_save_level_data__row	EQU	$AF
+__local_load_level__verbatim	EQU	$AE
+__local_compress_and_save_level_data__1	EQU	$AF
 __local_enable_next_level_ladders__1	EQU	$AF
-__local_load_level__row	EQU	$AF
-__local_compress_and_save_level_data__low	EQU	$B0
+__local_load_level__0	EQU	$AF
+__local_compress_and_save_level_data__row	EQU	$B0
 __local_enable_next_level_ladders__2	EQU	$B0
-__local_load_level__bg	EQU	$B0
-__local_compress_and_save_level_data__map	EQU	$B1
+__local_load_level__sprite	EQU	$B0
+__local_compress_and_save_level_data__low	EQU	$B1
 __local_enable_next_level_ladders__3	EQU	$B1
-__local_load_level__0	EQU	$B1
-__local_compress_and_save_level_data__1	EQU	$B2
+__local_load_level__row	EQU	$B1
+__local_compress_and_save_level_data__index	EQU	$B2
 __local_enable_next_level_ladders__4	EQU	$B2
-__local_load_level__map	EQU	$B2
+__local_load_level__index	EQU	$B2
+__local_draw_level_page2__sprite	EQU	$B3
 __local_enable_next_level_ladders__5	EQU	$B3
-__local_load_level__1	EQU	$B3
-__local_draw_level_page2__sprite	EQU	$B4
+__local_draw_level_page2__dst	EQU	$B4
 __local_enable_next_level_ladders__6	EQU	$B4
-__local_draw_level_page2__map_0	EQU	$B5
+__local_draw_level_page2__0	EQU	$B5
 __local_enable_next_level_ladders__n	EQU	$B5
-__local_draw_level_page2__0	EQU	$B6
-__local_draw_level_page2__src	EQU	$B7
-__local_draw_level_page2__map_1	EQU	$B8
-__local_draw_level_page2__1	EQU	$B9
-__local_draw_level_page2__bg	EQU	$BA
-__local_draw_level_page2__2	EQU	$BB
+__local_draw_level_page2__src	EQU	$B6
+__local_draw_level_page2__1	EQU	$B7
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -185,10 +181,10 @@ DISK_IO	EQU	$C088
 ; def access_compressed_level_data params=__zpabi_access_compressed_level_data__command locals=__local_access_compressed_level_data__0,__local_access_compressed_level_data__1,__local_access_compressed_level_data__2 indirect=false in_cycle=false
 ; def access_disk_or_reset_game params= locals=__local_access_disk_or_reset_game__0 indirect=false in_cycle=false
 ; def access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command locals=__local_access_hi_score_data_from_disk__0,__local_access_hi_score_data_from_disk__1,__local_access_hi_score_data_from_disk__differ indirect=false in_cycle=false
-; def compress_and_save_level_data params= locals=__local_compress_and_save_level_data__0,__local_compress_and_save_level_data__row,__local_compress_and_save_level_data__low,__local_compress_and_save_level_data__map,__local_compress_and_save_level_data__1 indirect=false in_cycle=false
-; def draw_level_page2 params= locals=__local_draw_level_page2__sprite,__local_draw_level_page2__map_0,__local_draw_level_page2__0,__local_draw_level_page2__src,__local_draw_level_page2__map_1,__local_draw_level_page2__1,__local_draw_level_page2__bg,__local_draw_level_page2__2,__local_draw_level_page2__3,__local_draw_level_page2__4 indirect=false in_cycle=false carry=true
+; def compress_and_save_level_data params= locals=__local_compress_and_save_level_data__0,__local_compress_and_save_level_data__1,__local_compress_and_save_level_data__row,__local_compress_and_save_level_data__low,__local_compress_and_save_level_data__index,__local_compress_and_save_level_data__2 indirect=false in_cycle=false
+; def draw_level_page2 params= locals=__local_draw_level_page2__sprite,__local_draw_level_page2__dst,__local_draw_level_page2__0,__local_draw_level_page2__src,__local_draw_level_page2__1 indirect=false in_cycle=false carry=true
 ; def enable_next_level_ladders params= locals=__local_enable_next_level_ladders__0,__local_enable_next_level_ladders__1,__local_enable_next_level_ladders__2,__local_enable_next_level_ladders__3,__local_enable_next_level_ladders__4,__local_enable_next_level_ladders__5,__local_enable_next_level_ladders__6,__local_enable_next_level_ladders__n,__local_enable_next_level_ladders__7 indirect=false in_cycle=false
-; def load_level params=__zpabi_load_level__verbatim locals=__local_load_level__sprite,__local_load_level__row,__local_load_level__bg,__local_load_level__0,__local_load_level__map,__local_load_level__1 indirect=false in_cycle=false
+; def load_level params=__zpabi_load_level__verbatim locals=__local_load_level__verbatim,__local_load_level__0,__local_load_level__sprite,__local_load_level__row,__local_load_level__index indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -262,7 +258,9 @@ DISK_IO	EQU	$C088
 ; item access_hi_score_data_from_disk section=.text local=false zero=false
 ; item enable_next_level_ladders section=.text local=false zero=false
 ; item HI_SCORE_DATA_MARKER section=.rodata local=false zero=false
-; item LEVEL_BG@rows section=.rodata local=true zero=false
+; item LEVEL_BG@lo section=.rodata local=true zero=false merge=true
+; item LEVEL_BG@hi section=.rodata local=true zero=false merge=true
+; item LEVEL_MAP@hi section=.rodata local=true zero=false merge=true
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
 ; zp PLAYER_X_ADJ size=1 at=$02 def=false init=
@@ -323,30 +321,19 @@ DISK_IO	EQU	$C088
 draw_level_page2:
    SUBROUTINE
 
-   LDA   #<(LEVEL_MAP+420)
-   STA   __local_draw_level_page2__1
-   LDA   #>(LEVEL_MAP+420)
-   STA   __local_draw_level_page2__map_1
-   LDA   #<(LEVEL_BG+420)
-   STA   __local_draw_level_page2__bg
-   LDA   #>(LEVEL_BG+420)
-   STA   __local_draw_level_page2__2
    LDA   #$0F
    STA   GAME_ROWNUM
 .loop@0_start:
    LDA   #$1B
    STA   GAME_COLNUM
 .loop@1_start:
-   LDA   GAME_COLNUM
-   STA   __local_draw_level_page2__src
-   CLC
-   ADC   __local_draw_level_page2__1
-   STA   __local_draw_level_page2__map_0
-   LDA   __local_draw_level_page2__map_1
-   ADC   #$00
-   STA   __local_draw_level_page2__0
-   LDY   #$00
-   LDA   (__local_draw_level_page2__map_0),Y
+   LDY   GAME_COLNUM
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_draw_level_page2__sprite
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_draw_level_page2__dst
+   LDA   (__local_draw_level_page2__sprite),Y
    STA   __local_draw_level_page2__sprite
    LDA   VERBATIM
    BNE   .lb_skip@2
@@ -373,7 +360,7 @@ draw_level_page2:
    STX   LADDER_COUNT
    LDA   GAME_ROWNUM
    STA   LADDER_LOCS_ROW,X
-   LDA   __local_draw_level_page2__src
+   TYA
    STA   LADDER_LOCS_COL,X
    JMP   .draw_level_page2@remove
 .case@4:
@@ -386,7 +373,7 @@ draw_level_page2:
    TAX
    INX
    STX   GUARD_COUNT
-   LDA   __local_draw_level_page2__src
+   TYA
    STA   GUARD_LOCS_COL,X
    LDA   GAME_ROWNUM
    STA   GUARD_LOCS_ROW,X
@@ -396,18 +383,20 @@ draw_level_page2:
    LDA   #$02
    STA   GUARD_X_ADJS,X
    STA   GUARD_Y_ADJS,X
+   LDX   GAME_ROWNUM
 .xjump@0:
+   LDA   LEVEL_BG@lo,X
+   STA   __local_draw_level_page2__dst
+   LDA   LEVEL_BG@hi,X
+   STA   __local_draw_level_page2__0
    LDA   #$00
-   LDY   __local_draw_level_page2__src
-   STA   (__local_draw_level_page2__bg),Y
+   STA   (__local_draw_level_page2__dst),Y
    JMP   .switch@2_break
 .case@6:
    LDA   PLAYER_COL
    BPL   .draw_level_page2@remove
-   LDA   __local_draw_level_page2__src
-   STA   PLAYER_COL
-   LDA   GAME_ROWNUM
-   STA   PLAYER_ROW
+   STY   PLAYER_COL
+   STX   PLAYER_ROW
    LDA   #$02
    STA   PLAYER_X_ADJ
    STA   PLAYER_Y_ADJ
@@ -419,11 +408,20 @@ draw_level_page2:
    STA   __local_draw_level_page2__sprite
    JMP   .switch@2_break
 .draw_level_page2@remove:
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_draw_level_page2__sprite
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_draw_level_page2__dst
    LDA   #$00
-   LDY   #$00
-   STA   (__local_draw_level_page2__map_0),Y
-   LDY   __local_draw_level_page2__src
-   STA   (__local_draw_level_page2__bg),Y
+   STA   (__local_draw_level_page2__sprite),Y
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_draw_level_page2__sprite
+   LDA   LEVEL_BG@hi,X
+   STA   __local_draw_level_page2__dst
+   LDA   #$00
+   STA   (__local_draw_level_page2__sprite),Y
    STA   __local_draw_level_page2__sprite
 .switch@2_break:
 .if_end@0:
@@ -435,20 +433,6 @@ draw_level_page2:
    BMI   .lb_skip@1
    JMP   .loop@1_start
 .lb_skip@1:
-   LDA   __local_draw_level_page2__1
-   SEC
-   SBC   #$1C
-   STA   __local_draw_level_page2__1
-   BCS   .carry_inc@0
-   DEC   __local_draw_level_page2__map_1
-.carry_inc@0:
-   LDA   __local_draw_level_page2__bg
-   SEC
-   SBC   #$1C
-   STA   __local_draw_level_page2__bg
-   BCS   .carry_inc@1
-   DEC   __local_draw_level_page2__2
-.carry_inc@1:
    DEC   GAME_ROWNUM
    BMI   .lb_skip@0
    JMP   .loop@0_start
@@ -458,16 +442,16 @@ draw_level_page2:
    LDA   #<HGR2
    STA   __local_draw_level_page2__src
    LDA   #>HGR2
-   STA   __local_draw_level_page2__map_1
+   STA   __local_draw_level_page2__1
    LDA   #<HGR1
-   STA   __local_draw_level_page2__map_0
+   STA   __local_draw_level_page2__dst
    LDA   #>HGR1
    STA   __local_draw_level_page2__0
 .loop@8_continue:
    LDA   __local_draw_level_page2__0
    CMP   #>(HGR1+8192)
    BNE   .jcmp_skip@0
-   LDA   __local_draw_level_page2__map_0
+   LDA   __local_draw_level_page2__dst
    CMP   #<HGR1
    BEQ   .tail@0
 .jcmp_skip@0:
@@ -475,11 +459,11 @@ draw_level_page2:
    LDA   (__local_draw_level_page2__src),Y
    INC   __local_draw_level_page2__src
    BNE   .inc_done@0
-   INC   __local_draw_level_page2__map_1
+   INC   __local_draw_level_page2__1
 .inc_done@0:
    LDY   #$00
-   STA   (__local_draw_level_page2__map_0),Y
-   INC   __local_draw_level_page2__map_0
+   STA   (__local_draw_level_page2__dst),Y
+   INC   __local_draw_level_page2__dst
    BNE   .loop@8_continue
    INC   __local_draw_level_page2__0
    JMP   .loop@8_continue
@@ -490,18 +474,19 @@ draw_level_page2:
    RTS
 .if_end@5:
    JSR   iris_wipe
-   LDA   #<(LEVEL_MAP+420)
-   STA   __local_draw_level_page2__map_0
-   LDA   #>(LEVEL_MAP+420)
-   STA   __local_draw_level_page2__0
    LDA   #$0F
    STA   GAME_ROWNUM
 .loop@9_start:
    LDA   #$1B
    STA   GAME_COLNUM
 .loop@10_start:
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_draw_level_page2__sprite
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_draw_level_page2__dst
    LDY   GAME_COLNUM
-   LDA   (__local_draw_level_page2__map_0),Y
+   LDA   (__local_draw_level_page2__sprite),Y
    CMP   #$09
    BEQ   .draw_level_page2@scfold@0
    CMP   #$08
@@ -513,13 +498,6 @@ draw_level_page2:
 .if_end@8:
    DEC   GAME_COLNUM
    BPL   .loop@10_start
-   LDA   __local_draw_level_page2__map_0
-   SEC
-   SBC   #$1C
-   STA   __local_draw_level_page2__map_0
-   BCS   .carry_inc@2
-   DEC   __local_draw_level_page2__0
-.carry_inc@2:
    DEC   GAME_ROWNUM
    BPL   .loop@9_start
 .tail@0:
@@ -556,63 +534,50 @@ load_level:
    STA   ALIVE
    STA   __zpabi_access_compressed_level_data__command
    JSR   access_compressed_level_data
-   LDA   #<LEVEL_MAP
-   CLC
-   STA   __local_load_level__map
-   LDA   #>LEVEL_MAP
-   ADC   #$00
-   STA   __local_load_level__1
-   LDA   #<LEVEL_BG
-   CLC
-   STA   __local_load_level__bg
-   LDA   #>LEVEL_BG
-   ADC   #$00
-   STA   __local_load_level__0
-   LDX   #$00
    LDA   #$00
+   STA   __local_load_level__index
    STA   __local_load_level__row
 .load_level@rot@3:
    LDY   #$00
 .load_level@rot@2:
-   LDA   DISK_BUFFER,X
-   STA   __local_load_level__sprite
+   LDX   __local_load_level__index
    TYA
    LSR
    BCC   .if_else@10
-   LDA   __local_load_level__sprite
+   LDA   DISK_BUFFER,X
    LSR
    LSR
    LSR
    LSR
-   INX
+   STA   __local_load_level__sprite
+   INC   __local_load_level__index
    JMP   .if_end@9
 .if_else@10:
-   LDA   __local_load_level__sprite
+   LDA   DISK_BUFFER,X
    AND   #$0F
+   STA   __local_load_level__sprite
 .if_end@9:
    CMP   #$0A
    BCC   .if_end@11
    LDA   #$00
+   STA   __local_load_level__sprite
 .if_end@11:
-   STA   (__local_load_level__map),Y
-   STA   (__local_load_level__bg),Y
+   LDX   __local_load_level__row
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__verbatim
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_load_level__0
+   LDA   __local_load_level__sprite
+   STA   (__local_load_level__verbatim),Y
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__verbatim
+   LDA   LEVEL_BG@hi,X
+   STA   __local_load_level__0
+   LDA   __local_load_level__sprite
+   STA   (__local_load_level__verbatim),Y
    INY
    CPY   #$1C
    BCC   .load_level@rot@2
-   LDA   __local_load_level__map
-   CLC
-   ADC   #$1C
-   STA   __local_load_level__map
-   BCC   .carry_inc@3
-   INC   __local_load_level__1
-.carry_inc@3:
-   LDA   __local_load_level__bg
-   CLC
-   ADC   #$1C
-   STA   __local_load_level__bg
-   BCC   .carry_inc@4
-   INC   __local_load_level__0
-.carry_inc@4:
    INC   __local_load_level__row
    LDA   __local_load_level__row
    CMP   #$10
@@ -634,20 +599,19 @@ load_level:
 compress_and_save_level_data:
    SUBROUTINE
 
-   LDA   #<LEVEL_MAP
-   CLC
-   STA   __local_compress_and_save_level_data__map
-   LDA   #>LEVEL_MAP
-   ADC   #$00
-   STA   __local_compress_and_save_level_data__1
-   LDX   #$00
    LDA   #$00
+   STA   __local_compress_and_save_level_data__index
    STA   __local_compress_and_save_level_data__low
    STA   __local_compress_and_save_level_data__row
 .compress_and_save_level_data@rot@5:
    LDY   #$00
 .compress_and_save_level_data@rot@4:
-   LDA   (__local_compress_and_save_level_data__map),Y
+   LDX   __local_compress_and_save_level_data__row
+   LDA   LEVEL_BG@lo,X
+   STA   __local_compress_and_save_level_data__0
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_compress_and_save_level_data__1
+   LDA   (__local_compress_and_save_level_data__0),Y
    STA   __local_compress_and_save_level_data__0
    TYA
    LSR
@@ -658,8 +622,9 @@ compress_and_save_level_data:
    ASL
    ASL
    ORA   __local_compress_and_save_level_data__low
+   LDX   __local_compress_and_save_level_data__index
    STA   DISK_BUFFER,X
-   INX
+   INC   __local_compress_and_save_level_data__index
    JMP   .if_end@14
 .if_else@15:
    LDA   __local_compress_and_save_level_data__0
@@ -668,13 +633,6 @@ compress_and_save_level_data:
    INY
    CPY   #$1C
    BCC   .compress_and_save_level_data@rot@4
-   LDA   __local_compress_and_save_level_data__map
-   CLC
-   ADC   #$1C
-   STA   __local_compress_and_save_level_data__map
-   BCC   .carry_inc@5
-   INC   __local_compress_and_save_level_data__1
-.carry_inc@5:
    INC   __local_compress_and_save_level_data__row
    LDA   __local_compress_and_save_level_data__row
    CMP   #$10
@@ -812,24 +770,24 @@ enable_next_level_ladders:
    LDA   LADDER_LOCS_ROW,X
    STA   GAME_ROWNUM
    LDX   __local_enable_next_level_ladders__5
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_enable_next_level_ladders__4
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    CLC
    ADC   __local_enable_next_level_ladders__6
    STA   __local_enable_next_level_ladders__3
-   BCC   .carry_inc@6
+   BCC   .carry_inc@0
    INC   __local_enable_next_level_ladders__4
-.carry_inc@6:
-   LDA   LEVEL_BG@rows+34,X
+.carry_inc@0:
+   LDA   LEVEL_MAP@hi,X
    STA   __local_enable_next_level_ladders__2
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    CLC
    ADC   __local_enable_next_level_ladders__6
    STA   __local_enable_next_level_ladders__1
-   BCC   .carry_inc@7
+   BCC   .carry_inc@1
    INC   __local_enable_next_level_ladders__2
-.carry_inc@7:
+.carry_inc@1:
    LDY   #$00
    LDA   (__local_enable_next_level_ladders__3),Y
    BEQ   .if_end@23
@@ -873,8 +831,14 @@ enable_next_level_ladders:
 HI_SCORE_DATA_MARKER:
    DC.B  $CC, $CF, $C4, $C5, $A0, $D2, $D5, $CE, $CE, $C5, $D2
 
-LEVEL_BG@rows:
+LEVEL_BG@lo:
    DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
-   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
-   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
-   DC.B  $09, $09, $09
+   DC.B  $C0
+
+LEVEL_BG@hi:
+   DC.B  $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B
+
+LEVEL_MAP@hi:
+   DC.B  $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09, $09
+   DC.B  $09

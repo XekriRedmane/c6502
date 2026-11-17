@@ -13,8 +13,8 @@ high bytes in the other:
 
 and then read `(p),Y`. This pass does the same. For each `&A + i *
 R`, with `i` an unsigned byte, plus or minus a constant `k`, it makes
-the pointer `IndexedLoad(rows, i, p, offset=k, plane=N+1)`, which
-reads byte j of the row's address at `rows + k + i + j * (N + 1)`.
+the pointer `IndexedLoad(A@rows, i, p, offset=k, plane=N+1)`, which
+reads byte j of the row's address at `A@rows + k + i + j * (N + 1)`.
 
 The table holds N+1 addresses, `A`, `A+R`, ..., `A+N*R`, so a
 pointer one past the last row works too. C99 §6.5.6.8 makes any
@@ -48,11 +48,21 @@ qualify. The pointer is computed where the `ZeroExtend` read `i`.
 A table costs 2(N+1) bytes in each unit that makes it, and each
 access saves what the multiply and the add would have cost
 (`_saving`). The pass builds a table for an array only when the
-unit's accesses to it save more than the table costs. Arrays whose
-tables have the same number of rows share bytes: two arrays with the
-same row addresses share one table, and two whose row addresses have
-the same low bytes (arrays 256 bytes apart) share the half with the
-low bytes.
+unit's accesses to it save more than the table costs.
+
+The table's two halves, the low bytes and the high bytes, are objects
+of their own, `A@lo` and `A@hi`, and `A@rows` exists only in the TAC,
+where it holds both halves one after the other so that constant
+folding and `tac_sim` read it as any table split into byte planes.
+Its symbol names the two objects (`StaticAttr.planes`), and
+`tac_to_asm` emits them in its place and reads byte j of a lookup
+from the j-th of them, at `A@lo+k,X` and `A@hi+k,X`. Arrays with the
+same number of rows share a half when its bytes are the same, as the
+low halves of two arrays 256 bytes apart are, so such a half is one
+object, named after the first array that has it. Each half is marked
+`mergeable`, since nothing but these lookups reads it and nothing
+takes its address, so the linker keeps one copy of the halves that
+several units make with the same bytes (passes/linker.py).
 """
 
 from __future__ import annotations
@@ -100,22 +110,29 @@ def apply_row_address_tables(
             top.append(_rewrite(tl, mine, layout) if mine else tl)
         else:
             top.append(tl)
+    for name, half in layout.halves.items():
+        symbols[name] = _byte_table(tuple(half), mergeable=True)
     for table in layout.tables:
         init, values = plane_init(table.planes)
         top.append(tac_ast.StaticVariable(
             name=table.name, is_global=False, data_type=tac_ast.Pointer(),
             init=init,
         ))
-        symbols[table.name] = Symbol(
-            type=c99_ast.Array(
-                element_type=c99_ast.Const(referenced_type=c99_ast.UChar()),
-                size=len(values),
-            ),
-            attrs=StaticAttr(
-                initial_value=Initial(value=values), is_global=False,
-            ),
-        )
+        symbols[table.name] = _byte_table(values, planes=table.objects)
     return tac_ast.Program(top_level=top)
+
+
+def _byte_table(values: tuple, **attrs) -> Symbol:
+    """The symbol of a table of `const` bytes holding `values`."""
+    return Symbol(
+        type=c99_ast.Array(
+            element_type=c99_ast.Const(referenced_type=c99_ast.UChar()),
+            size=len(values),
+        ),
+        attrs=StaticAttr(
+            initial_value=Initial(value=values), is_global=False, **attrs,
+        ),
+    )
 
 
 class _Access:
@@ -291,19 +308,24 @@ def _saving(row: int) -> int:
 
 
 class _Table:
-    def __init__(self, name: str, planes: list[list]):
+    """A table of `planes` (the low and then the high bytes of an
+    array's row addresses), and the objects that hold its planes."""
+
+    def __init__(self, name: str, planes: list[list], objects: tuple[str, ...]):
         self.name = name
         self.planes = planes
+        self.objects = objects
 
 
 class _Layout:
-    """The tables to make, and for each array the table its lookups
-    read, the offset of its low bytes in it, and the distance from
-    its low bytes to its high bytes."""
+    """The tables to make, one for each array, the objects that hold
+    their halves (`halves`, by name), and for each array its table and
+    the number of row addresses in it."""
 
     def __init__(self):
         self.tables: list[_Table] = []
-        self.arrays: dict[str, tuple[str, int, int]] = {}
+        self.halves: dict[str, list] = {}
+        self.arrays: dict[str, tuple[str, int]] = {}
 
 
 def _row_bytes(name: str, rows: int, row: int, symbols) -> tuple[list, list]:
@@ -324,11 +346,11 @@ def _row_bytes(name: str, rows: int, row: int, symbols) -> tuple[list, list]:
 
 def _choose(accesses: dict[str, list], symbols, types) -> _Layout:
     """Picks the arrays whose lookups save more than the bytes their
-    tables add, and lays out the tables. Arrays with the same number
-    of rows go in one table, which holds each distinct half once:
-    every low half first and then every high half, so that an array's
-    high bytes follow its low ones. Since arrays can share halves,
-    the arrays of a group are chosen together, trying every set of
+    tables add, and lays out the tables. Each chosen array gets a
+    table `A@rows` of its low and high halves, and each distinct half
+    is one object, `A@lo` or `A@hi` after the first array that has
+    it. Arrays with the same number of rows can share halves, so the
+    arrays of such a group are chosen together, trying every set of
     them when there are at most `_EXHAUSTIVE` and adding them one at a
     time, the most accessed first, otherwise."""
     layout = _Layout()
@@ -341,27 +363,26 @@ def _choose(accesses: dict[str, list], symbols, types) -> _Layout:
         gain[name] = len(accesses[name]) * _saving(row)
         groups.setdefault(rows + 1, []).append(name)
     for length, names in sorted(groups.items()):
-        chosen = _best_set(names, halves, gain, length)
-        if not chosen:
-            continue
-        los: list[list] = []
-        his: list[list] = []
-        for n in chosen:
+        made: list[tuple[list, str]] = []
+
+        def half_object(half: list, name: str) -> str:
+            """The object holding `half`, made as `name` if no array
+            of the group has it yet."""
+            for bytes_, existing in made:
+                if bytes_ == half:
+                    return existing
+            made.append((half, name))
+            layout.halves[name] = half
+            return name
+
+        for n in _best_set(names, halves, gain, length):
             lo, hi = halves[n]
-            if lo not in los and lo not in his:
-                los.append(lo)
-            if hi not in his and hi not in los:
-                his.append(hi)
-        planes = los + his
-        table = _Table(f"{chosen[0]}@rows", planes)
-        layout.tables.append(table)
-        for n in chosen:
-            lo, hi = halves[n]
-            first = planes.index(lo)
-            second = planes.index(hi)
-            layout.arrays[n] = (
-                table.name, first * length, (second - first) * length,
+            table = _Table(
+                f"{n}@rows", [lo, hi],
+                (half_object(lo, f"{n}@lo"), half_object(hi, f"{n}@hi")),
             )
+            layout.tables.append(table)
+            layout.arrays[n] = (table.name, length)
     return layout
 
 
@@ -403,10 +424,10 @@ def _rewrite(
     instrs: list = list(fn.instructions)
     drop: set[int] = set()
     for acc in accesses:
-        table, start, plane = layout.arrays[acc.array]
+        table, plane = layout.arrays[acc.array]
         instrs[acc.at] = tac_ast.IndexedLoad(
             name=table, index=acc.index, dst=acc.dst, is_volatile=False,
-            offset=start + acc.k, plane=plane,
+            offset=acc.k, plane=plane,
         )
         drop.update(acc.drop)
     return tac_ast.Function(

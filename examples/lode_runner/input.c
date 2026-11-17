@@ -1044,13 +1044,11 @@ static void return_handler(void) {
     TXTPAGE1 = 0;
     clear_hgr2();
 
-    /* The cells are drawn from the last to the first, so `cell` steps
-     * back through LEVEL_BG one cell at a time. A trap is drawn as the
-     * brick it looks like. */
-    const uint8_t *cell = &LEVEL_BG[MAX_GAME_ROW][MAX_GAME_COL];
+    /* The cells are drawn from the last to the first. A trap is drawn
+     * as the brick it looks like. */
     for (GAME_ROWNUM = MAX_GAME_ROW; (int8_t)GAME_ROWNUM >= 0; GAME_ROWNUM--) {
         for (GAME_COLNUM = MAX_GAME_COL; (int8_t)GAME_COLNUM >= 0; GAME_COLNUM--) {
-            uint8_t sprite = *cell--;
+            uint8_t sprite = LEVEL_BG[GAME_ROWNUM][GAME_COLNUM];
             if (sprite == SPRITE_TRAP)
                 sprite = SPRITE_BRICK;
             draw_sprite_page2(sprite);

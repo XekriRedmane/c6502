@@ -49,7 +49,7 @@ Format
 ; def <fn> param_bytes=<N> local_bytes=<M> indirect=<bool> in_cycle=<bool>
 ; ext <fn> param_bytes=<N>
 ; call <caller> -> <callee> [saved]
-; item <name> section=<name> local=<bool> zero=<bool>
+; item <name> section=<name> local=<bool> zero=<bool> [merge=true]
 ; zp <name> size=<N> at=<$XX|auto> def=<bool> init=<byte,...> [weight=<N>] [local=true]
 ; runtime hargs_size=<N> [hargs_need=<N>]
 ; @zp-link-meta-end
@@ -87,7 +87,9 @@ an empty entry for the others, and a `def` line's `changes` list the
 slots of the parameters the function assigns. `carry=true` on a `def`
 or `ext` line marks a function that returns a `bool` in the carry
 flag, by `[[c6502::return_bool_in_carry]]` or by the compiler's
-choice (`passes/carry_return_choice.py`).
+choice (`passes/carry_return_choice.py`). `merge=true` on an `item`
+line marks an object the linker may replace with another unit's
+object of the same bytes (`ItemMeta.merge`).
 """
 from __future__ import annotations
 
@@ -162,11 +164,16 @@ class ItemMeta:
     it goes in, `local` is whether its name has internal linkage (a
     `static`, or a string literal), so another TU's item may have the
     same name, and `zero` is whether it's an object whose bytes are
-    all zero, laid down as `DS.B`."""
+    all zero, laid down as `DS.B`. `merge` marks an object of the
+    compiler's own that nothing takes the address of and nothing
+    writes, a plane of a table of row addresses, so the linker keeps
+    one copy of the objects so marked whose bytes are the same
+    (`linker._merge_identical`)."""
     name: str
     section: str
     local: bool = False
     zero: bool = False
+    merge: bool = False
 
 
 @dataclass
@@ -431,6 +438,7 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
             f"; item {it.name} section={it.section} "
             f"local={'true' if it.local else 'false'} "
             f"zero={'true' if it.zero else 'false'}"
+            + (" merge=true" if it.merge else "")
         )
     for z in meta.zp_objects:
         at = "auto" if z.at is None else f"${z.at:02X}"
@@ -572,6 +580,7 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             name=parts[1], section=kvs["section"],
             local=kvs.get("local") == "true",
             zero=kvs.get("zero") == "true",
+            merge=kvs.get("merge") == "true",
         ))
     elif kind == "runtime":
         kvs = dict(_split_kv(p) for p in parts[1:])

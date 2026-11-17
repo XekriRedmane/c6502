@@ -17,6 +17,9 @@ Coverage:
   - A declaration that names a parameter differently from the
     definition, or leaves it unnamed, links: its slot symbols are
     bound to the definition's by position.
+  - The halves of the tables of row addresses that several units
+    make with the same bytes are one copy in the program, and units
+    read through the copy another unit made.
 """
 from __future__ import annotations
 
@@ -581,3 +584,132 @@ class TestStaticFunctionsInTwoUnits(unittest.TestCase):
         equs = _equs(text)
         self.assertNotEqual(equs["__zpabi_f__x.0"], equs["__zpabi_f__x"])
         self.assertEqual(build_linked_sim(text.exe).run().return_int(), 119)
+
+
+# The arrays the row-table tests read. M and B are 0x200 bytes apart, so
+# the low bytes of their row addresses are the same.
+_ROWS = (
+    "#include <stdint.h>\n"
+    "extern uint8_t M [[c6502::address(0x6000)]][16][28];\n"
+    "extern uint8_t B [[c6502::address(0x6200)]][16][28];\n"
+)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestMergedRowTables(unittest.TestCase):
+    """`-O` puts the halves of a 2-D array's table of row addresses in
+    objects of their own (`A@lo`, `A@hi`), in each unit that indexes the
+    array, and the linker keeps one copy of the halves with the same
+    bytes (`linker._merge_identical`). One access to a 16-row array of
+    28-byte rows saves more than its 34-byte table, so each function
+    below makes a table."""
+
+    def _link(self, units: list[str]) -> tuple[str, dict[str, int]]:
+        """Links `units` and returns the linked text and the size of
+        each table half in the executable, by name."""
+        from binutils import elf as E
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            objects = []
+            for k, src in enumerate(units):
+                obj = tmp / f"u{k}.o"
+                self.assertEqual(_compile_to_obj(src, obj), 0)
+                objects.append(obj)
+            out = tmp / "linked"
+            rc, err = _link_capture_stderr(objects, out)
+            self.assertEqual(rc, 0, err)
+            text = linked_text(out)
+            halves = {
+                s.name: s.size for s in E.read_file(out).symbols
+                if s.type == E.STT_OBJECT and ("@lo" in s.name or "@hi" in s.name)
+            }
+        return text, halves
+
+    def _run(self, text) -> int:
+        from sim.linked import build_linked_sim
+        return build_linked_sim(text.exe).run().return_int()
+
+    # main fills M and B, so that M[r][c] is r * 16 + c and B[r][c] is
+    # r + c, and returns the sum of what `reads` reads.
+    @staticmethod
+    def _main(reads: str) -> str:
+        return (
+            "int main(void) {\n"
+            "    for (uint8_t r = 0; r < 16; r++)\n"
+            "        for (uint8_t c = 0; c < 28; c++) {\n"
+            "            M[r][c] = (uint8_t)(r * 16 + c);\n"
+            "            B[r][c] = (uint8_t)(r + c);\n"
+            "        }\n"
+            f"    return {reads};\n"
+            "}\n"
+        )
+
+    def test_two_units_share_a_table(self) -> None:
+        both = "uint8_t both{k}(uint8_t r, uint8_t c) {{ return M[r][c] + B[r][c]; }}\n"
+        u0 = _ROWS + both.format(k=0) + "uint8_t both1(uint8_t r, uint8_t c);\n" \
+            + self._main("both0(3, 4) * 10 + both1(15, 27)")
+        u1 = _ROWS + both.format(k=1)
+        text, halves = self._link([u0, u1])
+        # Each unit made B@lo, B@hi, and M@hi, and one copy of each is
+        # left, unit 0's.
+        self.assertEqual(halves, {"B@lo.0": 17, "B@hi.0": 17, "M@hi.0": 17})
+        self.assertIn("M@hi.0,X", text)
+        # M[15][27] is (240 + 27) & 0xFF.
+        self.assertEqual(self._run(text), (52 + 7) * 10 + (11 + 42))
+
+    def test_three_units_with_different_halves(self) -> None:
+        # Unit 1 indexes only M and makes M@lo and M@hi, unit 2 only B.
+        # M@lo has the same bytes as unit 0's B@lo, so the program keeps
+        # unit 0's three halves, and units 1 and 2 read through them.
+        u0 = _ROWS + (
+            "uint8_t m1(uint8_t r, uint8_t c);\n"
+            "uint8_t b2(uint8_t r, uint8_t c);\n"
+            "uint8_t both(uint8_t r, uint8_t c) { return M[r][c] + B[r][c]; }\n"
+        ) + self._main("both(1, 2) + m1(14, 5) * 2 + b2(15, 27) * 3")
+        u1 = _ROWS + "uint8_t m1(uint8_t r, uint8_t c) { return M[r + 1][c]; }\n"
+        u2 = _ROWS + "uint8_t b2(uint8_t r, uint8_t c) { return B[r][c]; }\n"
+        text, halves = self._link([u0, u1, u2])
+        self.assertEqual(halves, {"B@lo.0": 17, "B@hi.0": 17, "M@hi.0": 17})
+        self.assertIn("M@hi.0+1,X", text)
+        self.assertEqual(
+            self._run(text), (18 + 3) + ((15 * 16 + 5) & 0xFF) * 2 + 42 * 3,
+        )
+
+    def test_tables_that_differ_stay_apart(self) -> None:
+        # T's table has 11 row addresses, M's 17, so they share no half
+        # although T's rows are M's first rows. Each unit's static S is an
+        # array of its own, so their tables, whose bytes are relocations
+        # against S.0 and S.1, stay apart too. A global G is one array,
+        # so both units' tables of it are one.
+        s = (
+            "static uint8_t S[20][14];\n"
+            "uint8_t s{k}(uint8_t r, uint8_t c) {{\n"
+            "    S[r][c] = {k} + 1;\n"
+            "    return S[r][c] + S[r - 1][c] + G[r][c] + G[r - 1][c];\n"
+            "}}\n"
+        )
+        u0 = _ROWS + "uint8_t G[20][14];\n" \
+            + s.format(k=0) + (
+                "uint8_t t1(uint8_t r, uint8_t c);\n"
+                "uint8_t s1(uint8_t r, uint8_t c);\n"
+                "uint8_t m(uint8_t r, uint8_t c) { return M[r][c]; }\n"
+            ) + self._main(
+                "(G[19][13] = 7, m(2, 3) + t1(9, 27) * 2"
+                " + s0(19, 13) * 3 + s1(19, 13) * 5)"
+            )
+        # T is the first 10 rows of M's memory. A unit can't declare both.
+        u1 = (
+            "#include <stdint.h>\n"
+            "extern uint8_t T [[c6502::address(0x6000)]][10][28];\n"
+            "extern uint8_t G[20][14];\n"
+        ) + s.format(k=1) \
+            + "uint8_t t1(uint8_t r, uint8_t c) { return T[r][c]; }\n"
+        text, halves = self._link([u0, u1])
+        self.assertEqual(halves, {
+            "B@lo": 17, "B@hi": 17, "M@hi": 17, "T@lo": 11, "T@hi": 11,
+            "S@lo.0": 21, "S@hi.0": 21, "S@lo.1": 21, "S@hi.1": 21,
+            "G@lo.0": 21, "G@hi.0": 21,
+        })
+        # m(2, 3) = 35, t1(9, 27) = (144 + 27) & 0xFF, s0 = 1 + 0 + 7,
+        # s1 = 2 + 0 + 7.
+        self.assertEqual(self._run(text), 35 + 171 * 2 + 8 * 3 + 9 * 5)

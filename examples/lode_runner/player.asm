@@ -28,6 +28,7 @@ PADDLE_VALUES	EQU	$65
 __zpabi_access_compressed_level_data__command	EQU	$80
 __zpabi_access_hi_score_data_from_disk__command	EQU	$80
 __zpabi_bcd_to_decimal2__bcd	EQU	$80
+__zpabi_bg_row__row	EQU	$80
 __zpabi_blocks_player__sprite	EQU	$80
 __zpabi_char_to_sprite_num__c	EQU	$80
 __zpabi_draw_guard_sprite__sprite	EQU	$80
@@ -56,7 +57,6 @@ __zpabi_row_to_addr__page	EQU	$81
 __zpabi_run_or_swing__first	EQU	$81
 __zpabi_add_and_update_score__bcd_points_1	EQU	$82
 __zpabi_append_note__duration	EQU	$82
-__zpabi_bg_row__row	EQU	$82
 __zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$82
 __zpabi_draw_sprite_page1__sprite	EQU	$82
 __zpabi_draw_sprite_page2__sprite	EQU	$82
@@ -109,13 +109,12 @@ __local_try_moving_right__0	EQU	$B1
 __local_try_moving_left__1	EQU	$B2
 __local_try_moving_right__1	EQU	$B2
 __local_keep_digging__2	EQU	$B3
-__local_try_moving_left__2	EQU	$B3
+__local_run_or_swing__0	EQU	$B3
 __local_keep_digging__state	EQU	$B4
 __local_keep_digging__3	EQU	$B5
-__local_run_or_swing__0	EQU	$B5
 __local_keep_digging__4	EQU	$B6
+__local_leave_cell__2	EQU	$B6
 __local_keep_digging__col	EQU	$B7
-__local_leave_cell__2	EQU	$B7
 __local_keep_digging__row	EQU	$B8
 __local_keep_digging__5	EQU	$B9
 __local_keep_digging__6	EQU	$BA
@@ -202,13 +201,13 @@ DISK_IO	EQU	$C088
 ; def nudge_player_towards_exact_column params= locals= indirect=false in_cycle=false
 ; def nudge_player_towards_exact_row params= locals= indirect=false in_cycle=false
 ; def run_or_swing params=__zpabi_run_or_swing__first locals=__local_run_or_swing__0,__local_run_or_swing__1 indirect=false in_cycle=false
-; def stands_on_something params= locals=__local_stands_on_something__0,__local_stands_on_something__1 indirect=false in_cycle=false carry=true
+; def stands_on_something params= locals=__local_stands_on_something__0,__local_stands_on_something__1,__local_stands_on_something__2 indirect=false in_cycle=false carry=true
 ; def start_digging params=__zpabi_start_digging__direction locals=__local_start_digging__0 indirect=false in_cycle=false carry=true
 ; def step_down params= locals=__local_step_down__0 indirect=false in_cycle=false
 ; def stop_digging params= locals= indirect=false in_cycle=false carry=true
 ; def try_moving_down params= locals=__local_try_moving_down__0,__local_try_moving_down__1 indirect=false in_cycle=false carry=true
-; def try_moving_left params= locals=__local_try_moving_left__0,__local_try_moving_left__1,__local_try_moving_left__2,__local_try_moving_left__3 indirect=false in_cycle=false
-; def try_moving_right params= locals=__local_try_moving_right__0,__local_try_moving_right__1,__local_try_moving_right__2,__local_try_moving_right__3 indirect=false in_cycle=false
+; def try_moving_left params= locals=__local_try_moving_left__0,__local_try_moving_left__1 indirect=false in_cycle=false
+; def try_moving_right params= locals=__local_try_moving_right__0,__local_try_moving_right__1 indirect=false in_cycle=false
 ; def try_moving_up params= locals=__local_try_moving_up__0,__local_try_moving_up__1,__local_try_moving_up__2 indirect=false in_cycle=false carry=true
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
@@ -270,7 +269,6 @@ DISK_IO	EQU	$C088
 ; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
 ; ext wait_key params=
 ; call check_for_gold_picked_up_by_player -> add_and_update_score
-; call check_for_gold_picked_up_by_player -> bg_row
 ; call check_for_gold_picked_up_by_player -> draw_sprite_page2
 ; call check_for_gold_picked_up_by_player -> erase_sprite_at_pixel_coords
 ; call check_for_gold_picked_up_by_player -> load_sound_data
@@ -335,7 +333,6 @@ DISK_IO	EQU	$C088
 ; call try_moving_left -> enter_cell
 ; call try_moving_left -> erase_player
 ; call try_moving_left -> leave_cell
-; call try_moving_left -> map_row
 ; call try_moving_left -> nudge_player_towards_exact_row
 ; call try_moving_left -> run_or_swing
 ; call try_moving_right -> blocks_player
@@ -343,7 +340,6 @@ DISK_IO	EQU	$C088
 ; call try_moving_right -> enter_cell
 ; call try_moving_right -> erase_player
 ; call try_moving_right -> leave_cell
-; call try_moving_right -> map_row
 ; call try_moving_right -> nudge_player_towards_exact_row
 ; call try_moving_right -> run_or_swing
 ; call try_moving_up -> bg_row
@@ -363,27 +359,26 @@ DISK_IO	EQU	$C088
 ; item erase_player@run2 section=.text local=true zero=false
 ; item draw_player section=.text local=true zero=false
 ; item check_for_gold_picked_up_by_player section=.text local=true zero=false
-; item check_for_gold_picked_up_by_player@run9 section=.text local=true zero=false
+; item check_for_gold_picked_up_by_player@run8 section=.text local=true zero=false
 ; item inc_anim_state section=.text local=true zero=false
 ; item nudge_player_towards_exact_column section=.text local=true zero=false
 ; item nudge_player_towards_exact_row section=.text local=true zero=false
 ; item leave_cell section=.text local=true zero=false
-; item leave_cell@run6 section=.text local=true zero=false
 ; item leave_cell@run5 section=.text local=true zero=false
-; item leave_cell@run1 section=.text local=true zero=false
+; item leave_cell@run4 section=.text local=true zero=false
 ; item leave_cell@run0 section=.text local=true zero=false
 ; item enter_cell section=.text local=true zero=false
 ; item blocks_player section=.text local=true zero=false
 ; item step_down section=.text local=true zero=false
 ; item run_or_swing section=.text local=true zero=false
 ; item try_moving_left section=.text local=true zero=false
-; item try_moving_left@run10 section=.text local=true zero=false
+; item try_moving_left@run9 section=.text local=true zero=false
 ; item try_moving_right section=.text local=true zero=false
 ; item climb section=.text local=true zero=false
 ; item try_moving_up section=.text local=true zero=false
-; item try_moving_up@run8 section=.text local=true zero=false
 ; item try_moving_up@run7 section=.text local=true zero=false
-; item try_moving_up@run4 section=.text local=true zero=false
+; item try_moving_up@run6 section=.text local=true zero=false
+; item try_moving_up@run1 section=.text local=true zero=false
 ; item try_moving_down section=.text local=true zero=false
 ; item drop_player_in_hole section=.text local=true zero=false
 ; item stop_digging section=.text local=true zero=false
@@ -395,7 +390,9 @@ DISK_IO	EQU	$C088
 ; item SPRITE_ANIM_SEQS section=.rodata local=true zero=false
 ; item dig_tables section=.rodata local=true zero=false
 ; item gold_tune section=.rodata local=true zero=false
-; item LEVEL_BG@rows section=.rodata local=true zero=false
+; item LEVEL_BG@lo section=.rodata local=true zero=false merge=true
+; item LEVEL_BG@hi section=.rodata local=true zero=false merge=true
+; item LEVEL_MAP@hi section=.rodata local=true zero=false merge=true
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
 ; zp PLAYER_X_ADJ size=1 at=$02 def=false init=
@@ -459,9 +456,9 @@ map_row:
    SUBROUTINE
 
    LDX   __zpabi_map_row__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   map_row@ret
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   map_row@ret+1
    RTS
 
@@ -469,9 +466,9 @@ bg_row:
    SUBROUTINE
 
    LDX   __zpabi_bg_row__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   bg_row@ret
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   bg_row@ret+1
    RTS
 
@@ -544,12 +541,10 @@ check_for_gold_picked_up_by_player:
 .check_for_gold_picked_up_by_player@scfold@0:
    RTS
 .if_end@5:
-   LDA   PLAYER_ROW
-   STA   __zpabi_bg_row__row
-   JSR   bg_row
-   LDA   bg_row@ret+1
+   LDX   PLAYER_ROW
+   LDA   LEVEL_BG@hi,X
    STA   __local_check_for_gold_picked_up_by_player__2
-   LDA   bg_row@ret
+   LDA   LEVEL_BG@lo,X
    CLC
    ADC   PLAYER_COL
    STA   __local_check_for_gold_picked_up_by_player__1
@@ -564,8 +559,7 @@ check_for_gold_picked_up_by_player:
 .if_end@6:
    LSR   DIDNT_PICK_UP_GOLD
    DEC   GOLD_COUNT
-   LDA   PLAYER_ROW
-   STA   GAME_ROWNUM
+   STX   GAME_ROWNUM
    LDA   PLAYER_COL
    STA   GAME_COLNUM
    LDA   #$00
@@ -580,7 +574,7 @@ check_for_gold_picked_up_by_player:
    STY   __zpabi_erase_sprite_at_pixel_coords__sprite
    STA   __zpabi_erase_sprite_at_pixel_coords__half_col
    LDA   SCREEN_ROW_TABLE,X
-   JSR   check_for_gold_picked_up_by_player@run9
+   JSR   check_for_gold_picked_up_by_player@run8
    LDA   #$50
    STA   __zpabi_add_and_update_score__bcd_points_0
    LDA   #$02
@@ -592,7 +586,7 @@ check_for_gold_picked_up_by_player:
    STA   __zpabi_load_sound_data__notes_1
    JMP   load_sound_data
 
-check_for_gold_picked_up_by_player@run9:
+check_for_gold_picked_up_by_player@run8:
    SUBROUTINE
 
    STA   __zpabi_erase_sprite_at_pixel_coords__row
@@ -649,36 +643,31 @@ nudge_player_towards_exact_row:
 leave_cell:
    SUBROUTINE
 
-   JSR   leave_cell@run5
+   JSR   leave_cell@run4
    STA   __local_leave_cell__2
    CMP   #$01
    BNE   .cond_else@16
    LDA   #$00
    STA   __local_leave_cell__2
 .cond_else@16:
-   JSR   leave_cell@run6
+   LDA   PLAYER_ROW
+   JSR   leave_cell@run5
    LDA   __local_leave_cell__2
    LDY   PLAYER_COL
    STA   (map_row@ret),Y
    RTS
 
-leave_cell@run6:
-   SUBROUTINE
-
-   LDA   PLAYER_ROW
-   JMP   leave_cell@run1
-
 leave_cell@run5:
-   SUBROUTINE
-
-   LDA   PLAYER_ROW
-   JMP   leave_cell@run0
-
-leave_cell@run1:
    SUBROUTINE
 
    STA   __zpabi_map_row__row
    JMP   map_row
+
+leave_cell@run4:
+   SUBROUTINE
+
+   LDA   PLAYER_ROW
+   JMP   leave_cell@run0
 
 leave_cell@run0:
    SUBROUTINE
@@ -692,7 +681,8 @@ leave_cell@run0:
 enter_cell:
    SUBROUTINE
 
-   JSR   leave_cell@run6
+   LDA   PLAYER_ROW
+   JSR   leave_cell@run5
    LDA   #$09
    LDY   PLAYER_COL
    STA   (map_row@ret),Y
@@ -732,7 +722,7 @@ step_down:
 run_or_swing:
    SUBROUTINE
 
-   JSR   leave_cell@run5
+   JSR   leave_cell@run4
    CMP   #$04
    BNE   .if_else@24
    LDA   __zpabi_inc_anim_state__first
@@ -766,24 +756,15 @@ try_moving_left:
    BNE   .if_end@26
    RTS
 .if_end@26:
-   JSR   leave_cell@run6
-   LDA   PLAYER_COL
-   SEC
-   SBC   #$01
+   LDX   PLAYER_ROW
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_moving_left__0
-   LDA   #$00
-   SBC   #$00
-   STA   __local_try_moving_left__2
-   LDA   map_row@ret
-   CLC
-   ADC   __local_try_moving_left__0
-   STA   __local_try_moving_left__0
-   LDA   map_row@ret+1
-   ADC   __local_try_moving_left__2
+   LDA   LEVEL_MAP@hi,X
    STA   __local_try_moving_left__1
-   LDY   #$00
+   LDY   PLAYER_COL
+   DEY
    LDA   (__local_try_moving_left__0),Y
-   JSR   try_moving_left@run10
+   JSR   try_moving_left@run9
    BCC   .if_end@27
    RTS
 .if_end@27:
@@ -807,7 +788,7 @@ try_moving_left:
    STA   __zpabi_run_or_swing__first
    JMP   run_or_swing
 
-try_moving_left@run10:
+try_moving_left@run9:
    SUBROUTINE
 
    STA   __zpabi_blocks_player__sprite
@@ -824,19 +805,15 @@ try_moving_right:
    BNE   .if_end@31
    RTS
 .if_end@31:
-   JSR   leave_cell@run6
-   LDA   map_row@ret+1
-   STA   __local_try_moving_right__1
-   LDA   map_row@ret
-   CLC
-   ADC   PLAYER_COL
+   LDX   PLAYER_ROW
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_moving_right__0
-   BCC   .carry_inc@1
-   INC   __local_try_moving_right__1
-.carry_inc@1:
-   LDY   #$01
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_try_moving_right__1
+   LDY   PLAYER_COL
+   INY
    LDA   (__local_try_moving_right__0),Y
-   JSR   try_moving_left@run10
+   JSR   try_moving_left@run9
    BCC   .if_end@32
    RTS
 .if_end@32:
@@ -877,7 +854,7 @@ climb:
 try_moving_up:
    SUBROUTINE
 
-   JSR   leave_cell@run5
+   JSR   leave_cell@run4
    CMP   #$03
    BNE   .if_else@36
    LDA   PLAYER_Y_ADJ
@@ -887,15 +864,15 @@ try_moving_up:
    BEQ   .tail@0
    SEC
    SBC   #$01
-   JSR   try_moving_up@run4
-   JSR   try_moving_left@run10
+   JSR   try_moving_up@run1
+   JSR   try_moving_left@run9
    BCC   .if_end@35
    RTS
 .if_else@36:
    LDA   PLAYER_Y_ADJ
    CMP   #$03
    BCC   .tail@0
-   JSR   try_moving_up@run8
+   JSR   try_moving_up@run7
    CMP   #$03
    BEQ   .if_end@41
 .tail@0:
@@ -903,7 +880,7 @@ try_moving_up:
    RTS
 .if_end@41:
 .if_end@35:
-   JSR   try_moving_up@run7
+   JSR   try_moving_up@run6
    DEC   PLAYER_Y_ADJ
    BMI   .if_else@43
    JSR   check_for_gold_picked_up_by_player
@@ -917,7 +894,7 @@ try_moving_up:
 .if_end@42:
    JMP   climb
 
-try_moving_up@run8:
+try_moving_up@run7:
    SUBROUTINE
 
    LDA   PLAYER_ROW
@@ -925,16 +902,16 @@ try_moving_up@run8:
    ADC   #$01
    JMP   leave_cell@run0
 
-try_moving_up@run7:
+try_moving_up@run6:
    SUBROUTINE
 
    JSR   erase_player
    JMP   nudge_player_towards_exact_column
 
-try_moving_up@run4:
+try_moving_up@run1:
    SUBROUTINE
 
-   JSR   leave_cell@run1
+   JSR   leave_cell@run5
    LDY   PLAYER_COL
    LDA   (map_row@ret),Y
    RTS
@@ -949,7 +926,7 @@ try_moving_down:
    CMP   #$0F
    BCS   .try_moving_down@scfold@0
    ADC   #$01
-   JSR   try_moving_up@run4
+   JSR   try_moving_up@run1
    CMP   #$02
    BEQ   .try_moving_down@scfold@0
    CMP   #$01
@@ -959,7 +936,7 @@ try_moving_down:
    RTS
 .if_end@48:
 .if_end@44:
-   JSR   try_moving_up@run7
+   JSR   try_moving_up@run6
    JSR   step_down
    JMP   climb
 
@@ -1063,7 +1040,7 @@ keep_digging:
    LDA   __local_keep_digging__row
    CLC
    ADC   #$01
-   JSR   leave_cell@run1
+   JSR   leave_cell@run5
    LDY   __local_keep_digging__col
    LDA   (map_row@ret),Y
    CMP   #$01
@@ -1099,11 +1076,11 @@ keep_digging:
    LDA   __local_keep_digging__4
    STA   __zpabi_erase_sprite_at_pixel_coords__half_col
    LDA   __local_keep_digging__3
-   JSR   check_for_gold_picked_up_by_player@run9
+   JSR   check_for_gold_picked_up_by_player@run8
 .if_end@59:
    JMP   stop_digging
 .if_end@58:
-   JSR   try_moving_up@run7
+   JSR   try_moving_up@run6
    JSR   nudge_player_towards_exact_row
    LDA   DIG_ANIM_STATE
    STA   __local_keep_digging__state
@@ -1158,7 +1135,7 @@ keep_digging:
    LDA   __local_keep_digging__4
    STA   __zpabi_erase_sprite_at_pixel_coords__half_col
    LDA   __local_keep_digging__3
-   JSR   check_for_gold_picked_up_by_player@run9
+   JSR   check_for_gold_picked_up_by_player@run8
 .if_end@67:
    LDA   __local_keep_digging__col
    STA   GAME_COLNUM
@@ -1224,11 +1201,11 @@ stands_on_something:
    BEQ   .or_true@75
    CLC
    ADC   #$01
-   JSR   try_moving_up@run4
+   JSR   try_moving_up@run1
    BEQ   .tail@1
    CMP   #$08
    BEQ   .or_true@75
-   JSR   try_moving_up@run8
+   JSR   try_moving_up@run7
    CMP   #$01
    BEQ   .or_true@75
    CMP   #$02
@@ -1253,7 +1230,7 @@ move_player:
 .if_end@79:
    LDA   PLAYER_COL
    STA   __local_move_player__note_y
-   JSR   leave_cell@run5
+   JSR   leave_cell@run4
    CMP   #$03
    BEQ   .if_end@84
    CMP   #$04
@@ -1347,8 +1324,14 @@ dig_tables:
 gold_tune:
    DC.B  $07, $45, $06, $55, $05, $44, $04, $54, $03, $43, $02, $53, $00
 
-LEVEL_BG@rows:
+LEVEL_BG@lo:
    DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
-   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
-   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
-   DC.B  $09, $09, $09
+   DC.B  $C0
+
+LEVEL_BG@hi:
+   DC.B  $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B
+
+LEVEL_MAP@hi:
+   DC.B  $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09, $09
+   DC.B  $09

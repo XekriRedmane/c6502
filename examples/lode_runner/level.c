@@ -31,11 +31,12 @@
       even number of cells, so the two agree. Drawing a level counts in
       GAME_ROWNUM and GAME_COLNUM as the original does, since
       draw_sprite_page2 reads them.
-    - The original's PTR1 and PTR2, set for each row from
-      CURR_LEVEL_ROW_SPRITES_PTR_OFFSETS and the two page tables, are
-      pointers into LEVEL_MAP and LEVEL_BG that step a row at a time. The demo's level is
-      DEMO_LEVELS[LEVELNUM], where the original adds LEVELNUM to $9E
-      for the page. The original's ROW_ADDR and ROW_ADDR2, when it
+    - The original reaches a cell through PTR1 and PTR2, which it sets
+      for each row from CURR_LEVEL_ROW_SPRITES_PTR_OFFSETS and the two
+      page tables. Here a cell is LEVEL_MAP[row][col] or
+      LEVEL_BG[row][col], and PTR1 and PTR2 aren't written. The
+      demo's level is DEMO_LEVELS[LEVELNUM], where the original adds
+      LEVELNUM to $9E for the page. The original's ROW_ADDR and ROW_ADDR2, when it
       copies page 2 to page 1, are local pointers, and its MASK0, when
       it compares the high-score sector's marker, is a local.
     - LOAD_LEVEL stores VERBATIM from X, which is $FF when it loads the
@@ -617,14 +618,12 @@ const uint8_t HI_SCORE_DATA_MARKER[11] = {
  * player off it. Returns true if VERBATIM isn't 0 and the level has no
  * player. */
 static bool draw_level_page2(void) {
-    uint8_t *map = LEVEL_MAP[MAX_GAME_ROW];
-    uint8_t *bg = LEVEL_BG[MAX_GAME_ROW];
     GAME_ROWNUM = MAX_GAME_ROW;
     do {
         GAME_COLNUM = MAX_GAME_COL;
         do {
             uint8_t col = GAME_COLNUM;
-            uint8_t sprite = map[col];
+            uint8_t sprite = LEVEL_MAP[GAME_ROWNUM][col];
             if (VERBATIM) {
                 uint8_t n;
                 switch (sprite) {
@@ -648,7 +647,7 @@ static bool draw_level_page2(void) {
                     GUARD_ANIM_STATES[n] = 0;
                     GUARD_X_ADJS[n] = 2;
                     GUARD_Y_ADJS[n] = 2;
-                    bg[col] = SPRITE_EMPTY;
+                    LEVEL_BG[GAME_ROWNUM][col] = SPRITE_EMPTY;
                     break;
                 case SPRITE_PLAYER:
                     /* PLAYER_COL is 0xFF until a player is found. */
@@ -661,22 +660,20 @@ static bool draw_level_page2(void) {
                     /* SPRITE_ANIM_SEQS[8] is sprite 9, the player
                      * running right. */
                     PLAYER_ANIM_STATE = 8;
-                    bg[col] = SPRITE_EMPTY;
+                    LEVEL_BG[GAME_ROWNUM][col] = SPRITE_EMPTY;
                     break;
                 case SPRITE_TRAP:
                     sprite = SPRITE_BRICK;
                     break;
                 remove:
                     sprite = SPRITE_EMPTY;
-                    map[col] = SPRITE_EMPTY;
-                    bg[col] = SPRITE_EMPTY;
+                    LEVEL_MAP[GAME_ROWNUM][col] = SPRITE_EMPTY;
+                    LEVEL_BG[GAME_ROWNUM][col] = SPRITE_EMPTY;
                     break;
                 }
             }
             draw_sprite_page2(sprite);
         } while ((int8_t)--GAME_COLNUM >= 0);
-        map -= LEVEL_COLS;
-        bg -= LEVEL_COLS;
     } while ((int8_t)--GAME_ROWNUM >= 0);
 
     if (!VERBATIM) {
@@ -692,16 +689,14 @@ static bool draw_level_page2(void) {
     iris_wipe();
 
     /* Leave page 2 with only what's behind the guards and the player. */
-    map = LEVEL_MAP[MAX_GAME_ROW];
     GAME_ROWNUM = MAX_GAME_ROW;
     do {
         GAME_COLNUM = MAX_GAME_COL;
         do {
-            uint8_t sprite = map[GAME_COLNUM];
+            uint8_t sprite = LEVEL_MAP[GAME_ROWNUM][GAME_COLNUM];
             if (sprite == SPRITE_PLAYER || sprite == SPRITE_GUARD)
                 draw_sprite_page2(SPRITE_EMPTY);
         } while ((int8_t)--GAME_COLNUM >= 0);
-        map -= LEVEL_COLS;
     } while ((int8_t)--GAME_ROWNUM >= 0);
     return false;
 }
@@ -730,8 +725,6 @@ void load_level(bool verbatim) {
         access_compressed_level_data(DISK_ACCESS_READ);
 
         uint8_t index = 0;
-        uint8_t *map = LEVEL_MAP[0];
-        uint8_t *bg = LEVEL_BG[0];
         for (uint8_t row = 0; row < LEVEL_ROWS; row++) {
             for (uint8_t col = 0; col < LEVEL_COLS; col++) {
                 uint8_t sprite = DISK_BUFFER[index];
@@ -743,11 +736,9 @@ void load_level(bool verbatim) {
                 }
                 if (sprite >= 10)
                     sprite = SPRITE_EMPTY;
-                map[col] = sprite;
-                bg[col] = sprite;
+                LEVEL_MAP[row][col] = sprite;
+                LEVEL_BG[row][col] = sprite;
             }
-            map += LEVEL_COLS;
-            bg += LEVEL_COLS;
         }
 
         if (!draw_level_page2())
@@ -765,16 +756,14 @@ void load_level(bool verbatim) {
 void compress_and_save_level_data(void) {
     uint8_t index = 0;
     uint8_t low = 0;
-    const uint8_t *map = LEVEL_MAP[0];
     for (uint8_t row = 0; row < LEVEL_ROWS; row++) {
         for (uint8_t col = 0; col < LEVEL_COLS; col++) {
-            uint8_t sprite = map[col];
+            uint8_t sprite = LEVEL_MAP[row][col];
             if (col & 1)
                 DISK_BUFFER[index++] = (uint8_t)(sprite << 4) | low;
             else
                 low = sprite;
         }
-        map += LEVEL_COLS;
     }
     access_compressed_level_data(DISK_ACCESS_WRITE);
 }

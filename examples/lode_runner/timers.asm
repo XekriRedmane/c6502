@@ -256,7 +256,9 @@ DISK_IO	EQU	$C088
 ; item fill_hole section=.text local=true zero=false
 ; item handle_timers section=.text local=false zero=false
 ; item guard_hatched_tune section=.rodata local=true zero=false
-; item LEVEL_BG@rows section=.rodata local=true zero=false
+; item LEVEL_BG@lo section=.rodata local=true zero=false merge=true
+; item LEVEL_BG@hi section=.rodata local=true zero=false merge=true
+; item LEVEL_MAP@hi section=.rodata local=true zero=false merge=true
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
 ; zp PLAYER_X_ADJ size=1 at=$02 def=false init=
@@ -347,16 +349,16 @@ guard_resurrections:
    LDA   #$01
    STA   GUARD_RESURRECTION_TIMERS,X
    LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_resurrections__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_guard_resurrections__1
    LDY   GAME_COLNUM
    LDA   (__local_guard_resurrections__0),Y
    BNE   .if_end@2
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_guard_resurrections__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_guard_resurrections__1
    LDA   #$08
    STA   (__local_guard_resurrections__0),Y
@@ -443,9 +445,9 @@ kill_guard_in_hole:
    STA   GUARD_RESURRECT_COL
 .loop@2_continue:
    LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_kill_guard_in_hole__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_kill_guard_in_hole__1
    LDY   GUARD_RESURRECT_COL
    LDA   (__local_kill_guard_in_hole__0),Y
@@ -481,9 +483,9 @@ draw_brick:
    SUBROUTINE
 
    LDX   __zpabi_draw_brick__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_draw_brick__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_draw_brick__1
    LDA   #$01
    LDY   __zpabi_draw_brick__col
@@ -507,9 +509,9 @@ fill_hole:
    LDA   BRICK_DIG_COLS,X
    STA   GAME_COLNUM
    LDX   __zpabi_draw_brick__row
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_fill_hole__0
-   LDA   LEVEL_BG@rows+34,X
+   LDA   LEVEL_MAP@hi,X
    STA   __local_fill_hole__1
    LDY   __zpabi_draw_brick__col
    LDA   (__local_fill_hole__0),Y
@@ -520,9 +522,9 @@ fill_hole:
 .if_else@14:
    CMP   #$08
    BNE   .if_else@16
-   LDA   LEVEL_BG@rows,X
+   LDA   LEVEL_BG@lo,X
    STA   __local_fill_hole__0
-   LDA   LEVEL_BG@rows+17,X
+   LDA   LEVEL_BG@hi,X
    STA   __local_fill_hole__1
    LDA   #$01
    STA   (__local_fill_hole__0),Y
@@ -601,8 +603,14 @@ handle_timers:
 guard_hatched_tune:
    DC.B  $02, $7C, $03, $78, $04, $74, $05, $70, $00
 
-LEVEL_BG@rows:
+LEVEL_BG@lo:
    DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
-   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
-   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
-   DC.B  $09, $09, $09
+   DC.B  $C0
+
+LEVEL_BG@hi:
+   DC.B  $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B
+
+LEVEL_MAP@hi:
+   DC.B  $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09, $09
+   DC.B  $09

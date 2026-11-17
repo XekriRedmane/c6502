@@ -177,7 +177,7 @@ DISK_IO	EQU	$C088
 ; def poll_for_key params=__zpabi_poll_for_key__joystick_ends locals=__local_poll_for_key__0,__local_poll_for_key__n indirect=false in_cycle=false carry=true
 ; def read_joystick_for_command params= locals=__local_read_joystick_for_command__dig,__local_read_joystick_for_command__0 indirect=false in_cycle=false
 ; def read_paddles params= locals=__local_read_paddles__0,__local_read_paddles__1 indirect=false in_cycle=false
-; def return_handler params= locals=__local_return_handler__sprite,__local_return_handler__g,__local_return_handler__z,__local_return_handler__x indirect=false in_cycle=false
+; def return_handler params= locals=__local_return_handler__sprite,__local_return_handler__g,__local_return_handler__z,__local_return_handler__x,__local_return_handler__0,__local_return_handler__1 indirect=false in_cycle=false
 ; def wait_for_key params=__zpabi_wait_for_key__cursor locals=__local_wait_for_key__0 indirect=false in_cycle=false
 ; def wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor locals=__local_wait_for_key_with_cursor_page_1__0 indirect=false in_cycle=false
 ; def wait_key params= locals=__local_wait_key__0 indirect=false in_cycle=false
@@ -276,6 +276,8 @@ DISK_IO	EQU	$C088
 ; item detect_lack_of_joystick section=.text local=false zero=false
 ; item VALID_KEY_COMMANDS section=.rodata local=true zero=false
 ; item paddle_thresholds section=.data local=true zero=false
+; item LEVEL_BG@lo section=.rodata local=true zero=false merge=true
+; item LEVEL_BG@hi section=.rodata local=true zero=false merge=true
 ; item __zp_init section=.text local=false zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
@@ -701,25 +703,19 @@ return_handler:
    STA   KBDSTRB
    STA   TXTPAGE1
    JSR   clear_hgr2
-   LDA   #<(LEVEL_BG+447)
-   STA   __local_return_handler__g
-   LDA   #>(LEVEL_BG+447)
-   STA   __local_return_handler__z
    LDA   #$0F
    STA   GAME_ROWNUM
 .return_handler@rot@1:
    LDA   #$1B
    STA   GAME_COLNUM
 .return_handler@rot@0:
-   LDY   #$00
-   LDA   (__local_return_handler__g),Y
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
    STA   __local_return_handler__sprite
-   LDA   __local_return_handler__g
-   BNE   .carry_inc@1
-   DEC   __local_return_handler__z
-.carry_inc@1:
-   DEC   __local_return_handler__g
-   LDA   __local_return_handler__sprite
+   LDA   LEVEL_BG@hi,X
+   STA   __local_return_handler__g
+   LDY   GAME_COLNUM
+   LDA   (__local_return_handler__sprite),Y
    CMP   #$05
    BNE   .if_end@39
    LDA   #$01
@@ -963,6 +959,14 @@ VALID_KEY_COMMANDS:
 paddle_thresholds:
    DC.B  $12, $2E
    DC.B  $12, $2E
+
+LEVEL_BG@lo:
+   DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
+   DC.B  $C0
+
+LEVEL_BG@hi:
+   DC.B  $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B
 
 __zp_init:
    SUBROUTINE

@@ -353,14 +353,21 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   address) of N rows of R bytes, R not a power of two, `i` an
   unsigned non-volatile byte, `-255 <= k <= N`, and every temporary
   defined and read once, becomes `IndexedLoad(A@rows, i, p, offset=k,
-  plane=...)` at the `ZeroExtend`'s place. `A@rows` holds the low and
+  plane=N+1)` at the `ZeroExtend`'s place. `A@rows` holds the low and
   then the high bytes of the N+1 row addresses (numbers for a fixed
-  address, `AddressByteInit`s otherwise). `_choose` keeps the set of
-  arrays whose accesses save more than their tables cost (`_saving`:
-  40 bytes a lookup over two shifts and an add or subtract, 10 over a
-  `mul16` call), and arrays with the same row count share one table
-  holding each distinct half once, so `LEVEL_MAP` and `LEVEL_BG`
-  share their low half. See docs/optimizations/row_address_tables.md.
+  address, `AddressByteInit`s otherwise), but only in the TAC: its
+  symbol's `StaticAttr.planes` names the objects that hold the two
+  halves, `A@lo` and `A@hi`, and `tac_to_asm` emits those in its
+  place (`_planes`, `_plane_object`) and reads byte j of a lookup from
+  the j-th. `_choose` keeps the set of arrays whose accesses save more
+  than their tables cost (`_saving`: 40 bytes a lookup over two shifts
+  and an add or subtract, 10 over a `mul16` call), and arrays with the
+  same row count share a half with the same bytes, one object named
+  after the first array, so `LEVEL_MAP` reads `LEVEL_BG@lo`. Each half's
+  symbol is `StaticAttr.mergeable`, which puts `merge=true` on its
+  `item` line, and the linker keeps one copy of the halves several
+  units make with the same bytes (`linker._merge_identical`). See
+  docs/optimizations/row_address_tables.md.
 
 `IndexedLoad.plane` is 0 for an ordinary array. When it isn't, the
 index is an element number, and byte k of the value is at `name +

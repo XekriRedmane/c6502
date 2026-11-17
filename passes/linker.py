@@ -81,6 +81,12 @@ are renamed with it, so the allocators place two functions; two units
 defining one external name is an error. A name no unit defines and
 the linker doesn't place has to be given with `--defsym`.
 
+Merged tables. The halves of the tables of row addresses that `-O`
+makes (passes/optimization/row_address_tables.py) are marked `merge`
+in the metadata, and the program keeps one copy of those with the same
+bytes and relocations (`_merge_identical`), however many units make
+them.
+
 Layout (passes/link_layout.py). Each item is a section of its own in
 its object. With a linker script (`-T`, passes/link_script.py), the
 script places them. Without one, `.text`, `.rodata`, `.data`, and
@@ -549,6 +555,10 @@ def link_objects(
     for _, obj in objects:
         for sec in obj.sections:
             relax(sec, obj.symbols, known)
+
+    # The compiler's tables that several units make with the same
+    # bytes are one table in the program.
+    _merge_identical(objects, metas)
 
     # The linker's own items: `__zp_init`, `__spill`, and the promoted
     # objects put back in the data segment.
@@ -1132,6 +1142,78 @@ def _drop_unused_locals(
     for d in merged.defs:
         if not any(n in addressed for n in d.locals):
             d.locals = [n for n in d.locals if n in named]
+
+
+def _merge_identical(
+    objects: list[tuple[str, E.ElfFile]], metas: list[LinkMetadata],
+) -> None:
+    """Keeps one copy of the items marked `merge` (`ItemMeta.merge`)
+    whose sections have the same contents, the first in the order of
+    the units and their items, and points every other copy's
+    references at it.
+
+    Such an item is a plane of a table of row addresses
+    (passes/optimization/row_address_tables.py), an object of the
+    compiler's own that nothing writes and nothing takes the address
+    of, so a program behaves the same whichever copy its lookups read.
+    Its contents are
+    its bytes and its relocations, and a relocation's symbol counts
+    as the same in two units when it names the same thing: an
+    undefined or global symbol by its name, which every unit resolves
+    alike, and a local one only within its own unit. `_rename_locals`
+    has run, so two units' `static` arrays of one name have different
+    names here, and their tables stay apart.
+
+    The kept copy's symbol becomes global. No other unit defines its
+    name, since `_rename_locals` gave every internal item a name no
+    other unit uses. Each other copy's section goes, and its symbol becomes
+    an undefined reference to the kept one, so its unit's relocations,
+    with their addends (`A@hi+1,X`), resolve to the kept copy."""
+    kept: dict[tuple, E.Symbol] = {}
+    for k, ((_, obj), meta) in enumerate(zip(objects, metas)):
+        merged: set[str] = set()
+        for it in meta.items:
+            if not it.merge:
+                continue
+            sym = _item_symbol(obj, it.name)
+            key = _contents(k, obj, sym)
+            if key is None:
+                continue
+            first = kept.setdefault(key, sym)
+            if first is sym:
+                continue
+            first.bind = E.STB_GLOBAL
+            sec = sym.section
+            obj.sections.remove(sec)
+            sym.name = first.name
+            sym.section = E.SHN_UNDEF
+            sym.value = 0
+            sym.size = 0
+            sym.bind = E.STB_GLOBAL
+            sym.type = E.STT_NOTYPE
+            merged.add(it.name)
+        if merged:
+            meta.items = [it for it in meta.items if it.name not in merged]
+
+
+def _contents(k: int, obj: E.ElfFile, sym: E.Symbol) -> tuple | None:
+    """What the section of item `sym` of unit `k` holds, for
+    `_merge_identical`, or None when another symbol is defined inside
+    it, which a reference could name."""
+    sec = sym.section
+    if any(s.section is sec and s is not sym for s in obj.symbols):
+        return None
+
+    def target(s: E.Symbol):
+        if s.defined and not s.is_global:
+            return (k, s.name)
+        return s.name
+
+    relocs = tuple(sorted(
+        (r.offset, r.type, target(r.symbol), r.addend) for r in sec.relocs
+    ))
+    return (sec.name, sec.type, sec.flags, sec.align, sec.size,
+            bytes(sec.data), relocs)
 
 
 def _link_shares(merged: LinkMetadata, metas: list[LinkMetadata]) -> list:

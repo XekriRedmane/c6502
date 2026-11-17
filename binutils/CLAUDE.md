@@ -66,6 +66,17 @@ Symbols:
   and so are the call edges and shares that name it
   (`linker._rename_meta`), so two objects' `static` functions of one
   name get slots of their own.
+- An item whose metadata line has `merge=true` (a half of a table of
+  row addresses, `A@lo` or `A@hi`) is kept once among the items so
+  marked whose sections have the same contents
+  (`linker._merge_identical`, after `_rename_locals` and
+  `ld.relax`). The contents are the bytes and the relocations, with
+  each relocation's symbol taken as its name when it's undefined or
+  global and as its object and name when it's local. The first
+  object's copy stays, and its symbol becomes global. Each later copy's
+  section goes, and its symbol becomes an undefined reference with the
+  kept one's name, so its object's relocations and their addends
+  resolve to the kept copy.
 
 ## Relocations
 

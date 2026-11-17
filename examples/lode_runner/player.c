@@ -1112,10 +1112,15 @@ static const uint8_t gold_tune[] = {
     0x00,
 };
 
-/* These return row `row` of LEVEL_MAP and of LEVEL_BG. The grid is
- * read and written through them so that the row's address, 28 bytes
- * a row, is computed in one place. The original looks it up in its
- * tables CURR_LEVEL_ROW_SPRITES_PTR_OFFSETS, _PAGES, and _PAGES2. */
+/* These return row `row` of LEVEL_MAP and of LEVEL_BG. The original
+ * looks the row up in its tables CURR_LEVEL_ROW_SPRITES_PTR_OFFSETS,
+ * _PAGES, and _PAGES2, and the compiler looks it up in a table of row
+ * addresses too, so LEVEL_MAP[row][col] is cheap. These calls are
+ * still smaller in most of this file, because a call and the two
+ * stores of the address it returns take 7 bytes where the lookup
+ * takes 10, and outline_runs shares many of the calls. Written as
+ * plain indexing everywhere, this file grew by 24 bytes, so only the
+ * three functions where plain indexing was smaller use it. */
 static uint8_t *map_row(uint8_t row)
 {
     return LEVEL_MAP[row];
@@ -1153,7 +1158,7 @@ static void check_for_gold_picked_up_by_player(void)
 {
     if (PLAYER_X_ADJ != 2 || PLAYER_Y_ADJ != 2)
         return;
-    uint8_t *cell = &bg_row(PLAYER_ROW)[PLAYER_COL];
+    uint8_t *cell = &LEVEL_BG[PLAYER_ROW][PLAYER_COL];
     if (*cell != SPRITE_GOLD)
         return;
     DIDNT_PICK_UP_GOLD >>= 1;
@@ -1260,7 +1265,7 @@ static void try_moving_left(void)
     if (PLAYER_X_ADJ < 3) {
         if (PLAYER_COL == 0)
             return;
-        if (blocks_player(map_row(PLAYER_ROW)[PLAYER_COL - 1]))
+        if (blocks_player(LEVEL_MAP[PLAYER_ROW][PLAYER_COL - 1]))
             return;
     }
     erase_player();
@@ -1285,7 +1290,7 @@ static void try_moving_right(void)
     if (PLAYER_X_ADJ >= 2) {
         if (PLAYER_COL == MAX_GAME_COL)
             return;
-        if (blocks_player(map_row(PLAYER_ROW)[PLAYER_COL + 1]))
+        if (blocks_player(LEVEL_MAP[PLAYER_ROW][PLAYER_COL + 1]))
             return;
     }
     erase_player();

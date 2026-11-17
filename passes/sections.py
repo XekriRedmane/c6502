@@ -55,6 +55,8 @@ def items(prog: asm_ast.Program, symbols) -> list[ItemMeta]:
             out.append(ItemMeta(
                 name=tl.name, section=section,
                 local=not tl.is_global, zero=zero,
+                merge=bool(sym is not None
+                           and getattr(sym.attrs, "mergeable", False)),
             ))
     return out
 

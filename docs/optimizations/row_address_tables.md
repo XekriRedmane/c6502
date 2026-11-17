@@ -17,20 +17,27 @@ programmers keep a table of row addresses instead, split into low and
 high bytes as [split tables](split_tables.md) are, and the pass does
 the same:
 
-    LDX i; LDA rows,X; STA p; LDA rows+N+1,X; STA p+1
+    LDX i; LDA lo,X; STA p; LDA hi,X; STA p+1
 
 The table holds the N+1 addresses `A`, `A+R`, ..., `A+N*R`. The last
 one is the address one past the last row, which `&A[N]` may compute.
 Any other row index is undefined (C99 §6.5.6.8), so the table needs
 no more entries.
 
-The lookup is an `IndexedLoad` of the table with `plane` set to the
-distance from the low bytes to the high bytes. `A[i + k]` and `A[i -
-k]` look up `rows+k,X` and `rows-k,X`. For an array with a fixed
-address (`[[c6502::address(addr)]]`) the table holds numbers, and for
-any other static array it holds `AddressByteInit` bytes, written `DC.B
-<(A+R*r)` and `DC.B >(A+R*r)`, which the linker fills in. The table is
-named `A@rows`, after the array.
+The two halves are objects of their own, `A@lo` and `A@hi`, named
+after the array. `A[i + k]` and `A[i - k]` look up `A@lo+k,X` and
+`A@lo-k,X`. For an array with a fixed address
+(`[[c6502::address(addr)]]`) the halves hold numbers, and for any other
+static array they hold `AddressByteInit` bytes, written `DC.B
+<(A+R*r)` and `DC.B >(A+R*r)`, which the linker fills in.
+
+In the TAC, the lookup is an `IndexedLoad` of a table `A@rows` that
+holds both halves, with `plane` set to N+1, so constant folding and
+`tac_sim` read it as they read any table split into byte planes
+([split tables](split_tables.md)). `A@rows` is never emitted. Its
+symbol names the two objects (`StaticAttr.planes`), and `tac_to_asm`
+emits them in its place and reads byte j of a lookup from the j-th of
+them.
 
 ## Example
 
@@ -92,18 +99,21 @@ the 34-byte table brings the unit from 126 bytes to 68.
 
 ```
    LDX   __zpabi_below__row
-   LDA   MAP@rows+1,X
+   LDA   MAP@lo+1,X
    STA   __local_below__0
-   LDA   MAP@rows+18,X
+   LDA   MAP@hi+1,X
    STA   __local_below__1
    LDY   __zpabi_below__col
    LDA   (__local_below__0),Y
    RTS
 ...
-MAP@rows:
+MAP@lo:
    DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
-   DC.B  $C0, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09
-   DC.B  $09, $09
+   DC.B  $C0
+
+MAP@hi:
+   DC.B  $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09, $09
+   DC.B  $09
 ```
 
 ## When it applies
@@ -142,14 +152,34 @@ tables cost, and makes none when no set saves bytes. One access to a
 to a 40-row array save 80 against 82, so the first gets a table and
 the second doesn't.
 
-Arrays with the same number of rows share one table, which holds each
-distinct half once, the low halves first. Lode Runner's `LEVEL_MAP`
-and `LEVEL_BG` are 0x200 bytes apart, so their rows' low bytes are
-the same, and the two arrays' 51-byte table has one low half and two
-high halves. `LEVEL_MAP`'s lookups read `rows+17,X` for the high byte
-and `LEVEL_BG`'s read `rows+34,X`. Since sharing makes an array cheaper
-once another is chosen, the pass tries every set of the arrays with
-the same number of rows when there are at most 10 of them.
+Arrays with the same number of rows share a half when its bytes are
+the same, and the half is one object, named after the first array in
+alphabetical order that has it. Lode Runner's `LEVEL_MAP` and
+`LEVEL_BG` are 0x200 bytes apart, so their rows' low bytes are the
+same, and a unit that indexes both has `LEVEL_BG@lo`, `LEVEL_BG@hi`,
+and `LEVEL_MAP@hi`, 51 bytes in all. `LEVEL_MAP`'s lookups read
+`LEVEL_BG@lo,X` for the low byte and `LEVEL_MAP@hi,X` for the high
+byte. Since sharing makes an array cheaper once another is chosen,
+the pass tries every set of the arrays with the same number of rows
+when there are at most 10 of them.
+
+## Across units
+
+Each unit that indexes an array makes its own halves, and the linker
+keeps one copy of the halves whose bytes are the same
+([linker scripts](../linker_scripts.md#tables-several-files-make)).
+The pass marks each half `merge=true` in the unit's link metadata.
+Nothing but these lookups reads a half, nothing writes one, and
+nothing takes the address of one, so a program behaves the same
+whichever copy its lookups read. A half is the same in two units when its bytes and
+its relocations are, so the halves of one `extern` array merge, and
+the halves of two units' `static` arrays of one name stay apart.
+
+Lode Runner indexes `LEVEL_MAP` and `LEVEL_BG` in five units. Four of
+them made all three halves and `editor.c` made `LEVEL_MAP@lo` and
+`LEVEL_MAP@hi`, which has the same bytes as `LEVEL_BG@lo`, 238 bytes
+in all. The linked program keeps the three halves of `level.c`, and its
+data shrank from 1784 bytes to 1597.
 
 ## What it leaves alone
 
@@ -162,8 +192,10 @@ the same number of rows when there are at most 10 of them.
   isn't known at link time.
 - A unit whose accesses don't save more than the tables cost.
 
-Each unit that uses a table makes its own copy, since the linker has
-no way yet to keep one copy of identical tables from several units.
+The cost model counts a unit's halves at their full size, although
+the linker may keep another unit's copy and drop this one's. The
+compile of one unit has nothing to go on about which halves other
+units make.
 
 ## Related
 

@@ -279,3 +279,29 @@ code. The linker could place hot functions, or pad in front of a hot
 loop, so that their branches stay within a page, at the cost of a
 few bytes. It would need to know which branches are hot, from a
 profile or from loop depth.
+
+## Check where `[[fallthrough]];` is
+
+`parser._Builder.attribute_declaration` rejects `[[fallthrough]];` at
+file scope by testing `len(_CTX.scopes) == 1`. The lexer runs a token
+ahead of the reductions, so when the declaration is the last thing in
+a function body it has already read the `}` and closed the body's
+scope. This function then gets "belongs in a switch statement, not at
+file scope":
+
+```c
+void h(int x) {
+    x++;
+    [[fallthrough]];
+}
+```
+
+The code is invalid anyway, because C23 §6.7.13.6 lets the attribute
+appear only in a switch, right before a `case` or `default` label,
+but the message names the wrong place. Nothing checks the rule itself
+either: `[[fallthrough]];` anywhere inside a function is accepted,
+including as the last statement of a switch's block. The check belongs
+where the parser knows which statement follows, as `var_decl` does for
+`[[c6502::save_hardware_stack]]` (it returns a marker that `decl_item`
+acts on and `start` rejects). Then report a `[[fallthrough]];` that
+isn't followed by a label in the same switch.

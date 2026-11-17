@@ -5,7 +5,7 @@
 a `ZeroExtend`, `SignExtend`, or `Truncate` whose operand doesn't
 change inside a loop out to the loop's preheader, so it runs once
 instead of on every iteration. It runs in the TAC fixed-point loop
-under `--optimize`, on SSA form, right after
+under `-O`, on SSA form, right after
 [common subexpression elimination](cse.md). The unoptimized pipeline
 doesn't run it.
 

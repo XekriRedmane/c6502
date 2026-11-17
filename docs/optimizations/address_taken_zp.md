@@ -6,7 +6,7 @@ each local whose address is taken in a byte of its function's
 private zero-page pool, where it would otherwise go in a soft-stack
 frame. It runs once in `compile.optimized_asm`, after the final run
 of the asm optimizer and before `replace_pseudoregisters_bare_exit`,
-under `--optimize` only.
+under `-O` only.
 
 A local whose address is taken can't take part in SSA renaming or
 register allocation, since a pointer to it has to reach one fixed
@@ -43,10 +43,10 @@ unsigned char sum_pair(void) {
 unsigned char main(void) { return sum_pair(); }
 ```
 
-The "Before" listing comes from the same `--optimize` compile with
+The "Before" listing comes from the same `-O` compile with
 `compute_address_taken_assignments` replaced by one that assigns no
 bytes, which leaves `a` and `b` in the frame. The "After" listing is
-the normal `--optimize` compile.
+the normal `-O` compile.
 
 ### Before
 

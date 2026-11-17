@@ -48,7 +48,7 @@
     the bottom, so with zero entries it runs 256 times. The do/while
     with a down-counter keeps exactly that behavior.
 
-    Under --optimize this compiles to the same 18 instructions and
+    Under -O this compiles to the same 18 instructions and
     loop as the original: the key's low byte stays in A for the whole
     loop (passes/loop_invariant_a.py) and the counter lives in X
     (passes/counter_to_index_reg.py). The compare is `CMP $2200,Y`

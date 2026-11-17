@@ -403,7 +403,7 @@ class TestInlineShiftByOne(unittest.TestCase):
             "unsigned int f(unsigned int x) { return x << 1; }\n"
             "int main(void) { return (int)f(0x4000u); }\n"  # 0x8000
         )
-        # No-opt path uses asl16 helper. --optimize uses inline.
+        # No-opt path uses asl16 helper. -O uses inline.
         # Both should match: 0x8000 (which signs to -32768 in int).
         self.assertEqual(self._run(src, opt=False), -32768)
         self.assertEqual(self._run(src, opt=True), -32768)

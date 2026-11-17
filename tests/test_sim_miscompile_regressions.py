@@ -2,9 +2,9 @@
 testing in Nov 2026.
 
 Each program runs three ways: through the TAC simulator, through the
-asm simulator without `--optimize` (the same pass list as
-`compile.py --codegen`, peephole fixedpoint included), and through
-the asm simulator with `--optimize`. Every run must return the value
+asm simulator without `-O` (the same pass list as
+`compile.py -S`, peephole fixedpoint included), and through
+the asm simulator with `-O`. Every run must return the value
 C99 gives under c6502's widths (int 16 bits, long 32, long long 64,
 plain char unsigned).
 
@@ -196,7 +196,7 @@ _CASES: list[tuple[str, str, int]] = [
     """, 6),
     # x_save_slot_load rewrote `LDA slot` to `TXA` after X had been
     # overwritten, by a call returning in X or by an LDX of another
-    # value. Both use `register` parameters under --optimize.
+    # value. Both use `register` parameters under -O.
     ("register_param_across_call", """
         int f3(void) { return 0; }
         int f0(register unsigned char p0, register unsigned char p1) {

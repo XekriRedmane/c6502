@@ -72,7 +72,7 @@ class TestDrawSpriteOpaquePageFlag(unittest.TestCase):
         self.assertEqual(self._run(optimize=False), 0xA5A5)
 
     def test_optimized_writes_correct_pages(self):
-        """Same, with --optimize."""
+        """Same, with -O."""
         self.assertEqual(self._run(optimize=True), 0xA5A5)
 
 

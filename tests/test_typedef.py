@@ -17,7 +17,7 @@ AST never names a typedef. Coverage:
     scope, conflicting redefinitions, a typedef in a parameter or a
     `for` initializer, a function definition typed by a typedef, and
     a typedef whose struct tag an inner declaration hides.
-  * Programs using typedefs run with and without `--optimize`.
+  * Programs using typedefs run with and without `-O`.
 """
 from __future__ import annotations
 
@@ -367,7 +367,7 @@ class TestTypedefErrors(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestTypedefPrograms(unittest.TestCase):
-    """Run each program with and without `--optimize`."""
+    """Run each program with and without `-O`."""
 
     def _returns(self, src: str, expected: int) -> None:
         for optimize in (False, True):

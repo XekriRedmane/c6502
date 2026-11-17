@@ -5,7 +5,7 @@ Real-world C sources used to exercise the compiler end-to-end. Each
 the expected output of
 
 ```sh
-uv run python compile.py examples/<name>.c --codegen --optimize \
+uv run python compile.py examples/<name>.c -S -O \
     -o examples/<name>.asm
 ```
 
@@ -16,9 +16,9 @@ The matched `.c` / `.asm` pairs serve two purposes:
    codegen drift is caught at test time.
 2. **Hand-readable reference** — the `.asm` files are short enough
    (typically <500 lines) that a reader can read them end-to-end and
-   see what `--optimize` produces on representative game code
+   see what `-O` produces on representative game code
    (loop unrolling for `#pragma c6502 loop unroll(enable)` regions
-   is folded into `--optimize` — there is no separate `--unroll`
+   is folded into `-O` — there is no separate `--unroll`
    flag).
 
 The example corpus is biased toward Apple II / game-engine workloads:
@@ -38,8 +38,9 @@ ROM's addresses.
 and the routines it reaches, in three C files and a shared header,
 linked by a linker script into the addresses the original occupies.
 Its README describes it and compares it with Zork's code, and
-`tests/test_zork_instr_save.py` checks its outputs (each unit's and the
-linked program's, which `tests/test_example_outputs.py` doesn't cover)
+`tests/test_zork_instr_save.py` checks its outputs (each unit's, and
+the listing of the linked executable, `objdump.py -D`, which
+`tests/test_example_outputs.py` doesn't cover)
 and runs it, and Zork's own code when `ZORK_MAIN_BIN` is set, against
 stand-ins for DOS, the Monitor, and the rest of Zork.
 
@@ -113,7 +114,7 @@ inc_low_byte_test.md).
 
 The `compile-example` skill (project-local) wraps the canonical
 compile command. Type `/compile-example <name>` to compile
-`examples/<name>.c` with `--optimize` and overwrite
+`examples/<name>.c` with `-O` and overwrite
 `examples/<name>.asm`. Run the test snapshot afterward
 (`uv run python -m unittest tests.test_example_outputs`) to confirm
 the new pair is wired up.

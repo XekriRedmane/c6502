@@ -3,7 +3,7 @@
 `apply_short_jumps` in [passes/short_jumps.py](../../passes/short_jumps.py)
 shortens jumps once the branches have their final reach. It runs
 once, right after long-branch expansion, at the end of the
-`--optimize` asm pipeline, and makes three changes, each of which
+`-O` asm pipeline, and makes three changes, each of which
 only removes bytes, so no branch falls out of reach.
 
 - A `JMP .L`, or a [jump table](jump_table.md)'s entry for `.L`, where

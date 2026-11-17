@@ -1,6 +1,6 @@
 # Zero-page promotion
 
-`--optimize` moves the busiest globals into zero page, where nobody
+`-O` moves the busiest globals into zero page, where nobody
 declared them with `[[c6502::zeropage]]`. The choice is made in
 `plan_zero_page` and `_promotion_order` in
 [passes/zp_globals.py](../../passes/zp_globals.py), on the unoptimized
@@ -120,13 +120,13 @@ once, so it stays where it was, and so does the array `buf`.
   costs the same anywhere.
 - A global used too little to pay for its store in `__zp_init`, such
   as `once` above.
-- Everything without `--optimize`.
+- Everything without `-O`.
 - Bytes from `$80` up, which are the compiler's pools.
 
 ## Linking
 
 The link metadata marks a promoted global with its weight (`weight=`
-on its `zp` line). `compile.py --link` places the promoted globals of
+on its `zp` line). The linker places the promoted globals of
 every unit after the declared ones, densest first. One that doesn't
 fit goes back in the data segment with its initial bytes, unless some
 unit uses it as an `(zp),Y` pointer, which only works in zero page;

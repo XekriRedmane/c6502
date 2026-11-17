@@ -7,7 +7,7 @@ Coverage:
   - Cross-call values land in the callee-saved pool.
   - End-to-end: --optimize-asm produces ZP loads/stores ($XX
     addresses) for a small program with 2+ live locals, matching
-    the kind of placement --optimize achieves.
+    the kind of placement -O achieves.
 """
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ class TestAsmRegalloc(unittest.TestCase):
 
 
 class TestAsmRegallocEndToEnd(unittest.TestCase):
-    """Compile real programs through `--codegen --optimize` and
+    """Compile real programs through `-S -O` and
     verify the byte-granular regalloc is at least exercised end-
     to-end."""
 
@@ -125,7 +125,7 @@ class TestAsmRegallocEndToEnd(unittest.TestCase):
             "int main(void) { return f(3, 4); }\n"
         )
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+            ["compile.py", "-", "-S", "-O"], stdin=src,
         )
         self.assertEqual(rc, 0)
         # At least one body-local symbolic load with an EQU

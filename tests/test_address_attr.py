@@ -219,7 +219,7 @@ class TestCodegen(unittest.TestCase):
                 self.assertNotIn("__zpabi_COUT", asm.split("@zp-link")[0])
 
     def test_without_zp_abi_uses_soft_stack(self) -> None:
-        # The default zp_abi promotion under --optimize doesn't
+        # The default zp_abi promotion under -O doesn't
         # apply to a function with a fixed address.
         src = (
             "[[c6502::address(0x1000)]] void f(unsigned char c);\n"
@@ -370,7 +370,7 @@ class TestSim(unittest.TestCase):
     def test_poll_key(self) -> None:
         # The example in docs/attributes.md. Clearing the strobe on
         # one path used to leave A = 0 at the return under
-        # --optimize, because two passes lost track of the `LDA #0`
+        # -O, because two passes lost track of the `LDA #0`
         # inside a volatile `STA`.
         src = (
             "extern volatile unsigned char KBD "
@@ -441,22 +441,17 @@ class TestLink(unittest.TestCase):
         from compile import main as compile_main
         with patch("sys.stdin", io.StringIO(src)):
             self.assertEqual(compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-c", "-O",
                 "-o", str(path),
             ]), 0)
 
     def _link(self, paths: list[Path], out: Path) -> tuple[int, str]:
-        from compile import main as compile_main
-        err = io.StringIO()
-        with patch("sys.stderr", err):
-            rc = compile_main(
-                ["compile.py", "--link", *map(str, paths), "-o", str(out)],
-            )
-        return rc, err.getvalue()
+        from tests.link_helpers import link_capture_stderr
+        return link_capture_stderr(paths, out)
 
     def test_fixed_names_bound_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
+            a, b, out = (Path(tmp) / n for n in ("a.o", "b.o", "out"))
             self._compile(
                 self._ROM + "void say(unsigned char c);\n"
                 "int main(void) { say(KBD); return 0; }\n", a,
@@ -466,13 +461,14 @@ class TestLink(unittest.TestCase):
             )
             rc, err = self._link([a, b], out)
             self.assertEqual(rc, 0, err)
-            text = out.read_text()
+            from tests.link_helpers import linked_text
+            text = linked_text(out)
             self.assertEqual(text.count("COUT\tEQU\t$FDED"), 1)
             self.assertEqual(text.count("KBD\tEQU\t$C000"), 1)
 
     def test_conflicting_addresses_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
+            a, b, out = (Path(tmp) / n for n in ("a.o", "b.o", "out"))
             self._compile(
                 "[[c6502::address(0xFDED)]] void out(unsigned char c);\n"
                 "void f(void) { out(1); }\n", a,

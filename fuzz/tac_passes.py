@@ -8,7 +8,7 @@ unoptimized TAC. The program is in SSA form between passes, which
 `tac_sim.py` runs too.
 
 That names the pass and the function without reducing the program
-first. When no TAC pass changes the result but the `--optimize`
+first. When no TAC pass changes the result but the `-O`
 asm result is still wrong, the bug is in `tac_to_asm` or an asm pass.
 
     uv run python -m fuzz.tac_passes fuzz_out/stmts/stmts1549.c

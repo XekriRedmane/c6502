@@ -36,7 +36,7 @@ It's a different test of the compiler from `../instr_save`:
 | `zstring.c` | `print_zstring`, `A_mod_3`, `get_alphabet`, `get_next_zchar`, alphabet 2's table, and `print_string_literal` | lines 2598-2809 and 908-921 |
 | `print_zstring.ld` | The linker script | |
 | `disk.asm`, `pages.asm`, `output.asm`, `zstring.asm` | Each file compiled on its own | |
-| `print_zstring.asm` | The four linked by the script | |
+| `print_zstring.asm` | The listing of the program the four link into by the script | |
 
 Each `.c` file's header quotes the original code and lists where it
 departs from it.
@@ -46,14 +46,18 @@ departs from it.
 ```sh
 cd examples/zork/print_zstring
 for f in disk pages output zstring; do
-    uv run python ../../../compile.py $f.c --codegen --optimize -o $f.asm
+    uv run python ../../../compile.py $f.c -S -O -o $f.asm
 done
-uv run python ../../../compile.py --link -T print_zstring.ld \
-    disk.asm pages.asm output.asm zstring.asm -o print_zstring.asm
+uv run python ../../../compile.py -T print_zstring.ld \
+    disk.asm pages.asm output.asm zstring.asm -o print_zstring
+uv run python ../../../objdump.py -D --no-show-raw-insn --no-addresses \
+    print_zstring > print_zstring.asm
 ```
 
-`print_zstring.asm` assembles with dasm. It has no `main`, since it's
-a piece of Zork. `tests/test_zork_print_zstring.py` links it with a
+The link assembles each unit's `.asm` and writes the ELF executable
+`print_zstring`, which isn't checked in, and `print_zstring.asm` is
+its listing in dasm's syntax. It has no `main`, since it's a piece of
+Zork. `tests/test_zork_print_zstring.py` links it with a
 `main` that calls `print_string_literal`, runs it, and checks the
 outputs above against fresh compiles.
 
@@ -82,7 +86,7 @@ the struct, for translating more of Zork.
 keeps these routines, running to the start of the next: `$17DD` for
 `pages.c` and then `zstring.c`, `$1B90` for `output.c`, and `$1DAC`
 for `disk.c`, its IOB and DCT first. Input descriptions name the
-file, `zstring.asm(.text .text.* .rodata .rodata.*)`, so each unit's
+file, `zstring.o(.text .text.* .rodata .rodata.*)`, so each unit's
 code goes in its region. `print_string_literal` has
 `[[c6502::section(".text.literal")]]`, which the script puts at
 `$0C5B`. The C version of a region is larger than Zork's, so it runs
@@ -92,7 +96,7 @@ here.
 **Recursion.** `print_zstring` is on a call-graph cycle, which a
 private zero-page pool normally rules out. The pragma on its
 recursive call makes each call push the caller's live values. The
-link metadata marks that call edge `saved`, and `--link` accepts the
+link metadata marks that call edge `saved`, and the linker accepts the
 cycle the way the compile did.
 
 **Arguments in registers and in zero page.** `RWTS` takes its
@@ -175,8 +179,8 @@ scenario:
 Linking it needed:
 
 - An input description in a linker script can name its file,
-  `zstring.asm(.text)` (passes/link_script.py, passes/link_layout.py).
-- `--link` accepts a recursive cycle whose every call is under
+  `zstring.o(.text)` (passes/link_script.py, passes/link_layout.py).
+- the linker accepts a recursive cycle whose every call is under
   `#pragma c6502 call save(hardware_stack)`: the link metadata marks
   such call edges `saved` (passes/zp_link_metadata.py,
   passes/linker.py).

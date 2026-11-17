@@ -4,7 +4,7 @@
 [passes/optimization/loop_rotate.py](../../passes/optimization/loop_rotate.py)
 moves the test of a `for (T i = N; i >= 0; i--)` loop from the top
 of the loop to the bottom. It runs once per function on the TAC,
-before SSA construction, and only under `--optimize`. It runs before
+before SSA construction, and only under `-O`. It runs before
 SSA because the counter still has one name across the init, the
 body, and the decrement there, so the rotation reorders instructions
 without renaming anything.

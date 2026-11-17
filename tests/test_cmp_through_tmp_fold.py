@@ -266,7 +266,7 @@ class TestCmpThroughTmpFoldXor(unittest.TestCase):
     def test_xor_after_candidate_does_not_crash(self):
         # The tmp-read scan used to read `instr.src` on an Xor, which
         # has `src1` / `src2`, and crashed on about one random
-        # program in twenty under --optimize. The Xor reads tmp, so
+        # program in twenty under -O. The Xor reads tmp, so
         # the fold must not fire.
         src = asm_ast.Data(name="S", offset=0)
         tmp = asm_ast.Data(name="T", offset=0)

@@ -4,7 +4,7 @@
 [passes/carry_known.py](../../passes/carry_known.py) drops a `SEC` or
 `CLC` where the carry already has that value, and moves one in front
 of a loop when every way back into the loop already has it. It runs
-once under `--optimize`, after the peephole fixed point's third run.
+once under `-O`, after the peephole fixed point's third run.
 Several peepholes match a `SEC` or `CLC` ([transfer plus or minus
 one](transfer_pm1_store.md) turns `TXA; CLC; ADC #1; STA M` into
 `INX; STX M`, and [CMP and SBC fusion](cmp_sbc_fusion.md) moves a

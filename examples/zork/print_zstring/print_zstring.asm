@@ -1,4 +1,11 @@
+; elf32-mos executable
+   PROCESSOR 6502
+
 HARGS	EQU	$00
+__bss_size	EQU	$00
+__data_size	EQU	$00
+__rodata_size	EQU	$00
+__text_size	EQU	$00
 SSP	EQU	$01
 FP	EQU	$03
 DPTR	EQU	$05
@@ -12,6 +19,7 @@ CV	EQU	$25
 GBAS	EQU	$26
 BAS	EQU	$28
 __monitor_bas2	EQU	$2A
+__literal_size	EQU	$2C
 __monitor_zp_2c	EQU	$2C
 __dos_zp_2f	EQU	$2F
 COLOR	EQU	$30
@@ -26,6 +34,7 @@ __dos_zp_3a	EQU	$3A
 __monitor_acc	EQU	$45
 __dos_zp_46	EQU	$46
 __monitor_status	EQU	$48
+__disk_size	EQU	$49
 __dos_zp_49	EQU	$49
 RND	EQU	$4E
 __zork_zp_7c	EQU	$7C
@@ -83,9 +92,48 @@ __local_dump_buffer_to_printer__1	EQU	$FA
 __local_set_page_first__0	EQU	$FA
 __local_dump_buffer_to_printer__2	EQU	$FB
 __local_set_page_first__prev_first	EQU	$FB
+__pages_size	EQU	$FB
+__output_size	EQU	$0156
+__zstring_size	EQU	$0168
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
+__literal_load	EQU	$0C5B
+__literal_start	EQU	$0C5B
+__literal_end	EQU	$0C87
+__literal_load_end	EQU	$0C87
+__pages_load	EQU	$17DD
+__pages_start	EQU	$17DD
+__pages_end	EQU	$18D8
+__pages_load_end	EQU	$18D8
+__zstring_load	EQU	$18D8
+__zstring_start	EQU	$18D8
+__zstring_end	EQU	$1A40
+__zstring_load_end	EQU	$1A40
+__output_load	EQU	$1B90
+__output_start	EQU	$1B90
+__output_end	EQU	$1CE6
+__output_load_end	EQU	$1CE6
+__disk_load	EQU	$1DAC
+__disk_start	EQU	$1DAC
+__bss_end	EQU	$1DF5
+__bss_load	EQU	$1DF5
+__bss_load_end	EQU	$1DF5
+__bss_start	EQU	$1DF5
+__data_end	EQU	$1DF5
+__data_load	EQU	$1DF5
+__data_load_end	EQU	$1DF5
+__data_start	EQU	$1DF5
+__disk_end	EQU	$1DF5
+__disk_load_end	EQU	$1DF5
+__rodata_end	EQU	$1DF5
+__rodata_load	EQU	$1DF5
+__rodata_load_end	EQU	$1DF5
+__rodata_start	EQU	$1DF5
+__text_end	EQU	$1DF5
+__text_load	EQU	$1DF5
+__text_load_end	EQU	$1DF5
+__text_start	EQU	$1DF5
 RWTS	EQU	$2900
 VTAB	EQU	$FC22
 HOME	EQU	$FC58
@@ -96,158 +144,11 @@ GETLN1	EQU	$FD6F
 COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
-; @zp-link-meta-begin
-; def A_mod_3 params=__zpabi_A_mod_3__a locals= indirect=false in_cycle=false param_regs=A
-; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
-; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X pinned=$E6,$E7,
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals= indirect=false in_cycle=false param_regs=A carry=true
-; def dump_buffer_line params= locals= indirect=false in_cycle=false
-; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
-; def dump_buffer_to_screen params= locals= indirect=false in_cycle=false
-; def dump_buffer_with_more params= locals=__local_dump_buffer_with_more__0,__local_dump_buffer_with_more__end indirect=false in_cycle=false
-; def find_index_of_page_table params= locals= indirect=false in_cycle=false carry=true
-; def get_alphabet params= locals= indirect=false in_cycle=false
-; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__page,__local_get_next_code_byte2__0 indirect=false in_cycle=false
-; def get_next_code_word params= locals=__local_get_next_code_word__1 indirect=false in_cycle=false
-; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1 indirect=false in_cycle=false carry=true
-; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
-; def load_packed_address params= locals= indirect=false in_cycle=false
-; def print_string_literal params= locals= indirect=false in_cycle=false
-; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
-; def read_from_sector params= locals= indirect=false in_cycle=false carry=true
-; def set_page_first params=__zpabi_set_page_first__slot locals=__local_set_page_first__0,__local_set_page_first__prev_first indirect=false in_cycle=false param_regs=A
-; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
-; ext CLREOL params=
-; ext COUT params=__zpabi_COUT__c param_regs=A
-; ext COUT1 params=__zpabi_COUT1__c param_regs=A
-; ext GETLN1 params=
-; ext HOME params=
-; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
-; ext VTAB params=
-; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
-; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X pinned=$E6,$E7,
-; ext do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command param_regs=A carry=true
-; ext dump_buffer_line params=
-; ext dump_buffer_to_printer params=
-; ext dump_buffer_to_screen params=
-; ext dump_buffer_with_more params=
-; ext find_index_of_page_table params= carry=true
-; ext get_alphabet params=
-; ext get_next_code_byte2 params=
-; ext get_next_code_word params=
-; ext get_next_zchar params= carry=true
-; ext invalidate_zcode_page2 params=
-; ext load_packed_address params=
-; ext print_string_literal params=
-; ext print_zstring params=
-; ext read_from_sector params= carry=true
-; ext restart params=
-; ext set_page_first params=__zpabi_set_page_first__slot param_regs=A
-; call buffer_char -> dump_buffer_with_more
-; call cout_string -> COUT1
-; call do_rwts_on_sector -> RWTS
-; call dump_buffer_line -> dump_buffer_to_printer
-; call dump_buffer_line -> dump_buffer_to_screen
-; call dump_buffer_to_printer -> COUT
-; call dump_buffer_to_screen -> COUT1
-; call dump_buffer_with_more -> CLREOL
-; call dump_buffer_with_more -> COUT
-; call dump_buffer_with_more -> COUT1
-; call dump_buffer_with_more -> RDKEY
-; call dump_buffer_with_more -> cout_string
-; call dump_buffer_with_more -> dump_buffer_line
-; call get_next_code_byte2 -> find_index_of_page_table
-; call get_next_code_byte2 -> read_from_sector
-; call get_next_code_byte2 -> restart
-; call get_next_code_byte2 -> set_page_first
-; call get_next_code_word -> get_next_code_byte2
-; call get_next_zchar -> get_next_code_word
-; call load_packed_address -> invalidate_zcode_page2
-; call print_string_literal -> print_zstring
-; call print_zstring -> A_mod_3
-; call print_zstring -> buffer_char
-; call print_zstring -> get_alphabet
-; call print_zstring -> get_next_zchar
-; call print_zstring -> load_packed_address
-; call print_zstring -> print_zstring saved
-; call read_from_sector -> do_rwts_on_sector
-; zp __monitor_zp_1f size=1 at=$1F def=false init=
-; zp WNDLFT size=1 at=$20 def=false init=
-; zp WNDWDTH size=1 at=$21 def=false init=
-; zp WNDTOP size=1 at=$22 def=false init=
-; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
-; zp GBAS size=2 at=$26 def=false init=
-; zp BAS size=2 at=$28 def=false init=
-; zp __monitor_bas2 size=2 at=$2A def=false init=
-; zp __monitor_zp_2c size=3 at=$2C def=false init=
-; zp __dos_zp_2f size=1 at=$2F def=false init=
-; zp COLOR size=1 at=$30 def=false init=
-; zp __dos_zp_31 size=1 at=$31 def=false init=
-; zp INVFLG size=1 at=$32 def=false init=
-; zp PROMPT size=1 at=$33 def=false init=
-; zp __dos_zp_34 size=1 at=$34 def=false init=
-; zp __monitor_ysav1 size=1 at=$35 def=false init=
-; zp CSW size=2 at=$36 def=false init=
-; zp KSW size=2 at=$38 def=false init=
-; zp __dos_zp_3a size=11 at=$3A def=false init=
-; zp __monitor_acc size=1 at=$45 def=false init=
-; zp __dos_zp_46 size=2 at=$46 def=false init=
-; zp __monitor_status size=1 at=$48 def=false init=
-; zp __dos_zp_49 size=5 at=$49 def=false init=
-; zp RND size=2 at=$4E def=false init=
-; zp __zork_zp_7c size=3 at=$7C def=false init=
-; zp SECTORS_PER_TRACK size=1 at=$7F def=false init=
-; zp __zork_zp_80 size=10 at=$80 def=false init=
-; zp Z_PC size=3 at=$8A def=false init=
-; zp ZCODE_PAGE_ADDR size=2 at=$8D def=false init=
-; zp ZCODE_PAGE_VALID size=1 at=$8F def=false init=
-; zp PAGE_TABLE_INDEX size=1 at=$90 def=false init=
-; zp Z_PC2 size=3 at=$91 def=false init=
-; zp ZCODE_PAGE_ADDR2 size=2 at=$94 def=false init=
-; zp ZCODE_PAGE_VALID2 size=1 at=$96 def=false init=
-; zp PAGE_TABLE_INDEX2 size=1 at=$97 def=false init=
-; zp __zork_zp_98 size=2 at=$98 def=false init=
-; zp __zork_zp_9a size=30 at=$9A def=false init=
-; zp HIGH_MEM_ADDR size=2 at=$B8 def=false init=
-; zp Z_HEADER_ADDR size=2 at=$BA def=false init=
-; zp NUM_IMAGE_PAGES size=1 at=$BC def=false init=
-; zp NUM_PAGE_TABLE_ENTRIES size=1 at=$BD def=false init=
-; zp FIRST_Z_PAGE size=1 at=$BE def=false init=
-; zp LAST_Z_PAGE size=1 at=$BF def=false init=
-; zp PAGE_L_TABLE size=2 at=$C0 def=false init=
-; zp PAGE_H_TABLE size=2 at=$C2 def=false init=
-; zp NEXT_PAGE_TABLE size=2 at=$C4 def=false init=
-; zp PREV_PAGE_TABLE size=2 at=$C6 def=false init=
-; zp __zork_zp_c8 size=6 at=$C8 def=false init=
-; zp SHIFT_ALPHABET size=1 at=$CE def=false init=
-; zp LOCKED_ALPHABET size=1 at=$CF def=false init=
-; zp ZDECOMPRESS_STATE size=1 at=$D0 def=false init=
-; zp ZCHARS size=2 at=$D1 def=false init=
-; zp __zork_zp_d3 size=15 at=$D3 def=false init=
-; zp Z_ABBREV_TABLE size=2 at=$E2 def=false init=
-; zp SCRATCH1 size=2 at=$E4 def=false init=
-; zp SCRATCH2 size=2 at=$E6 def=false init=
-; zp __zork_zp_e8 size=3 at=$E8 def=false init=
-; zp BUFF_END size=1 at=$EB def=false init=
-; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
-; zp CURR_LINE size=1 at=$ED def=false init=
-; zp PRINTER_CSW size=2 at=$EE def=false init=
-; zp __zork_zp_f0 size=3 at=$F0 def=false init=
-; runtime hargs_size=1 hargs_need=0
-; @zp-link-meta-end
-
-
+; Disassembly of section .literal at $0C5B
    SEG   literal
    ORG   $0C5B
-__literal_start:
-
 print_string_literal:
    SUBROUTINE
-
    LDA   Z_PC
    STA   Z_PC2
    LDA   Z_PC+1
@@ -270,51 +171,37 @@ print_string_literal:
    LDA   ZCODE_PAGE_ADDR2+1
    STA   ZCODE_PAGE_ADDR+1
    RTS
-__literal_end:
-__literal_load	EQU	__literal_start
-   IF    __literal_end > $17DD
-   ECHO  "section .literal runs past the end of region literal by", [__literal_end - $17DD]d, "bytes"
-   ERR
-   ENDIF
 
+; Disassembly of section .pages at $17DD
    SEG   pages
    ORG   $17DD
-__pages_start:
-
 load_packed_address:
    SUBROUTINE
-
    LDA   SCRATCH2
    ASL
    STA   Z_PC2
-   LDA   SCRATCH2+1
+   LDA   __zpabi_cout_string__s_1
    ROL
    STA   Z_PC2+1
    LDA   #$00
    ROL
    STA   Z_PC2+2
-
 invalidate_zcode_page2:
    SUBROUTINE
-
    LDA   #$00
    STA   ZCODE_PAGE_VALID2
    RTS
-
 get_next_code_word:
    SUBROUTINE
-
    JSR   get_next_code_byte2
-   STA   __local_get_next_code_word__1
+   STA   __local_dump_buffer_with_more__0
    JSR   get_next_code_byte2
    STA   SCRATCH2
-   LDA   __local_get_next_code_word__1
-   STA   SCRATCH2+1
+   LDA   __local_dump_buffer_with_more__0
+   STA   __zpabi_cout_string__s_1
    RTS
-
 get_next_code_byte2:
    SUBROUTINE
-
 .loop@0_start:
    LDA   ZCODE_PAGE_VALID2
    BEQ   .if_end@0
@@ -326,26 +213,26 @@ get_next_code_byte2:
    LDX   #$00
    STX   ZCODE_PAGE_VALID2
    ORA   Z_PC2+1
-   BNE   .if_end@2
+   BNE   .if_end@1
    INC   Z_PC2+2
-.if_end@2:
 .if_end@1:
+.if_end@2:
    LDA   (ZCODE_PAGE_ADDR2),Y
    RTS
 .if_end@0:
    LDA   Z_PC2+1
-   STA   __local_get_next_code_byte2__page
+   STA   __local_dump_buffer_with_more__end
    LDA   Z_PC2+2
-   STA   __local_get_next_code_byte2__0
+   STA   __local_dump_buffer_to_printer__x
    BNE   .if_else@6
-   LDA   __local_get_next_code_byte2__page
+   LDA   __local_dump_buffer_with_more__end
    CMP   NUM_IMAGE_PAGES
    BCC   .vthread@0
 .if_else@6:
-   LDA   __local_get_next_code_byte2__page
+   LDA   __local_dump_buffer_with_more__end
    STA   SCRATCH2
-   LDA   __local_get_next_code_byte2__0
-   STA   SCRATCH2+1
+   LDA   __local_dump_buffer_to_printer__x
+   STA   __zpabi_cout_string__s_1
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
    BCC   .if_end@7
@@ -360,16 +247,16 @@ get_next_code_byte2:
    STA   SCRATCH2
    LDA   HIGH_MEM_ADDR+1
    ADC   PAGE_TABLE_INDEX2
-   STA   SCRATCH2+1
-   LDA   __local_get_next_code_byte2__page
+   STA   __zpabi_cout_string__s_1
+   LDA   __local_dump_buffer_with_more__end
    STA   SCRATCH1
-   LDA   __local_get_next_code_byte2__0
+   LDA   __local_dump_buffer_to_printer__x
    STA   SCRATCH1+1
    JSR   read_from_sector
    BCC   .if_end@9
    JSR   restart
 .if_end@9:
-   LDA   __local_get_next_code_byte2__page
+   LDA   __local_dump_buffer_with_more__end
    LDY   PAGE_TABLE_INDEX2
    STA   (PAGE_L_TABLE),Y
    LDA   Z_PC2+2
@@ -390,47 +277,43 @@ get_next_code_byte2:
    LDA   #$FF
    STA   ZCODE_PAGE_VALID2
    JMP   .loop@0_start
-
 set_page_first:
    SUBROUTINE
-
    TAY
    CPY   FIRST_Z_PAGE
    BNE   .if_end@10
    RTS
 .if_end@10:
    LDA   FIRST_Z_PAGE
-   STA   __local_set_page_first__prev_first
+   STA   __local_dump_buffer_to_printer__2
    STY   FIRST_Z_PAGE
    LDA   (NEXT_PAGE_TABLE),Y
    TAX
-   LDA   __local_set_page_first__prev_first
+   LDA   __local_dump_buffer_to_printer__2
    STA   (NEXT_PAGE_TABLE),Y
    LDA   (PREV_PAGE_TABLE),Y
-   STA   __local_set_page_first__0
+   STA   __local_dump_buffer_to_printer__1
    LDA   #$FF
    STA   (PREV_PAGE_TABLE),Y
    TXA
-   LDY   __local_set_page_first__0
+   LDY   __local_dump_buffer_to_printer__1
    STA   (NEXT_PAGE_TABLE),Y
    LDA   FIRST_Z_PAGE
-   LDY   __local_set_page_first__prev_first
+   LDY   __local_dump_buffer_to_printer__2
    STA   (PREV_PAGE_TABLE),Y
    CPX   #$FF
    BNE   .if_else@12
-   LDA   __local_set_page_first__0
+   LDA   __local_dump_buffer_to_printer__1
    STA   LAST_Z_PAGE
    RTS
 .if_else@12:
    TXA
    TAY
-   LDA   __local_set_page_first__0
+   LDA   __local_dump_buffer_to_printer__1
    STA   (PREV_PAGE_TABLE),Y
    RTS
-
 find_index_of_page_table:
    SUBROUTINE
-
    LDX   NUM_PAGE_TABLE_ENTRIES
    LDY   #$00
    LDA   SCRATCH2
@@ -438,7 +321,7 @@ find_index_of_page_table:
    CMP   (PAGE_L_TABLE),Y
    BNE   .if_end@15
    LDA   (PAGE_H_TABLE),Y
-   CMP   SCRATCH2+1
+   CMP   __zpabi_cout_string__s_1
    BNE   .find_index_of_page_table@lia@1
    CLC
    TYA
@@ -452,20 +335,12 @@ find_index_of_page_table:
    SEC
    LDA   LAST_Z_PAGE
    RTS
-__pages_end:
-__pages_load	EQU	__pages_start
-   IF    __pages_end > $1B90
-   ECHO  "section .pages runs past the end of region zstring by", [__pages_end - $1B90]d, "bytes"
-   ERR
-   ENDIF
 
+; Disassembly of section .zstring at $18D8
    SEG   zstring
-   ORG   __pages_end
-__zstring_start:
-
+   ORG   $18D8
 print_zstring:
    SUBROUTINE
-
    LDA   #$00
    STA   LOCKED_ALPHABET
    STA   ZDECOMPRESS_STATE
@@ -480,7 +355,7 @@ print_zstring:
    ORA   #$00
    BNE   .if_else@2
    LDA   #$20
-   JMP   .if_end@1
+   JMP   .if_end@15
 .if_else@2:
    CMP   #$01
    BNE   .if_else@4
@@ -501,7 +376,7 @@ print_zstring:
    LDA   (__local_print_zstring__ch),Y
    STA   SCRATCH2
    LDA   __local_print_zstring__0
-   STA   SCRATCH2+1
+   STA   __zpabi_cout_string__s_1
    LDA   LOCKED_ALPHABET
    PHA
    LDA   ZDECOMPRESS_STATE
@@ -565,7 +440,7 @@ print_zstring:
 .xjump@0:
    CLC
    ADC   __local_print_zstring__c_0
-   JMP   .if_end@9
+   JMP   .if_end@15
 .if_else@10:
    CMP   #$01
    BNE   .if_else@12
@@ -584,29 +459,27 @@ print_zstring:
    STA   __local_print_zstring__c_0
    JSR   get_next_zchar
    ORA   __local_print_zstring__c_0
-   JMP   .if_end@13
+   JMP   .if_end@15
 .if_else@14:
    CMP   #$07
    BNE   .if_else@16
    LDA   #$0D
    JSR   buffer_char
    LDA   #$0A
-   BNE   .if_end@15
+   BNE   .if_end@1
 .if_else@16:
    SEC
    SBC   #$08
    TAX
    LDA   a2_table,X
-.if_end@15:
-.if_end@13:
-.if_end@9:
 .if_end@1:
+.if_end@13:
+.if_end@15:
+.if_end@9:
    JSR   buffer_char
    JMP   .loop@0_start
-
 A_mod_3:
    SUBROUTINE
-
    JMP   .loop@1_continue
 .A_mod_3@rot@0:
    SBC   #$03
@@ -614,10 +487,8 @@ A_mod_3:
    CMP   #$03
    BCS   .A_mod_3@rot@0
    RTS
-
 get_alphabet:
    SUBROUTINE
-
    LDA   SHIFT_ALPHABET
    BPL   .if_end@17
    LDA   LOCKED_ALPHABET
@@ -626,10 +497,8 @@ get_alphabet:
    LDY   #$FF
    STY   SHIFT_ALPHABET
    RTS
-
 get_next_zchar:
    SUBROUTINE
-
    LDA   ZDECOMPRESS_STATE
    BPL   .if_end@18
    SEC
@@ -641,12 +510,12 @@ get_next_zchar:
    JSR   get_next_code_word
    LDA   SCRATCH2
    STA   ZCHARS
-   LDA   SCRATCH2+1
+   LDA   __zpabi_cout_string__s_1
    STA   ZCHARS+1
    LSR
    LSR
    AND   #$1F
-   JMP   .if_end@19
+   JMP   .if_end@21
 .if_else@20:
    CMP   #$01
    BNE   .if_else@22
@@ -658,12 +527,12 @@ get_next_zchar:
    LSR
    LSR
    LSR
-   STA   __local_get_next_zchar__compound_literal_1
+   STA   __local_buffer_char__0
    LDA   ZCHARS+1
    ASL
    ASL
    ASL
-   ORA   __local_get_next_zchar__compound_literal_1
+   ORA   __local_buffer_char__0
    AND   #$1F
    JMP   .if_end@21
 .if_else@22:
@@ -677,28 +546,20 @@ get_next_zchar:
    STA   ZDECOMPRESS_STATE
    LDA   ZCHARS
    AND   #$1F
-.if_end@21:
 .if_end@19:
+.if_end@21:
    CLC
    RTS
-
 a2_table:
-   DC.B  $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $2E, $2C, $21, $3F, $5F, $23
+   DC.B  $30, $31, $32, $33, $34, $35, $36, $37
+   DC.B  $38, $39, $2E, $2C, $21, $3F, $5F, $23
    DC.B  $27, $22, $2F, $5C, $2D, $3A, $28, $29
-__zstring_end:
-__zstring_load	EQU	__zstring_start
-   IF    __zstring_end > $1B90
-   ECHO  "section .zstring runs past the end of region zstring by", [__zstring_end - $1B90]d, "bytes"
-   ERR
-   ENDIF
 
+; Disassembly of section .output at $1B90
    SEG   output
    ORG   $1B90
-__output_start:
-
 buffer_char:
    SUBROUTINE
-
    LDX   BUFF_END
    CMP   #$0D
    BNE   .if_end@0
@@ -728,7 +589,7 @@ buffer_char:
    CMP   #$A0
    BEQ   .loop@0_break
    DEX
-   BNE   .loop@0_start
+   BNE   .if_end@5
    LDX   WNDWDTH
 .loop@0_break:
    STX   BUFF_LINE_LEN
@@ -751,20 +612,15 @@ buffer_char:
    INC   BUFF_END
    STA   BUFF_AREA,X
    JMP   .loop@1_start
-
 dump_buffer_line:
    SUBROUTINE
-
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
    LSR
-   BCC   .if_end@9
+   BCC   dump_buffer_to_screen
    JSR   dump_buffer_to_printer
-.if_end@9:
-
 dump_buffer_to_screen:
    SUBROUTINE
-
    LDX   #$00
    BEQ   .loop@3_start
 .dump_buffer_to_screen@rot@1:
@@ -777,10 +633,8 @@ dump_buffer_to_screen:
    LDA   #$00
    STA   BUFF_END
    RTS
-
 dump_buffer_to_printer:
    SUBROUTINE
-
    LDA   CSW
    STA   __local_dump_buffer_to_printer__2
    LDA   CSW+1
@@ -824,19 +678,17 @@ dump_buffer_to_printer:
    LDA   __local_dump_buffer_to_printer__1
    STA   CSW+1
    RTS
-
 dump_buffer_with_more:
    SUBROUTINE
-
    INC   CURR_LINE
    LDA   CURR_LINE
    CMP   WNDBTM
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #<string_more
-   STA   __zpabi_cout_string__s_0
-   LDA   #>string_more
+   LDA   #$E0
+   STA   SCRATCH2
+   LDA   #$1C
    STA   __zpabi_cout_string__s_1
    LDX   #$06
    JSR   cout_string
@@ -888,63 +740,40 @@ dump_buffer_with_more:
    LDA   #$00
    STA   BUFF_END
    RTS
-
 cout_string:
    SUBROUTINE
-
    LDY   #$00
 .loop@4_start:
-   LDA   (__zpabi_cout_string__s_0),Y
+   LDA   (SCRATCH2),Y
    ORA   #$80
    JSR   COUT1
    INY
    DEX
    BNE   .loop@4_start
    RTS
-
 printer_card_initialized_flag:
-   DS.B  1
-
+   DC.B  $00
 string_more:
    DC.B  $5B, $4D, $4F, $52, $45, $5D
-__output_end:
-__output_load	EQU	__output_start
-   IF    __output_end > $1DAC
-   ECHO  "section .output runs past the end of region output by", [__output_end - $1DAC]d, "bytes"
-   ERR
-   ENDIF
 
+; Disassembly of section .disk at $1DAC
    SEG   disk
    ORG   $1DAC
-__disk_start:
-
 iob:
+   DC.B  $01, $60, $01, $00, $00, $00, $BD, $1D
+   DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
-   DC.B  $60
-   DC.B  $01
-   DS.B  3
-   DC.W  dct
-   DS.B  7
-   DC.B  $60
-   DC.B  $01
-
 dct:
-   DS.B  1
-   DC.B  $01
-   DC.W  $D8EF
-
+   DC.B  $00, $01, $EF, $D8
 read_from_sector:
    SUBROUTINE
-
    LDA   #$01
-
 do_rwts_on_sector:
    SUBROUTINE
-
    STA   iob+12
    LDA   SCRATCH2
    STA   iob+8
-   LDA   SCRATCH2+1
+   LDA   __zpabi_cout_string__s_1
    STA   iob+9
    LDA   #$03
    STA   iob+4
@@ -963,52 +792,6 @@ do_rwts_on_sector:
 .loop@0_break:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
-   LDA   #>iob
-   LDY   #<iob
+   LDA   #$1D
+   LDY   #$AC
    JMP   RWTS
-__disk_end:
-__disk_load	EQU	__disk_start
-   IF    __disk_end > $2200
-   ECHO  "section .disk runs past the end of region disk by", [__disk_end - $2200]d, "bytes"
-   ERR
-   ENDIF
-
-   SEG   text
-   ORG   __disk_end
-__text_start:
-__text_end:
-__text_load	EQU	__text_start
-   IF    __text_end > $2200
-   ECHO  "section .text runs past the end of region disk by", [__text_end - $2200]d, "bytes"
-   ERR
-   ENDIF
-
-   SEG   rodata
-   ORG   __text_end
-__rodata_start:
-__rodata_end:
-__rodata_load	EQU	__rodata_start
-   IF    __rodata_end > $2200
-   ECHO  "section .rodata runs past the end of region disk by", [__rodata_end - $2200]d, "bytes"
-   ERR
-   ENDIF
-
-   SEG   data
-   ORG   __rodata_end
-__data_start:
-__data_end:
-__data_load	EQU	__data_start
-   IF    __data_end > $2200
-   ECHO  "section .data runs past the end of region disk by", [__data_end - $2200]d, "bytes"
-   ERR
-   ENDIF
-
-   SEG   bss
-   ORG   __data_end
-__bss_start:
-__bss_end:
-__bss_load	EQU	__bss_start
-   IF    __bss_end > $2200
-   ECHO  "section .bss runs past the end of region disk by", [__bss_end - $2200]d, "bytes"
-   ERR
-   ENDIF

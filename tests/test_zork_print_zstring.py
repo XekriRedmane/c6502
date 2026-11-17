@@ -2,11 +2,12 @@
 z-string printer and print_string_literal, in four C files linked with
 a linker script into the addresses Zork gives them.
 
-`TestGoldOutputs` checks each unit's `--optimize` output and the linked
-program against the checked-in `.asm` files.
+`TestGoldOutputs` checks each unit's `-O` output and the listing of
+the linked program (`objdump.py -D`) against the checked-in `.asm`
+files.
 
-The rest runs the linked program in the simulator (assembled with
-dasm, so it skips without dasm) on a small story file. The story has
+The rest runs the linked executable in the simulator on a small
+story file. The story has
 five 256-byte pages. Pages 0 and 1 are resident at `_IMAGE`, and pages
 2 to 4 are read from a disk image at `_DISK` into a two-slot cache, so
 that the string crosses from a resident page into a cached one and the
@@ -47,7 +48,6 @@ from py65.devices.mpu6502 import MPU
 _DIR = Path(__file__).parent.parent / "examples" / "zork" / "print_zstring"
 _UNITS = ["disk", "pages", "output", "zstring"]
 _HAVE_PCPP = shutil.which("pcpp") is not None
-_HAVE_DASM = shutil.which("dasm") is not None
 
 _RWTS, _MAIN = 0x2900, 0x0800
 _COUT1, _COUT, _RDKEY, _CLREOL = 0xFDF0, 0xFDED, 0xFD0C, 0xFC9C
@@ -73,7 +73,7 @@ int main(void) { print_string_literal(); return 0; }
 def _compile(unit: str, out: Path) -> None:
     from compile import main as compile_main
     assert compile_main([
-        "compile.py", str(_DIR / f"{unit}.c"), "--codegen", "--optimize",
+        "compile.py", str(_DIR / f"{unit}.c"), "-S", "-O",
         "-o", str(out),
     ]) == 0
 
@@ -81,7 +81,7 @@ def _compile(unit: str, out: Path) -> None:
 def _link(paths: list[Path], out: Path) -> None:
     from compile import main as compile_main
     assert compile_main([
-        "compile.py", "--link", "-T", str(_DIR / "print_zstring.ld"),
+        "compile.py", "-T", str(_DIR / "print_zstring.ld"),
         *map(str, paths), "-o", str(out),
     ]) == 0
 
@@ -106,8 +106,9 @@ class TestGoldOutputs(unittest.TestCase):
                     )
             linked = Path(tmp) / "print_zstring.asm"
             _link(paths, linked)
+            from tests.link_helpers import listing
             self.assertEqual(
-                linked.read_text(),
+                listing(linked),
                 (_DIR / "print_zstring.asm").read_text(),
             )
 
@@ -350,17 +351,18 @@ def _linked_text() -> str:
         driver = Path(tmp) / "driver.asm"
         with patch("sys.stdin", io.StringIO(_DRIVER)):
             assert compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-S", "-O",
                 "-I", str(_DIR), "-o", str(driver),
             ]) == 0
-        linked = Path(tmp) / "linked.asm"
+        linked = Path(tmp) / "linked"
         _link(paths + [driver], linked)
-        return linked.read_text()
+        from tests.link_helpers import linked_text
+        return linked_text(linked)
 
 
 def _run_c(text: str, **scenario) -> _Machine:
     from sim.linked import build_linked_sim
-    sim = build_linked_sim(text)
+    sim = build_linked_sim(text.exe)
     machine = _Machine(sim.mpu, **scenario)
     machine.run(sim.runtime.hooks)
     return machine
@@ -394,7 +396,7 @@ def _text(screen: list[int]) -> str:
     return "".join(out)
 
 
-@unittest.skipUnless(_HAVE_PCPP and _HAVE_DASM, "needs pcpp and dasm")
+@unittest.skipUnless(_HAVE_PCPP, "needs pcpp")
 class TestRuns(unittest.TestCase):
 
     @classmethod

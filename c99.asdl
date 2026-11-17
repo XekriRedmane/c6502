@@ -23,7 +23,7 @@ module C99 {
         -- preceding the loop. The only recognized name today is
         -- "unroll" — set when the pragma's state is `enable`.
         -- `disable` and absent pragma both leave it None. The
-        -- pragma is honored only under `--optimize --unroll`; a
+        -- pragma is honored only under `-O --unroll`; a
         -- pragma seen without those flags is silently ignored.
         | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label, string? unroll_annotation)
         | SwitchStmt(exp control, statement body, identifier label, switch_case* cases, identifier? default_label, data_type? promoted_type)
@@ -79,7 +79,7 @@ module C99 {
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves, string? section, bool noreturn)
     -- `section` (on both declarations) is the name from
     -- `[[c6502::section("name")]]`, or None. It only matters to
-    -- `compile.py --link -T`, which places each section where the
+    -- `compile.py -T`, which places each section where the
     -- linker script says (passes/sections.py).
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).

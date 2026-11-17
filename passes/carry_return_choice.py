@@ -47,7 +47,7 @@ gives the carry return to every function that
 
 The unit that defines the function and every unit that calls it each
 record the choice in the link metadata (`carry=true` on the `def` and
-`ext` lines, from `zp_link_metadata`), and `compile.py --link` rejects
+`ext` lines, from `zp_link_metadata`), and the linker rejects
 units that disagree. They can disagree when one unit takes the
 function's address, or when the defining unit can't give it zp_abi.
 
@@ -63,7 +63,7 @@ of a function whose `FunAttr.carry_return` is set, and the calls to
 it, the way it does for the annotation. `choose_global_carry_returns`
 runs right after `select_abi`, and `choose_carry_returns` after it,
 so that a static function can pass its carry through a function with
-external linkage. Only under `--optimize`.
+external linkage. Only under `-O`.
 """
 from __future__ import annotations
 

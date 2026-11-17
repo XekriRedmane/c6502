@@ -20,12 +20,12 @@ SECTIONS
 {
     .main : { *(.text.main) } > low
     .text : {
-        decode.asm(.text .text.*)
-        pages.asm(.text .text.*)
-        zstring.asm(.text .text.*)
-        output.asm(.text .text.*)
-        objects.asm(.text .text.*)
-        numbers.asm(.text .text.*)
+        decode.o(.text .text.*)
+        pages.o(.text .text.*)
+        zstring.o(.text .text.*)
+        output.o(.text .text.*)
+        objects.o(.text .text.*)
+        numbers.o(.text .text.*)
     } > low
     .text.rest : { *(.text .text.*) } > high
     .rodata : { *(.rodata .rodata.*) } > high

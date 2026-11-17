@@ -1,4 +1,4 @@
-"""Compares `examples/zork_find_index_of_page_table.c` under --optimize
+"""Compares `examples/zork_find_index_of_page_table.c` under -O
 with the hand-written routine it translates, from the Zork I (r15)
 Z-machine interpreter
 (https://github.com/XekriRedmane/zorki-r15-reveng).
@@ -107,7 +107,7 @@ class TestFindIndexOfPageTable(unittest.TestCase):
     def setUpClass(cls) -> None:
         src = _EXAMPLE.read_text()
         asm_text = subprocess.run(
-            [sys.executable, "compile.py", str(_EXAMPLE), "--codegen", "--optimize"],
+            [sys.executable, "compile.py", str(_EXAMPLE), "-S", "-O", "-o", "-"],
             capture_output=True, text=True, check=True,
             cwd=Path(__file__).parent.parent,
         ).stdout

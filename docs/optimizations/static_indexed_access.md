@@ -7,7 +7,7 @@ turns a read or write of `o[i].m`, where `o` is a static array, into
 offset=m)`, which `tac_to_asm` lowers as `LDX i; LDA o+m,X`. It runs
 once, after the TAC fixed point and before
 [indirect-indexed access through a pointer](recognize_indirect_indexed.md),
-under `--optimize`.
+under `-O`.
 
 Three other changes make the index a byte for it to work with, and
 put a constant part of it in the offset:

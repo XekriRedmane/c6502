@@ -3,7 +3,7 @@
 chapter_8 covers iteration statements (`while`, `do`/`while`, `for`),
 `break` / `continue`, and `switch`. Three buckets:
 
-  valid/             — must compile through `--codegen`.
+  valid/             — must compile through `-S`.
   invalid_parse/     — must fail at lex or parse.
   invalid_semantics/ — must be rejected somewhere in the pipeline.
 
@@ -49,7 +49,7 @@ _EXPECTED_FAILURES_CODEGEN = frozenset()
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter8Valid(unittest.TestCase):
-    """Each chapter_8/valid file must compile through `--codegen`,
+    """Each chapter_8/valid file must compile through `-S`,
     except those listed in `_EXPECTED_FAILURES_CODEGEN` (must fail) or
     `_INCOMPATIBLE_VALID` (skipped)."""
 

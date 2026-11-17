@@ -3,15 +3,15 @@ name: compile-example
 description: Use when user says "compile example", "compile <name>",
   or invokes /compile-example with a filename — compiles a C source
   file from the examples/ directory with full optimization
-  (--optimize) and writes the resulting 6502 assembly to
+  (-O) and writes the resulting 6502 assembly to
   examples/<name>.asm
 ---
 
 # Compile Example
 
 Takes a filename argument naming a source file in `examples/` and runs
-it through `compile.py --codegen --optimize`, writing the output to
-the matching `.asm` file in `examples/`. `--optimize` enables loop
+it through `compile.py -S -O`, writing the output to
+the matching `.asm` file in `examples/`. `-O` enables loop
 unrolling and the default zp_abi pipeline.
 
 ## Input
@@ -30,10 +30,10 @@ for output. If the input `.c` doesn't exist, report it and stop.
 From the project root (`/project/c6502`):
 
 ```sh
-uv run python compile.py examples/<base>.c --codegen --optimize -o examples/<base>.asm
+uv run python compile.py examples/<base>.c -S -O -o examples/<base>.asm
 ```
 
-The `-o` path must end in `.asm` (compile.py enforces this).
+The `-o` path must end in `.s` or `.asm` (compile.py enforces this).
 
 ## After compiling
 
@@ -157,7 +157,7 @@ old file in place. Then:
    atom (or asserts the eligibility filter rejects the input).
    Confirm the test fails before the fix. If the offending shape
    is only producible end-to-end, fall back to an integration
-   test that runs `compile.py --codegen --optimize` on the small
+   test that runs `compile.py -S -O` on the small
    repro.
 
 4. **Fix the pass.** Tighten the eligibility filter (or whatever

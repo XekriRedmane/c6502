@@ -41,7 +41,7 @@ code), so it's reserved and addressed but not initialized. An
 `extern` declaration without an address and without a definition
 names an object another unit defines. This unit doesn't place it
 (`ZpGlobals.external`); its references stay `Data(name, k)`, and
-`compile.py --link` gives the name its address.
+The linker gives the name its address.
 
 # How references reach zero page
 
@@ -61,17 +61,17 @@ returns, and a global's value isn't.
 # Linking
 
 Since every reference is by name, the code doesn't depend on where a
-bare `zeropage` object ends up. Under `--optimize` each unit lists its
+bare `zeropage` object ends up. Under `-O` each unit lists its
 zero-page objects in the link metadata (`link_records`): the size, the
 fixed address if it has one, whether the unit defines it, and its
-initial bytes. `compile.py --link` keeps the fixed addresses, places
+initial bytes. The linker keeps the fixed addresses, places
 the rest for the whole program, keeps every object's bytes out of the
 slot allocators, and replaces each unit's `__zp_init` with one that
 stores every object's initial bytes (`passes/linker.py`).
 
-# Promotion under `--optimize`
+# Promotion under `-O`
 
-With `--optimize`, globals nobody asked for are moved into zero page
+With `-O`, globals nobody asked for are moved into zero page
 too, when they're used enough to pay for it (`_promotion_order`). A
 candidate is a scalar (an integer, a floating-point number, or a
 pointer) with static storage that the unit defines, that isn't
@@ -145,8 +145,8 @@ class ZpGlobals:
     address, and `external` maps each `extern` object with neither an
     address nor a definition here to its size; another unit defines
     it and the linker places it. `promoted` maps each object
-    `--optimize` moved into zero page to its weight (see "Promotion
-    under `--optimize`"). `param_bytes` are the bytes where functions
+    `-O` moved into zero page to its weight (see "Promotion
+    under `-O`"). `param_bytes` are the bytes where functions
     take a `zeropage(addr)` parameter, which are in `reserved` too:
     their callers, which may be outside the program, write them."""
     addrs: dict[str, int] = field(default_factory=dict)
@@ -177,7 +177,7 @@ def allocate_zp_globals(
     the block has to move), then the rest. An `extern` with no address
     and no definition goes in `external` instead. With `weights` (the
     `access_weights` of the unit), globals that pay for it are then
-    promoted into the bytes left (see "Promotion under `--optimize`").
+    promoted into the bytes left (see "Promotion under `-O`").
     Raises
     `ZpGlobalError` for an address out of range, an overlap, or a full
     range, and `RuntimeLayoutError` when the runtime's block doesn't
@@ -398,7 +398,7 @@ def plan_zero_page(tac, symbols, types, promote: bool = False) -> ZpGlobals:
     """`allocate_zp_globals` for a translation unit whose unoptimized
     TAC is `tac`. If the runtime's block has to move, HARGS is sized
     by translating `tac` to asm and measuring it
-    (`runtime_layout.hargs_need`). `promote` (under `--optimize`)
+    (`runtime_layout.hargs_need`). `promote` (under `-O`)
     also promotes globals into zero page."""
     def need() -> int:
         from passes.runtime_layout import hargs_need

@@ -293,36 +293,33 @@ class TestLink(unittest.TestCase):
         from compile import main as compile_main
         with patch("sys.stdin", io.StringIO(src)):
             self.assertEqual(compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-S", "-O",
                 "-o", str(path),
             ]), 0)
 
     def _link(self, paths, out: Path) -> tuple[int, str]:
-        from compile import main as compile_main
-        err = io.StringIO()
-        with patch("sys.stderr", err):
-            rc = compile_main(
-                ["compile.py", "--link", *map(str, paths), "-o", str(out)],
-            )
-        return rc, err.getvalue()
+        from tests.link_helpers import link_capture_stderr
+        return link_capture_stderr(paths, out)
 
     def test_layout_bound_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
+            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o"))
             self._compile("int g(int x);\n"
                           "int main(void) { return g(2); }\n", a)
             self._compile("int g(int x) { return x + 1; }\n", b)
             rc, err = self._link([a, b], out)
             self.assertEqual(rc, 0, err)
-            text = out.read_text()
+            from tests.link_helpers import linked_text
+            text = linked_text(out)
             self.assertEqual(text.count("DPTR\tEQU\t$24"), 1)
             self.assertEqual(text.count("SSP\tEQU\t$00"), 1)
 
-    def test_old_units_have_to_agree(self) -> None:
-        # Units that don't say how much of HARGS they use, as before the
-        # linker chose the layout, have to come with the same one.
+    def test_units_without_a_need(self) -> None:
+        # A unit that doesn't say how much of HARGS it uses is taken to
+        # use the classic block's, and its own EQUs for the runtime's
+        # names don't bind them: the linker chooses the layout.
         with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
+            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o"))
             self._compile("int main(void) { return 0; }\n", a)
             self._compile("int g(int x) { return x + 1; }\n", b)
             for path in (a, b):
@@ -333,15 +330,16 @@ class TestLink(unittest.TestCase):
                 "DPTR\tEQU\t$24", "DPTR\tEQU\t$30",
             ))
             rc, err = self._link([a, b], out)
-            self.assertEqual(rc, 1)
-            self.assertIn("runtime zero-page layout", err)
+            self.assertEqual(rc, 0, err)
+            from tests.link_helpers import symbols
+            self.assertEqual(symbols(out)["DPTR"], CLASSIC.dptr)
 
     def test_layout_chosen_for_the_program(self) -> None:
         # One unit uses the Monitor's zero page, which moves the block;
         # the other doesn't, and needs more of HARGS (a 16-bit
         # multiply). The linker chooses one layout for both.
         with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
+            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o"))
             self._compile(
                 "#include <apple2/monitor_io.h>\n"
                 "int mul(int x, int y);\n"
@@ -350,12 +348,8 @@ class TestLink(unittest.TestCase):
             self._compile("int mul(int x, int y) { return x * y; }\n", b)
             rc, err = self._link([a, b], out)
             self.assertEqual(rc, 0, err)
-            equ = {
-                m.group(1): int(m.group(2), 16)
-                for m in re.finditer(
-                    r"^(\S+)\tEQU\t\$([0-9A-F]+)$", out.read_text(), re.M,
-                )
-            }
+            from tests.link_helpers import linked_text, symbols
+            equ = symbols(out)
             runtime = [equ[n] for n in ("SSP", "FP", "HARGS", "DPTR")]
             self.assertNotIn(0x24, runtime)
             need = int(re.search(
@@ -363,7 +357,7 @@ class TestLink(unittest.TestCase):
             ).group(1))
             self.assertGreater(need, 1)
             size = int(re.search(
-                r"; runtime hargs_size=(\d+)", out.read_text(),
+                r"; runtime hargs_size=(\d+)", linked_text(out),
             ).group(1))
             self.assertGreaterEqual(size, need)
 

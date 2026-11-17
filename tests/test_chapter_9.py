@@ -3,7 +3,7 @@
 chapter_9 covers function declarations, definitions, calls, and
 arguments. Five buckets:
 
-  valid/                 — must compile through `--codegen`.
+  valid/                 — must compile through `-S`.
   invalid_parse/         — must fail at lex or parse.
   invalid_declarations/  — must be rejected in the pipeline.
   invalid_labels/        — must be rejected in the pipeline.
@@ -76,7 +76,7 @@ def _run_codegen_subtest(test, files, root, not_rejected):
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter9Valid(unittest.TestCase):
-    """Each chapter_9/valid file must compile through `--codegen`."""
+    """Each chapter_9/valid file must compile through `-S`."""
 
     def test_codegen(self):
         files = sorted((_C9 / "valid").rglob("*.c"))

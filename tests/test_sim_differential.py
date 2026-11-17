@@ -117,7 +117,7 @@ _OPT_DIVERGES: dict[str, str] = {
 
 # Programs where the optimized build is known to take more cycles
 # than the unoptimized one. The unoptimized build runs the same
-# peephole fixedpoint as `compile.py --codegen`, so on tiny programs
+# peephole fixedpoint as `compile.py -S`, so on tiny programs
 # it can beat the optimizer when the optimizer leaves a shape the
 # peepholes don't recognize. Each entry names that shape, and each
 # has an item in TODO.md.

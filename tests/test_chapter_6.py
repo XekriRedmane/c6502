@@ -3,7 +3,7 @@
 chapter_6 covers `if` / `else`, the ternary `?:`, and `goto` /
 labeled statements. Four buckets:
 
-  valid/             — must compile through `--codegen`.
+  valid/             — must compile through `-S`.
   invalid_lex/       — must fail at the lexer.
   invalid_parse/     — must lex cleanly but fail at parse.
   invalid_semantics/ — must parse cleanly but fail at one of the
@@ -42,7 +42,7 @@ _SEMANTIC_FAILURES = (
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter6Valid(unittest.TestCase):
-    """Each chapter_6/valid file must compile through `--codegen`."""
+    """Each chapter_6/valid file must compile through `-S`."""
 
     def test_codegen(self):
         files = sorted((_C6 / "valid").rglob("*.c"))

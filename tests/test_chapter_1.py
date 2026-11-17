@@ -3,7 +3,7 @@
 chapter_1 covers the minimal `int main(void) { return N; }` program
 form. Three buckets:
 
-  valid/         — must compile through `--codegen`.
+  valid/         — must compile through `-S`.
   invalid_lex/   — must fail at the lexer.
   invalid_parse/ — must fail at lex or parse.
 

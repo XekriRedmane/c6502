@@ -5,7 +5,7 @@
 replaces each `for` loop marked with `#pragma c6502 loop
 unroll(enable)` by one copy of its body per iteration. It runs once,
 on the C AST, after parsing and before identifier resolution. It runs
-only under `--optimize`, and without that flag the pragma has no
+only under `-O`, and without that flag the pragma has no
 effect and the loop compiles as written.
 
 The preprocessor turns the pragma into a token that the parser
@@ -37,7 +37,7 @@ void fill(uint8_t v) {
 
 The pass changes the AST, which has no printed form in the pass
 tracing script, so the listings below are the output of `compile.py
---tac --optimize` on the same source without the pragma and with it,
+--tac -O` on the same source without the pragma and with it,
 printed one instruction per line.
 
 ### Before
@@ -115,7 +115,7 @@ unmarked statement are found and unrolled too.
 
 ## What it leaves alone
 
-- Every loop without the pragma, and every loop when `--optimize` is
+- Every loop without the pragma, and every loop when `-O` is
   off.
 - A loop marked `#pragma c6502 loop unroll(disable)`, which the
   preprocessor drops as a no-op.

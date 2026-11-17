@@ -36,7 +36,7 @@ around Zork as well as Zork itself:
 | `save.c` | `instr_save` and `copy_data_to_buff` | lines 3634-3699 |
 | `instr_save.ld` | The linker script: everything in one region from `$1DAC`, where the original starts, to `$2200` | |
 | `disk.asm`, `prompts.asm`, `save.asm` | Each file compiled on its own | |
-| `instr_save.asm` | The three linked by the script | |
+| `instr_save.asm` | The listing of the program the three link into by the script | |
 
 Each `.c` file's header quotes or locates the original code and lists
 where it departs from it.
@@ -45,15 +45,19 @@ where it departs from it.
 
 ```sh
 cd examples/zork/instr_save
-uv run python ../../../compile.py disk.c --codegen --optimize -o disk.asm
-uv run python ../../../compile.py prompts.c --codegen --optimize -o prompts.asm
-uv run python ../../../compile.py save.c --codegen --optimize -o save.asm
-uv run python ../../../compile.py --link -T instr_save.ld \
-    disk.asm prompts.asm save.asm -o instr_save.asm
+uv run python ../../../compile.py disk.c -S -O -o disk.asm
+uv run python ../../../compile.py prompts.c -S -O -o prompts.asm
+uv run python ../../../compile.py save.c -S -O -o save.asm
+uv run python ../../../compile.py -T instr_save.ld \
+    disk.asm prompts.asm save.asm -o instr_save
+uv run python ../../../objdump.py -D --no-show-raw-insn --no-addresses \
+    instr_save > instr_save.asm
 ```
 
-`instr_save.asm` assembles with dasm. It has no `main`, since it's a
-piece of Zork. `tests/test_zork_instr_save.py` links it with a `main`
+The link assembles each unit's `.asm` and writes the ELF executable
+`instr_save`, which isn't checked in, and `instr_save.asm` is its
+listing in dasm's syntax. It has no `main`, since it's a piece of
+Zork. `tests/test_zork_instr_save.py` links it with a `main`
 that calls `instr_save`, runs it, and checks the outputs above
 against fresh compiles.
 
@@ -78,7 +82,7 @@ zero-page byte of its own. Functions that return "failed" return it
 in the carry, so `if (write_next_sector()) goto fail;` is a `JSR` and
 a `BCS`, as in the original. `inc_sector_and_write` and
 `write_next_sector` do so without an annotation, as every `bool`
-function with external linkage does under `--optimize`
+function with external linkage does under `-O`
 ([carry_return_choice.md](../../../docs/optimizations/carry_return_choice.md)).
 `do_rwts_on_sector` is `static` and keeps `return_bool_in_carry`: its
 caller stores the result while it restores the motor's spin-up time,
@@ -105,7 +109,7 @@ compiler works out from the call graph where the pointer can live:
   `inc_sector_and_write` is in another file, its declaration in
   `zork.h` makes the parameter `const`
   (`bool inc_sector_and_write(uint8_t *const buffer)`), which is the
-  promise that lets `save.c` do this. `--link` checks it against the
+  promise that lets `save.c` do this. The linker checks it against the
   whole program.
 
 [docs/optimizations/slot_sharing.md](../../../docs/optimizations/slot_sharing.md)
@@ -120,8 +124,8 @@ object, so the compiler doesn't reorder it past `BUFF_AREA`'s.
 
 **Sections.** The code goes in `.text`, the strings in `.rodata`, and
 the IOB, DCT, and prompts in `.data`. The script puts them in one
-region, which is how Zork's listing mixes code and data. dasm stops
-with a message if they don't fit before `$2200`. The script also
+region, which is how Zork's listing mixes code and data. The link
+fails with a message if they don't fit before `$2200`. The script also
 places `.bss`, where slots that don't fit in zero page would go; here
 none are left over.
 
@@ -202,10 +206,10 @@ Building it turned up gaps that are now fixed:
 - A quoted `#include "zork.h"` now looks in the including file's
   directory.
 - A `const char` array can be initialized from a string literal.
-- `--link` chooses the runtime's zero-page block for the whole
+- the linker chooses the runtime's zero-page block for the whole
   program, so a unit that sizes HARGS differently, or includes
   `<apple2/monitor_io.h>` when another doesn't, still links.
-- `--link` gives the parameter and local slots the whole zero-page
+- the linker gives the parameter and local slots the whole zero-page
   pool, `$80`-`$FF`, since every linked function has a private pool.
   Zork leaves only `$F3`-`$FF` free, all in the half that was unused.
 - With a script, a slot that doesn't fit in zero page goes in a
@@ -233,11 +237,11 @@ Passing pointers as arguments instead of in `SCRATCH2` led to more:
 - A register parameter takes no zero-page byte. It used to have one
   that was written on entry and then usually never read again.
 - A unit whose functions all have private pools takes its slots from
-  `$80`-`$FF`, as `--link` does. Compiled alone, each unit here used to
+  `$80`-`$FF`, as the linker does. Compiled alone, each unit here used to
   get only `$80`-`$BF`, all of it Zork's, so its pointer parameters
   were outside zero page, and its loops went through `DPTR` even after
   linking put the pointers in zero page.
-- `--link` leaves out the local bytes no code names any more, which
+- the linker leaves out the local bytes no code names any more, which
   had kept `print_ascii_string`'s count and index out of zero page.
 - Loop-invariant store hoisting leaves a copy of a zero-page pointer
   into `DPTR` in its loop, where it becomes a `(zp),Y` access.

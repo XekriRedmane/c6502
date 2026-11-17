@@ -1,6 +1,6 @@
 """Enumerations (C99 §6.7.2.2): the parser's enumeration constants
 and enum tags, and programs run through the TAC simulator and the asm
-simulator with and without `--optimize`."""
+simulator with and without `-O`."""
 
 from __future__ import annotations
 

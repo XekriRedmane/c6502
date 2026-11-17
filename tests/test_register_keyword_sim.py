@@ -39,7 +39,7 @@ class TestRegisterKeywordSim(unittest.TestCase):
         with patch("sys.stdin", io.StringIO(source)), \
              patch("sys.stdout", new_callable=io.StringIO) as out:
             rc = compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-S", "-O",
             ])
         self.assertEqual(rc, 0)
         return out.getvalue()
@@ -130,7 +130,7 @@ class TestRegisterKeywordSim(unittest.TestCase):
         # `main()` reports the problem on stderr and returns 1.
         with patch("sys.stdin", io.StringIO(src)),              patch("sys.stdout", new_callable=io.StringIO),              patch("sys.stderr", new_callable=io.StringIO) as err:
             rc = compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-S", "-O",
             ])
         self.assertEqual(rc, 1)
         self.assertTrue(err.getvalue().startswith("<stdin>: error: "))

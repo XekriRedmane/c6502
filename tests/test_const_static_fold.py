@@ -2,7 +2,7 @@
 
 A `static T const = <const-init>` (file-scope, internal linkage,
 const-qualified, scalar) whose address is never taken is genuinely
-immutable in a single-TU program. Under `--optimize`, the asm-level
+immutable in a single-TU program. Under `-O`, the asm-level
 optimizer pipeline replaces every reference to its bytes with `Imm`
 operands carrying the corresponding initializer byte, and drops
 the `StaticVariable` top-level. The win: `LDA name` (3 bytes) →
@@ -18,7 +18,7 @@ Coverage:
     `const` qualifier — every one of these keeps the static.
   * End-to-end correctness via the sim — folded code computes
     the same result as unfolded code.
-  * Without `--optimize`, the fold is a no-op (storage and
+  * Without `-O`, the fold is a no-op (storage and
     references both remain).
 """
 from __future__ import annotations
@@ -66,7 +66,7 @@ class TestConstStaticFoldAsmShape(unittest.TestCase):
         self.assertIn("#$41", asm)
 
     def test_unoptimized_keeps_static_storage(self) -> None:
-        # Without --optimize the fold doesn't run. The storage
+        # Without -O the fold doesn't run. The storage
         # cells and the label both survive; references are
         # absolute loads, not immediates.
         src = (

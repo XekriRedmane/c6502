@@ -1,6 +1,6 @@
 """Loop unrolling for `#pragma c6502 loop unroll(enable)`.
 
-Runs before identifier_resolution under `--optimize --unroll`.
+Runs before identifier_resolution under `-O --unroll`.
 Replaces every for-loop carrying `unroll_annotation == "unroll"`
 with a Compound of N back-to-back copies of the body, each in
 its own scope, with the induction variable substituted by the

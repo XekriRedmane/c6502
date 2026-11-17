@@ -3,8 +3,8 @@ compares main()'s return value.
 
 The three paths:
   * `tac`   — the TAC interpreter (`tac_sim`) on unoptimized TAC.
-  * `unopt` — the asm simulator on `compile.py --codegen` output.
-  * `opt`   — the asm simulator on `compile.py --codegen --optimize`
+  * `unopt` — the asm simulator on `compile.py -S` output.
+  * `opt`   — the asm simulator on `compile.py -S -O`
               output.
 
 Each result is main()'s return as a signed 16-bit int, or a string

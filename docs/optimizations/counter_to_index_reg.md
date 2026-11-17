@@ -4,7 +4,7 @@
 [passes/counter_to_index_reg.py](../../passes/counter_to_index_reg.py)
 moves a loop counter that is read only by its own `DEC` from memory
 into X, or into Y when the loop uses X. It runs once under
-`--optimize`, after the first peephole fixed point and the
+`-O`, after the first peephole fixed point and the
 [X-pivot promotion](loop_counter_to_x.md), and before the second
 peephole fixed point, which folds the load it leaves. Within a
 function it repeats until no more counters move. The unoptimized

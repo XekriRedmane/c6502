@@ -5,8 +5,8 @@ gives every function that qualifies the zp_abi calling convention,
 and `allocate_zp_slots` in
 [passes/zp_slot_allocation.py](../../passes/zp_slot_allocation.py)
 then picks the zero-page bytes that hold each such function's
-parameters. Both run once, under `--optimize` only, after the TAC
-optimizer and before `tac_to_asm`. Without `--optimize` every
+parameters. Both run once, under `-O` only, after the TAC
+optimizer and before `tac_to_asm`. Without `-O` every
 argument goes on the soft stack, except for a call to a zp_abi
 routine at a fixed address. The convention itself is described for
 users in [calling_conventions.md](../calling_conventions.md), and
@@ -37,7 +37,7 @@ same `LDA` and `STA` instructions assemble in their 3-byte absolute
 form. When every function in the unit has a [private local
 pool](zp_local_pools.md), no function keeps a value in `$C0`-`$FF`
 across a call, so the slots and pools come from all of `$80`-`$FF`,
-as they do when `--link` allocates them for a whole program.
+as they do when the linker allocates them for a whole program.
 
 Not every parameter gets a slot:
 
@@ -69,12 +69,12 @@ unsigned char add3(unsigned char a, unsigned char b, unsigned char c) {
 unsigned char main(void) { return add3(1, 2, 3); }
 ```
 
-The "Before" listing is the soft-stack code that `--optimize`
+The "Before" listing is the soft-stack code that `-O`
 produces for the same program with `fp = add3;` added at the start
 of `main`, where `fp` is a global function pointer. That takes
 `add3`'s address, which makes it ineligible. The lines that store
 `fp` are dropped. The "After" listing is the program above, compiled
-with `--optimize`.
+with `-O`.
 
 ### Before
 

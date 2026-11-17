@@ -30,8 +30,13 @@ file holds the project overview and notes about root-level files
   — AST-level unroller (`#pragma c6502 loop unroll(enable)`).
 - [tests/CLAUDE.md](tests/CLAUDE.md) — test organization, chapter
   harnesses, where to look for status.
+- [binutils/CLAUDE.md](binutils/CLAUDE.md) — the object-file tools:
+  ELF objects and executables, the assembler `compile.py -c` runs,
+  relocation and relaxation, and the disassembler behind `nm.py` and
+  `objdump.py`.
 - [sim/CLAUDE.md](sim/CLAUDE.md) — in-process 6502 simulator
-  (assembler, runtime stub, Python-implemented helpers).
+  (assembler, runtime stub, Python-implemented helpers, and the
+  loader for linked executables).
 - [docs/CLAUDE.md](docs/CLAUDE.md) — design notes, walkthroughs,
   reference grammars, drafts.
 - [examples/CLAUDE.md](examples/CLAUDE.md) — real-world C sources
@@ -55,17 +60,19 @@ C source
   → label_resolution
   → loop_labeling
   → type_checking                       → c99_ast (+ SymbolTable, TypeTable)
-  → (--optimize: unroll_program — #pragma c6502 loop unroll(enable))
+  → (-O: unroll_program — #pragma c6502 loop unroll(enable))
   → c99_to_tac                          → tac_ast
-  → (--optimize: TAC fixed-point opts)
-  → (--optimize: select_abi + allocate_zp_slots)
+  → (-O: TAC fixed-point opts)
+  → (-O: select_abi + allocate_zp_slots)
   → tac_to_asm                          → asm_ast
-  → (--optimize: asm-SSA round-trip + byte-granular regalloc)
+  → (-O: asm-SSA round-trip + byte-granular regalloc)
   → replace_pseudoregisters             (Pseudo → Frame / ZP / Data)
-  → (--optimize: synthesize_prologue, loop_counter_to_x, peephole fixedpoint)
+  → (-O: synthesize_prologue, loop_counter_to_x, peephole fixedpoint)
   → expand_long_branches
   → asm_to_asm2                         → asm2_ast (1:1 with 6502 opcodes)
   → asm_emit                            → dasm-syntax 6502 assembly text
+  → (-c: binutils.assembler)            → relocatable ELF object
+  → (link: passes.linker)               → ELF executable
 ```
 
 Four ASDL-defined IRs (`c99.asdl`, `tac.asdl`, `asm.asdl`,
@@ -92,7 +99,7 @@ Two key runtime conventions:
   below; user guide in
   [docs/calling_conventions.md](docs/calling_conventions.md).
   The bytes left below `$80` are for user globals marked
-  `[[c6502::zeropage]]`, and under `--optimize` for busy scalar
+  `[[c6502::zeropage]]`, and under `-O` for busy scalar
   globals the compiler promotes there itself; `zeropage(addr)` may also pin one in
   `$80-$FF`, which removes those bytes from the compiler's pools. Their initial values are stored by a generated `__zp_init`,
   which the boot code calls before `main` (see `passes/zp_globals.py`).
@@ -110,7 +117,7 @@ Two key runtime conventions:
   body locals in ZP for eligible leaf / non-recursive /
   non-indirect-calling functions; ineligible functions fall back
   to the default caller/callee partition (`$80..$BF` / `$C0..$FF`).
-  Eligible functions emit as bare body + RTS. Under `--optimize`
+  Eligible functions emit as bare body + RTS. Under `-O`
   every function defaults to zp_abi when eligible — the explicit
   `[[c6502::zp_abi]]` annotation is no longer required but
   remains supported as a strict-mode opt-in: an annotated
@@ -132,7 +139,7 @@ Two key runtime conventions:
   comes back in A (and X) and the flag in C, with no sret pointer,
   so the function stays zp_abi-eligible. The callee does `LDA flag;
   CMP #1; [LDX hi;] LDA lo`, and the caller stores A (and X) and then
-  `LDA #0; ROL A` into the flag byte. Under `--optimize`, a `static`
+  `LDA #0; ROL A` into the flag byte. Under `-O`, a `static`
   `bool` function whose address isn't taken, and whose every call
   branches on the result or returns it from another such function,
   gets the convention without the annotation, and so does every
@@ -140,12 +147,12 @@ Two key runtime conventions:
   decides from the declaration alone (`passes/carry_return_choice.py`;
   `FunAttr.returns_bool` records the `bool` before `c99_to_tac` erases
   it). The link metadata marks each such function `carry=true`, and
-  `--link` rejects units that disagree.
+  the linker rejects units that disagree.
 - **`#pragma c6502 call save(hardware_stack)`** before an expression
   statement, a `return`, or a block-scope declaration marks the calls
   in it (`hw_stack_save` on the c99 and TAC `FunctionCall`, set by the
   parser's `_mark_hw_stack_save`). Each must be a direct call that can
-  recurse. Under `--optimize`, a call-graph cycle whose every
+  recurse. Under `-O`, a call-graph cycle whose every
   internal call is marked gets private pools, and each marked call
   saves the caller's live values with `PHA` / `PLA` instead of the
   function saving callee-saved bytes at entry and exit. The user
@@ -203,26 +210,35 @@ C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in para
 uv run python -m unittest tests.test_asm_emit   # run one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one test
 
-uv run python compile.py <source.c> --codegen              # C → 6502 asm to stdout
-uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
-uv run python compile.py - --tac < source.c                # read stdin, stop after TAC
-uv run python compile.py - --codegen --optimize < src.c    # with the optimizer pipeline
+uv run python compile.py <source.c> -S          # C → 6502 asm in <source>.s
+uv run python compile.py <source.c> -S -o out.asm   # to a file (.s or .asm)
+uv run python compile.py <source.c> -S -o -     # to stdout
+uv run python compile.py - --tac < source.c     # read stdin, stop after TAC
+uv run python compile.py - -S -O < src.c        # with the optimizer pipeline
+uv run python compile.py -O -c a.c b.c          # objects a.o and b.o
+uv run python compile.py a.o b.o -o prog        # link them (ELF executable)
+uv run python nm.py a.o                         # list an object's symbols
+uv run python objdump.py -d a.o                 # disassemble (dasm syntax)
 ```
 
-`compile.py` is the only CLI; every other module is library-only.
-Flags it doesn't recognize are forwarded to the preprocessor (pcpp),
-so `-D`, `-U`, `-I`, `--passthru-*`, `--line-directive` etc. work the
-same as the `pcpp` CLI. pcpp's own `-o` is not forwarded.
+`compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
+module is library-only. Flags `compile.py` doesn't recognize are
+forwarded to the preprocessor (pcpp), so `-D`, `-U`, `-I`,
+`--passthru-*`, `--line-directive` etc. work the same as the `pcpp`
+CLI. pcpp's own `-o` is not forwarded.
 
-Stage-selection flags (mutually exclusive, one required with
-`compile.py`): `--lex`, `--parse`, `--resolve`, `--tac`, `--codegen`.
-`--resolve` runs the three name-resolution passes (identifier
-resolution, label resolution, loop labeling) in that order.
+Stage-selection flags (mutually exclusive, at most one):
+`--lex`, `--parse`, `--resolve`, `--tac`, `-S` (assembly), `-c`
+(a relocatable ELF object per input, `<stem>.o`). With none, the
+inputs (C, `.asm`, or `.o`) are linked into an ELF executable
+(`a.out` unless `-o`). `--resolve` runs the three name-resolution
+passes (identifier resolution, label resolution, loop labeling) in
+that order.
 
-Modifier flag (orthogonal to the stage flags; applies to `--tac`
-and `--codegen`):
+Modifier flag (orthogonal to the stage flags; applies to `--tac`,
+`-S`, `-c`, and C inputs to a link):
 
-- `--optimize` runs the optimizer pipeline:
+- `-O` runs the optimizer pipeline:
 
   0. AST-level unroll (`passes.optimization_ast.unroll.unroll_
      program`) — fully unrolls every for-loop carrying
@@ -272,22 +288,34 @@ and `--codegen`):
   The INC / DEC peepholes run in the unoptimized pipeline too
   (their win is addressing-mode-aware, not regalloc-dependent).
 
-Linker mode:
+Objects and linking:
 
-- `compile.py --link <a.asm> <b.asm> ... -o out.asm` — multi-TU
-  globally re-allocates `__zpabi_*` and `__local_*` ZP slot symbols
-  across the supplied per-TU outputs (each produced by `compile.py
-  --codegen --optimize`). Reads each input's `; @zp-link-meta-begin`
-  / `; @zp-link-meta-end` block (emitted by
-  `passes.zp_link_metadata`) to recover the call-graph and param /
-  local sizes needed for the global allocation. See
-  `passes/linker.py`.
-  With `-T script.ld` (a GNU ld subset, `passes/link_script.py`) it
-  also lays the program out in memory: each function and object is
-  an item in a section (`passes/sections.py`, `[[c6502::section
-  ("name")]]`), and the output sections become dasm `SEG` / `ORG` /
-  `RORG` blocks with overflow checks (`passes/link_layout.py`). User
-  guide: [docs/linker_scripts.md](docs/linker_scripts.md).
+- `compile.py -c` writes the text `-S` would and assembles it
+  (`binutils/assembler.py`) into an ELF object (`binutils/elf.py`):
+  one section per function and object, symbols, `R_MOS_*`
+  relocations for everything the linker places, the link metadata
+  block in `.c6502.link`, and the text itself in `.c6502.asm`. See
+  [binutils/CLAUDE.md](binutils/CLAUDE.md).
+- `compile.py a.o b.o ... -o prog` links (`passes/linker.py`). It
+  merges every unit's link metadata (`passes.zp_link_metadata`) and
+  globally re-allocates the `__zpabi_*` and `__local_*` ZP slots, the
+  zero-page objects, and the runtime's block over the merged call
+  graph. Then it fixes each instruction's addressing mode to the
+  program's addresses: an absolute operand the program puts in zero
+  page is shortened (`binutils.ld.relax`), and a unit that reached a
+  name in zero page that the program puts above $FF is assembled
+  again from its `.c6502.asm` (`linker._reassemble`). It lays the
+  sections out, applies the relocations, and writes an ELF
+  executable. With `-T script.ld` (a GNU ld subset,
+  `passes/link_script.py`) the script places each item's section
+  (`passes/sections.py`, `[[c6502::section("name")]]`;
+  `passes/link_layout.py`); without one, `.text`, `.rodata`, `.data`,
+  and `.bss` follow each other from `$0800` (`-Ttext=ADDR` moves
+  it). A name no object defines and the linker doesn't place is an
+  error unless `--defsym NAME=VALUE` gives it. User guide:
+  [docs/linker_scripts.md](docs/linker_scripts.md).
+- `sim/linked.py` runs an executable in the simulator, linked with
+  the runtime helpers' addresses (`sim.linked.defsym_args`).
 
 For the full optimizer walkthrough, see
 [passes/optimization/CLAUDE.md](passes/optimization/CLAUDE.md) and
@@ -317,7 +345,7 @@ named `Type_<name>` (to avoid colliding with Python builtins like
 
 ## Root-level pipeline stages
 
-`compile.py --codegen` chains eleven passes. The middle-end passes
+`compile.py -S` chains eleven passes. The middle-end passes
 (2–6, 9–10) live in `passes/`; their walkthroughs are in
 [passes/CLAUDE.md](passes/CLAUDE.md). The four stages rooted in this
 directory:
@@ -333,6 +361,11 @@ directory:
 
 Other root-level files:
 
+- `nm.py` — lists the symbols of objects and executables, as GNU nm
+  does.
+- `objdump.py` — shows the headers, symbols, relocations, link
+  metadata, and disassembly (in dasm's syntax) of objects and
+  executables, as GNU objdump does.
 - `asdl.py` — code generator for `*_ast.py` from `*.asdl`.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
@@ -782,8 +815,9 @@ The runtime header isn't in this repo:
 - `icall` trampoline (`JMP (DPTR)`).
 
 Programs that hit any of `*` / `/` / `%` / `<<` / `>>` / FP↔int cast
-/ FP arithmetic / indirect call assemble cleanly through dasm but
-won't link until the runtime header lands. Python-implemented hooks
+/ FP arithmetic / indirect call assemble cleanly but don't link until
+the runtime header lands, unless `--defsym` gives each helper an
+address, as `sim/linked.py` does with the simulator's. Python-implemented hooks
 in `sim/` cover all of these so simulation-based tests still pass.
 
 ### Type-system limitations
@@ -823,4 +857,4 @@ in `sim/` cover all of these so simulation-based tests still pass.
   across the full chapter corpus; the `_OPT_DIVERGES` dict at the
   top is the live list of optimizer bugs.
 - `tests/test_sim_asm_optimized.py` — chapter_1..12 corpus run
-  through `--optimize` with end-to-end return-value assertions.
+  through `-O` with end-to-end return-value assertions.

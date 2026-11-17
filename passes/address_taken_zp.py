@@ -83,7 +83,7 @@ def compute_address_taken_assignments(
     to Frame allocation in `replace_pseudoregisters`.
 
     `local_pools` and `colorings` come from the
-    `--optimize`-mode pipeline. Functions without a local pool
+    `-O`-mode pipeline. Functions without a local pool
     (ineligible for the private-pool model) get an empty inner
     dict — their address-taken locals stay on the soft stack.
     """

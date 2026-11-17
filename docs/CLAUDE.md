@@ -11,10 +11,10 @@ parsed by any tool.
   `section`, ...), where they go, the standard attributes it accepts,
   and to declaring and calling ROM routines, with Apple II Monitor
   examples, the errors the compiler reports, and current limits.
-- `linker_scripts.md` — user guide to `compile.py --link -T`: sections
-  (the defaults and `[[c6502::section("name")]]`), the GNU ld
-  script subset, the section symbols, the startup copy and clear, and
-  how the layout becomes dasm segments.
+- `linker_scripts.md` — user guide to linking with `compile.py -T`:
+  sections (the defaults and `[[c6502::section("name")]]`), the GNU
+  ld script subset, the section symbols, the startup copy and clear,
+  and how the linker computes the layout and writes the executable.
 - `pragmas.md` — user guide to the `#pragma c6502` directives:
   `loop unroll(enable)` and `call save(hardware_stack)`, with the
   cautions about the hardware stack's depth that the second needs.
@@ -23,7 +23,7 @@ parsed by any tool.
   caller's argument push, the prologue, the frame layout, and the
   epilogue. zp_abi: per-function zero-page parameter and local bytes,
   why call-graph siblings may share them, `register` parameters,
-  which functions qualify, mixing the two, and `--link`. Also return
+  which functions qualify, mixing the two, and linking. Also return
   values, costs, and limits.
 - `optimizations/` — one document per optimization, each with what
   it does, a before-and-after example captured from a compile, when it
@@ -33,7 +33,7 @@ parsed by any tool.
   matches `compile.py` and the two optimizer drivers, or when a
   document is missing from the index. A new pass needs a document and
   both index entries.
-- `optimization.md` — from-scratch tour of how `--optimize` turns
+- `optimization.md` — from-scratch tour of how `-O` turns
   "correct but slow" TAC into "correct and faster" TAC. Written for
   someone who has read the root CLAUDE.md but never touched the
   optimizer code.

@@ -49,7 +49,7 @@ void f(void) { g = flags & 0x80; }
 
 The identity rewrite appears in a byte join. For `w = ((uint16_t)hi
 << 8) | lo;` the high byte is `LDA hi; ORA #$00; STA w+1`, and the
-pass deletes the `ORA #$00`. Without `--optimize` the same deletion
+pass deletes the `ORA #$00`. Without `-O` the same deletion
 happens after a soft-stack load, as in `LDA (FP),Y; ORA #$00`.
 
 A third rewrite turns `LDA #$00; ORA m` and `LDA #$FF; AND m` into

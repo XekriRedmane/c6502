@@ -4,7 +4,7 @@ A comparison test assembles the original routine with py65's line
 assembler, runs it and the compiled function on the same inputs, and
 times each from entry to its RTS. `count_function_instructions` gives
 the compiled function's static instruction count from
-`compile.py --codegen --optimize` output."""
+`compile.py -S -O` output."""
 
 from __future__ import annotations
 
@@ -59,10 +59,10 @@ def call(mpu: MPU, entry: int) -> int:
 
 
 def count_function_instructions(c_path: Path, fn: str) -> int:
-    """Instructions in `fn`'s body in `compile.py --codegen
-    --optimize` output (labels, comments, and directives excluded)."""
+    """Instructions in `fn`'s body in `compile.py -S
+    -O` output (labels, comments, and directives excluded)."""
     asm_text = subprocess.run(
-        [sys.executable, "compile.py", str(c_path), "--codegen", "--optimize"],
+        [sys.executable, "compile.py", str(c_path), "-S", "-O", "-o", "-"],
         capture_output=True, text=True, check=True, cwd=REPO,
     ).stdout
     body = asm_text.split(f"\n{fn}:")[1]

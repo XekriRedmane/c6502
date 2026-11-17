@@ -1,5 +1,5 @@
 """The section each function and static object goes in, for
-`compile.py --link -T script` (passes/link_script.py, passes/linker.py).
+`compile.py -T script` (passes/link_script.py, passes/linker.py).
 
 Every function and every static-storage object the output defines is
 an *item* in a section. `[[c6502::section("name")]]` names the

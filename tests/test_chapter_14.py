@@ -3,14 +3,14 @@
 chapter_14 covers pointer types, the address-of `&` and dereference
 `*` operators, and null pointer constants. Four buckets:
 
-  valid/                — must compile through `--codegen`.
+  valid/                — must compile through `-S`.
   invalid_parse/        — must fail at lex or parse.
   invalid_declarations/ — must be rejected somewhere in the pipeline.
   invalid_types/        — must be rejected somewhere in the pipeline.
 
 The upstream `valid/libraries/` subdir is multi-TU and isn't applicable.
 
-All `valid/` files now compile through `--codegen`. Files that
+All `valid/` files now compile through `-S`. Files that
 originally used 8-byte-long literals were locally rewritten to
 substitute c6502's `long long` (4B) and `unsigned long long`
 (4B), with constants scaled accordingly.

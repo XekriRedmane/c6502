@@ -1,7 +1,7 @@
 # Values kept in a callee's parameter bytes
 
 `find_shares` in [passes/slot_sharing.py](../../passes/slot_sharing.py)
-runs under `--optimize` after ABI selection and before the parameter
+runs under `-O` after ABI selection and before the parameter
 slots get addresses. It finds values that can live in the zero-page
 bytes of a callee's parameter instead of in the caller's own pool:
 
@@ -66,7 +66,7 @@ void add_pages(const uint8_t *p, uint8_t pages) {
 }
 ```
 
-The "Before" listing is this program compiled with `--optimize` and
+The "Before" listing is this program compiled with `-O` and
 `find_shares` replaced by one that finds nothing. The "After" listing
 is the normal compile. `add_page` is the same in both, so it's left
 out.
@@ -214,7 +214,7 @@ bytes, which it can't check in the caller's unit. Each unit's `share`
 link-metadata records list, for each function using the bytes, the
 calls its value is live across, and the callers whose every call
 passes their own value. The linker joins the records of all units and
-checks rule 2 against the whole program's call graph. A `--link` that
+checks rule 2 against the whole program's call graph. A link that
 finds the promise broken stops with an error naming the function that
 writes the bytes. The fix is to declare the parameter without `const`.
 

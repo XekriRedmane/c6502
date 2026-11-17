@@ -1979,7 +1979,7 @@ class Translator:
         """Capture a register return into `dst_op`: low byte from A,
         high byte (for a 2-byte return) from X.
 
-        Under `--optimize` (`bare_exit`), the call-result temp colors
+        Under `-O` (`bare_exit`), the call-result temp colors
         to a ZP byte, so the high byte stores with a direct `STX`
         (`Mov(Reg(X), dst.hi)`) — no staging through A. The unoptimized
         pipeline resolves the temp to a Frame slot, which `STX` can't
@@ -3218,7 +3218,7 @@ class Translator:
         holds `b`: `b` is the top bit of the value the previous
         rotate-in shifted, `(uint8_t)(y >> 15)` read before it, with
         only those skipped instructions in between. Only under
-        `--optimize`, where these patterns come out of the TAC
+        `-O`, where these patterns come out of the TAC
         optimizer whole."""
         rotations: dict[int, tuple] = {}
         skip: set[int] = set()

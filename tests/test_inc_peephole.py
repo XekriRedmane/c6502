@@ -44,7 +44,7 @@ class TestIncPeepholeAsmShape(unittest.TestCase):
         return _run_stage("codegen", preprocess(src), optimize=True)
 
     def test_loop_counter_16bit_inc_chain(self) -> None:
-        # `for (int i = 0; i < N; i++)` — under --optimize the
+        # `for (int i = 0; i < N; i++)` — under -O the
         # loop counter `i` lives in two ZP bytes (regalloc colors
         # both bytes of the renamed SSA pseudos to ZP). The `i++`
         # increment is in-place on each byte and the peephole

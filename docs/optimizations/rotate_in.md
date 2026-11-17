@@ -3,7 +3,7 @@
 `Translator._rotate_in` in [tac_to_asm.py](../../tac_to_asm.py)
 lowers `(x << 1) | b`, where `b` is a byte that's 0 or 1, as `LDA b;
 LSR` followed by a `ROL` of each byte of `x`. It's part of the
-translation to asm under `--optimize`. `Translator._plan_rotations`
+translation to asm under `-O`. `Translator._plan_rotations`
 finds these ORs once per function.
 
 The `LSR` puts `b` in C, and the rotates shift it into bit 0 and the

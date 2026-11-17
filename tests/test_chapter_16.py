@@ -8,7 +8,7 @@ match for the feature set c6502 added in this round of work.
 
 Buckets:
 
-  valid/                   — must compile through `--codegen`.
+  valid/                   — must compile through `-S`.
   invalid_lex/             — must fail at the lexer.
   invalid_parse/           — must fail at lex or parse.
   invalid_types/           — must be rejected somewhere in the
@@ -68,7 +68,7 @@ _INCOMPATIBLE_VALID: frozenset[str] = frozenset({
 })
 
 
-# Currently fail through `--codegen` despite being in the valid
+# Currently fail through `-S` despite being in the valid
 # corpus; each represents a feature gap or known limitation that
 # we'll fix later. Pinned so a regression / a fix flips the harness.
 _EXPECTED_FAILURES_CODEGEN: frozenset[str] = frozenset()

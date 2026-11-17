@@ -1,8 +1,10 @@
 """Build and parse the `@zp-link-meta` block emitted alongside the
-EQU directives at the top of every optimized `.asm` file.
+EQU directives at the top of every optimized `.asm` file, and of the
+unoptimized text `compile.py -c` assembles. The assembler keeps the
+block, as text, in the object's `.c6502.link` section.
 
-The block carries the program-level information `compile.py
---link` needs to globally re-allocate `__zpabi_*` and
+The block carries the program-level information the linker
+(passes/linker.py) needs to globally re-allocate `__zpabi_*` and
 `__local_*` symbols across multiple TUs:
 
   * Which zp_abi functions are **defined** in this TU and how
@@ -27,7 +29,7 @@ The block carries the program-level information `compile.py
   * Every function and object the TU defines, an **item**, with the
     section it goes in (`passes/sections.py`), whether its name is
     internal to the TU, and whether it's all zero bytes, for a link
-    with a script (`compile.py --link -T`).
+    with a script (`compile.py -T`).
   * The TU's **zero-page objects** (`passes/zp_globals.py`): each
     one's size, its fixed address if it was declared with one,
     whether this TU defines it, and its initial bytes, so the
@@ -65,7 +67,7 @@ save(hardware_stack)`, so the linker can take a cycle of such calls
 as the compile did (`passes/recursion_saves.py`). `zp`
 lines describe zero-page objects; each `init` byte is written as the
 operand of an `LDA #` (`$05`, `<buf`, `>(buf+2)`), and `weight`
-marks an object `--optimize` promoted, which the linker may put back
+marks an object `-O` promoted, which the linker may put back
 in the data segment. The `runtime`
 line gives the size of the runtime's HARGS block, which the EQU
 lines don't show, and how many of its bytes the TU's code uses
@@ -170,7 +172,7 @@ class ZpObjectMeta:
     declared with one (`zeropage(addr)`), else None, and the linker
     places it. `defined` is whether this TU defines it, and `init` is
     its initial bytes then, each written as an `LDA #` operand.
-    `weight` is set when `--optimize` promoted it into zero page
+    `weight` is set when `-O` promoted it into zero page
     (`zp_globals.access_weights`), and None when the program asked.
     `local` is whether its name has internal linkage, so another TU
     may define one of the same name."""
@@ -186,8 +188,8 @@ class ZpObjectMeta:
 @dataclass
 class LinkMetadata:
     """Aggregate per-TU metadata. The linker reads one of these
-    per `.asm` input file and merges them into a program-level
-    view before re-running the allocators."""
+    per object and merges them into a program-level view before
+    re-running the allocators."""
     defs: list[FunctionMeta] = field(default_factory=list)
     externs: list[ExternMeta] = field(default_factory=list)
     calls: list[tuple[str, str]] = field(default_factory=list)

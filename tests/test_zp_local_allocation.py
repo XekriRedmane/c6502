@@ -246,7 +246,7 @@ int main(void) { pool[0] = f(3, 4); return pool[0]; }
 class TestUnitFallback(unittest.TestCase):
     """A unit compiled on its own takes the free bytes below the pool,
     around the runtime's block, before it spills out of zero page, as
-    `--link` does. The asm passes that follow values through zero page
+    the linker does. The asm passes that follow values through zero page
     then see its slots."""
 
     def test_slots_below_the_pool(self) -> None:

@@ -43,7 +43,7 @@ call.
 | `prompts.c` | Asking for the save diskette and giving the game diskette back | 3467-3633 |
 | `save.c` | `save` and `restore` | 3634-3772 |
 | `interpreter.ld` | The linker script | |
-| `*.asm` | Each file compiled on its own, and `interpreter.asm`, the eleven linked by the script | |
+| `*.asm` | Each file compiled on its own, and `interpreter.asm`, the listing of the program the eleven link into by the script | |
 
 Each `.c` file's header lists where it departs from the original and
 then quotes the original code it translates.
@@ -53,15 +53,20 @@ then quotes the original code it translates.
 ```sh
 cd examples/zork/interpreter
 for f in main decode objects numbers input pages zstring output disk prompts save; do
-    uv run python ../../../compile.py $f.c --codegen --optimize -o $f.asm
+    uv run python ../../../compile.py $f.c -S -O -o $f.asm
 done
-uv run python ../../../compile.py --link -T interpreter.ld \
+uv run python ../../../compile.py -T interpreter.ld \
     main.asm decode.asm objects.asm numbers.asm input.asm pages.asm \
-    zstring.asm output.asm disk.asm prompts.asm save.asm -o interpreter.asm
+    zstring.asm output.asm disk.asm prompts.asm save.asm -o interpreter
+uv run python ../../../objdump.py -D --no-show-raw-insn --no-addresses \
+    interpreter > interpreter.asm
 ```
 
-`interpreter.asm` assembles with dasm, after a `PROCESSOR 6502` line,
-which `sim/linked.py` adds. `tests/test_zork_interpreter.py` checks
+The link assembles each unit's `.asm` and writes the ELF executable
+`interpreter`, which isn't checked in. `interpreter.asm` is its
+listing in dasm's syntax, with a `SEG` and an `ORG` for each output
+section, and `sim/linked.py` runs the executable.
+`tests/test_zork_interpreter.py` checks
 each unit's output and the linked program against fresh compiles, and
 checks that the program calls none of the runtime's helpers and
 doesn't use the soft stack. With `ZORK_DSK` set to the path of `Zork I
@@ -406,7 +411,7 @@ the smaller code saved.
   ([join_store.md](../../../docs/optimizations/join_store.md)), 16
   bytes in `do_instruction`'s operands.
 - A unit compiled on its own puts a slot that doesn't fit in `$80`-`$FF`
-  in the free bytes below `$80`, as `--link` does, where it had put it
+  in the free bytes below `$80`, as the linker does, where it had put it
   at `$0200`
   ([zp_local_pools.md](../../../docs/optimizations/zp_local_pools.md)).
   `decode.c`'s zero-page globals fill most of `$80`-`$FF`, and memory

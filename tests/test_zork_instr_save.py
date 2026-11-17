@@ -1,11 +1,11 @@
 """The multi-unit example in examples/zork/instr_save: Zork's `save`
 instruction, in three C files linked with a linker script.
 
-`TestGoldOutputs` checks each unit's `--optimize` output and the linked
-program against the checked-in `.asm` files.
+`TestGoldOutputs` checks each unit's `-O` output and the listing of
+the linked program (`objdump.py -D`) against the checked-in `.asm`
+files.
 
-The rest runs the linked program in the simulator (assembled with
-dasm, so it skips without dasm). Zork's other routines, the Monitor's
+The rest runs the linked executable in the simulator. Zork's other routines, the Monitor's
 RDKEY, CLREOL, and COUT1, and DOS's RWTS are Python hooks at the
 addresses they have in Zork, which record what they're asked to do:
 the characters added to the line buffer, the characters printed
@@ -37,7 +37,6 @@ from py65.devices.mpu6502 import MPU
 _DIR = Path(__file__).parent.parent / "examples" / "zork" / "instr_save"
 _UNITS = ["disk", "prompts", "save"]
 _HAVE_PCPP = shutil.which("pcpp") is not None
-_HAVE_DASM = shutil.which("dasm") is not None
 
 # Zork's routines and the ROM's, at their addresses.
 _HOME, _MORE, _LINE, _BUFFER_CHAR = 0x1CC9, 0x1C5B, 0x1BE2, 0x1B90
@@ -60,7 +59,7 @@ _ORIGINAL_STATE = {
 def _compile(unit: str, out: Path) -> None:
     from compile import main as compile_main
     assert compile_main([
-        "compile.py", str(_DIR / f"{unit}.c"), "--codegen", "--optimize",
+        "compile.py", str(_DIR / f"{unit}.c"), "-S", "-O",
         "-o", str(out),
     ]) == 0
 
@@ -68,7 +67,7 @@ def _compile(unit: str, out: Path) -> None:
 def _link(paths: list[Path], out: Path) -> None:
     from compile import main as compile_main
     assert compile_main([
-        "compile.py", "--link", "-T", str(_DIR / "instr_save.ld"),
+        "compile.py", "-T", str(_DIR / "instr_save.ld"),
         *map(str, paths), "-o", str(out),
     ]) == 0
 
@@ -93,8 +92,9 @@ class TestGoldOutputs(unittest.TestCase):
                     )
             linked = Path(tmp) / "instr_save.asm"
             _link(paths, linked)
+            from tests.link_helpers import listing
             self.assertEqual(
-                linked.read_text(),
+                listing(linked),
                 (_DIR / "instr_save.asm").read_text(),
             )
 
@@ -215,17 +215,18 @@ def _linked_text() -> str:
         driver = Path(tmp) / "driver.asm"
         with patch("sys.stdin", io.StringIO(_DRIVER)):
             assert compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-S", "-O",
                 "-I", str(_DIR), "-o", str(driver),
             ]) == 0
-        linked = Path(tmp) / "linked.asm"
+        linked = Path(tmp) / "linked"
         _link(paths + [driver], linked)
-        return linked.read_text()
+        from tests.link_helpers import linked_text
+        return linked_text(linked)
 
 
 def _run_c(text: str, keys, fail_write=None) -> tuple[_Machine, dict]:
     from sim.linked import build_linked_sim
-    sim = build_linked_sim(text)
+    sim = build_linked_sim(text.exe)
     machine = _Machine(sim.mpu, keys, fail_write)
     machine.run(sim.runtime.hooks)
     iob, dct, prompts = (sim.symbols[n] for n in ("iob", "dct", "prompts"))
@@ -256,7 +257,7 @@ def _sectors(events) -> list[tuple]:
     return [e for e in events if e[0] == "rwts"]
 
 
-@unittest.skipUnless(_HAVE_PCPP and _HAVE_DASM, "needs pcpp and dasm")
+@unittest.skipUnless(_HAVE_PCPP, "needs pcpp")
 class TestRuns(unittest.TestCase):
 
     @classmethod

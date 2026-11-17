@@ -49,7 +49,7 @@ for `LDX` and `LDY`.
 
 # Where to run
 
-Once, at the end of the `--optimize` asm pipeline, right after
+Once, at the end of the `-O` asm pipeline, right after
 `expand_long_branches`, when the code's layout is final apart from
 what this pass removes.
 """

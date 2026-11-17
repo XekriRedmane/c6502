@@ -40,7 +40,17 @@ categories:
   module of the same name.
 - **Chapter end-to-end tests** (`test_chapter_<N>.py` with the
   matching `chapter_<N>/` directory of C sources) — drive each
-  chapter end-to-end through `--codegen`.
+  chapter end-to-end through `-S`.
+
+Tests that link go through `link_helpers.py`: `compile_object` (`-c
+-O` on a source string), `link` (with the runtime helpers' addresses,
+so the simulator can run the executable), `linked_text` (the
+executable's disassembly and link metadata, to search, with the
+executable's bytes in `.exe` for `sim.linked.build_linked_sim`), and
+`listing` (the `objdump.py -D` text the multi-unit examples check
+in). `test_binutils.py` covers the ELF files, the assembler,
+relaxation, `nm.py`, and `objdump.py`; its `TestAgainstDasm` compares
+the assembler with dasm and runs only where dasm is installed.
 
 ## Chapter harnesses
 
@@ -77,7 +87,7 @@ Where to look for more:
   the full chapter corpus; the `_OPT_DIVERGES` dict at the top is the
   live list of optimizer bugs.
 - `test_sim_asm_optimized.py` — chapter_1..12 corpus run through
-  `--optimize` with end-to-end return-value assertions.
+  `-O` with end-to-end return-value assertions.
 - `test_op_matrix_sim.py` — every assignment operator (`++` / `--`
   both ways, the compound assignments) over every integer type, seven
   storage classes (local, block `static`, global, zero-page global,

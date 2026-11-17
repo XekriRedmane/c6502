@@ -99,7 +99,7 @@ class TestFrontEnd(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestSim(unittest.TestCase):
-    """Each program runs in both pipelines. Without --optimize every
+    """Each program runs in both pipelines. Without -O every
     callee has a frame, so its return goes through the `PHP` / `PLP`
     epilogue."""
 
@@ -159,7 +159,7 @@ class TestSim(unittest.TestCase):
 
     def test_recursive_soft_stack(self):
         # Recursion keeps `is_even` on the soft stack even with
-        # --optimize, so its return goes through the frame teardown.
+        # -O, so its return goes through the frame teardown.
         src = _BOOL + _CARRY + (
             "bool is_even(unsigned char n) {\n"
             "    if (n == 0) return 1;\n"
@@ -690,7 +690,7 @@ class TestStructCodeShape(unittest.TestCase):
         self.assertRegex(main, r"JSR\s+f\s+STA\s+out\s+BC[CS]")
 
     def test_zp_abi_eligible(self):
-        # No hidden pointer, so `f` gets zp_abi under --optimize and
+        # No hidden pointer, so `f` gets zp_abi under -O and
         # the call passes nothing on the soft stack.
         asm = _codegen(_ZC + _CARRY + (
             "struct zc f(unsigned char x) { struct zc r; r.v = x; "

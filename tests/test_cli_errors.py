@@ -15,7 +15,7 @@ def _compile(src: str, *flags: str) -> tuple[int, str]:
     err = io.StringIO()
     with patch("sys.stdin", io.StringIO(src)), patch("sys.stderr", err), \
             patch("sys.stdout", io.StringIO()):
-        rc = compile_main(["compile.py", "-", "--codegen", *flags])
+        rc = compile_main(["compile.py", "-", "-S", *flags])
     return rc, err.getvalue()
 
 
@@ -72,7 +72,7 @@ class TestCliErrors(unittest.TestCase):
     }
 
     def test_frame_too_large(self) -> None:
-        # Only without --optimize: the optimizer folds this array away.
+        # Only without -O: the optimizer folds this array away.
         rc, err = _compile(
             "unsigned char f(void) { unsigned char b[300]; b[0] = 1; "
             "return b[0]; }",
@@ -83,7 +83,7 @@ class TestCliErrors(unittest.TestCase):
 
     def test_one_line_errors(self) -> None:
         for label, (src, needle) in self._CASES.items():
-            for flags in ((), ("--optimize",)):
+            for flags in ((), ("-O",)):
                 with self.subTest(label, flags=flags):
                     rc, err = _compile(src, *flags)
                     self.assertEqual(rc, 1)

@@ -92,7 +92,7 @@ class TestOptimizationDocs(unittest.TestCase):
         peep_start = text.index(
             "The peephole fixed point (`compile._peephole_fixedpoint`)",
         )
-        unopt_start = text.index("### Without `--optimize`")
+        unopt_start = text.index("### Without `-O`")
         self.alpha = _LINK.findall(text[alpha_start:order_start])
         self.order = _LINK.findall(text[order_start:peep_start])
         self.peephole = _LINK.findall(text[peep_start:unopt_start])

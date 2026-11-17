@@ -1,7 +1,7 @@
 """Gold-output regression tests for examples/.
 
 Each `examples/<name>.c` file ships with a checked-in
-`examples/<name>.asm` showing its blessed `--optimize` output.
+`examples/<name>.asm` showing its blessed `-O` output.
 These tests recompile each example and assert that the fresh
 output is byte-identical to the committed asm. The committed
 files are the "gold" output — any pipeline change that alters them
@@ -24,7 +24,7 @@ Failure handling: when a test fails because an optimization
 improved output, regenerate the committed file:
 
     uv run python compile.py examples/<name>.c \\
-        --codegen --optimize -o examples/<name>.asm
+        -S -O -o examples/<name>.asm
 
 and inspect the diff before committing the new gold output.
 """
@@ -60,7 +60,7 @@ def _examples() -> list[str]:
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestExampleOutputs(unittest.TestCase):
-    """Recompile each example with --optimize and compare against
+    """Recompile each example with -O and compare against
     the committed .asm file. A failure means the pipeline produces
     different output than the gold output — either an improvement
     that needs to be blessed, or a regression."""
@@ -89,6 +89,6 @@ class TestExampleOutputs(unittest.TestCase):
                         f"(expected {expected_lines} lines, got "
                         f"{actual_lines} lines). To bless the new "
                         f"output:\n  uv run python compile.py "
-                        f"examples/{name}.c --codegen --optimize "
+                        f"examples/{name}.c -S -O "
                         f"-o examples/{name}.asm"
                     )

@@ -59,7 +59,7 @@ it passed. Zork's own code dispatches through tables the same way.
 
 # Where to run
 
-Once, at the end of the `--optimize` asm pipeline, after
+Once, at the end of the `-O` asm pipeline, after
 `carry_known` and before `expand_long_branches`. Every pass that
 follows control flow has run by then, so none of them has to know
 the table. `expand_long_branches` sizes it through `instruction_size`.

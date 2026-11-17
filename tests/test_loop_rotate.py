@@ -431,7 +431,7 @@ class TestLoopRotateE2E(unittest.TestCase):
     the same result as unrotated ones."""
 
     def _sim(self, src: str, expected: int) -> None:
-        """Compile via `--codegen --optimize`, assemble, simulate
+        """Compile via `-S -O`, assemble, simulate
         until the program halts, assert the return value matches."""
         from sim.harness import build_sim
         sim = build_sim(src, optimize=True)

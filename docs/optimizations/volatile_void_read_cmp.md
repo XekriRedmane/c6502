@@ -4,7 +4,7 @@
 [passes/volatile_void_read_cmp.py](../../passes/volatile_void_read_cmp.py)
 turns a volatile load through a pointer whose value is thrown away
 into a `CMP` of the same byte. It runs in the peephole fixed point, in
-both pipelines, but only fires with `--optimize`. The unoptimized
+both pipelines, but only fires with `-O`. The unoptimized
 pipeline stores the loaded byte to a soft-stack temporary, and that
 store reads A.
 

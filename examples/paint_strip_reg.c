@@ -15,7 +15,7 @@
 //     no recursion, address not taken, params fit the ZP window.
 //   - No `&` on a `register` parameter or local (C99 §6.5.3.2.1).
 //
-// Generated code (under --optimize): caller emits `LDA #<x_pixel>;
+// Generated code (under -O): caller emits `LDA #<x_pixel>;
 // LDX #<color>; JSR paint_strip_reg`. Inside the function, the entry
 // stub copies A / X into the function's ZP slots so the rest of the
 // body reads them like any other zp_abi byte; the result is returned

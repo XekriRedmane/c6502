@@ -3,7 +3,7 @@ the form 2^a + 2^b and 2^a - 2^b, at each integer width.
 
 `tac_to_asm` inlines a constant shift `8q + r` as byte moves and `r`
 one-bit steps when `passes.shift_cost.inline_shift_ok` accepts it, and
-calls the `asl*` / `lsr*` / `asr*` helper otherwise. Under --optimize,
+calls the `asl*` / `lsr*` / `asr*` helper otherwise. Under -O,
 `strength_reduction` rewrites the multiplies into shifts and an Add or
 Subtract. Sweeping every count from 1 to width-1 runs both the inline
 and the helper paths, and the boundary between them, so each result

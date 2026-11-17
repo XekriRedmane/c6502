@@ -76,7 +76,7 @@ _TYPE_WEIGHTS = {
     "schar": 6, "uchar": 8, "int": 6, "uint": 8,
     "long": 3, "ulong": 3, "llong": 1, "ullong": 1,
 }
-# Statements per function, counting nested ones. Without --optimize
+# Statements per function, counting nested ones. Without -O
 # every TAC temporary gets its own frame byte, and a frame is at most
 # 253 bytes, so a long body is rejected on that path.
 _STMT_BUDGET = 12

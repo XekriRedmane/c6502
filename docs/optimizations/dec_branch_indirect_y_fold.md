@@ -4,7 +4,7 @@
 [passes/dec_branch_indirect_y_fold.py](../../passes/dec_branch_indirect_y_fold.py)
 drops the `LDY #$00` in front of a `(DPTR),Y` access that directly
 follows the fall-through of a `DEY; BNE` loop. It runs in the peephole
-fixed point, in both pipelines, but only fires with `--optimize`,
+fixed point, in both pipelines, but only fires with `-O`,
 because only [DEX and DEY for a register
 counter](dec_register_peephole.md) and the later loop promotions
 produce `DEY`.

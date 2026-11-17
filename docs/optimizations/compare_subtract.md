@@ -6,7 +6,7 @@ moves a `t = a - b` up to the `a < b` (or `>=`, `>`, `<=`) whose
 branch decides whether it runs, and `Translator._fused_subtract` in
 [tac_to_asm.py](../../tac_to_asm.py) then lowers the pair as one
 subtraction followed by a branch on its flags. It runs once, after the
-TAC fixed point, under `--optimize`.
+TAC fixed point, under `-O`.
 
 `while (s >= k) s -= k;` compares `s` with `k` and, when the loop
 continues, subtracts `k` from `s`. On the 6502 those are the same

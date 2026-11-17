@@ -722,7 +722,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         with patch("sys.stdin", io.StringIO(src)), \
              patch("sys.stdout", new_callable=io.StringIO), \
              patch("sys.stderr", new_callable=io.StringIO) as err:
-            rc = main(["compile.py", "-", "--codegen", "--optimize"])
+            rc = main(["compile.py", "-", "-S", "-O"])
         self.assertNotEqual(rc, 0)
         lines = err.getvalue().strip().splitlines()
         self.assertEqual(len(lines), 1)
@@ -909,7 +909,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
 
 
 class TestUnrollCli(unittest.TestCase):
-    """`--unroll` CLI flag — invocation, gating on `--optimize`,
+    """`--unroll` CLI flag — invocation, gating on `-O`,
     and an end-to-end pipeline check that an annotated loop
     actually compiles down."""
 
@@ -925,7 +925,7 @@ class TestUnrollCli(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def test_pragma_unrolls_under_optimize(self) -> None:
-        # Under `--optimize`, the AST-level unroll pass fires on
+        # Under `-O`, the AST-level unroll pass fires on
         # every for-loop carrying the pragma (with the canonical
         # init=const; cond=var<const; step=var=var+const shape).
         # Verify the loop is gone from the TAC (no continue/break
@@ -939,14 +939,14 @@ class TestUnrollCli(unittest.TestCase):
         }
         """
         rc, out, _ = self._run(
-            ["compile.py", "-", "--tac", "--optimize"], stdin=src,
+            ["compile.py", "-", "--tac", "-O"], stdin=src,
         )
         self.assertEqual(rc, 0)
         self.assertNotIn("_continue", out)
         self.assertNotIn("_break", out)
 
     def test_pragma_ignored_without_optimize(self) -> None:
-        # Without `--optimize`, the unroll pass is skipped. The
+        # Without `-O`, the unroll pass is skipped. The
         # pragma parses but the loop lowers normally with continue
         # / break labels.
         src = """

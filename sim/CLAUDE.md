@@ -17,11 +17,13 @@ MPU until the boot stub's BRK fires.
 - `harness.py` — top-level test harness: take C source, run the full
   compiler pipeline, assemble with a runtime stub, and execute on a
   py65 6502 simulator until BRK.
-- `linked.py` — `build_linked_sim`: runs a program `compile.py --link`
-  wrote, which only exists as text, by assembling it with dasm (the
-  runtime's helper addresses prepended as `EQU`s) and loading the
-  binary and symbols into the same simulator. `DASM` is None when
-  dasm isn't on the path; tests that need it skip.
+- `linked.py` — `build_linked_sim`: runs an ELF executable that
+  linking with `compile.py` wrote. It loads each segment at its load
+  address, reads the symbols, and installs the runtime for the
+  program's layout (its SSP, FP, HARGS, and DPTR symbols). A program
+  that calls the runtime's helpers is linked with their addresses
+  (`runtime_defsyms`, `defsym_args`), which are the same for every
+  layout, and `build_linked_sim` checks that they match.
 - `apple2.py` — `Apple2`, a stand-in Apple II for running a whole
   program: the Monitor's `HOME`, `CLREOL`, `VTAB`, `RDKEY`, `GETLN1`,
   `COUT`, and `COUT1` over a 40-by-24 screen with its text window, a
@@ -50,7 +52,7 @@ MPU until the boot stub's BRK fires.
   Python-trap runtime and the 6502-asm runtime.
 - The simulator is what `tests/test_sim_*` harnesses drive.
 - `build_sim(optimize=False)` runs the same passes as `compile.py
-  --codegen`, including the peephole fixedpoint, so unoptimized sim
+  -S`, including the peephole fixedpoint, so unoptimized sim
   tests execute the code the CLI emits.
 - `build_runtime` lays down `icall` (`JMP (DPTR)`, 3 raw bytes) after
   the assembled helpers, so indirect calls through function pointers

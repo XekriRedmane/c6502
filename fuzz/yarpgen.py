@@ -19,7 +19,7 @@ as parameters needs more than the 253 bytes a soft-stack frame can
 hold. Arrays have one dimension, loops at most 6 iterations, and a
 test at most 25 statements, which keeps a program to a few seconds in
 the simulator. A large `test()` still needs more than 253 bytes of
-temporaries without --optimize, which the runner counts as rejected.
+temporaries without -O, which the runner counts as rejected.
 
     uv run python -m fuzz.build_yarpgen          # once
     uv run python -m fuzz.yarpgen --start 0 --count 100

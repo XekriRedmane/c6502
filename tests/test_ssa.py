@@ -3,7 +3,7 @@
 
 End-to-end semantic preservation across many program shapes is
 already covered by the chapter_19 simulator harness running with
-`--optimize` (see tests/test_chapter_19.py). The cases here pin
+`-O` (see tests/test_chapter_19.py). The cases here pin
 specific structural invariants of SSA construction and destruction
 that the chapter harness can't reach into directly:
 

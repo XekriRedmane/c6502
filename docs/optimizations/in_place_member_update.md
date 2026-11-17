@@ -6,7 +6,7 @@ finds the values that can be computed straight into a member of a
 static struct, or into an element of a static array at a constant
 index, and `tac_to_asm` writes them there instead of into a temporary
 that's then copied in. For `s.m++` it reads the member in place too,
-so the add becomes `INC`. It applies only under `--optimize`, since
+so the add becomes `INC`. It applies only under `-O`, since
 the unoptimized pipeline reaches a member through a pointer.
 
 The TAC reads such a member with `IndexedLoad` and writes it with

@@ -3,7 +3,7 @@
 `apply_jump_tables` in [passes/jump_table.py](../../passes/jump_table.py)
 turns a chain of compares of A with constants, each followed by a
 branch to its case, into a dispatch through a table of the cases'
-addresses. It runs once, at the end of the `--optimize` asm pipeline,
+addresses. It runs once, at the end of the `-O` asm pipeline,
 after every pass that follows control flow, so none of those passes
 has to know the table.
 

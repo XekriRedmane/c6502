@@ -14,7 +14,7 @@ coalescing](coalescing.md), and before SSA destruction. The
 preliminary run uses the default zero-page partition and is used
 only to measure each function's demand for bytes. The final run draws from
 the private pools sized from that demand, in the functions that have
-one. Only the `--optimize` pipeline
+one. Only the `-O` pipeline
 allocates registers. The unoptimized pipeline puts every local on the
 soft-stack frame.
 
@@ -254,7 +254,7 @@ assembly is shown under [move coalescing](coalescing.md).
 
 ## When it applies
 
-Every function in the `--optimize` pipeline goes through the
+Every function in the `-O` pipeline goes through the
 allocator. A name is colored when it's a node of the interference
 graph, which excludes statics, parameters, and the sources of a
 `LoadAddress`.

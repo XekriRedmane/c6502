@@ -11,7 +11,7 @@ can skim.
 
 ### What happened
 
-`examples/floor_enemy_advance.asm` (compiled with `--optimize`)
+`examples/floor_enemy_advance.asm` (compiled with `-O`)
 contained 20 `STA DPTR` writes, ~12 of them dead. The asm-level
 SSA round-trip's `apply_indirect_base_prop` had successfully
 rewritten the indirect-Y operands to `IndirectZp(<b0>)` (so the
@@ -167,7 +167,7 @@ investigating "why doesn't pass X fire?":
 
 ### Compilation
 
-- Default flags for this project: `--optimize --unroll`. See user-
+- Default flags for this project: `-O --unroll`. See user-
   memory `feedback_compile_optimize_default.md`.
 
 ### Editing CLAUDE.md

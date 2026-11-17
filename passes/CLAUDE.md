@@ -310,52 +310,69 @@ this directory:
   the label directly, `name,Y` (`_label_pointer_operand`), which is
   how a pooled function's local array is indexed.
 - `label_resolution.py` — pass 4 (see below).
-- `linker.py` — `compile.py --link` driver; multi-TU re-allocates
-  `__zpabi_*` and `__local_*` symbols across per-TU outputs. A
+- `linker.py` — `link_objects` / `link_files`, what `compile.py` runs
+  on objects; multi-TU re-allocates `__zpabi_*` and `__local_*`
+  symbols across the units' objects (`binutils/elf.py`), reading
+  each one's link metadata from its `.c6502.link` section. A
   function's parameter slots come from its definition, and
   `_bind_extern_params` binds every unit's declaration symbols to them
   by position, since each unit spells them after its own parameter
   names (or positions, for unnamed ones). Zero-page objects are
   placed for the whole program (`_merge_zp_objects`,
   `_place_zp_objects`), their bytes are passed to the allocators as
-  `reserved`, and each unit's `__zp_init` is replaced with one
-  generated from the metadata (`_without_init`, `_init_lines`).
-  Internal names two units share are renamed `name.k`
-  (`link_layout.rename_locals`). `_choose_layout` picks the runtime's
-  block for the program (`choose_layout` over every unit's fixed
-  zero-page bytes and the largest `hargs_need`), and the slots come
-  from the whole pool, `$80`-`$FF` (the allocators' `window`), since
-  every linked function has a private pool, and then from the free
-  bytes below `$80` (their `fallback`, around the runtime's block,
-  `_runtime_bytes`, and the zero-page objects) before any spill. With `-T`, `_scripted_body`
-  lays the program out by the script, and a slot that spills goes in
-  a `__spill` block in `.bss` instead of at `$0200`. `sim/linked.py` runs a linked
-  program by assembling it with dasm. `_link_shares` joins every
-  unit's `share` records (`slot_sharing.merge_shares`, with each
-  declaration's slot spelling replaced by the definition's) and
-  checks them for the whole program (`check_linked_shares`).
-  `_drop_unused_locals` leaves out of each pool the slots no unit's
-  code names, unless the function takes a local's address. The bytes
-  of `zeropage(addr)` parameters (`def` / `ext` `pinned=`) are
-  reserved like zero-page objects'.
+  `reserved`, and each unit's `__zp_init` is left out
+  (`_without_init`) for one the linker assembles from the metadata
+  (`_init_lines`). A promoted object with no room goes back in the
+  data segment (`_data_lines`), unless a unit uses it as an `(zp),Y`
+  pointer (`_pointer_names`). Internal names two units share are
+  renamed `name.k` in the metadata and the symbols
+  (`_rename_locals`). `_choose_layout` picks the runtime's block for
+  the program (`choose_layout` over every unit's fixed zero-page
+  bytes and the largest `hargs_need`, the classic block's for a unit
+  without one), and the slots come from the whole pool, `$80`-`$FF`
+  (the allocators' `window`), since every linked function has a
+  private pool, and then from the free bytes below `$80` (their
+  `fallback`, around the runtime's block, `_runtime_bytes`, and the
+  zero-page objects) before any spill. A unit that reached a name
+  with zero-page addressing that the program puts above $FF is
+  assembled again from its `.c6502.asm` text with the program's
+  addresses (`_reassemble`), and every absolute instruction whose
+  operand the program puts in zero page is shortened
+  (`binutils.ld.relax`). Then `link_layout.lay_out` places the
+  sections, by the script (`-T`) or `default_script`, and
+  `binutils.ld` applies the relocations and writes the executable,
+  with every unit's symbols at their addresses and the placed names
+  as absolute symbols (`_output_symbols`). With `-T`, a slot that
+  spills goes in a `__spill` block in `.bss` instead of at `$0200`.
+  `_link_shares` joins every unit's `share` records
+  (`slot_sharing.merge_shares`, with each declaration's slot
+  spelling replaced by the definition's) and checks them for the
+  whole program (`check_linked_shares`). `_drop_unused_locals`
+  leaves out of each pool the slots no unit's relocations name,
+  unless the function takes a local's address. The bytes of
+  `zeropage(addr)` parameters (`def` / `ext` `pinned=`) are reserved
+  like zero-page objects'. `sim/linked.py` runs an executable.
 - `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
   `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
   `LOADADDR` / `SIZEOF`), and `(NOREORDER)`, which isn't GNU's. An
   input description's file part (`Input.file`) is `*` or a pattern
-  for a unit's file name without
-  its directory (`zstring.asm(.text)`), which `link_layout` matches.
-- `link_layout.py` — `item_chunks` (splits a unit's body into its
-  items), `rename_locals`, `fall_through` (a function ending in `JMP
-  g` goes right before `g` in its output section and loses the `JMP`;
-  the first such function in script order wins, no cycles, nothing
-  crosses an assignment, and only adjacent pairs under `(NOREORDER)`),
-  `layout_lines` (each output section as a
-  dasm `SEG` / `SEG.U` with `ORG`, `RORG` for a load address,
-  `__name_start` / `_end` / `_load` symbols, and `IF` / `ERR`
-  overflow checks; addresses are dasm expressions since sizes are
-  only known when assembling), and `startup_lines` (copying `AT>`
-  sections and clearing `NOLOAD` ones, in `__zp_init`).
+  for a unit's object name without its directory
+  (`zstring.o(.text)`), which `link_layout` matches. A C or `.asm`
+  input to a link goes by `<stem>.o`.
+- `link_layout.py` — `lay_out` places every unit's items, its
+  input sections, by a script, computing each address (sizes are
+  known): each output section's run and load addresses, the
+  `__name_start` / `_end` / `_load` / `_load_end` / `_size` symbols,
+  the script's assignments, and an error for a section that runs past
+  its region. `default_script` is the layout without `-T`.
+  `fall_through` (a function ending in `JMP g` goes right before `g`
+  in its output section and loses the `JMP`; the first such function
+  in script order wins, no cycles, nothing crosses an assignment, and
+  only adjacent pairs under `(NOREORDER)`) works on `Entry`s, whose
+  final `JMP` `tail_jump` reads from the section's bytes and
+  relocation. `startup_lines` is the code, in `__zp_init`, that
+  copies `AT>` sections and clears `NOLOAD` ones.
 - `long_branches.py` — `expand_program`. Rewrites conditional branches
   with out-of-range targets to `Branch(inverted_cond, .skip);
   Jump(target); .skip:`. Iterative.
@@ -568,7 +585,9 @@ this directory:
 - `y_peephole.py` — `apply_y_peephole` (LDY collapse, outside
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at
-  the top of `--codegen --optimize` output for the multi-TU linker:
+  the top of `-S -O` output (and of the unoptimized output `-c`
+  assembles), which the assembler keeps in each object's
+  `.c6502.link` section for the multi-TU linker:
   functions, zp_abi externs, call edges, zero-page objects (`zp`
   lines, from `zp_globals.link_records`), and the HARGS size
   (`runtime`).
@@ -603,9 +622,9 @@ this directory:
   is both maps). An `address` object below `$100` is an ordinary
   `extern` zero-page object. An `extern` object with neither an
   address nor a definition goes in `ZpGlobals.external`: another
-  unit defines it, and `--link` places it. `link_records` lists the
+  unit defines it, and the linker places it. `link_records` lists the
   unit's zero-page objects for the link metadata, with their initial
-  bytes. Under `--optimize`, `plan_zero_page(promote=True)` also
+  bytes. Under `-O`, `plan_zero_page(promote=True)` also
   promotes busy scalar globals into the bytes left below `$80`
   (`access_weights`, `_promotion_order`; `ZpGlobals.promoted`), and
   the linker may put one back in the data segment.
@@ -1039,7 +1058,7 @@ Takes the type-checker's SymbolTable so it can size each pseudo by its
 declared type: 1 byte for `Char` / `SChar` / `UChar` / unknown, 2 for
 `Int` / `UInt` / `Pointer`, 4 for `Long` / `ULong` / `Float`, 8 for
 `LongLong` / `ULongLong` / `Double`. Optionally takes a `colorings:
-dict[func_name, Coloring]` from the optimizer when `--optimize` is on;
+dict[func_name, Coloring]` from the optimizer when `-O` is on;
 without it, every pseudo goes to Frame as before.
 
 Walks each function twice:
@@ -1573,7 +1592,7 @@ with the Y-pivot path inside the promotion shape.
 
 ## Call-graph-disjoint ZP allocation
 
-Under `--optimize`, c6502 hands each eligible function a private range
+Under `-O`, c6502 hands each eligible function a private range
 of ZP bytes for its params (zp_abi) and body locals, allocated so no
 two functions on a common caller-callee path share a byte. The
 "caller-saved vs callee-saved" partition collapses for eligible
@@ -1608,10 +1627,10 @@ symbols. No `AllocateStack`, no Frame-resident param storage. Eligibility:
   non-zp_abi ones.
 - Param byte count fits the ZP window (default 64 bytes, $80–$BF).
   When the chain saturates, slots spill into a non-ZP fallback region
-  (default $0200–$FFFF); dasm picks absolute addressing automatically,
-  so the call-site / callee IR is unchanged.
+  (default $0200–$FFFF); the assembler picks absolute addressing from
+  the slot's address, so the call-site / callee IR is unchanged.
 
-Under `--optimize`, every function defaults to zp_abi when eligible.
+Under `-O`, every function defaults to zp_abi when eligible.
 The explicit `[[c6502::zp_abi]]` annotation is a strict-mode
 opt-in: an annotated function hard-errors on ineligibility, an
 unannotated one silently falls back to soft-stack. Same eligibility
@@ -1695,7 +1714,7 @@ other recursion is a link error.
   the parameter in place unless something it calls might store an
   argument at those bytes (`slot_sharing.pinned_param_copies`); then
   `tac_to_asm._pinned_param_locals` copies it into `<param>.reg` at
-  entry, after the register parameters' copies. `--link` rejects units
+  entry, after the register parameters' copies. The linker rejects units
   whose `def` / `ext` records disagree on where parameters arrive
   (`linker._arrivals`).
 - `slot_sharing.find_shares` runs between `select_abi` and
@@ -1762,11 +1781,12 @@ Two optimizer passes: the first sizes each function's local byte
 demand; the second uses per-function private pools as the regalloc's
 `allowed_range`.
 
-### Future: cross-TU
+### Across units
 
-Today the linker is dasm; per-TU compilation produces all the slot-
-symbol `EQU` bindings inline. Phase 2 would split the EQU emission
-into a separate `slots.inc` from a multi-TU linker that runs the
-allocator globally. The IR shape (symbolic slot refs in every
-`Data(__zpabi_*)` operand) is already prepared for that; the per-TU
-compile doesn't need to change. See `docs/leaf_zp_abi.md`.
+Each unit's compile binds its slot symbols with `EQU` lines for its
+own call graph. Its object leaves them undefined, and the linker
+allocates them again over the whole program's call graph
+(`passes/linker.py`). The IR refers to every slot by symbol
+(`Data(__zpabi_*)`, `Data(__local_*)`), so no unit's code changes,
+only the addresses its relocations get, and the addressing mode where
+an address crosses $100. See `docs/leaf_zp_abi.md`.

@@ -3,7 +3,7 @@
 `FoldStaticConstReads` (`fold_static_const_reads`) in
 [passes/optimization/static_const_fold.py](../../passes/optimization/static_const_fold.py)
 replaces each read of a `static const` scalar with its initial value.
-It runs once per function under `--optimize`, after SSA construction
+It runs once per function under `-O`, after SSA construction
 and before the TAC fixed-point loop.
 
 C's type system rejects every write to a `const` object, so a

@@ -1,4 +1,8 @@
+; elf32-mos executable
+   PROCESSOR 6502
+
 HARGS	EQU	$00
+__bss_size	EQU	$00
 SSP	EQU	$01
 FP	EQU	$03
 DPTR	EQU	$05
@@ -23,6 +27,7 @@ __monitor_ysav1	EQU	$35
 CSW	EQU	$36
 KSW	EQU	$38
 __dos_zp_3a	EQU	$3A
+__data_size	EQU	$45
 __monitor_acc	EQU	$45
 __dos_zp_46	EQU	$46
 __monitor_status	EQU	$48
@@ -33,6 +38,7 @@ SECTORS_PER_TRACK	EQU	$7F
 __zork_zp_80	EQU	$80
 Z_PC	EQU	$8A
 __zork_zp_8d	EQU	$8D
+__rodata_size	EQU	$8E
 LOCAL_ZVARS	EQU	$9A
 __zork_zp_b8	EQU	$B8
 Z_HEADER_ADDR	EQU	$BA
@@ -62,12 +68,29 @@ __local_get_prompted_number_from_user__1	EQU	$FB
 __local_print_ascii_string__count	EQU	$FC
 __local_print_ascii_string__i	EQU	$FD
 BUFF_AREA	EQU	$0200
+__text_size	EQU	$026F
 branch	EQU	$0BAA
 negated_branch	EQU	$0BB3
 buffer_char	EQU	$1B90
 dump_buffer_line	EQU	$1BE2
 dump_buffer_with_more	EQU	$1C5B
 home	EQU	$1CC9
+__text_load	EQU	$1DAC
+__text_start	EQU	$1DAC
+__rodata_load	EQU	$201B
+__rodata_start	EQU	$201B
+__text_end	EQU	$201B
+__text_load_end	EQU	$201B
+__data_load	EQU	$20A9
+__data_start	EQU	$20A9
+__rodata_end	EQU	$20A9
+__rodata_load_end	EQU	$20A9
+__bss_end	EQU	$20EE
+__bss_load	EQU	$20EE
+__bss_load_end	EQU	$20EE
+__bss_start	EQU	$20EE
+__data_end	EQU	$20EE
+__data_load_end	EQU	$20EE
 RWTS	EQU	$2900
 VTAB	EQU	$FC22
 HOME	EQU	$FC58
@@ -78,118 +101,11 @@ GETLN1	EQU	$FD6F
 COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
-; @zp-link-meta-begin
-; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
-; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals= indirect=false in_cycle=false param_regs=A,, carry=true
-; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
-; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false carry=true
-; def instr_save params= locals=__local_instr_save__pages indirect=false in_cycle=false
-; def please_insert_save_diskette params= locals=__local_please_insert_save_diskette__0,__local_please_insert_save_diskette__1 indirect=false in_cycle=false
-; def please_reinsert_game_diskette params= locals= indirect=false in_cycle=false
-; def print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count locals=__local_print_ascii_string__count,__local_print_ascii_string__i indirect=false in_cycle=false param_regs=,,X
-; def write_next_sector params= locals= indirect=false in_cycle=false carry=true
-; ext CLREOL params=
-; ext COUT params=__zpabi_COUT__c param_regs=A
-; ext COUT1 params=__zpabi_COUT1__c param_regs=A
-; ext GETLN1 params=
-; ext HOME params=
-; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
-; ext VTAB params=
-; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext branch params=
-; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
-; ext dump_buffer_line params=
-; ext dump_buffer_with_more params=
-; ext home params=
-; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 carry=true
-; ext instr_save params=
-; ext negated_branch params=
-; ext please_insert_save_diskette params=
-; ext please_reinsert_game_diskette params=
-; ext write_next_sector params= carry=true
-; call cout_string -> COUT1
-; call do_rwts_on_sector -> RWTS
-; call get_prompted_number_from_user -> CLREOL
-; call get_prompted_number_from_user -> RDKEY
-; call get_prompted_number_from_user -> cout_string
-; call get_prompted_number_from_user -> dump_buffer_line
-; call get_prompted_number_from_user -> dump_buffer_with_more
-; call get_prompted_number_from_user -> print_ascii_string
-; call inc_sector_and_write -> do_rwts_on_sector
-; call instr_save -> branch
-; call instr_save -> copy_data_to_buff
-; call instr_save -> inc_sector_and_write
-; call instr_save -> negated_branch
-; call instr_save -> please_insert_save_diskette
-; call instr_save -> please_reinsert_game_diskette
-; call instr_save -> write_next_sector
-; call please_insert_save_diskette -> RDKEY
-; call please_insert_save_diskette -> buffer_char
-; call please_insert_save_diskette -> dump_buffer_line
-; call please_insert_save_diskette -> dump_buffer_with_more
-; call please_insert_save_diskette -> get_prompted_number_from_user
-; call please_insert_save_diskette -> home
-; call please_insert_save_diskette -> print_ascii_string
-; call please_reinsert_game_diskette -> RDKEY
-; call please_reinsert_game_diskette -> dump_buffer_line
-; call please_reinsert_game_diskette -> dump_buffer_with_more
-; call please_reinsert_game_diskette -> print_ascii_string
-; call print_ascii_string -> buffer_char
-; call write_next_sector -> inc_sector_and_write
-; share member=do_rwts_on_sector:__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 member=inc_sector_and_write:__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 holder=instr_save live=instr_save:inc_sector_and_write forward=inc_sector_and_write>do_rwts_on_sector forward=instr_save>inc_sector_and_write writer=instr_save
-; zp __monitor_zp_1f size=1 at=$1F def=false init=
-; zp WNDLFT size=1 at=$20 def=false init=
-; zp WNDWDTH size=1 at=$21 def=false init=
-; zp WNDTOP size=1 at=$22 def=false init=
-; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
-; zp GBAS size=2 at=$26 def=false init=
-; zp BAS size=2 at=$28 def=false init=
-; zp __monitor_bas2 size=2 at=$2A def=false init=
-; zp __monitor_zp_2c size=3 at=$2C def=false init=
-; zp __dos_zp_2f size=1 at=$2F def=false init=
-; zp COLOR size=1 at=$30 def=false init=
-; zp __dos_zp_31 size=1 at=$31 def=false init=
-; zp INVFLG size=1 at=$32 def=false init=
-; zp PROMPT size=1 at=$33 def=false init=
-; zp __dos_zp_34 size=1 at=$34 def=false init=
-; zp __monitor_ysav1 size=1 at=$35 def=false init=
-; zp CSW size=2 at=$36 def=false init=
-; zp KSW size=2 at=$38 def=false init=
-; zp __dos_zp_3a size=11 at=$3A def=false init=
-; zp __monitor_acc size=1 at=$45 def=false init=
-; zp __dos_zp_46 size=2 at=$46 def=false init=
-; zp __monitor_status size=1 at=$48 def=false init=
-; zp __dos_zp_49 size=5 at=$49 def=false init=
-; zp RND size=2 at=$4E def=false init=
-; zp __zork_zp_7c size=3 at=$7C def=false init=
-; zp SECTORS_PER_TRACK size=1 at=$7F def=false init=
-; zp __zork_zp_80 size=10 at=$80 def=false init=
-; zp Z_PC size=3 at=$8A def=false init=
-; zp __zork_zp_8d size=13 at=$8D def=false init=
-; zp LOCAL_ZVARS size=30 at=$9A def=false init=
-; zp __zork_zp_b8 size=2 at=$B8 def=false init=
-; zp Z_HEADER_ADDR size=2 at=$BA def=false init=
-; zp __zork_zp_bc size=12 at=$BC def=false init=
-; zp STACK_STATE size=6 at=$C8 def=false init=
-; zp __zork_zp_ce size=22 at=$CE def=false init=
-; zp SCRATCH1 size=2 at=$E4 def=false init=
-; zp __zork_zp_e6 size=2 at=$E6 def=false init=
-; zp __zork_zp_e8 size=11 at=$E8 def=false init=
-; runtime hargs_size=1 hargs_need=0
-; @zp-link-meta-end
-
-
+; Disassembly of section .text at $1DAC
    SEG   text
    ORG   $1DAC
-__text_start:
-
 do_rwts_on_sector:
    SUBROUTINE
-
    STA   iob+12
    LDA   __zpabi_do_rwts_on_sector__buffer_0
    STA   iob+8
@@ -212,21 +128,17 @@ do_rwts_on_sector:
 .loop@0_break:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
-   LDA   #>iob
-   LDY   #<iob
+   LDA   #$20
+   LDY   #$AD
    JMP   RWTS
-
 write_next_sector:
    SUBROUTINE
-
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_1
-
+   LDA   #$00
+   STA   __zpabi_do_rwts_on_sector__buffer_0
+   LDA   #$02
+   STA   __zpabi_do_rwts_on_sector__buffer_1
 inc_sector_and_write:
    SUBROUTINE
-
    INC   SCRATCH1
    BNE   .inc_done@0
    INC   SCRATCH1+1
@@ -240,44 +152,38 @@ inc_sector_and_write:
    LDA   #$D8
    STA   dct+3
    LDA   #$02
-   JSR   do_rwts_on_sector
+   JSR   __text_load
    LDA   __local_inc_sector_and_write__2
    STA   dct+2
    LDA   __local_inc_sector_and_write__1
    STA   dct+3
    RTS
-
 print_ascii_string:
    SUBROUTINE
-
    STX   __local_print_ascii_string__count
    LDA   #$00
    STA   __local_print_ascii_string__i
 .loop@0_start:
    LDY   __local_print_ascii_string__i
-   LDA   (__zpabi_print_ascii_string__s_0),Y
+   LDA   (__local_inc_sector_and_write__1),Y
    JSR   buffer_char
    INC   __local_print_ascii_string__i
    DEC   __local_print_ascii_string__count
    BNE   .loop@0_start
    RTS
-
 cout_string:
    SUBROUTINE
-
    LDY   #$00
 .loop@1_start:
-   LDA   (__zpabi_cout_string__s_0),Y
+   LDA   (__local_inc_sector_and_write__1),Y
    ORA   #$80
    JSR   COUT1
    INY
    DEX
    BNE   .loop@1_start
    RTS
-
 get_prompted_number_from_user:
    SUBROUTINE
-
    STA   __local_get_prompted_number_from_user__key
    JSR   dump_buffer_with_more
    LDA   __local_get_prompted_number_from_user__key
@@ -286,13 +192,13 @@ get_prompted_number_from_user:
    ASL
    ASL
    STA   __local_get_prompted_number_from_user__1
-   LDA   #<prompts
+   LDA   #$BE
    CLC
    ADC   __local_get_prompted_number_from_user__1
-   STA   __zpabi_print_ascii_string__s_0
-   LDA   #>prompts
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
    ADC   #$00
-   STA   __zpabi_print_ascii_string__s_1
+   STA   __local_inc_sector_and_write__2
    LDX   #$0F
    JSR   print_ascii_string
    JSR   dump_buffer_line
@@ -300,19 +206,19 @@ get_prompted_number_from_user:
    STA   CH
    LDA   #$3F
    STA   INVFLG
-   LDA   #<sDefault
-   STA   __zpabi_cout_string__s_0
-   LDA   #>sDefault
-   STA   __zpabi_cout_string__s_1
+   LDA   #$37
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
+   STA   __local_inc_sector_and_write__2
    LDX   #$0A
    JSR   cout_string
    CLC
-   LDA   #<(prompts+15)
+   LDA   #$CD
    ADC   __local_get_prompted_number_from_user__1
-   STA   __zpabi_cout_string__s_0
-   LDA   #>(prompts+15)
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
    ADC   #$00
-   STA   __zpabi_cout_string__s_1
+   STA   __local_inc_sector_and_write__2
    LDX   #$01
    JSR   cout_string
    LDA   #$FF
@@ -330,17 +236,15 @@ get_prompted_number_from_user:
 .if_end@0:
    AND   #$7F
    RTS
-
 please_insert_save_diskette:
    SUBROUTINE
-
    JSR   home
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
-   LDA   #<sPleaseInsert
-   STA   __zpabi_print_ascii_string__s_0
-   LDA   #>sPleaseInsert
-   STA   __zpabi_print_ascii_string__s_1
+   LDA   #$1B
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
+   STA   __local_inc_sector_and_write__2
    LDX   #$1C
    JSR   print_ascii_string
    JSR   dump_buffer_with_more
@@ -385,10 +289,10 @@ please_insert_save_diskette:
    JSR   buffer_char
 .loop@5_start:
    JSR   dump_buffer_with_more
-   LDA   #<sReturnToBegin
-   STA   __zpabi_print_ascii_string__s_0
-   LDA   #>sReturnToBegin
-   STA   __zpabi_print_ascii_string__s_1
+   LDA   #$41
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
+   STA   __local_inc_sector_and_write__2
    LDX   #$23
    JSR   print_ascii_string
    JSR   dump_buffer_line
@@ -413,10 +317,8 @@ please_insert_save_diskette:
    SBC   #$00
    STA   SCRATCH1+1
    JMP   dump_buffer_with_more
-
 please_reinsert_game_diskette:
    SUBROUTINE
-
    LDA   iob+1
    CMP   #$60
    BNE   .if_end@9
@@ -424,18 +326,18 @@ please_reinsert_game_diskette:
    CMP   #$01
    BNE   .if_end@9
    JSR   dump_buffer_with_more
-   LDA   #<sReinsertGameDiskette
-   STA   __zpabi_print_ascii_string__s_0
-   LDA   #>sReinsertGameDiskette
-   STA   __zpabi_print_ascii_string__s_1
+   LDA   #$64
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
+   STA   __local_inc_sector_and_write__2
    LDX   #$1F
    JSR   print_ascii_string
 .loop@6_start:
    JSR   dump_buffer_with_more
-   LDA   #<sPressReturnToContinue
-   STA   __zpabi_print_ascii_string__s_0
-   LDA   #>sPressReturnToContinue
-   STA   __zpabi_print_ascii_string__s_1
+   LDA   #$83
+   STA   __local_inc_sector_and_write__1
+   LDA   #$20
+   STA   __local_inc_sector_and_write__2
    LDX   #$26
    JSR   print_ascii_string
    JSR   dump_buffer_line
@@ -449,72 +351,68 @@ please_reinsert_game_diskette:
    LDA   #$01
    STA   iob+2
    RTS
-
 copy_data_to_buff:
    SUBROUTINE
-
 .loop@0_start:
    DEY
-   LDA   (__zpabi_copy_data_to_buff__src_0),Y
+   LDA   (__local_inc_sector_and_write__1),Y
    STA   BUFF_AREA,X
    INX
    TYA
    BNE   .loop@0_start
    TXA
    RTS
-
 instr_save:
    SUBROUTINE
-
    JSR   please_insert_save_diskette
    LDY   #$00
    LDA   (Z_HEADER_ADDR),Y
    STA   BUFF_AREA
-   LDA   #<Z_PC
-   STA   __zpabi_copy_data_to_buff__src_0
-   LDA   #>Z_PC
-   STA   __zpabi_copy_data_to_buff__src_1
+   LDA   #$8A
+   STA   __local_inc_sector_and_write__1
+   LDA   #$00
+   STA   __local_inc_sector_and_write__2
    LDX   #$01
    LDY   #$03
    JSR   copy_data_to_buff
    TAX
-   LDA   #<LOCAL_ZVARS
-   STA   __zpabi_copy_data_to_buff__src_0
-   LDA   #>LOCAL_ZVARS
-   STA   __zpabi_copy_data_to_buff__src_1
+   LDA   #$9A
+   STA   __local_inc_sector_and_write__1
+   LDA   #$00
+   STA   __local_inc_sector_and_write__2
    LDY   #$1E
    JSR   copy_data_to_buff
    TAX
-   LDA   #<STACK_STATE
-   STA   __zpabi_copy_data_to_buff__src_0
-   LDA   #>STACK_STATE
-   STA   __zpabi_copy_data_to_buff__src_1
+   LDA   #$C8
+   STA   __local_inc_sector_and_write__1
+   LDA   #$00
+   STA   __local_inc_sector_and_write__2
    LDY   #$06
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   #$80
-   STA   __zpabi_copy_data_to_buff__src_0
+   STA   __local_inc_sector_and_write__1
    LDA   #$02
-   STA   __zpabi_copy_data_to_buff__src_1
+   STA   __local_inc_sector_and_write__2
    LDX   #$00
    LDY   #$00
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   #$80
-   STA   __zpabi_copy_data_to_buff__src_0
+   STA   __local_inc_sector_and_write__1
    LDA   #$03
-   STA   __zpabi_copy_data_to_buff__src_1
+   STA   __local_inc_sector_and_write__2
    LDX   #$00
    LDY   #$68
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   Z_HEADER_ADDR
-   STA   __zpabi_inc_sector_and_write__buffer_0
+   STA   __zpabi_do_rwts_on_sector__buffer_0
    LDA   Z_HEADER_ADDR+1
-   STA   __zpabi_inc_sector_and_write__buffer_1
+   STA   __zpabi_do_rwts_on_sector__buffer_1
    LDY   #$0E
    LDA   (Z_HEADER_ADDR),Y
    ADC   #$01
@@ -522,7 +420,7 @@ instr_save:
 .loop@1_start:
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
-   INC   __zpabi_inc_sector_and_write__buffer_1
+   INC   __zpabi_do_rwts_on_sector__buffer_1
    DEC   __local_instr_save__pages
    BNE   .loop@1_start
    JSR   inc_sector_and_write
@@ -532,83 +430,49 @@ instr_save:
 .instr_save@fail:
    JSR   please_reinsert_game_diskette
    JMP   negated_branch
-__text_end:
-__text_load	EQU	__text_start
-   IF    __text_end > $2200
-   ECHO  "section .text runs past the end of region save by", [__text_end - $2200]d, "bytes"
-   ERR
-   ENDIF
 
+; Disassembly of section .rodata at $201B
    SEG   rodata
-   ORG   __text_end
-__rodata_start:
-
+   ORG   $201B
 sPleaseInsert:
-   DC.B  $50, $4C, $45, $41, $53, $45, $20, $49, $4E, $53, $45, $52, $54, $20, $53, $41
-   DC.B  $56, $45, $20, $44, $49, $53, $4B, $45, $54, $54, $45, $2C
-
+   DC.B  $50, $4C, $45, $41, $53, $45, $20, $49
+   DC.B  $4E, $53, $45, $52, $54, $20, $53, $41
+   DC.B  $56, $45, $20, $44, $49, $53, $4B, $45
+   DC.B  $54, $54, $45, $2C
 sDefault:
-   DC.B  $44, $45, $46, $41, $55, $4C, $54, $20, $3D, $20
-
+   DC.B  $44, $45, $46, $41, $55, $4C, $54, $20
+   DC.B  $3D, $20
 sReturnToBegin:
-   DC.B  $2D, $2D, $2D, $20, $50, $52, $45, $53, $53, $20, $27, $52, $45, $54, $55, $52
-   DC.B  $4E, $27, $20, $4B, $45, $59, $20, $54, $4F, $20, $42, $45, $47, $49, $4E, $20
+   DC.B  $2D, $2D, $2D, $20, $50, $52, $45, $53
+   DC.B  $53, $20, $27, $52, $45, $54, $55, $52
+   DC.B  $4E, $27, $20, $4B, $45, $59, $20, $54
+   DC.B  $4F, $20, $42, $45, $47, $49, $4E, $20
    DC.B  $2D, $2D, $2D
-
 sReinsertGameDiskette:
-   DC.B  $50, $4C, $45, $41, $53, $45, $20, $52, $45, $2D, $49, $4E, $53, $45, $52, $54
-   DC.B  $20, $47, $41, $4D, $45, $20, $44, $49, $53, $4B, $45, $54, $54, $45, $2C
-
+   DC.B  $50, $4C, $45, $41, $53, $45, $20, $52
+   DC.B  $45, $2D, $49, $4E, $53, $45, $52, $54
+   DC.B  $20, $47, $41, $4D, $45, $20, $44, $49
+   DC.B  $53, $4B, $45, $54, $54, $45, $2C
 sPressReturnToContinue:
-   DC.B  $2D, $2D, $2D, $20, $50, $52, $45, $53, $53, $20, $27, $52, $45, $54, $55, $52
-   DC.B  $4E, $27, $20, $4B, $45, $59, $20, $54, $4F, $20, $43, $4F, $4E, $54, $49, $4E
+   DC.B  $2D, $2D, $2D, $20, $50, $52, $45, $53
+   DC.B  $53, $20, $27, $52, $45, $54, $55, $52
+   DC.B  $4E, $27, $20, $4B, $45, $59, $20, $54
+   DC.B  $4F, $20, $43, $4F, $4E, $54, $49, $4E
    DC.B  $55, $45, $20, $2D, $2D, $2D
-__rodata_end:
-__rodata_load	EQU	__rodata_start
-   IF    __rodata_end > $2200
-   ECHO  "section .rodata runs past the end of region save by", [__rodata_end - $2200]d, "bytes"
-   ERR
-   ENDIF
 
+; Disassembly of section .data at $20A9
    SEG   data
-   ORG   __rodata_end
-__data_start:
-
+   ORG   $20A9
 dct:
-   DS.B  1
-   DC.B  $01
-   DC.W  $D8EF
-
+   DC.B  $00, $01, $EF, $D8
 iob:
+   DC.B  $01, $60, $01, $00, $00, $00, $A9, $20
+   DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
-   DC.B  $60
-   DC.B  $01
-   DS.B  3
-   DC.W  dct
-   DS.B  7
-   DC.B  $60
-   DC.B  $01
-
 prompts:
-   DC.B  $53, $4C, $4F, $54, $20, $20, $20, $20, $20, $28, $31, $2D, $37, $29, $3A
-   DC.B  $36
-   DC.B  $44, $52, $49, $56, $45, $20, $20, $20, $20, $28, $31, $2D, $32, $29, $3A
-   DC.B  $32
-   DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E, $20, $28, $30, $2D, $37, $29, $3A
-   DC.B  $30
-__data_end:
-__data_load	EQU	__data_start
-   IF    __data_end > $2200
-   ECHO  "section .data runs past the end of region save by", [__data_end - $2200]d, "bytes"
-   ERR
-   ENDIF
-
-   SEG   bss
-   ORG   __data_end
-__bss_start:
-__bss_end:
-__bss_load	EQU	__bss_start
-   IF    __bss_end > $2200
-   ECHO  "section .bss runs past the end of region save by", [__bss_end - $2200]d, "bytes"
-   ERR
-   ENDIF
+   DC.B  $53, $4C, $4F, $54, $20, $20, $20, $20
+   DC.B  $20, $28, $31, $2D, $37, $29, $3A, $36
+   DC.B  $44, $52, $49, $56, $45, $20, $20, $20
+   DC.B  $20, $28, $31, $2D, $32, $29, $3A, $32
+   DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E
+   DC.B  $20, $28, $30, $2D, $37, $29, $3A, $30

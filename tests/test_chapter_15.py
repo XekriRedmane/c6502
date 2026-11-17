@@ -33,7 +33,7 @@ _C15_VALID = _TESTS_DIR / "chapter_15" / "valid"
 _INCOMPATIBLE = frozenset()
 
 
-# Currently fail through `--codegen`. Each corresponds to a feature gap
+# Currently fail through `-S`. Each corresponds to a feature gap
 # we plan to close. When a fix lands, drop the entry — the harness
 # asserts each listed file still fails so it can't drift silently.
 _EXPECTED_FAILURES_CODEGEN = frozenset({
@@ -44,7 +44,7 @@ _EXPECTED_FAILURES_CODEGEN = frozenset({
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter15Valid(unittest.TestCase):
-    """Each chapter_15 valid file must compile through `--codegen`,
+    """Each chapter_15 valid file must compile through `-S`,
     except those listed in `_EXPECTED_FAILURES_CODEGEN` (must fail) or
     `_INCOMPATIBLE` (skipped)."""
 

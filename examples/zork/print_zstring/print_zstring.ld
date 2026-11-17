@@ -19,15 +19,15 @@ MEMORY
 SECTIONS
 {
     .literal : { *(.text.literal) } > literal
-    .pages : { pages.asm(.text .text.* .rodata .rodata.*) } > zstring
-    .zstring : { zstring.asm(.text .text.* .rodata .rodata.*) } > zstring
+    .pages : { pages.o(.text .text.* .rodata .rodata.*) } > zstring
+    .zstring : { zstring.o(.text .text.* .rodata .rodata.*) } > zstring
     .output : {
-        output.asm(.text .text.*)
-        output.asm(.rodata .rodata.* .data .data.* .bss .bss.*)
+        output.o(.text .text.*)
+        output.o(.rodata .rodata.* .data .data.* .bss .bss.*)
     } > output
     .disk : {
-        disk.asm(.data .data.*)
-        disk.asm(.text .text.*)
+        disk.o(.data .data.*)
+        disk.o(.text .text.*)
     } > disk
     .text : { *(.text .text.*) } > disk
     .rodata : { *(.rodata .rodata.*) } > disk

@@ -237,7 +237,7 @@ class TestDirectIndexLoadAsmShape(unittest.TestCase):
 
     def test_indexed_load_uses_direct_ldx(self) -> None:
         # IndexedLoad's lowering stages the index via A→X. Under
-        # --optimize, the loop counter `i` ends up either pinned to
+        # -O, the loop counter `i` ends up either pinned to
         # the X register directly (HwReg coloring) or living in ZP
         # with a peephole-emitted direct `LDX $XX`. Either way the
         # `arr[i]` access uses absolute,X addressing — `LDA arr,X`

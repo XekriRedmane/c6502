@@ -1,6 +1,6 @@
 """`[[noreturn]]` on a function (C23 §6.7.13.7): the parser records it
 on the declaration, the type checker on the function's `FunAttr` from
-any declaration, and under `--optimize` nothing runs after a call to
+any declaration, and under `-O` nothing runs after a call to
 the function (`passes/optimization/noreturn_call.py`)."""
 
 from __future__ import annotations

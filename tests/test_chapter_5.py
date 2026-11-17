@@ -4,7 +4,7 @@ chapter_5 covers local variable declarations, assignment, compound
 assignment (`+=` etc.), and pre/post increment/decrement. Three
 buckets:
 
-  valid/             — must compile through `--codegen`.
+  valid/             — must compile through `-S`.
   invalid_parse/     — must fail at lex or parse.
   invalid_semantics/ — must parse cleanly but fail at one of the
                        semantic passes (identifier_resolution,
@@ -50,7 +50,7 @@ _SEMANTIC_FAILURES = (
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter5Valid(unittest.TestCase):
-    """Each chapter_5/valid file must compile through `--codegen`."""
+    """Each chapter_5/valid file must compile through `-S`."""
 
     def test_codegen(self):
         files = sorted((_C5 / "valid").rglob("*.c"))

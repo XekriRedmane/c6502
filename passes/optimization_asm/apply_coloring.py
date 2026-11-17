@@ -64,7 +64,7 @@ def apply_coloring(
     `__zpabi_*` block, and dasm picks zp vs. absolute addressing
     from the resolved value (so a pool that spilled above `$FF`
     is transparent to the body). The symbolic form is what makes
-    the multi-TU linker (`compile.py --link`) able to re-allocate
+    the multi-TU linker (the linker) able to re-allocate
     body locals globally: the per-TU IR doesn't bake in addresses,
     only stable slot indices.
 

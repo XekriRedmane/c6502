@@ -28,7 +28,6 @@ from preprocessor import preprocess
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-_HAVE_DASM = shutil.which("dasm") is not None
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -266,24 +265,22 @@ int main(void) {
 
 
 def _link(sources: list[str]) -> tuple[int, str, str]:
+    """Compiles each source with `-O` to an object and links them.
+    Returns the exit code, the linked program as text
+    (`link_helpers.linked_text`), and stderr."""
+    from tests.link_helpers import (
+        compile_object, link_capture_stderr, linked_text,
+    )
     with tempfile.TemporaryDirectory() as tmp:
         paths = []
         for k, src in enumerate(sources):
-            path = Path(tmp) / f"u{k}.asm"
-            with patch("sys.stdin", io.StringIO(src)):
-                assert compile_main([
-                    "compile.py", "-", "--codegen", "--optimize",
-                    "-o", str(path),
-                ]) == 0
-            paths.append(str(path))
-        out = Path(tmp) / "out.asm"
-        err = io.StringIO()
-        with patch("sys.stderr", err):
-            rc = compile_main(
-                ["compile.py", "--link", *paths, "-o", str(out)],
-            )
-        text = out.read_text() if rc == 0 else ""
-    return rc, text, err.getvalue()
+            path = Path(tmp) / f"u{k}.o"
+            assert compile_object(src, path) == 0
+            paths.append(path)
+        out = Path(tmp) / "out"
+        rc, err = link_capture_stderr(paths, out)
+        text = linked_text(out) if rc == 0 else ""
+    return rc, text, err
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
@@ -300,12 +297,11 @@ class TestAcrossUnits(unittest.TestCase):
         src = _UNIT_USE.replace("*const p", "*p")
         self.assertEqual(_shares(_codegen(src)), [])
 
-    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
     def test_linked_program_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([_UNIT_DEF, _UNIT_USE])
         self.assertEqual(rc, 0, err)
-        self.assertEqual(build_linked_sim(text).run().return_int(),
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          _PAGES_SUM)
 
     def test_checks(self) -> None:
@@ -495,7 +491,7 @@ class TestPinnedParams(unittest.TestCase):
             AbiSelectionError, r"declares a `zeropage\(addr\)` parameter",
         ):
             _codegen(src)
-        # Without --optimize, the function takes it on the soft stack,
+        # Without -O, the function takes it on the soft stack,
         # as its callers pass it.
         self.assertEqual(_run(src, False), 3)
 
@@ -507,14 +503,13 @@ class TestPinnedParams(unittest.TestCase):
             int main(void) { f("a"); return 0; }
             """)
 
-    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
     def test_linked(self) -> None:
         from sim.linked import build_linked_sim
         use = _SUM_DECL + _SUM_MAIN
         rc, text, err = _link([_SUM, use])
         self.assertEqual(rc, 0, err)
         self.assertEqual(_equs(text)["__zpabi_sum__p_0"], 0x30)
-        self.assertEqual(build_linked_sim(text).run().return_int(), 15)
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(), 15)
         # A unit that puts the argument somewhere else doesn't link.
         rc, _, err = _link([_SUM, use.replace("0x30", "0x40")])
         self.assertNotEqual(rc, 0)

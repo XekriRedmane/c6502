@@ -9,7 +9,7 @@ its `bool` in C, and a caller branches on it with `BCC` or `BCS`.
 function with external linkage ([a function with external
 linkage](#a-function-with-external-linkage)). Both run once on the
 optimized TAC, between ABI selection and translation to asm, and only
-under `--optimize`. `choose_global_carry_returns` runs first, so that
+under `-O`. `choose_global_carry_returns` runs first, so that
 a static function can pass its carry on through a function it
 chose.
 
@@ -138,7 +138,7 @@ big:                                big:
 
 Each unit records the choice in its link metadata, as `carry=true` on
 the function's `def` or `ext` line, for an annotated function too.
-`compile.py --link` rejects units that disagree
+The linker rejects units that disagree
 (`linker._carry_conflict`). That happens when one unit takes the
 function's address, or when the unit that defines it can't make it
 zp_abi. A function that returns `unsigned char` returns it in A in

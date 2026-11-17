@@ -3,8 +3,9 @@ Zork I's (r15) interpreter, output/main.asm of
 https://github.com/XekriRedmane/zorki-r15-reveng, in eleven C files
 linked with a linker script.
 
-`TestGoldOutputs` checks each unit's `--optimize` output and the linked
-program against the checked-in `.asm` files.
+`TestGoldOutputs` checks each unit's `-O` output and the listing of
+the linked program (`objdump.py -D`) against the checked-in `.asm`
+files.
 
 `TestSessions` plays Zork on the interpreter, and on Zork's own, and
 compares the two. It runs only with the game's disk image, which isn't
@@ -33,7 +34,6 @@ _UNITS = [
     "output", "disk", "prompts", "save",
 ]
 _HAVE_PCPP = shutil.which("pcpp") is not None
-_HAVE_DASM = shutil.which("dasm") is not None
 _DSK = os.environ.get("ZORK_DSK")
 
 # Zork's boot loader reads 26 sectors from track 1 into $0800.
@@ -73,7 +73,7 @@ _PRINTER_KEYS = [ord(c) for c in "362\r" "562\r" "362\r"]
 def _compile(unit: str, out: Path) -> None:
     from compile import main as compile_main
     assert compile_main([
-        "compile.py", str(_DIR / f"{unit}.c"), "--codegen", "--optimize",
+        "compile.py", str(_DIR / f"{unit}.c"), "-S", "-O",
         "-o", str(out),
     ]) == 0
 
@@ -81,7 +81,7 @@ def _compile(unit: str, out: Path) -> None:
 def _link(paths: list[Path], out: Path) -> None:
     from compile import main as compile_main
     assert compile_main([
-        "compile.py", "--link", "-T", str(_DIR / "interpreter.ld"),
+        "compile.py", "-T", str(_DIR / "interpreter.ld"),
         *map(str, paths), "-o", str(out),
     ]) == 0
 
@@ -92,7 +92,7 @@ def _build(tmp: str) -> tuple[list[Path], Path]:
         path = Path(tmp) / f"{unit}.asm"
         _compile(unit, path)
         paths.append(path)
-    linked = Path(tmp) / "interpreter.asm"
+    linked = Path(tmp) / "interpreter"
     _link(paths, linked)
     return paths, linked
 
@@ -112,8 +112,9 @@ class TestGoldOutputs(unittest.TestCase):
                         path.read_text(),
                         (_DIR / f"{unit}.asm").read_text(),
                     )
+            from tests.link_helpers import listing
             self.assertEqual(
-                linked.read_text(),
+                listing(linked),
                 (_DIR / "interpreter.asm").read_text(),
             )
 
@@ -167,13 +168,13 @@ def _run_original(dsk: bytes, lines, keys=()):
 
 def _run_c(text: str, dsk: bytes, lines, keys=()):
     from sim.linked import build_linked_sim
-    sim = build_linked_sim(text)
+    sim = build_linked_sim(text.exe)
     a = _machine(sim.mpu, dsk, lines, keys)
     a.run(other_hooks=dict(sim.runtime.hooks))
     return a
 
 
-@unittest.skipUnless(_HAVE_PCPP and _HAVE_DASM, "pcpp or dasm not available")
+@unittest.skipUnless(_HAVE_PCPP, "pcpp not available")
 @unittest.skipUnless(_DSK, "set ZORK_DSK to Zork I r15's disk image")
 class TestSessions(unittest.TestCase):
 
@@ -182,7 +183,8 @@ class TestSessions(unittest.TestCase):
         cls.dsk = _disk()
         with tempfile.TemporaryDirectory() as tmp:
             _, linked = _build(tmp)
-            cls.text = linked.read_text()
+            from tests.link_helpers import linked_text
+            cls.text = linked_text(linked)
 
     def _compare(self, lines, keys=()):
         original = _run_original(self.dsk, lines, keys)

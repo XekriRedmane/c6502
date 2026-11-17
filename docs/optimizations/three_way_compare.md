@@ -4,7 +4,7 @@
 [passes/optimization/three_way_compare.py](../../passes/optimization/three_way_compare.py)
 splits a 2-byte unsigned ordering compare and an equality compare of
 the same two values into a compare of the high bytes and then of the
-low bytes. It runs once, after SSA destruction, under `--optimize`.
+low bytes. It runs once, after SSA destruction, under `-O`.
 
 A search of a sorted table tests the key against an entry twice:
 

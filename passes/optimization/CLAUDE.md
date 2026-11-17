@@ -1,6 +1,6 @@
 # passes/optimization/CLAUDE.md
 
-TAC-level optimizer. Active under `--optimize`. Runs after
+TAC-level optimizer. Active under `-O`. Runs after
 `c99_to_tac` and before `tac_to_asm`. The root pipeline overview lives
 in `/project/c6502/CLAUDE.md`; the asm-level SSA round-trip that runs
 later lives in

@@ -35,7 +35,7 @@ from `get_next_zchar` in `examples/zork/print_zstring/zstring.c`,
 where `ZCHARS` is a 16-bit zero-page global. The shift by 10 moves
 the high byte down and shifts it twice more, and the bytes of the
 result above the low one are dead. The "Before" listing is the same
-`--optimize` compile without this pass.
+`-O` compile without this pass.
 
 ### Before
 

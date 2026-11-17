@@ -15,7 +15,7 @@ is negative or not less than the width, and a left shift of a
 negative value. Right shift of a negative value is implementation-
 defined, and c6502 shifts arithmetically, so the model does too.
 
-The parameter form exercises zp_abi parameters under --optimize. The
+The parameter form exercises zp_abi parameters under -O. The
 global form exercises static storage and static initializers.
 
     uv run python -m fuzz.exprs --start 0 --count 300

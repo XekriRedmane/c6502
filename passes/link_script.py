@@ -1,4 +1,4 @@
-"""Linker scripts for `compile.py --link -T script.ld`: a subset of GNU
+"""Linker scripts for `compile.py -T script.ld`: a subset of GNU
 ld's script language.
 
 A script names the memory regions of the machine and says which

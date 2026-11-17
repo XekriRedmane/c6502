@@ -1,9 +1,10 @@
-"""End-to-end tests for the multi-TU linker (`compile.py --link`).
+"""End-to-end tests for the multi-TU linker (`compile.py` given
+objects).
 
-Strategy: compile each input .c file separately to .asm with
-`--codegen --optimize`, then run the linker over the .asm
-files, then either inspect the combined asm or assemble and
-simulate it.
+Strategy: compile each input .c file separately to an object with
+`-c -O`, link the objects into an executable, then either inspect
+the executable's disassembly and metadata (`link_helpers.linked_text`)
+or simulate it.
 
 Coverage:
   - Two TUs each defining one zp_abi function, with `main` in
@@ -12,50 +13,22 @@ Coverage:
   - Linker rejects cross-TU duplicate definition.
   - Linker rejects a non-zp_abi extern callee.
   - Linker rejects cross-TU recursion (mutual).
-  - Output asm has one global EQU block, no per-TU blocks.
+  - The executable has one merged metadata block.
   - A declaration that names a parameter differently from the
     definition, or leaves it unnamed, links: its slot symbols are
     bound to the definition's by position.
 """
 from __future__ import annotations
 
-import io
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from compile import main as compile_main
-
-
-def _compile_to_asm(source: str, out_path: Path) -> int:
-    """Compile a single C source through `--codegen --optimize`,
-    write the asm to `out_path`. Returns the exit code."""
-    with patch("sys.stdin", io.StringIO(source)):
-        return compile_main([
-            "compile.py", "-", "--codegen", "--optimize",
-            "-o", str(out_path),
-        ])
-
-
-def _link(asm_paths: list[Path], out_path: Path) -> int:
-    """Run `compile.py --link` over the asm_paths."""
-    argv = ["compile.py", "--link"]
-    argv.extend(str(p) for p in asm_paths)
-    argv.extend(["-o", str(out_path)])
-    return compile_main(argv)
-
-
-def _link_capture_stderr(asm_paths: list[Path], out_path: Path) -> tuple[int, str]:
-    """Run --link; capture stderr (link errors go there)."""
-    argv = ["compile.py", "--link"]
-    argv.extend(str(p) for p in asm_paths)
-    argv.extend(["-o", str(out_path)])
-    with patch("sys.stderr", io.StringIO()) as err:
-        rc = compile_main(argv)
-        return rc, err.getvalue()
+from tests.link_helpers import (
+    compile_object as _compile_to_obj, link as _link,
+    link_capture_stderr as _link_capture_stderr, linked_text,
+)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
@@ -76,13 +49,13 @@ class TestLinkerHappyPath(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            a = tmp / "a.asm"
-            b = tmp / "b.asm"
-            out = tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(tu_a, a), 0)
-            self.assertEqual(_compile_to_asm(tu_b, b), 0)
+            a = tmp / "a.o"
+            b = tmp / "b.o"
+            out = tmp / "linked"
+            self.assertEqual(_compile_to_obj(tu_a, a), 0)
+            self.assertEqual(_compile_to_obj(tu_b, b), 0)
             self.assertEqual(_link([a, b], out), 0)
-            text = out.read_text()
+            text = linked_text(out)
             # One global EQU block at the top.
             self.assertIn("__zpabi_helper__x_0\tEQU\t", text)
             # The function bodies appear after the EQU block.
@@ -116,13 +89,13 @@ class TestLinkerHappyPath(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            a = tmp / "a.asm"
-            b = tmp / "b.asm"
-            out = tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(tu_a, a), 0)
-            self.assertEqual(_compile_to_asm(tu_b, b), 0)
+            a = tmp / "a.o"
+            b = tmp / "b.o"
+            out = tmp / "linked"
+            self.assertEqual(_compile_to_obj(tu_a, a), 0)
+            self.assertEqual(_compile_to_obj(tu_b, b), 0)
             self.assertEqual(_link([a, b], out), 0)
-            text = out.read_text()
+            text = linked_text(out)
             # TU A's main should load `b` into X before JSR (the
             # direct-into-X peephole renders `LDA #imm; TAX` as a
             # single LDX #imm). NOT `STA __zpabi_helper__b` — that's
@@ -166,12 +139,12 @@ class TestLinkerHappyPath(unittest.TestCase):
             tmp = Path(tmp)
             paths = []
             for name, src in [("a", tu_a), ("b", tu_b), ("c", tu_c)]:
-                p = tmp / f"{name}.asm"
-                self.assertEqual(_compile_to_asm(src, p), 0)
+                p = tmp / f"{name}.o"
+                self.assertEqual(_compile_to_obj(src, p), 0)
                 paths.append(p)
-            out = tmp / "linked.asm"
+            out = tmp / "linked"
             self.assertEqual(_link(paths, out), 0)
-            text = out.read_text()
+            text = linked_text(out)
             # One EQU per symbol.
             self.assertEqual(text.count("__zpabi_helper__x_0\tEQU\t"), 1)
 
@@ -193,39 +166,45 @@ class TestLinkerErrors(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            a = tmp / "a.asm"
-            b = tmp / "b.asm"
-            out = tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(tu_a, a), 0)
-            self.assertEqual(_compile_to_asm(tu_b, b), 0)
+            a = tmp / "a.o"
+            b = tmp / "b.o"
+            out = tmp / "linked"
+            self.assertEqual(_compile_to_obj(tu_a, a), 0)
+            self.assertEqual(_compile_to_obj(tu_b, b), 0)
             rc, err = _link_capture_stderr([a, b], out)
             self.assertEqual(rc, 1)
             self.assertIn("multiple TUs", err)
             self.assertIn("helper", err)
 
     def test_unannotated_extern_accepted_under_default_zp_abi(self) -> None:
-        # Under the default-zp_abi policy (`--optimize`), every
+        # Under the default-zp_abi policy (`-O`), every
         # extern is treated as zp_abi at the call site: args land
         # in `__zpabi_<callee>_p<k>` slots, and the per-TU output
         # advertises the extern in `; @zp-link-meta-begin`. The
-        # linker therefore accepts the link — the user is on the
-        # hook for ensuring the actual definition uses a matching
-        # ABI.
+        # linker's allocation accepts it, and the function's address
+        # has to come from somewhere: no object defines it, so the
+        # link fails on the undefined symbol until `--defsym` gives
+        # one. The user is on the hook for the definition's ABI.
         src = (
             "extern int regular_lib_fn(int x); "
             "int main(void) { return regular_lib_fn(7); }"
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            p = tmp / "a.asm"
-            out = tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(src, p), 0)
+            p = tmp / "a.o"
+            out = tmp / "linked"
+            self.assertEqual(_compile_to_obj(src, p), 0)
             rc, err = _link_capture_stderr([p], out)
+            self.assertEqual(rc, 1)
+            self.assertIn("undefined symbol `regular_lib_fn`", err)
+            rc, err = _link_capture_stderr(
+                [p], out, extra=["--defsym", "regular_lib_fn=0x6000"],
+            )
             self.assertEqual(rc, 0, f"Expected link to succeed, stderr: {err!r}")
 
     def test_no_inputs_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "linked.asm"
+            out = Path(tmp) / "linked"
             # argparse rejects empty positional with nargs=+
             # (SystemExit from its built-in error path).
             with self.assertRaises(SystemExit) as cm:
@@ -255,11 +234,11 @@ class TestParameterNames(unittest.TestCase):
         caller = decl + " int main(void) { return put(4, 300); }"
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            a, b, out = tmp / "a.asm", tmp / "b.asm", tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(self._DEF, a), 0)
-            self.assertEqual(_compile_to_asm(caller, b), 0)
+            a, b, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
+            self.assertEqual(_compile_to_obj(self._DEF, a), 0)
+            self.assertEqual(_compile_to_obj(caller, b), 0)
             rc, err = _link_capture_stderr([a, b], out)
-            return rc, err, out.read_text() if rc == 0 else ""
+            return rc, err, linked_text(out) if rc == 0 else ""
 
     def _assert_bound_like_definition(self, text: str, names) -> None:
         equs = _equs(text)
@@ -299,9 +278,9 @@ class TestParameterNames(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            a, b, out = tmp / "a.asm", tmp / "b.asm", tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(definition, a), 0)
-            self.assertEqual(_compile_to_asm(caller, b), 0)
+            a, b, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
+            self.assertEqual(_compile_to_obj(definition, a), 0)
+            self.assertEqual(_compile_to_obj(caller, b), 0)
             rc, err = _link_capture_stderr([a, b], out)
         self.assertEqual(rc, 1)
         self.assertIn("same names", err)
@@ -325,7 +304,7 @@ class TestParameterNames(unittest.TestCase):
 
     def test_unnamed_parameter_in_one_unit(self) -> None:
         # Calling a function declared with an unnamed parameter used
-        # to crash `--optimize`, with or without the annotation.
+        # to crash `-O`, with or without the annotation.
         from compile import _run_stage
         from preprocessor import preprocess
         for attr in ("", "[[c6502::zp_abi]] "):
@@ -368,11 +347,11 @@ class TestRecursionWithSaves(unittest.TestCase):
     def _link_one(self, src: str) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            p = tmp / "a.asm"
-            out = tmp / "linked.asm"
-            self.assertEqual(_compile_to_asm(src, p), 0)
+            p = tmp / "a.o"
+            out = tmp / "linked"
+            self.assertEqual(_compile_to_obj(src, p), 0)
             rc, err = _link_capture_stderr([p], out)
-            text = out.read_text() if rc == 0 else ""
+            text = linked_text(out) if rc == 0 else ""
         return rc, err, text
 
     def test_saved_cycle_links(self):
@@ -382,7 +361,6 @@ class TestRecursionWithSaves(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         self.assertIn("JSR   walk", text)
 
-    @unittest.skipUnless(shutil.which("dasm"), "dasm not installed")
     def test_saved_cycle_runs(self):
         from sim.linked import build_linked_sim
         rc, err, text = self._link_one(
@@ -390,7 +368,7 @@ class TestRecursionWithSaves(unittest.TestCase):
         )
         self.assertEqual(rc, 0, err)
         # out = ((0 * 3 + 1) * 3 + 2) * 3 + 3
-        self.assertEqual(build_linked_sim(text).run().return_int(), 18)
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(), 18)
 
     def test_cycle_without_saves_rejected(self):
         src = (
@@ -400,12 +378,12 @@ class TestRecursionWithSaves(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            p = tmp / "a.asm"
+            p = tmp / "a.o"
             # Without the pragma the compile itself falls back to the
             # soft stack, which the linker can't re-allocate.
-            if _compile_to_asm(src, p) != 0:
+            if _compile_to_obj(src, p) != 0:
                 return
-            rc, err = _link_capture_stderr([p], tmp / "linked.asm")
+            rc, err = _link_capture_stderr([p], tmp / "linked")
             self.assertNotEqual(rc, 0)
 
 if __name__ == "__main__":
@@ -434,12 +412,12 @@ class TestLowZeroPageFallback(unittest.TestCase):
     def test_parameters_go_below_the_pool(self) -> None:
         from passes.runtime_layout import CLASSIC
         with tempfile.TemporaryDirectory() as tmp:
-            a, b = Path(tmp) / "a.asm", Path(tmp) / "b.asm"
-            self.assertEqual(_compile_to_asm(self._A, a), 0)
-            self.assertEqual(_compile_to_asm(self._B, b), 0)
-            out = Path(tmp) / "out.asm"
+            a, b = Path(tmp) / "a.o", Path(tmp) / "b.o"
+            self.assertEqual(_compile_to_obj(self._A, a), 0)
+            self.assertEqual(_compile_to_obj(self._B, b), 0)
+            out = Path(tmp) / "out"
             self.assertEqual(_link([a, b], out), 0)
-            text = out.read_text()
+            text = linked_text(out)
         equs = _equs(text)
         params = {k: v for k, v in equs.items()
                   if k.startswith("__zpabi_add3_")}
@@ -448,8 +426,7 @@ class TestLowZeroPageFallback(unittest.TestCase):
         for name, addr in params.items():
             self.assertLess(addr, 0x80, name)
             self.assertNotIn(addr, runtime, name)
-        if shutil.which("dasm"):
-            from sim.linked import build_linked_sim
-            sim = build_linked_sim(text)
-            result = sim.run()
-            self.assertEqual(result.return_int(), 1)
+        from sim.linked import build_linked_sim
+        sim = build_linked_sim(text.exe)
+        result = sim.run()
+        self.assertEqual(result.return_int(), 1)

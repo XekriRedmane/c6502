@@ -7,7 +7,7 @@ graph, so that the register allocator gives both the same byte. It
 runs once per function in each of the two runs of the asm-level SSA
 optimizer, after the copy propagation and dead-code fixed point and
 after `build_interference`, and before the X / Y eligibility scan and
-`color_graph`. Only the `--optimize` pipeline runs it.
+`color_graph`. Only the `-O` pipeline runs it.
 
 Asm SSA gives every definition of every byte its own name. A loop
 variable therefore has one name for its value at the loop head (the
@@ -57,7 +57,7 @@ uint16_t sum(const uint8_t *p, uint8_t n) {
 
 The pass returns a map from names to their representatives and
 doesn't change the IR, so these listings are the final assembly of
-two complete compiles with `--optimize`. The first has
+two complete compiles with `-O`. The first has
 `coalesce_moves` replaced by a function that merges nothing. In the
 second, the pass merges each of the three Phis at the loop head with
 its argument from the loop body, as `%9.1.b0.v1` into

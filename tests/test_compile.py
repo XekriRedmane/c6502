@@ -51,7 +51,7 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("Ret(", out)
 
     def test_codegen_stdin_prints_asm(self):
-        rc, out, _ = self._run(["compile.py", "-", "--codegen"], stdin=self.SOURCE)
+        rc, out, _ = self._run(["compile.py", "-", "-S"], stdin=self.SOURCE)
         self.assertEqual(rc, 0)
         self.assertIn("main:", out)
         self.assertIn("SUBROUTINE", out)
@@ -66,7 +66,7 @@ class TestCompileDriver(unittest.TestCase):
         # user-written name). Arms that each `return` would leave the
         # JMP after a return, where `unreachable_drop` removes it.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int main(void) { int a = 0; int b; "
                   "if (a) b = 1; else b = 2; return b; }",
         )
@@ -83,7 +83,7 @@ class TestCompileDriver(unittest.TestCase):
         # frame slots, so both immediate writes (LDA #$01 and
         # LDA #$02) appear in the asm.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int main(void) { int a = 1; { int a = 2; } return a; }",
         )
         self.assertEqual(rc, 0)
@@ -97,7 +97,7 @@ class TestCompileDriver(unittest.TestCase):
         # it's gone the JMP is a jump to the next instruction, which
         # is dropped too.)
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin=(
                 "int main(void) { int a = 0; foo: a = a + 1; "
                 "if (a < 5) { a = a + 2; goto foo; } return a; }"
@@ -113,7 +113,7 @@ class TestCompileDriver(unittest.TestCase):
         # check both the ADC #$01 (the +=1 step) and that the asm
         # compiled cleanly.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int main(void) { int a = 0; a++; return a; }",
         )
         self.assertEqual(rc, 0)
@@ -123,7 +123,7 @@ class TestCompileDriver(unittest.TestCase):
         # Prefix `--a` desugars to `a = a - 1`, which lowers to SBC
         # #$01 against a's frame slot.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int main(void) { int a = 5; --a; return a; }",
         )
         self.assertEqual(rc, 0)
@@ -136,7 +136,7 @@ class TestCompileDriver(unittest.TestCase):
         # result here (no runtime header yet); we just check the
         # immediate ADC and the initializer LDA both made it through.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int main(void) { int a = 5; a += 3; return a; }",
         )
         self.assertEqual(rc, 0)
@@ -149,7 +149,7 @@ class TestCompileDriver(unittest.TestCase):
         # (Int = 2 bytes post C99 width refresh), and references
         # inside main use absolute addressing (LDA g).
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="static int g = 7; int main(void) { return g; }",
         )
         self.assertEqual(rc, 0)
@@ -165,7 +165,7 @@ class TestCompileDriver(unittest.TestCase):
         # absolute addressing against that mangled name. The zero
         # init lays down as `DS.B 2` (zero-run for the 2-byte Int).
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int main(void) { static int x; return x; }",
         )
         self.assertEqual(rc, 0)
@@ -180,7 +180,7 @@ class TestCompileDriver(unittest.TestCase):
         # checking resolves it to a zeroed StaticVariable, and
         # c99_to_tac emits the zero as a 2-byte `ZeroInit`.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="int x; int main(void) { return x; }",
         )
         self.assertEqual(rc, 0)
@@ -193,7 +193,7 @@ class TestCompileDriver(unittest.TestCase):
         # symbol is referenced (LDA x) but no DC.B is emitted —
         # the definition lives in another TU.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="extern int x; int main(void) { return x; }",
         )
         self.assertEqual(rc, 0)
@@ -206,7 +206,7 @@ class TestCompileDriver(unittest.TestCase):
         # consecutive DC.W directives (Int = 2 bytes) under the
         # variable's label.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin=(
                 "int main(void) { "
                 "static int nested[3][2] = {{1,2},{3,4},{5,6}}; "
@@ -232,7 +232,7 @@ class TestCompileDriver(unittest.TestCase):
         # Each int is 2 bytes, so the 3 trailing IntInit(0)s
         # coalesce into one `DS.B 6`.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin=(
                 "int main(void) { "
                 "static int a[5] = {1, 2}; return a[2]; }"
@@ -254,7 +254,7 @@ class TestCompileDriver(unittest.TestCase):
         # are independent (they bracket the {200,300} row), so they
         # emit as two separate `DS.B`s.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin=(
                 "int main(void) { "
                 "static long a[3][2] = {{100}, {200, 300}}; "
@@ -276,7 +276,7 @@ class TestCompileDriver(unittest.TestCase):
         # File-scope `long a[3] = {1, 2, 3};` — each element is a
         # 4-byte LongInit, so we get three DC.L directives.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin=(
                 "long a[3] = {1, 2, 3}; "
                 "int main(void) { return (int)a[0]; }"
@@ -293,7 +293,7 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_pcpp_strips_comments(self):
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin="/* hello */ int main(void) { return 1; } // bye",
         )
         self.assertEqual(rc, 0)
@@ -303,19 +303,19 @@ class TestCompileDriver(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "hello.asm"
             rc, _, _ = self._run(
-                ["compile.py", "-", "--codegen", "-o", str(out_path)],
+                ["compile.py", "-", "-S", "-o", str(out_path)],
                 stdin="int main(void) { return 7; }",
             )
             self.assertEqual(rc, 0)
             self.assertIn("LDA   #$07", out_path.read_text())
 
-    def test_codegen_output_must_end_in_asm(self):
+    def test_codegen_output_must_end_in_s_or_asm(self):
         rc, _, err = self._run(
-            ["compile.py", "-", "--codegen", "-o", "out.txt"],
+            ["compile.py", "-", "-S", "-o", "out.txt"],
             stdin=self.SOURCE,
         )
         self.assertEqual(rc, 2)
-        self.assertIn(".asm suffix", err)
+        self.assertIn(".s or .asm suffix", err)
 
     def test_non_codegen_outputs_can_have_any_suffix(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -331,23 +331,43 @@ class TestCompileDriver(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self._run(["compile.py", "-", "--lex", "--parse"], stdin=self.SOURCE)
 
-    def test_stage_is_required(self):
+    def test_input_is_required(self):
         with self.assertRaises(SystemExit):
-            self._run(["compile.py", "-"], stdin=self.SOURCE)
+            self._run(["compile.py", "-S"], stdin=self.SOURCE)
 
     def test_input_from_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             in_path = Path(tmp) / "hello.c"
             in_path.write_text(self.SOURCE)
             rc, out, _ = self._run(
-                ["compile.py", str(in_path), "--codegen"],
+                ["compile.py", str(in_path), "-S", "-o", "-"],
             )
             self.assertEqual(rc, 0)
             self.assertIn("LDA   #$2A", out)
 
+    def test_assembly_named_after_source(self):
+        # As gcc does, `-S` on `src/hello.c` writes `hello.s` in the
+        # current directory.
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src"
+            src.mkdir()
+            (src / "hello.c").write_text(self.SOURCE)
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                rc, out, _ = self._run(
+                    ["compile.py", str(src / "hello.c"), "-S"],
+                )
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(rc, 0)
+            self.assertEqual(out, "")
+            self.assertIn("LDA   #$2A", (Path(tmp) / "hello.s").read_text())
+
     def test_dash_d_macro_is_forwarded_to_preprocessor(self):
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "-D", "MAX=42"],
+            ["compile.py", "-", "-S", "-D", "MAX=42"],
             stdin="int main(void) { return MAX; }",
         )
         self.assertEqual(rc, 0)
@@ -355,7 +375,7 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_dash_d_without_value_defaults_to_one(self):
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "-D", "FOO"],
+            ["compile.py", "-", "-S", "-D", "FOO"],
             stdin="int main(void) { return FOO; }",
         )
         self.assertEqual(rc, 0)
@@ -366,7 +386,7 @@ class TestCompileDriver(unittest.TestCase):
         # the parser would reject as a numeric expression. So we only
         # check that the macro is defined, via #ifdef.
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"],
+            ["compile.py", "-", "-S"],
             stdin=("#ifdef __PCPP_VERSION__\n"
                    "int main(void) { return 99; }\n"
                    "#else\n"
@@ -378,7 +398,7 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_unknown_pcpp_flag_is_ignored(self):
         rc, _, err = self._run(
-            ["compile.py", "-", "--codegen", "--no-such-pcpp-flag"],
+            ["compile.py", "-", "-S", "--no-such-pcpp-flag"],
             stdin=self.SOURCE,
         )
         self.assertEqual(rc, 0)
@@ -401,7 +421,7 @@ class TestVoid(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def _codegen(self, src: str) -> str:
-        rc, out, err = self._run(["compile.py", "-", "--codegen"], stdin=src)
+        rc, out, err = self._run(["compile.py", "-", "-S"], stdin=src)
         self.assertEqual(rc, 0, msg=err)
         return out
 
@@ -413,7 +433,7 @@ class TestVoid(unittest.TestCase):
         # rejected the program.
         try:
             rc, _, err = self._run(
-                ["compile.py", "-", "--codegen"], stdin=src,
+                ["compile.py", "-", "-S"], stdin=src,
             )
         except Exception as e:  # noqa: BLE001
             return str(e)
@@ -586,14 +606,14 @@ class TestSizeof(unittest.TestCase):
         return out
 
     def _codegen(self, src: str) -> str:
-        rc, out, err = self._run(["compile.py", "-", "--codegen"], stdin=src)
+        rc, out, err = self._run(["compile.py", "-", "-S"], stdin=src)
         self.assertEqual(rc, 0, msg=err)
         return out
 
     def _expect_failure(self, src: str) -> str:
         try:
             rc, _, err = self._run(
-                ["compile.py", "-", "--codegen"], stdin=src,
+                ["compile.py", "-", "-S"], stdin=src,
             )
         except Exception as e:  # noqa: BLE001
             return str(e)
@@ -773,7 +793,7 @@ class TestSizeof(unittest.TestCase):
 
 
 class TestCodegenWithRegalloc(unittest.TestCase):
-    """End-to-end: --codegen --optimize routes promotable SSA values
+    """End-to-end: -S -O routes promotable SSA values
     through register allocation; eligible values lower to direct ZP
     addressing (LDA $XX) instead of indirect-Y frame access
     (LDY #off; LDA (FP),Y)."""
@@ -787,14 +807,14 @@ class TestCodegenWithRegalloc(unittest.TestCase):
 
     def test_optimize_emits_zp_load_for_register_allocated_value(self):
         # Two locals depending on a param defeat constant folding:
-        # `a = p + 1; b = a + p; return b`. With --optimize the
+        # `a = p + 1; b = a + p; return b`. With -O the
         # surviving locals land in the function's private pool and
         # lower to `LDA __local_main_b<k>`. The EQU directives at
         # the top bind each symbol to an address in the caller-
         # saved ZP range so dasm encodes the loads as 2-byte zp.
         src = "int main(int p) { int a = p + 1; int b = a + p; return b; }"
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+            ["compile.py", "-", "-S", "-O"], stdin=src,
         )
         self.assertEqual(rc, 0)
         import re
@@ -805,11 +825,11 @@ class TestCodegenWithRegalloc(unittest.TestCase):
         self.assertRegex(out, r"__local_main__\w+\s+EQU\s+\$[89AB][0-9A-F]")
 
     def test_no_optimize_keeps_frame_addressing(self):
-        # Same source without --optimize → no ZP, all accesses are
+        # Same source without -O → no ZP, all accesses are
         # via the FP-relative indirect-Y machinery.
         src = "int main(int p) { int a = p + 1; int b = a + p; return b; }"
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen"], stdin=src,
+            ["compile.py", "-", "-S"], stdin=src,
         )
         self.assertEqual(rc, 0)
         self.assertIn("(FP),Y", out)
@@ -821,12 +841,12 @@ class TestCodegenWithRegalloc(unittest.TestCase):
         self.assertNotRegex(out, r"LDA\s+\$[89A-F][0-9A-F]")
 
     def test_optimize_eligible_param_uses_zp_slot(self):
-        # Under `--optimize`, every eligible function defaults to
+        # Under `-O`, every eligible function defaults to
         # zp_abi: the param lives in a `__zpabi_<fn>__<name>`
         # ZP slot rather than `(FP),Y` Frame addressing.
         src = "int main(int p) { return p + 1; }"
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+            ["compile.py", "-", "-S", "-O"], stdin=src,
         )
         self.assertEqual(rc, 0)
         self.assertIn("__zpabi_main__p_0", out)
@@ -842,14 +862,14 @@ class TestCodegenWithRegalloc(unittest.TestCase):
             "int main(void) { return r(3); }"
         )
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+            ["compile.py", "-", "-S", "-O"], stdin=src,
         )
         self.assertEqual(rc, 0)
         self.assertIn("(FP),Y", out)
 
 
 class TestOptimizeFlagBehavior(unittest.TestCase):
-    """Smoke checks for `--optimize`: representative programs
+    """Smoke checks for `-O`: representative programs
     compile, and frameless functions collapse to bare RTS via
     the late prologue-synthesis pass."""
 
@@ -872,7 +892,7 @@ class TestOptimizeFlagBehavior(unittest.TestCase):
         for src in sources:
             with self.subTest(src=src):
                 rc, out, _ = self._run(
-                    ["compile.py", "-", "--codegen", "--optimize"],
+                    ["compile.py", "-", "-S", "-O"],
                     stdin=src,
                 )
                 self.assertEqual(rc, 0)
@@ -881,7 +901,7 @@ class TestOptimizeFlagBehavior(unittest.TestCase):
 
     def test_optimize_collapses_frameless_function(self):
         # A no-arg / no-local / no-callee-saved function under
-        # `--optimize` reaches the synthesis pass with bare
+        # `-O` reaches the synthesis pass with bare
         # `Return(save_a)` atoms, and synthesis short-circuits —
         # no FunctionPrologue, no SSP/FP arithmetic, just a
         # single RTS.

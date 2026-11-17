@@ -727,7 +727,7 @@ class TestIndirectIndexedCorrectness(unittest.TestCase):
         self.assertEqual(out.memory[dest_addr + 3], 0xAB)
 
     def test_unoptimized_still_works(self) -> None:
-        # The pass only fires under --optimize. Verify both modes
+        # The pass only fires under -O. Verify both modes
         # produce the same result.
         src = (
             "#include <stdint.h>\n"

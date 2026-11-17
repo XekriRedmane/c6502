@@ -7,7 +7,7 @@ sense of the jump. It runs in the TAC fixed-point loop as part of the
 `fold_producer_jumps` `RuleSet`, together with the
 [comparison jump fold](cmp_zero_jump_fold.md) and the
 [AND jump fold](and_zero_jump_fold.md). It runs only under
-`--optimize`.
+`-O`.
 
 `tac_to_asm` lowers `Unary(!, x, %t)` by testing `x`, loading `#0` or
 `#1` into `%t` on two paths, and joining them. A jump on `%t` then

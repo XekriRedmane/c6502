@@ -4,7 +4,7 @@
 [passes/loop_counter_to_x.py](../../passes/loop_counter_to_x.py)
 moves a one-byte loop counter that the body uses as an `abs,X` index
 out of its zero-page byte and into X for the whole loop. It runs once
-under `--optimize`, after the first peephole fixed point, between the
+under `-O`, after the first peephole fixed point, between the
 [loop-carried A promotion](promote_loop_carried_to_a.md) and the
 [count-down counter promotion](counter_to_index_reg.md). The second
 peephole fixed point cleans up the loads and stores it leaves. The

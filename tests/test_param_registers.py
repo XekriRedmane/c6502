@@ -138,7 +138,7 @@ class TestAbiErrors(unittest.TestCase):
         src = self._CASES["shared register"][0]
         with patch("sys.stdin", io.StringIO(src)), \
                 patch("sys.stderr", err), patch("sys.stdout", io.StringIO()):
-            rc = compile_main(["compile.py", "-", "--codegen", "--optimize"])
+            rc = compile_main(["compile.py", "-", "-S", "-O"])
         self.assertEqual(rc, 1)
         self.assertTrue(err.getvalue().startswith("<stdin>: error: "))
         self.assertNotIn("Traceback", err.getvalue())
@@ -243,7 +243,7 @@ class TestSim(unittest.TestCase):
         self._check(src, 9, standin=self._NEXT_CODE)
 
     def test_a_argument_from_a_frame_slot(self):
-        # Without --optimize, `a` and `b` live on the soft stack, and
+        # Without -O, `a` and `b` live on the soft stack, and
         # loading `a` into A is `LDY #off; LDA (FP),Y`, which would
         # destroy `b`, already in Y. So `a` is loaded first and kept
         # with PHA / PLA.

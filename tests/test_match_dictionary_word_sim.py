@@ -1,4 +1,4 @@
-"""Compares `examples/zork_match_dictionary_word.c` under --optimize with
+"""Compares `examples/zork_match_dictionary_word.c` under -O with
 the hand-written routine it translates, from the Zork I (r15)
 Z-machine interpreter
 (https://github.com/XekriRedmane/zorki-r15-reveng).

@@ -1,21 +1,23 @@
 # Linker scripts and sections
 
-A program compiled from several source files is joined with
-`compile.py --link`. Given a linker script with `-T`, the linker also
-places the program in memory: which code and data go in ROM and which
-in RAM, at what addresses, with what alignment. The script language
-is a subset of GNU ld's, so a script written for a GCC toolchain
-mostly reads the same.
+A program compiled from several source files is linked by
+`compile.py` from their objects. Given a linker script with `-T`, the
+linker places the program in memory: which code and data go in ROM
+and which in RAM, at what addresses, with what alignment. The script
+language is a subset of GNU ld's, so a script written for a GCC
+toolchain mostly reads the same.
 
 ```sh
-uv run python compile.py main.c --codegen --optimize -o main.asm
-uv run python compile.py io.c --codegen --optimize -o io.asm
-uv run python compile.py --link -T prog.ld main.asm io.asm -o prog.asm
-dasm prog.asm -f2 -oprog.bin
+uv run python compile.py -O -c main.c io.c          # main.o and io.o
+uv run python compile.py -T prog.ld main.o io.o -o prog
+uv run python objdump.py -h prog                    # where each section went
 ```
 
-Without `-T`, the linked output has no addresses, as before, and
-whatever assembles it decides where it goes.
+The output is an ELF executable with a loadable segment for each output
+section, at its load address. Without `-T`, `.text`, `.rodata`,
+`.data`, and `.bss` follow each other from `$0800`, and any other
+section comes after them; `-Ttext=ADDR` starts `.text` at `ADDR`
+instead.
 
 ## Sections
 
@@ -139,8 +141,9 @@ its `JMP`:
   since nothing is discarded), symbol assignments, and `. = expr`,
   `. += n` to skip ahead. Patterns use `*`, `?`, and `[...]`. `file`
   is `*` for every input, or a pattern matched against an input
-  file's name without its directory, so `zstring.asm(.text)` takes
-  only that unit's code. examples/zork/print_zstring/print_zstring.ld
+  file's name without its directory, so `zstring.o(.text)` takes
+  only that unit's code. A C source or `.asm` file given to the link
+  goes by its object's name, `zstring.o` for `zstring.c`. examples/zork/print_zstring/print_zstring.ld
   places each unit where Zork keeps the original routines this way.
 - Symbol assignments `sym = expr;` and `PROVIDE(sym = expr);`, inside
   output sections or between them.
@@ -156,8 +159,9 @@ between output sections are errors.
 ## Symbols
 
 Each output section defines `__name_start` and `__name_end` (its run
-addresses) and `__name_load` (its load address), with the section's
-dots turned into underscores: `.text.boot` gives `__text_boot_start`.
+addresses), `__name_load` and `__name_load_end` (its load addresses),
+and `__name_size`, with the section's dots turned into underscores:
+`.text.boot` gives `__text_boot_start`.
 `ADDR`, `LOADADDR`, and `SIZEOF` in the script use them, and so can
 assembly or C code that declares them `extern`.
 
@@ -172,21 +176,31 @@ The copy uses `DPTR` and the first four bytes of `HARGS`.
 
 ## How it works
 
-Section sizes aren't known until the program is assembled, so the
-linker writes the layout as dasm directives and leaves the arithmetic
-to dasm. Each output section is a `SEG` (`SEG.U` for `NOLOAD`) with
-an `ORG` at its address, which for a section in a region is the end
-label of the region's previous section. A section with a load address
-puts its bytes at the `ORG` and runs at a `RORG`. After each section,
-an `IF` / `ERR` block stops dasm with a message if the section runs
-past the end of its region:
+Each function and object is a section of its own in its object, with
+its size, so the linker computes every address itself: a section in a
+region starts at the end of the region's previous section, and its
+items follow each other. A section that runs past the end of its
+region, or whose load bytes run past the end of its load region,
+fails the link:
 
 ```
-section .text runs past the end of region rom by 12 bytes
+compile.py: link error: section .text runs past the end of region rom by 12 bytes
 ```
 
-dasm's `-f2` format keeps each segment at its own address, which a
-program with code in ROM and data in RAM needs.
+Before laying the program out, the linker gives each instruction the
+addressing mode the program's addresses call for. An absolute operand
+the program puts in zero page, such as a global that another unit
+moved into zero page, gets its zero-page form, one byte shorter
+(`binutils.ld.relax`), and a unit that reached a name in zero page
+that the program puts above $FF is assembled again from the text the
+object keeps. Then it applies each relocation. A segment of the
+executable runs at its section's run address and is loaded at its
+load address, which is how `.data` goes in ROM to be copied to RAM.
+
+`objdump.py -D` writes the executable as dasm source, each output
+section a `SEG` (`SEG.U` for `NOLOAD`) with its `ORG`, and a `RORG`
+for a section with a load address. The examples check in that listing
+of their linked programs.
 
 ## Zero page
 

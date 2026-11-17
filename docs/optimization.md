@@ -1,6 +1,6 @@
 # The Optimization Pipeline
 
-This is a from-scratch tour of how `--optimize` turns "correct but
+This is a from-scratch tour of how `-O` turns "correct but
 slow" TAC into "correct and faster" TAC. Written for someone who has
 read CLAUDE.md but never touched the optimizer code.
 
@@ -10,7 +10,7 @@ lists them in the order the pipeline runs them.
 
 ## Why optimize at all?
 
-Without `--optimize`, the c6502 compiler produces working 6502 code
+Without `-O`, the c6502 compiler produces working 6502 code
 that puts every variable on the soft stack. Reading a variable costs
 8 cycles (`LDY #off; LDA (FP),Y`). With optimization on, hot
 variables instead live in zero-page bytes (`$80-$FF`) and reading
@@ -833,7 +833,7 @@ those bytes survives the call.
 ### The actual 6502 assembly
 
 Here's the output of
-`compile.py - --codegen --optimize` on the C source above:
+`compile.py - -S -O` on the C source above:
 
 ```
 main:
@@ -956,8 +956,8 @@ A few things to notice:
   ($80-$BF) and there was nothing to preserve across.
 
 - **All ZP loads use the fast addressing mode.** Every variable
-  read in the loop body is a 3-cycle `LDA $XX`. With `--codegen`
-  alone (no `--optimize`), every one would be the 8-cycle `LDY
+  read in the loop body is a 3-cycle `LDA $XX`. With `-S`
+  alone (no `-O`), every one would be the 8-cycle `LDY
   #off; LDA (FP),Y` sequence. The loop runs roughly 2.5× faster
   in cycles per iteration.
 
@@ -1113,7 +1113,7 @@ shorter `INC + BNE` chain.
 ### The case
 
 A `for (int i = 0; i < N; i++)` loop with `i` ZP-allocated under
-`--optimize` lowers the `i++` to:
+`-O` lowers the `i++` to:
 
 ```
 LDA  $81             ; load i.lo
@@ -1433,7 +1433,7 @@ the saved-FP slot at FP+3). Synthesis checks N=2 (param `n` is
 
 ### The actual 6502 assembly
 
-Output of `compile.py - --codegen --optimize` on the same
+Output of `compile.py - -S -O` on the same
 C source:
 
 ```
@@ -1556,17 +1556,17 @@ main:
 
 A few things to notice:
 
-- **Same prologue / epilogue shape as `--optimize`.** N=2, M=0,
+- **Same prologue / epilogue shape as `-O`.** N=2, M=0,
   no callee-saved bytes — synthesis decided a frame is still
   needed (N>0 means params arrive on the soft stack and need
   FP-relative addressing) but there's no extra ZP-byte
   preservation work. Identical structurally to what
-  `--optimize` emits for the same case.
+  `-O` emits for the same case.
 
-- **Fewer ZP bytes used than `--optimize`.** This run uses 8
-  bytes (`$80`–`$87`) vs `--optimize`'s 10 bytes (`$82`–`$8B`).
-  The difference is `b.2` and `b.3`: `--optimize` colors them
-  separately ($88/$89 vs $84/$85); `--optimize` colors
+- **Fewer ZP bytes used than `-O`.** This run uses 8
+  bytes (`$80`–`$87`) vs `-O`'s 10 bytes (`$82`–`$8B`).
+  The difference is `b.2` and `b.3`: `-O` colors them
+  separately ($88/$89 vs $84/$85); `-O` colors
   every version of `@2.b.2` to one pair ($83/$82) because
   the byte-versioned SSA exposes that they're the same
   value chain across iterations and the collapsed Phi Movs
@@ -1587,7 +1587,7 @@ A few things to notice:
   appear at the END of the entry block (just before flow
   reaches the loop test); the back-edge Phi Movs appear
   inside `.loop@0_continue` just before the `JMP
-  .loop@0_start`. The corresponding `--optimize` output
+  .loop@0_start`. The corresponding `-O` output
   inlines its de-SSA Copies in the same positions, just
   with different ZP slots picked.
 
@@ -1599,13 +1599,13 @@ Several `compile.py` flags let you peek at what the optimizer is
 doing:
 
 - `--tac` shows the TAC right after `c99_to_tac` (no optimization).
-- `--tac --optimize` shows the TAC AFTER the full optimizer
+- `--tac -O` shows the TAC AFTER the full optimizer
   pipeline (post-de-SSA).
-- `--tac --optimize` shows the TAC after the alt path's TAC
-  opts (regalloc skipped, otherwise identical to `--optimize`).
-- `--codegen` shows the final 6502 asm (no optimization).
-- `--codegen --optimize` shows the final asm with regalloc applied.
-- `--codegen --optimize` shows the final asm from the alt
+- `--tac -O` shows the TAC after the alt path's TAC
+  opts (regalloc skipped, otherwise identical to `-O`).
+- `-S` shows the final 6502 asm (no optimization).
+- `-S -O` shows the final asm with regalloc applied.
+- `-S -O` shows the final asm from the alt
   pipeline (asm-SSA round-trip; no regalloc until step 7 lands).
 
 For digging deeper into individual phases, the test files are the
@@ -1660,9 +1660,9 @@ These are documented as future work in the codebase:
 
 ---
 
-## The `--optimize` alternate pipeline
+## The `-O` alternate pipeline
 
-`--optimize` selects an alternate optimization path that runs
+`-O` selects an alternate optimization path that runs
 TAC-level fixed-point opts but defers register allocation to an
 asm-level layer. The motivation: doing optimization at the asm IR
 exposes byte-granular structure that's invisible at TAC, and a
@@ -1670,9 +1670,9 @@ late, asm-aware regalloc can color individual bytes (rather than
 whole multi-byte values like the TAC-level allocator does today).
 
 Status: byte-level DCE, byte-granular regalloc, and forward +
-backward copy propagation are all in place. `--optimize` is
+backward copy propagation are all in place. `-O` is
 sim-correct on the chapter_1..12 corpus and produces output that
-places live values in ZP slots the same way `--optimize` does —
+places live values in ZP slots the same way `-O` does —
 with two bonuses:
 
   * **Byte-level DCE** drops dead high-byte work that the TAC-level
@@ -1683,15 +1683,15 @@ with two bonuses:
     typical wins are on Long return values where a temp gets ZP-
     colored and then immediately reloaded into HARGS.
 
-### How it differs from `--optimize`
+### How it differs from `-O`
 
 ```
---optimize               : c99_to_tac → optimize_tac (incl. regalloc)
+-O               : c99_to_tac → optimize_tac (incl. regalloc)
                            → tac_to_asm → replace_pseudoregisters
                            → expand_long_branches → asm_to_asm2
                            → asm_emit
 
---optimize           : c99_to_tac → optimize_tac (NO regalloc)
+-O           : c99_to_tac → optimize_tac (NO regalloc)
                            → tac_to_asm bare_exit=True
                            → asm_opt.optimize_program (asm-SSA round-trip)
                            → replace_pseudoregisters_bare_exit
@@ -1700,7 +1700,7 @@ with two bonuses:
                            → asm_emit
 ```
 
-Three architectural pieces are new under `--optimize`:
+Three architectural pieces are new under `-O`:
 
 **1. Bare-exit emission from `tac_to_asm`.** With `bare_exit=True`,
 phase 9 emits an atomic `asm_ast.Return(save_a)` at each function
@@ -1725,7 +1725,7 @@ the bare-exit program plus the frame dims, and either:
 | `arg_bytes == 0` AND `local_bytes == 0` AND no callee-saved bytes | Leave the bare `Return(save_a)` atoms in place. No `FunctionPrologue` prepended. |
 | Otherwise | Prepend `FunctionPrologue(N, M, callee_saved_addrs)`; rewrite each `Return(save_a)` to `Ret(N, M, save_a, callee_saved_addrs)`. |
 
-The frame-less case is byte-equivalent to `--optimize`'s current
+The frame-less case is byte-equivalent to `-O`'s current
 collapsed RTS, but the asm tree is now self-describing: any
 later pass can see "this function has no frame" by looking at the
 IR directly (no need to consult `FunctionPrologue.arg_bytes ==
@@ -2099,7 +2099,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 
 | Step | Status |
 |---|---|
-| 1. `--optimize` flag plumbing | Done |
+| 1. `-O` flag plumbing | Done |
 | 2. `Return(save_a)` atom in `asm_ast` | Done |
 | 3. `replace_program_bare_exit` + `prologue_synthesis` | Done |
 | 4. Synthesis collapses M=0/S=0 to bare RTS | Done |
@@ -2107,7 +2107,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | 5b. Same | Done |
 | 5c. `to_ssa` (Phi placement + byte-granular renaming) | Done |
 | 5d. `from_ssa` (Phi → Mov, critical-edge splitting, parallel-copy ordering by storage key, cycle break) | Done |
-| 5e. Wire round-trip into `--optimize`; chapter sim corpus passes | Done |
+| 5e. Wire round-trip into `-O`; chapter sim corpus passes | Done |
 | 6. Byte-level DCE (drops dead high-byte work) | Done |
 | 6a. Forward copy propagation (SSA-aware, byte-granular) | Done |
 | 6b. Backward copy propagation (Pseudo → Reg(A) → memory round-trip elision) | Done |
@@ -2140,7 +2140,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 
 ### Frame elimination via `[[c6502::zp_abi]]`
 
-A separate optimization layered on top of `--optimize`: any
+A separate optimization layered on top of `-O`: any
 function declared with `[[c6502::zp_abi]]` participates in
 the **per-function ZP-passing calling convention**. The function's
 parameters live at fixed zero-page addresses chosen by
@@ -2176,7 +2176,7 @@ the declaration specifiers:
 }
 ```
 
-Compiled with `--codegen --optimize`, `add` produces:
+Compiled with `-S -O`, `add` produces:
 
 ```
 add:
@@ -2192,7 +2192,7 @@ add:
    RTS                ; bare RTS — no SSP/FP teardown
 ```
 
-Compare to the legacy soft-stack ABI (the `--optimize` form),
+Compare to the legacy soft-stack ABI (the `-O` form),
 which emits ~17 instructions of prologue + matching epilogue
 even for this 7-instruction function. The savings stack with
 the existing asm-level optimizations: byte-DCE trims dead high-

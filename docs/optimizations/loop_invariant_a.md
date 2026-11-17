@@ -3,7 +3,7 @@
 `apply_loop_invariant_a` in
 [passes/loop_invariant_a.py](../../passes/loop_invariant_a.py) keeps
 a key that a loop compares against on every iteration in A, and
-compares each loop value against it. It runs once under `--optimize`,
+compares each loop value against it. It runs once under `-O`,
 after the third peephole fixed point, just before
 `expand_long_branches`. Within a function it repeats until no more
 loops qualify. The unoptimized pipeline doesn't run it.

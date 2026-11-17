@@ -6,8 +6,8 @@ README.md has grown into a wall of low-level detail. It should
 describe the project in a few paragraphs and then cover how to
 download and install it, how to run it, and how to compile the code
 and run the tests. It should also include one small C example with
-the output from each of the main flags (`--tac`, `--codegen`, and
-`--codegen --optimize`), and link to
+the output from each of the main flags (`--tac`, `-S`, and
+`-S -O`), and link to
 [docs/calling_conventions.md](docs/calling_conventions.md) and
 [docs/attributes.md](docs/attributes.md).
 

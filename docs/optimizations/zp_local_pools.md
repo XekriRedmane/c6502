@@ -8,7 +8,7 @@ the same time uses any of them. The size of each run comes from
 `compute_local_bytes` in
 [passes/function_local_sizing.py](../../passes/function_local_sizing.py).
 Both run once in `compile.optimized_asm`, between two runs of the asm
-optimizer, under `--optimize` only.
+optimizer, under `-O` only.
 
 Without a private pool, the byte-granular register allocator splits
 zero page in two. A value that isn't live across a call goes in
@@ -42,7 +42,7 @@ When every function in the unit has a private pool, the runs come
 from all of `$80`-`$FF`, as they do when linking, since none keeps a
 value in the callee-saved half across a call. In that case, when no
 run there is long enough, the pool takes free bytes below `$80`,
-around the runtime's block and the zero-page globals, as `--link`
+around the runtime's block and the zero-page globals, as the linker
 does too, and so do the zp_abi parameter slots.
 Memory value propagation follows values only through zero page, so a
 pool at an absolute address would leave copies in the unit's code
@@ -68,10 +68,10 @@ unsigned char sum2(unsigned char a, unsigned char b) {
 unsigned char main(void) { return sum2(3, 4); }
 ```
 
-The "Before" listing comes from the same `--optimize` compile with
+The "Before" listing comes from the same `-O` compile with
 `allocate_function_locals` replaced by one that returns no pools, so
 every function uses the caller-saved and callee-saved split. The
-"After" listing is the normal `--optimize` compile.
+"After" listing is the normal `-O` compile.
 
 ### Before
 

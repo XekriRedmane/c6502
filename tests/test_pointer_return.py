@@ -15,7 +15,7 @@ class TestPointerReturn(unittest.TestCase):
     #include <stdint.h>
     uint8_t table[8] = {10, 20, 30, 40, 50, 60, 70, 80};
     uint8_t *gp;
-    /* zp_abi under --optimize. */
+    /* zp_abi under -O. */
     static uint8_t *entry(uint8_t i) { return table + i; }
     /* A soft-stack function in both pipelines, since it recurses. */
     static uint8_t *walk(uint8_t *p, uint8_t n) {

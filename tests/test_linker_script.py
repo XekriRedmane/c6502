@@ -1,13 +1,13 @@
-"""Tests for linker scripts (`compile.py --link -T`) and
+"""Tests for linker scripts (`compile.py -T`) and
 `[[c6502::section("name")]]`.
 
 Covers the script parser (passes/link_script.py), the attribute in the
 parser and type checker, each item's default section
 (passes/sections.py), renaming internal names two units share, and
 linked programs laid out by a script (passes/link_layout.py): run
-through dasm when it's installed, with `.data` copied from ROM, a
-NOLOAD `.bss` cleared, a section at a fixed address, page alignment,
-and dasm stopping on a region that overflows. It also covers functions
+in the simulator, with `.data` copied from ROM, a NOLOAD `.bss`
+cleared, a section at a fixed address, page alignment, and a link
+that fails on a region that overflows. It also covers functions
 that end by jumping to another falling into it instead
 (`link_layout.fall_through`), and `(NOREORDER)`.
 """
@@ -25,7 +25,6 @@ from passes.link_script import ScriptError, parse_script
 from passes.type_checking import TypeCheckError
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-_HAVE_DASM = shutil.which("dasm") is not None
 
 
 def _codegen(src: str) -> str:
@@ -35,31 +34,26 @@ def _codegen(src: str) -> str:
 
 
 def _link(sources: list[str], script: str | None = None):
-    """Compiles each source with `--optimize` and links them, with
+    """Compiles each source with `-O` to an object and links them, with
     `script` as the linker script. Returns the exit code, the linked
-    text, and stderr."""
-    from compile import main as compile_main
+    program as text (`link_helpers.linked_text`), and stderr."""
+    from tests.link_helpers import (
+        compile_object, link_capture_stderr, linked_text,
+    )
     with tempfile.TemporaryDirectory() as tmp:
         paths = []
         for k, src in enumerate(sources):
-            path = Path(tmp) / f"u{k}.asm"
-            with patch("sys.stdin", io.StringIO(src)):
-                assert compile_main([
-                    "compile.py", "-", "--codegen", "--optimize",
-                    "-o", str(path),
-                ]) == 0
-            paths.append(str(path))
-        argv = ["compile.py", "--link", *paths]
+            path = Path(tmp) / f"u{k}.o"
+            assert compile_object(src, path) == 0
+            paths.append(path)
+        ld = None
         if script is not None:
             ld = Path(tmp) / "prog.ld"
             ld.write_text(script)
-            argv += ["-T", str(ld)]
-        out = Path(tmp) / "out.asm"
-        err = io.StringIO()
-        with patch("sys.stderr", err):
-            rc = compile_main(argv + ["-o", str(out)])
-        text = out.read_text() if rc == 0 else ""
-    return rc, text, err.getvalue()
+        out = Path(tmp) / "out"
+        rc, err = link_capture_stderr(paths, out, script=ld)
+        text = linked_text(out) if rc == 0 else ""
+    return rc, text, err
 
 
 _ROM_SCRIPT = """
@@ -237,7 +231,6 @@ class TestScriptedLink(unittest.TestCase):
         self.assertIn("   SEG   text\n   ORG   $8000\n", text)
         self.assertIn("   SEG.U bss\n", text)
         self.assertIn("   RORG  $0800\n", text)
-        self.assertIn("   ORG   [[__rodata_end + 255] & $FF00]\n", text)
         self.assertIn("   ORG   $BFFA\n", text)
         # `main`, from .text.boot, comes before `pick`.
         self.assertLess(text.index("\nmain:"), text.index("\npick:"))
@@ -246,7 +239,7 @@ class TestScriptedLink(unittest.TestCase):
         # The second unit's code goes first, by its file's name.
         script = _ROM_SCRIPT.replace(
             ".text : { *(.text.boot) *(.text .text.*) } > rom",
-            ".first : { u1.asm(.text .text.*) } > rom\n"
+            ".first : { u1.o(.text .text.*) } > rom\n"
             "    .text : { *(.text.boot) *(.text .text.*) } > rom",
         )
         rc, text, err = _link([_UNIT_A, _UNIT_B], script)
@@ -254,15 +247,15 @@ class TestScriptedLink(unittest.TestCase):
         self.assertLess(text.index("\npick:"), text.index("\nmain:"))
         self.assertIn("   SEG   first\n   ORG   $8000\n", text)
 
-    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
     def test_runs_with_data_copied_and_bss_cleared(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([_UNIT_A, _UNIT_B], _ROM_SCRIPT)
         self.assertEqual(rc, 0, err)
-        sim = build_linked_sim(text)
+        sim = build_linked_sim(text.exe)
         sym = sim.symbols
         self.assertEqual(sym["main"], 0x8000)
         self.assertEqual(sym["squares"] & 0xFF, 0)
+        self.assertEqual(sym["__page_start"], sym["squares"])
         self.assertEqual(sym["seed"], 0x0800)
         self.assertGreaterEqual(sym["__data_load"], 0x8000)
         self.assertEqual(sym["vectors"], 0xBFFA)
@@ -273,14 +266,13 @@ class TestScriptedLink(unittest.TestCase):
         mem = sim.mpu.memory
         self.assertEqual(mem[0xBFFA] | mem[0xBFFB] << 8, 0x8000)
 
-    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
-    def test_region_overflow_stops_dasm(self) -> None:
-        from sim.linked import build_linked_sim
+    def test_region_overflow_rejected(self) -> None:
         small = _ROM_SCRIPT.replace("LENGTH = 16K", "LENGTH = 0x40")
-        rc, text, err = _link([_UNIT_A, _UNIT_B], small)
-        self.assertEqual(rc, 0, err)
-        with self.assertRaisesRegex(RuntimeError, "ERR pseudo-op"):
-            build_linked_sim(text)
+        rc, _, err = _link([_UNIT_A, _UNIT_B], small)
+        self.assertEqual(rc, 1)
+        self.assertRegex(
+            err, r"section \.\w+ runs past the end of region rom by \d+ bytes",
+        )
 
     def test_unplaced_section_rejected(self) -> None:
         script = _ROM_SCRIPT.replace("*(.page)", "*(.nothing)")
@@ -302,67 +294,97 @@ class TestScriptedLink(unittest.TestCase):
         self.assertIn("doesn't define", err)
 
 
-def _function(name: str, *body: str) -> list[str]:
-    """An item's lines as asm_emit writes a function."""
-    return [f"{name}:", "   SUBROUTINE", "", *(f"   {b}" for b in body)]
+def _entry(name: str, tail: str | None = None, function: bool = True):
+    from passes.link_layout import Entry
+    return Entry(name=name, function=function, tail=tail)
 
 
 class TestFallThrough(unittest.TestCase):
-    """`link_layout.fall_through` on items written out by hand."""
+    """`link_layout.fall_through` on items written out by hand. Each
+    result is the order of the items, with `-` after the name of each
+    one whose final `JMP` is dropped."""
 
-    _G = _function("g", "RTS")
-    _DATA = ["d:", "   DC.B  $01"]
+    _G = _entry("g")
+    _DATA = _entry("d", function=False)
 
-    def _run(self, items, reorder=True) -> list[list[str]]:
+    def _run(self, entries, reorder=True) -> list[str]:
         from passes.link_layout import fall_through
-        return fall_through(items, reorder=reorder)
+        return [e.name + ("-" if dropped else "")
+                for e, dropped in fall_through(entries, reorder=reorder)]
 
     def test_moves_target_after_jump(self) -> None:
-        f = _function("f", "LDA   #$01", "JMP   g")
-        out = self._run([f, self._DATA, self._G])
-        self.assertEqual(out, [f[:-1], self._G, self._DATA])
+        f = _entry("f", "g")
+        self.assertEqual(self._run([f, self._DATA, self._G]),
+                         ["f-", "g", "d"])
 
     def test_first_jumper_wins(self) -> None:
-        h = _function("h", "JMP   g")
-        f = _function("f", "LDA   #$01", "JMP   g")
-        out = self._run([h, f, self._G])
-        self.assertEqual(out, [h[:-1], self._G, f])
+        h = _entry("h", "g")
+        f = _entry("f", "g")
+        self.assertEqual(self._run([h, f, self._G]), ["h-", "g", "f"])
 
     def test_chain(self) -> None:
         # e falls into f, which falls into g, all at e's place.
-        g = _function("g", "RTS")
-        f = _function("f", "JMP   g")
-        e = _function("e", "JMP   f")
-        out = self._run([g, f, self._DATA, e])
-        self.assertEqual(out, [self._DATA, e[:-1], f[:-1], g])
+        g, f, e = _entry("g"), _entry("f", "g"), _entry("e", "f")
+        self.assertEqual(self._run([g, f, self._DATA, e]),
+                         ["d", "e-", "f-", "g"])
 
     def test_cycle_keeps_one_jump(self) -> None:
-        a = _function("a", "BEQ   .x", "RTS", ".x:", "JMP   b")
-        b = _function("b", "JMP   a")
-        out = self._run([a, b])
-        self.assertEqual(out, [a[:-1], b])
-        # The label in front of the dropped jump stays, at b's address.
-        self.assertEqual(out[0][-1], "   .x:")
+        a, b = _entry("a", "b"), _entry("b", "a")
+        self.assertEqual(self._run([a, b]), ["a-", "b"])
 
     def test_left_alone(self) -> None:
-        # A jump to an object, to a name outside the items, through a
-        # pointer, or to itself, and a jump that isn't last.
+        # A jump to an object, to a name outside the items, or to
+        # itself.
         items = [
-            _function("p", "JMP   d"),
-            _function("q", "JMP   elsewhere"),
-            _function("r", "JMP   (vector)"),
-            _function("s", "JMP   s"),
-            _function("t", "JMP   g", "RTS"),
+            _entry("p", "d"), _entry("q", "elsewhere"), _entry("s", "s"),
             self._DATA, self._G,
         ]
-        self.assertEqual(self._run(items), items)
+        self.assertEqual(self._run(items), ["p", "q", "s", "d", "g"])
 
     def test_noreorder(self) -> None:
-        f = _function("f", "JMP   g")
-        apart = [f, self._DATA, self._G]
-        self.assertEqual(self._run(apart, reorder=False), apart)
+        f = _entry("f", "g")
+        self.assertEqual(self._run([f, self._DATA, self._G], reorder=False),
+                         ["f", "d", "g"])
         self.assertEqual(self._run([f, self._G], reorder=False),
-                         [f[:-1], self._G])
+                         ["f-", "g"])
+
+
+class TestTailJump(unittest.TestCase):
+    """`link_layout.tail_jump` finds a function's final `JMP name` in
+    its assembled bytes."""
+
+    def _tail(self, *body: str) -> str | None:
+        from binutils.assembler import assemble
+        from passes.link_layout import tail_jump
+        text = "\n".join(["f:", "   SUBROUTINE", *(
+            b if b.startswith(".") else f"   {b}" for b in body
+        )]) + "\n"
+        obj = assemble(text, "t.asm")
+        return tail_jump(obj.sections[0], obj.symbols)
+
+    def test_final_jump(self) -> None:
+        self.assertEqual(self._tail("LDA   #$01", "JMP   g"), "g")
+
+    def test_label_on_jump_kept(self) -> None:
+        # A label in front of the jump then names the target's first
+        # instruction, which is where the jump went.
+        self.assertEqual(self._tail("BEQ   .x", "RTS", ".x:", "JMP   g"),
+                         "g")
+
+    def test_not_a_final_jump(self) -> None:
+        for body in [
+            ("JMP   (vector)",),
+            ("JMP   g", "RTS"),
+            ("JMP   g", ".after:"),
+            ("JMP   g+1",),
+            ("BEQ   .x", "JMP   .x", ".x:", "RTS"),
+        ]:
+            with self.subTest(body=body):
+                self.assertIsNone(self._tail(*body))
+
+    def test_jump_table_at_end(self) -> None:
+        # Bytes that look like `JMP` in a jump table aren't one.
+        self.assertIsNone(self._tail("RTS", ".t:", "DC.W  g"))
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
@@ -408,12 +430,11 @@ SECTIONS
         self.assertEqual(rc, 0, err)
         self.assertIn("JMP   finish", text)
 
-    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
     def test_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([self._MAIN, self._FINISH], self._SCRIPT % "")
         self.assertEqual(rc, 0, err)
-        self.assertEqual(build_linked_sim(text).run().return_int(),
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          3 + 11 + 5)
 
 
@@ -434,12 +455,11 @@ class TestNames(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         self.assertIn("str@0.1", text)
 
-    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
     def test_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([self._A, self._B])
         self.assertEqual(rc, 0, err)
-        self.assertEqual(build_linked_sim(text).run().return_int(),
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          2 + ord("A") + 11 + ord("B"))
 
     def test_external_name_defined_twice(self) -> None:

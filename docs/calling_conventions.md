@@ -16,9 +16,9 @@ keeps its locals, and where the result comes back. c6502 has two.
 
 | Compiled | Function | Convention |
 |---|---|---|
-| without `--optimize` | any | soft stack |
-| with `--optimize` | qualifies for zp_abi (see "Which functions qualify") | zp_abi |
-| with `--optimize` | doesn't qualify | soft stack |
+| without `-O` | any | soft stack |
+| with `-O` | qualifies for zp_abi (see "Which functions qualify") | zp_abi |
+| with `-O` | doesn't qualify | soft stack |
 | either way | declared with `[[c6502::address(...)]]` | what its declaration says |
 
 With `[[c6502::zp_abi]]` on a function, the compiler reports an
@@ -105,7 +105,7 @@ Monitor"). The output says where they are, in its `SSP EQU` and
 
 ### A call, step by step
 
-Here is a small program, compiled without `--optimize` so that every
+Here is a small program, compiled without `-O` so that every
 function uses the soft stack.
 
 ```c
@@ -277,7 +277,7 @@ computed when the program runs, as `FP` plus its offset.
 The address stays valid until the function returns, since `FP`
 doesn't move until then.
 
-### The soft stack with `--optimize`
+### The soft stack with `-O`
 
 A function that doesn't qualify for zp_abi still keeps most of its
 working values in zero page. The compiler's pool is split in two.
@@ -297,7 +297,7 @@ unsigned int fact(unsigned char n) {
 
 ## The zp_abi convention
 
-With `--optimize`, a function that qualifies gets its arguments in
+With `-O`, a function that qualifies gets its arguments in
 zero-page bytes set aside for it, keeps its locals in zero page too,
 and has no prologue or epilogue. It's a plain body ending in `RTS`.
 
@@ -382,7 +382,7 @@ found from the call graph instead of written by hand; see
 ### Recursion that saves on the hardware stack
 
 A recursive function's locals get zero-page bytes of their own under
-`--optimize` when you mark the calls that recurse:
+`-O` when you mark the calls that recurse:
 
 ```c
 void print_zstring(void) {
@@ -487,7 +487,7 @@ show:
 
 The caller loads X first, then Y, then A, because loading X or Y goes
 through A (`LDA v; TAX`, until a peephole makes it `LDX v`). Without
-`--optimize`, an argument that's on the soft stack is loaded with
+`-O`, an argument that's on the soft stack is loaded with
 `LDY #off; LDA (FP),Y`, which would destroy an argument already in Y.
 So when a call passes an argument in Y, the A argument is loaded first
 and kept on the hardware stack with `PHA` until X and Y are loaded,
@@ -547,7 +547,7 @@ frame on the soft stack.
 
 ### Which functions qualify
 
-A function uses zp_abi with `--optimize` unless one of these is true.
+A function uses zp_abi with `-O` unless one of these is true.
 
 - It can call itself, directly or through other functions.
 - Its address is taken, or it calls through a function pointer. The
@@ -576,9 +576,8 @@ zero-page bytes of its own, as the last condition above says.
 
 Each source file is compiled on its own, and the parameter and local
 bytes it binds with `EQU` lines are only right for that file. So
-source files compiled with `--optimize` are joined with
-`compile.py --link`, which assigns the bytes for the whole program at
-once. A function declared `extern` and defined in another file gets
+source files compiled with `-O` are linked by `compile.py`,
+which assigns the bytes for the whole program at once. A function declared `extern` and defined in another file gets
 zp_abi on both sides by the same rules, and the linker checks that
 the files agree on the size of its parameters and the registers they
 arrive in. Each file names the parameter bytes after its own
@@ -596,7 +595,7 @@ checks, for the whole program, that nothing such a call reaches
 writes those bytes, and stops with an error naming the function that
 does ([optimizations/slot_sharing.md](optimizations/slot_sharing.md)).
 
-`--link` handles only programs whose functions all use zp_abi. It
+The linker handles only programs whose functions all use zp_abi. It
 rejects a recursive function and one that calls through a pointer,
 with an error that names them. It also places the program's
 zero-page globals, which keeps their bytes out of the parameter and
@@ -618,8 +617,8 @@ takes 3 cycles and 2 bytes. Passing an argument costs the caller a
 store to the callee's byte, or nothing more than loading it, for a
 `register` parameter.
 
-The `add3` example shows the difference. Without `--optimize` it's
-74 instructions, and with `--optimize`, where it uses zp_abi, it's
+The `add3` example shows the difference. Without `-O` it's
+74 instructions, and with `-O`, where it uses zp_abi, it's
 13, counting the `RTS` in both.
 
 ## Limits

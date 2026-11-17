@@ -38,9 +38,9 @@ ASDL source.
 
 ## Top-level driver: `compile.py`
 
-`compile.py` chains the whole pipeline. It pipes the input through pcpp
-to strip comments, then runs to the stage requested by exactly one
-mutually-exclusive flag:
+`compile.py` compiles, assembles, and links, with gcc's flags. It
+pipes each C input through pcpp to strip comments, then runs to the
+stage that at most one of these flags asks for:
 
 | flag             | output                                                        |
 | ---------------- | ------------------------------------------------------------- |
@@ -50,38 +50,76 @@ mutually-exclusive flag:
 |                  | variables → `@N.orig`; goto labels → `.<funcname>@<orig>`;    |
 |                  | loops → `.loop@N`, with break/continue stamped to match)      |
 | `--tac`          | `pretty(tac_ast)` — three-address-code IR                     |
-| `--codegen`      | 6502 assembly text                                            |
-| `--optimize`     | modifier orthogonal to the stage flags. Runs the optimizer    |
-|                  | pipeline (TAC fixed-point opts → asm-level SSA round-trip with|
-|                  | byte-granular regalloc → late prologue synthesis) and enables |
-|                  | the `[[c6502::zp_abi]]` + call-graph-disjoint local-pool|
-|                  | allocator. See `docs/optimization.md` for the walk-through.   |
+| `-S`             | 6502 assembly text, in dasm's syntax, `<name>.s`              |
+| `-c`             | a relocatable ELF object, `<name>.o`                          |
+| (none)           | an ELF executable, `a.out`, linked from every input           |
+
+`-O` is a modifier orthogonal to the stage flags. It
+runs the optimizer pipeline (TAC fixed-point opts → asm-level SSA
+round-trip with byte-granular regalloc → late prologue synthesis) and
+enables the `[[c6502::zp_abi]]` + call-graph-disjoint local-pool
+allocator. See `docs/optimization.md` for the walk-through.
 
 ```sh
-uv run python compile.py <source.c> --codegen              # to stdout
-uv run python compile.py <source.c> --codegen -o out.asm   # to file
-uv run python compile.py - --tac < source.c                # stdin
-uv run python compile.py - --codegen --optimize < src.c    # with optimization
+uv run python compile.py <source.c> -S              # to <source>.s
+uv run python compile.py <source.c> -S -o out.asm   # to out.asm
+uv run python compile.py <source.c> -S -o -         # to stdout
+uv run python compile.py - --tac < source.c         # stdin
+uv run python compile.py - -S -O < src.c            # with optimization
+uv run python compile.py -O -c a.c b.c              # a.o and b.o
+uv run python compile.py a.o b.o -o prog            # link them
+uv run python compile.py -O -T prog.ld a.c b.o -o prog  # both at once
 ```
 
 - `-` as the input filename reads from stdin.
-- With `--codegen`, the `-o` filename must end in `.asm`.
-- Other stages accept any output filename, or default to stdout.
+- With `-S`, each C input becomes `<name>.s` in the current
+  directory, as gcc names it, and stdin goes to stdout. A `-o`
+  filename must end in `.s` or `.asm`, and `-o -` is stdout.
+- With `-c`, each `.c` or `.asm` input becomes an object named after
+  it in the current directory, as gcc names them, unless `-o` names
+  the one output.
+- Without a stage flag, the inputs can be C sources, `.asm` files,
+  and objects, and they're linked into one executable. `-T script.ld`
+  gives a linker script, `-Ttext=ADDR` (or `--origin ADDR`) moves the
+  start of `.text` from `$0800` in a link without one, and `--defsym
+  NAME=VALUE` gives an address to a name no object defines.
+- The other text stages accept any output filename, or default to
+  stdout.
 - Comment stripping uses pcpp via the Python API; any flag
   `compile.py` doesn't recognize is forwarded to pcpp (`-D`,
   `-U`, `-I`, `--passthru-*`, etc.).
 
 ```sh
-uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
+uv run python compile.py - -S -DMAX=42 -I include/ < src.c
 ```
 
-`compile.py` is the only CLI; every other module is library-only.
+An object holds one section per function and per object, its symbols,
+its relocations, the link metadata the linker allocates zero page
+from, and the assembly text it came from. The machine number and the
+relocation types are llvm-mos's (`EM_MOS`, `R_MOS_*`).
+[binutils/CLAUDE.md](binutils/CLAUDE.md) describes the format. Two
+more tools read objects and executables, as GNU's do:
+
+```sh
+uv run python nm.py prog.o           # symbols: T, D, B, R, A, U
+uv run python objdump.py -d prog.o   # disassembly, in dasm's syntax
+uv run python objdump.py -x prog.o   # headers, symbols, relocations,
+                                     # and link metadata
+uv run python objdump.py -D --no-show-raw-insn --no-addresses prog
+                                     # the whole executable as dasm
+                                     # source, with SEG and ORG
+```
+
+`tests/test_binutils.py` checks, where dasm is installed, that the
+assembler's bytes are dasm's for every example and that dasm assembles
+the listing of the linked Zork interpreter into the executable's
+bytes.
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains ten passes. Each is a separate module
+`compile.py -S` chains ten passes. Each is a separate module
 that takes an AST and returns an AST (or text, for emit). With
-`--optimize`, a TAC-level optimizer (SSA construction, fixed-point
+`-O`, a TAC-level optimizer (SSA construction, fixed-point
 loop, register allocation, SSA destruction) runs between
 `c99_to_tac` and `tac_to_asm`; see the "Optimization pipeline"
 section below.
@@ -571,11 +609,10 @@ section below.
    below) and `AllocateStack(N)` (a 16-bit `SSP -= N` sequence).
 
 The intermediate stages are inspectable via `compile.py`'s
-`--lex`, `--parse`, `--resolve`, `--tac`, `--codegen` flags.
-`--optimize` is orthogonal and threads through `--tac` and
-`--codegen`.
+`--lex`, `--parse`, `--resolve`, `--tac`, and `-S` flags.
+`-O` is orthogonal and threads through `--tac`, `-S`, and `-c`.
 
-## Optimization pipeline (`--optimize`)
+## Optimization pipeline (`-O`)
 
 ```
 c99_to_tac → TAC fixed-point opts:
@@ -639,7 +676,7 @@ Distinguishing features:
   ~13-instruction CMP-and-select sequence, by tracing through
   ZeroExtend defs.
 - **Call-graph-disjoint ZP allocation.** See dedicated section
-  above. Under `--optimize`, every eligible function gets a
+  above. Under `-O`, every eligible function gets a
   private range of ZP bytes for its params (`[[c6502::zp_abi]]` only) and body locals, disjoint from every
   coexisting function. Eligible functions emit as bare body +
   RTS. Phase 2 will move the EQU emission into a separate
@@ -657,7 +694,7 @@ Distinguishing features:
 
 `docs/optimization.md` is the from-scratch tour with worked
 examples. `tests/test_sim_asm_optimized.py` runs chapters
-1-12 through `--optimize` end-to-end and asserts return
+1-12 through `-O` end-to-end and asserts return
 values match the unoptimized path.
 
 ## Lexer and parser as APIs
@@ -702,7 +739,7 @@ operand kinds based on the name: `Data(name, offset)` for
 static-storage objects (link-time absolute addressing); `Frame
 (offset)` for parameters and uncolored / spilled / address-taken
 locals (FP-relative indirect-Y); `ZP(addr, offset)` for
-register-allocated locals when `--optimize` is on (direct
+register-allocated locals when `-O` is on (direct
 zero-page addressing); and a callee-save area at `FP+1..FP+S`
 that the prologue saves into and the epilogue restores from.
 
@@ -1087,8 +1124,9 @@ measured from `sim/runtime_helpers.py`. Then it places `HARGS`,
 `SSP`, `FP`, and `DPTR` in the lowest free bytes below `$80`. A
 program with no helper calls gets a one-byte `HARGS`. Zero-page
 globals without an address go in the bytes left over. When the block
-doesn't fit, that's a compile error. Units linked with `--link` have
-to share one layout, and the link fails if they don't.
+doesn't fit, that's a compile error. Linking chooses one layout for
+the whole program, from every unit's zero-page objects and the largest
+`HARGS` any unit needs.
 
 `HARGS` is the I/O block that runtime helpers read inputs from and
 write outputs into; the user-function calling convention (soft-stack
@@ -1240,7 +1278,7 @@ The hardware stack, meanwhile, just holds the return address pushed by
 [docs/calling_conventions.md](docs/calling_conventions.md) traces a
 whole call through the soft stack, with the compiler's current output
 for the caller's argument push, the prologue, the frame, and the
-epilogue. It also describes the zp_abi convention `--optimize` uses
+epilogue. It also describes the zp_abi convention `-O` uses
 for functions that qualify, when the soft stack is still used, and
 what each costs. A function with neither locals nor args
 (`M = N = 0`) gets no prologue, and its epilogue is a single `RTS`.
@@ -1357,10 +1395,10 @@ Zero page isn't part of the program image, so the compiler emits a
 routine `__zp_init` that stores each zero-page object's initial value
 (its initializer, or zero). **The boot code must call `__zp_init`
 before `main`.** The simulator's boot stub does. Each object becomes
-an `EQU` in the output. Linking several translation units with
-`--link` places every unit's bare objects for the whole program and
-writes one `__zp_init`. An `extern` declaration without an address
-names an object another unit defines. With `--optimize`, busy scalar
+an `EQU` in the output. Linking several translation units places
+every unit's bare objects for the whole program and writes one
+`__zp_init`. An `extern` declaration without an address
+names an object another unit defines. With `-O`, busy scalar
 globals are moved into the bytes left below `$80` without the
 attribute (docs/optimizations/zp_promotion.md).
 
@@ -1388,14 +1426,15 @@ bytes are kept out of the compiler's zero-page pools, and one in
 `$00`-`$25` moves the runtime's block out of its way. Two objects
 with addresses may not
 overlap. Declarations may add the attribute one at a time, but two
-different addresses for one name are an error. `--link` binds each
-name once and rejects two units that give it different addresses.
+different addresses for one name are an error. The linker binds
+each name once and rejects two units that give it different
+addresses.
 
 A function with an address gets its calling convention from its
-declaration alone, the same with and without `--optimize`. With
+declaration alone, the same with and without `-O`. With
 `zp_abi`, its `register` arguments go in A and X, which is what a ROM
 routine expects. Without `zp_abi`, its arguments go on the soft
-stack, and the default zp_abi promotion under `--optimize` doesn't
+stack, and the default zp_abi promotion under `-O` doesn't
 apply to it. A `zp_abi` routine with an address must take every
 parameter in a register and return at most 2 bytes in A and X, and
 its address can't be taken, since external code can't follow the
@@ -1441,15 +1480,16 @@ caller turns C into 0 or 1 with `LDA #0; ROL A`, or branches on it
 with `BCC` / `BCS` when the result is only tested. Nothing else in
 c6502 reads a flag across a call.
 
-Under `--optimize`, a function gets the convention without the
+Under `-O`, a function gets the convention without the
 attribute when it returns `bool` and either has external linkage and
 is zp_abi, or is `static` and every call branches on its result
 ([carry_return_choice.md](docs/optimizations/carry_return_choice.md)).
-`--link` checks that every unit made the same choice for a function.
+The linker checks that every unit made the same choice for a
+function.
 
 ## Status
 
-End-to-end through `compile.py --codegen` to runnable 6502 asm:
+End-to-end through `compile.py -S` to runnable 6502 asm:
 
 - Multiple top-level functions, forward declarations, function
   calls with parameters, multi-arg passing via the soft-stack
@@ -1469,7 +1509,8 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   threading. **Gaps**: `*` / `/` / `%` / `<<` / `>>` lower to
   runtime-helper Calls (mul/divmod/asl/asr/lsr) — marshaling
   is in place but the helpers themselves aren't yet in the
-  repo; programs that use them assemble but won't link.
+  repo; programs that use them assemble, but don't link unless
+  `--defsym` gives each helper an address.
   Unsigned ordering (`<` / `>` / `<=` / `>=`) on multi-byte
   operands still V-corrects (signed lowering) — a known
   imprecision.
@@ -1485,8 +1526,9 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   addressing without a definition. See "Storage classes and
   linkage". `[[c6502::zeropage]]` / `zeropage(addr)` puts one
   in zero page (see "Zero-page globals").
-- Multi-file programs: `compile.py --link` joins `--optimize`
-  outputs, and `-T script.ld` lays the program out in memory with a
+- Multi-file programs: `compile.py` links `-O` objects into an ELF
+  executable, allocating every unit's zero-page slots for the whole
+  program, and `-T script.ld` lays the program out in memory with a
   GNU ld-style linker script (`MEMORY`, `SECTIONS`, `AT>`, `NOLOAD`,
   `ALIGN`), placing each section, including ones named with
   `[[c6502::section("name")]]`. See docs/linker_scripts.md.
@@ -1558,10 +1600,11 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
 helpers `mul8/16/32`, `divmod8/16/32`, `asl/asr/lsr8/16/32`, FP
 arithmetic helpers, 26 FP-conversion helpers, `icall`
 trampoline). Programs that use `*` / `/` / `%` / `<<` / `>>`,
-any FP↔int cast, or any indirect call assemble but won't link
-until those land.
+any FP↔int cast, or any indirect call assemble, but don't link
+until those land, unless `--defsym` gives each helper an address (as
+`sim/linked.py` does with the simulator's).
 
-End-to-end with `--optimize`:
+End-to-end with `-O`:
 
 - Full optimizer: TAC SSA fixed-point opts → asm-level SSA
   round-trip with byte-granular regalloc → late prologue

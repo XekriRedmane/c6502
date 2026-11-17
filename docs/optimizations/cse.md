@@ -5,7 +5,7 @@
 [passes/optimization/cse.py](../../passes/optimization/cse.py)
 replaces an instruction that computes the same value as an earlier one
 with a `Copy` from the earlier one's result. It runs in the TAC
-fixed-point loop under `--optimize`, on SSA form, just before
+fixed-point loop under `-O`, on SSA form, just before
 [loop-invariant code motion](licm.md). The unoptimized pipeline
 doesn't run it.
 

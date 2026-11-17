@@ -6,7 +6,7 @@ drops each internal-linkage static object that no instruction and no
 initializer refers to. It runs at the end of each call of
 `optimize_program`, after every function has been through the asm SSA
 round trip, so it runs twice per compile. It runs only under
-`--optimize`.
+`-O`.
 
 Several folds remove every read of a static and leave its storage in
 place. The TAC [constant folding](constant_folding.md) turns
@@ -26,7 +26,7 @@ unsigned char loud(void) { return gain[2]; }
 ```
 
 Since the pass changes only the list of top-level objects, the
-listings are two complete compiles with `--optimize`, the first with
+listings are two complete compiles with `-O`, the first with
 the pass replaced by one that returns the program unchanged.
 
 ### Before

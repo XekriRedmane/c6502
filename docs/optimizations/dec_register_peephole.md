@@ -5,7 +5,7 @@
 turns a decrement of a value held in X or Y, which `tac_to_asm`
 routes through A and a temporary, into `DEX` or `DEY`. It runs in the
 peephole fixed point, in both pipelines, but only fires with
-`--optimize`. The unoptimized pipeline keeps a `register` local on
+`-O`. The unoptimized pipeline keeps a `register` local on
 the soft stack, so it never produces the shape.
 
 A `register` local lives in Y. For `--y`, `tac_to_asm` emits a byte

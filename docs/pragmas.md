@@ -9,7 +9,7 @@ line, just before the code it applies to, and each starts with
 | `#pragma c6502 loop unroll(enable)` | a `for` loop | Unrolls the loop completely. |
 | `#pragma c6502 call save(hardware_stack)` | a statement or declaration in a function | Lets a recursive call save its caller's locals on the 6502's hardware stack. |
 
-Both take effect only under `--optimize`. Without it, the code
+Both take effect only under `-O`. Without it, the code
 compiles as if the pragma weren't there, though a misplaced `call
 save` pragma is still an error.
 
@@ -133,7 +133,7 @@ through a function pointer.
 Parameters, and locals whose address is taken, stay on the soft
 stack, where each call has its own copy. They aren't pushed.
 
-The calls have to be in one source file. `compile.py --link` accepts
+The calls have to be in one source file. The linker accepts
 such a cycle, which the link metadata marks call by call, and reports
 any other recursion as an error. examples/zork/print_zstring links
 `print_zstring` this way.
@@ -169,7 +169,7 @@ often much later, and the crash points nowhere near its cause.
 **You may push more than you expect.** Every local that's still
 needed after the call is pushed, along with any value the compiler
 keeps in a temporary across the call, and a `long` local takes 4
-bytes. To see the real number, compile with `--codegen --optimize`
+bytes. To see the real number, compile with `-S -O`
 and count the `PHA`s before the marked `JSR`.
 
 Use the pragma when you know the recursion is shallow.

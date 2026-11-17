@@ -5,7 +5,7 @@
 drops each `Mov` or `Phi` that writes a byte of a temporary nothing
 reads. It runs in the asm SSA fixed point inside `optimize_program`,
 after the two copy propagations in each round, and repeats internally
-until it changes nothing. It runs only under `--optimize`.
+until it changes nothing. It runs only under `-O`.
 
 After asm SSA construction, each byte of a multi-byte value is a
 separate name, so the pass can find a dead high byte of a value whose

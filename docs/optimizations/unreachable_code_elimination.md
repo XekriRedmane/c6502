@@ -4,7 +4,7 @@
 [passes/optimization/unreachable_code_elimination.py](../../passes/optimization/unreachable_code_elimination.py)
 removes TAC blocks that no path from the function's entry reaches, and
 then tidies the Phis, jumps, and labels that the removal leaves
-behind. It runs in the TAC fixed-point loop under `--optimize`, on SSA
+behind. It runs in the TAC fixed-point loop under `-O`, on SSA
 form, right after [dead loop elimination](dead_loop_elimination.md).
 The unoptimized pipeline doesn't run it.
 

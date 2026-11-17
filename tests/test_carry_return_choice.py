@@ -246,7 +246,7 @@ class TestLinked(unittest.TestCase):
         from compile import main as compile_main
         with patch("sys.stdin", io.StringIO(src)):
             self.assertEqual(compile_main([
-                "compile.py", "-", "--codegen", "--optimize",
+                "compile.py", "-", "-S", "-O",
                 "-o", str(path),
             ]), 0)
         return path.read_text()
@@ -261,16 +261,16 @@ class TestLinked(unittest.TestCase):
             # The defining unit and the calling unit both record it.
             self.assertRegex(lib, r"; def is_digit .*carry=true")
             self.assertRegex(main, r"; ext is_digit .*carry=true")
-            out = Path(tmp) / "out.asm"
+            out = Path(tmp) / "out"
             self.assertEqual(compile_main([
-                "compile.py", "--link", str(Path(tmp) / "lib.asm"),
+                "compile.py", str(Path(tmp) / "lib.asm"),
                 str(Path(tmp) / "main.asm"), "-o", str(out),
             ]), 0)
-            text = out.read_text()
-        if shutil.which("dasm"):
-            from sim.linked import build_linked_sim
-            # Three of the five are digits.
-            self.assertEqual(build_linked_sim(text).run().return_int(), 33)
+            from tests.link_helpers import linked_text
+            text = linked_text(out)
+        from sim.linked import build_linked_sim
+        # Three of the five are digits.
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(), 33)
 
     def test_units_disagree(self):
         # A unit that calls the function expecting its result in A,

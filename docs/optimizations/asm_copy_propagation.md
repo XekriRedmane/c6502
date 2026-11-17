@@ -6,7 +6,7 @@ replaces each read of a byte that a direct `Mov` copied with the
 `Mov`'s source. It runs in the asm SSA fixed point inside
 `optimize_program`, which repeats `copy_propagate`,
 `backward_copy_propagate`, `byte_dce`, and `absorb_zero_load` until a
-round changes nothing. It runs only under `--optimize`.
+round changes nothing. It runs only under `-O`.
 
 After asm SSA construction, each byte of a temporary has exactly one
 definition, so a temporary written by `Mov(src, t)` holds `src` at

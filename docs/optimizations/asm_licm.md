@@ -4,7 +4,7 @@
 a store that writes the same value on every iteration of a loop to
 just before the loop. It runs once, after
 [prologue synthesis](prologue_synthesis.md) and before the first
-peephole fixed point, under `--optimize` only. Inside each function
+peephole fixed point, under `-O` only. Inside each function
 it repeats until nothing more moves, trying the innermost loops
 first, so a store hoisted out of an inner loop can then leave the
 loop around it.

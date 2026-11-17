@@ -15,7 +15,7 @@ instructions breaks the match. The asm SSA round trip leaves a label
 at the head of every block it built (`.f@asm_ssa_block@N`,
 `.f@asm_ssa_preheader@0`), and loop labeling leaves
 `.loop@N_continue` on a loop that has no `continue`. Without
-`--optimize` the pass still finds those `continue` labels, as in
+`-O` the pass still finds those `continue` labels, as in
 `for (i = 0; i < n; i++) buf[i] = 0;`.
 
 ## Example

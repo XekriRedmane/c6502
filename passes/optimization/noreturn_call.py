@@ -35,7 +35,7 @@ memory value propagation reads `OPERANDS` there and the copy goes.
 # Where it runs
 
 Before SSA construction, so that the dropped code's definitions never
-take part in it. Under `--optimize` only.
+take part in it. Under `-O` only.
 """
 from __future__ import annotations
 

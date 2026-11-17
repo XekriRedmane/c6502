@@ -5,7 +5,7 @@
 ends the path at a call to a function declared `[[noreturn]]`. It puts
 a `Ret` right after the call and drops the instructions after it, up
 to the next label. It runs once per function in the TAC optimizer,
-before SSA construction, under `--optimize` only.
+before SSA construction, under `-O` only.
 
 C23 §6.7.13.7 makes it undefined for a `[[noreturn]]` function to
 return, so nothing after such a call runs. Without the `Ret`, the code

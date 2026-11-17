@@ -4,7 +4,7 @@
 [passes/optimization/dead_store_elimination.py](../../passes/optimization/dead_store_elimination.py)
 removes TAC instructions whose result nothing reads. It runs on
 SSA-form TAC in the optimizer's fixed point, right after copy
-propagation, and only under `--optimize`.
+propagation, and only under `-O`.
 
 In SSA form a renamed variable has one definition, so the definition
 is dead exactly when the name appears nowhere in the function as an

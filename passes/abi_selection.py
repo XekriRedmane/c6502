@@ -80,7 +80,7 @@ pipelines:
     parameters) and the result comes back in A and X.
   * Without it, the arguments go on the soft stack, for a routine
     written to c6502's own convention. The default zp_abi promotion
-    under `--optimize` skips these functions.
+    under `-O` skips these functions.
 
 `fixed_address_layouts` computes the layouts for the first kind, and
 `select_abi` and the unoptimized pipeline both use it. A `zp_abi`
@@ -892,7 +892,7 @@ def select_abi(
     if any explicit `[[c6502::zp_abi]]` annotation can't be
     honored.
 
-    Under `--optimize`, every function defaults to zp_abi: an
+    Under `-O`, every function defaults to zp_abi: an
     unannotated function attempts zp_abi and SILENTLY falls back
     to `SoftStackLayout` on ineligibility (indirect calls,
     recursion, address taken, params don't fit). An annotated

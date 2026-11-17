@@ -5,7 +5,7 @@ The three rules in
 rewrite a multiply, divide, or modulo by a constant as shifts, masks,
 adds, or copies. The pipeline runs them as one `RuleSet` named
 `reduce_strength` in the TAC fixed-point loop, right after constant
-folding. They run only under `--optimize`.
+folding. They run only under `-O`.
 
 The 6502 has no multiply or divide instruction, so `tac_to_asm` lowers
 `*`, `/`, and `%` to a call to a runtime helper (`mul16`,

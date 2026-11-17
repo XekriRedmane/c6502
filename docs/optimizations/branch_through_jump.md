@@ -12,7 +12,7 @@ sits at the bottom, so the branch back goes through a block that holds
 only `JMP .loop@0_start`. Each time the branch is taken, the 6502 then
 spends 3 more cycles on the `JMP`. Branching straight to the loop head
 saves those 3 cycles per iteration, and deleting the trampoline saves
-3 bytes. Without `--optimize` the pass finds the same shape in nested
+3 bytes. Without `-O` the pass finds the same shape in nested
 `if` statements and around `goto`.
 
 ## Example

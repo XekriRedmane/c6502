@@ -224,7 +224,7 @@ class TestGuards(unittest.TestCase):
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestSimIntegration(unittest.TestCase):
     """End-to-end: a small C program exercising the (uchar & 0x80)
-    idiom returns the right value under --optimize."""
+    idiom returns the right value under -O."""
 
     def _run(self, src: str) -> int:
         sim = build_sim(src, optimize=True)

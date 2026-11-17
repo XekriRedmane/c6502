@@ -16,7 +16,7 @@ only calls fj with j > i), plus extras chosen per seed:
   * calls inside loops, and globals updated across calls,
   * functions returning `bool`, half of them marked
     `[[c6502::return_bool_in_carry]]`, called for their value or as
-    an `if` condition. Under `--optimize`, the unmarked ones return
+    an `if` condition. Under `-O`, the unmarked ones return
     in the carry flag too when they're zp_abi
     (passes/carry_return_choice.py).
 Function bodies compute random integer expressions over parameters,
@@ -26,7 +26,7 @@ call between two different calling conventions.
 
 The TAC interpreter is the reference, which is fair for backend bugs
 because zp_abi, frames, and register placement are all decided after
-TAC. Without --optimize every function uses the soft stack; with it,
+TAC. Without -O every function uses the soft stack; with it,
 the eligible ones get zp_abi.
 
 Undefined behavior is avoided by construction. Divisors are `(e | 1)`
@@ -133,7 +133,7 @@ def make_program(seed: int) -> tuple[str, None]:
     arng = random.Random(seed * 15485863 + 5)
     marked = {i for i in sorted(carry) if arng.random() < 0.5}
 
-    # Which functions end up on the soft stack under --optimize: the
+    # Which functions end up on the soft stack under -O: the
     # pointer-called one, each caller through the pointer, each
     # caller of `rec` when `rec` has no private pool, and every
     # caller of one of those (a zp_abi function can only call zp_abi

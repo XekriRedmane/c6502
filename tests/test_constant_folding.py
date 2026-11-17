@@ -1238,7 +1238,7 @@ class TestFoldSignednessAware(unittest.TestCase):
     """Folds where signedness affects the result, dispatched off the
     operand variant. These pin the contract that `tac_to_asm` uses
     BCC/BCS for unsigned ordering and `lsr*` for unsigned right shift
-    — the constant folder has to agree, otherwise --optimize would
+    — the constant folder has to agree, otherwise -O would
     diverge from the unoptimized lowering."""
 
     def test_unsigned_less_than_above_signed_threshold(self) -> None:

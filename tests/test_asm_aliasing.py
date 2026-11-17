@@ -232,7 +232,7 @@ class TestZeroPagePointers(unittest.TestCase):
     """
 
     def test_two_pointers_to_one_buffer_run(self) -> None:
-        # Under --optimize `p[i]` and `q[i]` are `(zp),Y` through two
+        # Under -O `p[i]` and `q[i]` are `(zp),Y` through two
         # bases; the read through `p` after the store through `q`
         # must see the 9. (1 + 2 + 3 + 4) + 4 * 9 = 46.
         for optimize in (False, True):

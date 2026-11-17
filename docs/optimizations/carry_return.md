@@ -7,7 +7,7 @@ the carry flag ([attributes.md](../attributes.md) describes the
 attribute). `apply_carry_return_tails`, `apply_carry_const_fold`, and
 `apply_carry_branch_fold` run one after another in the peephole fixed
 point, right after [constant AND and ORA fold](const_arith_fold.md).
-They run in both pipelines but only fire with `--optimize`. Without it
+They run in both pipelines but only fire with `-O`. Without it
 every function returns through the soft-stack `Ret`, which the tail
 copy doesn't match, and both the callee's `LDA` and the caller's `ROL
 A` are followed by a store of A to the soft stack.

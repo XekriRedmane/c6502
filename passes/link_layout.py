@@ -1,33 +1,25 @@
-"""Laying a linked program out by a linker script (`compile.py --link -T
-script.ld`; the script language is in passes/link_script.py).
+"""Laying a linked program out: where each input section goes, by a
+linker script (`compile.py -T script.ld`; the script language is in
+passes/link_script.py) or by the default script, which puts `.text`,
+`.rodata`, `.data`, and `.bss` one after another from the origin.
 
-Each unit's body is split into its items, one per function and
-object (`item_chunks`), using the `item` lines of its link metadata
-(passes/sections.py). `layout_lines` then writes the output sections in
-script order, each one a dasm segment:
+Each unit's items (its functions and objects, `item` lines in its link
+metadata, passes/sections.py) are its input sections, one each in the
+object (binutils/elf.py). `lay_out` walks the script's statements in
+order, keeping each memory region's next free address, and places the
+items each output section takes, unit by unit in the order the units
+were given, and in each unit in the order it lists them. Since every
+section's size is known, each address is a number, computed here.
 
-    SEG text                    ; SEG.U for a NOLOAD section
-    ORG <load address>
-__text_load:                    ; only with AT> or AT(...)
-    RORG <run address>
-__text_start:
-    <the items whose section matches, unit by unit, in order,
-     but for fall-through chains>
-__text_end:
-    REND
-__text_load_end:
-
-Sizes aren't known until dasm assembles the program, so every address
-the script computes is a dasm expression: a section in a region
-starts at the region's origin or at the end label of the region's
-previous section. `RORG` gives the code its run address while the
-bytes go at the load address, which is how `AT>` puts `.data` in ROM
-to be copied to RAM. Each section's symbols are named after it, with
-the dots turned into underscores (`.text.boot` gives
-`__text_boot_start`); `ADDR`, `LOADADDR`, and `SIZEOF` in the script
-refer to them. `. = expr` inside a section skips to `expr` with a
-`DS.B`, which works the same in a relocated and an uninitialized
-segment.
+Every output section `.name` defines `__name_start` and `__name_end`
+(its run addresses), `__name_load` and `__name_load_end` (where its
+bytes are in memory before the startup code copies them, which are
+the run addresses unless the section has `AT>` or `AT(...)`), and
+`__name_size`. Dots and other characters that can't be in a symbol
+become underscores (`.text.boot` gives `__text_boot_start`). `ADDR`,
+`LOADADDR`, and `SIZEOF` in the script give those values. `. = expr`
+inside a section skips to `expr`, with zero bytes in a section that's
+loaded.
 
 Inside a section, a function that ends with a `JMP` to another of its
 functions goes right before that one, and the `JMP` is dropped
@@ -37,9 +29,8 @@ only a function already in front of its target loses the `JMP`.
 Nothing moves across an assignment in the section, since one marks
 an address.
 
-After each section, an `IF ... ERR` block makes dasm stop when the
-section runs past the end of its region, or its load bytes past the
-end of the load region.
+A section that runs past the end of its region, or whose load bytes
+run past the end of its load region, is an error.
 
 `startup_lines` is code for `__zp_init`, which the boot code calls
 before `main`: it copies each `AT>` section from its load address to
@@ -48,11 +39,12 @@ the first four bytes of `HARGS`, which hold nothing yet then.
 """
 from __future__ import annotations
 
-import dataclasses
 import fnmatch
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from binutils import elf as E
+from binutils.ld import OutputSection as Output, Placed
 from passes.link_script import (
     Assign, Binary, Call, Dot, Input, Num, OutputSection, Script, Sym, Unary,
 )
@@ -65,152 +57,92 @@ class LayoutError(Exception):
 
 @dataclass
 class Unit:
-    """One input file: its name for messages, its items in output
-    order, and each item's lines."""
+    """One input file: its name (for messages and the script's file
+    patterns), its number in the link, its items in order, each item's
+    input section, and for each function that ends in a `JMP` to a
+    function, that function's name (`tail_jump`)."""
     path: str
+    index: int
     items: list[ItemMeta]
-    chunks: dict[str, list[str]]
+    sections: dict[str, E.Section]
+    tails: dict[str, str] = field(default_factory=dict)
 
 
-def item_chunks(body: list[str], items: list[ItemMeta]) -> dict[str, list[str]]:
-    """Splits `body` at the label line of each item in `items`. Each
-    item's lines run from its label to the next item's, without
-    trailing blank lines."""
-    names = {it.name for it in items}
-    out: dict[str, list[str]] = {}
-    current: list[str] | None = None
-    for line in body:
-        if line.endswith(":") and line[:-1] in names:
-            current = out.setdefault(line[:-1], [])
-        if current is not None:
-            current.append(line)
-        elif line.strip():
-            raise LayoutError(
-                f"line {line!r} comes before any item in its unit"
-            )
-    for lines in out.values():
-        while lines and lines[-1] == "":
-            lines.pop()
-    missing = names - set(out)
-    if missing:
-        raise LayoutError(
-            f"the unit's metadata lists {sorted(missing)}, which its body "
-            f"doesn't define"
-        )
-    return out
+@dataclass
+class Entry:
+    """An item for `fall_through`: its name, whether it's a function,
+    and the function its final `JMP` goes to, if it ends in one."""
+    name: str
+    function: bool = False
+    tail: str | None = None
+    payload: object = None
 
 
-_LABEL_CHARS = r"A-Za-z0-9_.@"
+@dataclass
+class Layout:
+    """The output sections, with every input section placed, and the
+    symbols the layout defines (section bounds and the script's
+    assignments)."""
+    outputs: list[Output] = field(default_factory=list)
+    symbols: dict[str, int] = field(default_factory=dict)
 
 
-def rename_locals(units: list[tuple], taken: set[str]) -> list[tuple]:
-    """Gives every internal item and internal zero-page object whose
-    name another unit also uses, or that `taken` (the program's other
-    names) holds, a name of its own: `name.k`, for unit `k`. Each unit
-    is `(items, zp_objects, body)`, and comes back with the names
-    rewritten in all three. Raises `LayoutError` when two units define
-    the same external name."""
-    owner: dict[str, int] = {}
-    users: dict[str, set[int]] = {}
-    for k, (items, zp_objects, _) in enumerate(units):
-        for it in items:
-            users.setdefault(it.name, set()).add(k)
-            if not it.local:
-                if it.name in owner:
-                    raise LayoutError(
-                        f"`{it.name}` is defined in multiple TUs"
-                    )
-                owner[it.name] = k
-        for z in zp_objects:
-            users.setdefault(z.name, set()).add(k)
-    out = []
-    for k, (items, zp_objects, body) in enumerate(units):
-        local_names = (
-            [it.name for it in items if it.local]
-            + [z.name for z in zp_objects if z.local]
-        )
-        renames = {
-            name: f"{name}.{k}" for name in local_names
-            if len(users[name]) > 1 or name in taken
-        }
-        if renames:
-            pattern = re.compile(
-                rf"(?<![{_LABEL_CHARS}])("
-                + "|".join(re.escape(n) for n in renames)
-                + rf")(?![{_LABEL_CHARS}])"
-            )
-            body = [pattern.sub(lambda m: renames[m.group(1)], line)
-                    for line in body]
-            items = [
-                ItemMeta(name=renames.get(it.name, it.name),
-                         section=it.section, local=it.local, zero=it.zero)
-                for it in items
-            ]
-            zp_objects = [
-                dataclasses.replace(z, name=renames.get(z.name, z.name))
-                for z in zp_objects
-            ]
-        out.append((items, zp_objects, body))
-    return out
-
-
-# A function's last instruction when it's a jump to a label, as
-# asm_emit writes it.
-_TAIL_JUMP = re.compile(rf"^\s+JMP\s+([A-Za-z_][{_LABEL_CHARS}]*)\s*$")
-
-
-def _is_function(lines: list[str]) -> bool:
-    """True iff the item's lines are a function's. asm_emit starts
-    every function with its label and `SUBROUTINE`, and no object."""
-    return any(line.strip() == "SUBROUTINE" for line in lines[1:3])
-
-
-def _tail_jump(lines: list[str]) -> tuple[int, str] | None:
-    """The index of the function's last instruction and the label it
-    jumps to, when that instruction is a `JMP` to a label, else
-    None."""
-    for i in range(len(lines) - 1, 0, -1):
-        text = lines[i].strip()
-        if not text or text.startswith(";"):
+def tail_jump(sec: E.Section, symbols: list[E.Symbol]) -> str | None:
+    """The name of the function `sec` jumps to at its end, when the
+    function's last instruction is `JMP name` (no offset) and no label
+    or data follows it, else None. `symbols` are the section's
+    object's symbols."""
+    size = sec.size
+    if sec.type == E.SHT_NOBITS or size < 3 or sec.data[size - 3] != 0x4C:
+        return None
+    r = next((r for r in sec.relocs if r.offset == size - 2), None)
+    if r is None or r.type != E.R_MOS_ADDR16 or r.addend != 0:
+        return None
+    if r.symbol.name.startswith("."):
+        return None
+    mapping = None
+    for s in symbols:
+        if s.section is not sec:
             continue
-        m = _TAIL_JUMP.match(lines[i])
-        return (i, m.group(1)) if m else None
-    return None
+        if s.value > size - 3 and s.type != E.STT_FUNC:
+            # A label on the JMP's operand or after it.
+            return None
+        if s.name in ("$c", "$d") and s.value <= size - 3:
+            if mapping is None or s.value >= mapping[0]:
+                mapping = (s.value, s.name)
+    if mapping is not None and mapping[1] == "$d":
+        return None
+    return r.symbol.name
 
 
-def fall_through(
-    items: list[list[str]], reorder: bool = True,
-) -> list[list[str]]:
-    """Puts each function that ends by jumping to another function of
-    `items` (each item's lines, in the script's order) right before
-    it, and drops the jump, so the first runs into the second.
+def fall_through(entries: list[Entry], reorder: bool = True) -> list[tuple[Entry, bool]]:
+    """`entries` (in the script's order) with each function that ends
+    by jumping to another function of `entries` moved right before it,
+    paired with True when its jump is dropped, so the first runs into
+    the second.
 
     A function is the target of at most one such pair, the first of
-    the functions jumping to it in `items`, and a pair that would
+    the functions jumping to it in `entries`, and a pair that would
     close a cycle is left out. Each chain of pairs is laid down where
-    its first function is, and every other item keeps its place. With
+    its first function is, and every other entry keeps its place. With
     `reorder` false, only a function already right before its target
     loses its jump, and nothing moves.
 
-    Dropping the jump keeps any label in front of it, which then names
-    the target's first instruction, the address the jump went to."""
-    index = {
-        lines[0][:-1]: i for i, lines in enumerate(items)
-        if _is_function(lines)
-    }
-    jumps: dict[int, tuple[int, int]] = {}
-    for i, lines in enumerate(items):
-        tail = _tail_jump(lines) if _is_function(lines) else None
-        if tail is None:
+    Dropping the jump keeps any label on it, which then names the
+    target's first instruction, the address the jump went to."""
+    index = {e.name: i for i, e in enumerate(entries) if e.function}
+    jumps: dict[int, int] = {}
+    for i, e in enumerate(entries):
+        if not e.function or e.tail is None:
             continue
-        j = index.get(tail[1])
+        j = index.get(e.tail)
         if j is None or j == i or (not reorder and j != i + 1):
             continue
-        jumps[i] = (j, tail[0])
+        jumps[i] = j
     after: dict[int, int] = {}
     before: dict[int, int] = {}
     for i in sorted(jumps):
-        j = jumps[i][0]
+        j = jumps[i]
         if j in before:
             continue
         end = j
@@ -220,49 +152,59 @@ def fall_through(
             continue
         after[i] = j
         before[j] = i
-    out: list[list[str]] = []
-    for i in range(len(items)):
+    out: list[tuple[Entry, bool]] = []
+    for i in range(len(entries)):
         if i in before:
             continue
         n: int | None = i
         while n is not None:
-            lines = items[n]
-            if n in after:
-                cut = jumps[n][1]
-                lines = lines[:cut] + lines[cut + 1:]
-            out.append(lines)
+            out.append((entries[n], n in after))
             n = after.get(n)
     return out
 
 
-def _sym(section: str) -> str:
+def section_symbol(section: str) -> str:
     """The part of a section's symbols named after it."""
     return re.sub(r"[^A-Za-z0-9_]", "_", section.lstrip("."))
 
 
-def _expr(e, script: Script, dot: str | None) -> str:
-    """`e` as a dasm expression. `dot` is what `.` stands for."""
-    def go(e) -> str:
+class _Evaluator:
+    def __init__(self, script: Script, symbols: dict[str, int],
+                 lookup) -> None:
+        self.script = script
+        self.symbols = symbols
+        self.lookup = lookup
+
+    def __call__(self, e, dot: int | None) -> int:
         match e:
             case Num(value=v):
-                return f"${v & 0xFFFFFFFF:04X}"
+                return v
             case Sym(name=n):
-                return n
+                if n in self.symbols:
+                    return self.symbols[n]
+                v = self.lookup(n)
+                if v is None:
+                    raise LayoutError(
+                        f"the script uses `{n}` before it has a value"
+                    )
+                return v
             case Dot():
                 if dot is None:
                     raise LayoutError("`.` isn't defined here")
                 return dot
             case Unary(op=op, operand=o):
-                return f"[{op}{go(o)}]"
+                v = self(o, dot)
+                return -v if op == "-" else ~v
             case Binary(op=op, left=l, right=r):
-                return f"[{go(l)} {op} {go(r)}]"
+                a, b = self(l, dot), self(r, dot)
+                return _binary(op, a, b)
             case Call(fn="ALIGN", args=args):
                 if len(args) == 1:
-                    base, n = dot, args[0]
-                    if base is None:
+                    if dot is None:
                         raise LayoutError("`ALIGN(n)` needs `.`")
+                    base, n = dot, args[0]
                 else:
-                    base, n = go(args[0]), args[1]
+                    base, n = self(args[0], dot), args[1]
                 if not isinstance(n, Num) or n.value & (n.value - 1):
                     raise LayoutError(
                         "ALIGN takes a power of two written as a number"
@@ -271,53 +213,104 @@ def _expr(e, script: Script, dot: str | None) -> str:
             case Call(fn=fn, args=[Sym(name=name)]) if fn in (
                 "ORIGIN", "LENGTH",
             ):
-                region = script.regions.get(name)
+                region = self.script.regions.get(name)
                 if region is None:
                     raise LayoutError(f"{fn}({name}) names no region")
-                value = region.origin if fn == "ORIGIN" else region.length
-                return f"${value:04X}"
+                return region.origin if fn == "ORIGIN" else region.length
             case Call(fn=fn, args=[Sym(name=name)]) if fn in (
                 "ADDR", "LOADADDR", "SIZEOF",
             ):
-                s = _sym(name)
-                if fn == "ADDR":
-                    return f"__{s}_start"
-                if fn == "LOADADDR":
-                    return f"__{s}_load"
-                return f"[__{s}_end - __{s}_start]"
+                s = section_symbol(name)
+                key = {"ADDR": "start", "LOADADDR": "load",
+                       "SIZEOF": "size"}[fn]
+                sym = f"__{s}_{key}"
+                if sym not in self.symbols:
+                    raise LayoutError(
+                        f"{fn}({name}) comes before section {name} is "
+                        f"laid out"
+                    )
+                return self.symbols[sym]
         raise LayoutError(f"can't use {e!r} in a linker script expression")
-    return go(e)
 
 
-def _align(base: str, n: int) -> str:
+def _binary(op: str, a: int, b: int) -> int:
+    if op == "+":
+        return a + b
+    if op == "-":
+        return a - b
+    if op == "*":
+        return a * b
+    if op == "/":
+        if b == 0:
+            raise LayoutError("division by zero in the linker script")
+        return a // b
+    if op == "&":
+        return a & b
+    if op == "|":
+        return a | b
+    if op == "^":
+        return a ^ b
+    if op == "<<":
+        return a << b
+    if op == ">>":
+        return a >> b
+    raise LayoutError(f"unknown operator {op} in the linker script")
+
+
+def _align(base: int, n: int) -> int:
     if n <= 1:
         return base
-    return f"[[{base} + {n - 1}] & ${0xFFFF & ~(n - 1):04X}]"
+    return (base + n - 1) & ~(n - 1)
 
 
-def layout_lines(
-    script: Script, units: list[Unit], instr_line,
-) -> list[str]:
-    """The program's body laid out by `script`. `instr_line(opcode,
-    operand)` formats one line the way asm_emit does. Raises
+def default_script(units: list[Unit], origin: int) -> Script:
+    """The script a link without `-T` uses: `.text` from `origin`,
+    then `.rodata`, `.data`, `.bss`, and then each other section name
+    the units use, in the order they first appear, each right after
+    the one before."""
+    std = [".text", ".rodata", ".data", ".bss"]
+    names = list(std)
+    for u in units:
+        for it in u.items:
+            base = it.section
+            if not any(base == n or base.startswith(n + ".") for n in std) \
+                    and base not in names:
+                names.append(base)
+    script = Script()
+    for k, name in enumerate(names):
+        patterns = [name, name + ".*"] if name in std else [name]
+        script.statements.append(OutputSection(
+            name=name, address=Num(origin) if k == 0 else None,
+            contents=[Input(patterns=patterns)],
+        ))
+    return script
+
+
+def lay_out(
+    script: Script, units: list[Unit], lookup=lambda name: None,
+) -> Layout:
+    """Places every item of `units` by `script`. `lookup(name)` gives
+    the value of a symbol the script names that the layout doesn't
+    define (such as an absolute symbol from a unit), or None. Raises
     `LayoutError` for an item no output section takes, an item that a
-    NOLOAD section can't hold, or a section with nowhere to go."""
+    NOLOAD section can't hold, a section with nowhere to go, or one
+    that runs past the end of its region."""
+    layout = Layout()
+    sym = layout.symbols
+    ev = _Evaluator(script, sym, lookup)
     placed: set[tuple[int, str]] = set()
-    cursor = {
-        name: f"${r.origin:04X}" for name, r in script.regions.items()
-    }
-    prev_end: str | None = None
-    out: list[str] = []
+    cursor = {name: r.origin for name, r in script.regions.items()}
+    prev_end: int | None = None
     for stmt in script.statements:
         if isinstance(stmt, Assign):
-            out.append(
-                f"{stmt.symbol}\tEQU\t{_expr(stmt.expr, script, prev_end)}"
-            )
+            if stmt.symbol == ".":
+                raise LayoutError("`.` can only be set inside a section")
+            sym[stmt.symbol] = ev(stmt.expr, prev_end)
             continue
         sec: OutputSection = stmt
-        s = _sym(sec.name)
+        s = section_symbol(sec.name)
         if sec.address is not None:
-            vma = _expr(sec.address, script, prev_end)
+            vma = ev(sec.address, prev_end)
         elif sec.region is not None:
             vma = cursor[sec.region]
         elif prev_end is not None:
@@ -328,55 +321,55 @@ def layout_lines(
             )
         if sec.align is not None:
             if not isinstance(sec.align, Num):
-                raise LayoutError(
-                    f"ALIGN on {sec.name} has to be a number"
-                )
+                raise LayoutError(f"ALIGN on {sec.name} has to be a number")
             vma = _align(vma, sec.align.value)
         relocated = sec.at is not None or sec.load_region is not None
         if sec.at is not None:
-            lma = _expr(sec.at, script, prev_end)
+            lma = ev(sec.at, prev_end)
         elif sec.load_region is not None:
             lma = cursor[sec.load_region]
         else:
             lma = vma
-        out.append("")
-        out.append(instr_line("SEG.U" if sec.noload else "SEG", s))
-        out.append(instr_line("ORG", lma))
+        out = Output(name=sec.name, addr=vma, load_addr=lma, size=0,
+                     noload=sec.noload)
+        sym[f"__{s}_start"] = vma
         if relocated:
-            out.append(f"__{s}_load:")
-            out.append(instr_line("RORG", vma))
-        out.append(f"__{s}_start:")
-        # The items since the last assignment, which may be put in
-        # fall-through chains among themselves. An assignment marks an
-        # address, so nothing moves across one.
-        run: list[list[str]] = []
+            sym[f"__{s}_load"] = lma
+        pc = vma
+        run: list[Entry] = []
 
-        def flush_run() -> None:
-            for lines in fall_through(run, reorder=sec.reorder):
-                out.append("")
-                out.extend(lines)
+        def flush() -> None:
+            nonlocal pc
+            for entry, dropped in fall_through(run, reorder=sec.reorder):
+                unit, it_section = entry.payload
+                size = it_section.size - (3 if dropped else 0)
+                out.parts.append(Placed(unit.index, it_section, pc, size))
+                if it_section.flags & E.SHF_EXECINSTR:
+                    out.executable = True
+                pc += size
             run.clear()
 
         for c in sec.contents:
             if isinstance(c, Assign):
-                flush_run()
+                flush()
                 if c.symbol == ".":
-                    target = _expr(c.expr, script, ".")
-                    out.append(instr_line("DS.B", f"[{target} - .]"))
-                elif isinstance(c.expr, Dot):
-                    out.append(f"{c.symbol}:")
+                    target = ev(c.expr, pc)
+                    if target < pc:
+                        raise LayoutError(
+                            f"`. = ...` in {sec.name} moves the location "
+                            f"back from ${pc:04X} to ${target:04X}"
+                        )
+                    pc = target
                 else:
-                    out.append(
-                        f"{c.symbol}\tEQU\t{_expr(c.expr, script, '.')}"
-                    )
+                    sym[c.symbol] = ev(c.expr, pc)
                 continue
             assert isinstance(c, Input)
-            for k, unit in enumerate(units):
+            for unit in units:
                 name = unit.path.replace("\\", "/").rsplit("/", 1)[-1]
                 if not fnmatch.fnmatchcase(name, c.file):
                     continue
                 for it in unit.items:
-                    if (k, it.name) in placed:
+                    if (unit.index, it.name) in placed:
                         continue
                     if not any(fnmatch.fnmatchcase(it.section, p)
                                for p in c.patterns):
@@ -388,50 +381,48 @@ def layout_lines(
                             f"NOLOAD output section {sec.name} can't "
                             f"hold it"
                         )
-                    placed.add((k, it.name))
-                    run.append(unit.chunks[it.name])
-        flush_run()
-        out.append(f"__{s}_end:")
+                    placed.add((unit.index, it.name))
+                    it_section = unit.sections[it.name]
+                    run.append(Entry(
+                        name=it.name,
+                        function=bool(it_section.flags & E.SHF_EXECINSTR),
+                        tail=unit.tails.get(it.name),
+                        payload=(unit, it_section),
+                    ))
+        flush()
+        out.size = pc - vma
+        end = pc
+        sym[f"__{s}_end"] = end
+        sym[f"__{s}_size"] = out.size
         if relocated:
-            out.append(instr_line("REND"))
-            out.append(f"__{s}_load_end:")
+            sym[f"__{s}_load_end"] = lma + out.size
         else:
-            out.append(f"__{s}_load\tEQU\t__{s}_start")
-        for region, end_label in (
-            (sec.region, f"__{s}_end"),
-            (sec.load_region, f"__{s}_load_end"),
+            sym[f"__{s}_load"] = vma
+            sym[f"__{s}_load_end"] = end
+        for region, last in (
+            (sec.region, end), (sec.load_region, lma + out.size),
         ):
             if region is None:
                 continue
             r = script.regions[region]
-            out.extend(_overflow_check(sec.name, region, r.end, end_label,
-                                       instr_line))
-            cursor[region] = end_label
-        prev_end = f"__{s}_end"
+            if last > r.end:
+                raise LayoutError(
+                    f"section {sec.name} runs past the end of region "
+                    f"{region} by {last - r.end} bytes"
+                )
+            cursor[region] = last
+        layout.outputs.append(out)
+        prev_end = end
     unplaced = [
         f"`{it.name}` (section {it.section}, {unit.path})"
-        for k, unit in enumerate(units) for it in unit.items
-        if (k, it.name) not in placed
+        for unit in units for it in unit.items
+        if (unit.index, it.name) not in placed
     ]
     if unplaced:
         raise LayoutError(
-            "no output section in the script takes "
-            + ", ".join(unplaced)
+            "no output section in the script takes " + ", ".join(unplaced)
         )
-    return out
-
-
-def _overflow_check(section, region, end, end_label, instr_line):
-    return [
-        instr_line("IF", f"{end_label} > ${end:04X}"),
-        instr_line(
-            "ECHO",
-            f'"section {section} runs past the end of region {region} by",'
-            f" [{end_label} - ${end:04X}]d, \"bytes\"",
-        ),
-        instr_line("ERR"),
-        instr_line("ENDIF"),
-    ]
+    return layout
 
 
 def startup_lines(script: Script, instr_line) -> list[str]:
@@ -443,8 +434,8 @@ def startup_lines(script: Script, instr_line) -> list[str]:
         relocated = sec.at is not None or sec.load_region is not None
         if not (relocated or sec.noload):
             continue
-        s = _sym(sec.name)
-        size = f"[__{s}_end - __{s}_start]"
+        s = section_symbol(sec.name)
+        size = f"__{s}_size"
         if relocated:
             out += [
                 instr_line("LDA", f"#<__{s}_load"),

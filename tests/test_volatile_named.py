@@ -5,7 +5,7 @@ volatile load or store (`_volatile_scalar`): `IndexedLoad` /
 `IndexedSymbolStore` at index 0 for an object with static storage,
 and `GetAddress` plus `Load` / `Store` for an automatic one. Before,
 the access was a plain `Copy`, so `KBD;` was dropped in both
-pipelines and, under --optimize, `while (!(KBD & 0x80)) ;` read KBD
+pipelines and, under -O, `while (!(KBD & 0x80)) ;` read KBD
 once and didn't wait.
 
 Each test runs in both pipelines. The simulator can't change memory

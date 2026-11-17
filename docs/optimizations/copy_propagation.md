@@ -5,7 +5,7 @@
 replaces each use of a `Copy`'s destination with the `Copy`'s
 source. It runs on SSA-form TAC in the optimizer's fixed point, after
 loop-invariant hoisting and just before dead-store elimination, and
-only under `--optimize`.
+only under `-O`.
 
 In SSA form each renamed variable is written exactly once, so after
 `Copy(y, x)` the name `x` holds the value of `y` at every place that

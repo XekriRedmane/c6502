@@ -7,7 +7,7 @@ into one direct conditional jump. It runs in the TAC fixed-point loop
 as part of the `fold_producer_jumps` `RuleSet`, together with the
 [AND jump fold](and_zero_jump_fold.md) and the
 [logical-not jump fold](lnot_jump_fold.md). It runs only under
-`--optimize`.
+`-O`.
 
 `c99_to_tac` lowers `if (a == 0)` as a `Binary(==, ...)` that writes
 0 or 1 into a temporary, followed by a `JumpIfFalse` on that

@@ -1,7 +1,7 @@
 # passes/optimization_asm/CLAUDE.md
 
 Asm-level SSA round-trip with byte-granular regalloc. Active under
-`--optimize`. Sits between `tac_to_asm` (which produces `asm_ast`) and
+`-O`. Sits between `tac_to_asm` (which produces `asm_ast`) and
 `replace_pseudoregisters_bare_exit` (which resolves Pseudos to
 concrete operands). The root pipeline overview lives in
 `/project/c6502/CLAUDE.md`; the TAC-level optimizer that runs earlier

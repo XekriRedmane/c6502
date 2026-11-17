@@ -1,6 +1,6 @@
 """`short`, `unsigned short`, and unary `+`: parsing, type checking,
 and programs run through the TAC simulator and the asm simulator
-with and without `--optimize`."""
+with and without `-O`."""
 
 from __future__ import annotations
 

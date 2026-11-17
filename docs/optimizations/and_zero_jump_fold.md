@@ -7,7 +7,7 @@ turns a bit test of a byte, `if (flags & mask)`, into a
 fixed-point loop as part of the `fold_producer_jumps` `RuleSet`,
 together with the [comparison jump fold](cmp_zero_jump_fold.md) and
 the [logical-not jump fold](lnot_jump_fold.md). It runs only under
-`--optimize`.
+`-O`.
 
 C99 promotes an `unsigned char` operand of `&` to `int`, so
 `c99_to_tac` emits a `ZeroExtend`, a 2-byte `BitwiseAnd`, and a jump

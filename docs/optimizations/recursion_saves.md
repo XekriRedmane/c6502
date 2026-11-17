@@ -5,7 +5,7 @@
 which values a recursive function saves on the hardware stack around
 each call that can recurse, and `tac_to_asm` emits the `PHA` and
 `PLA` instructions. It applies only to calls under `#pragma c6502
-call save(hardware_stack)`, and only under `--optimize`.
+call save(hardware_stack)`, and only under `-O`.
 
 A function on a cycle of calls normally can't have a [private local
 pool](zp_local_pools.md): the call that recurses runs the same code
@@ -64,7 +64,7 @@ void descend(void) {
 }
 ```
 
-The "Before" listing is the same `--optimize` compile without the
+The "Before" listing is the same `-O` compile without the
 pragma.
 
 ### Before
@@ -195,7 +195,7 @@ PHA` for each byte before the call, and `PLA; STA g` after it.
   every other function they call has a pool too.
 
 The cycle has to be within one source file, since each file's compile
-plans its own saves. `--link` takes such a cycle as the compile did:
+plans its own saves. The linker takes such a cycle as the compile did:
 the link metadata marks each call edge whose calls are all under the
 pragma (`; call f -> f saved`), and the linker's allocators see the
 cycle through those marks (`hw_stack_cycles`). Any other cycle is a

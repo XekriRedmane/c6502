@@ -3,7 +3,7 @@
 `apply_x_save_slot_load` in
 [passes/x_save_slot_load.py](../../passes/x_save_slot_load.py)
 rewrites a load from the memory byte that X is saved to as a read of X
-itself. It runs once under `--optimize`, after the
+itself. It runs once under `-O`, after the
 [count-down counter promotion](counter_to_index_reg.md) and before the
 second peephole fixed point, which removes the `STX` / `LDX` pairs the
 rewrite leaves dead. The unoptimized pipeline doesn't run it.

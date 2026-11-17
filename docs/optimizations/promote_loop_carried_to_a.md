@@ -3,7 +3,7 @@
 `apply_promote_loop_carried_to_a` in
 [passes/promote_loop_carried_to_a.py](../../passes/promote_loop_carried_to_a.py)
 moves a `register` parameter that a loop reads and increments out of
-its zero-page save byte and into A. It runs once under `--optimize`,
+its zero-page save byte and into A. It runs once under `-O`,
 after the first peephole fixed point and just before the
 [X-pivot promotion](loop_counter_to_x.md), and the second peephole
 fixed point cleans up after it. The unoptimized pipeline doesn't run

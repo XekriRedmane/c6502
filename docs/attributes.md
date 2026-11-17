@@ -51,7 +51,7 @@ for it shows the C23 form.
 C23's standard attributes are accepted where C23 allows them:
 `deprecated`, `maybe_unused`, `nodiscard`, `noreturn`, and
 `fallthrough`, the last as `[[fallthrough]];` in a switch. Only
-`noreturn` (or `_Noreturn`) changes anything. Under `--optimize`, the
+`noreturn` (or `_Noreturn`) changes anything. Under `-O`, the
 code after a call to a function that any declaration marks with it is
 dropped, and the call becomes a `JMP`
 ([docs/optimizations/noreturn_call.md](optimizations/noreturn_call.md)).
@@ -97,7 +97,7 @@ result comes back in A, and an `int`-sized one comes back with its low
 byte in A and its high byte in X. A pointer, and anything wider, comes
 back in the zero-page block called `HARGS`.
 
-With `--optimize`, every function that can use `zp_abi` gets it, so
+With `-O`, every function that can use `zp_abi` gets it, so
 you rarely need to write it on a function you define. Writing it
 anyway makes the compiler report an error when the function can't
 use it, for instance because it's recursive. On a ROM routine, though,
@@ -207,8 +207,8 @@ store an argument at the same bytes (a function with a `zeropage(addr)`
 parameter there, or a function defined in another source file, which
 might call one), the function first copies the parameter into a local
 of its own. Like a `register` parameter, a `zeropage(addr)` parameter
-needs the function to use `zp_abi` (with `--optimize`), so a function
-that can't, such as a recursive one, is an error. Without `--optimize`,
+needs the function to use `zp_abi` (with `-O`), so a function
+that can't, such as a recursive one, is an error. Without `-O`,
 calls between functions the compiler compiles pass every argument on
 the soft stack, as they do for `register` parameters. Each declaration
 of the function has to give the parameter the same address.
@@ -246,14 +246,14 @@ Every declaration of the function has to carry the attribute, since a
 caller compiled without it would read A. You can't take the
 function's address, because a call through a pointer reads A.
 
-Under `--optimize`, a `static` function returning `bool` gets the same
+Under `-O`, a `static` function returning `bool` gets the same
 convention without the attribute when every call to it branches on
 the result or returns it from another such function, and its address
 isn't taken
 ([carry_return_choice.md](optimizations/carry_return_choice.md)). A
 `bool` function with external linkage gets it whenever it's zp_abi,
 since every unit can make that choice from the declaration, and
-`--link` checks that the units agree. Such a function returns
+The linker checks that the units agree. Such a function returns
 `unsigned char` to keep its result in A.
 
 #### A value and a flag
@@ -322,7 +322,7 @@ compiler writes a routine called `__zp_init` that stores each
 zero-page object's initial value. The program's startup code has to
 call `__zp_init` before `main`.
 
-With `--optimize`, the compiler also moves the busiest scalar globals
+With `-O`, the compiler also moves the busiest scalar globals
 into the zero-page bytes left below `$80`, without the attribute
 ([zero-page promotion](optimizations/zp_promotion.md)). The attribute
 is still the way to be sure a variable gets one of them.
@@ -339,7 +339,7 @@ extern uint8_t hits [[c6502::zeropage]];
 uint8_t hits [[c6502::zeropage]] = 0;
 ```
 
-A file that only declares `hits` doesn't give it an address. `--link`
+A file that only declares `hits` doesn't give it an address. The linker
 places every file's bare `zeropage` objects for the whole program,
 keeps each `zeropage(addr)` object where it was declared, and writes
 one `__zp_init` that stores them all. It's an error to define the
@@ -461,7 +461,7 @@ byte.
 
 `section` puts a function or an object with static storage in a
 named section instead of the one it would go in (`.text`, `.rodata`,
-`.data`, or `.bss`). A linker script given to `compile.py --link -T`
+`.data`, or `.bss`). A linker script given to `compile.py -T`
 then decides where the section goes in memory:
 
 ```c
@@ -542,7 +542,7 @@ int main(void) {
 }
 ```
 
-With `--optimize`, the output starts with an `EQU` line for each
+With `-O`, the output starts with an `EQU` line for each
 name the header declares, and `main` compiles to the following.
 
 ```
@@ -564,7 +564,7 @@ main:
 
 `RDKEY` leaves the key in A and `COUT` reads it from A, so the
 compiler passes it along without storing it anywhere. The calls work
-the same way without `--optimize`, although the code around them is
+the same way without `-O`, although the code around them is
 longer.
 
 `HOME` and `RDKEY` take no arguments, but they still get `zp_abi`.
@@ -615,7 +615,7 @@ uint8_t wait_key(void) {
 
 Because `KBD` is `volatile`, the loop reads it on every pass, and
 `KBDSTRB;` reads `KBDSTRB` even though the value isn't used. With
-`--optimize`, `wait_key` compiles to the following.
+`-O`, `wait_key` compiles to the following.
 
 ```
 wait_key:
@@ -705,9 +705,9 @@ in a program that calls the Monitor should include the header.
 
 A header also lets every source file declare the routines the same
 way, and the compiler checks that all declarations of a name agree.
-When several source files are compiled separately and joined with
-`compile.py --link`, each routine's name is bound once, and the link
-fails if two files give a name different addresses.
+When several source files are compiled separately and linked,
+each routine's name is bound once, and the link fails if two
+files give a name different addresses.
 
 ## What the compiler rejects
 
@@ -716,7 +716,7 @@ declaration and the reason. `compile.py` prints it on one line, as
 `<file>: error: <message>`, and exits with status 1.
 
 ```
-$ compile.py rom.c --codegen
+$ compile.py rom.c -S
 rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte comes back in X
 ```
 
@@ -729,8 +729,8 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | Reserved zero-page bytes that leave no room below `$80` for the runtime's block | The runtime needs `HARGS` and three 2-byte pointers in zero page, and the compiler's own pools use `$80`-`$FF`. |
 | A `register` parameter on a function with `address` but no `zp_abi` | Without `zp_abi`, arguments go on the soft stack, which the ROM routine doesn't read. |
 | A `zp_abi` routine with `address` and a parameter that has neither `register`, `in_*`, nor `zeropage(addr)` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
-| A `zeropage(addr)` parameter on a function that can't use `zp_abi` with `--optimize`, such as a recursive one | Only `zp_abi` passes arguments in zero page. |
-| Declarations of a function that give a parameter different addresses, or `zeropage(addr)` on only some of them | A caller would store the argument where the function doesn't read it. `--link` checks this across source files too. |
+| A `zeropage(addr)` parameter on a function that can't use `zp_abi` with `-O`, such as a recursive one | Only `zp_abi` passes arguments in zero page. |
+| Declarations of a function that give a parameter different addresses, or `zeropage(addr)` on only some of them | A caller would store the argument where the function doesn't read it. The linker checks this across source files too. |
 | `zeropage(addr)` on a `register` parameter, without an address, or past `$FF` | The parameter arrives either in a register or in zero page, at one address. |
 | Two parameters that name the same register | A register holds one value. |
 | A pair on a 1-byte parameter, or one register on a 2-byte one | Each byte needs its own register. |
@@ -752,7 +752,7 @@ scrolling, and keyboard input continue into the 80-column firmware
 at `$C100`. The Monitor headers cover the bytes the Monitor ROM
 listing shows, and any zero page that firmware uses isn't covered.
 
-**Linking.** `--link` chooses where the runtime's zero-page block
+**Linking.** The linker chooses where the runtime's zero-page block
 goes for the whole program, around every file's zero-page objects, so
 a file that includes `<apple2/monitor_io.h>` links with one that
 doesn't. Files compiled before the linker recorded how much of `HARGS`

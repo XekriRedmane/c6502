@@ -43,9 +43,9 @@ error is an `ERR` result like any other, so the program is saved.
 Every program runs three ways, and main()'s return is compared:
 
 - `tac`: the TAC interpreter on unoptimized TAC.
-- `unopt`: the asm simulator on `compile.py --codegen` output
+- `unopt`: the asm simulator on `compile.py -S` output
   (soft stack everywhere).
-- `opt`: the asm simulator on `compile.py --codegen --optimize`
+- `opt`: the asm simulator on `compile.py -S -O`
   output (zp_abi, private pools, `register` placement).
 
 A result is an int, or a string starting with `ERR` or `TIMEOUT`.
@@ -89,7 +89,7 @@ calls on purpose. About 30% of the functions return `bool`, and half
 the calls to them are `if` conditions, so the carry-flag return is
 checked both as a value and as a branch. Half of those functions
 carry `[[c6502::return_bool_in_carry]]`, and the rest return in the
-carry flag under `--optimize` when they're zp_abi, by the compiler's
+carry flag under `-O` when they're zp_abi, by the compiler's
 choice (passes/carry_return_choice.py). Those choices come from
 random streams of their own (`crng`, and `arng` for the attribute),
 so adding them left the rest of each older seed's program as it was.
@@ -142,10 +142,10 @@ more:
   separate fixed-point rounds (seed 987, rejected by the assembler);
 - move coalescing putting the shift temp of `p *= 5` in `p`'s slot
   while `p` was still to be read (seed 1921, a wrong value with
-  --optimize);
+  -O);
 - `redundant_load` taking an empty `z_reflects` to mean "Z reflects
   A", after a soft-stack store's `LDY #off` had set Z (seed 2391, a
-  wrong value without --optimize).
+  wrong value without -O).
 
 Once it declared objects `volatile`, 43 of seeds 4400-4999 came out
 wrong in every path, the TAC interpreter included: `_emit_cast`
@@ -180,7 +180,7 @@ generator.
 program. `main` returns the checksum folded to 15 bits instead of
 printing it, and `size_t` is `unsigned int`. The
 TAC result is the reference. A program takes about 6 seconds, and
-most of them need more than 253 bytes of frame without --optimize,
+most of them need more than 253 bytes of frame without -O,
 so the runner counts them as rejected and compares only the
 optimized path against TAC.
 
@@ -202,7 +202,7 @@ pass, and the function, after which `main` returns something other
 than it did on unoptimized TAC. `tac_sim.py` runs the optimizer's own
 instructions and the SSA form between passes, so this works on any
 program, without reducing it first. If no TAC pass changes the
-result but the `--optimize` path is still wrong, the bug is in
+result but the `-O` path is still wrong, the bug is in
 `tac_to_asm` or an asm pass. Then turn off the asm passes in
 `compile` one at a time (replace `compile.apply_<name>` with an
 identity) until the result comes out right, which is how

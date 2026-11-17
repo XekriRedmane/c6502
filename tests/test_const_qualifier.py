@@ -16,7 +16,7 @@ Coverage:
     `const int *`).
   - Arithmetic on const operands strips the qualifier — `const int +
     const int` produces `int`, not `const int`.
-  - End-to-end compilation through `--codegen` for valid programs.
+  - End-to-end compilation through `-S` for valid programs.
 
 c6502 deliberately defers the C99 §6.5.16.1 pointer-assignment
 qualifier compatibility check (assigning `const int *` to `int *`

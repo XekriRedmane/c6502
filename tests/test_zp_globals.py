@@ -6,10 +6,9 @@ rule, placement (fixed and automatic, overlaps, ranges, `extern`),
 the generated code (EQU binding, no storage, `__zp_init`, `(zp),Y`
 on a zero-page pointer, pinned bytes kept out of the compiler's
 pools), simulator runs of initialization and aliasing in both
-pipelines, promotion of busy globals under `--optimize`, and
-linking units that share zero-page objects (`compile.py --link`),
-including putting back a promoted object that doesn't fit, run
-through dasm when it's installed.
+pipelines, promotion of busy globals under `-O`, and
+linking units that share zero-page objects, including putting back
+a promoted object that doesn't fit, run in the simulator.
 """
 from __future__ import annotations
 
@@ -229,7 +228,7 @@ _PROMOTE = (
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestPromotion(unittest.TestCase):
-    """`--optimize` moves busy scalar globals into zero page."""
+    """`-O` moves busy scalar globals into zero page."""
 
     def test_busy_scalars_promoted(self) -> None:
         asm = _codegen(_PROMOTE)
@@ -387,30 +386,26 @@ _UNIT_B = _HEADER + (
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestLink(unittest.TestCase):
-    """`compile.py --link` places the zero-page objects of every unit
+    """Linking places the zero-page objects of every unit
     for the whole program and merges their `__zp_init`s."""
 
     def _link(self, *sources: str) -> tuple[int, str, str]:
-        """Compiles each source with `--optimize` and links them.
-        Returns the exit code, the linked text, and stderr."""
-        from compile import main as compile_main
+        """Compiles each source with `-O` to an object and links them.
+        Returns the exit code, the linked program as text
+        (`link_helpers.linked_text`), and stderr."""
+        from tests.link_helpers import (
+            compile_object, link_capture_stderr, linked_text,
+        )
         with tempfile.TemporaryDirectory() as tmp:
             paths = []
             for k, src in enumerate(sources):
-                path = Path(tmp) / f"u{k}.asm"
-                with patch("sys.stdin", io.StringIO(src)):
-                    self.assertEqual(compile_main([
-                        "compile.py", "-", "--codegen", "--optimize",
-                        "-o", str(path),
-                    ]), 0)
-                paths.append(str(path))
-            out = Path(tmp) / "out.asm"
-            err = io.StringIO()
-            with patch("sys.stderr", err):
-                rc = compile_main(["compile.py", "--link", *paths,
-                                   "-o", str(out)])
-            text = out.read_text() if rc == 0 else ""
-        return rc, text, err.getvalue()
+                path = Path(tmp) / f"u{k}.o"
+                self.assertEqual(compile_object(src, path), 0)
+                paths.append(path)
+            out = Path(tmp) / "out"
+            rc, err = link_capture_stderr(paths, out)
+            text = linked_text(out) if rc == 0 else ""
+        return rc, text, err
 
     def test_objects_placed_for_the_whole_program(self) -> None:
         rc, text, err = self._link(_UNIT_A, _UNIT_B)
@@ -433,13 +428,12 @@ class TestLink(unittest.TestCase):
                       "STA   big+1"):
             self.assertIn(store, init)
 
-    @unittest.skipUnless(shutil.which("dasm"), "dasm not installed")
     def test_linked_program_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = self._link(_UNIT_A, _UNIT_B)
         self.assertEqual(rc, 0, err)
         # total = 5 + (1+2+3+4) * 2 = 25, big = 1000 + 25.
-        self.assertEqual(build_linked_sim(text).run().return_int(),
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          25 + 1025)
 
     # Unit A leaves 4 bytes below $80; unit B promotes three busy
@@ -469,7 +463,6 @@ class TestLink(unittest.TestCase):
         self.assertIn(f"\n{back}:\n   DC.B", text)
         self.assertNotIn(f"STA   {back}\n", text[text.index("__zp_init:"):])
 
-    @unittest.skipUnless(shutil.which("dasm"), "dasm not installed")
     def test_promoted_object_that_doesnt_fit_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = self._link(self._FULL, self._COUNTERS)
@@ -479,7 +472,7 @@ class TestLink(unittest.TestCase):
             a += 1
             b += a
             c += b
-        self.assertEqual(build_linked_sim(text).run().return_int(),
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          (a + b + c + 3) & 0xFFFF)
 
     def test_promoted_pointer_has_to_fit(self) -> None:

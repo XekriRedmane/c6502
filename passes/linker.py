@@ -1,19 +1,20 @@
-"""Multi-TU linker for c6502.
+"""The c6502 linker: links relocatable objects (`compile.py -c -O`)
+into an executable.
 
-`compile.py --link foo.asm bar.asm -o out.asm` reads N
-optimized `.asm` files, re-allocates every `__zpabi_*` and
-`__local_*` slot symbol over the **merged** call graph, and
-emits a single `.asm` with one global EQU block plus the
-function bodies concatenated in input order.
+    compile.py -O a.o b.o -o prog          # one section after another
+    compile.py -O -T script.ld a.o b.o -o prog
+
+Linking is where c6502 does its whole-program optimization: each unit
+leaves its zero-page slots, its zero-page objects, and the runtime's
+block to the linker, which places them for the program as a whole.
 
 What "linking" does at the call-graph level:
 
-  * Unions every TU's `LinkMetadata` (see
-    `passes.zp_link_metadata`) into a program-level view of
-    function definitions, zp_abi extern declarations, and call
-    edges.
-  * Detects cross-TU duplicate definitions (same function
-    defined in two `.asm` files) — link error.
+  * Unions every unit's `LinkMetadata` (see
+    `passes.zp_link_metadata`, the section `.c6502.link` of each
+    object) into a program-level view of function definitions, zp_abi
+    extern declarations, and call edges.
+  * Detects cross-TU duplicate definitions — link error.
   * Detects cross-TU recursion that no per-TU compile could
     have seen — link error.
   * Detects calls to functions that aren't in any TU's `def`
@@ -27,65 +28,82 @@ What "linking" does at the call-graph level:
     runs in-process. The output is the global address binding
     for every slot symbol.
 
-Eligibility caveat (Phase 3 MVP). The linker requires every
-function defined across all input TUs to be eligible for the
-private-pool model: no `IndirectCall`, no participation in
-any cycle (local or cross-TU), and every callee either
-defined in some TU or declared zp_abi extern. Functions that
-were ineligible at per-TU compile time emitted body locals as
-numeric `ZP(addr, 0)` operands (not `__local_*` symbols), so
-the linker has nothing to re-allocate there — and the user's
-asm probably contains hardcoded ZP addresses that the linker
-can't reason about. A future Phase 4 could lift this
-restriction by extending the metadata block to record
-ineligible functions' numeric ZP usage and treating those
-addresses as immutably blocked.
+Eligibility caveat. The linker requires every function defined across
+all input TUs to be eligible for the private-pool model: no
+`IndirectCall`, no participation in any cycle (local or cross-TU,
+except one whose every call saves on the hardware stack), and every
+callee either defined in some TU or declared zp_abi extern.
 
-The runtime's block. Every TU names SSP, FP, HARGS, and DPTR only by
-name, and lists how many HARGS bytes it uses, so the linker chooses
+Addressing modes. Each unit was assembled with the addressing modes
+its own compile chose, from its own addresses for the names the
+linker places. Two things can differ in the whole program.
+
+  * A name the unit reached with zero-page addressing (`R_MOS_ADDR8`)
+    can end up above $FF: a slot that no longer fits in zero page, or
+    a global that `-O` promoted into zero page and that the program
+    has no room for, which goes back in the data segment. Each object
+    keeps the text it was assembled from (`.c6502.asm`), and the
+    linker assembles such a unit again with the program's addresses
+    (`_reassemble`), so its instructions reach the name with absolute
+    addressing.
+  * A name the unit reached with absolute addressing can end up in
+    zero page: most often a global another unit promoted, which this
+    unit only declared `extern`. The linker shortens each such
+    instruction to its zero-page form (`binutils.ld.relax`).
+
+Either way, each instruction gets the addressing mode dasm would have
+given it from the program's addresses.
+
+The runtime's block. Every unit names SSP, FP, HARGS, and DPTR only by
+symbol, and lists how many HARGS bytes it uses, so the linker chooses
 the program's layout (`_choose_layout`) the way the compiler does for
 one TU, from every TU's fixed zero-page objects and the largest
 need. A TU that includes `<apple2/monitor_io.h>`, which moves the
-block, links with one that doesn't. TUs from before the need was
-recorded have to agree on the layout instead.
+block, links with one that doesn't.
 
-Zero-page objects (`passes/zp_globals.py`). Each TU lists its
+Zero-page objects (`passes/zp_globals.py`). Each unit lists its
 zero-page objects in the metadata, and refers to them only by name,
-so the linker re-places them for the whole program
+so the linker places them for the whole program
 (`_place_zp_objects`): an object declared with an address keeps it,
 and the rest go in the lowest free bytes below `$80`, the declared
-ones first and then the ones `--optimize` promoted (`weight=` in the
-metadata), densest first. A promoted object that doesn't fit goes
-back in the data segment (`_data_lines`), unless some unit uses it
-as an `(zp),Y` pointer, which only works in zero page. Their bytes
-are kept out of the slot allocators, and each TU's `__zp_init` is
-replaced with one that stores every object's initial bytes
-(`_init_lines`).
+ones first and then the ones `-O` promoted (`weight=` in the
+metadata), densest first. Their bytes are kept out of the slot
+allocators, and each unit's `__zp_init` is left out in favor of one
+the linker writes, which stores every object's initial bytes
+(`_init_lines`) and runs the startup code a script needs.
 
 Names. An internal name (a `static`, or a string literal `str@N`)
 that another unit also defines, or that names something else in the
-program, is renamed `name.k` in unit `k`
-(`link_layout.rename_locals`); two units defining one external name
-is an error.
+program, is renamed `name.k` in unit `k` (`_rename_locals`), so that
+every item has a name of its own in the executable; two units
+defining one external name is an error. A name no unit defines and
+the linker doesn't place has to be given with `--defsym`.
 
-Layout. With a linker script (`-T`, passes/link_script.py), the
-output is laid out by it: each function and object is an item in a
-section (passes/sections.py), and the output sections become dasm
-segments at the script's addresses (passes/link_layout.py). The
-startup code that copies `AT>` sections and clears `NOLOAD` ones goes
-in `__zp_init`. A slot that doesn't fit in zero page goes in
-`__spill`, an item in `.bss` that the script places, instead of at
-the allocators' fixed spill address ($0200 up), which the program may
-use for something else. Without a script, the units' bodies follow
-each other as before, with no address.
+Layout (passes/link_layout.py). Each item is a section of its own in
+its object. With a linker script (`-T`, passes/link_script.py), the
+script places them. Without one, `.text`, `.rodata`, `.data`, and
+`.bss` follow each other from the origin ($0800 unless given). A
+slot that doesn't fit in zero page goes in `__spill`, an item in
+`.bss`, when there's a script, instead of at the allocators' fixed
+spill address ($0200 up), which the program may use for something
+else.
 
-`link_files` is the top-level entry point.
+The output is an ELF executable (binutils/elf.py) with one loadable
+segment per output section, every symbol of every unit at its
+address, the names the linker placed as absolute symbols, and the
+merged link metadata.
+
+`link_objects` and `link_files` are the entry points.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 import tac_ast
+from binutils import elf as E
+from binutils.ld import (
+    LinkError, Resolver, executable, global_definitions, relax,
+)
 from passes.abi_selection import ParamLayout, SoftStackLayout, ZpLayout
 from passes.optimization.pool import Pool
 from passes.runtime_layout import RUNTIME_NAMES
@@ -93,6 +111,7 @@ from passes.zp_globals import AUTO_HI, INIT_FUNCTION
 from passes.zp_link_metadata import (
     ExternMeta,
     FunctionMeta,
+    ItemMeta,
     LinkMetadata,
     ZpObjectMeta,
     format_metadata,
@@ -106,77 +125,13 @@ from passes.zp_slot_allocation import (
     ZpSlotAllocationError, allocate_zp_slots,
 )
 
+__all__ = [
+    "LinkError", "ZpLocalAllocationError", "ZpSlotAllocationError",
+    "link_files", "link_objects",
+]
 
-class LinkError(Exception):
-    """Raised on a link-time validation failure — cross-TU
-    duplicate definitions, cycles spanning TUs, missing extern
-    declarations, or any function ineligible for the private-pool
-    model under the merged view."""
-
-
-# ---------------------------------------------------------------------------
-# File splitting.
-# ---------------------------------------------------------------------------
-
-
-_EQU_PATTERN = "\tEQU\t"
-_META_BEGIN = "; @zp-link-meta-begin"
-_META_END = "; @zp-link-meta-end"
-
-
-def _split_asm(text: str) -> tuple[list[str], list[str], list[str]]:
-    """Split `text` into (equ_lines, metadata_lines, body_lines).
-    EQU lines are detected by the `<sym>\\tEQU\\t$<value>` shape
-    asm_emit produces at the top. The metadata block is bracketed
-    by `@zp-link-meta-{begin,end}` comment markers.
-
-    Order matters: the per-TU emit puts EQUs first, then the
-    metadata block, then a blank line, then the body. This
-    splitter respects that order; lines outside both blocks
-    become body (preserving blank-line separators)."""
-    equ: list[str] = []
-    meta: list[str] = []
-    body: list[str] = []
-    in_meta = False
-    seen_meta = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped == _META_BEGIN:
-            in_meta = True
-            seen_meta = True
-            meta.append(line)
-            continue
-        if stripped == _META_END:
-            meta.append(line)
-            in_meta = False
-            continue
-        if in_meta:
-            meta.append(line)
-            continue
-        if _EQU_PATTERN in line and not body:
-            equ.append(line)
-            continue
-        # First non-EQU, non-meta line ends the EQU block; the
-        # blank separator after EQU isn't preserved (we re-emit a
-        # blank later). Same for the blank after the metadata
-        # block.
-        if not body and stripped == "" and (equ or seen_meta):
-            continue
-        body.append(line)
-    return equ, meta, body
-
-
-def _layout_text(layout: dict[str, int]) -> str:
-    return ", ".join(
-        f"{name}={addr}" if name == "HARGS size" else f"{name}=${addr:02X}"
-        for name, addr in sorted(layout.items())
-    ) or "(none)"
-
-
-def _parse_equ(line: str) -> tuple[str, int]:
-    """The name and address of a `<sym>\\tEQU\\t$<hex>` line."""
-    name, _, value = line.split("\t")
-    return name, int(value.strip().lstrip("$"), 16)
+# Where a link without a script puts `.text`.
+DEFAULT_ORIGIN = 0x0800
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +204,7 @@ def _carry_conflict(name: str) -> str:
     its `bool` in the carry flag."""
     return (
         f"the units disagree on whether `{name}` returns its `bool` in "
-        f"the carry flag. Under --optimize, a `bool` function with "
+        f"the carry flag. Under -O, a `bool` function with "
         f"external linkage does when it's zp_abi, so a unit that takes "
         f"its address, or one that can't give it zp_abi, sees it "
         f"differently from the others. A function that returns "
@@ -360,10 +315,9 @@ def _synthesize(
         ))
     prog = tac_ast.Program(top_level=top_level)
     # Build the abi dict from the metadata-embedded slot symbols.
-    # Each TU baked the symbol strings into its body when emitting
-    # the per-TU asm; the linker reuses them verbatim so the bodies
-    # don't need rewriting — only the EQU block (which we mint
-    # fresh below) and the addresses change.
+    # Each TU's object names its slots by these symbols, which it
+    # leaves undefined, so only the addresses the linker gives them
+    # change.
     abi: dict[str, ParamLayout] = {}
     for d in merged.defs:
         if d.params:
@@ -413,98 +367,83 @@ def link_files(
     input_paths: list[Path | str],
     output_path: Path | str,
     script_path: Path | str | None = None,
+    *,
+    origin: int = DEFAULT_ORIGIN,
+    defsyms: dict[str, int] | None = None,
 ) -> None:
-    """Read each input `.asm`, merge metadata, re-allocate every
-    slot symbol globally, and write a single `.asm` to
-    `output_path`. Raises `LinkError` on any validation failure;
-    raises `ZpSlotAllocationError` / `ZpLocalAllocationError` if
-    the merged graph can't be allocated within the configured ZP
-    + spill region (defaults to the same as the single-TU
-    pass)."""
-    if not input_paths:
-        raise LinkError("link requires at least one input .asm file")
-    # Read + split.
-    metas: list[LinkMetadata] = []
-    bodies: list[list[str]] = []
-    fixed: dict[str, int] = {}
-    unit_layouts: list[dict[str, int]] = []
+    """Links the objects at `input_paths` into the executable at
+    `output_path`, laid out by the linker script at `script_path` if
+    one is given. Raises `LinkError` on any failure, and
+    `ZpSlotAllocationError` / `ZpLocalAllocationError` when the merged
+    graph's slots can't be allocated."""
+    inputs = []
     for path in input_paths:
-        text = Path(path).read_text()
-        equ, _, body = _split_asm(text)
-        meta = parse_metadata(text)
-        zp_names = {z.name for z in meta.zp_objects}
-        # The other EQUs bind user names. One at $100 or above is a
-        # function or object with `[[c6502::address(...)]]`,
-        # which every unit binds to the same address, so it's kept.
-        # A zero-page object is listed in the metadata, and is placed
-        # again below.
-        unit_layout: dict[str, int] = {}
-        if meta.hargs_size is not None:
-            unit_layout["HARGS size"] = meta.hargs_size
-        for line in equ:
-            if line.startswith(("__zpabi_", "__local_")):
-                continue
-            name, addr = _parse_equ(line)
-            if name in zp_names:
-                continue
-            if name in RUNTIME_NAMES:
-                unit_layout[name] = addr
-            elif addr < 0x100:
-                raise LinkError(
-                    f"{path}: {name!r} is bound to ${addr:02X} in zero "
-                    f"page but isn't in the unit's link metadata; "
-                    f"compile it again with this compiler"
-                )
-            elif fixed.setdefault(name, addr) != addr:
-                raise LinkError(
-                    f"{path}: {name!r} is at ${addr:04X} here and at "
-                    f"${fixed[name]:04X} in an earlier unit"
-                )
-        unit_layouts.append(unit_layout)
-        metas.append(meta)
-        bodies.append(_without_init(body))
-    from passes.link_layout import LayoutError
-    script = None
-    if script_path is not None:
-        from passes.link_script import ScriptError, parse_script
         try:
-            script = parse_script(Path(script_path).read_text())
-        except ScriptError as e:
-            raise LinkError(f"{script_path}: {e}") from e
-        for path, meta, body in zip(input_paths, metas, bodies):
-            if not meta.items and any(line.strip() for line in body):
-                raise LinkError(
-                    f"{path} has no section information in its link "
-                    f"metadata; compile it again with this compiler"
-                )
-    # Give colliding internal names their own spellings.
-    from passes.link_layout import rename_locals
+            inputs.append((str(path), E.read_file(path)))
+        except E.ElfError as e:
+            raise LinkError(str(e)) from e
+    script = read_script(script_path) if script_path is not None else None
+    exe = link_objects(inputs, script, origin=origin, defsyms=defsyms)
+    Path(output_path).write_bytes(E.write(exe))
+
+
+def read_script(path: Path | str):
+    """The parsed linker script at `path`."""
+    from passes.link_script import ScriptError, parse_script
     try:
-        renamed = rename_locals(
-            [([it for it in m.items if it.name != INIT_FUNCTION],
-              m.zp_objects, body)
-             for m, body in zip(metas, bodies)],
-            set(fixed),
-        )
-    except LayoutError as e:
-        raise LinkError(str(e)) from e
-    bodies = [body for _, _, body in renamed]
-    unit_items = [items for items, _, _ in renamed]
-    for meta, (_, zp_objects, _) in zip(metas, renamed):
-        meta.zp_objects = zp_objects
+        return parse_script(Path(path).read_text())
+    except ScriptError as e:
+        raise LinkError(f"{path}: {e}") from e
+
+
+def link_objects(
+    inputs: list[tuple[str, E.ElfFile]],
+    script=None,
+    *,
+    origin: int = DEFAULT_ORIGIN,
+    defsyms: dict[str, int] | None = None,
+) -> E.ElfFile:
+    """The executable that links `inputs`, each an object and the name
+    it goes by (which the script's file patterns match without its
+    directory). `script` is a parsed linker script, or None for the
+    default layout from `origin`. `defsyms` gives addresses for names
+    no object defines, such as the runtime's helpers."""
+    from passes.link_layout import (
+        LayoutError, Unit, default_script, lay_out, startup_lines,
+        tail_jump,
+    )
+    if not inputs:
+        raise LinkError("linking needs at least one object")
+    defsyms = dict(defsyms or {})
+    metas: list[LinkMetadata] = []
+    objects: list[tuple[str, E.ElfFile]] = []
+    for path, obj in inputs:
+        if obj.type != E.ET_REL:
+            raise LinkError(f"{path} isn't a relocatable object")
+        text = obj.link_text()
+        try:
+            meta = parse_metadata(text) if text else LinkMetadata()
+        except ValueError as e:
+            raise LinkError(f"{path}: {e}") from e
+        meta.items = _object_items(meta, obj, path)
+        objects.append((path, _without_init(obj)))
+        meta.items = [it for it in meta.items if it.name != INIT_FUNCTION]
+        metas.append(meta)
+    _, absolute = global_definitions(objects)
+    fixed = dict(absolute)
+    # Give colliding internal names their own spellings.
+    renames = _rename_locals(objects, metas, set(fixed))
     # Merge + validate.
     merged = _merge(metas)
     _validate_eligibility(merged)
-    _drop_unused_locals(merged, bodies)
+    _drop_unused_locals(merged, objects)
     # Place the runtime's block, then the zero-page objects, then the
     # slots, each keeping off the bytes before it.
-    objects = _merge_zp_objects(metas)
-    startup_need = 0
+    zp_objects = _merge_zp_objects(metas)
+    startup = []
     if script is not None:
         from asm_emit import _instr_line
-        from passes.link_layout import startup_lines
-        if startup_lines(script, _instr_line):
-            startup_need = 4
+        startup = startup_lines(script, _instr_line)
     # The bytes where routines with a fixed address read a
     # `zeropage(addr)` parameter: nothing else of the program's may go
     # there.
@@ -513,36 +452,33 @@ def link_files(
         for a in r.pinned if a is not None
     )
     layout = _choose_layout(
-        input_paths, metas, unit_layouts, objects, startup_need,
-        param_bytes,
+        metas, zp_objects, 4 if startup else 0, param_bytes,
     )
     zp_addrs, demoted = _place_zp_objects(
-        objects, layout or {}, bodies, param_bytes,
+        zp_objects, layout, param_bytes, _pointer_names(objects),
     )
     zp_bytes = frozenset(
         b for name, addr in zp_addrs.items()
-        for b in range(addr, addr + objects[name][0].size)
+        for b in range(addr, addr + zp_objects[name][0].size)
     ) | param_bytes
     merged.zp_objects = [
         ZpObjectMeta(
-            name=name, size=objects[name][0].size, at=addr,
-            defined=any(r.defined for r in objects[name]),
-            init=next((r.init for r in objects[name] if r.defined), []),
+            name=name, size=zp_objects[name][0].size, at=addr,
+            defined=any(r.defined for r in zp_objects[name]),
+            init=next((r.init for r in zp_objects[name] if r.defined), []),
         )
         for name, addr in sorted(zp_addrs.items(), key=lambda kv: kv[1])
     ]
-    merged.hargs_size = layout.get("HARGS size")
-    merged.hargs_need = (
-        max(m.hargs_need for m in metas)
-        if metas and all(m.hargs_need is not None for m in metas)
-        else None
+    merged.hargs_size = layout["HARGS size"]
+    merged.hargs_need = max(
+        (m.hargs_need for m in metas if m.hargs_need is not None),
+        default=None,
     )
     # The values kept in parameter bytes across calls, as one program's
     # (passes/slot_sharing.py).
     merged.shares = _link_shares(merged, metas)
     # Synthesize the program shape the allocators expect.
     prog, abi, local_bytes = _synthesize(merged)
-    # Run the global allocators.
     # Every linked function has a private pool (`_validate_eligibility`),
     # so no function keeps a value in the pool's callee-saved half across
     # a call, and the slots can come from the whole pool.
@@ -569,154 +505,397 @@ def link_files(
         prog, abi, local_bytes, reserved=low_reserved, window=window,
         fallback=fallback, shares=merged.shares, **spill,
     )
-    # Slot names round-trip through the per-TU metadata block;
-    # reuse them verbatim so the body text doesn't need rewriting.
+    # Slot names round-trip through the per-TU metadata block, and the
+    # objects name the slots by them.
     slot_names_by_fn = {d.name: list(d.locals) for d in merged.defs}
     local_sym_to_addr = build_local_slot_symbols(
         local_pools, slot_names_by_fn=slot_names_by_fn,
     )
-    all_symbols = {
-        **{k: v for k, v in (layout or {}).items() if k in RUNTIME_NAMES},
-        **zp_sym_to_addr, **local_sym_to_addr, **fixed, **zp_addrs,
+    runtime = {k: v for k, v in layout.items() if k in RUNTIME_NAMES}
+    placed_names = {
+        **runtime, **zp_sym_to_addr, **local_sym_to_addr, **zp_addrs,
     }
     _bind_extern_params(
-        merged, [e for m in metas for e in m.externs], all_symbols,
+        merged, [e for m in metas for e in m.externs], placed_names,
     )
     spilled = {
-        name: addr - _SPILL_BASE for name, addr in all_symbols.items()
+        name: addr - _SPILL_BASE for name, addr in placed_names.items()
         if script is not None and addr >= _SPILL_BASE
-        and name not in fixed
     }
     for name in spilled:
-        del all_symbols[name]
-    # Format the output.
-    out_lines: list[str] = []
-    out_lines.extend(_format_equ_block(all_symbols))
-    for name, offset in sorted(spilled.items(), key=lambda kv: kv[1]):
-        out_lines.append(f"{name}\tEQU\t{_SPILL}+{offset}")
-    out_lines.append("")
-    out_lines.extend(format_metadata(merged))
-    out_lines.append("")
-    if script is None:
-        for i, body in enumerate(bodies):
-            if i > 0:
-                out_lines.append("")
-            out_lines.extend(body)
-        init = _init_lines(merged.zp_objects)
-        if init:
-            out_lines.append("")
-            out_lines.extend(init)
-        for name in demoted:
-            record = next(r for r in objects[name] if r.defined)
-            out_lines.append("")
-            out_lines.extend(_data_lines(record))
-    else:
-        spill_size = max(spilled.values(), default=-1) + 1
-        out_lines.extend(_scripted_body(
-            script, input_paths, unit_items, bodies, merged, objects,
-            demoted, (layout or {}).get("HARGS size"), spill_size,
-        ))
-    # LF on every platform, as compile.py writes.
-    Path(output_path).write_text(
-        "\n".join(out_lines) + "\n", encoding="utf-8", newline="\n",
+        del placed_names[name]
+
+    # A unit that reaches a name with zero-page addressing, where the
+    # program puts the name above $FF, is assembled again with the
+    # program's addresses (`_reassemble`).
+    _reassemble(objects, renames, placed_names, set(demoted) | set(spilled))
+
+    # Instructions that reach a name the linker put in zero page with
+    # absolute addressing get the zero-page form (`ld.relax`).
+    section_defs, absolute = global_definitions(objects)
+
+    def known(sym: E.Symbol) -> int | None:
+        if sym.defined:
+            return sym.value if sym.section == E.SHN_ABS else None
+        if sym.name in section_defs:
+            return None
+        for table in (placed_names, absolute, defsyms):
+            if sym.name in table:
+                return table[sym.name]
+        return None
+
+    for _, obj in objects:
+        for sec in obj.sections:
+            relax(sec, obj.symbols, known)
+
+    # The linker's own items: `__zp_init`, `__spill`, and the promoted
+    # objects put back in the data segment.
+    from asm_emit import _instr_line
+    own_lines = _init_lines(merged.zp_objects, startup)
+    spill_size = max(spilled.values(), default=-1) + 1
+    if spill_size:
+        own_lines += ["", f"{_SPILL}:", _instr_line("DS.B", str(spill_size))]
+    for name in demoted:
+        record = next(r for r in zp_objects[name] if r.defined)
+        own_lines += [""] + _data_lines(record)
+    units: list[Unit] = []
+    for k, ((path, obj), meta) in enumerate(zip(objects, metas)):
+        units.append(_unit(k, path, obj, meta.items, tail_jump))
+    if own_lines:
+        from binutils.assembler import AssemblerError, assemble
+        try:
+            own = assemble(
+                "\n".join(own_lines) + "\n", "the linker",
+                link_symbols={**runtime, **zp_addrs},
+            )
+        except AssemblerError as e:
+            raise LinkError(f"the linker's own code: {e}") from e
+        own_items = _object_items(LinkMetadata(), own, "the linker")
+        objects.append(("the linker", own))
+        units.append(_unit(len(units), "the linker", own, own_items,
+                           tail_jump))
+
+    # Lay the program out.
+    _, absolute = global_definitions(objects)
+
+    def lookup(name: str) -> int | None:
+        for table in (placed_names, absolute, defsyms):
+            if name in table:
+                return table[name]
+        return None
+
+    try:
+        placement = lay_out(
+            script if script is not None else default_script(units, origin),
+            units, lookup,
+        )
+    except LayoutError as e:
+        raise LinkError(str(e)) from e
+    placed = [p for out in placement.outputs for p in out.parts]
+    addr_of = {id(p.section): p for p in placed}
+    if spilled:
+        spill_section = units[-1].sections[_SPILL]
+        base = addr_of[id(spill_section)].addr
+        for name, offset in spilled.items():
+            placed_names[name] = base + offset
+    extra = {**placed_names, **placement.symbols, **defsyms}
+    resolver = Resolver(objects, placed, extra)
+    symbols = _output_symbols(
+        objects, placement.outputs, addr_of, placed_names, zp_objects,
+        placement.symbols, defsyms,
     )
+    main = resolver.defs.get("main")
+    entry = resolver.value(main[1], main[0]) if main else 0
+    link_text = "\n".join(format_metadata(merged)) + "\n"
+    return executable(objects, placement.outputs, resolver, symbols, entry,
+                      link_text)
 
 
 # Spilled slots get addresses from here up while allocating, which
-# `link_files` then rebases onto `__spill` when a script lays the
+# `link_objects` then rebases onto `__spill` when a script lays the
 # program out.
 _SPILL_BASE = 0xF000
 _SPILL = "__spill"
 
 
-def _scripted_body(
-    script, paths, unit_items, bodies, merged, objects, demoted,
-    hargs_size, spill_size: int = 0,
-) -> list[str]:
-    """The program's body laid out by `script`, with the linker's own
-    items (`__zp_init`, with the startup code, and the promoted
-    objects put back in the data segment) in a unit of their own."""
-    from asm_emit import _instr_line
-    from passes.link_layout import (
-        LayoutError, Unit, item_chunks, layout_lines, startup_lines,
-    )
-    from passes.zp_link_metadata import ItemMeta
-    startup = startup_lines(script, _instr_line)
-    if startup and hargs_size is not None and hargs_size < 4:
-        raise LinkError(
-            f"the startup code that copies and clears sections needs 4 "
-            f"bytes of HARGS, and the runtime's block has {hargs_size}"
-        )
-    units = []
-    try:
-        for path, items, body in zip(paths, unit_items, bodies):
-            units.append(Unit(
-                path=str(path), items=items, chunks=item_chunks(body, items),
-            ))
-        own_items: list[ItemMeta] = []
-        chunks: dict[str, list[str]] = {}
-        if spill_size:
-            own_items.append(ItemMeta(name=_SPILL, section=".bss", zero=True))
-            chunks[_SPILL] = [f"{_SPILL}:", _instr_line("DS.B", str(spill_size))]
-        init = _init_lines(merged.zp_objects, startup)
-        if init:
-            own_items.append(ItemMeta(name=INIT_FUNCTION, section=".text"))
-            chunks[INIT_FUNCTION] = init
-        for name in demoted:
-            record = next(r for r in objects[name] if r.defined)
-            zero = all(v == "$00" for v in record.init)
-            own_items.append(ItemMeta(
-                name=name, section=".bss" if zero else ".data", zero=zero,
-            ))
-            chunks[name] = (
-                [f"{name}:", _instr_line("DS.B", str(record.size))]
-                if zero else _data_lines(record)
+def _object_items(meta: LinkMetadata, obj: E.ElfFile, path: str) -> list[ItemMeta]:
+    """The items of `obj` in order: its metadata's, or, for an object
+    without metadata, one for each function and object symbol, in the
+    order of its sections. Raises `LinkError` when the metadata names
+    an item the object doesn't define."""
+    defined = {
+        s.name: s for s in obj.symbols
+        if isinstance(s.section, E.Section)
+        and s.type in (E.STT_FUNC, E.STT_OBJECT)
+    }
+    if meta.items:
+        missing = [it.name for it in meta.items if it.name not in defined]
+        if missing:
+            raise LinkError(
+                f"{path}: the link metadata lists {sorted(missing)}, which "
+                f"the object doesn't define"
             )
-        units.append(Unit(path="the linker", items=own_items, chunks=chunks))
-        return layout_lines(script, units, _instr_line)
-    except LayoutError as e:
-        raise LinkError(str(e)) from e
+        return list(meta.items)
+    order = {id(s): i for i, s in enumerate(obj.sections)}
+    syms = sorted(defined.values(), key=lambda s: order[id(s.section)])
+    return [
+        ItemMeta(name=s.name, section=s.section.name, local=not s.is_global,
+                 zero=s.section.type == E.SHT_NOBITS)
+        for s in syms
+    ]
 
 
-def _runtime_bytes(layout: dict[str, int] | None) -> frozenset[int]:
+def _item_symbol(obj: E.ElfFile, name: str) -> E.Symbol:
+    return next(
+        s for s in obj.symbols
+        if s.name == name and isinstance(s.section, E.Section)
+        and s.type in (E.STT_FUNC, E.STT_OBJECT)
+    )
+
+
+def _without_init(obj: E.ElfFile) -> E.ElfFile:
+    """`obj` without its `__zp_init` function, which the linker
+    replaces with one for the whole program."""
+    sym = next(
+        (s for s in obj.symbols if s.name == INIT_FUNCTION
+         and isinstance(s.section, E.Section) and s.type == E.STT_FUNC),
+        None,
+    )
+    if sym is None:
+        return obj
+    sec = sym.section
+    return E.ElfFile(
+        type=obj.type,
+        sections=[s for s in obj.sections if s is not sec],
+        symbols=[s for s in obj.symbols if s.section is not sec],
+        entry=obj.entry, flags=obj.flags,
+    )
+
+
+def _unit(k: int, path: str, obj: E.ElfFile, items: list[ItemMeta],
+          tail_jump):
+    from passes.link_layout import Unit
+    sections = {it.name: _item_symbol(obj, it.name).section for it in items}
+    tails = {}
+    for it in items:
+        sec = sections[it.name]
+        if sec.flags & E.SHF_EXECINSTR:
+            target = tail_jump(sec, obj.symbols)
+            if target is not None:
+                tails[it.name] = target
+    return Unit(path=path, index=k, items=items, sections=sections,
+                tails=tails)
+
+
+def _rename_locals(
+    objects: list[tuple[str, E.ElfFile]], metas: list[LinkMetadata],
+    taken: set[str],
+) -> list[dict[str, str]]:
+    """Gives every internal item and internal zero-page object whose
+    name another unit also uses, or that `taken` (the program's other
+    names) holds, a name of its own: `name.k`, for unit `k`, in the
+    unit's metadata and symbols. Returns each unit's renames. Raises
+    `LinkError` when two units define the same external name."""
+    owner: dict[str, int] = {}
+    users: dict[str, set[int]] = {}
+    for k, meta in enumerate(metas):
+        for it in meta.items:
+            users.setdefault(it.name, set()).add(k)
+            if not it.local:
+                if it.name in owner:
+                    raise LinkError(
+                        f"`{it.name}` is defined in multiple TUs"
+                    )
+                owner[it.name] = k
+        for z in meta.zp_objects:
+            users.setdefault(z.name, set()).add(k)
+    import dataclasses
+    out: list[dict[str, str]] = []
+    for k, ((_, obj), meta) in enumerate(zip(objects, metas)):
+        local_names = (
+            [it.name for it in meta.items if it.local]
+            + [z.name for z in meta.zp_objects if z.local]
+        )
+        renames = {
+            name: f"{name}.{k}" for name in local_names
+            if len(users[name]) > 1 or name in taken
+        }
+        out.append(renames)
+        if not renames:
+            continue
+        _apply_renames(obj, renames)
+        meta.items = [
+            dataclasses.replace(it, name=renames.get(it.name, it.name))
+            for it in meta.items
+        ]
+        meta.zp_objects = [
+            dataclasses.replace(z, name=renames.get(z.name, z.name))
+            for z in meta.zp_objects
+        ]
+    return out
+
+
+def _apply_renames(obj: E.ElfFile, renames: dict[str, str]) -> None:
+    for s in obj.symbols:
+        if s.name in renames and not (s.is_global and s.defined):
+            s.name = renames[s.name]
+
+
+def _pointer_names(objects: list[tuple[str, E.ElfFile]]) -> set[str]:
+    """The names some unit uses as an `(name),Y` or `(name,X)`
+    pointer, which has to be in zero page."""
+    from binutils.opcodes import DECODE
+    out: set[str] = set()
+    for _, obj in objects:
+        for sec in obj.sections:
+            for r in sec.relocs:
+                if r.type != E.R_MOS_ADDR8 or r.offset == 0:
+                    continue
+                op = DECODE.get(sec.data[r.offset - 1])
+                if op is not None and op[1] in ("indx", "indy"):
+                    out.add(r.symbol.name)
+    return out
+
+
+def _reassemble(
+    objects: list[tuple[str, E.ElfFile]], renames: list[dict[str, str]],
+    placed: dict[str, int], outside: set[str],
+) -> None:
+    """Assembles again, from the text it keeps (`.c6502.asm`), each
+    unit that reaches one of the names the linker placed with
+    zero-page addressing where the program puts that name above $FF
+    or in `outside` (a slot spilled into `__spill`, or a promoted
+    object put back in the data segment). Its instructions then reach
+    the name with absolute addressing, as dasm assembled the linked
+    text before the toolchain had objects. A unit without its text is
+    left alone, and `ld.relocate` reports the relocation that doesn't
+    fit."""
+    from binutils.assembler import AssemblerError, assemble
+    values: dict[str, int | None] = {name: None for name in outside}
+    values.update(placed)
+    for k, (path, obj) in enumerate(objects):
+        clash = any(
+            r.type == E.R_MOS_ADDR8 and not r.symbol.defined
+            and (r.symbol.name in outside
+                 or placed.get(r.symbol.name, 0) + r.addend > 0xFF)
+            for sec in obj.sections for r in sec.relocs
+        )
+        text = obj.source_text()
+        if not clash or text is None:
+            continue
+        # The unit's own names, before `_rename_locals`.
+        back = {new: old for old, new in renames[k].items()}
+        unit_values = {back.get(n, n): v for n, v in values.items()}
+        filename = next(
+            (s.name for s in obj.symbols if s.type == E.STT_FILE), path,
+        )
+        try:
+            new = assemble(text, filename, link_symbols=unit_values)
+        except AssemblerError as e:
+            raise LinkError(
+                f"{path}: assembling it again with the program's zero-page "
+                f"addresses: {e}"
+            ) from e
+        new = _without_init(new)
+        _apply_renames(new, renames[k])
+        objects[k] = (path, new)
+
+
+def _data_lines(record: ZpObjectMeta) -> list[str]:
+    """A promoted object that didn't fit, back in the data segment
+    with its initial bytes."""
+    from asm_emit import _instr_line
+    if not record.init or all(v == "$00" for v in record.init):
+        return [f"{record.name}:", _instr_line("DS.B", str(record.size))]
+    return [f"{record.name}:", _instr_line("DC.B", ", ".join(record.init))]
+
+
+def _output_symbols(
+    objects, outputs, addr_of, placed_names, zp_objects, layout_symbols,
+    defsyms,
+) -> list[E.Symbol]:
+    """The executable's symbol table: every unit's file symbol, and
+    each symbol it defines in a placed section, at its address; the
+    absolute symbols, once each; and the names the linker placed or
+    defined, as absolute symbols."""
+    output_of = {
+        id(p.section): out for out in outputs for p in out.parts
+    }
+    out: list[E.Symbol] = []
+    seen_abs: set[str] = set()
+    for path, obj in objects:
+        out.append(E.Symbol(
+            name=Path(path).name, bind=E.STB_LOCAL, type=E.STT_FILE,
+            section=E.SHN_ABS,
+        ))
+        for s in obj.symbols:
+            if s.type == E.STT_FILE or not s.defined:
+                continue
+            if s.section == E.SHN_ABS:
+                if s.is_global and s.name not in seen_abs:
+                    seen_abs.add(s.name)
+                    out.append(E.Symbol(
+                        name=s.name, value=s.value, bind=E.STB_GLOBAL,
+                        section=E.SHN_ABS,
+                    ))
+                continue
+            p = addr_of.get(id(s.section))
+            if p is None:
+                continue
+            if s.value >= p.size and s.type not in (E.STT_FUNC, E.STT_OBJECT) \
+                    and p.size < s.section.size:
+                # A label on the `JMP` the layout dropped, which is the
+                # next function's address; that function's label names
+                # it in the executable.
+                continue
+            out.append(E.Symbol(
+                name=s.name, value=p.addr + s.value,
+                size=p.size if s.type in (E.STT_FUNC, E.STT_OBJECT)
+                else s.size,
+                bind=s.bind, type=s.type,
+                section=output_of[id(s.section)], other=s.other,
+            ))
+    sizes = {name: records[0].size for name, records in zp_objects.items()}
+    for table in (placed_names, layout_symbols, defsyms):
+        for name, value in sorted(table.items(), key=lambda kv: kv[1]):
+            if name in seen_abs:
+                continue
+            seen_abs.add(name)
+            out.append(E.Symbol(
+                name=name, value=value & 0xFFFF, size=sizes.get(name, 0),
+                bind=E.STB_GLOBAL,
+                type=E.STT_OBJECT if name in sizes else E.STT_NOTYPE,
+                section=E.SHN_ABS,
+            ))
+    return out
+
+
+def _runtime_bytes(layout: dict[str, int]) -> frozenset[int]:
     """The bytes of the runtime's block (SSP, FP, DPTR, and HARGS)
-    in `layout`, as `_choose_layout` returns it, or the classic block's
-    when there's no layout."""
-    from passes.runtime_layout import CLASSIC
-    if not layout:
-        return CLASSIC.bytes()
-    size = layout.get("HARGS size", CLASSIC.hargs_size)
+    in `layout`, as `_choose_layout` returns it."""
+    size = layout["HARGS size"]
     out: set[int] = set()
     for name, n in (("SSP", 2), ("FP", 2), ("DPTR", 2), ("HARGS", size)):
-        if name in layout:
-            out.update(range(layout[name], layout[name] + n))
+        out.update(range(layout[name], layout[name] + n))
     return frozenset(out)
 
 
 def _choose_layout(
-    paths, metas, unit_layouts, objects, startup_need: int,
+    metas, objects, startup_need: int,
     param_bytes: frozenset[int] = frozenset(),
 ) -> dict[str, int]:
     """The program's runtime layout, as SSP, FP, HARGS, DPTR, and
-    "HARGS size". When every unit lists its HARGS need, it's
-    `runtime_layout.choose_layout` for the program's fixed zero-page
-    bytes and the largest need (at least `startup_need`). Otherwise the
-    units have to agree on one, which is then the program's. Raises
-    `LinkError` when they don't, or when the block doesn't fit."""
-    from passes.runtime_layout import RuntimeLayoutError, choose_layout
-    needs = [m.hargs_need for m in metas]
-    if not unit_layouts or any(n is None for n in needs):
-        layout = unit_layouts[0] if unit_layouts else {}
-        for path, unit_layout in zip(paths, unit_layouts):
-            if unit_layout != layout:
-                raise LinkError(
-                    f"{path}: its runtime zero-page layout "
-                    f"{_layout_text(unit_layout)} differs from an earlier "
-                    f"unit's {_layout_text(layout)}; compile every unit "
-                    f"again with this compiler so the linker can choose "
-                    f"one"
-                )
-        return layout
+    "HARGS size": `runtime_layout.choose_layout` for the program's
+    fixed zero-page bytes and the largest HARGS need of any unit (at
+    least `startup_need`). A unit without metadata needs the classic
+    block's HARGS. Raises `LinkError` when the block doesn't fit."""
+    from passes.runtime_layout import (
+        CLASSIC, RuntimeLayoutError, choose_layout,
+    )
+    needs = [
+        m.hargs_need if m.hargs_need is not None else CLASSIC.hargs_size
+        for m in metas
+    ]
     reserved = frozenset(
         b for records in objects.values() for r in records
         if r.at is not None for b in range(r.at, r.at + r.size)
@@ -770,30 +949,29 @@ def _merge_zp_objects(
     return objects
 
 
+
 def _place_zp_objects(
     objects: dict[str, list[ZpObjectMeta]],
     layout: dict[str, int],
-    bodies: list[list[str]],
     param_bytes: frozenset[int] = frozenset(),
+    pointers: set[str] = frozenset(),
 ) -> tuple[dict[str, int], list[str]]:
     """Addresses for the zero-page objects: a declared address where
     any unit gives one, and otherwise the lowest free bytes below
     `$80`, in the order the units list the objects, around the fixed
     ones and the runtime's block (`layout`'s SSP, FP, HARGS, and
     DPTR, and its "HARGS size"). The objects every unit that lists
-    them says `--optimize` promoted go last, densest first, and one
+    them says `-O` promoted go last, densest first, and one
     that doesn't fit is returned in the second list, to go back in the
-    data segment, unless a unit in `bodies` uses it as an `(name),Y`
-    pointer. The objects without an address also keep off
-    `param_bytes`, where functions take `zeropage(addr)` parameters.
-    Raises `LinkError` on an overlap or a full range."""
-    from passes.runtime_layout import CLASSIC, RuntimeLayout
+    data segment, unless some unit uses it as an `(name),Y` pointer
+    (it's in `pointers`), which only works in zero page. The objects
+    without an address also keep off `param_bytes`, where functions
+    take `zeropage(addr)` parameters. Raises `LinkError` on an overlap
+    or a full range."""
+    from passes.runtime_layout import RuntimeLayout
     runtime = RuntimeLayout(
-        ssp=layout.get("SSP", CLASSIC.ssp),
-        fp=layout.get("FP", CLASSIC.fp),
-        hargs=layout.get("HARGS", CLASSIC.hargs),
-        hargs_size=layout.get("HARGS size", CLASSIC.hargs_size),
-        dptr=layout.get("DPTR", CLASSIC.dptr),
+        ssp=layout["SSP"], fp=layout["FP"], hargs=layout["HARGS"],
+        hargs_size=layout["HARGS size"], dptr=layout["DPTR"],
     ).bytes()
     used: dict[int, str] = {}
     addrs: dict[str, int] = {}
@@ -827,6 +1005,7 @@ def _place_zp_objects(
                 f"runtime's zero-page block"
             )
         claim(name, at, size)
+
     def free(size: int) -> int | None:
         return next(
             (a for a in range(0, AUTO_HI - size + 1)
@@ -850,7 +1029,7 @@ def _place_zp_objects(
         if addr is not None:
             claim(name, addr, size)
             continue
-        if any(f"({name})," in line for body in bodies for line in body):
+        if name in pointers:
             raise LinkError(
                 f"no room for `{name}` ({size} bytes) below "
                 f"${AUTO_HI:02X} in the linked program, and its unit "
@@ -859,33 +1038,6 @@ def _place_zp_objects(
             )
         demoted.append(name)
     return addrs, demoted
-
-
-def _data_lines(record: ZpObjectMeta) -> list[str]:
-    """A promoted object that didn't fit, back in the data segment
-    with its initial bytes."""
-    from asm_emit import _instr_line
-    return [f"{record.name}:", _instr_line("DC.B", ", ".join(record.init))]
-
-
-def _without_init(body: list[str]) -> list[str]:
-    """`body` without its `__zp_init` function, which `_init_lines`
-    replaces with one for the whole program. The function runs from
-    its label to the next top-level label (a line with no leading
-    space or dot that ends in `:`)."""
-    try:
-        start = body.index(f"{INIT_FUNCTION}:")
-    except ValueError:
-        return body
-    end = start + 1
-    while end < len(body) and not (
-        body[end].endswith(":") and body[end][:1] not in (" ", "\t", ".")
-    ):
-        end += 1
-    out = body[:start] + body[end:]
-    while out and out[-1] == "":
-        out.pop()
-    return out
 
 
 def _init_lines(
@@ -914,16 +1066,21 @@ def _init_lines(
     return lines
 
 
-def _drop_unused_locals(merged: LinkMetadata, bodies: list[list[str]]) -> None:
+
+def _drop_unused_locals(
+    merged: LinkMetadata, objects: list[tuple[str, E.ElfFile]],
+) -> None:
     """Leaves out of each function's local pool the slots no unit's
     code names, which the peepholes emptied after the pool was sized,
     so they don't take zero-page bytes. A function that takes a local's
     address (`#<` or `#>` of one of its slots) keeps its whole pool,
     since a pointer can reach the bytes after the one it names."""
-    import re
-    text = "\n".join(line for body in bodies for line in body)
-    named = set(re.findall(r"__local_\w+", text))
-    addressed = set(re.findall(r"#[<>]\(?(__local_\w+)", text))
+    relocs = [r for _, obj in objects for s in obj.sections for r in s.relocs]
+    named = {r.symbol.name for r in relocs}
+    addressed = {
+        r.symbol.name for r in relocs
+        if r.type in (E.R_MOS_ADDR16_LO, E.R_MOS_ADDR16_HI)
+    }
     for d in merged.defs:
         if not any(n in addressed for n in d.locals):
             d.locals = [n for n in d.locals if n in named]
@@ -1010,18 +1167,3 @@ def _regs(param_regs: list[str], count: int) -> list[str]:
     """`param_regs` padded with "" (no register) to `count` entries."""
     return list(param_regs) + [""] * (count - len(param_regs))
 
-
-def _format_equ_block(
-    sym_to_addr: dict[str, int],
-) -> list[str]:
-    """Same convention as `asm_emit._emit_equ_block`: sorted by
-    (addr, name), `<sym>\\tEQU\\t$<addr>` per line. Two-digit hex
-    for ZP, four-digit for spill-region addresses (≥ $100)."""
-    items = sorted(sym_to_addr.items(), key=lambda kv: (kv[1], kv[0]))
-    lines: list[str] = []
-    for sym, addr in items:
-        if addr <= 0xFF:
-            lines.append(f"{sym}\tEQU\t${addr:02X}")
-        else:
-            lines.append(f"{sym}\tEQU\t${addr:04X}")
-    return lines

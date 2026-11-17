@@ -1321,10 +1321,10 @@ def emit_program(
 
     `link_metadata_lines` is an optional list of comment lines
     from `passes.zp_link_metadata.format_metadata` describing the
-    TU's zp_abi state for the multi-TU linker (`compile.py
-    --link`). Emitted immediately after the EQU block. Dasm
-    ignores comments, so the asm assembles unchanged in single-TU
-    mode."""
+    TU's zp_abi state for the multi-TU linker (passes/linker.py),
+    which `compile.py -c` keeps in the object's `.c6502.link`
+    section. Emitted immediately after the EQU block. Dasm ignores
+    comments, so the asm assembles unchanged in single-TU mode."""
     global _ADDR_TO_SYMBOLS
     # Build the reverse map for the duration of this emit so
     # `IndirectZp` / `IndirectZpY` operands render as

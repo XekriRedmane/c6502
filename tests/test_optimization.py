@@ -12,8 +12,8 @@ function. Per-pass behavioral tests live in their own modules
     converge in zero or one iteration);
   - the program-level dispatch (Function entries get optimized,
     StaticVariable entries pass through);
-  - end-to-end CLI plumbing (`--optimize` doesn't break --tac /
-    --codegen).
+  - end-to-end CLI plumbing (`-O` doesn't break --tac /
+    -S).
 
 Coloring decisions live entirely in the asm-level pipeline now —
 this driver does NOT perform register allocation. See
@@ -154,7 +154,7 @@ class TestOptimizeProgram(unittest.TestCase):
 
 
 class TestCliFlag(unittest.TestCase):
-    """`--optimize` is orthogonal to --tac / --codegen — it changes
+    """`-O` is orthogonal to --tac / -S — it changes
     the optimization level but the same stages still run."""
 
     SOURCE = "int main(void) { return 42; }"
@@ -175,17 +175,17 @@ class TestCliFlag(unittest.TestCase):
             ["compile.py", "-", "--tac"], stdin=self.SOURCE,
         )
         rc2, _, _ = self._run(
-            ["compile.py", "-", "--tac", "--optimize"], stdin=self.SOURCE,
+            ["compile.py", "-", "--tac", "-O"], stdin=self.SOURCE,
         )
         self.assertEqual(rc1, 0)
         self.assertEqual(rc2, 0)
 
     def test_codegen_with_optimize_compiles(self) -> None:
         rc1, _, _ = self._run(
-            ["compile.py", "-", "--codegen"], stdin=self.SOURCE,
+            ["compile.py", "-", "-S"], stdin=self.SOURCE,
         )
         rc2, _, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize"],
+            ["compile.py", "-", "-S", "-O"],
             stdin=self.SOURCE,
         )
         self.assertEqual(rc1, 0)

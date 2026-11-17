@@ -5,7 +5,7 @@
 evaluates TAC instructions whose operands are all constants and
 replaces each one with a `Copy` of the result. It runs first in each
 sweep of the TAC fixed-point loop, after SSA construction, and only
-under `--optimize`.
+under `-O`.
 
 The pass looks at one instruction at a time. A `Unary`, a `Binary`, or
 an integer or floating-point conversion whose operands are all

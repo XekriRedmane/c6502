@@ -6,7 +6,7 @@ makes a temporary's definition store straight to the memory the
 temporary is later copied to, and deletes the copy. It runs in the
 asm SSA fixed point inside `optimize_program`, after
 `copy_propagate` in each round, and repeats internally until it
-changes nothing. It runs only under `--optimize`.
+changes nothing. It runs only under `-O`.
 
 `tac_to_asm` computes a value into a temporary through A and later
 copies the temporary to its destination through A, as `LDA t; STA

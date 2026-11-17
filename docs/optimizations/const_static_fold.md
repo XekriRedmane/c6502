@@ -7,7 +7,7 @@ immediate holding that byte, and drops the static's storage. It runs
 once at the start of each call of `optimize_program`, before the
 per-function asm SSA round trip, so it runs twice per compile (the
 preliminary sizing run and the final run). It runs only under
-`--optimize`.
+`-O`.
 
 A read of a static in memory is an absolute load, and `LDA name`
 takes 3 bytes and 4 cycles, where `LDA #imm` takes 2 bytes and 2

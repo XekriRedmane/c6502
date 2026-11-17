@@ -15,7 +15,7 @@ Coverage:
   * End-to-end via the optimizer pipeline:
       - `static T const` increment chains through to INC + BNE.
       - Loop counter `i++` (where regalloc coalesces) chains too.
-      - Programs computed correctly under `--optimize`.
+      - Programs computed correctly under `-O`.
 """
 from __future__ import annotations
 

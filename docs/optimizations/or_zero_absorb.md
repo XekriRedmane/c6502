@@ -5,7 +5,7 @@
 rewrites `LDA #0; ORA x` as `LDA x`. It runs last in each round of
 the asm SSA fixed point inside `optimize_program`, after
 `byte_dce`, so it runs before move coalescing and register
-allocation. It runs only under `--optimize`.
+allocation. It runs only under `-O`.
 
 Building a 16-bit value as `((uint16_t)hi << 8) | lo` lowers the low
 byte of the shift to the constant 0 and then ORs the zero-extended

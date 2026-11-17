@@ -3,7 +3,7 @@
 chapter_12 introduces unsigned integer types and signed/unsigned
 conversions. Five buckets:
 
-  valid/             — must compile through `--codegen`.
+  valid/             — must compile through `-S`.
   invalid_lex/       — must fail at the lexer.
   invalid_parse/     — must fail at lex or parse.
   invalid_labels/    — must be rejected somewhere in the pipeline.

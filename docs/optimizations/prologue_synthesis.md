@@ -7,12 +7,12 @@ prologue and epilogue to a function only when the function ends up
 needing a frame. It runs once, after `replace_pseudoregisters_bare_exit`
 and the [LoadAddress split](lower_data_load_address.md), and before
 [asm LICM](asm_licm.md) and the peephole fixed point. It runs only
-under `--optimize`. The unoptimized pipeline gets its prologue from
+under `-O`. The unoptimized pipeline gets its prologue from
 `replace_pseudoregisters.replace_program`, which gives every function
 one, and `asm_to_asm2` drops it for a function with no argument or
 local bytes.
 
-Under `--optimize`, `tac_to_asm` runs in bare-exit mode. It emits no
+Under `-O`, `tac_to_asm` runs in bare-exit mode. It emits no
 `FunctionPrologue`, and it ends each return path with a bare
 `Return`, which lowers to `RTS`. Which functions get a frame isn't
 known until register allocation has run and

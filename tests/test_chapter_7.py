@@ -4,7 +4,7 @@ chapter_7 covers compound statements (block scopes) — `{ ... }` as a
 statement, nested scopes, variable shadowing, and goto across
 scopes. Three buckets:
 
-  valid/             — must compile through `--codegen`.
+  valid/             — must compile through `-S`.
   invalid_parse/     — must fail at lex or parse.
   invalid_semantics/ — must parse cleanly but fail at one of the
                        semantic passes.
@@ -40,7 +40,7 @@ _SEMANTIC_FAILURES = (
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter7Valid(unittest.TestCase):
-    """Each chapter_7/valid file must compile through `--codegen`."""
+    """Each chapter_7/valid file must compile through `-S`."""
 
     def test_codegen(self):
         files = sorted((_C7 / "valid").rglob("*.c"))

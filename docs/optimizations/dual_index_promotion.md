@@ -4,7 +4,7 @@
 [passes/dual_index_promotion.py](../../passes/dual_index_promotion.py)
 loads a byte that a function reloads into X several times into Y once
 at entry, and switches the `abs,X` accesses that use it to `abs,Y`.
-It runs once under `--optimize`, after the second peephole fixed point
+It runs once under `-O`, after the second peephole fixed point
 and before the third, which cleans up after it. The unoptimized
 pipeline doesn't run it.
 

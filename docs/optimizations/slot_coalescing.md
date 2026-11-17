@@ -4,7 +4,7 @@
 [passes/slot_coalescing.py](../../passes/slot_coalescing.py) renames
 a zero-page local that holds a copy of a parameter to the parameter's
 own slot, when the two are never live at once with different values.
-It runs once under `--optimize`, after the third peephole fixed point
+It runs once under `-O`, after the third peephole fixed point
 and `carry_known`, and before [loop-invariant compare key in
 A](loop_invariant_a.md).
 

@@ -58,7 +58,7 @@ class TestSelectAbi(unittest.TestCase):
         # Without `[[c6502::zp_abi]]`, an eligible function
         # (no indirect calls, no recursion, no address taken,
         # params fit the ZP window) defaults to zp_abi under
-        # `select_abi` — this matches the `--optimize` policy of
+        # `select_abi` — this matches the `-O` policy of
         # "every function gets zp_abi when it can."
         tac, c99, types = _compile_to_tac(
             "int main(void) { return 0; }",

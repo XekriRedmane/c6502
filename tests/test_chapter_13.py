@@ -3,7 +3,7 @@
 chapter_13 covers floating-point types (`float` / `double`) and
 conversions to/from integer types. Four buckets:
 
-  valid/             — must compile through `--codegen`.
+  valid/             — must compile through `-S`.
   invalid_lex/       — must fail at the lexer.
   invalid_parse/     — must fail at lex or parse.
   invalid_types/     — must be rejected somewhere in the pipeline.

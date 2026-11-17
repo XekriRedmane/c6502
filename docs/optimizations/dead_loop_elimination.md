@@ -3,7 +3,7 @@
 `eliminate_dead_loops` (the `EliminateDeadLoops` pass) in
 [passes/optimization/dead_loop_elimination.py](../../passes/optimization/dead_loop_elimination.py)
 deletes a loop that has no side effects and whose values nobody reads
-after it. It runs in the TAC fixed-point loop under `--optimize`, on
+after it. It runs in the TAC fixed-point loop under `-O`, on
 SSA form, right after the jump folds. The unoptimized pipeline doesn't
 run it.
 

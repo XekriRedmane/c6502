@@ -141,7 +141,7 @@ a user variable.
 
 ## Pipeline order
 
-`compile.py --codegen --optimize` applies the optimizations in the
+`compile.py -S -O` applies the optimizations in the
 order below. Steps that aren't optimizations are listed in plain text
 without a link, so that each optimization's neighbors can be seen. A
 group marked *fixed point* runs every member in order, then repeats
@@ -316,9 +316,9 @@ reaching the cap raises an error.
 47. [Store X or Y directly](via_a_store_fold.md)
 48. [Transfer plus or minus one](transfer_pm1_store.md)
 
-### Without `--optimize`
+### Without `-O`
 
-`compile.py --codegen` without `--optimize` runs none of the TAC or
+`compile.py -S` without `-O` runs none of the TAC or
 asm SSA optimizations. It translates to asm, replaces
 pseudoregisters, and runs the peephole fixed point above once, with
 every member. It then expands long branches, places zero-page

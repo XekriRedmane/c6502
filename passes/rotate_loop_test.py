@@ -50,7 +50,7 @@ Other jumps and branches to `L`, such as a `continue`, still go to
 
 After the peephole fixed points and `loop_invariant_a`, which
 expects the loop's test at its top, and before
-`expand_long_branches`. Only under `--optimize`.
+`expand_long_branches`. Only under `-O`.
 """
 from __future__ import annotations
 

@@ -19,7 +19,7 @@ The starting values sit on a carry or borrow boundary (`0x00FF`
 before `++`, `0x0100` before `--`, and their wider forms), so a
 multi-byte operator has to carry into every byte. Each expected
 result is computed in Python under C99's rules with c6502's widths.
-Every program runs with and without --optimize.
+Every program runs with and without -O.
 
 This shape grid is what missed `return ++c;` for a static `unsigned
 char`: the INC peephole left A without the new value, and neither the
@@ -76,7 +76,7 @@ _USES = ["ret", "after", "if", "arg"]
 
 _CHUNK = 40
 _ZP_BUDGET = 80
-# Bytes of results per program. Without --optimize, main holds each
+# Bytes of results per program. Without -O, main holds each
 # call's result in a frame temp, and a frame is at most 253 bytes.
 _RESULT_BUDGET = 160
 

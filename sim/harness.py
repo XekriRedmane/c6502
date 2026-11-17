@@ -74,9 +74,9 @@ def compile_to_asm(
     bindings produced by `passes.zp_slot_allocation` (empty when
     optimization is off or no zp_abi function is present).
 
-    Both pipelines run the passes `compile.py --codegen` runs, so the
+    Both pipelines run the passes `compile.py -S` runs, so the
     simulator executes the code the CLI emits. `optimize=True` runs
-    `compile.optimized_asm`, the `--optimize` pipeline."""
+    `compile.optimized_asm`, the `-O` pipeline."""
     from compile import _resolved
     ast5, syms, types = type_check_program(
         _resolved(preprocess(source), optimize=optimize),
@@ -99,12 +99,12 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp, tac):
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
     if optimize:
-        # The same pipeline `compile.py --codegen --optimize` runs.
+        # The same pipeline `compile.py -S -O` runs.
         from compile import optimized_asm
         opt = optimized_asm(ast5, syms, types, zp, tac, statics)
         return opt.asm, syms, types, {**opt.slot_symbols, **zp.equs()}
-    # Unoptimized path: the same passes `compile.py --codegen` runs
-    # without `--optimize`, including the full peephole fixedpoint,
+    # Unoptimized path: the same passes `compile.py -S` runs
+    # without `-O`, including the full peephole fixedpoint,
     # so the sim executes the code the CLI emits.
     from compile import _peephole_fixedpoint
     # Calls to a zp_abi routine with a fixed address pass their

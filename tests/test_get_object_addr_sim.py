@@ -1,4 +1,4 @@
-"""Compares `examples/zork_get_object_addr.c` under --optimize with the
+"""Compares `examples/zork_get_object_addr.c` under -O with the
 hand-written routine it translates, from the Zork I (r15) Z-machine
 interpreter (https://github.com/XekriRedmane/zorki-r15-reveng).
 

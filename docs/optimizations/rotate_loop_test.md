@@ -5,7 +5,7 @@
 the test of a loop that tests at its top to the loop's bottom. It
 runs once, after [the loop-invariant compare key in
 A](loop_invariant_a.md) and before long-branch expansion, and only
-under `--optimize`.
+under `-O`.
 
 A `for` or `while` loop tests at the top and ends with a `JMP` back
 to the test. Each pass runs the test's branch not taken (2 cycles)

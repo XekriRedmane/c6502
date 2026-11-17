@@ -11,7 +11,7 @@ which makes the code after that label dead too. The pass repeats
 until nothing changes, because the peephole fixed point would
 otherwise spend a round per label on such a chain, and a chain
 longer than its 16-round cap fails the compile (fuzz.stmts seeds
-4411, 4593, and 4793, without --optimize).
+4411, 4593, and 4793, without -O).
 
 Copying a return tail ahead of its label (`carry_return.py`) is what
 leaves such code behind. When the last path that jumped to the label

@@ -3,7 +3,7 @@
 `lower_data_load_address` in
 [passes/lower_data_load_address.py](../../passes/lower_data_load_address.py)
 splits a `LoadAddress` whose source is a fixed address into two
-single-byte stores of immediates. It runs once in the `--optimize`
+single-byte stores of immediates. It runs once in the `-O`
 pipeline, after `replace_pseudoregisters_bare_exit` and before
 prologue synthesis and the peephole fixed point. The unoptimized
 pipeline doesn't run it.

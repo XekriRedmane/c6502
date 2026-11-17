@@ -3,7 +3,7 @@
 chapter_10 covers file-scope variables, the `static` and `extern`
 storage classes, tentative definitions, and linkage. Five buckets:
 
-  valid/                 — must compile through `--codegen`.
+  valid/                 — must compile through `-S`.
   invalid_parse/         — must fail at lex or parse.
   invalid_declarations/  — must be rejected in the pipeline.
   invalid_labels/        — must be rejected in the pipeline.
@@ -70,7 +70,7 @@ def _run_codegen_subtest(test, files, root, not_rejected):
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter10Valid(unittest.TestCase):
-    """Each chapter_10/valid file must compile through `--codegen`,
+    """Each chapter_10/valid file must compile through `-S`,
     except those listed in `_EXPECTED_FAILURES_CODEGEN`."""
 
     def test_codegen(self):

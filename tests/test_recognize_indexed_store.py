@@ -409,7 +409,7 @@ class TestIndexedStoreCorrectness(unittest.TestCase):
         self.assertEqual(result.memory[0x40FA], 0x99)
 
     def test_unoptimized_still_works(self) -> None:
-        # The fold only fires under --optimize. Without it the
+        # The fold only fires under -O. Without it the
         # program still has to compute the right address — verify
         # both modes produce the same result.
         src = (

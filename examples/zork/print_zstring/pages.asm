@@ -70,7 +70,6 @@ PRINTER_CSW	EQU	$EE
 __zork_zp_f0	EQU	$F0
 __local_get_next_code_word__1	EQU	$F4
 __local_get_next_code_byte2__page	EQU	$F6
-__local_get_next_code_byte2__0	EQU	$F8
 __local_set_page_first__0	EQU	$F9
 __local_set_page_first__prev_first	EQU	$FA
 BUFF_AREA	EQU	$0200
@@ -251,7 +250,6 @@ get_next_code_byte2:
    LDA   Z_PC2+1
    STA   __local_get_next_code_byte2__page
    LDA   Z_PC2+2
-   STA   __local_get_next_code_byte2__0
    BNE   .if_else@6
    LDA   __local_get_next_code_byte2__page
    CMP   NUM_IMAGE_PAGES
@@ -259,7 +257,7 @@ get_next_code_byte2:
 .if_else@6:
    LDA   __local_get_next_code_byte2__page
    STA   SCRATCH2
-   LDA   __local_get_next_code_byte2__0
+   LDA   Z_PC2+2
    STA   SCRATCH2+1
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
@@ -277,7 +275,7 @@ get_next_code_byte2:
    STA   SCRATCH2+1
    LDA   __local_get_next_code_byte2__page
    STA   SCRATCH1
-   LDA   __local_get_next_code_byte2__0
+   LDA   Z_PC2+2
    STA   SCRATCH1+1
    JSR   read_from_sector
    BCC   .if_end@9

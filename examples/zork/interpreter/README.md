@@ -163,8 +163,8 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 446 |
-| `decode.c` | 1859 | 1787 |
-| `objects.c` | 788 | 903 |
+| `decode.c` | 1859 | 1783 |
+| `objects.c` | 788 | 879 |
 | `numbers.c` | 436 | 465 |
 | `input.c` | 1018 | 1081 |
 | `pages.c` | 384 | 379 |
@@ -173,7 +173,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 337 |
-| **Total** | **6643** | **6850** |
+| **Total** | **6643** | **6822** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -529,3 +529,10 @@ the smaller code saved.
   ([recognize_indirect_indexed.md](../../../docs/optimizations/recognize_indirect_indexed.md)),
   so `print_zstring` reads the abbreviation table's second byte with
   `INY`, as Zork's does, 14 bytes shorter.
+- A call to a function of the unit whose writes are known, directly or
+  through what it calls, ends only the facts about those bytes, and a
+  call to a `[[noreturn]]` function adds nothing
+  ([memory_value_propagation.md](../../../docs/optimizations/memory_value_propagation.md)).
+  The property instructions, `remove_obj`, `instr_insert_obj`, and
+  `do_var` read `OPERANDS` after their calls, where they had copied
+  it into a slot first, 28 bytes.

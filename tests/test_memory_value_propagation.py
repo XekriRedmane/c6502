@@ -446,5 +446,52 @@ class TestCopiedPointer(unittest.TestCase):
         self.assertEqual(out[4].src, asm_ast.IndirectZpY(address=0x94))
 
 
+class TestCallSummaries(unittest.TestCase):
+    """A call to a function of the program whose writes are known kills
+    only the facts about the bytes it writes, so a slot that holds a
+    copy of `OPS` across the call still reads `OPS` after it."""
+
+    _ADDRS = {"OPS": 0x82, "__local_f__t": 0x90, "OTHER": 0x84}
+
+    def _run(self, callee_body, noreturn=frozenset()):
+        # f: LDA OPS; STA t; JSR g; LDA #1; CLC; ADC t; STA OTHER+1; RTS
+        f = asm_ast.Function(name="f", is_global=True, params=[], instructions=[
+            _load(_data("OPS")), _store(_data("__local_f__t")),
+            asm_ast.Call(name="g"),
+            _load(asm_ast.Imm(value=1)), asm_ast.ClearCarry(),
+            asm_ast.Add(src=_data("__local_f__t"), dst=_A()),
+            _store(_data("OTHER", 1)), asm_ast.Return(),
+        ])
+        g = asm_ast.Function(name="g", is_global=False, params=[],
+                             instructions=[*callee_body, asm_ast.Return()])
+        out = apply_memory_value_propagation(
+            asm_ast.Program(top_level=[f, g]), zp_symbol_addrs=self._ADDRS,
+            noreturn=noreturn,
+        )
+        return out.top_level[0].instructions[5].src
+
+    def test_callee_writing_other_bytes_keeps_the_fact(self):
+        src = self._run([_load(asm_ast.Imm(value=0)), _store(_data("OTHER"))])
+        self.assertEqual(src, _data("OPS"))
+
+    def test_callee_writing_the_source_kills_it(self):
+        src = self._run([_load(asm_ast.Imm(value=0)), _store(_data("OPS"))])
+        self.assertEqual(src, _data("__local_f__t"))
+
+    def test_callee_storing_through_a_pointer_kills_everything(self):
+        src = self._run([_load(asm_ast.Imm(value=0)),
+                         _store(asm_ast.IndirectZpY(address=0x84))])
+        self.assertEqual(src, _data("__local_f__t"))
+
+    def test_callee_calling_outside_the_program_kills_everything(self):
+        self.assertEqual(self._run([asm_ast.Call(name="h")]),
+                         _data("__local_f__t"))
+
+    def test_call_that_never_returns_adds_nothing(self):
+        # `h` stops the program, so nothing after `JSR h` runs.
+        src = self._run([asm_ast.Call(name="h")], noreturn=frozenset({"h"}))
+        self.assertEqual(src, _data("OPS"))
+
+
 if __name__ == "__main__":
     unittest.main()

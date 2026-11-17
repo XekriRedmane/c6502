@@ -51,14 +51,12 @@ __local_ascii_to_zchar__z	EQU	$50
 __local_branch__offset_1	EQU	$50
 __local_instr_call__1	EQU	$50
 __local_instr_get_prop__0	EQU	$50
-__local_instr_get_prop_addr__0	EQU	$50
 __local_match_dictionary_word__0	EQU	$50
 __local_print_status_line__1	EQU	$50
 __local_ascii_to_zchar__dest	EQU	$51
 __local_branch__offset_0	EQU	$51
 __local_instr_call__i	EQU	$51
 __local_instr_get_prop__1	EQU	$51
-__local_instr_get_prop_addr__y	EQU	$51
 __local_match_dictionary_word__count_0	EQU	$51
 __local_print_status_line__2	EQU	$51
 __local_ascii_to_zchar__left	EQU	$52
@@ -66,7 +64,6 @@ __local_branch__condition	EQU	$52
 __local_divu16__partial_1	EQU	$52
 __local_instr_call__args	EQU	$52
 __local_instr_get_prop__y	EQU	$52
-__local_instr_get_prop_addr__1	EQU	$52
 __local_match_dictionary_word__5	EQU	$52
 __local_ascii_to_zchar__0	EQU	$53
 __local_divu16__partial_0	EQU	$53
@@ -76,26 +73,25 @@ __local_match_dictionary_word__6	EQU	$53
 __local_return_value__0	EQU	$53
 __local_ascii_to_zchar__1	EQU	$54
 __local_divu16__0	EQU	$54
-__local_instr_get_prop__3	EQU	$54
+__local_get_object_addr__0	EQU	$54
 __local_match_dictionary_word__count_1	EQU	$54
 __local_return_value__1	EQU	$54
 __local_ascii_to_zchar__2	EQU	$55
-__local_get_object_addr__0	EQU	$55
+__local_get_object_addr__1	EQU	$55
 __local_match_dictionary_word__8	EQU	$55
 __local_return_value__x	EQU	$55
 __local_ascii_to_zchar__index	EQU	$56
-__local_get_object_addr__1	EQU	$56
+__local_get_object_addr__2	EQU	$56
 __local_match_dictionary_word__entry_0	EQU	$56
 __local_return_value__count	EQU	$56
-__local_get_object_addr__2	EQU	$57
+__local_get_object_addr__3	EQU	$57
 __local_match_dictionary_word__entry_1	EQU	$57
 __local_print_ascii_string__count	EQU	$57
 __local_set_nonstack_var__var	EQU	$57
-__local_get_object_addr__3	EQU	$58
+__local_get_object_addr__obj	EQU	$58
 __local_print_ascii_string__i	EQU	$58
 __local_set_nonstack_var__0	EQU	$58
 __local_dump_buffer_with_more__0	EQU	$59
-__local_get_object_addr__obj	EQU	$59
 __local_set_nonstack_var__1	EQU	$59
 __local_dump_buffer_with_more__end	EQU	$5A
 __local_dump_buffer_to_printer__x	EQU	$5B
@@ -141,8 +137,10 @@ __local_get_dictionary_addr__0	EQU	$E0
 __local_get_next_zchar__compound_literal_1	EQU	$E0
 __local_inc_var__0	EQU	$E0
 __local_instr_get_next_prop__y	EQU	$E0
+__local_instr_get_prop_addr__0	EQU	$E0
 __local_mulu16__product	EQU	$E0
 __local_please_insert_save_diskette__0	EQU	$E0
+__local_remove_obj__2	EQU	$E0
 __local_write_to_sector__1	EQU	$E0
 __zpabi_branch_to_offset__offset_0	EQU	$E0
 __zpabi_check_sign__a_0	EQU	$E0
@@ -157,8 +155,9 @@ __zpabi_search_nonalpha_table__c	EQU	$E0
 __zpabi_set_attr_word__word_0	EQU	$E0
 __zpabi_store_with_sign__n_0	EQU	$E0
 __local_get_next_code_word__1	EQU	$E1
-__local_instr_get_next_prop__1	EQU	$E1
+__local_instr_get_prop_addr__y	EQU	$E1
 __local_please_insert_save_diskette__1	EQU	$E1
+__local_remove_obj__3	EQU	$E1
 __local_search_nonalpha_table__0	EQU	$E1
 __local_var_put__var	EQU	$E1
 __local_write_to_sector__2	EQU	$E1
@@ -223,7 +222,6 @@ __local_branch_to_offset__2	EQU	$E8
 __local_get_property_ptr__0	EQU	$E8
 __local_next_property__y	EQU	$E8
 __local_read_line__n	EQU	$E8
-__local_remove_obj__2	EQU	$E8
 __local_z_compress__2	EQU	$E8
 __zpabi_divu16__divisor_0	EQU	$E8
 __zpabi_find_index_of_page_table__page_0	EQU	$E8
@@ -231,14 +229,12 @@ __zpabi_mulu16__b_0	EQU	$E8
 __zpabi_push__value_0	EQU	$E8
 __zpabi_var_put__value_0	EQU	$E8
 __local_attr_ptr_and_mask__n	EQU	$E9
-__local_remove_obj__3	EQU	$E9
 __local_z_compress__3	EQU	$E9
 __zpabi_divu16__divisor_1	EQU	$E9
 __zpabi_find_index_of_page_table__page_1	EQU	$E9
 __zpabi_mulu16__b_1	EQU	$E9
 __zpabi_push__value_1	EQU	$E9
 __zpabi_var_put__value_1	EQU	$E9
-__local_remove_obj__4	EQU	$EA
 __local_store_result__0	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
@@ -292,9 +288,9 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$10C1
-__text_end	EQU	$1A08
-__text_load_end	EQU	$1A08
+__text_size	EQU	$10A5
+__text_end	EQU	$19EC
+__text_load_end	EQU	$19EC
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -678,7 +674,7 @@ return_value@tail1:
 store_result:
    SUBROUTINE
    JSR   get_next_code_byte
-   STA   __local_remove_obj__4
+   STA   __local_store_result__0
    ORA   #$00
    BNE   .if_else@7
    LDA   __local_branch_to_offset__0
@@ -691,7 +687,7 @@ store_result:
    STA   __local_get_next_code_byte__page
    LDA   __local_attr_ptr_and_mask__attr
    STA   __local_get_nonstack_var__0
-   LDA   __local_remove_obj__4
+   LDA   __local_store_result__0
    JMP   set_nonstack_var
 branch@tail0:
    SUBROUTINE
@@ -838,9 +834,9 @@ do_0op:
    PHA
    RTS
 .jtab@0:
-   DC.B  $88, $0B, $8B, $0B, $6F, $11, $8E, $0B
+   DC.B  $88, $0B, $8B, $0B, $6B, $11, $8E, $0B
    DC.B  $A4, $0B, $56, $32, $EF, $32, $24, $2C
-   DC.B  $97, $0B, $6E, $09, $2A, $2C, $84, $12
+   DC.B  $97, $0B, $6E, $09, $2A, $2C, $80, $12
 .case@4:
    JMP   branch@tail0
 .case@5:
@@ -872,9 +868,9 @@ do_1op:
    PHA
    RTS
 .jtab@1:
-   DC.B  $D7, $0B, $D8, $14, $9F, $15, $AB, $15
-   DC.B  $B7, $17, $2F, $0B, $4A, $0B, $E6, $0B
-   DC.B  $40, $2C, $69, $13, $F4, $0B, $F9, $0B
+   DC.B  $D7, $0B, $CC, $14, $93, $15, $9F, $15
+   DC.B  $9F, $17, $2F, $0B, $4A, $0B, $E6, $0B
+   DC.B  $40, $2C, $65, $13, $F4, $0B, $F9, $0B
    DC.B  $04, $0C, $10, $0C, $1E, $0C, $26, $0C
 .case@18:
    LDA   OPERANDS+1
@@ -934,27 +930,25 @@ do_1op@tail4:
    JMP   store_result
 do_var:
    SUBROUTINE
-   LDX   OPERANDS
-   STX   __local_do_var__3
    CMP   #$0A
    BCC   .lb_skip@2
    JMP   internal_error
 .lb_skip@2:
    ASL
    TAY
-   LDA   $0C52,Y
+   LDA   $0C4E,Y
    PHA
    LDA   .jtab@3,Y
    PHA
    RTS
 .jtab@3:
-   DC.B  $80, $0A, $64, $0C, $95, $0C, $DE, $17
-   DC.B  $92, $2F, $B6, $0C, $BB, $0C, $8F, $19
-   DC.B  $C6, $0C, $D1, $0C
+   DC.B  $80, $0A, $60, $0C, $91, $0C, $C6, $17
+   DC.B  $92, $2F, $B2, $0C, $B7, $0C, $73, $19
+   DC.B  $C2, $0C, $CD, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
-   ADC   __local_do_var__3
+   ADC   OPERANDS
    STA   __local_do_2op__0
    LDA   Z_HEADER_ADDR+1
    ADC   OPERANDS+1
@@ -980,7 +974,7 @@ do_var:
    STA   (__local_do_2op__0),Y
    RTS
 .case@63:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    CLC
    ADC   OPERANDS+2
    STA   __local_do_2op__equal
@@ -999,16 +993,16 @@ do_var:
    STA   (__local_do_2op__equal),Y
    RTS
 .case@66:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    JMP   buffer_char
 .case@67:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    STA   __local_dec_var__0
    LDA   OPERANDS+1
    STA   __local_get_next_code_word__1
    JMP   print_number
 .case@69:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   OPERANDS+1
    STA   __local_attr_ptr_and_mask__n
@@ -1017,7 +1011,7 @@ do_var:
    JSR   pop
    STA   __local_attr_ptr_and_mask__mask_1
    STX   __local_attr_ptr_and_mask__n
-   LDA   __local_do_var__3
+   LDA   OPERANDS
 var_put:
    SUBROUTINE
    STA   __local_get_next_code_word__1
@@ -1033,11 +1027,11 @@ var_put:
    LDA   __local_get_next_code_word__1
 set_nonstack_var:
    SUBROUTINE
-   STA   __local_get_object_addr__2
+   STA   __local_get_object_addr__3
    CMP   #$10
    BCS   .if_end@3
-   DEC   __local_get_object_addr__2
-   LDA   __local_get_object_addr__2
+   DEC   __local_get_object_addr__3
+   LDA   __local_get_object_addr__3
    ASL
    TAX
    LDA   __local_get_nonstack_var__0
@@ -1048,23 +1042,23 @@ set_nonstack_var:
 .if_end@3:
    SBC   #$10
    ASL
-   STA   __local_get_object_addr__2
+   STA   __local_get_object_addr__3
    LDA   #$00
    ROL
    STA   __local_dump_buffer_with_more__0
    LDA   GLOBAL_ZVARS_ADDR
    CLC
-   ADC   __local_get_object_addr__2
-   STA   __local_get_object_addr__2
+   ADC   __local_get_object_addr__3
+   STA   __local_get_object_addr__3
    LDA   GLOBAL_ZVARS_ADDR+1
    ADC   __local_dump_buffer_with_more__0
-   STA   __local_get_object_addr__3
+   STA   __local_get_object_addr__obj
    LDA   __local_get_nonstack_var__0
    LDY   #$00
-   STA   (__local_get_object_addr__2),Y
+   STA   (__local_get_object_addr__3),Y
    LDA   __local_get_next_code_byte__page
    INY
-   STA   (__local_get_object_addr__2),Y
+   STA   (__local_get_object_addr__3),Y
    RTS
 do_instruction:
    SUBROUTINE
@@ -1197,19 +1191,19 @@ do_2op:
 .lb_skip@1:
    ASL
    TAY
-   LDA   $0E1C,Y
+   LDA   $0E18,Y
    PHA
    LDA   .jtab@2,Y
    PHA
    RTS
 .jtab@2:
-   DC.B  $40, $2C, $4C, $0E, $AD, $0E, $C1, $0E
-   DC.B  $D1, $0E, $E1, $0E, $BD, $15, $F8, $0E
-   DC.B  $15, $0F, $22, $0F, $29, $16, $3A, $16
-   DC.B  $54, $16, $31, $0F, $AC, $13, $3E, $0F
-   DC.B  $58, $0F, $B0, $16, $37, $17, $80, $17
-   DC.B  $74, $0F, $84, $0F, $B8, $18, $1B, $19
-   DC.B  $62, $19
+   DC.B  $40, $2C, $48, $0E, $A9, $0E, $BD, $0E
+   DC.B  $CD, $0E, $DD, $0E, $B1, $15, $F4, $0E
+   DC.B  $11, $0F, $1E, $0F, $1D, $16, $2E, $16
+   DC.B  $48, $16, $2D, $0F, $A6, $13, $3A, $0F
+   DC.B  $54, $0F, $A4, $16, $27, $17, $6C, $17
+   DC.B  $70, $0F, $80, $0F, $9C, $18, $FF, $18
+   DC.B  $46, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1930,15 +1924,15 @@ cout_string:
    RTS
 print_ascii_string:
    SUBROUTINE
-   STX   __local_get_object_addr__2
+   STX   __local_get_object_addr__3
    LDA   #$00
-   STA   __local_get_object_addr__3
+   STA   __local_get_object_addr__obj
 .loop@5_start:
-   LDY   __local_get_object_addr__3
+   LDY   __local_get_object_addr__obj
    LDA   (__local_get_next_code_byte__page),Y
    JSR   buffer_char
-   INC   __local_get_object_addr__3
-   DEC   __local_get_object_addr__2
+   INC   __local_get_object_addr__obj
+   DEC   __local_get_object_addr__3
    BNE   .loop@5_start
    RTS
 reset_window:
@@ -1963,45 +1957,45 @@ home:
    RTS
 get_object_addr:
    SUBROUTINE
-   STA   __local_dump_buffer_with_more__0
+   STA   __local_get_object_addr__obj
    LDY   #$0A
    LDA   (Z_HEADER_ADDR),Y
-   STA   __local_ascii_to_zchar__2
+   STA   __local_ascii_to_zchar__1
    INY
    LDA   (Z_HEADER_ADDR),Y
    CLC
    ADC   Z_HEADER_ADDR
    STA   __local_get_object_addr__3
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_ascii_to_zchar__2
-   STA   __local_get_object_addr__2
-   LDA   __local_dump_buffer_with_more__0
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
+   ADC   __local_ascii_to_zchar__1
    STA   __local_ascii_to_zchar__index
-   LDA   __local_dump_buffer_with_more__0
+   LDA   __local_get_object_addr__obj
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_ascii_to_zchar__2
+   LDA   __local_get_object_addr__obj
    ASL
    ASL
    ASL
    CLC
    ADC   __local_get_object_addr__3
+   STA   __local_ascii_to_zchar__1
+   LDA   __local_ascii_to_zchar__index
+   ADC   __local_ascii_to_zchar__2
    STA   __local_ascii_to_zchar__2
-   LDA   __local_get_object_addr__2
-   ADC   __local_ascii_to_zchar__index
-   STA   __local_ascii_to_zchar__index
-   LDA   __local_ascii_to_zchar__2
+   LDA   __local_ascii_to_zchar__1
    CLC
-   ADC   __local_dump_buffer_with_more__0
+   ADC   __local_get_object_addr__obj
    BCC   .carry_inc@0
-   INC   __local_ascii_to_zchar__index
+   INC   __local_ascii_to_zchar__2
    CLC
 .carry_inc@0:
    ADC   #$35
    STA   get_object_addr@ret
-   LDA   __local_ascii_to_zchar__index
+   LDA   __local_ascii_to_zchar__2
    ADC   #$00
    STA   get_object_addr@ret+1
    RTS
@@ -2010,12 +2004,11 @@ instr_remove_obj:
 remove_obj:
    SUBROUTINE
    LDA   OPERANDS
-   STA   __local_remove_obj__4
    JSR   get_object_addr
    LDA   get_object_addr@ret
-   STA   __local_attr_ptr_and_mask__mask_1
+   STA   __local_dec_var__0
    LDA   get_object_addr@ret+1
-   STA   __local_attr_ptr_and_mask__n
+   STA   __local_get_next_code_word__1
    LDY   #$04
    LDA   (get_object_addr@ret),Y
    BNE   .if_end@0
@@ -2024,10 +2017,10 @@ remove_obj:
    JSR   get_object_addr
    LDY   #$06
    LDA   (get_object_addr@ret),Y
-   CMP   __local_remove_obj__4
+   CMP   OPERANDS
    BNE   .if_else@2
    DEY
-   LDA   (__local_attr_ptr_and_mask__mask_1),Y
+   LDA   (__local_dec_var__0),Y
    INY
    STA   (get_object_addr@ret),Y
    JMP   .if_end@1
@@ -2036,31 +2029,28 @@ remove_obj:
    JSR   get_object_addr
    LDY   #$05
    LDA   (get_object_addr@ret),Y
-   CMP   __local_remove_obj__4
+   CMP   OPERANDS
    BNE   .if_else@2
-   LDA   (__local_attr_ptr_and_mask__mask_1),Y
+   LDA   (__local_dec_var__0),Y
    STA   (get_object_addr@ret),Y
 .if_end@1:
    LDA   #$00
    LDY   #$04
-   STA   (__local_attr_ptr_and_mask__mask_1),Y
+   STA   (__local_dec_var__0),Y
    INY
-   STA   (__local_attr_ptr_and_mask__mask_1),Y
+   STA   (__local_dec_var__0),Y
    RTS
 instr_insert_obj:
    SUBROUTINE
    JSR   instr_remove_obj
    LDA   OPERANDS
    STA   __local_attr_ptr_and_mask__attr
-   LDA   OPERANDS+2
-   STA   __local_instr_clear_attr__0
-   LDA   OPERANDS
    JSR   get_object_addr
    LDA   get_object_addr@ret
    STA   __local_instr_clear_attr__1
    LDA   get_object_addr@ret+1
    STA   __local_branch_to_offset__0
-   LDA   __local_instr_clear_attr__0
+   LDA   OPERANDS+2
    LDY   #$04
    STA   (get_object_addr@ret),Y
    JSR   get_object_addr
@@ -2518,8 +2508,6 @@ next_property:
    RTS
 instr_get_prop:
    SUBROUTINE
-   LDA   OPERANDS+2
-   STA   __local_ascii_to_zchar__1
    JSR   get_property_ptr
    STA   __local_ascii_to_zchar__left
    JMP   .loop@2_start
@@ -2535,7 +2523,7 @@ instr_get_prop:
    LDA   Z_HEADER_ADDR+1
    ADC   __local_ascii_to_zchar__z
    STA   __local_ascii_to_zchar__0
-   LDA   __local_ascii_to_zchar__1
+   LDA   OPERANDS+2
    ASL
    STA   __local_ascii_to_zchar__dest
    TAY
@@ -2555,7 +2543,7 @@ instr_get_prop:
    STA   __local_ascii_to_zchar__left
 .loop@2_start:
    JSR   get_property_num
-   CMP   __local_ascii_to_zchar__1
+   CMP   OPERANDS+2
    BNE   .instr_get_prop@rot@1
    LDA   __local_ascii_to_zchar__left
    JSR   get_property_len
@@ -2592,39 +2580,37 @@ instr_get_prop:
    JMP   internal_error
 instr_get_prop_addr:
    SUBROUTINE
-   LDA   OPERANDS+2
-   STA   __local_ascii_to_zchar__left
    JSR   get_property_ptr
-   STA   __local_ascii_to_zchar__dest
+   STA   __local_get_next_code_word__1
 .loop@3_start:
    JSR   get_property_num
-   CMP   __local_ascii_to_zchar__left
+   CMP   OPERANDS+2
    BNE   .if_end@11
    LDA   props
    CLC
-   ADC   __local_ascii_to_zchar__dest
-   STA   __local_ascii_to_zchar__z
+   ADC   __local_get_next_code_word__1
+   STA   __local_dec_var__0
    LDA   props+1
    ADC   #$00
-   STA   __local_ascii_to_zchar__dest
-   INC   __local_ascii_to_zchar__z
+   STA   __local_get_next_code_word__1
+   INC   __local_dec_var__0
    BNE   .inc_done@0
-   INC   __local_ascii_to_zchar__dest
+   INC   __local_get_next_code_word__1
 .inc_done@0:
-   LDA   __local_ascii_to_zchar__z
+   LDA   __local_dec_var__0
    SEC
    SBC   Z_HEADER_ADDR
    STA   __local_branch_to_offset__0
-   LDA   __local_ascii_to_zchar__dest
+   LDA   __local_get_next_code_word__1
    SBC   Z_HEADER_ADDR+1
    JMP   instr_get_prop@tail2
 .if_end@11:
    BCS   .if_end@12
    JMP   instr_get_prop_addr@tail1
 .if_end@12:
-   LDA   __local_ascii_to_zchar__dest
+   LDA   __local_get_next_code_word__1
    JSR   next_property
-   STA   __local_ascii_to_zchar__dest
+   STA   __local_get_next_code_word__1
    JMP   .loop@3_start
 instr_get_prop_addr@tail1:
    SUBROUTINE
@@ -2636,16 +2622,14 @@ instr_get_prop@tail2:
    JMP   store_result
 instr_get_next_prop:
    SUBROUTINE
-   LDA   OPERANDS+2
-   STA   __local_get_next_code_word__1
    JSR   get_property_ptr
    STA   __local_dec_var__0
-   LDA   __local_get_next_code_word__1
+   LDA   OPERANDS+2
    BEQ   .if_end@13
 .loop@4_start:
    LDA   __local_dec_var__0
    JSR   get_property_num
-   CMP   __local_get_next_code_word__1
+   CMP   OPERANDS+2
    BNE   .if_end@14
    LDA   __local_dec_var__0
    JSR   next_property
@@ -2692,8 +2676,6 @@ instr_get_prop_len:
    JMP   instr_get_parent@tail0
 instr_put_prop:
    SUBROUTINE
-   LDA   OPERANDS+2
-   STA   __local_branch_to_offset__0
    JSR   get_property_ptr
    STA   __local_instr_clear_attr__1
    JMP   .loop@5_start
@@ -2706,7 +2688,7 @@ instr_put_prop:
    STA   __local_instr_clear_attr__1
 .loop@5_start:
    JSR   get_property_num
-   CMP   __local_branch_to_offset__0
+   CMP   OPERANDS+2
    BNE   .instr_put_prop@rot@2
    LDA   __local_instr_clear_attr__1
    JSR   get_property_len
@@ -3472,7 +3454,7 @@ match_dictionary_word:
    SUBROUTINE
    JSR   get_dictionary_addr
    LDA   get_dictionary_addr@ret+1
-   STA   __local_get_object_addr__2
+   STA   __local_get_object_addr__3
    LDY   #$00
    LDA   (get_dictionary_addr@ret),Y
    TAY
@@ -3496,7 +3478,7 @@ match_dictionary_word:
    ADC   get_dictionary_addr@ret
    STA   __local_ascii_to_zchar__index
    BCC   .carry_inc@0
-   INC   __local_get_object_addr__2
+   INC   __local_get_object_addr__3
 .carry_inc@0:
 .loop@8_start:
    LDA   __local_ascii_to_zchar__index
@@ -3504,7 +3486,7 @@ match_dictionary_word:
    ADC   __local_ascii_to_zchar__0
    STA   __local_ascii_to_zchar__index
    BCC   .carry_inc@1
-   INC   __local_get_object_addr__2
+   INC   __local_get_object_addr__3
 .carry_inc@1:
    LDA   __local_ascii_to_zchar__left
    SEC
@@ -3525,7 +3507,7 @@ match_dictionary_word:
    SBC   __local_ascii_to_zchar__0
    STA   __local_ascii_to_zchar__index
    BCS   .carry_inc@3
-   DEC   __local_get_object_addr__2
+   DEC   __local_get_object_addr__3
 .carry_inc@3:
    LDA   __local_ascii_to_zchar__left
    CLC
@@ -3558,7 +3540,7 @@ match_dictionary_word:
    LDA   __local_ascii_to_zchar__index
    SBC   Z_HEADER_ADDR
    STA   __local_ascii_to_zchar__z
-   LDA   __local_get_object_addr__2
+   LDA   __local_get_object_addr__3
    SBC   Z_HEADER_ADDR+1
    TAX
    LDA   __local_ascii_to_zchar__z
@@ -3570,7 +3552,7 @@ match_dictionary_word:
    ADC   __local_ascii_to_zchar__2
    STA   __local_ascii_to_zchar__index
    BCC   .carry_inc@5
-   INC   __local_get_object_addr__2
+   INC   __local_get_object_addr__3
 .carry_inc@5:
    LDA   __local_ascii_to_zchar__dest
    SEC

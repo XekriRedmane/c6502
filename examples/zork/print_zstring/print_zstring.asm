@@ -85,13 +85,12 @@ __local_dump_buffer_with_more__0	EQU	$F6
 __local_get_next_code_word__1	EQU	$F6
 __local_dump_buffer_with_more__end	EQU	$F7
 __local_get_next_code_byte2__page	EQU	$F7
+__pages_size	EQU	$F7
 __local_dump_buffer_to_printer__x	EQU	$F8
-__local_get_next_code_byte2__0	EQU	$F8
+__local_set_page_first__0	EQU	$F8
 __local_dump_buffer_to_printer__1	EQU	$F9
-__local_set_page_first__0	EQU	$F9
-__pages_size	EQU	$F9
+__local_set_page_first__prev_first	EQU	$F9
 __local_dump_buffer_to_printer__2	EQU	$FA
-__local_set_page_first__prev_first	EQU	$FA
 __output_size	EQU	$0156
 __zstring_size	EQU	$015A
 BUFF_AREA	EQU	$0200
@@ -103,12 +102,12 @@ __literal_end	EQU	$0C87
 __literal_load_end	EQU	$0C87
 __pages_load	EQU	$17DD
 __pages_start	EQU	$17DD
-__pages_end	EQU	$18D6
-__pages_load_end	EQU	$18D6
-__zstring_load	EQU	$18D6
-__zstring_start	EQU	$18D6
-__zstring_end	EQU	$1A30
-__zstring_load_end	EQU	$1A30
+__pages_end	EQU	$18D4
+__pages_load_end	EQU	$18D4
+__zstring_load	EQU	$18D4
+__zstring_start	EQU	$18D4
+__zstring_end	EQU	$1A2E
+__zstring_load_end	EQU	$1A2E
 __output_load	EQU	$1B90
 __output_start	EQU	$1B90
 __output_end	EQU	$1CE6
@@ -222,7 +221,6 @@ get_next_code_byte2:
    LDA   Z_PC2+1
    STA   __local_dump_buffer_with_more__end
    LDA   Z_PC2+2
-   STA   __local_dump_buffer_to_printer__x
    BNE   .if_else@6
    LDA   __local_dump_buffer_with_more__end
    CMP   NUM_IMAGE_PAGES
@@ -230,7 +228,7 @@ get_next_code_byte2:
 .if_else@6:
    LDA   __local_dump_buffer_with_more__end
    STA   SCRATCH2
-   LDA   __local_dump_buffer_to_printer__x
+   LDA   Z_PC2+2
    STA   __zpabi_cout_string__s_1
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
@@ -248,7 +246,7 @@ get_next_code_byte2:
    STA   __zpabi_cout_string__s_1
    LDA   __local_dump_buffer_with_more__end
    STA   SCRATCH1
-   LDA   __local_dump_buffer_to_printer__x
+   LDA   Z_PC2+2
    STA   SCRATCH1+1
    JSR   read_from_sector
    BCC   .if_end@9
@@ -283,31 +281,31 @@ set_page_first:
    RTS
 .if_end@10:
    LDA   FIRST_Z_PAGE
-   STA   __local_dump_buffer_to_printer__2
+   STA   __local_dump_buffer_to_printer__1
    STY   FIRST_Z_PAGE
    LDA   (NEXT_PAGE_TABLE),Y
    TAX
-   LDA   __local_dump_buffer_to_printer__2
+   LDA   __local_dump_buffer_to_printer__1
    STA   (NEXT_PAGE_TABLE),Y
    LDA   (PREV_PAGE_TABLE),Y
-   STA   __local_dump_buffer_to_printer__1
+   STA   __local_dump_buffer_to_printer__x
    LDA   #$FF
    STA   (PREV_PAGE_TABLE),Y
    TXA
-   LDY   __local_dump_buffer_to_printer__1
+   LDY   __local_dump_buffer_to_printer__x
    STA   (NEXT_PAGE_TABLE),Y
    LDA   FIRST_Z_PAGE
-   LDY   __local_dump_buffer_to_printer__2
+   LDY   __local_dump_buffer_to_printer__1
    STA   (PREV_PAGE_TABLE),Y
    CPX   #$FF
    BNE   .if_else@12
-   LDA   __local_dump_buffer_to_printer__1
+   LDA   __local_dump_buffer_to_printer__x
    STA   LAST_Z_PAGE
    RTS
 .if_else@12:
    TXA
    TAY
-   LDA   __local_dump_buffer_to_printer__1
+   LDA   __local_dump_buffer_to_printer__x
    STA   (PREV_PAGE_TABLE),Y
    RTS
 find_index_of_page_table:
@@ -334,9 +332,9 @@ find_index_of_page_table:
    LDA   LAST_Z_PAGE
    RTS
 
-; Disassembly of section .zstring at $18D6
+; Disassembly of section .zstring at $18D4
    SEG   zstring
-   ORG   $18D6
+   ORG   $18D4
 print_zstring:
    SUBROUTINE
    LDA   #$00

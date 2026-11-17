@@ -97,9 +97,7 @@ __local_instr_get_prop__1	EQU	$E5
 __local_instr_get_prop_addr__y	EQU	$E5
 __local_instr_get_prop_len__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
-__local_instr_get_next_prop__1	EQU	$E6
 __local_instr_get_prop__y	EQU	$E6
-__local_instr_get_prop_addr__1	EQU	$E6
 __local_instr_get_prop_len__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
 __local_store_and_branch_on__related	EQU	$E6
@@ -108,7 +106,6 @@ __local_instr_get_prop__2	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
 __local_instr_put_prop__2	EQU	$E7
 __local_attr_ptr_and_mask__attr	EQU	$E8
-__local_instr_get_prop__3	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
 __local_attr_ptr_and_mask__mask_1	EQU	$E9
 __local_instr_insert_obj__5	EQU	$E9
@@ -120,7 +117,6 @@ PRINTER_CSW	EQU	$EE
 __local_get_property_ptr__0	EQU	$F0
 __local_remove_obj__2	EQU	$F3
 __local_remove_obj__3	EQU	$F4
-__local_remove_obj__4	EQU	$F5
 __local_get_object_addr__0	EQU	$F6
 __local_get_object_addr__1	EQU	$F7
 __local_get_object_addr__2	EQU	$F8
@@ -418,7 +414,6 @@ remove_obj:
    SUBROUTINE
 
    LDA   OPERANDS
-   STA   __local_remove_obj__4
    JSR   get_object_addr
    LDA   get_object_addr@ret
    STA   __local_remove_obj__2
@@ -432,7 +427,7 @@ remove_obj:
    JSR   get_object_addr
    LDY   #$06
    LDA   (get_object_addr@ret),Y
-   CMP   __local_remove_obj__4
+   CMP   OPERANDS
    BNE   .if_else@2
    DEY
    LDA   (__local_remove_obj__2),Y
@@ -444,7 +439,7 @@ remove_obj:
    JSR   get_object_addr
    LDY   #$05
    LDA   (get_object_addr@ret),Y
-   CMP   __local_remove_obj__4
+   CMP   OPERANDS
    BNE   .loop@0_start
    LDA   (__local_remove_obj__2),Y
    STA   (get_object_addr@ret),Y
@@ -467,15 +462,12 @@ instr_insert_obj:
    JSR   remove_obj
    LDA   OPERANDS
    STA   __local_instr_insert_obj__5
-   LDA   OPERANDS+2
-   STA   __local_instr_insert_obj__0
-   LDA   OPERANDS
    JSR   get_object_addr
    LDA   get_object_addr@ret
    STA   __local_instr_insert_obj__3
    LDA   get_object_addr@ret+1
    STA   __local_instr_insert_obj__4
-   LDA   __local_instr_insert_obj__0
+   LDA   OPERANDS+2
    LDY   #$04
    STA   (get_object_addr@ret),Y
    JSR   get_object_addr
@@ -738,8 +730,6 @@ next_property:
 instr_get_prop:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __local_instr_get_prop__3
    JSR   get_property_ptr
    STA   __local_instr_get_prop__y
    JMP   .loop@2_start
@@ -755,7 +745,7 @@ instr_get_prop:
    LDA   Z_HEADER_ADDR+1
    ADC   __local_instr_get_prop__0
    STA   __local_instr_get_prop__2
-   LDA   __local_instr_get_prop__3
+   LDA   OPERANDS+2
    ASL
    STA   __local_instr_get_prop__1
    TAY
@@ -775,7 +765,7 @@ instr_get_prop:
    STA   __local_instr_get_prop__y
 .loop@2_start:
    JSR   get_property_num
-   CMP   __local_instr_get_prop__3
+   CMP   OPERANDS+2
    BNE   .instr_get_prop@rot@1
    LDA   __local_instr_get_prop__y
    JSR   get_property_len
@@ -820,13 +810,11 @@ instr_get_prop@tail2:
 instr_get_prop_addr:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __local_instr_get_prop_addr__1
    JSR   get_property_ptr
    STA   __local_instr_get_prop_addr__y
 .loop@3_start:
    JSR   get_property_num
-   CMP   __local_instr_get_prop_addr__1
+   CMP   OPERANDS+2
    BNE   .if_end@11
    LDA   props
    CLC
@@ -865,16 +853,14 @@ instr_get_prop_addr@tail1:
 instr_get_next_prop:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __local_instr_get_next_prop__1
    JSR   get_property_ptr
    STA   __local_instr_get_next_prop__y
-   LDA   __local_instr_get_next_prop__1
+   LDA   OPERANDS+2
    BEQ   .if_end@13
 .loop@4_start:
    LDA   __local_instr_get_next_prop__y
    JSR   get_property_num
-   CMP   __local_instr_get_next_prop__1
+   CMP   OPERANDS+2
    BNE   .if_end@14
    LDA   __local_instr_get_next_prop__y
    JSR   next_property
@@ -925,8 +911,6 @@ instr_get_prop_len:
 instr_put_prop:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __local_instr_put_prop__1
    JSR   get_property_ptr
    STA   __local_instr_put_prop__y
    JMP   .loop@5_start
@@ -939,7 +923,7 @@ instr_put_prop:
    STA   __local_instr_put_prop__y
 .loop@5_start:
    JSR   get_property_num
-   CMP   __local_instr_put_prop__1
+   CMP   OPERANDS+2
    BNE   .instr_put_prop@rot@2
    LDA   __local_instr_put_prop__y
    JSR   get_property_len

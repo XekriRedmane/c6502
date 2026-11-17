@@ -258,25 +258,144 @@ def apply_memory_value_propagation(
     prog: asm_ast.Program,
     *,
     zp_symbol_addrs: dict[str, int] | None = None,
+    noreturn: frozenset[str] = frozenset(),
 ) -> asm_ast.Program:
     """Top-level entry. `zp_symbol_addrs` extends the runtime-symbol
     table with caller-supplied `Data(name)` → byte-address bindings
-    (typically the `__zpabi_*` and `__local_*` slot symbols)."""
+    (typically the `__zpabi_*` and `__local_*` slot symbols).
+    `noreturn` names the functions that never return
+    (`[[noreturn]]`), whose calls don't reach the code after them
+    (see `_call_summaries`)."""
     from passes.asm_aliasing import runtime_zp_addrs
     addrs = dict(runtime_zp_addrs())
     if zp_symbol_addrs:
         addrs.update(zp_symbol_addrs)
+    summaries = _call_summaries(prog, addrs, noreturn)
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl, addrs))
+            new_top.append(_rewrite_function(tl, addrs, summaries))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
 
+# What a call may write, for the facts after it (`_call_summaries`):
+# zero-page addresses, and the `(name, offset)` bytes of other
+# statics, with an offset of None for any byte of the name.
+Summary = tuple[frozenset[int], frozenset[tuple[str, Optional[int]]]]
+
+
+def _call_summaries(
+    prog: asm_ast.Program, zp_addrs: dict[str, int],
+    noreturn: frozenset[str],
+) -> dict[str, Summary]:
+    """For each function of `prog` whose effects are known, what it
+    and everything it calls may write. A function is left out (its
+    calls kill every fact, as any call did) when it, or something it
+    calls, writes through a pointer, a frame, or an index into a
+    zero-page object, has a soft-stack frame or another compound atom,
+    or calls a function that isn't in `prog` and returns. A call to a
+    function that never returns adds nothing, since the code after
+    the call never runs: Zork's `push` calls `internal_error` when
+    the stack is full. So a call to a `static` leaf such as
+    `get_property_ptr` keeps the fact that a slot holds a copy of
+    `OPERANDS+2`, and `instr_get_prop` reads `OPERANDS+2` where it had
+    copied it before the call."""
+    fns = {tl.name: tl for tl in prog.top_level
+           if isinstance(tl, asm_ast.Function)}
+    own: dict[str, Optional[Summary]] = {}
+    calls: dict[str, set[str]] = {}
+    for name, fn in fns.items():
+        own[name] = _own_writes(fn, zp_addrs)
+        calls[name] = set()
+        labels = {i.name for i in fn.instructions
+                  if isinstance(i, asm_ast.Label)}
+        for ins in fn.instructions:
+            if isinstance(ins, asm_ast.Call):
+                callee = ins.name
+            elif (isinstance(ins, asm_ast.Jump)
+                    and ins.target not in labels):
+                callee = ins.target
+            else:
+                continue
+            if callee in noreturn:
+                continue
+            if callee not in fns:
+                own[name] = None
+            calls[name].add(callee)
+    # An unknown callee makes its callers unknown, until nothing
+    # changes.
+    known = {n for n, s in own.items() if s is not None}
+    changed = True
+    while changed:
+        changed = False
+        for n in list(known):
+            if any(c not in known for c in calls[n]):
+                known.discard(n)
+                changed = True
+    out: dict[str, Summary] = {}
+    for n in known:
+        zp: set[int] = set()
+        data: set[tuple[str, Optional[int]]] = set()
+        seen: set[str] = set()
+        stack = [n]
+        while stack:
+            f = stack.pop()
+            if f in seen:
+                continue
+            seen.add(f)
+            z, d = own[f]
+            zp |= z
+            data |= d
+            stack.extend(calls[f])
+        out[n] = (frozenset(zp), frozenset(data))
+    return out
+
+
+_WRITERS = (
+    asm_ast.Mov, asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    asm_ast.Xor, asm_ast.Inc, asm_ast.Dec, asm_ast.Pop,
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight,
+)
+
+
+def _own_writes(fn: asm_ast.Function, zp_addrs) -> Optional[Summary]:
+    """The bytes `fn`'s own instructions may write, or None when one
+    of them may write any byte (see `_call_summaries`)."""
+    zp: set[int] = set()
+    data: set[tuple[str, Optional[int]]] = set()
+    for ins in fn.instructions:
+        if isinstance(ins, (asm_ast.FunctionPrologue, asm_ast.AllocateStack,
+                            asm_ast.LoadAddress, asm_ast.Ret, asm_ast.Phi)):
+            return None
+        if not isinstance(ins, _WRITERS):
+            continue
+        dst = ins.dst
+        if isinstance(dst, asm_ast.Reg):
+            continue
+        if isinstance(dst, (asm_ast.ZP, asm_ast.Data)):
+            addr = _zp_addr(dst, zp_addrs)
+            if addr is not None:
+                zp.add(addr)
+            elif isinstance(dst, asm_ast.Data):
+                if dst.name in zp_addrs:
+                    # A zero-page name whose byte is past $FF.
+                    return None
+                data.add((dst.name, dst.offset))
+            continue
+        if (isinstance(dst, asm_ast.IndexedData) and dst.name
+                and dst.name not in zp_addrs):
+            data.add((dst.name, None))
+            continue
+        return None
+    return (frozenset(zp), frozenset(data))
+
+
 def _rewrite_function(
     fn: asm_ast.Function, zp_addrs: dict[str, int],
+    summaries: dict | None = None,
 ) -> asm_ast.Function:
     # A tail call is a `JMP` to another function's name, which isn't
     # a label of this one. The tolerant build gives each such target
@@ -303,6 +422,7 @@ def _rewrite_function(
     ctx = _Ctx(
         zp_addrs=zp_addrs, writable=writable,
         x_tokens=x_tokens, y_tokens=y_tokens,
+        summaries=summaries or {},
     )
     in_states = _solve(cfg, ctx)
     # Find which slot reads could read a fixed source instead, then
@@ -335,6 +455,8 @@ class _Ctx:
     probe: Optional[set[tuple[int, int]]] = None
     allowed: frozenset[tuple[int, int]] = frozenset()
     index: int = 0
+    # What each call may write (`_call_summaries`).
+    summaries: dict = field(default_factory=dict)
 
 
 def _index_register_tokens(
@@ -520,6 +642,21 @@ def _transfer(
     instr: asm_ast.Type_instruction, state: State, ctx: _Ctx,
 ) -> None:
     """In-place transfer of `instr`'s effects on `state`."""
+    # A call to a function whose writes are known kills the facts
+    # about those bytes, and A, X, and Y, which the callee may change.
+    if isinstance(instr, asm_ast.Call) and instr.name in ctx.summaries:
+        zp, data = ctx.summaries[instr.name]
+        state.a_value = None
+        state.x_token = None
+        state.y_token = None
+        for addr in zp:
+            _kill_cell(addr, state)
+        for name, offset in data:
+            if offset is None:
+                _kill_data_name_any(name, state)
+            else:
+                _kill_data_name(name, offset, state)
+        return
     # Calls / compound atoms: opaque, kill everything (cells, A
     # register, and the X/Y tokens since a callee can clobber them).
     if isinstance(instr, (
@@ -787,6 +924,16 @@ def _kill_data_name(name: str, offset: int, state: State) -> None:
             state.cells.pop(k, None)
     if (isinstance(state.a_value, DataExpr)
             and (state.a_value.name, state.a_value.offset) == target):
+        state.a_value = None
+
+
+def _kill_data_name_any(name: str, state: State) -> None:
+    """`_kill_data_name` for every byte of `name`, after an indexed
+    write to it."""
+    for k, v in list(state.cells.items()):
+        if isinstance(v, DataExpr) and v.name == name:
+            state.cells.pop(k, None)
+    if isinstance(state.a_value, DataExpr) and state.a_value.name == name:
         state.a_value = None
 
 

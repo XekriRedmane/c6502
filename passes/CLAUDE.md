@@ -327,7 +327,11 @@ this directory:
   the label directly, `name,Y` (`_label_pointer_operand`), which is
   how a pooled function's local array is indexed. A `(zp),Y` pointer whose bytes copy a named zero-page pointer
   (not a slot) reads or writes through that pointer
-  (`_copied_pointer_operand`).
+  (`_copied_pointer_operand`). A call to a function of the program
+  with a summary of what it and its callees may write
+  (`_call_summaries`: none for a store through a pointer, a frame, or
+  a call outside the program that returns; a call to a `noreturn`
+  name adds nothing) ends only the facts about those bytes.
 - `label_resolution.py` — pass 4 (see below).
 - `linker.py` — `link_objects` / `link_files`, what `compile.py` runs
   on objects; multi-TU re-allocates `__zpabi_*` and `__local_*`

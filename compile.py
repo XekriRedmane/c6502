@@ -230,6 +230,7 @@ _PEEPHOLE_FIXEDPOINT_CAP = 16
 
 def _peephole_fixedpoint(
     prog, *, zp_slot_symbols=None, zp_global_symbols=None,
+    noreturn=frozenset(),
 ):
     """Run apply_inc_peephole → apply_dec_peephole → apply_direct_
     index_load → apply_redundant_load_elimination →
@@ -251,7 +252,9 @@ def _peephole_fixedpoint(
     which several passes treat as scratch that's dead at return.
     `zp_global_symbols` are user zero-page globals; only
     `memory_value_propagation` gets them, so it can use a zero-page
-    pointer global as an `(zp),Y` base."""
+    pointer global as an `(zp),Y` base. It gets `noreturn` too, the
+    functions that never return, whose calls end its call summaries'
+    paths."""
     zp_cells = {**(zp_slot_symbols or {}), **(zp_global_symbols or {})}
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
         new_prog = apply_split_mem_to_mem(prog)
@@ -264,7 +267,7 @@ def _peephole_fixedpoint(
         new_prog = apply_dead_pha_pla(new_prog)
         new_prog = apply_cpx_cpy_peephole(new_prog)
         new_prog = apply_memory_value_propagation(
-            new_prog, zp_symbol_addrs=zp_cells or None,
+            new_prog, zp_symbol_addrs=zp_cells or None, noreturn=noreturn,
         )
         new_prog = apply_shift_in_a(new_prog)
         new_prog = apply_redundant_load_after_rmw(new_prog)
@@ -420,6 +423,13 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     every static-storage object, and `zp` is the translation unit's
     zero-page plan (passes/zp_globals.py), which must be in effect."""
     tac = optimize_tac(tac, symbols)
+    # The functions that never return, for memory value propagation's
+    # call summaries.
+    from passes.type_checking import FunAttr
+    noreturn = frozenset(
+        n for n, s in symbols.items()
+        if isinstance(s.attrs, FunAttr) and getattr(s.attrs, "noreturn", False)
+    )
     # Inline-switch dispatch for small const-pointer arrays.
     # Recognizes `arr[i][j]` where arr is a `static const T
     # * const[N]` and rewrites the indirect chain to a
@@ -595,7 +605,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm2 = apply_licm(asm2, {**all_slot_symbols, **zp.addrs})
     asm3 = _peephole_fixedpoint(
         asm2, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs,
+        zp_global_symbols=zp.addrs, noreturn=noreturn,
     )
     # Promote a reg('A')-param's body-local spill to live in
     # A across the loop body (parks it in Y during the
@@ -621,7 +631,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # Y-pivot embedded in loop_counter_to_x freed up X).
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs,
+        zp_global_symbols=zp.addrs, noreturn=noreturn,
     )
     # Y-promote a Data symbol that's loaded into X multiple
     # times when Y is otherwise unused — saves the
@@ -632,7 +642,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm3 = apply_dual_index_promotion(asm3)
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs,
+        zp_global_symbols=zp.addrs, noreturn=noreturn,
     )
     # Drop a SEC or CLC where C already has that value, or move one in
     # front of a loop whose back edges have it (passes/carry_known.py).
@@ -661,12 +671,12 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # bottom, so both run again, and carry_known after them.
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs,
+        zp_global_symbols=zp.addrs, noreturn=noreturn,
     )
     asm3 = apply_counter_to_index_reg(asm3)
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs,
+        zp_global_symbols=zp.addrs, noreturn=noreturn,
     )
     asm3 = apply_carry_known(asm3)
     # A chain of compares of A with constants becomes a jump table

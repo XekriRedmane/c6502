@@ -1307,8 +1307,6 @@ do_2op:
 do_var:
    SUBROUTINE
 
-   LDX   OPERANDS
-   STX   __local_do_var__3
    CMP   #$0A
    BCC   .lb_skip@2
    JMP   internal_error
@@ -1334,7 +1332,7 @@ do_var:
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
-   ADC   __local_do_var__3
+   ADC   OPERANDS
    STA   __local_do_var__0
    LDA   Z_HEADER_ADDR+1
    ADC   OPERANDS+1
@@ -1360,7 +1358,7 @@ do_var:
    STA   (__local_do_var__0),Y
    RTS
 .case@63:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    CLC
    ADC   OPERANDS+2
    STA   __local_do_var__n
@@ -1379,16 +1377,16 @@ do_var:
    STA   (__local_do_var__n),Y
    RTS
 .case@66:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    JMP   buffer_char
 .case@67:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    STA   __zpabi_print_number__n_0
    LDA   OPERANDS+1
    STA   __zpabi_print_number__n_1
    JMP   print_number
 .case@69:
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    STA   __zpabi_push__value_0
    LDA   OPERANDS+1
    STA   __zpabi_push__value_1
@@ -1397,7 +1395,7 @@ do_var:
    JSR   pop
    STA   __zpabi_var_put__value_0
    STX   __zpabi_var_put__value_1
-   LDA   __local_do_var__3
+   LDA   OPERANDS
    JMP   var_put
 
 do_instruction:

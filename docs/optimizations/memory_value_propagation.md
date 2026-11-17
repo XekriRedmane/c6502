@@ -225,6 +225,43 @@ through `p` before anything can write `F@ret` again goes through
 and a store through a pointer, end the facts as they do for every
 cell, so a read after one keeps the copy.
 
+## Calls whose writes are known
+
+A call used to end every fact. Now, for each function of the program
+it computes what that function, and everything it calls, may write:
+the zero-page bytes, and the bytes of other statics. A call to a
+function with such a summary ends only the facts about those bytes,
+and what A, X, and Y held. A function has no summary when it, or
+something it calls, writes through a pointer, into a frame, or at an
+index into a zero-page object, sets up a soft-stack frame, or calls a
+function outside the program that returns. A call to a function that
+never returns (`[[noreturn]]`, which `compile.optimized_asm` passes
+in) adds nothing, since the code after it never runs.
+
+In Zork's `objects.c` (examples/zork/interpreter), the property
+instructions read `OPERANDS[1]` after calls to `get_property_ptr`,
+`get_property_num`, and `next_property`, which only read the object
+table and write `props` and their own slots. Each had copied it into
+a slot first, since the call could have changed `OPERANDS`:
+
+```
+instr_get_prop_addr:                        instr_get_prop_addr:
+   LDA   OPERANDS+2                            JSR   get_property_ptr
+   STA   __local_instr_get_prop_addr__1        STA   __local_instr_get_prop_addr__y
+   JSR   get_property_ptr                ->  .loop@3_start:
+   STA   __local_instr_get_prop_addr__y        JSR   get_property_num
+.loop@3_start:                                 CMP   OPERANDS+2
+   JSR   get_property_num
+   CMP   __local_instr_get_prop_addr__1
+```
+
+That's 24 bytes in the four property instructions, `remove_obj`, and
+`instr_insert_obj`, whose calls to `get_object_addr` write only its
+return pointer.
+In `decode.c`, `do_var` reads `OPERANDS` in its cases after calls whose
+only call outside the unit is to `internal_error`, which never
+returns.
+
 ## When it applies
 
 - A tail call, a `JMP` to another function, ends the facts like a

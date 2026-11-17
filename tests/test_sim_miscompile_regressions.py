@@ -50,6 +50,27 @@ _CASES: list[tuple[str, str, int]] = [
             return a * 10 + b;
         }
     """, 73),
+    # cmp_through_tmp_fold took the store `g3 = p` to the zero-page
+    # global `g3` for the temporary of the add after it, since the
+    # add was the only read of `g3` in `f`, and dropped the store.
+    # `main` reads `g3` afterwards. Found by fuzz.stmts, seed 1809.
+    ("store_to_a_global_kept_for_its_readers", """
+        unsigned int acc;
+        unsigned char g3 [[c6502::zeropage]] = 2;
+        unsigned long z4 = 40;
+        unsigned long *gp = &z4;
+        void mix(unsigned long v) { acc = acc * 3 + (unsigned int)v; }
+        void f(void) {
+            unsigned char w = 0;
+            unsigned long p;
+            while (w++ < 3) {
+                p = --(*gp);
+                g3 = p;
+                mix(w + g3);
+            }
+        }
+        int main(void) { f(); mix(g3); return (int)(acc & 0x7FFF); }
+    """, 1597),
     # rotate_loop_test entered a rotated loop at its body when the
     # test was known to pass the first time, skipping the test's
     # `LDA i; CMP #1; BCS exit`. carry_known had dropped the body's

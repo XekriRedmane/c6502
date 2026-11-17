@@ -69,9 +69,10 @@ class TestCmpThroughTmpFold(unittest.TestCase):
         self.assertEqual(out, instrs)
 
     def test_sbc_after_sec(self):
-        # do_rwts_on_sector's `sector - SECTORS_PER_TRACK`.
+        # do_rwts_on_sector's `sector - SECTORS_PER_TRACK`, staged
+        # through one of the function's own slots.
         src = asm_ast.Data(name="SECTORS_PER_TRACK", offset=0)
-        tmp = asm_ast.Data(name="T", offset=0)
+        tmp = asm_ast.Data(name="__local_f__T", offset=0)
         other = asm_ast.Data(name="sector", offset=0)
         prog = _wrap([
             _lda(src), _sta(tmp), _lda(other), asm_ast.SetCarry(),
@@ -82,6 +83,19 @@ class TestCmpThroughTmpFold(unittest.TestCase):
             _lda(other), asm_ast.SetCarry(), asm_ast.Sub(src=src, dst=_A),
             asm_ast.Return(save_a=True),
         ])
+
+    def test_global_temporary_kept_when_live_elsewhere(self):
+        # `T` is a global, which other functions may read, so its
+        # store stays although nothing else in this function reads it.
+        src = asm_ast.Data(name="S", offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(other), asm_ast.SetCarry(),
+            asm_ast.Sub(src=tmp, dst=_A), asm_ast.Return(save_a=True),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
 
     def test_logic_and_add(self):
         src = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())

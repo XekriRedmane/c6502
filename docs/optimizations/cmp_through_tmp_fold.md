@@ -123,11 +123,15 @@ kept in A.
   from `tmp`. Any indexed, indirect, or soft-stack `other` is
   rejected, since the pass can't rule out that it addresses `tmp`.
 - Dropping the store loses nothing. Either `tmp` is dead after the
-  `CMP` on every path, by `asm_dead_store.mem_dead_after`, or every
-  read of `tmp` anywhere in the function is the `CMP` of some
-  matching window, in which case the pass folds all of those windows
-  together. The second rule covers several comparisons that each
-  stage their own value through the same slot.
+  `CMP` on every path, by `asm_dead_store.mem_dead_after`, or `tmp` is
+  one of the function's own `__local_*` slots, whose address it never
+  takes, and every read of `tmp` anywhere in the function is the `CMP`
+  of some matching window, in which case the pass folds all of those
+  windows together. The second rule covers several comparisons that
+  each stage their own value through the same slot. It used to take
+  any `tmp`, and in a loop with `g3 = p; mix(w + g3);` it dropped the
+  store to the zero-page global `g3`, whose other readers are in other
+  functions (`fuzz.stmts`, seed 1809).
 
 ## What it leaves alone
 

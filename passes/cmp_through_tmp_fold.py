@@ -94,7 +94,10 @@ collects the `__local_*` symbol when it's no longer referenced.
     nothing. Register allocation reuses a `__local_*` slot for
     unrelated values, so this is checked per candidate. When it
     doesn't hold, the group rule below can still apply.
-  * Otherwise, every read of `tmp` in the function must be "owned"
+  * Otherwise, `tmp` must be one of the function's own `__local_*`
+    slots whose address it never takes, since the other readers of a
+    global are in other functions, and every read of `tmp` in the
+    function must be "owned"
     by a matching candidate window — i.e. it must sit at one of the
     candidates' CMP positions. When that holds, folding every
     candidate in the group as a batch leaves no orphaned reader.
@@ -331,6 +334,22 @@ def _matches_pattern(a, b, c, d) -> tuple[
     return src, other
 
 
+def _own_private_slots(fn: asm_ast.Function) -> set[str]:
+    """The names of `fn`'s own `__local_<fn>__*` slots whose address
+    `fn` never takes (no `ImmLabelLow` / `ImmLabelHigh` of them), which
+    no other function reads."""
+    prefix = f"__local_{fn.name}__"
+    names: set[str] = set()
+    taken: set[str] = set()
+    for ins in fn.instructions:
+        for op in vars(ins).values():
+            if isinstance(op, asm_ast.Data) and op.name.startswith(prefix):
+                names.add(op.name)
+            if isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
+                taken.add(op.name)
+    return names - taken
+
+
 def _tmp_key(tmp):
     """Hashable identity for a Data / ZP tmp operand."""
     if isinstance(tmp, asm_ast.Data):
@@ -383,8 +402,16 @@ def _rewrite_function(
         tmp_by_key[key] = tmp
 
     foldable_keys: set[tuple] = set()
+    own = _own_private_slots(fn)
     for key, owned_idxs in owned_cmp_idxs_by_key.items():
         tmp = tmp_by_key[key]
+        # Only the function's own slots: a global's other readers are
+        # in other functions. `g3 = p18; mix(w24 + g3);` in a loop had
+        # its store to the zero-page global `g3` dropped, as the add's
+        # temporary, since the add was the only read of `g3` in the
+        # function (fuzz.stmts, seed 1809).
+        if not (isinstance(tmp, asm_ast.Data) and tmp.name in own):
+            continue
         if all(
             (k in owned_idxs) or not _reads_tmp(instr, tmp)
             for k, instr in enumerate(instrs)

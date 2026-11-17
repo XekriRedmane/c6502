@@ -88,6 +88,19 @@ unsigned char top_bit(void) {
 the branch's target returns `t` in A, so the code stays `LDA flags;
 AND #$80; BEQ .if_end@0`.
 
+## After any instruction that set N from A
+
+The `LDA` needn't be right before the `AND`. When the instruction that
+last wrote A set N from it, with only stores and conditional branches
+between, and a label in between is reached that way on every path in
+(`redundant_compare._flags_from`), `AND #$80; BEQ` / `BNE` is `BPL` /
+`BMI`. A must be dead on both paths, and N and Z too, since without the
+`AND`, Z comes from all of A. In Zork's `ascii_to_zchar`
+(examples/zork/interpreter/input.c), `a = get_alphabet_for_char(c) -
+1; if (a & 0x80)` was `SEC; SBC #$01; STA a; AND #$80; BEQ`, and
+`get_alphabet_for_char` tests `c & 0x80` after an `ORA #$00` that tests
+`c == 0`, 8 bytes in the two with the reloads of A that then go.
+
 ## The low bit
 
 Bit 0 maps onto C through `LSR A`, which is 1 byte to the `AND`'s 2

@@ -166,14 +166,14 @@ file and the original code it translates:
 | `decode.c` | 1859 | 1783 |
 | `objects.c` | 788 | 879 |
 | `numbers.c` | 436 | 465 |
-| `input.c` | 1018 | 1081 |
+| `input.c` | 1018 | 1073 |
 | `pages.c` | 384 | 379 |
 | `zstring.c` | 383 | 387 |
 | `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 337 |
-| **Total** | **6643** | **6822** |
+| **Total** | **6643** | **6814** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -536,3 +536,7 @@ the smaller code saved.
   The property instructions, `remove_obj`, `instr_insert_obj`, and
   `do_var` read `OPERANDS` after their calls, where they had copied
   it into a slot first, 28 bytes.
+- `AND #$80; BEQ` is `BPL` after any instruction that set N from A,
+  with stores between
+  ([and_sign_bit_branch.md](../../../docs/optimizations/and_sign_bit_branch.md)),
+  8 bytes in `ascii_to_zchar` and `get_alphabet_for_char`.

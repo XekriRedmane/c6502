@@ -280,7 +280,7 @@ __main_size	EQU	$0147
 BUFF_AREA	EQU	$0200
 __tables_size	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
-__text_rest_size	EQU	$07B9
+__text_rest_size	EQU	$07B1
 __main_load	EQU	$0800
 __main_start	EQU	$0800
 restart	EQU	$0800
@@ -294,20 +294,20 @@ __text_load_end	EQU	$19EC
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
-__rodata_load	EQU	$33B9
-__rodata_start	EQU	$33B9
-__text_rest_end	EQU	$33B9
-__text_rest_load_end	EQU	$33B9
-__data_load	EQU	$349B
-__data_start	EQU	$349B
-__rodata_end	EQU	$349B
-__rodata_load_end	EQU	$349B
-__bss_load	EQU	$34E0
-__bss_start	EQU	$34E0
-__data_end	EQU	$34E0
-__data_load_end	EQU	$34E0
-__bss_end	EQU	$34E3
-__bss_load_end	EQU	$34E3
+__rodata_load	EQU	$33B1
+__rodata_start	EQU	$33B1
+__text_rest_end	EQU	$33B1
+__text_rest_load_end	EQU	$33B1
+__data_load	EQU	$3493
+__data_start	EQU	$3493
+__rodata_end	EQU	$3493
+__rodata_load_end	EQU	$3493
+__bss_load	EQU	$34D8
+__bss_start	EQU	$34D8
+__data_end	EQU	$34D8
+__data_load_end	EQU	$34D8
+__bss_end	EQU	$34DB
+__bss_load_end	EQU	$34DB
 __tables_load	EQU	$3500
 __tables_start	EQU	$3500
 __story	EQU	$3700
@@ -835,7 +835,7 @@ do_0op:
    RTS
 .jtab@0:
    DC.B  $88, $0B, $8B, $0B, $6B, $11, $8E, $0B
-   DC.B  $A4, $0B, $56, $32, $EF, $32, $24, $2C
+   DC.B  $A4, $0B, $4E, $32, $E7, $32, $24, $2C
    DC.B  $97, $0B, $6E, $09, $2A, $2C, $80, $12
 .case@4:
    JMP   branch@tail0
@@ -943,7 +943,7 @@ do_var:
    RTS
 .jtab@3:
    DC.B  $80, $0A, $60, $0C, $91, $0C, $C6, $17
-   DC.B  $92, $2F, $B2, $0C, $B7, $0C, $73, $19
+   DC.B  $8A, $2F, $B2, $0C, $B7, $0C, $73, $19
    DC.B  $C2, $0C, $CD, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
@@ -1798,9 +1798,9 @@ dump_buffer_with_more:
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #$07
+   LDA   #$FF
    STA   __local_get_nonstack_var__1
-   LDA   #$34
+   LDA   #$33
    STA   __local_get_nonstack_var__2
    LDX   #$06
    JSR   cout_string
@@ -3028,7 +3028,7 @@ instr_restart:
 instr_quit:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$B9
+   LDA   #$B1
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
@@ -3042,7 +3042,7 @@ instr_quit@tail0:
 internal_error:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$CD
+   LDA   #$C5
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
@@ -3067,7 +3067,7 @@ print_status_line:
    JSR   dump_buffer_to_screen
    LDA   #$19
    STA   CH
-   LDA   #$E1
+   LDA   #$D9
    STA   __local_get_nonstack_var__1
    LDA   #$33
    STA   __local_get_nonstack_var__2
@@ -3249,8 +3249,7 @@ get_alphabet_for_char:
 .if_end@18:
    ORA   #$00
    BEQ   .get_alphabet_for_char@scfold@0
-   AND   #$80
-   BEQ   .if_end@21
+   BPL   .if_end@21
 .get_alphabet_for_char@scfold@0:
    LDA   __local_dec_var__0
    RTS
@@ -3348,15 +3347,12 @@ ascii_to_zchar:
    JSR   get_alphabet_for_char
    SEC
    SBC   #$01
-   STA   __local_ascii_to_zchar__z
-   AND   #$80
-   BEQ   .if_else@30
+   BPL   .if_else@30
    LDA   __local_ascii_to_zchar__2
    SEC
    SBC   #$5B
    JMP   .if_end@33
 .if_else@30:
-   LDA   __local_ascii_to_zchar__z
    BNE   .if_else@32
    LDA   __local_ascii_to_zchar__2
    SEC
@@ -3736,7 +3732,7 @@ do_rwts_on_sector:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #$34
-   LDY   #$9B
+   LDY   #$93
    JMP   RWTS
 write_next_sector:
    SUBROUTINE
@@ -3776,7 +3772,7 @@ get_prompted_number_from_user:
    ASL
    ASL
    STA   __local_attr_ptr_and_mask__attr
-   LDA   #$B0
+   LDA   #$A8
    CLC
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_next_code_byte__page
@@ -3790,14 +3786,14 @@ get_prompted_number_from_user:
    STA   CH
    LDA   #$3F
    STA   INVFLG
-   LDA   #$29
+   LDA   #$21
    STA   __local_get_nonstack_var__1
    LDA   #$34
    STA   __local_get_nonstack_var__2
    LDX   #$0A
    JSR   cout_string
    CLC
-   LDA   #$BF
+   LDA   #$B7
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_nonstack_var__1
    LDA   #$34
@@ -3825,7 +3821,7 @@ please_insert_save_diskette:
    JSR   home
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
-   LDA   #$0D
+   LDA   #$05
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3873,7 +3869,7 @@ please_insert_save_diskette:
    JSR   buffer_char
 .loop@3_start:
    JSR   dump_buffer_with_more
-   LDA   #$33
+   LDA   #$2B
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3912,7 +3908,7 @@ please_reinsert_game_diskette:
    CMP   #$01
    BNE   .if_end@9
    JSR   dump_buffer_with_more
-   LDA   #$56
+   LDA   #$4E
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3920,7 +3916,7 @@ please_reinsert_game_diskette:
    JSR   print_ascii_string
 .loop@4_start:
    JSR   dump_buffer_with_more
-   LDA   #$75
+   LDA   #$6D
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -4139,9 +4135,9 @@ __zp_init:
    STA   sign_bit
    RTS
 
-; Disassembly of section .rodata at $33B9
+; Disassembly of section .rodata at $33B1
    SEG   rodata
-   ORG   $33B9
+   ORG   $33B1
 sEndOfSession:
    DC.B  $2D, $2D, $20, $45, $4E, $44, $20, $4F
    DC.B  $46, $20, $53, $45, $53, $53, $49, $4F
@@ -4186,11 +4182,11 @@ sPressReturnToContinue:
    DC.B  $4F, $20, $43, $4F, $4E, $54, $49, $4E
    DC.B  $55, $45, $20, $2D, $2D, $2D
 
-; Disassembly of section .data at $349B
+; Disassembly of section .data at $3493
    SEG   data
-   ORG   $349B
+   ORG   $3493
 iob:
-   DC.B  $01, $60, $01, $00, $00, $00, $AC, $34
+   DC.B  $01, $60, $01, $00, $00, $00, $A4, $34
    DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
 dct:
@@ -4203,9 +4199,9 @@ prompts:
    DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E
    DC.B  $20, $28, $30, $2D, $37, $29, $3A, $30
 
-; Disassembly of section .bss at $34E0
+; Disassembly of section .bss at $34D8
    SEG   bss
-   ORG   $34E0
+   ORG   $34D8
 attr_mask:
    DC.B  $00, $00
 printer_card_initialized_flag:

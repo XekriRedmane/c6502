@@ -151,6 +151,20 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             out.append(asm_ast.Branch(cond=new_cond, target=br.target))
             i += 4
             continue
+        # Any instruction that set N from A, with stores and branches
+        # between it and the AND, as `a = x - 1; if (a & 0x80)` leaves
+        # `SEC; SBC #$01; STA a; AND #$80; BEQ`.
+        if (i + 1 < len(instrs)
+                and _is_and_imm80(instrs[i])
+                and _is_eq_ne_branch(instrs[i + 1])
+                and _flags_set_from_a(instrs, i)
+                and _a_dead_both_ways(instrs, i + 1)
+                and _flags_dead_both_ways(instrs, i + 1)):
+            br = instrs[i + 1]
+            new_cond = asm_ast.PL() if isinstance(br.cond, asm_ast.EQ) else asm_ast.MI()
+            out.append(asm_ast.Branch(cond=new_cond, target=br.target))
+            i += 2
+            continue
         if (i + 2 < len(instrs)
                 and isinstance(instrs[i], asm_ast.Mov)
                 and not instrs[i].is_volatile
@@ -199,6 +213,32 @@ def _a_dead_both_ways(instrs, branch_idx: int) -> bool:
     for k, ins in enumerate(instrs):
         if isinstance(ins, asm_ast.Label) and ins.name == target:
             return a_dead_at(instrs, k)
+    return False
+
+
+def _flags_set_from_a(instrs, i: int) -> bool:
+    """True when N and Z at `instrs[i]` were set from A's value by the
+    instruction that last wrote A (`redundant_compare._flags_from`,
+    which passes over stores and conditional branches and follows
+    labels to every way in)."""
+    from passes.redundant_compare import _A, _TABLE_TARGETS, _flags_from, _label_refs
+    refs = _label_refs(instrs)
+    refs[_TABLE_TARGETS] = {
+        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
+        for t in ins.targets
+    }
+    return _flags_from(instrs, i, _A, refs)
+
+
+def _flags_dead_both_ways(instrs, branch_idx: int) -> bool:
+    """True iff N and Z are dead on both paths after the branch at
+    `branch_idx`, since without the AND, Z comes from all of A."""
+    if not flags_dead_at(instrs, branch_idx + 1):
+        return False
+    target = instrs[branch_idx].target
+    for k, ins in enumerate(instrs):
+        if isinstance(ins, asm_ast.Label) and ins.name == target:
+            return flags_dead_at(instrs, k)
     return False
 
 

@@ -80,16 +80,14 @@ floor_enemy_advance:
    STA   enemy_y,X
    JMP   .if_end@0
 .if_else@1:
-   AND   #$80
-   BEQ   .if_else@7
+   BPL   .if_else@7
    LDA   __zpabi_floor_enemy_advance__move_dir
    BNE   .if_else@9
    LDA   #$07
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@8
 .if_else@9:
-   AND   #$80
-   BEQ   .if_else@11
+   BPL   .if_else@11
    LDA   #$05
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@10
@@ -116,8 +114,7 @@ floor_enemy_advance:
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@13
 .if_else@14:
-   AND   #$80
-   BEQ   .if_else@16
+   BPL   .if_else@16
    LDA   #$09
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@15

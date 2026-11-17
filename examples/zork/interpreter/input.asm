@@ -557,8 +557,7 @@ get_alphabet_for_char:
 .if_end@18:
    ORA   #$00
    BEQ   .get_alphabet_for_char@scfold@0
-   AND   #$80
-   BEQ   .if_end@21
+   BPL   .if_end@21
 .get_alphabet_for_char@scfold@0:
    LDA   __zpabi_get_alphabet_for_char__c
    RTS
@@ -714,15 +713,12 @@ ascii_to_zchar:
    JSR   get_alphabet_for_char
    SEC
    SBC   #$01
-   STA   __local_ascii_to_zchar__z
-   AND   #$80
-   BEQ   .if_else@30
+   BPL   .if_else@30
    LDA   __local_ascii_to_zchar__2
    SEC
    SBC   #$5B
    JMP   .if_end@29
 .if_else@30:
-   LDA   __local_ascii_to_zchar__z
    BNE   .if_else@32
    LDA   __local_ascii_to_zchar__2
    SEC

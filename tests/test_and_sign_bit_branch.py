@@ -286,5 +286,44 @@ class TestBitSix(unittest.TestCase):
         self.assertEqual(out, instrs)
 
 
+
+class TestSignAlreadyInN(unittest.TestCase):
+    """`AND #$80; BEQ` after any instruction that set N from A, with
+    stores between, is `BPL`, as for `a = x - 1; if (a & 0x80)`."""
+
+    _A = asm_ast.Reg(reg=asm_ast.A())
+
+    def _shape(self, first, after=()):
+        a = self._A
+        return [
+            first,
+            asm_ast.Mov(src=a, dst=asm_ast.Data(name="z", offset=0)),
+            asm_ast.And(src=asm_ast.Imm(value=0x80), dst=a),
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            *after, _ret(),
+        ]
+
+    def test_after_a_subtract_and_a_store(self):
+        sub = asm_ast.Sub(src=asm_ast.Imm(value=1), dst=self._A)
+        out = _instrs(apply_and_sign_bit_branch(_wrap(self._shape(sub))))
+        self.assertEqual(out[2], asm_ast.Branch(cond=asm_ast.PL(), target="L"))
+        self.assertEqual(len(out), 4)
+
+    def test_after_a_call_left_alone(self):
+        # A call's flags aren't A's.
+        instrs = self._shape(asm_ast.Call(name="g"))
+        out = _instrs(apply_and_sign_bit_branch(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+    def test_left_alone_when_z_is_read_after(self):
+        # Without the AND, Z comes from all of A.
+        sub = asm_ast.Sub(src=asm_ast.Imm(value=1), dst=self._A)
+        instrs = self._shape(sub, [
+            asm_ast.Branch(cond=asm_ast.NE(), target="M"),
+            asm_ast.Label(name="M"),
+        ])
+        out = _instrs(apply_and_sign_bit_branch(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
 if __name__ == "__main__":
     unittest.main()

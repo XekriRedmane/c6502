@@ -174,5 +174,52 @@ class TestConstArithFold(unittest.TestCase):
         self.assertEqual(apply_const_arith_fold(prog), prog)
 
 
+    def _high_add(self, flag, op, value, label_offset=0):
+        return _wrap([
+            asm_ast.Mov(src=asm_ast.ImmLabelHigh(name="t", offset=label_offset),
+                        dst=_A),
+            flag,
+            op(src=asm_ast.Imm(value=value), dst=_A),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="d", offset=0)),
+            asm_ast.Return(),
+        ])
+
+    def test_label_high_plus_constant(self):
+        # `t + 0x100` on a pointer whose low byte is `t`'s.
+        out = _instrs(apply_const_arith_fold(self._high_add(
+            asm_ast.ClearCarry(), asm_ast.Add, 1, label_offset=128)))
+        self.assertEqual(out[0], asm_ast.Mov(
+            src=asm_ast.ImmLabelHigh(name="t", offset=384), dst=_A))
+        self.assertEqual(len(out), 3)
+
+    def test_label_high_minus_constant_below_label_left_alone(self):
+        # `t - 0x100` would be written `t+-256`.
+        prog = self._high_add(asm_ast.SetCarry(), asm_ast.Sub, 1)
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
+    def _shift_add_one(self, after):
+        return _wrap([
+            asm_ast.Mov(src=asm_ast.Data(name="m", offset=0), dst=_A),
+            asm_ast.ArithmeticShiftLeft(dst=_A),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=_A),
+            *after,
+            asm_ast.Return(save_a=True),
+        ])
+
+    def test_shift_then_add_one_rotates_a_one_in(self):
+        out = _instrs(apply_const_arith_fold(self._shift_add_one([])))
+        self.assertEqual(out[1:3], [
+            asm_ast.SetCarry(), asm_ast.RotateLeft(dst=_A),
+        ])
+
+    def test_shift_then_add_one_kept_when_carry_is_read(self):
+        # The add leaves C clear, the rotate leaves the old bit 7.
+        prog = self._shift_add_one([
+            asm_ast.Branch(cond=asm_ast.CS(), target=".t"),
+            asm_ast.Label(name=".t"),
+        ])
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
 if __name__ == "__main__":
     unittest.main()

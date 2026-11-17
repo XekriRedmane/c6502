@@ -289,11 +289,10 @@ locate_last_ram_page:
 main:
    SUBROUTINE
 
-   LDA   #$00
-   STA   PRINTER_CSW
    LDA   #$C1
    STA   PRINTER_CSW+1
    LDA   #$00
+   STA   PRINTER_CSW
    STA   ZCODE_PAGE_VALID
    STA   ZCODE_PAGE_VALID2
    STA   PAGE_TABLE_INDEX
@@ -318,17 +317,14 @@ main:
    STA   ZCHAR_SCRATCH1+6
    LDA   #<page_tables
    STA   PAGE_L_TABLE
+   STA   NEXT_PAGE_TABLE
    LDA   #>page_tables
    STA   PAGE_L_TABLE+1
    LDA   #<(page_tables+128)
    STA   PAGE_H_TABLE
    LDA   #>(page_tables+128)
    STA   PAGE_H_TABLE+1
-   LDA   #<page_tables
-   STA   NEXT_PAGE_TABLE
-   LDA   #>page_tables
-   CLC
-   ADC   #$01
+   LDA   #>(page_tables+256)
    STA   NEXT_PAGE_TABLE+1
    LDA   #<(page_tables+384)
    STA   PREV_PAGE_TABLE

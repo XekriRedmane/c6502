@@ -184,8 +184,6 @@ main:
    STA   z_header_addr
    LDA   #>story
    STA   z_header_addr+1
-   LDA   #$00
-   STA   story+8
    LDA   #$40
    STA   story+9
    LDA   #$03
@@ -198,11 +196,11 @@ main:
    STA   story+67
    LDA   #$07
    STA   story+68
-   LDA   #$00
-   STA   story+69
    LDA   #$14
    STA   story+70
    LDA   #$00
+   STA   story+8
+   STA   story+69
    STA   __local_main__i
 .main@rot@0:
    ADC   #$01

@@ -47,6 +47,20 @@ subsequent reader of A or the flags sees the same state. The
 `Reg(A)` — that's `Mov` (LDA / TXA / TYA) plus the post-fold
 A-arithmetic atoms (`Add` / `Sub` / `And` / `Or`).
 
+# A label's high byte plus a constant
+
+`LDA #>(name+o); CLC; ADC #k` becomes `LDA #>(name+o+256k)`, and
+`SEC; SBC #k` subtracts `256k`, when C and V are dead after. The
+assembler computes the sum. A pointer `page_tables + 0x100`, whose
+low byte is the label's own, leaves this on its high byte. An offset
+that would come out negative is left alone.
+
+# Shifting in a 1
+
+`ASL A; CLC; ADC #1` becomes `SEC; ROL A` when C and V are dead
+after. The add sets the bit 0 the shift cleared, as rotating a set C
+in does, and A, N, and Z come out the same.
+
 # Adding 0 with the carry known
 
 `CLC; ADC #$00` and `SEC; SBC #$00` leave A and C as they were, so
@@ -96,6 +110,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         if const is not None:
             out.append(const)
             i += 1
+            continue
+        shifted_in = _shift_in_one(instrs, i)
+        if shifted_in is not None:
+            out.extend(shifted_in)
+            i += 3
             continue
         if _is_carry_free_zero_add(instrs, i):
             # Keep the CLC / SEC, drop the ADC #0 / SBC #0.
@@ -158,6 +177,11 @@ def _try_fold_add(instrs, i):
     if i + 2 >= len(instrs):
         return None
     a, flag, op = instrs[i:i + 3]
+    high = _label_high_sum(a, flag, op)
+    if high is not None:
+        if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
+            return None
+        return asm_ast.Mov(src=high, dst=a.dst)
     if not (isinstance(a, asm_ast.Mov) and isinstance(a.src, asm_ast.Imm)
             and _is_reg_a(a.dst)):
         return None
@@ -174,6 +198,28 @@ def _try_fold_add(instrs, i):
     if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
         return None
     return asm_ast.Mov(src=asm_ast.Imm(value=value), dst=a.dst)
+
+
+def _shift_in_one(instrs, i):
+    """`SEC; ROL A` for `ASL A; CLC; ADC #1` at `instrs[i]`, when C
+    and V are dead after, else None. The `ASL` leaves bit 0 clear, so
+    adding 1 sets it with no carry, which is what rotating a set C in
+    does. A, N, and Z come out the same, and only C and V differ: the
+    add leaves both clear, and the `ROL` puts the old bit 7 in C.
+    `(uint8_t)(props[0] << 1) + 1` in Zork's `get_property_ptr` is
+    the case."""
+    if i + 2 >= len(instrs):
+        return None
+    shift, flag, op = instrs[i:i + 3]
+    if not (isinstance(shift, asm_ast.ArithmeticShiftLeft)
+            and _is_reg_a(shift.dst)
+            and isinstance(flag, asm_ast.ClearCarry)
+            and isinstance(op, asm_ast.Add) and _is_reg_a(op.dst)
+            and isinstance(op.src, asm_ast.Imm) and op.src.value & 0xFF == 1):
+        return None
+    if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
+        return None
+    return [asm_ast.SetCarry(), asm_ast.RotateLeft(dst=shift.dst)]
 
 
 def _is_carry_free_zero_add(instrs, i) -> bool:
@@ -203,6 +249,39 @@ def _is_carry_free_zero_add(instrs, i) -> bool:
     return (isinstance(prev, (asm_ast.Mov, asm_ast.And, asm_ast.Or,
                               asm_ast.Add, asm_ast.Sub))
             and _is_reg_a(prev.dst))
+
+
+def _label_high_sum(a, flag, op):
+    """`ImmLabelHigh(name, offset + 256 * k)` for `LDA #>(name+offset);
+    CLC; ADC #k` (or `LDA #k; CLC; ADC #>(name+offset)`), and with
+    `-256 * k` for `SEC; SBC #k` after the label's half, else None.
+    Adding `k` to the high byte of an address is adding `256 * k` to
+    the address, which dasm and the linker compute, so `page_tables +
+    0x100` in Zork's `main`, whose low byte is the label's, loads its
+    high byte with one `LDA`."""
+    if not (isinstance(a, asm_ast.Mov) and _is_reg_a(a.dst)
+            and isinstance(op, (asm_ast.Add, asm_ast.Sub))
+            and _is_reg_a(op.dst)):
+        return None
+    if isinstance(op, asm_ast.Add) and isinstance(flag, asm_ast.ClearCarry):
+        sign = 1
+    elif isinstance(op, asm_ast.Sub) and isinstance(flag, asm_ast.SetCarry):
+        sign = -1
+    else:
+        return None
+    if isinstance(a.src, asm_ast.ImmLabelHigh) and isinstance(op.src, asm_ast.Imm):
+        label, k = a.src, op.src.value & 0xFF
+    elif (sign == 1 and isinstance(a.src, asm_ast.Imm)
+            and isinstance(op.src, asm_ast.ImmLabelHigh)):
+        label, k = op.src, a.src.value & 0xFF
+    else:
+        return None
+    offset = label.offset + sign * 256 * k
+    # `asm_emit` writes an offset as `name+offset`, so a negative one
+    # would read `name+-256`.
+    if offset < 0:
+        return None
+    return asm_ast.ImmLabelHigh(name=label.name, offset=offset)
 
 
 def _try_absorb_zero_load(a, b):

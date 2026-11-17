@@ -689,9 +689,8 @@ get_property_ptr:
    STA   props+1
    LDY   #$00
    LDA   (props),Y
-   ASL
-   CLC
-   ADC   #$01
+   SEC
+   ROL
    RTS
 
 get_property_num:

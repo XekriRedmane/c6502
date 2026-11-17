@@ -185,6 +185,7 @@ from passes.type_checking import (
 )
 from c99_to_tac import translate_program as translate_to_tac
 from passes.return_in_zero_page import return_pointers_in_zero_page
+from passes.constant_store_order import apply_constant_store_order
 
 
 def _resolved(source: str, *, optimize: bool = False):
@@ -268,6 +269,7 @@ def _peephole_fixedpoint(
         new_prog = apply_redundant_load_after_rmw(new_prog)
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)
+        new_prog = apply_constant_store_order(new_prog)
         new_prog = apply_join_store(
             new_prog, zp_slot_symbols=zp_slot_symbols,
         )

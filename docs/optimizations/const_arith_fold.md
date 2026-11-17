@@ -68,7 +68,7 @@ All three rewrites look at two adjacent instructions that write A.
 - `LDA #$00; ORA m` or `LDA #$FF; AND m` becomes `LDA m`, for any
   operand `m`.
 
-Three more look at one instruction, two, or three.
+The others look at one instruction, two, or three.
 
 - `AND #$00` becomes `LDA #$00`, and `ORA #$FF` becomes `LDA #$FF`,
   after any instruction, since the result doesn't depend on A and N
@@ -82,6 +82,18 @@ Three more look at one instruction, two, or three.
   Z come out as the add left them. `if (offset & 0x8000) pages +=
   0x100;` on a `pages` whose high byte is 0 adds 1 to 0 this way.
 
+- `LDA #>(name+o); CLC; ADC #k` becomes `LDA #>(name+o+256k)` when C
+  and V are dead after, since adding `k` to an address's high byte
+  adds `256k` to the address, which the assembler computes. `SEC; SBC
+  #k` subtracts, unless the offset would come out negative, which
+  `asm_emit` would write as `name+-256`. Zork's `main` sets one of
+  the page cache's table pointers to `page_tables + 0x100`, whose low
+  byte is the label's own.
+- `ASL A; CLC; ADC #1` becomes `SEC; ROL A` when C and V are dead
+  after. The add sets the bit 0 the shift cleared, which is what
+  rotating a set C in does, and A, N, and Z come out the same.
+  `get_property_ptr` in Zork's `objects.c` computes `(uint8_t)(n <<
+  1) + 1`.
 - `CLC; ADC #$00` becomes `CLC`, and `SEC; SBC #$00` becomes `SEC`,
   when V is dead after and N and Z are dead or were set from A by the
   instruction before the `CLC` or `SEC`. The add leaves A and C as

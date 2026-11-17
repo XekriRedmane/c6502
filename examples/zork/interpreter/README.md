@@ -162,9 +162,9 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 461 |
+| `main.c` | 391 | 454 |
 | `decode.c` | 1859 | 1824 |
-| `objects.c` | 788 | 934 |
+| `objects.c` | 788 | 932 |
 | `numbers.c` | 436 | 473 |
 | `input.c` | 1018 | 1081 |
 | `pages.c` | 384 | 379 |
@@ -173,7 +173,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **6963** |
+| **Total** | **6643** | **6954** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -502,3 +502,9 @@ the smaller code saved.
   `store_result` still copies its value, since other units call it,
   and its value is live across `get_next_code_byte`, which another
   unit defines.
+- `LDA #>page_tables; CLC; ADC #$01` is `LDA #>(page_tables+256)`, and
+  `ASL; CLC; ADC #1` is `SEC; ROL`, when C and V are dead after
+  ([const_arith_fold.md](../../../docs/optimizations/const_arith_fold.md)),
+  and a run of constant stores loads each value once
+  ([constant_store_order.md](../../../docs/optimizations/constant_store_order.md)),
+  9 bytes in `main` and `get_property_ptr`.

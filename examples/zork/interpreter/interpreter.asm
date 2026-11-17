@@ -281,7 +281,7 @@ __local_do_2op__2	EQU	$FD
 __local_do_var__2	EQU	$FD
 __local_do_var__3	EQU	$FE
 __local_buffer_char__0	EQU	$FF
-__main_size	EQU	$014E
+__main_size	EQU	$0147
 BUFF_AREA	EQU	$0200
 __tables_size	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
@@ -289,13 +289,13 @@ __text_rest_size	EQU	$07C9
 __main_load	EQU	$0800
 __main_start	EQU	$0800
 restart	EQU	$0800
-__main_end	EQU	$094E
-__main_load_end	EQU	$094E
-__text_load	EQU	$094E
-__text_start	EQU	$094E
-__text_size	EQU	$111B
-__text_end	EQU	$1A69
-__text_load_end	EQU	$1A69
+__main_end	EQU	$0947
+__main_load_end	EQU	$0947
+__text_load	EQU	$0947
+__text_start	EQU	$0947
+__text_size	EQU	$1119
+__text_end	EQU	$1A60
+__text_load_end	EQU	$1A60
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -332,11 +332,10 @@ COUT1	EQU	$FDF0
    ORG   $0800
 main:
    SUBROUTINE
-   LDA   #$00
-   STA   PRINTER_CSW
    LDA   #$C1
    STA   PRINTER_CSW+1
    LDA   #$00
+   STA   PRINTER_CSW
    STA   ZCODE_PAGE_VALID
    STA   ZCODE_PAGE_VALID2
    STA   PAGE_TABLE_INDEX
@@ -361,17 +360,14 @@ main:
    STA   ZCHAR_SCRATCH1+6
    LDA   #$00
    STA   PAGE_L_TABLE
+   STA   NEXT_PAGE_TABLE
    LDA   #$35
    STA   PAGE_L_TABLE+1
    LDA   #$80
    STA   PAGE_H_TABLE
    LDA   #$35
    STA   PAGE_H_TABLE+1
-   LDA   #$00
-   STA   NEXT_PAGE_TABLE
-   LDA   #$35
-   CLC
-   ADC   #$01
+   LDA   #$36
    STA   NEXT_PAGE_TABLE+1
    LDA   #$80
    STA   PREV_PAGE_TABLE
@@ -513,9 +509,9 @@ main:
    LDY   __local_main__sector
    JMP   .loop@2_start
 
-; Disassembly of section .text at $094E
+; Disassembly of section .text at $0947
    SEG   text
-   ORG   $094E
+   ORG   $0947
 push:
    SUBROUTINE
    LDA   Z_SP
@@ -829,15 +825,15 @@ do_0op:
    BCS   .default@16
    ASL
    TAY
-   LDA   $0B75,Y
+   LDA   $0B6E,Y
    PHA
    LDA   .jtab@0,Y
    PHA
    RTS
 .jtab@0:
-   DC.B  $8B, $0B, $96, $0B, $8D, $11, $9F, $0B
-   DC.B  $B5, $0B, $5F, $32, $F5, $32, $24, $2C
-   DC.B  $A8, $0B, $7B, $09, $2A, $2C, $A2, $12
+   DC.B  $84, $0B, $8F, $0B, $86, $11, $98, $0B
+   DC.B  $AE, $0B, $5F, $32, $F5, $32, $24, $2C
+   DC.B  $A1, $0B, $74, $09, $2A, $2C, $9B, $12
 .case@4:
    LDA   #$01
    STA   __local_dec_var__0
@@ -870,16 +866,16 @@ do_1op:
 .lb_skip@0:
    ASL
    TAY
-   LDA   $0BCA,Y
+   LDA   $0BC3,Y
    PHA
    LDA   .jtab@1,Y
    PHA
    RTS
 .jtab@1:
-   DC.B  $E8, $0B, $04, $15, $D9, $15, $E5, $15
-   DC.B  $0A, $18, $2D, $0B, $48, $0B, $F7, $0B
-   DC.B  $40, $2C, $87, $13, $05, $0C, $0A, $0C
-   DC.B  $15, $0C, $25, $0C, $33, $0C, $3F, $0C
+   DC.B  $E1, $0B, $FD, $14, $D2, $15, $DE, $15
+   DC.B  $01, $18, $26, $0B, $41, $0B, $F0, $0B
+   DC.B  $40, $2C, $80, $13, $FE, $0B, $03, $0C
+   DC.B  $0E, $0C, $1E, $0C, $2C, $0C, $38, $0C
 .case@18:
    LDA   OPERANDS+1
    ORA   OPERANDS
@@ -946,15 +942,15 @@ do_var:
 .lb_skip@2:
    ASL
    TAY
-   LDA   $0C66,Y
+   LDA   $0C5F,Y
    PHA
    LDA   .jtab@3,Y
    PHA
    RTS
 .jtab@3:
-   DC.B  $7C, $0A, $78, $0C, $A9, $0C, $37, $18
-   DC.B  $9A, $2F, $CA, $0C, $CF, $0C, $EE, $19
-   DC.B  $DA, $0C, $E5, $0C
+   DC.B  $75, $0A, $71, $0C, $A2, $0C, $2E, $18
+   DC.B  $9A, $2F, $C3, $0C, $C8, $0C, $E5, $19
+   DC.B  $D3, $0C, $DE, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1201,19 +1197,19 @@ do_2op:
 .lb_skip@1:
    ASL
    TAY
-   LDA   $0E30,Y
+   LDA   $0E29,Y
    PHA
    LDA   .jtab@2,Y
    PHA
    RTS
 .jtab@2:
-   DC.B  $40, $2C, $60, $0E, $C5, $0E, $D9, $0E
-   DC.B  $E9, $0E, $F9, $0E, $F7, $15, $10, $0F
-   DC.B  $2D, $0F, $3C, $0F, $63, $16, $78, $16
-   DC.B  $92, $16, $4B, $0F, $CA, $13, $58, $0F
-   DC.B  $76, $0F, $F0, $16, $7F, $17, $C7, $17
-   DC.B  $92, $0F, $A2, $0F, $11, $19, $76, $19
-   DC.B  $C1, $19
+   DC.B  $40, $2C, $59, $0E, $BE, $0E, $D2, $0E
+   DC.B  $E2, $0E, $F2, $0E, $F0, $15, $09, $0F
+   DC.B  $26, $0F, $35, $0F, $5C, $16, $71, $16
+   DC.B  $8B, $16, $44, $0F, $C3, $13, $51, $0F
+   DC.B  $6F, $0F, $E7, $16, $76, $17, $BE, $17
+   DC.B  $8B, $0F, $9B, $0F, $08, $19, $6D, $19
+   DC.B  $B8, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -2508,9 +2504,8 @@ get_property_ptr:
    STA   props+1
    LDY   #$00
    LDA   (props),Y
-   ASL
-   CLC
-   ADC   #$01
+   SEC
+   ROL
    RTS
 get_property_num:
    SUBROUTINE

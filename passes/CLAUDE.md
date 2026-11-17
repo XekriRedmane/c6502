@@ -203,6 +203,12 @@ this directory:
   LDA #k2; ADC #>r; STA d1`) becomes `LDA #<(r+K); STA d0; LDA
   #>(r+K); STA d1` when C and V are dead after: `&r[2].a` on a static
   array.
+- `constant_store_order.py` — `apply_constant_store_order`. A
+  straight run of constant stores (`LDA #k` and `STA m`, or the asm
+  IR's `Mov(#k, m)`) to distinct, non-volatile `Data` bytes, with at
+  most one function's slots among them, stores each value's bytes
+  after its first load, keeping the last value last, when that drops
+  a load.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
   folding for case labels, static initializers, and, through the
   parser, array sizes and enumeration constants).
@@ -1277,6 +1283,9 @@ document says whether it fires there.
   is overwritten before any read. Memory-to-memory transfer redundancy
   (e.g. the unrolled DPTR-staging sequences `redundant_load`'s A-
   tracking can't see across an intervening A clobber).
+- `apply_constant_store_order` — a run of constant stores grouped by
+  value, so each value is loaded once. See the module docstring in
+  `constant_store_order.py`.
 - `apply_join_store` — a join's copy of a slot into memory, `LDA t;
   STA M`, made by each arm's store instead. See the module docstring
   in `join_store.py`.
@@ -1330,7 +1339,10 @@ document says whether it fires there.
   `LDA #folded`. Most useful for the high-byte branch of an int-typed
   AND of a uchar value (`(uchar & 0x80)` after promotion). Also `AND
   #$00` / `ORA #$FF` → `LDA #$00` / `LDA #$FF`, and `LDA #C1; CLC; ADC
-  #C2` (or `SEC; SBC`) → `LDA #folded` when C and V are dead after.
+  #C2` (or `SEC; SBC`) → `LDA #folded` when C and V are dead after,
+  with a label's high byte as `C1` too (`#>(name+256*C2)`). `ASL A;
+  CLC; ADC #1` → `SEC; ROL A` and `CLC; ADC #0` → `CLC` (`SEC; SBC
+  #0` → `SEC`) under the same conditions on C and V.
 - `apply_round_trip_load_drop` — drops `STA M; LDA M` where the LDA's
   only observable side effect is re-loading A with A's already-current
   value. After an instruction that doesn't set N/Z from A (a `JSR`),

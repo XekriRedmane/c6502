@@ -10,7 +10,6 @@ __zpabi_draw_sprite__sprite_y	EQU	$84
 __zpabi_draw_sprite__tile_src_0	EQU	$85
 __zpabi_draw_sprite__tile_src_1	EQU	$86
 __zpabi_draw_sprite__page_flag	EQU	$87
-__local_beam_target_draw__state	EQU	$88
 __local_beam_target_draw__0	EQU	$89
 
 ; @zp-link-meta-begin
@@ -64,13 +63,10 @@ beam_target_draw:
    BEQ   .loop@0_continue
    LDX   enemy_col,Y
    LDA   proj_screen_col,X
-   STA   __local_beam_target_draw__state
-   LDA   #$25
-   CMP   __local_beam_target_draw__state
-   BCC   .loop@0_continue
-   LDA   #$23
-   CMP   __local_beam_target_draw__state
+   CMP   #$26
    BCS   .loop@0_continue
+   CMP   #$24
+   BCC   .loop@0_continue
    LDA   enemy_y,Y
    STA   __local_beam_target_draw__0
    LDA   beam_y

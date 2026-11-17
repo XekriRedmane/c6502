@@ -43,7 +43,8 @@ Wraparound-safe ops:
 
 NOT safe (high bytes contribute to low bytes of the result):
   - Divide, Modulo — long division pulls from high bytes.
-  - RightShift — high bytes shift down into the low bytes.
+  - RightShift — high bytes shift down into the low bytes. A shift
+    of an extended byte is the exception, below.
 
 LeftShift is safe in its first operand, since the low bytes of
 `x << k` depend only on the low bytes of `x`. It's narrowed only
@@ -51,6 +52,16 @@ when the count is a Constant below the narrow width in bits. A
 constant shift is inlined as ASL / ROL steps over every byte of the
 operand, so `(uint8_t)(len << 4)` with `len` promoted to `int` would
 otherwise shift a high byte that's thrown away.
+
+RightShift is narrowed only when its first operand is a ZeroExtend of
+an unsigned Var or a SignExtend of a signed one, and its count is a
+Constant below the narrow width in bits that the lowering inlines at
+the narrow width (`shift_cost.inline_shift_ok`), since a 1-byte
+arithmetic shift by 3 calls `asr8`. The extended bytes hold 0 or
+copies of the sign bit, which are the bits a narrow logical or
+arithmetic shift of the Var brings in, so `(uint8_t)(props[y] >> 5)`
+is a 1-byte shift. It had shifted the extension's high byte, known to
+be 0, left by three and ORed it into the result.
 
 For a Constant operand, narrowing reduces the value modulo
 2^(8n). Modular arithmetic preserves equivalence regardless of
@@ -117,6 +128,7 @@ from passes.optimization.framework import (
     m_Cast, m_Var,
 )
 from passes.optimization.var_visit import count_uses, defs_in
+from passes.shift_cost import inline_shift_ok
 
 
 # Wraparound-safe ops: the low n bytes of op(W(a), W(b)) depend only
@@ -178,7 +190,8 @@ class NarrowWidenedArith(DefUsePass):
             return None
         if isinstance(bin_instr.op, _COMPARE_OPS):
             return _narrow_compare(bin_instr, m, env, ctx)
-        is_shift = isinstance(bin_instr.op, tac_ast.LeftShift)
+        is_shift = isinstance(
+            bin_instr.op, (tac_ast.LeftShift, tac_ast.RightShift))
         if not (isinstance(bin_instr.op, _SAFE_OPS) or is_shift):
             return None
         if not isinstance(bin_instr.dst, tac_ast.Var):
@@ -192,6 +205,10 @@ class NarrowWidenedArith(DefUsePass):
             # No widening to undo. fold_truncate_extend or constant_fold
             # handles the trivial cases.
             return None
+        if (isinstance(bin_instr.op, tac_ast.RightShift)
+                and not _extended_shift_source(
+                    bin_instr.src1, dst_width, env, ctx)):
+            return None
 
         dst_unsigned = _is_unsigned(dst_var, ctx.symbols)
         if dst_unsigned is None:
@@ -201,6 +218,17 @@ class NarrowWidenedArith(DefUsePass):
             if not (isinstance(count, tac_ast.Constant)
                     and isinstance(getattr(count.const, "value", None), int)
                     and 0 <= count.const.value < 8 * dst_width):
+                return None
+            # A narrow shift the lowering doesn't inline calls a
+            # helper, where the wide one may have been inline: a
+            # 1-byte arithmetic shift by 3 calls `asr8`.
+            if (isinstance(bin_instr.op, tac_ast.RightShift)
+                    and count.const.value
+                    and not inline_shift_ok(
+                        dst_width, count.const.value,
+                        signed_right=not _is_unsigned(
+                            env.def_of(bin_instr.src1).src, ctx.symbols),
+                    )):
                 return None
 
         trunc_idx = env.def_idx.get(dst_var.name)
@@ -310,6 +338,37 @@ def _narrow_compare(
     )
     _count_new_uses(env.extra, narrow)
     return Rewrite(replacement=narrow, drop_defs=(bin_instr.dst,))
+
+
+def _extended_shift_source(
+    src: tac_ast.Type_val, width: int, env: DefUseEnv, ctx: PassContext,
+) -> bool:
+    """True when `src`, the value a RightShift shifts, is a
+    ZeroExtend of an unsigned Var or a SignExtend of a signed one,
+    and that Var is `width` bytes, the width of the narrow result. A
+    wider Var has bits above the result's that the shift brings down:
+    `(uint8_t)((uint32_t)w >> 5)` on a 2-byte `w` reads bits 8 to 12
+    of `w`, so it can't be a shift of `w`'s low byte.
+    The bytes above the extended Var's are then copies of 0 or of its
+    sign bit, which a narrow shift of the Var shifts in itself: a
+    logical shift fills with 0, and `tac_to_asm` picks the shift's
+    kind from its first operand's type. So the low bytes of `(int)b
+    >> k` are `b >> k` for a count below the Var's width in bits. Any
+    other wide value shifts bits of its high bytes into the low ones,
+    so `_narrow_operand`'s Truncate of a wide Var doesn't apply."""
+    if not isinstance(src, tac_ast.Var) or src.name not in ctx.ssa_dsts:
+        return False
+    cast = env.def_of(src)
+    if not isinstance(cast, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
+        return False
+    if not isinstance(cast.src, tac_ast.Var):
+        return False
+    if _byte_width(cast.src, ctx.symbols) != width:
+        return False
+    unsigned = _is_unsigned(cast.src, ctx.symbols)
+    if unsigned is None:
+        return False
+    return unsigned == isinstance(cast, tac_ast.ZeroExtend)
 
 
 def _count_new_uses(use_counts, replacement) -> None:

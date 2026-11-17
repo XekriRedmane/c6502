@@ -443,10 +443,8 @@ read_line:
    STA   __local_read_line__c
    CMP   #$41
    BCC   .if_end@5
-   LDA   #$5A
-   CMP   __local_read_line__c
-   BCC   .if_end@5
-   LDA   __local_read_line__c
+   CMP   #$5B
+   BCS   .if_end@5
    ORA   #$20
    STA   __local_read_line__c
 .if_end@5:
@@ -556,29 +554,25 @@ get_alphabet_for_char:
 
    LDA   __zpabi_get_alphabet_for_char__c
    CMP   #$61
-   BCC   .vthread@0
-   LDA   #$7A
-   CMP   __zpabi_get_alphabet_for_char__c
    BCC   .if_end@15
+   CMP   #$7B
+   BCS   .if_end@15
    LDA   #$00
    RTS
 .if_end@15:
-   LDA   __zpabi_get_alphabet_for_char__c
-.vthread@0:
    CMP   #$41
    BCC   .if_end@18
-   LDA   #$5A
-   CMP   __zpabi_get_alphabet_for_char__c
-   BCC   .if_end@18
+   CMP   #$5B
+   BCS   .if_end@18
    LDA   #$01
    RTS
 .if_end@18:
-   LDA   __zpabi_get_alphabet_for_char__c
-   BEQ   .vthread@1
+   ORA   #$00
+   BEQ   .get_alphabet_for_char@scfold@0
    AND   #$80
    BEQ   .if_end@21
+.get_alphabet_for_char@scfold@0:
    LDA   __zpabi_get_alphabet_for_char__c
-.vthread@1:
    RTS
 .if_end@21:
    LDA   #$02
@@ -764,12 +758,6 @@ ascii_to_zchar:
    LSR
    LSR
    LSR
-   STA   __local_ascii_to_zchar__z
-   LDA   #$00
-   ASL
-   ASL
-   ASL
-   ORA   __local_ascii_to_zchar__z
    AND   #$03
    STA   ZCHAR_SCRATCH2,X
    INX
@@ -950,11 +938,11 @@ instr_sread:
    LDA   input_count
    BNE   .if_end@48
    LDA   char_count
-   BNE   .vthread@2
+   BNE   .vthread@0
    RTS
 .if_end@48:
    LDA   char_count
-.vthread@2:
+.vthread@0:
    CMP   #$06
    BNE   .if_end@49
    JSR   skip_separators

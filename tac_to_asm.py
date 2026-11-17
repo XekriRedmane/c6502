@@ -1181,6 +1181,45 @@ def _load_y_index(idx_op: asm_ast.Type_operand) -> list[asm_ast.Type_instruction
     ]
 
 
+# An ordering with its operands swapped: `k < x` is `x > k`.
+_MIRRORED = {
+    tac_ast.LessThan: tac_ast.GreaterThan,
+    tac_ast.GreaterThan: tac_ast.LessThan,
+    tac_ast.LessOrEqual: tac_ast.GreaterOrEqual,
+    tac_ast.GreaterOrEqual: tac_ast.LessOrEqual,
+}
+
+
+def _constant_on_right(op, src1, src2, *, unsigned: bool):
+    """A 1-byte ordering `JumpIfCmp` with its constant on the right,
+    as `<` or `>=`. The lowering of `>` and `<=` swaps the operands
+    and loads the constant into A, `LDA #k; CMP x; BCC`, and then `x`
+    has to be loaded again if anything after reads it. `x > k` is
+    `x >= k + 1` and `x <= k` is `x < k + 1`, which compare `x` in A
+    with `CMP #k+1`, unless `k` is the type's largest value, where
+    `k + 1` wraps. A constant on the left swaps first."""
+    if (isinstance(src1, tac_ast.Constant)
+            and not isinstance(src2, tac_ast.Constant)
+            and type(op) in _MIRRORED):
+        op, src1, src2 = _MIRRORED[type(op)](), src2, src1
+    if not (isinstance(op, (tac_ast.GreaterThan, tac_ast.LessOrEqual))
+            and isinstance(src2, tac_ast.Constant)
+            and not isinstance(src1, tac_ast.Constant)):
+        return op, src1, src2
+    value = getattr(src2.const, "value", None)
+    if not isinstance(value, int):
+        return op, src1, src2
+    if unsigned:
+        if value & 0xFF == 0xFF:
+            return op, src1, src2
+    elif value >= 0x7F:
+        return op, src1, src2
+    bumped = tac_ast.Constant(const=type(src2.const)(value=value + 1))
+    if isinstance(op, tac_ast.GreaterThan):
+        return tac_ast.GreaterOrEqual(), src1, bumped
+    return tac_ast.LessThan(), src1, bumped
+
+
 def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
     """Address the k-th byte (0 = low, 1 = high) of a multi-byte
     operand. For `Imm`, extract that byte of the constant — Python's
@@ -4129,6 +4168,12 @@ class Translator:
             )
             if fused is not None:
                 return fused
+            if size == 1:
+                op, src1, src2 = _constant_on_right(
+                    op, src1, src2, unsigned=unsigned_cmp or pointer_cmp,
+                )
+                src1_op = translate_val(src1)
+                src2_op = translate_val(src2)
         match op:
             case tac_ast.Equal():
                 return self._jcmp_equality(

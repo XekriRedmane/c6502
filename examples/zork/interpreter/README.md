@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 21% larger than the
+(see "Compared with Zork's own code"). It is 6% larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
@@ -164,16 +164,16 @@ file and the original code it translates:
 |---|---:|---:|
 | `main.c` | 391 | 465 |
 | `decode.c` | 1859 | 1850 |
-| `objects.c` | 788 | 968 |
+| `objects.c` | 788 | 951 |
 | `numbers.c` | 436 | 473 |
-| `input.c` | 1018 | 1105 |
+| `input.c` | 1018 | 1086 |
 | `pages.c` | 384 | 383 |
 | `zstring.c` | 383 | 401 |
 | `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7055** |
+| **Total** | **6643** | **7019** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -199,7 +199,10 @@ calls a handler is the handler's address in the table, as in Zork's.
 against 190, and `mulu16` 41 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 35,373,347 cycles against Zork's
+**Speed.** These counts were measured before the compiler changes
+listed below from the 1-byte right shift on, which haven't been timed
+yet, since the sessions need the game's disk image. The first session
+takes 35,373,347 cycles against Zork's
 38,490,260, 8.1% fewer, and the second 6,888,843 against 7,434,428,
 7.3% fewer. Most of the difference is the jump tables, which reach
 each instruction's case in the same few cycles where the compare
@@ -465,3 +468,13 @@ the smaller code saved.
   4 bytes at `do_var`'s entry.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.
+- A right shift of a byte promoted to `int` and truncated back is a
+  1-byte shift
+  ([narrow_widened_arith.md](../../../docs/optimizations/narrow_widened_arith.md)).
+  `get_property_len`'s `props[y] >> 5` had shifted the promoted high
+  byte, known to be 0, left by three and ORed it in, 26 bytes in
+  `objects.c` and `input.c`. A 1-byte `x > k` is `x >= k + 1` and `x
+  <= k` is `x < k + 1`, so `x` stays in A for `CMP #k+1`
+  ([cmp_zero_jump_fold.md](../../../docs/optimizations/cmp_zero_jump_fold.md)),
+  10 bytes in the range tests of `read_line` and
+  `get_alphabet_for_char`.

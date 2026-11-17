@@ -184,6 +184,23 @@ The extend's own result must be SSA-renamed too.
   3; if (c) hits = 1;` keeps the 2-byte compare of `t`, which holds
   the old value of `g`. The `== 0` trace stops at the same extend.
 
+## Lowering a 1-byte ordering against a constant
+
+`tac_to_asm` lowers `x > y` and `x <= y` with their operands swapped,
+as `y < x` and `y >= x`, because the 6502's compare sets C for `>=`.
+Against a constant `k` that would load the constant into A, `LDA #k;
+CMP x; BCC`, and leave `x` to be loaded again by whatever reads it
+next. For a 1-byte `JumpIfCmp` the lowering first moves a constant on
+the left to the right, mirroring the operator, and then rewrites `x >
+k` as `x >= k + 1` and `x <= k` as `x < k + 1`
+(`tac_to_asm._constant_on_right`). `if (c >= 'A' && c <= 'Z') c |=
+0x20;` becomes `LDA c; CMP #$41; BCC end; CMP #$5B; BCS end; ORA
+#$20`, with `c` in A throughout, where the second test had been `LDA
+#$5A; CMP c; BCC end` and the `ORA` had needed `LDA c` before it. The
+rewrite is skipped when `k` is the type's largest value, 255 or 127,
+where `k + 1` wraps. Wider comparisons keep the swap, since their
+chain of `SBC`s is as long either way.
+
 ## Related
 
 [AND jump fold](and_zero_jump_fold.md) handles `if (x & mask)` and

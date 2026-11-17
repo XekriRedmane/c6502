@@ -50,6 +50,39 @@ _CASES: list[tuple[str, str, int]] = [
             return a * 10 + b;
         }
     """, 73),
+    # narrow_widened_arith narrowed a right shift of any extended
+    # value to a shift of the extend's low byte, so
+    # `(uint8_t)((uint32_t)w >> 5)` lost bits 8 to 12 of `w`. Only an
+    # extended byte narrows. The 1-byte compares check that a `>` or
+    # `<=` with its constant moved to the right, as `>= k + 1` or `<
+    # k + 1`, keeps each boundary and leaves the type's largest value
+    # alone.
+    ("right_shift_and_compare_constants", """
+        unsigned int r;
+        void acc(unsigned char v) { r = r * 3 + v; }
+        unsigned int ws[3] = { 0x1FE0, 0xABCD, 0x00FF };
+        unsigned char bs[5] = { 0xE7, 0x5A, 0x5B, 0xFF, 0x00 };
+        signed char cs[5] = { -100, 100, -1, 127, -128 };
+        int main(void) {
+            for (unsigned char i = 0; i != 3; i++)
+                acc((unsigned char)((unsigned long)ws[i] >> 5));
+            for (unsigned char i = 0; i != 5; i++) {
+                unsigned char b = bs[i];
+                acc(b >> 5);
+                acc(b > 0x5A);
+                acc(b <= 0x5A);
+                acc(0x41 < b);
+            }
+            for (unsigned char i = 0; i != 5; i++) {
+                signed char c = cs[i];
+                acc((unsigned char)(c >> 1));
+                acc((unsigned char)(c >> 3));
+                acc(c > 100);
+                acc(c <= -2);
+            }
+            return (int)(r & 0x7FFF);
+        }
+    """, 8423),
     # flags_dead_at treated a label as the end of flag liveness, so
     # dead_a_arith dropped the signed compare's `EOR #$80` overflow
     # correction just before `.cmp_novf:`.

@@ -257,7 +257,6 @@ __zpabi_push__value_0	EQU	$E8
 __zpabi_set_nonstack_var__value_0	EQU	$E8
 __local_attr_ptr_and_mask__n	EQU	$E9
 __local_get_nonstack_var__1	EQU	$E9
-__local_get_property_len__0	EQU	$E9
 __local_get_property_ptr__1	EQU	$E9
 __local_instr_insert_obj__5	EQU	$E9
 __local_pop__2	EQU	$E9
@@ -309,7 +308,7 @@ __main_size	EQU	$0152
 BUFF_AREA	EQU	$0200
 __tables_size	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
-__text_rest_size	EQU	$07E1
+__text_rest_size	EQU	$07CE
 __main_load	EQU	$0800
 __main_start	EQU	$0800
 restart	EQU	$0800
@@ -317,31 +316,31 @@ __main_end	EQU	$0952
 __main_load_end	EQU	$0952
 __text_load	EQU	$0952
 __text_start	EQU	$0952
-__text_size	EQU	$115B
-__text_end	EQU	$1AAD
-__text_load_end	EQU	$1AAD
+__text_size	EQU	$114A
+__text_end	EQU	$1A9C
+__text_load_end	EQU	$1A9C
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
-__rodata_load	EQU	$33E1
-__rodata_start	EQU	$33E1
-__text_rest_end	EQU	$33E1
-__text_rest_load_end	EQU	$33E1
-__data_load	EQU	$34C3
-__data_start	EQU	$34C3
-__rodata_end	EQU	$34C3
-__rodata_load_end	EQU	$34C3
-__bss_load	EQU	$3508
-__bss_start	EQU	$3508
-__data_end	EQU	$3508
-__data_load_end	EQU	$3508
-__bss_end	EQU	$350B
-__bss_load_end	EQU	$350B
-__tables_load	EQU	$3600
-__tables_start	EQU	$3600
-__story	EQU	$3800
-__tables_end	EQU	$3800
-__tables_load_end	EQU	$3800
+__rodata_load	EQU	$33CE
+__rodata_start	EQU	$33CE
+__text_rest_end	EQU	$33CE
+__text_rest_load_end	EQU	$33CE
+__data_load	EQU	$34B0
+__data_start	EQU	$34B0
+__rodata_end	EQU	$34B0
+__rodata_load_end	EQU	$34B0
+__bss_load	EQU	$34F5
+__bss_start	EQU	$34F5
+__data_end	EQU	$34F5
+__data_load_end	EQU	$34F5
+__bss_end	EQU	$34F8
+__bss_load_end	EQU	$34F8
+__tables_load	EQU	$3500
+__tables_start	EQU	$3500
+__story	EQU	$3700
+__tables_end	EQU	$3700
+__tables_load_end	EQU	$3700
 VTAB	EQU	$FC22
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
@@ -385,21 +384,21 @@ main:
    STA   ZCHAR_SCRATCH1+6
    LDA   #$00
    STA   PAGE_L_TABLE
-   LDA   #$36
+   LDA   #$35
    STA   PAGE_L_TABLE+1
    LDA   #$80
    STA   PAGE_H_TABLE
-   LDA   #$36
+   LDA   #$35
    STA   PAGE_H_TABLE+1
    LDA   #$00
    STA   NEXT_PAGE_TABLE
-   LDA   #$36
+   LDA   #$35
    CLC
    ADC   #$01
    STA   NEXT_PAGE_TABLE+1
    LDA   #$80
    STA   PREV_PAGE_TABLE
-   LDA   #$37
+   LDA   #$36
    STA   PREV_PAGE_TABLE+1
    LDY   #$00
 .loop@2_start:
@@ -429,7 +428,7 @@ main:
    STA   LAST_Z_PAGE
    LDA   #$00
    STA   Z_HEADER_ADDR
-   LDA   #$38
+   LDA   #$37
    STA   Z_HEADER_ADDR+1
    JSR   reset_window
    LDA   #$00
@@ -871,7 +870,7 @@ do_0op:
    RTS
 .jtab@0:
    DC.B  $A1, $0B, $AC, $0B, $AF, $11, $B5, $0B
-   DC.B  $CB, $0B, $77, $32, $0D, $33, $24, $2C
+   DC.B  $CB, $0B, $64, $32, $FA, $32, $24, $2C
    DC.B  $BE, $0B, $7F, $09, $2A, $2C, $C4, $12
 .case@4:
    LDA   #$01
@@ -912,7 +911,7 @@ do_1op:
    RTS
 .jtab@1:
    DC.B  $FE, $0B, $27, $15, $00, $16, $10, $16
-   DC.B  $46, $18, $35, $0B, $58, $0B, $0D, $0C
+   DC.B  $3D, $18, $35, $0B, $58, $0B, $0D, $0C
    DC.B  $40, $2C, $A2, $13, $1B, $0C, $20, $0C
    DC.B  $2B, $0C, $3B, $0C, $49, $0C, $55, $0C
 .case@18:
@@ -987,8 +986,8 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.B  $84, $0A, $8E, $0C, $BF, $0C, $7B, $18
-   DC.B  $B2, $2F, $E0, $0C, $E5, $0C, $32, $1A
+   DC.B  $84, $0A, $8E, $0C, $BF, $0C, $6A, $18
+   DC.B  $9F, $2F, $E0, $0C, $E5, $0C, $21, $1A
    DC.B  $F0, $0C, $FB, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
@@ -1250,9 +1249,9 @@ do_2op:
    DC.B  $07, $0F, $17, $0F, $26, $16, $2E, $0F
    DC.B  $4B, $0F, $5A, $0F, $92, $16, $A7, $16
    DC.B  $C1, $16, $69, $0F, $E9, $13, $76, $0F
-   DC.B  $94, $0F, $2C, $17, $BB, $17, $03, $18
-   DC.B  $B0, $0F, $C0, $0F, $55, $19, $BA, $19
-   DC.B  $05, $1A
+   DC.B  $94, $0F, $23, $17, $B2, $17, $FA, $17
+   DC.B  $B0, $0F, $C0, $0F, $44, $19, $A9, $19
+   DC.B  $F4, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1854,7 +1853,7 @@ dump_buffer_with_more:
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #$2F
+   LDA   #$1C
    STA   __local_set_nonstack_var__1
    LDA   #$34
    STA   __zpabi_cout_string__s_1
@@ -2579,12 +2578,6 @@ get_property_len:
    LSR
    LSR
    LSR
-   STA   __local_attr_ptr_and_mask__n
-   LDA   #$00
-   ASL
-   ASL
-   ASL
-   ORA   __local_attr_ptr_and_mask__n
    RTS
 next_property:
    SUBROUTINE
@@ -2772,12 +2765,6 @@ instr_get_prop_len:
    LSR
    LSR
    LSR
-   STA   __local_do_2op__equal
-   TYA
-   ASL
-   ASL
-   ASL
-   ORA   __local_do_2op__equal
    CLC
    ADC   #$01
    STA   __local_branch_to_offset__0
@@ -3141,7 +3128,7 @@ instr_restart:
 instr_quit:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$E1
+   LDA   #$CE
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_print_number__digits
@@ -3153,7 +3140,7 @@ instr_quit:
 internal_error:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$F5
+   LDA   #$E2
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_print_number__digits
@@ -3182,9 +3169,9 @@ print_status_line:
    JSR   dump_buffer_to_screen
    LDA   #$19
    STA   CH
-   LDA   #$09
+   LDA   #$F6
    STA   __local_set_nonstack_var__1
-   LDA   #$34
+   LDA   #$33
    STA   __zpabi_cout_string__s_1
    LDX   #$06
    JSR   cout_string
@@ -3255,10 +3242,8 @@ read_line:
    STA   __local_branch_to_offset__0
    CMP   #$41
    BCC   .if_end@5
-   LDA   #$5A
-   CMP   __local_branch_to_offset__0
-   BCC   .if_end@5
-   LDA   __local_branch_to_offset__0
+   CMP   #$5B
+   BCS   .if_end@5
    ORA   #$20
    STA   __local_branch_to_offset__0
 .if_end@5:
@@ -3354,29 +3339,25 @@ get_alphabet_for_char:
    SUBROUTINE
    LDA   __local_get_const_word__1
    CMP   #$61
-   BCC   .vthread@0
-   LDA   #$7A
-   CMP   __local_get_const_word__1
    BCC   .if_end@15
+   CMP   #$7B
+   BCS   .if_end@15
    LDA   #$00
    RTS
 .if_end@15:
-   LDA   __local_get_const_word__1
-.vthread@0:
    CMP   #$41
    BCC   .if_end@18
-   LDA   #$5A
-   CMP   __local_get_const_word__1
-   BCC   .if_end@18
+   CMP   #$5B
+   BCS   .if_end@18
    LDA   #$01
    RTS
 .if_end@18:
-   LDA   __local_get_const_word__1
-   BEQ   .vthread@1
+   ORA   #$00
+   BEQ   .get_alphabet_for_char@scfold@0
    AND   #$80
    BEQ   .if_end@21
+.get_alphabet_for_char@scfold@0:
    LDA   __local_get_const_word__1
-.vthread@1:
    RTS
 .if_end@21:
    LDA   #$02
@@ -3504,12 +3485,6 @@ ascii_to_zchar:
    LSR
    LSR
    LSR
-   STA   __local_ascii_to_zchar__z
-   LDA   #$00
-   ASL
-   ASL
-   ASL
-   ORA   __local_ascii_to_zchar__z
    AND   #$03
    STA   ZCHAR_SCRATCH2,X
    INX
@@ -3735,11 +3710,11 @@ instr_sread:
    LDA   input_count
    BNE   .if_end@48
    LDA   char_count
-   BNE   .vthread@2
+   BNE   .vthread@0
    RTS
 .if_end@48:
    LDA   char_count
-.vthread@2:
+.vthread@0:
    CMP   #$06
    BNE   .if_end@49
    JSR   skip_separators
@@ -3866,7 +3841,7 @@ do_rwts_on_sector:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #$34
-   LDY   #$C3
+   LDY   #$B0
    JMP   RWTS
 write_next_sector:
    SUBROUTINE
@@ -3906,7 +3881,7 @@ get_prompted_number_from_user:
    ASL
    ASL
    STA   __local_attr_ptr_and_mask__attr
-   LDA   #$D8
+   LDA   #$C5
    CLC
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_next_code_byte__page
@@ -3920,14 +3895,14 @@ get_prompted_number_from_user:
    STA   CH
    LDA   #$3F
    STA   INVFLG
-   LDA   #$51
+   LDA   #$3E
    STA   __local_set_nonstack_var__1
    LDA   #$34
    STA   __zpabi_cout_string__s_1
    LDX   #$0A
    JSR   cout_string
    CLC
-   LDA   #$E7
+   LDA   #$D4
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_set_nonstack_var__1
    LDA   #$34
@@ -3955,7 +3930,7 @@ please_insert_save_diskette:
    JSR   home
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
-   LDA   #$35
+   LDA   #$22
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_print_number__digits
@@ -4003,7 +3978,7 @@ please_insert_save_diskette:
    JSR   buffer_char
 .loop@3_start:
    JSR   dump_buffer_with_more
-   LDA   #$5B
+   LDA   #$48
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_print_number__digits
@@ -4043,7 +4018,7 @@ please_reinsert_game_diskette:
    CMP   #$01
    BNE   .if_end@9
    JSR   dump_buffer_with_more
-   LDA   #$7E
+   LDA   #$6B
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_print_number__digits
@@ -4051,7 +4026,7 @@ please_reinsert_game_diskette:
    JSR   print_ascii_string
 .loop@4_start:
    JSR   dump_buffer_with_more
-   LDA   #$9D
+   LDA   #$8A
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_print_number__digits
@@ -4270,9 +4245,9 @@ __zp_init:
    STA   sign_bit
    RTS
 
-; Disassembly of section .rodata at $33E1
+; Disassembly of section .rodata at $33CE
    SEG   rodata
-   ORG   $33E1
+   ORG   $33CE
 sEndOfSession:
    DC.B  $2D, $2D, $20, $45, $4E, $44, $20, $4F
    DC.B  $46, $20, $53, $45, $53, $53, $49, $4F
@@ -4317,11 +4292,11 @@ sPressReturnToContinue:
    DC.B  $4F, $20, $43, $4F, $4E, $54, $49, $4E
    DC.B  $55, $45, $20, $2D, $2D, $2D
 
-; Disassembly of section .data at $34C3
+; Disassembly of section .data at $34B0
    SEG   data
-   ORG   $34C3
+   ORG   $34B0
 iob:
-   DC.B  $01, $60, $01, $00, $00, $00, $D4, $34
+   DC.B  $01, $60, $01, $00, $00, $00, $C1, $34
    DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
 dct:
@@ -4334,17 +4309,17 @@ prompts:
    DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E
    DC.B  $20, $28, $30, $2D, $37, $29, $3A, $30
 
-; Disassembly of section .bss at $3508
+; Disassembly of section .bss at $34F5
    SEG   bss
-   ORG   $3508
+   ORG   $34F5
 attr_mask:
    DC.B  $00, $00
 printer_card_initialized_flag:
    DC.B  $00
 
-; Disassembly of section .tables at $3600
+; Disassembly of section .tables at $3500
    SEG   tables
-   ORG   $3600
+   ORG   $3500
 page_tables:
    DC.B  $00, $00, $00, $00, $00, $00, $00, $00
    DC.B  $00, $00, $00, $00, $00, $00, $00, $00

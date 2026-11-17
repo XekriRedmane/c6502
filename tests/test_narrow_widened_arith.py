@@ -317,6 +317,65 @@ class TestNarrowWidenedArith(unittest.TestCase):
         # width, which the narrow shift's lowering doesn't handle.
         self.assertIsInstance(self._shift_by(8)[-1], tac_ast.Truncate)
 
+    def _right_shift(self, count, src_type=c99_ast.UChar(),
+                     extend=tac_ast.ZeroExtend, wide_type=c99_ast.Int()):
+        """`(uint8_t)(wide)a >> count`, with `a` of `src_type`."""
+        instrs = [
+            extend(src=_var("a"), dst=_var("ea")),
+            tac_ast.Binary(
+                op=tac_ast.RightShift(), src1=_var("ea"),
+                src2=_const_int(count), dst=_var("r"),
+            ),
+            tac_ast.Truncate(src=_var("r"), dst=_var("d")),
+        ]
+        symbols = {
+            "a": _local(src_type),
+            "ea": _local(wide_type),
+            "r": _local(wide_type),
+            "d": _local(c99_ast.UChar()),
+        }
+        return narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts={"ea", "r", "d"},
+        ).instructions
+
+    def test_right_shift_of_extended_byte_narrowed(self):
+        # `props[y] >> 5`: the extended high byte is 0, and a 1-byte
+        # logical shift brings in the same zeros.
+        new = self._right_shift(5)[-1]
+        self.assertEqual(new, tac_ast.Binary(
+            op=tac_ast.RightShift(), src1=_var("a"),
+            src2=_const_uchar(5), dst=_var("d"),
+        ))
+
+    def test_right_shift_of_wider_extended_value_not_narrowed(self):
+        # `(uint8_t)((uint32_t)w >> 5)` on a 2-byte `w` reads bits 8
+        # to 12 of `w`. A shift of `w`'s low byte would lose them.
+        out = self._right_shift(
+            5, src_type=c99_ast.UInt(), wide_type=c99_ast.ULong(),
+        )
+        self.assertIsInstance(out[-1], tac_ast.Truncate)
+
+    def test_signed_right_shift_by_one_narrowed(self):
+        # A 1-byte arithmetic shift by 1 is inline (`CMP #$80; ROR`).
+        new = self._right_shift(
+            1, src_type=c99_ast.SChar(), extend=tac_ast.SignExtend,
+        )[-1]
+        self.assertIsInstance(new, tac_ast.Binary)
+        self.assertEqual(new.src1, _var("a"))
+
+    def test_signed_right_shift_by_three_not_narrowed(self):
+        # A 1-byte arithmetic shift by 3 would call `asr8`.
+        out = self._right_shift(
+            3, src_type=c99_ast.SChar(), extend=tac_ast.SignExtend,
+        )
+        self.assertIsInstance(out[-1], tac_ast.Truncate)
+
+    def test_zero_extended_signed_byte_not_narrowed(self):
+        # A ZeroExtend of a signed byte doesn't fill with copies of
+        # its sign bit, which an arithmetic shift of it would.
+        out = self._right_shift(1, src_type=c99_ast.SChar())
+        self.assertIsInstance(out[-1], tac_ast.Truncate)
+
     def test_dst_width_equals_extend_width_left_alone(self):
         # `Truncate(int -> int)` is a no-op of zero width gap;
         # there's nothing to narrow. (In practice this wouldn't

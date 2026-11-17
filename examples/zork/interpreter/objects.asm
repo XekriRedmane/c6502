@@ -126,7 +126,6 @@ __local_attr_ptr_and_mask__attr	EQU	$E8
 __local_instr_get_prop__3	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
 __local_attr_ptr_and_mask__mask_1	EQU	$E9
-__local_get_property_len__0	EQU	$E9
 __local_instr_insert_obj__5	EQU	$E9
 __local_attr_ptr_and_mask__n	EQU	$EA
 BUFF_END	EQU	$EB
@@ -745,12 +744,6 @@ get_property_len:
    LSR
    LSR
    LSR
-   STA   __local_get_property_len__0
-   LDA   #$00
-   ASL
-   ASL
-   ASL
-   ORA   __local_get_property_len__0
    RTS
 
 next_property:
@@ -948,12 +941,6 @@ instr_get_prop_len:
    LSR
    LSR
    LSR
-   STA   __local_instr_get_prop_len__0
-   TYA
-   ASL
-   ASL
-   ASL
-   ORA   __local_instr_get_prop_len__0
    CLC
    ADC   #$01
    STA   __zpabi_store_result__value_0

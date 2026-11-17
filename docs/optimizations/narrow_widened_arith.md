@@ -76,7 +76,16 @@ truncate the value the comparison read, as below.
   `Binary` with one of these operators. `+`, `-`, `*`, `&`, `|`, and
   `^` qualify because carries only move from low bytes to high
   bytes. `<<` qualifies only with a constant count less than the
-  number of bits in the truncated width.
+  number of bits in the truncated width. `>>` qualifies with such a
+  count when its first operand is a `ZeroExtend` of an unsigned
+  variable or a `SignExtend` of a signed one, as wide as the
+  truncate's destination. The bytes the extend adds hold 0 or copies
+  of the sign bit, and a narrow logical or arithmetic shift brings in
+  the same bits, so `(uint8_t)(props[y] >> 5)` is `LDA (props),Y;
+  LSR` five times. The narrow shift also has to be one `tac_to_asm`
+  lowers inline (`shift_cost.inline_shift_ok`). A 1-byte arithmetic
+  shift by 1 is `CMP #$80; ROR`, while one by 3 would call `asr8`, so
+  a `signed char` shifted by more than 1 keeps its 16-bit shift.
 - The `Binary`'s result is wider than the truncate's destination.
 - Each operand is one of these:
   - a constant, which is reduced modulo the narrow width and takes a
@@ -114,9 +123,14 @@ held in memory across it.
 
 ## What it leaves alone
 
-- `/`, `%`, and `>>`, where high bytes of the operands move into the
-  low bytes of the result. `(uint8_t)(a >> 1)` keeps its 16-bit
-  shift in TAC.
+- `/` and `%`, where high bytes of the operands move into the low
+  bytes of the result.
+- `>>` of any value other than an extended variable as wide as the
+  result. For a 2-byte `w`, `(uint8_t)((uint32_t)w >> 5)` takes bits
+  8 to 12 of `w` into the result, so a shift of `w`'s low byte would
+  lose them. A `ZeroExtend` of a signed byte isn't narrowed either,
+  since its added byte isn't a copy of the sign bit, which an
+  arithmetic shift of the byte would bring in.
 - A `<<` by a variable count, such as `a << n`.
 - A global or other non-SSA operand that may change between the
   wide `Binary` and the truncate, as in `int t = g + 1; h();
@@ -127,8 +141,9 @@ held in memory across it.
 
 ## Related
 
-A right shift isn't narrowed here, since high bytes shift down into
-the low one. `tac_to_asm` handles the common case itself: when a
+A right shift of a wide value isn't narrowed here, since its high
+bytes shift down into the low one. `tac_to_asm` handles that case
+itself: when a
 constant right shift's result is read only through a `Truncate` to
 one byte (`significant_bytes.low_byte_only`), it computes just that
 byte from the two source bytes it comes from. `(uint8_t)(ZCHARS >>

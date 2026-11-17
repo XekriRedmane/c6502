@@ -68,19 +68,16 @@ __local_instr_call__args	EQU	$52
 __local_instr_get_prop__y	EQU	$52
 __local_instr_get_prop_addr__1	EQU	$52
 __local_match_dictionary_word__5	EQU	$52
-__local_print_zstring__ch	EQU	$52
 __local_ascii_to_zchar__0	EQU	$53
 __local_divu16__partial_0	EQU	$53
 __local_instr_call__2	EQU	$53
 __local_instr_get_prop__2	EQU	$53
 __local_match_dictionary_word__6	EQU	$53
-__local_print_zstring__c_0	EQU	$53
 __local_return_value__0	EQU	$53
 __local_ascii_to_zchar__1	EQU	$54
 __local_divu16__0	EQU	$54
 __local_instr_get_prop__3	EQU	$54
 __local_match_dictionary_word__count_1	EQU	$54
-__local_print_zstring__0	EQU	$54
 __local_return_value__1	EQU	$54
 __local_ascii_to_zchar__2	EQU	$55
 __local_get_object_addr__0	EQU	$55
@@ -250,17 +247,19 @@ PRINTER_CSW	EQU	$EE
 __local_get_next_code_byte__page	EQU	$F0
 __local_get_nonstack_var__var	EQU	$F0
 __local_print_number__count	EQU	$F0
+__local_print_zstring__ch	EQU	$F0
 __zpabi_print_ascii_string__s_0	EQU	$F0
 __zpabi_set_nonstack_var__value_0	EQU	$F0
 __local_get_nonstack_var__0	EQU	$F1
 __local_print_number__digits	EQU	$F1
-__local_set_page_first__0	EQU	$F1
+__local_print_zstring__c_0	EQU	$F1
 __zpabi_print_ascii_string__s_1	EQU	$F1
 __zpabi_set_nonstack_var__value_1	EQU	$F1
 __local_get_nonstack_var__1	EQU	$F2
-__local_set_page_first__prev_first	EQU	$F2
+__local_set_page_first__0	EQU	$F2
 __zpabi_cout_string__s_0	EQU	$F2
 __local_get_nonstack_var__2	EQU	$F3
+__local_set_page_first__prev_first	EQU	$F3
 __zpabi_cout_string__s_1	EQU	$F3
 __local_main__0	EQU	$F4
 __local_main__sector	EQU	$F5
@@ -293,9 +292,9 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$10CF
-__text_end	EQU	$1A16
-__text_load_end	EQU	$1A16
+__text_size	EQU	$10C1
+__text_end	EQU	$1A08
+__text_load_end	EQU	$1A08
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -873,8 +872,8 @@ do_1op:
    PHA
    RTS
 .jtab@1:
-   DC.B  $D7, $0B, $E6, $14, $AD, $15, $B9, $15
-   DC.B  $C5, $17, $2F, $0B, $4A, $0B, $E6, $0B
+   DC.B  $D7, $0B, $D8, $14, $9F, $15, $AB, $15
+   DC.B  $B7, $17, $2F, $0B, $4A, $0B, $E6, $0B
    DC.B  $40, $2C, $69, $13, $F4, $0B, $F9, $0B
    DC.B  $04, $0C, $10, $0C, $1E, $0C, $26, $0C
 .case@18:
@@ -949,8 +948,8 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.B  $80, $0A, $64, $0C, $95, $0C, $EC, $17
-   DC.B  $92, $2F, $B6, $0C, $BB, $0C, $9D, $19
+   DC.B  $80, $0A, $64, $0C, $95, $0C, $DE, $17
+   DC.B  $92, $2F, $B6, $0C, $BB, $0C, $8F, $19
    DC.B  $C6, $0C, $D1, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
@@ -1205,12 +1204,12 @@ do_2op:
    RTS
 .jtab@2:
    DC.B  $40, $2C, $4C, $0E, $AD, $0E, $C1, $0E
-   DC.B  $D1, $0E, $E1, $0E, $CB, $15, $F8, $0E
-   DC.B  $15, $0F, $22, $0F, $37, $16, $48, $16
-   DC.B  $62, $16, $31, $0F, $AC, $13, $3E, $0F
-   DC.B  $58, $0F, $BE, $16, $45, $17, $8E, $17
-   DC.B  $74, $0F, $84, $0F, $C6, $18, $29, $19
-   DC.B  $70, $19
+   DC.B  $D1, $0E, $E1, $0E, $BD, $15, $F8, $0E
+   DC.B  $15, $0F, $22, $0F, $29, $16, $3A, $16
+   DC.B  $54, $16, $31, $0F, $AC, $13, $3E, $0F
+   DC.B  $58, $0F, $B0, $16, $37, $17, $80, $17
+   DC.B  $74, $0F, $84, $0F, $B8, $18, $1B, $19
+   DC.B  $62, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1409,11 +1408,11 @@ set_page_first:
    RTS
 .if_end@0:
    LDA   FIRST_Z_PAGE
-   STA   __local_get_nonstack_var__1
+   STA   __local_get_nonstack_var__2
    STY   FIRST_Z_PAGE
    LDA   (NEXT_PAGE_TABLE),Y
-   STA   __local_get_nonstack_var__0
-   LDA   __local_get_nonstack_var__1
+   STA   __local_get_nonstack_var__1
+   LDA   __local_get_nonstack_var__2
    STA   (NEXT_PAGE_TABLE),Y
    LDA   (PREV_PAGE_TABLE),Y
    TAX
@@ -1421,19 +1420,19 @@ set_page_first:
    STA   (PREV_PAGE_TABLE),Y
    TXA
    TAY
-   LDA   __local_get_nonstack_var__0
+   LDA   __local_get_nonstack_var__1
    STA   (NEXT_PAGE_TABLE),Y
    LDA   FIRST_Z_PAGE
-   LDY   __local_get_nonstack_var__1
+   LDY   __local_get_nonstack_var__2
    STA   (PREV_PAGE_TABLE),Y
-   LDA   __local_get_nonstack_var__0
+   LDA   __local_get_nonstack_var__1
    CMP   #$FF
    BNE   .if_else@2
    STX   LAST_Z_PAGE
    RTS
 .if_else@2:
    TXA
-   LDY   __local_get_nonstack_var__0
+   LDY   __local_get_nonstack_var__1
    STA   (PREV_PAGE_TABLE),Y
    RTS
 find_index_of_page_table:
@@ -2100,7 +2099,7 @@ print_zstring:
    STA   SHIFT_ALPHABET
 .loop@0_start:
    JSR   get_next_zchar
-   STA   __local_ascii_to_zchar__0
+   STA   __local_get_nonstack_var__0
    BCC   .if_end@0
    RTS
 .if_end@0:
@@ -2113,21 +2112,14 @@ print_zstring:
    BNE   .if_else@4
    JSR   get_next_zchar
    ASL
-   STA   __local_ascii_to_zchar__left
-   LDY   __local_ascii_to_zchar__left
+   STA   __local_get_nonstack_var__0
+   LDY   __local_get_nonstack_var__0
    LDA   (Z_ABBREV_TABLE),Y
-   STA   __local_ascii_to_zchar__1
-   LDA   Z_ABBREV_TABLE
-   CLC
-   ADC   __local_ascii_to_zchar__left
-   STA   __local_ascii_to_zchar__left
-   LDA   Z_ABBREV_TABLE+1
-   ADC   #$00
-   STA   __local_ascii_to_zchar__0
-   LDY   #$01
-   LDA   (__local_ascii_to_zchar__left),Y
+   STA   __local_get_next_code_byte__page
+   INY
+   LDA   (Z_ABBREV_TABLE),Y
    STA   __local_dec_var__0
-   LDA   __local_ascii_to_zchar__1
+   LDA   __local_get_next_code_byte__page
    STA   __local_get_next_code_word__1
    LDA   LOCKED_ALPHABET
    PHA
@@ -2169,7 +2161,7 @@ print_zstring:
    BCS   .if_else@6
    JSR   get_alphabet
    CLC
-   ADC   __local_ascii_to_zchar__0
+   ADC   __local_get_nonstack_var__0
    CLC
    ADC   #$02
    JSR   A_mod_3
@@ -2180,7 +2172,7 @@ print_zstring:
    BCS   .if_else@8
    JSR   get_alphabet
    CLC
-   ADC   __local_ascii_to_zchar__0
+   ADC   __local_get_nonstack_var__0
    JSR   A_mod_3
    STA   LOCKED_ALPHABET
    JMP   .loop@0_start
@@ -2191,7 +2183,7 @@ print_zstring:
    LDA   #$5B
 .xjump@0:
    CLC
-   ADC   __local_ascii_to_zchar__0
+   ADC   __local_get_nonstack_var__0
    JMP   .if_end@15
 .if_else@10:
    CMP   #$01
@@ -2199,7 +2191,7 @@ print_zstring:
    LDA   #$3B
    BNE   .xjump@0
 .if_else@12:
-   LDA   __local_ascii_to_zchar__0
+   LDA   __local_get_nonstack_var__0
    CMP   #$06
    BNE   .if_else@14
    JSR   get_next_zchar
@@ -2208,9 +2200,9 @@ print_zstring:
    ASL
    ASL
    ASL
-   STA   __local_ascii_to_zchar__0
+   STA   __local_get_nonstack_var__0
    JSR   get_next_zchar
-   ORA   __local_ascii_to_zchar__0
+   ORA   __local_get_nonstack_var__0
    JMP   .if_end@15
 .if_else@14:
    CMP   #$07

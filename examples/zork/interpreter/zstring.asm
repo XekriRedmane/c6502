@@ -80,7 +80,6 @@ __zpabi_store_result__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_print_zstring__ch	EQU	$E4
 __local_print_zstring__c_0	EQU	$E5
-__local_print_zstring__0	EQU	$E6
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -103,7 +102,7 @@ COUT1	EQU	$FDF0
 ; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
 ; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false carry=true
 ; def print_string_literal params= locals= indirect=false in_cycle=false
-; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
+; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0 indirect=false in_cycle=true
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
@@ -276,21 +275,14 @@ print_zstring:
    BNE   .if_else@4
    JSR   get_next_zchar
    ASL
-   STA   __local_print_zstring__ch
-   LDY   __local_print_zstring__ch
-   LDA   (Z_ABBREV_TABLE),Y
-   STA   __local_print_zstring__0
-   LDA   Z_ABBREV_TABLE
-   CLC
-   ADC   __local_print_zstring__ch
-   STA   __local_print_zstring__ch
-   LDA   Z_ABBREV_TABLE+1
-   ADC   #$00
    STA   __local_print_zstring__c_0
-   LDY   #$01
-   LDA   (__local_print_zstring__ch),Y
+   LDY   __local_print_zstring__c_0
+   LDA   (Z_ABBREV_TABLE),Y
+   STA   __local_print_zstring__ch
+   INY
+   LDA   (Z_ABBREV_TABLE),Y
    STA   __zpabi_load_packed_address__addr_0
-   LDA   __local_print_zstring__0
+   LDA   __local_print_zstring__ch
    STA   __zpabi_load_packed_address__addr_1
    LDA   LOCKED_ALPHABET
    PHA

@@ -132,7 +132,7 @@ interpreter state in every scenario.
 | `get_next_code_byte2` | 127 | 131 |
 | `set_page_first` | 53 | 54 |
 | `find_index_of_page_table` | 29 | 29 |
-| `print_zstring` | 216 | 237 |
+| `print_zstring` | 216 | 223 |
 | `A_mod_3` | 11 | 10 |
 | `get_alphabet` | 12 | 12 |
 | `get_next_zchar` | 76 | 77 |
@@ -144,7 +144,7 @@ interpreter state in every scenario.
 | `cout_string` | 14 | 14 |
 | `do_rwts_on_sector` | 51 | 50 |
 | `read_from_sector` | 6 | 2 |
-| **Code** | **981** | **1016** |
+| **Code** | **981** | **1002** |
 
 Zork's `buffer_char` counts its `buffer_char_set_buffer_end` label,
 which `dump_buffer_with_more` jumps to. The data is the same: the IOB

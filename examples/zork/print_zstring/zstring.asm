@@ -70,8 +70,7 @@ PRINTER_CSW	EQU	$EE
 __zork_zp_f0	EQU	$F0
 __local_print_zstring__ch	EQU	$F3
 __local_print_zstring__c_0	EQU	$F4
-__local_print_zstring__0	EQU	$F5
-__local_get_next_zchar__compound_literal_1	EQU	$F6
+__local_get_next_zchar__compound_literal_1	EQU	$F5
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -90,7 +89,7 @@ COUT1	EQU	$FDF0
 ; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
 ; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false carry=true
 ; def print_string_literal params= locals= indirect=false in_cycle=false
-; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
+; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0 indirect=false in_cycle=true
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
@@ -222,18 +221,11 @@ print_zstring:
    STA   __local_print_zstring__ch
    LDY   __local_print_zstring__ch
    LDA   (Z_ABBREV_TABLE),Y
-   STA   __local_print_zstring__0
-   LDA   Z_ABBREV_TABLE
-   CLC
-   ADC   __local_print_zstring__ch
-   STA   __local_print_zstring__ch
-   LDA   Z_ABBREV_TABLE+1
-   ADC   #$00
    STA   __local_print_zstring__c_0
-   LDY   #$01
-   LDA   (__local_print_zstring__ch),Y
+   INY
+   LDA   (Z_ABBREV_TABLE),Y
    STA   SCRATCH2
-   LDA   __local_print_zstring__0
+   LDA   __local_print_zstring__c_0
    STA   SCRATCH2+1
    LDA   LOCKED_ALPHABET
    PHA

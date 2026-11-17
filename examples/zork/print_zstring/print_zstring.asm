@@ -79,22 +79,21 @@ PRINTER_CSW	EQU	$EE
 __zork_zp_f0	EQU	$F0
 __local_print_zstring__ch	EQU	$F3
 __local_print_zstring__c_0	EQU	$F4
-__local_print_zstring__0	EQU	$F5
-__local_buffer_char__0	EQU	$F6
-__local_get_next_zchar__compound_literal_1	EQU	$F6
-__local_dump_buffer_with_more__0	EQU	$F7
-__local_get_next_code_word__1	EQU	$F7
-__local_dump_buffer_with_more__end	EQU	$F8
-__local_get_next_code_byte2__page	EQU	$F8
-__local_dump_buffer_to_printer__x	EQU	$F9
-__local_get_next_code_byte2__0	EQU	$F9
+__local_buffer_char__0	EQU	$F5
+__local_get_next_zchar__compound_literal_1	EQU	$F5
+__local_dump_buffer_with_more__0	EQU	$F6
+__local_get_next_code_word__1	EQU	$F6
+__local_dump_buffer_with_more__end	EQU	$F7
+__local_get_next_code_byte2__page	EQU	$F7
+__local_dump_buffer_to_printer__x	EQU	$F8
+__local_get_next_code_byte2__0	EQU	$F8
+__local_dump_buffer_to_printer__1	EQU	$F9
+__local_set_page_first__0	EQU	$F9
 __pages_size	EQU	$F9
-__local_dump_buffer_to_printer__1	EQU	$FA
-__local_set_page_first__0	EQU	$FA
-__local_dump_buffer_to_printer__2	EQU	$FB
-__local_set_page_first__prev_first	EQU	$FB
+__local_dump_buffer_to_printer__2	EQU	$FA
+__local_set_page_first__prev_first	EQU	$FA
 __output_size	EQU	$0156
-__zstring_size	EQU	$0168
+__zstring_size	EQU	$015A
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -108,8 +107,8 @@ __pages_end	EQU	$18D6
 __pages_load_end	EQU	$18D6
 __zstring_load	EQU	$18D6
 __zstring_start	EQU	$18D6
-__zstring_end	EQU	$1A3E
-__zstring_load_end	EQU	$1A3E
+__zstring_end	EQU	$1A30
+__zstring_load_end	EQU	$1A30
 __output_load	EQU	$1B90
 __output_start	EQU	$1B90
 __output_end	EQU	$1CE6
@@ -363,18 +362,11 @@ print_zstring:
    STA   __local_print_zstring__ch
    LDY   __local_print_zstring__ch
    LDA   (Z_ABBREV_TABLE),Y
-   STA   __local_print_zstring__0
-   LDA   Z_ABBREV_TABLE
-   CLC
-   ADC   __local_print_zstring__ch
-   STA   __local_print_zstring__ch
-   LDA   Z_ABBREV_TABLE+1
-   ADC   #$00
    STA   __local_print_zstring__c_0
-   LDY   #$01
-   LDA   (__local_print_zstring__ch),Y
+   INY
+   LDA   (Z_ABBREV_TABLE),Y
    STA   SCRATCH2
-   LDA   __local_print_zstring__0
+   LDA   __local_print_zstring__c_0
    STA   __zpabi_cout_string__s_1
    LDA   LOCKED_ALPHABET
    PHA

@@ -462,6 +462,51 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
                 )
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestByteIndexSum(unittest.TestCase):
+    """`p[i + k]` with a byte `i` whose largest value plus `k` fits in
+    a byte is `(p),Y` with Y = `i + k`, so a word table read through a
+    pointer at an even index, `p[i]` and `p[i + 1]` with `i = j << 1`,
+    is `LDY i; LDA (p),Y; INY; LDA (p),Y`."""
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "static uint8_t data[300];\n"
+        "uint8_t *table;\n"
+        "uint16_t word(uint8_t j) {\n"
+        "    uint8_t i = j << 1;\n"
+        "    return ((uint16_t)table[i] << 8) | table[i + 1];\n"
+        "}\n"
+        "uint16_t odd(uint8_t i) {\n"
+        "    return ((uint16_t)table[i] << 8) | table[i + 1];\n"
+        "}\n"
+        "int main(void) {\n"
+        "    table = data;\n"
+        "    data[254] = 0x12; data[255] = 0x34; data[256] = 0x56;\n"
+        "    return (word(127) == 0x1234) + 2 * (odd(255) == 0x3456);\n"
+        "}\n"
+    )
+
+    def test_even_index_reads_with_iny(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        word = asm[asm.index("\nword:\n"):asm.index("\nodd:\n")]
+        self.assertIn("INY", word)
+        self.assertNotIn("ADC", word)
+
+    def test_runs(self) -> None:
+        # `odd(255)` reads `table + 256`, past the byte Y can hold, so
+        # it keeps its 16-bit add.
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run(
+                    max_cycles=5_000_000,
+                )
+                self.assertFalse(out.timed_out)
+                self.assertEqual(out.return_int(), 3)
+
+
 class TestRecognizeIndirectIndexedDefersToIndexedStore(unittest.TestCase):
     """The recognizer must defer to `recognize_indexed_store` /
     `recognize_indexed_load` when the pointer-side Var transitively

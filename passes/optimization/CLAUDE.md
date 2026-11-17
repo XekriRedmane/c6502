@@ -235,6 +235,12 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   1-byte Load or Store and `p` is unchanged at each
   (`_all_byte_accesses`, with `narrow_widened_arith.var_unchanged`),
   as in `p[1]++`; the Add is then left for the asm byte DCE.
+  An access at a constant offset `k >= 1` through `p + ZeroExtend(b)`,
+  its one reader, is `(p),Y` with index `b + k` (a new byte
+  temporary) when `b`'s largest value (`_byte_max`: a left or right
+  shift or an AND by a constant) plus `k` fits in a byte
+  (`_byte_index_sum`), so `p[i + 1]` after `p[i]` at an even `i` is
+  `INY`.
   Deliberately runs LAST so any pointer that's going to fold to a Constant (via the const-static
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper

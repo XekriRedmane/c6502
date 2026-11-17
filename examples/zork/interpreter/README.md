@@ -168,12 +168,12 @@ file and the original code it translates:
 | `numbers.c` | 436 | 465 |
 | `input.c` | 1018 | 1081 |
 | `pages.c` | 384 | 379 |
-| `zstring.c` | 383 | 401 |
+| `zstring.c` | 383 | 387 |
 | `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 337 |
-| **Total** | **6643** | **6864** |
+| **Total** | **6643** | **6850** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -523,3 +523,9 @@ the smaller code saved.
   bytes in 15 tails, such as the store of a byte with `store_result`
   that four of `objects.c`'s property routines end with, and the
   message and endless loop `quit` and the internal error end with.
+- `p[i + k]` through a pointer is `(p),Y` with Y = `i + k` when `i`'s
+  largest value plus `k` fits in a byte, as for an `i` shifted left
+  by 1
+  ([recognize_indirect_indexed.md](../../../docs/optimizations/recognize_indirect_indexed.md)),
+  so `print_zstring` reads the abbreviation table's second byte with
+  `INY`, as Zork's does, 14 bytes shorter.

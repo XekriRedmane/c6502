@@ -96,6 +96,44 @@ access is rewritten on its own and the later ones find the
 `Add` through the address. The volatile bit of the access carries
 over.
 
+## An index known to fit with the offset
+
+An access at a constant offset `k` through a pointer that is itself
+`p + ZeroExtend(b)`, for a byte `b`, is `(p),Y` with Y = `b + k` when
+`b`'s largest value plus `k` fits in a byte. There's no carry out of
+the byte sum then, so `(p),Y` reaches the address the two 16-bit adds
+did. The largest value comes from `b`'s definition: a constant, a
+left shift by a constant, which clears the low bits, a logical right
+shift, or an AND with a constant, through copies; anything else
+counts as 255. The rewrite is made only for `k` of 1 or more, and only
+when the access is the sum's only reader, so the sum's 16-bit add
+goes. A loop that also needs the sum, as `entry += stride; ...
+entry[0]` in Zork's `match_dictionary_word`, would otherwise keep the
+old pointer and the new one alive.
+
+Zork's abbreviation lookup reads a word table at an even index, `i =
+z << 1`:
+
+```
+   ASL                                     ASL
+   STA   __local_print_zstring__ch         STA   __local_print_zstring__c_0
+   LDY   __local_print_zstring__ch         LDY   __local_print_zstring__c_0
+   LDA   (Z_ABBREV_TABLE),Y                LDA   (Z_ABBREV_TABLE),Y
+   STA   __local_print_zstring__0    ->    STA   __local_print_zstring__ch
+   LDA   Z_ABBREV_TABLE                    INY
+   CLC                                     LDA   (Z_ABBREV_TABLE),Y
+   ADC   __local_print_zstring__ch
+   STA   __local_print_zstring__ch
+   LDA   Z_ABBREV_TABLE+1
+   ADC   #$00
+   STA   __local_print_zstring__c_0
+   LDY   #$01
+   LDA   (__local_print_zstring__ch),Y
+```
+
+which is the original's `INY`, 14 bytes shorter in `print_zstring`
+(examples/zork/interpreter/zstring.c).
+
 ## What it leaves alone
 
 - A `signed char` index, which C99 promotes with a `SignExtend`. Y

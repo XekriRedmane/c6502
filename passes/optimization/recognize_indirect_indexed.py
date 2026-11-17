@@ -177,12 +177,23 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             # them are, nothing reads it, and the asm byte DCE drops it.
             addr = m.bindings['addr_var']
             drop = (addr,) if env.extra.get(addr.name, 0) == 1 else ()
+            folded = _byte_index_sum(ptr_var, idx_var, m, env, ctx)
+            if folded is not None:
+                ptr_var, idx_var, pre = folded
+                return self._finish(m, ctx, ptr_var, idx_var, drop, pre, env)
+        return self._finish(m, ctx, ptr_var, idx_var, drop, [], env)
+
+    def _finish(self, m, ctx, ptr_var, idx_var, drop, pre, env=None):
+        """The `Rewrite` of the matched access as an indexed one through
+        `ptr_var` at `idx_var`, after the instructions `pre`, or None."""
         # (zp),Y needs a pointer Var base — a Constant base is the
         # absolute,X case handled by recognize_indexed_store/load.
         if not isinstance(ptr_var, tac_ast.Var):
             return None
         # Defer to recognize_indexed_* when the ptr resolves to a Constant.
-        if _resolves_to_constant(ptr_var, env.def_idx, env.instructions):
+        if env is not None and _resolves_to_constant(
+            ptr_var, env.def_idx, env.instructions,
+        ):
             return None
         # Determine Load or Store and check the access value's width.
         if 'load_instr' in m.bindings:
@@ -204,6 +215,8 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
         # Drop the intermediate defs (the Binary(Add), and the
         # ZeroExtend when there is one) atomically, so no subsequent
         # DSE pass is needed.
+        if pre:
+            return Rewrite(replacement=[*pre, replacement], drop_defs=drop)
         return Rewrite(replacement=replacement, drop_defs=drop)
 
 
@@ -247,6 +260,89 @@ def _const_offset_chain(
         ):
             return None
         return ptr, tac_ast.Constant(const=tac_ast.ConstUChar(value=value))
+    return None
+
+
+def _byte_max(v: tac_ast.Type_val, env: DefUseEnv, depth: int = 0) -> int:
+    """The largest value the 1-byte `v` can hold, from its definition:
+    a constant, a left shift by a constant (whose low bits are 0), a
+    logical right shift or an AND with a constant, or a copy of one of
+    those. 255 for anything else."""
+    if isinstance(v, tac_ast.Constant):
+        value = getattr(v.const, "value", None)
+        return value & 0xFF if isinstance(value, int) else 0xFF
+    if not isinstance(v, tac_ast.Var) or depth > 8:
+        return 0xFF
+    d = env.def_of(v)
+    if isinstance(d, tac_ast.Copy):
+        return _byte_max(d.src, env, depth + 1)
+    if not isinstance(d, tac_ast.Binary) or not isinstance(d.src2, tac_ast.Constant):
+        return 0xFF
+    k = getattr(d.src2.const, "value", None)
+    if not isinstance(k, int) or not 0 <= k < 8:
+        if isinstance(d.op, tac_ast.BitwiseAnd) and isinstance(k, int):
+            return k & 0xFF
+        return 0xFF
+    if isinstance(d.op, tac_ast.LeftShift):
+        return (0xFF << k) & 0xFF
+    if isinstance(d.op, tac_ast.RightShift):
+        return 0xFF >> k
+    if isinstance(d.op, tac_ast.BitwiseAnd):
+        return k & 0xFF
+    return 0xFF
+
+
+def _byte_index_sum(ptr, k, m, env: DefUseEnv, ctx: PassContext):
+    """`(base, t, [Binary(Add, b, k, t)])` when `ptr`, the pointer an
+    access reads at the constant offset `k`, is `base + ZeroExtend(b)`
+    for a 1-byte `b` whose largest value plus `k` fits in a byte, and
+    `base` still holds at the access the value the Add read. Then `ptr
+    + k` is `base + (b + k)` with no carry out of the byte sum, and the
+    access is `(base),Y` with Y = `b + k`. In Zork's abbreviation lookup
+    `Z_ABBREV_TABLE[i + 1]` with `i = z << 1`, which is even, became
+    `INY` after the read of `Z_ABBREV_TABLE[i]`, where it had added `i`
+    to the table's address in a zero-page pair. Else None."""
+    from passes.optimization.narrow_widened_arith import (
+        _register_temp, var_unchanged,
+    )
+    if ctx.symbols is None or ctx.ssa_dsts is None:
+        return None
+    if not isinstance(ptr, tac_ast.Var) or ptr.name not in ctx.ssa_dsts:
+        return None
+    # Only when the access is the sum's one reader, so its 16-bit add
+    # goes. `entry += stride; ... entry[0]` in the loop of
+    # `match_dictionary_word` still needs the new `entry`, and reading
+    # through the old one at Y = stride kept both alive.
+    if k.const.value == 0 or env.extra.get(ptr.name, 0) != 1:
+        return None
+    add = env.def_of(ptr)
+    if not (isinstance(add, tac_ast.Binary) and isinstance(add.op, tac_ast.Add)):
+        return None
+    for base, ext in ((add.src1, add.src2), (add.src2, add.src1)):
+        if not (isinstance(base, tac_ast.Var) and isinstance(ext, tac_ast.Var)
+                and ext.name in ctx.ssa_dsts):
+            continue
+        z = env.def_of(ext)
+        if not (isinstance(z, tac_ast.ZeroExtend) and isinstance(z.src, tac_ast.Var)
+                and z.src.name in ctx.ssa_dsts
+                and is_1_byte_var(z.src, ctx.symbols)):
+            continue
+        if _byte_max(z.src, env) + k.const.value > 0xFF:
+            continue
+        add_idx = env.def_idx.get(ptr.name)
+        access = m.bindings.get('load_instr') or m.bindings.get('store_instr')
+        at = next((i for i, ins in enumerate(env.instructions)
+                   if ins is access), None)
+        if add_idx is None or at is None or not var_unchanged(
+            base, add_idx, at, env, ctx,
+        ):
+            continue
+        name = f"{ptr.name}.y{k.const.value}"
+        _register_temp(ctx, like=z.src.name, name=name)
+        t = tac_ast.Var(name=name)
+        return base, t, [tac_ast.Binary(
+            op=tac_ast.Add(), src1=z.src, src2=k, dst=t,
+        )]
     return None
 
 

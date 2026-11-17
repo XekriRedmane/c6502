@@ -70,11 +70,9 @@ __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
 __zpabi_print_number__n_0	EQU	$E0
-__zpabi_push__value_0	EQU	$E0
 __zpabi_return_value__value_0	EQU	$E0
 __zpabi_set_attr_word__word_0	EQU	$E0
 __zpabi_store_result__value_0	EQU	$E0
-__zpabi_var_put__value_0	EQU	$E0
 __local_instr_test_attr__1	EQU	$E1
 __local_next_property__y	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
@@ -82,11 +80,9 @@ __zpabi_load_address__addr_1	EQU	$E1
 __zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
 __zpabi_print_number__n_1	EQU	$E1
-__zpabi_push__value_1	EQU	$E1
 __zpabi_return_value__value_1	EQU	$E1
 __zpabi_set_attr_word__word_1	EQU	$E1
 __zpabi_store_result__value_1	EQU	$E1
-__zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_instr_clear_attr__0	EQU	$E4
 __local_instr_get_next_prop__y	EQU	$E4
@@ -209,13 +205,11 @@ COUT1	EQU	$FDF0
 ; ext new_line params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
-; ext pop params=
 ; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
 ; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1
 ; ext print_status_line params=
 ; ext print_string_literal params=
 ; ext print_zstring params=
-; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
 ; ext read_from_sector params= carry=true
 ; ext read_next_sector params= carry=true
 ; ext reset_window params=
@@ -223,7 +217,6 @@ COUT1	EQU	$FDF0
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
-; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
 ; ext write_next_sector params= carry=true
 ; ext write_to_sector params= carry=true
 ; call attr_ptr_and_mask -> get_object_addr

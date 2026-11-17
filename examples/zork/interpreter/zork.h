@@ -239,10 +239,7 @@ bool RWTS(struct iob *iob [[c6502::in_ya]]);
 
 void do_instruction(void);
 uint16_t var_get(register uint8_t var);
-void var_put(register uint8_t var, uint16_t value);
 void store_result(uint16_t value);
-void push(uint16_t value);
-uint16_t pop(void);
 void branch(register bool condition);
 void return_value(uint16_t value);
 uint8_t get_next_code_byte(void);

@@ -195,7 +195,14 @@ the bytes:
 
 A variable that breaks a rule isn't kept there, and the rules are
 checked again, since dropping a shared parameter makes its function
-write the bytes. Each function keeps at most one value in a set of
+write the bytes. When some of the variables that break a rule are
+parameters of functions with external linkage, only those are dropped
+first, since such a parameter is what brings rule 3 into force for
+the others. In Zork's `decode.c`, `store_result` passes its parameter
+on to `push` while it's live across `get_next_code_byte`, in
+`pages.c`, so it can't share `push`'s bytes. `var_get` keeps the
+value it pops in them across `push(value)`, which `store_result`'s
+parameter had made fail rule 3 as well. Each function keeps at most one value in a set of
 shared bytes.
 
 ## Across units

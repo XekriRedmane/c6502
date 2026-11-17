@@ -81,6 +81,9 @@ each bound variable `v` of a function `F`:
 
 A binding that breaks a condition is dropped, and the check is
 repeated, since dropping an alias can make its function a writer.
+When some of the bindings that break one are parameters of functions
+with external linkage, only those go in that round, since they may be
+what makes rule 3 apply to the others.
 Each function appears at most once in a share, as a member or as a
 holder: two of its values can't have one home.
 
@@ -361,6 +364,19 @@ def find_shares(
                     bad.add(id(b))
         if not bad:
             break
+        # A failing parameter of a function with external linkage is
+        # what makes its share's owners global (rule 3), and so may be
+        # what fails the share's other bindings. Those go first, and
+        # the rest are checked again without them. `store_result(v)`
+        # passing `v` on to `push` fails rule 3, and while it's in the
+        # share `var_get`, holding the value it pops in `push`'s bytes
+        # across `push(value)`, failed with it.
+        global_aliases = {
+            id(b) for b in cands
+            if id(b) in bad and b.alias and fns[b.fn].is_global
+        }
+        if global_aliases and global_aliases != bad:
+            bad = global_aliases
         # A binding that goes takes the locals sharing its home with it.
         gone = {(b.fn, b.var) for b in cands if id(b) in bad}
         cands = [

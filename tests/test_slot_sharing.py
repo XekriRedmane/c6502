@@ -188,6 +188,34 @@ int main(void) {
         self.assertEqual(_shares(_codegen(src)), [])
         self._check_runs(src, 10 + 3 + 10)
 
+    def test_global_forwarder_dropped_before_its_share(self) -> None:
+        # `store` passes its parameter on to `push` with it live across
+        # `next_byte`, in another unit, which might call `store` (rule
+        # 3), so `store` can't keep it in `push`'s bytes. `peek` can
+        # keep the value it pops there across `push(v)`, since `push`
+        # is static. It had been dropped along with `store`, whose
+        # external linkage made the share's owners global.
+        src = """
+        #include <stdint.h>
+        uint8_t next_byte(void);
+        void fail(void);
+        uint16_t stack[8];
+        uint8_t sp;
+        static void push(uint16_t value) {
+            stack[sp++] = value;
+            if (sp > 7) fail();
+        }
+        static uint16_t pop(void) { return stack[--sp]; }
+        void store(uint16_t value) { if (next_byte() == 0) push(value); }
+        uint16_t peek(void) { uint16_t v = pop(); push(v); return v; }
+        """
+        asm = _codegen(src)
+        shares = _shares(asm)
+        self.assertEqual(len(shares), 1, shares)
+        self.assertIn("holder=peek", shares[0])
+        self.assertNotIn("member=store:", shares[0])
+        self.assertNotIn("__local_peek__", " ".join(_body(asm, "peek")))
+
     def test_callee_steps_a_copy(self) -> None:
         # `sum` steps `p` through the bytes, which out of SSA is a copy
         # of the parameter, so the parameter's bytes stay as they were

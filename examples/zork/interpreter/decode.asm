@@ -2,15 +2,14 @@ HARGS	EQU	$00
 SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
-__local_branch_to_offset__0	EQU	$0B
 __local_return_value__0	EQU	$0B
 __local_return_value__1	EQU	$0C
 __local_return_value__x	EQU	$0D
-__local_branch_to_offset__pages_1	EQU	$0E
 __local_return_value__count	EQU	$0E
-__local_branch_to_offset__2	EQU	$0F
 __local_set_nonstack_var__var	EQU	$0F
+__local_pop__1	EQU	$10
 __local_set_nonstack_var__0	EQU	$10
+__local_pop__2	EQU	$11
 __local_set_nonstack_var__1	EQU	$11
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
@@ -72,7 +71,8 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__local_var_get__var	EQU	$E0
+__local_dec_var__0	EQU	$E0
+__local_inc_var__0	EQU	$E0
 __zpabi_branch_to_offset__offset_0	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
@@ -80,9 +80,8 @@ __zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
 __zpabi_print_number__n_0	EQU	$E0
 __zpabi_return_value__value_0	EQU	$E0
-__zpabi_var_put__value_0	EQU	$E0
 __local_get_const_word__1	EQU	$E1
-__local_var_get__0	EQU	$E1
+__local_var_put__var	EQU	$E1
 __zpabi_branch_to_offset__offset_1	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
 __zpabi_load_address__addr_1	EQU	$E1
@@ -90,21 +89,18 @@ __zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
 __zpabi_print_number__n_1	EQU	$E1
 __zpabi_return_value__value_1	EQU	$E1
-__zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__local_get_nonstack_var__var	EQU	$E4
-__local_var_put__var	EQU	$E4
+__local_branch_to_offset__0	EQU	$E4
 __zpabi_store_result__value_0	EQU	$E4
-__local_get_nonstack_var__0	EQU	$E5
 __zpabi_store_result__value_1	EQU	$E5
-__local_get_nonstack_var__1	EQU	$E6
-__local_pop__1	EQU	$E6
 __zpabi_push__value_0	EQU	$E6
-__zpabi_set_nonstack_var__value_0	EQU	$E6
-__local_get_nonstack_var__2	EQU	$E7
-__local_pop__2	EQU	$E7
+__zpabi_var_put__value_0	EQU	$E6
+__local_branch_to_offset__pages_1	EQU	$E7
 __zpabi_push__value_1	EQU	$E7
-__zpabi_set_nonstack_var__value_1	EQU	$E7
+__zpabi_var_put__value_1	EQU	$E7
+__local_branch_to_offset__2	EQU	$E8
+__zpabi_set_nonstack_var__value_0	EQU	$E8
+__zpabi_set_nonstack_var__value_1	EQU	$E9
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -122,19 +118,17 @@ __local_do_var__1	EQU	$F7
 __local_do_2op__2	EQU	$F8
 __local_do_var__2	EQU	$F8
 __local_do_var__3	EQU	$F9
-__local_branch__offset_1	EQU	$FB
-__local_dec_var__0	EQU	$FB
-__local_inc_var__0	EQU	$FB
 __local_instr_call__1	EQU	$FB
-__local_branch__offset_0	EQU	$FC
-__local_dec_var__1	EQU	$FC
-__local_inc_var__1	EQU	$FC
+__local_branch__offset_1	EQU	$FC
+__local_get_nonstack_var__var	EQU	$FC
 __local_instr_call__i	EQU	$FC
-__local_branch__condition	EQU	$FD
-__local_dec_var__2	EQU	$FD
-__local_inc_var__2	EQU	$FD
+__local_branch__offset_0	EQU	$FD
+__local_get_nonstack_var__0	EQU	$FD
 __local_instr_call__args	EQU	$FD
+__local_branch__condition	EQU	$FE
+__local_get_nonstack_var__1	EQU	$FE
 __local_instr_call__2	EQU	$FE
+__local_get_nonstack_var__2	EQU	$FF
 __local_store_result__0	EQU	$FF
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
@@ -152,23 +146,23 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__condition indirect=false in_cycle=false param_regs=A
 ; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false changes=__zpabi_branch_to_offset__offset_1
-; def dec_var params= locals=__local_dec_var__0,__local_dec_var__1,__local_dec_var__2 indirect=false in_cycle=false
+; def dec_var params= locals=__local_dec_var__0 indirect=false in_cycle=false
 ; def do_0op params=__zpabi_do_0op__n locals=__local_do_0op__n indirect=false in_cycle=false param_regs=A
 ; def do_1op params=__zpabi_do_1op__n locals=__local_do_1op__0,__local_do_1op__1,__local_do_1op__n indirect=false in_cycle=false param_regs=A
-; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__1,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4 indirect=false in_cycle=false param_regs=A
+; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__1,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4,__local_do_2op__5 indirect=false in_cycle=false param_regs=A
 ; def do_instruction params= locals=__local_do_instruction__v_1,__local_do_instruction__0,__local_do_instruction__v_0,__local_do_instruction__forms,__local_do_instruction__1 indirect=false in_cycle=false
 ; def do_var params=__zpabi_do_var__n locals=__local_do_var__n,__local_do_var__0,__local_do_var__1,__local_do_var__2,__local_do_var__3 indirect=false in_cycle=false param_regs=A
 ; def get_const_word params= locals=__local_get_const_word__0,__local_get_const_word__1 indirect=false in_cycle=false
 ; def get_nonstack_var params=__zpabi_get_nonstack_var__var locals=__local_get_nonstack_var__var,__local_get_nonstack_var__0,__local_get_nonstack_var__1,__local_get_nonstack_var__2 indirect=false in_cycle=false param_regs=A
 ; def get_var_content params= locals=__local_get_var_content__0 indirect=false in_cycle=false
-; def inc_var params= locals=__local_inc_var__0,__local_inc_var__1,__local_inc_var__2 indirect=false in_cycle=false
+; def inc_var params= locals=__local_inc_var__0 indirect=false in_cycle=false
 ; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__i,__local_instr_call__args,__local_instr_call__2 indirect=false in_cycle=false
 ; def pop params= locals=__local_pop__0,__local_pop__1,__local_pop__2 indirect=false in_cycle=false
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals=__local_push__0 indirect=false in_cycle=false
 ; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count indirect=false in_cycle=false
 ; def set_nonstack_var params=__zpabi_set_nonstack_var__var,__zpabi_set_nonstack_var__value_0,__zpabi_set_nonstack_var__value_1 locals=__local_set_nonstack_var__var,__local_set_nonstack_var__0,__local_set_nonstack_var__1 indirect=false in_cycle=false param_regs=A,,
 ; def store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 locals=__local_store_result__0 indirect=false in_cycle=false
-; def var_get params=__zpabi_var_get__var locals=__local_var_get__var,__local_var_get__0 indirect=false in_cycle=false param_regs=A
+; def var_get params=__zpabi_var_get__var locals=__local_var_get__var indirect=false in_cycle=false param_regs=A
 ; def var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 locals=__local_var_put__var indirect=false in_cycle=false param_regs=A,,
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -325,12 +319,13 @@ COUT1	EQU	$FDF0
 ; call var_put -> pop
 ; call var_put -> push
 ; call var_put -> set_nonstack_var
-; item push section=.text local=false zero=false
-; item pop section=.text local=false zero=false
+; share member=push:__zpabi_push__value_0,__zpabi_push__value_1 member=var_put:__zpabi_var_put__value_0,__zpabi_var_put__value_1 holder=dec_var holder=inc_var holder=var_get live=dec_var:var_put live=inc_var:var_put live=var_get:push live=var_put:pop forward=dec_var>var_put forward=inc_var>var_put forward=var_get>push forward=var_put>push writer=dec_var writer=inc_var writer=var_get
+; item push section=.text local=true zero=false
+; item pop section=.text local=true zero=false
 ; item get_nonstack_var section=.text local=true zero=false
 ; item set_nonstack_var section=.text local=true zero=false
 ; item var_get section=.text local=false zero=false
-; item var_put section=.text local=false zero=false
+; item var_put section=.text local=true zero=false
 ; item store_result section=.text local=false zero=false
 ; item get_const_word section=.text local=true zero=false
 ; item get_var_content section=.text local=true zero=false
@@ -551,13 +546,11 @@ var_get:
    ORA   #$00
    BNE   .if_end@4
    JSR   pop
-   STA   __local_var_get__0
-   STX   __local_var_get__var
    STA   __zpabi_push__value_0
    STX   __zpabi_push__value_1
    JSR   push
-   LDX   __local_var_get__var
-   LDA   __local_var_get__0
+   LDX   __zpabi_push__value_1
+   LDA   __zpabi_push__value_0
    RTS
 .if_end@4:
    JMP   get_nonstack_var
@@ -569,15 +562,11 @@ var_put:
    ORA   #$00
    BNE   .if_end@5
    JSR   pop
-   LDA   __zpabi_var_put__value_0
-   STA   __zpabi_push__value_0
-   LDA   __zpabi_var_put__value_1
-   STA   __zpabi_push__value_1
    JMP   push
 .if_end@5:
-   LDA   __zpabi_var_put__value_0
+   LDA   __zpabi_push__value_0
    STA   __zpabi_set_nonstack_var__value_0
-   LDA   __zpabi_var_put__value_1
+   LDA   __zpabi_push__value_1
    STA   __zpabi_set_nonstack_var__value_1
    LDA   __local_var_put__var
    JMP   set_nonstack_var
@@ -889,44 +878,37 @@ inc_var:
    SUBROUTINE
 
    LDA   OPERANDS
-   STA   __local_inc_var__2
-   JSR   var_get
    STA   __local_inc_var__0
-   STX   __local_inc_var__1
-   INC   __local_inc_var__0
+   JSR   var_get
+   STA   __zpabi_var_put__value_0
+   STX   __zpabi_var_put__value_1
+   INC   __zpabi_var_put__value_0
    BNE   .inc_done@1
-   INC   __local_inc_var__1
+   INC   __zpabi_var_put__value_1
 .inc_done@1:
    LDA   __local_inc_var__0
-   STA   __zpabi_var_put__value_0
-   LDA   __local_inc_var__1
-   STA   __zpabi_var_put__value_1
-   LDA   __local_inc_var__2
    JSR   var_put
-   LDX   __local_inc_var__1
-   LDA   __local_inc_var__0
+   LDX   __zpabi_var_put__value_1
+   LDA   __zpabi_var_put__value_0
    RTS
 
 dec_var:
    SUBROUTINE
 
    LDA   OPERANDS
-   STA   __local_dec_var__2
+   STA   __local_dec_var__0
    JSR   var_get
-   STX   __local_dec_var__1
+   STX   __zpabi_var_put__value_1
    SEC
    SBC   #$01
-   STA   __local_dec_var__0
-   BCS   .carry_inc@3
-   DEC   __local_dec_var__1
-.carry_inc@3:
    STA   __zpabi_var_put__value_0
-   LDA   __local_dec_var__1
-   STA   __zpabi_var_put__value_1
-   LDA   __local_dec_var__2
-   JSR   var_put
-   LDX   __local_dec_var__1
+   BCS   .carry_inc@3
+   DEC   __zpabi_var_put__value_1
+.carry_inc@3:
    LDA   __local_dec_var__0
+   JSR   var_put
+   LDX   __zpabi_var_put__value_1
+   LDA   __zpabi_var_put__value_0
    RTS
 
 do_0op:

@@ -887,7 +887,7 @@
 
 /* Pushes the word `value`. More than 179 words on the stack is an
  * internal error. */
-void push(uint16_t value) {
+static void push(uint16_t value) {
     Z_SP--;
     *Z_SP = (uint8_t)value;
     Z_SP--;
@@ -897,7 +897,7 @@ void push(uint16_t value) {
 }
 
 /* Pops a word. Popping from an empty stack is an internal error. */
-uint16_t pop(void) {
+static uint16_t pop(void) {
     uint8_t hi = Z_SP[0];
     uint8_t lo = Z_SP[1];
     Z_SP += 2;
@@ -942,7 +942,7 @@ uint16_t var_get(register uint8_t var) {
 
 /* Sets variable `var` to `value`. Variable 0 replaces the top of the
  * stack. */
-void var_put(register uint8_t var, uint16_t value) {
+static void var_put(register uint8_t var, uint16_t value) {
     if (var == 0) {
         pop();
         push(value);

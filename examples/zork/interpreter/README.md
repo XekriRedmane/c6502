@@ -163,7 +163,7 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 461 |
-| `decode.c` | 1859 | 1850 |
+| `decode.c` | 1859 | 1824 |
 | `objects.c` | 788 | 934 |
 | `numbers.c` | 436 | 473 |
 | `input.c` | 1018 | 1081 |
@@ -173,7 +173,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **6989** |
+| **Total** | **6643** | **6963** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -491,3 +491,14 @@ the smaller code saved.
   unit calls it, and `get_dictionary_addr` in `input.c` already was.
   Each call had stored the result from A and X into a zero-page pair,
   22 bytes in the two units.
+- When parameters that a function with external linkage passes on
+  can't share their callees' bytes, slot sharing drops those first and
+  checks the other values again
+  ([slot_sharing.md](../../../docs/optimizations/slot_sharing.md)).
+  `push`, `pop`, and `var_put` are `static` in `decode.c`, since no
+  other unit calls them. Then `var_get` keeps the value it pops in
+  `push`'s bytes across `push(value)`, and `var_put`'s value is in
+  `push`'s bytes, where its callers store it, 26 bytes in `decode.c`.
+  `store_result` still copies its value, since other units call it,
+  and its value is live across `get_next_code_byte`, which another
+  unit defines.

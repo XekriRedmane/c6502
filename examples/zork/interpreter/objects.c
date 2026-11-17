@@ -605,10 +605,12 @@ void instr_get_prop(void) {
     }
     uint8_t len = get_property_len(y);
     y++;
+    /* The offsets from props are a byte, as the original's Y is, so
+     * the second byte of a word is `INY` from the first. */
     if (len == 0)
         store_result(props[y]);
     else if (len == 1)
-        store_result(((uint16_t)props[y] << 8) | props[y + 1]);
+        store_result(((uint16_t)props[y] << 8) | props[(uint8_t)(y + 1)]);
     else
         internal_error();
 }
@@ -679,12 +681,13 @@ void instr_put_prop(void) {
     }
     uint8_t len = get_property_len(y);
     y++;
+    /* A byte offset, as in instr_get_prop. */
     uint16_t v = OPERANDS[2];
     if (len == 0) {
         props[y] = (uint8_t)v;
     } else if (len == 1) {
         props[y] = (uint8_t)(v >> 8);
-        props[y + 1] = (uint8_t)v;
+        props[(uint8_t)(y + 1)] = (uint8_t)v;
     } else {
         internal_error();
     }

@@ -56,14 +56,14 @@ __local_print_status_line__1	EQU	$50
 __local_ascii_to_zchar__dest	EQU	$51
 __local_branch__offset_0	EQU	$51
 __local_instr_call__i	EQU	$51
-__local_instr_get_prop__1	EQU	$51
+__local_instr_get_prop__y	EQU	$51
 __local_match_dictionary_word__count_0	EQU	$51
 __local_print_status_line__2	EQU	$51
 __local_ascii_to_zchar__left	EQU	$52
 __local_branch__condition	EQU	$52
 __local_divu16__partial_1	EQU	$52
 __local_instr_call__args	EQU	$52
-__local_instr_get_prop__y	EQU	$52
+__local_instr_get_prop__1	EQU	$52
 __local_match_dictionary_word__5	EQU	$52
 __local_ascii_to_zchar__0	EQU	$53
 __local_divu16__partial_0	EQU	$53
@@ -138,6 +138,7 @@ __local_get_next_zchar__compound_literal_1	EQU	$E0
 __local_inc_var__0	EQU	$E0
 __local_instr_get_next_prop__y	EQU	$E0
 __local_instr_get_prop_addr__0	EQU	$E0
+__local_instr_put_prop__y	EQU	$E0
 __local_mulu16__product	EQU	$E0
 __local_please_insert_save_diskette__0	EQU	$E0
 __local_remove_obj__2	EQU	$E0
@@ -156,6 +157,7 @@ __zpabi_set_attr_word__word_0	EQU	$E0
 __zpabi_store_with_sign__n_0	EQU	$E0
 __local_get_next_code_word__1	EQU	$E1
 __local_instr_get_prop_addr__y	EQU	$E1
+__local_instr_put_prop__1	EQU	$E1
 __local_please_insert_save_diskette__1	EQU	$E1
 __local_remove_obj__3	EQU	$E1
 __local_search_nonalpha_table__0	EQU	$E1
@@ -173,13 +175,14 @@ __zpabi_set_attr_word__word_1	EQU	$E1
 __zpabi_store_with_sign__n_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __rodata_size	EQU	$E2
+__local_get_property_ptr__0	EQU	$E4
 __local_instr_clear_attr__0	EQU	$E4
 __local_instr_insert_obj__0	EQU	$E4
-__local_instr_put_prop__0	EQU	$E4
 __local_instr_restore__pages	EQU	$E4
 __local_instr_save__pages	EQU	$E4
 __local_instr_test_attr__1	EQU	$E4
 __local_locate_last_ram_page__2	EQU	$E4
+__local_next_property__y	EQU	$E4
 __local_store_and_branch_on__related	EQU	$E4
 __zpabi_check_sign__b_0	EQU	$E4
 __zpabi_is_dict_separator__c	EQU	$E4
@@ -187,7 +190,6 @@ __zpabi_is_separator__c	EQU	$E4
 __zpabi_is_std_separator__c	EQU	$E4
 __local_instr_clear_attr__1	EQU	$E5
 __local_instr_insert_obj__3	EQU	$E5
-__local_instr_put_prop__y	EQU	$E5
 __local_instr_restore__1	EQU	$E5
 __local_instr_sread__1	EQU	$E5
 __local_locate_last_ram_page__3	EQU	$E5
@@ -196,7 +198,6 @@ __local_branch_to_offset__0	EQU	$E6
 __local_get_prompted_number_from_user__key	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E6
 __local_instr_insert_obj__4	EQU	$E6
-__local_instr_put_prop__1	EQU	$E6
 __local_locate_last_ram_page__page	EQU	$E6
 __local_pop__1	EQU	$E6
 __local_print_obj__obj	EQU	$E6
@@ -210,7 +211,6 @@ __local_branch_to_offset__pages_1	EQU	$E7
 __local_get_next_code_byte2__page	EQU	$E7
 __local_get_prompted_number_from_user__1	EQU	$E7
 __local_instr_insert_obj__5	EQU	$E7
-__local_instr_put_prop__2	EQU	$E7
 __local_pop__2	EQU	$E7
 __local_read_line__left	EQU	$E7
 __local_z_compress__1	EQU	$E7
@@ -219,8 +219,6 @@ __zpabi_mulu16__a_1	EQU	$E7
 __zpabi_store_result__value_1	EQU	$E7
 __local_attr_ptr_and_mask__mask_1	EQU	$E8
 __local_branch_to_offset__2	EQU	$E8
-__local_get_property_ptr__0	EQU	$E8
-__local_next_property__y	EQU	$E8
 __local_read_line__n	EQU	$E8
 __local_z_compress__2	EQU	$E8
 __zpabi_divu16__divisor_0	EQU	$E8
@@ -288,9 +286,9 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$1065
-__text_end	EQU	$19AC
-__text_load_end	EQU	$19AC
+__text_size	EQU	$1031
+__text_end	EQU	$1978
+__text_load_end	EQU	$1978
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -869,7 +867,7 @@ do_1op:
    RTS
 .jtab@1:
    DC.B  $D3, $0B, $BA, $14, $81, $15, $8D, $15
-   DC.B  $8D, $17, $2B, $0B, $46, $0B, $E2, $0B
+   DC.B  $6F, $17, $2B, $0B, $46, $0B, $E2, $0B
    DC.B  $40, $2C, $53, $13, $EE, $0B, $F3, $0B
    DC.B  $FE, $0B, $0A, $0C, $18, $0C, $20, $0C
 .case@18:
@@ -954,8 +952,8 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.B  $58, $0A, $6B, $0C, $9C, $0C, $B4, $17
-   DC.B  $85, $2F, $BD, $0C, $C2, $0C, $33, $19
+   DC.B  $58, $0A, $6B, $0C, $9C, $0C, $96, $17
+   DC.B  $85, $2F, $BD, $0C, $C2, $0C, $FF, $18
    DC.B  $CD, $0C, $D8, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
@@ -1213,9 +1211,9 @@ do_2op:
    DC.B  $D8, $0E, $E8, $0E, $9F, $15, $FF, $0E
    DC.B  $1C, $0F, $29, $0F, $0B, $16, $1C, $16
    DC.B  $36, $16, $38, $0F, $94, $13, $45, $0F
-   DC.B  $5D, $0F, $92, $16, $15, $17, $5A, $17
-   DC.B  $77, $0F, $87, $0F, $31, $18, $B4, $18
-   DC.B  $22, $19
+   DC.B  $5D, $0F, $92, $16, $F7, $16, $3C, $17
+   DC.B  $77, $0F, $87, $0F, $FD, $17, $80, $18
+   DC.B  $EE, $18
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -2055,10 +2053,10 @@ instr_insert_obj:
    JSR   get_object_addr
    LDY   #$06
    LDA   (get_object_addr@ret),Y
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    LDA   __local_attr_ptr_and_mask__attr
    STA   (get_object_addr@ret),Y
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    BEQ   .if_end@3
    DEY
    STA   (__local_instr_clear_attr__1),Y
@@ -2219,12 +2217,12 @@ instr_get_sibling:
    LDA   (get_object_addr@ret),Y
 store_and_branch_on:
    SUBROUTINE
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    STA   __local_branch_to_offset__0
    LDA   #$00
    STA   __local_attr_ptr_and_mask__attr
    JSR   store_result
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
 store_and_branch_on@tail2:
    SUBROUTINE
    BEQ   branch
@@ -2421,10 +2419,10 @@ instr_test_attr:
    SUBROUTINE
    JSR   attr_ptr_and_mask
    AND   __bss_load
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    TXA
    AND   attr_mask+1
-   ORA   __local_instr_clear_attr__0
+   ORA   __local_get_property_ptr__0
    JMP   store_and_branch_on@tail2
 instr_set_attr:
    SUBROUTINE
@@ -2452,12 +2450,12 @@ instr_clear_attr:
    STA   __local_instr_clear_attr__1
    LDA   attr_mask+1
    EOR   #$FF
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    LDA   __local_branch_to_offset__0
    AND   __local_instr_clear_attr__1
    STA   __local_dec_var__0
    TXA
-   AND   __local_instr_clear_attr__0
+   AND   __local_get_property_ptr__0
    STA   __local_get_next_code_word__1
    JMP   set_attr_word
 get_property_ptr:
@@ -2466,14 +2464,14 @@ get_property_ptr:
    JSR   get_object_addr
    LDY   #$07
    LDA   (get_object_addr@ret),Y
-   STA   __local_attr_ptr_and_mask__mask_1
+   STA   __local_get_property_ptr__0
    INY
    LDA   (get_object_addr@ret),Y
    CLC
    ADC   Z_HEADER_ADDR
    STA   props
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_attr_ptr_and_mask__mask_1
+   ADC   __local_get_property_ptr__0
    STA   props+1
    LDY   #$00
    LDA   (props),Y
@@ -2498,17 +2496,17 @@ get_property_len:
    RTS
 next_property:
    SUBROUTINE
-   STA   __local_attr_ptr_and_mask__mask_1
+   STA   __local_get_property_ptr__0
    JSR   get_property_len
    CLC
-   ADC   __local_attr_ptr_and_mask__mask_1
+   ADC   __local_get_property_ptr__0
    CLC
    ADC   #$02
    RTS
 instr_get_prop:
    SUBROUTINE
    JSR   get_property_ptr
-   STA   __local_ascii_to_zchar__left
+   STA   __local_ascii_to_zchar__dest
    JMP   .loop@2_start
 .instr_get_prop@rot@1:
    BCS   .if_end@6
@@ -2533,48 +2531,34 @@ instr_get_prop:
    LDY   __local_ascii_to_zchar__dest
    DEY
    LDA   (__local_ascii_to_zchar__left),Y
+.xjump@0:
    STA   __local_branch_to_offset__0
    LDA   __local_ascii_to_zchar__z
    JMP   instr_get_prop@tail3
 .if_end@6:
-   LDA   __local_ascii_to_zchar__left
+   LDA   __local_ascii_to_zchar__dest
    JSR   next_property
-   STA   __local_ascii_to_zchar__left
+   STA   __local_ascii_to_zchar__dest
 .loop@2_start:
    JSR   get_property_num
    CMP   OPERANDS+2
    BNE   .instr_get_prop@rot@1
-   LDA   __local_ascii_to_zchar__left
-   JSR   get_property_len
-   STA   __local_ascii_to_zchar__dest
-   LDA   __local_ascii_to_zchar__left
-   CLC
-   ADC   #$01
-   STA   __local_ascii_to_zchar__z
    LDA   __local_ascii_to_zchar__dest
+   JSR   get_property_len
+   LDY   __local_ascii_to_zchar__dest
+   INY
+   ORA   #$00
    BNE   .if_else@8
-   LDY   __local_ascii_to_zchar__z
    LDA   (props),Y
    JMP   instr_get_parent@tail0
 .if_else@8:
    CMP   #$01
    BNE   .if_else@10
-   LDY   __local_ascii_to_zchar__z
    LDA   (props),Y
-   STA   __local_ascii_to_zchar__left
-   LDA   props
-   CLC
-   ADC   __local_ascii_to_zchar__z
    STA   __local_ascii_to_zchar__z
-   LDA   props+1
-   ADC   #$00
-   STA   __local_ascii_to_zchar__dest
-   LDY   #$01
-   LDA   (__local_ascii_to_zchar__z),Y
-   STA   __local_branch_to_offset__0
-   LDA   __local_ascii_to_zchar__left
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   INY
+   LDA   (props),Y
+   JMP   .xjump@0
 .if_else@10:
    JMP   internal_error
 instr_get_prop_addr:
@@ -2676,47 +2660,36 @@ instr_get_prop_len:
 instr_put_prop:
    SUBROUTINE
    JSR   get_property_ptr
-   STA   __local_instr_clear_attr__1
+   STA   __local_dec_var__0
    JMP   .loop@5_start
 .instr_put_prop@rot@2:
    BCS   .if_end@17
    JMP   internal_error
 .if_end@17:
-   LDA   __local_instr_clear_attr__1
+   LDA   __local_dec_var__0
    JSR   next_property
-   STA   __local_instr_clear_attr__1
+   STA   __local_dec_var__0
 .loop@5_start:
    JSR   get_property_num
    CMP   OPERANDS+2
    BNE   .instr_put_prop@rot@2
-   LDA   __local_instr_clear_attr__1
+   LDA   __local_dec_var__0
    JSR   get_property_len
-   STA   __local_attr_ptr_and_mask__attr
-   INC   __local_instr_clear_attr__1
+   STA   __local_get_next_code_word__1
+   LDY   __local_dec_var__0
+   INY
    LDA   OPERANDS+4
-   STA   __local_branch_to_offset__0
-   LDA   __local_attr_ptr_and_mask__attr
-   BNE   .if_else@19
-   LDA   __local_branch_to_offset__0
-   LDY   __local_instr_clear_attr__1
-   STA   (props),Y
-   RTS
-.if_else@19:
+   STA   __local_dec_var__0
+   LDA   __local_get_next_code_word__1
+   BEQ   .tail@0
    CMP   #$01
    BNE   .if_else@21
    LDA   OPERANDS+5
-   LDY   __local_instr_clear_attr__1
    STA   (props),Y
-   LDA   props
-   CLC
-   ADC   __local_instr_clear_attr__1
-   STA   __local_instr_clear_attr__0
-   LDA   props+1
-   ADC   #$00
-   STA   __local_instr_clear_attr__1
-   LDA   __local_branch_to_offset__0
-   LDY   #$01
-   STA   (__local_instr_clear_attr__0),Y
+   INY
+.tail@0:
+   LDA   __local_dec_var__0
+   STA   (props),Y
    RTS
 .if_else@21:
    JMP   internal_error
@@ -2752,7 +2725,7 @@ instr_mul:
    SUBROUTINE
    JSR   instr_mul@run2
    BNE   .if_else@7
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    CMP   #$02
    BNE   .vthread@0
 .xjump@0:
@@ -2769,7 +2742,7 @@ instr_mul:
    LDA   __local_dec_var__0
    STA   __local_branch_to_offset__0
    STX   __local_attr_ptr_and_mask__attr
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   __local_instr_clear_attr__1
    STA   __local_attr_ptr_and_mask__n
@@ -2805,7 +2778,7 @@ instr_mul@run2:
 instr_mul@run0:
    SUBROUTINE
    LDA   OPERANDS+2
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    LDA   OPERANDS+3
    STA   __local_instr_clear_attr__1
    LDA   OPERANDS
@@ -2835,7 +2808,7 @@ instr_div:
    SUBROUTINE
    JSR   instr_mul@run2
    BNE   .if_else@11
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    CMP   #$02
    BNE   .vthread@1
 .xjump@1:
@@ -2856,7 +2829,7 @@ instr_div@run1:
    SUBROUTINE
    STA   __local_branch_to_offset__0
    STX   __local_attr_ptr_and_mask__attr
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   __local_instr_clear_attr__1
    STA   __local_attr_ptr_and_mask__n
@@ -2988,19 +2961,19 @@ locate_last_ram_page:
 .loop@0_start:
    DEC   __local_branch_to_offset__0
    LDA   #$FF
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    LDA   __local_branch_to_offset__0
    STA   __local_instr_clear_attr__1
    LDY   #$00
-   LDA   (__local_instr_clear_attr__0),Y
-   CMP   (__local_instr_clear_attr__0),Y
+   LDA   (__local_get_property_ptr__0),Y
+   CMP   (__local_get_property_ptr__0),Y
    BNE   .loop@0_start
    EOR   #$FF
-   STA   (__local_instr_clear_attr__0),Y
-   CMP   (__local_instr_clear_attr__0),Y
+   STA   (__local_get_property_ptr__0),Y
+   CMP   (__local_get_property_ptr__0),Y
    BNE   .loop@0_start
    EOR   #$FF
-   STA   (__local_instr_clear_attr__0),Y
+   STA   (__local_get_property_ptr__0),Y
    LDA   __local_branch_to_offset__0
    RTS
 instr_restart:
@@ -3161,7 +3134,7 @@ is_dict_separator:
    LDY   #$00
    LDA   (get_dictionary_addr@ret),Y
    TAX
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    BEQ   .tail@1
 .loop@2_start:
    INY
@@ -3184,7 +3157,7 @@ is_std_separator:
    SUBROUTINE
    LDX   #$00
 .is_std_separator@rot@1:
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    CMP   SEPARATORS_TABLE,X
    BNE   .if_end@10
    SEC
@@ -3201,7 +3174,7 @@ skip_separators:
 .skip_separators@rot@2:
    LDY   input_ptr
    LDA   (text),Y
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    JSR   is_separator
    BCC   .if_end@12
    RTS
@@ -3610,10 +3583,10 @@ instr_sread:
    STA   (parse),Y
    LDY   input_ptr
    LDA   (text),Y
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    JSR   is_dict_separator
    BCC   .if_end@51
-   LDA   __local_instr_clear_attr__0
+   LDA   __local_get_property_ptr__0
    STA   ZCHAR_SCRATCH1
    INC   char_count
    DEC   input_count
@@ -3622,7 +3595,7 @@ instr_sread:
 .if_end@51:
    LDY   input_ptr
    LDA   (text),Y
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    JSR   is_std_separator
    BCC   .if_end@50
    INC   input_ptr
@@ -3634,7 +3607,7 @@ instr_sread:
    BEQ   .if_end@55
    LDY   input_ptr
    LDA   (text),Y
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
    JSR   is_separator
    BCS   .if_end@55
    LDY   input_ptr
@@ -3988,12 +3961,12 @@ instr_save:
    BCS   instr_save@tail1
    JSR   instr_save@run0
    ADC   #$01
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
 .loop@2_start:
    JSR   inc_sector_and_write
    BCS   instr_save@tail1
    INC   disk_buffer+1
-   DEC   __local_instr_clear_attr__0
+   DEC   __local_get_property_ptr__0
    BNE   .loop@2_start
    JSR   inc_sector_and_write
    BCS   instr_save@tail1
@@ -4083,12 +4056,12 @@ instr_restore:
    JSR   instr_save@run0
    CLC
    ADC   #$01
-   STA   __local_instr_clear_attr__0
+   STA   __local_get_property_ptr__0
 .loop@3_start:
    JSR   inc_sector_and_read
    BCS   .instr_restore@fail
    INC   disk_buffer+1
-   DEC   __local_instr_clear_attr__0
+   DEC   __local_get_property_ptr__0
    BNE   .loop@3_start
    LDA   __local_instr_clear_attr__1
    LDY   #$11

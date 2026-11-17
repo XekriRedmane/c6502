@@ -90,21 +90,19 @@ __local_instr_get_prop__0	EQU	$E4
 __local_instr_get_prop_addr__0	EQU	$E4
 __local_instr_get_prop_len__0	EQU	$E4
 __local_instr_insert_obj__0	EQU	$E4
-__local_instr_put_prop__0	EQU	$E4
 __local_print_obj__obj	EQU	$E4
 __local_instr_clear_attr__1	EQU	$E5
-__local_instr_get_prop__1	EQU	$E5
+__local_instr_get_prop__y	EQU	$E5
 __local_instr_get_prop_addr__y	EQU	$E5
 __local_instr_get_prop_len__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
-__local_instr_get_prop__y	EQU	$E6
+__local_instr_get_prop__1	EQU	$E6
 __local_instr_get_prop_len__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
 __local_store_and_branch_on__related	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E7
 __local_instr_get_prop__2	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
-__local_instr_put_prop__2	EQU	$E7
 __local_attr_ptr_and_mask__attr	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
 __local_attr_ptr_and_mask__mask_1	EQU	$E9
@@ -145,13 +143,13 @@ COUT1	EQU	$FDF0
 ; def instr_get_child params= locals=__local_instr_get_child__0,__local_instr_get_child__1 indirect=false in_cycle=false
 ; def instr_get_next_prop params= locals=__local_instr_get_next_prop__y,__local_instr_get_next_prop__0,__local_instr_get_next_prop__1 indirect=false in_cycle=false
 ; def instr_get_parent params= locals=__local_instr_get_parent__0,__local_instr_get_parent__1 indirect=false in_cycle=false
-; def instr_get_prop params= locals=__local_instr_get_prop__0,__local_instr_get_prop__1,__local_instr_get_prop__y,__local_instr_get_prop__2,__local_instr_get_prop__3 indirect=false in_cycle=false
+; def instr_get_prop params= locals=__local_instr_get_prop__0,__local_instr_get_prop__y,__local_instr_get_prop__1,__local_instr_get_prop__2,__local_instr_get_prop__3 indirect=false in_cycle=false
 ; def instr_get_prop_addr params= locals=__local_instr_get_prop_addr__0,__local_instr_get_prop_addr__y,__local_instr_get_prop_addr__1 indirect=false in_cycle=false
 ; def instr_get_prop_len params= locals=__local_instr_get_prop_len__0,__local_instr_get_prop_len__1,__local_instr_get_prop_len__2 indirect=false in_cycle=false
 ; def instr_get_sibling params= locals=__local_instr_get_sibling__0,__local_instr_get_sibling__1 indirect=false in_cycle=false
 ; def instr_insert_obj params= locals=__local_instr_insert_obj__0,__local_instr_insert_obj__1,__local_instr_insert_obj__2,__local_instr_insert_obj__3,__local_instr_insert_obj__4,__local_instr_insert_obj__5 indirect=false in_cycle=false
 ; def instr_jin params= locals=__local_instr_jin__0,__local_instr_jin__1,__local_instr_jin__2,__local_instr_jin__3 indirect=false in_cycle=false
-; def instr_put_prop params= locals=__local_instr_put_prop__0,__local_instr_put_prop__y,__local_instr_put_prop__1,__local_instr_put_prop__2 indirect=false in_cycle=false
+; def instr_put_prop params= locals=__local_instr_put_prop__0,__local_instr_put_prop__y,__local_instr_put_prop__1 indirect=false in_cycle=false
 ; def instr_remove_obj params= locals= indirect=false in_cycle=false
 ; def instr_set_attr params= locals=__local_instr_set_attr__0,__local_instr_set_attr__1 indirect=false in_cycle=false
 ; def instr_test_attr params= locals=__local_instr_test_attr__0,__local_instr_test_attr__1 indirect=false in_cycle=false
@@ -741,21 +739,22 @@ instr_get_prop:
    INY
    LDA   (Z_HEADER_ADDR),Y
    ADC   Z_HEADER_ADDR
-   STA   __local_instr_get_prop__y
+   STA   __local_instr_get_prop__1
    LDA   Z_HEADER_ADDR+1
    ADC   __local_instr_get_prop__0
    STA   __local_instr_get_prop__2
    LDA   OPERANDS+2
    ASL
-   STA   __local_instr_get_prop__1
+   STA   __local_instr_get_prop__y
    TAY
    DEY
    DEY
-   LDA   (__local_instr_get_prop__y),Y
+   LDA   (__local_instr_get_prop__1),Y
    STA   __local_instr_get_prop__0
-   LDY   __local_instr_get_prop__1
+   LDY   __local_instr_get_prop__y
    DEY
-   LDA   (__local_instr_get_prop__y),Y
+   LDA   (__local_instr_get_prop__1),Y
+.xjump@0:
    STA   __zpabi_store_result__value_0
    LDA   __local_instr_get_prop__0
    JMP   instr_get_prop@tail3
@@ -769,35 +768,20 @@ instr_get_prop:
    BNE   .instr_get_prop@rot@1
    LDA   __local_instr_get_prop__y
    JSR   get_property_len
-   STA   __local_instr_get_prop__1
-   LDA   __local_instr_get_prop__y
-   CLC
-   ADC   #$01
-   STA   __local_instr_get_prop__0
-   LDA   __local_instr_get_prop__1
+   LDY   __local_instr_get_prop__y
+   INY
+   ORA   #$00
    BNE   .if_else@8
-   LDY   __local_instr_get_prop__0
    LDA   (props),Y
    JMP   instr_get_parent@tail0
 .if_else@8:
    CMP   #$01
    BNE   .if_else@10
-   LDY   __local_instr_get_prop__0
    LDA   (props),Y
-   STA   __local_instr_get_prop__y
-   LDA   props
-   CLC
-   ADC   __local_instr_get_prop__0
    STA   __local_instr_get_prop__0
-   LDA   props+1
-   ADC   #$00
-   STA   __local_instr_get_prop__1
-   LDY   #$01
-   LDA   (__local_instr_get_prop__0),Y
-   STA   __zpabi_store_result__value_0
-   LDA   __local_instr_get_prop__y
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   INY
+   LDA   (props),Y
+   JMP   .xjump@0
 .if_else@10:
    JMP   internal_error
 
@@ -927,32 +911,21 @@ instr_put_prop:
    BNE   .instr_put_prop@rot@2
    LDA   __local_instr_put_prop__y
    JSR   get_property_len
-   STA   __local_instr_put_prop__2
-   INC   __local_instr_put_prop__y
-   LDA   OPERANDS+4
    STA   __local_instr_put_prop__1
-   LDA   __local_instr_put_prop__2
-   BNE   .if_else@19
-   LDA   __local_instr_put_prop__1
    LDY   __local_instr_put_prop__y
-   STA   (props),Y
-   RTS
-.if_else@19:
+   INY
+   LDA   OPERANDS+4
+   STA   __local_instr_put_prop__y
+   LDA   __local_instr_put_prop__1
+   BEQ   .tail@0
    CMP   #$01
    BNE   .if_else@21
    LDA   OPERANDS+5
-   LDY   __local_instr_put_prop__y
    STA   (props),Y
-   LDA   props
-   CLC
-   ADC   __local_instr_put_prop__y
-   STA   __local_instr_put_prop__0
-   LDA   props+1
-   ADC   #$00
-   STA   __local_instr_put_prop__y
-   LDA   __local_instr_put_prop__1
-   LDY   #$01
-   STA   (__local_instr_put_prop__0),Y
+   INY
+.tail@0:
+   LDA   __local_instr_put_prop__y
+   STA   (props),Y
    RTS
 .if_else@21:
    JMP   internal_error

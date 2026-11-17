@@ -164,7 +164,7 @@ file and the original code it translates:
 |---|---:|---:|
 | `main.c` | 391 | 446 |
 | `decode.c` | 1859 | 1775 |
-| `objects.c` | 788 | 879 |
+| `objects.c` | 788 | 827 |
 | `numbers.c` | 436 | 419 |
 | `input.c` | 1018 | 1068 |
 | `pages.c` | 384 | 371 |
@@ -173,7 +173,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 136 |
 | `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 332 |
-| **Total** | **6643** | **6739** |
+| **Total** | **6643** | **6687** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -545,3 +545,8 @@ the smaller code saved.
   ([outline_runs.md](../../../docs/optimizations/outline_runs.md)), 75
   bytes, such as the 19 that pass both operands to `check_sign` in
   `mul`, `div`, and `mod`. Each place pays 12 cycles.
+- `instr_get_prop` and `instr_put_prop` read and write the second byte
+  of a word property at `props[(uint8_t)(y + 1)]`, a byte offset like
+  the original's Y, where `props[y + 1]` had made C add `y` to `props`
+  as 16 bits. That's a change to `objects.c`, not to the compiler,
+  and with the tails and runs it lets go, it takes 52 bytes off.

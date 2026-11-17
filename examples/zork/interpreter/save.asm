@@ -189,6 +189,8 @@ COUT1	EQU	$FDF0
 ; item copy_data_to_buff section=.text local=true zero=false
 ; item copy_data_from_buff section=.text local=true zero=false
 ; item instr_save section=.text local=false zero=false
+; item instr_save@tail1 section=.text local=true zero=false
+; item instr_save@tail0 section=.text local=true zero=false
 ; item instr_restore section=.text local=false zero=false
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
@@ -352,12 +354,22 @@ instr_save:
    BNE   .loop@2_start
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
-   JSR   please_reinsert_game_diskette
-   LDA   #$01
-   JMP   branch
+   JMP   instr_save@tail0
 .instr_save@fail:
+   JMP   instr_save@tail1
+
+instr_save@tail1:
+   SUBROUTINE
+
    JSR   please_reinsert_game_diskette
    LDA   #$00
+   JMP   branch
+
+instr_save@tail0:
+   SUBROUTINE
+
+   JSR   please_reinsert_game_diskette
+   LDA   #$01
    JMP   branch
 
 instr_restore:
@@ -438,10 +450,6 @@ instr_restore:
    LDA   __local_instr_restore__1
    LDY   #$11
    STA   (Z_HEADER_ADDR),Y
-   JSR   please_reinsert_game_diskette
-   LDA   #$01
-   JMP   branch
+   JMP   instr_save@tail0
 .instr_restore@fail:
-   JSR   please_reinsert_game_diskette
-   LDA   #$00
-   JMP   branch
+   JMP   instr_save@tail1

@@ -186,6 +186,7 @@ from passes.type_checking import (
 from c99_to_tac import translate_program as translate_to_tac
 from passes.return_in_zero_page import return_pointers_in_zero_page
 from passes.constant_store_order import apply_constant_store_order
+from passes.shared_tails import apply_shared_tails
 
 
 def _resolved(source: str, *, optimize: bool = False):
@@ -683,6 +684,9 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # Jumps to tail-call stubs and jumps after a constant load, with
     # the branches' final reach (passes/short_jumps.py).
     asm4 = apply_short_jumps(asm4)
+    # Code that two functions end with alike goes in a function of its
+    # own, which each jumps to (passes/shared_tails.py).
+    asm4 = apply_shared_tails(asm4, symbols)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     zp_records = link_records(asm4, zp)

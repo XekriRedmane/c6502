@@ -285,7 +285,7 @@ __main_size	EQU	$0147
 BUFF_AREA	EQU	$0200
 __tables_size	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
-__text_rest_size	EQU	$07C8
+__text_rest_size	EQU	$07B9
 __main_load	EQU	$0800
 __main_start	EQU	$0800
 restart	EQU	$0800
@@ -293,26 +293,26 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$110F
-__text_end	EQU	$1A56
-__text_load_end	EQU	$1A56
+__text_size	EQU	$10CF
+__text_end	EQU	$1A16
+__text_load_end	EQU	$1A16
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
-__rodata_load	EQU	$33C8
-__rodata_start	EQU	$33C8
-__text_rest_end	EQU	$33C8
-__text_rest_load_end	EQU	$33C8
-__data_load	EQU	$34AA
-__data_start	EQU	$34AA
-__rodata_end	EQU	$34AA
-__rodata_load_end	EQU	$34AA
-__bss_load	EQU	$34EF
-__bss_start	EQU	$34EF
-__data_end	EQU	$34EF
-__data_load_end	EQU	$34EF
-__bss_end	EQU	$34F2
-__bss_load_end	EQU	$34F2
+__rodata_load	EQU	$33B9
+__rodata_start	EQU	$33B9
+__text_rest_end	EQU	$33B9
+__text_rest_load_end	EQU	$33B9
+__data_load	EQU	$349B
+__data_start	EQU	$349B
+__rodata_end	EQU	$349B
+__rodata_load_end	EQU	$349B
+__bss_load	EQU	$34E0
+__bss_start	EQU	$34E0
+__data_end	EQU	$34E0
+__data_load_end	EQU	$34E0
+__bss_end	EQU	$34E3
+__bss_load_end	EQU	$34E3
 __tables_load	EQU	$3500
 __tables_start	EQU	$3500
 __story	EQU	$3700
@@ -621,6 +621,11 @@ get_var_content:
    JMP   pop
 .if_end@8:
    JMP   get_nonstack_var
+branch@tail2:
+   SUBROUTINE
+   LDA   #$00
+   STA   __local_dec_var__0
+   STA   __local_get_next_code_word__1
 return_value:
    SUBROUTINE
    LDA   FRAME_Z_SP
@@ -668,6 +673,8 @@ return_value:
    LDA   __local_dec_var__0
    STA   __local_branch_to_offset__0
    LDA   __local_get_next_code_word__1
+return_value@tail1:
+   SUBROUTINE
    STA   __local_attr_ptr_and_mask__attr
 store_result:
    SUBROUTINE
@@ -687,6 +694,13 @@ store_result:
    STA   __local_get_nonstack_var__0
    LDA   __local_remove_obj__4
    JMP   set_nonstack_var
+branch@tail0:
+   SUBROUTINE
+   LDA   #$01
+   STA   __local_dec_var__0
+   LDA   #$00
+   STA   __local_get_next_code_word__1
+   JMP   return_value
 instr_call:
    SUBROUTINE
    LDA   OPERANDS
@@ -694,8 +708,7 @@ instr_call:
    BNE   .if_end@20
    LDA   #$00
    STA   __local_branch_to_offset__0
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   return_value@tail1
 .if_end@20:
    LDA   FRAME_STACK_COUNT
    STA   __local_attr_ptr_and_mask__mask_1
@@ -794,6 +807,8 @@ inc_var:
    INC   __local_attr_ptr_and_mask__n
 .inc_done@1:
    LDA   __local_dec_var__0
+inc_var@tail3:
+   SUBROUTINE
    JSR   var_put
    LDX   __local_attr_ptr_and_mask__n
    LDA   __local_attr_ptr_and_mask__mask_1
@@ -811,36 +826,26 @@ dec_var:
    DEC   __local_attr_ptr_and_mask__n
 .carry_inc@3:
    LDA   __local_dec_var__0
-   JSR   var_put
-   LDX   __local_attr_ptr_and_mask__n
-   LDA   __local_attr_ptr_and_mask__mask_1
-   RTS
+   JMP   inc_var@tail3
 do_0op:
    SUBROUTINE
    CMP   #$0C
    BCS   .default@16
    ASL
    TAY
-   LDA   $0B68,Y
+   LDA   $0B72,Y
    PHA
    LDA   .jtab@0,Y
    PHA
    RTS
 .jtab@0:
-   DC.B  $7E, $0B, $89, $0B, $7C, $11, $92, $0B
-   DC.B  $A8, $0B, $5E, $32, $F4, $32, $24, $2C
-   DC.B  $9B, $0B, $6E, $09, $2A, $2C, $91, $12
+   DC.B  $88, $0B, $8B, $0B, $6F, $11, $8E, $0B
+   DC.B  $A4, $0B, $56, $32, $EF, $32, $24, $2C
+   DC.B  $97, $0B, $6E, $09, $2A, $2C, $84, $12
 .case@4:
-   LDA   #$01
-   STA   __local_dec_var__0
-   LDA   #$00
-   STA   __local_get_next_code_word__1
-   JMP   return_value
+   JMP   branch@tail0
 .case@5:
-   LDA   #$00
-   STA   __local_dec_var__0
-   STA   __local_get_next_code_word__1
-   JMP   return_value
+   JMP   branch@tail2
 .case@7:
    JSR   print_string_literal
    JSR   new_line
@@ -862,16 +867,16 @@ do_1op:
 .lb_skip@0:
    ASL
    TAY
-   LDA   $0BBD,Y
+   LDA   $0BB9,Y
    PHA
    LDA   .jtab@1,Y
    PHA
    RTS
 .jtab@1:
-   DC.B  $DB, $0B, $F3, $14, $C8, $15, $D4, $15
-   DC.B  $F7, $17, $20, $0B, $3B, $0B, $EA, $0B
-   DC.B  $40, $2C, $76, $13, $F8, $0B, $FD, $0B
-   DC.B  $08, $0C, $18, $0C, $26, $0C, $32, $0C
+   DC.B  $D7, $0B, $E6, $14, $AD, $15, $B9, $15
+   DC.B  $C5, $17, $2F, $0B, $4A, $0B, $E6, $0B
+   DC.B  $40, $2C, $69, $13, $F4, $0B, $F9, $0B
+   DC.B  $04, $0C, $10, $0C, $1E, $0C, $26, $0C
 .case@18:
    LDA   OPERANDS+1
    ORA   OPERANDS
@@ -904,9 +909,7 @@ do_1op:
    SBC   #$02
    STA   __local_dec_var__0
    LDA   OPERANDS+1
-   SBC   #$00
-   STA   __local_get_next_code_word__1
-   JMP   branch_to_offset
+   JMP   branch@tail5
 .case@30:
    LDA   OPERANDS
    STA   __local_dec_var__0
@@ -917,16 +920,18 @@ do_1op:
 .case@31:
    LDA   OPERANDS
    JSR   var_get
-   STA   __local_branch_to_offset__0
-   STX   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   do_1op@tail4
 .case@32:
    LDA   OPERANDS
    EOR   #$FF
    STA   __local_branch_to_offset__0
    LDA   OPERANDS+1
    EOR   #$FF
-   STA   __local_attr_ptr_and_mask__attr
+   JMP   return_value@tail1
+do_1op@tail4:
+   SUBROUTINE
+   STA   __local_branch_to_offset__0
+   STX   __local_attr_ptr_and_mask__attr
    JMP   store_result
 do_var:
    SUBROUTINE
@@ -938,15 +943,15 @@ do_var:
 .lb_skip@2:
    ASL
    TAY
-   LDA   $0C59,Y
+   LDA   $0C52,Y
    PHA
    LDA   .jtab@3,Y
    PHA
    RTS
 .jtab@3:
-   DC.B  $6F, $0A, $6B, $0C, $9C, $0C, $24, $18
-   DC.B  $9A, $2F, $BD, $0C, $C2, $0C, $DB, $19
-   DC.B  $CD, $0C, $D8, $0C
+   DC.B  $80, $0A, $64, $0C, $95, $0C, $EC, $17
+   DC.B  $92, $2F, $B6, $0C, $BB, $0C, $9D, $19
+   DC.B  $C6, $0C, $D1, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1193,19 +1198,19 @@ do_2op:
 .lb_skip@1:
    ASL
    TAY
-   LDA   $0E23,Y
+   LDA   $0E1C,Y
    PHA
    LDA   .jtab@2,Y
    PHA
    RTS
 .jtab@2:
-   DC.B  $40, $2C, $53, $0E, $B4, $0E, $C8, $0E
-   DC.B  $D8, $0E, $E8, $0E, $E6, $15, $FF, $0E
-   DC.B  $1C, $0F, $2B, $0F, $52, $16, $67, $16
-   DC.B  $81, $16, $3A, $0F, $B9, $13, $47, $0F
-   DC.B  $65, $0F, $DD, $16, $6C, $17, $B4, $17
-   DC.B  $81, $0F, $91, $0F, $FE, $18, $63, $19
-   DC.B  $AE, $19
+   DC.B  $40, $2C, $4C, $0E, $AD, $0E, $C1, $0E
+   DC.B  $D1, $0E, $E1, $0E, $CB, $15, $F8, $0E
+   DC.B  $15, $0F, $22, $0F, $37, $16, $48, $16
+   DC.B  $62, $16, $31, $0F, $AC, $13, $3E, $0F
+   DC.B  $58, $0F, $BE, $16, $45, $17, $8E, $17
+   DC.B  $74, $0F, $84, $0F, $C6, $18, $29, $19
+   DC.B  $70, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1335,8 +1340,7 @@ do_2op:
    STA   __local_branch_to_offset__0
    LDA   OPERANDS+1
    ORA   __local_do_2op__2
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   return_value@tail1
 .case@43:
    LDA   OPERANDS
    AND   __local_do_2op__1
@@ -1364,9 +1368,7 @@ do_2op:
    STA   __local_get_next_code_word__1
    JSR   load_address
    JSR   get_next_code_word
-   STA   __local_branch_to_offset__0
-   STX   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   do_1op@tail4
 .case@50:
    LDA   OPERANDS
    CLC
@@ -1803,7 +1805,7 @@ dump_buffer_with_more:
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #$16
+   LDA   #$07
    STA   __local_get_nonstack_var__1
    LDA   #$34
    STA   __local_get_nonstack_var__2
@@ -2242,6 +2244,8 @@ store_and_branch_on:
    STA   __local_attr_ptr_and_mask__attr
    JSR   store_result
    LDA   __local_instr_clear_attr__0
+store_and_branch_on@tail3:
+   SUBROUTINE
    BEQ   branch
    LDA   #$01
 branch:
@@ -2286,21 +2290,14 @@ branch:
    LDA   __local_ascii_to_zchar__dest
    ORA   __local_ascii_to_zchar__z
    BNE   .if_end@18
-   LDA   #$00
-   STA   __local_dec_var__0
-   STA   __local_get_next_code_word__1
-   JMP   return_value
+   JMP   branch@tail2
 .if_end@18:
    LDA   __local_ascii_to_zchar__z
    BNE   .if_end@19
    LDA   __local_ascii_to_zchar__dest
    CMP   #$01
    BNE   .vthread@0
-   LDA   #$01
-   STA   __local_dec_var__0
-   LDA   #$00
-   STA   __local_get_next_code_word__1
-   JMP   return_value
+   JMP   branch@tail0
 .if_end@19:
    LDA   __local_ascii_to_zchar__dest
 .vthread@0:
@@ -2308,6 +2305,8 @@ branch:
    SBC   #$02
    STA   __local_dec_var__0
    LDA   __local_ascii_to_zchar__z
+branch@tail5:
+   SUBROUTINE
    SBC   #$00
    STA   __local_get_next_code_word__1
 branch_to_offset:
@@ -2368,6 +2367,8 @@ instr_get_parent:
    JSR   get_object_addr
    LDY   #$04
    LDA   (get_object_addr@ret),Y
+instr_get_parent@tail0:
+   SUBROUTINE
    STA   __local_branch_to_offset__0
    LDA   #$00
    STA   __local_attr_ptr_and_mask__attr
@@ -2443,10 +2444,7 @@ instr_test_attr:
    TXA
    AND   attr_mask+1
    ORA   __local_instr_clear_attr__0
-   BEQ   .cmp_end@3
-   LDA   #$01
-.cmp_end@3:
-   JMP   branch
+   JMP   store_and_branch_on@tail3
 instr_set_attr:
    SUBROUTINE
    JSR   attr_ptr_and_mask
@@ -2558,8 +2556,7 @@ instr_get_prop:
    LDA   (__local_ascii_to_zchar__left),Y
    STA   __local_branch_to_offset__0
    LDA   __local_ascii_to_zchar__z
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_prop@tail2
 .if_end@6:
    LDA   __local_ascii_to_zchar__left
    JSR   next_property
@@ -2579,10 +2576,7 @@ instr_get_prop:
    BNE   .if_else@8
    LDY   __local_ascii_to_zchar__z
    LDA   (props),Y
-   STA   __local_branch_to_offset__0
-   LDA   #$00
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_parent@tail0
 .if_else@8:
    CMP   #$01
    BNE   .if_else@10
@@ -2631,19 +2625,23 @@ instr_get_prop_addr:
    STA   __local_branch_to_offset__0
    LDA   __local_ascii_to_zchar__dest
    SBC   Z_HEADER_ADDR+1
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_prop@tail2
 .if_end@11:
    BCS   .if_end@12
-   LDA   #$00
-   STA   __local_branch_to_offset__0
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_prop_addr@tail1
 .if_end@12:
    LDA   __local_ascii_to_zchar__dest
    JSR   next_property
    STA   __local_ascii_to_zchar__dest
    JMP   .loop@3_start
+instr_get_prop_addr@tail1:
+   SUBROUTINE
+   LDA   #$00
+   STA   __local_branch_to_offset__0
+instr_get_prop@tail2:
+   SUBROUTINE
+   STA   __local_attr_ptr_and_mask__attr
+   JMP   store_result
 instr_get_next_prop:
    SUBROUTINE
    LDA   OPERANDS+2
@@ -2663,10 +2661,7 @@ instr_get_next_prop:
    JMP   .loop@4_break
 .if_end@14:
    BCS   .if_end@15
-   LDA   #$00
-   STA   __local_branch_to_offset__0
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_prop_addr@tail1
 .if_end@15:
    LDA   __local_dec_var__0
    JSR   next_property
@@ -2676,10 +2671,7 @@ instr_get_next_prop:
 .loop@4_break:
    LDA   __local_dec_var__0
    JSR   get_property_num
-   STA   __local_branch_to_offset__0
-   LDA   #$00
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_parent@tail0
 instr_get_prop_len:
    SUBROUTINE
    LDA   Z_HEADER_ADDR
@@ -2705,10 +2697,7 @@ instr_get_prop_len:
    LSR
    CLC
    ADC   #$01
-   STA   __local_branch_to_offset__0
-   LDA   #$00
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   instr_get_parent@tail0
 instr_put_prop:
    SUBROUTINE
    LDA   OPERANDS+2
@@ -2882,6 +2871,8 @@ instr_mul:
    LDA   __local_instr_clear_attr__1
    STA   __local_attr_ptr_and_mask__n
    JSR   mulu16
+instr_mul@tail1:
+   SUBROUTINE
    STA   __local_dec_var__0
    STX   __local_get_next_code_word__1
 store_with_sign:
@@ -2895,8 +2886,7 @@ store_with_sign:
    LDA   #$00
    SBC   __local_get_next_code_word__1
 .if_end@3:
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   store_with_sign@tail0
 .store_with_sign@asm_ssa_split@0:
    LDA   __local_dec_var__0
    STA   __local_branch_to_offset__0
@@ -2939,10 +2929,7 @@ instr_div:
    LDA   __local_instr_clear_attr__1
    STA   __local_attr_ptr_and_mask__n
    JSR   divu16
-   STA   __local_dec_var__0
-   STX   __local_get_next_code_word__1
-.if_end@8:
-   JMP   store_with_sign
+   JMP   instr_mul@tail1
 instr_mod:
    SUBROUTINE
    LDA   OPERANDS+2
@@ -2964,6 +2951,8 @@ instr_mod:
    LDA   remainder
    STA   __local_branch_to_offset__0
    LDA   remainder+1
+store_with_sign@tail0:
+   SUBROUTINE
    STA   __local_attr_ptr_and_mask__attr
    JMP   store_result
 instr_random:
@@ -2986,8 +2975,7 @@ instr_random:
    STA   __local_branch_to_offset__0
    LDA   remainder+1
    ADC   #$00
-   STA   __local_attr_ptr_and_mask__attr
-   JMP   store_result
+   JMP   store_with_sign@tail0
 print_number:
    SUBROUTINE
    LDA   __local_get_next_code_word__1
@@ -3066,10 +3054,12 @@ instr_restart:
 instr_quit:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$C8
+   LDA   #$B9
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
+instr_quit@tail0:
+   SUBROUTINE
    LDX   #$14
    JSR   print_ascii_string
    JSR   dump_buffer_with_more
@@ -3078,15 +3068,11 @@ instr_quit:
 internal_error:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$DC
+   LDA   #$CD
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
-   LDX   #$14
-   JSR   print_ascii_string
-   JSR   dump_buffer_with_more
-.loop@6_start:
-   JMP   .loop@6_start
+   JMP   instr_quit@tail0
 print_status_line:
    SUBROUTINE
    JSR   dump_buffer_line
@@ -3107,7 +3093,7 @@ print_status_line:
    JSR   dump_buffer_to_screen
    LDA   #$19
    STA   CH
-   LDA   #$F0
+   LDA   #$E1
    STA   __local_get_nonstack_var__1
    LDA   #$33
    STA   __local_get_nonstack_var__2
@@ -3776,7 +3762,7 @@ do_rwts_on_sector:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #$34
-   LDY   #$AA
+   LDY   #$9B
    JMP   RWTS
 write_next_sector:
    SUBROUTINE
@@ -3816,7 +3802,7 @@ get_prompted_number_from_user:
    ASL
    ASL
    STA   __local_attr_ptr_and_mask__attr
-   LDA   #$BF
+   LDA   #$B0
    CLC
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_next_code_byte__page
@@ -3830,14 +3816,14 @@ get_prompted_number_from_user:
    STA   CH
    LDA   #$3F
    STA   INVFLG
-   LDA   #$38
+   LDA   #$29
    STA   __local_get_nonstack_var__1
    LDA   #$34
    STA   __local_get_nonstack_var__2
    LDX   #$0A
    JSR   cout_string
    CLC
-   LDA   #$CE
+   LDA   #$BF
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_nonstack_var__1
    LDA   #$34
@@ -3865,7 +3851,7 @@ please_insert_save_diskette:
    JSR   home
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
-   LDA   #$1C
+   LDA   #$0D
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3913,7 +3899,7 @@ please_insert_save_diskette:
    JSR   buffer_char
 .loop@3_start:
    JSR   dump_buffer_with_more
-   LDA   #$42
+   LDA   #$33
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3952,7 +3938,7 @@ please_reinsert_game_diskette:
    CMP   #$01
    BNE   .if_end@9
    JSR   dump_buffer_with_more
-   LDA   #$65
+   LDA   #$56
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3960,7 +3946,7 @@ please_reinsert_game_diskette:
    JSR   print_ascii_string
 .loop@4_start:
    JSR   dump_buffer_with_more
-   LDA   #$84
+   LDA   #$75
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -4029,7 +4015,7 @@ instr_save:
    LDY   #$06
    JSR   copy_data_to_buff
    JSR   write_next_sector
-   BCS   .instr_save@fail
+   BCS   instr_save@tail1
    LDA   #$80
    STA   __local_dec_var__0
    LDA   #$02
@@ -4038,7 +4024,7 @@ instr_save:
    LDY   #$00
    JSR   copy_data_to_buff
    JSR   write_next_sector
-   BCS   .instr_save@fail
+   BCS   instr_save@tail1
    LDA   #$80
    STA   __local_dec_var__0
    LDA   #$03
@@ -4047,7 +4033,7 @@ instr_save:
    LDY   #$68
    JSR   copy_data_to_buff
    JSR   write_next_sector
-   BCS   .instr_save@fail
+   BCS   instr_save@tail1
    LDA   Z_HEADER_ADDR
    STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
@@ -4058,18 +4044,22 @@ instr_save:
    STA   __local_instr_clear_attr__0
 .loop@2_start:
    JSR   inc_sector_and_write
-   BCS   .instr_save@fail
+   BCS   instr_save@tail1
    INC   disk_buffer+1
    DEC   __local_instr_clear_attr__0
    BNE   .loop@2_start
    JSR   inc_sector_and_write
-   BCS   .instr_save@fail
-   JSR   please_reinsert_game_diskette
-   LDA   #$01
-   JMP   branch
-.instr_save@fail:
+   BCS   instr_save@tail1
+   JMP   instr_save@tail0
+instr_save@tail1:
+   SUBROUTINE
    JSR   please_reinsert_game_diskette
    LDA   #$00
+   JMP   branch
+instr_save@tail0:
+   SUBROUTINE
+   JSR   please_reinsert_game_diskette
+   LDA   #$01
    JMP   branch
 instr_restore:
    SUBROUTINE
@@ -4148,13 +4138,9 @@ instr_restore:
    LDA   __local_instr_clear_attr__1
    LDY   #$11
    STA   (Z_HEADER_ADDR),Y
-   JSR   please_reinsert_game_diskette
-   LDA   #$01
-   JMP   branch
+   JMP   instr_save@tail0
 .instr_restore@fail:
-   JSR   please_reinsert_game_diskette
-   LDA   #$00
-   JMP   branch
+   JMP   instr_save@tail1
 __zp_init:
    SUBROUTINE
    LDA   #$00
@@ -4179,9 +4165,9 @@ __zp_init:
    STA   sign_bit
    RTS
 
-; Disassembly of section .rodata at $33C8
+; Disassembly of section .rodata at $33B9
    SEG   rodata
-   ORG   $33C8
+   ORG   $33B9
 sEndOfSession:
    DC.B  $2D, $2D, $20, $45, $4E, $44, $20, $4F
    DC.B  $46, $20, $53, $45, $53, $53, $49, $4F
@@ -4226,11 +4212,11 @@ sPressReturnToContinue:
    DC.B  $4F, $20, $43, $4F, $4E, $54, $49, $4E
    DC.B  $55, $45, $20, $2D, $2D, $2D
 
-; Disassembly of section .data at $34AA
+; Disassembly of section .data at $349B
    SEG   data
-   ORG   $34AA
+   ORG   $349B
 iob:
-   DC.B  $01, $60, $01, $00, $00, $00, $BB, $34
+   DC.B  $01, $60, $01, $00, $00, $00, $AC, $34
    DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
 dct:
@@ -4243,9 +4229,9 @@ prompts:
    DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E
    DC.B  $20, $28, $30, $2D, $37, $29, $3A, $30
 
-; Disassembly of section .bss at $34EF
+; Disassembly of section .bss at $34E0
    SEG   bss
-   ORG   $34EF
+   ORG   $34E0
 attr_mask:
    DC.B  $00, $00
 printer_card_initialized_flag:

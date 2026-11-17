@@ -271,9 +271,11 @@ COUT1	EQU	$FDF0
 ; item instr_insert_obj section=.text local=false zero=false
 ; item print_obj section=.text local=false zero=false
 ; item store_and_branch_on section=.text local=true zero=false
+; item store_and_branch_on@tail3 section=.text local=true zero=false
 ; item instr_get_sibling section=.text local=false zero=false
 ; item instr_get_child section=.text local=false zero=false
 ; item instr_get_parent section=.text local=false zero=false
+; item instr_get_parent@tail0 section=.text local=true zero=false
 ; item instr_jin section=.text local=false zero=false
 ; item attr_ptr_and_mask section=.text local=true zero=false
 ; item set_attr_word section=.text local=true zero=false
@@ -285,7 +287,9 @@ COUT1	EQU	$FDF0
 ; item get_property_len section=.text local=true zero=false
 ; item next_property section=.text local=true zero=false
 ; item instr_get_prop section=.text local=false zero=false
+; item instr_get_prop@tail2 section=.text local=true zero=false
 ; item instr_get_prop_addr section=.text local=false zero=false
+; item instr_get_prop_addr@tail1 section=.text local=true zero=false
 ; item instr_get_next_prop section=.text local=false zero=false
 ; item instr_get_prop_len section=.text local=false zero=false
 ; item instr_put_prop section=.text local=false zero=false
@@ -514,6 +518,11 @@ store_and_branch_on:
    STA   __zpabi_store_result__value_1
    JSR   store_result
    LDA   __local_store_and_branch_on__related
+   JMP   store_and_branch_on@tail3
+
+store_and_branch_on@tail3:
+   SUBROUTINE
+
    BEQ   .cmp_end@0
    LDA   #$01
 .cmp_end@0:
@@ -544,6 +553,11 @@ instr_get_parent:
    JSR   get_object_addr
    LDY   #$04
    LDA   (get_object_addr@ret),Y
+   JMP   instr_get_parent@tail0
+
+instr_get_parent@tail0:
+   SUBROUTINE
+
    STA   __zpabi_store_result__value_0
    LDA   #$00
    STA   __zpabi_store_result__value_1
@@ -636,10 +650,7 @@ instr_test_attr:
    TXA
    AND   attr_mask+1
    ORA   __local_instr_test_attr__1
-   BEQ   .cmp_end@3
-   LDA   #$01
-.cmp_end@3:
-   JMP   branch
+   JMP   store_and_branch_on@tail3
 
 instr_set_attr:
    SUBROUTINE
@@ -757,8 +768,7 @@ instr_get_prop:
    LDA   (__local_instr_get_prop__y),Y
    STA   __zpabi_store_result__value_0
    LDA   __local_instr_get_prop__0
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_prop@tail2
 .if_end@6:
    LDA   __local_instr_get_prop__y
    JSR   next_property
@@ -778,10 +788,7 @@ instr_get_prop:
    BNE   .if_else@8
    LDY   __local_instr_get_prop__0
    LDA   (props),Y
-   STA   __zpabi_store_result__value_0
-   LDA   #$00
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_parent@tail0
 .if_else@8:
    CMP   #$01
    BNE   .if_else@10
@@ -803,6 +810,12 @@ instr_get_prop:
    JMP   store_result
 .if_else@10:
    JMP   internal_error
+
+instr_get_prop@tail2:
+   SUBROUTINE
+
+   STA   __zpabi_store_result__value_1
+   JMP   store_result
 
 instr_get_prop_addr:
    SUBROUTINE
@@ -832,19 +845,22 @@ instr_get_prop_addr:
    STA   __zpabi_store_result__value_0
    LDA   __local_instr_get_prop_addr__y
    SBC   Z_HEADER_ADDR+1
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_prop@tail2
 .if_end@11:
    BCS   .if_end@12
-   LDA   #$00
-   STA   __zpabi_store_result__value_0
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_prop_addr@tail1
 .if_end@12:
    LDA   __local_instr_get_prop_addr__y
    JSR   next_property
    STA   __local_instr_get_prop_addr__y
    JMP   .loop@3_start
+
+instr_get_prop_addr@tail1:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   __zpabi_store_result__value_0
+   JMP   instr_get_prop@tail2
 
 instr_get_next_prop:
    SUBROUTINE
@@ -866,10 +882,7 @@ instr_get_next_prop:
    JMP   .loop@4_break
 .if_end@14:
    BCS   .if_end@15
-   LDA   #$00
-   STA   __zpabi_store_result__value_0
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_prop_addr@tail1
 .if_end@15:
    LDA   __local_instr_get_next_prop__y
    JSR   next_property
@@ -879,10 +892,7 @@ instr_get_next_prop:
 .if_end@13:
    LDA   __local_instr_get_next_prop__y
    JSR   get_property_num
-   STA   __zpabi_store_result__value_0
-   LDA   #$00
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_parent@tail0
 
 instr_get_prop_len:
    SUBROUTINE
@@ -910,10 +920,7 @@ instr_get_prop_len:
    LSR
    CLC
    ADC   #$01
-   STA   __zpabi_store_result__value_0
-   LDA   #$00
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   instr_get_parent@tail0
 
 instr_put_prop:
    SUBROUTINE

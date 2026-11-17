@@ -188,6 +188,7 @@ COUT1	EQU	$FDF0
 ; item main section=.text.main local=false zero=false
 ; item instr_restart section=.text local=false zero=false
 ; item instr_quit section=.text local=false zero=false
+; item instr_quit@tail0 section=.text local=true zero=false
 ; item internal_error section=.text local=false zero=false
 ; item page_tables section=.tables local=false zero=true
 ; item sEndOfSession section=.rodata local=true zero=false
@@ -480,6 +481,11 @@ instr_quit:
    STA   __zpabi_print_ascii_string__s_0
    LDA   #>sEndOfSession
    STA   __zpabi_print_ascii_string__s_1
+   JMP   instr_quit@tail0
+
+instr_quit@tail0:
+   SUBROUTINE
+
    LDX   #$14
    JSR   print_ascii_string
    JSR   dump_buffer_with_more
@@ -494,11 +500,7 @@ internal_error:
    STA   __zpabi_print_ascii_string__s_0
    LDA   #>sInternalError
    STA   __zpabi_print_ascii_string__s_1
-   LDX   #$14
-   JSR   print_ascii_string
-   JSR   dump_buffer_with_more
-.loop@6_start:
-   JMP   .loop@6_start
+   JMP   instr_quit@tail0
 
 page_tables:
    DS.B  512

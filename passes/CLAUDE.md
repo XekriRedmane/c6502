@@ -157,6 +157,15 @@ this directory:
   the copy may touch `t` or `M`, call, or branch, and `t`, A, and N/Z
   must be dead after. `OPERANDS[0] = c ? f() : g();` stores the high
   byte straight into `OPERANDS+1` on each arm.
+- `shared_tails.py` — `apply_shared_tails`. Runs last in
+  `compile.optimized_asm`, after `apply_short_jumps`. A run of
+  instructions that several functions of the unit end alike (ending in
+  a `JMP` or `RTS`, its `.` labels all inside it, no `FunctionPrologue`
+  or `JumpTable`) goes in a new internal function `F@tail<n>`, and
+  each of them ends with `JMP F@tail<n>`, when that's smaller before
+  the link too. The linker's `fall_through` puts one of them right
+  before it. The new function's symbol is a copy of the first
+  sharer's, for its section.
 - `short_jumps.py` — `apply_short_jumps`. Runs once right after
   `expand_long_branches`. A `JMP .L` or a `JumpTable` entry `.L`
   whose first instruction is a `JMP f` out of the function (no

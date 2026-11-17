@@ -210,7 +210,9 @@ COUT1	EQU	$FDF0
 ; item divu16 section=.text local=true zero=false
 ; item check_sign section=.text local=true zero=false
 ; item store_with_sign section=.text local=true zero=false
+; item store_with_sign@tail0 section=.text local=true zero=false
 ; item instr_mul section=.text local=false zero=false
+; item instr_mul@tail1 section=.text local=true zero=false
 ; item instr_div section=.text local=false zero=false
 ; item instr_mod section=.text local=false zero=false
 ; item instr_random section=.text local=false zero=false
@@ -393,13 +395,18 @@ store_with_sign:
    LDA   #$00
    SBC   __zpabi_store_with_sign__n_1
 .if_end@3:
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   store_with_sign@tail0
 .store_with_sign@asm_ssa_split@0:
    LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_store_result__value_0
    LDA   __zpabi_store_with_sign__n_1
    JMP   .if_end@3
+
+store_with_sign@tail0:
+   SUBROUTINE
+
+   STA   __zpabi_store_result__value_1
+   JMP   store_result
 
 instr_mul:
    SUBROUTINE
@@ -439,6 +446,11 @@ instr_mul:
    LDA   __zpabi_check_sign__b_1
    STA   __zpabi_mulu16__b_1
    JSR   mulu16
+   JMP   instr_mul@tail1
+
+instr_mul@tail1:
+   SUBROUTINE
+
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
 .if_end@4:
@@ -482,10 +494,7 @@ instr_div:
    LDA   __zpabi_check_sign__b_1
    STA   __zpabi_divu16__divisor_1
    JSR   divu16
-   STA   __zpabi_store_with_sign__n_0
-   STX   __zpabi_store_with_sign__n_1
-.if_end@8:
-   JMP   store_with_sign
+   JMP   instr_mul@tail1
 
 instr_mod:
    SUBROUTINE
@@ -509,8 +518,7 @@ instr_mod:
    LDA   remainder
    STA   __zpabi_store_result__value_0
    LDA   remainder+1
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   store_with_sign@tail0
 
 instr_random:
    SUBROUTINE
@@ -533,8 +541,7 @@ instr_random:
    STA   __zpabi_store_result__value_0
    LDA   remainder+1
    ADC   #$00
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   store_with_sign@tail0
 
 print_number:
    SUBROUTINE

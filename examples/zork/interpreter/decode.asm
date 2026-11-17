@@ -330,13 +330,19 @@ COUT1	EQU	$FDF0
 ; item get_const_word section=.text local=true zero=false
 ; item get_var_content section=.text local=true zero=false
 ; item return_value section=.text local=false zero=false
+; item return_value@tail1 section=.text local=true zero=false
 ; item branch_to_offset section=.text local=true zero=false
 ; item branch section=.text local=false zero=false
+; item branch@tail5 section=.text local=true zero=false
+; item branch@tail2 section=.text local=true zero=false
+; item branch@tail0 section=.text local=true zero=false
 ; item instr_call section=.text local=true zero=false
 ; item inc_var section=.text local=true zero=false
+; item inc_var@tail3 section=.text local=true zero=false
 ; item dec_var section=.text local=true zero=false
 ; item do_0op section=.text local=true zero=false
 ; item do_1op section=.text local=true zero=false
+; item do_1op@tail4 section=.text local=true zero=false
 ; item do_2op section=.text local=true zero=false
 ; item do_var section=.text local=true zero=false
 ; item do_instruction section=.text local=false zero=false
@@ -654,6 +660,11 @@ return_value:
    LDA   __zpabi_return_value__value_0
    STA   __zpabi_store_result__value_0
    LDA   __zpabi_return_value__value_1
+   JMP   return_value@tail1
+
+return_value@tail1:
+   SUBROUTINE
+
    STA   __zpabi_store_result__value_1
    JMP   store_result
 
@@ -747,21 +758,14 @@ branch:
    LDA   __local_branch__offset_0
    ORA   __local_branch__offset_1
    BNE   .if_end@18
-   LDA   #$00
-   STA   __zpabi_return_value__value_0
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
+   JMP   branch@tail2
 .if_end@18:
    LDA   __local_branch__offset_1
    BNE   .if_end@19
    LDA   __local_branch__offset_0
    CMP   #$01
    BNE   .vthread@0
-   LDA   #$01
-   STA   __zpabi_return_value__value_0
-   LDA   #$00
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
+   JMP   branch@tail0
 .if_end@19:
    LDA   __local_branch__offset_0
 .vthread@0:
@@ -769,9 +773,31 @@ branch:
    SBC   #$02
    STA   __zpabi_branch_to_offset__offset_0
    LDA   __local_branch__offset_1
+   JMP   branch@tail5
+
+branch@tail5:
+   SUBROUTINE
+
    SBC   #$00
    STA   __zpabi_branch_to_offset__offset_1
    JMP   branch_to_offset
+
+branch@tail2:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   __zpabi_return_value__value_0
+   STA   __zpabi_return_value__value_1
+   JMP   return_value
+
+branch@tail0:
+   SUBROUTINE
+
+   LDA   #$01
+   STA   __zpabi_return_value__value_0
+   LDA   #$00
+   STA   __zpabi_return_value__value_1
+   JMP   return_value
 
 instr_call:
    SUBROUTINE
@@ -781,8 +807,7 @@ instr_call:
    BNE   .if_end@20
    LDA   #$00
    STA   __zpabi_store_result__value_0
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   return_value@tail1
 .if_end@20:
    LDA   FRAME_STACK_COUNT
    STA   __zpabi_push__value_0
@@ -883,6 +908,11 @@ inc_var:
    INC   __zpabi_var_put__value_1
 .inc_done@1:
    LDA   __local_inc_var__0
+   JMP   inc_var@tail3
+
+inc_var@tail3:
+   SUBROUTINE
+
    JSR   var_put
    LDX   __zpabi_var_put__value_1
    LDA   __zpabi_var_put__value_0
@@ -902,10 +932,7 @@ dec_var:
    DEC   __zpabi_var_put__value_1
 .carry_inc@3:
    LDA   __local_dec_var__0
-   JSR   var_put
-   LDX   __zpabi_var_put__value_1
-   LDA   __zpabi_var_put__value_0
-   RTS
+   JMP   inc_var@tail3
 
 do_0op:
    SUBROUTINE
@@ -933,16 +960,9 @@ do_0op:
    DC.W  instr_quit-1
    DC.W  new_line-1
 .case@4:
-   LDA   #$01
-   STA   __zpabi_return_value__value_0
-   LDA   #$00
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
+   JMP   branch@tail0
 .case@5:
-   LDA   #$00
-   STA   __zpabi_return_value__value_0
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
+   JMP   branch@tail2
 .case@7:
    JSR   print_string_literal
    JSR   new_line
@@ -1020,9 +1040,7 @@ do_1op:
    SBC   #$02
    STA   __zpabi_branch_to_offset__offset_0
    LDA   OPERANDS+1
-   SBC   #$00
-   STA   __zpabi_branch_to_offset__offset_1
-   JMP   branch_to_offset
+   JMP   branch@tail5
 .case@30:
    LDA   OPERANDS
    STA   __zpabi_load_packed_address__addr_0
@@ -1033,16 +1051,20 @@ do_1op:
 .case@31:
    LDA   OPERANDS
    JSR   var_get
-   STA   __zpabi_store_result__value_0
-   STX   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   do_1op@tail4
 .case@32:
    LDA   OPERANDS
    EOR   #$FF
    STA   __zpabi_store_result__value_0
    LDA   OPERANDS+1
    EOR   #$FF
-   STA   __zpabi_store_result__value_1
+   JMP   return_value@tail1
+
+do_1op@tail4:
+   SUBROUTINE
+
+   STA   __zpabi_store_result__value_0
+   STX   __zpabi_store_result__value_1
    JMP   store_result
 
 do_2op:
@@ -1220,8 +1242,7 @@ do_2op:
    STA   __zpabi_store_result__value_0
    LDA   OPERANDS+1
    ORA   __local_do_2op__2
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   return_value@tail1
 .case@43:
    LDA   OPERANDS
    AND   __local_do_2op__1
@@ -1249,9 +1270,7 @@ do_2op:
    STA   __zpabi_load_address__addr_1
    JSR   load_address
    JSR   get_next_code_word
-   STA   __zpabi_store_result__value_0
-   STX   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   do_1op@tail4
 .case@50:
    LDA   OPERANDS
    CLC

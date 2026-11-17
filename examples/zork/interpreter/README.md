@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 5% larger than the
+(see "Compared with Zork's own code"). It is 3% larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
@@ -162,18 +162,18 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 454 |
-| `decode.c` | 1859 | 1814 |
-| `objects.c` | 788 | 932 |
-| `numbers.c` | 436 | 473 |
+| `main.c` | 391 | 446 |
+| `decode.c` | 1859 | 1787 |
+| `objects.c` | 788 | 903 |
+| `numbers.c` | 436 | 465 |
 | `input.c` | 1018 | 1081 |
 | `pages.c` | 384 | 379 |
 | `zstring.c` | 383 | 401 |
 | `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 527 |
-| `save.c` | 325 | 344 |
-| **Total** | **6643** | **6943** |
+| `save.c` | 325 | 337 |
+| **Total** | **6643** | **6864** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -181,7 +181,7 @@ generates to clear the globals in zero page. The boot loader doesn't
 run it, and the interpreter writes each of those globals before it
 reads it. A function that ends by jumping to another is placed
 right before that one and falls into it, as in Zork. The linker does
-that for 19 functions, which saves a 3-byte `JMP` in each. Each
+that for 32 functions, which saves a 3-byte `JMP` in each. Each
 function is counted with the file that defines it, wherever the
 linker places it. Zork's boot loader reads 26 sectors,
 `$0800`-`$21FF`, so on an Apple II this program would take a loader
@@ -190,8 +190,9 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 812 bytes with the handlers written
-into their cases (`do_2op` alone is 418), where Zork's four tables
+The four dispatch switches take 778 bytes with the handlers written
+into their cases, not counting the tails they share with other
+functions (`do_2op` alone is 408), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
 Each switch now dispatches through a table too, and a case that only
 calls a handler is the handler's address in the table, as in Zork's.
@@ -515,3 +516,10 @@ the smaller code saved.
   N and Z from A
   ([redundant_compare.md](../../../docs/optimizations/redundant_compare.md)),
   11 bytes in `push`, `je`, and `please_insert_save_diskette`.
+- Code that several functions of a unit end with alike goes in a
+  function of its own, which each of them jumps to, and the linker
+  puts one of them right before it
+  ([shared_tails.md](../../../docs/optimizations/shared_tails.md)), 79
+  bytes in 15 tails, such as the store of a byte with `store_result`
+  that four of `objects.c`'s property routines end with, and the
+  message and endless loop `quit` and the internal error end with.

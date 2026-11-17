@@ -192,7 +192,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   Moves `Y = X + c` past the last in-line use of `X` when `Y`'s only
   consumer follows, exposing `recognize_indexed_*` patterns the original
   ordering hid. `X` must be SSA-renamed (a static could be written in
-  between), and the scan stops at any write to `X`.
+  between), and the scan stops at any write to `X`. A jump on `X`
+  right after the step, `X`'s last use, tests `Y` against the
+  constant moved by `c` instead (`_test_the_step`), so `while (x-- !=
+  0)` is `DEX; CPX #$FF; BNE`.
 - `sink_and_past_branch.py` — `SinkAndPastBranch` (raw FixedpointPass —
   duplicates a trio into multiple successors with SSA renaming; different
   shape from SinkPass). See "sink_and_past_branch" in the peephole

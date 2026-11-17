@@ -91,6 +91,36 @@ If the scan found a read of `X`, the add moves to just after it.
 Each sweep moves an instruction once, and the fixed point finishes
 longer chains.
 
+## A test of the value before the step
+
+When the last use of `X` is a jump right after `Y = X - c` (or `X +
+c`), the step can't move past it. Then the jump tests `Y`: `X != k` is
+`Y != k - c` modulo the width, `X == k` is `Y == k - c`, and a jump on
+`X` being nonzero tests `Y` against `-c`. Only instructions that read
+neither may come between the step and the jump, and nothing after the
+jump, nor any Phi, may read `X`, so `X`'s range ends at the step and
+`X` and `Y` can share a register. `while (x-- != 0)` in Zork's
+`search_nonalpha_table` (examples/zork/interpreter/input.c) had kept
+both values:
+
+```
+   TXA                                      DEX
+   SEC                                      CPX   #$FF
+   SBC   #$01                               BNE   .loop@5_start
+   STA   __local_search_nonalpha_table__0   LDA   #$00
+   TXA                                ->    RTS
+   BNE   .search_nonalpha_table@ssa_split@1
+   LDA   #$00
+   RTS
+.search_nonalpha_table@ssa_split@1:
+   LDX   __local_search_nonalpha_table__0
+   JMP   .loop@5_start
+```
+
+That's 9 bytes shorter. Zork's own loop ends `DEX; BPL`, a byte
+shorter still, which it can use because it knows the count starts
+below $80.
+
 ## What it leaves alone
 
 - An add of a static. With a static `s`, in `unsigned t = s + 1; s =

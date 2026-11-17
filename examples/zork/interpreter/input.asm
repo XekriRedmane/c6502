@@ -78,7 +78,6 @@ __zpabi_print_number__n_0	EQU	$E0
 __zpabi_return_value__value_0	EQU	$E0
 __zpabi_search_nonalpha_table__c	EQU	$E0
 __zpabi_store_result__value_0	EQU	$E0
-__local_search_nonalpha_table__0	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
 __zpabi_load_address__addr_1	EQU	$E1
 __zpabi_load_packed_address__addr_1	EQU	$E1
@@ -583,17 +582,11 @@ search_nonalpha_table:
    ADC   #$08
    RTS
 .if_end@22:
-   TXA
-   SEC
-   SBC   #$01
-   STA   __local_search_nonalpha_table__0
-   TXA
-   BNE   .search_nonalpha_table@ssa_split@1
+   DEX
+   CPX   #$FF
+   BNE   .loop@5_start
    LDA   #$00
    RTS
-.search_nonalpha_table@ssa_split@1:
-   LDX   __local_search_nonalpha_table__0
-   JMP   .loop@5_start
 
 z_compress:
    SUBROUTINE

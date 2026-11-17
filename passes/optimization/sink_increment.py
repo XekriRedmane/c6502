@@ -293,6 +293,106 @@ class SinkIncrements(SinkPass):
         # the original sink_increments behaviour exactly.
         return src_idx + offset
 
+    def run(self, fn, ctx):
+        return _test_the_step(super().run(fn, ctx), ctx)
+
+
+_EQUALITY = {tac_ast.Equal: tac_ast.Equal, tac_ast.NotEqual: tac_ast.NotEqual}
+
+
+def _test_the_step(fn: tac_ast.Function, ctx: PassContext) -> tac_ast.Function:
+    """A jump on X right after `Y = X - c` (or `X + c`), X's last use,
+    tests Y instead: `X != k` is `Y != k - c` modulo the width, and so
+    is `X == k`, and a jump on X being nonzero is a test of Y against
+    `-c`. X's live range then ends at the step, so X and Y can share a
+    register. `while (x-- != 0)` in Zork's `search_nonalpha_table` had
+    kept the old and the new `x`, computed the step through A into a
+    slot, and copied it back on the loop's edge; it's now `DEX; CPX
+    #$FF; BNE`. The jump has to come right after the step, with only
+    instructions that read neither between, and nothing after it may
+    read X, nor any Phi, so the rewrite only shortens X's range."""
+    if ctx.ssa_dsts is None or ctx.symbols is None:
+        return fn
+    from passes.optimization.narrow_widened_arith import (
+        _byte_width, _is_unsigned, _narrow_constant,
+    )
+    instrs = list(fn.instructions)
+    phi_uses = {
+        u.name for ins in instrs if isinstance(ins, tac_ast.Phi)
+        for u in uses_in(ins)
+    }
+    changed = False
+    for i, step in enumerate(instrs):
+        if not (isinstance(step, tac_ast.Binary)
+                and isinstance(step.op, (tac_ast.Add, tac_ast.Subtract))
+                and isinstance(step.src1, tac_ast.Var)
+                and isinstance(step.src2, tac_ast.Constant)
+                and isinstance(step.dst, tac_ast.Var)
+                and step.src1.name in ctx.ssa_dsts
+                and step.dst.name in ctx.ssa_dsts
+                and step.src1.name != step.dst.name):
+            continue
+        c = getattr(step.src2.const, "value", None)
+        if not isinstance(c, int):
+            continue
+        x, y = step.src1, step.dst
+        width = _byte_width(y, ctx.symbols)
+        if width is None or width != _byte_width(x, ctx.symbols):
+            continue
+        unsigned = _is_unsigned(y, ctx.symbols)
+        if unsigned is None or x.name in phi_uses:
+            continue
+        j = i + 1
+        while j < len(instrs) and not isinstance(instrs[j], (
+            tac_ast.Label, tac_ast.Jump, tac_ast.JumpIfTrue,
+            tac_ast.JumpIfFalse, tac_ast.JumpIfCmp, tac_ast.JumpIfMasked,
+            tac_ast.Ret,
+        )) and not any(u.name in (x.name, y.name)
+                       for u in uses_in(instrs[j])):
+            j += 1
+        if j >= len(instrs):
+            continue
+        jump = instrs[j]
+        if isinstance(jump, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse)):
+            if jump.condition != x:
+                continue
+            k = 0
+            op = (tac_ast.NotEqual() if isinstance(jump, tac_ast.JumpIfTrue)
+                  else tac_ast.Equal())
+        elif (isinstance(jump, tac_ast.JumpIfCmp)
+                and type(jump.op) in _EQUALITY):
+            if jump.src1 == x and isinstance(jump.src2, tac_ast.Constant):
+                k = getattr(jump.src2.const, "value", None)
+            elif jump.src2 == x and isinstance(jump.src1, tac_ast.Constant):
+                k = getattr(jump.src1.const, "value", None)
+            else:
+                continue
+            if not isinstance(k, int):
+                continue
+            op = jump.op
+        else:
+            continue
+        if any(u.name == x.name for ins in instrs[j + 1:]
+               for u in uses_in(ins)):
+            continue
+        moved = k - c if isinstance(step.op, tac_ast.Subtract) else k + c
+        const = _narrow_constant(
+            tac_ast.Constant(const=tac_ast.ConstInt(value=moved)),
+            width, unsigned,
+        )
+        if const is None:
+            continue
+        instrs[j] = tac_ast.JumpIfCmp(
+            op=op, src1=y, src2=const, target=jump.target,
+        )
+        changed = True
+    if not changed:
+        return fn
+    return tac_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
 
 def sink_increments(fn: tac_ast.Function) -> tac_ast.Function:
     """Walk `fn.instructions` and move sinkable `Binary(Add |

@@ -166,14 +166,14 @@ file and the original code it translates:
 | `decode.c` | 1859 | 1775 |
 | `objects.c` | 788 | 827 |
 | `numbers.c` | 436 | 419 |
-| `input.c` | 1018 | 1068 |
+| `input.c` | 1018 | 1059 |
 | `pages.c` | 384 | 371 |
 | `zstring.c` | 383 | 387 |
 | `output.c` | 387 | 399 |
 | `disk.c` | 138 | 136 |
 | `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 332 |
-| **Total** | **6643** | **6687** |
+| **Total** | **6643** | **6678** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -550,3 +550,7 @@ the smaller code saved.
   the original's Y, where `props[y + 1]` had made C add `y` to `props`
   as 16 bits. That's a change to `objects.c`, not to the compiler,
   and with the tails and runs it lets go, it takes 52 bytes off.
+- A jump on a value right after its last step tests the stepped value
+  ([sink_increment.md](../../../docs/optimizations/sink_increment.md)),
+  so `search_nonalpha_table`'s `while (x-- != 0)` is `DEX; CPX #$FF;
+  BNE`, 9 bytes shorter.

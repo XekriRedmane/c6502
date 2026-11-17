@@ -93,6 +93,45 @@ class TestSinkIncrementSim(unittest.TestCase):
         )
         self._both(src, 5 + 7 * 16)
 
+    def test_post_decrement_tests(self) -> None:
+        # `x-- != 0` tests the decremented value against -1, for each
+        # width and signedness, with the count running out at 0 and
+        # at a match.
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t tab[8] = {9, 8, 7, 6, 5, 4, 3, 2};\n"
+            "uint8_t find(uint8_t c) {\n"
+            "    uint8_t x = 7;\n"
+            "    do { if (tab[x] == c) return x + 10; } while (x-- != 0);\n"
+            "    return 0;\n"
+            "}\n"
+            "int8_t sdown(int8_t n) { int8_t k = 0;\n"
+            "    while (n-- != -3) k++; return k; }\n"
+            "uint16_t wdown(uint16_t n) { uint16_t k = 0;\n"
+            "    while (n--) k += 2; return k; }\n"
+            "int main(void) {\n"
+            "    return find(5) + find(1) * 100 + sdown(4) * 1000\n"
+            "        + (int)wdown(300);\n"
+            "}\n"
+        )
+        self._both(src, (4 + 10) + 0 + 7 * 1000 + 600)
+
+    def test_post_decrement_becomes_dex(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t tab[8];\n"
+            "uint8_t find(uint8_t c) {\n"
+            "    uint8_t x = 7;\n"
+            "    do { if (tab[x] == c) return x + 8; } while (x-- != 0);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        self.assertIn("CPX   #$FF", asm)
+        self.assertNotIn("SBC", asm)
+
 
 if __name__ == "__main__":
     unittest.main()

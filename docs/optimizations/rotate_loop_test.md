@@ -114,6 +114,17 @@ values unknown, and then the `JMP` stays. A label at the start of the
 function is where the function is entered, so control falls into it,
 and the values there are unknown.
 
+Entering at the body also skips what the test leaves in the registers
+and the flags, which the body may read, since until now the body ran
+only after the test. So the entry `JMP` is left out only when every
+register the test writes, and N, Z, C, and V, are each dead at the
+start of the body. After `LDA i; CMP #1; BCS exit`, C is clear in the
+body, and [carry already known](carry_known.md) had dropped the `CLC`
+of an increment there. Entered at the body, the first increment added
+the carry from before the loop. `fuzz.stmts` found it with seed 1262,
+and `main` in examples/zork_match_dictionary_word.c, whose loop starts
+with `ADC #$01`, now keeps its entry `JMP`.
+
 Other jumps to `L`, such as from a `continue`, still go to `L`, which
 moves to the bottom with the test.
 

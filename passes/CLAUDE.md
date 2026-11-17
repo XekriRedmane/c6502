@@ -414,7 +414,8 @@ this directory:
   inverted to branch back to the body, and is entered with a `JMP` to
   the test, or at the body when `_entry_passes` evaluates the test to
   pass on the constants the straight-line code before the loop
-  leaves. The test is one branch to the label right after the `JMP`
+  leaves and every register and flag the test writes is dead at the
+  body (`_test_effects_dead`). The test is one branch to the label right after the `JMP`
   back, and the loop is at most 112 bytes. Runs once, after
   `loop_invariant_a` and before `expand_long_branches`.
 - `loop_invariant_a.py` — `apply_loop_invariant_a`. In a loop whose

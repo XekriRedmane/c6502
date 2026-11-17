@@ -202,6 +202,7 @@ main:
    STA   story+8
    STA   story+69
    STA   __local_main__i
+   JMP   .loop@2_start
 .main@rot@0:
    ADC   #$01
    STA   __local_main__3
@@ -237,6 +238,7 @@ main:
    STA   (__local_main__0),Y
    LDA   __local_main__3
    STA   __local_main__i
+.loop@2_start:
    CMP   #$14
    BCC   .main@rot@0
    LDA   #$00

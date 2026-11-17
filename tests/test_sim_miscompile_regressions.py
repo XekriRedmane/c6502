@@ -50,6 +50,51 @@ _CASES: list[tuple[str, str, int]] = [
             return a * 10 + b;
         }
     """, 73),
+    # rotate_loop_test entered a rotated loop at its body when the
+    # test was known to pass the first time, skipping the test's
+    # `LDA i; CMP #1; BCS exit`. carry_known had dropped the body's
+    # CLC before `gs5.m0++` because the test's fall-through left C
+    # clear, so the first pass added C from before the loop. Found by
+    # fuzz.stmts, seed 1262.
+    ("rotated_loop_entered_without_its_test", """
+        unsigned int acc;
+        void mix(unsigned long v) {
+            acc = (unsigned int)((acc << 1) | (acc >> 15))
+                ^ (unsigned int)v ^ (unsigned int)(v >> 16);
+        }
+        unsigned int g2 = 0;
+        unsigned int g3 = 256;
+        unsigned int ga4[4] = {65535, 55822, 2, 255};
+        struct S_gs5 { unsigned char pad; unsigned int m0; unsigned int m1; };
+        struct S_gs5 gs5 = {0, 63853, 0};
+        unsigned int *gp6 = &g2;
+        unsigned int *gp7 = &g3;
+        void fin(void) {
+            mix(g3); mix(ga4[0]); mix(ga4[1]); mix(ga4[2]); mix(ga4[3]);
+            mix(gs5.m0); mix(gs5.m1);
+        }
+        signed char f15(signed char p16, signed char p17,
+                        unsigned int p18, signed char *pp19) {
+            for (unsigned char i23 = 0; i23 < 1; i23++) {
+                (*gp7) = (gs5.m0++);
+                (--ga4[0]);
+            }
+            if ((128UL | (p18++))) {
+            }
+            if ((p17 || p18)) {
+            }
+            return 0;
+        }
+        int main(void) {
+            signed char l24 = 0;
+            for (unsigned char i27 = 0; i27 < 4; i27++) {
+                mix(f15((ga4[(i27 & 3)] + i27), (*gp6), (i27 - i27), &l24));
+            }
+            (ga4[1] ^= 129);
+            fin();
+            return (int)(acc & 0x7FFF);
+        }
+    """, 31411),
     # narrow_widened_arith narrowed a right shift of any extended
     # value to a shift of the extend's low byte, so
     # `(uint8_t)((uint32_t)w >> 5)` lost bits 8 to 12 of `w`. Only an

@@ -30,7 +30,9 @@ too, 3 bytes and 3 cycles, and the loop is entered at the body. That
 is the case of `for (uint8_t i = 0; i != 6; i++)`, whose test is
 `CPX #$06; BEQ` right after `LDX #$00`. `_entry_passes` evaluates the
 test on the constants that the straight-line code in front of the
-loop leaves in the registers and in memory.
+loop leaves in the registers and in memory, and `_test_effects_dead`
+checks that the body doesn't read a register or flag the test sets,
+since the first pass then doesn't run the test.
 
 # Eligibility
 
@@ -127,7 +129,10 @@ def _rotate_one(
             instrs[l - 1], (asm_ast.Jump, asm_ast.Return, asm_ast.Ret),
         )
         entry: list[asm_ast.Type_instruction] = []
-        if falls_in and not _entry_passes(instrs, l, test):
+        if falls_in and not (
+            _entry_passes(instrs, l, test)
+            and _test_effects_dead(instrs, test, test_end + 1)
+        ):
             entry = [asm_ast.Jump(target=jump.target)]
         bottom_test = [
             *test[:-1],
@@ -181,6 +186,35 @@ def _size(ins: asm_ast.Type_instruction) -> int:
 
 
 # ---- The test on entry ---------------------------------------------------
+
+def _test_effects_dead(instrs, test, body: int) -> bool:
+    """True when nothing from `body` on reads a register or a flag that
+    `test` writes before writing it again, so the first pass may skip
+    the test. The body is otherwise run after the test, and a pass
+    before this one may have relied on what the test left: after
+    `LDA i; CMP #1; BCS exit`, C is clear in the body, and
+    `carry_known` dropped the `CLC` of the body's `gs5.m0++`. Entered
+    at the body, the add then added whatever C held."""
+    from passes.asm_liveness import (
+        a_dead_at, c_dead_at, flags_dead_at, v_dead_at, x_dead_at,
+        y_dead_at,
+    )
+    written: set[str] = set()
+    for ins in test:
+        dst = getattr(ins, "dst", None)
+        if isinstance(dst, asm_ast.Reg):
+            written.add(type(dst.reg).__name__)
+        if sets_up_y(ins):
+            written.add("Y")
+    dead = {"A": a_dead_at, "X": x_dead_at, "Y": y_dead_at}
+    if any(not dead[r](instrs, body) for r in written if r in dead):
+        return False
+    # Each flag on its own: `all_flags_dead_at` takes any branch to
+    # read them all, and the `BNE` at the bottom of `clear_page1`'s
+    # loop reads only Z, which the body's `DEX` writes first.
+    return (flags_dead_at(instrs, body) and c_dead_at(instrs, body)
+            and v_dead_at(instrs, body))
+
 
 def _entry_passes(instrs, l: int, test) -> bool:
     """True when the straight-line code that falls into the label at

@@ -144,6 +144,49 @@ class TestCompareWithZero(unittest.TestCase):
         self.assertEqual(_run(list(instrs)), instrs)
 
 
+class TestTestOfAJoin(unittest.TestCase):
+    """An `ORA #$00` (or `CMP #$00`) after a label, where every way in
+    set N and Z from A, as `equal = a == b; if (!equal) ...` leaves
+    it: `LDA #$00; BEQ end; LDA #$01; end: STA equal; ORA #$00`."""
+
+    _ORA0 = asm_ast.Or(src=asm_ast.Imm(value=0), dst=_A)
+
+    def _join(self, first):
+        sta = asm_ast.Mov(src=_A, dst=asm_ast.ZP(address=0x81, offset=0),
+                          is_volatile=False)
+        return [
+            first,
+            asm_ast.Branch(cond=asm_ast.EQ(), target="end"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A, is_volatile=False),
+            asm_ast.Label(name="end"),
+            sta, self._ORA0,
+            asm_ast.Branch(cond=asm_ast.NE(), target="L"), _ret(),
+            asm_ast.Label(name="L"), _ret(),
+        ]
+
+    def test_every_way_in_set_the_flags(self):
+        instrs = self._join(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A,
+                                        is_volatile=False))
+        out = _run(list(instrs))
+        self.assertNotIn(self._ORA0, out)
+        self.assertEqual(len(out), len(instrs) - 1)
+
+    def test_kept_when_a_way_in_set_them_otherwise(self):
+        # The branch to `end` follows a call, whose flags aren't A's.
+        instrs = self._join(asm_ast.Call(name="g"))
+        self.assertEqual(_run(list(instrs)), instrs)
+
+    def test_kept_at_a_jump_table_target(self):
+        instrs = [
+            _lda(),
+            asm_ast.JumpTable(table="t", index="Y", base=0, targets=["end"]),
+            asm_ast.Label(name="end"), self._ORA0,
+            asm_ast.Branch(cond=asm_ast.NE(), target="L"), _ret(),
+            asm_ast.Label(name="L"), _ret(),
+        ]
+        self.assertEqual(_run(list(instrs)), instrs)
+
+
 class TestCarryOfAdd(unittest.TestCase):
     """`CMP m` after `LDA m; CLC; ADC x` sets C opposite to the add's
     carry, so a branch on C takes the opposite condition without it.

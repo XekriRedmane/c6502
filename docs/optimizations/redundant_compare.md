@@ -125,6 +125,35 @@ returns before the other rule runs, since a compare with 0 that one
 rule drops may be the one an identical compare after it relies on
 for C.
 
+An `ORA #$00` or `AND #$FF` goes under the same rule, without the
+condition on C, which neither changes. `round_trip_load_drop` leaves
+`ORA #$00` where a load of a byte just stored comes after an
+instruction that doesn't set N and Z from A.
+
+The walk back from the compare also passes over conditional branches
+and follows a label to every way in: each branch or jump to it, and
+the fall-through from the instruction before it. Each must have set
+N and Z from the register. In `je`, in Zork's `do_2op`
+(examples/zork/interpreter/decode.c), `equal = a == b;` ends
+
+```
+   BEQ   .cmp_true@3
+.thread@0:
+   LDA   #$00
+   BEQ   .cmp_end@4
+.cmp_true@3:
+   LDA   #$01
+.cmp_end@4:
+   STA   __local_do_2op__equal
+   ORA   #$00
+   BNE   .if_end@25
+```
+
+and both loads into A set the flags the `ORA #$00` tests, so it goes,
+for 6 bytes in the three such tests. A label the walk meets twice
+(a loop), a label a `JumpTable` or a label operand names, and the
+start of the function stop the walk, and the compare stays.
+
 ## A compare with the byte an add started from
 
 After `LDA m; CLC; ADC x`, the sum wraps below `m` exactly when the

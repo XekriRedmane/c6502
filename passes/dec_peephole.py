@@ -28,9 +28,11 @@ N=1 iff result has bit 7 set (input was either 0 → 0xFF, or in
 DEC's result conflates the borrow case with normal large-value
 results.
 
-Because of this, we DON'T extend the peephole to multi-byte. The
-multi-byte SBC chain stays as-is (it's still correct, just longer).
-For the 1-byte case the peephole is a pure win.
+Because of this, the multi-byte SBC chain stays as it is, except for
+the 2-byte form that `carry_inc` leaves, `LDA M0; SEC; SBC #1; STA M0;
+BCS L; DEC M1; L:`. Testing the low byte before decrementing it
+(`LDA M0; BNE L; DEC M1; L: DEC M0`) tells whether it borrows, when A
+and every flag are dead after (`_try_match_two_byte`).
 
 # Eligibility
 
@@ -52,7 +54,7 @@ which it composes with naturally.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at
+from passes.asm_liveness import a_dead_at, all_flags_dead_at
 
 
 def apply_dec_peephole(prog: asm_ast.Program) -> asm_ast.Program:
@@ -77,6 +79,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):
+        two = _try_match_two_byte(instrs, i)
+        if two is not None:
+            out.extend(two)
+            i += 7
+            continue
         match = _try_match_sub1(instrs, i)
         if match is None:
             out.append(instrs[i])
@@ -96,6 +103,91 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
+
+# Instructions that set N and Z from the value they leave in A.
+_SETS_NZ_FROM_A = (
+    asm_ast.Mov, asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    asm_ast.Xor, asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight, asm_ast.Pop,
+)
+
+
+def _load_can_test(instrs, i) -> bool:
+    """False when the low byte's load at `instrs[i]` follows a store of
+    A into the same byte, with only stores between, and the
+    instruction before those stores didn't set N and Z from A. The
+    `SBC` form then uses A without the load, which `round_trip_load`
+    drops, while the `BNE` form needs it to set the flags, as an `ORA
+    #$00` after a `JSR`. That made `dec_var`'s `var_get() - 1` a byte
+    longer. After an `AND` that set them, the load goes either way."""
+    m0 = instrs[i].src
+    k = i - 1
+    stored = False
+    while k >= 0:
+        ins = instrs[k]
+        if not (isinstance(ins, asm_ast.Mov) and isinstance(ins.src, asm_ast.Reg)
+                and not isinstance(ins.dst, asm_ast.Reg)):
+            break
+        if ins.src == _REG_A and _operands_equal(ins.dst, m0):
+            stored = True
+        k -= 1
+    if not stored:
+        return True
+    prev = instrs[k] if k >= 0 else None
+    return (isinstance(prev, _SETS_NZ_FROM_A)
+            and getattr(prev, "dst", None) == _REG_A)
+
+
+def _try_match_two_byte(instrs, i):
+    """`LDA M0; BNE L; DEC M1; L: DEC M0` for the 2-byte decrement in
+    place that `carry_inc` leaves, `LDA M0; SEC; SBC #1; STA M0; BCS
+    L; DEC M1; L:`, else None. The low byte borrows when it was 0, so
+    the high byte is decremented first, when the low one is 0, and
+    then the low one. That's 8 bytes for zero-page bytes where the
+    `SBC` form took 10. A, C, V, N, and Z must be dead after `L`,
+    since they come out different, and nothing else may branch to
+    `L`, where the low byte has already been decremented. Zork's
+    `push` decrements `Z_SP` twice this way."""
+    if i + 6 >= len(instrs):
+        return None
+    load, sec, sub, store, bcs, dec, label = instrs[i:i + 7]
+    if not (isinstance(load, asm_ast.Mov) and load.dst == _REG_A
+            and not load.is_volatile
+            and isinstance(sec, asm_ast.SetCarry)
+            and isinstance(sub, asm_ast.Sub) and sub.dst == _REG_A
+            and isinstance(sub.src, asm_ast.Imm) and sub.src.value == 1
+            and isinstance(store, asm_ast.Mov) and store.src == _REG_A
+            and not store.is_volatile
+            and _operands_equal(store.dst, load.src)
+            and _is_dec_eligible_operand(load.src)
+            and isinstance(bcs, asm_ast.Branch)
+            and isinstance(bcs.cond, asm_ast.CS)
+            and isinstance(dec, asm_ast.Dec)
+            and isinstance(dec.dst, (asm_ast.Data, asm_ast.ZP))
+            and isinstance(label, asm_ast.Label)
+            and label.name == bcs.target):
+        return None
+    if isinstance(load.src, asm_ast.Reg) or _operands_equal(dec.dst, load.src):
+        return None
+    refs = sum(
+        1 for x in instrs
+        if (isinstance(x, (asm_ast.Branch, asm_ast.Jump))
+            and x.target == label.name)
+        or (isinstance(x, asm_ast.JumpTable) and label.name in x.targets)
+    )
+    if refs != 1:
+        return None
+    if not (a_dead_at(instrs, i + 7) and all_flags_dead_at(instrs, i + 7)):
+        return None
+    if not _load_can_test(instrs, i):
+        return None
+    return [
+        load,
+        asm_ast.Branch(cond=asm_ast.NE(), target=label.name),
+        dec,
+        label,
+        asm_ast.Dec(dst=load.src),
+    ]
 
 
 def _try_match_sub1(

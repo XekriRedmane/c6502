@@ -397,12 +397,11 @@ please_insert_save_diskette:
    ROR
    ROR
    AND   #$C0
-   SEC
-   SBC   #$01
    STA   __local_please_insert_save_diskette__0
-   BCS   .carry_inc@0
+   BNE   .carry_inc@0
    DEC   __local_please_insert_save_diskette__1
 .carry_inc@0:
+   DEC   __local_please_insert_save_diskette__0
    JSR   dump_buffer_with_more
    LDX   __local_please_insert_save_diskette__1
    LDA   __local_please_insert_save_diskette__0

@@ -131,8 +131,10 @@ this directory:
   through such a run, since A, the operand, and the flags are all
   unchanged. That's the second of `if (k < e) ...; if (k == e) ...`,
   and the second compare of each byte `three_way_compare` writes.
-  Also a compare of a register with 0 right after the instruction
-  that set N and Z from it (stores may come between), when C is dead
+  Also a compare of a register with 0, or an `ORA #$00` / `AND #$FF`,
+  after the instruction that set N and Z from it (stores and
+  conditional branches may come between, and a label is followed to
+  every way in), when C is dead for the compare
   (`_drop_compares_with_zero`, in a sweep of its own), and `CMP m`
   after `LDA m; CLC; ADC x` (stores from A between), which sets C
   opposite to the add's carry: the compare goes and the `BCC` / `BCS`

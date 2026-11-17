@@ -61,5 +61,55 @@ class TestDecPeephole(unittest.TestCase):
         self.assertEqual(out, [asm_ast.Dec(dst=lo)] + tail)
 
 
+    def _two_byte(self, after):
+        lo = asm_ast.Data(name="sp", offset=0)
+        hi = asm_ast.Data(name="sp", offset=1)
+        return lo, hi, _sub1(lo) + [
+            asm_ast.Branch(cond=asm_ast.CS(), target=".carry_inc@0"),
+            asm_ast.Dec(dst=hi),
+            asm_ast.Label(name=".carry_inc@0"),
+            *after,
+        ]
+
+    def test_two_byte_decrement_tests_the_low_byte_first(self):
+        # `sp--` on a 2-byte pointer, as carry_inc leaves it.
+        load = asm_ast.Mov(src=asm_ast.Data(name="v", offset=0), dst=_A,
+                           is_volatile=False)
+        lo, hi, instrs = self._two_byte([load, asm_ast.Return()])
+        self.assertEqual(_run(instrs), [
+            asm_ast.Mov(src=lo, dst=_A, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".carry_inc@0"),
+            asm_ast.Dec(dst=hi),
+            asm_ast.Label(name=".carry_inc@0"),
+            asm_ast.Dec(dst=lo),
+            load,
+            asm_ast.Return(),
+        ])
+
+    def test_two_byte_decrement_kept_when_a_is_read(self):
+        # A holds the new low byte after the SBC form, and the old one
+        # after the DEC form.
+        _, _, instrs = self._two_byte([asm_ast.Return(save_a=True)])
+        self.assertEqual(_run(instrs), instrs)
+
+    def test_two_byte_decrement_kept_after_a_store_of_the_low_byte(self):
+        # `v = f() - 1`: A holds the low byte from the call, whose
+        # flags aren't A's, so the `BNE` form would need `ORA #$00`.
+        lo = asm_ast.Data(name="sp", offset=0)
+        store = asm_ast.Mov(src=_A, dst=lo, is_volatile=False)
+        _, _, instrs = self._two_byte([asm_ast.Return()])
+        instrs = [asm_ast.Call(name="f"), store] + instrs
+        self.assertEqual(_run(instrs), instrs)
+
+    def test_two_byte_decrement_after_a_store_of_a_flag_setting_value(self):
+        # `v = (x & 0xC0) - 1`: the AND set N and Z from A.
+        lo = asm_ast.Data(name="sp", offset=0)
+        mask = asm_ast.And(src=asm_ast.Imm(value=0xC0), dst=_A)
+        store = asm_ast.Mov(src=_A, dst=lo, is_volatile=False)
+        _, _, instrs = self._two_byte([asm_ast.Return()])
+        out = _run([mask, store] + instrs)
+        self.assertIn(asm_ast.Branch(cond=asm_ast.NE(), target=".carry_inc@0"),
+                      out)
+
 if __name__ == "__main__":
     unittest.main()

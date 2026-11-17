@@ -163,7 +163,7 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 454 |
-| `decode.c` | 1859 | 1824 |
+| `decode.c` | 1859 | 1814 |
 | `objects.c` | 788 | 932 |
 | `numbers.c` | 436 | 473 |
 | `input.c` | 1018 | 1081 |
@@ -171,9 +171,9 @@ file and the original code it translates:
 | `zstring.c` | 383 | 401 |
 | `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
-| `prompts.c` | 534 | 528 |
+| `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **6954** |
+| **Total** | **6643** | **6943** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -508,3 +508,10 @@ the smaller code saved.
   and a run of constant stores loads each value once
   ([constant_store_order.md](../../../docs/optimizations/constant_store_order.md)),
   9 bytes in `main` and `get_property_ptr`.
+- A 2-byte decrement in place tests the low byte and decrements the
+  high one before the low one, `LDA lo; BNE; DEC hi; DEC lo`
+  ([dec_peephole.md](../../../docs/optimizations/dec_peephole.md)),
+  and an `ORA #$00` goes when every way into the label before it set
+  N and Z from A
+  ([redundant_compare.md](../../../docs/optimizations/redundant_compare.md)),
+  11 bytes in `push`, `je`, and `please_insert_save_diskette`.

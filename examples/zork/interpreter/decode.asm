@@ -414,22 +414,18 @@ push:
    SUBROUTINE
 
    LDA   Z_SP
-   SEC
-   SBC   #$01
-   STA   Z_SP
-   BCS   .carry_inc@0
+   BNE   .carry_inc@0
    DEC   Z_SP+1
 .carry_inc@0:
+   DEC   Z_SP
    LDA   __zpabi_push__value_0
    LDY   #$00
    STA   (Z_SP),Y
    LDA   Z_SP
-   SEC
-   SBC   #$01
-   STA   Z_SP
-   BCS   .carry_inc@1
+   BNE   .carry_inc@1
    DEC   Z_SP+1
 .carry_inc@1:
+   DEC   Z_SP
    LDA   __zpabi_push__value_1
    LDY   #$00
    STA   (Z_SP),Y
@@ -1116,7 +1112,6 @@ do_2op:
    LDA   #$01
 .cmp_end@4:
    STA   __local_do_2op__equal
-   ORA   #$00
    BNE   .if_end@25
    LDA   __local_do_2op__0
    SEC
@@ -1136,7 +1131,6 @@ do_2op:
    LDA   #$01
 .cmp_end@7:
    STA   __local_do_2op__equal
-   ORA   #$00
    BNE   .if_end@28
    LDA   __local_do_2op__1
    SEC

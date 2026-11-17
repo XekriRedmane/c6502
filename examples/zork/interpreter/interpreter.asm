@@ -285,7 +285,7 @@ __main_size	EQU	$0147
 BUFF_AREA	EQU	$0200
 __tables_size	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
-__text_rest_size	EQU	$07C9
+__text_rest_size	EQU	$07C8
 __main_load	EQU	$0800
 __main_start	EQU	$0800
 restart	EQU	$0800
@@ -293,26 +293,26 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$1119
-__text_end	EQU	$1A60
-__text_load_end	EQU	$1A60
+__text_size	EQU	$110F
+__text_end	EQU	$1A56
+__text_load_end	EQU	$1A56
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
-__rodata_load	EQU	$33C9
-__rodata_start	EQU	$33C9
-__text_rest_end	EQU	$33C9
-__text_rest_load_end	EQU	$33C9
-__data_load	EQU	$34AB
-__data_start	EQU	$34AB
-__rodata_end	EQU	$34AB
-__rodata_load_end	EQU	$34AB
-__bss_load	EQU	$34F0
-__bss_start	EQU	$34F0
-__data_end	EQU	$34F0
-__data_load_end	EQU	$34F0
-__bss_end	EQU	$34F3
-__bss_load_end	EQU	$34F3
+__rodata_load	EQU	$33C8
+__rodata_start	EQU	$33C8
+__text_rest_end	EQU	$33C8
+__text_rest_load_end	EQU	$33C8
+__data_load	EQU	$34AA
+__data_start	EQU	$34AA
+__rodata_end	EQU	$34AA
+__rodata_load_end	EQU	$34AA
+__bss_load	EQU	$34EF
+__bss_start	EQU	$34EF
+__data_end	EQU	$34EF
+__data_load_end	EQU	$34EF
+__bss_end	EQU	$34F2
+__bss_load_end	EQU	$34F2
 __tables_load	EQU	$3500
 __tables_start	EQU	$3500
 __story	EQU	$3700
@@ -515,22 +515,18 @@ main:
 push:
    SUBROUTINE
    LDA   Z_SP
-   SEC
-   SBC   #$01
-   STA   Z_SP
-   BCS   .carry_inc@0
+   BNE   .carry_inc@0
    DEC   Z_SP+1
 .carry_inc@0:
+   DEC   Z_SP
    LDA   __local_attr_ptr_and_mask__mask_1
    LDY   #$00
    STA   (Z_SP),Y
    LDA   Z_SP
-   SEC
-   SBC   #$01
-   STA   Z_SP
-   BCS   .carry_inc@1
+   BNE   .carry_inc@1
    DEC   Z_SP+1
 .carry_inc@1:
+   DEC   Z_SP
    LDA   __local_attr_ptr_and_mask__n
    LDY   #$00
    STA   (Z_SP),Y
@@ -825,15 +821,15 @@ do_0op:
    BCS   .default@16
    ASL
    TAY
-   LDA   $0B6E,Y
+   LDA   $0B68,Y
    PHA
    LDA   .jtab@0,Y
    PHA
    RTS
 .jtab@0:
-   DC.B  $84, $0B, $8F, $0B, $86, $11, $98, $0B
-   DC.B  $AE, $0B, $5F, $32, $F5, $32, $24, $2C
-   DC.B  $A1, $0B, $74, $09, $2A, $2C, $9B, $12
+   DC.B  $7E, $0B, $89, $0B, $7C, $11, $92, $0B
+   DC.B  $A8, $0B, $5E, $32, $F4, $32, $24, $2C
+   DC.B  $9B, $0B, $6E, $09, $2A, $2C, $91, $12
 .case@4:
    LDA   #$01
    STA   __local_dec_var__0
@@ -866,16 +862,16 @@ do_1op:
 .lb_skip@0:
    ASL
    TAY
-   LDA   $0BC3,Y
+   LDA   $0BBD,Y
    PHA
    LDA   .jtab@1,Y
    PHA
    RTS
 .jtab@1:
-   DC.B  $E1, $0B, $FD, $14, $D2, $15, $DE, $15
-   DC.B  $01, $18, $26, $0B, $41, $0B, $F0, $0B
-   DC.B  $40, $2C, $80, $13, $FE, $0B, $03, $0C
-   DC.B  $0E, $0C, $1E, $0C, $2C, $0C, $38, $0C
+   DC.B  $DB, $0B, $F3, $14, $C8, $15, $D4, $15
+   DC.B  $F7, $17, $20, $0B, $3B, $0B, $EA, $0B
+   DC.B  $40, $2C, $76, $13, $F8, $0B, $FD, $0B
+   DC.B  $08, $0C, $18, $0C, $26, $0C, $32, $0C
 .case@18:
    LDA   OPERANDS+1
    ORA   OPERANDS
@@ -942,15 +938,15 @@ do_var:
 .lb_skip@2:
    ASL
    TAY
-   LDA   $0C5F,Y
+   LDA   $0C59,Y
    PHA
    LDA   .jtab@3,Y
    PHA
    RTS
 .jtab@3:
-   DC.B  $75, $0A, $71, $0C, $A2, $0C, $2E, $18
-   DC.B  $9A, $2F, $C3, $0C, $C8, $0C, $E5, $19
-   DC.B  $D3, $0C, $DE, $0C
+   DC.B  $6F, $0A, $6B, $0C, $9C, $0C, $24, $18
+   DC.B  $9A, $2F, $BD, $0C, $C2, $0C, $DB, $19
+   DC.B  $CD, $0C, $D8, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1197,19 +1193,19 @@ do_2op:
 .lb_skip@1:
    ASL
    TAY
-   LDA   $0E29,Y
+   LDA   $0E23,Y
    PHA
    LDA   .jtab@2,Y
    PHA
    RTS
 .jtab@2:
-   DC.B  $40, $2C, $59, $0E, $BE, $0E, $D2, $0E
-   DC.B  $E2, $0E, $F2, $0E, $F0, $15, $09, $0F
-   DC.B  $26, $0F, $35, $0F, $5C, $16, $71, $16
-   DC.B  $8B, $16, $44, $0F, $C3, $13, $51, $0F
-   DC.B  $6F, $0F, $E7, $16, $76, $17, $BE, $17
-   DC.B  $8B, $0F, $9B, $0F, $08, $19, $6D, $19
-   DC.B  $B8, $19
+   DC.B  $40, $2C, $53, $0E, $B4, $0E, $C8, $0E
+   DC.B  $D8, $0E, $E8, $0E, $E6, $15, $FF, $0E
+   DC.B  $1C, $0F, $2B, $0F, $52, $16, $67, $16
+   DC.B  $81, $16, $3A, $0F, $B9, $13, $47, $0F
+   DC.B  $65, $0F, $DD, $16, $6C, $17, $B4, $17
+   DC.B  $81, $0F, $91, $0F, $FE, $18, $63, $19
+   DC.B  $AE, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1231,7 +1227,6 @@ do_2op:
    LDA   #$01
 .cmp_end@4:
    STA   __local_do_2op__equal
-   ORA   #$00
    BNE   .if_end@25
    LDA   __local_do_2op__0
    SEC
@@ -1251,7 +1246,6 @@ do_2op:
    LDA   #$01
 .cmp_end@7:
    STA   __local_do_2op__equal
-   ORA   #$00
    BNE   .if_end@25
    LDA   __local_do_2op__1
    SEC
@@ -1809,7 +1803,7 @@ dump_buffer_with_more:
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #$17
+   LDA   #$16
    STA   __local_get_nonstack_var__1
    LDA   #$34
    STA   __local_get_nonstack_var__2
@@ -3072,7 +3066,7 @@ instr_restart:
 instr_quit:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$C9
+   LDA   #$C8
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
@@ -3084,7 +3078,7 @@ instr_quit:
 internal_error:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$DD
+   LDA   #$DC
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
@@ -3113,7 +3107,7 @@ print_status_line:
    JSR   dump_buffer_to_screen
    LDA   #$19
    STA   CH
-   LDA   #$F1
+   LDA   #$F0
    STA   __local_get_nonstack_var__1
    LDA   #$33
    STA   __local_get_nonstack_var__2
@@ -3782,7 +3776,7 @@ do_rwts_on_sector:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #$34
-   LDY   #$AB
+   LDY   #$AA
    JMP   RWTS
 write_next_sector:
    SUBROUTINE
@@ -3822,7 +3816,7 @@ get_prompted_number_from_user:
    ASL
    ASL
    STA   __local_attr_ptr_and_mask__attr
-   LDA   #$C0
+   LDA   #$BF
    CLC
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_next_code_byte__page
@@ -3836,14 +3830,14 @@ get_prompted_number_from_user:
    STA   CH
    LDA   #$3F
    STA   INVFLG
-   LDA   #$39
+   LDA   #$38
    STA   __local_get_nonstack_var__1
    LDA   #$34
    STA   __local_get_nonstack_var__2
    LDX   #$0A
    JSR   cout_string
    CLC
-   LDA   #$CF
+   LDA   #$CE
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_nonstack_var__1
    LDA   #$34
@@ -3871,7 +3865,7 @@ please_insert_save_diskette:
    JSR   home
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
-   LDA   #$1D
+   LDA   #$1C
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3919,7 +3913,7 @@ please_insert_save_diskette:
    JSR   buffer_char
 .loop@3_start:
    JSR   dump_buffer_with_more
-   LDA   #$43
+   LDA   #$42
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3940,12 +3934,11 @@ please_insert_save_diskette:
    ROR
    ROR
    AND   #$C0
-   SEC
-   SBC   #$01
    STA   __local_dec_var__0
-   BCS   .carry_inc@0
+   BNE   .carry_inc@0
    DEC   __local_get_next_code_word__1
 .carry_inc@0:
+   DEC   __local_dec_var__0
    JSR   dump_buffer_with_more
    LDX   __local_get_next_code_word__1
    LDA   __local_dec_var__0
@@ -3959,7 +3952,7 @@ please_reinsert_game_diskette:
    CMP   #$01
    BNE   .if_end@9
    JSR   dump_buffer_with_more
-   LDA   #$66
+   LDA   #$65
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3967,7 +3960,7 @@ please_reinsert_game_diskette:
    JSR   print_ascii_string
 .loop@4_start:
    JSR   dump_buffer_with_more
-   LDA   #$85
+   LDA   #$84
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -4186,9 +4179,9 @@ __zp_init:
    STA   sign_bit
    RTS
 
-; Disassembly of section .rodata at $33C9
+; Disassembly of section .rodata at $33C8
    SEG   rodata
-   ORG   $33C9
+   ORG   $33C8
 sEndOfSession:
    DC.B  $2D, $2D, $20, $45, $4E, $44, $20, $4F
    DC.B  $46, $20, $53, $45, $53, $53, $49, $4F
@@ -4233,11 +4226,11 @@ sPressReturnToContinue:
    DC.B  $4F, $20, $43, $4F, $4E, $54, $49, $4E
    DC.B  $55, $45, $20, $2D, $2D, $2D
 
-; Disassembly of section .data at $34AB
+; Disassembly of section .data at $34AA
    SEG   data
-   ORG   $34AB
+   ORG   $34AA
 iob:
-   DC.B  $01, $60, $01, $00, $00, $00, $BC, $34
+   DC.B  $01, $60, $01, $00, $00, $00, $BB, $34
    DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
 dct:
@@ -4250,9 +4243,9 @@ prompts:
    DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E
    DC.B  $20, $28, $30, $2D, $37, $29, $3A, $30
 
-; Disassembly of section .bss at $34F0
+; Disassembly of section .bss at $34EF
    SEG   bss
-   ORG   $34F0
+   ORG   $34EF
 attr_mask:
    DC.B  $00, $00
 printer_card_initialized_flag:

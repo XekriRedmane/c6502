@@ -60,6 +60,49 @@ and a return. Loads, stores, transfers, logical operations, `INC`,
 `DEC`, pushes and pulls, and `BIT` leave C alone, and the walk passes
 over them.
 
+## A 2-byte decrement
+
+The low byte borrows when it was 0, which a test before the `DEC`
+tells. So the 2-byte decrement in place that [carry INC](carry_inc.md)
+leaves,
+
+```
+   LDA   Z_SP
+   SEC
+   SBC   #$01
+   STA   Z_SP
+   BCS   .carry_inc@0
+   DEC   Z_SP+1
+.carry_inc@0:
+```
+
+becomes
+
+```
+   LDA   Z_SP
+   BNE   .carry_inc@0
+   DEC   Z_SP+1
+.carry_inc@0:
+   DEC   Z_SP
+```
+
+8 bytes for zero-page bytes where it took 10. A now holds the old low
+byte, C is unchanged, and N and Z come from the low byte's `DEC`, so A
+and every flag must be dead after the label, and nothing else may
+branch to the label, which the old code reached with the low byte
+already decremented. Zork's `push` (examples/zork/interpreter/decode.c)
+decrements its stack pointer twice this way.
+
+When the low byte's load follows a store of A into the same byte,
+with only stores between, the `SBC` form needs no load at all, while
+the `BNE` form needs one to set the flags. The rewrite is made then
+only when the instruction before those stores set N and Z from A, so
+the load can go. In `dec_var`, `var_get(var) - 1` leaves the low byte
+in A after a `JSR`, and the rewrite would have added an `ORA #$00`,
+one byte more. In `please_insert_save_diskette` (`prompts.c`) it
+follows an `AND`, and `SEC; SBC #1; BCS` becomes `BNE` and a second
+`DEC`, a byte less, since the store stays in both forms.
+
 ## What it leaves alone
 
 - The low byte of a multi-byte subtract. If the next three atoms are
@@ -68,9 +111,10 @@ over them.
   After `DEC`, no single flag tells whether the byte borrowed. Z is
   set when the byte went from 1 to 0, and N is set both when it went
   from 0 to `$FF` and when it went from `$81` to `$80`. So there's
-  no multi-byte form. For `ticks -= 1` on a `uint16_t`, this pass
-  reports 0 changes, and [carry INC](carry_inc.md) rewrites the top
-  byte to `BCS skip; DEC ticks+1`.
+  no multi-byte form of the chain itself. For `ticks -= 1` on a
+  `uint16_t`, [carry INC](carry_inc.md) rewrites the top byte to `BCS
+  skip; DEC ticks+1`, and the next section covers what this pass then
+  does with it.
 - A byte on the soft stack or behind a pointer, because `DEC` has no
   `(zp),Y` mode. In the unoptimized pipeline every local and
   temporary is on the soft stack, and `lives -= 1` on a static goes

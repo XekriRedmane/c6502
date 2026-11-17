@@ -411,7 +411,6 @@ active_neg_step:
    STA   companion_pos_lo,X
    LDA   __local_active_neg_step__1
    STA   companion_pos_hi,X
-   ORA   #$00
    BNE   .if_end@32
    LDA   __local_active_neg_step__0
    CMP   #$3E

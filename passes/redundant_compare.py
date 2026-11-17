@@ -123,16 +123,45 @@ _SETS_NZ_FROM_DST = (
 )
 
 
-def _flags_from(instrs, c: int, reg) -> bool:
+def _flags_from(instrs, c: int, reg, refs=None, seen=None) -> bool:
     """True when N and Z at `instrs[c]` were set from `reg`'s current
     value by the instruction that last wrote it, with only stores in
-    between."""
+    between.
+
+    With `refs` (`_label_refs`), the walk also passes over conditional
+    branches, which leave registers and flags alone, and follows a
+    label to every way in: each branch or jump to it, and the
+    fall-through from the instruction before it. Every one of them
+    must have set the flags from `reg`. A label it meets twice, a
+    label a `JumpTable` or a label operand names, and the function's
+    start all count as not. In `je`, `LDA #$00; BEQ end` and `LDA
+    #$01` both reach `end: STA equal`, so the `ORA #$00` after the
+    store tests what the loads set."""
     from passes.asm_liveness import sets_up_y
     for k in range(c - 1, -1, -1):
         ins = instrs[k]
         dst = getattr(ins, "dst", None)
         if (isinstance(ins, asm_ast.Mov) and not isinstance(dst, asm_ast.Reg)
                 and isinstance(ins.src, asm_ast.Reg) and not sets_up_y(ins)):
+            continue
+        if refs is not None and isinstance(ins, asm_ast.Branch):
+            continue
+        if refs is not None and isinstance(ins, asm_ast.Label):
+            if seen is None:
+                seen = set()
+            if ins.name in seen or ins.name in refs.get(_TABLE_TARGETS, ()):
+                return False
+            seen.add(ins.name)
+            preds = refs.get(ins.name, [])
+            if any(p < 0 for p in preds):
+                return False
+            for p in preds:
+                if not _flags_from(instrs, p, reg, refs, seen):
+                    return False
+            if k == 0:
+                return False
+            if isinstance(instrs[k - 1], (*_NO_FALL_THROUGH, asm_ast.JumpTable)):
+                return bool(preds)
             continue
         if not isinstance(ins, _SETS_NZ_FROM_DST) or dst != reg:
             return False
@@ -147,17 +176,36 @@ def _flags_from(instrs, c: int, reg) -> bool:
 
 
 def _drop_compares_with_zero(instrs) -> set[int]:
+    """The indexes of the `CMP #$00` (or `CPX` / `CPY`) with C dead
+    after, and of the `ORA #$00` and `AND #$FF`, whose N and Z the
+    instruction that set the register already set."""
     from passes.asm_liveness import c_dead_at
+    refs = _label_refs(instrs)
+    refs[_TABLE_TARGETS] = {
+        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
+        for t in ins.targets
+    }
     drop: set[int] = set()
     for c, ins in enumerate(instrs):
         if (isinstance(ins, asm_ast.Compare)
                 and isinstance(ins.left, asm_ast.Reg)
                 and isinstance(ins.right, asm_ast.Imm)
                 and ins.right.value & 0xFF == 0
-                and _flags_from(instrs, c, ins.left)
+                and _flags_from(instrs, c, ins.left, refs)
                 and c_dead_at(instrs, c + 1)):
             drop.add(c)
+        elif (isinstance(ins, (asm_ast.Or, asm_ast.And))
+                and _is_a(ins.dst) and isinstance(ins.src, asm_ast.Imm)
+                and ins.src.value & 0xFF == (
+                    0 if isinstance(ins, asm_ast.Or) else 0xFF)
+                and _flags_from(instrs, c, ins.dst, refs)):
+            drop.add(c)
     return drop
+
+
+# The key in `_label_refs`' map under which `_drop_compares_with_zero`
+# keeps the labels a `JumpTable` names. It isn't a label's name.
+_TABLE_TARGETS = " jump table targets"
 
 
 def _carry_of_add(instrs) -> dict[int, asm_ast.Type_instruction | None]:

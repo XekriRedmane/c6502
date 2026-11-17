@@ -683,14 +683,15 @@ Distinguishing features:
   `slots.inc` for cross-TU allocation.
 - **Recursion that saves on the hardware stack.** A recursive
   function normally saves its callee-saved zero-page bytes on every
-  call. `#pragma c6502 call save(hardware_stack)` before a statement
+  call. `[[c6502::save_hardware_stack]]` before a statement
   marks the calls in it that recurse, and when every recursive call
   on a cycle is marked, the cycle's functions get private pools and
   save what's live across each marked call with `LDA; PHA` / `PLA;
   STA` instead (`passes/recursion_saves.py`). The compiler can't bound
-  the recursion's depth, so the pragma is the programmer's promise
+  the recursion's depth, so the attribute is the programmer's promise
   that the hardware stack has room; see
-  [docs/pragmas.md](docs/pragmas.md) before using it.
+  [docs/attributes.md](docs/attributes.md#save_hardware_stack) before
+  using it.
 
 `docs/optimization.md` is the from-scratch tour with worked
 examples. `tests/test_sim_asm_optimized.py` runs chapters
@@ -1441,10 +1442,10 @@ its address can't be taken, since external code can't follow the
 rest of the convention. Each of these is a compile error.
 
 [docs/attributes.md](docs/attributes.md) explains every attribute and
-walks through declaring and calling Apple II Monitor routines.
-[docs/pragmas.md](docs/pragmas.md) explains the two `#pragma c6502`
-directives, loop unrolling and saving across a recursive call on the
-hardware stack.
+walks through declaring and calling Apple II Monitor routines. Its
+statement attributes go before a statement: `[[c6502::unroll]]` and
+`[[c6502::keep]]` before a `for` loop, and
+`[[c6502::save_hardware_stack]]` before a call that recurses.
 
 ### Returning a bool in the carry flag
 

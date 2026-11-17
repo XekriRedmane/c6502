@@ -420,7 +420,7 @@ def _const_int_or_none(exp: c99_ast.Type_exp | None) -> int | None:
     return None
 
 
-# Part of the label names of a loop under `#pragma c6502 loop keep`.
+# Part of the label names of a loop marked `[[c6502::keep]]`.
 KEEP_LOOP_MARK = "_keep"
 
 
@@ -1528,8 +1528,8 @@ class Translator:
                 top_levels.extend(self._emit_static_variables())
                 _erase_bool(decls, self._symbols, self._types)
                 program = tac_ast.Program(top_level=top_levels)
-                from passes.recursion_saves import check_pragmas
-                check_pragmas(program)
+                from passes.recursion_saves import check_marked_calls
+                check_marked_calls(program)
                 return program
         raise TypeError(f"unexpected program: {prog!r}")
 
@@ -1991,8 +1991,8 @@ class Translator:
                 #   <post insns>              (omitted if post is None)
                 #   Jump(<start>)
                 #   Label(<break>)
-                if stmt.unroll_annotation == "keep":
-                    # `#pragma c6502 loop keep`: the labels carry
+                if stmt.loop_attribute == "keep":
+                    # `[[c6502::keep]]`: the labels carry
                     # KEEP_LOOP_MARK, which dead-loop elimination reads.
                     label = f"{label}{KEEP_LOOP_MARK}"
                 start = _start_label(label)
@@ -2215,7 +2215,7 @@ class Translator:
         if hw and ptr is not None:
             from passes.recursion_saves import RecursionSaveError
             raise RecursionSaveError(
-                "`#pragma c6502 call save(hardware_stack)` can't "
+                "`[[c6502::save_hardware_stack]]` can't "
                 "apply to a call through a function pointer"
             )
         # `f(arg1, arg2, ...)` lowers to: evaluate each arg
@@ -2687,7 +2687,7 @@ class Translator:
                 if exp.hw_stack_save:
                     from passes.recursion_saves import RecursionSaveError
                     raise RecursionSaveError(
-                        "`#pragma c6502 call save(hardware_stack)` can't "
+                        "`[[c6502::save_hardware_stack]]` can't "
                         "apply to a call through a function pointer"
                     )
                 ptr = self.translate_exp(callee, instrs)

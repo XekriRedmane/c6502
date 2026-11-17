@@ -427,14 +427,13 @@ A recursive function's locals get zero-page bytes of their own under
 void print_zstring(void) {
     ...
             load_packed_address();
-#pragma c6502 call save(hardware_stack)
-            print_zstring();
+            [[c6502::save_hardware_stack]] print_zstring();
     ...
 }
 ```
 
-The pragma applies to the calls in the statement or declaration
-right after it, each of which has to be a direct call that can
+The attribute applies to the calls in the statement or declaration
+it comes before, each of which has to be a direct call that can
 recurse. Before such
 a call, the caller pushes each local that's live across it with `LDA;
 PHA`, and after the call it pulls them back with `PLA; STA`. Because
@@ -445,8 +444,10 @@ copy per call.
 
 It applies only when every call from one function on the cycle to
 another is marked. The compiler can't tell how deep the recursion
-goes, so the pragma is your promise that the hardware stack has room.
-Read the cautions in [pragmas.md](pragmas.md) before using it, and see
+goes, so the attribute is your promise that the hardware stack has
+room. Read the cautions in
+[attributes.md](attributes.md#save_hardware_stack) before using it,
+and see
 [saves around a recursive call](optimizations/recursion_saves.md) for
 the details.
 
@@ -681,7 +682,7 @@ keeps a 2-byte return address on the 256-byte hardware stack, and a
 soft-stack epilogue briefly pushes up to 2 more bytes. That caps
 recursion at about 120 calls deep, and fewer when other code also
 uses the hardware stack, however much room the soft stack has. A call
-under `#pragma c6502 call save(hardware_stack)` also keeps the bytes
+marked `[[c6502::save_hardware_stack]]` also keeps the bytes
 it saved there until it returns, so a call that saves 7 bytes uses 9
 per level.
 

@@ -2,14 +2,14 @@
 
 `unroll_program` in
 [passes/optimization_ast/unroll.py](../../passes/optimization_ast/unroll.py)
-replaces each `for` loop marked with `#pragma c6502 loop
-unroll(enable)` by one copy of its body per iteration. It runs once,
-on the C AST, after parsing and before identifier resolution. It runs
-only under `-O`, and without that flag the pragma has no
+replaces each `for` loop marked with the statement attribute
+`[[c6502::unroll]]` by one copy of its body per iteration. It runs
+once, on the C AST, after parsing and before identifier resolution.
+It runs only under `-O`, and without that flag the attribute has no
 effect and the loop compiles as written.
 
-The preprocessor turns the pragma into a token that the parser
-attaches to the next `for` statement. The pass works out the values
+The parser records the attribute in the `loop_attribute` field of the
+`for` statement after it. The pass works out the values
 the induction variable takes by stepping it from its initial value
 until the condition fails, then emits the body once per value, each
 copy in its own block, with every read of the induction variable
@@ -29,15 +29,14 @@ with the iteration count.
 ```c
 uint8_t row[4];
 void fill(uint8_t v) {
-#pragma c6502 loop unroll(enable)
-    for (uint8_t i = 0; i < 4; i++)
+    [[c6502::unroll]] for (uint8_t i = 0; i < 4; i++)
         row[i] = v + i;
 }
 ```
 
 The pass changes the AST, which has no printed form in the pass
 tracing script, so the listings below are the output of `compile.py
---tac -O` on the same source without the pragma and with it,
+--tac -O` on the same source without the attribute and with it,
 printed one instruction per line.
 
 ### Before
@@ -115,14 +114,12 @@ unmarked statement are found and unrolled too.
 
 ## What it leaves alone
 
-- Every loop without the pragma, and every loop when `-O` is
+- Every loop without the attribute, and every loop when `-O` is
   off.
-- A loop marked `#pragma c6502 loop unroll(disable)`, which the
-  preprocessor drops as a no-op.
-- `while` and `do` loops, which the pragma doesn't attach to.
+- `while` and `do` loops. The attribute is an error before them.
 
 A marked loop that doesn't match the shape above is a compile
-error, because the pragma states that the loop is to be unrolled. A bound held in a variable, as in `i < n`,
+error, because the attribute states that the loop is to be unrolled. A bound held in a variable, as in `i < n`,
 fails with "condition's right operand must be an integer constant".
 
 A marked loop that never ends is a compile error too. The loop's

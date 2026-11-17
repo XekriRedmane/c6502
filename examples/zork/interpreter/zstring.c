@@ -23,8 +23,8 @@
       values where the original uses SCRATCH2.
     - print_zstring keeps the z-character in a local where the
       original uses SCRATCH3, and saves the decoder's state around the
-      abbreviation's call with `#pragma c6502 call save(hardware_stack)`,
-      which pushes it with PHA as the original does.
+      abbreviation's call with `[[c6502::save_hardware_stack]]`, which
+      pushes it with PHA as the original does.
 
     Zork I (r15), output/main.asm lines 908-921, 2598-2809:
 
@@ -269,8 +269,7 @@ void print_zstring(void) {
             uint24_t pc = Z_PC2;
             load_packed_address(addr);
             /* Abbreviations don't nest, so this goes two deep. */
-#pragma c6502 call save(hardware_stack)
-            print_zstring();
+            [[c6502::save_hardware_stack]] print_zstring();
             Z_PC2 = pc;
             ZCODE_PAGE_VALID2 = 0;
             ZCHARS = zchars;

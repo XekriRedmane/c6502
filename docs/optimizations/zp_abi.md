@@ -204,8 +204,9 @@ these are true.
   [private local pool](zp_local_pools.md). A soft-stack callee
   without a pool uses `$80`-`$BF` as scratch, which is where the
   caller's own parameters are. One with a pool, such as a function
-  whose address is taken or a recursive one under `#pragma c6502
-  call save(hardware_stack)`, writes only its pool, which is kept
+  whose address is taken or a recursive one whose recursive calls
+  are marked `[[c6502::save_hardware_stack]]`, writes only its pool,
+  which is kept
   apart from the caller's bytes. `_demote_soft_stack_callers`
   applies this last and repeats until no function changes, since
   demoting one function can disqualify its callers. The parameter
@@ -243,7 +244,7 @@ still live.
   the result isn't one of the declared parameters, so the slot
   layout has no byte for it.
 - A caller of a soft-stack function without a private pool, such as
-  a recursive function without the pragma, a function that calls
+  a recursive function without the attribute, a function that calls
   through a pointer, or a routine with a fixed address that's
   declared without `zp_abi`. With
   `[[c6502::address(0xFDED)]] void cout(unsigned char c);`, a

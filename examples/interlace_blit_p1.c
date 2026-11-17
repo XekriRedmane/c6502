@@ -38,8 +38,7 @@ void interlace_blit_p1(uint8_t* zp_blit_src, uint8_t zp_blit_x_start, uint8_t zp
             * bytes.  Y wraps mod 256, matching (zp),Y semantics. */
             y += (uint8_t)35;
         } else {
-            #pragma c6502 loop unroll(enable)
-            for (uint8_t k = 0; k < 35; k++) {
+            [[c6502::unroll]] for (uint8_t k = 0; k < 35; k++) {
                 uint8_t b = zp_blit_src[y];
                 HIRES_P1_ROW[k][0][x] = b;   /* band 0 */
                 HIRES_P1_ROW[k][1][x] = b;   /* band 1 */

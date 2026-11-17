@@ -12,7 +12,7 @@ AST-level optimizations land.
 ## `unroll_program`
 
 Runs after parsing and before identifier resolution. Every for-loop
-carrying `#pragma c6502 loop unroll(enable)` (with the canonical
+marked `[[c6502::unroll]]` (with the canonical
 `init=const; cond=var<const; step=var=var+const` shape and a compile-
 time-known iteration count) is fully unrolled in place. The trip
 count follows C. The induction variable wraps at its own width and

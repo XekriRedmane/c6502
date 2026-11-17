@@ -1,7 +1,7 @@
-"""Loop unrolling for `#pragma c6502 loop unroll(enable)`.
+"""Loop unrolling for `[[c6502::unroll]]`.
 
-Runs before identifier_resolution under `-O --unroll`.
-Replaces every for-loop carrying `unroll_annotation == "unroll"`
+Runs before identifier_resolution under `-O`.
+Replaces every for-loop carrying `loop_attribute == "unroll"`
 with a Compound of N back-to-back copies of the body, each in
 its own scope, with the induction variable substituted by the
 corresponding integer constant in each clone.
@@ -28,10 +28,8 @@ lookup table whose key is a substituted induction variable from
 an enclosing unrolled loop:
 
     static const uint8_t COUNTS[7] = {7, 1, 7, 1, 7, 1, 7};
-    #pragma c6502 loop unroll(enable)
-    for (uint8_t b = 0; b < 7; b++)
-        #pragma c6502 loop unroll(enable)
-        for (uint8_t i = 0; i < COUNTS[b]; i++)  // bound folds
+    [[c6502::unroll]] for (uint8_t b = 0; b < 7; b++)
+        [[c6502::unroll]] for (uint8_t i = 0; i < COUNTS[b]; i++)  // bound folds
             ...
 
 Iteration count is capped at MAX_ITERATIONS.
@@ -63,8 +61,8 @@ from passes.type_checking import (
 
 
 class UnrollError(Exception):
-    """A `#pragma c6502 loop unroll(enable)`-annotated loop did not
-    match the canonical shape the unroller can handle."""
+    """A loop marked `[[c6502::unroll]]` did not match the canonical
+    shape the unroller can handle."""
 
 
 MAX_ITERATIONS = 256
@@ -296,7 +294,7 @@ def _unroll_statement(stmt: c99_ast.Type_statement) -> c99_ast.Type_statement:
     """Rewrite annotated for-loops; recurse through every other
     statement form so nested annotated loops are also unrolled."""
     match stmt:
-        case c99_ast.ForStmt(unroll_annotation="unroll"):
+        case c99_ast.ForStmt(loop_attribute="unroll"):
             return _unroll_for(stmt)
         case c99_ast.ForStmt():
             return c99_ast.ForStmt(
@@ -305,7 +303,7 @@ def _unroll_statement(stmt: c99_ast.Type_statement) -> c99_ast.Type_statement:
                 post_clause=stmt.post_clause,
                 body=_unroll_statement(stmt.body),
                 label=stmt.label,
-                unroll_annotation=stmt.unroll_annotation,
+                loop_attribute=stmt.loop_attribute,
             )
         case c99_ast.IfStmt(condition=c, then_clause=t, else_clause=e):
             return c99_ast.IfStmt(

@@ -170,8 +170,8 @@ module TAC {
         | JumpIfMasked(val val, int mask, bool jump_when_nonzero, identifier target)
         | Label(identifier name)
         -- `hw_stack_save` marks a call that can recurse, made from a
-        -- statement or declaration under `#pragma c6502 call save(
-        -- hardware_stack)`.
+        -- statement or declaration that
+        -- `[[c6502::save_hardware_stack]]` comes before.
         -- The caller saves the values live across it on the hardware
         -- stack (passes/recursion_saves.py).
         -- `noreturn` marks a call to a function declared

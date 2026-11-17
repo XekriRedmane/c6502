@@ -8,8 +8,8 @@ caller-saved / callee-saved split instead, and saves every callee-saved
 byte it uses in its prologue and restores it in its epilogue, on every
 call, recursive or not.
 
-`#pragma c6502 call save(hardware_stack)` before a statement or a
-declaration marks the calls in it (`tac_ast.FunctionCall.hw_stack_save`). It tells the
+`[[c6502::save_hardware_stack]]` before a statement or a declaration
+marks the calls in it (`tac_ast.FunctionCall.hw_stack_save`). It tells the
 compiler that the caller may save what it needs across those calls on
 the hardware stack. The compiler can't bound how deep the recursion
 goes, so the user vouches for the stack's 256 bytes.
@@ -43,11 +43,11 @@ from passes.type_checking import StaticAttr, _is_volatile_qualified
 
 
 class RecursionSaveError(Exception):
-    """`#pragma c6502 call save(hardware_stack)` on a statement it
-    can't apply to."""
+    """`[[c6502::save_hardware_stack]]` on a statement it can't apply
+    to."""
 
 
-_PRAGMA = "`#pragma c6502 call save(hardware_stack)`"
+_ATTRIBUTE = "`[[c6502::save_hardware_stack]]`"
 
 
 def call_graph(prog: tac_ast.Program) -> dict[str, set[str]]:
@@ -109,7 +109,7 @@ def cycles(graph: dict[str, set[str]]) -> dict[str, frozenset[str]]:
     return out
 
 
-def check_pragmas(prog: tac_ast.Program) -> None:
+def check_marked_calls(prog: tac_ast.Program) -> None:
     """Raises `RecursionSaveError` for a marked call that can't
     recurse: one to a function that can't call the caller back, or one
     that never returns."""
@@ -124,7 +124,7 @@ def check_pragmas(prog: tac_ast.Program) -> None:
                 and abandons_caller(instr)
             ):
                 raise RecursionSaveError(
-                    f"{_PRAGMA} is on a call to '{instr.name}' in "
+                    f"{_ATTRIBUTE} is on a call to '{instr.name}' in "
                     f"'{tl.name}', but '{instr.name}' is declared "
                     f"`[[noreturn]]` and takes no arguments, so nothing "
                     f"of '{tl.name}' is needed after the call and "
@@ -136,7 +136,7 @@ def check_pragmas(prog: tac_ast.Program) -> None:
                 and instr.name not in cyc.get(tl.name, ())
             ):
                 raise RecursionSaveError(
-                    f"{_PRAGMA} is on a call to '{instr.name}' in "
+                    f"{_ATTRIBUTE} is on a call to '{instr.name}' in "
                     f"'{tl.name}', but '{instr.name}' can't call "
                     f"'{tl.name}' again, so the call can't recurse"
                 )

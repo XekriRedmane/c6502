@@ -17,7 +17,7 @@ The matched `.c` / `.asm` pairs serve two purposes:
 2. **Hand-readable reference** — the `.asm` files are short enough
    (typically <500 lines) that a reader can read them end-to-end and
    see what `-O` produces on representative game code
-   (loop unrolling for `#pragma c6502 loop unroll(enable)` regions
+   (loop unrolling for `[[c6502::unroll]]` loops
    is folded into `-O` — there is no separate `--unroll`
    flag).
 

@@ -1,4 +1,4 @@
-"""Tests for `#pragma c6502 call save(hardware_stack)`: a recursive
+"""Tests for `[[c6502::save_hardware_stack]]`: a recursive
 function whose recursive calls are marked gets a private zero-page
 pool, and saves what's live across each marked call on the hardware
 stack (`passes/recursion_saves.py`)."""
@@ -13,11 +13,13 @@ from parser import ParserError, parse
 from passes.abi_selection import SoftStackLayout
 from passes.recursion_saves import RecursionSaveError, hw_stack_cycles
 from passes.zp_local_allocation import allocate_function_locals
-from preprocessor import preprocess
+from preprocessor import PreprocessorError, preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
-_PRAGMA = "#pragma c6502 call save(hardware_stack)\n"
+# The attribute, before a statement or declaration. In the programs
+# below, `SAVE ` stands where it goes.
+_SAVE = "[[c6502::save_hardware_stack]] "
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -63,7 +65,7 @@ void descend(void) {
     if (remaining != 0) {
         remaining = remaining - 1;
         level = here + 1;
-PRAGMA        descend();
+        SAVE descend();
         level = here;
     }
 }
@@ -78,16 +80,20 @@ int main(void) {
 
 class TestSyntax(unittest.TestCase):
 
-    def test_preprocessor_sentinel(self) -> None:
-        out = preprocess("void f(void) {\n" + _PRAGMA + "f();\n}\n")
-        self.assertIn("__c6502_pragma_hw_stack_save__", out)
+    def test_old_pragma_names_the_attribute(self) -> None:
+        with self.assertRaises(PreprocessorError) as cm:
+            preprocess(
+                "void f(void) {\n#pragma c6502 call save(hardware_stack)\n"
+                "f();\n}\n"
+            )
+        self.assertIn("[[c6502::save_hardware_stack]]", str(cm.exception))
 
     def test_marks_the_calls_after_it(self) -> None:
         for stmt in ("x = f(1) + g();", "return f(1) + g();",
                      "int x = f(1) + g();"):
             with self.subTest(stmt):
                 src = ("int f(int); int g(void);\nint h(void) {\n"
-                       "int x = 0;\n" + _PRAGMA + stmt
+                       "int x = 0;\n" + _SAVE + stmt
                        + "\nreturn f(2);\n}\n")
                 calls = _calls(parse(preprocess(src)))
                 marked = [(c.name, c.hw_stack_save) for c in calls]
@@ -97,21 +103,33 @@ class TestSyntax(unittest.TestCase):
 
     def test_rejected_positions(self) -> None:
         for stmt, needle in (
-            ("if (f(1)) x = 1;", "must come before an expression"),
-            ("{ f(1); }", "must come before an expression"),
-            ("x = 1;", "calls a function"),
-            ("int y = 2;", "calls a function"),
+            ("SAVE if (f(1)) x = 1;", "goes before an expression"),
+            ("SAVE { f(1); }", "goes before an expression"),
+            ("SAVE while (f(1)) x = 1;", "goes before an expression"),
+            ("SAVE for (;;) f(1);", "goes before an expression"),
+            ("SAVE x = 1;", "calls a function"),
+            ("SAVE int y = 2;", "calls a function"),
+            ("SAVE int g(int);", "declares a function"),
+            ("SAVE typedef int T;", "a typedef declaration has none"),
+            ("int y [[c6502::save_hardware_stack]] = f(1);",
+             "goes at the front of the declaration"),
+            ("for (SAVE int i = f(1); i;) x = 1;", "first clause"),
+            ("SAVE L: f(1);", "Put it after the label"),
+            ("SAVE SAVE x = f(1);", "given twice"),
+            ("SAVE SAVE int y = f(1);", "given twice"),
+            ("[[c6502::save_hardware_stack(1)]] x = f(1);",
+             "doesn't take an argument"),
         ):
             with self.subTest(stmt):
                 src = ("int f(int);\nvoid h(void) {\nint x;\n"
-                       + _PRAGMA + stmt + "\n}\n")
+                       + stmt.replace("SAVE ", _SAVE) + "\n}\n")
                 with self.assertRaises(ParserError) as cm:
                     parse(preprocess(src))
                 self.assertIn(needle, str(cm.exception))
 
     def test_call_that_cant_recurse(self) -> None:
         src = ("int g(int x) { return x; }\nint f(int x) {\n"
-               + _PRAGMA + "return g(x);\n}\n")
+               + _SAVE + "return g(x);\n}\n")
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 with self.assertRaises(RecursionSaveError) as cm:
@@ -120,7 +138,7 @@ class TestSyntax(unittest.TestCase):
 
     def test_call_through_a_pointer(self) -> None:
         src = ("int f(int x) {\nint (*p)(int) = f;\nif (x == 0) return 0;\n"
-               + _PRAGMA + "return p(x - 1);\n}\n")
+               + _SAVE + "return p(x - 1);\n}\n")
         with self.assertRaises(RecursionSaveError) as cm:
             _codegen(src)
         self.assertIn("function pointer", str(cm.exception))
@@ -184,7 +202,7 @@ class TestCodegen(unittest.TestCase):
 
     def test_saves_around_the_call(self) -> None:
         body = _function(
-            _codegen(_DESCEND.replace("PRAGMA", _PRAGMA)), "descend",
+            _codegen(_DESCEND.replace("SAVE ", _SAVE)), "descend",
         )
         self.assertNotIn("prologue", body)
         self.assertIn(
@@ -193,9 +211,9 @@ class TestCodegen(unittest.TestCase):
             body,
         )
 
-    def test_without_the_pragma(self) -> None:
+    def test_without_the_attribute(self) -> None:
         body = _function(
-            _codegen(_DESCEND.replace("PRAGMA", "")), "descend",
+            _codegen(_DESCEND.replace("SAVE ", "")), "descend",
         )
         self.assertIn("callee-saved", body)
         self.assertNotIn("PHA", body)
@@ -209,13 +227,13 @@ void f(void) {
         unsigned char sa = a;
         unsigned char sb = b;
         load();
-PRAGMA        f();
+        SAVE f();
         b = sb;
         a = sa;
     }
 }
 int main(void) { f(); return depth; }
-""".replace("PRAGMA", _PRAGMA)
+""".replace("SAVE ", _SAVE)
         body = _function(_codegen(src), "f")
         self.assertIn(
             "   LDA   a\n   PHA\n   LDA   b\n   PHA\n   JSR   load\n"
@@ -226,7 +244,7 @@ int main(void) { f(); return depth; }
     def test_caller_keeps_zp_abi(self) -> None:
         # rec has a pool, so f0 can call it and read its own
         # parameter slot afterwards.
-        src = _PROGRAMS["zp_abi caller"].replace("PRAGMA", _PRAGMA)
+        src = _PROGRAMS["zp_abi caller"].replace("SAVE ", _SAVE)
         body = _function(_codegen(src), "f0")
         self.assertNotIn("prologue", body)
         self.assertIn("JSR   rec", body)
@@ -238,7 +256,7 @@ int pong(int n);
 int ping(int n) {
     int a = n * 2;
     if (n <= 0) return 0;
-PRAGMA    int r = pong(n - 1);
+    SAVE int r = pong(n - 1);
     return r + a;
 }
 int pong(int n) {
@@ -248,7 +266,7 @@ int pong(int n) {
     return r * 2 + b;
 }
 int main(void) { return ping(5); }
-""".replace("PRAGMA", _PRAGMA)
+""".replace("SAVE ", _SAVE)
         asm = _codegen(src)
         self.assertIn("callee-saved", _function(asm, "ping"))
         self.assertNotIn("PHA\n   JSR", _function(asm, "ping"))
@@ -267,7 +285,7 @@ void walk(unsigned char k) {
     out[n++] = a;
     if (k > 0) {
         depth = depth + 1;
-PRAGMA        walk(k - 1);
+        SAVE walk(k - 1);
         depth = b;
     }
     out[n++] = a + (unsigned char)w + b;
@@ -275,7 +293,7 @@ PRAGMA        walk(k - 1);
 int fact(int x) {
     int y = x;
     if (x <= 1) return 1;
-PRAGMA    y = y * fact(x - 1);
+    SAVE y = y * fact(x - 1);
     return y;
 }
 int main(void) {
@@ -290,19 +308,19 @@ unsigned char weights[8] = {3, 1, 4, 1, 5, 9, 2, 6};
 unsigned int sum_from(unsigned char i) {
     if (i >= 8) return 0;
     unsigned char w = weights[i];
-PRAGMA    return w + sum_from(i + 1);
+    SAVE return w + sum_from(i + 1);
 }
 int even(unsigned char n);
 int odd(unsigned char n) {
     if (n == 0) return 0;
     unsigned char k = n * 2;
-PRAGMA    int r = even(n - 1);
+    SAVE int r = even(n - 1);
     return r + k;
 }
 int even(unsigned char n) {
     if (n == 0) return 1;
     unsigned char k = n + 7;
-PRAGMA    int r = odd(n - 1);
+    SAVE int r = odd(n - 1);
     return r * 3 + k;
 }
 int main(void) { return (int)sum_from(0) * 100 + even(6); }
@@ -312,7 +330,7 @@ unsigned int count_paths(unsigned char n) {
     unsigned int total = 0;
     if (n < 2) return 1;
     for (unsigned char k = 1; k <= 2; k++) {
-PRAGMA        total += count_paths(n - k);
+        SAVE total += count_paths(n - k);
     }
     return total;
 }
@@ -325,7 +343,7 @@ unsigned char walk2(unsigned char n) {
     unsigned char keep = n * 3;
     bump(&local);
     if (n == 0) return local;
-PRAGMA    unsigned char r = walk2(n - 1);
+    SAVE unsigned char r = walk2(n - 1);
     return r + local + keep;
 }
 int main(void) { return walk2(5); }
@@ -334,7 +352,7 @@ int main(void) { return walk2(5); }
 long acc(unsigned char n) {
     long big = (long)n * 70000;
     if (n == 0) return 1;
-PRAGMA    long r = acc(n - 1);
+    SAVE long r = acc(n - 1);
     return r + big;
 }
 int main(void) { return (int)(acc(5) & 0x7FFF); }
@@ -345,7 +363,7 @@ int main(void) { return (int)(acc(5) & 0x7FFF); }
 bool any_bit(unsigned char n, unsigned char mask) {
     unsigned char h = n & mask;
     if (n == 0) return 0;
-PRAGMA    bool r = any_bit(n >> 1, mask);
+    SAVE bool r = any_bit(n >> 1, mask);
     return r || h == 3;
 }
 int main(void) {
@@ -358,7 +376,7 @@ int main(void) {
 int rec(int d) {
     int k = d * 3;
     if (d <= 0) return 0;
-PRAGMA    int r = rec(d - 1);
+    SAVE int r = rec(d - 1);
     return r + 1 + (k & 1);
 }
 int f0(int p0) { int l = rec(3); return p0 + l; }
@@ -369,7 +387,7 @@ int pong(int n);
 int ping(int n) {
     int a = n * 2;
     if (n <= 0) return 0;
-PRAGMA    int r = pong(n - 1);
+    SAVE int r = pong(n - 1);
     return r + a;
 }
 int pong(int n) {
@@ -387,7 +405,7 @@ class TestPrograms(unittest.TestCase):
 
     def test_programs(self) -> None:
         for name, src in _PROGRAMS.items():
-            src = src.replace("PRAGMA", _PRAGMA)
+            src = src.replace("SAVE ", _SAVE)
             expected = _run_tac(src) & 0xFFFF
             for optimize in (False, True):
                 with self.subTest(name, optimize=optimize):

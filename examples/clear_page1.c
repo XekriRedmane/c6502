@@ -43,8 +43,7 @@ void clear_page1(uint8_t zp_clear_col, uint8_t zp_clear_col_end)
         (inclusive) and zero each of 34 explicit rows + 63 helper rows. */
     uint8_t x = zp_clear_col;
     for (;;) {
-        #pragma c6502 loop unroll(enable)
-        for (unsigned i = 0; i < 34; i++)
+        [[c6502::unroll]] for (unsigned i = 0; i < 34; i++)
             STRIPE_ROW[i][x] = 0x00;
         interlace_fill_p1(x, 0x00);
         if (x == zp_clear_col_end) break;   /* CPX/BEQ before the DEX */
@@ -56,8 +55,7 @@ void clear_page1(uint8_t zp_clear_col, uint8_t zp_clear_col_end)
     uint8_t y = 39;
     for (;;) {
         uint8_t v = TEXT_STRIP_SRC[y];
-        #pragma c6502 loop unroll(enable)
-        for (unsigned i = 0; i < 12; i++)
+        [[c6502::unroll]] for (unsigned i = 0; i < 12; i++)
             TEXT_ROW[i][y] = v;
         if (y == 0) break;
         y--;

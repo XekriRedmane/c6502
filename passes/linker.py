@@ -245,7 +245,7 @@ def _validate_eligibility(merged: LinkMetadata) -> None:
         )
     # Cycle members from any TU's local view, except a cycle whose
     # every call saves its caller's values on the hardware stack
-    # (`#pragma c6502 call save(hardware_stack)`), which the TU's
+    # (`[[c6502::save_hardware_stack]]`), which the TU's
     # compile gave pools as the allocators here do. Cross-TU cycles
     # are detected as a side effect of `allocate_zp_slots` /
     # `allocate_function_locals` (they raise their own errors).
@@ -259,8 +259,8 @@ def _validate_eligibility(merged: LinkMetadata) -> None:
         raise LinkError(
             f"function(s) on a cycle in their own TU's call "
             f"graph (recursion is supported only when every call "
-            f"in the cycle is under `#pragma c6502 call "
-            f"save(hardware_stack)`): {sorted(locally_cyclic)}",
+            f"in the cycle is marked "
+            f"`[[c6502::save_hardware_stack]]`): {sorted(locally_cyclic)}",
         )
     # Call edges to names that are neither defined nor declared
     # zp_abi extern — these are non-zp_abi externs (e.g. a regular

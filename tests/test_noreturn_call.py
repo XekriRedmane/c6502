@@ -275,12 +275,11 @@ class TestCallGraph(unittest.TestCase):
         self.assertIsInstance(abi["f"], SoftStackLayout)
         self.assertIsInstance(abi["g"], SoftStackLayout)
 
-    def test_pragma_on_the_call(self) -> None:
+    def test_save_hardware_stack_on_the_call(self) -> None:
         from passes.recursion_saves import RecursionSaveError
         src = ("[[noreturn]] void r(void);\n"
                "void f(void) {\n"
-               "#pragma c6502 call save(hardware_stack)\n"
-               "r();\n}\n"
+               "[[c6502::save_hardware_stack]] r();\n}\n"
                "void r(void) { for (;;) f(); }\n")
         with self.assertRaises(RecursionSaveError) as cm:
             _codegen(src)

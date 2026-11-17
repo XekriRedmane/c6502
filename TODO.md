@@ -27,11 +27,11 @@ parameter slots and private local pools come from the same window.
 Before the rule, `int f(int p) { int l = rec(3); return p + l; }`
 with a recursive `rec` read a clobbered `p`. A soft-stack function
 with a pool, such as one whose address is taken or a recursive one
-under `#pragma c6502 call save(hardware_stack)`, writes only its
-pool, so calling it doesn't demote anything.
+whose recursive calls are marked `[[c6502::save_hardware_stack]]`,
+writes only its pool, so calling it doesn't demote anything.
 
 The callees that still demote are the ones whose writes are
-unbounded: recursion without the pragma, a function that calls
+unbounded: recursion without the attribute, a function that calls
 through a pointer, and an `extern` that isn't zp_abi (such as a ROM
 routine declared without `zp_abi`). One of these demotes every
 function that can reach it, and a demoted function loses zp_abi
@@ -51,7 +51,7 @@ Possible approaches, roughly in order of effort:
   - The caller isn't on a cycle, so it appears at most once in any
     chain of calls, and the hardware stack these saves use is
     bounded by the call graph. The compiler can add it up and fall
-    back to demotion past a budget, with no pragma.
+    back to demotion past a budget, with no attribute.
   - The save set has to include the caller's zp_abi parameters,
     which `plan_saves` leaves out because a recursive function keeps
     them in its frame.
@@ -260,7 +260,7 @@ are already smaller. What's left:
   on, so a local of its own for the product would need a copy there.
 - `print_number` is 82 bytes against 65. Zork pushes the digits on
   the 6502's stack, which C can't, and a recursive digit printer
-  under `#pragma c6502 call save(hardware_stack)` would push them but
+  marked `[[c6502::save_hardware_stack]]` would push them but
   take its parameter on the soft stack. Each pass through the loop
   also copies `n` into `divu16`'s dividend slot and its quotient back
   (12 bytes), and stores the divisor 10 again (8), since nothing

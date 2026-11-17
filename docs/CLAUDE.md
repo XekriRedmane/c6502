@@ -9,15 +9,16 @@ parsed by any tool.
 - `attributes.md` — user guide to c6502's C23 attributes
   (`[[c6502::zp_abi]]`, `return_bool_in_carry`, `zeropage`, `address`,
   `section`, ...), where they go, the standard attributes it accepts,
+  the statement attributes (`unroll` and `keep` before a `for`, and
+  `save_hardware_stack`, which replaced the `#pragma c6502`
+  directives, with the cautions about the hardware stack's depth that
+  come with the last),
   and to declaring and calling ROM routines, with Apple II Monitor
   examples, the errors the compiler reports, and current limits.
 - `linker_scripts.md` — user guide to linking with `compile.py -T`:
   sections (the defaults and `[[c6502::section("name")]]`), the GNU
   ld script subset, the section symbols, the startup copy and clear,
   and how the linker computes the layout and writes the executable.
-- `pragmas.md` — user guide to the `#pragma c6502` directives:
-  `loop unroll(enable)` and `call save(hardware_stack)`, with the
-  cautions about the hardware stack's depth that the second needs.
 - `calling_conventions.md` — user guide to c6502's two calling
   conventions. The soft stack: SSP and FP, a call traced through the
   caller's argument push, the prologue, the frame layout, and the

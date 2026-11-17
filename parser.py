@@ -729,13 +729,40 @@ def _consume_specifiers(items, start):
 # `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` — the registers a
 #            parameter arrives in (`_register_marker`).
 #
-# Which ones a declaration may carry is checked where it's built.
-# Register pinning of locals is NOT an attribute — it uses the C
+# The statement attributes go before a statement (C23 §6.8).
+# `_STATEMENT_ATTRIBUTES` lists the statements each one applies to.
+#
+# `unroll` — on a `for` loop, unrolls it under `-O`
+#            (passes/optimization_ast/unroll.py).
+#
+# `keep` — on a `for` loop, keeps dead-loop elimination from deleting
+#            it, since a delay loop's only effect is the time it takes
+#            (c99_to_tac.KEEP_LOOP_MARK).
+#
+# `save_hardware_stack` — marks the calls in an expression statement, a
+#            `return`, or a block-scope declaration's initializers as
+#            calls that save the caller's live values on the hardware
+#            stack (passes/recursion_saves.py). On a declaration it goes
+#            where the declaration's leading attributes go. C23 gives
+#            those to the names the declaration declares, but c6502
+#            reads this one as applying to the calls in the
+#            initializers.
+#
+# Which ones a declaration or statement may carry is checked where it's
+# built. Register pinning of locals is NOT an attribute — it uses the C
 # `register` storage-class keyword.
 _C6502_PREFIX = "c6502"
+_STATEMENT_ATTRIBUTES = {
+    "unroll": "a `for` statement",
+    "keep": "a `for` statement",
+    "save_hardware_stack": (
+        "an expression statement, a `return` statement, or a declaration "
+        "inside a function"
+    ),
+}
 _C6502_ATTRIBUTES = frozenset({
     "section", "zp_abi", "return_bool_in_carry", "zeropage", "address",
-    "preserves_x", "preserves_y", "packed",
+    "preserves_x", "preserves_y", "packed", *_STATEMENT_ATTRIBUTES,
 })
 
 # The register each `preserves_*` attribute names.
@@ -757,7 +784,7 @@ _DECLARED = frozenset({
 })
 _STANDARD_ATTRIBUTES: dict[str, tuple[frozenset[str], bool]] = {
     "deprecated": (_DECLARED, True),
-    "maybe_unused": (_DECLARED, False),
+    "maybe_unused": (_DECLARED | {"label"}, False),
     "nodiscard": (frozenset({"function", "tag"}), True),
     "noreturn": (frozenset({"function"}), False),
     "_Noreturn": (frozenset({"function"}), False),
@@ -776,6 +803,8 @@ _KIND_NAMES = {
     "member": "a member",
     "enumerator": "an enumeration constant",
     "attribute declaration": "an attribute declaration",
+    "statement": "a statement",
+    "label": "a label",
 }
 
 
@@ -902,7 +931,10 @@ def _c6502_attributes(attrs: _Attributes | None, kind: str, where: str):
     """Checks that each standard attribute in `attrs` may apply to
     `kind` of entity (a key of `_KIND_NAMES`), and returns the list of
     c6502 attributes, or None when there are none. `where` names the
-    declaration in messages."""
+    declaration or statement in messages. Raises ParserError for a
+    statement attribute on anything but a statement. A declaration that
+    takes `save_hardware_stack` removes it first
+    (`_take_hw_stack_save`)."""
     if attrs is None:
         return None
     for name, _arg in attrs.standard:
@@ -918,6 +950,14 @@ def _c6502_attributes(attrs: _Attributes | None, kind: str, where: str):
                 f"the standard attribute `{name}` can't apply to "
                 f"{_KIND_NAMES[kind]}; saw it on {where}"
             )
+    if kind != "statement":
+        for name, _arg in attrs.c6502:
+            if name in _STATEMENT_ATTRIBUTES:
+                raise ParserError(
+                    f"`c6502::{name}` goes before "
+                    f"{_STATEMENT_ATTRIBUTES[name]}; it doesn't apply to "
+                    f"{where}"
+                )
     return attrs.c6502 or None
 
 
@@ -1130,13 +1170,13 @@ def _extract_section(specs, where: str) -> str | None:
     return None
 
 
-_HW_STACK_SAVE = "`#pragma c6502 call save(hardware_stack)`"
+_HW_STACK_SAVE = "`[[c6502::save_hardware_stack]]`"
 
 
 def _mark_hw_stack_save(node) -> None:
     """Sets `hw_stack_save` on every call in `node`, a statement or a
-    list of declarations that `#pragma c6502 call save(hardware_stack)`
-    comes before. Raises `ParserError` if there's no call."""
+    list of declarations that `[[c6502::save_hardware_stack]]` comes
+    before. Raises `ParserError` if there's no call."""
     count = 0
 
     def walk(n) -> None:
@@ -1161,19 +1201,126 @@ def _mark_hw_stack_save(node) -> None:
         )
 
 
-def _consume_pragma_clause(items, start):
-    """If `items[start]` is a transformed pragma_clause result (a
-    plain string — the canonical annotation name, e.g. "unroll"),
-    return `(annotation, start+1)`. Otherwise the optional
-    `pragma_clause?` in the grammar didn't fire, return `(None,
-    start)`."""
-    if (
-        start < len(items)
-        and isinstance(items[start], str)
-        and not hasattr(items[start], "type")
-    ):
-        return items[start], start + 1
-    return None, start
+def _take_hw_stack_save(
+    attrs: _Attributes | None,
+) -> tuple[_Attributes | None, bool]:
+    """Removes `c6502::save_hardware_stack` from a declaration's leading
+    attributes. Returns the attributes left (None when none are) and
+    whether it was there. Raises ParserError when it's given twice or
+    with an argument."""
+    if attrs is None:
+        return None, False
+    saves = [arg for name, arg in attrs.c6502 if name == "save_hardware_stack"]
+    if not saves:
+        return attrs, False
+    if len(saves) > 1:
+        raise ParserError(
+            "`c6502::save_hardware_stack` is given twice on one "
+            "declaration"
+        )
+    if saves[0] is not None:
+        raise ParserError(
+            "`c6502::save_hardware_stack` doesn't take an argument"
+        )
+    rest = _Attributes(
+        c6502=[x for x in attrs.c6502 if x[0] != "save_hardware_stack"],
+        standard=attrs.standard,
+    )
+    return (rest if rest.c6502 or rest.standard else None), True
+
+
+class _HwStackSaveDecls(list):
+    """The declarations `var_decl` returns for a declaration that
+    `[[c6502::save_hardware_stack]]` comes before. `decl_item` marks
+    their calls, and `start` and `for_init` reject this type, since the
+    attribute applies only to a declaration that's an item of a block.
+    `var_decl` can't tell where it is from the parser's scopes, since
+    the lexer has already read the token after the declaration, and a
+    `}` there has closed the block's scope."""
+
+
+# How each kind of statement reads in a message.
+_STATEMENT_NAMES = {
+    c99_ast.Return: "a `return` statement",
+    c99_ast.Expression: "an expression statement",
+    c99_ast.IfStmt: "an `if` statement",
+    c99_ast.Compound: "a block",
+    c99_ast.BreakStmt: "a `break` statement",
+    c99_ast.ContinueStmt: "a `continue` statement",
+    c99_ast.WhileStmt: "a `while` statement",
+    c99_ast.DoWhileStmt: "a `do` statement",
+    c99_ast.ForStmt: "a `for` statement",
+    c99_ast.SwitchStmt: "a `switch` statement",
+    c99_ast.Goto: "a `goto` statement",
+}
+
+
+def _apply_statement_attributes(
+    attrs: _Attributes, stmt: c99_ast.Type_statement,
+) -> None:
+    """Applies the attributes before `stmt` to it, which C23 §6.8
+    allows before any unlabeled statement. `[[c6502::unroll]]` and
+    `[[c6502::keep]]` set a `for` statement's `loop_attribute`, and
+    `[[c6502::save_hardware_stack]]` marks the calls in an expression
+    statement or a `return`. Raises ParserError for any other c6502
+    attribute, for one of these before a statement it doesn't apply
+    to, and for a standard attribute, since none applies to a
+    statement."""
+    what = _STATEMENT_NAMES[type(stmt)]
+    seen: set[str] = set()
+    for name, arg in _c6502_attributes(attrs, "statement", what) or []:
+        if name not in _STATEMENT_ATTRIBUTES:
+            raise ParserError(
+                f"`c6502::{name}` doesn't apply to a statement; saw it "
+                f"on {what}"
+            )
+        if name in seen:
+            raise ParserError(
+                f"`c6502::{name}` is given twice on {what}"
+            )
+        seen.add(name)
+        if arg is not None:
+            raise ParserError(f"`c6502::{name}` doesn't take an argument")
+        if name in ("unroll", "keep"):
+            if not isinstance(stmt, c99_ast.ForStmt):
+                raise ParserError(
+                    f"`c6502::{name}` goes before a `for` statement; saw "
+                    f"it on {what}"
+                )
+            if stmt.loop_attribute is not None:
+                raise ParserError(
+                    "`c6502::unroll` and `c6502::keep` are both given on "
+                    "one `for` statement. An unrolled loop leaves no loop "
+                    "to keep"
+                )
+            stmt.loop_attribute = name
+            continue
+        # Any other statement holds statements of its own, and the
+        # attribute would cover the calls nested in them.
+        if not isinstance(stmt, (c99_ast.Expression, c99_ast.Return)):
+            raise ParserError(
+                f"{_HW_STACK_SAVE} goes before an expression statement, "
+                f"a `return` statement, or a declaration, so that it "
+                f"covers only the calls in that one; saw it on {what}"
+            )
+        _mark_hw_stack_save(stmt)
+
+
+def _check_label_attributes(attrs: _Attributes) -> None:
+    """Checks the attributes before a label, which C23 §6.8.2 gives to
+    the label. Of the standard attributes only `maybe_unused` applies
+    to a label, and none of c6502's does. A c6502 statement attribute
+    there raises ParserError with a pointer to where it goes."""
+    for name, _arg in attrs.c6502:
+        raise ParserError(
+            f"attributes before a label apply to the label, and "
+            f"`c6502::{name}` doesn't apply to one. Put it after the "
+            f"label, just before the statement, as in `L: "
+            f"[[c6502::{name}]] ...`"
+            if name in _STATEMENT_ATTRIBUTES else
+            f"`c6502::{name}` doesn't apply to a label"
+        )
+    _c6502_attributes(attrs, "label", "a label")
 
 
 # Integer constant typing per C99 §6.4.4.1 paragraph 5: "the type of
@@ -2044,6 +2191,12 @@ class _ASTBuilder(Transformer):
         # for the body and the VarDecl for `x`). Flatten here.
         flat = []
         for it in items:
+            if isinstance(it, _HwStackSaveDecls):
+                raise ParserError(
+                    f"{_HW_STACK_SAVE} goes before a statement or a "
+                    f"declaration inside a function; saw it on a "
+                    f"declaration at file scope"
+                )
             flat.extend(it)
         return c99_ast.Program(declaration=flat)
 
@@ -2515,6 +2668,8 @@ class _ASTBuilder(Transformer):
         # form, only legal at file scope. A block_item may carry a
         # function *forward declaration* (FunctionDecl with body=None)
         # but never a definition (body present).
+        if isinstance(declaration_list, _HwStackSaveDecls):
+            _mark_hw_stack_save(declaration_list)
         out = []
         for d in declaration_list:
             if (
@@ -2753,7 +2908,16 @@ class _ASTBuilder(Transformer):
             it for it in items[i:]
             if isinstance(it, tuple)
         ]
+        # `[[c6502::save_hardware_stack]]` before a declaration in a
+        # block marks the calls in its initializers.
+        prefix_attrs, hw_stack_save = _take_hw_stack_save(prefix_attrs)
         if isinstance(storage_class, _TypedefStorage):
+            if hw_stack_save:
+                raise ParserError(
+                    f"{_HW_STACK_SAVE} applies to the calls in a "
+                    f"declaration's initializers, and a typedef "
+                    f"declaration has none"
+                )
             return struct_decls + _typedef_declaration(
                 prefix_attrs, init_decls, struct_decls,
             )
@@ -2762,11 +2926,25 @@ class _ASTBuilder(Transformer):
             name, composed, outer_param_names, outer_param_regs = (
                 _apply_declarator(decl_tree, base_type)
             )
+            if name_attrs is not None and any(
+                n == "save_hardware_stack" for n, _a in name_attrs.c6502
+            ):
+                raise ParserError(
+                    f"{_HW_STACK_SAVE} goes at the front of the "
+                    f"declaration of `{name}`, where it applies to the "
+                    f"calls in its initializers, and not after the name"
+                )
             attrs = _merge_attributes(prefix_attrs, name_attrs)
             if isinstance(composed, c99_ast.FunType):
                 if init is not None:
                     raise ParserError(
                         "function declaration cannot have an initializer"
+                    )
+                if hw_stack_save:
+                    raise ParserError(
+                        f"{_HW_STACK_SAVE} applies to the calls in a "
+                        f"declaration's initializers, and `{name}` "
+                        f"declares a function"
                     )
                 where = f"function declaration {name!r}"
                 attr_specs = _c6502_attributes(attrs, "function", where)
@@ -2817,6 +2995,8 @@ class _ASTBuilder(Transformer):
                         section=_extract_section(attr_specs, f"`{name}`"),
                     )
                 ))
+        if hw_stack_save:
+            return _HwStackSaveDecls(struct_decls + tails)
         return struct_decls + tails
 
     def tag_only_decl(self, items):
@@ -3034,25 +3214,29 @@ class _ASTBuilder(Transformer):
     def null_stmt(self, _semi):
         return c99_ast.Null()
 
-    # `#pragma c6502 call save(hardware_stack)` before a statement or
-    # a declaration marks the calls in it. Only an expression
-    # statement, a `return`, or a declaration's initializers have calls
-    # of their own; any other statement would also cover the ones in
-    # the statements nested in it.
+    # Attributes before a statement (C23 §6.8), which
+    # `_apply_statement_attributes` checks and applies. A declaration's
+    # go through `var_decl`.
     @v_args(inline=True)
-    def hw_stack_save_stmt(self, _pragma, stmt):
-        if not isinstance(stmt, (c99_ast.Expression, c99_ast.Return)):
-            raise ParserError(
-                f"{_HW_STACK_SAVE} must come before an expression "
-                f"statement, a `return`, or a declaration"
-            )
-        _mark_hw_stack_save(stmt)
+    def attributed_stmt(self, attrs, stmt):
+        _apply_statement_attributes(attrs, stmt)
         return stmt
 
+    # Attributes before a label, which apply to the label.
     @v_args(inline=True)
-    def hw_stack_save_decl_item(self, _pragma, declaration_list):
-        _mark_hw_stack_save(declaration_list)
-        return self.decl_item(declaration_list)
+    def attributed_labeled_stmt(self, attrs, identifier, colon, stmt):
+        _check_label_attributes(attrs)
+        return self.labeled_stmt(identifier, colon, stmt)
+
+    @v_args(inline=True)
+    def attributed_case_stmt(self, attrs, case, value, colon, body):
+        _check_label_attributes(attrs)
+        return self.case_stmt(case, value, colon, body)
+
+    @v_args(inline=True)
+    def attributed_default_stmt(self, attrs, default, colon, body):
+        _check_label_attributes(attrs)
+        return self.default_stmt(default, colon, body)
 
     # Loop and jump statements. Loop labels are minted by the
     # loop_labeling pass that runs after identifier_resolution; the
@@ -3096,6 +3280,13 @@ class _ASTBuilder(Transformer):
             # and none may carry a storage class (C99 §6.8.5.3 only
             # permits auto / register).
             if isinstance(child, list):
+                if isinstance(child, _HwStackSaveDecls):
+                    raise ParserError(
+                        f"{_HW_STACK_SAVE} can't go on the declaration "
+                        f"in a `for` statement's first clause. It goes "
+                        f"before an expression statement, a `return` "
+                        f"statement, or a declaration in a block"
+                    )
                 if any(
                     isinstance(d, c99_ast.StructDecl)
                     for d in child
@@ -3175,29 +3366,18 @@ class _ASTBuilder(Transformer):
     # between the condition and post_clause is in our items list. Each
     # of condition / post_clause is independently optional, so we scan
     # for the SEMICOLON to know which side each remaining child is on.
-    def pragma_unroll(self, items):
-        # `pragma_clause: PRAGMA_UNROLL -> pragma_unroll`. The token's
-        # value is the literal sentinel; we hand back the canonical
-        # annotation name that ForStmt.unroll_annotation expects.
-        return "unroll"
-
-    def pragma_keep(self, items):
-        # `pragma_clause: PRAGMA_KEEP -> pragma_keep`, a loop that
-        # c99_to_tac marks so that dead-loop elimination keeps it.
-        return "keep"
-
     def for_stmt(self, items):
-        # items: [pragma?, FOR, LPAREN, for_init, condition?, SEMICOLON,
+        # items: [FOR, LPAREN, for_init, condition?, SEMICOLON,
         #         post_clause?, RPAREN, statement]
         # The loop is over, so its scope (pushed by the lexer at `for`)
         # ends, after the parser already lexed the token that follows.
+        # The loop reduces to an `unlabeled_stmt`, and `attributed_stmt`
+        # applies the attributes before it, if any, after that.
         _CTX.remove_scope(_CTX.for_scopes.pop())
-        _CTX.retype_lookahead("statement")
-        unroll_annotation, idx = _consume_pragma_clause(items, 0)
-        # idx now points at FOR. The rest of the parse is unchanged.
-        init = items[idx + 2]
+        _CTX.retype_lookahead("unlabeled_stmt")
+        init = items[2]
         body = items[-1]
-        middle = items[idx + 3:-2]
+        middle = items[3:-2]
         semi_idx = next(
             i for i, c in enumerate(middle)
             if hasattr(c, "type") and c.type == "SEMICOLON"
@@ -3212,7 +3392,6 @@ class _ASTBuilder(Transformer):
             post_clause=post_clause,
             body=body,
             label="",
-            unroll_annotation=unroll_annotation,
         )
 
     # Alternatives of `exp` — each named in c99.lark.

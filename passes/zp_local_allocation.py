@@ -36,8 +36,8 @@ A function is eligible for the private-pool model iff:
   3. It is not part of any cycle in the static direct call
      graph — recursion would have a recursive call clobber the
      outer activation's still-live locals. The exception is a
-     cycle whose every call from one member to another is under
-     `#pragma c6502 call save(hardware_stack)`
+     cycle whose every call from one member to another is marked
+     `[[c6502::save_hardware_stack]]`
      (`recursion_saves.hw_stack_cycles`): the caller saves what's
      live across each of those calls on the hardware stack, so
      nothing in its pool needs to survive them.

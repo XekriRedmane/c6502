@@ -32,12 +32,10 @@ void paint_hud_strip_p1(void) {
     uint8_t y = 0;                          /* monotonic, NOT reset per column */
     for (int8_t x = 0x0F; x >= 0; x--) {       /* right-to-left, 16 columns */
 
-        #pragma c6502 loop unroll(enable)
-        for (uint8_t b = 0; b < 7; b++) {
+        [[c6502::unroll]] for (uint8_t b = 0; b < 7; b++) {
             uint8_t pixels = HUD_STRIP_SRC[y++];
 
-            #pragma c6502 loop unroll(enable)
-            for (uint8_t i = 0; i < HUD_ROW_COUNT[b]; i++) {
+            [[c6502::unroll]] for (uint8_t i = 0; i < HUD_ROW_COUNT[b]; i++) {
                 *(HGR1_ROW[HUD_ROW_GROUPS[b][i]] + HUD_COL_BASE + x) = pixels;
             }
         }

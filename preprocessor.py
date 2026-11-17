@@ -122,6 +122,8 @@ class CompilePreprocessor(Preprocessor):
     def __init__(self, args: argparse.Namespace) -> None:
         super().__init__()
         self.args = args
+        # The file `run` preprocesses, which `_where` leaves unnamed.
+        self.input_file: str | None = None
 
         self.define("__PCPP_VERSION__ " + PCPP_VERSION)
         self.define("__PCPP_ALWAYS_FALSE__ 0")
@@ -180,6 +182,7 @@ class CompilePreprocessor(Preprocessor):
             self.add_path(_BUNDLED_INCLUDE_DIR)
 
     def run(self, source: str, filename: str | None = None) -> str:
+        self.input_file = filename
         self.parse(source, filename)
         out = io.StringIO()
         if self.args.write_bom:
@@ -245,10 +248,27 @@ class CompilePreprocessor(Preprocessor):
             directive, toks, ifpassthru, precedingtoks)
 
     def on_directive_unknown(self, directive, toks, ifpassthru, precedingtoks):
+        # pcpp passes `#pragma` lines other than `#pragma once` through
+        # here, with the file and line they're on.
+        if directive.value == "pragma":
+            _check_pragma(directive, toks, self._where(directive))
         if ifpassthru:
             return None
         return super().on_directive_unknown(
             directive, toks, ifpassthru, precedingtoks)
+
+    def _where(self, tok) -> str:
+        """Names the line `tok` is on, as "line 3" in the file being
+        preprocessed, or "line 3 of <path>" in a file it includes.
+        compile.py's message names the file being compiled."""
+        source = tok.source
+        if source is None or (
+            self.input_file is not None
+            and os.path.normcase(os.path.abspath(source))
+            == os.path.normcase(os.path.abspath(self.input_file))
+        ):
+            return f"line {tok.lineno}"
+        return f"line {tok.lineno} of {source}"
 
     def on_potential_include_guard(self, macro):
         self.potential_include_guard = macro
@@ -306,93 +326,73 @@ class CompilePreprocessor(Preprocessor):
 
 
 class PreprocessorError(Exception):
-    """A `#pragma c6502 ...` line whose body c6502 does not recognize."""
+    """A `#pragma c6502 ...` line. c6502's directives are C23 statement
+    attributes now, and the message names the one to write instead, and
+    the line the pragma is on in its source file."""
 
-
-# `#pragma c6502 call save(hardware_stack)` comes before a statement
-# whose calls can recurse, and lets the caller save the values live
-# across them on the hardware stack (passes/recursion_saves.py). The
-# parser takes this sentinel as the start of that statement.
-_PRAGMA_HW_STACK_SAVE_SENTINEL = "__c6502_pragma_hw_stack_save__"
-
-_C6502_HW_STACK_SAVE_RE = re.compile(
-    r"^[ 	]+call[ 	]+save[ 	]*\([ 	]*hardware_stack[ 	]*\)[ 	]*$",
-)
-
-
-# `#pragma c6502 loop unroll(enable)` — emitted for the immediately-
-# following for-loop and consumed by the parser as a `pragma_clause`.
-# The chosen sentinel uses the C-reserved identifier namespace
-# (`__c6502_` per C99 §7.1.3) so it can never collide with a user
-# identifier, and the lexer already accepts plain identifiers — no
-# lexer change required.
-_PRAGMA_UNROLL_SENTINEL = "__c6502_pragma_unroll__"
-
-# `#pragma c6502 loop keep` comes before a `for` loop that must stay
-# even though it computes nothing anyone reads, such as a delay loop.
-_PRAGMA_KEEP_SENTINEL = "__c6502_pragma_keep__"
-
-_C6502_KEEP_RE = re.compile(r"^[ 	]+loop[ 	]+keep[ 	]*$")
 
 # Match a full `#pragma ...` line (anchored to start-of-line, possibly
 # preceded by whitespace). Captures the body after `#pragma` for
 # inspection.
 _PRAGMA_LINE_RE = re.compile(r"^[ \t]*#[ \t]*pragma\b(?P<body>.*)$")
 
-# Within a `#pragma c6502 ...` body, recognize the unroll directive.
-# Whitespace is permissive; the form is otherwise fixed.
-_C6502_UNROLL_RE = re.compile(
-    r"^[ \t]+loop[ \t]+unroll[ \t]*\([ \t]*(?P<state>enable|disable)[ \t]*\)[ \t]*$",
-)
+# The `#pragma c6502` directives c6502 used to take, with the
+# whitespace removed, and what to write instead of each.
+_REPLACED_PRAGMAS = {
+    "loopunroll(enable)": (
+        "write the statement attribute `[[c6502::unroll]]` before the "
+        "loop instead, as in `[[c6502::unroll]] for (...)`"
+    ),
+    "loopunroll(disable)": (
+        "it never did anything, so delete the line"
+    ),
+    "loopkeep": (
+        "write the statement attribute `[[c6502::keep]]` before the "
+        "loop instead, as in `[[c6502::keep]] for (...)`"
+    ),
+    "callsave(hardware_stack)": (
+        "write the statement attribute `[[c6502::save_hardware_stack]]` "
+        "before the statement or declaration instead, as in "
+        "`[[c6502::save_hardware_stack]] f(x);`"
+    ),
+}
 
 
-def _rewrite_pragmas(text: str) -> str:
-    """Post-scan pcpp output: rewrite `#pragma c6502 ...` lines to
-    sentinel tokens the parser can consume, strip every other
-    `#pragma` line.
+def _check_pragma(directive, toks, where: str) -> None:
+    """Raises PreprocessorError for a `#pragma c6502` directive, whose
+    message names the C23 statement attribute that replaced it
+    (docs/attributes.md). `directive` is pcpp's `pragma` token, `toks`
+    the tokens after it, and `where` names the file the line is in,
+    such as "line 3" or "line 3 of foo.h". Any other pragma passes."""
+    body = "".join(tok.value for tok in toks).strip()
+    words = body.split()
+    if not words or words[0] != "c6502":
+        return
+    line = f"#pragma {body}"
+    instead = _REPLACED_PRAGMAS.get("".join(words[1:]))
+    if instead is not None:
+        raise PreprocessorError(
+            f"{where}: c6502 no longer takes `{line}`; {instead}"
+        )
+    raise PreprocessorError(
+        f"{where}: c6502 takes no `#pragma c6502` directives, so "
+        f"`{line}` is an error. Its directives are the statement "
+        f"attributes `[[c6502::unroll]]` and `[[c6502::keep]]` before a "
+        f"`for` loop, and `[[c6502::save_hardware_stack]]` before a "
+        f"statement or declaration"
+    )
 
-    Each rewrite preserves the original line as a single line of
-    output (sentinel-on-its-own-line for `enable`, blank line
-    otherwise) so error line numbers stay accurate.
 
-    `#pragma c6502 loop unroll(enable)`  → `__c6502_pragma_unroll__`
-    `#pragma c6502 loop unroll(disable)` → blank line (explicit no-op)
-    `#pragma c6502 call save(hardware_stack)`
-                                         → `__c6502_pragma_hw_stack_save__`
-    `#pragma c6502 loop keep`            → `__c6502_pragma_keep__`
-    other `#pragma c6502 ...`            → PreprocessorError
-    any other `#pragma ...`              → blank line (C99 §6.10.6)
-    """
-    out_lines = []
-    for lineno, line in enumerate(text.split("\n"), start=1):
-        m = _PRAGMA_LINE_RE.match(line)
-        if not m:
-            out_lines.append(line)
-            continue
-        body = m.group("body")
-        if not body.startswith((" ", "\t")) or not body.lstrip().startswith("c6502"):
-            # Not ours — strip per C99 §6.10.6.
-            out_lines.append("")
-            continue
-        # Strip the `c6502` token, then match the rest.
-        rest = body.lstrip()[len("c6502"):]
-        if _C6502_HW_STACK_SAVE_RE.match(rest):
-            out_lines.append(_PRAGMA_HW_STACK_SAVE_SENTINEL)
-            continue
-        if _C6502_KEEP_RE.match(rest):
-            out_lines.append(_PRAGMA_KEEP_SENTINEL)
-            continue
-        m2 = _C6502_UNROLL_RE.match(rest)
-        if m2 is None:
-            raise PreprocessorError(
-                f"line {lineno}: unrecognized `#pragma c6502` "
-                f"directive: {line.strip()!r}",
-            )
-        if m2.group("state") == "enable":
-            out_lines.append(_PRAGMA_UNROLL_SENTINEL)
-        else:
-            out_lines.append("")
-    return "\n".join(out_lines)
+def _strip_pragmas(text: str) -> str:
+    """Strips every `#pragma` line pcpp passed through, as C99 §6.10.6
+    lets an implementation do with a pragma it doesn't recognize.
+    `CompilePreprocessor.on_directive_unknown` has already rejected the
+    `#pragma c6502` lines. Each `#pragma` line becomes a blank line, so
+    that the line numbers of later errors stay the same."""
+    return "\n".join(
+        "" if _PRAGMA_LINE_RE.match(line) else line
+        for line in text.split("\n")
+    )
 
 
 def preprocess(
@@ -406,6 +406,6 @@ def preprocess(
 
     With no argv (or `[]`): strip comments and suppress `#line` markers.
     """
-    return _rewrite_pragmas(
+    return _strip_pragmas(
         CompilePreprocessor(parse_args(argv)).run(source, filename),
     )

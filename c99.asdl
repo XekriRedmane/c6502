@@ -18,14 +18,13 @@ module C99 {
         | ContinueStmt(identifier label)
         | WhileStmt(exp condition, statement body, identifier label)
         | DoWhileStmt(statement body, exp condition, identifier label)
-        -- `unroll_annotation` carries the value of any
-        -- `#pragma c6502 loop unroll(<state>)` directive immediately
-        -- preceding the loop. The only recognized name today is
-        -- "unroll" — set when the pragma's state is `enable`.
-        -- `disable` and absent pragma both leave it None. The
-        -- pragma is honored only under `-O --unroll`; a
-        -- pragma seen without those flags is silently ignored.
-        | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label, string? unroll_annotation)
+        -- `loop_attribute` is the name of the c6502 statement
+        -- attribute before the loop, or None without one: "unroll"
+        -- for `[[c6502::unroll]]`, which unrolls the loop under `-O`
+        -- (passes/optimization_ast/unroll.py), and "keep" for
+        -- `[[c6502::keep]]`, which keeps dead-loop elimination from
+        -- deleting it (c99_to_tac.KEEP_LOOP_MARK).
+        | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label, string? loop_attribute)
         | SwitchStmt(exp control, statement body, identifier label, switch_case* cases, identifier? default_label, data_type? promoted_type)
         | CaseStmt(exp value, statement body, identifier label)
         | DefaultStmt(statement body, identifier label)
@@ -205,7 +204,7 @@ module C99 {
         | Prefix(incdec_op op, exp operand, data_type?)
         | Conditional(exp condition, exp true_clause, exp false_clause, data_type?)
         -- `hw_stack_save` marks a call in a statement or declaration
-        -- under `#pragma c6502 call save(hardware_stack)`.
+        -- that `[[c6502::save_hardware_stack]]` comes before.
         | FunctionCall(identifier name, exp* args, data_type?, bool hw_stack_save)
         -- A call whose callee is an expression other than a name:
         -- `pick()(3)`, `t[i](3)`, `s.g(3)`, `p->g(3)`, `(**fp)(3)`.

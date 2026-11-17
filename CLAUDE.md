@@ -27,7 +27,7 @@ file holds the project overview and notes about root-level files
   — asm-level SSA round-trip with byte-granular regalloc, move
   coalescing, const-static fold.
 - [passes/optimization_ast/CLAUDE.md](passes/optimization_ast/CLAUDE.md)
-  — AST-level unroller (`#pragma c6502 loop unroll(enable)`).
+  — AST-level unroller (`[[c6502::unroll]]`).
 - [tests/CLAUDE.md](tests/CLAUDE.md) — test organization, chapter
   harnesses, where to look for status.
 - [binutils/CLAUDE.md](binutils/CLAUDE.md) — the object-file tools:
@@ -60,7 +60,7 @@ C source
   → label_resolution
   → loop_labeling
   → type_checking                       → c99_ast (+ SymbolTable, TypeTable)
-  → (-O: unroll_program — #pragma c6502 loop unroll(enable))
+  → (-O: unroll_program — [[c6502::unroll]] for loops)
   → c99_to_tac                          → tac_ast
   → (-O: return_pointers_in_zero_page — a static's pointer result in F@ret)
   → (-O: TAC fixed-point opts)
@@ -152,7 +152,7 @@ Two key runtime conventions:
   `FunAttr.returns_bool` records the `bool` before `c99_to_tac` erases
   it). The link metadata marks each such function `carry=true`, and
   the linker rejects units that disagree.
-- **`#pragma c6502 call save(hardware_stack)`** before an expression
+- **`[[c6502::save_hardware_stack]]`** before an expression
   statement, a `return`, or a block-scope declaration marks the calls
   in it (`hw_stack_save` on the c99 and TAC `FunctionCall`, set by the
   parser's `_mark_hw_stack_save`). Each must be a direct call that can
@@ -162,7 +162,7 @@ Two key runtime conventions:
   function saving callee-saved bytes at entry and exit. The user
   vouches for the hardware stack's depth. See
   `passes/recursion_saves.py`; user guide, with the cautions, in
-  [docs/pragmas.md](docs/pragmas.md).
+  [docs/attributes.md](docs/attributes.md#save_hardware_stack).
 - **The `register` keyword** requests 6502-register placement,
   refining the zp_abi calling convention. Placement is POSITIONAL:
   the first register arg-byte goes in **A**, the second in **X**
@@ -245,8 +245,8 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
 - `-O` runs the optimizer pipeline:
 
   0. AST-level unroll (`passes.optimization_ast.unroll.unroll_
-     program`) — fully unrolls every for-loop carrying
-     `#pragma c6502 loop unroll(enable)`. Runs after parsing and
+     program`) — fully unrolls every for-loop marked
+     `[[c6502::unroll]]`. Runs after parsing and
      before identifier resolution. See
      [passes/optimization_ast/CLAUDE.md](passes/optimization_ast/CLAUDE.md).
   1. TAC SSA construction (`passes.optimization.ssa_construction`).
@@ -669,7 +669,8 @@ or an unknown `c6502::` name is an error. Each declaration merges its
 leading attributes with those after its name (`_merge_attributes`,
 `_declarator_attributes`), and `_c6502_attributes(attrs, kind, where)`
 checks the standard ones against the kind of entity
-(`_STANDARD_ATTRIBUTES`) and hands the c6502 ones to the per-kind
+(`_STANDARD_ATTRIBUTES`), rejects a statement attribute on anything
+but a statement, and hands the c6502 ones to the per-kind
 helpers: `_extract_function_attributes`, `_extract_object_placement`,
 `_extract_section`, `_register_marker` (parameters), and
 `_enum_is_packed`. Of the standard ones only `noreturn` / `_Noreturn`
@@ -678,6 +679,27 @@ checker ORs into `FunAttr.noreturn` and every pass that rebuilds a
 `function_decl` copies. Attributes after a parameter list, `*`, `]`,
 or the type specifiers (which C23 applies to a type) aren't in the
 grammar.
+
+Statement attributes (C23 §6.8) go before an unlabeled statement:
+`?statement` has an `attribute_specifier_seq unlabeled_stmt ->
+attributed_stmt` alternative, and `_apply_statement_attributes` checks
+and applies them (`_STATEMENT_ATTRIBUTES` lists them).
+`[[c6502::unroll]]` and `[[c6502::keep]]` before a `for` set
+`ForStmt.loop_attribute` to "unroll" (the unroller's mark) or "keep"
+(`c99_to_tac.KEEP_LOOP_MARK`, which dead-loop elimination reads).
+`[[c6502::save_hardware_stack]]` before an expression statement or a
+`return` marks its calls. Before a block-scope declaration it goes
+with the declaration's leading attributes, and c6502 reads it as
+applying to the calls in the initializers: `var_decl` takes it out
+(`_take_hw_stack_save`) and returns a `_HwStackSaveDecls` list, which
+`decl_item` marks and `start` and `for_init` reject. Attributes before
+`;` stay an attribute declaration, so the null statement takes none,
+and attributes before a label belong to the label
+(`attributed_labeled_stmt` and the `case` / `default` forms), where
+only `maybe_unused` applies. The `#pragma c6502` lines these replaced
+are a `PreprocessorError` that names the attribute
+(`preprocessor._reject_c6502_pragmas`); other `#pragma` lines become
+blank lines.
 
 ### Lexer & preprocessor
 

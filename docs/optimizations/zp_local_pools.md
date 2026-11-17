@@ -177,8 +177,9 @@ A function gets a pool when all of these are true.
 - Its body has no call through a function pointer, whose target
   could write anywhere.
 - It isn't on a cycle of direct calls, unless every call from one
-  function on the cycle to another is under `#pragma c6502 call
-  save(hardware_stack)`. Then the caller saves what's live across
+  function on the cycle to another is marked
+  `[[c6502::save_hardware_stack]]`. Then the caller saves what's live
+  across
   each of those calls on the hardware stack ([saves around a
   recursive call](recursion_saves.md)), and the functions on the
   cycle may share bytes with each other.
@@ -193,7 +194,7 @@ whose only problem is that its address is taken still gets a pool.
 
 ## What it leaves alone
 
-- A recursive function without the pragma, and every function that
+- A recursive function without the attribute, and every function that
   calls it, directly or through other functions. An inner activation
   would write the same bytes as the outer one.
 - A function that calls through a pointer, and its callers.

@@ -1092,8 +1092,7 @@ static void return_handler(void) {
 static bool check_joystick_or_delay(void) {
     if (INPUT_MODE == KEYBOARD_MODE) {
         for (uint8_t x = 2; x != 0; x--) {
-#pragma c6502 loop keep
-            for (uint8_t y = 0; --y;) {
+            [[c6502::keep]] for (uint8_t y = 0; --y;) {
             }
         }
         return false;

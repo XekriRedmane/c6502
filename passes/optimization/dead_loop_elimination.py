@@ -105,8 +105,8 @@ def _try_eliminate(
     """Verify the loop is pure and loop-local, then rewrite the
     header to jump past the body. Mutates `cfg` in place if the
     rewrite fires; returns True iff it did."""
-    # A loop under `#pragma c6502 loop keep` stays, which a delay
-    # loop needs.
+    # A loop marked `[[c6502::keep]]` stays, which a delay loop
+    # needs.
     for bid in body:
         for instr in cfg.blocks[bid].instructions:
             if isinstance(instr, tac_ast.Label) and KEEP_LOOP_MARK in instr.name:

@@ -231,7 +231,8 @@ writes the bytes. The fix is to declare the parameter without `const`.
   into the callee's slot.
 - A callee that takes the parameter in a register, or at a fixed
   address (`zeropage(addr)`).
-- Functions on a cycle under `#pragma c6502 call save(hardware_stack)`,
-  and functions without private pools.
+- Functions on a cycle whose calls are marked
+  `[[c6502::save_hardware_stack]]`, and functions without private
+  pools.
 - `p += 0x100` stays a 16-bit add of 0 and 1 instead of an `INC` of the
   high byte.

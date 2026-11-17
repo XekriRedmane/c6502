@@ -1,11 +1,11 @@
-"""Behavioral tests for `#pragma c6502 loop unroll(...)`.
+"""Behavioral tests for `[[c6502::unroll]]`.
 
 Coverage:
   Surface plumbing (commit 1):
-  - Pragma recognition by the preprocessor (enable / disable /
-    unknown / other vendor / pragma once / whitespace flex).
-  - Parser captures `unroll_annotation` on the matching ForStmt.
-  - Annotation rides through every AST-level pass.
+  - The parser sets `loop_attribute` on the ForStmt after the
+    attribute, and the old `#pragma c6502 loop unroll(...)` is an
+    error that names the attribute.
+  - The attribute rides through every AST-level pass.
 
   Unroll pass (commit 2):
   - Canonical loops unroll: ascending / descending, increment /
@@ -59,73 +59,27 @@ def _for_stmts(src: str) -> list[c99_ast.ForStmt]:
 
 _PROG = """
 int main(void) {{
-    {pragma}
-    for (int i = 0; i < 4; i++) {{ }}
+    {attribute}for (int i = 0; i < 4; i++) {{ }}
     return 0;
 }}
 """
 
 
-class TestUnrollPragmaPreprocess(unittest.TestCase):
-    def test_enable_rewrites_to_sentinel(self) -> None:
-        src = "#pragma c6502 loop unroll(enable)\nint x;\n"
-        out = preprocess(src)
-        self.assertIn("__c6502_pragma_unroll__", out)
-        # Line count preserved so error messages reference the right line.
-        self.assertEqual(out.count("\n"), src.count("\n"))
-
-    def test_disable_strips_to_blank(self) -> None:
-        src = "#pragma c6502 loop unroll(disable)\nint x;\n"
-        out = preprocess(src)
-        self.assertNotIn("c6502", out)
-        self.assertEqual(out.count("\n"), src.count("\n"))
-
-    def test_unknown_c6502_pragma_rejected(self) -> None:
-        with self.assertRaises(PreprocessorError) as cm:
-            preprocess("#pragma c6502 wat\nint x;\n")
-        self.assertIn("c6502", str(cm.exception))
-        self.assertIn("line 1", str(cm.exception))
-
-    def test_other_vendor_pragma_stripped(self) -> None:
-        out = preprocess("#pragma GCC something\nint x;\n")
-        self.assertNotIn("pragma", out)
-
-    def test_pragma_once_handled_by_pcpp(self) -> None:
-        # pcpp consumes `#pragma once`; our post-scan never sees it.
-        out = preprocess("#pragma once\nint x;\n")
-        self.assertNotIn("pragma", out)
-
-    def test_whitespace_flex(self) -> None:
-        out = preprocess(
-            "#  pragma   c6502   loop  unroll ( enable )\nint x;\n",
-        )
-        self.assertIn("__c6502_pragma_unroll__", out)
-
-
-class TestUnrollPragmaParse(unittest.TestCase):
-    def test_enable_sets_unroll_annotation(self) -> None:
-        loops = _for_stmts(_PROG.format(
-            pragma="#pragma c6502 loop unroll(enable)",
-        ))
+class TestUnrollAttributeParse(unittest.TestCase):
+    def test_sets_loop_attribute(self) -> None:
+        loops = _for_stmts(_PROG.format(attribute="[[c6502::unroll]] "))
         self.assertEqual(len(loops), 1)
-        self.assertEqual(loops[0].unroll_annotation, "unroll")
+        self.assertEqual(loops[0].loop_attribute, "unroll")
 
-    def test_disable_leaves_annotation_none(self) -> None:
-        loops = _for_stmts(_PROG.format(
-            pragma="#pragma c6502 loop unroll(disable)",
-        ))
+    def test_no_attribute_leaves_it_none(self) -> None:
+        loops = _for_stmts(_PROG.format(attribute=""))
         self.assertEqual(len(loops), 1)
-        self.assertIsNone(loops[0].unroll_annotation)
+        self.assertIsNone(loops[0].loop_attribute)
 
-    def test_no_pragma_leaves_annotation_none(self) -> None:
-        loops = _for_stmts(_PROG.format(pragma=""))
-        self.assertEqual(len(loops), 1)
-        self.assertIsNone(loops[0].unroll_annotation)
-
-    def test_pragma_only_attaches_to_immediately_next_loop(self) -> None:
+    def test_attaches_only_to_its_own_loop(self) -> None:
         src = """
         int main(void) {
-            #pragma c6502 loop unroll(enable)
+            [[c6502::unroll]]
             for (int i = 0; i < 4; i++) { }
             for (int j = 0; j < 4; j++) { }
             return 0;
@@ -133,25 +87,37 @@ class TestUnrollPragmaParse(unittest.TestCase):
         """
         loops = _for_stmts(src)
         self.assertEqual(len(loops), 2)
-        self.assertEqual(loops[0].unroll_annotation, "unroll")
-        self.assertIsNone(loops[1].unroll_annotation)
+        self.assertEqual(loops[0].loop_attribute, "unroll")
+        self.assertIsNone(loops[1].loop_attribute)
 
-    def test_pragma_without_following_for_is_parse_error(self) -> None:
+    def test_before_another_statement_is_an_error(self) -> None:
         src = """
         int main(void) {
-            #pragma c6502 loop unroll(enable)
-            return 0;
+            [[c6502::unroll]] return 0;
         }
         """
-        with self.assertRaises(Exception):
+        with self.assertRaises(ParserError) as cm:
             parse(preprocess(src))
+        self.assertIn("goes before a `for` statement", str(cm.exception))
+
+    def test_old_pragma_names_the_attribute(self) -> None:
+        for state, needle in (
+            ("enable", "[[c6502::unroll]]"),
+            ("disable", "delete the line"),
+        ):
+            with self.subTest(state):
+                with self.assertRaises(PreprocessorError) as cm:
+                    preprocess(_PROG.format(
+                        attribute=f"#pragma c6502 loop unroll({state})\n",
+                    ))
+                self.assertIn(needle, str(cm.exception))
 
 
-class TestUnrollPragmaPipelinePassthrough(unittest.TestCase):
-    """The annotation rides through every AST-level pass unchanged."""
+class TestUnrollAttributePipelinePassthrough(unittest.TestCase):
+    """The attribute rides through every AST-level pass unchanged."""
 
     def _annotated_after(self, transform) -> bool:
-        src = _PROG.format(pragma="#pragma c6502 loop unroll(enable)")
+        src = _PROG.format(attribute="[[c6502::unroll]] ")
         prog = transform(parse(preprocess(src)))
         loops: list[c99_ast.ForStmt] = []
 
@@ -167,7 +133,7 @@ class TestUnrollPragmaPipelinePassthrough(unittest.TestCase):
 
         walk(prog)
         self.assertEqual(len(loops), 1)
-        return loops[0].unroll_annotation == "unroll"
+        return loops[0].loop_attribute == "unroll"
 
     def test_string_lifting_preserves_annotation(self) -> None:
         self.assertTrue(self._annotated_after(lift_program))
@@ -231,8 +197,7 @@ class TestUnrollAscending(unittest.TestCase):
     def test_simple_lt_increment(self) -> None:
         prog = _unrolled("""
         int s = 0;
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i < 4; i++) s += i;
+        [[c6502::unroll]] for (int i = 0; i < 4; i++) s += i;
         """)
         self.assertEqual(_outer_iter_count(prog), 4)
         # The substituted iv values appear in source-order in the body
@@ -250,16 +215,14 @@ class TestUnrollAscending(unittest.TestCase):
 
     def test_lt_eq_includes_endpoint(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i <= 3; i++) i + 1;
+        [[c6502::unroll]] for (int i = 0; i <= 3; i++) i + 1;
         """)
         self.assertEqual(_outer_iter_count(prog), 4)
 
     def test_compound_assign_step(self) -> None:
         prog = _unrolled("""
         int s = 0;
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i < 10; i += 2) s += i;
+        [[c6502::unroll]] for (int i = 0; i < 10; i += 2) s += i;
         """)
         self.assertEqual(_outer_iter_count(prog), 5)
         items = _main_block_items(prog)
@@ -273,8 +236,7 @@ class TestUnrollAscending(unittest.TestCase):
 
     def test_prefix_increment(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i < 3; ++i) i;
+        [[c6502::unroll]] for (int i = 0; i < 3; ++i) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 3)
 
@@ -283,8 +245,7 @@ class TestUnrollDescending(unittest.TestCase):
     def test_gt_decrement(self) -> None:
         prog = _unrolled("""
         int s = 0;
-        #pragma c6502 loop unroll(enable)
-        for (int i = 5; i > 0; i--) s += i;
+        [[c6502::unroll]] for (int i = 5; i > 0; i--) s += i;
         """)
         self.assertEqual(_outer_iter_count(prog), 5)
         items = _main_block_items(prog)
@@ -298,15 +259,13 @@ class TestUnrollDescending(unittest.TestCase):
 
     def test_ge_decrement_to_zero(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 3; i >= 0; --i) i;
+        [[c6502::unroll]] for (int i = 3; i >= 0; --i) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 4)
 
     def test_minus_eq_step(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 10; i > 0; i -= 2) i;
+        [[c6502::unroll]] for (int i = 10; i > 0; i -= 2) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 5)
 
@@ -314,8 +273,7 @@ class TestUnrollDescending(unittest.TestCase):
 class TestUnrollIvTypes(unittest.TestCase):
     def test_long_iv(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (long i = 0; i < 3; i++) i;
+        [[c6502::unroll]] for (long i = 0; i < 3; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 3)
         # The substituted constant must be ConstLong, not ConstInt.
@@ -350,29 +308,25 @@ class TestUnrollIvTypes(unittest.TestCase):
 
     def test_unsigned_int_iv(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (unsigned int i = 0; i < 2; i++) i;
+        [[c6502::unroll]] for (unsigned int i = 0; i < 2; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 2)
 
     def test_char_iv(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (char i = 0; i < 3; i++) i;
+        [[c6502::unroll]] for (char i = 0; i < 3; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 3)
 
     def test_signed_char_iv(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (signed char i = 0; i < 3; i++) i;
+        [[c6502::unroll]] for (signed char i = 0; i < 3; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 3)
 
     def test_unsigned_char_iv(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (unsigned char i = 0; i < 3; i++) i;
+        [[c6502::unroll]] for (unsigned char i = 0; i < 3; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 3)
 
@@ -380,8 +334,7 @@ class TestUnrollIvTypes(unittest.TestCase):
 class TestUnrollEdgeCases(unittest.TestCase):
     def test_zero_iterations(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 5; i < 0; i++) i;
+        [[c6502::unroll]] for (int i = 5; i < 0; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 0)
 
@@ -398,8 +351,7 @@ class TestUnrollEdgeCases(unittest.TestCase):
 
     def test_mixed_annotated_unannotated(self) -> None:
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i < 2; i++) i;
+        [[c6502::unroll]] for (int i = 0; i < 2; i++) i;
         for (int j = 0; j < 2; j++) j;
         """)
         items = _main_block_items(prog)
@@ -412,10 +364,8 @@ class TestUnrollEdgeCases(unittest.TestCase):
     def test_nested_annotated_loops(self) -> None:
         prog = _unrolled("""
         int s = 0;
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i < 4; i++) {
-            #pragma c6502 loop unroll(enable)
-            for (int j = 0; j < 3; j++) {
+        [[c6502::unroll]] for (int i = 0; i < 4; i++) {
+            [[c6502::unroll]] for (int j = 0; j < 3; j++) {
                 s += 1;
             }
         }
@@ -442,8 +392,7 @@ class TestUnrollEdgeCases(unittest.TestCase):
         prog = unroll_program(parse(preprocess("""
             int main(void) {
                 int s = 0;
-                #pragma c6502 loop unroll(enable)
-                for (int i = 0; i < 3; i++) {
+                [[c6502::unroll]] for (int i = 0; i < 3; i++) {
                     int t = i + 1;
                     s += t;
                 }
@@ -480,8 +429,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_break_in_body_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { if (i == 2) break; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { if (i == 2) break; }
             """,
             "break",
         )
@@ -489,8 +437,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_continue_in_body_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { if (i == 2) continue; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { if (i == 2) continue; }
             """,
             "continue",
         )
@@ -498,8 +445,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_goto_in_body_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { goto out; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { goto out; }
         out: ;
             """,
             "goto",
@@ -508,8 +454,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_labeled_stmt_in_body_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { lbl: i; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { lbl: i; }
             """,
             "labeled",
         )
@@ -517,8 +462,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_iv_assignment_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { i = 5; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { i = 5; }
             """,
             "reassigned",
         )
@@ -526,8 +470,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_iv_compound_assign_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { i += 5; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { i += 5; }
             """,
             "modified",
         )
@@ -535,8 +478,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_iv_inner_increment_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { i++; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { i++; }
             """,
             "modified",
         )
@@ -545,8 +487,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         self._expect_unroll_error(
             """
             int *p;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { p = &i; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { p = &i; }
             """,
             "address",
         )
@@ -554,8 +495,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_iv_inner_shadow_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) { int i = 99; }
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) { int i = 99; }
             """,
             "shadowed",
         )
@@ -563,8 +503,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_inner_for_reusing_iv_name_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) {
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) {
                 for (int i = 0; i < 2; i++) i;
             }
             """,
@@ -575,8 +514,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         self._expect_unroll_error(
             """
             int x = 0;
-            #pragma c6502 loop unroll(enable)
-            for (int i = x; i < 4; i++) i;
+            [[c6502::unroll]] for (int i = x; i < 4; i++) i;
             """,
             "integer constant",
         )
@@ -585,8 +523,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         self._expect_unroll_error(
             """
             int x = 4;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < x; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < x; i++) i;
             """,
             "integer constant",
         )
@@ -595,8 +532,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         self._expect_unroll_error(
             """
             int x = 1;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i += x) i;
+            [[c6502::unroll]] for (int i = 0; i < 4; i += x) i;
             """,
             "post-clause step",
         )
@@ -604,8 +540,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_zero_step_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i += 0) i;
+            [[c6502::unroll]] for (int i = 0; i < 4; i += 0) i;
             """,
             "positive integer",
         )
@@ -613,8 +548,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_equality_op_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i == 0; i++) i;
+            [[c6502::unroll]] for (int i = 0; i == 0; i++) i;
             """,
             "comparison op",
         )
@@ -622,8 +556,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_not_equal_op_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i != 4; i++) i;
+            [[c6502::unroll]] for (int i = 0; i != 4; i++) i;
             """,
             "comparison op",
         )
@@ -632,8 +565,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         self._expect_unroll_error(
             """
             int x;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; x < 4; i++) i;
+            [[c6502::unroll]] for (int i = 0; x < 4; i++) i;
             """,
             "induction variable",
         )
@@ -642,8 +574,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         # We accept only `iv <op> const`, not `const <op> iv`.
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; 4 > i; i++) i;
+            [[c6502::unroll]] for (int i = 0; 4 > i; i++) i;
             """,
             "left operand",
         )
@@ -651,8 +582,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_iteration_cap_exceeded_rejected(self) -> None:
         self._expect_unroll_error(
             f"""
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < {MAX_ITERATIONS + 1}; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < {MAX_ITERATIONS + 1}; i++) i;
             """,
             "cap",
         )
@@ -661,8 +591,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         self._expect_unroll_error(
             """
             int i;
-            #pragma c6502 loop unroll(enable)
-            for (i = 0; i < 4; i++) i;
+            [[c6502::unroll]] for (i = 0; i < 4; i++) i;
             """,
             "must declare",
         )
@@ -670,8 +599,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_missing_condition_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; ; i++) { if (i > 4) break; }
+            [[c6502::unroll]] for (int i = 0; ; i++) { if (i > 4) break; }
             """,
             "condition is required",
         )
@@ -679,8 +607,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
     def test_missing_post_rejected(self) -> None:
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; ) i;
+            [[c6502::unroll]] for (int i = 0; i < 4; ) i;
             """,
             "post-clause is required",
         )
@@ -691,8 +618,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         # made an infinite loop return.
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (unsigned char i = 0; i <= 255; i++) i;
+            [[c6502::unroll]] for (unsigned char i = 0; i <= 255; i++) i;
             """,
             "never terminates",
         )
@@ -701,8 +627,7 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         # A signed char tops out at 127 and wraps to -128.
         self._expect_unroll_error(
             """
-            #pragma c6502 loop unroll(enable)
-            for (signed char i = 0; i < 200; i++) i;
+            [[c6502::unroll]] for (signed char i = 0; i < 200; i++) i;
             """,
             "never terminates",
         )
@@ -715,8 +640,8 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         src = (
             "unsigned char row[256];\n"
             "void fill(unsigned char v) {\n"
-            "#pragma c6502 loop unroll(enable)\n"
-            "    for (unsigned char i = 0; i <= 255; i++) row[i] = v;\n"
+            "    [[c6502::unroll]] "
+            "for (unsigned char i = 0; i <= 255; i++) row[i] = v;\n"
             "}\n"
         )
         with patch("sys.stdin", io.StringIO(src)), \
@@ -736,16 +661,14 @@ class TestUnrollTripCountWidth(unittest.TestCase):
     def test_step_wraps_past_bound(self) -> None:
         # 250, 254, then 258 wraps to 2, and `2 > 3` is false.
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (unsigned char i = 250; i > 3; i += 4) i;
+        [[c6502::unroll]] for (unsigned char i = 250; i > 3; i += 4) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 2)
 
     def test_cast_bound_is_converted(self) -> None:
         # `(unsigned char)260` is 4.
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = 0; i < (unsigned char)260; i++) i;
+        [[c6502::unroll]] for (int i = 0; i < (unsigned char)260; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 4)
 
@@ -754,8 +677,7 @@ class TestUnrollTripCountWidth(unittest.TestCase):
         # converts i to unsigned, so -3, -2, and -1 compare as 65533,
         # 65534, and 65535, and 0 ends the loop.
         prog = _unrolled("""
-        #pragma c6502 loop unroll(enable)
-        for (int i = (int)65533u; i > 65530u; i++) i;
+        [[c6502::unroll]] for (int i = (int)65533u; i > 65530u; i++) i;
         """)
         self.assertEqual(_outer_iter_count(prog), 3)
 
@@ -772,8 +694,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         src = """
         static const int BOUNDS[3] = {3, 4, 5};
         int main(void) {
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < BOUNDS[2]; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < BOUNDS[2]; i++) i;
             return 0;
         }
         """
@@ -790,8 +711,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         src = """
         static const int M[2][3] = { {1, 2, 3}, {4, 5, 6} };
         int main(void) {
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < M[1][2]; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < M[1][2]; i++) i;
             return 0;
         }
         """
@@ -810,8 +730,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         src = """
         static const int M[2][3] = { {1, 2, 3}, {7} };
         int main(void) {
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < M[1][2]; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < M[1][2]; i++) i;
             return 0;
         }
         """
@@ -830,10 +749,8 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         static const int COUNT[3] = {2, 4, 1};
         int main(void) {
             int s = 0;
-            #pragma c6502 loop unroll(enable)
-            for (int b = 0; b < 3; b++) {
-                #pragma c6502 loop unroll(enable)
-                for (int i = 0; i < COUNT[b]; i++) s++;
+            [[c6502::unroll]] for (int b = 0; b < 3; b++) {
+                [[c6502::unroll]] for (int i = 0; i < COUNT[b]; i++) s++;
             }
             return s;
         }
@@ -871,8 +788,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         src = """
         int main(void) {
             const int BOUNDS[3] = {3, 4, 5};
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < BOUNDS[2]; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < BOUNDS[2]; i++) i;
             return 0;
         }
         """
@@ -885,8 +801,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         src = """
         static int BOUNDS[3] = {3, 4, 5};
         int main(void) {
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < BOUNDS[2]; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < BOUNDS[2]; i++) i;
             return 0;
         }
         """
@@ -899,8 +814,7 @@ class TestUnrollConstArraySubscriptBound(unittest.TestCase):
         static const int BOUNDS[3] = {3, 4, 5};
         int main(void) {
             int j = 1;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < BOUNDS[j]; i++) i;
+            [[c6502::unroll]] for (int i = 0; i < BOUNDS[j]; i++) i;
             return 0;
         }
         """
@@ -924,17 +838,16 @@ class TestUnrollCli(unittest.TestCase):
             rc = main(argv)
         return rc, out.getvalue(), err.getvalue()
 
-    def test_pragma_unrolls_under_optimize(self) -> None:
+    def test_attribute_unrolls_under_optimize(self) -> None:
         # Under `-O`, the AST-level unroll pass fires on
-        # every for-loop carrying the pragma (with the canonical
+        # every for-loop marked `[[c6502::unroll]]` (with the canonical
         # init=const; cond=var<const; step=var=var+const shape).
         # Verify the loop is gone from the TAC (no continue/break
         # labels mint).
         src = """
         int main(void) {
             int s = 0;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) s += i;
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) s += i;
             return s;
         }
         """
@@ -945,15 +858,14 @@ class TestUnrollCli(unittest.TestCase):
         self.assertNotIn("_continue", out)
         self.assertNotIn("_break", out)
 
-    def test_pragma_ignored_without_optimize(self) -> None:
+    def test_attribute_ignored_without_optimize(self) -> None:
         # Without `-O`, the unroll pass is skipped. The
-        # pragma parses but the loop lowers normally with continue
+        # attribute parses but the loop lowers normally with continue
         # / break labels.
         src = """
         int main(void) {
             int s = 0;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) s += i;
+            [[c6502::unroll]] for (int i = 0; i < 4; i++) s += i;
             return s;
         }
         """

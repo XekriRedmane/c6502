@@ -52,8 +52,9 @@ any check fails):
      caller still needs afterwards (`int f(int p) { int l = rec(3);
      return p + l; }` with a recursive `rec`). A soft-stack function
      that has a pool (`zp_local_allocation.pool_eligible`), such as
-     one whose address is taken, or a recursive one under `#pragma
-     c6502 call save(hardware_stack)`, writes only its pool, which is
+     one whose address is taken, or a recursive one whose recursive
+     calls are marked `[[c6502::save_hardware_stack]]`, writes only its
+     pool, which is
      kept apart from its callers' bytes, so calling it is safe.
      `_demote_soft_stack_callers` applies this after the
      per-function checks, repeating until no function changes, since

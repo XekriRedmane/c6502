@@ -202,13 +202,12 @@ class TestRuns(unittest.TestCase):
                 self.assertEqual(_run(src, optimize), 10 * 100 - 5 + 2)
 
 
-class TestHardwareStackPragma(unittest.TestCase):
+class TestHardwareStackSave(unittest.TestCase):
     def test_rejected_through_a_table(self) -> None:
         src = """
             int (*t[1])(int);
             int main(void) {
-                #pragma c6502 call save(hardware_stack)
-                return t[0](1);
+                [[c6502::save_hardware_stack]] return t[0](1);
             }
         """
         with self.assertRaisesRegex(RecursionSaveError, "function pointer"):

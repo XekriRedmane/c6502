@@ -4,8 +4,8 @@
 [passes/recursion_saves.py](../../passes/recursion_saves.py) decides
 which values a recursive function saves on the hardware stack around
 each call that can recurse, and `tac_to_asm` emits the `PHA` and
-`PLA` instructions. It applies only to calls under `#pragma c6502
-call save(hardware_stack)`, and only under `-O`.
+`PLA` instructions. It applies only to calls marked
+`[[c6502::save_hardware_stack]]`, and only under `-O`.
 
 A function on a cycle of calls normally can't have a [private local
 pool](zp_local_pools.md): the call that recurses runs the same code
@@ -16,8 +16,8 @@ that byte in its prologue and restores it in its epilogue. It pays
 for this on every call, through a soft-stack frame it may not
 otherwise need, even on the calls that don't recurse.
 
-The pragma marks the calls in the statement or declaration after
-it. It promises
+The attribute marks the calls in the statement or declaration it
+comes before. It promises
 that the hardware stack is deep enough for the bytes the caller
 pushes there, which the compiler can't check, since it can't tell
 how deep the recursion goes. When every call that stays on the cycle
@@ -57,15 +57,14 @@ void descend(void) {
     if (remaining != 0) {
         remaining = remaining - 1;
         level = here + 1;
-#pragma c6502 call save(hardware_stack)
-        descend();
+        [[c6502::save_hardware_stack]] descend();
         level = here;
     }
 }
 ```
 
 The "Before" listing is the same `-O` compile without the
-pragma.
+attribute.
 
 ### Before
 
@@ -176,14 +175,14 @@ After the call it's pulled straight into `level`. `descend` goes from
 
 In `examples/zork/interpreter/zstring.c`, `print_zstring` saves the
 string decoder's state in locals before the call that prints an
-abbreviation, and restores it after. With the pragma the locals
+abbreviation, and restores it after. With the attribute the locals
 disappear, and the code is the same as the original Zork's: `LDA g;
 PHA` for each byte before the call, and `PLA; STA g` after it.
 
 ## When it applies
 
-- The call is under `#pragma c6502 call save(hardware_stack)`. The
-  pragma has to come right before an expression statement, a
+- The call is marked `[[c6502::save_hardware_stack]]`. The
+  attribute has to come right before an expression statement, a
   `return`, or a declaration, and every call in it has to be one
   that can recurse, a direct call to a function on the caller's
   cycle. Anything else is an error.
@@ -196,8 +195,8 @@ PHA` for each byte before the call, and `PLA; STA g` after it.
 
 The cycle has to be within one source file, since each file's compile
 plans its own saves. The linker takes such a cycle as the compile did:
-the link metadata marks each call edge whose calls are all under the
-pragma (`; call f -> f saved`), and the linker's allocators see the
+the link metadata marks each call edge whose calls are all marked
+(`; call f -> f saved`), and the linker's allocators see the
 cycle through those marks (`hw_stack_cycles`). Any other cycle is a
 link error.
 
@@ -208,9 +207,9 @@ taken (which stay in the frame for the same reason) aren't saved.
 
 ## What it leaves alone
 
-- Recursion without the pragma, which keeps its callee-saved bytes.
+- Recursion without the attribute, which keeps its callee-saved bytes.
 - The unoptimized compile, where every function saves its own
-  callee-saved bytes. The pragma is accepted and ignored.
+  callee-saved bytes. The attribute is accepted and ignored.
 - Parameters. A recursive function still takes its parameters on the
   soft stack, since a zp_abi parameter would be overwritten by the
   arguments of the call that recurses.
@@ -224,8 +223,8 @@ an abbreviation can't contain another, so it goes two calls deep.
 
 ## Related
 
-[Pragmas](../pragmas.md) is the user guide to the pragma, with the
-cautions about the hardware stack's depth.
+[Attributes](../attributes.md#save_hardware_stack) is the user guide
+to the attribute, with the cautions about the hardware stack's depth.
 
 [Private local pools](zp_local_pools.md) gives the functions on the
 cycle their pools, and [byte-granular register

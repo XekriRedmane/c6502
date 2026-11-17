@@ -126,7 +126,7 @@ the startup code that sets up the soft stack, so the program uses
 neither. `mul`, `div`, `mod`, and printing a number use the original's
 shift-and-subtract loops, written in C. No function uses the soft
 stack, `print_zstring` included, which calls itself for an
-abbreviation under `#pragma c6502 call save(hardware_stack)`.
+abbreviation in a call marked `[[c6502::save_hardware_stack]]`.
 
 **Starting over.** Zork jumps to `main` when a page can't be read and
 for the `restart` instruction. `restart()` is declared at `$0800` like

@@ -209,8 +209,7 @@ void sound_delay(uint8_t index) {
 /* Waits `count` times 180 passes, and 256 times for a count of 0. */
 void sound_delay1(uint8_t count) {
     do {
-#pragma c6502 loop keep
-        for (uint8_t y = 0xB4; --y;) {
+        [[c6502::keep]] for (uint8_t y = 0xB4; --y;) {
         }
     } while (--count);
 }
@@ -218,8 +217,7 @@ void sound_delay1(uint8_t count) {
 /* Clicks the speaker 192 times, 128 passes apart, if sound is on. */
 void beep(void) {
     for (uint8_t n = 0xC0; n != 0; n--) {
-#pragma c6502 loop keep
-        for (uint8_t x = 0x80; --x;) {
+        [[c6502::keep]] for (uint8_t x = 0x80; --x;) {
         }
         if (ENABLE_SOUND)
             (void)SPKR;

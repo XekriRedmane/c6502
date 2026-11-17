@@ -968,10 +968,8 @@ static bool show_anim_line(const uint8_t *rows) {
 
     /* 255 passes, then 256 for each further count. */
     uint8_t y = 0xFF;
-#pragma c6502 loop keep
-    for (uint8_t x = anim_count; x != 0; x--) {
-#pragma c6502 loop keep
-        for (; --y;) {
+    [[c6502::keep]] for (uint8_t x = anim_count; x != 0; x--) {
+        [[c6502::keep]] for (; --y;) {
         }
     }
     anim_count++;

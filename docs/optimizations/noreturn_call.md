@@ -170,7 +170,7 @@ later trips overwrite them. A function that still uses the soft stack
 leaves its frame behind as well, and a cycle through one runs out of
 soft stack after enough trips.
 
-`#pragma c6502 call save(hardware_stack)` on such a call is an error,
+`[[c6502::save_hardware_stack]]` on such a call is an error,
 since nothing of the caller's is needed after it.
 
 ## Related

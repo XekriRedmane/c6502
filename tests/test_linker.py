@@ -328,9 +328,9 @@ class TestParameterNames(unittest.TestCase):
 
 
 class TestRecursionWithSaves(unittest.TestCase):
-    """A cycle whose every call is under `#pragma c6502 call
-    save(hardware_stack)` links, as Zork's print_zstring does; one
-    without the pragma doesn't."""
+    """A cycle whose every call is marked
+    `[[c6502::save_hardware_stack]]` links, as Zork's print_zstring
+    does; one without the attribute doesn't."""
 
     _SAVED = """
     unsigned char depth;
@@ -338,8 +338,7 @@ class TestRecursionWithSaves(unittest.TestCase):
     void walk(unsigned char n) {
         unsigned char here = n;
         if (n == 0) return;
-    #pragma c6502 call save(hardware_stack)
-        walk(n - 1);
+        [[c6502::save_hardware_stack]] walk(n - 1);
         out = out * 3 + here;
     }
     """
@@ -379,7 +378,7 @@ class TestRecursionWithSaves(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             p = tmp / "a.o"
-            # Without the pragma the compile itself falls back to the
+            # Without the attribute the compile itself falls back to the
             # soft stack, which the linker can't re-allocate.
             if _compile_to_obj(src, p) != 0:
                 return

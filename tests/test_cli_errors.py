@@ -50,12 +50,19 @@ class TestCliErrors(unittest.TestCase):
              "a struct of a value and a `bool`, not `int`"),
         "call save on a call that can't recurse":
             ("int g(int x) { return x; }\nint f(int x) {\n"
-             "#pragma c6502 call save(hardware_stack)\nreturn g(x);\n}\n",
+             "[[c6502::save_hardware_stack]] return g(x);\n}\n",
              "'g' can't call 'f' again"),
         "call save before an if":
-            ("int f(int x) {\n#pragma c6502 call save(hardware_stack)\n"
+            ("int f(int x) {\n[[c6502::save_hardware_stack]]\n"
              "if (x) return f(x - 1);\nreturn 0;\n}\n",
-             "must come before an expression statement"),
+             "goes before an expression statement"),
+        "old pragma after an include":
+            ("#include <stdint.h>\nint f(void) {\n"
+             "#pragma c6502 loop unroll(enable)\n"
+             "for (int i = 0; i < 2; i++) ;\nreturn 0;\n}\n",
+             "<stdin>: error: line 3: c6502 no longer takes `#pragma "
+             "c6502 loop unroll(enable)`; write the statement attribute "
+             "`[[c6502::unroll]]`"),
         "zeropage on a local":
             ("int main(void) { unsigned char a "
              "[[c6502::zeropage]]; return a; }",

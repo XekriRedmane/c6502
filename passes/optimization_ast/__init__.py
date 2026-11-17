@@ -5,7 +5,7 @@ Distinct from `passes.optimization` (which operates on TAC) and
 this package transforms the c99 AST itself.
 
 Currently houses a single pass: `unroll`, which fully unrolls
-`for` loops carrying `#pragma c6502 loop unroll(enable)`. AST-
+`for` loops marked `[[c6502::unroll]]`. AST-
 level unrolling sidesteps the per-iteration label / induction-
 variable renaming that a TAC-level fold would need to redo —
 identifier_resolution and loop_labeling run AFTER unroll, so

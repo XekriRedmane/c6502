@@ -3,9 +3,10 @@
 c6502 has a few attributes, written in C23's attribute syntax, that
 tell the compiler things C itself has no way to say. These include where an object
 lives, how a function takes its arguments, and how it returns its
-result. This document explains each attribute, and then shows how to
-use them together to call routines that are already in ROM, such as
-the Apple II Monitor's `COUT`.
+result. A few more go before a statement and change how a loop or a
+call compiles. This document explains each attribute, and then shows
+how to use the declaration attributes together to call routines that
+are already in ROM, such as the Apple II Monitor's `COUT`.
 
 The examples use `uint8_t` and friends from `<stdint.h>`, and `bool`
 from `<stdbool.h>`, where it's `_Bool`.
@@ -35,7 +36,9 @@ void f [[c6502::zp_abi]] (void);
 
 A parameter's attributes go after its name, or in front of the
 parameter: `uint8_t n [[c6502::in_x]]` and `[[c6502::in_x]] uint8_t n`
-are the same. An enum's `packed` goes right after `enum`.
+are the same. An enum's `packed` goes right after `enum`. The
+[statement attributes](#statement-attributes) go in front of a
+statement, as in `[[c6502::unroll]] for (...)`.
 
 C23 also lets attributes follow a function's parameter list, a `*`, an
 array's `]`, or the type specifiers, where they apply to that type.
@@ -475,6 +478,236 @@ the attribute can't go with `zeropage` or `address`. Without `-T` it
 has no effect. [linker_scripts.md](linker_scripts.md) describes
 sections and scripts.
 
+## Statement attributes
+
+Three of c6502's attributes go before a statement inside a function,
+where C23 §6.8 allows an attribute list.
+
+| Attribute | Goes before | What it does |
+|---|---|---|
+| `unroll` | a `for` loop | Unrolls the loop completely. |
+| `keep` | a `for` loop | Keeps a loop that computes nothing, such as a delay loop. |
+| `save_hardware_stack` | an expression statement, a `return`, or a declaration | Lets a recursive call save its caller's locals on the 6502's hardware stack. |
+
+```c
+[[c6502::unroll]] for (uint8_t i = 0; i < 4; i++)
+    row[i] = v + i;
+```
+
+The attribute can share the loop's line, as above, or sit on the line
+before it. `unroll` and `save_hardware_stack` take effect only under
+`-O`, and without it the code compiles as if they weren't there. A
+misplaced one is an error either way. `keep` matters only under `-O`
+too, since dead-loop elimination runs only there.
+
+A statement attribute anywhere else is an error whose message names
+the place it goes. That covers `unroll` or `keep` before a `while`
+loop, any of the three on a function or at file scope, and any of them
+before a label.
+C23 gives the attributes before a label to the label, so `L:
+[[c6502::keep]] for (...)` is the way to mark a labeled loop. No
+standard attribute applies to a statement, and the other `c6502::`
+attributes don't either.
+
+These used to be `#pragma c6502` directives. A `#pragma c6502` line is
+now an error whose message names the attribute that replaces it.
+`#pragma c6502 loop unroll(disable)` never did anything and has no
+replacement. Any other `#pragma`, such as `#pragma once` or one meant
+for another compiler, is ignored, as C99 §6.10.6 allows.
+
+### `unroll`
+
+```c
+uint8_t row[4];
+
+void fill(uint8_t v) {
+    [[c6502::unroll]] for (uint8_t i = 0; i < 4; i++)
+        row[i] = v + i;
+}
+```
+
+The loop is replaced by one copy of its body per iteration, with `i`
+replaced by that iteration's value in each copy. The copies need no
+compare, branch, or increment, and a constant index lets `row[i]`
+use the element's address directly. The cost is code size, which
+grows with the number of iterations.
+
+The loop has to have a simple shape the compiler can count:
+
+- The `for` declares one integer variable, initialized to a
+  constant.
+- The condition compares that variable with a constant using `<`,
+  `<=`, `>`, or `>=`.
+- The step is `++`, `--`, `+= K`, or `-= K`, with `K` a positive
+  constant.
+- The body has no `break`, `continue`, `goto`, or label, and doesn't
+  change the variable or take its address.
+- The loop ends within 256 iterations.
+
+A marked loop that doesn't fit this shape is a compile error, since
+the attribute states that the loop is to be unrolled. [Loop
+unrolling](optimizations/unroll.md) has the full rules, including
+which constants count.
+
+### `keep`
+
+Under `-O`, dead-loop elimination deletes a loop whose only effect is
+on variables that nobody reads afterwards. A delay loop is exactly
+that, and its effect is the time it takes:
+
+```c
+void sound_delay1(uint8_t count) {
+    do {
+        [[c6502::keep]] for (uint8_t y = 0xB4; --y;) {
+        }
+    } while (--count);
+}
+```
+
+`keep` makes dead-loop elimination leave the loop alone. The other
+optimizations still apply to it, so the loop may compile to fewer
+instructions than a straightforward translation, and the time it takes
+can change from one version of the compiler to the next. A delay that
+has to be exact belongs in assembly.
+
+### `save_hardware_stack`
+
+This attribute is for recursive functions. Use it only after reading
+the cautions below.
+
+#### What it does
+
+A function that calls itself, directly or through other functions,
+normally keeps its locals in zero-page bytes that it shares with
+other functions on the same terms as everyone else: it saves the
+ones it uses when it starts and restores them when it returns. It
+does that on every call, including the calls that don't recurse,
+and it saves them in a soft-stack frame.
+
+The attribute marks calls that recurse. When every call that can
+recurse is marked, the function instead gets zero-page bytes of its
+own, as a non-recursive function does. Around each marked call, the
+caller pushes each local that's still used after the call onto the
+hardware stack, and pulls them back after the call:
+
+```c
+void print_zstring(void) {
+    ...
+            uint8_t locked = LOCKED_ALPHABET;
+            uint8_t state = ZDECOMPRESS_STATE;
+            load_packed_address();
+            [[c6502::save_hardware_stack]] print_zstring();
+            ZDECOMPRESS_STATE = state;
+            LOCKED_ALPHABET = locked;
+    ...
+}
+```
+
+compiles to
+
+```
+   LDA   LOCKED_ALPHABET
+   PHA
+   LDA   ZDECOMPRESS_STATE
+   PHA
+   JSR   load_packed_address
+   JSR   print_zstring
+   PLA
+   STA   ZDECOMPRESS_STATE
+   PLA
+   STA   LOCKED_ALPHABET
+```
+
+and the function no longer saves anything when it starts or ends. In
+Zork's `print_zstring` (examples/zork/interpreter/zstring.c) this made
+the function 180 bytes smaller, measured in the example it came from,
+and faster on every call.
+
+#### Where it goes
+
+The attribute goes inside a function, just before one of these:
+
+- an expression statement, such as `f(x);` or `y = f(x) + 1;`,
+- a `return` statement, such as `return a + f(x);`,
+- a declaration in a block, such as `int r = f(x);`.
+
+On a declaration it goes at the front, where a declaration's leading
+attributes go: `[[c6502::save_hardware_stack]] int r = f(x);`. C23
+says those apply to the names the declaration declares, but c6502
+reads this one as applying to the calls in the declaration's
+initializers. After a declaration's name, on a function declaration,
+on a typedef, at file scope, and in the first clause of a `for`, it's
+an error.
+
+It marks every call in that statement or declaration, and each of
+them has to be a direct call that can recurse, that is, a call to a
+function that can call the caller back. A call to any other function,
+a call through a function pointer, or a statement with no call at
+all is an error. Before an `if`, a loop, or a block, the attribute is
+also an error, because it would cover the calls in the statements
+nested inside.
+
+The attribute takes effect only when every call that can recurse is
+marked. If a function `f` calls `g` and `g` calls `f`, both calls
+need it. If one is unmarked, the functions compile as they would
+without the attribute. The attribute also has no effect on a function
+that couldn't get its own zero-page bytes anyway, such as one that
+calls through a function pointer.
+
+Parameters, and locals whose address is taken, stay on the soft
+stack, where each call has its own copy. They aren't pushed.
+
+The calls have to be in one source file. The linker accepts
+such a cycle, which the link metadata marks call by call, and reports
+any other recursion as an error. examples/zork/interpreter links
+`print_zstring` this way.
+
+#### Cautions
+
+**The compiler can't check that the hardware stack is big enough.**
+How deep your recursion goes isn't fixed at compile time, so the
+attribute is your promise that it's shallow enough. That's why it isn't on by
+default.
+
+The 6502's hardware stack is a single 256-byte page, `$0100`-`$01FF`.
+Every call in progress already keeps a 2-byte return address there.
+With the attribute, every call in progress also keeps the bytes it
+pushed until the call returns. A recursive call that saves 7 bytes
+uses 9 bytes of hardware stack per level, so 20 levels take 180
+bytes. The rest of the program uses the stack too:
+
+- the return addresses of the calls that led to the recursion,
+- the runtime helpers and the soft-stack epilogue, which push a few
+  bytes for a moment,
+- an interrupt handler, which can run at any point and pushes at
+  least 3 bytes, plus whatever it pushes itself,
+- ROM routines you call, such as the Monitor's, which may use the
+  stack too.
+
+**Running out of hardware stack fails silently.** The stack pointer
+wraps around within page 1, and the next push overwrites the oldest
+bytes on the stack, usually the return addresses of the outermost
+calls. Nothing reports it. The program returns to the wrong place,
+often much later, and the crash points nowhere near its cause.
+
+**You may push more than you expect.** Every local that's still
+needed after the call is pushed, along with any value the compiler
+keeps in a temporary across the call, and a `long` local takes 4
+bytes. To see the exact number, compile with `-S -O`
+and count the `PHA`s before the marked `JSR`.
+
+Use the attribute when you know the recursion is shallow.
+
+Without the attribute, recursion keeps everything but return addresses
+on the soft stack, which can grow much larger than 256 bytes. That's
+slower, but it doesn't depend on how deep the recursion goes. [The
+calling conventions guide](calling_conventions.md#limits) covers the
+limits of both stacks.
+
+[Saves around a recursive call](optimizations/recursion_saves.md)
+describes how the compiler decides what to save, for readers who
+want the details.
+
 ## Calling a ROM routine
 
 A ROM routine was written long before your program, so the compiler
@@ -745,6 +978,11 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | `return_bool_in_carry` on a function returning a struct that isn't one value of 1 or 2 bytes followed by one `bool` | Only that shape fits in A, X, and the carry flag. |
 | `preserves_x` on a routine that returns a struct whose value is an `int` or `unsigned int` | The high byte of the value comes back in X. |
 | `packed` on `enum tag` without its list of constants | The definition decides the type, so a later use can't change it. |
+| `unroll` or `keep` before anything but a `for` loop, or both on one loop | They describe a `for` loop, and an unrolled loop leaves no loop to keep. |
+| `save_hardware_stack` before an `if`, a loop, or a block | It would cover the calls in the statements nested inside. |
+| `save_hardware_stack` on a statement or declaration without a call, or on a call that can't recurse | There's nothing for it to save around. |
+| A statement attribute on a declaration other than one in a block, or before a label | It applies to a statement, and C23 gives the attributes before a label to the label. |
+| A `#pragma c6502` line | The statement attributes replaced the pragmas, and the error names the attribute to write instead. |
 
 ## Limits
 

@@ -195,7 +195,7 @@ def _resolved(source: str, *, optimize: bool = False):
     lifting. Order matters:
       1. parse — c99 AST
       2. (optional) unroll — when -O is set, every for-loop
-         carrying `#pragma c6502 loop unroll(enable)` is fully
+         marked `[[c6502::unroll]]` is fully
          unrolled here, BEFORE identifier_resolution, so each
          cloned body's locals get fresh per-iteration `@N.<name>`
          rewrites for free.
@@ -447,7 +447,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     choose_global_carry_returns(tac, symbols, abi)
     choose_carry_returns(tac, symbols)
     # Functions on a cycle whose recursive calls are all under
-    # `#pragma c6502 call save(hardware_stack)` get private pools too,
+    # `[[c6502::save_hardware_stack]]` get private pools too,
     # and save their live values around those calls
     # (passes/recursion_saves.py).
     recursion = recursive_pool_functions(tac, abi)
@@ -1026,7 +1026,7 @@ def main(argv: list[str]) -> int:
              "(byte-granular forward + backward copy-prop, byte-DCE, "
              "byte-granular regalloc), then late prologue / epilogue "
              "synthesis. Also enables AST-level loop unrolling for "
-             "`#pragma c6502 loop unroll(enable)` loops and the "
+             "`[[c6502::unroll]]` loops and the "
              "`[[c6502::zp_abi]]` calling-convention "
              "optimization. Applies to --resolve, --tac, -S, and -c, "
              "and to C sources given to a link.",

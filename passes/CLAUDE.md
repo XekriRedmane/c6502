@@ -16,7 +16,7 @@ middle-end passes that sit between the language front end
   SSA round-trip with byte-granular regalloc, move coalescing,
   const-static fold.
 - [optimization_ast/CLAUDE.md](optimization_ast/CLAUDE.md) — AST-level
-  unroller (`#pragma c6502 loop unroll(enable)`).
+  unroller (`[[c6502::unroll]]`).
 
 ## Module roster
 
@@ -125,8 +125,8 @@ this directory:
   defined. `check_asm` runs after `tac_to_asm`, the asm optimizer,
   each peephole sweep, and at the end: labels unique and branched to,
   no `Phi` outside SSA, no `Pseudo` once they're replaced.
-- `recursion_saves.py` — `#pragma c6502 call save(hardware_stack)`.
-  `check_pragmas` rejects a marked call that can't recurse,
+- `recursion_saves.py` — `[[c6502::save_hardware_stack]]`.
+  `check_marked_calls` rejects a marked call that can't recurse,
   `hw_stack_cycles` finds the call-graph cycles whose every
   recursive call is marked, and `plan_saves` tells `tac_to_asm`
   where to push and pull each value live across such a call (see
@@ -1715,8 +1715,9 @@ every coexisting zp_abi function's param slots. Eligibility:
   callees).
 - No `IndirectCall`.
 - Not in any call-graph cycle (Tarjan SCC), unless every call
-  between the cycle's members is marked with `#pragma c6502 call
-  save(hardware_stack)` (see "Recursion with hardware-stack saves").
+  between the cycle's members is marked with
+  `[[c6502::save_hardware_stack]]` (see "Recursion with hardware-stack
+  saves").
 - Every direct callee is also eligible, OR is a zp_abi extern (treated
   as a bounded leaf via its declared param slots). A non-zp_abi extern
   callee disqualifies the caller.
@@ -1742,8 +1743,8 @@ subroutines). The callers of `graph_calls` / `abandons_caller` are
 `pinned_param_copies` read), `recursion_saves.call_graph` and
 `hw_stack_cycles`, and `zp_link_metadata.build_metadata`, which
 writes no `call` line for the call, so the linker's synthetic program
-leaves it out too. `check_pragmas` rejects `call save(hardware_stack)`
-on such a call.
+leaves it out too. `check_marked_calls` rejects
+`[[c6502::save_hardware_stack]]` on such a call.
 
 A call with arguments stays an edge, since the caller writes the callee's
 parameter slots while its own bytes are live, and in a cycle those
@@ -1761,8 +1762,8 @@ leaves its frame behind, which doesn't wrap.
 `recursion_saves.hw_stack_cycles` finds the cycles whose every call
 between members is marked (`tac_ast.FunctionCall.hw_stack_save`, set
 from the c99 `FunctionCall` flag the parser sets for the calls in a
-statement or declaration under the pragma;
-`check_pragmas` rejects a marked call to a function off the caller's
+statement or declaration marked `[[c6502::save_hardware_stack]]`;
+`check_marked_calls` rejects a marked call to a function off the caller's
 cycle). Those functions skip the cycle rule above, and
 `zp_local_allocation.recursive_pool_functions` maps the eligible ones
 to their cycles. Then:
@@ -1787,7 +1788,7 @@ to their cycles. Then:
   the plan fails loudly rather than miscompile.
 
 Parameters stay on the soft stack (these functions aren't zp_abi).
-The unoptimized pipeline ignores the pragma. The linker accepts a
+The unoptimized pipeline ignores the attribute. The linker accepts a
 cycle within one unit whose every call is marked: the metadata's
 `call` lines carry `saved` for such edges (`LinkMetadata.saved_calls`),
 `linker._synthesize` puts `hw_stack_save` on the synthetic calls, and

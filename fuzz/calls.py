@@ -4,9 +4,8 @@ Each program has three to six functions f0..fN arranged as a DAG (fi
 only calls fj with j > i), plus extras chosen per seed:
   * a recursive function `rec`, which can't get zp_abi and so stays
     on the soft stack. Sometimes it keeps locals live across its
-    recursive call under `#pragma c6502 call save(hardware_stack)`,
-    which gives it a private pool and saves them on the hardware
-    stack,
+    recursive call marked `[[c6502::save_hardware_stack]]`, which
+    gives it a private pool and saves them on the hardware stack,
   * the last function called through a function pointer, which also
     puts it (and every function making that indirect call) on the
     soft stack,
@@ -59,8 +58,7 @@ _REC_SAVED = """int rec(int d, int x) {
     unsigned char a = (unsigned char)(x * 7);
     long b = (long)x * 3;
     if (d <= 0) return x & 255;
-#pragma c6502 call save(hardware_stack)
-    int r = rec(d - 1, (x * 3 + d) & 1023);
+    [[c6502::save_hardware_stack]] int r = rec(d - 1, (x * 3 + d) & 1023);
     return (r + a + (int)(b & 15)) & 1023;
 }"""
 
@@ -138,8 +136,9 @@ def make_program(seed: int) -> tuple[str, None]:
     # caller of `rec` when `rec` has no private pool, and every
     # caller of one of those (a zp_abi function can only call zp_abi
     # functions and soft-stack functions with a pool, and the `rec`
-    # under the pragma has one). `register` is only legal on the
-    # rest, since it needs zp_abi.
+    # whose recursive call is marked `[[c6502::save_hardware_stack]]`
+    # has one). `register` is only legal on the rest, since it needs
+    # zp_abi.
     soft = set()
     if use_ptr_fn:
         soft.add(n - 1)

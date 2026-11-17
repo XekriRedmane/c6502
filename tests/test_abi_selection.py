@@ -130,16 +130,17 @@ class TestSelectAbi(unittest.TestCase):
                 self.assertIsInstance(abi["f"], ZpLayout)
 
     def test_caller_of_recursive_function(self) -> None:
-        # Without the pragma, `rec` has no pool and `f` is demoted.
-        # With it, `rec` has a pool and `f` keeps zp_abi.
+        # Without `[[c6502::save_hardware_stack]]` on the recursive
+        # call, `rec` has no pool and `f` is demoted. With it, `rec`
+        # has a pool and `f` keeps zp_abi.
         from preprocessor import preprocess
-        for pragma, want in (
+        for attribute, want in (
             ("", SoftStackLayout),
-            ("#pragma c6502 call save(hardware_stack)\n", ZpLayout),
+            ("[[c6502::save_hardware_stack]] ", ZpLayout),
         ):
-            with self.subTest(pragma=bool(pragma)):
+            with self.subTest(attribute=bool(attribute)):
                 tac, c99, types = _compile_to_tac(preprocess(
-                    "int rec(int d) {\nif (d <= 0) return 0;\n" + pragma
+                    "int rec(int d) {\nif (d <= 0) return 0;\n" + attribute
                     + "return rec(d - 1) + 1;\n}\n"
                     "int f(int p) { int l = rec(3); return p + l; }\n"
                     "int main(void) { return f(4); }\n"

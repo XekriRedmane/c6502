@@ -64,8 +64,8 @@ non-zp_abi externs (the linker uses these to detect when a TU's
 function calls something that can't be globally bounded). A call to
 a `[[noreturn]]` function that passes no arguments has no line, since
 it isn't an edge of the call graph (`passes/call_edges.py`). `saved`
-marks an edge whose every call is under `#pragma c6502 call
-save(hardware_stack)`, so the linker can take a cycle of such calls
+marks an edge whose every call is marked
+`[[c6502::save_hardware_stack]]`, so the linker can take a cycle of such calls
 as the compile did (`passes/recursion_saves.py`). `zp`
 lines describe zero-page objects; each `init` byte is written as the
 operand of an `LDA #` (`$05`, `<buf`, `>(buf+2)`), and `weight`

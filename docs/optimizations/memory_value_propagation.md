@@ -258,9 +258,11 @@ instr_get_prop_addr:                        instr_get_prop_addr:
 That's 24 bytes in the four property instructions, `remove_obj`, and
 `instr_insert_obj`, whose calls to `get_object_addr` write only its
 return pointer.
-In `decode.c`, `do_var` reads `OPERANDS` in its cases after calls whose
-only call outside the unit is to `internal_error`, which never
-returns.
+In `decode.c`, `do_var` copied `OPERANDS` into a slot before its jump
+table, and every case read the slot. The `pull` case reads it after
+`pop`, whose only call outside the unit is to `internal_error`, which
+never returns. That read had kept the copy for all of them, since the
+rewrite is made only when every read of a slot's stores can be.
 
 ## When it applies
 

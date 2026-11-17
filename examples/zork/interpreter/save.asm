@@ -189,6 +189,8 @@ COUT1	EQU	$FDF0
 ; item copy_data_to_buff section=.text local=true zero=false
 ; item copy_data_from_buff section=.text local=true zero=false
 ; item instr_save section=.text local=false zero=false
+; item instr_save@run1 section=.text local=true zero=false
+; item instr_save@run0 section=.text local=true zero=false
 ; item instr_save@tail1 section=.text local=true zero=false
 ; item instr_save@tail0 section=.text local=true zero=false
 ; item instr_restore section=.text local=false zero=false
@@ -291,9 +293,7 @@ copy_data_from_buff:
 instr_save:
    SUBROUTINE
 
-   JSR   please_insert_save_diskette
-   STA   disk_sector
-   STX   disk_sector+1
+   JSR   instr_save@run1
    LDY   #$00
    LDA   (Z_HEADER_ADDR),Y
    STA   BUFF_AREA
@@ -338,12 +338,7 @@ instr_save:
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
-   LDA   Z_HEADER_ADDR
-   STA   disk_buffer
-   LDA   Z_HEADER_ADDR+1
-   STA   disk_buffer+1
-   LDY   #$0E
-   LDA   (Z_HEADER_ADDR),Y
+   JSR   instr_save@run0
    ADC   #$01
    STA   __local_instr_save__pages
 .loop@2_start:
@@ -357,6 +352,25 @@ instr_save:
    JMP   instr_save@tail0
 .instr_save@fail:
    JMP   instr_save@tail1
+
+instr_save@run1:
+   SUBROUTINE
+
+   JSR   please_insert_save_diskette
+   STA   disk_sector
+   STX   disk_sector+1
+   RTS
+
+instr_save@run0:
+   SUBROUTINE
+
+   LDA   Z_HEADER_ADDR
+   STA   disk_buffer
+   LDA   Z_HEADER_ADDR+1
+   STA   disk_buffer+1
+   LDY   #$0E
+   LDA   (Z_HEADER_ADDR),Y
+   RTS
 
 instr_save@tail1:
    SUBROUTINE
@@ -375,9 +389,7 @@ instr_save@tail0:
 instr_restore:
    SUBROUTINE
 
-   JSR   please_insert_save_diskette
-   STA   disk_sector
-   STX   disk_sector+1
+   JSR   instr_save@run1
    JSR   read_next_sector
    BCC   .lb_skip@1
    JMP   .instr_restore@fail
@@ -432,12 +444,7 @@ instr_restore:
    LDX   #$00
    LDY   #$68
    JSR   copy_data_from_buff
-   LDA   Z_HEADER_ADDR
-   STA   disk_buffer
-   LDA   Z_HEADER_ADDR+1
-   STA   disk_buffer+1
-   LDY   #$0E
-   LDA   (Z_HEADER_ADDR),Y
+   JSR   instr_save@run0
    CLC
    ADC   #$01
    STA   __local_instr_restore__pages

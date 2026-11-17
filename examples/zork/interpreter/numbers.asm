@@ -212,8 +212,11 @@ COUT1	EQU	$FDF0
 ; item store_with_sign section=.text local=true zero=false
 ; item store_with_sign@tail0 section=.text local=true zero=false
 ; item instr_mul section=.text local=false zero=false
+; item instr_mul@run2 section=.text local=true zero=false
+; item instr_mul@run0 section=.text local=true zero=false
 ; item instr_mul@tail1 section=.text local=true zero=false
 ; item instr_div section=.text local=false zero=false
+; item instr_div@run1 section=.text local=true zero=false
 ; item instr_mod section=.text local=false zero=false
 ; item instr_random section=.text local=false zero=false
 ; item print_number section=.text local=false zero=false
@@ -411,18 +414,7 @@ store_with_sign@tail0:
 instr_mul:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __zpabi_check_sign__b_0
-   LDA   OPERANDS+3
-   STA   __zpabi_check_sign__b_1
-   LDA   OPERANDS
-   STA   __zpabi_check_sign__a_0
-   LDA   OPERANDS+1
-   STA   __zpabi_check_sign__a_1
-   JSR   check_sign
-   STA   __zpabi_store_with_sign__n_0
-   STX   __zpabi_store_with_sign__n_1
-   LDA   __zpabi_check_sign__b_1
+   JSR   instr_mul@run2
    BNE   .if_else@7
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
@@ -448,6 +440,28 @@ instr_mul:
    JSR   mulu16
    JMP   instr_mul@tail1
 
+instr_mul@run2:
+   SUBROUTINE
+
+   JSR   instr_mul@run0
+   STA   __zpabi_store_with_sign__n_0
+   STX   __zpabi_store_with_sign__n_1
+   LDA   __zpabi_check_sign__b_1
+   RTS
+
+instr_mul@run0:
+   SUBROUTINE
+
+   LDA   OPERANDS+2
+   STA   __zpabi_check_sign__b_0
+   LDA   OPERANDS+3
+   STA   __zpabi_check_sign__b_1
+   LDA   OPERANDS
+   STA   __zpabi_check_sign__a_0
+   LDA   OPERANDS+1
+   STA   __zpabi_check_sign__a_1
+   JMP   check_sign
+
 instr_mul@tail1:
    SUBROUTINE
 
@@ -459,18 +473,7 @@ instr_mul@tail1:
 instr_div:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __zpabi_check_sign__b_0
-   LDA   OPERANDS+3
-   STA   __zpabi_check_sign__b_1
-   LDA   OPERANDS
-   STA   __zpabi_check_sign__a_0
-   LDA   OPERANDS+1
-   STA   __zpabi_check_sign__a_1
-   JSR   check_sign
-   STA   __zpabi_store_with_sign__n_0
-   STX   __zpabi_store_with_sign__n_1
-   LDA   __zpabi_check_sign__b_1
+   JSR   instr_mul@run2
    BNE   .if_else@11
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
@@ -487,34 +490,25 @@ instr_div:
    JMP   .xjump@1
 .if_else@11:
    LDA   __zpabi_store_with_sign__n_0
+   JSR   instr_div@run1
+   JMP   instr_mul@tail1
+
+instr_div@run1:
+   SUBROUTINE
+
    STA   __zpabi_divu16__dividend_0
    STX   __zpabi_divu16__dividend_1
    LDA   __zpabi_check_sign__b_0
    STA   __zpabi_divu16__divisor_0
    LDA   __zpabi_check_sign__b_1
    STA   __zpabi_divu16__divisor_1
-   JSR   divu16
-   JMP   instr_mul@tail1
+   JMP   divu16
 
 instr_mod:
    SUBROUTINE
 
-   LDA   OPERANDS+2
-   STA   __zpabi_check_sign__b_0
-   LDA   OPERANDS+3
-   STA   __zpabi_check_sign__b_1
-   LDA   OPERANDS
-   STA   __zpabi_check_sign__a_0
-   LDA   OPERANDS+1
-   STA   __zpabi_check_sign__a_1
-   JSR   check_sign
-   STA   __zpabi_divu16__dividend_0
-   STX   __zpabi_divu16__dividend_1
-   LDA   __zpabi_check_sign__b_0
-   STA   __zpabi_divu16__divisor_0
-   LDA   __zpabi_check_sign__b_1
-   STA   __zpabi_divu16__divisor_1
-   JSR   divu16
+   JSR   instr_mul@run0
+   JSR   instr_div@run1
    LDA   remainder
    STA   __zpabi_store_result__value_0
    LDA   remainder+1

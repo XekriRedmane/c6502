@@ -157,6 +157,14 @@ this directory:
   the copy may touch `t` or `M`, call, or branch, and `t`, A, and N/Z
   must be dead after. `OPERANDS[0] = c ? f() : g();` stores the high
   byte straight into `OPERANDS+1` on each arm.
+- `outline_runs.py` — `apply_outline_runs`. Runs after
+  `apply_shared_tails`, last in `compile.optimized_asm`. A run of
+  straight-line instructions repeated in the unit (no label, branch,
+  jump, return, push, pull, soft-stack operand, own `__local_*` slot,
+  or call with register arguments; not in a loop of at most 64 bytes)
+  goes in a new internal function `F@run<n>` ending in `RTS`, and each
+  place becomes `JSR F@run<n>`, when that's smaller before the link.
+  Sizes count the `zp_names` operands as one byte.
 - `shared_tails.py` — `apply_shared_tails`. Runs last in
   `compile.optimized_asm`, after `apply_short_jumps`. A run of
   instructions that several functions of the unit end alike (ending in

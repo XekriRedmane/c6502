@@ -138,19 +138,23 @@ interpreter state in every scenario.
 | `get_next_zchar` | 76 | 77 |
 | `buffer_char` | 82 | 88 |
 | `dump_buffer_line` | 15 | 10 |
-| `dump_buffer_to_printer` | 78 | 87 |
+| `dump_buffer_to_printer` | 78 | 77 |
 | `dump_buffer_to_screen` | 21 | 20 |
-| `dump_buffer_with_more` | 110 | 116 |
+| `dump_buffer_with_more` | 110 | 106 |
 | `cout_string` | 14 | 14 |
+| the two runs `dump_buffer_to_printer` and `dump_buffer_with_more` share | | 18 |
 | `do_rwts_on_sector` | 51 | 50 |
 | `read_from_sector` | 6 | 2 |
-| **Code** | **981** | **1000** |
+| **Code** | **981** | **998** |
 
 Zork's `buffer_char` counts its `buffer_char_set_buffer_end` label,
 which `dump_buffer_with_more` jumps to. The data is the same: the IOB
 and DCT, the printer flag, `[MORE]`, and alphabet 2's 24 characters.
 
-**Speed.** Counting the cycles from the call to `print_string_literal`
+**Speed.** These counts were measured before the compiler changes of
+16 Nov 2026 that shortened `get_next_code_byte2`, `print_zstring`,
+`dump_buffer_to_printer`, and `dump_buffer_with_more`, which haven't
+been timed yet. Counting the cycles from the call to `print_string_literal`
 to its return (the stand-ins take none), the string takes 41,415
 cycles against Zork's 39,980, 3.6% more; with a transcript, 45,626
 against 43,687; and to the failed read, 2,376 against 2,283. When the

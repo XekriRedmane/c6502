@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 3% larger than the
+(see "Compared with Zork's own code"). It is 1% larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
@@ -163,17 +163,17 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 446 |
-| `decode.c` | 1859 | 1783 |
+| `decode.c` | 1859 | 1775 |
 | `objects.c` | 788 | 879 |
-| `numbers.c` | 436 | 465 |
-| `input.c` | 1018 | 1073 |
-| `pages.c` | 384 | 379 |
+| `numbers.c` | 436 | 419 |
+| `input.c` | 1018 | 1068 |
+| `pages.c` | 384 | 371 |
 | `zstring.c` | 383 | 387 |
-| `output.c` | 387 | 401 |
-| `disk.c` | 138 | 137 |
+| `output.c` | 387 | 399 |
+| `disk.c` | 138 | 136 |
 | `prompts.c` | 534 | 527 |
-| `save.c` | 325 | 337 |
-| **Total** | **6643** | **6814** |
+| `save.c` | 325 | 332 |
+| **Total** | **6643** | **6739** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -540,3 +540,8 @@ the smaller code saved.
   with stores between
   ([and_sign_bit_branch.md](../../../docs/optimizations/and_sign_bit_branch.md)),
   8 bytes in `ascii_to_zchar` and `get_alphabet_for_char`.
+- A run of instructions repeated in a unit goes in a function of its
+  own, which each place calls, ending with a jump to its last call
+  ([outline_runs.md](../../../docs/optimizations/outline_runs.md)), 75
+  bytes, such as the 19 that pass both operands to `check_sign` in
+  `mul`, `div`, and `mod`. Each place pays 12 cycles.

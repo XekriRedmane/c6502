@@ -246,6 +246,7 @@ COUT1	EQU	$FDF0
 ; call skip_separators -> is_separator
 ; share member=is_dict_separator:__zpabi_is_dict_separator__c member=is_separator:__zpabi_is_separator__c member=is_std_separator:__zpabi_is_std_separator__c holder=instr_sread live=instr_sread:is_dict_separator live=is_separator:is_dict_separator forward=instr_sread>is_dict_separator forward=is_separator>is_dict_separator forward=is_separator>is_std_separator writer=instr_sread
 ; item print_status_line section=.text local=false zero=false
+; item print_status_line@run1 section=.text local=true zero=false
 ; item read_line section=.text local=true zero=false
 ; item get_dictionary_addr section=.text local=true zero=false
 ; item is_dict_separator section=.text local=true zero=false
@@ -256,6 +257,7 @@ COUT1	EQU	$FDF0
 ; item search_nonalpha_table section=.text local=true zero=false
 ; item z_compress section=.text local=true zero=false
 ; item ascii_to_zchar section=.text local=true zero=false
+; item ascii_to_zchar@run0 section=.text local=true zero=false
 ; item match_dictionary_word section=.text local=true zero=false
 ; item instr_sread section=.text local=false zero=false
 ; item sScore section=.rodata local=true zero=false
@@ -371,16 +373,12 @@ print_status_line:
    STA   CH
    LDA   #$11
    JSR   var_get
-   STA   __zpabi_print_number__n_0
-   STX   __zpabi_print_number__n_1
-   JSR   print_number
+   JSR   print_status_line@run1
    LDA   #$2F
    JSR   buffer_char
    LDA   #$12
    JSR   var_get
-   STA   __zpabi_print_number__n_0
-   STX   __zpabi_print_number__n_1
-   JSR   print_number
+   JSR   print_status_line@run1
    JSR   dump_buffer_to_screen
    LDA   #$FF
    STA   INVFLG
@@ -389,6 +387,13 @@ print_status_line:
    LDA   __local_print_status_line__2
    STA   CH
    JMP   VTAB
+
+print_status_line@run1:
+   SUBROUTINE
+
+   STA   __zpabi_print_number__n_0
+   STX   __zpabi_print_number__n_1
+   JMP   print_number
 
 read_line:
    SUBROUTINE
@@ -671,8 +676,7 @@ ascii_to_zchar:
    LDA   #$05
    JMP   .if_end@23
 .if_else@24:
-   STA   __zpabi_get_alphabet_for_char__c
-   JSR   get_alphabet_for_char
+   JSR   ascii_to_zchar@run0
    STA   __local_ascii_to_zchar__1
    CMP   LOCKED_ALPHABET
    BEQ   .if_end@25
@@ -684,8 +688,7 @@ ascii_to_zchar:
    STA   __local_ascii_to_zchar__0
    LDX   __local_ascii_to_zchar__index
    LDA   ZCHAR_SCRATCH1,X
-   STA   __zpabi_get_alphabet_for_char__c
-   JSR   get_alphabet_for_char
+   JSR   ascii_to_zchar@run0
    CMP   __local_ascii_to_zchar__1
    BNE   .if_else@27
    LDA   __local_ascii_to_zchar__0
@@ -709,8 +712,7 @@ ascii_to_zchar:
    BEQ   .loop@7_break
 .if_end@25:
    LDA   __local_ascii_to_zchar__2
-   STA   __zpabi_get_alphabet_for_char__c
-   JSR   get_alphabet_for_char
+   JSR   ascii_to_zchar@run0
    SEC
    SBC   #$01
    BPL   .if_else@30
@@ -763,6 +765,12 @@ ascii_to_zchar:
 .lb_skip@0:
 .loop@7_break:
    JMP   z_compress
+
+ascii_to_zchar@run0:
+   SUBROUTINE
+
+   STA   __zpabi_get_alphabet_for_char__c
+   JMP   get_alphabet_for_char
 
 match_dictionary_word:
    SUBROUTINE

@@ -64,14 +64,19 @@ from sim.assembler import instruction_size
 _ENDS = (asm_ast.Jump, asm_ast.Return)
 
 
-def apply_shared_tails(prog: asm_ast.Program, symbols) -> asm_ast.Program:
+def apply_shared_tails(
+    prog: asm_ast.Program, symbols, *, zp_names=None,
+) -> asm_ast.Program:
     """`prog` with each shared segment in a function of its own (see
     the module docstring). Each new function's symbol, a copy of the
-    first sharer's with internal linkage, is added to `symbols`."""
+    first sharer's with internal linkage, is added to `symbols`.
+    `zp_names` are the names of zero-page bytes, which take one-byte
+    operands, for the sizes of the segments
+    (`sim.assembler.instruction_size`)."""
     top = list(prog.top_level)
     count = 0
     while True:
-        best = _best_share(top)
+        best = _best_share(top, zp_names)
         if best is None:
             return asm_ast.Program(top_level=top)
         owner, segments = best
@@ -112,7 +117,7 @@ def _eligible(tl) -> bool:
                         for i in tl.instructions))
 
 
-def _best_share(top):
+def _best_share(top, zp_names=None):
     """`(owner, {key: (function index, start, end)})` for the segment
     that saves the most bytes, or None."""
     fns = [(i, tl) for i, tl in enumerate(top) if _eligible(tl)]
@@ -128,7 +133,7 @@ def _best_share(top):
                     if seg is None:
                         continue
                     sa, sb, form = seg
-                    size = sum(instruction_size(x)
+                    size = sum(instruction_size(x, zp_names=zp_names)
                                for x in a.instructions[sa:ta + 1])
                     members = {fa: (sa, ta), fb: (sb, tb)}
                     for fc, c in fns:

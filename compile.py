@@ -187,6 +187,7 @@ from c99_to_tac import translate_program as translate_to_tac
 from passes.return_in_zero_page import return_pointers_in_zero_page
 from passes.constant_store_order import apply_constant_store_order
 from passes.shared_tails import apply_shared_tails
+from passes.outline_runs import apply_outline_runs
 
 
 def _resolved(source: str, *, optimize: bool = False):
@@ -696,7 +697,16 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm4 = apply_short_jumps(asm4)
     # Code that two functions end with alike goes in a function of its
     # own, which each jumps to (passes/shared_tails.py).
-    asm4 = apply_shared_tails(asm4, symbols)
+    # The names that are zero-page bytes, for the sizes of the code
+    # the next two passes move.
+    from sim.assembler import DEFAULT_ZP_SYMBOLS
+    zp_names = frozenset(
+        n for n, a in {**all_slot_symbols, **zp.addrs}.items() if a <= 0xFF
+    ) | frozenset(DEFAULT_ZP_SYMBOLS)
+    asm4 = apply_shared_tails(asm4, symbols, zp_names=zp_names)
+    # A run of instructions repeated in the unit goes in a function of
+    # its own, which each place calls (passes/outline_runs.py).
+    asm4 = apply_outline_runs(asm4, symbols, zp_names=zp_names)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     zp_records = link_records(asm4, zp)

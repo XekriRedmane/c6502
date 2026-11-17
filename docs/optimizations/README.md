@@ -105,6 +105,7 @@ a user variable.
 - [Narrowing widened arithmetic](narrow_widened_arith.md). Does promoted byte arithmetic at one byte when only the low byte is used.
 - [Operands without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`, and the same for `ADC`, `SBC`, `AND`, `ORA`, and `EOR`.
 - [OR-with-zero absorb](or_zero_absorb.md). Rewrites `LDA #0; ORA x` as `LDA x` before move coalescing.
+- [Outlined runs](outline_runs.md). Moves a run of instructions that several places in a unit repeat into a function of its own, which each place calls.
 - [PHA and PLA removal](dead_pha_pla.md). Drops a PHA/PLA pair around instructions that leave A untouched.
 - [Private local pools](zp_local_pools.md). Gives each eligible function body-local zero-page bytes that no coexisting function uses.
 - [Prologue synthesis](prologue_synthesis.md). Adds a soft-stack prologue and epilogue only to functions that need a frame.
@@ -263,8 +264,9 @@ them whenever a pass is added or moved.
 31. Long-branch expansion.
 32. [Shorter jumps](short_jumps.md)
 33. [Shared function tails](shared_tails.md)
-34. Zero-page global placement, and lowering to `asm2_ast`.
-35. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+34. [Outlined runs](outline_runs.md)
+35. Zero-page global placement, and lowering to `asm2_ast`.
+36. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

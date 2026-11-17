@@ -181,6 +181,7 @@ COUT1	EQU	$FDF0
 ; item read_from_sector section=.text local=false zero=false
 ; item inc_sector_and_read section=.text local=false zero=false
 ; item read_next_sector section=.text local=false zero=false
+; item read_next_sector@run0 section=.text local=true zero=false
 ; item write_to_sector section=.text local=false zero=false
 ; item inc_sector_and_write section=.text local=false zero=false
 ; item write_next_sector section=.text local=false zero=false
@@ -304,11 +305,17 @@ inc_sector_and_read:
 read_next_sector:
    SUBROUTINE
 
+   JSR   read_next_sector@run0
+   JMP   inc_sector_and_read
+
+read_next_sector@run0:
+   SUBROUTINE
+
    LDA   #<BUFF_AREA
    STA   disk_buffer
    LDA   #>BUFF_AREA
    STA   disk_buffer+1
-   JMP   inc_sector_and_read
+   RTS
 
 write_to_sector:
    SUBROUTINE
@@ -341,10 +348,7 @@ inc_sector_and_write:
 write_next_sector:
    SUBROUTINE
 
-   LDA   #<BUFF_AREA
-   STA   disk_buffer
-   LDA   #>BUFF_AREA
-   STA   disk_buffer+1
+   JSR   read_next_sector@run0
    JMP   inc_sector_and_write
 
 iob:

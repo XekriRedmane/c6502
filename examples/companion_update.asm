@@ -96,6 +96,10 @@ __local_smc_body_draw__2	EQU	$A3
 ; item active_neg_step section=.text local=true zero=false
 ; item drift_step section=.text local=true zero=false
 ; item companion_update section=.text local=false zero=false
+; item companion_update@run3 section=.text local=true zero=false
+; item companion_update@run2 section=.text local=true zero=false
+; item companion_update@run1 section=.text local=true zero=false
+; item companion_update@run0 section=.text local=true zero=false
 ; item proj_screen_col section=.rodata local=true zero=false
 ; item proj_frame_idx section=.rodata local=true zero=false
 ; item companion_pos_pose1_lo section=.rodata local=true zero=false
@@ -498,34 +502,20 @@ companion_update:
    STA   __zpabi_drift_step__out_sprite_y_1
    JSR   drift_step
    LDA   __local_companion_update__slot
-   STA   __zpabi_compute_screen_x__slot
-   LDA   __zpabi_companion_update__player_y
-   STA   __zpabi_compute_screen_x__player_y
-   LDA   __zpabi_companion_update__sprite_xref
-   STA   __zpabi_compute_screen_x__sprite_xref
-   JSR   compute_screen_x
+   JSR   companion_update@run0
    STA   __local_companion_update__3
    LDX   __local_companion_update__3
-   LDA   proj_screen_col,X
-   STA   __zpabi_smc_body_draw__sprite_x
-   LDA   proj_frame_idx,X
-   STA   __zpabi_smc_body_draw__frame_idx
+   JSR   companion_update@run1
    LDX   __local_companion_update__slot
    LDA   companion_state,X
    STA   __zpabi_smc_body_draw__state
    STX   __zpabi_smc_body_draw__slot
    LDA   __local_companion_update__sprite_y
-   STA   __zpabi_smc_body_draw__sprite_y
-   LDA   __zpabi_companion_update__page_flag
-   STA   __zpabi_smc_body_draw__page_flag
-   JSR   smc_body_draw
+   JSR   companion_update@run2
    LDA   __local_companion_update__slot
    STA   __zpabi_player_catch__slot
    LDA   __local_companion_update__3
-   STA   __zpabi_player_catch__screen_x
-   LDA   __zpabi_companion_update__player_col
-   STA   __zpabi_player_catch__player_col
-   JSR   player_catch
+   JSR   companion_update@run3
    JMP   .loop@1_continue
 .if_end@42:
    BNE   .if_else@44
@@ -550,12 +540,7 @@ companion_update:
    BEQ   .loop@1_continue
 .if_end@43:
    LDA   __local_companion_update__slot
-   STA   __zpabi_compute_screen_x__slot
-   LDA   __zpabi_companion_update__player_y
-   STA   __zpabi_compute_screen_x__player_y
-   LDA   __zpabi_companion_update__sprite_xref
-   STA   __zpabi_compute_screen_x__sprite_xref
-   JSR   compute_screen_x
+   JSR   companion_update@run0
    STA   __zpabi_smc_body_draw__frame_idx
    TXA
    BNE   .loop@1_continue
@@ -572,32 +557,58 @@ companion_update:
    LDA   companion_row,X
    STA   __local_companion_update__3
    LDX   __zpabi_entity_proximity__screen_x
-   LDA   proj_screen_col,X
-   STA   __zpabi_smc_body_draw__sprite_x
-   LDA   proj_frame_idx,X
-   STA   __zpabi_smc_body_draw__frame_idx
+   JSR   companion_update@run1
    LDX   __local_companion_update__slot
    LDA   companion_state,X
    STA   __zpabi_smc_body_draw__state
    STX   __zpabi_smc_body_draw__slot
    LDA   __local_companion_update__3
-   STA   __zpabi_smc_body_draw__sprite_y
-   LDA   __zpabi_companion_update__page_flag
-   STA   __zpabi_smc_body_draw__page_flag
-   JSR   smc_body_draw
+   JSR   companion_update@run2
    LDA   __local_companion_update__slot
    STA   __zpabi_player_catch__slot
    LDA   __zpabi_entity_proximity__screen_x
-   STA   __zpabi_player_catch__screen_x
-   LDA   __zpabi_companion_update__player_col
-   STA   __zpabi_player_catch__player_col
-   JSR   player_catch
+   JSR   companion_update@run3
 .loop@1_continue:
    DEC   __local_companion_update__slot
    BMI   .lb_skip@0
    JMP   .loop@1_start
 .lb_skip@0:
    RTS
+
+companion_update@run3:
+   SUBROUTINE
+
+   STA   __zpabi_player_catch__screen_x
+   LDA   __zpabi_companion_update__player_col
+   STA   __zpabi_player_catch__player_col
+   JMP   player_catch
+
+companion_update@run2:
+   SUBROUTINE
+
+   STA   __zpabi_smc_body_draw__sprite_y
+   LDA   __zpabi_companion_update__page_flag
+   STA   __zpabi_smc_body_draw__page_flag
+   JMP   smc_body_draw
+
+companion_update@run1:
+   SUBROUTINE
+
+   LDA   proj_screen_col,X
+   STA   __zpabi_smc_body_draw__sprite_x
+   LDA   proj_frame_idx,X
+   STA   __zpabi_smc_body_draw__frame_idx
+   RTS
+
+companion_update@run0:
+   SUBROUTINE
+
+   STA   __zpabi_compute_screen_x__slot
+   LDA   __zpabi_companion_update__player_y
+   STA   __zpabi_compute_screen_x__player_y
+   LDA   __zpabi_companion_update__sprite_xref
+   STA   __zpabi_compute_screen_x__sprite_xref
+   JMP   compute_screen_x
 
 proj_screen_col:
    DC.B  $00, $00, $00, $00, $01, $01, $01, $02, $02, $02, $02, $03, $03, $03, $04, $04

@@ -91,7 +91,7 @@ __local_set_page_first__0	EQU	$F8
 __local_dump_buffer_to_printer__1	EQU	$F9
 __local_set_page_first__prev_first	EQU	$F9
 __local_dump_buffer_to_printer__2	EQU	$FA
-__output_size	EQU	$0156
+__output_size	EQU	$0154
 __zstring_size	EQU	$015A
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
@@ -110,8 +110,8 @@ __zstring_end	EQU	$1A2E
 __zstring_load_end	EQU	$1A2E
 __output_load	EQU	$1B90
 __output_start	EQU	$1B90
-__output_end	EQU	$1CE6
-__output_load_end	EQU	$1CE6
+__output_end	EQU	$1CE4
+__output_load_end	EQU	$1CE4
 __disk_load	EQU	$1DAC
 __disk_start	EQU	$1DAC
 __bss_end	EQU	$1DF5
@@ -628,10 +628,7 @@ dump_buffer_to_printer:
    STA   __local_dump_buffer_to_printer__2
    LDA   CSW+1
    STA   __local_dump_buffer_to_printer__1
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
+   JSR   dump_buffer_to_printer@run0
    LDA   printer_card_initialized_flag
    BNE   .if_end@10
    LDA   #$01
@@ -658,13 +655,24 @@ dump_buffer_to_printer:
 .loop@2_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_printer@rot@0
+   JSR   dump_buffer_to_printer@run1
+   LDA   __local_dump_buffer_to_printer__2
+   STA   CSW
+   LDA   __local_dump_buffer_to_printer__1
+   STA   CSW+1
+   RTS
+dump_buffer_to_printer@run1:
+   SUBROUTINE
    LDA   CSW
    STA   PRINTER_CSW
    LDA   CSW+1
    STA   PRINTER_CSW+1
-   LDA   __local_dump_buffer_to_printer__2
+   RTS
+dump_buffer_to_printer@run0:
+   SUBROUTINE
+   LDA   PRINTER_CSW
    STA   CSW
-   LDA   __local_dump_buffer_to_printer__1
+   LDA   PRINTER_CSW+1
    STA   CSW+1
    RTS
 dump_buffer_with_more:
@@ -675,7 +683,7 @@ dump_buffer_with_more:
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #$E0
+   LDA   #$DE
    STA   SCRATCH2
    LDA   #$1C
    STA   __zpabi_cout_string__s_1
@@ -711,16 +719,10 @@ dump_buffer_with_more:
    STA   __local_dump_buffer_with_more__end
    LDA   CSW+1
    STA   __local_dump_buffer_with_more__0
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
+   JSR   dump_buffer_to_printer@run0
    LDA   #$8D
    JSR   COUT
-   LDA   CSW
-   STA   PRINTER_CSW
-   LDA   CSW+1
-   STA   PRINTER_CSW+1
+   JSR   dump_buffer_to_printer@run1
    LDA   __local_dump_buffer_with_more__end
    STA   CSW
    LDA   __local_dump_buffer_with_more__0

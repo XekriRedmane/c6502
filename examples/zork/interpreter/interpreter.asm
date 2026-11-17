@@ -280,7 +280,7 @@ __main_size	EQU	$0147
 BUFF_AREA	EQU	$0200
 __tables_size	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
-__text_rest_size	EQU	$07B1
+__text_rest_size	EQU	$07A6
 __main_load	EQU	$0800
 __main_start	EQU	$0800
 restart	EQU	$0800
@@ -288,26 +288,26 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$10A5
-__text_end	EQU	$19EC
-__text_load_end	EQU	$19EC
+__text_size	EQU	$1065
+__text_end	EQU	$19AC
+__text_load_end	EQU	$19AC
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
-__rodata_load	EQU	$33B1
-__rodata_start	EQU	$33B1
-__text_rest_end	EQU	$33B1
-__text_rest_load_end	EQU	$33B1
-__data_load	EQU	$3493
-__data_start	EQU	$3493
-__rodata_end	EQU	$3493
-__rodata_load_end	EQU	$3493
-__bss_load	EQU	$34D8
-__bss_start	EQU	$34D8
-__data_end	EQU	$34D8
-__data_load_end	EQU	$34D8
-__bss_end	EQU	$34DB
-__bss_load_end	EQU	$34DB
+__rodata_load	EQU	$33A6
+__rodata_start	EQU	$33A6
+__text_rest_end	EQU	$33A6
+__text_rest_load_end	EQU	$33A6
+__data_load	EQU	$3488
+__data_start	EQU	$3488
+__rodata_end	EQU	$3488
+__rodata_load_end	EQU	$3488
+__bss_load	EQU	$34CD
+__bss_start	EQU	$34CD
+__data_end	EQU	$34CD
+__data_load_end	EQU	$34CD
+__bss_end	EQU	$34D0
+__bss_load_end	EQU	$34D0
 __tables_load	EQU	$3500
 __tables_start	EQU	$3500
 __story	EQU	$3700
@@ -507,31 +507,6 @@ main:
 ; Disassembly of section .text at $0947
    SEG   text
    ORG   $0947
-push:
-   SUBROUTINE
-   LDA   Z_SP
-   BNE   .carry_inc@0
-   DEC   Z_SP+1
-.carry_inc@0:
-   DEC   Z_SP
-   LDA   __local_attr_ptr_and_mask__mask_1
-   LDY   #$00
-   STA   (Z_SP),Y
-   LDA   Z_SP
-   BNE   .carry_inc@1
-   DEC   Z_SP+1
-.carry_inc@1:
-   DEC   Z_SP
-   LDA   __local_attr_ptr_and_mask__n
-   LDY   #$00
-   STA   (Z_SP),Y
-   INC   STACK_COUNT
-   LDA   STACK_COUNT
-   CMP   #$B4
-   BCC   .if_end@0
-   JMP   internal_error
-.if_end@0:
-   RTS
 pop:
    SUBROUTINE
    LDY   #$00
@@ -558,10 +533,10 @@ var_get:
    SUBROUTINE
    ORA   #$00
    BNE   get_nonstack_var
-   JSR   pop
+   JSR   __main_end
    STA   __local_attr_ptr_and_mask__mask_1
    STX   __local_attr_ptr_and_mask__n
-   JSR   __main_end
+   JSR   push
    LDX   __local_attr_ptr_and_mask__n
    LDA   __local_attr_ptr_and_mask__mask_1
    RTS
@@ -613,7 +588,7 @@ get_var_content:
    JSR   get_next_code_byte
    ORA   #$00
    BNE   .if_end@8
-   JMP   pop
+   JMP   __main_end
 .if_end@8:
    JMP   get_nonstack_var
 branch@tail2:
@@ -629,14 +604,14 @@ return_value:
    STA   Z_SP+1
    LDA   FRAME_STACK_COUNT
    STA   STACK_COUNT
-   JSR   pop
+   JSR   __main_end
    STA   __local_ascii_to_zchar__index
    ORA   #$00
    BEQ   .if_end@9
    ASL
    STA   __local_ascii_to_zchar__2
 .loop@0_start:
-   JSR   pop
+   JSR   __main_end
    STX   __local_ascii_to_zchar__0
    LDX   __local_ascii_to_zchar__2
    DEX
@@ -648,13 +623,13 @@ return_value:
    DEC   __local_ascii_to_zchar__index
    BNE   .loop@0_start
 .if_end@9:
-   JSR   pop
+   JSR   __main_end
    STA   __local_ascii_to_zchar__index
    STX   __local_ascii_to_zchar__2
-   JSR   pop
+   JSR   __main_end
    STA   FRAME_Z_SP
    STX   FRAME_Z_SP+1
-   JSR   pop
+   JSR   __main_end
    STA   __local_ascii_to_zchar__1
    STX   Z_PC
    LDA   __local_ascii_to_zchar__index
@@ -681,7 +656,7 @@ store_result:
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   __local_attr_ptr_and_mask__attr
    STA   __local_attr_ptr_and_mask__n
-   JMP   __main_end
+   JMP   push
 .if_else@7:
    LDA   __local_branch_to_offset__0
    STA   __local_get_next_code_byte__page
@@ -708,18 +683,15 @@ instr_call:
    LDA   FRAME_STACK_COUNT
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   Z_PC
-   STA   __local_attr_ptr_and_mask__n
-   JSR   __main_end
+   JSR   instr_call@run0
    LDA   FRAME_Z_SP
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   FRAME_Z_SP+1
-   STA   __local_attr_ptr_and_mask__n
-   JSR   __main_end
+   JSR   instr_call@run0
    LDA   Z_PC+1
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   Z_PC+2
-   STA   __local_attr_ptr_and_mask__n
-   JSR   __main_end
+   JSR   instr_call@run0
    LDA   #$00
    STA   ZCODE_PAGE_VALID
    LDA   OPERANDS
@@ -744,7 +716,7 @@ instr_call:
    STA   __local_attr_ptr_and_mask__n
    LDA   LOCAL_ZVARS+1,X
    STA   __local_attr_ptr_and_mask__mask_1
-   JSR   __main_end
+   JSR   push
    JSR   get_next_code_byte
    STA   __local_ascii_to_zchar__z
    JSR   get_next_code_byte
@@ -782,13 +754,41 @@ instr_call:
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   #$00
    STA   __local_attr_ptr_and_mask__n
-   JSR   __main_end
+   JSR   push
    LDA   STACK_COUNT
    STA   FRAME_STACK_COUNT
    LDA   Z_SP
    STA   FRAME_Z_SP
    LDA   Z_SP+1
    STA   FRAME_Z_SP+1
+   RTS
+instr_call@run0:
+   SUBROUTINE
+   STA   __local_attr_ptr_and_mask__n
+push:
+   SUBROUTINE
+   LDA   Z_SP
+   BNE   .carry_inc@0
+   DEC   Z_SP+1
+.carry_inc@0:
+   DEC   Z_SP
+   LDA   __local_attr_ptr_and_mask__mask_1
+   LDY   #$00
+   STA   (Z_SP),Y
+   LDA   Z_SP
+   BNE   .carry_inc@1
+   DEC   Z_SP+1
+.carry_inc@1:
+   DEC   Z_SP
+   LDA   __local_attr_ptr_and_mask__n
+   LDY   #$00
+   STA   (Z_SP),Y
+   INC   STACK_COUNT
+   LDA   STACK_COUNT
+   CMP   #$B4
+   BCC   .if_end@0
+   JMP   internal_error
+.if_end@0:
    RTS
 inc_var:
    SUBROUTINE
@@ -828,15 +828,15 @@ do_0op:
    BCS   .default@16
    ASL
    TAY
-   LDA   $0B72,Y
+   LDA   $0B6E,Y
    PHA
    LDA   .jtab@0,Y
    PHA
    RTS
 .jtab@0:
-   DC.B  $88, $0B, $8B, $0B, $6B, $11, $8E, $0B
-   DC.B  $A4, $0B, $4E, $32, $E7, $32, $24, $2C
-   DC.B  $97, $0B, $6E, $09, $2A, $2C, $80, $12
+   DC.B  $84, $0B, $87, $0B, $5B, $11, $8A, $0B
+   DC.B  $A0, $0B, $48, $32, $E9, $32, $24, $2C
+   DC.B  $93, $0B, $46, $09, $2A, $2C, $6E, $12
 .case@4:
    JMP   branch@tail0
 .case@5:
@@ -846,7 +846,7 @@ do_0op:
    JSR   new_line
    JMP   .case@4
 .case@12:
-   JSR   pop
+   JSR   __main_end
    STA   __local_dec_var__0
    STX   __local_get_next_code_word__1
    JMP   return_value
@@ -862,16 +862,16 @@ do_1op:
 .lb_skip@0:
    ASL
    TAY
-   LDA   $0BB9,Y
+   LDA   $0BB5,Y
    PHA
    LDA   .jtab@1,Y
    PHA
    RTS
 .jtab@1:
-   DC.B  $D7, $0B, $CC, $14, $93, $15, $9F, $15
-   DC.B  $9F, $17, $2F, $0B, $4A, $0B, $E6, $0B
-   DC.B  $40, $2C, $65, $13, $F4, $0B, $F9, $0B
-   DC.B  $04, $0C, $10, $0C, $1E, $0C, $26, $0C
+   DC.B  $D3, $0B, $BA, $14, $81, $15, $8D, $15
+   DC.B  $8D, $17, $2B, $0B, $46, $0B, $E2, $0B
+   DC.B  $40, $2C, $53, $13, $EE, $0B, $F3, $0B
+   DC.B  $FE, $0B, $0A, $0C, $18, $0C, $20, $0C
 .case@18:
    LDA   OPERANDS+1
    ORA   OPERANDS
@@ -886,8 +886,7 @@ do_1op:
    LDA   OPERANDS
    STA   __local_dec_var__0
    LDA   OPERANDS+1
-   STA   __local_get_next_code_word__1
-   JSR   load_address
+   JSR   do_1op@run1
    JMP   print_zstring
 .case@27:
    LDA   OPERANDS
@@ -904,7 +903,7 @@ do_1op:
    SBC   #$02
    STA   __local_dec_var__0
    LDA   OPERANDS+1
-   JMP   branch@tail5
+   JMP   branch@tail4
 .case@30:
    LDA   OPERANDS
    STA   __local_dec_var__0
@@ -915,7 +914,7 @@ do_1op:
 .case@31:
    LDA   OPERANDS
    JSR   var_get
-   JMP   do_1op@tail4
+   JMP   do_1op@tail5
 .case@32:
    LDA   OPERANDS
    EOR   #$FF
@@ -923,7 +922,20 @@ do_1op:
    LDA   OPERANDS+1
    EOR   #$FF
    JMP   return_value@tail1
-do_1op@tail4:
+do_1op@run1:
+   SUBROUTINE
+   STA   __local_get_next_code_word__1
+load_address:
+   SUBROUTINE
+   LDA   __local_dec_var__0
+   STA   Z_PC2
+   LDA   __local_get_next_code_word__1
+   STA   Z_PC2+1
+   LDA   #$00
+   STA   Z_PC2+2
+   STA   ZCODE_PAGE_VALID2
+   RTS
+do_1op@tail5:
    SUBROUTINE
    STA   __local_branch_to_offset__0
    STX   __local_attr_ptr_and_mask__attr
@@ -936,15 +948,15 @@ do_var:
 .lb_skip@2:
    ASL
    TAY
-   LDA   $0C4E,Y
+   LDA   $0C59,Y
    PHA
    LDA   .jtab@3,Y
    PHA
    RTS
 .jtab@3:
-   DC.B  $80, $0A, $60, $0C, $91, $0C, $C6, $17
-   DC.B  $8A, $2F, $B2, $0C, $B7, $0C, $73, $19
-   DC.B  $C2, $0C, $CD, $0C
+   DC.B  $58, $0A, $6B, $0C, $9C, $0C, $B4, $17
+   DC.B  $85, $2F, $BD, $0C, $C2, $0C, $33, $19
+   DC.B  $CD, $0C, $D8, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1006,9 +1018,9 @@ do_var:
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   OPERANDS+1
    STA   __local_attr_ptr_and_mask__n
-   JMP   __main_end
+   JMP   push
 .case@70:
-   JSR   pop
+   JSR   __main_end
    STA   __local_attr_ptr_and_mask__mask_1
    STX   __local_attr_ptr_and_mask__n
    LDA   OPERANDS
@@ -1017,8 +1029,8 @@ var_put:
    STA   __local_get_next_code_word__1
    ORA   #$00
    BNE   .if_end@5
-   JSR   pop
-   JMP   __main_end
+   JSR   __main_end
+   JMP   push
 .if_end@5:
    LDA   __local_attr_ptr_and_mask__mask_1
    STA   __local_get_next_code_byte__page
@@ -1191,19 +1203,19 @@ do_2op:
 .lb_skip@1:
    ASL
    TAY
-   LDA   $0E18,Y
+   LDA   $0E23,Y
    PHA
    LDA   .jtab@2,Y
    PHA
    RTS
 .jtab@2:
-   DC.B  $40, $2C, $48, $0E, $A9, $0E, $BD, $0E
-   DC.B  $CD, $0E, $DD, $0E, $B1, $15, $F4, $0E
-   DC.B  $11, $0F, $1E, $0F, $1D, $16, $2E, $16
-   DC.B  $48, $16, $2D, $0F, $A6, $13, $3A, $0F
-   DC.B  $54, $0F, $A4, $16, $27, $17, $6C, $17
-   DC.B  $70, $0F, $80, $0F, $9C, $18, $FF, $18
-   DC.B  $46, $19
+   DC.B  $40, $2C, $53, $0E, $B4, $0E, $C8, $0E
+   DC.B  $D8, $0E, $E8, $0E, $9F, $15, $FF, $0E
+   DC.B  $1C, $0F, $29, $0F, $0B, $16, $1C, $16
+   DC.B  $36, $16, $38, $0F, $94, $13, $45, $0F
+   DC.B  $5D, $0F, $92, $16, $15, $17, $5A, $17
+   DC.B  $77, $0F, $87, $0F, $31, $18, $B4, $18
+   DC.B  $22, $19
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1358,10 +1370,9 @@ do_2op:
    STA   __local_dec_var__0
    LDA   OPERANDS+1
    ADC   __local_do_2op__2
-   STA   __local_get_next_code_word__1
-   JSR   load_address
+   JSR   do_1op@run1
    JSR   get_next_code_word
-   JMP   do_1op@tail4
+   JMP   do_1op@tail5
 .case@50:
    LDA   OPERANDS
    CLC
@@ -1369,8 +1380,7 @@ do_2op:
    STA   __local_dec_var__0
    LDA   OPERANDS+1
    ADC   __local_do_2op__2
-   STA   __local_get_next_code_word__1
-   JSR   load_address
+   JSR   do_1op@run1
    JSR   get_next_code_byte2
    STA   __local_branch_to_offset__0
    LDA   #$00
@@ -1490,14 +1500,7 @@ get_next_code_byte:
    LDA   #$00
    STA   ZCODE_PAGE_VALID2
 .if_end@14:
-   LDA   __local_attr_ptr_and_mask__mask_1
-   STA   disk_sector
-   LDA   __local_attr_ptr_and_mask__n
-   STA   disk_sector+1
-   LDA   HIGH_MEM_ADDR
-   CLC
-   STA   disk_buffer
-   LDA   HIGH_MEM_ADDR+1
+   JSR   get_next_code_byte@run0
    ADC   PAGE_TABLE_INDEX
    STA   disk_buffer+1
    JSR   read_from_sector
@@ -1525,15 +1528,16 @@ get_next_code_byte:
    LDA   #$FF
    STA   ZCODE_PAGE_VALID
    JMP   .loop@1_start
-load_address:
+get_next_code_byte@run0:
    SUBROUTINE
-   LDA   __local_dec_var__0
-   STA   Z_PC2
-   LDA   __local_get_next_code_word__1
-   STA   Z_PC2+1
-   LDA   #$00
-   STA   Z_PC2+2
-   STA   ZCODE_PAGE_VALID2
+   LDA   __local_attr_ptr_and_mask__mask_1
+   STA   disk_sector
+   LDA   __local_attr_ptr_and_mask__n
+   STA   disk_sector+1
+   LDA   HIGH_MEM_ADDR
+   CLC
+   STA   disk_buffer
+   LDA   HIGH_MEM_ADDR+1
    RTS
 load_packed_address:
    SUBROUTINE
@@ -1594,14 +1598,7 @@ get_next_code_byte2:
    LDA   #$00
    STA   ZCODE_PAGE_VALID
 .if_end@24:
-   LDA   __local_attr_ptr_and_mask__mask_1
-   STA   disk_sector
-   LDA   __local_attr_ptr_and_mask__n
-   STA   disk_sector+1
-   LDA   HIGH_MEM_ADDR
-   CLC
-   STA   disk_buffer
-   LDA   HIGH_MEM_ADDR+1
+   JSR   get_next_code_byte@run0
    ADC   PAGE_TABLE_INDEX2
    STA   disk_buffer+1
    JSR   read_from_sector
@@ -1751,10 +1748,7 @@ dump_buffer_to_printer:
    STA   __local_dump_buffer_to_printer__2
    LDA   CSW+1
    STA   __local_dump_buffer_to_printer__1
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
+   JSR   dump_buffer_to_printer@run0
    LDA   printer_card_initialized_flag
    BNE   .if_end@10
    LDA   #$01
@@ -1781,13 +1775,24 @@ dump_buffer_to_printer:
 .loop@2_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_printer@rot@0
+   JSR   dump_buffer_to_printer@run1
+   LDA   __local_dump_buffer_to_printer__2
+   STA   CSW
+   LDA   __local_dump_buffer_to_printer__1
+   STA   CSW+1
+   RTS
+dump_buffer_to_printer@run1:
+   SUBROUTINE
    LDA   CSW
    STA   PRINTER_CSW
    LDA   CSW+1
    STA   PRINTER_CSW+1
-   LDA   __local_dump_buffer_to_printer__2
+   RTS
+dump_buffer_to_printer@run0:
+   SUBROUTINE
+   LDA   PRINTER_CSW
    STA   CSW
-   LDA   __local_dump_buffer_to_printer__1
+   LDA   PRINTER_CSW+1
    STA   CSW+1
    RTS
 dump_buffer_with_more:
@@ -1798,7 +1803,7 @@ dump_buffer_with_more:
    BCC   .if_end@11
    LDA   #$3F
    STA   INVFLG
-   LDA   #$FF
+   LDA   #$F4
    STA   __local_get_nonstack_var__1
    LDA   #$33
    STA   __local_get_nonstack_var__2
@@ -1834,16 +1839,10 @@ dump_buffer_with_more:
    STA   __local_dump_buffer_with_more__end
    LDA   CSW+1
    STA   __local_dump_buffer_with_more__0
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
+   JSR   dump_buffer_to_printer@run0
    LDA   #$8D
    JSR   COUT
-   LDA   CSW
-   STA   PRINTER_CSW
-   LDA   CSW+1
-   STA   PRINTER_CSW+1
+   JSR   dump_buffer_to_printer@run1
    LDA   __local_dump_buffer_with_more__end
    STA   CSW
    LDA   __local_dump_buffer_with_more__0
@@ -2226,7 +2225,7 @@ store_and_branch_on:
    STA   __local_attr_ptr_and_mask__attr
    JSR   store_result
    LDA   __local_instr_clear_attr__0
-store_and_branch_on@tail3:
+store_and_branch_on@tail2:
    SUBROUTINE
    BEQ   branch
    LDA   #$01
@@ -2287,7 +2286,7 @@ branch:
    SBC   #$02
    STA   __local_dec_var__0
    LDA   __local_ascii_to_zchar__z
-branch@tail5:
+branch@tail4:
    SUBROUTINE
    SBC   #$00
    STA   __local_get_next_code_word__1
@@ -2426,7 +2425,7 @@ instr_test_attr:
    TXA
    AND   attr_mask+1
    ORA   __local_instr_clear_attr__0
-   JMP   store_and_branch_on@tail3
+   JMP   store_and_branch_on@tail2
 instr_set_attr:
    SUBROUTINE
    JSR   attr_ptr_and_mask
@@ -2536,7 +2535,7 @@ instr_get_prop:
    LDA   (__local_ascii_to_zchar__left),Y
    STA   __local_branch_to_offset__0
    LDA   __local_ascii_to_zchar__z
-   JMP   instr_get_prop@tail2
+   JMP   instr_get_prop@tail3
 .if_end@6:
    LDA   __local_ascii_to_zchar__left
    JSR   next_property
@@ -2603,7 +2602,7 @@ instr_get_prop_addr:
    STA   __local_branch_to_offset__0
    LDA   __local_get_next_code_word__1
    SBC   Z_HEADER_ADDR+1
-   JMP   instr_get_prop@tail2
+   JMP   instr_get_prop@tail3
 .if_end@11:
    BCS   .if_end@12
    JMP   instr_get_prop_addr@tail1
@@ -2616,7 +2615,7 @@ instr_get_prop_addr@tail1:
    SUBROUTINE
    LDA   #$00
    STA   __local_branch_to_offset__0
-instr_get_prop@tail2:
+instr_get_prop@tail3:
    SUBROUTINE
    STA   __local_attr_ptr_and_mask__attr
    JMP   store_result
@@ -2749,79 +2748,9 @@ mulu16:
    BNE   .mulu16@rot@0
    LDA   __local_dec_var__0
    RTS
-divu16:
-   SUBROUTINE
-   LDX   __local_attr_ptr_and_mask__attr
-   LDA   #$00
-   STA   __local_ascii_to_zchar__0
-   STA   __local_ascii_to_zchar__left
-   LDY   #$11
-.divu16@rot@1:
-   LDA   __local_ascii_to_zchar__0
-   SEC
-   SBC   __local_attr_ptr_and_mask__mask_1
-   STA   __local_ascii_to_zchar__1
-   LDA   __local_ascii_to_zchar__left
-   SBC   __local_attr_ptr_and_mask__n
-   BCC   .divu16@asm_ssa_split@0
-   STA   __local_ascii_to_zchar__left
-   LDA   __local_ascii_to_zchar__1
-   STA   __local_ascii_to_zchar__0
-   LDA   #$01
-.if_end@1:
-   LSR
-   ROL   __local_branch_to_offset__0
-   TXA
-   ROL
-   TAX
-   ROL   __local_ascii_to_zchar__0
-   ROL   __local_ascii_to_zchar__left
-   DEY
-   BNE   .divu16@rot@1
-   LDA   __local_ascii_to_zchar__left
-   LSR
-   STA   remainder+1
-   LDA   __local_ascii_to_zchar__0
-   ROR
-   STA   remainder
-   LDA   __local_branch_to_offset__0
-   RTS
-.divu16@asm_ssa_split@0:
-   LDA   #$00
-   BEQ   .if_end@1
-check_sign:
-   SUBROUTINE
-   LDA   __local_get_next_code_word__1
-   EOR   __local_instr_clear_attr__1
-   STA   sign_bit
-   BPL   .check_sign@asm_ssa_split@0
-   SEC
-   LDA   #$00
-   SBC   __local_dec_var__0
-   STA   __local_dec_var__0
-   LDA   #$00
-   SBC   __local_get_next_code_word__1
-   TAX
-.if_end@2:
-   LDA   __local_dec_var__0
-   RTS
-.check_sign@asm_ssa_split@0:
-   LDX   __local_get_next_code_word__1
-   JMP   .if_end@2
 instr_mul:
    SUBROUTINE
-   LDA   OPERANDS+2
-   STA   __local_instr_clear_attr__0
-   LDA   OPERANDS+3
-   STA   __local_instr_clear_attr__1
-   LDA   OPERANDS
-   STA   __local_dec_var__0
-   LDA   OPERANDS+1
-   STA   __local_get_next_code_word__1
-   JSR   check_sign
-   STA   __local_dec_var__0
-   STX   __local_get_next_code_word__1
-   LDA   __local_instr_clear_attr__1
+   JSR   instr_mul@run2
    BNE   .if_else@7
    LDA   __local_instr_clear_attr__0
    CMP   #$02
@@ -2866,7 +2795,14 @@ store_with_sign:
    STA   __local_branch_to_offset__0
    LDA   __local_get_next_code_word__1
    JMP   .if_end@3
-instr_div:
+instr_mul@run2:
+   SUBROUTINE
+   JSR   instr_mul@run0
+   STA   __local_dec_var__0
+   STX   __local_get_next_code_word__1
+   LDA   __local_instr_clear_attr__1
+   RTS
+instr_mul@run0:
    SUBROUTINE
    LDA   OPERANDS+2
    STA   __local_instr_clear_attr__0
@@ -2876,10 +2812,28 @@ instr_div:
    STA   __local_dec_var__0
    LDA   OPERANDS+1
    STA   __local_get_next_code_word__1
-   JSR   check_sign
+check_sign:
+   SUBROUTINE
+   LDA   __local_get_next_code_word__1
+   EOR   __local_instr_clear_attr__1
+   STA   sign_bit
+   BPL   .check_sign@asm_ssa_split@0
+   SEC
+   LDA   #$00
+   SBC   __local_dec_var__0
    STA   __local_dec_var__0
-   STX   __local_get_next_code_word__1
-   LDA   __local_instr_clear_attr__1
+   LDA   #$00
+   SBC   __local_get_next_code_word__1
+   TAX
+.if_end@2:
+   LDA   __local_dec_var__0
+   RTS
+.check_sign@asm_ssa_split@0:
+   LDX   __local_get_next_code_word__1
+   JMP   .if_end@2
+instr_div:
+   SUBROUTINE
+   JSR   instr_mul@run2
    BNE   .if_else@11
    LDA   __local_instr_clear_attr__0
    CMP   #$02
@@ -2896,32 +2850,60 @@ instr_div:
    JMP   .xjump@1
 .if_else@11:
    LDA   __local_dec_var__0
+   JSR   instr_div@run1
+   JMP   instr_mul@tail1
+instr_div@run1:
+   SUBROUTINE
    STA   __local_branch_to_offset__0
    STX   __local_attr_ptr_and_mask__attr
    LDA   __local_instr_clear_attr__0
    STA   __local_attr_ptr_and_mask__mask_1
    LDA   __local_instr_clear_attr__1
    STA   __local_attr_ptr_and_mask__n
-   JSR   divu16
-   JMP   instr_mul@tail1
+divu16:
+   SUBROUTINE
+   LDX   __local_attr_ptr_and_mask__attr
+   LDA   #$00
+   STA   __local_ascii_to_zchar__0
+   STA   __local_ascii_to_zchar__left
+   LDY   #$11
+.divu16@rot@1:
+   LDA   __local_ascii_to_zchar__0
+   SEC
+   SBC   __local_attr_ptr_and_mask__mask_1
+   STA   __local_ascii_to_zchar__1
+   LDA   __local_ascii_to_zchar__left
+   SBC   __local_attr_ptr_and_mask__n
+   BCC   .divu16@asm_ssa_split@0
+   STA   __local_ascii_to_zchar__left
+   LDA   __local_ascii_to_zchar__1
+   STA   __local_ascii_to_zchar__0
+   LDA   #$01
+.if_end@1:
+   LSR
+   ROL   __local_branch_to_offset__0
+   TXA
+   ROL
+   TAX
+   ROL   __local_ascii_to_zchar__0
+   ROL   __local_ascii_to_zchar__left
+   DEY
+   BNE   .divu16@rot@1
+   LDA   __local_ascii_to_zchar__left
+   LSR
+   STA   remainder+1
+   LDA   __local_ascii_to_zchar__0
+   ROR
+   STA   remainder
+   LDA   __local_branch_to_offset__0
+   RTS
+.divu16@asm_ssa_split@0:
+   LDA   #$00
+   BEQ   .if_end@1
 instr_mod:
    SUBROUTINE
-   LDA   OPERANDS+2
-   STA   __local_instr_clear_attr__0
-   LDA   OPERANDS+3
-   STA   __local_instr_clear_attr__1
-   LDA   OPERANDS
-   STA   __local_dec_var__0
-   LDA   OPERANDS+1
-   STA   __local_get_next_code_word__1
-   JSR   check_sign
-   STA   __local_branch_to_offset__0
-   STX   __local_attr_ptr_and_mask__attr
-   LDA   __local_instr_clear_attr__0
-   STA   __local_attr_ptr_and_mask__mask_1
-   LDA   __local_instr_clear_attr__1
-   STA   __local_attr_ptr_and_mask__n
-   JSR   divu16
+   JSR   instr_mul@run0
+   JSR   instr_div@run1
    LDA   remainder
    STA   __local_branch_to_offset__0
    LDA   remainder+1
@@ -3028,7 +3010,7 @@ instr_restart:
 instr_quit:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$B1
+   LDA   #$A6
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
@@ -3042,7 +3024,7 @@ instr_quit@tail0:
 internal_error:
    SUBROUTINE
    JSR   dump_buffer_with_more
-   LDA   #$C5
+   LDA   #$BA
    STA   __local_get_next_code_byte__page
    LDA   #$33
    STA   __local_get_nonstack_var__0
@@ -3067,7 +3049,7 @@ print_status_line:
    JSR   dump_buffer_to_screen
    LDA   #$19
    STA   CH
-   LDA   #$D9
+   LDA   #$CE
    STA   __local_get_nonstack_var__1
    LDA   #$33
    STA   __local_get_nonstack_var__2
@@ -3079,16 +3061,12 @@ print_status_line:
    STA   CH
    LDA   #$11
    JSR   var_get
-   STA   __local_dec_var__0
-   STX   __local_get_next_code_word__1
-   JSR   print_number
+   JSR   print_status_line@run1
    LDA   #$2F
    JSR   buffer_char
    LDA   #$12
    JSR   var_get
-   STA   __local_dec_var__0
-   STX   __local_get_next_code_word__1
-   JSR   print_number
+   JSR   print_status_line@run1
    JSR   dump_buffer_to_screen
    LDA   #$FF
    STA   INVFLG
@@ -3097,6 +3075,11 @@ print_status_line:
    LDA   __local_ascii_to_zchar__dest
    STA   CH
    JMP   VTAB
+print_status_line@run1:
+   SUBROUTINE
+   STA   __local_dec_var__0
+   STX   __local_get_next_code_word__1
+   JMP   print_number
 read_line:
    SUBROUTINE
    JSR   dump_buffer_line
@@ -3230,32 +3213,6 @@ skip_separators:
    LDA   input_count
    BNE   .skip_separators@rot@2
    RTS
-get_alphabet_for_char:
-   SUBROUTINE
-   LDA   __local_dec_var__0
-   CMP   #$61
-   BCC   .if_end@15
-   CMP   #$7B
-   BCS   .if_end@15
-   LDA   #$00
-   RTS
-.if_end@15:
-   CMP   #$41
-   BCC   .if_end@18
-   CMP   #$5B
-   BCS   .if_end@18
-   LDA   #$01
-   RTS
-.if_end@18:
-   ORA   #$00
-   BEQ   .get_alphabet_for_char@scfold@0
-   BPL   .if_end@21
-.get_alphabet_for_char@scfold@0:
-   LDA   __local_dec_var__0
-   RTS
-.if_end@21:
-   LDA   #$02
-   RTS
 search_nonalpha_table:
    SUBROUTINE
    LDX   #$17
@@ -3305,8 +3262,7 @@ ascii_to_zchar:
    LDA   #$05
    JMP   .if_end@33
 .if_else@24:
-   STA   __local_dec_var__0
-   JSR   get_alphabet_for_char
+   JSR   ascii_to_zchar@run0
    STA   __local_ascii_to_zchar__1
    CMP   LOCKED_ALPHABET
    BEQ   .if_end@25
@@ -3318,8 +3274,7 @@ ascii_to_zchar:
    STA   __local_ascii_to_zchar__0
    LDX   __local_ascii_to_zchar__index
    LDA   ZCHAR_SCRATCH1,X
-   STA   __local_dec_var__0
-   JSR   get_alphabet_for_char
+   JSR   ascii_to_zchar@run0
    CMP   __local_ascii_to_zchar__1
    BNE   .if_else@27
    LDA   __local_ascii_to_zchar__0
@@ -3343,8 +3298,7 @@ ascii_to_zchar:
    BEQ   z_compress
 .if_end@25:
    LDA   __local_ascii_to_zchar__2
-   STA   __local_dec_var__0
-   JSR   get_alphabet_for_char
+   JSR   ascii_to_zchar@run0
    SEC
    SBC   #$01
    BPL   .if_else@30
@@ -3445,6 +3399,35 @@ z_compress:
    LDA   __local_attr_ptr_and_mask__mask_1
    ORA   #$80
    STA   ZCHAR_SCRATCH2+3
+   RTS
+ascii_to_zchar@run0:
+   SUBROUTINE
+   STA   __local_dec_var__0
+get_alphabet_for_char:
+   SUBROUTINE
+   LDA   __local_dec_var__0
+   CMP   #$61
+   BCC   .if_end@15
+   CMP   #$7B
+   BCS   .if_end@15
+   LDA   #$00
+   RTS
+.if_end@15:
+   CMP   #$41
+   BCC   .if_end@18
+   CMP   #$5B
+   BCS   .if_end@18
+   LDA   #$01
+   RTS
+.if_end@18:
+   ORA   #$00
+   BEQ   .get_alphabet_for_char@scfold@0
+   BPL   .if_end@21
+.get_alphabet_for_char@scfold@0:
+   LDA   __local_dec_var__0
+   RTS
+.if_end@21:
+   LDA   #$02
    RTS
 match_dictionary_word:
    SUBROUTINE
@@ -3695,10 +3678,7 @@ instr_sread:
    JMP   .loop@10_start
 read_next_sector:
    SUBROUTINE
-   LDA   #$00
-   STA   disk_buffer
-   LDA   #$02
-   STA   disk_buffer+1
+   JSR   read_next_sector@run0
 inc_sector_and_read:
    SUBROUTINE
    INC   disk_sector
@@ -3732,14 +3712,18 @@ do_rwts_on_sector:
    ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #$34
-   LDY   #$93
+   LDY   #$88
    JMP   RWTS
-write_next_sector:
+read_next_sector@run0:
    SUBROUTINE
    LDA   #$00
    STA   disk_buffer
    LDA   #$02
    STA   disk_buffer+1
+   RTS
+write_next_sector:
+   SUBROUTINE
+   JSR   read_next_sector@run0
 inc_sector_and_write:
    SUBROUTINE
    INC   disk_sector
@@ -3772,7 +3756,7 @@ get_prompted_number_from_user:
    ASL
    ASL
    STA   __local_attr_ptr_and_mask__attr
-   LDA   #$A8
+   LDA   #$9D
    CLC
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_next_code_byte__page
@@ -3786,14 +3770,14 @@ get_prompted_number_from_user:
    STA   CH
    LDA   #$3F
    STA   INVFLG
-   LDA   #$21
+   LDA   #$16
    STA   __local_get_nonstack_var__1
    LDA   #$34
    STA   __local_get_nonstack_var__2
    LDX   #$0A
    JSR   cout_string
    CLC
-   LDA   #$B7
+   LDA   #$AC
    ADC   __local_attr_ptr_and_mask__attr
    STA   __local_get_nonstack_var__1
    LDA   #$34
@@ -3821,9 +3805,9 @@ please_insert_save_diskette:
    JSR   home
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
-   LDA   #$05
+   LDA   #$FA
    STA   __local_get_next_code_byte__page
-   LDA   #$34
+   LDA   #$33
    STA   __local_get_nonstack_var__0
    LDX   #$1C
    JSR   print_ascii_string
@@ -3869,7 +3853,7 @@ please_insert_save_diskette:
    JSR   buffer_char
 .loop@3_start:
    JSR   dump_buffer_with_more
-   LDA   #$2B
+   LDA   #$20
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3908,7 +3892,7 @@ please_reinsert_game_diskette:
    CMP   #$01
    BNE   .if_end@9
    JSR   dump_buffer_with_more
-   LDA   #$4E
+   LDA   #$43
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3916,7 +3900,7 @@ please_reinsert_game_diskette:
    JSR   print_ascii_string
 .loop@4_start:
    JSR   dump_buffer_with_more
-   LDA   #$6D
+   LDA   #$62
    STA   __local_get_next_code_byte__page
    LDA   #$34
    STA   __local_get_nonstack_var__0
@@ -3957,9 +3941,7 @@ copy_data_from_buff:
    RTS
 instr_save:
    SUBROUTINE
-   JSR   please_insert_save_diskette
-   STA   disk_sector
-   STX   disk_sector+1
+   JSR   instr_save@run1
    LDY   #$00
    LDA   (Z_HEADER_ADDR),Y
    STA   BUFF_AREA
@@ -4004,12 +3986,7 @@ instr_save:
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   instr_save@tail1
-   LDA   Z_HEADER_ADDR
-   STA   disk_buffer
-   LDA   Z_HEADER_ADDR+1
-   STA   disk_buffer+1
-   LDY   #$0E
-   LDA   (Z_HEADER_ADDR),Y
+   JSR   instr_save@run0
    ADC   #$01
    STA   __local_instr_clear_attr__0
 .loop@2_start:
@@ -4026,6 +4003,21 @@ instr_save@tail1:
    JSR   please_reinsert_game_diskette
    LDA   #$00
    JMP   branch
+instr_save@run1:
+   SUBROUTINE
+   JSR   please_insert_save_diskette
+   STA   disk_sector
+   STX   disk_sector+1
+   RTS
+instr_save@run0:
+   SUBROUTINE
+   LDA   Z_HEADER_ADDR
+   STA   disk_buffer
+   LDA   Z_HEADER_ADDR+1
+   STA   disk_buffer+1
+   LDY   #$0E
+   LDA   (Z_HEADER_ADDR),Y
+   RTS
 instr_save@tail0:
    SUBROUTINE
    JSR   please_reinsert_game_diskette
@@ -4033,9 +4025,7 @@ instr_save@tail0:
    JMP   branch
 instr_restore:
    SUBROUTINE
-   JSR   please_insert_save_diskette
-   STA   disk_sector
-   STX   disk_sector+1
+   JSR   instr_save@run1
    JSR   read_next_sector
    BCC   .lb_skip@1
    JMP   .instr_restore@fail
@@ -4090,12 +4080,7 @@ instr_restore:
    LDX   #$00
    LDY   #$68
    JSR   copy_data_from_buff
-   LDA   Z_HEADER_ADDR
-   STA   disk_buffer
-   LDA   Z_HEADER_ADDR+1
-   STA   disk_buffer+1
-   LDY   #$0E
-   LDA   (Z_HEADER_ADDR),Y
+   JSR   instr_save@run0
    CLC
    ADC   #$01
    STA   __local_instr_clear_attr__0
@@ -4135,9 +4120,9 @@ __zp_init:
    STA   sign_bit
    RTS
 
-; Disassembly of section .rodata at $33B1
+; Disassembly of section .rodata at $33A6
    SEG   rodata
-   ORG   $33B1
+   ORG   $33A6
 sEndOfSession:
    DC.B  $2D, $2D, $20, $45, $4E, $44, $20, $4F
    DC.B  $46, $20, $53, $45, $53, $53, $49, $4F
@@ -4182,11 +4167,11 @@ sPressReturnToContinue:
    DC.B  $4F, $20, $43, $4F, $4E, $54, $49, $4E
    DC.B  $55, $45, $20, $2D, $2D, $2D
 
-; Disassembly of section .data at $3493
+; Disassembly of section .data at $3488
    SEG   data
-   ORG   $3493
+   ORG   $3488
 iob:
-   DC.B  $01, $60, $01, $00, $00, $00, $A4, $34
+   DC.B  $01, $60, $01, $00, $00, $00, $99, $34
    DC.B  $00, $00, $00, $00, $00, $00, $00, $60
    DC.B  $01
 dct:
@@ -4199,9 +4184,9 @@ prompts:
    DC.B  $50, $4F, $53, $49, $54, $49, $4F, $4E
    DC.B  $20, $28, $30, $2D, $37, $29, $3A, $30
 
-; Disassembly of section .bss at $34D8
+; Disassembly of section .bss at $34CD
    SEG   bss
-   ORG   $34D8
+   ORG   $34CD
 attr_mask:
    DC.B  $00, $00
 printer_card_initialized_flag:

@@ -192,6 +192,8 @@ COUT1	EQU	$FDF0
 ; item buffer_char section=.text local=false zero=false
 ; item dump_buffer_line section=.text local=false zero=false
 ; item dump_buffer_to_printer section=.text local=false zero=false
+; item dump_buffer_to_printer@run1 section=.text local=true zero=false
+; item dump_buffer_to_printer@run0 section=.text local=true zero=false
 ; item dump_buffer_to_screen section=.text local=false zero=false
 ; item dump_buffer_with_more section=.text local=false zero=false
 ; item new_line section=.text local=false zero=false
@@ -345,10 +347,7 @@ dump_buffer_to_printer:
    STA   __local_dump_buffer_to_printer__2
    LDA   CSW+1
    STA   __local_dump_buffer_to_printer__1
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
+   JSR   dump_buffer_to_printer@run0
    LDA   printer_card_initialized_flag
    BNE   .if_end@10
    LDA   #$01
@@ -375,13 +374,28 @@ dump_buffer_to_printer:
 .loop@2_start:
    CPX   BUFF_END
    BNE   .dump_buffer_to_printer@rot@0
+   JSR   dump_buffer_to_printer@run1
+   LDA   __local_dump_buffer_to_printer__2
+   STA   CSW
+   LDA   __local_dump_buffer_to_printer__1
+   STA   CSW+1
+   RTS
+
+dump_buffer_to_printer@run1:
+   SUBROUTINE
+
    LDA   CSW
    STA   PRINTER_CSW
    LDA   CSW+1
    STA   PRINTER_CSW+1
-   LDA   __local_dump_buffer_to_printer__2
+   RTS
+
+dump_buffer_to_printer@run0:
+   SUBROUTINE
+
+   LDA   PRINTER_CSW
    STA   CSW
-   LDA   __local_dump_buffer_to_printer__1
+   LDA   PRINTER_CSW+1
    STA   CSW+1
    RTS
 
@@ -446,16 +460,10 @@ dump_buffer_with_more:
    STA   __local_dump_buffer_with_more__end
    LDA   CSW+1
    STA   __local_dump_buffer_with_more__0
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
+   JSR   dump_buffer_to_printer@run0
    LDA   #$8D
    JSR   COUT
-   LDA   CSW
-   STA   PRINTER_CSW
-   LDA   CSW+1
-   STA   PRINTER_CSW+1
+   JSR   dump_buffer_to_printer@run1
    LDA   __local_dump_buffer_with_more__end
    STA   CSW
    LDA   __local_dump_buffer_with_more__0

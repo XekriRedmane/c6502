@@ -16,6 +16,7 @@ __zpabi_snd_delay_up__clicks	EQU	$83
 ; call do_ascend -> sfx_tone
 ; call do_ascend -> snd_delay_up
 ; item do_ascend section=.text local=false zero=false
+; item do_ascend@run0 section=.text local=true zero=false
 ; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
@@ -26,12 +27,7 @@ do_ascend:
    LDX   __zpabi_do_ascend__asc_floor
    CMP   floor_ceil,X
    BNE   .if_end@0
-   LDA   #$05
-   STA   __zpabi_sfx_tone__pitch
-   LDA   #$04
-   STA   __zpabi_sfx_tone__duration
-   JSR   sfx_tone
-   DEC   beam_tick
+   JSR   do_ascend@run0
    RTS
 .if_end@0:
    SEC
@@ -41,12 +37,7 @@ do_ascend:
    BNE   .if_end@1
    LDA   #$00
    STA   move_dir
-   LDA   #$05
-   STA   __zpabi_sfx_tone__pitch
-   LDA   #$04
-   STA   __zpabi_sfx_tone__duration
-   JSR   sfx_tone
-   DEC   beam_tick
+   JSR   do_ascend@run0
    RTS
 .if_end@1:
    CMP   floor_thresh,X
@@ -72,3 +63,14 @@ do_ascend:
    LDA   #$08
    STA   __zpabi_snd_delay_up__clicks
    JMP   snd_delay_up
+
+do_ascend@run0:
+   SUBROUTINE
+
+   LDA   #$05
+   STA   __zpabi_sfx_tone__pitch
+   LDA   #$04
+   STA   __zpabi_sfx_tone__duration
+   JSR   sfx_tone
+   DEC   beam_tick
+   RTS

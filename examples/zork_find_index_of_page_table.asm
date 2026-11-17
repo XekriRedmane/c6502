@@ -17,6 +17,9 @@ last_z_page	EQU	$BF
 ; call main -> find_index_of_page_table
 ; item find_index_of_page_table section=.text local=false zero=false
 ; item main section=.text local=false zero=false
+; item main@run2 section=.text local=true zero=false
+; item main@run1 section=.text local=true zero=false
+; item main@run0 section=.text local=true zero=false
 ; item __zp_init section=.text local=false zero=false
 ; zp num_page_table_entries size=1 at=$BD def=true init=$00
 ; zp last_z_page size=1 at=$BF def=true init=$00
@@ -56,54 +59,37 @@ main:
    LDA   #$02
    STA   last_z_page
    LDA   #$00
-   STA   DPTR
-   LDA   #$22
-   STA   DPTR+1
+   JSR   main@run0
    LDA   #$10
    LDY   #$00
    STA   (DPTR),Y
    LDA   #$80
-   STA   DPTR
-   LDA   #$22
-   STA   DPTR+1
-   LDA   #$00
-   STA   (DPTR),Y
+   JSR   main@run1
    LDA   #$01
-   STA   DPTR
-   LDA   #$22
-   STA   DPTR+1
+   JSR   main@run0
    LDA   #$20
+   LDY   #$00
    STA   (DPTR),Y
    LDA   #$81
-   STA   DPTR
-   LDA   #$22
-   STA   DPTR+1
+   JSR   main@run0
    LDA   #$01
+   LDY   #$00
    STA   (DPTR),Y
    LDA   #$02
-   STA   DPTR
-   LDA   #$22
-   STA   DPTR+1
+   JSR   main@run0
    LDA   #$30
+   LDY   #$00
    STA   (DPTR),Y
    LDA   #$82
-   STA   DPTR
-   LDA   #$22
-   STA   DPTR+1
-   LDA   #$00
-   STA   (DPTR),Y
+   JSR   main@run1
    LDA   #$20
    STA   __zpabi_find_index_of_page_table__page_0
-   LDA   #$01
-   STA   __zpabi_find_index_of_page_table__page_1
-   JSR   find_index_of_page_table
+   JSR   main@run2
    STA   __local_main__3
    STX   __local_main__2
    LDA   #$30
    STA   __zpabi_find_index_of_page_table__page_0
-   LDA   #$01
-   STA   __zpabi_find_index_of_page_table__page_1
-   JSR   find_index_of_page_table
+   JSR   main@run2
    STX   __local_main__1
    CLC
    ADC   __local_main__3
@@ -112,6 +98,30 @@ main:
    ADC   __local_main__1
    TAX
    LDA   __local_main__0
+   RTS
+
+main@run2:
+   SUBROUTINE
+
+   LDA   #$01
+   STA   __zpabi_find_index_of_page_table__page_1
+   JMP   find_index_of_page_table
+
+main@run1:
+   SUBROUTINE
+
+   JSR   main@run0
+   LDA   #$00
+   LDY   #$00
+   STA   (DPTR),Y
+   RTS
+
+main@run0:
+   SUBROUTINE
+
+   STA   DPTR
+   LDA   #$22
+   STA   DPTR+1
    RTS
 
 __zp_init:

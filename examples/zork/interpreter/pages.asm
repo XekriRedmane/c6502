@@ -187,6 +187,7 @@ COUT1	EQU	$FDF0
 ; item set_page_first section=.text local=true zero=false
 ; item find_index_of_page_table section=.text local=true zero=false
 ; item get_next_code_byte section=.text local=false zero=false
+; item get_next_code_byte@run0 section=.text local=true zero=false
 ; item load_address section=.text local=false zero=false
 ; item load_packed_address section=.text local=false zero=false
 ; item get_next_code_word section=.text local=false zero=false
@@ -362,14 +363,7 @@ get_next_code_byte:
    LDA   #$00
    STA   ZCODE_PAGE_VALID2
 .if_end@14:
-   LDA   __zpabi_find_index_of_page_table__page_0
-   STA   disk_sector
-   LDA   __zpabi_find_index_of_page_table__page_1
-   STA   disk_sector+1
-   LDA   HIGH_MEM_ADDR
-   CLC
-   STA   disk_buffer
-   LDA   HIGH_MEM_ADDR+1
+   JSR   get_next_code_byte@run0
    ADC   PAGE_TABLE_INDEX
    STA   disk_buffer+1
    JSR   read_from_sector
@@ -397,6 +391,19 @@ get_next_code_byte:
    LDA   #$FF
    STA   ZCODE_PAGE_VALID
    JMP   .loop@1_start
+
+get_next_code_byte@run0:
+   SUBROUTINE
+
+   LDA   __zpabi_find_index_of_page_table__page_0
+   STA   disk_sector
+   LDA   __zpabi_find_index_of_page_table__page_1
+   STA   disk_sector+1
+   LDA   HIGH_MEM_ADDR
+   CLC
+   STA   disk_buffer
+   LDA   HIGH_MEM_ADDR+1
+   RTS
 
 load_address:
    SUBROUTINE
@@ -474,14 +481,7 @@ get_next_code_byte2:
    LDA   #$00
    STA   ZCODE_PAGE_VALID
 .if_end@24:
-   LDA   __zpabi_find_index_of_page_table__page_0
-   STA   disk_sector
-   LDA   __zpabi_find_index_of_page_table__page_1
-   STA   disk_sector+1
-   LDA   HIGH_MEM_ADDR
-   CLC
-   STA   disk_buffer
-   LDA   HIGH_MEM_ADDR+1
+   JSR   get_next_code_byte@run0
    ADC   PAGE_TABLE_INDEX2
    STA   disk_buffer+1
    JSR   read_from_sector

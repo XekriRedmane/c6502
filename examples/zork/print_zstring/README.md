@@ -129,22 +129,22 @@ interpreter state in every scenario.
 | `invalidate_zcode_page2` | 5 | 5 |
 | `load_packed_address` | 18 | 15 |
 | `get_next_code_word` | 13 | 15 |
-| `get_next_code_byte2` | 127 | 133 |
-| `set_page_first` | 53 | 56 |
+| `get_next_code_byte2` | 127 | 131 |
+| `set_page_first` | 53 | 54 |
 | `find_index_of_page_table` | 29 | 29 |
-| `print_zstring` | 216 | 242 |
+| `print_zstring` | 216 | 237 |
 | `A_mod_3` | 11 | 10 |
 | `get_alphabet` | 12 | 12 |
-| `get_next_zchar` | 76 | 78 |
+| `get_next_zchar` | 76 | 77 |
 | `buffer_char` | 82 | 88 |
-| `dump_buffer_line` | 15 | 11 |
-| `dump_buffer_to_printer` | 78 | 88 |
-| `dump_buffer_to_screen` | 21 | 21 |
-| `dump_buffer_with_more` | 110 | 117 |
+| `dump_buffer_line` | 15 | 10 |
+| `dump_buffer_to_printer` | 78 | 87 |
+| `dump_buffer_to_screen` | 21 | 20 |
+| `dump_buffer_with_more` | 110 | 116 |
 | `cout_string` | 14 | 14 |
 | `do_rwts_on_sector` | 51 | 50 |
 | `read_from_sector` | 6 | 2 |
-| **Code** | **981** | **1030** |
+| **Code** | **981** | **1016** |
 
 Zork's `buffer_char` counts its `buffer_char_set_buffer_end` label,
 which `dump_buffer_with_more` jumps to. The data is the same: the IOB

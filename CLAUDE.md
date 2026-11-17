@@ -62,6 +62,7 @@ C source
   → type_checking                       → c99_ast (+ SymbolTable, TypeTable)
   → (-O: unroll_program — #pragma c6502 loop unroll(enable))
   → c99_to_tac                          → tac_ast
+  → (-O: return_pointers_in_zero_page — a static's pointer result in F@ret)
   → (-O: TAC fixed-point opts)
   → (-O: select_abi + allocate_zp_slots)
   → tac_to_asm                          → asm_ast

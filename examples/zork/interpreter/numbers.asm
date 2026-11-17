@@ -153,7 +153,6 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
 ; ext get_next_zchar params= carry=true
-; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
 ; ext inc_sector_and_read params= carry=true
 ; ext inc_sector_and_write params= carry=true

@@ -2,8 +2,9 @@ HARGS	EQU	$00
 SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
-props	EQU	$0B
-attr_ptr	EQU	$0D
+get_object_addr@ret	EQU	$0B
+props	EQU	$0D
+attr_ptr	EQU	$0F
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -88,39 +89,27 @@ __zpabi_store_result__value_1	EQU	$E1
 __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_instr_clear_attr__0	EQU	$E4
-__local_instr_get_child__0	EQU	$E4
 __local_instr_get_next_prop__y	EQU	$E4
-__local_instr_get_parent__0	EQU	$E4
 __local_instr_get_prop__0	EQU	$E4
 __local_instr_get_prop_addr__0	EQU	$E4
 __local_instr_get_prop_len__0	EQU	$E4
-__local_instr_get_sibling__0	EQU	$E4
 __local_instr_insert_obj__0	EQU	$E4
 __local_instr_put_prop__0	EQU	$E4
 __local_print_obj__obj	EQU	$E4
 __local_instr_clear_attr__1	EQU	$E5
-__local_instr_get_child__1	EQU	$E5
-__local_instr_get_parent__1	EQU	$E5
 __local_instr_get_prop__1	EQU	$E5
 __local_instr_get_prop_addr__y	EQU	$E5
 __local_instr_get_prop_len__1	EQU	$E5
-__local_instr_get_sibling__1	EQU	$E5
-__local_instr_insert_obj__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
-__local_print_obj__0	EQU	$E5
 __local_instr_get_next_prop__1	EQU	$E6
 __local_instr_get_prop__y	EQU	$E6
 __local_instr_get_prop_addr__1	EQU	$E6
 __local_instr_get_prop_len__2	EQU	$E6
-__local_instr_insert_obj__2	EQU	$E6
-__local_instr_jin__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
-__local_print_obj__1	EQU	$E6
 __local_store_and_branch_on__related	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E7
 __local_instr_get_prop__2	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
-__local_instr_jin__3	EQU	$E7
 __local_instr_put_prop__2	EQU	$E7
 __local_attr_ptr_and_mask__attr	EQU	$E8
 __local_instr_get_prop__3	EQU	$E8
@@ -133,10 +122,6 @@ BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
 __local_get_property_ptr__0	EQU	$F0
-__local_get_property_ptr__1	EQU	$F1
-__local_remove_obj__0	EQU	$F1
-__local_get_property_ptr__2	EQU	$F2
-__local_remove_obj__1	EQU	$F2
 __local_remove_obj__2	EQU	$F3
 __local_remove_obj__3	EQU	$F4
 __local_remove_obj__4	EQU	$F5
@@ -287,7 +272,7 @@ COUT1	EQU	$FDF0
 ; call remove_obj -> get_object_addr
 ; call store_and_branch_on -> branch
 ; call store_and_branch_on -> store_result
-; item get_object_addr section=.text local=false zero=false
+; item get_object_addr section=.text local=true zero=false
 ; item remove_obj section=.text local=true zero=false
 ; item instr_remove_obj section=.text local=false zero=false
 ; item instr_insert_obj section=.text local=false zero=false
@@ -313,6 +298,7 @@ COUT1	EQU	$FDF0
 ; item instr_put_prop section=.text local=false zero=false
 ; item attr_mask section=.bss local=true zero=true
 ; item __zp_init section=.text local=false zero=false
+; zp get_object_addr@ret size=2 at=auto def=true init= local=true
 ; zp props size=2 at=auto def=true init=$00,$00 weight=18 local=true
 ; zp attr_ptr size=2 at=auto def=true init=$00,$00 weight=7 local=true
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
@@ -416,18 +402,19 @@ get_object_addr:
    STA   __local_get_object_addr__0
    LDA   __local_get_object_addr__2
    ADC   __local_get_object_addr__1
-   TAX
+   STA   __local_get_object_addr__1
    LDA   __local_get_object_addr__0
    CLC
    ADC   __local_get_object_addr__obj
    BCC   .carry_inc@0
-   INX
+   INC   __local_get_object_addr__1
    CLC
 .carry_inc@0:
    ADC   #$35
-   BCC   .carry_inc@1
-   INX
-.carry_inc@1:
+   STA   get_object_addr@ret
+   LDA   __local_get_object_addr__1
+   ADC   #$00
+   STA   get_object_addr@ret+1
    RTS
 
 remove_obj:
@@ -436,36 +423,34 @@ remove_obj:
    LDA   OPERANDS
    STA   __local_remove_obj__4
    JSR   get_object_addr
+   LDA   get_object_addr@ret
    STA   __local_remove_obj__2
-   STX   __local_remove_obj__3
+   LDA   get_object_addr@ret+1
+   STA   __local_remove_obj__3
    LDY   #$04
-   LDA   (__local_remove_obj__2),Y
+   LDA   (get_object_addr@ret),Y
    BNE   .if_end@0
    RTS
 .if_end@0:
    JSR   get_object_addr
-   STA   __local_remove_obj__0
-   STX   __local_remove_obj__1
    LDY   #$06
-   LDA   (__local_remove_obj__0),Y
+   LDA   (get_object_addr@ret),Y
    CMP   __local_remove_obj__4
    BNE   .if_else@2
    DEY
    LDA   (__local_remove_obj__2),Y
    INY
-   STA   (__local_remove_obj__0),Y
+   STA   (get_object_addr@ret),Y
    JMP   .if_end@1
 .if_else@2:
 .loop@0_start:
    JSR   get_object_addr
-   STA   __local_remove_obj__0
-   STX   __local_remove_obj__1
    LDY   #$05
-   LDA   (__local_remove_obj__0),Y
+   LDA   (get_object_addr@ret),Y
    CMP   __local_remove_obj__4
    BNE   .loop@0_start
    LDA   (__local_remove_obj__2),Y
-   STA   (__local_remove_obj__0),Y
+   STA   (get_object_addr@ret),Y
 .if_end@1:
    LDA   #$00
    LDY   #$04
@@ -489,19 +474,19 @@ instr_insert_obj:
    STA   __local_instr_insert_obj__0
    LDA   OPERANDS
    JSR   get_object_addr
+   LDA   get_object_addr@ret
    STA   __local_instr_insert_obj__3
-   STX   __local_instr_insert_obj__4
+   LDA   get_object_addr@ret+1
+   STA   __local_instr_insert_obj__4
    LDA   __local_instr_insert_obj__0
    LDY   #$04
-   STA   (__local_instr_insert_obj__3),Y
+   STA   (get_object_addr@ret),Y
    JSR   get_object_addr
-   STA   __local_instr_insert_obj__1
-   STX   __local_instr_insert_obj__2
    LDY   #$06
-   LDA   (__local_instr_insert_obj__1),Y
+   LDA   (get_object_addr@ret),Y
    STA   __local_instr_insert_obj__0
    LDA   __local_instr_insert_obj__5
-   STA   (__local_instr_insert_obj__1),Y
+   STA   (get_object_addr@ret),Y
    LDA   __local_instr_insert_obj__0
    BEQ   .if_end@3
    DEY
@@ -513,13 +498,11 @@ print_obj:
    SUBROUTINE
 
    JSR   get_object_addr
-   STA   __local_print_obj__0
-   STX   __local_print_obj__1
    LDY   #$07
-   LDA   (__local_print_obj__0),Y
+   LDA   (get_object_addr@ret),Y
    STA   __local_print_obj__obj
    INY
-   LDA   (__local_print_obj__0),Y
+   LDA   (get_object_addr@ret),Y
    CLC
    ADC   #$01
    STA   __zpabi_load_address__addr_0
@@ -548,10 +531,8 @@ instr_get_sibling:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   STA   __local_instr_get_sibling__0
-   STX   __local_instr_get_sibling__1
    LDY   #$05
-   LDA   (__local_instr_get_sibling__0),Y
+   LDA   (get_object_addr@ret),Y
    JMP   store_and_branch_on
 
 instr_get_child:
@@ -559,10 +540,8 @@ instr_get_child:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   STA   __local_instr_get_child__0
-   STX   __local_instr_get_child__1
    LDY   #$06
-   LDA   (__local_instr_get_child__0),Y
+   LDA   (get_object_addr@ret),Y
    JMP   store_and_branch_on
 
 instr_get_parent:
@@ -570,10 +549,8 @@ instr_get_parent:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   STA   __local_instr_get_parent__0
-   STX   __local_instr_get_parent__1
    LDY   #$04
-   LDA   (__local_instr_get_parent__0),Y
+   LDA   (get_object_addr@ret),Y
    STA   __zpabi_store_result__value_0
    LDA   #$00
    STA   __zpabi_store_result__value_1
@@ -584,11 +561,9 @@ instr_jin:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   STA   __local_instr_jin__2
-   STX   __local_instr_jin__3
    LDY   #$04
    LDA   OPERANDS+2
-   CMP   (__local_instr_jin__2),Y
+   CMP   (get_object_addr@ret),Y
    BEQ   .cmp_true@1
    LDA   #$00
    BEQ   .cmp_end@2
@@ -602,8 +577,10 @@ attr_ptr_and_mask:
 
    LDA   OPERANDS
    JSR   get_object_addr
+   LDA   get_object_addr@ret
    STA   attr_ptr
-   STX   attr_ptr+1
+   LDA   get_object_addr@ret+1
+   STA   attr_ptr+1
    LDA   OPERANDS+2
    STA   __local_attr_ptr_and_mask__attr
    CMP   #$10
@@ -614,9 +591,9 @@ attr_ptr_and_mask:
    CLC
    ADC   #$02
    STA   attr_ptr
-   BCC   .carry_inc@2
+   BCC   .carry_inc@1
    INC   attr_ptr+1
-.carry_inc@2:
+.carry_inc@1:
 .if_end@4:
    LDA   #$0F
    SEC
@@ -706,13 +683,11 @@ get_property_ptr:
 
    LDA   OPERANDS
    JSR   get_object_addr
-   STA   __local_get_property_ptr__1
-   STX   __local_get_property_ptr__2
    LDY   #$07
-   LDA   (__local_get_property_ptr__1),Y
+   LDA   (get_object_addr@ret),Y
    STA   __local_get_property_ptr__0
    INY
-   LDA   (__local_get_property_ptr__1),Y
+   LDA   (get_object_addr@ret),Y
    CLC
    ADC   Z_HEADER_ADDR
    STA   props
@@ -931,9 +906,9 @@ instr_get_prop_len:
    SEC
    SBC   #$01
    STA   __local_instr_get_prop_len__0
-   BCS   .carry_inc@3
+   BCS   .carry_inc@2
    DEC   __local_instr_get_prop_len__1
-.carry_inc@3:
+.carry_inc@2:
    LDY   #$00
    LDA   (__local_instr_get_prop_len__0),Y
    LSR

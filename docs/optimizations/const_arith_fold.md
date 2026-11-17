@@ -68,7 +68,7 @@ All three rewrites look at two adjacent instructions that write A.
 - `LDA #$00; ORA m` or `LDA #$FF; AND m` becomes `LDA m`, for any
   operand `m`.
 
-Two more look at one instruction or three.
+Three more look at one instruction, two, or three.
 
 - `AND #$00` becomes `LDA #$00`, and `ORA #$FF` becomes `LDA #$FF`,
   after any instruction, since the result doesn't depend on A and N
@@ -81,6 +81,16 @@ Two more look at one instruction or three.
   and V are dead after (`asm_liveness.c_dead_at`, `v_dead_at`). N and
   Z come out as the add left them. `if (offset & 0x8000) pages +=
   0x100;` on a `pages` whose high byte is 0 adds 1 to 0 this way.
+
+- `CLC; ADC #$00` becomes `CLC`, and `SEC; SBC #$00` becomes `SEC`,
+  when V is dead after and N and Z are dead or were set from A by the
+  instruction before the `CLC` or `SEC`. The add leaves A and C as
+  they were, clears V, and sets N and Z from A. A 2-byte add of a
+  value whose low byte is 0 leaves this shape on the low byte, as in
+  `Z_HEADER_ADDR + ((uint16_t)sector << 8)` in Zork's `main`, which
+  was `LDA Z_HEADER_ADDR; CLC; ADC #$00; STA disk_buffer; LDA
+  Z_HEADER_ADDR+1; ADC sector`. Four of these in Zork's interpreter
+  took 8 bytes.
 
 After a fold the pass moves on past both instructions, so a chain
 such as `LDA #1; AND #3; ORA #4` takes a second call to fold

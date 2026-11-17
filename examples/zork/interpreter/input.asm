@@ -2,12 +2,13 @@ HARGS	EQU	$00
 SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
-input_ptr	EQU	$0B
-char_count	EQU	$0C
-input_count	EQU	$0D
-token_idx	EQU	$0E
-parse	EQU	$0F
-text	EQU	$11
+get_dictionary_addr@ret	EQU	$0B
+input_ptr	EQU	$0D
+char_count	EQU	$0E
+input_count	EQU	$0F
+token_idx	EQU	$10
+parse	EQU	$11
+text	EQU	$13
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -99,11 +100,9 @@ __local_z_compress__0	EQU	$E7
 __local_print_status_line__1	EQU	$E8
 __local_read_line__left	EQU	$E8
 __local_z_compress__1	EQU	$E8
-__local_is_dict_separator__1	EQU	$E9
 __local_print_status_line__2	EQU	$E9
 __local_read_line__n	EQU	$E9
 __local_z_compress__2	EQU	$E9
-__local_is_dict_separator__2	EQU	$EA
 __local_z_compress__3	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
@@ -125,7 +124,6 @@ __local_match_dictionary_word__8	EQU	$FA
 __local_match_dictionary_word__entry_0	EQU	$FB
 __local_match_dictionary_word__entry_1	EQU	$FC
 __local_get_dictionary_addr__0	EQU	$FD
-__local_get_dictionary_addr__1	EQU	$FE
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -176,7 +174,6 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_byte2 params=
 ; ext get_next_code_word params=
 ; ext get_next_zchar params= carry=true
-; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
 ; ext inc_sector_and_read params= carry=true
 ; ext inc_sector_and_write params= carry=true
@@ -271,6 +268,7 @@ COUT1	EQU	$FDF0
 ; item sScore section=.rodata local=true zero=false
 ; item SEPARATORS_TABLE section=.rodata local=true zero=false
 ; item __zp_init section=.text local=false zero=false
+; zp get_dictionary_addr@ret size=2 at=auto def=true init= local=true
 ; zp input_ptr size=1 at=auto def=true init=$00 weight=145 local=true
 ; zp char_count size=1 at=auto def=true init=$00 weight=129 local=true
 ; zp input_count size=1 at=auto def=true init=$00 weight=121 local=true
@@ -467,32 +465,29 @@ get_dictionary_addr:
 
    LDY   #$08
    LDA   (Z_HEADER_ADDR),Y
-   STA   __local_get_dictionary_addr__1
+   STA   __local_get_dictionary_addr__0
    INY
    LDA   (Z_HEADER_ADDR),Y
    CLC
    ADC   Z_HEADER_ADDR
-   STA   __local_get_dictionary_addr__0
+   STA   get_dictionary_addr@ret
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_get_dictionary_addr__1
-   TAX
-   LDA   __local_get_dictionary_addr__0
+   ADC   __local_get_dictionary_addr__0
+   STA   get_dictionary_addr@ret+1
    RTS
 
 is_dict_separator:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   STA   __local_is_dict_separator__1
-   STX   __local_is_dict_separator__2
    LDY   #$00
-   LDA   (__local_is_dict_separator__1),Y
+   LDA   (get_dictionary_addr@ret),Y
    TAX
    LDA   __zpabi_is_dict_separator__c
    BEQ   .tail@1
 .loop@2_start:
    INY
-   CMP   (__local_is_dict_separator__1),Y
+   CMP   (get_dictionary_addr@ret),Y
    BNE   .if_end@8
    SEC
    RTS
@@ -784,13 +779,13 @@ match_dictionary_word:
    SUBROUTINE
 
    JSR   get_dictionary_addr
-   STA   __local_match_dictionary_word__entry_0
-   STX   __local_match_dictionary_word__entry_1
+   LDA   get_dictionary_addr@ret+1
+   STA   __local_match_dictionary_word__entry_1
    LDY   #$00
-   LDA   (__local_match_dictionary_word__entry_0),Y
+   LDA   (get_dictionary_addr@ret),Y
    TAY
    INY
-   LDA   (__local_match_dictionary_word__entry_0),Y
+   LDA   (get_dictionary_addr@ret),Y
    STA   __local_match_dictionary_word__8
    ASL
    ASL
@@ -798,15 +793,15 @@ match_dictionary_word:
    ASL
    STA   __local_match_dictionary_word__6
    INY
-   LDA   (__local_match_dictionary_word__entry_0),Y
+   LDA   (get_dictionary_addr@ret),Y
    INY
    STA   __local_match_dictionary_word__count_1
-   LDA   (__local_match_dictionary_word__entry_0),Y
+   LDA   (get_dictionary_addr@ret),Y
    STA   __local_match_dictionary_word__5
    INY
    TYA
    CLC
-   ADC   __local_match_dictionary_word__entry_0
+   ADC   get_dictionary_addr@ret
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@0
    INC   __local_match_dictionary_word__entry_1

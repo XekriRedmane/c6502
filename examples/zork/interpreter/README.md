@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 6% larger than the
+(see "Compared with Zork's own code"). It is 5% larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
@@ -162,18 +162,18 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 465 |
+| `main.c` | 391 | 461 |
 | `decode.c` | 1859 | 1850 |
-| `objects.c` | 788 | 951 |
+| `objects.c` | 788 | 934 |
 | `numbers.c` | 436 | 473 |
-| `input.c` | 1018 | 1086 |
-| `pages.c` | 384 | 383 |
+| `input.c` | 1018 | 1081 |
+| `pages.c` | 384 | 379 |
 | `zstring.c` | 383 | 401 |
 | `output.c` | 387 | 401 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7019** |
+| **Total** | **6643** | **6989** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -478,3 +478,16 @@ the smaller code saved.
   ([cmp_zero_jump_fold.md](../../../docs/optimizations/cmp_zero_jump_fold.md)),
   10 bytes in the range tests of `read_line` and
   `get_alphabet_for_char`.
+- `CLC; ADC #$00` is `CLC` when V is dead after
+  ([const_arith_fold.md](../../../docs/optimizations/const_arith_fold.md)),
+  8 bytes in the 2-byte adds of a page number shifted left by 8 in
+  `main` and `pages.c`.
+- A `static` function returning a pointer returns it in a zero-page
+  pointer of its own, and a read through the result before the next
+  call reads through that pointer
+  ([return_in_zero_page.md](../../../docs/optimizations/return_in_zero_page.md)),
+  as Zork's `get_object_addr` leaves the address in `SCRATCH2`.
+  `get_object_addr` is `static` in `objects.c` for this, since no other
+  unit calls it, and `get_dictionary_addr` in `input.c` already was.
+  Each call had stored the result from A and X into a zero-page pair,
+  22 bytes in the two units.

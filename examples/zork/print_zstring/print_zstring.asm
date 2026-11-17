@@ -88,11 +88,11 @@ __local_dump_buffer_with_more__end	EQU	$F8
 __local_get_next_code_byte2__page	EQU	$F8
 __local_dump_buffer_to_printer__x	EQU	$F9
 __local_get_next_code_byte2__0	EQU	$F9
+__pages_size	EQU	$F9
 __local_dump_buffer_to_printer__1	EQU	$FA
 __local_set_page_first__0	EQU	$FA
 __local_dump_buffer_to_printer__2	EQU	$FB
 __local_set_page_first__prev_first	EQU	$FB
-__pages_size	EQU	$FB
 __output_size	EQU	$0156
 __zstring_size	EQU	$0168
 BUFF_AREA	EQU	$0200
@@ -104,12 +104,12 @@ __literal_end	EQU	$0C87
 __literal_load_end	EQU	$0C87
 __pages_load	EQU	$17DD
 __pages_start	EQU	$17DD
-__pages_end	EQU	$18D8
-__pages_load_end	EQU	$18D8
-__zstring_load	EQU	$18D8
-__zstring_start	EQU	$18D8
-__zstring_end	EQU	$1A40
-__zstring_load_end	EQU	$1A40
+__pages_end	EQU	$18D6
+__pages_load_end	EQU	$18D6
+__zstring_load	EQU	$18D6
+__zstring_start	EQU	$18D6
+__zstring_end	EQU	$1A3E
+__zstring_load_end	EQU	$1A3E
 __output_load	EQU	$1B90
 __output_start	EQU	$1B90
 __output_end	EQU	$1CE6
@@ -243,7 +243,6 @@ get_next_code_byte2:
 .if_end@8:
    LDA   HIGH_MEM_ADDR
    CLC
-   ADC   #$00
    STA   SCRATCH2
    LDA   HIGH_MEM_ADDR+1
    ADC   PAGE_TABLE_INDEX2
@@ -336,9 +335,9 @@ find_index_of_page_table:
    LDA   LAST_Z_PAGE
    RTS
 
-; Disassembly of section .zstring at $18D8
+; Disassembly of section .zstring at $18D6
    SEG   zstring
-   ORG   $18D8
+   ORG   $18D6
 print_zstring:
    SUBROUTINE
    LDA   #$00

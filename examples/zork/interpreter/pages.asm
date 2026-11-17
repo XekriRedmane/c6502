@@ -133,7 +133,6 @@ COUT1	EQU	$FDF0
 ; ext dump_buffer_with_more params=
 ; ext get_alphabet params=
 ; ext get_next_zchar params= carry=true
-; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
 ; ext inc_sector_and_read params= carry=true
 ; ext inc_sector_and_write params= carry=true
@@ -376,7 +375,6 @@ get_next_code_byte:
    STA   disk_sector+1
    LDA   HIGH_MEM_ADDR
    CLC
-   ADC   #$00
    STA   disk_buffer
    LDA   HIGH_MEM_ADDR+1
    ADC   PAGE_TABLE_INDEX
@@ -489,7 +487,6 @@ get_next_code_byte2:
    STA   disk_sector+1
    LDA   HIGH_MEM_ADDR
    CLC
-   ADC   #$00
    STA   disk_buffer
    LDA   HIGH_MEM_ADDR+1
    ADC   PAGE_TABLE_INDEX2

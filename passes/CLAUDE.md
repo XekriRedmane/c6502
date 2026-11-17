@@ -308,7 +308,9 @@ this directory:
   exit of the CFG (`redundant_load._build_cfg_tolerant`). A `(zp),Y`
   pointer whose bytes hold a label's address halves reads or writes
   the label directly, `name,Y` (`_label_pointer_operand`), which is
-  how a pooled function's local array is indexed.
+  how a pooled function's local array is indexed. A `(zp),Y` pointer whose bytes copy a named zero-page pointer
+  (not a slot) reads or writes through that pointer
+  (`_copied_pointer_operand`).
 - `label_resolution.py` — pass 4 (see below).
 - `linker.py` — `link_objects` / `link_files`, what `compile.py` runs
   on objects; multi-TU re-allocates `__zpabi_*` and `__local_*`
@@ -390,6 +392,15 @@ this directory:
   `rotate_loop_test`. An init from the register itself keeps the
   counter there, and one from the other index register is left
   alone, since there's no TXY or TYX.
+- `return_in_zero_page.py` — `return_pointers_in_zero_page`. Under
+  `-O`, a `static` function returning a pointer whose address isn't
+  taken stores its result in a zero-page object of its own, `F@ret`
+  (a `[[c6502::zeropage]]` static with no initial bytes), and each
+  call copies it from there. Runs on the unoptimized TAC in
+  `compile.translate_for_codegen`, which the CLI and the simulator
+  harness both call, before `plan_zero_page` places the objects.
+  `memory_value_propagation._copied_pointer_operand` then reads
+  through `F@ret` where the copy still holds it.
 - `rotate_loop_test.py` — `apply_rotate_loop_test`. A loop that
   tests at its top and ends with `JMP L` gets its test at the bottom,
   inverted to branch back to the body, and is entered with a `JMP` to

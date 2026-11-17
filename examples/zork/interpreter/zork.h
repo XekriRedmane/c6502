@@ -249,7 +249,6 @@ uint8_t get_next_code_byte(void);
 
 /* ---- objects.c ------------------------------------------------------- */
 
-uint8_t *get_object_addr(register uint8_t obj);
 void print_obj(register uint8_t obj);
 void instr_get_sibling(void);
 void instr_get_child(void);

@@ -209,6 +209,22 @@ every byte of that name and any `ZP` operand. Without that,
 `tests/chapter_16/valid/chars/access_through_char_pointer.c` once its
 reads became `x,Y`.
 
+## A copy of a named pointer
+
+When the two bytes of a `(zp),Y` pointer hold copies of the two bytes
+of a named zero-page pointer, one whose address the linker keeps (a
+zero-page object or one of the runtime's bytes, not a `__local_*` or
+`__zpabi_*` slot), the access goes through the named pointer. `(N),Y`
+becomes `(M),Y`, and `IndirectZp(N, k)` becomes `IndirectZp(M, k)`.
+A function that returns its pointer in a zero-page object
+([return_in_zero_page.md](return_in_zero_page.md)) leaves `LDA
+F@ret; STA p; LDA F@ret+1; STA p+1` after each call, and a read
+through `p` before anything can write `F@ret` again goes through
+`F@ret`. Then the copy's stores are dead, and
+[asm dead-store elimination](asm_dead_store.md) drops them. A call,
+and a store through a pointer, end the facts as they do for every
+cell, so a read after one keeps the copy.
+
 ## When it applies
 
 - A tail call, a `JMP` to another function, ends the facts like a

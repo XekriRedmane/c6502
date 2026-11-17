@@ -851,6 +851,11 @@ def _rewrite_instr(
     instr = _rewrite_operands(
         instr, lambda op: _label_pointer_operand(op, state),
     )
+    # A `(zp),Y` access through a slot pair that holds a copy of a
+    # named zero-page pointer goes through that pointer.
+    instr = _rewrite_operands(
+        instr, lambda op: _copied_pointer_operand(op, state),
+    )
     # Second pass: substitute cell-reads with their tracked Expr.
     return _rewrite_cell_reads(instr, state, ctx)
 
@@ -873,6 +878,33 @@ def _label_pointer_operand(op, state: State):
             name=lo.name, offset=lo.offset, index=asm_ast.Y(),
         )
     return asm_ast.Data(name=lo.name, offset=lo.offset + op.offset)
+
+
+def _copied_pointer_operand(op, state: State):
+    """`(M),Y` for `(N),Y`, and the constant-Y `IndirectZp(M, k)` for
+    `IndirectZp(N, k)`, when the bytes at `N` and `N + 1` hold copies
+    of the bytes at `M` and `M + 1`, and `M` is a named zero-page
+    object, a fixed one or the runtime's, whose address the linker
+    keeps (`_fixed_source` has the same rule). A function returning a
+    pointer in a zero-page object (passes/return_in_zero_page.py)
+    leaves `LDA F@ret; STA p; LDA F@ret+1; STA p+1` at each call, and
+    a read through `p` then goes through `F@ret`, so the copy can go.
+    Otherwise `op`."""
+    if not isinstance(op, (asm_ast.IndirectZpY, asm_ast.IndirectZp)):
+        return op
+    lo = state.cells.get(op.address)
+    hi = state.cells.get(op.address + 1)
+    if not (isinstance(lo, ZPRef) and isinstance(hi, ZPRef)):
+        return op
+    if hi.addr != lo.addr + 1 or lo.addr == op.address:
+        return op
+    if lo.name is None or lo.name.startswith(_SLOT_PREFIXES):
+        return op
+    if hi.name is None or hi.name.startswith(_SLOT_PREFIXES):
+        return op
+    if isinstance(op, asm_ast.IndirectZpY):
+        return asm_ast.IndirectZpY(address=lo.addr)
+    return asm_ast.IndirectZp(address=lo.addr, offset=op.offset)
 
 
 def _rewrite_operands(instr, fn):

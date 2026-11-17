@@ -184,6 +184,7 @@ from passes.type_checking import (
     check_program as type_check_program,
 )
 from c99_to_tac import translate_program as translate_to_tac
+from passes.return_in_zero_page import return_pointers_in_zero_page
 
 
 def _resolved(source: str, *, optimize: bool = False):
@@ -337,6 +338,19 @@ def _format_tokens(source: str) -> str:
     return "".join(out)
 
 
+def translate_for_codegen(prog, symbols, types, optimize: bool):
+    """Translates the type-checked `prog` to TAC for code generation.
+    Under `-O` it then returns each `static` function's pointer result
+    in a zero-page object of its own
+    (`passes.return_in_zero_page`), which adds the objects to
+    `symbols` before `plan_zero_page` places them. The CLI and the
+    simulator harness both start their compiles here."""
+    tac = translate_to_tac(prog, symbols, types)
+    if optimize:
+        tac = return_pointers_in_zero_page(tac, symbols)
+    return tac
+
+
 def _run_stage(
     stage: str, source: str, optimize: bool = False,
     link_metadata: bool = False,
@@ -363,7 +377,7 @@ def _run_stage(
         prog, symbols, types = type_check_program(
             _resolved(source, optimize=optimize),
         )
-        tac = translate_to_tac(prog, symbols, types)
+        tac = translate_for_codegen(prog, symbols, types, optimize)
         zp = plan_zero_page(tac, symbols, types, promote=optimize)
         with zero_page_in_effect(zp):
             return _codegen(

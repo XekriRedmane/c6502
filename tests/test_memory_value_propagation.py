@@ -405,5 +405,46 @@ class TestSlotReadsFixedSource(unittest.TestCase):
         self.assertEqual(out[9].src, _data("__local_f__t"))
 
 
+class TestCopiedPointer(unittest.TestCase):
+    """A `(zp),Y` access through a slot pair that holds a copy of a
+    named zero-page pointer goes through that pointer, which is what
+    a pointer returned in `F@ret` (passes/return_in_zero_page.py)
+    leaves at each call."""
+
+    _ADDRS = {"RET": 0x84, "__local_f__p": 0x94, "__zpabi_g__q": 0x96}
+
+    def _run(self, src, between=()):
+        # LDA src; STA p; LDA src+1; STA p+1; <between>; LDA (p),Y; RTS
+        fn = asm_ast.Function(name="f", is_global=True, params=[], instructions=[
+            _load(_data(src)), _store(_data("__local_f__p")),
+            _load(_data(src, 1)), _store(_data("__local_f__p", 1)),
+            *between,
+            _load(asm_ast.IndirectZpY(address=0x94)),
+            asm_ast.Return(save_a=True),
+        ])
+        return _instrs(apply_memory_value_propagation(
+            asm_ast.Program(top_level=[fn]), zp_symbol_addrs=self._ADDRS,
+        ))
+
+    def test_read_through_copy_of_named_pointer(self):
+        out = self._run("RET")
+        self.assertEqual(out[4].src, asm_ast.IndirectZpY(address=0x84))
+
+    def test_call_in_between_keeps_the_copy(self):
+        # The call may write RET again.
+        out = self._run("RET", [asm_ast.Call(name="g")])
+        self.assertEqual(out[5].src, asm_ast.IndirectZpY(address=0x94))
+
+    def test_store_through_a_pointer_keeps_the_copy(self):
+        # A store through a pointer may write RET's bytes.
+        out = self._run("RET", [_store(asm_ast.IndirectZpY(address=0x96))])
+        self.assertEqual(out[5].src, asm_ast.IndirectZpY(address=0x94))
+
+    def test_copy_of_another_functions_slot_left_alone(self):
+        # The linker may give `__zpabi_g__q` another address.
+        out = self._run("__zpabi_g__q")
+        self.assertEqual(out[4].src, asm_ast.IndirectZpY(address=0x94))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -129,6 +129,50 @@ class TestConstArithFold(unittest.TestCase):
         ])
         self.assertEqual(apply_const_arith_fold(prog), prog)
 
+    def _zero_add(self, flag, op, after):
+        """`LDA m; <flag>; <op> #0; STA d; <after>; RTS`."""
+        return _wrap([
+            asm_ast.Mov(src=asm_ast.Data(name="m", offset=0), dst=_A),
+            flag,
+            op(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="d", offset=0)),
+            *after,
+            asm_ast.Return(),
+        ])
+
+    def test_add_of_zero_after_clc_goes(self):
+        # `p + (n << 8)`'s low byte: the add of the shift's 0 leaves A
+        # and C as they were, and the high byte's ADC reads the C.
+        high = [
+            asm_ast.Mov(src=asm_ast.Data(name="m", offset=1), dst=_A),
+            asm_ast.Add(src=asm_ast.Data(name="n", offset=0), dst=_A),
+        ]
+        prog = self._zero_add(asm_ast.ClearCarry(), asm_ast.Add, high)
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(out[:3], [
+            asm_ast.Mov(src=asm_ast.Data(name="m", offset=0), dst=_A),
+            asm_ast.ClearCarry(),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="d", offset=0)),
+        ])
+
+    def test_subtract_of_zero_after_sec_goes(self):
+        prog = self._zero_add(asm_ast.SetCarry(), asm_ast.Sub, [])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertNotIn(asm_ast.Sub(src=asm_ast.Imm(value=0), dst=_A), out)
+
+    def test_add_of_zero_kept_when_v_is_read(self):
+        # The ADC clears V, which the CLC doesn't.
+        prog = self._zero_add(asm_ast.ClearCarry(), asm_ast.Add, [
+            asm_ast.Branch(cond=asm_ast.VC(), target=".t"),
+            asm_ast.Label(name=".t"),
+        ])
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
+    def test_add_of_zero_kept_with_the_other_carry(self):
+        # `SEC; ADC #0` adds 1.
+        prog = self._zero_add(asm_ast.SetCarry(), asm_ast.Add, [])
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
 
 if __name__ == "__main__":
     unittest.main()

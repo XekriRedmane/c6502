@@ -424,7 +424,7 @@
 #include "zork.h"
 
 /* Returns the address of object `obj`'s entry. */
-uint8_t *get_object_addr(register uint8_t obj) {
+static uint8_t *get_object_addr(register uint8_t obj) {
     uint16_t table = ((uint16_t)Z_HEADER_ADDR[HEADER_OBJECT_TABLE_ADDR] << 8)
         | Z_HEADER_ADDR[HEADER_OBJECT_TABLE_ADDR + 1];
     return Z_HEADER_ADDR + table + ((uint16_t)obj << 3) + obj

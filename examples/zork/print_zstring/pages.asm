@@ -271,7 +271,6 @@ get_next_code_byte2:
 .if_end@8:
    LDA   HIGH_MEM_ADDR
    CLC
-   ADC   #$00
    STA   SCRATCH2
    LDA   HIGH_MEM_ADDR+1
    ADC   PAGE_TABLE_INDEX2

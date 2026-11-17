@@ -29,6 +29,7 @@ a user variable.
 
 - [A call that doesn't return](noreturn_call.md). Ends the path at a call to a `[[noreturn]]` function, so nothing after it has to survive the call.
 - [A parameter's copy in the parameter's slot](slot_coalescing.md). Renames a zero-page local that copies a parameter to the parameter's own slot, or that's copied into a callee's slot for the call, when they're never live with different values.
+- [A pointer returned in zero page](return_in_zero_page.md). Makes a `static` function returning a pointer leave it in a zero-page pointer of its own, which its callers read through.
 - [Address of a zero-page local](lower_data_load_address.md). Splits a fixed-address LoadAddress into two immediate stores so peepholes can fold them.
 - [Address-taken locals in zero page](address_taken_zp.md). Puts address-taken locals in free private-pool bytes instead of the frame.
 - [AND jump fold](and_zero_jump_fold.md). Turns `if (byte & mask)` into a one-byte `JumpIfMasked` test with no temporaries.
@@ -157,7 +158,8 @@ them whenever a pass is added or moved.
    1. [Loop unrolling](unroll.md)
    2. Identifier resolution, string lifting, label resolution, loop
       labeling, type checking, and translation to TAC.
-   3. [Zero-page promotion](zp_promotion.md)
+   3. [A pointer returned in zero page](return_in_zero_page.md)
+   4. [Zero-page promotion](zp_promotion.md)
 2. TAC optimizer, once per function:
    1. [Signed countdown loop rotation](loop_rotate.md)
    2. [A call that doesn't return](noreturn_call.md)

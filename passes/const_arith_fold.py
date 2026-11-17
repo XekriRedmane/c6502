@@ -47,6 +47,14 @@ subsequent reader of A or the flags sees the same state. The
 `Reg(A)` — that's `Mov` (LDA / TXA / TYA) plus the post-fold
 A-arithmetic atoms (`Add` / `Sub` / `And` / `Or`).
 
+# Adding 0 with the carry known
+
+`CLC; ADC #$00` and `SEC; SBC #$00` leave A and C as they were, so
+the `ADC` / `SBC` goes when V is dead after and N and Z are either
+dead or already set from A by the instruction before the `CLC`. A
+2-byte add of a value whose low byte is 0, such as `p + (n << 8)`,
+leaves this on its low byte.
+
 # Scope and ordering
 
 Only handles `Reg(A)` as dst and `Imm` as both srcs — the common
@@ -65,7 +73,7 @@ position is consistent with other peepholes)."""
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import c_dead_at, v_dead_at
+from passes.asm_liveness import c_dead_at, flags_dead_at, v_dead_at
 
 
 def apply_const_arith_fold(prog: asm_ast.Program) -> asm_ast.Program:
@@ -88,6 +96,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         if const is not None:
             out.append(const)
             i += 1
+            continue
+        if _is_carry_free_zero_add(instrs, i):
+            # Keep the CLC / SEC, drop the ADC #0 / SBC #0.
+            out.append(a)
+            i += 2
             continue
         summed = _try_fold_add(instrs, i)
         if summed is not None:
@@ -161,6 +174,35 @@ def _try_fold_add(instrs, i):
     if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
         return None
     return asm_ast.Mov(src=asm_ast.Imm(value=value), dst=a.dst)
+
+
+def _is_carry_free_zero_add(instrs, i) -> bool:
+    """True for `CLC; ADC #0` or `SEC; SBC #0` at `instrs[i]`, whose
+    `ADC` / `SBC` leaves A and C as they were. It writes V (0) and N
+    and Z from A, so V must be dead after, and N and Z dead too unless
+    the instruction before the `CLC` set them from A. `Z_HEADER_ADDR +
+    (sector << 8)` adds the shift's low byte, a 0, so: `LDA
+    Z_HEADER_ADDR; CLC; ADC #$00; STA lo; LDA Z_HEADER_ADDR+1; ADC
+    sector`."""
+    if i + 1 >= len(instrs):
+        return False
+    flag, op = instrs[i], instrs[i + 1]
+    if not (isinstance(op, (asm_ast.Add, asm_ast.Sub))
+            and isinstance(op.src, asm_ast.Imm)
+            and op.src.value & 0xFF == 0 and _is_reg_a(op.dst)):
+        return False
+    if isinstance(op, asm_ast.Add) != isinstance(flag, asm_ast.ClearCarry):
+        return False
+    if isinstance(op, asm_ast.Sub) != isinstance(flag, asm_ast.SetCarry):
+        return False
+    if not v_dead_at(instrs, i + 2):
+        return False
+    if flags_dead_at(instrs, i + 2):
+        return True
+    prev = instrs[i - 1] if i > 0 else None
+    return (isinstance(prev, (asm_ast.Mov, asm_ast.And, asm_ast.Or,
+                              asm_ast.Add, asm_ast.Sub))
+            and _is_reg_a(prev.dst))
 
 
 def _try_absorb_zero_load(a, b):

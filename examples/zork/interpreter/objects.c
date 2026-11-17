@@ -525,10 +525,9 @@ static uint16_t attr_ptr_and_mask(void) {
         attr -= 0x10;
         attr_ptr += 2;
     }
-    uint16_t mask = 1;
+    attr_mask = 1;
     for (uint8_t n = 0x0F - attr; n != 0; n--)
-        mask <<= 1;
-    attr_mask = mask;
+        attr_mask <<= 1;
     return ((uint16_t)attr_ptr[0] << 8) | attr_ptr[1];
 }
 

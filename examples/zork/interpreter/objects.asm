@@ -3,8 +3,9 @@ SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
 get_object_addr@ret	EQU	$0B
-props	EQU	$0D
-attr_ptr	EQU	$0F
+attr_mask	EQU	$0D
+props	EQU	$0F
+attr_ptr	EQU	$11
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -103,11 +104,10 @@ __local_store_and_branch_on__related	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E7
 __local_instr_get_prop__2	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
-__local_attr_ptr_and_mask__attr	EQU	$E8
+__local_attr_ptr_and_mask__n	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
-__local_attr_ptr_and_mask__mask_1	EQU	$E9
+__local_attr_ptr_and_mask__0	EQU	$E9
 __local_instr_insert_obj__5	EQU	$E9
-__local_attr_ptr_and_mask__n	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -134,7 +134,7 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def attr_ptr_and_mask params= locals=__local_attr_ptr_and_mask__attr,__local_attr_ptr_and_mask__mask_1,__local_attr_ptr_and_mask__n indirect=false in_cycle=false
+; def attr_ptr_and_mask params= locals=__local_attr_ptr_and_mask__n,__local_attr_ptr_and_mask__0 indirect=false in_cycle=false
 ; def get_object_addr params=__zpabi_get_object_addr__obj locals=__local_get_object_addr__0,__local_get_object_addr__1,__local_get_object_addr__2,__local_get_object_addr__3,__local_get_object_addr__obj indirect=false in_cycle=false param_regs=A
 ; def get_property_len params=__zpabi_get_property_len__y locals=__local_get_property_len__0 indirect=false in_cycle=false param_regs=A
 ; def get_property_num params=__zpabi_get_property_num__y locals=__local_get_property_num__0 indirect=false in_cycle=false param_regs=A
@@ -287,9 +287,9 @@ COUT1	EQU	$FDF0
 ; item instr_get_next_prop section=.text local=false zero=false
 ; item instr_get_prop_len section=.text local=false zero=false
 ; item instr_put_prop section=.text local=false zero=false
-; item attr_mask section=.bss local=true zero=true
 ; item __zp_init section=.text local=false zero=false
 ; zp get_object_addr@ret size=2 at=auto def=true init= local=true
+; zp attr_mask size=2 at=auto def=true init=$00,$00 weight=20 local=true
 ; zp props size=2 at=auto def=true init=$00,$00 weight=18 local=true
 ; zp attr_ptr size=2 at=auto def=true init=$00,$00 weight=7 local=true
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
@@ -579,11 +579,11 @@ attr_ptr_and_mask:
    LDA   get_object_addr@ret+1
    STA   attr_ptr+1
    LDA   OPERANDS+2
-   STA   __local_attr_ptr_and_mask__attr
+   STA   __local_attr_ptr_and_mask__n
    CMP   #$10
    BCC   .if_end@4
    SBC   #$10
-   STA   __local_attr_ptr_and_mask__attr
+   STA   __local_attr_ptr_and_mask__n
    LDA   attr_ptr
    CLC
    ADC   #$02
@@ -592,32 +592,28 @@ attr_ptr_and_mask:
    INC   attr_ptr+1
 .carry_inc@1:
 .if_end@4:
+   LDA   #$01
+   STA   attr_mask
+   LDA   #$00
+   STA   attr_mask+1
    LDA   #$0F
    SEC
-   SBC   __local_attr_ptr_and_mask__attr
+   SBC   __local_attr_ptr_and_mask__n
    STA   __local_attr_ptr_and_mask__n
-   LDA   #$01
-   STA   __local_attr_ptr_and_mask__attr
-   LDA   #$00
-   STA   __local_attr_ptr_and_mask__mask_1
    JMP   .loop@1_start
 .attr_ptr_and_mask@rot@0:
-   ASL   __local_attr_ptr_and_mask__attr
-   ROL   __local_attr_ptr_and_mask__mask_1
+   ASL   attr_mask
+   ROL   attr_mask+1
    DEC   __local_attr_ptr_and_mask__n
 .loop@1_start:
    LDA   __local_attr_ptr_and_mask__n
    BNE   .attr_ptr_and_mask@rot@0
-   LDA   __local_attr_ptr_and_mask__attr
-   STA   attr_mask
-   LDA   __local_attr_ptr_and_mask__mask_1
-   STA   attr_mask+1
    LDY   #$00
    LDA   (attr_ptr),Y
-   STA   __local_attr_ptr_and_mask__mask_1
+   STA   __local_attr_ptr_and_mask__0
    INY
    LDA   (attr_ptr),Y
-   LDX   __local_attr_ptr_and_mask__mask_1
+   LDX   __local_attr_ptr_and_mask__0
    RTS
 
 set_attr_word:
@@ -930,15 +926,14 @@ instr_put_prop:
 .if_else@21:
    JMP   internal_error
 
-attr_mask:
-   DS.B  2
-
 __zp_init:
    SUBROUTINE
 
    LDA   #$00
    STA   attr_ptr
    STA   attr_ptr+1
+   STA   attr_mask
+   STA   attr_mask+1
    STA   props
    STA   props+1
    RTS

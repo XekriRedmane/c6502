@@ -164,7 +164,7 @@ file and the original code it translates:
 |---|---:|---:|
 | `main.c` | 391 | 446 |
 | `decode.c` | 1859 | 1775 |
-| `objects.c` | 788 | 827 |
+| `objects.c` | 788 | 809 |
 | `numbers.c` | 436 | 419 |
 | `input.c` | 1018 | 1059 |
 | `pages.c` | 384 | 371 |
@@ -173,7 +173,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 136 |
 | `prompts.c` | 534 | 527 |
 | `save.c` | 325 | 332 |
-| **Total** | **6643** | **6678** |
+| **Total** | **6643** | **6660** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -554,3 +554,6 @@ the smaller code saved.
   ([sink_increment.md](../../../docs/optimizations/sink_increment.md)),
   so `search_nonalpha_table`'s `while (x-- != 0)` is `DEX; CPX #$FF;
   BNE`, 9 bytes shorter.
+- `attr_ptr_and_mask` shifts the static `attr_mask` in place, as Zork
+  shifts `SCRATCH3`, where it had built the mask in a local and copied
+  it, 18 bytes. That's a change to `objects.c`.

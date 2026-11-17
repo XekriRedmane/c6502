@@ -688,6 +688,62 @@ class TestRedundantLoadZReflects(unittest.TestCase):
         out = _rewritten(instrs)
         self.assertEqual(len(out), 5)
 
+    def test_shift_of_memory_ends_older_reflections(self) -> None:
+        # `AND #1; STA t; LSR p; LDA t; BEQ`: the LSR sets Z from p's
+        # new value, so the BEQ needs Z set from t again. `if (moves)`
+        # after `bool moves = pattern & 1; pattern >>= 1;` was `LSR
+        # pattern; BEQ`.
+        t = asm_ast.Data(name="t", offset=0)
+        p = asm_ast.Data(name="p", offset=0)
+        instrs = [
+            asm_ast.Mov(src=p, dst=_REG_A),
+            asm_ast.And(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=t),
+            asm_ast.LogicalShiftRight(dst=p),
+            asm_ast.Mov(src=t, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # A still holds t, so the load becomes `ORA #$00`, which sets
+        # the flags from it.
+        self.assertEqual(
+            out[4], asm_ast.Or(src=asm_ast.Imm(value=0), dst=_REG_A),
+        )
+
+    def test_store_ends_reflection_of_the_byte_it_changes(self) -> None:
+        # `INC m; STA m; LDA m; BEQ`: Z reflects the INC's m, and the
+        # store writes another value over it.
+        m = asm_ast.Data(name="m", offset=0)
+        n = asm_ast.Data(name="n", offset=0)
+        instrs = [
+            asm_ast.Mov(src=n, dst=_REG_A),
+            asm_ast.Inc(dst=m),
+            asm_ast.Mov(src=_REG_A, dst=m),
+            asm_ast.Mov(src=m, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(
+            out[3], asm_ast.Or(src=asm_ast.Imm(value=0), dst=_REG_A),
+        )
+
+    def test_store_of_the_value_held_keeps_reflection(self) -> None:
+        # In `LDA m; STA m; LDA m; BEQ`, A already holds m when it's
+        # stored back, so m doesn't change, Z still reflects it, and
+        # the second load goes.
+        m = asm_ast.Data(name="m", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=m),
+            asm_ast.Mov(src=m, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 4)
+
 
 class TestRedundantLoadRegToReg(unittest.TestCase):
     """Reg-to-reg transfers (TXA / TYA / TAX / TAY) drop when both

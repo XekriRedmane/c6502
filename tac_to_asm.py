@@ -1246,7 +1246,10 @@ def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
 def _array_bytes(t, types) -> int:
     """Total byte count of an Array c99 type, recursing through
     nested arrays and resolving struct/union member sizes via the
-    TypeTable."""
+    TypeTable. The elements of a `const` array are `Const(...)`, and
+    the qualifier doesn't change their size."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):

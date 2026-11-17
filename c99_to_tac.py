@@ -420,6 +420,10 @@ def _const_int_or_none(exp: c99_ast.Type_exp | None) -> int | None:
     return None
 
 
+# Part of the label names of a loop under `#pragma c6502 loop keep`.
+KEEP_LOOP_MARK = "_keep"
+
+
 def _start_label(loop_label: str) -> str:
     return f"{loop_label}_start"
 
@@ -604,8 +608,12 @@ def _erase_short(prog, symbols, types) -> None:
             ]
 
 
-def _strip_bool_quals(t):
-    """`t` without the `const` and `volatile` around it."""
+def _unqualified(t):
+    """`t` without the `const` and `volatile` around it. The type
+    checker leaves both on the types it stamps (a `const struct s *p`
+    makes `*p` a `Const(Structure)`, and `T *const p` makes `p` a
+    `Const(Pointer)`), so every lowering that matches a pointer,
+    array, struct, or union type peels them first."""
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     return t
@@ -624,7 +632,7 @@ def _erase_bool(decls, symbols, types) -> None:
     for _, sym in symbols.items():
         if (isinstance(sym.attrs, FunAttr)
                 and isinstance(sym.type, c99_ast.FunType)
-                and isinstance(_strip_bool_quals(sym.type.ret), c99_ast.Bool)):
+                and isinstance(_unqualified(sym.type.ret), c99_ast.Bool)):
             sym.attrs = dataclasses.replace(sym.attrs, returns_bool=True)
         sym.type = _bool_to_uchar(sym.type)
     if types is not None:
@@ -1006,6 +1014,7 @@ def _zero_init_value(t: c99_ast.Type_data_type, types=None):
     member list. The type checker uses the same shape for `static T
     x;` (no init), so `_flat_static_init` consumes both via the
     same code path."""
+    t = _unqualified(t)
     if isinstance(t, c99_ast.Array):
         return tuple(
             _zero_init_value(t.element_type, types) for _ in range(t.size)
@@ -1055,6 +1064,7 @@ def _flat_static_init_raw(
     value,
     types=None,
 ) -> list[tac_ast.Type_static_init]:
+    t = _unqualified(t)
     if isinstance(t, c99_ast.Array):
         if not isinstance(value, tuple) or len(value) != t.size:
             raise TypeError(
@@ -1193,6 +1203,7 @@ def _pointee_size(t: c99_ast.Type_data_type, types=None) -> int:
     20 bytes — needed once multi-dim arrays land).  Function
     pointers and non-object types are rejected by the type checker
     before this point."""
+    t = _unqualified(t)
     assert isinstance(t, c99_ast.Pointer), f"not a pointer: {t!r}"
     return _sizeof(t.referenced_type, types)
 
@@ -1576,7 +1587,7 @@ class Translator:
         self, fd: c99_ast.Type_function_decl,
     ) -> tac_ast.Function:
         assert fd.body is not None
-        ret_type = (
+        ret_type = _unqualified(
             fd.data_type.ret
             if isinstance(fd.data_type, c99_ast.FunType)
             else c99_ast.Int()
@@ -1768,7 +1779,7 @@ class Translator:
                         if isinstance(vd.data_type, c99_ast.Array):
                             self._translate_array_init_list(vd, instrs)
                         elif isinstance(
-                            vd.data_type,
+                            _unqualified(vd.data_type),
                             (c99_ast.Structure, c99_ast.Union),
                         ):
                             self._translate_struct_init_list(
@@ -1980,6 +1991,10 @@ class Translator:
                 #   <post insns>              (omitted if post is None)
                 #   Jump(<start>)
                 #   Label(<break>)
+                if stmt.unroll_annotation == "keep":
+                    # `#pragma c6502 loop keep`: the labels carry
+                    # KEEP_LOOP_MARK, which dead-loop elimination reads.
+                    label = f"{label}{KEEP_LOOP_MARK}"
                 start = _start_label(label)
                 cont = _continue_label(label)
                 brk = _break_label(label)
@@ -2102,7 +2117,7 @@ class Translator:
                         if isinstance(vd.data_type, c99_ast.Array):
                             self._translate_array_init_list(vd, instrs)
                         elif isinstance(
-                            vd.data_type,
+                            _unqualified(vd.data_type),
                             (c99_ast.Structure, c99_ast.Union),
                         ):
                             self._translate_struct_init_list(vd, instrs)
@@ -2190,6 +2205,13 @@ class Translator:
             _strip_quals_c99(sym.type), c99_ast.Pointer,
         ):
             ptr = tac_ast.Var(name=name)
+        # A call to a `[[noreturn]]` function, by any of its
+        # declarations. The call graph leaves it out when it passes
+        # no arguments (passes/call_edges.py).
+        noreturn = (
+            ptr is None and sym is not None
+            and bool(getattr(sym.attrs, "noreturn", False))
+        )
         if hw and ptr is not None:
             from passes.recursion_saves import RecursionSaveError
             raise RecursionSaveError(
@@ -2223,7 +2245,7 @@ class Translator:
         # itself (a struct-typed Var), which downstream
         # consumers (Assignment Copy, Dot, Arrow, …) treat
         # like any other addressable struct lvalue.
-        ret_t = exp.data_type
+        ret_t = _unqualified(exp.data_type)
         if ptr is None and self._returns_carry_struct(name):
             # A `return_bool_in_carry` struct comes back in A
             # (and X) and the carry flag, with no hidden
@@ -2235,7 +2257,7 @@ class Translator:
             )
             instrs.append(tac_ast.FunctionCall(
                 name=name, args=arg_vals, dst=slot,
-                hw_stack_save=hw,
+                hw_stack_save=hw, noreturn=noreturn,
             ))
             return slot
         if isinstance(ret_t, (c99_ast.Structure, c99_ast.Union)):
@@ -2257,7 +2279,7 @@ class Translator:
             else:
                 instrs.append(tac_ast.FunctionCall(
                     name=name, args=arg_vals, dst=None,
-                    hw_stack_save=hw,
+                    hw_stack_save=hw, noreturn=noreturn,
                 ))
             return slot
         dst = (
@@ -2276,7 +2298,7 @@ class Translator:
         else:
             instrs.append(tac_ast.FunctionCall(
                 name=name, args=arg_vals, dst=dst,
-                hw_stack_save=hw,
+                hw_stack_save=hw, noreturn=noreturn,
             ))
         return dst
 
@@ -2392,8 +2414,8 @@ class Translator:
                 # back down to an element count. Everything else
                 # falls through to the plain Binary lowering.
                 lt, rt = left.data_type, right.data_type
-                l_ptr = isinstance(lt, c99_ast.Pointer)
-                r_ptr = isinstance(rt, c99_ast.Pointer)
+                l_ptr = isinstance(_unqualified(lt), c99_ast.Pointer)
+                r_ptr = isinstance(_unqualified(rt), c99_ast.Pointer)
                 if (
                     isinstance(op, (c99_ast.Add, c99_ast.Subtract))
                     and (l_ptr or r_ptr)
@@ -3007,7 +3029,9 @@ class Translator:
                 self._emit_init_stores(
                     elem_type, sub, base, byte_offset, instrs,
                 )
-            elif isinstance(elem_type, (c99_ast.Structure, c99_ast.Union)):
+            elif isinstance(
+                _unqualified(elem_type), (c99_ast.Structure, c99_ast.Union),
+            ):
                 sub = (
                     item if item is not None
                     else c99_ast.InitList(items=[], data_type=elem_type)
@@ -3050,6 +3074,7 @@ class Translator:
         member is initialized per C99 §6.7.8.16."""
         if self._types is None:
             raise TypeError("struct init lowering requires TypeTable")
+        struct_type = _unqualified(struct_type)
         layout = self._types.get(struct_type.tag)
         if layout is None or not layout.complete:
             raise TypeError(f"incomplete struct/union {struct_type!r}")
@@ -3078,7 +3103,9 @@ class Translator:
                 self._emit_init_stores(
                     mt, sub, base, byte_offset, instrs,
                 )
-            elif isinstance(mt, (c99_ast.Structure, c99_ast.Union)):
+            elif isinstance(
+                _unqualified(mt), (c99_ast.Structure, c99_ast.Union),
+            ):
                 sub = (
                     item if item is not None
                     else c99_ast.InitList(items=[], data_type=mt)
@@ -3118,7 +3145,7 @@ class Translator:
         """Lower `struct s x = {e1, e2, ...};` (block-scope only) by
         computing the address of `x` once and emitting one Store per
         scalar leaf."""
-        struct_type = vd.data_type
+        struct_type = _unqualified(vd.data_type)
         assert isinstance(struct_type, (c99_ast.Structure, c99_ast.Union))
         init = vd.init
         assert isinstance(init, c99_ast.InitList)
@@ -3138,6 +3165,7 @@ class Translator:
         """Look up the byte offset of `member` in `struct_type`'s
         layout. The type checker has validated existence; this is
         a straight read."""
+        struct_type = _unqualified(struct_type)
         layout = self._types.get(struct_type.tag)
         for m in layout.members:
             if m.name == member:
@@ -3243,7 +3271,7 @@ class Translator:
         """Compute the byte address of `e.m`. The operand IS a
         struct/union lvalue; get its address, add the member's
         offset."""
-        struct_type = operand.data_type
+        struct_type = _unqualified(operand.data_type)
         base = self._translate_lvalue_address(operand, instrs)
         offset = self._member_offset(struct_type, member)
         m_layout = self._types.get(struct_type.tag)
@@ -3260,9 +3288,9 @@ class Translator:
     ) -> tac_ast.Type_val:
         """Compute the byte address of `p->m`. Translate the pointer
         operand, then add the member's offset."""
-        ptr_type = operand.data_type
+        ptr_type = _unqualified(operand.data_type)
         assert isinstance(ptr_type, c99_ast.Pointer)
-        struct_type = ptr_type.referenced_type
+        struct_type = _unqualified(ptr_type.referenced_type)
         ptr_val = self.translate_exp(operand, instrs)
         offset = self._member_offset(struct_type, member)
         m_layout = self._types.get(struct_type.tag)
@@ -3733,7 +3761,7 @@ class Translator:
                 src2=_tac_const_val(c99_ast.Bool(), 0), dst=new,
             ))
             return new
-        if isinstance(op_type, c99_ast.Pointer):
+        if isinstance(_unqualified(op_type), c99_ast.Pointer):
             c99_op: c99_ast.Type_binary_operator = (
                 c99_ast.Add() if isinstance(op, c99_ast.Increment)
                 else c99_ast.Subtract()
@@ -3803,7 +3831,7 @@ class Translator:
             intermediate_type = lv_type
         is_pointer_arith = (
             isinstance(op, (c99_ast.Add, c99_ast.Subtract))
-            and isinstance(lv_type, c99_ast.Pointer)
+            and isinstance(_unqualified(lv_type), c99_ast.Pointer)
         )
         if self._volatile_scalar(lval):
             # One volatile read and one volatile write.

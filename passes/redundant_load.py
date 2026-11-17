@@ -1100,9 +1100,12 @@ def _update_state_core(
             _set_reg(state, instr.dst.reg, [])
             state.z_reflects = []
             return
+        # A shift of a memory byte sets N/Z from the byte's new
+        # value, so Z reflects that byte and nothing it reflected
+        # before. `LDA t; STA t2; LSR M; LDA t2; BEQ` must keep the
+        # second load, whose Z the `BEQ` reads.
         _invalidate_aliasing(state, instr.dst)
-        _invalidate_z_aliasing(state, instr.dst)
-        state.z_reflects.append(instr.dst)
+        state.z_reflects = [instr.dst]
         return
     if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
         if isinstance(instr.dst, asm_ast.Reg) and isinstance(
@@ -1245,6 +1248,18 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
         # z_reflects entries intersect the existing register
         # equivalence class, OR both are empty (Z reflects A's
         # current unknown value, and dst now equals that value).
+        #
+        # A store that changes dst also ends Z's reflection of dst
+        # and of every byte that may alias it. After `INC M; STA M`
+        # with A not a copy of M, Z still holds the INC's test of the
+        # old M + 1, so an `LDA M` before a `BEQ` must stay. A store
+        # of a register that already mirrors dst writes the value dst
+        # holds, and leaves Z's reflection of it alone.
+        if not any(
+            _operands_equal(c, mov.dst)
+            for c in _get_reg(state, mov.src.reg)
+        ):
+            _invalidate_z_aliasing(state, mov.dst)
         _invalidate_aliasing(state, mov.dst)
         if isinstance(mov.dst, _STABLE_MEM_TYPES):
             cur = _get_reg(state, mov.src.reg)

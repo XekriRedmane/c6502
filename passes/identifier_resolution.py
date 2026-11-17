@@ -289,6 +289,11 @@ class Resolver:
                 params=[self._resolve_type(p) for p in t.params],
                 ret=self._resolve_type(t.ret),
             )
+        if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+            # `const struct t x;` names the same tag as `struct t x;`.
+            return type(t)(
+                referenced_type=self._resolve_type(t.referenced_type),
+            )
         return t  # primitives carry no tag
 
     def _introduce_tag(self, source_tag: str) -> str:

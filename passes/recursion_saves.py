@@ -36,6 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import tac_ast
+from passes.call_edges import abandons_caller, graph_calls
 from passes.optimization.cfg import build_cfg
 from passes.optimization.var_visit import defs_in as _var_defs_in, uses_in
 from passes.type_checking import StaticAttr, _is_volatile_qualified
@@ -50,7 +51,9 @@ _PRAGMA = "`#pragma c6502 call save(hardware_stack)`"
 
 
 def call_graph(prog: tac_ast.Program) -> dict[str, set[str]]:
-    """Direct call edges among the functions defined in `prog`."""
+    """Direct call edges among the functions defined in `prog`. A call
+    that abandons its caller isn't an edge (passes/call_edges.py), so
+    it doesn't make a cycle."""
     names = {
         tl.name for tl in prog.top_level
         if isinstance(tl, tac_ast.Function)
@@ -59,8 +62,8 @@ def call_graph(prog: tac_ast.Program) -> dict[str, set[str]]:
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
-        for instr in tl.instructions:
-            if isinstance(instr, tac_ast.FunctionCall) and instr.name in names:
+        for instr in graph_calls(tl):
+            if instr.name in names:
                 graph[tl.name].add(instr.name)
     return graph
 
@@ -108,12 +111,25 @@ def cycles(graph: dict[str, set[str]]) -> dict[str, frozenset[str]]:
 
 def check_pragmas(prog: tac_ast.Program) -> None:
     """Raises `RecursionSaveError` for a marked call that can't
-    recurse: one to a function that can't call the caller back."""
+    recurse: one to a function that can't call the caller back, or one
+    that never returns."""
     cyc = cycles(call_graph(prog))
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
         for instr in tl.instructions:
+            if (
+                isinstance(instr, tac_ast.FunctionCall)
+                and instr.hw_stack_save
+                and abandons_caller(instr)
+            ):
+                raise RecursionSaveError(
+                    f"{_PRAGMA} is on a call to '{instr.name}' in "
+                    f"'{tl.name}', but '{instr.name}' is declared "
+                    f"`[[noreturn]]` and takes no arguments, so nothing "
+                    f"of '{tl.name}' is needed after the call and "
+                    f"nothing has to be saved"
+                )
             if (
                 isinstance(instr, tac_ast.FunctionCall)
                 and instr.hw_stack_save
@@ -136,12 +152,8 @@ def hw_stack_cycles(prog: tac_ast.Program) -> dict[str, frozenset[str]]:
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function) or tl.name not in cyc:
             continue
-        for instr in tl.instructions:
-            if (
-                isinstance(instr, tac_ast.FunctionCall)
-                and instr.name in cyc[tl.name]
-                and not instr.hw_stack_save
-            ):
+        for instr in graph_calls(tl):
+            if instr.name in cyc[tl.name] and not instr.hw_stack_save:
                 unmarked.add(tl.name)
     bad: set[str] = set()
     for n in unmarked:

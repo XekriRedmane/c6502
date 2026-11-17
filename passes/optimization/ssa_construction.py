@@ -640,6 +640,7 @@ def _rewrite_instruction(
             return tac_ast.FunctionCall(
                 name=n, args=new_args, dst=new_d,
                 hw_stack_save=instr.hw_stack_save,
+                noreturn=instr.noreturn,
             )
         case tac_ast.IndirectCall(ptr=p, args=args, dst=d):
             new_p = rewrite_use(p)

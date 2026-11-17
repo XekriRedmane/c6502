@@ -52,6 +52,14 @@ A function is eligible for the private-pool model iff:
      the annotation. A non-zp_abi extern callee disqualifies
      the caller (its writes are unbounded).
 
+A call to a `[[noreturn]]` function that passes no arguments isn't an
+edge of the call graph here, in rules 3, 4, and 5 or in the
+allocation below (`passes/call_edges.py`). Once it's made, nothing
+reads the caller's pool or the pools of the functions the caller was
+called from, so the callee's bytes and its callees' bytes may overlap
+them, and the callee may be anything, even a function that calls the
+caller again.
+
 Ineligible functions don't get an entry in the returned dict;
 their body regalloc continues to use the conservative
 caller/callee partition from `Pool`. They still execute
@@ -138,6 +146,7 @@ from collections import deque
 
 import tac_ast
 from passes.abi_selection import ParamLayout, ZpLayout
+from passes.call_edges import abandons_caller, graph_calls
 from passes.optimization.pool import Pool
 from passes.recursion_saves import cycles, hw_stack_cycles
 
@@ -337,7 +346,8 @@ def recursive_pool_functions(
 def _build_callgraph(prog: tac_ast.Program) -> dict[str, set[str]]:
     """Direct call edges among functions defined in `prog`. Externs
     aren't keys; calls to them are dropped from the edge set (they
-    show up in the eligibility check via `_extern_callees`)."""
+    show up in the eligibility check via `_extern_callees`). A call
+    that abandons its caller isn't an edge."""
     fn_names = {
         tl.name for tl in prog.top_level
         if isinstance(tl, tac_ast.Function)
@@ -346,11 +356,8 @@ def _build_callgraph(prog: tac_ast.Program) -> dict[str, set[str]]:
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
-        for instr in tl.instructions:
-            if (
-                isinstance(instr, tac_ast.FunctionCall)
-                and instr.name in fn_names
-            ):
+        for instr in graph_calls(tl):
+            if instr.name in fn_names:
                 cg[tl.name].add(instr.name)
     return cg
 
@@ -377,7 +384,7 @@ def _determine_eligibility(
             if isinstance(instr, tac_ast.IndirectCall):
                 has_indirect.add(tl.name)
             elif isinstance(instr, tac_ast.FunctionCall):
-                if instr.name in fn_names:
+                if instr.name in fn_names or abandons_caller(instr):
                     continue
                 # External callee. Acceptable iff it's declared
                 # zp_abi (we trust the annotation that its writes
@@ -487,11 +494,8 @@ def _build_direct_extern_callees(
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
-        for instr in tl.instructions:
-            if (
-                isinstance(instr, tac_ast.FunctionCall)
-                and instr.name not in in_tu
-            ):
+        for instr in graph_calls(tl):
+            if instr.name not in in_tu:
                 out[tl.name].add(instr.name)
     return out
 

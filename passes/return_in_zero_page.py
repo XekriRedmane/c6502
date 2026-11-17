@@ -109,6 +109,7 @@ def _rewrite(
             out.append(tac_ast.FunctionCall(
                 name=instr.name, args=list(instr.args), dst=None,
                 hw_stack_save=instr.hw_stack_save,
+                noreturn=instr.noreturn,
             ))
             out.append(tac_ast.Copy(
                 src=tac_ast.Var(name=return_slot_name(instr.name)),

@@ -115,6 +115,7 @@ from dataclasses import dataclass, replace
 import c99_ast
 import tac_ast
 from passes.abi_selection import ParamLayout, ZpLayout
+from passes.call_edges import graph_calls
 from passes.recursion_saves import _live_out, defs_in
 
 
@@ -150,14 +151,14 @@ class SlotShare:
 
 def reach_sets(prog: tac_ast.Program) -> dict[str, set[str]]:
     """Each function defined in `prog` mapped to every function it can
-    call, directly or not. A function without a body here is a leaf."""
+    call, directly or not. A function without a body here is a leaf.
+    A call that abandons its caller isn't followed
+    (passes/call_edges.py), since the caller and the functions it was
+    called from are never on the call stack with the callee again."""
     direct: dict[str, set[str]] = {}
     for tl in prog.top_level:
         if isinstance(tl, tac_ast.Function):
-            direct[tl.name] = {
-                i.name for i in tl.instructions
-                if isinstance(i, tac_ast.FunctionCall)
-            }
+            direct[tl.name] = {i.name for i in graph_calls(tl)}
     return _closure(direct)
 
 

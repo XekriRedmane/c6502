@@ -59,6 +59,13 @@ Symbols:
   `__local_*` slot, and the unit's zero-page objects (the `zp` lines
   of its metadata). One the unit reaches with zero-page addressing
   has `STO_MOS_ZEROPAGE`.
+- An internal name that another object also uses is renamed `name.k`
+  for the `k`th object of the link (`linker._rename_locals`), in its
+  symbols and its metadata. A renamed function's slots, which are
+  undefined symbols spelled after the function, are renamed with it,
+  and so are the call edges and shares that name it
+  (`linker._rename_meta`), so two objects' `static` functions of one
+  name get slots of their own.
 
 ## Relocations
 

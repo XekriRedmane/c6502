@@ -75,7 +75,9 @@ the linker writes, which stores every object's initial bytes
 Names. An internal name (a `static`, or a string literal `str@N`)
 that another unit also defines, or that names something else in the
 program, is renamed `name.k` in unit `k` (`_rename_locals`), so that
-every item has a name of its own in the executable; two units
+every item has a name of its own in the executable. A renamed
+function's zero-page slots, which each unit spells after the function,
+are renamed with it, so the allocators place two functions; two units
 defining one external name is an error. A name no unit defines and
 the linker doesn't place has to be given with `--defsym`.
 
@@ -695,7 +697,16 @@ def _rename_locals(
     name another unit also uses, or that `taken` (the program's other
     names) holds, a name of its own: `name.k`, for unit `k`, in the
     unit's metadata and symbols. Returns each unit's renames. Raises
-    `LinkError` when two units define the same external name."""
+    `LinkError` when two units define the same external name.
+
+    A renamed function is a `static` one, or a shared tail or outlined
+    run (`F@tail<n>`, `F@run<n>`) named after one. Each unit spells its
+    slots after the function (`__zpabi_f__x`, `__local_f__t`) and
+    leaves them undefined, so two units' `f` would otherwise share
+    their slots. The slots get `.k` too, and so does every record of
+    the metadata that names the function or its slots (`_rename_meta`):
+    its `def` line, the call edges, and the shares. The allocators then
+    place two functions, each with its own place in the call graph."""
     owner: dict[str, int] = {}
     users: dict[str, set[int]] = {}
     for k, meta in enumerate(metas):
@@ -709,7 +720,6 @@ def _rename_locals(
                 owner[it.name] = k
         for z in meta.zp_objects:
             users.setdefault(z.name, set()).add(k)
-    import dataclasses
     out: list[dict[str, str]] = []
     for k, ((_, obj), meta) in enumerate(zip(objects, metas)):
         local_names = (
@@ -720,19 +730,57 @@ def _rename_locals(
             name: f"{name}.{k}" for name in local_names
             if len(users[name]) > 1 or name in taken
         }
+        for d in meta.defs:
+            if d.name in renames:
+                for sym in [*d.params, *d.locals]:
+                    renames[sym] = f"{sym}.{k}"
         out.append(renames)
         if not renames:
             continue
         _apply_renames(obj, renames)
-        meta.items = [
-            dataclasses.replace(it, name=renames.get(it.name, it.name))
-            for it in meta.items
-        ]
-        meta.zp_objects = [
-            dataclasses.replace(z, name=renames.get(z.name, z.name))
-            for z in meta.zp_objects
-        ]
+        _rename_meta(meta, renames)
     return out
+
+
+def _rename_meta(meta: LinkMetadata, renames: dict[str, str]) -> None:
+    """Applies `renames` (old name to new) to every function, slot,
+    item, and zero-page object name in `meta`."""
+    import dataclasses
+
+    def r(name: str) -> str:
+        return renames.get(name, name)
+
+    def rs(names) -> list[str]:
+        return [r(n) for n in names]
+
+    meta.items = [dataclasses.replace(it, name=r(it.name))
+                  for it in meta.items]
+    meta.zp_objects = [dataclasses.replace(z, name=r(z.name))
+                       for z in meta.zp_objects]
+    meta.defs = [
+        dataclasses.replace(
+            d, name=r(d.name), params=rs(d.params), locals=rs(d.locals),
+            changes=rs(d.changes),
+        )
+        for d in meta.defs
+    ]
+    meta.externs = [
+        dataclasses.replace(e, name=r(e.name), params=rs(e.params))
+        for e in meta.externs
+    ]
+    meta.calls = [(r(a), r(b)) for a, b in meta.calls]
+    meta.saved_calls = [(r(a), r(b)) for a, b in meta.saved_calls]
+    meta.shares = [
+        dataclasses.replace(
+            s,
+            members=tuple((r(f), tuple(rs(syms))) for f, syms in s.members),
+            holders=tuple(rs(s.holders)),
+            live=tuple((r(f), tuple(rs(cs))) for f, cs in s.live),
+            forwards=tuple((r(a), r(b)) for a, b in s.forwards),
+            writers=tuple(rs(s.writers)),
+        )
+        for s in meta.shares
+    ]
 
 
 def _apply_renames(obj: E.ElfFile, renames: dict[str, str]) -> None:

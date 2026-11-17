@@ -228,7 +228,6 @@ COUT1	EQU	$FDF0
 ; call instr_get_prop -> get_property_len
 ; call instr_get_prop -> get_property_num
 ; call instr_get_prop -> get_property_ptr
-; call instr_get_prop -> internal_error
 ; call instr_get_prop -> next_property
 ; call instr_get_prop -> store_result
 ; call instr_get_prop_addr -> get_property_num
@@ -245,7 +244,6 @@ COUT1	EQU	$FDF0
 ; call instr_put_prop -> get_property_len
 ; call instr_put_prop -> get_property_num
 ; call instr_put_prop -> get_property_ptr
-; call instr_put_prop -> internal_error
 ; call instr_put_prop -> next_property
 ; call instr_remove_obj -> remove_obj
 ; call instr_set_attr -> attr_ptr_and_mask

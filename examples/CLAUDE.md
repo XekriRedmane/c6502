@@ -44,6 +44,33 @@ printer (`zork/instr_save/`, `zork/print_zstring/`), which were removed
 on 16 Nov 2026. Some documents in `docs/optimizations/` show listings
 captured from them.
 
+`lode_runner/` is `main.asm` of
+https://github.com/XekriRedmane/lode_runner_reveng, Broderbund's Lode
+Runner for the Apple II, in twelve C files and a shared header,
+`lode_runner.h`, which names the original's zero-page bytes and the
+tables its memory image keeps in place. The linker script,
+`lode_runner.ld`, puts the program where the original's code was,
+from `$6000`, with `format_patch` (editor.c's section `format_patch`)
+at `$8E00`, where the game's DOS jumps when the editor formats a
+disk. What doesn't fit there yet goes in `$9000`-`$9AFF`, which the
+original never touches. Each `.c` file's header quotes the lines of
+`main.asm` it translates and lists its departures from the original.
+`tests/test_lode_runner.py` checks each unit's output against its
+`.asm` file and, when `LODE_RUNNER_DIR` names the reverse-engineering
+project's directory (which holds `main.bin`, `lode_runner.do`, and
+`main.asm`), plays three scripts on the linked program and on the
+original, on the stand-in Apple II in `sim/lode_runner.py`, and
+compares every soft-switch access and RWTS call. There's no checked-in
+listing of the linked program.
+
+The program has `static` variables with initial values that `-O`
+promotes into zero page, such as editor.c's `kbd_entry_index`, and
+their initial bytes are stored by the `__zp_init` the linker writes.
+The game starts from the reset vector at `cold_start`, or from `main`,
+and neither calls `__zp_init`, so the program is correct only when
+something runs `__zp_init` first. The harness calls it before `main`
+(`sim.lode_runner.program_machine`).
+
 ## Translating Zork's code
 
 Zork's program counters are 24-bit byte addresses, and the interpreter

@@ -174,7 +174,10 @@ module TAC {
         -- hardware_stack)`.
         -- The caller saves the values live across it on the hardware
         -- stack (passes/recursion_saves.py).
-        | FunctionCall(identifier name, val* args, val? dst, bool hw_stack_save)
+        -- `noreturn` marks a call to a function declared
+        -- `[[noreturn]]`. When it also passes no arguments, the call
+        -- isn't an edge of the call graph (passes/call_edges.py).
+        | FunctionCall(identifier name, val* args, val? dst, bool hw_stack_save, bool noreturn)
         -- Indirect call via a function pointer. `ptr` is a Pointer-
         -- typed val whose 2-byte value is the target function's
         -- address. tac_to_asm stages those bytes into the DPTR

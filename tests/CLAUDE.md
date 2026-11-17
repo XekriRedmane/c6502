@@ -52,6 +52,35 @@ in). `test_binutils.py` covers the ELF files, the assembler,
 relaxation, `nm.py`, and `objdump.py`; its `TestAgainstDasm` compares
 the assembler with dasm and runs only where dasm is installed.
 
+## The multi-unit examples
+
+`test_zork_interpreter.py` and `test_lode_runner.py` cover the two
+programs in `examples/` that are linked from several units with a
+linker script. Each compiles every unit with `-O` and compares the
+output with its checked-in `.asm` file, which runs everywhere. The
+runs of the programs need files from the reverse-engineering projects,
+which aren't in this repository, and are skipped without them.
+
+- `test_zork_interpreter.py` also compares the linked program's
+  `objdump.py -D` listing with its checked-in copy. With `ZORK_DSK`
+  set to Zork I's disk image, it plays two sessions on the C
+  interpreter and on Zork's own, read from the same image, and
+  compares every Monitor and RWTS call.
+- `test_lode_runner.py` builds the program in `setUpClass`. With
+  `LODE_RUNNER_DIR` set to the lode_runner_reveng directory, `TestRuns`
+  plays three scripts of keys, `test_demo` (the attract mode),
+  `test_game` (a game that ends in the high-score table), and
+  `test_editor` (an edit, a save, a cleared level, and a game played
+  from the editor), on the C program and on the original, on
+  `sim/lode_runner.py`'s stand-in Apple II. The two streams of
+  soft-switch accesses and RWTS calls must be the same up to the
+  event at which the original's run ends, and so must the disks at
+  the end. On a difference, the failure message shows the events
+  around the first one, each with the routine or function it came
+  from. The demo, which runs both programs for about four minutes, is
+  the slowest test of the suite, so each script is a test method of
+  its own, which a worker of `-n auto` takes alone.
+
 ## Chapter harnesses
 
 `tests/chapter_<N>/` holds sample programs from

@@ -33,6 +33,16 @@ MPU until the boot stub's BRK fires.
   programs can be compared call for call, and `run` stops at a `BRK`,
   a `JMP` to itself, or a line input with the script used up.
   `tests/test_zork_interpreter.py` uses it.
+- `lode_runner.py` — `Machine`, a stand-in Apple II for Broderbund's
+  Lode Runner and examples/lode_runner. It records every access to
+  the soft switches at `$C000-$C0FF` and every call of RWTS (a Python
+  hook at `$B7B5` over a copy of the game's disk) as an event, with
+  CRCs of the two high-resolution pages, so that the original and the
+  C program can be compared event for event (`first_difference`).
+  Keys come from a script indexed by the number of KBD reads. The
+  soft switches are found by decoding each instruction's address
+  before it runs. `original_machine` and `program_machine` set up the
+  two programs. `tests/test_lode_runner.py` uses it.
 - `runtime.py` — runtime stub: zero-page reservations, boot stub,
   reset vector, and Python-implemented hooks for the 6502 helpers
   (`mul*` / `divmod*` / `asl*` / `asr*` / `lsr*`, plus FP slots). Each

@@ -369,6 +369,45 @@ That's also why a recursive function can't use zp_abi. Its own
 earlier calls are still running, and every one of them would read
 the same bytes.
 
+A call to a function declared `[[noreturn]]` that passes no arguments
+isn't part of the call graph. Control never comes back from it, so
+from the moment of the call nothing reads the caller's bytes again,
+or the bytes of any function the caller was called from. The callee
+may use the same bytes, and it may even call the caller again. An old
+game's `JMP RESET_GAME` from deep inside nested subroutines is written
+as such a call.
+
+```c
+[[noreturn]] void reset_game(void);
+
+static uint8_t get_key(void) {
+    uint8_t k = KBD;
+    if (k == 0x9B)
+        reset_game();     /* JMP reset_game */
+    return k;
+}
+```
+
+`reset_game` calls the functions that call `get_key`, but none of
+them is on a cycle, so they all keep zp_abi and their own bytes. A
+function is still on a cycle when it can return into itself through
+ordinary calls.
+
+The call stays in the graph when it passes arguments, because the
+caller writes them into the callee's bytes while its own bytes are
+still in use. A cycle through such a call is an ordinary cycle.
+
+C keeps the caller's objects alive while the callee runs, but c6502
+doesn't, so a pointer to a local of the caller, or of a function it
+was called from, must not be used after the call. Nothing checks
+this. Each trip around such a cycle also leaves the return addresses
+of the `JSR`s that led to the call on the hardware stack. The stack
+pointer wraps around within page 1, so later trips overwrite them.
+A function that still uses the soft stack leaves its frame behind
+too, and the soft stack doesn't wrap, so a cycle through one runs out
+of memory after enough trips. See
+[optimizations/noreturn_call.md](optimizations/noreturn_call.md).
+
 A value can also stay in a callee's bytes across calls. A function
 that passes its own parameter on unchanged to another function gets
 that function's bytes for the parameter, so its callers write the
@@ -597,7 +636,9 @@ does ([optimizations/slot_sharing.md](optimizations/slot_sharing.md)).
 
 The linker handles only programs whose functions all use zp_abi. It
 rejects a recursive function and one that calls through a pointer,
-with an error that names them. It also places the program's
+with an error that names them. A call to a `[[noreturn]]` function
+without arguments isn't recorded in the link metadata, so a cycle
+through one isn't recursion to the linker either. It also places the program's
 zero-page globals, which keeps their bytes out of the parameter and
 local bytes it assigns ([attributes.md](attributes.md)).
 

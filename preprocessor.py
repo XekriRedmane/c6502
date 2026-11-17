@@ -328,6 +328,12 @@ _C6502_HW_STACK_SAVE_RE = re.compile(
 # lexer change required.
 _PRAGMA_UNROLL_SENTINEL = "__c6502_pragma_unroll__"
 
+# `#pragma c6502 loop keep` comes before a `for` loop that must stay
+# even though it computes nothing anyone reads, such as a delay loop.
+_PRAGMA_KEEP_SENTINEL = "__c6502_pragma_keep__"
+
+_C6502_KEEP_RE = re.compile(r"^[ 	]+loop[ 	]+keep[ 	]*$")
+
 # Match a full `#pragma ...` line (anchored to start-of-line, possibly
 # preceded by whitespace). Captures the body after `#pragma` for
 # inspection.
@@ -353,6 +359,7 @@ def _rewrite_pragmas(text: str) -> str:
     `#pragma c6502 loop unroll(disable)` → blank line (explicit no-op)
     `#pragma c6502 call save(hardware_stack)`
                                          → `__c6502_pragma_hw_stack_save__`
+    `#pragma c6502 loop keep`            → `__c6502_pragma_keep__`
     other `#pragma c6502 ...`            → PreprocessorError
     any other `#pragma ...`              → blank line (C99 §6.10.6)
     """
@@ -371,6 +378,9 @@ def _rewrite_pragmas(text: str) -> str:
         rest = body.lstrip()[len("c6502"):]
         if _C6502_HW_STACK_SAVE_RE.match(rest):
             out_lines.append(_PRAGMA_HW_STACK_SAVE_SENTINEL)
+            continue
+        if _C6502_KEEP_RE.match(rest):
+            out_lines.append(_PRAGMA_KEEP_SENTINEL)
             continue
         m2 = _C6502_UNROLL_RE.match(rest)
         if m2 is None:

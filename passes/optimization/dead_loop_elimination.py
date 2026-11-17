@@ -44,6 +44,7 @@ Requires SSA form. A `ssa_dsts=None` caller is a no-op (mirrors
 from __future__ import annotations
 
 import tac_ast
+from c99_to_tac import KEEP_LOOP_MARK
 from passes.optimization.cfg import (
     CFG,
     build_cfg,
@@ -104,6 +105,12 @@ def _try_eliminate(
     """Verify the loop is pure and loop-local, then rewrite the
     header to jump past the body. Mutates `cfg` in place if the
     rewrite fires; returns True iff it did."""
+    # A loop under `#pragma c6502 loop keep` stays, which a delay
+    # loop needs.
+    for bid in body:
+        for instr in cfg.blocks[bid].instructions:
+            if isinstance(instr, tac_ast.Label) and KEEP_LOOP_MARK in instr.name:
+                return False
     # Purity: every body instruction must be pure. Phi / Copy /
     # Binary / Unary / cast / GetAddress / Label / Jump /
     # JumpIfTrue / JumpIfFalse / JumpIfCmp / JumpIfMasked all pass.

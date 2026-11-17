@@ -221,12 +221,9 @@ _DPTR = "DPTR"
 # instead of `($XX),Y`. Multiple symbols can share an address: the
 # call-graph-disjoint allocator gives non-coexisting functions the
 # same ZP bytes, so `__zpabi_fn_a__x` and `__local_fn_b__y` can
-# both resolve to the same byte. The renderer picks the symbol
-# that "belongs" to the current function being emitted (matching
-# `__zpabi_<current_fn>__*` or `__local_<current_fn>__*`),
-# falling back to the first registered symbol when no in-function
-# candidate exists. Reset to empty between calls so unit-test
-# paths see the raw-address rendering.
+# both resolve to the same byte. `_pick_symbol` chooses among them.
+# Reset to empty between calls so unit-test paths see the
+# raw-address rendering.
 _ADDR_TO_SYMBOLS: dict[int, list[str]] = {}
 
 # Name of the function whose body is currently being emitted, used
@@ -239,6 +236,10 @@ _CURRENT_FUNCTION: str | None = None
 # Per-emit_program context: each function's `preferred_symbols` (see
 # `emit_program`).
 _PREFERRED_SYMBOLS: dict[str, set[str]] = {}
+
+# The names of the `Data` and `IndexedData` operands in the body of
+# the function being emitted (`_operand_names`).
+_FUNCTION_NAMES: frozenset[str] = frozenset()
 
 
 def _zpy_operand(address: int) -> str:
@@ -260,9 +261,21 @@ def _zpy_operand(address: int) -> str:
 
 
 def _pick_symbol(address: int) -> str | None:
-    """Return the best slot-symbol name for `address`, preferring
-    one that belongs to `_CURRENT_FUNCTION`. None if the address
-    has no registered symbols."""
+    """Return the symbol that names the `(zp),Y` pointer at `address`
+    in `_CURRENT_FUNCTION`'s body, or None to write the address.
+
+    The operand carries only the address, and several functions'
+    slots can share it in this unit. The linker places each slot
+    symbol again for the whole program and relocates the operand by
+    the symbol written here, so the symbol must be the one whose
+    bytes the function keeps the pointer in. That's, in order, one of
+    the function's own slots (`__zpabi_<fn>__*`, `__local_<fn>__*`),
+    one of its `preferred_symbols`, a slot it names itself elsewhere
+    in its body (a callee's parameter slot it stores the pointer in),
+    or a name that isn't a slot (`DPTR`, a zero-page object). Another
+    function's slot is never the answer. A function without a pool of
+    its own uses the caller-saved bytes at fixed addresses, which the
+    address names."""
     candidates = _ADDR_TO_SYMBOLS.get(address)
     if not candidates:
         return None
@@ -277,7 +290,30 @@ def _pick_symbol(address: int) -> str | None:
         for sym in candidates:
             if sym in preferred:
                 return sym
-    return candidates[0]
+        for sym in candidates:
+            if sym in _FUNCTION_NAMES:
+                return sym
+    for sym in candidates:
+        if not _is_slot_symbol(sym):
+            return sym
+    return None
+
+
+def _is_slot_symbol(name: str) -> bool:
+    """Whether `name` is one of the compiler's zero-page slots, which
+    the linker places again for the whole program."""
+    return name.startswith(("__zpabi_", "__local_"))
+
+
+def _operand_names(instrs) -> frozenset[str]:
+    """The names of the `Data` and `IndexedData` operands in
+    `instrs`."""
+    names = set()
+    for instr in instrs:
+        for value in vars(instr).values():
+            if isinstance(value, (asm_ast.Data, asm_ast.IndexedData)):
+                names.add(value.name)
+    return frozenset(names)
 
 
 def _emit_jump_table(
@@ -1094,9 +1130,11 @@ def emit_function(fn: asm_ast.Function) -> list[str]:
             # lines are collapsed — the prologue's trailing blank and
             # the epilogue's leading blank otherwise pile up when a
             # function has no body between them.
-            global _CURRENT_FUNCTION
+            global _CURRENT_FUNCTION, _FUNCTION_NAMES
             prev_fn = _CURRENT_FUNCTION
+            prev_names = _FUNCTION_NAMES
             _CURRENT_FUNCTION = name
+            _FUNCTION_NAMES = _operand_names(instrs)
             try:
                 lines = [f"{name}:", _instr_line("SUBROUTINE")]
                 if instrs:
@@ -1109,6 +1147,7 @@ def emit_function(fn: asm_ast.Function) -> list[str]:
                 return lines
             finally:
                 _CURRENT_FUNCTION = prev_fn
+                _FUNCTION_NAMES = prev_names
         case _:
             raise TypeError(f"unexpected function: {fn!r}")
 

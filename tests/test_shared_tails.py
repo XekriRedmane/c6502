@@ -97,6 +97,23 @@ class TestPass(unittest.TestCase):
             asm_ast.Jump(target="f@tail0", reg_args=["A", "X", "Y"]),
         ])
 
+    def test_pointer_in_slot_bytes_stays_in_its_function(self):
+        # The read through the pointer at $80 is `f`'s slot in `f` and
+        # `g`'s in `g`, which the linker may place apart, so the shared
+        # segment starts after it.
+        read = asm_ast.Mov(src=asm_ast.IndirectZp(address=0x80, offset=1),
+                           dst=_A)
+        prog = asm_ast.Program(top_level=[
+            _fn("f", [_load("a"), read, *_store_tail()]),
+            _fn("g", [_load("b"), read, *_store_tail()]),
+        ])
+        out = apply_shared_tails(
+            prog, {}, slot_addrs=frozenset({0x80, 0x81}),
+        ).top_level
+        self.assertEqual(out[1].instructions, _store_tail())
+        for fn in (out[0], out[2]):
+            self.assertEqual(fn.instructions[1], read)
+
     def test_function_with_a_frame_left_alone(self):
         frame = asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=2,
                                          callee_saved_addrs=[])

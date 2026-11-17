@@ -32,7 +32,11 @@ any check fails):
      already blocks every zp_abi callee's parameter ZP slots
      from being used as the caller's locals (see
      `passes/optimization_asm/optimizer.py::_blocked_addrs_for`),
-     so the callee can't alias the caller's params.
+     so the callee can't alias the caller's params. A call to a
+     `[[noreturn]]` function without arguments isn't an edge of the
+     graph (`passes/call_edges.py`), since nothing of the caller's
+     is read after it, so `JMP RESET` from deep in a game doesn't
+     put everything between the reset and the jump on a cycle.
   3. **Address not taken.** No `Var(name=fn)` appears anywhere
      in the program. If the function's address is taken, an
      indirect call site can't know its custom ABI; only the
@@ -53,7 +57,9 @@ any check fails):
      kept apart from its callers' bytes, so calling it is safe.
      `_demote_soft_stack_callers` applies this after the
      per-function checks, repeating until no function changes, since
-     demoting one function can disqualify its callers. The body-local
+     demoting one function can disqualify its callers. A call that
+     abandons its caller (rule 2) doesn't count, since the caller
+     reads no parameter after it. The body-local
      private pools follow the same rule (see
      `passes/zp_local_allocation.py`).
 
@@ -98,6 +104,7 @@ from dataclasses import dataclass, field
 
 import c99_ast
 import tac_ast
+from passes.call_edges import graph_calls
 from passes.optimization.pool import Pool
 from passes.optimization.var_visit import vals_in
 from passes.zp_slot_naming import param_slot_symbols
@@ -494,7 +501,8 @@ def _build_callgraph(prog: tac_ast.Program) -> dict[str, set[str]]:
     function via `_has_indirect_call`. Only edges into functions
     defined in this program are recorded — calls to externs (no
     matching `tac_ast.Function`) can't introduce a cycle that
-    reenters the current TU."""
+    reenters the current TU. A call that abandons its caller isn't
+    an edge (passes/call_edges.py)."""
     fn_names = {
         tl.name for tl in prog.top_level
         if isinstance(tl, tac_ast.Function)
@@ -503,11 +511,8 @@ def _build_callgraph(prog: tac_ast.Program) -> dict[str, set[str]]:
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
-        for instr in tl.instructions:
-            if (
-                isinstance(instr, tac_ast.FunctionCall)
-                and instr.name in fn_names
-            ):
+        for instr in graph_calls(tl):
+            if instr.name in fn_names:
                 cg[tl.name].add(instr.name)
     return cg
 
@@ -1026,15 +1031,15 @@ def select_abi(
 
 def _direct_callees(prog: tac_ast.Program) -> dict[str, set[str]]:
     """`name -> names called directly`, including externs (unlike
-    `_build_callgraph`, which keeps only functions defined here)."""
+    `_build_callgraph`, which keeps only functions defined here).
+    A call that abandons its caller is left out, since the caller
+    reads none of its parameters after it, so a soft-stack callee
+    may overwrite them."""
     out: dict[str, set[str]] = {}
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
-        out[tl.name] = {
-            i.name for i in tl.instructions
-            if isinstance(i, tac_ast.FunctionCall)
-        }
+        out[tl.name] = {i.name for i in graph_calls(tl)}
     return out
 
 

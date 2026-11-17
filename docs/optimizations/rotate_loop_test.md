@@ -124,6 +124,19 @@ of an increment there. Entered at the body, the first increment added
 the carry from before the loop. `fuzz.stmts` found it with seed
 1262.
 
+The first pass also skips anything else the test does, so the entry
+`JMP` stays when the test writes memory, with a store or an `INC`,
+`DEC`, shift, or rotate of a byte, or reads a volatile byte. The test
+of `for (uint8_t i = 0x1F; i-- != 0;)` is `DEC i; LDA i; CMP #$FF;
+BEQ`, which passes on entry. Entered at the body, the loop skipped
+the first `DEC`, read `T[0x1F]` on its first pass, and ran 32 times
+where it should run 31. The second loop of `examples/clear_page1.c`,
+`for (;;) { ...; if (y == 0) break; y--; }`, has its stores to the
+twelve rows in what the pass takes for the test, ahead of `TXA; BEQ`,
+and `DEX; JMP` as the body. Entered at the `DEX`, it never stored
+column 39. It's now entered with `LDX #$27; BNE` to the stores, which
+[short jumps](short_jumps.md) made of the `JMP`.
+
 Other jumps to `L`, such as from a `continue`, still go to `L`, which
 moves to the bottom with the test.
 

@@ -95,6 +95,31 @@ class TestPass(unittest.TestCase):
                 if fn.name.endswith("@run0"):
                     self.assertNotIn("__local_", repr(ins))
 
+    def test_pointer_in_slot_bytes_left_alone(self):
+        # `f` and `h` each read through the pointer at $80, which is
+        # `__zpabi_f__p` in `f` and `__zpabi_h__p` in `h`. The linker
+        # may place the two apart, so the reads stay where they are,
+        # and only the run after them is outlined.
+        def reads(name):
+            return _fn(name, [
+                asm_ast.Mov(src=asm_ast.IndirectZp(address=0x80, offset=k),
+                            dst=_A)
+                for k in range(4)
+            ] + [*_setup(), asm_ast.Return()])
+        prog = asm_ast.Program(top_level=[reads("f"), reads("h")])
+        out = apply_outline_runs(
+            prog, {}, zp_names=_ZP, slot_addrs=frozenset({0x80, 0x81}),
+        ).top_level
+        self.assertEqual([tl.name for tl in out], ["f", "f@run0", "h"])
+        self.assertEqual(out[1].instructions,
+                         [*_setup()[:-1], asm_ast.Jump(target="g")])
+        # With the pointer at a byte that isn't a slot, such as a
+        # zero-page object's, the reads go in the run too.
+        out = apply_outline_runs(
+            prog, {}, zp_names=_ZP, slot_addrs=frozenset({0x90}),
+        ).top_level
+        self.assertIsInstance(out[1].instructions[0].src, asm_ast.IndirectZp)
+
     def test_short_loop_left_alone(self):
         def looped(name):
             return _fn(name, [

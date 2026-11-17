@@ -93,7 +93,13 @@ __zpabi_store_result__value_0`, ends by jumping to
 The instructions are the same, so they do the same thing in either
 function. A function's own slots and labels are spelled with its
 name, so matching instructions name only registers, globals, and
-other functions' parameter slots. The flags and registers reach the
+other functions' parameter slots. A `(zp),Y` pointer is the
+exception. Its operand holds the pointer's address, and `asm_emit`
+names it by the slot that the function it's emitted in keeps at that
+address. Two functions that are never on the call stack together can
+have slots at the same bytes in a unit, and the linker may place them
+apart, so a segment doesn't read or write through a pointer kept in a
+slot's bytes. The tail then starts after the last such access. The flags and registers reach the
 tail across the `JMP`, which changes neither. The new function has no
 parameters or locals, and the link metadata's call graph, built from
 the TAC, already has its calls as calls of the functions it came

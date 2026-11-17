@@ -38,7 +38,12 @@ a `JumpTable`, whose table is named for its function.
 The instructions are the same, so they do the same thing in either
 function: they name only registers, globals, and other functions'
 slots, since a function's own slots and labels are spelled with its
-name. The new function has no parameters or locals, and the link
+name. A `(zp),Y` pointer is the exception, since the operand carries
+the pointer's address, and `asm_emit` names it by the slot the
+function it's in keeps there. Two functions' slots can share those
+bytes in a unit and be placed apart by the linker, so a segment may
+not read or write through a pointer in a slot's bytes
+(`asm_aliasing.through_slot_pointer`). The new function has no parameters or locals, and the link
 metadata's call graph, built from the TAC, already has every call it
 makes as a call of the functions it came from.
 
@@ -59,6 +64,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import asm_ast
+from passes.asm_aliasing import through_slot_pointer
 from sim.assembler import instruction_size
 
 _ENDS = (asm_ast.Jump, asm_ast.Return)
@@ -66,17 +72,20 @@ _ENDS = (asm_ast.Jump, asm_ast.Return)
 
 def apply_shared_tails(
     prog: asm_ast.Program, symbols, *, zp_names=None,
+    slot_addrs=frozenset(),
 ) -> asm_ast.Program:
     """`prog` with each shared segment in a function of its own (see
     the module docstring). Each new function's symbol, a copy of the
     first sharer's with internal linkage, is added to `symbols`.
     `zp_names` are the names of zero-page bytes, which take one-byte
     operands, for the sizes of the segments
-    (`sim.assembler.instruction_size`)."""
+    (`sim.assembler.instruction_size`). `slot_addrs` are the addresses
+    of the unit's `__zpabi_*` and `__local_*` slots, whose bytes no
+    `(zp),Y` pointer in a segment may have."""
     top = list(prog.top_level)
     count = 0
     while True:
-        best = _best_share(top, zp_names)
+        best = _best_share(top, zp_names, slot_addrs)
         if best is None:
             return asm_ast.Program(top_level=top)
         owner, segments = best
@@ -117,7 +126,7 @@ def _eligible(tl) -> bool:
                         for i in tl.instructions))
 
 
-def _best_share(top, zp_names=None):
+def _best_share(top, zp_names=None, slot_addrs=frozenset()):
     """`(owner, {key: (function index, start, end)})` for the segment
     that saves the most bytes, or None."""
     fns = [(i, tl) for i, tl in enumerate(top) if _eligible(tl)]
@@ -129,7 +138,8 @@ def _best_share(top, zp_names=None):
         for fb, b in fns[ai + 1:]:
             for ta in ends[fa]:
                 for tb in ends[fb]:
-                    seg = _common(a.instructions, ta, b.instructions, tb)
+                    seg = _common(a.instructions, ta, b.instructions, tb,
+                                  slot_addrs)
                     if seg is None:
                         continue
                     sa, sb, form = seg
@@ -141,7 +151,9 @@ def _best_share(top, zp_names=None):
                             continue
                         for tc in ends[fc]:
                             sc = tc - (ta - sa)
-                            if sc >= 0 and _form(c.instructions, sc, tc) == form:
+                            if sc >= 0 and _form(
+                                c.instructions, sc, tc, slot_addrs,
+                            ) == form:
                                 members[fc] = (sc, tc)
                                 break
                     n = len(members)
@@ -153,7 +165,7 @@ def _best_share(top, zp_names=None):
     return best
 
 
-def _common(a, ta, b, tb):
+def _common(a, ta, b, tb, slot_addrs=frozenset()):
     """`(start in a, start in b, normal form)` of the longest matching
     segments that end at `a[ta]` and `b[tb]`, or None."""
     k = 0
@@ -162,8 +174,8 @@ def _common(a, ta, b, tb):
         k += 1
     for length in range(k, 0, -1):
         sa, sb = ta - length + 1, tb - length + 1
-        form = _form(a, sa, ta)
-        if form is not None and form == _form(b, sb, tb):
+        form = _form(a, sa, ta, slot_addrs)
+        if form is not None and form == _form(b, sb, tb, slot_addrs):
             return sa, sb, form
     return None
 
@@ -180,7 +192,7 @@ def _shape(ins):
     return repr(ins)
 
 
-def _form(instrs, s, t):
+def _form(instrs, s, t, slot_addrs=frozenset()):
     """The segment `instrs[s..t]` with its labels numbered in order,
     or None when it isn't a segment (see the module docstring)."""
     seg = instrs[s:t + 1]
@@ -193,6 +205,8 @@ def _form(instrs, s, t):
     out = []
     for ins in seg:
         if isinstance(ins, asm_ast.JumpTable):
+            return None
+        if through_slot_pointer(ins, slot_addrs):
             return None
         if isinstance(ins, asm_ast.Label):
             out.append(("label", inside[ins.name]))

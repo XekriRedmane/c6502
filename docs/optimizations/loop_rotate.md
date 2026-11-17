@@ -98,6 +98,13 @@ It rotates the loop when all of these are true.
   `Binary(>=, x, 0)`, where `x` may reach the compare through
   `SignExtend`, `ZeroExtend`, or `Copy` temporaries and the 0 may
   reach it through extends, truncations, or copies.
+- Every instruction of the test is a `Copy`, extend, truncation,
+  `Unary`, or `Binary` into a `%` temporary. The rotated loop skips
+  the first test, so a test that writes a variable, loads, or calls
+  is left alone. The test of `for (signed char i = 5; i-- >= 0;
+  i--)` decrements `i`, and the rotated loop skipped that first
+  decrement and returned 5565 where 420 is right. `(n++, i) >= 0`
+  lost its first `n++` the same way.
 - `x` is a `signed char`, `int`, `long`, or `long long`.
 - The instructions between `_continue` and the `Jump` back to
   `_start` are straight-line and end with `Binary(-, x, 1, %t);

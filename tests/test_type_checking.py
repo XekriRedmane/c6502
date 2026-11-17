@@ -2260,5 +2260,249 @@ class TestCharAndString(unittest.TestCase):
         self.assertEqual(ret.data_type, Int())
 
 
+def _ret_exp(prog, fn_index: int = -1):
+    """The expression of the first `return` in the function at
+    `fn_index` among the program's declarations."""
+    body = prog.declaration[fn_index].function_decl.body
+    for item in body.block_item:
+        if isinstance(item, c99_ast.S) and isinstance(
+            item.statement, c99_ast.Return,
+        ):
+            return item.statement.exp
+    raise AssertionError("no return statement")
+
+
+class TestQualifiedTypes(unittest.TestCase):
+    """`const` and `volatile` on a pointer, a struct, or a pointee
+    leave the type checker's `Const` / `Volatile` wrappers around the
+    types it stamps, and every check that looks for a pointer, array,
+    struct, or union has to see through them."""
+
+    def test_array_member_of_const_struct_has_const_elements(self):
+        # C99 §6.7.3.8: qualifying an array qualifies its elements, so
+        # `p->a` is `const unsigned char[3]`, which decays and
+        # subscripts as any array does.
+        prog, _ = _check(
+            "struct s { unsigned char a[3]; };\n"
+            "unsigned char f(const struct s *p) { return p->a[1]; }\n"
+        )
+        sub = _ret_exp(prog)
+        self.assertIsInstance(sub, c99_ast.Subscript)
+        self.assertEqual(
+            sub.data_type, c99_ast.Const(referenced_type=c99_ast.UChar()),
+        )
+        member = sub.array.exp
+        self.assertEqual(member.data_type, c99_ast.Array(
+            element_type=c99_ast.Const(referenced_type=c99_ast.UChar()),
+            size=3,
+        ))
+
+    def test_array_member_of_volatile_struct_has_volatile_elements(self):
+        prog, _ = _check(
+            "struct s { unsigned char a[3]; };\n"
+            "unsigned char f(volatile struct s *p) { return p->a[1]; }\n"
+        )
+        self.assertEqual(
+            _ret_exp(prog).data_type,
+            c99_ast.Volatile(referenced_type=c99_ast.UChar()),
+        )
+
+    def test_array_member_of_const_struct_converts_to_pointer_to_const(self):
+        _check(
+            "struct t { unsigned char a[3]; };\n"
+            "unsigned char f(const struct t *p, int i) {\n"
+            "    const unsigned char *q = p->a;\n"
+            "    return q[i];\n"
+            "}\n"
+        )
+
+    def test_member_through_const_pointer_is_writable(self):
+        # `p` itself is const; the struct it points at isn't.
+        _check(
+            "struct s { unsigned char a; unsigned char b[3]; };\n"
+            "void f(struct s *q) {\n"
+            "    struct s *const p = q;\n"
+            "    p->a = 5; p->b[1] = 6; (*p).a = 7;\n"
+            "}\n"
+        )
+
+    def test_member_of_const_struct_isnt_writable(self):
+        with self.assertRaises(TypeCheckError):
+            _check(
+                "struct s { unsigned char a[3]; };\n"
+                "void f(const struct s *p) { p->a[1] = 5; }\n"
+            )
+
+    def test_const_struct_objects_take_initializer_lists(self):
+        _, symbols = _check(
+            "struct s { unsigned char a; int b; };\n"
+            "const struct s g = {1, 2};\n"
+            "const struct s ga[2] = {{3, 4}, {5, 6}};\n"
+            "int f(void) {\n"
+            "    const struct s l = {7, 8};\n"
+            "    static const struct s sl = {9, 10};\n"
+            "    return l.b + sl.b;\n"
+            "}\n"
+        )
+        self.assertEqual(symbols["g"].attrs.initial_value, Initial((1, 2)))
+        self.assertEqual(
+            symbols["ga"].attrs.initial_value, Initial(((3, 4), (5, 6))),
+        )
+
+    def test_struct_copy_from_const_struct(self):
+        _check(
+            "struct s { unsigned char a; int b; };\n"
+            "void g(struct s v);\n"
+            "void f(struct s *d, const struct s *p) {\n"
+            "    struct s v = *p;\n"
+            "    *d = *p;\n"
+            "    g(*p);\n"
+            "}\n"
+            "struct s h(const struct s *p) { return *p; }\n"
+        )
+
+    def test_const_struct_with_block_scope_tag(self):
+        _check(
+            "int f(void) {\n"
+            "    struct t { int a; };\n"
+            "    const struct t x = {3};\n"
+            "    return x.a;\n"
+            "}\n"
+        )
+
+    def test_equality_of_pointers_differing_in_pointee_qualifiers(self):
+        # C99 §6.5.9.2: "pointers to qualified or unqualified versions
+        # of compatible types".
+        _check(
+            "unsigned char buf[4];\n"
+            "int f(const unsigned char *p) { return p != buf + 4; }\n"
+            "int g(volatile unsigned char *p) { return buf == p; }\n"
+        )
+
+    def test_relational_and_subtraction_of_pointers_differing_in_qualifiers(self):
+        # C99 §6.5.8.2 and §6.5.6.3.
+        prog, _ = _check(
+            "unsigned char buf[4];\n"
+            "int f(const unsigned char *p) { return p < buf + 4; }\n"
+            "int g(const unsigned char *p) { return p - buf; }\n"
+        )
+        self.assertEqual(_ret_exp(prog, -1).data_type, Int())
+
+    def test_conditional_pointer_takes_both_pointee_qualifiers(self):
+        # C99 §6.5.15.6: the result points at "an appropriately
+        # qualified version of the composite type".
+        prog, _ = _check(
+            "unsigned char buf[4];\n"
+            "const unsigned char *f(int c, const unsigned char *p) {\n"
+            "    return c ? buf : p;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            _ret_exp(prog).data_type,
+            c99_ast.Pointer(
+                referenced_type=c99_ast.Const(referenced_type=c99_ast.UChar()),
+            ),
+        )
+
+    def test_qualifiers_deeper_than_the_pointee_still_have_to_match(self):
+        with self.assertRaises(TypeCheckError):
+            _check(
+                "int f(const unsigned char **p, unsigned char **q) "
+                "{ return p == q; }\n"
+            )
+        _check(
+            "int f(const unsigned char *const *p, const unsigned char **q) "
+            "{ return p == q; }\n"
+        )
+
+    def test_ordering_a_void_pointer_and_an_object_pointer_is_rejected(self):
+        with self.assertRaises(TypeCheckError):
+            _check("int f(const void *p, int *q) { return p < q; }")
+
+    def test_comparisons_through_const_pointers(self):
+        _check(
+            "int f(int *const p, int *q) { return p - q + (p < q) + (p == q); }\n"
+            "int *g(int c, int *const p) { return c ? p : 0; }\n"
+            "int *const cp = 0;\n"
+            "void *h(void) { void *v = cp; return v; }\n"
+        )
+
+    def test_volatile_pointer_steps(self):
+        _check(
+            "int arr[4];\n"
+            "int *f(void) { int *volatile p = arr; p++; p += 2; return p; }\n"
+        )
+
+    def test_arithmetic_on_pointer_to_const_void_is_rejected(self):
+        with self.assertRaises(TypeCheckError):
+            _check("const void *f(const void *p) { return p + 1; }")
+        with self.assertRaises(TypeCheckError):
+            _check("void f(const void *p) { p++; }")
+
+    def test_call_through_const_function_pointer(self):
+        _check(
+            "int h(int);\n"
+            "int (*const fp)(int) = h;\n"
+            "int f(int x) { return fp(x); }\n"
+        )
+
+
+class TestAddressConstants(unittest.TestCase):
+    """C99 §6.6.9: an address constant in a static initializer may be
+    formed with `&`, `[]`, `.`, `->`, `*`, an array's decay, and the
+    addition or subtraction of an integer constant."""
+
+    def _initial(self, src: str, name: str):
+        _, symbols = _check(src)
+        return symbols[name].attrs.initial_value.value
+
+    def test_element_of_two_dimensional_array(self):
+        from passes.type_checking import AddressInit
+        value = self._initial(
+            "extern const unsigned char A[11][14];\n"
+            "static const unsigned char *const t[] = {\n"
+            "    A[5], &A[2][3], A[5] + 2, &A[1][0] + 1, A[5] - 1,\n"
+            "};\n",
+            "t",
+        )
+        self.assertEqual(value, (
+            AddressInit("A", 70), AddressInit("A", 31),
+            AddressInit("A", 72), AddressInit("A", 15),
+            AddressInit("A", 69),
+        ))
+
+    def test_member_of_struct(self):
+        from passes.type_checking import AddressInit
+        value = self._initial(
+            "struct m { unsigned char x; int m[4]; };\n"
+            "struct m S;\n"
+            "static int *const u[] = {\n"
+            "    &S.m[1], S.m + 3, &(&S)->m[2], &(*&S).m[0],\n"
+            "};\n",
+            "u",
+        )
+        self.assertEqual(value, (
+            AddressInit("S", 3), AddressInit("S", 7),
+            AddressInit("S", 5), AddressInit("S", 1),
+        ))
+
+    def test_element_through_a_pointer_variable_is_rejected(self):
+        # `p`'s value is only known at run time.
+        with self.assertRaises(TypeCheckError) as cm:
+            _check(
+                "int *p;\n"
+                "static int *q = &p[1];\n"
+            )
+        self.assertIn("not an address constant", str(cm.exception))
+
+    def test_element_with_a_variable_index_is_rejected(self):
+        with self.assertRaises(TypeCheckError):
+            _check(
+                "int a[4];\n"
+                "int i;\n"
+                "static int *q = &a[i];\n"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

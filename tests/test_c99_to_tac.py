@@ -3220,5 +3220,95 @@ class TestArrayFrameLayout(unittest.TestCase):
         self.assertEqual(big - small, 20)
 
 
+class TestQualifiedTypeLowering(unittest.TestCase):
+    """The type checker leaves `Const` and `Volatile` around the types
+    it stamps, so `T *const p` makes `p` a `Const(Pointer)` and
+    `const struct s *p` makes `*p` a `Const(Structure)`. Each lowering
+    that dispatches on a pointer or struct type peels them first."""
+
+    def _function(self, src, name="f"):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols, types = check_program(_resolved(src))
+        tac = translate_program(prog, symbols, types)
+        return next(
+            t for t in tac.top_level
+            if isinstance(t, tac_ast.Function) and t.name == name
+        ).instructions
+
+    def _offset_adds(self, instrs):
+        return [
+            i.src2.const.value for i in instrs
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Add)
+            and isinstance(i.src2, tac_ast.Constant)
+        ]
+
+    def test_arrow_through_const_pointer(self):
+        instrs = self._function(
+            "struct s { unsigned char a; unsigned char b; };\n"
+            "void f(struct s *q) { struct s *const p = q; p->b = 5; }\n"
+        )
+        self.assertEqual(self._offset_adds(instrs), [1])
+        self.assertEqual(
+            sum(isinstance(i, tac_ast.Store) for i in instrs), 1,
+        )
+
+    def test_member_of_const_struct(self):
+        instrs = self._function(
+            "struct s { unsigned char a; unsigned char b; };\n"
+            "unsigned char f(const struct s *p) { return p->b; }\n"
+        )
+        self.assertEqual(self._offset_adds(instrs), [1])
+        self.assertEqual(
+            sum(isinstance(i, tac_ast.Load) for i in instrs), 1,
+        )
+
+    def test_member_array_of_const_struct(self):
+        instrs = self._function(
+            "struct s { unsigned char x; unsigned char a[3]; };\n"
+            "unsigned char f(const struct s *p) { return p->a[2]; }\n"
+        )
+        self.assertEqual(
+            sum(isinstance(i, tac_ast.Load) for i in instrs), 1,
+        )
+
+    def test_volatile_pointer_increment_steps_by_the_element_size(self):
+        instrs = self._function(
+            "int arr[4];\n"
+            "int *f(void) { int *volatile p = arr; p++; return p; }\n"
+        )
+        scales = [
+            i.src2.const.value for i in instrs
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+            and isinstance(i.src2, tac_ast.Constant)
+        ]
+        self.assertEqual(scales, [2])
+
+    def test_const_struct_static_lays_out_its_members(self):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols, types = check_program(_resolved(
+            "struct s { unsigned char a; int b; };\n"
+            "const struct s g[2] = {{1, 2}, {3, 4}};\n"
+        ))
+        tac = translate_program(prog, symbols, types)
+        g = next(t for t in tac.top_level if t.name == "g")
+        self.assertEqual(g.init, [
+            tac_ast.UCharInit(value=1), tac_ast.IntInit(value=2),
+            tac_ast.UCharInit(value=3), tac_ast.IntInit(value=4),
+        ])
+
+    def test_const_struct_local_stores_each_member(self):
+        instrs = self._function(
+            "struct s { unsigned char a; int b; };\n"
+            "int f(void) { const struct s l = {7, 8}; return l.b; }\n"
+        )
+        self.assertEqual(
+            sum(isinstance(i, tac_ast.Store) for i in instrs), 2,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

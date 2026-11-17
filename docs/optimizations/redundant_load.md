@@ -147,7 +147,14 @@ unrolled iteration.
   reads N or Z before another instruction sets them
   (`asm_liveness.flags_dead_at`), or Z already reflects whether the
   source is zero, because the instruction that last set the flags
-  set them from the same value.
+  set them from the same value. An `INC`, `DEC`, shift, or rotate of
+  a byte sets the flags from that byte alone, so afterwards Z
+  reflects only it. A store that changes a byte ends Z's reflection
+  of it and of every byte the store may alias. In `bool moves =
+  pattern & 1; pattern >>= 1; if (moves) f();`, Z still counted as
+  reflecting `moves` after `LSR pattern`, the `LDA moves` before the
+  `BEQ` went, and the branch tested the shifted pattern. The load is
+  now `ORA #$00`, since A still holds `moves`.
 - A block's starting lists are the intersection of the lists at the
   end of every predecessor. What Z reflects is carried only into a
   block with a single predecessor, because on a merge the flags may

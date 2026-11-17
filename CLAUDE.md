@@ -123,7 +123,10 @@ Two key runtime conventions:
   `[[c6502::zp_abi]]` annotation is no longer required but
   remains supported as a strict-mode opt-in: an annotated
   function hard-errors on ineligibility (recursion, address
-  taken, etc.) instead of silently falling back. Details in
+  taken, etc.) instead of silently falling back. A call to a
+  `[[noreturn]]` function without arguments isn't a call-graph
+  edge (`passes/call_edges.py`), so a game's `JMP RESET_GAME` from
+  deep in its subroutines doesn't make a cycle. Details in
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
 - **`[[c6502::return_bool_in_carry]]`** on a function

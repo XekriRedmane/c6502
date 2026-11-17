@@ -1453,9 +1453,10 @@ class TestIndirectZpSymbolSelection(unittest.TestCase):
     `__local_<fn>__*` whose `<fn>` matches the current function."""
 
     def _emit(self, fn_name, instr, zp_slot_symbols):
+        instrs = instr if isinstance(instr, list) else [instr]
         fn = asm_ast.Function(
             name=fn_name, is_global=True, params=[],
-            instructions=[instr],
+            instructions=instrs,
         )
         prog = asm_ast.Program(top_level=[fn])
         return emit_program(prog, zp_slot_symbols=zp_slot_symbols)
@@ -1493,16 +1494,49 @@ class TestIndirectZpSymbolSelection(unittest.TestCase):
         out = self._emit("player_catch", instr, slot_syms)
         self.assertIn("(__local_player_catch__1),Y", out)
 
-    def test_falls_back_when_no_match(self):
-        # No symbol belongs to the current function — render with
-        # whichever symbol got registered first.
+    def test_other_functions_slot_is_never_named(self):
+        # `some_fn` has no pool of its own, and keeps the pointer at
+        # $90 in the caller-saved bytes. The linker places
+        # `__local_other_fn__0` elsewhere and would relocate the
+        # operand to it, so the operand is the address.
         slot_syms = {"__local_other_fn__0": 0x90}
         instr = asm_ast.Mov(
             src=_reg(_A),
             dst=asm_ast.IndirectZpY(address=0x90),
         )
         out = self._emit("some_fn", instr, slot_syms)
-        self.assertIn("(__local_other_fn__0),Y", out)
+        self.assertIn("($90),Y", out)
+        self.assertNotIn("__local_other_fn__0),Y", out)
+
+    def test_slot_the_function_names_itself(self):
+        # The function stores the pointer in a callee's parameter
+        # slot by name and reads through it, so that slot names it,
+        # whichever symbol was registered first at the address.
+        slot_syms = {
+            "__local_other_fn__0": 0x90,
+            "__zpabi_callee__p_0": 0x90,
+        }
+        instrs = [
+            asm_ast.Mov(
+                src=_reg(_A),
+                dst=asm_ast.Data(name="__zpabi_callee__p_0", offset=0),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.IndirectZpY(address=0x90), dst=_reg(_A),
+            ),
+        ]
+        out = self._emit("caller", instrs, slot_syms)
+        self.assertIn("(__zpabi_callee__p_0),Y", out)
+        self.assertNotIn("(__local_other_fn__0),Y", out)
+
+    def test_name_that_isnt_a_slot(self):
+        # A zero-page object's name is the pointer's in any function.
+        slot_syms = {"__local_other_fn__0": 0x90, "zp_ptr": 0x90}
+        instr = asm_ast.Mov(
+            src=asm_ast.IndirectZpY(address=0x90), dst=_reg(_A),
+        )
+        out = self._emit("some_fn", instr, slot_syms)
+        self.assertIn("(zp_ptr),Y", out)
 
 
 if __name__ == "__main__":

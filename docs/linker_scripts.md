@@ -227,8 +227,18 @@ that nothing in the program writes them while a value is kept there
 
 An internal name, a `static` function or object or a string literal,
 belongs to its own source file, and two files may each have one
-called `count`. The linker renames one of them `count.1` in the file
-it came from. Two files defining the same external name is an error.
+called `count`. The linker renames each of them after the file it came
+from, `count.0` in the first and `count.1` in the second. Two files
+defining the same external name is an error.
+
+Each file names a function's zero-page parameter and local bytes after
+the function (`__zpabi_f__x`, `__local_f__t`), so when two files each
+have a `static` function `f`, the linker renames those bytes with it
+(`__zpabi_f__x.0`, `__zpabi_f__x.1`). It renames the function in the
+file's call graph too, so the two functions get their bytes as two
+functions do. A function that the compiler makes from code several
+functions of a file share, a shared tail (`f@tail0`) or an outlined run
+(`f@run0`), is an internal name of its file as well.
 
 ## Related
 

@@ -519,9 +519,126 @@ def _const_source_type(c: c99_ast.Type_const) -> "Type":
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
+def _address_constant(
+    exp: c99_ast.Type_exp, name: str,
+    symbols: SymbolTable | None, types: "TypeTable | None",
+) -> AddressInit:
+    """The address that the pointer-valued expression `exp` gives, as
+    a static object's or function's name and a byte offset from it,
+    for the initializer of the static-storage object `name`. C99
+    §6.6.9 forms such an address constant with `&` (or an array's or
+    function's decay, which the type checker writes as an
+    `AddressOf`), `[]`, `.`, `->`, `*`, pointer casts, and the
+    addition or subtraction of an integer constant. So `A[5] + 2`,
+    with `A` a `uint8_t[11][14]`, is `A` plus 72 bytes. Raises when
+    `exp` isn't one, as `&p[1]` isn't for a pointer `p`, since its
+    value depends on what `p` holds at run time."""
+    def fail(why: str) -> TypeCheckError:
+        return TypeCheckError(
+            f"initializer for static-storage object {name!r} {why}"
+        )
+
+    def constant(index: c99_ast.Type_exp) -> int:
+        try:
+            value, _ = evaluate_integer_constant_expression(index)
+        except ConstantExpressionError as e:
+            raise fail(f"is not a constant expression: {e}") from e
+        return value
+
+    def pointee_size(t: Type) -> int:
+        return _sizeof(_strip_quals(t).referenced_type, types)
+
+    def member_offset(t: Type, member: str) -> int:
+        t = _strip_quals(t)
+        layout = types.get(t.tag) if types is not None else None
+        if layout is None:
+            raise fail(f"takes the address of a member of {t!r}")
+        for m in layout.members:
+            if m.name == member:
+                return m.byte_offset
+        raise fail(f"names no member {member!r} of {t!r}")
+
+    def lvalue(e: c99_ast.Type_exp) -> AddressInit:
+        """The address of the object the lvalue `e` designates."""
+        match e:
+            case c99_ast.Var() | c99_ast.CompoundLiteral():
+                target = e.name
+                if symbols is not None:
+                    sym = symbols.get(target)
+                    if sym is None:
+                        raise fail(
+                            f"references undeclared identifier "
+                            f"{target!r}"
+                        )
+                    if not isinstance(sym.attrs, (StaticAttr, FunAttr)):
+                        what = (
+                            "a compound literal inside a function"
+                            if isinstance(e, c99_ast.CompoundLiteral)
+                            else repr(target)
+                        )
+                        raise fail(
+                            f"takes the address of {what}, which "
+                            f"doesn't have static storage duration"
+                        )
+                return AddressInit(name=target, offset=0)
+            case c99_ast.Subscript(array=array, index=index):
+                base = pointer(array)
+                step = constant(index) * pointee_size(array.data_type)
+                return AddressInit(base.name, base.offset + step)
+            case c99_ast.Dot(operand=operand, member=member):
+                base = lvalue(operand)
+                return AddressInit(
+                    base.name,
+                    base.offset + member_offset(operand.data_type, member),
+                )
+            case c99_ast.Arrow(operand=operand, member=member):
+                base = pointer(operand)
+                pointee = _strip_quals(operand.data_type).referenced_type
+                return AddressInit(
+                    base.name, base.offset + member_offset(pointee, member),
+                )
+            case c99_ast.Dereference(exp=operand):
+                return pointer(operand)
+        raise fail(f"takes the address of a non-constant lvalue {e!r}")
+
+    def pointer(e: c99_ast.Type_exp) -> AddressInit:
+        """The address that the pointer-valued `e` holds."""
+        match e:
+            case c99_ast.AddressOf(exp=inner):
+                return lvalue(inner)
+            case c99_ast.Cast(exp=inner) if (
+                inner.data_type is not None
+                and _is_pointer_type(inner.data_type)
+            ):
+                return pointer(inner)
+            case c99_ast.Binary(
+                op=c99_ast.Add() | c99_ast.Subtract() as op,
+                left=left, right=right,
+            ):
+                if _is_pointer_type(left.data_type):
+                    ptr, k = left, right
+                elif isinstance(op, c99_ast.Add) and _is_pointer_type(
+                    right.data_type,
+                ):
+                    ptr, k = right, left
+                else:
+                    raise fail(f"is not an address constant: {e!r}")
+                if not _is_integer_type(k.data_type):
+                    raise fail(f"is not an address constant: {e!r}")
+                step = constant(k) * pointee_size(ptr.data_type)
+                if isinstance(op, c99_ast.Subtract):
+                    step = -step
+                base = pointer(ptr)
+                return AddressInit(base.name, base.offset + step)
+        raise fail(f"is not an address constant: {e!r}")
+
+    return pointer(exp)
+
+
 def _const_init_value(
     exp: c99_ast.Type_exp, target_type: "Type", name: str,
     symbols: SymbolTable | None = None,
+    types: "TypeTable | None" = None,
 ) -> int | AddressInit:
     """Static-storage initializers must be compile-time constant
     expressions (C99 §6.7.8.4). After `_check_exp` and the
@@ -530,11 +647,14 @@ def _const_init_value(
       * a `Cast` (possibly nested) wrapping any of these — produced
         by `_convert_to` for narrowing/widening initializers, or
         explicitly written by the user.
-      * an `AddressOf(Var(name))` — taking the address of another
-        static-storage object (or a function). C99 §6.6.7 paragraph
-        9 makes this a valid constant expression; we capture it as
-        an `AddressInit` and let codegen emit `DC.W name` so the
-        assembler resolves the symbol at link time.
+      * an address constant (C99 §6.6.9): the address of another
+        static-storage object or a function, formed with `&`, `[]`,
+        `.`, `->`, `*`, an array's decay, pointer casts, and the
+        addition or subtraction of an integer constant, such as
+        `&s.m[1]`, `A[5]`, or `A[5] + 2`. We capture it as an
+        `AddressInit` and let codegen emit `DC.W name+offset` so the
+        assembler resolves the symbol at link time (see
+        `_address_constant`).
 
     The returned value is in `target_type`'s natural form:
       * integer types → Python int (numeric value, unbounded — the
@@ -559,59 +679,34 @@ def _const_init_value(
             return _coerce_init_const_value(c, target_type)
         case c99_ast.Cast(target_type=cast_target, exp=inner):
             inner_val = _const_init_value(
-                inner, cast_target, name, symbols,
+                inner, cast_target, name, symbols, types,
             )
             return _coerce_init_value(
                 inner_val, cast_target, target_type,
             )
-        case c99_ast.AddressOf(exp=inner):
-            # Only `&name` (a bare Var operand) is a constant
-            # expression — `&*p` and other forms aren't (they
-            # depend on runtime values). A compound literal is an
-            # object with a name of its own, static at file scope.
-            if not isinstance(inner, (c99_ast.Var, c99_ast.CompoundLiteral)):
-                raise TypeCheckError(
-                    f"initializer for static-storage object {name!r} "
-                    f"takes the address of a non-Var expression "
-                    f"{inner!r}"
-                )
-            target = inner.name
-            if symbols is not None:
-                sym = symbols.get(target)
-                if sym is None:
-                    raise TypeCheckError(
-                        f"initializer for static-storage object "
-                        f"{name!r} references undeclared identifier "
-                        f"{target!r}"
-                    )
-                if not isinstance(sym.attrs, (StaticAttr, FunAttr)):
-                    what = (
-                        "a compound literal inside a function"
-                        if isinstance(inner, c99_ast.CompoundLiteral)
-                        else repr(target)
-                    )
-                    raise TypeCheckError(
-                        f"initializer for static-storage object "
-                        f"{name!r} takes the address of {what}, "
-                        f"which doesn't have static storage duration"
-                    )
+        case c99_ast.AddressOf() | c99_ast.Binary() if (
+            exp.data_type is not None and _is_pointer_type(exp.data_type)
+        ):
+            address = _address_constant(exp, name, symbols, types)
             if isinstance(_strip_quals(target_type), Bool):
                 # The address of an object or function isn't null,
                 # so it converts to 1 (C99 §6.3.1.2).
                 return 1
-            return AddressInit(name=target, offset=0)
+            return address
         case c99_ast.Unary(op=c99_ast.Plus(), exp=inner) if isinstance(
             _strip_quals(exp.data_type), (Float, Double),
         ):
             # `+1.5` is `1.5`.
-            return _const_init_value(inner, target_type, name, symbols)
+            return _const_init_value(
+                inner, target_type, name, symbols, types,
+            )
         case c99_ast.Unary(op=c99_ast.Negate(), exp=inner) if isinstance(
             _strip_quals(exp.data_type), (Float, Double),
         ):
             # `-1.5`: negate the IEEE 754 pattern by flipping its sign
             # bit, then convert from the operand's type to the target.
             fp_t = _strip_quals(exp.data_type)
-            bits = _const_init_value(inner, fp_t, name, symbols)
+            bits = _const_init_value(inner, fp_t, name, symbols, types)
             bits ^= 1 << (31 if isinstance(fp_t, Float) else 63)
             return _coerce_init_value(bits, fp_t, target_type)
         case c99_ast.Unary() | c99_ast.Binary() | c99_ast.Conditional() \
@@ -645,6 +740,7 @@ def _zero_aggregate(t: "Type", types: "TypeTable | None" = None):
     member zeroed recursively. Used both for tentative definitions
     (no init) and for trailing entries missing from a partial array
     initializer."""
+    t = _strip_quals(t)
     if isinstance(t, Array):
         return tuple(_zero_aggregate(t.element_type, types) for _ in range(t.size))
     if isinstance(t, (Structure, Union)):
@@ -752,6 +848,8 @@ def _const_init_aggregate(
     struct nodes recurse into their `InitList.items`, padding any
     missing trailing entries with the element / member type's
     typed-zero per C99 §6.7.8.21."""
+    scalar_type = var_type
+    var_type = _strip_quals(var_type)
     if isinstance(var_type, Array):
         # String literal initializing a char-array (at any nesting
         # depth) — `_string_to_value_tuple` lays the bytes down
@@ -808,7 +906,7 @@ def _const_init_aggregate(
             else:
                 items.append(_zero_aggregate(m.type, types))
         return tuple(items)
-    return _const_init_value(init, var_type, name, symbols)
+    return _const_init_value(init, scalar_type, name, symbols, types)
 
 
 def _types_equal(a: Type, b: Type) -> bool:
@@ -1176,7 +1274,20 @@ def _propagate_quals(member_t: Type, container_t: Type) -> Type:
     declared type); same for `->` on a pointer to a qualified
     struct. We mirror that here, applying both qualifiers
     independently in the canonical Volatile-inside, Const-outside
-    order."""
+    order.
+
+    Qualifying an array type qualifies its elements instead (C99
+    §6.7.3.8), so the `b` of `const struct { char b[3]; } *p` gives
+    `p->b` the type `Array(Const(Char), 3)`. A `Const(Array(...))`
+    would neither decay nor subscript, since both look for an `Array`
+    at the top."""
+    if isinstance(member_t, Array):
+        return Array(
+            element_type=_propagate_quals(
+                member_t.element_type, container_t,
+            ),
+            size=member_t.size,
+        )
     if _is_volatile_qualified(container_t) and not _is_volatile_qualified(
         member_t,
     ):
@@ -1186,6 +1297,34 @@ def _propagate_quals(member_t: Type, container_t: Type) -> Type:
     ):
         member_t = c99_ast.Const(referenced_type=member_t)
     return member_t
+
+
+def _composite_pointer(tl: Type, tr: Type) -> Type | None:
+    """The type that two pointer operands of `==`, `!=`, `<`, `-`, or
+    `?:` meet at, or None when their pointees aren't compatible.
+    C99 §6.5.8.2, §6.5.9.2, and §6.5.6.3 accept pointers "to qualified
+    or unqualified versions of compatible" types, so only the
+    qualifiers on each pointee are ignored, and `const uint8_t *`
+    meets `uint8_t *`. Qualifiers further in still have to match, so
+    `const uint8_t **` doesn't meet `uint8_t **`. A pointer to `void`
+    meets any pointer at a pointer to `void`.
+
+    The pointee of the result carries the qualifiers of both pointees
+    (§6.5.15.6), so `c ? p : buf`, with `p` a `const uint8_t *`, is a
+    `const uint8_t *`."""
+    pl = _strip_quals(tl).referenced_type
+    pr = _strip_quals(tr).referenced_type
+    if _is_void(pl) or _is_void(pr):
+        base = Void()
+    elif _types_equal(_strip_quals(pl), _strip_quals(pr)):
+        base = _strip_quals(pl)
+    else:
+        return None
+    if _is_volatile_qualified(pl) or _is_volatile_qualified(pr):
+        base = c99_ast.Volatile(referenced_type=base)
+    if _is_const_qualified(pl) or _is_const_qualified(pr):
+        base = c99_ast.Const(referenced_type=base)
+    return Pointer(referenced_type=base)
 
 
 def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
@@ -1747,6 +1886,9 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
             f"cannot implicitly convert {exp.data_type!r} to void; "
             f"use an explicit `(void)expr` cast to discard a value"
         )
+    # A `const`-qualified pointer target (`uint8_t *const t[] = {
+    # 0x2000 };`) skips these checks, and the examples rely on that
+    # to initialize tables of fixed addresses without a cast.
     if isinstance(target, Pointer) and exp.data_type is not None:
         src = exp.data_type
         if _is_integer_type(src):
@@ -1758,7 +1900,7 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
                     f"value 0) is assignable to a pointer per C99 "
                     f"§6.3.2.3.3"
                 )
-        elif isinstance(src, Pointer):
+        elif _is_pointer_type(src):
             # Both pointers but the equality short-circuit above
             # didn't fire, so the pointee types differ. C99 §6.3.2.3.1
             # gives `void *` a free conversion to and from any object
@@ -1784,7 +1926,7 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
     if (_is_arithmetic_type(target)
             and not isinstance(_strip_quals(target), Bool)
             and exp.data_type is not None
-            and isinstance(exp.data_type, Pointer)):
+            and _is_pointer_type(exp.data_type)):
         # Pointer → integer / FP needs an explicit cast. §6.5.16.1.1
         # allows assigning a pointer only to a `_Bool`, which gets
         # `p != 0`.
@@ -2144,7 +2286,7 @@ class TypeChecker:
         # definition can live in another TU). Otherwise the type
         # must be complete.
         require_complete = (
-            isinstance(vd.data_type, (Structure, Union, Array))
+            isinstance(_strip_quals(vd.data_type), (Structure, Union, Array))
             and not is_extern_decl
         )
         _check_well_formed_type(
@@ -2190,7 +2332,7 @@ class TypeChecker:
                     vd.init, vd.data_type, vd.name,
                     self.symbols, self.types,
                 ))
-        elif isinstance(vd.data_type, (Structure, Union)):
+        elif isinstance(_strip_quals(vd.data_type), (Structure, Union)):
             # File-scope `struct s x = {1,2,3};` — type-check the
             # init list against the layout and lift to a value tree.
             if not isinstance(vd.init, c99_ast.InitList):
@@ -2224,7 +2366,7 @@ class TypeChecker:
             vd.init = _convert_to(vd.init, vd.data_type)
             initial = Initial(
                 _const_init_value(
-                    vd.init, vd.data_type, vd.name, self.symbols,
+                    vd.init, vd.data_type, vd.name, self.symbols, self.types,
                 ),
             )
         # Recover linkage from the storage class.
@@ -2554,7 +2696,8 @@ class TypeChecker:
             # may be forward-declared with an incomplete
             # type, but its caller can't materialize the
             # value to pass).
-            if isinstance(expected, (Structure, Union)):
+            if isinstance(_strip_quals(expected), (Structure, Union)):
+                expected = _strip_quals(expected)
                 kw = "union" if isinstance(expected, Union) else "struct"
                 layout = self.types.get(expected.tag)
                 if layout is None or not layout.complete:
@@ -2562,7 +2705,7 @@ class TypeChecker:
                         f"argument {i} of {label}: cannot pass "
                         f"incomplete type '{kw} {expected.tag}'"
                     )
-                if not _types_equal(arg.data_type, expected):
+                if not _types_equal(_strip_quals(arg.data_type), expected):
                     raise TypeCheckError(
                         f"argument {i} of {label}: type "
                         f"{arg.data_type!r} doesn't match "
@@ -2783,7 +2926,7 @@ class TypeChecker:
         # (the definition lives elsewhere), same as file scope.
         is_extern_decl = isinstance(vd.storage_class, c99_ast.Extern)
         require_complete = (
-            isinstance(vd.data_type, (Structure, Union, Array))
+            isinstance(_strip_quals(vd.data_type), (Structure, Union, Array))
             and not is_extern_decl
         )
         _check_well_formed_type(
@@ -2879,7 +3022,7 @@ class TypeChecker:
                         vd.init, vd.data_type, vd.name,
                         self.symbols, self.types,
                     ))
-            elif isinstance(vd.data_type, (Structure, Union)):
+            elif isinstance(_strip_quals(vd.data_type), (Structure, Union)):
                 # `static struct s x = {1,2};`.
                 if not isinstance(vd.init, c99_ast.InitList):
                     raise TypeCheckError(
@@ -2906,6 +3049,7 @@ class TypeChecker:
                 initial = Initial(
                     _const_init_value(
                         vd.init, vd.data_type, vd.name, self.symbols,
+                        self.types,
                     ),
                 )
             _check_section(vd.name, vd.section, None, vd.placement)
@@ -3064,7 +3208,10 @@ class TypeChecker:
         """Type-check a brace-enclosed initializer for a struct or
         union. Validates the item count (≤ member count) and converts
         each item to the matching member's type via `_convert_to`.
-        Mutates `init.items` in place with the converted forms."""
+        Mutates `init.items` in place with the converted forms. The
+        qualifiers of a `const struct s x = {...};` don't change the
+        layout, so they're stripped first."""
+        struct_type = _strip_quals(struct_type)
         layout = self.types.get(struct_type.tag)
         if layout is None or not layout.complete:
             kw = "union" if isinstance(struct_type, Union) else "struct"
@@ -3095,7 +3242,7 @@ class TypeChecker:
         for i, item in enumerate(init.items):
             m = members[i]
             elem_type = m.type
-            if isinstance(elem_type, Array):
+            if isinstance(_strip_quals(elem_type), Array):
                 # Char-array member initialized by string literal.
                 if (
                     isinstance(item, c99_ast.String)
@@ -3112,7 +3259,7 @@ class TypeChecker:
                         f"member type is {elem_type!r}"
                     )
                 self._check_array_init_list(item, elem_type, var_name)
-            elif isinstance(elem_type, (Structure, Union)):
+            elif isinstance(_strip_quals(elem_type), (Structure, Union)):
                 if not isinstance(item, c99_ast.InitList):
                     raise TypeCheckError(
                         f"expected nested initializer (`{{...}}`) "
@@ -3193,7 +3340,7 @@ class TypeChecker:
                         f"type is {elem_type!r}"
                     )
                 self._check_array_init_list(item, elem_type, var_name)
-            elif isinstance(elem_type, (Structure, Union)):
+            elif isinstance(_strip_quals(elem_type), (Structure, Union)):
                 # Array of structs / unions: each item is a nested
                 # InitList for the element struct.
                 if not isinstance(item, c99_ast.InitList):
@@ -3286,8 +3433,10 @@ class TypeChecker:
                 # bypass `_convert_to` (no Cast for struct types);
                 # the value's type must match exactly.
                 exp = _decay_if_array(exp)
-                if isinstance(expected, (Structure, Union)):
-                    if not _types_equal(exp.data_type, expected):
+                if isinstance(_strip_quals(expected), (Structure, Union)):
+                    if not _types_equal(
+                        _strip_quals(exp.data_type), _strip_quals(expected),
+                    ):
                         raise TypeCheckError(
                             f"return value type {exp.data_type!r} "
                             f"doesn't match declared return type "
@@ -3510,7 +3659,7 @@ class TypeChecker:
                             vd.init, vd.data_type, vd.name,
                         )
                         continue
-                    if isinstance(vd.data_type, (Structure, Union)):
+                    if isinstance(_strip_quals(vd.data_type), (Structure, Union)):
                         # Same two forms accepted by block-scope var
                         # decls: brace-enclosed compound initializer
                         # or a struct-typed copy.
@@ -3521,7 +3670,9 @@ class TypeChecker:
                             continue
                         self._check_exp(vd.init)
                         init_t = vd.init.data_type
-                        if not _types_equal(init_t, vd.data_type):
+                        if not _types_equal(
+                            _strip_quals(init_t), _strip_quals(vd.data_type),
+                        ):
                             raise TypeCheckError(
                                 f"struct/union {vd.name!r}: "
                                 f"initializer has type {init_t!r}, "
@@ -3585,16 +3736,13 @@ class TypeChecker:
         if l_ptr and r_ptr:
             # `void *` matches any object pointer here, with the
             # common type being `void *`.
-            if _is_void_pointer(tl) or _is_void_pointer(tr):
-                return Pointer(referenced_type=Void())
-            if not _types_equal(tl_p, tr_p):
+            common = _composite_pointer(tl, tr)
+            if common is None:
                 raise TypeCheckError(
                     f"comparison of distinct pointer types: "
                     f"{tl!r} vs {tr!r}"
                 )
-            # Fresh instance so callers can attach to AST nodes
-            # without aliasing — same convention as `_common_type`.
-            return Pointer(referenced_type=tl_p.referenced_type)
+            return common
         # Exactly one operand is a pointer; the other must be a
         # null pointer constant.
         if l_ptr and _is_null_pointer_constant(rhs):
@@ -3890,7 +4038,9 @@ class TypeChecker:
                             f"binary '{op_name}' between pointer and "
                             f"non-pointer operand: {tl!r} {op_name} {tr!r}"
                         )
-                    if not _types_equal(tl, tr):
+                    common = _composite_pointer(tl, tr)
+                    if (common is None
+                            or _is_void_pointer(tl) != _is_void_pointer(tr)):
                         raise TypeCheckError(
                             f"comparison of distinct pointer types: "
                             f"{tl!r} {op_name} {tr!r}"
@@ -3953,15 +4103,17 @@ class TypeChecker:
                     for t in (tl_p, tr_p):
                         if (
                             isinstance(t, Pointer)
-                            and isinstance(t.referenced_type, FunType)
+                            and isinstance(
+                                _strip_quals(t.referenced_type), FunType,
+                            )
                         ):
                             raise TypeCheckError(
                                 f"binary '{op_name}' is not defined on "
                                 f"pointer-to-function operands "
                                 f"({tl!r} {op_name} {tr!r})"
                             )
-                        if isinstance(t, Pointer) and isinstance(
-                            t.referenced_type, Void,
+                        if isinstance(t, Pointer) and _is_void(
+                            t.referenced_type,
                         ):
                             raise TypeCheckError(
                                 f"binary '{op_name}' is not defined on "
@@ -3985,7 +4137,10 @@ class TypeChecker:
                                 f"binary '+' is not defined on two "
                                 f"pointer operands ({tl!r} + {tr!r})"
                             )
-                        if not _types_equal(tl_p, tr_p):
+                        if not _types_equal(
+                            _strip_quals(tl_p.referenced_type),
+                            _strip_quals(tr_p.referenced_type),
+                        ):
                             raise TypeCheckError(
                                 f"subtraction of distinct pointer "
                                 f"types: {tl!r} - {tr!r}"
@@ -4057,8 +4212,8 @@ class TypeChecker:
                                 c99_ast.LeftShift, c99_ast.RightShift,
                             ))
                             and (
-                                isinstance(tl, c99_ast.Pointer)
-                                or isinstance(tr, c99_ast.Pointer)
+                                _is_pointer_type(tl)
+                                or _is_pointer_type(tr)
                             )
                         )
                     )
@@ -4149,12 +4304,12 @@ class TypeChecker:
                     )
                 self._require_complete_value(lv, "compound assignment lval")
                 self._require_complete_value(rv, "compound assignment rval")
-                if isinstance(tl, Array):
+                if _is_array_type(tl):
                     raise TypeCheckError(
                         f"cannot use compound assignment on an array: "
                         f"{lv!r}"
                     )
-                if isinstance(tl, (Structure, Union)):
+                if _is_struct_or_union(tl):
                     raise TypeCheckError(
                         f"compound assignment is not defined for "
                         f"struct/union types ({tl!r})"
@@ -4195,9 +4350,7 @@ class TypeChecker:
                             f"operands ({tl!r}, {tr!r})"
                         )
                     if isinstance(op, (c99_ast.LeftShift, c99_ast.RightShift)):
-                        if isinstance(tl, c99_ast.Pointer) or isinstance(
-                            tr, c99_ast.Pointer,
-                        ):
+                        if _is_pointer_type(tl) or _is_pointer_type(tr):
                             raise TypeCheckError(
                                 f"compound shift requires integer "
                                 f"operands ({tl!r}, {tr!r})"
@@ -4210,7 +4363,7 @@ class TypeChecker:
                 # pointer-arith path before consulting it.
                 if (
                     isinstance(op, (c99_ast.Add, c99_ast.Subtract))
-                    and isinstance(tl, c99_ast.Pointer)
+                    and _is_pointer_type(tl)
                 ):
                     if not _is_integer_type(tr):
                         raise TypeCheckError(
@@ -4277,7 +4430,7 @@ class TypeChecker:
                 # an array isn't one). Subscript / Dereference lvals
                 # have their element type by the time we land here,
                 # so this only catches an outright `arr_name = ...`.
-                if isinstance(tl, Array):
+                if _is_array_type(tl):
                     raise TypeCheckError(
                         f"cannot assign to an array (use subscript): "
                         f"{lv!r}"
@@ -4286,8 +4439,8 @@ class TypeChecker:
                 # have the same tag and is_union flag. Bypass
                 # `_convert_to` (which doesn't know about struct
                 # types) and the `_decay_if_array` rval path.
-                if isinstance(tl, (Structure, Union)):
-                    if not _types_equal(tl, tr):
+                if _is_struct_or_union(tl):
+                    if not _types_equal(_strip_quals(tl), _strip_quals(tr)):
                         raise TypeCheckError(
                             f"struct/union assignment between "
                             f"distinct types: {tl!r} = {tr!r}"
@@ -4334,9 +4487,7 @@ class TypeChecker:
                 # the §6.5.6.2 constraint Binary `+`/`-` enforces. Void
                 # has no size, so reject (C99 §6.5.2.4.1 / §6.5.3.1.1
                 # require an "object type" operand for ++/--).
-                if isinstance(t, Pointer) and isinstance(
-                    t.referenced_type, Void,
-                ):
+                if _is_void_pointer(t):
                     raise TypeCheckError(
                         f"increment/decrement on void pointer is not "
                         f"defined (sizeof(void) is undefined)"
@@ -4382,6 +4533,9 @@ class TypeChecker:
                 # zero bytes meaningfully). No conversion — the
                 # result IS that struct type.
                 if _is_struct_or_union(tt) or _is_struct_or_union(tf):
+                    # The result is an rvalue, so the qualifiers of
+                    # each branch go (C99 §6.3.2.1.2).
+                    tt, tf = _strip_quals(tt), _strip_quals(tf)
                     if not (_is_struct_or_union(tt)
                             and _is_struct_or_union(tf)
                             and _types_equal(tt, tf)):
@@ -4410,25 +4564,26 @@ class TypeChecker:
                 # §6.5.15.6 also applies). One pointer plus a null
                 # pointer constant — the pointer wins. Anything else
                 # falls through to the usual arithmetic conversions.
-                tt_ptr = isinstance(tt, Pointer)
-                tf_ptr = isinstance(tf, Pointer)
+                tt_ptr = _is_pointer_type(tt)
+                tf_ptr = _is_pointer_type(tf)
                 if tt_ptr or tf_ptr:
                     if tt_ptr and tf_ptr:
                         # `void *` and any object pointer compose to
                         # `void *` (C99 §6.5.15.6).
-                        if _is_void_pointer(tt) or _is_void_pointer(tf):
-                            common = Pointer(referenced_type=Void())
-                        elif not _types_equal(tt, tf):
+                        common = _composite_pointer(tt, tf)
+                        if common is None:
                             raise TypeCheckError(
                                 f"conditional branches have distinct "
                                 f"pointer types: {tt!r} vs {tf!r}"
                             )
-                        else:
-                            common = Pointer(referenced_type=tt.referenced_type)
                     elif tt_ptr and _is_null_pointer_constant(f_clause):
-                        common = Pointer(referenced_type=tt.referenced_type)
+                        common = Pointer(
+                            referenced_type=_strip_quals(tt).referenced_type,
+                        )
                     elif tf_ptr and _is_null_pointer_constant(t_clause):
-                        common = Pointer(referenced_type=tf.referenced_type)
+                        common = Pointer(
+                            referenced_type=_strip_quals(tf).referenced_type,
+                        )
                     else:
                         raise TypeCheckError(
                             f"conditional branches must both be "
@@ -4486,11 +4641,8 @@ class TypeChecker:
                 fn_type: FunType
                 if isinstance(sym.type, FunType):
                     fn_type = sym.type
-                elif (
-                    isinstance(sym.type, Pointer)
-                    and isinstance(sym.type.referenced_type, FunType)
-                ):
-                    fn_type = sym.type.referenced_type
+                elif _is_pointer_to_function(sym.type):
+                    fn_type = _strip_quals(sym.type).referenced_type
                 else:
                     raise TypeCheckError(
                         f"variable {name!r} called as a function"
@@ -4527,6 +4679,7 @@ class TypeChecker:
                 # is `const int *`.)
                 t_inner_uq = _strip_quals(t_inner)
                 pointee = t_inner_uq.referenced_type
+                pointee_uq = _strip_quals(pointee)
                 # Pointer to incomplete struct/union: dereferencing
                 # the value isn't well-defined (no size, no member
                 # layout, no addressable storage). The `&*p ≡ p`
@@ -4535,11 +4688,11 @@ class TypeChecker:
                 # below sidesteps this check by translating
                 # `&Dereference(p)` directly without recursing into
                 # the inner Dereference's type-check.
-                if isinstance(pointee, (Structure, Union)):
-                    layout = self.types.get(pointee.tag)
+                if isinstance(pointee_uq, (Structure, Union)):
+                    layout = self.types.get(pointee_uq.tag)
                     if layout is None or not layout.complete:
-                        kw = "union" if isinstance(pointee, Union) else "struct"
-                        display = pointee.tag
+                        kw = "union" if isinstance(pointee_uq, Union) else "struct"
+                        display = pointee_uq.tag
                         if display.startswith("@") and "." in display:
                             display = display.split(".", 1)[1]
                         raise TypeCheckError(
@@ -4623,7 +4776,9 @@ class TypeChecker:
                 _check_well_formed_type(
                     t, where="sizeof type",
                     types=self.types,
-                    require_complete=isinstance(t, (Structure, Union, Array)),
+                    require_complete=isinstance(
+                        _strip_quals(t), (Structure, Union, Array),
+                    ),
                     tag_visible=self._tag_visible,
                 auto_introduce=self._auto_introduce_tag,
                 )
@@ -4761,7 +4916,8 @@ class TypeChecker:
                 # that inspects it sees a self-describing tree.
                 if isinstance(inner, c99_ast.Dereference):
                     ptr_type = self._check_exp(inner.exp)
-                    if isinstance(ptr_type, Pointer):
+                    if _is_pointer_type(ptr_type):
+                        ptr_type = _strip_quals(ptr_type)
                         inner.data_type = ptr_type.referenced_type
                         exp.data_type = ptr_type
                         return ptr_type

@@ -61,7 +61,9 @@ declared `[[c6502::zp_abi]]` but without a body in this
 TU). `call` lines record every direct call edge from a defined
 function to any other named function — including calls to
 non-zp_abi externs (the linker uses these to detect when a TU's
-function calls something that can't be globally bounded). `saved`
+function calls something that can't be globally bounded). A call to
+a `[[noreturn]]` function that passes no arguments has no line, since
+it isn't an edge of the call graph (`passes/call_edges.py`). `saved`
 marks an edge whose every call is under `#pragma c6502 call
 save(hardware_stack)`, so the linker can take a cycle of such calls
 as the compile did (`passes/recursion_saves.py`). `zp`
@@ -93,6 +95,7 @@ from dataclasses import dataclass, field
 
 import tac_ast
 from passes.abi_selection import ParamLayout, ZpLayout
+from passes.call_edges import abandons_caller
 
 
 @dataclass
@@ -247,7 +250,8 @@ def build_metadata(
         for instr in tl.instructions:
             if isinstance(instr, tac_ast.IndirectCall):
                 indirect_per_fn[tl.name] = True
-            elif isinstance(instr, tac_ast.FunctionCall):
+            elif (isinstance(instr, tac_ast.FunctionCall)
+                    and not abandons_caller(instr)):
                 callgraph[tl.name].add(instr.name)
                 edge = (tl.name, instr.name)
                 saved[edge] = saved.get(edge, True) and instr.hw_stack_save

@@ -166,6 +166,7 @@ def _filter(
             return tac_ast.FunctionCall(
                 name=instr.name, args=list(instr.args), dst=None,
                 hw_stack_save=instr.hw_stack_save,
+                noreturn=instr.noreturn,
             ), True
         return tac_ast.IndirectCall(
             ptr=instr.ptr, args=list(instr.args), dst=None,

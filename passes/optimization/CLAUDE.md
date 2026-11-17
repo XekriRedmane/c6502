@@ -37,13 +37,20 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   (`RotateSignedCountdownLoops`, PreSsaPass). Pre-SSA one-shot. The
   constant init must be written after the last label before the
   loop, so it reaches the loop on every path, and the counter's
-  address must never be taken.
+  address must never be taken. The test may only compute `%`
+  temporaries (`_computes_temporary`), since the rotated loop skips
+  the first test, and `i-- >= 0` or `(n++, i) >= 0` would lose a
+  write.
 - `noreturn_call.py` — `noreturn_calls` (`NoreturnCalls`, PreSsaPass).
   After a `FunctionCall` to a function with `FunAttr.noreturn` (from
   `[[noreturn]]` on any declaration), a `Ret(val=None)` replaces the
   instructions up to the next label, so values read after the `if`
   around the call needn't survive it. The `Ret` has no value in any
-  function, so `JSR f; RTS` becomes `JMP f`.
+  function, so `JSR f; RTS` becomes `JMP f`. The call graph reads
+  `FunctionCall.noreturn`, which `c99_to_tac` sets from the same
+  attribute, and leaves out such a call when it has no arguments
+  (`passes/call_edges.py`); every pass that rebuilds a
+  `FunctionCall` copies the flag, as it does `hw_stack_save`.
 - `static_const_fold.py` — `fold_static_const_reads`
   (`FoldStaticConstReads`, PreFixedpointPass wrapping an internal
   `OperandRewritePass`). One-shot post-SSA.

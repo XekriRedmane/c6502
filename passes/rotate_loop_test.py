@@ -32,7 +32,8 @@ is the case of `for (uint8_t i = 0; i != 6; i++)`, whose test is
 test on the constants that the straight-line code in front of the
 loop leaves in the registers and in memory, and `_test_effects_dead`
 checks that the body doesn't read a register or flag the test sets,
-since the first pass then doesn't run the test.
+and that the test writes no memory and reads no volatile byte, since
+the first pass then doesn't run the test.
 
 # Eligibility
 
@@ -194,11 +195,19 @@ def _test_effects_dead(instrs, test, body: int) -> bool:
     before this one may have relied on what the test left: after
     `LDA i; CMP #1; BCS exit`, C is clear in the body, and
     `carry_known` dropped the `CLC` of the body's `gs5.m0++`. Entered
-    at the body, the add then added whatever C held."""
+    at the body, the add then added whatever C held.
+
+    A test that writes memory or reads a volatile byte gives False,
+    since the first pass would then skip that write or read too. The
+    test of `for (uint8_t i = 0x1F; i-- != 0;)` is `DEC i; LDA i; CMP
+    #$FF; BEQ exit`, and entered at the body, the loop indexed with
+    0x1F on its first pass and ran 32 times."""
     from passes.asm_liveness import (
         a_dead_at, c_dead_at, flags_dead_at, v_dead_at, x_dead_at,
         y_dead_at,
     )
+    if any(_has_side_effect(ins) for ins in test):
+        return False
     written: set[str] = set()
     for ins in test:
         dst = getattr(ins, "dst", None)
@@ -214,6 +223,26 @@ def _test_effects_dead(instrs, test, body: int) -> bool:
     # loop reads only Z, which the body's `DEX` writes first.
     return (flags_dead_at(instrs, body) and c_dead_at(instrs, body)
             and v_dead_at(instrs, body))
+
+
+def _has_side_effect(ins) -> bool:
+    """True when `ins` does more than set registers and flags. That's
+    a write to memory (a store, or an `INC`, `DEC`, shift, or rotate
+    of a byte), a volatile access, or anything other than a move,
+    compare, `BIT`, arithmetic, shift, step, carry setting, or
+    branch."""
+    if isinstance(ins, asm_ast.Mov):
+        return ins.is_volatile or not isinstance(ins.dst, asm_ast.Reg)
+    if isinstance(ins, (
+        asm_ast.Inc, asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
+        asm_ast.LogicalShiftRight, asm_ast.RotateLeft, asm_ast.RotateRight,
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or, asm_ast.Xor,
+    )):
+        return not isinstance(ins.dst, asm_ast.Reg)
+    return not isinstance(ins, (
+        asm_ast.Compare, asm_ast.BitTest, asm_ast.SetCarry,
+        asm_ast.ClearCarry, asm_ast.Branch,
+    ))
 
 
 def _entry_passes(instrs, l: int, test) -> bool:

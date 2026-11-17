@@ -569,5 +569,107 @@ class TestVolatileLocalSurvives(unittest.TestCase):
         self.assertNotIn("SBC", asm)
 
 
+class TestQualifiedAggregatesRun(unittest.TestCase):
+    """Programs that reach a struct, an array, or a pointer through a
+    `const` or `volatile` qualifier, run in the simulator through both
+    pipelines. Each one was rejected or crashed the compiler before
+    the type checker and `c99_to_tac` looked through the qualifiers."""
+
+    def _returns(self, src: str, want: int) -> None:
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                result = build_sim(src, optimize=optimize).run()
+                self.assertEqual(result.return_int_signed(), want)
+
+    def test_array_member_through_pointer_to_const_struct(self):
+        self._returns(
+            "struct s { unsigned char a[3]; };\n"
+            "static unsigned char f(const struct s *p) { return p->a[1]; }\n"
+            "int main(void) { struct s v = {{4, 5, 6}}; return f(&v); }\n",
+            5,
+        )
+
+    def test_arrow_through_const_pointer(self):
+        self._returns(
+            "struct s { unsigned char a; unsigned char b[3]; };\n"
+            "static void f(struct s *q) {\n"
+            "    struct s *const p = q; p->a = 5; p->b[1] = 7;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    struct s v = {0, {0, 0, 0}}; f(&v); return v.a * 10 + v.b[1];\n"
+            "}\n",
+            57,
+        )
+
+    def test_member_of_const_struct(self):
+        self._returns(
+            "struct s { unsigned char x; unsigned char a; };\n"
+            "static unsigned char f(const struct s *p) { return p->a; }\n"
+            "int main(void) { struct s v = {1, 9}; return f(&v); }\n",
+            9,
+        )
+
+    def test_comparison_of_pointers_differing_in_qualifiers(self):
+        self._returns(
+            "unsigned char buf[4];\n"
+            "static int count(const unsigned char *p) {\n"
+            "    int n = 0; while (p != buf + 4) { n++; p++; } return n;\n"
+            "}\n"
+            "static int before(const unsigned char *p) { return p < buf + 4; }\n"
+            "static const unsigned char *pick(int c, const unsigned char *p) {\n"
+            "    return c ? p : buf;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    return count(buf + 1) * 100 + before(buf + 2) * 10\n"
+            "        + (pick(0, buf + 3) == buf);\n"
+            "}\n",
+            311,
+        )
+
+    def test_address_constants_into_arrays_and_members(self):
+        self._returns(
+            "const unsigned char A[3][4] = "
+            "{{0, 1, 2, 3}, {10, 11, 12, 13}, {20, 21, 22, 23}};\n"
+            "struct m { unsigned char x; unsigned char m[4]; };\n"
+            "struct m S = {1, {30, 31, 32, 33}};\n"
+            "static const unsigned char *const t[] = "
+            "{ A[2], &A[1][3], A[1] + 2, &S.m[1], S.m + 3 };\n"
+            "int main(void) {\n"
+            "    return t[0][1] + t[1][0] + *t[2] + *t[3] + *t[4];\n"
+            "}\n",
+            21 + 13 + 12 + 31 + 33,
+        )
+
+    def test_const_struct_objects(self):
+        self._returns(
+            "struct s { unsigned char a; int b; };\n"
+            "const struct s ca[2] = {{1, 200}, {3, 400}};\n"
+            "int main(void) {\n"
+            "    const struct s la = {7, 1000};\n"
+            "    struct s c = ca[1];\n"
+            "    return ca[0].b + la.b + c.b + la.a;\n"
+            "}\n",
+            200 + 1000 + 400 + 7,
+        )
+
+    def test_const_struct_with_block_scope_tag(self):
+        self._returns(
+            "int main(void) {\n"
+            "    struct t { int a; int b; };\n"
+            "    const struct t x = {300, 4};\n"
+            "    const struct t *p = &x;\n"
+            "    return p->a + x.b;\n"
+            "}\n",
+            304,
+        )
+
+    def test_volatile_pointer_steps_by_the_element_size(self):
+        self._returns(
+            "int arr[4] = {10, 20, 30, 40};\n"
+            "int main(void) { int *volatile p = arr; p++; p += 2; return *p; }\n",
+            40,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

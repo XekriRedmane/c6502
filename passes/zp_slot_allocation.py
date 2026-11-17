@@ -105,6 +105,7 @@ from collections import deque
 
 import tac_ast
 from passes.abi_selection import ParamLayout, ZpLayout
+from passes.call_edges import graph_calls
 from passes.optimization.pool import Pool
 
 
@@ -304,13 +305,12 @@ def _build_callgraph(
         n for n, layout in abi.items()
         if isinstance(layout, ZpLayout)
     }
+    # A call that abandons its caller isn't an edge: nothing reads
+    # the caller's parameters, or its callers', once it's made.
     direct: dict[str, set[str]] = {}
     for tl in prog.top_level:
         if isinstance(tl, tac_ast.Function):
-            direct[tl.name] = {
-                instr.name for instr in tl.instructions
-                if isinstance(instr, tac_ast.FunctionCall)
-            }
+            direct[tl.name] = {instr.name for instr in graph_calls(tl)}
     callees_of: dict[str, set[str]] = {n: set() for n in zp_names}
     for name in zp_names:
         seen: set[str] = set()

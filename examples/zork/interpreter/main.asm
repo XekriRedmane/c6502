@@ -62,6 +62,7 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
+__local_main__0	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
@@ -69,6 +70,7 @@ __zpabi_print_ascii_string__s_0	EQU	$E0
 __zpabi_print_number__n_0	EQU	$E0
 __zpabi_return_value__value_0	EQU	$E0
 __zpabi_store_result__value_0	EQU	$E0
+__local_main__sector	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
 __zpabi_load_address__addr_1	EQU	$E1
 __zpabi_load_packed_address__addr_1	EQU	$E1
@@ -77,11 +79,9 @@ __zpabi_print_number__n_1	EQU	$E1
 __zpabi_return_value__value_1	EQU	$E1
 __zpabi_store_result__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__local_main__0	EQU	$E4
-__local_main__sector	EQU	$E5
-__local_locate_last_ram_page__2	EQU	$E8
-__local_locate_last_ram_page__3	EQU	$E9
-__local_locate_last_ram_page__page	EQU	$EA
+__local_locate_last_ram_page__2	EQU	$E6
+__local_locate_last_ram_page__3	EQU	$E7
+__local_locate_last_ram_page__page	EQU	$E8
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -175,15 +175,12 @@ COUT1	EQU	$FDF0
 ; call instr_quit -> dump_buffer_with_more
 ; call instr_quit -> print_ascii_string
 ; call instr_restart -> dump_buffer_with_more
-; call instr_restart -> restart
 ; call internal_error -> dump_buffer_with_more
 ; call internal_error -> print_ascii_string
 ; call main -> do_instruction
-; call main -> internal_error
 ; call main -> locate_last_ram_page
 ; call main -> read_from_sector
 ; call main -> reset_window
-; call main -> restart
 ; item locate_last_ram_page section=.text local=true zero=false
 ; item main section=.text.main local=false zero=false
 ; item instr_restart section=.text local=false zero=false

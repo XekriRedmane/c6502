@@ -430,3 +430,155 @@ class TestLowZeroPageFallback(unittest.TestCase):
         sim = build_linked_sim(text.exe)
         result = sim.run()
         self.assertEqual(result.return_int(), 1)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestPointerInSharedSlotBytes(unittest.TestCase):
+    """`f1` and `f2` read through their pointer parameters alike. In
+    their unit, neither calls the other, so their parameter slots share
+    `$80`-`$81`, and the reads are the same instructions, `LDA ($80),Y`.
+    In the program, `f2` is called from `g`, whose parameter takes
+    `$80`, so the linker moves `f2`'s slots and the two pointers no
+    longer share bytes. Code that both functions run through the
+    pointer has to stay in each of them, where `asm_emit` names the
+    pointer by that function's own slot. Moved into a function of its
+    own by `shared_tails` or `outline_runs`, it was named by `f1`'s slot
+    alone, and `f2` read through `f1`'s bytes."""
+
+    _MAIN = (
+        "#include <stdint.h>\n"
+        "extern uint8_t out[8];\n"
+        "void f1(uint8_t *p);\n"
+        "void f2(uint8_t *p);\n"
+        "uint8_t A[3] = {1, 2, 3};\n"
+        "uint8_t B[3] = {10, 20, 30};\n"
+        "void g(uint8_t k) { f2(k ? B : A); }\n"
+        "int main(void) {\n"
+        "    f1(A);\n"
+        "    g(1);\n"
+        "    return out[0] + out[1] + out[2] + out[7];\n"
+        "}\n"
+    )
+
+    @staticmethod
+    def _readers(mark2: int) -> str:
+        return (
+            "#include <stdint.h>\n"
+            "uint8_t out[8];\n"
+            + "".join(
+                f"void f{n}(uint8_t *p) {{\n"
+                "    out[0] = p[0];\n"
+                "    out[1] = p[1];\n"
+                "    out[2] = p[2];\n"
+                f"    out[7] = {mark};\n"
+                "}\n"
+                for n, mark in ((1, 1), (2, mark2))
+            )
+        )
+
+    def _run(self, readers: str) -> tuple[int, str]:
+        from sim.linked import build_linked_sim
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a, b = tmp / "readers.o", tmp / "main.o"
+            self.assertEqual(_compile_to_obj(readers, a), 0)
+            self.assertEqual(_compile_to_obj(self._MAIN, b), 0)
+            out = tmp / "linked"
+            self.assertEqual(_link([a, b], out), 0)
+            text = linked_text(out)
+        equs = _equs(text)
+        self.assertNotEqual(equs["__zpabi_f1__p_0"], equs["__zpabi_f2__p_0"])
+        return build_linked_sim(text.exe).run().return_int(), text
+
+    def test_run_through_pointer_stays_in_each_function(self):
+        # The functions differ only in their last store, so the reads
+        # would be a run that `outline_runs` moves.
+        result, text = self._run(self._readers(2))
+        self.assertEqual(result, 10 + 20 + 30 + 2)
+        self.assertNotIn("@run", text)
+
+    def test_tail_through_pointer_stays_in_each_function(self):
+        # The functions are the same, so the reads would be in the tail
+        # that `shared_tails` shares. The tail starts after them.
+        result, text = self._run(self._readers(1))
+        self.assertEqual(result, 10 + 20 + 30 + 1)
+        self.assertIn("@tail", text)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestStaticFunctionsInTwoUnits(unittest.TestCase):
+    """Two units each define a `static` function `f`, and a `static`
+    function `pick` that returns a pointer, which `-O` returns in a
+    zero-page object of its own, `pick@ret`. Each unit spells its `f`'s
+    slots `__zpabi_f__x` and `__local_f__*`, so the linker has to rename
+    the slots with the function. Otherwise the merged metadata held
+    two definitions of `f`, and the link failed. `main`'s `f` calls `a`, which calls the other
+    unit's `f`, so the two functions' parameters must have different
+    bytes, since the first `f` reads its `x` after the call."""
+
+    _A = (
+        "#include <stdint.h>\n"
+        "static uint8_t T[2] = {40, 50};\n"
+        "static uint8_t *pick(uint8_t k) { return &T[k & 1]; }\n"
+        "static uint8_t f(uint8_t x) {\n"
+        "    uint8_t y = x + 1;\n"
+        "    return x + y + *pick(x);\n"
+        "}\n"
+        "uint8_t a(uint8_t x) { return f(x) + f(x + 1); }\n"
+    )
+    _B = (
+        "#include <stdint.h>\n"
+        "uint8_t a(uint8_t x);\n"
+        "static uint8_t T[2] = {1, 2};\n"
+        "static uint8_t *pick(uint8_t k) { return &T[k & 1]; }\n"
+        "static uint8_t f(uint8_t x) {\n"
+        "    uint8_t y = a(x);\n"
+        "    return x + y + *pick(x);\n"
+        "}\n"
+        "int main(void) { return f(5); }\n"
+    )
+
+    def test_links_and_runs(self) -> None:
+        from sim.linked import build_linked_sim
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a, b, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
+            self.assertEqual(_compile_to_obj(self._A, a), 0)
+            self.assertEqual(_compile_to_obj(self._B, b), 0)
+            rc, err = _link_capture_stderr([a, b], out)
+            self.assertEqual(rc, 0, err)
+            text = linked_text(out)
+        equs = _equs(text)
+        # Unit 0's `f` is called from `a`, which unit 1's `f` calls, so
+        # the allocators placed them as caller and callee.
+        self.assertNotEqual(equs["__zpabi_f__x.0"], equs["__zpabi_f__x.1"])
+        self.assertNotIn("__zpabi_f__x", equs)
+        self.assertIn("def f.0 ", text)
+        self.assertIn("def f.1 ", text)
+        self.assertIn("call a -> f.0", text)
+        self.assertIn("call f.1 -> a", text)
+        # a(5) = f.0(5) + f.0(6) = (5 + 6 + 50) + (6 + 7 + 40) = 114, and
+        # f.1(5) = 5 + 114 + 2.
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(), 121)
+
+    def test_static_beside_external_function(self) -> None:
+        # Unit 1's `f` has external linkage, so it keeps its name and
+        # its slots, and only unit 0's is renamed.
+        b = (
+            "#include <stdint.h>\n"
+            "uint8_t a(uint8_t x);\n"
+            "uint8_t f(uint8_t x) { uint8_t y = a(x); return x + y; }\n"
+            "int main(void) { return f(5); }\n"
+        )
+        from sim.linked import build_linked_sim
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            pa, pb, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
+            self.assertEqual(_compile_to_obj(self._A, pa), 0)
+            self.assertEqual(_compile_to_obj(b, pb), 0)
+            rc, err = _link_capture_stderr([pa, pb], out)
+            self.assertEqual(rc, 0, err)
+            text = linked_text(out)
+        equs = _equs(text)
+        self.assertNotEqual(equs["__zpabi_f__x.0"], equs["__zpabi_f__x"])
+        self.assertEqual(build_linked_sim(text.exe).run().return_int(), 119)

@@ -70,6 +70,10 @@ language:
     SignExtend / Copy chain of `x_var` followed by the GE — the
     latter arises from C99's integer-promotion of narrower
     operands (`SChar` → `Int` for the comparison).
+  * Every instruction of the cond block computes a `%` temporary
+    with no load, store, or call (`_computes_temporary`). The
+    rotated loop skips the first test, so a test with a side
+    effect, such as the decrement in `i-- >= 0`, would lose it.
   * The post block ends with `Binary(Subtract, x_var, Constant(1),
     %t); Copy(%t, x_var)`.  Postfix `x--` additionally prepends a
     `Copy(x_var, %old)` capturing the pre-mutation value; that
@@ -265,6 +269,10 @@ def _try_match(
         return None
 
     cond_block = instrs[i + 1 : cond_jif_idx]
+    # The rotated loop skips the test the first time, so the test
+    # may only compute temporaries.
+    if not all(_computes_temporary(ins) for ins in cond_block):
+        return None
     ge = _find_ge_producer(cond_block, cond_var_name)
     if ge is None:
         return None
@@ -391,6 +399,20 @@ def _val_resolves_to_zero(
                 return _val_resolves_to_zero(src, cond_block)
             case _:
                 return False
+    return False
+
+
+def _computes_temporary(ins: tac_ast.Type_instruction) -> bool:
+    """True when `ins` only computes a `%` temporary from values,
+    with no store, load, or call. The first test of a rotated loop
+    is skipped, so a test that does more is left alone. The test
+    `i-- >= 0` decrements `i`, and `(n++, i) >= 0` increments `n`,
+    and skipping either changes what the loop computes."""
+    match ins:
+        case (tac_ast.Copy(dst=d) | tac_ast.SignExtend(dst=d)
+              | tac_ast.ZeroExtend(dst=d) | tac_ast.Truncate(dst=d)
+              | tac_ast.Unary(dst=d) | tac_ast.Binary(dst=d)):
+            return isinstance(d, tac_ast.Var) and d.name.startswith("%")
     return False
 
 

@@ -229,6 +229,7 @@ def _redirect_dst(
             return tac_ast.FunctionCall(
                 name=n, args=args, dst=new_dst,
                 hw_stack_save=producer.hw_stack_save,
+                noreturn=producer.noreturn,
             )
         case tac_ast.IndirectCall(
             ptr=p, args=args, dst=d,

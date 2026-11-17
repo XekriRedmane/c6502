@@ -3181,6 +3181,11 @@ class _ASTBuilder(Transformer):
         # annotation name that ForStmt.unroll_annotation expects.
         return "unroll"
 
+    def pragma_keep(self, items):
+        # `pragma_clause: PRAGMA_KEEP -> pragma_keep`, a loop that
+        # c99_to_tac marks so that dead-loop elimination keeps it.
+        return "keep"
+
     def for_stmt(self, items):
         # items: [pragma?, FOR, LPAREN, for_init, condition?, SEMICOLON,
         #         post_clause?, RPAREN, statement]

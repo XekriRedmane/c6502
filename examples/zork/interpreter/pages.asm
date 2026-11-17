@@ -176,11 +176,9 @@ COUT1	EQU	$FDF0
 ; ext write_to_sector params= carry=true
 ; call get_next_code_byte -> find_index_of_page_table
 ; call get_next_code_byte -> read_from_sector
-; call get_next_code_byte -> restart
 ; call get_next_code_byte -> set_page_first
 ; call get_next_code_byte2 -> find_index_of_page_table
 ; call get_next_code_byte2 -> read_from_sector
-; call get_next_code_byte2 -> restart
 ; call get_next_code_byte2 -> set_page_first
 ; call get_next_code_word -> get_next_code_byte2
 ; share member=find_index_of_page_table:__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 holder=get_next_code_byte holder=get_next_code_byte2 live=get_next_code_byte:find_index_of_page_table live=get_next_code_byte2:find_index_of_page_table forward=get_next_code_byte>find_index_of_page_table forward=get_next_code_byte2>find_index_of_page_table writer=get_next_code_byte writer=get_next_code_byte2

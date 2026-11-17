@@ -117,6 +117,33 @@ class TestRotation(unittest.TestCase):
         out = _run(_loop([asm_ast.Mov(src=_imm(6), dst=_X())], _CPX6))
         self.assertEqual(out[1], asm_ast.Jump(target=".top"))
 
+    def test_test_that_writes_memory_keeps_jump(self):
+        # `for (uint8_t i = 0x1F; i-- != 0;)` tests with `DEC i; LDA
+        # i; CMP #$FF; BEQ`. The test passes on entry, but entered at
+        # the body, the first pass would skip the DEC and index with
+        # 0x1F.
+        out = _run(_loop(
+            [asm_ast.Mov(src=_imm(0x1F), dst=_A()),
+             asm_ast.Mov(src=_A(), dst=_data("i"))],
+            [asm_ast.Dec(dst=_data("i")),
+             asm_ast.Mov(src=_data("i"), dst=_A()),
+             asm_ast.Compare(left=_A(), right=_imm(0xFF))],
+            body=[asm_ast.Mov(src=_data("i"), dst=_X())],
+        ))
+        self.assertEqual(out[2], asm_ast.Jump(target=".top"))
+
+    def test_test_that_stores_keeps_jump(self):
+        # `(n = i) != 4` stores `n` in the test.
+        out = _run(_loop(
+            [asm_ast.Mov(src=_imm(0), dst=_A()),
+             asm_ast.Mov(src=_A(), dst=_data("i"))],
+            [asm_ast.Mov(src=_data("i"), dst=_A()),
+             asm_ast.Mov(src=_A(), dst=_data("n")),
+             asm_ast.Compare(left=_A(), right=_imm(4))],
+            body=[asm_ast.Inc(dst=_data("i"))],
+        ))
+        self.assertEqual(out[2], asm_ast.Jump(target=".top"))
+
     def test_continue_still_reaches_test(self):
         # A `continue` jumps to `.top`, which moves with the test.
         instrs = _loop(

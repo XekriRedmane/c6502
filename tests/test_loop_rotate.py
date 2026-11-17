@@ -193,6 +193,19 @@ class TestLoopRotateMatch(unittest.TestCase):
         out = rotate_signed_countdown_loops(_fn(instrs), symbols)
         self.assertEqual(out.instructions, instrs)
 
+    def test_test_that_writes_a_variable_skips(self) -> None:
+        # `for (int x = 15; (n += 1, x) >= 0; x--)` writes `n` in the
+        # test. The rotated loop skips the first test, and with it
+        # the first write.
+        instrs, symbols = self._make_int_loop(init_value=15)
+        instrs.insert(2, tac_ast.Binary(
+            op=tac_ast.Add(), src1=_var("n"), src2=_constI(1),
+            dst=_var("n"),
+        ))
+        symbols["n"] = Symbol(type=c99_ast.Int(), attrs=_LocalAttr())
+        out = rotate_signed_countdown_loops(_fn(instrs), symbols)
+        self.assertEqual(out.instructions, instrs)
+
 
 class TestLoopRotateSChar(unittest.TestCase):
     """The int8_t / SChar case: cond block has a SignExtend in
@@ -536,6 +549,33 @@ class TestLoopRotateE2E(unittest.TestCase):
             "int main(void) { return count(0); }\n"
         )
         self._both(src, 0)
+
+    def test_post_decrement_in_test_not_rotated(self) -> None:
+        # The test `i-- >= 0` decrements i. The rotated loop skipped
+        # the first test and so the first decrement, and returned
+        # 5565. The body should see 4, 2, and 0, and the result is
+        # their digits.
+        src = (
+            "int main(void) {\n"
+            "    int c = 0;\n"
+            "    for (signed char i = 5; i-- >= 0; i--) c = c * 10 + i;\n"
+            "    return c;\n"
+            "}\n"
+        )
+        self._both(src, 420)
+
+    def test_side_effect_in_test_not_rotated(self) -> None:
+        # `(n++, i) >= 0` runs five times, the last time failing. The
+        # rotated loop skipped the first one and returned 44.
+        src = (
+            "int n;\n"
+            "int main(void) {\n"
+            "    int c = 0;\n"
+            "    for (int i = 3; (n++, i) >= 0; i--) c++;\n"
+            "    return n * 10 + c;\n"
+            "}\n"
+        )
+        self._both(src, 54)
 
 
 if __name__ == "__main__":

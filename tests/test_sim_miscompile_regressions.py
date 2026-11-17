@@ -548,6 +548,58 @@ _CASES: list[tuple[str, str, int]] = [
         }
         int main(void) { return check(65535u, 15UL); }
     """, 241),
+    # redundant_load added the shifted byte to the bytes Z reflected
+    # after `LSR pattern`, keeping `moves` among them, and dropped the
+    # `LDA moves` before the `BEQ`, which then tested the shifted
+    # pattern. With PAT = 1, f was never called.
+    ("bit_tested_before_a_shift", """
+        #include <stdint.h>
+        #include <stdbool.h>
+        uint8_t PAT [[c6502::zeropage]];
+        uint8_t calls;
+        void f(void) { calls++; }
+        void g(void) {
+            uint8_t pattern = PAT;
+            do {
+                bool moves = pattern & 1;
+                pattern >>= 1;
+                if (moves) f();
+            } while (pattern != 0);
+        }
+        int main(void) {
+            PAT = 1; g();
+            PAT = 0x81; g();
+            PAT = 6; g();
+            return calls;
+        }
+    """, 5),
+    # rotate_loop_test entered the rotated loop at its body because
+    # the test, `DEC i; LDA i; CMP #$FF; BEQ exit`, passes on entry,
+    # and so skipped the DEC. The body ran 32 times, the first with
+    # i = 0x1F.
+    ("post_decrement_in_for_test", """
+        #include <stdint.h>
+        uint8_t T[32];
+        uint8_t first;
+        uint8_t calls;
+        void g(uint8_t v) { if (calls++ == 0) first = v; }
+        int main(void) {
+            for (uint8_t k = 0; k < 32; k++) T[k] = k;
+            for (uint8_t i = 0x1F; i-- != 0;)
+                g(T[i]);
+            return calls * 100 + first;
+        }
+    """, 3130),
+    # loop_rotate (TAC) skips the first test of a rotated countdown
+    # loop, and with it the test's `n++`.
+    ("side_effect_in_countdown_test", """
+        int n;
+        int main(void) {
+            int c = 0;
+            for (int i = 3; (n++, i) >= 0; i--) c++;
+            return n * 10 + c;
+        }
+    """, 54),
 ]
 
 

@@ -34,12 +34,18 @@ of a function, which can't end in one.
 A run is a sequence of loads, stores, arithmetic and logic
 instructions, compares, `SEC`, `CLC`, `BIT`, and calls, with no label,
 branch, jump, return, push, or pull, no soft-stack operand (`Frame`,
-`Stack`, a compound atom), and no name of a function's own
-`__local_*` slot. The places must not overlap. A function with a
-soft-stack frame is left alone, and so is a run inside a loop of at
-most 64 bytes, where the call's 12 cycles a pass would be a large
-share of the loop's time. In Zork's interpreter that rule costs 2
-bytes.
+`Stack`, a compound atom), no name of a function's own `__local_*`
+slot, and no `(zp),Y` pointer in a slot's bytes. That last operand
+carries the pointer's address, which `asm_emit` names by the slot the
+function it's in keeps there. Two functions' slots can share those
+bytes in a unit and be placed apart by the linker, so a run with one,
+moved into the first user's function, would name that function's
+pointer in every place it's called from
+(`asm_aliasing.through_slot_pointer`). The places must not overlap.
+A function with a soft-stack frame is left alone, and so is a run
+inside a loop of at most 64 bytes, where the call's 12 cycles a pass
+would be a large share of the loop's time. In Zork's interpreter that
+rule costs 2 bytes.
 
 A run of `s` bytes at `n` places takes `s + 1 + 3n` bytes in place of
 `n * s`, and the pass makes the change only when that's smaller,
@@ -65,6 +71,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import asm_ast
+from passes.asm_aliasing import through_slot_pointer
 from sim.assembler import instruction_size
 
 _RUN_KINDS = (
@@ -79,16 +86,20 @@ _MAX_LEN = 24
 
 def apply_outline_runs(
     prog: asm_ast.Program, symbols, *, zp_names=None,
+    slot_addrs=frozenset(),
 ) -> asm_ast.Program:
     """`prog` with each repeated run in a function of its own (see the
     module docstring). Each new function's symbol, a copy of the first
     user's with internal linkage, is added to `symbols`. `zp_names`
     are the names of zero-page bytes, which take one-byte operands, for
-    the sizes of the runs (`sim.assembler.instruction_size`)."""
+    the sizes of the runs (`sim.assembler.instruction_size`).
+    `slot_addrs` are the addresses of the unit's `__zpabi_*` and
+    `__local_*` slots, whose bytes no `(zp),Y` pointer in a run may
+    have."""
     top = list(prog.top_level)
     count = 0
     while True:
-        best = _best_run(top, zp_names)
+        best = _best_run(top, zp_names, slot_addrs)
         if best is None:
             return asm_ast.Program(top_level=top)
         length, places = best
@@ -127,8 +138,10 @@ def apply_outline_runs(
         ))
 
 
-def _runnable(ins) -> bool:
+def _runnable(ins, slot_addrs) -> bool:
     if not isinstance(ins, _RUN_KINDS):
+        return False
+    if through_slot_pointer(ins, slot_addrs):
         return False
     for op in vars(ins).values():
         if isinstance(op, (asm_ast.Frame, asm_ast.Stack, asm_ast.Pseudo)):
@@ -143,7 +156,7 @@ def _runnable(ins) -> bool:
     return True
 
 
-def _best_run(top, zp_names=None):
+def _best_run(top, zp_names=None, slot_addrs=frozenset()):
     """`(length, [(function index, start), ...])` for the run that
     saves the most, or None."""
     keys: list[tuple[int, int, str]] = []
@@ -158,7 +171,7 @@ def _best_run(top, zp_names=None):
         for k, ins in enumerate(tl.instructions):
             if any(lo <= k <= hi for lo, hi in loops):
                 continue
-            if _runnable(ins):
+            if _runnable(ins, slot_addrs):
                 keys.append((fi, k, repr(ins)))
                 sizes[(fi, k)] = instruction_size(ins, zp_names=zp_names)
     ok = {(fi, k): r for fi, k, r in keys}

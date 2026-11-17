@@ -81,6 +81,18 @@ __zpabi_push__value_1; JMP push`.
 - No instruction names a soft-stack operand or a function's own
   `__local_*` slot, and no call takes arguments in registers or keeps
   a register, since the registers are set or read around it.
+- No instruction reads or writes through a `(zp),Y` pointer kept in
+  the bytes of a `__zpabi_*` or `__local_*` slot. The operand holds
+  the pointer's address, and `asm_emit` names it by the slot that the
+  function it's emitted in keeps at that address. Two functions that
+  are never on the call stack together can have slots at the same
+  bytes in a unit, and the linker may place them apart, so the run,
+  emitted in the first user's function, would read through that
+  function's pointer in every place. Lode Runner's
+  `guard_find_candidate_row_above` and `guard_find_candidate_row_below`
+  each read a level row through a pointer of their own at `$C3`, and a
+  run of that read and a call to `is_floor` named
+  `__local_enter_cell__2` in both.
 - The function has no soft-stack frame.
 - The run isn't inside a loop of at most 64 bytes, where 12 cycles a
   pass would be a large share of the loop's time.

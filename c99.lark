@@ -143,6 +143,10 @@ ATTR_OPEN: /\[\s*\[/
 // keeps it disjoint from any user identifier.
 PRAGMA_UNROLL: "__c6502_pragma_unroll__"
 
+// Sentinel for `#pragma c6502 loop keep`, a `for` loop that dead-loop
+// elimination leaves alone.
+PRAGMA_KEEP: "__c6502_pragma_keep__"
+
 // Sentinel for `#pragma c6502 call save(hardware_stack)`, which comes
 // before a statement whose calls can recurse.
 PRAGMA_HW_STACK_SAVE: "__c6502_pragma_hw_stack_save__"
@@ -307,6 +311,7 @@ attribute_declaration: attribute_specifier_seq SEMICOLON
 // PRAGMA_UNROLL sentinel; any other recognized c6502 pragmas become
 // blank lines. Only `for` accepts a pragma_clause today.
 pragma_clause: PRAGMA_UNROLL                                         -> pragma_unroll
+             | PRAGMA_KEEP                                           -> pragma_keep
 // var_decl covers four shapes:
 //   `int x;` / `int x = 1;`           — object declaration with declarator
 //   `int foo(int);`                   — function forward decl (the var_decl
@@ -742,7 +747,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | COMPLEX | IMAGINARY | PRAGMA_UNROLL | PRAGMA_HW_STACK_SAVE
+         | BOOL | COMPLEX | IMAGINARY | PRAGMA_UNROLL | PRAGMA_KEEP | PRAGMA_HW_STACK_SAVE
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT

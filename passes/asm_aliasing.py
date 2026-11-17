@@ -214,6 +214,25 @@ def _instruction_operands(ins):
                 yield from _instruction_operands(v)
 
 
+def through_slot_pointer(ins, slot_addrs) -> bool:
+    """Whether `ins` reads or writes through a `(zp),Y` pointer
+    (`IndirectZp`, `IndirectZpY`) with a byte at one of `slot_addrs`,
+    the addresses of the unit's `__zpabi_*` and `__local_*` slots.
+
+    The operand carries the pointer's address, and `asm_emit` names it
+    by the slot that the function it's emitted in keeps there. Two
+    functions that are never on the call stack together can have
+    slots at the same bytes in one unit, and the linker may place
+    those slots apart, so such an instruction can't be moved into
+    another function."""
+    for op in _instruction_operands(ins):
+        if (isinstance(op, (asm_ast.IndirectZp, asm_ast.IndirectZpY))
+                and (op.address in slot_addrs
+                     or op.address + 1 in slot_addrs)):
+            return True
+    return False
+
+
 class pointer_proof:
     """Installs `names` (from `unreachable_by_pointer`) as the bytes
     `may_alias` treats as out of reach of the indirect operands, for

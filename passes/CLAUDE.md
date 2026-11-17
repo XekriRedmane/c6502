@@ -47,6 +47,12 @@ this directory:
   constant into memory (`LDA src; STA dst`), and a move between X and
   Y (`TXA; TAY`).
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
+- `call_edges.py` — `graph_calls` / `abandons_caller`: which direct
+  calls are edges of the call graph. A call to a `[[noreturn]]`
+  function that passes no arguments (`tac_ast.FunctionCall.noreturn`,
+  set by `c99_to_tac`, and empty `args`) isn't. Every pass that walks
+  the call graph takes its edges from here (see "A call that abandons
+  its caller" below).
 - `dead_pha_pla.py` — `apply_dead_pha_pla`. Drops `Push(Reg(A)) /
   body / Pop(Reg(A))` triples when the body preserves A and the
   PLA's N/Z flag effect is dead. Always-on. Headline case: the
@@ -161,15 +167,17 @@ this directory:
   `apply_shared_tails`, last in `compile.optimized_asm`. A run of
   straight-line instructions repeated in the unit (no label, branch,
   jump, return, push, pull, soft-stack operand, own `__local_*` slot,
-  or call with register arguments; not in a loop of at most 64 bytes)
+  `(zp),Y` pointer in a slot's bytes, or call with register arguments;
+  not in a loop of at most 64 bytes)
   goes in a new internal function `F@run<n>` ending in `RTS`, and each
   place becomes `JSR F@run<n>`, when that's smaller before the link.
   Sizes count the `zp_names` operands as one byte.
 - `shared_tails.py` — `apply_shared_tails`. Runs last in
   `compile.optimized_asm`, after `apply_short_jumps`. A run of
   instructions that several functions of the unit end alike (ending in
-  a `JMP` or `RTS`, its `.` labels all inside it, no `FunctionPrologue`
-  or `JumpTable`) goes in a new internal function `F@tail<n>`, and
+  a `JMP` or `RTS`, its `.` labels all inside it, no `FunctionPrologue`,
+  `JumpTable`, or `(zp),Y` pointer in a slot's bytes) goes in a new
+  internal function `F@tail<n>`, and
   each of them ends with `JMP F@tail<n>`, when that's smaller before
   the link too. The linker's `fall_through` puts one of them right
   before it. The new function's symbol is a copy of the first
@@ -357,7 +365,9 @@ this directory:
   data segment (`_data_lines`), unless a unit uses it as an `(zp),Y`
   pointer (`_pointer_names`). Internal names two units share are
   renamed `name.k` in the metadata and the symbols
-  (`_rename_locals`). `_choose_layout` picks the runtime's block for
+  (`_rename_locals`), and a renamed function's slots, call edges, and
+  shares with it (`_rename_meta`), so two units' `static` functions of
+  one name are two functions to the allocators. `_choose_layout` picks the runtime's block for
   the program (`choose_layout` over every unit's fixed zero-page
   bytes and the largest `hargs_need`, the classic block's for a unit
   without one), and the slots come from the whole pool, `$80`-`$FF`
@@ -435,8 +445,10 @@ this directory:
   inverted to branch back to the body, and is entered with a `JMP` to
   the test, or at the body when `_entry_passes` evaluates the test to
   pass on the constants the straight-line code before the loop
-  leaves and every register and flag the test writes is dead at the
-  body (`_test_effects_dead`). The test is one branch to the label right after the `JMP`
+  leaves, every register and flag the test writes is dead at the
+  body, and the test writes no memory and reads no volatile byte
+  (`_test_effects_dead`), as `DEC i` in the test of `i-- != 0` does.
+  The test is one branch to the label right after the `JMP`
   back, and the loop is at most 112 bytes. Runs once, after
   `loop_invariant_a` and before `expand_long_branches`.
 - `loop_invariant_a.py` — `apply_loop_invariant_a`. In a loop whose
@@ -539,7 +551,13 @@ this directory:
   (`merge_shares`, `check_linked_shares`). `check_shares` raises if
   the finished asm writes a shared slot of its own function, and
   `preferred_symbols` tells `asm_emit` which symbol names a `(zp),Y`
-  base in a holder. User guide: docs/optimizations/slot_sharing.md.
+  base in a holder. `asm_emit._pick_symbol` names a `(zp),Y` base by
+  the function's own slot at the address, then a preferred symbol,
+  then a slot the function names itself, then a name that isn't a
+  slot, and otherwise writes the address. It never names another
+  function's slot, which the linker may place elsewhere.
+  `asm_aliasing.through_slot_pointer` keeps `outline_runs` and
+  `shared_tails` from moving such an access into another function. User guide: docs/optimizations/slot_sharing.md.
 - `sections.py` — `items`: the section of each function and object in
   the finished asm (`[[c6502::section("name")]]`, else `.text`,
   `.rodata` for `const` objects and string literals, `.bss` for
@@ -1656,7 +1674,9 @@ symbols. No `AllocateStack`, no Frame-resident param storage. Eligibility:
 - No `IndirectCall` in body (callee's ABI unknowable at the indirect
   site).
 - Not on a cycle in the static direct call graph (a recursive call
-  would overwrite the outer activation's still-live params).
+  would overwrite the outer activation's still-live params). A call
+  that abandons its caller isn't an edge (see "A call that abandons
+  its caller").
 - Address never taken (indirect call sites would assume the default
   soft-stack ABI).
 - Every direct callee is zp_abi too, or has a private pool
@@ -1704,6 +1724,37 @@ every coexisting zp_abi function's param slots. Eligibility:
 Ineligible functions fall back to the conservative caller/callee
 partition ($80..$BF caller-saved, $C0..$FF callee-saved with the usual
 save/restore discipline).
+
+### A call that abandons its caller
+
+A call to a `[[noreturn]]` function that passes no arguments isn't an
+edge of the call graph (`call_edges.graph_calls`). From the moment
+of the call nothing reads the caller's bytes, or those of any function
+it was called from, so the callee's bytes and its callees' may
+overlap theirs, and the callee may call the caller again without
+making a cycle (Lode Runner's `JMP RESET_GAME` from nested
+subroutines). The callers of `graph_calls` / `abandons_caller` are
+`abi_selection._build_callgraph` (cycles) and `_direct_callees`
+(soft-stack demotion), `zp_slot_allocation._build_callgraph`,
+`zp_local_allocation._build_callgraph`, `_determine_eligibility`
+(extern callees), and `_build_direct_extern_callees`,
+`slot_sharing.reach_sets` (which `coexist`, `share_conflicts`, and
+`pinned_param_copies` read), `recursion_saves.call_graph` and
+`hw_stack_cycles`, and `zp_link_metadata.build_metadata`, which
+writes no `call` line for the call, so the linker's synthetic program
+leaves it out too. `check_pragmas` rejects `call save(hardware_stack)`
+on such a call.
+
+A call with arguments stays an edge, since the caller writes the callee's
+parameter slots while its own bytes are live, and in a cycle those
+slots are the ones the callee's earlier activation reads. A function
+that can return into itself through ordinary calls is still on a
+cycle. The caller's frame is dead from the call on, so
+a pointer to one of its locals (or an ancestor's) must not be used
+after it, which C would allow and nothing checks. Each trip around
+such a cycle leaves `JSR` return addresses on the hardware stack,
+which wraps within page 1, and a soft-stack function on the cycle
+leaves its frame behind, which doesn't wrap.
 
 ### Recursion with hardware-stack saves
 

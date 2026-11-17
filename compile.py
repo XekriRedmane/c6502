@@ -703,10 +703,19 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     zp_names = frozenset(
         n for n, a in {**all_slot_symbols, **zp.addrs}.items() if a <= 0xFF
     ) | frozenset(DEFAULT_ZP_SYMBOLS)
-    asm4 = apply_shared_tails(asm4, symbols, zp_names=zp_names)
+    # Neither moves a `(zp),Y` pointer in a slot's bytes into another
+    # function, where `asm_emit` would name it by that function's slot.
+    slot_addrs = frozenset(
+        a for a in all_slot_symbols.values() if a <= 0xFF
+    )
+    asm4 = apply_shared_tails(
+        asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
+    )
     # A run of instructions repeated in the unit goes in a function of
     # its own, which each place calls (passes/outline_runs.py).
-    asm4 = apply_outline_runs(asm4, symbols, zp_names=zp_names)
+    asm4 = apply_outline_runs(
+        asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
+    )
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     zp_records = link_records(asm4, zp)

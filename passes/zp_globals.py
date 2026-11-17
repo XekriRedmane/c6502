@@ -550,6 +550,11 @@ def _init_operands(init) -> list[asm_ast.Type_operand]:
             case asm_ast.AddressInit(name=n, offset=off):
                 out.append(asm_ast.ImmLabelLow(name=n, offset=off))
                 out.append(asm_ast.ImmLabelHigh(name=n, offset=off))
+            case asm_ast.AddressByteInit(name=n, offset=off, high=hi):
+                out.append(
+                    asm_ast.ImmLabelHigh(name=n, offset=off) if hi
+                    else asm_ast.ImmLabelLow(name=n, offset=off)
+                )
             case asm_ast.StringInit(str=s, bytes=n):
                 out.extend(asm_ast.Imm(value=ord(c) & 0xFF) for c in s)
                 out.extend(asm_ast.Imm(value=0) for _ in range(n - len(s)))

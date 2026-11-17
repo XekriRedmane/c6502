@@ -130,8 +130,10 @@ def eliminate_common_subexpressions(
             match instr:
                 case tac_ast.Load(src_ptr=p):
                     ops = (operand_key(p),)
-                case tac_ast.IndexedLoad(name=n, index=i, offset=o):
-                    ops = (n, operand_key(i), o)
+                case tac_ast.IndexedLoad(
+                    name=n, index=i, offset=o, plane=pl,
+                ):
+                    ops = (n, operand_key(i), o, pl)
                 case tac_ast.IndexedConstLoad(address=a, index=i):
                     ops = (a, operand_key(i))
                 case tac_ast.IndirectIndexedLoad(ptr=p, index=i):

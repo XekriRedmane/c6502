@@ -270,7 +270,7 @@ def _rewrite(
         case tac_ast.IndexedLoad(name=n, index=i, dst=d, is_volatile=v):
             return tac_ast.IndexedLoad(
                 name=n, index=sub(i), dst=d, is_volatile=v,
-                offset=instr.offset,
+                offset=instr.offset, plane=instr.plane,
             )
         case tac_ast.IndexedStore(address=a, index=i, src=s, is_volatile=v):
             return tac_ast.IndexedStore(

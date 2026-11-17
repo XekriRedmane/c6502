@@ -98,6 +98,8 @@ def _xlate_static_init(it: asm_ast.Type_static_init) -> asm2_ast.Type_static_ini
             return asm2_ast.DoubleInit(bits=b)
         case asm_ast.AddressInit(name=n, offset=o):
             return asm2_ast.AddressInit(name=n, offset=o)
+        case asm_ast.AddressByteInit(name=n, offset=o, high=hi):
+            return asm2_ast.AddressByteInit(name=n, offset=o, high=hi)
         case asm_ast.StringInit(str=s, bytes=n):
             return asm2_ast.StringInit(str=s, bytes=n)
         case asm_ast.ZeroInit(bytes=n):

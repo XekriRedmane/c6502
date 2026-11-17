@@ -162,6 +162,7 @@ def _init_size(init: tac_ast.Type_static_init) -> int:
         case tac_ast.FloatInit():                              return 4
         case tac_ast.DoubleInit():                             return 8
         case tac_ast.AddressInit():                            return 2
+        case tac_ast.AddressByteInit():                        return 1
         case tac_ast.StringInit(bytes=n):                      return n
         case tac_ast.ZeroInit(bytes=n):                        return n
     raise TacSimError(f"unsupported static_init: {type(init).__name__}")
@@ -313,6 +314,19 @@ class Simulator:
                     if target is None:
                         raise TacSimError(f"AddressInit references unknown {n!r}")
                     self.memory.store(addr, target + off, 2); addr += 2
+                case tac_ast.AddressByteInit(name=n, offset=off, high=hi):
+                    target = self._static_addr.get(n)
+                    if target is None:
+                        target = self._function_addr.get(n)
+                    if target is None:
+                        raise TacSimError(
+                            f"AddressByteInit references unknown {n!r}",
+                        )
+                    value = (target + off) & 0xFFFF
+                    self.memory.store(
+                        addr, value >> 8 if hi else value & 0xFF, 1,
+                    )
+                    addr += 1
                 case tac_ast.StringInit(str=s, bytes=n):
                     raw = s.encode("latin-1")
                     self.memory.write_bytes(addr, raw)
@@ -554,10 +568,16 @@ class Simulator:
                     )
                 idx_val, _ = self._read(frame, i)
                 w = self._dst_width(d)
+                at = base + ins.offset + (idx_val & 0xFF)
+                if ins.plane:
+                    # A table split into byte planes.
+                    self._write(frame, d, sum(
+                        self.memory.load(at + k * ins.plane, 1) << (8 * k)
+                        for k in range(w)
+                    ))
+                    return None
                 self._write(
-                    frame, d, self.memory.load(
-                        base + ins.offset + (idx_val & 0xFF), w,
-                    ),
+                    frame, d, self.memory.load(at, w),
                 )
 
             case tac_ast.IndexedSymbolStore(name=name, index=i, src=s):

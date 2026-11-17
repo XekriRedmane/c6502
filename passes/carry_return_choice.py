@@ -232,6 +232,8 @@ def _taken_names(prog: tac_ast.Program) -> set[str]:
                     out.add(ins.operand.name)
         elif isinstance(tl, tac_ast.StaticVariable):
             for init in tl.init:
-                if isinstance(init, tac_ast.AddressInit):
+                if isinstance(init, (
+                    tac_ast.AddressInit, tac_ast.AddressByteInit,
+                )):
                     out.add(init.name)
     return out

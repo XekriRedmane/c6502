@@ -1878,7 +1878,14 @@ tac → select_abi → find_shares → allocate_zp_slots
 
 Two optimizer passes: the first sizes each function's local byte
 demand; the second uses per-function private pools as the regalloc's
-`allowed_range`.
+`allowed_range`. A pool of the size the first pass counted can still
+be too small, because a `(zp),Y` pointer needs two adjacent free
+bytes. When the second pass spills a byte value of a pooled function
+that the first didn't (`compile._pool_shortfalls`), that function
+asks for a byte more per such value, and the pools are allocated and
+the second pass run again, up to `compile._POOL_RETRIES` (3) times.
+Lode Runner's `guard_find_candidate_row_above` took a soft-stack frame
+for one byte before this.
 
 ### Across units
 

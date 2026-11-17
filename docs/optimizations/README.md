@@ -121,6 +121,7 @@ a user variable.
 - [Redundant store elimination](redundant_store.md). Drops a repeated `LDA S; STA D` copy when D still holds S.
 - [Rematerialization of staged values](asm_remat.md). Reloads a staged value from its source so the staging-slot store dies.
 - [Round-trip load drop](round_trip_load.md). Deletes `LDA M` after `STA M` when the flags already reflect A.
+- [Row-address tables](row_address_tables.md). Looks up the address of a row of a 2-D array, whose rows aren't a power of two bytes long, in a table of the rows' addresses.
 - [Saves around a recursive call](recursion_saves.md). Pushes the values live across a marked recursive call so the function can have a private pool.
 - [Second index in Y](dual_index_promotion.md). Loads a byte reloaded into X several times into Y once at entry.
 - [Shorter jumps](short_jumps.md). Sends jumps and jump-table entries for a stub that jumps to another function there, drops the stub, and makes a JMP after a constant load a branch.
@@ -136,6 +137,7 @@ a user variable.
 - [Store X or Y directly](via_a_store_fold.md). Turns `TXA; STA M` into `STX M` (and TYA into STY) when A is dead.
 - [Strength reduction](strength_reduction.md). Rewrites multiply, divide, and modulo by constants as shifts, masks, adds, or copies.
 - [Subtract-and-test fusion](sub1_test_zero_peephole.md). Drops `LDA #0; CMP i` after `SBC #1` and branches on the inverted carry.
+- [Tables split into low and high bytes](split_tables.md). Stores a table of 2-byte elements read by a byte index as its low bytes and then its high bytes, so the index needs no shift.
 - [Tail call](tail_call.md). Turns `JSR f; RTS` into `JMP f` in frameless functions, and a jump to an RTS into the RTS.
 - [Tail merge](tail_merge.md). Branches to one shared copy of a repeated return sequence.
 - [Testing the low byte after an INC chain](inc_low_byte_test.md). Sends an INC chain's first BNE where a test of the incremented low byte would go.
@@ -168,6 +170,8 @@ them whenever a pass is added or moved.
       labeling, type checking, and translation to TAC.
    3. [A pointer returned in zero page](return_in_zero_page.md)
    4. [Zero-page promotion](zp_promotion.md)
+   5. [Row-address tables](row_address_tables.md), over the whole
+      program.
 2. TAC optimizer, once per function:
    1. [Signed countdown loop rotation](loop_rotate.md)
    2. [A call that doesn't return](noreturn_call.md)
@@ -206,7 +210,8 @@ them whenever a pass is added or moved.
    12. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
-   over the whole program.
+   then [tables split into low and high bytes](split_tables.md),
+   each over the whole program.
 4. [Default zp_abi calling convention](zp_abi.md): ABI selection,
    then the [carry-flag return without the
    annotation](carry_return_choice.md), then [values kept in a callee's parameter

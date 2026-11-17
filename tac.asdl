@@ -61,7 +61,17 @@ module TAC {
         -- array of structs reads `name+m,Y`
         -- (`passes/optimization/static_indexed_access.py`). Every pass
         -- that rebuilds the node keeps it.
-        | IndexedLoad(identifier name, val index, val dst, bool is_volatile, int offset)
+        --
+        -- `plane` is 0 for an ordinary array, whose element bytes are
+        -- consecutive. A table split into byte planes, the low bytes
+        -- of every element and then the high bytes, has `plane` set
+        -- to the distance from one plane to the next, and `index` is
+        -- the element number rather than a byte offset. Byte k of
+        -- `dst` is read from `name + offset + index + k * plane`, so
+        -- the index needs no scaling (`passes/optimization/
+        -- split_tables.py`, `row_address_tables.py`). Every pass that
+        -- rebuilds the node keeps it.
+        | IndexedLoad(identifier name, val index, val dst, bool is_volatile, int offset, int plane)
         -- Indexed store to a 16-bit absolute address. `address` is a
         -- compile-time integer base; `index` is a 1-byte (UChar) val
         -- that the codegen stages into X; `src` is a 1-byte (UChar /
@@ -290,6 +300,12 @@ module TAC {
                 | UIntInit(int value) | ULongInit(int value) | ULongLongInit(int value)
                 | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)
+                -- One byte of the address `name + offset`: the low
+                -- byte when `high` is false, the high byte when it's
+                -- true. asm_emit renders it as `DC.B <(name+offset)` or
+                -- `DC.B >(name+offset)`. A table of addresses split
+                -- into byte planes holds these.
+                | AddressByteInit(identifier name, int offset, bool high)
                 | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)
 }

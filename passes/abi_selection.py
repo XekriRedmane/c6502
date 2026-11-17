@@ -235,8 +235,9 @@ def _address_taken(
     for tl in prog.top_level:
         if isinstance(tl, tac_ast.StaticVariable):
             for item in tl.init:
-                if (isinstance(item, tac_ast.AddressInit)
-                        and item.name in function_names):
+                if (isinstance(item, (
+                    tac_ast.AddressInit, tac_ast.AddressByteInit,
+                )) and item.name in function_names):
                     taken.add(item.name)
             continue
         if not isinstance(tl, tac_ast.Function):

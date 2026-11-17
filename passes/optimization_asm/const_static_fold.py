@@ -186,7 +186,9 @@ def _scan_disqualifying(
         if isinstance(tl, asm_ast.StaticVariable):
             for item in tl.init:
                 if (
-                    isinstance(item, asm_ast.AddressInit)
+                    isinstance(item, (
+                        asm_ast.AddressInit, asm_ast.AddressByteInit,
+                    ))
                     and item.name in candidates
                 ):
                     disqualified.add(item.name)

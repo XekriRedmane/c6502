@@ -63,7 +63,10 @@ C source
   → (-O: unroll_program — [[c6502::unroll]] for loops)
   → c99_to_tac                          → tac_ast
   → (-O: return_pointers_in_zero_page — a static's pointer result in F@ret)
+  → (-O: apply_row_address_tables — 2-D rows from a table of row addresses)
   → (-O: TAC fixed-point opts)
+  → (-O: dispatch_const_pointer_arrays, apply_split_tables — tables of
+     2-byte elements as low bytes, then high bytes)
   → (-O: select_abi + allocate_zp_slots)
   → tac_to_asm                          → asm_ast
   → (-O: asm-SSA round-trip + byte-granular regalloc)
@@ -249,6 +252,13 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
      `[[c6502::unroll]]`. Runs after parsing and
      before identifier resolution. See
      [passes/optimization_ast/CLAUDE.md](passes/optimization_ast/CLAUDE.md).
+  0a. Row-address tables (`passes.optimization.row_address_tables`) —
+     `A[i]` on a static 2-D array whose rows aren't a power of two
+     bytes long reads the row's address from a table of row addresses
+     split into low and high bytes, when the unit saves bytes by it.
+     After the TAC optimizer, `apply_split_tables` stores a `static
+     const` table of 2-byte elements read by a byte index the same
+     way.
   1. TAC SSA construction (`passes.optimization.ssa_construction`).
   2. One-shot scalar const-static read fold — replaces `Var(static
      const scalar)` USE positions with `Constant(value)`.

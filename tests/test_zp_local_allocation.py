@@ -270,5 +270,65 @@ class TestUnitFallback(unittest.TestCase):
         )
 
 
+# Lode Runner's `guard_find_candidate_row_above`. Its preliminary
+# register allocation used 6 bytes, and with a pool of 6 the final
+# allocation had no two adjacent free bytes left for one of its row
+# pointers, so a byte value went to a soft-stack frame.
+_TIGHT_POOL = """
+#include <stdint.h>
+#include <stdbool.h>
+extern uint8_t BG [[c6502::address(0x6000)]][16][28];
+extern uint8_t LIMIT [[c6502::address(0x01)]];
+bool is_floor(uint8_t sprite) { return sprite == 1 || sprite == 2; }
+uint8_t f(uint8_t row, uint8_t col) {
+    for (;;) {
+        if (BG[row][col] != 3)
+            return row;
+        uint8_t ladder_row = row;
+        row--;
+        if (col != 0 && (is_floor(BG[ladder_row][col - 1]) ||
+                         BG[row][col - 1] == 4)) {
+            if (row <= LIMIT)
+                return row;
+        }
+        if (col != 27 && (is_floor(BG[ladder_row][col + 1]) ||
+                          BG[row][col + 1] == 4)) {
+            if (row <= LIMIT)
+                return row;
+        }
+        if (row == 0)
+            return row;
+    }
+}
+int main(void) {
+    LIMIT = 9;
+    for (uint8_t r = 0; r < 16; r++) BG[r][5] = 3;
+    BG[9][4] = 4;
+    return f(12, 5);
+}
+"""
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestPoolGrowth(unittest.TestCase):
+    """A function whose final register allocation spills a value the
+    preliminary one didn't gets a larger pool (`compile._pool_shortfalls`)."""
+
+    def test_no_frame(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(_TIGHT_POOL), optimize=True)
+        self.assertNotIn("prologue", asm)
+
+    def test_runs(self) -> None:
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(
+                    build_sim(_TIGHT_POOL, optimize=optimize).run().return_int(),
+                    9,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

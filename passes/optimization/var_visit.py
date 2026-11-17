@@ -132,7 +132,7 @@ def rewrite_uses_in(
                 return instr
             return tac_ast.IndexedLoad(
                 name=n, index=nidx, dst=d, is_volatile=v,
-                offset=instr.offset,
+                offset=instr.offset, plane=instr.plane,
             )
         case tac_ast.IndexedStore(address=a, index=idx, src=s, is_volatile=v):
             nidx = mapper(idx)

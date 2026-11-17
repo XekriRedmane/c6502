@@ -210,7 +210,17 @@ whose only problem is that its address is taken still gets a pool.
 A value that doesn't fit the pool in the final coloring is spilled
 to the soft-stack frame, which brings back the prologue. The pool is
 sized from the preliminary coloring, so this happens only when the
-final coloring uses more bytes than the preliminary one did.
+final coloring needs more bytes than the preliminary one used. That
+can happen even when the counts match, because a pointer read through
+`(zp),Y` needs two adjacent bytes, and the bytes left free in a pool
+of the counted size may not include two adjacent ones. So when the
+final coloring of a function with a pool spills a byte value that
+the preliminary coloring kept in zero page, `compile.optimized_asm`
+gives the function one more byte for each such value, allocates the
+pools again, and colors again, up to three times
+(`compile._pool_shortfalls`, `_POOL_RETRIES`). Lode Runner's
+`guard_find_candidate_row_above` used a frame for one byte until
+this was added.
 
 ## Related
 

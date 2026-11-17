@@ -107,13 +107,7 @@ __local_level_edit_save1__col	EQU	$AF
 __local_format_patch__tries_0	EQU	$B0
 __local_get_level_from_keyboard__level_0	EQU	$B0
 __local_level_edit_save1__row	EQU	$B0
-__local_cursor_cell__0	EQU	$B1
 __local_format_patch__slot16	EQU	$B1
-__local_cursor_cell__1	EQU	$B2
-__local_cursor_cell__2	EQU	$B3
-__local_cursor_cell__3	EQU	$B4
-__local_cursor_cell__4	EQU	$B5
-__local_cursor_cell__5	EQU	$B6
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -175,7 +169,7 @@ DISK_IO	EQU	$C088
 ; @zp-link-meta-begin
 ; def bad_data_disk params= locals= indirect=false in_cycle=false
 ; def check_for_valid_data_disk params= locals=__local_check_for_valid_data_disk__0 indirect=false in_cycle=false
-; def cursor_cell params= locals=__local_cursor_cell__0,__local_cursor_cell__1,__local_cursor_cell__2,__local_cursor_cell__3,__local_cursor_cell__4,__local_cursor_cell__5 indirect=false in_cycle=false
+; def cursor_cell params= locals=__local_cursor_cell__0,__local_cursor_cell__1,__local_cursor_cell__2 indirect=false in_cycle=false
 ; def dont_manipulate_master_disk params= locals= indirect=false in_cycle=false
 ; def edit_level params= locals= indirect=false in_cycle=false
 ; def edit_level_key_loop params= locals=__local_edit_level_key_loop__0,__local_edit_level_key_loop__1 indirect=false in_cycle=false
@@ -385,6 +379,7 @@ DISK_IO	EQU	$C088
 ; item editor_level_entry section=.data local=true zero=false
 ; item saved_vtoc_data section=.data local=true zero=false
 ; item SAVED_FILE_DESCRIPTIVE_ENTRY_DATA section=.rodata local=true zero=false
+; item LEVEL_MAP@rows section=.rodata local=true zero=false
 ; item __zp_init section=.text local=false zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
@@ -1094,43 +1089,12 @@ level_edit_change_level:
 cursor_cell:
    SUBROUTINE
 
-   LDA   GAME_ROWNUM
-   ASL
-   STA   __local_cursor_cell__4
-   LDA   #$00
-   ROL
-   ASL   __local_cursor_cell__4
-   ROL
-   STA   __local_cursor_cell__5
-   LDA   __local_cursor_cell__4
-   ASL
-   STA   __local_cursor_cell__2
-   LDA   __local_cursor_cell__5
-   ROL
-   ASL   __local_cursor_cell__2
-   ROL
-   ASL   __local_cursor_cell__2
-   ROL
-   STA   __local_cursor_cell__3
-   LDA   __local_cursor_cell__2
-   SEC
-   SBC   __local_cursor_cell__4
-   STA   __local_cursor_cell__1
-   LDA   __local_cursor_cell__3
-   SBC   __local_cursor_cell__5
-   STA   __local_cursor_cell__0
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_cursor_cell__1
-   STA   __local_cursor_cell__2
-   LDA   #>LEVEL_MAP
-   ADC   __local_cursor_cell__0
-   STA   __local_cursor_cell__1
-   LDA   __local_cursor_cell__2
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_MAP@rows,X
    CLC
    ADC   GAME_COLNUM
    STA   cursor_cell@ret
-   LDA   __local_cursor_cell__1
+   LDA   LEVEL_MAP@rows+17,X
    ADC   #$00
    STA   cursor_cell@ret+1
    RTS
@@ -1383,6 +1347,11 @@ SAVED_FILE_DESCRIPTIVE_ENTRY_DATA:
    DC.B  $22, $0F, $88, $88, $88, $88, $88, $88, $88, $88, $CC, $CF, $C4, $C5, $A0, $D2
    DC.B  $D5, $CE, $CE, $C5, $D2, $A0, $C4, $C1, $D4, $C1, $A0, $C4, $C9, $D3, $CB, $A0
    DC.B  $A0
+
+LEVEL_MAP@rows:
+   DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
+   DC.B  $C0, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09, $09
+   DC.B  $09, $09
 
 __zp_init:
    SUBROUTINE

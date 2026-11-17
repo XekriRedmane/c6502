@@ -926,18 +926,15 @@ spinning_game_over:
 .loop@8_start:
    LDA   #$00
    STA   __local_spinning_game_over__i
-   JMP   .loop@9_start
 .spinning_game_over@rot@3:
-   ASL
-   TAX
+   LDX   __local_spinning_game_over__i
    LDA   SPIN_ORDER,X
    STA   __zpabi_show_anim_line__rows_0
-   LDA   SPIN_ORDER+1,X
+   LDA   SPIN_ORDER+20,X
    STA   __zpabi_show_anim_line__rows_1
    JSR   show_anim_line
    BCS   .tail@0
    INC   __local_spinning_game_over__i
-.loop@9_start:
    LDA   __local_spinning_game_over__i
    CMP   #$14
    BCC   .spinning_game_over@rot@3
@@ -946,13 +943,11 @@ spinning_game_over:
    BCC   .loop@8_start
    LDA   #$00
    STA   __local_spinning_game_over__i
-   JMP   .loop@10_start
 .spinning_game_over@rot@4:
-   ASL
-   TAX
+   LDX   __local_spinning_game_over__i
    LDA   SPIN_ORDER,X
    STA   __zpabi_show_anim_line__rows_0
-   LDA   SPIN_ORDER+1,X
+   LDA   SPIN_ORDER+20,X
    STA   __zpabi_show_anim_line__rows_1
    JSR   show_anim_line
    BCC   .if_end@21
@@ -960,7 +955,6 @@ spinning_game_over:
    RTS
 .if_end@21:
    INC   __local_spinning_game_over__i
-.loop@10_start:
    LDA   __local_spinning_game_over__i
    CMP   #$06
    BCC   .spinning_game_over@rot@4
@@ -1035,26 +1029,46 @@ ANIM_PIXELS:
    DC.B  $90, $AA, $91, $A2, $C4, $A8, $85, $A8, $85, $82, $D4, $A2, $91, $82
 
 SPIN_ORDER:
-   DC.W  ANIM5
-   DC.W  ANIM4
-   DC.W  ANIM3
-   DC.W  ANIM2
-   DC.W  ANIM1
-   DC.W  ANIM0
-   DC.W  ANIM1
-   DC.W  ANIM2
-   DC.W  ANIM3
-   DC.W  ANIM4
-   DC.W  ANIM5
-   DC.W  ANIM10
-   DC.W  ANIM9
-   DC.W  ANIM8
-   DC.W  ANIM7
-   DC.W  ANIM6
-   DC.W  ANIM7
-   DC.W  ANIM8
-   DC.W  ANIM9
-   DC.W  ANIM10
+   DC.B  <ANIM5
+   DC.B  <ANIM4
+   DC.B  <ANIM3
+   DC.B  <ANIM2
+   DC.B  <ANIM1
+   DC.B  <ANIM0
+   DC.B  <ANIM1
+   DC.B  <ANIM2
+   DC.B  <ANIM3
+   DC.B  <ANIM4
+   DC.B  <ANIM5
+   DC.B  <ANIM10
+   DC.B  <ANIM9
+   DC.B  <ANIM8
+   DC.B  <ANIM7
+   DC.B  <ANIM6
+   DC.B  <ANIM7
+   DC.B  <ANIM8
+   DC.B  <ANIM9
+   DC.B  <ANIM10
+   DC.B  >ANIM5
+   DC.B  >ANIM4
+   DC.B  >ANIM3
+   DC.B  >ANIM2
+   DC.B  >ANIM1
+   DC.B  >ANIM0
+   DC.B  >ANIM1
+   DC.B  >ANIM2
+   DC.B  >ANIM3
+   DC.B  >ANIM4
+   DC.B  >ANIM5
+   DC.B  >ANIM10
+   DC.B  >ANIM9
+   DC.B  >ANIM8
+   DC.B  >ANIM7
+   DC.B  >ANIM6
+   DC.B  >ANIM7
+   DC.B  >ANIM8
+   DC.B  >ANIM9
+   DC.B  >ANIM10
 
 __zp_init:
    SUBROUTINE

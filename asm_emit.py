@@ -446,10 +446,11 @@ def _data_addr(d: asm_ast.Data) -> str:
     `offset` field selects the byte within a multi-byte static — 0
     for the low byte (and the only byte of an Int static), 1 for the
     high byte of a Long. We render `name+offset` for nonzero offsets
-    and bare `name` for the common offset-0 case."""
+    and bare `name` for the common offset-0 case, and `name-k` for a
+    negative one."""
     if d.offset == 0:
         return d.name
-    return f"{d.name}+{d.offset}"
+    return f"{d.name}{d.offset:+d}"
 
 
 def _zp_addr(z: asm_ast.ZP) -> str:
@@ -470,10 +471,11 @@ def _indexed_data_addr(d: asm_ast.IndexedData) -> str:
     is non-empty, or `$XXXX,X` / `$XXXX,Y` when `name` is empty
     (the IndexedStore lowering uses the empty-name form for
     raw 16-bit absolute,X stores against a folded constant
-    address).
+    address). A negative offset, which a lookup of row `i - 1` in a
+    table of row addresses has, is `name-k,X`.
     """
     if d.name:
-        base = d.name if d.offset == 0 else f"{d.name}+{d.offset}"
+        base = d.name if d.offset == 0 else f"{d.name}{d.offset:+d}"
     else:
         base = f"${d.offset:04X}"
     return f"{base},{_reg_letter(d.index)}"
@@ -1251,6 +1253,11 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
                 # just with a symbolic value instead of a literal.
                 operand = target if off == 0 else f"{target}+{off}"
                 lines.append(_instr_line("dc.w", operand))
+            case asm_ast.AddressByteInit(name=target, offset=off, high=hi):
+                # One byte of an address, in a table split into byte
+                # planes.
+                operand = target if off == 0 else f"({target}{off:+d})"
+                lines.append(_instr_line("dc.b", f"{'>' if hi else '<'}{operand}"))
             case asm_ast.StringInit(str=s, bytes=n):
                 # Lay down `n` byte cells: the first len(s) hold the
                 # bytes of `s` (each character 0..255), any remaining

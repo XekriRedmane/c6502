@@ -36,6 +36,7 @@ module ASM {
                 | IntInit(int value) | LongInit(int value) | LongLongInit(int value)
                 | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)
+                | AddressByteInit(identifier name, int offset, bool high)
                 | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)
 

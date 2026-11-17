@@ -149,6 +149,9 @@ and take an earlier load for A's value, which rematerialized
 - A value produced by arithmetic in A, because no single operand
   reproduces it.
 - A volatile load or store at either end.
+- A read into the index register of an indexed source, such as `LDX
+  local` after `LDA tab,X; STA local`. The 6502 has no `LDX abs,X` or
+  `LDY abs,Y`.
 
 ## Related
 

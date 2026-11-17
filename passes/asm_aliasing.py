@@ -173,7 +173,9 @@ def unreachable_by_pointer(prog: asm_ast.Program) -> frozenset[str]:
             if not tl.is_global:
                 statics.add(tl.name)
             for init in tl.init:
-                if isinstance(init, asm_ast.AddressInit):
+                if isinstance(init, (
+                    asm_ast.AddressInit, asm_ast.AddressByteInit,
+                )):
                     taken.add(init.name)
         elif isinstance(tl, asm_ast.Function):
             for ins in tl.instructions:

@@ -97,5 +97,5 @@ def _scan_operand(
 def _scan_init(
     init: asm_ast.Type_static_init, names: set[str],
 ) -> None:
-    if isinstance(init, asm_ast.AddressInit):
+    if isinstance(init, (asm_ast.AddressInit, asm_ast.AddressByteInit)):
         names.add(init.name)

@@ -258,6 +258,11 @@ def _fold(
             # erase the access. Skip folding.
             if is_vol:
                 return instr
+            if instr.plane:
+                res = _fold_plane_load(
+                    name, c.value + instr.offset, instr.plane, dst, symbols,
+                )
+                return res if res is not None else instr
             if instr.offset:
                 c = type(c)(value=c.value + instr.offset)
             res = _fold_indexed_load(name, c, dst, symbols)
@@ -413,6 +418,58 @@ def _fold_indexed_load(
     from c99_to_tac import _tac_const_for
     return tac_ast.Copy(
         src=tac_ast.Constant(const=_tac_const_for(dst_t, val)),
+        dst=dst,
+    )
+
+
+def _fold_plane_load(
+    name: str,
+    first: int,
+    plane: int,
+    dst: tac_ast.Type_val,
+    symbols,
+) -> tac_ast.Type_instruction | None:
+    """Folds an `IndexedLoad` with a constant index from a table split
+    into byte planes (`plane` nonzero) into `Copy(Constant(value),
+    dst)`. Byte k of the value is element `first + k * plane` of
+    `name`, which must be a static array of `const` bytes whose
+    initial value is a tuple of integers there. A byte that's part of
+    a link-time address (`AddressInit`) isn't known, and leaves the
+    load alone. Returns None when the load can't be folded."""
+    if symbols is None or not isinstance(dst, tac_ast.Var):
+        return None
+    sym = symbols.get(name)
+    from passes.type_checking import Initial, StaticAttr
+    if sym is None or not isinstance(sym.attrs, StaticAttr):
+        return None
+    if not isinstance(sym.attrs.initial_value, Initial):
+        return None
+    values = sym.attrs.initial_value.value
+    t = sym.type
+    if not (isinstance(values, tuple) and isinstance(t, c99_ast.Array)
+            and isinstance(t.element_type, c99_ast.Const)):
+        return None
+    dst_sym = symbols.get(dst.name)
+    if dst_sym is None:
+        return None
+    dst_t = dst_sym.type
+    while isinstance(dst_t, (c99_ast.Const, c99_ast.Volatile)):
+        dst_t = dst_t.referenced_type
+    width = _scalar_size(dst_t)
+    if width is None or isinstance(dst_t, (c99_ast.Float, c99_ast.Double)):
+        return None
+    value = 0
+    for k in range(width):
+        i = first + k * plane
+        if not 0 <= i < len(values) or not isinstance(values[i], int):
+            return None
+        value |= (values[i] & 0xFF) << (8 * k)
+    signed = (c99_ast.SChar, c99_ast.Int, c99_ast.Long, c99_ast.LongLong)
+    if isinstance(dst_t, signed) and value >= 1 << (8 * width - 1):
+        value -= 1 << (8 * width)
+    from c99_to_tac import _tac_const_for
+    return tac_ast.Copy(
+        src=tac_ast.Constant(const=_tac_const_for(dst_t, value)),
         dst=dst,
     )
 

@@ -221,7 +221,7 @@ def _redirect_dst(
         ) if is_target(d):
             return tac_ast.IndexedLoad(
                 name=n, index=idx, dst=new_dst, is_volatile=v,
-                offset=producer.offset,
+                offset=producer.offset, plane=producer.plane,
             )
         case tac_ast.FunctionCall(
             name=n, args=args, dst=d,

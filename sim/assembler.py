@@ -402,6 +402,11 @@ def _emit_init(
                 raise AssemblerError(f"undefined symbol {name!r}")
             addr = (syms[name] + off) & 0xFFFF
             return bytes([addr & 0xFF, (addr >> 8) & 0xFF])
+        case asm_ast.AddressByteInit(name=name, offset=off, high=hi):
+            if name not in syms:
+                raise AssemblerError(f"undefined symbol {name!r}")
+            addr = (syms[name] + off) & 0xFFFF
+            return bytes([(addr >> 8) & 0xFF if hi else addr & 0xFF])
         case asm_ast.StringInit(str=s, bytes=n):
             if n < len(s):
                 raise AssemblerError(
@@ -428,6 +433,8 @@ def _init_size(item: asm_ast.Type_static_init) -> int:
             return 8
         case asm_ast.AddressInit():
             return 2
+        case asm_ast.AddressByteInit():
+            return 1
         case asm_ast.StringInit(bytes=n) | asm_ast.ZeroInit(bytes=n):
             return n
         case _:

@@ -54,6 +54,17 @@ class TestApplyRemat(unittest.TestCase):
         self.assertEqual(out[-1].src, _indexed())
         self.assertEqual(out[-1].dst, _A())
 
+    def test_index_register_not_reloaded_from_its_own_table(self):
+        # `LDX local` can't become `LDX arr,X`, which the 6502
+        # doesn't have.
+        prog = _wrap([
+            asm_ast.Mov(src=_indexed(), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=_data(), dst=_X(), is_volatile=False),
+            asm_ast.Mov(src=_X(), dst=_data("OUT"), is_volatile=False),
+        ], slot_symbols={"__local_f__0": 0x80})
+        self.assertEqual(_instrs(prog)[2].src, _data())
+
     def test_two_atom_pattern_use_rewrite(self):
         # LDA arr,X; STA local; (A clobber) LDA other,X; STA other_local;
         # use: LDA local

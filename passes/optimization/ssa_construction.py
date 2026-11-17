@@ -611,7 +611,7 @@ def _rewrite_instruction(
             d2 = rewrite_def(d)
             return tac_ast.IndexedLoad(
                 name=n, index=i2, dst=d2, is_volatile=v,
-                offset=instr.offset,
+                offset=instr.offset, plane=instr.plane,
             )
         case tac_ast.IndexedStore(address=a, index=i, src=s, is_volatile=v):
             i2 = rewrite_use(i)

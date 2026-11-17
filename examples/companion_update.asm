@@ -58,9 +58,9 @@ __local_companion_update__slot	EQU	$9C
 __local_companion_update__sprite_y	EQU	$9D
 __local_smc_body_draw__hi	EQU	$9F
 __local_smc_body_draw__lo	EQU	$A0
-__local_smc_body_draw__0	EQU	$A1
-__local_smc_body_draw__1	EQU	$A2
-__local_smc_body_draw__2	EQU	$A3
+__local_smc_body_draw__pose	EQU	$A1
+__local_smc_body_draw__0	EQU	$A2
+__local_smc_body_draw__1	EQU	$A3
 
 ; @zp-link-meta-begin
 ; def active_neg_step params=__zpabi_active_neg_step__slot,__zpabi_active_neg_step__player_floor locals=__local_active_neg_step__0,__local_active_neg_step__1 indirect=false in_cycle=false
@@ -71,7 +71,7 @@ __local_smc_body_draw__2	EQU	$A3
 ; def entity_proximity params=__zpabi_entity_proximity__slot,__zpabi_entity_proximity__screen_x,__zpabi_entity_proximity__hit_max locals=__local_entity_proximity__0,__local_entity_proximity__1,__local_entity_proximity__entity_row indirect=false in_cycle=false
 ; def find_active_entity params=__zpabi_find_active_entity__hit_max,__zpabi_find_active_entity__out_row_0,__zpabi_find_active_entity__out_row_1 locals=__local_find_active_entity__0 indirect=false in_cycle=false carry=true
 ; def player_catch params=__zpabi_player_catch__slot,__zpabi_player_catch__screen_x,__zpabi_player_catch__player_col locals=__local_player_catch__0,__local_player_catch__1 indirect=false in_cycle=false
-; def smc_body_draw params=__zpabi_smc_body_draw__slot,__zpabi_smc_body_draw__sprite_x,__zpabi_smc_body_draw__sprite_y,__zpabi_smc_body_draw__frame_idx,__zpabi_smc_body_draw__state,__zpabi_smc_body_draw__page_flag locals=__local_smc_body_draw__hi,__local_smc_body_draw__lo,__local_smc_body_draw__0,__local_smc_body_draw__1,__local_smc_body_draw__2,__local_smc_body_draw__3,__local_smc_body_draw__4,__local_smc_body_draw__5 indirect=false in_cycle=false
+; def smc_body_draw params=__zpabi_smc_body_draw__slot,__zpabi_smc_body_draw__sprite_x,__zpabi_smc_body_draw__sprite_y,__zpabi_smc_body_draw__frame_idx,__zpabi_smc_body_draw__state,__zpabi_smc_body_draw__page_flag locals=__local_smc_body_draw__hi,__local_smc_body_draw__lo,__local_smc_body_draw__pose,__local_smc_body_draw__0,__local_smc_body_draw__1,__local_smc_body_draw__2,__local_smc_body_draw__3,__local_smc_body_draw__4 indirect=false in_cycle=false
 ; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag
 ; ext prng params=
 ; call active_neg_step -> prng
@@ -230,14 +230,14 @@ smc_body_draw:
    BEQ   .cmp_end@0
    LDA   #$01
 .cmp_end@0:
-   STA   __local_smc_body_draw__2
+   STA   __local_smc_body_draw__lo
    LDA   __zpabi_smc_body_draw__state
    BNE   .if_else@15
    LDA   #$00
-   STA   __local_smc_body_draw__hi
+   STA   __local_smc_body_draw__pose
    JMP   .if_end@14
 .if_else@15:
-   LDA   __local_smc_body_draw__2
+   LDA   __local_smc_body_draw__lo
    BEQ   .cond_else@16
    LDA   #<neg_walk_next
    STA   __local_smc_body_draw__0
@@ -252,7 +252,7 @@ smc_body_draw:
 .cond_end@17:
    LDY   #$00
    LDA   (__local_smc_body_draw__0),Y
-   STA   __local_smc_body_draw__hi
+   STA   __local_smc_body_draw__pose
    CLC
    ADC   #$01
    STA   HARGS
@@ -268,40 +268,36 @@ smc_body_draw:
    LDY   #$00
    STA   (__local_smc_body_draw__0),Y
 .if_end@14:
-   LDA   __local_smc_body_draw__2
+   LDA   __local_smc_body_draw__lo
    BEQ   .if_else@19
-   LDA   __local_smc_body_draw__hi
-   ASL
-   TAX
+   LDX   __local_smc_body_draw__pose
    LDA   companion_neg_lo_tbl,X
    STA   __local_smc_body_draw__hi
-   LDA   companion_neg_lo_tbl+1,X
+   LDA   companion_neg_lo_tbl+3,X
    STA   __local_smc_body_draw__lo
    LDY   __zpabi_smc_body_draw__frame_idx
    LDA   (__local_smc_body_draw__hi),Y
    STA   __local_smc_body_draw__lo
    LDA   companion_neg_hi_tbl,X
+   STA   __local_smc_body_draw__pose
+   LDA   companion_neg_hi_tbl+3,X
    STA   __local_smc_body_draw__0
-   LDA   companion_neg_hi_tbl+1,X
-   STA   __local_smc_body_draw__1
-   LDA   (__local_smc_body_draw__0),Y
+   LDA   (__local_smc_body_draw__pose),Y
    JMP   .if_end@18
 .if_else@19:
-   LDA   __local_smc_body_draw__hi
-   ASL
-   TAX
+   LDX   __local_smc_body_draw__pose
    LDA   companion_pos_lo_tbl,X
    STA   __local_smc_body_draw__hi
-   LDA   companion_pos_lo_tbl+1,X
+   LDA   companion_pos_lo_tbl+3,X
    STA   __local_smc_body_draw__lo
    LDY   __zpabi_smc_body_draw__frame_idx
    LDA   (__local_smc_body_draw__hi),Y
    STA   __local_smc_body_draw__lo
    LDA   companion_pos_hi_tbl,X
+   STA   __local_smc_body_draw__pose
+   LDA   companion_pos_hi_tbl+3,X
    STA   __local_smc_body_draw__0
-   LDA   companion_pos_hi_tbl+1,X
-   STA   __local_smc_body_draw__1
-   LDA   (__local_smc_body_draw__0),Y
+   LDA   (__local_smc_body_draw__pose),Y
 .if_end@18:
    STA   __zpabi_draw_sprite__tile_src_1
    LDA   __local_smc_body_draw__lo
@@ -671,24 +667,36 @@ companion_neg_pose3_hi:
    DC.B  $9F, $9F, $9F, $9F, $9F, $A0, $A0
 
 companion_pos_lo_tbl:
-   DC.W  companion_pos_pose1_lo
-   DC.W  companion_pos_pose2_lo
-   DC.W  companion_pos_pose3_lo
+   DC.B  <companion_pos_pose1_lo
+   DC.B  <companion_pos_pose2_lo
+   DC.B  <companion_pos_pose3_lo
+   DC.B  >companion_pos_pose1_lo
+   DC.B  >companion_pos_pose2_lo
+   DC.B  >companion_pos_pose3_lo
 
 companion_pos_hi_tbl:
-   DC.W  companion_pos_pose1_hi
-   DC.W  companion_pos_pose2_hi
-   DC.W  companion_pos_pose3_hi
+   DC.B  <companion_pos_pose1_hi
+   DC.B  <companion_pos_pose2_hi
+   DC.B  <companion_pos_pose3_hi
+   DC.B  >companion_pos_pose1_hi
+   DC.B  >companion_pos_pose2_hi
+   DC.B  >companion_pos_pose3_hi
 
 companion_neg_lo_tbl:
-   DC.W  companion_neg_pose1_lo
-   DC.W  companion_neg_pose2_lo
-   DC.W  companion_neg_pose3_lo
+   DC.B  <companion_neg_pose1_lo
+   DC.B  <companion_neg_pose2_lo
+   DC.B  <companion_neg_pose3_lo
+   DC.B  >companion_neg_pose1_lo
+   DC.B  >companion_neg_pose2_lo
+   DC.B  >companion_neg_pose3_lo
 
 companion_neg_hi_tbl:
-   DC.W  companion_neg_pose1_hi
-   DC.W  companion_neg_pose2_hi
-   DC.W  companion_neg_pose3_hi
+   DC.B  <companion_neg_pose1_hi
+   DC.B  <companion_neg_pose2_hi
+   DC.B  <companion_neg_pose3_hi
+   DC.B  >companion_neg_pose1_hi
+   DC.B  >companion_neg_pose2_hi
+   DC.B  >companion_neg_pose3_hi
 
 pos_walk_next:
    DS.B  1

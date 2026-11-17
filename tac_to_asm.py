@@ -661,6 +661,8 @@ def _to_asm_static_init(
             return asm_ast.DoubleInit(bits=b)
         case tac_ast.AddressInit(name=n, offset=off):
             return asm_ast.AddressInit(name=n, offset=off)
+        case tac_ast.AddressByteInit(name=n, offset=off, high=hi):
+            return asm_ast.AddressByteInit(name=n, offset=off, high=hi)
         case tac_ast.StringInit(str=s, bytes=b):
             return asm_ast.StringInit(str=s, bytes=b)
         case tac_ast.ZeroInit(bytes=b):
@@ -1950,8 +1952,11 @@ class Translator:
                 return self._translate_store(src, dst_ptr, v)
             case tac_ast.IndexedLoad(
                 name=name, index=index, dst=dst, is_volatile=v, offset=o,
+                plane=pl,
             ):
-                return self._translate_indexed_load(name, index, dst, v, o)
+                return self._translate_indexed_load(
+                    name, index, dst, v, o, pl,
+                )
             case tac_ast.IndexedStore(
                 address=addr, index=index, src=src, is_volatile=v,
             ):
@@ -2956,6 +2961,7 @@ class Translator:
         dst: tac_ast.Type_val,
         is_volatile: bool = False,
         offset: int = 0,
+        plane: int = 0,
     ) -> list[asm_ast.Type_instruction]:
         """Static-array indexed load: stage `index` into X, then read
         N consecutive bytes from `name+0..N-1,X` (absolute,X on the
@@ -2981,16 +2987,18 @@ class Translator:
         Mov would carry the volatile bit to the store as well.
 
         `offset` is the node's constant offset, added to every byte's
-        address: `LDA name+offset+k,X`."""
+        address: `LDA name+offset+k,X`. A table split into byte planes
+        (`plane` nonzero) has byte k at `name+offset+k*plane,X`."""
         index_op = translate_val(index)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
+        step = plane or 1
         if isinstance(index_op, asm_ast.Imm) and is_volatile:
             base = (index_op.value & 0xFF) + offset
             out = []
             for k in range(n):
                 out.append(asm_ast.Mov(
-                    src=self._named_byte(name, base + k),
+                    src=self._named_byte(name, base + k * step),
                     dst=_REG_A, is_volatile=True,
                 ))
                 out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
@@ -2999,7 +3007,7 @@ class Translator:
             base = (index_op.value & 0xFF) + offset
             return [
                 asm_ast.Mov(
-                    src=self._named_byte(name, base + k),
+                    src=self._named_byte(name, base + k * step),
                     dst=_byte_at(dst_op, k),
                     is_volatile=is_volatile,
                 )
@@ -3012,7 +3020,7 @@ class Translator:
         for k in range(n):
             out.append(asm_ast.Mov(
                 src=asm_ast.IndexedData(
-                    name=name, offset=offset + k, index=asm_ast.X(),
+                    name=name, offset=offset + k * step, index=asm_ast.X(),
                 ),
                 dst=_byte_at(dst_op, k),
                 is_volatile=is_volatile,

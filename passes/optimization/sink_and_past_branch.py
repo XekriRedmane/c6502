@@ -527,6 +527,7 @@ def _rewrite_instr_uses(
             dst=instr.dst,
             is_volatile=instr.is_volatile,
             offset=instr.offset,
+            plane=instr.plane,
         )
     if isinstance(instr, tac_ast.IndexedStore):
         return tac_ast.IndexedStore(

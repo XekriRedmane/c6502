@@ -154,6 +154,12 @@ def _rewrite_uses(
                 and _matches_local(cur.src, local_name)
             ):
                 continue
+            # There's no `LDX abs,X` or `LDY abs,Y`, so an indexed
+            # read can't load its own index register.
+            if (isinstance(recomp, asm_ast.IndexedData)
+                    and isinstance(cur.dst, asm_ast.Reg)
+                    and type(cur.dst.reg) is type(recomp.index)):
+                continue
             if not _can_remat(
                 recomp, out, range_start, j, writable, private,
             ):
@@ -672,7 +678,9 @@ def _collect_private_statics(prog: asm_ast.Program) -> frozenset[str]:
             if not tl.is_global:
                 statics.add(tl.name)
             for init in tl.init:
-                if isinstance(init, asm_ast.AddressInit):
+                if isinstance(init, (
+                    asm_ast.AddressInit, asm_ast.AddressByteInit,
+                )):
                     taken.add(init.name)
         elif isinstance(tl, asm_ast.Function):
             for instr in tl.instructions:

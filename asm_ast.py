@@ -76,6 +76,13 @@ class AddressInit(Type_static_init):
 
 
 @dataclass
+class AddressByteInit(Type_static_init):
+    name: str = ''
+    offset: int = 0
+    high: bool = False
+
+
+@dataclass
 class StringInit(Type_static_init):
     str: str = ''
     bytes: int = 0

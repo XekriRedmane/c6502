@@ -156,6 +156,8 @@ from passes.slot_sharing import (
     preferred_symbols,
 )
 from passes.optimization import optimize_program as optimize_tac
+from passes.optimization.split_tables import apply_split_tables
+from passes.optimization.row_address_tables import apply_row_address_tables
 from passes.optimization.dispatch_pointer_array import (
     dispatch_const_pointer_arrays,
 )
@@ -416,6 +418,25 @@ class OptimizedAsm:
     coalesced_params: dict = field(default_factory=dict)
 
 
+# How many times `optimized_asm` grows the pools of functions whose
+# final register allocation spilled more than the preliminary one.
+_POOL_RETRIES = 3
+
+
+def _pool_shortfalls(prelim, final, local_pools) -> dict[str, int]:
+    """Maps each function with a private pool to the number of byte
+    values its final coloring spilled that its preliminary coloring
+    didn't, leaving out functions with none."""
+    out: dict[str, int] = {}
+    for fn, coloring in final.items():
+        if fn not in local_pools or fn not in prelim:
+            continue
+        extra = len(set(coloring.spilled) - set(prelim[fn].spilled))
+        if extra:
+            out[fn] = extra
+    return out
+
+
 def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     """Runs the `-O` pipeline from the unoptimized TAC `tac` to
     the finished asm IR. `compile.py -S -O` and the
@@ -423,6 +444,11 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     so the simulator runs the code the CLI emits. `statics` names
     every static-storage object, and `zp` is the translation unit's
     zero-page plan (passes/zp_globals.py), which must be in effect."""
+    # The address of a row of a 2-D array whose rows aren't a power of
+    # two bytes long comes from a table of row addresses, when that's
+    # smaller (passes/optimization/row_address_tables.py). This runs
+    # before strength reduction turns the multiply into shifts.
+    tac = apply_row_address_tables(tac, symbols, types)
     tac = optimize_tac(tac, symbols)
     # The functions that never return, for memory value propagation's
     # call summaries.
@@ -438,6 +464,10 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # optimize_tac), so the dispatched cases can each
     # write to the same dst without Phi insertion.
     tac = dispatch_const_pointer_arrays(tac, symbols)
+    # A table of 2-byte elements read only by a byte index is stored
+    # as its low bytes and then its high bytes, so the index needs no
+    # shift (passes/optimization/split_tables.py).
+    tac = apply_split_tables(tac, symbols)
     abi = select_abi(tac, prog, types)
     # Every zp_abi `bool` function with external linkage returns it in
     # the carry flag, which every unit decides from the declaration
@@ -497,7 +527,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # caller/callee partition. Used only to size each
     # function's local-byte demand; the IR it produces is
     # discarded.
-    asm_prelim, _ = asm_opt.optimize_program(
+    asm_prelim, prelim_colorings = asm_opt.optimize_program(
         asm0, extra_statics=statics, param_layouts=abi,
         symbols=symbols, reserved_zp=zp.reserved,
         recursion_saves=recursion,
@@ -529,17 +559,30 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # ineligible functions (recursive, indirect-calling,
     # or with non-zp_abi extern callees) fall back to the
     # conservative pool.
-    local_pools = allocate_function_locals(
-        tac, abi, combined_local_bytes, reserved=low_reserved,
-        shares=shares, window=window, fallback=fallback,
-    )
     # Final optimizer pass with private pools threaded
-    # through to the regalloc.
-    asm0, asm_colorings = asm_opt.optimize_program(
-        asm0, extra_statics=statics, param_layouts=abi,
-        symbols=symbols, local_pools=local_pools,
-        reserved_zp=zp.reserved, recursion_saves=recursion,
-    )
+    # through to the regalloc. A pool as large as the preliminary
+    # pass's count of bytes can still be too small, because a pointer
+    # read through `(zp),Y` needs two adjacent bytes, which the bytes
+    # left free in a pool that size may not have. A function that
+    # then spills a value the preliminary pass kept in zero page gets
+    # a byte more for each such value, and the pools are allocated
+    # again, at most `_POOL_RETRIES` times.
+    asm_in = asm0
+    for _ in range(_POOL_RETRIES + 1):
+        local_pools = allocate_function_locals(
+            tac, abi, combined_local_bytes, reserved=low_reserved,
+            shares=shares, window=window, fallback=fallback,
+        )
+        asm0, asm_colorings = asm_opt.optimize_program(
+            asm_in, extra_statics=statics, param_layouts=abi,
+            symbols=symbols, local_pools=local_pools,
+            reserved_zp=zp.reserved, recursion_saves=recursion,
+        )
+        grown = _pool_shortfalls(prelim_colorings, asm_colorings, local_pools)
+        if not grown:
+            break
+        for fn, extra in grown.items():
+            combined_local_bytes[fn] = combined_local_bytes.get(fn, 0) + extra
     # Compute per-function address-taken Pseudo → ZP-byte
     # assignments from the pool addresses the regalloc
     # didn't claim. Names that don't fit (no contiguous

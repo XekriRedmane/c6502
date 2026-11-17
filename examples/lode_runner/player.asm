@@ -126,18 +126,6 @@ __local_check_for_gold_picked_up_by_player__1	EQU	$BF
 __local_draw_player__1	EQU	$BF
 __local_erase_player__1	EQU	$BF
 __local_check_for_gold_picked_up_by_player__2	EQU	$C0
-__local_map_row__0	EQU	$C1
-__local_bg_row__0	EQU	$C2
-__local_map_row__1	EQU	$C2
-__local_bg_row__1	EQU	$C3
-__local_map_row__2	EQU	$C3
-__local_bg_row__2	EQU	$C4
-__local_map_row__3	EQU	$C4
-__local_bg_row__3	EQU	$C5
-__local_map_row__4	EQU	$C5
-__local_bg_row__4	EQU	$C6
-__local_map_row__5	EQU	$C6
-__local_bg_row__5	EQU	$C7
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -197,7 +185,7 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def bg_row params=__zpabi_bg_row__row locals=__local_bg_row__0,__local_bg_row__1,__local_bg_row__2,__local_bg_row__3,__local_bg_row__4,__local_bg_row__5 indirect=false in_cycle=false
+; def bg_row params=__zpabi_bg_row__row locals= indirect=false in_cycle=false
 ; def blocks_player params=__zpabi_blocks_player__sprite locals=__local_blocks_player__0 indirect=false in_cycle=false carry=true
 ; def check_for_gold_picked_up_by_player params= locals=__local_check_for_gold_picked_up_by_player__0,__local_check_for_gold_picked_up_by_player__1,__local_check_for_gold_picked_up_by_player__2,__local_check_for_gold_picked_up_by_player__3 indirect=false in_cycle=false
 ; def climb params= locals= indirect=false in_cycle=false carry=true
@@ -209,7 +197,7 @@ DISK_IO	EQU	$C088
 ; def inc_anim_state params=__zpabi_inc_anim_state__first,__zpabi_inc_anim_state__last locals= indirect=false in_cycle=false
 ; def keep_digging params= locals=__local_keep_digging__0,__local_keep_digging__1,__local_keep_digging__2,__local_keep_digging__state,__local_keep_digging__3,__local_keep_digging__4,__local_keep_digging__col,__local_keep_digging__row,__local_keep_digging__5,__local_keep_digging__6,__local_keep_digging__7,__local_keep_digging__8,__local_keep_digging__9 indirect=false in_cycle=false carry=true
 ; def leave_cell params= locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2 indirect=false in_cycle=false
-; def map_row params=__zpabi_map_row__row locals=__local_map_row__0,__local_map_row__1,__local_map_row__2,__local_map_row__3,__local_map_row__4,__local_map_row__5 indirect=false in_cycle=false
+; def map_row params=__zpabi_map_row__row locals= indirect=false in_cycle=false
 ; def move_player params= locals=__local_move_player__note_y,__local_move_player__0,__local_move_player__1 indirect=false in_cycle=false
 ; def nudge_player_towards_exact_column params= locals= indirect=false in_cycle=false
 ; def nudge_player_towards_exact_row params= locals= indirect=false in_cycle=false
@@ -407,6 +395,7 @@ DISK_IO	EQU	$C088
 ; item SPRITE_ANIM_SEQS section=.rodata local=true zero=false
 ; item dig_tables section=.rodata local=true zero=false
 ; item gold_tune section=.rodata local=true zero=false
+; item LEVEL_BG@rows section=.rodata local=true zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
 ; zp PLAYER_X_ADJ size=1 at=$02 def=false init=
@@ -469,74 +458,20 @@ DISK_IO	EQU	$C088
 map_row:
    SUBROUTINE
 
-   LDA   __zpabi_map_row__row
-   ASL
-   STA   __local_map_row__4
-   LDA   #$00
-   ROL
-   ASL   __local_map_row__4
-   ROL
-   STA   __local_map_row__5
-   LDA   __local_map_row__4
-   ASL
-   STA   __local_map_row__2
-   LDA   __local_map_row__5
-   ROL
-   ASL   __local_map_row__2
-   ROL
-   ASL   __local_map_row__2
-   ROL
-   STA   __local_map_row__3
-   LDA   __local_map_row__2
-   SEC
-   SBC   __local_map_row__4
-   STA   __local_map_row__1
-   LDA   __local_map_row__3
-   SBC   __local_map_row__5
-   STA   __local_map_row__0
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_map_row__1
+   LDX   __zpabi_map_row__row
+   LDA   LEVEL_BG@rows,X
    STA   map_row@ret
-   LDA   #>LEVEL_MAP
-   ADC   __local_map_row__0
+   LDA   LEVEL_BG@rows+34,X
    STA   map_row@ret+1
    RTS
 
 bg_row:
    SUBROUTINE
 
-   LDA   __zpabi_bg_row__row
-   ASL
-   STA   __local_bg_row__4
-   LDA   #$00
-   ROL
-   ASL   __local_bg_row__4
-   ROL
-   STA   __local_bg_row__5
-   LDA   __local_bg_row__4
-   ASL
-   STA   __local_bg_row__2
-   LDA   __local_bg_row__5
-   ROL
-   ASL   __local_bg_row__2
-   ROL
-   ASL   __local_bg_row__2
-   ROL
-   STA   __local_bg_row__3
-   LDA   __local_bg_row__2
-   SEC
-   SBC   __local_bg_row__4
-   STA   __local_bg_row__1
-   LDA   __local_bg_row__3
-   SBC   __local_bg_row__5
-   STA   __local_bg_row__0
-   LDA   #<LEVEL_BG
-   CLC
-   ADC   __local_bg_row__1
+   LDX   __zpabi_bg_row__row
+   LDA   LEVEL_BG@rows,X
    STA   bg_row@ret
-   LDA   #>LEVEL_BG
-   ADC   __local_bg_row__0
+   LDA   LEVEL_BG@rows+17,X
    STA   bg_row@ret+1
    RTS
 
@@ -1411,3 +1346,9 @@ dig_tables:
 
 gold_tune:
    DC.B  $07, $45, $06, $55, $05, $44, $04, $54, $03, $43, $02, $53, $00
+
+LEVEL_BG@rows:
+   DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
+   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
+   DC.B  $09, $09, $09

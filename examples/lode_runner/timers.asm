@@ -94,33 +94,20 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
+__local_draw_brick__0	EQU	$AE
 __zpabi_add_and_update_score__bcd_points_0	EQU	$AE
+__local_draw_brick__1	EQU	$AF
 __zpabi_add_and_update_score__bcd_points_1	EQU	$AF
 __local_handle_timers__0	EQU	$B0
 __local_fill_hole__0	EQU	$B2
 __local_guard_resurrections__0	EQU	$B2
 __local_fill_hole__1	EQU	$B3
 __local_guard_resurrections__1	EQU	$B3
-__local_fill_hole__2	EQU	$B4
-__local_guard_resurrections__2	EQU	$B4
-__local_fill_hole__3	EQU	$B5
-__local_guard_resurrections__3	EQU	$B5
-__local_fill_hole__4	EQU	$B6
-__local_guard_resurrections__4	EQU	$B6
-__local_fill_hole__5	EQU	$B7
-__local_guard_resurrections__g	EQU	$B7
-__local_guard_resurrections__saved_guard_num	EQU	$B8
-__local_draw_brick__0	EQU	$B9
-__local_kill_guard_in_hole__0	EQU	$B9
-__local_draw_brick__1	EQU	$BA
-__local_kill_guard_in_hole__1	EQU	$BA
-__local_draw_brick__2	EQU	$BB
-__local_kill_guard_in_hole__2	EQU	$BB
-__local_draw_brick__3	EQU	$BC
-__local_kill_guard_in_hole__3	EQU	$BC
-__local_draw_brick__4	EQU	$BD
-__local_kill_guard_in_hole__4	EQU	$BD
-__local_kill_guard_in_hole__g	EQU	$BE
+__local_guard_resurrections__g	EQU	$B4
+__local_guard_resurrections__saved_guard_num	EQU	$B5
+__local_kill_guard_in_hole__0	EQU	$B5
+__local_kill_guard_in_hole__1	EQU	$B6
+__local_kill_guard_in_hole__g	EQU	$B7
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -180,11 +167,11 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def draw_brick params=__zpabi_draw_brick__row,__zpabi_draw_brick__col locals=__local_draw_brick__0,__local_draw_brick__1,__local_draw_brick__2,__local_draw_brick__3,__local_draw_brick__4,__local_draw_brick__5,__local_draw_brick__6 indirect=false in_cycle=false
-; def fill_hole params=__zpabi_fill_hole__i locals=__local_fill_hole__0,__local_fill_hole__1,__local_fill_hole__2,__local_fill_hole__3,__local_fill_hole__4,__local_fill_hole__5,__local_fill_hole__6 indirect=false in_cycle=false
-; def guard_resurrections params= locals=__local_guard_resurrections__0,__local_guard_resurrections__1,__local_guard_resurrections__2,__local_guard_resurrections__3,__local_guard_resurrections__4,__local_guard_resurrections__g,__local_guard_resurrections__saved_guard_num,__local_guard_resurrections__5,__local_guard_resurrections__6 indirect=false in_cycle=false
+; def draw_brick params=__zpabi_draw_brick__row,__zpabi_draw_brick__col locals=__local_draw_brick__0,__local_draw_brick__1 indirect=false in_cycle=false
+; def fill_hole params=__zpabi_fill_hole__i locals=__local_fill_hole__0,__local_fill_hole__1,__local_fill_hole__2 indirect=false in_cycle=false
+; def guard_resurrections params= locals=__local_guard_resurrections__0,__local_guard_resurrections__1,__local_guard_resurrections__g,__local_guard_resurrections__saved_guard_num indirect=false in_cycle=false
 ; def handle_timers params= locals=__local_handle_timers__0,__local_handle_timers__1 indirect=false in_cycle=false
-; def kill_guard_in_hole params= locals=__local_kill_guard_in_hole__0,__local_kill_guard_in_hole__1,__local_kill_guard_in_hole__2,__local_kill_guard_in_hole__3,__local_kill_guard_in_hole__4,__local_kill_guard_in_hole__g indirect=false in_cycle=false carry=true
+; def kill_guard_in_hole params= locals=__local_kill_guard_in_hole__0,__local_kill_guard_in_hole__1,__local_kill_guard_in_hole__g indirect=false in_cycle=false carry=true
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -267,9 +254,9 @@ DISK_IO	EQU	$C088
 ; item kill_guard_in_hole section=.text local=true zero=false
 ; item draw_brick section=.text local=true zero=false
 ; item fill_hole section=.text local=true zero=false
-; item fill_hole@run0 section=.text local=true zero=false
 ; item handle_timers section=.text local=false zero=false
 ; item guard_hatched_tune section=.rodata local=true zero=false
+; item LEVEL_BG@rows section=.rodata local=true zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
 ; zp PLAYER_X_ADJ size=1 at=$02 def=false init=
@@ -330,19 +317,20 @@ DISK_IO	EQU	$C088
 guard_resurrections:
    SUBROUTINE
 
-   LDX   GUARD_COUNT
+   LDA   GUARD_COUNT
+   STA   __local_guard_resurrections__g
    BNE   .if_end@0
    RTS
 .if_end@0:
    LDA   GUARD_NUM
    STA   __local_guard_resurrections__saved_guard_num
 .loop@0_start:
+   LDX   __local_guard_resurrections__g
    LDA   GUARD_RESURRECTION_TIMERS,X
-   BNE   .lb_skip@3
+   BNE   .lb_skip@1
    JMP   .loop@0_continue
-.lb_skip@3:
+.lb_skip@1:
    STX   GUARD_NUM
-   STX   __local_guard_resurrections__g
    JSR   load_guard_data
    LDX   __local_guard_resurrections__g
    LDA   #$7F
@@ -355,85 +343,25 @@ guard_resurrections:
    SEC
    SBC   #$01
    STA   GUARD_RESURRECTION_TIMERS,X
-   BEQ   .lb_skip@2
-   JMP   .if_else@3
-.lb_skip@2:
+   BNE   .if_else@3
    LDA   #$01
    STA   GUARD_RESURRECTION_TIMERS,X
-   LDA   GAME_ROWNUM
-   ASL
-   STA   __local_guard_resurrections__3
-   LDA   #$00
-   ROL
-   ASL   __local_guard_resurrections__3
-   ROL
-   STA   __local_guard_resurrections__4
-   LDA   __local_guard_resurrections__3
-   ASL
-   STA   __local_guard_resurrections__1
-   LDA   __local_guard_resurrections__4
-   ROL
-   ASL   __local_guard_resurrections__1
-   ROL
-   ASL   __local_guard_resurrections__1
-   ROL
-   STA   __local_guard_resurrections__2
-   LDA   __local_guard_resurrections__1
-   SEC
-   SBC   __local_guard_resurrections__3
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@rows,X
    STA   __local_guard_resurrections__0
-   LDA   __local_guard_resurrections__2
-   SBC   __local_guard_resurrections__4
-   STA   __local_guard_resurrections__2
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_guard_resurrections__0
-   STA   __local_guard_resurrections__0
-   LDA   #>LEVEL_MAP
-   ADC   __local_guard_resurrections__2
+   LDA   LEVEL_BG@rows+34,X
    STA   __local_guard_resurrections__1
    LDY   GAME_COLNUM
    LDA   (__local_guard_resurrections__0),Y
-   BEQ   .lb_skip@1
-   JMP   .if_end@2
-.lb_skip@1:
-   LDA   GAME_ROWNUM
-   ASL
-   STA   __local_guard_resurrections__3
-   LDA   #$00
-   ROL
-   ASL   __local_guard_resurrections__3
-   ROL
-   STA   __local_guard_resurrections__4
-   LDA   __local_guard_resurrections__3
-   ASL
-   STA   __local_guard_resurrections__1
-   LDA   __local_guard_resurrections__4
-   ROL
-   ASL   __local_guard_resurrections__1
-   ROL
-   ASL   __local_guard_resurrections__1
-   ROL
-   STA   __local_guard_resurrections__2
-   LDA   __local_guard_resurrections__1
-   SEC
-   SBC   __local_guard_resurrections__3
+   BNE   .if_end@2
+   LDA   LEVEL_BG@rows,X
    STA   __local_guard_resurrections__0
-   LDA   __local_guard_resurrections__2
-   SBC   __local_guard_resurrections__4
-   STA   __local_guard_resurrections__2
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_guard_resurrections__0
-   STA   __local_guard_resurrections__0
-   LDA   #>LEVEL_MAP
-   ADC   __local_guard_resurrections__2
+   LDA   LEVEL_BG@rows+34,X
    STA   __local_guard_resurrections__1
    LDA   #$08
    STA   (__local_guard_resurrections__0),Y
    LDA   #$00
    STA   __zpabi_draw_sprite_page2__sprite
-   STX   __local_guard_resurrections__g
    JSR   draw_sprite_page2
    LDX   __local_guard_resurrections__g
    LDA   #$00
@@ -441,49 +369,37 @@ guard_resurrections:
    STA   GUARD_RESURRECTION_TIMERS,X
    LDA   #$08
    STA   __zpabi_draw_sprite_page1__sprite
-   STX   __local_guard_resurrections__g
    JSR   draw_sprite_page1
-   LDX   __local_guard_resurrections__g
    LDA   #<guard_hatched_tune
    STA   __zpabi_load_sound_data__notes_0
    LDA   #>guard_hatched_tune
    STA   __zpabi_load_sound_data__notes_1
-   STX   __local_guard_resurrections__g
    JSR   load_sound_data
-   LDX   __local_guard_resurrections__g
    JMP   .if_end@2
 .if_else@3:
    CMP   #$13
    BNE   .if_else@6
    LDA   #$39
    STA   __zpabi_draw_sprite_page2__sprite
-   STX   __local_guard_resurrections__g
    JSR   draw_sprite_page2
-   LDX   __local_guard_resurrections__g
    LDA   #$39
    STA   __zpabi_draw_guard_sprite__sprite
-   STX   __local_guard_resurrections__g
    JSR   draw_guard_sprite
-   LDX   __local_guard_resurrections__g
    JMP   .if_end@5
 .if_else@6:
    CMP   #$0A
    BNE   .if_end@7
    LDA   #$3A
    STA   __zpabi_draw_sprite_page2__sprite
-   STX   __local_guard_resurrections__g
    JSR   draw_sprite_page2
-   LDX   __local_guard_resurrections__g
    LDA   #$3A
    STA   __zpabi_draw_guard_sprite__sprite
-   STX   __local_guard_resurrections__g
    JSR   draw_guard_sprite
-   LDX   __local_guard_resurrections__g
 .if_end@7:
 .if_end@5:
 .if_end@2:
 .loop@0_continue:
-   DEX
+   DEC   __local_guard_resurrections__g
    BEQ   .lb_skip@0
    JMP   .loop@0_start
 .lb_skip@0:
@@ -494,18 +410,16 @@ guard_resurrections:
 kill_guard_in_hole:
    SUBROUTINE
 
-   LDX   GUARD_COUNT
+   LDA   GUARD_COUNT
+   STA   __local_kill_guard_in_hole__g
 .loop@1_start:
+   LDX   __local_kill_guard_in_hole__g
    LDA   GUARD_LOCS_COL,X
    CMP   GAME_COLNUM
-   BEQ   .lb_skip@6
-   JMP   .if_end@10
-.lb_skip@6:
+   BNE   .if_end@10
    LDA   GUARD_LOCS_ROW,X
    CMP   GAME_ROWNUM
-   BEQ   .lb_skip@5
-   JMP   .if_end@10
-.lb_skip@5:
+   BNE   .if_end@10
    LDA   GUARD_GOLD_TIMERS,X
    BPL   .if_end@11
    DEC   GOLD_COUNT
@@ -513,12 +427,8 @@ kill_guard_in_hole:
    LDA   #$7F
    STA   GUARD_GOLD_TIMERS,X
    STX   GUARD_NUM
-   STX   __local_kill_guard_in_hole__g
    JSR   load_guard_data
-   LDX   __local_kill_guard_in_hole__g
-   STX   __local_kill_guard_in_hole__g
    JSR   erase_guard
-   LDX   __local_kill_guard_in_hole__g
    LDA   #$01
    STA   GAME_ROWNUM
    JMP   .loop@2_continue
@@ -532,41 +442,15 @@ kill_guard_in_hole:
    LDA   #$00
    STA   GUARD_RESURRECT_COL
 .loop@2_continue:
-   LDA   GAME_ROWNUM
-   ASL
-   STA   __local_kill_guard_in_hole__3
-   LDA   #$00
-   ROL
-   ASL   __local_kill_guard_in_hole__3
-   ROL
-   STA   __local_kill_guard_in_hole__4
-   LDA   __local_kill_guard_in_hole__3
-   ASL
-   STA   __local_kill_guard_in_hole__1
-   LDA   __local_kill_guard_in_hole__4
-   ROL
-   ASL   __local_kill_guard_in_hole__1
-   ROL
-   ASL   __local_kill_guard_in_hole__1
-   ROL
-   STA   __local_kill_guard_in_hole__2
-   LDA   __local_kill_guard_in_hole__1
-   SEC
-   SBC   __local_kill_guard_in_hole__3
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@rows,X
    STA   __local_kill_guard_in_hole__0
-   LDA   __local_kill_guard_in_hole__2
-   SBC   __local_kill_guard_in_hole__4
-   STA   __local_kill_guard_in_hole__2
-   LDA   #<LEVEL_BG
-   CLC
-   ADC   __local_kill_guard_in_hole__0
-   STA   __local_kill_guard_in_hole__0
-   LDA   #>LEVEL_BG
-   ADC   __local_kill_guard_in_hole__2
+   LDA   LEVEL_BG@rows+17,X
    STA   __local_kill_guard_in_hole__1
    LDY   GUARD_RESURRECT_COL
    LDA   (__local_kill_guard_in_hole__0),Y
    BNE   .kill_guard_in_hole@rot@0
+   LDX   __local_kill_guard_in_hole__g
    TYA
    STA   GUARD_LOCS_COL,X
    LDA   GAME_ROWNUM
@@ -586,47 +470,20 @@ kill_guard_in_hole:
    SEC
    RTS
 .if_end@10:
-   DEX
-   BEQ   .lb_skip@4
+   DEC   __local_kill_guard_in_hole__g
+   BEQ   .lb_skip@2
    JMP   .loop@1_start
-.lb_skip@4:
+.lb_skip@2:
    CLC
    RTS
 
 draw_brick:
    SUBROUTINE
 
-   LDA   __zpabi_draw_brick__row
-   ASL
-   STA   __local_draw_brick__3
-   LDA   #$00
-   ROL
-   ASL   __local_draw_brick__3
-   ROL
-   STA   __local_draw_brick__4
-   LDA   __local_draw_brick__3
-   ASL
-   STA   __local_draw_brick__1
-   LDA   __local_draw_brick__4
-   ROL
-   ASL   __local_draw_brick__1
-   ROL
-   ASL   __local_draw_brick__1
-   ROL
-   STA   __local_draw_brick__2
-   LDA   __local_draw_brick__1
-   SEC
-   SBC   __local_draw_brick__3
+   LDX   __zpabi_draw_brick__row
+   LDA   LEVEL_BG@rows,X
    STA   __local_draw_brick__0
-   LDA   __local_draw_brick__2
-   SBC   __local_draw_brick__4
-   STA   __local_draw_brick__2
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_draw_brick__0
-   STA   __local_draw_brick__0
-   LDA   #>LEVEL_MAP
-   ADC   __local_draw_brick__2
+   LDA   LEVEL_BG@rows+34,X
    STA   __local_draw_brick__1
    LDA   #$01
    LDY   __zpabi_draw_brick__col
@@ -647,39 +504,14 @@ fill_hole:
    STA   __zpabi_draw_brick__col
    LDA   BRICK_DIG_ROWS,X
    STA   GAME_ROWNUM
-   JSR   fill_hole@run0
-   ASL
-   STA   __local_fill_hole__4
-   LDA   #$00
-   ROL
-   ASL   __local_fill_hole__4
-   ROL
-   STA   __local_fill_hole__5
-   LDA   __local_fill_hole__4
-   ASL
+   LDA   BRICK_DIG_COLS,X
+   STA   GAME_COLNUM
+   LDX   __zpabi_draw_brick__row
+   LDA   LEVEL_BG@rows,X
    STA   __local_fill_hole__0
-   LDA   __local_fill_hole__5
-   ROL
-   ASL   __local_fill_hole__0
-   ROL
-   ASL   __local_fill_hole__0
-   ROL
+   LDA   LEVEL_BG@rows+34,X
    STA   __local_fill_hole__1
-   LDA   __local_fill_hole__0
-   SEC
-   SBC   __local_fill_hole__4
-   STA   __local_fill_hole__3
-   LDA   __local_fill_hole__1
-   SBC   __local_fill_hole__5
-   STA   __local_fill_hole__2
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_fill_hole__3
-   STA   __local_fill_hole__0
-   LDA   #>LEVEL_MAP
-   ADC   __local_fill_hole__2
-   STA   __local_fill_hole__1
-   LDY   BRICK_DIG_COLS,X
+   LDY   __zpabi_draw_brick__col
    LDA   (__local_fill_hole__0),Y
    CMP   #$09
    BNE   .if_else@14
@@ -688,12 +520,9 @@ fill_hole:
 .if_else@14:
    CMP   #$08
    BNE   .if_else@16
-   LDA   #<LEVEL_BG
-   CLC
-   ADC   __local_fill_hole__3
+   LDA   LEVEL_BG@rows,X
    STA   __local_fill_hole__0
-   LDA   #>LEVEL_BG
-   ADC   __local_fill_hole__2
+   LDA   LEVEL_BG@rows+17,X
    STA   __local_fill_hole__1
    LDA   #$01
    STA   (__local_fill_hole__0),Y
@@ -709,14 +538,6 @@ fill_hole:
 .if_end@15:
 .if_end@13:
    JMP   draw_brick
-
-fill_hole@run0:
-   SUBROUTINE
-
-   LDA   BRICK_DIG_COLS,X
-   STA   GAME_COLNUM
-   LDA   BRICK_DIG_ROWS,X
-   RTS
 
 handle_timers:
    SUBROUTINE
@@ -743,7 +564,9 @@ handle_timers:
    JSR   fill_hole
    JMP   .loop@3_continue
 .if_end@21:
-   JSR   fill_hole@run0
+   LDA   BRICK_DIG_COLS,X
+   STA   GAME_COLNUM
+   LDA   BRICK_DIG_ROWS,X
    STA   GAME_ROWNUM
    LDA   __local_handle_timers__0
    CMP   #$14
@@ -777,3 +600,9 @@ handle_timers:
 
 guard_hatched_tune:
    DC.B  $02, $7C, $03, $78, $04, $74, $05, $70, $00
+
+LEVEL_BG@rows:
+   DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
+   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
+   DC.B  $09, $09, $09

@@ -328,6 +328,45 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   indirection at the cost of a small dispatch chain; frees X and Y from
   the dual-index conflict so loop counters can stay pinned to X across
   the dispatch.
+- `split_tables.py` — `apply_split_tables`. Runs at the program level
+  right after `dispatch_const_pointer_arrays`. A `static const` array
+  of at most 256 elements of 2 bytes or more, with internal linkage,
+  that the unit reads only by a byte index is laid out as the low
+  bytes of every element, then the next bytes, and so on (`plane_init`,
+  which `row_address_tables` uses too), and each read becomes
+  `IndexedLoad(T, i, dst, offset=k, plane=N)`, `LDA T+k,X` and `LDA
+  T+k+N,X`. A read is an `IndexedLoad` through `i << log2(w)` (or a
+  constant offset), or a `Load` through `GetAddress(T) + (ZeroExtend(i)
+  << log2(w))` for a table of more than 255 bytes, each with its chain
+  in one block and `i` unchanged up to the load (no write of it, and
+  no call or pointer store when it's a static or address-taken). Any
+  other reference to the table, an `AddressInit` in another static
+  included, leaves it alone. The table's symbol becomes an array of
+  `const` bytes whose `Initial` tuple holds the bytes in the new order,
+  integers or `AddressByteInit`s, which `constant_folding._fold_plane_load`
+  reads. See docs/optimizations/split_tables.md.
+- `row_address_tables.py` — `apply_row_address_tables`. Runs at the
+  program level at the start of `compile.optimized_asm`, before
+  `optimize_tac`, on the TAC from `c99_to_tac`, since strength
+  reduction would turn the multiply into shifts. `GetAddress(A) +
+  (ZeroExtend(i) ± k...) * R`, with A a static array (or one at a fixed
+  address) of N rows of R bytes, R not a power of two, `i` an
+  unsigned non-volatile byte, `-255 <= k <= N`, and every temporary
+  defined and read once, becomes `IndexedLoad(A@rows, i, p, offset=k,
+  plane=...)` at the `ZeroExtend`'s place. `A@rows` holds the low and
+  then the high bytes of the N+1 row addresses (numbers for a fixed
+  address, `AddressByteInit`s otherwise). `_choose` keeps the set of
+  arrays whose accesses save more than their tables cost (`_saving`:
+  40 bytes a lookup over two shifts and an add or subtract, 10 over a
+  `mul16` call), and arrays with the same row count share one table
+  holding each distinct half once, so `LEVEL_MAP` and `LEVEL_BG`
+  share their low half. See docs/optimizations/row_address_tables.md.
+
+`IndexedLoad.plane` is 0 for an ordinary array. When it isn't, the
+index is an element number, and byte k of the value is at `name +
+offset + index + k * plane`. Every pass that rebuilds an
+`IndexedLoad` keeps it, CSE keys on it, and `tac_to_asm`, `tac_sim`,
+and the const-array fold (`_fold_plane_load`) read it.
 
 ## Per-function pipeline shape
 

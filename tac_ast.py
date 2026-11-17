@@ -126,6 +126,7 @@ class IndexedLoad(Type_instruction):
     dst: Type_val
     is_volatile: bool = False
     offset: int = 0
+    plane: int = 0
 
 
 @dataclass(kw_only=True)
@@ -556,6 +557,13 @@ class DoubleInit(Type_static_init):
 class AddressInit(Type_static_init):
     name: str = ''
     offset: int = 0
+
+
+@dataclass
+class AddressByteInit(Type_static_init):
+    name: str = ''
+    offset: int = 0
+    high: bool = False
 
 
 @dataclass

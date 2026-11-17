@@ -98,7 +98,6 @@ DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
 __local_compress_and_save_level_data__0	EQU	$AE
-__local_enable_next_level_ladders__0	EQU	$AE
 __local_load_level__sprite	EQU	$AE
 __local_compress_and_save_level_data__row	EQU	$AF
 __local_enable_next_level_ladders__1	EQU	$AF
@@ -188,7 +187,7 @@ DISK_IO	EQU	$C088
 ; def access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command locals=__local_access_hi_score_data_from_disk__0,__local_access_hi_score_data_from_disk__1,__local_access_hi_score_data_from_disk__differ indirect=false in_cycle=false
 ; def compress_and_save_level_data params= locals=__local_compress_and_save_level_data__0,__local_compress_and_save_level_data__row,__local_compress_and_save_level_data__low,__local_compress_and_save_level_data__map,__local_compress_and_save_level_data__1 indirect=false in_cycle=false
 ; def draw_level_page2 params= locals=__local_draw_level_page2__sprite,__local_draw_level_page2__map_0,__local_draw_level_page2__0,__local_draw_level_page2__src,__local_draw_level_page2__map_1,__local_draw_level_page2__1,__local_draw_level_page2__bg,__local_draw_level_page2__2,__local_draw_level_page2__3,__local_draw_level_page2__4 indirect=false in_cycle=false carry=true
-; def enable_next_level_ladders params= locals=__local_enable_next_level_ladders__0,__local_enable_next_level_ladders__1,__local_enable_next_level_ladders__2,__local_enable_next_level_ladders__3,__local_enable_next_level_ladders__4,__local_enable_next_level_ladders__5,__local_enable_next_level_ladders__6,__local_enable_next_level_ladders__n,__local_enable_next_level_ladders__7,__local_enable_next_level_ladders__8 indirect=false in_cycle=false
+; def enable_next_level_ladders params= locals=__local_enable_next_level_ladders__0,__local_enable_next_level_ladders__1,__local_enable_next_level_ladders__2,__local_enable_next_level_ladders__3,__local_enable_next_level_ladders__4,__local_enable_next_level_ladders__5,__local_enable_next_level_ladders__6,__local_enable_next_level_ladders__n,__local_enable_next_level_ladders__7 indirect=false in_cycle=false
 ; def load_level params=__zpabi_load_level__verbatim locals=__local_load_level__sprite,__local_load_level__row,__local_load_level__bg,__local_load_level__0,__local_load_level__map,__local_load_level__1 indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
@@ -263,6 +262,7 @@ DISK_IO	EQU	$C088
 ; item access_hi_score_data_from_disk section=.text local=false zero=false
 ; item enable_next_level_ladders section=.text local=false zero=false
 ; item HI_SCORE_DATA_MARKER section=.rodata local=false zero=false
+; item LEVEL_BG@rows section=.rodata local=true zero=false
 ; zp PLAYER_COL size=1 at=$00 def=false init=
 ; zp PLAYER_ROW size=1 at=$01 def=false init=
 ; zp PLAYER_X_ADJ size=1 at=$02 def=false init=
@@ -811,53 +811,19 @@ enable_next_level_ladders:
    STA   GAME_COLNUM
    LDA   LADDER_LOCS_ROW,X
    STA   GAME_ROWNUM
-   LDA   LADDER_LOCS_ROW,X
-   ASL
-   STA   __local_enable_next_level_ladders__3
-   LDA   #$00
-   ROL
-   ASL   __local_enable_next_level_ladders__3
-   ROL
+   LDX   __local_enable_next_level_ladders__5
+   LDA   LEVEL_BG@rows+17,X
    STA   __local_enable_next_level_ladders__4
-   LDA   __local_enable_next_level_ladders__3
-   ASL
-   STA   __local_enable_next_level_ladders__0
-   LDA   __local_enable_next_level_ladders__4
-   ROL
-   ASL   __local_enable_next_level_ladders__0
-   ROL
-   ASL   __local_enable_next_level_ladders__0
-   ROL
-   STA   __local_enable_next_level_ladders__1
-   LDA   __local_enable_next_level_ladders__0
-   SEC
-   SBC   __local_enable_next_level_ladders__3
-   STA   __local_enable_next_level_ladders__2
-   LDA   __local_enable_next_level_ladders__1
-   SBC   __local_enable_next_level_ladders__4
-   STA   __local_enable_next_level_ladders__1
-   LDA   #<LEVEL_BG
-   CLC
-   ADC   __local_enable_next_level_ladders__2
-   STA   __local_enable_next_level_ladders__0
-   LDA   #>LEVEL_BG
-   ADC   __local_enable_next_level_ladders__1
-   STA   __local_enable_next_level_ladders__4
-   LDA   __local_enable_next_level_ladders__0
+   LDA   LEVEL_BG@rows,X
    CLC
    ADC   __local_enable_next_level_ladders__6
    STA   __local_enable_next_level_ladders__3
    BCC   .carry_inc@6
    INC   __local_enable_next_level_ladders__4
 .carry_inc@6:
-   LDA   #<LEVEL_MAP
-   CLC
-   ADC   __local_enable_next_level_ladders__2
-   STA   __local_enable_next_level_ladders__0
-   LDA   #>LEVEL_MAP
-   ADC   __local_enable_next_level_ladders__1
+   LDA   LEVEL_BG@rows+34,X
    STA   __local_enable_next_level_ladders__2
-   LDA   __local_enable_next_level_ladders__0
+   LDA   LEVEL_BG@rows,X
    CLC
    ADC   __local_enable_next_level_ladders__6
    STA   __local_enable_next_level_ladders__1
@@ -906,3 +872,9 @@ enable_next_level_ladders:
 
 HI_SCORE_DATA_MARKER:
    DC.B  $CC, $CF, $C4, $C5, $A0, $D2, $D5, $CE, $CE, $C5, $D2
+
+LEVEL_BG@rows:
+   DC.B  $00, $1C, $38, $54, $70, $8C, $A8, $C4, $E0, $FC, $18, $34, $50, $6C, $88, $A4
+   DC.B  $C0, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0B, $0B
+   DC.B  $0B, $0B, $08, $08, $08, $08, $08, $08, $08, $08, $08, $08, $09, $09, $09, $09
+   DC.B  $09, $09, $09

@@ -479,6 +479,7 @@ class Resolver:
                         abi_annotation=vd.abi_annotation,
                         placement=vd.placement,
                         section=vd.section,
+                        is_constexpr=vd.is_constexpr,
                     ),
                 )
             case c99_ast.FunctionDecl(function_decl=fd):
@@ -847,6 +848,7 @@ class Resolver:
                     abi_annotation=vd.abi_annotation,
                     placement=vd.placement,
                     section=vd.section,
+                    is_constexpr=vd.is_constexpr,
                 )
         raise TypeError(f"unexpected var_decl: {vd!r}")
 

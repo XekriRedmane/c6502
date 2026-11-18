@@ -33,10 +33,14 @@ Then it disqualifies any candidate whose:
 
 Surviving candidates are the names whose bytes can be folded. The
 pass walks every function and replaces every `Pseudo(name=cand,
-offset=k)` USE operand with `Imm(byte_at(init, k))`. Defs and
-LoadAddress.src/dst aren't rewritten (the disqualification rules
-above guarantee neither shape names a candidate). Finally the pass
-drops the now-unreferenced `StaticVariable` top-levels.
+offset=k)` and `Data(name=cand, offset=k)` USE operand with
+`Imm(byte_at(init, k))`. A `Data` read is a load through the
+object's address that the TAC optimizer made a direct read, as `*pk`
+after `pk = &K`. Defs and LoadAddress.src/dst aren't rewritten (the
+disqualification rules above guarantee neither shape names a
+candidate). Finally the pass drops the `StaticVariable` top-levels
+that nothing names any more. Before `Data` reads were rewritten, the
+storage went while `LDA K` still read it, and the link failed.
 
 Runs as a program-level prepass inside `optimize_program`, BEFORE
 the per-function SSA round-trip — replacing the Pseudo references
@@ -46,6 +50,7 @@ behind.
 """
 from __future__ import annotations
 
+import dataclasses
 from typing import Iterable
 
 import asm_ast
@@ -317,19 +322,44 @@ def _rewrite_program(
     prog: asm_ast.Type_program,
     surviving: dict[str, list[int]],
 ) -> asm_ast.Type_program:
-    """Drop surviving statics; rewrite Pseudo refs to them as
-    Imm operands in every function."""
-    new_top: list[asm_ast.Type_top_level] = []
-    for tl in prog.top_level:
-        if isinstance(tl, asm_ast.StaticVariable):
-            if tl.name in surviving:
-                continue
-            new_top.append(tl)
-        elif isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl, surviving))
-        else:
-            new_top.append(tl)
-    return asm_ast.Program(top_level=new_top)
+    """Drop surviving statics; rewrite Pseudo and Data refs to them
+    as Imm operands in every function. A static that something still
+    names after the rewrite, in an instruction `_rewrite_instr`
+    doesn't rewrite, keeps its storage."""
+    rewritten = [
+        _rewrite_function(tl, surviving)
+        if isinstance(tl, asm_ast.Function) else tl
+        for tl in prog.top_level
+    ]
+    named: set[str] = set()
+    for tl in rewritten:
+        if isinstance(tl, asm_ast.Function):
+            _names_in(tl.instructions, named)
+    return asm_ast.Program(top_level=[
+        tl for tl in rewritten
+        if not (isinstance(tl, asm_ast.StaticVariable)
+                and tl.name in surviving and tl.name not in named)
+    ])
+
+
+_NAMED_OPERANDS = (
+    asm_ast.Pseudo, asm_ast.Data, asm_ast.IndexedData,
+    asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
+)
+
+
+def _names_in(node, out: set[str]) -> None:
+    """Adds the name of every operand in `node` that names an object
+    (`Pseudo`, `Data`, `IndexedData`, and a label's halves) to
+    `out`."""
+    if isinstance(node, _NAMED_OPERANDS):
+        out.add(node.name)
+    elif isinstance(node, list):
+        for n in node:
+            _names_in(n, out)
+    elif dataclasses.is_dataclass(node):
+        for f in dataclasses.fields(node):
+            _names_in(getattr(node, f.name), out)
 
 
 def _rewrite_function(
@@ -356,9 +386,14 @@ def _rewrite_instr(
     byte. DEF-position operands are left alone."""
 
     def sub(op: asm_ast.Type_operand) -> asm_ast.Type_operand:
+        # A `Data` read is one the TAC optimizer made of a load
+        # through the static's address, as `*p` after `p = &K`
+        # becomes `IndexedLoad(K, 0)`, which tac_to_asm lowers to
+        # `Data(K, 0)`.
         if (
-            isinstance(op, asm_ast.Pseudo)
+            isinstance(op, (asm_ast.Pseudo, asm_ast.Data))
             and op.name in surviving
+            and 0 <= op.offset < len(surviving[op.name])
         ):
             byts = surviving[op.name]
             return asm_ast.Imm(value=byts[op.offset])

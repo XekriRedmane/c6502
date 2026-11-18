@@ -152,6 +152,8 @@ BOOL: "bool"
 TRUE: "true"
 FALSE: "false"
 NULLPTR: "nullptr"
+// C23's storage-class specifier for named constants (§6.7.2).
+CONSTEXPR: "constexpr"
 // The type of `nullptr`, which <stddef.h> names `nullptr_t` (C23
 // §7.21.2). It's c6502's own keyword, since C23's header writes the
 // type as `typeof_unqual(nullptr)` and c6502 has no `typeof`.
@@ -268,7 +270,7 @@ _specs_after_type: _spec_after_type | _specs_after_type _spec_after_type
 _spec_after_type: specifier | type_specifier
 _type_head: type_specifier | typedef_name
 // A specifier that isn't a type: a storage class or a type qualifier.
-specifier: type_qualifier | STATIC | EXTERN | REGISTER | TYPEDEF
+specifier: type_qualifier | STATIC | EXTERN | REGISTER | TYPEDEF | CONSTEXPR
 typedef_name: TYPEDEF_NAME
 // C23 attributes (§6.7.13): `[[c6502::zp_abi]]`, `[[deprecated("why")]]`,
 // `[[c6502::zp_abi, c6502::address(0xFDED)]]`. An attribute is a name,
@@ -308,7 +310,7 @@ _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGE
                     | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
                     | UNSIGNED | VOID | VOLATILE | WHILE
                     | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR
-                    | C6502_NULLPTR_T | BITINT | COMPLEX | IMAGINARY
+                    | C6502_NULLPTR_T | CONSTEXPR | BITINT | COMPLEX | IMAGINARY
                     | ELLIPSIS | COLONCOLON | LSHIFT_ASSIGN | RSHIFT_ASSIGN
                     | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT
                     | LE | GE | EQ | NE | ANDAND | OROR
@@ -784,7 +786,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
          | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR | C6502_NULLPTR_T
-         | BITINT | COMPLEX | IMAGINARY
+         | CONSTEXPR | BITINT | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | BITINT_INTEGER | UBITINT_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT

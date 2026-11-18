@@ -923,6 +923,60 @@ are a `PreprocessorError` that names the attribute
 (`preprocessor._reject_c6502_pragmas`); other `#pragma` lines become
 blank lines.
 
+### constexpr
+
+C23's `constexpr` (§6.7.2) is a storage-class specifier, the
+`CONSTEXPR` keyword in the grammar's `specifier` rule. Its rules come
+from the parser and the type checker:
+
+- `_split_specifiers` lets it come alone or with `static` or
+  `register` and leaves it out of its result. `var_decl` tests for it
+  with `_has_constexpr`, sets `var_decl.is_constexpr`, requires an
+  initializer, and makes the declarator's type `const`
+  (`_constexpr_type`), so `constexpr int *p` is `int *const p`. A
+  function, a parameter, a typedef, and a declaration without a
+  declarator reject it.
+- `TypeChecker._begin_constexpr`, before the usual checks, rejects a
+  volatile type or member and checks each scalar in the initializer
+  on a copy (`_check_constexpr_init`): an integer object takes an
+  integer constant expression and a real floating one an integer or
+  floating constant, and the value must survive the conversion to the
+  object's type (§6.7.2p5-6). A string's characters must fit a
+  `signed char` element. `_end_constexpr`, after them, takes the
+  object's value tree (its `Initial` value, or `_const_init_aggregate`
+  of the converted initializer for an automatic one), requires every
+  pointer in it to be null, and records it in `_constexpr`.
+- At file scope a `constexpr` object becomes `static` (internal
+  linkage, §6.2.2p3), and it must be the only declaration of its name.
+
+The name of a `constexpr` object, and a `.` member of one at any
+depth, is a named constant (§6.6p7).
+`constant_expression.named_constant` returns its type and value from
+the innermost resolver installed with `named_constants`, which for
+the whole program is `TypeChecker._named_constant`, installed by
+`check_program`. The evaluator takes an
+integer one as an operand, and a floating one (or a floating
+constant) under a cast to an integer type (§6.6p8,
+`_floating_operand`). `_const_init_value` and `_const_init_aggregate`
+take any named constant, so a structure constant can initialize a
+static struct. A union constant's members other than the first have
+no value (§6.6p16). An integer named constant that is 0 is a null
+pointer constant (`_is_null_pointer_constant`). Subscripting a
+`constexpr` array isn't a constant expression, as C23 specifies.
+
+The parser folds array sizes, enumeration values, and `_BitInt`
+widths before the type checker runs, so `init_declarator` folds a
+`constexpr` scalar's or structure's initializer when it can
+(`_fold_named_constant`) and puts `(type, value)` on its `_Binding`.
+`_fold_integer_constant` gives its type checker those of the names in
+the expression (`_checker_with_named_constants`), and, when one is a
+structure, the struct bodies parsed so far (`_ParseContext.struct_bodies`,
+the latest body of each tag).
+
+A static initializer folds `+`, `-`, `*`, and `/` of `float` and
+`double` constants with `fp_arith` (`_FP_FOLDS`), so that `constexpr
+double third = 1.0 / 3.0;` compiles.
+
 ### Lexer & preprocessor
 
 The lexer (`lexer.py`) treats comments as lex errors — it assumes a

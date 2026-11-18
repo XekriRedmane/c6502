@@ -84,11 +84,15 @@ rejects a write to a const object, so the last check is a safety
 net.
 
 For each surviving candidate, the pass rewrites `Pseudo(name, k)`
-into `Imm` of byte `k` of the initializer, little-endian, in every
-read position. Those are the source of `Mov`, `Add`, `Sub`, `And`,
-and `Or`, both sources of `Xor`, the source of `Push`, and both sides
-of `Compare`. Then it drops the `StaticVariable`. The pass does
-nothing when no symbol table is passed in.
+and `Data(name, k)` into `Imm` of byte `k` of the initializer,
+little-endian, in every read position. Those are the source of `Mov`,
+`Add`, `Sub`, `And`, and `Or`, both sources of `Xor`, the source of
+`Push`, and both sides of `Compare`. A `Data` read comes from the TAC
+optimizer, which turns a load through the object's address into a
+read of the object, as `*pk` after `pk = &K` becomes `LDA K`. Then it
+drops the `StaticVariable`, unless an instruction it doesn't rewrite
+still names the object. The pass does nothing when no symbol table
+is passed in.
 
 ## What it leaves alone
 

@@ -73,9 +73,10 @@ names meets all of these conditions.
 
 - It has static storage, which covers file-scope objects and
   block-scope `static`s, with either linkage.
-- Its initializer is a number (`Initial` holding an `int` or a
-  `float`). A pointer initialized from an integer cast, such as
-  `(uint8_t *)0x0400`, qualifies.
+- Its initializer is a number (`Initial` holding an `int`). A
+  pointer initialized from an integer cast, such as `(uint8_t
+  *)0x0400`, qualifies. A `float` or `double` object's `Initial`
+  holds its IEEE 754 bits, which become the constant's bits.
 - Its type is `const` at the outermost level and is not `volatile`.
 - The type under the qualifier is a scalar, meaning a character or
   integer type, `float`, `double`, or a pointer.

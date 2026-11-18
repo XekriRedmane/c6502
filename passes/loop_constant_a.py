@@ -40,8 +40,8 @@ Every instruction in the loop is one of these.
   * An instruction that leaves A alone and that `asm_emit` writes
     without going through A (`_leaves_a`).
 
-A is dead at the header, so no read in the loop sees the value A had
-before it, and N and Z are dead there, since the new `LDA #k` sets
+A is dead at the header, so nothing in the loop reads the value A
+held before it, and N and Z are dead there, since the new `LDA #k` sets
 them.
 
 # Why the values stay the same

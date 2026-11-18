@@ -116,6 +116,7 @@ class StringLifter:
             abi_annotation=vd.abi_annotation,
             placement=vd.placement,
             section=vd.section,
+            is_constexpr=vd.is_constexpr,
         )
 
     def _lift_init(self, init, declared_type):

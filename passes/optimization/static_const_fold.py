@@ -73,9 +73,15 @@ def _build_cache(
         scalar_t = _scalar_type(sym.type)
         if scalar_t is None:
             continue
-        cache[name] = tac_ast.Constant(
-            const=_tac_const_for(scalar_t, v),
-        )
+        if isinstance(scalar_t, c99_ast.Float):
+            # A floating static's `Initial` holds its IEEE 754 bits,
+            # where `_tac_const_for` takes a number.
+            const = tac_ast.ConstFloat(bits=int(v))
+        elif isinstance(scalar_t, c99_ast.Double):
+            const = tac_ast.ConstDouble(bits=int(v))
+        else:
+            const = _tac_const_for(scalar_t, v)
+        cache[name] = tac_ast.Constant(const=const)
     return cache
 
 

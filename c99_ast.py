@@ -186,6 +186,7 @@ class Type_var_decl:
     abi_annotation: str | None = None
     placement: Type_placement | None = None
     section: str | None = None
+    is_constexpr: bool = False
 
 
 @dataclass(kw_only=True)

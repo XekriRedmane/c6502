@@ -526,9 +526,10 @@ loop. Walks every TAC instruction; replaces every USE-position
 `Var(name)` with `Constant(value)` when `name`'s symbol-table entry
 is:
 
-- `StaticAttr(initial_value=Initial(c))` with `c` being `int` or
-  `float` (NOT `AddressInit` — link-time symbol; NOT a tuple —
-  aggregate);
+- `StaticAttr(initial_value=Initial(c))` with `c` being an `int`
+  (NOT `AddressInit` — link-time symbol; NOT a tuple — aggregate),
+  which for a `float` or `double` object holds its IEEE 754 bits, so
+  the constant is `ConstFloat(bits=c)` / `ConstDouble(bits=c)`;
 - type carries an outermost `Const(...)` wrapper (gates the fold on
   the C type system having already promised the storage's value is
   fixed at runtime);

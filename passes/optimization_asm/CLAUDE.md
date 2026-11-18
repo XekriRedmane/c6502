@@ -195,9 +195,13 @@ A candidate is then disqualified if it appears as:
 - an `AddressInit(name=candidate, ...)` in another static's
   initializer.
 
-For surviving candidates: every `Pseudo(name=cand, offset=k)` USE in
-every function is rewritten to `Imm(byte_at(init, k))`, and the
-candidate's `StaticVariable` top-level is dropped. The asm-level
+For surviving candidates: every `Pseudo(name=cand, offset=k)` and
+`Data(name=cand, offset=k)` USE in every function is rewritten to
+`Imm(byte_at(init, k))`, and the candidate's `StaticVariable`
+top-level is dropped, unless an instruction the rewrite doesn't cover
+still names it. A `Data` read is a load through the object's address
+that the TAC optimizer turned into a direct read (`*pk` after `pk =
+&K`). The asm-level
 `Mov(Imm, Pseudo)` shapes the rewrite leaves behind get picked up by
 the existing forward-copy-prop / DCE bracket — the fold is a setup
 for downstream cleanup, not a standalone pass.

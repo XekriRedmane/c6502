@@ -74,6 +74,21 @@ These parts work.
   compiler folds a call of a constant, which makes it a constant
   expression, and writes a short loop in place for any other call
   ([docs/stdbit.md](docs/stdbit.md)).
+- C23's `constexpr` declares an object whose value is fixed when the
+  program is compiled, alone or with `static` or `register`. The
+  object is `const`, and its name is a constant, so after `constexpr
+  int N = 8;` the name `N` can size an array, be an enumeration
+  value, a `_BitInt` width, or a `case` label, and go in a static
+  object's initializer. So can a member of a `constexpr` structure,
+  such as `S.n`. The initializer must be a constant whose value the
+  object's type holds exactly, so `constexpr unsigned u = -1;` and
+  `constexpr float f = 0.1;` are errors, and a pointer must be null.
+  A `constexpr` object at file scope has internal linkage, and c6502
+  takes its `constexpr` declaration only as the one declaration of
+  its name. A compound literal can't be `constexpr`, and `restrict`
+  isn't checked, since c6502 drops it. A static initializer may also
+  compute with floating constants, as `1.0 / 3.0`, in the type of the
+  operation, `float` or `double`.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.

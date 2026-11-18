@@ -41,7 +41,10 @@ module C99 {
     -- 6502 register (Y — the only register available to locals). Hard-
     -- error post-parse if the type isn't 1-byte (Char/SChar/UChar) or
     -- is a Pointer. Carried on `storage_class` as `Register()`.
-    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation, placement? placement, string? section)
+    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation, placement? placement, string? section, bool is_constexpr)
+    -- is_constexpr is C23's `constexpr` storage-class specifier
+    -- (§6.7.2), which may come with `static` or `register` in
+    -- storage_class. The parser has already made the type `const`.
     -- abi_annotation carries the value of any prefix bare-identifier
     -- attribute (currently only "zp_abi"; see docs/leaf_zp_abi.md).
     -- Used by the leaf-ZP-ABI optimization. None when no such

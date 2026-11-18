@@ -19,9 +19,10 @@ class TestKeywords(unittest.TestCase):
 
     def test_keyword_count(self):
         # The 37 standard C99 keywords, C23's `bool`, `true`, `false`,
-        # `nullptr`, and `_BitInt`, and c6502's `__c6502_nullptr_t`.
-        # Attributes are C23's `[[...]]`, which takes no keyword.
-        self.assertEqual(len(KEYWORDS), 43)
+        # `nullptr`, `_BitInt`, and `constexpr`, and c6502's
+        # `__c6502_nullptr_t`. Attributes are C23's `[[...]]`, which
+        # takes no keyword.
+        self.assertEqual(len(KEYWORDS), 44)
 
     def test_bit_precise_keyword_and_constants(self):
         self.assertEqual(

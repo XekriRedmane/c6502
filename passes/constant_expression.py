@@ -75,14 +75,54 @@ operator check either.
 
 from __future__ import annotations
 
+import contextlib
+from typing import Callable
+
 import bit_precise
 import builtin_functions
 import c99_ast
+import fp_arith
 
 
 class ConstantExpressionError(Exception):
     """Raised when an expression required to be a constant expression
     (per C99 §6.6) doesn't satisfy the constraints of that section."""
+
+
+# A named constant (C23 §6.6p7) is the name of an object declared
+# `constexpr`, or a `.` member of one of structure or union type, at
+# any depth. Its value is the object's, which the type checker fixes
+# when it checks the declaration. The evaluator doesn't see the
+# symbol table, so the code that holds the values installs a resolver
+# with `named_constants`: the type checker for the program, and the
+# parser for the array sizes and enumeration values it folds. A resolver
+# takes a `Var` or `Dot` and returns `(type, value)`, or None when the
+# expression isn't a named constant. The value has the form a static
+# initializer's value has (`passes.type_checking.Initial`): an int
+# for an integer type, the IEEE 754 bits for `float` and `double`, 0
+# for a null pointer, and a tuple of the elements or members for an
+# aggregate.
+NamedConstantResolver = Callable[[c99_ast.Type_exp], "tuple | None"]
+_RESOLVERS: list[NamedConstantResolver] = []
+
+
+@contextlib.contextmanager
+def named_constants(resolver: NamedConstantResolver):
+    """Makes `resolver` give the values of named constants until the
+    `with` block ends."""
+    _RESOLVERS.append(resolver)
+    try:
+        yield
+    finally:
+        _RESOLVERS.pop()
+
+
+def named_constant(exp: c99_ast.Type_exp) -> tuple | None:
+    """`(type, value)` of `exp` when it's a named constant, from the
+    innermost resolver, or None."""
+    if not _RESOLVERS or not isinstance(exp, (c99_ast.Var, c99_ast.Dot)):
+        return None
+    return _RESOLVERS[-1](exp)
 
 
 # Width / signedness of the six integer types c6502 models. Mirrors
@@ -248,8 +288,13 @@ def evaluate_integer_constant_expression(
 
     Accepted shapes:
       * An integer `Constant` (any integer or char variant).
+      * A named constant of integer type (C23 §6.6p7), the name of a
+        `constexpr` object or a `.` member of one, whose value comes
+        from `named_constant`.
       * `Cast(target_type=integer, exp=...)`, applied modulo the
-        target's width with the target's signedness.
+        target's width with the target's signedness. Its operand may
+        be a floating constant or a named constant of floating type
+        (C23 §6.6p8), truncated toward zero.
       * `SizeOfType(T)` / `SizeOfExp(e)`, which fold to ULong.
       * `Unary` (`-`, `~`, `!`), `Binary` (arithmetic, bitwise,
         shift, comparison, `&&`, `||`), and `Conditional` over
@@ -273,6 +318,18 @@ def evaluate_integer_constant_expression(
     match exp:
         case c99_ast.Constant(const=c):
             return _const_int_value(c), _const_type(c)
+        case c99_ast.Var() | c99_ast.Dot() if (
+            named := named_constant(exp)
+        ) is not None:
+            t, value = named
+            if not _is_integer_type(t):
+                raise ConstantExpressionError(
+                    f"named constant {_describe(exp)} doesn't have an "
+                    f"integer type, so it can be in an integer constant "
+                    f"expression only as the operand of a cast to one "
+                    f"(C23 §6.6p8)"
+                )
+            return _coerce_to_integer_type(value, t), _strip_quals(t)
         case c99_ast.Cast(target_type=target, exp=inner):
             if not _is_integer_type(target):
                 raise ConstantExpressionError(
@@ -280,6 +337,9 @@ def evaluate_integer_constant_expression(
                     f"integer cast target ({target!r}); §6.6.6 requires "
                     f"integer type"
                 )
+            floating = _floating_operand(inner)
+            if floating is not None:
+                return _floating_to_integer(*floating, target), _strip_quals(target)
             inner_value, _inner_type = evaluate_integer_constant_expression(
                 inner,
             )
@@ -343,6 +403,61 @@ def evaluate_integer_constant_expression(
     raise ConstantExpressionError(
         f"expression is not an integer constant expression: {exp!r}"
     )
+
+
+def _describe(exp: c99_ast.Type_exp) -> str:
+    """`exp`, a `Var` or a chain of `Dot`s on one, as source text."""
+    if isinstance(exp, c99_ast.Dot):
+        return f"{_describe(exp.operand)}.{exp.member}"
+    name = getattr(exp, "name", "")
+    # identifier_resolution names a block-scope object `@N.name`.
+    return f"`{name.split('.', 1)[1] if name.startswith('@') else name}`"
+
+
+def _floating_operand(
+    exp: c99_ast.Type_exp,
+) -> tuple[c99_ast.Type_data_type, int] | None:
+    """`(type, bits)` when `exp` is a floating constant or a named
+    constant of floating type, the operands C23 §6.6p8 lets a cast in
+    an integer constant expression convert, and None otherwise."""
+    if isinstance(exp, c99_ast.Constant) and isinstance(
+        exp.const, (c99_ast.ConstFloat, c99_ast.ConstDouble),
+    ):
+        t = (c99_ast.Float() if isinstance(exp.const, c99_ast.ConstFloat)
+             else c99_ast.Double())
+        return t, exp.const.bits
+    named = named_constant(exp)
+    if named is not None and isinstance(
+        _strip_quals(named[0]), (c99_ast.Float, c99_ast.Double),
+    ):
+        return _strip_quals(named[0]), named[1]
+    return None
+
+
+def _floating_to_integer(
+    t: c99_ast.Type_data_type, bits: int, target: c99_ast.Type_data_type,
+) -> int:
+    """The floating value with IEEE 754 `bits` of type `t` converted to
+    the integer type `target`, truncated toward zero. A value whose
+    integer part `target` can't hold makes the conversion undefined
+    (C99 §6.3.1.4p1), so it isn't a constant. A `bool` target is 0
+    for a zero of either sign and 1 for anything else (C99
+    §6.3.1.2)."""
+    if isinstance(_strip_quals(target), c99_ast.Bool):
+        magnitude = 0x7FFFFFFF if isinstance(t, c99_ast.Float) else (1 << 63) - 1
+        return int(bits & magnitude != 0)
+    try:
+        value = (fp_arith.single_bits_to_int(bits)
+                 if isinstance(t, c99_ast.Float)
+                 else fp_arith.double_bits_to_int(bits))
+    except (OverflowError, ValueError):
+        value = None
+    if value is None or _coerce_to_integer_type(value, target) != value:
+        raise ConstantExpressionError(
+            f"the floating value converted to {_strip_quals(target)!r} is "
+            f"out of its range, which is undefined (C99 §6.3.1.4)"
+        )
+    return value
 
 
 def _result_type(exp: c99_ast.Type_exp) -> c99_ast.Type_data_type:

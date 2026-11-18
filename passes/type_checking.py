@@ -116,6 +116,8 @@ import fp_arith
 from passes.constant_expression import (
     ConstantExpressionError,
     evaluate_integer_constant_expression,
+    named_constant,
+    named_constants,
 )
 from passes.identifier_resolution import Linkage
 from passes import stdbit_functions
@@ -501,7 +503,12 @@ def _coerce_init_value(
     into `target_type`'s natural form. Same-type conversions are a
     no-op; integer / integer pass through unbounded (callers mask to
     width); int ↔ FP routes through `fp_arith` so we never see a
-    Python float."""
+    Python float. Qualifiers don't change a value's form, so they're
+    stripped first: `static const double x = 1.5;` once stored the
+    integer 1 as its bits, since `Const(Double)` didn't count as
+    floating."""
+    source_type = _strip_quals(source_type)
+    target_type = _strip_quals(target_type)
     if _types_equal(source_type, target_type):
         return value
     if isinstance(_strip_quals(target_type), Bool):
@@ -806,6 +813,17 @@ def _const_init_value(
     match exp:
         case c99_ast.Constant(const=c):
             return _coerce_init_const_value(c, target_type)
+        case c99_ast.Var() | c99_ast.Dot() if (
+            named := named_constant(exp)
+        ) is not None and not isinstance(
+            _strip_quals(named[0]), (Array, Structure, Union),
+        ):
+            # A named constant (C23 §6.6p7): a `constexpr` object, or
+            # a member of one, with the value the object has.
+            source_type, value = named
+            return _coerce_init_value(
+                value, _strip_quals(source_type), target_type,
+            )
         case c99_ast.Cast(target_type=cast_target, exp=inner):
             inner_val = _const_init_value(
                 inner, cast_target, name, symbols, types,
@@ -838,6 +856,19 @@ def _const_init_value(
             bits = _const_init_value(inner, fp_t, name, symbols, types)
             bits ^= 1 << (31 if isinstance(fp_t, Float) else 63)
             return _coerce_init_value(bits, fp_t, target_type)
+        case c99_ast.Binary(op=op, left=left, right=right) if isinstance(
+            _strip_quals(exp.data_type), (Float, Double),
+        ) and type(op) in _FP_FOLDS:
+            # `1.0 / 3.0`, computed as the program would compute it,
+            # in the type of the operation, to which the type checker
+            # has converted both operands, so that C23's `constexpr
+            # double third = 1.0 / 3.0;` compiles (§6.7.2p18).
+            fp_t = _strip_quals(exp.data_type)
+            a = _const_init_value(left, fp_t, name, symbols, types)
+            b = _const_init_value(right, fp_t, name, symbols, types)
+            single, double = _FP_FOLDS[type(op)]
+            fold = single if isinstance(fp_t, Float) else double
+            return _coerce_init_value(fold(a, b), fp_t, target_type)
         case c99_ast.Unary() | c99_ast.Binary() | c99_ast.Conditional() \
                 | c99_ast.SizeOfExp() | c99_ast.SizeOfType() \
                 | c99_ast.FunctionCall() \
@@ -861,6 +892,16 @@ def _const_init_value(
         f"initializer for static-storage object {name!r} is not a "
         f"constant expression"
     )
+
+
+# The floating operations a static initializer folds, each with its
+# `float` and `double` forms in fp_arith.
+_FP_FOLDS = {
+    c99_ast.Add: (fp_arith.single_add, fp_arith.double_add),
+    c99_ast.Subtract: (fp_arith.single_sub, fp_arith.double_sub),
+    c99_ast.Multiply: (fp_arith.single_mul, fp_arith.double_mul),
+    c99_ast.Divide: (fp_arith.single_div, fp_arith.double_div),
+}
 
 
 def _zero_aggregate(t: "Type", types: "TypeTable | None" = None):
@@ -1064,6 +1105,14 @@ def _const_init_aggregate(
         return tuple(items)
     if isinstance(var_type, (Structure, Union)):
         if not isinstance(init, c99_ast.InitList):
+            # A structure or union constant (C23 §6.6p13), such as a
+            # `constexpr struct s` object, has the value tree of its
+            # object.
+            named = named_constant(init)
+            if named is not None and _types_equal(
+                _strip_quals(named[0]), var_type,
+            ):
+                return named[1]
             raise TypeCheckError(
                 f"static struct/union {name!r} requires a brace-"
                 f"enclosed initializer (`{{...}}`)"
@@ -1253,6 +1302,21 @@ def _display_name(name: str) -> str:
     if name.startswith("@") and "." in name:
         return name.split(".", 1)[1]
     return name
+
+
+def _contains_node(node, cls) -> bool:
+    """Whether the AST `node` has a node of class `cls` anywhere in
+    it."""
+    if isinstance(node, cls):
+        return True
+    if isinstance(node, list):
+        return any(_contains_node(n, cls) for n in node)
+    if dataclasses.is_dataclass(node):
+        return any(
+            _contains_node(getattr(node, f.name), cls)
+            for f in dataclasses.fields(node)
+        )
+    return False
 
 
 _C_TYPE_NAMES = {
@@ -1864,9 +1928,14 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
     pointers exist, etc.) Used at the type-check boundary for
     pointer equality — `p == 0` and `0 == p` are legal even though
     the bare types don't match. C23 adds the predefined constant
-    `nullptr` to the null pointer constants (§6.3.2.3p3)."""
+    `nullptr` to the null pointer constants (§6.3.2.3p3), and a named
+    constant of integer type and value 0, such as `constexpr int Z =
+    0;`, is one too (C23 §6.6p11 footnote 118)."""
     while isinstance(exp, c99_ast.Cast):
         exp = exp.exp
+    named = named_constant(exp)
+    if named is not None:
+        return _is_integer_type(named[0]) and named[1] == 0
     if not isinstance(exp, c99_ast.Constant):
         return False
     c = exp.const
@@ -2314,6 +2383,10 @@ class TypeChecker:
         self._carry_return = False
         # Tag visibility stack — outermost (file scope) at index 0.
         self._tag_scopes: list[set[str]] = [set()]
+        # Each `constexpr` object checked so far: its type and its
+        # value tree, in the form `Initial.value` has. They're the
+        # named constants `_named_constant` gives the evaluator.
+        self._constexpr: dict[str, tuple[Type, object]] = {}
 
     def _push_tag_scope(self) -> None:
         self._tag_scopes.append(set())
@@ -2398,8 +2471,9 @@ class TypeChecker:
                 # internal linkage, since no library has them
                 # (passes/stdbit_functions.py).
                 library = stdbit_functions.add_definitions(decls)
-                for d in decls:
-                    self._check_file_scope_declaration(d)
+                with named_constants(self._named_constant):
+                    for d in decls:
+                        self._check_file_scope_declaration(d)
                 for name in library:
                     sym = self.symbols.get(name)
                     sym.attrs = dataclasses.replace(
@@ -2620,6 +2694,33 @@ class TypeChecker:
     def _check_file_scope_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
+        if vd.name in self._constexpr:
+            raise TypeCheckError(
+                f"{vd.name!r} is declared again after its `constexpr` "
+                f"declaration, which c6502 takes only as the one "
+                f"declaration of a name (C23 §6.7.1p12 leaves any "
+                f"other to the implementation)"
+            )
+        if vd.is_constexpr:
+            if vd.name in self.symbols:
+                raise TypeCheckError(
+                    f"{vd.name!r} is declared `constexpr` after another "
+                    f"declaration of it, and c6502 takes a `constexpr` "
+                    f"declaration only as the one declaration of a name "
+                    f"(C23 §6.7.1p12 leaves any other to the "
+                    f"implementation)"
+                )
+            # A file-scope constexpr object has internal linkage
+            # (C23 §6.2.2p3).
+            vd.storage_class = c99_ast.Static()
+            self._begin_constexpr(vd)
+        self._check_file_scope_var_body(vd)
+        if vd.is_constexpr:
+            self._end_constexpr(vd)
+
+    def _check_file_scope_var_body(
+        self, vd: c99_ast.Type_var_decl,
+    ) -> None:
         # File-scope linkage rules (per identifier_resolution):
         # `static`        → INTERNAL
         # `extern`        → matches prior visible (EXTERNAL if none)
@@ -2698,18 +2799,23 @@ class TypeChecker:
         elif isinstance(_strip_quals(vd.data_type), (Structure, Union)):
             # File-scope `struct s x = {1,2,3};` — type-check the
             # init list against the layout and lift to a value tree.
+            # A structure constant takes the place of the list.
             if not isinstance(vd.init, c99_ast.InitList):
-                raise TypeCheckError(
-                    f"file-scope struct/union {vd.name!r} requires "
-                    f"a brace-enclosed initializer (`{{...}}`)"
+                value = self._structure_constant_init(vd)
+                if value is None:
+                    raise TypeCheckError(
+                        f"file-scope struct/union {vd.name!r} requires "
+                        f"a brace-enclosed initializer (`{{...}}`)"
+                    )
+                initial = Initial(value)
+            else:
+                self._check_struct_init_list(
+                    vd.init, vd.data_type, vd.name,
                 )
-            self._check_struct_init_list(
-                vd.init, vd.data_type, vd.name,
-            )
-            initial = Initial(_const_init_aggregate(
-                vd.init, vd.data_type, vd.name,
-                self.symbols, self.types,
-            ))
+                initial = Initial(_const_init_aggregate(
+                    vd.init, vd.data_type, vd.name,
+                    self.symbols, self.types,
+                ))
         else:
             # Type-check the initializer normally (sets data_type
             # on every node) and convert to the declared type if
@@ -3456,6 +3562,15 @@ class TypeChecker:
     def _check_block_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
+        if vd.is_constexpr:
+            self._begin_constexpr(vd)
+        self._check_block_var_body(vd)
+        if vd.is_constexpr:
+            self._end_constexpr(vd)
+
+    def _check_block_var_body(
+        self, vd: c99_ast.Type_var_decl,
+    ) -> None:
         vd.data_type = _size_from_initializer(
             vd.data_type, vd.init, f"array {_display_name(vd.name)!r}",
         )
@@ -3569,19 +3684,24 @@ class TypeChecker:
                         self.symbols, self.types,
                     ))
             elif isinstance(_strip_quals(vd.data_type), (Structure, Union)):
-                # `static struct s x = {1,2};`.
+                # `static struct s x = {1,2};`, or a structure
+                # constant in place of the list.
                 if not isinstance(vd.init, c99_ast.InitList):
-                    raise TypeCheckError(
-                        f"static struct/union {vd.name!r} requires "
-                        f"a brace-enclosed initializer (`{{...}}`)"
+                    value = self._structure_constant_init(vd)
+                    if value is None:
+                        raise TypeCheckError(
+                            f"static struct/union {vd.name!r} requires "
+                            f"a brace-enclosed initializer (`{{...}}`)"
+                        )
+                    initial = Initial(value)
+                else:
+                    self._check_struct_init_list(
+                        vd.init, vd.data_type, vd.name,
                     )
-                self._check_struct_init_list(
-                    vd.init, vd.data_type, vd.name,
-                )
-                initial = Initial(_const_init_aggregate(
-                    vd.init, vd.data_type, vd.name,
-                    self.symbols, self.types,
-                ))
+                    initial = Initial(_const_init_aggregate(
+                        vd.init, vd.data_type, vd.name,
+                        self.symbols, self.types,
+                    ))
             else:
                 # Same flow as the file-scope-static path: type-
                 # check, apply the conversion rule (so a literal of
@@ -3694,6 +3814,239 @@ class TypeChecker:
             self._check_exp(vd.init)
             vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
+
+    # ------------------------------------------------------------------
+    # constexpr objects (C23 §6.7.2)
+    # ------------------------------------------------------------------
+
+    def _named_constant(self, exp: c99_ast.Type_exp) -> tuple | None:
+        """`(type, value)` of `exp` when it's a named constant (C23
+        §6.6p7): a `constexpr` object, or a `.` member of one of
+        structure or union type, at any depth. The evaluator in
+        passes/constant_expression.py reads this through
+        `named_constant`."""
+        if isinstance(exp, c99_ast.Var):
+            return self._constexpr.get(exp.name)
+        if not isinstance(exp, c99_ast.Dot):
+            return None
+        base = self._named_constant(exp.operand)
+        if base is None:
+            return None
+        t, value = base
+        st = _strip_quals(t)
+        if not isinstance(st, (Structure, Union)):
+            return None
+        layout = self.types.get(st.tag)
+        if layout is None:
+            return None
+        for i, m in enumerate(layout.members):
+            if m.name != exp.member:
+                continue
+            if i >= len(value):
+                # Only a union's first member has a value, since its
+                # initializer sets that one.
+                raise ConstantExpressionError(
+                    f"member {m.name!r} of a union constant isn't the "
+                    f"member its initializer sets, and only that one "
+                    f"is a constant (C23 §6.6p16)"
+                )
+            return m.type, value[i]
+        return None
+
+    def _structure_constant_init(self, vd: c99_ast.Type_var_decl):
+        """The value tree of `vd`'s initializer when it's a structure
+        or union constant of `vd`'s type, as in `constexpr struct s B
+        = A;` with `A` declared `constexpr`, and None otherwise."""
+        self._check_exp(vd.init)
+        named = named_constant(vd.init)
+        if named is None or not _types_equal(
+            _strip_quals(named[0]), _strip_quals(vd.data_type),
+        ):
+            return None
+        return named[1]
+
+    def _begin_constexpr(self, vd: c99_ast.Type_var_decl) -> None:
+        """Checks the rules of C23 §6.7.2p5-6 for the `constexpr`
+        object `vd` that don't depend on its converted initializer:
+        no volatile type in it, and each value of the initializer
+        exactly representable in the type it initializes."""
+        name = _display_name(vd.name)
+        volatile = self._volatile_part(vd.data_type)
+        if volatile is not None:
+            raise TypeCheckError(
+                f"`constexpr` object {name!r} has {volatile}, and a "
+                f"constexpr object can't have a volatile type, or a "
+                f"member of one (C23 §6.7.2p5)"
+            )
+        self._check_constexpr_init(vd.init, vd.data_type, name)
+
+    def _end_constexpr(self, vd: c99_ast.Type_var_decl) -> None:
+        """Records the value of the `constexpr` object `vd`, which the
+        normal checks have converted to its type, so later named
+        constants read it. Every pointer in it must be null (C23
+        §6.7.2p6)."""
+        name = _display_name(vd.name)
+        sym = self.symbols.get(vd.name)
+        if sym is not None and isinstance(sym.attrs, StaticAttr) and isinstance(
+            sym.attrs.initial_value, Initial,
+        ):
+            value = sym.attrs.initial_value.value
+        else:
+            try:
+                value = _const_init_aggregate(
+                    vd.init, vd.data_type, vd.name, self.symbols, self.types,
+                )
+            except TypeCheckError as e:
+                raise TypeCheckError(
+                    f"the initializer of `constexpr` object {name!r} must "
+                    f"be a constant expression (C23 §6.7.2p6): "
+                    + str(e).replace(repr(vd.name), repr(name))
+                ) from e
+        if self._has_address(value):
+            raise TypeCheckError(
+                f"`constexpr` object {name!r} holds a pointer that isn't "
+                f"null, and a constexpr pointer must be null (C23 "
+                f"§6.7.2p6)"
+            )
+        self._constexpr[vd.name] = (vd.data_type, value)
+
+    @staticmethod
+    def _has_address(value) -> bool:
+        """Whether the value tree `value` holds an address."""
+        if isinstance(value, AddressInit):
+            return True
+        if isinstance(value, tuple):
+            return any(TypeChecker._has_address(v) for v in value)
+        return False
+
+    def _volatile_part(self, t: Type, seen=None) -> str | None:
+        """A description of the volatile part of the object type `t`
+        (the object itself, an element, or a member at any depth), or
+        None. What a pointer points to doesn't count."""
+        seen = set() if seen is None else seen
+        if isinstance(t, c99_ast.Volatile):
+            return f"the volatile type {_c_type(t)}"
+        if isinstance(t, Const):
+            return self._volatile_part(t.referenced_type, seen)
+        if isinstance(t, Array):
+            return self._volatile_part(t.element_type, seen)
+        if isinstance(t, (Structure, Union)) and t.tag not in seen:
+            seen.add(t.tag)
+            layout = self.types.get(t.tag)
+            for m in layout.members if layout is not None else ():
+                if self._volatile_part(m.type, seen) is not None:
+                    return f"a volatile member {m.name!r}"
+        return None
+
+    def _check_constexpr_init(self, init, t: Type, name: str) -> None:
+        """Checks each value in the initializer `init` of an object of
+        type `t` in a `constexpr` object `name`: an object of integer
+        type takes an integer constant expression and one of real
+        floating type an integer or real floating one, and the value
+        must be exactly representable in the type, since a constexpr
+        initializer can't change a value (C23 §6.7.2p5-6). Pointers
+        are checked later, by `_end_constexpr`. The shapes the normal
+        checks reject are left for them."""
+        st = _strip_quals(t)
+        if isinstance(st, Array):
+            items = init.items if isinstance(init, c99_ast.InitList) else [init]
+            if (len(items) == 1 and isinstance(items[0], c99_ast.String)
+                    and _is_char_element(st.element_type)):
+                self._check_constexpr_string(items[0], st.element_type, name)
+                return
+            if isinstance(init, c99_ast.InitList):
+                for item in init.items:
+                    self._check_constexpr_init(item, st.element_type, name)
+            return
+        if isinstance(st, (Structure, Union)):
+            layout = self.types.get(st.tag)
+            if not isinstance(init, c99_ast.InitList) or layout is None:
+                return
+            members = layout.members[:1] if isinstance(st, Union) else layout.members
+            for item, m in zip(init.items, members):
+                self._check_constexpr_init(item, m.type, name)
+            return
+        if isinstance(init, c99_ast.InitList):
+            if len(init.items) == 1:
+                self._check_constexpr_init(init.items[0], t, name)
+            return
+        if not (_is_integer_type(st) or _is_floating_type(st)):
+            return
+        if _contains_node(init, c99_ast.CompoundLiteral):
+            # The normal checks declare its object, which a second
+            # check of a copy would declare again. It isn't a constant
+            # either way.
+            return
+        leaf = copy.deepcopy(init)
+        self._check_exp(leaf)
+        leaf = _decay_if_array(leaf)
+        source = _strip_quals(leaf.data_type)
+
+        def fail(why: str) -> TypeCheckError:
+            return TypeCheckError(
+                f"the initializer of `constexpr` object {name!r} {why}"
+            )
+
+        if _is_integer_type(source):
+            try:
+                value, _ = evaluate_integer_constant_expression(leaf)
+            except ConstantExpressionError as e:
+                raise fail(
+                    f"isn't an integer constant expression (C23 "
+                    f"§6.7.2p6): {e}"
+                ) from e
+            if _is_integer_type(st):
+                exact = (value in (0, 1) if isinstance(st, Bool)
+                         else _coerce_int_to_type(value, st) == value)
+            else:
+                bits = _coerce_init_value(value, source, st)
+                exact = _coerce_init_value(bits, st, source) == value
+            if not exact:
+                raise fail(
+                    f"has the value {value}, which {_c_type(st)} can't "
+                    f"hold exactly, and a constexpr initializer can't "
+                    f"change a value (C23 §6.7.2p5)"
+                )
+            return
+        if not _is_floating_type(source):
+            raise fail(
+                f"has type {_c_type(source)}, and an object of type "
+                f"{_c_type(st)} takes an arithmetic constant expression "
+                f"(C23 §6.7.2p6)"
+            )
+        if _is_integer_type(st):
+            raise fail(
+                f"has the floating type {_c_type(source)}, and an object "
+                f"of integer type takes an integer constant expression "
+                f"(C23 §6.7.2p6)"
+            )
+        bits = _const_init_value(leaf, source, name, self.symbols, self.types)
+        converted = _coerce_init_value(bits, source, st)
+        if _coerce_init_value(converted, st, source) != bits:
+            raise fail(
+                f"has a {_c_type(source)} value that {_c_type(st)} can't "
+                f"hold exactly, and a constexpr initializer can't change "
+                f"a value (C23 §6.7.2p5)"
+            )
+
+    def _check_constexpr_string(
+        self, s: c99_ast.String, element: Type, name: str,
+    ) -> None:
+        """Each character of the string literal `s` must keep its value
+        in the `constexpr` array's element type (C23 §6.7.2p5). A
+        string's characters have type `char`, which is unsigned in
+        c6502, so one above 127 changes value in a `signed char`."""
+        if not _is_signed(_strip_quals(element)):
+            return
+        for ch in s.str:
+            if ord(ch) > 127:
+                raise TypeCheckError(
+                    f"the string that initializes `constexpr` array "
+                    f"{name!r} has the character {ord(ch)}, which "
+                    f"{_c_type(_strip_quals(element))} can't hold, and a "
+                    f"constexpr initializer can't change a value (C23 "
+                    f"§6.7.2p5)"
+                )
 
     def _check_compound_literal(self, exp: c99_ast.CompoundLiteral) -> Type:
         """`(T){...}` (C99 §6.5.2.5) declares an unnamed object named

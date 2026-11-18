@@ -179,14 +179,22 @@ class _Binding:
     names, an enumeration constant, with its value, or anything else
     (an object, a function, a parameter). `tag_scopes` maps each
     struct/union tag in a typedef's type to the scope whose
-    declaration of the tag the type refers to."""
+    declaration of the tag the type refers to.
 
-    __slots__ = ("data_type", "tag_scopes", "enum_value")
+    `constant` is `(type, value)` for a scalar object declared
+    `constexpr` (C23 §6.7.2) whose initializer the parser could fold,
+    with the value in the form a static initializer's value has, so
+    the constant expressions the parser folds can use the name. The
+    object is still an object, which keeps its uses in the AST."""
 
-    def __init__(self, data_type=None, tag_scopes=None, enum_value=None):
+    __slots__ = ("data_type", "tag_scopes", "enum_value", "constant")
+
+    def __init__(self, data_type=None, tag_scopes=None, enum_value=None,
+                 constant=None):
         self.data_type = data_type
         self.tag_scopes = tag_scopes or {}
         self.enum_value = enum_value
+        self.constant = constant
 
     @property
     def is_typedef(self) -> bool:
@@ -262,6 +270,10 @@ class _ParseContext:
         self.body_scope: _Scope | None = None
         self.anonymous_tags = 0
         self.tag_head = _TagHead()
+        # Each struct/union body parsed so far, so the constant
+        # expressions the parser folds can use a member of a
+        # `constexpr` structure (`_checker_with_named_constants`).
+        self.struct_bodies: list[c99_ast.Type_struct_decl] = []
         # The latest token lexed, and the parser state it was lexed in.
         self.token: Token | None = None
         self.parser_state = None
@@ -674,15 +686,29 @@ def _split_specifiers(specs):
     in `Const(...)` if any `const` qualifier appeared. storage_class
     is a `c99_ast.Static() / .Extern() / .Register()`, a
     `_TypedefStorage()`, or None.
+
+    C23's `constexpr` (§6.7.2p2) may come with `static` or `register`
+    as well, and with nothing else. It isn't in the result. The
+    callers test for it with `_has_constexpr`, and `var_decl` adds the
+    `const` it implies to each declarator's type
+    (`_constexpr_type`), since `constexpr int *p` makes `p` itself
+    const.
     """
     type_specs = []
     qualifier_specs = []
     storage = None
+    constexpr = False
     for spec in specs:
         if spec.type in _TYPE_SPECIFIER_TOKEN_TYPES:
             type_specs.append(spec)
         elif spec.type in _TYPE_QUALIFIER_TOKEN_TYPES:
             qualifier_specs.append(spec)
+        elif spec.type == "CONSTEXPR":
+            if constexpr:
+                raise ParserError(
+                    "`constexpr` appears twice in a declaration"
+                )
+            constexpr = True
         else:
             cls = _STORAGE_CLASSES[spec.type]
             if storage is not None:
@@ -691,10 +717,31 @@ def _split_specifiers(specs):
                     "in a declaration"
                 )
             storage = cls()
+    if constexpr and not isinstance(
+        storage, (type(None), c99_ast.Static, c99_ast.Register),
+    ):
+        raise ParserError(
+            f"`constexpr` can't go with `{_storage_name(storage)}`; of "
+            f"the other storage-class specifiers, only `static` and "
+            f"`register` may come with it (C23 §6.7.2p2)"
+        )
     return (
         _apply_qualifiers(_resolve_data_type(type_specs), qualifier_specs),
         storage,
     )
+
+
+def _has_constexpr(specs) -> bool:
+    """Whether the declaration specifiers `specs` include C23's
+    `constexpr`."""
+    return any(getattr(s, "type", None) == "CONSTEXPR" for s in specs)
+
+
+def _constexpr_type(data_type):
+    """The type of an object declared `constexpr`, which is `const`
+    whether or not the declaration says so (C23 §6.7.2p16). An array's
+    elements take the qualifier."""
+    return _apply_qualifiers(data_type, [Token("CONST", "const")])
 
 
 def _apply_qualifiers(data_type, qualifier_tokens):
@@ -2086,15 +2133,104 @@ def _fold_integer_constant(exp) -> int:
     # of the parser in the pipeline.
     from passes.constant_expression import (
         ConstantExpressionError, evaluate_integer_constant_expression,
+        named_constants,
     )
-    from passes.type_checking import TypeChecker, TypeCheckError
+    from passes.type_checking import TypeCheckError
     exp = copy.deepcopy(exp)
+    checker = _checker_with_named_constants(exp)
     try:
-        TypeChecker()._check_exp(exp)
-        value, _ = evaluate_integer_constant_expression(exp)
+        with named_constants(checker._named_constant):
+            checker._check_exp(exp)
+            value, _ = evaluate_integer_constant_expression(exp)
     except (TypeCheckError, ConstantExpressionError) as e:
         raise ParserError(str(e)) from e
     return value
+
+
+def _checker_with_named_constants(exp, layouts: bool = False):
+    """A type checker holding the named constants in scope that
+    `exp` names (`_Binding.constant`), as objects of their types with
+    their values, for folding a constant expression in the parser.
+    When one is a structure or union, or `layouts` is set, it also
+    has the layouts of the struct and union bodies parsed so far.
+    A tag declared again in an inner scope has its latest body."""
+    from passes.type_checking import (
+        LocalAttr, Symbol, TypeChecker, TypeCheckError,
+    )
+    checker = TypeChecker()
+    constants = {}
+    for name in _names_in(exp, set()):
+        binding = _CTX.lookup(name)
+        if binding is not None and binding.constant is not None:
+            constants[name] = binding.constant
+    if layouts or any(
+        isinstance(_unqualified(t), (c99_ast.Structure, c99_ast.Union))
+        for t, _value in constants.values()
+    ):
+        latest = {}
+        for sd in _CTX.struct_bodies:
+            latest.pop(sd.tag, None)
+            latest[sd.tag] = sd
+        for sd in latest.values():
+            try:
+                checker._check_struct_decl(copy.deepcopy(sd))
+            except (TypeCheckError, NotImplementedError):
+                pass
+    for name, (t, value) in constants.items():
+        checker.symbols[name] = Symbol(type=t, attrs=LocalAttr())
+        checker._constexpr[name] = (t, value)
+    return checker
+
+
+def _unqualified(t):
+    """`t` without its outer `const` and `volatile`."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    return t
+
+
+def _names_in(node, out: set) -> set:
+    """Adds the name of each `Var` in the AST `node` to `out`."""
+    if isinstance(node, c99_ast.Var):
+        out.add(node.name)
+    elif isinstance(node, list):
+        for n in node:
+            _names_in(n, out)
+    elif dataclasses.is_dataclass(node):
+        for f in dataclasses.fields(node):
+            _names_in(getattr(node, f.name), out)
+    return out
+
+
+def _fold_named_constant(data_type, init):
+    """`(type, value)` of a scalar object declared `constexpr` with
+    the initializer `init`, or None when the parser can't fold it. The
+    type checker checks the declaration again later and reports what's
+    wrong with it, so a failure here isn't an error."""
+    from passes.constant_expression import (
+        ConstantExpressionError, named_constants,
+    )
+    from passes.type_checking import Initial, TypeCheckError
+    aggregate = isinstance(
+        _unqualified(data_type), (c99_ast.Structure, c99_ast.Union),
+    )
+    if isinstance(data_type, c99_ast.Array):
+        return None
+    init = copy.deepcopy(init)
+    checker = _checker_with_named_constants(init, layouts=aggregate)
+    vd = c99_ast.Type_var_decl(
+        name="@constexpr", init=init, data_type=data_type,
+        storage_class=c99_ast.Static(),
+    )
+    try:
+        with named_constants(checker._named_constant):
+            checker._check_block_var(vd)
+    except (TypeCheckError, ConstantExpressionError, NotImplementedError):
+        return None
+    initial = checker.symbols.get("@constexpr").attrs.initial_value
+    if not isinstance(initial, Initial):
+        return None
+    return data_type, initial.value
 
 
 def _array_size_from_suffix(suffix):
@@ -2716,6 +2852,12 @@ class _ASTBuilder(Transformer):
                     "struct/union definition isn't permitted in a "
                     "parameter declaration"
                 )
+        if _has_constexpr(specs):
+            raise ParserError(
+                f"`constexpr` declares a named constant, and isn't "
+                f"permitted on {where}, where the only storage-class "
+                f"specifier is `register`"
+            )
         base, storage = _split_specifiers(specs)
         # C99 §6.7.5.3.2: the only storage class allowed on a parameter
         # is `register`. `static` / `extern` are constraint violations.
@@ -2991,7 +3133,26 @@ class _ASTBuilder(Transformer):
         # scope; see `_typedef_declaration`.
         decl_specs = _CTX.decl_specs[-1]
         if not decl_specs.is_typedef:
-            _CTX.declare(_declarator_name(decl_tree), _ORDINARY)
+            binding = _ORDINARY
+            if _has_constexpr(decl_specs.specs) and init is not None:
+                # A named constant (C23 §6.6p7), which the constant
+                # expressions the parser folds may use.
+                try:
+                    base, _storage = _split_specifiers(decl_specs.specs)
+                    _name, composed, _p, _r = _apply_declarator(
+                        decl_tree, base,
+                    )
+                except (ParserError, NotImplementedError):
+                    composed = None
+                if composed is not None and not isinstance(
+                    composed, c99_ast.FunType,
+                ):
+                    constant = _fold_named_constant(
+                        _constexpr_type(composed), init,
+                    )
+                    if constant is not None:
+                        binding = _Binding(constant=constant)
+            _CTX.declare(_declarator_name(decl_tree), binding)
             return (decl_tree, init, postfix, [])
         base, _storage = _split_specifiers(decl_specs.specs)
         name, composed, _params, _regs = _apply_declarator(decl_tree, base)
@@ -3022,6 +3183,7 @@ class _ASTBuilder(Transformer):
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
+        is_constexpr = _has_constexpr(specs)
         # The leading attributes apply to each declarator, with those
         # after its name. They're checked below, once the composed
         # type says whether it names a function (zp_abi) or an object
@@ -3076,6 +3238,11 @@ class _ASTBuilder(Transformer):
                     _extract_function_attributes(attr_specs, where=where)
                 )
                 noreturn = _is_noreturn(attrs)
+                if is_constexpr:
+                    raise ParserError(
+                        f"`constexpr` declares a named constant, which "
+                        f"is an object, and {where} declares a function"
+                    )
                 if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
                         f"storage class 'register' isn't permitted on "
@@ -3107,12 +3274,21 @@ class _ASTBuilder(Transformer):
                 attr_specs = _c6502_attributes(
                     attrs, "object", f"object declaration `{name}`",
                 )
+                if is_constexpr:
+                    if init is None:
+                        raise ParserError(
+                            f"`constexpr` object `{name}` has no "
+                            f"initializer, and a constexpr declaration "
+                            f"must have one (C23 §6.7.2p5)"
+                        )
+                    composed = _constexpr_type(composed)
                 tails.append(c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
                         name=name,
                         init=init,
                         data_type=composed,
                         storage_class=storage_class,
+                        is_constexpr=is_constexpr,
                         placement=_extract_object_placement(
                             attr_specs, name,
                         ),
@@ -3151,6 +3327,10 @@ class _ASTBuilder(Transformer):
         struct_decls = _drain_inline_struct_bodies(specs)
         if any(getattr(s, "type", None) == "TYPEDEF" for s in specs):
             raise ParserError("typedef declaration declares no name")
+        if _has_constexpr(specs):
+            raise ParserError(
+                "a `constexpr` declaration must declare an object"
+            )
         # Reject any storage-class specifier on a tag-only decl.
         if any(
             getattr(s, "type", None) in ("STATIC", "EXTERN")
@@ -3220,6 +3400,11 @@ class _ASTBuilder(Transformer):
             _apply_declarator(decl_tree, base_type)
         )
         where = f"function definition {name!r}"
+        if _has_constexpr(specs):
+            raise ParserError(
+                f"`constexpr` declares a named constant, which is an "
+                f"object, and {where} declares a function"
+            )
         def_attrs = _merge_attributes(
             prefix_attrs, _declarator_attributes(decl_tree),
         )
@@ -3824,6 +4009,7 @@ def _drain_inline_struct_bodies(specs):
                 members=members,
             )
             out.append(c99_ast.StructDecl(struct_decl=sd))
+            _CTX.struct_bodies.append(sd)
             s.body = None  # consumed; further references treat as forward-ref
     return out
 
@@ -3917,23 +4103,24 @@ _LARK = Lark.open(
 
 # The keywords C23 added (§6.4.1) that a C99 program could have used as
 # names, by their terminals in c99.lark.
-_C23_KEYWORD_TERMINALS = ("BOOL", "TRUE", "FALSE", "NULLPTR")
+_C23_KEYWORD_TERMINALS = ("BOOL", "TRUE", "FALSE", "NULLPTR", "CONSTEXPR")
 
 
 def _c23_keyword_as_name(e: UnexpectedInput) -> str | None:
     """The message for the syntax error `e` when it's `bool`, `true`,
-    `false`, or `nullptr` where the parser could take a name, as in
-    `int true;`, and None for any other error. C99 let a program use
-    those four as
-    names, and C23 makes them keywords. `int bool = 1;` fails on the
-    `=` after it, since `int bool` reads as two type specifiers."""
+    `false`, `nullptr`, or `constexpr` where the parser could take a
+    name, as in `int true;`, and None for any other error. C99 let a
+    program use those five as names, and C23 makes them keywords.
+    `int bool = 1;` and `int constexpr = 1;` fail on the `=` after the
+    keyword, since `int bool` reads as two type specifiers and `int
+    constexpr` as a type and a storage-class specifier."""
     if not isinstance(e, UnexpectedToken):
         return None
     if e.token.type in _C23_KEYWORD_TERMINALS and "IDENTIFIER" in e.expected:
         keyword = str(e.token)
-    elif (_CTX.recent[0] == "BOOL"
+    elif (_CTX.recent[0] in ("BOOL", "CONSTEXPR")
             and e.token.type in ("ASSIGN", "LBRACKET", "COMMA")):
-        keyword = "bool"
+        keyword = _CTX.recent[0].lower()
     else:
         return None
     return (

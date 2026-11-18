@@ -31,6 +31,8 @@ KEYWORDS = frozenset({
     "nullptr", "__c6502_nullptr_t",
     # C23's bit-precise integer types (§6.7.3.1).
     "_BitInt",
+    # C23's storage-class specifier for named constants (§6.7.2).
+    "constexpr",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with

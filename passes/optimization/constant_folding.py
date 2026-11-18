@@ -427,12 +427,17 @@ def _fold_indexed_load(
     if _scalar_size(dst_t) != elem_size:
         return None
     # Build the Constant matching the dst's c99 type. Reuse the
-    # c99_to_tac helper that knows the variant mapping.
+    # c99_to_tac helper that holds the variant mapping, except for a
+    # floating element, whose `Initial` value is its IEEE 754 bits
+    # where `_tac_const_for` takes a number.
     from c99_to_tac import _tac_const_for
-    return tac_ast.Copy(
-        src=tac_ast.Constant(const=_tac_const_for(dst_t, val)),
-        dst=dst,
-    )
+    if isinstance(dst_t, c99_ast.Float):
+        const = tac_ast.ConstFloat(bits=int(val))
+    elif isinstance(dst_t, c99_ast.Double):
+        const = tac_ast.ConstDouble(bits=int(val))
+    else:
+        const = _tac_const_for(dst_t, val)
+    return tac_ast.Copy(src=tac_ast.Constant(const=const), dst=dst)
 
 
 def _fold_plane_load(

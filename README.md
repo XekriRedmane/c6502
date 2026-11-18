@@ -272,8 +272,9 @@ sizes on 32- and 64-bit machines.
 
 `<stdint.h>` defines `uint8_t` as `unsigned char`, `int16_t` as
 `int`, `int32_t` as `long`, and so on. `sizeof` gives an `unsigned
-long`, and the difference of two pointers is an `int`, which
-`<stddef.h>` names `size_t` and `ptrdiff_t`. `NULL` is `((void
+int`, since no object is larger than the 64K address space, and the
+difference of two pointers is an `int`, which `<stddef.h>` names
+`size_t` and `ptrdiff_t`. `NULL` is `((void
 *)0)`. Since `int` is
 16 bits, `40000` is a `long` constant, and `1 << 16` is undefined.
 A binary constant takes the types a hexadecimal one does, so

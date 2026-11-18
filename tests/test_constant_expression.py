@@ -109,26 +109,26 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
             evaluate_integer_constant_expression(exp)
 
     def test_sizeof_type_int_returns_two(self):
-        # c6502: sizeof(int) == 2; result type is unsigned long.
+        # c6502: sizeof(int) == 2; result type is unsigned int.
         value, t = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.Int()),
         )
         self.assertEqual(value, 2)
-        self.assertIsInstance(t, c99_ast.ULong)
+        self.assertIsInstance(t, c99_ast.UInt)
 
     def test_sizeof_type_long_returns_four(self):
         value, t = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.Long()),
         )
         self.assertEqual(value, 4)
-        self.assertIsInstance(t, c99_ast.ULong)
+        self.assertIsInstance(t, c99_ast.UInt)
 
     def test_sizeof_type_long_long_returns_eight(self):
         value, t = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.LongLong()),
         )
         self.assertEqual(value, 8)
-        self.assertIsInstance(t, c99_ast.ULong)
+        self.assertIsInstance(t, c99_ast.UInt)
 
     def test_sizeof_type_double_returns_eight(self):
         value, _ = evaluate_integer_constant_expression(
@@ -176,7 +176,7 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
             c99_ast.SizeOfExp(exp=v),
         )
         self.assertEqual(value, 4)
-        self.assertIsInstance(t, c99_ast.ULong)
+        self.assertIsInstance(t, c99_ast.UInt)
 
     def test_sizeof_exp_without_data_type_rejected(self):
         # The evaluator can't fold sizeof e if the inner hasn't been

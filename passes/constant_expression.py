@@ -64,7 +64,7 @@ operations that boil down to width-modular arithmetic on the source
 integer value).
 
 `sizeof` folds to the byte size of its operand type as an
-`unsigned long` (size_t in c6502). For `sizeof (T)` the type comes
+`unsigned int` (size_t in c6502). For `sizeof (T)` the type comes
 from the AST node directly; for `sizeof e` the type comes from the
 inner expression's `data_type`, which the type checker must have
 stamped before this evaluator runs (the case-label call site
@@ -298,7 +298,8 @@ def evaluate_integer_constant_expression(
         target's width with the target's signedness. Its operand may
         be a floating constant or a named constant of floating type
         (C23 §6.6p8), truncated toward zero.
-      * `SizeOfType(T)` / `SizeOfExp(e)`, which fold to ULong.
+      * `SizeOfType(T)` / `SizeOfExp(e)`, which fold to UInt
+        (`size_t`).
       * `Unary` (`-`, `~`, `!`), `Binary` (arithmetic, bitwise,
         shift, comparison, `&&`, `||`), and `Conditional` over
         integer constant expressions.
@@ -348,7 +349,7 @@ def evaluate_integer_constant_expression(
             )
             return _coerce_to_integer_type(inner_value, target), _strip_quals(target)
         case c99_ast.SizeOfType(target_type=t):
-            return _sizeof(t), c99_ast.ULong()
+            return _sizeof(t), c99_ast.UInt()
         case c99_ast.SizeOfExp(exp=inner):
             inner_t = inner.data_type
             if inner_t is None:
@@ -357,7 +358,7 @@ def evaluate_integer_constant_expression(
                     "the constant evaluator requires the operand to "
                     "be type-checked first"
                 )
-            return _sizeof(inner_t), c99_ast.ULong()
+            return _sizeof(inner_t), c99_ast.UInt()
         case c99_ast.Unary(op=op, exp=inner):
             t = _result_type(exp)
             v, _ = evaluate_integer_constant_expression(inner)

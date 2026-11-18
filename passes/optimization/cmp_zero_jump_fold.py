@@ -326,6 +326,22 @@ def _try_narrow_through_zero_extend(
     if def_idx is None:
         return None
     defining = instrs[def_idx]
+    # A `Copy` between an `int` and an `unsigned int` is how a promoted
+    # byte meets an unsigned operand, as in `i < sizeof a`, and copy
+    # propagation keeps it, since the two differ in signedness. A Copy
+    # doesn't change the width, and the extend's value is 0 to 255
+    # either way, so the compare reads the extend's source just the
+    # same.
+    seen = 0
+    while (isinstance(defining, tac_ast.Copy)
+           and isinstance(defining.src, tac_ast.Var) and seen < 4):
+        seen += 1
+        if not _narrowable_use(defining.src, use_count, ssa_dsts):
+            return None
+        def_idx = var_def_idx.get(defining.src.name)
+        if def_idx is None:
+            return None
+        defining = instrs[def_idx]
     if not isinstance(defining, tac_ast.ZeroExtend):
         return None
     src = defining.src

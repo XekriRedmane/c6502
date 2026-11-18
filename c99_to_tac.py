@@ -3116,19 +3116,19 @@ class Translator:
                 # no array writes). The type checker has already
                 # stamped inner.data_type with the un-decayed
                 # operand type, which is all we need to compute
-                # the size. Result type is ULong (size_t in c6502).
+                # the size. Result type is UInt (size_t in c6502).
                 t = inner.data_type
                 assert t is not None, (
                     "type_checker should have stamped data_type "
                     f"on sizeof's inner expression: {inner!r}"
                 )
-                return tac_ast.Constant(const=tac_ast.ConstULong(
+                return tac_ast.Constant(const=tac_ast.ConstUInt(
                     value=_sizeof(t, self._types),
                 ))
             case c99_ast.SizeOfType(target_type=t):
                 # `sizeof (T)` — direct fold from the type-name.
                 # No inner expression to translate.
-                return tac_ast.Constant(const=tac_ast.ConstULong(
+                return tac_ast.Constant(const=tac_ast.ConstUInt(
                     value=_sizeof(t, self._types),
                 ))
             case c99_ast.Subscript(array=arr, index=idx):

@@ -296,6 +296,9 @@ _SIZEOF_LOOPS = (
     "        a[i] = b[i] + 1;\n"
     "    for (uint8_t i = 0; i < 40U; i++)\n"
     "        b[i] = a[i];\n"
+    "    uint8_t *p = (uint8_t *)a;\n"
+    "    for (uint8_t i = 0; i < sizeof a; i++)\n"
+    "        p[i] += 2;\n"
     "    return b[39];\n"
     "}\n"
     "int main(void) {\n"
@@ -309,18 +312,24 @@ _SIZEOF_LOOPS = (
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestByteLoopAgainstSizeof(unittest.TestCase):
     """`for (uint8_t i = 0; i < sizeof a; i++)` compares one byte. The
-    compare is at the width of `size_t`, `unsigned long`, which
-    promotes `i` to `int` and then to `unsigned long`, and `i < 40U`
-    converts the promoted `i` to `unsigned int` with a copy that copy
-    propagation removes after the compare has become a `JumpIfCmp`
-    (`cmp_zero_jump_fold.NARROW_JUMP_COMPARE_RULE`)."""
+    compare is at the width of `size_t`, `unsigned int`, so `i` is
+    promoted to `int` and then converted to `unsigned int` with a
+    copy, as it is for `i < 40U`. Copy propagation removes the copy
+    after the compare has become a `JumpIfCmp`
+    (`cmp_zero_jump_fold.NARROW_JUMP_COMPARE_RULE`), or keeps it when
+    the extend has other readers, as the address of `p[i]` is in the
+    third loop, and the narrowing looks through it."""
 
     def test_one_byte_compare(self):
         from compile import _run_stage
         from preprocessor import preprocess
         asm = _run_stage("codegen", preprocess(_SIZEOF_LOOPS), optimize=True)
         body = asm[asm.index("\nf:"):asm.index("\nmain:")]
-        self.assertEqual(body.count("CPX   #$28"), 2, body)
+        # The third loop keeps its counter in memory, so its compare
+        # is `CMP #$28`.
+        self.assertEqual(
+            body.count("CPX   #$28") + body.count("CMP   #$28"), 3, body,
+        )
         self.assertNotIn("SBC", body)
         self.assertNotIn("sx_done", body)
 

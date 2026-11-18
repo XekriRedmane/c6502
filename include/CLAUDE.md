@@ -22,10 +22,10 @@ automatically; no `-I` flag needed.
   typedefs mapping to c6502's integer model, plus the C99 limit and
   literal-suffix macros (`INT8_MAX`, `INT8_C`, etc.), and the limits
   `PTRDIFF_MIN` / `PTRDIFF_MAX` (an `int`'s), `SIZE_MAX` (an
-  `unsigned long`'s), and `WCHAR_MIN` / `WCHAR_MAX` (an `int`'s) of
+  `unsigned int`'s), and `WCHAR_MIN` / `WCHAR_MAX` (an `int`'s) of
   the types `<stddef.h>` declares.
 - `stddef.h` (C23 §7.21) — `ptrdiff_t` is `int` and `size_t` is
-  `unsigned long`, the types the subtraction of two pointers and
+  `unsigned int`, the types the subtraction of two pointers and
   `sizeof` give. `max_align_t` is `char`, since nothing in c6502 has
   an alignment above 1, and `wchar_t` is `int`. `nullptr_t` is
   `typeof_unqual(nullptr)`, as C23 declares it. `NULL` is `((void

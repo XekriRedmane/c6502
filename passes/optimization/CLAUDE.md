@@ -107,7 +107,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
     whose operand reached a `ZeroExtend` only after the fold, through
     a `Copy` that copy propagation removed later (`i < 40U` converts
     the promoted `int` to `unsigned`), narrows the same way, for an
-    SSA-renamed extend source.
+    SSA-renamed extend source. Every narrowing looks through such a
+    `Copy` to the extend behind it, since copy propagation keeps one
+    that changes the signedness while the extend has other readers
+    (`i < sizeof a`, with `sizeof` an `unsigned int`).
   - `fold_narrow_and_jump` (`AND_ZERO_RULE`): folds `(ZeroExtend(uchar);
     BitwiseAnd(_, 0x80); JumpIf*)` to `JumpIfMasked` when the operand
     narrows to 1 byte — direct `LDA / BPL/BMI` at asm lowering instead

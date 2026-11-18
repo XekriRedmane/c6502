@@ -5816,9 +5816,11 @@ class TypeChecker:
                         "sizeof of an incomplete array type is "
                         "illegal (C99 §6.5.3.4.1)"
                     )
-                # Result type is `unsigned long` (c6502's size_t).
-                exp.data_type = ULong()
-                return ULong()
+                # The result has type `size_t`, which is `unsigned
+                # int` in c6502, since no object is larger than the
+                # 64K address space.
+                exp.data_type = UInt()
+                return UInt()
             case c99_ast.SizeOfType(target_type=t):
                 if _is_void(t):
                     raise TypeCheckError(
@@ -5842,8 +5844,9 @@ class TypeChecker:
                     tag_visible=self._tag_visible,
                 auto_introduce=self._auto_introduce_tag,
                 )
-                exp.data_type = ULong()
-                return ULong()
+                # `size_t`, `unsigned int` in c6502, as for `sizeof e`.
+                exp.data_type = UInt()
+                return UInt()
             case c99_ast.Subscript(array=arr, index=idx):
                 # `E1[E2]` per C99 §6.5.2.1.2 is defined as
                 # `*((E1)+(E2))`. Because the underlying `+` is

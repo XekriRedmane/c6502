@@ -122,11 +122,11 @@ typedef unsigned long long uintmax_t;
 
 /* limits of other integer types — §7.18.3.
  * The subtraction of two pointers gives an `int` (2 bytes signed),
- * `sizeof` gives an `unsigned long`, and <stddef.h> makes `wchar_t`
+ * `sizeof` gives an `unsigned int`, and <stddef.h> makes `wchar_t`
  * an `int`. */
 #define PTRDIFF_MIN         INT16_MIN
 #define PTRDIFF_MAX         INT16_MAX
-#define SIZE_MAX            UINT32_MAX
+#define SIZE_MAX            UINT16_MAX
 #define WCHAR_MIN           INT16_MIN
 #define WCHAR_MAX           INT16_MAX
 

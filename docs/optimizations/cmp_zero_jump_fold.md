@@ -142,6 +142,17 @@ SBC #$28; LDA #$00; SBC #$00; BCC`, where it now compares one, `CPX
 #$28; BCC`. A `JumpIfCmp` has no result to find its position by, so
 only an SSA-renamed extend source narrows here.
 
+Copy propagation doesn't remove such a `Copy` when something else
+reads the extend's result, since the `Copy` changes the signedness,
+which `<` takes its sense from. So every narrowing looks through a
+`Copy` from a variable to the extend behind it
+(`_try_narrow_through_zero_extend`). A `Copy` never changes the
+width, and the extend's value is 0 to 255 as an `int` or an
+`unsigned int`. Lode Runner's `editor_clear_high_scores` clears its
+table with `for (uint8_t i = 0; i < sizeof HI_SCORES; i++)`, where
+`sizeof` is an `unsigned int`, and the index also feeds an unused
+address computation. Its test is `CPX #$50; BCC`.
+
 ## When it applies
 
 - A `Binary` with one of `==`, `!=`, `<`, `>`, `<=`, `>=` is followed

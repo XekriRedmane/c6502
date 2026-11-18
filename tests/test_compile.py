@@ -685,26 +685,24 @@ class TestSizeof(unittest.TestCase):
         )
         self.assertNotIn("JSR   foo", out)
 
-    def test_sizeof_returns_unsigned_long(self):
-        # Result type of sizeof is ULong. Assigning to a Long
-        # variable is a same-width conversion (no Truncate or
-        # SignExtend). Assigning to an Int truncates.
+    def test_sizeof_returns_unsigned_int(self):
+        # Result type of sizeof is UInt (size_t). Assigning to an Int
+        # is a same-width conversion, and assigning to a Long widens
+        # with a ZeroExtend.
         out = self._tac(
             "int main(void) { "
             "long l = sizeof(int); int i = sizeof(int); "
             "return 0; }",
         )
-        # Long ← ULong is a same-width pointer-style copy: just a
-        # Copy. Int ← ULong narrows: a Truncate.
-        self.assertIn("Truncate(", out)
+        self.assertIn("ZeroExtend(", out)
+        self.assertNotIn("Truncate(", out)
 
-    def test_sizeof_of_sizeof_is_four(self):
-        # sizeof's result has type unsigned long (size 4 in c6502
-        # post the C99 width refresh).
+    def test_sizeof_of_sizeof_is_two(self):
+        # sizeof's result has type unsigned int, 2 bytes in c6502.
         out = self._tac(
             "int main(void) { return (int)sizeof sizeof(int); }",
         )
-        self.assertIn("value=4", out)
+        self.assertIn("value=2", out)
 
     def test_sizeof_pointer_type_form(self):
         out = self._tac(

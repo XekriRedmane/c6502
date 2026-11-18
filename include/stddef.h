@@ -2,7 +2,9 @@
  *
  *   ptrdiff_t   = int            (the type the subtraction of two
  *                                 pointers gives in c6502)
- *   size_t      = unsigned long  (the type `sizeof` gives in c6502)
+ *   size_t      = unsigned int   (the type `sizeof` gives in c6502,
+ *                                 16 bits, since no object is larger
+ *                                 than the 64K address space)
  *   max_align_t = char           (c6502 puts every object and every
  *                                 struct member at any byte address,
  *                                 so the greatest alignment is 1)
@@ -35,7 +37,7 @@
 #define __STDC_VERSION_STDDEF_H__ 202311L
 
 typedef int ptrdiff_t;
-typedef unsigned long size_t;
+typedef unsigned int size_t;
 typedef char max_align_t;
 typedef int wchar_t;
 typedef typeof_unqual(nullptr) nullptr_t;

@@ -133,9 +133,9 @@ class TestStdintLimits(unittest.TestCase):
         self.assertEqual(self._run_int_signed("return PTRDIFF_MAX;"), 32767)
 
     def test_size_and_wchar_limits(self) -> None:
-        # `sizeof` gives an `unsigned long`, and <stddef.h> makes
+        # `sizeof` gives an `unsigned int`, and <stddef.h> makes
         # `wchar_t` an `int`.
-        self.assertEqual(self._run_ulong("return SIZE_MAX;"), 0xFFFFFFFF)
+        self.assertEqual(self._run_int_unsigned("return SIZE_MAX;"), 0xFFFF)
         self.assertEqual(self._run_int_signed("return WCHAR_MIN;"), -32768)
         self.assertEqual(self._run_int_signed("return WCHAR_MAX;"), 32767)
 

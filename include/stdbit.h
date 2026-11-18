@@ -44,7 +44,7 @@
 #define __STDC_ENDIAN_BIG__ 4321
 #define __STDC_ENDIAN_NATIVE__ __STDC_ENDIAN_LITTLE__
 
-typedef unsigned long size_t;
+typedef unsigned int size_t;
 
 typedef signed char int8_t;
 typedef unsigned char uint8_t;

@@ -558,7 +558,7 @@ that, and its effect is the time it takes:
 ```c
 void sound_delay1(uint8_t count) {
     do {
-        [[c6502::keep]] for (uint8_t y = 0xB4; --y;) {
+        [[c6502::keep]] for (uint8_t i = 0xB4; --i;) {
         }
     } while (--count);
 }

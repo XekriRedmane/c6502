@@ -257,8 +257,9 @@ extern volatile uint8_t KBDSTRB [[c6502::address(0xC010)]];  /* touch it to clea
 extern volatile uint8_t SPKR [[c6502::address(0xC030)]];     /* touch it to click the speaker */
 ```
 
-A read of a soft switch like `SPKR` matters for what it does to the
-hardware, and its value is thrown away. Without `volatile`, the
+A read of a soft switch like `SPKR` generally interacts with
+hardware, and usually its value doesn't matter and can be thrown
+away. Without `volatile`, the
 optimizer deletes a read whose value isn't used, so `(void)SPKR;`
 compiles to nothing. A loop that waits for a key, `while (!(KBD &
 0x80)) {}`, changes nothing the optimizer can see either, so it's

@@ -274,7 +274,7 @@ with nothing in its body is deleted, as C allows. Put
 down in X or Y.
 
 ```c
-[[c6502::keep]] for (uint8_t y = 0xB4; --y;) {
+[[c6502::keep]] for (uint8_t i = 0xB4; --i;) {
 }
 ```
 

@@ -197,7 +197,7 @@ to recognize. `tac_to_asm.py`'s docstring has the rest.
 |---|---|
 | a multi-byte `+` or `-` | `CLC` or `SEC` once, then `LDA; ADC; STA` (or `SBC`) for each byte, low byte first. `LDA` leaves C alone, so the carry passes from byte to byte. |
 | `==`, `!=` | `CMP` of each byte, the high byte first, branching out at the first difference |
-| `<`, `<=`, `>`, `>=` on signed values | a subtract of each byte, then `BVC` over `EOR #$80` to correct N after an overflow, then `BMI` or `BPL`. `>` and `<=` swap the operands. |
+| `<`, `<=`, `>`, `>=` on signed values | a subtract of each byte, then `BVC` over `EOR #$80` to correct N after an overflow, then `BMI` or `BPL`. `>` and `<=` swap the operands. Against 0, `<` and `>=` test the top byte's sign, and a branch on `>` or `<=` is `LDA top; BMI`, then `ORA` of the other bytes and `BNE` or `BEQ`. |
 | the same on unsigned values and pointers | a subtract of each byte, then the carry flag |
 | `*p`, `p->m` | the pointer copied to `DPTR`, then `LDY #k; LDA (DPTR),Y`. With `-O`, a pointer kept in zero page is used in place, as `(ptr),Y`. |
 | `a[i]` on a static array with a byte index | `LDA a,X` (with `-O`) |

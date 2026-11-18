@@ -3,7 +3,11 @@
 `apply_carry_known` in
 [passes/carry_known.py](../../passes/carry_known.py) drops a `SEC` or
 `CLC` where the carry already has that value, and moves one in front
-of a loop when every way back into the loop already has it. It runs
+of a loop when every way back into the loop already has it. It also
+drops an `ADC #0` where C is known clear and an `SBC #0` where C is
+known set, which leave A and C as they were. `P = &LOCS[0]`, with
+`LOCS` at a fixed address, had kept `CLC` and `LDA #>LOCS; ADC #0`
+after the low byte's add of 0 was folded away. It runs
 once under `-O`, after the peephole fixed point's third run.
 Several peepholes match a `SEC` or `CLC` ([transfer plus or minus
 one](transfer_pm1_store.md) turns `TXA; CLC; ADC #1; STA M` into
@@ -89,6 +93,10 @@ BCS; INC; JMP`, 15 cycles, which is Zork's own loop.
 
 ## When it applies
 
+- For dropping an `ADC #0` or `SBC #0` of A: C is known clear (for
+  `ADC`) or set (for `SBC`) along every path that reaches it, V is
+  dead after it, and N/Z are dead after it or were set from A by the
+  instruction before, a load into A.
 - For dropping: C is known at the `SEC` or `CLC` along every path that
   reaches it.
 - For moving: the `SEC` or `CLC` follows one or more labels, the

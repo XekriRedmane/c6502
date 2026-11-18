@@ -117,5 +117,78 @@ class TestCarryKnown(unittest.TestCase):
         )
 
 
+
+class TestAddOfZero(unittest.TestCase):
+    """An `ADC #0` with C known clear, or `SBC #0` with C known set,
+    leaves A and C as they were."""
+
+    _LO = asm_ast.ImmLabelLow(name="LOCS", offset=0)
+    _HI = asm_ast.ImmLabelHigh(name="LOCS", offset=0)
+    _P = asm_ast.Data(name="P", offset=0)
+    _P1 = asm_ast.Data(name="P", offset=1)
+    _ZERO = asm_ast.Imm(value=0)
+
+    def test_high_byte_of_an_address_plus_zero(self):
+        # `P = &LOCS[0]` after the low byte's `ADC #0` was folded.
+        out = _run([
+            asm_ast.Mov(src=self._LO, dst=_A),
+            asm_ast.ClearCarry(),
+            asm_ast.Mov(src=_A, dst=self._P),
+            asm_ast.Mov(src=self._HI, dst=_A),
+            asm_ast.Add(src=self._ZERO, dst=_A),
+            asm_ast.Mov(src=_A, dst=self._P1),
+            asm_ast.Return(save_a=False),
+        ])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=self._LO, dst=_A),
+            asm_ast.Mov(src=_A, dst=self._P),
+            asm_ast.Mov(src=self._HI, dst=_A),
+            asm_ast.Mov(src=_A, dst=self._P1),
+            asm_ast.Return(save_a=False),
+        ])
+
+    def test_subtract_of_zero_with_carry_set(self):
+        out = _run([
+            asm_ast.SetCarry(),
+            asm_ast.Mov(src=_S, dst=_A),
+            asm_ast.Sub(src=self._ZERO, dst=_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".z"),
+            asm_ast.Label(name=".z"),
+            _ret(),
+        ])
+        self.assertNotIn(asm_ast.Sub(src=self._ZERO, dst=_A), out)
+
+    def test_stays_when_carry_unknown_or_v_read(self):
+        unknown = [
+            asm_ast.Mov(src=_S, dst=_A),
+            asm_ast.Add(src=self._ZERO, dst=_A),
+            _ret(),
+        ]
+        self.assertEqual(_run(unknown), unknown)
+        v_read = [
+            asm_ast.ClearCarry(),
+            asm_ast.Mov(src=_S, dst=_A),
+            asm_ast.Add(src=self._ZERO, dst=_A),
+            asm_ast.Branch(cond=asm_ast.VC(), target=".v"),
+            asm_ast.Label(name=".v"),
+            _ret(),
+        ]
+        self.assertEqual(_run(v_read), v_read)
+
+    def test_stays_when_flags_come_from_elsewhere(self):
+        # N/Z after `ADC #0` come from A, and before it from the `BIT`,
+        # which leaves C alone, so a branch on Z keeps it.
+        instrs = [
+            asm_ast.ClearCarry(),
+            asm_ast.Mov(src=_S, dst=_A),
+            asm_ast.BitTest(src=self._P),
+            asm_ast.Add(src=self._ZERO, dst=_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".z"),
+            asm_ast.Label(name=".z"),
+            _ret(),
+        ]
+        self.assertIn(asm_ast.Add(src=self._ZERO, dst=_A), _run(instrs))
+
+
 if __name__ == "__main__":
     unittest.main()

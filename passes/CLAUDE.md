@@ -93,11 +93,13 @@ this directory:
   on a 2-byte `b` tests the high byte once. Runs after
   `branch_thread`.
 - `carry_known.py` — `apply_carry_known`. A forward dataflow of C
-  (set / clear / unknown; `BCC` / `BCS` tell each edge) drops a `SEC`
+  (set / clear / unknown; `BCC` / `BCS` tell each edge) drops an `ADC
+  #0` where C is clear and an `SBC #0` where it's set (V dead after,
+  N/Z dead or set from A by the load before), then drops a `SEC`
   or `CLC` where C already has that value, moves one that starts a
   block in front of its labels when every edge in but the
   fall-through has C that way (a loop's back edges), and drops one
-  whose carry nothing reads; three steps, each on the result of the
+  whose carry nothing reads; four steps, each on the result of the
   one before. Runs once after
   the third peephole fixed point, since `transfer_pm1_store` and
   `cmp_sbc_fusion` match a `SEC` / `CLC`.
@@ -249,7 +251,8 @@ this directory:
   a label's halves and a constant (`LDA #k; CLC; ADC #<r; STA d0;
   LDA #k2; ADC #>r; STA d1`) becomes `LDA #<(r+K); STA d0; LDA
   #>(r+K); STA d1` when C and V are dead after: `&r[2].a` on a static
-  array.
+  array. The low byte alone, with no high byte after it, folds the
+  same way when C and V are dead after its store.
 - `constant_store_order.py` — `apply_constant_store_order`. A
   straight run of constant stores (`LDA #k` and `STA m`, or the asm
   IR's `Mov(#k, m)`) to distinct, non-volatile `Data` bytes, with at

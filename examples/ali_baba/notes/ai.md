@@ -92,6 +92,8 @@ are.
 
 ## Compiler bugs and gaps
 
+Items 1, 3, and 4 were fixed on 18 Nov 2026.
+
 1. **A crash on `keep` before a `for (;;)` with a `break`.** This
    fails in `cfg.build_cfg` with `KeyError: '.loop@0_break'`:
 

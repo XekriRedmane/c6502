@@ -168,10 +168,14 @@ Within a fold, the operands narrow in three ways.
   of a `ZeroExtend` from a `char` or `unsigned char` variable, and
   the other is either the same kind of value or an integer constant
   from 0 to 255. The constant becomes a `ConstUChar`.
-- For `>=` or `<` only, both operands narrow to one byte when one of
-  them is the result of a `SignExtend` from a `signed char` variable
-  and the other is a constant zero. Both comparisons test only the
-  sign bit, which `SignExtend` keeps.
+- Both operands of a jump's comparison narrow to one byte when one
+  of them is the result of a `SignExtend` from a `signed char`
+  variable, and the other is either the same kind of value or an
+  integer constant from -128 to 127, which becomes a `ConstChar`.
+  `SignExtend` keeps the value, so the signed comparison of the bytes
+  has the same result. Against 0, `>=` and `<` test only the sign
+  bit, and `>` and `<=` compare with 1 (`SEC; SBC #1` and the
+  overflow test), so `(int8_t)(a - b) > 0` is one byte.
 
 An extend's result that is SSA-renamed may have other uses. The
 narrowed compare reads the source, and the extend stays for the other
@@ -201,9 +205,6 @@ The extend's own result must be SSA-renamed too.
 - A comparison that isn't adjacent to its jump. Copy propagation and
   dead-store elimination usually close the gap, and the fold fires on
   a later round of the fixed point.
-- Narrowing of `>` or `<=` against zero for a `signed char`, which
-  would take a second branch for the zero case. These stay at `int`
-  width.
 - Narrowing against a constant outside 0 to 255, or of an operand
   whose `ZeroExtend` result has other uses. The comparison still
   becomes a `JumpIfCmp`, at the promoted width.

@@ -106,6 +106,10 @@ defines it. main.c doesn't.
 
 ## Compiler gaps
 
+Item 1 was fixed on 18 Nov 2026 for a read. A store still computes the
+address. Items 2, 3, and 4 were fixed on the same day, and events.c
+keeps its workarounds.
+
 1. A 2-byte member at a nonzero offset, read or written through a
    zero-page pointer, has its address computed first.
 

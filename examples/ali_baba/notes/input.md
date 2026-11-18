@@ -163,6 +163,9 @@ of $C2-$C3.
 
 ## Compiler gaps
 
+Item 2 was fixed on 18 Nov 2026, and so was item 3 for a read. A store
+still computes the address.
+
 Each of these makes correct code that is larger or slower than it
 needs to be. None blocked the translation.
 

@@ -64,11 +64,11 @@ __zpabi_poll_for_key__joystick_ends	EQU	$81
 __zpabi_put_string__s_1	EQU	$81
 __zpabi_row_to_addr__page	EQU	$81
 __zpabi_screen_row_for__y_adj	EQU	$81
-__local_check_for_input__0	EQU	$82
 __local_detect_lack_of_joystick__n_0	EQU	$82
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
 __zpabi_play_note__y	EQU	$82
+__local_check_for_input__1	EQU	$83
 __local_poll_for_key__n	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
@@ -180,7 +180,7 @@ DISK_IO	EQU	$C088
 ; def wait_for_key params=__zpabi_wait_for_key__cursor locals=__local_wait_for_key__0 indirect=false in_cycle=false
 ; def wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor locals=__local_wait_for_key_with_cursor_page_1__0 indirect=false in_cycle=false
 ; def wait_key params= locals=__local_wait_key__0 indirect=false in_cycle=false
-; def wait_key_queued params= locals=__local_wait_key_queued__0 indirect=false in_cycle=false
+; def wait_key_queued params= locals=__local_wait_key_queued__0,__local_wait_key_queued__1 indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -537,7 +537,7 @@ check_for_input:
    JMP   check_for_mode_1_input
 .if_end@24:
    LDA   KBD
-   STA   __local_check_for_input__0
+   STA   __local_check_for_input__1
    STA   KBDSTRB
    BMI   .if_end@25
    LDA   INPUT_MODE
@@ -659,7 +659,7 @@ check_for_input:
    BNE   .if_else@31
    JMP   read_joystick_for_command
 .if_else@31:
-   LDA   __local_check_for_input__0
+   LDA   __local_check_for_input__1
    STA   KEY_COMMAND
    STA   KEY_COMMAND_LR
    RTS

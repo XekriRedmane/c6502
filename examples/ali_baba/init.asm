@@ -101,7 +101,6 @@ __zpabi_trigger_scene_event__ev_1	EQU	$81
 __zpabi_tune_player__strength	EQU	$81
 __zpabi_update_event_list__value_0	EQU	$81
 __local_move_border_icons__carried	EQU	$82
-__local_select_input_mode__1	EQU	$82
 __zpabi_anim_border_icons__to	EQU	$82
 __zpabi_draw_border_strings__first	EQU	$82
 __zpabi_modify_current_stats__add	EQU	$82
@@ -110,6 +109,7 @@ __zpabi_plot_title_glyphs__charset	EQU	$82
 __zpabi_print_at__col	EQU	$82
 __zpabi_update_event_list__value_1	EQU	$82
 __local_plot_title_glyphs__i	EQU	$83
+__local_select_input_mode__2	EQU	$83
 __zpabi_draw_border_cell__glyph	EQU	$83
 __zpabi_draw_border_strings__last	EQU	$83
 __zpabi_num_to_decimal__out_1	EQU	$83
@@ -298,7 +298,7 @@ WAIT	EQU	$FCA8
 ; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__carried indirect=false in_cycle=false
 ; def plot_title_glyphs params=__zpabi_plot_title_glyphs__i,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i indirect=false in_cycle=false
 ; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals= indirect=false in_cycle=false
-; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1 indirect=false in_cycle=false
+; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1,__local_select_input_mode__2 indirect=false in_cycle=false
 ; def start_border_passes params= locals=__local_start_border_passes__glyph indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
@@ -979,7 +979,7 @@ select_input_mode:
    JSR   display_message
    LDA   BUTN
    AND   #$80
-   STA   __local_select_input_mode__1
+   STA   __local_select_input_mode__2
 .loop@8_start:
    LDA   #$00
    STA   KBDSTRB
@@ -987,7 +987,7 @@ select_input_mode:
    LDA   KBD
    BMI   .loop@9_break
    LDA   BUTN
-   EOR   __local_select_input_mode__1
+   EOR   __local_select_input_mode__2
    BPL   .loop@9_continue
    LDA   #$01
    STA   INPUT_MODE

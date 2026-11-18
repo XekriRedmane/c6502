@@ -100,6 +100,10 @@ None. Every routine keeps the header's declaration.
 
 ## Compiler gaps
 
+Items 1 and 2 were fixed on 18 Nov 2026. classify_entity_type returns
+each name's address as `LDX #>(MAP_OBJECT_NAMES+k); LDA
+#<(MAP_OBJECT_NAMES+k); RTS`.
+
 1. **An address-attributed object plus a constant isn't folded into
    one immediate.**
 

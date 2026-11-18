@@ -25,10 +25,19 @@ link-time constant, so the pass writes
 dasm computes `r+47` as a full address, so the high half carries out
 of the low as the `ADC` did. That's 4 instructions instead of 7.
 
+The low byte alone, `LDA #<r; CLC; ADC #9; STA d0` with no high byte
+after it, becomes `LDA #<(r+9); STA d0`, since the low byte of the
+sum doesn't depend on the carry out. `(uint8_t)(uint16_t)&LOCS[1]`
+compiles to it.
+
+A byte may go to X or Y in place of memory (`TAX`), as the high byte
+of a returned pointer does, so `return T + 7;` becomes `LDA
+#<(T+7); STA t; LDA #>(T+7); TAX; LDA t`, which later passes shorten.
+
 # Conditions
 
-C and V must be dead after the last store, since the `ADC`s set them
-and the loads don't. A and N/Z end the same: A holds the high byte of
+C and V must be dead after the last store (the low byte's store, in
+the second form), since the `ADC`s set them and the loads don't. A and N/Z end the same: A holds the high byte of
 the sum either way, and both `ADC` and `LDA` set N/Z from it.
 
 # Where to run
@@ -43,6 +52,8 @@ import asm_ast
 from passes.asm_liveness import c_dead_at, v_dead_at
 
 _A = asm_ast.Reg(reg=asm_ast.A())
+_X = asm_ast.Reg(reg=asm_ast.X())
+_Y = asm_ast.Reg(reg=asm_ast.Y())
 
 
 def apply_label_offset_fold(prog: asm_ast.Program) -> asm_ast.Program:
@@ -81,7 +92,8 @@ def _byte_add(instrs, i, label_cls, first: bool):
         return None
     if not (isinstance(store, asm_ast.Mov) and store.src == _A
             and not store.is_volatile
-            and isinstance(store.dst, (asm_ast.Data, asm_ast.ZP))):
+            and (isinstance(store.dst, (asm_ast.Data, asm_ast.ZP))
+                 or store.dst in (_X, _Y))):
         return None
     for lab, imm in ((load.src, add.src), (add.src, load.src)):
         if isinstance(lab, label_cls) and isinstance(imm, asm_ast.Imm):
@@ -116,6 +128,17 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 asm_ast.Mov(src=_A, dst=high[2]),
             ]
             i = high[3]
+            changed = True
+            continue
+        if (low is not None and c_dead_at(instrs, low[3])
+                and v_dead_at(instrs, low[3])):
+            off = low[0].offset + low[1]
+            out += [
+                asm_ast.Mov(src=asm_ast.ImmLabelLow(name=low[0].name,
+                                                    offset=off), dst=_A),
+                asm_ast.Mov(src=_A, dst=low[2]),
+            ]
+            i = low[3]
             changed = True
             continue
         out.append(instrs[i])

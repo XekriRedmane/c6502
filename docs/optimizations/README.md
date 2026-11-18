@@ -271,6 +271,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Move coalescing](coalescing.md). Merges copy-joined values in the interference graph so both share one byte.
 - [Moving a constant out of an offset](reassoc_offset.md). Rewrites `p + (x + k)` as `(p + x) + k` so subscripts share `p + x`.
 - [Multi-byte INC](inc_peephole.md). Rewrites an in-place add of 1 to memory as an INC and BNE chain.
+- [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md). Does a promoted byte's `&`, `|`, or `^` at one byte when the result's high bytes are zero, so a comparison of it narrows.
 - [Narrowing widened arithmetic](narrow_widened_arith.md). Does promoted byte arithmetic at one byte when only the low byte is used.
 - [Operands without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`, and the same for `ADC`, `SBC`, `AND`, `ORA`, and `EOR`.
 - [OR-with-zero absorb](or_zero_absorb.md). Rewrites `LDA #0; ORA x` as `LDA x` before move coalescing.
@@ -366,6 +367,7 @@ them whenever a pass is added or moved.
       17. [Sinking increments](sink_increment.md)
       18. [Sinking an AND past a bit test](sink_and_past_branch.md)
       19. [Narrowing widened arithmetic](narrow_widened_arith.md)
+      20. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
    6. [Indexed access to a static array of structs](static_indexed_access.md)
    7. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
    8. [Compare and subtract of the same operands](compare_subtract.md)

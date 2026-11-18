@@ -1773,14 +1773,14 @@ player_attack:
    LDA   (__local_player_attack__target),Y
    STA   __local_player_attack__2
    AND   #$C0
-   STA   __local_player_attack__1
+   STA   __local_player_attack__0
    LDA   __local_player_attack__2
    AND   #$1F
-   STA   __local_player_attack__0
-   LDA   __local_player_attack__1
+   STA   __local_player_attack__1
+   LDA   __local_player_attack__0
    CMP   #$C0
    BNE   .if_else@84
-   LDA   __local_player_attack__0
+   LDA   __local_player_attack__1
    CMP   #$1D
    BCC   .lb_skip@4
    JMP   .if_end@81
@@ -1804,7 +1804,7 @@ player_attack:
    CMP   #$04
    BCC   .if_end@91
 .player_attack@scfold@1:
-   LDA   __local_player_attack__0
+   LDA   __local_player_attack__1
    CMP   #$1F
    BCS   .if_else@93
    JSR   process_entity_script

@@ -930,6 +930,27 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
         # And the DPTR staging itself has been bypassed.
         self.assertNotIn("STA   DPTR", copy_body)
 
+    def test_global_pointer_stored_constant_on_another_path(self) -> None:
+        # `P = 0` on one path made the recognizer take P for the
+        # constant 0 everywhere, since the def index gives a global's
+        # last store, and `P->look` was read through a computed copy
+        # of P. A store doesn't make a global constant.
+        src = (
+            "#include <stdint.h>\n"
+            "struct mob { uint8_t a, b, c, d, look; };\n"
+            "extern struct mob *P [[c6502::zeropage(0xF4)]];\n"
+            "void next(void);\n"
+            "void walk(uint8_t n) {\n"
+            "    if (n == 0) { P = 0; return; }\n"
+            "    while (P->look >= 0x15) next();\n"
+            "}\n"
+        )
+        asm = self._compile(src)
+        body = asm[asm.index("walk:"):]
+        self.assertIn("LDY   #$04", body)
+        self.assertIn("LDA   (P),Y", body)
+        self.assertNotIn("ADC", body)
+
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestIndirectIndexedCorrectness(unittest.TestCase):

@@ -9,6 +9,11 @@ and an instruction that writes C (`ADC`, `SBC`, a compare, a shift or
 rotate, a call, and anything else not known to leave C alone) makes
 it unknown. Then:
 
+  * An `ADC #0` where C is known clear, or an `SBC #0` where it's
+    known set, goes when V is dead after it and N/Z are dead or were
+    set from A by the instruction before. It leaves A and C as they
+    were. `P = &LOCS[0]` on an array at a fixed address had kept
+    `LDA #>LOCS; ADC #0` after the low byte's `CLC`.
   * A `SEC` where C is known set, or a `CLC` where it's known clear,
     goes, and so does one whose carry nothing reads
     (`asm_liveness.c_dead_at`), as when dead-code elimination has
@@ -47,7 +52,7 @@ fixed point this pass dropped the CLC first, leaving `TXA; ADC #1`.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import c_dead_at
+from passes.asm_liveness import c_dead_at, flags_dead_at, v_dead_at
 
 # Instructions that leave C alone. Anything else is taken to change it.
 _KEEP_C = (
@@ -56,6 +61,8 @@ _KEEP_C = (
     asm_ast.Label, asm_ast.Branch, asm_ast.Jump,
 )
 _UNSEEN = object()
+_A = asm_ast.Reg(reg=asm_ast.A())
+_ZERO = asm_ast.Imm(value=0)
 
 
 def apply_carry_known(prog: asm_ast.Program) -> asm_ast.Program:
@@ -146,14 +153,16 @@ def _labels(instrs) -> dict[str, int]:
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
-    """Three steps, each on the result of the one before, since each
-    changes what the next sees: dropping the setters C already
-    matches (which changes no value of C), moving setters in front of
-    loops, and dropping the setters nothing reads. Done in one step,
+    """Four steps, each on the result of the one before, since each
+    changes what the next sees: dropping the adds and subtracts of 0
+    that leave C as it is, dropping the setters C already matches
+    (which changes no value of C), moving setters in front of loops,
+    and dropping the setters nothing reads. Done in one step,
     `CLC; LDA x; CLC; ADC y` lost both: the first as dead, since the
     second overwrites C, and the second as redundant after the
     first."""
     instrs = list(fn.instructions)
+    instrs = _drop_zero_adds(instrs)
     instrs = _drop_known(instrs)
     instrs = _move_into_loops(instrs)
     instrs = [
@@ -166,6 +175,27 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=instrs,
     )
+
+
+def _drop_zero_adds(instrs):
+    """Without the `ADC #0` where C is known clear and the `SBC #0`
+    where it's known set, when V is dead after and N/Z are dead or
+    already set from A."""
+    before, _ = _carry_states(instrs, _labels(instrs))
+    out = []
+    for i, ins in enumerate(instrs):
+        c = before[i]
+        no_op = (
+            (isinstance(ins, asm_ast.Add) and c == 0)
+            or (isinstance(ins, asm_ast.Sub) and c == 1)
+        ) and c is not _UNSEEN and ins.dst == _A and ins.src == _ZERO
+        if no_op and v_dead_at(instrs, i + 1) and (
+                flags_dead_at(instrs, i + 1)
+                or (i > 0 and isinstance(instrs[i - 1], asm_ast.Mov)
+                    and instrs[i - 1].dst == _A)):
+            continue
+        out.append(ins)
+    return out
 
 
 def _drop_known(instrs):

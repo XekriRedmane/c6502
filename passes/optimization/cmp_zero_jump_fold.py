@@ -35,17 +35,17 @@ Two flavors of fold, depending on the comparison shape:
     a 1-byte unsigned CMP — `LDA a; CMP #105; BCS .end` for the
     JumpIfFalse sense — instead of the 16-bit SBC chain.
 
-    Operand narrowing through SignExtend: for ordering against zero
-    (`>= 0` / `< 0` only), if one operand is the dst of a
-    `SignExtend(narrow_var)` whose source is a 1-byte signed type
-    (`SChar`) and the other operand is a literal zero, both narrow
-    to 1 byte. The transformation is sound because SignExtend
-    preserves the sign bit — `(int)schar >= 0 ⇔ schar >= 0` — and
-    the resulting `JumpIfCmp(GE/LT, schar_var, ConstChar(0), t)`
-    lowers via the dedicated zero-relational asm path (no SBC, no
-    V-correction) into a bare `LDA schar_var; B<PL|MI> t`. The
-    motivating case is the rotated signed-countdown for-loop's
-    tail test, which becomes `DEC mem; LDA mem; BPL .top`.
+    Operand narrowing through SignExtend: if one operand is the dst
+    of a `SignExtend(narrow_var)` whose source is a 1-byte signed
+    type (`SChar`), and the other is the same kind of value or an
+    integer constant from -128 to 127, both narrow to 1 byte, the
+    constant as a `ConstChar`. SignExtend keeps the value, so the
+    signed comparison of the bytes has the same result. Against 0,
+    `JumpIfCmp(GE/LT, schar_var, ConstChar(0), t)` lowers via the
+    dedicated zero-relational asm path (no SBC, no V-correction) into
+    a bare `LDA schar_var; B<PL|MI> t`, which the rotated
+    signed-countdown for-loop's tail test becomes, `DEC mem; LDA mem;
+    BPL .top`.
 
 The cmp's dst becomes dead in both cases; standard DSE picks it up
 along with any preceding ZeroExtend whose dst was only used by it.
@@ -132,7 +132,7 @@ def _build_cmp_zero_jump(
     if narrowed is not None:
         src1, src2 = narrowed
     else:
-        narrowed_signed = _try_narrow_signed_against_zero(
+        narrowed_signed = _try_narrow_signed_compare(
             binop.op, src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
             use_idx, ssa_dsts,
         )
@@ -278,16 +278,6 @@ _NARROW_SIGNED_TYPES: tuple[type, ...] = (
 )
 
 
-# Ordering ops where narrowing through SignExtend against zero
-# preserves the comparison's truth value. Strictly `>= 0` and `< 0`:
-# only the sign bit matters, so the underlying byte's sign bit is
-# the answer regardless of width. `> 0` and `<= 0` would also need
-# a zero check (more than one branch), so they're out of scope.
-_GE_LT_OPS: tuple[type, ...] = (
-    tac_ast.GreaterOrEqual, tac_ast.LessThan,
-)
-
-
 def _narrowable_use(
     val: tac_ast.Var,
     use_count: dict[str, int],
@@ -413,7 +403,7 @@ def _try_narrow_through_sign_extend(
     return src, sym.type
 
 
-def _try_narrow_signed_against_zero(
+def _try_narrow_signed_compare(
     op: tac_ast.Type_binary_operator,
     src1: tac_ast.Type_val,
     src2: tac_ast.Type_val,
@@ -424,15 +414,13 @@ def _try_narrow_signed_against_zero(
     use_idx: int,
     ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, tac_ast.Type_val] | None:
-    """Narrow `Binary(GreaterOrEqual | LessThan, ?, ?, _)` whose
-    one operand is the single-use dst of `SignExtend(SChar_var)`
-    and the other is a literal zero. Returns
-    `(SChar_var, ConstChar(0))` in the appropriate slot ordering,
-    or None if no narrowing applies. The rewrite preserves truth
-    because SignExtend keeps the sign bit, and `>= 0` / `< 0` are
-    sign-bit tests."""
-    if not isinstance(op, _GE_LT_OPS):
-        return None
+    """Narrow a signed comparison whose operands are each the
+    single-use dst of `SignExtend(SChar_var)` or an integer constant
+    from -128 to 127, at least one of them an extend. Returns the
+    narrowed pair, with each constant a `ConstChar`, or None if no
+    narrowing applies. A SignExtend keeps the value, and so does a
+    constant in that range, so the 1-byte signed comparison has the
+    same result. `(int8_t)(a - b) > 0` had compared at 16 bits."""
     if symbols is None:
         return None
     info1 = _try_narrow_through_sign_extend(
@@ -447,12 +435,30 @@ def _try_narrow_signed_against_zero(
     n2_ok = info2 is not None and isinstance(
         info2[1], _NARROW_SIGNED_TYPES,
     )
-    zero_const = tac_ast.Constant(const=tac_ast.ConstChar(value=0))
-    if n1_ok and _is_constant_zero(src2):
-        return info1[0], zero_const
-    if n2_ok and _is_constant_zero(src1):
-        return zero_const, info2[0]
+    if n1_ok and n2_ok:
+        return info1[0], info2[0]
+    if n1_ok:
+        nc = _narrow_const_to_signed_byte(src2)
+        if nc is not None:
+            return info1[0], nc
+    if n2_ok:
+        nc = _narrow_const_to_signed_byte(src1)
+        if nc is not None:
+            return nc, info2[0]
     return None
+
+
+def _narrow_const_to_signed_byte(
+    val: tac_ast.Type_val,
+) -> tac_ast.Type_val | None:
+    """An integer Constant from -128 to 127 as a `ConstChar`, which
+    tac_to_asm compares as signed, or None."""
+    if not isinstance(val, tac_ast.Constant):
+        return None
+    c = val.const
+    if not isinstance(c, _INTEGER_CONSTS) or not -128 <= c.value <= 127:
+        return None
+    return tac_ast.Constant(const=tac_ast.ConstChar(value=c.value))
 
 
 def _try_narrow_compare(

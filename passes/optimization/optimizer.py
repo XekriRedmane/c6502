@@ -111,6 +111,7 @@ from passes.optimization.truncate_extend_fold import (
 from passes.optimization.sink_increment import SinkIncrements
 from passes.optimization.sink_and_past_branch import SinkAndPastBranch
 from passes.optimization.narrow_widened_arith import NarrowWidenedArith
+from passes.optimization.narrow_byte_bitwise import NarrowByteBitwise
 from passes.optimization.recognize_indirect_indexed import RecognizeIndirectIndexed
 from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
 from passes.optimization.compare_subtract import HoistSubtractToCompare
@@ -186,6 +187,10 @@ _DRIVER = PhaseDriver(
         # force the AND result to live across the branch and spill
         # to memory.
         NarrowWidenedArith(),
+        # `(x & 0x3F) < 3` on a byte x as a byte `&`, zero-extended, so
+        # the comparison narrows. After sink_and_past_branch for the
+        # same reason as narrow_widened_arith.
+        NarrowByteBitwise(),
     ],
     post_fixedpoint=[
         # `o[i].m` on a static array as `IndexedLoad(o, i, offset=m)`

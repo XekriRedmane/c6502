@@ -824,13 +824,9 @@ hrcg_select_font:
    STA   __local_hrcg_select_font__1
    LDA   __local_hrcg_select_font__0
    ADC   #>FONT_DATA
-   STA   __local_hrcg_select_font__0
-   LDA   __local_hrcg_select_font__1
-   CLC
-   STA   hrcg+3
-   LDA   __local_hrcg_select_font__0
-   ADC   #$00
    STA   hrcg+4
+   LDA   __local_hrcg_select_font__1
+   STA   hrcg+3
    RTS
 .if_else@11:
    JSR   hrcg_select_font@run1

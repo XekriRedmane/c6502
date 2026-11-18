@@ -45,6 +45,13 @@ int main(void) { return deref(&r[2].a); }
 
 That's 4 instructions instead of 7.
 
+The low byte alone folds too. `(uint8_t)(uint16_t)&LOCS[1]`, on an
+array of 9-byte records at a fixed address, reaches the asm as `LDA
+#<LOCS; CLC; ADC #$09; STA t` with nothing after it that reads the
+carry. The low byte of the sum doesn't depend on the carry out, so
+that becomes `LDA #<(LOCS+9); STA t`, and memory value propagation
+then compares with the immediate, `CMP #<(LOCS+9)`.
+
 ## When it applies
 
 - The low byte is a load into A, a `CLC` before or after it, an `ADC`,
@@ -52,14 +59,21 @@ That's 4 instructions instead of 7.
   a store. One operand of each `ADC` (either one) is the label's half,
   `ImmLabelLow` and then `ImmLabelHigh` of the same name and offset,
   and the other is an immediate.
-- The stores go to `Data` or `ZP` operands, and nothing is volatile.
+- The stores go to `Data` or `ZP` operands, or to X or Y (`TAX`,
+  `TAY`), and nothing is volatile. A function returning `T + 7` for an
+  array `T` at a fixed address puts the high byte in X, and the fold
+  leaves `LDX #>(T+7); LDA #<(T+7); RTS` once later passes have
+  shortened it.
 - C and V are dead after the last store, since the `ADC`s set them and
   the loads don't. A and N/Z come out the same either way.
+- When no high byte follows, the low byte folds alone if C and V are
+  dead after its store.
 
 ## What it leaves alone
 
 - An add of a label and a variable, such as `prompts + offset`.
-- A single byte of an address on its own.
+- A high byte of an address on its own, since it depends on the
+  carry out of the low byte.
 
 ## Related
 

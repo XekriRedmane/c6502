@@ -116,6 +116,10 @@ it is.
 
 ## Compiler gaps
 
+Items 1 and 2 were fixed on 18 Nov 2026, and item 3 for a read. A
+store still computes the address. combat.c keeps its workarounds for
+the first two.
+
 None of these is a miscompile. Each makes code larger than it has to
 be, and the first two have workarounds in combat.c.
 

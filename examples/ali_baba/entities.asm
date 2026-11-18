@@ -498,7 +498,7 @@ WAIT	EQU	$FCA8
 ; share member=adjust_pc_count:__zpabi_adjust_pc_count__loc_0,__zpabi_adjust_pc_count__loc_1 holder=reorder_char live=reorder_char:adjust_pc_count,get_mob_data writer=reorder_char
 ; item load_char_name_ptr section=.text local=false zero=false
 ; item setup_char_sprite section=.text local=false zero=false
-; item setup_char_sprite@run2 section=.text local=true zero=false
+; item setup_char_sprite@run1 section=.text local=true zero=false
 ; item setup_char_sprite@tail0 section=.text local=true zero=false
 ; item find_entity_at_pos section=.text local=false zero=false
 ; item get_entity_fontchar section=.text local=false zero=false
@@ -506,12 +506,11 @@ WAIT	EQU	$FCA8
 ; item print_mob_name section=.text local=false zero=false
 ; item adjust_pc_count section=.text local=true zero=false
 ; item reorder_char section=.text local=false zero=false
-; item reorder_char@run3 section=.text local=true zero=false
-; item reorder_char@run1 section=.text local=true zero=false
+; item reorder_char@run2 section=.text local=true zero=false
+; item reorder_char@run0 section=.text local=true zero=false
 ; item print_entity_name section=.text local=false zero=false
 ; item draw_char_at_pos section=.text local=false zero=false
 ; item classify_entity_type section=.text local=false zero=false
-; item classify_entity_type@run0 section=.text local=true zero=false
 ; item follow_link section=.text local=true zero=false
 ; item first_group_member section=.text local=false zero=false
 ; item next_group_member section=.text local=false zero=false
@@ -566,7 +565,7 @@ setup_char_sprite:
 
    LDY   #$03
    LDA   (ENTITY_PTR),Y
-   JSR   setup_char_sprite@run2
+   JSR   setup_char_sprite@run1
    STA   FONT_COL
    STA   BLINK_COL
    TXA
@@ -577,7 +576,7 @@ setup_char_sprite:
    STA   BLINK_CHAR
    JMP   setup_char_sprite@tail0
 
-setup_char_sprite@run2:
+setup_char_sprite@run1:
    SUBROUTINE
 
    STA   __zpabi_pos_to_colrow__pos
@@ -788,8 +787,8 @@ reorder_char:
    SUBROUTINE
 
    LDA   SOURCE_CHAR
-   JSR   reorder_char@run3
-   JSR   reorder_char@run1
+   JSR   reorder_char@run2
+   JSR   reorder_char@run0
    LDA   #$FF
    STA   __zpabi_adjust_pc_count__delta
    JSR   adjust_pc_count
@@ -835,10 +834,10 @@ reorder_char:
    AND   #$1F
    STA   __local_reorder_char__4
    LDA   ACTIVE_CHAR
-   JSR   reorder_char@run3
+   JSR   reorder_char@run2
    STA   __local_reorder_char__0
    STX   __local_reorder_char__3
-   JSR   reorder_char@run1
+   JSR   reorder_char@run0
    LDA   #$01
    STA   __zpabi_adjust_pc_count__delta
    JSR   adjust_pc_count
@@ -903,13 +902,13 @@ reorder_char:
 .if_end@34:
    RTS
 
-reorder_char@run3:
+reorder_char@run2:
    SUBROUTINE
 
    STA   __zpabi_get_char_record__index
    JMP   get_char_record
 
-reorder_char@run1:
+reorder_char@run0:
    SUBROUTINE
 
    STA   __zpabi_adjust_pc_count__loc_0
@@ -937,7 +936,7 @@ draw_char_at_pos:
    SUBROUTINE
 
    LDA   __zpabi_draw_char_at_pos__pos
-   JSR   setup_char_sprite@run2
+   JSR   setup_char_sprite@run1
    STA   FONT_COL
    STX   FONT_ROW
    LDA   __zpabi_draw_char_at_pos__pos
@@ -956,64 +955,40 @@ classify_entity_type:
    LDA   __zpabi_classify_entity_type__e_0
    ORA   __zpabi_classify_entity_type__e_1
    BNE   .cond_else@38
-   LDA   #<MAP_OBJECT_NAMES
-   CLC
-   ADC   #$21
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   JMP   .tail@0
+   LDA   #<(MAP_OBJECT_NAMES+33)
+   LDX   #>(MAP_OBJECT_NAMES+33)
+   RTS
 .cond_else@38:
-   CLC
-   JSR   classify_entity_type@run0
+   LDX   #>MAP_OBJECT_NAMES
    LDA   #<MAP_OBJECT_NAMES
    RTS
 .if_end@37:
    LDY   #$01
    LDA   (__zpabi_classify_entity_type__e_0),Y
    CMP   #$80
-   BCS   .if_end@40
-   LDA   #<MAP_OBJECT_NAMES
-   ADC   #$39
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
-   RTS
-.if_end@40:
+   BCC   .tail@1
    CMP   #$C0
    BCS   .if_end@41
-   LDA   #<MAP_OBJECT_NAMES
-   ADC   #$21
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+   LDX   #>(MAP_OBJECT_NAMES+33)
+   LDA   #<(MAP_OBJECT_NAMES+33)
    RTS
 .if_end@41:
    CMP   #$D2
    BCS   .if_end@42
-   LDA   #<MAP_OBJECT_NAMES
-   ADC   #$10
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+   LDX   #>(MAP_OBJECT_NAMES+16)
+   LDA   #<(MAP_OBJECT_NAMES+16)
    RTS
 .if_end@42:
    CMP   #$D5
    BCS   .if_end@43
-   LDA   #<MAP_OBJECT_NAMES
-   ADC   #$53
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+   LDX   #>(MAP_OBJECT_NAMES+83)
+   LDA   #<(MAP_OBJECT_NAMES+83)
    RTS
 .if_end@43:
    CMP   #$FE
    BEQ   .if_end@44
-   LDA   #<MAP_OBJECT_NAMES
-   CLC
-   ADC   #$65
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+   LDX   #>(MAP_OBJECT_NAMES+101)
+   LDA   #<(MAP_OBJECT_NAMES+101)
    RTS
 .if_end@44:
    LDY   #$02
@@ -1022,68 +997,36 @@ classify_entity_type:
    AND   #$1F
    STA   __local_classify_entity_type__1
    BNE   .if_end@45
-   LDA   #<MAP_OBJECT_NAMES
-   CLC
-   ADC   #$40
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+   LDX   #>(MAP_OBJECT_NAMES+64)
+   LDA   #<(MAP_OBJECT_NAMES+64)
    RTS
 .if_end@45:
    LDA   __local_classify_entity_type__0
    AND   #$C0
    CMP   #$C0
-   BEQ   .if_end@46
-   LDA   #<MAP_OBJECT_NAMES
-   CLC
-   ADC   #$2D
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
-   RTS
-.if_end@46:
+   BNE   .tail@2
    LDA   __local_classify_entity_type__1
    CMP   #$1B
    BCS   .if_end@47
-   LDA   #<MAP_OBJECT_NAMES
-   ADC   #$07
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+   LDX   #>(MAP_OBJECT_NAMES+7)
+   LDA   #<(MAP_OBJECT_NAMES+7)
    RTS
 .if_end@47:
    CMP   #$1D
    BCS   .if_end@48
-   LDA   #<MAP_OBJECT_NAMES
-   ADC   #$39
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+.tail@1:
+   LDX   #>(MAP_OBJECT_NAMES+57)
+   LDA   #<(MAP_OBJECT_NAMES+57)
    RTS
 .if_end@48:
    BNE   .if_end@49
-   LDA   #<MAP_OBJECT_NAMES
-   CLC
-   ADC   #$2D
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-   LDA   __local_classify_entity_type__0
+.tail@2:
+   LDX   #>(MAP_OBJECT_NAMES+45)
+   LDA   #<(MAP_OBJECT_NAMES+45)
    RTS
 .if_end@49:
    LDA   #<MAP_OBJECT_NAMES
-   CLC
-   STA   __local_classify_entity_type__0
-   JSR   classify_entity_type@run0
-.tail@0:
-   LDA   __local_classify_entity_type__0
-   RTS
-
-classify_entity_type@run0:
-   SUBROUTINE
-
-   LDA   #>MAP_OBJECT_NAMES
-   ADC   #$00
-   TAX
+   LDX   #>MAP_OBJECT_NAMES
    RTS
 
 follow_link:
@@ -1163,7 +1106,7 @@ set_blink_target:
 .if_else@54:
    LDY   #$03
    LDA   (MOB_PTR),Y
-   JSR   setup_char_sprite@run2
+   JSR   setup_char_sprite@run1
    STA   BLINK_COL
    STX   BLINK_ROW
    LDY   #$04
@@ -1177,7 +1120,7 @@ load_char_to_fa:
    SUBROUTINE
 
    LDA   __zpabi_load_char_to_fa__index
-   JSR   reorder_char@run3
+   JSR   reorder_char@run2
    STA   CHAR_PTR
    STX   CHAR_PTR+1
    RTS

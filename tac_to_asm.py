@@ -4404,6 +4404,12 @@ class Translator:
             )
             if fused is not None:
                 return fused
+            if not (unsigned_cmp or pointer_cmp):
+                vs_zero = self._jcmp_signed_positive(
+                    op, src1, src2, size, target,
+                )
+                if vs_zero is not None:
+                    return vs_zero
             if size == 1:
                 op, src1, src2 = _constant_on_right(
                     op, src1, src2, unsigned=unsigned_cmp or pointer_cmp,
@@ -4475,6 +4481,49 @@ class Translator:
                     src2_op, src1_op, size, asm_ast.PL(), target,
                 )
         raise TypeError(f"unsupported JumpIfCmp op: {op!r}")
+
+    def _jcmp_signed_positive(
+        self, op, src1, src2, size: int, target: str,
+    ) -> list[asm_ast.Type_instruction] | None:
+        """The branch for a signed `x > 0` or `x <= 0` (either operand
+        order), or None. `x` is positive when its top byte's sign bit is
+        clear and some byte is nonzero:
+
+            x <= 0:  LDA top; BMI target; ORA ...; BEQ target
+            x > 0:   LDA top; BMI skip; ORA ...; BNE target; skip:
+
+        The subtraction from 0 with the overflow test had taken 15
+        bytes for a 2-byte `x`, and `x >= 1` on a byte 9."""
+        if (isinstance(src1, tac_ast.Constant)
+                and not isinstance(src2, tac_ast.Constant)
+                and type(op) in _MIRRORED):
+            op, src1, src2 = _MIRRORED[type(op)](), src2, src1
+        if not (isinstance(op, (tac_ast.GreaterThan, tac_ast.LessOrEqual))
+                and isinstance(src2, tac_ast.Constant)
+                and getattr(src2.const, "value", None) == 0
+                and not isinstance(src1, tac_ast.Constant)):
+            return None
+        x = translate_val(src1)
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_byte_at(x, size - 1), dst=_REG_A),
+        ]
+        rest = [
+            asm_ast.Or(src=_byte_at(x, k), dst=_REG_A)
+            for k in range(size - 1)
+        ]
+        if isinstance(op, tac_ast.LessOrEqual):
+            return out + [
+                asm_ast.Branch(cond=asm_ast.MI(), target=target),
+                *rest,
+                asm_ast.Branch(cond=asm_ast.EQ(), target=target),
+            ]
+        skip = self.make_label("jcmp_neg")
+        return out + [
+            asm_ast.Branch(cond=asm_ast.MI(), target=skip),
+            *rest,
+            asm_ast.Branch(cond=asm_ast.NE(), target=target),
+            asm_ast.Label(name=skip),
+        ]
 
     def _fused_subtract(
         self, op, src1, src2, target: str, size: int, *, unsigned: bool,
@@ -4951,6 +5000,11 @@ def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
             return asm_ast.Imm(value=b)
         case tac_ast.Constant(const=tac_ast.ConstDouble(bits=b)):
             return asm_ast.Imm(value=b)
+        case tac_ast.Constant(const=tac_ast.ConstChar(value=v)):
+            # A signed byte, whose value may be negative. A 1-byte
+            # lowering may write it without `_byte_at`, so give its bit
+            # pattern here.
+            return asm_ast.Imm(value=v & 0xFF)
         case tac_ast.Constant(const=c):
             return asm_ast.Imm(value=c.value)
         case tac_ast.Var(name=n):

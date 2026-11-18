@@ -901,10 +901,10 @@ print_centered_plus_col:
    SEC
    SBC   __local_print_centered_plus_col__0
    STA   __local_print_centered_plus_col__0
-   LSR
-   STA   __local_print_centered_plus_col__1
-   LDA   __local_print_centered_plus_col__0
    AND   #$01
+   STA   __local_print_centered_plus_col__1
+   LSR   __local_print_centered_plus_col__0
+   LDA   __local_print_centered_plus_col__0
    CLC
    ADC   __local_print_centered_plus_col__1
    CLC

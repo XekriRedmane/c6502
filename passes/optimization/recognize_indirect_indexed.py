@@ -153,15 +153,20 @@ def _resolves_to_constant(
     v: tac_ast.Var,
     def_idx: dict[str, int],
     all_instrs: list,
+    ssa_dsts: set[str] | None,
 ) -> bool:
     """True iff `v`'s SSA def chain ends in a Constant. Follows
     `Copy` chains of arbitrary depth; gives up on non-Copy defs.
     Used to defer to the IndexedLoad/Store recognizers when the
-    pointer-side operand is just a Var-wrapped Constant."""
+    pointer-side operand is just a Var-wrapped Constant. Only an
+    SSA-renamed name has one def. `def_idx` gives a global's last
+    store, and after `P = 0` on one path `P->m` elsewhere had been
+    left to those recognizers, which took it as an address computed
+    at run time."""
     seen: set[str] = set()
     cur = v
     while True:
-        if cur.name in seen:
+        if cur.name in seen or ssa_dsts is None or cur.name not in ssa_dsts:
             return False
         seen.add(cur.name)
         idx = def_idx.get(cur.name)
@@ -250,7 +255,7 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             return None
         # Defer to recognize_indexed_* when the ptr resolves to a Constant.
         if env is not None and _resolves_to_constant(
-            ptr_var, env.def_idx, env.instructions,
+            ptr_var, env.def_idx, env.instructions, ctx.ssa_dsts,
         ):
             return None
         # Determine Load or Store and check the access value's width.
@@ -346,7 +351,8 @@ def _offset_from_extend_chain(m, env: DefUseEnv, ctx: PassContext):
                 chain = None
         if chain is None or not isinstance(chain.base, tac_ast.Var):
             continue
-        if _resolves_to_constant(chain.base, env.def_idx, env.instructions):
+        if _resolves_to_constant(chain.base, env.def_idx, env.instructions,
+                                 ctx.ssa_dsts):
             continue
         access = m.bindings.get('load_instr') or m.bindings.get('store_instr')
         at = next((i for i, ins in enumerate(env.instructions)

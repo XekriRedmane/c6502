@@ -110,12 +110,12 @@ __zpabi_print_string__s_1	EQU	$87
 __zpabi_setup_input__m_1	EQU	$87
 __zpabi_tune_player__strength	EQU	$87
 __zpabi_validate_input__o_0	EQU	$87
-__local_read_keyboard__0	EQU	$88
 __zpabi_call_input_init__init	EQU	$88
 __zpabi_copy_record_data__o_0	EQU	$88
 __zpabi_hrcg_cout__c	EQU	$88
 __zpabi_validate_input__o_1	EQU	$88
 __local_format_slot_number__n	EQU	$89
+__local_read_keyboard__1	EQU	$89
 __zpabi_check_adjacent_threats__pos	EQU	$89
 __zpabi_check_encounter__pos	EQU	$89
 __zpabi_copy_record_data__o_1	EQU	$89
@@ -339,7 +339,7 @@ WAIT	EQU	$FCA8
 ; def option params=__zpabi_option__n locals=__local_option__0,__local_option__1,__local_option__2 indirect=false in_cycle=false
 ; def prompt_insert_disk params= locals= indirect=false in_cycle=false
 ; def read_game_data params= locals=__local_read_game_data__0 indirect=false in_cycle=false
-; def read_keyboard params= locals=__local_read_keyboard__0 indirect=false in_cycle=false
+; def read_keyboard params= locals=__local_read_keyboard__0,__local_read_keyboard__1 indirect=false in_cycle=false
 ; def read_paddle params=__zpabi_read_paddle__n locals=__local_read_paddle__0 indirect=false in_cycle=false param_regs=X
 ; def render_input_buffer params= locals=__local_render_input_buffer__0,__local_render_input_buffer__i indirect=false in_cycle=false
 ; def retire_character params= locals= indirect=false in_cycle=false
@@ -1239,13 +1239,13 @@ read_keyboard:
 .loop@8_start:
    JSR   step_prng
    JSR   check_input
-   STA   __local_read_keyboard__0
+   STA   __local_read_keyboard__1
    AND   #$80
    BNE   .read_keyboard@rot@2
-   LDA   __local_read_keyboard__0
+   LDA   __local_read_keyboard__1
    STA   KBDSTRB
    JSR   anim_check_frame
-   LDA   __local_read_keyboard__0
+   LDA   __local_read_keyboard__1
    RTS
 
 check_combat_eligibility:

@@ -101,17 +101,15 @@ __zpabi_row_to_addr__row	EQU	$AE
 __zpabi_shifted_pixels__table_0	EQU	$AE
 __zpabi_row_to_addr__page	EQU	$AF
 __zpabi_shifted_pixels__table_1	EQU	$AF
-__local_draw_sprite__0	EQU	$B0
 __local_draw_sprite_at_pixel_coords__0	EQU	$B0
 __local_erase_sprite_at_pixel_coords__0	EQU	$B0
-__local_draw_sprite__1	EQU	$B1
 __local_draw_sprite_at_pixel_coords__1	EQU	$B1
 __local_erase_sprite_at_pixel_coords__1	EQU	$B1
 __local_draw_sprite__2	EQU	$B2
 __local_draw_sprite_at_pixel_coords__2	EQU	$B2
+__local_erase_sprite_at_pixel_coords__2	EQU	$B2
 __local_draw_sprite__3	EQU	$B3
 __local_draw_sprite_at_pixel_coords__3	EQU	$B3
-__local_erase_sprite_at_pixel_coords__3	EQU	$B3
 __local_draw_sprite__i	EQU	$B4
 __local_draw_sprite_at_pixel_coords__b	EQU	$B4
 __local_erase_sprite_at_pixel_coords__4	EQU	$B4
@@ -464,11 +462,7 @@ draw_sprite:
    JSR   compute_shifted_sprite
    LDA   #$00
    STA   __local_draw_sprite__i
-.loop@1_start:
-   CMP   #$21
-   BCC   .lb_skip@0
-   JMP   .loop@1_break
-.lb_skip@0:
+.draw_sprite@rot@0:
    LDA   __local_draw_sprite__row
    STA   __zpabi_row_to_addr__row
    LDA   __zpabi_draw_sprite__page
@@ -483,25 +477,17 @@ draw_sprite:
 .carry_inc@2:
    LDY   #$00
    LDA   (__local_draw_sprite__2),Y
-   STA   __local_draw_sprite__0
-   LDX   __local_draw_sprite__i
-   LDA   BLOCK_DATA,X
-   STA   __local_draw_sprite__1
-   LDA   __local_draw_sprite__0
    AND   __local_draw_sprite__5
-   ORA   __local_draw_sprite__1
+   LDX   __local_draw_sprite__i
+   ORA   BLOCK_DATA,X
    STA   (__local_draw_sprite__2),Y
    LDA   __zpabi_compute_shifted_sprite__shift
    CMP   #$05
    BCS   .if_else@1
    INY
    LDA   (__local_draw_sprite__2),Y
-   STA   __local_draw_sprite__0
-   LDA   BLOCK_DATA+1,X
-   STA   __local_draw_sprite__1
-   LDA   __local_draw_sprite__0
    AND   __local_draw_sprite__4
-   ORA   __local_draw_sprite__1
+   ORA   BLOCK_DATA+1,X
    STA   (__local_draw_sprite__2),Y
    JMP   .if_end@0
 .if_else@1:
@@ -511,20 +497,16 @@ draw_sprite:
    CLC
    INY
    LDA   (__local_draw_sprite__2),Y
-   STA   __local_draw_sprite__0
-   LDA   BLOCK_DATA+2,X
-   STA   __local_draw_sprite__1
-   LDA   __local_draw_sprite__0
    AND   __local_draw_sprite__4
-   ORA   __local_draw_sprite__1
+   ORA   BLOCK_DATA+2,X
    STA   (__local_draw_sprite__2),Y
 .if_end@0:
    INC   __local_draw_sprite__row
    TXA
    ADC   #$03
    STA   __local_draw_sprite__i
-   JMP   .loop@1_start
-.loop@1_break:
+   CMP   #$21
+   BCC   .draw_sprite@rot@0
    RTS
 
 draw_sprite_page1:
@@ -568,17 +550,21 @@ erase_sprite_at_pixel_coords:
    LDA   #$00
    STA   __local_erase_sprite_at_pixel_coords__b
    JMP   .loop@3_start
-.erase_sprite_at_pixel_coords@rot@0:
+.erase_sprite_at_pixel_coords@rot@1:
    LDA   __local_erase_sprite_at_pixel_coords__8
    ADC   __local_erase_sprite_at_pixel_coords__b
    STA   __local_erase_sprite_at_pixel_coords__4
    CLC
    LDY   __local_erase_sprite_at_pixel_coords__4
    LDA   (__local_erase_sprite_at_pixel_coords__5),Y
-   STA   __local_erase_sprite_at_pixel_coords__3
+   STA   __local_erase_sprite_at_pixel_coords__1
    LDA   __local_erase_sprite_at_pixel_coords__i
    ADC   __local_erase_sprite_at_pixel_coords__b
    TAX
+   LDA   BLOCK_DATA,X
+   EOR   #$7F
+   AND   __local_erase_sprite_at_pixel_coords__1
+   STA   __local_erase_sprite_at_pixel_coords__2
    CLC
    LDA   __local_erase_sprite_at_pixel_coords__5
    STA   __local_erase_sprite_at_pixel_coords__0
@@ -586,17 +572,13 @@ erase_sprite_at_pixel_coords:
    ADC   #$20
    STA   __local_erase_sprite_at_pixel_coords__1
    LDA   (__local_erase_sprite_at_pixel_coords__0),Y
-   STA   __local_erase_sprite_at_pixel_coords__1
-   LDA   BLOCK_DATA,X
-   EOR   #$7F
-   AND   __local_erase_sprite_at_pixel_coords__3
-   ORA   __local_erase_sprite_at_pixel_coords__1
+   ORA   __local_erase_sprite_at_pixel_coords__2
    STA   (__local_erase_sprite_at_pixel_coords__5),Y
    INC   __local_erase_sprite_at_pixel_coords__b
 .loop@3_start:
    LDA   __local_erase_sprite_at_pixel_coords__b
    CMP   __local_erase_sprite_at_pixel_coords__7
-   BCC   .erase_sprite_at_pixel_coords@rot@0
+   BCC   .erase_sprite_at_pixel_coords@rot@1
    INC   __zpabi_erase_sprite_at_pixel_coords__row
    LDA   __local_erase_sprite_at_pixel_coords__i
    CLC
@@ -644,9 +626,9 @@ draw_sprite_at_pixel_coords:
    STA   __local_draw_sprite_at_pixel_coords__i
 .loop@4_start:
    CMP   #$21
-   BCC   .lb_skip@1
+   BCC   .lb_skip@0
    JMP   .loop@4_break
-.lb_skip@1:
+.lb_skip@0:
    LDA   __zpabi_draw_sprite_at_pixel_coords__row
    JSR   erase_sprite_at_pixel_coords@run1
    STA   __local_draw_sprite_at_pixel_coords__4
@@ -654,7 +636,7 @@ draw_sprite_at_pixel_coords:
    LDA   #$00
    STA   __local_draw_sprite_at_pixel_coords__b
    JMP   .loop@5_start
-.draw_sprite_at_pixel_coords@rot@1:
+.draw_sprite_at_pixel_coords@rot@2:
    LDA   __local_draw_sprite_at_pixel_coords__7
    ADC   __local_draw_sprite_at_pixel_coords__b
    STA   __local_draw_sprite_at_pixel_coords__3
@@ -669,15 +651,16 @@ draw_sprite_at_pixel_coords:
    STA   __local_draw_sprite_at_pixel_coords__1
    LDA   (__local_draw_sprite_at_pixel_coords__0),Y
    STA   __local_draw_sprite_at_pixel_coords__0
+   LDA   __local_draw_sprite_at_pixel_coords__2
+   EOR   __local_draw_sprite_at_pixel_coords__0
+   STA   __local_draw_sprite_at_pixel_coords__0
    LDA   __local_draw_sprite_at_pixel_coords__i
    CLC
    ADC   __local_draw_sprite_at_pixel_coords__b
    TAX
    LDA   BLOCK_DATA,X
    STA   __local_draw_sprite_at_pixel_coords__1
-   LDA   __local_draw_sprite_at_pixel_coords__2
-   EOR   __local_draw_sprite_at_pixel_coords__0
-   AND   __local_draw_sprite_at_pixel_coords__1
+   AND   __local_draw_sprite_at_pixel_coords__0
    ORA   __local_draw_sprite_at_pixel_coords__screens_differ
    STA   __local_draw_sprite_at_pixel_coords__screens_differ
    LDA   __local_draw_sprite_at_pixel_coords__2
@@ -687,7 +670,7 @@ draw_sprite_at_pixel_coords:
 .loop@5_start:
    LDA   __local_draw_sprite_at_pixel_coords__b
    CMP   __local_draw_sprite_at_pixel_coords__6
-   BCC   .draw_sprite_at_pixel_coords@rot@1
+   BCC   .draw_sprite_at_pixel_coords@rot@2
    INC   __zpabi_draw_sprite_at_pixel_coords__row
    LDA   __local_draw_sprite_at_pixel_coords__i
    CLC

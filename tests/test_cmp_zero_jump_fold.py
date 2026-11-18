@@ -781,28 +781,37 @@ class TestSignExtendNarrowingAgainstZero(unittest.TestCase):
         self.assertEqual(jic.src1, _var("@x"))
         self.assertEqual(jic.src2, _const_char(0))
 
-    def test_does_not_narrow_gt_against_zero(self):
-        # `> 0` would need a separate non-zero check; we only
-        # narrow `>= 0` / `< 0`. The fold still produces a
-        # JumpIfCmp but operands stay wide.
+    def _signed_compare(self, op, k):
         symbols = _symbols(("@x", c99_ast.SChar()))
         fn = _fn(
             tac_ast.SignExtend(src=_var("@x"), dst=_var("%wide")),
             tac_ast.Binary(
-                op=tac_ast.GreaterThan(),
-                src1=_var("%wide"), src2=_const_int(0),
+                op=op, src1=_var("%wide"), src2=_const_int(k),
                 dst=_var("%c"),
             ),
             tac_ast.JumpIfTrue(condition=_var("%c"), target=".pos"),
         )
         out = fold_cmp_zero_jump(fn, symbols=symbols)
-        jic = next(
+        return next(
             i for i in out.instructions
             if isinstance(i, tac_ast.JumpIfCmp)
         )
-        # Operand stays wide (not the SChar).
-        self.assertEqual(jic.src1, _var("%wide"))
-        self.assertEqual(jic.src2, _const_int(0))
+
+    def test_narrows_gt_against_any_signed_byte(self):
+        # `(int8_t)d > 0` and `> -12` compare the signed byte.
+        for k in (0, -12, 127, -128):
+            with self.subTest(k=k):
+                jic = self._signed_compare(tac_ast.GreaterThan(), k)
+                self.assertEqual(jic.src1, _var("@x"))
+                self.assertEqual(jic.src2, _const_char(k))
+
+    def test_does_not_narrow_against_a_wider_constant(self):
+        # 128 and -129 aren't signed bytes, so the compare stays wide.
+        for k in (128, -129):
+            with self.subTest(k=k):
+                jic = self._signed_compare(tac_ast.LessThan(), k)
+                self.assertEqual(jic.src1, _var("%wide"))
+                self.assertEqual(jic.src2, _const_int(k))
 
     def test_does_not_narrow_uchar_through_signextend(self):
         # SignExtend of an UChar is unusual (c99_to_tac would emit

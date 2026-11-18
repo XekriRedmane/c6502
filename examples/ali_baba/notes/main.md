@@ -55,6 +55,8 @@ None.
 
 ## Compiler gaps
 
+Item 1 was fixed on 18 Nov 2026, and main.c keeps its cast.
+
 1. A mask of a byte compared with a small constant is a signed 16-bit
    comparison.
 

@@ -225,6 +225,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   shape from SinkPass). See "sink_and_past_branch" in the peephole
   catalog. The original ZeroExtend or AND stays when another
   instruction reads its result.
+- `narrow_byte_bitwise.py` — `NarrowByteBitwise` (DefUsePass). A wide
+  `&`, `|`, or `^` with an extended byte among its operands, whose
+  result's high bytes are zero, becomes the operation on the low bytes
+  into a new `uchar` and a `ZeroExtend` of it, so that a comparison of
+  `(x & 0x3F)` narrows to one byte. Last in the fixed point.
 - `narrow_widened_arith.py` — `narrow_widened_arith` (`NarrowWidenedArith`,
   DefUsePass). Folds `Truncate(Binary(safe_op, Extend(a), Extend(b) |
   Constant), u_n)` → `Binary(safe_op, a, b | narrowed_Constant, u_n)`
@@ -426,7 +431,8 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → reassoc_offset_constant → direct_member_access
       → recognize_indexed_store → recognize_indexed_load
       → fold_truncate_extend → fold_extend_extend → sink_increments
-      → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)
+      → sink_and_past_branch → narrow_widened_arith
+      → narrow_byte_bitwise]*                          (FixedpointPass loop)
    → static_indexed_access         (PostFixedpointPass, one-shot)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
    → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)

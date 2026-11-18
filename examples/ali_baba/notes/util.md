@@ -95,6 +95,8 @@ None.
 
 ## Compiler gaps
 
+Item 1 was fixed on 18 Nov 2026, and util.c keeps its local.
+
 These don't stop the unit from compiling. Each costs bytes.
 
 1. A comparison of a masked byte with a byte is done at 16 bits,

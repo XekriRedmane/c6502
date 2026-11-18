@@ -91,6 +91,8 @@ every unit.
 
 ## Compiler gaps
 
+Item 1 was fixed on 18 Nov 2026, and turn.c keeps its cast.
+
 1. **A comparison of a masked byte is done in 16 bits, signed.**
    `(ENTITY_PTR->life & HP_MASK) < 3` compiled to `AND #$3F; LDY #0;
    SEC; SBC #3; TYA; SBC #0; BVC; EOR #$80; BPL`. game_turn_loop casts

@@ -99,15 +99,16 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_format_patch__b	EQU	$AE
+__local_format_patch__0	EQU	$AE
 __local_get_level_from_keyboard__n	EQU	$AE
-__local_format_patch__tries_1	EQU	$AF
+__local_format_patch__b	EQU	$AF
 __local_get_level_from_keyboard__level_1	EQU	$AF
 __local_level_edit_save1__col	EQU	$AF
-__local_format_patch__tries_0	EQU	$B0
+__local_format_patch__tries_1	EQU	$B0
 __local_get_level_from_keyboard__level_0	EQU	$B0
 __local_level_edit_save1__row	EQU	$B0
-__local_format_patch__slot16	EQU	$B1
+__local_format_patch__tries_0	EQU	$B1
+__local_format_patch__slot16	EQU	$B2
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -181,7 +182,7 @@ DISK_IO	EQU	$C088
 ; def editor_move_level params= locals=__local_editor_move_level__0 indirect=false in_cycle=false
 ; def editor_play_level params= locals=__local_editor_play_level__0 indirect=false in_cycle=false
 ; def editor_wait_for_key params= locals=__local_editor_wait_for_key__0 indirect=false in_cycle=false
-; def format_patch params=__zpabi_format_patch__slot16 locals=__local_format_patch__b,__local_format_patch__tries_1,__local_format_patch__tries_0,__local_format_patch__slot16 indirect=false in_cycle=false param_regs=X
+; def format_patch params=__zpabi_format_patch__slot16 locals=__local_format_patch__0,__local_format_patch__b,__local_format_patch__tries_1,__local_format_patch__tries_0,__local_format_patch__slot16 indirect=false in_cycle=false param_regs=X
 ; def get_key_for_edit_level params= locals=__local_get_key_for_edit_level__0,__local_get_key_for_edit_level__1 indirect=false in_cycle=false
 ; def get_level_from_keyboard params= locals=__local_get_level_from_keyboard__n,__local_get_level_from_keyboard__level_1,__local_get_level_from_keyboard__level_0 indirect=false in_cycle=false carry=true
 ; def hit_key_to_continue params= locals= indirect=false in_cycle=false
@@ -1250,7 +1251,7 @@ format_patch:
    CMP   #$D6
    BNE   .vthread@1
    LDA   DISK_IO,X
-   STA   __local_format_patch__b
+   STA   __local_format_patch__0
    JSR   dont_manipulate_master_disk
    JMP   start_level_editor
 

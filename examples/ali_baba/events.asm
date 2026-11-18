@@ -115,11 +115,11 @@ __local_update_event_list__0	EQU	$86
 __local_pick_random_mob__3	EQU	$87
 __local_pickup_treasure__0	EQU	$87
 __local_update_event_list__1	EQU	$87
+__local_find_msb__mask	EQU	$88
 __local_init_drop_display__i	EQU	$88
 __local_pick_random_mob__index	EQU	$88
 __local_pickup_treasure__1	EQU	$88
 __local_update_event_list__e	EQU	$88
-__local_find_msb__mask	EQU	$89
 __local_pick_random_char__0	EQU	$89
 __local_update_event_list__2	EQU	$89
 __local_update_event_list__3	EQU	$8A
@@ -299,7 +299,7 @@ WAIT	EQU	$FCA8
 ; def event_faction_scene_cont params=__zpabi_event_faction_scene_cont__index locals=__local_event_faction_scene_cont__0 indirect=false in_cycle=false
 ; def event_spawn_mob params= locals=__local_event_spawn_mob__0,__local_event_spawn_mob__index indirect=false in_cycle=false
 ; def find_mob_by_faction params=__zpabi_find_mob_by_faction__faction locals=__local_find_mob_by_faction__link indirect=false in_cycle=false carry=true
-; def find_msb params=__zpabi_find_msb__v locals=__local_find_msb__0,__local_find_msb__1,__local_find_msb__mask indirect=false in_cycle=false
+; def find_msb params=__zpabi_find_msb__v locals=__local_find_msb__0,__local_find_msb__mask indirect=false in_cycle=false
 ; def flush_pending_xp params= locals=__local_flush_pending_xp__0,__local_flush_pending_xp__1,__local_flush_pending_xp__2 indirect=false in_cycle=false
 ; def inc_stat params=__zpabi_inc_stat__offset locals=__local_inc_stat__0 indirect=false in_cycle=false
 ; def init_drop_display params= locals=__local_init_drop_display__0,__local_init_drop_display__1,__local_init_drop_display__i indirect=false in_cycle=false
@@ -967,10 +967,8 @@ pickup_treasure:
    JSR   num_to_decimal
    JSR   set_cursor_row21
    LDA   #<S_CHEST_MESSAGE
-   CLC
    STA   __zpabi_clear_and_display__strings_0
    LDA   #>S_CHEST_MESSAGE
-   ADC   #$00
    STA   __zpabi_clear_and_display__strings_1
    JSR   clear_and_display
 .if_end@19:

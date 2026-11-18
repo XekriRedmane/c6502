@@ -83,7 +83,6 @@ __zpabi_setup_text_pos_col20__name_1	EQU	$81
 __zpabi_trigger_scene_event__ev_1	EQU	$81
 __zpabi_tune_player__strength	EQU	$81
 __zpabi_update_event_list__value_0	EQU	$81
-__local_join_party__0	EQU	$82
 __zpabi_event_penalty__ev_0	EQU	$82
 __zpabi_find_entity_at_pos__pos	EQU	$82
 __zpabi_manhattan_distance__pos	EQU	$82
@@ -110,26 +109,25 @@ __local_npc_move_ai__best	EQU	$86
 __local_shop_buy_handler__2	EQU	$86
 __local_npc_move_ai__best_score	EQU	$87
 __local_shop_buy_handler__3	EQU	$87
-__local_ai_choose_target__1	EQU	$88
 __local_award_xp__0	EQU	$88
 __local_npc_move_ai__1	EQU	$88
 __local_show_item__tier	EQU	$88
 __local_apply_shop_effect__1	EQU	$89
 __local_award_xp__1	EQU	$89
+__local_find_nearest_event__nearest_dist	EQU	$89
 __local_show_item__i	EQU	$89
 __local_apply_shop_effect__2	EQU	$8A
 __local_award_xp__2	EQU	$8A
 __local_show_item__to	EQU	$8A
 __local_apply_shop_effect__rec	EQU	$8B
 __local_evaluate_direction__0	EQU	$8B
-__local_find_nearest_event__nearest_dist	EQU	$8B
+__local_find_nearest_event__1	EQU	$8B
 __local_show_item__1	EQU	$8B
 __local_apply_shop_effect__3	EQU	$8C
 __local_evaluate_direction__1	EQU	$8C
+__local_find_nearest_event__ev	EQU	$8C
 __local_show_item__2	EQU	$8C
-__local_find_nearest_event__1	EQU	$8D
-__local_find_nearest_event__ev	EQU	$8E
-__local_find_nearest_event__2	EQU	$8F
+__local_find_nearest_event__2	EQU	$8D
 __local_manhattan_distance__0	EQU	$90
 __local_manhattan_distance__1	EQU	$91
 __local_manhattan_distance__2	EQU	$92
@@ -298,7 +296,7 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def ai_choose_target params= locals=__local_ai_choose_target__best_pos,__local_ai_choose_target__best_strength,__local_ai_choose_target__0,__local_ai_choose_target__1,__local_ai_choose_target__2,__local_ai_choose_target__3 indirect=false in_cycle=false
+; def ai_choose_target params= locals=__local_ai_choose_target__best_pos,__local_ai_choose_target__best_strength,__local_ai_choose_target__0,__local_ai_choose_target__1 indirect=false in_cycle=false
 ; def apply_shop_effect params=__zpabi_apply_shop_effect__n locals=__local_apply_shop_effect__0,__local_apply_shop_effect__1,__local_apply_shop_effect__2,__local_apply_shop_effect__rec,__local_apply_shop_effect__3 indirect=false in_cycle=false
 ; def award_xp params=__zpabi_award_xp__n locals=__local_award_xp__0,__local_award_xp__1,__local_award_xp__2 indirect=false in_cycle=false
 ; def browse_handler params= locals=__local_browse_handler__0 indirect=false in_cycle=false
@@ -905,12 +903,11 @@ npc_move_ai:
    CMP   #$03
    BCS   .cond_else@34
    EOR   #$03
-   STA   AI_PREV_DIR
    JMP   .cond_end@35
 .cond_else@34:
    EOR   #$07
-   STA   AI_PREV_DIR
 .cond_end@35:
+   STA   AI_PREV_DIR
    LDA   __local_npc_move_ai__best
    RTS
 
@@ -936,13 +933,9 @@ join_party:
    STA   (ENTITY_PTR),Y
    LDY   #$0F
    LDA   (ENTITY_PTR),Y
-   STA   __local_join_party__1
-   LDA   (MOB_PTR),Y
-   STA   __local_join_party__0
-   LDA   __local_join_party__1
    AND   #$3F
    STA   __local_join_party__1
-   LDA   __local_join_party__0
+   LDA   (MOB_PTR),Y
    AND   #$C0
    ORA   __local_join_party__1
    STA   (ENTITY_PTR),Y
@@ -974,20 +967,14 @@ ai_choose_target:
    LDY   #$06
    LDA   (ENTITY_PTR),Y
    AND   #$3F
-   STA   __local_ai_choose_target__1
+   STA   __local_ai_choose_target__best_strength
    DEY
    LDA   (ENTITY_PTR),Y
    AND   #$1F
-   STA   __local_ai_choose_target__best_strength
-   LDA   __local_ai_choose_target__1
-   SEC
-   SBC   __local_ai_choose_target__best_strength
-   LDA   #$00
-   SBC   #$00
-   BVC   .jcmp_novf@0
-   EOR   #$80
-.jcmp_novf@0:
-   BMI   .if_else@41
+   STA   __local_ai_choose_target__best_pos
+   LDA   __local_ai_choose_target__best_strength
+   CMP   __local_ai_choose_target__best_pos
+   BCC   .if_else@41
    JSR   find_nearest_event
    STA   AI_TARGET_POS
    JMP   .if_end@38
@@ -1317,16 +1304,16 @@ award_xp:
 
    LDY   #$0B
    LDA   (ENTITY_PTR),Y
-   STA   __local_award_xp__2
+   STA   __local_award_xp__1
    AND   #$E0
    STA   (ENTITY_PTR),Y
+   LDA   __local_award_xp__1
+   AND   #$1F
+   STA   __local_award_xp__1
    LDY   #$08
    LDA   (ENTITY_PTR),Y
    STA   __zpabi_pending_xp__armor
    JSR   pending_xp
-   STA   __local_award_xp__1
-   LDA   __local_award_xp__2
-   AND   #$1F
    CLC
    ADC   __local_award_xp__1
    STA   __local_award_xp__2

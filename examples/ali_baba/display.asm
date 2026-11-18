@@ -465,8 +465,6 @@ WAIT	EQU	$FCA8
 ; item setup_text_pos section=.text local=false zero=false
 ; item setup_text_pos_col20 section=.text local=false zero=false
 ; item display_char_stats section=.text local=false zero=false
-; item display_char_stats@run4 section=.text local=true zero=false
-; item display_char_stats@run3 section=.text local=true zero=false
 ; item display_char_stats@run2 section=.text local=true zero=false
 ; item display_char_stats@run1 section=.text local=true zero=false
 ; item display_char_stats@run0 section=.text local=true zero=false
@@ -594,13 +592,15 @@ display_char_stats:
    LDY   #$06
    LDA   (ENTITY_PTR),Y
    AND   #$3F
-   JSR   display_char_stats@run2
+   STA   __zpabi_num_to_decimal__value_0
    LDA   #<(STATS_TEMPLATE+10)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+10)
    JSR   display_char_stats@run0
    LDY   #$08
-   JSR   display_char_stats@run3
+   LDA   (ENTITY_PTR),Y
+   AND   #$0F
+   STA   __zpabi_num_to_decimal__value_0
    LDA   #<(STATS_TEMPLATE+94)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+94)
@@ -610,27 +610,33 @@ display_char_stats:
    LDA   #<(STATS_TEMPLATE+79)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+79)
-   JSR   display_char_stats@run0
+   JSR   display_char_stats@run2
    LDY   #$09
    JSR   display_char_stats@run1
    LDA   #<(STATS_TEMPLATE+121)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+121)
-   JSR   display_char_stats@run0
+   JSR   display_char_stats@run2
    LDY   #$05
-   JSR   display_char_stats@run4
+   LDA   (ENTITY_PTR),Y
+   AND   #$1F
+   STA   __zpabi_num_to_decimal__value_0
    LDA   #<(STATS_TEMPLATE+25)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+25)
    JSR   display_char_stats@run0
    LDY   #$0C
-   JSR   display_char_stats@run3
+   LDA   (ENTITY_PTR),Y
+   AND   #$0F
+   STA   __zpabi_num_to_decimal__value_0
    LDA   #<(STATS_TEMPLATE+67)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+67)
    JSR   display_char_stats@run0
    LDY   #$0B
-   JSR   display_char_stats@run4
+   LDA   (ENTITY_PTR),Y
+   AND   #$1F
+   STA   __zpabi_num_to_decimal__value_0
    LDA   #<(STATS_TEMPLATE+109)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+109)
@@ -644,7 +650,7 @@ display_char_stats:
    LDA   #<(STATS_TEMPLATE+51)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(STATS_TEMPLATE+51)
-   JSR   display_char_stats@run0
+   JSR   display_char_stats@run2
    LDA   STATS_TEMPLATE+54
    CMP   #$A0
    BNE   .if_end@4
@@ -701,38 +707,21 @@ display_char_stats:
 .loop@1_break:
    JMP   clear_map
 
-display_char_stats@run4:
-   SUBROUTINE
-
-   LDA   (ENTITY_PTR),Y
-   AND   #$1F
-   JMP   display_char_stats@run2
-
-display_char_stats@run3:
-   SUBROUTINE
-
-   LDA   (ENTITY_PTR),Y
-   AND   #$0F
-   JMP   display_char_stats@run2
-
 display_char_stats@run2:
    SUBROUTINE
 
-   STA   __zpabi_num_to_decimal__value_0
-   LDA   #$00
-   STA   __zpabi_num_to_decimal__value_1
-   RTS
+   STA   __zpabi_num_to_decimal__out_1
+   JMP   num_to_decimal
 
 display_char_stats@run1:
    SUBROUTINE
 
    LDA   (ENTITY_PTR),Y
    AND   #$0F
-   LDY   #$00
    CLC
    ADC   #$01
    STA   __zpabi_num_to_decimal__value_0
-   TYA
+   LDA   #$00
    ADC   #$00
    STA   __zpabi_num_to_decimal__value_1
    RTS
@@ -741,4 +730,6 @@ display_char_stats@run0:
    SUBROUTINE
 
    STA   __zpabi_num_to_decimal__out_1
+   LDA   #$00
+   STA   __zpabi_num_to_decimal__value_1
    JMP   num_to_decimal

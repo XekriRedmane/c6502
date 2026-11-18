@@ -136,6 +136,33 @@ class TestLoopAttributes(unittest.TestCase):
                 self.assertEqual("_keep_start" in tac, kept)
                 self.assertEqual("Jump(" in tac, kept)
 
+    def test_break_and_continue_in_a_kept_loop(self) -> None:
+        # A `break` or `continue` carries the loop's label without
+        # KEEP_LOOP_MARK, and once jumped to a label the kept loop
+        # never defined, which crashed the CFG build under -O.
+        from sim.harness import build_sim
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t even;\n"
+            "uint8_t f(uint8_t x) {\n"
+            "    uint8_t n = 0;\n"
+            "    [[c6502::keep]] for (;;) {\n"
+            "        if (--x == 0) break;\n"
+            "        n++;\n"
+            "        if (x & 1) continue;\n"
+            "        even++;\n"
+            "    }\n"
+            "    return n;\n"
+            "}\n"
+            "int main(void) { return f(7) * 16 + even; }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(src, optimize=optimize).run()
+                # x runs 6 down to 1, so n counts 6 passes, and even
+                # counts the 3 with x even.
+                self.assertEqual(out.return_int(), 6 * 16 + 3)
+
     def test_errors(self) -> None:
         for src, needle in (
             ("void f(void) { [[c6502::keep]] while (1) ; }",

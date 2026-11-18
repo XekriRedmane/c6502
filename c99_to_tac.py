@@ -73,7 +73,8 @@ Mapping:
                                  incoming `label` is the base name
                                  (`.loop@<N>`) attached by
                                  loop_labeling; we derive the per-
-                                 loop sub-targets by suffix.
+                                 loop sub-targets by suffix, after
+                                 KEEP_LOOP_MARK for a `keep` loop.
   C99 ContinueStmt(label)     -> tac Jump(<label>_continue).
   C99 WhileStmt(cond, body,   -> Label(<continue>); <eval cond -> v>;
                 label)           JumpIfFalse(v, <break>); <lower body>;
@@ -1739,6 +1740,18 @@ class Translator:
         # address). Read by the Return arm to redirect `return e;` to
         # a `Store(e, sret)` + `Ret(None)`.
         self._sret_param: str | None = None
+        # The labels of the loops marked `[[c6502::keep]]`, whose
+        # start, continue, and break labels carry KEEP_LOOP_MARK. A
+        # `break` or `continue` carries the loop's label without the
+        # mark, so `_loop_targets` adds it.
+        self._keep_loops: set[str] = set()
+
+    def _loop_targets(self, label: str) -> str:
+        """Returns the base of the target labels of the loop labeled
+        `label`, which has KEEP_LOOP_MARK added for a `keep` loop."""
+        if label in self._keep_loops:
+            return f"{label}{KEEP_LOOP_MARK}"
+        return label
 
     def make_temporary_variable_name(
         self, t: c99_ast.Type_data_type | None = None,
@@ -2573,10 +2586,12 @@ class Translator:
                 # label is the base name (e.g. `.loop@3`) minted by
                 # the loop_labeling pass; we derive the per-loop
                 # break/continue/start targets from it by suffix.
-                instrs.append(tac_ast.Jump(target=_break_label(label)))
+                instrs.append(tac_ast.Jump(
+                    target=_break_label(self._loop_targets(label))))
                 return
             case c99_ast.ContinueStmt(label=label):
-                instrs.append(tac_ast.Jump(target=_continue_label(label)))
+                instrs.append(tac_ast.Jump(
+                    target=_continue_label(self._loop_targets(label))))
                 return
             case c99_ast.WhileStmt(condition=cond, body=body, label=label):
                 # while: test-then-body, with the continue target at
@@ -2645,6 +2660,7 @@ class Translator:
                 if stmt.loop_attribute == "keep":
                     # `[[c6502::keep]]`: the labels carry
                     # KEEP_LOOP_MARK, which dead-loop elimination reads.
+                    self._keep_loops.add(label)
                     label = f"{label}{KEEP_LOOP_MARK}"
                 start = _start_label(label)
                 cont = _continue_label(label)

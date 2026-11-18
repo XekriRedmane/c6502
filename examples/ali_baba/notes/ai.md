@@ -106,6 +106,8 @@ are.
 
    Without `keep` it compiles. Sound.c needed a loop of that shape and
    used `for (; tone_padding++, --x;)` instead (see notes/sound.md).
+   The `break` jumped to the loop's break label without the `_keep`
+   mark the kept loop's labels carry. This was fixed on 18 Nov 2026.
 
 2. **`&SHOP_TABLE[n]` calls `mul8`.** The record is 41 bytes, which is
    32 + 8 + 1, and the index is a byte, but the multiplication isn't

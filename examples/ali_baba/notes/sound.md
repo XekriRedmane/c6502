@@ -100,7 +100,8 @@ No change is needed.
    The low tone's loop increments tone_padding and then counts down,
    which is that shape. The C writes the increment into the condition,
    `for (; tone_padding++, --x;)`, which compiles to `INC tone_padding;
-   DEY; BNE`.
+   DEY; BNE`. The crash was fixed on 18 Nov 2026, and the loop keeps
+   the form with the condition.
 
 2. **A `keep` loop's count went to zero page when X was taken.** In the
    tone routines, with the count a parameter or an ordinary local, the

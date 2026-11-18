@@ -1,7 +1,7 @@
 # include/CLAUDE.md
 
 C standard headers, c6502 flavor: C99's, except for C23's
-`<stdbool.h>` and `<stddef.h>`. Provided so user programs can
+`<stdbool.h>`, `<stddef.h>`, and `<stdbit.h>`. Provided so user programs can
 `#include <stdint.h>` / `#include <limits.h>` and get the right
 fixed-width types and limit macros for c6502's integer model.
 
@@ -13,7 +13,10 @@ automatically; no `-I` flag needed.
 - `limits.h` (C99 §7.10) — `CHAR_BIT`, `INT_MIN` / `INT_MAX`, etc.,
   for c6502's integer model. The values reflect c6502's actual widths
   — Int is 16 bits, Long is 32, LongLong is 64, char is unsigned 8-
-  bit.
+  bit. `BITINT_MAXWIDTH` (C23 §5.2.5.3.2) is 64, the widest N of
+  `_BitInt(N)` and `unsigned _BitInt(N)`, which is the least C23
+  allows (the width of `unsigned long long`), and it has to match
+  `bit_precise.BITINT_MAXWIDTH`, which the parser checks N against.
 - `stdint.h` (C99 §7.18) — `int8_t` / `uint8_t` / `int16_t` /
   `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t`
   typedefs mapping to c6502's integer model, plus the C99 limit and
@@ -35,6 +38,25 @@ automatically; no `-I` flag needed.
   sizes or enumeration values, which the parser folds before any
   struct layout exists. `unreachable()` is `((void)0)`, and
   `__STDC_VERSION_STDDEF_H__` is `202311L`.
+- `stdbit.h` (C23 §7.18) — the bit and byte utilities. Each of the
+  14 operations (`stdc_leading_zeros` through `stdc_bit_ceil`) is
+  declared as a function in its forms of one type, `_uc`, `_us`,
+  `_ui`, `_ul`, and `_ull`, each of which is also a macro for the
+  builtin `__c6502_stdc_<op>_<suffix>`, and its type-generic form
+  `stdc_<op>` is a macro for `__c6502_stdc_<op>`
+  (builtin_functions.py). The compiler folds a constant argument and
+  writes a loop in place for any other, and a unit that takes a
+  function's address, or calls it with the macro suppressed, gets a
+  definition of it with internal linkage
+  (passes/stdbit_functions.py), which also drops the declarations a
+  unit doesn't refer to. The parameter names are `__value`, which a
+  program's macros can't touch. `__STDC_VERSION_STDBIT_H__` is
+  `202311L`, `__STDC_ENDIAN_LITTLE__` 1234, `__STDC_ENDIAN_BIG__`
+  4321, and `__STDC_ENDIAN_NATIVE__` the little one. As §7.18.1p1
+  specifies, it declares `size_t` and the exact- and minimum-width
+  integer types too, the same typedefs as `<stddef.h>` and
+  `<stdint.h>` (C23 allows a typedef to be repeated), and nothing
+  else of theirs. User guide: `docs/stdbit.md`.
 - `stdbool.h` (C23 §7.19) — only `__bool_true_false_are_defined`,
   as 1. `bool`, `true`, and `false` are keywords in C23 (§6.4.1), so
   the header no longer defines them as macros, and including it

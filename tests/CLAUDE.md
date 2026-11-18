@@ -24,7 +24,9 @@ That's about 70 seconds against about 4 minutes in one process. Work
 stealing matters: with the default `--dist load` the run takes about
 2 minutes. The slowest tests are split into shards, one test method
 each, so the workers can share them: `test_op_matrix_sim` (8 per
-pipeline), `test_sim_differential` and `test_sim_asm` (4 each).
+pipeline), `test_bitint_sim` (16 per pipeline for the operators and 4
+for the storage grid), `test_sim_differential` and `test_sim_asm` (4
+each).
 
 Every harness class is `@unittest.skipUnless(shutil.which("pcpp"),
 …)`.
@@ -123,3 +125,12 @@ Where to look for more:
   expected values computed in Python, in both pipelines. It covers a
   grid the chapter corpus and the fuzzers sample sparsely; it's what
   found `return ++c;` on a static `unsigned char` losing A.
+- `test_bitint_sim.py` — every operator, and the conversions to and
+  from `long long`, `int`, `unsigned char`, `double`, and `float`, on
+  every bit-precise type, `_BitInt(2)` to `_BitInt(64)` and
+  `unsigned _BitInt(1)` to `unsigned _BitInt(64)`, with each result
+  compared byte for byte, padding included, against a Python model;
+  and `++`, `--`, and compound assignments on bit-precise objects in
+  the seven storage classes of `test_op_matrix_sim.py`. Each program
+  runs in both pipelines. `test_bitint.py` has the front end's rules
+  for these types.

@@ -57,6 +57,7 @@ import random
 import sys
 from dataclasses import dataclass, field
 
+from fuzz import bit_precise_types as bp
 from fuzz.runner import fuzz_main
 
 # key -> (C spelling, width in bits, signed)
@@ -100,14 +101,18 @@ def wrap(v: int, t: str) -> int:
 
 
 def promote(t: str) -> str:
+    # A bit-precise type isn't promoted (C23 §6.3.1.1p2).
     return "int" if t in ("schar", "uchar") else t
 
 
 def common(a: str, b: str) -> str:
-    """C99 §6.3.1.8 usual arithmetic conversions."""
+    """C99 §6.3.1.8 usual arithmetic conversions, and C23's for the
+    bit-precise types (fuzz/bit_precise_types.py)."""
     a, b = promote(a), promote(b)
     if a == b:
         return a
+    if bp.is_bit_precise(a) or bp.is_bit_precise(b):
+        return bp.common(TYPES, RANK, _UNSIGNED_OF, a, b)
     sa, sb = TYPES[a][2], TYPES[b][2]
     if sa == sb:
         return a if RANK[a] >= RANK[b] else b
@@ -691,8 +696,13 @@ _INTERESTING = [0, 1, 2, 3, 0x7F, 0x80, 0xFF, 0x100, 0x7FFF, 0x8000,
 
 
 class _Gen:
-    def __init__(self, rng: random.Random, vrng: random.Random | None = None):
+    def __init__(self, rng: random.Random, vrng: random.Random | None = None,
+                 extra_types: tuple[str, ...] = ()):
         self.rng = rng
+        # The bit-precise types this seed uses, if any, each weighted
+        # like `long`.
+        self.weights = dict(_TYPE_WEIGHTS)
+        self.weights.update({t: 3 for t in extra_types})
         # Picks which objects are `volatile`. It's separate from `rng`
         # so that adding the qualifier leaves each seed's program
         # otherwise the same. A volatile object's address is never
@@ -707,8 +717,8 @@ class _Gen:
         return f"{prefix}{self.n}"
 
     def typ(self) -> str:
-        ts = list(_TYPE_WEIGHTS)
-        return self.rng.choices(ts, weights=[_TYPE_WEIGHTS[t] for t in ts])[0]
+        ts = list(self.weights)
+        return self.rng.choices(ts, weights=[self.weights[t] for t in ts])[0]
 
     def value(self, t: str) -> int:
         r = self.rng
@@ -726,7 +736,7 @@ class _Gen:
             globals_.append(Obj(self.fresh("g"), t, "global", self.value(t)))
         for _ in range(r.randint(0, 3)):
             t = self.typ()
-            size = TYPES[t][1] // 8
+            size = (TYPES[t][1] + 7) // 8
             if self.zp_bytes + size > 40:
                 break
             self.zp_bytes += size
@@ -1004,9 +1014,11 @@ def make_program(seed: int) -> tuple[str, int]:
     """The program for `seed` and main()'s correct return. A program
     that hits undefined behavior is replaced by the next one drawn from
     the same seed."""
+    extra = tuple(bp.choose(TYPES, seed, 2))
     for attempt in range(200):
         rng = random.Random(seed * 1000 + attempt)
-        p = _Gen(rng, random.Random(seed * 1000 + attempt + 500)).program()
+        p = _Gen(rng, random.Random(seed * 1000 + attempt + 500),
+                 extra).program()
         interp = _Interp(p)
         try:
             interp.call("main", [])

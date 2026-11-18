@@ -9,8 +9,10 @@ program's own names can't collide with them. A program can't declare
 one of them, and can't use one as a value, such as by taking its
 address.
 
-Both builtins so far do packed BCD arithmetic with the 6502's decimal
-mode.
+The two builtins this document describes do packed BCD arithmetic
+with the 6502's decimal mode. The functions of C23's `<stdbit.h>` are
+builtins too, named `__c6502_stdc_...`, and
+[stdbit.md](stdbit.md) describes them.
 
 | Builtin | Computes |
 |---|---|
@@ -237,6 +239,7 @@ sum that wrapped is smaller than the score it started from.
 | An operand of signed type that isn't a nonnegative constant | A BCD digit has no sign, and a negative value would be taken as its 2's complement bytes. |
 | A floating operand, a pointer or array, or a structure or union | Only an integer holds packed BCD. |
 | A `bool` or plain `char` operand | A `bool` can't hold the result, and a byte of BCD is an `unsigned char`. |
+| An operand of a bit-precise type, such as `unsigned _BitInt(8)` | The builtins take the standard unsigned types, whose sizes are the whole bytes of BCD digits. A cast to one gives the operand that type. |
 | A negative constant | It has no BCD form. |
 | A constant that doesn't fit in the result type | Its high digits would be dropped without a word. Cast the other operand to a wider type to widen the result. |
 | A declaration of a builtin's name, as a function, an object, or a parameter | The name is the implementation's, and a call would still reach the builtin. |

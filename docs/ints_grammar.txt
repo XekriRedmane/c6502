@@ -1,22 +1,32 @@
 -- Reference documentation. The lexer implementation is in c99.lark.
+-- C23 §6.4.4.2 adds the binary constant and the digit separator, a
+-- `'` between two digits. pp_numbers.py reads the value and reports
+-- a separator in any other place.
 
 integer-constant:
     decimal-constant integer-suffix?
     | octal-constant integer-suffix?
     | hexadecimal-constant integer-suffix?
+    | binary-constant integer-suffix?
     ;
 
 decimal-constant:
-    nonzero-digit digit* ;
+    nonzero-digit ("'"? digit)* ;
 
 octal-constant:
-    '0' octal-digit* ;
+    '0' ("'"? octal-digit)* ;
 
 hexadecimal-constant:
-    hexadecimal-prefix hexadecimal-digit+ ;
+    hexadecimal-prefix hexadecimal-digit ("'"? hexadecimal-digit)* ;
+
+binary-constant:
+    binary-prefix binary-digit ("'"? binary-digit)* ;
 
 hexadecimal-prefix:
     '0x' | '0X' ;
+
+binary-prefix:
+    '0b' | '0B' ;
 
 nonzero-digit:
     [123456789] ;
@@ -27,11 +37,16 @@ octal-digit:
 hexadecimal-digit:
     [0123456789abcdefABCDEF] ;
 
+binary-digit:
+    [01] ;
+
 integer-suffix:
     unsigned-suffix long-suffix?
     | unsigned-suffix long-long-suffix
+    | unsigned-suffix bit-precise-int-suffix
     | long-suffix unsigned-suffix?
     | long-long-suffix unsigned-suffix?
+    | bit-precise-int-suffix unsigned-suffix?
 
 unsigned-suffix:
     [uU] ;
@@ -41,3 +56,10 @@ long-suffix:
 
 long-long-suffix:
     'll' | 'LL' ;
+
+-- C23's suffix for a `_BitInt` constant (§6.4.4.2p1). With `u` or
+-- `U` the constant is an `unsigned _BitInt(N)`, and without it a
+-- `_BitInt(N)`, of the least N that holds the value (with a sign bit
+-- for `_BitInt`).
+bit-precise-int-suffix:
+    'wb' | 'WB' ;

@@ -12,8 +12,9 @@ in `type_checking._check_builtin_call`, and a case in
 `c99_to_tac.Translator._translate_builtin`. Every other part of the
 front end calls `is_builtin`.
 
-The two builtins so far do packed BCD arithmetic with the 6502's
-decimal mode (docs/builtins.md).
+Two builtins do packed BCD arithmetic with the 6502's decimal mode
+(docs/builtins.md), and the rest are C23's bit and byte utilities,
+which <stdbit.h> names (docs/stdbit.md).
 
   `__c6502_bcd_add(a, b)` is `a + b` in packed BCD.
   `__c6502_bcd_sub(a, b)` is `a - b` in packed BCD.
@@ -32,16 +33,58 @@ that aren't 0-9 included. For those, py65's accumulator and carry
 match the NMOS 6502's algorithm in 6502.org's "Decimal Mode" tutorial
 (Appendix A). That comes from comparing the two algorithms, and it
 hasn't been checked on the hardware.
+
+The <stdbit.h> builtins are `__c6502_stdc_<operation>` for the
+type-generic form of each of C23's 14 operations (§7.18.3 through
+§7.18.16), typed by its argument, and `__c6502_stdc_<operation>_uc`,
+`_us`, `_ui`, `_ul`, and `_ull` for the forms with a parameter of
+`unsigned char` through `unsigned long long`. <stdbit.h> defines each
+`stdc_...` name as a macro for its builtin. `STDBIT_BUILTINS` maps each
+builtin to its operation and its suffix, and `stdbit` computes an
+operation, for constant folding and for the tests' model.
 """
 from __future__ import annotations
 
 BCD_ADD = "__c6502_bcd_add"
 BCD_SUB = "__c6502_bcd_sub"
 
+# C23's bit and byte utilities (§7.18), in the standard's order.
+STDBIT_OPERATIONS = (
+    "leading_zeros", "leading_ones", "trailing_zeros", "trailing_ones",
+    "first_leading_zero", "first_leading_one",
+    "first_trailing_zero", "first_trailing_one",
+    "count_zeros", "count_ones", "has_single_bit",
+    "bit_width", "bit_floor", "bit_ceil",
+)
+
+# The suffix of each function with a parameter of one type, and the
+# type, as `type_checking` names it.
+STDBIT_SUFFIXES = {
+    "uc": "unsigned char", "us": "unsigned short", "ui": "unsigned int",
+    "ul": "unsigned long", "ull": "unsigned long long",
+}
+
+# Each <stdbit.h> builtin's name, with its operation and its suffix,
+# None for the type-generic form.
+STDBIT_BUILTINS: dict[str, tuple[str, str | None]] = {}
+for _op in STDBIT_OPERATIONS:
+    STDBIT_BUILTINS[f"__c6502_stdc_{_op}"] = (_op, None)
+    for _suffix in STDBIT_SUFFIXES:
+        STDBIT_BUILTINS[f"__c6502_stdc_{_op}_{_suffix}"] = (_op, _suffix)
+
+# The name of each <stdbit.h> function with a parameter of one type,
+# `stdc_leading_zeros_uc` and the rest, and its builtin.
+STDBIT_FUNCTIONS: dict[str, str] = {
+    name[len("__c6502_"):]: name
+    for name, (_, suffix) in STDBIT_BUILTINS.items()
+    if suffix is not None
+}
+
 # Each builtin's name and the number of arguments it takes.
 BUILTINS: dict[str, int] = {
     BCD_ADD: 2,
     BCD_SUB: 2,
+    **{name: 1 for name in STDBIT_BUILTINS},
 }
 
 
@@ -108,3 +151,55 @@ def bcd_sub(a: int, b: int, nbytes: int) -> int:
         r, carry = sbc_byte((a >> 8 * k) & 0xFF, (b >> 8 * k) & 0xFF, carry)
         out |= r << 8 * k
     return out
+
+
+def stdbit(operation: str, value: int, width: int) -> int:
+    """The result of the <stdbit.h> `operation` (one of
+    `STDBIT_OPERATIONS`) on `value` taken as an unsigned integer of
+    `width` bits, as C23 §7.18 gives it. `has_single_bit` gives 0 or
+    1, and `bit_floor` and `bit_ceil` give a value of the same width.
+
+    The most significant index counts from the most significant bit,
+    0, to the least significant bit, `width - 1` (§7.18.1p3), and the
+    least significant index counts the other way (§7.18.1p4). Each
+    `first_...` result is the index plus 1, or 0 when there's no such
+    bit. `bit_ceil` gives 0 when the power of 2 doesn't fit in `width`
+    bits (§7.18.16p2), and `bit_ceil(0)` is 1, the smallest power of
+    2."""
+    mask = (1 << width) - 1
+    v = value & mask
+    inverse = v ^ mask
+
+    def trailing_zeros(x: int) -> int:
+        return width if x == 0 else (x & -x).bit_length() - 1
+
+    match operation:
+        case "leading_zeros":
+            return width - v.bit_length()
+        case "leading_ones":
+            return width - inverse.bit_length()
+        case "trailing_zeros":
+            return trailing_zeros(v)
+        case "trailing_ones":
+            return trailing_zeros(inverse)
+        case "first_leading_zero":
+            return 0 if v == mask else width - inverse.bit_length() + 1
+        case "first_leading_one":
+            return 0 if v == 0 else width - v.bit_length() + 1
+        case "first_trailing_zero":
+            return 0 if v == mask else trailing_zeros(inverse) + 1
+        case "first_trailing_one":
+            return 0 if v == 0 else trailing_zeros(v) + 1
+        case "count_zeros":
+            return width - bin(v).count("1")
+        case "count_ones":
+            return bin(v).count("1")
+        case "has_single_bit":
+            return int(bin(v).count("1") == 1)
+        case "bit_width":
+            return v.bit_length()
+        case "bit_floor":
+            return 0 if v == 0 else 1 << (v.bit_length() - 1)
+        case "bit_ceil":
+            return 1 if v <= 1 else (1 << (v - 1).bit_length()) & mask
+    raise ValueError(f"unknown <stdbit.h> operation {operation!r}")

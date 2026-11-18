@@ -41,6 +41,7 @@ from __future__ import annotations
 import random
 import sys
 
+from fuzz import bit_precise_types as bp
 from fuzz.runner import fuzz_main
 
 TYPES = ["signed char", "unsigned char", "int", "unsigned int",
@@ -63,20 +64,21 @@ _REC_SAVED = """int rec(int d, int x) {
 }"""
 
 
-def _expr(rng: random.Random, vars_: list[str], depth: int = 2) -> str:
+def _expr(rng: random.Random, vars_: list[str], depth: int = 2,
+          types: list[str] = TYPES) -> str:
     """A random integer expression over `vars_` with no undefined
-    division or shift."""
+    division or shift, whose casts are to `types`."""
     if depth == 0 or rng.random() < 0.3:
         if vars_ and rng.random() < 0.8:
             return rng.choice(vars_)
         return str(rng.choice([0, 1, 2, 3, 7, 100, 255, 1000, 32767]))
     k = rng.random()
-    a = _expr(rng, vars_, depth - 1)
+    a = _expr(rng, vars_, depth - 1, types)
     if k < 0.1:
-        return f"(({rng.choice(TYPES)})({a}))"
+        return f"(({rng.choice(types)})({a}))"
     if k < 0.17:
         return f"({rng.choice(['-', '~', '!'])}{a})"
-    b = _expr(rng, vars_, depth - 1)
+    b = _expr(rng, vars_, depth - 1, types)
     op = rng.choice(["+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>",
                      "<", ">", "<=", ">=", "==", "!=", "&&", "||"])
     if op in ("/", "%"):
@@ -95,19 +97,27 @@ def make_program(seed: int) -> tuple[str, None]:
     crng = random.Random(seed * 7919 + 1)
     # So does the choice of recursive function.
     rec_src = _REC_SAVED if random.Random(seed * 104729 + 3).random() < 0.5         else _REC
+    # Half the seeds add two bit-precise types (C23 §6.2.5), from a
+    # stream of their own too. The TAC interpreter is the reference,
+    # so no model of their rules is needed here.
+    types, size = list(TYPES), dict(SIZE)
+    for key in bp.choose(bp_types := {}, seed, 2):
+        spelling, width, _ = bp_types[key]
+        types.append(spelling)
+        size[spelling] = (width + 7) // 8
     n = rng.randint(3, 6)
     out = []
     globals_ = []
     for i in range(rng.randint(1, 3)):
         globals_.append(f"g{i}")
-        out.append(f"{rng.choice(TYPES)} g{i} = {rng.randint(0, 200)};")
+        out.append(f"{rng.choice(types)} g{i} = {rng.randint(0, 200)};")
     use_rec = rng.random() < 0.4
     use_ptr_fn = rng.random() < 0.4
 
     sigs = {}
     for i in range(n):
-        ret = rng.choice(TYPES)
-        params = [(rng.choice(TYPES), f"p{k}")
+        ret = rng.choice(types)
+        params = [(rng.choice(types), f"p{k}")
                   for k in range(rng.randint(0, 4))]
         if rng.random() < 0.25:
             # Receives the address of a local in each caller.
@@ -159,28 +169,28 @@ def make_program(seed: int) -> tuple[str, None]:
             q = ""
             # At most two register arg-bytes (A, then X), and never a
             # pointer.
-            if (i in reg_ok and t != "int *" and reg_bytes + SIZE[t] <= 2
+            if (i in reg_ok and t != "int *" and reg_bytes + size[t] <= 2
                     and rng.random() < 0.4):
                 q = "register "
-                reg_bytes += SIZE[t]
+                reg_bytes += size[t]
             decl.append(f"{q}{t} {name}")
         body = []
         vars_ = [name for t, name in params if t != "int *"] + globals_
         for k in range(rng.randint(1, 4)):
-            body.append(f"    {rng.choice(TYPES)} l{k} = {_expr(rng, vars_)};")
+            body.append(f"    {rng.choice(types)} l{k} = {_expr(rng, vars_, 2, types)};")
             vars_.append(f"l{k}")
         if i in reg_ok and rng.random() < 0.3:
             body.append("    register unsigned char ry = (unsigned char)(l0);")
             vars_.append("ry")
         if any(t == "int *" for t, _ in params):
-            body.append(f"    *pp += (int)({_expr(rng, vars_, 1)});")
+            body.append(f"    *pp += (int)({_expr(rng, vars_, 1, types)});")
             vars_.append("(*pp)")
         for j in calls[i]:
             cret, cparams = sigs[j]
             needs_box = any(t == "int *" for t, _ in cparams)
             if needs_box:
                 body.append(f"    int box{j} = (int)(l0);")
-            args = [f"&box{j}" if t == "int *" else _expr(rng, vars_, 1)
+            args = [f"&box{j}" if t == "int *" else _expr(rng, vars_, 1, types)
                     for t, _ in cparams]
             call = f"f{j}({', '.join(args)})"
             if use_ptr_fn and j == n - 1:
@@ -202,8 +212,8 @@ def make_program(seed: int) -> tuple[str, None]:
                 body.append(f"    {rng.choice(globals_)} += {dst};")
         if calls_rec[i]:
             dst = rng.choice([v for v in vars_ if v.startswith("l")])
-            body.append(f"    {dst} += rec(3, (int)({_expr(rng, vars_, 1)}));")
-        body.append(f"    return {_expr(rng, vars_)};")
+            body.append(f"    {dst} += rec(3, (int)({_expr(rng, vars_, 1, types)}));")
+        body.append(f"    return {_expr(rng, vars_, 2, types)};")
         attr = ("[[c6502::return_bool_in_carry]] "
                 if i in marked else "")
         ret = sigs[i][0]

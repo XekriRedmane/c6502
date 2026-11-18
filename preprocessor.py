@@ -18,25 +18,45 @@ Like pcmd.py, the `__PCPP_VERSION__`, `__PCPP_ALWAYS_FALSE__`, and
 
 Unknown flags are ignored with a NOTE on stderr (also matches pcmd.py).
 
-Two things follow C23 rather than pcpp. In the expression of an `#if`
-or `#elif`, the identifier `true` that is left after macro replacement
-becomes 1 and `false` becomes 0, whatever the passthru flags (C23
-§6.10.2p13). Each `_Bool` in the output gets a warning
+Several things follow C23 rather than pcpp. In the expression of an
+`#if` or `#elif`, the identifier `true` that is left after macro
+replacement becomes 1 and `false` becomes 0, whatever the passthru
+flags (C23 §6.10.2p13). Each `_Bool` in the output gets a warning
 (`ALT_BOOL_WARNING`, through `diagnostics.warn`) that names its line,
 since C23 makes `_Bool` an obsolescent spelling of `bool`.
+
+pcpp's lexer reads a number as a run of digits with an optional
+suffix, so it would split `1'000` into `1` and the start of a
+character constant `'000...`, which can swallow the rest of the line
+and hide its macros from expansion. `_PP_LEXER` replaces pcpp's number
+rule with C23's preprocessing number (§6.4.8,
+`pp_numbers.PP_NUMBER_RE`), which takes a `'` followed by a digit or a
+letter, so `1'000` and `0b1010` are single tokens. A floating constant
+is then one of those tokens too, as the standard has it. In an `#if`,
+`_NumberEvaluator` reads each number with `pp_numbers.parse_integer`
+before pcpp's evaluator sees it. That gives a binary constant its
+value, ignores digit separators, accepts the `ll` suffixes, and makes
+a hexadecimal, octal, or binary constant above `INTMAX_MAX` unsigned,
+since its type list ends in `uintmax_t` (§6.10.2p13, §6.4.4.2p6). A
+pp-number there that isn't a valid integer constant raises
+`PreprocessorError`.
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import io
 import os
 import re
 import sys
 
+from pcpp import parser as _pcpp_rules
+from pcpp.parser import lex as _ply_lex
 from pcpp.preprocessor import Action, OutputDirective, Preprocessor
 
 import diagnostics
+import pp_numbers
 
 PCPP_VERSION = "1.30"
 
@@ -60,6 +80,109 @@ ALT_BOOL_WARNING = (
 # when they're left in an `#if` expression after macro replacement.
 # Every other identifier left there becomes 0, as pcpp already does.
 _IF_KEYWORD_VALUES = {"true": 1, "false": 0}
+
+# The largest value of `intmax_t`, a `long long` in c6502. An `#if`
+# computes in `intmax_t` and `uintmax_t` (C23 §6.10.2p13).
+_INTMAX_MAX = (1 << 63) - 1
+_UINTMAX_MAX = (1 << 64) - 1
+
+
+@_ply_lex.TOKEN(pp_numbers.PP_NUMBER_RE.pattern)
+def _t_pp_number(t):
+    # PLY tries the rules given as functions before the rules given as
+    # strings, so this one comes before pcpp's CPP_FLOAT and CPP_DOT,
+    # and `1.5` and `.5` are pp-numbers. The token keeps pcpp's type
+    # CPP_INTEGER, which the rest of pcpp looks for.
+    return t
+
+
+class _PPLexerRules:
+    """pcpp's lexer rules (pcpp/parser.py), with C23's pp-number in
+    place of pcpp's integer rule. PLY reads the rules from the
+    attributes of this class."""
+
+
+for _name in dir(_pcpp_rules):
+    if _name.startswith("t_") or _name in ("tokens", "literals"):
+        setattr(_PPLexerRules, _name, getattr(_pcpp_rules, _name))
+_PPLexerRules.t_CPP_INTEGER = staticmethod(_t_pp_number)
+
+# Built once. Each `CompilePreprocessor` gets a clone, since a PLY
+# lexer holds its position in its input. An empty `lextab` keeps PLY
+# from reading a table module and from writing `lextab.py` into the
+# current directory, which it does whenever `optimize` is false.
+_PP_LEXER = _ply_lex.lex(
+    module=_PPLexerRules, optimize=True, lextab="",
+    errorlog=_ply_lex.NullLogger(),
+)
+
+
+def _if_integer(spelling: str) -> str:
+    """The spelling pcpp's evaluator reads for the pp-number
+    `spelling` in an `#if`, which is its value in decimal, with a `U`
+    when it's unsigned. Raises pp_numbers.NumberError when `spelling`
+    isn't an integer constant that fits in `uintmax_t`.
+
+    A `wb` or `uwb` constant is a `_BitInt` or `unsigned _BitInt`, and
+    in `#if` every signed integer type acts as `intmax_t` and every
+    unsigned one as `uintmax_t` (C23 §6.10.2p13), so `wb` is signed
+    whatever its value and `uwb` unsigned. With BITINT_MAXWIDTH at 64,
+    every `wb` value that has a type fits in `intmax_t`."""
+    if pp_numbers.is_floating(spelling):
+        pp_numbers.check_floating(spelling)
+        raise pp_numbers.NumberError(
+            f"an #if expression can't contain the floating constant "
+            f"{spelling!r}, since it's an integer constant expression "
+            f"(C23 §6.10.2p3)"
+        )
+    constant = pp_numbers.parse_integer(spelling)
+    if constant.bit_precise:
+        pp_numbers.bit_precise_width(constant, spelling)
+        return f"{constant.value}{'U' if constant.unsigned else ''}"
+    if constant.value > _UINTMAX_MAX:
+        raise pp_numbers.NumberError(
+            f"integer constant {spelling!r} doesn't fit in uintmax_t"
+        )
+    if (constant.value > _INTMAX_MAX and constant.base == 10
+            and not constant.unsigned):
+        raise pp_numbers.NumberError(
+            f"decimal constant {spelling!r} doesn't fit in intmax_t "
+            f"(a `u` suffix makes it unsigned)"
+        )
+    unsigned = constant.unsigned or constant.value > _INTMAX_MAX
+    return f"{constant.value}{'U' if unsigned else ''}"
+
+
+class _NumberEvaluator:
+    """Wraps pcpp's `#if` evaluator, and rewrites each number token
+    into the spelling `_if_integer` gives before pcpp's evaluator
+    reads it. pcpp catches and prints whatever its evaluator raises,
+    so the message for an invalid number goes in the preprocessor's
+    `number_error`, which `CompilePreprocessor.evalexpr` raises after
+    pcpp returns."""
+
+    def __init__(self, evaluator, preprocessor) -> None:
+        self.evaluator = evaluator
+        self.preprocessor = preprocessor
+
+    def __call__(self, tokens, functions={}, identifiers={}):
+        rewritten = []
+        for tok in tokens:
+            if (tok.type == self.preprocessor.t_INTEGER
+                    and isinstance(tok.value, str)):
+                try:
+                    value = _if_integer(tok.value)
+                except pp_numbers.NumberError as e:
+                    self.preprocessor.number_error = (
+                        f"{self.preprocessor._where(tok)}: {e}"
+                    )
+                    raise
+                tok = copy.copy(tok)
+                tok.value = value
+            rewritten.append(tok)
+        return self.evaluator(
+            rewritten, functions=functions, identifiers=identifiers,
+        )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -142,10 +265,14 @@ class CompilePreprocessor(Preprocessor):
     """
 
     def __init__(self, args: argparse.Namespace) -> None:
-        super().__init__()
+        super().__init__(lexer=_PP_LEXER.clone())
         self.args = args
         # The file `run` preprocesses, which `_where` leaves unnamed.
         self.input_file: str | None = None
+        # The message for an invalid number in an `#if`, which
+        # `_NumberEvaluator` records and `evalexpr` raises.
+        self.number_error: str | None = None
+        self.evaluator = _NumberEvaluator(self.evaluator, self)
 
         self.define("__PCPP_VERSION__ " + PCPP_VERSION)
         self.define("__PCPP_ALWAYS_FALSE__ 0")
@@ -232,6 +359,24 @@ class CompilePreprocessor(Preprocessor):
         if self.args.passthru_undefined_exprs:
             return None
         return super().on_unknown_macro_in_defined_expr(tok)
+
+    def evalexpr(self, tokens):
+        """Evaluates an `#if` or `#elif` expression, as
+        `Preprocessor.evalexpr` does, and raises PreprocessorError for
+        a number in it that isn't a valid integer constant."""
+        self.number_error = None
+        result = super().evalexpr(tokens)
+        if self.number_error is not None:
+            raise PreprocessorError(self.number_error)
+        return result
+
+    def on_error(self, file, line, msg):
+        # `evalexpr` raises the error for an invalid number in an
+        # `#if`, so pcpp's report of its evaluator's failure would
+        # only repeat it.
+        if self.number_error is not None:
+            return
+        super().on_error(file, line, msg)
 
     def on_unknown_macro_in_expr(self, ident):
         if ident in _IF_KEYWORD_VALUES:
@@ -360,9 +505,10 @@ class CompilePreprocessor(Preprocessor):
 
 
 class PreprocessorError(Exception):
-    """A `#pragma c6502 ...` line. c6502's directives are C23 statement
-    attributes now, and the message names the one to write instead, and
-    the line the pragma is on in its source file."""
+    """A `#pragma c6502 ...` line, or a number in an `#if` that isn't
+    an integer constant. c6502's directives are C23 statement
+    attributes now, and the message for a pragma names the one to
+    write instead. Each message names the line in its source file."""
 
 
 # Match a full `#pragma ...` line (anchored to start-of-line, possibly

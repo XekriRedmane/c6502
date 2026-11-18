@@ -77,6 +77,7 @@ subsequent rounds.
 from __future__ import annotations
 
 import c99_ast
+import bit_precise
 import tac_ast
 from passes.optimization.var_visit import defs_in
 from passes.optimization.framework import (
@@ -510,7 +511,7 @@ _INTEGER_CONSTS: tuple[type, ...] = (
     tac_ast.ConstChar, tac_ast.ConstUChar,
     tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
     tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
-)
+) + bit_precise.ODD_CONSTS
 
 
 def _trace_through_zero_extend(

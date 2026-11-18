@@ -31,6 +31,13 @@ parsed by any tool.
   to, the guarantee that the decimal flag is set only across the
   chain, the caution about interrupt handlers on an NMOS 6502, a
   score as the example, the errors, and the limits.
+- `stdbit.md` — user guide to `<stdbit.h>`: the forms of one type
+  and the type-generic forms, the types they take and return, each
+  function's result with the values for 0 and all ones, constant
+  folding, the loops they compile to with a listing and a table of
+  sizes, the functions a program reaches by address (defined in each
+  unit, with internal linkage), the header's other names, the errors,
+  and the limits.
 - `linker_scripts.md` — user guide to linking with `compile.py -T`:
   sections (the defaults and `[[c6502::section("name")]]`), the GNU
   ld script subset, the section symbols, the startup copy and clear,
@@ -69,8 +76,10 @@ precedence, dangling-else resolution, cast-vs-paren disambiguation)
 can be cross-checked against the spec without leaving the repo.
 
 - `chars_grammar.txt` — C99 §6.4.4.4 character-constant grammar.
-- `floats_grammar.txt` — C99 §6.4.4.2 floating-constant grammar.
-- `ints_grammar.txt` — C99 §6.4.4.1 integer-constant grammar.
+- `floats_grammar.txt` — C99 §6.4.4.2 floating-constant grammar,
+  with C23's digit separators.
+- `ints_grammar.txt` — C99 §6.4.4.1 integer-constant grammar, with
+  C23's binary constants, digit separators, and `wb` suffix.
 - `strings_grammar.txt` — C99 §6.4.5 string-literal grammar.
 
 ## Drafts

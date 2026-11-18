@@ -156,7 +156,8 @@ this directory:
   through such a run, since A, the operand, and the flags are all
   unchanged. That's the second of `if (k < e) ...; if (k == e) ...`,
   and the second compare of each byte `three_way_compare` writes.
-  Also a compare of a register with 0, or an `ORA #$00` / `AND #$FF`,
+  Also a compare of a register with 0, or an `ORA #$00` / `AND #$FF` /
+  `EOR #$00`,
   after the instruction that set N and Z from it (stores and
   conditional branches may come between, and a label is followed to
   every way in), when C is dead for the compare
@@ -593,6 +594,16 @@ this directory:
   all-zero objects, `.data`), for the link metadata's `item` lines,
   with `merge=true` on an object whose symbol is `StaticAttr.mergeable`.
 - `string_lifting.py` — pass 3 (see below).
+- `stdbit_functions.py` — `add_definitions`, which the type checker
+  runs first. Each `<stdbit.h>` function of one type
+  (`stdc_leading_zeros_uc` and the rest) that a unit declares without
+  `static`, refers to other than through its macro (by address, or
+  called as `(f)(x)` or after `#undef`), and doesn't define gets a
+  definition whose body returns its builtin, and `check_program`
+  gives it internal linkage. Each definition's parameter has its own
+  name, `@<function>.value`. The declarations of the ones the unit
+  doesn't refer to are dropped, so they get no slots, `EQU` lines, or
+  link metadata.
 - `sub1_test_zero_peephole.py` — `apply_sub1_test_zero_peephole`.
 - `type_checking.py` — pass 6 (see below).
 - `via_a_store_fold.py` — `apply_via_a_store_fold`. Folds
@@ -941,7 +952,11 @@ UChar 0..255):
 * UChar       → UInt
 
 Other integer types already have rank ≥ Int and pass through
-unchanged.
+unchanged, and so does a bit-precise type, `_BitInt(N)`, whatever its
+width (C23 §6.3.1.1p2). Its rank is by width, below a standard type
+of the same width (`_rank`), and `_common_type` hands a pair with one
+in it to `_common_bit_precise_type` (see "Type vocabulary" in the root
+CLAUDE.md).
 
 **Implicit conversions** apply C99 §6.3.1.8's usual arithmetic
 conversions to the post-promotion operand types. Floating types
@@ -1146,7 +1161,8 @@ addressing-mode operand and lays out the function's stack frame.
 Takes the type-checker's SymbolTable so it can size each pseudo by its
 declared type: 1 byte for `Char` / `SChar` / `UChar` / unknown, 2 for
 `Int` / `UInt` / `Pointer`, 4 for `Long` / `ULong` / `Float`, 8 for
-`LongLong` / `ULongLong` / `Double`. Optionally takes a `colorings:
+`LongLong` / `ULongLong` / `Double`, and ceil(N/8) for `BitInt(N)`,
+which is 3, 5, 6, or 7 after c99_to_tac. Optionally takes a `colorings:
 dict[func_name, Coloring]` from the optimizer when `-O` is on;
 without it, every pseudo goes to Frame as before.
 

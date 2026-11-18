@@ -509,6 +509,46 @@ class ConstDouble(Type_const):
 
 
 @dataclass
+class ConstInt24(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstUInt24(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstInt40(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstUInt40(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstInt48(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstUInt48(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstInt56(Type_const):
+    value: int = 0
+
+
+@dataclass
+class ConstUInt56(Type_const):
+    value: int = 0
+
+
+@dataclass
 class Type_static_init:
     pass
 

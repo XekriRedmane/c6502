@@ -75,6 +75,7 @@ operator check either.
 
 from __future__ import annotations
 
+import bit_precise
 import builtin_functions
 import c99_ast
 
@@ -115,7 +116,24 @@ def _strip_quals(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
 
 
 def _is_integer_type(t: c99_ast.Type_data_type) -> bool:
-    return type(_strip_quals(t)) in _INT_WIDTH
+    t = _strip_quals(t)
+    return type(t) in _INT_WIDTH or isinstance(t, c99_ast.BitInt)
+
+
+def _width_bits(t: c99_ast.Type_data_type) -> int:
+    """The width of the integer type `t` in bits: N for `_BitInt(N)`,
+    and 8 bits a byte for the others."""
+    t = _strip_quals(t)
+    if isinstance(t, c99_ast.BitInt):
+        return t.width
+    return 8 * _INT_WIDTH[type(t)]
+
+
+def _is_signed_type(t: c99_ast.Type_data_type) -> bool:
+    t = _strip_quals(t)
+    if isinstance(t, c99_ast.BitInt):
+        return t.is_signed
+    return isinstance(t, _SIGNED)
 
 
 def _sizeof(t: c99_ast.Type_data_type) -> int:
@@ -142,6 +160,8 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
         return 4
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.storage_bytes(t.width)
     if isinstance(t, c99_ast.Array):
         return _sizeof(t.element_type) * t.size
     raise ConstantExpressionError(
@@ -150,18 +170,19 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
 
 
 def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
-    """Reduce `value` mod 2**(8*width) and re-interpret with the
+    """Reduce `value` mod 2**width and re-interpret with the
     target's signedness — matches the runtime byte-level cast
     sequences in tac_to_asm (Truncate / SignExtend / ZeroExtend all
-    boil down to this for compile-time-known integer values). A
-    `bool` target gets 0 or 1 instead (C99 §6.3.1.2)."""
+    boil down to this for compile-time-known integer values). The
+    width of `_BitInt(N)` is N bits. A `bool` target gets 0 or 1
+    instead (C99 §6.3.1.2)."""
     t = _strip_quals(t)
     if isinstance(t, c99_ast.Bool):
         return int(value != 0)
-    width_bits = 8 * _INT_WIDTH[type(t)]
+    width_bits = _width_bits(t)
     mask = (1 << width_bits) - 1
     raw = value & mask
-    if isinstance(t, _SIGNED) and raw & (1 << (width_bits - 1)):
+    if _is_signed_type(t) and raw & (1 << (width_bits - 1)):
         raw -= 1 << width_bits
     return raw
 
@@ -175,7 +196,7 @@ def _const_int_value(c: c99_ast.Type_const) -> int:
                       c99_ast.ConstUInt, c99_ast.ConstULong,
                       c99_ast.ConstULongLong,
                       c99_ast.ConstChar, c99_ast.ConstUChar,
-                      c99_ast.ConstBool)):
+                      c99_ast.ConstBool, c99_ast.ConstBitInt)):
         return _coerce_to_integer_type(c.value, _const_type(c))
     if isinstance(c, c99_ast.ConstNullptr):
         # C23 §6.6p8 admits only operands of integer type, or of
@@ -210,6 +231,8 @@ def _const_type(c: c99_ast.Type_const) -> c99_ast.Type_data_type:
         return c99_ast.UChar()
     if isinstance(c, c99_ast.ConstBool):
         return c99_ast.Bool()
+    if isinstance(c, c99_ast.ConstBitInt):
+        return c99_ast.BitInt(width=c.width, is_signed=c.is_signed)
     raise ConstantExpressionError(
         f"non-integer constant {c!r} has no integer type"
     )
@@ -305,6 +328,18 @@ def evaluate_integer_constant_expression(
                 else builtin_functions.bcd_sub
             )
             return fold(a, b, _sizeof(t)), t
+        case c99_ast.FunctionCall(name=name, args=[arg]) if (
+            name in builtin_functions.STDBIT_BUILTINS
+        ):
+            # A <stdbit.h> builtin of a constant argument, which the
+            # type checker converted to the value type
+            # (docs/stdbit.md).
+            t = _result_type(exp)
+            v, value_t = evaluate_integer_constant_expression(arg)
+            operation, _ = builtin_functions.STDBIT_BUILTINS[name]
+            return builtin_functions.stdbit(
+                operation, v, 8 * _sizeof(value_t),
+            ), t
     raise ConstantExpressionError(
         f"expression is not an integer constant expression: {exp!r}"
     )
@@ -332,7 +367,7 @@ def _checked(value: int, t: c99_ast.Type_data_type) -> int:
     (C99 §6.2.5.9). A signed result outside `t`'s range is overflow,
     which is undefined, so it is rejected."""
     wrapped = _coerce_to_integer_type(value, t)
-    if isinstance(t, _SIGNED) and wrapped != value:
+    if _is_signed_type(t) and wrapped != value:
         raise ConstantExpressionError(
             f"signed overflow in constant expression ({value} does "
             f"not fit in {t!r})"
@@ -375,7 +410,7 @@ def _evaluate_binary(
         case c99_ast.GreaterOrEqual():
             return int(a >= b), t
         case c99_ast.LeftShift() | c99_ast.RightShift():
-            if b < 0 or b >= 8 * _INT_WIDTH[type(t)]:
+            if b < 0 or b >= _width_bits(t):
                 raise ConstantExpressionError(
                     f"shift count {b} out of range in constant expression"
                 )
@@ -383,7 +418,7 @@ def _evaluate_binary(
                 # A negative left operand shifts arithmetically, which
                 # is c6502's implementation-defined choice (asr*).
                 return _coerce_to_integer_type(a >> b, t), t
-            if isinstance(t, _SIGNED) and a < 0:
+            if _is_signed_type(t) and a < 0:
                 raise ConstantExpressionError(
                     "left shift of a negative value in constant expression"
                 )

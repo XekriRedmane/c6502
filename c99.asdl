@@ -127,6 +127,20 @@ module C99 {
         -- (§6.3.2.4). c99_to_tac replaces it with `void *` and each
         -- `nullptr` with `(void *)0`, so later passes never see it.
         | NullptrT
+        -- `_BitInt(N)` and `unsigned _BitInt(N)` (C23 §6.2.5p5,
+        -- §6.7.3.1): a bit-precise integer type of `width` N bits, the
+        -- sign bit included, for 2 <= N <= 64 when signed and
+        -- 1 <= N <= 64 when not (BITINT_MAXWIDTH is 64). It isn't
+        -- subject to the integer promotions (§6.3.1.1p2). A value
+        -- takes ceil(N/8) bytes, and the padding bits above bit N-1 of
+        -- the top byte hold the value's sign extension (signed) or
+        -- zeros (unsigned), which every operation that can change them
+        -- restores (bit_precise.py). After c99_to_tac, a type of 1, 2,
+        -- 4, or 8 bytes is the standard integer type of that size and
+        -- signedness, and one of 3, 5, 6, or 7 bytes is
+        -- `BitInt(8 * bytes, is_signed)`, so the back end sees only
+        -- whole bytes.
+        | BitInt(int width, bool is_signed)
         | Void
         | FunType(data_type* params, data_type ret)
         | Pointer(data_type referenced_type)
@@ -297,4 +311,9 @@ module C99 {
           -- The keyword `nullptr`, a null pointer constant of type
           -- `nullptr_t` (C23 §6.4.4.6p4, §6.3.2.3p3).
           | ConstNullptr
+          -- A constant of a bit-precise type, from the `wb` and `uwb`
+          -- suffixes (C23 §6.4.4.2p6) or folded by the type checker:
+          -- `value` (non-negative for `uwb`) of `_BitInt(width)` or
+          -- `unsigned _BitInt(width)`.
+          | ConstBitInt(int value, int width, bool is_signed)
 }

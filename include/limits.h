@@ -6,6 +6,8 @@
  *                                          minimum required widths)
  *   long  / unsigned long                 : 4 bytes
  *   long long / unsigned long long        : 8 bytes
+ *   _BitInt(N) / unsigned _BitInt(N)      : ceil(N/8) bytes, for N up
+ *                                          to BITINT_MAXWIDTH
  *
  * Plain `char` is unsigned in c6502 — an implementation choice
  * permitted by C99 §6.2.5.15 — so CHAR_MIN / CHAR_MAX match
@@ -52,5 +54,11 @@
 #define LLONG_MAX 9223372036854775807LL
 #define LLONG_MIN (-LLONG_MAX - 1LL)
 #define ULLONG_MAX 18446744073709551615ULL
+
+/* The widest N of _BitInt(N) and unsigned _BitInt(N) (C23
+ * §5.2.5.3.2), the least the standard allows, which is the width of
+ * unsigned long long. The runtime's helpers for multiply, divide,
+ * shifts, and floating conversions take at most 8 bytes. */
+#define BITINT_MAXWIDTH 64
 
 #endif /* _LIMITS_H */

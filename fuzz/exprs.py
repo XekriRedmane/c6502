@@ -18,6 +18,14 @@ defined, and c6502 shifts arithmetically, so the model does too.
 The parameter form exercises zp_abi parameters under -O. The
 global form exercises static storage and static initializers.
 
+Half the seeds add three bit-precise types, `_BitInt(N)` or `unsigned
+_BitInt(N)` with N from 1 to 64, to the six standard ones (C23
+§6.2.5). They aren't promoted, they rank by width below a standard
+type of the same width, and the usual arithmetic conversions mix them
+with the others (C23 §6.3.1.1, §6.3.1.8). Whether a seed has them,
+and which, come from a random stream of their own, so a seed without
+them is the program it was before they were added.
+
     uv run python -m fuzz.exprs --start 0 --count 300
 """
 
@@ -26,6 +34,7 @@ from __future__ import annotations
 import random
 import sys
 
+from fuzz import bit_precise_types as bp
 from fuzz.runner import fuzz_main
 
 # key -> (C spelling, width in bits, signed)
@@ -39,6 +48,8 @@ TYPES = {
 }
 # Conversion rank (C99 §6.3.1.1) of the promoted types.
 RANK = {"int": 1, "uint": 1, "long": 2, "ulong": 2}
+# The keys of the standard types, which every seed draws from.
+STANDARD_KEYS = list(TYPES)
 
 
 class _UB(Exception):
@@ -57,7 +68,7 @@ def wrap(v: int, t: str) -> int:
 
 def promote(t: str) -> str:
     """C99 §6.3.1.1.2 integer promotion. With a 16-bit int, both char
-    types promote to int."""
+    types promote to int, and a bit-precise type stays as it is."""
     return "int" if t in ("schar", "uchar") else t
 
 
@@ -66,6 +77,8 @@ def common(a: str, b: str) -> str:
     a, b = promote(a), promote(b)
     if a == b:
         return a
+    if bp.is_bit_precise(a) or bp.is_bit_precise(b):
+        return bp.common(TYPES, RANK, {"int": "uint", "long": "ulong"}, a, b)
     sa, sb = TYPES[a][2], TYPES[b][2]
     if sa == sb:
         return a if RANK[a] >= RANK[b] else b
@@ -86,6 +99,8 @@ def lit(v: int, t: str) -> str:
     written as a cast of the unsigned bit pattern, which is a plain
     integer constant expression."""
     spelling, w, _ = TYPES[t]
+    if bp.is_bit_precise(t):
+        return bp.literal(TYPES, v, t)
     if t in ("schar", "uchar"):
         return f"(({spelling}){v & 0xFF})"
     if v < 0:
@@ -94,14 +109,15 @@ def lit(v: int, t: str) -> str:
     return f"(({spelling}){v}{suffix})"
 
 
-def _gen(depth: int, vars_: list, rng: random.Random) -> tuple[str, int, str]:
-    """A random expression as `(C text, value, type)`. Raises `_UB`
-    when the expression would be undefined."""
+def _gen(depth: int, vars_: list, rng: random.Random,
+         keys: list[str] = STANDARD_KEYS) -> tuple[str, int, str]:
+    """A random expression as `(C text, value, type)`, of the types
+    `keys`. Raises `_UB` when the expression would be undefined."""
     if depth == 0 or rng.random() < 0.25:
         if rng.random() < 0.7:
             name, t, v = rng.choice(vars_)
             return name, v, t
-        t = rng.choice(list(TYPES))
+        t = rng.choice(keys)
         _, w, _ = TYPES[t]
         v = wrap(rng.choice([0, 1, 2, 7, 127, 128, 255, 256, 0x7FFF,
                              0x8000, 0xFFFF, 0x12345, 0x7FFFFFFF,
@@ -109,11 +125,11 @@ def _gen(depth: int, vars_: list, rng: random.Random) -> tuple[str, int, str]:
         return lit(v, t), v, t
     kind = rng.random()
     if kind < 0.12:
-        a, av, _ = _gen(depth - 1, vars_, rng)
-        t = rng.choice(list(TYPES))
+        a, av, _ = _gen(depth - 1, vars_, rng, keys)
+        t = rng.choice(keys)
         return f"(({TYPES[t][0]})({a}))", wrap(av, t), t
     if kind < 0.2:
-        a, av, at = _gen(depth - 1, vars_, rng)
+        a, av, at = _gen(depth - 1, vars_, rng, keys)
         op = rng.choice(["-", "~", "!"])
         if op == "!":
             return f"(!{a})", int(av == 0), "int"
@@ -122,8 +138,8 @@ def _gen(depth: int, vars_: list, rng: random.Random) -> tuple[str, int, str]:
         if TYPES[pt][2] and not _in_range(r, pt):
             raise _UB
         return f"({op}{a})", wrap(r, pt), pt
-    a, av, at = _gen(depth - 1, vars_, rng)
-    b, bv, bt = _gen(depth - 1, vars_, rng)
+    a, av, at = _gen(depth - 1, vars_, rng, keys)
+    b, bv, bt = _gen(depth - 1, vars_, rng, keys)
     op = rng.choice(["+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>",
                      "<", ">", "<=", ">=", "==", "!=", "&&", "||"])
     text = f"({a} {op} {b})"
@@ -169,9 +185,10 @@ def _gen(depth: int, vars_: list, rng: random.Random) -> tuple[str, int, str]:
 def make_program(seed: int, n_exprs: int = 8, depth: int = 3) -> tuple[str, int]:
     """The program for `seed`, and main()'s correct return (0)."""
     rng = random.Random(seed)
+    keys = STANDARD_KEYS + bp.choose(TYPES, seed, 3)
     vars_ = []
     for i in range(6):
-        t = rng.choice(list(TYPES))
+        t = rng.choice(keys)
         _, w, _ = TYPES[t]
         v = wrap(rng.choice([rng.getrandbits(w), rng.getrandbits(4),
                              1 << (w - 1), (1 << w) - 1, 1, 0]), t)
@@ -179,7 +196,7 @@ def make_program(seed: int, n_exprs: int = 8, depth: int = 3) -> tuple[str, int]
     exprs = []
     while len(exprs) < n_exprs:
         try:
-            exprs.append(_gen(depth, vars_, rng))
+            exprs.append(_gen(depth, vars_, rng, keys))
         except _UB:
             pass
     use_params = rng.random() < 0.5

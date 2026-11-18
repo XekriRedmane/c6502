@@ -125,8 +125,11 @@ returns before the other rule runs, since a compare with 0 that one
 rule drops may be the one an identical compare after it relies on
 for C.
 
-An `ORA #$00` or `AND #$FF` goes under the same rule, without the
-condition on C, which neither changes. `round_trip_load_drop` leaves
+An `ORA #$00`, `AND #$FF`, or `EOR #$00` goes under the same rule,
+without the condition on C, which none of them changes. The `EOR
+#$00` comes from the low bytes of the `^` that restores the padding
+bits of a signed `_BitInt(N)` (bit_precise.py), whose sign bit is in
+the top byte. `round_trip_load_drop` leaves
 `ORA #$00` where a load of a byte just stored comes after an
 instruction that doesn't set N and Z from A.
 

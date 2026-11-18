@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import bit_precise
 import builtin_functions
 import c99_ast
 import fp_arith
@@ -98,6 +99,9 @@ def _type_info(t: Type) -> tuple[bool, int, bool]:
     # `const` / `volatile` don't change a value's representation.
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
+    if isinstance(t, c99_ast.BitInt):
+        # A bit-precise type, as whole bytes (bit_precise.py).
+        return (t.is_signed, bit_precise.storage_bytes(t.width), False)
     info = _TYPE_INFO.get(type(t))
     if info is None:
         raise TacSimError(f"unsupported type in simulator: {type(t).__name__}")
@@ -119,6 +123,10 @@ def _const_info(c: tac_ast.Type_const) -> tuple[bool, int, bool, int]:
         case tac_ast.ConstULongLong(value=v): return (False, 8, False, v & 0xFFFFFFFFFFFFFFFF)
         case tac_ast.ConstFloat(bits=b):      return (False, 4, True,  b & 0xFFFFFFFF)
         case tac_ast.ConstDouble(bits=b):     return (False, 8, True,  b & 0xFFFFFFFFFFFFFFFF)
+    layout = bit_precise.ODD_CONST_LAYOUT.get(type(c))
+    if layout is not None:
+        n, signed = layout
+        return (signed, n, False, c.value & _mask(n))
     raise TacSimError(f"unsupported const variant: {type(c).__name__}")
 
 

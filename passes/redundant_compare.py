@@ -179,8 +179,10 @@ def _flags_from(instrs, c: int, reg, refs=None, seen=None) -> bool:
 
 def _drop_compares_with_zero(instrs) -> set[int]:
     """The indexes of the `CMP #$00` (or `CPX` / `CPY`) with C dead
-    after, and of the `ORA #$00` and `AND #$FF`, whose N and Z the
-    instruction that set the register already set."""
+    after, and of the `ORA #$00`, `AND #$FF`, and `EOR #$00`, whose N
+    and Z the instruction that set the register already set. The
+    `EOR #$00` comes from the low bytes of the mask that restores a
+    signed bit-precise type's padding (bit_precise.py)."""
     from passes.asm_liveness import c_dead_at
     refs = _label_refs(instrs)
     refs[_TABLE_TARGETS] = {
@@ -200,6 +202,12 @@ def _drop_compares_with_zero(instrs) -> set[int]:
                 and _is_a(ins.dst) and isinstance(ins.src, asm_ast.Imm)
                 and ins.src.value & 0xFF == (
                     0 if isinstance(ins, asm_ast.Or) else 0xFF)
+                and _flags_from(instrs, c, ins.dst, refs)):
+            drop.add(c)
+        elif (isinstance(ins, asm_ast.Xor)
+                and _is_a(ins.dst) and _is_a(ins.src1)
+                and isinstance(ins.src2, asm_ast.Imm)
+                and ins.src2.value & 0xFF == 0
                 and _flags_from(instrs, c, ins.dst, refs)):
             drop.add(c)
     return drop

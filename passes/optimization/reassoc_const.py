@@ -79,6 +79,7 @@ arr[K] + col` shape.
 
 from __future__ import annotations
 
+import bit_precise
 import tac_ast
 from passes.optimization.var_visit import count_uses
 from passes.optimization.framework import (
@@ -164,13 +165,14 @@ _BITS_FOR_VARIANT: dict[type, int] = {
     tac_ast.ConstULong: 32,
     tac_ast.ConstLongLong: 64,
     tac_ast.ConstULongLong: 64,
+    **{cls: 8 * n for cls, (n, _) in bit_precise.ODD_CONST_LAYOUT.items()},
 }
 
 
 _SIGNED_VARIANTS: tuple[type, ...] = (
     tac_ast.ConstChar, tac_ast.ConstInt,
     tac_ast.ConstLong, tac_ast.ConstLongLong,
-)
+) + bit_precise.ODD_SIGNED_CONSTS
 
 # Inner-Binary pattern: Add with one Constant and one arbitrary operand.
 _inner_pattern = m_Commutative(

@@ -157,6 +157,8 @@ def _unsigned_of(val: tac_ast.Type_val, symbols) -> bool | None:
     t = sym.type
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
+    if isinstance(t, c99_ast.BitInt):
+        return not t.is_signed
     if isinstance(t, (
         c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
         c99_ast.Char, c99_ast.UChar, c99_ast.Pointer,

@@ -85,6 +85,8 @@ _SCALAR_TYPES: tuple[type, ...] = (
     c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
     c99_ast.Float, c99_ast.Double,
     c99_ast.Pointer,
+    # The 3-, 5-, 6-, and 7-byte integers left of the bit-precise types.
+    c99_ast.BitInt,
 )
 
 

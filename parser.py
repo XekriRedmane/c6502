@@ -39,6 +39,8 @@ from lark.visitors import v_args
 import c99_ast
 import fp_arith
 from builtin_functions import is_builtin
+import pp_numbers
+from lexer import NUMBER_TERMINALS, check_number
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
@@ -93,14 +95,14 @@ _STORAGE_CLASSES = {
 # `.type` attribute so the same predicate logic works on all of them).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "BOOL", "VOID",
-                           "C6502_NULLPTR_T",
+                           "C6502_NULLPTR_T", "BITINT",
                            "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
                            "STRUCT", "UNION", "TYPEDEF_NAME", "ENUM",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "BOOL",
                                 "VOID", "C6502_NULLPTR_T", "STRUCT", "UNION", "TYPEDEF_NAME",
-                                "ENUM")
+                                "ENUM", "BITINT")
 # `const` and `volatile` are honored at parse time and wrapped into
 # `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
 # but is silently dropped — c6502 has no aliasing-analysis pass that
@@ -146,6 +148,16 @@ class _TypedefSpecifier:
 @dataclass
 class _EnumSpecifier(_TypedefSpecifier):
     defines: bool = False
+
+
+# A `_BitInt(N)` type specifier, produced by the `bitint_specifier`
+# transformer, which has already folded and checked N. With `signed`
+# or nothing else it's `_BitInt(N)`, and with `unsigned` it's
+# `unsigned _BitInt(N)` (C23 §6.7.3.1p2).
+@dataclass
+class _BitIntSpecifier:
+    type: str  # always "BITINT", the protocol of Token.type
+    width: int
 
 
 # The specifiers of one declaration, produced by the `decl_specs`
@@ -450,6 +462,11 @@ def _resolve_data_type(type_specs):
                                                       combine with any
                                                       other type
                                                       specifier
+      * `_BitInt(N)`, `signed _BitInt(N)`          → BitInt(N, signed)
+      * `unsigned _BitInt(N)`                      → BitInt(N, unsigned);
+                                                     neither combines
+                                                     with any other
+                                                     type specifier
     """
     # A typedef name or an enum specifier is a whole type on its own
     # (C99 §6.7.2.2).
@@ -484,6 +501,9 @@ def _resolve_data_type(type_specs):
         ts = tag_specs[0]
         return (c99_ast.Union(tag=ts.tag) if ts.is_union
                 else c99_ast.Structure(tag=ts.tag))
+    bitint_specs = [t for t in type_specs if isinstance(t, _BitIntSpecifier)]
+    if bitint_specs:
+        return _bit_precise_type(type_specs, bitint_specs)
     int_count = sum(1 for t in type_specs if t.type == "INT")
     long_count = sum(1 for t in type_specs if t.type == "LONG")
     signed_count = sum(1 for t in type_specs if t.type == "SIGNED")
@@ -606,6 +626,32 @@ def _resolve_data_type(type_specs):
     if is_unsigned:
         return c99_ast.UInt()
     return c99_ast.Int()
+
+
+def _bit_precise_type(type_specs, bitint_specs):
+    """The type of a specifier list with `_BitInt(N)` in it, which may
+    have one `signed` or one `unsigned` besides (C23 §6.7.3.1p2). N must
+    be at least 2 for `_BitInt` and at least 1 for `unsigned _BitInt`
+    (§6.7.3.1p4)."""
+    import bit_precise
+    others = [t for t in type_specs if t not in bitint_specs]
+    if len(bitint_specs) > 1 or len(others) > 1 or any(
+        t.type not in ("SIGNED", "UNSIGNED") for t in others
+    ):
+        raise ParserError(
+            "'_BitInt(N)' combines only with one 'signed' or one "
+            "'unsigned' (C23 §6.7.3.1p2)"
+        )
+    signed = not (others and others[0].type == "UNSIGNED")
+    width = bitint_specs[0].width
+    least = bit_precise.min_width(signed)
+    if width < least:
+        kind = "_BitInt" if signed else "unsigned _BitInt"
+        raise ParserError(
+            f"the width of {kind} must be at least {least}, and it's "
+            f"{width} (C23 §6.7.3.1p4)"
+        )
+    return c99_ast.BitInt(width=width, is_signed=signed)
 
 
 def _split_specifiers(specs):
@@ -1444,30 +1490,26 @@ _CANDIDATES = {
 
 
 def _parse_integer_token(text):
-    """Strip the C99 integer-constant suffix off `text` and return
+    """Strip the integer-constant suffix off `text` and return
     `(value, base, has_ll)`:
       * `value` — the non-negative integer (literals are always
         non-negative; negation is a separate unary-minus operator).
-      * `base` — `"hex_oct"` for hex (`0x...`) and octal (`0...`)
-        literals, `"decimal"` otherwise. The two bases share suffix
-        rules but differ in their unsuffixed / L-suffixed type lists
-        (C99 §6.4.4.1 table).
+        Digit separators (C23 §6.4.4.2p2) are ignored.
+      * `base` — `"hex_oct"` for hexadecimal (`0x...`), binary
+        (`0b...`), and octal (`0...`) literals, `"decimal"` otherwise.
+        The bases share suffix rules but differ in their unsuffixed /
+        L-suffixed type lists (C23 §6.4.4.2p6 table), where binary
+        constants take the list of octal and hexadecimal ones.
       * `has_ll` — True if the suffix contains `LL` or `ll`. Used to
         pick the long-long candidate row for LONG_INTEGER /
         ULONG_INTEGER tokens.
-    """
-    i = len(text)
-    while i > 0 and text[i - 1] in "uUlL":
-        i -= 1
-    digits, suffix = text[:i], text[i:]
-    has_ll = "LL" in suffix or "ll" in suffix
-    if digits.startswith(("0x", "0X")):
-        base = "hex_oct"
-    elif len(digits) > 1 and digits.startswith("0"):
-        base = "hex_oct"
-    else:
-        base = "decimal"
-    return int(digits, 0), base, has_ll
+    The lexer has already checked the spelling (pp_numbers.py)."""
+    try:
+        constant = pp_numbers.parse_integer(text)
+    except pp_numbers.NumberError as e:
+        raise ParserError(str(e)) from None
+    base = "decimal" if constant.base == 10 else "hex_oct"
+    return constant.value, base, constant.length == "ll"
 
 
 # Single-character C99 escape sequences (§6.4.4.4 paragraph 4 / §5.2.2).
@@ -1614,9 +1656,10 @@ def _const_for_token(token):
     if token.type == "CHAR_CONSTANT":
         return c99_ast.ConstInt(value=_decode_char_constant(token))
     if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
-        # Strip a trailing `f`/`F` before parsing — fp_arith doesn't
-        # know about C suffixes.
+        # Strip a trailing `f`/`F` and the digit separators before
+        # parsing — fp_arith doesn't know about either.
         body = text[:-1] if token.type == "FLOAT_CONSTANT" else text
+        body = body.replace("'", "")
         if body.startswith(("0x", "0X")):
             # Hex floats (`0x1.0p3`) lex but neither Python nor
             # numpy parses the C hex-float syntax; rejected here
@@ -1638,6 +1681,19 @@ def _const_for_token(token):
     if token.type == "LONG_DOUBLE_CONSTANT":
         raise ParserError(
             f"`long double` is not supported (literal {text!r})"
+        )
+    if token.type in ("BITINT_INTEGER", "UBITINT_INTEGER"):
+        # `wb` gives the `_BitInt(N)` and `uwb` the `unsigned
+        # _BitInt(N)` of the least N that holds the value (C23
+        # §6.4.4.2p6), whatever the base.
+        try:
+            constant = pp_numbers.parse_integer(text)
+            width = pp_numbers.bit_precise_width(constant, text)
+        except pp_numbers.NumberError as e:
+            raise ParserError(str(e)) from None
+        return c99_ast.ConstBitInt(
+            value=constant.value, width=width,
+            is_signed=not constant.unsigned,
         )
     value, base, has_ll = _parse_integer_token(text)
     # `has_ll` upgrades a LONG_INTEGER / ULONG_INTEGER token to its
@@ -2075,6 +2131,7 @@ def _array_size_from_suffix(suffix):
     if not isinstance(c, (
         c99_ast.ConstInt, c99_ast.ConstLong,
         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstBool,
+        c99_ast.ConstBitInt,
     )):
         raise NotImplementedError(
             "array size must be an integer constant"
@@ -2311,11 +2368,13 @@ class _ASTBuilder(Transformer):
         # handle the optional abstract_declarator separately.
         leaf_items = [
             it for it in items
-            if isinstance(it, (Token, _TagSpecifier, _TypedefSpecifier))
+            if isinstance(it, (Token, _TagSpecifier, _TypedefSpecifier,
+                               _BitIntSpecifier))
         ]
         type_specs = [
             it for it in leaf_items
-            if isinstance(it, (_TagSpecifier, _TypedefSpecifier))
+            if isinstance(it, (_TagSpecifier, _TypedefSpecifier,
+                               _BitIntSpecifier))
             or (isinstance(it, Token)
                 and it.type in _TYPE_SPECIFIER_TOKEN_TYPES)
         ]
@@ -2422,6 +2481,28 @@ class _ASTBuilder(Transformer):
             is_union=is_union,
             body=body,
         )
+
+    @v_args(inline=True)
+    def bitint_specifier(self, _bitint, _lparen, width_exp, _rparen):
+        # `BITINT LPAREN constant_exp RPAREN`. N is an integer constant
+        # expression (C23 §6.7.3.1p4), folded here as an array size is,
+        # and at most BITINT_MAXWIDTH. The least N depends on `signed`
+        # or `unsigned`, which `_bit_precise_type` checks.
+        import bit_precise
+        try:
+            width = _fold_integer_constant(width_exp)
+        except ParserError as e:
+            raise ParserError(
+                f"the width N of _BitInt(N) must be an integer constant "
+                f"expression (C23 §6.7.3.1p4): {e}"
+            ) from None
+        if width > bit_precise.BITINT_MAXWIDTH:
+            raise ParserError(
+                f"the width of _BitInt can be at most BITINT_MAXWIDTH, "
+                f"{bit_precise.BITINT_MAXWIDTH}, and it's {width} (C23 "
+                f"§6.7.3.1p4)"
+            )
+        return _BitIntSpecifier(type="BITINT", width=width)
 
     def enum_specifier(self, items):
         # items: [ENUM, attributes?, IDENTIFIER?, (LBRACE,
@@ -2547,7 +2628,8 @@ class _ASTBuilder(Transformer):
         # transformer keeps them intermixed).
         type_specs = [
             it for it in leaf_items
-            if isinstance(it, (_TagSpecifier, _TypedefSpecifier))
+            if isinstance(it, (_TagSpecifier, _TypedefSpecifier,
+                               _BitIntSpecifier))
             or (isinstance(it, Token)
                 and it.type in _TYPE_SPECIFIER_TOKEN_TYPES)
         ]
@@ -3776,6 +3858,8 @@ class _TypedefLexer(BasicLexer):
 
     def next_token(self, lex_state, parser_state=None):
         token = super().next_token(lex_state, parser_state)
+        if token.type in NUMBER_TERMINALS:
+            check_number(lex_state.text.text, token)
         ctx = _CTX
         ctx.body_scope = None
         kind = token.type

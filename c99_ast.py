@@ -333,6 +333,12 @@ class NullptrT(Type_data_type):
 
 
 @dataclass
+class BitInt(Type_data_type):
+    width: int = 0
+    is_signed: bool = False
+
+
+@dataclass
 class Void(Type_data_type):
     pass
 
@@ -751,3 +757,10 @@ class ConstBool(Type_const):
 @dataclass
 class ConstNullptr(Type_const):
     pass
+
+
+@dataclass
+class ConstBitInt(Type_const):
+    value: int = 0
+    width: int = 0
+    is_signed: bool = False

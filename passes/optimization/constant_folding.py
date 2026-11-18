@@ -123,6 +123,7 @@ Cases left unfolded:
 
 from __future__ import annotations
 
+import bit_precise
 import builtin_functions
 import c99_ast
 import fp_arith
@@ -142,12 +143,16 @@ _INTEGER_CONST_BITS: dict[type, int] = {
     tac_ast.ConstUInt: 16,
     tac_ast.ConstULong: 32,
     tac_ast.ConstULongLong: 64,
+    # The 3-, 5-, 6-, and 7-byte integers of the bit-precise types
+    # (bit_precise.py), whose padding c99_to_tac already restores, so
+    # they fold as whole bytes.
+    **{cls: 8 * n for cls, (n, _) in bit_precise.ODD_CONST_LAYOUT.items()},
 }
 
 _UNSIGNED_INT_VARIANTS: tuple[type, ...] = (
     tac_ast.ConstUChar,
     tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
-)
+) + bit_precise.ODD_UNSIGNED_CONSTS
 
 # Inverse: TAC integer const variant for a given (bits, signed) pair.
 # Width-changing folds (SignExtend / ZeroExtend / Truncate, FP→Int)
@@ -162,6 +167,8 @@ _INTEGER_VARIANT_FOR: dict[tuple[int, bool], type] = {
     (16, False): tac_ast.ConstUInt,
     (32, False): tac_ast.ConstULong,
     (64, False): tac_ast.ConstULongLong,
+    **{(8 * n, s): cls
+       for cls, (n, s) in bit_precise.ODD_CONST_LAYOUT.items()},
 }
 
 
@@ -471,7 +478,9 @@ def _fold_plane_load(
             return None
         value |= (values[i] & 0xFF) << (8 * k)
     signed = (c99_ast.SChar, c99_ast.Int, c99_ast.Long, c99_ast.LongLong)
-    if isinstance(dst_t, signed) and value >= 1 << (8 * width - 1):
+    if (isinstance(dst_t, signed)
+            or isinstance(dst_t, c99_ast.BitInt) and dst_t.is_signed) \
+            and value >= 1 << (8 * width - 1):
         value -= 1 << (8 * width)
     from c99_to_tac import _tac_const_for
     return tac_ast.Copy(
@@ -492,6 +501,8 @@ def _scalar_size(t) -> int | None:
         return 4
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.storage_bytes(t.width)
     return None
 
 
@@ -593,6 +604,10 @@ def _dst_int_variant(
         return tac_ast.ConstLongLong
     if isinstance(t, c99_ast.ULongLong):
         return tac_ast.ConstULongLong
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.INTEGER_CONST_CLASSES[
+            (bit_precise.storage_bytes(t.width), t.is_signed)
+        ]
     return None
 
 
@@ -774,6 +789,8 @@ _SIGNEDNESS_PAIR: dict[type, type] = {
     tac_ast.ConstULongLong: tac_ast.ConstULongLong,
     tac_ast.ConstChar: tac_ast.ConstUChar,
     tac_ast.ConstUChar: tac_ast.ConstUChar,
+    **{cls: bit_precise.ODD_CONST_CLASSES[(n, False)]
+       for cls, (n, _) in bit_precise.ODD_CONST_LAYOUT.items()},
 }
 
 

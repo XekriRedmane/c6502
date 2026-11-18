@@ -105,9 +105,12 @@ Errors raised (`TypeCheckError`)
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
+import bit_precise
 import builtin_functions
+import copy
 import c99_ast
 import fp_arith
 from passes.constant_expression import (
@@ -115,6 +118,7 @@ from passes.constant_expression import (
     evaluate_integer_constant_expression,
 )
 from passes.identifier_resolution import Linkage
+from passes import stdbit_functions
 
 
 class TypeCheckError(Exception):
@@ -156,6 +160,28 @@ Array = c99_ast.Array
 Structure = c99_ast.Structure
 Union = c99_ast.Union
 Const = c99_ast.Const
+BitInt = c99_ast.BitInt
+
+# The parameter type of each <stdbit.h> function with a suffix
+# (builtin_functions.STDBIT_SUFFIXES).
+_STDBIT_PARAMETER_TYPES = {
+    "uc": UChar, "us": UShort, "ui": UInt, "ul": ULong, "ull": ULongLong,
+}
+
+# The types a type-generic <stdbit.h> function takes: C23 §7.18.3p2's
+# standard unsigned integer types other than `bool`. c6502 has no
+# extended integer types. The bit-precise unsigned types whose width
+# matches a standard type, `unsigned _BitInt(N)` for N of 8, 16, 32,
+# and 64, are allowed too (`_is_stdbit_generic_type`).
+_STDBIT_GENERIC_TYPES = (UChar, UShort, UInt, ULong, ULongLong)
+
+
+def _is_stdbit_generic_type(t: "Type") -> bool:
+    """True iff the unqualified `t` is a type the type-generic
+    <stdbit.h> functions take (C23 §7.18.3p2)."""
+    if isinstance(t, BitInt):
+        return not t.is_signed and t.width in (8, 16, 32, 64)
+    return isinstance(t, _STDBIT_GENERIC_TYPES)
 
 
 # ---------------------------------------------------------------------------
@@ -504,10 +530,16 @@ def _coerce_init_value(
         # zero per C99 §6.3.1.4. Caller masks to the target type's
         # width as part of the static_init build.
         if isinstance(source_type, Float):
-            return fp_arith.single_bits_to_int(value)
-        return fp_arith.double_bits_to_int(value)
+            value = fp_arith.single_bits_to_int(value)
+        else:
+            value = fp_arith.double_bits_to_int(value)
     # Integer → integer: pass through unbounded; the static_init
-    # builder applies the target-width mask.
+    # builder applies the target-width mask. A bit-precise target
+    # gets its value at its own width here, since a cast to it in the
+    # middle of a chain (`(int)(_BitInt(5))100`) has to wrap at N bits,
+    # and the static-const folds read the value.
+    if isinstance(_strip_quals(target_type), BitInt):
+        return _coerce_int_to_type(int(value), target_type)
     return value
 
 
@@ -538,6 +570,8 @@ def _const_source_type(c: c99_ast.Type_const) -> "Type":
         return Bool()
     if isinstance(c, c99_ast.ConstNullptr):
         return NullptrT()
+    if isinstance(c, c99_ast.ConstBitInt):
+        return BitInt(width=c.width, is_signed=c.is_signed)
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
@@ -1062,7 +1096,7 @@ def _is_object_type(t: Type) -> bool:
     t = _strip_quals(t)
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
-            Char, SChar, UChar, Bool, Short, UShort,
+            Char, SChar, UChar, Bool, Short, UShort, BitInt,
             Float, Double, Pointer, NullptrT),
     )
 
@@ -1087,7 +1121,7 @@ def _is_integer_type(t: Type) -> bool:
     return isinstance(
         _strip_quals(t),
         (Int, Long, LongLong, UInt, ULong, ULongLong,
-         Char, SChar, UChar, Bool, Short, UShort),
+         Char, SChar, UChar, Bool, Short, UShort, BitInt),
     )
 
 
@@ -1191,6 +1225,8 @@ def _c_type(t) -> str:
         return f"{kw} {_display_name(t.tag)}"
     if isinstance(t, FunType):
         return "a function type"
+    if isinstance(t, BitInt):
+        return f"{'' if t.is_signed else 'unsigned '}_BitInt({t.width})"
     return _C_TYPE_NAMES.get(type(t), type(t).__name__)
 
 
@@ -1476,6 +1512,10 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
         return 4
     if isinstance(t, (LongLong, ULongLong, Double)):
         return 8
+    if isinstance(t, BitInt):
+        # ceil(N/8) bytes, the padding bits at the top
+        # (bit_precise.py).
+        return bit_precise.storage_bytes(t.width)
     if isinstance(t, Array):
         return _sizeof(t.element_type, types) * t.size
     if isinstance(t, (Structure, Union)):
@@ -1780,7 +1820,8 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
         c,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
          c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
-         c99_ast.ConstChar, c99_ast.ConstUChar, c99_ast.ConstBool),
+         c99_ast.ConstChar, c99_ast.ConstUChar, c99_ast.ConstBool,
+         c99_ast.ConstBitInt),
     ):
         return c.value == 0
     return False
@@ -1828,6 +1869,8 @@ def _is_arithmetic_type(t: Type) -> bool:
 # LongLong/ULongLong rank 3.
 def _int_width(t: Type) -> int:
     t = _strip_quals(t)
+    if isinstance(t, BitInt):
+        return bit_precise.storage_bytes(t.width)
     if isinstance(t, (Char, SChar, UChar, Bool)):
         return 1
     if isinstance(t, (Int, UInt, Short, UShort)):
@@ -1839,10 +1882,77 @@ def _int_width(t: Type) -> int:
     raise TypeError(f"_int_width: not an integer object type: {t!r}")
 
 
+def _int_bits(t: Type) -> int:
+    """The width of the integer type `t` in bits (C23 §6.2.6.2): N for
+    `_BitInt(N)`, and 8 bits a byte for the others. A conversion to
+    `bool` is handled on its own."""
+    t = _strip_quals(t)
+    if isinstance(t, BitInt):
+        return t.width
+    return 8 * _int_width(t)
+
+
 def _is_signed(t: Type) -> bool:
     # Plain `char` is unsigned in c6502 (0..255), matching `unsigned
     # char`. Per C99 §6.2.5.15 the choice is implementation-defined.
-    return isinstance(_strip_quals(t), (Int, Long, LongLong, SChar, Short))
+    t = _strip_quals(t)
+    if isinstance(t, BitInt):
+        return t.is_signed
+    return isinstance(t, (Int, Long, LongLong, SChar, Short))
+
+
+# The standard integer types left after the integer promotions, each
+# with its width in bits, its place in the order of rank `short < int
+# < long < long long` (C23 §6.3.1.1p1), and its unsigned counterpart.
+_STANDARD_RANKS = {
+    Int: (16, 3, UInt), UInt: (16, 3, UInt),
+    Long: (32, 4, ULong), ULong: (32, 4, ULong),
+    LongLong: (64, 5, ULongLong), ULongLong: (64, 5, ULongLong),
+}
+
+
+def _rank(t: Type) -> tuple[int, int]:
+    """A key that orders the promoted integer types by their integer
+    conversion rank (C23 §6.3.1.1p1). The rank of a bit-precise type
+    is above that of any standard or bit-precise type of less width,
+    and below that of a standard type of the same width, so the key is
+    the width and then 0 for a bit-precise type or the standard type's
+    place in the order of rank. An unsigned type ranks with its signed
+    counterpart, and `unsigned _BitInt(1)`, which has none, ranks by
+    its width."""
+    if isinstance(t, BitInt):
+        return (t.width, 0)
+    width, order, _ = _STANDARD_RANKS[type(t)]
+    return (width, order)
+
+
+def _unsigned_counterpart(t: Type) -> Type:
+    if isinstance(t, BitInt):
+        return BitInt(width=t.width, is_signed=False)
+    return _STANDARD_RANKS[type(t)][2]()
+
+
+def _common_bit_precise_type(a: Type, b: Type) -> Type:
+    """The usual arithmetic conversions of C23 §6.3.1.8p1 for two
+    promoted integer types, at least one of them bit-precise. The
+    integer promotions leave a bit-precise type as it is
+    (§6.3.1.1p2), so `_BitInt(5) + _BitInt(5)` is a `_BitInt(5)` and
+    `_BitInt(24) + int` a `_BitInt(24)`, while `_BitInt(16) + int` is
+    an `int`, whose rank is greater at the same width."""
+    if _types_equal(a, b):
+        return copy.deepcopy(a)
+    a_signed, b_signed = _is_signed(a), _is_signed(b)
+    if a_signed == b_signed:
+        return copy.deepcopy(a if _rank(a) >= _rank(b) else b)
+    signed, unsigned = (a, b) if a_signed else (b, a)
+    if _rank(unsigned) >= _rank(signed):
+        return copy.deepcopy(unsigned)
+    # The signed type has the greater rank. It's the result when it
+    # holds every value of the unsigned type, and otherwise the
+    # unsigned type corresponding to it is.
+    if _int_bits(signed) - 1 >= _int_bits(unsigned):
+        return copy.deepcopy(signed)
+    return _unsigned_counterpart(signed)
 
 
 def _promote_integer(t: Type) -> Type:
@@ -1892,7 +2002,7 @@ def _coerce_int_to_type(value: int, t: Type) -> int:
     §6.3.1.2)."""
     if isinstance(_strip_quals(t), Bool):
         return int(value != 0)
-    width_bits = 8 * _int_width(t)
+    width_bits = _int_bits(t)
     mask = (1 << width_bits) - 1
     raw = value & mask
     if _is_signed(t) and raw & (1 << (width_bits - 1)):
@@ -1908,6 +2018,11 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     and-mask consumers, so signed negatives wrap to their two's-
     complement bit pattern at the matching width."""
     t = _strip_quals(t)
+    if isinstance(t, BitInt):
+        return c99_ast.ConstBitInt(
+            value=value & ((1 << t.width) - 1), width=t.width,
+            is_signed=t.is_signed,
+        )
     if isinstance(t, (Int, UInt, Short, UShort)):
         bits = value & 0xFFFF
         if isinstance(t, (Int, Short)):
@@ -1970,6 +2085,8 @@ def _common_type(a: Type, b: Type) -> Type:
         return Double()
     if isinstance(a, Float) or isinstance(b, Float):
         return Float()
+    if isinstance(a, BitInt) or isinstance(b, BitInt):
+        return _common_bit_precise_type(a, b)
     if _types_equal(a, b):
         return type(a)()
     a_signed, b_signed = _is_signed(a), _is_signed(b)
@@ -2220,8 +2337,18 @@ class TypeChecker:
     ) -> tuple[c99_ast.Type_program, SymbolTable, TypeTable]:
         match prog:
             case c99_ast.Program(declaration=decls):
+                # The <stdbit.h> functions the program reaches other
+                # than through their macros get definitions here, with
+                # internal linkage, since no library has them
+                # (passes/stdbit_functions.py).
+                library = stdbit_functions.add_definitions(decls)
                 for d in decls:
                     self._check_file_scope_declaration(d)
+                for name in library:
+                    sym = self.symbols.get(name)
+                    sym.attrs = dataclasses.replace(
+                        sym.attrs, is_global=False,
+                    )
                 return prog, self.symbols, self.types
         raise TypeError(f"unexpected program: {prog!r}")
 
@@ -2907,7 +3034,70 @@ class TypeChecker:
             )
         if name in (builtin_functions.BCD_ADD, builtin_functions.BCD_SUB):
             return self._check_bcd_call(exp, name, args)
+        if name in builtin_functions.STDBIT_BUILTINS:
+            return self._check_stdbit_call(exp, name, args)
         raise AssertionError(f"no type rule for builtin {name}")
+
+    def _check_stdbit_call(
+        self, exp: c99_ast.FunctionCall, name: str, args,
+    ) -> Type:
+        """A <stdbit.h> builtin (C23 §7.18, docs/stdbit.md). A form
+        with a suffix, such as `__c6502_stdc_leading_zeros_uc`, is
+        checked as a call of a function with a parameter of its type,
+        so the argument is converted as if by assignment. The
+        type-generic form takes the type of its argument, which has
+        to be a standard unsigned integer type other than `bool`
+        (§7.18.3p2), and no integer promotion is applied. `bit_floor`
+        and `bit_ceil` return a value of the argument's type,
+        `has_single_bit` a `bool`, and the rest an `unsigned int`,
+        which C23 gives the forms with a suffix and leaves to the
+        implementation for the type-generic form ("a suitable large
+        unsigned integer type")."""
+        operation, suffix = builtin_functions.STDBIT_BUILTINS[name]
+        spelled = name[len("__c6502_"):]
+        if suffix is not None:
+            value_t = _STDBIT_PARAMETER_TYPES[suffix]()
+        else:
+            arg = args[0]
+            self._check_exp(arg)
+            arg = _decay_if_array(arg)
+            t = _strip_quals(arg.data_type)
+            if not _is_stdbit_generic_type(t):
+                raise TypeCheckError(
+                    f"the argument of {spelled} has type {_c_type(t)}, "
+                    f"and C23 §7.18 defines the type-generic functions "
+                    f"on unsigned char, unsigned short, unsigned int, "
+                    f"unsigned long, unsigned long long, and the "
+                    f"unsigned _BitInt of 8, 16, 32, and 64 bits, with "
+                    f"no integer promotion (cast it to one, or call a "
+                    f"function such as {spelled}_ui)"
+                )
+            value_t = copy.deepcopy(t)
+        if operation in ("bit_floor", "bit_ceil"):
+            result_t: Type = value_t
+        elif operation == "has_single_bit":
+            result_t = Bool()
+        else:
+            result_t = UInt()
+        if suffix is not None:
+            self._check_call_args(
+                exp, spelled, FunType(params=[value_t], ret=result_t),
+                args,
+            )
+        else:
+            args[0] = _convert_to(arg, value_t)
+            exp.data_type = result_t
+        # A constant argument becomes a `Constant` of the value type,
+        # which c99_to_tac folds.
+        try:
+            value, _ = evaluate_integer_constant_expression(args[0])
+        except ConstantExpressionError:
+            return result_t
+        value &= (1 << 8 * _int_width(value_t)) - 1
+        args[0] = c99_ast.Constant(
+            const=_const_for_value(value, value_t), data_type=value_t,
+        )
+        return result_t
 
     def _check_bcd_call(
         self, exp: c99_ast.FunctionCall, name: str, args,
@@ -2956,6 +3146,12 @@ class TypeChecker:
                 raise TypeCheckError(
                     f"{where} is the negative constant {value}; packed "
                     f"BCD operands are unsigned"
+                )
+            if isinstance(t, BitInt):
+                raise TypeCheckError(
+                    f"{where} has the bit-precise type {_c_type(t)}; "
+                    f"packed BCD operands must have a standard unsigned "
+                    f"integer type (cast it to one)"
                 )
             if isinstance(t, (Bool, Char)):
                 raise TypeCheckError(
@@ -4138,6 +4334,9 @@ class TypeChecker:
                     t = Float()
                 elif isinstance(c, c99_ast.ConstDouble):
                     t = Double()
+                elif isinstance(c, c99_ast.ConstBitInt):
+                    # `wb` and `uwb` (C23 §6.4.4.2p6).
+                    t = BitInt(width=c.width, is_signed=c.is_signed)
                 else:
                     raise TypeError(f"unexpected const: {c!r}")
                 exp.data_type = t

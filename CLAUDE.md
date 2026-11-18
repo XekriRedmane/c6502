@@ -142,6 +142,26 @@ Two key runtime conventions:
   that nothing else runs with the decimal flag set. The arithmetic
   (`adc_byte` / `sbc_byte`) copies py65's decimal mode, for digits
   that aren't 0-9 too. User guide: [docs/builtins.md](docs/builtins.md).
+  The other 84 builtins are `<stdbit.h>`'s (C23 §7.18):
+  `__c6502_stdc_<op>` for each of the 14 operations in its
+  type-generic form and `__c6502_stdc_<op>_uc` / `_us` / `_ui` /
+  `_ul` / `_ull` for the forms of one type (`STDBIT_BUILTINS`), which
+  `include/stdbit.h` names `stdc_<op>...` with macros.
+  `type_checking._check_stdbit_call` types a form with a suffix as a
+  call of a function with that parameter, and the type-generic form
+  by its argument, which must be an unsigned integer type other than
+  `bool`, with no integer promotion. `bit_floor` / `bit_ceil` return
+  the value type, `has_single_bit` `bool`, the rest `unsigned int`.
+  A constant argument folds (`builtin_functions.stdbit`) in the type
+  checker, `c99_to_tac`, and `constant_expression`, so a call is an
+  integer constant expression. `c99_to_tac._translate_stdbit` writes
+  any other call as a TAC loop that shifts a copy of the value until
+  it's zero and counts in a byte. A unit that takes the address of a
+  `stdc_<op>_uc` etc., or calls it with the macro suppressed, gets a
+  definition of it with internal linkage
+  (`passes/stdbit_functions.py`, run at the start of
+  `check_program`), and the header's declarations it doesn't refer
+  to are dropped. User guide: [docs/stdbit.md](docs/stdbit.md).
 - **zp_abi + call-graph-disjoint private pools** put params AND
   body locals in ZP for eligible leaf / non-recursive /
   non-indirect-calling functions; ineligible functions fall back
@@ -424,11 +444,22 @@ Other root-level files:
   so only a caller that opens such a block receives them. `compile._compile_c`
   collects each C input's and prints them to stderr as `<file>:
   warning: line N: <message>`, before any error.
+- `bit_precise.py` — C23's bit-precise types: `BITINT_MAXWIDTH`, the
+  storage size and type of each, the TAC constant classes of the
+  3-, 5-, 6-, and 7-byte integers, the width of a `wb` constant, and
+  wrapping at N bits. Its docstring describes the representation.
 - `builtin_functions.py` — the builtins' names and argument counts
-  (`BUILTINS`, `is_builtin`) and the packed BCD arithmetic
+  (`BUILTINS`, `is_builtin`), the packed BCD arithmetic
   (`adc_byte`, `sbc_byte`, `bcd_add`, `bcd_sub`) that constant
   folding, `tac_sim`, and the type checker's constant evaluator
-  share.
+  share, and the `<stdbit.h>` builtins (`STDBIT_BUILTINS`,
+  `STDBIT_FUNCTIONS`) with their model, `stdbit`.
+- `pp_numbers.py` — the spelling of numeric constants: C23's
+  pp-number (`PP_NUMBER_RE`, `pp_number_at`), binary constants, digit
+  separators, and suffixes (`parse_integer`, `check_floating`), with
+  the messages for a misplaced separator, a bad digit, and a `wb`
+  suffix. The lexer, the parser, and the preprocessor's `#if` share
+  it.
 - `knowledge_base.md` — engineering-knowledge running log.
 
 ## Parser
@@ -452,8 +483,8 @@ the function_decl's `params` array; their *types* live in parallel on
 
 ### Type vocabulary
 
-Twelve integer types, two floating types, `nullptr_t`, plus pointers
-and function types. Widths follow C99's minimum ranges per §5.2.4.2.1 — Int is 16
+Twelve integer types, C23's bit-precise integer types, two floating
+types, `nullptr_t`, plus pointers and function types. Widths follow C99's minimum ranges per §5.2.4.2.1 — Int is 16
 bits, Long is 32 bits, LongLong is 64 bits.
 
 Integers:
@@ -508,6 +539,58 @@ comparison, `!`, `&&`, `||`, a `bool`), and makes `++` store 1 and
 symbol table, the struct layouts, and the top-level declaration
 types, so no pass after it sees `Bool`. tac_to_asm lowers a `!= 0`
 with a 1-byte result as `LDA x; ORA ...; BEQ end; LDA #1`.
+
+`BitInt(width, is_signed)` is C23's `_BitInt(N)` (`is_signed`, for
+2 <= N <= 64) or `unsigned _BitInt(N)` (1 <= N <= 64), a bit-precise
+integer type (§6.2.5p5, §6.7.3.1). `BITINT_MAXWIDTH` is 64, the least
+C23 allows, since the runtime's helpers stop at 8 bytes; `<limits.h>`
+defines it and `bit_precise.BITINT_MAXWIDTH` holds it. The parser's
+`bitint_specifier` folds N as it folds an array size, and
+`_bit_precise_type` takes at most one `signed` or `unsigned` beside
+it and checks N. These rules come from the type checker:
+
+- No integer promotion (§6.3.1.1p2): `_BitInt(5) + _BitInt(5)` is a
+  `_BitInt(5)`, and so are `-x`, `~x`, `x++`, and `x << n`.
+- Rank (§6.3.1.1p1, `type_checking._rank`): by width, with a standard
+  type above a bit-precise one of the same width. So `_BitInt(16) +
+  int` is an `int`, `unsigned _BitInt(16) + int` an `unsigned int`,
+  and `_BitInt(24) + int` a `_BitInt(24)`
+  (`_common_bit_precise_type`, the usual arithmetic conversions of
+  §6.3.1.8).
+- `sizeof` is ceil(N/8) (`bit_precise.storage_bytes`), so `unsigned
+  _BitInt(24)` is 3 bytes.
+- A constant expression computes at N bits (`_int_bits`,
+  `constant_expression._width_bits`), with an unsigned type wrapping
+  and signed overflow rejected as for the other types. A static
+  initializer of a bit-precise type converts to N bits
+  (`_coerce_init_value`).
+- The type-generic `<stdbit.h>` functions take an `unsigned
+  _BitInt(N)` of 8, 16, 32, or 64 bits (§7.18.3p2); the packed BCD
+  builtins take none.
+
+A value takes ceil(N/8) bytes, low byte first, and the padding bits
+above bit N-1 hold the sign extension of a signed value and zeros for
+an unsigned one, so the bytes are the value as an integer of that
+width. `c99_to_tac._restore_padding` restores that after each
+operation that can change it (`+`, `-`, `*`, `<<`, unary `-`, `~` of
+an unsigned value, a signed `/`), and `_emit_bit_precise_cast` after
+a conversion into the type from one with values it can't hold: an
+`&` with the mask of N bits, and for a signed type `^` and `-` of the
+sign bit after it. Neither step is emitted for a type whose N is a
+multiple of 8.
+Signed overflow wraps (it's undefined, and a conversion out of range
+is implementation-defined). Conversions to and from `float` and
+`double` extend to (or come from) the next of 2, 4, and 8 bytes. At
+the end, `_erase_bit_precise` replaces each bit-precise type in the
+symbol table, the layouts, and the declarations with its storage
+type (`bit_precise.storage_type`): the standard integer type for 1,
+2, 4, and 8 bytes and `BitInt(8 * bytes, is_signed)` for 3, 5, 6, and
+7. The back end handles those as whole bytes, with the TAC constants
+`ConstInt24` to `ConstUInt56` (`bit_precise.ODD_CONST_CLASSES`), and
+`tac_to_asm._odd_width_helper_op` passes a multiply, divide,
+remainder, or shift by a variable of one to the helper of the next of
+4 and 8 bytes, each operand extended in `HARGS` (zero-filled for `*`
+and `<<`, by its signedness for the others). See `bit_precise.py`.
 
 Floating:
 
@@ -574,7 +657,21 @@ the value):
 
 Picking the matching const variant from those lists. A literal whose
 value exceeds `unsigned long long` (the widest type c6502 models) is
-rejected with "doesn't fit any supported type". Floating literals
+rejected with "doesn't fit any supported type".
+
+C23's `wb` / `WB` suffix, with `u` or `U` before or after it or
+neither (§6.4.4.2p1), lexes as `BITINT_INTEGER` or `UBITINT_INTEGER`
+and makes a `ConstBitInt(value, width, is_signed)`: `wb` the
+`_BitInt(N)` of the least N > 1 that holds the value and a sign bit,
+`uwb` the `unsigned _BitInt(N)` of the least N > 0 that holds it, in
+any base (§6.4.4.2p6; `bit_precise.constant_width`). So `3wb` is a
+`_BitInt(3)`, `3uwb` an `unsigned _BitInt(2)`, and `0uwb` an
+`unsigned _BitInt(1)`. A constant whose value takes more than 64 bits has no
+type, which `pp_numbers.bit_precise_width` reports. In `#if` a `wb`
+constant is signed and a `uwb` one unsigned, since every type there
+acts as `intmax_t` or `uintmax_t` (§6.10.2p13).
+
+Floating literals
 follow C99 §6.4.4.2 — the suffix uniquely determines the type, no
 value-fitting rule:
 
@@ -586,6 +683,30 @@ Hex floating literals (`0x1.0p3`) lex but the parser rejects them —
 Python's `float()` doesn't parse the C hex-float syntax, so wiring
 up support would mean writing the conversion by hand; deferred until
 something in the corpus needs them.
+
+C23 §6.4.4.2 adds binary constants and digit separators, which the
+terminals in `c99.lark` take. A binary constant (`0b1010`, `0B1010`)
+is in `_BARE_INT` before the octal form, so it carries every integer
+suffix and lexes as one of the four integer terminals, and the parser
+types it by the hex/octal list (`base == "hex_oct"`), so
+`0b1111111111111111` is an `unsigned int` where `65535` is a `long`.
+A digit separator is a `'` between two digits of one digit sequence
+(`1'000'000`, `0xFF'FF`, `0b1010'1010`, `0'17`, `1'000.5e1'0`). The
+terminals take one only there, and `_parse_integer_token`
+(through `pp_numbers.parse_integer`) and `_const_for_token` drop
+them for the value. `lexer.check_number`, which `tokenize` and the
+parser's `_TypedefLexer` both call on every numeric token, reads the
+pp-number at the token (C23 §6.4.8) and raises `LexError` for a
+separator anywhere else (last, doubled, after `0x` / `0b`, touching
+the period or the exponent, before the suffix), for a binary
+constant with a digit other than 0 and 1 or no digits, and for a
+`wb` / `uwb` suffix, whose `_BitInt` c6502 doesn't have. A number
+with none of those is left to the terminals as before, so `08` still
+lexes as `0` and `8`. `pp_numbers.IntegerConstant.length` is "wb"
+for the bit-precise suffix, which a `_BitInt` would type.
+`_parse_integer_token` reads each base itself, which also fixed
+octal constants with a nonzero digit (`017`), which used to raise
+Python's ValueError.
 
 `Constant(const)` wraps the resulting `Type_const`.
 `_split_specifiers` validates the run of specifier tokens (`int`,
@@ -799,6 +920,18 @@ the macro's use. A program that names something `bool`, `true`,
 `parser._c23_keyword_as_name` rewords to say that C23 made the name a
 keyword. In an `#if`, `nullptr` is 0, as pcpp gives every other name
 left there.
+
+pcpp's own number rule is digits and a suffix, so `1'000` would be
+`1` and a character constant that could swallow the rest of the
+line. `CompilePreprocessor` runs a PLY lexer built from pcpp's rules
+with C23's pp-number (`pp_numbers.PP_NUMBER_RE`) in place of the
+integer rule (`_PP_LEXER`, cloned per preprocessor), so a number with
+separators, a binary constant, and a floating constant are each one
+`CPP_INTEGER` token. In an `#if`, `_NumberEvaluator` rewrites each
+number token to its decimal value (with `U` when unsigned, or above
+`INTMAX_MAX` in a non-decimal base) before pcpp's evaluator reads it,
+and an invalid one, a floating constant, or a `wb` suffix raises
+`PreprocessorError` from `evalexpr`.
 
 `docs/*_grammar.txt` files are reference documentation for the spec
 grammars that `c99.lark` implements — they aren't parsed by any tool.

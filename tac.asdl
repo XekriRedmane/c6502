@@ -267,6 +267,16 @@ module TAC {
           | ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
           | ConstUInt(int value) | ConstULong(int value) | ConstULongLong(int value)
           | ConstFloat(int bits) | ConstDouble(int bits)
+          -- The 3-, 5-, 6-, and 7-byte integers, signed and unsigned,
+          -- which the bit-precise types of those sizes become
+          -- (`_BitInt(17)` to `_BitInt(24)` are 3 bytes, and so on).
+          -- c99_to_tac has already brought any padding bits to the
+          -- value's sign or zero extension, so the back end treats
+          -- them as whole bytes (bit_precise.py).
+          | ConstInt24(int value) | ConstUInt24(int value)
+          | ConstInt40(int value) | ConstUInt40(int value)
+          | ConstInt48(int value) | ConstUInt48(int value)
+          | ConstInt56(int value) | ConstUInt56(int value)
     -- AddressInit lays down a 2-byte word that resolves at link
     -- time to the address `name + offset`. Only used for Pointer-
     -- typed statics initialized with `&otherstatic` (C99 §6.6.7

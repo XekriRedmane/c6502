@@ -17,14 +17,26 @@ _INT_L: /[lL]/
 _INT_LL: /ll|LL/
 _INT_U: /[uU]/
 _LSUFFIX: _INT_LL | _INT_L
-_HEX_INT: /0[xX][0-9a-fA-F]+/
-_DECIMAL_INT: /[1-9][0-9]*/
-_OCTAL_INT: /0[0-7]*/
-_BARE_INT: _HEX_INT | _DECIMAL_INT | _OCTAL_INT
+// C23 §6.4.4.2 adds binary constants (`0b1010`) and digit separators,
+// a `'` between two digits of a digit sequence (`1'000`, `0xFF'FF`).
+// The terminals take a separator only between two digits; the lexer
+// reports a misplaced one (pp_numbers.py). Binary comes before octal,
+// which would otherwise match the `0`.
+_HEX_INT: /0[xX][0-9a-fA-F](?:'?[0-9a-fA-F])*/
+_BIN_INT: /0[bB][01](?:'?[01])*/
+_DECIMAL_INT: /[1-9](?:'?[0-9])*/
+_OCTAL_INT: /0(?:'?[0-7])*/
+_BARE_INT: _HEX_INT | _BIN_INT | _DECIMAL_INT | _OCTAL_INT
 INTEGER_CONSTANT: _BARE_INT
 LONG_INTEGER: _BARE_INT _LSUFFIX
 UINT_INTEGER: _BARE_INT _INT_U
 ULONG_INTEGER: _BARE_INT (_INT_U _LSUFFIX | _LSUFFIX _INT_U)
+// C23's bit-precise suffixes (§6.4.4.2p1): `wb` or `WB` makes a
+// `_BitInt`, and with `u` or `U` before or after it an `unsigned
+// _BitInt`, each of the smallest width that holds the value.
+_INT_WB: /(?:wb|WB)/
+BITINT_INTEGER: _BARE_INT _INT_WB
+UBITINT_INTEGER: _BARE_INT (_INT_U _INT_WB | _INT_WB _INT_U)
 
 // -- Floating constant (docs/floats_grammar.txt; C99 §6.4.4.2) --
 // Three terminals split by suffix presence — same shape as the four
@@ -36,11 +48,13 @@ ULONG_INTEGER: _BARE_INT (_INT_U _LSUFFIX | _LSUFFIX _INT_U)
 //   * l / L      → long double — rejected (c6502 has no long double)
 // NOTE: fractions use an explicit (?:...) group. Without it, the top-level `|`
 // leaks out when these are concatenated into the enclosing terminal.
-_DEC_EXP: /[eE][+-]?[0-9]+/
-_BIN_EXP: /[pP][+-]?[0-9]+/
-_DEC_FRAC: /(?:[0-9]*\.[0-9]+|[0-9]+\.)/
-_HEX_FRAC: /(?:[0-9a-fA-F]*\.[0-9a-fA-F]+|[0-9a-fA-F]+\.?)/
-_DEC_FLOAT: _DEC_FRAC _DEC_EXP? | /[0-9]+/ _DEC_EXP
+// Each digit sequence may have digit separators between its digits
+// (C23 §6.4.4.3p1).
+_DEC_EXP: /[eE][+-]?[0-9](?:'?[0-9])*/
+_BIN_EXP: /[pP][+-]?[0-9](?:'?[0-9])*/
+_DEC_FRAC: /(?:(?:[0-9](?:'?[0-9])*)?\.[0-9](?:'?[0-9])*|[0-9](?:'?[0-9])*\.)/
+_HEX_FRAC: /(?:(?:[0-9a-fA-F](?:'?[0-9a-fA-F])*)?\.[0-9a-fA-F](?:'?[0-9a-fA-F])*|[0-9a-fA-F](?:'?[0-9a-fA-F])*\.?)/
+_DEC_FLOAT: _DEC_FRAC _DEC_EXP? | /[0-9](?:'?[0-9])*/ _DEC_EXP
 _HEX_FLOAT: /0[xX]/ _HEX_FRAC _BIN_EXP
 DOUBLE_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT)
 FLOAT_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT) /[fF]/
@@ -130,6 +144,8 @@ VOLATILE: "volatile"
 WHILE: "while"
 ALT_BOOL: "_Bool"
 COMPLEX: "_Complex"
+// C23's bit-precise integer types (§6.7.3.1), `_BitInt(N)`.
+BITINT: "_BitInt"
 // C23's keywords (§6.4.1). `_Bool` above is an obsolescent spelling of
 // `bool`, which the preprocessor warns about.
 BOOL: "bool"
@@ -283,7 +299,7 @@ _balanced_token: LPAREN _balanced_token* RPAREN
                | ATTR_OPEN _balanced_token* RBRACKET RBRACKET
                | _attribute_arg_token
 _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER
-                    | ULONG_INTEGER | DOUBLE_CONSTANT | FLOAT_CONSTANT
+                    | ULONG_INTEGER | BITINT_INTEGER | UBITINT_INTEGER | DOUBLE_CONSTANT | FLOAT_CONSTANT
                     | LONG_DOUBLE_CONSTANT | CHAR_CONSTANT | STRING_LITERAL
                     | AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
                     | DEFAULT | DO | DOUBLE | ELSE | ENUM | EXTERN
@@ -292,7 +308,7 @@ _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGE
                     | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
                     | UNSIGNED | VOID | VOLATILE | WHILE
                     | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR
-                    | C6502_NULLPTR_T | COMPLEX | IMAGINARY
+                    | C6502_NULLPTR_T | BITINT | COMPLEX | IMAGINARY
                     | ELLIPSIS | COLONCOLON | LSHIFT_ASSIGN | RSHIFT_ASSIGN
                     | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT
                     | LE | GE | EQ | NE | ANDAND | OROR
@@ -341,6 +357,7 @@ function_decl: attribute_specifier_seq? decl_specs declarator block
 
 type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
               | C6502_NULLPTR_T
+              | BITINT LPAREN constant_exp RPAREN -> bitint_specifier
               | struct_or_union_specifier
               | enum_specifier
 
@@ -604,6 +621,8 @@ const: INTEGER_CONSTANT
      | LONG_INTEGER
      | UINT_INTEGER
      | ULONG_INTEGER
+     | BITINT_INTEGER
+     | UBITINT_INTEGER
      | DOUBLE_CONSTANT
      | FLOAT_CONSTANT
      | LONG_DOUBLE_CONSTANT
@@ -764,8 +783,9 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
          | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR | C6502_NULLPTR_T
-         | COMPLEX | IMAGINARY
+         | BITINT | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
+         | BITINT_INTEGER | UBITINT_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT
          | STRING_LITERAL | IDENTIFIER | INVALID_NUMBER

@@ -169,7 +169,8 @@ def _operands_in(instr: asm_ast.Type_instruction):
 def size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
     table — Char/SChar/UChar → 1, Int/UInt → 2, Long/ULong → 4,
-    LongLong/ULongLong → 8, Float → 4, Double → 8, Pointer → 2
+    LongLong/ULongLong → 8, BitInt(N) → ceil(N/8), Float → 4,
+    Double → 8, Pointer → 2
     (the 6502's address width), Array → recursive element size ×
     count, Structure/Union → layout size (from TypeTable). A None
     symbol table or an absent entry both default to 1, which
@@ -195,6 +196,10 @@ def sizeof(t: c99_ast.Type_data_type, types=None) -> int:
         return 4
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        # ceil(N/8); after c99_to_tac only 3, 5, 6, and 7 bytes are
+        # left of these.
+        return (t.width + 7) // 8
     if isinstance(t, c99_ast.Array):
         return sizeof(t.element_type, types) * t.size
     if isinstance(t, (c99_ast.Structure, c99_ast.Union)):

@@ -197,6 +197,8 @@ def _width(t) -> int | None:
         return 4
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        return (t.width + 7) // 8
     return None
 
 

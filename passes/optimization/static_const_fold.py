@@ -103,7 +103,7 @@ def _scalar_type(t):
         c99_ast.Long, c99_ast.ULong,
         c99_ast.LongLong, c99_ast.ULongLong,
         c99_ast.Float, c99_ast.Double,
-        c99_ast.Pointer,
+        c99_ast.Pointer, c99_ast.BitInt,
     )):
         return inner
     return None

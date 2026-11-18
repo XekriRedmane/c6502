@@ -78,6 +78,19 @@ It catches front-end and codegen bugs in conversions, promotions,
 signedness, comparisons, and multi-byte arithmetic. It does not
 exercise control flow or calls beyond the one call to `check`.
 
+Half the seeds add three of C23's bit-precise types, `_BitInt(N)` or
+`unsigned _BitInt(N)` of random widths from 1 to 64, to the types the
+variables, casts, and constants draw from. `fuzz/bit_precise_types.py`
+has their rules (no promotion, rank by width below a standard type
+of the same width, and the usual arithmetic conversions), which
+`stmts.py` uses too. Whether a seed has them, and which, come from a
+random stream of their own (`bit_precise_types.choose`), so the seeds
+without them generate the programs they did before. Those seeds'
+unoptimized frames are larger, since restoring a bit-precise value's
+padding takes temporaries. Of seeds 0 to 199, 15 of the 93 programs
+with bit-precise types passed the 253 bytes and were counted as
+rejected, and none of the 107 without them did.
+
 ## `calls.py`
 
 Three to six functions in a DAG, with a recursive function and a
@@ -99,6 +112,14 @@ local live across its recursive call, marked
 `[[c6502::save_hardware_stack]]`, so it gets a private pool and saves them on
 the hardware stack (`passes/recursion_saves.py`). That choice has its
 own random stream too.
+
+Half the seeds add two bit-precise types, `_BitInt(N)` or `unsigned
+_BitInt(N)`, to the types of the globals, parameters, returns, locals,
+and casts, from a stream of their own like the choices above. The TAC
+interpreter is the reference, so the generator has no model of
+their rules. A 3-byte return comes back in `HARGS`, as a 4-byte one
+does, and a bit-precise parameter of 1 or 2 bytes can be a `register`
+parameter.
 
 The generator predicts which functions end up on the soft stack (any
 function that reaches `rec` or the pointer call) and only puts
@@ -123,6 +144,10 @@ doesn't change the rest of a seed's program. An object whose address
 is taken (a `*gp` target, or a local of a type some helper takes by
 pointer) stays plain. `mix()` folds values into a checksum that main
 returns.
+
+Half the seeds add two bit-precise types, `_BitInt(N)` or `unsigned
+_BitInt(N)`, weighted like `long`, with the rules of
+`fuzz/bit_precise_types.py`, chosen by `bit_precise_types.choose`.
 
 The generator builds a tree, renders it, and runs the same tree in a
 Python interpreter under C's rules, so the program carries `// expect:

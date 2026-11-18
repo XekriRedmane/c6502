@@ -1,4 +1,6 @@
 -- Reference documentation. The lexer implementation is in c99.lark.
+-- C23 §6.4.4.3 lets a digit separator, a `'`, go between two digits
+-- of a digit sequence.
 
 floating-constant:
     decimal-floating-constant
@@ -31,7 +33,7 @@ sign:
     [+-] ;
 
 digit-sequence:
-    digit+ ;
+    digit ("'"? digit)* ;
 
 hexadecimal-fractional-constant:
     hexadecimal-digit-sequence? '.' hexadecimal-digit-sequence
@@ -44,7 +46,7 @@ binary-exponent-part:
     ;
 
 hexadecimal-digit-sequence:
-    hexadecimal-digit+ ;
+    hexadecimal-digit ("'"? hexadecimal-digit)* ;
 
 floating-suffix:
     [flFL] ;

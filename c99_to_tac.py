@@ -380,6 +380,7 @@ Cross-cutting invariants downstream passes depend on:
 
 from __future__ import annotations
 
+import bit_precise
 import dataclasses
 
 import builtin_functions
@@ -551,8 +552,92 @@ def _is_integer_type_c99(t: c99_ast.Type_data_type) -> bool:
     return isinstance(_strip_quals_c99(t), (
         c99_ast.Char, c99_ast.SChar, c99_ast.UChar, c99_ast.Bool,
         c99_ast.Int, c99_ast.UInt, c99_ast.Long, c99_ast.ULong,
-        c99_ast.LongLong, c99_ast.ULongLong,
+        c99_ast.LongLong, c99_ast.ULongLong, c99_ast.BitInt,
     ))
+
+
+def _bit_precise_to_storage(t):
+    """`t` with every bit-precise type in it, at any depth, replaced by
+    the integer type of its storage (`bit_precise.storage_type`).
+    Returns `t` itself when there's none."""
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.storage_type(t)
+    if not dataclasses.is_dataclass(t):
+        return t
+    changes = {}
+    for f in dataclasses.fields(t):
+        v = getattr(t, f.name)
+        if isinstance(v, list):
+            nv = [_bit_precise_to_storage(x) for x in v]
+            if any(a is not b for a, b in zip(nv, v)):
+                changes[f.name] = nv
+        elif isinstance(v, c99_ast.Type_data_type):
+            nv = _bit_precise_to_storage(v)
+            if nv is not v:
+                changes[f.name] = nv
+    return dataclasses.replace(t, **changes) if changes else t
+
+
+def _erase_bit_precise(decls, symbols, types) -> None:
+    """Replace each bit-precise type with the integer type of its
+    storage everywhere the passes after this one read c99 types: the
+    symbol table, the struct and union layouts, and the types of the
+    top-level declarations (which `abi_selection` reads). By now the
+    TAC has brought the padding bits back to the value's sign or zero
+    extension after every operation that can change them, so the back
+    end reads only the byte count and the signedness: `_BitInt(12)` is
+    an `int` from here on, and `unsigned _BitInt(20)` a 3-byte
+    `BitInt(24)`. The expression nodes keep their bit-precise types,
+    so translating the program again still restores the padding."""
+    for _, sym in symbols.items():
+        sym.type = _bit_precise_to_storage(sym.type)
+    if types is not None:
+        for _, layout in types.items():
+            layout.members = [
+                dataclasses.replace(m, type=_bit_precise_to_storage(m.type))
+                for m in layout.members
+            ]
+    for d in decls:
+        decl = getattr(d, "function_decl", None) or getattr(
+            d, "var_decl", None,
+        )
+        if decl is not None:
+            decl.data_type = _bit_precise_to_storage(decl.data_type)
+
+
+def _int_range(t: c99_ast.Type_data_type) -> tuple[int, int] | None:
+    """The least and greatest values of the integer or pointer type
+    `t`, or None for any other type."""
+    t = _strip_quals_c99(t)
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.value_range(t.width, t.is_signed)
+    if isinstance(t, c99_ast.Bool):
+        return 0, 1
+    if isinstance(t, c99_ast.Pointer) or _is_integer_type_c99(t):
+        return bit_precise.value_range(
+            8 * _byte_width_of(t), not _is_unsigned_integer(t),
+        )
+    return None
+
+
+def _changes_padding(op, t: c99_ast.BitInt) -> bool:
+    """True iff the TAC operation `op` on values of the bit-precise
+    type `t` can give a result whose padding bits aren't the sign or
+    zero extension of its N bits, when its operands' padding bits
+    are. `+`, `-`, `*`, and `<<` carry into the padding, a signed `/`
+    does for the minimum divided by -1, and unary `-` does for 0
+    minus anything. `~` of an unsigned value sets the padding, while
+    `~` of a sign-extended value is sign-extended. `&`, `|`, `^`, `%`,
+    `>>`, and an unsigned `/` keep the padding as it is."""
+    match op:
+        case (tac_ast.Add() | tac_ast.Subtract() | tac_ast.Multiply()
+              | tac_ast.LeftShift() | tac_ast.Negate()):
+            return True
+        case tac_ast.Divide():
+            return t.is_signed
+        case tac_ast.Complement():
+            return not t.is_signed
+    return False
 
 
 def _bool_to_uchar(t):
@@ -729,6 +814,8 @@ def _byte_width_of(t: c99_ast.Type_data_type) -> int:
         return 4
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.storage_bytes(t.width)
     if isinstance(t, c99_ast.Float):
         return 4
     if isinstance(t, c99_ast.Double):
@@ -784,6 +871,10 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         # C99 §6.2.5.15's implementation-defined choice for plain
         # char) — collapse onto unsigned `UInt`. So does `bool`.
         return tac_ast.UInt()
+    if isinstance(t, c99_ast.BitInt):
+        # Like the char types, only the signedness is kept here; the
+        # symbol table gives the width.
+        return tac_ast.Int() if t.is_signed else tac_ast.UInt()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
     if isinstance(t, c99_ast.Double):
@@ -844,6 +935,10 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
         return tac_ast.ConstFloat(bits=c.bits)
     if isinstance(c, c99_ast.ConstDouble):
         return tac_ast.ConstDouble(bits=c.bits)
+    if isinstance(c, c99_ast.ConstBitInt):
+        return _tac_const_for(
+            c99_ast.BitInt(width=c.width, is_signed=c.is_signed), c.value,
+        )
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
@@ -854,6 +949,8 @@ def _is_unsigned_integer(t: c99_ast.Type_data_type) -> bool:
     `tac_to_asm`'s `_is_unsigned_val` rule."""
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
+    if isinstance(t, c99_ast.BitInt):
+        return not t.is_signed
     return isinstance(t, (
         c99_ast.Char, c99_ast.UChar, c99_ast.Bool, c99_ast.UInt,
         c99_ast.ULong, c99_ast.ULongLong, c99_ast.Pointer,
@@ -883,6 +980,14 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
     underlying width and signedness."""
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
+    if isinstance(t, c99_ast.BitInt):
+        # The value modulo 2^N, held as an integer of the storage
+        # width, which is how the padding bits are kept
+        # (bit_precise.py).
+        return bit_precise.make_const(
+            bit_precise.storage_bytes(t.width), t.is_signed,
+            bit_precise.wrap(int(value), t.width, t.is_signed),
+        )
     if isinstance(t, c99_ast.SChar):
         return tac_ast.ConstChar(value=int(value))
     if isinstance(t, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool)):
@@ -908,11 +1013,28 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
     )
 
 
+# The width in bytes of each type a <stdbit.h> builtin takes. An
+# `unsigned short` is still one while the type checker's types are.
+_STDBIT_WIDTHS = {
+    c99_ast.UChar: 1, c99_ast.UShort: 2, c99_ast.UInt: 2,
+    c99_ast.ULong: 4, c99_ast.ULongLong: 8,
+}
+
+
 def _tac_const_val(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Constant:
     """Convenience: build a TAC `Constant(const=...)` val typed by
     `t`. The result is a `Type_val` ready to drop into a TAC
     instruction's src / dst slot."""
     return tac_ast.Constant(const=_tac_const_for(t, value))
+
+
+def _tac_storage_const(t: c99_ast.BitInt, bits: int) -> tac_ast.Constant:
+    """A TAC constant of the bit-precise type `t`'s storage holding the
+    bit pattern `bits`, which may set padding bits (the masks that
+    restore them)."""
+    return tac_ast.Constant(const=bit_precise.make_const(
+        bit_precise.storage_bytes(t.width), t.is_signed, bits,
+    ))
 
 
 def _fold_fp_cast_constant(
@@ -964,6 +1086,10 @@ def _fold_fp_cast_constant(
         v = c.value
     elif isinstance(c, tac_ast.ConstULongLong):
         v = c.value & 0xFFFFFFFF
+    elif isinstance(c, (tac_ast.ConstChar, tac_ast.ConstUChar)
+                    + bit_precise.ODD_CONSTS):
+        # A bit-precise source, whose storage is one of these.
+        v = bit_precise.const_value(c)
     else:
         raise TypeError(f"unexpected TAC const: {c!r}")
     return _tac_const_for(target, v)
@@ -1180,6 +1306,19 @@ def _flat_static_init_raw(
             if laid_down < layout.size:
                 out.append(tac_ast.ZeroInit(bytes=layout.size - laid_down))
         return out
+    if isinstance(t, c99_ast.BitInt):
+        # The value at N bits, as an integer of the storage width. A
+        # storage of 3, 5, 6, or 7 bytes has no init of its own, so
+        # it's laid down a byte at a time, low byte first.
+        v = bit_precise.wrap(int(value), t.width, t.is_signed)
+        storage = bit_precise.storage_type(t)
+        n = bit_precise.storage_bytes(t.width)
+        if not isinstance(storage, c99_ast.BitInt):
+            return [_tac_static_init_for(storage, v)]
+        return [
+            tac_ast.UCharInit(value=(v >> (8 * k)) & 0xFF)
+            for k in range(n)
+        ]
     return [_tac_static_init_for(t, value)]
 
 
@@ -1494,6 +1633,8 @@ def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
         return 4
     if isinstance(t, c99_ast.Double):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.storage_bytes(t.width)
     if isinstance(t, c99_ast.Array):
         return _sizeof(t.element_type, types) * t.size
     if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
@@ -1584,7 +1725,10 @@ class Translator:
         packed BCD builtins become `Binary(BcdAdd)` or
         `Binary(BcdSubtract)`. The type checker converted both
         operands to the result type, and when both are constants the
-        result is folded here, in both pipelines."""
+        result is folded here, in both pipelines. A <stdbit.h> builtin
+        goes to `_translate_stdbit`."""
+        if name in builtin_functions.STDBIT_BUILTINS:
+            return self._translate_stdbit(exp, name, args, instrs)
         a = self.translate_exp(args[0], instrs)
         b = self.translate_exp(args[1], instrs)
         add = name == builtin_functions.BCD_ADD
@@ -1607,6 +1751,233 @@ class Translator:
             src1=a, src2=b, dst=dst,
         ))
         return dst
+
+    def _translate_stdbit(
+        self, exp: c99_ast.FunctionCall, name: str, args, instrs,
+    ) -> tac_ast.Type_val:
+        """Lowers a <stdbit.h> builtin (C23 §7.18, docs/stdbit.md).
+        The type checker converted the argument to the value type,
+        and a constant argument is folded here, in both pipelines,
+        with `builtin_functions.stdbit`.
+
+        Otherwise the call becomes a loop on a copy `t` of the value
+        (or of its complement, for the operations that look for 1
+        bits where the others look for 0 bits). Each loop shifts `t`
+        a bit at a time until it's zero, which is the 6502's `LSR` or
+        `ASL` chain and an `ORA` of the bytes, and counts the shifts
+        in a byte. That keeps the code small for every width, at the
+        cost of up to N passes for an N-bit value. These are the
+        results in terms of the width N and the number of shifts s.
+
+          * Shifting right, s is the bit width (`bit_width`), and
+            N - s is the number of leading zeros.
+          * Shifting left, s is N minus the number of trailing zeros,
+            or 0 for a zero value, so N - s is the number of
+            trailing zeros.
+          * A `first_...` operation is 0 for a zero `t` and N + 1 - s
+            otherwise.
+          * `count_ones` and `count_zeros` add up the bits shifted
+            out to the right.
+          * `bit_floor` and `bit_ceil` shift a result left once for
+            each right shift of `t`, starting from 1, which takes
+            `bit_ceil` past the top bit to 0 when its power of 2
+            doesn't fit (§7.18.16p2).
+          * `has_single_bit` of one or two bytes is
+            `v != 0 && (v & (v - 1)) == 0`, and of four or eight it
+            shifts a nonzero value right past its lowest 1 and tests
+            what's left for zero."""
+        operation, _ = builtin_functions.STDBIT_BUILTINS[name]
+        value_t = _strip_quals_c99(args[0].data_type)
+        result_t = _strip_quals_c99(exp.data_type)
+        width = _byte_width_of(value_t)
+        bits = 8 * width
+        v = self.translate_exp(args[0], instrs)
+        if isinstance(v, tac_ast.Constant):
+            return _tac_const_val(
+                result_t,
+                builtin_functions.stdbit(operation, v.const.value, bits),
+            )
+        one = _tac_const_val(c99_ast.Int(), 1)
+
+        def temp(t) -> tac_ast.Var:
+            return tac_ast.Var(name=self.make_temporary_variable_name(t))
+
+        def shift(op, var) -> None:
+            instrs.append(tac_ast.Binary(op=op, src1=var, src2=one, dst=var))
+
+        def step(counter, delta) -> None:
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Add() if delta > 0 else tac_ast.Subtract(),
+                src1=counter, src2=_tac_const_val(c99_ast.UChar(), 1),
+                dst=counter,
+            ))
+
+        def label(prefix: str) -> str:
+            return self.make_label(f"stdbit_{prefix}")
+
+        end = label("end")
+        if operation == "has_single_bit" and width > 2:
+            # Shift the value right until its low bit is 1, and then
+            # once more. The value had a single 1 bit if and only if
+            # nothing is left. For 4 and 8 bytes that takes less code
+            # than the v & (v - 1) below, and for 1 and 2 more.
+            r = temp(result_t)
+            t = temp(value_t)
+            low = temp(c99_ast.UChar())
+            body = label("body")
+            test = label("test")
+            instrs += [
+                tac_ast.Copy(src=_tac_const_val(result_t, 0), dst=r),
+                tac_ast.Copy(src=v, dst=t),
+                tac_ast.JumpIfFalse(condition=t, target=end),
+                tac_ast.Jump(target=test),
+                tac_ast.Label(name=body),
+            ]
+            shift(tac_ast.RightShift(), t)
+            instrs += [
+                tac_ast.Label(name=test),
+                tac_ast.Truncate(src=t, dst=low),
+                tac_ast.Binary(
+                    op=tac_ast.BitwiseAnd(), src1=low,
+                    src2=_tac_const_val(c99_ast.UChar(), 1), dst=low,
+                ),
+                tac_ast.JumpIfFalse(condition=low, target=body),
+            ]
+            shift(tac_ast.RightShift(), t)
+            instrs += [
+                tac_ast.JumpIfTrue(condition=t, target=end),
+                tac_ast.Copy(src=_tac_const_val(result_t, 1), dst=r),
+                tac_ast.Label(name=end),
+            ]
+            return r
+        if operation == "has_single_bit":
+            r = temp(result_t)
+            d = temp(value_t)
+            instrs += [
+                tac_ast.Copy(src=_tac_const_val(result_t, 0), dst=r),
+                tac_ast.JumpIfFalse(condition=v, target=end),
+                tac_ast.Binary(
+                    op=tac_ast.Subtract(), src1=v,
+                    src2=_tac_const_val(value_t, 1), dst=d,
+                ),
+                tac_ast.Binary(
+                    op=tac_ast.BitwiseAnd(), src1=v, src2=d, dst=d,
+                ),
+                tac_ast.JumpIfTrue(condition=d, target=end),
+                tac_ast.Copy(src=_tac_const_val(result_t, 1), dst=r),
+                tac_ast.Label(name=end),
+            ]
+            return r
+        t = temp(value_t)
+        body, test = label("body"), label("test")
+        if operation in ("bit_floor", "bit_ceil"):
+            # Both loops start from r = 1. `bit_floor` shifts v >> 1
+            # and clears r after the loop for v == 0, and `bit_ceil`
+            # shifts v - 1, or 0 for v == 0, whose result is 1. The
+            # loop's exit then joins no other value of r, which would
+            # put a copy of r in the loop.
+            r = temp(value_t)
+            instrs.append(tac_ast.Copy(src=_tac_const_val(value_t, 1), dst=r))
+            if operation == "bit_floor":
+                instrs.append(tac_ast.Binary(
+                    op=tac_ast.RightShift(), src1=v, src2=one, dst=t,
+                ))
+            else:
+                instrs += [
+                    tac_ast.Copy(src=v, dst=t),
+                    tac_ast.JumpIfFalse(condition=t, target=test),
+                    tac_ast.Binary(
+                        op=tac_ast.Subtract(), src1=t,
+                        src2=_tac_const_val(value_t, 1), dst=t,
+                    ),
+                ]
+            instrs += [tac_ast.Jump(target=test), tac_ast.Label(name=body)]
+            shift(tac_ast.RightShift(), t)
+            shift(tac_ast.LeftShift(), r)
+            instrs += [
+                tac_ast.Label(name=test),
+                tac_ast.JumpIfTrue(condition=t, target=body),
+            ]
+            if operation == "bit_floor":
+                instrs += [
+                    tac_ast.JumpIfTrue(condition=v, target=end),
+                    tac_ast.Copy(src=_tac_const_val(value_t, 0), dst=r),
+                    tac_ast.Label(name=end),
+                ]
+            return r
+        ones = operation in (
+            "leading_ones", "trailing_ones",
+            "first_leading_zero", "first_trailing_zero",
+        )
+        if ones:
+            instrs.append(tac_ast.Unary(op=tac_ast.Complement(), src=v, dst=t))
+        else:
+            instrs.append(tac_ast.Copy(src=v, dst=t))
+        n = temp(c99_ast.UChar())
+
+        def set_n(value: int) -> None:
+            instrs.append(tac_ast.Copy(
+                src=_tac_const_val(c99_ast.UChar(), value), dst=n,
+            ))
+
+        if operation in ("count_ones", "count_zeros"):
+            counting_ones = operation == "count_ones"
+            set_n(0 if counting_ones else bits)
+            skip = label("skip")
+            low = t
+            if width > 1:
+                low = temp(c99_ast.UChar())
+            bit = temp(c99_ast.UChar())
+            instrs += [tac_ast.Jump(target=test), tac_ast.Label(name=body)]
+            if width > 1:
+                instrs.append(tac_ast.Truncate(src=t, dst=low))
+            instrs += [
+                tac_ast.Binary(
+                    op=tac_ast.BitwiseAnd(), src1=low,
+                    src2=_tac_const_val(c99_ast.UChar(), 1), dst=bit,
+                ),
+                tac_ast.JumpIfFalse(condition=bit, target=skip),
+            ]
+            step(n, 1 if counting_ones else -1)
+            instrs.append(tac_ast.Label(name=skip))
+            shift(tac_ast.RightShift(), t)
+        else:
+            right = operation in (
+                "leading_zeros", "leading_ones", "bit_width",
+                "first_leading_zero", "first_leading_one",
+            )
+            direction = tac_ast.RightShift() if right else tac_ast.LeftShift()
+            if operation.startswith("first_"):
+                set_n(0)
+                instrs.append(tac_ast.JumpIfFalse(condition=t, target=end))
+                set_n(bits + 1)
+                instrs.append(tac_ast.Label(name=body))
+                shift(direction, t)
+                step(n, -1)
+                instrs += [
+                    tac_ast.JumpIfTrue(condition=t, target=body),
+                    tac_ast.Label(name=end),
+                ]
+                return self._stdbit_count_result(n, result_t, instrs)
+            counting_up = operation == "bit_width"
+            set_n(0 if counting_up else bits)
+            instrs += [tac_ast.Jump(target=test), tac_ast.Label(name=body)]
+            shift(direction, t)
+            step(n, 1 if counting_up else -1)
+        instrs += [
+            tac_ast.Label(name=test),
+            tac_ast.JumpIfTrue(condition=t, target=body),
+        ]
+        return self._stdbit_count_result(n, result_t, instrs)
+
+    def _stdbit_count_result(
+        self, n: tac_ast.Var, result_t, instrs,
+    ) -> tac_ast.Type_val:
+        """The count `n`, a byte, zero-extended to `result_t`, the
+        `unsigned int` a <stdbit.h> count is."""
+        r = tac_ast.Var(name=self.make_temporary_variable_name(result_t))
+        instrs.append(tac_ast.ZeroExtend(src=n, dst=r))
+        return r
 
     def _returns_carry_struct(self, fn_name: str) -> bool:
         """True iff `fn_name` is a `return_bool_in_carry` function that
@@ -1750,6 +2121,7 @@ class Translator:
                         top_levels.append(fn)
                 top_levels.extend(self._emit_static_variables())
                 _erase_bool(decls, self._symbols, self._types)
+                _erase_bit_precise(decls, self._symbols, self._types)
                 program = tac_ast.Program(top_level=top_levels)
                 from passes.recursion_saves import check_marked_calls
                 check_marked_calls(program)
@@ -2607,12 +2979,15 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
+                tac_op = self.translate_unop(op)
                 instrs.append(tac_ast.Unary(
-                    op=self.translate_unop(op),
+                    op=tac_op,
                     src=src,
                     dst=dst,
                 ))
-                return dst
+                return self._restore_padding(
+                    dst, exp.data_type, tac_op, instrs,
+                )
             case c99_ast.Binary(op=c99_ast.LogicalAnd(), left=left, right=right):
                 return self.translate_short_circuit(
                     left, right, instrs,
@@ -2653,13 +3028,16 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
+                tac_op = self.translate_binop(op)
                 instrs.append(tac_ast.Binary(
-                    op=self.translate_binop(op),
+                    op=tac_op,
                     src1=src1,
                     src2=src2,
                     dst=dst,
                 ))
-                return dst
+                return self._restore_padding(
+                    dst, exp.data_type, tac_op, instrs,
+                )
             case c99_ast.Var(name=name):
                 # Resolved name from identifier_resolution (e.g. `@0.x`)
                 # passes straight through into TAC's Var namespace —
@@ -4112,13 +4490,14 @@ class Translator:
         new = tac_ast.Var(
             name=self.make_temporary_variable_name(op_type),
         )
+        tac_op = self.translate_incdec(op)
         instrs.append(tac_ast.Binary(
-            op=self.translate_incdec(op),
+            op=tac_op,
             src1=src,
             src2=_tac_const_val(op_type, 1),
             dst=new,
         ))
-        return new
+        return self._restore_padding(new, op_type, tac_op, instrs)
 
     def _translate_compound_assign(
         self,
@@ -4258,15 +4637,19 @@ class Translator:
         binop_dst = tac_ast.Var(
             name=self.make_temporary_variable_name(intermediate_type),
         )
+        tac_op = self.translate_binop(op)
         instrs.append(tac_ast.Binary(
-            op=self.translate_binop(op),
+            op=tac_op,
             src1=lval_val_at_inter,
             src2=rval_val,
             dst=binop_dst,
         ))
+        result = self._restore_padding(
+            binop_dst, intermediate_type, tac_op, instrs,
+        )
         # Convert binop result back to lval's type.
         return self._emit_widen_or_narrow(
-            binop_dst, intermediate_type, lv_type, instrs,
+            result, intermediate_type, lv_type, instrs,
         )
 
     def _emit_cast(
@@ -4290,6 +4673,11 @@ class Translator:
         target = _strip_quals_c99(target)
         if isinstance(target, c99_ast.Bool):
             return self._emit_to_bool(inner_val, source, instrs)
+        if (isinstance(source, c99_ast.BitInt)
+                or isinstance(target, c99_ast.BitInt)):
+            return self._emit_bit_precise_cast(
+                inner_val, source, target, instrs,
+            )
         src_fp = isinstance(
             source, (c99_ast.Float, c99_ast.Double),
         )
@@ -4455,6 +4843,136 @@ class Translator:
                 src=inner_val, dst=dst,
             ))
         return dst
+
+    def _restore_padding(
+        self,
+        val: tac_ast.Type_val,
+        t: c99_ast.Type_data_type | None,
+        op,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """`val`, the result of the TAC operation `op` at type `t`,
+        with its padding bits brought back to the sign or zero
+        extension of its N bits when `t` is a bit-precise type whose
+        top byte has padding and `op` can change it (`_changes_padding`,
+        bit_precise.py). Any other `val` is returned as it is."""
+        if t is None:
+            return val
+        t = _strip_quals_c99(t)
+        if (not isinstance(t, c99_ast.BitInt)
+                or not bit_precise.has_padding(t)
+                or not _changes_padding(op, t)):
+            return val
+        return self._wrap_bit_precise(val, t, instrs)
+
+    def _wrap_bit_precise(
+        self,
+        val: tac_ast.Type_val,
+        t: c99_ast.BitInt,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """`val`, an integer of `t`'s storage width, reduced modulo
+        2^N and stored the way `t` keeps its padding bits: masked with
+        `m` = 2^N - 1 for an unsigned type, and `((val & m) ^ s) - s`
+        with the sign bit `s` = 2^(N-1) for a signed one, which
+        copies bit N-1 into every bit above it. A constant folds. A
+        value of a type without padding is returned as it is."""
+        if not bit_precise.has_padding(t):
+            return val
+        if isinstance(val, tac_ast.Constant):
+            return _tac_const_val(t, bit_precise.const_value(val.const))
+
+        def step(op, src, k: int) -> tac_ast.Var:
+            dst = tac_ast.Var(name=self.make_temporary_variable_name(t))
+            instrs.append(tac_ast.Binary(
+                op=op, src1=src, src2=_tac_storage_const(t, k), dst=dst,
+            ))
+            return dst
+
+        masked = step(tac_ast.BitwiseAnd(), val, (1 << t.width) - 1)
+        if not t.is_signed:
+            return masked
+        sign = 1 << (t.width - 1)
+        return step(
+            tac_ast.Subtract(), step(tac_ast.BitwiseXor(), masked, sign),
+            sign,
+        )
+
+    def _emit_bit_precise_cast(
+        self,
+        inner_val: tac_ast.Type_val,
+        source: c99_ast.Type_data_type,
+        target: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """A conversion with a bit-precise source or target, neither
+        of them `bool` or qualified. Between integers, the value is
+        brought to the target's storage width as any integer is (the
+        source's storage already holds its value, so it's extended by
+        the source's signedness), and then reduced modulo 2^N when the
+        target is bit-precise with padding and the source has values
+        it can't hold (C23 §6.3.1.3; a signed target wraps, c6502's
+        implementation-defined choice).
+
+        The runtime's conversions to and from `float` and `double`
+        take integers of 2, 4, and 8 bytes, so a bit-precise source
+        of another size is extended to the next of those first, and a
+        bit-precise target is converted at that size and then
+        truncated and wrapped."""
+        src_fp = isinstance(source, (c99_ast.Float, c99_ast.Double))
+        tgt_fp = isinstance(target, (c99_ast.Float, c99_ast.Double))
+
+        def helper_type(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
+            n = max(2, bit_precise.helper_bytes(_byte_width_of(t)))
+            return bit_precise.storage_type(c99_ast.BitInt(
+                width=8 * n, is_signed=not _is_unsigned_integer(t),
+            ))
+
+        if isinstance(inner_val, tac_ast.Constant):
+            c = inner_val.const
+            if src_fp or tgt_fp:
+                return tac_ast.Constant(
+                    const=_fold_fp_cast_constant(target, c),
+                )
+            return _tac_const_val(target, bit_precise.const_value(c))
+        if tgt_fp:
+            wide_t = helper_type(source)
+            wide = self._emit_cast(inner_val, source, wide_t, instrs)
+            return self._emit_cast(wide, wide_t, target, instrs)
+        if src_fp:
+            wide_t = helper_type(target)
+            wide = tac_ast.Var(
+                name=self.make_temporary_variable_name(wide_t),
+            )
+            node_cls = (
+                tac_ast.FloatToInt if isinstance(source, c99_ast.Float)
+                else tac_ast.DoubleToInt
+            )
+            instrs.append(node_cls(src=inner_val, dst=wide))
+            return self._emit_bit_precise_cast(wide, wide_t, target, instrs)
+        src_w = _byte_width_of(source)
+        tgt_w = _byte_width_of(target)
+        src_unsigned = _is_unsigned_integer(source)
+        if src_w == tgt_w and src_unsigned == _is_unsigned_integer(target):
+            val = inner_val
+        else:
+            val = tac_ast.Var(
+                name=self.make_temporary_variable_name(target),
+            )
+            if src_w == tgt_w:
+                instrs.append(tac_ast.Copy(src=inner_val, dst=val))
+            elif src_w > tgt_w:
+                instrs.append(tac_ast.Truncate(src=inner_val, dst=val))
+            elif src_unsigned:
+                instrs.append(tac_ast.ZeroExtend(src=inner_val, dst=val))
+            else:
+                instrs.append(tac_ast.SignExtend(src=inner_val, dst=val))
+        if isinstance(target, c99_ast.BitInt):
+            lo, hi = bit_precise.value_range(target.width, target.is_signed)
+            src_range = _int_range(source)
+            if src_range is None or src_range[0] < lo or src_range[1] > hi:
+                return self._wrap_bit_precise(val, target, instrs)
+        return val
 
     def _emit_to_bool(
         self,

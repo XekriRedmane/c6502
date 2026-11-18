@@ -48,6 +48,7 @@ Eligibility:
 """
 from __future__ import annotations
 
+import bit_precise
 import tac_ast
 from passes.optimization.framework import FixedpointPass, PassContext
 from passes.type_checking import StaticAttr
@@ -58,7 +59,7 @@ _INT_CONSTS = (
     tac_ast.ConstInt, tac_ast.ConstUInt, tac_ast.ConstLong,
     tac_ast.ConstULong, tac_ast.ConstLongLong, tac_ast.ConstULongLong,
     tac_ast.ConstChar, tac_ast.ConstUChar,
-)
+) + bit_precise.ODD_CONSTS
 
 _AGGREGATES = (c99_ast.Structure, c99_ast.Union, c99_ast.Array)
 

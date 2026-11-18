@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import Iterator
 
 from lark import Lark
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput
+
+import pp_numbers
 
 
 KEYWORDS = frozenset({
@@ -26,6 +29,8 @@ KEYWORDS = frozenset({
     # `__c6502_nullptr_t`, a keyword in the reserved namespace, since
     # c6502 has no `typeof` to write it as C23's header does.
     "nullptr", "__c6502_nullptr_t",
+    # C23's bit-precise integer types (§6.7.3.1).
+    "_BitInt",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with
@@ -145,6 +150,8 @@ _TERMINAL_TO_KIND.update({
     "LONG_INTEGER": TokenKind.CONSTANT,
     "UINT_INTEGER": TokenKind.CONSTANT,
     "ULONG_INTEGER": TokenKind.CONSTANT,
+    "BITINT_INTEGER": TokenKind.CONSTANT,
+    "UBITINT_INTEGER": TokenKind.CONSTANT,
     "DOUBLE_CONSTANT": TokenKind.CONSTANT,
     "FLOAT_CONSTANT": TokenKind.CONSTANT,
     "LONG_DOUBLE_CONSTANT": TokenKind.CONSTANT,
@@ -153,10 +160,63 @@ _TERMINAL_TO_KIND.update({
 })
 
 
+# The terminals of numeric constants, which `check_number` looks at.
+NUMBER_TERMINALS = frozenset({
+    "INTEGER_CONSTANT", "LONG_INTEGER", "UINT_INTEGER", "ULONG_INTEGER",
+    "BITINT_INTEGER", "UBITINT_INTEGER",
+    "DOUBLE_CONSTANT", "FLOAT_CONSTANT", "LONG_DOUBLE_CONSTANT",
+    "INVALID_NUMBER",
+})
+
+
+def check_number(source: str, lt) -> None:
+    """Raises LexError for the numeric Lark token `lt` in `source`
+    when the pp-number it begins (C23 §6.4.8) uses a C23 spelling
+    wrongly: a digit separator that isn't between two digits, a binary
+    constant with a digit other than 0 and 1 or no digits, or a `wb`
+    or `uwb` constant too wide for any `_BitInt`. The message comes from
+    pp_numbers.py. Any other number is left to the terminals and to
+    the check in `tokenize`, as before. `tokenize` and the parser's
+    lexer both call this.
+
+    A `'` right after a number is a separator that isn't followed by a
+    digit. The pp-number ends before it, as in `1'` or `1''000`, and
+    the `'` would start a character constant, which can't follow a
+    number in a valid program."""
+    start = lt.start_pos
+    spelling = pp_numbers.pp_number_at(source, start)
+    end = start + len(spelling)
+    if end < len(source) and source[end] == "'":
+        shown = re.match(r"[0-9A-Za-z_.']*", source[start:]).group(0)
+        raise LexError(
+            f"a digit separator has to be between two digits, and the "
+            f"one after {spelling!r} in {shown!r} isn't followed by a "
+            f"digit",
+            lt.line, lt.column,
+        )
+    if ("'" not in spelling and spelling[:2] not in ("0b", "0B")
+            and lt.type not in ("BITINT_INTEGER", "UBITINT_INTEGER")):
+        return
+    try:
+        pp_numbers.check(spelling)
+        if not pp_numbers.is_floating(spelling):
+            constant = pp_numbers.parse_integer(spelling)
+            if constant.bit_precise:
+                pp_numbers.bit_precise_width(constant, spelling)
+    except pp_numbers.NumberError as e:
+        raise LexError(str(e), lt.line, lt.column) from None
+    if len(spelling) != len(str(lt)):
+        raise LexError(
+            f"invalid pp-number {spelling!r}", lt.line, lt.column,
+        )
+
+
 def tokenize(source: str) -> Iterator[Token]:
     prev: Token | None = None
     try:
         for lt in _LARK.lex(source):
+            if lt.type in NUMBER_TERMINALS:
+                check_number(source, lt)
             if lt.type == "INVALID_NUMBER":
                 raise LexError(
                     f"malformed numeric token {str(lt)!r}",

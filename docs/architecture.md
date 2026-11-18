@@ -102,9 +102,9 @@ each constructor keeps its ASDL name.
 
 A program is a list of declarations, each a `VarDecl` or a
 `FunctionDecl`, and a function definition is a `FunctionDecl` with a
-body. Types are `Int()`, `UChar()`, `Pointer(...)`, `Array(...)`,
-`FunType(...)`, and so on, with `Const(...)` and `Volatile(...)`
-wrapping a qualified type. `typedef` and `enum` never reach the AST,
+body. Types are `Int()`, `UChar()`, `BitInt(width, is_signed)`,
+`Pointer(...)`, `Array(...)`, `FunType(...)`, and so on, with
+`Const(...)` and `Volatile(...)` wrapping a qualified type. `typedef` and `enum` never reach the AST,
 since the parser puts the types and values in place of the names.
 
 ### tac_ast
@@ -119,6 +119,14 @@ stores (`IndexedLoad`, `IndirectIndexedStore`, and the others), which
 later become `abs,X` and `(zp),Y` accesses, come from `c99_to_tac`
 for some subscripts and from the optimizer's recognizers for the
 rest. The optimizer adds `Phi` while a function is in SSA form.
+
+An integer in the TAC is 1 to 8 bytes. C23's bit-precise types
+(`_BitInt(N)`, bit_precise.py) take ceil(N/8) bytes, and `c99_to_tac`
+restores their padding bits after each operation and then replaces
+each one with the type of its storage: a standard integer type for 1,
+2, 4, and 8 bytes, and `BitInt(24)`, `BitInt(40)`, `BitInt(48)`, or
+`BitInt(56)` for the other sizes, whose constants are `ConstInt24` to
+`ConstUInt56`. Every pass after it handles those as whole bytes.
 
 ### asm_ast
 
@@ -197,6 +205,9 @@ to recognize. `tac_to_asm.py`'s docstring has the rest.
 | a shift by a constant | inline `ASL` and `ROL` (or `LSR`, `ROR`) chains when that's at most 8 shift instructions, by `passes/shift_cost.py`'s rule, otherwise a helper |
 | a call through a pointer | the pointer copied to `DPTR`, then `JSR icall`, and `icall` is `JMP (DPTR)`. The callee's arguments go on the soft stack. |
 | a static object | `Data`, with absolute or zero-page addressing, and `DC.B`, `DC.W`, `DC.L`, or `DS.B` for its storage |
+| `+`, `-`, `*`, `<<`, unary `-`, or a conversion on a `_BitInt(N)` whose N isn't a multiple of 8 | the operation at the storage width, then an `AND` with the mask of the N bits, and for a signed type an `EOR` and an `SBC` of the sign bit, which copy bit N-1 into the padding. Below the top byte the mask is `$FF` and the sign bit's bytes are 0, and `-O` drops most of those bytes' instructions. |
+| `*`, `/`, `%`, or a shift by a variable of a 3-, 5-, 6-, or 7-byte integer | the helper of the next of 4 and 8 bytes, each operand extended in `HARGS` (zero-filled for `*` and `<<`, by its signedness otherwise), and the low bytes of the result loaded back |
+| a `<stdbit.h>` call, such as `stdc_leading_zeros(x)` | a loop between `.stdbit_body@N` and `.stdbit_test@N` that shifts a copy of `x` with `LSR` / `ROR` (or `ASL` / `ROL`) until it's zero, and counts the passes with `INC` or `DEC` of a byte (see docs/stdbit.md). A constant argument folds to its result. |
 
 ## Runtime conventions
 
@@ -244,7 +255,9 @@ A 1-byte result comes back in A, and a 2-byte one in A (low) and X
 (high). A 4-byte result comes back in `HARGS+8`-`HARGS+11`, and an
 8-byte one in `HARGS+16`-`HARGS+23`, which are the slots the
 floating-point helpers write their results to, so `return a + b;`
-compiles with no copy of the result. A struct comes back through a hidden pointer to the
+compiles with no copy of the result. A bit-precise type of 3 bytes
+comes back from `HARGS+8` up, and one of 5, 6, or 7 bytes from
+`HARGS+16` up. A struct comes back through a hidden pointer to the
 caller's storage, passed as the first argument. A
 `return_bool_in_carry` function returns its `bool` in C.
 
@@ -256,7 +269,9 @@ inputs as they were and may use the rest of `HARGS` as scratch.
 Compiled code keeps no value in A, X, Y, `DPTR`, or `HARGS` across a
 call, so a helper may overwrite all of them, and a result in `HARGS`
 is read right after the call. `w` is the operand's width in bytes, 1, 2, 4, or 8, and the
-helper's suffix is `8w` bits, as in `mul16`.
+helper's suffix is `8w` bits, as in `mul16`. An operand of 3, 5, 6,
+or 7 bytes goes to the helper of the next of 4 and 8 bytes, extended
+to that width (`tac_to_asm._odd_width_helper_op`).
 
 | Helpers | Inputs | Output |
 |---|---|---|

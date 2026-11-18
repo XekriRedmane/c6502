@@ -43,6 +43,27 @@ These parts work.
   `NULL`, and to every null pointer. Converting it to an integer, or
   comparing it with `<`, is an error, as C23 specifies. The compiler
   treats it as the constant 0 from the type checker on.
+- C23's binary constants, such as `0b1010'0101`, and digit
+  separators, such as `1'000'000` and `0xFF'FF`, work in C and in
+  `#if`. A separator anywhere but between two digits is an error
+  that says where it is.
+- C23's bit-precise integer types, `_BitInt(N)` and `unsigned
+  _BitInt(N)`, work for N up to `BITINT_MAXWIDTH`, which is 64, with
+  the `wb` and `uwb` constant suffixes, in C and in `#if`. They aren't
+  promoted, so `_BitInt(5) + _BitInt(5)` is a `_BitInt(5)`, and
+  arithmetic on them wraps at N bits. c6502 wraps a signed one too,
+  where C leaves overflow undefined. A value takes ceil(N/8)
+  bytes, so an `unsigned _BitInt(24)` is 3 bytes, and adding,
+  subtracting, comparing, and the bitwise operators work on those 3
+  bytes directly. A multiply, divide, or shift by a variable of a 3-,
+  5-, 6-, or 7-byte value uses the runtime's helper for the next of 4
+  and 8 bytes.
+- C23's `<stdbit.h>` has all 14 of its operations, from
+  `stdc_leading_zeros` to `stdc_bit_ceil`, in the forms of one type
+  and the type-generic forms, and its endian and version macros. The
+  compiler folds a call of a constant, which makes it a constant
+  expression, and writes a short loop in place for any other call
+  ([docs/stdbit.md](docs/stdbit.md)).
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.
@@ -66,9 +87,9 @@ These parts are missing.
   pointer `SSP`, call `__zp_init`, and then call `main` (see
   [Zero page](#zero-page) below).
 - There's no standard library. The only headers are `<stdint.h>`,
-  `<stddef.h>`, `<stdbool.h>`, `<limits.h>`, and two that declare the
-  Apple II Monitor's routines, `<apple2/monitor_io.h>` and
-  `<apple2/interactive_monitor.h>`.
+  `<stddef.h>`, `<stdbool.h>`, `<stdbit.h>`, `<limits.h>`, and two
+  that declare the Apple II Monitor's routines,
+  `<apple2/monitor_io.h>` and `<apple2/interactive_monitor.h>`.
 - Floating point has no 6502 code at all, as described above.
   `long double` and hexadecimal floating constants are rejected, and
   `==` on `float` or `double` compares bit patterns, so `0.0 == -0.0`
@@ -205,6 +226,7 @@ sizes on 32- and 64-bit machines.
 | `float`, `double` | 4 and 8 bytes | IEEE 754, with no arithmetic code (see "Status") |
 | `bool` | 1 byte | 0 (`false`) or 1 (`true`). `_Bool` is the same type. |
 | `nullptr_t` | 2 bytes | Only `nullptr`, stored as 2 zero bytes. |
+| `_BitInt(N)`, `unsigned _BitInt(N)` | ceil(N/8) bytes | -2^(N-1) to 2^(N-1) - 1, or 0 to 2^N - 1, for N up to 64. The bits above the value hold its sign (or 0). |
 
 `<stdint.h>` defines `uint8_t` as `unsigned char`, `int16_t` as
 `int`, `int32_t` as `long`, and so on. `sizeof` gives an `unsigned
@@ -212,6 +234,9 @@ long`, and the difference of two pointers is an `int`, which
 `<stddef.h>` names `size_t` and `ptrdiff_t`. `NULL` is `((void
 *)0)`. Since `int` is
 16 bits, `40000` is a `long` constant, and `1 << 16` is undefined.
+A binary constant takes the types a hexadecimal one does, so
+`0b1111'1111'1111'1111` is an `unsigned int`, and a digit separator
+`'` can go between any two digits of a constant.
 
 The 6502 does arithmetic a byte at a time, so every byte of a value
 costs code and time. C promotes `char` operands to `int` before any
@@ -309,6 +334,9 @@ down in X or Y.
   `__c6502_bcd_add` and `__c6502_bcd_sub`, which add and subtract
   packed BCD numbers with the 6502's decimal mode, for scores and
   other decimal counters.
+- [docs/stdbit.md](docs/stdbit.md) describes C23's `<stdbit.h>`, the
+  bit counts, the bit searches, and the powers of 2 it rounds to,
+  what each returns, and the loops they compile to.
 - [docs/calling_conventions.md](docs/calling_conventions.md) traces a
   call through the soft stack and through zp_abi, says which
   functions qualify for zp_abi, and gives the costs and limits of

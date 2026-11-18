@@ -297,7 +297,14 @@ Operand-size and signedness dispatch:
 
   `Translator._size_of(val)` returns 1 (Int/UInt), 2 (Long/ULong),
   4 (LongLong/ULongLong/Float), or 8 (Double) — reading the symbol
-  table for Vars and the const variant for Constants. Each per-
+  table for Vars and the const variant for Constants. A bit-precise
+  type's storage of 3, 5, 6, or 7 bytes (`BitInt(24)` to `BitInt(56)`,
+  constants `ConstInt24` to `ConstUInt56`; bit_precise.py) is that
+  many bytes, and the per-byte lowerings take it as they take any
+  other width. A multiply, divide, remainder, or helper shift of one
+  goes to the helper of the next of 4 and 8 bytes with each operand
+  extended in HARGS (`_odd_width_helper_op`), and a return of one
+  comes back in the HARGS slot of that width (`_RET_HARGS_OFFSET`). Each per-
   instruction lowering keys off this size; the size-parameterized
   loops naturally generalize across 1, 2, and 4 byte widths with
   carry threading where appropriate. Signedness only matters for
@@ -342,6 +349,7 @@ from __future__ import annotations
 
 from passes.shift_cost import inline_shift_ok
 import asm_ast
+import bit_precise
 import c99_ast
 import tac_ast
 from passes.type_checking import FunAttr, StaticAttr, SymbolTable
@@ -477,8 +485,10 @@ _HARGS = "HARGS"
 # HARGS+8..11 (and `mul32`/`divmod32`'s output slot too, so a
 # function ending `return a OP b;` for those types skips the epilogue
 # copy). LongLong and Double (8B) sit in HARGS+16..23, the FP-double
-# helpers' output slot.
-_RET_HARGS_OFFSET = {2: 0, 4: 8, 8: 16}
+# helpers' output slot. A 3-byte integer (a bit-precise type of 17 to
+# 24 bits) comes back in the 4-byte slot, and one of 5 to 7 bytes in
+# the 8-byte slot.
+_RET_HARGS_OFFSET = {2: 0, 3: 8, 4: 8, 5: 16, 6: 16, 7: 16, 8: 16}
 # DPTR is the dereference / scratch indirect-pointer pair, at
 # zero-page `$24`/`$25` in the classic layout, right after HARGS
 # (`passes/runtime_layout.py`). Used by Load /
@@ -799,7 +809,7 @@ def _shift_count_const_value(val) -> int | None:
         tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
         tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
         tac_ast.ConstChar, tac_ast.ConstUChar,
-    )):
+    ) + bit_precise.ODD_CONSTS):
         return None
     if c.value < 0:
         return None
@@ -1280,6 +1290,8 @@ def _array_bytes(t, types) -> int:
         return 4
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
+    if isinstance(t, c99_ast.BitInt):
+        return bit_precise.storage_bytes(t.width)
     if isinstance(t, c99_ast.Array):
         return _array_bytes(t.element_type, types) * t.size
     if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
@@ -1475,6 +1487,10 @@ class Translator:
                 | tac_ast.ConstULong() | tac_ast.ConstULongLong()
             )):
                 return True
+            case tac_ast.Constant(const=c) if isinstance(
+                c, bit_precise.ODD_UNSIGNED_CONSTS,
+            ):
+                return True
             case tac_ast.Constant():
                 return False
             case tac_ast.Var(name=name):
@@ -1486,6 +1502,8 @@ class Translator:
                 sym_type = sym.type
                 while isinstance(sym_type, (c99_ast.Const, c99_ast.Volatile)):
                     sym_type = sym_type.referenced_type
+                if isinstance(sym_type, c99_ast.BitInt):
+                    return not sym_type.is_signed
                 return isinstance(sym_type, (
                     c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
                     c99_ast.Char, c99_ast.UChar, c99_ast.Pointer,
@@ -1514,7 +1532,8 @@ class Translator:
     def _size_of(self, val: tac_ast.Type_val) -> int:
         """Byte width of a TAC val. Integer types: 1 for Char / SChar
         / UChar, 2 for Int / UInt, 4 for Long / ULong, 8 for LongLong
-        / ULongLong. Floating types: 4 for Float, 8 for Double.
+        / ULongLong, and 3, 5, 6, or 7 for what's left of a
+        bit-precise type (`BitInt(N)`, N/8 bytes). Floating types: 4 for Float, 8 for Double.
         Pointer: 2 (the 6502's address width). Constants dispatch
         on the const variant (each variant carries width and
         signedness; this helper only reads width); Vars look up
@@ -1537,6 +1556,10 @@ class Translator:
                 return 4
             case tac_ast.Constant(const=tac_ast.ConstDouble()):
                 return 8
+            case tac_ast.Constant(const=c) if isinstance(
+                c, bit_precise.ODD_CONSTS,
+            ):
+                return bit_precise.ODD_CONST_LAYOUT[type(c)][0]
             case tac_ast.Var(name=name):
                 sym = (
                     self._symbols.get(name)
@@ -1569,6 +1592,8 @@ class Translator:
                     return 4
                 if isinstance(sym_type, c99_ast.Double):
                     return 8
+                if isinstance(sym_type, c99_ast.BitInt):
+                    return bit_precise.storage_bytes(sym_type.width)
                 if isinstance(
                     sym_type, (c99_ast.Structure, c99_ast.Union),
                 ):
@@ -3570,6 +3595,15 @@ class Translator:
                 output_offset=out_off, output_size=size,
                 dst_op=dst_op,
             )
+        if size not in (1, 2, 4, 8) and isinstance(op, (
+            tac_ast.Multiply, tac_ast.Divide, tac_ast.Modulo,
+            tac_ast.LeftShift, tac_ast.RightShift,
+        )):
+            widened = self._odd_width_helper_op(
+                op, src1, src2, src1_op, src2_op, dst_op, size,
+            )
+            if widened is not None:
+                return widened
         match op:
             case tac_ast.BcdAdd() | tac_ast.BcdSubtract():
                 # One instruction for the whole decimal-mode chain, so
@@ -3863,6 +3897,88 @@ class Translator:
                     src2_op, src1_op, dst_op, size, asm_ast.PL(), dst_size,
                 )
         raise TypeError(f"unexpected binary operator: {op!r}")
+
+    def _odd_width_helper_op(
+        self,
+        op: tac_ast.Type_binary_operator,
+        src1: tac_ast.Type_val,
+        src2: tac_ast.Type_val,
+        src1_op: asm_ast.Type_operand,
+        src2_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+    ) -> list[asm_ast.Type_instruction] | None:
+        """A multiply, divide, remainder, or shift of a 3-, 5-, 6-, or
+        7-byte integer (a bit-precise type of that size), for which the
+        runtime has no helper. The operands go to the helper of the next
+        width `w` (4 or 8 bytes), each extended to `w` bytes in HARGS,
+        and the low `size` bytes of the result come back. A multiply's
+        and a left shift's low bytes don't depend on the bytes above
+        them, so those operands are zero-filled. A divide, a remainder,
+        and a right shift extend by the operand's signedness, which
+        gives the value itself at `w` bytes, so the result is the same
+        as at `size` bytes and fits in them. A shift by a constant that
+        `inline_shift_ok` accepts at `size` bytes is left to the inline
+        lowering (returns None)."""
+        w = bit_precise.helper_bytes(size)
+        bits = {4: "32", 8: "64"}[w]
+        unsigned = self._is_unsigned_val(src1)
+        if isinstance(op, (tac_ast.LeftShift, tac_ast.RightShift)):
+            cnt = _shift_count_const_value(src2)
+            if cnt is not None and inline_shift_ok(
+                size, cnt,
+                signed_right=isinstance(op, tac_ast.RightShift)
+                and not unsigned,
+            ):
+                return None
+        match op:
+            case tac_ast.Multiply():
+                helper, out_off, fill = f"mul{bits}", 2 * w, "zero"
+            case tac_ast.Divide() | tac_ast.Modulo():
+                helper = f"{'u' if unsigned else 's'}divmod{bits}"
+                out_off = (2 if isinstance(op, tac_ast.Divide) else 3) * w
+                fill = "zero" if unsigned else "sign"
+            case tac_ast.LeftShift():
+                helper, out_off, fill = f"asl{bits}", w + 1, "zero"
+            case tac_ast.RightShift():
+                helper = f"{'lsr' if unsigned else 'asr'}{bits}"
+                out_off = w + 1
+                fill = "zero" if unsigned else "sign"
+        out: list[asm_ast.Type_instruction] = []
+        operands = [src1_op]
+        if not isinstance(op, (tac_ast.LeftShift, tac_ast.RightShift)):
+            operands.append(src2_op)
+        for j, op_ in enumerate(operands):
+            base = j * w
+            for k in range(size):
+                out.append(asm_ast.Mov(src=_byte_at(op_, k), dst=_REG_A))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_hargs(base + k)))
+            if fill == "sign":
+                # A is the top byte. Its bit 7 goes to C, and
+                # `0 + $FF + C` then `EOR #$FF` is $FF for a set bit and
+                # $00 for a clear one.
+                out.extend([
+                    asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+                    asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                    asm_ast.Add(src=asm_ast.Imm(value=0xFF), dst=_REG_A),
+                    asm_ast.Xor(
+                        src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                        dst=_REG_A,
+                    ),
+                ])
+            else:
+                out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+            for k in range(size, w):
+                out.append(asm_ast.Mov(src=_REG_A, dst=_hargs(base + k)))
+        if isinstance(op, (tac_ast.LeftShift, tac_ast.RightShift)):
+            # The count is one byte, right after the value.
+            out.append(asm_ast.Mov(src=_byte_at(src2_op, 0), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_hargs(w)))
+        out.append(asm_ast.Call(name=helper))
+        for k in range(size):
+            out.append(asm_ast.Mov(src=_hargs(out_off + k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return out
 
     def _translate_add_sub(
         self,

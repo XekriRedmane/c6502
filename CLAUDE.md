@@ -775,8 +775,9 @@ notes that aren't visible from the grammar alone:
   member, which §6.7.11p11 zeroes. Adjacent zero bytes are one run,
   which `_emit_zero_bytes` clears with constant stores of 8, 4, 2,
   or 1 bytes when it's shorter than `_CLEAR_LOOP_BYTES` (9), and
-  otherwise with a loop that counts a byte index down (`DEY; LDA
-  #0; STA v,Y; TYA; BNE` under `-O`). The comment at
+  otherwise with a loop that counts a byte index down (`LDA #0`
+  before it and `DEY; STA v,Y; BNE` in it under `-O`, after
+  `passes/loop_constant_a.py`). The comment at
   `_CLEAR_LOOP_BYTES` has the measurements.
 - A compound literal `(T){...}` (C99 §6.5.2.5) is a
   `CompoundLiteral(name, target_type, init)` node, parsed as a

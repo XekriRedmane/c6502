@@ -500,6 +500,17 @@ this directory:
   in-loop INC → CLC+ADC. Drops the local, A carries the
   incremented value across the loop back-edge. The A-pinning
   analog of `loop_counter_to_x` (which does the same for X).
+- `loop_constant_a.py` — `apply_loop_constant_a`. In a loop whose
+  every write of A is `LDA #k` of one constant, or a `TXA` / `TYA`
+  whose value nothing reads, removes the loads and the transfers and
+  puts one `LDA #k` in front of the header. A, N, and Z must be dead
+  at the header and N/Z after each load, each transfer's flags must
+  be dead or already set from its register once the loads are gone
+  (`dead_a_arith._flags_reflect_src_reg`), and every other
+  instruction must leave A alone as `asm_emit` writes it
+  (`_leaves_a`). The clearing loop of `= {}` becomes `LDA #0; .l:
+  DEY; STA v,Y; BNE .l`. Runs in the peephole fixed point, right
+  before `dead_a_arith`.
 - `loop_labeling.py` — pass 5 (see below).
 - `mem_const_prop.py` — `apply_mem_const_prop` peephole.
 - `prologue_synthesis.py` — late prologue / epilogue synthesis.
@@ -1406,6 +1417,9 @@ document says whether it fires there.
   nothing reads the slot after it and the flags it sets are dead, as
   in the unused high byte of `(uint8_t)(w << 1)`. `mem_dead_after`
   exposes the walk for other passes.
+- `apply_loop_constant_a` — a loop's one constant loaded into A
+  in front of the loop, with the loads and the unread `TXA` / `TYA`
+  in it removed. See the module roster entry above.
 - `apply_dead_a_arith_elimination` — drops instructions whose only
   observable effect is a write to `Reg(A)` and the N/Z/C/V flags, when
   both A and the flags are dead afterward. That includes `ASL` / `LSR`

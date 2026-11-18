@@ -257,6 +257,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Load after read-modify-write](redundant_load_after_rmw.md). Deletes an unused load right after INC, DEC, or a shift of the same byte.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
 - [Link-time address arithmetic](label_offset_fold.md). Turns an add of a label's address and a constant into one immediate, `#<(name+k)`.
+- [Loop constant in A](loop_constant_a.md). Loads a loop's one constant into A in front of the loop, and drops the `TXA` or `TYA` that tested an index register.
 - [Loop counter in X](loop_counter_to_x.md). Moves an index loop counter into X, moving other index loads to Y.
 - [Loop test at the bottom](rotate_loop_test.md). Moves a loop's test to its bottom, and drops the first test when it's known to pass.
 - [Loop unrolling](unroll.md). Replaces a counted for loop marked `[[c6502::unroll]]` with one body copy per iteration.
@@ -465,38 +466,39 @@ reaching the cap raises an error.
 16. [Join store](join_store.md)
 17. [Rematerialization of staged values](asm_remat.md)
 18. [Asm dead-store elimination](asm_dead_store.md)
-19. [Dead A arithmetic](dead_a_arith.md)
-20. [Dead label drop](dead_label_drop.md)
-21. [Unreachable code drop](unreachable_drop.md)
-22. [Branch inversion](branch_invert.md)
-23. [Branch to next label](branch_to_next_drop.md)
-24. [Branch through jump](branch_through_jump.md)
-25. [Branch threading on a known flag](branch_thread.md)
-26. [Branch threading on known values](branch_value_thread.md)
-27. [DEX and DEY for a register counter](dec_register_peephole.md)
-28. [TXA past a branch](transfer_past_branch.md)
-29. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
-30. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
-31. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
-32. [Memory constant propagation](mem_const_prop.md)
-33. [Constant AND and ORA fold](const_arith_fold.md)
-34. [Link-time address arithmetic](label_offset_fold.md)
-35. [Carry set again by a shift](carry_recompute.md)
-36. [Carry-flag return peepholes](carry_return.md), which are three
+19. [Loop constant in A](loop_constant_a.md)
+20. [Dead A arithmetic](dead_a_arith.md)
+21. [Dead label drop](dead_label_drop.md)
+22. [Unreachable code drop](unreachable_drop.md)
+23. [Branch inversion](branch_invert.md)
+24. [Branch to next label](branch_to_next_drop.md)
+25. [Branch through jump](branch_through_jump.md)
+26. [Branch threading on a known flag](branch_thread.md)
+27. [Branch threading on known values](branch_value_thread.md)
+28. [DEX and DEY for a register counter](dec_register_peephole.md)
+29. [TXA past a branch](transfer_past_branch.md)
+30. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
+31. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
+32. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
+33. [Memory constant propagation](mem_const_prop.md)
+34. [Constant AND and ORA fold](const_arith_fold.md)
+35. [Link-time address arithmetic](label_offset_fold.md)
+36. [Carry set again by a shift](carry_recompute.md)
+37. [Carry-flag return peepholes](carry_return.md), which are three
     passes run back to back.
-37. [Round-trip load drop](round_trip_load.md)
-38. [Sign-bit test without AND](and_sign_bit_branch.md)
-39. [Self-store drop](self_store_drop.md)
-40. [Redundant compare](redundant_compare.md)
-41. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-42. [Commuted ADC, AND, and ORA](adc_commute.md)
-43. [CMP and SBC fusion](cmp_sbc_fusion.md)
-44. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-45. [Tail call](tail_call.md)
-46. [Tail merge](tail_merge.md)
-47. [Cross jumping](cross_jump.md)
-48. [Store X or Y directly](via_a_store_fold.md)
-49. [Transfer plus or minus one](transfer_pm1_store.md)
+38. [Round-trip load drop](round_trip_load.md)
+39. [Sign-bit test without AND](and_sign_bit_branch.md)
+40. [Self-store drop](self_store_drop.md)
+41. [Redundant compare](redundant_compare.md)
+42. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+43. [Commuted ADC, AND, and ORA](adc_commute.md)
+44. [CMP and SBC fusion](cmp_sbc_fusion.md)
+45. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+46. [Tail call](tail_call.md)
+47. [Tail merge](tail_merge.md)
+48. [Cross jumping](cross_jump.md)
+49. [Store X or Y directly](via_a_store_fold.md)
+50. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `-O`
 

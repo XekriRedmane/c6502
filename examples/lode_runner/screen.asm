@@ -346,10 +346,10 @@ clear_page:
    LDA   __zpabi_clear_page__page_1
    STA   __local_clear_page__0
    LDX   #$20
+   LDA   #$80
 .clear_page@rot@0:
    LDY   #$00
 .loop@1_start:
-   LDA   #$80
    STA   (__local_clear_page__page),Y
    INY
    BNE   .loop@1_start

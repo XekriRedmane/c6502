@@ -1636,14 +1636,16 @@ def _is_zero_constant(exp: c99_ast.Type_exp) -> bool:
 # with each form forced.
 #
 #   n                       2    4    6    7    8   10   16   32   loop
-#   -O, in the pool         6   12   16   18   20   24   36   68     11
+#   -O, in the pool         6   12   16   18   20   24   36   68     10
 #   -O, soft-stack frame    9   15   21   24   27   33   51   99     23
 #   unoptimized            35   41   80  117   53   92  110  226     81
 #
 # The loop is smaller from 4 bytes up in the pool and from 7 bytes up
-# in a frame. It's also slower. In the pool, it's `LDY #n; DEY; LDA
-# #0; STA v,Y; TYA; BNE`, 14 cycles a byte, where the stores are `STA
-# v+k` with A or Y zero, 3 cycles a byte. In a frame, the loop takes
+# in a frame. It's also slower. In the pool, it's `LDY #n; LDA #0;
+# DEY; STA v,Y; BNE`, 10 cycles a byte, where the stores are `STA v+k`
+# with A or Y zero, 3 cycles a byte. The loop was 11 bytes and 14
+# cycles a byte when this table was measured, with `LDA #0` and `TYA`
+# in it, before passes/loop_constant_a.py. In a frame, the loop takes
 # the object's address in each pass. From 8 bytes up the loop is the
 # smaller form in both -O settings, but 8 bytes are one 8-byte store,
 # which the unoptimized pipeline lowers in 53 bytes against the loop's
@@ -1651,8 +1653,8 @@ def _is_zero_constant(exp: c99_ast.Type_exp) -> bool:
 # frame than the store's, and that took `test_non_constant` in
 # tests/chapter_15/valid/initialization/automatic.c past the 255-byte
 # reach of `(FP),Y`. So the loop starts at 9 bytes. Below that, the
-# stores under -O cost at most 9 bytes more than the loop and run over
-# four times as fast.
+# stores under -O cost at most 10 bytes more than the loop and run over
+# three times as fast.
 _CLEAR_LOOP_BYTES = 9
 
 # The constant types `_emit_zero_bytes` stores zero with, widest
@@ -3758,7 +3760,10 @@ class Translator:
         bytes, widest first.
 
         Under -O, with `v` in a function's pool, the loop is `LDY #n;
-        DEY; LDA #0; STA v,Y; TYA; BNE`. The loop takes the object's
+        LDA #0; DEY; STA v,Y; BNE`, where
+        passes/loop_constant_a.py has moved the `LDA #0` out of the
+        loop and dropped the `TYA` that tested the index. The loop
+        takes the object's
         address again in each pass, as `((unsigned char *)&v)[i] = 0`
         in C would. `memory_value_propagation` then sees the
         address's halves in the pointer's bytes right before the
@@ -3766,9 +3771,8 @@ class Translator:
         the address taken once before the loop, the store through
         the pointer would kill that fact on the way around the loop,
         and the store would stay `(p),Y`. Storing before the
-        decrement would let `BNE` read the flags `DEY` sets and drop
-        the `TYA`, but the store would then be at `v-1`, an offset
-        that `name+65535` stands for in the asm IR.
+        decrement would put the store at `v-1`, an offset that
+        `name+65535` stands for in the asm IR.
         `_CLEAR_LOOP_BYTES` gives the measurements behind the
         threshold."""
         while n >= _CLEAR_LOOP_BYTES:

@@ -115,11 +115,11 @@ lines of `main.asm` it translates:
 | `timers.c` | 440 | 505 | 9 | 514 |
 | `screen.c` | 503 | 514 | 36 | 550 |
 | `hiscore.c` | 621 | 610 | 99 | 709 |
-| `editor.c` | 1898 | 1318 | 740 | 2058 |
+| `editor.c` | 1898 | 1317 | 740 | 2057 |
 | `sprites.c` | 629 | 602 | 24 | 626 |
 | `sound.c` | 192 | 210 | 16 | 226 |
 | `wipe.c` | 1201 | 920 | 371 | 1291 |
-| **Total** | **11801** | **10710** | **1546** | **12256** |
+| **Total** | **11801** | **10709** | **1546** | **12255** |
 
 The original's count is every byte its lines assemble to, code and
 data alike, since the original keeps its tables and messages among its

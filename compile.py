@@ -113,6 +113,7 @@ from passes.rotate_loop_test import apply_rotate_loop_test
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
+from passes.loop_constant_a import apply_loop_constant_a
 from passes.memory_value_propagation import (
     apply_memory_value_propagation,
 )
@@ -287,6 +288,7 @@ def _peephole_fixedpoint(
         new_prog = apply_asm_dead_store(
             new_prog, zp_slot_symbols=zp_slot_symbols,
         )
+        new_prog = apply_loop_constant_a(new_prog)
         new_prog = apply_dead_a_arith_elimination(new_prog)
         new_prog = apply_dead_label_drop(new_prog)
         new_prog = apply_unreachable_drop(new_prog)

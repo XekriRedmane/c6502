@@ -346,11 +346,13 @@ class TestCode(unittest.TestCase):
         stores = [i for i in fn.instructions if isinstance(i, tac_ast.Store)]
         self.assertEqual(len(stores), 1)
         # Under -O the object is in the function's pool and the loop
-        # indexes it with Y: 40 bytes, counted down.
+        # indexes it with Y: 40 bytes, counted down. The 0 is loaded
+        # before the loop, and the BNE reads the flags DEY sets
+        # (passes/loop_constant_a.py).
         asm = _compile(src, "-O")
         self.assertIn(
-            "   LDY   #$28\n.clear@0:\n   DEY\n   LDA   #$00\n"
-            "   STA   __local_f__v,Y\n   TYA\n   BNE   .clear@0\n",
+            "   LDY   #$28\n   LDA   #$00\n.clear@0:\n   DEY\n"
+            "   STA   __local_f__v,Y\n   BNE   .clear@0\n",
             asm,
         )
 

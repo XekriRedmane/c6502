@@ -770,8 +770,8 @@ editor_clear_level:
 .if_end@11:
    JSR   check_for_valid_data_disk
    LDX   #$00
+   TXA
 .loop@9_start:
-   LDA   #$00
    STA   DISK_BUFFER,X
    INX
    BNE   .loop@9_start

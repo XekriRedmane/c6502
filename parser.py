@@ -95,13 +95,13 @@ _STORAGE_CLASSES = {
 # `.type` attribute so the same predicate logic works on all of them).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "BOOL", "VOID",
-                           "C6502_NULLPTR_T", "BITINT",
+                           "BITINT",
                            "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
                            "STRUCT", "UNION", "TYPEDEF_NAME", "ENUM",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "BOOL",
-                                "VOID", "C6502_NULLPTR_T", "STRUCT", "UNION", "TYPEDEF_NAME",
+                                "VOID", "STRUCT", "UNION", "TYPEDEF_NAME",
                                 "ENUM", "BITINT")
 # `const` and `volatile` are honored at parse time and wrapped into
 # `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
@@ -136,6 +136,14 @@ class _TypedefSpecifier:
     type: str  # always "TYPEDEF_NAME" — same protocol as Token.type
     name: str
     data_type: "c99_ast.Type_data_type"
+
+
+# A typeof specifier (C23 §6.7.3.6), produced by the `typeof_specifier`
+# transformer. Like a typedef name, it's a whole type on its own, the
+# one the parser worked out from its operand.
+@dataclass
+class _TypeofSpecifier(_TypedefSpecifier):
+    pass
 
 
 # An enum type specifier, produced by the `enum_specifier`
@@ -185,16 +193,23 @@ class _Binding:
     `constexpr` (C23 §6.7.2) whose initializer the parser could fold,
     with the value in the form a static initializer's value has, so
     the constant expressions the parser folds can use the name. The
-    object is still an object, which keeps its uses in the AST."""
+    object is still an object, which keeps its uses in the AST.
 
-    __slots__ = ("data_type", "tag_scopes", "enum_value", "constant")
+    `object_type` is the type of an object, a function, or a
+    parameter (adjusted to a pointer for an array or a function), for
+    a `typeof` of an expression that names it. `tag_scopes` maps the
+    struct/union tags in it to their scopes too."""
+
+    __slots__ = ("data_type", "tag_scopes", "enum_value", "constant",
+                 "object_type")
 
     def __init__(self, data_type=None, tag_scopes=None, enum_value=None,
-                 constant=None):
+                 constant=None, object_type=None):
         self.data_type = data_type
         self.tag_scopes = tag_scopes or {}
         self.enum_value = enum_value
         self.constant = constant
+        self.object_type = object_type
 
     @property
     def is_typedef(self) -> bool:
@@ -436,11 +451,6 @@ def _resolve_data_type(type_specs):
                                                      combine with any
                                                      other type
                                                      specifier
-      * `__c6502_nullptr_t`                        → NullptrT, C23's
-                                                     `nullptr_t`; cannot
-                                                     combine with any
-                                                     other type
-                                                     specifier
       * `char`                                     → Char (signed,
                                                      -128..127 in
                                                      c6502)
@@ -488,7 +498,8 @@ def _resolve_data_type(type_specs):
     if typedef_specs:
         spec = typedef_specs[0]
         if len(type_specs) != 1:
-            what = (spec.name if isinstance(spec, _EnumSpecifier)
+            what = (spec.name
+                    if isinstance(spec, (_EnumSpecifier, _TypeofSpecifier))
                     else f"typedef name {spec.name!r}")
             raise ParserError(
                 f"{what} cannot combine with another type specifier"
@@ -526,13 +537,6 @@ def _resolve_data_type(type_specs):
     void_count = sum(1 for t in type_specs if t.type == "VOID")
     bool_count = sum(1 for t in type_specs if t.type == "BOOL")
     short_count = sum(1 for t in type_specs if t.type == "SHORT")
-    if any(t.type == "C6502_NULLPTR_T" for t in type_specs):
-        if len(type_specs) != 1:
-            raise ParserError(
-                "'__c6502_nullptr_t' (nullptr_t) cannot combine with "
-                "another type specifier"
-            )
-        return c99_ast.NullptrT()
     if bool_count > 0:
         if len(type_specs) != 1:
             # Named as the program spelled it, `bool` or `_Bool`.
@@ -2280,16 +2284,114 @@ def _has_literal(node) -> bool:
 
 
 def _names_in(node, out: set) -> set:
-    """Adds the name of each `Var` in the AST `node` to `out`."""
+    """Adds the name of each `Var` in the AST `node`, and of each
+    function a `FunctionCall` calls by name, to `out`."""
     if isinstance(node, c99_ast.Var):
         out.add(node.name)
     elif isinstance(node, list):
         for n in node:
             _names_in(n, out)
     elif dataclasses.is_dataclass(node):
+        if isinstance(node, c99_ast.FunctionCall):
+            out.add(node.name)
         for f in dataclasses.fields(node):
             _names_in(getattr(node, f.name), out)
     return out
+
+
+def _object_binding(data_type, constant=None) -> "_Binding":
+    """The binding of an object, function, or parameter of type
+    `data_type` (None when the parser couldn't work it out), with its
+    value when it's a named constant."""
+    if data_type is None and constant is None:
+        return _ORDINARY
+    tags = _type_tags(data_type, []) if data_type is not None else []
+    return _Binding(
+        constant=constant, object_type=data_type,
+        tag_scopes={tag: _CTX.tag_scope(tag) for tag, _u in tags},
+    )
+
+
+def _typeof(operand, unqual: bool, keyword: str):
+    """The type a typeof specifier names (C23 §6.7.3.6): `operand`
+    itself when it's a type, and otherwise the type of the expression
+    `operand`, which the type checker works out on a copy that has
+    the types of the names in scope. With `typeof_unqual` the type
+    loses its qualifiers, and an array's elements lose theirs. The
+    operand isn't evaluated, since c6502 has no variably modified
+    types."""
+    if isinstance(operand, c99_ast.Type_data_type):
+        t = copy.deepcopy(operand)
+    else:
+        t = _expression_type(operand, keyword)
+    return _unqualified_type(t) if unqual else t
+
+
+def _expression_type(exp, keyword: str):
+    """The type of the expression `exp` for a `keyword` (`typeof` or
+    `typeof_unqual`) specifier."""
+    from passes.constant_expression import (
+        ConstantExpressionError, named_constants,
+    )
+    from passes.type_checking import (
+        FunAttr, LocalAttr, Symbol, TypeCheckError,
+    )
+    if isinstance(exp, c99_ast.Var):
+        binding = _CTX.lookup(exp.name)
+        if binding is not None and isinstance(
+            binding.object_type, c99_ast.FunType,
+        ):
+            # A function designator has its function type here, since
+            # it doesn't decay as an operand of typeof.
+            _check_typeof_tags(binding, keyword, exp.name)
+            return copy.deepcopy(binding.object_type)
+    exp = _named_literals(copy.deepcopy(exp))
+    checker = _checker_with_named_constants(exp, layouts=True)
+    for name in _names_in(exp, set()):
+        binding = _CTX.lookup(name)
+        if binding is None or binding.object_type is None:
+            continue
+        _check_typeof_tags(binding, keyword, name)
+        if name in checker._constexpr:
+            continue
+        t = copy.deepcopy(binding.object_type)
+        attrs = (FunAttr(defined=False, is_global=True)
+                 if isinstance(t, c99_ast.FunType) else LocalAttr())
+        checker.symbols[name] = Symbol(type=t, attrs=attrs)
+    try:
+        with named_constants(checker._named_constant):
+            return copy.deepcopy(checker._check_exp(exp))
+    except (TypeCheckError, ConstantExpressionError) as e:
+        raise ParserError(f"the operand of `{keyword}`: {e}") from e
+
+
+def _check_typeof_tags(binding, keyword: str, name: str) -> None:
+    """Rejects a `typeof` of `name` when a struct/union tag in its type
+    is hidden here by an inner declaration of the tag, as
+    `typedef_name` does for a typedef."""
+    for tag, scope in binding.tag_scopes.items():
+        if _CTX.tag_scope(tag) is not scope:
+            raise ParserError(
+                f"`{keyword}` of {name!r} would name the struct or union "
+                f"{tag!r} declared in an outer scope, which a declaration "
+                f"of {tag!r} in an inner scope hides here; c6502 can't "
+                f"express that type here, so give the inner struct or "
+                f"union another tag"
+            )
+
+
+def _unqualified_type(t):
+    """`t` without its qualifiers, at the top and on an array's
+    elements at any depth, which C23 counts as the array's own
+    (§6.7.3.6p5 and its EXAMPLE 2). What a pointer points to keeps
+    its qualifiers."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    if isinstance(t, c99_ast.Array):
+        return c99_ast.Array(
+            element_type=_unqualified_type(t.element_type), size=t.size,
+        )
+    return t
 
 
 def _fold_named_constant(data_type, init):
@@ -2569,6 +2671,16 @@ class _ASTBuilder(Transformer):
             type="TYPEDEF_NAME",
             name=name,
             data_type=copy.deepcopy(binding.data_type),
+        )
+
+    def typeof_specifier(self, items):
+        # `(TYPEOF | TYPEOF_UNQUAL) LPAREN (exp | type_name) RPAREN`.
+        keyword, operand = items[0], items[2]
+        unqual = keyword.type == "TYPEOF_UNQUAL"
+        return _TypeofSpecifier(
+            type="TYPEDEF_NAME",
+            name=f"`{keyword}`",
+            data_type=_typeof(operand, unqual, str(keyword)),
         )
 
     @v_args(inline=True)
@@ -3239,26 +3351,41 @@ class _ASTBuilder(Transformer):
         # scope; see `_typedef_declaration`.
         decl_specs = _CTX.decl_specs[-1]
         if not decl_specs.is_typedef:
-            binding = _ORDINARY
-            if _has_constexpr(decl_specs.specs) and init is not None:
-                # A named constant (C23 §6.6p7), which the constant
-                # expressions the parser folds may use.
+            # The object's or function's type, for a `typeof` that
+            # names it, and its value when it's a named constant (C23
+            # §6.6p7), which the constant expressions the parser folds
+            # may use.
+            try:
+                base, _storage = _split_specifiers(decl_specs.specs)
+                _name, composed, _p, _r = _apply_declarator(
+                    decl_tree, base,
+                )
+            except (ParserError, NotImplementedError):
+                composed = None
+            constant = None
+            if (isinstance(composed, c99_ast.Array) and composed.size == 0
+                    and init is not None):
+                # `int a[] = {1, 2};` takes its size from the
+                # initializer (C99 §6.7.8.22), so `typeof(a)` has it.
+                from passes.type_checking import (
+                    TypeCheckError, _size_from_initializer,
+                )
                 try:
-                    base, _storage = _split_specifiers(decl_specs.specs)
-                    _name, composed, _p, _r = _apply_declarator(
-                        decl_tree, base,
+                    composed = _size_from_initializer(
+                        composed, init, "the array",
                     )
-                except (ParserError, NotImplementedError):
-                    composed = None
-                if composed is not None and not isinstance(
+                except TypeCheckError:
+                    pass
+            if composed is not None and _has_constexpr(decl_specs.specs):
+                composed = _constexpr_type(composed)
+                if init is not None and not isinstance(
                     composed, c99_ast.FunType,
                 ):
-                    constant = _fold_named_constant(
-                        _constexpr_type(composed), init,
-                    )
-                    if constant is not None:
-                        binding = _Binding(constant=constant)
-            _CTX.declare(_declarator_name(decl_tree), binding)
+                    constant = _fold_named_constant(composed, init)
+            _CTX.declare(
+                _declarator_name(decl_tree),
+                _object_binding(composed, constant),
+            )
             return (decl_tree, init, postfix, [])
         base, _storage = _split_specifiers(decl_specs.specs)
         name, composed, _params, _regs = _apply_declarator(decl_tree, base)
@@ -3535,7 +3662,7 @@ class _ASTBuilder(Transformer):
                 f"parameters in its declarator; its type can't come "
                 f"from a typedef (C99 §6.9.1.2)"
             )
-        _CTX.declare(name, _ORDINARY, _CTX.scopes[0])
+        _CTX.declare(name, _object_binding(composed), _CTX.scopes[0])
         if address is not None:
             raise ParserError(
                 f"function {name!r} has `[[c6502::address(...)]]`, "
@@ -3576,12 +3703,27 @@ class _ASTBuilder(Transformer):
         scope = _CTX.body_scope
         if scope is not None:
             _CTX.body_scope = None
-            _name, _type, params, _regs = _apply_declarator(
+            _name, ftype, params, _regs = _apply_declarator(
                 tree, c99_ast.Int(),
             )
-            for param in params or []:
+            # The function's name is in scope from the end of its
+            # declarator (C99 §6.2.1p7), so its body can name it, as in
+            # `typeof(f)`. The function definition declares it again
+            # when its body ends.
+            try:
+                base, _storage = _split_specifiers(_CTX.decl_specs[-1].specs)
+                name, own, _p, _r = _apply_declarator(tree, base)
+                if isinstance(own, c99_ast.FunType):
+                    _CTX.declare(name, _object_binding(own), _CTX.scopes[0])
+            except (ParserError, NotImplementedError, IndexError):
+                pass
+            param_types = (ftype.params if isinstance(ftype, c99_ast.FunType)
+                           else [])
+            for i, param in enumerate(params or []):
                 if param is not None:
-                    _CTX.declare(param, _ORDINARY, scope)
+                    _CTX.declare(param, _object_binding(
+                        param_types[i] if i < len(param_types) else None,
+                    ), scope)
         return tree
 
     # Alternatives of `statement` — each named in c99.lark.
@@ -4211,15 +4353,16 @@ _LARK = Lark.open(
 # names, by their terminals in c99.lark.
 _C23_KEYWORD_TERMINALS = (
     "BOOL", "TRUE", "FALSE", "NULLPTR", "CONSTEXPR", "THREAD_LOCAL",
+    "TYPEOF", "TYPEOF_UNQUAL",
 )
 
 
 def _c23_keyword_as_name(e: UnexpectedInput) -> str | None:
     """The message for the syntax error `e` when it's `bool`, `true`,
-    `false`, `nullptr`, `constexpr`, or `thread_local` where the
-    parser could take a name, as in `int true;`, and None for any
-    other error. C99 let a program use those six as names, and C23
-    makes them keywords.
+    `false`, `nullptr`, `constexpr`, `thread_local`, `typeof`, or
+    `typeof_unqual` where the parser could take a name, as in `int
+    true;`, and None for any other error. C99 let a program use those
+    as names, and C23 makes them keywords.
     `int bool = 1;` and `int constexpr = 1;` fail on the `=` after the
     keyword, since `int bool` reads as two type specifiers and `int
     constexpr` as a type and a storage-class specifier, and so does

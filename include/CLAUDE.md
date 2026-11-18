@@ -27,11 +27,10 @@ automatically; no `-I` flag needed.
 - `stddef.h` (C23 §7.21) — `ptrdiff_t` is `int` and `size_t` is
   `unsigned long`, the types the subtraction of two pointers and
   `sizeof` give. `max_align_t` is `char`, since nothing in c6502 has
-  an alignment above 1, and `wchar_t` is `int`. `nullptr_t` is a
-  typedef of `__c6502_nullptr_t`, c6502's keyword for the type of
-  `nullptr`, because C23's `typeof_unqual(nullptr)` needs a `typeof`
-  that c6502 doesn't have. `NULL` is `((void *)0)`, which compares
-  equal to `0` and to `nullptr` and can't be assigned to an integer.
+  an alignment above 1, and `wchar_t` is `int`. `nullptr_t` is
+  `typeof_unqual(nullptr)`, as C23 declares it. `NULL` is `((void
+  *)0)`, which compares equal to `0` and to `nullptr` and can't be
+  assigned to an integer.
   `offsetof(type, member)` is `((size_t)&((type *)0)->member)`, which
   the type checker folds to a constant (`_null_based_offset`). It
   works in static initializers and case labels, but not in array

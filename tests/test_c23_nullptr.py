@@ -4,8 +4,8 @@
 Coverage:
 
   * `nullptr` is a keyword and a constant of type `nullptr_t`, which
-    the keyword `__c6502_nullptr_t` names, and a name spelled
-    `nullptr` is an error.
+    `typeof_unqual(nullptr)` names, and a name spelled `nullptr` is an
+    error.
   * Each conversion the standard allows and each one it rejects, by
     assignment, initialization, argument, return, and cast, with the
     messages.
@@ -44,7 +44,7 @@ from tests.test_sim_chapters import _run_program as _run_tac
 
 # What <stddef.h> declares `nullptr_t` as, for the tests that don't
 # include it.
-_NULLPTR_T = "typedef __c6502_nullptr_t nullptr_t;\n"
+_NULLPTR_T = "typedef typeof_unqual(nullptr) nullptr_t;\n"
 
 
 def _check(src: str):
@@ -74,8 +74,10 @@ class TestKeywords(unittest.TestCase):
             c99_ast.Constant(const=c99_ast.ConstNullptr()),
         )
 
-    def test_type_keyword_names_nullptr_t(self) -> None:
-        prog = parse("__c6502_nullptr_t n; const __c6502_nullptr_t m;")
+    def test_typeof_names_nullptr_t(self) -> None:
+        prog = parse(
+            "typeof(nullptr) n; const typeof_unqual(nullptr) m;"
+        )
         self.assertEqual(
             [d.var_decl.data_type for d in prog.declaration],
             [c99_ast.NullptrT(),
@@ -88,17 +90,13 @@ class TestKeywords(unittest.TestCase):
             .statement.exp
         self.assertEqual(exp.data_type, c99_ast.NullptrT())
 
-    def test_type_keyword_takes_no_other_specifier(self) -> None:
-        for src in ("unsigned __c6502_nullptr_t n;",
-                    "int __c6502_nullptr_t;"):
-            with self.subTest(src=src):
-                with self.assertRaises(ParserError) as cm:
-                    parse(src)
-                self.assertEqual(
-                    str(cm.exception),
-                    "'__c6502_nullptr_t' (nullptr_t) cannot combine "
-                    "with another type specifier",
-                )
+    def test_nullptr_t_takes_no_other_specifier(self) -> None:
+        with self.assertRaises(ParserError) as cm:
+            parse("typeof(nullptr) unsigned n;")
+        self.assertEqual(
+            str(cm.exception),
+            "`typeof` cannot combine with another type specifier",
+        )
 
     def test_names_are_errors(self) -> None:
         for src in (

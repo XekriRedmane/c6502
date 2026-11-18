@@ -610,9 +610,8 @@ for unsigned ordering, pointer-arithmetic scaling).
 `NullptrT()` is C23's `nullptr_t` (§7.21.2), a scalar type whose one
 value is `nullptr`, 2 bytes with a null `void *`'s representation.
 The keyword `nullptr` (C23 §6.4.1) is `ConstNullptr()`, a null
-pointer constant of that type, and the reserved keyword
-`__c6502_nullptr_t` names the type, which `<stddef.h>` declares as
-`typedef __c6502_nullptr_t nullptr_t;` since c6502 has no `typeof`.
+pointer constant of that type, and `<stddef.h>` declares the type as
+C23's does, `typedef typeof_unqual(nullptr) nullptr_t;`.
 The type checker applies C23's rules. A `nullptr_t` converts
 implicitly to any pointer type and to `bool` (§6.3.2.4, §6.5.17.2),
 and by cast to those and to `void`. Only a null pointer constant or
@@ -719,9 +718,9 @@ ULong; `long long [int]` / `signed long long [int]` → LongLong;
 `unsigned long long [int]` → ULongLong; `short [int]` / `signed short
 [int]` → Short; `unsigned short [int]` → UShort; `char` → Char;
 `signed char` → SChar; `unsigned char` → UChar; `bool` or `_Bool` → Bool; `float` → Float;
-`double` → Double; `__c6502_nullptr_t` → NullptrT), rejecting multiple type specifiers, multiple
+`double` → Double), rejecting multiple type specifiers, multiple
 storage classes, missing type, three or more `long`s, `short` twice or
-with `long`, `bool` or `__c6502_nullptr_t` combined with any other type specifier, `char`
+with `long`, `bool` combined with any other type specifier, `char`
 combined with `int` / `long` / `short`, `long double`, `signed unsigned`, and any
 FP/integer specifier mix (`int float`, `unsigned double`, etc.).
 
@@ -855,7 +854,7 @@ declaration hides at the point of use is rejected, since the
 substituted `struct foo` would name the inner one. `<stdint.h>`
 uses real typedefs. `bool`, `true`, and `false` are keywords (C23
 §6.4.1), so `<stdbool.h>` defines only `__bool_true_false_are_defined`.
-`<stddef.h>` declares `nullptr_t` as a typedef of `__c6502_nullptr_t`.
+`<stddef.h>` declares `nullptr_t` as `typeof_unqual(nullptr)`.
 
 ### Enumerations
 

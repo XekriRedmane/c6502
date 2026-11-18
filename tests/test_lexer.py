@@ -19,10 +19,10 @@ class TestKeywords(unittest.TestCase):
 
     def test_keyword_count(self):
         # The 37 standard C99 keywords, C23's `bool`, `true`, `false`,
-        # `nullptr`, `_BitInt`, `constexpr`, and `thread_local`, C11's
-        # `_Thread_local`, and c6502's `__c6502_nullptr_t`. Attributes
+        # `nullptr`, `_BitInt`, `constexpr`, `thread_local`, `typeof`,
+        # and `typeof_unqual`, and C11's `_Thread_local`. Attributes
         # are C23's `[[...]]`, which takes no keyword.
-        self.assertEqual(len(KEYWORDS), 46)
+        self.assertEqual(len(KEYWORDS), 47)
 
     def test_bit_precise_keyword_and_constants(self):
         self.assertEqual(
@@ -44,9 +44,9 @@ class TestKeywords(unittest.TestCase):
 
     def test_nullptr_keywords(self):
         self.assertEqual(
-            kinds_vals("nullptr __c6502_nullptr_t nullptr_t nullptrx"),
+            kinds_vals("nullptr typeof_unqual nullptr_t nullptrx"),
             [(TokenKind.KEYWORD, "nullptr"),
-             (TokenKind.KEYWORD, "__c6502_nullptr_t"),
+             (TokenKind.KEYWORD, "typeof_unqual"),
              (TokenKind.IDENTIFIER, "nullptr_t"),
              (TokenKind.IDENTIFIER, "nullptrx")],
         )

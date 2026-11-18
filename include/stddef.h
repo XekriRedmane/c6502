@@ -10,11 +10,9 @@
  *                                 literals, so nothing produces one)
  *   nullptr_t   = the type of `nullptr`
  *
- * C23 declares `nullptr_t` as `typedef typeof_unqual(nullptr)
- * nullptr_t;` (§7.21.2). c6502 has no `typeof`, so the header names
- * the type with c6502's keyword `__c6502_nullptr_t`, which is in the
- * namespace reserved for the implementation. A `nullptr_t` is 2
- * bytes, all zero, and converts to any pointer type and to `bool`.
+ * `nullptr_t` is `typeof_unqual(nullptr)`, as C23 declares it
+ * (§7.21.2). A `nullptr_t` is 2 bytes, all zero, and converts to any
+ * pointer type and to `bool`.
  *
  * `NULL` is `((void *)0)`, the null pointer constant that C99
  * programs were written for. It compares equal to both `0` and `nullptr` (§6.5.10p6), it
@@ -40,7 +38,7 @@ typedef int ptrdiff_t;
 typedef unsigned long size_t;
 typedef char max_align_t;
 typedef int wchar_t;
-typedef __c6502_nullptr_t nullptr_t;
+typedef typeof_unqual(nullptr) nullptr_t;
 
 #define NULL ((void *)0)
 #define unreachable() ((void)0)

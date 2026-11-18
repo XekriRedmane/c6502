@@ -158,10 +158,9 @@ CONSTEXPR: "constexpr"
 // parser rejects, since c6502 has no threads.
 THREAD_LOCAL: "thread_local"
 ALT_THREAD_LOCAL: "_Thread_local"
-// The type of `nullptr`, which <stddef.h> names `nullptr_t` (C23
-// §7.21.2). It's c6502's own keyword, since C23's header writes the
-// type as `typeof_unqual(nullptr)` and c6502 has no `typeof`.
-C6502_NULLPTR_T: "__c6502_nullptr_t"
+// C23's typeof operators (§6.7.3.6).
+TYPEOF: "typeof"
+TYPEOF_UNQUAL: "typeof_unqual"
 IMAGINARY: "_Imaginary"
 
 // The `[[` that opens a C23 attribute specifier (§6.7.13). C23 makes
@@ -272,11 +271,15 @@ decl_specs: _nontype_specs? _type_head _specs_after_type?
 _nontype_specs: specifier | _nontype_specs specifier
 _specs_after_type: _spec_after_type | _specs_after_type _spec_after_type
 _spec_after_type: specifier | type_specifier
-_type_head: type_specifier | typedef_name
+_type_head: type_specifier | typedef_name | typeof_specifier
 // A specifier that isn't a type: a storage class or a type qualifier.
 specifier: type_qualifier | STATIC | EXTERN | REGISTER | TYPEDEF | CONSTEXPR
          | THREAD_LOCAL | ALT_THREAD_LOCAL
 typedef_name: TYPEDEF_NAME
+// C23's typeof specifier (§6.7.3.6): the type of an expression, which
+// isn't evaluated, or a type name, and with `typeof_unqual` that type
+// without its qualifiers. Like a typedef name, it's a whole type.
+typeof_specifier: (TYPEOF | TYPEOF_UNQUAL) LPAREN (exp | type_name) RPAREN
 // C23 attributes (§6.7.13): `[[c6502::zp_abi]]`, `[[deprecated("why")]]`,
 // `[[c6502::zp_abi, c6502::address(0xFDED)]]`. An attribute is a name,
 // with a `prefix::` for one an implementation defines (c6502's are
@@ -315,8 +318,9 @@ _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGE
                     | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
                     | UNSIGNED | VOID | VOLATILE | WHILE
                     | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR
-                    | C6502_NULLPTR_T | CONSTEXPR | THREAD_LOCAL
-                    | ALT_THREAD_LOCAL | BITINT | COMPLEX | IMAGINARY
+                    | CONSTEXPR | THREAD_LOCAL
+                    | ALT_THREAD_LOCAL | TYPEOF | TYPEOF_UNQUAL
+                    | BITINT | COMPLEX | IMAGINARY
                     | ELLIPSIS | COLONCOLON | LSHIFT_ASSIGN | RSHIFT_ASSIGN
                     | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT
                     | LE | GE | EQ | NE | ANDAND | OROR
@@ -365,7 +369,6 @@ initializer: assignment_exp                                        -> init_exp
 function_decl: attribute_specifier_seq? decl_specs declarator block
 
 type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
-              | C6502_NULLPTR_T
               | BITINT LPAREN constant_exp RPAREN -> bitint_specifier
               | struct_or_union_specifier
               | enum_specifier
@@ -799,9 +802,9 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR | C6502_NULLPTR_T
+         | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR
          | CONSTEXPR | THREAD_LOCAL | ALT_THREAD_LOCAL
-         | BITINT | COMPLEX | IMAGINARY
+         | TYPEOF | TYPEOF_UNQUAL | BITINT | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | BITINT_INTEGER | UBITINT_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT

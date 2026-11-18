@@ -95,9 +95,16 @@ These parts work.
   is, and so is a member of a `constexpr` structure literal, such as
   `(constexpr struct pt){1, 2}.y`. `(register uint8_t){9}` has no
   address, and it follows the rule for a `register` local, which
-  c6502 keeps in the Y register, so it has to be one byte. c6502 has no threads, so it rejects
-  `thread_local`, and C11's `_Thread_local`, on a compound literal
-  and on a declaration.
+  c6502 keeps in the Y register, so it has to be one byte. c6502 has
+  no threads, so it rejects `thread_local`, and C11's
+  `_Thread_local`, on a compound literal and on a declaration.
+- C23's `typeof` and `typeof_unqual` work, on an expression or a
+  type name, anywhere a type can go. The expression isn't evaluated,
+  so `typeof(x++)` leaves `x` alone. `typeof` keeps the qualifiers,
+  and `typeof_unqual` drops them, from an array's elements too, so
+  `typeof_unqual` of a `const char *const` array is an array of
+  `const char *`. `<stddef.h>` declares `nullptr_t` as C23's does,
+  `typeof_unqual(nullptr)`.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.

@@ -133,7 +133,7 @@ class TestParse(unittest.TestCase):
 class TestTypeCheck(unittest.TestCase):
     def test_scalars_are_zero(self) -> None:
         src = (
-            "typedef __c6502_nullptr_t nullptr_t;"
+            "typedef typeof_unqual(nullptr) nullptr_t;"
             "int i = {}; unsigned long ul = {}; char c = {};"
             "signed char sc = {}; long long ll = {}; int *p = {};"
             "void (*fp)(void) = {}; float f = {}; double d = {};"
@@ -389,7 +389,7 @@ _PROGRAM = """\
 struct s { int a; char b[3]; long c; };
 union u { char c; long l; double d; };
 struct n { struct s s; union u u; int k[2][3]; float f; };
-typedef __c6502_nullptr_t nullptr_t;
+typedef typeof_unqual(nullptr) nullptr_t;
 
 static int failed;
 static int checks;

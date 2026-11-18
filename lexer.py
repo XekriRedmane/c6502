@@ -25,10 +25,9 @@ KEYWORDS = frozenset({
     # spelling of `bool` that C23 makes obsolescent.
     "bool", "true", "false",
     # C23 §6.4.1 also adds `nullptr` (§6.4.4.6). Its type, `nullptr_t`,
-    # isn't a keyword. <stddef.h> declares it as a typedef of
-    # `__c6502_nullptr_t`, a keyword in the reserved namespace, since
-    # c6502 has no `typeof` to write it as C23's header does.
-    "nullptr", "__c6502_nullptr_t",
+    # isn't a keyword. <stddef.h> declares it as C23's does, as
+    # `typeof_unqual(nullptr)`.
+    "nullptr",
     # C23's bit-precise integer types (§6.7.3.1).
     "_BitInt",
     # C23's storage-class specifier for named constants (§6.7.2).
@@ -36,6 +35,8 @@ KEYWORDS = frozenset({
     # C23's `thread_local` (§6.7.2) and C11's spelling of it, which
     # the parser rejects, since c6502 has no threads.
     "thread_local", "_Thread_local",
+    # C23's typeof operators (§6.7.3.6).
+    "typeof", "typeof_unqual",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with

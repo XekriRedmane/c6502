@@ -1,7 +1,7 @@
 # include/CLAUDE.md
 
 C standard headers, c6502 flavor: C99's, except for C23's
-`<stdbool.h>`. Provided so user programs can
+`<stdbool.h>` and `<stddef.h>`. Provided so user programs can
 `#include <stdint.h>` / `#include <limits.h>` and get the right
 fixed-width types and limit macros for c6502's integer model.
 
@@ -17,7 +17,24 @@ automatically; no `-I` flag needed.
 - `stdint.h` (C99 §7.18) — `int8_t` / `uint8_t` / `int16_t` /
   `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t`
   typedefs mapping to c6502's integer model, plus the C99 limit and
-  literal-suffix macros (`INT8_MAX`, `INT8_C`, etc.).
+  literal-suffix macros (`INT8_MAX`, `INT8_C`, etc.), and the limits
+  `PTRDIFF_MIN` / `PTRDIFF_MAX` (an `int`'s), `SIZE_MAX` (an
+  `unsigned long`'s), and `WCHAR_MIN` / `WCHAR_MAX` (an `int`'s) of
+  the types `<stddef.h>` declares.
+- `stddef.h` (C23 §7.21) — `ptrdiff_t` is `int` and `size_t` is
+  `unsigned long`, the types the subtraction of two pointers and
+  `sizeof` give. `max_align_t` is `char`, since nothing in c6502 has
+  an alignment above 1, and `wchar_t` is `int`. `nullptr_t` is a
+  typedef of `__c6502_nullptr_t`, c6502's keyword for the type of
+  `nullptr`, because C23's `typeof_unqual(nullptr)` needs a `typeof`
+  that c6502 doesn't have. `NULL` is `((void *)0)`, which compares
+  equal to `0` and to `nullptr` and can't be assigned to an integer.
+  `offsetof(type, member)` is `((size_t)&((type *)0)->member)`, which
+  the type checker folds to a constant (`_null_based_offset`). It
+  works in static initializers and case labels, but not in array
+  sizes or enumeration values, which the parser folds before any
+  struct layout exists. `unreachable()` is `((void)0)`, and
+  `__STDC_VERSION_STDDEF_H__` is `202311L`.
 - `stdbool.h` (C23 §7.19) — only `__bool_true_false_are_defined`,
   as 1. `bool`, `true`, and `false` are keywords in C23 (§6.4.1), so
   the header no longer defines them as macros, and including it
@@ -43,6 +60,3 @@ automatically; no `-I` flag needed.
   and memory tools, disassembler, register display and BRK,
   cassette, power-up slot scan): `$00`-`$01`, `$2F`, `$31`, `$34`,
   `$3A`-`$44`, `$46`-`$47`, `$49`.
-
-`size_t`, `ptrdiff_t`, and friends aren't modeled yet — the chapter
-corpus doesn't need them, and c6502 has no `stddef.h` to host them.

@@ -133,8 +133,10 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
                       c99_ast.Bool)):
         return 1
+    # `nullptr_t` is as wide as a pointer to a character type (C23
+    # §7.21.2p3).
     if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Short,
-                      c99_ast.UShort, c99_ast.Pointer)):
+                      c99_ast.UShort, c99_ast.Pointer, c99_ast.NullptrT)):
         return 2
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Float)):
         return 4
@@ -175,6 +177,14 @@ def _const_int_value(c: c99_ast.Type_const) -> int:
                       c99_ast.ConstChar, c99_ast.ConstUChar,
                       c99_ast.ConstBool)):
         return _coerce_to_integer_type(c.value, _const_type(c))
+    if isinstance(c, c99_ast.ConstNullptr):
+        # C23 §6.6p8 admits only operands of integer type, or of
+        # arithmetic type under a cast, and `nullptr` has neither.
+        raise ConstantExpressionError(
+            "`nullptr` has type nullptr_t, which isn't an integer type, "
+            "so it can't be an operand of an integer constant "
+            "expression (C23 §6.6p8)"
+        )
     raise ConstantExpressionError(
         f"floating constant {c!r} is not an integer constant"
     )

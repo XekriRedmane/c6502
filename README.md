@@ -37,6 +37,12 @@ These parts work.
   compiles, with a warning at each use, since C23 makes it
   obsolescent. A program that names something `bool`, `true`, or
   `false`, as C99 allowed, no longer compiles.
+- C23's `nullptr` is a keyword, a null pointer constant of type
+  `nullptr_t`, which `<stddef.h>` declares. It converts to any
+  pointer type and to `bool`, and it compares equal to `0`, to
+  `NULL`, and to every null pointer. Converting it to an integer, or
+  comparing it with `<`, is an error, as C23 specifies. The compiler
+  treats it as the constant 0 from the type checker on.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.
@@ -60,8 +66,8 @@ These parts are missing.
   pointer `SSP`, call `__zp_init`, and then call `main` (see
   [Zero page](#zero-page) below).
 - There's no standard library. The only headers are `<stdint.h>`,
-  `<stdbool.h>`, `<limits.h>`, and two that declare the Apple II
-  Monitor's routines, `<apple2/monitor_io.h>` and
+  `<stddef.h>`, `<stdbool.h>`, `<limits.h>`, and two that declare the
+  Apple II Monitor's routines, `<apple2/monitor_io.h>` and
   `<apple2/interactive_monitor.h>`.
 - Floating point has no 6502 code at all, as described above.
   `long double` and hexadecimal floating constants are rejected, and
@@ -198,10 +204,13 @@ sizes on 32- and 64-bit machines.
 | a pointer | 2 bytes | `$0000` to `$FFFF` |
 | `float`, `double` | 4 and 8 bytes | IEEE 754, with no arithmetic code (see "Status") |
 | `bool` | 1 byte | 0 (`false`) or 1 (`true`). `_Bool` is the same type. |
+| `nullptr_t` | 2 bytes | Only `nullptr`, stored as 2 zero bytes. |
 
 `<stdint.h>` defines `uint8_t` as `unsigned char`, `int16_t` as
 `int`, `int32_t` as `long`, and so on. `sizeof` gives an `unsigned
-long`, and the difference of two pointers is an `int`. Since `int` is
+long`, and the difference of two pointers is an `int`, which
+`<stddef.h>` names `size_t` and `ptrdiff_t`. `NULL` is `((void
+*)0)`. Since `int` is
 16 bits, `40000` is a `long` constant, and `1 << 16` is undefined.
 
 The 6502 does arithmetic a byte at a time, so every byte of a value

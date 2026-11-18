@@ -135,6 +135,11 @@ COMPLEX: "_Complex"
 BOOL: "bool"
 TRUE: "true"
 FALSE: "false"
+NULLPTR: "nullptr"
+// The type of `nullptr`, which <stddef.h> names `nullptr_t` (C23
+// §7.21.2). It's c6502's own keyword, since C23's header writes the
+// type as `typeof_unqual(nullptr)` and c6502 has no `typeof`.
+C6502_NULLPTR_T: "__c6502_nullptr_t"
 IMAGINARY: "_Imaginary"
 
 // The `[[` that opens a C23 attribute specifier (§6.7.13). C23 makes
@@ -286,7 +291,8 @@ _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGE
                     | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
                     | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
                     | UNSIGNED | VOID | VOLATILE | WHILE
-                    | BOOL | ALT_BOOL | TRUE | FALSE | COMPLEX | IMAGINARY
+                    | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR
+                    | C6502_NULLPTR_T | COMPLEX | IMAGINARY
                     | ELLIPSIS | COLONCOLON | LSHIFT_ASSIGN | RSHIFT_ASSIGN
                     | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT
                     | LE | GE | EQ | NE | ANDAND | OROR
@@ -334,6 +340,7 @@ initializer: assignment_exp                                      -> init_exp
 function_decl: attribute_specifier_seq? decl_specs declarator block
 
 type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
+              | C6502_NULLPTR_T
               | struct_or_union_specifier
               | enum_specifier
 
@@ -603,6 +610,7 @@ const: INTEGER_CONSTANT
      | CHAR_CONSTANT
      | TRUE
      | FALSE
+     | NULLPTR
 
 unop: MINUS                         -> negate
     | PLUS                          -> unary_plus
@@ -755,7 +763,8 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | ALT_BOOL | TRUE | FALSE | COMPLEX | IMAGINARY
+         | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR | C6502_NULLPTR_T
+         | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT

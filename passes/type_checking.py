@@ -144,6 +144,7 @@ Char = c99_ast.Char
 SChar = c99_ast.SChar
 UChar = c99_ast.UChar
 Bool = c99_ast.Bool
+NullptrT = c99_ast.NullptrT
 Short = c99_ast.Short
 UShort = c99_ast.UShort
 Float = c99_ast.Float
@@ -453,7 +454,12 @@ def _coerce_init_const_value(
     from its variant; the conversion goes through `fp_arith` whenever
     a Float / Double boundary is crossed."""
     src_type = _const_source_type(c)
-    if isinstance(c, (c99_ast.ConstFloat, c99_ast.ConstDouble)):
+    if isinstance(c, c99_ast.ConstNullptr):
+        # `nullptr` has a null `void *`'s representation (C23
+        # §7.21.2p3), all zero bytes, and converts to `false` and to
+        # null pointers (§6.3.2.4p1).
+        raw = 0
+    elif isinstance(c, (c99_ast.ConstFloat, c99_ast.ConstDouble)):
         raw = c.bits
     else:
         # An integer constant holds its bit pattern, so a signed one
@@ -530,6 +536,8 @@ def _const_source_type(c: c99_ast.Type_const) -> "Type":
         return UChar()
     if isinstance(c, c99_ast.ConstBool):
         return Bool()
+    if isinstance(c, c99_ast.ConstNullptr):
+        return NullptrT()
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
@@ -645,6 +653,79 @@ def _address_constant(
                 base = pointer(ptr)
                 return AddressInit(base.name, base.offset + step)
         raise fail(f"is not an address constant: {e!r}")
+
+    return pointer(exp)
+
+
+def _null_based_offset(
+    exp: c99_ast.Type_exp, types: "TypeTable | None",
+) -> int | None:
+    """The address that the type-checked pointer expression `exp`
+    gives when it's a member or element of an object at address 0,
+    as in `&((struct s *)0)->m[2]`, or None for any other expression.
+    <stddef.h>'s `offsetof(type, member)` expands to such an address
+    converted to `size_t`, and C23 §7.21p4 makes that an integer
+    constant expression, so the type checker folds the address to a
+    constant. Nothing is read at address 0, since `->`, `.`, `[]`, and
+    `&` only compute addresses here."""
+    def constant(e: c99_ast.Type_exp) -> int | None:
+        try:
+            value, _ = evaluate_integer_constant_expression(e)
+        except ConstantExpressionError:
+            return None
+        return value
+
+    def member_offset(t: Type, member: str) -> int | None:
+        t = _strip_quals(t)
+        if not isinstance(t, (Structure, Union)) or types is None:
+            return None
+        layout = types.get(t.tag)
+        if layout is None:
+            return None
+        for m in layout.members:
+            if m.name == member:
+                return m.byte_offset
+        return None
+
+    def pointer(e: c99_ast.Type_exp) -> int | None:
+        match e:
+            case c99_ast.Cast(target_type=t, exp=inner) if (
+                _is_pointer_type(t) and inner.data_type is not None
+            ):
+                if _is_pointer_type(inner.data_type):
+                    return pointer(inner)
+                if _is_integer_type(inner.data_type):
+                    return 0 if constant(inner) == 0 else None
+            case c99_ast.AddressOf(exp=inner):
+                return lvalue(inner)
+        return None
+
+    def lvalue(e: c99_ast.Type_exp) -> int | None:
+        match e:
+            case c99_ast.Arrow(operand=operand, member=member):
+                base = pointer(operand)
+                if base is None:
+                    return None
+                offset = member_offset(
+                    _strip_quals(operand.data_type).referenced_type, member,
+                )
+            case c99_ast.Dot(operand=operand, member=member):
+                base = lvalue(operand)
+                if base is None:
+                    return None
+                offset = member_offset(operand.data_type, member)
+            case c99_ast.Subscript(array=array, index=index):
+                base = pointer(array)
+                k = constant(index)
+                if base is None or k is None:
+                    return None
+                pointee = _strip_quals(array.data_type).referenced_type
+                offset = k * _sizeof(pointee, types)
+            case c99_ast.Dereference(exp=operand):
+                return pointer(operand)
+            case _:
+                return None
+        return None if offset is None else base + offset
 
     return pointer(exp)
 
@@ -972,12 +1053,17 @@ def _is_object_type(t: Type) -> bool:
     bare struct rvalues on most contexts), so they're excluded
     here too — consumers that legitimately accept structs check
     explicitly. `Const(...)` is transparent — `const int` is still
-    an object type."""
+    an object type.
+
+    C23 adds `nullptr_t` to the scalar types (§6.2.5p26), so it's
+    here too. The operators that take any scalar operand take it, and
+    the checks of the operators whose operands must be arithmetic or
+    pointers reject it by name."""
     t = _strip_quals(t)
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
             Char, SChar, UChar, Bool, Short, UShort,
-            Float, Double, Pointer),
+            Float, Double, Pointer, NullptrT),
     )
 
 
@@ -1013,6 +1099,11 @@ def _is_pointer_type(t: Type) -> bool:
     return isinstance(_strip_quals(t), Pointer)
 
 
+def _is_nullptr_type(t: Type | None) -> bool:
+    """True iff `t` is `nullptr_t` (C23 §7.21.2), qualified or not."""
+    return t is not None and isinstance(_strip_quals(t), NullptrT)
+
+
 def _is_array_type(t: Type) -> bool:
     return isinstance(_strip_quals(t), Array)
 
@@ -1035,6 +1126,18 @@ _TRUTH_OPS = (
     c99_ast.GreaterThan, c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
     c99_ast.LogicalAnd, c99_ast.LogicalOr,
 )
+
+
+_BINARY_OP_SPELLING = {
+    c99_ast.Add: "+", c99_ast.Subtract: "-", c99_ast.Multiply: "*",
+    c99_ast.Divide: "/", c99_ast.Modulo: "%", c99_ast.BitwiseAnd: "&",
+    c99_ast.BitwiseOr: "|", c99_ast.BitwiseXor: "^",
+    c99_ast.LeftShift: "<<", c99_ast.RightShift: ">>",
+    c99_ast.Equal: "==", c99_ast.NotEqual: "!=", c99_ast.LessThan: "<",
+    c99_ast.GreaterThan: ">", c99_ast.LessOrEqual: "<=",
+    c99_ast.GreaterOrEqual: ">=", c99_ast.LogicalAnd: "&&",
+    c99_ast.LogicalOr: "||",
+}
 
 
 def _is_truth_valued(exp: c99_ast.Type_exp) -> bool:
@@ -1064,7 +1167,8 @@ def _display_name(name: str) -> str:
 
 _C_TYPE_NAMES = {
     Char: "char", SChar: "signed char", UChar: "unsigned char",
-    Bool: "bool", Short: "short", UShort: "unsigned short",
+    Bool: "bool", NullptrT: "nullptr_t",
+    Short: "short", UShort: "unsigned short",
     Int: "int", UInt: "unsigned int", Long: "long",
     ULong: "unsigned long", LongLong: "long long",
     ULongLong: "unsigned long long", Float: "float", Double: "double",
@@ -1364,7 +1468,9 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     t = _strip_quals(t)
     if isinstance(t, (Char, SChar, UChar, Bool)):
         return 1
-    if isinstance(t, (Int, UInt, Short, UShort, Pointer)):
+    # `nullptr_t` is as wide as a pointer to a character type (C23
+    # §7.21.2p3).
+    if isinstance(t, (Int, UInt, Short, UShort, Pointer, NullptrT)):
         return 2
     if isinstance(t, (Long, ULong, Float)):
         return 4
@@ -1403,7 +1509,9 @@ def _check_register_object(t: Type, *, max_bytes: int, where: str) -> None:
             f"{where}: a pointer can't be placed in a register "
             f"(`register` is not allowed on pointer types)"
         )
-    if isinstance(_strip_quals(t), (Array, Structure, Union, FunType)):
+    if isinstance(
+        _strip_quals(t), (Array, Structure, Union, FunType, NullptrT),
+    ):
         raise TypeCheckError(
             f"{where}: only a scalar integer object can be placed in "
             f"a register"
@@ -1659,12 +1767,15 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
     of `Cast`s. (`(int)0`, `(long)0`, `((void *)0)` once void
     pointers exist, etc.) Used at the type-check boundary for
     pointer equality — `p == 0` and `0 == p` are legal even though
-    the bare types don't match."""
+    the bare types don't match. C23 adds the predefined constant
+    `nullptr` to the null pointer constants (§6.3.2.3p3)."""
     while isinstance(exp, c99_ast.Cast):
         exp = exp.exp
     if not isinstance(exp, c99_ast.Constant):
         return False
     c = exp.const
+    if isinstance(c, c99_ast.ConstNullptr):
+        return True
     if isinstance(
         c,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
@@ -1673,6 +1784,31 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
     ):
         return c.value == 0
     return False
+
+
+def _is_c23_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
+    """True iff the type-checked `exp` is a null pointer constant as
+    C23 §6.3.2.3p3 defines one: "An integer constant expression with
+    the value 0, such an expression cast to type void *, or the
+    predefined constant nullptr". This is the test for converting a
+    value to `nullptr_t` (§6.3.2.4p2, §6.5.5p4, §6.5.17.2p1), which
+    is stricter than `_is_null_pointer_constant`. `(int *)0` is a
+    null pointer but not a null pointer constant, so it doesn't
+    convert to `nullptr_t`."""
+    if (isinstance(exp, c99_ast.Constant)
+            and isinstance(exp.const, c99_ast.ConstNullptr)):
+        return True
+    if (isinstance(exp, c99_ast.Cast)
+            and isinstance(exp.target_type, Pointer)
+            and isinstance(exp.target_type.referenced_type, Void)):
+        exp = exp.exp
+    if exp.data_type is None or not _is_integer_type(exp.data_type):
+        return False
+    try:
+        value, _ = evaluate_integer_constant_expression(exp)
+    except ConstantExpressionError:
+        return False
+    return value == 0
 
 
 def _is_arithmetic_type(t: Type) -> bool:
@@ -1905,6 +2041,28 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
             f"cannot implicitly convert {exp.data_type!r} to void; "
             f"use an explicit `(void)expr` cast to discard a value"
         )
+    # A `nullptr_t` value converts to a pointer type, giving a null
+    # pointer, and to `bool`, giving false (C23 §6.3.2.4p1), and
+    # §6.5.17.2p1 lets assignment do either. Only a null pointer
+    # constant or another `nullptr_t` converts to `nullptr_t`
+    # (§6.3.2.4p2).
+    if _is_nullptr_type(exp.data_type):
+        if not isinstance(_strip_quals(target), (Pointer, Bool)):
+            raise TypeCheckError(
+                f"cannot convert nullptr_t to {_c_type(target)}: a "
+                f"nullptr_t value converts implicitly only to a pointer "
+                f"type or bool (C23 §6.3.2.4, §6.5.17.2)"
+            )
+        return c99_ast.Cast(target_type=target, exp=exp, data_type=target)
+    if _is_nullptr_type(target):
+        if not _is_c23_null_pointer_constant(exp):
+            raise TypeCheckError(
+                f"cannot convert {_c_type(exp.data_type)} to nullptr_t: "
+                f"only nullptr, another nullptr_t value, or a null "
+                f"pointer constant converts to nullptr_t (C23 "
+                f"§6.3.2.4, §6.5.17.2)"
+            )
+        return c99_ast.Cast(target_type=target, exp=exp, data_type=target)
     # A `const`-qualified pointer target (`uint8_t *const t[] = {
     # 0x2000 };`) skips these checks, and the examples rely on that
     # to initialize tables of fixed addresses without a cast.
@@ -2016,8 +2174,9 @@ class TypeChecker:
     ) -> None:
         """The controlling expression of an `if` / `while` / `do` /
         `for` / `?:` shall have scalar type (C99 §6.8.4.1.1 /
-        §6.8.5.2 / §6.5.15.2). Scalar = arithmetic + pointer; struct
-        / union / void are rejected. Arrays decay to pointers in
+        §6.8.5.2 / §6.5.15.2). Scalar = arithmetic + pointer +
+        `nullptr_t` (C23 §6.2.5p26); struct / union / void are
+        rejected. Arrays decay to pointers in
         operand context (§6.3.2.1.3) and are accepted here."""
         t = exp.data_type
         if isinstance(t, Array):
@@ -3868,14 +4027,69 @@ class TypeChecker:
                 )
             return common
         # Exactly one operand is a pointer; the other must be a
-        # null pointer constant.
-        if l_ptr and _is_null_pointer_constant(rhs):
+        # null pointer constant, or in C23 have type `nullptr_t`
+        # (§6.5.10p2). `nullptr` is both.
+        if l_ptr and (_is_null_pointer_constant(rhs)
+                      or _is_nullptr_type(tr)):
             return Pointer(referenced_type=tl_p.referenced_type)
-        if r_ptr and _is_null_pointer_constant(lhs):
+        if r_ptr and (_is_null_pointer_constant(lhs)
+                      or _is_nullptr_type(tl)):
             return Pointer(referenced_type=tr_p.referenced_type)
         raise TypeCheckError(
             f"comparison between pointer and non-null-constant "
             f"non-pointer: {tl!r} vs {tr!r}"
+        )
+
+    def _check_nullptr_binary(
+        self, exp: c99_ast.Binary, op, tl: Type, tr: Type,
+    ) -> Type | None:
+        """Types a binary operator other than `&&` and `||` with a
+        `nullptr_t` operand, or returns None to leave `exp` to the
+        pointer rules when the other operand is a pointer.
+
+        C23 §6.5.10p2 lets `==` and `!=` compare two `nullptr_t`
+        operands, a `nullptr_t` with a null pointer constant, and a
+        pointer with a `nullptr_t`. §6.5.10p5-6 make the first two
+        equal, and the third equal if and only if the pointer is
+        null. The first two convert both operands to `void *`, which
+        makes each a null pointer, and the third is a pointer
+        comparison. Every other
+        operator takes arithmetic, integer, real, or pointer
+        operands, and `nullptr_t` is none of those (§6.5.9p2 for the
+        relational operators)."""
+        op_name = _BINARY_OP_SPELLING[type(op)]
+        lhs, rhs = exp.left, exp.right
+        if isinstance(op, (c99_ast.Equal, c99_ast.NotEqual)):
+            if _is_pointer_type(tl) or _is_pointer_type(tr):
+                return None
+            if ((_is_nullptr_type(tl) and _is_nullptr_type(tr))
+                    or (_is_nullptr_type(tl)
+                        and _is_c23_null_pointer_constant(rhs))
+                    or (_is_nullptr_type(tr)
+                        and _is_c23_null_pointer_constant(lhs))):
+                void_p = Pointer(referenced_type=Void())
+                exp.left = _convert_to(lhs, void_p)
+                exp.right = _convert_to(rhs, void_p)
+                exp.data_type = Int()
+                return Int()
+            raise TypeCheckError(
+                f"binary '{op_name}' between {_c_type(tl)} and "
+                f"{_c_type(tr)}: a nullptr_t compares only with another "
+                f"nullptr_t, a null pointer constant, or a pointer "
+                f"(C23 §6.5.10p2)"
+            )
+        if isinstance(op, (
+            c99_ast.LessThan, c99_ast.GreaterThan,
+            c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
+        )):
+            raise TypeCheckError(
+                f"binary '{op_name}' is not defined on nullptr_t: the "
+                f"relational operators compare real types or pointers "
+                f"to object types (C23 §6.5.9p2)"
+            )
+        raise TypeCheckError(
+            f"binary '{op_name}' is not defined on nullptr_t "
+            f"({_c_type(tl)} {op_name} {_c_type(tr)})"
         )
 
     def _check_exp(self, exp: c99_ast.Type_exp) -> Type:
@@ -3917,6 +4131,9 @@ class TypeChecker:
                 elif isinstance(c, c99_ast.ConstBool):
                     # `true` and `false` (C23 §6.4.4.6).
                     t = Bool()
+                elif isinstance(c, c99_ast.ConstNullptr):
+                    # `nullptr` (C23 §6.4.4.6p4, §7.21.2).
+                    t = NullptrT()
                 elif isinstance(c, c99_ast.ConstFloat):
                     t = Float()
                 elif isinstance(c, c99_ast.ConstDouble):
@@ -3987,6 +4204,27 @@ class TypeChecker:
                         f"cannot cast non-object type {inner_type!r} "
                         f"to {target!r}"
                     )
+                # C23 §6.5.5p4: "The type nullptr_t shall not be
+                # converted to any type other than void, bool or a
+                # pointer type. If the target type is nullptr_t, the
+                # cast expression shall be a null pointer constant or
+                # have type nullptr_t." (`void` is handled above.)
+                if _is_nullptr_type(inner_type) and not isinstance(
+                    _strip_quals(target), (Pointer, Bool, NullptrT),
+                ):
+                    raise TypeCheckError(
+                        f"cannot cast nullptr_t to {_c_type(target)}: "
+                        f"nullptr_t converts only to void, bool, or a "
+                        f"pointer type (C23 §6.5.5p4)"
+                    )
+                if (_is_nullptr_type(target)
+                        and not _is_nullptr_type(inner_type)
+                        and not _is_c23_null_pointer_constant(inner)):
+                    raise TypeCheckError(
+                        f"cannot cast {_c_type(inner_type)} to "
+                        f"nullptr_t: the operand must be a null pointer "
+                        f"constant or have type nullptr_t (C23 §6.5.5p4)"
+                    )
                 # C99 §6.3.2.3 only defines pointer ↔ integer and
                 # pointer ↔ pointer conversions. Pointer ↔ floating
                 # has no meaning — an address isn't an arithmetic
@@ -4001,6 +4239,17 @@ class TypeChecker:
                         f"floating-point type: {inner_type!r} → "
                         f"{target!r}"
                     )
+                # `offsetof(type, member)` from <stddef.h>: the address
+                # of a member of an object at address 0, converted to
+                # an integer. The address becomes a constant, so the
+                # cast is an integer constant expression.
+                if src_ptr and _is_integer_type(target):
+                    offset = _null_based_offset(inner, self.types)
+                    if offset is not None:
+                        exp.exp = c99_ast.Constant(
+                            const=c99_ast.ConstUInt(value=offset & 0xFFFF),
+                            data_type=UInt(),
+                        )
                 exp.data_type = target
                 return target
             case c99_ast.Var(name=name):
@@ -4040,6 +4289,20 @@ class TypeChecker:
                 if not _is_object_type(t):
                     raise TypeCheckError(
                         f"unary operator on non-object type {t!r}"
+                    )
+                # `nullptr_t` is scalar, so `!nullptr` is 1, but `-`,
+                # `+`, and `~` need an arithmetic or integer operand
+                # (C23 §6.5.4.3p1).
+                if _is_nullptr_type(t) and not isinstance(
+                    op, c99_ast.LogicalNot,
+                ):
+                    op_name = {
+                        c99_ast.Negate: "-", c99_ast.Complement: "~",
+                        c99_ast.Plus: "+",
+                    }[type(op)]
+                    raise TypeCheckError(
+                        f"unary '{op_name}' is not defined on nullptr_t "
+                        f"(C23 §6.5.4.3)"
                     )
                 # Per-operator operand-type constraints:
                 #   `-` and `+` require arithmetic (reject Pointer
@@ -4123,6 +4386,10 @@ class TypeChecker:
                     # object type in the c6502 vocabulary).
                     exp.data_type = Int()
                     return Int()
+                if _is_nullptr_type(tl) or _is_nullptr_type(tr):
+                    result = self._check_nullptr_binary(exp, op, tl, tr)
+                    if result is not None:
+                        return result
                 # Pointer equality (C99 §6.5.9.2) takes its own path
                 # — `_common_type` would crash on Pointer for the
                 # same reason as above, and the legality rules
@@ -4441,6 +4708,14 @@ class TypeChecker:
                         f"compound assignment is not defined for "
                         f"struct/union types ({tl!r})"
                     )
+                # C23 §6.5.17.3p1-2: the operands are arithmetic, or a
+                # pointer and an integer.
+                if _is_nullptr_type(tl) or _is_nullptr_type(tr):
+                    raise TypeCheckError(
+                        f"compound assignment is not defined on "
+                        f"nullptr_t ({_c_type(tl)}, {_c_type(tr)}; C23 "
+                        f"§6.5.17.3)"
+                    )
                 # rval array decay (lval can't be an array — caught
                 # above). rval might be `arr` decaying to pointer.
                 rv = _decay_if_array(rv)
@@ -4609,6 +4884,12 @@ class TypeChecker:
                         f"increment/decrement operator on non-object "
                         f"type {t!r}"
                     )
+                if _is_nullptr_type(t):
+                    raise TypeCheckError(
+                        "the operand of ++ or -- must have a real or "
+                        "pointer type, and nullptr_t is neither (C23 "
+                        "§6.5.3.5, §6.5.4.1)"
+                    )
                 # `++p` / `--p` / `p++` / `p--` is defined as `p ± 1`
                 # element, which requires a complete pointee — exactly
                 # the §6.5.6.2 constraint Binary `+`/`-` enforces. Void
@@ -4693,6 +4974,27 @@ class TypeChecker:
                 # falls through to the usual arithmetic conversions.
                 tt_ptr = _is_pointer_type(tt)
                 tf_ptr = _is_pointer_type(tf)
+                # C23 §6.5.16p3 allows a `nullptr_t` operand with
+                # another `nullptr_t`, which gives a `nullptr_t`, or
+                # with a pointer, which gives the pointer's type
+                # (§6.5.16p7). Footnote 109: "If a second or third
+                # operand of type nullptr_t is used and the other
+                # operand is not a pointer and does not have type
+                # nullptr_t itself, a constraint is violated even if
+                # that other operand is a null pointer constant such
+                # as 0."
+                tt_null = _is_nullptr_type(tt)
+                tf_null = _is_nullptr_type(tf)
+                if tt_null and tf_null:
+                    exp.data_type = NullptrT()
+                    return exp.data_type
+                if (tt_null and not tf_ptr) or (tf_null and not tt_ptr):
+                    raise TypeCheckError(
+                        f"conditional branches of type {_c_type(tt)} and "
+                        f"{_c_type(tf)}: the other branch of a nullptr_t "
+                        f"branch must be a pointer or another nullptr_t "
+                        f"(C23 §6.5.16p3)"
+                    )
                 if tt_ptr or tf_ptr:
                     if tt_ptr and tf_ptr:
                         # `void *` and any object pointer compose to
@@ -4703,11 +5005,13 @@ class TypeChecker:
                                 f"conditional branches have distinct "
                                 f"pointer types: {tt!r} vs {tf!r}"
                             )
-                    elif tt_ptr and _is_null_pointer_constant(f_clause):
+                    elif tt_ptr and (_is_null_pointer_constant(f_clause)
+                                     or tf_null):
                         common = Pointer(
                             referenced_type=_strip_quals(tt).referenced_type,
                         )
-                    elif tf_ptr and _is_null_pointer_constant(t_clause):
+                    elif tf_ptr and (_is_null_pointer_constant(t_clause)
+                                     or tt_null):
                         common = Pointer(
                             referenced_type=_strip_quals(tf).referenced_type,
                         )

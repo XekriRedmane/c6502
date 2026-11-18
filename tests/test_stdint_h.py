@@ -127,9 +127,17 @@ class TestStdintLimits(unittest.TestCase):
         self.assertEqual(self._run_int_unsigned("return UINTPTR_MAX;"), 65535)
 
     def test_ptrdiff_limits(self) -> None:
-        # c6502's ptrdiff_t is `long` (4 bytes signed).
-        self.assertEqual(self._run_long("return PTRDIFF_MIN;"), -0x80000000)
-        self.assertEqual(self._run_long("return PTRDIFF_MAX;"), 0x7FFFFFFF)
+        # The subtraction of two pointers gives an `int` (2 bytes
+        # signed), which <stddef.h> names `ptrdiff_t`.
+        self.assertEqual(self._run_int_signed("return PTRDIFF_MIN;"), -32768)
+        self.assertEqual(self._run_int_signed("return PTRDIFF_MAX;"), 32767)
+
+    def test_size_and_wchar_limits(self) -> None:
+        # `sizeof` gives an `unsigned long`, and <stddef.h> makes
+        # `wchar_t` an `int`.
+        self.assertEqual(self._run_ulong("return SIZE_MAX;"), 0xFFFFFFFF)
+        self.assertEqual(self._run_int_signed("return WCHAR_MIN;"), -32768)
+        self.assertEqual(self._run_int_signed("return WCHAR_MAX;"), 32767)
 
 
 class TestStdintIntegerConstantMacros(unittest.TestCase):

@@ -93,12 +93,13 @@ _STORAGE_CLASSES = {
 # `.type` attribute so the same predicate logic works on all of them).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "BOOL", "VOID",
+                           "C6502_NULLPTR_T",
                            "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
                            "STRUCT", "UNION", "TYPEDEF_NAME", "ENUM",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "BOOL",
-                                "VOID", "STRUCT", "UNION", "TYPEDEF_NAME",
+                                "VOID", "C6502_NULLPTR_T", "STRUCT", "UNION", "TYPEDEF_NAME",
                                 "ENUM")
 # `const` and `volatile` are honored at parse time and wrapped into
 # `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
@@ -411,6 +412,11 @@ def _resolve_data_type(type_specs):
                                                      combine with any
                                                      other type
                                                      specifier
+      * `__c6502_nullptr_t`                        → NullptrT, C23's
+                                                     `nullptr_t`; cannot
+                                                     combine with any
+                                                     other type
+                                                     specifier
       * `char`                                     → Char (signed,
                                                      -128..127 in
                                                      c6502)
@@ -488,6 +494,13 @@ def _resolve_data_type(type_specs):
     void_count = sum(1 for t in type_specs if t.type == "VOID")
     bool_count = sum(1 for t in type_specs if t.type == "BOOL")
     short_count = sum(1 for t in type_specs if t.type == "SHORT")
+    if any(t.type == "C6502_NULLPTR_T" for t in type_specs):
+        if len(type_specs) != 1:
+            raise ParserError(
+                "'__c6502_nullptr_t' (nullptr_t) cannot combine with "
+                "another type specifier"
+            )
+        return c99_ast.NullptrT()
     if bool_count > 0:
         if len(type_specs) != 1:
             # Named as the program spelled it, `bool` or `_Bool`.
@@ -1591,10 +1604,13 @@ def _const_for_token(token):
     determines the type — no value-fitting rule); character
     literals lex via CHAR_CONSTANT and ride as a `ConstInt` carrying
     the byte value (§6.4.4.4.10). The keywords `true` and `false` are
-    constants of type `bool` with the values 1 and 0 (C23 §6.4.4.6)."""
+    constants of type `bool` with the values 1 and 0, and `nullptr` is
+    a null pointer constant of type `nullptr_t` (C23 §6.4.4.6)."""
     text = str(token)
     if token.type in ("TRUE", "FALSE"):
         return c99_ast.ConstBool(value=int(token.type == "TRUE"))
+    if token.type == "NULLPTR":
+        return c99_ast.ConstNullptr()
     if token.type == "CHAR_CONSTANT":
         return c99_ast.ConstInt(value=_decode_char_constant(token))
     if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
@@ -2049,6 +2065,13 @@ def _array_size_from_suffix(suffix):
             raise ParserError("array size must be positive")
         return value
     c = size_exp.const
+    if isinstance(c, c99_ast.ConstNullptr):
+        # An array size is an integer constant expression (C23
+        # §6.7.7.3p1, §6.6p8), and `nullptr` has no integer type.
+        raise ParserError(
+            "array size must have integer type, and `nullptr` has type "
+            "nullptr_t (C23 §6.7.7.3)"
+        )
     if not isinstance(c, (
         c99_ast.ConstInt, c99_ast.ConstLong,
         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstBool,
@@ -3417,7 +3440,8 @@ class _ASTBuilder(Transformer):
     def const(self, token):
         # `const: INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER
         # | ULONG_INTEGER | DOUBLE_CONSTANT | FLOAT_CONSTANT
-        # | LONG_DOUBLE_CONSTANT | CHAR_CONSTANT | TRUE | FALSE`. The
+        # | LONG_DOUBLE_CONSTANT | CHAR_CONSTANT | TRUE | FALSE
+        # | NULLPTR`. The
         # lex split is by suffix presence only. For integers, `_const_for_token` consults the C99
         # §6.4.4.1 type list (keyed by token-kind + base) and picks
         # the first variant whose range fits. For FP, the suffix
@@ -3808,13 +3832,14 @@ _LARK = Lark.open(
 
 # The keywords C23 added (§6.4.1) that a C99 program could have used as
 # names, by their terminals in c99.lark.
-_C23_KEYWORD_TERMINALS = ("BOOL", "TRUE", "FALSE")
+_C23_KEYWORD_TERMINALS = ("BOOL", "TRUE", "FALSE", "NULLPTR")
 
 
 def _c23_keyword_as_name(e: UnexpectedInput) -> str | None:
     """The message for the syntax error `e` when it's `bool`, `true`,
-    or `false` where the parser could take a name, as in `int true;`,
-    and None for any other error. C99 let a program use those three as
+    `false`, or `nullptr` where the parser could take a name, as in
+    `int true;`, and None for any other error. C99 let a program use
+    those four as
     names, and C23 makes them keywords. `int bool = 1;` fails on the
     `=` after it, since `int bool` reads as two type specifiers."""
     if not isinstance(e, UnexpectedToken):

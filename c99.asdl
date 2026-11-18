@@ -120,6 +120,13 @@ module C99 {
         -- conversions and then erases Bool to UChar, so later passes
         -- never see it.
         | Bool
+        -- `nullptr_t` (C23 §7.21.2), the type of `nullptr`: a scalar
+        -- type with the one value `nullptr`, as wide as a pointer and
+        -- with a null `void *`'s representation (§7.21.2p3), so 2 zero
+        -- bytes. It converts to any pointer type and to `bool`
+        -- (§6.3.2.4). c99_to_tac replaces it with `void *` and each
+        -- `nullptr` with `(void *)0`, so later passes never see it.
+        | NullptrT
         | Void
         | FunType(data_type* params, data_type ret)
         | Pointer(data_type referenced_type)
@@ -287,4 +294,7 @@ module C99 {
           | ConstFloat(int bits) | ConstDouble(int bits)
           | ConstChar(int value) | ConstUChar(int value)
           | ConstBool(int value)
+          -- The keyword `nullptr`, a null pointer constant of type
+          -- `nullptr_t` (C23 §6.4.4.6p4, §6.3.2.3p3).
+          | ConstNullptr
 }

@@ -328,6 +328,11 @@ class Bool(Type_data_type):
 
 
 @dataclass
+class NullptrT(Type_data_type):
+    pass
+
+
+@dataclass
 class Void(Type_data_type):
     pass
 
@@ -741,3 +746,8 @@ class ConstUChar(Type_const):
 @dataclass
 class ConstBool(Type_const):
     value: int = 0
+
+
+@dataclass
+class ConstNullptr(Type_const):
+    pass

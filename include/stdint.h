@@ -20,9 +20,9 @@
  *   intmax_t  = long long             (widest integer modeled)
  *   uintmax_t = unsigned long long
  *
- * `size_t`, `sig_atomic_t`, `wchar_t`, `wint_t` aren't modeled, so
- * `SIZE_MAX`, `SIG_ATOMIC_*`, `WCHAR_*`, `WINT_*` aren't defined
- * here.
+ * `PTRDIFF_*`, `SIZE_MAX`, and `WCHAR_*` give the ranges of the types
+ * <stddef.h> declares. `sig_atomic_t` and `wint_t` aren't modeled,
+ * so `SIG_ATOMIC_*` and `WINT_*` aren't defined here.
  */
 #ifndef _STDINT_H
 #define _STDINT_H
@@ -120,11 +120,15 @@ typedef unsigned long long uintmax_t;
 #define INTMAX_MAX          INT64_MAX
 #define UINTMAX_MAX         UINT64_MAX
 
-/* limits of `ptrdiff_t` — §7.18.3.
- * c6502 uses `long` (4 bytes signed) as the result type of
- * pointer subtraction. */
-#define PTRDIFF_MIN         INT32_MIN
-#define PTRDIFF_MAX         INT32_MAX
+/* limits of other integer types — §7.18.3.
+ * The subtraction of two pointers gives an `int` (2 bytes signed),
+ * `sizeof` gives an `unsigned long`, and <stddef.h> makes `wchar_t`
+ * an `int`. */
+#define PTRDIFF_MIN         INT16_MIN
+#define PTRDIFF_MAX         INT16_MAX
+#define SIZE_MAX            UINT32_MAX
+#define WCHAR_MIN           INT16_MIN
+#define WCHAR_MAX           INT16_MAX
 
 /* macros for integer constants — §7.18.4 */
 #define INT8_C(c)           c

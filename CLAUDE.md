@@ -452,8 +452,8 @@ the function_decl's `params` array; their *types* live in parallel on
 
 ### Type vocabulary
 
-Twelve integer types, two floating types, plus pointers and function
-types. Widths follow C99's minimum ranges per §5.2.4.2.1 — Int is 16
+Twelve integer types, two floating types, `nullptr_t`, plus pointers
+and function types. Widths follow C99's minimum ranges per §5.2.4.2.1 — Int is 16
 bits, Long is 32 bits, LongLong is 64 bits.
 
 Integers:
@@ -524,6 +524,27 @@ conceptually distinct, and the symbol table preserves the Pointer
 type for the rare codegen sites that inspect it (signedness checks
 for unsigned ordering, pointer-arithmetic scaling).
 
+`NullptrT()` is C23's `nullptr_t` (§7.21.2), a scalar type whose one
+value is `nullptr`, 2 bytes with a null `void *`'s representation.
+The keyword `nullptr` (C23 §6.4.1) is `ConstNullptr()`, a null
+pointer constant of that type, and the reserved keyword
+`__c6502_nullptr_t` names the type, which `<stddef.h>` declares as
+`typedef __c6502_nullptr_t nullptr_t;` since c6502 has no `typeof`.
+The type checker applies C23's rules. A `nullptr_t` converts
+implicitly to any pointer type and to `bool` (§6.3.2.4, §6.5.17.2),
+and by cast to those and to `void`. Only a null pointer constant or
+another `nullptr_t` converts to it (`_is_c23_null_pointer_constant`).
+`==` and `!=` take two `nullptr_t`s, a `nullptr_t` and a null pointer
+constant, or a pointer and a `nullptr_t` (§6.5.10p2,
+`_check_nullptr_binary`). Every other binary operator, unary `-`,
+`+`, `~`, `++`, and `--` reject it. `?:` takes it with a pointer or
+another `nullptr_t`, but not with `0` (§6.5.16p3, footnote 109). It
+isn't an integer constant (§6.6p8), so `case nullptr:` and `int
+a[nullptr]` are errors, but `static int *p = nullptr;` is a static
+initializer. `c99_to_tac` starts by replacing `NullptrT` with `void
+*` and each `nullptr` with `(void *)0` (`_erase_nullptr`), so the TAC
+has the constant 0 and no pass after the type checker sees either.
+
 ### Constants
 
 The lexer splits integer literals into four terminals by suffix
@@ -577,9 +598,9 @@ ULong; `long long [int]` / `signed long long [int]` → LongLong;
 `unsigned long long [int]` → ULongLong; `short [int]` / `signed short
 [int]` → Short; `unsigned short [int]` → UShort; `char` → Char;
 `signed char` → SChar; `unsigned char` → UChar; `bool` or `_Bool` → Bool; `float` → Float;
-`double` → Double), rejecting multiple type specifiers, multiple
+`double` → Double; `__c6502_nullptr_t` → NullptrT), rejecting multiple type specifiers, multiple
 storage classes, missing type, three or more `long`s, `short` twice or
-with `long`, `bool` combined with any other type specifier, `char`
+with `long`, `bool` or `__c6502_nullptr_t` combined with any other type specifier, `char`
 combined with `int` / `long` / `short`, `long double`, `signed unsigned`, and any
 FP/integer specifier mix (`int float`, `unsigned double`, etc.).
 
@@ -678,6 +699,7 @@ declaration hides at the point of use is rejected, since the
 substituted `struct foo` would name the inner one. `<stdint.h>`
 uses real typedefs. `bool`, `true`, and `false` are keywords (C23
 §6.4.1), so `<stdbool.h>` defines only `__bool_true_false_are_defined`.
+`<stddef.h>` declares `nullptr_t` as a typedef of `__c6502_nullptr_t`.
 
 ### Enumerations
 
@@ -772,9 +794,11 @@ value 0 in an `#if` (C23 §6.10.2p13; pcpp gives every other name left
 there 0), even under `--passthru-unknown-exprs`. Its `token` override
 warns at each `_Bool` the preprocessor writes out, with the line it's
 on (`_where`), which for a `_Bool` a macro expands to is the line of
-the macro's use. A program that names something `bool`, `true`, or
-`false` gets a syntax error, which `parser._c23_keyword_as_name`
-rewords to say that C23 made the name a keyword.
+the macro's use. A program that names something `bool`, `true`,
+`false`, or `nullptr` gets a syntax error, which
+`parser._c23_keyword_as_name` rewords to say that C23 made the name a
+keyword. In an `#if`, `nullptr` is 0, as pcpp gives every other name
+left there.
 
 `docs/*_grammar.txt` files are reference documentation for the spec
 grammars that `c99.lark` implements — they aren't parsed by any tool.

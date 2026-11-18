@@ -615,6 +615,60 @@ def _erase_short(prog, symbols, types) -> None:
             ]
 
 
+def _null_void_pointer() -> c99_ast.Type_exp:
+    """`(void *)0`, type-checked, which is what `nullptr` becomes."""
+    void_p = c99_ast.Pointer(referenced_type=c99_ast.Void())
+    return c99_ast.Cast(
+        target_type=void_p,
+        exp=c99_ast.Constant(
+            const=c99_ast.ConstInt(value=0), data_type=c99_ast.Int(),
+        ),
+        data_type=c99_ast.Pointer(referenced_type=c99_ast.Void()),
+    )
+
+
+def _nullptr_to_void_pointer(node):
+    """`node` with `nullptr_t` replaced, at any depth, by `void *`, and
+    each `nullptr` by `(void *)0`, changing c99 AST nodes in place."""
+    if isinstance(node, c99_ast.NullptrT):
+        return c99_ast.Pointer(referenced_type=c99_ast.Void())
+    if (isinstance(node, c99_ast.Constant)
+            and isinstance(node.const, c99_ast.ConstNullptr)):
+        return _null_void_pointer()
+    if isinstance(node, list):
+        return [_nullptr_to_void_pointer(x) for x in node]
+    if isinstance(node, tuple):
+        return tuple(_nullptr_to_void_pointer(x) for x in node)
+    if dataclasses.is_dataclass(node) and not isinstance(node, type):
+        for f in dataclasses.fields(node):
+            value = getattr(node, f.name)
+            new = _nullptr_to_void_pointer(value)
+            if new is not value:
+                setattr(node, f.name, new)
+    return node
+
+
+def _erase_nullptr(prog, symbols, types) -> None:
+    """Replace `nullptr_t` with `void *` and `nullptr` with `(void *)0`
+    in the program, the symbol table, and the struct and union
+    layouts, before translating. The type checker has already
+    checked every use of `nullptr_t` and written each of its
+    conversions as a Cast. A `nullptr_t` value has a null `void *`'s
+    representation (C23 §7.21.2p3), so as a `void *` each of those
+    Casts converts a null pointer to a null pointer or to `false`.
+    `nullptr` is then the constant 0 from here on, which the
+    optimizer folds like any other."""
+    _nullptr_to_void_pointer(prog)
+    for _, sym in symbols.items():
+        sym.type = _nullptr_to_void_pointer(sym.type)
+    if types is not None:
+        for _, layout in types.items():
+            layout.members = [
+                dataclasses.replace(m, type=_nullptr_to_void_pointer(m.type))
+                for m in layout.members
+            ]
+
+
 def _unqualified(t):
     """`t` without the `const` and `volatile` around it. The type
     checker leaves both on the types it stamps (a `const struct s *p`
@@ -1688,6 +1742,7 @@ class Translator:
         match prog:
             case c99_ast.Program(declaration=decls):
                 _erase_short(prog, self._symbols, self._types)
+                _erase_nullptr(prog, self._symbols, self._types)
                 top_levels: list[tac_ast.Type_top_level] = []
                 for d in decls:
                     fn = self._translate_top_level_declaration(d)

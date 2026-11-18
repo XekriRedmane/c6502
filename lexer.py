@@ -21,6 +21,11 @@ KEYWORDS = frozenset({
     # C23 §6.4.1 adds these three. `_Bool` stays, as an alternative
     # spelling of `bool` that C23 makes obsolescent.
     "bool", "true", "false",
+    # C23 §6.4.1 also adds `nullptr` (§6.4.4.6). Its type, `nullptr_t`,
+    # isn't a keyword. <stddef.h> declares it as a typedef of
+    # `__c6502_nullptr_t`, a keyword in the reserved namespace, since
+    # c6502 has no `typeof` to write it as C23's header does.
+    "nullptr", "__c6502_nullptr_t",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with

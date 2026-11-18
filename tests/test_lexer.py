@@ -18,10 +18,10 @@ class TestKeywords(unittest.TestCase):
                 self.assertEqual(kinds_vals(kw), [(TokenKind.KEYWORD, kw)])
 
     def test_keyword_count(self):
-        # The 37 standard C99 keywords and C23's `bool`, `true`, and
-        # `false`. Attributes are C23's `[[...]]`, which needs no
-        # keyword.
-        self.assertEqual(len(KEYWORDS), 40)
+        # The 37 standard C99 keywords, C23's `bool`, `true`, `false`,
+        # and `nullptr`, and c6502's `__c6502_nullptr_t`. Attributes
+        # are C23's `[[...]]`, which takes no keyword.
+        self.assertEqual(len(KEYWORDS), 42)
 
     def test_c23_boolean_keywords(self):
         self.assertEqual(
@@ -30,6 +30,15 @@ class TestKeywords(unittest.TestCase):
              (TokenKind.KEYWORD, "false"), (TokenKind.KEYWORD, "_Bool"),
              (TokenKind.IDENTIFIER, "booly"),
              (TokenKind.IDENTIFIER, "true_")],
+        )
+
+    def test_nullptr_keywords(self):
+        self.assertEqual(
+            kinds_vals("nullptr __c6502_nullptr_t nullptr_t nullptrx"),
+            [(TokenKind.KEYWORD, "nullptr"),
+             (TokenKind.KEYWORD, "__c6502_nullptr_t"),
+             (TokenKind.IDENTIFIER, "nullptr_t"),
+             (TokenKind.IDENTIFIER, "nullptrx")],
         )
 
     def test_attribute_tokens(self):

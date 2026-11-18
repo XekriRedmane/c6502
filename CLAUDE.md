@@ -10,6 +10,13 @@ Dependencies are managed with `uv`; `pyproject.toml` is the source of
 truth and `uv.lock` the resolved set. `requirements.txt` is a hand-
 maintained `pip`-compatible fallback and may lag.
 
+[docs/architecture.md](docs/architecture.md) summarizes what the code
+does: the pipeline as a diagram, the four IRs and their operands, the
+names each stage makes up, the lowerings to recognize in the output,
+the zero-page map, the helpers' `HARGS` layouts, and the link steps.
+Read it first for orientation. This file and the subdirectories'
+CLAUDE.md files have the per-module detail.
+
 ## Subdirectories
 
 Each subdirectory has its own CLAUDE.md with the details for the
@@ -351,9 +358,10 @@ Objects and linking:
 
 For the full optimizer walkthrough, see
 [passes/optimization/CLAUDE.md](passes/optimization/CLAUDE.md) and
-`docs/optimization.md` / `docs/leaf_zp_abi.md`. Each optimization has
+`docs/leaf_zp_abi.md`. Each optimization has
 its own document in [docs/optimizations/](docs/optimizations/README.md),
-whose README lists them in pipeline order. A pass that's added or
+whose README describes how `-O` is organized, with diagrams, and
+lists the optimizations in pipeline order. A pass that's added or
 moved needs that list updated, and `tests/test_optimization_docs.py`
 fails until it is.
 
@@ -778,11 +786,14 @@ cross-cutting facts other docs / readers need at orientation level:
   typically one pass per byte with the 6502's carry flag threading
   naturally between them. (FP arithmetic isn't lowered inline; it
   dispatches to runtime helpers via the HARGS block.)
-- **HARGS** is the runtime-helper exchange block — 24 bytes of
-  zero-page at `$04`–`$1B`. Caller writes inputs at fixed offsets,
+- **HARGS** is the runtime-helper exchange block — 32 bytes of
+  zero-page at `$04`–`$23` in the classic layout.
+  [docs/architecture.md](docs/architecture.md) gives each helper's
+  layout. Caller writes inputs at fixed offsets,
   JSRs the helper, reads outputs from later offsets. The same block
-  doubles as the wide-return slot for `LongLong` / `Float` / `Double`
-  return values (`HARGS+8..11` and `HARGS+16..23`). HARGS is
+  doubles as the wide-return slot for 4-byte (`long`, `float`) and
+  8-byte (`long long`, `double`) return values (`HARGS+8..11` and
+  `HARGS+16..23`). HARGS is
   caller-saved, so any HARGS-returned value MUST be captured
   immediately after the JSR.
 
@@ -812,11 +823,11 @@ dodges the 256-byte page-1 limit and keeps return addresses out of
 the way during frame teardown.
 
 Reserved zero-page: `$00`/`$01` = `SSP` (soft stack pointer, low/
-high), `$02`/`$03` = `FP` (frame pointer), `$04`–`$1B` = `HARGS`
-(24-byte runtime-helper exchange block — see `tac_to_asm.py`'s
-module docstring for each helper's per-byte slot table; the block
-is sized for the largest helper, `dadd`/`dsub`/`dmul`/`ddiv`, with
-16 bytes of inputs + 8 of output). `SSP` and `FP` both point at the **next-free
+high), `$02`/`$03` = `FP` (frame pointer), `$04`–`$23` = `HARGS`
+(32-byte runtime-helper exchange block — see "The helpers' exchange
+block" in docs/architecture.md for each helper's slots; the block
+is sized for the largest helpers, `udivmod64` / `sdivmod64`, with
+16 bytes of inputs + 16 of output), `$24`/`$25` = `DPTR`. `SSP` and `FP` both point at the **next-free
 byte** and grow downward. SSP/FP access is always indirect-indexed:
 `LDY #off; LDA (SSP),Y` or `LDA (FP),Y`, so `Y` is scratch for any
 soft-stack access. HARGS bytes are accessed absolutely (`LDA
@@ -843,14 +854,14 @@ and `M` local-bytes:
   collapses to `RTS`.
 
 Arg `j` is at offset `M + 3 + j` (not `M + 1 + j`) because the
-saved-FP slot sits between locals and args. The README has a frame
-diagram and a fully annotated sample prologue/epilogue.
+saved-FP slot sits between locals and args.
+[docs/calling_conventions.md](docs/calling_conventions.md) has a frame
+diagram and an annotated prologue and epilogue.
 
 ## Status
 
-For a working-feature checklist (every C99 §6.x construct c6502
-accepts end-to-end), see the README's `## Status` section and
-`tests/STATUS.md` (chapter-by-chapter pass/fail). The chapter test
+For what works and what's missing, see the README's `## Status`
+section and `tests/STATUS.md` (chapter-by-chapter pass/fail). The chapter test
 harnesses under `tests/test_chapter_<N>.py` are the authoritative
 list of what compiles and runs.
 
@@ -881,10 +892,12 @@ in `sim/` cover all of these so simulation-based tests still pass.
 
 ### Type-system limitations
 
-- FP arithmetic / unary FP ops (`+`/`-`/`*`/`/` and unary `-` on
-  `float` / `double`) raise `NotImplementedError` at TAC translation.
-  FP conversions and static initialisers work; FP comparisons via
-  `flt` / `fle` / `dlt` / `dle` work in sim through Python hooks.
+- FP arithmetic (`+`/`-`/`*`/`/` on `float` / `double`) compiles to
+  calls of `fadd` / `dmul` / etc., and unary `-` flips the sign bit
+  inline. No helper exists as 6502 code; the sim runs them, the
+  conversions, and the comparisons `flt` / `fle` / `dlt` / `dle`
+  through Python hooks. `==` / `!=` compare bit patterns, so
+  `0.0 == -0.0` is false.
 - `long double` rejected at parse time (no 16-byte IEEE 754).
 - Hex floating literals (`0x1.0p3`) lex but the parser rejects them
   — `float()` doesn't parse C hex-float syntax and the conversion

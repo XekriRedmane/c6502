@@ -9,8 +9,8 @@ entirely to a bare `RTS` — no SSP/FP arithmetic, no saved-FP
 slot, no per-byte `(FP),Y` reads in the body.
 
 This document describes the design (what changes, why, and which
-edge cases matter) and a step-by-step build plan that mirrors the
-previous staged work in `docs/optimization.md`.
+edge cases matter) and a step-by-step build plan that was carried
+out in stages, each verified against the chapter corpus.
 
 ---
 
@@ -498,8 +498,7 @@ time of definition.
 
 ## Build plan
 
-Mirrors the previous staged work in `docs/optimization.md`. Each
-step ends with a verification gate (chapter sim corpus + new
+Each step ends with a verification gate (chapter sim corpus + new
 focused tests). The chapter sim corpus is the primary backstop;
 each step must leave it green.
 

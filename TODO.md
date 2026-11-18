@@ -1,22 +1,5 @@
 # TODO
 
-## Rewrite the README and add an architecture document
-
-README.md has grown into a wall of low-level detail. It should
-describe the project in a few paragraphs and then cover how to
-download and install it, how to run it, and how to compile the code
-and run the tests. It should also include one small C example with
-the output from each of the main flags (`--tac`, `-S`, and
-`-S -O`), and link to
-[docs/calling_conventions.md](docs/calling_conventions.md) and
-[docs/attributes.md](docs/attributes.md).
-
-The low-level material moves to a new `docs/architecture.md`, which
-describes the pipeline, the four IRs, and the runtime conventions.
-That document should be organized around diagrams, tables, and short
-sections with headings, so that a reader can find one stage without
-reading the whole thing.
-
 ## Let zp_abi functions call soft-stack functions without a pool
 
 A function only gets zp_abi when every function it calls directly

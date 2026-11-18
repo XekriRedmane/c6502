@@ -6,6 +6,15 @@ parsed by any tool.
 
 ## Long-form docs
 
+- `architecture.md` — how the compiler is put together, for people
+  working on it and for Claude: the pipeline as a Mermaid diagram
+  with a table of stages and modules, the four IRs and the asm
+  operands, the names each stage makes up, the lowerings to
+  recognize in the output, the zero-page map, return values, each
+  runtime helper's `HARGS` layout, the output format, and the link
+  steps as a diagram. The root README links it from its build
+  section, and the root CLAUDE.md as the summary of what the code
+  does.
 - `attributes.md` — user guide to c6502's C23 attributes
   (`[[c6502::zp_abi]]`, `return_bool_in_carry`, `zeropage`, `address`,
   `section`, ...), where they go, the standard attributes it accepts,
@@ -35,16 +44,15 @@ parsed by any tool.
   values, costs, and limits.
 - `optimizations/` — one document per optimization, each with what
   it does, a before-and-after example captured from a compile, when it
-  applies, and what it leaves alone. `optimizations/README.md` indexes
-  them alphabetically and in pipeline order, and
+  applies, and what it leaves alone. `optimizations/README.md` opens
+  with how `-O` is organized (SSA at two levels, diagrams of the
+  stages and the two asm optimizer runs, one value followed from a C
+  variable to a zero-page byte, and how the fixed points repeat), then
+  indexes them alphabetically and in pipeline order, and
   `tests/test_optimization_docs.py` fails when that order no longer
   matches `compile.py` and the two optimizer drivers, or when a
   document is missing from the index. A new pass needs a document and
   both index entries.
-- `optimization.md` — from-scratch tour of how `-O` turns
-  "correct but slow" TAC into "correct and faster" TAC. Written for
-  someone who has read the root CLAUDE.md but never touched the
-  optimizer code.
 - `leaf_zp_abi.md` — design for `[[c6502::zp_abi]]` and the
   call-graph-disjoint ZP allocator: leaf functions with bare-RTS
   prologue / epilogue when arg bytes fit in a private ZP slice.

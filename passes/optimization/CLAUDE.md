@@ -430,7 +430,8 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → fn'
 ```
 
-`docs/optimization.md` is the from-scratch tour. Brief notes per
+`docs/optimizations/README.md` describes how `-O` is organized,
+with diagrams, and has a document for each pass. Brief notes per
 stage:
 
 1. **`rotate_signed_countdown_loops`** (`loop_rotate.py`). Pre-SSA

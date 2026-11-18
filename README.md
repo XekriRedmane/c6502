@@ -1,1663 +1,348 @@
 # c6502
 
-A C99 compiler written in Python.
+c6502 is an experimental optimizing C99 compiler for the MOS 6502,
+with some C23 features, written in Python. It writes assembly in
+[dasm](https://dasm-assembler.github.io/)'s syntax, and it has its own
+assembler and linker, which write ELF objects and executables.
 
-## Dependencies
+## Status
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/). The
-declared dependencies live in `pyproject.toml` and the resolved
-versions in `uv.lock`. Normal workflow:
+It isn't finished, and the gaps listed below matter for a program of
+any size. It's far enough along to compile two whole programs, each
+linked from several source files. They are Zork I's interpreter
+([examples/zork](examples/zork/README.md)) and Broderbund's Lode
+Runner ([examples/lode_runner](examples/lode_runner/README.md)). The
+tests run each one on a simulated Apple II beside the original and
+compare what the two do with the Monitor, DOS, and the hardware, call
+for call. Those runs use files that aren't in this repository (see
+"Running the tests").
+
+These parts work.
+
+- Most of C99 compiles. That includes every integer type, `float`
+  and `double` as types, pointers, arrays, structs and unions (passed
+  and returned by value), enums, typedefs, `switch`, `goto`, function
+  pointers, compound literals, `static` and `extern` across source
+  files, `const`, and `volatile`.
+- C23's attribute syntax, `[[...]]`, is accepted, with the standard
+  attributes and c6502's own. The compiler's attributes put objects
+  and parameters in zero page, bind names to the addresses of ROM
+  routines and I/O registers, pass parameters in registers, return a
+  `bool` in the carry flag, place code in sections, and unroll loops.
+- The optimizer, `-O`, keeps values in zero page and in the A, X, and
+  Y registers, gives each function that can have one a frame in fixed
+  zero-page bytes, and runs more than a hundred smaller rewrites.
+- The linker links several objects and reads GNU ld-style linker
+  scripts.
+
+These parts are missing.
+
+- There's no runtime library. Multiplying, dividing, and taking a
+  remainder by a value that isn't a constant, shifting by a variable
+  count, every floating-point operation, and calling through a
+  function pointer all compile to calls of helper routines (`mul16`,
+  `udivmod16`, `asl16`, `fadd`, `icall`, and so on), and no library
+  to link them from is in the repository. A program that uses them
+  links only when `--defsym` gives each helper's address, so you have
+  to write the helpers. The simulator has 6502 versions of the
+  integer helpers (`sim/runtime_helpers.py`) and Python stand-ins
+  for the floating-point ones, which is how the tests run such
+  programs.
+- There's no startup code. Something has to set the soft stack
+  pointer `SSP`, call `__zp_init`, and then call `main` (see
+  [Zero page](#zero-page) below).
+- There's no standard library. The only headers are `<stdint.h>`,
+  `<stdbool.h>`, `<limits.h>`, and two that declare the Apple II
+  Monitor's routines, `<apple2/monitor_io.h>` and
+  `<apple2/interactive_monitor.h>`.
+- Floating point has no 6502 code at all, as described above.
+  `long double` and hexadecimal floating constants are rejected, and
+  `==` on `float` or `double` compares bit patterns, so `0.0 == -0.0`
+  is false.
+- Variadic functions, bit-fields, designated initializers,
+  variable-length arrays, `inline`, and `_Complex` are rejected. So
+  are a few initializer forms, such as the flat list for a nested
+  array (`int a[2][3] = {1, 2, 3, 4, 5, 6};`).
+
+## Installation
+
+1. Install Python 3.11 or later.
+2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+3. Clone the repository with
+   `git clone https://github.com/XekriRedmane/c6502.git`, and `cd`
+   into it.
+4. Run `uv sync`. It creates a virtual environment in `.venv` and
+   installs the dependencies, including the preprocessor,
+   [pcpp](https://github.com/ned14/pcpp), and the development
+   dependencies pytest and pytest-xdist.
+5. Check that it works with
+   `uv run python -m unittest tests.test_example_outputs`. It
+   compiles every example in `examples/` and compares the output
+   with the checked-in `.asm` files, and it should print `OK`.
+6. Optionally, install dasm and put it on your `PATH`. Compiling,
+   linking, and running programs in the simulator don't use it, but
+   the tests that compare c6502's assembler with dasm run only where
+   dasm is installed.
+
+`requirements.txt` lists the same packages for a plain `pip`
+environment. It's kept by hand and may be behind `uv.lock`.
+
+## Usage
+
+`compile.py`'s flags follow gcc's where the two have the same
+options. Every command below runs from the repository's directory.
 
 ```sh
-uv sync             # create/update the project venv
-uv add <package>    # add a new dependency
-uv run python ...   # run a script inside the venv
+uv run python compile.py prog.c -S             # assembly in prog.s
+uv run python compile.py prog.c -S -O          # the same, optimized
+uv run python compile.py prog.c -S -O -o -     # to stdout
+uv run python compile.py -O -c a.c b.c         # objects a.o and b.o
+uv run python compile.py a.o b.o -o prog       # link them
+uv run python compile.py -O -T prog.ld a.c b.o -o prog   # both, with a linker script
+uv run python compile.py a.o -o prog --defsym mul16=0x9000   # give a helper's address
+uv run python nm.py a.o                        # an object's symbols
+uv run python objdump.py -d a.o                # disassembly, in dasm's syntax
 ```
 
-`requirements.txt` is **not** the primary source — it's a convenience
-file for reproducing the same package set in a plain `pip`-managed
-venv (no uv available). It is generated by hand from `uv pip freeze`
-and may lag; if there's any disagreement, `uv.lock` wins.
+Without `-S` or `-c`, the inputs (C sources, `.asm` files, and
+objects) are linked into an ELF executable, `a.out` unless `-o` names
+it. Without `-T`, the code starts at `$0800`, and `-Ttext=ADDR` moves
+it. Flags that `compile.py` doesn't recognize go to the preprocessor,
+so `-D`, `-U`, and `-I` work as usual. `--lex`, `--parse`,
+`--resolve`, and `--tac` stop after the stage they name and print
+that stage's output.
 
-## Regenerating AST modules from `.asdl` sources
+### An example
 
-Each `*_ast.py` module is generated from its matching `*.asdl` source by
-`asdl.py`. After editing any ASDL file, regenerate:
+```c
+#include <stdint.h>
+
+uint8_t table[16];
+
+uint8_t sum(void) {
+    uint8_t total = 0;
+    for (uint8_t i = 0; i < 16; i++)
+        total += table[i];
+    return total;
+}
+```
+
+`uv run python compile.py sum.c -S -O -o -` prints this.
+
+```
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+
+; @zp-link-meta-begin
+; def sum params= locals=__local_sum__0,__local_sum__total indirect=false in_cycle=false
+; item sum section=.text local=false zero=false
+; item table section=.bss local=false zero=true
+; runtime hargs_size=32 hargs_need=0
+; @zp-link-meta-end
+
+sum:
+   SUBROUTINE
+
+   LDA   #$00
+   LDX   #$00
+   BEQ   .loop@0_start
+.sum@rot@0:
+   ADC   table,X
+   INX
+.loop@0_start:
+   CPX   #$10
+   BCC   .sum@rot@0
+   RTS
+
+table:
+   DS.B  16
+```
+
+`total` stays in A and `i` in X for the whole loop, and the result
+comes back in A. The `ADC` has no `CLC` in front of it because the
+only way to reach it is the `BCC`, which is taken only when C is
+clear. The comment block between the `EQU` lines and the code is
+read by the linker, which uses it to place the function's zero-page
+bytes when it links several files. The function is 15 bytes. Without
+`-O` it's 228 bytes, since every variable and temporary then lives on
+the soft stack. With `int` in place of both `uint8_t`s, `-O` makes it
+48 bytes, for the reason the next section gives.
+
+### How C maps onto the 6502
+
+The C types have these sizes on the 6502, which differ from their
+sizes on 32- and 64-bit machines.
+
+| Type | Size | Range |
+|---|---|---|
+| `char` | 1 byte | 0 to 255. Plain `char` is unsigned. |
+| `signed char` | 1 byte | -128 to 127 |
+| `short`, `int` | 2 bytes | -32768 to 32767 |
+| `long` | 4 bytes | -2^31 to 2^31 - 1 |
+| `long long` | 8 bytes | -2^63 to 2^63 - 1 |
+| a pointer | 2 bytes | `$0000` to `$FFFF` |
+| `float`, `double` | 4 and 8 bytes | IEEE 754, with no arithmetic code (see "Status") |
+| `_Bool` | 1 byte | 0 or 1 |
+
+`<stdint.h>` defines `uint8_t` as `unsigned char`, `int16_t` as
+`int`, `int32_t` as `long`, and so on. `sizeof` gives an `unsigned
+long`, and the difference of two pointers is an `int`. Since `int` is
+16 bits, `40000` is a `long` constant, and `1 << 16` is undefined.
+
+The 6502 does arithmetic a byte at a time, so every byte of a value
+costs code and time. C promotes `char` operands to `int` before any
+arithmetic, which makes `a + b` on two `uint8_t`s a 16-bit add. `-O`
+narrows such arithmetic back to one byte when only the low byte is
+used, as when the sum is stored in a `uint8_t`, but a value kept in
+an `int` stays two bytes everywhere it goes. Declaring a counter, an
+index, or a flag `uint8_t` wherever its values fit saves code, as the
+example above shows.
+
+A multiplication by a constant power of two becomes a shift, and so
+do the division and remainder of an unsigned value by one. A
+multiplication by a constant such as 3, 5, 10, or 12, which is the
+sum or difference of two powers of two, becomes two shifts and an add
+or a subtract. Every other multiplication, division, remainder, and
+shift by a variable count calls a helper, which the program has to
+supply.
+
+#### Zero page
+
+The first 256 bytes of memory have shorter, faster instructions, and
+the 6502 can follow a pointer only if it's in zero page. c6502 keeps its runtime's bookkeeping in `$00`-`$25` (the soft
+stack pointer `SSP`, the frame pointer `FP`, the helper exchange
+block `HARGS`, and a pointer scratch `DPTR`), and with `-O` it keeps
+the functions' parameters and locals in `$80`-`$FF`. The bytes
+between, `$26`-`$7F`, are for globals marked
+`[[c6502::zeropage]]`, and with `-O` the compiler moves the busiest
+scalar globals there itself. Since zero page isn't part of the
+program's image, the compiler writes a routine `__zp_init` that
+stores those globals' initial values, and the startup code has to
+call it before `main`. A program that shares zero page with a ROM or
+an operating system declares the bytes those use, and the runtime's
+block moves out of their way.
+
+#### Calling conventions
+
+There are two. Without `-O`, every function keeps its arguments and
+locals on a *soft stack*, a stack in main memory reached through
+`SSP` and `FP` with `(FP),Y` instructions, which costs a prologue and
+an epilogue on each call. With `-O`, each
+function that qualifies gets its arguments and locals in fixed
+zero-page bytes instead, and has no frame at all. Among other
+conditions, a function that qualifies isn't recursive, doesn't call
+through a pointer, and doesn't have its address taken. Two functions
+that are never active at the same time share those bytes. `register`
+on a parameter passes it in A or X, and `[[c6502::in_y]]` passes it
+in Y. [docs/calling_conventions.md](docs/calling_conventions.md)
+traces a call through each convention.
+
+#### Recursion
+
+Recursion works, on the soft stack. A soft-stack frame holds at most
+253 bytes of locals, because its offsets are one byte, and
+nothing checks that the soft stack stays clear of the program. Each
+call in progress also keeps a 2-byte return address on the 6502's own
+256-byte stack, which limits recursion to about 120 calls deep.
+
+#### I/O registers
+
+I/O registers are `volatile` objects at fixed addresses, so that
+every read and write in the source happens in the program.
+
+```c
+extern volatile uint8_t KBD [[c6502::address(0xC000)]];
+```
+
+## Documentation
+
+- [docs/attributes.md](docs/attributes.md) describes every attribute,
+  where each one goes, and the errors the compiler reports, and walks
+  through declaring and calling the Apple II Monitor's routines.
+- [docs/builtins.md](docs/builtins.md) describes
+  `__c6502_bcd_add` and `__c6502_bcd_sub`, which add and subtract
+  packed BCD numbers with the 6502's decimal mode, for scores and
+  other decimal counters.
+- [docs/calling_conventions.md](docs/calling_conventions.md) traces a
+  call through the soft stack and through zp_abi, says which
+  functions qualify for zp_abi, and gives the costs and limits of
+  each.
+- [docs/linker_scripts.md](docs/linker_scripts.md) covers sections,
+  the subset of GNU ld's script language the linker reads, the
+  symbols it defines, and the copies and clears that `__zp_init` does
+  at startup.
+- [docs/optimizations/README.md](docs/optimizations/README.md) shows
+  how `-O` is organized and lists every optimization, alphabetically
+  and in the order they run, each with a before-and-after example.
+
+## Working on the compiler
+
+[docs/architecture.md](docs/architecture.md) describes the pipeline,
+the four intermediate representations, and the runtime conventions.
+Each directory's `CLAUDE.md` describes the modules in it.
+
+### Running the tests
+
+```sh
+uv run python -m unittest                          # every test
+uv run python -m unittest tests.test_asm_emit      # one module
+C6502_CHECK_IR=1 uv run python -m unittest         # check the IR after every pass
+C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
+```
+
+The parallel run takes about 70 seconds, against about 4 minutes in
+one process. `C6502_CHECK_IR=1` checks the IR after every optimizer
+pass and at each stage boundary, and adds about 3% to the time.
+
+The runs of the two example programs read files from each program's
+reverse-engineering project, which aren't in this repository. Without
+them, the runs are skipped, and the comparisons of each unit's output
+with its checked-in `.asm` file still run.
+
+- `ZORK_DSK` names the disk image of Zork I r15, `Zork I r15 (4am
+  crack).dsk` from
+  [zorki-r15-reveng](https://github.com/XekriRedmane/zorki-r15-reveng).
+  `tests/test_zork_interpreter.py` then plays two sessions on the
+  compiled interpreter and on Zork's own, read from that image.
+- `LODE_RUNNER_DIR` names the directory of
+  [lode_runner_reveng](https://github.com/XekriRedmane/lode_runner_reveng),
+  which holds `main.bin`, `lode_runner.do`, and `main.asm`.
+  `tests/test_lode_runner.py` then plays three scripts of keys on the
+  compiled game and on the original. The demo takes about four
+  minutes.
+
+[tests/CLAUDE.md](tests/CLAUDE.md) describes how the tests are
+organized.
+
+### The fuzzers
+
+The fuzzers generate random C programs and check that the TAC
+interpreter, the unoptimized code, and the optimized code all give
+the same result. They're worth running after changing a pass, the ABI
+selection, or the register allocator.
+
+```sh
+uv run python -m fuzz.exprs --start 0 --count 300 -j 12   # expressions, in 12 processes
+uv run python -m fuzz.calls --start 0 --count 300         # calling conventions
+uv run python -m fuzz.stmts --start 0 --count 300         # control flow and storage
+uv run python -m fuzz.build_yarpgen                       # once, before the next line
+uv run python -m fuzz.yarpgen --start 0 --count 100       # YARPGen's programs
+uv run python -m fuzz.reduce fuzz_out/calls/calls534.c    # shrink a failing program
+```
+
+Failing programs land in `fuzz_out/`. [fuzz/CLAUDE.md](fuzz/CLAUDE.md)
+describes each tool.
+
+### Regenerating the AST modules
+
+Each `*_ast.py` module is generated from the matching `.asdl` file by
+`asdl.py`. After editing an ASDL file, regenerate its module.
 
 ```sh
 uv run python asdl.py c99.asdl c99_ast.py
 uv run python asdl.py tac.asdl tac_ast.py
 uv run python asdl.py asm.asdl asm_ast.py
+uv run python asdl.py asm2.asdl asm2_ast.py
 ```
-
-The generator emits one `@dataclass` per type. Sum-type bases are named
-`Type_<name>` to avoid collisions with Python builtins (`int`, etc.);
-constructor classes keep their ASDL names. Fields use `int`, `str`, `list[...]`,
-`T | None` depending on the primitive / optional / sequence markers in the
-ASDL source.
-
-## Top-level driver: `compile.py`
-
-`compile.py` compiles, assembles, and links, with gcc's flags. It
-pipes each C input through pcpp to strip comments, then runs to the
-stage that at most one of these flags asks for:
-
-| flag             | output                                                        |
-| ---------------- | ------------------------------------------------------------- |
-| `--lex`          | one `line:col<TAB>kind<TAB>value` line per token              |
-| `--parse`        | `pretty(c99_ast)` — the parsed AST                            |
-| `--resolve`      | `pretty(c99_ast)` after the three resolution passes (user     |
-|                  | variables → `@N.orig`; goto labels → `.<funcname>@<orig>`;    |
-|                  | loops → `.loop@N`, with break/continue stamped to match)      |
-| `--tac`          | `pretty(tac_ast)` — three-address-code IR                     |
-| `-S`             | 6502 assembly text, in dasm's syntax, `<name>.s`              |
-| `-c`             | a relocatable ELF object, `<name>.o`                          |
-| (none)           | an ELF executable, `a.out`, linked from every input           |
-
-`-O` is a modifier orthogonal to the stage flags. It
-runs the optimizer pipeline (TAC fixed-point opts → asm-level SSA
-round-trip with byte-granular regalloc → late prologue synthesis) and
-enables the `[[c6502::zp_abi]]` + call-graph-disjoint local-pool
-allocator. See `docs/optimization.md` for the walk-through.
-
-```sh
-uv run python compile.py <source.c> -S              # to <source>.s
-uv run python compile.py <source.c> -S -o out.asm   # to out.asm
-uv run python compile.py <source.c> -S -o -         # to stdout
-uv run python compile.py - --tac < source.c         # stdin
-uv run python compile.py - -S -O < src.c            # with optimization
-uv run python compile.py -O -c a.c b.c              # a.o and b.o
-uv run python compile.py a.o b.o -o prog            # link them
-uv run python compile.py -O -T prog.ld a.c b.o -o prog  # both at once
-```
-
-- `-` as the input filename reads from stdin.
-- With `-S`, each C input becomes `<name>.s` in the current
-  directory, as gcc names it, and stdin goes to stdout. A `-o`
-  filename must end in `.s` or `.asm`, and `-o -` is stdout.
-- With `-c`, each `.c` or `.asm` input becomes an object named after
-  it in the current directory, as gcc names them, unless `-o` names
-  the one output.
-- Without a stage flag, the inputs can be C sources, `.asm` files,
-  and objects, and they're linked into one executable. `-T script.ld`
-  gives a linker script, `-Ttext=ADDR` (or `--origin ADDR`) moves the
-  start of `.text` from `$0800` in a link without one, and `--defsym
-  NAME=VALUE` gives an address to a name no object defines.
-- The other text stages accept any output filename, or default to
-  stdout.
-- Comment stripping uses pcpp via the Python API; any flag
-  `compile.py` doesn't recognize is forwarded to pcpp (`-D`,
-  `-U`, `-I`, `--passthru-*`, etc.).
-
-```sh
-uv run python compile.py - -S -DMAX=42 -I include/ < src.c
-```
-
-An object holds one section per function and per object, its symbols,
-its relocations, the link metadata the linker allocates zero page
-from, and the assembly text it came from. The machine number and the
-relocation types are llvm-mos's (`EM_MOS`, `R_MOS_*`).
-[binutils/CLAUDE.md](binutils/CLAUDE.md) describes the format. Two
-more tools read objects and executables, as GNU's do:
-
-```sh
-uv run python nm.py prog.o           # symbols: T, D, B, R, A, U
-uv run python objdump.py -d prog.o   # disassembly, in dasm's syntax
-uv run python objdump.py -x prog.o   # headers, symbols, relocations,
-                                     # and link metadata
-uv run python objdump.py -D --no-show-raw-insn --no-addresses prog
-                                     # the whole executable as dasm
-                                     # source, with SEG and ORG
-```
-
-`tests/test_binutils.py` checks, where dasm is installed, that the
-assembler's bytes are dasm's for every example and that dasm assembles
-the listing of the linked Zork interpreter into the executable's
-bytes.
-
-## Compiler pipeline
-
-`compile.py -S` chains ten passes. Each is a separate module
-that takes an AST and returns an AST (or text, for emit). With
-`-O`, a TAC-level optimizer (SSA construction, fixed-point
-loop, register allocation, SSA destruction) runs between
-`c99_to_tac` and `tac_to_asm`; see the "Optimization pipeline"
-section below.
-
-1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
-   Lark/LALR parser using the grammar in `c99.lark`. A translation
-   unit is `Program(declaration*)`: each top-level declaration is a
-   `VarDecl` (file-scope object) or a `FunctionDecl` (forward
-   declaration when `body=None`, definition when `body=Block(...)`).
-   Both declaration kinds carry a required `data_type` and an
-   optional `storage_class` (`Static` / `Extern` / None). The parser
-   splits the `specifier+` run that precedes the identifier into a
-   data type — composed from `int`, `long`, `signed`, `unsigned`
-   tokens by `_resolve_data_type` — plus at most one storage class;
-   illegal combinations (multiple storage classes, multiple `int`s,
-   `long long`, `signed unsigned`, missing type specifier) raise
-   `ParserError` from `_split_specifiers`.
-
-   c6502 follows the C99 minimum widths (§5.2.4.2.1). The integer
-   types are `Char()` / `SChar()` / `UChar()` (1 byte each;
-   `Char` is unsigned per c6502's implementation-defined choice
-   per §6.2.5.15), `Int()` (2-byte signed, -32768..32767),
-   `UInt()` (2-byte unsigned, 0..65535), `Short()` / `UShort()`
-   (`short` / `unsigned short`, the same widths as `Int()` /
-   `UInt()`), `Long()` (4-byte
-   signed), `ULong()` (4-byte unsigned), `LongLong()` (8-byte
-   signed), and `ULongLong()` (8-byte unsigned). Floating types
-   are `Float()` (IEEE 754 single, 4 bytes) and `Double()` (IEEE
-   754 double, 8 bytes); `long double` isn't modelled. Pointers
-   are `Pointer(referenced_type)` and are 2 bytes wide (the
-   6502's address width). The lexer splits integer literals into
-   four terminals by suffix (`INTEGER_CONSTANT` for no suffix,
-   `LONG_INTEGER` for `L`/`LL`, `UINT_INTEGER` for `U` only,
-   `ULONG_INTEGER` for combined `U+L` in either order); the
-   parser's `_const_for_token` then maps each (token-kind, base,
-   has_ll) tuple to its C99 §6.4.4.1 paragraph 5 type list and
-   picks the first variant whose range fits the value (`ConstInt`
-   / `ConstLong` / `ConstLongLong` / `ConstUInt` / `ConstULong` /
-   `ConstULongLong`). Floating literals split into three
-   terminals (`DOUBLE_CONSTANT`, `FLOAT_CONSTANT`,
-   `LONG_DOUBLE_CONSTANT`); the parser rejects the `long double`
-   variant. A literal whose value exceeds `unsigned long long`
-   (the widest c6502 type, 2^64 - 1) is rejected. A
-   `function_decl`'s `data_type` is `FunType(params, ret)`,
-   built from the per-param type-specifier runs and the return-
-   type specifiers; the param *names* live on the function_decl's
-   `params` array, parallel to `data_type.params`.
-
-   A function `body` is a `Block` of `block_item`s; each item is a
-   declaration (`int x;`, `long x = 5;`, `unsigned int u = 200U;`,
-   `unsigned long w = 60000UL;`, `static int x = 5;`, `extern long
-   x;`, or `int foo(int a, long b);`) or a statement
-   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`, `goto
-   label;`, `label: stmt`, a nested block as a `Compound(block)`,
-   `break;`, `continue;`, `while (exp) stmt`, `do stmt while (exp);`,
-   `for (<for_init> exp? ; exp?) stmt`, or a null `;`). The for-
-   init slot is either a declaration or `exp? ;`. Loop AST nodes
-   (`WhileStmt`, `DoWhileStmt`, `ForStmt`) and the jump nodes
-   (`BreakStmt`, `ContinueStmt`) carry an `identifier label` field
-   that the parser leaves as the empty string; loop_labeling fills
-   it in later. The compound-statement rule reuses the same `block`
-   rule the function body uses; the transformer just wraps the
-   resulting `Block` in a `Compound`. The dangling-else ambiguity
-   is resolved by Lark's LALR(1) backend preferring shift over
-   reduce on `else`, which binds the `else` to the nearest
-   preceding unmatched `if` — the C99 §6.8.4.1 rule. `<exp>` is
-   built from integer constants, identifiers, function calls
-   (`f(arg, ...)`), cast expressions (`(int)x` / `(long)x`), the
-   unary ops (`-`/`~`/`!`/`+`), binary
-   `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
-   parentheses, right-associative `=` plus the ten compound
-   assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-   `<<=`, `>>=`), the four increment/decrement operators in both
-   prefix (`++a` / `--a`) and postfix (`a++` / `a--`) form, and
-   the ternary `cond ? t : f`. Compound assignments desugar at
-   parse time to `Assignment(lval, Binary(OP, lval, rval))`;
-   prefix `++a` / `--a` desugar the same way to `a = a ± 1`.
-   Postfix keeps its own `Postfix(incdec_op, exp)` AST node
-   because it must evaluate to the operand's *old* value while
-   mutating it. The ternary is its own `Conditional(condition,
-   true_clause, false_clause)` node; grammatically it sits between
-   assignment and logical-or, with the false-clause slot
-   restricted to `conditional_exp` (so `?:` is right-associative
-   and `1 ? 2 : a = 5` parses as `(1 ? 2 : a) = 5`). Cast
-   expressions sit at their own `cast_exp` level between
-   `unary_exp` and `mul_exp` (C99 §6.5.4), right-recursive so
-   `(int)(long)x` parses as `(int)((long)x)`. The unary-op
-   alternative takes a `cast_exp`, so `-(int)x` parses as
-   `-((int)x)`; prefix `++` / `--` keep `unary_exp` operands
-   because the cast result isn't an lvalue (`++(int)x` is a parse
-   error). Operator precedence is encoded by a precedence-climbing
-   rule layout (`exp → assignment_exp → conditional_exp →
-   logical_or_exp → … → cast_exp → unary_exp → postfix_exp → atom`).
-
-2. **`passes.identifier_resolution.resolve_program`** — `c99_ast` →
-   `c99_ast`. Rewrites every user-written identifier — variables and
-   function names both — and tags each declaration with its C99
-   §6.2.2 linkage kind. Renaming is keyed off linkage:
-   `Linkage.NONE` names get a program-unique `@<N>.<orig>` (illegal
-   as a C identifier, so collision-proof), while `Linkage.INTERNAL`
-   and `Linkage.EXTERNAL` names keep their source spelling — the
-   linker (or later TU passes, for INTERNAL) resolves them by name.
-
-   The pass walks the program twice. The first pass registers every
-   file-scope declaration in `_file_scope` with its computed linkage
-   so a function body can reference a global declared further down
-   in the file. The second pass resolves each declaration's
-   initializer / body. File-scope linkage rules: `static` →
-   INTERNAL; `extern` → matches the prior visible declaration's
-   linkage if any, else EXTERNAL; no specifier → EXTERNAL for
-   objects, as-if-`extern` (so prior-visible-or-EXTERNAL) for
-   functions. Block-scope linkage rules: plain `int x;` and
-   `static int x;` → NONE (the `static` changes storage duration,
-   not linkage); `extern int x;` → prior-visible rule against the
-   inherited file-scope parent; block-scope function declarations →
-   as-if-`extern` (and `static` is rejected at block scope per
-   §6.2.2).
-
-   Each scope owns a map from user name to `(resolved_name, inner,
-   linkage)` where `inner` is True iff the name was declared in this
-   block. Entering a nested block clones the parent's map and flips
-   every entry's `inner` flag to False; the file-scope table seeds
-   each function body's outermost scope the same way. So a block-
-   scope `extern int x;` after a file-scope `static int x = 5;`
-   sees the file-scope entry as outer-scoped INTERNAL, and the
-   prior-visible rule kicks in to give the block decl INTERNAL
-   linkage with the source spelling preserved. While/do-while bodies
-   share the parent scope; for-headers (`for (<init> ...) ...`) open
-   a fresh scope per C99 §6.8.5.3, so a header declaration legally
-   shadows any outer name for the duration of the loop. Function
-   parameters share the body's outermost scope (§6.9.1.7) — a body
-   decl that reuses a param name raises duplicate-decl; an inner
-   compound legally shadows the param. `Assignment` and `Postfix`
-   require their lval / operand to be a `Var` (richer lvalues
-   haven't landed yet); `1+2=3`, `-a=5`, `(a=b)=c`, `1++` all raise
-   "invalid lvalue" here. Labels, gotos, break, and continue pass
-   through unchanged — they live in separate namespaces and are
-   owned by later passes.
-
-3. **`passes.label_resolution.resolve_program`** — `c99_ast` →
-   `c99_ast`. Validates and rewrites `LabeledStmt` (C99 §6.8.1) and
-   `Goto` (§6.8.6). Two walks per function: (a) collect every
-   declared label, mint a unique name `.<funcname>@<orig>`, and
-   raise `LabelResolutionError` on duplicates; (b) rewrite the AST,
-   replacing each label and matching goto target with the unique
-   name and raising on a goto whose target wasn't declared in the
-   same function. Labels are visible across the whole function so
-   forward gotos resolve, and both walks descend into `if`,
-   compound, while, do-while, and for bodies. The leading `.` makes
-   them dasm **local labels** (scoped to the SUBROUTINE the asm
-   emits), which automatically isolates same-named labels across
-   different functions. The `@` separator is illegal in a C
-   identifier, so user-mangled labels can never collide with any
-   user-written identifier. Translator-minted labels also embed `@`
-   (`.if_end@N`, `.cond_else@N`, `.loop@N`, …); the two forms stay
-   disjoint because the part after `@` is a C identifier here vs.
-   a digit run there. The C99 §6.8.6 prohibition on jumping into a
-   variably-modified-type identifier's scope is vacuously satisfied
-   (c6502 has no VLAs).
-
-4. **`passes.loop_labeling.label_program`** — `c99_ast` → `c99_ast`.
-   Mints a unique label `.loop@<N>` per iteration statement and
-   stamps it onto that loop's `label` field. While walking the body,
-   the same label is stamped onto every `BreakStmt` and
-   `ContinueStmt` encountered; nested loops push their own label as
-   the current target for their body, so an inner break/continue
-   targets the innermost enclosing loop. A `break` or `continue`
-   outside any loop raises `LoopLabelingError`. (C99 §6.8.6.3 also
-   allows `break` inside a switch; c6502 has no switch yet, so the
-   loop pass is sole owner of break/continue targets right now.)
-   The pass runs *after* label_resolution: loop labels are
-   translator-minted, so they slot in only once user goto / labeled-
-   stmt names have been resolved. Disjointness from user labels is
-   structural — `.loop@<N>` has digits after `@`, `.<funcname>@<orig>`
-   has a C identifier — so the two forms can never match.
-
-5. **`passes.type_checking.check_program`** — `c99_ast` →
-   `(c99_ast, SymbolTable)`. Validates that every identifier is used
-   in a way consistent with its declaration and produces the
-   `SymbolTable` later passes consume. The data-type classes (`Int`,
-   `Long`, `UInt`, `ULong`, `FunType`) live on `c99_ast` and are re-
-   exported here so every consumer agrees on the type vocabulary;
-   equality is structural via `@dataclass`. Each `Symbol` carries a
-   `type` plus an `IdAttr` — `LocalAttr` (automatic-storage object,
-   including every TAC temporary registered downstream),
-   `StaticAttr(initial_value, is_global)` (static-storage object —
-   every file-scope object plus block-scope `static`), or
-   `FunAttr(defined, is_global)` (a function name). `is_global` is
-   True iff the symbol has external linkage, materialized once here
-   so the asm backend doesn't have to re-derive it from the three-
-   way `Linkage` enum.
-
-   The pass mutates each visited expression's `data_type?` field in
-   place — every `Constant` / `Var` / `Cast` / `Unary` / `Binary` /
-   `Assignment` / `Postfix` / `Conditional` / `FunctionCall` ends up
-   tagged with its concrete result type. Constants pick from the
-   const variant (ConstInt → Int, ConstLong → Long, ConstUInt →
-   UInt, ConstULong → ULong); Cast picks its target_type; Var picks
-   the symbol's type; Unary / Postfix inherit the inner type,
-   except `!` which always yields Int per §6.5.3.3.5.
-
-   **C99 implicit conversions** apply via `_convert_to(exp, target)`:
-   if `exp.data_type` already equals `target`, return `exp`; else
-   wrap it in an implicit `Cast(target, exp, data_type=target)`. The
-   helper runs at every place C99 specifies a conversion:
-   - **Binary** operands (§6.3.1.8 usual arithmetic conversions):
-     `_common_type` implements the full rule keyed by C99 §6.3.1.1
-     conversion rank (Int/UInt are rank 1; Long/ULong are rank 2):
-     matching types pass through; both signed (or both unsigned) →
-     higher-rank wins (Int+Long → Long, UInt+ULong → ULong); mixed
-     signedness with the unsigned at rank ≥ signed → unsigned wins
-     (Int+UInt → UInt, Int+ULong → ULong, Long+ULong → ULong);
-     mixed signedness with the signed at higher rank that can
-     represent all unsigned values → signed wins (Long+UInt → Long).
-     Comparison and `&&` / `||` results are always Int regardless of
-     operand type, but the operands still go through promotion so
-     the underlying op happens at one width.
-   - **Assignment** rval (§6.5.16.1): converted to lval's type.
-     Compound assignments inherit this via parser desugaring —
-     `int_x += long_y` parses as `int_x = int_x + long_y`, the
-     Binary promotes both operands to Long, and the Assignment
-     narrows the Long result back to Int with an implicit Cast.
-   - **FunctionCall** args (§6.5.2.2.7): each arg converted to the
-     corresponding parameter's type.
-   - **Return** value (§6.8.6.4.3): converted to the enclosing
-     function's declared return type.
-   - **Variable initializers** (§6.5.16.1): block-scope auto, block-
-     scope `static`, file-scope, and for-init declarations all run
-     through the same conversion. Static-storage initializers stay
-     constant-expression-only — `_const_init_value` recursively
-     drills through any number of Cast wrappers (the parser produces
-     `Cast` for explicit casts, and the implicit-conversion rule
-     wraps a mismatched literal in another Cast) to the underlying
-     integer.
-
-   `InitialValue` is one of `Initial(c)`, `Tentative`, or
-   `NoInitializer` per C99 §6.9.2. Initializer rules:
-   - File-scope `T x = e;` / `static T x = e;` → `Initial(c)`.
-   - File-scope `T x;` / `static T x;` → `Tentative`. Per §6.9.2.2
-     a tentative definition resolves to a zero-initialized
-     definition at end-of-TU if no `Initial` ever appears.
-   - File-scope `extern T x;` (no init) → `NoInitializer`.
-   - Block-scope `static T x;` → `Initial(0)` per §6.7.8.10.
-   - Block-scope `static T x = e;` → `Initial(c)`.
-   - Block-scope `extern T x;` → `NoInitializer`. Initializers are
-     forbidden on block-scope `extern` declarations (§6.7.8.5) and
-     raise here.
-   - Block-scope `T x [= e];` → `LocalAttr` (no static-storage
-     metadata; the initializer lowers as a regular runtime `Copy`
-     at the declaration site).
-
-   Multiple file-scope declarations of the same identifier merge:
-   function signatures must agree; `defined` flips False→True on
-   first definition; two distinct `Initial(c)` values are an
-   error; otherwise the more-defined of two initial-value tags wins
-   (`Initial > Tentative > NoInitializer`).
-
-   Other diagnostics: function designator used where an object is
-   required (a function name decays to a pointer elsewhere), variable called
-   as a function, wrong call arity, function redefinition, cast
-   target that isn't an integer object type, mismatched binary-
-   operator operand types (only when neither is an object type —
-   every Int/Long/UInt/ULong mix is handled by promotion now), and
-   linkage disagreement with a prior declaration.
-
-6. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
-   `(c99_ast, SymbolTable)` → `tac_ast`. The TAC program shape is
-   `Program(top_level*)`, where each `top_level` is either a
-   `Function(name, is_global, params, instructions)` or a
-   `StaticVariable(name, is_global, data_type, init)`. The TAC ASDL
-   mirrors the c99 ASDL's typed shape: TAC `data_type` is
-   `Int | Long | UInt | ULong | FunType(params, ret)`, and TAC
-   `static_init = IntInit(int) | LongInit(int) | UIntInit(int) |
-   ULongInit(int)` — the variant tells codegen both width and
-   signedness. The TAC `const` sum is narrower (only
-   `ConstInt(int) | ConstLong(int)`): the 6502 has no signedness
-   distinction at the byte level, so unsigned values pass through
-   the signed const variant of the matching width
-   (ConstUInt(v) → ConstInt(v), ConstULong(v) → ConstLong(v)),
-   bit pattern preserved by `_byte_at`'s `& 0xFF` mask. Two
-   passes assemble the top_level list:
-
-   1. Walk c99 declarations in source order. Each `FunctionDecl`
-      with a body lowers to a TAC `Function`; `is_global` rides
-      through from the function's symbol-table entry. File-scope
-      variable declarations and forward function declarations emit
-      nothing here — their definitions appear in the second pass.
-      Block-scope variable declarations with a storage class
-      (`static` / `extern`) also skip TAC emission at the
-      declaration site; plain `int x [= e];` / `long x [= e];` /
-      `unsigned int x [= e];` / `unsigned long x [= e];` lowers to
-      a `Copy` from the evaluated initializer into the var.
-   2. Iterate the symbol table once. Each `StaticAttr` entry whose
-      `initial_value` is `Initial(c)` (use `c`) or `Tentative`
-      (use `0`) becomes a TAC `StaticVariable`, with the integer
-      wrapped in `IntInit(v)` / `LongInit(v)` / `UIntInit(v)` /
-      `ULongInit(v)` matching the variable's declared type;
-      `NoInitializer` entries describe a reference to a definition
-      elsewhere and emit nothing.
-
-   **Cast lowering.** `Cast(target, exp)` dispatches by byte width
-   of source and target (the 6502 doesn't distinguish signedness,
-   so same-width cross-sign casts carry no codegen):
-   - same width (Int↔UInt, Long↔ULong, plus matching types) →
-     elide (return inner's val)
-   - 1B → 2B with a *signed* source (Int → Long / Int → ULong) →
-     `SignExtend(src, dst)`
-   - 1B → 2B with an *unsigned* source (UInt → Long /
-     UInt → ULong) → `ZeroExtend(src, dst)`
-   - 2B → 1B (any signedness combination) →
-     `Truncate(src, dst)`
-   The source type comes from the inner node's `data_type`, set
-   by the type checker.
-
-   **Typed temporaries.**
-   `Translator.make_temporary_variable_name(t)` mints a fresh `%N`
-   and registers it in the symbol table as a `LocalAttr` symbol
-   with `type=t`. Every production call site passes the surrounding
-   expression's `data_type` (post-promotion / post-conversion), so
-   each `%N` carries the right width. Downstream consumers —
-   `tac_to_asm` for operand-size dispatch and
-   `replace_pseudoregisters` for frame-slot sizing — both read
-   `symbols['%N'].type` to decide between a 1-byte and 2-byte
-   plan. The implicit-zero `Ret` for fall-through
-   functions also picks the constant width from the function's
-   declared return type — 2-byte-returning functions
-   (Long / ULong) get `ConstLong(0)`, 1-byte-returning ones
-   (Int / UInt) get `ConstInt(0)`.
-
-   Compound expressions flatten into ops, materializing each
-   intermediate into a fresh `Var(%n)` temporary. `Binary(op, src1,
-   src2, dst)` evaluates `src1` first so its temps get the lower
-   numbers. `FunctionCall(name, args, dst)` evaluates each arg in
-   source order, mints a fresh dst temp, and emits a single TAC
-   `FunctionCall` instruction. `Goto(label)` lowers to a TAC
-   `Jump(label)`; `LabeledStmt(label, stmt)` lowers to a TAC
-   `Label(label)` followed by the inner statement's lowering. Label
-   names arrive pre-mangled by label_resolution and pass through
-   unchanged. Iteration statements derive concrete control-flow
-   targets from the base label set by loop_labeling, by suffix:
-   `<base>_start` (top of loop), `<base>_continue` (continue
-   target), `<base>_break` (break target). `BreakStmt(label)` →
-   `Jump(<label>_break)`, `ContinueStmt(label)` →
-   `Jump(<label>_continue)`. The three loop kinds lower to fixed
-   sequences:
-   - `while`: `Label(_continue); <eval cond>; JumpIfFalse(_break);
-     <body>; Jump(_continue); Label(_break)`.
-   - `do-while`: `Label(_start); <body>; Label(_continue);
-     <eval cond>; JumpIfTrue(_start); Label(_break)`.
-   - `for`: `<init>; Label(_start); [<eval cond>;
-     JumpIfFalse(_break);] <body>; Label(_continue); [<post>;]
-     Jump(_start); Label(_break)`. The bracketed sections are
-     omitted when the corresponding `for` slot is empty; a missing
-     condition is treated as unconditionally true so the test and
-     `JumpIfFalse` drop out entirely.
-
-   Every TAC function ends in a `Ret` — if the body falls off the
-   end without returning, an implicit `Ret` of a zero constant
-   typed by the function's declared return type is appended
-   (`ConstLong(0)` for a 2-byte-returning function, `ConstInt(0)`
-   for a 1-byte one — C99 §5.1.2.2.3 mandates this for `main`; we
-   apply it generally so every TAC function terminates).
-
-7. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
-   `tac_ast` → `asm_ast`. The asm program shape mirrors TAC:
-   `Program(top_level*)` with `Function(name, is_global, params,
-   instructions)` and `StaticVariable(name, is_global, init)`. Each
-   TAC `Function` lowers atom by atom; each TAC `StaticVariable`
-   rides through to an asm `StaticVariable` unchanged, with the
-   typed init (`IntInit | LongInit`) rewrapped 1-to-1. The asm side
-   drops the TAC's separate `data_type` field — the variant of the
-   init alone determines the cell size at emit (DC.B for IntInit,
-   DC.W for LongInit).
-
-   Each TAC instruction lowers into a sequence of asm atoms (`Mov`
-   to/from `A`, atomic ops on `A`, carry setup if needed). **The
-   asm IR is strictly 1:1 with 6502 opcodes** — no width tagging
-   anywhere — so `tac_to_asm` is the single home of all 16-bit
-   lowering. For each TAC instruction whose operands are 2-byte
-   (Long or ULong, per the symbol table), the translator emits a
-   sequence of byte-level asm atoms — typically a low-byte pass
-   followed by a high-byte pass, with the 6502's carry flag
-   threading naturally between them for arithmetic. The asm-side
-   `static_init` collapses to two width variants
-   (`IntInit | LongInit`) — TAC `UIntInit(v) → IntInit(v)`,
-   `ULongInit(v) → LongInit(v)`. Same rationale as the const
-   collapse above: the 6502 has no signedness distinction at the
-   byte level, and the asm IR is 1:1 with opcodes (no width or
-   sign tagging), so all that matters at emit is the cell size —
-   `DC.B` (1 byte) vs `DC.W` (2 bytes). `asm_emit` masks the
-   value before printing it as `$XX`/`$XXXX`, so a negative
-   `LongInit(-1)` and an unsigned `LongInit(65535)` both render
-   as `$FFFF`.
-
-   **Per-byte addressing.** `Pseudo` and `Data` carry an `int
-   offset` field: `Pseudo(name, offset=0)` is the low byte (or
-   the only byte of a 1-byte type), `Pseudo(name, offset=1)` the
-   high byte of a 2-byte type. The helper `_byte_at(operand, k)`
-   produces the k-th byte of any operand — for `Imm(v)` it
-   extracts `(v >> 8*k) & 0xFF` (Python's arithmetic `>>` so a
-   negative ConstLong folds to its two's-complement bytes);
-   memory-shaped operands bump their `offset` by k.
-
-   **Operand-size dispatch.** `Translator._size_of(val)` returns
-   1 for 1-byte types (Int / UInt) or 2 for 2-byte types (Long /
-   ULong) by reading the symbol table for Vars and the const
-   variant for Constants (TAC `const` collapses sign, so its
-   variant alone gives the width). Each per-instruction lowering
-   keys off this size — 1-byte operands lower to single-byte
-   sequences; 2-byte operands to byte-pair sequences. Signedness
-   only matters for ordering comparisons and shifts; everywhere
-   else the byte sequences are identical. Examples:
-   - `Copy(src, dst)` 2B: 2 Movs (lo, hi).
-   - `Binary(Add, …)` 2B: `Mov src1.lo→A; CLC; Add(src2.lo, A);
-     Mov A→dst.lo; Mov src1.hi→A; Add(src2.hi, A); Mov A→dst.hi`.
-     No CLC between bytes — `LDA` only affects N/Z, so the carry
-     from the low ADC is intact for the high ADC.
-   - `Binary(Equal, …)` 2B: high CMP first; if differ, BNE short-
-     circuits to a label (Z=0 there); else fall through to low
-     CMP whose Z is the answer; then 0/1 select.
-   - `Binary(LessThan, …)` 2B: low SBC then high SBC, V-correction
-     on the high result, branch on MI/PL. Same operand-swap trick
-     as the 8-bit form for `>` and `<=`. Always lowered as
-     signed today; unsigned 2B ordering would need the
-     `BCC`/`BCS` form instead.
-   - `JumpIfFalse(2B_cond, target)`: `Mov(cond.lo, A);
-     Or(cond.hi, A); Branch(EQ, target)` — the OR sets Z=1 iff
-     the 16-bit value is zero.
-   - `SignExtend(src, dst)` (signed 1B → any 2B): inline byte
-     sequence — `Mov(src, A); Mov(A, dst.lo); Branch(MI,
-     sx_neg@N); LDA #$00; Jump(sx_done@N); Label(sx_neg@N);
-     LDA #$FF; Label(sx_done@N); Mov(A, dst.hi)`. The framing
-     LDA sets N based on the source byte's sign; STA preserves
-     flags so BMI sees the right N.
-   - `ZeroExtend(src, dst)` (unsigned 1B → any 2B): inline byte
-     sequence — `Mov(src, A); Mov(A, dst.lo); LDA #$00; Mov(A,
-     dst.hi)`. No branch needed: the new high byte is
-     unconditionally zero.
-   - `Truncate(src, dst)` (any 2B → any 1B): a single byte Mov
-     from `src.lo` to `dst` — memory is little-endian, so the
-     source's offset-0 byte is the low byte and the high byte is
-     discarded.
-   - `*` / `/` / `%` / `<<` / `>>` on 2-byte operands (Long or
-     ULong): not implemented yet — the runtime helpers (`mul8` /
-     `divmod8` / `shl8` / `asr8`) are 8-bit only and the 16-bit
-     equivalents aren't in this repo. `tac_to_asm` raises
-     `NotImplementedError` so the failure points at the source-
-     level construct.
-
-   Optimization is deferred to TAC-level passes — this pass
-   produces correct but redundant output (every intermediate is
-   materialized through a `Frame` slot or a `Data` symbol).
-
-8. **`passes.replace_pseudoregisters.replace_program`** — lays out
-   each function's stack frame and rewrites every `Pseudo` operand.
-   Takes the type-checker's SymbolTable so it can size each pseudo:
-   2-byte types (`Long` / `ULong`) → 2 contiguous bytes, 1-byte
-   types (`Int` / `UInt` / unknown) → 1 byte. A
-   `Pseudo(name, offset=k)` resolves three ways depending on the
-   name:
-   - The name appears as a top-level `StaticVariable` in the same
-     program (or, via `extra_statics`, as a `StaticAttr` symbol-
-     table entry without a definition in this TU — i.e., an extern
-     reference). The pseudo lowers to `Data(name, offset=k)`
-     (absolute addressing).
-   - The name is in the function's `params` list. The pseudo
-     becomes `Frame(base + k)` where `base` is the param's first
-     byte; param j's base is `M + 3 + (sum of prior param sizes)`.
-   - Otherwise it's a local temporary. Each distinct name gets a
-     contiguous run of `size_of(name)` bytes; bases are assigned
-     in encounter order starting at `Frame(1)`.
-
-   Per function: walk once to classify and mint local base offsets
-   (advancing the cursor by each name's size), compute final
-   `M`/`N`, walk again to rewrite operands (each Pseudo's `offset`
-   is added to the resolved base), prepend
-   `FunctionPrologue(arg_bytes=N, local_bytes=M)`, and patch every
-   `Ret(...)` with the same dimensions. `StaticVariable` top-level
-   entries pass through unchanged.
-
-9. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
-   assembly text. Each `Function` emits as a labeled `SUBROUTINE`
-   block; each `StaticVariable` emits as `<name>: DC.B $XX`.
-   **Atomic IR**: every instruction node maps to one 6502 opcode,
-   with the exceptions of `Ret` and `FunctionPrologue` (the multi-
-   instruction prelude/epilogue — see "Function stack frame layout"
-   below) and `AllocateStack(N)` (a 16-bit `SSP -= N` sequence).
-
-The intermediate stages are inspectable via `compile.py`'s
-`--lex`, `--parse`, `--resolve`, `--tac`, and `-S` flags.
-`-O` is orthogonal and threads through `--tac`, `-S`, and `-c`.
-
-## Optimization pipeline (`-O`)
-
-```
-c99_to_tac → TAC fixed-point opts:
-   [constant_fold → strength_reduce → cmp_zero_jump_fold →
-    UCE → copy_prop → DSE]*
-→ tac_to_asm bare_exit=True → asm-level SSA round-trip:
-   [forward copy-prop → backward copy-prop → byte-DCE]*
-→ byte-granular regalloc → SSA destruction
-→ replace_pseudoregisters_bare_exit → late prologue synthesis
-→ expand_long_branches → asm_to_asm2 → asm_emit
-```
-
-The TAC-level fixed-point loop iterates `constant_fold`
-(width-correct integer / FP folding), `reduce_strength`
-(Mul/Div/Mod by `2^k` → shift / mask), `fold_cmp_zero_jump`
-(fuses `cmp; JumpIf` into direct conditional jumps; narrows
-through ZeroExtend), `eliminate_unreachable_code` (Phi
-pruning, dead block / jump / label removal), SSA-aware
-`copy_propagate`, and SSA-aware `eliminate_dead_stores`.
-`from_ssa` lowers each Phi to per-predecessor Copies with
-parallel-copy topological ordering; cycles break with a fresh
-`<funcname>.cycle_tmp@N` Var.
-
-Distinguishing features:
-
-- **Byte-granular SSA + regalloc.** The asm-level SSA pass
-  versions each `(name, byte offset)` pair independently, so
-  byte 0 of a Long has its own def/use chain separate from
-  byte 3. A `(long)y` cast whose result is later truncated
-  back to `int` drops the dead high-byte stores via byte-DCE.
-  The byte-granular regalloc picks ZP slots per byte; disjoint
-  lifetimes within the same logical variable can share colors.
-- **Forward + backward copy propagation.** Forward substitutes
-  Mov-into-Pseudo uses. Backward collapses the `Mov(A, P);
-  ...; Mov(P, A); Mov(A, D)` round-trip into a single
-  `Mov(A, D)` at the def site — catches Long-return temps
-  that get ZP-colored only to be immediately reloaded into
-  HARGS.
-- **Strength reduction + inline constant shifts.** Power-of-2
-  `Multiply` / `Divide` / `Modulo` rewrite to shifts / masks, and a
-  multiply by `2^a + 2^b` or `2^a - 2^b` (3, 5, 7, 9, 10, 12, …)
-  rewrites to two shifts and an add or subtract. The asm layer
-  inlines a constant shift as byte moves plus a per-byte
-  `ASL low; ROL b1; ...` chain when that's at most 8 shift
-  instructions (`passes/shift_cost.py`), so `x * 9` on an `int` is
-  `(x << 3) + x` with no helper call.
-- **Common-subexpression elimination, offset reassociation, and
-  invariant extends.** A repeated computation or load is reused when
-  nothing could have changed it, `p[n + 1]` / `p[n + 2]` share `p + n`
-  and become `LDY #1` / `LDY #2`, and a loop-invariant zero-extend
-  moves out of the loop. Two tests of the same operands in a row
-  compare once, and repeated `return` tails share one copy.
-- **Carry bytes with BCC / INC.** When an add's other operand has
-  zero high bytes (`p + c`, `p + 53`, `g += c`) and the high bytes are
-  updated in place, they become `BCC done; INC hi; BNE done; ...`
-  instead of `LDA hi; ADC #0; STA hi`, and a subtract's top byte
-  becomes `BCS skip; DEC hi`. Move coalescing puts the sum's high
-  byte in the same slot as the operand's where they don't interfere.
-- **Comparison-against-zero / jump fold.** `if (uint8_t a == 0)`
-  lowers to bare `LDA a; BNE end` (3 bytes) instead of a
-  ~13-instruction CMP-and-select sequence, by tracing through
-  ZeroExtend defs.
-- **Call-graph-disjoint ZP allocation.** See dedicated section
-  above. Under `-O`, every eligible function gets a
-  private range of ZP bytes for its params (`[[c6502::zp_abi]]` only) and body locals, disjoint from every
-  coexisting function. Eligible functions emit as bare body +
-  RTS. Phase 2 will move the EQU emission into a separate
-  `slots.inc` for cross-TU allocation.
-- **Recursion that saves on the hardware stack.** A recursive
-  function normally saves its callee-saved zero-page bytes on every
-  call. `[[c6502::save_hardware_stack]]` before a statement
-  marks the calls in it that recurse, and when every recursive call
-  on a cycle is marked, the cycle's functions get private pools and
-  save what's live across each marked call with `LDA; PHA` / `PLA;
-  STA` instead (`passes/recursion_saves.py`). The compiler can't bound
-  the recursion's depth, so the attribute is the programmer's promise
-  that the hardware stack has room; see
-  [docs/attributes.md](docs/attributes.md#save_hardware_stack) before
-  using it.
-
-`docs/optimization.md` is the from-scratch tour with worked
-examples. `tests/test_sim_asm_optimized.py` runs chapters
-1-12 through `-O` end-to-end and asserts return
-values match the unoptimized path.
-
-## Lexer and parser as APIs
-
-`lexer.py` provides `tokenize(source)`, which yields `Token`s with
-`kind: TokenKind` (one of `KEYWORD`, `IDENTIFIER`, `SYMBOL`,
-`CONSTANT`, `STRING_LITERAL`) and `value`. Malformed numeric tokens
-(e.g. `0x` with no digits, `3e` with no exponent body) raise
-`LexError` rather than being split into pieces.
-
-`parser.py` provides `parse(source)`, returning a `c99_ast`
-dataclass tree. The pretty-printer in `pretty.py` works on any
-`@dataclass` tree and emits valid Python, so round-tripping through
-`eval()` with the AST classes in scope reconstructs the node.
-
-The `docs/*_grammar.txt` files are reference documentation for the spec
-grammars that `c99.lark` implements — they're not parsed by any
-tool.
-
-## asm IR and the atomic emit
-
-The asm IR (declared in `asm.asdl`) is strictly one node per 6502
-instruction, with `Ret`, `FunctionPrologue`, and `AllocateStack` as
-the only multi-instruction exceptions. The 6502 is an 8-bit machine,
-so every asm instruction is implicitly Byte-typed — there's no width
-tagging anywhere on the IR. Compound concepts like `Unary` are
-strictly TAC nodes — `tac_to_asm` lowers them into atoms before
-they reach the asm AST.
-
-Multi-byte operations don't appear at the asm IR level either:
-`tac_to_asm` expands them into byte-level sequences (typically a
-low-byte pass + a high-byte pass with the carry flag threading
-between them) before producing asm. Per-byte addressing is the
-job of the `offset` field on `Pseudo` / `Stack` / `Frame` /
-`Data` / `ZP` operands — `Pseudo(name, offset=0)` is the low
-byte (or the only byte of a 1-byte type), `Pseudo(name,
-offset=1)` the high byte of a 2-byte type, etc. up to
-`offset=7` for the high byte of a Double.
-
-`replace_pseudoregisters` resolves each Pseudo to one of four
-operand kinds based on the name: `Data(name, offset)` for
-static-storage objects (link-time absolute addressing); `Frame
-(offset)` for parameters and uncolored / spilled / address-taken
-locals (FP-relative indirect-Y); `ZP(addr, offset)` for
-register-allocated locals when `-O` is on (direct
-zero-page addressing); and a callee-save area at `FP+1..FP+S`
-that the prologue saves into and the epilogue restores from.
-
-Output formatting: labels at column 1, opcodes at column 4, operands
-at column 10. Each function emits `<name>:` on one line, the
-`SUBROUTINE` directive on the next, a blank line, then instructions.
-Each `StaticVariable` emits as `<name>:` on one line, then either
-`DC.B $XX` (for `CharInit(v)` / `UCharInit(v)`), `DC.W $XXXX`
-(for `IntInit(v)` / `UIntInit(v)`, masked to 16 bits),
-`DC.L $WWWWWWWW` (for `LongInit` / `ULongInit` / `FloatInit`,
-masked to 32 bits or packed via `struct.pack` for FP), or two
-`DC.L`s for `LongLongInit` / `ULongLongInit` / `DoubleInit` (8
-bytes — dasm has no native 8-byte directive). All multi-byte
-directives lay bytes down little-endian, matching the soft-stack
-memory model.
-
-| asm node                                       | 6502 emission                          |
-| ---------------------------------------------- | -------------------------------------- |
-| `Mov(Imm(v), Reg(A/X/Y))`                      | `LDA/LDX/LDY #$v`                      |
-| `Mov(Reg(X/Y), Reg(A))`                        | `TXA` / `TYA`                          |
-| `Mov(Reg(A), Reg(X/Y))`                        | `TAX` / `TAY`                          |
-| `Mov(Imm(v), <mem>)`                           | `LDA #$v; <store mem>`                 |
-| `Mov(<mem>, Reg(A))`                           | `<load mem>`                           |
-| `Mov(Reg(A), <mem>)`                           | `<store mem>`                          |
-| `Mov(<mem>, <mem>)`                            | `<load>` then `<store>` via A          |
-| `Add(<mem>, Reg(A))` / `Imm`                   | `ADC <mem>` / `ADC #$v`                |
-| `Sub(<mem>, Reg(A))` / `Imm`                   | `SBC <mem>` / `SBC #$v`                |
-| `Xor(Reg(A), <mem-or-imm>, Reg(A))` (commutative) | `EOR <op>`                          |
-| `And(<mem-or-imm>, Reg(A))`                    | `AND <op>`                             |
-| `Or(<mem-or-imm>, Reg(A))`                     | `ORA <op>`                             |
-| `Compare(Reg(A), <mem-or-imm>)`                | `CMP <op>`                             |
-| `Compare(Reg(X/Y), Imm/Data)`                  | `CPX/CPY <op>` (no indirect-Y mode)    |
-| `ClearCarry` / `SetCarry`                      | `CLC` / `SEC`                          |
-| `Inc(Reg(X/Y))` / `Dec(Reg(X/Y))`              | `INX/INY` / `DEX/DEY`                  |
-| `ArithmeticShiftLeft(Reg(A))`                  | `ASL A`                                |
-| `LogicalShiftRight(Reg(A))`                    | `LSR A`                                |
-| `RotateLeft(Reg(A))`                           | `ROL A`                                |
-| `RotateRight(Reg(A))`                          | `ROR A`                                |
-| `Push(Reg(A))` / `Pop(Reg(A))`                 | `PHA` / `PLA`                          |
-| `Call(name)`                                   | `JSR <name>`                           |
-| `AllocateStack(N)`                             | 16-bit `SSP -= N` sequence             |
-| `Jump(target)`                                 | `JMP <target>`                         |
-| `Branch(cond, target)`                         | `B<cond> <target>` (cond ∈ CC/CS/EQ/MI/NE/PL/VC/VS) |
-| `Label(name)`                                  | `<name>:` at column 1                  |
-| `FunctionPrologue(N, M)`                       | multi-instruction; see frame docs      |
-| `Ret(N, M)`                                    | multi-instruction; see frame docs      |
-| `StaticVariable(name, _, IntInit(v))`          | `<name>:` then `DC.B $<v>`             |
-| `StaticVariable(name, _, LongInit(v))`         | `<name>:` then `DC.W $<v & 0xFFFF>`    |
-
-`<mem>` covers `Stack(off)`, `Frame(off)`, and `Data(name, offset)`.
-Stack and Frame use indirect-Y addressing through a zero-page
-pointer: `LDY #off; LDA (PTR),Y` to read, `LDY #off; STA (PTR),Y`
-to write. `PTR` is `SSP` for `Stack`, `FP` for `Frame`.
-`Data(name, offset)` uses absolute addressing — `LDA name` (when
-offset is 0) or `LDA name+offset` (otherwise), no LDY preamble —
-and is what every static-storage object reference becomes after
-`replace_pseudoregisters` runs. The `offset` lets a single Pseudo
-address the high byte of a 2-byte (`Long`) static via
-`Data(name, offset=1)`. Stack/Frame offsets are 0..255 (one-byte
-`LDY` index). Immediates are 0..255 (single byte). Static-variable
-init bytes follow the variant: `IntInit(v)` requires 0..255,
-`LongInit(v)` accepts the full 16-bit signed-or-unsigned range
-(-32768..65535) and renders masked to 0xFFFF.
-
-Notes:
-- `Add`/`Sub` don't emit `CLC`/`SEC` themselves — the caller emits
-  `ClearCarry` or `SetCarry` first. This keeps each atomic node 1:1
-  with a 6502 opcode (the `LDY` for an indirect-Y source counts as
-  addressing-mode setup, not a separate logical step).
-- `Pseudo` operands at emit are an error — they should have been
-  resolved by `replace_pseudoregisters`.
-- `Mul`/`Div`/`Mod` and the shifts (`LeftShift`/`RightShift`) are
-  TAC-only concepts — `tac_to_asm` lowers them to `Call`s of runtime
-  helpers (see the "`Call` and runtime helpers" note below). The six
-  comparisons (`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/
-  `LessOrEqual`/`GreaterOrEqual`) and unary `LogicalNot` are also
-  TAC-only but are lowered inline (Branch + 0/1-select labels) rather
-  than through a helper — see "Comparison lowering" below. The asm IR
-  contains no multiply/divide/shift/lnot primitives; every non-
-  `Ret`/`FunctionPrologue` node maps 1:1 to a 6502 opcode.
-- Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`,
-  `Reg(A) → Reg(A)`) raise — there's no direct transfer instruction.
-- `ArithmeticShiftLeft` / `LogicalShiftRight` / `RotateLeft` /
-  `RotateRight` currently only accept `Reg(A)` as `dst` — the 6502's
-  shift/rotate family supports accumulator and absolute/zero-page
-  addressing but not indirect-Y, so soft-stack values can't be shifted
-  in place; codegen has to load to A, shift, then store. Memory-dst
-  support could be added later for in-place shifts of zero-page bytes
-  (the typical 16-bit shift sequence: `ASL low_byte` then `ROL A`
-  for the high byte, with carry threading).
-
-### `Call` and runtime helpers
-
-`tac_to_asm` lowers TAC operations that don't have a direct 6502
-encoding — `Multiply` / `Divide` / `Modulo` / `LeftShift` /
-`RightShift` plus the six FP-conversion nodes — into a short
-sequence that marshals operands through `HARGS`, calls the helper,
-and reads the result back out. The shape is the same for every
-helper:
-
-```
-Mov src1.byte0 -> A; Mov A -> HARGS+0     ; pack inputs starting
-Mov src1.byte1 -> A; Mov A -> HARGS+1     ;   at HARGS+0 in source-
-Mov src2.byte0 -> A; Mov A -> HARGS+...   ;   byte order
-...
-Call <helper>                              ; helper reads inputs and
-                                           ;   writes its output to
-                                           ;   a fixed HARGS offset
-Mov HARGS+<out_off> -> A; Mov A -> dst.byte0
-Mov HARGS+<out_off+1> -> A; Mov A -> dst.byte1
-...
-```
-
-Every byte routes through `A` because `A` is the only register that
-loads uniformly from any source-operand kind and stores to any
-destination kind. **Inputs survive the call**, so a helper may use
-the slots between its inputs and outputs as scratch but must leave
-the input bytes intact — caller-side `dst` can therefore overlap an
-input at the TAC level (matters for `x = x * y`).
-
-The helpers are part of the runtime header (not in this repo yet).
-Each helper documents its own per-byte HARGS layout; the dispatch
-in `tac_to_asm` knows the layout for every helper it emits.
-
-**Integer helpers** (the `8` / `16` suffix is the operand width):
-
-| helper      | inputs                                       | output                          |
-| ----------- | -------------------------------------------- | ------------------------------- |
-| `mul8`      | `A=HARGS+0`, `B=HARGS+1` (1B each)           | `result=HARGS+2` (1B, low byte) |
-| `udivmod8`  | `num=HARGS+0`, `den=HARGS+1` (1B each)       | `quot=HARGS+2`, `rem=HARGS+3`   |
-| `sdivmod8`  | (same shape as `udivmod8`; trunc-toward-zero) | `quot=HARGS+2`, `rem=HARGS+3`   |
-| `asl8`      | `val=HARGS+0`, `count=HARGS+1` (1B each)     | `result=HARGS+2` (1B)           |
-| `asr8`      | (same shape as `asl8`; signed right shift)   | `result=HARGS+2` (1B)           |
-| `lsr8`      | (same shape as `asl8`; logical right shift)  | `result=HARGS+2` (1B)           |
-| `mul16`     | `A=HARGS+0..1`, `B=HARGS+2..3` (2B each)     | `result=HARGS+4..5` (2B, low half) |
-| `udivmod16` | `num=HARGS+0..1`, `den=HARGS+2..3`           | `quot=HARGS+4..5`, `rem=HARGS+6..7` |
-| `sdivmod16` | (same shape as `udivmod16`; trunc-toward-zero) | `quot=HARGS+4..5`, `rem=HARGS+6..7` |
-| `asl16`     | `val=HARGS+0..1` (2B), `count=HARGS+2` (1B)  | `result=HARGS+3..4` (2B)        |
-| `asr16`     | (same shape as `asl16`)                      | `result=HARGS+3..4` (2B)        |
-| `lsr16`     | (same shape as `asl16`)                      | `result=HARGS+3..4` (2B)        |
-
-The dispatch picks the 8-bit, 16-bit, or 32-bit helper from the
-operand width, and the signed / unsigned variant from the operand
-type via `_is_unsigned_val` — same machinery `>>` uses to pick
-between `asr*` and `lsr*`. Each `mul*` produces a same-width
-result (the low N bytes of `A*B`); C multiplication wraps on
-overflow, so the high half isn't useful to the caller and the
-helper doesn't write it. One helper covers signed and unsigned
-because the bit pattern of the low half is identical.
-
-**FP arithmetic helpers** (Float = 4B IEEE 754 single, Double = 8B
-IEEE 754 double):
-
-| helper                              | inputs                                     | output                  |
-| ----------------------------------- | ------------------------------------------ | ----------------------- |
-| `fadd` / `fsub` / `fmul` / `fdiv`   | `A=HARGS+0..3` (4B), `B=HARGS+4..7` (4B)   | `result=HARGS+8..11` (4B)  |
-| `dadd` / `dsub` / `dmul` / `ddiv`   | `A=HARGS+0..7` (8B), `B=HARGS+8..15` (8B)  | `result=HARGS+16..23` (8B) |
-
-`dadd` / `dsub` / `dmul` / `ddiv` fill the entire 24-byte block —
-that is what sets `HARGS`'s size.
-
-**FP↔integer / FP↔FP conversion helpers** (one helper per
-source-signedness × source-width pair on the integer side; FP side
-picks by precision):
-
-| helper | direction      | input           | output           |
-| ------ | -------------- | --------------- | ---------------- |
-| `i2f`  | Int → Float    | `HARGS+0` (1B)  | `HARGS+1..4` (4B)  |
-| `u2f`  | UInt → Float   | `HARGS+0` (1B)  | `HARGS+1..4` (4B)  |
-| `l2f`  | Long → Float   | `HARGS+0..1` (2B) | `HARGS+2..5` (4B) |
-| `ul2f` | ULong → Float  | `HARGS+0..1` (2B) | `HARGS+2..5` (4B) |
-| `i2d`  | Int → Double   | `HARGS+0` (1B)  | `HARGS+1..8` (8B)  |
-| `u2d`  | UInt → Double  | `HARGS+0` (1B)  | `HARGS+1..8` (8B)  |
-| `l2d`  | Long → Double  | `HARGS+0..1` (2B) | `HARGS+2..9` (8B) |
-| `ul2d` | ULong → Double | `HARGS+0..1` (2B) | `HARGS+2..9` (8B) |
-| `f2i`  | Float → Int    | `HARGS+0..3` (4B) | `HARGS+4` (1B)   |
-| `f2u`  | Float → UInt   | `HARGS+0..3` (4B) | `HARGS+4` (1B)   |
-| `f2l`  | Float → Long   | `HARGS+0..3` (4B) | `HARGS+4..5` (2B) |
-| `f2ul` | Float → ULong  | `HARGS+0..3` (4B) | `HARGS+4..5` (2B) |
-| `d2i`  | Double → Int   | `HARGS+0..7` (8B) | `HARGS+8` (1B)   |
-| `d2u`  | Double → UInt  | `HARGS+0..7` (8B) | `HARGS+8` (1B)   |
-| `d2l`  | Double → Long  | `HARGS+0..7` (8B) | `HARGS+8..9` (2B) |
-| `d2ul` | Double → ULong | `HARGS+0..7` (8B) | `HARGS+8..9` (2B) |
-| `f2d`  | Float → Double | `HARGS+0..3` (4B) | `HARGS+4..11` (8B) |
-| `d2f`  | Double → Float | `HARGS+0..7` (8B) | `HARGS+8..11` (4B) |
-
-All conversion helpers truncate FP→integer toward zero per
-C99 §6.3.1.4. The signed and unsigned variants are separate
-helpers because TAC's integer `const` collapses signedness onto
-width — by the time the dispatch runs, only the source's c99 type
-(via the symbol table) tells signed from unsigned.
-
-**Indirect call trampoline**: `icall` is a single-instruction
-helper used by `IndirectCall` (call through a function pointer).
-The 6502 has `JMP indirect` but no `JSR indirect`, so we trampoline:
-
-```
-icall:  JMP  (DPTR)
-```
-
-The caller stages the function pointer's two bytes into `DPTR`,
-then `JSR icall`. The `JSR` pushes a return address as usual, the
-trampoline `JMP (DPTR)` transfers control to the target function
-(the address it reads from the `DPTR` zero-page slot), and the
-target's `RTS` pops back to just past the `JSR icall`. `DPTR` is
-caller-saved like `HARGS` — the called function may freely clobber
-it. Args and return values follow the same conventions as a
-direct call (soft-stack args, register / `HARGS` return).
-
-#### Return-value convention
-
-Only 1-byte returns ride in a register; everything wider lives in a
-fixed `HARGS` zero-page slot. The 1-byte case rides in `A` because
-the epilogue's `PHA`/`PLA` can preserve it cheaply across the
-SSP/FP arithmetic.
-
-| return type | location                                                |
-| ----------- | ------------------------------------------------------- |
-| `char` (1B)                                       | `A`                |
-| `int` / `unsigned int` / pointer (2B)             | `A` (low), `X` (high) |
-| `long long` / `unsigned long long` / `float` (4B) | `HARGS+8..11`      |
-| `double` (8B)                                     | `HARGS+16..23`     |
-
-The 4B and 8B slots **deliberately overlap with the FP arithmetic
-helpers' output slots**: a function whose body is `return a + b;`
-for FP operands ends with a helper call (`fadd` / `dadd` / etc.)
-that has already left the result in the right place — no extra
-copy needed in the epilogue. `mul32` / `divmod32` write to the
-same 4B slot, so `return a * b;` for `long long` operands skips
-the epilogue copy too. The 2B slot at `HARGS+0..1` overlaps the
-`mul8` / `divmod8` *input* slot, but timing doesn't conflict —
-return-setup happens after any helper call has consumed its
-inputs.
-
-Because `HARGS` is caller-saved (any helper call may clobber it),
-a HARGS-resident return value sits in `HARGS` only across the
-`RTS` boundary — the caller reads it back out immediately after
-the `JSR`, before issuing any other helper call. The SSP/FP
-arithmetic in the epilogue doesn't touch `HARGS`, so the
-HARGS-return path skips the `PHA`/`PLA` pair the 1-byte path uses.
-
-Unary `!` lowers inline rather than through a helper — see "Unary
-`!` lowering" below.
-
-### Comparison lowering
-
-The six TAC comparisons don't go through runtime helpers. They lower
-inline to `Compare`/`Sub` + `Branch` + a 0/1-select built from two
-fresh labels per use (`tac_to_asm` is class-based so the label counter
-persists across the program).
-
-`Equal` / `NotEqual` use `CMP` + `BEQ`/`BNE`:
-
-```
-Mov(src1, A)
-Compare(A, src2)              ; CMP — sets Z=1 iff src1 == src2
-Branch(EQ|NE, cmp_true@N)
-Mov(Imm(0), A)
-Jump(cmp_end@M)
-Label(cmp_true@N)
-Mov(Imm(1), A)
-Label(cmp_end@M)
-Mov(A, dst)
-```
-
-`CMP` leaves `V` unchanged, but `Z` is reliable unconditionally, so
-this works for both signed and unsigned.
-
-`LessThan` / `GreaterOrEqual` use `SBC` with a V-flag correction, then
-`BMI`/`BPL`:
-
-```
-Mov(src1, A)
-SetCarry
-Sub(src2, A)                  ; SBC — sets N, Z, C, V
-Branch(VC, cmp_novf@N)        ; skip correction if no overflow
-Xor(A, Imm($80), A)           ; EOR #$80 — flip N when overflow made it lie
-Label(cmp_novf@N)
-Branch(MI|PL, cmp_true@M)     ; MI for <, PL for >=
-... 0/1 select ...
-```
-
-`CMP` can't be used for signed ordering on the 6502 because it doesn't
-touch `V`, and the `N` flag it produces is wrong whenever the signed
-subtraction overflows (e.g. `+1 < −128` would mis-compile). The
-`BVC novf; EOR #$80` pair corrects `N` in the overflow case.
-
-`GreaterThan` / `LessOrEqual` reuse the same SBC-with-V-correction
-sequence but swap the operands: `src1 > src2` becomes `src2 < src1`
-(branch on MI), and `src1 <= src2` becomes `src2 >= src1` (branch on
-PL). The swap is because `Z` is unreliable after the `EOR #$80`
-correction — testing "not-less-than AND not-equal" directly would need
-a second compare, and swapping is cheaper.
-
-### Short-circuit lowering (`&&` / `||`)
-
-`&&` / `||` never become a TAC `Binary` — `c99_to_tac` emits the
-control flow directly using `JumpIfFalse` / `JumpIfTrue`, `Jump`,
-`Label`, and `Copy`. `tac_to_asm` then lowers those five TAC atoms:
-
-| TAC instruction                | asm lowering                                     |
-| ------------------------------ | ------------------------------------------------ |
-| `Copy(src, dst)`               | `Mov(src, dst)` (emitter handles all shapes)     |
-| `Jump(target)`                 | `Jump(target)` (atom-for-atom)                   |
-| `Label(name)`                  | `Label(name)` (atom-for-atom)                    |
-| `JumpIfTrue(cond, target)`     | `Mov(cond, A); Branch(NE, target)`               |
-| `JumpIfFalse(cond, target)`    | `Mov(cond, A); Branch(EQ, target)`               |
-
-The conditional jumps work because LDA (both immediate and indirect-Y)
-sets `Z` based on the loaded byte — BEQ therefore fires iff the value
-is zero (C's falsy), and BNE iff it's non-zero (truthy). No runtime
-helper, no extra compare.
-
-Label prefixes are disjoint between `c99_to_tac` (`and_false@N` /
-`and_end@N` / `or_true@N` / `or_end@N`) and the inline lowerings in
-`tac_to_asm` (`cmp_true@N` / `cmp_end@N` / `cmp_novf@N` for
-comparisons, `lnot_true@N` / `lnot_end@N` for `!`), so the two label
-counters can overlap without collision. Every translator-minted label
-embeds `@<digits>`, which keeps it disjoint from any user-written
-identifier and from goto labels mangled to `.<funcname>@<orig>`
-(those have a C identifier after the `@`, not digits).
-
-### Unary `!` lowering
-
-`!x` is the 8-bit "is-zero" predicate. The framing `Mov(src, A)` that
-sits around every unary-op lowering already emits `LDA`, which sets
-`Z` based on the loaded byte — so `tac_to_asm` can branch on that
-directly and skip the `Compare`:
-
-```
-Mov(src, A)                   ; LDA sets Z=1 iff src == 0
-Branch(EQ, lnot_true@N)
-Mov(Imm(0), A)
-Jump(lnot_end@M)
-Label(lnot_true@N)
-Mov(Imm(1), A)
-Label(lnot_end@M)
-Mov(A, dst)
-```
-
-The inline form means there's no `lnot8` runtime helper to write —
-the framing `LDA` already sets `Z` for free. The labels come from
-the same `Translator` counter that the comparison lowerings use, so
-`!` and `==`/`<`/etc. in the same program get globally unique label
-numbers.
-
-## Function stack frame layout
-
-c6502 uses a **soft data stack** in main RAM, separate from the 6502's
-hardware stack at `$0100`–`$01FF`. The hardware stack is reserved for
-return addresses (and any short-lived `PHA` / `PHP` a function does
-internally); arguments and locals live on the soft stack. This sidesteps
-the 256-byte page-1 limit and keeps the return address out of the way
-when a function tears down its frame.
-
-### Reserved zero-page locations
-
-| address     | name  | purpose                                                  |
-| ----------- | ----- | -------------------------------------------------------- |
-| `$00`/`$01` | SSP   | soft stack pointer (low / high byte)                     |
-| `$02`/`$03` | FP    | frame pointer (low / high byte)                          |
-| `$04`–`$23` | HARGS | runtime-helper argument/result exchange block (32 bytes) |
-| `$24`/`$25` | DPTR  | dereference / scratch indirect pointer (low / high byte) |
-| `$26`–`$7F` |       | user zero-page globals (see "Zero-page globals")         |
-
-That's the classic layout, and every program gets it unless it
-reserves some of those bytes. The output binds the four names with
-`EQU` lines, and the runtime's helpers have to be assembled with the
-same values.
-
-A program reserves zero-page bytes by declaring objects there with
-`[[c6502::address(addr)]]` or `zeropage(addr)`, typically for
-system software it runs alongside. `#include <apple2/monitor_io.h>`
-declares every byte the Apple II Monitor's text, keyboard, graphics,
-and delay routines use, and `<apple2/interactive_monitor.h>` adds
-the bytes of its command loop, disassembler, and cassette routines.
-When a reserved byte falls in `$00`–`$25`, the compiler moves the
-block (`passes/runtime_layout.py`). It sizes `HARGS` to what the program
-needs: the highest `HARGS` offset its own code uses, and the
-footprint of each helper it calls, scratch bytes included, as
-measured from `sim/runtime_helpers.py`. Then it places `HARGS`,
-`SSP`, `FP`, and `DPTR` in the lowest free bytes below `$80`. A
-program with no helper calls gets a one-byte `HARGS`. Zero-page
-globals without an address go in the bytes left over. When the block
-doesn't fit, that's a compile error. Linking chooses one layout for
-the whole program, from every unit's zero-page objects and the largest
-`HARGS` any unit needs.
-
-`HARGS` is the I/O block that runtime helpers read inputs from and
-write outputs into; the user-function calling convention (soft-stack
-args, register returns) doesn't touch it. It is sized for the largest
-helpers, the 64-bit `udivmod64` / `sdivmod64`, which take 16 input
-bytes and write 16 output bytes. A double-precision binary op
-(`dadd` / `dsub` / `dmul` / `ddiv`) takes two 8-byte operands at
-`HARGS+0..7` and `HARGS+8..15` and writes its 8-byte result at
-`HARGS+16..23`. Smaller helpers
-(integer `mul8` / `divmod8` / `mul16` / `divmod16` / shifts, FP↔int
-conversions, `f2d` / `d2f`, single-precision arithmetic) use only
-the low end of the block; the unused high bytes stay free for the
-caller. The block is **caller-saved**: any helper call may clobber
-all 32 bytes, so a function that needs a value to survive a helper
-call has to spill it to a frame slot first. See the per-helper byte
-layouts in `tac_to_asm.py` for the input / output offsets each
-helper uses within `HARGS`.
-
-`DPTR` is the **dereference / scratch indirect pointer** — a single
-2-byte zero-page slot used by the `Load` and `Store` TAC ops to
-reach memory through a pointer. The lowering pattern is always
-"stage the target address into `DPTR`, then access via `(DPTR),Y`":
-
-```
-LDA  ptr+0
-STA  DPTR
-LDA  ptr+1
-STA  DPTR+1
-LDY  #0
-LDA  (DPTR),Y       ; or `STA (DPTR),Y` for a Store
-... LDY #1; LDA (DPTR),Y for the next byte; etc.
-```
-
-Like `HARGS`, `DPTR` is **caller-saved**: any runtime-helper call
-or any unrelated `Load` / `Store` may clobber it, so codegen
-re-stages the address each time a dereference is needed. The
-`AddressOf` operator doesn't touch `DPTR` — it just produces a
-2-byte value (via `LoadAddress`); the computed address only winds
-up in `DPTR` later, when something reads or writes through it.
-
-### Soft stack convention
-
-- Grows **downward** toward lower addresses (mirrors the hardware stack).
-- `SSP` always points at the **next-free byte** — so the most recently
-  pushed byte is at `SSP+1`, the one before it at `SSP+2`, etc.
-- The runtime header initializes `SSP` to a high address (`$7FFF` by
-  default) before jumping to `main`.
-- All accesses use indirect-indexed addressing: `LDY #off; LDA (SSP),Y`
-  to read, `STA (SSP),Y` to write. **Y is therefore scratch** for any
-  soft-stack access — codegen reloads it as needed.
-
-### Frame pointer
-
-`SSP` is unstable inside a function: any intra-function push (e.g.
-arguments for a nested call) shifts it, which would invalidate
-SSP-relative offsets to locals and args. To dodge that, every function
-captures a **frame pointer** (`FP`) once in its prelude that doesn't
-move until the epilogue, and addresses locals/args via `FP` instead of
-`SSP`.
-
-- `FP` is set so it coincides with `SSP` immediately after the prelude
-  finishes — same "points-at-next-free-byte" convention as `SSP`. So
-  the smallest valid `FP` offset is also `1`.
-- The caller's `FP` value is saved on the soft stack as part of the
-  callee's prelude and restored by the epilogue, so nested calls
-  correctly chain frames.
-- Codegen produces `Frame(off)` operands for locals/args; emit lowers
-  them to `LDY #off; LDA (FP),Y` etc.
-
-### Calling convention
-
-For a function that takes `N` bytes of arguments and uses `M` bytes of
-local storage:
-
-1. **Caller** subtracts `N` from `SSP`, then writes the arguments into
-   `SSP+1` … `SSP+N`.
-2. **Caller** issues `JSR target`. The hardware stack receives the
-   2-byte return address; the soft stack is unchanged.
-3. **Callee prelude** (only when `N+M > 0`):
-   1. Subtract `M+2` from `SSP`, allocating the saved-FP slot plus
-      `M` bytes of locals in one step.
-   2. Write the caller's `FP` into the slot at `SSP+M+1` (low) and
-      `SSP+M+2` (high) via `LDY #(M+1); STA (SSP),Y; INY; …`.
-   3. Set `FP = SSP`. From here on, `Frame(off)` accesses resolve
-      against this fixed `FP`.
-4. … function body runs (may push/pop on the soft stack freely; only
-   `SSP` moves, `FP` stays put) …
-5. **Callee epilogue** (only when `N+M > 0`):
-   1. `PHA` the return value's low byte, and for a 2-byte return
-      `TXA; PHA` its high byte (the SSP/FP arithmetic clobbers `A`
-      and `X`). A carry-flag return is saved with `PHP` instead.
-   2. `SSP = FP + (M + N + 2)` — a single 16-bit add restores `SSP`
-      to the value it had before the caller pushed args, simultaneously
-      tearing down locals + the saved-FP slot + the caller's args.
-   3. Read the saved FP via `LDA (FP),Y` with `Y = M+1` (low) and
-      `Y = M+2` (high). The `FP` register is still pointing at our
-      own frame at this point, so `(FP),Y` resolves correctly. Stash
-      the low byte in `X` across the high read — writing to `FP`
-      between the two reads would corrupt the indirect base.
-   4. `STA FP+1` (high byte), then `TXA; STA FP` (low byte). `FP`
-      now holds the caller's value.
-   5. `PLA` to restore the return value, with `PLA; TAX` first for a
-      2-byte one.
-6. **Callee** issues `RTS`.
-
-When `N+M == 0` (no locals, no args) the prelude and epilogue collapse
-to nothing and `RTS` respectively — there's no FP setup to do.
-
-After the return, `SSP` and `FP` are both back to where they were
-before the caller pushed arguments — the caller does no per-call
-cleanup.
-
-### Frame diagram
-
-Immediately after the prelude (`FP = SSP`) the frame for a call with
-`N` argument bytes and `M` local bytes looks like this (high addresses
-at top):
-
-```
-              higher addresses
-          +-------------------------+
- FP+M+N+2 |        arg N-1          |
-          |          ...            |
- FP+M+3   |        arg 0            |
-          +-------------------------+
- FP+M+2   |  saved caller FP (high) |
- FP+M+1   |  saved caller FP (low)  |
-          +-------------------------+
- FP+M     |       local M-1         |
-          |          ...            |
- FP+1     |       local 0           |
-          +-------------------------+
- FP       |   (next free byte)      |   <- FP, and SSP just after prelude
-          +-------------------------+
-              lower addresses
-```
-
-`local 0` / `arg 0` are the bytes nearest the FP end of their
-respective regions — i.e., the most-recently-allocated. The 2-byte
-saved-FP slot sits between locals and args; together with the
-caller-pushed args, it's why arg `j` is at offset `M + 3 + j`, not
-`M + 1 + j`.
-
-The hardware stack, meanwhile, just holds the return address pushed by
-`JSR`, plus anything the function `PHA`s during execution.
-
-### Walkthrough
-
-[docs/calling_conventions.md](docs/calling_conventions.md) traces a
-whole call through the soft stack, with the compiler's current output
-for the caller's argument push, the prologue, the frame, and the
-epilogue. It also describes the zp_abi convention `-O` uses
-for functions that qualify, when the soft stack is still used, and
-what each costs. A function with neither locals nor args
-(`M = N = 0`) gets no prologue, and its epilogue is a single `RTS`.
-
-## Stripping comments with pcpp
-
-The lexer treats comments as lex errors (we expect a preprocessor to have
-handled them already). [pcpp](https://github.com/ned14/pcpp) is installed
-in the dev environment as a uv tool; use it to strip comments before
-lexing or parsing:
-
-```sh
-pcpp input.c --line-directive | uv run python lexer.py -
-pcpp input.c --line-directive | uv run python parser.py -
-```
-
-Notes:
-- `-` as the input to `lexer.py` / `parser.py` reads from stdin.
-- `--line-directive` with no form argument (trailing flag, or
-  `--line-directive=`) suppresses the `#line N "file"` markers pcpp
-  emits by default.
-- pcpp replaces each block comment with a single space (C99 translation
-  phase 3), not an empty string — harmless since our lexer ignores
-  whitespace.
-- Add `-D NAME=VAL` / `-U NAME` / `-I path` as needed for macro and
-  include control. `--passthru-comments` keeps comments if you ever
-  need the opposite behavior.
-
-## Storage classes and linkage
-
-c6502 implements C99 §6.2.2 linkage and storage-class specifiers.
-The pipeline distinguishes three runtime categories of identifier:
-
-- **Automatic-storage objects** — block-scope `int x [= e];` and
-  function parameters. NONE-linkage; live on the soft-stack frame
-  with a fresh slot per function activation.
-- **Static-storage objects** — every file-scope object plus block-
-  scope `static int x [= e];`. Live at a fixed memory address and
-  emit as a top-level `StaticVariable` in the asm output. References
-  use absolute addressing (`LDA name` / `STA name`), not the
-  indirect-Y soft-stack mode.
-- **Function names** — every `FunctionDecl` (definition or forward
-  declaration). EXTERNAL by default, INTERNAL with `static`.
-
-`is_global` on the asm IR is True for EXTERNAL linkage and False
-otherwise (INTERNAL or NONE). `replace_pseudoregisters` consults
-the program's `StaticVariable` list (plus an `extra_statics`
-parameter from `compile.py` carrying static-storage names that
-don't have a definition in this TU — e.g. `extern int x;` against
-no prior declaration here) to decide whether each `Pseudo(name)`
-becomes a `Data(name)` or a `Frame(off)`.
-
-Linkage rules at a glance:
-
-| declaration                                        | linkage    | storage   | initial value                |
-| -------------------------------------------------- | ---------- | --------- | ---------------------------- |
-| file-scope `int x;`                                | EXTERNAL   | static    | `Tentative` (zero at end-TU) |
-| file-scope `int x = c;`                            | EXTERNAL   | static    | `Initial(c)`                 |
-| file-scope `static int x [= c];`                   | INTERNAL   | static    | `Tentative` / `Initial(c)`   |
-| file-scope `extern int x;` (no prior visible)      | EXTERNAL   | static    | `NoInitializer`              |
-| file-scope `extern int x;` (prior INTERNAL)        | INTERNAL   | static    | inherits prior init          |
-| file-scope `int foo(...);` / `int foo(...) {…}`    | EXTERNAL   | n/a       | n/a                          |
-| file-scope `static int foo(...);`                  | INTERNAL   | n/a       | n/a                          |
-| block-scope `int x [= e];` (no specifier)          | NONE       | automatic | (runtime `Copy` at decl)     |
-| block-scope `static int x;` (no init)              | NONE       | static    | `Initial(0)` per §6.7.8.10   |
-| block-scope `static int x = c;`                    | NONE       | static    | `Initial(c)`                 |
-| block-scope `extern int x;`                        | matches prior visible | static | `NoInitializer`     |
-| function parameter                                 | NONE       | automatic | n/a                          |
-
-A `static` on a block-scope function declaration is rejected per
-§6.2.2 ("A function declaration can contain the storage-class
-specifier static only if it is at file scope"). Two file-scope
-declarations of the same name with different linkages are UB per
-§6.2.2.7; identifier_resolution rejects the change-of-linkage
-case rather than silently accepting it.
-
-Renaming is keyed off linkage: NONE-linkage names are renamed to a
-program-unique `@<N>.<orig>` so block-scope statics don't collide
-with file-scope spellings; INTERNAL/EXTERNAL names keep their
-source spelling so the linker (or later TU passes, for INTERNAL)
-can resolve them by name. Block-scope statics therefore land in the
-asm output under a mangled label like `@0.x:` — collision-proof
-across functions but still the same fixed memory address each time
-the function runs.
-
-### Zero-page globals
-
-`[[c6502::zeropage]]` puts an object with static storage (a
-file-scope object, or a block-scope `static`) in zero page, where every
-access is a 2-byte zero-page instruction instead of a 3-byte absolute
-one, and a pointer can be the base of `(zp),Y` directly instead of
-being copied to `DPTR` first.
-
-```c
-uint8_t num_entries [[c6502::zeropage]];        /* $26-$7F */
-[[c6502::zeropage(0xBA)]] uint8_t *z_header_addr;  /* $BA-$BB */
-```
-
-The bare form takes the lowest free bytes below `$80` that neither
-the runtime's block (`$00`-`$25` in the classic layout) nor a fixed
-object uses, so `$26` up unless the block moved. The compiler's pool
-is `$80`-`$FF`. The address form puts the object's first (low) byte
-at that address, anywhere in `$00`-`$FF`, so ported code can keep
-its documented addresses. An object takes as many bytes as its type,
-so the pointer above occupies `$BA` and `$BB`. A byte in `$80`-`$FF`
-is then taken out of the compiler's pool, and a byte in `$00`-`$25`
-moves the runtime's block (see "Reserved zero-page locations").
-Overlapping objects, an object that runs past `$FF`, and no room
-left below `$80` are compile errors. An `extern` declaration with an
-address and no definition names a byte something else owns: it's
-reserved and addressed but never initialized.
-
-Zero page isn't part of the program image, so the compiler emits a
-routine `__zp_init` that stores each zero-page object's initial value
-(its initializer, or zero). **The boot code must call `__zp_init`
-before `main`.** The simulator's boot stub does. Each object becomes
-an `EQU` in the output. Linking several translation units places
-every unit's bare objects for the whole program and writes one
-`__zp_init`. An `extern` declaration without an address
-names an object another unit defines. With `-O`, busy scalar
-globals are moved into the bytes left below `$80` without the
-attribute (docs/optimizations/zp_promotion.md).
-
-### Fixed addresses
-
-`[[c6502::address(addr)]]` binds a function or an `extern`
-object to a fixed address that something outside the program owns,
-such as a ROM routine, an I/O register, or a Monitor variable. The
-name becomes an `EQU` in the output, and nothing is defined for it.
-
-```c
-[[c6502::zp_abi, c6502::address(0xFDED)]]
-extern void COUT(register uint8_t c);                  /* JSR COUT */
-extern volatile uint8_t KBD [[c6502::address(0xC000)]];
-extern uint16_t CSW [[c6502::address(0x36)]];    /* zero page */
-```
-
-A function with an address can't have a body anywhere in the
-translation unit. An object with an address has to be declared
-`extern` without an initializer in every declaration, since the
-program doesn't own its memory. An access is a plain absolute
-instruction (`STA KBD`), with no pointer staged in `DPTR`. An object
-below `$100` is treated as an `extern` `zeropage(addr)` object: its
-bytes are kept out of the compiler's zero-page pools, and one in
-`$00`-`$25` moves the runtime's block out of its way. Two objects
-with addresses may not
-overlap. Declarations may add the attribute one at a time, but two
-different addresses for one name are an error. The linker binds
-each name once and rejects two units that give it different
-addresses.
-
-A function with an address gets its calling convention from its
-declaration alone, the same with and without `-O`. With
-`zp_abi`, its `register` arguments go in A and X, which is what a ROM
-routine expects. Without `zp_abi`, its arguments go on the soft
-stack, and the default zp_abi promotion under `-O` doesn't
-apply to it. A `zp_abi` routine with an address must take every
-parameter in a register and return at most 2 bytes in A and X, and
-its address can't be taken, since external code can't follow the
-rest of the convention. Each of these is a compile error.
-
-[docs/attributes.md](docs/attributes.md) explains every attribute and
-walks through declaring and calling Apple II Monitor routines. Its
-statement attributes go before a statement: `[[c6502::unroll]]` and
-`[[c6502::keep]]` before a `for` loop, and
-`[[c6502::save_hardware_stack]]` before a call that recurses.
-
-### Returning a bool in the carry flag
-
-Hand-written 6502 code often returns a yes/no answer in the carry
-flag, and the caller branches on it right after the `JSR`.
-`[[c6502::return_bool_in_carry]]` gives a C function that
-convention.
-
-```c
-[[c6502::return_bool_in_carry]] bool contains(uint8_t k) {
-    for (uint8_t i = 0; i < 5; i++)
-        if (tab[i] == k) return true;    /* SEC; RTS */
-    return false;                        /* CLC; RTS */
-}
-
-if (contains(k)) n += k;                 /* JSR contains; BCC skip */
-```
-
-The return type must be `bool` (`_Bool`); `unsigned char` and `char`
-are rejected. The function returns `e != 0` for `return e;`, the way
-converting a value to `bool` does, so a caller that uses the result
-as a number gets 0 or 1. A
-comparison, `!`, `&&`, `||`, or a constant 0 or 1 is returned as it
-is. Every declaration of the function must carry the attribute,
-since callers compiled without it would read A. The address of such
-a function can't be taken, because a call through a pointer can't
-know where the result is.
-
-The callee ends in `CMP #1` on the value, which sets C exactly when
-it's 1, or in `SEC` / `CLC` when the value is a constant. A function
-with a frame keeps C across its teardown with `PHP` / `PLP`. The
-caller turns C into 0 or 1 with `LDA #0; ROL A`, or branches on it
-with `BCC` / `BCS` when the result is only tested. Nothing else in
-c6502 reads a flag across a call.
-
-Under `-O`, a function gets the convention without the
-attribute when it returns `bool` and either has external linkage and
-is zp_abi, or is `static` and every call branches on its result
-([carry_return_choice.md](docs/optimizations/carry_return_choice.md)).
-The linker checks that every unit made the same choice for a
-function.
-
-## Builtins
-
-c6502 has two builtins, `__c6502_bcd_add(a, b)` and
-`__c6502_bcd_sub(a, b)`, which add and subtract packed BCD numbers
-(two decimal digits to a byte, low byte first) with the 6502's
-decimal mode. The operands are unsigned integers, and the result has
-the wider operand's type, so two `uint8_t`s give a `uint8_t`. Each
-call compiles to `SED; CLC; LDA a; ADC b; STA r; ...; CLD`, a byte at
-a time, and the decimal flag is set for that chain and nothing else.
-Constant operands fold at compile time.
-
-```c
-uint32_t score;   /* eight BCD digits */
-
-void add_points(uint16_t bcd_points) {
-    score = __c6502_bcd_add(score, bcd_points);
-}
-```
-
-[docs/builtins.md](docs/builtins.md) gives the types, what invalid
-digits produce, the code, and the caution about interrupt handlers on
-an NMOS 6502, which doesn't clear the decimal flag when it takes an
-interrupt.
-
-## Status
-
-End-to-end through `compile.py -S` to runnable 6502 asm:
-
-- Multiple top-level functions, forward declarations, function
-  calls with parameters, multi-arg passing via the soft-stack
-  convention (caller writes args at `Stack(1..N)`; callee reads
-  at `Frame(M+3..M+2+N)`).
-- Variable declarations (typed), assignments, expression
-  statements, null statements. Block-scope automatics get unique
-  `@<N>.<orig>` names before TAC; missing `return` appends an
-  implicit `Ret(0)` typed for the function's return.
-- All the integer types (`int` / `short` / `long` / `long long`,
-  their `unsigned` forms, `char` / `signed char` /
-  `unsigned char`, `_Bool`) and explicit casts
-  among them. Mixed-type arithmetic per C99 §6.3.1.8; the type
-  checker inserts implicit `SignExtend` / `ZeroExtend` /
-  `Truncate` casts so TAC sees uniform-width operands.
-  Multi-byte arithmetic fans out byte-by-byte with carry
-  threading. **Gaps**: `*` / `/` / `%` / `<<` / `>>` lower to
-  runtime-helper Calls (mul/divmod/asl/asr/lsr) — marshaling
-  is in place but the helpers themselves aren't yet in the
-  repo; programs that use them assemble, but don't link unless
-  `--defsym` gives each helper an address.
-  Unsigned ordering (`<` / `>` / `<=` / `>=`) on multi-byte
-  operands still V-corrects (signed lowering) — a known
-  imprecision.
-- Floating types (`float`, `double`): static initialisers
-  lay down IEEE 754 bytes; runtime int↔FP conversions
-  marshal through HARGS to runtime helpers (also not yet in
-  the repo). Arithmetic on FP operands raises
-  `NotImplementedError` at TAC translation pending the FP
-  helpers.
-- Storage classes `static` / `extern` with C99 §6.2.2 linkage.
-  File-scope objects (incl. block-scope `static`) emit as
-  `StaticVariable` top-levels; `extern` references use absolute
-  addressing without a definition. See "Storage classes and
-  linkage". `[[c6502::zeropage]]` / `zeropage(addr)` puts one
-  in zero page (see "Zero-page globals").
-- Multi-file programs: `compile.py` links `-O` objects into an ELF
-  executable, allocating every unit's zero-page slots for the whole
-  program, and `-T script.ld` lays the program out in memory with a
-  GNU ld-style linker script (`MEMORY`, `SECTIONS`, `AT>`, `NOLOAD`,
-  `ALIGN`), placing each section, including ones named with
-  `[[c6502::section("name")]]`. See docs/linker_scripts.md.
-- Integer / character / string / floating constants per their
-  C99 §6.4.4 / §6.4.5 rules (string-literal concatenation,
-  string lifting to file-scope `static char[N+1]`).
-- Unary `-` / `~` / `!`, binary `+` / `-` / `*` / `/` / `%` /
-  `&` / `|` / `^` / `<<` / `>>` / `==` / `!=` /
-  `<` / `>` / `<=` / `>=` / `&&` / `||`. `==`/`!=`/`<`/`>`/
-  `<=`/`>=` lower inline (no helper); `*`/`/`/`%`/`<<`/`>>`
-  marshal through HARGS to runtime helpers.
-- Assignment `=`, compound `+=` etc., prefix `++a`/`--a`,
-  postfix `a++`/`a--`. Subscript / Dereference lvalues
-  evaluate their address exactly once (so `arr[i++] += 1`
-  is correct).
-- Control flow: `if` / `if else`, ternary `? :`,
-  `while` / `do-while` / `for` (with `break` / `continue`),
-  labeled statements and `goto` (forward gotos OK),
-  `switch` / `case` / `default`. Loop scope opens its own
-  variable scope.
-- Arrays (block-scope and `static`, single and multi-dim),
-  constant-initializer lists with zero-padding for missing
-  entries, array-to-pointer decay, multi-dim subscript,
-  array parameters with the §6.7.5.3.7 pointer adjustment.
-  An array of unknown size takes its size from its initializer
-  (`int t[] = {1, 2, 3};`, `char s[] = "abc";`, §6.7.8.22), and
-  `extern int t[];` names one defined elsewhere or later. A string
-  literal in braces initializes a char array (`char s[] = {"abc"};`).
-  Rejected: array assignment.
-- Pointers, pointer arithmetic (with sizeof-pointee scaling),
-  pointer ordering comparisons, function pointers and
-  indirect calls through any expression that gives one, such as
-  `t[i](x)`, `p->g(x)`, and `pick()(x)` (through `icall`, pending
-  the runtime helper).
-- `void` return type and `void *` per §6.3.2.3.1.
-- `sizeof` (both shapes) folded at compile time; result type
-  `unsigned long` (size_t).
-- `struct` and `union`: declarations (file- and block-scope),
-  forward decls, `.` / `->` access (chained), compound
-  initializers, struct = struct copy, pointer-to-struct,
-  address-of member. **No padding** — byte-aligned everywhere.
-  Struct-by-value params use the soft-stack arg block;
-  struct-by-value returns use an sret convention with a
-  hidden first param. Block-scope tag shadowing supported.
-  A struct or union may omit its tag (`struct { int x; } p;`).
-- Compound literals, `(type){ initializer-list }`: an array,
-  struct, union, or scalar object, automatic inside a function
-  (initialized each time it's evaluated) and static at file scope.
-- `_Bool`, and `bool` from `<stdbool.h>`: one byte holding 0 or 1.
-  Converting any scalar to it gives 0 if the value compares equal to
-  0 and 1 otherwise (`bool b = 256;` stores 1), `++` stores 1, and
-  `--` toggles. A comparison, `!`, `&&`, or `||` converts with no
-  extra code; anything else costs a zero test (`LDA x; BEQ; LDA #1`).
-- `typedef` at file and block scope, including typedefs of
-  pointers, arrays, functions, and anonymous structs. An inner
-  declaration of the same name hides a typedef name (`int T;`,
-  a parameter `T`, a `for` variable `T`). `<stdint.h>` defines
-  its types with `typedef`.
-- `enum`, with or without a tag, at file and block scope and in
-  struct members and typedefs. An enumerated type is `int`, and each
-  enumeration constant is an `int` constant usable anywhere one is,
-  including array sizes and `case` labels. An inner declaration of
-  the same name hides one. `[[c6502::packed]]` on an enum's
-  definition makes its type the smallest that holds its values:
-  `unsigned char` for 0..255, `signed char` for -128..127, else `int`.
-
-**Not yet in the pipeline**: the runtime header
-(`SSP`/`FP`/`HARGS`/`DPTR` ZP addresses, reset vector, arithmetic
-helpers `mul8/16/32`, `divmod8/16/32`, `asl/asr/lsr8/16/32`, FP
-arithmetic helpers, 26 FP-conversion helpers, `icall`
-trampoline). Programs that use `*` / `/` / `%` / `<<` / `>>`,
-any FP↔int cast, or any indirect call assemble, but don't link
-until those land, unless `--defsym` gives each helper an address (as
-`sim/linked.py` does with the simulator's).
-
-End-to-end with `-O`:
-
-- Full optimizer: TAC SSA fixed-point opts → asm-level SSA
-  round-trip with byte-granular regalloc → late prologue
-  synthesis. See `docs/optimization.md`.
-- Call-graph-disjoint ZP allocation for params (when
-  `[[c6502::zp_abi]]`-annotated) AND body locals.
-  Eligible functions emit as bare body + RTS. See
-  `docs/leaf_zp_abi.md`.
-
-## Tests
-
-```sh
-uv run python -m unittest
-```
-
-The `tests/` subdirectories hold sample programs from
-[nlsandler/writing-a-c-compiler-tests](https://github.com/nlsandler/writing-a-c-compiler-tests)
-(chapter 1), checked in verbatim:
-
-- `tests/invalid_lex/` — sources that must fail at lex time (bad
-  characters, malformed pp-numbers, …). Exercised by
-  `TestInvalidLex` in `test_lexer.py`.
-- `tests/invalid_parse/` — sources that lex cleanly but must fail at
-  parse time (missing tokens, wrong keyword case, extra junk, …).
-  Exercised by `TestInvalidParseFiles` in `test_parser.py`.
-- `tests/valid/` — sources that must parse into `int main(void) {
-  return N; }`. Exercised by `TestValidFiles` in `test_parser.py`.
-
-Each file is run through `pcpp` (to strip comments) before being fed
-to the lexer or parser; the file-based test classes are skipped if
-`pcpp` isn't on `PATH`.

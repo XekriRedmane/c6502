@@ -104,9 +104,8 @@ applicable to c6502 and are skipped at import time.
 
 ## Status
 
-For a working-feature checklist (every C99 §6.x construct c6502
-accepts end-to-end), see the README's `## Status` section and
-`STATUS.md` (chapter-by-chapter pass/fail). The chapter harnesses are
+For what works and what's missing, see the README's `## Status`
+section and `STATUS.md` (chapter-by-chapter pass/fail). The chapter harnesses are
 the authoritative list of what compiles and runs.
 
 Where to look for more:

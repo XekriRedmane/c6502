@@ -3,10 +3,8 @@
 Each file in this directory describes one optimization that c6502
 performs. A file says what the optimization does and why it's cheaper
 on the 6502, shows a small example before and after, and gives the
-conditions under which it applies and the cases it leaves alone. For
-the ideas behind the optimizer as a whole (SSA form, the fixed-point
-loops, register allocation), read
-[../optimization.md](../optimization.md) first.
+conditions under which it applies and the cases it leaves alone. The
+next section describes how the optimizer as a whole is put together.
 
 Most listings were captured from a compile by wrapping the one pass
 the file describes and printing its input and output. The rest
@@ -29,6 +27,171 @@ and `ULL` for the `long long` types, and `f` and `d` for `float` and
 `double`. A name such as `%3.1` is a
 compiler temporary, and a name such as `@0.i.2` is the SSA version of
 a user variable.
+
+## How `-O` is organized
+
+Without `-O`, every variable and temporary lives in the function's
+soft-stack frame, and each read of one is `LDY #off; LDA (FP),Y`,
+4 bytes and 7 cycles. `-O` exists mostly to put those values in
+zero page, where a read is `LDA zp`, 2 bytes and 3 cycles, or in X
+and Y, and to clean up the code around them. It works at two levels.
+The TAC optimizer rewrites whole values, such as an `int` or a
+pointer, where arithmetic and control flow are still easy to
+recognize. The asm optimizer then works on single bytes, after
+`tac_to_asm` has split every value into bytes, so the two bytes of
+an `int` can end up in different places, or one of them can be
+dropped. The peepholes then rewrite short runs of 6502 instructions.
+
+Both optimizers put a function in *SSA form* (static single
+assignment) first. Every variable is renamed at each assignment, so
+that each name is written exactly once, and where two paths with
+different versions of a variable meet, a `Phi` picks the version of
+the path taken. With one definition per name, a pass can replace a
+read by what was written without first checking which assignment
+reaches it. SSA destruction turns each `Phi` back into a copy at the
+end of each path into the join.
+
+### The stages
+
+The steps of each stage, with each one's document, are in "Pipeline
+order" below. What the list can't show is which steps feed which.
+The asm optimizer runs twice over the same input, because the size
+of each function's private pool of zero-page bytes has to be known
+before the final run's allocation, and the only measure of it is a
+run of the allocator.
+
+```mermaid
+flowchart TD
+    tacin["TAC from c99_to_tac and return_pointers_in_zero_page"]
+    rows["apply_row_address_tables, over the program"]
+    tacopt["the TAC optimizer, optimize_tac, once per function"]
+    tables["dispatch_const_pointer_arrays, then apply_split_tables, over the program"]
+    abi["select_abi, the carry-return choice, find_shares, allocate_zp_slots, and the others"]
+    t2a["tac_to_asm with bare exits: asm with Pseudo operands and no prologues"]
+    pre["asm optimizer, preliminary run, from the default caller- and callee-saved halves of $80-$FF"]
+    pools["allocate_function_locals: a private pool for each eligible function"]
+    fin["asm optimizer, final run, from the private pools"]
+    rp["replace_pseudoregisters_bare_exit: the Pseudos left become Frame, Data, or ZP operands"]
+    late["lower_data_load_address, prologue synthesis, asm loop-invariant stores"]
+    peep["five peephole fixed points, with the register promotions, slot coalescing, and loop rotation between them"]
+    final["jump tables, copies through X or Y, long branches, shorter jumps, shared tails, outlined runs, zero-page globals placed"]
+
+    tacin --> rows --> tacopt --> tables --> abi --> t2a
+    t2a --> pre
+    t2a --> fin
+    fin --> rp --> late --> peep --> final
+    abi -.->|"each function's convention and slot addresses"| t2a
+    abi -.->|"each function's convention"| pools
+    pre -.->|"each function's count of local bytes"| pools
+    pools -.->|"each pool's addresses"| fin
+    fin -.->|"a pooled function spilled more than in the preliminary run: its pool grows, at most 3 times"| pools
+    fin -.->|"each function's coloring"| rp
+    pools -.->|"each pool's addresses"| rp
+```
+
+A solid arrow passes the program to the next step. A dashed arrow is
+other data that a later step reads. The preliminary run's output
+program goes nowhere, and only its counts are kept. Both asm
+optimizer runs and pseudoregister replacement also read the
+conventions from ABI selection, and those arrows are left out.
+
+### One value's way to zero page
+
+This is `total` from the following function, followed through the
+stages with the names it has in each. It's the `int` version of the
+example in the root README, and the low and high bytes of `total`
+end up in different places.
+
+```c
+#include <stdint.h>
+
+uint8_t table[16];
+
+int sum(void) {
+    int total = 0;
+    for (int i = 0; i < 16; i++)
+        total += table[i];
+    return total;
+}
+```
+
+```mermaid
+flowchart TD
+    c["int total, a local of sum"]
+    t0["@0.total, a 2-byte TAC variable"]
+    t1["@0.total.2, the TAC SSA version left after destruction"]
+    p["Pseudo @0.total.2, at offsets 0 and 1"]
+    b0["@0.total.2.b0.v1 to .v3, versions of the low byte"]
+    b1["@0.total.2.b1.v1 to .v3, versions of the high byte"]
+    k0["@0.total.2.b0.v2"]
+    k1["@0.total.2.b1.v2"]
+    z["pool byte $82, the third byte of sum's pool $80-$82"]
+    y["register Y"]
+    d["Data __local_sum__total"]
+    e["__local_sum__total EQU $82, and LDA, ADC, STA of it in the loop"]
+    ry["Reg Y, and INY after the low byte's carry, BCC"]
+
+    c -->|"identifier resolution"| t0
+    t0 -->|"TAC optimizer"| t1
+    t1 -->|"tac_to_asm"| p
+    p -->|"asm SSA construction, byte 0"| b0
+    p -->|"asm SSA construction, byte 1"| b1
+    b0 -->|"the copy-propagation and DCE fixed point"| k0
+    b1 -->|"the copy-propagation and DCE fixed point"| k1
+    k0 -->|"color_graph"| z
+    k1 -->|"color_graph, as the carry byte of a loop's add"| y
+    z -->|"apply_coloring, in a function with a pool"| d
+    y -->|"apply_coloring"| ry
+    d -->|"asm_emit"| e
+```
+
+The pool's bytes are named after the variables they hold, so that
+the linker can move them. A function without a private pool gets
+numbered `ZP` operands from the coloring instead. The low byte of
+`i` went to X and its high byte to `__local_sum__i_1`, `$81`, by the
+same steps. A value that the allocator can't place, and one whose
+address is taken, stays a `Pseudo` until pseudoregister replacement,
+which puts it in the soft-stack frame, or an address-taken local of
+a function with a pool in a free byte of the pool.
+
+### How the fixed points repeat
+
+Three groups of passes repeat until a sweep changes nothing, because
+each pass can open up work for the others. A constant fold can make
+a branch's condition constant, and unreachable-code elimination then
+drops the dead arm and the `Phi` arguments that came from it. That
+can leave a `Phi` with one source, which constant folding turns into
+a copy on the next sweep and copy propagation then forwards.
+
+```mermaid
+flowchart TD
+    subgraph tac["TAC fixed point, once per function, in SSA form"]
+        ts["one sweep of every fixed-point pass, constant folding through narrowing"]
+        tq{"function changed?"}
+        ts --> tq
+        tq -->|"yes, and fewer than 256 sweeps so far"| ts
+    end
+    subgraph asm["asm SSA fixed point, once per function in each run"]
+        as1["asm copy propagation"] --> as2["backward copy propagation"] --> as3["byte-granular DCE"] --> as4["OR-with-zero absorb"]
+        aq{"instructions changed?"}
+        as4 --> aq
+        aq -->|"yes"| as1
+    end
+    subgraph pp["peephole fixed point, five times under -O"]
+        ps["one sweep of every peephole, memory-to-memory move splitting through transfer plus or minus one"]
+        pq{"program changed?"}
+        ps --> pq
+        pq -->|"yes, and fewer than 16 sweeps so far"| ps
+        pq -->|"yes, after 16 sweeps"| err["AssertionError"]
+    end
+    tq -->|"no, or 256 sweeps"| tout["the passes after the fixed point"]
+    aq -->|"no"| aout["liveness, coalescing, coloring"]
+    pq -->|"no"| pout["the next pass in optimized_asm"]
+```
+
+The two limits guard against passes that undo each other's changes.
+Only the peephole loop treats reaching its limit as a compiler bug.
+The unoptimized pipeline runs the peephole fixed point once.
 
 ## Alphabetical list
 

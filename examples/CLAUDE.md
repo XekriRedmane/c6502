@@ -64,6 +64,27 @@ compares every soft-switch access and RWTS call. There's no checked-in
 listing of the linked program. Its README describes how the program
 is built and compared, and each file's size against the original's.
 
+`ali_baba/` is the literate `main.nw` of
+https://github.com/XekriRedmane/ali_baba_reveng, Electronic Arts' Ali
+Baba and the Forty Thieves for the Apple II, in fourteen C files and a
+shared header, `ali_baba.h`. The game's code and its HRCG text engine
+are C, and the copy-protection interpreter at `$0500-$07FF`, the disk
+code at `$B300-$BFFF`, and the boot loader stay the original's, called
+at their addresses. The tables among the original's code moved into
+the units, so `ali_baba.ld` puts the program in the spans the original's
+code and tables filled, plus `$A900-$B2FF`, which the original never
+touches. `UNITS.md` records which routines and tables each unit has and
+the decisions behind the header, and `notes/` has each unit's
+departures and size by routine. `tests/test_ali_baba.py` checks each
+unit's output against its `.asm` file and, when `ALI_BABA_DIR` names
+the reverse-engineering project's directory (after its `build.py` has
+made `output/main.bin`, `main.asm`, and `main.sym`), plays four scripts
+on the linked program and on the original, on the stand-in Apple II in
+`sim/ali_baba.py` with the Disk II of `sim/disk2.py`, and compares
+every soft-switch access, Monitor call, and call into the disk code,
+and the disks they leave. Its README describes the comparison and each
+file's size against the original's.
+
 The program has `static` variables with initial values that `-O`
 promotes into zero page, such as editor.c's `kbd_entry_index`, and
 their initial bytes are stored by the `__zp_init` the linker writes.

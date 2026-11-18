@@ -56,9 +56,9 @@ the assembler with dasm and runs only where dasm is installed.
 
 ## The multi-unit examples
 
-`test_zork_interpreter.py` and `test_lode_runner.py` cover the two
-programs in `examples/` that are linked from several units with a
-linker script. Each compiles every unit with `-O` and compares the
+`test_zork_interpreter.py`, `test_lode_runner.py`, and
+`test_ali_baba.py` cover the three programs in `examples/` that are
+linked from several units with a linker script. Each compiles every unit with `-O` and compares the
 output with its checked-in `.asm` file, which runs everywhere. The
 runs of the programs need files from the reverse-engineering projects,
 which aren't in this repository, and are skipped without them.
@@ -82,6 +82,15 @@ which aren't in this repository, and are skipped without them.
   from. The demo, which runs both programs for about four minutes, is
   the slowest test of the suite, so each script is a test method of
   its own, which a worker of `-n auto` takes alone.
+- `test_ali_baba.py` checks each unit's output against its `.asm`
+  file and round-trips disk images through `sim/disk2.py`. With
+  `ALI_BABA_DIR` set to the ali_baba_reveng directory (after its
+  `build.py`), `TestOriginal` plays four scripts on the original
+  (the attract mode, a game, a save to a blank disk, and a load) and
+  checks what each reaches, and `TestRuns` plays them on the linked
+  C program too and requires the same events, on `sim/ali_baba.py`,
+  and the same disks. `uv run python -m tests.test_ali_baba coverage`
+  lists the original's routines no script reaches.
 
 ## Chapter harnesses
 

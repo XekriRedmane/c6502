@@ -47,6 +47,29 @@ MPU until the boot stub's BRK fires.
   soft switches are found by decoding each instruction's address
   before it runs. `original_machine` and `program_machine` set up the
   two programs. `tests/test_lode_runner.py` uses it.
+- `ali_baba.py` — `Machine`, a stand-in Apple II for Electronic Arts'
+  Ali Baba and examples/ali_baba, built like `lode_runner.py`. It
+  records every soft-switch access, every call of a Monitor routine
+  (stand-ins for WAIT, PREAD, SETPWRC, and the text routines the
+  HRCG's control characters reach, with the argument each reads),
+  and every call from the game into the kept disk code at `$B300` and
+  `$B7B5`, with a CRC of hi-res page 1, so the original and the C
+  program can be compared event for event. COUT isn't an event, since
+  the C program calls the HRCG directly. Keys and disk swaps come from
+  a script indexed by the number of KBD reads. `original_machine`
+  starts the original from main.bin as the loader leaves it (the
+  HRCG and the disk code staged in page 1), and `program_machine`
+  loads a linked executable over the same image, runs `__zp_init`,
+  and enters `main`. `coverage` reports which of the original's
+  routines a run executes. `tests/test_ali_baba.py` uses it.
+- `disk2.py` — a Disk II controller and drives emulated a nibble at a
+  time: a `.dsk` image converted to DOS 3.3 tracks (address and data
+  fields, 6-and-2 encoding, the sector skew) and back, stepper phases
+  and half tracks, the motor, Q6/Q7, writes, and write protect. The
+  disk moves one nibble per read of the data latch, so what code reads
+  doesn't depend on its timing. `WIDE_TRACK` reads the half tracks
+  around track 5 as track 5, as the wide track Ali Baba's copy
+  protection checks would read.
 - `runtime.py` — runtime stub: zero-page reservations, boot stub,
   reset vector, and Python-implemented hooks for the 6502 helpers
   (`mul*` / `divmod*` / `asl*` / `asr*` / `lsr*`, plus FP slots). Each

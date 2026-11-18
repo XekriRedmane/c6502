@@ -1230,6 +1230,11 @@ def _constant_on_right(op, src1, src2, *, unsigned: bool):
     return tac_ast.LessThan(), src1, bumped
 
 
+def _imm_zero(op: asm_ast.Type_operand) -> bool:
+    """True when `op` is the constant 0."""
+    return isinstance(op, asm_ast.Imm) and op.value == 0
+
+
 def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
     """Address the k-th byte (0 = low, 1 = high) of a multi-byte
     operand. For `Imm`, extract that byte of the constant — Python's
@@ -4449,8 +4454,27 @@ class Translator:
         first byte that differs — any BNE fires immediately. For
         Equal we walk all bytes; if any differs we skip past the
         final BEQ via a fall-through label so we don't take the
-        branch."""
+        branch.
+
+        A comparison of several bytes with 0 ORs the bytes together
+        and branches once, as `_translate_cond_jump` does for a truth
+        test: `LDA b0; ORA b1; ...; BEQ` is 2 bytes for each byte after
+        the first, where the byte-by-byte chain is 4. The chain can stop
+        at the first nonzero byte, so it's a few cycles faster when a
+        high byte isn't 0, but `if (score == 0)` on a uint32_t was 6
+        bytes longer than `if ((b0 | b1 | b2 | b3) == 0)`."""
         out: list[asm_ast.Type_instruction] = []
+        zero = _imm_zero(src2_op) or _imm_zero(src1_op)
+        if size > 1 and zero:
+            value_op = src1_op if _imm_zero(src2_op) else src2_op
+            out.append(asm_ast.Mov(src=_byte_at(value_op, 0), dst=_REG_A))
+            for k in range(1, size):
+                out.append(asm_ast.Or(src=_byte_at(value_op, k), dst=_REG_A))
+            out.append(asm_ast.Branch(
+                cond=asm_ast.EQ() if branch_on_eq else asm_ast.NE(),
+                target=target,
+            ))
+            return out
         if not branch_on_eq:
             for k in range(size - 1, -1, -1):
                 out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))

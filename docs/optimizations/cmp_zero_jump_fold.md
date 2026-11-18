@@ -67,6 +67,14 @@ so the `JumpIfCmp` always jumps when its operator holds.
 - For `int a, b`, `a < b` becomes `JumpIfCmp(>=, @0.a, @1.b,
   .if_end@0)` at full width, which lowers to a 2-byte `SBC` chain
   with the overflow correction and one `BPL`.
+- For `uint32_t s`, `s == 0` becomes `JumpIfCmp(!=, @0.s, 0ul,
+  .if_end@0)`, which lowers to `LDA s; ORA s+1; ORA s+2; ORA s+3;
+  BNE .if_end@0`, the same as a truth test of `s`. Any `==` or `!=`
+  of several bytes against 0 ORs the bytes together and branches
+  once. A compare against another value walks the bytes from the
+  high one down and branches out at the first that differs, which
+  costs 4 bytes a byte where the OR costs 2. Lode Runner's
+  `record_hi_score_data_to_disk` tests its 4-byte score this way.
 
 ## A comparison kept as a value
 

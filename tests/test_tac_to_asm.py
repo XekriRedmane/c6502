@@ -1837,6 +1837,47 @@ class TestTranslateJumpIfCmp(unittest.TestCase):
             symbols[name] = Symbol(type=t, attrs=LocalAttr())
         return Translator(symbols=symbols)
 
+    def _zero_jump(self, op, *, zero_on_left=False):
+        # `%a op 0` on a uint32_t, with the 0 on either side.
+        import c99_ast as c
+        t = self._t(("%a", c.ULong()))
+        var = tac_ast.Var(name="%a")
+        zero = tac_ast.Constant(const=tac_ast.ConstULong(value=0))
+        return t.translate_instruction(tac_ast.JumpIfCmp(
+            op=op,
+            src1=zero if zero_on_left else var,
+            src2=var if zero_on_left else zero,
+            target=".end",
+        ))
+
+    def _or_bytes(self, cond):
+        return [
+            asm_ast.Mov(src=asm_ast.Pseudo(name="%a", offset=0), dst=_REG_A),
+            asm_ast.Or(src=asm_ast.Pseudo(name="%a", offset=1), dst=_REG_A),
+            asm_ast.Or(src=asm_ast.Pseudo(name="%a", offset=2), dst=_REG_A),
+            asm_ast.Or(src=asm_ast.Pseudo(name="%a", offset=3), dst=_REG_A),
+            asm_ast.Branch(cond=cond, target=".end"),
+        ]
+
+    def test_wide_equal_zero_ors_the_bytes(self):
+        # `LDA b0; ORA b1; ORA b2; ORA b3; BEQ`, 10 bytes for a value
+        # in zero page, where comparing a byte at a time took 16.
+        self.assertEqual(
+            self._zero_jump(tac_ast.Equal()), self._or_bytes(asm_ast.EQ()),
+        )
+
+    def test_wide_not_equal_zero_ors_the_bytes(self):
+        self.assertEqual(
+            self._zero_jump(tac_ast.NotEqual()),
+            self._or_bytes(asm_ast.NE()),
+        )
+
+    def test_wide_zero_on_the_left_ors_the_bytes(self):
+        self.assertEqual(
+            self._zero_jump(tac_ast.Equal(), zero_on_left=True),
+            self._or_bytes(asm_ast.EQ()),
+        )
+
     def test_uchar_lt_const_uses_lda_cmp_bcc(self):
         # 1-byte unsigned compare-and-branch: LDA / CMP / BCC.
         import c99_ast as c

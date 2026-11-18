@@ -424,7 +424,7 @@ static bool beats(struct hi_score *entry) {
 void record_hi_score_data_to_disk(void) {
     if (HI_SCORE_ELIGIBLE == 0)
         return;
-    if ((SCORE_BYTES[0] | SCORE_BYTES[1] | SCORE_BYTES[2] | SCORE_BYTES[3]) == 0)
+    if (SCORE == 0)
         return;
     if (access_hi_score_data_from_disk(DISK_ACCESS_READ) == 0)
         return;

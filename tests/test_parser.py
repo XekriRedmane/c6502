@@ -3369,13 +3369,15 @@ class TestInitializerListParsing(unittest.TestCase):
         for item in init.items:
             self.assertIsInstance(item, c99_ast.Constant)
 
-    def test_empty_init_list_rejected_by_grammar(self):
-        # `{}` would be a GNU/C2x extension — the standard requires
-        # at least one initializer. Lark fails to parse the empty
-        # form.
+    def test_empty_init_list(self):
+        # C23's empty initializer `{}` (§6.7.11p1) is an InitList with
+        # no items. `{,}` is still a syntax error.
+        init = self._init("int main(void) { int a[3] = {}; return 0; }")
+        self.assertIsInstance(init, c99_ast.InitList)
+        self.assertEqual(init.items, [])
         from parser import parse
         with self.assertRaises(Exception):
-            parse("int main(void) { int a[3] = {}; return 0; }")
+            parse("int main(void) { int a[3] = {,}; return 0; }")
 
     def test_trailing_comma_allowed(self):
         # C99 §6.7.8 explicitly permits `{1, 2, 3,}` — handy for

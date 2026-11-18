@@ -2905,11 +2905,13 @@ class _ASTBuilder(Transformer):
 
     # `initializer` rule alternatives. `init_exp` is `assignment_exp`
     # (a single scalar initializer); the inner exp passes through
-    # unchanged. `init_list` is `{ initializer (, initializer)* ,? }`
-    # — strip the LBRACE / COMMA / RBRACE tokens and wrap the
-    # remaining items in InitList. Items are themselves initializer
-    # results (an exp or another InitList), supporting nested init
-    # for future multi-dim use.
+    # unchanged. `init_list` is `{ initializer (, initializer)* ,? }`,
+    # or C23's empty initializer `{}` — strip the LBRACE / COMMA /
+    # RBRACE tokens and wrap the remaining items in InitList, which
+    # has no items for `{}`. Items are themselves initializer results
+    # (an exp or another InitList). The type checker decides what the
+    # braces mean from the declared type, since `{5}` initializes a
+    # scalar and `{}` initializes any object (C23 §6.7.11p11-12).
     @v_args(inline=True)
     def init_exp(self, exp):
         return exp
@@ -2925,14 +2927,16 @@ class _ASTBuilder(Transformer):
         return c99_ast.InitList(items=children)
 
     def compound_literal(self, items):
-        # `LPAREN type_name RPAREN LBRACE initializer (COMMA
-        # initializer)* COMMA? RBRACE`. The braces hold what a
+        # `LPAREN type_name RPAREN LBRACE (initializer (COMMA
+        # initializer)* COMMA?)? RBRACE`. The braces hold what a
         # declaration's `= {...}` would, and the initializer takes
         # the shape a var_decl's does, so later passes treat it like
         # one: an InitList for an array or struct, the String for a
         # char array initialized by `{"abc"}` (C99 §6.7.8.14 allows
         # the braces), and the single expression for a scalar
-        # (§6.7.8.11).
+        # (§6.7.8.11). A scalar's `{}` or a list of more than one
+        # item stays an InitList, which the type checker turns into a
+        # zero or rejects, as it does for a declaration's.
         target = items[1]
         inits = [
             it for it in items[4:-1]
@@ -2960,13 +2964,10 @@ class _ASTBuilder(Transformer):
                 init = c99_ast.InitList(items=inits)
         elif isinstance(core, (c99_ast.Structure, c99_ast.Union)):
             init = c99_ast.InitList(items=inits)
-        else:
-            if len(inits) != 1 or isinstance(inits[0], c99_ast.InitList):
-                raise ParserError(
-                    "a scalar compound literal takes exactly one "
-                    "initializer, as in `(int){5}`"
-                )
+        elif len(inits) == 1 and not isinstance(inits[0], c99_ast.InitList):
             init = inits[0]
+        else:
+            init = c99_ast.InitList(items=inits)
         return c99_ast.CompoundLiteral(target_type=target, init=init)
 
     def init_declarator(self, items):

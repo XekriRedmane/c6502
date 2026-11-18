@@ -2123,16 +2123,15 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         )
         instrs = tac.top_level[0].instructions
         kinds = [type(i).__name__ for i in instrs]
-        # 1× GetAddress, 5× Store (no per-byte Add for the first;
-        # 4× Add for the offset bytes).
+        # 1× GetAddress, a Store each for 'H' and 'i', and the three
+        # zero bytes as one run, stored 2 bytes and then 1.
         self.assertEqual(kinds.count("GetAddress"), 1)
-        self.assertEqual(kinds.count("Store"), 5)
-        # The five Store source values are 'H', 'i', 0, 0, 0.
-        store_vals = [
-            i.src.const.value for i in instrs
-            if isinstance(i, tac_ast.Store)
-        ]
-        self.assertEqual(store_vals, [ord('H'), ord('i'), 0, 0, 0])
+        stores = [i.src.const for i in instrs if isinstance(i, tac_ast.Store)]
+        self.assertEqual(
+            [(type(c).__name__, c.value) for c in stores],
+            [("ConstUChar", ord('H')), ("ConstUChar", ord('i')),
+             ("ConstUInt", 0), ("ConstUChar", 0)],
+        )
 
     def test_file_scope_char_array_string_init_emits_static_with_bytes(self):
         # `char arr[5] = "Hi";` at file scope lands in the static
@@ -2933,8 +2932,9 @@ class TestArrayInitList(unittest.TestCase):
         )
 
     def test_partial_init_pads_with_zeros(self):
-        # `int a[5] = {1, 2}` — 5 Stores: items 0/1 from the source,
-        # items 2/3/4 are ConstInt(0).
+        # `int a[5] = {1, 2}`: items 0 and 1 from the source, then the
+        # 6 bytes of items 2 to 4 as one run of zero, stored 4 bytes
+        # and then 2.
         tac = self._tac(
             "int main(void) { int a[5] = {1, 2}; return 0; }"
         )
@@ -2942,12 +2942,12 @@ class TestArrayInitList(unittest.TestCase):
             i for i in tac.top_level[0].instructions
             if isinstance(i, tac_ast.Store)
         ]
-        self.assertEqual(len(stores), 5)
-        for i, expected_val in enumerate([1, 2, 0, 0, 0]):
-            self.assertEqual(
-                stores[i].src,
-                tac_ast.Constant(const=tac_ast.ConstInt(value=expected_val)),
-            )
+        self.assertEqual([s.src for s in stores], [
+            tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstULong(value=0)),
+            tac_ast.Constant(const=tac_ast.ConstUInt(value=0)),
+        ])
 
     def test_init_emits_get_address(self):
         # The first instruction is a GetAddress for the array.
@@ -3134,8 +3134,8 @@ class TestMultiDimArrays(unittest.TestCase):
     def test_partial_two_dim_init_zero_pads(self):
         # `int a[2][3] = {{1, 2}};` — outer item 0 has only 2 inner
         # items (third zero-padded); outer item 1 missing entirely
-        # (all three inner zero-padded). Total: 6 Stores with
-        # values [1, 2, 0, 0, 0, 0].
+        # (all three inner zero-padded). The four zero elements are
+        # one run of 8 bytes, which one 8-byte store clears.
         tac = self._tac(
             "int main(void) { int a[2][3] = {{1, 2}}; return 0; }"
         )
@@ -3143,12 +3143,11 @@ class TestMultiDimArrays(unittest.TestCase):
             i for i in tac.top_level[0].instructions
             if isinstance(i, tac_ast.Store)
         ]
-        self.assertEqual(len(stores), 6)
-        for i, expected in enumerate([1, 2, 0, 0, 0, 0]):
-            self.assertEqual(
-                stores[i].src,
-                tac_ast.Constant(const=tac_ast.ConstInt(value=expected)),
-            )
+        self.assertEqual([s.src for s in stores], [
+            tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstULongLong(value=0)),
+        ])
 
     def test_two_dim_init_uses_correct_byte_offsets(self):
         # `int a[2][3] = {{1,2,3},{4,5,6}};` — sizeof(int)=2, so

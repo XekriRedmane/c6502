@@ -81,8 +81,12 @@ class TestParse(unittest.TestCase):
                     parse(src)
 
     def test_rejects_scalar_with_two_initializers(self) -> None:
-        with self.assertRaises(ParserError):
-            parse("int main(void) { return (int){1, 2}; }")
+        # The type checker rejects it, as it does `int x = {1, 2};`.
+        with self.assertRaises(TypeCheckError) as cm:
+            check_program(resolve_program(
+                parse("int main(void) { return (int){1, 2}; }"),
+            ))
+        self.assertIn("'(compound literal)'", str(cm.exception))
 
 
 class TestTypeCheck(unittest.TestCase):

@@ -917,22 +917,78 @@ def _param_zeropage(markers) -> tuple[int | None, ...]:
     return tuple(int(m[1:]) if m.startswith("@") else None for m in markers)
 
 
-def _size_from_initializer(t: "Type", init) -> "Type":
+def _size_from_initializer(t: "Type", init, what: str) -> "Type":
     """`t` completed by its initializer `init` when `t` is an array of
     unknown size (C99 §6.7.8.22): a string literal for an array of
     char gives its length plus the null, and a brace-enclosed list
-    gives its number of items. Anything else, including no initializer
-    and an empty list, leaves `t` as it is, and the checks after
-    reject the incomplete type."""
+    gives its number of items. Anything else, including no
+    initializer, leaves `t` as it is, and the checks after reject the
+    incomplete type.
+
+    The empty initializer `{}` is an error, because C23 §6.7.11p4
+    states "An array of unknown size shall not be initialized by an
+    empty initializer." `what` names the object in the message, as in
+    "array 'a'"."""
     if not (isinstance(t, Array) and t.size == 0) or init is None:
         return t
     if isinstance(init, c99_ast.String) and _is_char_element(t.element_type):
         size = len(init.str) + 1
     elif isinstance(init, c99_ast.InitList) and init.items:
         size = len(init.items)
+    elif isinstance(init, c99_ast.InitList):
+        raise TypeCheckError(
+            f"{what} has unknown size, so it can't be initialized by "
+            f"the empty initializer `{{}}`, which has no elements to "
+            f"give it a size (C23 §6.7.11p4)"
+        )
     else:
         return t
     return Array(element_type=t.element_type, size=size)
+
+
+def _empty_init_zero(t: "Type") -> c99_ast.Type_exp:
+    """The constant that the empty initializer `{}` gives a scalar of
+    type `t`, before conversion to `t`. C23 §6.7.11p11 initializes a
+    pointer to a null pointer and an arithmetic object to zero.
+    Integer 0 is a null pointer constant, and it converts to every
+    integer type, to bool, and to `nullptr_t` (§6.3.2.4p2). A
+    floating object gets a floating zero, so no integer-to-float
+    conversion is left for run time."""
+    t = _strip_quals(t)
+    if isinstance(t, Float):
+        return c99_ast.Constant(const=c99_ast.ConstFloat(bits=0))
+    if isinstance(t, Double):
+        return c99_ast.Constant(const=c99_ast.ConstDouble(bits=0))
+    return c99_ast.Constant(const=c99_ast.ConstInt(value=0))
+
+
+def _unbrace_scalar_init(init, t: "Type", what: str) -> c99_ast.Type_exp:
+    """The expression that initializes a scalar of type `t`, from its
+    initializer `init`. C23 §6.7.11p12 states "The initializer for a
+    scalar shall be a single expression, optionally enclosed in
+    braces, or it shall be an empty initializer." So `{5}` and `{5,}`
+    give the 5, and `{}` gives the zero of `_empty_init_zero`. A list
+    of two or more items and a second pair of braces (`{{5}}`) are
+    errors. `what` names the scalar in the message, as in "scalar
+    variable 'x'"."""
+    if not isinstance(init, c99_ast.InitList):
+        return init
+    if not init.items:
+        return _empty_init_zero(t)
+    if len(init.items) > 1:
+        raise TypeCheckError(
+            f"too many initializers for {what}: {len(init.items)} "
+            f"given, and a scalar's braces hold one expression (C23 "
+            f"§6.7.11p12)"
+        )
+    item = init.items[0]
+    if isinstance(item, c99_ast.InitList):
+        raise TypeCheckError(
+            f"unexpected nested initializer for {what}: a scalar's "
+            f"initializer is one expression, optionally in one pair of "
+            f"braces, or the empty initializer `{{}}` (C23 §6.7.11p12)"
+        )
+    return item
 
 
 def _composite_array(a: "Type", b: "Type") -> "Type | None":
@@ -2580,7 +2636,9 @@ class TypeChecker:
                 f"`register` (C99 §6.7.1 — only block-scope objects "
                 f"and function parameters)"
             )
-        vd.data_type = _size_from_initializer(vd.data_type, vd.init)
+        vd.data_type = _size_from_initializer(
+            vd.data_type, vd.init, f"array {_display_name(vd.name)!r}",
+        )
         if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"file-scope object {vd.name!r} declared with non-"
@@ -2661,6 +2719,13 @@ class TypeChecker:
             # `Cast(declared_type, original_init)` for the
             # mismatched case. `_const_init_value` then drills
             # through any Cast wrappers to the underlying integer.
+            # A braced scalar (`int x = {5};`) or the empty
+            # initializer (`int x = {};`) is replaced by its
+            # expression first.
+            vd.init = _unbrace_scalar_init(
+                vd.init, vd.data_type,
+                f"scalar variable {_display_name(vd.name)!r}",
+            )
             self._check_exp(vd.init)
             # Array-to-pointer decay — `static char *p = arr;`
             # (where `arr` is char[]) and the same shape after
@@ -3391,7 +3456,9 @@ class TypeChecker:
     def _check_block_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
-        vd.data_type = _size_from_initializer(vd.data_type, vd.init)
+        vd.data_type = _size_from_initializer(
+            vd.data_type, vd.init, f"array {_display_name(vd.name)!r}",
+        )
         if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"object {vd.name!r} declared with non-object type "
@@ -3522,6 +3589,10 @@ class TypeChecker:
                 # Cast), then drill through Casts to the underlying
                 # integer value. An array or function decays to a
                 # pointer first, as it does at file scope.
+                vd.init = _unbrace_scalar_init(
+                    vd.init, vd.data_type,
+                    f"scalar variable {_display_name(vd.name)!r}",
+                )
                 self._check_exp(vd.init)
                 vd.init = _decay_if_array(vd.init)
                 vd.init = _convert_to(vd.init, vd.data_type)
@@ -3613,14 +3684,13 @@ class TypeChecker:
                         f"type {init_t!r}, expected {vd.data_type!r}"
                     )
                 return
-            # Scalar var with InitList init — `int x = {1,2,3};` is
-            # rejected (C99 also allows `int x = {5};` but that's a
-            # corner we don't need yet).
-            if isinstance(vd.init, c99_ast.InitList):
-                raise TypeCheckError(
-                    f"scalar variable {vd.name!r} cannot have a "
-                    f"brace-enclosed initializer"
-                )
+            # A scalar's initializer may be in braces (`int x =
+            # {5};`) or be the empty initializer (`int x = {};`),
+            # and `int x = {1, 2};` is rejected.
+            vd.init = _unbrace_scalar_init(
+                vd.init, vd.data_type,
+                f"scalar variable {_display_name(vd.name)!r}",
+            )
             self._check_exp(vd.init)
             vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
@@ -3634,7 +3704,9 @@ class TypeChecker:
         be constant (§6.5.2.5.3). An array of unknown size takes its
         size from the initializer, as `int a[] = {1, 2};` would
         (§6.7.8.22)."""
-        t = _size_from_initializer(exp.target_type, exp.init)
+        t = _size_from_initializer(
+            exp.target_type, exp.init, "the compound literal's array",
+        )
         exp.target_type = t
         at_file_scope = self._return_type is None
         vd = c99_ast.Type_var_decl(
@@ -3647,6 +3719,8 @@ class TypeChecker:
             # The object's name is one identifier_resolution made up.
             raise TypeCheckError(str(e).replace(
                 repr(exp.name), "'(compound literal)'",
+            ).replace(
+                repr(_display_name(exp.name)), "'(compound literal)'",
             )) from e
         exp.init = vd.init
         exp.data_type = t
@@ -3749,12 +3823,12 @@ class TypeChecker:
                     item, elem_type, f"{var_name}.{m.name}",
                 )
             else:
-                if isinstance(item, c99_ast.InitList):
-                    raise TypeCheckError(
-                        f"unexpected nested initializer for member "
-                        f"{m.name!r} of {var_name!r} (member type is "
-                        f"{elem_type!r}, not aggregate)"
-                    )
+                # A scalar member's initializer may be braced, as in
+                # `{ {5}, 1 }`, or empty, as in `{ {}, 1 }`.
+                item = _unbrace_scalar_init(
+                    item, elem_type,
+                    f"member {m.name!r} of {_display_name(var_name)!r}",
+                )
                 self._check_exp(item)
                 item = _decay_if_array(item)
                 init.items[i] = _convert_to(item, elem_type)
@@ -3832,12 +3906,12 @@ class TypeChecker:
                     item, elem_type, f"{var_name}[{i}]",
                 )
             else:
-                if isinstance(item, c99_ast.InitList):
-                    raise TypeCheckError(
-                        f"unexpected nested initializer at index "
-                        f"{i} of {var_name!r} (element type is "
-                        f"{elem_type!r}, not an array)"
-                    )
+                # A scalar element's initializer may be braced, as in
+                # `{ {5}, 1 }`, or empty, as in `{ {}, 1 }`.
+                item = _unbrace_scalar_init(
+                    item, elem_type,
+                    f"element {i} of {_display_name(var_name)!r}",
+                )
                 self._check_exp(item)
                 # Same conversion rule as scalar init / Assignment
                 # rval — array-decay first (so e.g. `&other` shapes
@@ -4093,6 +4167,10 @@ class TypeChecker:
                 # class specifiers on every declarator, so each is
                 # plain `T <name> = <exp>;` and lands as a LocalAttr.
                 for vd in vds:
+                    vd.data_type = _size_from_initializer(
+                        vd.data_type, vd.init,
+                        f"array {_display_name(vd.name)!r}",
+                    )
                     if vd.placement is not None or vd.section is not None:
                         raise TypeCheckError(
                             f"`[[c6502::zeropage]]` and "
@@ -4158,11 +4236,10 @@ class TypeChecker:
                                 f"expected {vd.data_type!r}"
                             )
                         continue
-                    if isinstance(vd.init, c99_ast.InitList):
-                        raise TypeCheckError(
-                            f"scalar variable {vd.name!r} cannot "
-                            f"have a brace-enclosed initializer"
-                        )
+                    vd.init = _unbrace_scalar_init(
+                        vd.init, vd.data_type,
+                        f"scalar variable {_display_name(vd.name)!r}",
+                    )
                     # Initializer-conversion rule: type-check then
                     # wrap in an implicit Cast if needed (same
                     # shape as block-scope var decls).

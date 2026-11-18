@@ -345,14 +345,15 @@ var_decl: attribute_specifier_seq? decl_specs init_declarator (COMMA init_declar
 // alone, so a declaration of several names can give each its own.
 init_declarator: declarator (ASSIGN initializer)?
 
-// Initializer per C99 §6.7.8: either a single assignment-level
-// expression, or a brace-enclosed list of initializers. The list
-// allows a trailing comma per the standard. Items are themselves
-// `initializer` for nesting (multi-dim init); the current type
-// checker only validates flat single-dim init, but the recursive
-// grammar leaves room without a future grammar bump.
-initializer: assignment_exp                                      -> init_exp
-           | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
+// Initializer per C23 §6.7.11: either a single assignment-level
+// expression, or a braced initializer, which is a list of
+// initializers in braces, with an optional trailing comma. The list
+// may be empty (`{}`, C23's empty initializer), which default-
+// initializes the object as if it had static storage duration.
+// Items are themselves `initializer`, so nested braces initialize a
+// subaggregate, or a scalar (`{5}`, §6.7.11p12).
+initializer: assignment_exp                                        -> init_exp
+           | LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> init_list
 function_decl: attribute_specifier_seq? decl_specs declarator block
 
 type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
@@ -604,7 +605,7 @@ constant_exp: conditional_exp
             | postfix_exp DOT IDENTIFIER        -> member_dot
             | postfix_exp ARROW IDENTIFIER      -> member_arrow
             | postfix_exp LPAREN arg_list? RPAREN -> function_call
-            | LPAREN type_name RPAREN LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> compound_literal
+            | LPAREN type_name RPAREN LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> compound_literal
             | atom
 
 // A function call is a postfix operator on any expression (C99

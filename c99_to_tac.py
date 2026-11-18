@@ -1611,6 +1611,60 @@ def _is_char_element(t: c99_ast.Type_data_type) -> bool:
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
 
 
+def _is_zero_constant(exp: c99_ast.Type_exp) -> bool:
+    """True iff `exp` is a constant whose bytes are all zero: an
+    integer or bit-precise 0, a floating +0.0, `nullptr`, or a cast of
+    one of these, since a cast of 0 gives 0, +0.0, or a null pointer.
+    An automatic aggregate's initializer clears such a member along
+    with the bytes around it (`_init_leaves`)."""
+    while isinstance(exp, c99_ast.Cast):
+        exp = exp.exp
+    if not isinstance(exp, c99_ast.Constant):
+        return False
+    c = exp.const
+    if isinstance(c, c99_ast.ConstNullptr):
+        return True
+    if isinstance(c, (c99_ast.ConstFloat, c99_ast.ConstDouble)):
+        return c.bits == 0
+    return getattr(c, "value", None) == 0
+
+
+# The fewest zero bytes in a run that an automatic aggregate's
+# initializer clears with a loop (`_emit_zero_bytes`). A shorter run
+# gets constant stores. These are the bytes of code that `= {}` adds
+# to a function holding a struct of n bytes, measured on 17 Nov 2026
+# with each form forced.
+#
+#   n                       2    4    6    7    8   10   16   32   loop
+#   -O, in the pool         6   12   16   18   20   24   36   68     11
+#   -O, soft-stack frame    9   15   21   24   27   33   51   99     23
+#   unoptimized            35   41   80  117   53   92  110  226     81
+#
+# The loop is smaller from 4 bytes up in the pool and from 7 bytes up
+# in a frame. It's also slower. In the pool, it's `LDY #n; DEY; LDA
+# #0; STA v,Y; TYA; BNE`, 14 cycles a byte, where the stores are `STA
+# v+k` with A or Y zero, 3 cycles a byte. In a frame, the loop takes
+# the object's address in each pass. From 8 bytes up the loop is the
+# smaller form in both -O settings, but 8 bytes are one 8-byte store,
+# which the unoptimized pipeline lowers in 53 bytes against the loop's
+# 81. The loop's temporaries also take 7 more bytes of an unoptimized
+# frame than the store's, and that took `test_non_constant` in
+# tests/chapter_15/valid/initialization/automatic.c past the 255-byte
+# reach of `(FP),Y`. So the loop starts at 9 bytes. Below that, the
+# stores under -O cost at most 9 bytes more than the loop and run over
+# four times as fast.
+_CLEAR_LOOP_BYTES = 9
+
+# The constant types `_emit_zero_bytes` stores zero with, widest
+# first: one Store per 8, 4, 2, or 1 bytes.
+_ZERO_STORE_TYPES = (
+    (8, c99_ast.ULongLong()),
+    (4, c99_ast.ULong()),
+    (2, c99_ast.UInt()),
+    (1, c99_ast.UChar()),
+)
+
+
 def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes occupied by a value of type `t` in c6502's storage
     model. Recursive for Array — `int[3][4]` is 24 bytes (Int = 2),
@@ -3502,65 +3556,11 @@ class Translator:
         vd: c99_ast.Type_var_decl,
         instrs: list[tac_ast.Type_instruction],
     ) -> None:
-        """Lower `T arr[N] = {e1, e2, ...};` (block-scope only) to a
-        sequence of leaf Stores. GetAddress once for the array's
-        base, then walk the (possibly nested) initializer tree
-        recursively, accumulating a constant byte offset to each
-        scalar leaf and emitting `Store(val, base + offset)` for it.
-        Missing items at any level zero-pad per C99 §6.7.8.21."""
-        arr_type = vd.data_type
-        assert isinstance(arr_type, c99_ast.Array)
-        init = vd.init
-        assert isinstance(init, c99_ast.InitList)
-        # Single base address for the whole initializer tree; we
-        # treat it as a byte-pointer (typed Pointer(Int) is fine —
-        # the size dispatch on Store comes from the value's type,
-        # not the pointer's).
-        base = tac_ast.Var(
-            name=self.make_temporary_variable_name(
-                c99_ast.Pointer(referenced_type=c99_ast.Int()),
-            ),
-        )
-        instrs.append(tac_ast.GetAddress(
-            operand=tac_ast.Var(name=vd.name), dst=base,
-        ))
-        self._emit_init_stores(arr_type, init, base, 0, instrs)
-
-    def _emit_string_stores(
-        self,
-        s_node: c99_ast.String,
-        arr_type: c99_ast.Array,
-        base: tac_ast.Type_val,
-        base_offset: int,
-        instrs: list[tac_ast.Type_instruction],
-    ) -> None:
-        """Lay each byte of `s_node.str` (zero-pad to `arr_type.size`)
-        down at `base + base_offset + k`. Used by the nested
-        char-array case of `_emit_init_stores` when an inner
-        `String` initializes a `char[N]` sub-aggregate (e.g.
-        `signed char a[3][4] = {{...}, "efgh", "ijk"}`)."""
-        n = arr_type.size
-        s = s_node.str
-        elem_type = arr_type.element_type
-        for i in range(n):
-            byte = ord(s[i]) & 0xFF if i < len(s) else 0
-            val = _tac_const_val(elem_type, byte)
-            offset = base_offset + i
-            if offset == 0:
-                addr = base
-            else:
-                addr = tac_ast.Var(
-                    name=self.make_temporary_variable_name(
-                        c99_ast.Pointer(referenced_type=elem_type),
-                    ),
-                )
-                instrs.append(tac_ast.Binary(
-                    op=tac_ast.Add(),
-                    src1=base,
-                    src2=_tac_const_val(c99_ast.Int(), offset),
-                    dst=addr,
-                ))
-            instrs.append(tac_ast.Store(src=val, dst_ptr=addr, is_volatile=_is_volatile_quals_c99(elem_type)))
+        """Lower `T arr[N] = {e1, e2, ...};` (block-scope only) to
+        stores into the array's bytes (`_emit_initializer`)."""
+        assert isinstance(vd.data_type, c99_ast.Array)
+        assert isinstance(vd.init, c99_ast.InitList)
+        self._emit_initializer(vd, instrs)
 
     def _translate_string_array_init(
         self,
@@ -3571,218 +3571,259 @@ class Translator:
         the bytes of the literal initialize the leading elements;
         any remaining elements are zero-initialized (which
         includes the null terminator when there's room — when
-        `N == len`, the terminator is elided). Lay each byte down
-        via the same `GetAddress` + `Store` pattern as the InitList
-        path, with the constant value coming from the string."""
-        arr_type = vd.data_type
-        assert isinstance(arr_type, c99_ast.Array)
+        `N == len`, the terminator is elided)."""
+        assert isinstance(vd.data_type, c99_ast.Array)
         assert isinstance(vd.init, c99_ast.String)
-        n = arr_type.size
-        s = vd.init.str
-        elem_type = arr_type.element_type
-        # Single base address for the array's storage. Pointer-to-
-        # Int as the temp's c99 type (size dispatch on the Store
-        # itself comes from the value's TAC type, which is Int
-        # 1B for every byte we lay down).
-        base = tac_ast.Var(
-            name=self.make_temporary_variable_name(
-                c99_ast.Pointer(referenced_type=c99_ast.Int()),
-            ),
-        )
-        instrs.append(tac_ast.GetAddress(
-            operand=tac_ast.Var(name=vd.name), dst=base,
-        ))
-        for i in range(n):
-            byte = ord(s[i]) & 0xFF if i < len(s) else 0
-            val = _tac_const_val(elem_type, byte)
-            if i == 0:
-                addr = base
-            else:
-                addr = tac_ast.Var(
-                    name=self.make_temporary_variable_name(
-                        c99_ast.Pointer(referenced_type=elem_type),
-                    ),
-                )
-                instrs.append(tac_ast.Binary(
-                    op=tac_ast.Add(),
-                    src1=base,
-                    src2=_tac_const_val(c99_ast.Int(), i),
-                    dst=addr,
-                ))
-            instrs.append(tac_ast.Store(src=val, dst_ptr=addr, is_volatile=_is_volatile_quals_c99(elem_type)))
-
-    def _emit_init_stores(
-        self,
-        arr_type: c99_ast.Array,
-        init: c99_ast.InitList,
-        base: tac_ast.Type_val,
-        base_offset: int,
-        instrs: list[tac_ast.Type_instruction],
-    ) -> None:
-        """Walk an (possibly nested) initializer for an array of
-        type `arr_type`, emitting Store instructions for each scalar
-        leaf at `base + (base_offset + leaf_offset)` bytes. Missing
-        items zero-pad: a None item with an Array element type
-        recurses with an empty InitList (so all leaves of the
-        sub-array zero); a None item with a scalar element type
-        emits `Store(0-of-elem, addr)`."""
-        elem_type = arr_type.element_type
-        elem_size = _sizeof(elem_type, self._types)
-        for i in range(arr_type.size):
-            byte_offset = base_offset + i * elem_size
-            item = init.items[i] if i < len(init.items) else None
-            if isinstance(elem_type, c99_ast.Array):
-                # Recurse into the sub-array. A missing item is a
-                # logically-empty InitList — every leaf zeroes.
-                # A `String` item at a char-array sub-element type
-                # is the §6.7.8.14 string-as-char-array form; emit
-                # per-byte stores at this offset.
-                if (
-                    isinstance(item, c99_ast.String)
-                    and _is_char_element(elem_type.element_type)
-                ):
-                    self._emit_string_stores(
-                        item, elem_type, base, byte_offset, instrs,
-                    )
-                    continue
-                sub = (
-                    item if item is not None
-                    else c99_ast.InitList(items=[], data_type=elem_type)
-                )
-                self._emit_init_stores(
-                    elem_type, sub, base, byte_offset, instrs,
-                )
-            elif isinstance(
-                _unqualified(elem_type), (c99_ast.Structure, c99_ast.Union),
-            ):
-                sub = (
-                    item if item is not None
-                    else c99_ast.InitList(items=[], data_type=elem_type)
-                )
-                self._emit_struct_init_stores(
-                    elem_type, sub, base, byte_offset, instrs,
-                )
-            else:
-                if item is None:
-                    val = _tac_const_val(elem_type, 0)
-                else:
-                    val = self.translate_exp(item, instrs)
-                if byte_offset == 0:
-                    addr = base
-                else:
-                    addr = tac_ast.Var(
-                        name=self.make_temporary_variable_name(
-                            c99_ast.Pointer(referenced_type=elem_type),
-                        ),
-                    )
-                    instrs.append(tac_ast.Binary(
-                        op=tac_ast.Add(),
-                        src1=base,
-                        src2=_tac_const_val(c99_ast.Int(), byte_offset),
-                        dst=addr,
-                    ))
-                instrs.append(tac_ast.Store(src=val, dst_ptr=addr, is_volatile=_is_volatile_quals_c99(elem_type)))
-
-    def _emit_struct_init_stores(
-        self,
-        struct_type,  # c99_ast.Structure | c99_ast.Union
-        init: c99_ast.InitList,
-        base: tac_ast.Type_val,
-        base_offset: int,
-        instrs: list[tac_ast.Type_instruction],
-    ) -> None:
-        """Walk a struct/union initializer, emitting Store instructions
-        for each scalar leaf at `base + (base_offset + member_offset)`
-        bytes. Missing items zero-pad. For unions only the first named
-        member is initialized per C99 §6.7.8.16."""
-        if self._types is None:
-            raise TypeError("struct init lowering requires TypeTable")
-        struct_type = _unqualified(struct_type)
-        layout = self._types.get(struct_type.tag)
-        if layout is None or not layout.complete:
-            raise TypeError(f"incomplete struct/union {struct_type!r}")
-        members = (
-            layout.members[:1]
-            if isinstance(struct_type, c99_ast.Union)
-            else layout.members
-        )
-        for i, m in enumerate(members):
-            byte_offset = base_offset + m.byte_offset
-            item = init.items[i] if i < len(init.items) else None
-            mt = m.type
-            if isinstance(mt, c99_ast.Array):
-                if (
-                    isinstance(item, c99_ast.String)
-                    and _is_char_element(mt.element_type)
-                ):
-                    self._emit_string_stores(
-                        item, mt, base, byte_offset, instrs,
-                    )
-                    continue
-                sub = (
-                    item if item is not None
-                    else c99_ast.InitList(items=[], data_type=mt)
-                )
-                self._emit_init_stores(
-                    mt, sub, base, byte_offset, instrs,
-                )
-            elif isinstance(
-                _unqualified(mt), (c99_ast.Structure, c99_ast.Union),
-            ):
-                sub = (
-                    item if item is not None
-                    else c99_ast.InitList(items=[], data_type=mt)
-                )
-                self._emit_struct_init_stores(
-                    mt, sub, base, byte_offset, instrs,
-                )
-            else:
-                if item is None:
-                    val = _tac_const_val(mt, 0)
-                else:
-                    val = self.translate_exp(item, instrs)
-                if byte_offset == 0:
-                    addr = base
-                else:
-                    addr = tac_ast.Var(
-                        name=self.make_temporary_variable_name(
-                            c99_ast.Pointer(referenced_type=mt),
-                        ),
-                    )
-                    instrs.append(tac_ast.Binary(
-                        op=tac_ast.Add(),
-                        src1=base,
-                        src2=_tac_const_val(c99_ast.Int(), byte_offset),
-                        dst=addr,
-                    ))
-                instrs.append(tac_ast.Store(
-                    src=val, dst_ptr=addr,
-                    is_volatile=_is_volatile_quals_c99(mt),
-                ))
+        self._emit_initializer(vd, instrs)
 
     def _translate_struct_init_list(
         self,
         vd: c99_ast.Type_var_decl,
         instrs: list[tac_ast.Type_instruction],
     ) -> None:
-        """Lower `struct s x = {e1, e2, ...};` (block-scope only) by
-        computing the address of `x` once and emitting one Store per
-        scalar leaf."""
-        struct_type = _unqualified(vd.data_type)
-        assert isinstance(struct_type, (c99_ast.Structure, c99_ast.Union))
-        init = vd.init
-        assert isinstance(init, c99_ast.InitList)
-        base = tac_ast.Var(
-            name=self.make_temporary_variable_name(
-                c99_ast.Pointer(referenced_type=c99_ast.Int()),
-            ),
+        """Lower `struct s x = {e1, e2, ...};` (block-scope only) to
+        stores into the object's bytes (`_emit_initializer`)."""
+        assert isinstance(
+            _unqualified(vd.data_type), (c99_ast.Structure, c99_ast.Union),
         )
-        instrs.append(tac_ast.GetAddress(
-            operand=tac_ast.Var(name=vd.name), dst=base,
-        ))
-        self._emit_struct_init_stores(
-            struct_type, init, base, 0, instrs,
-        )
+        assert isinstance(vd.init, c99_ast.InitList)
+        self._emit_initializer(vd, instrs)
+
+    def _emit_initializer(
+        self,
+        vd: c99_ast.Type_var_decl,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Store the initial value of the automatic aggregate `vd`, an
+        array, struct, or union initialized by a brace-enclosed list
+        or (for a char array) a string literal.
+
+        The address of the object is taken once. `_init_leaves` lists
+        the scalar stores the initializer makes, in order of offset,
+        and the zero bytes it leaves: the subobjects the list doesn't
+        initialize, which C23 §6.7.11p20 subjects to default
+        initialization (zero, or a null pointer, which is zero bytes
+        here), the explicit zero constants, and a default-initialized
+        union's bytes past its first member. Adjacent zero bytes are
+        merged into one run, and `_emit_zero_bytes` clears each run.
+        So `struct s v = {};`, C23's empty initializer, and
+        `struct s v = {0};` both clear the object as one run. The
+        initializer's expressions are evaluated in the order of the
+        bytes they initialize, which C23 §6.7.11p24 leaves
+        unspecified."""
+        base_val: list[tac_ast.Type_val] = []
+
+        def base() -> tac_ast.Type_val:
+            # The object's address, taken just before the first store
+            # through it. A clear loop takes its own.
+            if not base_val:
+                base_val.append(tac_ast.Var(
+                    name=self.make_temporary_variable_name(
+                        c99_ast.Pointer(referenced_type=c99_ast.UChar()),
+                    ),
+                ))
+                instrs.append(tac_ast.GetAddress(
+                    operand=tac_ast.Var(name=vd.name), dst=base_val[0],
+                ))
+            return base_val[0]
+
+        leaves: list[tuple] = []
+        self._init_leaves(vd.data_type, vd.init, 0, leaves)
+        run_start = run_end = 0
+        for leaf in leaves + [("end",)]:
+            if leaf[0] == "zero" and run_end > run_start \
+                    and leaf[1] == run_end:
+                run_end += leaf[2]
+                continue
+            if run_end > run_start:
+                self._emit_zero_bytes(
+                    vd.name, base, run_start, run_end - run_start, instrs,
+                )
+            run_start = run_end = 0
+            if leaf[0] == "zero":
+                run_start, run_end = leaf[1], leaf[1] + leaf[2]
+            elif leaf[0] == "store":
+                _, offset, value, t = leaf
+                if isinstance(value, tac_ast.Constant):
+                    val = value
+                else:
+                    val = self.translate_exp(value, instrs)
+                instrs.append(tac_ast.Store(
+                    src=val,
+                    dst_ptr=self._add_offset(base(), offset, t, instrs),
+                    is_volatile=_is_volatile_quals_c99(t),
+                ))
+
+    def _init_leaves(
+        self,
+        t: c99_ast.Type_data_type,
+        init: c99_ast.Type_exp | None,
+        offset: int,
+        out: list[tuple],
+    ) -> None:
+        """Append to `out` what initializing an object of type `t` at
+        byte `offset` with `init` stores, in order of offset. `init`
+        is None for a subobject the enclosing list doesn't reach, and
+        an empty InitList is C23's empty initializer. Both mean
+        default initialization (C23 §6.7.11p11). Each entry is one of
+        these.
+
+          ("zero", offset, n)        n bytes of zero
+          ("store", offset, v, t)    a store of the value v of type t,
+                                     a c99 expression or a TAC
+                                     constant
+
+        A volatile scalar is always a store of its own, so that its
+        access stays one `Store` marked volatile. Structs have no
+        padding in c6502, since nothing is aligned, but a union is as
+        big as its biggest member. A default-initialized union is
+        zero in all its bytes, since §6.7.11p11 zeroes its padding.
+        A union initialized by a list leaves the bytes past its first
+        member alone, since their value is unspecified then."""
+        t_unq = _unqualified(t)
+        if isinstance(t_unq, c99_ast.Array):
+            elem = t_unq.element_type
+            if isinstance(init, c99_ast.String) and _is_char_element(elem):
+                s = init.str
+                for i in range(t_unq.size):
+                    byte = ord(s[i]) & 0xFF if i < len(s) else 0
+                    if byte == 0 and not _is_volatile_quals_c99(elem):
+                        out.append(("zero", offset + i, 1))
+                    else:
+                        out.append((
+                            "store", offset + i,
+                            _tac_const_val(elem, byte), elem,
+                        ))
+                return
+            items = init.items if isinstance(init, c99_ast.InitList) else []
+            elem_size = _sizeof(elem, self._types)
+            for i in range(t_unq.size):
+                self._init_leaves(
+                    elem, items[i] if i < len(items) else None,
+                    offset + i * elem_size, out,
+                )
+            return
+        if isinstance(t_unq, (c99_ast.Structure, c99_ast.Union)):
+            if self._types is None:
+                raise TypeError("struct init lowering requires TypeTable")
+            layout = self._types.get(t_unq.tag)
+            if layout is None or not layout.complete:
+                raise TypeError(f"incomplete struct/union {t_unq!r}")
+            is_union = isinstance(t_unq, c99_ast.Union)
+            members = layout.members[:1] if is_union else layout.members
+            items = init.items if isinstance(init, c99_ast.InitList) else []
+            for i, m in enumerate(members):
+                self._init_leaves(
+                    m.type, items[i] if i < len(items) else None,
+                    offset + m.byte_offset, out,
+                )
+            if is_union and not items:
+                first = (
+                    _sizeof(members[0].type, self._types) if members else 0
+                )
+                if layout.size > first:
+                    out.append(
+                        ("zero", offset + first, layout.size - first),
+                    )
+            return
+        if init is None or _is_zero_constant(init):
+            if _is_volatile_quals_c99(t):
+                out.append(("store", offset, _tac_const_val(t, 0), t))
+            else:
+                out.append(("zero", offset, _sizeof(t, self._types)))
+            return
+        out.append(("store", offset, init, t))
+
+    def _emit_zero_bytes(
+        self,
+        name: str,
+        base: "Callable[[], tac_ast.Type_val]",
+        offset: int,
+        n: int,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Store zero in the `n` bytes at `offset` in the object
+        `name`. `base()` gives the object's address, taken once for
+        the whole initializer. A run of at least `_CLEAR_LOOP_BYTES`
+        bytes gets a loop for each 256 bytes, which counts a byte
+        index down to zero.
+
+            i = 256 or what's left    ; unsigned char, 0 for 256
+        .clear@N:
+            i = i - 1
+            Store(0, &name + offset + i)
+            if (i != 0) goto .clear@N
+
+        A shorter run gets one constant store per 8, 4, 2, or 1
+        bytes, widest first.
+
+        Under -O, with `v` in a function's pool, the loop is `LDY #n;
+        DEY; LDA #0; STA v,Y; TYA; BNE`. The loop takes the object's
+        address again in each pass, as `((unsigned char *)&v)[i] = 0`
+        in C would. `memory_value_propagation` then sees the
+        address's halves in the pointer's bytes right before the
+        store, so the store is `v,Y` and the `GetAddress` goes. With
+        the address taken once before the loop, the store through
+        the pointer would kill that fact on the way around the loop,
+        and the store would stay `(p),Y`. Storing before the
+        decrement would let `BNE` read the flags `DEY` sets and drop
+        the `TYA`, but the store would then be at `v-1`, an offset
+        that `name+65535` stands for in the asm IR.
+        `_CLEAR_LOOP_BYTES` gives the measurements behind the
+        threshold."""
+        while n >= _CLEAR_LOOP_BYTES:
+            chunk = min(n, 256)
+            i = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.UChar()),
+            )
+            instrs.append(tac_ast.Copy(
+                src=_tac_const_val(c99_ast.UChar(), chunk & 0xFF), dst=i,
+            ))
+            top = self.make_label("clear")
+            instrs.append(tac_ast.Label(name=top))
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Subtract(), src1=i,
+                src2=_tac_const_val(c99_ast.UChar(), 1), dst=i,
+            ))
+            wide = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.UInt()),
+            )
+            instrs.append(tac_ast.ZeroExtend(src=i, dst=wide))
+            start = tac_ast.Var(
+                name=self.make_temporary_variable_name(
+                    c99_ast.Pointer(referenced_type=c99_ast.UChar()),
+                ),
+            )
+            instrs.append(tac_ast.GetAddress(
+                operand=tac_ast.Var(name=name), dst=start,
+            ))
+            p = self._add_offset(start, offset, c99_ast.UChar(), instrs)
+            addr = tac_ast.Var(
+                name=self.make_temporary_variable_name(
+                    c99_ast.Pointer(referenced_type=c99_ast.UChar()),
+                ),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Add(), src1=p, src2=wide, dst=addr,
+            ))
+            instrs.append(tac_ast.Store(
+                src=_tac_const_val(c99_ast.UChar(), 0), dst_ptr=addr,
+                is_volatile=False,
+            ))
+            instrs.append(tac_ast.JumpIfTrue(condition=i, target=top))
+            offset += chunk
+            n -= chunk
+        end = offset + n
+        while offset < end:
+            for width, zt in _ZERO_STORE_TYPES:
+                if end - offset >= width:
+                    break
+            instrs.append(tac_ast.Store(
+                src=_tac_const_val(zt, 0),
+                dst_ptr=self._add_offset(base(), offset, zt, instrs),
+                is_volatile=False,
+            ))
+            offset += width
 
     def _member_offset(self, struct_type, member: str) -> int:
         """Look up the byte offset of `member` in `struct_type`'s

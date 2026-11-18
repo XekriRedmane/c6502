@@ -208,6 +208,7 @@ to recognize. `tac_to_asm.py`'s docstring has the rest.
 | `+`, `-`, `*`, `<<`, unary `-`, or a conversion on a `_BitInt(N)` whose N isn't a multiple of 8 | the operation at the storage width, then an `AND` with the mask of the N bits, and for a signed type an `EOR` and an `SBC` of the sign bit, which copy bit N-1 into the padding. Below the top byte the mask is `$FF` and the sign bit's bytes are 0, and `-O` drops most of those bytes' instructions. |
 | `*`, `/`, `%`, or a shift by a variable of a 3-, 5-, 6-, or 7-byte integer | the helper of the next of 4 and 8 bytes, each operand extended in `HARGS` (zero-filled for `*` and `<<`, by its signedness otherwise), and the low bytes of the result loaded back |
 | a `<stdbit.h>` call, such as `stdc_leading_zeros(x)` | a loop between `.stdbit_body@N` and `.stdbit_test@N` that shifts a copy of `x` with `LSR` / `ROR` (or `ASL` / `ROL`) until it's zero, and counts the passes with `INC` or `DEC` of a byte (see docs/stdbit.md). A constant argument folds to its result. |
+| an automatic aggregate initialized by `= {}`, or the zero bytes a shorter list leaves | the run of zero bytes cleared by constant stores when it's under 9 bytes, and otherwise by a loop, `LDY #n; .clear@N: DEY; LDA #0; STA v,Y; TYA; BNE .clear@N` with `-O`, which takes the object's address in each pass when it's in a soft-stack frame. A static one is `DS.B` in `.bss`. |
 
 ## Runtime conventions
 

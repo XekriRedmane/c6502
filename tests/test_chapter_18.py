@@ -153,6 +153,14 @@ _INVALID_LEX_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "dot_bad_token.c",
 })
 _INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
+
+# invalid_parse files that C23 allows, which must compile. Each
+# initializes an object with the empty initializer `{}`, which C23
+# §6.7.11p1 adds to the grammar (the files' own comments say so).
+_INVALID_PARSE_VALID_IN_C23: frozenset[str] = frozenset({
+    "empty_initializer_list.c",
+    "extra_credit/union_empty_initializer.c",
+})
 _INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 _INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 
@@ -223,7 +231,9 @@ class TestChapter18InvalidParse(unittest.TestCase):
                 source = preprocess(
                     path.read_text(), ["-I", str(path.parent)],
                 )
-                if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
+                if rel in _INVALID_PARSE_VALID_IN_C23:
+                    _run_stage("codegen", source)
+                elif rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
                     parse(source)
                 else:
                     with self.assertRaises(_PARSE_FAILURES):

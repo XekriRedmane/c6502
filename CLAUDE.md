@@ -759,11 +759,32 @@ notes that aren't visible from the grammar alone:
   label_resolution fill it in later. `SwitchStmt` also has `cases`
   (list of `(value, label)` pairs), `default_label`, and a
   `promoted_type` filled by the type checker.
+- An initializer in braces is an `InitList` whatever the declared
+  type, and C23's empty initializer `{}` (§6.7.11) is one with no
+  items. The type checker gives a scalar's braces their meaning
+  (`_unbrace_scalar_init`): `{e}` and `{e,}` are `e`, `{}` is a zero
+  of the scalar's type (`_empty_init_zero`), and two items or a
+  second pair of braces are errors (§6.7.11p12). This applies to a
+  member or element too, as in `{ {}, {5} }`. An array of unknown
+  size can't take `{}` (§6.7.11p4, `_size_from_initializer`). A
+  static object's value tree from `{}` is all zero, so it goes in
+  `.bss`. For an automatic aggregate, `c99_to_tac._init_leaves`
+  lists the stores the initializer makes and the zero bytes it
+  leaves: the subobjects the list doesn't reach, the explicit zero
+  constants, and a default-initialized union's bytes past its first
+  member, which §6.7.11p11 zeroes. Adjacent zero bytes are one run,
+  which `_emit_zero_bytes` clears with constant stores of 8, 4, 2,
+  or 1 bytes when it's shorter than `_CLEAR_LOOP_BYTES` (9), and
+  otherwise with a loop that counts a byte index down (`DEY; LDA
+  #0; STA v,Y; TYA; BNE` under `-O`). The comment at
+  `_CLEAR_LOOP_BYTES` has the measurements.
 - A compound literal `(T){...}` (C99 §6.5.2.5) is a
   `CompoundLiteral(name, target_type, init)` node, parsed as a
-  postfix expression (`{` after `(T)` tells it from a cast). Its
-  `init` has a var_decl's shape (InitList, a String for a char
-  array, or a scalar's one expression), identifier_resolution names
+  postfix expression (`{` after `(T)` tells it from a cast). The
+  braces may be empty, as in `(struct s){}`. Its `init` has a
+  var_decl's shape (InitList, a String for a char array, or a
+  scalar's one expression, with a scalar's `{}` or longer list left
+  an InitList for the type checker), identifier_resolution names
   its object `@N.compound_literal`, and the type checker checks it as
   that declaration: automatic inside a function, static at file
   scope, an unsized array sized from the initializer. c99_to_tac
@@ -1086,8 +1107,9 @@ in `sim/` cover all of these so simulation-based tests still pass.
   — `float()` doesn't parse C hex-float syntax and the conversion
   isn't wired up.
 - Some C99 init-list shapes rejected: scalar init for an array,
-  brace init for a scalar, too many initializers, the C99
-  subaggregate flat form (`int a[2][3] = {1,2,3,4,5,6};`).
+  too many initializers, the C99 subaggregate flat form (`int
+  a[2][3] = {1,2,3,4,5,6};`), and a member or element of struct type
+  initialized by an expression.
 - Variable-length arrays aren't supported. An array size must be
   an integer constant expression, which the parser folds through
   the type checker and `passes.constant_expression` (the same folder

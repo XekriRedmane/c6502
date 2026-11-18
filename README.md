@@ -43,6 +43,16 @@ These parts work.
   `NULL`, and to every null pointer. Converting it to an integer, or
   comparing it with `<`, is an error, as C23 specifies. The compiler
   treats it as the constant 0 from the type checker on.
+- C23's empty initializer, `= {}`, works for every object that can
+  be initialized: a scalar, an array, a struct, a union, a subobject
+  in a longer list (`{ {}, 1 }`), and a compound literal such as
+  `(struct s){}`. Every byte of the object is zero, which in c6502 is
+  also a null pointer and `+0.0`, and that includes a union's bytes
+  past its first member. A static object initialized this way goes
+  in `.bss`. An automatic one is cleared by stores when it's under 9
+  bytes and by a loop otherwise. An array of unknown size can't be
+  initialized by `{}`, as C23 specifies. A scalar's initializer may
+  also be in braces, as in `int x = {5};`, which C99 allowed too.
 - C23's binary constants, such as `0b1010'0101`, and digit
   separators, such as `1'000'000` and `0xFF'FF`, work in C and in
   `#if`. A separator anywhere but between two digits is an error
@@ -97,7 +107,8 @@ These parts are missing.
 - Variadic functions, bit-fields, designated initializers,
   variable-length arrays, `inline`, and `_Complex` are rejected. So
   are a few initializer forms, such as the flat list for a nested
-  array (`int a[2][3] = {1, 2, 3, 4, 5, 6};`).
+  array (`int a[2][3] = {1, 2, 3, 4, 5, 6};`) and a struct member
+  initialized by an expression of struct type.
 
 ## Installation
 

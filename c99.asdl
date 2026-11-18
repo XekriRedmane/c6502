@@ -239,12 +239,14 @@ module C99 {
         | Dereference(exp, data_type?)
         | AddressOf(exp, data_type?)
         | Subscript(exp array, exp index, data_type?)
-        -- Initializer list `{e1, e2, ...}`. Only valid as the init
-        -- slot of a var_decl whose data_type is Array; rejected
-        -- elsewhere by the type checker. Items can themselves be
-        -- InitLists (a future hook for multi-dim init), but the
-        -- current cut only supports single-dim arrays with scalar
-        -- items.
+        -- Initializer list `{e1, e2, ...}`, or C23's empty
+        -- initializer `{}` with no items. Only valid as an
+        -- initializer, of a var_decl, a compound literal, or an item
+        -- of another InitList; rejected elsewhere by the type
+        -- checker. Items can themselves be InitLists, for a
+        -- subaggregate or a braced scalar. The type checker replaces
+        -- a scalar's InitList by its one expression, or by a zero
+        -- for `{}`.
         | InitList(exp* items, data_type?)
         -- `sizeof e` (operator on an expression) and `sizeof (T)`
         -- (operator on a type-name). Per C99 §6.5.3.4.2 the
@@ -274,7 +276,9 @@ module C99 {
         -- an unnamed object, and an lvalue. `init` has the shape a
         -- var_decl's would: an InitList for an array or struct, a
         -- String for a char array, or the one expression in the
-        -- braces for a scalar. `name` is the object's name, "" from
+        -- braces for a scalar, which the parser leaves an InitList
+        -- when the braces are empty or hold more than one item.
+        -- `name` is the object's name, "" from
         -- the parser and unique after identifier_resolution. Inside
         -- a function the object is automatic, and evaluation
         -- initializes it each time it reaches the literal; outside

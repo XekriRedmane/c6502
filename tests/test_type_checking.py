@@ -1927,11 +1927,13 @@ class TestArrays(unittest.TestCase):
         )
 
     def test_init_list_for_scalar_rejected(self):
+        # A scalar's braces hold one expression (C23 §6.7.11p12).
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
                 "int main(void) { int x = {1, 2}; return 0; }"
             )
-        self.assertIn("brace-enclosed", str(ctx.exception))
+        self.assertIn("too many initializers for scalar variable 'x'",
+                      str(ctx.exception))
 
     def test_scalar_init_for_array_rejected(self):
         with self.assertRaises(TypeCheckError) as ctx:
@@ -1981,12 +1983,14 @@ class TestArrays(unittest.TestCase):
 
     def test_nested_init_extra_braces_rejected(self):
         # `int a[3] = {{1,2,3}};` — element type is Int (not an
-        # array), so a nested `{1,2,3}` is the wrong shape.
+        # array), so `{1,2,3}` is a braced scalar with three
+        # expressions, where C23 §6.7.11p12 allows one.
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
                 "int main(void) { int a[3] = {{1,2,3}}; return 0; }"
             )
-        self.assertIn("unexpected nested initializer", str(ctx.exception))
+        self.assertIn("too many initializers for element 0 of 'a'",
+                      str(ctx.exception))
 
     def test_init_list_in_expression_position_rejected(self):
         # The grammar doesn't allow `{1, 2}` as a regular expression

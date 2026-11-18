@@ -197,6 +197,28 @@ class TestRematYSetup(unittest.TestCase):
         self.assertEqual(_instrs(prog)[-1].src, self._indexed_y())
 
 
+class TestRematIndirectZpBase(unittest.TestCase):
+    """`IndirectZp(addr, off)` is `LDY #off; LDA (addr),Y`. It reads
+    the pointer at `addr` and `addr + 1`, whatever `off` is, so a
+    stage into either byte stays."""
+
+    def test_pointer_high_byte_is_read(self):
+        hi = _data("__local_f__3")
+        prog = _wrap([
+            asm_ast.Mov(src=_data("__zpabi_f__p_1"), dst=_A(),
+                        is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=hi, is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=asm_ast.Data(name="DPTR", offset=1),
+                        is_volatile=False),
+            asm_ast.Mov(src=asm_ast.IndirectZp(address=0x84, offset=6),
+                        dst=_A(), is_volatile=False),
+        ], slot_symbols={"__local_f__2": 0x84, "__local_f__3": 0x85})
+        self.assertIn(
+            asm_ast.Mov(src=_A(), dst=hi, is_volatile=False),
+            _instrs(prog),
+        )
+
+
 class TestRematPointerStore(unittest.TestCase):
     """A store through a pointer between the load and the read may
     write the static, unless the static is internal and its address

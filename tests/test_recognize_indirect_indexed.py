@@ -461,6 +461,68 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
                     out.memory[sim.symbols["data"] + 7], 0x100 - 122,
                 )
 
+    def test_wide_offset_load_folds(self) -> None:
+        # A 2-byte value at offset k folds when Y reaches its last byte,
+        # k + 1 <= 255. Its bytes lower as `LDY #k` and `LDY #k+1`.
+        for k, folds in ((0, True), (13, True), (254, True), (255, False)):
+            with self.subTest(k=k):
+                symbols = _canonical_symbols()
+                symbols["b"] = _uint_local()
+                instrs = self._load(k)
+                out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
+                if not folds:
+                    self.assertEqual(out.instructions, instrs)
+                    continue
+                self.assertEqual(out.instructions, [
+                    tac_ast.IndirectIndexedLoad(
+                        ptr=_var("p"),
+                        index=tac_ast.Constant(
+                            const=tac_ast.ConstUChar(value=k),
+                        ),
+                        dst=_var("b"), is_volatile=False,
+                    ),
+                ])
+
+    def test_wide_member_end_to_end(self) -> None:
+        # A 2-byte member read, written, and updated in place through a
+        # pointer, and through a pointer the function computes, which
+        # stays in DPTR for the last byte of the store while the reads
+        # go through the computed pointer's own bytes. asm_remat had
+        # taken IndirectZp's offset as part of the pointer's address,
+        # and dropped the store of that pointer's high byte.
+        src = (
+            "#include <stdint.h>\n"
+            "struct rec { uint8_t a[13]; uint16_t gold; uint8_t b; };\n"
+            "static struct rec r[2];\n"
+            "struct rec *P;\n"
+            "static uint8_t less(uint16_t price) { return P->gold < price; }\n"
+            "static void clear(void) { P->gold = 0; }\n"
+            "static void add(struct rec *q) { q->gold += 5; }\n"
+            "static int bump(int *ptr) {\n"
+            "    if ((--ptr)[3] += 4) return 4;\n"
+            "    return 0;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    static int arr[4] = {-1, -2, -3, -4};\n"
+            "    P = &r[1];\n"
+            "    P->gold = 1000;\n"
+            "    if (!less(1001) || less(1000)) return 1;\n"
+            "    add(P);\n"
+            "    if (r[1].gold != 1005) return 2;\n"
+            "    clear();\n"
+            "    if (r[1].gold != 0 || r[1].b != 0) return 3;\n"
+            "    if (bump(arr + 1) != 0 || arr[3] != 0) return 4;\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(src, optimize=optimize).run(
+                    max_cycles=5_000_000,
+                )
+                self.assertFalse(out.timed_out)
+                self.assertEqual(out.return_int(), 0)
+
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestByteIndexSum(unittest.TestCase):

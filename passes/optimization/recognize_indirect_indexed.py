@@ -31,7 +31,12 @@ index a `ConstUChar(k)`. That is the shape of `p[10]` and of a
 byte-sized struct member read through a pointer, and it lowers to
 `LDY #k; LDA (DPTR),Y`. Its address may be read by several 1-byte
 Loads and Stores (`_all_byte_accesses`), as in `p[1]++`, and each is
-rewritten. The pattern recognizer doesn't need to know whether ptr
+rewritten. With a constant offset the value may be wider than a byte,
+as a 2-byte member `p->gold` is, when its last byte is at most 255
+from `ptr` (`_access_width`). It lowers as `LDY #k; LDA (DPTR),Y`,
+then `LDY #k+1` (which the asm peepholes make `INY`), and so on, in
+place of an Add that computes `ptr + k` into a temporary and stages
+it in DPTR. The pattern recognizer doesn't need to know whether ptr
 will end up in ZP — that decision happens in tac_to_asm and asm
 regalloc.
 
@@ -51,10 +56,9 @@ The fusion fires when:
     setting `Y = index_var` is equivalent to adding `index_var` to
     the pointer's low byte and propagating any carry — i.e., the
     6502's `(zp),Y` semantics match exactly.
-  * The Load's `dst` (or Store's `src`) is a 1-byte typed val. A
-    multi-byte access would require multiple `LDA (zp),Y; INY` pairs
-    with carry-safe iteration — deferred until a motivating case
-    appears.
+  * The Load's `dst` (or Store's `src`) is a 1-byte typed val, or,
+    for a constant index `k`, a value of `w` bytes with `k + w - 1 <=
+    255`, so that Y reaches every byte.
 
 The c99 type of `ptr` is NOT checked here: the type checker
 already verified the Binary is pointer arithmetic (because the
@@ -87,6 +91,46 @@ from passes.optimization.framework import (
 from passes.optimization.extend_add_chain import (
     recognize_extend_add_chain, is_1_byte_var, is_1_byte_val, all_dsts,
 )
+
+
+def _access_width(v: tac_ast.Type_val, symbols) -> int | None:
+    """The width in bytes of the scalar value `v`, a Var by its c99
+    type or a Constant by its variant, or None."""
+    from passes.optimization.split_tables import _width
+    import c99_ast
+    if isinstance(v, tac_ast.Constant):
+        return _CONST_WIDTHS.get(type(v.const))
+    if not isinstance(v, tac_ast.Var):
+        return None
+    sym = symbols.get(v.name) if hasattr(symbols, "get") else None
+    if sym is None:
+        return None
+    t = sym.type
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    return _width(t)
+
+
+_CONST_WIDTHS = {
+    tac_ast.ConstChar: 1, tac_ast.ConstUChar: 1,
+    tac_ast.ConstInt: 2, tac_ast.ConstUInt: 2,
+    tac_ast.ConstLong: 4, tac_ast.ConstULong: 4,
+    tac_ast.ConstLongLong: 8, tac_ast.ConstULongLong: 8,
+    tac_ast.ConstFloat: 4, tac_ast.ConstDouble: 8,
+}
+
+
+def _fits_constant_offset(
+    index: tac_ast.Type_val, v: tac_ast.Type_val, symbols,
+) -> bool:
+    """True iff `v` is wider than a byte and `index` is a constant
+    offset that reaches all of its bytes in Y (C99 member access at a
+    constant offset through a pointer)."""
+    if not isinstance(index, tac_ast.Constant):
+        return False
+    k = getattr(index.const, "value", None)
+    w = _access_width(v, symbols)
+    return isinstance(k, int) and w is not None and w > 1 and k + w - 1 <= 0xFF
 
 
 def recognize_indirect_indexed(
@@ -212,7 +256,8 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
         # Determine Load or Store and check the access value's width.
         if 'load_instr' in m.bindings:
             load_dst = m.bindings['load_dst']
-            if not is_1_byte_var(load_dst, ctx.symbols):
+            if not (is_1_byte_var(load_dst, ctx.symbols)
+                    or _fits_constant_offset(idx_var, load_dst, ctx.symbols)):
                 return None
             replacement: tac_ast.Type_instruction = tac_ast.IndirectIndexedLoad(
                 ptr=ptr_var, index=idx_var, dst=load_dst,
@@ -220,7 +265,8 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             )
         else:
             store_src = m.bindings['store_src']
-            if not is_1_byte_val(store_src, ctx.symbols):
+            if not (is_1_byte_val(store_src, ctx.symbols)
+                    or _fits_constant_offset(idx_var, store_src, ctx.symbols)):
                 return None
             replacement = tac_ast.IndirectIndexedStore(
                 ptr=ptr_var, index=idx_var, src=store_src,
@@ -354,11 +400,12 @@ def _const_offset_chain(
             continue
         if not 0 <= value <= 0xFF:
             continue
+        index = tac_ast.Constant(const=tac_ast.ConstUChar(value=value))
         if env.extra.get(addr_var.name, 0) != 1 and not _all_byte_accesses(
-            addr_var, ptr, env, ctx,
+            addr_var, ptr, env, ctx, index=index,
         ):
             return None
-        return ptr, tac_ast.Constant(const=tac_ast.ConstUChar(value=value))
+        return ptr, index
     return None
 
 
@@ -448,10 +495,13 @@ def _byte_index_sum(ptr, k, m, env: DefUseEnv, ctx: PassContext):
 def _all_byte_accesses(
     addr_var: tac_ast.Var, ptr: tac_ast.Type_val, env: DefUseEnv,
     ctx: PassContext, offsets: bool = False,
+    index: tac_ast.Type_val | None = None,
 ) -> bool:
     """True iff every read of `addr_var` is the pointer of a `Load`
     into a 1-byte Var or of a `Store` of a 1-byte value, and `ptr`
-    still holds at each one the value the Add read. Then every reader
+    still holds at each one the value the Add read. With the constant
+    `index` the Add adds, a wider value whose bytes Y reaches counts
+    too (`_fits_constant_offset`), as in `p->gold += 5`. Then every reader
     becomes an indexed access, and nothing reads the Add. A non-SSA `ptr`, such
     as a global, must be unchanged from the Add to each access
     (`narrow_widened_arith.var_unchanged`). With `offsets`, a reader
@@ -469,10 +519,14 @@ def _all_byte_accesses(
         if not reads:
             continue
         if isinstance(instr, tac_ast.Load) and instr.src_ptr == addr_var:
-            ok = is_1_byte_var(instr.dst, ctx.symbols)
+            ok = (is_1_byte_var(instr.dst, ctx.symbols)
+                  or (index is not None and _fits_constant_offset(
+                      index, instr.dst, ctx.symbols)))
         elif isinstance(instr, tac_ast.Store) and instr.dst_ptr == addr_var:
             ok = (instr.src != addr_var
-                  and is_1_byte_val(instr.src, ctx.symbols))
+                  and (is_1_byte_val(instr.src, ctx.symbols)
+                       or (index is not None and _fits_constant_offset(
+                           index, instr.src, ctx.symbols))))
         elif offsets:
             at = _offset_access(instr, addr_var, env, ctx)
             ok = at is not None

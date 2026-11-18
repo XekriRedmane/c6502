@@ -260,6 +260,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   k)` with `0 <= k <= 255` feeding the Load / Store, becomes the same
   node with index `ConstUChar(k)`, which lowers to `LDY #k` (the
   shape of `p[10]` and of a byte struct member through a pointer).
+  With such a constant index, a wider value folds too when `k + w -
+  1 <= 255` (`_fits_constant_offset`), as a 2-byte member `p->gold`
+  does, and `tac_to_asm` reads or writes it a byte at a time at
+  `k`, `k+1`, and so on.
   Such an address may have several readers when every one is a
   1-byte Load or Store and `p` is unchanged at each
   (`_all_byte_accesses`, with `narrow_widened_arith.var_unchanged`),

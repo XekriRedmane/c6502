@@ -412,8 +412,10 @@ def _collect_referenced_addrs(
         slot symbol; else skip — link-time-addressed globals
         aren't in our pool).
       * `ZP(addr, off)` — single byte at `addr + off`.
-      * `IndirectZp(addr, off)` — the pointer pair at
-        `addr + off` and `addr + off + 1` is read.
+      * `IndirectZp(addr, off)` — the pointer pair at `addr` and
+        `addr + 1` is read. `off` is the `LDY #off` that indexes from
+        it, which `asm_dead_store._ptr_source_reads` reads the same
+        way.
       * `IndirectZpY(addr)` — the pointer pair at `addr` and
         `addr + 1` is read.
       * Other shapes (`Reg`, `Imm`, `ImmLabel*`, `Frame`, `Stack`,
@@ -443,10 +445,7 @@ def _add_indirect_ptr_reads(
     to compute the effective address. For dst-side operands (where
     the byte is being written but the pointer is still read),
     record those pointer-source bytes."""
-    if isinstance(op, asm_ast.IndirectZp):
-        referenced.add(op.address + op.offset)
-        referenced.add(op.address + op.offset + 1)
-    elif isinstance(op, asm_ast.IndirectZpY):
+    if isinstance(op, (asm_ast.IndirectZp, asm_ast.IndirectZpY)):
         referenced.add(op.address)
         referenced.add(op.address + 1)
     elif isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY)):
@@ -473,11 +472,9 @@ def _add_referenced_addrs(
             referenced.add(base + op.offset)
     elif isinstance(op, asm_ast.ZP):
         referenced.add(op.address + op.offset)
-    elif isinstance(op, asm_ast.IndirectZp):
-        # Pointer pair: low byte at addr+off, high at addr+off+1.
-        referenced.add(op.address + op.offset)
-        referenced.add(op.address + op.offset + 1)
-    elif isinstance(op, asm_ast.IndirectZpY):
+    elif isinstance(op, (asm_ast.IndirectZp, asm_ast.IndirectZpY)):
+        # The pointer pair at addr and addr+1. IndirectZp's offset is
+        # the Y that indexes from it, not part of the pair's address.
         referenced.add(op.address)
         referenced.add(op.address + 1)
 

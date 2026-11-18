@@ -85,7 +85,13 @@ These must also be true.
 - `p` is a variable whose definition isn't a chain of `Copy`
   instructions ending in a constant.
 - A load writes a one-byte variable, and a store writes a one-byte
-  variable or a `char` or `unsigned char` constant.
+  variable or a `char` or `unsigned char` constant. With a constant
+  index `k`, the value may be wider when `Y` reaches its last byte,
+  `k` plus the width less one at most 255. That is a 2-byte struct
+  member through a pointer, `p->gold`, which loads as `LDY #k; LDA
+  (p),Y; INY; LDA (p),Y`, where it had built `p + k` in a zero-page
+  pair and copied that to DPTR. In Ali Baba's units this saved 186
+  bytes.
 
 The pass doesn't check the C type of `p`. A pointer to a type wider
 than a byte scales the index with a shift or multiply first, and
@@ -176,8 +182,13 @@ in `sprites.c` and `level.c`, the program is 79 bytes shorter.
   defines `p[-1]` as the byte before `p`. The access keeps its
   sign extension and 16-bit add, and reads through the sum with
   `LDY #$00`.
-- A value wider than a byte. For a `const uint16_t *p`, `p[i]`
-  shifts `i` left before the add, and the load stays a pointer load.
+- A value wider than a byte at a variable index. For a `const
+  uint16_t *p`, `p[i]` shifts `i` left before the add, and the load
+  stays a pointer load.
+- A store of a value wider than a byte keeps `(DPTR),Y` for its later
+  bytes. [Memory value propagation](memory_value_propagation.md)
+  rewrites the first byte's store to `(p),Y` and then stops, since a
+  store through a pointer could change the pointer's own bytes.
 - A constant offset above 255, such as `p[300]`.
 - An address with a constant offset that something besides one-byte
   loads and stores reads, such as `q = p + 1;` next to `*q = 0;`.

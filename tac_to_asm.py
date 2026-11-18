@@ -3259,11 +3259,23 @@ class Translator:
         the IndirectY atom itself, which doesn't emit an LDY (that
         was the point of the new operand). So Y stays correct.
 
-        The recognizer verified `dst` is 1 byte, so no per-byte
-        fan-out."""
+        The recognizer verified `dst` is 1 byte, or that the index is
+        a constant `k` that reaches each of its bytes in Y. Such a
+        wider value is read a byte at a time, `LDY #k+b; LDA
+        (DPTR),Y`, as a plain Load is."""
         ptr_op = translate_val(ptr)
         idx_op = _byte_at(translate_val(index), 0)
         dst_op = translate_val(dst)
+        n = self._size_of(dst)
+        if n > 1 and isinstance(idx_op, asm_ast.Imm):
+            out = list(self._stage_dptr(ptr_op))
+            for b in range(n):
+                out.append(asm_ast.Mov(
+                    src=asm_ast.Indirect(offset=idx_op.value + b),
+                    dst=_REG_A, is_volatile=is_volatile,
+                ))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, b)))
+            return out
         return [
             *self._stage_dptr(ptr_op),
             *_load_y_index(idx_op),
@@ -3303,6 +3315,19 @@ class Translator:
         to be ZP-resident post-regalloc — deferred."""
         ptr_op = translate_val(ptr)
         idx_op = _byte_at(translate_val(index), 0)
+        n = self._size_of(src)
+        if n > 1 and isinstance(idx_op, asm_ast.Imm):
+            # A value wider than a byte at a constant offset, which
+            # the recognizer allows when Y reaches all its bytes.
+            whole = translate_val(src)
+            out = list(self._stage_dptr(ptr_op))
+            for b in range(n):
+                out.append(asm_ast.Mov(src=_byte_at(whole, b), dst=_REG_A))
+                out.append(asm_ast.Mov(
+                    src=_REG_A, dst=asm_ast.Indirect(offset=idx_op.value + b),
+                    is_volatile=is_volatile,
+                ))
+            return out
         # `_byte_at` takes the low byte of a constant, so a negative
         # `signed char` constant becomes its 2's complement byte.
         src_op = _byte_at(translate_val(src), 0)

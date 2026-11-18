@@ -45,9 +45,9 @@ across calls anyway, and callee-saved slots `$C0..$FF` get
 restored from frame storage by the late-synthesized epilogue,
 not from their current ZP value at the body's `Return`.
 
-For ZP outside the pool (runtime infrastructure at `$00..$1F`,
-notably HARGS at `$04..$1B` which holds wider-than-Int return
-values) and for `Data` (link-time-addressable globals — other
+For ZP outside the pool (the runtime's block, `$00..$25` in the
+classic layout, notably HARGS at `$04..$23`, which holds
+wider-than-Int return values) and for `Data` (link-time-addressable globals — other
 functions in the program can read them), we conservatively treat
 the address as live at exit. Cross-block analysis still gets to
 fire if every path back-edges and overwrites before reading; it

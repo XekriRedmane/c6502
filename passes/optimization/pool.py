@@ -1,8 +1,9 @@
 """Zero-page byte pool configuration for register allocation.
 
-The 6502 has 256 zero-page bytes ($00-$FF). The runtime header
-reserves the low end ($00-$1B today: SSP/FP/HARGS/DPTR), so the
-register allocator draws from the high end. A `Pool` describes the
+The 6502 has 256 zero-page bytes ($00-$FF). The runtime's block
+takes the low end ($00-$25 in the classic layout: SSP, FP, HARGS, and
+DPTR; see passes/runtime_layout.py), so the register allocator draws
+from the high end. A `Pool` describes the
 allocator's available range and how it's split into caller-saved
 and callee-saved halves.
 

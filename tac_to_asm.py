@@ -86,7 +86,8 @@ Mapping highlights (full per-op detail in `translate_binary` /
   Binary(Multiply/Divide/   -> Runtime helper Calls. Operands and
     Modulo/LeftShift/         results are exchanged through the
     RightShift)               shared zero-page slot block `HARGS`
-                               (24 bytes). Width-driven helper choice:
+                               (32 bytes in the classic layout).
+                               Width-driven helper choice:
                                8-bit operands dispatch to
                                mul8/{u,s}divmod8/asl8/{a,l}sr8; 16-bit
                                to mul16/{u,s}divmod16/asl16/{a,l}sr16;
@@ -158,10 +159,12 @@ Caller-side: FunctionCall(name, args, dst) lowers to
 
 Runtime helper layout:
 
-HARGS is a 24-byte zero-page block (`$04`–`$1B`) the runtime header
-pins by name, sized for the largest helper (dadd/dsub/dmul/ddiv —
-16 bytes in + 8 bytes out); integer helpers use only the low 8
-bytes. Caller writes inputs into `HARGS+0..N-1`, JSRs the helper,
+HARGS is a zero-page block of 32 bytes in the classic layout
+(`$04`–`$23`); `passes/runtime_layout.py` places it and sizes it to
+what the program's helpers need when a fixed zero-page object takes
+those bytes. The largest helpers, dadd/dsub/dmul/ddiv, take 16 bytes
+in and write 8 out at HARGS+16..23, and `mul32` works in
+HARGS+12..19. Caller writes inputs into `HARGS+0..N-1`, JSRs the helper,
 and reads the result from a fixed offset later in the block. Inputs
 survive the call. The signed/unsigned divmod split mirrors the
 asr/lsr right-shift split: signed `/` and `%` route to `sdivmod*`
@@ -374,10 +377,11 @@ _REG_BY_NAME = {
     "Y": _REG_Y,
 }
 
-# Runtime helpers exchange operands through a shared 24-byte block
-# in zero page (`$04`–`$1B`). The asm symbol `HARGS` names the
-# block's base address (defined to $04 by the runtime header); each
-# helper documents its own byte layout within HARGS+0..HARGS+23.
+# Runtime helpers exchange operands through a shared block in zero
+# page, 32 bytes at `$04`–`$23` in the classic layout
+# (`passes/runtime_layout.py` places and sizes it). The asm symbol
+# `HARGS` names the block's base address; each helper documents its
+# own byte layout within it.
 # Inputs sit at the low offsets, outputs at the high offsets, and
 # inputs survive the call. The block is sized for the largest helper
 # (a double-precision FP op needs 16 bytes of inputs + 8 bytes of
@@ -424,39 +428,41 @@ _REG_BY_NAME = {
 #   dadd/dsub/dmul/ddiv  in:  A=HARGS+0..7, B=HARGS+8..15
 #                              out: result=HARGS+16..23
 #
-# FP/integer conversion helpers (not implemented yet; layout
-# reserved). Inputs at low offsets, output immediately after
+# FP/integer conversion helpers. The repository has no 6502 code for
+# them; the simulator's are Python hooks (sim/runtime.py), whose
+# sizes this table follows. Inputs at low offsets, output immediately
+# after
 # (matching the existing helper convention). The signed/unsigned and
 # narrow/wide variants are separate helpers because the runtime
 # implementations differ — tac_to_asm picks the right name from the
 # operand's symbol-table type (Int / UInt / Long / ULong vs. Float /
 # Double):
-#   i2f      (signed 1B → float):     in HARGS+0;     out HARGS+1..4
-#   u2f      (unsigned 1B → float):   in HARGS+0;     out HARGS+1..4
-#   l2f      (signed 2B → float):     in HARGS+0..1;  out HARGS+2..5
-#   ul2f     (unsigned 2B → float):   in HARGS+0..1;  out HARGS+2..5
-#   ll2f     (signed 4B → float):     in HARGS+0..3;  out HARGS+4..7
-#   ull2f    (unsigned 4B → float):   in HARGS+0..3;  out HARGS+4..7
-#   i2d      (signed 1B → double):    in HARGS+0;     out HARGS+1..8
-#   u2d      (unsigned 1B → double):  in HARGS+0;     out HARGS+1..8
-#   l2d      (signed 2B → double):    in HARGS+0..1;  out HARGS+2..9
-#   ul2d     (unsigned 2B → double):  in HARGS+0..1;  out HARGS+2..9
-#   ll2d     (signed 4B → double):    in HARGS+0..3;  out HARGS+4..11
-#   ull2d    (unsigned 4B → double):  in HARGS+0..3;  out HARGS+4..11
-#   f2i      (float → signed 1B):     in HARGS+0..3;  out HARGS+4
-#   f2u      (float → unsigned 1B):   in HARGS+0..3;  out HARGS+4
-#   f2l      (float → signed 2B):     in HARGS+0..3;  out HARGS+4..5
-#   f2ul     (float → unsigned 2B):   in HARGS+0..3;  out HARGS+4..5
-#   f2ll     (float → signed 4B):     in HARGS+0..3;  out HARGS+4..7
-#   f2ull    (float → unsigned 4B):   in HARGS+0..3;  out HARGS+4..7
-#   d2i      (double → signed 1B):    in HARGS+0..7;  out HARGS+8
-#   d2u      (double → unsigned 1B):  in HARGS+0..7;  out HARGS+8
-#   d2l      (double → signed 2B):    in HARGS+0..7;  out HARGS+8..9
-#   d2ul     (double → unsigned 2B):  in HARGS+0..7;  out HARGS+8..9
-#   d2ll     (double → signed 4B):    in HARGS+0..7;  out HARGS+8..11
-#   d2ull    (double → unsigned 4B):  in HARGS+0..7;  out HARGS+8..11
-#   f2d      (float → double):        in HARGS+0..3;  out HARGS+4..11
-#   d2f      (double → float):        in HARGS+0..7;  out HARGS+8..11
+#   i2f      (signed 2B → float):         in HARGS+0..1;    out HARGS+2..5
+#   u2f      (unsigned 2B → float):       in HARGS+0..1;    out HARGS+2..5
+#   l2f      (signed 4B → float):         in HARGS+0..3;    out HARGS+4..7
+#   ul2f     (unsigned 4B → float):       in HARGS+0..3;    out HARGS+4..7
+#   ll2f     (signed 8B → float):         in HARGS+0..7;    out HARGS+8..11
+#   ull2f    (unsigned 8B → float):       in HARGS+0..7;    out HARGS+8..11
+#   i2d      (signed 2B → double):        in HARGS+0..1;    out HARGS+2..9
+#   u2d      (unsigned 2B → double):      in HARGS+0..1;    out HARGS+2..9
+#   l2d      (signed 4B → double):        in HARGS+0..3;    out HARGS+4..11
+#   ul2d     (unsigned 4B → double):      in HARGS+0..3;    out HARGS+4..11
+#   ll2d     (signed 8B → double):        in HARGS+0..7;    out HARGS+8..15
+#   ull2d    (unsigned 8B → double):      in HARGS+0..7;    out HARGS+8..15
+#   f2i      (float → signed 2B):         in HARGS+0..3;    out HARGS+4..5
+#   f2u      (float → unsigned 2B):       in HARGS+0..3;    out HARGS+4..5
+#   f2l      (float → signed 4B):         in HARGS+0..3;    out HARGS+4..7
+#   f2ul     (float → unsigned 4B):       in HARGS+0..3;    out HARGS+4..7
+#   f2ll     (float → signed 8B):         in HARGS+0..3;    out HARGS+4..11
+#   f2ull    (float → unsigned 8B):       in HARGS+0..3;    out HARGS+4..11
+#   d2i      (double → signed 2B):        in HARGS+0..7;    out HARGS+8..9
+#   d2u      (double → unsigned 2B):      in HARGS+0..7;    out HARGS+8..9
+#   d2l      (double → signed 4B):        in HARGS+0..7;    out HARGS+8..11
+#   d2ul     (double → unsigned 4B):      in HARGS+0..7;    out HARGS+8..11
+#   d2ll     (double → signed 8B):        in HARGS+0..7;    out HARGS+8..15
+#   d2ull    (double → unsigned 8B):      in HARGS+0..7;    out HARGS+8..15
+#   f2d      (float → double):            in HARGS+0..3;    out HARGS+4..11
+#   d2f      (double → float):            in HARGS+0..7;    out HARGS+8..11
 _HARGS = "HARGS"
 # Return-slot HARGS offset, keyed by return-type width in bytes.
 # 1-byte returns ride in A and don't appear here; everything else
@@ -466,15 +472,16 @@ _HARGS = "HARGS"
 # since an `int` and a pointer come back in A and X — different from
 # the helper outputs at
 # HARGS+2..7, so capturing a Long return doesn't conflict with the
-# HARGS layout for `mul8`/`divmod8`/`asl8`/`asr8`/`lsr8`. LongLong /
+# HARGS layout for `mul8`/`divmod8`/`asl8`/`asr8`/`lsr8`. Long and
 # Float (4B) sit in the FP-arithmetic helpers' output slot at
 # HARGS+8..11 (and `mul32`/`divmod32`'s output slot too, so a
 # function ending `return a OP b;` for those types skips the epilogue
-# copy). Double (8B) sits in HARGS+16..23 — the FP-double helpers'
-# output slot.
+# copy). LongLong and Double (8B) sit in HARGS+16..23, the FP-double
+# helpers' output slot.
 _RET_HARGS_OFFSET = {2: 0, 4: 8, 8: 16}
-# DPTR is the dereference / scratch indirect-pointer pair. Reserved
-# at zero-page `$1C`/`$1D` (right after HARGS). Used by Load /
+# DPTR is the dereference / scratch indirect-pointer pair, at
+# zero-page `$24`/`$25` in the classic layout, right after HARGS
+# (`passes/runtime_layout.py`). Used by Load /
 # Store TAC ops: caller writes the 2-byte target address into
 # `DPTR` / `DPTR+1`, then reads or writes through `(DPTR),Y` with Y
 # = byte offset. Caller-saved like HARGS — any helper call may

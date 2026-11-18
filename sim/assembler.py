@@ -11,7 +11,8 @@ Two-pass design:
   at this point.
 
 Pre-installed zero-page symbols: `SSP=$00/$01`, `FP=$02/$03`,
-`HARGS=$04..$1B`, `DPTR=$1C/$1D` — matching the runtime header. Any
+`HARGS=$04..$23`, `DPTR=$24/$25` — the classic layout of
+`passes/runtime_layout.py`. Any
 asm-level reference to one of these names resolves to the zero-page
 address. Callers can pass additional `extra_symbols` (e.g. helper trap
 addresses like `mul16=$E000`) before assembly so `Call(name)` /
@@ -909,7 +910,7 @@ def _data_fits_zp(d: asm_ast.Data) -> bool:
     # don't track ranges per name. Be conservative: only allow
     # offset 0..(0xFF - base) — but since we don't have the base
     # value here, fall back to a simple offset cap. The pre-installed
-    # zp symbols today (HARGS=$04, span 24 bytes; SSP, FP, DPTR — 2
+    # zp symbols today (HARGS=$04, span 32 bytes; SSP, FP, DPTR — 2
     # bytes each) all fit zp comfortably for any offset `tac_to_asm`
     # emits, so an offset bound of 0..0xFB is safe.
     return 0 <= d.offset <= 0xFB

@@ -150,43 +150,50 @@ address-taken values are filtered out before regalloc).
 `StaticVariable(name, is_global, init)` top-level node. Emitted as
 `<name>:` on its own line followed by the dasm directive matching
 the init variant:
-  - `IntInit(int=v)`       → `DC.B $XX` (1 byte; masked to 8 bits).
-  - `LongInit(int=v)`      → `DC.W $XXXX` (2 bytes; masked to 16
-                              bits so signed-negative values render
-                              as two's-complement).
-  - `LongLongInit(int=v)`  → `DC.L $WWWWWWWW` (4 bytes; masked to
-                              32 bits — same two's-complement
-                              rationale).
-  - `FloatInit(float=v)`   → `DC.L $WWWWWWWW` (4 bytes IEEE 754
-                              single, packed via `struct.pack` at
-                              emit time).
-  - `DoubleInit(float=v)`  → two `DC.L`s, low half then high half
-                              (8 bytes IEEE 754 double; dasm has
-                              no native 8-byte directive).
+  - `CharInit(value=v)`     → `DC.B $XX` (1 byte, masked to 8 bits).
+  - `IntInit(value=v)`      → `DC.W $XXXX` (2 bytes, masked to 16
+                              bits, so a negative value is written
+                              as its two's complement).
+  - `LongInit(value=v)`     → `DC.L $WWWWWWWW` (4 bytes, masked to
+                              32 bits for the same reason).
+  - `LongLongInit(value=v)` → two `DC.L`s, the low half first
+                              (8 bytes).
+  - `FloatInit(bits=b)`     → `DC.L $WWWWWWWW` (the 4 bytes of an IEEE
+                              754 single).
+  - `DoubleInit(bits=b)`    → two `DC.L`s, the low half first (the 8
+                              bytes of an IEEE 754 double; dasm has no
+                              8-byte directive).
+  - `AddressInit(name, offset)` → `DC.W name+offset`, the address
+                              the linker resolves.
+  - `AddressByteInit(name, offset, high)` → `DC.B <(name+offset)` or
+                              `DC.B >(name+offset)`, one byte of an
+                              address, for a table split into its low
+                              and high bytes.
+  - `StringInit`, `ZeroInit`, and the other variants are described
+    where `emit_static_variable` handles them.
 dasm's DC.B/DC.W/DC.L all lay bytes down little-endian, matching
 the soft-stack memory model — so `Data(name, offset=1)` accesses
-the high byte of a Long static, `Data(name, offset=3)` the high
-byte of a LongLong static, and `Data(name, offset=7)` the high byte
-of a Double static. (Mnemonics are uppercased per the `_instr_line`
-convention — including the `dc.b` / `dc.w` / `dc.l` directive
-names.)
+the high byte of an Int static, `Data(name, offset=3)` the high
+byte of a Long static, and `Data(name, offset=7)` the high byte
+of a LongLong or Double static. (Mnemonics are uppercased per the
+`_instr_line` convention — including the `dc.b` / `dc.w` / `dc.l`
+directive names.)
 
-The `is_global` flag is recorded on the IR but not yet surfaced in
-the asm output: dasm has no native "export" / "module-private"
-distinction, and statics get unique names anyway (block-scope
-statics arrive with `@<N>.<orig>` from identifier_resolution; file-
-scope INTERNAL keeps the source spelling but the user wrote
-`static`). When multi-TU linking lands this is where a
-`.globl name` directive (or equivalent) would appear under
-`is_global=True`.
+The `is_global` flag doesn't change the assembly text, since dasm has
+no export directive. It goes into the link metadata block instead, as
+the `local=` field of the static's `item` line (`passes/sections.py`),
+which tells the linker whether another unit may refer to the name and
+whether to rename it when two units both define it.
 
 (`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
 atoms. Likewise `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are
 TAC-only concepts; `tac_to_asm` lowers each to `Mov`s into the
-shared `HARGS` zero-page block, a `Call` to the appropriate
-runtime helper (mul8/mul16/divmod8/divmod16/asl8/asl16/asr8/asr16,
-keyed off operand size), and `Mov`s reading the result back out.)
+shared `HARGS` zero-page block, a `Call` to the runtime helper for
+the operation and operand size (`mul8`/`mul16`/`mul32`,
+`udivmod8`..`udivmod32`, `sdivmod8`..`sdivmod32`, `asl8`..`asl32`,
+`asr8`..`asr32`, `lsr8`..`lsr32`), and `Mov`s reading the result back
+out.)
 """
 
 from __future__ import annotations
@@ -209,8 +216,9 @@ _OPERAND_COL = 9   # "column 10"
 # header `equ`s each to its zero-page address.
 _SSP = "SSP"
 _FP = "FP"
-# DPTR is the dereference / scratch indirect-pointer pair, reserved
-# at zero-page `$1C`/`$1D` by the runtime header. Used by the
+# DPTR is the dereference / scratch indirect-pointer pair, at
+# zero-page `$24`/`$25` in the classic layout
+# (`passes/runtime_layout.py`). Used by the
 # `Indirect(off)` operand for `(DPTR),Y` indirect-Y access — the
 # addressing mode that backs Load and Store TAC ops.
 _DPTR = "DPTR"

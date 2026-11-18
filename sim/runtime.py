@@ -299,9 +299,9 @@ def _int_to_fp(int_size: int, signed: bool, fp_size: int) -> Hook:
 
     The output offset matches the helper's documented layout:
     output starts immediately after the input slot. e.g.
-      i2f:  in HARGS+0,    out HARGS+1..4
-      l2d:  in HARGS+0..1, out HARGS+2..9
-      ll2f: in HARGS+0..3, out HARGS+4..7
+      i2f:  in HARGS+0..1, out HARGS+2..5
+      l2d:  in HARGS+0..3, out HARGS+4..11
+      ll2f: in HARGS+0..7, out HARGS+8..11
     """
     fmt = "<f" if fp_size == 4 else "<d"
 

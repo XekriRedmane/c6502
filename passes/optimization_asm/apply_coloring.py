@@ -44,6 +44,7 @@ spilled) pass through unchanged — they're handled later by
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization.register_allocation import Coloring
 from passes.zp_slot_naming import local_slot_names
 
@@ -143,6 +144,8 @@ def _apply_to_instruction(
 ) -> asm_ast.Type_instruction:
     apply = lambda op: _apply_to_op(op, coloring, fn_name, addr_to_name)
     match instr:
+        case asm_ast.DecimalArith():
+            return decimal_arith.map_operands(instr, apply)
         case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             return asm_ast.Mov(
                 src=apply(src), dst=apply(dst), is_volatile=v,
@@ -457,7 +460,8 @@ def _instr_breaks_transfer_chain(
     if isinstance(instr, (asm_ast.Call, asm_ast.Label, asm_ast.Jump,
                           asm_ast.Branch, asm_ast.Return, asm_ast.Ret,
                           asm_ast.FunctionPrologue,
-                          asm_ast.AllocateStack)):
+                          asm_ast.AllocateStack,
+                          asm_ast.DecimalArith)):
         return True
     # Writes to dst_reg / src_reg via Mov / Inc / Dec / etc.
     dst_op = _instr_destination(instr)

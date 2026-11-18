@@ -38,6 +38,7 @@ from lark.visitors import v_args
 
 import c99_ast
 import fp_arith
+from builtin_functions import is_builtin
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
@@ -1187,7 +1188,9 @@ def _mark_hw_stack_save(node) -> None:
             return
         if not dataclasses.is_dataclass(n):
             return
-        if isinstance(n, (c99_ast.FunctionCall, c99_ast.IndirectCall)):
+        if isinstance(n, c99_ast.IndirectCall) or (
+            isinstance(n, c99_ast.FunctionCall) and not is_builtin(n.name)
+        ):
             n.hw_stack_save = True
             count += 1
         for f in dataclasses.fields(n):

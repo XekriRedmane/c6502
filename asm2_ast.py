@@ -157,6 +157,16 @@ class Pop(Type_instruction):
 
 
 @dataclass
+class SetDecimal(Type_instruction):
+    pass
+
+
+@dataclass
+class ClearDecimal(Type_instruction):
+    pass
+
+
+@dataclass
 class PushStatus(Type_instruction):
     pass
 

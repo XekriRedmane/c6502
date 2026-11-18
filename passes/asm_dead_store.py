@@ -79,6 +79,7 @@ appear).
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_aliasing import may_alias as _may_alias
 from passes.asm_liveness import all_flags_dead_at, flags_dead_at
 
@@ -255,6 +256,8 @@ def _all_operands(
     Used by `_collect_address_taken_names` to scan for ImmLabel*
     references; over-inclusive is safe (we only filter on operand
     type)."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return decimal_arith.operands(instr)
     ops: list[asm_ast.Type_operand] = []
     for attr in ("src", "dst", "operand"):
         v = getattr(instr, attr, None)
@@ -623,6 +626,13 @@ def _writes_same(
     structurally identical (Data-with-Data, ZP-with-ZP, same
     address). NOT just "may alias"; we need the kill to be exact
     so we don't conflate a partial kill with a full one."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        # `_reads` runs first, so a chain that reads `target` before
+        # writing it has already counted as a read.
+        return any(
+            _operands_equal_exact(d, target)
+            for d in decimal_arith.writes(instr)
+        )
     dst = _write_operand(instr)
     if dst is None:
         return False
@@ -676,6 +686,10 @@ def _read_operands(
     e.g. `STA (DPTR),Y` writes the target byte but READS DPTR
     (and DPTR+1) to know where to write."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.reads(instr)
+            for op in decimal_arith.operands(instr):
+                yield from _ptr_source_reads(op)
         case asm_ast.Mov(src=src, dst=dst):
             if not isinstance(src, asm_ast.Reg):
                 yield src

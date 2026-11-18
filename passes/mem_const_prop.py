@@ -132,7 +132,7 @@ def _is_block_boundary(instr) -> bool:
         asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
         asm_ast.Ret, asm_ast.Return, asm_ast.Call,
         asm_ast.LoadAddress, asm_ast.FunctionPrologue,
-        asm_ast.AllocateStack,
+        asm_ast.AllocateStack, asm_ast.DecimalArith,
     ))
 
 

@@ -248,6 +248,14 @@ class JumpTable(Type_instruction):
 
 
 @dataclass
+class DecimalArith(Type_instruction):
+    subtract: bool = False
+    left: list[Type_operand] = field(default_factory=list)
+    right: list[Type_operand] = field(default_factory=list)
+    dst: list[Type_operand] = field(default_factory=list)
+
+
+@dataclass
 class Compare(Type_instruction):
     left: Type_operand
     right: Type_operand

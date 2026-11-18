@@ -44,7 +44,16 @@ _FP = "FP"
 
 
 def translate_program(prog: asm_ast.Program) -> asm2_ast.Program:
-    """Translate an asm_ast program to its asm2_ast equivalent."""
+    """Translate an asm_ast program to its asm2_ast equivalent. With
+    `C6502_CHECK_IR=1`, `ir_check.check_asm2` then checks that the
+    decimal flag is set only across a packed BCD chain."""
+    from passes import ir_check
+    out = _translate_program(prog)
+    ir_check.check_asm2(out, after="asm_to_asm2")
+    return out
+
+
+def _translate_program(prog: asm_ast.Program) -> asm2_ast.Program:
     return asm2_ast.Program(
         top_level=[_xlate_top_level(tl) for tl in prog.top_level],
     )
@@ -425,6 +434,30 @@ def _check_byte(label: str, v: int) -> None:
 # -------- per-instruction dispatch --------
 
 
+def expand_decimal_arith(
+    instr: asm_ast.DecimalArith,
+) -> list[asm2_ast.Type_instruction]:
+    """Expands a packed BCD add or subtract into its decimal-mode
+    chain. The decimal flag is set for the ADC or SBC of each byte
+    and for nothing else: the expansion is `SED`, `CLC` (`SEC`), an
+    `LDA left[k]`, `ADC right[k]` (`SBC`), `STA dst[k]` per byte, low
+    byte first, and `CLD`. A soft-stack operand's `LDY #off` is part
+    of its access. The IR check (`ir_check.check_asm2`) reads the
+    result back to confirm that shape."""
+    a = _reg_a()
+    arith = asm2_ast.Sub if instr.subtract else asm2_ast.Add
+    out: list[asm2_ast.Type_instruction] = [
+        asm2_ast.SetDecimal(),
+        asm2_ast.SetCarry() if instr.subtract else asm2_ast.ClearCarry(),
+    ]
+    for left, right, dst in zip(instr.left, instr.right, instr.dst):
+        out.append(asm2_ast.Mov(src=_xlate_op(left), dst=a))
+        out.append(arith(src=_xlate_op(right), dst=a))
+        out.append(asm2_ast.Mov(src=a, dst=_xlate_op(dst)))
+    out.append(asm2_ast.ClearDecimal())
+    return out
+
+
 def _xlate_instruction(
     instr: asm_ast.Type_instruction,
 ) -> list[asm2_ast.Type_instruction]:
@@ -464,6 +497,8 @@ def _xlate_instruction(
             return [asm2_ast.Push(src=_xlate_op(s))]
         case asm_ast.Pop(dst=d):
             return [asm2_ast.Pop(dst=_xlate_op(d))]
+        case asm_ast.DecimalArith():
+            return expand_decimal_arith(instr)
         case asm_ast.Xor(src1=s1, src2=s2, dst=d):
             return [asm2_ast.Xor(
                 src1=_xlate_op(s1),

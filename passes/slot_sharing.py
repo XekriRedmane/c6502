@@ -955,6 +955,8 @@ def check_shares(
 def _memory_writes(instr):
     import asm_ast
     match instr:
+        case asm_ast.DecimalArith(dst=ds):
+            yield from ds
         case asm_ast.Mov(dst=d) | asm_ast.Inc(dst=d) | asm_ast.Dec(dst=d) \
                 | asm_ast.ArithmeticShiftLeft(dst=d) \
                 | asm_ast.LogicalShiftRight(dst=d) \

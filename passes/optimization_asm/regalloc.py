@@ -472,6 +472,10 @@ def _instr_writes_hwregs(
     66)."""
     from passes.optimization_asm.optimizer import _all_operands_in
     out: list[str] = []
+    if isinstance(instr, asm_ast.DecimalArith):
+        # A BCD chain's operand may still become a soft-stack slot,
+        # whose access loads Y, so it counts as writing Y.
+        return ("Y",)
     if any(
         isinstance(op, _LDY_OPERANDS) for op in _all_operands_in(instr)
     ):

@@ -67,6 +67,7 @@ which folds the `LDA n; TAX` the rewrite leaves.
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_liveness import call_preserves, x_dead_at, y_dead_at
 
 _SETUP_USES_Y = (
@@ -94,6 +95,8 @@ def apply_counter_to_index_reg(prog: asm_ast.Program) -> asm_ast.Program:
 
 def _operands(instr) -> list:
     match instr:
+        case asm_ast.DecimalArith():
+            return decimal_arith.operands(instr)
         case asm_ast.Mov(src=s, dst=d) | asm_ast.LoadAddress(src=s, dst=d):
             return [s, d]
         case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d) \
@@ -134,6 +137,7 @@ def _touches_reg(instr, reg_cls) -> bool:
     if isinstance(instr, (
         asm_ast.FunctionPrologue, asm_ast.AllocateStack,
         asm_ast.Ret, asm_ast.Return, asm_ast.LoadAddress,
+        asm_ast.DecimalArith,
     )):
         return True
     if isinstance(instr, (asm_ast.Jump,)) and instr.reg_args:

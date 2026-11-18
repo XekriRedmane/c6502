@@ -114,7 +114,9 @@ write from the store back to that instruction is safe when:
   fine.
 
 It's an update, with the member read in place as well, when the
-instruction is `t + c` or `t - c` with `c` a constant and:
+instruction is `t + c` or `t - c` with `c` a constant, or a packed BCD
+add or subtract ([docs/builtins.md](../builtins.md)) of `t` and a
+constant or a local, with `t` as either operand, and:
 
 - `t` was loaded from the bytes the store writes, by a load that
   isn't volatile, and is the same size as `u`;
@@ -124,6 +126,12 @@ instruction is `t + c` or `t - c` with `c` a constant and:
   or other write to the object, only instructions that compute into
   locals and read memory, so the member still holds `t` wherever `t`
   is read.
+
+The BCD chain reads byte k of each operand before it writes byte k of
+the result, and it never reads a byte of the member again after
+writing it, so the member can stand for `t` in either place. `s.score = __c6502_bcd_add(s.score,
+points)` then becomes `SED; CLC; LDA s+k; ADC points; STA s+k; ...;
+CLD`.
 
 ## What it leaves alone
 

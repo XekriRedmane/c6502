@@ -15,6 +15,13 @@ parsed by any tool.
   come with the last),
   and to declaring and calling ROM routines, with Apple II Monitor
   examples, the errors the compiler reports, and current limits.
+- `builtins.md` — user guide to the builtins, `__c6502_bcd_add` and
+  `__c6502_bcd_sub`: what packed BCD is, the operand and result
+  types, wrap-around and borrow, what digits above 9 produce (py65's
+  model of the NMOS 6502), constant folding, the code they compile
+  to, the guarantee that the decimal flag is set only across the
+  chain, the caution about interrupt handlers on an NMOS 6502, a
+  score as the example, the errors, and the limits.
 - `linker_scripts.md` — user guide to linking with `compile.py -T`:
   sections (the defaults and `[[c6502::section("name")]]`), the GNU
   ld script subset, the section symbols, the startup copy and clear,

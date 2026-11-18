@@ -33,7 +33,9 @@ function's instructions:
   (a `Binary`, `Unary`, `Copy`, extend, or truncate), it isn't
   volatile, and `u` is defined only there and read only by the store;
 - for an update, the definition is `t + c` or `t - c` with `c` a
-  constant, `t` is loaded from the bytes the store writes by a load
+  constant, or a packed BCD add or subtract of `t` and a constant or
+  a local (`__c6502_bcd_add(t, x)`), `t` is loaded from the bytes the
+  store writes by a load
   that isn't volatile, `t` and `u` are the same size, and `t` is
   defined only by the load and read only after it and up to the add.
   Between the load and the add there's no label, jump, call, store,
@@ -149,16 +151,35 @@ def _update_of(
 ) -> tuple[int, str] | None:
     """When instruction `j` adds a constant to, or subtracts one from,
     a local `t` loaded from byte `base` of `obj`, and the member can
-    stand for `t`, the index of the load and `t`, else None."""
+    stand for `t`, the index of the load and `t`, else None. A packed
+    BCD add or subtract may have `t` as either operand and a local as
+    the other. Its chain writes byte k of the member after it reads
+    byte k of each operand, so the member can stand for `t` in
+    either place."""
     ins = instrs[j]
-    if not (isinstance(ins, tac_ast.Binary)
-            and isinstance(ins.op, (tac_ast.Add, tac_ast.Subtract))
-            and isinstance(ins.src1, tac_ast.Var)
-            and isinstance(ins.src2, tac_ast.Constant)):
+    if not isinstance(ins, tac_ast.Binary):
         return None
-    t = ins.src1.name
+    if isinstance(ins.op, (tac_ast.Add, tac_ast.Subtract)):
+        if not (isinstance(ins.src1, tac_ast.Var)
+                and isinstance(ins.src2, tac_ast.Constant)):
+            return None
+        t_val = ins.src1
+    elif isinstance(ins.op, (tac_ast.BcdAdd, tac_ast.BcdSubtract)):
+        loaded = [
+            v for v in (ins.src1, ins.src2) if isinstance(v, tac_ast.Var)
+            and _load_of(instrs, j, v.name, obj) is not None
+        ]
+        if len(loaded) != 1:
+            return None
+        t_val = loaded[0]
+        other = ins.src2 if t_val is ins.src1 else ins.src1
+        if isinstance(other, tac_ast.Var) and other.name in (t_val.name, obj):
+            return None
+    else:
+        return None
+    t = t_val.name
     if (t == ins.dst.name or not renamable(t)
-            or size_of(ins.src1) != size_of(ins.dst)):
+            or size_of(t_val) != size_of(ins.dst)):
         return None
     i = _load_of(instrs, j, t, obj)
     if i is None:

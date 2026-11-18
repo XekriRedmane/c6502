@@ -56,6 +56,10 @@ module ASM2 {
         | Pop(operand dst)
         -- PHP / PLP. Only the `Ret` lowering emits them, to keep a
         -- carry-flag return value across the frame teardown.
+        -- SED / CLD. Only the expansion of asm `DecimalArith` emits
+        -- them, around its ADC or SBC chain.
+        | SetDecimal
+        | ClearDecimal
         | PushStatus
         | PullStatus
         | Xor(operand src1, operand src2, operand dst)

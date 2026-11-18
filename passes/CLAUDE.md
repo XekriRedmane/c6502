@@ -124,7 +124,26 @@ this directory:
   dominates every read; outside SSA, every `%` temporary read is
   defined. `check_asm` runs after `tac_to_asm`, the asm optimizer,
   each peephole sweep, and at the end: labels unique and branched to,
-  no `Phi` outside SSA, no `Pseudo` once they're replaced.
+  no `Phi` outside SSA, no `Pseudo` once they're replaced, and each
+  `DecimalArith` of a well-formed shape. `check_asm2` runs at the end
+  of `asm_to_asm2`: every `SED` begins a packed BCD chain of exactly
+  `CLC` (`SEC`) and `LDA; ADC (SBC); STA` per byte, a `CLD` ends it,
+  and no `CLD` or unclosed `SED` is anywhere else
+  (`decimal_region_problems`).
+- `decimal_arith.py` — the reads, writes, and operand forms of asm
+  `DecimalArith`, the one instruction a packed BCD add or subtract
+  (`__c6502_bcd_add` / `__c6502_bcd_sub`) stays as until
+  `asm_to_asm2` expands it, so that no pass can put code between its
+  `SED` and `CLD` or move part of the chain out. Every pass that
+  enumerates instruction kinds handles it through `reads`, `writes`,
+  `operands`, `writes_y`, and `map_operands`, or treats it as a
+  barrier that clobbers A, Y, the flags, and memory. It reads no flag
+  and no register, writes A, N, Z, C, and V, writes Y when an operand
+  is a soft-stack slot, and never takes a register operand.
+  `early_write_pairs` gives the interference edges between `dst[k]`
+  and the source bytes of higher index, which it reads after writing
+  `dst[k]`. `byte_dce` drops the whole chain when no byte of it is
+  read, and its top bytes when only they aren't.
 - `recursion_saves.py` — `[[c6502::save_hardware_stack]]`.
   `check_marked_calls` rejects a marked call that can't recurse,
   `hw_stack_cycles` finds the call-graph cycles whose every
@@ -327,7 +346,9 @@ this directory:
   store) the loaded `t` is renamed too and the load skipped, when
   nothing between the load and the add writes memory or branches and
   `t` isn't read after the add, so the add is in place and becomes
-  `INC`.
+  `INC`. A packed BCD add or subtract of `t` and a constant or local,
+  `s.score = __c6502_bcd_add(s.score, x)`, is renamed the same way,
+  with `t` as either operand.
 - `memory_value_propagation.py` —
   `apply_memory_value_propagation`. CFG-aware forward dataflow
   that tracks ZP-cell → recomputable-source equivalences and
@@ -1193,6 +1214,11 @@ epilogue used to emit inline), and `Blank` (a blank-line separator
 between prologue / body / epilogue; emit collapses runs of these).
 `LoadAddress` stays a single atom (its expansion is short enough to
 keep as one logical "compute the address into two bytes" step).
+`DecimalArith` becomes `SetDecimal` (SED), `ClearCarry` or
+`SetCarry`, an `LDA` / `ADC` (`SBC`) / `STA` per byte, and
+`ClearDecimal` (CLD), which only this expansion writes
+(`expand_decimal_arith`), and `ir_check.check_asm2` reads the result
+back.
 
 The compound-node lowerings are deliberately naive: they drop the
 INY / TAX / STX byte-saving tricks that `asm_emit` used to use, in

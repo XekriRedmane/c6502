@@ -27,6 +27,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization_asm.cfg import (
     CFG,
     BasicBlock,
@@ -196,6 +197,8 @@ def _defs_in(instr: asm_ast.Type_instruction):
     helper but kept here so liveness has no upward dependency on
     the SSA module."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.pseudo_writes(instr)
         case asm_ast.Mov(dst=dst):
             if isinstance(dst, asm_ast.Pseudo):
                 yield dst
@@ -229,6 +232,8 @@ def _defs_in(instr: asm_ast.Type_instruction):
 def _uses_in(instr: asm_ast.Type_instruction):
     """Yield Pseudos used by `instr`."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.pseudo_reads(instr)
         case asm_ast.Mov(src=src):
             if isinstance(src, asm_ast.Pseudo):
                 yield src

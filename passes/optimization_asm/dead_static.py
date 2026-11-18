@@ -82,6 +82,11 @@ def _scan_instruction(
         val = getattr(instr, fname)
         if isinstance(val, asm_ast.Type_operand):
             _scan_operand(val, names)
+        elif isinstance(val, list):
+            # `DecimalArith` keeps its operands in lists.
+            for v in val:
+                if isinstance(v, asm_ast.Type_operand):
+                    _scan_operand(v, names)
 
 
 def _scan_operand(

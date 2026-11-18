@@ -650,9 +650,8 @@ init_game_data:
 
    LDA   #$00
    STA   SCORE
-   LDY   #$00
-   STY   SCORE+1
-   STY   SCORE+2
+   STA   SCORE+1
+   STA   SCORE+2
    STA   SCORE+3
    STA   GUARD_PATTERN_OFFSET
    STA   WIPE_MODE

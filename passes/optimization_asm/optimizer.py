@@ -37,6 +37,7 @@ into `replace_pseudoregisters_bare_exit`, which lowers
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization.register_allocation import Coloring
 from passes.optimization_asm.apply_coloring import apply_coloring
 from passes.optimization_asm.backward_copy_propagation import (
@@ -503,6 +504,8 @@ def _all_operands_in(
     `_uses_in` but yields all operands (not just Pseudos), so callers
     can filter."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.operands(instr)
         case asm_ast.Mov(src=src, dst=dst):
             yield src; yield dst
         case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d):

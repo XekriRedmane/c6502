@@ -123,6 +123,7 @@ Cases left unfolded:
 
 from __future__ import annotations
 
+import builtin_functions
 import c99_ast
 import fp_arith
 import tac_ast
@@ -203,6 +204,11 @@ def _fold(
             src2=tac_ast.Constant(const=c2),
             dst=dst,
         ):
+            if isinstance(op, (tac_ast.BcdAdd, tac_ast.BcdSubtract)):
+                res = _fold_bcd(op, c1, c2, dst, symbols)
+                if res is None:
+                    return instr
+                return tac_ast.Copy(src=tac_ast.Constant(const=res), dst=dst)
             res = _fold_binary(op, c1, c2)
             if res is None:
                 return instr
@@ -638,6 +644,29 @@ def _truth_as_dst(
     if dst_variant is None or dst_variant is type(c):
         return c
     return _wrap_int(dst_variant, c.value)
+
+
+def _fold_bcd(
+    op: tac_ast.Type_binary_operator,
+    c1: tac_ast.Type_const, c2: tac_ast.Type_const,
+    dst: tac_ast.Type_val, symbols,
+) -> tac_ast.Type_const | None:
+    """Folds packed BCD addition or subtraction of two integer
+    constants at `dst`'s width, byte by byte as the 6502's decimal
+    mode computes it (builtin_functions.py), whatever the constants'
+    variants. Returns None when `dst`'s type isn't known."""
+    if not _is_integer_const(c1) or not _is_integer_const(c2):
+        return None
+    variant = _dst_int_variant(dst, symbols)
+    if variant is None:
+        return None
+    nbytes = _INTEGER_CONST_BITS[variant] // 8
+    fold = (
+        builtin_functions.bcd_add if isinstance(op, tac_ast.BcdAdd)
+        else builtin_functions.bcd_sub
+    )
+    mask = (1 << 8 * nbytes) - 1
+    return _wrap_int(variant, fold(c1.value & mask, c2.value & mask, nbytes))
 
 
 def _fold_copy(

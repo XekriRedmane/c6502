@@ -41,7 +41,10 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
   copy is `Mov(P, A); Mov(A, D)` or one memory-to-memory `Mov(P, D)`
   (each byte of a zp_abi argument), and the relocation stops at an
   `AllocateStack` / `FunctionPrologue`, which move SSP.
-- `byte_dce.py` — byte-granular dead-code elimination.
+- `byte_dce.py` — byte-granular dead-code elimination. A packed BCD
+  `DecimalArith` goes when no byte it writes is read, and loses its
+  top bytes when only they aren't, since a byte depends only on the
+  bytes below it.
 - `regalloc.py` — byte-granular register allocation. Colors 1-byte
   SSA names to ZP from `Pool(start=0x80)` (default split: caller-
   saved `[0x80, 0xC0)`, callee-saved `[0xC0, 0x100)`); multi-byte
@@ -51,7 +54,14 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
 - `cfg.py` — asm-level control-flow graph (basic blocks, dominators,
   natural loops).
 - `interference.py` — `build_interference`. Asm-level interference
-  graph; runs before coalescing.
+  graph; runs before coalescing. The bytes one instruction writes
+  interfere with each other and with everything live after it, dead
+  or not, which matters for `DecimalArith`, the one instruction that
+  writes several. Its `dst[k]` also interferes with its source bytes
+  of higher index (`decimal_arith.early_write_pairs`), which it reads
+  after writing `dst[k]`, and `coalescing._byte_edges` adds the same
+  edges. `hwreg_eligibility` keeps every operand of a `DecimalArith`
+  out of X and Y, and `regalloc` counts one as writing Y.
 - `liveness.py` — byte-granular liveness used by interference / DCE.
 
 ## Per-function pipeline shape

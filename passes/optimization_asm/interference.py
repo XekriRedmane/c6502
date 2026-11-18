@@ -31,6 +31,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization.interference import (
     InterferenceGraph,
     InterferenceNode,
@@ -81,14 +82,26 @@ def build_interference(
             instr = blk.instructions[i]
             if isinstance(instr, asm_ast.Phi):
                 continue
-            for d in _defs_in(instr):
-                if not colorable(d.name):
-                    continue
+            # An instruction that writes several bytes (a BCD chain)
+            # writes them all, so each interferes with the others and
+            # with everything live after it, even when it's dead.
+            defs = [d for d in _defs_in(instr) if colorable(d.name)]
+            after = live | {d.name for d in defs}
+            for d in defs:
                 ensure_node(d.name)
-                for n in live:
+                for n in after:
                     if n != d.name:
                         graph.add_edge(d.name, n)
+            for d in defs:
                 live.discard(d.name)
+            if isinstance(instr, asm_ast.DecimalArith):
+                # A BCD chain writes dst[k] before it reads the
+                # source bytes of higher index.
+                for a, b in decimal_arith.early_write_pairs(instr):
+                    if colorable(a) and colorable(b):
+                        ensure_node(a)
+                        ensure_node(b)
+                        graph.add_edge(a, b)
             # Cross-call detection. A name live across the call may
             # have no node yet, when its only uses are in a block the
             # loop hasn't reached, so create it here rather than skip
@@ -197,6 +210,10 @@ def _all_pseudos_in(
 ):
     """Yield every Pseudo operand appearing anywhere in `instr`."""
     match instr:
+        case asm_ast.DecimalArith():
+            for op in decimal_arith.operands(instr):
+                if isinstance(op, asm_ast.Pseudo):
+                    yield op
         case asm_ast.Mov(src=src, dst=dst):
             for op in (src, dst):
                 if isinstance(op, asm_ast.Pseudo):

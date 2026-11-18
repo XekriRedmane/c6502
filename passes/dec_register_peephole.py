@@ -60,6 +60,7 @@ the fixed point.
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 
 
 def apply_dec_register_peephole(prog: asm_ast.Program) -> asm_ast.Program:
@@ -306,6 +307,8 @@ def _writes_reg_a(instr: asm_ast.Type_instruction) -> bool:
     def is_a(op):
         return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
     match instr:
+        case asm_ast.DecimalArith():
+            return True
         case asm_ast.Mov(dst=d):
             if is_a(d):
                 return True
@@ -350,6 +353,11 @@ def _operand_roles(instr: asm_ast.Type_instruction):
     `instr`. is_dst=True for the destination position of a Mov;
     every other position counts as a read."""
     match instr:
+        case asm_ast.DecimalArith():
+            for s in decimal_arith.reads(instr):
+                yield s, False
+            for w in decimal_arith.writes(instr):
+                yield w, True
         case asm_ast.Mov(src=s, dst=d):
             yield s, False
             yield d, True

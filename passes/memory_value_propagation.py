@@ -131,6 +131,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_liveness import sets_up_y
 from passes.optimization_asm.cfg import (
     BasicBlock, CFG, build_cfg, ENTRY_ID, EXIT_ID,
@@ -368,7 +369,8 @@ def _own_writes(fn: asm_ast.Function, zp_addrs) -> Optional[Summary]:
     data: set[tuple[str, Optional[int]]] = set()
     for ins in fn.instructions:
         if isinstance(ins, (asm_ast.FunctionPrologue, asm_ast.AllocateStack,
-                            asm_ast.LoadAddress, asm_ast.Ret, asm_ast.Phi)):
+                            asm_ast.LoadAddress, asm_ast.Ret, asm_ast.Phi,
+                            asm_ast.DecimalArith)):
             return None
         if not isinstance(ins, _WRITERS):
             continue
@@ -515,6 +517,12 @@ def _writable_data_names(fn: asm_ast.Function) -> frozenset[str]:
     only when `name` is NOT in this set."""
     out: set[str] = set()
     for instr in fn.instructions:
+        if isinstance(instr, asm_ast.DecimalArith):
+            out.update(
+                w.name for w in decimal_arith.writes(instr)
+                if isinstance(w, asm_ast.Data)
+            )
+            continue
         dst = _instr_write_dst(instr)
         if dst is None:
             continue
@@ -662,7 +670,7 @@ def _transfer(
     if isinstance(instr, (
         asm_ast.Call, asm_ast.FunctionPrologue,
         asm_ast.AllocateStack, asm_ast.LoadAddress,
-        asm_ast.Phi,
+        asm_ast.Phi, asm_ast.DecimalArith,
     )):
         state.a_value = None
         state.cells.clear()
@@ -1358,6 +1366,12 @@ def _slot_accesses(
         if a is not None:
             read.add(a)
     written: set[int] = set()
+    if isinstance(instr, asm_ast.DecimalArith):
+        for w in decimal_arith.writes(instr):
+            a = _zp_addr(w, zp_addrs)
+            if a is not None:
+                written.add(a)
+        return read, written
     dst = instr.dst if isinstance(instr, asm_ast.LoadAddress) \
         else _instr_write_dst(instr)
     if dst is not None:

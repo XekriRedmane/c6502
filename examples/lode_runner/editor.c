@@ -1214,8 +1214,7 @@ static bool get_level_from_keyboard(void) {
 }
 
 void level_editor(void) {
-    for (uint8_t i = 0; i < 4; i++)
-        SCORE[i] = 0;
+    SCORE = 0;
     LIVES = 5;
     GAME_MODE = GAME_MODE_LEVEL_EDITOR;
     saved_input_mode = INPUT_MODE;

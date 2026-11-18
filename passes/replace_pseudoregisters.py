@@ -89,6 +89,7 @@ from dataclasses import dataclass, field
 
 import asm_ast
 import c99_ast
+from passes import decimal_arith
 from passes.type_checking import SymbolTable
 
 
@@ -110,6 +111,8 @@ def _operands_in(instr: asm_ast.Type_instruction):
     order. Used by the first walk to discover Pseudos. Instructions
     without operand fields yield nothing."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.operands(instr)
         case asm_ast.Mov(src=src, dst=dst):
             yield src
             yield dst
@@ -480,6 +483,8 @@ class Replacer:
         to carry the function's dims. Instructions without operand
         fields (or only register operands) pass through unchanged."""
         match instr:
+            case asm_ast.DecimalArith():
+                return decimal_arith.map_operands(instr, self.replace)
             case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
                 return asm_ast.Mov(
                     src=self.replace(src), dst=self.replace(dst),

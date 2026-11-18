@@ -53,6 +53,8 @@ Atomic arithmetic / flag instructions:
   - `Push(src)` -> `PHA` (src must be `Reg(A)`).
   - `Pop(dst)`  -> `PLA` (dst must be `Reg(A)`).
   - `PushStatus` -> `PHP`; `PullStatus` -> `PLP`.
+  - `SetDecimal` -> `SED`; `ClearDecimal` -> `CLD`. Only the expansion
+    of asm `DecimalArith` (packed BCD) makes them.
   - `Xor(src1, src2, dst)` -> `EOR <src>`. dst must be `Reg(A)`; one
     of src1/src2 must be `Reg(A)`, the other an `Imm`/`Stack`/`Frame`.
     The non-A operand picks the addressing mode; Stack/Frame go through
@@ -1090,6 +1092,10 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return [_instr_line("PHP")]
         case asm_ast.PullStatus():
             return [_instr_line("PLP")]
+        case asm_ast.SetDecimal():
+            return [_instr_line("SED")]
+        case asm_ast.ClearDecimal():
+            return [_instr_line("CLD")]
         case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
             return _emit_xor(s1, s2, dst)
         case asm_ast.And(src=src, dst=dst):

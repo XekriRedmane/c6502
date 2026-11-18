@@ -69,6 +69,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization_asm.ssa_construction import excluded_pseudo_names
 
 
@@ -180,6 +181,10 @@ def _rewrite(
         return op
 
     match instr:
+        case asm_ast.DecimalArith():
+            # The propagated values (constants and SSA Pseudos) are
+            # all operand forms the chain takes.
+            return decimal_arith.map_reads(instr, sub_use)
         case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             return asm_ast.Mov(src=sub_use(src), dst=dst, is_volatile=v)
         case asm_ast.Add(src=src, dst=dst):

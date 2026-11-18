@@ -126,10 +126,12 @@ def _referenced(instrs) -> set[str]:
             out.add(ins.target)
         elif isinstance(ins, asm_ast.JumpTable):
             out.update(ins.targets)
-        for v in vars(ins).values():
-            name = getattr(v, "name", None)
-            if isinstance(name, str):
-                out.add(name)
+        for field in vars(ins).values():
+            # `DecimalArith` keeps its operands in lists.
+            for v in field if isinstance(field, list) else (field,):
+                name = getattr(v, "name", None)
+                if isinstance(name, str):
+                    out.add(name)
     return out
 
 

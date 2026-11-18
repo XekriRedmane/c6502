@@ -107,19 +107,19 @@ lines of `main.asm` it translates:
 
 | File | Original | C code | C data | C total |
 |---|---:|---:|---:|---:|
-| `main.c` | 699 | 617 | 71 | 688 |
+| `main.c` | 699 | 615 | 71 | 686 |
 | `level.c` | 755 | 855 | 11 | 866 |
 | `player.c` | 1528 | 1299 | 93 | 1392 |
 | `input.c` | 918 | 959 | 11 | 970 |
 | `guards.c` | 2417 | 2303 | 65 | 2368 |
 | `timers.c` | 440 | 505 | 9 | 514 |
-| `screen.c` | 503 | 588 | 36 | 624 |
-| `hiscore.c` | 621 | 618 | 99 | 717 |
-| `editor.c` | 1898 | 1319 | 740 | 2059 |
+| `screen.c` | 503 | 514 | 36 | 550 |
+| `hiscore.c` | 621 | 610 | 99 | 709 |
+| `editor.c` | 1898 | 1318 | 740 | 2058 |
 | `sprites.c` | 629 | 602 | 24 | 626 |
 | `sound.c` | 192 | 210 | 16 | 226 |
 | `wipe.c` | 1201 | 920 | 371 | 1291 |
-| **Total** | **11801** | **10795** | **1546** | **12341** |
+| **Total** | **11801** | **10710** | **1546** | **12256** |
 
 The original's count is every byte its lines assemble to, code and
 data alike, since the original keeps its tables and messages among its

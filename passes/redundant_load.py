@@ -1193,7 +1193,8 @@ def _update_state_core(
         return
     if isinstance(instr, (asm_ast.FunctionPrologue,
                           asm_ast.AllocateStack,
-                          asm_ast.LoadAddress)):
+                          asm_ast.LoadAddress,
+                          asm_ast.DecimalArith)):
         # These expand into multi-instruction sequences in
         # asm_to_asm2; their inner effects exceed the tracker.
         state.reset()

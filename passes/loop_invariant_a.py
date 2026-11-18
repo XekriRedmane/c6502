@@ -65,6 +65,7 @@ expansion like everything else.
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_aliasing import may_alias
 from passes.asm_liveness import a_dead_at, sets_flags
 
@@ -117,6 +118,7 @@ def _writes_a(instr) -> bool:
         return instr.dst == _A
     return isinstance(instr, (
         asm_ast.Call, asm_ast.FunctionPrologue, asm_ast.AllocateStack,
+        asm_ast.DecimalArith,
     ))
 
 
@@ -139,6 +141,8 @@ def _touches_a(instr) -> bool:
 
 def _written_memory(instr) -> list:
     """Memory operands `instr` may write."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return decimal_arith.writes(instr)
     if isinstance(instr, (asm_ast.Mov, asm_ast.Pop, asm_ast.LoadAddress)):
         return [] if isinstance(instr.dst, asm_ast.Reg) else [instr.dst]
     if isinstance(instr, (

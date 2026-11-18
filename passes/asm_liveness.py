@@ -63,11 +63,15 @@ counts as a read.
 - The ALU instructions (Add/Sub/And/Or/Xor) RMW A: they read A
   before writing it, so they're a read, not a kill.
 - Shift/rotate on A (`ASL A` etc.) likewise RMW A.
+- `DecimalArith` (a packed BCD chain) kills A, writes every flag
+  without reading one, and kills Y when an operand is a soft-stack
+  slot (`passes/decimal_arith.py`).
 """
 
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 
 
 def is_reg_a(op: asm_ast.Type_operand) -> bool:
@@ -294,6 +298,9 @@ def kills_a(instr: asm_ast.Type_instruction) -> bool:
         return True
     if isinstance(instr, asm_ast.LoadAddress):
         return True
+    if isinstance(instr, asm_ast.DecimalArith):
+        # Each byte of a BCD chain starts with an `LDA`.
+        return True
     return False
 
 
@@ -330,6 +337,8 @@ def sets_up_y(instr: asm_ast.Type_instruction) -> bool:
     setup, so the instruction writes Y whatever it does otherwise.
     For a pass that has to know every write to Y, such as one that
     reuses an `abs,Y` load at a later point."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return decimal_arith.writes_y(instr)
     return any(
         isinstance(op, Y_SETUP_OPERANDS) for op in vars(instr).values()
     )
@@ -484,6 +493,8 @@ def kills_y(instr: asm_ast.Type_instruction) -> bool:
         # Frame slot whose offset fits the same indirect-Y setup,
         # but we don't model that precisely).
         return _operand_setup_clobbers_y(instr.dst)
+    if isinstance(instr, asm_ast.DecimalArith):
+        return decimal_arith.writes_y(instr)
     return False
 
 
@@ -604,10 +615,14 @@ _C_BRANCHES = (asm_ast.CC, asm_ast.CS)
 _C_WRITERS = (
     asm_ast.ClearCarry, asm_ast.SetCarry, asm_ast.Compare,
     asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight, asm_ast.Call,
+    asm_ast.DecimalArith,
 )
 # ADC and SBC write V without reading it, and so does BIT.
 _V_BRANCHES = (asm_ast.VC, asm_ast.VS)
-_V_WRITERS = (asm_ast.Add, asm_ast.Sub, asm_ast.BitTest, asm_ast.Call)
+_V_WRITERS = (
+    asm_ast.Add, asm_ast.Sub, asm_ast.BitTest, asm_ast.Call,
+    asm_ast.DecimalArith,
+)
 # Compound atoms that expand to arithmetic `asm_to_asm2` writes out
 # later. They're treated as reading every flag.
 _OPAQUE = (asm_ast.LoadAddress, asm_ast.AllocateStack,
@@ -691,12 +706,14 @@ def _overwrites_all_flags(instr: asm_ast.Type_instruction) -> bool:
       * `Compare` (CMP/CPX/CPY) — sets N/Z/C from subtraction.
       * `ArithmeticShiftLeft` / `LogicalShiftRight` — set C from
         the shifted-out bit.
-      * `Call` — callee defines all flags."""
+      * `Call` — callee defines all flags.
+      * `DecimalArith` — a BCD chain starts with `CLC` / `SEC` and
+        ends with an `ADC` / `SBC`."""
     if isinstance(instr, (
         asm_ast.SetCarry, asm_ast.ClearCarry,
         asm_ast.Compare,
         asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.Call,
+        asm_ast.Call, asm_ast.DecimalArith,
     )):
         return True
     return False
@@ -748,6 +765,8 @@ def sets_flags(instr: asm_ast.Type_instruction) -> bool:
     if isinstance(instr, asm_ast.Pop):
         return True
     if isinstance(instr, asm_ast.LoadAddress):
+        return True
+    if isinstance(instr, asm_ast.DecimalArith):
         return True
     if isinstance(instr, asm_ast.Call):
         # Callee-defined flag state — assume clobbered.

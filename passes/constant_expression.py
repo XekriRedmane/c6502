@@ -75,6 +75,7 @@ operator check either.
 
 from __future__ import annotations
 
+import builtin_functions
 import c99_ast
 
 
@@ -277,6 +278,20 @@ def evaluate_integer_constant_expression(
             c, _ = evaluate_integer_constant_expression(cond)
             v, _ = evaluate_integer_constant_expression(tc if c else fc)
             return _coerce_to_integer_type(v, t), t
+        case c99_ast.FunctionCall(name=name, args=args) if name in (
+            builtin_functions.BCD_ADD, builtin_functions.BCD_SUB,
+        ):
+            # A packed BCD builtin of constant operands. It isn't a
+            # function call, so it is a constant (docs/builtins.md).
+            t = _result_type(exp)
+            a, _ = evaluate_integer_constant_expression(args[0])
+            b, _ = evaluate_integer_constant_expression(args[1])
+            fold = (
+                builtin_functions.bcd_add
+                if name == builtin_functions.BCD_ADD
+                else builtin_functions.bcd_sub
+            )
+            return fold(a, b, _sizeof(t)), t
     raise ConstantExpressionError(
         f"expression is not an integer constant expression: {exp!r}"
     )
@@ -416,6 +431,12 @@ def validate_constant_expression(exp: c99_ast.Type_exp) -> None:
                 "postfix increment/decrement is not allowed in a "
                 "constant expression"
             )
+        case c99_ast.FunctionCall(name=name, args=args) if (
+            builtin_functions.is_builtin(name)
+        ):
+            for arg in args:
+                validate_constant_expression(arg)
+            return
         case c99_ast.FunctionCall() | c99_ast.IndirectCall():
             raise ConstantExpressionError(
                 "function call is not allowed in a constant expression"

@@ -167,10 +167,12 @@ def _hargs_offsets(instrs) -> set[int]:
     out: set[int] = set()
     for instr in instrs:
         for f in dataclasses.fields(instr):
-            op = getattr(instr, f.name)
-            if (isinstance(op, (asm_ast.Data, asm_ast.IndexedData))
-                    and op.name == "HARGS"):
-                out.add(op.offset)
+            field = getattr(instr, f.name)
+            # `DecimalArith` keeps its operands in lists.
+            for op in field if isinstance(field, list) else (field,):
+                if (isinstance(op, (asm_ast.Data, asm_ast.IndexedData))
+                        and op.name == "HARGS"):
+                    out.add(op.offset)
     return out
 
 

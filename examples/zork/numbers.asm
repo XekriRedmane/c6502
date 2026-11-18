@@ -1,12 +1,12 @@
 HARGS	EQU	$00
-SSP	EQU	$05
-FP	EQU	$07
-DPTR	EQU	$09
-remainder	EQU	$0B
-sign_bit	EQU	$0D
-__local_divu16__partial_1	EQU	$0F
-__local_divu16__partial_0	EQU	$10
-__local_divu16__0	EQU	$11
+SSP	EQU	$01
+FP	EQU	$03
+DPTR	EQU	$05
+remainder	EQU	$07
+sign_bit	EQU	$09
+__local_divu16__partial_1	EQU	$0B
+__local_divu16__partial_0	EQU	$0C
+__local_divu16__0	EQU	$0D
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -290,7 +290,7 @@ COUT1	EQU	$FDF0
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
 ; zp disk_buffer size=2 at=auto def=false init=
 ; zp disk_sector size=2 at=auto def=false init=
-; runtime hargs_size=5 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 mulu16:

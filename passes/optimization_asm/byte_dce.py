@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization_asm.ssa_construction import excluded_pseudo_names
 
 
@@ -76,6 +77,8 @@ def _one_pass(
     for instr in fn.instructions:
         if _is_dead(instr, use_set, statics, excluded):
             continue
+        if isinstance(instr, asm_ast.DecimalArith):
+            instr = _drop_dead_top_bytes(instr, use_set, statics, excluded)
         new_instrs.append(instr)
     return asm_ast.Function(
         name=fn.name,
@@ -115,6 +118,15 @@ def _is_dead(
         if instr.dst.name in excluded:
             return False
         return (instr.dst.name, instr.dst.offset) not in use_set
+    if isinstance(instr, asm_ast.DecimalArith):
+        # A packed BCD chain is pure, so it goes when no byte it
+        # writes is read. It's kept whole otherwise.
+        return all(
+            isinstance(d, asm_ast.Pseudo) and d.name not in statics
+            and d.name not in excluded
+            and (d.name, d.offset) not in use_set
+            for d in instr.dst
+        )
     if isinstance(instr, asm_ast.Phi):
         if not isinstance(instr.dst, asm_ast.Pseudo):
             return False
@@ -124,6 +136,31 @@ def _is_dead(
             return False
         return (instr.dst.name, instr.dst.offset) not in use_set
     return False
+
+
+def _drop_dead_top_bytes(
+    instr: asm_ast.DecimalArith,
+    use_set: set[tuple[str, int]],
+    statics: frozenset[str],
+    excluded: frozenset[str],
+) -> asm_ast.DecimalArith:
+    """`instr` without the top bytes whose results nothing reads. A
+    byte of a BCD chain depends only on the bytes below it, so the
+    chain can stop after the highest byte that's read. A dead byte
+    below a live one stays, since its carry is needed."""
+    def dead(op) -> bool:
+        return (isinstance(op, asm_ast.Pseudo) and op.name not in statics
+                and op.name not in excluded
+                and (op.name, op.offset) not in use_set)
+    n = len(instr.dst)
+    while n > 1 and dead(instr.dst[n - 1]):
+        n -= 1
+    if n == len(instr.dst):
+        return instr
+    return asm_ast.DecimalArith(
+        subtract=instr.subtract, left=instr.left[:n],
+        right=instr.right[:n], dst=instr.dst[:n],
+    )
 
 
 # Excluded-from-SSA names are defined once in
@@ -152,6 +189,8 @@ def _use_operands(
     _uses_in` — same shape, kept here so the DCE pass is self-
     contained."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.reads(instr)
         case asm_ast.Mov(src=src):
             yield src
         case asm_ast.Add(src=src, dst=dst):

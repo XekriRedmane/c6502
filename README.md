@@ -1488,6 +1488,30 @@ is zp_abi, or is `static` and every call branches on its result
 The linker checks that every unit made the same choice for a
 function.
 
+## Builtins
+
+c6502 has two builtins, `__c6502_bcd_add(a, b)` and
+`__c6502_bcd_sub(a, b)`, which add and subtract packed BCD numbers
+(two decimal digits to a byte, low byte first) with the 6502's
+decimal mode. The operands are unsigned integers, and the result has
+the wider operand's type, so two `uint8_t`s give a `uint8_t`. Each
+call compiles to `SED; CLC; LDA a; ADC b; STA r; ...; CLD`, a byte at
+a time, and the decimal flag is set for that chain and nothing else.
+Constant operands fold at compile time.
+
+```c
+uint32_t score;   /* eight BCD digits */
+
+void add_points(uint16_t bcd_points) {
+    score = __c6502_bcd_add(score, bcd_points);
+}
+```
+
+[docs/builtins.md](docs/builtins.md) gives the types, what invalid
+digits produce, the code, and the caution about interrupt handlers on
+an NMOS 6502, which doesn't clear the decimal flag when it takes an
+interrupt.
+
 ## Status
 
 End-to-end through `compile.py -S` to runnable 6502 asm:

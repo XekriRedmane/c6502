@@ -141,6 +141,7 @@ sequence enables downstream passes to find more opportunities
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 
 
 def apply_cmp_through_tmp_fold(
@@ -224,6 +225,8 @@ def _read_operands(instr) -> list:
     orphan store). RMW positions (Inc / Dec / shifts; the dst of
     Add / Sub / And / Or / Xor which is normally Reg(A) but treated
     as a read here for safety) DO count as reads."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return decimal_arith.reads(instr)
     if isinstance(instr, asm_ast.Mov):
         return [instr.src]
     if isinstance(instr, asm_ast.Compare):

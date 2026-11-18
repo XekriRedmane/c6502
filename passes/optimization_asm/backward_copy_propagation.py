@@ -77,6 +77,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization_asm.ssa_construction import excluded_pseudo_names
 from passes.asm_liveness import (
     a_dead_at as _a_dead_at,
@@ -382,6 +383,8 @@ def _use_operands(
     """Yield every USE operand. RMW targets count. Mirrors
     `byte_dce._use_operands`."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.reads(instr)
         case asm_ast.Mov(src=src):
             yield src
         case asm_ast.Add(src=src, dst=dst):
@@ -429,6 +432,8 @@ def _all_operands(
     """Every operand-typed field of `instr` — uses AND defs.
     Mirrors `ssa_construction._operand_fields`."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.operands(instr)
         case asm_ast.Mov(src=src, dst=dst):
             yield src
             yield dst

@@ -170,6 +170,26 @@ module ASM {
         -- flow.
         | JumpTable(identifier table, string index, int base,
                     identifier* targets)
+        -- DecimalArith(subtract, left, right, dst) is packed BCD
+        -- addition or subtraction (TAC `BcdAdd` / `BcdSubtract`), one
+        -- byte of each operand per element of the lists, low byte
+        -- first. The three lists have the same length. It stays one
+        -- instruction through every asm pass, and `asm_to_asm2`
+        -- expands it into `SED; CLC (SEC for subtract); LDA left[0];
+        -- ADC (SBC) right[0]; STA dst[0]; ...; CLD`, so no other
+        -- instruction can run while the decimal flag is set, and no
+        -- pass can move one into the region or out of it. A, the
+        -- flags N, Z, C, and V, and Y (when an operand is a soft-stack
+        -- slot, whose access begins with `LDY #off`) are clobbered.
+        -- `dst[k]` is written after `left[j]` and `right[j]` are read
+        -- for j <= k, and before they're read for j > k, so the
+        -- register allocator keeps `dst[k]` from sharing a byte with a
+        -- source byte of a higher index. No operand is a register or
+        -- an indexed or indirect form (`passes/decimal_arith.py`
+        -- lists the operand forms and gives the reads and writes every
+        -- pass uses).
+        | DecimalArith(bool subtract, operand* left, operand* right,
+                       operand* dst)
         | Compare(operand left, operand right)
         -- BitTest(src) — emits `BIT src` (NMOS 6502: zp and abs
         -- addressing only). Sets N to bit 7 of src, V to bit 6 of

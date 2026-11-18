@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import builtin_functions
 import c99_ast
 import fp_arith
 import tac_ast
@@ -860,6 +861,12 @@ class Simulator:
             return 1 if cmp else 0
 
         match op:
+            # Packed BCD, byte by byte as the 6502's decimal mode
+            # computes it (builtin_functions.adc_byte / sbc_byte).
+            case tac_ast.BcdAdd():
+                return builtin_functions.bcd_add(a_u, b_u, w)
+            case tac_ast.BcdSubtract():
+                return builtin_functions.bcd_sub(a_u, b_u, w)
             case tac_ast.Add():        return (a_u + b_u) & m
             case tac_ast.Subtract():   return (a_u - b_u) & m
             case tac_ast.Multiply():   return (a_u * b_u) & m

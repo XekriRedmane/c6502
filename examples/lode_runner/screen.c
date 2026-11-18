@@ -19,11 +19,11 @@
       bytes from it, where the original takes the first and the end
       page numbers in A and X.
     - PUT_STATUS_BYTE takes the number and the column as parameters.
-    - add_and_update_score adds the points a decimal digit at a time,
-      where the original sets the 6502's decimal mode and adds a byte
-      at a time. The two agree whenever every digit of the score and
-      of the points is 0-9. Every call adds a BCD constant (0, 75, 100,
-      or 250) to a score that starts at 0, so no other digit occurs.
+    - add_and_update_score takes the points as a parameter, where the
+      original takes their low byte in A and their high byte in Y. It
+      adds them to SCORE with __c6502_bcd_add, which sets the 6502's
+      decimal mode and adds a byte at a time as the original does,
+      through a uint32_t pointer to SCORE's four bytes.
     - put_digit and put_char share the drawing of a sprite at the
       cursor, draw_at_cursor, which the original repeats in each.
     - char_to_sprite_num finds the punctuation's sprites by searching
@@ -505,32 +505,16 @@ void put_status_level(void) {
 }
 
 void add_and_update_score(uint16_t bcd_points) {
-    /* Each byte of SCORE holds two BCD digits, the tens in the high
-     * nibble. The points' low byte is added to SCORE[0] and their high
-     * byte to SCORE[1], and the carry runs on through SCORE[3]. */
-    bool carry = false;
-    for (uint8_t i = 0; i < 4; i++) {
-        uint8_t units = (SCORE[i] & 0x0F) + ((uint8_t)bcd_points & 0x0F) + carry;
-        uint8_t tens = (SCORE[i] >> 4) + ((uint8_t)bcd_points >> 4);
-        if (units > 9) {
-            units -= 10;
-            tens++;
-        }
-        carry = tens > 9;
-        if (carry)
-            tens -= 10;
-        SCORE[i] = tens << 4 | units;
-        bcd_points >>= 8;
-    }
+    SCORE = __c6502_bcd_add(SCORE, bcd_points);
 
     GAME_COLNUM = 5;
     GAME_ROWNUM = 16;
     /* The status line shows seven digits, so the score's highest digit
      * isn't drawn. */
-    bcd_to_decimal2(SCORE[3]);
+    bcd_to_decimal2(SCORE_BYTES[3]);
     put_digit(DIGITS[2]);
     for (int8_t i = 2; i >= 0; i--) {
-        bcd_to_decimal2(SCORE[i]);
+        bcd_to_decimal2(SCORE_BYTES[i]);
         put_digit(DIGITS[1]);
         put_digit(DIGITS[2]);
     }

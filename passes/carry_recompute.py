@@ -92,7 +92,8 @@ def _writes(ins):
     """The memory operand `ins` writes, or "?" for an instruction that
     may write memory it doesn't name, or None."""
     if isinstance(ins, (asm_ast.Call, asm_ast.FunctionPrologue,
-                        asm_ast.AllocateStack, asm_ast.LoadAddress)):
+                        asm_ast.AllocateStack, asm_ast.LoadAddress,
+                        asm_ast.DecimalArith)):
         return "?"
     dst = getattr(ins, "dst", None)
     if dst is None or isinstance(dst, asm_ast.Reg):
@@ -181,4 +182,4 @@ def _writes_a(ins) -> bool:
         return ins.dst == _A
     return isinstance(ins, (asm_ast.Call, asm_ast.FunctionPrologue,
                             asm_ast.Ret, asm_ast.AllocateStack,
-                            asm_ast.LoadAddress))
+                            asm_ast.LoadAddress, asm_ast.DecimalArith))

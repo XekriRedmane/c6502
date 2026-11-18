@@ -350,7 +350,8 @@ def _holds(instrs, i: int, reg, mem, unaliased) -> bool:
         if isinstance(ins, (asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
                             asm_ast.Return, asm_ast.Ret, asm_ast.Call,
                             asm_ast.FunctionPrologue,
-                            asm_ast.AllocateStack, asm_ast.LoadAddress)):
+                            asm_ast.AllocateStack, asm_ast.LoadAddress,
+                            asm_ast.DecimalArith)):
             return False
         if (isinstance(ins, asm_ast.Mov) and ins.dst == reg
                 and ins.src == mem and not ins.is_volatile):

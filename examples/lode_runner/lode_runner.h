@@ -145,8 +145,11 @@ extern uint8_t DIGITS [[c6502::zeropage(0x89)]][3];
 /* The number of passes PLAY_SOUND's delay takes, initially 6. */
 extern uint8_t FRAME_PERIOD [[c6502::zeropage(0x8C)]];
 extern uint8_t GUARD_COUNT [[c6502::zeropage(0x8D)]];
-/* Eight BCD digits, the tens and units in SCORE[0]. */
-extern uint8_t SCORE [[c6502::zeropage(0x8E)]][4];
+/* Eight packed BCD digits, low byte first, so SCORE_BYTES[0] holds the
+ * tens and units. SCORE_BYTES reads them a byte at a time, which C99
+ * §6.5.7 allows through a character type. */
+extern uint32_t SCORE [[c6502::zeropage(0x8E)]];
+#define SCORE_BYTES ((uint8_t *)&SCORE)
 extern uint8_t GOLD_COUNT [[c6502::zeropage(0x93)]];
 /* 1 until the player picks up gold during a move. */
 extern uint8_t DIDNT_PICK_UP_GOLD [[c6502::zeropage(0x94)]];

@@ -409,7 +409,7 @@ static bool beats(struct hi_score *entry) {
     if (LEVELNUM != entry->level)
         return LEVELNUM > entry->level;
     for (uint8_t i = 0; i < 4; i++) {
-        uint8_t digits = SCORE[3 - i];
+        uint8_t digits = SCORE_BYTES[3 - i];
         if (digits != entry->score[i])
             return digits > entry->score[i];
     }
@@ -424,7 +424,7 @@ static bool beats(struct hi_score *entry) {
 void record_hi_score_data_to_disk(void) {
     if (HI_SCORE_ELIGIBLE == 0)
         return;
-    if ((SCORE[0] | SCORE[1] | SCORE[2] | SCORE[3]) == 0)
+    if ((SCORE_BYTES[0] | SCORE_BYTES[1] | SCORE_BYTES[2] | SCORE_BYTES[3]) == 0)
         return;
     if (access_hi_score_data_from_disk(DISK_ACCESS_READ) == 0)
         return;
@@ -441,7 +441,7 @@ void record_hi_score_data_to_disk(void) {
      * n starts at (n - 1) << 3. HI_SCORES[e] = HI_SCORES[e - 1] for
      * each entry took 110 bytes more, because the compiler copies each
      * entry through eight bytes of temporaries, and `i-- != first` as
-     * the test took 6 bytes more than the decrement in the body. */
+     * the test took 9 bytes more than the decrement in the body. */
     uint8_t first = (uint8_t)((n - 1) << 3);
     for (uint8_t i = 9 << 3; i != first;) {
         i--;
@@ -454,10 +454,10 @@ void record_hi_score_data_to_disk(void) {
     entry->initials[1] = 0xA0;
     entry->initials[2] = 0xA0;
     entry->level = LEVELNUM;
-    entry->score[0] = SCORE[3];
-    entry->score[1] = SCORE[2];
-    entry->score[2] = SCORE[1];
-    entry->score[3] = SCORE[0];
+    entry->score[0] = SCORE_BYTES[3];
+    entry->score[1] = SCORE_BYTES[2];
+    entry->score[2] = SCORE_BYTES[1];
+    entry->score[3] = SCORE_BYTES[0];
     uint8_t *const initials = entry->initials;
     hi_score_screen();
 

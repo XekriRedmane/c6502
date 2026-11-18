@@ -13,7 +13,11 @@ MPU until the boot stub's BRK fires.
   `_prologue_size` / `_ret_size` / `_emit_prologue` / `_emit_ret`
   mirror the naive lowering in `passes.asm_to_asm2`, so
   `instruction_size` (used by `passes.long_branches`) and the
-  assembler stay byte-aligned with what `asm_emit` produces.
+  assembler stay byte-aligned with what `asm_emit` produces. A packed
+  BCD `DecimalArith` assembles as `asm_to_asm2.expand_decimal_arith`
+  writes it, `SED`, `CLC` or `SEC`, an `LDA` / `ADC` (`SBC`) / `STA`
+  per byte, and `CLD`. py65 runs `ADC` and `SBC` in decimal mode as
+  `builtin_functions.adc_byte` / `sbc_byte` compute them.
 - `harness.py` — top-level test harness: take C source, run the full
   compiler pipeline, assemble with a runtime stub, and execute on a
   py65 6502 simulator until BRK.

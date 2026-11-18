@@ -35,6 +35,7 @@ and before the EQU block is rendered.
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 
 
 def prune_unused_locals(
@@ -81,6 +82,8 @@ def _operands_in(instr: asm_ast.Type_instruction):
     Used for unreferenced-symbol detection — we don't distinguish
     reads from writes since either kind makes the symbol live."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.operands(instr)
         case asm_ast.Mov(src=s, dst=d):
             yield s
             yield d

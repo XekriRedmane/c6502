@@ -383,6 +383,16 @@ class GreaterOrEqual(Type_binary_operator):
 
 
 @dataclass
+class BcdAdd(Type_binary_operator):
+    pass
+
+
+@dataclass
+class BcdSubtract(Type_binary_operator):
+    pass
+
+
+@dataclass
 class Type_data_type:
     pass
 

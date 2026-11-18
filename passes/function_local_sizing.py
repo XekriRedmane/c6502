@@ -47,6 +47,7 @@ function's private range needs to be.
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 
 
 def compute_local_bytes(
@@ -200,6 +201,8 @@ def _all_operands_in(instr: asm_ast.Type_instruction):
     `passes` neighbor is `zp_slot_allocation`, which doesn't
     import asm-level helpers)."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.operands(instr)
         case asm_ast.Mov(src=s, dst=d):
             yield s; yield d
         case (

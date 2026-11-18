@@ -117,6 +117,24 @@ Two key runtime conventions:
   `Call`, and `asm_liveness.call_preserves` lets the passes keep a
   value in X or Y across it. User guide:
   [docs/attributes.md](docs/attributes.md).
+- **Builtins** (`builtin_functions.py`). `__c6502_bcd_add(a, b)` and
+  `__c6502_bcd_sub(a, b)` do packed BCD arithmetic. The parser and
+  identifier resolution leave a call of one as a c99 `FunctionCall`
+  with its own name (`is_builtin`), and reject a declaration of the
+  name or a use of it as a value.
+  `type_checking._check_bcd_call` types it (unsigned operands, the
+  result the higher-rank operand type, no integer promotion), and
+  `c99_to_tac._translate_builtin` lowers it to TAC
+  `Binary(BcdAdd | BcdSubtract)`, folding constant operands there and
+  in `constant_folding._fold_bcd`. `tac_to_asm` lowers that to one
+  asm `DecimalArith(subtract, left*, right*, dst*)`, which stays one
+  instruction through every asm pass (`passes/decimal_arith.py` gives
+  its reads and writes) and which `asm_to_asm2.expand_decimal_arith`
+  spells out as `SED; CLC; LDA; ADC; STA; ...; CLD`, with the asm2
+  atoms `SetDecimal` / `ClearDecimal`. `ir_check.check_asm2` checks
+  that nothing else runs with the decimal flag set. The arithmetic
+  (`adc_byte` / `sbc_byte`) copies py65's decimal mode, for digits
+  that aren't 0-9 too. User guide: [docs/builtins.md](docs/builtins.md).
 - **zp_abi + call-graph-disjoint private pools** put params AND
   body locals in ZP for eligible leaf / non-recursive /
   non-indirect-calling functions; ineligible functions fall back
@@ -393,6 +411,11 @@ Other root-level files:
   diagnostics).
 - `compile.py` — the CLI driver.
 - `main.py` — empty `hello world` stub; not part of the compiler.
+- `builtin_functions.py` — the builtins' names and argument counts
+  (`BUILTINS`, `is_builtin`) and the packed BCD arithmetic
+  (`adc_byte`, `sbc_byte`, `bcd_add`, `bcd_sub`) that constant
+  folding, `tac_sim`, and the type checker's constant evaluator
+  share.
 - `knowledge_base.md` — engineering-knowledge running log.
 
 ## Parser

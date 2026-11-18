@@ -5,9 +5,9 @@ PLAYER_Y_ADJ	EQU	$03
 PLAYER_ANIM_STATE	EQU	$04
 PLAYER_FACING_DIRECTION	EQU	$05
 HARGS	EQU	$06
-SSP	EQU	$0B
-FP	EQU	$0D
-DPTR	EQU	$0F
+SSP	EQU	$07
+FP	EQU	$09
+DPTR	EQU	$0B
 GUARD_LOC_COL	EQU	$12
 GUARD_LOC_ROW	EQU	$13
 GUARD_ANIM_STATE	EQU	$14
@@ -111,12 +111,9 @@ __local_put_status_draw__2	EQU	$B3
 __local_put_status_draw__line176	EQU	$B4
 __local_put_status_draw__3	EQU	$B5
 __local_put_status_draw__4	EQU	$B6
-__local_add_and_update_score__tens	EQU	$B7
 __local_add_and_update_score__i	EQU	$B8
 __local_put_string__s	EQU	$B8
-__local_add_and_update_score__0	EQU	$B9
 __local_put_string__1	EQU	$B9
-__local_add_and_update_score__carry	EQU	$BC
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -176,7 +173,7 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 locals=__local_add_and_update_score__tens,__local_add_and_update_score__i,__local_add_and_update_score__0,__local_add_and_update_score__bcd_points_1,__local_add_and_update_score__bcd_points_0,__local_add_and_update_score__carry,__local_add_and_update_score__1 indirect=false in_cycle=false changes=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
+; def add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 locals=__local_add_and_update_score__0,__local_add_and_update_score__i indirect=false in_cycle=false
 ; def bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd locals= indirect=false in_cycle=false
 ; def char_to_sprite_num params=__zpabi_char_to_sprite_num__c locals=__local_char_to_sprite_num__0,__local_char_to_sprite_num__i indirect=false in_cycle=false
 ; def clear_hgr1 params= locals= indirect=false in_cycle=false
@@ -338,7 +335,7 @@ DISK_IO	EQU	$C088
 ; zp DEMO_RUNNING size=1 at=$AC def=false init=
 ; zp LEVEL_SAVED size=1 at=$AD def=false init=
 ; zp BLOCK_DATA size=33 at=$DF def=false init=
-; runtime hargs_size=5 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 clear_page:
@@ -517,69 +514,21 @@ put_status_level:
 add_and_update_score:
    SUBROUTINE
 
-   LDA   #$00
-   STA   __local_add_and_update_score__carry
-   LDX   #$00
-.loop@3_start:
-   CPX   #$04
-   BCS   .loop@3_break
-   LDA   SCORE,X
-   STA   __local_add_and_update_score__0
-   AND   #$0F
-   STA   __local_add_and_update_score__i
-   LDA   __zpabi_add_and_update_score__bcd_points_0
-   AND   #$0F
-   ADC   __local_add_and_update_score__i
+   SED
    CLC
-   ADC   __local_add_and_update_score__carry
-   STA   __local_add_and_update_score__i
-   LDA   __local_add_and_update_score__0
-   LSR
-   LSR
-   LSR
-   LSR
-   STA   __local_add_and_update_score__0
-   LDA   __zpabi_add_and_update_score__bcd_points_0
-   LSR
-   LSR
-   LSR
-   LSR
-   CLC
-   ADC   __local_add_and_update_score__0
-   STA   __local_add_and_update_score__tens
-   LDA   __local_add_and_update_score__i
-   SEC
-   SBC   #$0A
-   BCC   .if_end@2
-   STA   __local_add_and_update_score__i
-   INC   __local_add_and_update_score__tens
-.if_end@2:
-   LDA   __local_add_and_update_score__tens
-   CLC
-   SBC   #$09
-   LDA   #$00
-   ROL
-   STA   __local_add_and_update_score__carry
-   BEQ   .if_end@3
-   LDA   __local_add_and_update_score__tens
-   SEC
-   SBC   #$0A
-   STA   __local_add_and_update_score__tens
-.if_end@3:
-   LDA   __local_add_and_update_score__tens
-   ASL
-   ASL
-   ASL
-   ASL
-   ORA   __local_add_and_update_score__i
-   STA   SCORE,X
-   INX
-   LDA   __zpabi_add_and_update_score__bcd_points_1
-   STA   __zpabi_add_and_update_score__bcd_points_0
-   LDA   #$00
-   STA   __zpabi_add_and_update_score__bcd_points_1
-   JMP   .loop@3_start
-.loop@3_break:
+   LDA   SCORE
+   ADC   __zpabi_add_and_update_score__bcd_points_0
+   STA   SCORE
+   LDA   SCORE+1
+   ADC   __zpabi_add_and_update_score__bcd_points_1
+   STA   SCORE+1
+   LDA   SCORE+2
+   ADC   #$00
+   STA   SCORE+2
+   LDA   SCORE+3
+   ADC   #$00
+   STA   SCORE+3
+   CLD
    LDA   #$05
    STA   GAME_COLNUM
    LDA   #$10
@@ -589,12 +538,11 @@ add_and_update_score:
    JSR   bcd_to_decimal2
    LDA   DIGITS+2
    JSR   put_status_byte@run0
-   LDA   #$02
-   STA   __local_add_and_update_score__i
-.loop@4_start:
-   LDX   __local_add_and_update_score__i
+   LDX   #$02
+.loop@3_start:
    LDA   SCORE,X
    STA   __zpabi_bcd_to_decimal2__bcd
+   STX   __local_add_and_update_score__i
    JSR   bcd_to_decimal2
    LDA   DIGITS+1
    STA   __zpabi_put_digit__digit
@@ -602,8 +550,9 @@ add_and_update_score:
    LDA   DIGITS+2
    STA   __zpabi_put_digit__digit
    JSR   put_digit
-   DEC   __local_add_and_update_score__i
-   BPL   .loop@4_start
+   LDX   __local_add_and_update_score__i
+   DEX
+   BPL   .loop@3_start
    RTS
 
 bcd_to_decimal2:
@@ -627,18 +576,18 @@ to_decimal3:
    STA   DIGITS+1
    STA   DIGITS
    LDA   __zpabi_to_decimal3__n
-   JMP   .loop@5_continue
+   JMP   .loop@4_continue
 .to_decimal3@rot@1:
    INC   DIGITS
    SBC   #$64
-.loop@5_continue:
+.loop@4_continue:
    CMP   #$64
    BCS   .to_decimal3@rot@1
-   JMP   .loop@6_continue
+   JMP   .loop@5_continue
 .to_decimal3@rot@2:
    INC   DIGITS+1
    SBC   #$0A
-.loop@6_continue:
+.loop@5_continue:
    CMP   #$0A
    BCS   .to_decimal3@rot@2
    STA   DIGITS+2
@@ -649,16 +598,16 @@ draw_at_cursor:
 
    LDA   DRAW_PAGE
    CMP   #$40
-   BNE   .if_else@5
+   BNE   .if_else@3
    LDA   __zpabi_draw_at_cursor__sprite
    STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
-   JMP   .if_end@4
-.if_else@5:
+   JMP   .if_end@2
+.if_else@3:
    LDA   __zpabi_draw_at_cursor__sprite
    STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
-.if_end@4:
+.if_end@2:
    INC   GAME_COLNUM
    RTS
 
@@ -676,30 +625,30 @@ char_to_sprite_num:
 
    LDA   __zpabi_char_to_sprite_num__c
    CMP   #$C1
-   BCC   .if_end@8
+   BCC   .if_end@6
    CMP   #$DB
-   BCS   .if_end@8
+   BCS   .if_end@6
    SEC
    SBC   #$7C
    RTS
-.if_end@8:
+.if_end@6:
    CMP   #$A0
-   BNE   .if_end@9
+   BNE   .if_end@7
    LDA   #$00
    RTS
-.if_end@9:
+.if_end@7:
    LDA   #$00
    STA   __local_char_to_sprite_num__i
 .char_to_sprite_num@rot@3:
    LDX   __local_char_to_sprite_num__i
    LDA   __zpabi_char_to_sprite_num__c
    CMP   PUNCTUATION,X
-   BNE   .if_end@10
+   BNE   .if_end@8
    LDA   #$5F
    CLC
    ADC   __local_char_to_sprite_num__i
    RTS
-.if_end@10:
+.if_end@8:
    INC   __local_char_to_sprite_num__i
    LDA   __local_char_to_sprite_num__i
    CMP   #$07
@@ -712,9 +661,9 @@ put_char:
 
    LDA   __zpabi_char_to_sprite_num__c
    CMP   #$8D
-   BNE   .if_end@11
+   BNE   .if_end@9
    JMP   newline
-.if_end@11:
+.if_end@9:
    JSR   char_to_sprite_num
    STA   __zpabi_draw_at_cursor__sprite
    JMP   draw_at_cursor
@@ -734,15 +683,15 @@ put_string:
    STA   __local_put_string__s
    LDA   __zpabi_put_string__s_1
    STA   __local_put_string__1
-   JMP   .loop@8_start
+   JMP   .loop@7_start
 .put_string@rot@4:
    ORA   #$80
    STA   __zpabi_put_char__c
    JSR   put_char
    INC   __local_put_string__s
-   BNE   .loop@8_start
+   BNE   .loop@7_start
    INC   __local_put_string__1
-.loop@8_start:
+.loop@7_start:
    LDY   #$00
    LDA   (__local_put_string__s),Y
    BNE   .put_string@rot@4

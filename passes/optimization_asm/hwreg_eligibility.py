@@ -117,6 +117,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes import decimal_arith
 
 
 @dataclass
@@ -388,6 +389,11 @@ def _operand_roles(instr: asm_ast.Type_instruction):
     The role string drives `_role_ok` to decide if a Pseudo at that
     position can survive HwReg pinning."""
     match instr:
+        case asm_ast.DecimalArith():
+            # ADC / SBC can't read X or Y, so no operand of a BCD
+            # chain goes in a register.
+            for op in decimal_arith.operands(instr):
+                yield ("other", op)
         case asm_ast.Mov(src=src, dst=dst):
             yield ("mov_src", src)
             yield ("mov_dst", dst)

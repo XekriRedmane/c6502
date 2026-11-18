@@ -690,13 +690,11 @@ get_level_from_keyboard:
 level_editor:
    SUBROUTINE
 
-   LDX   #$00
-.level_editor@rot@4:
    LDA   #$00
-   STA   SCORE,X
-   INX
-   CPX   #$04
-   BCC   .level_editor@rot@4
+   STA   SCORE
+   STA   SCORE+1
+   STA   SCORE+2
+   STA   SCORE+3
    LDA   #$05
    STA   LIVES
    STA   GAME_MODE
@@ -772,11 +770,11 @@ editor_clear_level:
 .if_end@11:
    JSR   check_for_valid_data_disk
    LDX   #$00
-.loop@10_start:
+.loop@9_start:
    LDA   #$00
    STA   DISK_BUFFER,X
    INX
-   BNE   .loop@10_start
+   BNE   .loop@9_start
    JMP   editor_clear_level@tail1
 
 editor_clear_level@tail1:
@@ -885,32 +883,32 @@ editor_initialize_disk:
    STA   DISK_LEVEL_LOC
    JSR   editor_move_level@run4
    LDX   #$00
-.editor_initialize_disk@rot@5:
+.editor_initialize_disk@rot@4:
    LDA   saved_vtoc_data+1,X
    STA   DISK_BUFFER,X
    INX
    CPX   #$38
-   BCC   .editor_initialize_disk@rot@5
+   BCC   .editor_initialize_disk@rot@4
    JSR   editor_initialize_disk@run7
    LDA   #$EF
    STA   DISK_LEVEL_LOC
    JSR   editor_move_level@run4
    LDX   #$00
-.editor_initialize_disk@rot@6:
+.editor_initialize_disk@rot@5:
    LDA   SAVED_FILE_DESCRIPTIVE_ENTRY_DATA,X
    STA   DISK_BUFFER+11,X
    INX
    CPX   #$21
-   BCC   .editor_initialize_disk@rot@6
+   BCC   .editor_initialize_disk@rot@5
    JSR   editor_initialize_disk@run7
    JSR   check_for_valid_data_disk@run0
    LDX   #$00
-.editor_initialize_disk@rot@7:
+.editor_initialize_disk@rot@6:
    LDA   HI_SCORE_DATA_MARKER,X
    STA   HI_SCORE_MARKER,X
    INX
    CPX   #$0B
-   BCC   .editor_initialize_disk@rot@7
+   BCC   .editor_initialize_disk@rot@6
    LDA   #$02
    STA   __zpabi_access_hi_score_data_from_disk__command
    JSR   access_hi_score_data_from_disk
@@ -945,11 +943,11 @@ editor_clear_high_scores:
 .if_end@17:
    LDA   #$00
    TAX
-.editor_clear_high_scores@rot@8:
+.editor_clear_high_scores@rot@7:
    STA   HI_SCORES,X
    INX
    CPX   #$50
-   BCC   .editor_clear_high_scores@rot@8
+   BCC   .editor_clear_high_scores@rot@7
    LDA   #$02
    STA   __zpabi_access_hi_score_data_from_disk__command
    JMP   access_hi_score_data_from_disk
@@ -957,7 +955,7 @@ editor_clear_high_scores:
 editor_command_loop:
    SUBROUTINE
 
-.loop@15_start:
+.loop@14_start:
    LDA   GAME_ROWNUM
    CMP   #$09
    BCC   .if_end@18
@@ -970,39 +968,39 @@ editor_command_loop:
    JSR   put_string
    JSR   editor_wait_for_key
    CMP   #$D0
-   BEQ   .case@17
+   BEQ   .case@16
    CMP   #$C3
-   BEQ   .case@18
+   BEQ   .case@17
    CMP   #$C5
-   BEQ   .case@19
+   BEQ   .case@18
    CMP   #$CD
-   BEQ   .case@20
+   BEQ   .case@19
    CMP   #$C9
-   BEQ   .case@21
+   BEQ   .case@20
    CMP   #$D3
-   BEQ   .case@22
-   JMP   .default@23
-.case@17:
+   BEQ   .case@21
+   JMP   .default@22
+.case@16:
    JSR   editor_play_level
-   JMP   .loop@15_start
-.case@18:
+   JMP   .loop@14_start
+.case@17:
    JSR   editor_clear_level
-   JMP   .loop@15_start
-.case@19:
+   JMP   .loop@14_start
+.case@18:
    JSR   editor_edit_level
-   JMP   .loop@15_start
-.case@20:
+   JMP   .loop@14_start
+.case@19:
    JSR   editor_move_level
-   JMP   .loop@15_start
-.case@21:
+   JMP   .loop@14_start
+.case@20:
    JSR   editor_initialize_disk
-   JMP   .loop@15_start
-.case@22:
+   JMP   .loop@14_start
+.case@21:
    JSR   editor_clear_high_scores
-   JMP   .loop@15_start
-.default@23:
+   JMP   .loop@14_start
+.default@22:
    JSR   beep
-   JMP   .loop@15_start
+   JMP   .loop@14_start
 
 edit_level:
    SUBROUTINE
@@ -1068,18 +1066,18 @@ level_edit_change_level:
    LDA   #>str@14
    STA   __zpabi_put_string__s_1
    JSR   hit_key_to_continue@run5
-.loop@24_start:
+.loop@23_start:
    LDA   #$00
    STA   __zpabi_wait_for_key__cursor
    JSR   wait_for_key
    LDY   #$00
    STY   KBDSTRB
    CMP   #$CE
-   BEQ   .loop@24_break
+   BEQ   .loop@23_break
    CMP   #$D9
-   BNE   .loop@24_start
+   BNE   .loop@23_start
    JSR   level_edit_save1
-.loop@24_break:
+.loop@23_break:
 .if_end@23:
    LDA   #$00
    STA   TXTPAGE1
@@ -1130,81 +1128,81 @@ put_sprite_at_cursor:
 edit_level_key_loop:
    SUBROUTINE
 
-   JMP   .loop@25_start
-.edit_level_key_loop@rot@9:
+   JMP   .loop@24_start
+.edit_level_key_loop@rot@8:
    STA   __zpabi_put_sprite_at_cursor__sprite
    JSR   put_sprite_at_cursor
-.loop@25_start:
+.loop@24_start:
    JSR   get_key_for_edit_level
    STA   __local_edit_level_key_loop__1
    SEC
    SBC   #$B0
    CMP   #$0A
-   BCC   .edit_level_key_loop@rot@9
+   BCC   .edit_level_key_loop@rot@8
    LDA   __local_edit_level_key_loop__1
    CMP   #$CA
-   BEQ   .case@27
+   BEQ   .case@26
    CMP   #$C9
-   BEQ   .case@28
+   BEQ   .case@27
    CMP   #$CB
-   BEQ   .case@29
+   BEQ   .case@28
    CMP   #$CD
-   BEQ   .case@30
+   BEQ   .case@29
    CMP   #$93
-   BEQ   .case@31
+   BEQ   .case@30
    CMP   #$95
-   BEQ   .case@32
+   BEQ   .case@31
    CMP   #$88
-   BEQ   .case@33
+   BEQ   .case@32
    CMP   #$91
-   BEQ   .case@34
-   JMP   .switch@26_break
-.case@27:
+   BEQ   .case@33
+   JMP   .switch@25_break
+.case@26:
    LDA   GAME_COLNUM
-   BEQ   .switch@26_break
+   BEQ   .switch@25_break
    DEC   GAME_COLNUM
-   JMP   .loop@25_start
-.case@28:
+   JMP   .loop@24_start
+.case@27:
    LDA   GAME_ROWNUM
-   BEQ   .switch@26_break
+   BEQ   .switch@25_break
    DEC   GAME_ROWNUM
-   JMP   .loop@25_start
-.case@29:
+   JMP   .loop@24_start
+.case@28:
    LDA   GAME_COLNUM
    CMP   #$1B
-   BCS   .switch@26_break
+   BCS   .switch@25_break
    INC   GAME_COLNUM
-   JMP   .loop@25_start
-.case@30:
+   JMP   .loop@24_start
+.case@29:
    LDA   GAME_ROWNUM
    CMP   #$0F
-   BCS   .switch@26_break
+   BCS   .switch@25_break
    INC   GAME_ROWNUM
-   JMP   .loop@25_start
-.case@31:
+   JMP   .loop@24_start
+.case@30:
    JSR   level_edit_save1
-   JMP   .loop@25_start
-.case@32:
+   JMP   .loop@24_start
+.case@31:
    LDA   DISK_LEVEL_LOC
    CMP   #$95
-   BEQ   .switch@26_break
+   BEQ   .switch@25_break
    JSR   level_edit_change_level
    INC   DISK_LEVEL_LOC
    INC   LEVELNUM
    JMP   edit_level
-.case@33:
+.case@32:
    LDA   DISK_LEVEL_LOC
-   BEQ   .switch@26_break
+   BEQ   .switch@25_break
    JSR   level_edit_change_level
    DEC   LEVELNUM
    DEC   DISK_LEVEL_LOC
    JMP   edit_level
-.case@34:
+.case@33:
    JSR   level_edit_change_level
    JMP   start_level_editor
-.switch@26_break:
+.switch@25_break:
    JSR   beep
-   JMP   .loop@25_start
+   JMP   .loop@24_start
 
 format_patch:
    SUBROUTINE
@@ -1230,25 +1228,25 @@ format_patch:
    BNE   .if_end@34
    JMP   DSKFORM
 .if_end@34:
-.loop@35_start:
+.loop@34_start:
    LDX   __local_format_patch__slot16
    LDA   DISK_IO+4,X
    STA   __local_format_patch__b
-   BPL   .loop@35_start
+   BPL   .loop@34_start
 .vthread@0:
    CMP   #$D4
    BNE   .format_patch@await_mark
+.loop@35_start:
+   LDA   DISK_IO+4,X
+   STA   __local_format_patch__b
+   BPL   .loop@35_start
+.vthread@1:
+   CMP   #$D5
+   BNE   .vthread@0
 .loop@36_start:
    LDA   DISK_IO+4,X
    STA   __local_format_patch__b
    BPL   .loop@36_start
-.vthread@1:
-   CMP   #$D5
-   BNE   .vthread@0
-.loop@37_start:
-   LDA   DISK_IO+4,X
-   STA   __local_format_patch__b
-   BPL   .loop@37_start
    CMP   #$D6
    BNE   .vthread@1
    LDA   DISK_IO,X

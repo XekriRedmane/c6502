@@ -56,6 +56,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization_asm.cfg import (
     CFG,
     ENTRY_ID,
@@ -357,6 +358,8 @@ def _operand_fields(
     """Every operand-typed field of `instr`. The shapes here mirror
     `replace_pseudoregisters._operands_in` plus the asm-level Phi."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.operands(instr)
         case asm_ast.Mov(src=src, dst=dst):
             yield src
             yield dst
@@ -415,6 +418,8 @@ def _defs_in(
     ASL / LSR / ROL / ROR similarly — but their names are excluded
     from promotability upstream, so the renaming will skip them."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.pseudo_writes(instr)
         case asm_ast.Mov(dst=dst):
             if isinstance(dst, asm_ast.Pseudo):
                 yield dst
@@ -450,6 +455,8 @@ def _uses_in(
 ) -> Iterable[asm_ast.Pseudo]:
     """Yield Pseudo uses of `instr`."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.pseudo_reads(instr)
         case asm_ast.Mov(src=src):
             if isinstance(src, asm_ast.Pseudo):
                 yield src
@@ -709,6 +716,13 @@ def _rewrite_instruction(
     # By instruction shape: handle uses first (so a self-write reads
     # the OLD value), then defs.
     match instr:
+        case asm_ast.DecimalArith():
+            # Every source byte is read before any dst byte is
+            # written, as far as naming goes: a dst byte that shares
+            # a source byte's name is the same byte k on both sides.
+            return decimal_arith.map_writes(
+                decimal_arith.map_reads(instr, rewrite_use), rewrite_def,
+            )
         case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             new_src = rewrite_use(src)
             new_dst = rewrite_def(dst)

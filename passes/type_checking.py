@@ -107,6 +107,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import builtin_functions
 import c99_ast
 import fp_arith
 from passes.constant_expression import (
@@ -722,8 +723,11 @@ def _const_init_value(
             return _coerce_init_value(bits, fp_t, target_type)
         case c99_ast.Unary() | c99_ast.Binary() | c99_ast.Conditional() \
                 | c99_ast.SizeOfExp() | c99_ast.SizeOfType() \
+                | c99_ast.FunctionCall() \
                 if exp.data_type is not None \
-                and _is_integer_type(_strip_quals(exp.data_type)):
+                and _is_integer_type(_strip_quals(exp.data_type)) \
+                and (not isinstance(exp, c99_ast.FunctionCall)
+                     or builtin_functions.is_builtin(exp.name)):
             # An integer operator expression such as `-5`, `1 << 20`,
             # or `sizeof(long)`. C99 §6.6.6 lets an arithmetic
             # constant expression use these, and the folder already
@@ -2728,6 +2732,111 @@ class TypeChecker:
         exp.data_type = fn_type.ret
         return fn_type.ret
 
+    def _check_builtin_call(
+        self, exp: c99_ast.FunctionCall, name: str, args,
+    ) -> Type:
+        """Types a call of a builtin (builtin_functions.py). Each
+        builtin has its own rules, and docs/builtins.md gives them."""
+        want = builtin_functions.BUILTINS[name]
+        if len(args) != want:
+            raise TypeCheckError(
+                f"{name} takes {want} arguments, got {len(args)}"
+            )
+        if name in (builtin_functions.BCD_ADD, builtin_functions.BCD_SUB):
+            return self._check_bcd_call(exp, name, args)
+        raise AssertionError(f"no type rule for builtin {name}")
+
+    def _check_bcd_call(
+        self, exp: c99_ast.FunctionCall, name: str, args,
+    ) -> Type:
+        """`__c6502_bcd_add(a, b)` and `__c6502_bcd_sub(a, b)`. Each
+        operand has an unsigned integer type other than `_Bool`, or
+        is a nonnegative integer constant expression of any integer
+        type (a plain `0x75`, which is an `int`). The result has the
+        operand type of higher rank, as the usual arithmetic
+        conversions give it without the integer promotions, so two
+        `unsigned char`s give an `unsigned char`. A constant of
+        signed type takes the other operand's type and must fit in
+        it, and two of them give the first of `unsigned int`,
+        `unsigned long`, and `unsigned long long` that holds both.
+        Every operand is converted to the result type, so a narrower
+        one is zero-extended, and a constant becomes a `Constant` of
+        that type, which c99_to_tac folds."""
+        order = (UChar, UShort, UInt, ULong, ULongLong)
+        kinds: list[tuple[Type, int | None]] = []
+        for k, arg in enumerate(args):
+            self._check_exp(arg)
+            arg = _decay_if_array(arg)
+            args[k] = arg
+            t = _strip_quals(arg.data_type)
+            where = f"argument {k + 1} of {name}"
+            if isinstance(t, (Float, Double)):
+                raise TypeCheckError(
+                    f"{where} has floating type {_c_type(t)}; packed BCD "
+                    f"operands must have an unsigned integer type"
+                )
+            if _is_pointer_type(t):
+                raise TypeCheckError(
+                    f"{where} is a pointer ({_c_type(t)}); packed BCD "
+                    f"operands must have an unsigned integer type"
+                )
+            if not _is_integer_type(t):
+                raise TypeCheckError(
+                    f"{where} has type {_c_type(t)}; packed BCD operands "
+                    f"must have an unsigned integer type"
+                )
+            try:
+                value, _ = evaluate_integer_constant_expression(arg)
+            except ConstantExpressionError:
+                value = None
+            if value is not None and value < 0:
+                raise TypeCheckError(
+                    f"{where} is the negative constant {value}; packed "
+                    f"BCD operands are unsigned"
+                )
+            if isinstance(t, (Bool, Char)):
+                raise TypeCheckError(
+                    f"{where} has type {_c_type(t)}; packed BCD operands "
+                    f"must have an unsigned integer type other than "
+                    f"_Bool and plain char (use unsigned char)"
+                )
+            if _is_signed(t) and value is None:
+                raise TypeCheckError(
+                    f"{where} has the signed type {_c_type(t)}; packed "
+                    f"BCD operands must have an unsigned integer type "
+                    f"(cast it, or give a constant a `u` suffix)"
+                )
+            kinds.append((t, value if _is_signed(t) else None))
+        typed = [t for t, adapts in kinds if adapts is None]
+        if typed:
+            result = max(typed, key=lambda t: order.index(type(t)))
+            result = type(result)()
+        else:
+            # A signed constant is at most 2**63 - 1, so one of the
+            # three holds it.
+            biggest = max(v for _, v in kinds)
+            result = next(
+                t() for t in (UInt, ULong, ULongLong)
+                if biggest < 1 << 8 * _int_width(t())
+            )
+        for k, arg in enumerate(args):
+            try:
+                value, _ = evaluate_integer_constant_expression(arg)
+            except ConstantExpressionError:
+                args[k] = _convert_to(arg, result)
+                continue
+            if value >= 1 << 8 * _int_width(result):
+                raise TypeCheckError(
+                    f"argument {k + 1} of {name}, {value:#x}, doesn't fit "
+                    f"in {_c_type(result)}, the type of the result (cast "
+                    f"the other operand to widen it)"
+                )
+            args[k] = c99_ast.Constant(
+                const=_const_for_value(value, result), data_type=result,
+            )
+        exp.data_type = result
+        return result
+
     def _check_callee(self, exp: c99_ast.IndirectCall) -> FunType:
         """Type-checks the callee of `exp`, replacing it with the
         expression that gives the function's address, and returns the
@@ -4634,6 +4743,10 @@ class TypeChecker:
                 exp.right = _decay_if_array(right)
                 exp.data_type = exp.right.data_type
                 return exp.data_type
+            case c99_ast.FunctionCall(name=name, args=args) if (
+                builtin_functions.is_builtin(name)
+            ):
+                return self._check_builtin_call(exp, name, args)
             case c99_ast.FunctionCall(name=name, args=args):
                 sym = self.symbols.get(name)
                 if sym is None:

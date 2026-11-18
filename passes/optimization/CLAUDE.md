@@ -55,6 +55,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   (`FoldStaticConstReads`, PreFixedpointPass wrapping an internal
   `OperandRewritePass`). One-shot post-SSA.
 - `constant_folding.py` — `constant_fold` (`ConstantFold`, WindowPass).
+  A packed BCD `Binary(BcdAdd | BcdSubtract)` of two constants folds
+  at its dst's width with `builtin_functions.bcd_add` / `bcd_sub`
+  (`_fold_bcd`). Every other pass treats those two ops as an opaque
+  pure binary operation.
   Unary / Binary / comparison / cast / conditional-jump-with-constant-
   cond (including a `JumpIfCmp` of two constants) / Phis with agreeing
   args. Width-correct wraparound at the
@@ -288,7 +292,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `o[i].m`. The `offset` field of `IndexedLoad` / `IndexedSymbolStore`
   is kept by every pass that rebuilds one. `c99_to_tac` itself puts a
   constant added to an unsigned byte index of a static array there
-  (`_split_index_addend`), so `t[x + 1]` is `LDA t+1,X`.
+  (`_split_index_addend`), so `t[x + 1]` is `LDA t+1,X`. A subscript
+  of a cast of a static object's address, `((uint8_t *)&S)[i]` or
+  `*((uint8_t *)&S + i)`, reads `S` as an array (`_object_view`) and
+  lowers to `IndexedLoad(S, i)` / `IndexedSymbolStore(S, i, v)` the
+  same way.
 - `compare_subtract.py` — `hoist_subtract_to_compare`
   (`HoistSubtractToCompare`, PostFixedpointPass). Moves `t = a - b`
   from a successor (whose only predecessor is the compare's block) to

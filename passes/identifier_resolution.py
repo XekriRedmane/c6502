@@ -96,6 +96,7 @@ from __future__ import annotations
 from enum import Enum
 
 import c99_ast
+from builtin_functions import is_builtin
 
 
 class Linkage(Enum):
@@ -430,6 +431,7 @@ class Resolver:
         return Linkage.EXTERNAL
 
     def _record_file_scope(self, name: str, linkage: Linkage) -> None:
+        _reject_builtin_name(name)
         # File-scope identifiers aren't renamed (linker uses the
         # source spelling), so resolved_name == name. Reject a
         # change-of-linkage redeclaration; a same-linkage redeclaration
@@ -644,6 +646,7 @@ class Resolver:
                 raise IdentifierResolutionError(
                     f"duplicate parameter name {original!r}"
                 )
+            _reject_builtin_name(original)
             unique = self.make_unique(original)
             scope[original] = (unique, True, Linkage.NONE)
             renamed.append(unique)
@@ -784,6 +787,7 @@ class Resolver:
         incompatible same-block redeclaration. Callers compute the
         resolved name (for NONE-linkage) or pass the source name
         (for INTERNAL/EXTERNAL)."""
+        _reject_builtin_name(original)
         existing = scope.get(original)
         if existing is not None and existing[1]:
             # Same-block redeclaration. Allowed only when both old and
@@ -1045,6 +1049,10 @@ class Resolver:
                 # context is legal; we just hand off the resolved name.
                 if name in scope:
                     return c99_ast.Var(name=scope[name][0])
+                if is_builtin(name):
+                    raise IdentifierResolutionError(
+                        f"{name} is a builtin, which can only be called"
+                    )
                 raise IdentifierResolutionError(
                     f"undeclared identifier {name!r}"
                 )
@@ -1221,6 +1229,13 @@ class Resolver:
                 # scope entry); the type checker enforces "the name
                 # actually denotes a function".
                 new_args = [self.resolve_exp(a, scope) for a in args]
+                if is_builtin(name):
+                    # A builtin (builtin_functions.py) keeps its name,
+                    # which no declaration can take.
+                    return c99_ast.FunctionCall(
+                        name=name, args=new_args,
+                        hw_stack_save=exp.hw_stack_save,
+                    )
                 if name in scope:
                     return c99_ast.FunctionCall(
                         name=scope[name][0], args=new_args,
@@ -1238,6 +1253,16 @@ class Resolver:
                     hw_stack_save=exp.hw_stack_save,
                 )
         raise TypeError(f"unexpected exp: {exp!r}")
+
+
+def _reject_builtin_name(name: str) -> None:
+    """Raises when a declaration names a builtin. Its name is in the
+    implementation's reserved namespace (C99 §7.1.3), and a call to it
+    would still reach the builtin."""
+    if is_builtin(name):
+        raise IdentifierResolutionError(
+            f"{name} is a builtin and can't be declared"
+        )
 
 
 def resolve_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:

@@ -9,7 +9,7 @@ once, after the TAC fixed point and before
 [indirect-indexed access through a pointer](recognize_indirect_indexed.md),
 under `-O`.
 
-Three other changes make the index a byte for it to work with, and
+Four other changes make the index a byte for it to work with, and
 put a constant part of it in the offset:
 
 - `c99_to_tac` scales an index into an array object at byte width
@@ -34,7 +34,29 @@ put a constant part of it in the offset:
   element size within a byte. Zork's `instr_call` reads
   `LOCAL_ZVARS[x + 1]` as `LDA LOCAL_ZVARS+1,X`, where it computed
   `x + 1` in A and kept it in a slot. `(uint8_t)(x + 1)` wraps at 255,
-  and the cast keeps the add in place.
+  and the cast keeps the add in place. The constant may be a `sizeof`,
+  as in `((uint8_t *)HI_SCORES)[i + sizeof(struct hi_score)]`. A
+  constant index is the element's byte offset, so `t[2]` reads `t+2`
+  in both pipelines.
+- A subscript of a cast of an object's address, `((T *)&obj)[i]` or
+  `*((T *)&obj + i)`, reads `obj` as an array of `T`
+  (`c99_to_tac._object_view`). C99 §6.5.7 allows the access for any
+  object when `T` is a character type, and it's how Lode Runner reads
+  the packed BCD `uint32_t SCORE` a byte at a time. When `obj` has
+  static storage and spans at most 256 bytes, and `T` is an integer
+  or pointer type, `c99_to_tac` lowers the subscript as it lowers one
+  of a static array at `obj`'s address, to `IndexedLoad(obj, i)` or
+  `IndexedSymbolStore(obj, i, v)`. `SCORE_BYTES[3 - i]` in Lode
+  Runner's `beats` is then `LDA SCORE,X`, where it built the pointer
+  `SCORE + (3 - i)` in two zero-page bytes and read `LDA (p),Y`. That
+  took `beats` from 87 bytes to 61, the size it had when `SCORE` was
+  declared as a byte array. The access names `obj`, so every pass
+  that tracks `obj`'s value treats it as a read or write of `obj`. A
+  compound assignment or an increment goes through the address, as
+  one of an array element does, and `_byte_offset_scale` scales its
+  index at byte width when `obj` spans at most 255 bytes, so this pass
+  makes it indexed. An automatic object is left to the pointer, since
+  it has no link-time address.
 
 The rewrite is exact for any size of object: `abs,X` adds the index
 to the full 16-bit address `o+m`, as the `Load` through `o + i + m`

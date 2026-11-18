@@ -79,6 +79,7 @@ byte per occurrence (TXA = 1 byte vs LDA abs = 3 bytes / LDA zp =
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 
 
 def apply_x_save_slot_load(prog: asm_ast.Program) -> asm_ast.Program:
@@ -265,6 +266,12 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     # a Pop into M, breaks the invariant.
     disqualified: set[tuple] = set()
     for i, instr in enumerate(instrs):
+        if isinstance(instr, asm_ast.DecimalArith):
+            for w in decimal_arith.writes(instr):
+                key = _op_key(w)
+                if key is not None and key in candidates:
+                    disqualified.add(key)
+            continue
         if isinstance(instr, asm_ast.Mov):
             key = _op_key(instr.dst)
             if key is None or key not in candidates:

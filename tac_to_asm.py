@@ -62,6 +62,14 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                threads through each successive SBC.
   Binary(BitwiseAnd/Or/Xor) -> Byte op on each pair of bytes; no carry
                                threading needed (these don't touch C).
+  Binary(BcdAdd/BcdSubtract) -> One DecimalArith, with each byte of
+                               src1, src2, and dst in its lists, low
+                               byte first. asm_to_asm2 expands it to
+                               SED; CLC (SEC); LDA/ADC (SBC)/STA per
+                               byte; CLD, and keeping it one
+                               instruction until then keeps every asm
+                               pass out of the decimal-mode region
+                               (passes/decimal_arith.py).
   Binary(Equal/NotEqual)    -> Int: Compare + Branch + 0/1 select.
                                Multi-byte: walk bytes high→low, BNE
                                short-circuit on each except the
@@ -3551,6 +3559,16 @@ class Translator:
                 dst_op=dst_op,
             )
         match op:
+            case tac_ast.BcdAdd() | tac_ast.BcdSubtract():
+                # One instruction for the whole decimal-mode chain, so
+                # that no asm pass can put code between its SED and
+                # CLD (passes/decimal_arith.py).
+                return [asm_ast.DecimalArith(
+                    subtract=isinstance(op, tac_ast.BcdSubtract),
+                    left=[_byte_at(src1_op, k) for k in range(size)],
+                    right=[_byte_at(src2_op, k) for k in range(size)],
+                    dst=[_byte_at(dst_op, k) for k in range(size)],
+                )]
             case tac_ast.Add():
                 return self._translate_add_sub(
                     src1_op, src2_op, dst_op, size,

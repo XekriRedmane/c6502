@@ -406,8 +406,8 @@ def _writes_reg_a(instr: asm_ast.Type_instruction) -> bool:
         case asm_ast.RotateLeft(dst=d) | asm_ast.RotateRight(dst=d):
             if is_a(d):
                 return True
-        case asm_ast.Call() | asm_ast.LoadAddress():
-            # Both clobber A in their lowering.
+        case asm_ast.Call() | asm_ast.LoadAddress() | asm_ast.DecimalArith():
+            # All three clobber A in their lowering.
             return True
     return False
 

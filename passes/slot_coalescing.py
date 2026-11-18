@@ -113,6 +113,7 @@ from __future__ import annotations
 import dataclasses
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_aliasing import _instruction_operands, unreachable_by_pointer
 
 _RMW = (
@@ -390,9 +391,13 @@ def _reads_writes(ins, names, ctx: _Ctx = _NO_CTX) -> tuple[set[str], set[str]]:
     # another function's slot: functions that are never active together
     # can share bytes, and the linker allocates them again for the whole
     # program. Only a function's own slots are certainly apart.
+    written = (
+        decimal_arith.writes(ins) if isinstance(ins, asm_ast.DecimalArith)
+        else [getattr(ins, "dst", None)]
+    )
     for op in _instruction_operands(ins):
         if (isinstance(op, asm_ast.Data) and op.name.startswith("__zpabi_")
-                and op is getattr(ins, "dst", None)):
+                and any(op is w for w in written)):
             owner = ctx.slot_owner(op.name)
             writes |= {s for s in names if s in ctx.owners
                        and ctx.owners[s] != owner}
@@ -403,6 +408,14 @@ def _direct_reads_writes(ins, names) -> tuple[set[str], set[str]]:
     """The names `ins` reads and writes by name."""
     reads: set[str] = set()
     writes: set[str] = set()
+    if isinstance(ins, asm_ast.DecimalArith):
+        # Its names are all excluded (`_excluded`), so this only has
+        # to be right for liveness, where its reads come first.
+        reads = {op.name for op in decimal_arith.reads(ins) if _data(op, names)}
+        writes = {
+            op.name for op in decimal_arith.writes(ins) if _data(op, names)
+        }
+        return reads, writes
     if isinstance(ins, (asm_ast.Mov, asm_ast.Pop)):
         if isinstance(ins, asm_ast.Mov) and _data(ins.src, names):
             reads.add(ins.src.name)

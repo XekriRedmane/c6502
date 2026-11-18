@@ -722,10 +722,7 @@ static void level_cleared(void) {
 /* Starts a game or the demo with 5 lives and plays it level by level.
  * A game first checks that the disk is a data disk or the master. */
 void init_game_data(void) {
-    SCORE[0] = 0;
-    SCORE[1] = 0;
-    SCORE[2] = 0;
-    SCORE[3] = 0;
+    SCORE = 0;
     GUARD_PATTERN_OFFSET = 0;
     WIPE_MODE = 0;
     GUARD_RESURRECT_COL = 0;

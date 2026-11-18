@@ -98,9 +98,11 @@ def _label_refs(instrs) -> dict[str, list[int]]:
     for i, ins in enumerate(instrs):
         if isinstance(ins, (asm_ast.Branch, asm_ast.Jump)):
             refs.setdefault(ins.target, []).append(i)
-        for op in vars(ins).values():
-            if isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
-                refs.setdefault(op.name, []).append(-1)
+        for field in vars(ins).values():
+            # `DecimalArith` keeps its operands in lists.
+            for op in field if isinstance(field, list) else (field,):
+                if isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
+                    refs.setdefault(op.name, []).append(-1)
     return refs
 
 

@@ -123,6 +123,7 @@ long-branch displacement check is invalidated.
 from __future__ import annotations
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_liveness import flags_dead_at
 
 
@@ -222,6 +223,8 @@ def _references_y(instr: asm_ast.Type_instruction) -> bool:
     that `asm_emit` puts in front of an `Indirect`, `IndirectZp`,
     `Frame`, or `Stack` access. A call or tail-call jump that passes
     an argument in Y counts too."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return decimal_arith.writes_y(instr)
     if isinstance(instr, (asm_ast.Call, asm_ast.Jump)) and (
         "Y" in instr.reg_args
     ):
@@ -541,6 +544,11 @@ def _fix_op(op: asm_ast.Type_operand) -> asm_ast.Type_operand:
 def _writes_name(instr: asm_ast.Type_instruction, name: str) -> bool:
     """True iff `instr` writes a byte of the object `name`, directly
     or through an index."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return any(
+            isinstance(w, asm_ast.Data) and w.name == name
+            for w in decimal_arith.writes(instr)
+        )
     dst = getattr(instr, "dst", None)
     if isinstance(instr, (asm_ast.Push, asm_ast.Compare, asm_ast.BitTest)):
         return False

@@ -216,6 +216,17 @@ module TAC {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
+        -- Packed BCD addition and subtraction, from the builtins
+        -- `__c6502_bcd_add` and `__c6502_bcd_sub` (builtin_functions.py,
+        -- docs/builtins.md). Both operands and `dst` have the same
+        -- unsigned type, each byte holding two decimal digits, low
+        -- byte first. The carry (or borrow) out of the top byte is
+        -- dropped. The result for a digit that isn't 0-9 is what the
+        -- NMOS 6502's decimal-mode ADC / SBC gives (py65's model).
+        -- Every pass that doesn't name these ops treats them as an
+        -- opaque pure operation. tac_to_asm lowers them to one asm
+        -- `DecimalArith`.
+        | BcdAdd | BcdSubtract
     -- TAC's `data_type` sum covers c99's object-typed scalar
     -- categories. Pointer is its own variant because a 6502 address
     -- (2 bytes) is narrower than `Long` (4 bytes) under the

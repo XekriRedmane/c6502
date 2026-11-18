@@ -747,9 +747,11 @@ def _operand_roles(instr):
     # leave X stale: `STA M; ROL M; INC M; LDX M` once promoted M to
     # X with the `ROL` still updating memory.
     for f in dataclasses.fields(instr):
-        op = getattr(instr, f.name)
-        if isinstance(op, (asm_ast.Data, asm_ast.ZP)):
-            yield ('other', op)
+        field = getattr(instr, f.name)
+        # `DecimalArith` keeps its operands in lists.
+        for op in field if isinstance(field, list) else (field,):
+            if isinstance(op, (asm_ast.Data, asm_ast.ZP)):
+                yield ('other', op)
 
 
 def _find_loop_top_lda(instrs, dec_idx, ldx_indices):

@@ -80,6 +80,7 @@ from __future__ import annotations
 import dataclasses
 
 import asm_ast
+from passes import decimal_arith
 from passes.asm_liveness import sets_up_y
 from passes.asm_aliasing import may_alias, runtime_zp_addrs
 
@@ -283,6 +284,8 @@ def _writes_a(instr: asm_ast.Type_instruction) -> bool:
     Mov (those are caught by the caller). Arithmetic / logic ops
     on Reg(A) write A; in-place shifts on Reg(A) too; Pop(A)
     writes A."""
+    if isinstance(instr, asm_ast.DecimalArith):
+        return True
     if isinstance(instr, (
         asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
     )):
@@ -488,7 +491,9 @@ def _read_operands(
     conservative on them. `Mov.src` is read; `Mov.dst` is not
     (Mov is a pure write to its dst)."""
     out: list[asm_ast.Type_operand] = []
-    if isinstance(instr, asm_ast.Mov):
+    if isinstance(instr, asm_ast.DecimalArith):
+        out.extend(decimal_arith.reads(instr))
+    elif isinstance(instr, asm_ast.Mov):
         out.append(instr.src)
     elif isinstance(instr, (asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or)):
         out.append(instr.src)
@@ -769,7 +774,7 @@ def _is_block_boundary(instr: asm_ast.Type_instruction) -> bool:
         asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
         asm_ast.Call, asm_ast.Ret, asm_ast.Return,
         asm_ast.FunctionPrologue, asm_ast.AllocateStack,
-        asm_ast.LoadAddress,
+        asm_ast.LoadAddress, asm_ast.DecimalArith,
     ))
 
 
@@ -797,7 +802,9 @@ def _dsts_of(
     """Yield every operand `instr` writes (the dst side; reads aren't
     yielded). Used to compute the set of statically-written names."""
     out: list[asm_ast.Type_operand] = []
-    if isinstance(instr, asm_ast.Mov):
+    if isinstance(instr, asm_ast.DecimalArith):
+        out.extend(decimal_arith.writes(instr))
+    elif isinstance(instr, asm_ast.Mov):
         out.append(instr.dst)
     elif isinstance(instr, (
         asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or, asm_ast.Xor,

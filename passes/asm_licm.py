@@ -210,6 +210,10 @@ def _try_hoist_one(
     # No Calls allowed in the body — conservative.
     if any(isinstance(instrs[k], asm_ast.Call) for k in body_range):
         return None
+    # A packed BCD chain writes several bytes, which the single-dst
+    # write count below doesn't model.
+    if any(isinstance(instrs[k], asm_ast.DecimalArith) for k in body_range):
+        return None
     # Tally write-counts to each Data/ZP key inside the body so we
     # can recognize "only this Mov writes M" (for the dst check) and
     # "no instruction writes this cell" (for the src check on the

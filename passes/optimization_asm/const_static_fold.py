@@ -49,6 +49,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes import decimal_arith
 import c99_ast
 
 
@@ -218,6 +219,10 @@ def _scan_instr(
         # LoadAddress.dst is always a 2-byte temp; static names
         # don't reach there.
         return
+    if isinstance(instr, asm_ast.DecimalArith):
+        for op in decimal_arith.writes(instr):
+            if isinstance(op, asm_ast.Pseudo) and op.name in candidates:
+                disqualified.add(op.name)
     # Write destinations of arithmetic / RMW atoms.
     write_dst = _write_destination(instr)
     if (
@@ -285,6 +290,8 @@ def _operand_uses(
     yielded (use `_write_destination` for that). Used by the
     disqualification scan to find IndexedData references."""
     match instr:
+        case asm_ast.DecimalArith():
+            yield from decimal_arith.reads(instr)
         case asm_ast.Mov(src=src):
             yield src
         case asm_ast.Add(src=src) | asm_ast.Sub(src=src):
@@ -358,6 +365,8 @@ def _rewrite_instr(
         return op
 
     match instr:
+        case asm_ast.DecimalArith():
+            return decimal_arith.map_reads(instr, sub)
         case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             return asm_ast.Mov(src=sub(src), dst=dst, is_volatile=v)
         case asm_ast.Add(src=src, dst=dst):

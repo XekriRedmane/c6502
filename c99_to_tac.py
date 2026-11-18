@@ -225,6 +225,12 @@ Mapping:
                                  Python). A `None` inner data_type
                                  (synthetic AST that bypassed
                                  type-checking) falls back to elide.
+  C99 FunctionCall(builtin)   -> `_translate_builtin`. A packed BCD
+                                 builtin evaluates its two operands,
+                                 which the type checker converted to
+                                 the result type, and emits
+                                 Binary(BcdAdd | BcdSubtract), or a
+                                 constant when both are constants.
   C99 FunctionCall(name, args) -> evaluate each arg in source order
                                  (left-most temp first), mint a
                                  fresh typed dst temp, emit one
@@ -376,6 +382,7 @@ from __future__ import annotations
 
 import dataclasses
 
+import builtin_functions
 import c99_ast
 import fp_arith
 import tac_ast
@@ -1214,7 +1221,16 @@ def _byte_offset_scale(array: c99_ast.Type_exp, types=None) -> int | None:
     bytes, so that the byte offset of any index C defines fits in a
     byte (see `_translate_subscript_address`); else None. `&arr`
     written out is a pointer to the whole array, not a decay, and a
-    pointer operand isn't an array object."""
+    pointer operand isn't an array object.
+
+    A cast of an object's address, `((uint8_t *)&score)[i]`, reads
+    the object as an array (`_object_view`). Its offset is scaled in
+    a byte when the object spans at most 255 bytes, so that the
+    address one past its end fits too."""
+    view = _object_view(array, types)
+    if view is not None:
+        _, elem, total = view
+        return elem if total <= 255 else None
     if not isinstance(array, c99_ast.AddressOf):
         return None
     arr_t = _strip_quals_c99(array.exp.data_type)
@@ -1232,12 +1248,13 @@ def _byte_offset_scale(array: c99_ast.Type_exp, types=None) -> int | None:
 
 
 def _split_index_addend(
-    index: c99_ast.Type_exp, total: int, elem_size: int,
+    index: c99_ast.Type_exp, total: int, elem_size: int, types=None,
 ) -> tuple[c99_ast.Type_exp, int] | None:
     """`(e, k)` when the subscript `index` into a static array of
     `total` bytes (at most 256) is `e + k` or `k + e`, with `e` an
     unsigned byte widened to at least 2 bytes and `k` a constant from
-    0 up to the last element, else None.
+    0 up to the last element, else None. `k` may be a `sizeof`
+    (`_exact_const_index`), as in `((uint8_t *)t)[i + sizeof *t]`.
 
     The sum is at most 510, so the add can't wrap, and an index C
     defines leaves `e * elem_size` within a byte. The access then
@@ -1255,21 +1272,138 @@ def _split_index_addend(
             and _sizeof(index.data_type) >= 2):
         return None
     for e, k in ((index.left, index.right), (index.right, index.left)):
-        if not (isinstance(k, c99_ast.Constant)
-                and isinstance(k.const, (
-                    c99_ast.ConstInt, c99_ast.ConstLong,
-                    c99_ast.ConstLongLong, c99_ast.ConstUInt,
-                    c99_ast.ConstULong, c99_ast.ConstULongLong))
-                and 0 <= k.const.value
-                and k.const.value * elem_size < total):
+        value = _exact_const_index(k, types)
+        if value is None or not 0 <= value * elem_size < total:
             continue
+        # `i + sizeof(T)` widens `i` to `int` and then to `size_t`.
+        # Each cast keeps a byte's value, so the inner one will do.
+        while (isinstance(e, c99_ast.Cast)
+               and _is_integer_type_c99(e.target_type)
+               and _sizeof(e.target_type) >= 2
+               and isinstance(e.exp, c99_ast.Cast)
+               and _is_integer_type_c99(e.exp.target_type)
+               and _sizeof(e.exp.target_type) >= 2):
+            e = e.exp
         if not (isinstance(e, c99_ast.Cast)
                 and _sizeof(e.target_type) >= 2
                 and e.exp.data_type is not None
                 and isinstance(_strip_quals_c99(e.exp.data_type), (
                     c99_ast.UChar, c99_ast.Char, c99_ast.Bool))):
             continue
-        return e, k.const.value
+        return e, value
+    return None
+
+
+def _exact_const_index(exp: c99_ast.Type_exp, types=None) -> int | None:
+    """The value of `exp` when it's an integer Constant or a `sizeof`,
+    under integer casts, else None. Each cast converts the value as C
+    does (C99 §6.3.1.3), so `(signed char)200` is -56.
+    `_const_int_or_none` skips the casts, which is only right for
+    casts that keep the value. A `sizeof` of a struct needs the
+    TypeTable `types`."""
+    if (isinstance(exp, c99_ast.Constant)
+            and isinstance(exp.const, (
+                c99_ast.ConstInt, c99_ast.ConstLong,
+                c99_ast.ConstLongLong, c99_ast.ConstUInt,
+                c99_ast.ConstULong, c99_ast.ConstULongLong,
+                c99_ast.ConstChar, c99_ast.ConstUChar))):
+        return exp.const.value
+    if isinstance(exp, c99_ast.SizeOfType):
+        return _sizeof(exp.target_type, types)
+    if isinstance(exp, c99_ast.SizeOfExp) and exp.exp.data_type is not None:
+        return _sizeof(exp.exp.data_type, types)
+    if not (isinstance(exp, c99_ast.Cast)
+            and _is_integer_type_c99(exp.target_type)):
+        return None
+    v = _exact_const_index(exp.exp, types)
+    if v is None:
+        return None
+    target = _strip_quals_c99(exp.target_type)
+    if isinstance(target, c99_ast.Bool):
+        return int(v != 0)
+    return _reinterpret_int(
+        v, _sizeof(target), not _is_unsigned_integer(target),
+    )
+
+
+def _cast_address_object(ptr: c99_ast.Type_exp) -> c99_ast.Var | None:
+    """The `Var` of `obj` when the pointer expression `ptr` is `(T
+    *)&obj`, `(T *)arr` for an array `arr`, or either with more
+    pointer casts in between, as in `(T *)(void *)&obj`. Else None.
+
+    Reading or writing an object's bytes through such a pointer, with
+    T a character type, is the access C99 §6.5.7 allows for every
+    object, so `((uint8_t *)&score)[i]` is the way to read byte `i`
+    of a `uint32_t`."""
+    if not (isinstance(ptr, c99_ast.Cast)
+            and isinstance(_unqualified(ptr.target_type), c99_ast.Pointer)):
+        return None
+    inner = ptr.exp
+    while (isinstance(inner, c99_ast.Cast)
+           and isinstance(_unqualified(inner.target_type), c99_ast.Pointer)
+           and inner.exp.data_type is not None
+           and isinstance(_unqualified(inner.exp.data_type),
+                          c99_ast.Pointer)):
+        inner = inner.exp
+    if isinstance(inner, c99_ast.AddressOf) and isinstance(
+        inner.exp, c99_ast.Var,
+    ):
+        return inner.exp
+    return None
+
+
+_VIEW_ELEMENTS = (
+    c99_ast.Char, c99_ast.SChar, c99_ast.UChar, c99_ast.Bool,
+    c99_ast.Int, c99_ast.UInt, c99_ast.Long, c99_ast.ULong,
+    c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Pointer,
+)
+
+
+def _object_view(
+    ptr: c99_ast.Type_exp, types=None,
+) -> tuple[c99_ast.Var, int, int] | None:
+    """`(obj, element size, object size)` when `ptr` is a cast of
+    `obj`'s address (`_cast_address_object`) to a pointer to an
+    integer or pointer type, and `obj` has a known size of at most
+    256 bytes. Subscripting `ptr` then reads the object as an array
+    of that element type. Else None."""
+    obj = _cast_address_object(ptr)
+    if obj is None or obj.data_type is None:
+        return None
+    elem_t = _unqualified(_unqualified(ptr.target_type).referenced_type)
+    if not isinstance(elem_t, _VIEW_ELEMENTS):
+        return None
+    obj_t = _unqualified(obj.data_type)
+    if isinstance(obj_t, c99_ast.FunType) or (
+        isinstance(obj_t, c99_ast.Array) and not obj_t.size
+    ):
+        return None
+    total = _sizeof(obj_t, types)
+    elem = _sizeof(elem_t, types)
+    if not 1 <= elem <= total <= 256:
+        return None
+    return obj, elem, total
+
+
+def _deref_as_subscript(
+    ptr: c99_ast.Type_exp,
+) -> tuple[c99_ast.Type_exp, c99_ast.Type_exp] | None:
+    """`(p, k)` when `*ptr` is `*(p + k)`, `*(k + p)`, or `*p`, with
+    `p` a cast of an object's address (`_cast_address_object`), so
+    that `*ptr` is `p[k]` (C99 §6.5.2.1p2). `*p` is `p[0]`. Else
+    None, and an ordinary dereference is left as it is."""
+    if _cast_address_object(ptr) is not None:
+        return ptr, c99_ast.Constant(
+            const=c99_ast.ConstInt(value=0), data_type=c99_ast.Int(),
+        )
+    if not (isinstance(ptr, c99_ast.Binary)
+            and isinstance(ptr.op, c99_ast.Add)):
+        return None
+    for p, k in ((ptr.left, ptr.right), (ptr.right, ptr.left)):
+        if (_cast_address_object(p) is not None
+                and k.data_type is not None
+                and _is_integer_type_c99(k.data_type)):
+            return p, k
     return None
 
 
@@ -1385,6 +1519,37 @@ class Translator:
             attrs=LocalAttr(),
         )
         return name
+
+    def _translate_builtin(
+        self, exp: c99_ast.FunctionCall, name: str, args, instrs,
+    ) -> tac_ast.Type_val:
+        """Lowers a call of a builtin (builtin_functions.py). The
+        packed BCD builtins become `Binary(BcdAdd)` or
+        `Binary(BcdSubtract)`. The type checker converted both
+        operands to the result type, and when both are constants the
+        result is folded here, in both pipelines."""
+        a = self.translate_exp(args[0], instrs)
+        b = self.translate_exp(args[1], instrs)
+        add = name == builtin_functions.BCD_ADD
+        t = _strip_quals_c99(exp.data_type)
+        if isinstance(a, tac_ast.Constant) and isinstance(b, tac_ast.Constant):
+            width = {
+                c99_ast.UChar: 1, c99_ast.UInt: 2, c99_ast.UShort: 2,
+                c99_ast.ULong: 4, c99_ast.ULongLong: 8,
+            }[type(t)]
+            fold = builtin_functions.bcd_add if add else builtin_functions.bcd_sub
+            value = fold(a.const.value, b.const.value, width)
+            const_cls = {
+                1: tac_ast.ConstUChar, 2: tac_ast.ConstUInt,
+                4: tac_ast.ConstULong, 8: tac_ast.ConstULongLong,
+            }[width]
+            return tac_ast.Constant(const=const_cls(value=value))
+        dst = tac_ast.Var(name=self.make_temporary_variable_name(t))
+        instrs.append(tac_ast.Binary(
+            op=tac_ast.BcdAdd() if add else tac_ast.BcdSubtract(),
+            src1=a, src2=b, dst=dst,
+        ))
+        return dst
 
     def _returns_carry_struct(self, fn_name: str) -> bool:
         """True iff `fn_name` is a `return_bool_in_carry` function that
@@ -2565,6 +2730,14 @@ class Translator:
                     # conversion via the type checker's _convert_to),
                     # so we return rval_val for the chained-assignment
                     # case `*q = *p = 5`.
+                    #
+                    # `*((uint8_t *)&obj + k)` is `((uint8_t *)&obj)[k]`
+                    # and stores as that subscript does.
+                    sub = _deref_as_subscript(lval.exp)
+                    if sub is not None and self._try_indexed_store_subscript(
+                        sub[0], sub[1], rval_val, is_vol, instrs,
+                    ):
+                        return rval_val
                     ptr_val = self.translate_exp(lval.exp, instrs)
                     instrs.append(tac_ast.Store(
                         src=rval_val, dst_ptr=ptr_val,
@@ -2577,7 +2750,7 @@ class Translator:
                     # on the rvalue side); fall back to general
                     # pointer arithmetic + Store.
                     if self._try_indexed_store_subscript(
-                        lval, rval_val, is_vol, instrs,
+                        lval.array, lval.index, rval_val, is_vol, instrs,
                     ):
                         return rval_val
                     addr = self._translate_subscript_address(
@@ -2672,6 +2845,10 @@ class Translator:
                 # emitted by the two sub-translations IS the comma.
                 self.translate_exp(left, instrs)
                 return self.translate_exp(right, instrs)
+            case c99_ast.FunctionCall(name=name, args=args) if (
+                builtin_functions.is_builtin(name)
+            ):
+                return self._translate_builtin(exp, name, args, instrs)
             case c99_ast.FunctionCall(name=name, args=args):
                 return self._translate_call(exp, name, None, args, instrs)
             case c99_ast.IndirectCall(callee=callee, args=args):
@@ -2718,6 +2895,16 @@ class Translator:
                 # handled in the Assignment case above; that path
                 # never reaches this one because Assignment doesn't
                 # call translate_exp on its lval.
+                #
+                # `*((uint8_t *)&obj + k)` is `((uint8_t *)&obj)[k]`
+                # (C99 §6.5.2.1p2) and reads as that subscript does.
+                sub = _deref_as_subscript(inner)
+                if sub is not None:
+                    fast = self._try_indexed_load_subscript(
+                        sub[0], sub[1], exp, instrs,
+                    )
+                    if fast is not None:
+                        return fast
                 ptr_val = self.translate_exp(inner, instrs)
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
@@ -3337,7 +3524,29 @@ class Translator:
             dimensions (a partial subscript that yields a sub-
             array is NOT eligible — its dst would be an array, not
             a scalar).
+
+        A cast of a static object's address, `((uint8_t *)&score)[i]`,
+        reads the object as an array of the pointed-to type
+        (`_object_view`), and lowers as a single-dim array at the
+        object's address does.
         """
+        view = self._static_object_view(array)
+        if view is not None:
+            name, elem_size, total, obj_volatile = view
+            got = self._byte_index(index, total, elem_size, instrs)
+            if got is None:
+                return None
+            byte_idx, offset = got
+            dst = tac_ast.Var(
+                name=self.make_temporary_variable_name(exp.data_type),
+            )
+            instrs.append(tac_ast.IndexedLoad(
+                name=name, index=byte_idx, dst=dst,
+                is_volatile=(obj_volatile
+                             or _is_volatile_quals_c99(exp.data_type)),
+                offset=offset,
+            ))
+            return dst
         # Walk inside-out, collecting (index, ...) for each
         # subscript level. Single-dim case: indices_outer_to_inner
         # ends up as [index]. Multi-dim case (nested
@@ -3417,65 +3626,137 @@ class Translator:
             return dst
 
         # Single-dim path with possibly-runtime index.
-        # Compute the 1-byte index. The type checker widened idx to
-        # Long; we evaluate at that width and Truncate. A constant
-        # added to the index goes in the offset.
-        idx_exp, addend = _split_index_addend(
-            indices_outer_to_inner[0], total, elem_size,
-        ) or (indices_outer_to_inner[0], 0)
-        idx_val = self.translate_exp(idx_exp, instrs)
-        byte_idx = tac_ast.Var(
-            name=self.make_temporary_variable_name(c99_ast.UChar()),
+        got = self._byte_index(
+            indices_outer_to_inner[0], total, elem_size, instrs,
         )
-        instrs.append(tac_ast.Truncate(src=idx_val, dst=byte_idx))
-
-        if elem_size == 1:
-            scaled_byte: tac_ast.Type_val = byte_idx
-        else:
-            scaled_byte = tac_ast.Var(
-                name=self.make_temporary_variable_name(c99_ast.UChar()),
-            )
-            instrs.append(tac_ast.Binary(
-                op=tac_ast.Multiply(),
-                src1=byte_idx,
-                src2=tac_ast.Constant(
-                    const=tac_ast.ConstUChar(value=elem_size),
-                ),
-                dst=scaled_byte,
-            ))
-
+        if got is None:
+            return None
+        scaled_byte, offset = got
         dst = tac_ast.Var(
             name=self.make_temporary_variable_name(exp.data_type),
         )
         instrs.append(tac_ast.IndexedLoad(
             name=base_var.name, index=scaled_byte, dst=dst,
             is_volatile=_is_volatile_quals_c99(exp.data_type),
-            offset=addend * elem_size,
+            offset=offset,
         ))
         return dst
 
+    def _static_object_view(
+        self, array: c99_ast.Type_exp,
+    ) -> tuple[str, int, int, bool] | None:
+        """`(name, element size, object size, volatile)` when `array`
+        is a cast of the address of an object with static storage
+        (`_object_view`), else None. The last is True when the object
+        itself is volatile, and every access to it through the cast
+        is then made volatile too."""
+        view = _object_view(array, self._types)
+        if view is None:
+            return None
+        obj, elem_size, total = view
+        sym = self._symbols.get(obj.name)
+        if sym is None or not isinstance(sym.attrs, StaticAttr):
+            return None
+        t = sym.type
+        obj_volatile = False
+        while isinstance(t, (c99_ast.Const, c99_ast.Volatile, c99_ast.Array)):
+            if isinstance(t, c99_ast.Volatile):
+                obj_volatile = True
+            t = (t.element_type if isinstance(t, c99_ast.Array)
+                 else t.referenced_type)
+        return obj.name, elem_size, total, obj_volatile
+
+    def _byte_index(
+        self,
+        index: c99_ast.Type_exp,
+        total: int,
+        elem_size: int,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tuple[tac_ast.Type_val, int] | None:
+        """`(byte index, offset)` for subscript `index` into a static
+        array of `elem_size`-byte elements that spans `total` bytes
+        (at most 256), for an `IndexedLoad` or `IndexedSymbolStore`.
+
+        A constant index is the constant byte offset of its element,
+        so `t[2]` reads `t+2` with no index register. It's None when
+        that element lies outside the array, which C leaves undefined,
+        and the access then goes through a pointer. Any other index is
+        evaluated, truncated to a byte, and multiplied by the element
+        size, since every index C defines leaves the byte offset
+        within the array. A constant added to the index goes in the
+        offset (`_split_index_addend`).
+
+        An `extern T t[]` declared without a size has a `total` of 0,
+        and is taken to span 256 bytes, which its definition must
+        not exceed for any of its indexed accesses to work."""
+        total = total or 256
+        k = _exact_const_index(index, self._types)
+        if k is not None:
+            if not 0 <= k * elem_size < total:
+                return None
+            return tac_ast.Constant(
+                const=tac_ast.ConstUChar(value=k * elem_size),
+            ), 0
+        idx_exp, addend = _split_index_addend(
+            index, total, elem_size, self._types,
+        ) or (index, 0)
+        idx_val = self.translate_exp(idx_exp, instrs)
+        byte_idx = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.UChar()),
+        )
+        instrs.append(tac_ast.Truncate(src=idx_val, dst=byte_idx))
+        if elem_size == 1:
+            return byte_idx, addend
+        scaled_byte = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.UChar()),
+        )
+        instrs.append(tac_ast.Binary(
+            op=tac_ast.Multiply(),
+            src1=byte_idx,
+            src2=tac_ast.Constant(
+                const=tac_ast.ConstUChar(value=elem_size),
+            ),
+            dst=scaled_byte,
+        ))
+        return scaled_byte, addend * elem_size
+
     def _try_indexed_store_subscript(
         self,
-        lval: c99_ast.Subscript,
+        array: c99_ast.Type_exp,
+        index: c99_ast.Type_exp,
         rval_val: tac_ast.Type_val,
         is_volatile: bool,
         instrs: list[tac_ast.Type_instruction],
     ) -> bool:
         """Store-side mirror of `_try_indexed_load_subscript`. If
-        `lval` is `arr[i]` (single- or multi-dim) where the
-        underlying `arr` is a static-storage Array whose total byte
-        size ≤ 256, emit `IndexedSymbolStore` and return True.
-        Otherwise return False and let the caller fall back to
-        general pointer arithmetic + Store.
+        `array[index]` (single- or multi-dim) is an element of a
+        static-storage Array whose total byte size ≤ 256, or of a
+        static object read through a cast of its address, emit
+        `IndexedSymbolStore` and return True. Otherwise return False
+        and let the caller fall back to general pointer arithmetic +
+        Store.
 
         Same eligibility as the load side; same single-dim runtime-
         index / multi-dim constant-index split. The byte width of
         the store comes from `rval_val`'s symbol-table type, picked
         up by `tac_to_asm._translate_indexed_symbol_store` via
         `_size_of`."""
+        view = self._static_object_view(array)
+        if view is not None:
+            name, elem_size, total, obj_volatile = view
+            got = self._byte_index(index, total, elem_size, instrs)
+            if got is None:
+                return False
+            byte_idx, offset = got
+            instrs.append(tac_ast.IndexedSymbolStore(
+                name=name, index=byte_idx, src=rval_val,
+                is_volatile=is_volatile or obj_volatile,
+                offset=offset,
+            ))
+            return True
         # Walk inside-out, collecting indices per subscript level.
-        indices_inner_to_outer: list[c99_ast.Type_exp] = [lval.index]
-        cur_array = lval.array
+        indices_inner_to_outer: list[c99_ast.Type_exp] = [index]
+        cur_array = array
         base_var: c99_ast.Var | None = None
         while True:
             if not isinstance(cur_array, c99_ast.AddressOf):
@@ -3538,39 +3819,19 @@ class Translator:
             ))
             return True
 
-        # Single-dim with possibly-runtime index: Truncate to UChar,
-        # optionally multiply by elem_size, emit IndexedSymbolStore.
-        # A constant added to the index goes in the offset.
-        idx_exp, addend = _split_index_addend(
-            indices_outer_to_inner[0], total, elem_size,
-        ) or (indices_outer_to_inner[0], 0)
-        idx_val = self.translate_exp(idx_exp, instrs)
-        byte_idx = tac_ast.Var(
-            name=self.make_temporary_variable_name(c99_ast.UChar()),
+        # Single-dim with possibly-runtime index.
+        got = self._byte_index(
+            indices_outer_to_inner[0], total, elem_size, instrs,
         )
-        instrs.append(tac_ast.Truncate(src=idx_val, dst=byte_idx))
-
-        if elem_size == 1:
-            scaled_byte: tac_ast.Type_val = byte_idx
-        else:
-            scaled_byte = tac_ast.Var(
-                name=self.make_temporary_variable_name(c99_ast.UChar()),
-            )
-            instrs.append(tac_ast.Binary(
-                op=tac_ast.Multiply(),
-                src1=byte_idx,
-                src2=tac_ast.Constant(
-                    const=tac_ast.ConstUChar(value=elem_size),
-                ),
-                dst=scaled_byte,
-            ))
-
+        if got is None:
+            return False
+        scaled_byte, offset = got
         instrs.append(tac_ast.IndexedSymbolStore(
             name=base_var.name,
             index=scaled_byte,
             src=rval_val,
             is_volatile=is_volatile,
-            offset=addend * elem_size,
+            offset=offset,
         ))
         return True
 
@@ -3638,6 +3899,21 @@ class Translator:
             instrs=instrs,
         )
 
+    def _translate_deref_address(
+        self,
+        ptr: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Evaluate the pointer `ptr` of a `*ptr` that's read and
+        written in place. `*((uint8_t *)&obj + k)` is the subscript
+        `((uint8_t *)&obj)[k]`, whose offset
+        `_translate_subscript_address` computes in a byte. A plain
+        `*(uint8_t *)&obj` has no offset to compute."""
+        sub = _deref_as_subscript(ptr)
+        if sub is not None and isinstance(ptr, c99_ast.Binary):
+            return self._translate_subscript_address(sub[0], sub[1], instrs)
+        return self.translate_exp(ptr, instrs)
+
     def _translate_incdec(
         self,
         op: c99_ast.Type_incdec_op,
@@ -3702,7 +3978,7 @@ class Translator:
                 operand.array, operand.index, instrs,
             )
         elif isinstance(operand, c99_ast.Dereference):
-            addr = self.translate_exp(operand.exp, instrs)
+            addr = self._translate_deref_address(operand.exp, instrs)
         elif isinstance(operand, c99_ast.Dot):
             addr = self._translate_dot_address(
                 operand.operand, operand.member, instrs,
@@ -3858,7 +4134,7 @@ class Translator:
                 lval.array, lval.index, instrs,
             )
         elif isinstance(lval, c99_ast.Dereference):
-            addr = self.translate_exp(lval.exp, instrs)
+            addr = self._translate_deref_address(lval.exp, instrs)
         elif isinstance(lval, c99_ast.Dot):
             addr = self._translate_dot_address(
                 lval.operand, lval.member, instrs,

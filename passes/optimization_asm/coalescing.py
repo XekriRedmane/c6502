@@ -119,6 +119,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes import decimal_arith
 from passes.optimization.interference import InterferenceGraph
 
 
@@ -357,11 +358,17 @@ def _byte_edges(
         for instr in reversed(blk.instructions):
             if isinstance(instr, asm_ast.Phi):
                 continue
-            for dv in _defs_in(instr):
-                for n in live:
+            defs = list(_defs_in(instr))
+            after = live | {dv.name for dv in defs}
+            for dv in defs:
+                for n in after:
                     if n != dv.name:
                         edges.add(frozenset((dv.name, n)))
+            for dv in defs:
                 live.discard(dv.name)
+            if isinstance(instr, asm_ast.DecimalArith):
+                for a, b in decimal_arith.early_write_pairs(instr):
+                    edges.add(frozenset((a, b)))
             for u in _uses_in(instr):
                 live.add(u.name)
         phi_dsts = [

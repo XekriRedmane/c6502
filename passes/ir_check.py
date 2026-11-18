@@ -33,11 +33,25 @@ sweep):
     them.
   * No `Phi` outside the asm optimizer's SSA form, and no `Pseudo`
     once pseudoregisters have been replaced.
+  * Every `DecimalArith` (packed BCD) has lists of one length, at
+    least one byte long, and operands of the forms its expansion
+    takes (`passes/decimal_arith.form_problems`).
+
+Asm2 (`check_asm2`, after `asm_to_asm2`):
+
+  * The decimal flag is set only across a packed BCD chain. Every
+    `SED` is followed by `CLC` and ADCs or by `SEC` and SBCs, each
+    byte as `LDA src; ADC src; STA dst` with no register operand
+    but the A these name, and then a `CLD`. Nothing else is between
+    them, no `CLD` is anywhere else, and no function ends with the
+    flag set. A soft-stack operand's `LDY #off` is part of its
+    access, so it's inside the chain too.
 """
 from __future__ import annotations
 
 import os
 
+import asm2_ast
 import asm_ast
 import tac_ast
 
@@ -275,4 +289,91 @@ def _asm_problems(fn, pseudos, phis) -> list[str]:
             isinstance(op, asm_ast.Pseudo) for op in _all_operands_in(instr)
         ):
             problems.append(f"Pseudo left in {type(instr).__name__}")
+        if isinstance(instr, asm_ast.DecimalArith):
+            from passes.decimal_arith import form_problems
+            problems += form_problems(instr)
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# Asm2.
+# ---------------------------------------------------------------------------
+
+
+def check_asm2(prog: asm2_ast.Program, *, after: str) -> None:
+    """Raises `IRCheckError` if the decimal flag is set anywhere but
+    across a packed BCD chain (see the module docstring)."""
+    if not _enabled:
+        return
+    for tl in prog.top_level:
+        if isinstance(tl, asm2_ast.Function):
+            problems = decimal_region_problems(tl.instructions)
+            if problems:
+                raise IRCheckError(
+                    f"after {after}, function '{tl.name}': "
+                    + "; ".join(problems[:5])
+                )
+
+
+# Operand forms an LDA / ADC / SBC / STA of a BCD chain may name:
+# immediates, absolute and zero-page bytes, and soft-stack slots. No
+# register, index, or pointer, whose address would have to be set up
+# inside the chain.
+_CHAIN_SOURCES = (
+    asm2_ast.Imm, asm2_ast.ImmLabelLow, asm2_ast.ImmLabelHigh,
+    asm2_ast.Data, asm2_ast.ZP, asm2_ast.Frame, asm2_ast.Stack,
+)
+_CHAIN_DESTS = (asm2_ast.Data, asm2_ast.ZP, asm2_ast.Frame, asm2_ast.Stack)
+
+
+def _is_a2(op) -> bool:
+    return isinstance(op, asm2_ast.Reg) and isinstance(op.reg, asm2_ast.A)
+
+
+def decimal_region_problems(instrs) -> list[str]:
+    """What's wrong with the decimal-mode regions of a function's asm2
+    instructions. Public so that a test can feed it a broken region."""
+    problems: list[str] = []
+    i, n = 0, len(instrs)
+    while i < n:
+        ins = instrs[i]
+        if isinstance(ins, asm2_ast.ClearDecimal):
+            problems.append(f"CLD at {i} outside a BCD chain")
+        if not isinstance(ins, asm2_ast.SetDecimal):
+            i += 1
+            continue
+        start = i
+        i += 1
+        if i < n and isinstance(instrs[i], asm2_ast.ClearCarry):
+            arith = asm2_ast.Add
+        elif i < n and isinstance(instrs[i], asm2_ast.SetCarry):
+            arith = asm2_ast.Sub
+        else:
+            problems.append(f"SED at {start} isn't followed by CLC or SEC")
+            continue
+        i += 1
+        count = 0
+        while i + 2 < n:
+            load, op, store = instrs[i], instrs[i + 1], instrs[i + 2]
+            if not (isinstance(load, asm2_ast.Mov) and _is_a2(load.dst)
+                    and isinstance(load.src, _CHAIN_SOURCES)):
+                break
+            if not (type(op) is arith and _is_a2(op.dst)
+                    and isinstance(op.src, _CHAIN_SOURCES)):
+                break
+            if not (isinstance(store, asm2_ast.Mov) and _is_a2(store.src)
+                    and isinstance(store.dst, _CHAIN_DESTS)):
+                break
+            count += 1
+            i += 3
+        if count == 0:
+            problems.append(f"the BCD chain at {start} has no byte")
+        if i >= n or not isinstance(instrs[i], asm2_ast.ClearDecimal):
+            what = type(instrs[i]).__name__ if i < n else "the end"
+            problems.append(
+                f"{what} at {i} runs with the decimal flag set (SED at "
+                f"{start})"
+            )
+            continue
+        i += 1
     return problems

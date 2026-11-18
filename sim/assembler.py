@@ -46,6 +46,7 @@ _IMPLIED = {
     "ASL_A": 0x0A, "LSR_A": 0x4A,
     "ROL_A": 0x2A, "ROR_A": 0x6A,
     "RTS": 0x60, "RTI": 0x40, "BRK": 0x00,
+    "SED": 0xF8, "CLD": 0xD8,
     "NOP": 0xEA,
 }
 
@@ -363,6 +364,8 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return 1   # RTS
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _load_address_size(src, dst)
+        case asm_ast.DecimalArith():
+            return _decimal_arith_size(instr)
         case asm_ast.Phi():
             raise TypeError(
                 "sim.assembler: Phi node leaked past SSA destruction",
@@ -537,6 +540,8 @@ def _emit_instr(
             return bytes([_IMPLIED["RTS"]])
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _emit_load_address(src, dst, syms)
+        case asm_ast.DecimalArith():
+            return _emit_decimal_arith(instr, syms)
         case asm_ast.Phi():
             raise TypeError(
                 "sim.assembler: Phi node leaked past SSA destruction",
@@ -1553,6 +1558,32 @@ def _emit_ret(
         out += bytes([_IMPLIED["PLA"]])
     out += bytes([_IMPLIED["RTS"]])
     return bytes(out)
+
+
+# -------- DecimalArith --------
+
+
+def _decimal_arith_size(instr: asm_ast.DecimalArith) -> int:
+    """`SED`, `CLC` or `SEC`, an LDA / ADC (SBC) / STA per byte, and
+    `CLD`, as `passes.asm_to_asm2.expand_decimal_arith` writes it."""
+    a = asm_ast.Reg(reg=asm_ast.A())
+    n = 3
+    for left, right, dst in zip(instr.left, instr.right, instr.dst):
+        n += _mov_size(left, a) + _accum_arith_size(right) + _mov_size(a, dst)
+    return n
+
+
+def _emit_decimal_arith(
+    instr: asm_ast.DecimalArith, syms: dict[str, int],
+) -> bytes:
+    a = asm_ast.Reg(reg=asm_ast.A())
+    out = bytes([_IMPLIED["SED"], _IMPLIED["SEC" if instr.subtract else "CLC"]])
+    op = "SBC" if instr.subtract else "ADC"
+    for left, right, dst in zip(instr.left, instr.right, instr.dst):
+        out += _emit_mov(left, a, syms)
+        out += _emit_accum_arith(op, right, syms)
+        out += _emit_mov(a, dst, syms)
+    return out + bytes([_IMPLIED["CLD"]])
 
 
 # -------- LoadAddress --------

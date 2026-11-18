@@ -249,11 +249,32 @@ call in progress also keeps a 2-byte return address on the 6502's own
 
 #### I/O registers
 
-I/O registers are `volatile` objects at fixed addresses, so that
-every read and write in the source happens in the program.
+Declare an I/O register as a `volatile` object at its address.
 
 ```c
-extern volatile uint8_t KBD [[c6502::address(0xC000)]];
+extern volatile uint8_t KBD [[c6502::address(0xC000)]];      /* bit 7 set: a key is waiting */
+extern volatile uint8_t KBDSTRB [[c6502::address(0xC010)]];  /* touch it to clear the key */
+extern volatile uint8_t SPKR [[c6502::address(0xC030)]];     /* touch it to click the speaker */
+```
+
+A read of a soft switch like `SPKR` matters for what it does to the
+hardware, and its value is thrown away. Without `volatile`, the
+optimizer deletes a read whose value isn't used, so `(void)SPKR;`
+compiles to nothing. A loop that waits for a key, `while (!(KBD &
+0x80)) {}`, changes nothing the optimizer can see either, so it's
+deleted too, and the program goes on without waiting. With
+`volatile`, each read in the source is one `LDA` and each write one
+`STA`, in the order the source has them: `(void)SPKR;` is `LDA SPKR`,
+and `KBDSTRB = 0;` is a store to `$C010`.
+
+`volatile` doesn't keep a loop that only spends time. A delay loop
+with nothing in its body is deleted, as C allows. Put
+`[[c6502::keep]]` before it to keep it, and it compiles to a count
+down in X or Y.
+
+```c
+[[c6502::keep]] for (uint8_t y = 0xB4; --y;) {
+}
 ```
 
 ## Documentation

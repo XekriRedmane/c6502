@@ -118,9 +118,12 @@ def named_constants(resolver: NamedConstantResolver):
 
 
 def named_constant(exp: c99_ast.Type_exp) -> tuple | None:
-    """`(type, value)` of `exp` when it's a named constant, from the
-    innermost resolver, or None."""
-    if not _RESOLVERS or not isinstance(exp, (c99_ast.Var, c99_ast.Dot)):
+    """`(type, value)` of `exp` when it's a named constant or a
+    compound literal constant (`(constexpr int){5}`, C23 §6.6p6), or a
+    `.` member of one, from the innermost resolver, or None."""
+    if not _RESOLVERS or not isinstance(
+        exp, (c99_ast.Var, c99_ast.Dot, c99_ast.CompoundLiteral),
+    ):
         return None
     return _RESOLVERS[-1](exp)
 
@@ -318,7 +321,7 @@ def evaluate_integer_constant_expression(
     match exp:
         case c99_ast.Constant(const=c):
             return _const_int_value(c), _const_type(c)
-        case c99_ast.Var() | c99_ast.Dot() if (
+        case c99_ast.Var() | c99_ast.Dot() | c99_ast.CompoundLiteral() if (
             named := named_constant(exp)
         ) is not None:
             t, value = named
@@ -406,9 +409,12 @@ def evaluate_integer_constant_expression(
 
 
 def _describe(exp: c99_ast.Type_exp) -> str:
-    """`exp`, a `Var` or a chain of `Dot`s on one, as source text."""
+    """`exp`, a `Var`, a compound literal, or a chain of `Dot`s on
+    one, as source text."""
     if isinstance(exp, c99_ast.Dot):
         return f"{_describe(exp.operand)}.{exp.member}"
+    if isinstance(exp, c99_ast.CompoundLiteral):
+        return "(a compound literal)"
     name = getattr(exp, "name", "")
     # identifier_resolution names a block-scope object `@N.name`.
     return f"`{name.split('.', 1)[1] if name.startswith('@') else name}`"

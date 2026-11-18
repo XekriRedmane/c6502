@@ -813,7 +813,7 @@ def _const_init_value(
     match exp:
         case c99_ast.Constant(const=c):
             return _coerce_init_const_value(c, target_type)
-        case c99_ast.Var() | c99_ast.Dot() if (
+        case c99_ast.Var() | c99_ast.Dot() | c99_ast.CompoundLiteral() if (
             named := named_constant(exp)
         ) is not None and not isinstance(
             _strip_quals(named[0]), (Array, Structure, Union),
@@ -1302,21 +1302,6 @@ def _display_name(name: str) -> str:
     if name.startswith("@") and "." in name:
         return name.split(".", 1)[1]
     return name
-
-
-def _contains_node(node, cls) -> bool:
-    """Whether the AST `node` has a node of class `cls` anywhere in
-    it."""
-    if isinstance(node, cls):
-        return True
-    if isinstance(node, list):
-        return any(_contains_node(n, cls) for n in node)
-    if dataclasses.is_dataclass(node):
-        return any(
-            _contains_node(getattr(node, f.name), cls)
-            for f in dataclasses.fields(node)
-        )
-    return False
 
 
 _C_TYPE_NAMES = {
@@ -3825,7 +3810,10 @@ class TypeChecker:
         structure or union type, at any depth. The evaluator in
         passes/constant_expression.py reads this through
         `named_constant`."""
-        if isinstance(exp, c99_ast.Var):
+        if isinstance(exp, (c99_ast.Var, c99_ast.CompoundLiteral)):
+            # A `constexpr` compound literal is a compound literal
+            # constant (C23 §6.6p6), recorded by its name like an
+            # object.
             return self._constexpr.get(exp.name)
         if not isinstance(exp, c99_ast.Dot):
             return None
@@ -3972,11 +3960,8 @@ class TypeChecker:
             return
         if not (_is_integer_type(st) or _is_floating_type(st)):
             return
-        if _contains_node(init, c99_ast.CompoundLiteral):
-            # The normal checks declare its object, which a second
-            # check of a copy would declare again. It isn't a constant
-            # either way.
-            return
+        # A compound literal in the copy is checked again by the
+        # normal checks, which record the same object.
         leaf = copy.deepcopy(init)
         self._check_exp(leaf)
         leaf = _decay_if_array(leaf)
@@ -4062,9 +4047,20 @@ class TypeChecker:
         )
         exp.target_type = t
         at_file_scope = self._return_type is None
+        storage = exp.storage_class
+        if at_file_scope:
+            # C23 §6.5.3.6p4 checks a compound literal's storage class
+            # as a declaration's at its scope, and a file-scope object
+            # can't be `register`.
+            if isinstance(storage, c99_ast.Register):
+                raise TypeCheckError(
+                    "a compound literal at file scope can't be "
+                    "`register` (C23 §6.5.3.6p4)"
+                )
+            storage = c99_ast.Static()
         vd = c99_ast.Type_var_decl(
             name=exp.name, init=exp.init, data_type=t,
-            storage_class=c99_ast.Static() if at_file_scope else None,
+            storage_class=storage, is_constexpr=exp.is_constexpr,
         )
         try:
             self._check_block_var(vd)
@@ -5950,6 +5946,13 @@ class TypeChecker:
                 # taking the address of a function yields a function
                 # pointer. Detect that shape directly so the inner
                 # `_check_exp` doesn't trip the guard.
+                if isinstance(inner, c99_ast.CompoundLiteral) and isinstance(
+                    inner.storage_class, c99_ast.Register,
+                ):
+                    raise TypeCheckError(
+                        "can't take the address of a `register` "
+                        "compound literal (C99 §6.5.3.2.1)"
+                    )
                 if isinstance(inner, c99_ast.Var):
                     sym = self.symbols.get(inner.name)
                     # Reject `&x` on a `register` object (param or

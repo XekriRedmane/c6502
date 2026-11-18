@@ -33,6 +33,9 @@ KEYWORDS = frozenset({
     "_BitInt",
     # C23's storage-class specifier for named constants (§6.7.2).
     "constexpr",
+    # C23's `thread_local` (§6.7.2) and C11's spelling of it, which
+    # the parser rejects, since c6502 has no threads.
+    "thread_local", "_Thread_local",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with
@@ -134,7 +137,9 @@ _LARK = Lark.open(
 # `bool`, so its terminal is `ALT_BOOL`. Derived here so changes to
 # KEYWORDS flow through automatically; c99.lark still has to be edited
 # by hand to match.
-_TERMINAL_EXCEPTIONS = {"_Bool": "ALT_BOOL"}
+_TERMINAL_EXCEPTIONS = {
+    "_Bool": "ALT_BOOL", "_Thread_local": "ALT_THREAD_LOCAL",
+}
 
 
 def _keyword_terminal(kw: str) -> str:

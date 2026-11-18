@@ -85,10 +85,19 @@ These parts work.
   `constexpr float f = 0.1;` are errors, and a pointer must be null.
   A `constexpr` object at file scope has internal linkage, and c6502
   takes its `constexpr` declaration only as the one declaration of
-  its name. A compound literal can't be `constexpr`, and `restrict`
-  isn't checked, since c6502 drops it. A static initializer may also
-  compute with floating constants, as `1.0 / 3.0`, in the type of the
-  operation, `float` or `double`.
+  its name. `restrict` isn't checked, since c6502 drops it. A static
+  initializer may also compute with floating constants, as `1.0 /
+  3.0`, in the type of the operation, `float` or `double`.
+- C23's storage-class specifiers on a compound literal work. `(static
+  int[]){1, 2, 3}` inside a function is one object for the whole
+  program, so a function can return a pointer to it.
+  `(constexpr int){5}` is a constant, as a `constexpr` object's name
+  is, and so is a member of a `constexpr` structure literal, such as
+  `(constexpr struct pt){1, 2}.y`. `(register uint8_t){9}` has no
+  address, and it follows the rule for a `register` local, which
+  c6502 keeps in the Y register, so it has to be one byte. c6502 has no threads, so it rejects
+  `thread_local`, and C11's `_Thread_local`, on a compound literal
+  and on a declaration.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.

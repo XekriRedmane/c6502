@@ -288,7 +288,7 @@ module C99 {
         -- one it's static, with a constant initializer. An array of
         -- unknown size (`(int[]){1, 2}`) takes its size from the
         -- initializer in the type checker.
-        | CompoundLiteral(identifier name, data_type target_type, exp init, data_type?)
+        | CompoundLiteral(identifier name, data_type target_type, exp init, data_type?, storage_class? storage_class, bool is_constexpr)
 
     -- `Plus` is unary `+`, which only applies the integer promotions.
     unary_operator = Complement | Negate | LogicalNot | Plus

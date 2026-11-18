@@ -1,6 +1,8 @@
 """Tests for C23's `constexpr` storage-class specifier (§6.7.2), the
-named constants it declares (§6.6p7), and the folding of floating
-arithmetic in static initializers that its examples rely on.
+named constants it declares (§6.6p7), the storage-class specifiers
+C23 allows on a compound literal (§6.5.3.6), and the folding of
+floating arithmetic in static initializers that the examples of
+`constexpr` rely on. c6502 has no threads and rejects `thread_local`.
 
 The program in `_PROGRAM` returns 0 when every use of a named
 constant gives the right value, and otherwise the number of the first
@@ -150,8 +152,9 @@ class TestRules(unittest.TestCase):
              "has a volatile member 'a'"),
             ("int f(void) { int y = 5; constexpr int z = y; return z; }",
              "isn't an integer constant expression"),
+            # A compound literal without `constexpr` isn't a constant.
             ("int f(void) { constexpr int K = (int){5}; return K; }",
-             "must be a constant expression"),
+             "isn't an integer constant expression"),
             ("constexpr int K = 1; void f(void) { K = 3; }",
              "const-qualified"),
             ("constexpr int K = 1; extern int K;",
@@ -314,6 +317,112 @@ class TestPrograms(unittest.TestCase):
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 self.assertEqual(_run(_PROGRAM, optimize), 0)
+
+
+_LITERALS = """#include <stdint.h>
+struct pt { int x, y; };
+constexpr int K = (constexpr int){5} + 1;
+int arr[(constexpr int){3}];
+static int si = (constexpr struct pt){7, 8}.y;
+int *keep(void) { return (static int[]){10, 20, 30}; }
+int count(void) {
+    int *p = &(static int){0};
+    return ++*p;
+}
+int main(void) {
+    switch (6) { case (constexpr uint8_t){6}: break; default: return 1; }
+    if (K != 6) return 2;
+    if (sizeof arr != 6) return 3;
+    if (si != 8) return 4;
+    int *q = keep();
+    if (q[2] != 30) return 5;
+    count(); count();
+    if (count() != 3) return 6;
+    if ((register uint8_t){9} + 1 != 10) return 7;
+    if ((constexpr struct pt){1, 2}.x != 1) return 8;
+    return 0;
+}
+"""
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestCompoundLiteralStorage(unittest.TestCase):
+    """A compound literal with `constexpr` is a compound literal
+    constant (C23 §6.6p6), one with `static` has static storage
+    inside a function, and one with `register` has no address."""
+
+    def test_parse(self) -> None:
+        cl = parse(
+            "int *f(void) { return (static constexpr int[]){1}; }"
+        ).declaration[0].function_decl.body.block_item[0].statement.exp
+        self.assertEqual(cl.storage_class, c99_ast.Static())
+        self.assertTrue(cl.is_constexpr)
+        self.assertEqual(cl.target_type, c99_ast.Array(
+            element_type=c99_ast.Const(referenced_type=c99_ast.Int()),
+            size=0,
+        ))
+
+    def test_accepted(self) -> None:
+        for src in (
+            "int f(void) { return (constexpr int){5}; }",
+            "int a[(constexpr int){3}];",
+            "struct pt { int x, y; };"
+            " constexpr struct pt P = (constexpr struct pt){1, 2};",
+            "struct pt { int x, y; }; int a[(constexpr struct pt){1, 2}.y];",
+            "int *f(void) { return (static int[]){1, 2}; }",
+            "int *p = (static int[]){1, 2};",
+            "static int s = (constexpr int){4} * 2;",
+            "int f(void) { return (static constexpr int){4}"
+            " + (register constexpr unsigned char){5}; }",
+        ):
+            with self.subTest(src=src):
+                _check(src)
+
+    def test_rejected(self) -> None:
+        for src, message in (
+            ("thread_local int x;", "c6502 has no threads"),
+            ("_Thread_local int x;", "c6502 has no threads"),
+            ("static thread_local int x;", "c6502 has no threads"),
+            ("int f(void) { return (thread_local int){1}; }",
+             "c6502 has no threads"),
+            ("int f(void) { return (extern int){1}; }",
+             "`extern` can't go on a compound literal"),
+            ("int f(void) { return (typedef int){1}; }",
+             "`typedef` can't go on a compound literal"),
+            ("int f(void) { return (auto int){1}; }",
+             "`auto` can't go on a compound literal"),
+            ("int f(void) { return (static register int){1}; }",
+             "both `static` and `register`"),
+            ("int f(void) { return (static static int){1}; }",
+             "appears twice"),
+            ("unsigned char *f(void) {"
+             " return &(register unsigned char){1}; }",
+             "address of a `register` compound literal"),
+            ("int x = (register int){1};", "at file scope can't be"),
+            ("int a[(static int){3}];", "integer constant expression"),
+            ("int f(void) { return (constexpr unsigned){-1}; }",
+             "which unsigned int can't hold exactly"),
+            ("int g; int f(void) { return *(constexpr int *){&g}; }",
+             "a constexpr pointer must be null"),
+            ("int f(void) { int x = 5; return (constexpr int){x}; }",
+             "isn't an integer constant expression"),
+            ("int f(int x) { return *(static int[]){x}; }",
+             "is not a constant expression"),
+            ("int thread_local = 1;", "`thread_local` is a keyword"),
+        ):
+            with self.subTest(src=src):
+                with self.assertRaises((TypeCheckError, ParserError,
+                                        NotImplementedError)) as cm:
+                    _check(src)
+                self.assertIn(message, str(cm.exception))
+
+    def test_tac_sim(self) -> None:
+        self.assertEqual(_run_tac(preprocess(_LITERALS)), 0)
+
+    def test_asm_sim(self) -> None:
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(_run(_LITERALS, optimize), 0)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

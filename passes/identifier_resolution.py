@@ -1155,6 +1155,8 @@ class Resolver:
                     name=self.make_unique("compound_literal"),
                     target_type=self._resolve_type(t),
                     init=self.resolve_exp(init, scope),
+                    storage_class=exp.storage_class,
+                    is_constexpr=exp.is_constexpr,
                 )
             case c99_ast.InitList(items=items):
                 # `{e1, e2, ...}` — recurse into each item. The type

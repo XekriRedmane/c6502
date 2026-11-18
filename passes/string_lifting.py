@@ -460,6 +460,8 @@ class StringLifter:
                 return c99_ast.CompoundLiteral(
                     name=name, target_type=t,
                     init=self._lift_init(init, t), data_type=dt,
+                    storage_class=exp.storage_class,
+                    is_constexpr=exp.is_constexpr,
                 )
             case c99_ast.SizeOfType():
                 # `sizeof (T)` — no sub-expression, no lifting.

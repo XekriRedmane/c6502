@@ -790,7 +790,20 @@ notes that aren't visible from the grammar alone:
   that declaration: automatic inside a function, static at file
   scope, an unsized array sized from the initializer. c99_to_tac
   initializes the object where evaluation reaches the literal and
-  then treats it as a `Var`.
+  then treats it as a `Var`. C23 lets storage-class specifiers go
+  between the `(` and the type (§6.5.3.6), the grammar's
+  `compound_literal_storage`. `_literal_storage` turns them into the
+  node's `storage_class` (`Static()` or `Register()`) and
+  `is_constexpr`, and rejects the others, which C23 leaves undefined,
+  and `thread_local`, since c6502 has no threads (`_NO_THREADS`, which
+  `_split_specifiers` gives a declaration too). The type checker
+  checks the literal as a declaration with those, and rejects
+  `register` at file scope and `&` of a `register` literal. A
+  `constexpr` literal is a compound literal constant (§6.6p6), whose
+  value `TypeChecker._named_constant` gives by its name, as for a
+  named constant. For the folds in the parser, `_named_literals`
+  names each literal in the copy, since identifier_resolution hasn't
+  run yet.
 - Case-label expressions go through a `constant_exp` wrapper around
   `conditional_exp` — the wrapper is a hook for the §6.6 validator
   in `passes.constant_expression`.
@@ -950,7 +963,8 @@ from the parser and the type checker:
   linkage, §6.2.2p3), and it must be the only declaration of its name.
 
 The name of a `constexpr` object, and a `.` member of one at any
-depth, is a named constant (§6.6p7).
+depth, is a named constant (§6.6p7), and a `constexpr` compound
+literal is a compound literal constant (§6.6p6).
 `constant_expression.named_constant` returns its type and value from
 the innermost resolver installed with `named_constants`, which for
 the whole program is `TypeChecker._named_constant`, installed by

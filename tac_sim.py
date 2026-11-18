@@ -145,7 +145,10 @@ def _is_aggregate(t: Type) -> bool:
 
 def _sizeof(t: Type, types: TypeTable | None = None) -> int:
     """Bytes occupied by an object of type `t`. Recursive for Array;
-    Structure / Union require a TypeTable."""
+    Structure / Union require a TypeTable. Qualifiers don't change
+    the size, and a `const struct` local has one."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
     if isinstance(t, c99_ast.Array):
         return _sizeof(t.element_type, types) * t.size
     if _is_aggregate(t):

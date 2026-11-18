@@ -154,6 +154,10 @@ FALSE: "false"
 NULLPTR: "nullptr"
 // C23's storage-class specifier for named constants (§6.7.2).
 CONSTEXPR: "constexpr"
+// C23's `thread_local` (§6.7.2) and C11's `_Thread_local`, which the
+// parser rejects, since c6502 has no threads.
+THREAD_LOCAL: "thread_local"
+ALT_THREAD_LOCAL: "_Thread_local"
 // The type of `nullptr`, which <stddef.h> names `nullptr_t` (C23
 // §7.21.2). It's c6502's own keyword, since C23's header writes the
 // type as `typeof_unqual(nullptr)` and c6502 has no `typeof`.
@@ -271,6 +275,7 @@ _spec_after_type: specifier | type_specifier
 _type_head: type_specifier | typedef_name
 // A specifier that isn't a type: a storage class or a type qualifier.
 specifier: type_qualifier | STATIC | EXTERN | REGISTER | TYPEDEF | CONSTEXPR
+         | THREAD_LOCAL | ALT_THREAD_LOCAL
 typedef_name: TYPEDEF_NAME
 // C23 attributes (§6.7.13): `[[c6502::zp_abi]]`, `[[deprecated("why")]]`,
 // `[[c6502::zp_abi, c6502::address(0xFDED)]]`. An attribute is a name,
@@ -310,7 +315,8 @@ _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGE
                     | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
                     | UNSIGNED | VOID | VOLATILE | WHILE
                     | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR
-                    | C6502_NULLPTR_T | CONSTEXPR | BITINT | COMPLEX | IMAGINARY
+                    | C6502_NULLPTR_T | CONSTEXPR | THREAD_LOCAL
+                    | ALT_THREAD_LOCAL | BITINT | COMPLEX | IMAGINARY
                     | ELLIPSIS | COLONCOLON | LSHIFT_ASSIGN | RSHIFT_ASSIGN
                     | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT
                     | LE | GE | EQ | NE | ANDAND | OROR
@@ -608,7 +614,15 @@ constant_exp: conditional_exp
             | postfix_exp ARROW IDENTIFIER      -> member_arrow
             | postfix_exp LPAREN arg_list? RPAREN -> function_call
             | LPAREN type_name RPAREN LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> compound_literal
+            | LPAREN compound_literal_storage type_name RPAREN LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> compound_literal
             | atom
+
+// C23 lets a compound literal have storage-class specifiers (§6.5.3.6),
+// as in `(static int[]){1, 2}` and `(constexpr int){5}`. The rule takes
+// every storage-class keyword, so the parser can say why it rejects
+// the ones C23 leaves undefined there.
+compound_literal_storage: (STATIC | REGISTER | CONSTEXPR | EXTERN | TYPEDEF
+                          | AUTO | THREAD_LOCAL | ALT_THREAD_LOCAL)+
 
 // A function call is a postfix operator on any expression (C99
 // §6.5.2.2), so `f(x)`, `(*fp)(x)`, `pick()(x)`, `t[i](x)`, and
@@ -786,7 +800,8 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
          | BOOL | ALT_BOOL | TRUE | FALSE | NULLPTR | C6502_NULLPTR_T
-         | CONSTEXPR | BITINT | COMPLEX | IMAGINARY
+         | CONSTEXPR | THREAD_LOCAL | ALT_THREAD_LOCAL
+         | BITINT | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | BITINT_INTEGER | UBITINT_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT

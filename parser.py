@@ -709,6 +709,8 @@ def _split_specifiers(specs):
                     "`constexpr` appears twice in a declaration"
                 )
             constexpr = True
+        elif spec.type in _THREAD_LOCAL_TOKENS:
+            raise ParserError(_NO_THREADS.format(spec=spec))
         else:
             cls = _STORAGE_CLASSES[spec.type]
             if storage is not None:
@@ -729,6 +731,59 @@ def _split_specifiers(specs):
         _apply_qualifiers(_resolve_data_type(type_specs), qualifier_specs),
         storage,
     )
+
+
+# C23's `thread_local` and C11's `_Thread_local` (C23 §6.7.2).
+_THREAD_LOCAL_TOKENS = ("THREAD_LOCAL", "ALT_THREAD_LOCAL")
+_NO_THREADS = (
+    "`{spec}` gives each thread its own object, and c6502 has no "
+    "threads, so it doesn't take `{spec}`"
+)
+
+
+class _LiteralStorage:
+    """The storage-class specifiers of a compound literal (C23
+    §6.5.3.6), as `compound_literal_storage` leaves them for
+    `compound_literal`."""
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+
+def _literal_storage(tokens):
+    """`(storage_class, is_constexpr)` for a compound literal with the
+    storage-class specifier `tokens`. C23 §6.5.3.6p7 defines a
+    compound literal with `constexpr`, `static`, `register`, or
+    `thread_local`, and leaves any other undefined, and §6.7.2p2
+    lets `constexpr` come with `static` or `register`."""
+    seen = set()
+    storage = None
+    constexpr = False
+    for tok in tokens:
+        if tok.type in _THREAD_LOCAL_TOKENS:
+            raise ParserError(_NO_THREADS.format(spec=tok))
+        if tok.type in seen:
+            raise ParserError(
+                f"`{tok}` appears twice in a compound literal"
+            )
+        seen.add(tok.type)
+        if tok.type == "CONSTEXPR":
+            constexpr = True
+        elif tok.type in ("STATIC", "REGISTER"):
+            if storage is not None:
+                raise ParserError(
+                    "a compound literal can't be both `static` and "
+                    "`register`"
+                )
+            storage = (c99_ast.Static() if tok.type == "STATIC"
+                       else c99_ast.Register())
+        else:
+            raise ParserError(
+                f"`{tok}` can't go on a compound literal, which takes "
+                f"only `constexpr`, `static`, `register`, and "
+                f"`thread_local` (C23 §6.5.3.6p7)"
+            )
+    return storage, constexpr
 
 
 def _has_constexpr(specs) -> bool:
@@ -2136,8 +2191,10 @@ def _fold_integer_constant(exp) -> int:
         named_constants,
     )
     from passes.type_checking import TypeCheckError
-    exp = copy.deepcopy(exp)
-    checker = _checker_with_named_constants(exp)
+    exp = _named_literals(copy.deepcopy(exp))
+    checker = _checker_with_named_constants(
+        exp, layouts=_has_literal(exp),
+    )
     try:
         with named_constants(checker._named_constant):
             checker._check_exp(exp)
@@ -2189,6 +2246,39 @@ def _unqualified(t):
     return t
 
 
+def _named_literals(node, counter=None):
+    """Gives each compound literal in the AST `node` a name of its own
+    and returns `node`. identifier_resolution names them later, and in
+    a copy the parser folds, two literals with the same empty name
+    would share one value, since the type checker keeps a `constexpr`
+    one's value by its name."""
+    counter = [0] if counter is None else counter
+    if isinstance(node, c99_ast.CompoundLiteral) and not node.name:
+        counter[0] += 1
+        node.name = f"@fold{counter[0]}.compound_literal"
+    if isinstance(node, list):
+        for n in node:
+            _named_literals(n, counter)
+    elif dataclasses.is_dataclass(node):
+        for f in dataclasses.fields(node):
+            _named_literals(getattr(node, f.name), counter)
+    return node
+
+
+def _has_literal(node) -> bool:
+    """Whether the AST `node` has a compound literal in it."""
+    if isinstance(node, c99_ast.CompoundLiteral):
+        return True
+    if isinstance(node, list):
+        return any(_has_literal(n) for n in node)
+    if dataclasses.is_dataclass(node):
+        return any(
+            _has_literal(getattr(node, f.name))
+            for f in dataclasses.fields(node)
+        )
+    return False
+
+
 def _names_in(node, out: set) -> set:
     """Adds the name of each `Var` in the AST `node` to `out`."""
     if isinstance(node, c99_ast.Var):
@@ -2216,8 +2306,10 @@ def _fold_named_constant(data_type, init):
     )
     if isinstance(data_type, c99_ast.Array):
         return None
-    init = copy.deepcopy(init)
-    checker = _checker_with_named_constants(init, layouts=aggregate)
+    init = _named_literals(copy.deepcopy(init))
+    checker = _checker_with_named_constants(
+        init, layouts=aggregate or _has_literal(init),
+    )
     vd = c99_ast.Type_var_decl(
         name="@constexpr", init=init, data_type=data_type,
         storage_class=c99_ast.Static(),
@@ -3079,6 +3171,12 @@ class _ASTBuilder(Transformer):
         # (§6.7.8.11). A scalar's `{}` or a list of more than one
         # item stays an InitList, which the type checker turns into a
         # zero or rejects, as it does for a declaration's.
+        # `(static T){...}`: C23's storage-class specifiers come
+        # between the `(` and the type (§6.5.3.6).
+        storage_class, is_constexpr = None, False
+        if isinstance(items[1], _LiteralStorage):
+            storage_class, is_constexpr = _literal_storage(items[1].tokens)
+            items = items[:1] + items[2:]
         target = items[1]
         inits = [
             it for it in items[4:-1]
@@ -3110,7 +3208,15 @@ class _ASTBuilder(Transformer):
             init = inits[0]
         else:
             init = c99_ast.InitList(items=inits)
-        return c99_ast.CompoundLiteral(target_type=target, init=init)
+        if is_constexpr:
+            target = _constexpr_type(target)
+        return c99_ast.CompoundLiteral(
+            target_type=target, init=init, storage_class=storage_class,
+            is_constexpr=is_constexpr,
+        )
+
+    def compound_literal_storage(self, items):
+        return _LiteralStorage(list(items))
 
     def init_declarator(self, items):
         # `init_declarator: declarator (ASSIGN initializer)?`. Returns
@@ -4103,22 +4209,26 @@ _LARK = Lark.open(
 
 # The keywords C23 added (§6.4.1) that a C99 program could have used as
 # names, by their terminals in c99.lark.
-_C23_KEYWORD_TERMINALS = ("BOOL", "TRUE", "FALSE", "NULLPTR", "CONSTEXPR")
+_C23_KEYWORD_TERMINALS = (
+    "BOOL", "TRUE", "FALSE", "NULLPTR", "CONSTEXPR", "THREAD_LOCAL",
+)
 
 
 def _c23_keyword_as_name(e: UnexpectedInput) -> str | None:
     """The message for the syntax error `e` when it's `bool`, `true`,
-    `false`, `nullptr`, or `constexpr` where the parser could take a
-    name, as in `int true;`, and None for any other error. C99 let a
-    program use those five as names, and C23 makes them keywords.
+    `false`, `nullptr`, `constexpr`, or `thread_local` where the
+    parser could take a name, as in `int true;`, and None for any
+    other error. C99 let a program use those six as names, and C23
+    makes them keywords.
     `int bool = 1;` and `int constexpr = 1;` fail on the `=` after the
     keyword, since `int bool` reads as two type specifiers and `int
-    constexpr` as a type and a storage-class specifier."""
+    constexpr` as a type and a storage-class specifier, and so does
+    `int thread_local = 1;`."""
     if not isinstance(e, UnexpectedToken):
         return None
     if e.token.type in _C23_KEYWORD_TERMINALS and "IDENTIFIER" in e.expected:
         keyword = str(e.token)
-    elif (_CTX.recent[0] in ("BOOL", "CONSTEXPR")
+    elif (_CTX.recent[0] in ("BOOL", "CONSTEXPR", "THREAD_LOCAL")
             and e.token.type in ("ASSIGN", "LBRACKET", "COMMA")):
         keyword = _CTX.recent[0].lower()
     else:

@@ -2797,14 +2797,17 @@ class Translator:
         `Var` naming its object, which is then an lvalue like any
         other. Inside a function the object is automatic, and each
         evaluation initializes it the way a declaration with the
-        same initializer would. At file scope it's static, and the
-        symbol-table sweep lays down its bytes."""
+        same initializer would. At file scope, or with `static` (C23
+        §6.5.3.6), it's static, and the symbol-table sweep lays down
+        its bytes."""
         sym = self._symbols.get(cl.name)
         if not isinstance(sym.attrs, StaticAttr):
             self.translate_declaration(
                 c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
                     name=cl.name, init=cl.init,
                     data_type=cl.target_type,
+                    storage_class=cl.storage_class,
+                    is_constexpr=cl.is_constexpr,
                 )),
                 instrs,
             )

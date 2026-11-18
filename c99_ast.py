@@ -558,6 +558,8 @@ class CompoundLiteral(Type_exp):
     target_type: Type_data_type
     init: Type_exp
     data_type: Type_data_type | None = None
+    storage_class: Type_storage_class | None = None
+    is_constexpr: bool = False
 
 
 @dataclass

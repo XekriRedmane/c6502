@@ -691,6 +691,14 @@ def _split_specifiers(specs):
     is a `c99_ast.Static() / .Extern() / .Register()`, a
     `_TypedefStorage()`, or None.
 
+    C23's `auto` (§6.7.2) with no type specifier makes the type the
+    initializer's (§6.7.10), and the type is then an `_Inferred`
+    holding the qualifiers, which `init_declarator` replaces. With a
+    type specifier it's C99's automatic storage class, which leaves
+    `storage_class` None, and the callers that care test for it with
+    `_has_auto`. It may come with any storage class but `typedef`,
+    and with one only when the type is inferred (§6.7.2p2, p4).
+
     C23's `constexpr` (§6.7.2p2) may come with `static` or `register`
     as well, and with nothing else. It isn't in the result. The
     callers test for it with `_has_constexpr`, and `var_decl` adds the
@@ -702,6 +710,7 @@ def _split_specifiers(specs):
     qualifier_specs = []
     storage = None
     constexpr = False
+    auto = False
     for spec in specs:
         if spec.type in _TYPE_SPECIFIER_TOKEN_TYPES:
             type_specs.append(spec)
@@ -715,6 +724,10 @@ def _split_specifiers(specs):
             constexpr = True
         elif spec.type in _THREAD_LOCAL_TOKENS:
             raise ParserError(_NO_THREADS.format(spec=spec))
+        elif spec.type == "AUTO":
+            if auto:
+                raise ParserError("`auto` appears twice in a declaration")
+            auto = True
         else:
             cls = _STORAGE_CLASSES[spec.type]
             if storage is not None:
@@ -731,6 +744,21 @@ def _split_specifiers(specs):
             f"the other storage-class specifiers, only `static` and "
             f"`register` may come with it (C23 §6.7.2p2)"
         )
+    if auto:
+        if isinstance(storage, _TypedefStorage):
+            raise ParserError(
+                "`auto` can't go with `typedef` (C23 §6.7.2p2)"
+            )
+        if not type_specs:
+            # The type comes from the initializer (C23 §6.7.10).
+            return _Inferred(qualifier_specs), storage
+        if storage is not None or constexpr:
+            other = "constexpr" if storage is None else _storage_name(storage)
+            raise ParserError(
+                f"`auto` goes with `{other}` only when it infers the "
+                f"type from the initializer, and this declaration has "
+                f"a type specifier (C23 §6.7.2p4)"
+            )
     return (
         _apply_qualifiers(_resolve_data_type(type_specs), qualifier_specs),
         storage,
@@ -788,6 +816,65 @@ def _literal_storage(tokens):
                 f"`thread_local` (C23 §6.5.3.6p7)"
             )
     return storage, constexpr
+
+
+class _Inferred:
+    """The type of a declaration whose specifiers have `auto` and no
+    type specifier, which its initializer gives (C23 §6.7.10). It
+    holds the qualifier tokens, which apply to the inferred type."""
+
+    def __init__(self, qualifiers):
+        self.qualifiers = qualifiers
+
+
+def _has_auto(specs) -> bool:
+    """Whether the declaration specifiers `specs` include `auto`."""
+    return any(getattr(s, "type", None) == "AUTO" for s in specs)
+
+
+def _inferred_type(marker, decl_tree, init, constexpr: bool):
+    """The type C23's `auto` infers (§6.7.10) for the declarator
+    `decl_tree` from its initializer `init`: the initializer's type
+    after lvalue conversion, which drops its qualifiers, and the
+    conversion of an array or a function to a pointer, with the
+    qualifiers of the declaration specifiers (`marker`). The
+    declarator must be a plain name with an `= expression`
+    initializer, which can't use the name, since the name's scope
+    starts after it (§6.7.10p5)."""
+    name = _declarator_name(decl_tree)
+    _n, shape, _p, _r = _apply_declarator(decl_tree, c99_ast.Int())
+    if shape != c99_ast.Int():
+        raise ParserError(
+            f"`auto` infers the type of a plain name, and the declarator "
+            f"of `{name}` adds to it, which c6502 doesn't take (C23 "
+            f"§6.7.10p2 leaves it to the implementation)"
+        )
+    if init is None:
+        raise ParserError(
+            f"`auto` object `{name}` has no initializer to infer its "
+            f"type from (C23 §6.7.10p2)"
+        )
+    if isinstance(init, c99_ast.InitList):
+        raise ParserError(
+            f"the initializer of `auto` object `{name}` is a list in "
+            f"braces, and `auto` infers a type only from an expression "
+            f"(C23 §6.7.10p2)"
+        )
+    if name in _names_in(init, set()):
+        raise ParserError(
+            f"the initializer of `auto` object `{name}` uses the name "
+            f"`{name}`, which isn't in scope until the initializer ends "
+            f"and hides any `{name}` outside (C23 §6.7.10p5)"
+        )
+    t = _unqualified(_expression_type(
+        init, "auto", f"the initializer of `auto` object `{name}`",
+    ))
+    if isinstance(t, c99_ast.Array):
+        t = c99_ast.Pointer(referenced_type=t.element_type)
+    elif isinstance(t, c99_ast.FunType):
+        t = c99_ast.Pointer(referenced_type=t)
+    t = _apply_qualifiers(t, marker.qualifiers)
+    return _constexpr_type(t) if constexpr else t
 
 
 def _has_constexpr(specs) -> bool:
@@ -1921,7 +2008,7 @@ def _typedef_declaration(prefix_attrs, init_decls, struct_decls):
     """
     declared = {sd.struct_decl.tag for sd in struct_decls}
     out = []
-    for decl_tree, init, name_attrs, forward_tags in init_decls:
+    for decl_tree, init, name_attrs, forward_tags, _t in init_decls:
         name = _declarator_name(decl_tree)
         if init is not None:
             raise ParserError(
@@ -2327,9 +2414,10 @@ def _typeof(operand, unqual: bool, keyword: str):
     return _unqualified_type(t) if unqual else t
 
 
-def _expression_type(exp, keyword: str):
-    """The type of the expression `exp` for a `keyword` (`typeof` or
-    `typeof_unqual`) specifier."""
+def _expression_type(exp, keyword: str, what: str | None = None):
+    """The type of the expression `exp` for a `keyword` (`typeof`,
+    `typeof_unqual`, or `auto`). `what` names `exp` in an error, by
+    default as the keyword's operand."""
     from passes.constant_expression import (
         ConstantExpressionError, named_constants,
     )
@@ -2362,7 +2450,9 @@ def _expression_type(exp, keyword: str):
         with named_constants(checker._named_constant):
             return copy.deepcopy(checker._check_exp(exp))
     except (TypeCheckError, ConstantExpressionError) as e:
-        raise ParserError(f"the operand of `{keyword}`: {e}") from e
+        raise ParserError(
+            f"{what or f'the operand of `{keyword}`'}: {e}"
+        ) from e
 
 
 def _check_typeof_tags(binding, keyword: str, name: str) -> None:
@@ -3056,11 +3146,11 @@ class _ASTBuilder(Transformer):
                     "struct/union definition isn't permitted in a "
                     "parameter declaration"
                 )
-        if _has_constexpr(specs):
+        if _has_constexpr(specs) or _has_auto(specs):
+            keyword = "constexpr" if _has_constexpr(specs) else "auto"
             raise ParserError(
-                f"`constexpr` declares a named constant, and isn't "
-                f"permitted on {where}, where the only storage-class "
-                f"specifier is `register`"
+                f"`{keyword}` isn't permitted on {where}, where the only "
+                f"storage-class specifier is `register`"
             )
         base, storage = _split_specifiers(specs)
         # C99 §6.7.5.3.2: the only storage class allowed on a parameter
@@ -3354,9 +3444,23 @@ class _ASTBuilder(Transformer):
             # The object's or function's type, for a `typeof` that
             # names it, and its value when it's a named constant (C23
             # §6.6p7), which the constant expressions the parser folds
-            # may use.
+            # may use. A type `auto` infers is worked out here, before
+            # the name is declared, and goes back to `var_decl`.
+            base, _storage = _split_specifiers(decl_specs.specs)
+            if isinstance(base, _Inferred):
+                inferred = _inferred_type(
+                    base, decl_tree, init,
+                    constexpr=_has_constexpr(decl_specs.specs),
+                )
+                constant = None
+                if _has_constexpr(decl_specs.specs):
+                    constant = _fold_named_constant(inferred, init)
+                _CTX.declare(
+                    _declarator_name(decl_tree),
+                    _object_binding(inferred, constant),
+                )
+                return (decl_tree, init, postfix, [], inferred)
             try:
-                base, _storage = _split_specifiers(decl_specs.specs)
                 _name, composed, _p, _r = _apply_declarator(
                     decl_tree, base,
                 )
@@ -3386,7 +3490,7 @@ class _ASTBuilder(Transformer):
                 _declarator_name(decl_tree),
                 _object_binding(composed, constant),
             )
-            return (decl_tree, init, postfix, [])
+            return (decl_tree, init, postfix, [], None)
         base, _storage = _split_specifiers(decl_specs.specs)
         name, composed, _params, _regs = _apply_declarator(decl_tree, base)
         tags = _type_tags(composed, [])
@@ -3396,7 +3500,7 @@ class _ASTBuilder(Transformer):
             (tag, is_union) for tag, is_union in tags
             if tag_scopes[tag] is _CTX.scopes[-1]
         ]
-        return (decl_tree, init, postfix, forward_tags)
+        return (decl_tree, init, postfix, forward_tags, None)
 
     def var_decl(self, items):
         # `var_decl: attribute_specifier_seq? specifier+
@@ -3417,6 +3521,12 @@ class _ASTBuilder(Transformer):
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         is_constexpr = _has_constexpr(specs)
+        if (_has_auto(specs) and not isinstance(base_type, _Inferred)
+                and len(_CTX.scopes) == 1):
+            raise ParserError(
+                "`auto` at file scope only marks a type to infer, and "
+                "this declaration has a type specifier (C23 §6.7.2p4)"
+            )
         # The leading attributes apply to each declarator, with those
         # after its name. They're checked below, once the composed
         # type says whether it names a function (zp_abi) or an object
@@ -3440,11 +3550,23 @@ class _ASTBuilder(Transformer):
             return struct_decls + _typedef_declaration(
                 prefix_attrs, init_decls, struct_decls,
             )
-        tails: list = []
-        for decl_tree, init, name_attrs, _tags in init_decls:
-            name, composed, outer_param_names, outer_param_regs = (
-                _apply_declarator(decl_tree, base_type)
+        if isinstance(base_type, _Inferred) and len(init_decls) > 1:
+            raise ParserError(
+                "an `auto` declaration that infers its type declares one "
+                "name, and c6502 doesn't take more (C23 §6.7.1p12 leaves "
+                "it to the implementation)"
             )
+        tails: list = []
+        for decl_tree, init, name_attrs, _tags, inferred in init_decls:
+            if inferred is not None:
+                name = _declarator_name(decl_tree)
+                composed, outer_param_names, outer_param_regs = (
+                    inferred, None, None,
+                )
+            else:
+                name, composed, outer_param_names, outer_param_regs = (
+                    _apply_declarator(decl_tree, base_type)
+                )
             if name_attrs is not None and any(
                 n == "save_hardware_stack" for n, _a in name_attrs.c6502
             ):
@@ -3471,6 +3593,12 @@ class _ASTBuilder(Transformer):
                     _extract_function_attributes(attr_specs, where=where)
                 )
                 noreturn = _is_noreturn(attrs)
+                if _has_auto(specs):
+                    raise ParserError(
+                        f"`auto` can't go on {where}, since a function "
+                        f"has no automatic storage and c6502 doesn't "
+                        f"infer a function's type"
+                    )
                 if is_constexpr:
                     raise ParserError(
                         f"`constexpr` declares a named constant, which "
@@ -3514,7 +3642,8 @@ class _ASTBuilder(Transformer):
                             f"initializer, and a constexpr declaration "
                             f"must have one (C23 §6.7.2p5)"
                         )
-                    composed = _constexpr_type(composed)
+                    if inferred is None:
+                        composed = _constexpr_type(composed)
                 tails.append(c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
                         name=name,
@@ -3629,6 +3758,13 @@ class _ASTBuilder(Transformer):
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         decl_tree = items[i]
+        if _has_auto(specs):
+            raise ParserError(
+                f"`auto` can't go on function definition "
+                f"{_declarator_name(decl_tree)!r}: c6502 doesn't infer a "
+                f"function's return type (C23 §6.7.1p12 leaves it to the "
+                f"implementation), and a function has no automatic storage"
+            )
         name, composed, outer_param_names, outer_param_regs = (
             _apply_declarator(decl_tree, base_type)
         )

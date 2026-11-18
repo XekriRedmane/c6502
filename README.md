@@ -105,6 +105,17 @@ These parts work.
   `typeof_unqual` of a `const char *const` array is an array of
   `const char *`. `<stddef.h>` declares `nullptr_t` as C23's does,
   `typeof_unqual(nullptr)`.
+- C23's `auto` infers an object's type from its initializer when the
+  declaration has no type specifier, so `auto p = &a;` with a
+  `double a` makes `p` a `double *`. The initializer's qualifiers
+  go, an array or a function becomes a pointer, and the
+  declaration's own qualifiers apply, as in `const auto k = 5;`. It
+  works with `static`, `register`, and `constexpr`, at file scope and
+  in a block. The name can't be used in its own initializer. c6502
+  takes one plain name per such declaration, and not `auto *p` or a
+  function, which C23 leaves to the implementation. With a type
+  specifier, `auto` is C99's storage class, as in `auto int x;`, in a
+  block only.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.

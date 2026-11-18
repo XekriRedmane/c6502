@@ -274,7 +274,7 @@ _spec_after_type: specifier | type_specifier
 _type_head: type_specifier | typedef_name | typeof_specifier
 // A specifier that isn't a type: a storage class or a type qualifier.
 specifier: type_qualifier | STATIC | EXTERN | REGISTER | TYPEDEF | CONSTEXPR
-         | THREAD_LOCAL | ALT_THREAD_LOCAL
+         | THREAD_LOCAL | ALT_THREAD_LOCAL | AUTO
 typedef_name: TYPEDEF_NAME
 // C23's typeof specifier (§6.7.3.6): the type of an expression, which
 // isn't evaluated, or a type name, and with `typeof_unqual` that type

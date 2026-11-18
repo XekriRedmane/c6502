@@ -856,6 +856,25 @@ uses real typedefs. `bool`, `true`, and `false` are keywords (C23
 §6.4.1), so `<stdbool.h>` defines only `__bool_true_false_are_defined`.
 `<stddef.h>` declares `nullptr_t` as `typeof_unqual(nullptr)`.
 
+### auto
+
+C23's `auto` (§6.7.2, §6.7.10) is in the grammar's `specifier` rule.
+With a type specifier it's C99's automatic storage class:
+`_split_specifiers` leaves `storage_class` None, and `var_decl`
+rejects it at file scope (`_has_auto`) and with another storage
+class. With no type specifier, `_split_specifiers` returns an
+`_Inferred` holding the qualifiers, and `init_declarator` infers the
+type before it declares the name (`_inferred_type`): the
+initializer's type from `_expression_type`, as for `typeof`, without
+its qualifiers, with an array or a function as a pointer, and with
+the declaration's qualifiers (and `const` for `constexpr`). The
+declarator must be a plain name, with an initializer that is an
+expression and doesn't use the name. `init_declarator` returns the
+type as the fifth item of its tuple, and `var_decl` takes it in place
+of composing the declarator, so no `auto` reaches the AST. A
+function, a parameter, a typedef, and more than one declarator in an
+inferring declaration are rejected.
+
 ### Enumerations
 
 `enum` (C99 §6.7.2.2), like `typedef`, never reaches the AST. The

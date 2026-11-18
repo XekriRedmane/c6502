@@ -173,7 +173,7 @@ definition is in an earlier block, so it's pushed from its pool byte.
 After the call it's pulled straight into `level`. `descend` goes from
 111 bytes to 44.
 
-In `examples/zork/interpreter/zstring.c`, `print_zstring` saves the
+In `examples/zork/zstring.c`, `print_zstring` saves the
 string decoder's state in locals before the call that prints an
 abbreviation, and restores it after. With the attribute the locals
 disappear, and the code is the same as the original Zork's: `LDA g;

@@ -46,7 +46,7 @@ on A does, and C is dead after the compare, the compare goes too:
     BNE   .if_else
 
 That's the high byte of `b == 2` in Zork's `instr_mul`
-(examples/zork/interpreter/numbers.c). Stores may come between the
+(examples/zork/numbers.c). Stores may come between the
 two, since they leave the flags and the register alone, except one
 lowered with an `LDY #off` setup.
 
@@ -67,7 +67,7 @@ the compare, none to `m`, and N and Z must be dead after the branch
 on both paths, since the add sets them from the sum. That's `if
 (new_lo < lo)` after `new_lo = lo + offset`, the C for the carry of a
 byte add, in Zork's `branch_to_offset`
-(examples/zork/interpreter/decode.c).
+(examples/zork/decode.c).
 
 A compare of a volatile read is never followed by a branch
 (`volatile_void_read_cmp` makes that rewrite only when the flags

@@ -49,7 +49,7 @@ in 2 cycles where the load takes 3 or 4:
     Mov(Reg(A), <mem M>)    # STA M
     Or(Imm(0), Reg(A))      # ORA #$00
 
-`print_zstring` (examples/zork/interpreter/zstring.c) tests the
+`print_zstring` (examples/zork/zstring.c) tests the
 alphabet `get_alphabet` returns this way, `JSR get_alphabet; ORA
 #$00; BNE`, as Zork's code does; the store is then dead, and
 `asm_dead_store` drops it. When nothing reads the flags, the load

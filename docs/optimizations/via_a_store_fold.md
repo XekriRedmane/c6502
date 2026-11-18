@@ -71,7 +71,7 @@ X or Y when the code parks A in a slot to make the copy:
    LDA   __local_do_var__n
 ```
 
-That's the entry of `do_var` in `examples/zork/interpreter/decode.c`,
+That's the entry of `do_var` in `examples/zork/decode.c`,
 which copies `OPERANDS[0]` into a slot while A holds the opcode it
 dispatches on, and it saves 4 bytes. It applies when the slot is one
 of the function's own `__local_*` slots that nothing reads after the

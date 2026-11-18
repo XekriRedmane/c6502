@@ -148,7 +148,6 @@ __local_draw_wipe_block__2	EQU	$BE
 __local_div_by_7__1	EQU	$BF
 __local_draw_wipe_block__3	EQU	$BF
 __local_div_by_7__q	EQU	$C0
-__local_draw_wipe_block__4	EQU	$C0
 __local_div_by_7__n_1	EQU	$C1
 __local_div_by_7__n_0	EQU	$C2
 BLOCK_DATA	EQU	$DF
@@ -211,7 +210,7 @@ DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
 ; def div_by_7 params=__zpabi_div_by_7__x_0,__zpabi_div_by_7__x_1,__zpabi_div_by_7__c_0,__zpabi_div_by_7__c_1 locals=__local_div_by_7__d_0,__local_div_by_7__d_1,__local_div_by_7__0,__local_div_by_7__1,__local_div_by_7__q,__local_div_by_7__n_1,__local_div_by_7__n_0 indirect=false in_cycle=false
-; def draw_wipe_block params=__zpabi_draw_wipe_block__line_0,__zpabi_draw_wipe_block__line_1,__zpabi_draw_wipe_block__c_0,__zpabi_draw_wipe_block__c_1 locals=__local_draw_wipe_block__0,__local_draw_wipe_block__1,__local_draw_wipe_block__2,__local_draw_wipe_block__3,__local_draw_wipe_block__4 indirect=false in_cycle=false
+; def draw_wipe_block params=__zpabi_draw_wipe_block__line_0,__zpabi_draw_wipe_block__line_1,__zpabi_draw_wipe_block__c_0,__zpabi_draw_wipe_block__c_1 locals=__local_draw_wipe_block__0,__local_draw_wipe_block__1,__local_draw_wipe_block__2,__local_draw_wipe_block__3 indirect=false in_cycle=false
 ; def draw_wipe_row params=__zpabi_draw_wipe_row__row_0,__zpabi_draw_wipe_row__row_1,__zpabi_draw_wipe_row__east_0,__zpabi_draw_wipe_row__east_1,__zpabi_draw_wipe_row__west_0,__zpabi_draw_wipe_row__west_1 locals= indirect=false in_cycle=false
 ; def draw_wipe_step params= locals= indirect=false in_cycle=false
 ; def iris_wipe params= locals=__local_iris_wipe__r indirect=false in_cycle=false
@@ -486,56 +485,43 @@ draw_wipe_block:
 
    LDY   #$00
    LDA   (__zpabi_draw_wipe_block__c_0),Y
-   STA   __local_draw_wipe_block__0
+   STA   __local_draw_wipe_block__3
    CMP   #$28
    BCC   .if_end@4
    RTS
 .if_end@4:
    LDA   wipe_dir
    BNE   .if_else@6
-   LDA   __zpabi_draw_wipe_block__line_0
-   ADC   __local_draw_wipe_block__0
-   STA   __local_draw_wipe_block__2
-   LDA   __zpabi_draw_wipe_block__line_1
-   ADC   #$00
-   STA   __local_draw_wipe_block__3
-   LDY   #$00
-   LDA   (__local_draw_wipe_block__2),Y
+   LDY   __local_draw_wipe_block__3
+   LDA   (__zpabi_draw_wipe_block__line_0),Y
    STA   __local_draw_wipe_block__1
-   INY
+   LDY   #$01
    LDA   (__zpabi_draw_wipe_block__c_0),Y
    TAX
    LDA   __local_draw_wipe_block__1
    AND   WIPE_BLOCK_CLOSE_MASK,X
-   DEY
-   STA   (__local_draw_wipe_block__2),Y
+   LDY   __local_draw_wipe_block__3
+   STA   (__zpabi_draw_wipe_block__line_0),Y
    RTS
 .if_else@6:
-   LDA   __zpabi_draw_wipe_block__line_0
-   ADC   __local_draw_wipe_block__0
-   STA   __local_draw_wipe_block__3
-   LDA   __zpabi_draw_wipe_block__line_1
-   ADC   #$00
-   STA   __local_draw_wipe_block__4
-   LDA   __local_draw_wipe_block__3
-   STA   __local_draw_wipe_block__0
-   LDY   #$00
-   LDA   (__local_draw_wipe_block__3),Y
+   LDY   __local_draw_wipe_block__3
+   LDA   (__zpabi_draw_wipe_block__line_0),Y
    STA   __local_draw_wipe_block__2
-   LDA   __local_draw_wipe_block__4
-   CLC
+   LDA   __zpabi_draw_wipe_block__line_0
+   STA   __local_draw_wipe_block__0
+   LDA   __zpabi_draw_wipe_block__line_1
    ADC   #$20
    STA   __local_draw_wipe_block__1
    LDA   (__local_draw_wipe_block__0),Y
    STA   __local_draw_wipe_block__1
-   INY
+   LDY   #$01
    LDA   (__zpabi_draw_wipe_block__c_0),Y
    TAX
    LDA   __local_draw_wipe_block__1
    AND   WIPE_BLOCK_OPEN_MASK,X
    ORA   __local_draw_wipe_block__2
-   DEY
-   STA   (__local_draw_wipe_block__3),Y
+   LDY   __local_draw_wipe_block__3
+   STA   (__zpabi_draw_wipe_block__line_0),Y
    RTS
 
 draw_wipe_row:

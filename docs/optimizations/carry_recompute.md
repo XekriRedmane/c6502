@@ -17,7 +17,7 @@ same way.
 
 ## Example
 
-From `load_packed_address` in `examples/zork/interpreter/pages.c`,
+From `load_packed_address` in `examples/zork/pages.c`,
 which sets the 24-bit `Z_PC2` to twice `SCRATCH2`:
 
 ```c

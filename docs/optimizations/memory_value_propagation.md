@@ -132,7 +132,7 @@ read costs over the zero-page one. With `table[i]` in place of
 at the join.
 
 The third rewrite is what turns Zork's `text = Z_HEADER_ADDR +
-OPERANDS[0];` (in examples/zork/interpreter/input.c) from
+OPERANDS[0];` (in examples/zork/input.c) from
 
 ```
    LDA   OPERANDS
@@ -184,7 +184,7 @@ label directly. `(N),Y` becomes `name,Y` (`IndexedData`), and the
 constant-Y `IndirectZp(N, k)` becomes `Data(name, k)`. Adding Y
 carries into the high byte in both addressing modes, so they reach
 the same byte. A local array of a function with a private pool has a
-fixed address, so Zork's `print_number` (examples/zork/interpreter/
+fixed address, so Zork's `print_number` (examples/zork/
 numbers.c), which keeps its digits in one, had loaded the array's
 address into a pointer before each of its two loops:
 
@@ -238,7 +238,7 @@ function outside the program that returns. A call to a function that
 never returns (`[[noreturn]]`, which `compile.optimized_asm` passes
 in) adds nothing, since the code after it never runs.
 
-In Zork's `objects.c` (examples/zork/interpreter), the property
+In Zork's `objects.c` (examples/zork), the property
 instructions read `OPERANDS[1]` after calls to `get_property_ptr`,
 `get_property_num`, and `next_property`, which only read the object
 table and write `props` and their own slots. Each had copied it into

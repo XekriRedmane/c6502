@@ -1308,29 +1308,31 @@ class TestTranslatePointerOrdering(unittest.TestCase):
         return asm_ast.Pseudo(name=name, offset=k)
 
     def _expected(self, left_name, right_name, cond):
-        # Two-byte SBC pair (carry threads), then C as the 0/1 value:
-        # `LDA #0; ROL A`, inverted with `EOR #1` for `<` (BCC). No
+        # Two-byte SBC pair (carry threads), then C as the 0/1 value,
+        # `LDA #0; ROL A`. For `<` (BCC) the operands swap and the
+        # subtract starts with CLC, so C is `right > left` itself. No
         # V-correction (no .cmp_novf label). The result store fills
         # both bytes of %r (Int = 2 bytes): low byte gets the 0/1
         # value from A, high byte gets a literal 0.
+        set_c = asm_ast.SetCarry()
+        if isinstance(cond, asm_ast.CC):
+            left_name, right_name = right_name, left_name
+            set_c = asm_ast.ClearCarry()
         return [
             asm_ast.Mov(src=self._byte(left_name, 0), dst=_REG_A),
-            asm_ast.SetCarry(),
+            set_c,
             asm_ast.Sub(src=self._byte(right_name, 0), dst=_REG_A),
             asm_ast.Mov(src=self._byte(left_name, 1), dst=_REG_A),
             asm_ast.Sub(src=self._byte(right_name, 1), dst=_REG_A),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.RotateLeft(dst=_REG_A),
-            *([asm_ast.Xor(src1=_REG_A, src2=asm_ast.Imm(value=1),
-                           dst=_REG_A)]
-              if isinstance(cond, asm_ast.CC) else []),
             asm_ast.Mov(src=_REG_A, dst=self._byte("%r", 0)),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=self._byte("%r", 1)),
         ]
 
     def test_pointer_less_than_uses_bcc_no_swap(self):
-        # p < q unsigned: compute p - q, branch on CC (no borrow
-        # = false; borrow = true → BCC takes branch when borrow).
+        # p < q unsigned: the caller passes p, q and CC, and the
+        # lowering computes q - p - 1, whose carry is q > p.
         t = self._setup()
         self.assertEqual(
             t.translate_binary(
@@ -1351,7 +1353,8 @@ class TestTranslatePointerOrdering(unittest.TestCase):
         )
 
     def test_pointer_greater_than_swaps_and_uses_bcc(self):
-        # p > q <=> q < p. Swap so left=%q, right=%p; BCC.
+        # p > q <=> q < p. Swap so left=%q, right=%p; BCC, which the
+        # lowering computes as p - q - 1.
         t = self._setup()
         self.assertEqual(
             t.translate_binary(

@@ -569,8 +569,6 @@ load_level:
    STA   __local_load_level__0
    LDA   __local_load_level__sprite
    STA   (__local_load_level__verbatim),Y
-   LDA   LEVEL_BG@lo,X
-   STA   __local_load_level__verbatim
    LDA   LEVEL_BG@hi,X
    STA   __local_load_level__0
    LDA   __local_load_level__sprite
@@ -754,15 +752,13 @@ enable_next_level_ladders:
    STA   __local_enable_next_level_ladders__n
 .loop@20_start:
    LDA   __local_enable_next_level_ladders__n
-   BNE   .lb_skip@4
+   BNE   .lb_skip@3
    JMP   .loop@20_break
-.lb_skip@4:
+.lb_skip@3:
    LDX   __local_enable_next_level_ladders__n
    LDA   LADDER_LOCS_COL,X
    STA   __local_enable_next_level_ladders__6
-   BPL   .lb_skip@3
-   JMP   .loop@20_continue
-.lb_skip@3:
+   BMI   .loop@20_continue
    LDA   LADDER_LOCS_ROW,X
    STA   __local_enable_next_level_ladders__5
    LDA   __local_enable_next_level_ladders__6
@@ -770,25 +766,14 @@ enable_next_level_ladders:
    LDA   LADDER_LOCS_ROW,X
    STA   GAME_ROWNUM
    LDX   __local_enable_next_level_ladders__5
+   LDA   LEVEL_BG@lo,X
+   STA   __local_enable_next_level_ladders__3
+   STA   __local_enable_next_level_ladders__1
    LDA   LEVEL_BG@hi,X
    STA   __local_enable_next_level_ladders__4
-   LDA   LEVEL_BG@lo,X
-   CLC
-   ADC   __local_enable_next_level_ladders__6
-   STA   __local_enable_next_level_ladders__3
-   BCC   .carry_inc@0
-   INC   __local_enable_next_level_ladders__4
-.carry_inc@0:
    LDA   LEVEL_MAP@hi,X
    STA   __local_enable_next_level_ladders__2
-   LDA   LEVEL_BG@lo,X
-   CLC
-   ADC   __local_enable_next_level_ladders__6
-   STA   __local_enable_next_level_ladders__1
-   BCC   .carry_inc@1
-   INC   __local_enable_next_level_ladders__2
-.carry_inc@1:
-   LDY   #$00
+   LDY   __local_enable_next_level_ladders__6
    LDA   (__local_enable_next_level_ladders__3),Y
    BEQ   .if_end@23
    LDA   #$01
@@ -796,7 +781,6 @@ enable_next_level_ladders:
    JMP   .loop@20_continue
 .if_end@23:
    LDA   #$03
-   LDY   #$00
    STA   (__local_enable_next_level_ladders__3),Y
    LDA   (__local_enable_next_level_ladders__1),Y
    BNE   .if_end@24

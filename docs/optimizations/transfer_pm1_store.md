@@ -83,7 +83,7 @@ STA next` into `INX; STX next`.
   `SBC` or `ADC` set them, but set N and Z from the new value just as
   the `SBC` or `ADC` did, so a branch on N or Z may follow. That was
   `get_next_code_byte2`'s `if (++Z_PC2_L == 0)` in
-  examples/zork/interpreter/pages.c, which became `INY; STY
+  examples/zork/pages.c, which became `INY; STY
   Z_PC2_L; BNE`, so the byte it read stayed in A. (Z_PC2 is now a
   24-bit struct, whose increment is `INC`; see [members computed in
   place](in_place_member_update.md).)
@@ -126,7 +126,7 @@ Y ends up with the sum too. A `TAY` back after the second makes all four
 instructions one `INY`, when A, C, and V are dead after it. N and Z
 come out the same in each, from the sum. Each saves 2 bytes and 2
 cycles for a step of 1, and 1 byte for a step of 2. Zork's
-`match_dictionary_word` (examples/zork/interpreter/input.c) steps its
+`match_dictionary_word` (examples/zork/input.c) steps its
 index through the dictionary's header with `y++`, which gave both
 shapes:
 
@@ -160,7 +160,7 @@ for a step of 1 or 2, `CLC; ADC #k` with `INX`, and the Y forms, when
 A, C, and V are dead after (`_rewrite_step_then_reload`). X and the
 byte end up with the same value as before, and N and Z come out the
 same, from the last step. That's `x -= 2` in Zork's `return_value`
-(examples/zork/interpreter/decode.c), and it saves 3 bytes there, 4
+(examples/zork/decode.c), and it saves 3 bytes there, 4
 for a step of 1.
 
 ## What it leaves alone

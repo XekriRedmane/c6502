@@ -77,7 +77,7 @@ both become `LDY #1` accesses. An SSA-renamed `p` always holds the
 same value. Any other `p`, such as a global, must not be volatile,
 and the `Add` must be in the access's block with no call, store, or
 assignment to `p` between them. Zork's `parse[1]++` in
-examples/zork/interpreter/input.c went from 24 bytes, which built
+examples/zork/input.c went from 24 bytes, which built
 `parse + 1` in a zero-page pair, to 12.
 
 These must also be true.
@@ -132,7 +132,41 @@ z << 1`:
 ```
 
 which is the original's `INY`, 14 bytes shorter in `print_zstring`
-(examples/zork/interpreter/zstring.c).
+(examples/zork/zstring.c).
+
+## An index shared by several accesses
+
+`p[i] &= m` reads and writes `p + ZeroExtend(i)`. When every reader of
+the sum is a 1-byte `Load` from it or `Store` to it, each becomes
+`(p),Y` with Y = `i`, and the sum goes once the last one is rewritten
+(`_shared_extend_add_chain`). `i` must be SSA-renamed, and `p` must
+hold at each access the value the sum read.
+
+A reader may also be `(p + ZeroExtend(i)) + k`, for a constant `k`
+outside 0 to 255, read by one 1-byte access. Common subexpression
+elimination turns `background[x]`, with `background = line + 0x2000`,
+into `(line + x) + 0x2000` so that it shares `line + x` with
+`line[x]`. That access becomes `(t),Y` with Y = `x` and `t = line +
+0x2000`, a pointer plus a constant, made just before the access
+(`_offset_from_extend_chain`). A `k` of 0 to 255 is left as `(q),Y`
+with Y = `k`, since several such offsets share `q` where each would
+need a pointer of its own.
+
+Lode Runner's wipe draws a block of the closing or opening circle
+with
+
+```c
+if (wipe_dir == 0)
+    line[c->byte] &= WIPE_BLOCK_CLOSE_MASK[c->pixel];
+else
+    line[c->byte] |= line[c->byte + 0x2000] & WIPE_BLOCK_OPEN_MASK[c->pixel];
+```
+
+The closing branch had added `c->byte` to `line` in a zero-page pair
+and read and written through it with Y = 0. It now loads Y with
+`c->byte` and reads and writes `(line),Y`, and the opening branch adds
+0x20 to a copy of `line`'s high byte. Together with the same shapes
+in `sprites.c` and `level.c`, the program is 79 bytes shorter.
 
 ## What it leaves alone
 

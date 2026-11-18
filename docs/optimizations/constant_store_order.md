@@ -13,7 +13,7 @@ one, it's loaded again, 2 bytes and 2 cycles each time.
 
 ## Example
 
-Zork's `main` (examples/zork/interpreter/main.c) sets the printer's
+Zork's `main` (examples/zork/main.c) sets the printer's
 `CSW` to `$C100` and then clears several of the interpreter's bytes.
 
 ### Before

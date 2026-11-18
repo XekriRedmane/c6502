@@ -33,7 +33,7 @@ Only A differs, since the moved branch skips the load, so A must be
 dead where it arrives (`a_dead_at`). M0 is a `Data` or `ZP` byte,
 the load isn't volatile, and `done` is reached only from the chain.
 
-`get_next_code_byte2` in examples/zork/interpreter/pages.c is
+`get_next_code_byte2` in examples/zork/pages.c is
 
     Z_PC2.lo++;
     if ((uint8_t)Z_PC2.lo == 0) { ... }

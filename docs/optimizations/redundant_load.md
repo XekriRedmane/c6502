@@ -39,7 +39,13 @@ The pass has five more rewrites that use the same lists.
 - `LDA X; STA D1; LDA M; STA D2`, with A already holding M, becomes
   `STA D2; LDA X; STA D1`, when neither store writes what the other
   pair reads or stores (D1 against M and D2, D2 against X) and A
-  and N/Z are dead after. Every case of `floor_enemy_draw`'s second
+  and N/Z are dead after. Nor may D1 be a byte of the pointer that
+  D2 is stored through, or D2 a byte of X's pointer, which the pass
+  checks with the addresses of the unit's zero-page slots
+  (`zp_symbol_addrs`). Once the groups dropped a `LDA #7` before
+  `STA (p),Y`, `LDA LEVEL_BG@hi,X; STA p+1; STA (p),Y` had become
+  `STA (p),Y; LDA LEVEL_BG@hi,X; STA p+1`, which stored through the
+  old pointer. Every case of `floor_enemy_draw`'s second
   dispatch leaves the high byte of the sprite pointer in A, and the
   join stored the low byte to `draw_sprite`'s parameter first:
 
@@ -75,7 +81,7 @@ The pass has five more rewrites that use the same lists.
   STY M` (or `LDX` / `STX`) when A holds a value from memory that's
   loaded again after the store, `k` isn't read afterwards, and Y (or
   X) is dead. The reload then goes in the second phase. `get_alphabet`
-  (examples/zork/interpreter/zstring.c) returns the alphabet it
+  (examples/zork/zstring.c) returns the alphabet it
   loaded after `SHIFT_ALPHABET = 0xFF`, and became Zork's own `LDY
   #$FF; STY SHIFT_ALPHABET; RTS` with no copy in a local.
 
@@ -83,6 +89,48 @@ These three change what A or Z holds at the end of a block, which would
 make the lists a later block starts with wrong. So they're a phase of
 their own: the pass applies them (keeping the swapped `LDA M`),
 computes the lists again on the result, and only then drops loads.
+
+A store from a register into a byte its list holds goes, since the
+byte already holds the value.
+
+When a register is loaded with something else, the bytes its list
+held still hold one value. Two or more of them stay together as a
+memory group, and a load of any byte of a group gives the register
+the whole group as its list. So a store into a byte of the group then
+goes. Lode Runner's tables of row addresses for `LEVEL_MAP` and
+`LEVEL_BG` share their low bytes, and a function that reads a cell of
+`LEVEL_BG` and then writes the same cell of `LEVEL_MAP` sets up the
+second pointer with the same low byte. In `guard_fall_into_row_below`
+(examples/lode_runner/guards.c)
+
+```
+   LDA   LEVEL_BG@lo,X                 LDA   LEVEL_BG@lo,X
+   STA   p                             STA   p
+   LDA   LEVEL_BG@hi,X                 LDA   LEVEL_BG@hi,X
+   STA   p+1                           STA   p+1
+   LDA   (p),Y                 ->      LDA   (p),Y
+   BNE   .if_else@45                   BNE   .if_else@45
+   LDA   LEVEL_BG@lo,X                 LDA   LEVEL_MAP@hi,X
+   STA   p                             STA   p+1
+   LDA   LEVEL_MAP@hi,X
+   STA   p+1
+```
+
+`p` and `LEVEL_BG@lo,X` form a group when A is loaded from
+`LEVEL_BG@hi,X`, and the group survives the load through the pointer
+and the branch. The store through `p` that follows doesn't end it
+either, since no pointer reaches the table, a `static` whose address
+the unit never takes (`asm_aliasing.may_alias` now says so for an
+indexed access to such an object too). The `LDA LEVEL_BG@lo,X` left
+without its store goes as a dead load. The groups take 50 bytes off
+Lode Runner.
+
+A group ends where a list would lose the same operands: a write that
+may alias a byte of it removes that byte, and a change to X or Y
+removes every operand indexed by the register. That includes a
+transfer into X or Y, `TAX` after `LDA t,X`, which the lists hadn't
+been checked for, and which the groups needed, since a group outlives
+the register. Two groups at a join keep what both paths agree on.
 
 A load into A of a value A already holds, kept because a branch
 reads the flags it sets, becomes `ORA #$00`: the same N and Z from A,
@@ -167,7 +215,7 @@ leaves a byte no pointer can point to
 (`asm_aliasing.unreachable_by_pointer`), which is a `static` whose
 address the unit never takes or a function's own zero-page slot
 (`__local_f__*`, `__zpabi_f__*`) whose address the unit never takes.
-Zork's `read_line` (examples/zork/interpreter/input.c) stores its
+Zork's `read_line` (examples/zork/input.c) stores its
 `c` through `text` and then compares it, and the second `LDA
 __local_read_line__c` goes:
 

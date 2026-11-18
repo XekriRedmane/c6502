@@ -164,6 +164,20 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
 
     def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         chain = recognize_extend_add_chain(m.bindings['addr_var'], env, ctx)
+        if chain is None:
+            chain = _shared_extend_add_chain(m.bindings['addr_var'], env, ctx)
+            if chain is not None:
+                # The Add and the extend stay for the readers not yet
+                # rewritten. Once every one is, nothing reads them,
+                # and the asm byte DCE drops them.
+                return self._finish(
+                    m, ctx, chain.base, chain.idx_var, (), [], env,
+                )
+        if chain is None:
+            moved = _offset_from_extend_chain(m, env, ctx)
+            if moved is not None:
+                ptr_var, idx_var, pre = moved
+                return self._finish(m, ctx, ptr_var, idx_var, (), pre, env)
         if chain is not None:
             ptr_var, idx_var = chain.base, chain.idx_var
             drop = chain.drop_defs()
@@ -218,6 +232,91 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
         if pre:
             return Rewrite(replacement=[*pre, replacement], drop_defs=drop)
         return Rewrite(replacement=replacement, drop_defs=drop)
+
+
+def _shared_extend_add_chain(
+    addr_var: tac_ast.Var, env: DefUseEnv, ctx: PassContext,
+):
+    """The `ExtendAddChain` of `addr_var = ptr + ZeroExtend(i)` when
+    `addr_var` has several readers and each is a 1-byte `Load` from it
+    or `Store` to it (`_all_byte_accesses`), as in `p[i] &= m`, which
+    reads and writes `p + i`. Each reader becomes `(p),Y` with Y = `i`,
+    so `i` must be SSA-renamed to hold the Add's value at each one.
+    Else None."""
+    if env.extra.get(addr_var.name, 0) < 2:
+        return None
+    chain = recognize_extend_add_chain(addr_var, env, ctx, single_use=False)
+    if chain is None or chain.idx_var.name not in ctx.ssa_dsts:
+        return None
+    if not _all_byte_accesses(addr_var, chain.base, env, ctx, offsets=True):
+        return None
+    return chain
+
+
+def _offset_from_extend_chain(m, env: DefUseEnv, ctx: PassContext):
+    """`(t, i, [Binary(Add, p, k, t)])` when the access reads or writes
+    through `q + k`, its one reader, with `k` an integer constant that
+    doesn't fit in a byte and `q = p + ZeroExtend(i)`, whose other
+    readers, if any, all become `(p),Y` accesses
+    (`_shared_extend_add_chain`). The access is then `(t),Y` with Y =
+    `i` and `t = p + k`, a pointer plus a constant, and `q` itself goes
+    once its other readers are rewritten. A `k` of 0 to 255 is left to
+    `_const_offset_chain`, which reads `(q),Y` with Y = `k`, since
+    several such offsets share `q` where each would need a pointer of
+    its own here. `background[x]` with
+    `background = line + 0x2000`, which CSE had turned into
+    `(line + x) + 0x2000` to share `line + x` with `line[x]`, reads
+    page 2 through its own pointer. `p` must hold at the access the
+    value `q`'s Add read. Else None."""
+    from passes.optimization.narrow_widened_arith import (
+        _register_temp, var_unchanged,
+    )
+    if ctx.symbols is None or ctx.ssa_dsts is None:
+        return None
+    addr = m.bindings['addr_var']
+    if addr.name not in ctx.ssa_dsts or env.extra.get(addr.name, 0) != 1:
+        return None
+    outer = env.def_of(addr)
+    if not (isinstance(outer, tac_ast.Binary)
+            and isinstance(outer.op, tac_ast.Add)):
+        return None
+    for q, k in ((outer.src1, outer.src2), (outer.src2, outer.src1)):
+        if not (isinstance(q, tac_ast.Var) and isinstance(k, tac_ast.Constant)
+                and q.name in ctx.ssa_dsts):
+            continue
+        value = getattr(k.const, "value", None)
+        if not isinstance(value, int) or isinstance(
+            k.const, (tac_ast.ConstFloat, tac_ast.ConstDouble),
+        ):
+            continue
+        if 0 <= value <= 0xFF:
+            # `(q),Y` with Y = k reads it without a second pointer.
+            continue
+        if env.extra.get(q.name, 0) >= 2:
+            chain = _shared_extend_add_chain(q, env, ctx)
+        else:
+            chain = recognize_extend_add_chain(q, env, ctx)
+            if chain is not None and chain.idx_var.name not in ctx.ssa_dsts:
+                chain = None
+        if chain is None or not isinstance(chain.base, tac_ast.Var):
+            continue
+        if _resolves_to_constant(chain.base, env.def_idx, env.instructions):
+            continue
+        access = m.bindings.get('load_instr') or m.bindings.get('store_instr')
+        at = next((i for i, ins in enumerate(env.instructions)
+                   if ins is access), None)
+        q_idx = env.def_idx.get(q.name)
+        if at is None or q_idx is None or not var_unchanged(
+            chain.base, q_idx, at, env, ctx,
+        ):
+            continue
+        name = f"{addr.name}.base"
+        _register_temp(ctx, like=chain.base.name, name=name)
+        t = tac_ast.Var(name=name)
+        return t, chain.idx_var, [tac_ast.Binary(
+            op=tac_ast.Add(), src1=chain.base, src2=k, dst=t,
+        )]
+    return None
 
 
 def _const_offset_chain(
@@ -348,14 +447,17 @@ def _byte_index_sum(ptr, k, m, env: DefUseEnv, ctx: PassContext):
 
 def _all_byte_accesses(
     addr_var: tac_ast.Var, ptr: tac_ast.Type_val, env: DefUseEnv,
-    ctx: PassContext,
+    ctx: PassContext, offsets: bool = False,
 ) -> bool:
     """True iff every read of `addr_var` is the pointer of a `Load`
     into a 1-byte Var or of a `Store` of a 1-byte value, and `ptr`
     still holds at each one the value the Add read. Then every reader
     becomes an indexed access, and nothing reads the Add. A non-SSA `ptr`, such
     as a global, must be unchanged from the Add to each access
-    (`narrow_widened_arith.var_unchanged`)."""
+    (`narrow_widened_arith.var_unchanged`). With `offsets`, a reader
+    may also be `addr_var + k` for a constant `k` outside 0 to 255
+    whose one reader is such an access, which
+    `_offset_from_extend_chain` rewrites."""
     from passes.optimization.narrow_widened_arith import var_unchanged
     from passes.optimization.var_visit import uses_in
     add_idx = env.def_idx.get(addr_var.name)
@@ -371,6 +473,13 @@ def _all_byte_accesses(
         elif isinstance(instr, tac_ast.Store) and instr.dst_ptr == addr_var:
             ok = (instr.src != addr_var
                   and is_1_byte_val(instr.src, ctx.symbols))
+        elif offsets:
+            at = _offset_access(instr, addr_var, env, ctx)
+            ok = at is not None
+            if ok and at >= 0 and isinstance(ptr, tac_ast.Var) and not var_unchanged(
+                ptr, add_idx, at, env, ctx,
+            ):
+                return False
         else:
             ok = False
         if not ok or reads != 1:
@@ -383,6 +492,43 @@ def _all_byte_accesses(
     # `env.instructions` holds the rewrites made so far in this run,
     # so an access already rewritten no longer reads `addr_var`.
     return seen > 0
+
+
+def _offset_access(
+    instr, addr_var: tac_ast.Var, env: DefUseEnv, ctx: PassContext,
+) -> int | None:
+    """The index of the one reader of `instr`'s dst when `instr` is
+    `Binary(Add, addr_var, k)` (either order) with an integer constant
+    `k` outside 0 to 255, its dst is SSA-renamed, and that reader is a 1-byte `Load`
+    from the dst or `Store` to it, or -1 when that access has been
+    rewritten already in this run and nothing reads the dst. Else
+    None."""
+    from passes.optimization.var_visit import uses_in
+    if not (isinstance(instr, tac_ast.Binary) and isinstance(instr.op, tac_ast.Add)):
+        return None
+    other = instr.src2 if instr.src1 == addr_var else instr.src1
+    if not isinstance(other, tac_ast.Constant):
+        return None
+    value = getattr(other.const, "value", None)
+    if not isinstance(value, int) or isinstance(
+        other.const, (tac_ast.ConstFloat, tac_ast.ConstDouble),
+    ) or 0 <= value <= 0xFF:
+        return None
+    dst = instr.dst
+    if not (isinstance(dst, tac_ast.Var) and dst.name in ctx.ssa_dsts
+            and env.extra.get(dst.name, 0) == 1):
+        return None
+    for i, use in enumerate(env.instructions):
+        if not any(u.name == dst.name for u in uses_in(use)):
+            continue
+        if isinstance(use, tac_ast.Load) and use.src_ptr == dst:
+            return i if is_1_byte_var(use.dst, ctx.symbols) else None
+        if isinstance(use, tac_ast.Store) and use.dst_ptr == dst:
+            return i if (use.src != dst
+                         and is_1_byte_val(use.src, ctx.symbols)) else None
+        return None
+    # The access has been rewritten already, so nothing reads the Add.
+    return -1
 
 
 _IMPL = _RecognizeIndirectIndexedDefUse()

@@ -24,7 +24,7 @@ which `tac_to_asm` lowers to one `CMP` and two branches per byte.
 `tail_merge` sends both bytes' "less" branches to one copy of the
 `return 0`.
 
-Zork's `match_dictionary_word` (examples/zork/interpreter/input.c)
+Zork's `match_dictionary_word` (examples/zork/input.c)
 compares the two 2-byte halves of an encoded word with a dictionary
 entry this way. Its inner loop became the same code as Zork's own,
 and the function went from 231 bytes to 181. Zork's is 190.

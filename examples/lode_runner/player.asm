@@ -121,10 +121,10 @@ __local_keep_digging__6	EQU	$BA
 __local_keep_digging__7	EQU	$BB
 __local_draw_player__0	EQU	$BE
 __local_erase_player__0	EQU	$BE
-__local_check_for_gold_picked_up_by_player__1	EQU	$BF
 __local_draw_player__1	EQU	$BF
 __local_erase_player__1	EQU	$BF
 __local_check_for_gold_picked_up_by_player__2	EQU	$C0
+__local_check_for_gold_picked_up_by_player__3	EQU	$C1
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -542,17 +542,12 @@ check_for_gold_picked_up_by_player:
    RTS
 .if_end@5:
    LDX   PLAYER_ROW
-   LDA   LEVEL_BG@hi,X
-   STA   __local_check_for_gold_picked_up_by_player__2
    LDA   LEVEL_BG@lo,X
-   CLC
-   ADC   PLAYER_COL
-   STA   __local_check_for_gold_picked_up_by_player__1
-   BCC   .carry_inc@0
-   INC   __local_check_for_gold_picked_up_by_player__2
-.carry_inc@0:
-   LDY   #$00
-   LDA   (__local_check_for_gold_picked_up_by_player__1),Y
+   STA   __local_check_for_gold_picked_up_by_player__2
+   LDA   LEVEL_BG@hi,X
+   STA   __local_check_for_gold_picked_up_by_player__3
+   LDY   PLAYER_COL
+   LDA   (__local_check_for_gold_picked_up_by_player__2),Y
    CMP   #$07
    BEQ   .if_end@6
    RTS
@@ -560,11 +555,9 @@ check_for_gold_picked_up_by_player:
    LSR   DIDNT_PICK_UP_GOLD
    DEC   GOLD_COUNT
    STX   GAME_ROWNUM
-   LDA   PLAYER_COL
-   STA   GAME_COLNUM
+   STY   GAME_COLNUM
    LDA   #$00
-   LDY   #$00
-   STA   (__local_check_for_gold_picked_up_by_player__1),Y
+   STA   (__local_check_for_gold_picked_up_by_player__2),Y
    STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDX   GAME_COLNUM
@@ -994,12 +987,11 @@ stop_digging:
 keep_digging:
    SUBROUTINE
 
-   LDA   DIG_DIRECTION
-   SEC
-   SBC   #$80
+   LDA   #$80
+   CLC
+   SBC   DIG_DIRECTION
    LDA   #$00
    ROL
-   EOR   #$01
    STA   __local_keep_digging__7
    BEQ   .cond_else@50
    LDA   #$0C

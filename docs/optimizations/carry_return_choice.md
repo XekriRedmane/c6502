@@ -74,7 +74,7 @@ where they took 8, since each is a `CLC` or `SEC` and its own `RTS`
 ([carry_return.md](carry_return.md)), and the call takes 2 bytes
 less.
 
-In Zork's interpreter (examples/zork/interpreter) it chooses the
+In Zork's interpreter (examples/zork) it chooses the
 three separator tests of `input.c`, which the original also returns
 in the carry, and `is_separator` becomes the original's `JSR
 is_dict_separator; BCC ...; RTS` followed by a tail call of
@@ -154,7 +154,7 @@ every unit.
   into a byte for those, which costs more than returning in A. The
   choice is made on TAC, where it can't tell which instructions
   will leave C alone. Zork's `write_to_sector`
-  (examples/zork/interpreter/disk.c) stores `do_rwts_on_sector`'s
+  (examples/zork/disk.c) stores `do_rwts_on_sector`'s
   result while it restores the motor's spin-up time, and the carry
   survives the `LDA` and `STA` in between, so `do_rwts_on_sector`
   keeps the annotation.

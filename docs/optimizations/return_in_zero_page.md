@@ -92,7 +92,7 @@ the copy's stores are dead. A call, or a store through a pointer,
 which could reach zero page, ends that, so a pointer used after one
 keeps its copy.
 
-In Zork's interpreter (examples/zork/interpreter) it applies to
+In Zork's interpreter (examples/zork) it applies to
 `get_object_addr` in `objects.c` and `get_dictionary_addr` in
 `input.c`, 22 bytes in the two units.
 

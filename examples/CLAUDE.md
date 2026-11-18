@@ -26,7 +26,7 @@ HUD strip painting, sprite blitting, audio tone generation, enemy AI
 advancement, hit-entity refresh. Many use `[[c6502::zp_abi]]`
 on the leaf helpers to exercise the call-graph-disjoint ZP allocator.
 
-`zork/interpreter/` is all of `output/main.asm` of
+`zork/` is all of `output/main.asm` of
 https://github.com/XekriRedmane/zorki-r15-reveng, Zork I's (r15) whole
 interpreter, in eleven C files and a shared header, linked by a linker
 script into a program that runs from `$0800` around DOS's RWTS and
@@ -61,7 +61,8 @@ project's directory (which holds `main.bin`, `lode_runner.do`, and
 `main.asm`), plays three scripts on the linked program and on the
 original, on the stand-in Apple II in `sim/lode_runner.py`, and
 compares every soft-switch access and RWTS call. There's no checked-in
-listing of the linked program.
+listing of the linked program. Its README describes how the program
+is built and compared, and each file's size against the original's.
 
 The program has `static` variables with initial values that `-O`
 promotes into zero page, such as editor.c's `kbd_entry_index`, and

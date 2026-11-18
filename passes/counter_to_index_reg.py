@@ -46,7 +46,7 @@ the same flags.
   `DEC` passes through the init. The loop is every instruction the
   code after the init reaches and that reaches the `DEC` again, so a
   block of it placed out of line counts, as the `ssa_split` block
-  that `divu16` (examples/zork/interpreter/numbers.c) leaves after its
+  that `divu16` (examples/zork/numbers.c) leaves after its
   `RTS` for the path where the divisor doesn't fit.
 - The register is dead at the init (`x_dead_at` / `y_dead_at`), so
   overwriting it there can't change a later read. An init from the
@@ -196,8 +196,9 @@ def _successors(instrs, i: int, label_at) -> list[int]:
 
 def _loop_region(instrs, init_i: int, dec_i: int, label_at):
     """The instructions the code after the init reaches and that reach
-    the DEC again: the loop, with any block of it placed out of line
-    (as `ssa_split` blocks are, after the function's return). None
+    the DEC again without passing the init: the loop, with any block
+    of it placed out of line (as `ssa_split` blocks are, after the
+    function's return). None
     when an instruction outside it, other than the init, jumps or
     falls into it, since the counter would arrive there without its
     init."""
@@ -220,7 +221,13 @@ def _loop_region(instrs, init_i: int, dec_i: int, label_at):
     stack = [dec_i]
     while stack:
         i = stack.pop()
-        if i in loop or i not in forward:
+        # The walk back stops at the init, which gives the counter its
+        # value. An enclosing loop that runs the init again on each of
+        # its passes is outside the counter's loop, so the counter
+        # may take a register the enclosing loop uses, such as the
+        # outer counter of a delay `do { for (y = n; --y;) {} } while
+        # (--count);`.
+        if i in loop or i not in forward or i == init_i:
             continue
         loop.add(i)
         stack.extend(preds.get(i, ()))

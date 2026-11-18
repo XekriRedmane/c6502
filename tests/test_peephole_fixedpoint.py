@@ -127,7 +127,7 @@ class TestFixedpoint(unittest.TestCase):
         # the equality check sees "changed" every iteration.
         rebuild_count = [0]
 
-        def always_change(p):
+        def always_change(p, **_):
             rebuild_count[0] += 1
             fn = p.top_level[0]
             new_fn = asm_ast.Function(

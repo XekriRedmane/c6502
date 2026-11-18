@@ -27,7 +27,7 @@ or `Xor` (3-operand IR form, different shape).
 
 The final `STA mem` is optional: without it the result in A is the
 same, and the rewrite still drops the load. `print_zstring`'s
-`get_alphabet() + z` (examples/zork/interpreter/zstring.c) was
+`get_alphabet() + z` (examples/zork/zstring.c) was
 `STA t; LDA z; CLC; ADC t` and becomes `CLC; ADC z`.
 
 # What the rewrite does

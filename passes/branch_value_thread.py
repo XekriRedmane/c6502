@@ -24,7 +24,7 @@ the `BNE M` at L isn't taken, and the `LDA b` after it leaves A as
 it was: the second branch can go to the `CMP #$04`, where a label is
 added. A test written as `if (b == 2) ... else if (b == 4) ...` on a
 2-byte `b` leaves this shape, and Zork's `instr_mul` and `instr_div`
-(examples/zork/interpreter/numbers.c) test `b`'s high byte once,
+(examples/zork/numbers.c) test `b`'s high byte once,
 where the C had tested it twice.
 
 # How

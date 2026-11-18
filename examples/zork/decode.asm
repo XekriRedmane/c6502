@@ -458,8 +458,8 @@ pop:
    BNE   .if_end@1
    JMP   internal_error
 .if_end@1:
-   LDA   __local_pop__1
    LDX   __local_pop__2
+   LDA   __local_pop__1
    RTS
 
 get_nonstack_var:

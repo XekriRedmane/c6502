@@ -121,6 +121,16 @@ into one byte-wide `Binary(&, x, 127uc, t)`, the sink no longer
 matches it, so the masked value is computed before the branch and
 held in memory across it.
 
+An operand that isn't SSA-renamed, such as a global, is read at the
+narrow operation, so the pass checks that nothing between the wide
+operation and the matched `Truncate` writes it. It finds the
+`Truncate` by identity. Looking it up as the last definition of its
+result, as it once did, found a different `Truncate` when a global is
+written on two paths. Lode Runner's `check_for_input`
+(examples/lode_runner/input.c) halves `ALIVE` in three cases of a
+switch, and only the last one had become `LSR ALIVE`. The other two
+had stayed `LDA #$00; LSR; ROR ALIVE`, 12 bytes in all.
+
 ## What it leaves alone
 
 - `/` and `%`, where high bytes of the operands move into the low

@@ -1334,18 +1334,15 @@ static void editor_initialize_disk(void) {
     access_compressed_level_data(DISK_ACCESS_WRITE);
 
     /* Level 0xEF is track 17, sector 15, the catalog's first sector.
-     * Its first file entry is at byte 11. The casts of sizeof here and
-     * in editor_clear_high_scores make each test a one-byte compare.
-     * The compiler compares `i < sizeof X` at the width of size_t,
-     * which made this unit 83 bytes larger. */
+     * Its first file entry is at byte 11. */
     DISK_LEVEL_LOC = 0xEF;
     access_compressed_level_data(DISK_ACCESS_READ);
-    for (uint8_t i = 0; i < (uint8_t)sizeof SAVED_FILE_DESCRIPTIVE_ENTRY_DATA; i++)
+    for (uint8_t i = 0; i < sizeof SAVED_FILE_DESCRIPTIVE_ENTRY_DATA; i++)
         DISK_BUFFER[11 + i] = SAVED_FILE_DESCRIPTIVE_ENTRY_DATA[i];
     access_compressed_level_data(DISK_ACCESS_WRITE);
 
     access_hi_score_data_from_disk(DISK_ACCESS_READ);
-    for (uint8_t i = 0; i < (uint8_t)sizeof HI_SCORE_MARKER; i++)
+    for (uint8_t i = 0; i < sizeof HI_SCORE_MARKER; i++)
         HI_SCORE_MARKER[i] = HI_SCORE_DATA_MARKER[i];
     access_hi_score_data_from_disk(DISK_ACCESS_WRITE);
 
@@ -1369,7 +1366,7 @@ static void editor_clear_high_scores(void) {
         start_level_editor();
     }
     uint8_t *scores = (uint8_t *)HI_SCORES;
-    for (uint8_t i = 0; i < (uint8_t)sizeof HI_SCORES; i++)
+    for (uint8_t i = 0; i < sizeof HI_SCORES; i++)
         scores[i] = 0;
     access_hi_score_data_from_disk(DISK_ACCESS_WRITE);
 }

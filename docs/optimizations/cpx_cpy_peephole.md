@@ -73,7 +73,7 @@ is an immediate, `Data`, or `ZP` operand, `t` is a `Data` or `ZP`
 byte nothing reads after the compare (`asm_dead_store.mem_dead_after`),
 and A is dead after it. A volatile M is fine, since `CPX M` reads it
 once, where the load did. `buffer_char`'s `x < WNDWDTH`
-(examples/zork/interpreter/output.c, with `WNDWDTH` the Monitor's
+(examples/zork/output.c, with `WNDWDTH` the Monitor's
 volatile window width) became `CPX WNDWDTH`.
 
 ## What it leaves alone

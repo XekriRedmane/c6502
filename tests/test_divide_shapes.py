@@ -1,6 +1,6 @@
 """Tests for the pieces that make a shift-and-subtract divide loop come
 out as the 6502 code a person writes, as Zork's `divu16`
-(examples/zork/interpreter/numbers.c) does:
+(examples/zork/numbers.c) does:
 
 - `tac_to_asm._fused_subtract` branches on the flags of a subtract
   with copies between it and the compare.

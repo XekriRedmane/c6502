@@ -285,9 +285,9 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$101B
-__text_end	EQU	$1962
-__text_load_end	EQU	$1962
+__text_size	EQU	$1019
+__text_end	EQU	$1960
+__text_load_end	EQU	$1960
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -523,8 +523,8 @@ pop:
    BNE   .if_end@1
    JMP   internal_error
 .if_end@1:
-   LDA   __local_ascii_to_zchar__1
    LDX   __local_ascii_to_zchar__2
+   LDA   __local_ascii_to_zchar__1
    RTS
 var_get:
    SUBROUTINE
@@ -825,9 +825,9 @@ do_0op:
    PHA
    RTS
 .jtab@0:
-   DC.B  $7C, $0B, $7F, $0B, $55, $11, $82, $0B
+   DC.B  $7C, $0B, $7F, $0B, $53, $11, $82, $0B
    DC.B  $98, $0B, $3F, $32, $E0, $32, $24, $2C
-   DC.B  $8B, $0B, $46, $09, $2A, $2C, $68, $12
+   DC.B  $8B, $0B, $46, $09, $2A, $2C, $66, $12
 .case@4:
    JMP   branch@tail0
 .case@5:
@@ -859,9 +859,9 @@ do_1op:
    PHA
    RTS
 .jtab@1:
-   DC.B  $CB, $0B, $B4, $14, $7B, $15, $87, $15
-   DC.B  $59, $17, $23, $0B, $3E, $0B, $DA, $0B
-   DC.B  $40, $2C, $4D, $13, $E6, $0B, $EB, $0B
+   DC.B  $CB, $0B, $B2, $14, $79, $15, $85, $15
+   DC.B  $57, $17, $23, $0B, $3E, $0B, $DA, $0B
+   DC.B  $40, $2C, $4B, $13, $E6, $0B, $EB, $0B
    DC.B  $F6, $0B, $02, $0C, $10, $0C, $18, $0C
 .case@18:
    LDA   OPERANDS+1
@@ -948,8 +948,8 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.B  $50, $0A, $65, $0C, $96, $0C, $80, $17
-   DC.B  $7C, $2F, $B7, $0C, $BC, $0C, $E9, $18
+   DC.B  $50, $0A, $65, $0C, $96, $0C, $7E, $17
+   DC.B  $7C, $2F, $B7, $0C, $BC, $0C, $E7, $18
    DC.B  $C7, $0C, $D2, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
@@ -1204,12 +1204,12 @@ do_2op:
    RTS
 .jtab@2:
    DC.B  $40, $2C, $4D, $0E, $AE, $0E, $C2, $0E
-   DC.B  $D2, $0E, $E2, $0E, $99, $15, $F9, $0E
-   DC.B  $16, $0F, $23, $0F, $FB, $15, $0A, $16
-   DC.B  $22, $16, $32, $0F, $8E, $13, $3F, $0F
-   DC.B  $57, $0F, $7C, $16, $E1, $16, $26, $17
-   DC.B  $71, $0F, $81, $0F, $E7, $17, $6A, $18
-   DC.B  $D8, $18
+   DC.B  $D2, $0E, $E2, $0E, $97, $15, $F9, $0E
+   DC.B  $16, $0F, $23, $0F, $F9, $15, $08, $16
+   DC.B  $20, $16, $32, $0F, $8C, $13, $3F, $0F
+   DC.B  $57, $0F, $7A, $16, $DF, $16, $24, $17
+   DC.B  $71, $0F, $81, $0F, $E5, $17, $68, $18
+   DC.B  $D6, $18
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1655,8 +1655,9 @@ get_next_zchar:
    TXA
    LSR
    LSR
+.xjump@1:
    AND   #$1F
-   JMP   .if_end@21
+   JMP   .if_end@19
 .if_else@20:
    CMP   #$01
    BNE   .if_else@22
@@ -1674,8 +1675,7 @@ get_next_zchar:
    ASL
    ASL
    ORA   __local_attr_ptr_and_mask__n
-   AND   #$1F
-   JMP   .if_end@21
+   JMP   .xjump@1
 .if_else@22:
    LDA   ZCHARS+1
    BPL   .cond_else@23
@@ -1688,7 +1688,6 @@ get_next_zchar:
    LDA   ZCHARS
    AND   #$1F
 .if_end@19:
-.if_end@21:
    CLC
    RTS
 print_string_literal:

@@ -111,7 +111,7 @@ skips an assignment. `if (c >= 0x60 && c < 0x80) c -= 0x20;` leaves
 The short-circuit arm may have copies of its own too, between
 `branch_label` and `Copy(C_sc, %t)`, as SSA destruction leaves for a
 phi of a name the chain changes, such as the `--left` in Zork's `je`
-(examples/zork/interpreter/decode.c), `!equal && --left != 0`:
+(examples/zork/decode.c), `!equal && --left != 0`:
 
     Label(.and_false@23)
     Copy(@77.left.3, @77.left.4)  ; only on the chain's path

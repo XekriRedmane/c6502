@@ -32,7 +32,7 @@ does it:
 
 That's 16 bytes, and most entries take only the first two branches.
 Zork's `match_dictionary_word`
-(examples/zork/interpreter/input.c) compares each of a word's two
+(examples/zork/input.c) compares each of a word's two
 2-byte halves with an entry's this way.
 
 The pass writes the byte compares in TAC. Each of the three outcomes,

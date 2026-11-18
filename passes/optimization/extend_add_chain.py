@@ -61,17 +61,19 @@ class ExtendAddChain:
 
 def recognize_extend_add_chain(
     addr_var: tac_ast.Var, env: DefUseEnv, ctx: PassContext,
+    *, single_use: bool = True,
 ) -> ExtendAddChain | None:
     """Walk back from `addr_var` (a Load/Store address operand) through
     `Binary(Add, base, %ext)` and `%ext := ZeroExtend(idx)`,
     applying the gates common to all three recognizers. Returns the
     `ExtendAddChain`, or None if any gate fails. Callers post-check
-    `base`'s kind and emit their own node."""
+    `base`'s kind and emit their own node. With `single_use` False,
+    `%addr` may have other readers, which the caller checks."""
     if ctx.symbols is None:
         return None
     if ctx.ssa_dsts is None or addr_var.name not in ctx.ssa_dsts:
         return None
-    if env.extra.get(addr_var.name, 0) != 1:  # %addr single-use
+    if single_use and env.extra.get(addr_var.name, 0) != 1:
         return None
 
     binary = env.def_of(addr_var)

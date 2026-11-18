@@ -115,7 +115,7 @@ compare goes too, saving 2 bytes and 2 cycles:
 ```
 
 That's the high byte of `b == 2` in Zork's `instr_mul`
-(examples/zork/interpreter/numbers.c). The instructions that count
+(examples/zork/numbers.c). The instructions that count
 are a load or transfer into the register, an `ADC`, `SBC`, `AND`,
 `ORA`, `EOR`, or shift on A, an `INX` / `DEX` style step, and a
 `PLA`. Stores may come between that instruction and the compare,
@@ -134,7 +134,7 @@ The walk back from the compare also passes over conditional branches
 and follows a label to every way in: each branch or jump to it, and
 the fall-through from the instruction before it. Each must have set
 N and Z from the register. In `je`, in Zork's `do_2op`
-(examples/zork/interpreter/decode.c), `equal = a == b;` ends
+(examples/zork/decode.c), `equal = a == b;` ends
 
 ```
    BEQ   .cmp_true@3
@@ -172,7 +172,7 @@ condition, and the compare goes:
 
 That's `if (new_lo < lo) pages++;` after `new_lo = lo + offset`, the
 C for the carry of a byte add, in Zork's `branch_to_offset`
-(examples/zork/interpreter/decode.c). Stores from A may come between
+(examples/zork/decode.c). Stores from A may come between
 the add and the compare, as long as none writes `m`. The add sets N
 and Z from the sum where the compare set them from the difference, so
 N and Z must be dead after the branch on both paths

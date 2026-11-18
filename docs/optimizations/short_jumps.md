@@ -28,7 +28,7 @@ to the switch's caller, as it would from the stub's `JMP`.
 
 ## Example
 
-From `do_1op` in `examples/zork/interpreter/decode.c`, a switch of 15
+From `do_1op` in `examples/zork/decode.c`, a switch of 15
 cases, 7 of which only call a function.
 
 ### Before

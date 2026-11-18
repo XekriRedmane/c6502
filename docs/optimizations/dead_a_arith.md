@@ -97,7 +97,7 @@ function ends up as `LDA s; EOR #$FF; CLC; ADC #$01; STA s; RTS`.
   that writes its flag, so a `BEQ` after an `LDA` reads only the Z the
   `LDA` set, and C and V from an `ADC` before the `LDA` are dead there.
   Zork's `instr_insert_obj` and `remove_obj`
-  (examples/zork/interpreter/objects.c) had each kept a dead `CLC; ADC
+  (examples/zork/objects.c) had each kept a dead `CLC; ADC
   #k; TXA; ADC #$00`, an object's address plus a member's offset that
   `LDY #k` had replaced, 6 bytes, until the pass
   stopped counting such a branch as a read of every flag. For the

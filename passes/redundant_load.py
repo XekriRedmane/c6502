@@ -151,16 +151,31 @@ _STABLE_MEM_TYPES = (
 _REORDER_ROUNDS = 64
 
 
+# The zero-page address of each slot symbol and zero-page object for
+# the run in progress, so that `_pointer_bytes` can tell whether a
+# store writes a pointer's byte. Empty when the caller has no map.
+_ZP_ADDRS: dict[str, int] = {}
+
+
 def apply_redundant_load_elimination(
-    prog: asm_ast.Program,
+    prog: asm_ast.Program, *, zp_symbol_addrs: dict[str, int] | None = None,
 ) -> asm_ast.Program:
+    """`zp_symbol_addrs` maps slot symbols and zero-page objects to
+    their addresses. Without it, a store to any slot may write the
+    pointer of an `(zp),Y` access, which keeps the two stores of
+    `_swap_pairs_ok` apart."""
+    global _ZP_ADDRS
     new_top: list[asm_ast.Type_top_level] = []
-    with pointer_proof(unreachable_by_pointer(prog)):
-        for tl in prog.top_level:
-            if isinstance(tl, asm_ast.Function):
-                new_top.append(_rewrite_function(tl))
-            else:
-                new_top.append(tl)
+    saved, _ZP_ADDRS = _ZP_ADDRS, dict(zp_symbol_addrs or {})
+    try:
+        with pointer_proof(unreachable_by_pointer(prog)):
+            for tl in prog.top_level:
+                if isinstance(tl, asm_ast.Function):
+                    new_top.append(_rewrite_function(tl))
+                else:
+                    new_top.append(tl)
+    finally:
+        _ZP_ADDRS = saved
     return asm_ast.Program(top_level=new_top)
 
 
@@ -196,6 +211,14 @@ class _RegState:
     # empty `z_reflects` alone doesn't say that: the flags may come
     # from an `LDY #off` setup, a compare, or an `LDX`.
     z_tracks_a: bool = False
+    # Groups of at least two memory operands known to hold one value
+    # that no register holds any more. A register's list becomes such
+    # a group when the register is loaded with something else
+    # (`_set_reg`), and a load of one of the group's operands makes
+    # the register mirror all of them again (`_load_list`). After
+    # `LDA t,X; STA p; LDA u,X; STA p+1; LDA (p),Y; ...; LDA t,X;
+    # STA p`, the last store writes the value `p` holds, and goes.
+    mem: list[list[asm_ast.Type_operand]] = field(default_factory=list)
 
     def reset(self) -> None:
         self.a = []
@@ -203,6 +226,7 @@ class _RegState:
         self.y = []
         self.z_reflects = []
         self.z_tracks_a = False
+        self.mem = []
 
 
 def _rewrite_function(
@@ -425,6 +449,12 @@ def _rewrite_with_in_states(
             out.append(asm_ast.Or(src=asm_ast.Imm(value=0), dst=instr.dst))
             state.z_reflects = list(state.a)
             continue
+        if _stores_held_value(instr, state):
+            # The byte already holds the register's value: a group
+            # of memory operands that held one value became the
+            # register's list when it loaded one of them. A store
+            # sets no flag, and the state is unchanged.
+            continue
         redirected = _redirect_lda_to_transfer(instr, state)
         if redirected is not None:
             # Rewrite `LDA M` to `TXA` / `TYA` when X or Y already
@@ -534,7 +564,39 @@ def _clone_state(s: _RegState) -> _RegState:
     return _RegState(
         a=list(s.a), x=list(s.x), y=list(s.y),
         z_reflects=list(s.z_reflects), z_tracks_a=s.z_tracks_a,
+        mem=[list(g) for g in s.mem],
     )
+
+
+def _memory_groups(s: _RegState) -> list[list[asm_ast.Type_operand]]:
+    """Every group of operands `s` knows to hold one value: its
+    memory groups and the lists of its registers."""
+    return [*s.mem, s.a, s.x, s.y]
+
+
+def _join_memory(
+    result: _RegState, states: list[_RegState],
+) -> list[list[asm_ast.Type_operand]]:
+    """The memory groups that hold on every path in: each group of at
+    least two operands that one group of every state contains, less
+    the operands a register of the joined state still mirrors, which
+    stay in that register's list."""
+    groups = [list(g) for g in _memory_groups(states[0])]
+    for s in states[1:]:
+        merged = []
+        for g1 in groups:
+            for g2 in _memory_groups(s):
+                inter = _intersect_operands(g1, g2)
+                if len(inter) >= 2:
+                    merged.append(inter)
+        groups = merged
+    in_regs = [*result.a, *result.x, *result.y]
+    out: list[list[asm_ast.Type_operand]] = []
+    for g in groups:
+        g = [op for op in g if not any(_operands_equal(op, r) for r in in_regs)]
+        if len(g) >= 2 and not any(_operand_list_equal(g, o) for o in out):
+            out.append(g)
+    return out
 
 
 def _join_states(states: Iterable[_RegState]) -> _RegState:
@@ -566,6 +628,7 @@ def _join_states(states: Iterable[_RegState]) -> _RegState:
     if len(states) > 1:
         result.z_reflects = []
         result.z_tracks_a = False
+        result.mem = _join_memory(result, states)
     return result
 
 
@@ -588,6 +651,9 @@ def _state_equal(s1: _RegState, s2: _RegState) -> bool:
         and _operand_list_equal(s1.y, s2.y)
         and _operand_list_equal(s1.z_reflects, s2.z_reflects)
         and s1.z_tracks_a == s2.z_tracks_a
+        and len(s1.mem) == len(s2.mem)
+        and all(any(_operand_list_equal(g1, g2) for g2 in s2.mem)
+                for g1 in s1.mem)
     )
 
 
@@ -701,7 +767,7 @@ def _store_const_via_index(
     STY M` (`LDX #k; STX M`), which leaves A alone, and how many
     instructions it replaces. Otherwise None.
 
-    `get_alphabet` in examples/zork/interpreter/zstring.c returns
+    `get_alphabet` in examples/zork/zstring.c returns
     the alphabet it loaded after `SHIFT_ALPHABET = 0xFF`, which then
     needs no copy of it in a local: `LDY #$FF; STY SHIFT_ALPHABET`, as
     in Zork's code. The two forms are the same size and speed, so
@@ -814,7 +880,33 @@ def _swap_pairs_ok(
             or (_may_alias(d1, d2) and not _same_index_apart(
                 d1, d2, instrs[i:i + 4]))):
         return False
+    # Nor may the first store write the pointer that the second
+    # store's address is read through, or the second store the one
+    # the first load's is: `LDA t,X; STA p+1; LDA #7; STA (p),Y`
+    # with A holding 7 had stored through the old `p`.
+    if any(_may_alias(d1, b, zp_slot_symbols=_ZP_ADDRS)
+           for b in _pointer_bytes(d2)) or any(
+        _may_alias(d2, b, zp_slot_symbols=_ZP_ADDRS)
+        for b in _pointer_bytes(x)
+    ):
+        return False
     return _a_dead_at(instrs, i + 4) and _flags_dead_at(instrs, i + 4)
+
+
+def _pointer_bytes(op: asm_ast.Type_operand) -> list[asm_ast.Type_operand]:
+    """The bytes that hold the address `op` is reached through: a
+    zero-page pointer's two bytes, DPTR's, FP's, or SSP's."""
+    if isinstance(op, (asm_ast.IndirectZp, asm_ast.IndirectZpY)):
+        return [asm_ast.ZP(address=op.address, offset=k) for k in (0, 1)]
+    if isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY)):
+        name = "DPTR"
+    elif isinstance(op, asm_ast.Frame):
+        name = "FP"
+    elif isinstance(op, asm_ast.Stack):
+        name = "SSP"
+    else:
+        return []
+    return [asm_ast.Data(name=name, offset=k) for k in (0, 1)]
 
 
 def _same_index_apart(
@@ -915,6 +1007,42 @@ def _redirect_lda_to_transfer(
     return None
 
 
+def _stores_held_value(
+    instr: asm_ast.Type_instruction, state: _RegState,
+) -> bool:
+    """True iff `instr` is a non-volatile store of A, X, or Y into a
+    `Data` / `ZP` byte the register is known to mirror, so the byte
+    already holds the value: a store right after a load of the same
+    byte, or one that a memory group made redundant."""
+    if not (isinstance(instr, asm_ast.Mov) and not instr.is_volatile
+            and isinstance(instr.src, asm_ast.Reg)
+            and isinstance(instr.dst, (asm_ast.Data, asm_ast.ZP))):
+        return False
+    return any(_operands_equal(op, instr.dst)
+               for op in _get_reg(state, instr.src.reg))
+
+
+def _drop_dependent(state: _RegState, reg: asm_ast.Type_reg) -> None:
+    """Drops from every memory group the operands whose address
+    depends on `reg`, which has just changed, and the groups left
+    with fewer than two operands."""
+    groups = [[op for op in g if not _depends_on_reg(op, reg)]
+              for g in state.mem]
+    state.mem = [g for g in groups if len(g) >= 2]
+
+
+def _load_list(
+    state: _RegState, src: asm_ast.Type_operand,
+) -> list[asm_ast.Type_operand]:
+    """What a register mirrors after a load of `src`: the memory group
+    that holds `src`, which leaves the groups, or `src` alone."""
+    for i, g in enumerate(state.mem):
+        if any(_operands_equal(op, src) for op in g):
+            del state.mem[i]
+            return g
+    return [src]
+
+
 def _update_state(
     instr: asm_ast.Type_instruction, state: _RegState,
     branch_targets: set[str] | None = None,
@@ -936,6 +1064,7 @@ def _update_state(
     if not any(_setup_writes_y(op) for op in ops):
         return
     _set_reg(state, asm_ast.Y(), [])
+    _drop_dependent(state, asm_ast.Y())
     state.a = [op for op in state.a if not _depends_on_reg(op, asm_ast.Y())]
     state.x = [op for op in state.x if not _depends_on_reg(op, asm_ast.Y())]
     state.z_reflects = [
@@ -1117,6 +1246,7 @@ def _update_state_core(
             # address depended on the prior register value.
             changed_reg = instr.dst.reg
             _set_reg(state, changed_reg, [])
+            _drop_dependent(state, changed_reg)
             state.a = [
                 op for op in state.a
                 if not _depends_on_reg(op, changed_reg)
@@ -1201,10 +1331,14 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
         state.z_reflects = list(new_value)
         return
     if dst_is_reg and not src_is_reg:
-        # Load: the register now mirrors ONLY the source operand.
-        # Any prior equivalences are wiped out (the previous
-        # value in the register is gone). Z reflects (src == 0).
-        _set_reg(state, mov.dst.reg, [mov.src])
+        # Load: the register now mirrors the source operand, and
+        # the memory group that holds it (`_load_list`). Any prior
+        # equivalences are wiped out (the previous value in the
+        # register is gone). Z reflects (src == 0).
+        _set_reg(state, mov.dst.reg, [])
+        if isinstance(mov.dst.reg, (asm_ast.X, asm_ast.Y)):
+            _drop_dependent(state, mov.dst.reg)
+        _set_reg(state, mov.dst.reg, _load_list(state, mov.src))
         state.z_reflects = [mov.src]
         # When the load writes X or Y, also drop any tracking
         # in the OTHER registers that depends on the changed
@@ -1324,6 +1458,25 @@ def _set_reg(
     state: _RegState, reg: asm_ast.Type_reg,
     value: list[asm_ast.Type_operand],
 ) -> None:
+    """Sets what `reg` mirrors. The memory operands of its old list
+    still hold one value, so two or more of them become a memory
+    group, less any whose address depends on `reg` itself."""
+    old = [op for op in _get_reg(state, reg)
+           if isinstance(op, (*_STABLE_MEM_TYPES, asm_ast.IndexedData))
+           and not _depends_on_reg(op, reg)]
+    if len(old) >= 2 and not any(
+        _operand_list_equal(old, g) for g in state.mem
+    ):
+        state.mem.append(old)
+    if isinstance(reg, (asm_ast.X, asm_ast.Y)):
+        # An operand indexed by the register now names another byte,
+        # in the memory groups, in the other registers' lists, and in
+        # the value given, as `TAX` after `LDA t,X` gives.
+        _drop_dependent(state, reg)
+        value = [op for op in value if not _depends_on_reg(op, reg)]
+        state.a = [op for op in state.a if not _depends_on_reg(op, reg)]
+        state.x = [op for op in state.x if not _depends_on_reg(op, reg)]
+        state.y = [op for op in state.y if not _depends_on_reg(op, reg)]
     if isinstance(reg, asm_ast.A):
         state.a = value
     elif isinstance(reg, asm_ast.X):
@@ -1340,6 +1493,9 @@ def _invalidate_aliasing(
     state.a = [op for op in state.a if not _may_alias(op, write_dst)]
     state.x = [op for op in state.x if not _may_alias(op, write_dst)]
     state.y = [op for op in state.y if not _may_alias(op, write_dst)]
+    groups = [[op for op in g if not _may_alias(op, write_dst)]
+              for g in state.mem]
+    state.mem = [g for g in groups if len(g) >= 2]
 
 
 def _invalidate_z_aliasing(

@@ -31,7 +31,7 @@ becomes
 The second path runs the same instructions it ran before, and then
 the same jump, so nothing it computes changes. It takes the 3 cycles
 of one more `JMP`, and the shared instructions' bytes go. Zork's
-`instr_mul` and `instr_div` (examples/zork/interpreter/numbers.c)
+`instr_mul` and `instr_div` (examples/zork/numbers.c)
 have this shape, as `if (b == 2) a <<= 1; else if (b == 4) a <<= 2;`
 leaves it, and the original lets the `* 4` path fall into the
 `* 2` one.

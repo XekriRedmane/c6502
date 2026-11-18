@@ -274,7 +274,9 @@ def _peephole_fixedpoint(
         )
         new_prog = apply_shift_in_a(new_prog)
         new_prog = apply_redundant_load_after_rmw(new_prog)
-        new_prog = apply_redundant_load_elimination(new_prog)
+        new_prog = apply_redundant_load_elimination(
+            new_prog, zp_symbol_addrs=zp_cells or None,
+        )
         new_prog = apply_redundant_store_elimination(new_prog)
         new_prog = apply_constant_store_order(new_prog)
         new_prog = apply_join_store(

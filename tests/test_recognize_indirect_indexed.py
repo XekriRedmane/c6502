@@ -507,6 +507,147 @@ class TestByteIndexSum(unittest.TestCase):
                 self.assertEqual(out.return_int(), 3)
 
 
+class TestSharedByteIndex(unittest.TestCase):
+    """`p + ZeroExtend(i)` read by several 1-byte loads and stores, as
+    in `p[i] &= m`, is `(p),Y` with Y = `i` in each of them, and a
+    reader `(p + i) + k` with `k` outside 0-255 is `(t),Y` with `t =
+    p + k`."""
+
+    def _instrs(self, *, offset=None):
+        # `y` has a definition, so that the standalone entry point,
+        # which takes every dst for an SSA name, takes `y` for one.
+        out = [
+            tac_ast.Copy(src=_var("value"), dst=_var("y")),
+            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
+            tac_ast.Binary(op=tac_ast.Add(), src1=_var("p"),
+                           src2=_var("%ext"), dst=_var("%addr")),
+            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
+        ]
+        if offset is not None:
+            out += [
+                tac_ast.Binary(
+                    op=tac_ast.Add(), src1=_var("%addr"),
+                    src2=tac_ast.Constant(
+                        const=tac_ast.ConstInt(value=offset)),
+                    dst=_var("%far"),
+                ),
+                tac_ast.Load(src_ptr=_var("%far"), dst=_var("c")),
+            ]
+        out.append(tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr")))
+        return out
+
+    def _symbols(self):
+        table = _canonical_symbols()
+        table["c"] = _uchar_local()
+        table["%far"] = _ptr_local()
+        return table
+
+    def test_read_and_write_fold(self) -> None:
+        out = recognize_indirect_indexed(
+            _fn(self._instrs()), symbols=self._symbols(),
+        )
+        self.assertIn(
+            tac_ast.IndirectIndexedLoad(
+                ptr=_var("p"), index=_var("y"), dst=_var("b"),
+                is_volatile=False,
+            ),
+            out.instructions,
+        )
+        self.assertIn(
+            tac_ast.IndirectIndexedStore(
+                ptr=_var("p"), index=_var("y"), src=_var("value"),
+                is_volatile=False,
+            ),
+            out.instructions,
+        )
+
+    def test_far_offset_reads_through_its_own_pointer(self) -> None:
+        out = recognize_indirect_indexed(
+            _fn(self._instrs(offset=0x2000)), symbols=self._symbols(),
+        )
+        loads = [i for i in out.instructions
+                 if isinstance(i, tac_ast.IndirectIndexedLoad)]
+        self.assertEqual(len(loads), 2)
+        far = loads[1]
+        self.assertEqual(far.index, _var("y"))
+        add = next(i for i in out.instructions
+                   if isinstance(i, tac_ast.Binary) and i.dst == far.ptr)
+        self.assertEqual(add.src1, _var("p"))
+        self.assertEqual(add.src2.const.value, 0x2000)
+
+    def test_small_offset_keeps_the_sum(self) -> None:
+        # `(q),Y` with Y = 1 reads `q + 1` without a second pointer,
+        # so `q` stays and nothing reads `(p),Y` with Y = `i`.
+        out = recognize_indirect_indexed(
+            _fn(self._instrs(offset=1)), symbols=self._symbols(),
+        )
+        loads = [i for i in out.instructions
+                 if isinstance(i, tac_ast.IndirectIndexedLoad)]
+        self.assertEqual(loads[-1].ptr, _var("%addr"))
+
+    def test_other_reader_does_not_fold(self) -> None:
+        instrs = self._instrs() + [
+            tac_ast.Copy(src=_var("%addr"), dst=_var("%other")),
+        ]
+        out = recognize_indirect_indexed(
+            _fn(instrs), symbols=self._symbols(),
+        )
+        self.assertEqual(out.instructions, instrs)
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "static uint8_t screen[0x2100];\n"
+        "static const uint8_t mask[2] = {0xF0, 0x0F};\n"
+        "uint8_t *row;\n"
+        "void close(uint8_t *line, uint8_t x, uint8_t m) {\n"
+        "    line[x] &= mask[m];\n"
+        "}\n"
+        "void open(uint8_t *line, uint8_t x, uint8_t m) {\n"
+        "    const uint8_t *background = line + 0x2000;\n"
+        "    line[x] |= background[x] & mask[m];\n"
+        "}\n"
+        "void open_global(uint8_t x) {\n"
+        "    uint8_t v = row[x];\n"
+        "    row = screen;\n"
+        "    row[x] = v | 1;\n"
+        "}\n"
+        "int main(void) {\n"
+        "    for (uint16_t k = 0; k < 0x100; k++) {\n"
+        "        screen[k] = (uint8_t)k;\n"
+        "        screen[k + 0x2000] = 0xFF;\n"
+        "    }\n"
+        "    close(screen + 0x10, 0xF5, 0);\n"
+        "    open(screen + 0x10, 0x05, 1);\n"
+        "    row = screen + 0x80;\n"
+        "    open_global(0x20);\n"
+        "    return screen[0x105] + screen[0x15] * 256 + screen[0x20];\n"
+        "}\n"
+    )
+
+    def test_shapes(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        close = asm[asm.index("\nclose:\n"):asm.index("\nopen:\n")]
+        self.assertNotIn("ADC", close)
+        opened = asm[asm.index("\nopen:\n"):asm.index("\nopen_global:\n")]
+        # One add, of 0x20 to the pointer's high byte.
+        self.assertEqual(opened.count("ADC"), 1, opened)
+
+    def test_runs(self) -> None:
+        # close: 0x05 & 0xF0 = 0x00 at 0x105. open: 0x15 | (0xFF &
+        # 0x0F) = 0x1F at 0x15. open_global reads row[0x20] through
+        # the old row, 0xA0, and writes it with bit 0 set through the
+        # new one, at 0x20.
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run(
+                    max_cycles=20_000_000,
+                )
+                self.assertFalse(out.timed_out)
+                self.assertEqual(out.return_int(), 0x1F00 + 0xA1)
+
+
 class TestRecognizeIndirectIndexedDefersToIndexedStore(unittest.TestCase):
     """The recognizer must defer to `recognize_indexed_store` /
     `recognize_indexed_load` when the pointer-side Var transitively

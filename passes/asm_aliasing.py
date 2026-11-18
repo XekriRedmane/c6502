@@ -386,6 +386,17 @@ def may_alias(
     if (isinstance(b, _indy_indirect_kinds) and isinstance(a, asm_ast.Data)
             and a.name in _POINTER_PROOF):
         return False
+    # The same holds for an indexed access to such an object, a
+    # `static` array whose address the unit never takes, such as a
+    # table of row addresses: no pointer reaches any of its bytes.
+    if (isinstance(a, _indy_indirect_kinds)
+            and isinstance(b, asm_ast.IndexedData)
+            and b.name in _POINTER_PROOF):
+        return False
+    if (isinstance(b, _indy_indirect_kinds)
+            and isinstance(a, asm_ast.IndexedData)
+            and a.name in _POINTER_PROOF):
+        return False
     _zp_indirect_kinds = (asm_ast.IndirectZp, asm_ast.IndirectZpY)
     if isinstance(a, _zp_indirect_kinds) and isinstance(b, asm_ast.Data):
         if b.name in _RUNTIME_ZP_NAMES:

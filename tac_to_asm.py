@@ -3387,7 +3387,7 @@ class Translator:
         `ASL` / `ROL` chain leaves it. That's 7 bytes in place against
         the shift's and the `ORA`'s 10. When C already holds `b`, the
         top bit the previous rotate-in shifted out, the `LDA b; LSR`
-        goes too. Zork's `divu16` (examples/zork/interpreter/numbers.c)
+        goes too. Zork's `divu16` (examples/zork/numbers.c)
         shifts each step's bit into its quotient, and the quotient's
         top bit into its remainder, this way. See `_plan_rotations`."""
         size = self._size_of(dst)
@@ -4174,12 +4174,22 @@ class Translator:
         borrow threads through the per-byte SBCs, so the final
         carry reflects the whole-value unsigned subtraction. Caller
         picks operand order and BCC/BCS to select among <, >=, >,
-        <=. `LDA #0; ROL A` turns C into the 0 or 1, with `EOR #1`
-        after it for BCC.
+        <=. `LDA #0; ROL A` turns C into the 0 or 1.
+
+        For BCC, `left < right`, the operands swap and the subtract
+        starts with `CLC`: `right - left - 1` borrows unless `right >
+        left`, so C is the answer itself, where `SEC` and `EOR #1`
+        after the `ROL` had inverted it. A carry-flag return of the
+        result then needs no `ROL` at all (`carry_branch_fold` drops
+        `LDA #0; ROL A; CMP #1`).
         """
+        set_c = asm_ast.SetCarry()
+        if isinstance(cond, asm_ast.CC):
+            left_op, right_op = right_op, left_op
+            set_c = asm_ast.ClearCarry()
         out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),
-            asm_ast.SetCarry(),
+            set_c,
             asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A),
         ]
         for k in range(1, size):
@@ -4187,7 +4197,7 @@ class Translator:
                 asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A),
                 asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A),
             ])
-        out.extend(_carry_to_value([], isinstance(cond, asm_ast.CC)))
+        out.extend(_carry_to_value([], False))
         self._store_compare_result(out, dst_op, dst_size)
         return out
 

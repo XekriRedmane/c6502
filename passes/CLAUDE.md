@@ -435,7 +435,10 @@ this directory:
   which handles counters that are also an index, and again after
   `rotate_loop_test`. An init from the register itself keeps the
   counter there, and one from the other index register is left
-  alone, since there's no TXY or TYX.
+  alone, since there's no TXY or TYX. The loop is what reaches the
+  DEC again without passing the init, so an enclosing loop that runs
+  the init on each pass may use the register: a delay's inner counter
+  goes in Y while the outer one is in X.
 - `return_in_zero_page.py` — `return_pointers_in_zero_page`. Under
   `-O`, a `static` function returning a pointer whose address isn't
   taken stores its result in a zero-page object of its own, `F@ret`
@@ -463,7 +466,7 @@ this directory:
   header with A overwritten. Needs A and N / C dead after the branch
   and a reload stub spot after a `JMP` / `RTS` for taken-edge
   reloads. Runs just before `expand_long_branches`. Headline case:
-  `find_index_of_page_table` in `examples/zork/interpreter/pages.c`.
+  `find_index_of_page_table` in `examples/zork/pages.c`.
 - `promote_loop_carried_to_a.py` —
   `apply_promote_loop_carried_to_a`. Scalar promotion of a
   function-entry-saved reg('A') param's body-local to live in A
@@ -1326,7 +1329,16 @@ document says whether it fires there.
   D1; LDA M; STA D2` to `LDA M; STA D2; LDA X; STA D1` when A holds
   M (a phi left in A at a join), where `name+k1,X` and `name+k2,X`
   count as different bytes when X doesn't change between them
-  (`_same_index_apart`). Heaviest after loop unrolling.
+  (`_same_index_apart`), and neither store may write the other's
+  pointer bytes (`_pointer_bytes`, with the slot addresses the
+  fixed point passes as `zp_symbol_addrs`). The bytes a register
+  mirrored stay together as a memory group (`_RegState.mem`) when
+  the register is reloaded, a load of one of them gives the
+  register the whole group, and a store into a byte the register
+  mirrors goes (`_stores_held_value`), so a row of `LEVEL_MAP` set up
+  after a row of `LEVEL_BG` keeps the shared low byte. Setting X or
+  Y drops every operand indexed by it from every list and group.
+  Heaviest after loop unrolling.
 - `apply_redundant_store_elimination` — drops STAs whose written cell
   is overwritten before any read. Memory-to-memory transfer redundancy
   (e.g. the unrolled DPTR-staging sequences `redundant_load`'s A-

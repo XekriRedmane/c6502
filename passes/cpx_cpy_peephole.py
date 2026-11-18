@@ -60,7 +60,7 @@ immediate, `Data`, or `ZP` operand (a volatile one is still read once,
 by the compare, where the load was), `t` is a
 `Data` or `ZP` byte that nothing reads after the compare
 (`asm_dead_store.mem_dead_after`), and A is dead after it. That's
-`buffer_char`'s `x < WNDWDTH` in examples/zork/interpreter/output.c.
+`buffer_char`'s `x < WNDWDTH` in examples/zork/output.c.
 
 # Where to run
 

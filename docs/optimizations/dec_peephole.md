@@ -90,7 +90,7 @@ becomes
 byte, C is unchanged, and N and Z come from the low byte's `DEC`, so A
 and every flag must be dead after the label, and nothing else may
 branch to the label, which the old code reached with the low byte
-already decremented. Zork's `push` (examples/zork/interpreter/decode.c)
+already decremented. Zork's `push` (examples/zork/decode.c)
 decrements its stack pointer twice this way.
 
 When the low byte's load follows a store of A into the same byte,

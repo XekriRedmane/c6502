@@ -2491,8 +2491,8 @@ class TestPointerEquality(unittest.TestCase):
         # `<` / `>` / `<=` / `>=` on same-type pointers — pointer
         # operands dispatch to the unsigned-ordering lowering (no
         # V-correction; carry flag carries the ordering result), so
-        # we get the per-byte SBC pair, and C, inverted for `<`, as
-        # the 0 or 1.
+        # we get the per-byte SBC pair, starting with CLC for `<`,
+        # whose carry is then the answer, and C as the 0 or 1.
         text = self._codegen(
             "int main(void) {\n"
             "  int x;\n"
@@ -2505,7 +2505,7 @@ class TestPointerEquality(unittest.TestCase):
         # unsigned `<`.
         self.assertEqual(text.count("SBC   (FP),Y"), 2)
         self.assertIn("ROL", text)
-        self.assertIn("EOR   #$01", text)
+        self.assertNotIn("EOR   #$01", text)
         self.assertNotIn(".cmp_novf@", text)
 
     def test_ordering_distinct_pointer_types_rejected(self):

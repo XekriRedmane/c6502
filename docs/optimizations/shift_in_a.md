@@ -31,7 +31,7 @@ last shift already set them to.
 code = (uint8_t)(ZCHARS >> 10) & 0x1F;
 ```
 
-from `get_next_zchar` in `examples/zork/interpreter/zstring.c`,
+from `get_next_zchar` in `examples/zork/zstring.c`,
 where `ZCHARS` is a 16-bit zero-page global. The shift by 10 moves
 the high byte down and shifts it twice more, and the bytes of the
 result above the low one are dead. The "Before" listing is the same
@@ -165,7 +165,7 @@ stops at two. The flags come out the same, from the last shift. A
 volatile byte is left alone, since a read-modify-write instruction on
 the NMOS 6502 writes the old value back before the new one, which
 matters for an I/O register. That's why Zork's `instr_random`
-(examples/zork/interpreter/numbers.c) still shifts `RND`'s high byte
+(examples/zork/numbers.c) still shifts `RND`'s high byte
 in A.
 
 ## Related

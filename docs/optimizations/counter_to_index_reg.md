@@ -90,12 +90,13 @@ counter goes in X and the loop is `LDA speaker; DEX; BNE`.
   label lies after the store and at or before the `DEC`. That branch
   is the back edge.
 - The loop is every instruction that the code after the store
-  reaches and that reaches the `DEC` again, so a block of it placed
+  reaches and that reaches the `DEC` again without passing the
+  store, so a block of it placed
   out of line counts, such as the block SSA destruction puts after
   the function's `RTS` for one side of an `if`. No instruction outside
   the loop, other than the store, jumps or falls into it, so every
   path to the `DEC` passes through the store. In Zork's `divu16`
-  (examples/zork/interpreter/numbers.c), the side where the divisor
+  (examples/zork/numbers.c), the side where the divisor
   doesn't fit is such a block.
 - No instruction in the loop other than the `DEC` reads or writes
   the register. That
@@ -112,13 +113,35 @@ counter goes in X and the loop is `LDA speaker; DEX; BNE`.
 
 X is tried first, then Y.
 
+The loop stops at the store because the store gives the counter its
+value. A loop around it, which runs the store again on each of its
+passes, is outside the counter's loop, so the counter may take a
+register that the outer loop uses, as long as the inner loop doesn't.
+Lode Runner's delay
+
+```c
+void sound_delay1(uint8_t count) {
+    do {
+        [[c6502::keep]] for (uint8_t y = 0xB4; --y;) {
+        }
+    } while (--count);
+}
+```
+
+has its outer counter in X, and the inner one had stayed in memory,
+`LDA #$B4; STA y; DEC y; BNE`, because the walk back from `DEC y`
+had gone round the outer loop, and the code before the outer loop,
+which falls into it, then counted as an entry into the counter's
+loop that skipped the store. It's now `LDY
+#$B4; DEY; BNE`, as in the original.
+
 An init stored from the register itself, as in `LDY #$11; STY i`,
 keeps the counter in that register and drops the store, when the
 register's value isn't read after the store. An init stored from the
 other index register is left alone for that register. The 6502 has
 no `TXY` or `TYX`, and `asm_emit` writes `Mov(Reg(Y), Reg(X))` as
 `TYA; TAX`, which changes A. In Zork's `divu16`
-(examples/zork/interpreter/numbers.c), `STY i` had become that move
+(examples/zork/numbers.c), `STY i` had become that move
 when the pass ran again after [loop test at the bottom](rotate_loop_test.md),
 and the first `LDA` of the loop then went as a redundant load,
 which left the interpreter looping forever.

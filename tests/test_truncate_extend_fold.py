@@ -6,6 +6,7 @@ renamed names (globals, statics, address-taken locals) which can
 have multiple definitions.
 """
 
+import shutil
 import unittest
 
 import c99_ast
@@ -80,12 +81,10 @@ class TestFoldTruncateExtend(unittest.TestCase):
         self.assertIsInstance(out.instructions[1], tac_ast.Copy)
         self.assertEqual(out.instructions[1].src, _var("i"))
 
-    def test_extend_then_wider_truncate_left_alone(self):
+    def test_extend_then_wider_truncate_is_a_narrower_extend(self):
         # SignExtend(int8 i, int32 t); Truncate(int32 t, int16 u)
-        # → leave as is. The Truncate reads bytes that the
-        # SignExtend filled with sign-replication; replacing it
-        # with `Truncate(i, u)` (or Copy) would lose the high
-        # bytes.
+        # → SignExtend(i, u). The Truncate keeps one byte of the
+        # sign replication, which a sign extension to u makes too.
         instrs = [
             tac_ast.SignExtend(src=_var("i"), dst=_var("t")),
             tac_ast.Truncate(src=_var("t"), dst=_var("u")),
@@ -94,6 +93,64 @@ class TestFoldTruncateExtend(unittest.TestCase):
             "i": _local(c99_ast.SChar()),     # 1 byte
             "t": _local(c99_ast.Long()),      # 4 bytes
             "u": _local(c99_ast.Int()),       # 2 bytes — wider than i
+        })
+        out = fold_truncate_extend(
+            _fn(instrs), symbols=symbols, ssa_dsts={"i", "t", "u"},
+        )
+        self.assertEqual(
+            out.instructions[1],
+            tac_ast.SignExtend(src=_var("i"), dst=_var("u")),
+        )
+
+    def test_zero_extend_then_wider_truncate(self):
+        instrs = [
+            tac_ast.ZeroExtend(src=_var("i"), dst=_var("t")),
+            tac_ast.Truncate(src=_var("t"), dst=_var("u")),
+        ]
+        symbols = _table({
+            "i": _local(c99_ast.UChar()),
+            "t": _local(c99_ast.ULong()),
+            "u": _local(c99_ast.UInt()),
+        })
+        out = fold_truncate_extend(
+            _fn(instrs), symbols=symbols, ssa_dsts={"i", "t", "u"},
+        )
+        self.assertEqual(
+            out.instructions[1],
+            tac_ast.ZeroExtend(src=_var("i"), dst=_var("u")),
+        )
+
+    def test_truncate_of_truncate(self):
+        # Truncate(int32 x, int16 t); Truncate(int16 t, int8 u) is
+        # Truncate(x, u).
+        instrs = [
+            tac_ast.Truncate(src=_var("x"), dst=_var("t")),
+            tac_ast.Truncate(src=_var("t"), dst=_var("u")),
+        ]
+        symbols = _table({
+            "x": _local(c99_ast.Long()),
+            "t": _local(c99_ast.Int()),
+            "u": _local(c99_ast.SChar()),
+        })
+        out = fold_truncate_extend(
+            _fn(instrs), symbols=symbols, ssa_dsts={"x", "t", "u"},
+        )
+        self.assertEqual(
+            out.instructions[1],
+            tac_ast.Truncate(src=_var("x"), dst=_var("u")),
+        )
+
+    def test_extend_then_wider_truncate_of_non_ssa_source_left_alone(self):
+        # Without an SSA-renamed `i`, `i` may have changed between the
+        # extend and the Truncate.
+        instrs = [
+            tac_ast.SignExtend(src=_var("i"), dst=_var("t")),
+            tac_ast.Truncate(src=_var("t"), dst=_var("u")),
+        ]
+        symbols = _table({
+            "i": _local(c99_ast.SChar()),
+            "t": _local(c99_ast.Long()),
+            "u": _local(c99_ast.Int()),
         })
         out = fold_truncate_extend(
             _fn(instrs), symbols=symbols, ssa_dsts={"t", "u"},
@@ -163,6 +220,116 @@ class TestFoldTruncateExtend(unittest.TestCase):
         })
         out = fold_truncate_extend(_fn(instrs), symbols=symbols)
         self.assertEqual(out.instructions, instrs)
+
+
+def _fold_extend_extend(instrs, symbols, ssa):
+    from passes.optimization.framework import PassContext
+    from passes.optimization.truncate_extend_fold import FoldExtendExtend
+    return FoldExtendExtend().run(
+        _fn(instrs), PassContext(symbols=symbols, ssa_dsts=ssa),
+    )
+
+
+class TestFoldExtendExtend(unittest.TestCase):
+    """An extend of a widening extend is one extend."""
+
+    def _case(self, inner, outer):
+        instrs = [
+            inner(src=_var("i"), dst=_var("t")),
+            outer(src=_var("t"), dst=_var("u")),
+        ]
+        symbols = {
+            "i": _local(c99_ast.UChar()),
+            "t": _local(c99_ast.Int()),
+            "u": _local(c99_ast.ULong()),
+        }
+        return _fold_extend_extend(instrs, symbols, {"i", "t", "u"})
+
+    def test_sign_extend_of_zero_extend_is_zero_extend(self):
+        # `(unsigned long)i` for a `uint8_t i`: the promotion to `int`
+        # leaves the top bit 0, so the sign extension adds zeros.
+        out = self._case(tac_ast.ZeroExtend, tac_ast.SignExtend)
+        self.assertEqual(
+            out.instructions[1],
+            tac_ast.ZeroExtend(src=_var("i"), dst=_var("u")),
+        )
+
+    def test_zero_extend_of_zero_extend(self):
+        out = self._case(tac_ast.ZeroExtend, tac_ast.ZeroExtend)
+        self.assertEqual(
+            out.instructions[1],
+            tac_ast.ZeroExtend(src=_var("i"), dst=_var("u")),
+        )
+
+    def test_sign_extend_of_sign_extend(self):
+        out = self._case(tac_ast.SignExtend, tac_ast.SignExtend)
+        self.assertEqual(
+            out.instructions[1],
+            tac_ast.SignExtend(src=_var("i"), dst=_var("u")),
+        )
+
+    def test_zero_extend_of_sign_extend_left_alone(self):
+        # The middle byte copies i's sign and the top bytes are 0.
+        out = self._case(tac_ast.SignExtend, tac_ast.ZeroExtend)
+        self.assertEqual(out.instructions[1].src, _var("t"))
+
+    def test_non_ssa_source_left_alone(self):
+        instrs = [
+            tac_ast.ZeroExtend(src=_var("i"), dst=_var("t")),
+            tac_ast.SignExtend(src=_var("t"), dst=_var("u")),
+        ]
+        symbols = {
+            "i": _local(c99_ast.UChar()),
+            "t": _local(c99_ast.Int()),
+            "u": _local(c99_ast.ULong()),
+        }
+        out = _fold_extend_extend(instrs, symbols, {"t", "u"})
+        self.assertEqual(out.instructions[1].src, _var("t"))
+
+
+_SIZEOF_LOOPS = (
+    "#include <stdint.h>\n"
+    "uint8_t a[40];\n"
+    "uint8_t b[40];\n"
+    "uint8_t f(void) {\n"
+    "    for (uint8_t i = 0; i < sizeof a; i++)\n"
+    "        a[i] = b[i] + 1;\n"
+    "    for (uint8_t i = 0; i < 40U; i++)\n"
+    "        b[i] = a[i];\n"
+    "    return b[39];\n"
+    "}\n"
+    "int main(void) {\n"
+    "    for (uint8_t i = 0; i < 40; i++)\n"
+    "        b[i] = i;\n"
+    "    return f();\n"
+    "}\n"
+)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestByteLoopAgainstSizeof(unittest.TestCase):
+    """`for (uint8_t i = 0; i < sizeof a; i++)` compares one byte. The
+    compare is at the width of `size_t`, `unsigned long`, which
+    promotes `i` to `int` and then to `unsigned long`, and `i < 40U`
+    converts the promoted `i` to `unsigned int` with a copy that copy
+    propagation removes after the compare has become a `JumpIfCmp`
+    (`cmp_zero_jump_fold.NARROW_JUMP_COMPARE_RULE`)."""
+
+    def test_one_byte_compare(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(_SIZEOF_LOOPS), optimize=True)
+        body = asm[asm.index("\nf:"):asm.index("\nmain:")]
+        self.assertEqual(body.count("CPX   #$28"), 2, body)
+        self.assertNotIn("SBC", body)
+        self.assertNotIn("sx_done", body)
+
+    def test_runs(self):
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(_SIZEOF_LOOPS, optimize=optimize)
+                self.assertEqual(sim.run().return_int(), 40)
 
 
 if __name__ == "__main__":

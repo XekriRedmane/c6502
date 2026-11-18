@@ -231,7 +231,7 @@ class NarrowWidenedArith(DefUsePass):
                     )):
                 return None
 
-        trunc_idx = env.def_idx.get(dst_var.name)
+        trunc_idx = _truncate_index(m, env)
         bin_idx = env.def_idx.get(trunc_src.name)
         if trunc_idx is None or bin_idx is None:
             return None
@@ -301,6 +301,18 @@ class NarrowWidenedArith(DefUsePass):
         return Rewrite(replacement=replacement, drop_defs=tuple(drop_vars))
 
 
+def _truncate_index(m: MatchResult, env: DefUseEnv) -> int | None:
+    """The matched Truncate's index. `def_idx` holds a name's last
+    definition, which for a global that several Truncates write, as
+    `ALIVE >>= 1` on two paths does, is another one."""
+    trunc = m.bindings['trunc']
+    i = env.def_idx.get(m.bindings['dst'].name)
+    if i is not None and env.instructions[i] is trunc:
+        return i
+    return next((k for k, ins in enumerate(env.instructions)
+                 if ins is trunc), None)
+
+
 def _narrow_compare(
     bin_instr: tac_ast.Binary, m: MatchResult, env: DefUseEnv,
     ctx: PassContext,
@@ -323,7 +335,7 @@ def _narrow_compare(
         return None
     if env.extra.get(bin_instr.dst.name, 0) != 1:
         return None
-    trunc_idx = env.def_idx.get(dst_var.name)
+    trunc_idx = _truncate_index(m, env)
     bin_idx = env.def_idx.get(trunc_src.name)
     if trunc_idx is None or bin_idx is None:
         return None

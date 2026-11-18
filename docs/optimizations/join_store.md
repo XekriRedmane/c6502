@@ -15,7 +15,7 @@ byte is the one left in a slot.
 
 ## Example
 
-From `do_instruction` in `examples/zork/interpreter/decode.c`, whose
+From `do_instruction` in `examples/zork/decode.c`, whose
 statement is
 
 ```c

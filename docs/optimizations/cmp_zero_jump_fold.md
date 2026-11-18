@@ -122,6 +122,18 @@ small:
    RTS
 ```
 
+## A jump folded before its extend was found
+
+`NARROW_JUMP_COMPARE_RULE` narrows the operands of a `JumpIfCmp` the
+same way. A comparison can become a `JumpIfCmp` while one of its
+operands is still a `Copy` of the extend's result, and copy
+propagation removes the `Copy` only later in the fixed point. `i <
+40U` on a `uint8_t i` converts the promoted `int` to `unsigned int`
+with such a `Copy`, and the loop had compared two bytes, `TXA; SEC;
+SBC #$28; LDA #$00; SBC #$00; BCC`, where it now compares one, `CPX
+#$28; BCC`. A `JumpIfCmp` has no result to find its position by, so
+only an SSA-renamed extend source narrows here.
+
 ## When it applies
 
 - A `Binary` with one of `==`, `!=`, `<`, `>`, `<=`, `>=` is followed
@@ -200,6 +212,30 @@ k` as `x >= k + 1` and `x <= k` as `x < k + 1`
 rewrite is skipped when `k` is the type's largest value, 255 or 127,
 where `k + 1` wraps. Wider comparisons keep the swap, since their
 chain of `SBC`s is as long either way.
+
+## Lowering an unsigned ordering kept as a value
+
+A comparison whose result is kept, rather than jumped on, is lowered
+by `tac_to_asm._translate_unsigned_ordering` when it's unsigned: a
+chain of `SBC`s, and `LDA #0; ROL A` to turn C into 0 or 1. The `SBC`
+sets C when its left operand is at least its right, which answers `>=`
+directly and `<` only inverted. For `a < b`, which `a > b` becomes by
+swapping its operands, the subtract is `b - a - 1`, `LDA b; CLC; SBC
+a`, whose carry is `b > a`, the answer itself. Before, it was `LDA a;
+SEC; SBC b` and then `EOR #1` after the `ROL`. In a function that
+returns its `bool` in C, [carry return](carry_return.md) then drops
+the whole `LDA #0; ROL A; CMP #1`, so Lode Runner's high-score test
+
+```c
+static bool beats(struct hi_score *entry) {
+    if (LEVELNUM != entry->level)
+        return LEVELNUM > entry->level;
+    ...
+```
+
+returns with `CLC; SBC __local_beats__0; RTS` where it had ended `SEC;
+SBC LEVELNUM; LDA #$00; ROL; EOR #$01; CMP #$01; RTS`, 26 bytes
+shorter in all.
 
 ## Related
 

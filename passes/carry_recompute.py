@@ -2,7 +2,7 @@
 
 # Pattern
 
-`load_packed_address` in `examples/zork/interpreter/pages.c` sets
+`load_packed_address` in `examples/zork/pages.c` sets
 the 24-bit `Z_PC2` to twice `SCRATCH2`:
 
     Z_PC2.lo = SCRATCH2 << 1;

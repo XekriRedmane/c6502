@@ -13,7 +13,7 @@ Four consecutive instructions:
 The last may instead be `Add` / `Sub` / `And` / `Or` of `tmp` into A,
 or `Xor` of A and `tmp`, with an optional `SetCarry` / `ClearCarry`
 in front of it (five instructions), which becomes `LDA other; [SEC;]
-SBC src`. `do_rwts_on_sector` in `examples/zork/interpreter/disk.c`
+SBC src`. `do_rwts_on_sector` in `examples/zork/disk.c`
 subtracts a zero-extended global that way:
 
     LDA   SECTORS_PER_TRACK

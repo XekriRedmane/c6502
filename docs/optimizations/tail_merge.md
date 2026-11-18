@@ -102,7 +102,7 @@ drop](dead_label_drop.md) removes it. If a branch skipped over that
 tail, the branch and tail now match the rule above. [Byte-by-byte
 three-way compare](three_way_compare.md) leaves both shapes for the
 `return 0` of each 2-byte compare in Zork's `match_dictionary_word`
-(examples/zork/interpreter/input.c):
+(examples/zork/input.c):
 
 ```
    BCC   .cmp3@1

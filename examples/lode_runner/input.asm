@@ -102,7 +102,6 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_check_joystick_or_delay__button	EQU	$AE
 __local_return_handler__sprite	EQU	$AE
 __local_check_joystick_or_delay__x	EQU	$AF
 __local_return_handler__g	EQU	$AF
@@ -387,13 +386,8 @@ past_threshold:
    SBC   __zpabi_past_threshold__threshold
    RTS
 .if_end@3:
-   LDA   __zpabi_past_threshold__reading
-   SEC
-   SBC   __zpabi_past_threshold__threshold
-   LDA   #$00
-   ROL
-   EOR   #$01
-   CMP   #$01
+   CLC
+   SBC   __zpabi_past_threshold__reading
    RTS
 
 button_pressed:
@@ -572,9 +566,7 @@ check_for_input:
    CMP   #$88
    BEQ   .case@13
    CMP   #$95
-   BNE   .lb_skip@5
-   JMP   .case@14
-.lb_skip@5:
+   BEQ   .case@14
    CMP   #$98
    BNE   .lb_skip@4
    JMP   .case@15
@@ -592,12 +584,8 @@ check_for_input:
    INC   LIVES
    INC   LEVELNUM
    INC   DISK_LEVEL_LOC
-   LDA   #$00
-   LSR
-   ROR   ALIVE
-   LDA   #$00
-   LSR
-   ROR   HI_SCORE_ELIGIBLE
+   LSR   ALIVE
+   LSR   HI_SCORE_ELIGIBLE
    RTS
 .case@5:
    LDA   LIVES
@@ -617,9 +605,7 @@ check_for_input:
 .case@8:
    LDA   #$01
    STA   LIVES
-   LDA   #$00
-   LSR
-   ROR   ALIVE
+   LSR   ALIVE
    RTS
 .case@9:
    LSR   ALIVE
@@ -800,10 +786,9 @@ check_joystick_or_delay:
 .loop@23_start:
    LDA   __local_check_joystick_or_delay__x
    BEQ   .if_end@54
-   LDA   #$00
-   STA   __local_check_joystick_or_delay__button
+   LDX   #$00
 .loop@24_keep_start:
-   DEC   __local_check_joystick_or_delay__button
+   DEX
    BNE   .loop@24_keep_start
    DEC   __local_check_joystick_or_delay__x
    JMP   .loop@23_start

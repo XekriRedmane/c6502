@@ -37,7 +37,7 @@ four tables the same way.
 
 ## Example
 
-From `do_2op` in `examples/zork/interpreter/decode.c`, a switch of 24
+From `do_2op` in `examples/zork/decode.c`, a switch of 24
 cases on the opcode's low five bits.
 
 ### Before

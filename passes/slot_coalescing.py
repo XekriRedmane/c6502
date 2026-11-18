@@ -20,7 +20,7 @@ different values, the local can be the slot itself. This pass renames
 the local to the slot, and the copy becomes `LDA P; STA P`. The pass
 drops such a store, a store from a register that already holds the
 byte's value, here or on every path into a label, and the peepholes
-then drop the load if nothing else reads it. Zork's `mulu16` (examples/zork/interpreter/numbers.c)
+then drop the load if nothing else reads it. Zork's `mulu16` (examples/zork/numbers.c)
 copied both its parameters, 16 bytes, and `divu16` copied its
 dividend into `quotient`, a local the C starts as a copy of it. A
 version the allocator put in a register stays there.
@@ -70,7 +70,7 @@ rejected by the linker (`slot_sharing.check_linked_shares`).
 The same goes for the bytes a function writes its callee's argument
 into. A local whose value is copied into a callee's parameter slot
 for the call can be that slot from where it's computed, as
-`instr_mul` (examples/zork/interpreter/numbers.c) passes the product
+`instr_mul` (examples/zork/numbers.c) passes the product
 to `store_with_sign`:
 
     JSR   mulu16                        JSR   mulu16

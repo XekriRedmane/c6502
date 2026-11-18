@@ -15,7 +15,7 @@ byte of the function's pool. So the function starts by copying the
 parameter's bytes into its pool, and the parameter's slot is never
 read again. After the rename, the copy stores a byte into itself, and
 the pass drops the store. A version the allocator put in a register
-stays there. In Zork's `numbers.c` (examples/zork/interpreter), this
+stays there. In Zork's `numbers.c` (examples/zork), this
 took 16 bytes of copies out of `mulu16`, the copy of `dividend` into
 `quotient` out of `divu16`, and the blocks that copied the parameter
 on the path that leaves it alone out of `check_sign` and

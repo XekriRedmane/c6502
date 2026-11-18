@@ -1,4 +1,4 @@
-"""The multi-unit example in examples/zork/interpreter: the whole of
+"""The multi-unit example in examples/zork: the whole of
 Zork I's (r15) interpreter, output/main.asm of
 https://github.com/XekriRedmane/zorki-r15-reveng, in eleven C files
 linked with a linker script.
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from py65.devices.mpu6502 import MPU
 
-_DIR = Path(__file__).parent.parent / "examples" / "zork" / "interpreter"
+_DIR = Path(__file__).parent.parent / "examples" / "zork"
 _UNITS = [
     "main", "decode", "objects", "numbers", "input", "pages", "zstring",
     "output", "disk", "prompts", "save",

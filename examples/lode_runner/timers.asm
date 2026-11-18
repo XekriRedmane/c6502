@@ -356,10 +356,6 @@ guard_resurrections:
    LDY   GAME_COLNUM
    LDA   (__local_guard_resurrections__0),Y
    BNE   .if_end@2
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_resurrections__0
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_guard_resurrections__1
    LDA   #$08
    STA   (__local_guard_resurrections__0),Y
    LDA   #$00
@@ -522,8 +518,6 @@ fill_hole:
 .if_else@14:
    CMP   #$08
    BNE   .if_else@16
-   LDA   LEVEL_BG@lo,X
-   STA   __local_fill_hole__0
    LDA   LEVEL_BG@hi,X
    STA   __local_fill_hole__1
    LDA   #$01

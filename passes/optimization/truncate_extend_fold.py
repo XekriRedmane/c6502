@@ -144,9 +144,11 @@ class FoldTruncateExtend(DefUsePass):
         if ctx.ssa_dsts is None or src_var.name not in ctx.ssa_dsts:
             return None
 
-        # Walk back to find the defining SignExtend or ZeroExtend.
+        # Walk back to find the defining SignExtend, ZeroExtend, or
+        # Truncate.
         cast = env.def_of(src_var)
-        if not isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
+        if not isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend,
+                                 tac_ast.Truncate)):
             return None
         if not isinstance(cast.src, tac_ast.Var):
             return None
@@ -164,7 +166,66 @@ class FoldTruncateExtend(DefUsePass):
         if src_width is None or dst_width is None:
             return None
         if dst_width > src_width:
-            return None
+            # A truncate to a width between x's and the extend's keeps
+            # some of the extend's bytes, and is the same extend of x
+            # to the narrower width. A truncate of a truncate can't be
+            # wider than x.
+            if isinstance(cast, tac_ast.Truncate):
+                return None
+            return type(cast)(src=cast.src, dst=dst_var)
         if dst_width == src_width:
             return tac_ast.Copy(src=cast.src, dst=dst_var)
         return tac_ast.Truncate(src=cast.src, dst=dst_var)
+
+
+class FoldExtendExtend(DefUsePass):
+    """DefUsePass: an extend of a widening extend of `x` is one extend
+    of `x`. A `ZeroExtend` that widens leaves the top bit of its
+    result 0, so sign-extending that result further adds zero bytes,
+    the same bytes a zero extension adds. The cases:
+
+      - `ZeroExtend(ZeroExtend(x))` and `SignExtend(ZeroExtend(x))`
+        are `ZeroExtend(x)`.
+      - `SignExtend(SignExtend(x))` is `SignExtend(x)`.
+      - `ZeroExtend(SignExtend(x))` stays, since its middle bytes are
+        copies of x's sign and its top bytes are 0.
+
+    `(unsigned long)i` for a `uint8_t i` promotes `i` to `int` first,
+    `ZeroExtend` then `SignExtend`, and the comparison narrowing in
+    `cmp_zero_jump_fold` follows only one `ZeroExtend`, so
+    `i < sizeof a` had compared four bytes."""
+    name = "fold_extend_extend"
+    pattern = m_Cast(
+        kind=(tac_ast.SignExtend, tac_ast.ZeroExtend),
+        src=m_Var(capture='src'),
+        dst=m_Var(capture='dst'),
+        capture='outer',
+    )
+
+    def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
+        src_var = m.bindings['src']
+        dst_var = m.bindings['dst']
+        outer = m.bindings['outer']
+        if ctx.ssa_dsts is None or src_var.name not in ctx.ssa_dsts:
+            return None
+        inner = env.def_of(src_var)
+        if not isinstance(inner, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
+            return None
+        if not isinstance(inner.src, tac_ast.Var):
+            return None
+        # As in FoldTruncateExtend, `x` is read at the outer extend in
+        # place of the inner one, so it must be SSA-renamed.
+        if inner.src.name not in ctx.ssa_dsts:
+            return None
+        x_width = _byte_width(inner.src, ctx.symbols)
+        mid_width = _byte_width(src_var, ctx.symbols)
+        dst_width = _byte_width(dst_var, ctx.symbols)
+        if x_width is None or mid_width is None or dst_width is None:
+            return None
+        if not x_width < mid_width < dst_width:
+            return None
+        if isinstance(inner, tac_ast.ZeroExtend):
+            return tac_ast.ZeroExtend(src=inner.src, dst=dst_var)
+        if isinstance(outer, tac_ast.SignExtend):
+            return tac_ast.SignExtend(src=inner.src, dst=dst_var)
+        return None

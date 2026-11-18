@@ -96,7 +96,7 @@ between, and a label in between is reached that way on every path in
 (`redundant_compare._flags_from`), `AND #$80; BEQ` / `BNE` is `BPL` /
 `BMI`. A must be dead on both paths, and N and Z too, since without the
 `AND`, Z comes from all of A. In Zork's `ascii_to_zchar`
-(examples/zork/interpreter/input.c), `a = get_alphabet_for_char(c) -
+(examples/zork/input.c), `a = get_alphabet_for_char(c) -
 1; if (a & 0x80)` was `SEC; SBC #$01; STA a; AND #$80; BEQ`, and
 `get_alphabet_for_char` tests `c & 0x80` after an `ORA #$00` that tests
 `c == 0`, 8 bytes in the two with the reloads of A that then go.
@@ -117,7 +117,7 @@ shifted where the `AND` left it masked, writes C, which the `AND`
 left alone, and sets N and Z from the shifted value, so A, C, N, and
 Z must all be dead on both paths after the branch. Any instruction
 may put the value in A. That's the test of `sign_bit & 0x01` in
-Zork's `store_with_sign` (examples/zork/interpreter/numbers.c), of
+Zork's `store_with_sign` (examples/zork/numbers.c), of
 the transcript bit in `read_line` and twice in `output.c`, and of a
 header flag in `main`.
 
@@ -137,7 +137,7 @@ byte, which `BIT` can address, and isn't volatile. `BIT` leaves A as
 it was, sets N from bit 7 of `m` and Z from A AND `m`, and writes V,
 where the load and the `AND` left V alone, so A, N, Z, and the earlier
 V must all be dead on both paths after the branch. It saves 2 bytes
-and 2 cycles. Zork's `branch` (examples/zork/interpreter/decode.c)
+and 2 cycles. Zork's `branch` (examples/zork/decode.c)
 tests bit 6 of its offset byte twice this way.
 
 ## What it leaves alone

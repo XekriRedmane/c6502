@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import unittest
 
 import asm_ast
@@ -147,6 +148,80 @@ class TestOutOfLineBlock(unittest.TestCase):
         # The counter would arrive at .join without its init.
         instrs = self._loop(jump_in_from_outside=True)
         self.assertEqual(_run(list(instrs)), instrs)
+
+
+
+class TestInnerLoopOfAnotherLoop(unittest.TestCase):
+    """A counter initialized inside another loop is dead on the outer
+    loop's way back to its init, so the outer loop may use the
+    register: the inner counter of `do { for (y = n; --y;) {} } while
+    (--count);` goes in Y while the outer one is in X."""
+
+    def _nested(self, inner_init):
+        y = asm_ast.Data(name="y", offset=0)
+        return [
+            asm_ast.Mov(src=_N, dst=_X, is_volatile=False),
+            asm_ast.Label(name=".outer"),
+            asm_ast.Mov(src=inner_init, dst=y, is_volatile=False),
+            asm_ast.Label(name=".inner"),
+            asm_ast.Dec(dst=y),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".inner"),
+            asm_ast.Dec(dst=_X),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".outer"),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_inner_counter_goes_in_y(self):
+        out = _run(self._nested(asm_ast.Imm(value=0xB4)))
+        self.assertEqual(
+            out[2], asm_ast.Mov(src=asm_ast.Imm(value=0xB4), dst=_Y,
+                                is_volatile=False),
+        )
+        self.assertEqual(out[4], asm_ast.Dec(dst=_Y))
+
+    def test_outer_register_used_inside_inner_loop_keeps_memory(self):
+        instrs = self._nested(asm_ast.Imm(value=0xB4))
+        instrs[4:4] = [asm_ast.Inc(dst=_Y)]
+        y = asm_ast.Data(name="y", offset=0)
+        out = _run(instrs)
+        # Y is used in the inner loop and X holds the outer counter.
+        self.assertIn(asm_ast.Dec(dst=y), out)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestDelayLoopSim(unittest.TestCase):
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "uint16_t passes;\n"
+        "void delay(uint8_t count) {\n"
+        "    do {\n"
+        "        [[c6502::keep]] for (uint8_t y = 3; --y;) {\n"
+        "        }\n"
+        "        passes++;\n"
+        "    } while (--count);\n"
+        "}\n"
+        "int main(void) {\n"
+        "    delay(5);\n"
+        "    delay(0);\n"
+        "    return passes;\n"
+        "}\n"
+    )
+
+    def test_dey(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        body = asm[asm.index("\ndelay:"):asm.index("\nmain:")]
+        self.assertIn("DEY", body)
+        self.assertIn("DEX", body)
+
+    def test_runs(self):
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run()
+                self.assertEqual(out.return_int(), 5 + 256)
 
 
 if __name__ == "__main__":

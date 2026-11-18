@@ -5,7 +5,7 @@ a function of its own, which each place calls.
 
 Functions that call the same routine with the same arguments repeat
 the code that sets the arguments up. Zork's `instr_mul`, `instr_div`,
-and `instr_mod` (examples/zork/interpreter/numbers.c) each start
+and `instr_mod` (examples/zork/numbers.c) each start
 
     LDA   OPERANDS+2
     STA   __zpabi_check_sign__b_0

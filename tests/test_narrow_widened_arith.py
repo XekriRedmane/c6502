@@ -11,6 +11,7 @@ masks Constants modulo the target width, and a truncated comparison
 narrowing to its 1-byte result.
 """
 
+import shutil
 import unittest
 
 import c99_ast
@@ -654,6 +655,81 @@ class TestNarrowWidenedArith(unittest.TestCase):
         instrs, _, ssa_dsts = _zext_add_trunc(tac_ast.Subtract)
         out = narrow_widened_arith(_fn(instrs), ssa_dsts=ssa_dsts)
         self.assertEqual(out.instructions, instrs)
+
+
+
+class TestGlobalWrittenOnTwoPaths(unittest.TestCase):
+    """`ALIVE >>= 1` on two paths writes the global with two
+    Truncates. Each narrows, and reads the global at its own
+    Truncate, where `def_idx` had given the last one's index and the
+    first had stayed wide (`_truncate_index`)."""
+
+    def test_both_narrow(self):
+        def shift(e, r):
+            return [
+                tac_ast.ZeroExtend(src=_var("g"), dst=_var(e)),
+                tac_ast.Binary(op=tac_ast.RightShift(), src1=_var(e),
+                               src2=_const_int(1), dst=_var(r)),
+                tac_ast.Truncate(src=_var(r), dst=_var("g")),
+            ]
+        instrs = [
+            *shift("e1", "r1"),
+            tac_ast.Ret(val=None),
+            tac_ast.Label(name=".other"),
+            *shift("e2", "r2"),
+            tac_ast.Ret(val=None),
+        ]
+        symbols = {
+            "g": _static(c99_ast.UChar()),
+            "e1": _local(c99_ast.Int()), "r1": _local(c99_ast.Int()),
+            "e2": _local(c99_ast.Int()), "r2": _local(c99_ast.Int()),
+        }
+        out = narrow_widened_arith(
+            _fn(instrs), symbols=symbols,
+            ssa_dsts={"e1", "r1", "e2", "r2"},
+        )
+        narrow = [i for i in out.instructions
+                  if isinstance(i, tac_ast.Binary) and i.dst == _var("g")]
+        self.assertEqual(len(narrow), 2, out.instructions)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "uint8_t alive = 0x81, other = 6, key;\n"
+        "void f(void) {\n"
+        "    if (key == 3) {\n"
+        "        other++;\n"
+        "        alive >>= 1;\n"
+        "        return;\n"
+        "    }\n"
+        "    if (key == 4)\n"
+        "        alive >>= 1;\n"
+        "}\n"
+        "int main(void) {\n"
+        "    key = 3; f();\n"
+        "    key = 4; f();\n"
+        "    key = 5; f();\n"
+        "    return alive + (other << 8);\n"
+        "}\n"
+    )
+
+    def test_one_byte_shifts(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        body = asm[asm.index("\nf:"):asm.index("\nmain:")]
+        self.assertEqual(body.count("LSR   alive"), 2, body)
+        self.assertNotIn("ROR", body)
+
+    def test_runs(self):
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run()
+                self.assertEqual(out.return_int(), 0x0720)
 
 
 if __name__ == "__main__":

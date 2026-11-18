@@ -63,12 +63,76 @@ The extended value may have other readers. Each truncate of it is
 rewritten on its own, and dead-store elimination removes the extend
 after the last reader goes.
 
+A truncate to a width between the source's and the extend's keeps
+some of the extend's bytes. Those are the bytes the same kind of
+extend to the narrower width makes, so in `uint8_t a; long l = a;
+return (int)l;` the `Truncate` from `long` becomes `ZeroExtend(a)` to
+`int`. A truncate of a truncate is one truncate of the first one's
+source.
+
+## An extend of an extend
+
+`FoldExtendExtend`, in the same module, runs right after
+`FoldTruncateExtend` and rewrites an extend of a widening extend of
+`x` as one extend of `x`. A `ZeroExtend` that widens leaves the top
+bit of its result 0, so a `SignExtend` of that result adds zero bytes,
+the same bytes a `ZeroExtend` adds.
+
+| Inner | Outer | Result |
+|---|---|---|
+| `ZeroExtend` | `ZeroExtend` or `SignExtend` | `ZeroExtend(x)` |
+| `SignExtend` | `SignExtend` | `SignExtend(x)` |
+| `SignExtend` | `ZeroExtend` | unchanged |
+
+The last row stays, because its middle bytes copy the sign of `x` and
+its top bytes are 0, which neither extend of `x` makes. The gates are
+the ones above. Both names must be SSA-renamed, since `x` is read at
+the outer extend in place of the inner one, and the widths must come
+from the symbol table and grow strictly at each step.
+
+C converts a byte compared with `sizeof` in two steps. In
+
+```c
+#include <stdint.h>
+uint8_t a[40], b[40];
+void f(void) {
+    for (uint8_t i = 0; i < sizeof a; i++)
+        a[i] = b[i];
+}
+```
+
+`i` is promoted to `int` and then converted to `size_t`, which is
+`unsigned long`, so the compare read `SignExtend(ZeroExtend(i))`. The
+[comparison narrowing](cmp_zero_jump_fold.md) follows one
+`ZeroExtend`, and the loop compared four bytes, with the sign
+extension of a high byte known to be 0 before it:
+
+```
+.loop@0_start:
+   LDA   #$00
+   BPL   .sx_done@1
+   LDA   #$FF
+.sx_done@1:
+   STA   __local_f__1
+   STA   __local_f__0
+   TXA
+   SEC
+   SBC   #$28
+   LDA   #$00
+   SBC   #$00
+   LDA   __local_f__1
+   SBC   #$00
+   LDA   __local_f__0
+   SBC   #$00
+   BCS   .loop@0_break
+```
+
+With one `ZeroExtend` the compare narrows to a byte, and the loop is
+`INX; CPX #$28; BCC`. Lode Runner's `editor.c` had cast each `sizeof`
+to `uint8_t` to get that.
+
 ## What it leaves alone
 
-- A truncate to a width between the source's and the extend's. In
-  `uint8_t a; long l = a; return (int)l;`, the `int` result reads
-  one byte that came from the zero extension, so the `Truncate`
-  from `long` stays.
 - An extend of a static or of an address-taken local. In
   `int t = s; s += 1; g = t; return (uint8_t)t;` with a static `s`,
   reading `s` at the truncate would return the incremented value.

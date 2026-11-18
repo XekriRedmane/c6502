@@ -21,7 +21,7 @@ rotate-in then takes no `LDA b; LSR` at all. The bit it shifts in is
 that bit is what the first one's last `ROL` left in C. The pass drops
 the load and the `LSR` when nothing between the two rotate-ins can
 change C, and the asm DCE then drops the computation of the bit.
-That's how Zork's `divu16` (examples/zork/interpreter/numbers.c)
+That's how Zork's `divu16` (examples/zork/numbers.c)
 comes out with the original's `ROL` chain.
 
 ## Example

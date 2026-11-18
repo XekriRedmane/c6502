@@ -81,7 +81,7 @@ across a call into a different calling convention.
 
 These were found in `examples/zork/print_zstring` and
 `examples/zork/instr_save`, which were removed on 16 Nov 2026. The same
-routines are in `examples/zork/interpreter`, whose README compares it
+routines are in `examples/zork`, whose README compares it
 with Zork's code.
 
 - **Branch layout in an `if` / `else if` chain.** `print_zstring`
@@ -127,7 +127,7 @@ Monitor's zero page, and the runtime's block moves around it
 (`passes/runtime_layout.py`). Headers for DOS 3.3, ProDOS, and
 Applesoft would do the same: each declares the zero-page bytes that
 software uses, from its listing, so a program that includes one keeps
-those bytes free. `examples/zork/interpreter/zork.h` declares the
+those bytes free. `examples/zork/zork.h` declares the
 bytes that RWTS uses by hand.
 
 ## Rotate loops with tests of more than one branch
@@ -177,7 +177,7 @@ A function returning one byte leaves it in A. When the value is
 already in X at the return and every caller either moves it to X
 with `TAX` or ignores it, returning it in X would remove the `TXA`
 before each `RTS` and the `TAX` after each call. Y works the same
-way. In Zork's interpreter (`examples/zork/interpreter/save.c`),
+way. In Zork's interpreter (`examples/zork/save.c`),
 `copy_data_to_buff` and `copy_data_from_buff` end in `TXA; RTS`, and
 two of each one's five calls are followed by `TAX`, so this would
 save 6 bytes there.
@@ -197,7 +197,7 @@ probably not worth it.
 
 ## Make Zork's input.c smaller
 
-`examples/zork/interpreter/input.c` is 1,110 bytes, where Zork's
+`examples/zork/input.c` is 1,110 bytes, where Zork's
 code for it is 1,018. `match_dictionary_word` is 181 bytes against
 Zork's 190. The separator tests, `is_dict_separator`,
 `is_std_separator`, and `is_separator`, are 52 bytes against Zork's
@@ -221,7 +221,7 @@ Zork's 190. The separator tests, `is_dict_separator`,
 
 ## Make Zork's numbers.c smaller
 
-`examples/zork/interpreter/numbers.c` is 475 bytes, where Zork's code
+`examples/zork/numbers.c` is 475 bytes, where Zork's code
 for it is 436. `divu16` (62 against 78) and `mulu16` (42 against 69)
 are already smaller. What's left:
 

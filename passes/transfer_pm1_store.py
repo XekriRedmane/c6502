@@ -51,7 +51,7 @@ The rewrite is sound iff at the boundary after STA M:
      sequence, and DEX leaves them stale. N and Z come out the same:
      DEX sets them from `X-1`, the value the SBC left in A. So a
      branch on N or Z may follow, as in `get_next_code_byte2`'s
-     `if (++Z_PC2_L == 0)` when examples/zork/interpreter/pages.c
+     `if (++Z_PC2_L == 0)` when examples/zork/pages.c
      kept Z_PC2 in three bytes, which became `INY; STY Z_PC2_L; BNE`.
 
 For the +1 form (`CLC; ADC #1`) the C/V mutation by the original
@@ -84,7 +84,7 @@ since writes M or might. A store through a pointer might, except to
 a byte no pointer can point to, a `static` or one of the function's
 own zero-page slots whose address the unit never takes
 (`asm_aliasing.unreachable_by_pointer`), such as Zork's `token_idx`
-in examples/zork/interpreter/input.c. A, C, and V must be dead
+in examples/zork/input.c. A, C, and V must be dead
 after. N and Z come out the same, from M plus or minus `k`.
 
 # A step on either side of a transfer
@@ -101,7 +101,7 @@ after). In the first,
 Y ends up with A's sum and A keeps its old value. In the second, A
 ends up with the sum and Y with it too. N and Z come out the same,
 from the sum. Zork's `match_dictionary_word`
-(examples/zork/interpreter/input.c) steps its index past the count
+(examples/zork/input.c) steps its index past the count
 of separators with `y++` and adds the last step to the dictionary's
 address, the first and second forms. Each saves 2 bytes and 2 cycles
 for a step of 1, and 1 byte for a step of 2.
@@ -116,7 +116,7 @@ stepped byte is stored back and then loaded into that register:
 for a step `k` of 1 or 2, `CLC; ADC #k` with `INX`, and the Y forms,
 when A, C, and V are dead after. X and M end up with the same value
 as before, and N and Z come out the same, from the last step. Zork's
-`return_value` (examples/zork/interpreter/decode.c) steps the index
+`return_value` (examples/zork/decode.c) steps the index
 of the local it restores this way, `x -= 2`. That saves 3 bytes for a
 step of 2 in zero page, and 4 for a step of 1.
 

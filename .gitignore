@@ -231,4 +231,4 @@ fuzz_out/
 # examples' build instructions write.
 *.o
 a.out
-examples/zork/interpreter/interpreter
+examples/zork/interpreter

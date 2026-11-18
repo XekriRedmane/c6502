@@ -193,7 +193,7 @@ then turns into `JMP is_three`.
   when the register holds a constant from an immediate load earlier
   in the block, through transfers, and N and Z are dead after. The
   register keeps its value. In Zork's `is_dict_separator`
-  (examples/zork/interpreter/input.c), `return false;` after `LDY
+  (examples/zork/input.c), `return false;` after `LDY
   #0` had become `CPY #1`, since `redundant_load` loads the 0 with
   `TYA` and `cpx_cpy_peephole` folds `TYA; CMP #1`. It becomes `CLC`,
   and [tail merge](tail_merge.md) then sends the branch to the

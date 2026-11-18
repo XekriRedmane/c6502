@@ -53,7 +53,7 @@ reads after the `LDA t`, `M` is a byte or a constant `LDX` can load
 and `D` one `STX` can store, X is dead from the `STA t` on (else Y,
 the same way), and N and Z are dead after, since they come from `M`
 where the `LDA t` set them from A. A ends with the value it had.
-Zork's `do_var` (examples/zork/interpreter/decode.c) copies
+Zork's `do_var` (examples/zork/decode.c) copies
 `OPERANDS[0]` into a slot on entry while A holds the opcode it
 dispatches on. It saves 4 bytes with the bytes in zero page.
 

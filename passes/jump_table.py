@@ -5,7 +5,7 @@ cases' addresses.
 # Pattern
 
 A `switch` on a byte becomes a chain like this one, from Zork's
-`do_2op` (examples/zork/interpreter/decode.c), with 24 cases:
+`do_2op` (examples/zork/decode.c), with 24 cases:
 
     CMP   #$01
     BEQ   .case@35

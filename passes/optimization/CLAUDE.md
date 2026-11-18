@@ -99,6 +99,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
     `CMP_ZERO_RULE` in the rule set): a comparison whose result isn't
     a jump's condition gets the same operand narrowing, into the same
     dst, so `return x < 10;` on a `uint8_t x` is a 1-byte compare.
+  - `NARROW_JUMP_COMPARE_RULE` (same module, after it): a `JumpIfCmp`
+    whose operand reached a `ZeroExtend` only after the fold, through
+    a `Copy` that copy propagation removed later (`i < 40U` converts
+    the promoted `int` to `unsigned`), narrows the same way, for an
+    SSA-renamed extend source.
   - `fold_narrow_and_jump` (`AND_ZERO_RULE`): folds `(ZeroExtend(uchar);
     BitwiseAnd(_, 0x80); JumpIf*)` to `JumpIfMasked` when the operand
     narrows to 1 byte — direct `LDA / BPL/BMI` at asm lowering instead
@@ -194,7 +199,12 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 - `truncate_extend_fold.py` — `fold_truncate_extend`
   (`FoldTruncateExtend`, DefUsePass). Folds `Truncate(SignExtend|
   ZeroExtend(x))` → `Copy(x)` (or narrower `Truncate`) when the
-  round-trip is the identity at the destination's width.
+  round-trip is the identity at the destination's width, to the same
+  extend of `x` when the destination is between the two widths, and
+  `Truncate(Truncate(x))` → `Truncate(x)`. `FoldExtendExtend`, right
+  after it, makes an extend of a widening extend one extend:
+  `SignExtend(ZeroExtend(x))` is `ZeroExtend(x)`, so `i < sizeof a`
+  on a `uint8_t i` narrows to a byte compare.
 - `sink_increment.py` — `sink_increments` (`SinkIncrements`, SinkPass).
   Moves `Y = X + c` past the last in-line use of `X` when `Y`'s only
   consumer follows, exposing `recognize_indexed_*` patterns the original
@@ -222,7 +232,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   non-SSA one must be unchanged since the wide Binary or Extend read
   it (same block, no call, store, or write to it in between; not
   volatile), or `int t = g + 1; h(); (uint8_t)t` would read `g` after
-  `h` changed it. Eliminates the dead
+  `h` changed it. The Truncate is found by identity
+  (`_truncate_index`), since a global written by several Truncates
+  has another one as its last definition. Eliminates the dead
   high-byte arithmetic that C99's `uint8_t op uint8_t`
   integer-promotion-then-truncate idiom otherwise leaves in the IR. MUST
   run AFTER `sink_and_past_branch` inside the fixed-point loop — sink's
@@ -251,6 +263,13 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   shift or an AND by a constant) plus `k` fits in a byte
   (`_byte_index_sum`), so `p[i + 1]` after `p[i]` at an even `i` is
   `INY`.
+  An address `p + ZeroExtend(i)` read by several 1-byte loads and
+  stores (`p[i] &= m`) is `(p),Y` with Y = `i` in each, for an
+  SSA-renamed `i` (`_shared_extend_add_chain`). A reader `(p +
+  ZeroExtend(i)) + k` with `k` outside 0-255, read by one 1-byte
+  access, is `(t),Y` with `t = p + k` made just before the access
+  (`_offset_from_extend_chain`), as CSE leaves `background[x]` for
+  `background = line + 0x2000`.
   Deliberately runs LAST so any pointer that's going to fold to a Constant (via the const-static
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper
@@ -391,7 +410,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → copy_propagate → DSE → fold_copies → reassoc_constants
       → reassoc_offset_constant → direct_member_access
       → recognize_indexed_store → recognize_indexed_load
-      → fold_truncate_extend → sink_increments
+      → fold_truncate_extend → fold_extend_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)
    → static_indexed_access         (PostFixedpointPass, one-shot)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)

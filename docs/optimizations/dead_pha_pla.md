@@ -89,7 +89,7 @@ the `PLA` was:
 ```
 
 That's 2 bytes and 5 cycles less, in Zork's `read_line` and
-`set_page_first` (examples/zork/interpreter). The load sets N and Z as
+`set_page_first` (examples/zork). The load sets N and Z as
 the `PLA` did. The byte can't be volatile, and the body can't write
 memory.
 

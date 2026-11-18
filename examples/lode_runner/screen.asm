@@ -554,12 +554,11 @@ add_and_update_score:
    STA   __local_add_and_update_score__i
    INC   __local_add_and_update_score__tens
 .if_end@2:
-   LDA   #$09
-   SEC
-   SBC   __local_add_and_update_score__tens
+   LDA   __local_add_and_update_score__tens
+   CLC
+   SBC   #$09
    LDA   #$00
    ROL
-   EOR   #$01
    STA   __local_add_and_update_score__carry
    BEQ   .if_end@3
    LDA   __local_add_and_update_score__tens

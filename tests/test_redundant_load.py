@@ -18,6 +18,7 @@ Coverage:
 """
 from __future__ import annotations
 
+import shutil
 import unittest
 
 import asm_ast
@@ -621,9 +622,10 @@ class TestRedundantLoadZReflects(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        # All five non-label instructions remain — the LDA is the
-        # only way to set Z to "is zp80 zero" before the branch.
-        self.assertEqual(len(out), 6)
+        # The store of the value zp80 holds goes, and the LDA stays,
+        # the only way to set Z to "is zp80 zero" before the branch.
+        self.assertEqual(len(out), 5)
+        self.assertIn(type(out[2]), (asm_ast.Mov, asm_ast.Or))
 
     def test_cmp_clears_z_reflects(self) -> None:
         # `Compare(A, M)` sets Z to "A equals M". That doesn't
@@ -732,7 +734,7 @@ class TestRedundantLoadZReflects(unittest.TestCase):
     def test_store_of_the_value_held_keeps_reflection(self) -> None:
         # In `LDA m; STA m; LDA m; BEQ`, A already holds m when it's
         # stored back, so m doesn't change, Z still reflects it, and
-        # the second load goes.
+        # the second load goes, and so does the store.
         m = asm_ast.Data(name="m", offset=0)
         instrs = [
             asm_ast.Mov(src=m, dst=_REG_A),
@@ -742,7 +744,7 @@ class TestRedundantLoadZReflects(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        self.assertEqual(len(out), 4)
+        self.assertEqual(len(out), 3)
 
 
 class TestRedundantLoadRegToReg(unittest.TestCase):
@@ -1449,6 +1451,180 @@ class TestStoreThroughPointer(unittest.TestCase):
         # `__local_f__x__c` might be `f__x`'s local `c`.
         mem = asm_ast.Data(name="__local_f__x__c", offset=0)
         self.assertEqual(self._shape(mem, fns=["f__x"]), 6)
+
+
+
+class TestMemoryGroups(unittest.TestCase):
+    """Bytes that hold one value after the register that held it is
+    reloaded. A load of one of them makes the register mirror all of
+    them, and a store into one of those is dropped. The row of a 2-D
+    table is set up again with the same low byte."""
+
+    _LO = asm_ast.IndexedData(name="T@lo", offset=0, index=asm_ast.X())
+    _P0 = asm_ast.Data(name="__local_f__p0", offset=0)
+    _P1 = asm_ast.Data(name="__local_f__p1", offset=0)
+
+    def _row(self, hi_name, then):
+        hi = asm_ast.IndexedData(name=hi_name, offset=0, index=asm_ast.X())
+        return [
+            asm_ast.Mov(src=self._LO, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=self._P0),
+            asm_ast.Mov(src=hi, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=self._P1),
+            *then,
+        ]
+
+    def _store_through(self):
+        return [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90)),
+        ]
+
+    def _run(self, instrs):
+        top = [_fn(instrs)] + [
+            asm_ast.StaticVariable(name=n, is_global=False, init=[])
+            for n in ("T@lo", "A@hi", "B@hi")
+        ]
+        return apply_redundant_load_elimination(
+            asm_ast.Program(top_level=top),
+        ).top_level[0].instructions
+
+    def test_second_row_keeps_low_byte(self):
+        instrs = (self._row("A@hi", self._store_through())
+                  + self._row("B@hi", self._store_through())
+                  + [asm_ast.Return(save_a=False)])
+        out = self._run(instrs)
+        self.assertEqual(out.count(asm_ast.Mov(src=_REG_A, dst=self._P0)), 1)
+        self.assertEqual(out.count(asm_ast.Mov(src=_REG_A, dst=self._P1)), 2)
+
+    def test_index_change_ends_the_group(self):
+        instrs = (self._row("A@hi", self._store_through())
+                  + [asm_ast.Inc(dst=_REG_X)]
+                  + self._row("B@hi", self._store_through())
+                  + [asm_ast.Return(save_a=False)])
+        out = self._run(instrs)
+        self.assertEqual(out.count(asm_ast.Mov(src=_REG_A, dst=self._P0)), 2)
+
+    def test_write_of_the_byte_ends_the_group(self):
+        instrs = (self._row("A@hi", [asm_ast.Inc(dst=self._P0)])
+                  + self._row("B@hi", [])
+                  + [asm_ast.Return(save_a=False)])
+        out = self._run(instrs)
+        self.assertEqual(out.count(asm_ast.Mov(src=_REG_A, dst=self._P0)), 2)
+
+    def test_group_survives_a_join_only_when_both_paths_have_it(self):
+        def shape(other_path):
+            return (
+                self._row("A@hi", [
+                    asm_ast.Branch(cond=asm_ast.EQ(), target=".j"),
+                    *other_path,
+                    asm_ast.Label(name=".j"),
+                ])
+                + self._row("B@hi", [])
+                + [asm_ast.Return(save_a=False)]
+            )
+        out = self._run(shape([asm_ast.Inc(dst=_REG_Y)]))
+        self.assertEqual(out.count(asm_ast.Mov(src=_REG_A, dst=self._P0)), 1)
+        out = self._run(shape([asm_ast.Inc(dst=self._P0)]))
+        self.assertEqual(out.count(asm_ast.Mov(src=_REG_A, dst=self._P0)), 2)
+
+
+class TestSwapPairsThroughPointer(unittest.TestCase):
+    """`LDA t,X; STA p+1; LDA #7; STA (p),Y` with A holding 7 must not
+    become `STA (p),Y; LDA t,X; STA p+1`, which stores through the old
+    pointer."""
+
+    def test_kept(self):
+        p1 = asm_ast.Data(name="__local_f__p", offset=1)
+        hi = asm_ast.IndexedData(name="t", offset=0, index=asm_ast.X())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="g", offset=0)),
+            asm_ast.Mov(src=hi, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=p1),
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90)),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        prog = asm_ast.Program(top_level=[
+            _fn(list(instrs)),
+            asm_ast.StaticVariable(name="t", is_global=False, init=[]),
+        ])
+        out = apply_redundant_load_elimination(
+            prog, zp_symbol_addrs={"__local_f__p": 0x90},
+        ).top_level[0].instructions
+        at_store = out.index(asm_ast.Mov(src=_REG_A, dst=p1))
+        at_ptr = out.index(
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90)))
+        self.assertLess(at_store, at_ptr)
+
+    def test_swapped_when_the_store_is_another_byte(self):
+        d1 = asm_ast.Data(name="__local_f__q", offset=0)
+        hi = asm_ast.IndexedData(name="t", offset=0, index=asm_ast.X())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="g", offset=0)),
+            asm_ast.Mov(src=hi, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=d1),
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90)),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        # `t` is a static whose address the unit doesn't take, so the
+        # store through the pointer can't change it.
+        prog = asm_ast.Program(top_level=[
+            _fn(list(instrs)),
+            asm_ast.StaticVariable(name="t", is_global=False, init=[]),
+        ])
+        out = apply_redundant_load_elimination(
+            prog,
+            zp_symbol_addrs={"__local_f__q": 0x84, "__local_f__p": 0x90},
+        ).top_level[0].instructions
+        at_store = out.index(asm_ast.Mov(src=_REG_A, dst=d1))
+        at_ptr = out.index(
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0x90)))
+        self.assertGreater(at_store, at_ptr)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestRowsOfTwoTablesSim(unittest.TestCase):
+    """Two 2-D arrays whose tables of row addresses share the low
+    bytes, read and written in one row, as Lode Runner's LEVEL_MAP and
+    LEVEL_BG are."""
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "static uint8_t map[16][28];\n"
+        "static uint8_t bg[16][28];\n"
+        "uint8_t row, col;\n"
+        "void fall(void) {\n"
+        "    uint8_t r = row + 1;\n"
+        "    if (bg[r][col] == 1 && (int8_t)col >= 0) {\n"
+        "        uint8_t above = r - 1;\n"
+        "        if (bg[above][col] == 0) {\n"
+        "            map[above][col] = 7;\n"
+        "            bg[above][col] = 7;\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+        "int main(void) {\n"
+        "    for (uint8_t i = 0; i < 16; i++)\n"
+        "        for (uint8_t j = 0; j < 28; j++)\n"
+        "            bg[i][j] = (uint8_t)(i + j) & 1;\n"
+        "    row = 4; col = 4;\n"
+        "    fall();\n"
+        "    return map[4][4] + bg[4][4] * 16 + bg[5][4] * 256;\n"
+        "}\n"
+    )
+
+    def test_runs(self):
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run()
+                self.assertEqual(out.return_int(), 7 + 7 * 16 + 256)
 
 
 if __name__ == "__main__":

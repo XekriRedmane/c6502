@@ -65,7 +65,7 @@ a bare `Return` becomes a copy of that `Return`: `RTS` is 1 byte and
 A `switch` whose cases end in `break` leaves this shape, each case
 jumping to the `RTS` after the switch, and a case that ends in a call,
 `JSR f; JMP .break`, then becomes `JSR f; RTS`, which the rule above
-makes `JMP f`. Zork's `do_2op` (examples/zork/interpreter/decode.c)
+makes `JMP f`. Zork's `do_2op` (examples/zork/decode.c)
 has a dozen such cases. A `Ret`, which tears down a frame, isn't
 copied.
 

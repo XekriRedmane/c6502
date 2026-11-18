@@ -19,7 +19,7 @@ the hardware stack holds two more bytes while the run executes.
 ## Example
 
 Zork's `instr_mul`, `instr_div`, and `instr_mod`
-(examples/zork/interpreter/numbers.c) each start by passing both
+(examples/zork/numbers.c) each start by passing both
 operands to `check_sign`.
 
 ### Before

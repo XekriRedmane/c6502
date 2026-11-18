@@ -17,7 +17,7 @@ directly: `(N),Y` becomes `name,Y` (`IndexedData`) and the
 constant-Y `IndirectZp(N, k)` becomes `Data(name, k)`. That's a
 local array of a function with a private pool, which has a fixed
 address, as Zork's `print_number` keeps its digits in
-(examples/zork/interpreter/numbers.c). The pointer's stores then go
+(examples/zork/numbers.c). The pointer's stores then go
 when nothing else reads it. Later milestones add the `apply_remat`-style rewrite
 (reads of a stage cell whose source is a recomputable
 `Imm`/`Data`/`IndexedData`) and the X-save-slot rewrite (reads of

@@ -59,7 +59,7 @@ The same goes for bit 0, through the carry:
 A shifted where the AND left it masked, and it writes C, which the
 AND didn't, and sets N and Z from the shifted value, so A, C, N, and
 Z must all be dead on both paths after the branch. Zork's
-`store_with_sign` (examples/zork/interpreter/numbers.c) tests
+`store_with_sign` (examples/zork/numbers.c) tests
 `sign_bit & 0x01` this way.
 
 # Bit 6
@@ -80,7 +80,7 @@ volatile. `BIT` leaves A as it was, sets N from bit 7 of M and Z from
 A AND M, and writes V, where the load and the AND left V alone. So A,
 N, Z, and the V from before must all be dead on both paths after the
 branch. That saves 2 bytes and 2 cycles. Zork's `branch`
-(examples/zork/interpreter/decode.c) tests bit 6 of its offset byte
+(examples/zork/decode.c) tests bit 6 of its offset byte
 twice.
 
 # Where to run

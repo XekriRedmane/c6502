@@ -19,7 +19,7 @@ function `F@tail<n>`.
 
 ## Example
 
-In Zork's `objects.c` (examples/zork/interpreter), `instr_get_parent`,
+In Zork's `objects.c` (examples/zork), `instr_get_parent`,
 `instr_get_prop`, `instr_get_next_prop`, and `instr_get_prop_len` each
 end with the store of a byte.
 

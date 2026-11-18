@@ -12,7 +12,7 @@ holds go.
 
 ## Example
 
-From `instr_mul` in `examples/zork/interpreter/numbers.c`, where `a <<=
+From `instr_mul` in `examples/zork/numbers.c`, where `a <<=
 1` for `b == 2` and `a <<= 2` for `b == 4` end in the same shift and
 the same jump.
 

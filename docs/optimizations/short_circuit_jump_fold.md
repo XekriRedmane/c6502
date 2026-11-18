@@ -94,7 +94,7 @@ Otherwise the jumps to `branch` go to a new label
 `Copy`s may sit between `end` and the consumer when they neither
 read nor write `%t`. SSA destruction puts a phi's copies there when
 the consumer skips an assignment: `if (c >= 0x60 && c < 0x80) c -=
-0x20;` in `buffer_char` (examples/zork/interpreter/output.c) has
+0x20;` in `buffer_char` (examples/zork/output.c) has
 `Copy(@0.c, @0.c.2)` between `.and_end` and the test. The copies run
 on every path through the consumer, so they stay on both: in place
 for the path that falls through, and for the chain, in a stub
@@ -108,7 +108,7 @@ kept in A, as in Zork's code.
 
 The short-circuit arm may also have copies of its own, between
 `branch` and `Copy(C_sc, %t)`, when the chain changes a variable a
-phi joins. Zork's `je` (examples/zork/interpreter/decode.c) tests
+phi joins. Zork's `je` (examples/zork/decode.c) tests
 `!equal && --left != 0`, and SSA destruction leaves `Copy(@77.left.3,
 @77.left.4)` after `.and_false`. Those copies run only on the chain's
 path, so they go first in its stub, or right after the new label in

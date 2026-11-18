@@ -5,7 +5,7 @@ arm.
 # Pattern
 
 `OPERANDS[0] = (op & 0x40) ? get_var_content() : get_next_code_byte();`
-in Zork's `do_instruction` (examples/zork/interpreter/decode.c) keeps
+in Zork's `do_instruction` (examples/zork/decode.c) keeps
 the low byte in A across the join and the high byte in a slot:
 
        JSR   get_var_content

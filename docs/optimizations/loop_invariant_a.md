@@ -19,7 +19,7 @@ cycles) becomes `CMP abs,X` (3 bytes, 4 cycles), so each iteration
 saves 3 cycles, and the `LDA zp` before the loop adds back the 2
 bytes. The hand-written page-table search in Zork I keeps its key in
 A this way, and `find_index_of_page_table` in
-`examples/zork/interpreter/pages.c` is a C version of that routine.
+`examples/zork/pages.c` is a C version of that routine.
 
 ## Example
 

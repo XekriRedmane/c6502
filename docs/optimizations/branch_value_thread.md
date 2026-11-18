@@ -17,7 +17,7 @@ the tests it knows the answer to.
 
 ## Example
 
-From `instr_mul` in `examples/zork/interpreter/numbers.c`, with [cross
+From `instr_mul` in `examples/zork/numbers.c`, with [cross
 jumping](cross_jump.md) switched off in both compiles.
 
 ### Before

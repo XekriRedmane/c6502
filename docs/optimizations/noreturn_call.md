@@ -65,7 +65,7 @@ sum:
 ```
 
 `v` stays in A and `i` in X, since the only way to `.if_end@0` is
-the branch. Zork's `do_2op` (`examples/zork/interpreter/decode.c`)
+the branch. Zork's `do_2op` (`examples/zork/decode.c`)
 reads its operand `a` straight from `OPERANDS` now, where it had
 copied it on entry because `internal_error()` came between the copy
 and the reads.

@@ -11,7 +11,7 @@ because every path through a TAC function ends in one. On the 6502
 the call and the `Ret` become `JSR f; RTS`, which `tail_call` turns
 into `JMP f`.
 
-Zork's `do_2op` (examples/zork/interpreter/decode.c) checks its
+Zork's `do_2op` (examples/zork/decode.c) checks its
 operand count with
 
     if (left == 0)

@@ -84,6 +84,7 @@ from passes.optimization.framework import (
     PassContext, MatchResult, RuleEnv,
     m_Binary, m_Var,
 )
+from passes.optimization.framework.patterns import Pattern
 
 
 _CMP_OPS: tuple[type, ...] = (
@@ -180,6 +181,50 @@ NARROW_VALUE_COMPARE_RULE = Rule(
         op=_CMP_OPS, dst=m_Var(capture='cmp_dst'), capture='binop',
     ),
     build=_build_narrow_value_compare,
+)
+
+
+class _m_JumpIfCmp(Pattern):
+    """Matches a `JumpIfCmp` and binds it as `capture`."""
+
+    def __init__(self, capture: str) -> None:
+        self.capture = capture
+
+    def match(self, node, m):
+        if not isinstance(node, tac_ast.JumpIfCmp):
+            return False
+        m.bindings[self.capture] = node
+        return True
+
+
+def _build_narrow_jump_compare(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """A `JumpIfCmp` whose operands narrow to 1-byte unsigned
+    (`_try_narrow_compare`) compares the narrow operands. The compare
+    was folded into the jump before one operand's `ZeroExtend` reached
+    it: `i < 40U` on a `uint8_t i` converts the promoted `int` to
+    `unsigned int` with a `Copy`, which copy propagation removes only
+    after the fold. The jump has no dst to locate it by, so `use_idx`
+    is -1, and only an SSA-renamed extend source narrows."""
+    jmp = m.bindings['jmp']
+    if not isinstance(jmp.op, _CMP_OPS):
+        return None
+    narrowed = _try_narrow_compare(
+        jmp.src1, jmp.src2, env.instructions, env.def_idx, env.use_count,
+        ctx.symbols, -1, ctx.ssa_dsts,
+    )
+    if narrowed is None:
+        return None
+    return [tac_ast.JumpIfCmp(
+        op=jmp.op, src1=narrowed[0], src2=narrowed[1], target=jmp.target,
+    )]
+
+
+NARROW_JUMP_COMPARE_RULE = Rule(
+    name="narrow_jump_compare",
+    pattern=_m_JumpIfCmp('jmp'),
+    build=_build_narrow_jump_compare,
 )
 
 

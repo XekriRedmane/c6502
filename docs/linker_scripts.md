@@ -113,7 +113,7 @@ by jumping to the other, keeps its `JMP`. No item moves across an
 assignment inside the section (`. = ...` or `sym = .;`), since an
 assignment marks an address.
 
-In Zork's interpreter (examples/zork/interpreter) this removes 19
+In Zork's interpreter (examples/zork) this removes 19
 `JMP`s, 57 bytes. Two of the pairs are functions of different units:
 `print_obj` in `objects.c` falls into `print_zstring` in `zstring.c`,
 and `store_and_branch_on` in `objects.c` into `branch` in
@@ -144,7 +144,7 @@ its `JMP`:
   file's name without its directory, so `zstring.o(.text)` takes
   only that unit's code. A C source or `.asm` file given to the link
   goes by its object's name, `zstring.o` for `zstring.c`.
-  examples/zork/interpreter/interpreter.ld puts the six units that run
+  examples/zork/interpreter.ld puts the six units that run
   on every Z-machine instruction in the low region this way.
 - Symbol assignments `sym = expr;` and `PROVIDE(sym = expr);`, inside
   output sections or between them.
@@ -212,7 +212,7 @@ needs, then the zero-page globals, then the functions' parameter and
 local bytes, which may use any free byte from `$80` up, and then any
 free byte below `$80`, around the runtime's block and every
 zero-page object. A program whose headers reserve most of `$80`-`$FF`,
-as examples/zork/interpreter's does for Zork's own zero page, keeps
+as examples/zork's does for Zork's own zero page, keeps
 its parameters and locals in zero page that way. A parameter or
 local that doesn't fit in either goes in `__spill`, a block in `.bss`, which the
 script places with the rest of the data. Without a script it goes at

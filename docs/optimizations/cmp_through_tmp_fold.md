@@ -75,7 +75,7 @@ __zpabi_band__y; CMP __local_band__0` into `LDA __zpabi_band__y; LDY
 
 The same staging happens for the right operand of an addition or a
 subtraction, such as a global widened to 16 bits. In
-`do_rwts_on_sector` (`examples/zork/interpreter/disk.c`), `sector -
+`do_rwts_on_sector` (`examples/zork/disk.c`), `sector -
 SECTORS_PER_TRACK` subtracted a copy:
 
 ```
@@ -106,7 +106,7 @@ kept in A.
   `CMP` (or arithmetic instruction) then reads that byte once, after
   the load of `other`, which mustn't be volatile too.
   `dump_buffer_with_more`'s `++CURR_LINE >= WNDBTM`
-  (examples/zork/interpreter/output.c), with the Monitor's volatile
+  (examples/zork/output.c), with the Monitor's volatile
   `WNDBTM`, became Zork's own `INC CURR_LINE; LDA CURR_LINE; CMP
   WNDBTM`.
 - `tmp` is a `Data` or `ZP` operand, and the `STA` and the `CMP` (or

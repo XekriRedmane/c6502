@@ -86,7 +86,7 @@ from passes.optimization.static_const_fold import FoldStaticConstReads
 from passes.optimization.constant_folding import ConstantFold
 from passes.optimization.strength_reduction import STRENGTH_RULES
 from passes.optimization.cmp_zero_jump_fold import (
-    CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE,
+    CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE, NARROW_JUMP_COMPARE_RULE,
 )
 from passes.optimization.and_zero_jump_fold import AND_ZERO_RULE
 from passes.optimization.lnot_jump_fold import LNOT_RULE
@@ -105,7 +105,9 @@ from passes.optimization.reassoc_offset import ReassocOffsetConstant
 from passes.optimization.direct_member_access import DirectMemberAccess
 from passes.optimization.recognize_indexed_store import RecognizeIndexedStore
 from passes.optimization.recognize_indexed_load import RecognizeIndexedLoad
-from passes.optimization.truncate_extend_fold import FoldTruncateExtend
+from passes.optimization.truncate_extend_fold import (
+    FoldExtendExtend, FoldTruncateExtend,
+)
 from passes.optimization.sink_increment import SinkIncrements
 from passes.optimization.sink_and_past_branch import SinkAndPastBranch
 from passes.optimization.narrow_widened_arith import NarrowWidenedArith
@@ -149,9 +151,12 @@ _DRIVER = PhaseDriver(
         # each position instead of three separate sweeps.
         # A compare kept as a value narrows its operands, when the
         # comparison fold, tried first at the same position, finds no
-        # jump on its result.
-        RuleSet(CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE, AND_ZERO_RULE,
-                LNOT_RULE, name="fold_producer_jumps"),
+        # jump on its result. A JumpIfCmp made before its operand's
+        # extend was exposed (through a cast that copy propagation
+        # removed later) narrows the same way.
+        RuleSet(CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE,
+                NARROW_JUMP_COMPARE_RULE, AND_ZERO_RULE, LNOT_RULE,
+                name="fold_producer_jumps"),
         EliminateDeadLoops(),
         EliminateUnreachableCode(),
         # Replaces a repeated computation or load with a Copy from the
@@ -170,6 +175,7 @@ _DRIVER = PhaseDriver(
         RecognizeIndexedStore(),
         RecognizeIndexedLoad(),
         FoldTruncateExtend(),
+        FoldExtendExtend(),
         SinkIncrements(),
         SinkAndPastBranch(),
         # Run AFTER sink_and_past_branch so the latter sees the

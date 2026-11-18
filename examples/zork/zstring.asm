@@ -426,6 +426,7 @@ get_next_zchar:
    TXA
    LSR
    LSR
+.xjump@1:
    AND   #$1F
    JMP   .if_end@19
 .if_else@20:
@@ -445,8 +446,7 @@ get_next_zchar:
    ASL
    ASL
    ORA   __local_get_next_zchar__compound_literal_1
-   AND   #$1F
-   JMP   .if_end@21
+   JMP   .xjump@1
 .if_else@22:
    LDA   ZCHARS+1
    BPL   .cond_else@23
@@ -458,7 +458,6 @@ get_next_zchar:
    STA   ZDECOMPRESS_STATE
    LDA   ZCHARS
    AND   #$1F
-.if_end@21:
 .if_end@19:
    CLC
    RTS

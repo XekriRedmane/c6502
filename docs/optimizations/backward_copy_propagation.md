@@ -73,7 +73,7 @@ or a single memory-to-memory `Mov(P, D)` at `i`, which emits as the
 same `LDA P; STA D`. `tac_to_asm` writes each byte of a zp_abi
 argument that way, so a pointer computed only to be passed, such as
 `print_ascii_string(prompts[which].text, 15)` in
-`examples/zork/interpreter/prompts.c`, is stored straight into the
+`examples/zork/prompts.c`, is stored straight into the
 callee's parameter bytes. It requires all of these.
 
 - Neither `Mov` is volatile, and neither is the `Mov(A, P)` that

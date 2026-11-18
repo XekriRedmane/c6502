@@ -106,7 +106,6 @@ __local_beats__0	EQU	$B6
 __local_hi_score_screen__0	EQU	$B6
 __local_beats__1	EQU	$B7
 __local_hi_score_screen__1	EQU	$B7
-__local_beats__2	EQU	$B8
 __local_hi_score_screen__i	EQU	$B8
 __local_beats__i	EQU	$B9
 __local_hi_score_screen__2	EQU	$B9
@@ -459,16 +458,7 @@ beats:
    STA   __local_beats__0
    LDA   LEVELNUM
    CMP   __local_beats__0
-   BEQ   .if_end@3
-   LDA   __local_beats__0
-   SEC
-   SBC   LEVELNUM
-   LDA   #$00
-   ROL
-   EOR   #$01
-   CMP   #$01
-   RTS
-.if_end@3:
+   BNE   .tail@0
    LDA   #$00
    STA   __local_beats__i
 .beats@rot@1:
@@ -476,8 +466,6 @@ beats:
    SEC
    SBC   __local_beats__i
    TAX
-   LDA   SCORE,X
-   STA   __local_beats__2
    LDA   __local_beats__i
    CLC
    ADC   __zpabi_beats__entry_0
@@ -491,13 +479,9 @@ beats:
    LDA   SCORE,X
    CMP   __local_beats__0
    BEQ   .if_end@4
-   LDA   __local_beats__0
-   SEC
-   SBC   __local_beats__2
-   LDA   #$00
-   ROL
-   EOR   #$01
-   CMP   #$01
+.tail@0:
+   CLC
+   SBC   __local_beats__0
    RTS
 .if_end@4:
    INC   __local_beats__i

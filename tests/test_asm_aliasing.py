@@ -251,3 +251,18 @@ class TestIndexedData(unittest.TestCase):
     def test_indexed_data_vs_zp(self) -> None:
         self.assertFalse(may_alias(_idata("", 0x4000), _zp(0x80)))
         self.assertFalse(may_alias(_zp(0xFF), _idata("g", 0)))
+
+
+
+class TestIndexedStaticAgainstPointer(unittest.TestCase):
+    """An indexed access to an object no pointer can reach doesn't
+    alias a store through a pointer."""
+
+    def test_pointer_proof(self):
+        from passes.asm_aliasing import may_alias, pointer_proof
+        row = asm_ast.IndexedData(name="T@lo", offset=0, index=asm_ast.X())
+        through = asm_ast.IndirectZpY(address=0x90)
+        self.assertTrue(may_alias(row, through))
+        with pointer_proof(frozenset({"T@lo"})):
+            self.assertFalse(may_alias(row, through))
+            self.assertFalse(may_alias(through, row))

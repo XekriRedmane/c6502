@@ -94,7 +94,7 @@ free.
     already, where `carry_inc` updates it in place, and moving it into
     X or Y costs a transfer each way.
     The high byte of `do_rwts_on_sector`'s 16-bit `sector` in
-    `examples/zork/interpreter/disk.c` lives in X this way, as in
+    `examples/zork/disk.c` lives in X this way, as in
     Zork's own code.
 
 # Output

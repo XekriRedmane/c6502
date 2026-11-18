@@ -100,7 +100,7 @@ c`), the step can't move past it. Then the jump tests `Y`: `X != k` is
 neither may come between the step and the jump, and nothing after the
 jump, nor any Phi, may read `X`, so `X`'s range ends at the step and
 `X` and `Y` can share a register. `while (x-- != 0)` in Zork's
-`search_nonalpha_table` (examples/zork/interpreter/input.c) had kept
+`search_nonalpha_table` (examples/zork/input.c) had kept
 both values:
 
 ```

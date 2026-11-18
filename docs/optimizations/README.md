@@ -12,7 +12,7 @@ Most listings were captured from a compile by wrapping the one pass
 the file describes and printing its input and output. The rest
 compare two complete compiles, or come from the pass's unit test, and
 their files say so. A listing from one of Zork's routines may have been
-captured from an example that `examples/zork/interpreter` grew out of
+captured from an example that `examples/zork` grew out of
 (`examples/zork/print_zstring`, `examples/zork/instr_save`, or a
 single-routine `examples/zork_<routine>.c`), which were removed on 16
 Nov 2026. The file names the interpreter's copy of the routine, which
@@ -117,7 +117,7 @@ a user variable.
 - [Reads of X's save slot](x_save_slot_load.md). Rewrites loads of X's spill byte as TXA or STX.
 - [Redundant compare](redundant_compare.md). Deletes a compare reached only through the branches after an identical compare, and a compare with 0 whose flags are already set.
 - [Redundant LDY setup](y_peephole.md). Drops `LDY #n`, or makes it INY or DEY, when Y's value is known.
-- [Redundant load elimination](redundant_load.md). Drops loads into A, X, or Y when the register already holds the value.
+- [Redundant load elimination](redundant_load.md). Drops loads into A, X, or Y when the register already holds the value, and stores into a byte that already holds it.
 - [Redundant store elimination](redundant_store.md). Drops a repeated `LDA S; STA D` copy when D still holds S.
 - [Rematerialization of staged values](asm_remat.md). Reloads a staged value from its source so the staging-slot store dies.
 - [Round-trip load drop](round_trip_load.md). Deletes `LDA M` after `STA M` when the flags already reflect A.
@@ -142,7 +142,7 @@ a user variable.
 - [Tail merge](tail_merge.md). Branches to one shared copy of a repeated return sequence.
 - [Testing the low byte after an INC chain](inc_low_byte_test.md). Sends an INC chain's first BNE where a test of the incremented low byte would go.
 - [Transfer plus or minus one](transfer_pm1_store.md). Turns `TXA; SEC; SBC #1; STA M` into `DEX; STX M`, and the +1 and Y forms.
-- [Truncate of an extend](truncate_extend_fold.md). Rewrites a truncate of an extend to read the extend's source directly.
+- [Truncate of an extend](truncate_extend_fold.md). Rewrites a truncate of an extend to read the extend's source directly, and an extend of an extend as one extend.
 - [TXA past a branch](transfer_past_branch.md). Moves TXA or TYA after a branch when only the fall-through reads A.
 - [Unreachable code drop](unreachable_drop.md). Deletes unlabeled instructions after a jump or return that no path reaches.
 - [Unreachable code elimination](unreachable_code_elimination.md). Removes unreachable TAC blocks, then the stale Phi arguments, jumps, and labels.
@@ -197,7 +197,8 @@ them whenever a pass is added or moved.
       13. [Direct member access](direct_member_access.md)
       14. [Indexed store to a fixed address](recognize_indexed_store.md)
       15. [Indexed load from a fixed address](recognize_indexed_load.md)
-      16. [Truncate of an extend](truncate_extend_fold.md)
+      16. [Truncate of an extend](truncate_extend_fold.md), then an
+          extend of an extend
       17. [Sinking increments](sink_increment.md)
       18. [Sinking an AND past a bit test](sink_and_past_branch.md)
       19. [Narrowing widened arithmetic](narrow_widened_arith.md)

@@ -23,7 +23,6 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__local_beep__x	EQU	$80
 __zpabi_access_compressed_level_data__command	EQU	$80
 __zpabi_access_hi_score_data_from_disk__command	EQU	$80
 __zpabi_add_and_update_score__bcd_points_0	EQU	$80
@@ -96,7 +95,6 @@ DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
 __local_play_note__duration	EQU	$AE
-__local_sound_delay1__y	EQU	$AE
 __local_load_sound_data__notes	EQU	$AF
 __local_play_note__y	EQU	$AF
 __local_load_sound_data__1	EQU	$B0
@@ -303,10 +301,9 @@ sound_delay1:
 
    LDX   __zpabi_sound_delay1__count
 .loop@0_start:
-   LDA   #$B4
-   STA   __local_sound_delay1__y
+   LDY   #$B4
 .loop@1_keep_start:
-   DEC   __local_sound_delay1__y
+   DEY
    BNE   .loop@1_keep_start
    DEX
    BNE   .loop@0_start
@@ -315,18 +312,17 @@ sound_delay1:
 beep:
    SUBROUTINE
 
-   LDX   #$C0
+   LDY   #$C0
 .beep@rot@0:
-   LDA   #$80
-   STA   __local_beep__x
+   LDX   #$80
 .loop@3_keep_start:
-   DEC   __local_beep__x
+   DEX
    BNE   .loop@3_keep_start
    LDA   ENABLE_SOUND
    BEQ   .if_end@0
    LDA   SPKR
 .if_end@0:
-   DEX
+   DEY
    BNE   .beep@rot@0
    RTS
 

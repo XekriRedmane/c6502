@@ -388,7 +388,7 @@ void COUT1(register uint8_t c);
 ```
 
 Here is Zork's loop that prints its output buffer, from
-`dump_buffer_to_screen` in `examples/zork/interpreter/output.c`. It
+`dump_buffer_to_screen` in `examples/zork/output.c`. It
 keeps the index in X.
 
 ```c
@@ -619,7 +619,7 @@ compiles to
 ```
 
 and the function no longer saves anything when it starts or ends. In
-Zork's `print_zstring` (examples/zork/interpreter/zstring.c) this made
+Zork's `print_zstring` (examples/zork/zstring.c) this made
 the function 180 bytes smaller, measured in the example it came from,
 and faster on every call.
 
@@ -659,7 +659,7 @@ stack, where each call has its own copy. They aren't pushed.
 
 The calls have to be in one source file. The linker accepts
 such a cycle, which the link metadata marks call by call, and reports
-any other recursion as an error. examples/zork/interpreter links
+any other recursion as an error. examples/zork links
 `print_zstring` this way.
 
 #### Cautions

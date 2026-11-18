@@ -784,16 +784,11 @@ guard_drop_gold:
    LDA   GUARD_LOC_COL
    STX   GAME_ROWNUM
    STA   GAME_COLNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_guard_drop_gold__1
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_drop_gold__2
-   LDA   LEVEL_BG@lo,X
-   CLC
-   ADC   GUARD_LOC_COL
-   STA   __local_guard_drop_gold__1
-   BCC   .carry_inc@0
-   INC   __local_guard_drop_gold__2
-.carry_inc@0:
-   LDY   #$00
+   LDY   GUARD_LOC_COL
    LDA   (__local_guard_drop_gold__1),Y
    BNE   .if_else@14
    LDA   #$07
@@ -870,8 +865,6 @@ leave_cell:
    LDA   #$00
    STA   __local_leave_cell__2
 .cond_else@24:
-   LDA   LEVEL_BG@lo,X
-   STA   __local_leave_cell__0
    LDA   LEVEL_MAP@hi,X
    STA   __local_leave_cell__1
    LDA   __local_leave_cell__2
@@ -967,8 +960,6 @@ guard_is_supported:
    SEC
    RTS
 .if_end@40:
-   LDA   LEVEL_BG@lo+1,X
-   STA   __local_guard_is_supported__0
    LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_is_supported__1
    LDA   (__local_guard_is_supported__0),Y
@@ -1008,14 +999,10 @@ guard_fall_into_row_below:
    STA   __local_guard_fall_into_row_below__1
    LDA   (__local_guard_fall_into_row_below__0),Y
    BNE   .if_else@45
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_fall_into_row_below__0
    LDA   LEVEL_MAP@hi,X
    STA   __local_guard_fall_into_row_below__1
    LDA   #$07
    STA   (__local_guard_fall_into_row_below__0),Y
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_fall_into_row_below__0
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_fall_into_row_below__1
    LDA   #$07
@@ -1255,8 +1242,6 @@ try_guard_move_left:
    BEQ   .try_guard_move_left@scfold@0
    CMP   #$01
    BEQ   .try_guard_move_left@scfold@0
-   LDA   LEVEL_BG@lo,X
-   STA   __local_try_guard_move_left__0
    LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_left__1
    LDA   (__local_try_guard_move_left__0),Y
@@ -1346,8 +1331,6 @@ try_guard_move_right:
    BEQ   .try_guard_move_right@scfold@0
    CMP   #$01
    BEQ   .try_guard_move_right@scfold@0
-   LDA   LEVEL_BG@lo,X
-   STA   __local_try_guard_move_right__0
    LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_right__1
    LDA   (__local_try_guard_move_right__0),Y

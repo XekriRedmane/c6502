@@ -54,7 +54,7 @@ jump would have done next. A `switch` whose cases end in `break`
 leaves this shape, each case jumping to the `RTS` after the switch.
 A case that ends in a call, `JSR f; JMP .break`, then becomes `JSR f;
 RTS`, and so `JMP f`. In Zork's `decode.c`
-(examples/zork/interpreter), this took 174 bytes off the four
+(examples/zork), this took 174 bytes off the four
 dispatch switches. A `Ret`, which tears down a frame, isn't copied.
 
 ## When it applies

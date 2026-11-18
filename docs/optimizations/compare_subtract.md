@@ -25,7 +25,7 @@ BMI` or `BPL`).
 
 ## Example
 
-From `do_rwts_on_sector` in `examples/zork/interpreter/disk.c`:
+From `do_rwts_on_sector` in `examples/zork/disk.c`:
 
 ```c
 uint16_t sector = SCRATCH1;
@@ -151,7 +151,7 @@ nothing in between but copies, and its destination can't be one of
 the compare's operands, which the compare reads after it. SSA
 destruction puts a Phi's copies at the end of the compare's block,
 between the two, as `if (partial >= divisor) { partial -= divisor;
-fits = 1; }` in Zork's `divu16` (examples/zork/interpreter/numbers.c)
+fits = 1; }` in Zork's `divu16` (examples/zork/numbers.c)
 leaves `partial` and `fits` for the side that skips the body. A copy
 is a load and a store, which leave C and V as the subtract set them.
 None of the copies may write an operand of the compare, or the

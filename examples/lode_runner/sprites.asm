@@ -113,36 +113,34 @@ __local_draw_sprite__3	EQU	$B3
 __local_draw_sprite_at_pixel_coords__3	EQU	$B3
 __local_erase_sprite_at_pixel_coords__3	EQU	$B3
 __local_draw_sprite__i	EQU	$B4
-__local_draw_sprite_at_pixel_coords__4	EQU	$B4
+__local_draw_sprite_at_pixel_coords__b	EQU	$B4
 __local_erase_sprite_at_pixel_coords__4	EQU	$B4
 __local_draw_sprite__row	EQU	$B5
-__local_draw_sprite_at_pixel_coords__b	EQU	$B5
-__local_erase_sprite_at_pixel_coords__5	EQU	$B5
+__local_draw_sprite_at_pixel_coords__4	EQU	$B5
+__local_erase_sprite_at_pixel_coords__b	EQU	$B5
 __local_draw_sprite__4	EQU	$B6
 __local_draw_sprite_at_pixel_coords__5	EQU	$B6
-__local_erase_sprite_at_pixel_coords__b	EQU	$B6
+__local_erase_sprite_at_pixel_coords__5	EQU	$B6
 __local_draw_sprite__5	EQU	$B7
-__local_draw_sprite_at_pixel_coords__6	EQU	$B7
 __local_erase_sprite_at_pixel_coords__6	EQU	$B7
 __local_draw_sprite__6	EQU	$B8
-__local_erase_sprite_at_pixel_coords__7	EQU	$B8
-__local_draw_sprite_at_pixel_coords__i	EQU	$B9
-__local_draw_sprite_at_pixel_coords__screens_differ	EQU	$BA
-__local_erase_sprite_at_pixel_coords__i	EQU	$BA
+__local_draw_sprite_at_pixel_coords__i	EQU	$B8
+__local_draw_sprite_at_pixel_coords__screens_differ	EQU	$B9
+__local_erase_sprite_at_pixel_coords__i	EQU	$B9
+__local_draw_sprite_at_pixel_coords__6	EQU	$BA
+__local_erase_sprite_at_pixel_coords__7	EQU	$BA
 __local_draw_sprite_at_pixel_coords__7	EQU	$BB
 __local_erase_sprite_at_pixel_coords__8	EQU	$BB
-__local_draw_sprite_at_pixel_coords__8	EQU	$BC
-__local_erase_sprite_at_pixel_coords__9	EQU	$BC
-__local_compute_shifted_sprite__0	EQU	$BF
-__local_compute_shifted_sprite__1	EQU	$C0
-__local_compute_shifted_sprite__2	EQU	$C1
-__local_compute_shifted_sprite__3	EQU	$C2
-__local_compute_shifted_sprite__4	EQU	$C3
-__local_compute_shifted_sprite__i	EQU	$C4
-__local_compute_shifted_sprite__data	EQU	$C5
-__local_compute_shifted_sprite__5	EQU	$C6
-__local_shifted_pixels__high	EQU	$C9
-__local_shifted_pixels__2	EQU	$CA
+__local_compute_shifted_sprite__0	EQU	$BE
+__local_compute_shifted_sprite__1	EQU	$BF
+__local_compute_shifted_sprite__2	EQU	$C0
+__local_compute_shifted_sprite__3	EQU	$C1
+__local_compute_shifted_sprite__4	EQU	$C2
+__local_compute_shifted_sprite__i	EQU	$C3
+__local_compute_shifted_sprite__data	EQU	$C4
+__local_compute_shifted_sprite__5	EQU	$C5
+__local_shifted_pixels__high	EQU	$C8
+__local_shifted_pixels__2	EQU	$C9
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -204,10 +202,10 @@ DISK_IO	EQU	$C088
 ; @zp-link-meta-begin
 ; def compute_shifted_sprite params=__zpabi_compute_shifted_sprite__sprite,__zpabi_compute_shifted_sprite__shift locals=__local_compute_shifted_sprite__0,__local_compute_shifted_sprite__1,__local_compute_shifted_sprite__2,__local_compute_shifted_sprite__3,__local_compute_shifted_sprite__4,__local_compute_shifted_sprite__i,__local_compute_shifted_sprite__data,__local_compute_shifted_sprite__5 indirect=false in_cycle=false
 ; def draw_sprite params=__zpabi_draw_sprite__sprite,__zpabi_draw_sprite__page locals=__local_draw_sprite__0,__local_draw_sprite__1,__local_draw_sprite__2,__local_draw_sprite__3,__local_draw_sprite__i,__local_draw_sprite__row,__local_draw_sprite__4,__local_draw_sprite__5,__local_draw_sprite__6 indirect=false in_cycle=false
-; def draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row locals=__local_draw_sprite_at_pixel_coords__0,__local_draw_sprite_at_pixel_coords__1,__local_draw_sprite_at_pixel_coords__2,__local_draw_sprite_at_pixel_coords__3,__local_draw_sprite_at_pixel_coords__4,__local_draw_sprite_at_pixel_coords__b,__local_draw_sprite_at_pixel_coords__5,__local_draw_sprite_at_pixel_coords__6,__local_draw_sprite_at_pixel_coords__row,__local_draw_sprite_at_pixel_coords__i,__local_draw_sprite_at_pixel_coords__screens_differ,__local_draw_sprite_at_pixel_coords__7,__local_draw_sprite_at_pixel_coords__8,__local_draw_sprite_at_pixel_coords__9,__local_draw_sprite_at_pixel_coords__10 indirect=false in_cycle=false changes=__zpabi_draw_sprite_at_pixel_coords__row
+; def draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row locals=__local_draw_sprite_at_pixel_coords__0,__local_draw_sprite_at_pixel_coords__1,__local_draw_sprite_at_pixel_coords__2,__local_draw_sprite_at_pixel_coords__3,__local_draw_sprite_at_pixel_coords__b,__local_draw_sprite_at_pixel_coords__4,__local_draw_sprite_at_pixel_coords__5,__local_draw_sprite_at_pixel_coords__row,__local_draw_sprite_at_pixel_coords__i,__local_draw_sprite_at_pixel_coords__screens_differ,__local_draw_sprite_at_pixel_coords__6,__local_draw_sprite_at_pixel_coords__7,__local_draw_sprite_at_pixel_coords__8,__local_draw_sprite_at_pixel_coords__9 indirect=false in_cycle=false changes=__zpabi_draw_sprite_at_pixel_coords__row
 ; def draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite locals= indirect=false in_cycle=false
 ; def draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite locals= indirect=false in_cycle=false
-; def erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row locals=__local_erase_sprite_at_pixel_coords__0,__local_erase_sprite_at_pixel_coords__1,__local_erase_sprite_at_pixel_coords__2,__local_erase_sprite_at_pixel_coords__3,__local_erase_sprite_at_pixel_coords__4,__local_erase_sprite_at_pixel_coords__5,__local_erase_sprite_at_pixel_coords__b,__local_erase_sprite_at_pixel_coords__6,__local_erase_sprite_at_pixel_coords__7,__local_erase_sprite_at_pixel_coords__row,__local_erase_sprite_at_pixel_coords__i,__local_erase_sprite_at_pixel_coords__8,__local_erase_sprite_at_pixel_coords__9,__local_erase_sprite_at_pixel_coords__10 indirect=false in_cycle=false changes=__zpabi_erase_sprite_at_pixel_coords__row
+; def erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row locals=__local_erase_sprite_at_pixel_coords__0,__local_erase_sprite_at_pixel_coords__1,__local_erase_sprite_at_pixel_coords__2,__local_erase_sprite_at_pixel_coords__3,__local_erase_sprite_at_pixel_coords__4,__local_erase_sprite_at_pixel_coords__b,__local_erase_sprite_at_pixel_coords__5,__local_erase_sprite_at_pixel_coords__6,__local_erase_sprite_at_pixel_coords__row,__local_erase_sprite_at_pixel_coords__i,__local_erase_sprite_at_pixel_coords__7,__local_erase_sprite_at_pixel_coords__8,__local_erase_sprite_at_pixel_coords__9 indirect=false in_cycle=false changes=__zpabi_erase_sprite_at_pixel_coords__row
 ; def half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj locals=__local_half_screen_col_for__0,__local_half_screen_col_for__1 indirect=false in_cycle=false
 ; def screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj locals=__local_screen_row_for__0,__local_screen_row_for__1 indirect=false in_cycle=false
 ; def shifted_pixels params=__zpabi_shifted_pixels__table_0,__zpabi_shifted_pixels__table_1,__zpabi_shifted_pixels__b locals=__local_shifted_pixels__0,__local_shifted_pixels__1,__local_shifted_pixels__high,__local_shifted_pixels__2 indirect=false in_cycle=false
@@ -548,15 +546,15 @@ erase_sprite_at_pixel_coords:
 
    LDX   __zpabi_erase_sprite_at_pixel_coords__half_col
    LDA   HALF_SCREEN_COL_BYTE_TABLE,X
-   STA   __local_erase_sprite_at_pixel_coords__9
+   STA   __local_erase_sprite_at_pixel_coords__8
    JSR   erase_sprite_at_pixel_coords@run0
    BCS   .cond_else@2
    LDA   #$02
-   STA   __local_erase_sprite_at_pixel_coords__8
+   STA   __local_erase_sprite_at_pixel_coords__7
    JMP   .cond_end@3
 .cond_else@2:
    LDA   #$03
-   STA   __local_erase_sprite_at_pixel_coords__8
+   STA   __local_erase_sprite_at_pixel_coords__7
 .cond_end@3:
    LDA   #$00
    STA   __local_erase_sprite_at_pixel_coords__i
@@ -565,31 +563,26 @@ erase_sprite_at_pixel_coords:
    BCS   .loop@2_break
    LDA   __zpabi_erase_sprite_at_pixel_coords__row
    JSR   erase_sprite_at_pixel_coords@run1
-   STA   __local_erase_sprite_at_pixel_coords__7
+   STA   __local_erase_sprite_at_pixel_coords__5
    STX   __local_erase_sprite_at_pixel_coords__6
    LDA   #$00
    STA   __local_erase_sprite_at_pixel_coords__b
    JMP   .loop@3_start
 .erase_sprite_at_pixel_coords@rot@0:
-   LDA   __local_erase_sprite_at_pixel_coords__9
+   LDA   __local_erase_sprite_at_pixel_coords__8
    ADC   __local_erase_sprite_at_pixel_coords__b
-   CLC
-   ADC   __local_erase_sprite_at_pixel_coords__7
    STA   __local_erase_sprite_at_pixel_coords__4
-   LDA   __local_erase_sprite_at_pixel_coords__6
-   ADC   #$00
-   STA   __local_erase_sprite_at_pixel_coords__5
-   LDY   #$00
-   LDA   (__local_erase_sprite_at_pixel_coords__4),Y
+   CLC
+   LDY   __local_erase_sprite_at_pixel_coords__4
+   LDA   (__local_erase_sprite_at_pixel_coords__5),Y
    STA   __local_erase_sprite_at_pixel_coords__3
    LDA   __local_erase_sprite_at_pixel_coords__i
-   CLC
    ADC   __local_erase_sprite_at_pixel_coords__b
    TAX
-   LDA   __local_erase_sprite_at_pixel_coords__4
-   STA   __local_erase_sprite_at_pixel_coords__0
-   LDA   __local_erase_sprite_at_pixel_coords__5
    CLC
+   LDA   __local_erase_sprite_at_pixel_coords__5
+   STA   __local_erase_sprite_at_pixel_coords__0
+   LDA   __local_erase_sprite_at_pixel_coords__6
    ADC   #$20
    STA   __local_erase_sprite_at_pixel_coords__1
    LDA   (__local_erase_sprite_at_pixel_coords__0),Y
@@ -598,11 +591,11 @@ erase_sprite_at_pixel_coords:
    EOR   #$7F
    AND   __local_erase_sprite_at_pixel_coords__3
    ORA   __local_erase_sprite_at_pixel_coords__1
-   STA   (__local_erase_sprite_at_pixel_coords__4),Y
+   STA   (__local_erase_sprite_at_pixel_coords__5),Y
    INC   __local_erase_sprite_at_pixel_coords__b
 .loop@3_start:
    LDA   __local_erase_sprite_at_pixel_coords__b
-   CMP   __local_erase_sprite_at_pixel_coords__8
+   CMP   __local_erase_sprite_at_pixel_coords__7
    BCC   .erase_sprite_at_pixel_coords@rot@0
    INC   __zpabi_erase_sprite_at_pixel_coords__row
    LDA   __local_erase_sprite_at_pixel_coords__i
@@ -636,15 +629,15 @@ draw_sprite_at_pixel_coords:
 
    LDX   __zpabi_draw_sprite_at_pixel_coords__half_col
    LDA   HALF_SCREEN_COL_BYTE_TABLE,X
-   STA   __local_draw_sprite_at_pixel_coords__8
+   STA   __local_draw_sprite_at_pixel_coords__7
    JSR   erase_sprite_at_pixel_coords@run0
    BCS   .cond_else@4
    LDA   #$02
-   STA   __local_draw_sprite_at_pixel_coords__7
+   STA   __local_draw_sprite_at_pixel_coords__6
    JMP   .cond_end@5
 .cond_else@4:
    LDA   #$03
-   STA   __local_draw_sprite_at_pixel_coords__7
+   STA   __local_draw_sprite_at_pixel_coords__6
 .cond_end@5:
    LDA   #$00
    STA   __local_draw_sprite_at_pixel_coords__screens_differ
@@ -656,27 +649,22 @@ draw_sprite_at_pixel_coords:
 .lb_skip@1:
    LDA   __zpabi_draw_sprite_at_pixel_coords__row
    JSR   erase_sprite_at_pixel_coords@run1
-   STA   __local_draw_sprite_at_pixel_coords__6
+   STA   __local_draw_sprite_at_pixel_coords__4
    STX   __local_draw_sprite_at_pixel_coords__5
    LDA   #$00
    STA   __local_draw_sprite_at_pixel_coords__b
    JMP   .loop@5_start
 .draw_sprite_at_pixel_coords@rot@1:
-   LDA   __local_draw_sprite_at_pixel_coords__8
+   LDA   __local_draw_sprite_at_pixel_coords__7
    ADC   __local_draw_sprite_at_pixel_coords__b
-   CLC
-   ADC   __local_draw_sprite_at_pixel_coords__6
    STA   __local_draw_sprite_at_pixel_coords__3
-   LDA   __local_draw_sprite_at_pixel_coords__5
-   ADC   #$00
-   STA   __local_draw_sprite_at_pixel_coords__4
-   LDA   __local_draw_sprite_at_pixel_coords__3
-   STA   __local_draw_sprite_at_pixel_coords__0
-   LDY   #$00
-   LDA   (__local_draw_sprite_at_pixel_coords__3),Y
+   CLC
+   LDY   __local_draw_sprite_at_pixel_coords__3
+   LDA   (__local_draw_sprite_at_pixel_coords__4),Y
    STA   __local_draw_sprite_at_pixel_coords__2
    LDA   __local_draw_sprite_at_pixel_coords__4
-   CLC
+   STA   __local_draw_sprite_at_pixel_coords__0
+   LDA   __local_draw_sprite_at_pixel_coords__5
    ADC   #$20
    STA   __local_draw_sprite_at_pixel_coords__1
    LDA   (__local_draw_sprite_at_pixel_coords__0),Y
@@ -694,11 +682,11 @@ draw_sprite_at_pixel_coords:
    STA   __local_draw_sprite_at_pixel_coords__screens_differ
    LDA   __local_draw_sprite_at_pixel_coords__2
    ORA   __local_draw_sprite_at_pixel_coords__1
-   STA   (__local_draw_sprite_at_pixel_coords__3),Y
+   STA   (__local_draw_sprite_at_pixel_coords__4),Y
    INC   __local_draw_sprite_at_pixel_coords__b
 .loop@5_start:
    LDA   __local_draw_sprite_at_pixel_coords__b
-   CMP   __local_draw_sprite_at_pixel_coords__7
+   CMP   __local_draw_sprite_at_pixel_coords__6
    BCC   .draw_sprite_at_pixel_coords@rot@1
    INC   __zpabi_draw_sprite_at_pixel_coords__row
    LDA   __local_draw_sprite_at_pixel_coords__i

@@ -128,7 +128,7 @@ when all its members are.
    byte is `LDA M; SBC #0; STA M`. Coming after the index hints, a
    carry byte never takes a register an index wanted. The high byte
    of the 16-bit sector number in `do_rwts_on_sector`
-   (`examples/zork/interpreter/disk.c`) lives in X this way, as in
+   (`examples/zork/disk.c`) lives in X this way, as in
    Zork's code.
 
 The allocator makes no attempt to pin an eligible name with no hint

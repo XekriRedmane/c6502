@@ -87,7 +87,7 @@ count:
 `clear` loses its first test and its `JMP`, since X is 0 on entry and
 `CPX #$06; BEQ` doesn't branch for 0. `count` reads `buf` in its
 test, which isn't known on entry, so it's entered with a `JMP` to its
-test. In Zork's interpreter (examples/zork/interpreter) this removes
+test. In Zork's interpreter (examples/zork) this removes
 the entry test of five loops, 15 bytes, and saves 84,602 of the first
 test session's 38,476,066 cycles.
 

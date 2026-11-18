@@ -201,7 +201,7 @@ Mapping:
                                        FloatToInt / DoubleToInt
                                   * Float↔Double               →
                                        FloatToDouble / DoubleToFloat
-                                  * scalar→_Bool              →
+                                  * scalar→bool               →
                                        Binary(NotEqual, src, 0,
                                        dst) (a Constant folds),
                                        or just the low byte when
@@ -421,7 +421,7 @@ def _const_int_or_none(exp: c99_ast.Type_exp | None) -> int | None:
         exp.const,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
          c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
-         c99_ast.ConstChar, c99_ast.ConstUChar),
+         c99_ast.ConstChar, c99_ast.ConstUChar, c99_ast.ConstBool),
     ):
         return exp.const.value
     return None
@@ -515,7 +515,7 @@ _TRUTH_OPS = (
 
 def _is_zero_or_one(exp: c99_ast.Type_exp) -> bool:
     """True iff the type-checked `exp` can only be 0 or 1, so
-    converting it to `_Bool` needs no `!= 0`: a `_Bool`, a
+    converting it to `bool` needs no `!= 0`: a `bool`, a
     comparison, `&&`, `||`, `!`, the constants 0 and 1, an integer
     cast of such a value, `&` with such an operand, `|` and `^` of
     two of them, and `?:` and `,` that yield one."""
@@ -556,7 +556,7 @@ def _is_integer_type_c99(t: c99_ast.Type_data_type) -> bool:
 
 
 def _bool_to_uchar(t):
-    """`t` with every `_Bool` in it, at any depth, replaced by
+    """`t` with every `bool` in it, at any depth, replaced by
     `unsigned char`. Returns `t` itself when there's none."""
     if isinstance(t, c99_ast.Bool):
         return c99_ast.UChar()
@@ -627,13 +627,13 @@ def _unqualified(t):
 
 
 def _erase_bool(decls, symbols, types) -> None:
-    """Replace `_Bool` with `unsigned char` everywhere the passes after
+    """Replace `bool` with `unsigned char` everywhere the passes after
     this one read c99 types: the symbol table, the struct and union
     layouts, and the types of the top-level declarations (which
-    `abi_selection` reads). By now every conversion to `_Bool` has
+    `abi_selection` reads). By now every conversion to `bool` has
     become a `!= 0` in the TAC, and what's left of the type is a byte
-    holding 0 or 1, so the back end needs no `_Bool` of its own. The
-    expression nodes keep their `_Bool`, so translating the program
+    holding 0 or 1, so the back end needs no `bool` of its own. The
+    expression nodes keep their `bool`, so translating the program
     again still lowers its conversions."""
     from passes.type_checking import FunAttr
     for _, sym in symbols.items():
@@ -728,7 +728,7 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
     if isinstance(t, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool)):
         # Plain Char and UChar are 1-byte unsigned in c6502 (per
         # C99 §6.2.5.15's implementation-defined choice for plain
-        # char) — collapse onto unsigned `UInt`. So does `_Bool`.
+        # char) — collapse onto unsigned `UInt`. So does `bool`.
         return tac_ast.UInt()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
@@ -782,7 +782,9 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
         return tac_ast.ConstULongLong(value=c.value)
     if isinstance(c, c99_ast.ConstChar):
         return tac_ast.ConstChar(value=c.value)
-    if isinstance(c, c99_ast.ConstUChar):
+    if isinstance(c, (c99_ast.ConstUChar, c99_ast.ConstBool)):
+        # `true` and `false` are bytes holding 1 and 0, since Bool is
+        # UChar after `_erase_bool`.
         return tac_ast.ConstUChar(value=c.value)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(bits=c.bits)
@@ -977,7 +979,7 @@ def _tac_static_init_for(
     if isinstance(t, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool)):
         # Plain `char` is unsigned in c6502 — same byte semantics
         # as `unsigned char`. The type checker already gave a
-        # `_Bool` 0 or 1.
+        # `bool` 0 or 1.
         return tac_ast.UCharInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
@@ -1306,7 +1308,8 @@ def _exact_const_index(exp: c99_ast.Type_exp, types=None) -> int | None:
                 c99_ast.ConstInt, c99_ast.ConstLong,
                 c99_ast.ConstLongLong, c99_ast.ConstUInt,
                 c99_ast.ConstULong, c99_ast.ConstULongLong,
-                c99_ast.ConstChar, c99_ast.ConstUChar))):
+                c99_ast.ConstChar, c99_ast.ConstUChar,
+                c99_ast.ConstBool))):
         return exp.const.value
     if isinstance(exp, c99_ast.SizeOfType):
         return _sizeof(exp.target_type, types)
@@ -4023,7 +4026,7 @@ class Translator:
         for an explicit `ptr + 1`. For arithmetic operands emits a
         plain `Binary(Add | Subtract, src, 1)`.
 
-        A `_Bool` operand converts `src ± 1` back to `_Bool` (C99
+        A `bool` operand converts `src ± 1` back to `bool` (C99
         §6.5.2.4.2), so `++` always stores 1 and `--` stores `src ==
         0`."""
         if isinstance(_strip_quals_c99(op_type), c99_ast.Bool):
@@ -4404,7 +4407,7 @@ class Translator:
         source: c99_ast.Type_data_type,
         instrs: list[tac_ast.Type_instruction],
     ) -> tac_ast.Type_val:
-        """Convert `val` (typed `source`, a scalar) to `_Bool`: 0 if
+        """Convert `val` (typed `source`, a scalar) to `bool`: 0 if
         it compares equal to 0, else 1 (C99 §6.3.1.2). A constant
         folds; anything else is `val != 0` into a 1-byte temp."""
         if isinstance(val, tac_ast.Constant):
@@ -4431,7 +4434,7 @@ class Translator:
         source: c99_ast.Type_data_type,
         instrs: list[tac_ast.Type_instruction],
     ) -> tac_ast.Type_val:
-        """Convert `val` to `_Bool` when it's already 0 or 1 (see
+        """Convert `val` to `bool` when it's already 0 or 1 (see
         `_is_zero_or_one`): just its low byte, with no comparison."""
         source = _strip_quals_c99(source)
         if isinstance(val, tac_ast.Constant):

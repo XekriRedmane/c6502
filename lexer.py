@@ -18,6 +18,9 @@ KEYWORDS = frozenset({
     "signed", "sizeof", "static", "struct", "switch", "typedef", "union",
     "unsigned", "void", "volatile", "while",
     "_Bool", "_Complex", "_Imaginary",
+    # C23 §6.4.1 adds these three. `_Bool` stays, as an alternative
+    # spelling of `bool` that C23 makes obsolescent.
+    "bool", "true", "false",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with
@@ -115,11 +118,15 @@ _LARK = Lark.open(
 
 # Each keyword has its own terminal in c99.lark. Terminal names are the
 # keyword uppercased with leading AND trailing underscores stripped
-# (e.g. `_Bool` → `BOOL`). Derived here
-# so changes to KEYWORDS flow through automatically; c99.lark still
-# has to be edited by hand to match.
+# (e.g. `_Complex` → `COMPLEX`). `_Bool` would then collide with
+# `bool`, so its terminal is `ALT_BOOL`. Derived here so changes to
+# KEYWORDS flow through automatically; c99.lark still has to be edited
+# by hand to match.
+_TERMINAL_EXCEPTIONS = {"_Bool": "ALT_BOOL"}
+
+
 def _keyword_terminal(kw: str) -> str:
-    return kw.strip("_").upper()
+    return _TERMINAL_EXCEPTIONS.get(kw, kw.strip("_").upper())
 
 
 _TERMINAL_TO_KIND = {_keyword_terminal(kw): TokenKind.KEYWORD for kw in KEYWORDS}

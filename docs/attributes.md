@@ -8,8 +8,8 @@ call compiles. This document explains each attribute, and then shows
 how to use the declaration attributes together to call routines that
 are already in ROM, such as the Apple II Monitor's `COUT`.
 
-The examples use `uint8_t` and friends from `<stdint.h>`, and `bool`
-from `<stdbool.h>`, where it's `_Bool`.
+The examples use `uint8_t` and friends from `<stdint.h>`, and `bool`,
+which is a keyword in C23.
 
 ## Writing an attribute
 
@@ -234,7 +234,7 @@ leaves them alone. See
 
 A function declared with this attribute returns its result in the
 carry flag, set for true and clear for false, instead of in A. The
-function has to return `bool` (`_Bool`); an `unsigned char` or
+function has to return `bool`; an `unsigned char` or
 `char` return is an error. When a caller tests the
 result with `if`, the compiler branches on the flag with `BCC` or
 `BCS` instead of first turning it into a number.

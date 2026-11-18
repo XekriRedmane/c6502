@@ -29,6 +29,14 @@ These parts work.
   and parameters in zero page, bind names to the addresses of ROM
   routines and I/O registers, pass parameters in registers, return a
   `bool` in the carry flag, place code in sections, and unroll loops.
+- C23's `bool`, `true`, and `false` are keywords. `true` and `false`
+  are constants of type `bool`, so `sizeof(true)` is 1, and they
+  work in constant expressions and in `#if`, where `true` is 1 and
+  `false` is 0. `<stdbool.h>` is C23's, which defines only
+  `__bool_true_false_are_defined`. The older spelling `_Bool` still
+  compiles, with a warning at each use, since C23 makes it
+  obsolescent. A program that names something `bool`, `true`, or
+  `false`, as C99 allowed, no longer compiles.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.
@@ -112,6 +120,11 @@ so `-D`, `-U`, and `-I` work as usual. `--lex`, `--parse`,
 `--resolve`, and `--tac` stop after the stage they name and print
 that stage's output.
 
+An error stops the compile with one line on stderr, `<file>: error:
+<message>`, and exit status 1. A warning, such as the one for each
+use of `_Bool`, is a line of the form `<file>: warning: line N:
+<message>`, and the compile goes on.
+
 ### An example
 
 ```c
@@ -184,7 +197,7 @@ sizes on 32- and 64-bit machines.
 | `long long` | 8 bytes | -2^63 to 2^63 - 1 |
 | a pointer | 2 bytes | `$0000` to `$FFFF` |
 | `float`, `double` | 4 and 8 bytes | IEEE 754, with no arithmetic code (see "Status") |
-| `_Bool` | 1 byte | 0 or 1 |
+| `bool` | 1 byte | 0 (`false`) or 1 (`true`). `_Bool` is the same type. |
 
 `<stdint.h>` defines `uint8_t` as `unsigned char`, `int16_t` as
 `int`, `int32_t` as `long`, and so on. `sizeof` gives an `unsigned

@@ -50,7 +50,7 @@ class TestParse(unittest.TestCase):
             ("long short int x;", "'short' cannot combine with 'long'"),
             ("short char x;", "'char' cannot combine"),
             ("short double x;", "floating type cannot combine"),
-            ("_Bool short x;", "_Bool"),
+            ("bool short x;", "bool"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaises(ParserError) as ctx:

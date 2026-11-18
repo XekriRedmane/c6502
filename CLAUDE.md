@@ -158,7 +158,7 @@ Two key runtime conventions:
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
 - **`[[c6502::return_bool_in_carry]]`** on a function
-  returning `bool` (`_Bool`, never `unsigned char` or `char`) makes
+  returning `bool` (never `unsigned char` or `char`) makes
   it return `e != 0` in the carry flag. The callee ends in `CMP #1` (`SEC` / `CLC` for a
   constant, `PHP` / `PLP` around a frame teardown), and the caller
   branches with `BCC` / `BCS` or captures C with `LDA #0; ROL A`.
@@ -167,7 +167,7 @@ Two key runtime conventions:
   must carry it, and its address can't be taken. See
   `passes/carry_return.py`. The function may instead return a
   struct of exactly two members, a 1- or 2-byte integer value and
-  then a `_Bool` (`type_checking.carry_struct_value_bytes`). The value
+  then a `bool` (`type_checking.carry_struct_value_bytes`). The value
   comes back in A (and X) and the flag in C, with no sret pointer,
   so the function stays zp_abi-eligible. The callee does `LDA flag;
   CMP #1; [LDX hi;] LDA lo`, and the caller stores A (and X) and then
@@ -419,6 +419,11 @@ Other root-level files:
   diagnostics).
 - `compile.py` — the CLI driver.
 - `main.py` — empty `hello world` stub; not part of the compiler.
+- `diagnostics.py` — warnings: `warn(where, message)` records one in
+  the innermost open `collecting()` block and drops it outside one,
+  so only a caller that opens such a block receives them. `compile._compile_c`
+  collects each C input's and prints them to stderr as `<file>:
+  warning: line N: <message>`, before any error.
 - `builtin_functions.py` — the builtins' names and argument counts
   (`BUILTINS`, `is_builtin`) and the packed BCD arithmetic
   (`adc_byte`, `sbc_byte`, `bcd_add`, `bcd_sub`) that constant
@@ -470,8 +475,19 @@ Integers:
   byte semantics as `unsigned char`).
 - `SChar()` is `signed char` (1-byte signed, -128..127).
 - `UChar()` is `unsigned char` (1-byte unsigned, 0..255).
-- `Bool()` is `_Bool` (1 byte holding 0 or 1); `<stdbool.h>`'s
-  `bool` is a macro for it.
+- `Bool()` is `bool` (1 byte holding 0 or 1), a keyword since C23
+  (§6.4.1). So are its constants `true` and `false`, which the
+  parser makes `ConstBool(1)` and `ConstBool(0)` and which have
+  type `bool`, so `sizeof(true)` is 1 and `true + true` is the
+  `int` 2. `_Bool` is the same type, and the preprocessor warns at
+  each use of it (`preprocessor.ALT_BOOL_WARNING`), since C23
+  makes that spelling obsolescent. `<stdbool.h>` defines only
+  `__bool_true_false_are_defined`. In an `#if`, `true` is 1 and
+  `false` 0 (C23 §6.10.2p13). The warnings go through
+  `diagnostics.py`: `diagnostics.warn` records one, a
+  `diagnostics.collecting()` block collects them, and compile.py
+  prints each C input's to stderr as `<file>: warning: line N:
+  <message>` without failing the compile.
 
 An enumerated type is `Int()` (C99 §6.7.2.2.4 lets it be compatible
 with `int`), or with `[[c6502::packed]]` `UChar()` / `SChar()`
@@ -483,11 +499,11 @@ Char/SChar/UChar/Bool are distinct types from Int/UInt — C99
 range covers both signed and unsigned char), so arithmetic always
 happens at Int width or wider.
 
-Converting a scalar to `_Bool` gives 0 if it compares equal to 0 and
+Converting a scalar to `bool` gives 0 if it compares equal to 0 and
 1 otherwise (C99 §6.3.1.2). The type checker applies that to static
 initializers. For everything else, c99_to_tac lowers each conversion
 to `x != 0`, skipping it for a value that is already 0 or 1 (a
-comparison, `!`, `&&`, `||`, a `_Bool`), and makes `++` store 1 and
+comparison, `!`, `&&`, `||`, a `bool`), and makes `++` store 1 and
 `--` store `x == 0`. Then it replaces `Bool` with `UChar` in the
 symbol table, the struct layouts, and the top-level declaration
 types, so no pass after it sees `Bool`. tac_to_asm lowers a `!= 0`
@@ -560,10 +576,10 @@ supports (`int` / `signed [int]` → Int; `unsigned [int]` → UInt;
 ULong; `long long [int]` / `signed long long [int]` → LongLong;
 `unsigned long long [int]` → ULongLong; `short [int]` / `signed short
 [int]` → Short; `unsigned short [int]` → UShort; `char` → Char;
-`signed char` → SChar; `unsigned char` → UChar; `_Bool` → Bool; `float` → Float;
+`signed char` → SChar; `unsigned char` → UChar; `bool` or `_Bool` → Bool; `float` → Float;
 `double` → Double), rejecting multiple type specifiers, multiple
 storage classes, missing type, three or more `long`s, `short` twice or
-with `long`, `_Bool` combined with any other type specifier, `char`
+with `long`, `bool` combined with any other type specifier, `char`
 combined with `int` / `long` / `short`, `long double`, `signed unsigned`, and any
 FP/integer specifier mix (`int float`, `unsigned double`, etc.).
 
@@ -660,8 +676,8 @@ multiplication otherwise, the parser tracks scopes while it parses
 (`__anonymous_struct_<N>`). A typedef whose struct tag an inner
 declaration hides at the point of use is rejected, since the
 substituted `struct foo` would name the inner one. `<stdint.h>`
-uses real typedefs; `<stdbool.h>` keeps `bool` a macro for `_Bool`, as
-C99 §7.16.2 specifies.
+uses real typedefs. `bool`, `true`, and `false` are keywords (C23
+§6.4.1), so `<stdbool.h>` defines only `__bool_true_false_are_defined`.
 
 ### Enumerations
 
@@ -749,6 +765,16 @@ preprocessor has already stripped them. `preprocessor.preprocess`
 wraps `pcpp` (installed as a uv tool, used via its Python API, no
 shelling out). Malformed numeric tokens (`0x` with no digits, `3e`
 with no exponent body) raise `LexError` rather than being split.
+
+Two pcpp hooks in `CompilePreprocessor` follow C23. Its
+`on_unknown_macro_in_expr` gives `true` the value 1 and `false` the
+value 0 in an `#if` (C23 §6.10.2p13; pcpp gives every other name left
+there 0), even under `--passthru-unknown-exprs`. Its `token` override
+warns at each `_Bool` the preprocessor writes out, with the line it's
+on (`_where`), which for a `_Bool` a macro expands to is the line of
+the macro's use. A program that names something `bool`, `true`, or
+`false` gets a syntax error, which `parser._c23_keyword_as_name`
+rewords to say that C23 made the name a keyword.
 
 `docs/*_grammar.txt` files are reference documentation for the spec
 grammars that `c99.lark` implements — they aren't parsed by any tool.

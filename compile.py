@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+import diagnostics
 from asm_emit import emit_program
 from tac_to_asm import translate_program as translate_to_asm
 from lexer import tokenize
@@ -984,12 +985,27 @@ def _read_source(path: str) -> tuple[str, str | None]:
 
 def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
                link_metadata: bool = False) -> str:
-    """The output of `stage` for the C source at `path`."""
+    """The output of `stage` for the C source at `path`. Prints the
+    warnings the compile issued to stderr, before any error it raises,
+    as gcc does."""
     source, filename = _read_source(path)
-    return _run_stage(
-        stage, preprocess(source, pcpp_args, filename),
-        optimize=optimize, link_metadata=link_metadata,
-    )
+    with diagnostics.collecting() as found:
+        try:
+            return _run_stage(
+                stage, preprocess(source, pcpp_args, filename),
+                optimize=optimize, link_metadata=link_metadata,
+            )
+        finally:
+            _print_warnings(path, found)
+
+
+def _print_warnings(path: str, found) -> None:
+    """Prints each warning in `found` (diagnostics.CompileWarning) to
+    stderr as `<file>: warning: line N: <message>`, the form `_report`
+    gives an error."""
+    where = "<stdin>" if path == "-" else path
+    for w in found:
+        print(f"{where}: warning: {w}", file=sys.stderr)
 
 
 def _object(path: str, pcpp_args, optimize: bool):

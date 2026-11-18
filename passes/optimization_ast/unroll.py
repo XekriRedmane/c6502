@@ -257,7 +257,7 @@ def _scalar_const_int(exp: c99_ast.Type_exp | None) -> int | None:
         exp.const,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
          c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
-         c99_ast.ConstChar, c99_ast.ConstUChar),
+         c99_ast.ConstChar, c99_ast.ConstUChar, c99_ast.ConstBool),
     ):
         return exp.const.value
     return None
@@ -663,7 +663,7 @@ def _const_int_value(exp) -> int | None:
         exp.const,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
          c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
-         c99_ast.ConstChar, c99_ast.ConstUChar),
+         c99_ast.ConstChar, c99_ast.ConstUChar, c99_ast.ConstBool),
     ):
         return exp.const.value
     if isinstance(exp, c99_ast.Subscript):
@@ -695,6 +695,9 @@ _CONST_TYPE: dict[type, type] = {
     c99_ast.ConstULongLong: c99_ast.ULongLong,
     c99_ast.ConstChar: c99_ast.SChar,
     c99_ast.ConstUChar: c99_ast.UChar,
+    # `true` and `false` are `bool`, but a loop bound or step uses
+    # them promoted to `int` (C23 §6.3.1.1), and they hold 0 or 1.
+    c99_ast.ConstBool: c99_ast.Int,
 }
 
 

@@ -17,6 +17,13 @@ Like pcmd.py, the `__PCPP_VERSION__`, `__PCPP_ALWAYS_FALSE__`, and
 `__PCPP_ALWAYS_TRUE__` macros are predefined.
 
 Unknown flags are ignored with a NOTE on stderr (also matches pcmd.py).
+
+Two things follow C23 rather than pcpp. In the expression of an `#if`
+or `#elif`, the identifier `true` that is left after macro replacement
+becomes 1 and `false` becomes 0, whatever the passthru flags (C23
+§6.10.2p13). Each `_Bool` in the output gets a warning
+(`ALT_BOOL_WARNING`, through `diagnostics.warn`) that names its line,
+since C23 makes `_Bool` an obsolescent spelling of `bool`.
 """
 
 from __future__ import annotations
@@ -29,6 +36,8 @@ import sys
 
 from pcpp.preprocessor import Action, OutputDirective, Preprocessor
 
+import diagnostics
+
 PCPP_VERSION = "1.30"
 
 # Bundled standard headers (limits.h, etc.) live alongside this
@@ -38,6 +47,19 @@ PCPP_VERSION = "1.30"
 _BUNDLED_INCLUDE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "include",
 )
+
+# The warning for each `_Bool` the preprocessor writes out. C23 §6.4.1
+# lists `_Bool` as an alternative spelling of the keyword `bool`, and
+# its footnote 62 makes the alternative spellings obsolescent.
+ALT_BOOL_WARNING = (
+    "`_Bool` is deprecated: C23 makes it an obsolescent spelling of the "
+    "keyword `bool` (C23 §6.4.1). Use `bool` instead."
+)
+
+# The values C23 §6.10.2p13 gives the identifiers `true` and `false`
+# when they're left in an `#if` expression after macro replacement.
+# Every other identifier left there becomes 0, as pcpp already does.
+_IF_KEYWORD_VALUES = {"true": 1, "false": 0}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -212,6 +234,8 @@ class CompilePreprocessor(Preprocessor):
         return super().on_unknown_macro_in_defined_expr(tok)
 
     def on_unknown_macro_in_expr(self, ident):
+        if ident in _IF_KEYWORD_VALUES:
+            return _IF_KEYWORD_VALUES[ident]
         if self.args.undefines and ident in self.args.undefines:
             return super().on_unknown_macro_in_expr(ident)
         if self.args.passthru_undefined_exprs:
@@ -269,6 +293,16 @@ class CompilePreprocessor(Preprocessor):
         ):
             return f"line {tok.lineno}"
         return f"line {tok.lineno} of {source}"
+
+    def token(self):
+        """Returns pcpp's next output token, as `Preprocessor.token`
+        does, and warns about it when it's a `_Bool`. A `_Bool` that a
+        macro expands to has the line of the macro's use."""
+        tok = super().token()
+        if (tok is not None and tok.type == self.t_ID
+                and tok.value == "_Bool"):
+            diagnostics.warn(self._where(tok), ALT_BOOL_WARNING)
+        return tok
 
     def on_potential_include_guard(self, macro):
         self.potential_include_guard = macro

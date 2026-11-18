@@ -64,7 +64,7 @@ the result instead of being dropped.
 
 The compiler rejects an operand of signed type (unless it's a
 nonnegative constant), a floating operand, a pointer or array, a
-structure or union, a `_Bool`, and a plain `char`. A `_Bool` can't
+structure or union, a `bool`, and a plain `char`. A `bool` can't
 hold a BCD result. Plain `char` holds characters, and C99 §6.2.5
 lists it among neither the signed nor the unsigned integer types, so
 a byte of BCD is an `unsigned char`.
@@ -236,7 +236,7 @@ sum that wrapped is smaller than the score it started from.
 | A call with other than two arguments | Each builtin takes two operands. |
 | An operand of signed type that isn't a nonnegative constant | A BCD digit has no sign, and a negative value would be taken as its 2's complement bytes. |
 | A floating operand, a pointer or array, or a structure or union | Only an integer holds packed BCD. |
-| A `_Bool` or plain `char` operand | A `_Bool` can't hold the result, and a byte of BCD is an `unsigned char`. |
+| A `bool` or plain `char` operand | A `bool` can't hold the result, and a byte of BCD is an `unsigned char`. |
 | A negative constant | It has no BCD form. |
 | A constant that doesn't fit in the result type | Its high digits would be dropped without a word. Cast the other operand to a wider type to widen the result. |
 | A declaration of a builtin's name, as a function, an object, or a parameter | The name is the implementation's, and a call would still reach the builtin. |

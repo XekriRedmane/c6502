@@ -236,7 +236,7 @@ the 6502's CMP / SBC + branch atoms cover these):
     either operand can have nonzero are compared
     (`_equality_bytes`, from passes/significant_bytes.py), here and
     in the compare-and-branch lowering. A comparison with 0
-    whose dst is 1 byte (a conversion to `_Bool`) ORs the bytes
+    whose dst is 1 byte (a conversion to `bool`) ORs the bytes
     instead (`AND #$7F` on a floating value's high byte first) and,
     for NotEqual, ends `BEQ end; LDA #1; end:`.
 
@@ -4001,7 +4001,7 @@ class Translator:
         every non-NaN, non-zero FP value the test corpus exercises.
 
         A comparison with 0 whose result is one byte (the conversion
-        of a scalar to `_Bool`, or a comparison the optimizer
+        of a scalar to `bool`, or a comparison the optimizer
         narrowed) goes to `_translate_zero_test` instead.
         """
         if (dst_size == 1 and isinstance(src2_op, asm_ast.Imm)

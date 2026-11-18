@@ -369,8 +369,8 @@ class FunAttr(IdAttr):
     function with an address may have, or None. Empty when no
     parameter has one.
 
-    `returns_bool` is True when the function returns `_Bool`.
-    `c99_to_tac` sets it when it replaces `_Bool` with `unsigned char`
+    `returns_bool` is True when the function returns `bool`.
+    `c99_to_tac` sets it when it replaces `bool` with `unsigned char`
     in the types, so that `passes/carry_return_choice.py` can still
     tell such a function apart.
 
@@ -528,6 +528,8 @@ def _const_source_type(c: c99_ast.Type_const) -> "Type":
         return Char()
     if isinstance(c, c99_ast.ConstUChar):
         return UChar()
+    if isinstance(c, c99_ast.ConstBool):
+        return Bool()
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
@@ -1045,6 +1047,8 @@ def _is_truth_valued(exp: c99_ast.Type_exp) -> bool:
     if isinstance(exp, c99_ast.Unary):
         return isinstance(exp.op, c99_ast.LogicalNot)
     if isinstance(exp, c99_ast.Constant):
+        if isinstance(exp.const, c99_ast.ConstBool):
+            return True
         return (isinstance(exp.const, c99_ast.ConstInt)
                 and exp.const.value in (0, 1))
     return False
@@ -1060,7 +1064,7 @@ def _display_name(name: str) -> str:
 
 _C_TYPE_NAMES = {
     Char: "char", SChar: "signed char", UChar: "unsigned char",
-    Bool: "_Bool", Short: "short", UShort: "unsigned short",
+    Bool: "bool", Short: "short", UShort: "unsigned short",
     Int: "int", UInt: "unsigned int", Long: "long",
     ULong: "unsigned long", LongLong: "long long",
     ULongLong: "unsigned long long", Float: "float", Double: "double",
@@ -1139,7 +1143,7 @@ def carry_struct_value_bytes(ret: Type, types) -> int | None:
     """The size of the value member, 1 or 2, when `ret` is a struct a
     `return_bool_in_carry` function may return: exactly two members,
     an integer value of 1 or 2 bytes (not a pointer) and then a `bool`
-    flag (`_Bool`). The value comes back in A (and X) and the flag in
+    flag. The value comes back in A (and X) and the flag in
     the carry. None for any other type."""
     ret = _strip_quals(ret)
     if not isinstance(ret, Structure) or types is None:
@@ -1190,7 +1194,7 @@ def _check_section(name: str, section, address, placement) -> None:
 
 def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
     """Rejects `[[c6502::return_bool_in_carry]]` on a function
-    whose return type isn't a `bool` (`_Bool`) or a struct of a value
+    whose return type isn't a `bool` or a struct of a value
     and a `bool` (`carry_struct_value_bytes`)."""
     if isinstance(_strip_quals(ret), Bool):
         return
@@ -1201,14 +1205,14 @@ def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
             f"`[[c6502::return_bool_in_carry]]` on {name!r} "
             f"returns `{_c_type(ret)}`, but a struct it returns has to "
             f"have exactly two members: first an integer value of 1 or "
-            f"2 bytes (`char`, `unsigned char`, `_Bool`, `int`, or "
+            f"2 bytes (`char`, `unsigned char`, `bool`, `int`, or "
             f"`unsigned int`, not a pointer), which comes back in A (and "
-            f"X), then a `bool` (`_Bool`) flag, which comes back in the "
+            f"X), then a `bool` flag, which comes back in the "
             f"carry flag"
         )
     raise TypeCheckError(
         f"`[[c6502::return_bool_in_carry]]` on {name!r} "
-        f"needs a `bool` (`_Bool`) return type, or a struct of a value "
+        f"needs a `bool` return type, or a struct of a value "
         f"and a `bool`, not `{_c_type(ret)}`"
     )
 
@@ -1665,7 +1669,7 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
         c,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
          c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
-         c99_ast.ConstChar, c99_ast.ConstUChar),
+         c99_ast.ConstChar, c99_ast.ConstUChar, c99_ast.ConstBool),
     ):
         return c.value == 0
     return False
@@ -1731,7 +1735,7 @@ def _promote_integer(t: Type) -> Type:
     promotion (the promoted value is an rvalue; rvalues aren't
     qualified per C99 §6.3.2.1.2).
 
-    `_Bool` ranks below `char` (§6.3.1.1.1) and promotes to Int the
+    `bool` ranks below `char` (§6.3.1.1.1) and promotes to Int the
     same way. `short` is as wide as `int`, so it promotes to Int, but
     `int` can't hold every `unsigned short`, which promotes to UInt."""
     t = _strip_quals(t)
@@ -1748,7 +1752,7 @@ def _coerce_int_to_type(value: int, t: Type) -> int:
     tac_to_asm — Truncate / SignExtend / ZeroExtend all collapse to
     width-modular arithmetic for compile-time-known values. Used by
     the switch type-checker to canonicalize case values to the
-    promoted control type. A `_Bool` target gets 0 or 1 (C99
+    promoted control type. A `bool` target gets 0 or 1 (C99
     §6.3.1.2)."""
     if isinstance(_strip_quals(t), Bool):
         return int(value != 0)
@@ -1943,7 +1947,7 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
             and exp.data_type is not None
             and _is_pointer_type(exp.data_type)):
         # Pointer → integer / FP needs an explicit cast. §6.5.16.1.1
-        # allows assigning a pointer only to a `_Bool`, which gets
+        # allows assigning a pointer only to a `bool`, which gets
         # `p != 0`.
         raise TypeCheckError(
             f"cannot implicitly convert pointer type {exp.data_type!r} "
@@ -2750,7 +2754,7 @@ class TypeChecker:
         self, exp: c99_ast.FunctionCall, name: str, args,
     ) -> Type:
         """`__c6502_bcd_add(a, b)` and `__c6502_bcd_sub(a, b)`. Each
-        operand has an unsigned integer type other than `_Bool`, or
+        operand has an unsigned integer type other than `bool`, or
         is a nonnegative integer constant expression of any integer
         type (a plain `0x75`, which is an `int`). The result has the
         operand type of higher rank, as the usual arithmetic
@@ -2798,7 +2802,7 @@ class TypeChecker:
                 raise TypeCheckError(
                     f"{where} has type {_c_type(t)}; packed BCD operands "
                     f"must have an unsigned integer type other than "
-                    f"_Bool and plain char (use unsigned char)"
+                    f"bool and plain char (use unsigned char)"
                 )
             if _is_signed(t) and value is None:
                 raise TypeCheckError(
@@ -2873,7 +2877,7 @@ class TypeChecker:
         return t.referenced_type
 
     def _is_bool_var(self, exp) -> bool:
-        """True iff `exp` names a `_Bool` object, whose value is already
+        """True iff `exp` names a `bool` object, whose value is already
         0 or 1, so a carry-flag function returns it without testing it
         against 0 again."""
         if not isinstance(exp, c99_ast.Var):
@@ -3534,7 +3538,7 @@ class TypeChecker:
                         and not self._is_carry_call(exp)
                         and not self._is_bool_var(exp)):
                     # The carry flag holds one bit, so the function
-                    # returns `e != 0`, the way a C99 `_Bool` would
+                    # returns `e != 0`, the way a `bool` would
                     # convert `e`. Wrapping before the check lets
                     # `p != 0` on a pointer and array decay work.
                     exp = c99_ast.Binary(
@@ -3910,6 +3914,9 @@ class TypeChecker:
                     t = SChar()
                 elif isinstance(c, c99_ast.ConstUChar):
                     t = UChar()
+                elif isinstance(c, c99_ast.ConstBool):
+                    # `true` and `false` (C23 §6.4.4.6).
+                    t = Bool()
                 elif isinstance(c, c99_ast.ConstFloat):
                     t = Float()
                 elif isinstance(c, c99_ast.ConstDouble):

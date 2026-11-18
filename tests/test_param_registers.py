@@ -281,7 +281,7 @@ class TestShape(unittest.TestCase):
             "struct iob { unsigned char t[17]; };\n"
             "struct iob iob;\n"
             "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]\n"
-            "_Bool RWTS(struct iob *p [[c6502::in_ya]]);\n"
+            "bool RWTS(struct iob *p [[c6502::in_ya]]);\n"
             "int main(void) { return RWTS(&iob); }\n"
         )
         main = asm.split("\nmain:")[1]
@@ -292,7 +292,7 @@ class TestShape(unittest.TestCase):
         asm = _codegen(
             "unsigned char iob[17];\n"
             "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]\n"
-            "_Bool RWTS(register unsigned char hi [[c6502::in_a]],\n"
+            "bool RWTS(register unsigned char hi [[c6502::in_a]],\n"
             "                   register unsigned char lo [[c6502::in_y]]);\n"
             "int main(void) {\n"
             "    return RWTS((unsigned char)((unsigned int)iob >> 8),\n"

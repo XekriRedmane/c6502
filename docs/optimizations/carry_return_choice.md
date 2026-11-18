@@ -85,7 +85,7 @@ is_dict_separator; BCC ...; RTS` followed by a tail call of
 - The function returns `bool`, has internal linkage (`static`), and
   is defined in the unit, so every call to it is there.
   `FunAttr.returns_bool` records the `bool`, which `c99_to_tac` sets
-  before it turns `_Bool` into `unsigned char` in the types.
+  before it turns `bool` into `unsigned char` in the types.
 - It isn't already declared `return_bool_in_carry`, doesn't have an
   `address`, and its address is never taken, since an indirect call
   can't know the result is in C.

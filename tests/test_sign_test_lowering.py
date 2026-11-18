@@ -29,7 +29,7 @@ def _program(ctype: str, bits: int, values) -> str:
     return (
         f"{ctype} t[{len(values)}] = {{{table}}};\n"
         f"int lt[{len(values)}];\n"
-        f"_Bool ge[{len(values)}];\n"
+        f"bool ge[{len(values)}];\n"
         "int main(void) {\n"
         f"    for (unsigned char i = 0; i < {len(values)}; i++) {{\n"
         "        lt[i] = t[i] < 0;\n"

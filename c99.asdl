@@ -113,9 +113,10 @@ module C99 {
         -- 65535. c99_to_tac replaces them with Int / UInt.
         | Short
         | UShort
-        -- `_Bool` (C99 §6.2.5.2): one byte holding 0 or 1. Every
-        -- conversion to it gives 0 for a value that compares equal to
-        -- 0 and 1 otherwise (§6.3.1.2). c99_to_tac lowers those
+        -- `bool` (C23 §6.2.5, spelled `_Bool` before C23): one byte
+        -- holding 0 or 1. Every conversion to it gives 0 for a value
+        -- that compares equal to 0 and 1 otherwise (§6.3.1.2 in
+        -- both). c99_to_tac lowers those
         -- conversions and then erases Bool to UChar, so later passes
         -- never see it.
         | Bool
@@ -278,8 +279,12 @@ module C99 {
     -- `fp_arith` from the source string at parse time. We never go
     -- through Python's `float`, so single-precision narrowing happens
     -- at the source-text boundary with correct round-to-nearest-even.
+    -- ConstBool is the keyword `true` (value 1) or `false` (value 0),
+    -- a constant of type `bool` (C23 §6.4.4.6). c99_to_tac makes it a
+    -- TAC ConstUChar, since it erases Bool to UChar.
     const = ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
           | ConstUInt(int value) | ConstULong(int value) | ConstULongLong(int value)
           | ConstFloat(int bits) | ConstDouble(int bits)
           | ConstChar(int value) | ConstUChar(int value)
+          | ConstBool(int value)
 }

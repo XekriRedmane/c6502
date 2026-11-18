@@ -67,7 +67,7 @@ is why it isn't a box of its own.
 
 | Stage | Module | Detail |
 |---|---|---|
-| Preprocessing | `preprocessor.py` | pcpp's Python API. `include/` is on the search path. Flags `compile.py` doesn't know are passed to it. |
+| Preprocessing | `preprocessor.py` | pcpp's Python API. `include/` is on the search path. Flags `compile.py` doesn't know are passed to it. In `#if`, `true` is 1 and `false` is 0, as in C23, and each `_Bool` gets a warning (`diagnostics.py`). |
 | Parsing | `parser.py`, `c99.lark`, `lexer.py` | LALR, with the AST built as each rule reduces, so that `typedef` names are known while parsing. See "Parser" in [../CLAUDE.md](../CLAUDE.md). |
 | Name resolution | `passes/identifier_resolution.py`, `string_lifting.py`, `label_resolution.py`, `loop_labeling.py` | [../passes/CLAUDE.md](../passes/CLAUDE.md), passes 2 to 5 |
 | Type checking | `passes/type_checking.py` | Promotions, conversions, and the symbol table. [../passes/CLAUDE.md](../passes/CLAUDE.md), pass 6 |

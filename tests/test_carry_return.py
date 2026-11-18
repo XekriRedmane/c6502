@@ -68,17 +68,17 @@ class TestFrontEnd(unittest.TestCase):
         return _run_stage("tac", src)
 
     def test_parses(self):
-        prog = parse(_CARRY + "_Bool f(void) { return 1; }")
+        prog = parse(_CARRY + "bool f(void) { return 1; }")
         self.assertTrue(prog.declaration[0].function_decl.carry_return)
 
     def test_rejects_argument(self):
         with self.assertRaises(ParserError):
             parse("[[c6502::return_bool_in_carry(1)]] "
-                  "_Bool f(void) { return 1; }")
+                  "bool f(void) { return 1; }")
 
     def test_rejects_object(self):
         with self.assertRaises(ParserError):
-            parse(_CARRY + "_Bool g;")
+            parse(_CARRY + "bool g;")
 
     def test_rejects_non_bool_return(self):
         for ret in ("int", "unsigned char", "char"):
@@ -88,13 +88,13 @@ class TestFrontEnd(unittest.TestCase):
 
     def test_declarations_must_agree(self):
         with self.assertRaisesRegex(TypeCheckError, "must agree"):
-            self._tac("_Bool f(void);\n"
-                      + _CARRY + "_Bool f(void) { return 1; }")
+            self._tac("bool f(void);\n"
+                      + _CARRY + "bool f(void) { return 1; }")
 
     def test_rejects_address(self):
         with self.assertRaisesRegex(TypeCheckError, "address"):
-            self._tac(_CARRY + "_Bool f(void) { return 1; }\n"
-                      "_Bool (*p)(void) = f;")
+            self._tac(_CARRY + "bool f(void) { return 1; }\n"
+                      "bool (*p)(void) = f;")
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
@@ -386,8 +386,8 @@ class TestCarryLiveAtReturn(unittest.TestCase):
 
 # A struct of a value and a `bool`, which a `return_bool_in_carry`
 # function returns with the value in A (and X) and the flag in C.
-_ZC = "struct zc { unsigned char v; _Bool end; };\n"
-_WV = "struct wv { int v; _Bool end; };\n"
+_ZC = "struct zc { unsigned char v; bool end; };\n"
+_WV = "struct wv { int v; bool end; };\n"
 
 
 def _tac_main(src):
@@ -415,22 +415,22 @@ class TestStructFrontEnd(unittest.TestCase):
                       "unsigned int"):
             with self.subTest(value):
                 self._tac(
-                    f"struct s {{ {value} v; _Bool end; }};\n"
+                    f"struct s {{ {value} v; bool end; }};\n"
                     + _CARRY + "struct s f(void) { struct s r; r.v = 1; "
                     "r.end = 0; return r; }"
                 )
 
     def test_rejects_other_shapes(self):
         shapes = {
-            "three members": "unsigned char v; _Bool end; "
+            "three members": "unsigned char v; bool end; "
                              "unsigned char x;",
             "one member": "unsigned char v;",
-            "pointer value": "unsigned char *v; _Bool end;",
-            "long value": "long v; _Bool end;",
+            "pointer value": "unsigned char *v; bool end;",
+            "long value": "long v; bool end;",
             "int flag": "unsigned char v; int end;",
             "unsigned char flag": "unsigned char v; unsigned char end;",
             "char flag": "unsigned char v; char end;",
-            "flag first": "_Bool end; int v;",
+            "flag first": "bool end; int v;",
         }
         for label, members in shapes.items():
             with self.subTest(label):
@@ -443,7 +443,7 @@ class TestStructFrontEnd(unittest.TestCase):
 
     def test_rejects_union(self):
         with self.assertRaisesRegex(TypeCheckError, "exactly two members"):
-            self._tac("union u { unsigned char v; _Bool end; };\n"
+            self._tac("union u { unsigned char v; bool end; };\n"
                       + _CARRY + "union u f(void);")
 
     def test_no_hidden_pointer(self):

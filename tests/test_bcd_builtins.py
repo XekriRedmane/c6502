@@ -153,7 +153,7 @@ class TestFrontEnd(unittest.TestCase):
             ("uint8_t *p;", "__c6502_bcd_add(p, 1)", "pointer"),
             ("uint8_t t[2];", "__c6502_bcd_add(t, 1)", "pointer"),
             ("struct s { int x; } v;", "__c6502_bcd_add(v, 1)", "struct"),
-            ("_Bool b;", "__c6502_bcd_add(b, 1)", "_Bool"),
+            ("bool b;", "__c6502_bcd_add(b, 1)", "bool"),
             ("char c;", "__c6502_bcd_add(c, 1)", "plain char"),
             ("uint8_t a;", "__c6502_bcd_add(a, -1)", "negative"),
             ("uint8_t a;", "__c6502_bcd_add(a, 0x100)", "doesn't fit"),

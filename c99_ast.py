@@ -736,3 +736,8 @@ class ConstChar(Type_const):
 @dataclass
 class ConstUChar(Type_const):
     value: int = 0
+
+
+@dataclass
+class ConstBool(Type_const):
+    value: int = 0

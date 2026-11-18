@@ -18,9 +18,19 @@ class TestKeywords(unittest.TestCase):
                 self.assertEqual(kinds_vals(kw), [(TokenKind.KEYWORD, kw)])
 
     def test_keyword_count(self):
-        # The 37 standard C99 keywords. Attributes are C23's `[[...]]`,
-        # which needs no keyword.
-        self.assertEqual(len(KEYWORDS), 37)
+        # The 37 standard C99 keywords and C23's `bool`, `true`, and
+        # `false`. Attributes are C23's `[[...]]`, which needs no
+        # keyword.
+        self.assertEqual(len(KEYWORDS), 40)
+
+    def test_c23_boolean_keywords(self):
+        self.assertEqual(
+            kinds_vals("bool true false _Bool booly true_"),
+            [(TokenKind.KEYWORD, "bool"), (TokenKind.KEYWORD, "true"),
+             (TokenKind.KEYWORD, "false"), (TokenKind.KEYWORD, "_Bool"),
+             (TokenKind.IDENTIFIER, "booly"),
+             (TokenKind.IDENTIFIER, "true_")],
+        )
 
     def test_attribute_tokens(self):
         # `[[` is one token, with or without space between the

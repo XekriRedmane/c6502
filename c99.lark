@@ -91,7 +91,8 @@ INVALID_NUMBER: _BAD_HEX_PREFIX | _BAD_HEX_DOT | _BAD_HEX_NO_EXP | _BAD_HEX_EXP 
 //    priority than IDENTIFIER on equal-length matches, so `int` wins over
 //    IDENTIFIER for input `int` while `intx` falls through to IDENTIFIER
 //    via longest match.
-//    Naming: uppercase the keyword; strip leading `_` (so `_Bool` → `BOOL`).
+//    Naming: uppercase the keyword; strip leading `_` (so `_Complex` →
+//    `COMPLEX`). `_Bool` is `ALT_BOOL`, since `BOOL` is C23's `bool`.
 //    Keep this list in sync with KEYWORDS in lexer.py.
 AUTO: "auto"
 BREAK: "break"
@@ -127,8 +128,13 @@ UNSIGNED: "unsigned"
 VOID: "void"
 VOLATILE: "volatile"
 WHILE: "while"
-BOOL: "_Bool"
+ALT_BOOL: "_Bool"
 COMPLEX: "_Complex"
+// C23's keywords (§6.4.1). `_Bool` above is an obsolescent spelling of
+// `bool`, which the preprocessor warns about.
+BOOL: "bool"
+TRUE: "true"
+FALSE: "false"
 IMAGINARY: "_Imaginary"
 
 // The `[[` that opens a C23 attribute specifier (§6.7.13). C23 makes
@@ -280,7 +286,7 @@ _attribute_arg_token: IDENTIFIER | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGE
                     | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
                     | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
                     | UNSIGNED | VOID | VOLATILE | WHILE
-                    | BOOL | COMPLEX | IMAGINARY
+                    | BOOL | ALT_BOOL | TRUE | FALSE | COMPLEX | IMAGINARY
                     | ELLIPSIS | COLONCOLON | LSHIFT_ASSIGN | RSHIFT_ASSIGN
                     | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT
                     | LE | GE | EQ | NE | ANDAND | OROR
@@ -327,7 +333,7 @@ initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
 function_decl: attribute_specifier_seq? decl_specs declarator block
 
-type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | VOID
+type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
               | struct_or_union_specifier
               | enum_specifier
 
@@ -532,7 +538,7 @@ constant_exp: conditional_exp
 // Right-recursive so `(int)(long)x` parses as `(int)((long)x)`. The
 // LPAREN-vs-paren-expr ambiguity is resolved at LALR(1) by the next
 // token after `(`: any type-specifier token (INT/LONG/SIGNED/
-// UNSIGNED/FLOAT/DOUBLE/CHAR/BOOL/VOID) → cast; anything else → parenthesised exp.
+// UNSIGNED/FLOAT/DOUBLE/CHAR/BOOL/ALT_BOOL/VOID) → cast; anything else → parenthesised exp.
 
 ?cast_exp: LPAREN type_name RPAREN cast_exp  -> cast
          | unary_exp
@@ -595,6 +601,8 @@ const: INTEGER_CONSTANT
      | FLOAT_CONSTANT
      | LONG_DOUBLE_CONSTANT
      | CHAR_CONSTANT
+     | TRUE
+     | FALSE
 
 unop: MINUS                         -> negate
     | PLUS                          -> unary_plus
@@ -747,7 +755,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | COMPLEX | IMAGINARY
+         | BOOL | ALT_BOOL | TRUE | FALSE | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT

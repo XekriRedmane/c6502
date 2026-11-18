@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lark import Lark, Token, Transformer, Tree
-from lark.exceptions import UnexpectedInput
+from lark.exceptions import UnexpectedInput, UnexpectedToken
 from lark.lexer import BasicLexer
 from lark.parsers.lalr_analysis import Shift
 from lark.visitors import v_args
@@ -407,7 +407,7 @@ def _type_tags(t, out: list) -> list:
 def _resolve_data_type(type_specs):
     """Map a list of type-specifier tokens to a c99_ast object type.
     Valid combinations follow C99 §6.7.2:
-      * `_Bool`                                    → Bool; cannot
+      * `bool` (or `_Bool`)                        → Bool; cannot
                                                      combine with any
                                                      other type
                                                      specifier
@@ -490,8 +490,16 @@ def _resolve_data_type(type_specs):
     short_count = sum(1 for t in type_specs if t.type == "SHORT")
     if bool_count > 0:
         if len(type_specs) != 1:
+            # Named as the program spelled it, `bool` or `_Bool`.
+            spelling = next(str(t) for t in type_specs if t.type == "BOOL")
+            # `int bool;` declared an `int` named `bool` before C23.
+            note = (
+                "; `bool` is a keyword in C23 (§6.4.1), so it can't be a "
+                "name either" if spelling == "bool" else ""
+            )
             raise ParserError(
-                "'_Bool' cannot combine with another type specifier"
+                f"'{spelling}' cannot combine with another type "
+                f"specifier{note}"
             )
         return c99_ast.Bool()
     is_fp = float_count > 0 or double_count > 0
@@ -1582,8 +1590,11 @@ def _const_for_token(token):
     value); floating literals follow C99 §6.4.4.2 (suffix uniquely
     determines the type — no value-fitting rule); character
     literals lex via CHAR_CONSTANT and ride as a `ConstInt` carrying
-    the byte value (§6.4.4.4.10)."""
+    the byte value (§6.4.4.4.10). The keywords `true` and `false` are
+    constants of type `bool` with the values 1 and 0 (C23 §6.4.4.6)."""
     text = str(token)
+    if token.type in ("TRUE", "FALSE"):
+        return c99_ast.ConstBool(value=int(token.type == "TRUE"))
     if token.type == "CHAR_CONSTANT":
         return c99_ast.ConstInt(value=_decode_char_constant(token))
     if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
@@ -2040,7 +2051,7 @@ def _array_size_from_suffix(suffix):
     c = size_exp.const
     if not isinstance(c, (
         c99_ast.ConstInt, c99_ast.ConstLong,
-        c99_ast.ConstUInt, c99_ast.ConstULong,
+        c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstBool,
     )):
         raise NotImplementedError(
             "array size must be an integer constant"
@@ -2258,7 +2269,11 @@ class _ASTBuilder(Transformer):
         # The simple-keyword alternatives produce a Token; the
         # struct/union alternative produces a `_TagSpecifier`. Inline
         # the single child so the caller (`specifier`, `type_name`,
-        # `specifier_qualifier_list`) sees the leaf directly.
+        # `specifier_qualifier_list`) sees the leaf directly. `_Bool`
+        # (ALT_BOOL) is the same type as `bool` (C23 §6.4.1), so it
+        # becomes a BOOL token that keeps its spelling for messages.
+        if isinstance(child, Token) and child.type == "ALT_BOOL":
+            return Token.new_borrow_pos("BOOL", str(child), child)
         return child
 
     def type_name(self, items):
@@ -3402,8 +3417,8 @@ class _ASTBuilder(Transformer):
     def const(self, token):
         # `const: INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER
         # | ULONG_INTEGER | DOUBLE_CONSTANT | FLOAT_CONSTANT
-        # | LONG_DOUBLE_CONSTANT`. The lex split is by suffix presence
-        # only. For integers, `_const_for_token` consults the C99
+        # | LONG_DOUBLE_CONSTANT | CHAR_CONSTANT | TRUE | FALSE`. The
+        # lex split is by suffix presence only. For integers, `_const_for_token` consults the C99
         # §6.4.4.1 type list (keyed by token-kind + base) and picks
         # the first variant whose range fits. For FP, the suffix
         # uniquely determines the type (§6.4.4.2). Long-double and
@@ -3791,12 +3806,42 @@ _LARK = Lark.open(
 )
 
 
+# The keywords C23 added (§6.4.1) that a C99 program could have used as
+# names, by their terminals in c99.lark.
+_C23_KEYWORD_TERMINALS = ("BOOL", "TRUE", "FALSE")
+
+
+def _c23_keyword_as_name(e: UnexpectedInput) -> str | None:
+    """The message for the syntax error `e` when it's `bool`, `true`,
+    or `false` where the parser could take a name, as in `int true;`,
+    and None for any other error. C99 let a program use those three as
+    names, and C23 makes them keywords. `int bool = 1;` fails on the
+    `=` after it, since `int bool` reads as two type specifiers."""
+    if not isinstance(e, UnexpectedToken):
+        return None
+    if e.token.type in _C23_KEYWORD_TERMINALS and "IDENTIFIER" in e.expected:
+        keyword = str(e.token)
+    elif (_CTX.recent[0] == "BOOL"
+            and e.token.type in ("ASSIGN", "LBRACKET", "COMMA")):
+        keyword = "bool"
+    else:
+        return None
+    return (
+        f"line {e.line}, column {e.column}: `{keyword}` is a keyword in "
+        f"C23 (§6.4.1), so it can't be the name of a variable, function, "
+        f"parameter, type, tag, member, or label"
+    )
+
+
 def parse(source: str) -> c99_ast.Type_program:
     global _CTX
     _CTX = _ParseContext()
     try:
         return _LARK.parse(source, start="start")
     except UnexpectedInput as e:
+        message = _c23_keyword_as_name(e)
+        if message is not None:
+            raise ParserError(message) from None
         if "__attribute__" not in source:
             raise
         raise ParserError(

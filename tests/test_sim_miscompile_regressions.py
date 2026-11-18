@@ -529,14 +529,14 @@ _CASES: list[tuple[str, str, int]] = [
             return arr_4[0] * 10 + arr_4[4];
         }
     """, 55),
-    # Constant folding gave `k != 0`, a conversion to `_Bool`, an
+    # Constant folding gave `k != 0`, a conversion to `bool`, an
     # `int` result, which the 1-byte store then wrote as 2 bytes,
     # clearing `a[1]`. Found by YARPGen.
     ("bool_of_constant_into_array", """
-        _Bool a[3];
+        bool a[3];
         int main(void) {
             a[1] = 1;
-            a[0] = (_Bool)(59071U * 65430U);
+            a[0] = (bool)(59071U * 65430U);
             return a[0] * 4 + a[1] * 2 + a[2];
         }
     """, 6),

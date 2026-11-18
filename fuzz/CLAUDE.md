@@ -178,7 +178,10 @@ generator.
 
 `merge` turns a test's `init.h`, `func.c`, and `driver.c` into one
 program. `main` returns the checksum folded to 15 bits instead of
-printing it, and `size_t` is `unsigned int`. The
+printing it, and `size_t` is `unsigned int`. YARPGen's C output
+spells the boolean type `_Bool`, which draws C23's deprecation
+warning, but the runner collects no warnings (`diagnostics.py`), so
+they don't count against a program. The
 TAC result is the reference. A program takes about 6 seconds, and
 most of them need more than 253 bytes of frame without -O,
 so the runner counts them as rejected and compares only the

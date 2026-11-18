@@ -637,9 +637,9 @@ def _truth_as_dst(
 ) -> tac_ast.Type_const:
     """A folded comparison or `!`, a `ConstInt` 0 or 1, retyped to
     `dst`'s integer type. Its dst is usually an `int`, but converting a
-    value to `_Bool` lowers to `x != 0` with a 1-byte dst, and a 2-byte
+    value to `bool` lowers to `x != 0` with a 1-byte dst, and a 2-byte
     constant copied there would be stored as 2 bytes, overwriting the
-    byte after it (`arr[0] = (_Bool)k;` cleared `arr[1]`)."""
+    byte after it (`arr[0] = (bool)k;` cleared `arr[1]`)."""
     dst_variant = _dst_int_variant(dst, symbols)
     if dst_variant is None or dst_variant is type(c):
         return c

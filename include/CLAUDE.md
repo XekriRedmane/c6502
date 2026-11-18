@@ -1,6 +1,7 @@
 # include/CLAUDE.md
 
-C99 standard headers, c6502 flavor. Provided so user programs can
+C standard headers, c6502 flavor: C99's, except for C23's
+`<stdbool.h>`. Provided so user programs can
 `#include <stdint.h>` / `#include <limits.h>` and get the right
 fixed-width types and limit macros for c6502's integer model.
 
@@ -17,9 +18,10 @@ automatically; no `-I` flag needed.
   `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t`
   typedefs mapping to c6502's integer model, plus the C99 limit and
   literal-suffix macros (`INT8_MAX`, `INT8_C`, etc.).
-- `stdbool.h` (C99 §7.16) — `bool` / `true` / `false` /
-  `__bool_true_false_are_defined`. `bool` is a macro for `_Bool`,
-  as C99 §7.16.2 specifies.
+- `stdbool.h` (C23 §7.19) — only `__bool_true_false_are_defined`,
+  as 1. `bool`, `true`, and `false` are keywords in C23 (§6.4.1), so
+  the header no longer defines them as macros, and including it
+  doesn't warn the way a `_Bool` does.
 - `apple2/monitor_io.h` — the Apple II Monitor ROM routines a program
   calls: `HOME`, `CLREOL`, `RDKEY`, `COUT`, `COUT1`, `WAIT`, `VTAB`,
   and `GETLN1` as `zp_abi` routines with `address`, each but the last

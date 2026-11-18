@@ -152,7 +152,7 @@ def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
     target's signedness — matches the runtime byte-level cast
     sequences in tac_to_asm (Truncate / SignExtend / ZeroExtend all
     boil down to this for compile-time-known integer values). A
-    `_Bool` target gets 0 or 1 instead (C99 §6.3.1.2)."""
+    `bool` target gets 0 or 1 instead (C99 §6.3.1.2)."""
     t = _strip_quals(t)
     if isinstance(t, c99_ast.Bool):
         return int(value != 0)
@@ -172,7 +172,8 @@ def _const_int_value(c: c99_ast.Type_const) -> int:
                       c99_ast.ConstLongLong,
                       c99_ast.ConstUInt, c99_ast.ConstULong,
                       c99_ast.ConstULongLong,
-                      c99_ast.ConstChar, c99_ast.ConstUChar)):
+                      c99_ast.ConstChar, c99_ast.ConstUChar,
+                      c99_ast.ConstBool)):
         return _coerce_to_integer_type(c.value, _const_type(c))
     raise ConstantExpressionError(
         f"floating constant {c!r} is not an integer constant"
@@ -197,6 +198,8 @@ def _const_type(c: c99_ast.Type_const) -> c99_ast.Type_data_type:
         return c99_ast.SChar()
     if isinstance(c, c99_ast.ConstUChar):
         return c99_ast.UChar()
+    if isinstance(c, c99_ast.ConstBool):
+        return c99_ast.Bool()
     raise ConstantExpressionError(
         f"non-integer constant {c!r} has no integer type"
     )

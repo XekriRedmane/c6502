@@ -284,15 +284,11 @@ class TestParse(unittest.TestCase):
              "underlying type can be declared before its constants"),
             ("enum E : int { A, A };", "declared again"),
             ("int A; enum E : int { A };", "declared again"),
-            # `packed` belongs to enums without a fixed type.
-            ("enum [[c6502::packed]] E : int { A };",
-             "`[[c6502::packed]]` can't go on an enum with a fixed "
-             "underlying type"),
+            # `packed` was removed in favor of the fixed type.
+            ("enum [[c6502::packed]] E : int { A };", "was removed"),
             ("enum [[c6502::packed]] E : int;", "`enum e : uint8_t"),
-            ("enum [[c6502::packed]] : unsigned char { A };",
-             "can't go on an enum with a fixed underlying type"),
             ("enum [[c6502::zeropage]] E : int;",
-             "takes `c6502::packed`"),
+             "`c6502::zeropage` doesn't apply to an enum"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaises(ParserError) as ctx:

@@ -554,8 +554,7 @@ Integers:
   <message>` without failing the compile.
 
 An enumerated type is `Int()` (C99 §6.7.2.2.4 lets it be compatible
-with `int`), or with `[[c6502::packed]]` `UChar()` / `SChar()`
-when its values fit, and an enumeration constant is an `int` constant.
+with `int`), and an enumeration constant is an `int` constant.
 With C23's fixed underlying type, `enum e : T`, the enumerated type
 and its constants are T. Neither reaches the AST; see "Enumerations"
 under Parser.
@@ -951,10 +950,12 @@ hides it, since every ordinary declaration goes in the parser's
 scopes. A value is folded like an array size (`_fold_integer_constant`)
 and must fit in an `int`.
 
-The specifier (`_EnumSpecifier`) resolves to `Int()`, or for an enum
-defined with `[[c6502::packed]]` (after `enum`) to the smallest of
-`UChar()`, `SChar()`, and `Int()` that holds its values
-(`_packed_enum_type`). `_TagHead` follows the tokens from `enum`,
+The specifier (`_EnumSpecifier`) resolves to `Int()`, or to the fixed
+underlying type. No c6502 attribute applies to an enum
+(`_no_enum_attributes`), and `[[c6502::packed]]`, which made an enum
+the smallest of `UChar()`, `SChar()`, and `Int()` that held its values,
+was removed on 19 Nov 2026 in favor of the fixed type. Using it is an
+error whose message points to `enum e : uint8_t`. `_TagHead` follows the tokens from `enum`,
 `struct`, or `union` to the body's `{`, so the lexer doesn't open a
 scope there, and it follows an enum's `: T` too, which is why the
 lexer retypes a typedef name before `_TagHead` sees the token. Enum
@@ -980,8 +981,7 @@ other than a bit-precise one or an enumerated one: a typedef name for
 an enum is marked `_Binding.enumerated`, and `enum_type_tag` takes
 `struct s`, `union u`, and `enum e` after the `:` only to report them.
 The qualifiers are dropped. A value, given or one more than the one
-before, that T can't hold is an error, and so is
-`[[c6502::packed]]`, whose message points to the fixed type.
+before, that T can't hold is an error.
 
 The `identifier` rule puts `_enum_constant(value, T)` in place of a
 use of a typed enum's constant: a `Constant` of T's own variant for
@@ -1034,8 +1034,8 @@ checks the standard ones against the kind of entity
 (`_STANDARD_ATTRIBUTES`), rejects a statement attribute on anything
 but a statement, and hands the c6502 ones to the per-kind
 helpers: `_extract_function_attributes`, `_extract_object_placement`,
-`_extract_section`, `_register_marker` (parameters), and
-`_enum_is_packed`. Of the standard ones only `noreturn` / `_Noreturn`
+`_extract_section`, and `_register_marker` (parameters), and
+`_no_enum_attributes` rejects any on an enum. Of the standard ones only `noreturn` / `_Noreturn`
 is kept, as `function_decl.noreturn` (`_is_noreturn`), which the type
 checker ORs into `FunAttr.noreturn` and every pass that rebuilds a
 `function_decl` copies. Attributes after a parameter list, `*`, `]`,

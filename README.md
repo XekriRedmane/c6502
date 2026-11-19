@@ -144,9 +144,9 @@ These parts work.
   declares the type, complete, before its constants, and a later
   definition must give the same type. That declaration has to stand
   alone, as C23 specifies, and a declaration or cast that names the
-  type afterward writes `enum kind`. It's the standard way to get a
-  one-byte enum, which `[[c6502::packed]]` gives without one, and the
-  two can't be combined.
+  type afterward writes `enum kind`. It's the way to get a one-byte
+  enum. c6502's `[[c6502::packed]]`, which did that before, is
+  removed.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.

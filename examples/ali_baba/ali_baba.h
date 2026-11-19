@@ -307,7 +307,7 @@ enum menu_init {
     ordinary routines that a menu option or a chain routine reaches by
     JMP, and run_chain() calls each of those and then stops.
 */
-enum [[c6502::packed]] chain_state {
+enum chain_state : uint8_t {
     CHAIN_RETURN = 0,
     /* turn.c */
     CHAIN_GAME_TURN_LOOP, CHAIN_MOVE_LOOP, CHAIN_END_TURN, CHAIN_TURN_DISPATCH,

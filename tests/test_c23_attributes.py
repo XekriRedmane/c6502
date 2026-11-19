@@ -70,9 +70,12 @@ class TestPlacement(unittest.TestCase):
         )
         self.assertEqual(d.param_registers, ["X", "Y", "A"])
 
-    def test_packed_enum(self) -> None:
-        d = _decl("enum [[c6502::packed]] e { A }; enum e v;")
-        self.assertEqual(d.data_type, c99_ast.UChar())
+    def test_packed_was_removed(self) -> None:
+        # C23's `enum e : uint8_t` took its place.
+        with self.assertRaises(ParserError) as ctx:
+            _decl("enum [[c6502::packed]] e { A }; enum e v;")
+        self.assertIn("`[[c6502::packed]]` was removed", str(ctx.exception))
+        self.assertIn("enum e : uint8_t", str(ctx.exception))
 
     def test_double_underscore_spelling(self) -> None:
         self.assertEqual(
@@ -155,8 +158,8 @@ class TestErrors(unittest.TestCase):
             ("[[fallthrough]];", "switch statement"),
             ("[[c6502::zp_abi]];", "attribute declaration"),
             ("[[c6502::zp_abi]] struct s;", "need a declarator"),
-            ("struct [[c6502::packed]] s { int a; };", "doesn't apply to a struct"),
-            ("enum e { A [[c6502::packed]] };", "enumeration constant"),
+            ("struct [[c6502::zp_abi]] s { int a; };", "doesn't apply to a struct"),
+            ("enum e { A [[c6502::zp_abi]] };", "enumeration constant"),
             ("struct s { int a [[c6502::zeropage]]; };", "member 'a'"),
             ("[[c6502::zeropage]] typedef int T;", "typedef 'T'"),
             ("__attribute__((zp_abi)) void f(void);", "C23 attributes"),

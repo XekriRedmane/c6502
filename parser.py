@@ -153,9 +153,8 @@ class _TypeofSpecifier(_TypedefSpecifier):
 # An enum type specifier, produced by the `enum_specifier`
 # transformer. Like a typedef name, it's a whole type on its own:
 # `int`, which C99 §6.7.2.2.4 lets an enumerated type be compatible
-# with, for a packed enum `unsigned char` or `signed char` when its
-# values fit (`_packed_enum_type`), and for an enum with a fixed
-# underlying type (C23 §6.7.3.3) that type. `defines` is true when it
+# with, or for an enum with a fixed underlying type (C23 §6.7.3.3)
+# that type. `defines` is true when it
 # has an enumerator list, which makes `enum e { A };` a declaration
 # that declares something.
 @dataclass
@@ -167,12 +166,11 @@ class _EnumSpecifier(_TypedefSpecifier):
 # The start of an enum definition, produced by the `enum_head`
 # transformer before the enumerators are parsed: the tag, the
 # underlying type given after a `:` (C23 §6.7.3.3) or None for an enum
-# without one, and whether `[[c6502::packed]]` is on it.
+# without one.
 @dataclass
 class _EnumHead:
     tag: str | None
     fixed: "c99_ast.Type_data_type | None"
-    packed: bool
 
 
 # An enum tag in one scope: the enum's type, whether the type was
@@ -269,8 +267,8 @@ class _Scope:
     def __init__(self):
         self.names: dict[str, _Binding] = {}
         self.tags: set[str] = set()
-        # Each enum tag's type (Int, a packed enum's smaller type, or a
-        # fixed underlying type) and how it was declared.
+        # Each enum tag's type (Int, or a fixed underlying type) and
+        # how it was declared.
         self.enum_tags: dict[str, _EnumTag] = {}
 
 
@@ -440,7 +438,7 @@ class _TagHead:
     """Follows the tokens from `struct`, `union`, or `enum` to the `{`
     of its body, if it has one, so the lexer knows that `{` doesn't
     start a block. In between there may be attributes and a tag, as in
-    `enum [[c6502::packed]] e {`, and after an enum's tag, a `:` and
+    `struct [[deprecated]] s {`, and after an enum's tag, a `:` and
     its underlying type (C23 §6.7.3.3), as in `enum e : const uint8_t
     {` or `enum : typeof(x) {`."""
 
@@ -1061,9 +1059,6 @@ def _consume_specifiers(items, start):
 # `section` — the linker section a function or object goes in
 #            (`section(".text.boot")`).
 #
-# `packed` — on an enum's definition, the smallest type that holds its
-#            values.
-#
 # `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` — the registers a
 #            parameter arrives in (`_register_marker`).
 #
@@ -1100,7 +1095,7 @@ _STATEMENT_ATTRIBUTES = {
 }
 _C6502_ATTRIBUTES = frozenset({
     "section", "zp_abi", "return_bool_in_carry", "zeropage", "address",
-    "preserves_x", "preserves_y", "packed", *_STATEMENT_ATTRIBUTES,
+    "preserves_x", "preserves_y", *_STATEMENT_ATTRIBUTES,
 })
 
 # The register each `preserves_*` attribute names.
@@ -2297,51 +2292,12 @@ def _adjust_param_type(t):
     return t
 
 
-def _enum_is_packed(
-    attrs: _Attributes | None, defines: bool, fixed: bool,
-) -> bool:
-    """Whether an enum specifier's attributes make it packed. `packed`,
-    with no argument, is the only c6502 attribute an enum takes, and
-    only where it's defined, on an enum without a fixed underlying
-    type (`fixed`)."""
-    packed = False
-    for name, arg in _c6502_attributes(attrs, "tag", "an enum") or []:
-        if name != "packed":
-            raise ParserError(
-                f"`c6502::{name}` doesn't apply to an enum; it takes "
-                f"`c6502::packed`"
-            )
-        if arg is not None:
-            raise ParserError(
-                "`[[c6502::packed]]` doesn't take an argument"
-            )
-        if packed:
-            raise ParserError("`c6502::packed` is given twice on an enum")
-        packed = True
-    if packed and fixed:
-        raise ParserError(
-            "`[[c6502::packed]]` can't go on an enum with a fixed "
-            "underlying type, since the type after the `:` sets the "
-            "enum's size. Leave the attribute out: C23's `enum e : "
-            "uint8_t { ... }` is the standard way to make an enum one "
-            "byte"
-        )
-    if packed and not defines:
-        raise ParserError(
-            "`[[c6502::packed]]` goes on an enum's definition, the one "
-            "with the list of constants"
-        )
-    return packed
-
-
-def _packed_enum_type(lowest: int, highest: int) -> c99_ast.Type_data_type:
-    """The type of a packed enum whose values run from `lowest` to
-    `highest`: the smallest that holds them all, as GCC picks it."""
-    if 0 <= lowest and highest <= 0xFF:
-        return c99_ast.UChar()
-    if -0x80 <= lowest and highest <= 0x7F:
-        return c99_ast.SChar()
-    return c99_ast.Int()
+def _no_enum_attributes(attrs: _Attributes | None) -> None:
+    """Checks that an enum specifier carries no c6502 attribute, since
+    none applies to an enum, and the standard ones that apply to a tag
+    pass through `_c6502_attributes`."""
+    for name, _arg in _c6502_attributes(attrs, "tag", "an enum") or []:
+        raise ParserError(f"`c6502::{name}` doesn't apply to an enum")
 
 
 # The types that can be an enum's fixed underlying type (C23
@@ -3138,11 +3094,11 @@ class _ASTBuilder(Transformer):
         tag = str(rest[0]) if rest and _is_token(rest[0], "IDENTIFIER") else None
         fixed = (rest[-1] if rest and not _is_token(rest[-1], "IDENTIFIER")
                  else None)
-        packed = _enum_is_packed(attrs, True, fixed is not None)
+        _no_enum_attributes(attrs)
         if fixed is not None and tag is not None:
             _declare_enum_tag(tag, fixed, fixed=True, defines=True)
         _CTX.enum_types.append(fixed)
-        return _EnumHead(tag=tag, fixed=fixed, packed=packed)
+        return _EnumHead(tag=tag, fixed=fixed)
 
     def enum_specifier(self, items):
         # items: [_EnumHead, LBRACE, enumerator_list, COMMA?, RBRACE]
@@ -3156,16 +3112,14 @@ class _ASTBuilder(Transformer):
             if head.fixed is not None:
                 data_type = copy.deepcopy(head.fixed)
             else:
-                _last, lowest, highest = items[2]
-                data_type = (_packed_enum_type(lowest, highest)
-                             if head.packed else c99_ast.Int())
+                data_type = c99_ast.Int()
                 if tag is not None:
                     _declare_enum_tag(tag, data_type, fixed=False,
                                       defines=True)
             defines = True
         else:
             attrs, i = _consume_attributes(items, 1)
-            _enum_is_packed(attrs, False, False)
+            _no_enum_attributes(attrs)
             tag = str(items[i])
             defines = False
             kind = _CTX.tag_is_enum(tag)
@@ -3194,7 +3148,7 @@ class _ASTBuilder(Transformer):
         # (§6.7.3.3). It declares the tag and leaves nothing in the
         # AST.
         attrs, i = _consume_attributes(items, 1)
-        _enum_is_packed(attrs, False, True)
+        _no_enum_attributes(attrs)
         tag, fixed = str(items[i]), items[i + 1]
         _declare_enum_tag(tag, fixed, fixed=True, defines=False)
         return []
@@ -3602,6 +3556,12 @@ class _ASTBuilder(Transformer):
         name = _normalized_attribute_name(items[2].value)
         if prefix != _C6502_PREFIX:
             return None
+        if name == "packed":
+            raise ParserError(
+                "`[[c6502::packed]]` was removed. C23's fixed underlying "
+                "type gives an enum its size: `enum e : uint8_t { ... }` "
+                "is one byte (C23 §6.7.3.3)"
+            )
         if not _is_c6502_attribute(name):
             raise ParserError(
                 f"unknown attribute `c6502::{name}`; c6502's attributes "

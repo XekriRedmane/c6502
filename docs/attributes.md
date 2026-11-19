@@ -36,7 +36,7 @@ void f [[c6502::zp_abi]] (void);
 
 A parameter's attributes go after its name, or in front of the
 parameter: `uint8_t n [[c6502::in_x]]` and `[[c6502::in_x]] uint8_t n`
-are the same. An enum's `packed` goes right after `enum`. The
+are the same. The
 [statement attributes](#statement-attributes) go in front of a
 statement, as in `[[c6502::unroll]] for (...)`.
 
@@ -76,7 +76,6 @@ arguments. Those arguments can't contain braces.
 | `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
 | `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a parameter | Names the register (or two, low byte first) the parameter arrives in. |
 | `zeropage(addr)` | a parameter that isn't `register` | Passes the argument in zero page at `addr`. |
-| `packed` | an enum's definition | Makes the enum one byte when its values fit. |
 | `section("name")` | a function, or an object with static storage | Puts it in a section of that name, for a linker script to place. |
 
 ### `zp_abi`
@@ -449,46 +448,25 @@ what the ROM listings show for each Monitor routine. A routine that
 returns an `int` can't be `preserves_x`, because the high byte of
 its result comes back in X.
 
-### `packed`
+### One-byte enums
 
 An enum's type is `int`, two bytes, which makes every variable,
 parameter, and struct member of that type cost two bytes and every
-operation on it two bytes' work. With `packed`, which does what GCC's
-`packed` does on an enum, the type is the smallest that holds the
-enum's values:
-
-| Values | Type |
-|---|---|
-| all in 0..255 | `unsigned char` |
-| all in -128..127, some negative | `signed char` |
-| anything else | `int` |
-
-```c
-typedef enum [[c6502::packed]] { IDLE, RUN, STOP } state;
-enum [[c6502::packed]] dir { LEFT = -1, NONE, RIGHT };
-
-struct actor { state s; enum dir d; uint8_t x; };   // 3 bytes
-```
-
-The attribute goes right after `enum` in the definition, not on a
-later `enum dir` that refers to it. GCC also took it after the closing
-`}`, but C23 has no place for an attribute there. The
-enumeration constants are still `int` constants, as C99 says, so
-`RUN + 1` is an `int`; storing one in a packed variable takes a
-byte.
-
-C23's standard way to the same size is a fixed underlying type,
-which needs no attribute and which other compilers read too:
+operation on it two bytes' work. C23's fixed underlying type gives an
+enum the size of the type after its `:`, and its constants that type
+too, so `sizeof RUN` is 1 here:
 
 ```c
 typedef enum : uint8_t { IDLE, RUN, STOP } state;
 enum dir : int8_t { LEFT = -1, NONE, RIGHT };
+
+struct actor { state s; enum dir d; uint8_t x; };   // 3 bytes
 ```
 
-With a fixed type the constants have that type as well, so `sizeof
-RUN` is 1, and a value the type can't hold is an error where `packed`
-would pick a wider type. `packed` can't go on an enum with a fixed
-type, since the type after the `:` sets the size.
+A value the type can't hold is an error. c6502 had an attribute for
+this, `[[c6502::packed]]`, which picked the smallest type that held an
+enum's values. It was removed on 19 Nov 2026, and using it is an error
+whose message points to the fixed type.
 
 ### `section("name")`
 
@@ -1004,8 +982,7 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | `return_bool_in_carry` on some declarations of a function but not all | A caller compiled without it would read A instead of the carry flag. |
 | `return_bool_in_carry` on a function returning a struct that isn't one value of 1 or 2 bytes followed by one `bool` | Only that shape fits in A, X, and the carry flag. |
 | `preserves_x` on a routine that returns a struct whose value is an `int` or `unsigned int` | The high byte of the value comes back in X. |
-| `packed` on `enum tag` without its list of constants | The definition sets the type, so a later use can't change it. |
-| `packed` on an enum with a fixed underlying type, `enum e : T` | The type after the `:` sets the size. Write the fixed type alone. |
+| `packed` on an enum | It was removed. `enum e : uint8_t { ... }` gives an enum one byte. |
 | `unroll` or `keep` before anything but a `for` loop, or both on one loop | They describe a `for` loop, and an unrolled loop leaves no loop to keep. |
 | `save_hardware_stack` before an `if`, a loop, or a block | It would cover the calls in the statements nested inside. |
 | `save_hardware_stack` on a statement or declaration without a call, or on a call that can't recurse | There's nothing for it to save around. |

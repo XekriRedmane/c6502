@@ -381,8 +381,8 @@ type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR |
 
 // Enumeration specifier (C99 §6.7.2.2): `enum tag { A, B = 5, C }`,
 // with or without the tag, or `enum tag` for one declared earlier.
-// The type is `int`, or with `[[c6502::packed]]` after `enum`, the
-// smallest type that holds the values.
+// The type is `int`, or with a fixed underlying type (below) that
+// type.
 // The parser declares each enumeration constant as its enumerator
 // reduces, which is before the next one's value is parsed, so
 // `enum { A, B = A + 1 }` works. `enumerator_list` is left-recursive

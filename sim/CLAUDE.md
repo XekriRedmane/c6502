@@ -82,7 +82,7 @@ MPU until the boot stub's BRK fires.
   64-bit and floating-point helpers), so every chapter test runs
   end-to-end.
 - The runtime helpers' 6502 code, which `build_runtime` assembles
-  at $E000, is in `runtime/helpers.py` (see runtime/CLAUDE.md).
+  at $E000, is in `rtlib/helpers.py` (see rtlib/CLAUDE.md).
 
 ## Notes
 

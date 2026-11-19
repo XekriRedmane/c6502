@@ -3,7 +3,7 @@ multiply, divide, and shift by a variable count (`mul16`, `sdivmod16`,
 `asl8`, and the rest), which the linker adds to a program as a C
 toolchain links routines from libgcc.
 
-The helpers are the `asm_ast` functions of `runtime/helpers.py`
+The helpers are the `asm_ast` functions of `rtlib/helpers.py`
 (`all_helper_functions`), the same code the simulator runs. When a
 program's objects name a helper that none of them defines and no
 `--defsym` gives, `library_object` writes that helper and every helper
@@ -41,7 +41,7 @@ LIBRARY_NAME = "runtime.o"
 def _functions() -> dict[str, asm_ast.Function]:
     """Each helper's function, by name, in the order
     `all_helper_functions` gives them."""
-    from runtime.helpers import all_helper_functions
+    from rtlib.helpers import all_helper_functions
     return {fn.name: fn for fn in all_helper_functions()}
 
 

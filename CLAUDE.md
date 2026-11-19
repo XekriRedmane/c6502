@@ -41,7 +41,7 @@ file holds the project overview and notes about root-level files
   ELF objects and executables, the assembler `compile.py -c` runs,
   relocation and relaxation, and the disassembler behind `nm.py` and
   `objdump.py`.
-- [runtime/CLAUDE.md](runtime/CLAUDE.md) — the runtime library, the
+- [rtlib/CLAUDE.md](rtlib/CLAUDE.md) — the runtime library, the
   6502 helpers that the linker adds to a program that calls them and
   that the simulator runs.
 - [sim/CLAUDE.md](sim/CLAUDE.md) — in-process 6502 simulator
@@ -390,7 +390,7 @@ Objects and linking:
   error unless `--defsym NAME=VALUE` gives it. User guide:
   [docs/linker_scripts.md](docs/linker_scripts.md).
 - The runtime helpers a program calls (`mul16`, `sdivmod16`, `asl8`,
-  and the rest with 6502 code in `runtime/helpers.py`) come from
+  and the rest with 6502 code in `rtlib/helpers.py`) come from
   the runtime library (`passes/runtime_library.py`), as routines come
   from libgcc. The linker takes each helper that some object names,
   that no object defines, and that no `--defsym` gives, and the

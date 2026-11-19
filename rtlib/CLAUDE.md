@@ -1,10 +1,12 @@
-# runtime/CLAUDE.md
+# rtlib/CLAUDE.md
 
 The runtime library: the 6502 helpers that compiled code calls for
 operations it doesn't do inline, such as `udivmod16` for a 16-bit
 division by a variable, or a multiply of two 16-bit values. They live
 here because every linked program takes them from here, and the
-simulator runs the same code.
+simulator runs the same code. The package isn't named `runtime`, since
+a script run from inside `sim/` would then find `sim/runtime.py` under
+that bare name and fail to import the package.
 
 - `helpers.py` — the helpers as `asm_ast.Function`s
   (`all_helper_functions`, and `ASM_IMPLEMENTED`, the names of those

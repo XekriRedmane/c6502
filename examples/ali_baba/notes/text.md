@@ -160,25 +160,26 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 |---|---:|---|---:|
 | NUM_TO_DECIMAL | 132 | num_to_decimal | 96 |
 | TEXT_RENDERER | 145 | render_stream, text_renderer, text_renderer_no_pause | 180 |
-| DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop, next_string | 158 |
-| SCROLL_STATUS_LINE | 21 | scroll_status_line | 25 |
+| DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop (next_string inlined) | 153 |
+| SCROLL_STATUS_LINE, SET_TEXT_WINDOW_SCROLL | 31 | scroll_status_line (set_text_window_scroll inlined) | 32 |
 | SET_CURSOR_ROW21, SET_TEXT_WINDOW_BOTTOM | 20 | the same and set_cursor_row | 24 |
 | PRINT_BOTTOM_CENTERED | 11 | print_bottom_centered | 11 |
 | PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 30 |
 | SET_INVERSE_VIDEO, PRINT_CTRL_N | 10 | the same | 10 |
-| SET_TEXT_WINDOW_WRAP, SET_TEXT_WINDOW_SCROLL | 20 | the same | 20 |
+| SET_TEXT_WINDOW_WRAP | 10 | set_text_window_wrap | 10 |
 | PRINT_CTRL_AB | 10 | print_ctrl_ab | 10 |
 | PRINT_STRING_AT_ADDR, PRINT_STRING | 22 | print_string | 38 |
 | SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 11 |
-| **Total code** | **553** | | **613** |
+| **Total code** | **553** | | **605** |
 
 The C's bytes are the symbol sizes of `nm.py -S text.o`. Before the
 rewrite into plain C on 18 Nov 2026, the unit was 668 bytes of code
 and 10 of data. It was 729 bytes after the rewrite, and 692 once c6502
 shared one call of `udivmod16` between a `/` and a `%` and divided a
 byte by 2 without `sdivmod16`. On 19 Nov 2026 it was 642, after the
-fixes listed under "Compiler bugs and gaps", and 613 once
-num_to_decimal used `__c6502_bin_to_bcd`. The linker adds
+fixes listed under "Compiler bugs and gaps", 613 once
+num_to_decimal used `__c6502_bin_to_bcd`, and 605 once c6502
+inlined next_string and set_text_window_scroll into their callers. The linker adds
 `bin16_to_bcd`'s 46 bytes to the program from the runtime library,
 where it added `udivmod16`'s 49 before.
 

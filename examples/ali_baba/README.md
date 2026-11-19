@@ -155,26 +155,26 @@ translates (the chunks of `main.asm` that `UNITS.md` gives it):
 
 | File | Original code | Original tables | C code | C data |
 |---|---:|---:|---:|---:|
-| `main.c` | 381 | 2 | 361 | 0 |
-| `init.c` | 972 | 355 | 834 | 362 |
-| `turn.c` | 616 | 6 | 1150 | 0 |
-| `input.c` | 1639 | 1313 | 1723 | 1256 |
-| `combat.c` | 2856 | 23 | 2957 | 0 |
-| `ai.c` | 1223 | 18 | 1374 | 27 |
-| `events.c` | 1542 | 8 | 1606 | 0 |
+| `main.c` | 381 | 2 | 347 | 0 |
+| `init.c` | 972 | 355 | 807 | 362 |
+| `turn.c` | 616 | 6 | 1111 | 0 |
+| `input.c` | 1639 | 1313 | 1680 | 1256 |
+| `combat.c` | 2856 | 23 | 2926 | 0 |
+| `ai.c` | 1223 | 18 | 1347 | 27 |
+| `events.c` | 1542 | 8 | 1591 | 0 |
 | `entities.c` | 1033 | 8 | 1017 | 0 |
-| `map.c` | 993 | 43 | 985 | 8 |
-| `display.c` | 399 | 0 | 446 | 0 |
-| `util.c` | 866 | 119 | 787 | 13 |
-| `text.c` | 553 | 8 | 613 | 0 |
+| `map.c` | 993 | 43 | 963 | 8 |
+| `display.c` | 399 | 0 | 437 | 0 |
+| `util.c` | 866 | 119 | 773 | 13 |
+| `text.c` | 553 | 8 | 605 | 0 |
 | `sound.c` | 337 | 64 | 437 | 0 |
-| `hrcg.c` | 1141 | 907 | 846 | 790 |
-| **Total** | **14551** | **2874** | **15136** | **2456** |
+| `hrcg.c` | 1141 | 907 | 825 | 790 |
+| **Total** | **14551** | **2874** | **14866** | **2456** |
 
 The C counts are the symbol sizes of each unit's `-c -O` object
 (`nm.py -S`), and they leave out the `__zp_init` the linker writes.
 The link also adds the runtime library's `bin16_to_bcd`, 46 bytes of
-code, which brings the C program's code to 15,182 bytes, 4.3% more
+code, which brings the C program's code to 14,912 bytes, 2.5% more
 than the original's. `hrcg.c` leaves out the HRCG's entry points and control
 characters that the game never uses.
 

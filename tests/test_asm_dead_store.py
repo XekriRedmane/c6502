@@ -443,6 +443,48 @@ class TestPrivateSlotNotReadThroughPointer(unittest.TestCase):
         self.assertEqual(out.count(instrs[1]), 2)
 
 
+class TestPointerInNumberedZeroPage(unittest.TestCase):
+    """A function without a private pool keeps a pointer in numbered
+    zero-page bytes, `ZP(addr)`. A load through it reads both bytes,
+    though the bytes the load reaches can't be in the pool. The
+    stores of a pointer an indirect call returned were dropped, and
+    `pick()[0]` read through whatever the bytes held."""
+
+    def test_stores_of_the_pointer_stay(self):
+        a = asm_ast.Reg(reg=asm_ast.A())
+        x = asm_ast.Reg(reg=asm_ast.X())
+        instrs = [
+            asm_ast.Mov(src=a, dst=asm_ast.ZP(address=0x80, offset=0),
+                        is_volatile=False),
+            asm_ast.Mov(src=x, dst=asm_ast.ZP(address=0x81, offset=0),
+                        is_volatile=False),
+            asm_ast.Mov(src=asm_ast.IndirectZp(address=0x80, offset=0),
+                        dst=a, is_volatile=False),
+            asm_ast.Mov(src=a, dst=asm_ast.ZP(address=0x80, offset=0),
+                        is_volatile=False),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _run(instrs)
+        self.assertEqual(out[:3], instrs[:3])
+
+    def test_runs(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp CLI not available")
+        from sim.harness import build_sim
+        src = """
+            unsigned char table[8] = {10, 20, 30, 40, 50, 60, 70, 80};
+            static unsigned char *last(void) { return &table[7]; }
+            static unsigned char *(*pick)(void) = last;
+            int main(void) { unsigned char *c = pick(); return *c; }
+        """
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(
+                    build_sim(src, optimize=optimize).run().return_int(), 80,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
 

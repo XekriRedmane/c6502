@@ -600,14 +600,19 @@ def _reads(
     operands) needs this to recognize that the indirect aliases the
     Data-form slot symbol the pointer was initialized through."""
     for op in _read_operands(instr):
-        if private and isinstance(op, _INDIRECT_KINDS):
-            # Only the pointer bytes can be `target`.
+        if isinstance(op, _INDIRECT_KINDS):
+            # An access through a pointer reads the pointer's bytes,
+            # which `_may_alias` doesn't count: it compares the
+            # bytes the access reaches, and a pointer can't reach
+            # the zero-page pool its own bytes may be in.
             if any(
                 _may_alias(p, target, zp_slot_symbols=zp_slot_symbols)
                 for p in _ptr_source_reads(op)
             ):
                 return True
-            continue
+            if private:
+                # Only the pointer bytes can be `target`.
+                continue
         if _may_alias(op, target, zp_slot_symbols=zp_slot_symbols):
             return True
     return False

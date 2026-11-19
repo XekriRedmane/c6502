@@ -16,6 +16,10 @@ add of `FP` and the local's offset, and every access is
 `LDY #off; LDA (FP),Y`. In a pool byte, `x` is named
 `__local_<function>__x`, `&x` is the pair of immediates `#<` and
 `#>` of that name, and an access is a 2-byte zero-page instruction.
+A second address-taken local with the same name, such as a second
+compound literal or an `x` declared again in an inner block, is
+`__local_<function>__x@2`, and a third is `@3`, so that each has
+bytes of its own.
 
 The pool has room because `compute_address_taken_bytes` in
 [passes/function_local_sizing.py](../../passes/function_local_sizing.py)

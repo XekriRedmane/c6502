@@ -363,9 +363,15 @@ init_declarator: declarator (ASSIGN initializer)?
 // may be empty (`{}`, C23's empty initializer), which default-
 // initializes the object as if it had static storage duration.
 // Items are themselves `initializer`, so nested braces initialize a
-// subaggregate, or a scalar (`{5}`, §6.7.11p12).
+// subaggregate, or a scalar (`{5}`, §6.7.11p12). An item may start
+// with designators (§6.7.11p1), as in `[2] = 5`, `.x = 1`, and
+// `.a[2].b = 7`.
 initializer: assignment_exp                                        -> init_exp
-           | LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> init_list
+           | LBRACE (init_item (COMMA init_item)* COMMA?)? RBRACE -> init_list
+?init_item: initializer
+          | designator+ ASSIGN initializer -> designation
+designator: LBRACKET constant_exp RBRACKET -> index_designator
+          | DOT IDENTIFIER                 -> member_designator
 function_decl: attribute_specifier_seq? decl_specs declarator block
 
 type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
@@ -616,8 +622,8 @@ constant_exp: conditional_exp
             | postfix_exp DOT IDENTIFIER        -> member_dot
             | postfix_exp ARROW IDENTIFIER      -> member_arrow
             | postfix_exp LPAREN arg_list? RPAREN -> function_call
-            | LPAREN type_name RPAREN LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> compound_literal
-            | LPAREN compound_literal_storage type_name RPAREN LBRACE (initializer (COMMA initializer)* COMMA?)? RBRACE -> compound_literal
+            | LPAREN type_name RPAREN LBRACE (init_item (COMMA init_item)* COMMA?)? RBRACE -> compound_literal
+            | LPAREN compound_literal_storage type_name RPAREN LBRACE (init_item (COMMA init_item)* COMMA?)? RBRACE -> compound_literal
             | atom
 
 // C23 lets a compound literal have storage-class specifiers (§6.5.3.6),

@@ -3362,6 +3362,43 @@ class _ASTBuilder(Transformer):
         ]
         return c99_ast.InitList(items=children)
 
+    # `designator+ ASSIGN initializer`, an item of a braced list with
+    # designators (C23 §6.7.11p1). The designators stay in source
+    # order, and passes/designators.py later works out which
+    # subobject they name.
+    def designation(self, items):
+        return c99_ast.Designation(
+            designators=list(items[:-2]), init=items[-1],
+        )
+
+    @v_args(inline=True)
+    def index_designator(self, _lbracket, index_exp, _rbracket):
+        # `[constant-expression]`. The index is an integer constant
+        # expression (C23 §6.7.11p6), folded here as an array size is,
+        # so an enumeration constant or a `constexpr` object works.
+        # Whether it's in range depends on the array's type, which
+        # passes/designators.py checks.
+        try:
+            index = _fold_integer_constant(index_exp)
+        except ParserError as e:
+            raise ParserError(
+                f"an array designator's index must be an integer "
+                f"constant expression (C23 §6.7.11p6): {e}"
+            ) from None
+        if index < 0:
+            raise ParserError(
+                f"an array designator's index is {index}, and it must "
+                f"not be negative (C23 §6.7.11p6)"
+            )
+        return c99_ast.IndexDesignator(index=index)
+
+    @v_args(inline=True)
+    def member_designator(self, _dot, name):
+        # `.identifier`. The struct or union it names a member of is
+        # known only once the list's type is, so passes/designators.py
+        # checks the name.
+        return c99_ast.MemberDesignator(member=str(name))
+
     def compound_literal(self, items):
         # `LPAREN type_name RPAREN LBRACE (initializer (COMMA
         # initializer)* COMMA?)? RBRACE`. The braces hold what a
@@ -3406,7 +3443,9 @@ class _ASTBuilder(Transformer):
                 init = c99_ast.InitList(items=inits)
         elif isinstance(core, (c99_ast.Structure, c99_ast.Union)):
             init = c99_ast.InitList(items=inits)
-        elif len(inits) == 1 and not isinstance(inits[0], c99_ast.InitList):
+        elif len(inits) == 1 and not isinstance(
+            inits[0], (c99_ast.InitList, c99_ast.Designation),
+        ):
             init = inits[0]
         else:
             init = c99_ast.InitList(items=inits)

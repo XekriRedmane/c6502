@@ -69,7 +69,7 @@ is why it isn't a box of its own.
 |---|---|---|
 | Preprocessing | `preprocessor.py` | pcpp's Python API. `include/` is on the search path. Flags `compile.py` doesn't know are passed to it. In `#if`, `true` is 1 and `false` is 0, as in C23, and each `_Bool` gets a warning (`diagnostics.py`). |
 | Parsing | `parser.py`, `c99.lark`, `lexer.py` | LALR, with the AST built as each rule reduces, so that `typedef` names are known while parsing. See "Parser" in [../CLAUDE.md](../CLAUDE.md). |
-| Name resolution | `passes/identifier_resolution.py`, `string_lifting.py`, `label_resolution.py`, `loop_labeling.py` | [../passes/CLAUDE.md](../passes/CLAUDE.md), passes 2 to 5 |
+| Name resolution | `passes/identifier_resolution.py`, `string_lifting.py`, `label_resolution.py`, `loop_labeling.py` | [../passes/CLAUDE.md](../passes/CLAUDE.md), passes 2 to 5. string_lifting first rewrites designated initializers into positional lists (`passes/designators.py`). |
 | Type checking | `passes/type_checking.py` | Promotions, conversions, and the symbol table. [../passes/CLAUDE.md](../passes/CLAUDE.md), pass 6 |
 | Translation to TAC | `c99_to_tac.py` | The module docstring maps each C construct to TAC. |
 | Translation to asm | `tac_to_asm.py` | The module docstring gives each lowering and each helper's layout. |
@@ -182,7 +182,7 @@ have, usually `@`, so they never collide with the program's names.
 | `name.k` | `@0.total.2` | the TAC optimizer's SSA versions, some of which are left after SSA destruction |
 | `name.bB.vN` | `@0.total.2.b0.v1` | the asm optimizer's SSA version `N` of byte `B` |
 | `__zpabi_fn__param` | `__zpabi_lt__b_0` | `passes/abi_selection.py`, a zp_abi parameter's slot, with `_k` for byte `k` of a wider one |
-| `__local_fn__var` | `__local_sum__total` | `passes/zp_slot_naming.py`, a byte of a function's private pool, `__local_fn__N` for a temporary |
+| `__local_fn__var` | `__local_sum__total` | `passes/zp_slot_naming.py`, a byte of a function's private pool, `__local_fn__N` for a temporary. `passes/address_taken_zp.py` adds `@2`, `@3`, and so on to an address-taken local whose name an earlier one has, such as a second compound literal. |
 | `fn@ret`, `fn@tailN`, `fn@runN` | `sum@run0` | `return_in_zero_page.py`, `shared_tails.py`, and `outline_runs.py` |
 
 Labels that start with `.` are local to the function's `SUBROUTINE`

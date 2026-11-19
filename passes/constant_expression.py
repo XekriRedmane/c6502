@@ -647,6 +647,9 @@ def validate_constant_expression(exp: c99_ast.Type_exp) -> None:
             for it in items:
                 validate_constant_expression(it)
             return
+        case c99_ast.Designation(init=init):
+            validate_constant_expression(init)
+            return
     raise ConstantExpressionError(
         f"unexpected expression in constant-expression validation: {exp!r}"
     )

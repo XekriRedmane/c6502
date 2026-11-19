@@ -42,6 +42,7 @@ from the file-scope decl list.
 from __future__ import annotations
 
 import c99_ast
+from passes.designators import normalize_initializer
 
 
 class StringLifter:
@@ -54,8 +55,8 @@ class StringLifter:
     def __init__(self) -> None:
         self._counter = 0
         self._lifted: list[c99_ast.Type_declaration] = []
-        # Map of resolved struct/union tag → member types in
-        # declaration order. Used by `_lift_init` to dispatch each
+        # Map of resolved struct/union tag → `(name, type)` of each
+        # member in declaration order. Used by `_lift_init` to dispatch each
         # item of a struct/union InitList to its corresponding
         # member type, so a String going to a non-char-array
         # member (e.g. `char *msg`) gets lifted while one going to
@@ -99,15 +100,19 @@ class StringLifter:
             sd = decl.struct_decl
             if sd.members:
                 self._struct_members[sd.tag] = [
-                    m.data_type for m in sd.members
+                    (m.name, m.data_type) for m in sd.members
                 ]
             return decl
         raise TypeError(f"unexpected declaration: {decl!r}")
 
     def _lift_var_decl(self, vd):
         """Lift any String *inside* the init, except the direct-
-        char-array-init case. Pass other fields through unchanged."""
-        new_init = self._lift_init(vd.init, vd.data_type)
+        char-array-init case. Pass other fields through unchanged.
+        A list with designators is first rewritten into positional
+        form (passes/designators.py), so each item lines up with the
+        subobject it initializes."""
+        init = self._normalize(vd.init, vd.data_type, _display_name(vd.name))
+        new_init = self._lift_init(init, vd.data_type)
         if new_init is vd.init:
             return vd
         return c99_ast.Type_var_decl(
@@ -117,6 +122,13 @@ class StringLifter:
             placement=vd.placement,
             section=vd.section,
             is_constexpr=vd.is_constexpr,
+        )
+
+    def _normalize(self, init, declared_type, what: str | None):
+        """Returns `init` with its designations rewritten into
+        positional form, for an object of type `declared_type`."""
+        return normalize_initializer(
+            init, declared_type, self._struct_members.get, what,
         )
 
     def _lift_init(self, init, declared_type):
@@ -170,6 +182,7 @@ class StringLifter:
             ]
             return c99_ast.InitList(
                 items=new_items, data_type=init.data_type,
+                union_member=init.union_member,
             )
         if (
             isinstance(init, c99_ast.InitList)
@@ -192,16 +205,21 @@ class StringLifter:
             if members is not None and isinstance(
                 declared_type, c99_ast.Union,
             ):
-                members = members[:1]
+                # A designator may have chosen another member.
+                members = [
+                    m for m in members
+                    if m[0] == init.union_member
+                ] or members[:1]
             new_items = []
             for i, it in enumerate(init.items):
                 m_type = (
-                    members[i] if members is not None and i < len(members)
+                    members[i][1] if members is not None and i < len(members)
                     else None
                 )
                 new_items.append(self._lift_init(it, m_type))
             return c99_ast.InitList(
                 items=new_items, data_type=init.data_type,
+                union_member=init.union_member,
             )
         if isinstance(init, c99_ast.InitList) and declared_type is None:
             # Aggregate-init item that we don't have type info for
@@ -217,6 +235,7 @@ class StringLifter:
                     new_items.append(self._lift_exp(it))
             return c99_ast.InitList(
                 items=new_items, data_type=init.data_type,
+                union_member=init.union_member,
             )
         return self._lift_exp(init)
 
@@ -440,7 +459,14 @@ class StringLifter:
             case c99_ast.InitList(items=items, data_type=dt):
                 return c99_ast.InitList(
                     items=[self._lift_exp(it) for it in items],
-                    data_type=dt,
+                    data_type=dt, union_member=exp.union_member,
+                )
+            case c99_ast.Designation(designators=ds, init=init):
+                # Only a list of a type the lifter couldn't work out
+                # keeps a designation, and the type checker rejects
+                # that list.
+                return c99_ast.Designation(
+                    designators=ds, init=self._lift_exp(init),
                 )
             case c99_ast.SizeOfExp(exp=inner, data_type=dt):
                 # The inner expression is type-checked but not
@@ -457,6 +483,7 @@ class StringLifter:
             ):
                 # The initializer lifts as a declaration's of type
                 # `t` would, so `(char[]){"abc"}` keeps its String.
+                init = self._normalize(init, t, None)
                 return c99_ast.CompoundLiteral(
                     name=name, target_type=t,
                     init=self._lift_init(init, t), data_type=dt,
@@ -527,3 +554,11 @@ def lift_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:
     the new file-scope statics prepended to the program's
     declaration list."""
     return StringLifter().lift_program(prog)
+
+
+def _display_name(name: str) -> str:
+    """`name` as the program spelled it. identifier_resolution renames
+    a block-scope object `x` to `@N.x`."""
+    if name.startswith("@") and "." in name:
+        return name.split(".", 1)[1]
+    return name

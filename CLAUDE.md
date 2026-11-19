@@ -767,7 +767,29 @@ notes that aren't visible from the grammar alone:
   `promoted_type` filled by the type checker.
 - An initializer in braces is an `InitList` whatever the declared
   type, and C23's empty initializer `{}` (§6.7.11) is one with no
-  items. The type checker gives a scalar's braces their meaning
+  items. An item may be a `Designation(designators, init)`, from
+  `[k] = v`, `.m = v`, or a chain such as `.a[2].b = v` (C23
+  §6.7.11p1). The parser folds each array designator's index as it
+  folds an array size, so an enumeration constant or a `constexpr`
+  object works there, and rejects a negative one.
+  `passes/designators.py` rewrites a list with designations into one
+  item per subobject in order, with `{}` for each subobject it leaves
+  out, before any other initializer processing. string_lifting does
+  that for the whole program, and the type checker does it again for
+  the lists the parser folds. A union's list then holds one item, and
+  `InitList.union_member` names the member it initializes (None for
+  the first). A static union whose member isn't the first has a
+  `UnionValue` value tree, and both a static and an automatic one
+  have zero in the bytes past the member. A later initializer of a
+  subobject overrides an earlier one (§6.7.11p19), a designation into
+  a subaggregate overrides only the part it names, and an array of
+  unknown size takes its size from the largest index (§6.7.11p22).
+  An overridden initializer isn't evaluated, and one with an
+  assignment, `++`, `--`, or a call is an error. A positional item
+  after a chain of designators would need brace elision, which c6502
+  doesn't have, so it's an error that says to brace the
+  subaggregate. A designator that doesn't fit the type, an index past
+  the end, and a designator in a scalar's braces are errors too. The type checker gives a scalar's braces their meaning
   (`_unbrace_scalar_init`): `{e}` and `{e,}` are `e`, `{}` is a zero
   of the scalar's type (`_empty_init_zero`), and two items or a
   second pair of braces are errors (§6.7.11p12). This applies to a
@@ -1203,7 +1225,13 @@ in `sim/` cover all of these so simulation-based tests still pass.
 - Some C99 init-list shapes rejected: scalar init for an array,
   too many initializers, the C99 subaggregate flat form (`int
   a[2][3] = {1,2,3,4,5,6};`), and a member or element of struct type
-  initialized by an expression.
+  initialized by an expression. Brace elision is missing with
+  designators too, so a positional item after `.a.x = 1` and a scalar
+  for an aggregate (`[0] = 1` for an element of type `int[2]`) are
+  rejected, as is a designator that overrides part of a subobject an
+  expression or a string literal initializes. An overridden
+  initializer with side effects is rejected, and a read of a
+  volatile object in an overridden one isn't evaluated.
 - Variable-length arrays aren't supported. An array size must be
   an integer constant expression, which the parser folds through
   the type checker and `passes.constant_expression` (the same folder

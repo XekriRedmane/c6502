@@ -1167,6 +1167,15 @@ class Resolver:
                 # naturally handles both shapes.
                 return c99_ast.InitList(
                     items=[self.resolve_exp(it, scope) for it in items],
+                    union_member=exp.union_member,
+                )
+            case c99_ast.Designation(designators=ds, init=init):
+                # `[2] = v` or `.x = v` in a braced list. The parser
+                # has folded each index, and a member name is looked
+                # up in the struct or union by passes/designators.py,
+                # so only the initializer has names to resolve.
+                return c99_ast.Designation(
+                    designators=ds, init=self.resolve_exp(init, scope),
                 )
             case c99_ast.SizeOfExp(exp=inner):
                 # `sizeof e` — even though sizeof's operand is not

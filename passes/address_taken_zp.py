@@ -204,14 +204,25 @@ def slot_symbols(
     source identifier recovered via `parse_pseudo_name`. For
     multi-byte address-taken locals, each byte gets a trailing
     `_<k>` suffix; the caller is expected to append the byte
-    offset when resolving sub-byte refs."""
+    offset when resolving sub-byte refs.
+
+    Two locals of one function can have the same source name, as two
+    compound literals (`@3.compound_literal`, `@5.compound_literal`)
+    or a name declared again in an inner block do. The second gets
+    `@2` after its name, the third `@3`, and so on, since the bytes
+    are distinct and `@` can't occur in a C identifier."""
     from passes.zp_slot_naming import parse_pseudo_name
     out: dict[str, str] = {}
+    used: dict[str, int] = {}
     for pname in assignments:
         source, _ = parse_pseudo_name(pname)
         if source is None:
             # Compiler temp — synthesize a deterministic name.
             out[pname] = f"__local_{fn_name}__addr_{pname}"
-        else:
-            out[pname] = f"__local_{fn_name}__{source}"
+            continue
+        name = f"__local_{fn_name}__{source}"
+        used[name] = used.get(name, 0) + 1
+        if used[name] > 1:
+            name = f"{name}@{used[name]}"
+        out[pname] = name
     return out

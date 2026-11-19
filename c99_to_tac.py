@@ -398,6 +398,7 @@ from passes.type_checking import (
     Symbol,
     SymbolTable,
     Tentative,
+    UnionValue,
 )
 
 
@@ -1291,6 +1292,10 @@ def _flat_static_init_raw(
             if isinstance(t, c99_ast.Union)
             else layout.members
         )
+        if isinstance(value, UnionValue):
+            # A designator initialized a member other than the first.
+            members = [layout.members[value.member]]
+            value = (value.value,)
         out: list[tac_ast.Type_static_init] = []
         for i, m in enumerate(members):
             elem_value = (
@@ -3624,8 +3629,9 @@ class Translator:
         and the zero bytes it leaves: the subobjects the list doesn't
         initialize, which C23 §6.7.11p20 subjects to default
         initialization (zero, or a null pointer, which is zero bytes
-        here), the explicit zero constants, and a default-initialized
-        union's bytes past its first member. Adjacent zero bytes are
+        here), the explicit zero constants, and a union's bytes past
+        its member when it's default-initialized or its list has a
+        designator. Adjacent zero bytes are
         merged into one run, and `_emit_zero_bytes` clears each run.
         So `struct s v = {};`, C23's empty initializer, and
         `struct s v = {0};` both clear the object as one run. The
@@ -3699,8 +3705,11 @@ class Translator:
         padding in c6502, since nothing is aligned, but a union is as
         big as its biggest member. A default-initialized union is
         zero in all its bytes, since §6.7.11p11 zeroes its padding.
-        A union initialized by a list leaves the bytes past its first
-        member alone, since their value is unspecified then."""
+        A union initialized by a list without a designator leaves the
+        bytes past its first member alone, since their value is
+        unspecified then. A union whose list has a designator
+        (`InitList.union_member`) gets zero in the bytes past the
+        member it initializes, as a static one does."""
         t_unq = _unqualified(t)
         if isinstance(t_unq, c99_ast.Array):
             elem = t_unq.element_type
@@ -3732,13 +3741,20 @@ class Translator:
                 raise TypeError(f"incomplete struct/union {t_unq!r}")
             is_union = isinstance(t_unq, c99_ast.Union)
             members = layout.members[:1] if is_union else layout.members
+            chosen = (
+                init.union_member
+                if is_union and isinstance(init, c99_ast.InitList)
+                else None
+            )
+            if chosen is not None:
+                members = [m for m in layout.members if m.name == chosen]
             items = init.items if isinstance(init, c99_ast.InitList) else []
             for i, m in enumerate(members):
                 self._init_leaves(
                     m.type, items[i] if i < len(items) else None,
                     offset + m.byte_offset, out,
                 )
-            if is_union and not items:
+            if is_union and (not items or chosen is not None):
                 first = (
                     _sizeof(members[0].type, self._types) if members else 0
                 )

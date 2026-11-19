@@ -53,6 +53,24 @@ These parts work.
   bytes and by a loop otherwise. An array of unknown size can't be
   initialized by `{}`, as C23 specifies. A scalar's initializer may
   also be in braces, as in `int x = {5};`, which C99 allowed too.
+- Designated initializers (C99 §6.7.8, C23 §6.7.11) work in every
+  braced list, as in `int a[8] = {[2] = 1, [5] = 4, 5};`, `struct p q
+  = {.y = 2, .x = 1};`, and `struct s v = {.pt[1].y = 7};`. An index
+  is an integer constant expression, so an enumeration constant or a
+  `constexpr` object can name it. An item without a designator
+  initializes the subobject after the one the last designator before
+  it named, and an array of unknown size is as long as its largest
+  index plus one. A later initializer of a subobject replaces an
+  earlier one, and a designator that reaches inside a subaggregate
+  replaces only the part it names. `union u x = {.l = 5};`
+  initializes the member `l`, and the union's other bytes are zero.
+  The compiler never evaluates an initializer that a later one
+  replaces, and it rejects one that assigns, increments, decrements,
+  or calls a function, since C leaves it unspecified whether those
+  side effects happen. c6502 has no brace elision, so an item
+  without a designator can't follow a chain such as `.pt[1].y = 7`,
+  which would continue inside `pt[1]`. The error says to put that
+  subaggregate's initializers in braces.
 - C23's binary constants, such as `0b1010'0101`, and digit
   separators, such as `1'000'000` and `0xFF'FF`, work in C and in
   `#if`. A separator anywhere but between two digits is an error
@@ -146,11 +164,13 @@ These parts are missing.
   `long double` and hexadecimal floating constants are rejected, and
   `==` on `float` or `double` compares bit patterns, so `0.0 == -0.0`
   is false.
-- Variadic functions, bit-fields, designated initializers,
-  variable-length arrays, `inline`, and `_Complex` are rejected. So
-  are a few initializer forms, such as the flat list for a nested
-  array (`int a[2][3] = {1, 2, 3, 4, 5, 6};`) and a struct member
-  initialized by an expression of struct type.
+- Variadic functions, bit-fields, variable-length arrays, `inline`,
+  and `_Complex` are rejected. So are a few initializer forms, such
+  as the flat list for a nested array (`int a[2][3] = {1, 2, 3, 4, 5,
+  6};`) and a struct member initialized by an expression of struct
+  type. Designated initializers work, but without brace elision, so
+  an item without a designator can't follow a chain such as `.a.x =
+  1`, and an overridden initializer with side effects is rejected.
 
 ## Installation
 

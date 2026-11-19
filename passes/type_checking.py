@@ -119,6 +119,7 @@ from passes.constant_expression import (
     named_constant,
     named_constants,
 )
+from passes.designators import normalize_initializer
 from passes.identifier_resolution import Linkage
 from passes import stdbit_functions
 
@@ -295,8 +296,21 @@ class Initial(InitialValue):
     or a nested tuple for nested arrays. Missing trailing entries
     in the source initializer have already been padded with
     typed-zero by the type-check (so codegen sees a complete
-    tuple of size `arr.size`)."""
-    value: int | float | AddressInit | tuple
+    tuple of size `arr.size`). A struct's is a tuple with one entry
+    per member, and a union's is a tuple holding its first member's
+    value, or a `UnionValue` when a designator initializes another
+    member."""
+    value: "int | float | AddressInit | tuple | UnionValue"
+
+
+@dataclass(frozen=True)
+class UnionValue:
+    """The value tree of a union whose initializer sets a member other
+    than the first, as `{.b = 5}` does. `member` is the member's index
+    in the union's layout, and `value` is that member's value tree.
+    The union's bytes past the member are zero."""
+    member: int
+    value: object
 
 
 @dataclass(frozen=True)
@@ -1130,7 +1144,18 @@ def _const_init_aggregate(
         if isinstance(var_type, Union):
             # Per C99 §6.7.8.16, only the first named member of a
             # union is initialized when the initializer list isn't
-            # a designated one. We accept at most one item.
+            # a designated one. We accept at most one item. A
+            # designator may choose another member.
+            k = _union_member_index(layout, init)
+            if k:
+                value = (
+                    _const_init_aggregate(
+                        init.items[0], layout.members[k].type, name,
+                        symbols, types,
+                    ) if init.items
+                    else _zero_aggregate(layout.members[k].type, types)
+                )
+                return UnionValue(member=k, value=value)
             members = layout.members[:1]
         else:
             members = layout.members
@@ -1144,6 +1169,21 @@ def _const_init_aggregate(
                 items.append(_zero_aggregate(m.type, types))
         return tuple(items)
     return _const_init_value(init, scalar_type, name, symbols, types)
+
+
+def _union_member_index(layout: "StructLayout", init) -> int:
+    """Returns the index in `layout` of the union member that the list
+    `init` initializes: the one `init.union_member` names, or the first
+    member when it names none."""
+    name = getattr(init, "union_member", None)
+    if name is None:
+        return 0
+    for k, m in enumerate(layout.members):
+        if m.name == name:
+            return k
+    raise TypeCheckError(
+        f"union '{layout.tag}' has no member named {name!r}"
+    )
 
 
 def _types_equal(a: Type, b: Type) -> bool:
@@ -2698,6 +2738,8 @@ class TypeChecker:
             # A file-scope constexpr object has internal linkage
             # (C23 §6.2.2p3).
             vd.storage_class = c99_ast.Static()
+        vd.init = self._normalize_init(vd.init, vd.data_type, vd.name)
+        if vd.is_constexpr:
             self._begin_constexpr(vd)
         self._check_file_scope_var_body(vd)
         if vd.is_constexpr:
@@ -3544,9 +3586,27 @@ class TypeChecker:
                 return
         raise TypeError(f"unexpected declaration: {decl!r}")
 
+    def _normalize_init(self, init, t: Type, name: str | None):
+        """Returns the initializer `init` of the object `name` of type
+        `t` with its designations rewritten into positional form
+        (passes/designators.py). `name` is None for a compound
+        literal. string_lifting has done that for a
+        whole program, so this matters for the lists the parser checks
+        while folding a `constexpr` object."""
+        def layout_of(tag: str):
+            layout = self.types.get(tag)
+            if layout is None or not layout.complete:
+                return None
+            return [(m.name, m.type) for m in layout.members]
+        return normalize_initializer(
+            init, t, layout_of,
+            None if name is None else _display_name(name),
+        )
+
     def _check_block_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
+        vd.init = self._normalize_init(vd.init, vd.data_type, vd.name)
         if vd.is_constexpr:
             self._begin_constexpr(vd)
         self._check_block_var_body(vd)
@@ -3827,6 +3887,16 @@ class TypeChecker:
         layout = self.types.get(st.tag)
         if layout is None:
             return None
+        if isinstance(value, UnionValue):
+            # A designator initialized this member of the union.
+            member = layout.members[value.member]
+            if member.name != exp.member:
+                raise ConstantExpressionError(
+                    f"member {exp.member!r} of a union constant isn't "
+                    f"the member its initializer sets, and only that one "
+                    f"is a constant (C23 §6.6p16)"
+                )
+            return member.type, value.value
         for i, m in enumerate(layout.members):
             if m.name != exp.member:
                 continue
@@ -3903,6 +3973,8 @@ class TypeChecker:
         """Whether the value tree `value` holds an address."""
         if isinstance(value, AddressInit):
             return True
+        if isinstance(value, UnionValue):
+            return TypeChecker._has_address(value.value)
         if isinstance(value, tuple):
             return any(TypeChecker._has_address(v) for v in value)
         return False
@@ -3950,7 +4022,11 @@ class TypeChecker:
             layout = self.types.get(st.tag)
             if not isinstance(init, c99_ast.InitList) or layout is None:
                 return
-            members = layout.members[:1] if isinstance(st, Union) else layout.members
+            if isinstance(st, Union):
+                k = _union_member_index(layout, init)
+                members = layout.members[k:k + 1]
+            else:
+                members = layout.members
             for item, m in zip(init.items, members):
                 self._check_constexpr_init(item, m.type, name)
             return
@@ -4042,6 +4118,7 @@ class TypeChecker:
         be constant (§6.5.2.5.3). An array of unknown size takes its
         size from the initializer, as `int a[] = {1, 2};` would
         (§6.7.8.22)."""
+        exp.init = self._normalize_init(exp.init, exp.target_type, None)
         t = _size_from_initializer(
             exp.target_type, exp.init, "the compound literal's array",
         )
@@ -4124,8 +4201,10 @@ class TypeChecker:
         if isinstance(struct_type, Union):
             # Per C99 §6.7.8.16, a non-designated initializer for a
             # union initializes the *first named member*. At most
-            # one item permitted.
-            members = layout.members[:1]
+            # one item permitted. A designator may have chosen
+            # another member, which `init.union_member` names.
+            k = _union_member_index(layout, init)
+            members = layout.members[k:k + 1]
             if len(init.items) > 1:
                 raise TypeCheckError(
                     f"too many initializers for union {var_name!r}: "
@@ -4516,6 +4595,9 @@ class TypeChecker:
                 # class specifiers on every declarator, so each is
                 # plain `T <name> = <exp>;` and lands as a LocalAttr.
                 for vd in vds:
+                    vd.init = self._normalize_init(
+                        vd.init, vd.data_type, vd.name,
+                    )
                     vd.data_type = _size_from_initializer(
                         vd.data_type, vd.init,
                         f"array {_display_name(vd.name)!r}",
@@ -5772,6 +5854,11 @@ class TypeChecker:
                 raise TypeCheckError(
                     "brace-enclosed initializer (`{...}`) is only "
                     "valid as a variable initializer for an array"
+                )
+            case c99_ast.Designation():
+                raise TypeCheckError(
+                    "a designator such as `[2] =` or `.x =` goes only "
+                    "in front of an item of a braced initializer"
                 )
             case c99_ast.SizeOfExp(exp=inner):
                 # Type-check the inner expression to populate its

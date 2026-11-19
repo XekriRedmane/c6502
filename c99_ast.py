@@ -517,6 +517,13 @@ class Subscript(Type_exp):
 class InitList(Type_exp):
     items: list[Type_exp] = field(default_factory=list)
     data_type: Type_data_type | None = None
+    union_member: str | None = None
+
+
+@dataclass(kw_only=True)
+class Designation(Type_exp):
+    designators: list[Type_designator] = field(default_factory=list)
+    init: Type_exp
 
 
 @dataclass
@@ -560,6 +567,21 @@ class CompoundLiteral(Type_exp):
     data_type: Type_data_type | None = None
     storage_class: Type_storage_class | None = None
     is_constexpr: bool = False
+
+
+@dataclass
+class Type_designator:
+    pass
+
+
+@dataclass
+class IndexDesignator(Type_designator):
+    index: int = 0
+
+
+@dataclass
+class MemberDesignator(Type_designator):
+    member: str = ''
 
 
 @dataclass

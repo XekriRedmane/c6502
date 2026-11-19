@@ -134,6 +134,23 @@ this directory:
   `CLC` (`SEC`) and `LDA; ADC (SBC); STA` per byte, a `CLD` ends it,
   and no `CLD` or unclosed `SED` is anywhere else
   (`decimal_region_problems`).
+- `designators.py` — `normalize_initializer`, which rewrites a braced
+  list with designators (`[2] = v`, `.x = v`, `.a[2].b = v`, C23
+  §6.7.11) into the positional form every later pass handles: one
+  item per subobject in order, `{}` for each subobject nothing
+  initializes, and for a union one item with `InitList.union_member`
+  naming the member. string_lifting calls it for every declaration
+  and compound literal, and the type checker calls it again for the
+  lists the parser checks while folding a `constexpr` object. A
+  later initializer of a subobject overrides an earlier one, and a
+  later designation into a subaggregate overrides only the part it
+  names. An overridden initializer is never evaluated, and one with
+  an assignment, an increment or decrement, or a call is an error,
+  since C leaves it unspecified whether its side effects happen
+  (§6.7.11p19). A positional item after a chain of designators would
+  continue inside a subaggregate, which takes brace elision, and is
+  an error that says to brace the subaggregate. The module docstring
+  has an example and the rest of the rules.
 - `decimal_arith.py` — the reads, writes, and operand forms of asm
   `DecimalArith`, the one instruction a packed BCD add or subtract
   (`__c6502_bcd_add` / `__c6502_bcd_sub`) stays as until
@@ -863,6 +880,13 @@ character (`.`) and don't get re-renamed; runs BEFORE
 label_resolution / loop_labeling / type_checking so those passes see
 the rewritten AST.
 
+Each item of a braced list goes to the subobject it initializes, so a
+string for a `char[N]` member stays inline and one for a `char *`
+member is lifted. A list with designators is first rewritten into
+positional form by `designators.normalize_initializer`, using the
+`(name, type)` of each member of the struct and union bodies seen so
+far, so no pass after this one sees a `Designation`.
+
 ## Pass 4: `label_resolution.resolve_program`
 
 `c99_ast` → `c99_ast`. Validates labeled statements (C99 §6.8.1) and
@@ -941,7 +965,12 @@ structural via `@dataclass`. Each `Symbol` carries a `type` plus an
 - `StaticAttr(initial_value, is_global)` — every file-scope object
   plus block-scope `static`. `initial_value` is one of `Initial(c)`,
   `Tentative`, or `NoInitializer` per C99 §6.9.2. `Initial.value` is
-  `int` for integer types and `float` for floating types.
+  `int` for integer types and `float` for floating types. An array's
+  or struct's is a tuple of the value trees of its elements or
+  members, and a union's is a tuple holding its first member's, or a
+  `UnionValue(member, value)` when a designator initializes another
+  member (`InitList.union_member`). `_flat_static_init_raw` in
+  c99_to_tac lays the member down and zeroes the rest of the union.
 - `FunAttr(defined, is_global)` — a function name. `defined` flips
   True the first time a definition is seen.
 

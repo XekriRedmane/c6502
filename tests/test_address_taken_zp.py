@@ -173,6 +173,21 @@ class TestSlotSymbols(unittest.TestCase):
         )
         self.assertEqual(out, {"%5": "__local_caller__addr_%5"})
 
+    def test_same_source_name_gets_a_suffix(self):
+        # Two compound literals in one function have the source name
+        # `compound_literal`. Before the suffix, both got one symbol,
+        # so the second literal's stores went to the first's bytes.
+        out = slot_symbols(
+            "f", {"@3.compound_literal": 0x88, "@5.compound_literal": 0x8C,
+                  "@7.compound_literal": 0x90},
+            None, None,
+        )
+        self.assertEqual(out, {
+            "@3.compound_literal": "__local_f__compound_literal",
+            "@5.compound_literal": "__local_f__compound_literal@2",
+            "@7.compound_literal": "__local_f__compound_literal@3",
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -249,8 +249,18 @@ module C99 {
         -- checker. Items can themselves be InitLists, for a
         -- subaggregate or a braced scalar. The type checker replaces
         -- a scalar's InitList by its one expression, or by a zero
-        -- for `{}`.
-        | InitList(exp* items, data_type?)
+        -- for `{}`. An item may be a `Designation` until
+        -- passes/designators.py rewrites the list into one item per
+        -- subobject in order. `union_member` is the name of the
+        -- member a union's list initializes, which a designator
+        -- chooses. None means the first member.
+        | InitList(exp* items, data_type?, identifier? union_member)
+        -- An item of an InitList with designators (C99 §6.7.8, C23
+        -- §6.7.11): `[2] = v`, `.x = v`, or a chain such as
+        -- `.a[2].b = v`. `init` is an expression or another InitList.
+        -- Only valid as an item of an InitList. passes/designators.py
+        -- replaces every one before the type checker checks the list.
+        | Designation(designator* designators, exp init)
         -- `sizeof e` (operator on an expression) and `sizeof (T)`
         -- (operator on a type-name). Per C99 §6.5.3.4.2 the
         -- operand is not evaluated — only its type matters; the
@@ -291,6 +301,12 @@ module C99 {
         | CompoundLiteral(identifier name, data_type target_type, exp init, data_type?, storage_class? storage_class, bool is_constexpr)
 
     -- `Plus` is unary `+`, which only applies the integer promotions.
+    -- One step of a designation. The parser folds an array
+    -- designator's constant expression to `index`, as it folds an
+    -- array size, so `index` may be negative only until the parser's
+    -- check rejects it.
+    designator = IndexDesignator(int index) | MemberDesignator(identifier member)
+
     unary_operator = Complement | Negate | LogicalNot | Plus
     incdec_op = Increment | Decrement
     binary_operator =

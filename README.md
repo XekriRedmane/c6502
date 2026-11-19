@@ -134,6 +134,19 @@ These parts work.
   function, which C23 leaves to the implementation. With a type
   specifier, `auto` is C99's storage class, as in `auto int x;`, in a
   block only.
+- C23's enumerations with a fixed underlying type work. After `enum
+  kind : uint8_t { LEAF, PAIR, LIST };`, the type `enum kind` is a
+  `uint8_t`, one byte, and each constant is a `uint8_t` constant, so
+  `sizeof LEAF` is 1 and the constant promotes as a `uint8_t` does.
+  The type may be any integer type other than a bit-precise one or
+  another enum, and a value the type can't hold is an error, which
+  includes counting past its largest value. `enum kind : uint8_t;`
+  declares the type, complete, before its constants, and a later
+  definition must give the same type. That declaration has to stand
+  alone, as C23 specifies, and a declaration or cast that names the
+  type afterward writes `enum kind`. It's the standard way to get a
+  one-byte enum, which `[[c6502::packed]]` gives without one, and the
+  two can't be combined.
 - The optimizer, `-O`, keeps values in zero page and in the A, X, and
   Y registers, gives each function that can have one a frame in fixed
   zero-page bytes, and runs more than a hundred smaller rewrites.

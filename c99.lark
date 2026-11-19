@@ -252,7 +252,7 @@ start: declaration*
 //   `block`                    → function_decl (definition)
 // LALR(1) lookahead-1 distinguishes the two on `LBRACE` vs `ASSIGN`/
 // `SEMICOLON` once the declarator has been parsed.
-declaration: function_decl | var_decl | attribute_declaration
+declaration: function_decl | var_decl | attribute_declaration | enum_tag_decl
 // Declaration specifiers (C99 §6.7): types, storage classes, and
 // type qualifiers, in any order. The `_split_specifiers` helper sorts
 // them out and rejects illegal combinations.
@@ -380,15 +380,41 @@ type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR |
               | enum_specifier
 
 // Enumeration specifier (C99 §6.7.2.2): `enum tag { A, B = 5, C }`,
-// with or without the tag, or `enum tag` for one defined earlier.
+// with or without the tag, or `enum tag` for one declared earlier.
 // The type is `int`, or with `[[c6502::packed]]` after `enum`, the
 // smallest type that holds the values.
 // The parser declares each enumeration constant as its enumerator
 // reduces, which is before the next one's value is parsed, so
 // `enum { A, B = A + 1 }` works. `enumerator_list` is left-recursive
 // so each reduction sees the value before it.
-enum_specifier: ENUM attribute_specifier_seq? IDENTIFIER? LBRACE enumerator_list COMMA? RBRACE
+//
+// C23 §6.7.3.3 adds a fixed underlying type, `enum e : uint8_t { A }`,
+// which is the type of the enum and of its constants. `enum_head` is
+// a rule of its own so that it reduces when the parser sees the `{`,
+// before the first enumerator. Its transformer records the underlying
+// type, which each enumerator's value is checked against, and declares
+// a typed enum's tag, which is complete from there on.
+//
+// C23 allows `enum e : T` without a list only as the whole declaration
+// `enum e : T;`, which is `enum_tag_decl`, a declaration of its own.
+// An `enum_specifier` with a `:` always has its list, which keeps the
+// list after the `:` from running into the specifiers after an
+// `enum_specifier`. The `:` list is always followed by `{` or `;`, so
+// it's the longest list, as C23 specifies, with no conflict. The list is a specifier-qualifier list without struct,
+// union, and enum specifiers, which can't name an integer type and
+// would put a second `{` after the `:`. `enum_type_tag` takes `struct
+// s`, `union u`, and `enum e` there only to report them.
+enum_specifier: enum_head LBRACE enumerator_list COMMA? RBRACE
               | ENUM attribute_specifier_seq? IDENTIFIER
+enum_head: ENUM attribute_specifier_seq? IDENTIFIER? enum_type_specifier?
+enum_tag_decl: ENUM attribute_specifier_seq? IDENTIFIER enum_type_specifier SEMICOLON
+enum_type_specifier: COLON _qualifiers? _enum_type_head _enum_types_after?
+_enum_type_head: enum_type_word | typedef_name | typeof_specifier | enum_type_tag
+_enum_types_after: _enum_type_after | _enum_types_after _enum_type_after
+_enum_type_after: type_qualifier | enum_type_word
+enum_type_word: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | ALT_BOOL | VOID
+              | BITINT LPAREN constant_exp RPAREN -> bitint_specifier
+enum_type_tag: (STRUCT | UNION | ENUM) IDENTIFIER
 enumerator_list: enumerator
                | enumerator_list COMMA enumerator
 enumerator: IDENTIFIER attribute_specifier_seq? (ASSIGN constant_exp)?

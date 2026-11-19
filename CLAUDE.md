@@ -555,8 +555,10 @@ Integers:
 
 An enumerated type is `Int()` (C99 §6.7.2.2.4 lets it be compatible
 with `int`), or with `[[c6502::packed]]` `UChar()` / `SChar()`
-when its values fit, and an enumeration constant is an `int` constant. Neither
-reaches the AST; see "Enumerations" under Parser.
+when its values fit, and an enumeration constant is an `int` constant.
+With C23's fixed underlying type, `enum e : T`, the enumerated type
+and its constants are T. Neither reaches the AST; see "Enumerations"
+under Parser.
 
 Char/SChar/UChar/Bool are distinct types from Int/UInt — C99
 §6.3.1.1.2 integer-promotes them all to `int` (because Int's 16-bit
@@ -954,11 +956,57 @@ defined with `[[c6502::packed]]` (after `enum`) to the smallest of
 `UChar()`, `SChar()`, and `Int()` that holds its values
 (`_packed_enum_type`). `_TagHead` follows the tokens from `enum`,
 `struct`, or `union` to the body's `{`, so the lexer doesn't open a
-scope there. Enum tags live in `_Scope.enum_tags`, with their types,
-beside the struct/union tags, and `enum tag`
-must name an enum defined in an enclosing scope (C99 has no forward
-declaration of one). A declaration that only defines an enum leaves
+scope there, and it follows an enum's `: T` too, which is why the
+lexer retypes a typedef name before `_TagHead` sees the token. Enum
+tags live in `_Scope.enum_tags` as `_EnumTag`s (the type, whether a
+`:` fixed it, whether the list has been parsed), beside the
+struct/union tags, and `enum tag` must name an enum declared in an
+enclosing scope. A declaration that only defines an enum leaves
 nothing in the AST.
+
+C23's fixed underlying type (§6.7.3.3), `enum e : uint8_t { A, B }`,
+makes the enum that type and each constant a constant of that type.
+The grammar's `enum_head` (`enum`, attributes, tag, and `:
+T`) reduces when the parser sees the `{`, before the first
+enumerator. Its transformer pushes the type on
+`_ParseContext.enum_types`, which `enumerator_list` checks each value
+against, and declares a typed enum's tag right away, since the type
+is complete from the end of its `: T`, so `enum e : long { A =
+sizeof(enum e) }` works. An enum defined inside an enumerator's value
+pushes its own entry, so `enum E : char { A = sizeof(enum F : long {
+X }) }` checks `X` against `long` and `A` against `char`.
+`enum_type_specifier` resolves T, which must be an integer type
+other than a bit-precise one or an enumerated one: a typedef name for
+an enum is marked `_Binding.enumerated`, and `enum_type_tag` takes
+`struct s`, `union u`, and `enum e` after the `:` only to report them.
+The qualifiers are dropped. A value, given or one more than the one
+before, that T can't hold is an error, and so is
+`[[c6502::packed]]`, whose message points to the fixed type.
+
+The `identifier` rule puts `_enum_constant(value, T)` in place of a
+use of a typed enum's constant: a `Constant` of T's own variant for
+`int`, `unsigned int`, `long`, `unsigned long`, `long long`,
+`unsigned long long`, `unsigned char` (`ConstUChar`), and `bool`
+(`ConstBool`), and for `char`, `signed char`, `short`, and `unsigned
+short`, which have none, a `Cast` to T of a `ConstInt` (`ConstUInt`
+for `unsigned short`). The type checker and the constant evaluator
+then give it T, so `sizeof A` is `sizeof(T)` and `A + A` follows T's
+promotions: with `enum F : uint8_t { M = 200 }`, `M + M` is the
+`int` 400.
+
+`enum e : T;` alone is `enum_tag_decl`, a `declaration` of its own,
+since C23 allows that form nowhere else. An `enum_specifier` with a
+`:` always has its list, which keeps the `:` list from running into
+the specifiers after an enum specifier, and the list after the `:` is always followed by `{` or
+`;`, so the grammar has no new conflict. Any other use of `enum e :
+T` without a list, such as `enum e : int x;`, `(enum e : int)x`, or
+`enum e : int;` in a struct or a `for`, is a syntax error that
+`_enum_type_without_list` rewords. `_declare_enum_tag` takes a tag
+declared again in one scope only with the same type
+(`enum e : int; ... enum e : int { A };`, or `enum e : int;` after
+the definition), and rejects a definition without the type after a
+declaration with one, a declaration with one after a definition
+without, and two definitions.
 
 ### Attributes
 

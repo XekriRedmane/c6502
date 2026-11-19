@@ -477,6 +477,19 @@ enumeration constants are still `int` constants, as C99 says, so
 `RUN + 1` is an `int`; storing one in a packed variable takes a
 byte.
 
+C23's standard way to the same size is a fixed underlying type,
+which needs no attribute and which other compilers read too:
+
+```c
+typedef enum : uint8_t { IDLE, RUN, STOP } state;
+enum dir : int8_t { LEFT = -1, NONE, RIGHT };
+```
+
+With a fixed type the constants have that type as well, so `sizeof
+RUN` is 1, and a value the type can't hold is an error where `packed`
+would pick a wider type. `packed` can't go on an enum with a fixed
+type, since the type after the `:` sets the size.
+
 ### `section("name")`
 
 `section` puts a function or an object with static storage in a
@@ -991,7 +1004,8 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | `return_bool_in_carry` on some declarations of a function but not all | A caller compiled without it would read A instead of the carry flag. |
 | `return_bool_in_carry` on a function returning a struct that isn't one value of 1 or 2 bytes followed by one `bool` | Only that shape fits in A, X, and the carry flag. |
 | `preserves_x` on a routine that returns a struct whose value is an `int` or `unsigned int` | The high byte of the value comes back in X. |
-| `packed` on `enum tag` without its list of constants | The definition decides the type, so a later use can't change it. |
+| `packed` on `enum tag` without its list of constants | The definition sets the type, so a later use can't change it. |
+| `packed` on an enum with a fixed underlying type, `enum e : T` | The type after the `:` sets the size. Write the fixed type alone. |
 | `unroll` or `keep` before anything but a `for` loop, or both on one loop | They describe a `for` loop, and an unrolled loop leaves no loop to keep. |
 | `save_hardware_stack` before an `if`, a loop, or a block | It would cover the calls in the statements nested inside. |
 | `save_hardware_stack` on a statement or declaration without a call, or on a call that can't recurse | There's nothing for it to save around. |

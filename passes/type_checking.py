@@ -564,12 +564,13 @@ def _coerce_init_value(
             value = fp_arith.single_bits_to_int(value)
         else:
             value = fp_arith.double_bits_to_int(value)
-    # Integer → integer: pass through unbounded; the static_init
-    # builder applies the target-width mask. A bit-precise target
-    # gets its value at its own width here, since a cast to it in the
-    # middle of a chain (`(int)(_BitInt(5))100`) has to wrap at N bits,
-    # and the static-const folds read the value.
-    if isinstance(_strip_quals(target_type), BitInt):
+    # Integer → integer: the value wraps to the target type's range
+    # here, since a cast in the middle of a chain has to wrap at the
+    # cast's width. `static long v = (unsigned char)400;` once stored
+    # 400, where the conversion gives 144, and `(signed char)200` gave
+    # 200 where it gives -56. The static-const folds read the value
+    # too, and the static_init builder masks it to the target's width.
+    if _is_integer_type(target_type):
         return _coerce_int_to_type(int(value), target_type)
     return value
 

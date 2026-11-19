@@ -699,11 +699,9 @@ enable_next_level_ladders:
    LDA   LADDER_LOCS_COL,X
    STA   __local_enable_next_level_ladders__6
    BMI   .loop@20_continue
-   LDA   LADDER_LOCS_ROW,X
-   STA   __local_enable_next_level_ladders__5
-   LDA   __local_enable_next_level_ladders__6
    STA   GAME_COLNUM
    LDA   LADDER_LOCS_ROW,X
+   STA   __local_enable_next_level_ladders__5
    STA   GAME_ROWNUM
    LDX   __local_enable_next_level_ladders__5
    LDA   LEVEL_BG@lo,X

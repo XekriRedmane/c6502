@@ -477,12 +477,12 @@ num_to_decimal:
    STA   HARGS
    STX   HARGS+1
    JSR   bin16_to_bcd
-   LDA   HARGS+2
-   STA   __local_num_to_decimal__packed
    LDA   HARGS+3
    STA   __local_num_to_decimal__packed+1
    LDA   HARGS+4
    STA   __local_num_to_decimal__packed+2
+   LDA   HARGS+2
+   STA   __local_num_to_decimal__packed
    LDA   __zpabi_num_to_decimal__out_0
    STA   __local_num_to_decimal__out
    LDA   __zpabi_num_to_decimal__out_1

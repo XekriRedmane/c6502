@@ -315,11 +315,16 @@ this directory:
   array. The low byte alone, with no high byte after it, folds the
   same way when C and V are dead after its store.
 - `constant_store_order.py` — `apply_constant_store_order`. A
-  straight run of constant stores (`LDA #k` and `STA m`, or the asm
-  IR's `Mov(#k, m)`) to distinct, non-volatile `Data` bytes, with at
-  most one function's slots among them, stores each value's bytes
-  after its first load, keeping the last value last, when that drops
-  a load.
+  straight run of loads into A and stores (`LDA #k`, `LDA n`, or `LDA
+  n,X` / `n,Y` and `STA m`, or the asm IR's `Mov(#k, m)`) to
+  distinct, non-volatile `Data` bytes, with at most one function's
+  slots among its operands, stores each value's bytes after its
+  first load, keeping the last value last, when that drops a load. No
+  load may be volatile, and no store may write a byte a load reads.
+  An indexed load of `n` counts as reading every byte of `n`, and one
+  of a slot or runtime symbol leaves the run alone. Lode Runner's `fill_hole`
+  stores `BRICK_DIG_ROWS,X` into a local and `GAME_ROWNUM` after one
+  load.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
   folding for case labels, static initializers, and, through the
   parser, array sizes and enumeration constants).
@@ -1577,9 +1582,9 @@ document says whether it fires there.
   is overwritten before any read. Memory-to-memory transfer redundancy
   (e.g. the unrolled DPTR-staging sequences `redundant_load`'s A-
   tracking can't see across an intervening A clobber).
-- `apply_constant_store_order` — a run of constant stores grouped by
-  value, so each value is loaded once. See the module docstring in
-  `constant_store_order.py`.
+- `apply_constant_store_order` — a run of stores grouped by the value
+  stored, a constant or a byte loaded from memory, so each value is
+  loaded once. See the module docstring in `constant_store_order.py`.
 - `apply_join_store` — a join's copy of a slot into memory, `LDA t;
   STA M`, made by each arm's store instead. See the module docstring
   in `join_store.py`.

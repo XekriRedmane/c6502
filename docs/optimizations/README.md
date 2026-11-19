@@ -243,7 +243,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Const-static fold](const_static_fold.md). Replaces reads of a static const scalar with immediates and drops its storage.
 - [Constant AND and ORA fold](const_arith_fold.md). Folds `LDA #k` with `AND`/`ORA #k`, and `ADC #k1; CLC; ADC #k2` into one `ADC`, and deletes `ORA #0` and `AND #$FF`.
 - [Constant folding](constant_folding.md). Evaluates operations, casts, jumps, and const-array reads whose operands are all constants.
-- [Constant store order](constant_store_order.md). Groups a run of constant stores by value, so that each value is loaded once.
+- [Constant store order](constant_store_order.md). Groups a run of stores by the value stored, a constant or a byte loaded from memory, so that each value is loaded once.
 - [Copy folding](copy_folding.md). Makes the instruction that writes a single-use temporary write the Copy's destination directly.
 - [Copy propagation](copy_propagation.md). Replaces each read of an SSA Copy's destination with its source.
 - [Count-down counter in X or Y](counter_to_index_reg.md). Moves a counter used only by its DEC into X or Y.

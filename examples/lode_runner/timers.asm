@@ -381,11 +381,9 @@ handle_timers:
 .lb_skip@2:
    LDA   BRICK_DIG_ROWS,X
    STA   __local_handle_timers__2
-   LDA   BRICK_DIG_COLS,X
-   STA   __local_handle_timers__saved_guard_num
-   LDA   BRICK_DIG_ROWS,X
    STA   GAME_ROWNUM
    LDA   BRICK_DIG_COLS,X
+   STA   __local_handle_timers__saved_guard_num
    STA   GAME_COLNUM
    LDX   __local_handle_timers__2
    LDA   LEVEL_BG@lo,X

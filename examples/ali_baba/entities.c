@@ -940,17 +940,10 @@ uint8_t get_entity_fontchar(entity_ref e) {
 
 /* Each group of 21 appearances is a font group. Appearance r of a group
  * is sprite r + 1, except that the first four of every group but the
- * first are sprites $21-$24. The loop leaves appearance / 21 in `group`
- * and appearance % 21 in `appearance`. It divides by subtraction because
- * c6502 compiles `/` and `%` to calls of a runtime helper, which this
- * program doesn't have. */
+ * first are sprites $21-$24. */
 uint16_t appearance_to_fontchar(uint8_t appearance) {
-    uint8_t group = 0;
-    while (appearance >= 21) {
-        appearance -= 21;
-        group++;
-    }
-    uint8_t sprite = appearance + 1;
+    uint8_t group = appearance / 21;
+    uint8_t sprite = appearance % 21 + 1;
     if (sprite < 5 && group != 0)
         sprite += 0x20;
     return sprite | (uint16_t)group << 8;
@@ -1153,19 +1146,14 @@ void print_fontchar_at_text_pos(void) {
     render_font_char_direct(selector);
 }
 
-/* The selector is that of the font before FONT_CHARNUM's, which is
- * written only when FONT_CHARNUM is 24 or more. The loop adds
- * FONT_CHARNUM / 24 to the selector and leaves FONT_CHARNUM % 24 in
- * `sprite`, dividing by subtraction for the reason given at
- * appearance_to_fontchar. */
+/* The selector is that of the font before FONT_CHARNUM's, and
+ * FONT_CHARNUM's own is written only when FONT_CHARNUM is 24 or more,
+ * as in the original. */
 void render_font_char_direct(uint8_t charset_sel) {
-    uint8_t sprite = FONT_CHARNUM;
-    while (sprite >= SPRITES_PER_FONT) {
-        charset_sel++;
-        s_PRINT_FONT_CHAR.charset = charset_sel;
-        sprite -= SPRITES_PER_FONT;
-    }
-    uint8_t glyph = sprite * 4 + FIRST_SPRITE_GLYPH;
+    if (FONT_CHARNUM >= SPRITES_PER_FONT)
+        s_PRINT_FONT_CHAR.charset =
+            charset_sel + FONT_CHARNUM / SPRITES_PER_FONT;
+    uint8_t glyph = FONT_CHARNUM % SPRITES_PER_FONT * 4 + FIRST_SPRITE_GLYPH;
     s_PRINT_FONT_CHAR.upper_left = glyph;
     s_PRINT_FONT_CHAR.upper_right = glyph + 1;
     s_PRINT_FONT_CHAR.lower_left = glyph + 2;

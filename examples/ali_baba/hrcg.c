@@ -64,9 +64,7 @@
     - HRCG_ROW_TABLE, twelve bytes indexed by row / 2 and halved with a
       ROR, isn't kept, and hrcg_row_address computes a row's address
       from row % 8 and row / 8. The original reads HRCG_TRAILING_DATA
-      for rows past 23, which never occur. The division calls the
-      runtime helper sdivmod16, which the original doesn't, and which
-      isn't in this repository as 6502 code.
+      for rows past 23, which never occur.
     - STD_FONT_DATA is a const array in this file, with the 768 bytes
       the image holds at $97A5. Nothing else in the program computes
       its address.

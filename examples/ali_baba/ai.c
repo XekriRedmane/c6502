@@ -957,10 +957,6 @@ constexpr uint8_t PENDING_XP_UNIT = 0x10;
  * they are. */
 constexpr uint8_t LOW_SPACE = 0x20;
 
-/* The original tests only the high byte of a pointer the group walk
- * leaves, so a pointer into page 0 counts as none. */
-#define IN_PAGE_0(p) ((uint16_t)(p) < 0x0100)
-
 uint8_t manhattan_distance(uint8_t pos, uint8_t from) {
     uint16_t to = pos_to_colrow(pos);
     uint8_t col = (uint8_t)to;

@@ -38,9 +38,9 @@
     - TEXT_RENDERER saves its stream index in TEXT_STREAM_IDX ($5A98)
       across RENDER_FONT_CHAR. render_stream keeps it in a local and
       doesn't write TEXT_STREAM_IDX, which nothing else reads.
-    - The divisions in num_to_decimal and print_centered_plus_col call
-      the runtime helpers udivmod16 and sdivmod16, which the original
-      doesn't, and which aren't in this repository as 6502 code.
+    - num_to_decimal's 16-bit divisions call the runtime helper
+      udivmod16, which the original doesn't, and which the linker adds
+      from the runtime library.
     - PRINT_STRING_AT_ADDR, which takes the string in X and Y, is
       print_string. SET_TEXT_WINDOW_UPPER_LEFT_ALL and
       SET_TEXT_WINDOW_UPPER_LEFT_LOW are set_text_window_upper_left(0)

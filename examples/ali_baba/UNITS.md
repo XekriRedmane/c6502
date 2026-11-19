@@ -72,12 +72,12 @@ runs next.
 - Several routines reach memory through a null or small pointer, and
   the C does the same through the same pointer. `$00-$05` and
   `$0A-$0F` are reserved for that (header, "Zero page").
-- c6502 has no runtime helpers in this repository yet. A
-  multiplication by a constant that isn't a sum of a few shifts, a
-  division or remainder, and a shift by a variable count each call
-  one, and the link then fails (see "Compiler gaps"). Write them as
-  the original does, with repeated subtraction, shifts by constants,
-  and loops.
+- Write multiplication, division, remainder, and shifts by a variable
+  count with `*`, `/`, `%`, `<<`, and `>>`. c6502 compiles a byte's
+  product, its division and remainder by a constant, and a shift of 1
+  or 2 bytes by a variable count inline, and the linker adds any
+  runtime helper the program still calls from the runtime library
+  (see "Compiler gaps", item 6).
 - `[[c6502::keep]]` on a `for` keeps a delay loop that the optimizer
   would otherwise drop. A loop that times something says what it
   times in a comment.
@@ -1085,11 +1085,11 @@ Notes:
   signed (`CMP #n; BPL`), and the sample is accepted on `d == 0 ||
   (d & 0x80)`. Report_util gives the masks and shifts. A limit of 0
   returns 0 without stepping the PRNG.
-- STEP_PRNG computes `69 * state + $53`. Write the multiplication as
-  shifts and adds, since `* 69` calls the missing `mul8` helper.
-- POS_TO_COLROW divides by repeated subtraction, giving column and row
-  for any byte. It returns the column in the low byte and the row in
-  the high byte.
+- STEP_PRNG computes `69 * state + $53` in a byte, and step_prng
+  writes it so. c6502 compiles `* 69` to shifts and adds.
+- POS_TO_COLROW divides by repeated subtraction, giving `pos % 20` and
+  `pos / 20` for any byte, and pos_to_colrow writes them so. It
+  returns the column in the low byte and the row in the high byte.
 - GET_MOB_DATA adds `16 * (index - 1)` to the pointer at `$4000`
   (`MOB_BASE`). An index of 0 gives `MOB_BASE + $FF0`, which no
   caller passes.
@@ -1444,8 +1444,11 @@ and the units follow the workaround given for each.
    count while bit 7 of `PADDL[n]` is set) with the same soft-switch
    accesses.
 
-6. **The runtime helpers weren't in the repository**, so a program
-   that called one didn't link without `--defsym`.
+6. **The runtime helpers weren't in the repository, and a byte's
+   multiplication, division, and shift by a variable count called
+   them**, so a program that used one of those operations didn't link
+   without `--defsym`. Each line below compiled to the call in its
+   comment. Both were fixed on 18 Nov 2026.
 
    ```c
    a = (uint8_t)(b * 69 + 0x53);    /* JSR mul8 */
@@ -1455,18 +1458,16 @@ and the units follow the workaround given for each.
 
    The link failed with `undefined symbol 'mul8' (a runtime helper;
    the runtime library isn't in the repository yet, so give its
-   address with --defsym)`. Since 18 Nov 2026 the linker adds the
-   helpers a program calls from the runtime library
-   (`passes/runtime_library.py`), and with `ali_baba.ld` they go in
-   `spare` with the other code the script doesn't name. Sdivmod16,
-   udivmod16, asl16, and asr16 come to 228 bytes, and `spare` had
-   379 bytes free on 18 Nov 2026. Multiplications by 3, 4, and 20
-   compile inline. The original has no such calls, and the units
-   write these operations as the original does: STEP_PRNG's `* 69` as
-   shifts and adds, POS_TO_COLROW's division by repeated subtraction,
-   and shifts by a variable count as loops of shifts by one, in
-   `uint8_t` so that integer promotion doesn't make them 16-bit signed
-   shifts.
+   address with --defsym)`. The linker now adds the helpers a program
+   calls from the runtime library (`passes/runtime_library.py`), and
+   with `ali_baba.ld` they go in `spare` with the other code the
+   script doesn't name. c6502 also compiles each line above inline
+   now: a multiplication by a constant as shifts and adds, a byte
+   times a byte as an 8-by-8 loop, a byte's division and remainder by
+   a constant as one loop of subtractions, and a shift of 1 or 2 bytes
+   by a variable count as a loop. The units write these operations
+   with the operators, and the only helper the program calls is
+   `udivmod16`, 49 bytes, for num_to_decimal's 16-bit divisions.
 
 7. **An ordering comparison with a `constexpr uint8_t` wasn't
    narrowed to a byte compare.** The read of the constant was folded

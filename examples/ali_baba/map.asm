@@ -3,9 +3,8 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$11
-FP	EQU	$13
-DPTR	EQU	$15
+SSP	EQU	$1B
+FP	EQU	$1D
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -17,11 +16,12 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
+DPTR	EQU	$60
 __local_setup_scene_display__wait	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
-__local_load_scene_from_disk__sector	EQU	$81
+__local_load_scene_from_disk__scene	EQU	$81
 __local_scene_setup__1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
@@ -224,7 +224,7 @@ WAIT	EQU	$FCA8
 ; def integrity_fail params= locals=__local_integrity_fail__0,__local_integrity_fail__1,__local_integrity_fail__2,__local_integrity_fail__offset indirect=false in_cycle=false
 ; def load_map_tiles params= locals=__local_load_map_tiles__0 indirect=false in_cycle=false
 ; def load_scene_data params= locals=__local_load_scene_data__0 indirect=false in_cycle=false
-; def load_scene_from_disk params=__zpabi_load_scene_from_disk__scene locals=__local_load_scene_from_disk__sector,__local_load_scene_from_disk__tries,__local_load_scene_from_disk__iob,__local_load_scene_from_disk__0,__local_load_scene_from_disk__1 indirect=false in_cycle=false param_regs=A carry=true
+; def load_scene_from_disk params=__zpabi_load_scene_from_disk__scene locals=__local_load_scene_from_disk__scene,__local_load_scene_from_disk__tries,__local_load_scene_from_disk__iob,__local_load_scene_from_disk__0,__local_load_scene_from_disk__1 indirect=false in_cycle=false param_regs=A carry=true
 ; def rwts_dispatch params=__zpabi_rwts_dispatch__command locals=__local_rwts_dispatch__iob,__local_rwts_dispatch__0,__local_rwts_dispatch__command indirect=false in_cycle=false param_regs=A carry=true
 ; def scene_loop params=__zpabi_scene_loop__scene locals=__local_scene_loop__scene indirect=false in_cycle=false param_regs=A
 ; def scene_setup params= locals=__local_scene_setup__0,__local_scene_setup__1,__local_scene_setup__2,__local_scene_setup__3,__local_scene_setup__4 indirect=false in_cycle=false
@@ -509,7 +509,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=1 hargs_need=0
+; runtime hargs_size=11 hargs_need=0
 ; @zp-link-meta-end
 
 load_map_tiles:
@@ -958,7 +958,7 @@ load_scene_data:
 load_scene_from_disk:
    SUBROUTINE
 
-   STA   __local_load_scene_from_disk__sector
+   STA   __local_load_scene_from_disk__scene
    LDA   RWTS_IOB_PTR
    STA   __local_load_scene_from_disk__iob
    STA   DPTR
@@ -971,32 +971,40 @@ load_scene_from_disk:
    LDA   #>SCENE_TEXT_DATA
    INY
    STA   (DPTR),Y
-   LDA   GAME_SIG_TRACK
-   STA   __local_load_scene_from_disk__tries
    LDA   GAME_SIG_SECTOR
    CLC
-   ADC   __local_load_scene_from_disk__sector
-   JMP   .loop@6_continue
-.load_scene_from_disk@rot@4:
-   INC   __local_load_scene_from_disk__tries
+   ADC   __local_load_scene_from_disk__scene
+   STA   __local_load_scene_from_disk__tries
+   LDX   #$FF
+   SEC
+.div_loop@1:
+   INX
    SBC   #$0D
-.loop@6_continue:
-   CMP   #$0D
-   BCS   .load_scene_from_disk@rot@4
+   BCS   .div_loop@1
+   ADC   #$0D
    LDY   #$05
    STA   (__local_load_scene_from_disk__iob),Y
    LDA   __local_load_scene_from_disk__tries
-   DEY
+   LDX   #$FF
+   SEC
+.div_loop@2:
+   INX
+   SBC   #$0D
+   BCS   .div_loop@2
+   STX   __local_load_scene_from_disk__scene
+   LDA   GAME_SIG_TRACK
+   ADC   __local_load_scene_from_disk__scene
+   LDY   #$04
    STA   (__local_load_scene_from_disk__iob),Y
    LDA   #$02
    STA   __local_load_scene_from_disk__tries
-.loop@7_continue:
+.loop@6_continue:
    JSR   disk_read
-   BCC   .loop@7_break
+   BCC   .loop@6_break
    DEC   __local_load_scene_from_disk__tries
-   BNE   .loop@7_continue
+   BNE   .loop@6_continue
    RTS
-.loop@7_break:
+.loop@6_break:
    RTS
 
 scene_loop:
@@ -1018,14 +1026,14 @@ scene_loop:
    BNE   .if_end@32
    JSR   load_scene_data
 .if_end@32:
-.loop@8_start:
+.loop@7_start:
    LDA   SCENE_NUMBER
    JSR   load_scene_from_disk
    BCC   .if_end@33
    JSR   set_text_window_bottom
    LDA   #$1B
    JSR   display_message
-   JMP   .loop@8_break
+   JMP   .loop@7_break
 .if_end@33:
    JSR   display_status_bar
    LDA   #<SCENE_TEXT_DATA
@@ -1037,10 +1045,10 @@ scene_loop:
    LDA   #$03
    JSR   tune_player
    LDA   SCENE_TEXT_DATA+255
-   BEQ   .loop@8_break
+   BEQ   .loop@7_break
    STA   SCENE_NUMBER
-   JMP   .loop@8_start
-.loop@8_break:
+   JMP   .loop@7_start
+.loop@7_break:
    JSR   set_text_window_bottom
    LDA   #$00
    STA   LOCATION_POS

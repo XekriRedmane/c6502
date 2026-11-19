@@ -1950,10 +1950,6 @@ static void mob_attack(void);
 static void process_entity_script(void);
 static void event_prng_check(void);
 
-/* The original tests only the high byte of a pointer the group walk
- * leaves, so a pointer into page 0 counts as none. */
-#define IN_PAGE_0(p) ((uint16_t)(p) < 0x0100)
-
 /* Returns the defense in bits 4-1 of a mob's strength byte. */
 static uint8_t defense(const struct mob *m) {
     return (m->strength >> 1) & 0x0F;

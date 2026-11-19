@@ -251,6 +251,11 @@ constexpr entity_ref ENTITY_EDGE = 0x0001;
 #define ENTITY_EVENT(e) ((struct event *)(e))
 #define MOB_REF(m) ((entity_ref)(uint16_t)(m) | 0x8000)
 
+/* The original tests only the high byte of a pointer that a mob
+ * group's walk leaves, so a pointer into page 0 counts as none. ai.c
+ * and combat.c walk the groups. */
+#define IN_PAGE_0(p) ((uint16_t)(p) < 0x0100)
+
 /* ---- Menus ---------------------------------------------------------- */
 
 /*

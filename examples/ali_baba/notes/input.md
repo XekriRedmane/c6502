@@ -172,8 +172,7 @@ The comparison of two masked byte fields as ints was fixed on 18 Nov
 2026, and so was a pointer member's read through a zero-page pointer.
 
 Each of these makes correct code that is larger or slower than it
-needs to be. None blocked the translation except item 6, which would
-make the program call a runtime helper that it doesn't have.
+needs to be. None blocked the translation.
 
 1. **A volatile read through an index is stored to a dead local.**
 
@@ -268,23 +267,14 @@ make the program call a runtime helper that it doesn't have.
    than the previous C, which wrote `under_level ^ 1` and
    `under_level + 3`.
 
-6. **A byte divided by a constant calls the 16-bit signed division
-   helper, once for `/` and again for `%`.**
-
-   ```c
-   extern uint8_t TEXT_ROW [[c6502::zeropage(0x25)]];
-   extern uint8_t TEXT_COL [[c6502::zeropage(0x24)]];
-   void set_cursor_pos(uint8_t pos) {
-       TEXT_ROW = 21 + pos / 40;
-       TEXT_COL = pos % 40;
-   }
-   ```
-
-   extends `pos` to 16 bits in HARGS and calls `sdivmod16` twice. The
-   program has no runtime helpers, so a division links only with
-   `--defsym`, as the harness links it, and wouldn't run on an Apple II.
-   `set_cursor_pos` therefore subtracts 40 as the original does, and
-   map.c's `load_scene_from_disk` subtracts 13 in a loop.
+A byte divided by a constant called the 16-bit signed division helper
+`sdivmod16`, once for `/` and again for `%`, until 18 Nov 2026, so
+set_cursor_pos subtracted 40 as the original does. c6502 now divides a
+byte by a constant with an inline loop of subtractions, which a `/` and
+a `%` of the same operands share. set_cursor_pos divides by 40 for a
+position below 80, and puts any other position on row 23 at column
+pos - 80, as the original's two subtractions do. It is 35 bytes, as
+the subtracting version was.
 
 ## Size
 

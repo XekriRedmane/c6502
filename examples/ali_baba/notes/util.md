@@ -83,11 +83,8 @@ Every routine of the unit is translated, and none is incomplete.
   and `random_in_range` shifts by its count. Every limit, sample, and
   index gives the original's result (checked for all 256 limits and 128
   samples of random_in_range). The division and the shifts by a
-  variable count call the runtime helpers `sdivmod16`, `asl8`, `asl16`,
-  and `asr16`, which the harness links at the simulator's addresses.
-  The original calls no helper, and those helpers aren't in the
-  repository as 6502 code, so the unit doesn't run on an Apple II
-  until they are.
+  variable count are inline loops, and the unit calls no runtime
+  helper.
 - `cold_restart` uses only zero-page locals, no soft stack, and calls
   nothing but DISK_BOOT_ROM, which the listing shows.
 
@@ -111,34 +108,37 @@ None.
 
 ## Compiler gaps
 
-These don't stop the unit from compiling. Each costs bytes, and the
-first two call runtime helpers, which the original doesn't call.
+These don't stop the unit from compiling. Each costs bytes. The first
+item of the earlier list, a byte's `/` and `%` by a constant calling
+`sdivmod16` twice, was fixed on 18 Nov 2026. pos_to_colrow is now one
+loop of subtractions, 11 bytes, where the original's is 13.
 
-1. A division or remainder of a `uint8_t` by a constant is a signed
-   16-bit division, and `/` and `%` of the same operands call it twice.
-   `pos_to_colrow` is 38 bytes and two calls of `sdivmod16`, where the
-   repeated subtraction of the original is 13.
-
-   ```c
-   uint16_t f(uint8_t pos) { return pos % 20 | (uint16_t)(pos / 20) << 8; }
-   ```
-
-2. A shift of a `uint8_t` by a variable count is a 16-bit shift, signed
-   for `>>`, and a comparison of the shifted value with a constant is a
-   signed 16-bit comparison. `random_in_range` is 126 bytes with four
-   helper calls, where the old C, with loops of one-bit shifts, was 89.
+1. **A shift by a variable count is a loop on the value in memory, and
+   a shifted byte compared with a constant is a 16-bit shift and a
+   signed 16-bit comparison.** random_in_range is 120 bytes, where the
+   old C, with loops of one-bit shifts, was 89.
 
    ```c
-   uint8_t f(uint8_t x, uint8_t n) { return x >> n; }   /* JSR asr16 */
+   uint8_t f(uint8_t x, uint8_t n) { return x >> n; }
    uint8_t g(uint8_t limit) {
        uint8_t shift = 0;
-       while (limit << shift < 0x40)                    /* JSR asl16, 16-bit compare */
+       while (limit << shift < 0x40)
            shift++;
        return shift;
    }
    ```
 
-3. A small static function isn't inlined. `is_player_character` is 16
+   f compiles to `STA x; CPX #0; BEQ done; loop: LSR x; DEX; BNE loop;
+   done: LDA x`, where `LSR A` in the loop would save the store and the
+   load. g copies `limit` and a 0 into a 16-bit temporary on each pass,
+   shifts both bytes, and compares with `SEC; SBC #$40; LDA hi; SBC
+   #0; BVC; EOR #$80; BPL`. For a limit of 1 or more the loop ends by
+   a shift of 6, so the shifted value fits in a byte and an unsigned
+   8-bit comparison would do, but the compiler has no bound on `shift`
+   and keeps the high byte and the signed comparison. random_in_range
+   also loads the count into X again for each of its four shift loops.
+
+2. A small static function isn't inlined. `is_player_character` is 16
    bytes, and each caller sets up a pointer in A and X for it, where
    `LDY #4; LDA (m),Y; CMP #$15` in place would do.
 
@@ -150,7 +150,7 @@ first two call runtime helpers, which the original doesn't call.
    void f(void) { if (is_pc(M)) hit(); }
    ```
 
-4. A loop that counts up from 0 and doesn't use its index keeps the
+3. A loop that counts up from 0 and doesn't use its index keeps the
    count-up: `LDA #0; STA n; ...; INC n; LDA n; CMP #4; BCC`. Counting
    down to 0 would save the compare. `delay_with_animation` is 16 bytes,
    where the old do-while that counted down was 12.
@@ -160,12 +160,12 @@ first two call runtime helpers, which the original doesn't call.
    void f(void) { for (uint8_t n = 0; n < 4; n++) tick(); }
    ```
 
-5. `cold_restart`'s loops over a pointer compare both bytes of the
+4. `cold_restart`'s loops over a pointer compare both bytes of the
    pointer on each pass, and the `p <= (uint8_t *)0xA56F` test of the
    tail is a 16-bit subtraction. It is 70 bytes, where loops over a page
    number and a byte index were 40.
 
-6. A 16-bit store to a member at an offset through a zero-page
+5. A 16-bit store to a member at an offset through a zero-page
    pointer builds the member's address in a temporary and in DPTR.
 
    ```c
@@ -193,7 +193,7 @@ entry, as main.lst lays them out).
 | FIND_NEXT_PC | 38 | find_next_pc | 31 |
 | FIND_PREV_PC | 39 | find_prev_pc | 34 |
 | INIT_CHAR_SELECT | 19 | init_char_select | 19 |
-| POS_TO_COLROW | 13 | pos_to_colrow and its two outlined tails | 38 |
+| POS_TO_COLROW | 13 | pos_to_colrow | 11 |
 | GET_MOB_DATA | 31 | get_mob_data | 32 |
 | DELAY_WITH_ANIMATION | 14 | delay_with_animation | 16 |
 | TICK_ANIM_COUNTER | 18 | tick_anim_counter | 17 |
@@ -202,21 +202,22 @@ entry, as main.lst lays them out).
 | IDLE_ANIM_HANDLER, DEC_WAIT_IF_NONZERO | 44 | idle_anim_handler | 47 |
 | COLROW_TO_POS | 9 | colrow_to_pos | 16 |
 | GET_CHAR_RECORD | 28 | get_char_record | 47 |
-| RANDOM_IN_RANGE | 118 | random_in_range | 126 |
+| RANDOM_IN_RANGE | 118 | random_in_range | 120 |
 | DISPATCH_ON_MODE | 13 | dispatch_on_mode | 11 |
 | STEP_PRNG | 31 | step_prng | 29 |
 | VERIFY_INTEGRITY | 34 | verify_integrity | 27 |
 | VERIFY_DISK_IO | 31 | verify_disk_io | 1 |
 | COMPUTE_CHECKSUM | 70 | compute_checksum | 83 |
 | COLD_RESTART | 33 | cold_restart | 70 |
-| Total | 740 | | 824 |
+| Total | 740 | | 791 |
 
-The C's bytes are the symbol sizes of `nm.py -S util.o`. random_in_range
-also calls pos_to_colrow's 7-byte outlined tail, which is counted under
-pos_to_colrow. Before the rewrite into plain C on 18 Nov 2026, the same
-routines came to 722 bytes.
+The C's bytes are the symbol sizes of `nm.py -S util.o`. Before the
+rewrite into plain C on 18 Nov 2026, the same routines came to 722
+bytes. They came to 824 after the rewrite, and to 791 once c6502
+divided a byte by a constant and shifted by a variable count inline.
 
-By section, the C has 643 bytes in `.text` (and the linker's 5-byte
+By section, the C has 610 bytes in `.text`
+ (and the linker's 5-byte
 `__zp_init` for ANIM_FRAME_CTR), 111 in `.text.integrity`, which the
 original's `$A4E6`-`$A56E` (135 bytes) held, and 70 in `.cold_restart`
 at `$A56F`. The data is 12 bytes of `.rodata`, 1 of `.data`

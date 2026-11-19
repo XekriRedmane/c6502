@@ -16,9 +16,10 @@ save to a new scenario disk, a load from it, a visit to the forest's
 shops, and a game with a second character, it makes the same
 soft-switch accesses, Monitor calls, and disk calls as the original,
 with the same hi-res page 1 at each one, and leaves the same disks
-(see "How it's compared"). It is about 4.5% larger than the code it
-translates (see "Size"), and it fits by using `$A900-$B2FF`, which the
-original never touches.
+(see "How it's compared"). Its code is about 7.5% larger than the code
+it translates, counting the runtime helper the linker adds (see
+"Size"), and it fits by using `$A900-$B2FF`, which the original never
+touches.
 
 ## Files
 
@@ -63,12 +64,13 @@ uv run python ../../compile.py -T ali_baba.ld \
 Each unit is compiled twice from the same source: to its `.asm`,
 which is checked in, and to its object, which the link reads. Neither
 the objects nor the executable are checked in. The link needs no
-`--defsym`. A unit that multiplies, divides, or shifts by a variable
-count calls one of the runtime's helpers, and the linker adds each
-helper the program calls from the runtime library, as `runtime.o`,
-which the script's `*(.text ...)` puts in `$A900-$B2FF`. The units
-write those operations as the original does, so today the program
-calls none (UNITS.md, "Compiler gaps", item 6).
+`--defsym`. c6502 compiles most multiplications, divisions, and shifts
+by a variable count inline, and calls a runtime helper for the rest.
+The linker adds each helper the program calls from the runtime
+library, as `runtime.o`, and the script's last pattern in `.spare`,
+`*(.text ...)`, puts it in `$A900-$B2FF` after map's, util's, and
+text's code. Ali Baba calls one, `udivmod16`, 49 bytes, for the 16-bit
+divisions of `num_to_decimal` in text.c.
 
 The original's code shares its spans of memory with tables, which the
 C program defines where it uses them, so the linker script's regions
@@ -132,8 +134,8 @@ original goes through `COUT`.
 
 The six scripts run on the program linked with the simulator's runtime
 helpers (`sim.linked.defsym_args`), and the game also runs on the
-program linked by the command above, which holds any helper it calls
-from the runtime library.
+program linked by the command above, which holds its own copy of
+`udivmod16` from the runtime library.
 
 The six scripts run 337 of the 387 code labels in the spans the C
 program replaces (`uv run python -m tests.test_ali_baba coverage`
@@ -152,37 +154,47 @@ translates (the chunks of `main.asm` that `UNITS.md` gives it):
 
 | File | Original code | Original tables | C code | C data |
 |---|---:|---:|---:|---:|
-| `main.c` | 381 | 2 | 368 | 0 |
-| `init.c` | 972 | 355 | 836 | 362 |
-| `turn.c` | 616 | 6 | 1184 | 0 |
-| `input.c` | 1639 | 1313 | 1707 | 1256 |
-| `combat.c` | 2856 | 23 | 2973 | 0 |
-| `ai.c` | 1223 | 18 | 1427 | 20 |
-| `events.c` | 1542 | 8 | 1561 | 0 |
-| `entities.c` | 1033 | 8 | 1049 | 0 |
-| `map.c` | 993 | 43 | 1001 | 8 |
-| `display.c` | 399 | 0 | 437 | 0 |
-| `util.c` | 866 | 119 | 722 | 13 |
-| `text.c` | 553 | 8 | 668 | 10 |
-| `sound.c` | 337 | 64 | 436 | 0 |
-| `hrcg.c` | 1141 | 907 | 835 | 781 |
-| **Total** | **14551** | **2874** | **15204** | **2450** |
+| `main.c` | 381 | 2 | 369 | 0 |
+| `init.c` | 972 | 355 | 858 | 362 |
+| `turn.c` | 616 | 6 | 1160 | 0 |
+| `input.c` | 1639 | 1313 | 1793 | 1256 |
+| `combat.c` | 2856 | 23 | 2992 | 0 |
+| `ai.c` | 1223 | 18 | 1457 | 27 |
+| `events.c` | 1542 | 8 | 1630 | 0 |
+| `entities.c` | 1033 | 8 | 1056 | 0 |
+| `map.c` | 993 | 43 | 1020 | 8 |
+| `display.c` | 399 | 0 | 449 | 0 |
+| `util.c` | 866 | 119 | 791 | 13 |
+| `text.c` | 553 | 8 | 692 | 0 |
+| `sound.c` | 337 | 64 | 450 | 0 |
+| `hrcg.c` | 1141 | 907 | 877 | 790 |
+| **Total** | **14551** | **2874** | **15594** | **2456** |
 
-The C counts are of each unit's object, and they leave out the
-`__zp_init` the linker writes. `hrcg.c` leaves out the HRCG's entry
-points and control characters that the game never uses.
+The C counts are the symbol sizes of each unit's `-c -O` object
+(`nm.py -S`), and they leave out the `__zp_init` the linker writes.
+The link also adds the runtime library's `udivmod16`, 49 bytes of code,
+which brings the C program's code to 15,643 bytes, 7.5% more than the
+original's. `hrcg.c` leaves out the HRCG's entry points and control
+characters that the game never uses.
 
-The largest difference is `turn.c`'s `run_chain`, 502 bytes. The
+The largest difference is `turn.c`'s `run_chain`, 461 bytes. The
 original's turn and menus are chains of `JMP`s that can lead back to
 where they started, and c6502 rejects recursion at the link, so each
 routine of a chain returns the next one's number and `run_chain` calls
 them in a loop. The rest comes mostly from code the compiler could
 write better, which the notes list unit by unit. The largest kinds
-left are tail calls between a unit's functions, which the original
-arranges to fall through or branch into each other, copies that the
-compiler puts after a function's end with a `JMP` back, a value
-chosen by an `if` that goes through a temporary at the join, and
-switches on 16-bit values. The gap was 11% before 18 Nov 2026, when
-c6502 began passing a function's leading arguments in A and X, which
-took 742 bytes off the units, and narrowed comparisons of masked
-bytes.
+left are the stores of each argument into its callee's zero-page
+parameters, where the original passes it in a register or leaves it
+where the callee reads it (combat.c, events.c, entities.c, main.c, and
+ai.c), a chain routine's `JSR x; LDA #state; RTS` where the original
+jumps (turn.c and events.c), pointers to a record's members built as
+16-bit addresses in temporaries (ai.c and combat.c), and map.c's
+16-bit copies of the saved pointers, which the original makes in
+SAVE_ZP_CONTEXT, outside the code counted. The gap was 11% before 18
+Nov 2026, when c6502 began passing a function's leading arguments in A
+and X, which took 742 bytes off the units, and narrowed comparisons of
+masked bytes. The rewrite of the units as plain C later that day added
+469 bytes, which each unit's notes give by routine. c6502's inline
+byte division, shifts by a variable count, and byte products then took
+96 bytes off, and rewriting the four routines that still divided by
+subtraction with `/` and `%` added 17.

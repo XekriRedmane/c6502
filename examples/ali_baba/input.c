@@ -2235,21 +2235,18 @@ static struct menu_option *option(uint8_t n) {
     return &MENU_DESC_PTR->options[n - 1];
 }
 
-/* Moves the cursor to an option's position: row 21, 22, or 23 for
- * positions 0-39, 40-79, and 80-119, and the position's remainder as
- * the column. SET_CURSOR_POS. */
+/* Moves the cursor to an option's position, which counts 40 cells to a
+ * line from the start of row 21. A position of 120 or more, which no
+ * menu has, stays on row 23 at a column past 39, as in the original,
+ * which subtracts 40 at most twice. SET_CURSOR_POS. */
 static void set_cursor_pos(uint8_t pos) {
-    uint8_t row = 21;
-    if (pos >= 40) {
-        pos -= 40;
-        row = 22;
-        if (pos >= 40) {
-            pos -= 40;
-            row = 23;
-        }
+    if (pos < 80) {
+        TEXT_ROW = 21 + pos / 40;
+        TEXT_COL = pos % 40;
+    } else {
+        TEXT_ROW = 23;
+        TEXT_COL = pos - 80;
     }
-    TEXT_ROW = row;
-    TEXT_COL = pos;
 }
 
 /* Draws option `o` in the current video mode, and then selects normal

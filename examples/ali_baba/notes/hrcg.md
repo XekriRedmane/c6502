@@ -53,19 +53,20 @@ None.
 
 No bug was hit. These cost bytes:
 
-1. A `uint8_t` divided by 8, or its remainder by 8, is a signed 16-bit
-   division, and `/` and `%` of the same operands call `sdivmod16`
-   twice. `AND #7` and three `LSR`s would do. hrcg_row_address is 114
-   bytes and two helper calls for every character drawn, where the old
-   C, with `row >> 3` and a 3-byte table, was 51.
+1. The products in hrcg_row_address's line address are 16-bit
+   arithmetic through zero-page temporaries. `row % 8` and `row / 8`
+   compile to `AND #7` and three `LSR`s, and `0x80 * (row % 8)` to an
+   `LSR` and a `ROR`, but `0x28 * (row / 8)` is two 16-bit shifts and
+   a 16-bit add, and the high byte of `row / 8 << 3`, which is 0 for
+   any byte, is computed with five more `LSR`s. `row / 8` is at most
+   31, so value_range's bounds would show that byte to be 0.
+   hrcg_row_address is 90 bytes, where the old C, with `row >> 3` and
+   a 3-byte table, was 51.
 
    ```c
    #include <stdint.h>
-   uint8_t g(uint8_t row) { return 0x80 * (row % 8) + 0x28 * (row / 8); }
+   uint16_t g(uint8_t row) { return 0x80 * (row % 8) + 0x28 * (row / 8); }
    ```
-
-   This also makes the HRCG call a runtime helper, which the original
-   doesn't, and those helpers aren't in the repository as 6502 code.
 
 2. `row + 1 < WNDBTM`, with both bytes, is a signed 16-bit comparison
    with an overflow test (`BVC; EOR #$80`). row + 1 is 1-256 and
@@ -99,7 +100,7 @@ From `objdump.py -t` of `hrcg.o` (before linking), against `main.lst`.
 
 | | Original | C |
 |---|---:|---:|
-| Code of the routines translated | 846 | 901 |
+| Code of the routines translated | 846 | 877 |
 | Dispatch table and row table | 66 | 12 (the fonts' addresses, which the compiler makes) |
 | Variables | 21 (at $9305-$9319) | 10 in .bss, 4 in zero page |
 | Standard font | 768 | 768 |
@@ -110,7 +111,8 @@ $94E6-$94FD, $9519-$9544, $9561-$956E, $957C-$95D0, $95D3-$95F7,
 $95FA-$9732, and $9737-$9784), including the few shifted variants
 inside them. The unit's whole code is 1141 bytes. The C's are the
 symbol sizes of `nm.py -S hrcg.o`, and its code was 835 bytes before
-the rewrite into plain C on 18 Nov 2026.
+the rewrite into plain C on 18 Nov 2026. It was 901 bytes after the
+rewrite, and 877 once c6502 divided a byte by 8 without `sdivmod16`.
 
 ## Checked against the original
 

@@ -75,8 +75,10 @@ Every routine of the unit is translated, and none is incomplete.
   does.
 - `load_scene_from_disk` takes the scene as a parameter where the
   original reads SCENE_NUMBER (scene_loop passes SCENE_NUMBER), keeps
-  the track and the count of tries in locals where the original uses
-  `$BE`, and drops the three calls of DISK_RTS, an RTS.
+  the count of tries in a local where the original uses `$BE`, which
+  also holds the track while the original counts it up, and drops the
+  three calls of DISK_RTS, an RTS.
+
 - `integrity_fail` is a function. In the original it is the error tail
   of LOAD_SCENE_DATA, which VERIFY_INTEGRITY reaches with a JMP.
 - `tune_player` is passed 0 as the strength. The original's Y at its
@@ -200,6 +202,22 @@ These don't stop the unit from compiling. Each costs bytes.
    tests, which the previous `do`-`while` loops didn't. It is 4 bytes
    larger.
 
+6. **A `/` and a `%` of the same byte with a store between them make
+   two loops of subtractions**, as in notes/entities.md, gap 1.
+   load_scene_from_disk stores `sector % 13` through the IOB pointer
+   and then computes `sector / 13`, and the store keeps the two from
+   sharing one loop, though `sector` is a local whose address isn't
+   taken. The second loop and the reload of `sector` are 10 bytes, and
+   the quotient goes through a temporary in `STX t; LDA
+   GAME_SIG_TRACK; ADC t`, where `TXA; ADC GAME_SIG_TRACK` would do.
+
+   ```c
+   #include <stdint.h>
+   struct iob { uint8_t pad[4]; uint8_t track, sector; };
+   extern struct iob *P [[c6502::zeropage(0xE0)]];
+   void g(uint8_t s) { P->sector = s % 13; P->track = 0x11 + s / 13; }
+   ```
+
 ## Size
 
 Code bytes in the `-S -O` output, from `nm.py -S map.o`, against the
@@ -220,10 +238,10 @@ original's bytes for the same routines.
 | FILL_MAP | 49 | fill_map | 63 |
 | LOAD_MAP_TILES | 29 | load_map_tiles | 28 |
 | CLEAR_MAP | 14 | clear_map | 15 |
-| LOAD_SCENE_FROM_DISK, DISK_READ_JUMP, DISK_RTS | 74 | load_scene_from_disk | 71 |
-| Total | 922 | | 1008 |
+| LOAD_SCENE_FROM_DISK, DISK_READ_JUMP, DISK_RTS | 74 | load_scene_from_disk | 83 |
+| Total | 922 | | 1020 |
 
-The C's 1008 bytes are 937 in `.text` and 71 in `.text.scene_disk`.
+The C's 1020 bytes are 937 in `.text` and 83 in `.text.scene_disk`.
 The data is 4 bytes of `.rodata` (TILE_FILL_TAB), 2 of `.data`
 (DEFAULT_CHAR and MAP_FILL_CHAR), and 2 of `.bss` (BLINK_ALT_CHAR and
 MAP_REDRAW_FLAG). The original's tables were 3 + 1 + 1 + 12 = 17 bytes
@@ -236,7 +254,7 @@ SCENE_LOOP's 87 bytes), `draw_map_entities` (25, of which gap 3 is 9),
 and the disk routines (21, the carry that `rwts_dispatch` turns into a
 `bool` and back with `LDA #0; ROL; ...; CMP #1`).
 
-`load_scene_from_disk` finds the track and sector of a scene with a
-loop that subtracts 13, as the original does. `sector / 13` and
-`sector % 13` would each call `sdivmod16`, a runtime helper that the
-program doesn't have (see notes/input.md, gap 6).
+`load_scene_from_disk` finds the track and sector of a scene with
+`sector / 13` and `sector % 13`. Until 18 Nov 2026 those called the
+runtime helper `sdivmod16`, and the C subtracted 13 in a loop, as the
+original does, in 71 bytes. With the two loops of gap 6 it is 83.

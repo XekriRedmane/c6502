@@ -50,10 +50,9 @@ The file's opening comment lists them. In short:
 - render_stream doesn't write TEXT_STREAM_IDX (`$5A98`), where the
   original saves its index there across RENDER_FONT_CHAR. Nothing else
   reads it.
-- The divisions call the runtime helpers `udivmod16` and `sdivmod16`,
-  which the harness links at the simulator's addresses. The original
-  calls no helper, and those helpers aren't in the repository as 6502
-  code, so the unit doesn't run on an Apple II until they are.
+- num_to_decimal's 16-bit divisions call the runtime helper
+  `udivmod16`, which the linker adds from the runtime library. The
+  original calls no helper.
 
 ## Header changes needed
 
@@ -63,11 +62,14 @@ None.
 
 No bug was hit. These cost bytes against the original:
 
-1. A 16-bit `/` and `%` of the same operands call `udivmod16` twice,
-   though one call leaves both, and `place /= 10` calls it a third
-   time. num_to_decimal is 153 bytes and makes 15 helper calls for a
-   number, where the original's repeated subtraction is 132 bytes and
-   the old C's was 111 and a 10-byte table.
+1. **`place /= 10` calls `udivmod16`.** num_to_decimal's `value /
+   place` and `value % place` share one call, and dividing the place
+   by 10 makes a second, so a number takes 10 helper calls.
+   num_to_decimal is 125 bytes, where the original's repeated
+   subtraction is 132 bytes and the old C's was 111 and a 10-byte
+   table of the places. A 16-bit value divided by the constant 10 could
+   be done inline, and a loop over the five places, which are
+   constants, could be unrolled into five divisions by constants.
 
    ```c
    #include <stdint.h>
@@ -79,11 +81,11 @@ No bug was hit. These cost bytes against the original:
    }
    ```
 
-2. `(space + 1) / 2`, with `space` a `uint8_t`, calls `sdivmod16`. The
-   dividend can't be negative, so a 9-bit shift right (`LSR` of the
-   high byte and `ROR` of the low) would do, and the original's `LSR;
-   ADC TEXT_COL` takes in the rounding as the carry. print_centered_plus_col
-   is 51 bytes, against the original's 19.
+2. **`(space + 1) / 2`, with `space` a `uint8_t`, is a 9-bit shift
+   right**, an add of 1 with the carry into a high byte, `LSR` of the
+   high byte, and `ROR` of the low. The original's `LSR; ADC TEXT_COL`
+   takes in the rounding as the carry, which is the same sum.
+   print_centered_plus_col is 42 bytes, against the original's 19.
 
    ```c
    #include <stdint.h>
@@ -105,23 +107,26 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 
 | Original | Bytes | C | Bytes |
 |---|---:|---|---:|
-| NUM_TO_DECIMAL | 132 | num_to_decimal and its outlined tail | 153 |
+| NUM_TO_DECIMAL | 132 | num_to_decimal | 125 |
 | TEXT_RENDERER | 145 | render_stream, text_renderer, text_renderer_no_pause | 180 |
 | DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop, next_string | 192 |
 | SCROLL_STATUS_LINE | 21 | scroll_status_line | 25 |
 | SET_CURSOR_ROW21, SET_TEXT_WINDOW_BOTTOM | 20 | the same and set_cursor_row | 24 |
 | PRINT_BOTTOM_CENTERED | 11 | print_bottom_centered | 15 |
-| PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 51 |
+| PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 42 |
 | SET_INVERSE_VIDEO, PRINT_CTRL_N | 10 | the same | 10 |
 | SET_TEXT_WINDOW_WRAP, SET_TEXT_WINDOW_SCROLL | 20 | the same | 20 |
 | PRINT_CTRL_AB | 10 | print_ctrl_ab | 10 |
 | PRINT_STRING_AT_ADDR, PRINT_STRING | 22 | print_string | 38 |
 | SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 11 |
-| **Total code** | **553** | | **729** |
+| **Total code** | **553** | | **692** |
 
 The C's bytes are the symbol sizes of `nm.py -S text.o`. Before the
 rewrite into plain C on 18 Nov 2026, the unit was 668 bytes of code
-and 10 of data.
+and 10 of data. It was 729 bytes after the rewrite, and 692 once c6502
+shared one call of `udivmod16` between a `/` and a `%` and divided a
+byte by 2 without `sdivmod16`. The linker adds `udivmod16`'s 49 bytes
+to the program from the runtime library.
 
 ## Checked against the original
 

@@ -35,8 +35,8 @@
       reads through DISK_READ_JUMP, a JMP to DISK_READ.
       load_scene_from_disk calls disk_read. It takes the scene as a
       parameter where the original reads SCENE_NUMBER, and keeps the
-      track and the count of tries in locals where the original uses
-      $BE.
+      count of tries in a local where the original uses $BE, which
+      also holds the track while the original counts it up.
     - INTEGRITY_FAIL_ADDR is the error tail of LOAD_SCENE_DATA, which
       VERIFY_INTEGRITY jumps to. integrity_fail is a function that
       load_scene_data and verify_integrity call.
@@ -858,14 +858,9 @@ static void load_scene_data(void) {
 static bool load_scene_from_disk(uint8_t scene) {
     struct rwts_iob *iob = RWTS_IOB_PTR;
     iob->buffer_addr = SCENE_TEXT_DATA;
-    uint8_t track = GAME_SIG_TRACK;
     uint8_t sector = GAME_SIG_SECTOR + scene;
-    while (sector >= 13) {
-        track++;
-        sector -= 13;
-    }
-    iob->sector = sector;
-    iob->track = track;
+    iob->sector = sector % 13;
+    iob->track = GAME_SIG_TRACK + sector / 13;
     uint8_t tries = 2;
     while (disk_read()) {
         if (--tries == 0)

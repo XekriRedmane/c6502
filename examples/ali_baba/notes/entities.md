@@ -110,24 +110,37 @@ and the C no longer works around them. classify_entity_type returns
 each name's address as `LDX #>S_A_DOOR; LDA #<S_A_DOOR; RTS`, and
 reorder_char compares the masked level without a cast. These remain.
 
-1. **A division or remainder of a byte by a constant calls the
-   runtime helper `sdivmod16`.**
+1. **A `/` and a `%` of the same byte make two loops of subtractions
+   when a branch or a store comes between them.** c6502 divides a byte
+   by a constant with an inline loop that counts the quotient in X and
+   leaves the remainder less the divisor in A, and a `/` and a `%` of
+   the same operands share one loop only when nothing but arithmetic
+   comes between them (docs/optimizations/byte_divide.md).
+   appearance_to_fontchar's two are next to each other and share one.
+   render_font_char_direct divides only for a sprite number of 24 or
+   more, as the original writes the font's selector only then, and
+   takes the remainder after the `if`.
 
    ```c
+   #include <stdint.h>
    extern uint8_t V [[c6502::address(0x5A00)]];
    extern uint8_t Q [[c6502::address(0x5A01)]];
    extern uint8_t R [[c6502::address(0x5A02)]];
-   void f(void) { Q = V / 21; R = V % 21; }
+   void f(void) { if (V >= 24) Q = V / 24; R = V % 24; }
    ```
 
-   compiles to two calls of a fragment that stores V and 21 in HARGS
-   as 16-bit operands and jumps to `sdivmod16`, which this program
-   doesn't have (README, "Building"). appearance_to_fontchar and
-   render_font_char_direct therefore divide by repeated subtraction,
-   as the original does, in a `while` loop. Both operands are
-   unsigned bytes, so an 8-bit unsigned division would do, and a
-   division of a byte by a constant can be done inline with a multiply
-   by the reciprocal or, for a quotient this small, by the loop.
+   compiles to `LDA V; CMP #$18; BCC skip; LDX #$FF; loop: INX; SBC
+   #$18; BCS loop; STX Q; LDA V; skip: LDX #$FF; SEC; loop2: INX; SBC
+   #$18; BCS loop2; ADC #$18; STA R`. On the path through the `if`,
+   the first loop has already left the remainder less 24 in A, and the
+   reload of V and the second loop, 11 bytes, compute it again.
+   render_font_char_direct is 77 bytes, 11 more than the old C's
+   `while` loop of subtractions, which stored the selector at each
+   pass as the original does.
+
+   After the loop, the remainder of appearance_to_fontchar's
+   `appearance % 21 + 1` is `ADC #$15; CLC; ADC #$01`, where the carry
+   is already clear and `ADC #$16` would do.
 
 2. **Stores to different globals are reordered.** setup_char_sprite
    stores FONT_COL, FONT_ROW, BLINK_COL, and BLINK_ROW in the
@@ -146,7 +159,9 @@ The bytes of code in `entities.c -c -O` (the `.text` sections, from
 the rewrite to plain C the unit took 1,049 bytes with the same
 compiler, and the only routine whose size changed is
 adjust_pc_count, by 2 bytes, for the comparison of both bytes of the
-record's address.
+record's address. appearance_to_fontchar and render_font_char_direct
+were rewritten with `/` and `%` once c6502 divided a byte inline, and
+went from 37 and 66 bytes to 31 and 77 (gap 1).
 
 | Routine | Original | C |
 |---|---|---|
@@ -154,7 +169,7 @@ record's address.
 | SETUP_CHAR_SPRITE | 37 | 32 + 8 |
 | FIND_ENTITY_AT_POS | 152 | 91 |
 | GET_ENTITY_FONTCHAR | 121 | 125 |
-| APPEARANCE_TO_FONTCHAR | 25 | 37 |
+| APPEARANCE_TO_FONTCHAR | 25 | 31 |
 | PRINT_MOB_NAME | 14 | 15 |
 | REORDER_CHAR | 171 | 237 |
 | DECR/INCR_GROUP_COUNT | 36 | 29 |
@@ -166,16 +181,15 @@ record's address.
 | REORDER_CURRENT_CHAR | 17 | 13 |
 | SET_BLINK_TARGET | 61 | 54 |
 | LOAD_CHAR_TO_FA | 12 | 8 |
-| RENDER_FONT_CHAR group | 66 | 6 + 19 + 66 |
+| RENDER_FONT_CHAR group | 66 | 6 + 19 + 77 |
 | DRAW_BLINK_ALT | 18 | 20 |
 | DRAW_BLINK_NORMAL/CHAR | 47 | 6 + 26 |
 | FONT_POS_TO_TEXT_POS | 13 | 13 |
-| Total | 1033 | 1051 |
+| Total | 1033 | 1056 |
 
 The `+` terms are the C's separate functions, and for
 SETUP_CHAR_SPRITE the 8 bytes of `setup_char_sprite@tail0`, a tail the
 optimizer outlined. Most of the difference is the copying of pointer
 arguments into the callee's fixed zero-page slots (reorder_char's
-calls of adjust_pc_count and get_mob_data), and appearance_to_fontchar
-and render_font_char_direct keeping their counters in memory where the
-original keeps them in A and Y.
+calls of adjust_pc_count and get_mob_data), and render_font_char_direct's
+second loop of subtractions (gap 1).

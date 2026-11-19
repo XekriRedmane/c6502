@@ -3,9 +3,8 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$1A
-FP	EQU	$1C
-slot_number	EQU	$1E
+SSP	EQU	$1B
+FP	EQU	$1D
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -19,10 +18,11 @@ DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
 option@ret	EQU	$62
-under_level	EQU	$64
-joy_zone_x	EQU	$65
-joy_zone_y	EQU	$66
-safe_to_rest	EQU	$67
+slot_number	EQU	$64
+under_level	EQU	$65
+joy_zone_x	EQU	$66
+joy_zone_y	EQU	$67
+safe_to_rest	EQU	$68
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
@@ -297,7 +297,7 @@ WAIT	EQU	$FCA8
 ; def retire_character params= locals= indirect=false in_cycle=false
 ; def save_game params= locals=__local_save_game__0 indirect=false in_cycle=false
 ; def scenario_done params= locals= indirect=false in_cycle=false
-; def set_cursor_pos params=__zpabi_set_cursor_pos__pos locals=__local_set_cursor_pos__pos,__local_set_cursor_pos__row indirect=false in_cycle=false param_regs=A
+; def set_cursor_pos params=__zpabi_set_cursor_pos__pos locals=__local_set_cursor_pos__pos indirect=false in_cycle=false param_regs=A
 ; def settings_danger_down params= locals= indirect=false in_cycle=false
 ; def settings_danger_up params= locals= indirect=false in_cycle=false
 ; def settings_speed_down params= locals= indirect=false in_cycle=false
@@ -755,7 +755,6 @@ WAIT	EQU	$FCA8
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
 ; zp NULL_PAGE_HIGH size=6 at=$0A def=false init=
-; zp slot_number size=1 at=auto def=true init=$01 weight=14 local=true
 ; zp MONITOR_YSAV1_1F size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -768,6 +767,7 @@ WAIT	EQU	$FCA8
 ; zp DOS_ZP size=38 at=$2A def=false init=
 ; zp DISK_VM_ZP size=16 at=$50 def=false init=
 ; zp option@ret size=2 at=auto def=true init= local=true
+; zp slot_number size=1 at=auto def=true init=$01 weight=14 local=true
 ; zp under_level size=1 at=auto def=true init=$00 weight=6 local=true
 ; zp joy_zone_x size=1 at=auto def=true init=$01 weight=5 local=true
 ; zp joy_zone_y size=1 at=auto def=true init=$01 weight=4 local=true
@@ -778,7 +778,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=11 hargs_need=0
 ; @zp-link-meta-end
 
 option:
@@ -827,28 +827,28 @@ option:
 set_cursor_pos:
    SUBROUTINE
 
-   STA   __local_set_cursor_pos__pos
-   CMP   #$28
-   BCC   .set_cursor_pos@asm_ssa_split@0
+   CMP   #$50
+   BCS   .if_else@1
+   LDX   #$FF
+   SEC
+.div_loop@0:
+   INX
    SBC   #$28
-   STA   __local_set_cursor_pos__pos
-   CMP   #$28
-   BCC   .set_cursor_pos@asm_ssa_split@1
-   SBC   #$28
-   STA   __local_set_cursor_pos__pos
-   LDA   #$17
-.if_end@1:
-.if_end@0:
+   BCS   .div_loop@0
+   ADC   #$28
+   STA   TEXT_COL
+   STX   __local_set_cursor_pos__pos
+   LDA   #$15
+   CLC
+   ADC   __local_set_cursor_pos__pos
    STA   TEXT_ROW
-   LDA   __local_set_cursor_pos__pos
+   RTS
+.if_else@1:
+   LDY   #$17
+   STY   TEXT_ROW
+   SBC   #$50
    STA   TEXT_COL
    RTS
-.set_cursor_pos@asm_ssa_split@0:
-   LDA   #$15
-   BNE   .if_end@0
-.set_cursor_pos@asm_ssa_split@1:
-   LDA   #$16
-   BNE   .if_end@1
 
 draw_option:
    SUBROUTINE
@@ -1282,20 +1282,20 @@ configure_input:
    STA   GAME_INPUT_OPTIONS+45
    LDA   under_level
    STA   GAME_INPUT_OPTIONS+27
-   BEQ   .lnot_true@0
+   BEQ   .lnot_true@1
    LDA   #$00
-   BEQ   .lnot_end@1
-.lnot_true@0:
+   BEQ   .lnot_end@2
+.lnot_true@1:
    LDA   #$01
-.lnot_end@1:
+.lnot_end@2:
    STA   GAME_INPUT_OPTIONS+9
    LDA   under_level
-   BEQ   .lnot_true@2
+   BEQ   .lnot_true@3
    LDA   #$00
-   BEQ   .lnot_end@3
-.lnot_true@2:
+   BEQ   .lnot_end@4
+.lnot_true@3:
    LDA   #$01
-.lnot_end@3:
+.lnot_end@4:
    STA   GAME_INPUT_OPTIONS+18
    LDA   under_level
    BEQ   .cond_else@37

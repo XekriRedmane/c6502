@@ -3,9 +3,8 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$11
-FP	EQU	$13
-DPTR	EQU	$15
+SSP	EQU	$1B
+FP	EQU	$1D
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -17,6 +16,7 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
+DPTR	EQU	$60
 __local_classify_entity_type__0	EQU	$80
 __local_draw_blink_alt__sprite	EQU	$80
 __local_load_char_name_ptr__0	EQU	$80
@@ -40,11 +40,11 @@ __local_get_entity_fontchar__sprite	EQU	$83
 __local_reorder_char__0	EQU	$83
 __local_find_entity_at_pos__ev	EQU	$84
 __local_get_entity_fontchar__0	EQU	$84
-__local_render_font_char_direct__charset_sel	EQU	$84
+__local_render_font_char_direct__0	EQU	$84
 __local_reorder_char__1	EQU	$84
 __local_find_entity_at_pos__0	EQU	$85
 __local_get_entity_fontchar__e	EQU	$85
-__local_render_font_char_direct__sprite	EQU	$85
+__local_render_font_char_direct__charset_sel	EQU	$85
 __local_reorder_char__link	EQU	$85
 __local_find_entity_at_pos__pos	EQU	$86
 __local_get_entity_fontchar__1	EQU	$86
@@ -250,7 +250,7 @@ WAIT	EQU	$FCA8
 ; def print_member_name params= locals=__local_print_member_name__0 indirect=false in_cycle=false
 ; def print_mob_name params= locals=__local_print_mob_name__0 indirect=false in_cycle=false
 ; def render_font_char params= locals= indirect=false in_cycle=false
-; def render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel locals=__local_render_font_char_direct__charset_sel,__local_render_font_char_direct__sprite indirect=false in_cycle=false param_regs=A
+; def render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel locals=__local_render_font_char_direct__0,__local_render_font_char_direct__charset_sel indirect=false in_cycle=false param_regs=A
 ; def reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 locals=__local_reorder_char__0,__local_reorder_char__1,__local_reorder_char__link,__local_reorder_char__2,__local_reorder_char__3,__local_reorder_char__4,__local_reorder_char__5,__local_reorder_char__m,__local_reorder_char__6,__local_reorder_char__7 indirect=false in_cycle=false param_regs=A,X
 ; def reorder_current_char params= locals= indirect=false in_cycle=false
 ; def set_blink_target params= locals=__local_set_blink_target__0,__local_set_blink_target__1 indirect=false in_cycle=false
@@ -497,7 +497,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=1 hargs_need=0
+; runtime hargs_size=11 hargs_need=0
 ; @zp-link-meta-end
 
 load_char_name_ptr:
@@ -673,20 +673,18 @@ get_entity_fontchar:
 appearance_to_fontchar:
    SUBROUTINE
 
-   STA   __local_appearance_to_fontchar__sprite
-   LDX   #$00
-   BEQ   .loop@2_continue
-.appearance_to_fontchar@rot@2:
-   SBC   #$15
-   STA   __local_appearance_to_fontchar__sprite
+   LDX   #$FF
+   SEC
+.div_loop@0:
    INX
-.loop@2_continue:
-   CMP   #$15
-   BCS   .appearance_to_fontchar@rot@2
-   INC   __local_appearance_to_fontchar__sprite
-   LDA   __local_appearance_to_fontchar__sprite
+   SBC   #$15
+   BCS   .div_loop@0
+   ADC   #$15
+   CLC
+   ADC   #$01
+   STA   __local_appearance_to_fontchar__sprite
    CMP   #$05
-   BCS   .vthread@0
+   BCS   .if_end@23
    TXA
    BEQ   .if_end@23
    LDA   __local_appearance_to_fontchar__sprite
@@ -694,8 +692,6 @@ appearance_to_fontchar:
    STA   __local_appearance_to_fontchar__sprite
 .if_end@23:
    LDA   __local_appearance_to_fontchar__sprite
-.vthread@0:
-   ORA   #$00
    RTS
 
 print_mob_name:
@@ -716,10 +712,10 @@ adjust_pc_count:
    STA   __local_adjust_pc_count__loc
    STX   __local_adjust_pc_count__2
    CPX   #>LOCATIONS
-   BNE   .jcmp_skip@0
+   BNE   .jcmp_skip@1
    CMP   #<LOCATIONS
    BEQ   .if_end@26
-.jcmp_skip@0:
+.jcmp_skip@1:
    LDY   #$04
    LDA   (__zpabi_adjust_pc_count__m_0),Y
    CMP   #$15
@@ -755,7 +751,7 @@ reorder_char:
    BCC   .carry_inc@1
    INC   __local_reorder_char__2
 .carry_inc@1:
-.loop@3_start:
+.loop@2_start:
    LDY   #$00
    LDA   (__local_reorder_char__link),Y
    STA   __local_reorder_char__5
@@ -763,7 +759,7 @@ reorder_char:
    CPX   __local_reorder_char__6
    BNE   .if_end@27
    CMP   __local_reorder_char__m
-   BEQ   .loop@3_break
+   BEQ   .loop@2_break
 .if_end@27:
    CLC
    ADC   #$02
@@ -771,8 +767,8 @@ reorder_char:
    TXA
    ADC   #$00
    STA   __local_reorder_char__2
-   JMP   .loop@3_start
-.loop@3_break:
+   JMP   .loop@2_start
+.loop@2_break:
    LDA   __local_reorder_char__5
    CMP   CURRENT_ROOM
    BNE   .if_end@28
@@ -804,10 +800,10 @@ reorder_char:
    CLC
    ADC   #$02
    STA   __local_reorder_char__2
-   BCC   .loop@4_continue
+   BCC   .loop@3_continue
    INC   __local_reorder_char__3
-   JMP   .loop@4_continue
-.reorder_char@rot@3:
+   JMP   .loop@3_continue
+.reorder_char@rot@2:
    JSR   get_mob_data
    STA   __local_reorder_char__1
    STX   __local_reorder_char__link
@@ -815,16 +811,16 @@ reorder_char:
    BNE   .if_else@30
    JSR   step_prng
    ORA   #$00
-   BEQ   .loop@4_break
+   BEQ   .loop@3_break
    CMP   #$81
    BCC   .if_end@29
-   JMP   .loop@4_break
+   JMP   .loop@3_break
 .if_else@30:
    LDY   #$0B
    LDA   (__local_reorder_char__1),Y
    AND   #$1F
    CMP   __local_reorder_char__4
-   BCC   .loop@4_break
+   BCC   .loop@3_break
 .if_end@29:
    LDA   __local_reorder_char__1
    CLC
@@ -833,11 +829,11 @@ reorder_char:
    LDA   __local_reorder_char__link
    ADC   #$00
    STA   __local_reorder_char__3
-.loop@4_continue:
+.loop@3_continue:
    LDY   #$00
    LDA   (__local_reorder_char__2),Y
-   BNE   .reorder_char@rot@3
-.loop@4_break:
+   BNE   .reorder_char@rot@2
+.loop@3_break:
    LDY   #$00
    LDA   (__local_reorder_char__2),Y
    LDY   #$02
@@ -1089,32 +1085,40 @@ render_font_char_direct:
 
    STA   __local_render_font_char_direct__charset_sel
    LDA   FONT_CHARNUM
-   STA   __local_render_font_char_direct__sprite
-   JMP   .loop@5_continue
-.render_font_char_direct@rot@4:
-   INC   __local_render_font_char_direct__charset_sel
-   LDA   __local_render_font_char_direct__charset_sel
-   STA   s_PRINT_FONT_CHAR+2
-   LDA   __local_render_font_char_direct__sprite
-   SBC   #$18
-   STA   __local_render_font_char_direct__sprite
-.loop@5_continue:
    CMP   #$18
-   BCS   .render_font_char_direct@rot@4
+   BCC   .vthread@0
+   LDX   #$FF
+.div_loop@2:
+   INX
+   SBC   #$18
+   BCS   .div_loop@2
+   STX   __local_render_font_char_direct__0
+   LDA   __local_render_font_char_direct__charset_sel
+   ADC   __local_render_font_char_direct__0
+   STA   s_PRINT_FONT_CHAR+2
+   LDA   FONT_CHARNUM
+.vthread@0:
+   LDX   #$FF
+   SEC
+.div_loop@3:
+   INX
+   SBC   #$18
+   BCS   .div_loop@3
+   ADC   #$18
    ASL
    ASL
    CLC
    ADC   #$20
-   STA   __local_render_font_char_direct__charset_sel
+   STA   __local_render_font_char_direct__0
    STA   s_PRINT_FONT_CHAR+4
    CLC
    ADC   #$01
    STA   s_PRINT_FONT_CHAR+5
-   LDA   __local_render_font_char_direct__charset_sel
+   LDA   __local_render_font_char_direct__0
    CLC
    ADC   #$02
    STA   s_PRINT_FONT_CHAR+7
-   LDA   __local_render_font_char_direct__charset_sel
+   LDA   __local_render_font_char_direct__0
    CLC
    ADC   #$03
    STA   s_PRINT_FONT_CHAR+8
@@ -1127,9 +1131,9 @@ draw_blink_char:
 
    LDA   BLINK_COL
    CMP   #$14
-   BCC   .if_end@58
+   BCC   .if_end@59
    RTS
-.if_end@58:
+.if_end@59:
    STA   FONT_COL
    LDA   BLINK_ROW
    STA   FONT_ROW

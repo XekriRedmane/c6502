@@ -187,13 +187,17 @@ def _read(run, name: str, t: _Type, n: int) -> list[int]:
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestHelpers(unittest.TestCase):
-    """Each helper, linked from the library and run, against Python."""
+    """Each helper, linked from the library and run, against Python.
+    A 1- or 2-byte shift by a variable count is an inline loop, so
+    those tests check the loop's results and that the shift helpers
+    of those widths aren't linked."""
 
     N = 24
 
     def _check(self, helpers: set[str], t: _Type, u: _Type,
                outs: list[tuple[str, object]], nonzero: bool = False,
-               counts: range | None = None) -> None:
+               counts: range | None = None,
+               absent: frozenset[str] = frozenset()) -> None:
         rng = random.Random(f"{sorted(helpers)}{t.c}")
         xs = t.values(rng, self.N)
         if counts is not None:
@@ -212,6 +216,8 @@ class TestHelpers(unittest.TestCase):
         exe = _build(_source(t, u, xs, ys, [e for e, _ in outs]))
         self.assertTrue(helpers <= set(_own_helpers(exe)),
                         f"{helpers} not all in {sorted(_own_helpers(exe))}")
+        self.assertFalse(absent & set(_own_helpers(exe)),
+                         f"{absent} linked: {sorted(_own_helpers(exe))}")
         self.assertFalse(any(
             s.name in helper_names() and s.section == E.SHN_ABS
             for s in exe.symbols
@@ -243,16 +249,19 @@ class TestHelpers(unittest.TestCase):
         ], nonzero=True)
 
     def test_asl8(self) -> None:
-        self._check({"asl8"}, U8, COUNT, [("x << y", lambda x, y: x << y)],
-                    counts=range(8))
+        self._check(set(), U8, COUNT, [("x << y", lambda x, y: x << y)],
+                    counts=range(8),
+                    absent=frozenset({"asl8"}))
 
     def test_lsr8(self) -> None:
-        self._check({"lsr8"}, UB8, COUNT, [("x >> y", lambda x, y: x >> y)],
-                    counts=range(8))
+        self._check(set(), UB8, COUNT, [("x >> y", lambda x, y: x >> y)],
+                    counts=range(8),
+                    absent=frozenset({"lsr8"}))
 
     def test_asr8(self) -> None:
-        self._check({"asr8"}, B8, COUNT, [("x >> y", lambda x, y: x >> y)],
-                    counts=range(8))
+        self._check(set(), B8, COUNT, [("x >> y", lambda x, y: x >> y)],
+                    counts=range(8),
+                    absent=frozenset({"asr8"}))
 
     def test_mul16(self) -> None:
         self._check({"mul16"}, U16, U16, [("x * y", lambda x, y: x * y)])
@@ -270,16 +279,19 @@ class TestHelpers(unittest.TestCase):
         ], nonzero=True)
 
     def test_asl16(self) -> None:
-        self._check({"asl16"}, U16, COUNT, [("x << y", lambda x, y: x << y)],
-                    counts=range(16))
+        self._check(set(), U16, COUNT, [("x << y", lambda x, y: x << y)],
+                    counts=range(16),
+                    absent=frozenset({"asl16"}))
 
     def test_lsr16(self) -> None:
-        self._check({"lsr16"}, U16, COUNT, [("x >> y", lambda x, y: x >> y)],
-                    counts=range(16))
+        self._check(set(), U16, COUNT, [("x >> y", lambda x, y: x >> y)],
+                    counts=range(16),
+                    absent=frozenset({"lsr16"}))
 
     def test_asr16(self) -> None:
-        self._check({"asr16"}, S16, COUNT, [("x >> y", lambda x, y: x >> y)],
-                    counts=range(16))
+        self._check(set(), S16, COUNT, [("x >> y", lambda x, y: x >> y)],
+                    counts=range(16),
+                    absent=frozenset({"asr16"}))
 
     def test_mul32(self) -> None:
         self._check({"mul32"}, U32, U32, [("x * y", lambda x, y: x * y)])

@@ -49,8 +49,8 @@ The file's opening comment lists them. In short:
   that byte offset to the record's address, since the header keeps
   SHOP_ITEM_OFFSET at $5A85 as the original's byte offset.
 - The price, which ADD_PRICE_COMPONENT adds up once for each tier and
-  once more, is `slot->price * (tier + 1)`. The multiplication calls
-  `mul16` (see below).
+  once more, is `slot->price * (tier + 1)`. The multiplication is an
+  inline loop of eight shifts and adds (see below).
 - SHOP_BUY_HANDLER's `JMP (NUM_VALUE)` is a loop over the two tables of
   addresses that calls `apply_shop_effect(n)` or `award_xp(n)`. A junk
   slot's word, which only the slots that no shipped mask enables hold,
@@ -110,24 +110,26 @@ as `n * 41` in shifts and adds, so display_shop indexes the table.
 
 None of the gaps below is a miscompile.
 
-1. **A byte times a small byte plus 1 calls `mul16`.** show_item's
-   price is a byte times 1-4, whose result takes 16 bits.
+1. **A byte times a multiplier of 1-4 runs eight passes of the 8-by-8
+   multiply loop.** show_item's price is a byte times the tier plus 1,
+   with the tier masked to 0-3, and its 16-bit result is the shift and
+   add loop of docs/optimizations/byte_product.md.
 
    ```c
    #include <stdint.h>
    extern uint16_t PRICE [[c6502::address(0x5A81)]];
-   void f(uint8_t price, uint8_t tier) { PRICE = price * (tier + 1); }
+   void f(uint8_t price, uint8_t style) {
+       PRICE = price * (((style >> 5) & 3) + 1);
+   }
    ```
 
-   compiles to `STA HARGS; TXA; CLC; ADC #1; STA HARGS+2; LDA #0; ADC
-   #0; STA HARGS+3; LDA #0; STA HARGS+1; JSR mul16` and two copies out
-   of HARGS+4 and HARGS+5. The old C added the price tier + 1 times in
-   a loop of 16-bit adds, as the original does, and show_item is 4
-   bytes larger with the call. The call also makes the linked program
-   depend on a runtime helper, which this repository doesn't have as
-   6502 code (UNITS.md, "Compiler gaps", item 6). With `price * (((style
-   >> 5) & 3) + 1)`, where `style` is a parameter, the shift also calls
-   `asr16`, where the shift alone compiles to five `LSR`s.
+   compiles to the five `LSR`s and the `AND #3` of the tier, then
+   `CLC; ADC #1; STA HARGS; LDA #0; LDX #8; LSR HARGS`, a loop of `BCC;
+   CLC; ADC price; ROR; ROR HARGS; DEX; BNE`, and the two stores. The
+   old C added the price tier + 1 times in a loop of 16-bit adds, as
+   the original does, and show_item is 6 bytes larger than with that
+   loop. Without the mask, `price * (tier + 1)` still calls `mul16`,
+   since `tier + 1` can be 256.
 
 2. **A pointer to one of two members of ENTITY_PTR's record is
    computed as a 16-bit address**, as in notes/combat.md, gap 3.
@@ -181,15 +183,15 @@ against the original's from `main.lst`.
 | NPC_MOVE_AI | 211 | npc_move_ai | 217 |
 | EVALUATE_DIRECTION, INC_MOB_COUNTERS | 150 | evaluate_direction, event_penalty | 174 |
 | AI_CHOOSE_TARGET | 285 | ai_choose_target, join_party | 289 |
-| DISPLAY_SHOP, BROWSE_HANDLER, ADVANCE_SHOP_PTR, ADD_PRICE_COMPONENT | 232 | display_shop, browse_handler, show_item, next_slot (and @run0), current_slot | 321 |
+| DISPLAY_SHOP, BROWSE_HANDLER, ADVANCE_SHOP_PTR, ADD_PRICE_COMPONENT | 232 | display_shop, browse_handler, show_item, next_slot (and @run0), current_slot | 323 |
 | SHOP_BUY_HANDLER | 68 | shop_buy_handler | 140 |
-| SHOP_BUY_EFFECT_0-4, APPLY_SHOP_EFFECT | 62 | apply_shop_effect | 63 |
+| SHOP_BUY_EFFECT_0-4, APPLY_SHOP_EFFECT | 62 | apply_shop_effect | 59 |
 | XP_AWARD_0-4, AWARD_XP, EXTRACT_PENDING_XP | 94 | award_xp, pending_xp | 107 |
-| **Total** | **1223** | | **1459** |
+| **Total** | **1223** | | **1457** |
 
 The C also has 25 bytes of read-only data, the two tables of handler
 addresses and REVERSE_DIR, and the 2 bytes of `shop` in `.bss`. It is
-236 bytes (19%) larger in code. The largest losses are in show_item
+234 bytes (19%) larger in code. The largest losses are in show_item
 and shop_buy_handler, where much of the difference is the copies of
 zero-page parameters around calls and the zero-page loop counters of
 gap 6.
@@ -198,13 +200,15 @@ Before the rewrite of 18 Nov 2026 the unit's code was 1427 bytes, with
 7 bytes of `__zp_init` for `shop` beside it. award_xp grew by 21 bytes
 (gap 3), display_shop by 11 (gap 4), apply_shop_effect by 7 (gap 2),
 and show_item by 4 (gap 1), and npc_move_ai shrank by 13 with
-REVERSE_DIR's 5 bytes in place of the XORs.
+REVERSE_DIR's 5 bytes in place of the XORs. The inline multiply loop
+that c6502 began writing for a byte times a byte later on 18 Nov 2026
+replaced show_item's call of `mul16` and made it 2 bytes larger, and
+apply_shop_effect is 4 bytes smaller since then, from the order in
+which it adds its three terms.
 
 ## For the integrator
 
 - `shop` is a static in the unit's `.bss`, and ai.c has no `__zp_init`.
-- show_item calls the runtime helper `mul16`, so the program links only
-  with `--defsym` for it (the tests use `sim.linked.defsym_args()`).
 - display_shop, browse_handler, and shop_buy_handler return
   `CHAIN_START_GAME_INPUT`, `CHAIN_START_GAME_INPUT`, and
   `CHAIN_BROWSE_HANDLER` (or `CHAIN_RETURN` from display_shop for an AI

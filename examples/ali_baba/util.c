@@ -58,10 +58,6 @@
     - COLD_RESTART fills each page from offset 0 and then from $FF
       down, and the tail from $A56F down. cold_restart fills both from
       the lowest address up, which stores the same bytes.
-    - pos_to_colrow divides with / and %, and random_in_range shifts by
-      a count with << and >>. Those call the runtime helpers sdivmod16,
-      asl8, asl16, and asr16, which the original doesn't, and which
-      aren't in this repository as 6502 code.
 
     Ali Baba, main.asm lines 1724-1941, 2057-2124, 2255-2386,
     2406-2433, 2862-2885, 3347-3433, 5387-5400, 14896-14947,

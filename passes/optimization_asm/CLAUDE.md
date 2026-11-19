@@ -12,7 +12,12 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
 - `optimizer.py` — driver (`optimize_program`, `optimize_function`).
   Orchestrates the prepasses, then per-function SSA construction,
   coalescing, fixed-point copy-prop / DCE bracket, regalloc, and SSA
-  destruction.
+  destruction. Before SSA construction, `_explicit_index_tests` puts a
+  `CPX #0` (`CPY #0`) before each branch on N or Z that reads the
+  flags of a move into X (Y) right before it, since the passes below
+  treat a move as a copy that sets no flags, and coloring can make it
+  a move of X to itself, which emits nothing. `redundant_compare`
+  drops the compare where the load stays.
 - `const_static_fold.py` — `fold_const_statics`. Program-level prepass
   (see "Const-static fold" below).
 - `dead_static.py` — drops any internal-linkage `StaticVariable` top-
@@ -69,6 +74,7 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
 ```
 fn → fold_const_statics (program-level prepass)
    → dead_static       (program-level prepass)
+   → _explicit_index_tests
    → to_ssa
    → hwreg_eligibility
    → coalesce_moves

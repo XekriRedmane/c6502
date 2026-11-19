@@ -1264,7 +1264,9 @@ def _shift_loop(
             out.extend(load)
         # `redundant_compare` drops the CPX after an LDX of the count.
         # The branch doesn't read the flags of the TAX, since the asm
-        # optimizer drops `TXA; TAX` when the count is already in X.
+        # optimizer drops `TXA; TAX` when the count is already in X
+        # (the hazard `optimization_asm.optimizer._explicit_index_tests`
+        # guards against for every such branch).
         out.append(asm_ast.Compare(left=_REG_X, right=asm_ast.Imm(value=0)))
         out.append(asm_ast.Branch(cond=asm_ast.EQ(), target=done))
     else:

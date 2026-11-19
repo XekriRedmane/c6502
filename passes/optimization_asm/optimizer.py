@@ -352,6 +352,7 @@ def _optimize_function(
     # Wrap as a single-fn program for the pass's API.
     prog = asm_ast.Program(top_level=[fn])
     fn = apply_sub1_test_zero_peephole(prog).top_level[0]
+    fn = _explicit_index_tests(fn)
     fn = to_ssa(fn, statics=statics)
     # Step 6: SSA-aware forward + backward copy propagation +
     # byte-granular DCE, iterated to a fixed point. Forward
@@ -461,6 +462,45 @@ def _optimize_function(
     fn = from_ssa(fn)
     return fn, coloring
 
+
+def _explicit_index_tests(fn: asm_ast.Function) -> asm_ast.Function:
+    """Returns `fn` with a `CPX #0` (`CPY #0`) put before each branch on
+    N or Z that reads the flags of a move into X (or Y) right before it.
+    The optimizer below treats a move as a copy that leaves the flags
+    alone: copy propagation folds `TXA; TAX` into one move, coloring
+    makes that a move of X to itself, which emits nothing, and the
+    branch read the flags of whatever came before. A shift by a count
+    arriving in X, `LDA n; TAX; BEQ done`, had branched on the caller's
+    flags. The compare keeps the test, and `redundant_compare` drops it
+    after an `LDX` that sets the same flags. When the branch's code
+    reads C, which the compare sets, `INX; DEX` takes its place. A move
+    into A is left alone, since the allocator never colors a value to
+    A, so a load into A stays a load."""
+    from passes.asm_liveness import c_dead_at
+    instrs = fn.instructions
+    out: list[asm_ast.Type_instruction] = []
+    changed = False
+    for i, ins in enumerate(instrs):
+        prev = instrs[i - 1] if i else None
+        if (isinstance(ins, asm_ast.Branch)
+                and isinstance(ins.cond, (asm_ast.EQ, asm_ast.NE,
+                                          asm_ast.MI, asm_ast.PL))
+                and isinstance(prev, asm_ast.Mov)
+                and isinstance(prev.dst, asm_ast.Reg)
+                and isinstance(prev.dst.reg, (asm_ast.X, asm_ast.Y))):
+            reg = prev.dst
+            if c_dead_at(instrs, i):
+                out.append(asm_ast.Compare(left=reg, right=asm_ast.Imm(value=0)))
+            else:
+                out += [asm_ast.Inc(dst=reg), asm_ast.Dec(dst=reg)]
+            changed = True
+        out.append(ins)
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=out,
+    )
 
 def _check_nothing_live_across(
     fn: asm_ast.Function, liveness, graph, callees: frozenset[str],

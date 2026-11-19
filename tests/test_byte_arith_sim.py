@@ -223,5 +223,38 @@ class TestByteArith(unittest.TestCase):
         self._check(optimize=True)
 
 
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestBranchOnTransferFlags(unittest.TestCase):
+    """A branch on the flags of a move into X keeps its test when the
+    move disappears. The shift loop's own `CPX #0` is taken out here,
+    so the test depends on the asm optimizer's guard
+    (`_explicit_index_tests`): with `n` arriving in X, `LDA n; TAX;
+    BEQ done` became a move of X to itself and branched on the caller's
+    flags, and a count of 0 shifted 256 times."""
+
+    def test_zero_count(self):
+        from unittest import mock
+        import asm_ast
+        import tac_to_asm
+        from sim.harness import build_sim
+        original = tac_to_asm._shift_loop
+
+        def without_compare(*args, **kwargs):
+            return [i for i in original(*args, **kwargs)
+                    if not isinstance(i, asm_ast.Compare)]
+
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t sh(uint8_t v, uint8_t n) { return v << n; }\n"
+            "int main(void) { return sh(5, 0) + (sh(1, 0) << 4) "
+            "+ (sh(3, 2) << 8); }\n"
+        )
+        with mock.patch.object(tac_to_asm, "_shift_loop", without_compare):
+            for optimize in (False, True):
+                with self.subTest(optimize=optimize):
+                    out = build_sim(src, optimize=optimize).run()
+                    self.assertEqual(out.return_int(), 5 + 0x10 + 0xC00)
+
 if __name__ == "__main__":
     unittest.main()

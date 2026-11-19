@@ -137,8 +137,12 @@ propagation removes the `Copy` only later in the fixed point. `i <
 40U` on a `uint8_t i` converts the promoted `int` to `unsigned int`
 with such a `Copy`, and the loop had compared two bytes, `TXA; SEC;
 SBC #$28; LDA #$00; SBC #$00; BCC`, where it now compares one, `CPX
-#$28; BCC`. A `JumpIfCmp` has no result to find its position by, so
-only an SSA-renamed extend source narrows here.
+#$28; BCC`. The rule finds the `JumpIfCmp`'s position in the
+function, so a global's extend earlier in the same straight run
+narrows too. `T < M` on a global byte `T` and a `constexpr uint8_t M`
+reaches the jump while `M` is a variable, and becomes a compare with
+99 only after the static's read is folded, so it had stayed a 16-bit
+signed compare. It's now `CMP #$63; BCS`.
 
 Copy propagation doesn't remove such a `Copy` when something else
 reads the extend's result, since the `Copy` changes the signedness,

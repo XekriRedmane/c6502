@@ -111,6 +111,4 @@ UNITS.md's table). The C takes 395 bytes in `main.asm`.
 The C's extra bytes are the zp_abi argument stores (`STA
 __zpabi_...`) before calls that take A in the original, and
 START_MOB_TURN's JMP to GAME_TURN_LOOP becoming a store of the chain
-state and a JMP to `run_chain`. INC_EVENT_THRESHOLD's comparison with
-MAX_THRESHOLD, a `constexpr uint8_t`, is a 16-bit signed compare that
-costs 9 bytes (UNITS.md, compiler gap 7).
+state and a JMP to `run_chain`.

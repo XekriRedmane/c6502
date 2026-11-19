@@ -1464,25 +1464,12 @@ and the units follow the workaround given for each.
    shifts by one, in `uint8_t` so that integer promotion doesn't make
    them 16-bit signed shifts.
 
-7. **An ordering comparison with a `constexpr uint8_t` isn't
-   narrowed to a byte compare.** With an `int` constant, an enumeration
-   constant, or a cast literal it is.
-
-   ```c
-   constexpr uint8_t MAX_GAME_SPEED = 5;
-   if (ANIM_INDEX >= MAX_GAME_SPEED)    /* SEC; SBC #5; LDA #0; SBC #0; BVC; EOR #$80; BMI */
-   if (ANIM_INDEX >= 5)                 /* CMP #5; BCC */
-   ```
-
-   The optimized TAC of the first still holds a `JumpIfCmp` of
-   `ZeroExtend(ANIM_INDEX)` against `ConstInt(5)`, the shape that
-   `cmp_zero_jump_fold._try_narrow_compare` narrows, so the fold
-   presumably runs before the constant replaces the read of
-   MAX_GAME_SPEED, but that hasn't been traced. `==` and `!=` come out
-   as a byte compare either way. The units declare such constants `uint8_t` all the same, and
-   the six comparisons it affects (MAX_THRESHOLD in main.c, MAP_WIDTH
-   in entities.c, and MAX_GAME_SPEED, MAX_SLOT_NUMBER, and
-   GAME_DISK_SLOTS twice in input.c) cost 55 bytes until it's fixed.
+7. **An ordering comparison with a `constexpr uint8_t` wasn't
+   narrowed to a byte compare.** The read of the constant was folded
+   only after the comparison had become a jump, where the narrowing
+   of a jump's operands took only SSA-renamed extend sources, which a
+   global such as ANIM_INDEX isn't. It was fixed on 18 Nov 2026, and
+   `ANIM_INDEX >= MAX_GAME_SPEED` compiles to `CMP #5; BCC`.
 
 ## For the harness
 

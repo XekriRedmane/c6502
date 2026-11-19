@@ -1075,5 +1075,25 @@ class TestValueCompareNarrowing(unittest.TestCase):
             self.assertEqual(out.instructions, fn.instructions)
 
 
+
+class TestConstexprBound(unittest.TestCase):
+    """A global byte compared with a `constexpr uint8_t` narrows. The
+    constant's read is folded only after the compare reaches its jump,
+    where the global's extend is found in the same straight run."""
+
+    def test_byte_compare(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        src = (
+            "#include <stdint.h>\n"
+            "constexpr uint8_t M = 0x63;\n"
+            "extern uint8_t T [[c6502::address(0x4239)]];\n"
+            "void f(void) { if (T < M) T++; }\n"
+        )
+        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        body = asm[asm.index("\nf:"):]
+        self.assertIn("CMP   #$63", body)
+        self.assertNotIn("BVC", body)
+
 if __name__ == "__main__":
     unittest.main()

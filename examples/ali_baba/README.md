@@ -141,21 +141,21 @@ translates (the chunks of `main.asm` that `UNITS.md` gives it):
 
 | File | Original code | Original tables | C code | C data |
 |---|---:|---:|---:|---:|
-| `main.c` | 381 | 2 | 377 | 0 |
+| `main.c` | 381 | 2 | 368 | 0 |
 | `init.c` | 972 | 355 | 836 | 362 |
 | `turn.c` | 616 | 6 | 1184 | 0 |
-| `input.c` | 1639 | 1313 | 1741 | 1256 |
+| `input.c` | 1639 | 1313 | 1707 | 1256 |
 | `combat.c` | 2856 | 23 | 2973 | 0 |
 | `ai.c` | 1223 | 18 | 1427 | 20 |
 | `events.c` | 1542 | 8 | 1561 | 0 |
-| `entities.c` | 1033 | 8 | 1061 | 0 |
+| `entities.c` | 1033 | 8 | 1049 | 0 |
 | `map.c` | 993 | 43 | 1001 | 8 |
 | `display.c` | 399 | 0 | 437 | 0 |
 | `util.c` | 866 | 119 | 722 | 13 |
 | `text.c` | 553 | 8 | 668 | 10 |
 | `sound.c` | 337 | 64 | 436 | 0 |
 | `hrcg.c` | 1141 | 907 | 835 | 781 |
-| **Total** | **14551** | **2874** | **15259** | **2450** |
+| **Total** | **14551** | **2874** | **15204** | **2450** |
 
 The C counts are of each unit's object, and they leave out the
 `__zp_init` the linker writes. `hrcg.c` leaves out the HRCG's entry
@@ -174,6 +174,4 @@ chosen by an `if` that goes through a temporary at the join, and
 switches on 16-bit values. The gap was 11% before 18 Nov 2026, when
 c6502 began passing a function's leading arguments in A and X, which
 took 742 bytes off the units, and narrowed comparisons of masked
-bytes. Six comparisons with `constexpr uint8_t` constants in `main.c`,
-`input.c`, and `entities.c` compile to 16-bit signed compares, which
-cost 55 bytes (UNITS.md, compiler gap 7).
+bytes.

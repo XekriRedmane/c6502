@@ -234,7 +234,7 @@ WAIT	EQU	$FCA8
 ; def appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance locals=__local_appearance_to_fontchar__sprite indirect=false in_cycle=false param_regs=A
 ; def classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 locals=__local_classify_entity_type__0,__local_classify_entity_type__e,__local_classify_entity_type__1 indirect=false in_cycle=false param_regs=A,X
 ; def draw_blink_alt params= locals=__local_draw_blink_alt__sprite indirect=false in_cycle=false
-; def draw_blink_char params= locals=__local_draw_blink_char__0 indirect=false in_cycle=false
+; def draw_blink_char params= locals= indirect=false in_cycle=false
 ; def draw_blink_normal params= locals= indirect=false in_cycle=false
 ; def draw_char_at_pos params=__zpabi_draw_char_at_pos__pos locals=__local_draw_char_at_pos__0,__local_draw_char_at_pos__1,__local_draw_char_at_pos__pos indirect=false in_cycle=false param_regs=A
 ; def find_entity_at_pos params=__zpabi_find_entity_at_pos__pos locals=__local_find_entity_at_pos__link,__local_find_entity_at_pos__ev,__local_find_entity_at_pos__0,__local_find_entity_at_pos__pos indirect=false in_cycle=false param_regs=A
@@ -1126,17 +1126,10 @@ draw_blink_char:
    SUBROUTINE
 
    LDA   BLINK_COL
-   SEC
-   SBC   #$14
-   LDA   #$00
-   SBC   #$00
-   BVC   .jcmp_novf@0
-   EOR   #$80
-.jcmp_novf@0:
-   BMI   .if_end@56
+   CMP   #$14
+   BCC   .if_end@56
    RTS
 .if_end@56:
-   LDA   BLINK_COL
    STA   FONT_COL
    LDA   BLINK_ROW
    STA   FONT_ROW

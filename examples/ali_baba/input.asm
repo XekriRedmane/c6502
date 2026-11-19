@@ -293,14 +293,14 @@ WAIT	EQU	$FCA8
 ; def settings_danger_down params= locals= indirect=false in_cycle=false
 ; def settings_danger_up params= locals= indirect=false in_cycle=false
 ; def settings_speed_down params= locals=__local_settings_speed_down__0 indirect=false in_cycle=false
-; def settings_speed_up params= locals=__local_settings_speed_up__0 indirect=false in_cycle=false
+; def settings_speed_up params= locals= indirect=false in_cycle=false
 ; def setup_data_iob params= locals= indirect=false in_cycle=false
 ; def setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 locals=__local_setup_input__m,__local_setup_input__0 indirect=false in_cycle=false param_regs=A,X
 ; def setup_slot_iob params= locals=__local_setup_slot_iob__slot,__local_setup_slot_iob__0 indirect=false in_cycle=false
 ; def slot_dec params= locals=__local_slot_dec__0 indirect=false in_cycle=false
 ; def slot_dec_enter params= locals= indirect=false in_cycle=false
 ; def slot_dec_reenter params= locals= indirect=false in_cycle=false
-; def slot_inc params= locals=__local_slot_inc__0 indirect=false in_cycle=false
+; def slot_inc params= locals= indirect=false in_cycle=false
 ; def slot_inc_enter params= locals= indirect=false in_cycle=false
 ; def slot_inc_reenter params= locals= indirect=false in_cycle=false
 ; def slot_update params= locals= indirect=false in_cycle=false
@@ -663,7 +663,6 @@ WAIT	EQU	$FCA8
 ; item write_game_data section=.text local=true zero=false
 ; item read_game_data section=.text local=true zero=false
 ; item continue_game section=.text local=false zero=false
-; item continue_game@run0 section=.text local=true zero=false
 ; item save_game section=.text local=false zero=false
 ; item enter_scenario_disk section=.text local=false zero=false
 ; item scenario_done section=.text local=true zero=false
@@ -1338,14 +1337,8 @@ settings_speed_up:
    JSR   store_selection_to_record
    INC   ANIM_INDEX
    LDA   ANIM_INDEX
-   SEC
-   SBC   #$05
-   LDA   #$00
-   SBC   #$00
-   BVC   .jcmp_novf@0
-   EOR   #$80
-.jcmp_novf@0:
-   BMI   .if_end@39
+   CMP   #$05
+   BCC   .if_end@39
    LDA   #$05
    STA   ANIM_INDEX
 .if_end@39:
@@ -1440,14 +1433,8 @@ slot_inc:
 
    INC   slot_number
    LDA   slot_number
-   SEC
-   SBC   #$11
-   LDA   #$00
-   SBC   #$00
-   BVC   .jcmp_novf@1
-   EOR   #$80
-.jcmp_novf@1:
-   BMI   .if_end@42
+   CMP   #$11
+   BCC   .if_end@42
    DEC   slot_number
 .if_end@42:
    JMP   slot_update
@@ -1856,11 +1843,9 @@ read_game_data:
 continue_game:
    SUBROUTINE
 
-   JSR   continue_game@run0
-   BVC   .jcmp_novf@2
-   EOR   #$80
-.jcmp_novf@2:
-   BPL   .if_end@62
+   LDA   slot_number
+   CMP   #$01
+   BCS   .if_end@62
    JSR   ensure_game_disk
    JSR   read_game_data
    LDA   #$00
@@ -1885,24 +1870,12 @@ continue_game:
    LDA   #$00
    RTS
 
-continue_game@run0:
-   SUBROUTINE
-
-   LDA   slot_number
-   SEC
-   SBC   #$01
-   LDA   #$00
-   SBC   #$00
-   RTS
-
 save_game:
    SUBROUTINE
 
-   JSR   continue_game@run0
-   BVC   .jcmp_novf@3
-   EOR   #$80
-.jcmp_novf@3:
-   BPL   .if_end@64
+   LDA   slot_number
+   CMP   #$01
+   BCS   .if_end@64
    JSR   ensure_game_disk
    JSR   write_game_data
    LDA   #$02

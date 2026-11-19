@@ -195,6 +195,4 @@ bytes. The rest of the difference is mostly the copying of pointer
 arguments into the callee's fixed zero-page slots (reorder_char's
 calls of adjust_pc_count and get_mob_data), and appearance_to_fontchar
 and render_font_char_direct keeping their counters in memory where the
-original keeps them in A and Y. draw_blink_char's test of BLINK_COL
-against MAP_WIDTH, a `constexpr uint8_t`, is a 16-bit signed compare
-that costs 12 bytes (UNITS.md, compiler gap 7).
+original keeps them in A and Y.

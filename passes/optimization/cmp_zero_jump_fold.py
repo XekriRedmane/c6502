@@ -206,14 +206,20 @@ def _build_narrow_jump_compare(
     was folded into the jump before one operand's `ZeroExtend` reached
     it: `i < 40U` on a `uint8_t i` converts the promoted `int` to
     `unsigned int` with a `Copy`, which copy propagation removes only
-    after the fold. The jump has no dst to locate it by, so `use_idx`
-    is -1, and only an SSA-renamed extend source narrows."""
+    after the fold. The jump has no dst to locate it by, so its
+    position is found by identity, which lets a global extend source,
+    read earlier in the same straight run, narrow too: `T < M` with a
+    `constexpr uint8_t M` became a compare of `T` and 99 only after
+    the fold, since `M` was a variable until its read was folded."""
     jmp = m.bindings['jmp']
     if not isinstance(jmp.op, _CMP_OPS):
         return None
+    use_idx = next(
+        (i for i, ins in enumerate(env.instructions) if ins is jmp), -1,
+    )
     narrowed = _try_narrow_compare(
         jmp.src1, jmp.src2, env.instructions, env.def_idx, env.use_count,
-        ctx.symbols, -1, ctx.ssa_dsts,
+        ctx.symbols, use_idx, ctx.ssa_dsts,
     )
     if narrowed is None:
         return None

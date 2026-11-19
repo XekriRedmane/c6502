@@ -236,10 +236,7 @@ instruction bytes for the same routines, counted from `main.lst`
 | menu strings | 679 | 677 |
 | other tables and variables | 39 | 34, of which `-O` moves the 5 variables to zero page |
 
-The code is 347 bytes, 22%, larger than the original's. The four
-comparisons with MAX_GAME_SPEED, MAX_SLOT_NUMBER, and GAME_DISK_SLOTS,
-which are `constexpr uint8_t` constants, compile to 16-bit signed
-compares and take 34 of those bytes (UNITS.md, compiler gap 7). The largest
+The code is 313 bytes, 20%, larger than the original's. The largest
 differences are the menu driver (`option`, `draw_option`, and
 `input_loop`, which pass option pointers in zero-page parameters where
 the original keeps one in $C2), the IOB setup (gap 3), and

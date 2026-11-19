@@ -199,7 +199,7 @@ WAIT	EQU	$FCA8
 ; def check_mob_needs_turn params= locals=__local_check_mob_needs_turn__0 indirect=false in_cycle=false carry=true
 ; def dec_event_threshold params= locals= indirect=false in_cycle=false
 ; def dec_threshold_wrap params= locals= indirect=false in_cycle=false
-; def inc_event_threshold params= locals=__local_inc_event_threshold__0 indirect=false in_cycle=false
+; def inc_event_threshold params= locals= indirect=false in_cycle=false
 ; def inc_threshold_wrap params= locals= indirect=false in_cycle=false
 ; def main params= locals=__local_main__0 indirect=false in_cycle=false
 ; def process_mob_groups params= locals=__local_process_mob_groups__0 indirect=false in_cycle=false
@@ -638,14 +638,8 @@ inc_event_threshold:
    SUBROUTINE
 
    LDA   EVENT_THRESHOLD
-   SEC
-   SBC   #$63
-   LDA   #$00
-   SBC   #$00
-   BVC   .jcmp_novf@0
-   EOR   #$80
-.jcmp_novf@0:
-   BPL   .if_end@16
+   CMP   #$63
+   BCS   .if_end@16
    INC   EVENT_THRESHOLD
 .if_end@16:
    RTS

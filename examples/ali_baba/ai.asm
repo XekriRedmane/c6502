@@ -25,7 +25,6 @@ __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_ai_choose_target__best_strength	EQU	$81
 __local_npc_move_ai__best_score	EQU	$81
-__local_shop_buy_handler__0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_display_shop__0	EQU	$82
@@ -46,21 +45,18 @@ __local_display_shop__3	EQU	$86
 __local_evaluate_direction__test_pos	EQU	$86
 __local_find_nearest_event__1	EQU	$86
 __local_apply_shop_effect__1	EQU	$87
-__local_award_xp__1	EQU	$87
+__local_award_xp__armor	EQU	$87
 __local_evaluate_direction__1	EQU	$87
 __local_find_nearest_event__ev	EQU	$87
 __local_show_item__0	EQU	$87
-__local_award_xp__n	EQU	$88
+__local_award_xp__1	EQU	$88
 __local_evaluate_direction__2	EQU	$88
 __local_find_nearest_event__2	EQU	$88
 __local_apply_shop_effect__3	EQU	$89
-__local_award_xp__2	EQU	$89
+__local_award_xp__n	EQU	$89
 __local_evaluate_direction__dir	EQU	$89
 __local_show_item__i	EQU	$89
-__local_apply_shop_effect__4	EQU	$8A
-__local_award_xp__armor	EQU	$8A
 __local_show_item__to	EQU	$8A
-__local_award_xp__3	EQU	$8B
 __local_manhattan_distance__from	EQU	$8B
 __local_show_item__2	EQU	$8B
 __local_event_penalty__ev	EQU	$8C
@@ -68,7 +64,9 @@ __local_manhattan_distance__pos	EQU	$8C
 __local_show_item__3	EQU	$8C
 __local_event_penalty__1	EQU	$8D
 __local_manhattan_distance__0	EQU	$8D
+__local_show_item__4	EQU	$8D
 __local_manhattan_distance__1	EQU	$8E
+__local_show_item__5	EQU	$8E
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -243,8 +241,8 @@ WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
 ; def ai_choose_target params= locals=__local_ai_choose_target__best_pos,__local_ai_choose_target__best_strength,__local_ai_choose_target__0,__local_ai_choose_target__1 indirect=false in_cycle=false
-; def apply_shop_effect params=__zpabi_apply_shop_effect__n locals=__local_apply_shop_effect__0,__local_apply_shop_effect__1,__local_apply_shop_effect__2,__local_apply_shop_effect__3,__local_apply_shop_effect__4 indirect=false in_cycle=false param_regs=A
-; def award_xp params=__zpabi_award_xp__n locals=__local_award_xp__0,__local_award_xp__1,__local_award_xp__n,__local_award_xp__2,__local_award_xp__armor,__local_award_xp__3,__local_award_xp__4 indirect=false in_cycle=false param_regs=A
+; def apply_shop_effect params=__zpabi_apply_shop_effect__n locals=__local_apply_shop_effect__0,__local_apply_shop_effect__1,__local_apply_shop_effect__2,__local_apply_shop_effect__3 indirect=false in_cycle=false param_regs=A
+; def award_xp params=__zpabi_award_xp__n locals=__local_award_xp__0,__local_award_xp__armor,__local_award_xp__1,__local_award_xp__n,__local_award_xp__2 indirect=false in_cycle=false param_regs=A
 ; def browse_handler params= locals=__local_browse_handler__0 indirect=false in_cycle=false
 ; def current_slot params= locals=__local_current_slot__0 indirect=false in_cycle=false
 ; def display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 locals=__local_display_shop__0,__local_display_shop__1,__local_display_shop__2,__local_display_shop__ev,__local_display_shop__3 indirect=false in_cycle=false param_regs=A,X
@@ -696,15 +694,11 @@ evaluate_direction:
    BCS   .if_else@25
    LDA   __local_evaluate_direction__0
    BNE   .if_else@25
-   LDX   __local_evaluate_direction__dir
-   LDA   DIR_SCORES,X
-   STA   __local_evaluate_direction__test_pos
-   LDX   __local_evaluate_direction__1
    LDA   __local_evaluate_direction__2
    JSR   event_penalty
    CLC
-   ADC   __local_evaluate_direction__test_pos
    LDX   __local_evaluate_direction__dir
+   ADC   DIR_SCORES,X
    STA   DIR_SCORES,X
    RTS
 .if_else@25:
@@ -1032,9 +1026,9 @@ show_item:
    BEQ   .show_item@rot@3
    JSR   current_slot
    LDA   current_slot@ret
-   STA   __local_show_item__to
+   STA   __local_show_item__4
    LDA   current_slot@ret+1
-   STA   __local_show_item__2
+   STA   __local_show_item__5
    LDA   LOCATION_STYLE
    LSR
    LSR
@@ -1092,15 +1086,11 @@ show_item:
    LDX   SHOP_PRICE+1
    LDA   SHOP_PRICE
    JSR   num_to_decimal
-   LDA   __local_show_item__to
-   STA   DPTR
-   LDA   __local_show_item__2
-   STA   DPTR+1
    LDY   #$02
-   LDA   (__local_show_item__to),Y
+   LDA   (__local_show_item__4),Y
    STA   __local_show_item__2
    INY
-   LDA   (DPTR),Y
+   LDA   (__local_show_item__4),Y
    STA   __local_show_item__3
    LDY   #$00
    LDA   (__local_show_item__2),Y
@@ -1179,21 +1169,12 @@ apply_shop_effect:
    TAX
    CPX   #$03
    BCS   .cond_else@54
-   LDA   ENTITY_PTR
-   ADC   #$07
+   LDA   #$07
    STA   __local_apply_shop_effect__3
-   LDA   ENTITY_PTR+1
-   ADC   #$00
-   STA   __local_apply_shop_effect__4
    JMP   .cond_end@55
 .cond_else@54:
-   LDA   ENTITY_PTR
-   CLC
-   ADC   #$09
+   LDA   #$09
    STA   __local_apply_shop_effect__3
-   LDA   ENTITY_PTR+1
-   ADC   #$00
-   STA   __local_apply_shop_effect__4
 .cond_end@55:
    LDY   #$05
    LDA   (ENTITY_PTR),Y
@@ -1207,8 +1188,8 @@ apply_shop_effect:
    ADC   LOCATION_STYLE_BITS
    CLC
    ADC   __local_apply_shop_effect__1
-   LDY   #$00
-   STA   (__local_apply_shop_effect__3),Y
+   LDY   __local_apply_shop_effect__3
+   STA   (ENTITY_PTR),Y
    RTS
 
 pending_xp:
@@ -1227,18 +1208,18 @@ award_xp:
    STA   __local_award_xp__n
    LDY   #$0B
    LDA   (ENTITY_PTR),Y
-   STA   __local_award_xp__1
+   STA   __local_award_xp__armor
    AND   #$E0
    STA   (ENTITY_PTR),Y
-   LDA   __local_award_xp__1
+   LDA   __local_award_xp__armor
    AND   #$1F
-   STA   __local_award_xp__1
+   STA   __local_award_xp__armor
    LDY   #$08
    LDA   (ENTITY_PTR),Y
    JSR   pending_xp
    CLC
-   ADC   __local_award_xp__1
-   STA   __local_award_xp__3
+   ADC   __local_award_xp__armor
+   STA   __local_award_xp__1
    LDX   __local_award_xp__n
    LDA   XP_AWARD_TABLE,X
    CLC
@@ -1251,29 +1232,21 @@ award_xp:
    STA   __local_award_xp__armor
 .loop@9_continue:
    JSR   pending_xp
-   CMP   __local_award_xp__3
+   CMP   __local_award_xp__1
    BCS   .award_xp@rot@6
    LDA   __local_award_xp__armor
    LDY   #$08
    STA   (ENTITY_PTR),Y
-   LDA   ENTITY_PTR
-   ADC   #$0B
-   STA   __local_award_xp__n
-   LDA   ENTITY_PTR+1
-   ADC   #$00
-   STA   __local_award_xp__2
-   LDY   #$00
-   LDA   (__local_award_xp__n),Y
-   STA   __local_award_xp__1
-   LDA   __local_award_xp__armor
    JSR   pending_xp
    STA   __local_award_xp__0
-   LDA   __local_award_xp__3
+   LDY   #$0B
+   LDA   (ENTITY_PTR),Y
+   STA   __local_award_xp__armor
+   LDA   __local_award_xp__1
    SEC
    SBC   __local_award_xp__0
-   ORA   __local_award_xp__1
-   LDY   #$00
-   STA   (__local_award_xp__n),Y
+   ORA   __local_award_xp__armor
+   STA   (ENTITY_PTR),Y
    RTS
 
 shop_buy_handler:
@@ -1281,14 +1254,10 @@ shop_buy_handler:
 
    LDY   #$0D
    LDA   (ENTITY_PTR),Y
-   STA   __local_shop_buy_handler__1
-   INY
-   LDA   (ENTITY_PTR),Y
-   STA   __local_shop_buy_handler__0
-   LDA   __local_shop_buy_handler__1
    SEC
    SBC   SHOP_PRICE
-   LDA   __local_shop_buy_handler__0
+   INY
+   LDA   (ENTITY_PTR),Y
    SBC   SHOP_PRICE+1
    BCS   .if_end@56
    JSR   set_cursor_row21

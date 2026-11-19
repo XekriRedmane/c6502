@@ -196,14 +196,18 @@ The unoptimized pipeline runs the peephole fixed point once.
 ## Alphabetical list
 
 - [A byte divided by a constant](byte_divide.md). Lowers an unsigned byte's `/` or `%` by a constant as a loop of subtractions, with one loop for a divide and a remainder of the same operands, and one helper call for such a pair of any other width.
+- [A byte written back through its pointer](pointer_self_store.md). Drops a store through a zero-page pointer of the byte read from there, and reads a copied byte through the pointer again where that removes the copy.
 - [A call that doesn't return](noreturn_call.md). Ends the path at a call to a `[[noreturn]]` function, so nothing after it has to survive the call.
+- [A choice of offsets from one pointer](phi_offset.md). Makes a join of `p + k1` and `p + k2` a choice of `k1` or `k2` added to `p`, which becomes `(p),Y` with the offset in Y.
+- [A compound assignment's call first](calls_first.md). Evaluates the right operand of `lval OP= rval` first when only it calls a function, so the left one isn't kept across the call.
 - [A divide and a remainder computed together](divmod_hoist.md). Computes a `/` and a `%` of the same operands at one place when a store, a call, or a branch comes between them, so they share one loop or helper call.
 - [A global read after it's stored](read_stored_global.md). Makes an instruction read a global just stored from a temporary, as `*++P` does, so the temporary folds away.
 - [A loop counted down to 0](count_down.md). Makes a byte loop counter that only its own test and step read count the passes left, so the test is `DEC i; BNE`.
 - [A parameter's copy in the parameter's slot](slot_coalescing.md). Renames a zero-page local that copies a parameter to the parameter's own slot, or that's copied into a callee's slot for the call, when they're never live with different values.
-- [A product of two bytes](byte_product.md). Lowers a 16-bit product of two values from 0 to 255 as an 8-by-8 shift-and-add loop where it called `mul16`.
 - [A pointer returned in zero page](return_in_zero_page.md). Makes a `static` function returning a pointer leave it in a zero-page pointer of its own, which its callers read through.
+- [A product of two bytes](byte_product.md). Lowers a 16-bit product of two values from 0 to 255 as an 8-by-8 shift-and-add loop where it called `mul16`.
 - [A step moved onto its edge](step_on_edge.md). Puts `t = i - 1`, whose result reaches `i` only by a copy on one edge out of the block, in place of that copy, so `while (i-- != first)` steps with `DEC i`.
+- [A widened byte multiplied before the constant](distribute_constant.md). Rewrites `(x - c) * k` on a zero-extended byte as `x * k - c * k`, so the product is of one byte.
 - [Address of a zero-page local](lower_data_load_address.md). Splits a fixed-address LoadAddress into two immediate stores so peepholes can fold them.
 - [Address-taken locals in zero page](address_taken_zp.md). Puts address-taken locals in free private-pool bytes instead of the frame.
 - [AND jump fold](and_zero_jump_fold.md). Turns `if (byte & mask)` into a one-byte `JumpIfMasked` test with no temporaries.
@@ -253,6 +257,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Direct load into X or Y](direct_index_load.md). Fuses `LDA M; TAX` or `TAY` into LDX or LDY when A is dead.
 - [Direct member access](direct_member_access.md). Turns a load or store through `&obj + k` into direct byte access.
 - [Dispatch on a small pointer table](dispatch_pointer_array.md). Rewrites `arr[i][j]` on a small pointer table as a compare-and-branch on `i`.
+- [Each byte of a wide access through the pointer](pointer_restage.md). Copies a zero-page pointer into DPTR again before each byte of a wide member, so every byte goes through `(p),Y`.
 - [Indexed access to a static array of structs](static_indexed_access.md). Turns `o[i].m` on a static array into `LDA o+m,X`, and `(&o + i) + m` into `(&o + m) + i`.
 - [Indexed load from a fixed address](recognize_indexed_load.md). Turns a byte load through a constant address plus a byte index into `LDA C,X`.
 - [Indexed store to a fixed address](recognize_indexed_store.md). Turns a byte store through a constant address plus a byte index into `STA C,X`.
@@ -340,7 +345,8 @@ them whenever a pass is added or moved.
 1. Parse. Then, on the AST:
    1. [Loop unrolling](unroll.md)
    2. Identifier resolution, string lifting, label resolution, loop
-      labeling, type checking, and translation to TAC.
+      labeling, type checking, and translation to TAC, with [a
+      compound assignment's call first](calls_first.md).
    3. [A pointer returned in zero page](return_in_zero_page.md)
    4. [Zero-page promotion](zp_promotion.md)
    5. [Row-address tables](row_address_tables.md), over the whole
@@ -352,42 +358,45 @@ them whenever a pass is added or moved.
    4. [Static const reads](static_const_fold.md)
    5. *Fixed point*:
       1. [Constant folding](constant_folding.md)
-      2. [Strength reduction](strength_reduction.md)
-      3. The three jump folds, run as one rule set. They are the
+      2. [A widened byte multiplied before the
+         constant](distribute_constant.md)
+      3. [Strength reduction](strength_reduction.md)
+      4. The three jump folds, run as one rule set. They are the
          [comparison and jump fold](cmp_zero_jump_fold.md), with
          its narrowing of a comparison kept as a value, the
          [AND jump fold](and_zero_jump_fold.md), and the
          [logical-not jump fold](lnot_jump_fold.md).
-      4. [Dead loop elimination](dead_loop_elimination.md)
-      5. [Unreachable code elimination](unreachable_code_elimination.md)
-      6. [Common subexpression elimination](cse.md)
-      7. [Loop-invariant extends and truncates](licm.md)
-      8. [Copy propagation](copy_propagation.md)
-      9. [Dead-store elimination](dead_store_elimination.md)
-      10. [A global read after it's stored](read_stored_global.md)
-      11. [Copy folding](copy_folding.md)
-      12. [Combining added constants](reassoc_const.md)
-      13. [Moving a constant out of an offset](reassoc_offset.md)
-      14. [Direct member access](direct_member_access.md)
-      15. [Indexed store to a fixed address](recognize_indexed_store.md)
-      16. [Indexed load from a fixed address](recognize_indexed_load.md)
-      17. [Truncate of an extend](truncate_extend_fold.md), then an
+      5. [Dead loop elimination](dead_loop_elimination.md)
+      6. [Unreachable code elimination](unreachable_code_elimination.md)
+      7. [Common subexpression elimination](cse.md)
+      8. [Loop-invariant extends and truncates](licm.md)
+      9. [Copy propagation](copy_propagation.md)
+      10. [Dead-store elimination](dead_store_elimination.md)
+      11. [A global read after it's stored](read_stored_global.md)
+      12. [Copy folding](copy_folding.md)
+      13. [Combining added constants](reassoc_const.md)
+      14. [Moving a constant out of an offset](reassoc_offset.md)
+      15. [Direct member access](direct_member_access.md)
+      16. [Indexed store to a fixed address](recognize_indexed_store.md)
+      17. [Indexed load from a fixed address](recognize_indexed_load.md)
+      18. [Truncate of an extend](truncate_extend_fold.md), then an
           extend of an extend
-      18. [Sinking increments](sink_increment.md)
-      19. [Sinking an AND past a bit test](sink_and_past_branch.md)
-      20. [Narrowing widened arithmetic](narrow_widened_arith.md)
-      21. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
-      22. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
-   6. [Indexed access to a static array of structs](static_indexed_access.md)
-   7. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
-   8. [Compare and subtract of the same operands](compare_subtract.md)
-   9. [A divide and a remainder computed together](divmod_hoist.md)
-   10. [A loop counted down to 0](count_down.md)
-   11. SSA destruction.
-   12. [Copy folding](copy_folding.md), once more.
-   13. [A step moved onto its edge](step_on_edge.md)
-   14. [Byte-by-byte three-way compare](three_way_compare.md)
-   15. *Fixed point*: [branching directly on `&&` and
+      19. [Sinking increments](sink_increment.md)
+      20. [Sinking an AND past a bit test](sink_and_past_branch.md)
+      21. [Narrowing widened arithmetic](narrow_widened_arith.md)
+      22. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
+      23. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
+   6. [A choice of offsets from one pointer](phi_offset.md)
+   7. [Indexed access to a static array of structs](static_indexed_access.md)
+   8. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
+   9. [Compare and subtract of the same operands](compare_subtract.md)
+   10. [A divide and a remainder computed together](divmod_hoist.md)
+   11. [A loop counted down to 0](count_down.md)
+   12. SSA destruction.
+   13. [Copy folding](copy_folding.md), once more.
+   14. [A step moved onto its edge](step_on_edge.md)
+   15. [Byte-by-byte three-way compare](three_way_compare.md)
+   16. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    then [tables split into low and high bytes](split_tables.md),
@@ -400,8 +409,9 @@ them whenever a pass is added or moved.
    call](recursion_saves.md), [members of a static object computed in
    place](in_place_member_update.md), [shifting a bit in through
    the carry](rotate_in.md), [a byte divided by a
-   constant](byte_divide.md), [shifts by a loop](shift_loop.md), and
-   [a product of two bytes](byte_product.md).
+   constant](byte_divide.md), [shifts by a loop](shift_loop.md),
+   [a product of two bytes](byte_product.md), and [each byte of a wide
+   access through the pointer](pointer_restage.md).
 6. Asm SSA optimizer, run once to measure each function's local
    bytes. Its output is discarded. The steps are the same as in step
    8.
@@ -506,16 +516,17 @@ reaching the cap raises an error.
 38. [Round-trip load drop](round_trip_load.md)
 39. [Sign-bit test without AND](and_sign_bit_branch.md)
 40. [Self-store drop](self_store_drop.md)
-41. [Redundant compare](redundant_compare.md)
-42. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-43. [Commuted ADC, AND, and ORA](adc_commute.md)
-44. [CMP and SBC fusion](cmp_sbc_fusion.md)
-45. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-46. [Tail call](tail_call.md)
-47. [Tail merge](tail_merge.md)
-48. [Cross jumping](cross_jump.md)
-49. [Store X or Y directly](via_a_store_fold.md)
-50. [Transfer plus or minus one](transfer_pm1_store.md)
+41. [A byte written back through its pointer](pointer_self_store.md)
+42. [Redundant compare](redundant_compare.md)
+43. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+44. [Commuted ADC, AND, and ORA](adc_commute.md)
+45. [CMP and SBC fusion](cmp_sbc_fusion.md)
+46. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+47. [Tail call](tail_call.md)
+48. [Tail merge](tail_merge.md)
+49. [Cross jumping](cross_jump.md)
+50. [Store X or Y directly](via_a_store_fold.md)
+51. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `-O`
 

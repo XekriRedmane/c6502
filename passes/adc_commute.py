@@ -255,17 +255,27 @@ def _is_sta(instr: asm_ast.Type_instruction) -> bool:
     )
 
 
+# The operands `mem` may be: a byte with a fixed address, an indexed
+# byte, or a byte through a zero-page pointer (`(zp),Y`), which `ADC`,
+# `AND`, `ORA`, and `STA` all take. The `LDY #k` an `IndirectZp`
+# operand begins with moves from the dropped load to the operation,
+# with only a `CLC` or `SEC` between, so Y ends the same.
+_MEM_KINDS = (
+    asm_ast.ZP, asm_ast.Data, asm_ast.IndexedData,
+    asm_ast.IndirectZp, asm_ast.IndirectZpY,
+)
+
+
 def _is_lda_compat(instr: asm_ast.Type_instruction) -> bool:
-    """Non-volatile `Mov(<ZP|Data|IndexedData>, Reg(A))`. The mem
-    side can be IndexedData (`abs,X|Y`) — ADC supports those
-    addressing modes, so the rewrite preserves encodability."""
+    """Non-volatile `Mov(<ZP|Data|IndexedData|(zp),Y>, Reg(A))`. The
+    mem side can be IndexedData (`abs,X|Y`) or a byte through a
+    zero-page pointer — ADC supports those addressing modes, so the
+    rewrite preserves encodability."""
     return (
         isinstance(instr, asm_ast.Mov)
         and not instr.is_volatile
         and _is_reg_a(instr.dst)
-        and isinstance(instr.src, (
-            asm_ast.ZP, asm_ast.Data, asm_ast.IndexedData,
-        ))
+        and isinstance(instr.src, _MEM_KINDS)
     )
 
 
@@ -277,9 +287,7 @@ def _is_sta_compat(instr: asm_ast.Type_instruction) -> bool:
         isinstance(instr, asm_ast.Mov)
         and not instr.is_volatile
         and _is_reg_a(instr.src)
-        and isinstance(instr.dst, (
-            asm_ast.ZP, asm_ast.Data, asm_ast.IndexedData,
-        ))
+        and isinstance(instr.dst, _MEM_KINDS)
     )
 
 
@@ -317,6 +325,11 @@ def _operands_equal(
             and a.offset == b.offset
             and type(a.index) is type(b.index)
         )
+    if isinstance(a, asm_ast.IndirectZp) and isinstance(b, asm_ast.IndirectZp):
+        return a.address == b.address and a.offset == b.offset
+    if (isinstance(a, asm_ast.IndirectZpY)
+            and isinstance(b, asm_ast.IndirectZpY)):
+        return a.address == b.address
     return False
 
 

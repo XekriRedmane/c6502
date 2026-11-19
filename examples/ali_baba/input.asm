@@ -37,12 +37,9 @@ __local_verify_disk_signature__tries	EQU	$84
 __local_verify_game_disk__tries	EQU	$84
 __local_transfer_game_data__tries	EQU	$85
 __local_transfer_game_data__command	EQU	$86
-__local_advance_sector__0	EQU	$87
 __local_input_loop__m	EQU	$87
 __local_setup_slot_iob__0	EQU	$87
-__local_advance_sector__1	EQU	$88
 __local_input_loop__0	EQU	$88
-__local_draw_option__0	EQU	$8A
 __local_read_keyboard__0	EQU	$8A
 __local_setup_input__m	EQU	$8A
 __local_draw_option__o	EQU	$8B
@@ -61,19 +58,18 @@ __local_draw_input_options__n	EQU	$8F
 __local_validate_input__dir	EQU	$8F
 __local_copy_record_data__o	EQU	$90
 __local_copy_record_data__0	EQU	$91
-__local_option__n	EQU	$91
+__local_option__0	EQU	$91
 __local_read_paddle__0	EQU	$91
 __local_copy_record_data__1	EQU	$92
-__local_option__0	EQU	$92
+__local_option__1	EQU	$92
 __local_copy_record_data__2	EQU	$93
 __local_joy_to_zone__old_zone	EQU	$93
-__local_option__1	EQU	$93
+__local_option__2	EQU	$93
 __local_copy_record_data__3	EQU	$94
-__local_option__2	EQU	$94
+__local_option__3	EQU	$94
 __local_copy_record_data__4	EQU	$95
-__local_option__3	EQU	$95
+__local_option__n	EQU	$95
 __local_copy_record_data__5	EQU	$96
-__local_option__4	EQU	$96
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -287,7 +283,7 @@ WAIT	EQU	$FCA8
 ; def menu_other_options params= locals=__local_menu_other_options__0 indirect=false in_cycle=false
 ; def menu_see_your_lot params= locals= indirect=false in_cycle=false
 ; def menu_settings_init params= locals= indirect=false in_cycle=false
-; def option params=__zpabi_option__n locals=__local_option__n,__local_option__0,__local_option__1,__local_option__2,__local_option__3,__local_option__4 indirect=false in_cycle=false param_regs=A
+; def option params=__zpabi_option__n locals=__local_option__0,__local_option__1,__local_option__2,__local_option__3,__local_option__n indirect=false in_cycle=false param_regs=A
 ; def prompt_insert_disk params= locals= indirect=false in_cycle=false
 ; def read_game_data params= locals=__local_read_game_data__0 indirect=false in_cycle=false
 ; def read_keyboard params= locals=__local_read_keyboard__0,__local_read_keyboard__1 indirect=false in_cycle=false
@@ -657,9 +653,8 @@ WAIT	EQU	$FCA8
 ; item char_select_home section=.text local=false zero=false
 ; item start_game_input section=.text local=false zero=false
 ; item setup_data_iob section=.text local=true zero=false
-; item setup_data_iob@run0 section=.text local=true zero=false
 ; item verify_game_disk section=.text local=true zero=false
-; item verify_game_disk@run1 section=.text local=true zero=false
+; item verify_game_disk@run0 section=.text local=true zero=false
 ; item wait_keypress section=.text local=true zero=false
 ; item prompt_insert_disk section=.text local=true zero=false
 ; item ensure_game_disk section=.text local=true zero=false
@@ -786,40 +781,38 @@ option:
    STA   __local_option__n
    LDY   #$03
    LDA   (MENU_DESC_PTR),Y
-   STA   __local_option__4
+   STA   __local_option__3
    INY
    LDA   (MENU_DESC_PTR),Y
-   STA   __local_option__3
+   STA   __local_option__2
    LDA   __local_option__n
-   SEC
-   SBC   #$01
-   STA   __local_option__0
-   LDA   #$00
-   SBC   #$00
-   STA   __local_option__n
-   LDA   __local_option__0
-   ASL
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
    STA   __local_option__1
    LDA   __local_option__n
-   ROL
-   ASL   __local_option__1
-   ROL
-   ASL   __local_option__1
-   ROL
-   STA   __local_option__2
-   LDA   __local_option__1
+   ASL
+   ASL
+   ASL
    CLC
-   ADC   __local_option__0
-   STA   __local_option__0
-   LDA   __local_option__2
    ADC   __local_option__n
-   STA   __local_option__n
-   LDA   __local_option__4
+   BCC   .carry_inc@0
+   INC   __local_option__1
+.carry_inc@0:
+   SEC
+   SBC   #$09
+   STA   __local_option__0
+   BCS   .carry_inc@1
+   DEC   __local_option__1
+.carry_inc@1:
+   LDA   __local_option__3
    CLC
    ADC   __local_option__0
    STA   option@ret
-   LDA   __local_option__3
-   ADC   __local_option__n
+   LDA   __local_option__2
+   ADC   __local_option__1
    STA   option@ret+1
    RTS
 
@@ -857,13 +850,11 @@ draw_option:
    LDA   (__local_draw_option__o),Y
    JSR   set_cursor_pos
    JSR   print_ctrl_ab
-   LDY   #$06
-   LDA   (__local_draw_option__o),Y
-   STA   __local_draw_option__0
-   INY
+   LDY   #$07
    LDA   (__local_draw_option__o),Y
    TAX
-   LDA   __local_draw_option__0
+   DEY
+   LDA   (__local_draw_option__o),Y
    JSR   print_string
    JMP   print_ctrl_n
 
@@ -1655,22 +1646,12 @@ setup_data_iob:
    STA   (RWTS_IOB_PTR),Y
    INY
    STA   (RWTS_IOB_PTR),Y
-   JSR   setup_data_iob@run0
    LDA   #<SCENE_TEXT_DATA
    LDY   #$08
    STA   (RWTS_IOB_PTR),Y
    LDA   #>SCENE_TEXT_DATA
    INY
-   STA   (DPTR),Y
-   RTS
-
-setup_data_iob@run0:
-   SUBROUTINE
-
-   LDA   RWTS_IOB_PTR
-   STA   DPTR
-   LDA   RWTS_IOB_PTR+1
-   STA   DPTR+1
+   STA   (RWTS_IOB_PTR),Y
    RTS
 
 verify_game_disk:
@@ -1678,7 +1659,7 @@ verify_game_disk:
 
    JSR   setup_data_iob
    LDA   #$11
-   JSR   verify_game_disk@run1
+   JSR   verify_game_disk@run0
    LDA   #$02
    STA   __local_verify_game_disk__tries
 .loop@16_continue:
@@ -1703,7 +1684,7 @@ verify_game_disk:
    SEC
    RTS
 
-verify_game_disk@run1:
+verify_game_disk@run0:
    SUBROUTINE
 
    LDY   #$04
@@ -1824,14 +1805,13 @@ setup_slot_iob:
    ASL   __local_setup_slot_iob__0
    CLC
    ADC   __local_setup_slot_iob__0
-   JSR   verify_game_disk@run1
-   JSR   setup_data_iob@run0
+   JSR   verify_game_disk@run0
    LDA   #<LOCATIONS
    LDY   #$08
    STA   (RWTS_IOB_PTR),Y
    LDA   #>LOCATIONS
    INY
-   STA   (DPTR),Y
+   STA   (RWTS_IOB_PTR),Y
    LDA   #$00
    LDY   #$0B
    STA   (RWTS_IOB_PTR),Y
@@ -1841,20 +1821,11 @@ advance_sector:
    SUBROUTINE
 
    CLC
-   JSR   setup_data_iob@run0
-   LDY   #$08
+   LDY   #$09
    LDA   (RWTS_IOB_PTR),Y
-   STA   __local_advance_sector__1
-   INY
-   LDA   (RWTS_IOB_PTR),Y
-   STA   __local_advance_sector__0
-   INC   __local_advance_sector__0
-   LDA   __local_advance_sector__1
-   DEY
+   ADC   #$01
    STA   (RWTS_IOB_PTR),Y
-   LDA   __local_advance_sector__0
-   INY
-   STA   (DPTR),Y
+   CLC
    LDY   #$05
    LDA   (RWTS_IOB_PTR),Y
    ADC   #$01

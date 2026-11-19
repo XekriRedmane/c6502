@@ -134,7 +134,10 @@ None of the gaps below is a miscompile.
 2. **A pointer to one of two members of ENTITY_PTR's record is
    computed as a 16-bit address**, as in notes/combat.md, gap 3.
    apply_shop_effect's `n < 3 ? &ENTITY_PTR->sword : &ENTITY_PTR->dagger`
-   costs 7 bytes against the old C's field index.
+   costs 7 bytes against the old C's field index. Fixed on 19 Nov
+   2026: each arm loads the member's offset, and the store goes
+   through `(ENTITY_PTR),Y` (docs/optimizations/phi_offset.md).
+   apply_shop_effect is 42 bytes, 17 fewer.
 
 3. **A compound assignment to a member through a zero-page pointer,
    with a call on its right side, computes the member's address before
@@ -154,7 +157,10 @@ None of the gaps below is a miscompile.
    since C leaves the order of the two sides open. award_xp's
    `ENTITY_PTR->level |= total - pending_xp(armor)` has this shape, and
    award_xp is 21 bytes larger than the old C, which read the pending
-   amount into a local in its loop.
+   amount into a local in its loop. Fixed on 19 Nov 2026: the call
+   comes first, and the member is read and written through
+   `(ENTITY_PTR),Y` after it (docs/optimizations/calls_first.md).
+   award_xp is 84 bytes, 16 fewer.
 
 4. **The static `shop` stays in `.bss`.** With the loop that stepped it
    gone, `-O` no longer promotes it into zero page, and `shop->scene`

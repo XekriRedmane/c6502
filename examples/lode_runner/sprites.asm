@@ -392,10 +392,8 @@ compute_shifted_sprite:
    CLC
    LDX   __local_compute_shifted_sprite__0
    LDA   BLOCK_DATA,X
-   STA   __local_compute_shifted_sprite__sprite
    LDY   #$00
-   LDA   (shifted_pixels@ret),Y
-   ORA   __local_compute_shifted_sprite__sprite
+   ORA   (shifted_pixels@ret),Y
    STA   BLOCK_DATA,X
    INY
    LDA   (__local_compute_shifted_sprite__1),Y

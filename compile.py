@@ -88,6 +88,7 @@ from passes.round_trip_load import apply_round_trip_load_drop
 from passes.and_sign_bit_branch import apply_and_sign_bit_branch
 from passes.shift_in_a import apply_shift_in_a
 from passes.self_store_drop import apply_self_store_drop
+from passes.pointer_self_store import apply_pointer_self_store_drop
 from passes.cmp_through_tmp_fold import apply_cmp_through_tmp_fold
 from passes.redundant_compare import apply_redundant_compare
 from passes.tail_merge import apply_tail_merge
@@ -317,6 +318,9 @@ def _peephole_fixedpoint(
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)
+        new_prog = apply_pointer_self_store_drop(
+            new_prog, zp_symbol_addrs=zp_cells or None,
+        )
         new_prog = apply_redundant_compare(new_prog)
         new_prog = apply_cmp_through_tmp_fold(
             new_prog, zp_slot_symbols=zp_slot_symbols,

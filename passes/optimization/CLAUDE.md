@@ -64,6 +64,22 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   args. Width-correct wraparound at the
   operand's declared width. Const-array-subscript fold
   (`_fold_indexed_load`) is part of this pass.
+- `distribute_constant.py` — `DistributeConstant` (raw
+  FixedpointPass, right after `ConstantFold`). `(x ± c) * k`, with
+  the sum single-use and `x` an SSA `ZeroExtend` of a byte, becomes
+  `x * k ± c * k` (a negative product subtracted, so its top byte is
+  `SBC #0`, which `carry_inc` makes `BCS; DEC`). The product of one
+  significant byte shifts in A or is an 8-by-8 loop. `&p->options[n -
+  1]` with 9-byte options is `n * 9 - 9`.
+- `phi_offset.py` — `PhiOffset` (PostFixedpointPass, first). A Phi of
+  single-use `p + k_i` (one Var `p`, constants 0-255) whose result's
+  one reader is a load or store through it becomes `o = Phi(k_i)`,
+  `ZeroExtend(o)`, and `p + that` after the join's Phis, so the access
+  is `(p),Y` with the offset in Y. `p` must be unchanged from the
+  adds to the join: SSA-renamed, or no store, call, write of `p`, or
+  jump out of the range from the first add to the Phi
+  (`_unchanged_between`), and not `volatile`. `n < 3 ? &E->sword :
+  &E->dagger` is `LDY #7` or `LDY #9` and `STA (E),Y`.
 - `strength_reduction.py` — `reduce_strength` (three `RuleSet` rules
   `MULTIPLY_RULE` / `DIVIDE_RULE` / `MODULO_RULE`, bundled as
   `STRENGTH_RULES`; `optimizer.py` runs them as one merged RuleSet).
@@ -495,7 +511,8 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → noreturn_calls                (PreSsaPass, one-shot)
    → to_ssa                        (owned by PhaseDriver)
    → fold_static_const_reads       (PreFixedpointPass, one-shot)
-   → [constant_fold → reduce_strength → fold_producer_jumps
+   → [constant_fold → distribute_constant → reduce_strength
+      → fold_producer_jumps
       (cmp_zero ∪ narrow_and ∪ lnot, one merged RuleSet)
       → eliminate_dead_loops → UCE → cse → licm
       → copy_propagate → DSE → read_stored_globals → fold_copies
@@ -505,6 +522,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → fold_truncate_extend → fold_extend_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith
       → narrow_byte_range → narrow_byte_bitwise]*      (FixedpointPass loop)
+   → phi_offset                    (PostFixedpointPass, one-shot)
    → static_indexed_access         (PostFixedpointPass, one-shot)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
    → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)

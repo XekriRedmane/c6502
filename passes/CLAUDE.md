@@ -70,7 +70,9 @@ this directory:
   — both arms reach L's position) and drops the orphaned Label
   in the same sweep when L has no other Branch/Jump/Phi refs.
   Also drops a `Jump` to one of the labels right after it, as left
-  by `BCC top; JMP done; done:`.
+  by `BCC top; JMP done; done:`, and a `Branch` right after a `Branch`
+  on the same condition with no label between, which is never taken
+  (a wide compare whose bytes became known left a `BNE` per byte).
   Headline source: the sign-extension diamond residue from
   `_translate_sign_extend` (BVC / BPL skip-empty-arm pattern left
   over when the widened high byte is dead). `flags_dead_at` walks
@@ -566,6 +568,26 @@ this directory:
   split into the two transfers through A that `asm_emit` writes. See
   "Mem-to-mem splitting" below.
 - `self_store_drop.py` — `apply_self_store_drop`.
+- `pointer_self_store.py` — `apply_pointer_self_store_drop`. Within a
+  block, follows which bytes (and A) hold a byte read through a
+  zero-page pointer, `IndirectZp(N, k)`. A non-volatile store of A
+  back to `IndirectZp(N, k)` when A holds that byte goes, and a read of
+  a function's own slot holding it, copied there right after the read
+  with A dead, unread since, and dead after with Y, reads through the
+  pointer again so the copy dies. A fact ends at a write of `N` or
+  `N + 1`, at a write `may_alias` says may reach the byte (with
+  `pointer_proof`), and at a call, label, or branch.
+  `P->buf += 0x100` is `LDY #k+1; LDA (P),Y; CLC; ADC #1; STA (P),Y`.
+- `pointer_restage.py` — the rules `tac_to_asm._restage` applies under
+  `-O`: a load or store of 2 bytes or more through a zero-page pointer
+  at a constant offset copies the pointer into DPTR again before each
+  byte, so `memory_value_propagation` sends every byte through
+  `(p),Y`. A store does so only when C's effective-type rule makes an
+  overlap of its bytes with the pointer undefined: the pointer is a
+  TAC variable of pointer type, and the pointee's scalar at exactly
+  those bytes (`scalar_at`) is neither a character type nor
+  compatible with the pointer's own type (`restage_store`). So
+  `N->next = q` on a `struct node *N` keeps one copy.
 - `shift_in_a.py` — `apply_shift_in_a`. Rewrites `STA M; <ASL / LSR /
   ROL / ROR M>+; LDA M` as the shifts on A followed by `STA M`, and
   does the same without the `LDA` when A is dead after the shifts.
@@ -1546,6 +1568,11 @@ document says whether it fires there.
   when A, N, Z, and V are dead on both paths.
 - `apply_self_store_drop` — `Mov(M, A); ...; Mov(A, M)` where the body
   doesn't modify M and A reads M → drop the trailing self-store.
+- `apply_pointer_self_store_drop` — the same for a byte read through a
+  zero-page pointer, `LDA (N),Y; ...; STA (N),Y` with one Y, through a
+  slot copy too, and a read of such a slot copy made through the
+  pointer again where that kills the copy. See the module roster
+  entry above.
 - `apply_cmp_through_tmp_fold` — `Mov(src, A); Mov(A, tmp); Mov(other,
   A); Compare(A, tmp)` → `Mov(other, A); Compare(A, src)`. Drops the
   RHS-stage-through-tmp pattern so CMP reads `src` directly (incl.

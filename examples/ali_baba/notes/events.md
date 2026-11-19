@@ -133,7 +133,8 @@ These remain.
    compiles to `LDA ENTITY_PTR; STA DPTR; LDA ENTITY_PTR+1; STA DPTR+1;
    LDA #0; LDY #$0D; STA (ENTITY_PTR),Y; INY; STA (DPTR),Y`, where `LDA
    #0; LDY #$0D; STA (ENTITY_PTR),Y; INY; STA (ENTITY_PTR),Y` does. It
-   costs 8 bytes in `pickup_treasure`'s fourth trap.
+   costs 8 bytes in `pickup_treasure`'s fourth trap. Fixed on 19 Nov
+   2026 (docs/optimizations/pointer_restage.md).
 
 2. A comparison of a 16-bit global with a 2-byte member through a
    zero-page pointer copies both bytes of the member to temporaries.
@@ -146,7 +147,11 @@ These remain.
    gives `LDY #$0D; LDA (ENTITY_PTR),Y; STA t1; INY; LDA (ENTITY_PTR),Y;
    STA t0; LDA t1; SEC; SBC W; LDA t0; SBC W+1`, where `LDY #$0D; LDA
    (ENTITY_PTR),Y; CMP W; INY; LDA (ENTITY_PTR),Y; SBC W+1` does. It
-   costs 9 bytes in `adj_drop`.
+   costs 9 bytes in `adj_drop`. Fixed on 19 Nov 2026 except for the
+   `CMP`: each byte is read where the subtraction uses it, `LDY #$0D;
+   LDA (ENTITY_PTR),Y; SEC; SBC W; INY; LDA (ENTITY_PTR),Y; SBC W+1`
+   (docs/optimizations/pointer_self_store.md), and adj_drop is 8 bytes
+   smaller.
 
 3. `(int16_t)w <= 0` right after a store to `w` copies both bytes to
    temporaries before the test.

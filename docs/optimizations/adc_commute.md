@@ -64,8 +64,12 @@ The final output is `JSR sample; CLC; ADC total; STA total; RTS`.
   A alone as it's emitted, and has no operand that `may_alias` says
   could address `temp`. This band admits the `LDX` or `LDY` that sets
   up an indexed `mem`.
-- Next is a non-volatile `LDA mem`, where `mem` is a `Data`, `ZP`, or
-  `abs,X` / `abs,Y` operand, optionally followed by `CLC` or `SEC`.
+- Next is a non-volatile `LDA mem`, where `mem` is a `Data`, `ZP`,
+  `abs,X` / `abs,Y`, or `(zp),Y` operand, optionally followed by `CLC`
+  or `SEC`. A `(zp),Y` operand's `LDY #k` moves from the load to the
+  operation with only the `CLC` or `SEC` between, so Y ends the same.
+  `E->level |= h(x)` is `JSR h; LDY #$0A; ORA (E),Y; STA (E),Y` (see
+  [a compound assignment's call first](calls_first.md)).
 - Then comes an `ADC`, `AND`, or `ORA` of `temp` into A. A store of
   the result back to `mem`, as `mem += v` makes, may follow, but
   needn't: in `print_zstring` (examples/zork/zstring.c),

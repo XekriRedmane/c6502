@@ -664,9 +664,8 @@ next_string:
    STA   __local_next_string__s
    STX   __local_next_string__1
    LDY   #$00
-   LDA   (__local_next_string__s),Y
    CLC
-   ADC   __local_next_string__s
+   ADC   (__local_next_string__s),Y
    BCC   .carry_inc@0
    INC   __local_next_string__1
    CLC

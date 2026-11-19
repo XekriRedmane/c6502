@@ -27,7 +27,6 @@ __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_load_scene_from_disk__tries	EQU	$82
 __local_scene_setup__2	EQU	$82
-__local_clear_map__0	EQU	$83
 __local_load_scene_from_disk__iob	EQU	$83
 __local_scene_setup__3	EQU	$83
 __local_draw_map_entities__1	EQU	$84
@@ -566,13 +565,11 @@ fill_map:
 clear_map:
    SUBROUTINE
 
-   LDY   #$00
-   LDA   (CHAR_PTR),Y
-   STA   __local_clear_map__0
-   INY
+   LDY   #$01
    LDA   (CHAR_PTR),Y
    TAX
-   LDA   __local_clear_map__0
+   DEY
+   LDA   (CHAR_PTR),Y
    JMP   setup_text_pos
 
 draw_map_col:
@@ -875,15 +872,11 @@ scene_setup:
    LDX   MOB_PTR+1
    LDA   MOB_PTR
    JSR   reorder_char
-   LDA   MOB_PTR
-   STA   DPTR
-   LDA   MOB_PTR+1
-   STA   DPTR+1
    LDA   #$00
    LDY   #$0D
    STA   (MOB_PTR),Y
    INY
-   STA   (DPTR),Y
+   STA   (MOB_PTR),Y
    JSR   clamp_char_field
    LDA   CURRENT_PLAYER
    CMP   ACTIVE_CHAR
@@ -961,16 +954,14 @@ load_scene_from_disk:
    STA   __local_load_scene_from_disk__scene
    LDA   RWTS_IOB_PTR
    STA   __local_load_scene_from_disk__iob
-   STA   DPTR
    LDA   RWTS_IOB_PTR+1
    STA   __local_load_scene_from_disk__0
-   STA   DPTR+1
    LDA   #<SCENE_TEXT_DATA
    LDY   #$08
    STA   (RWTS_IOB_PTR),Y
    LDA   #>SCENE_TEXT_DATA
    INY
-   STA   (DPTR),Y
+   STA   (__local_load_scene_from_disk__iob),Y
    LDA   GAME_SIG_SECTOR
    CLC
    ADC   __local_load_scene_from_disk__scene

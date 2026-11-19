@@ -105,6 +105,8 @@ from passes.optimization.copy_folding import (
 )
 from passes.optimization.reassoc_const import ReassocConstants
 from passes.optimization.reassoc_offset import ReassocOffsetConstant
+from passes.optimization.phi_offset import PhiOffset
+from passes.optimization.distribute_constant import DistributeConstant
 from passes.optimization.direct_member_access import DirectMemberAccess
 from passes.optimization.recognize_indexed_store import RecognizeIndexedStore
 from passes.optimization.recognize_indexed_load import RecognizeIndexedLoad
@@ -149,6 +151,9 @@ _DRIVER = PhaseDriver(
     ],
     fixedpoint=[
         ConstantFold(),
+        # `(x - c) * k` on a widened byte `x` as `x * k - c * k`, before
+        # strength reduction makes the multiply shifts.
+        DistributeConstant(),
         # Strength reduction split into per-op rules (Multiply / Divide
         # / Modulo by powers of two) in one RuleSet.
         RuleSet(*STRENGTH_RULES, name="reduce_strength"),
@@ -208,6 +213,10 @@ _DRIVER = PhaseDriver(
         NarrowByteBitwise(),
     ],
     post_fixedpoint=[
+        # A join choosing `p + k1` or `p + k2` as a choice of `k1` or
+        # `k2` added to `p` after it, which the next two passes make
+        # an indexed access.
+        PhiOffset(),
         # `o[i].m` on a static array as `IndexedLoad(o, i, offset=m)`
         # (abs,X), and `(&o + i) + m` as `(&o + m) + i`. Before the
         # indirect-indexed recognizer, which would otherwise take the

@@ -212,7 +212,12 @@ needs to be. None blocked the translation.
    back, 31 bytes before the RTS with the copy to DPTR, where `LDY #9;
    LDA (P),Y; CLC; ADC #1; STA (P),Y` is 9. `setup_data_iob` and `setup_slot_iob` pay the first, and
    `advance_sector` pays both, 16 bytes more than the previous C, which
-   incremented the high byte through a cast.
+   incremented the high byte through a cast. Fixed on 19 Nov 2026:
+   both bytes go through `(P),Y` (docs/optimizations/pointer_restage.md),
+   and `step` is `CLC; LDY #9; LDA (P),Y; ADC #1; STA (P),Y`
+   (docs/optimizations/pointer_self_store.md). advance_sector is 35
+   bytes, 17 fewer, and setup_data_iob and setup_slot_iob are 3 fewer
+   each, with no copy into DPTR to share.
 
 3. **Indexing an array of 9-byte structs by a byte minus 1 multiplies
    in 16 bits.**
@@ -226,7 +231,11 @@ needs to be. None blocked the translation.
    extends `n - 1` to 16 bits and multiplies by 9 with 16-bit shifts and
    adds, 69 bytes in all. The 16 bits are needed for an `n` above 29,
    which no menu has. The previous C computed the offset as a
-   `uint8_t`, which is `ASL; ASL; ASL; ADC`, 38 bytes in all.
+   `uint8_t`, which is `ASL; ASL; ASL; ADC`, 38 bytes in all. Since 19
+   Nov 2026 `(n - 1) * 9` is computed as `n * 9 - 9`, whose product is
+   of the byte `n` (docs/optimizations/distribute_constant.md), and
+   `option` is 57 bytes. The offset still takes 16 bits, since `n - 1`
+   is -1 for an `n` of 0, which C defines as `options[-1]`.
 
 4. **A copy from a pointer one past a length byte computes the source
    address in 16 bits on each pass.**

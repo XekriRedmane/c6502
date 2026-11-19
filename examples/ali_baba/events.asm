@@ -42,7 +42,6 @@ __local_pick_random_mob__0	EQU	$83
 __local_pickup_treasure__0	EQU	$83
 __local_process_char_events__e	EQU	$83
 __local_event_faction_scene_cont__index	EQU	$84
-__local_init_drop_gold__0	EQU	$84
 __local_pick_random_mob__1	EQU	$84
 __local_pickup_treasure__1	EQU	$84
 __local_process_char_events__1	EQU	$84
@@ -835,15 +834,11 @@ pickup_treasure:
    STA   (ENTITY_PTR),Y
    JMP   .switch@2_break
 .default@6:
-   LDA   ENTITY_PTR
-   STA   DPTR
-   LDA   ENTITY_PTR+1
-   STA   DPTR+1
    LDA   #$00
    LDY   #$0D
    STA   (ENTITY_PTR),Y
    INY
-   STA   (DPTR),Y
+   STA   (ENTITY_PTR),Y
 .switch@2_break:
    LDY   #$02
    LDA   (ENTITY_PTR),Y
@@ -1338,13 +1333,11 @@ find_msb:
 init_drop_gold:
    SUBROUTINE
 
-   LDY   #$0D
-   LDA   (ENTITY_PTR),Y
-   STA   __local_init_drop_gold__0
-   INY
+   LDY   #$0E
    LDA   (ENTITY_PTR),Y
    TAX
-   LDA   __local_init_drop_gold__0
+   DEY
+   LDA   (ENTITY_PTR),Y
    JSR   find_msb
    STA   DROP_AMOUNT
    STX   DROP_AMOUNT+1
@@ -1411,14 +1404,10 @@ adj_drop:
    ROR   DROP_STEP
    LDY   #$0D
    LDA   (ENTITY_PTR),Y
-   STA   __local_adj_drop__1
-   INY
-   LDA   (ENTITY_PTR),Y
-   STA   __local_adj_drop__0
-   LDA   __local_adj_drop__1
    SEC
    SBC   DROP_AMOUNT
-   LDA   __local_adj_drop__0
+   INY
+   LDA   (ENTITY_PTR),Y
    SBC   DROP_AMOUNT+1
    BCC   .if_end@59
    LDA   #$1D

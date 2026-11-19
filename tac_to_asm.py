@@ -3226,6 +3226,14 @@ class Translator:
         ptr_op = translate_val(src_ptr)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
+        if self._restage(src_ptr, ptr_op, 0, n, False):
+            out = []
+            for k, ins in enumerate(
+                    _indirect_read(dst_op, n, is_volatile=is_volatile)):
+                if k % 2 == 0:
+                    out.extend(self._stage_dptr(ptr_op))
+                out.append(ins)
+            return out
         return [
             *self._stage_dptr(ptr_op),
             *_indirect_read(dst_op, n, is_volatile=is_volatile),
@@ -3241,6 +3249,13 @@ class Translator:
         ptr_op = translate_val(dst_ptr)
         src_op = translate_val(src)
         n = self._size_of(src)
+        if not is_volatile and self._restage(dst_ptr, ptr_op, 0, n, True):
+            out = []
+            for k, ins in enumerate(_indirect_write(src_op, n)):
+                if k % 2 == 0:
+                    out.extend(self._stage_dptr(ptr_op))
+                out.append(ins)
+            return out
         return [
             *self._stage_dptr(ptr_op),
             *_indirect_write(src_op, n, is_volatile=is_volatile),
@@ -3483,8 +3498,11 @@ class Translator:
         dst_op = translate_val(dst)
         n = self._size_of(dst)
         if n > 1 and isinstance(idx_op, asm_ast.Imm):
-            out = list(self._stage_dptr(ptr_op))
+            again = self._restage(ptr, ptr_op, idx_op.value, n, False)
+            out = []
             for b in range(n):
+                if b == 0 or again:
+                    out.extend(self._stage_dptr(ptr_op))
                 out.append(asm_ast.Mov(
                     src=asm_ast.Indirect(offset=idx_op.value + b),
                     dst=_REG_A, is_volatile=is_volatile,
@@ -3535,8 +3553,12 @@ class Translator:
             # A value wider than a byte at a constant offset, which
             # the recognizer allows when Y reaches all its bytes.
             whole = translate_val(src)
-            out = list(self._stage_dptr(ptr_op))
+            again = (not is_volatile
+                     and self._restage(ptr, ptr_op, idx_op.value, n, True))
+            out = []
             for b in range(n):
+                if b == 0 or again:
+                    out.extend(self._stage_dptr(ptr_op))
                 out.append(asm_ast.Mov(src=_byte_at(whole, b), dst=_REG_A))
                 out.append(asm_ast.Mov(
                     src=_REG_A, dst=asm_ast.Indirect(offset=idx_op.value + b),
@@ -3569,6 +3591,28 @@ class Translator:
                 is_volatile=is_volatile,
             ),
         ]
+
+    def _restage(
+        self, ptr: tac_ast.Type_val, ptr_op: asm_ast.Type_operand,
+        offset: int, n: int, store: bool,
+    ) -> bool:
+        """Whether a load (or a store, `store`) of `n` bytes at
+        `offset` through `ptr` copies the pointer into DPTR again before
+        each byte after the first, under `-O`, so that every byte is
+        read or written through the pointer in zero page
+        (passes/pointer_restage.py has the conditions and the reason a
+        store's earlier bytes can't change the pointer)."""
+        from passes import pointer_restage
+        if not (self._bare_exit and n > 1
+                and pointer_restage.pointer_in_zero_page(ptr_op)):
+            return False
+        if not store:
+            return True
+        if not isinstance(ptr, tac_ast.Var) or self._symbols is None:
+            return False
+        sym = self._symbols.get(ptr.name)
+        return sym is not None and pointer_restage.restage_store(
+            sym.type, offset, n, self._types)
 
     @staticmethod
     def _stage_dptr(

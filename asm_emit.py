@@ -741,6 +741,15 @@ def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
             # the `adc_commute` peephole when the to-add value lives
             # in A and the other operand is a static-array element.
             return [_instr_line(opcode, _indexed_data_addr(src))]
+        case asm_ast.IndirectZp(address=addr, offset=off):
+            # A byte through a zero-page pointer, which `adc_commute`
+            # makes the operand when the other value is in A.
+            return [
+                _emit_load_y(off),
+                _instr_line(opcode, _zpy_operand(addr)),
+            ]
+        case asm_ast.IndirectZpY(address=addr):
+            return [_instr_line(opcode, _zpy_operand(addr))]
         case _:
             raise ValueError(
                 f"unsupported {opcode} source: {src!r}"

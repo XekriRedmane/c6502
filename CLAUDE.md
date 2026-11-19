@@ -315,7 +315,8 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
   2. One-shot scalar const-static read fold — replaces `Var(static
      const scalar)` USE positions with `Constant(value)`.
   3. TAC fixed-point loop: constant folding (incl. const-array-
-     subscript fold), strength reduction, comparison-against-zero /
+     subscript fold), `(x - c) * k` on a widened byte as `x * k - c *
+     k` (`distribute_constant`), strength reduction, comparison-against-zero /
      jump fold, AND-zero-jump fold, unreachable-code elimination,
      common-subexpression elimination, loop-invariant extends,
      copy propagation, dead-store elimination, copy folding, Add-
@@ -324,7 +325,9 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
      recognizers, and the narrowing of promoted bytes' arithmetic
      (`narrow_widened_arith`, `narrow_byte_range` for `/`, `%`, `>>`,
      and a 16-bit `*` of operands `value_range` bounds by 255,
-     `narrow_byte_bitwise`).
+     `narrow_byte_bitwise`). After it, a join of `p + k1` and `p + k2`
+     read through once becomes a choice of `k1` or `k2` added to `p`
+     (`phi_offset`), which the recognizers make `(p),Y`.
   4. TAC SSA destruction + post-destruction copy folding.
   5. Asm-level const-static fold (drops scalar `static T const`
      storage, replacing references with immediates).
@@ -767,7 +770,11 @@ notes that aren't visible from the grammar alone:
   lets c99_to_tac evaluate the lval's address ONCE for side-effect-
   ful lvals like `arr[i++] += 1`. The type checker stamps
   `intermediate_type` (binop working type) and `data_type` (lval
-  type, the result type).
+  type, the result type). When `rval` calls a function and `lval`
+  neither calls nor writes anything and isn't volatile, c99_to_tac
+  evaluates `rval` first (`_calls_first`, which C's unsequenced
+  operands allow), so `E->level |= h(x)` keeps nothing across the
+  call.
 - Prefix `++a`/`--a` → `Prefix(incdec_op, exp)`; postfix `a++`/`a--`
   → `Postfix(incdec_op, exp)`. Separate nodes (not desugars) for
   the same address-once reason and because prefix returns the new
@@ -1109,7 +1116,12 @@ pointer-arithmetic byte-scaling via `translate_pointer_arithmetic`).
 
 ## tac_to_asm
 
-`tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. See the
+`tac_to_asm.translate_program` — `tac_ast` → `asm_ast`.
+Under `-O`, a load or store of 2 bytes or more through a zero-page
+pointer at a constant offset copies the pointer into DPTR again before
+each byte (`_restage`, with the rules and the effective-type argument
+for stores in `passes/pointer_restage.py`), so
+`memory_value_propagation` sends every byte through `(p),Y`. See the
 module docstring at the top of `tac_to_asm.py` for the per-construct
 mapping, the runtime helper layout table (HARGS slots per helper),
 the inline comparison / LogicalNot lowerings, the cast lowering

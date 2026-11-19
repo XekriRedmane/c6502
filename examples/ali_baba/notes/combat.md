@@ -149,7 +149,9 @@ and stores `nullptr` in pick_random_member.
 
    compiles to `STA r; STX r+1; STA DPTR; STX DPTR+1; LDY #$0D; LDA
    (r),Y; STA r; INY; LDA (DPTR),Y`. modify_char_stats and apply_damage
-   pay for it.
+   pay for it. Fixed on 19 Nov 2026: both bytes go through `(r),Y`
+   (docs/optimizations/pointer_restage.md), and modify_char_stats is 6
+   bytes smaller.
 
 2. The test that a pointer is out of page 0, `(uint16_t)p >= 0x0100`
    (`IN_PAGE_0`), compiles to `SEC; LDA p+1; SBC #1; BCS`, 3 bytes
@@ -181,7 +183,12 @@ and stores `nullptr` in pick_random_member.
    compiles to an `LDA E; CLC; ADC #k; STA w; LDA E+1; ADC #0; STA
    w+1` for each member and `LDY #0; STA (w),Y`. The field index of the
    old C (`LDA #7` or `LDA #9` into a byte, then `LDY k; STA (E),Y`)
-   was 5 bytes shorter in calc_combat_strength.
+   was 5 bytes shorter in calc_combat_strength. Since 19 Nov 2026 this
+   example is `LDY #7` or `LDY #9` and `STA (E),Y`
+   (docs/optimizations/phi_offset.md), but calc_combat_strength isn't
+   changed. It reads `*weapon` before and after a call to
+   `random_in_range`, which may move ENTITY_PTR, so C requires the
+   address from before the call, and the pointer is still computed.
 
 4. `stdc_bit_width_uc(x | 1)` compiles to a loop with its test at the
    top and a separate count, and the `3 +` around it is a separate add.

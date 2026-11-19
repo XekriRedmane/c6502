@@ -477,6 +477,56 @@ def _is_volatile_quals_c99(t: c99_ast.Type_data_type | None) -> bool:
     return isinstance(t, c99_ast.Volatile)
 
 
+def _calls_or_writes(node) -> bool:
+    """Returns whether evaluating the expression `node` calls a
+    function, assigns, increments, or decrements. The operand of
+    `sizeof` isn't evaluated, so it doesn't count."""
+    if isinstance(node, (
+        c99_ast.Assignment, c99_ast.CompoundAssignment, c99_ast.Prefix,
+        c99_ast.Postfix, c99_ast.FunctionCall, c99_ast.IndirectCall,
+    )):
+        return True
+    if isinstance(node, (c99_ast.SizeOfExp, c99_ast.SizeOfType)):
+        return False
+    if isinstance(node, list):
+        return any(_calls_or_writes(n) for n in node)
+    if isinstance(node, c99_ast.Type_exp):
+        return any(
+            _calls_or_writes(getattr(node, f.name))
+            for f in dataclasses.fields(node)
+        )
+    return False
+
+
+def _calls(node) -> bool:
+    """Returns whether evaluating the expression `node` calls a
+    function."""
+    if isinstance(node, (c99_ast.FunctionCall, c99_ast.IndirectCall)):
+        return True
+    if isinstance(node, (c99_ast.SizeOfExp, c99_ast.SizeOfType)):
+        return False
+    if isinstance(node, list):
+        return any(_calls(n) for n in node)
+    if isinstance(node, c99_ast.Type_exp):
+        return any(
+            _calls(getattr(node, f.name)) for f in dataclasses.fields(node)
+        )
+    return False
+
+
+def _calls_first(lval: c99_ast.Type_exp, rval: c99_ast.Type_exp) -> bool:
+    """Whether `lval OP= rval` evaluates `rval` before the address and
+    the value of `lval`: when `rval` calls a function and `lval`
+    neither calls nor writes anything, and isn't volatile. C leaves
+    the evaluations of the two operands unsequenced (C23 §6.5.17.1),
+    and a call indeterminately sequenced with them (§6.5.3.3), so the
+    lvalue may be read after the call. Its address and value then needn't be kept across the call,
+    and `E->level |= h(x)` is `JSR h; LDY #k; ORA (E),Y; STA (E),Y`."""
+    if _is_volatile_quals_c99(lval.data_type):
+        return False
+    return _calls(rval) and not _calls_or_writes(lval)
+
+
 def _strip_quals_c99(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
     """Strip every `Const` / `Volatile` wrapper anywhere in `t`.
     `Pointer(Const(Int))` becomes `Pointer(Int)`,
@@ -4646,6 +4696,9 @@ class Translator:
         # Subscript / Dereference / Dot / Arrow: compute the
         # lvalue's byte address exactly once, then Load + binop +
         # Store through it.
+        rval_val = None
+        if _calls_first(lval, rval):
+            rval_val = self.translate_exp(rval, instrs)
         if isinstance(lval, c99_ast.Subscript):
             addr = self._translate_subscript_address(
                 lval.array, lval.index, instrs,
@@ -4675,7 +4728,7 @@ class Translator:
         ))
         new_val = self._compute_compound_step(
             op, cur, lv_type, rval, intermediate_type,
-            is_pointer_arith, instrs,
+            is_pointer_arith, instrs, rval_val=rval_val,
         )
         instrs.append(tac_ast.Store(
             src=new_val, dst_ptr=addr, is_volatile=is_vol,
@@ -4691,12 +4744,15 @@ class Translator:
         intermediate_type: c99_ast.Type_data_type,
         is_pointer_arith: bool,
         instrs: list[tac_ast.Type_instruction],
+        rval_val: tac_ast.Type_val | None = None,
     ) -> tac_ast.Type_val:
         """Compute `(T)((C)lval_val OP rval)` and return the
         resulting val of type T (the lval's type). Used by both
         the Var and address-based branches of
-        `_translate_compound_assign`."""
-        rval_val = self.translate_exp(rval_exp, instrs)
+        `_translate_compound_assign`. `rval_val` is the right
+        operand's value when the caller has evaluated it already."""
+        if rval_val is None:
+            rval_val = self.translate_exp(rval_exp, instrs)
         if is_pointer_arith:
             # ptr += int — route through translate_pointer_arithmetic
             # so the rval is scaled by sizeof(pointee).

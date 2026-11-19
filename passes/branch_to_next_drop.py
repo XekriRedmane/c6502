@@ -1,6 +1,15 @@
 """Drop a `Branch` whose target is the immediately-following label,
 and a `Jump` whose target is one of the labels right after it.
 
+A `Branch` right after a `Branch` on the same condition, with no label
+between, goes too. The first one falls through only when its
+condition is false, a branch changes no flag, so the second is never
+taken. A wide comparison whose bytes have become known can leave a
+`BNE` for each byte in a row, as `*ul_ptr != 1000` did once each byte
+read through the pointer went to the variable's own byte, and
+`branch_thread` would otherwise retarget them one per sweep of the
+peephole fixed point.
+
 A `Jump` to the next label can be left when a conditional branch over
 it was inverted to reach the other target, as in `BCC top; JMP done;
 done:`. Like a Branch, it changes no register, flag, or memory, so it
@@ -133,6 +142,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 i += 2
             else:
                 i += 1
+            continue
+        if (isinstance(a, asm_ast.Branch) and out
+                and isinstance(out[-1], asm_ast.Branch)
+                and type(out[-1].cond) is type(a.cond)):
+            i += 1
             continue
         if isinstance(a, asm_ast.Jump):
             j = i + 1

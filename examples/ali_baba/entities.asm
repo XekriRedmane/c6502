@@ -19,21 +19,18 @@ DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
 __local_classify_entity_type__0	EQU	$80
 __local_draw_blink_alt__sprite	EQU	$80
-__local_load_char_name_ptr__0	EQU	$80
-__local_print_entity_name__m	EQU	$80
-__local_print_member_name__0	EQU	$80
-__local_print_mob_name__0	EQU	$80
 __zpabi_adjust_pc_count__m_0	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_classify_entity_type__e	EQU	$81
-__local_print_entity_name__0	EQU	$81
+__local_print_entity_name__m	EQU	$81
 __zpabi_adjust_pc_count__m_1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_classify_entity_type__1	EQU	$82
 __local_draw_char_at_pos__pos	EQU	$82
+__local_print_entity_name__1	EQU	$82
 __zpabi_adjust_pc_count__delta	EQU	$82
 __local_find_entity_at_pos__link	EQU	$83
 __local_get_entity_fontchar__sprite	EQU	$83
@@ -246,7 +243,7 @@ WAIT	EQU	$FCA8
 ; def load_char_name_ptr params= locals=__local_load_char_name_ptr__0 indirect=false in_cycle=false
 ; def load_char_to_fa params=__zpabi_load_char_to_fa__index locals=__local_load_char_to_fa__index indirect=false in_cycle=false param_regs=A
 ; def next_group_member params= locals=__local_next_group_member__0 indirect=false in_cycle=false
-; def print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 locals=__local_print_entity_name__m,__local_print_entity_name__0,__local_print_entity_name__1 indirect=false in_cycle=false param_regs=A,X
+; def print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 locals=__local_print_entity_name__0,__local_print_entity_name__m,__local_print_entity_name__1 indirect=false in_cycle=false param_regs=A,X
 ; def print_fontchar_at_text_pos params= locals=__local_print_fontchar_at_text_pos__0 indirect=false in_cycle=false
 ; def print_member_name params= locals=__local_print_member_name__0 indirect=false in_cycle=false
 ; def print_mob_name params= locals=__local_print_mob_name__0 indirect=false in_cycle=false
@@ -452,6 +449,7 @@ WAIT	EQU	$FCA8
 ; call setup_char_sprite -> pos_to_colrow
 ; call setup_char_sprite -> render_font_char
 ; item load_char_name_ptr section=.text local=false zero=false
+; item load_char_name_ptr@run0 section=.text local=true zero=false
 ; item setup_char_sprite section=.text local=false zero=false
 ; item setup_char_sprite@tail0 section=.text local=true zero=false
 ; item find_entity_at_pos section=.text local=false zero=false
@@ -504,14 +502,18 @@ WAIT	EQU	$FCA8
 load_char_name_ptr:
    SUBROUTINE
 
-   LDY   #$00
-   LDA   (ENTITY_PTR),Y
-   STA   __local_load_char_name_ptr__0
-   INY
+   JSR   load_char_name_ptr@run0
+   JMP   setup_text_pos_col20
+
+load_char_name_ptr@run0:
+   SUBROUTINE
+
+   LDY   #$01
    LDA   (ENTITY_PTR),Y
    TAX
-   LDA   __local_load_char_name_ptr__0
-   JMP   setup_text_pos_col20
+   DEY
+   LDA   (ENTITY_PTR),Y
+   RTS
 
 setup_char_sprite:
    SUBROUTINE
@@ -695,13 +697,7 @@ appearance_to_fontchar:
 print_mob_name:
    SUBROUTINE
 
-   LDY   #$00
-   LDA   (ENTITY_PTR),Y
-   STA   __local_print_mob_name__0
-   INY
-   LDA   (ENTITY_PTR),Y
-   TAX
-   LDA   __local_print_mob_name__0
+   JSR   load_char_name_ptr@run0
    JMP   print_bottom_centered
 
 adjust_pc_count:
@@ -858,19 +854,13 @@ print_entity_name:
    SUBROUTINE
 
    STA   __local_print_entity_name__m
-   STX   __local_print_entity_name__0
+   STX   __local_print_entity_name__1
    JSR   set_cursor_row21
-   LDA   __local_print_entity_name__m
-   STA   DPTR
-   LDA   __local_print_entity_name__0
-   STA   DPTR+1
-   LDY   #$00
+   LDY   #$01
    LDA   (__local_print_entity_name__m),Y
-   STA   __local_print_entity_name__m
-   INY
-   LDA   (DPTR),Y
    TAX
-   LDA   __local_print_entity_name__m
+   DEY
+   LDA   (__local_print_entity_name__m),Y
    JSR   print_bottom_centered
    JMP   scroll_status_line
 
@@ -1004,13 +994,11 @@ next_group_member:
 print_member_name:
    SUBROUTINE
 
-   LDY   #$00
-   LDA   (MOB_PTR),Y
-   STA   __local_print_member_name__0
-   INY
+   LDY   #$01
    LDA   (MOB_PTR),Y
    TAX
-   LDA   __local_print_member_name__0
+   DEY
+   LDA   (MOB_PTR),Y
    JMP   print_bottom_centered
 
 reorder_current_char:

@@ -2335,7 +2335,6 @@ modify_char_stats:
    STA   __local_modify_char_stats__rec
    STX   __local_modify_char_stats__1
    CLC
-   STA   DPTR
    LDY   #$0D
    LDA   (__local_modify_char_stats__rec),Y
    STA   __local_modify_char_stats__0
@@ -2360,13 +2359,11 @@ modify_char_stats:
    SBC   __zpabi_modify_char_stats__amount_1
    STA   __local_modify_char_stats__gold_1
 .if_end@159:
-   STX   DPTR+1
-   LDA   __local_modify_char_stats__gold_0
-   LDY   #$0D
+   LDY   #$0E
    STA   (__local_modify_char_stats__rec),Y
-   LDA   __local_modify_char_stats__gold_1
-   INY
-   STA   (DPTR),Y
+   LDA   __local_modify_char_stats__gold_0
+   DEY
+   STA   (__local_modify_char_stats__rec),Y
    LDY   #$05
    LDA   (__local_modify_char_stats__rec),Y
    ASL

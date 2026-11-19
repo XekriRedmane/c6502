@@ -142,6 +142,12 @@ def is_user_zp_byte(addr: int) -> bool:
     return addr in _USER_ZP_BYTES
 
 
+def is_user_zp_global(name: str) -> bool:
+    """True iff `name` is a user zero-page global of the compile in
+    progress."""
+    return name in _USER_ZP_GLOBALS
+
+
 def unreachable_by_pointer(prog: asm_ast.Program) -> frozenset[str]:
     """The `Data` names in `prog` that no pointer can point to, since
     nothing in the unit takes their address: no `LoadAddress` of

@@ -13,9 +13,11 @@ makes no change. It doesn't run in the unoptimized pipeline.
 followed by a tail that stores 1 or 0 into a temporary `%t` and
 joins at an "end" label. In `if (a && b)` the next instruction tests
 `%t` again. The two tests make two layers of branches for one
-decision, and the asm also stores `%t` to a zero-page byte and loads
-it back. In the example below the function body drops from 28 bytes
-to 13.
+decision, and the asm would also store `%t` to a zero-page byte and
+load it back. The asm-level passes now remove the value and the
+second test by themselves in the example below, whose final code is
+the same 13 bytes with this pass disabled. The pass leaves the TAC
+with one test per decision, so those passes have less to undo.
 
 ## Example
 
@@ -53,15 +55,14 @@ Label(.if_end@2)
 Ret(None)
 ```
 
-The final assembly is `LDA __zpabi_both__a; BEQ .if_end@2;
-LDA __zpabi_both__b; BEQ .if_end@2; LDA #$01; STA g`.
+`both` takes `a` in A and `b` in X, and the final assembly is `ORA
+#$00; BEQ .if_end@2; TXA; BEQ .if_end@2; LDA #$01; STA g`.
 
 In `if (a || b)` a chain jump means the value is 1, and on 1 the
 consumer `JumpIfFalse` falls through into the body. The pass then points the chain at a new label
 `.either@scfold@0` in front of the body, and puts `Jump(.if_end@5)`
 before that label for the case where no chain jump fired. The final
-assembly is `LDA __zpabi_either__a; BNE .either@scfold@0;
-LDA __zpabi_either__b; BEQ .if_end@5`.
+assembly is `ORA #$00; BNE .either@scfold@0; TXA; BEQ .if_end@5`.
 
 ## When it applies
 

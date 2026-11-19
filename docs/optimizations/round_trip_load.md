@@ -35,14 +35,18 @@ unsigned char bump(unsigned char *p) {
 
 ```
 bump:
+   STA   __local_bump__p
+   STX   __local_bump__1
    LDY   #$00
-   LDA   ($80),Y
+   LDA   ($81),Y
    CLC
    ADC   #$03
    STA   __local_bump__0
    LDA   __local_bump__0
-   STA   ($80),Y
-   LDA   ($80),Y
+   LDY   #$00
+   STA   ($81),Y
+   LDY   #$00
+   LDA   ($81),Y
    RTS
 ```
 
@@ -50,20 +54,25 @@ bump:
 
 ```
 bump:
+   STA   __local_bump__p
+   STX   __local_bump__1
    LDY   #$00
-   LDA   ($80),Y
+   LDA   ($81),Y
    CLC
    ADC   #$03
    STA   __local_bump__0
-   STA   ($80),Y
-   LDA   ($80),Y
+   LDY   #$00
+   STA   ($81),Y
+   LDY   #$00
+   LDA   ($81),Y
    RTS
 ```
 
-`$80` is the zero-page slot that holds `p`, which the final output
-names `__zpabi_bump__p_0`. The `STA __local_bump__0` is unread after
-the rewrite, and `asm_dead_store` deletes it before the output is
-emitted.
+`p` arrives in A and X, and `$81` is the zero-page byte it's copied
+to, which the final output names `__local_bump__p`. The `STA
+__local_bump__0` is unread after the rewrite, and `asm_dead_store`
+deletes it before the output is emitted, as later passes delete the
+repeated `LDY #$00`.
 
 The pass has a second form for a memory-to-memory `Mov(M, D)`, which
 emits as `LDA M; STA D`. When that atom follows the same writer and

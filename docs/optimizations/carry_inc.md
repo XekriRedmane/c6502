@@ -36,9 +36,10 @@ void add(uint8_t c) { total += c; }
 ### Before
 
 ```
+   STA   __local_add__c
    LDA   total
    CLC
-   ADC   __zpabi_add__c
+   ADC   __local_add__c
    STA   total
    LDA   total+1
    ADC   #$00
@@ -49,15 +50,20 @@ void add(uint8_t c) { total += c; }
 ### After
 
 ```
+   STA   __local_add__c
    LDA   total
    CLC
-   ADC   __zpabi_add__c
+   ADC   __local_add__c
    STA   total
    BCC   .carry_inc@0
    INC   total+1
 .carry_inc@0:
    RTS
 ```
+
+`c` arrives in A. In the first round of the fixed point it's still
+stored into `__local_add__c`, and later passes add it to `total`
+straight from A, as `CLC; ADC total; STA total`.
 
 With a `uint32_t big`, `big += c` has three carry bytes, and they
 become `BCC .carry_inc@1; INC big+1; BNE .carry_inc@1; INC big+2; BNE

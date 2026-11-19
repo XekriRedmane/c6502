@@ -29,9 +29,7 @@ void set_mode(unsigned char m) {
 
 ```
 set_mode:
-   LDA   __zpabi_set_mode__m
    STA   mode
-   STA   __zpabi_redraw__m
    JSR   redraw
    RTS
 ```
@@ -40,11 +38,12 @@ set_mode:
 
 ```
 set_mode:
-   LDA   __zpabi_set_mode__m
    STA   mode
-   STA   __zpabi_redraw__m
    JMP   redraw
 ```
+
+`m` arrives in A and goes to `redraw` in A, so nothing is stored
+before the call.
 
 ## A jump to a return
 

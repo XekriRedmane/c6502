@@ -56,8 +56,8 @@ Mov(A, Data(DPTR, 1))
 ```
 
 The `screen: DC.W $2000` storage is gone from the output as well.
-With the TAC-level fold on, `clear` compiles to `LDX
-__zpabi_clear__i; LDA #$00; STA $2000,X; RTS`, since the constant
+With the TAC-level fold on, `clear` compiles to `TAX;
+LDA #$00; STA $2000,X; RTS`, with `i` arriving in A, since the constant
 address reaches the TAC indexed-store recognizer and the pointer
 never goes through DPTR.
 

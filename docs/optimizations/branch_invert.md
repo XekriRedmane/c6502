@@ -35,9 +35,10 @@ void fill(uint8_t v)
 ### Before
 
 ```
+   STA   __local_fill__v
    LDX   #$27
 .loop@0_start:
-   LDA   __zpabi_fill__v
+   LDA   __local_fill__v
    STA   buf,X
    TXA
    BNE   .if_end@0
@@ -52,9 +53,10 @@ void fill(uint8_t v)
 ### After
 
 ```
+   STA   __local_fill__v
    LDX   #$27
 .loop@0_start:
-   LDA   __zpabi_fill__v
+   LDA   __local_fill__v
    STA   buf,X
    TXA
    BEQ   .loop@0_break

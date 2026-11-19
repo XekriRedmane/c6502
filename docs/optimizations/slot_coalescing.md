@@ -41,13 +41,11 @@ static uint16_t mul(uint16_t a, uint16_t b) {
 
 ```
 mul:
+   STA   __local_mul__a_0
+   STX   __local_mul__a_1
    LDA   #$00
    STA   __local_mul__product
    LDX   #$00
-   LDA   __zpabi_mul__a_0
-   STA   __local_mul__a_0
-   LDA   __zpabi_mul__a_1
-   STA   __local_mul__a_1
    LDA   __zpabi_mul__b_0
    STA   __local_mul__b_0
    LDA   __zpabi_mul__b_1
@@ -64,16 +62,23 @@ mul:
 
 ```
 mul:
+   STA   __local_mul__a_0
+   STX   __local_mul__a_1
    LDA   #$00
    STA   __local_mul__product
    LDX   #$00
-   JMP   .loop@0_continue
+   BEQ   .loop@0_continue
    ...
-   ASL   __zpabi_mul__a_0
-   ROL   __zpabi_mul__a_1
+   ASL   __local_mul__a_0
+   ROL   __local_mul__a_1
    LSR   __zpabi_mul__b_1
    ROR   __zpabi_mul__b_0
 ```
+
+`a` arrives in A and X. As a register parameter it has no slot, so
+its copy in `__local_mul__a_0` and `__local_mul__a_1` stays, and only
+`b`'s copy goes. With the copy gone, the jump into the loop follows
+`LDX #$00`, and [shorter jumps](short_jumps.md) makes it a `BEQ`.
 
 ## When it applies
 

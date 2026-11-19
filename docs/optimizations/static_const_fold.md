@@ -50,11 +50,11 @@ Ret(None)
 ```
 
 The [indexed store recognizer](recognize_indexed_store.md) then
-turns the add and the store into one `IndexedStore`, and the function
-compiles to this.
+turns the add and the store into one `IndexedStore`. `col` arrives in
+A, and the function compiles to this.
 
 ```
-   LDX   __zpabi_clear_cell__col
+   TAX
    LDA   #$A0
    STA   $0400,X
    RTS
@@ -62,8 +62,8 @@ compiles to this.
 
 With the two `const` qualifiers removed from the source, the pass
 makes no change, and the body copies `screen` into DPTR, loads
-`blank`, and stores through `(DPTR),Y`. That body takes 17 bytes and
-27 cycles, where the one above takes 7 bytes and 10 cycles, and the
+`blank`, and stores through `(DPTR),Y`. That body takes 16 bytes and
+26 cycles, where the one above takes 6 bytes and 9 cycles, and the
 two objects no longer take 3 bytes of data.
 
 ## When it applies

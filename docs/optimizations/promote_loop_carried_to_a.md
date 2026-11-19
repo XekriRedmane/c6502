@@ -47,8 +47,6 @@ void snd_delay_up(register uint8_t pitch, register uint8_t clicks)
 snd_delay_up:
    SUBROUTINE
 
-   STA   __zpabi_snd_delay_up__pitch
-   STX   __zpabi_snd_delay_up__clicks
    STA   __local_snd_delay_up__pitch
    LDA   sfx_click_ptr
    STA   DPTR
@@ -72,8 +70,6 @@ snd_delay_up:
 snd_delay_up:
    SUBROUTINE
 
-   STA   __zpabi_snd_delay_up__pitch
-   STX   __zpabi_snd_delay_up__clicks
    TAY
    LDA   sfx_click_ptr
    STA   DPTR

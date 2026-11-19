@@ -21,82 +21,84 @@ pair that leaves the loop saves 7 cycles per iteration.
 ## Example
 
 ```c
-volatile unsigned char *port;
+extern volatile unsigned char *port;
 
-void blink(unsigned char n) {
-    while (n--) {
-        *port = 1;
-    }
+void click(unsigned char n) {
+    do {
+        (void)*port;
+    } while (--n);
 }
 ```
 
 ### Before
 
 ```
-blink:
+click:
    SUBROUTINE
 
-.blink@asm_ssa_preheader@0:
-.blink@ssa_preheader@0:
-   LDA   __zpabi_blink__n
-   STA   __local_blink__n
-.loop@0_continue:
-   LDA   __local_blink__n
-   SEC
-   SBC   #$01
-   STA   __local_blink__0
-   LDA   __local_blink__n
-   BEQ   .loop@0_break
-.blink@ssa_block@0:
+.click@asm_ssa_block@0:
+   STA   __local_click__n
+.click@ssa_preheader@0:
+.loop@0_start:
    LDA   port
    STA   DPTR
    LDA   port+1
    STA   DPTR+1
-   LDA   #$01
    LDY   #$00
-   STA   (DPTR),Y
-   LDA   __local_blink__0
-   STA   __local_blink__n
-   JMP   .loop@0_continue
-.loop@0_break:
+   LDA   (DPTR),Y
+.loop@0_continue:
+   LDA   __local_click__n
+   SEC
+   SBC   #$01
+   STA   __local_click__n
+   LDA   __local_click__n
+   BNE   .click@asm_ssa_split@0
+.click@asm_ssa_block@1:
    RTS
+.click@asm_ssa_split@0:
+   JMP   .loop@0_start
 ```
 
 ### After
 
 ```
-blink:
+click:
    SUBROUTINE
 
-.blink@asm_ssa_preheader@0:
-.blink@ssa_preheader@0:
-   LDA   __zpabi_blink__n
-   STA   __local_blink__n
+.click@asm_ssa_block@0:
+   STA   __local_click__n
+.click@ssa_preheader@0:
    LDA   port
    STA   DPTR
    LDA   port+1
    STA   DPTR+1
+.loop@0_start:
+   LDY   #$00
+   LDA   (DPTR),Y
 .loop@0_continue:
-   LDA   __local_blink__n
+   LDA   __local_click__n
    SEC
    SBC   #$01
-   STA   __local_blink__0
-   LDA   __local_blink__n
-   BEQ   .loop@0_break
-.blink@ssa_block@0:
-   LDA   #$01
-   LDY   #$00
-   STA   (DPTR),Y
-   LDA   __local_blink__0
-   STA   __local_blink__n
-   JMP   .loop@0_continue
-.loop@0_break:
+   STA   __local_click__n
+   LDA   __local_click__n
+   BNE   .click@asm_ssa_split@0
+.click@asm_ssa_block@1:
    RTS
+.click@asm_ssa_split@0:
+   JMP   .loop@0_start
 ```
 
-The store through `port` is volatile and stays in the loop. The load
+The read through `port` is volatile and stays in the loop. The load
 of `port` itself is an ordinary read, since `port` is a pointer to
-volatile data and isn't volatile itself.
+volatile data and isn't volatile itself. The final loop is `LDY #$00;
+CMP (DPTR),Y; DEX; BNE`, with the counter in X.
+
+`port` is `extern` in this example because `-O` promotes a busy
+pointer defined in the unit into zero page, and the loop then reads
+`(port),Y` with no staging to move. The loop reads through `port`
+and doesn't store through it, because the aliasing rules can't tell
+a store through a pointer apart from a write of `port` or of `DPTR`.
+With `*port = 1;` in the loop, the staging stays where it is.
 
 A constant store moves the same way. In a `do`-`while` loop that
 starts with `mode = 3;`, the pass moves `LDA #$03; STA mode` from
@@ -138,6 +140,8 @@ store is moved when all of these are true.
 - Any store in a loop that calls a function. With `tick();` added to
   the loop above, the `DPTR` staging stays in the loop.
 - A volatile access, which has to happen once per iteration.
+- The staging of a pointer that the loop stores through, since the
+  store may write the pointer or `DPTR`.
 - A store of a register other than A, and any store whose value
   comes from arithmetic.
 - A loop with a second entry, such as a `goto` into its middle.

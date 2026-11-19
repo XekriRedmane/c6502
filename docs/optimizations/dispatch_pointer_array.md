@@ -10,15 +10,17 @@ input is the TAC after SSA destruction. It doesn't run in the
 unoptimized pipeline.
 
 The generic lowering loads the 2-byte pointer `arr[i]` with
-`ASL A; TAX; LDA arr,X; ...; LDA arr+1,X`, stores it in a zero-page
-pair, and reads through the pair with `LDY j; LDA (ptr),Y`. That
-takes X, Y, and two zero-page bytes at the same time. After the
+`LDX i; LDA arr,X; ...; LDA arr+N,X` (the table's low bytes come
+first, as [split tables](split_tables.md) stores them), stores it in a
+zero-page pair, and reads through the pair with `LDY j; LDA
+(ptr),Y`. That takes X, Y, and two zero-page bytes at the same
+time. After the
 rewrite, each arm is `LDX j; LDA target_k,X`, and Y and the
 zero-page pair are free. A loop counter that lives in X or Y can then
 stay there across the access. In the example below the function
-body grows from 18 bytes to 19, but nothing reads the 4-byte `frames`
-table any more, so the table is removed. The read takes 15 or 17
-cycles where it took 29.
+body shrinks from 19 bytes to 12, and nothing reads the 4-byte
+`frames` table any more, so the table is removed. The function takes
+8 or 9 cycles before its `RTS` where it took 29.
 
 ## Example
 
@@ -53,10 +55,10 @@ Ret(%6.1)
 ```
 
 The last element is the fall-through case, so a table of N pointers
-takes N - 1 compares. The final assembly is
-`LDA __zpabi_frame__anim; CMP #$00; BEQ .dispatch@0@case@0;
-LDX __zpabi_frame__step; LDA jump,X; JMP .dispatch@0@end`, followed
-by `LDX __zpabi_frame__step; LDA walk,X` for case 0.
+takes N - 1 compares. `anim` arrives in A and
+`step` in X, so the final assembly is `CMP #$00; BEQ
+.dispatch@0@case@0; LDA jump,X; RTS`, followed by `LDA walk,X; RTS`
+for case 0.
 
 ## When it applies
 

@@ -38,7 +38,6 @@ void count(void) {
    STA   __local_count__x
 .loop@0_start:
    LDA   __local_count__x
-   STA   __zpabi_put__v
    JSR   put
 .loop@0_continue:
    DEC   __local_count__x
@@ -57,7 +56,6 @@ void count(void) {
    STA   __local_count__x
 .loop@0_start:
    LDA   __local_count__x
-   STA   __zpabi_put__v
    JSR   put
 .loop@0_continue:
    DEC   __local_count__x

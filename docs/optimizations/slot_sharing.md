@@ -51,22 +51,25 @@ on the call stack with any function using it.
 
 uint16_t sum;
 
-static void add_page(const uint8_t *p) {
-    uint8_t i = 0;
+static void add_page(uint8_t first, const uint8_t *p) {
+    uint8_t i = first;
     do { sum += p[i]; i++; } while (i != 0);
 }
 
-static void forward(const uint8_t *p) { add_page(p); }
+static void forward(uint8_t first, const uint8_t *p) { add_page(first, p); }
 
-void add_pages(const uint8_t *p, uint8_t pages) {
+void add_pages(uint8_t pages, const uint8_t *p) {
     do {
-        forward(p);
+        forward(0, p);
         p += 0x100;
     } while (--pages != 0);
 }
 ```
 
-The "Before" listing is this program compiled with `-O` and
+Each function takes a byte ahead of `p`, which goes in A, so `p` is
+passed in zero-page bytes. A pointer at the head of the parameter
+list would go in A and X, and a parameter passed in a register can't
+be shared. The "Before" listing is this program compiled with `-O` and
 `find_shares` replaced by one that finds nothing. The "After" listing
 is the normal compile. `add_page` is the same in both, so it's left
 out.
@@ -76,46 +79,36 @@ out.
 ```
 __zpabi_add_pages__p_0	EQU	$80
 __zpabi_add_pages__p_1	EQU	$81
-__zpabi_add_pages__pages	EQU	$82
-__zpabi_forward__p_0	EQU	$83
-__zpabi_forward__p_1	EQU	$84
-__zpabi_add_page__p_0	EQU	$85
-__zpabi_add_page__p_1	EQU	$86
-__local_add_pages__pages	EQU	$87
-__local_add_pages__p_1	EQU	$88
-__local_add_pages__p_0	EQU	$89
+__zpabi_forward__p_0	EQU	$82
+__zpabi_forward__p_1	EQU	$83
+__zpabi_add_page__p_0	EQU	$84
+__zpabi_add_page__p_1	EQU	$85
+__local_add_pages__pages	EQU	$86
+__local_forward__first	EQU	$89
 
 forward:
    SUBROUTINE
 
+   STA   __local_forward__first
    LDA   __zpabi_forward__p_0
    STA   __zpabi_add_page__p_0
    LDA   __zpabi_forward__p_1
    STA   __zpabi_add_page__p_1
+   LDA   __local_forward__first
    JMP   add_page
 
 add_pages:
    SUBROUTINE
 
-   LDA   __zpabi_add_pages__p_0
-   STA   __local_add_pages__p_0
-   LDA   __zpabi_add_pages__p_1
-   STA   __local_add_pages__p_1
-   LDA   __zpabi_add_pages__pages
    STA   __local_add_pages__pages
 .loop@1_start:
-   LDA   __local_add_pages__p_0
+   LDA   __zpabi_add_pages__p_0
    STA   __zpabi_forward__p_0
-   LDA   __local_add_pages__p_1
+   LDA   __zpabi_add_pages__p_1
    STA   __zpabi_forward__p_1
+   LDA   #$00
    JSR   forward
-   LDA   __local_add_pages__p_0
-   CLC
-   ADC   #$00
-   STA   __local_add_pages__p_0
-   LDA   __local_add_pages__p_1
-   ADC   #$01
-   STA   __local_add_pages__p_1
+   INC   __zpabi_add_pages__p_1
    DEC   __local_add_pages__pages
    BNE   .loop@1_start
    RTS
@@ -126,12 +119,11 @@ add_pages:
 ```
 __zpabi_add_pages__p_0	EQU	$80
 __zpabi_add_pages__p_1	EQU	$81
-__zpabi_add_pages__pages	EQU	$82
-__zpabi_add_page__p_0	EQU	$83
-__zpabi_forward__p_0	EQU	$83
-__zpabi_add_page__p_1	EQU	$84
-__zpabi_forward__p_1	EQU	$84
-__local_add_pages__pages	EQU	$85
+__zpabi_add_page__p_0	EQU	$82
+__zpabi_forward__p_0	EQU	$82
+__zpabi_add_page__p_1	EQU	$83
+__zpabi_forward__p_1	EQU	$83
+__local_add_pages__pages	EQU	$84
 
 forward:
    SUBROUTINE
@@ -141,31 +133,26 @@ forward:
 add_pages:
    SUBROUTINE
 
+   STA   __local_add_pages__pages
    LDA   __zpabi_add_pages__p_0
    STA   __zpabi_forward__p_0
    LDA   __zpabi_add_pages__p_1
    STA   __zpabi_forward__p_1
-   LDA   __zpabi_add_pages__pages
-   STA   __local_add_pages__pages
 .loop@1_start:
+   LDA   #$00
    JSR   forward
-   LDA   __zpabi_forward__p_0
-   CLC
-   ADC   #$00
-   STA   __zpabi_forward__p_0
-   LDA   __zpabi_forward__p_1
-   ADC   #$01
-   STA   __zpabi_forward__p_1
+   INC   __zpabi_forward__p_1
    DEC   __local_add_pages__pages
    BNE   .loop@1_start
    RTS
 ```
 
 `forward` passes its parameter on in `add_page`'s bytes and shrinks
-from 11 bytes to 3. `add_pages` keeps `p` in `forward`'s bytes, which
-`forward` and `add_page` leave alone, so the loop loses the 8-byte,
-12-cycle copy before each call, and the program uses 6 zero-page
-bytes instead of 10. `add_pages` can't share its own parameter `p`
+from 15 bytes to 3. Before, it also had to keep `first` out of A
+while it copied `p`. `add_pages` keeps `p` in `forward`'s bytes,
+which `forward` and `add_page` leave alone, so the loop loses the
+8-byte, 12-cycle copy before each call, and the `EQU` lines name 5
+zero-page bytes instead of 8. `add_pages` can't share its own parameter `p`
 with `forward`'s, since it changes it, so it copies it once before
 the loop.
 
@@ -234,5 +221,3 @@ writes the bytes. The fix is to declare the parameter without `const`.
 - Functions on a cycle whose calls are marked
   `[[c6502::save_hardware_stack]]`, and functions without private
   pools.
-- `p += 0x100` stays a 16-bit add of 0 and 1 instead of an `INC` of the
-  high byte.

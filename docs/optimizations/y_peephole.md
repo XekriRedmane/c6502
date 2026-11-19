@@ -39,27 +39,19 @@ void bump(struct pt *p)
 bump:
    SUBROUTINE
 
+   STA   __local_bump__p
+   STX   __local_bump__1
    LDY   #$00
-   LDA   (__zpabi_bump__p_0),Y
-   STA   __local_bump__0
-   INC   __local_bump__0
-   LDA   __local_bump__0
-   LDY   #$00
-   STA   (__zpabi_bump__p_0),Y
-   LDA   __zpabi_bump__p_0
+   LDA   (__local_bump__p),Y
    CLC
    ADC   #$01
-   STA   __local_bump__1
-   LDA   __zpabi_bump__p_1
-   ADC   #$00
-   STA   __local_bump__2
    LDY   #$00
-   LDA   (__local_bump__1),Y
-   STA   __local_bump__0
-   INC   __local_bump__0
-   LDA   __local_bump__0
-   LDY   #$00
-   STA   (__local_bump__1),Y
+   STA   (__local_bump__p),Y
+   CLC
+   LDY   #$01
+   LDA   (__local_bump__p),Y
+   ADC   #$01
+   STA   (__local_bump__p),Y
    RTS
 ```
 
@@ -69,32 +61,26 @@ bump:
 bump:
    SUBROUTINE
 
+   STA   __local_bump__p
+   STX   __local_bump__1
    LDY   #$00
-   LDA   (__zpabi_bump__p_0),Y
-   STA   __local_bump__0
-   INC   __local_bump__0
-   LDA   __local_bump__0
-   STA   (__zpabi_bump__p_0),Y
-   LDA   __zpabi_bump__p_0
+   LDA   (__local_bump__p),Y
    CLC
    ADC   #$01
-   STA   __local_bump__1
-   LDA   __zpabi_bump__p_1
-   ADC   #$00
-   STA   __local_bump__2
-   LDA   (__local_bump__1),Y
-   STA   __local_bump__0
-   INC   __local_bump__0
-   LDA   __local_bump__0
-   STA   (__local_bump__1),Y
+   STA   (__local_bump__p),Y
+   CLC
+   INY
+   LDA   (__local_bump__p),Y
+   ADC   #$01
+   STA   (__local_bump__p),Y
    RTS
 ```
 
-Nothing between the first `LDY #$00` and the `RTS` writes Y, so the
-other three are dropped, even though the second pair of accesses goes
-through a different pointer.
+Nothing between the first `LDY #$00` and the second writes Y, so the
+second is dropped. Y then holds 0 at the `LDY #$01` that sets up the
+accesses of `p->y`, which becomes `INY`.
 
-The `INY` and `DEY` forms show up in soft-stack code. In the
+The `INY` and `DEY` forms also show up in soft-stack code. In the
 unoptimized compile of `int add(int a, int b) { return a + b; }`, the
 epilogue's `LDY #$03; LDA (FP),Y; TAX; LDY #$04; LDA (FP),Y` becomes
 `LDY #$03; LDA (FP),Y; TAX; INY; LDA (FP),Y`, and a later `LDY #$01`

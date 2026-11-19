@@ -16,14 +16,17 @@ out of the loop. The pass loads `key` once before the loop, and again
 only on the paths inside the loop that overwrite A before returning
 to the top. In the loop below, `LDA abs,X; CMP zp` (5 bytes, 7
 cycles) becomes `CMP abs,X` (3 bytes, 4 cycles), so each iteration
-saves 3 cycles, and the `LDA zp` before the loop adds back the 2
-bytes. The hand-written page-table search in Zork I keeps its key in
-A this way, and `find_index_of_page_table` in
-`examples/zork/pages.c` is a C version of that routine.
+saves 3 cycles. `key` arrives in A, so no load of it is left before
+the loop, the store of `key` at entry goes too, and the function is 4
+bytes shorter. The hand-written
+page-table search in Zork I keeps its key in A this way, and
+`find_index_of_page_table` in `examples/zork/pages.c` is a C version
+of that routine.
 
 ## Example
 
 ```c
+#include <stdint.h>
 extern uint8_t tbl[64];
 
 uint8_t find(uint8_t key)
@@ -38,23 +41,27 @@ uint8_t find(uint8_t key)
 }
 ```
 
+The listings are from `-O`, and the "Before" listing comes from the
+same compile with `apply_loop_invariant_a` turned off.
+
 ### Before
 
 ```
 find:
    SUBROUTINE
 
+   STA   __local_find__key
    LDX   #$00
-.loop@1_start:
+.loop@0_start:
    LDA   tbl,X
-   CMP   __zpabi_find__key
-   BNE   .if_end@1
+   CMP   __local_find__key
+   BNE   .if_end@0
    TXA
    RTS
-.if_end@1:
+.if_end@0:
    INX
    CPX   #$40
-   BNE   .loop@1_start
+   BNE   .loop@0_start
    LDA   #$FF
    RTS
 ```
@@ -66,27 +73,26 @@ find:
    SUBROUTINE
 
    LDX   #$00
-   LDA   __zpabi_find__key
-.loop@1_start:
+.loop@0_start:
    CMP   tbl,X
-   BNE   .if_end@1
+   BNE   .if_end@0
    TXA
    RTS
-.if_end@1:
+.if_end@0:
    INX
    CPX   #$40
-   BNE   .loop@1_start
+   BNE   .loop@0_start
    LDA   #$FF
    RTS
 ```
 
 In the Zork page-table search, a second compare inside the loop
-overwrites A with `LDA $2280,Y` before branching back toward the top
-with `BNE .if_end@2`. The pass retargets that branch to a new label,
-`.find_index_of_page_table@lia@1`, which it places after the
+overwrites A with `LDA (PAGE_H_TABLE),Y` before branching back toward
+the top with `BNE .if_end@5`. The pass retargets that branch to a new
+label, `.find_index_of_page_table@lia@1`, which it places after the
 preceding `RTS`, where it reloads the key with `LDA
-__zpabi_find_index_of_page_table__page_0` and falls into `.if_end@2`.
-The path that doesn't overwrite A reaches `.if_end@2` without the
+__local_find_index_of_page_table__page_0` and falls into `.if_end@5`.
+The path that doesn't overwrite A reaches `.if_end@5` without the
 reload.
 
 ## When it applies
@@ -116,7 +122,7 @@ reload.
 
 - A loop with a call in it. With `tick();` added after the `if` in
   the example, the callee may change `k` and A, and the loop keeps its
-  `LDA tbl,X; CMP __zpabi_find__key`.
+  `LDA tbl,X; CMP __local_find__key`.
 - A key the loop writes, and a key that may alias a byte the loop
   writes, such as another byte reached through a pointer.
 - A key that isn't a `Data` or `ZP` byte. A compare against an

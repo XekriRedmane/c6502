@@ -24,9 +24,9 @@ The pass has five more rewrites that use the same lists.
   when both registers already hold the same value. In `LDX state;
   TXA; BPL .if_end@0; TXA; AND #$0F`, the second `TXA` is dropped.
 - `LDA M` becomes `TXA` (or `TYA`) when A doesn't hold M but X (or
-  Y) does. With `void ident(unsigned char i) { tab[i] = i; }`, the
-  pass turns `LDX __zpabi_ident__i; LDA __zpabi_ident__i` into `LDX
-  __zpabi_ident__i; TXA`. That saves a byte and a cycle for a
+  Y) does. With a global `unsigned char i` and `void ident(void) {
+  tab[i] = i; }`, the pass turns `LDX i; LDA i` into `LDX i; TXA`.
+  That saves a byte and a cycle for a
   zero-page operand, and 2 bytes and 2 cycles for an absolute one.
   A then holds M too, so `apply_via_a_store_fold` can turn a
   following `TXA; STA N` into `STX N` when A is dead.
@@ -152,14 +152,16 @@ void fill(unsigned char col, unsigned char color) {
 ### Before
 
 ```
-   LDX   __zpabi_fill__col
-   LDA   __zpabi_fill__color
+   STA   __local_fill__col
+   STX   __local_fill__color
+   LDX   __local_fill__col
+   LDA   __local_fill__color
    STA   row0,X
-   LDX   __zpabi_fill__col
-   LDA   __zpabi_fill__color
+   LDX   __local_fill__col
+   LDA   __local_fill__color
    STA   row1,X
-   LDX   __zpabi_fill__col
-   LDA   __zpabi_fill__color
+   LDX   __local_fill__col
+   LDA   __local_fill__color
    STA   row2,X
    RTS
 ```
@@ -167,16 +169,19 @@ void fill(unsigned char col, unsigned char color) {
 ### After
 
 ```
-   LDX   __zpabi_fill__col
-   LDA   __zpabi_fill__color
+   STA   __local_fill__col
+   STX   __local_fill__color
+   LDX   __local_fill__col
+   LDA   __local_fill__color
    STA   row0,X
    STA   row1,X
    STA   row2,X
    RTS
 ```
 
-The parameters are zero-page slots, and an indexed store into a
-static array can't reach zero page, so `STA row0,X` leaves both
+`fill` takes `col` in A and `color` in X and copies them into
+zero-page bytes of its own at entry. An indexed store into a static
+array can't reach zero page, so `STA row0,X` leaves both
 lists intact. The pass removes 8 bytes and 12 cycles here. The win
 grows with loop unrolling, where the same loads repeat once per
 unrolled iteration.

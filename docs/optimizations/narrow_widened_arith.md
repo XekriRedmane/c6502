@@ -10,33 +10,35 @@ loop, and it has to run after
 reason given under "When it applies". It doesn't run in the
 unoptimized pipeline.
 
-C's integer promotions turn `uint8_t d = a - b;` into two
-`ZeroExtend`s to `int`, a 16-bit subtract, and a `Truncate` back to
-one byte. The high byte of the subtract feeds only the byte that the
-truncate throws away. The asm-level dead-code passes don't always
-remove it, because their flag liveness check stops at every branch.
-In the example below the high byte survives as `LDA #$00; SBC #$00`
-plus a store and reload of the low byte around it. Doing the
-subtract at one byte in TAC removes that work, and the function body
-drops from 18 bytes to 10.
+C's integer promotions turn `uint8_t d = a * b;` into two
+`ZeroExtend`s to `int`, a 16-bit multiply, and a `Truncate` back to
+one byte. The high byte of the product feeds only the byte that the
+truncate throws away. The asm-level passes can remove the work of an
+unread high byte that is computed inline, but a multiply is a call of
+a runtime helper, and no asm pass turns a call of `mul16` into one of
+`mul8`. Doing the multiply at one byte in TAC makes it a call of
+`mul8`, and the function body in the example below drops from 20
+bytes to 14. For a subtract, as in `uint8_t d = a - b;`, the asm-level passes
+now remove the high byte by themselves, and the final code is the
+same with this pass disabled.
 
 ## Example
 
 ```c
 #include <stdint.h>
 uint8_t g;
-void dlt(uint8_t a, uint8_t b) { uint8_t d = a - b; if (d) g = d; }
+void prod(uint8_t a, uint8_t b) { uint8_t d = a * b; if (d) g = d; }
 ```
 
 ### Before
 
 ```
-ZeroExtend(@3.a, %7.1)
-ZeroExtend(@4.b, %8.1)
-Binary(-, %7.1, %8.1, %9.1)
-Truncate(%9.1, %10.1)
-JumpIfFalse(%10.1, .if_end@0)
-Copy(%10.1, g)
+ZeroExtend(@0.a, %0.1)
+ZeroExtend(@1.b, %1.1)
+Binary(*, %0.1, %1.1, %2.1)
+Truncate(%2.1, %3.1)
+JumpIfFalse(%3.1, .if_end@0)
+Copy(%3.1, g)
 Label(.if_end@0)
 Ret(None)
 ```
@@ -44,20 +46,24 @@ Ret(None)
 ### After
 
 ```
-Binary(-, @3.a, @4.b, %10.1)
-JumpIfFalse(%10.1, .if_end@0)
-Copy(%10.1, g)
+Binary(*, @0.a, @1.b, %3.1)
+JumpIfFalse(%3.1, .if_end@0)
+Copy(%3.1, g)
 Label(.if_end@0)
 Ret(None)
 ```
 
-The final assembly is `LDA __zpabi_dlt__a; SEC; SBC __zpabi_dlt__b;
-BEQ .if_end@0; STA g`.
+The final assembly is `STA HARGS; STX HARGS+1; JSR mul8; LDA
+HARGS+2; BEQ .if_end@0; STA g`. With the pass disabled, `prod` zeroes
+the two high bytes of `mul16`'s operands and calls it, which takes `STA
+HARGS; LDA #$00; STA HARGS+1; STA HARGS+3; STX HARGS+2; JSR mul16; LDA
+HARGS+4`.
 
 A constant shift narrows the same way. For `return len << 4;` with a
-`uint8_t len`, the pass turns `Binary(<<, %4.1, 4, %5.1)` and its
-`Truncate` into `Binary(<<, @2.len, 4uc, %6.1)`, which lowers to four
-`ASL A`. Without it, the shift goes through a zero-page byte.
+`uint8_t len`, the pass turns `Binary(<<, %0.1, 4, %1.1)` and its
+`Truncate` into `Binary(<<, @0.len, 4uc, %2.1)`, which lowers to four
+`ASL A`. The final code is the same four `ASL A` with the pass
+disabled.
 
 A comparison's result is 0 or 1, so a `Truncate` of one is the same
 comparison with a narrow result, and its operands stay as they are.

@@ -35,7 +35,7 @@ void f(uint8_t i)
 ### Before
 
 ```
-   LDX   __zpabi_f__i
+   TAX
    LDY   tab,X
    TYA
    BPL   .if_else@1
@@ -54,7 +54,7 @@ void f(uint8_t i)
 ### After
 
 ```
-   LDX   __zpabi_f__i
+   TAX
    LDY   tab,X
    BPL   .if_else@1
    TYA

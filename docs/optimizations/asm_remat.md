@@ -27,6 +27,7 @@ and the function no longer uses its slot.
 ## Example
 
 ```c
+#include <stdint.h>
 static const uint8_t glyph[8] = {1, 2, 4, 8, 16, 32, 64, 128};
 uint8_t plot(uint8_t i, uint8_t *p) {
     uint8_t bits = glyph[i];
@@ -38,7 +39,7 @@ uint8_t plot(uint8_t i, uint8_t *p) {
 ### Before
 
 ```
-   LDX   __zpabi_plot__i
+   TAX
    LDA   glyph,X
    STA   __local_plot__0
    LDA   __zpabi_plot__p_0
@@ -47,7 +48,7 @@ uint8_t plot(uint8_t i, uint8_t *p) {
    STA   DPTR+1
    LDA   #$00
    LDY   #$00
-   STA   ($81),Y
+   STA   ($80),Y
    LDA   __local_plot__0
    RTS
 ```
@@ -55,7 +56,7 @@ uint8_t plot(uint8_t i, uint8_t *p) {
 ### After
 
 ```
-   LDX   __zpabi_plot__i
+   TAX
    LDA   glyph,X
    LDA   __zpabi_plot__p_0
    STA   DPTR
@@ -63,7 +64,7 @@ uint8_t plot(uint8_t i, uint8_t *p) {
    STA   DPTR+1
    LDA   #$00
    LDY   #$00
-   STA   ($81),Y
+   STA   ($80),Y
    LDA   glyph,X
    RTS
 ```

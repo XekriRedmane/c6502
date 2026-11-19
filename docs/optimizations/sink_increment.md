@@ -14,7 +14,7 @@ add moves past the read, the old `y` is dead by the time the new one
 is defined, and the two can share one register. In a chain of
 `src[y++]` reads, every value of `y` ends up in X, and each add
 becomes an `INX`. In the example below the function body drops from
-34 bytes to 22.
+29 bytes to 21.
 
 ## Example
 
@@ -35,11 +35,11 @@ void copy3(uint8_t y) {
 Binary(+, @0.y, 1uc, %1.1)
 IndexedConstLoad(0x6000, @0.y, %4.1)
 IndexedSymbolStore(out, 0uc, %4.1)
-Binary(+, %1.1, 1uc, %7.1)
-IndexedConstLoad(0x6000, %1.1, %10.1)
-IndexedSymbolStore(out, 1uc, %10.1)
-IndexedConstLoad(0x6000, %7.1, %14.1)
-IndexedSymbolStore(out, 2uc, %14.1)
+Binary(+, %1.1, 1uc, %6.1)
+IndexedConstLoad(0x6000, %1.1, %9.1)
+IndexedSymbolStore(out, 1uc, %9.1)
+IndexedConstLoad(0x6000, %6.1, %12.1)
+IndexedSymbolStore(out, 2uc, %12.1)
 Ret(None)
 ```
 
@@ -49,18 +49,19 @@ Ret(None)
 IndexedConstLoad(0x6000, @0.y, %4.1)
 Binary(+, @0.y, 1uc, %1.1)
 IndexedSymbolStore(out, 0uc, %4.1)
-IndexedConstLoad(0x6000, %1.1, %10.1)
-Binary(+, %1.1, 1uc, %7.1)
-IndexedSymbolStore(out, 1uc, %10.1)
-IndexedConstLoad(0x6000, %7.1, %14.1)
-IndexedSymbolStore(out, 2uc, %14.1)
+IndexedConstLoad(0x6000, %1.1, %9.1)
+Binary(+, %1.1, 1uc, %6.1)
+IndexedSymbolStore(out, 1uc, %9.1)
+IndexedConstLoad(0x6000, %6.1, %12.1)
+IndexedSymbolStore(out, 2uc, %12.1)
 Ret(None)
 ```
 
-The final assembly is `LDX __zpabi_copy3__y; LDA $6000,X;
-STA out; INX; LDA $6000,X; STA out+1; INX; ...`. With the pass
-switched off, the first `y + 1` sits in Y and the second in a
-zero-page byte, and each one is computed with `CLC; ADC #$01`.
+`y` arrives in A, and the final assembly is `TAX; LDA $6000,X; STA
+out; INX; LDA $6000,X; STA out+1; INX; ...`. With the pass switched
+off, the first `y + 1` is computed in Y with `TAY; INY`, and the
+second with `TYA; CLC; ADC #$01` into a zero-page byte, which is
+loaded into X for the last read.
 
 ## When it applies
 

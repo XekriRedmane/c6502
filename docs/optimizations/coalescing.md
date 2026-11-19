@@ -70,18 +70,16 @@ into `@3.i.2.b0.v2`.
 sum:
    SUBROUTINE
 
+   STA   __local_sum__p
+   STX   __local_sum__2
    LDA   #$00
    STA   __local_sum__s
    LDX   #$00
    LDY   #$00
-.loop@0_start:
-   CPY   __zpabi_sum__n
-   BCS   .loop@0_break
-   LDA   (__zpabi_sum__p_0),Y
-   STA   __local_sum__0
-   LDA   __local_sum__s
-   CLC
-   ADC   __local_sum__0
+   BEQ   .loop@0_start
+.sum@rot@0:
+   LDA   (__local_sum__p),Y
+   ADC   __local_sum__s
    STA   __local_sum__1
    TXA
    ADC   #$00
@@ -90,8 +88,9 @@ sum:
    LDX   __local_sum__s
    LDA   __local_sum__1
    STA   __local_sum__s
-   JMP   .loop@0_start
-.loop@0_break:
+.loop@0_start:
+   CPY   __zpabi_sum__n
+   BCC   .sum@rot@0
    RTS
 ```
 
@@ -101,23 +100,24 @@ sum:
 sum:
    SUBROUTINE
 
+   STA   __local_sum__p
+   STX   __local_sum__1
    LDA   #$00
    STA   __local_sum__s
    LDX   #$00
    LDY   #$00
-.loop@0_start:
-   CPY   __zpabi_sum__n
-   BCS   .loop@0_break
-   LDA   (__zpabi_sum__p_0),Y
-   CLC
+   BEQ   .loop@0_start
+.sum@rot@0:
+   LDA   (__local_sum__p),Y
    ADC   __local_sum__s
    STA   __local_sum__s
    BCC   .carry_inc@0
    INX
 .carry_inc@0:
    INY
-   JMP   .loop@0_start
-.loop@0_break:
+.loop@0_start:
+   CPY   __zpabi_sum__n
+   BCC   .sum@rot@0
    RTS
 ```
 
@@ -125,8 +125,8 @@ Without the merges, the new low byte of `s` goes to a temporary
 (`__local_sum__1`) and the new high byte goes through a pool byte to
 X, and the back edge copies both into place. With them, the add
 writes `s` in place and its high byte, which the allocator puts in
-X, becomes `BCC; INX`. The loop goes from 30 bytes and 45 cycles per
-iteration to 18 bytes and 26 or 27 cycles.
+X, becomes `BCC; INX`. The loop goes from 22 bytes and 35 cycles per
+iteration to 14 bytes and 22 or 23 cycles.
 
 ## When it applies
 

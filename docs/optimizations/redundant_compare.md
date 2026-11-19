@@ -41,13 +41,13 @@ unsigned char classify(unsigned char key, unsigned char entry) {
 
 ```
 classify:
-   LDA   __zpabi_classify__key
-   CMP   __zpabi_classify__entry
+   STX   __local_classify__entry
+   CMP   __local_classify__entry
    BCS   .if_end@0
    LDA   #$01
    RTS
 .if_end@0:
-   CMP   __zpabi_classify__entry
+   CMP   __local_classify__entry
    BNE   .if_end@1
    LDA   #$02
    RTS
@@ -60,8 +60,8 @@ classify:
 
 ```
 classify:
-   LDA   __zpabi_classify__key
-   CMP   __zpabi_classify__entry
+   STX   __local_classify__entry
+   CMP   __local_classify__entry
    BCS   .if_end@0
    LDA   #$01
    RTS
@@ -190,9 +190,9 @@ a compare of a volatile operand is never followed by a branch.
 ## What it leaves alone
 
 - A label that the code above falls into. In `if (key < entry) g =
-  1; if (key == entry) g = 2;` the `STA g` falls through into
-  `.if_end@0` with 1 in A, so the code reloads `key` there and the
-  second compare stays.
+  1; if (key == entry) g = 2;` the `LDY #$01; STY g` falls through
+  into `.if_end@0`, so the second compare stays, even though A holds
+  `key` on both ways in.
 - A label reached by a second branch or jump, which could arrive with
   other values in A or the flags.
 - Two compares with different operands or registers.

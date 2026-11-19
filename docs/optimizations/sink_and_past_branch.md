@@ -69,7 +69,7 @@ ZeroExtend(%5.1.snk_else@0, %12.1)
 ...
 ```
 
-The final assembly starts `LDX __zpabi_step__i; LDA bob,X;
+`i` arrives in A, and the final assembly starts `TAX; LDA bob,X;
 BPL .if_else@1; AND #$7F`, and the `else` block starts with
 `AND #$7F; CLC; ADC y`. With the pass switched off, the function computes `AND #$7F` and
 stores it before the branch, then reloads `bob,X` for the `BPL`.

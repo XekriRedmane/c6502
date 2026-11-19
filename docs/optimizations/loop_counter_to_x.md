@@ -38,12 +38,13 @@ pass was written for the outer loop of
 ## Example
 
 ```c
+#include <stdint.h>
 extern uint8_t ent_y[8];
 extern uint8_t ent_row[8];
 extern uint8_t spr_w[4];
-void draw(uint8_t y, uint8_t w);
+void draw(uint8_t y [[c6502::in_a]], uint8_t w);
 
-void refresh(uint8_t n, uint8_t spr)
+void refresh(uint8_t n [[c6502::in_a]], uint8_t spr)
 {
     uint8_t i = n;
     do {
@@ -55,13 +56,18 @@ void refresh(uint8_t n, uint8_t spr)
 }
 ```
 
+Both declarations mark their first parameter `[[c6502::in_a]]`, which
+gives `spr` and `w` zero-page slots. Without the marks, `spr` arrives
+in X and `w` goes to `draw` in X, and the pass doesn't fire. The
+listings are from `-O`, and the "Before" listing comes from the same
+compile with `apply_loop_counter_to_x` turned off.
+
 ### Before
 
 ```
 refresh:
    SUBROUTINE
 
-   LDA   __zpabi_refresh__n
    STA   __local_refresh__i
 .loop@0_start:
    LDX   __local_refresh__i
@@ -71,14 +77,11 @@ refresh:
    LDA   spr_w,X
    STA   __local_refresh__1
    LDX   __local_refresh__i
-   LDA   ent_row,X
-   STA   __local_refresh__0
    LDA   __local_refresh__2
    CLC
-   ADC   __local_refresh__0
-   STA   __zpabi_draw__y
-   LDA   __local_refresh__1
-   STA   __zpabi_draw__w
+   ADC   ent_row,X
+   LDX   __local_refresh__1
+   STX   __zpabi_draw__w
    JSR   draw
    DEC   __local_refresh__i
    BPL   .loop@0_start
@@ -91,23 +94,16 @@ refresh:
 refresh:
    SUBROUTINE
 
-   LDA   __zpabi_refresh__n
-   STA   __local_refresh__i
    TAX
 .loop@0_start:
-   LDA   ent_y,X
-   STA   __local_refresh__2
    LDY   __zpabi_refresh__spr
-   LDA   spr_w,Y
-   STA   __local_refresh__1
-   LDA   ent_row,X
-   STA   __local_refresh__0
-   LDA   __local_refresh__2
+   LDA   ent_y,X
    CLC
-   ADC   __local_refresh__0
-   STA   __zpabi_draw__y
-   LDA   __local_refresh__1
+   ADC   ent_row,X
+   STA   __local_refresh__0
+   LDA   spr_w,Y
    STA   __zpabi_draw__w
+   LDA   __local_refresh__0
    STX   __local_refresh__i
    JSR   draw
    LDX   __local_refresh__i
@@ -116,9 +112,10 @@ refresh:
    RTS
 ```
 
-The later peepholes fold `LDA n; STA i; TAX` into `LDX
-__zpabi_refresh__n`, since the `STX` before the call writes `i`
-before anything reads it.
+The `STA` that initialized `i` is gone. X takes `n` with `TAX` and is
+stepped with `DEX`, and `i` is written to memory only to save X across
+the call. The second index, `spr`, is loaded into Y, and `spr_w` is
+read as `spr_w,Y`.
 
 A loop that counts up and tests the counter at the top is promoted
 the same way, with `INC M` becoming `INX`. In `dump_buffer_to_screen`

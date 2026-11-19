@@ -79,16 +79,17 @@ every function uses the caller-saved and callee-saved split. The
 sum2:
    SUBROUTINE
 
-   ; prologue: 0 arg bytes, 1 local bytes, 1 callee-saved bytes
+   PHA
+   ; prologue: 0 arg bytes, 2 local bytes, 2 callee-saved bytes
    SEC
    LDA   SSP
-   SBC   #$03
+   SBC   #$04
    STA   SSP
    LDA   SSP+1
    SBC   #$00
    STA   SSP+1
    LDA   FP
-   LDY   #$02
+   LDY   #$03
    STA   (SSP),Y
    LDA   FP+1
    INY
@@ -100,27 +101,31 @@ sum2:
    LDA   $C0
    LDY   #$01
    STA   (FP),Y
+   LDA   $C1
+   INY
+   STA   (FP),Y
 
-   LDA   __zpabi_sum2__a
-   STA   __zpabi_twice__x
+   PLA
+   STA   $80
+   STX   $C1
    JSR   twice
    STA   $C0
-   LDA   __zpabi_sum2__b
-   STA   __zpabi_twice__x
+   LDA   $C1
    JSR   twice
-   STA   $83
-   LDA   $C0
    CLC
-   ADC   $83
+   ADC   $C0
 
    ; epilogue
    PHA
    LDY   #$01
    LDA   (FP),Y
    STA   $C0
+   INY
+   LDA   (FP),Y
+   STA   $C1
    CLC
    LDA   FP
-   ADC   #$03
+   ADC   #$04
    STA   SSP
    LDA   FP+1
    ADC   #$00
@@ -140,33 +145,31 @@ sum2:
 ### After
 
 ```
-__local_sum2__0	EQU	$84
-__local_sum2__1	EQU	$85
+__local_sum2__b	EQU	$81
+__local_sum2__a	EQU	$82
 
 sum2:
    SUBROUTINE
 
-   LDA   __zpabi_sum2__a
-   STA   __zpabi_twice__x
+   STX   __local_sum2__b
    JSR   twice
-   STA   __local_sum2__1
-   LDA   __zpabi_sum2__b
-   STA   __zpabi_twice__x
+   STA   __local_sum2__a
+   LDA   __local_sum2__b
    JSR   twice
-   STA   __local_sum2__0
-   LDA   __local_sum2__1
    CLC
-   ADC   __local_sum2__0
+   ADC   __local_sum2__a
    RTS
 ```
 
-`t` is live across the second call, so in the "Before" listing it's
-in the callee-saved byte `$C0`, and saving that byte costs `sum2` a
-frame. `sum2` goes from 95 bytes to 24. The pool starts at `$84`
-because `main`, a caller of `sum2`, has a 1-byte pool at `$83`, and
-`$80`-`$82` hold the parameters of `sum2` and `twice`. The byte at
-`$83` comes from the preliminary run, and the final code for `main`
-doesn't use it.
+`b` is live across the first call and `t` across the second, so in
+the "Before" listing they're in the callee-saved bytes `$C1` and
+`$C0`, and saving those bytes costs `sum2` a frame. `sum2` goes from
+101 bytes to 16. The parameters of `sum2` and `twice` arrive in A and
+X and take no zero-page bytes. The pool takes `$81`-`$83` because
+`main`, a caller of `sum2`, has a 1-byte pool at `$80`. That byte
+comes from the preliminary run, and the final code for `main` doesn't
+use it. Nor does the final code for `sum2` use `$83`, so it has no
+`EQU` line.
 
 ## When it applies
 

@@ -87,14 +87,10 @@ sum_pair:
    LDA   FP+1
    ADC   #$00
    STA   __local_sum_pair__0+1
-   LDA   __local_sum_pair__2
-   STA   __zpabi_read_pair__lo_0
-   LDA   __local_sum_pair__3
-   STA   __zpabi_read_pair__lo_1
    LDA   __local_sum_pair__0
    STA   __zpabi_read_pair__hi_0
-   LDA   __local_sum_pair__1
-   STA   __zpabi_read_pair__hi_1
+   LDX   __local_sum_pair__3
+   LDA   __local_sum_pair__2
    JSR   read_pair
    LDY   #$01
    LDA   (FP),Y
@@ -126,20 +122,18 @@ sum_pair:
 ### After
 
 ```
-__local_sum_pair__a	EQU	$89
-__local_sum_pair__b	EQU	$8A
+__local_sum_pair__a	EQU	$87
+__local_sum_pair__b	EQU	$88
 
 sum_pair:
    SUBROUTINE
 
-   LDA   #<__local_sum_pair__a
-   STA   __zpabi_read_pair__lo_0
-   LDA   #>__local_sum_pair__a
-   STA   __zpabi_read_pair__lo_1
    LDA   #<__local_sum_pair__b
    STA   __zpabi_read_pair__hi_0
    LDA   #>__local_sum_pair__b
    STA   __zpabi_read_pair__hi_1
+   LDX   #>__local_sum_pair__a
+   LDA   #<__local_sum_pair__a
    JSR   read_pair
    LDA   __local_sum_pair__a
    CLC
@@ -147,14 +141,22 @@ sum_pair:
    RTS
 ```
 
-`sum_pair` goes from 113 bytes to 25. Its pool is `$85`-`$8A`. The
-final coloring took `$85`-`$88` for the two pointers, and the pass
+`sum_pair` goes from 105 bytes to 21. Its pool is `$83`-`$88`. The
+final coloring took `$83`-`$86` for the two pointers, and the pass
 put `a` and `b` in the two bytes left over. Each pointer is a
 constant once `a` and `b` have fixed addresses, so
 [Split of LoadAddress](lower_data_load_address.md) and
 [Memory value propagation](memory_value_propagation.md) later
-replace the loads from `$85`-`$88` with immediates, and the stores
-into those bytes are then dead.
+replace the loads from `$83`-`$86` with immediates, and the stores
+into those bytes are then dead. The first pointer, `lo`, goes to
+`read_pair` in A and X, and the second in its zero-page bytes.
+
+The "Before" build stores only the low byte of `hi`, and
+`__zpabi_read_pair__hi_1` is never written. The normal `-O` compile
+of a recursive function that makes the same call, whose `a` and `b`
+stay in its frame, stores both bytes, so the missing store comes
+from replacing the pass and the listing serves only to show the
+frame's cost.
 
 ## When it applies
 

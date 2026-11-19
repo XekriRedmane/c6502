@@ -41,7 +41,7 @@ Zork's `get_next_code_byte2` stores the value from a value-and-flag
 struct before it tests the flag:
 
 ```c
-struct page_slot found = find_index_of_page_table();
+struct page_slot found = find_index_of_page_table(story_page);
 PAGE_TABLE_INDEX2 = found.slot;
 if (found.not_found) {
     if (found.slot == PAGE_TABLE_INDEX)
@@ -52,15 +52,15 @@ if (found.not_found) {
 
 ```
    JSR   find_index_of_page_table
-   STA   __local_get_next_code_byte2__page
+   STA   __local_get_next_code_byte2__found_0
    LDA   #$00
    ROL
    STA   __local_get_next_code_byte2__found_1
-   LDA   __local_get_next_code_byte2__page
+   LDA   __local_get_next_code_byte2__found_0
    STA   PAGE_TABLE_INDEX2
    LDA   __local_get_next_code_byte2__found_1
-   BEQ   .if_end@13
-   LDA   __local_get_next_code_byte2__page
+   BEQ   .if_end@23
+   LDA   __local_get_next_code_byte2__found_0
    CMP   PAGE_TABLE_INDEX
 ```
 
@@ -69,12 +69,12 @@ if (found.not_found) {
 ```
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
-   BCC   .if_end@13
+   BCC   .if_end@23
    CMP   PAGE_TABLE_INDEX
 ```
 
 With the capture gone, A still holds the slot at both loads of
-`page`, so [redundant load elimination](redundant_load.md) deletes
+`found_0`, so [redundant load elimination](redundant_load.md) deletes
 them, and [dead store elimination](asm_dead_store.md) the store.
 
 ## Example
@@ -101,12 +101,7 @@ it, and `bump` as `apply_carry_branch_fold` receives it.
 
 ```
 is_three:
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_differ@2
-   LDA   __zpabi_is_three__x
    CMP   #$03
-.cmp_differ@2:
    BEQ   .cmp_true@0
    LDA   #$00
    JMP   .cmp_end@1
@@ -118,7 +113,6 @@ is_three:
 
 bump:
    LDA   g
-   STA   __zpabi_is_three__x
    JSR   is_three
    LDA   #$00
    ROL
@@ -137,12 +131,7 @@ then `apply_carry_const_fold` in the same round, and `bump` after
 
 ```
 is_three:
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_differ@2
-   LDA   __zpabi_is_three__x
    CMP   #$03
-.cmp_differ@2:
    BEQ   .cmp_true@0
    CLC
    RTS
@@ -155,7 +144,6 @@ is_three:
 
 bump:
    LDA   g
-   STA   __zpabi_is_three__x
    JSR   is_three
    BCC   .if_end@0
    LDA   #$07

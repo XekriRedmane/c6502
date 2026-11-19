@@ -20,16 +20,16 @@ the same jump.
 
 ```
    BNE   .vthread@0
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
    JMP   .if_end@4
 .vthread@0:
    CMP   #$04
-   BNE   .if_else@7
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
+   BNE   .vthread@1
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
    JMP   .if_end@6
 ```
 
@@ -38,22 +38,24 @@ the same jump.
 ```
    BNE   .vthread@0
 .xjump@0:
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
    JMP   .if_end@4
 .vthread@0:
    CMP   #$04
-   BNE   .if_else@7
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
+   BNE   .vthread@1
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
    JMP   .xjump@0
 ```
 
 `.if_end@6` and `.if_end@4` label the same instruction, so the two
 jumps go to the same place. The `* 4` path shifts once and joins the
 `* 2` path, as Zork's code does, 4 bytes shorter. In the whole
-interpreter it takes 56 bytes off, and the first Zork session runs
-35,000 cycles longer, 0.09%.
+linked interpreter it takes 41 bytes off. When the pass was added, it
+made the first Zork session run 35,000 cycles longer, 0.09%. That
+count hasn't been measured again since arguments began arriving in A
+and X.
 
 ## When it applies
 

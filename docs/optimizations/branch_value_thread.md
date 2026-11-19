@@ -24,43 +24,63 @@ jumping](cross_jump.md) switched off in both compiles.
 
 ```
    LDA   __zpabi_check_sign__b_1
+   CMP   #$00
    BNE   .if_else@5
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
    BNE   .if_else@5
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
    JMP   .if_end@4
 .if_else@5:
    LDA   __zpabi_check_sign__b_1
+   CMP   #$00
    BNE   .if_else@7
    LDA   __zpabi_check_sign__b_0
    CMP   #$04
    BNE   .if_else@7
+   ...
+.if_else@7:
+   LDA   __zpabi_check_sign__b_0
+   STA   __zpabi_mulu16__b_0
 ```
 
 ### After
 
 ```
    LDA   __zpabi_check_sign__b_1
+   CMP   #$00
    BNE   .if_else@7
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
    BNE   .vthread@0
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
+   ASL   __local_instr_mul__product
+   ROL   __local_instr_mul__0
    JMP   .if_end@4
+.if_else@5:
+   LDA   __zpabi_check_sign__b_1
+   CMP   #$00
+   BNE   .if_else@7
+   LDA   __zpabi_check_sign__b_0
 .vthread@0:
    CMP   #$04
-   BNE   .if_else@7
+   BNE   .vthread@1
+   ...
+.if_else@7:
+   LDA   __zpabi_check_sign__b_0
+.vthread@1:
+   STA   __zpabi_mulu16__b_0
 ```
 
 The first `BNE` goes straight to `.if_else@7`, the multiply. The
-second goes to the `CMP #$04`, with A still holding the low byte. No
-branch reaches the high-byte test at `.if_else@5` any more, and
-[unreachable code drop](unreachable_drop.md) removes it with the
-low-byte load after it. That's 6 bytes in each of `instr_mul` and
-`instr_div`, which now test `b` the way Zork's code does.
+second goes to the `CMP #$04`, with A still holding the low byte, and
+the third goes past the multiply's reload of that byte, which saves 3
+cycles on the way to `mulu16`. No branch reaches the high-byte test
+at `.if_else@5` any more, and [unreachable code
+drop](unreachable_drop.md) removes it with the low-byte load after
+it. That's 6 bytes in each of `instr_mul` and `instr_div`, which now
+test `b` the way Zork's code does. The `CMP #$00` after each load of
+the high byte goes later, in [redundant compare](redundant_compare.md).
 
 ## When it applies
 

@@ -32,26 +32,28 @@ void plot(uint8_t col, uint8_t v) { page[rows[2] + col] = v; }
 ### Before
 
 ```
-ZeroExtend(@0.col, %4.1)
-Binary(+, 256u, %4.1, %6.1)
-Binary(+, 8192u, %6.1, %7.1)
-Store(@1.v, %7.1)
+ZeroExtend(@0.col, %2.1)
+Binary(+, 256u, %2.1, %4.1)
+Binary(+, 8192u, %4.1, %5.1)
+Store(@1.v, %5.1)
 Ret(None)
 ```
 
 ### After
 
 ```
-ZeroExtend(@0.col, %4.1)
-Binary(+, 8448u, %4.1, %7.1)
-Store(@1.v, %7.1)
+ZeroExtend(@0.col, %2.1)
+Binary(+, 8448u, %2.1, %5.1)
+Store(@1.v, %5.1)
 Ret(None)
 ```
 
 The listing prints constants in decimal, so 8192 is 0x2000 and 8448
 is 0x2100. The indexed-store recognizer then turns the last three
-instructions into one `IndexedStore`, and the function compiles to
-`LDX __zpabi_plot__col; LDA __zpabi_plot__v; STA $2100,X; RTS`.
+instructions into one `IndexedStore`. `col` arrives in A and `v` in
+X, and the function compiles to `STA __local_plot__col; STX
+__local_plot__v; LDX __local_plot__col; LDA __local_plot__v; STA
+$2100,X; RTS`.
 
 ## When it applies
 

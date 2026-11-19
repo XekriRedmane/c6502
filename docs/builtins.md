@@ -203,18 +203,22 @@ void add_to_score(uint16_t bcd_points) {
 
 `SCORE` stays an array of bytes, because the code that draws the
 score reads it a byte, two digits, at a time. The pointer gives the
-addition all four bytes as one `uint32_t`. With `-O`, `add_to_score`
-compiles to the chain and nothing more.
+addition all four bytes as one `uint32_t`. With `-O`, `bcd_points`
+arrives in A and X, and `add_to_score` stores it in two bytes of its
+own, since the chain reads no operand from a register. The rest is the
+chain.
 
 ```
 add_to_score:
+    STA __local_add_to_score__bcd_points_0
+    STX __local_add_to_score__bcd_points_1
     SED
     CLC
     LDA SCORE
-    ADC __zpabi_add_to_score__bcd_points_0
+    ADC __local_add_to_score__bcd_points_0
     STA SCORE
     LDA SCORE+1
-    ADC __zpabi_add_to_score__bcd_points_1
+    ADC __local_add_to_score__bcd_points_1
     STA SCORE+1
     LDA SCORE+2
     ADC #$00

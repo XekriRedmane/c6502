@@ -44,8 +44,9 @@ Copy(@0.a, %1.1)
 Ret(%1.1)
 ```
 
-Copy propagation then forwards `@0.a` into the `Ret`, and the
-function returns with `LDA __zpabi_f__a`.
+Copy propagation then forwards `@0.a` into the `Ret`. `a` arrives in
+A, so the function returns it there with no load, and its code is
+`STA g; LDY #$00; STY g+1; RTS`.
 
 ## When it applies
 

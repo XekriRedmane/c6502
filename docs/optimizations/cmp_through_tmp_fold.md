@@ -36,13 +36,12 @@ void check(unsigned char idx) {
 
 ```
 check:
-   LDA   __zpabi_check__idx
    AND   #$0F
    TAX
    LDA   table,X
-   STA   __local_check__0
+   STA   __local_check__idx
    LDA   y
-   CMP   __local_check__0
+   CMP   __local_check__idx
    BNE   .if_end@0
    LDA   #$01
    STA   hit
@@ -54,7 +53,6 @@ check:
 
 ```
 check:
-   LDA   __zpabi_check__idx
    AND   #$0F
    TAX
    LDA   y
@@ -66,17 +64,20 @@ check:
    RTS
 ```
 
-A byte read through a pointer folds the same way. For `if (y == *p)`
-the pass turns `LDY #$00; LDA ($80),Y; STA __local_band__0; LDA
-__zpabi_band__y; CMP __local_band__0` into `LDA __zpabi_band__y; LDY
-#$00; CMP ($80),Y`, where `$80` is the zero-page slot that holds `p`.
+`idx` arrives in A, so the `AND` needs no load in front of it. A byte read through a pointer folds the
+same way. For `if (y == *p)` in `void band(unsigned char y, unsigned
+char *p)`, the pass turns `LDY #$00; LDA ($80),Y; STA
+__local_band__0; LDA __local_band__y; CMP __local_band__0` into `LDA
+__local_band__y; LDY #$00; CMP ($80),Y`, where `$80` is the
+zero-page slot that holds `p`. `y` arrives in A and is stored in
+`__local_band__y` at entry.
 
 ### Arithmetic
 
 The same staging happens for the right operand of an addition or a
 subtraction, such as a global widened to 16 bits. In
-`do_rwts_on_sector` (`examples/zork/disk.c`), `sector -
-SECTORS_PER_TRACK` subtracted a copy:
+`do_rwts_on_sector` (`examples/zork/disk.c`), when this pass was
+added, `sector - SECTORS_PER_TRACK` subtracted a copy:
 
 ```
    LDA   SECTORS_PER_TRACK
@@ -86,7 +87,7 @@ SECTORS_PER_TRACK` subtracted a copy:
    SBC   __local_do_rwts_on_sector__command
 ```
 
-and now subtracts the global itself:
+and the pass made it subtract the global itself:
 
 ```
    LDA   __local_do_rwts_on_sector__sector_0
@@ -94,7 +95,9 @@ and now subtracts the global itself:
    SBC   SECTORS_PER_TRACK
 ```
 
-That takes a pass through the loop from 42 cycles to 36. An
+That took a pass through the loop from 42 cycles to 36. The loop
+now keeps `sector` in A and X, and runs `SBC SECTORS_PER_TRACK` with
+no load in front of it. An
 operand that reaches the temporary from a table or a global does the
 same in `s += arr[i]`, which becomes `CLC; ADC arr,X` with the sum
 kept in A.

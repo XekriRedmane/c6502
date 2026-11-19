@@ -35,17 +35,17 @@ partial = (partial << 1) | out;
 ### Before
 
 ```
-.if_end@0:
-   LDA   __zpabi_divu16__dividend_1
+.if_end@1:
+   LDA   __local_divu16__dividend_1
    ASL
    LDA   #$00
    ROL
    STA   __local_divu16__0
-   ASL   __zpabi_divu16__dividend_0
-   ROL   __zpabi_divu16__dividend_1
-   LDA   __zpabi_divu16__dividend_0
+   ASL   __local_divu16__dividend_0
+   ROL   __local_divu16__dividend_1
+   LDA   __local_divu16__dividend_0
    ORA   __local_divu16__fits
-   STA   __zpabi_divu16__dividend_0
+   STA   __local_divu16__dividend_0
    ASL   __local_divu16__partial_0
    ROL   __local_divu16__partial_1
    LDA   __local_divu16__partial_0
@@ -59,16 +59,17 @@ partial = (partial << 1) | out;
    LDA   #$01                 ; LDA #$00 on the path where it didn't fit
 .if_end@1:
    LSR
-   ROL   __zpabi_divu16__dividend_0
-   TXA
+   ROL   __local_divu16__quotient
+   TYA
    ROL
-   TAX
+   TAY
    ROL   __local_divu16__partial_0
    ROL   __local_divu16__partial_1
 ```
 
 The `fits` byte now lives in A, set on each side of the `if`, since
-nothing else reads it. The quotient's high byte is in X.
+nothing else reads it. The quotient's high byte is in Y, and the
+loop's counter is in X.
 
 ## When it applies
 
@@ -96,4 +97,4 @@ nothing else reads it. The quotient's high byte is in X.
 [Compare and subtract of the same operands](compare_subtract.md)
 makes the subtract in the same loop set the bit's value, and
 [count-down counter in X or Y](counter_to_index_reg.md) puts the
-loop's counter in Y.
+loop's counter in X.

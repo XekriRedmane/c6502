@@ -32,12 +32,7 @@ which copy a shared return tail into each path that reaches it.
 ### Before
 
 ```
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_differ@2
-   LDA   __zpabi_is_three__x
    CMP   #$03
-.cmp_differ@2:
    BEQ   .cmp_true@0
    CLC
    RTS
@@ -51,12 +46,7 @@ which copy a shared return tail into each path that reaches it.
 ### After
 
 ```
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_differ@2
-   LDA   __zpabi_is_three__x
    CMP   #$03
-.cmp_differ@2:
    BEQ   .cmp_true@0
    CLC
    RTS

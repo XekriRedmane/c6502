@@ -37,12 +37,13 @@ if (hy >= player_y) {
 
 ```
 .loop@0_start:
+   LDX   __local_refresh_hit_entities__x
    LDA   entity_hit_y,X
-   CMP   __zpabi_refresh_hit_entities__player_y
+   CMP   __local_refresh_hit_entities__player_y
    BCC   .if_end@0
    SEC
-   SBC   __zpabi_refresh_hit_entities__player_y
-   STA   __local_refresh_hit_entities__1
+   SBC   __local_refresh_hit_entities__player_y
+   STA   __local_refresh_hit_entities__0
    CMP   #$2F
 ```
 
@@ -50,11 +51,12 @@ if (hy >= player_y) {
 
 ```
 .loop@0_start:
+   LDX   __local_refresh_hit_entities__x
    LDA   entity_hit_y,X
    SEC
-   SBC   __zpabi_refresh_hit_entities__player_y
+   SBC   __local_refresh_hit_entities__player_y
    BCC   .if_end@0
-   STA   __local_refresh_hit_entities__1
+   STA   __local_refresh_hit_entities__0
    CMP   #$2F
 ```
 

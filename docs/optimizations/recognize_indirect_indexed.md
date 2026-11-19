@@ -17,7 +17,8 @@ For `p[i]`, `c99_to_tac` zero-extends `i`, adds it to `p` with a
 in a zero-page pair and reads it with `LDY #$00; LDA (sum),Y`. The
 `(zp),Y` mode adds Y to the pointer, carrying into the high byte, so
 loading `i` into Y does the same add for free. In the example below
-the function body drops from 17 bytes to 4. A constant offset such
+the function body drops from 15 bytes to 8, and 4 of the 8 copy `p`
+from A and X into a zero-page pair. A constant offset such
 as `p[10]` or a byte member `o->y` becomes `LDY #k` before the
 access.
 
@@ -51,11 +52,12 @@ IndirectIndexedLoad(@0.p, @1.i, %2.1)
 Ret(%2.1)
 ```
 
-The final assembly is `LDY __zpabi_at__i; LDA (__zpabi_at__p_0),Y;
-RTS`. For `p[10] = v`, the pass turns `Binary(+, @2.p, 10, %3.1);
-Store(@3.v, %3.1)` into `IndirectIndexedStore(@2.p, 10uc, @3.v)`,
-which lowers to `LDA __zpabi_put10__v; LDY #$0A;
-STA (__zpabi_put10__p_0),Y`.
+The final assembly is `STA __local_at__p; STX __local_at__0; LDY
+__zpabi_at__i; LDA (__local_at__p),Y; RTS`. For `p[10] = v` in `void
+put10(uint8_t *p, uint8_t v)`, the pass turns `Binary(+, @0.p, 10,
+%0.1); Store(@1.v, %0.1)` into `IndirectIndexedStore(@0.p, 10uc,
+@1.v)`, which lowers to `LDA __zpabi_put10__v; LDY #$0A; STA
+(__local_put10__p),Y` after the same copy of `p`.
 
 ## When it applies
 

@@ -53,17 +53,21 @@ uint8_t sum(uint8_t *p, uint8_t n) {
 ### Before
 
 ```
+.sum@asm_ssa_block@0:
+   STA   __local_sum__p
+   STX   __local_sum__1
+.sum@ssa_block@0:
    LDA   #$00
    STA   __local_sum__s
    LDY   #$00
-   LDA   __zpabi_sum__p_0
-   STA   DPTR
-   LDA   __zpabi_sum__p_1
-   STA   DPTR+1
 .loop@0_start:
    CPY   __zpabi_sum__n
    BCS   .loop@0_break
-.sum@asm_ssa_block@0:
+.sum@asm_ssa_block@1:
+   LDA   __local_sum__p
+   STA   DPTR
+   LDA   __local_sum__1
+   STA   DPTR+1
    LDA   (DPTR),Y
    STA   __local_sum__0
    LDA   __local_sum__s
@@ -81,18 +85,22 @@ uint8_t sum(uint8_t *p, uint8_t n) {
 ### After
 
 ```
+.sum@asm_ssa_block@0:
+   STA   __local_sum__p
+   STX   __local_sum__1
+.sum@ssa_block@0:
    LDA   #$00
    STA   __local_sum__s
    LDY   #$00
-   LDA   __zpabi_sum__p_0
-   STA   DPTR
-   LDA   __zpabi_sum__p_1
-   STA   DPTR+1
 .loop@0_start:
    CPY   __zpabi_sum__n
    BCS   .loop@0_break
-.sum@asm_ssa_block@0:
-   LDA   ($80),Y
+.sum@asm_ssa_block@1:
+   LDA   __local_sum__p
+   STA   DPTR
+   LDA   __local_sum__1
+   STA   DPTR+1
+   LDA   ($83),Y
    STA   __local_sum__0
    LDA   __local_sum__s
    CLC
@@ -106,11 +114,13 @@ uint8_t sum(uint8_t *p, uint8_t n) {
    RTS
 ```
 
-The copy into `DPTR` sits before the loop label and the read sits
-inside the loop, so a pass that clears its facts at every label would
-miss it. The `$80` is the address of `__zpabi_sum__p_0`, and the
-final assembly prints it by name as `LDA (__zpabi_sum__p_0),Y`, with
-the four staging instructions gone.
+`sum` takes `p` in A and X and copies it into `__local_sum__p` and
+`__local_sum__1` at entry. The `$83` is the address of
+`__local_sum__p`, and the final assembly prints it by name as `LDA
+(__local_sum__p),Y`, with the four instructions that copied the
+pointer into `DPTR` gone. Here the copy and the read sit in the same
+block. The facts also carry across labels and joins, and in the next
+example the copy and the read sit on either side of a join.
 
 The second rewrite shows up in
 

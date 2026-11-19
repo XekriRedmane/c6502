@@ -28,6 +28,7 @@ scan of one block can't show.
 ## Example
 
 ```c
+#include <stdint.h>
 uint8_t g;
 void f(uint8_t a) { g = 1; if (a) g = 2; else g = 3; }
 ```
@@ -35,9 +36,10 @@ void f(uint8_t a) { g = 1; if (a) g = 2; else g = 3; }
 ### Before
 
 ```
-   LDA   #$01
-   STA   g
-   LDA   __zpabi_f__a
+.f@asm_ssa_block@0:
+   LDY   #$01
+   STY   g
+   ORA   #$00
    BEQ   .if_else@1
 .f@asm_ssa_block@1:
    LDA   #$02
@@ -53,8 +55,9 @@ void f(uint8_t a) { g = 1; if (a) g = 2; else g = 3; }
 ### After
 
 ```
-   LDA   #$01
-   LDA   __zpabi_f__a
+.f@asm_ssa_block@0:
+   LDY   #$01
+   ORA   #$00
    BEQ   .if_else@1
 .f@asm_ssa_block@1:
    LDA   #$02
@@ -67,13 +70,20 @@ void f(uint8_t a) { g = 1; if (a) g = 2; else g = 3; }
    RTS
 ```
 
+`a` arrives in A, so the test is `ORA #$00`, and the constant 1 goes
+through Y to leave A alone. The `LDY #$01` that fed the dropped store
+has no reader either, and a later pass removes it.
+
 The pass has two other rewrites. For `void clear(uint8_t *p) { *p =
 0; }` it drops both `STA DPTR` and `STA DPTR+1` after memory value
 propagation has changed the store to `STA ($80),Y`, because `DPTR` is
-scratch that is dead at return. For `return (uint8_t)(w << 1);` with
-a global `uint16_t w`, the shift of a copy of `w` into two slots ends
-in `ROL __local_lo2__1`, and the pass drops the `ROL` because nothing
-reads the high byte or the carry it sets.
+scratch that is dead at return. It also drops an `INC`, `DEC`, or
+shift of a `__local_*` slot whose new value and flags have no reader.
+When this document was written, `return (uint8_t)(w << 1);` with a
+global `uint16_t w` ended in `ROL __local_lo2__1`, which the pass
+dropped. The current compiler emits `LDA w; ASL` for it, with no
+`ROL` to drop, and a scan of the programs in `examples/` found no
+dead `INC`, `DEC`, or shift for it.
 
 ## When it applies
 

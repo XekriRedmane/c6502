@@ -50,14 +50,20 @@ JumpIfMasked(@0.flags, 64, False, .if_end@0)
 
 The third field of `JumpIfMasked` is `jump_when_nonzero`. A
 `JumpIfTrue` becomes `True` and a `JumpIfFalse` becomes `False`. The
-final code is `LDA __zpabi_check__flags; AND #$40; BEQ .if_end@0`,
-where the same test on an `int flags` takes 9 instructions, with two
-stores to temporaries and an `ORA`.
+final code is `AND #$40; BEQ .if_end@0`, since `flags` arrives in A.
+With this rule turned off, the final code is the same.
+[Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
+then makes the AND a 1-byte operation followed by a `ZeroExtend`, and
+the asm passes drop the zero high byte. The same holds for `int
+flags`, whose mask falls in its low byte.
 
 For `if (!(flags & 0x80))`, the logical-not fold first removes the
 `!` and flips the jump to `JumpIfTrue`, and this rule then gives
 `JumpIfMasked(@0.flags, 128, True, .if_end@0)`. The final code is
-`LDA __zpabi_check__flags; BMI .if_end@0`.
+`AND #$80; BNE .if_end@0`. The [AND sign-bit
+branch](and_sign_bit_branch.md) peephole needs the `LDA` that sets
+the N flag, and the byte arrives in A with no `LDA`, so the `AND`
+stays.
 
 ## When it applies
 
@@ -95,8 +101,10 @@ two stores, and an `ORA` to `LDA ZCHARS+1; BPL`.
 - An `int` operand with no `ZeroExtend` in front of it whose mask
   spans more than one byte, such as `flags & 0x0140`.
 - A `signed char` operand, which C99 promotes with a `SignExtend`.
-  A run on `signed char flags` reports 0 changes, and the final code
-  keeps the sign-extension branch, two `AND`s, and an `ORA`.
+  A run on `signed char flags` reports 0 changes. The final code is
+  still `AND #$40; BEQ`, because the mask clears every bit that the
+  sign extension sets, and the bitwise narrowing makes the AND one
+  byte.
 - A mask above 0xFF, or a negative one.
 - An AND whose result is also stored or returned, or whose
   `ZeroExtend` result has another use.

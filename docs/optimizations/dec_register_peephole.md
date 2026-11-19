@@ -29,13 +29,14 @@ void wait(uint8_t delay)
 ### Before
 
 ```
-   LDY   __zpabi_wait__delay
+   STA   __local_wait__delay
+   LDY   __local_wait__delay
 .loop@0_continue:
    TYA
    SEC
    SBC   #$01
-   STA   __local_wait__0
-   LDY   __local_wait__0
+   STA   __local_wait__delay
+   LDY   __local_wait__delay
    BNE   .loop@0_continue
 .loop@0_break:
    RTS
@@ -44,13 +45,18 @@ void wait(uint8_t delay)
 ### After
 
 ```
-   LDY   __zpabi_wait__delay
+   STA   __local_wait__delay
+   LDY   __local_wait__delay
 .loop@0_continue:
    DEY
    BNE   .loop@0_continue
 .loop@0_break:
    RTS
 ```
+
+`delay` arrives in A and is stored in `__local_wait__delay` on the
+way to Y. That byte is dead once Y holds it, so the subtract's
+temporary takes the same byte.
 
 `volatile` keeps the empty loop from being deleted. The volatile
 counter's storage is Y itself, and `DEY` reads and writes Y once, so

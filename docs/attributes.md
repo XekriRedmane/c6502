@@ -86,18 +86,28 @@ stack in main memory that the compiler manages with the `SSP` and `FP`
 pointers. That works for every function, but every argument costs
 several instructions to write and to read.
 
-A `zp_abi` function takes its arguments in zero page instead, and its
-`register` parameters in the A and X registers. The first `register`
-byte goes in A and the second in X, so `register uint8_t a, register
+A `zp_abi` function takes its arguments in the A and X registers and
+in zero page instead. When its declaration names no register and no
+address for any parameter, its leading integer and pointer parameters
+arrive in A and then X, as many whole parameters as fit in the two
+registers, and the rest in zero page. So `f(uint8_t a, uint8_t b)`
+takes `a` in A and `b` in X, and `f(const char *s)` takes the low byte
+of `s` in A and the high byte in X. `main` takes its parameters in
+zero page.
+
+When the declaration has `register` parameters, they alone go in
+registers, and the others in zero page. The first `register` byte
+goes in A and the second in X, so `register uint8_t a, register
 uint8_t b` puts `a` in A and `b` in X, and `register uint16_t v` puts
 the low byte in A and the high byte in X. A parameter can name its
-register instead, with `in_a`, `in_x`, or `in_y` (see below). A
-pointer can't be a `register` parameter by position, but it can name
-its registers.
+register instead, with `in_a`, `in_x`, or `in_y` (see below), and
+then the other parameters go in zero page unless they name a register
+too. A pointer can't be a `register` parameter by position, but it can
+name its registers.
 
 The return value doesn't depend on the attribute. A `char`-sized
-result comes back in A, and an `int`-sized one comes back with its low
-byte in A and its high byte in X. A pointer, and anything wider, comes
+result comes back in A, and an `int`-sized one or a pointer comes back
+with its low byte in A and its high byte in X. Anything wider comes
 back in the zero-page block called `HARGS`.
 
 With `-O`, every function that can use `zp_abi` gets it, so
@@ -400,28 +410,34 @@ Without `preserves_x`, the loop saves X before each call and reloads
 it after.
 
 ```
-.loop@0_start:
-   CPX   BUFF_END
-   BEQ   .loop@0_break
+   LDX   #$00
+   BEQ   .loop@0_start
+.dump_buffer_to_screen@rot@0:
    LDA   BUFF_AREA,X
    STX   __local_dump_buffer_to_screen__x
    JSR   COUT1
    LDX   __local_dump_buffer_to_screen__x
    INX
-   JMP   .loop@0_start
-```
-
-With it, the save and reload are gone, and the loop is the same as
-Zork's hand-written one.
-
-```
 .loop@0_start:
    CPX   BUFF_END
-   BEQ   .loop@0_break
+   BNE   .dump_buffer_to_screen@rot@0
+```
+
+With it, the save and reload are gone. The loop then has the
+instructions of Zork's hand-written one, which tests at the top with
+`CPX BUFF_END; BEQ` and jumps back with `JMP`. The compiler moves the
+test to the bottom, so each pass through the loop takes one branch.
+
+```
+   LDX   #$00
+   BEQ   .loop@0_start
+.dump_buffer_to_screen@rot@0:
    LDA   BUFF_AREA,X
    JSR   COUT1
    INX
-   JMP   .loop@0_start
+.loop@0_start:
+   CPX   BUFF_END
+   BNE   .dump_buffer_to_screen@rot@0
 ```
 
 Only a routine with `address` can carry these attributes, because the
@@ -784,10 +800,8 @@ main:
    SUBROUTINE
 
    JSR   HOME
+   LDX   #>str@0
    LDA   #<str@0
-   STA   __zpabi_print__s_0
-   LDA   #>str@0
-   STA   __zpabi_print__s_1
    JSR   print
    JSR   RDKEY
    JSR   COUT
@@ -962,7 +976,7 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | Two `address` objects that overlap | The optimizer assumes different names are different memory. |
 | Reserved zero-page bytes that leave no room below `$80` for the runtime's block | The runtime needs `HARGS` and three 2-byte pointers in zero page, and the compiler's own pools use `$80`-`$FF`. |
 | A `register` parameter on a function with `address` but no `zp_abi` | Without `zp_abi`, arguments go on the soft stack, which the ROM routine doesn't read. |
-| A `zp_abi` routine with `address` and a parameter that has neither `register`, `in_*`, nor `zeropage(addr)` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
+| A `zp_abi` routine with `address` and a parameter that has neither `register`, `in_*`, nor `zeropage(addr)`, when another parameter has one of them or the parameters don't all fit in A and X | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
 | A `zeropage(addr)` parameter on a function that can't use `zp_abi` with `-O`, such as a recursive one | Only `zp_abi` passes arguments in zero page. |
 | Declarations of a function that give a parameter different addresses, or `zeropage(addr)` on only some of them | A caller would store the argument where the function doesn't read it. The linker checks this across source files too. |
 | `zeropage(addr)` on a `register` parameter, without an address, or past `$FF` | The parameter arrives either in a register or in zero page, at one address. |

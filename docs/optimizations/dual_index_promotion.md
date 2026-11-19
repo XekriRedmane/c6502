@@ -23,14 +23,20 @@ cycles.
 
 ## Example
 
-This is `examples/apply_bobble.c` without its comments.
+This is `examples/apply_bobble.c` without its comments and with
+`[[c6502::in_a]]` on `bobble_idx`. A declaration that names a
+register gets no registers by default, so `bobble_idx` arrives in A
+and `slot` in its zero-page byte. In the example file, `slot` arrives
+in A and `bobble_idx` in X, so the function's only loads into X are
+the two of `slot`, and the pass leaves it alone.
 
 ```c
+#include <stdint.h>
 extern uint8_t entity_floor_pos[20];
 extern const uint8_t rescue_bobble[];
 
 [[c6502::zp_abi]]
-static void apply_bobble(uint8_t slot, uint8_t bobble_idx)
+static void apply_bobble(uint8_t slot, uint8_t bobble_idx [[c6502::in_a]])
 {
     uint8_t bobble    = rescue_bobble[bobble_idx];
     uint8_t magnitude = bobble & 0x7F;
@@ -48,7 +54,7 @@ static void apply_bobble(uint8_t slot, uint8_t bobble_idx)
 apply_bobble:
    SUBROUTINE
 
-   LDX   __zpabi_apply_bobble__bobble_idx
+   TAX
    LDA   rescue_bobble,X
    BPL   .if_else@1
    AND   #$7F
@@ -56,7 +62,7 @@ apply_bobble:
    CLC
    ADC   entity_floor_pos,X
    STA   entity_floor_pos,X
-   JMP   .if_end@0
+   RTS
 .if_else@1:
    AND   #$7F
    STA   __local_apply_bobble__1
@@ -65,7 +71,6 @@ apply_bobble:
    SEC
    SBC   __local_apply_bobble__1
    STA   entity_floor_pos,X
-.if_end@0:
    RTS
 ```
 
@@ -76,14 +81,14 @@ apply_bobble:
    SUBROUTINE
 
    LDY   __zpabi_apply_bobble__slot
-   LDX   __zpabi_apply_bobble__bobble_idx
+   TAX
    LDA   rescue_bobble,X
    BPL   .if_else@1
    AND   #$7F
    CLC
    ADC   entity_floor_pos,Y
    STA   entity_floor_pos,Y
-   JMP   .if_end@0
+   RTS
 .if_else@1:
    AND   #$7F
    STA   __local_apply_bobble__1
@@ -91,7 +96,6 @@ apply_bobble:
    SEC
    SBC   __local_apply_bobble__1
    STA   entity_floor_pos,Y
-.if_end@0:
    RTS
 ```
 
@@ -127,8 +131,10 @@ apply_bobble:
 
 ## What it leaves alone
 
-- A function with a call in it. Adding a call to `tick()` in the
-  `else` branch of the example leaves both `LDX` loads in place.
+- A function with a call in it. Adding a call to `tick()` at the
+  start of the `else` branch of the example leaves both `LDX` loads
+  in place. A call at the end of the branch becomes `JMP tick`, which
+  doesn't count as a call, and the pass still applies.
 - A function that uses Y anywhere, including through a soft-stack
   access or a pointer dereference.
 - An `abs,X` operand after a join where X holds `D` on one incoming

@@ -38,15 +38,16 @@ void fill(uint8_t v)
 ### Before
 
 ```
-.fill@asm_ssa_preheader@0:
+.fill@asm_ssa_block@0:
+   STA   __local_fill__v
 .fill@ssa_block@0:
    LDX   #$27
 .loop@0_start:
-   LDA   __zpabi_fill__v
+   LDA   __local_fill__v
    STA   buf,X
    TXA
    BNE   .if_end@0
-.fill@asm_ssa_block@0:
+.fill@asm_ssa_block@1:
    JMP   .loop@0_break
 .if_end@0:
    DEX
@@ -59,9 +60,10 @@ void fill(uint8_t v)
 ### After
 
 ```
+   STA   __local_fill__v
    LDX   #$27
 .loop@0_start:
-   LDA   __zpabi_fill__v
+   LDA   __local_fill__v
    STA   buf,X
    TXA
    BNE   .if_end@0
@@ -73,7 +75,7 @@ void fill(uint8_t v)
    RTS
 ```
 
-With `.fill@asm_ssa_block@0` gone, the `BNE` and `JMP` are adjacent,
+With `.fill@asm_ssa_block@1` gone, the `BNE` and `JMP` are adjacent,
 and branch inversion turns them into `BEQ .loop@0_break` later in the
 same round. That leaves `.if_end@0` with no reference, and this pass
 deletes it on its next call.

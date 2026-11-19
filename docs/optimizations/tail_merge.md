@@ -35,15 +35,16 @@ int lookup(unsigned char key, unsigned char lo, unsigned char hi) {
 
 ```
 lookup:
-   LDA   __zpabi_lookup__key
-   CMP   __zpabi_lookup__lo
+   STA   __local_lookup__key
+   STX   __local_lookup__lo
+   CMP   __local_lookup__lo
    BCS   .if_end@0
    LDX   #$00
    TXA
    RTS
 .if_end@0:
    LDA   __zpabi_lookup__hi
-   CMP   __zpabi_lookup__key
+   CMP   __local_lookup__key
    BCS   .if_end@1
    LDX   #$00
    TXA
@@ -56,12 +57,13 @@ lookup:
 
 ```
 lookup:
-   LDA   __zpabi_lookup__key
-   CMP   __zpabi_lookup__lo
+   STA   __local_lookup__key
+   STX   __local_lookup__lo
+   CMP   __local_lookup__lo
    BCC   .tail@0
 .if_end@0:
    LDA   __zpabi_lookup__hi
-   CMP   __zpabi_lookup__key
+   CMP   __local_lookup__key
    BCS   .if_end@1
 .tail@0:
    LDX   #$00

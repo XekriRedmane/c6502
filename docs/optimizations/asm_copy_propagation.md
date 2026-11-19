@@ -28,7 +28,8 @@ unsigned int widen(unsigned char x, unsigned int y) { return y - x; }
 
 ```
 Label(.widen@asm_ssa_block@0)
-Mov(Pseudo(@0.x, 0), Pseudo(%1.1.b0.v1, 0))
+Mov(A, Pseudo(@0.x.reg.b0.v1, 0))
+Mov(Pseudo(@0.x.reg.b0.v1, 0), Pseudo(%1.1.b0.v1, 0))
 Mov(Imm(0), Pseudo(%1.1.b1.v1, 0))
 Mov(Pseudo(@1.y, 0), A)
 SetCarry
@@ -44,11 +45,12 @@ Mov(A, Pseudo(%2.1.b1.v1, 0))
 
 ```
 Label(.widen@asm_ssa_block@0)
-Mov(Pseudo(@0.x, 0), Pseudo(%1.1.b0.v1, 0))
+Mov(A, Pseudo(@0.x.reg.b0.v1, 0))
+Mov(Pseudo(@0.x.reg.b0.v1, 0), Pseudo(%1.1.b0.v1, 0))
 Mov(Imm(0), Pseudo(%1.1.b1.v1, 0))
 Mov(Pseudo(@1.y, 0), A)
 SetCarry
-Sub(Pseudo(@0.x, 0), A)
+Sub(Pseudo(@0.x.reg.b0.v1, 0), A)
 Mov(A, Pseudo(%2.1.b0.v1, 0))
 Mov(Pseudo(@1.y, 1), A)
 Sub(Imm(0), A)
@@ -56,12 +58,22 @@ Mov(A, Pseudo(%2.1.b1.v1, 0))
 ...
 ```
 
-The final code is `LDA y; SEC; SBC x; STA t; LDA y+1; SBC #$00; TAX;
-LDA t; RTS`. With the pass turned off, the function also has `LDA
-__zpabi_widen__x; STA __local_widen__0` in front, which is 4 bytes
-and 6 cycles more, and its private pool takes a second zero-page
-byte. The peephole passes recover the `SBC #$00` on their own, but
-not the copy of `x`.
+`x` arrives in A, and `@0.x.reg` is the local that the function
+copies it into at entry. The final code is `STA __local_widen__x;
+LDA __zpabi_widen__y_0; SEC; SBC __local_widen__x; STA
+__local_widen__x; LDA __zpabi_widen__y_1; SBC #$00; TAX; LDA
+__local_widen__x; RTS`, which is 17 bytes. With the pass turned off,
+the final code is the same. The copy into `%1.1.b0.v1` then survives
+the fixed point, and since its source is an ordinary local, [move
+coalescing](coalescing.md) gives the two the same byte, which turns
+the copy into a self-move that is dropped. The peephole passes
+recover the `SBC #$00` on their own.
+
+The pass makes a difference when the copy's source is a parameter's
+zero-page byte, which coalescing doesn't merge with a local. Before
+18 Nov 2026, `x` arrived in `__zpabi_widen__x`, and with the pass
+turned off the function also had `LDA __zpabi_widen__x; STA
+__local_widen__0` in front, which is 4 bytes and 6 cycles more.
 
 ## When it applies
 

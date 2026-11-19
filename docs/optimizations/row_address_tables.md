@@ -49,62 +49,66 @@ uint8_t below(uint8_t row, uint8_t col) { return MAP[row + 1][col]; }
 ```
 
 These listings compare two complete compiles, with and without the
-pass. `below` shrinks from 66 bytes to 17 and `at` from 60 to 17, and
-the 34-byte table brings the unit from 126 bytes to 68.
+pass. `below` shrinks from 68 bytes to 19 and `at` from 62 to 19, and
+the 34-byte table brings the unit from 130 bytes to 72.
 
 ### Before
 
 ```
-   LDA   __zpabi_below__row
+   STA   __local_below__row
+   TXA
+   TAY
+   LDA   __local_below__row
    CLC
    ADC   #$01
-   STA   __local_below__3
+   STA   __local_below__2
    LDA   #$00
    ADC   #$00
-   ASL   __local_below__3
+   ASL   __local_below__2
    ROL
-   ASL   __local_below__3
+   ASL   __local_below__2
    ROL
-   STA   __local_below__4
-   LDA   __local_below__3
-   ASL
-   STA   __local_below__1
-   LDA   __local_below__4
-   ROL
-   ASL   __local_below__1
-   ROL
-   ASL   __local_below__1
-   ROL
-   STA   __local_below__2
-   LDA   __local_below__1
-   SEC
-   SBC   __local_below__3
-   STA   __local_below__0
+   STA   __local_below__3
    LDA   __local_below__2
-   SBC   __local_below__4
-   STA   __local_below__2
+   ASL
+   STA   __local_below__0
+   LDA   __local_below__3
+   ROL
+   ASL   __local_below__0
+   ROL
+   ASL   __local_below__0
+   ROL
+   STA   __local_below__1
+   LDA   __local_below__0
+   SEC
+   SBC   __local_below__2
+   STA   __local_below__row
+   LDA   __local_below__1
+   SBC   __local_below__3
+   STA   __local_below__1
    LDA   #<MAP
    CLC
-   ADC   __local_below__0
-   STA   __local_below__0
+   ADC   __local_below__row
+   STA   __local_below__row
    LDA   #>MAP
-   ADC   __local_below__2
-   STA   __local_below__1
-   LDY   __zpabi_below__col
-   LDA   (__local_below__0),Y
+   ADC   __local_below__1
+   STA   __local_below__0
+   LDA   (__local_below__row),Y
    RTS
 ```
 
 ### After
 
 ```
-   LDX   __zpabi_below__row
+   STA   __local_below__row
+   TXA
+   TAY
+   LDX   __local_below__row
    LDA   MAP@lo+1,X
-   STA   __local_below__0
+   STA   __local_below__row
    LDA   MAP@hi+1,X
-   STA   __local_below__1
-   LDY   __zpabi_below__col
-   LDA   (__local_below__0),Y
+   STA   __local_below__0
+   LDA   (__local_below__row),Y
    RTS
 ...
 MAP@lo:

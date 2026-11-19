@@ -250,6 +250,15 @@ and private pools are under "Call-graph-disjoint ZP allocation" in
 [../passes/CLAUDE.md](../passes/CLAUDE.md). The original design is
 [leaf_zp_abi.md](leaf_zp_abi.md).
 
+A zp_abi function other than `main` takes its leading integer and
+pointer parameters in A and then X, as many whole parameters as fit in
+the two registers, unless its declaration names a register or an
+address for any parameter. The rest arrive in their
+`__zpabi_fn__param` slots. The callee copies a parameter that arrives
+in a register into a local, `__local_fn__param`, which the register
+allocator may keep in a register. A call is `LDA #3; JSR f` where an
+argument in a slot takes `LDA #3; STA __zpabi_f__n; JSR f`.
+
 ### Return values
 
 A 1-byte result comes back in A, and a 2-byte one in A (low) and X

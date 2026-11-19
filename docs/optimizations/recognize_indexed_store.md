@@ -18,10 +18,11 @@ A pointer with a fixed value, such as `static uint8_t * const screen
 `screen[col]` is then a zero-extend of `col`, a 16-bit add of 0x0400,
 and a store through the sum. Without this pass, `tac_to_asm` builds
 the sum in a zero-page pair and stores with `STA (ptr),Y`, which
-takes 19 bytes in the example below. The 6502's absolute,X mode adds
+takes 10 bytes in the example below. The 6502's absolute,X mode adds
 X to a 16-bit base inside the store instruction, so the same store is
-`LDX col; LDA ch; STA $0400,X` with `col` and `ch` in zero page,
-which takes 7 bytes. Because X is only 8 bits, the zero high byte of
+`STA $0400,X`, which takes 3 bytes. The example's `put` takes `ch` in
+A and `col` in X, so the store is the function's only instruction
+before the `RTS`. Because X is only 8 bits, the zero high byte of
 the extended index costs nothing.
 
 ## Example
@@ -29,27 +30,26 @@ the extended index costs nothing.
 ```c
 #include <stdint.h>
 static uint8_t * const screen = (uint8_t * const)0x0400;
-void put(uint8_t col, uint8_t ch) { screen[col] = ch; }
+void put(uint8_t ch, uint8_t col) { screen[col] = ch; }
 ```
 
 ### Before
 
 ```
-ZeroExtend(@0.col, %0.1)
+ZeroExtend(@1.col, %0.1)
 Binary(+, 1024u, %0.1, %1.1)
-Store(@1.ch, %1.1)
+Store(@0.ch, %1.1)
 Ret(None)
 ```
 
 ### After
 
 ```
-IndexedStore(0x400, @0.col, @1.ch)
+IndexedStore(0x400, @1.col, @0.ch)
 Ret(None)
 ```
 
-The final assembly is `LDX __zpabi_put__col; LDA __zpabi_put__ch;
-STA $0400,X; RTS`.
+The final assembly is `STA $0400,X; RTS`.
 
 ## When it applies
 

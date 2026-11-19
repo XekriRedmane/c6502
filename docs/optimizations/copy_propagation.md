@@ -57,7 +57,8 @@ Ret(%3.1)
 
 The chain from `z` through `y` resolves to the parameter `x`. Once
 dead-store elimination drops the two copies, the function compiles to
-`LDA __zpabi_scale__x; CLC; ADC __zpabi_scale__x; RTS`.
+`STA __local_scale__x; CLC; ADC __local_scale__x; RTS`, where `x`
+arrives in A and is stored once so that the add can read it.
 
 ## When it applies
 

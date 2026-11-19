@@ -36,13 +36,12 @@ int main(void) { if (small(g)) g = 1; return g; }
 
 ```
 small:
-   ...
-   BMI   .cmp_true@1
+   STA   __local_small__x
+   LDA   #$0A
+   CLC
+   SBC   __local_small__x
    LDA   #$00
-   JMP   .cmp_end@2
-.cmp_true@1:
-   LDA   #$01
-.cmp_end@2:
+   ROL
    RTS
 main:
    ...
@@ -55,12 +54,10 @@ main:
 
 ```
 small:
-   ...
-   BMI   .cmp_true@1
+   STA   __local_small__x
+   LDA   #$0A
    CLC
-   RTS
-.cmp_true@1:
-   SEC
+   SBC   __local_small__x
    RTS
 main:
    ...
@@ -69,10 +66,11 @@ main:
 ```
 
 These are two complete compiles, with the pass turned off and on,
-and `...` marks the lines they share. `small`'s returns take 4 bytes
-where they took 8, since each is a `CLC` or `SEC` and its own `RTS`
-([carry_return.md](carry_return.md)), and the call takes 2 bytes
-less.
+and `...` marks the lines they share. `small` computes `x < 10` as
+the carry out of `9 - x`, so with the result in C it returns right
+after the subtract. Returned in A, the carry has to become a number
+first, with `LDA #$00; ROL`, so `small` takes 8 bytes where it took
+11, and the call takes 2 bytes less.
 
 In Zork's interpreter (examples/zork) it chooses the
 three separator tests of `input.c`, which the original also returns
@@ -124,15 +122,10 @@ bool big(uint8_t x) { return x > 5; }
 
 ```
 big:                                big:
-   LDA   #$05                          LDA   #$05
-   SEC                                 SEC
-   SBC   __zpabi_big__x                SBC   __zpabi_big__x
-   BCC   .cmp_true@0          ->       BCC   .cmp_true@0
-   LDA   #$00                          CLC
-   JMP   .cmp_end@1                    RTS
-.cmp_true@0:                        .cmp_true@0:
-   LDA   #$01                          SEC
-.cmp_end@1:                            RTS
+   CLC                                 CLC
+   SBC   #$05                          SBC   #$05
+   LDA   #$00             ->           RTS
+   ROL
    RTS
 ```
 

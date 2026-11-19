@@ -29,14 +29,20 @@ void check(uint8_t i)
 }
 ```
 
+The "Before" listing comes from the same `-O` compile with
+`apply_index_inc_cmp_y` turned off. `i` arrives in A, and C is dead at
+the add, so [Shift in A](shift_in_a.md) has already turned the
+temporary's `STA`, `INC`, and `LDA` into `CLC; ADC #1`, the second
+form described under "When it applies". Here the pass saves 2 bytes
+and 2 cycles.
+
 ### Before
 
 ```
-   LDX   __zpabi_check__i
+   TAX
    LDA   ceiling,X
-   STA   __local_check__0
-   INC   __local_check__0
-   LDA   __local_check__0
+   CLC
+   ADC   #$01
    CMP   beam_y
    BNE   .if_end@0
    LDA   #$01
@@ -48,7 +54,7 @@ void check(uint8_t i)
 ### After
 
 ```
-   LDX   __zpabi_check__i
+   TAX
    LDY   ceiling,X
    INY
    CPY   beam_y

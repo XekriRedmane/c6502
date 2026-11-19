@@ -14,9 +14,9 @@ A table at a fixed address, read through a pointer such as
 `static const uint8_t * const font = (const uint8_t * const)0xD000`,
 gives the TAC a zero-extend of the index, a 16-bit add of the
 constant base, and a `Load` through the sum. `tac_to_asm` would build
-the sum in a zero-page pair and read with `LDA (ptr),Y`, which is 17
+the sum in a zero-page pair and read with `LDA (ptr),Y`, which is 10
 bytes in the example below. With absolute,X the read is
-`LDX i; LDA $D000,X`, which is 5 bytes.
+`TAX; LDA $D000,X`, which is 4 bytes.
 
 ## Example
 
@@ -43,7 +43,7 @@ Ret(%2.1)
 ```
 
 The listing prints constants in decimal, so 53248 is 0xD000. The
-final assembly is `LDX __zpabi_glyph_row__i; LDA $D000,X; RTS`.
+final assembly is `TAX; LDA $D000,X; RTS`, since `i` arrives in A.
 
 ## When it applies
 

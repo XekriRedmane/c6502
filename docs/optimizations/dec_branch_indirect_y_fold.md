@@ -36,20 +36,19 @@ void buzz(uint8_t delay, uint8_t n)
 ### Before
 
 ```
-   LDA   __zpabi_buzz__n
-   STA   __local_buzz__n
+   STA   __local_buzz__delay
    LDA   speaker
    STA   DPTR
    LDA   speaker+1
    STA   DPTR+1
 .loop@0_start:
-   LDY   __zpabi_buzz__delay
+   LDY   __local_buzz__delay
 .loop@1_continue:
    DEY
    BNE   .loop@1_continue
    LDY   #$00
    CMP   (DPTR),Y
-   DEC   __local_buzz__n
+   DEX
    BNE   .loop@0_start
    RTS
 ```
@@ -57,19 +56,18 @@ void buzz(uint8_t delay, uint8_t n)
 ### After
 
 ```
-   LDA   __zpabi_buzz__n
-   STA   __local_buzz__n
+   STA   __local_buzz__delay
    LDA   speaker
    STA   DPTR
    LDA   speaker+1
    STA   DPTR+1
 .loop@0_start:
-   LDY   __zpabi_buzz__delay
+   LDY   __local_buzz__delay
 .loop@1_continue:
    DEY
    BNE   .loop@1_continue
    CMP   (DPTR),Y
-   DEC   __local_buzz__n
+   DEX
    BNE   .loop@0_start
    RTS
 ```

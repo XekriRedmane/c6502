@@ -64,10 +64,13 @@ IndexedSymbolStore(player, 2uc, 100u)
 Ret(None)
 ```
 
-The final assembly stores each byte with an absolute `STA`, from
-`STA player` to `STA player+3`. With the pass switched off, the same
-function reloads `#<player` and `#>player` into a zero-page pair for
-each member and adds 2 to it for `hp`.
+The final assembly stores each byte with an absolute store, from
+`STA player` to `STA player+3`, and stores `y` with `STX player+1`,
+since `y` arrives in X. That's 17 bytes. With the pass switched off,
+the function takes 29 bytes. Later passes still store `x` and the low
+byte of `hp` directly, but `y` goes through `TXA; LDY #$01; STA
+player,Y`, and the high byte of `hp` goes through `player`'s address
+in DPTR.
 
 ## When it applies
 

@@ -113,11 +113,12 @@ by jumping to the other, keeps its `JMP`. No item moves across an
 assignment inside the section (`. = ...` or `sym = .;`), since an
 assignment marks an address.
 
-In Zork's interpreter (examples/zork) this removes 19
-`JMP`s, 57 bytes. Two of the pairs are functions of different units:
+In Zork's interpreter (examples/zork) this removes 28
+`JMP`s, 84 bytes. Two of the pairs are functions of different units:
 `print_obj` in `objects.c` falls into `print_zstring` in `zstring.c`,
-and `store_and_branch_on` in `objects.c` into `branch` in
-`decode.c`.
+and `store_and_branch_on@tail0`, the tail that `store_and_branch_on`
+in `objects.c` shares with another function and falls into, falls
+into `branch` in `decode.c`.
 
 Moving a function changes its address. For a section whose order
 matters, `(NOREORDER)` after the section's name keeps the order, and

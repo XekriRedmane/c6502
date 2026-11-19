@@ -22,6 +22,8 @@ into `LDX n`, which saves another byte and 2 cycles before the loop.
 ## Example
 
 ```c
+#include <stdint.h>
+
 extern volatile uint8_t speaker;
 extern uint8_t buf[256];
 
@@ -43,11 +45,11 @@ void fill(uint8_t n, uint8_t v)
 fill:
    SUBROUTINE
 
-   LDX   #$00
-   LDA   __zpabi_fill__n
    STA   __local_fill__c
+   STX   __local_fill__v
+   LDX   #$00
 .loop@0_start:
-   LDA   __zpabi_fill__v
+   LDA   __local_fill__v
    STA   buf,X
    INX
    LDA   speaker
@@ -62,11 +64,11 @@ fill:
 fill:
    SUBROUTINE
 
-   LDX   #$00
-   LDA   __zpabi_fill__n
    TAY
+   STX   __local_fill__v
+   LDX   #$00
 .loop@0_start:
-   LDA   __zpabi_fill__v
+   LDA   __local_fill__v
    STA   buf,X
    INX
    LDA   speaker
@@ -75,9 +77,10 @@ fill:
    RTS
 ```
 
-The index `i` already lives in X, so the counter goes in Y. The final
-assembly starts the loop with `LDY __zpabi_fill__n`. Without the
-`buf[i]` store, as in a loop of bare volatile reads of `speaker`, the
+The index `i` already lives in X, so the counter goes in Y. Since `n`
+arrives in A, the store that becomes `TAY` is the function's first
+instruction, and the final assembly is the listing after the pass.
+Without the `buf[i]` store, as in a loop of bare volatile reads of `speaker`, the
 counter goes in X and the loop is `LDA speaker; DEX; BNE`.
 
 ## When it applies

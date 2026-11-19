@@ -46,10 +46,9 @@ JumpIfTrue(%0.1, .if_end@0)
 ...
 ```
 
-The final code is `JSR ready; STA __local_poll__0; LDA
-__local_poll__0; BNE .if_end@0`. The store and the reload of the
-returned byte are left over from the asm passes, so the branch
-doesn't yet follow the `JSR` directly.
+The final code is `JSR ready; ORA #$00; BNE .if_end@0`. The `ORA`
+sets Z from the returned byte, because the compiler never branches on
+the flags a call leaves behind.
 
 ## When it applies
 
@@ -62,15 +61,16 @@ doesn't yet follow the `JSR` directly.
 When `src` is itself a comparison or a masked byte, the
 [comparison](cmp_zero_jump_fold.md) or [AND](and_zero_jump_fold.md)
 fold can then fold the new jump on a later round. That is how
-`if (!(flags & 0x80))` ends as `LDA __zpabi_check__flags; BMI
-.if_end@0`.
+`if (!(flags & 0x80))`, with `flags` arriving in A, ends as `AND
+#$80; BNE .if_end@0`.
 
 ## What it leaves alone
 
 - A `!` whose result has another use. In
   `int t = !a; if (t) seen = 1; return t;` the run reports 0 changes,
   and the final code keeps the `.lnot_true@0` / `.lnot_end@1`
-  diamond and the `ORA #$00; BEQ` test after it.
+  diamond, then stores its 0 or 1 in `t` and branches on it with
+  `BEQ`.
 - A `!` that isn't adjacent to its jump, until copy propagation and
   dead-store elimination close the gap on a later round.
 

@@ -37,14 +37,15 @@ Compiled with the attribute left off:
 
 ```
 sum:
-   LDX   __zpabi_sum__i
+   STA   __local_sum__i
+   LDX   __local_sum__i
    LDA   table,X
-   STA   __local_sum__1
+   STA   __local_sum__0
    BNE   .if_end@0
    JSR   fail
 .if_end@0:
-   LDX   __zpabi_sum__i
-   LDA   __local_sum__1
+   LDX   __local_sum__i
+   LDA   __local_sum__0
    CLC
    ADC   table+1,X
    RTS
@@ -54,18 +55,20 @@ sum:
 
 ```
 sum:
-   LDX   __zpabi_sum__i
+   TAX
    LDA   table,X
    BNE   .if_end@0
    JMP   fail
 .if_end@0:
+   LDA   table+1,X
    CLC
-   ADC   table+1,X
+   ADC   table,X
    RTS
 ```
 
-`v` stays in A and `i` in X, since the only way to `.if_end@0` is
-the branch. Zork's `do_2op` (`examples/zork/decode.c`)
+`i` arrives in A and stays in X, since the only way to `.if_end@0`
+is the branch, and the add reads `v` again from `table,X` where it
+had kept a copy in `__local_sum__0`. Zork's `do_2op` (`examples/zork/decode.c`)
 reads its operand `a` straight from `OPERANDS` now, where it had
 copied it on entry because `internal_error()` came between the copy
 and the reads.
@@ -112,8 +115,8 @@ used the soft stack, a function with a `register` parameter couldn't
 call one of them, and the link failed with "cycle detected in zp_abi
 call graph". Now none of them uses the soft stack. In the program
 below, `deep`, `middle`, and `reset_game` used to be on a cycle, and
-now `deep` reads its parameter and keeps its local in zero-page bytes
-of its own.
+now `deep` takes its parameter in A, as a zp_abi function, and keeps
+its local in a zero-page byte of its own.
 
 ```c
 #include <stdint.h>
@@ -136,10 +139,9 @@ void reset_game(void) {
 
 ```
 deep:
-   LDA   __zpabi_deep__n
    CLC
    ADC   #$01
-   STA   __local_deep__1
+   STA   __local_deep__0
    INC   steps
    LDA   steps
    CMP   #$03
@@ -148,7 +150,7 @@ deep:
    STA   steps
    JMP   reset_game
 .if_end@0:
-   LDA   __local_deep__1
+   LDA   __local_deep__0
    RTS
 ```
 

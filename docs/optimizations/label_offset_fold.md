@@ -18,9 +18,14 @@ address, so the high half carries out of the low as the `ADC` did.
 ```c
 struct rec { char t[5]; unsigned int w; char a; };
 struct rec r[4];
-unsigned char deref(const unsigned char *p);
+unsigned char deref(const char *p);
 int main(void) { return deref(&r[2].a); }
 ```
+
+The listings are from `-O`, and the "Before" listing comes from the
+same compile with `apply_label_offset_fold` turned off. `p` arrives in
+A and X, so the store of the high byte is a `TAX`, and the low byte
+waits in a temporary while the high byte is computed.
 
 ### Before
 
@@ -28,22 +33,25 @@ int main(void) { return deref(&r[2].a); }
    LDA   #$17
    CLC
    ADC   #<r
-   STA   __zpabi_deref__p_0
+   STA   __local_main__0
    LDA   #$00
    ADC   #>r
-   STA   __zpabi_deref__p_1
+   TAX
+   LDA   __local_main__0
+   JSR   deref
 ```
 
 ### After
 
 ```
+   LDX   #>(r+23)
    LDA   #<(r+23)
-   STA   __zpabi_deref__p_0
-   LDA   #>(r+23)
-   STA   __zpabi_deref__p_1
+   JSR   deref
 ```
 
-That's 4 instructions instead of 7.
+Once both halves are immediates, later passes drop the temporary, and
+the argument takes 2 instructions and 4 bytes, where it took 8
+instructions and 14 bytes.
 
 The low byte alone folds too. `(uint8_t)(uint16_t)&LOCS[1]`, on an
 array of 9-byte records at a fixed address, reaches the asm as `LDA

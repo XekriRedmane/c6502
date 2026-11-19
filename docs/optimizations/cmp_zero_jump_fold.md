@@ -49,8 +49,8 @@ JumpIfTrue(@0.a, .if_end@0)
 ```
 
 The fold follows the test back through the `ZeroExtend`, so the jump
-reads the 1-byte `a` and the final code is `LDA __zpabi_check__a; BNE
-.if_end@0`. Dead-store elimination drops the `ZeroExtend` on a later
+reads the 1-byte `a`. `a` arrives in A, so the final code is `ORA
+#$00; BNE .if_end@0`, where the `ORA` sets the flags from it. Dead-store elimination drops the `ZeroExtend` on a later
 round. An `== 0` flips the sense of the jump and a `!= 0` keeps it.
 
 The other comparisons, each checked by a run, become a `JumpIfCmp`.
@@ -59,11 +59,11 @@ so the `JumpIfCmp` always jumps when its operator holds.
 
 - For `uint8_t a`, `a < 105` becomes `JumpIfCmp(>=, @0.a, 105uc,
   .if_end@0)`. Both operands narrow to one unsigned byte, and the
-  final code is `LDA __zpabi_check__a; CMP #$69; BCS .if_end@0`.
+  final code is `CMP #$69; BCS .if_end@0`.
 - For `uint8_t a`, `a != 5` becomes `JumpIfCmp(==, @0.a, 5uc,
-  .if_end@0)`, which lowers to `LDA __zpabi_check__a; CMP #$05; BEQ .if_end@0`.
+  .if_end@0)`, which lowers to `CMP #$05; BEQ .if_end@0`.
 - For `signed char a`, `a >= 0` becomes `JumpIfCmp(<, @0.a, 0c,
-  .if_end@0)`, which lowers to `LDA __zpabi_check__a; BMI .if_end@0`.
+  .if_end@0)`, which lowers to `ORA #$00; BMI .if_end@0`.
 - For `int a, b`, `a < b` becomes `JumpIfCmp(>=, @0.a, @1.b,
   .if_end@0)` at full width, which lowers to a 2-byte `SBC` chain
   with the overflow correction and one `BPL`.
@@ -97,7 +97,6 @@ correction:
 
 ```
 small:
-   LDA   __zpabi_small__x
    SEC
    SBC   #$0A
    LDA   #$00
@@ -105,12 +104,9 @@ small:
    BVC   .cmp_novf@0
    EOR   #$80
 .cmp_novf@0:
-   BMI   .cmp_true@1
+   ASL
    LDA   #$00
-   JMP   .cmp_end@2
-.cmp_true@1:
-   LDA   #$01
-.cmp_end@2:
+   ROL
    RTS
 ```
 
@@ -118,17 +114,19 @@ With it, the compare is one unsigned byte:
 
 ```
 small:
-   LDA   __zpabi_small__x
-   SEC
-   SBC   #$0A
-   BCC   .cmp_true@0
+   STA   __local_small__x
+   LDA   #$0A
+   CLC
+   SBC   __local_small__x
    LDA   #$00
-   JMP   .cmp_end@1
-.cmp_true@0:
-   LDA   #$01
-.cmp_end@1:
+   ROL
    RTS
 ```
+
+The narrowed compare is an unsigned ordering kept as a value, which
+is lowered as described [below](#lowering-an-unsigned-ordering-kept-as-a-value).
+`x < 10` becomes `10 - x - 1`, whose carry is the answer, so `x` is
+stored to be subtracted from the constant.
 
 ## A jump folded before its extend was found
 
@@ -199,9 +197,9 @@ The extend's own result must be SSA-renamed too.
 
 - A comparison whose result has another use. In
   `int t = a < 5; if (t) seen = 1; return t;` the final code
-  materializes `t` with `LDA #$00` / `LDA #$01` and then tests it
-  again with `ORA #$00; BEQ`. The value-compare rule still narrows
-  the compare to `SEC; SBC #$05; BCC`.
+  materializes `t` with `LDA #$05; CLC; SBC a; LDA #$00;
+  ROL`, stores it, and then branches on it with `BEQ`. The
+  value-compare rule still narrows the compare to one byte.
 - A comparison that isn't adjacent to its jump. Copy propagation and
   dead-store elimination usually close the gap, and the fold fires on
   a later round of the fixed point.

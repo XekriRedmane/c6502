@@ -36,43 +36,43 @@ void add_score(uint8_t kind) { total += SCORES[kind]; }
 ```
 
 These listings compare two complete compiles, with and without the
-pass. `add_score` shrinks from 58 bytes to 30.
+pass. `add_score` shrinks from 56 bytes to 29. `kind` arrives in A,
+so the read after the split starts with `TAX`.
 
 ### Before
 
 ```
-   LDA   __zpabi_add_score__kind
    ASL
-   STA   __local_add_score__0
+   STA   __local_add_score__kind
    LDA   #$00
    ROL
-   STA   __local_add_score__2
+   STA   __local_add_score__1
    LDA   #<SCORES
    CLC
-   ADC   __local_add_score__0
-   STA   __local_add_score__0
+   ADC   __local_add_score__kind
+   STA   __local_add_score__kind
    LDA   #>SCORES
-   ADC   __local_add_score__2
-   STA   __local_add_score__1
+   ADC   __local_add_score__1
+   STA   __local_add_score__0
    STA   DPTR+1
-   LDA   __local_add_score__0
+   LDA   __local_add_score__kind
    STA   DPTR
    LDY   #$00
-   LDA   (__local_add_score__0),Y
-   STA   __local_add_score__1
+   LDA   (__local_add_score__kind),Y
+   STA   __local_add_score__0
    INY
    LDA   (DPTR),Y
-   STA   __local_add_score__0
+   STA   __local_add_score__kind
    LDA   total
    CLC
-   ADC   __local_add_score__1
+   ADC   __local_add_score__0
    ...
 ```
 
 ### After
 
 ```
-   LDX   __zpabi_add_score__kind
+   TAX
    LDA   SCORES,X
    STA   __local_add_score__1
    LDA   SCORES+200,X

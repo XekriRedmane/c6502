@@ -38,7 +38,7 @@ uint8_t caller(void) { uint8_t x; put(&x); return x; }
 `x` has its address taken, and the address-taken pass puts it at a
 fixed byte of `caller`'s pool, `__local_caller__x`. Its address is
 then a link-time constant, and the `LoadAddress` that computes `&x`
-has a `Data` source. These listings are in IR notation (`--raw`),
+has a `Data` source. These listings are in IR notation,
 because the text form of the `LoadAddress` is the same four
 instructions the pass produces.
 
@@ -47,9 +47,10 @@ instructions the pass produces.
 ```
 Label(.caller@asm_ssa_block@0)
 LoadAddress(Data(__local_caller__x, 0), Data(__local_caller__0, 0))
-Mov(Data(__local_caller__0, 0), Data(__zpabi_put__p_0, 0))
-Mov(Data(__local_caller__1, 0), Data(__zpabi_put__p_1, 0))
-Call(put, [])
+Mov(Data(__local_caller__1, 0), A)
+Mov(A, X)
+Mov(Data(__local_caller__0, 0), A)
+Call(put, [A, X])
 Mov(Data(__local_caller__x, 0), A)
 Return(True)
 ```
@@ -60,33 +61,35 @@ Return(True)
 Label(.caller@asm_ssa_block@0)
 Mov(ImmLabelLow(__local_caller__x, 0), Data(__local_caller__0, 0))
 Mov(ImmLabelHigh(__local_caller__x, 0), Data(__local_caller__1, 0))
-Mov(Data(__local_caller__0, 0), Data(__zpabi_put__p_0, 0))
-Mov(Data(__local_caller__1, 0), Data(__zpabi_put__p_1, 0))
-Call(put, [])
+Mov(Data(__local_caller__1, 0), A)
+Mov(A, X)
+Mov(Data(__local_caller__0, 0), A)
+Call(put, [A, X])
 Mov(Data(__local_caller__x, 0), A)
 Return(True)
 ```
 
-In the peephole fixed point, `memory_value_propagation` rewrites the
-two reads of `__local_caller__0` and `__local_caller__1` to `LDA
-#<__local_caller__x` and `LDA #>__local_caller__x`. `apply_remat`
-then drops the two stores to the temporary, which nothing reads any
-more, and `dead_a_arith` drops the two loads that fed them. The final
-code for `caller` is the following.
+`put` takes its pointer in A and X, so the caller reads the two
+bytes of the temporary into those registers. In the peephole fixed
+point, `memory_value_propagation` rewrites the two reads of
+`__local_caller__1` and `__local_caller__0` to loads of
+`#>__local_caller__x` and `#<__local_caller__x`. `apply_remat` then
+drops the two stores to the temporary, which nothing reads any more,
+and `dead_a_arith` drops the two loads that fed them. The final code
+for `caller` is the following.
 
 ```
+   LDX   #>__local_caller__x
    LDA   #<__local_caller__x
-   STA   __zpabi_put__p_0
-   LDA   #>__local_caller__x
-   STA   __zpabi_put__p_1
    JSR   put
    LDA   __local_caller__x
    RTS
 ```
 
-With the pass disabled, the final code still has all eight instructions
-of the staging round trip in front of the `JSR`, which is 16 bytes
-and 22 cycles where the code above takes 8 bytes and 10 cycles.
+With the pass disabled, the final code still has the six instructions
+of the round trip through the temporary in front of the `JSR`, which
+is 12 bytes and 16 cycles where the code above takes 4 bytes and 4
+cycles.
 
 ## When it applies
 

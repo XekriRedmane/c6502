@@ -76,7 +76,9 @@ X and the pass turns `DEX; TXA; BPL` into `DEX; BPL`.
 
 - The read-modify-write and the load are adjacent. The
   read-modify-write is an `INC`, `DEC`, or shift or rotate of a
-  `Data` or `ZP` byte, or an `INX`, `INY`, `DEX`, or `DEY`.
+  `Data` or `ZP` byte or of an array element indexed by X, or an
+  `INX`, `INY`, `DEX`, or `DEY`. Neither instruction writes X, so
+  `DEC t,X` and `LDA t,X` name the same byte.
 - The load reads the same operand into A, and it isn't volatile.
 - A is dead after the load. The pass follows both arms of every
   branch and the target of every jump until it finds an instruction
@@ -91,9 +93,9 @@ X and the pass turns `DEX; TXA; BPL` into `DEX; BPL`.
 - A volatile load, since the read itself is the observable effect
   of a volatile access.
 - A load with anything between it and the read-modify-write.
-- A soft-stack, pointer, or indexed operand. The 6502 has no
-  read-modify-write in the `(zp),Y` mode, so those updates go
-  through A and never take this shape.
+- A soft-stack, pointer, or Y-indexed operand. The 6502 has no
+  read-modify-write in the `(zp),Y` or abs,Y mode, so those updates
+  go through A and never take this shape.
 - A path that jumps to a label outside the function, such as a tail
   call. The pass treats A as live there.
 

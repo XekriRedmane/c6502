@@ -133,11 +133,11 @@ class TestObjectByteViewShape(unittest.TestCase):
             "void f(uint8_t i) { ZB[i] |= m; }\n"
             "void g(uint8_t i) { ++*(ZB + i); }\n"
         ), optimize=True)
-        for fn in ("f", "g"):
-            with self.subTest(fn=fn):
-                body = _function(asm, fn)
-                self.assertIn("LDA   Z,X", body)
-                self.assertIn("STA   Z,X", body)
+        body = _function(asm, "f")
+        self.assertIn("LDA   Z,X", body)
+        self.assertIn("STA   Z,X", body)
+        # The increment is in place (`inc_peephole`'s indexed form).
+        self.assertIn("INC   Z,X", _function(asm, "g"))
 
     def test_two_byte_elements(self) -> None:
         asm = _asm(_PRELUDE + (

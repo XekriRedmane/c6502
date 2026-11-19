@@ -66,15 +66,18 @@ the low byte's copy is a store of a byte to itself, which goes, so
 The pass matches a `CLC; ADC #1` on the first byte followed by an
 `ADC #0` on each later byte, with no `CLC` between them. Each byte's
 load must read the same location its store writes, and that location
-must be a `Data` or `ZP` operand. The bytes don't have to be
+must be a `Data` or `ZP` operand, or an array element indexed by X,
+which `INC t,X` increments in place. For an element, C and V must
+also be dead after the chain, since the `ADC` form sets them and
+`INC` leaves them alone. `a[i]++` on a byte array is `TAX; INC a,X`. The bytes don't have to be
 adjacent in memory, because the byte-granular register allocator can
 put the bytes of one value in unrelated zero-page slots, and only the
 multi-byte add-1 lowering emits this shape.
 
 ## What it leaves alone
 
-- An operand on the soft stack, through a pointer, or indexed by X,
-  because `INC` has no `(zp),Y` mode. A soft-stack local in the
+- An operand on the soft stack, through a pointer, or indexed by Y,
+  because `INC` has no `(zp),Y` or abs,Y mode. A soft-stack local in the
   unoptimized pipeline is a `Frame` operand, so `i += 1` on one keeps
   its `ADC` chain.
 - An add whose stores go somewhere other than where its loads read,

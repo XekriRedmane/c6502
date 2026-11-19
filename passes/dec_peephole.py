@@ -37,9 +37,22 @@ and every flag are dead after (`_try_match_two_byte`).
 # Eligibility
 
   * Memory operand is `Data(name, k)`, `ZP(addr, 0)`, `Reg(X)`,
-    or `Reg(Y)`. DEX / DEY exist for the registers; DEC supports
-    zp / abs / zp,X / abs,X for memory. `Frame` / `Stack` /
-    `Indirect` use indirect-Y, which DEC doesn't address — skip.
+    `Reg(Y)`, or an array element indexed by X, `IndexedData(name,
+    k, X)`. DEX / DEY exist for the registers; DEC supports zp / abs /
+    zp,X / abs,X for memory. `Frame` / `Stack` / `Indirect` use
+    indirect-Y, and there's no `DEC abs,Y`, so those are skipped.
+  * Neither the load nor the store is volatile. `DEC M` reads M and
+    writes it once each (an NMOS 6502 also writes the old value back
+    first), so a volatile byte keeps its separate load and store.
+  * For an element, `LDA t,X; SEC; SBC #1; STA t,X` becomes `DEC t,X`
+    (3 bytes and 7 cycles against 9 bytes and 13 cycles). Nothing
+    between the load and the store writes X, since the four
+    instructions are adjacent, so both name the same byte, and `DEC
+    t,X` names it too. As for any operand, C and V must be dead after,
+    since `SBC` sets them and `DEC` leaves them, and when A is live
+    `LDA t,X` follows the `DEC`, which sets N and Z as the `SBC` did.
+    Lode Runner's `--GUARD_RESURRECTION_TIMERS[g]` is `DEC
+    GUARD_RESURRECTION_TIMERS,X`.
   * Pattern is in-place: `LDA M; SEC; SBC #1; STA M` with the
     same M throughout.
 
@@ -55,6 +68,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_liveness import a_dead_at, all_flags_dead_at
+from passes.inc_peephole import is_x_indexed
 
 
 def apply_dec_peephole(prog: asm_ast.Program) -> asm_ast.Program:
@@ -163,7 +177,8 @@ def _try_match_two_byte(instrs, i):
             and isinstance(bcs, asm_ast.Branch)
             and isinstance(bcs.cond, asm_ast.CS)
             and isinstance(dec, asm_ast.Dec)
-            and isinstance(dec.dst, (asm_ast.Data, asm_ast.ZP))
+            and (isinstance(dec.dst, (asm_ast.Data, asm_ast.ZP))
+                 or is_x_indexed(dec.dst))
             and isinstance(label, asm_ast.Label)
             and label.name == bcs.target):
         return None
@@ -376,10 +391,10 @@ def _is_sbc_continuation(
 
 def _is_dec_eligible_operand(op: asm_ast.Type_operand) -> bool:
     """True iff `op` is a memory operand DEC / DEX / DEY can address
-    directly: `Data(name, k)`, `ZP(addr, 0)`, `Reg(X)`, or `Reg(Y)`.
-    Frame / Stack / Indirect / IndexedData use addressing modes DEC
-    doesn't support."""
-    if isinstance(op, (asm_ast.Data, asm_ast.ZP)):
+    directly: `Data(name, k)`, `ZP(addr, 0)`, `Reg(X)`, `Reg(Y)`, or
+    `IndexedData(name, k, X)`. Frame / Stack / Indirect and an
+    element indexed by Y use addressing modes DEC doesn't support."""
+    if isinstance(op, (asm_ast.Data, asm_ast.ZP)) or is_x_indexed(op):
         return True
     if isinstance(op, asm_ast.Reg):
         return isinstance(op.reg, (asm_ast.X, asm_ast.Y))
@@ -396,4 +411,12 @@ def _operands_equal(
         return a.address == b.address and a.offset == b.offset
     if isinstance(a, asm_ast.Reg) and isinstance(b, asm_ast.Reg):
         return type(a.reg) is type(b.reg)
+    if isinstance(a, asm_ast.IndexedData) and isinstance(
+        b, asm_ast.IndexedData,
+    ):
+        # The same byte only while the index register is unchanged,
+        # which holds within the adjacent instructions these
+        # patterns match.
+        return (a.name == b.name and a.offset == b.offset
+                and type(a.index) is type(b.index))
     return False

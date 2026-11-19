@@ -605,6 +605,14 @@ def _is_indexed_data(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, asm_ast.IndexedData)
 
 
+def _is_x_indexed(op: asm_ast.Type_operand) -> bool:
+    """True for an `IndexedData` indexed by X, which `INC`, `DEC`, and
+    the shifts take as abs,X. They have no abs,Y form."""
+    return isinstance(op, asm_ast.IndexedData) and isinstance(
+        op.index, asm_ast.X,
+    )
+
+
 def _resolve_indexed_data_addr(
     op: asm_ast.IndexedData, syms: dict[str, int],
 ) -> int:
@@ -1237,11 +1245,15 @@ def _emit_compare(
 
 def _inc_dec_size(dst: asm_ast.Type_operand) -> int:
     """1 byte for register-mode INX/INY/DEX/DEY; 2 / 3 bytes for the
-    memory-mode INC/DEC on a `Data` / `ZP` operand (zp / abs)."""
+    memory-mode INC/DEC on a `Data` / `ZP` operand (zp / abs); 3 for
+    abs,X on an `IndexedData` indexed by X, which this assembler
+    always encodes as absolute, as it does an indexed load."""
     if _is_reg_x(dst) or _is_reg_y(dst):
         return 1
     if _is_data_or_zp(dst):
         return 2 if _abs_fits_zp(dst) else 3
+    if _is_x_indexed(dst):
+        return 3
     raise AssemblerError(f"Inc/Dec dst unsupported: {dst!r}")
 
 
@@ -1254,6 +1266,8 @@ def _shift_size(dst: asm_ast.Type_operand) -> int:
         return 1
     if _is_data_or_zp(dst):
         return 2 if _abs_fits_zp(dst) else 3
+    if _is_x_indexed(dst):
+        return 3
     if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
         return _load_mem_to_a_size(dst) + 1 + _store_a_to_mem_size(dst)
     raise AssemblerError(f"Shift dst unsupported: {dst!r}")
@@ -1266,11 +1280,16 @@ def _emit_inc_dec(
         return bytes([_IMPLIED["INX" if name == "Inc" else "DEX"]])
     if _is_reg_y(op):
         return bytes([_IMPLIED["INY" if name == "Inc" else "DEY"]])
+    opcode = "INC" if name == "Inc" else "DEC"
     if _is_data_or_zp(op):
-        opcode = "INC" if name == "Inc" else "DEC"
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(op, syms))
+    if _is_x_indexed(op):
+        return _emit_abs_indexed(
+            opcode, _resolve_indexed_data_addr(op, syms), op.index,
+        )
     raise AssemblerError(
-        f"{name} dst must be Reg(X), Reg(Y), Data, or ZP; got {op!r}"
+        f"{name} dst must be Reg(X), Reg(Y), Data, ZP, or IndexedData "
+        f"indexed by X; got {op!r}"
     )
 
 
@@ -1286,6 +1305,10 @@ def _emit_shift(
         return bytes([_IMPLIED[opcode + "_A"]])
     if _is_data_or_zp(dst):
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(dst, syms))
+    if _is_x_indexed(dst):
+        return _emit_abs_indexed(
+            opcode, _resolve_indexed_data_addr(dst, syms), dst.index,
+        )
     if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
         return (
             _emit_indy("LDA", dst)
@@ -1293,8 +1316,8 @@ def _emit_shift(
             + _emit_indy("STA", dst)
         )
     raise AssemblerError(
-        f"{opcode} dst must be Reg(A), Data, ZP, Stack, or Frame; "
-        f"got {dst!r}"
+        f"{opcode} dst must be Reg(A), Data, ZP, IndexedData indexed by "
+        f"X, Stack, or Frame; got {dst!r}"
     )
 
 

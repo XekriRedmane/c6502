@@ -99,6 +99,11 @@ absolute byte, so the rule stops at two. The flags come out the same, from the l
 is left alone, since a read-modify-write instruction on the NMOS 6502
 writes the old value back before the new one.
 
+M may also be an array element indexed by X, `LDA t,X; ASL; STA t,X`
+→ `ASL t,X`, since X can't change between the adjacent load and
+store. That's 3 bytes and 7 cycles against 7 and 11 for one shift,
+and 6 and 14 against 8 and 13 for two.
+
 # A loop of one-bit shifts
 
 `STA m`, a count put in X, a loop of `ASL m; DEX; BNE`, and `LDA m`
@@ -122,6 +127,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_liveness import a_dead_at, c_dead_at, v_dead_at
+from passes.inc_peephole import is_x_indexed
 
 _SHIFTS = (
     asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
@@ -303,14 +309,16 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 def _shift_in_place(fn: asm_ast.Function) -> asm_ast.Function:
     """`LDA M; ASL; STA M` as `ASL M`, for one or two shifts, when M is
-    a non-volatile zero-page or absolute byte and A is dead after."""
+    a non-volatile zero-page or absolute byte, or an array element
+    indexed by X, and A is dead after."""
     instrs = list(fn.instructions)
     changed = False
     i = 0
     while i < len(instrs):
         load = instrs[i]
         if not (isinstance(load, asm_ast.Mov) and _is_reg_a(load.dst)
-                and not load.is_volatile and _mem(load.src)):
+                and not load.is_volatile
+                and (_mem(load.src) or is_x_indexed(load.src))):
             i += 1
             continue
         k = i + 1

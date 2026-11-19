@@ -61,8 +61,10 @@ Atomic arithmetic / flag instructions:
     LDY indirect-Y like Add/Sub. Carry / sign flags are not affected.
   - `And(src, dst)` -> `AND <src>`; same operand shape as `Add`.
   - `Or(src, dst)`  -> `ORA <src>`; same operand shape as `Add`.
-  - `ArithmeticShiftLeft(dst)` -> `ASL A` (dst=`Reg(A)`) or
-    `ASL name+off` (dst=`Data`).
+  - `ArithmeticShiftLeft(dst)` -> `ASL A` (dst=`Reg(A)`),
+    `ASL name+off` (dst=`Data`), or `ASL name+off,X` (dst=
+    `IndexedData` indexed by X). `Inc` / `Dec` take that indexed form
+    too.
   - `LogicalShiftRight(dst)`   -> `LSR A` / `LSR name+off`.
   - `RotateLeft(dst)`          -> `ROL A` / `ROL name+off`.
   - `RotateRight(dst)`         -> `ROR A` / `ROR name+off`.
@@ -795,6 +797,8 @@ def _emit_acc_shift(
       - `Data(name, off)` / `ZP(addr, off)` → `ASL name+off` /
         `ASL $XX` etc. (2-3 bytes). Used by the runtime helpers
         to shift HARGS slots in place and by colored ZP locals.
+      - `IndexedData(name, off, X)` → `ASL name+off,X` (3 bytes, or 2
+        for zp,X), an array element shifted in place.
       - `Stack(off)` / `Frame(off)` — synthesize via the
         accumulator: `LDY #off; LDA (PTR),Y; <op>; LDY #off; STA
         (PTR),Y`. The 6502 has no indirect-Y shift mode, so we
@@ -808,6 +812,8 @@ def _emit_acc_shift(
         return [_instr_line(opcode)]
     if _is_data_or_zp(dst):
         return [_instr_line(opcode, _abs_addr(dst))]
+    if is_x_indexed(dst):
+        return [_instr_line(opcode, _indexed_data_addr(dst))]
     if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
         return (
             _emit_indirect_load(dst.offset, dst)
@@ -815,40 +821,52 @@ def _emit_acc_shift(
             + _emit_indirect_store(dst.offset, dst)
         )
     raise ValueError(
-        f"{op_name} dst must be Reg(A), Data, ZP, Stack, or Frame, "
-        f"got {dst!r}"
+        f"{op_name} dst must be Reg(A), Data, ZP, IndexedData indexed "
+        f"by X, Stack, or Frame, got {dst!r}"
+    )
+
+
+def is_x_indexed(op: asm_ast.Type_operand) -> bool:
+    """True iff `op` is an `IndexedData` indexed by X, the one indexed
+    form that `INC`, `DEC`, `ASL`, `LSR`, `ROL`, and `ROR` take
+    (`INC name,X`). The 6502 has no `abs,Y` mode for them."""
+    return isinstance(op, asm_ast.IndexedData) and isinstance(
+        op.index, asm_ast.X,
     )
 
 
 def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
-    """`INX` / `INY` for X/Y, or `INC name+off` / `INC $XX` for a
-    `Data` / `ZP` operand (the 6502 has memory-mode INC in zp / abs /
-    zp,X / abs,X — we emit the abs / zp form). Soft-stack operands
-    aren't supported (no indirect-Y)."""
-    match dst:
-        case asm_ast.Reg(reg=asm_ast.X()):
-            return [_instr_line("INX")]
-        case asm_ast.Reg(reg=asm_ast.Y()):
-            return [_instr_line("INY")]
-        case asm_ast.Data() | asm_ast.ZP():
-            return [_instr_line("INC", _abs_addr(dst))]
-        case _:
-            raise ValueError(
-                f"Inc dst must be Reg(X), Reg(Y), Data, or ZP, got {dst!r}"
-            )
+    """`INX` / `INY` for X/Y, `INC name+off` / `INC $XX` for a `Data`
+    / `ZP` operand, and `INC name+off,X` for an `IndexedData` indexed
+    by X, which dasm assembles as zp,X when the address is in zero
+    page. Soft-stack operands aren't supported (no indirect-Y)."""
+    return _emit_step("INC", "INX", "INY", "Inc", dst)
 
 
 def _emit_dec(dst: asm_ast.Type_operand) -> list[str]:
+    """The `DEC` counterpart of `_emit_inc`."""
+    return _emit_step("DEC", "DEX", "DEY", "Dec", dst)
+
+
+def _emit_step(
+    opcode: str, x_op: str, y_op: str, name: str,
+    dst: asm_ast.Type_operand,
+) -> list[str]:
+    """`INC` / `DEC` (`opcode`) of `dst`, or `x_op` / `y_op` for an
+    index register."""
     match dst:
         case asm_ast.Reg(reg=asm_ast.X()):
-            return [_instr_line("DEX")]
+            return [_instr_line(x_op)]
         case asm_ast.Reg(reg=asm_ast.Y()):
-            return [_instr_line("DEY")]
+            return [_instr_line(y_op)]
         case asm_ast.Data() | asm_ast.ZP():
-            return [_instr_line("DEC", _abs_addr(dst))]
+            return [_instr_line(opcode, _abs_addr(dst))]
+        case _ if is_x_indexed(dst):
+            return [_instr_line(opcode, _indexed_data_addr(dst))]
         case _:
             raise ValueError(
-                f"Dec dst must be Reg(X), Reg(Y), Data, or ZP, got {dst!r}"
+                f"{name} dst must be Reg(X), Reg(Y), Data, ZP, or "
+                f"IndexedData indexed by X, got {dst!r}"
             )
 
 

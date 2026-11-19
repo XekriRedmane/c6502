@@ -75,6 +75,7 @@ from passes.zp_globals import (
 )
 from passes.carry_inc import apply_carry_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
+from passes.element_in_place import apply_element_in_place
 from passes.branch_invert import apply_branch_invert
 from passes.branch_to_next_drop import apply_branch_to_next_drop
 from passes.carry_return import (
@@ -282,6 +283,9 @@ def _peephole_fixedpoint(
         new_prog = apply_carry_inc_peephole(new_prog)
         new_prog = apply_dec_peephole(new_prog)
         new_prog = apply_sub1_test_zero_peephole(new_prog)
+        new_prog = apply_element_in_place(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
         new_prog = apply_direct_index_load(new_prog)
         new_prog = apply_dead_pha_pla(new_prog)
         new_prog = apply_cpx_cpy_peephole(new_prog)

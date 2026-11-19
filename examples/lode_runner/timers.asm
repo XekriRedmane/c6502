@@ -285,17 +285,15 @@ handle_timers:
 
    LDA   GUARD_COUNT
    STA   __local_handle_timers__g
-   BNE   .lb_skip@7
+   BNE   .lb_skip@6
    JMP   .i0@end
-.lb_skip@7:
+.lb_skip@6:
    LDA   GUARD_NUM
    STA   __local_handle_timers__saved_guard_num
 .i0_loop@0_start:
    LDX   __local_handle_timers__g
    LDA   GUARD_RESURRECTION_TIMERS,X
-   BNE   .lb_skip@6
-   JMP   .i0_loop@0_continue
-.lb_skip@6:
+   BEQ   .i0_loop@0_continue
    STX   GUARD_NUM
    JSR   load_guard_data
    LDX   __local_handle_timers__g
@@ -305,10 +303,8 @@ handle_timers:
    STA   GAME_COLNUM
    LDA   GUARD_LOCS_ROW,X
    STA   GAME_ROWNUM
+   DEC   GUARD_RESURRECTION_TIMERS,X
    LDA   GUARD_RESURRECTION_TIMERS,X
-   SEC
-   SBC   #$01
-   STA   GUARD_RESURRECTION_TIMERS,X
    BNE   .i0_if_else@3
    LDA   #$01
    STA   GUARD_RESURRECTION_TIMERS,X
@@ -376,13 +372,10 @@ handle_timers:
 .lb_skip@4:
    LDX   __local_handle_timers__i
    LDA   BRICK_FILL_TIMERS,X
-   STA   __local_handle_timers__0
    BNE   .lb_skip@3
    JMP   .loop@3_continue
 .lb_skip@3:
-   DEC   __local_handle_timers__0
-   LDA   __local_handle_timers__0
-   STA   BRICK_FILL_TIMERS,X
+   DEC   BRICK_FILL_TIMERS,X
    BEQ   .lb_skip@2
    JMP   .if_end@21
 .lb_skip@2:
@@ -496,7 +489,7 @@ handle_timers:
    STA   GAME_COLNUM
    LDA   BRICK_DIG_ROWS,X
    STA   GAME_ROWNUM
-   LDA   __local_handle_timers__0
+   LDA   BRICK_FILL_TIMERS,X
    CMP   #$14
    BEQ   .handle_timers@ssa_block@24
    CMP   #$0A

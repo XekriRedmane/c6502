@@ -131,8 +131,10 @@ this directory:
   defined. `check_asm` runs after `tac_to_asm`, the asm optimizer,
   each peephole sweep, and at the end: labels unique and branched to,
   no `Phi` outside SSA, no `Pseudo` once they're replaced, each
-  `DecimalArith` of a well-formed shape, and no `SetDecimal` or
-  `ClearDecimal`, which only the runtime helpers write. `check_asm2`
+  `DecimalArith` of a well-formed shape, no `SetDecimal` or
+  `ClearDecimal`, which only the runtime helpers write, and no `INC`,
+  `DEC`, or shift of an element indexed by Y, which has no 6502
+  form. `check_asm2`
   runs at the end of `asm_to_asm2`: every `SED` begins a packed BCD
   chain of exactly `CLC` (`SEC`) and `LDA; ADC (SBC); STA` per byte,
   a `CLD` ends it, and no `CLD` or unclosed `SED` is anywhere else
@@ -350,7 +352,25 @@ this directory:
   `while (--counter != 0) { … }` when the counter is pinned to
   X / Y.
 - `dec_inc_branch_fold.py` — `apply_dec_inc_branch_fold` peephole.
-- `dec_peephole.py` — `apply_dec_peephole` peephole.
+- `dec_peephole.py` — `apply_dec_peephole` peephole. An array
+  element indexed by X is decremented in place too, `LDA t,X; SEC;
+  SBC #1; STA t,X` → `DEC t,X`, and so `inc_peephole` (`INC t,X`,
+  with C and V dead after), `carry_inc`, and `shift_in_a`'s
+  `_shift_in_place` (`ASL t,X`) take that operand
+  (`inc_peephole.is_x_indexed`). `asm_emit`, the sim's assembler, and
+  `binutils` (which relaxes abs,X to zp,X) encode it.
+- `element_in_place.py` — `apply_element_in_place`. `DEC t; LDA
+  t; STA tab,X` (or `INC` or a shift), with `t` one of the function's
+  own slots, becomes `DEC tab,X; LDA tab,X` when a forward dataflow
+  of which of A, `t`, and `tab,X` hold one value shows `t` holding
+  the element before it, and every read of `t` the stepped value
+  reaches reads `tab,X` instead (a load, `CMP`, or ALU operand where
+  `t` still holds the element). A write of X, a call, or a store that
+  may reach the element ends the fact; a store to a zero-page object
+  doesn't reach an element of an array outside zero page. Only when
+  that saves bytes. Lode Runner's `--BRICK_FILL_TIMERS[i]` in
+  `handle_timers`. Needs the slot map, so it does nothing in the
+  unoptimized pipeline.
 - `direct_index_load.py` — `apply_direct_index_load` peephole (see
   below).
 - `function_local_sizing.py` — `compute_local_bytes`. Counts each
@@ -1438,14 +1458,17 @@ Always-on (runs in both optimized AND unoptimized pipelines):
   `LDA M; ADC #0; STA M`, → `BCC done; INC M; ...` chains, and a
   subtract's top `SBC #0` byte → `BCS skip; DEC M`. See the module
   docstring in `carry_inc.py`.
-- `apply_dec_peephole` — single-byte SBC-#1 chains on stable memory →
-  `DEC`. (No multi-byte form: DEC sets N/Z off the post-decrement
+- `apply_dec_peephole` — single-byte SBC-#1 chains on stable memory
+  or an element indexed by X → `DEC`. (No multi-byte form: DEC sets N/Z off the post-decrement
   value, so the underflow check would have to sit BEFORE the DEC, not
   after, which doesn't match the chain shape.)
 - `apply_sub1_test_zero_peephole` — folds the `for (uint8_t i = N;
   i-- > 0; ) { ... }` shape's separate sub-and-test pair into a single
   `DEC M; BNE label` (or inverted variant) since DEC's flag side-
   effect IS the post-decrement zero test.
+- `apply_element_in_place` — `DEC t; LDA t; STA tab,X` on a slot
+  holding the element → `DEC tab,X; LDA tab,X`, with the slot's
+  reads reading the element. See the module roster entry above.
 - `apply_direct_index_load` — `LDA M; TAX` → `LDX M` when M is
   `Imm`/`Data`/`ZP`, or `IndexedData` by the other register (`LDX
   abs,Y`, `LDY abs,X`), and `Reg(A)` is dead after. See "Direct-into-X/Y
@@ -1801,9 +1824,11 @@ The chain pattern (per byte, in order):
 
 Eligibility (per-byte; failures break the chain at that byte):
 
-- `M[k]` is `Data(name, k)` or `ZP(addr, 0)`. The 6502's INC has zp /
-  abs / zp,X / abs,X modes — no `(ind),Y` — so `Frame` / `Stack` /
-  `Indirect` operands stay as ADC chains.
+- `M[k]` is `Data(name, k)`, `ZP(addr, 0)`, or an element indexed by
+  X, `IndexedData(name, k, X)`, which also needs C and V dead after.
+  The 6502's INC has zp / abs / zp,X / abs,X modes — no `(ind),Y` or
+  abs,Y — so `Frame` / `Stack` / `Indirect` operands stay as ADC
+  chains.
 - The pattern's per-byte LDA source equals the STA destination (in-
   place). After SSA destruction routes through a temp (common for
   parallel-copy ordering), `LDA $84; ... STA $82` isn't in-place on

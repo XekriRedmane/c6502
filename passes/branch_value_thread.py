@@ -234,6 +234,10 @@ def _scan_step(state: _State, ins) -> bool:
             state.forget(ins.dst)
         elif _is_a(ins.dst):
             state.a = None
+        elif not _is_reg(ins.dst):
+            # An element indexed by X (`DEC t,X`) may be any byte of
+            # `t` and past it, as a store to one is.
+            return False
         state.nz = None
         return True
     if isinstance(ins, (asm_ast.Add, asm_ast.Sub, asm_ast.And,

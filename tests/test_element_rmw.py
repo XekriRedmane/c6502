@@ -1,0 +1,409 @@
+"""Tests for the read-modify-write of an array element indexed by X,
+`INC t,X` and the rest: the emitters, the peepholes that make them
+(`dec_peephole`, `inc_peephole`, `shift_in_a`,
+`redundant_load_after_rmw`, `element_in_place`), the IR check, the
+passes that had to learn that such an instruction writes an element,
+and programs run in both pipelines. The object-file side (encodings,
+relaxation to zp,X, and dasm) is in `test_binutils.py`."""
+from __future__ import annotations
+
+import re
+import shutil
+import unittest
+
+import asm_ast
+from passes.dec_peephole import apply_dec_peephole
+from passes.element_in_place import apply_element_in_place
+from passes.inc_peephole import apply_inc_peephole
+from passes.redundant_load_after_rmw import apply_redundant_load_after_rmw
+from passes.shift_in_a import apply_shift_in_a
+
+_HAVE_PCPP = shutil.which("pcpp") is not None
+
+_A = asm_ast.Reg(reg=asm_ast.A())
+_X = asm_ast.Reg(reg=asm_ast.X())
+_E = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())
+_EY = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.Y())
+_T = asm_ast.Data(name="__local_f__t", offset=0)
+_SLOTS = {"__local_f__t": 0x90}
+_RTS = asm_ast.Return(save_a=False, save_x=False, save_c=False)
+_RTS_A = asm_ast.Return(save_a=True, save_x=False, save_c=False)
+
+
+def _mov(src, dst, volatile=False):
+    return asm_ast.Mov(src=src, dst=dst, is_volatile=volatile)
+
+
+def _run(pass_, instrs, **kw):
+    prog = asm_ast.Program(top_level=[asm_ast.Function(
+        name="f", is_global=True, params=[], instructions=instrs,
+    )])
+    return pass_(prog, **kw).top_level[0].instructions
+
+
+def _step(op, m):
+    """`LDA m; SEC; SBC #1; STA m` (op "sub") or the CLC; ADC form."""
+    carry, arith = ((asm_ast.SetCarry(), asm_ast.Sub) if op == "sub"
+                    else (asm_ast.ClearCarry(), asm_ast.Add))
+    return [_mov(m, _A), carry, arith(src=asm_ast.Imm(value=1), dst=_A),
+            _mov(_A, m)]
+
+
+class TestDecPeephole(unittest.TestCase):
+
+    def test_element_decremented_in_place(self) -> None:
+        out = _run(apply_dec_peephole, _step("sub", _E) + [_RTS])
+        self.assertEqual(out, [asm_ast.Dec(dst=_E), _RTS])
+
+    def test_element_reloaded_when_a_is_read(self) -> None:
+        out = _run(apply_dec_peephole, _step("sub", _E) + [_RTS_A])
+        self.assertEqual(out, [asm_ast.Dec(dst=_E), _mov(_E, _A), _RTS_A])
+
+    def test_element_indexed_by_y_left_alone(self) -> None:
+        # There's no `DEC abs,Y`.
+        instrs = _step("sub", _EY) + [_RTS]
+        self.assertEqual(_run(apply_dec_peephole, instrs), instrs)
+
+    def test_volatile_element_left_alone(self) -> None:
+        instrs = _step("sub", _E)
+        instrs[0] = _mov(_E, _A, volatile=True)
+        instrs.append(_RTS)
+        self.assertEqual(_run(apply_dec_peephole, instrs), instrs)
+
+    def test_borrow_read_after_blocks_it(self) -> None:
+        # `SBC` sets C, which the `BCC` reads, and `DEC` leaves it.
+        instrs = _step("sub", _E) + [
+            asm_ast.Branch(cond=asm_ast.CC(), target=".l"),
+            asm_ast.Label(name=".l"), _RTS,
+        ]
+        self.assertEqual(_run(apply_dec_peephole, instrs), instrs)
+
+
+class TestIncPeephole(unittest.TestCase):
+
+    def test_element_incremented_in_place(self) -> None:
+        out = _run(apply_inc_peephole, _step("add", _E) + [_RTS])
+        self.assertEqual(out, [asm_ast.Inc(dst=_E), _RTS])
+
+    def test_carry_read_after_blocks_it(self) -> None:
+        instrs = _step("add", _E) + [
+            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
+            asm_ast.Label(name=".l"), _RTS,
+        ]
+        self.assertEqual(_run(apply_inc_peephole, instrs), instrs)
+
+    def test_element_indexed_by_y_left_alone(self) -> None:
+        instrs = _step("add", _EY) + [_RTS]
+        self.assertEqual(_run(apply_inc_peephole, instrs), instrs)
+
+
+class TestShiftInPlace(unittest.TestCase):
+
+    def test_element_shifted_in_place(self) -> None:
+        out = _run(apply_shift_in_a, [
+            _mov(_E, _A), asm_ast.LogicalShiftRight(dst=_A),
+            asm_ast.LogicalShiftRight(dst=_A), _mov(_A, _E), _RTS,
+        ])
+        self.assertEqual(out, [asm_ast.LogicalShiftRight(dst=_E),
+                               asm_ast.LogicalShiftRight(dst=_E), _RTS])
+
+    def test_element_indexed_by_y_left_alone(self) -> None:
+        instrs = [_mov(_EY, _A), asm_ast.ArithmeticShiftLeft(dst=_A),
+                  _mov(_A, _EY), _RTS]
+        self.assertEqual(_run(apply_shift_in_a, instrs), instrs)
+
+
+class TestRedundantLoadAfterRmw(unittest.TestCase):
+
+    def test_reload_of_the_element_dropped(self) -> None:
+        out = _run(apply_redundant_load_after_rmw, [
+            asm_ast.Dec(dst=_E), _mov(_E, _A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
+            asm_ast.Label(name=".l"), _RTS,
+        ])
+        self.assertEqual(out, [
+            asm_ast.Dec(dst=_E),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
+            asm_ast.Label(name=".l"), _RTS,
+        ])
+
+
+def _timer(between):
+    """`handle_timers`'s shape, with `between` the instructions between
+    the site and the compare's load of the slot."""
+    return [
+        _mov(_E, _A), _mov(_A, _T),
+        asm_ast.Branch(cond=asm_ast.NE(), target=".skip"),
+        _RTS,
+        asm_ast.Label(name=".skip"),
+        asm_ast.Dec(dst=_T), _mov(_T, _A), _mov(_A, _E),
+        asm_ast.Branch(cond=asm_ast.EQ(), target=".done"),
+        *between,
+        _mov(_T, _A),
+        asm_ast.Compare(left=_A, right=asm_ast.Imm(value=20)),
+        asm_ast.Branch(cond=asm_ast.NE(), target=".done"),
+        _mov(asm_ast.Imm(value=1), asm_ast.Data(name="hit", offset=0)),
+        asm_ast.Label(name=".done"),
+        _RTS,
+    ]
+
+
+class TestElementInPlace(unittest.TestCase):
+
+    def _run(self, instrs):
+        return _run(apply_element_in_place, instrs, zp_slot_symbols=_SLOTS)
+
+    def test_slot_copy_stepped_in_the_element(self) -> None:
+        out = self._run(_timer([]))
+        self.assertEqual(out[5:8], [
+            asm_ast.Dec(dst=_E), _mov(_E, _A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".done"),
+        ])
+        self.assertEqual(out[8], _mov(_E, _A))
+        self.assertNotIn(_T, [getattr(i, "src", None) for i in out])
+
+    def test_store_to_a_zero_page_object_between(self) -> None:
+        from passes import asm_aliasing
+        asm_aliasing.set_user_zp_globals({"col": 0x85}, frozenset({0x85}))
+        try:
+            store = _mov(asm_ast.Imm(value=3),
+                         asm_ast.Data(name="col", offset=0))
+            out = self._run(_timer([store]))
+        finally:
+            asm_aliasing.set_user_zp_globals({})
+        self.assertIn(asm_ast.Dec(dst=_E), out)
+
+    def test_store_to_another_absolute_object_between(self) -> None:
+        # `other` might overlap `tab` at a fixed address.
+        instrs = _timer([_mov(asm_ast.Imm(value=3),
+                              asm_ast.Data(name="other", offset=0))])
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_index_changed_between(self) -> None:
+        instrs = _timer([_mov(asm_ast.Imm(value=3), _X)])
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_call_between(self) -> None:
+        instrs = _timer([asm_ast.Call(name="g", reg_args=[], preserves=[])])
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_read_into_x_left_alone(self) -> None:
+        # There's no `LDX abs,X`.
+        instrs = _timer([_mov(_T, _X)])
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_slot_not_a_copy_of_the_element(self) -> None:
+        instrs = _timer([])
+        instrs[1] = _mov(asm_ast.Imm(value=4), _T)
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_volatile_element_left_alone(self) -> None:
+        instrs = _timer([])
+        instrs[0] = _mov(_E, _A, volatile=True)
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_without_the_slot_map(self) -> None:
+        instrs = _timer([])
+        self.assertEqual(_run(apply_element_in_place, instrs), instrs)
+
+
+class TestCheckIr(unittest.TestCase):
+
+    def test_element_indexed_by_y_rejected(self) -> None:
+        from passes import ir_check
+        prog = asm_ast.Program(top_level=[asm_ast.Function(
+            name="f", is_global=True, params=[],
+            instructions=[asm_ast.Inc(dst=_EY), _RTS],
+        )])
+        was = ir_check.enabled()
+        ir_check.enable()
+        try:
+            with self.assertRaisesRegex(ir_check.IRCheckError, "abs,X"):
+                ir_check.check_asm(prog, after="a test")
+        finally:
+            ir_check.enable(was)
+
+
+class TestPointerSelfStore(unittest.TestCase):
+
+    def test_element_store_ends_the_fact_about_a_byte_of_it(self) -> None:
+        # `buf+1` holds the byte read through P; `STA buf,X` may change
+        # it, so the store of `buf+1` back through P stays.
+        from passes.pointer_self_store import apply_pointer_self_store_drop
+        through = asm_ast.IndirectZp(address=0x40, offset=0)
+        buf1 = asm_ast.Data(name="buf", offset=1)
+        buf_x = asm_ast.IndexedData(name="buf", offset=0, index=asm_ast.X())
+        instrs = [
+            _mov(through, _A), _mov(_A, buf1),
+            _mov(asm_ast.Imm(value=9), _A), _mov(_A, buf_x),
+            _mov(buf1, _A), _mov(_A, through), _RTS,
+        ]
+        self.assertEqual(_run(apply_pointer_self_store_drop, instrs), instrs)
+
+
+class TestEmit(unittest.TestCase):
+
+    def test_sim_assembler_encodings(self) -> None:
+        from sim.assembler import assemble, instruction_size
+        ops = [asm_ast.Inc, asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
+               asm_ast.LogicalShiftRight, asm_ast.RotateLeft,
+               asm_ast.RotateRight]
+        instrs = [op(dst=_E) for op in ops] + [_RTS]
+        prog = asm_ast.Program(top_level=[
+            asm_ast.Function(name="f", is_global=True, params=[],
+                             instructions=instrs),
+            asm_ast.StaticVariable(name="tab", is_global=False,
+                                   init=[asm_ast.ZeroInit(bytes=4)]),
+        ])
+        out = assemble(prog, origin=0x0800)
+        tab = out.symbols["tab"]
+        code = bytes(out.image[0x0800:0x0800 + 19])
+        self.assertEqual(code, b"".join(
+            bytes([op, tab & 0xFF, tab >> 8])
+            for op in (0xFE, 0xDE, 0x1E, 0x5E, 0x3E, 0x7E)) + b"\x60")
+        self.assertEqual(instruction_size(asm_ast.Inc(dst=_E)), 3)
+
+
+def _asm(src: str, optimize: bool) -> str:
+    from compile import _run_stage
+    from preprocessor import preprocess
+    return _run_stage("codegen", preprocess(src), optimize=optimize)
+
+
+_PROGRAM = """
+#include <stdint.h>
+uint8_t a[16];
+uint8_t out[24];
+[[c6502::zeropage]] uint8_t flag;
+void dec_unused(uint8_t i) { --a[i]; }
+uint8_t dec_used(uint8_t i) { return --a[i]; }
+void inc_unused(uint8_t i) { a[i]++; }
+uint8_t inc_used(uint8_t i) { return ++a[i]; }
+uint8_t post_dec(uint8_t i) { return a[i]--; }
+uint8_t post_inc(uint8_t i) { return a[i]++; }
+void shl(uint8_t i) { a[i] <<= 1; }
+void shr(uint8_t i) { a[i] >>= 1; }
+uint8_t shl_used(uint8_t i) { return a[i] <<= 1; }
+uint8_t dec_branch(uint8_t i) { if (--a[i] == 0) return 7; return 9; }
+uint8_t inc_branch(uint8_t i) { if (++a[i] == 0) return 7; return 9; }
+uint8_t timer(uint8_t i) {
+    if (a[i] == 0)
+        return 1;
+    uint8_t t = --a[i];
+    if (t == 0) {
+        flag = 6;
+        return 2;
+    }
+    flag = 5;
+    if (t == 20 || t == 10)
+        return t;
+    return 3;
+}
+void timers(uint8_t n) {
+    for (uint8_t i = n; (int8_t)i >= 0; i--) {
+        if (a[i] == 0)
+            continue;
+        uint8_t t = --a[i];
+        if (t == 0) {
+            flag = 1;
+            continue;
+        }
+        flag = 2;
+        if (t == 20 || t == 10)
+            out[16 + i] = t;
+    }
+}
+int main(void) {
+    uint8_t k = 0;
+    a[0] = 0;    dec_unused(0);
+    a[1] = 1;    out[k++] = dec_used(1);
+    a[2] = 255;  inc_unused(2);
+    a[3] = 0x7F; out[k++] = inc_used(3);
+    a[4] = 0;    out[k++] = post_dec(4);
+    a[5] = 255;  out[k++] = post_inc(5);
+    a[6] = 0x81; shl(6);
+    a[7] = 0x81; shr(7);
+    a[8] = 0xC0; out[k++] = shl_used(8);
+    a[9] = 1;    out[k++] = dec_branch(9);
+    out[k++] = dec_branch(9);
+    a[10] = 255; out[k++] = inc_branch(10);
+    out[k++] = inc_branch(10);
+    a[11] = 0;   out[k++] = timer(11);
+    a[12] = 1;   out[k++] = timer(12);
+    a[13] = 21;  out[k++] = timer(13);
+    a[14] = 11;  out[k++] = timer(14);
+    a[15] = 6;   out[k++] = timer(15);
+    out[k++] = flag;
+    a[0] = 0; a[1] = 1; a[2] = 21; a[3] = 11; a[4] = 200;
+    timers(4);
+    out[k++] = flag;
+    return k;
+}
+"""
+
+# The results main stores in out[], in order.
+_OUT = [0, 0x80, 0, 255, 0x80, 7, 9, 7, 9, 1, 2, 20, 10, 3, 5, 1]
+
+
+@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+class TestPrograms(unittest.TestCase):
+    """Each operation on an element indexed by X, across 0 and 255,
+    with the result used and not, and branched on, in both pipelines.
+    `timer` and `timers` have `handle_timers`'s shape."""
+
+    def test_runs(self) -> None:
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(_PROGRAM, optimize=optimize)
+                result = sim.run()
+                self.assertFalse(result.timed_out)
+                mem = result.memory
+                a = list(mem[sim.symbols["a"]:sim.symbols["a"] + 16])
+                out = list(mem[sim.symbols["out"]:sim.symbols["out"] + 24])
+                self.assertEqual(result.return_int(), len(_OUT))
+                self.assertEqual(out[:len(_OUT)], _OUT)
+                # The second batch, by timers(4): a[0] stays 0, a[1]
+                # runs out, a[2] and a[3] reach 20 and 10, a[4] steps.
+                self.assertEqual(a[:5], [0, 0, 20, 10, 199])
+                self.assertEqual(out[16:21], [0, 0, 20, 10, 0])
+                self.assertEqual(a[5:16], [0, 0x02, 0x40, 0x80, 0xFF, 1,
+                                           0, 0, 20, 10, 5])
+
+    def test_element_store_over_a_copy_of_a_pointed_to_byte(self) -> None:
+        # `pointer_self_store` took `buf[1]` to hold `p->v` after `buf[i]
+        # = 9` and dropped the store back through `p`, so this returned
+        # 3 under -O before 19 Nov 2026.
+        from sim.harness import build_sim
+        src = """
+        #include <stdint.h>
+        struct s { uint8_t v; uint8_t w; };
+        static uint8_t buf[4];
+        struct s obj;
+        void f(struct s *p, uint8_t i) {
+            buf[1] = p->v;
+            buf[i] = 9;
+            p->v = buf[1];
+        }
+        int main(void) {
+            obj.v = 3;
+            f(&obj, 1);
+            return obj.v;
+        }
+        """
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                result = build_sim(src, optimize=optimize).run()
+                self.assertEqual(result.return_int(), 9)
+
+    def test_optimized_code_uses_the_indexed_forms(self) -> None:
+        text = _asm(_PROGRAM, True)
+        for op in ("DEC", "INC", "ASL", "LSR"):
+            self.assertRegex(text, rf"(?m)^   {op}   a,X$")
+        body = text[text.index("timers:"):text.index("main:")]
+        self.assertNotRegex(body, r"STA   a,X")
+        self.assertRegex(body, r"DEC   a,X")
+
+
+if __name__ == "__main__":
+    unittest.main()

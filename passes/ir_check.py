@@ -38,6 +38,8 @@ sweep):
     takes (`passes/decimal_arith.form_problems`).
   * No `SetDecimal` or `ClearDecimal`, which only the runtime helpers
     write.
+  * An `INC`, `DEC`, or shift of an array element (`IndexedData`) is
+    indexed by X, since the 6502 has no abs,Y form of them.
 
 Asm2 (`check_asm2`, after `asm_to_asm2`):
 
@@ -303,7 +305,21 @@ def _asm_problems(fn, pseudos, phis) -> list[str]:
             problems.append(
                 f"{type(instr).__name__} outside a runtime helper"
             )
+        if (isinstance(instr, _READ_MODIFY_WRITE)
+                and isinstance(instr.dst, asm_ast.IndexedData)
+                and not isinstance(instr.dst.index, asm_ast.X)):
+            problems.append(
+                f"{type(instr).__name__} of {instr.dst!r}, which has no "
+                "6502 addressing mode (only abs,X)"
+            )
     return problems
+
+
+# The read-modify-write instructions, whose one indexed form is abs,X.
+_READ_MODIFY_WRITE = (
+    asm_ast.Inc, asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
+    asm_ast.LogicalShiftRight, asm_ast.RotateLeft, asm_ast.RotateRight,
+)
 
 
 # ---------------------------------------------------------------------------

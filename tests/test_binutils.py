@@ -48,6 +48,15 @@ def _image(obj: E.ElfFile, symbols: dict[str, int], origin: int = 0x0800,
     return bytes(out), {id(p.section): p.addr for p in placed}
 
 
+# The read-modify-write instructions and their zp,X and abs,X opcodes,
+# from the MCS6500 manual's instruction summary.
+_RMW_OPS = ("INC", "DEC", "ASL", "LSR", "ROL", "ROR")
+_RMW_ZPX = {"INC": 0xF6, "DEC": 0xD6, "ASL": 0x16, "LSR": 0x56,
+            "ROL": 0x36, "ROR": 0x76}
+_RMW_ABSX = {"INC": 0xFE, "DEC": 0xDE, "ASL": 0x1E, "LSR": 0x5E,
+             "ROL": 0x3E, "ROR": 0x7E}
+
+
 def _fn(*body: str, name: str = "f") -> str:
     lines = [f"{name}:", "   SUBROUTINE"]
     for b in body:
@@ -113,6 +122,29 @@ class TestAssembler(unittest.TestCase):
         self.assertEqual(relocs[(13, "later")], E.R_MOS_ADDR16)
         far = obj.symbol("FAR")
         self.assertEqual((far.section, far.value), (E.SHN_ABS, 0x1234))
+
+    def test_read_modify_write_of_an_element(self) -> None:
+        # `INC t,X` and the rest take zp,X for an address in zero page
+        # and abs,X otherwise, and the disassembler reads them back.
+        from binutils.disasm import disassemble
+        text = "ZP\tEQU\t$80\nFAR\tEQU\t$1234\n" + _fn(
+            *(f"{op}   {name},X"
+              for op in _RMW_OPS for name in ("ZP", "FAR")),
+            "RTS",
+        )
+        obj = assemble(text)
+        code, _ = _image(obj, {})
+        expected = b""
+        for op in _RMW_OPS:
+            expected += bytes([_RMW_ZPX[op], 0x80])
+            expected += bytes([_RMW_ABSX[op], 0x34, 0x12])
+        self.assertEqual(code, expected + b"\x60")
+        listing = "\n".join(disassemble(obj))
+        for op in _RMW_OPS:
+            self.assertRegex(
+                listing, rf"{op}   ZP,X +; [0-9A-F]{{4}}  {_RMW_ZPX[op]:02X} ")
+            self.assertRegex(
+                listing, rf"{op}   FAR,X +; [0-9A-F]{{4}}  {_RMW_ABSX[op]:02X} ")
 
     def test_linker_placed_names_stay_undefined(self) -> None:
         # A slot, a runtime name, and a zero-page object take their
@@ -223,6 +255,19 @@ class TestRelax(unittest.TestCase):
         label = next(s for s in obj.symbols if s.name == ".x")
         self.assertEqual(label.value, 9)
         self.assertEqual(obj.symbol("f").size, 13)
+
+    def test_element_read_modify_write_shortened(self) -> None:
+        # `DEC t,X` on a name the linker puts in zero page becomes
+        # zp,X, as `LDA t,X` does.
+        text = _fn(*(f"{op}   ext,X" for op in _RMW_OPS), "RTS")
+        obj = assemble(text)
+        sec = obj.sections[0]
+        saved = relax(sec, obj.symbols, lambda s: 0x42 if s.name == "ext"
+                      else None)
+        self.assertEqual(saved, len(_RMW_OPS))
+        image, _ = _image(obj, {"ext": 0x42})
+        self.assertEqual(image, b"".join(
+            bytes([_RMW_ZPX[op], 0x42]) for op in _RMW_OPS) + b"\x60")
 
     def test_jump_table_left_alone(self) -> None:
         text = _fn("RTS", ".t:", "DC.W  ext")
@@ -408,6 +453,19 @@ class TestAgainstDasm(unittest.TestCase):
                     mine, bytes(theirs.get(0x0800 + k, 0)
                                 for k in range(len(mine))),
                 )
+
+    def test_element_read_modify_write(self) -> None:
+        # dasm picks zp,X or abs,X for `INC t,X` and the rest as this
+        # assembler does.
+        text = "ZP\tEQU\t$80\nFAR\tEQU\t$1234\n" + _fn(
+            *(f"{op}   {name}+1,X"
+              for op in _RMW_OPS for name in ("ZP", "FAR")),
+            "RTS",
+        )
+        mine, _ = _image(assemble(text), {})
+        theirs = self._dasm("   PROCESSOR 6502\n   ORG $0800\n" + text)
+        self.assertEqual(mine, bytes(theirs[0x0800 + k]
+                                     for k in range(len(mine))))
 
     def test_linked_listings(self) -> None:
         from tests.link_helpers import listing

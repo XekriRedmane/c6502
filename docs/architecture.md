@@ -147,7 +147,7 @@ for each byte. The operands are the following.
 | `ZP(addr, k)` | a zero-page byte by its number | the coloring, in a function without a private pool |
 | `Indirect(k)`, `IndirectY()` | `(DPTR),Y`, with Y loaded or already set | `tac_to_asm`, for loads and stores through a pointer |
 | `IndirectZp(addr, k)`, `IndirectZpY(addr)` | `(addr),Y` through a pointer kept in zero page | the peepholes |
-| `IndexedData(name, k, X or Y)` | `name+k,X` or `name+k,Y` | `tac_to_asm`, from the indexed TAC instructions |
+| `IndexedData(name, k, X or Y)` | `name+k,X` or `name+k,Y` | `tac_to_asm`, from the indexed TAC instructions, and the peepholes that step an element in place (`INC`, `DEC`, and the shifts take only the X form) |
 | `ImmLabelLow(name, k)`, `ImmLabelHigh(name, k)` | `#<(name+k)`, `#>(name+k)` | the address of an object |
 
 The four compound instructions are `FunctionPrologue`, `Ret` (the

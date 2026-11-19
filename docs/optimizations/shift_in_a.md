@@ -168,6 +168,13 @@ matters for an I/O register. That's why Zork's `instr_random`
 (examples/zork/numbers.c) still shifts `RND`'s high byte
 in A.
 
+The byte may also be an array element indexed by X, which the
+adjacent load and store name with the same X. `a[i] >>= 1` is `TAX;
+LSR a,X`. One shift is 3 bytes and 7 cycles against 7 bytes and 11
+cycles, and two are 6 bytes and 14 cycles against 8 bytes and 13
+cycles. An element indexed by Y stays in A, since the shifts have no
+abs,Y mode.
+
 ### A loop of one-bit shifts
 
 [Shifts by a loop](shift_loop.md) shifts a byte by a variable count in

@@ -261,6 +261,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Direct member access](direct_member_access.md). Turns a load or store through `&obj + k` into direct byte access.
 - [Dispatch on a small pointer table](dispatch_pointer_array.md). Rewrites `arr[i][j]` on a small pointer table as a compare-and-branch on `i`.
 - [Each byte of a wide access through the pointer](pointer_restage.md). Copies a zero-page pointer into DPTR again before each byte of a wide member, so every byte goes through `(p),Y`.
+- [Element stepped in place](element_in_place.md). Steps an array element with `DEC t,X` where a slot held a copy of it, and reads the element where the code read the slot.
 - [Indexed access to a static array of structs](static_indexed_access.md). Turns `o[i].m` on a static array into `LDA o+m,X`, and `(&o + i) + m` into `(&o + m) + i`.
 - [Indexed load from a fixed address](recognize_indexed_load.md). Turns a byte load through a constant address plus a byte index into `LDA C,X`.
 - [Indexed store to a fixed address](recognize_indexed_store.md). Turns a byte store through a constant address plus a byte index into `STA C,X`.
@@ -498,59 +499,61 @@ reaching the cap raises an error.
 6. [Carry INC](carry_inc.md)
 7. [DEC](dec_peephole.md)
 8. [Subtract-and-test fusion](sub1_test_zero_peephole.md)
-9. [Direct load into X or Y](direct_index_load.md)
-10. [PHA and PLA removal](dead_pha_pla.md)
-11. [CPX and CPY](cpx_cpy_peephole.md)
-12. [Memory value propagation](memory_value_propagation.md)
-13. [Shift in A](shift_in_a.md)
-14. [Load after read-modify-write](redundant_load_after_rmw.md)
-15. [Redundant load elimination](redundant_load.md)
-16. [Redundant store elimination](redundant_store.md)
-17. [Constant store order](constant_store_order.md)
-18. [Join store](join_store.md)
-19. [Rematerialization of staged values](asm_remat.md)
-20. [Asm dead-store elimination](asm_dead_store.md)
-21. [Loop constant in A](loop_constant_a.md)
-22. [Dead A arithmetic](dead_a_arith.md)
-23. [Dead label drop](dead_label_drop.md)
-24. [Unreachable code drop](unreachable_drop.md)
-25. [Branch inversion](branch_invert.md)
-26. [Branch to next label](branch_to_next_drop.md)
-27. [Branch through jump](branch_through_jump.md)
-28. [Branch threading on a known flag](branch_thread.md)
-29. [Branch threading on known values](branch_value_thread.md)
-30. [DEX and DEY for a register counter](dec_register_peephole.md)
-31. [TXA past a branch](transfer_past_branch.md)
-32. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
-33. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
-34. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
-35. [Memory constant propagation](mem_const_prop.md)
-36. [Constant AND and ORA fold](const_arith_fold.md)
-37. [Link-time address arithmetic](label_offset_fold.md)
-38. [Carry set again by a shift](carry_recompute.md)
-39. [Carry-flag return peepholes](carry_return.md), which are three
+9. [Element stepped in place](element_in_place.md)
+10. [Direct load into X or Y](direct_index_load.md)
+11. [PHA and PLA removal](dead_pha_pla.md)
+12. [CPX and CPY](cpx_cpy_peephole.md)
+13. [Memory value propagation](memory_value_propagation.md)
+14. [Shift in A](shift_in_a.md)
+15. [Load after read-modify-write](redundant_load_after_rmw.md)
+16. [Redundant load elimination](redundant_load.md)
+17. [Redundant store elimination](redundant_store.md)
+18. [Constant store order](constant_store_order.md)
+19. [Join store](join_store.md)
+20. [Rematerialization of staged values](asm_remat.md)
+21. [Asm dead-store elimination](asm_dead_store.md)
+22. [Loop constant in A](loop_constant_a.md)
+23. [Dead A arithmetic](dead_a_arith.md)
+24. [Dead label drop](dead_label_drop.md)
+25. [Unreachable code drop](unreachable_drop.md)
+26. [Branch inversion](branch_invert.md)
+27. [Branch to next label](branch_to_next_drop.md)
+28. [Branch through jump](branch_through_jump.md)
+29. [Branch threading on a known flag](branch_thread.md)
+30. [Branch threading on known values](branch_value_thread.md)
+31. [DEX and DEY for a register counter](dec_register_peephole.md)
+32. [TXA past a branch](transfer_past_branch.md)
+33. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
+34. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
+35. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
+36. [Memory constant propagation](mem_const_prop.md)
+37. [Constant AND and ORA fold](const_arith_fold.md)
+38. [Link-time address arithmetic](label_offset_fold.md)
+39. [Carry set again by a shift](carry_recompute.md)
+40. [Carry-flag return peepholes](carry_return.md), which are three
     passes run back to back.
-40. [Round-trip load drop](round_trip_load.md)
-41. [Sign-bit test without AND](and_sign_bit_branch.md)
-42. [Self-store drop](self_store_drop.md)
-43. [A byte written back through its pointer](pointer_self_store.md)
-44. [Redundant compare](redundant_compare.md)
-45. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-46. [Commuted ADC, AND, and ORA](adc_commute.md)
-47. [CMP and SBC fusion](cmp_sbc_fusion.md)
-48. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-49. [Tail call](tail_call.md)
-50. [Tail merge](tail_merge.md)
-51. [Cross jumping](cross_jump.md)
-52. [Store X or Y directly](via_a_store_fold.md)
-53. [Transfer plus or minus one](transfer_pm1_store.md)
+41. [Round-trip load drop](round_trip_load.md)
+42. [Sign-bit test without AND](and_sign_bit_branch.md)
+43. [Self-store drop](self_store_drop.md)
+44. [A byte written back through its pointer](pointer_self_store.md)
+45. [Redundant compare](redundant_compare.md)
+46. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+47. [Commuted ADC, AND, and ORA](adc_commute.md)
+48. [CMP and SBC fusion](cmp_sbc_fusion.md)
+49. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+50. [Tail call](tail_call.md)
+51. [Tail merge](tail_merge.md)
+52. [Cross jumping](cross_jump.md)
+53. [Store X or Y directly](via_a_store_fold.md)
+54. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `-O`
 
 `compile.py -S` without `-O` runs none of the TAC or
 asm SSA optimizations. It translates to asm, replaces
 pseudoregisters, and runs the peephole fixed point above once, with
-every member. It then expands long branches, places zero-page
+every member but [element stepped in place](element_in_place.md),
+which needs the addresses of the zero-page slots. It then expands long branches, places zero-page
 globals, emits, and runs [redundant LDY setup](y_peephole.md) on the
 text. Many peepholes find nothing to rewrite there, because every
 temporary lives on the soft stack. Each peephole's file says whether

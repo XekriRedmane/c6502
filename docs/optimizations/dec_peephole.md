@@ -48,7 +48,35 @@ LDA lives`, which is still 3 bytes shorter.
 The pass matches the four atoms `Mov(M, A)`, `SetCarry`,
 `Sub(Imm(1), A)`, and `Mov(A, M)`, where the store writes the same
 byte the load reads and neither move is volatile. M must be a `Data`
-or `ZP` operand, or X or Y.
+or `ZP` operand, X or Y, or an array element indexed by X.
+
+An element indexed by X is decremented in place with `DEC t,X`, which
+the 6502 has (there's no `DEC abs,Y`). X can't change between the
+adjacent load and store, so `t,X` names the byte both of them named.
+In Lode Runner's `handle_timers` (examples/lode_runner/timers.c),
+`--GUARD_RESURRECTION_TIMERS[g]` was
+
+```
+   LDA   GUARD_RESURRECTION_TIMERS,X
+   SEC
+   SBC   #$01
+   STA   GUARD_RESURRECTION_TIMERS,X
+   BNE   .i0_if_else@3
+```
+
+and is now
+
+```
+   DEC   GUARD_RESURRECTION_TIMERS,X
+   LDA   GUARD_RESURRECTION_TIMERS,X
+   BNE   .i0_if_else@3
+```
+
+since the compares at `.i0_if_else@3` read A. That's 6 bytes against
+9, and 11 cycles against 13. The original loads the element at
+`.i0_if_else@3` instead, where the compares are, and branches on the
+flags the `DEC` sets. No pass moves a load past a branch, so the load
+stays before the `BNE`.
 
 `DEC` leaves C and V alone, where the `SBC` sets them. So the pass
 follows every path from the store, through both arms of each `BEQ`,
@@ -116,7 +144,8 @@ follows an `AND`, and `SEC; SBC #1; BCS` becomes `BNE` and a second
   skip; DEC ticks+1`, and the next section covers what this pass then
   does with it.
 - A byte on the soft stack or behind a pointer, because `DEC` has no
-  `(zp),Y` mode. In the unoptimized pipeline every local and
+  `(zp),Y` mode, and an element indexed by Y, because it has no abs,Y
+  mode either. In the unoptimized pipeline every local and
   temporary is on the soft stack, and `lives -= 1` on a static goes
   through a temporary there, so the pass reports 0 changes on
   `lives--`, `--lives`, and `lives = lives - 1` under `--unopt`.

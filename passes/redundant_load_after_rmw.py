@@ -38,6 +38,9 @@ with the same operand `M` in both. M is one of:
 
   * `Data` (absolute) or `ZP` (zero-page) — `DEC mem; LDA mem`,
     the canonical memory-iv form.
+  * An array element indexed by X, `IndexedData(name, k, X)`, as in
+    `DEC t,X; LDA t,X`. Neither instruction writes X, so both name
+    the same byte.
   * `Reg(X)` or `Reg(Y)` — `DEX; TXA` / `DEY; TYA`, the canonical
     register-iv form. Only DEX/DEY/INX/INY exist for registers
     (no shift/rotate on X/Y), so rmw types here are restricted
@@ -80,6 +83,7 @@ late peepholes).
 from __future__ import annotations
 
 import asm_ast
+from passes.inc_peephole import is_x_indexed
 
 
 def apply_redundant_load_after_rmw(
@@ -151,6 +155,9 @@ def _is_eligible_rmw(instr: asm_ast.Type_instruction) -> bool:
 
       * `Data` (absolute memory),
       * `ZP` (zero-page memory),
+      * `IndexedData(name, k, X)`, an array element (`DEC t,X; LDA
+        t,X`, where X can't change between the two adjacent
+        instructions, so both name one byte),
       * `Reg(X)` or `Reg(Y)` (DEX/DEY/INX/INY only — no shift /
         rotate on X/Y).
 
@@ -162,7 +169,7 @@ def _is_eligible_rmw(instr: asm_ast.Type_instruction) -> bool:
     if not isinstance(instr, _RMW_TYPES):
         return False
     dst = instr.dst
-    if isinstance(dst, (asm_ast.Data, asm_ast.ZP)):
+    if isinstance(dst, (asm_ast.Data, asm_ast.ZP)) or is_x_indexed(dst):
         return True
     if isinstance(dst, asm_ast.Reg) and isinstance(
         dst.reg, (asm_ast.X, asm_ast.Y),
@@ -190,13 +197,18 @@ def _is_redundant_lda_after_rmw(
 def _operands_match(
     a: asm_ast.Type_operand, b: asm_ast.Type_operand,
 ) -> bool:
-    """Structural equality on `Data` / `ZP` / `Reg` operand pairs."""
+    """Structural equality on `Data` / `ZP` / `Reg` / `IndexedData`
+    operand pairs."""
     if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
     if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
         return a.address == b.address and a.offset == b.offset
     if isinstance(a, asm_ast.Reg) and isinstance(b, asm_ast.Reg):
         return type(a.reg) is type(b.reg)
+    if isinstance(a, asm_ast.IndexedData) and isinstance(
+        b, asm_ast.IndexedData,
+    ):
+        return a == b
     return False
 
 

@@ -118,6 +118,13 @@ def _cell(op) -> Optional[tuple]:
     return None
 
 
+def _cell_operand(key: tuple) -> asm_ast.Type_operand:
+    """The operand for a `_cell` key."""
+    if key[0] == "zp":
+        return asm_ast.ZP(address=key[1], offset=0)
+    return asm_ast.Data(name=key[1], offset=key[2])
+
+
 class _State:
     def __init__(self, zp_addrs: dict[str, int]):
         self.zp_addrs = zp_addrs
@@ -158,6 +165,14 @@ class _State:
         if key is not None:
             self.cells.pop(key, None)
             self.origin.pop(key, None)
+        else:
+            # A store or read-modify-write of an element, `STA t,X` or
+            # `DEC t,X`, may write any byte of `t`.
+            for c in [c for c in self.cells
+                      if may_alias(_cell_operand(c), dst,
+                                   zp_slot_symbols=self.zp_addrs)]:
+                del self.cells[c]
+                self.origin.pop(c, None)
         addr = self._address(dst)
         unresolved = isinstance(dst, asm_ast.Data) and addr is None and (
             dst.name.startswith(("__local_", "__zpabi_"))

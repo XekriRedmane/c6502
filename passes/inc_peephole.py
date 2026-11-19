@@ -32,10 +32,14 @@ cycles for the ADC chain (per-byte savings grow with width).
 
 Eligibility (per byte position):
 
-  * Memory operand is `Data(name, k)` or `ZP(addr, 0)`. Other
-    operand kinds (`Frame`, `Stack`, `Indirect`, `IndexedData`)
-    use addressing modes INC doesn't support — `(ind),Y` and
-    indirect-X aren't INC-able. Skip those.
+  * Memory operand is `Data(name, k)`, `ZP(addr, 0)`, or an array
+    element indexed by X, `IndexedData(name, k, X)` (`INC t,X`).
+    Other operand kinds (`Frame`, `Stack`, `Indirect`, an element
+    indexed by Y) use addressing modes INC doesn't support. Skip
+    those. X can't change within the matched run, whose instructions
+    are adjacent and write only A, the flags, and the bytes, so each
+    `t+k,X` names the byte the ADC form read and wrote. For an
+    element, C and V must also be dead after the run.
   * The pattern's per-byte LDA source equals the STA destination
     (in-place RMW). If they differ — common after SSA destruction
     routes through a temp — INC is unsound (it'd write where we
@@ -74,7 +78,7 @@ addressing-mode awareness, not from any post-regalloc state.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at
+from passes.asm_liveness import a_dead_at, c_dead_at, v_dead_at
 
 
 def apply_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
@@ -182,6 +186,15 @@ def _try_match(
     # If such a carry-consuming `Add` follows, folding to INC would
     # drop the carry it needs. Refuse the whole match in that case.
     if _carry_consumed_after(instrs, start + consumed):
+        return None
+    # An element indexed by X has to have C and V dead after, which
+    # the ADC form sets and the INC form leaves alone. The `Data` and
+    # `ZP` forms rely on the codegen convention described above; this
+    # form is newer, and the check costs nothing where it holds.
+    if any(is_x_indexed(op) for op in mem_ops) and not (
+        c_dead_at(instrs, start + consumed)
+        and v_dead_at(instrs, start + consumed)
+    ):
         return None
     return (consumed, mem_ops)
 
@@ -299,11 +312,20 @@ def _is_inc_eligible_operand(op: asm_ast.Type_operand) -> bool:
     isn't here because the peephole runs after `replace_pseudo
     registers` (or, for HwReg-pinned values, after `apply_coloring`
     has rewritten Pseudo → Reg)."""
-    if isinstance(op, (asm_ast.Data, asm_ast.ZP)):
+    if isinstance(op, (asm_ast.Data, asm_ast.ZP)) or is_x_indexed(op):
         return True
     if isinstance(op, asm_ast.Reg):
         return isinstance(op.reg, (asm_ast.X, asm_ast.Y))
     return False
+
+
+def is_x_indexed(op: asm_ast.Type_operand) -> bool:
+    """True iff `op` is an array element indexed by X, `IndexedData(
+    name, k, X)`, the one indexed form `INC`, `DEC`, `ASL`, `LSR`,
+    `ROL`, and `ROR` take. There's no abs,Y form of them."""
+    return isinstance(op, asm_ast.IndexedData) and isinstance(
+        op.index, asm_ast.X,
+    )
 
 
 def _operands_equal(
@@ -319,6 +341,14 @@ def _operands_equal(
         )
     if isinstance(a, asm_ast.Reg) and isinstance(b, asm_ast.Reg):
         return type(a.reg) is type(b.reg)
+    if isinstance(a, asm_ast.IndexedData) and isinstance(
+        b, asm_ast.IndexedData,
+    ):
+        # The same byte only while the index register is unchanged,
+        # which holds within the adjacent instructions these
+        # patterns match.
+        return (a.name == b.name and a.offset == b.offset
+                and type(a.index) is type(b.index))
     return False
 
 

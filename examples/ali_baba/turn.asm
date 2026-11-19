@@ -21,6 +21,7 @@ DISK_VM_ZP	EQU	$50
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
+__local_move_loop__0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_move_loop__dir	EQU	$82
@@ -203,7 +204,7 @@ WAIT	EQU	$FCA8
 ; @zp-link-meta-begin
 ; def check_and_restrict params= locals=__local_check_and_restrict__0,__local_check_and_restrict__1 indirect=false in_cycle=false
 ; def clear_restricted params= locals=__local_clear_restricted__0 indirect=false in_cycle=false
-; def commit_move params= locals=__local_commit_move__col indirect=false in_cycle=false
+; def commit_move params= locals=__local_commit_move__0 indirect=false in_cycle=false
 ; def end_turn params= locals=__local_end_turn__0 indirect=false in_cycle=false
 ; def game_turn_loop params= locals=__local_game_turn_loop__0,__local_game_turn_loop__1 indirect=false in_cycle=false
 ; def move_loop params= locals=__local_move_loop__0,__local_move_loop__dir,__local_move_loop__1,__local_move_loop__2 indirect=false in_cycle=false
@@ -538,25 +539,25 @@ run_chain:
 .loop@0_continue:
    CMP   #$3B
    BCC   .lb_skip@0
-   JMP   .default@60
+   JMP   .jtdef@0
 .lb_skip@0:
    ASL
    TAY
-   LDA   .jtab@0+1,Y
+   LDA   .jtab@1+1,Y
    PHA
-   LDA   .jtab@0,Y
+   LDA   .jtab@1,Y
    PHA
    RTS
-.jtab@0:
+.jtab@1:
    DC.W  .loop@0_break-1
    DC.W  .case@2-1
    DC.W  .case@3-1
    DC.W  .case@4-1
    DC.W  .case@5-1
-   DC.W  .case@6-1
+   DC.W  set_state_fight-1
    DC.W  .case@7-1
    DC.W  .case@8-1
-   DC.W  .case@9-1
+   DC.W  auto_heal-1
    DC.W  .case@10-1
    DC.W  .case@11-1
    DC.W  .case@12-1
@@ -564,7 +565,7 @@ run_chain:
    DC.W  .case@14-1
    DC.W  .case@15-1
    DC.W  .case@16-1
-   DC.W  .case@17-1
+   DC.W  resolve_attack-1
    DC.W  .case@18-1
    DC.W  .case@19-1
    DC.W  .case@20-1
@@ -599,7 +600,7 @@ run_chain:
    DC.W  .case@49-1
    DC.W  .case@50-1
    DC.W  .case@51-1
-   DC.W  .case@52-1
+   DC.W  retire_character-1
    DC.W  .case@53-1
    DC.W  .case@54-1
    DC.W  .case@55-1
@@ -607,6 +608,8 @@ run_chain:
    DC.W  .case@57-1
    DC.W  .case@58-1
    DC.W  .case@59-1
+.jtdef@0:
+   RTS
 .case@2:
    JSR   game_turn_loop
    JMP   .loop@0_continue
@@ -619,25 +622,15 @@ run_chain:
 .case@5:
    JSR   turn_dispatch
    JMP   .loop@0_continue
-.case@6:
-   JSR   set_state_fight
-   LDA   #$00
-   JMP   .loop@0_continue
 .case@7:
    JSR   toggle_sound
    JMP   .loop@0_continue
 .case@8:
    JSR   init_char_select
    JMP   .loop@0_continue
-.case@9:
-   JSR   auto_heal
-   LDA   #$00
-   JMP   .loop@0_continue
 .case@10:
    LDA   #$14
-   JSR   enter_combat_state
-   LDA   #$00
-   JMP   .loop@0_continue
+   JMP   enter_combat_state
 .case@11:
    JSR   attack_right
    JMP   .loop@0_continue
@@ -655,10 +648,6 @@ run_chain:
    JMP   .loop@0_continue
 .case@16:
    JSR   select_someone_else
-   JMP   .loop@0_continue
-.case@17:
-   JSR   resolve_attack
-   LDA   #$00
    JMP   .loop@0_continue
 .case@18:
    JSR   handle_mob_encounter
@@ -762,10 +751,6 @@ run_chain:
 .case@51:
    JSR   use_scenario_disk
    JMP   .loop@0_continue
-.case@52:
-   JSR   retire_character
-   LDA   #$00
-   JMP   .loop@0_continue
 .case@53:
    JSR   flush_pending_xp
    JMP   .loop@0_continue
@@ -786,9 +771,6 @@ run_chain:
    JMP   .loop@0_continue
 .case@59:
    JSR   browse_handler
-   JMP   .loop@0_continue
-.default@60:
-   LDA   #$00
    JMP   .loop@0_continue
 .loop@0_break:
    RTS
@@ -826,11 +808,11 @@ game_turn_loop:
    LDY   #$03
    LDA   (ENTITY_PTR),Y
    JSR   pos_to_colrow
-   STA   CURRENT_COL
    STA   TURN_START_COL
+   STA   CURRENT_COL
    TXA
-   STA   CURRENT_ROW
    STA   TURN_START_ROW
+   STA   CURRENT_ROW
    LDA   #$00
    STA   STEPS_TAKEN
    JSR   clear_restricted
@@ -1009,57 +991,64 @@ move_loop:
    JMP   .loop@61_start
 .if_end@41:
    TXA
-   BNE   .if_end@43
+   AND   #$80
+   STA   __local_move_loop__0
+   BEQ   .if_end@43
+   LDA   #$11
+   RTS
+.if_end@43:
+   LDA   #$FF
+   SEC
+   SBC   __local_move_loop__1
+   LDA   #$00
+   SBC   __local_move_loop__2
+   BCS   .move_loop@scfold@1
+   LDA   __local_move_loop__0
+   BEQ   .if_end@46
+.move_loop@scfold@1:
    LDX   #$00
    LDA   #$07
    JSR   tune_player
    JSR   show_locked_msg
    LDA   #$00
    RTS
-.if_end@43:
-   BPL   .if_end@44
-   LDA   #$11
-   RTS
-.if_end@44:
+.if_end@46:
    LDY   #$01
    LDA   (__local_move_loop__1),Y
-   STA   __local_move_loop__dir
-   AND   #$C0
    CMP   #$C0
-   BEQ   .if_end@45
+   BCS   .if_end@47
    LDA   __local_move_loop__1
    JSR   handle_encounter
    LDA   #$00
    RTS
-.if_end@45:
-   LDA   __local_move_loop__dir
+.if_end@47:
    CMP   #$D2
-   BCS   .if_end@46
+   BCS   .if_end@48
    LDA   __local_move_loop__1
    JSR   pickup_treasure
    LDA   #$00
    RTS
-.if_end@46:
+.if_end@48:
    CMP   #$D5
-   BCS   .if_end@47
+   BCS   .if_end@49
    LDA   __local_move_loop__1
    JSR   trigger_scene_event
 .tail@0:
    LDA   #$00
    RTS
-.if_end@47:
+.if_end@49:
    CMP   #$DB
-   BCS   .if_end@48
+   BCS   .if_end@50
    JSR   commit_move
    LDX   __local_move_loop__2
    LDA   __local_move_loop__1
    JMP   display_shop
-.if_end@48:
+.if_end@50:
    CMP   #$FE
-   BNE   .if_end@49
+   BNE   .if_end@51
    LDA   __local_move_loop__1
    JMP   handle_event_slot
-.if_end@49:
+.if_end@51:
    LDA   #$12
    RTS
 
@@ -1067,17 +1056,19 @@ commit_move:
    SUBROUTINE
 
    LDA   CURRENT_COL
-   LDX   CURRENT_ROW
-   STA   FONT_COL
    STA   BLINK_COL
-   STX   FONT_ROW
-   STX   BLINK_ROW
+   STA   FONT_COL
+   LDA   CURRENT_ROW
+   STA   BLINK_ROW
+   STA   FONT_ROW
+   LDX   CURRENT_ROW
+   LDA   CURRENT_COL
    JSR   colrow_to_pos
    LDY   #$03
    STA   (ENTITY_PTR),Y
    LDA   CHAR_SPRITE
-   STA   FONT_CHARNUM
    STA   BLINK_CHAR
+   STA   FONT_CHARNUM
    LDA   #$01
    STA   FONT_CHARSET
    JSR   render_font_char
@@ -1098,12 +1089,12 @@ reset_turn_pos:
    STA   TURN_START_ROW
    LDA   TURN_TUNE_GUARD
    CMP   #$16
-   BNE   .if_end@50
+   BNE   .if_end@52
    DEC   TURN_TUNE_GUARD
    LDX   #$00
    LDA   #$0B
    JSR   tune_player
-.if_end@50:
+.if_end@52:
    RTS
 
 end_turn:
@@ -1120,11 +1111,11 @@ end_turn:
    AND   #$07
    SEC
    SBC   STEPS_TAKEN
-   BMI   .if_end@52
+   BMI   .if_end@54
 .tail@1:
    LDA   #$04
    RTS
-.if_end@52:
+.if_end@54:
    JSR   set_state_fight
    LDA   #$00
    RTS
@@ -1145,9 +1136,9 @@ check_and_restrict:
    JSR   clear_restricted
    LDA   __local_check_and_restrict__0
    CMP   #$02
-   BNE   .if_end@53
+   BNE   .if_end@55
    JSR   set_restricted
-.if_end@53:
+.if_end@55:
    RTS
 
 set_char_state:

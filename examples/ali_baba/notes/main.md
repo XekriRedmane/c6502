@@ -29,7 +29,7 @@ it.
   START_MOB_TURN jumps to GAME_TURN_LOOP. The chain's last RTS returns
   to PROCESS_MOB_GROUPS in the original, and `run_chain` returns there
   in C.
-- `toggle_sound` tests and flips `SOUND_ON` where TOGGLE_SOUND tests
+- `toggle_sound` flips and tests `SOUND_ON` where TOGGLE_SOUND tests
   and patches the first bytes of PLAY_HIGH_TONE and PLAY_LOW_TONE. It
   writes `S_SOUND_IS_ON.state`, the original's S_SOUND_CHAR1 and
   S_SOUND_CHAR2, as the original does, and
@@ -56,7 +56,10 @@ None.
 
 ## Compiler gaps
 
-Item 1 was fixed on 18 Nov 2026, and main.c keeps its cast.
+Items 1 and 2 were fixed by 18 Nov 2026. main.c now writes the mask's
+comparison without a cast and reads the name's high byte as
+`(uint16_t)CHAR_PTR->name >> 8`, and both compile as the workarounds
+did.
 
 1. A mask of a byte compared with a small constant is a signed 16-bit
    comparison.
@@ -67,10 +70,8 @@ Item 1 was fixed on 18 Nov 2026, and main.c keeps its cast.
    void c(void) { if ((X1 & 0x3F) < 3) f(); }
    ```
 
-   compiles to `AND #$3F; LDY #0; SEC; SBC #3; TYA; SBC #0; BVC; EOR
+   compiled to `AND #$3F; LDY #0; SEC; SBC #3; TYA; SBC #0; BVC; EOR
    #$80; BPL`, where `CMP #3; BCS` does, since the value is 0-63.
-   `process_mob_groups` casts the mask to `uint8_t`, which gives `CMP
-   #$03; BCS`.
 
 2. Reading the high byte of a pointer member reads the low byte too.
 
@@ -81,9 +82,8 @@ Item 1 was fixed on 18 Nov 2026, and main.c keeps its cast.
    void e(void) { X1 = (uint8_t)((uint16_t)P->name >> 8); }
    ```
 
-   compiles to `LDY #0; LDA (P),Y; INY; LDA (P),Y; STA X1`. `main`
-   reads the byte as `((const uint8_t *)CHAR_PTR)[1]`
-   (`NAME_HIGH_BYTE`), which gives `LDY #1; LDA (CHAR_PTR),Y`.
+   compiled to `LDY #0; LDA (P),Y; INY; LDA (P),Y; STA X1`, and now
+   compiles to `LDY #1; LDA (P),Y`.
 
 3. `check_mob_needs_turn` has an `ORA #$00` after `JSR check_encounter`
    to set the flags from A, which the original's `LDA
@@ -92,7 +92,7 @@ Item 1 was fixed on 18 Nov 2026, and main.c keeps its cast.
 ## Size
 
 The original's routines take 381 bytes (main.lst, the sizes in
-UNITS.md's table). The C takes 395 bytes in `main.asm`.
+UNITS.md's table). The C takes 396 bytes in `main.asm`.
 
 | Routine | Original | C |
 |---|---|---|
@@ -101,12 +101,12 @@ UNITS.md's table). The C takes 395 bytes in `main.asm`.
 | SHOW_IDLE_STATUS | 14 | 16 |
 | START_MOB_TURN | 34 | 40 |
 | CHECK_MOB_NEEDS_TURN | 44 | 47 |
-| TOGGLE_SOUND | 40 | 39 |
+| TOGGLE_SOUND | 40 | 40 |
 | SETTINGS_DISPLAY_INIT | 31 | 33 |
 | DEC_/INC_THRESHOLD_WRAP | 8 | 6 |
 | DEC_/INC_EVENT_THRESHOLD | 20 | 29 |
 | ATTRACT_SCREEN | 35 | 35 |
-| Total | 381 | 395 |
+| Total | 381 | 396 |
 
 The C's extra bytes are the zp_abi argument stores (`STA
 __zpabi_...`) before calls that take A in the original, and

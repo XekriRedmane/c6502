@@ -201,6 +201,7 @@ WAIT	EQU	$FCA8
 ; @zp-link-meta-begin
 ; def display_char_stats params= locals=__local_display_char_stats__0 indirect=false in_cycle=false
 ; def display_status_bar params= locals=__local_display_status_bar__0 indirect=false in_cycle=false
+; def key_or_button params= locals=__local_key_or_button__0 indirect=false in_cycle=false carry=true
 ; def print_panel_name params=__zpabi_print_panel_name__col,__zpabi_print_panel_name__name_0,__zpabi_print_panel_name__name_1 locals=__local_print_panel_name__i,__local_print_panel_name__0 indirect=false in_cycle=false param_regs=A,,
 ; def setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 locals=__local_setup_text_pos__name_1 indirect=false in_cycle=false param_regs=A,X
 ; def setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 locals=__local_setup_text_pos_col20__name_1 indirect=false in_cycle=false param_regs=A,X
@@ -384,6 +385,7 @@ WAIT	EQU	$FCA8
 ; ext verify_integrity params=
 ; call display_char_stats -> anim_tick_and_wait
 ; call display_char_stats -> clear_map
+; call display_char_stats -> key_or_button
 ; call display_char_stats -> num_to_decimal
 ; call display_char_stats -> print_ctrl_ab
 ; call display_char_stats -> print_string
@@ -401,6 +403,7 @@ WAIT	EQU	$FCA8
 ; item print_panel_name section=.text local=true zero=false
 ; item setup_text_pos section=.text local=false zero=false
 ; item setup_text_pos_col20 section=.text local=false zero=false
+; item key_or_button section=.text local=true zero=false
 ; item display_char_stats section=.text local=false zero=false
 ; zp NULL_PAGE_LOW size=6 at=$00 def=false init=
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
@@ -439,6 +442,8 @@ display_status_bar:
    JSR   print_ctrl_ab
    LDA   #$17
    STA   TEXT_ROW
+   LDA   #$04
+   STA   TEXT_COL
    LDA   INPUT_MODE
    BEQ   .cond_else@0
    LDA   #<S_PRESS_BUTTON
@@ -448,8 +453,6 @@ display_status_bar:
    LDA   #<S_PRESS_SPACE
    LDX   #>S_PRESS_SPACE
 .cond_end@1:
-   LDY   #$04
-   STY   TEXT_COL
    JMP   print_string
 
 print_panel_name:
@@ -461,17 +464,18 @@ print_panel_name:
    JSR   print_ctrl_ab
    LDA   #$8C
    JSR   hrcg_cout
-   LDA   #$14
+   LDA   #$00
    STA   __local_print_panel_name__i
 .print_panel_name@rot@0:
    LDA   #$A0
    JSR   hrcg_cout
-   DEC   __local_print_panel_name__i
-   BNE   .print_panel_name@rot@0
+   INC   __local_print_panel_name__i
+   LDA   __local_print_panel_name__i
+   CMP   #$14
+   BCC   .print_panel_name@rot@0
    LDA   #$14
    STA   TEXT_ROW
    LDA   #$0A
-   SEC
    SBC   TEXT_COL
    STA   TEXT_COL
    LDX   __zpabi_print_panel_name__name_1
@@ -495,6 +499,24 @@ setup_text_pos_col20:
    STX   __zpabi_print_panel_name__name_1
    LDA   #$14
    JMP   print_panel_name
+
+key_or_button:
+   SUBROUTINE
+
+   LDA   KBD
+   BMI   .or_true@2
+   LDA   INPUT_MODE
+   BEQ   .key_or_button@scfold@1
+   LDA   BUTN
+   BMI   .or_true@2
+   LDA   BUTN+1
+   BMI   .or_true@2
+.key_or_button@scfold@1:
+   CLC
+   RTS
+.or_true@2:
+   SEC
+   RTS
 
 display_char_stats:
    SUBROUTINE
@@ -609,13 +631,13 @@ display_char_stats:
    JSR   num_to_decimal
    LDA   STATS_TEMPLATE+54
    CMP   #$A0
-   BNE   .if_end@4
+   BNE   .if_end@10
    LDA   STATS_TEMPLATE+55
    CMP   #$B0
-   BNE   .if_end@4
+   BNE   .if_end@10
    LDA   #$A0
    STA   STATS_TEMPLATE+55
-.if_end@4:
+.if_end@10:
    JSR   scroll_status_line
    JSR   print_ctrl_ab
    LDA   #$15
@@ -630,25 +652,18 @@ display_char_stats:
    LDA   #$00
    STA   TEXT_COL
    LDA   INPUT_MODE
-   BEQ   .cond_else@5
+   BEQ   .cond_else@11
    LDA   #<STATS_PROMPT_JOYSTICK
    LDX   #>STATS_PROMPT_JOYSTICK
-   JMP   .cond_end@6
-.cond_else@5:
+   JMP   .cond_end@12
+.cond_else@11:
    LDA   #<STATS_PROMPT_KEYBOARD
    LDX   #>STATS_PROMPT_KEYBOARD
-.cond_end@6:
+.cond_end@12:
    JSR   print_string
    JSR   anim_tick_and_wait
    STA   KBDSTRB
-.loop@1_start:
-   LDA   KBD
-   BMI   .loop@1_break
-   LDA   INPUT_MODE
-   BEQ   .loop@1_start
-   LDA   BUTN
-   BMI   .loop@1_break
-   LDA   BUTN+1
-   BPL   .loop@1_start
-.loop@1_break:
+.loop@1_continue:
+   JSR   key_or_button
+   BCC   .loop@1_continue
    JMP   clear_map

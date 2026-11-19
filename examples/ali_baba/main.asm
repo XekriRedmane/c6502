@@ -206,7 +206,7 @@ WAIT	EQU	$FCA8
 ; def settings_display_init params= locals=__local_settings_display_init__0 indirect=false in_cycle=false
 ; def show_idle_status params= locals= indirect=false in_cycle=false
 ; def start_mob_turn params= locals=__local_start_mob_turn__0,__local_start_mob_turn__1 indirect=false in_cycle=false
-; def toggle_sound params= locals= indirect=false in_cycle=false
+; def toggle_sound params= locals=__local_toggle_sound__0 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -591,20 +591,23 @@ toggle_sound:
    SUBROUTINE
 
    LDA   SOUND_ON
-   BNE   .if_else@14
+   BEQ   .lnot_true@0
+   LDA   #$00
+   BEQ   .lnot_end@1
+.lnot_true@0:
+   LDA   #$01
+.lnot_end@1:
+   STA   SOUND_ON
+   BEQ   .if_else@14
    LDA   #$CE
    STA   S_SOUND_IS_ON+11
    LDA   #$A0
    STA   S_SOUND_IS_ON+12
-   LDA   #$01
-   STA   SOUND_ON
    JMP   .if_end@13
 .if_else@14:
    LDA   #$C6
    STA   S_SOUND_IS_ON+11
    STA   S_SOUND_IS_ON+12
-   LDA   #$00
-   STA   SOUND_ON
 .if_end@13:
    LDA   #$16
    RTS

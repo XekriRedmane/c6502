@@ -352,7 +352,6 @@
  * high byte is $FF, which is LOCATIONS_END's at $4237. The test reads
  * that one byte, as the original does. */
 constexpr uint8_t LOCATION_LIST_END = 0xFF;
-#define NAME_HIGH_BYTE(loc) (((const uint8_t *)(loc))[1])
 
 /* MAX_THRESHOLD in the original, the highest danger setting (99). */
 constexpr uint8_t MAX_THRESHOLD = 0x63;
@@ -386,7 +385,7 @@ int main(void) {
             }
             CURRENT_PLAYER++;
             CHAR_PTR++;
-        } while (NAME_HIGH_BYTE(CHAR_PTR) != LOCATION_LIST_END);
+        } while ((uint16_t)CHAR_PTR->name >> 8 != LOCATION_LIST_END);
         random_events();
     }
 }
@@ -423,8 +422,8 @@ static bool check_mob_needs_turn(void) {
  * PROCESS_MOB_GROUPS. */
 static void start_mob_turn(void) {
     uint16_t glyph_group = appearance_to_fontchar(ENTITY_PTR->appearance);
-    CHAR_SPRITE = (uint8_t)glyph_group;
-    CHAR_AI_MODE = (uint8_t)(glyph_group >> 8);
+    CHAR_SPRITE = glyph_group;
+    CHAR_AI_MODE = glyph_group >> 8;
     if (!check_mob_needs_turn())
         return;
     set_cursor_row21();
@@ -448,7 +447,7 @@ static void process_mob_groups(void) {
     while (CURRENT_ROOM != 0) {
         ENTITY_PTR = get_mob_data(CURRENT_ROOM);
         CURRENT_ROOM = ENTITY_PTR->next;
-        if ((uint8_t)(ENTITY_PTR->life & HP_MASK) < 3) {
+        if ((ENTITY_PTR->life & HP_MASK) < 3) {
             show_idle_status();
             auto_heal();
         } else {
@@ -459,14 +458,13 @@ static void process_mob_groups(void) {
 }
 
 uint8_t toggle_sound(void) {
-    if (!SOUND_ON) {
+    SOUND_ON = !SOUND_ON;
+    if (SOUND_ON) {
         S_SOUND_IS_ON.state[0] = 0xCE;  /* 'N' */
         S_SOUND_IS_ON.state[1] = 0xA0;  /* ' ' */
-        SOUND_ON = true;
     } else {
         S_SOUND_IS_ON.state[0] = 0xC6;  /* 'F' */
         S_SOUND_IS_ON.state[1] = 0xC6;  /* 'F' */
-        SOUND_ON = false;
     }
     return CHAIN_MENU_GAME_SETTINGS;
 }

@@ -288,9 +288,8 @@ void display_status_bar(void) {
     text_renderer_no_pause();
     print_ctrl_ab();
     TEXT_ROW = 23;
-    const uint8_t *prompt = INPUT_MODE != 0 ? S_PRESS_BUTTON : S_PRESS_SPACE;
     TEXT_COL = 4;
-    print_string(prompt);
+    print_string(INPUT_MODE != 0 ? S_PRESS_BUTTON : S_PRESS_SPACE);
 }
 
 /* Clears 20 columns of row 20 from column `col`, in lower case, and
@@ -304,7 +303,7 @@ static void print_panel_name(uint8_t col, const uint8_t *name) {
     TEXT_ROW = 20;
     print_ctrl_ab();
     hrcg_cout(HRCG_CTRL_L);
-    for (uint8_t i = MAP_WIDTH; i != 0; i--)
+    for (uint8_t i = 0; i < MAP_WIDTH; i++)
         hrcg_cout(SPACE);
     TEXT_ROW = 20;
     TEXT_COL = 10 - TEXT_COL;
@@ -318,6 +317,14 @@ void setup_text_pos(const uint8_t *name) {
 
 void setup_text_pos_col20(const uint8_t *name) {
     print_panel_name(MAP_WIDTH, name);
+}
+
+/* Returns true when a key is waiting or, in joystick mode, when button 0
+ * or 1 is down. It reads KBD, then BUTN[0], then BUTN[1], and stops at
+ * the first that has bit 7 set, as the original's loop does. */
+static bool key_or_button(void) {
+    return (KBD & 0x80) != 0
+        || (INPUT_MODE != 0 && ((BUTN[0] & 0x80) != 0 || (BUTN[1] & 0x80) != 0));
 }
 
 void display_char_stats(void) {
@@ -353,7 +360,7 @@ void display_char_stats(void) {
     print_ctrl_ab();
     TEXT_ROW = 21;
     TEXT_COL = 0;
-    print_string((const uint8_t *)&STATS_TEMPLATE);
+    print_string(&STATS_TEMPLATE.length);
     TEXT_ROW = 20;
     TEXT_COL = 0;
     print_string(INPUT_MODE != 0 ? STATS_PROMPT_JOYSTICK : STATS_PROMPT_KEYBOARD);
@@ -361,13 +368,7 @@ void display_char_stats(void) {
     /* The original stores anim_tick_and_wait's A, the frame counter, to
      * clear the strobe. */
     KBDSTRB = anim_tick_and_wait();
-    for (;;) {
-        if (KBD & 0x80)
-            break;
-        if (INPUT_MODE == 0)
-            continue;
-        if ((BUTN[0] & 0x80) || (BUTN[1] & 0x80))
-            break;
-    }
+    while (!key_or_button())
+        ;
     clear_map();
 }

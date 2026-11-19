@@ -65,22 +65,58 @@ No change to `ali_baba.h` is needed.
 
 ## Compiler gaps
 
-None new. `print_panel_name` is larger than the original's body because
-each `hrcg_cout` call stores its argument in a zero-page parameter
-where the original's COUT takes A, and the 20-space loop keeps its
-counter in memory across the call where the original keeps it in X,
-which COUT preserves.
+`print_panel_name` is larger than the original's body because each
+`hrcg_cout` call stores its argument in a zero-page parameter where the
+original's COUT takes A, and the 20-space loop keeps its counter in
+memory across the call where the original keeps it in X, which COUT
+preserves. Two more gaps come from the rewrite as plain C.
+
+1. **A loop that counts up with an unused index isn't turned to count
+   down.**
+
+   ```c
+   #include <stdint.h>
+   void out(uint8_t c);
+   void f(void) { for (uint8_t i = 0; i < 20; i++) out(0xA0); }
+   ```
+
+   compiles the step to `INC i; LDA i; CMP #$14; BCC`, where the loop
+   counting from 20 to 0 compiles to `DEC i; BNE`, 3 bytes fewer.
+   `print_panel_name` pays them (50 to 53 bytes).
+
+2. **A static function called once isn't inlined.**
+
+   ```c
+   #include <stdint.h>
+   #include <stdbool.h>
+   extern volatile uint8_t KBD [[c6502::address(0xC000)]];
+   extern volatile uint8_t BUTN [[c6502::address(0xC061)]][2];
+   extern uint8_t MODE [[c6502::address(0x5A00)]];
+   void done(void);
+   static bool ready(void) {
+       return (KBD & 0x80) != 0
+           || (MODE != 0 && ((BUTN[0] & 0x80) != 0 || (BUTN[1] & 0x80) != 0));
+   }
+   void f(void) { while (!ready()) ; done(); }
+   ```
+
+   compiles `ready` to the tests and `CLC; RTS` or `SEC; RTS`, and the
+   loop to `JSR ready; BCC`. Written in the loop, as the old C had
+   them, the tests branch straight back to the loop or out of it, as
+   the original's do. `key_or_button` costs 9 bytes this way (24
+   bytes, against the 15 it took off `display_char_stats`).
 
 ## Size
 
-Code bytes, from the `-c -O` object's sections, against the original's
-instruction bytes, counted from `main.lst`:
+Code bytes, from the `-c -O` object (`nm.py -S`), against the
+original's instruction bytes, counted from `main.lst`. The last column
+is the C before it was rewritten as plain C on 18 Nov 2026.
 
-| Routine | Original | C |
-|---|---|---|
-| DISPLAY_STATUS_BAR | 52 | 64 |
-| SETUP_TEXT_POS, SETUP_TEXT_POS_COL20 | 51 | 76 (`print_panel_name` 62 and two entries of 7) |
-| DISPLAY_CHAR_STATS | 296 | 325 (282 and the 43 bytes of the shared runs the compiler factored out) |
-| total | 399 | 465 |
+| Routine | Original | C | Before |
+|---|---|---|---|
+| DISPLAY_STATUS_BAR | 52 | 46 | 46 |
+| SETUP_TEXT_POS, SETUP_TEXT_POS_COL20 | 51 | 71 (`print_panel_name` 53 and two entries of 9) | 68 |
+| DISPLAY_CHAR_STATS | 296 | 332 (308 and `key_or_button` 24) | 323 |
+| total | 399 | 449 | 437 |
 
-The C is 66 bytes, 17%, larger.
+The C is 50 bytes, 13%, larger.

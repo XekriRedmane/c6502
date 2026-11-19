@@ -5,7 +5,7 @@ NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
 SSP	EQU	$1A
 FP	EQU	$1C
-border_handler	EQU	$1E
+border_pass	EQU	$1E
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -18,10 +18,9 @@ BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
-border_pass	EQU	$62
+border_next	EQU	$62
 border_anim_index	EQU	$63
-border_next	EQU	$64
-__local_clear_hires_page1__page	EQU	$80
+__local_clear_hires_page1__0	EQU	$80
 __local_init_mob_count__0	EQU	$80
 __local_move_border_icon_list__first	EQU	$80
 __zpabi_anim_border_icons__to	EQU	$80
@@ -31,24 +30,26 @@ __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_plot_title_glyphs__charset	EQU	$80
 __zpabi_print_at__col	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
-__local_clear_hires_page1__0	EQU	$81
-__local_init_mob_count__1	EQU	$81
+__local_clear_hires_page1__1	EQU	$81
 __local_plot_title_glyphs__i	EQU	$81
+__local_select_input_mode__1	EQU	$81
 __zpabi_draw_border_strings__last	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_print_at__row	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_anim_border_icons__limit	EQU	$82
-__local_move_border_icons__carried	EQU	$82
+__local_clear_hires_page1__i_1	EQU	$82
+__local_draw_border_strings__0	EQU	$82
+__local_move_border_icons__0	EQU	$82
 __local_plot_title_glyphs__end	EQU	$82
-__local_select_input_mode__2	EQU	$82
 __local_anim_border_icons__from	EQU	$83
-__local_draw_border_strings__s_1	EQU	$83
+__local_clear_hires_page1__i_0	EQU	$83
 __local_move_border_icons__cell	EQU	$83
 __local_print_at__s_0	EQU	$83
-__local_draw_border_strings__s_0	EQU	$84
+__local_draw_border_strings__s_1	EQU	$84
 __local_move_border_icons__first	EQU	$84
-__local_draw_border_cell__cell	EQU	$86
+__local_draw_border_strings__s_0	EQU	$85
+__local_draw_border_cell__cell	EQU	$87
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -57,6 +58,7 @@ ENTITY_PTR	EQU	$F8
 CHAR_PTR	EQU	$FA
 SOFTEV	EQU	$03F2
 PWREDUP	EQU	$03F4
+HIRES_PAGE_1	EQU	$2000
 LOCATIONS	EQU	$4000
 LOCATIONS_END	EQU	$4237
 EVENT_THRESHOLD	EQU	$4239
@@ -224,20 +226,20 @@ WAIT	EQU	$FCA8
 ; @zp-link-meta-begin
 ; def anim_border_icons params=__zpabi_anim_border_icons__limit,__zpabi_anim_border_icons__from,__zpabi_anim_border_icons__to locals=__local_anim_border_icons__limit,__local_anim_border_icons__from indirect=false in_cycle=false param_regs=A,X,
 ; def border_anim_step params= locals=__local_border_anim_step__0 indirect=false in_cycle=false
-; def clear_hires_page1 params= locals=__local_clear_hires_page1__page,__local_clear_hires_page1__0 indirect=false in_cycle=false
+; def clear_hires_page1 params= locals=__local_clear_hires_page1__0,__local_clear_hires_page1__1,__local_clear_hires_page1__i_1,__local_clear_hires_page1__i_0 indirect=false in_cycle=false
 ; def draw_border_cell params=__zpabi_draw_border_cell__cell,__zpabi_draw_border_cell__glyph locals=__local_draw_border_cell__glyph,__local_draw_border_cell__cell indirect=false in_cycle=false param_regs=A,X
 ; def draw_border_labels params= locals= indirect=false in_cycle=false
-; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__last,__local_draw_border_strings__s_1,__local_draw_border_strings__s_0 indirect=false in_cycle=false param_regs=A,X,, changes=__zpabi_draw_border_strings__last
+; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__0,__local_draw_border_strings__i,__local_draw_border_strings__s_1,__local_draw_border_strings__s_0 indirect=false in_cycle=false param_regs=A,X,, changes=__zpabi_draw_border_strings__last
 ; def game_init params= locals= indirect=false in_cycle=false
 ; def init_disk_iob params= locals= indirect=false in_cycle=false
 ; def init_game_display params= locals= indirect=false in_cycle=false
 ; def init_game_state params= locals= indirect=false in_cycle=false
-; def init_mob_count params= locals=__local_init_mob_count__0,__local_init_mob_count__1 indirect=false in_cycle=false
+; def init_mob_count params= locals=__local_init_mob_count__0 indirect=false in_cycle=false
 ; def move_border_icon_list params=__zpabi_move_border_icon_list__first locals=__local_move_border_icon_list__first indirect=false in_cycle=false param_regs=A
-; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__carried,__local_move_border_icons__cell,__local_move_border_icons__first indirect=false in_cycle=false param_regs=A,X
-; def plot_title_glyphs params=__zpabi_plot_title_glyphs__i,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i,__local_plot_title_glyphs__end indirect=false in_cycle=false param_regs=A,X,
+; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__0,__local_move_border_icons__cell,__local_move_border_icons__first,__local_move_border_icons__1 indirect=false in_cycle=false param_regs=A,X
+; def plot_title_glyphs params=__zpabi_plot_title_glyphs__first,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i,__local_plot_title_glyphs__end indirect=false in_cycle=false param_regs=A,X,
 ; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals=__local_print_at__s_1,__local_print_at__s_0 indirect=false in_cycle=false param_regs=A,X,,
-; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1,__local_select_input_mode__2 indirect=false in_cycle=false
+; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1 indirect=false in_cycle=false
 ; def start_border_passes params= locals=__local_start_border_passes__0 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
@@ -496,7 +498,7 @@ WAIT	EQU	$FCA8
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
 ; zp NULL_PAGE_HIGH size=6 at=$0A def=false init=
-; zp border_handler size=1 at=auto def=true init=$00 weight=7 local=true
+; zp border_pass size=1 at=auto def=true init=$00 weight=7 local=true
 ; zp MONITOR_YSAV1_1F size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -508,9 +510,8 @@ WAIT	EQU	$FCA8
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
 ; zp DISK_VM_ZP size=16 at=$50 def=false init=
-; zp border_pass size=1 at=auto def=true init=$00 weight=7 local=true
+; zp border_next size=1 at=auto def=true init=$00 weight=5 local=true
 ; zp border_anim_index size=1 at=auto def=true init=$06 weight=4 local=true
-; zp border_next size=1 at=auto def=true init=$00 weight=3 local=true
 ; zp MENU_DESC_PTR size=2 at=$C0 def=false init=
 ; zp MENU_OPTION_PTR size=2 at=$C2 def=false init=
 ; zp TUNE_PC size=2 at=$E4 def=false init=
@@ -538,38 +539,44 @@ move_border_icons:
 
    STA   __local_move_border_icons__first
    STX   __local_move_border_icons__cell
-   LDA   #$00
-   STA   __local_move_border_icons__carried
+   LDY   #$00
 .loop@0_start:
-   LDA   __local_move_border_icons__carried
+   TYA
    BEQ   .if_else@1
    LDX   __local_move_border_icons__cell
+   TYA
    STA   border_glyph,X
-   LDX   __local_move_border_icons__carried
+   TYA
+   TAX
    LDA   __local_move_border_icons__cell
    JSR   draw_border_cell
-   LDA   #$00
-   STA   __local_move_border_icons__carried
-   JMP   .if_end@0
+   LDY   #$00
+   BEQ   .if_end@0
 .if_else@1:
    LDX   __local_move_border_icons__cell
    LDA   border_glyph,X
-   STA   __local_move_border_icons__carried
+   STA   __local_move_border_icons__0
    BEQ   .if_end@2
    LDA   #$00
    STA   border_glyph,X
    LDX   #$00
    LDA   __local_move_border_icons__cell
    JSR   draw_border_cell
+   LDY   __local_move_border_icons__0
 .if_end@2:
 .if_end@0:
    LDA   __local_move_border_icons__cell
+   SEC
+   SBC   #$01
+   STA   __local_move_border_icons__0
+   LDA   __local_move_border_icons__cell
    CMP   __local_move_border_icons__first
-   BEQ   .loop@0_break
-   DEC   __local_move_border_icons__cell
-   JMP   .loop@0_start
-.loop@0_break:
+   BNE   .move_border_icons@ssa_split@1
    RTS
+.move_border_icons@ssa_split@1:
+   LDA   __local_move_border_icons__0
+   STA   __local_move_border_icons__cell
+   JMP   .loop@0_start
 
 move_border_icon_list:
    SUBROUTINE
@@ -593,12 +600,10 @@ start_border_passes:
    INC   border_anim_index
    LDA   border_anim_index
    CMP   #$16
-   BCC   .if_end@4
+   BCC   .if_end@3
    LDA   #$05
    STA   border_anim_index
-.if_end@4:
-   LDA   #$02
-   STA   border_handler
+.if_end@3:
    RTS
 
 anim_border_icons:
@@ -607,15 +612,15 @@ anim_border_icons:
    STX   __local_anim_border_icons__from
    JSR   random_in_range
    CMP   #$02
-   BCC   .if_end@5
+   BCC   .if_end@4
    RTS
-.if_end@5:
+.if_end@4:
    ORA   #$00
    BNE   .anim_border_icons@asm_ssa_split@0
    LDA   __zpabi_anim_border_icons__to
    ADC   #$09
    TAY
-.if_end@6:
+.if_end@5:
    LDX   __local_anim_border_icons__from
    LDA   border_glyph,X
    STA   __local_anim_border_icons__limit
@@ -630,72 +635,68 @@ anim_border_icons:
    JMP   draw_border_cell
 .anim_border_icons@asm_ssa_split@0:
    LDY   __zpabi_anim_border_icons__to
-   JMP   .if_end@6
+   JMP   .if_end@5
 
 border_anim_step:
    SUBROUTINE
 
    LDA   border_next
+   CMP   #$02
    BEQ   .case@2
    CMP   #$01
    BEQ   .case@3
-   CMP   #$02
+   ORA   #$00
    BEQ   .case@4
    JMP   .default@5
 .case@2:
-   LDA   #$0A
-   JSR   move_border_icon_list
-   LDA   #$13
-   JSR   move_border_icon_list
-   JMP   .switch@1_break
-.case@3:
-   LDX   #$09
-   LDA   #$00
-   JSR   move_border_icons
-   JMP   .switch@1_break
-.case@4:
    LDA   #$1C
    JSR   move_border_icon_list
    LDA   #$25
    JSR   move_border_icon_list
-   JMP   .switch@1_break
-.default@5:
-   JSR   start_border_passes
-.switch@1_break:
-   LDA   border_handler
-   BPL   .vthread@0
+   LDA   #$01
+   STA   border_next
+   RTS
+.case@3:
+   LDX   #$09
+   LDA   #$00
+   JSR   move_border_icons
+   LDA   #$00
+   STA   border_next
+   RTS
+.case@4:
+   LDA   #$0A
+   JSR   move_border_icon_list
+   LDA   #$13
+   JSR   move_border_icon_list
    LDA   border_pass
-   BNE   .if_else@9
+   BNE   .if_else@7
    JSR   start_border_passes
-   JMP   .if_end@8
-.if_else@9:
+   JMP   .switch@1_break
+.if_else@7:
    DEC   border_pass
    LDA   border_pass
    CMP   #$01
-   BNE   .if_else@11
+   BNE   .if_else@9
    LDA   #$12
    STA   __zpabi_anim_border_icons__to
    LDX   #$07
    LDA   #$04
    JSR   anim_border_icons
-   JMP   .if_end@10
-.if_else@11:
+   JMP   .switch@1_break
+.if_else@9:
    ORA   #$00
-   BNE   .if_end@12
+   BNE   .switch@1_break
    LDA   #$24
    STA   __zpabi_anim_border_icons__to
    LDX   #$02
    TXA
    JSR   anim_border_icons
-.if_end@12:
-.if_end@10:
+   JMP   .switch@1_break
+.default@5:
+   JSR   start_border_passes
+.switch@1_break:
    LDA   #$02
-   STA   border_handler
-.if_end@8:
-   LDA   border_handler
-.vthread@0:
    STA   border_next
-   DEC   border_handler
    RTS
 
 plot_title_glyphs:
@@ -703,7 +704,8 @@ plot_title_glyphs:
 
    STA   __local_plot_title_glyphs__i
    STX   __local_plot_title_glyphs__end
-.loop@6_start:
+   JMP   .loop@6_start
+.plot_title_glyphs@rot@0:
    LDX   __local_plot_title_glyphs__i
    LDA   TITLE_GLYPH,X
    STA   FONT_CHARNUM
@@ -715,9 +717,10 @@ plot_title_glyphs:
    STA   FONT_CHARSET
    JSR   print_fontchar_at_text_pos
    INC   __local_plot_title_glyphs__i
+.loop@6_start:
    LDA   __local_plot_title_glyphs__i
    CMP   __local_plot_title_glyphs__end
-   BNE   .loop@6_start
+   BCC   .plot_title_glyphs@rot@0
    RTS
 
 draw_border_strings:
@@ -725,9 +728,6 @@ draw_border_strings:
 
    STA   __local_draw_border_strings__s_0
    STX   __local_draw_border_strings__s_1
-   JMP   .loop@7_start
-.draw_border_strings@rot@0:
-   DEC   __zpabi_draw_border_strings__last
 .loop@7_start:
    LDX   __zpabi_draw_border_strings__last
    LDA   BORDER_LABEL_COL,X
@@ -738,9 +738,17 @@ draw_border_strings:
    LDA   __local_draw_border_strings__s_0
    JSR   print_string
    LDA   __zpabi_draw_border_strings__last
+   SEC
+   SBC   #$01
+   STA   __local_draw_border_strings__0
+   LDA   __zpabi_draw_border_strings__last
    CMP   __zpabi_draw_border_strings__first
-   BNE   .draw_border_strings@rot@0
+   BNE   .draw_border_strings@ssa_split@1
    RTS
+.draw_border_strings@ssa_split@1:
+   LDA   __local_draw_border_strings__0
+   STA   __zpabi_draw_border_strings__last
+   JMP   .loop@7_start
 
 draw_border_labels:
    SUBROUTINE
@@ -873,16 +881,18 @@ select_input_mode:
    JSR   display_message
    LDA   BUTN
    AND   #$80
-   STA   __local_select_input_mode__2
+   STA   __local_select_input_mode__1
 .loop@8_start:
    LDA   #$00
    STA   KBDSTRB
 .loop@9_continue:
    LDA   KBD
-   BMI   .loop@9_break
+   CMP   #$80
+   BCS   .loop@9_break
    LDA   BUTN
-   EOR   __local_select_input_mode__2
-   BPL   .loop@9_continue
+   AND   #$80
+   CMP   __local_select_input_mode__1
+   BEQ   .loop@9_continue
    LDA   #$01
    STA   INPUT_MODE
    JSR   set_cursor_row21
@@ -908,10 +918,9 @@ init_mob_count:
 .init_mob_count@rot@1:
    LDY   #$08
    LDA   (CHAR_PTR),Y
-   STA   __local_init_mob_count__1
+   STA   __local_init_mob_count__0
    CLC
    ADC   TOTAL_MOB_COUNT
-   STA   __local_init_mob_count__0
    STA   TOTAL_MOB_COUNT
    LDA   CHAR_PTR
    CLC
@@ -920,8 +929,8 @@ init_mob_count:
    BCC   .carry_inc@0
    INC   CHAR_PTR+1
 .carry_inc@0:
-   LDA   __local_init_mob_count__0
-   CMP   __local_init_mob_count__1
+   LDA   TOTAL_MOB_COUNT
+   CMP   __local_init_mob_count__0
    BCS   .loop@10_continue
    INC   CHAR_PTR
    BNE   .loop@10_continue
@@ -946,25 +955,28 @@ clear_hires_page1:
    SUBROUTINE
 
    LDA   #$00
-   STA   __local_clear_hires_page1__page
-   LDA   #$20
-   STA   __local_clear_hires_page1__0
-.loop@11_start:
-   LDA   __local_clear_hires_page1__0
-   CMP   #$40
-   BNE   .jcmp_skip@0
-   LDA   __local_clear_hires_page1__page
-   BEQ   .loop@11_break
-.jcmp_skip@0:
+   STA   __local_clear_hires_page1__i_0
    LDY   #$00
-   TYA
-.loop@12_start:
-   STA   (__local_clear_hires_page1__page),Y
-   INY
-   BNE   .loop@12_start
-   INC   __local_clear_hires_page1__0
+   STY   __local_clear_hires_page1__i_1
    JMP   .loop@11_start
-.loop@11_break:
+.clear_hires_page1@rot@2:
+   LDA   #<HIRES_PAGE_1
+   ADC   __local_clear_hires_page1__i_0
+   STA   __local_clear_hires_page1__0
+   LDA   #>HIRES_PAGE_1
+   ADC   __local_clear_hires_page1__i_1
+   STA   __local_clear_hires_page1__1
+   LDA   #$00
+   LDY   #$00
+   STA   (__local_clear_hires_page1__0),Y
+   INC   __local_clear_hires_page1__i_0
+   BNE   .loop@11_start
+   INC   __local_clear_hires_page1__i_1
+.loop@11_start:
+   SEC
+   LDA   __local_clear_hires_page1__i_1
+   SBC   #$20
+   BCC   .clear_hires_page1@rot@2
    RTS
 
 game_init:
@@ -990,8 +1002,7 @@ game_init:
    JSR   set_text_window_bottom
    LDA   #$00
    STA   LOCATION_POS
-   LDY   #$00
-   STY   LOCATION_STYLE
+   STA   LOCATION_STYLE
    STA   ENTITY_PTR+1
    JSR   select_input_mode
    LDA   #$20
@@ -1073,7 +1084,6 @@ __zp_init:
 
    LDA   #$00
    STA   border_next
-   STA   border_handler
    STA   border_pass
    LDA   #$06
    STA   border_anim_index

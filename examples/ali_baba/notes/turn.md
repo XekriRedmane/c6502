@@ -91,19 +91,63 @@ every unit.
 
 ## Compiler gaps
 
-Item 1 was fixed on 18 Nov 2026, and turn.c keeps its cast.
+Item 1 was fixed by 18 Nov 2026, and turn.c now writes the comparison
+without a cast.
 
 1. **A comparison of a masked byte is done in 16 bits, signed.**
    `(ENTITY_PTR->life & HP_MASK) < 3` compiled to `AND #$3F; LDY #0;
-   SEC; SBC #3; TYA; SBC #0; BVC; EOR #$80; BPL`. game_turn_loop casts
-   the masked byte to `uint8_t`, which gives `AND #$3F; CMP #3; BCS`.
-   notes/entities.md has the minimal example.
-2. **Stores to different globals are reordered.** commit_move stores
-   FONT_COL, BLINK_COL, FONT_ROW, and BLINK_ROW in the original's
-   order, and the listing stores FONT_COL, FONT_ROW, BLINK_COL,
-   BLINK_ROW. The bytes are the same once the routine returns.
-3. **The chain costs a dispatcher.** The original's JMPs between
-   chain routines cost nothing beyond the JMP. run_chain is 506 bytes,
+   SEC; SBC #3; TYA; SBC #0; BVC; EOR #$80; BPL`, and now compiles to
+   `AND #$3F; CMP #3; BCS`. notes/entities.md has the minimal example.
+2. **A chained assignment reads its source again for a later use.**
+
+   ```c
+   #include <stdint.h>
+   extern uint8_t A1 [[c6502::address(0x5A0C)]], A2 [[c6502::address(0x5AA2)]], C1 [[c6502::address(0x5A63)]];
+   extern uint8_t B1 [[c6502::address(0x5A0D)]], B2 [[c6502::address(0x5AA3)]], C2 [[c6502::address(0x5A64)]];
+   uint8_t pos(uint8_t c, uint8_t r);
+   uint8_t f(void) {
+       A1 = A2 = C1;
+       B1 = B2 = C2;
+       return pos(C1, C2);
+   }
+   ```
+
+   compiles to `LDA C1; STA A2; STA A1; LDA C2; STA B2; STA B1; LDX
+   C2; LDA C1; JMP pos`. The stores go to other objects at fixed
+   addresses, so C1 and C2 are unchanged, and `TAX` and a reload of
+   C1 alone, or `LDX C2` before the second pair of stores, would do.
+   `commit_move` writes FONT_COL, BLINK_COL, FONT_ROW, and BLINK_ROW
+   this way, and it is 6 bytes larger than with locals for the column
+   and row (50 to 56 bytes). The stores also come out in the order
+   BLINK_COL, FONT_COL, BLINK_ROW, FONT_ROW, where the original stores
+   FONT_COL first, and the bytes are the same once the routine
+   returns.
+3. **A test that repeats one the code has already made is made
+   again.** `move_loop` tests `ENTITY_IS_MOB(e)` and returns, and then
+   `!ENTITY_IS_EVENT(e)`, which is `!(e > 0x00FF && !ENTITY_IS_MOB(e))`.
+
+   ```c
+   #include <stdint.h>
+   uint16_t find(void);
+   uint8_t f(void) {
+       uint16_t e = find();
+       if (e & 0x8000) return 1;
+       if (!(e > 0xFF && !(e & 0x8000))) return 2;
+       return 3;
+   }
+   ```
+
+   compiles the second test to `LDA #$FF; SEC; SBC e; LDA #0; SBC
+   e+1; BCS two; TXA; BPL three`. The bit-15 test is known false
+   there, and `e > 0xFF` is `e+1 != 0`, so `TXA; BNE three` would do.
+   The old C's `(e >> 8) == 0` gave `TXA; BNE`. In `move_loop` the
+   compiler also keeps the bit-15 test as a byte (`AND #$80; STA t`)
+   for the second test. The two tests take 17 bytes more than the old
+   C's, and `type < EVENT_ACTIVATED`, which replaced `(type &
+   EVENT_ACTIVATED) != EVENT_ACTIVATED`, saved 6, so move_loop grew 11
+   bytes (316 to 327).
+4. **The chain costs a dispatcher.** The original's JMPs between
+   chain routines cost nothing beyond the JMP. run_chain is 461 bytes,
    a 118-byte table of case addresses and 6 to 13 bytes a case for
    the JSR, the state, and the JMP back to the switch. A table of the
    routines' addresses less 1, with an RTS trick in place of the JSR,
@@ -111,33 +155,33 @@ Item 1 was fixed on 18 Nov 2026, and turn.c keeps its cast.
    through a function pointer (UNITS.md, gap 1). Every chain exit
    that returns a constant state also costs `LDA #n; RTS` where the
    original has `JMP x`, and every call of a handler with `ev` copies
-   the pointer into the callee's zero-page parameter.
+   the pointer into the callee's zero-page parameter. The five cases
+   that call an ordinary routine return from run_chain, which took 41
+   bytes off it.
 
 No compiler crash or wrong code.
 
 ## Size
 
-The bytes of code in `turn.c -c -O` (the `.text` sections, from
-`objdump.py -h`), against the original's code bytes in `main.lst`:
+The bytes of code in `turn.c -c -O` (`nm.py -S`), against the
+original's code bytes in `main.lst`. The last column is the C before
+it was rewritten as plain C on 18 Nov 2026.
 
-| Routine | Original | C |
-|---|---|---|
-| TURN_DISPATCH | 20 | 39 |
-| GAME_TURN_LOOP and MOVE_LOOP | 421 | 129 + 14 + 9 + 348 + 5 + 7 |
-| COMMIT_MOVE and RESET_TURN_POS | 85 | 58 + 46 |
-| END_TURN | 31 | 34 |
-| SET_STATE_FIGHT | 5 | 7 |
-| CHECK_AND_RESTRICT | 21 | 18 |
-| SET_CHAR_STATE | 15 | 11 |
-| CLEAR_RESTRICTED | 9 | 9 |
-| SET_RESTRICTED | 9 | 9 |
-| Total of the original's routines | 616 | 743 |
-| run_chain | | 506 |
-| `__zp_init` for TURN_ACTIVE | | 5 |
-| Total | 616 | 1254 |
+| Routine | Original | C | Before |
+|---|---|---|---|
+| TURN_DISPATCH | 20 | 37 | 37 |
+| GAME_TURN_LOOP and MOVE_LOOP | 421 | 145 + 327 | 145 + 316 |
+| COMMIT_MOVE and RESET_TURN_POS | 85 | 56 + 42 | 50 + 42 |
+| END_TURN | 31 | 34 | 34 |
+| SET_STATE_FIGHT | 5 | 5 | 5 |
+| CHECK_AND_RESTRICT | 21 | 22 | 22 |
+| SET_CHAR_STATE | 15 | 13 | 13 |
+| CLEAR_RESTRICTED | 9 | 9 | 9 |
+| SET_RESTRICTED | 9 | 9 | 9 |
+| Total of the original's routines | 616 | 699 | 682 |
+| run_chain | | 461 | 502 |
+| `__zp_init` for TURN_ACTIVE | | 5 | 5 |
+| Total | 616 | 1165 | 1189 |
 
-The `+` terms are pieces the optimizer outlined into shared
-subroutines, counted under the routine they are named after
-(`move_loop@run2` is the call of colrow_to_pos that commit_move and
-reset_turn_pos share too). move_loop loses most of its bytes to the
-handlers' parameters and to `JSR x; LDA #0; RTS` in place of `JMP x`.
+move_loop loses most of its bytes to the handlers' parameters and to
+`JSR x; LDA #0; RTS` in place of `JMP x`.

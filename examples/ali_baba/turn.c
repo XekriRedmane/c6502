@@ -514,6 +514,7 @@ enum {
     AI_PASS = 5,
     AI_ATTACK = 6,
     AI_ENTER_COMBAT = 7,
+    AI_FIGHT = 8,
     AI_REST = 9,
 };
 
@@ -545,8 +546,7 @@ void run_chain(uint8_t state) {
         case CHAIN_TURN_DISPATCH: state = turn_dispatch(); break;
         case CHAIN_SET_STATE_FIGHT:
             set_state_fight();
-            state = CHAIN_RETURN;
-            break;
+            return;
         /* main.c */
         case CHAIN_TOGGLE_SOUND: state = toggle_sound(); break;
         /* util.c */
@@ -554,12 +554,10 @@ void run_chain(uint8_t state) {
         /* combat.c */
         case CHAIN_AUTO_HEAL:
             auto_heal();
-            state = CHAIN_RETURN;
-            break;
+            return;
         case CHAIN_ENTER_COMBAT_STATE:
             enter_combat_state(MENU_COMBAT_POS);
-            state = CHAIN_RETURN;
-            break;
+            return;
         case CHAIN_ATTACK_RIGHT: state = attack_right(); break;
         case CHAIN_ATTACK_LEFT: state = attack_left(); break;
         case CHAIN_ATTACK_UP: state = attack_up(); break;
@@ -568,8 +566,7 @@ void run_chain(uint8_t state) {
         case CHAIN_SELECT_SOMEONE_ELSE: state = select_someone_else(); break;
         case CHAIN_RESOLVE_ATTACK:
             resolve_attack();
-            state = CHAIN_RETURN;
-            break;
+            return;
         case CHAIN_HANDLE_MOB_ENCOUNTER: state = handle_mob_encounter(); break;
         /* input.c */
         case CHAIN_TEARDOWN_INPUT: state = teardown_input(); break;
@@ -609,8 +606,7 @@ void run_chain(uint8_t state) {
         case CHAIN_USE_SCENARIO_DISK: state = use_scenario_disk(); break;
         case CHAIN_RETIRE_CHARACTER:
             retire_character();
-            state = CHAIN_RETURN;
-            break;
+            return;
         /* events.c */
         case CHAIN_FLUSH_PENDING_XP: state = flush_pending_xp(); break;
         case CHAIN_INIT_DROP_GOLD: state = init_drop_gold(); break;
@@ -620,7 +616,7 @@ void run_chain(uint8_t state) {
         /* ai.c */
         case CHAIN_SHOP_BUY_HANDLER: state = shop_buy_handler(); break;
         case CHAIN_BROWSE_HANDLER: state = browse_handler(); break;
-        default: state = CHAIN_RETURN; break;
+        default: return;
         }
     }
 }
@@ -635,11 +631,9 @@ void run_chain(uint8_t state) {
     original's comment says "negative".
 */
 static uint8_t turn_dispatch(void) {
-    uint8_t action;
-
     if (CHAR_AI_MODE == 0)
         return CHAIN_TEARDOWN_INPUT;
-    action = select_combat_target();
+    uint8_t action = select_combat_target();
     if (action == ACTION_ENTER_COMBAT)
         enter_combat_state(ACTION_ENTER_COMBAT);
     else if (action < ACTION_ENTER_COMBAT)
@@ -660,20 +654,13 @@ static uint8_t turn_dispatch(void) {
     CHECK_THREATS_HERE as one threat, where it means the mob is safe.
 */
 static uint8_t game_turn_loop(void) {
-    uint16_t colrow;
-    uint8_t col, row;
-
     TURN_ACTIVE = 1;
-    colrow = pos_to_colrow(ENTITY_PTR->pos);
-    col = (uint8_t)colrow;
-    row = (uint8_t)(colrow >> 8);
-    CURRENT_COL = col;
-    TURN_START_COL = col;
-    CURRENT_ROW = row;
-    TURN_START_ROW = row;
+    uint16_t colrow = pos_to_colrow(ENTITY_PTR->pos);
+    CURRENT_COL = TURN_START_COL = colrow;
+    CURRENT_ROW = TURN_START_ROW = colrow >> 8;
     STEPS_TAKEN = 0;
     clear_restricted();
-    if ((uint8_t)(ENTITY_PTR->life & HP_MASK) < 3)
+    if ((ENTITY_PTR->life & HP_MASK) < 3)
         set_restricted();
     if (check_encounter(ENTITY_PTR->pos) == ENCOUNTER_HOSTILE)
         set_restricted();
@@ -706,9 +693,6 @@ static uint8_t game_turn_loop(void) {
 static uint8_t move_loop(void) {
     for (;;) {
         uint8_t dir;
-        entity_ref e;
-        struct event *ev;
-        uint8_t type;
 
         if (MOVE_POINTS == 0 && (STEPS_TAKEN != 0 || CHAR_AI_MODE != 0))
             return CHAIN_END_TURN;
@@ -730,7 +714,7 @@ static uint8_t move_loop(void) {
                     enter_combat_state(AI_ENTER_COMBAT);
                 else if (dir == AI_ATTACK)
                     start_combat();
-                else
+                else    /* AI_FIGHT, or a larger command */
                     set_state_fight();
                 return CHAIN_RETURN;
             }
@@ -760,7 +744,7 @@ static uint8_t move_loop(void) {
         else
             CURRENT_COL++;
 
-        e = find_entity_at_pos(colrow_to_pos(CURRENT_COL, CURRENT_ROW));
+        entity_ref e = find_entity_at_pos(colrow_to_pos(CURRENT_COL, CURRENT_ROW));
         if (e == ENTITY_NONE) {
             commit_move();
             if (check_threats_here() == 0) {
@@ -769,18 +753,18 @@ static uint8_t move_loop(void) {
             }
             continue;
         }
-        if ((e >> 8) == 0) {
+        if (ENTITY_IS_MOB(e))
+            return CHAIN_HANDLE_MOB_ENCOUNTER;
+        if (!ENTITY_IS_EVENT(e)) {
             /* the edge of the map */
             tune_player(TUNE_ENTITY_INTERACTION, 0);
             show_locked_msg();
             return CHAIN_RETURN;
         }
-        if (ENTITY_IS_MOB(e))
-            return CHAIN_HANDLE_MOB_ENCOUNTER;
 
-        ev = ENTITY_EVENT(e);
-        type = ev->type;
-        if ((type & EVENT_ACTIVATED) != EVENT_ACTIVATED) {
+        struct event *ev = ENTITY_EVENT(e);
+        uint8_t type = ev->type;
+        if (type < EVENT_ACTIVATED) {
             handle_encounter(ev);
             return CHAIN_RETURN;
         }
@@ -806,16 +790,10 @@ static uint8_t move_loop(void) {
  * blinking cell, and stores it as the mob's position. reset_turn_pos
  * then plays the step's tune. */
 void commit_move(void) {
-    uint8_t col = CURRENT_COL;
-    uint8_t row = CURRENT_ROW;
-
-    FONT_COL = col;
-    BLINK_COL = col;
-    FONT_ROW = row;
-    BLINK_ROW = row;
-    ENTITY_PTR->pos = colrow_to_pos(col, row);
-    FONT_CHARNUM = CHAR_SPRITE;
-    BLINK_CHAR = CHAR_SPRITE;
+    FONT_COL = BLINK_COL = CURRENT_COL;
+    FONT_ROW = BLINK_ROW = CURRENT_ROW;
+    ENTITY_PTR->pos = colrow_to_pos(CURRENT_COL, CURRENT_ROW);
+    FONT_CHARNUM = BLINK_CHAR = CHAR_SPRITE;
     FONT_CHARSET = 1;
     render_font_char();
     TURN_TUNE_GUARD = TURN_TUNE_ARMED;
@@ -840,13 +818,11 @@ void reset_turn_pos(void) {
     comment says that a level above the steps grants another turn.
 */
 static uint8_t end_turn(void) {
-    int8_t margin;
-
     TURN_ACTIVE = 0;
     check_and_restrict();
     if (STEPS_TAKEN == 0)
         return CHAIN_TURN_DISPATCH;
-    margin = (int8_t)(((ENTITY_PTR->speed >> 1) & 7) - STEPS_TAKEN);
+    int8_t margin = (int8_t)(((ENTITY_PTR->speed >> 1) & 7) - STEPS_TAKEN);
     if (margin >= 0)
         return CHAIN_TURN_DISPATCH;
     set_state_fight();

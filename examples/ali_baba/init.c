@@ -46,8 +46,8 @@
       DRAW_BORDER_CHAR and PLOT_CHAR are its body.
     - The bytes the border code uses as variables are statics and
       locals: BORDER_ANIM_INDEX is border_anim_index, BORDER_ANIM_SAVE
-      is border_pass, BORDER_LOOP_CTR is border_handler (half its
-      value) in the animation and the loop index in draw_border_strings,
+      is border_pass, BORDER_LOOP_CTR is the handler border_next
+      names in the animation and the loop index in draw_border_strings,
       BORDER_SWAP_FLAG is move_border_icons's `carried`,
       BORDER_INITIAL_CHAR is anim_border_icons's `from`, and
       BORDER_ICON_OFFSET and ICON_TABLE_PTR are the cell index.
@@ -819,6 +819,10 @@
 */
 #include "ali_baba.h"
 
+/* Hi-res page 1, $2000-$3FFF, where the loader stages the HRCG and the
+ * disk code and where the HRCG draws. */
+extern uint8_t HIRES_PAGE_1 [[c6502::address(0x2000)]][0x2000];
+
 /* ---- The title screen's border ------------------------------------------- */
 
 /*
@@ -879,12 +883,9 @@ enum {
 };
 
 /* The step border_anim_step runs next, a BORDER_ value. The original
- * keeps the routine's address in DISPATCH_VEC ($F6/$F7). */
+ * keeps the routine's address in DISPATCH_VEC ($F6/$F7), and the
+ * handler that follows in BORDER_LOOP_CTR ($5DC3). */
 static uint8_t border_next;
-/* The handler the pass chooses after border_next, counting down from
- * BORDER_HANDLER_C, and -1 once the pass has chosen all three. The
- * original's BORDER_LOOP_CTR ($5DC3) is twice this. */
-static int8_t border_handler;
 /* The passes left after this one, 3 down to 0. BORDER_ANIM_SAVE. */
 static uint8_t border_pass;
 
@@ -915,25 +916,20 @@ static void draw_border_cell(uint8_t cell, uint8_t glyph)
 */
 static void move_border_icons(uint8_t first, uint8_t last)
 {
-    uint8_t cell = last;
     uint8_t carried = 0;
+    uint8_t cell = last;
 
-    for (;;) {
+    do {
         if (carried != 0) {
             border_glyph[cell] = carried;
             draw_border_cell(cell, carried);
             carried = 0;
-        } else {
+        } else if (border_glyph[cell] != 0) {
             carried = border_glyph[cell];
-            if (carried != 0) {
-                border_glyph[cell] = 0;
-                draw_border_cell(cell, 0);
-            }
+            border_glyph[cell] = 0;
+            draw_border_cell(cell, 0);
         }
-        if (cell == first)
-            break;
-        cell--;
-    }
+    } while (cell-- != first);
 }
 
 /* Moves the icons of the nine cells from `first` on.
@@ -958,7 +954,6 @@ static void start_border_passes(void)
     draw_border_cell(BORDER_TICK_CELL, glyph);
     if (++border_anim_index >= 0x16)
         border_anim_index = 5;
-    border_handler = BORDER_HANDLER_C;
 }
 
 /*
@@ -971,13 +966,12 @@ static void start_border_passes(void)
 static void anim_border_icons(uint8_t limit, uint8_t from, uint8_t to)
 {
     uint8_t r = random_in_range(limit);
-    uint8_t glyph;
 
     if (r > 1)
         return;
     if (r == 0)
         to += 9;
-    glyph = border_glyph[from];
+    uint8_t glyph = border_glyph[from];
     border_glyph[to] = glyph;
     border_glyph[from] = 0;
     draw_border_cell(to, glyph);
@@ -1002,22 +996,18 @@ static void anim_border_icons(uint8_t limit, uint8_t from, uint8_t to)
 void border_anim_step(void)
 {
     switch (border_next) {
-    case BORDER_HANDLER_A:
-        move_border_icon_list(10);
-        move_border_icon_list(19);
-        break;
-    case BORDER_HANDLER_B:
-        move_border_icons(0, 9);
-        break;
     case BORDER_HANDLER_C:
         move_border_icon_list(28);
         move_border_icon_list(37);
-        break;
-    default:    /* BORDER_RESTART */
-        start_border_passes();
-        break;
-    }
-    if (border_handler < 0) {
+        border_next = BORDER_HANDLER_B;
+        return;
+    case BORDER_HANDLER_B:
+        move_border_icons(0, 9);
+        border_next = BORDER_HANDLER_A;
+        return;
+    case BORDER_HANDLER_A:
+        move_border_icon_list(10);
+        move_border_icon_list(19);
         if (border_pass == 0) {
             start_border_passes();
         } else {
@@ -1026,11 +1016,13 @@ void border_anim_step(void)
                 anim_border_icons(4, 7, 18);
             else if (border_pass == 0)
                 anim_border_icons(2, 2, 36);
-            border_handler = BORDER_HANDLER_C;
         }
+        break;
+    default:    /* BORDER_RESTART */
+        start_border_passes();
+        break;
     }
-    border_next = (uint8_t)border_handler;
-    border_handler--;
+    border_next = BORDER_HANDLER_C;
 }
 
 /* ---- The title screen ----------------------------------------------------- */
@@ -1102,31 +1094,30 @@ static const uint8_t TITLE_GLYPH[9] = { 0x01, 0x0E, 0x04, 0x02, 0x01, 0x03, 0x04
 static const uint8_t TITLE_GLYPH_COL[9] = { 0x10, 0x12, 0x14, 0x04, 0x04, 0x22, 0x22, 0x10, 0x16 };
 static const uint8_t TITLE_GLYPH_ROW[9] = { 0x03, 0x03, 0x03, 0x0B, 0x10, 0x10, 0x0B, 0x10, 0x0B };
 
-/* Draws glyphs `i` up to `end` - 1 of TITLE_GLYPH, of font group
+/* Draws glyphs `first` up to `end` - 1 of TITLE_GLYPH, of font group
  * `charset`. PLOT_CHAR and DRAW_BORDER_CHAR draw one each. */
-static void plot_title_glyphs(uint8_t i, uint8_t end, uint8_t charset)
+static void plot_title_glyphs(uint8_t first, uint8_t end, uint8_t charset)
 {
-    do {
+    for (uint8_t i = first; i < end; i++) {
         FONT_CHARNUM = TITLE_GLYPH[i];
         TEXT_COL = TITLE_GLYPH_COL[i];
         TEXT_ROW = TITLE_GLYPH_ROW[i];
         FONT_CHARSET = charset;
         print_fontchar_at_text_pos();
-    } while (++i != end);
+    }
 }
 
 /* Prints string `s` at border label positions `first` to `last`, the
  * last first. One loop of DRAW_BORDER_LABELS. */
 static void draw_border_strings(const uint8_t *s, uint8_t first, uint8_t last)
 {
-    for (;;) {
-        TEXT_COL = BORDER_LABEL_COL[last];
-        TEXT_ROW = BORDER_LABEL_ROW[last];
+    uint8_t i = last;
+
+    do {
+        TEXT_COL = BORDER_LABEL_COL[i];
+        TEXT_ROW = BORDER_LABEL_ROW[i];
         print_string(s);
-        if (last == first)
-            break;
-        last--;
-    }
+    } while (i-- != first);
 }
 
 /* Draws the border frame in font '2'. DRAW_BORDER_LABELS. */
@@ -1203,22 +1194,20 @@ static void init_game_state(void)
 */
 static void select_input_mode(void)
 {
-    uint8_t button;
-    uint8_t key;
-
     display_message(MSG_INPUT_PROMPT);
-    button = BUTN[0] & 0x80;
+    uint8_t button = BUTN[0] & 0x80;
+    uint8_t key;
     do {
         KBDSTRB = 0;
-        while (!((key = KBD) & 0x80)) {
-            if ((BUTN[0] ^ button) & 0x80) {
+        while ((key = KBD) < 0x80) {
+            if ((BUTN[0] & 0x80) != button) {
                 INPUT_MODE = 1;
                 set_cursor_row21();
                 display_message(MSG_JOYSTICK_MODE);
                 return;
             }
         }
-    } while (key != 0xA0);
+    } while (key != 0xA0);  /* space */
     INPUT_MODE = 0;
 }
 
@@ -1234,13 +1223,11 @@ static void init_mob_count(void)
 {
     TOTAL_MOB_COUNT = 0;
     CHAR_PTR = &LOCATIONS[1];
-    while (((const uint8_t *)CHAR_PTR)[1] != 0xFF) {
+    while ((uint16_t)CHAR_PTR->name >> 8 != 0xFF) {
         uint8_t count = CHAR_PTR->pc_count;
-        uint8_t total = TOTAL_MOB_COUNT + count;
-
-        TOTAL_MOB_COUNT = total;
+        TOTAL_MOB_COUNT += count;
         CHAR_PTR++;
-        if (total < count)      /* the carry out of the sum */
+        if (TOTAL_MOB_COUNT < count)    /* the sum carried */
             CHAR_PTR = (struct location *)((uint8_t *)CHAR_PTR + 1);
     }
 }
@@ -1251,6 +1238,14 @@ static void init_disk_iob(void)
     RWTS_IOB_PTR = &RWTS_IOB;
 }
 
+/* Clears hi-res page 1, as RELOCATE_HIRES_STAGING does when it copies
+ * the loader's staged pages out of it. */
+static void clear_hires_page1(void)
+{
+    for (uint16_t i = 0; i < sizeof HIRES_PAGE_1; i++)
+        HIRES_PAGE_1[i] = 0;
+}
+
 /*
     Points RESET at cold_restart, shows the high-resolution page 1, sets
     up the HRCG and the text window, plays the title screen, runs the
@@ -1258,26 +1253,14 @@ static void init_disk_iob(void)
 
     SOFTEV gets the constant $A56F, which is where the linker script
     puts cold_restart, since taking cold_restart's address would make it
-    ineligible for the ZP-passing ABI.
+    ineligible for the ZP-passing ABI. The original clears only the high
+    byte of ENTITY_PTR, and so does game_init.
 */
-/* Clears hi-res page 1, $2000-$3FFF, as RELOCATE_HIRES_STAGING does
- * when it copies the loader's staged pages out of it. */
-static void clear_hires_page1(void)
-{
-    for (uint8_t *page = (uint8_t *)0x2000; page != (uint8_t *)0x4000;
-         page += 256) {
-        uint8_t i = 0;
-        do {
-            page[i] = 0;
-        } while (++i != 0);
-    }
-}
-
 void game_init(void)
 {
     SOFTEV = 0xA56F;
     SETPWRC();
-    BLINK_COL = 0x14;
+    BLINK_COL = MAP_WIDTH;      /* no blinking cell */
     clear_hires_page1();
 
     (void)TXTCLR;
@@ -1294,7 +1277,7 @@ void game_init(void)
 
     LOCATION_POS = 0;
     LOCATION_STYLE = 0;
-    ((uint8_t *)&ENTITY_PTR)[1] = 0;
+    ENTITY_PTR = (struct mob *)((uint16_t)ENTITY_PTR & 0x00FF);
 
     select_input_mode();
     run_chain(CHAIN_INIT_WORLD);

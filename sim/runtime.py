@@ -30,16 +30,13 @@ Boot stub at $0600:
     JSR main
     BRK              ; halts the simulator (the harness stops on BRK)
 
-Helpers are mostly modeled on the documented HARGS layouts. Today we
-implement unsigned multiply / divide / shift / arithmetic-shift
-semantics for the integer family. Multiplication is bitwise-correct
-for both signed and unsigned C operands at the *truncated* widths the
-caller uses (low N bytes of the product), which matches the way
-`tac_to_asm` consumes the result. Unsigned division is bitwise-correct
-for unsigned C operands; signed division on negatives currently gives
-wrong results — there's no signed/unsigned routing in `tac_to_asm`
-today, so this is an open question for the eventual real runtime, not
-a simulator-specific limitation.
+The hooks follow the documented HARGS layouts. Multiplication keeps
+the low N bytes of the product, which is the result for both signed
+and unsigned C operands at the width the caller reads. `udivmod*`
+floor-divides unsigned operands, and `sdivmod*` truncates toward zero
+with the remainder taking the dividend's sign (C99 §6.5.5.6). The
+helpers with 6502 code (`sim/runtime_helpers.py`, the runtime
+library) run as 6502 code instead of their hooks.
 
 FP helpers (`i2f` / `u2f` / `f2i` / `f2d` / `fadd` / etc., plus the
 ordering helpers `flt` / `fle` / `dlt` / `dle`) are implemented as

@@ -43,8 +43,10 @@ footprint of every helper it calls. The footprints are measured from
 the 6502 helpers in `sim/runtime_helpers.py`, including the helpers
 they call. A helper that's only a Python hook in the simulator, such
 as the floating-point ones, uses no scratch, so the program's own
-offsets cover it. A runtime written outside this repo has to keep
-each helper within those footprints.
+offsets cover it. The runtime library the linker adds to a program
+(passes/runtime_library.py) is the same code, so its helpers keep
+within these footprints. A runtime written outside this repo, given
+with `--defsym`, has to keep each helper within them too.
 """
 
 from __future__ import annotations

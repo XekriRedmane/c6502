@@ -117,9 +117,11 @@ class Resolver:
         )
 
 
-# The names of the runtime's helpers, which the compiler calls and the
-# repository doesn't have as a library yet (CLAUDE.md, "Not yet in the
-# repo").
+# The names of the runtime's helpers, which the compiler calls. The
+# linker adds the ones the runtime library has
+# (passes/runtime_library.py) to a program that calls them, so a name
+# here that is still undefined is one of the helpers without 6502 code
+# (CLAUDE.md, "Not yet in the repo").
 _HELPER = re.compile(
     r"(mul|udivmod|sdivmod|asl|asr|lsr)(8|16|32|64)|icall"
     r"|[fd](add|sub|mul|div|lt|le)"
@@ -131,8 +133,8 @@ def _undefined_hint(name: str) -> str:
     """A hint to add to the error for an undefined `name`."""
     if _HELPER.fullmatch(name):
         return (
-            " (a runtime helper; the runtime library isn't in the "
-            "repository yet, so give its address with --defsym)"
+            " (a runtime helper that has no 6502 code in the runtime "
+            "library yet, so give its address with --defsym)"
         )
     return ""
 

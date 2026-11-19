@@ -1114,8 +1114,10 @@ def program_machine(main_bin: bytes, exe, disk: bytes,
     When the program calls the simulator's runtime helpers (it was
     linked with `sim.linked.defsym_args()`), they're installed as
     `sim/linked.py` installs them, at $E000 in the ROM's space, which
-    the game never uses. `ssp`, if given, is stored in SSP, for a
-    program whose functions use the soft stack.
+    the game never uses. A program linked without them holds the
+    helpers it calls from the runtime library, in its own segments.
+    `ssp`, if given, is stored in SSP, for a program whose functions
+    use the soft stack.
 
     `__zp_init`, if the program has one, has already run. The
     registers are then put back as EALDR leaves them."""
@@ -1127,7 +1129,7 @@ def program_machine(main_bin: bytes, exe, disk: bytes,
         put(mem, seg.paddr, seg.data + bytes(seg.memsz - len(seg.data)))
     machine = _machine(mem, disk, keys, swaps, disks, wide_track)
     symbols = program_symbols(exe)
-    _install_helpers(machine, symbols)
+    _install_helpers(machine, symbols, exe)
     if ssp is not None:
         from passes.runtime_layout import CLASSIC
         at = symbols.get("SSP", CLASSIC.ssp)
@@ -1140,11 +1142,18 @@ def program_machine(main_bin: bytes, exe, disk: bytes,
     return machine
 
 
-def _install_helpers(machine: Machine, symbols: dict[str, int]) -> None:
-    """Installs the simulator's runtime helpers that the program refers
-    to, checking that it was linked with their addresses."""
+def _install_helpers(machine: Machine, symbols: dict[str, int],
+                     exe) -> None:
+    """Installs the simulator's runtime helpers that the program `exe`
+    refers to and doesn't hold itself, checking that it was linked with
+    their addresses."""
     import sim.runtime as rt_mod
+    from binutils import elf as E
     from passes.runtime_layout import CLASSIC, RuntimeLayout
+    own = {
+        s.name for s in exe.symbols
+        if s.defined and s.type != E.STT_FILE and s.section != E.SHN_ABS
+    }
     layout = RuntimeLayout(
         ssp=symbols.get("SSP", CLASSIC.ssp),
         fp=symbols.get("FP", CLASSIC.fp),
@@ -1152,7 +1161,7 @@ def _install_helpers(machine: Machine, symbols: dict[str, int]) -> None:
         dptr=symbols.get("DPTR", CLASSIC.dptr),
     )
     runtime = rt_mod.build_runtime(layout)
-    used = [n for n in runtime.symbols if n in symbols]
+    used = [n for n in runtime.symbols if n in symbols and n not in own]
     if not used:
         return
     for name in used:

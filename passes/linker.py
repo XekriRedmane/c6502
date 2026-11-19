@@ -79,7 +79,18 @@ every item has a name of its own in the executable. A renamed
 function's zero-page slots, which each unit spells after the function,
 are renamed with it, so the allocators place two functions; two units
 defining one external name is an error. A name no unit defines and
-the linker doesn't place has to be given with `--defsym`.
+the linker doesn't place has to be given with `--defsym`, except a
+runtime helper with 6502 code.
+
+The runtime library (passes/runtime_library.py). The helpers the
+units call to multiply, divide, and shift, which no unit defines and
+no `--defsym` gives, and the helpers those call, come from the library
+as one more object, `runtime.o`, with a section for each helper
+(`_runtime_library`). It goes after the units, so without a script
+its helpers follow their code in `.text`, and a script places them as
+`runtime.o(.text)` or with a pattern such as `*(.text)`. Its metadata
+gives the HARGS bytes the helpers touch, which `_choose_layout` counts
+in the program's block.
 
 Merged tables. The halves of the tables of row addresses that `-O`
 makes (passes/optimization/row_address_tables.py) are marked `merge`
@@ -415,7 +426,8 @@ def link_objects(
     it goes by (which the script's file patterns match without its
     directory). `script` is a parsed linker script, or None for the
     default layout from `origin`. `defsyms` gives addresses for names
-    no object defines, such as the runtime's helpers."""
+    no object defines, and a runtime helper it names isn't taken from
+    the runtime library."""
     from passes.link_layout import (
         LayoutError, Unit, default_script, lay_out, startup_lines,
         tail_jump,
@@ -437,6 +449,11 @@ def link_objects(
         objects.append((path, _without_init(obj)))
         meta.items = [it for it in meta.items if it.name != INIT_FUNCTION]
         metas.append(meta)
+    # The runtime's helpers the objects call, from the library.
+    library = _runtime_library(objects, defsyms)
+    if library is not None:
+        objects.append(library[0])
+        metas.append(library[1])
     _, absolute = global_definitions(objects)
     fixed = dict(absolute)
     # Give colliding internal names their own spellings.
@@ -628,6 +645,23 @@ def link_objects(
 # program out.
 _SPILL_BASE = 0xF000
 _SPILL = "__spill"
+
+
+def _runtime_library(
+    objects: list[tuple[str, E.ElfFile]], defsyms: dict[str, int],
+) -> tuple[tuple[str, E.ElfFile], LinkMetadata] | None:
+    """The object of the runtime's helpers that `objects` call and
+    neither define nor get from `defsyms`, with its name and its link
+    metadata, or None when they call none (passes/runtime_library.py)."""
+    from passes.runtime_library import LIBRARY_NAME, library_object, needed
+    defs, absolute = global_definitions(objects)
+    names = needed(objects, set(defs) | set(absolute) | set(defsyms))
+    if not names:
+        return None
+    obj = library_object(names)
+    meta = parse_metadata(obj.link_text())
+    meta.items = _object_items(meta, obj, LIBRARY_NAME)
+    return (LIBRARY_NAME, obj), meta
 
 
 def _object_items(meta: LinkMetadata, obj: E.ElfFile, path: str) -> list[ItemMeta]:

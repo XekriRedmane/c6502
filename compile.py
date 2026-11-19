@@ -28,7 +28,10 @@ and the objects are linked into an ELF executable (passes/linker.py),
 by default `a.out`. `-T script.ld` lays the program out by a linker
 script, `-Ttext=ADDR` or `--origin ADDR` starts `.text` somewhere
 other than $0800 in a link without one, and `--defsym NAME=VALUE`
-gives an address to a name no object defines.
+gives an address to a name no object defines. The runtime helpers
+the program calls to multiply, divide, and shift come from the
+runtime library (passes/runtime_library.py), unless `--defsym` gives
+their addresses.
 
 `-O` (orthogonal to the stage flag) runs the optimizer pipeline: TAC-level fixed-point opts (constant folding,
 strength reduction, comparison-against-zero / jump fold, UCE, copy

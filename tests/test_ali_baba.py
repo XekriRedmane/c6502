@@ -19,6 +19,10 @@ each script on the original and checks that it reaches what the script
 is for. `TestRuns` plays each on the C program as well and compares the
 two: the streams of events must be the same up to the event at which
 the original's run ends, and so must the disks the scripts write.
+`TestRuns` links the program with the simulator's runtime helpers
+(`sim.linked.defsym_args`), and `TestReadmeLink` links it by the
+README's command, which takes the helpers from the runtime library,
+and plays the game on it.
 
 Each script is a test method of its own, which pytest-xdist can give to
 a worker of its own. On the original, the attract mode takes about 9
@@ -433,9 +437,13 @@ class TestGoldOutputs(unittest.TestCase):
                     )
 
 
-def _build(tmp: str) -> Path:
+def _build(tmp: str, defsyms: bool = True) -> Path:
     """Compiles each unit to an object and links them with the
-    example's linker script. Returns the executable's path."""
+    example's linker script. Returns the executable's path. With
+    `defsyms`, the link gives the simulator's runtime helpers'
+    addresses (`sim.linked.defsym_args`). Without it, the link is the
+    README's, and the program holds the helpers it calls from the
+    runtime library."""
     from compile import main as compile_main
     from sim.linked import defsym_args
     objects = [
@@ -445,7 +453,7 @@ def _build(tmp: str) -> Path:
     linked = Path(tmp) / "ali_baba"
     assert compile_main([
         "compile.py", "-T", str(_DIR / "ali_baba.ld"), *objects,
-        *defsym_args(), "-o", str(linked),
+        *(defsym_args() if defsyms else []), "-o", str(linked),
     ]) == 0
     return linked
 
@@ -522,6 +530,37 @@ class TestRuns(unittest.TestCase):
 
     def test_party(self) -> None:
         self._compare(_PARTY)
+
+
+@unittest.skipUnless(_HAVE_PCPP, "pcpp not available")
+@unittest.skipUnless(
+    _AB_DIR, "set ALI_BABA_DIR to the ali_baba_reveng directory")
+@unittest.skipUnless((_DIR / "ali_baba.ld").exists(),
+                     "examples/ali_baba has no linker script yet")
+class TestReadmeLink(unittest.TestCase):
+    """The program linked by the README's command, with no `--defsym`,
+    so that it holds every runtime helper it calls from the runtime
+    library, fits the script's regions and plays a game. The link
+    fails when a region overflows, so the build checks the fit."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from binutils import elf as E
+        with tempfile.TemporaryDirectory() as tmp:
+            cls.exe = E.read_file(_build(tmp, defsyms=False))
+        cls.functions = _function_names(cls.exe)
+
+    def test_helpers_are_its_own(self) -> None:
+        from binutils import elf as E
+        from passes.runtime_library import helper_names
+        absolute = [
+            s.name for s in self.exe.symbols
+            if s.name in helper_names() and s.section == E.SHN_ABS
+        ]
+        self.assertEqual(absolute, [])
+
+    def test_game(self) -> None:
+        TestRuns._compare(self, _GAME)
 
 
 def _print_coverage() -> None:

@@ -142,17 +142,18 @@ These parts work.
 
 These parts are missing.
 
-- There's no runtime library. Multiplying, dividing, and taking a
-  remainder by a value that isn't a constant, shifting by a variable
-  count, every floating-point operation, and calling through a
-  function pointer all compile to calls of helper routines (`mul16`,
-  `udivmod16`, `asl16`, `fadd`, `icall`, and so on), and no library
-  to link them from is in the repository. A program that uses them
-  links only when `--defsym` gives each helper's address, so you have
-  to write the helpers. The simulator has 6502 versions of the
-  integer helpers (`sim/runtime_helpers.py`) and Python stand-ins
-  for the floating-point ones, which is how the tests run such
-  programs.
+- The runtime library has only the integer helpers. Multiplying,
+  dividing, and taking a remainder by a value that isn't a constant,
+  and shifting by a variable count, compile to calls of helper
+  routines (`mul16`, `udivmod16`, `asl16`, and so on), and the linker
+  adds the ones a program calls from the runtime library
+  (`passes/runtime_library.py`). Every floating-point operation, the
+  64-bit integer operations, and calling through a function pointer
+  call helpers (`fadd`, `mul64`, `icall`, and so on) that have no
+  6502 code yet. A program that uses them links only when `--defsym`
+  gives each such helper's address, so you have to write those
+  helpers. The simulator has Python stand-ins for them, which is how
+  the tests run such programs.
 - There's no startup code. Something has to set the soft stack
   pointer `SSP`, call `__zp_init`, and then call `main` (see
   [Zero page](#zero-page) below).
@@ -207,7 +208,7 @@ uv run python compile.py prog.c -S -O -o -     # to stdout
 uv run python compile.py -O -c a.c b.c         # objects a.o and b.o
 uv run python compile.py a.o b.o -o prog       # link them
 uv run python compile.py -O -T prog.ld a.c b.o -o prog   # both, with a linker script
-uv run python compile.py a.o -o prog --defsym mul16=0x9000   # give a helper's address
+uv run python compile.py a.o -o prog --defsym fadd=0x9000    # give a helper's address
 uv run python nm.py a.o                        # an object's symbols
 uv run python objdump.py -d a.o                # disassembly, in dasm's syntax
 ```
@@ -326,8 +327,8 @@ do the division and remainder of an unsigned value by one. A
 multiplication by a constant such as 3, 5, 10, or 12, which is the
 sum or difference of two powers of two, becomes two shifts and an add
 or a subtract. Every other multiplication, division, remainder, and
-shift by a variable count calls a helper, which the program has to
-supply.
+shift by a variable count calls a helper, which the linker adds to
+the program from the runtime library.
 
 #### Zero page
 

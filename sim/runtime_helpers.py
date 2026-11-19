@@ -1,7 +1,10 @@
 """6502 assembly implementations of the runtime helpers, expressed as
-`asm_ast.Function` objects. The simulator's `build_runtime` assembles
-these alongside the user program and binds their symbols, so a `JSR
-udivmod8` in user code lands on the real 6502 routine instead of a
+`asm_ast.Function` objects. They're the runtime library: the linker
+adds the ones a program calls to the program
+(`passes/runtime_library.py`). The simulator's `build_runtime` also
+assembles them at $E000 and binds their symbols, so a `JSR udivmod8`
+in a program the harness runs, or in one linked with
+`sim.linked.defsym_args`, lands on the 6502 routine instead of a
 Python trap.
 
 Each helper follows the documented HARGS layout (see `tac_to_asm.py`'s
@@ -15,12 +18,19 @@ abs as the resolved address dictates). The shift / rotate / inc / dec
 emit on `Data` operands — added alongside this module — is what
 allows these to be expressed cleanly without going through A.
 
-Currently implemented: `mul8`, `mul16`, `mul32`, `udivmod8`,
-`sdivmod8`, plus the full shift family `asl{8,16,32}` /
-`asr{8,16,32}` / `lsr{8,16,32}`. The 16- and 32-bit divmods stay
-as Python hooks in `sim/runtime.py` until they're written here
-(same shift-and-subtract algorithm as udivmod8, scaled byte-widths
-plus a sign-correction wrapper for sdivmod16 / sdivmod32).
+The helpers here are `mul8`, `mul16`, `mul32`, `udivmod{8,16,32}`,
+`sdivmod{8,16,32}`, and the shifts `asl{8,16,32}`, `asr{8,16,32}`,
+and `lsr{8,16,32}`. On 18 Nov 2026 each of them gave the same bytes as
+the simulator's Python hook of the same name (`sim/runtime.py`) on
+edge cases and random operands, with every shift count from 0 to past
+the width. A shift by a count of the width or more gives 0 (`asl`,
+`lsr`) or the sign in every bit (`asr`), as the hooks do. The hooks
+raise on a division by zero. There the helpers give the dividend as
+the remainder, and a quotient of all ones from `udivmod`, and from
+`sdivmod` a quotient of -1 for a dividend of 0 or more and 1 for a
+negative one. The 64-bit helpers, the floating-point ones, and
+`icall` are only Python hooks (and 3 bytes for `icall`) in the
+simulator.
 """
 
 from __future__ import annotations
@@ -887,10 +897,9 @@ def sdivmod32_function() -> a.Function:
     )
 
 
-# Names of the helpers we have real asm for. `sim/runtime.py` reads
-# this list and does NOT install Python hooks for these names — the
-# real asm runs instead, assembled into the program image alongside
-# the user code.
+# Names of the helpers that have 6502 code. `sim/runtime.py` reads
+# this list and doesn't install Python hooks for these names, and the
+# 6502 code runs instead, assembled at $E000.
 ASM_IMPLEMENTED: tuple[str, ...] = (
     "mul8", "mul16", "mul32",
     "udivmod8", "sdivmod8",
@@ -903,9 +912,10 @@ ASM_IMPLEMENTED: tuple[str, ...] = (
 
 
 def all_helper_functions() -> list[a.Function]:
-    """The full set of asm helpers to assemble into the program image.
-    Add to this list as more helpers move from Python hooks to real
-    asm."""
+    """Returns every helper that has 6502 code, in the order the
+    simulator assembles them and the runtime library lays them out. A
+    helper added here is in the library and replaces the simulator's
+    Python hook once its name is in `ASM_IMPLEMENTED`."""
     return [
         mul8_function(),
         mul16_function(),

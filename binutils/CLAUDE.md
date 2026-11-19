@@ -24,7 +24,11 @@ script are in `passes/`.
   writes, to an `ET_REL` object. See its docstring for the syntax.
 - `ld.py` — the generic half of linking: `global_definitions`,
   `Resolver` (a symbol's address, from its own object first),
-  `relax`, `relocate`, and `executable`.
+  `relax`, `relocate`, and `executable`. The error for an undefined
+  name that is a runtime helper's says that the helper has no 6502
+  code in the runtime library, since the linker adds the ones it has
+  (`passes/runtime_library.py`), and that `--defsym` can give its
+  address.
 - `disasm.py` — `disassemble(elf)`, the listing `objdump.py -d` and
   `-D` print.
 

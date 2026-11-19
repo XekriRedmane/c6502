@@ -50,7 +50,10 @@ so the simulator can run the executable), `linked_text` (the
 executable's disassembly and link metadata, to search, with the
 executable's bytes in `.exe` for `sim.linked.build_linked_sim`), and
 `listing` (the `objdump.py -D` text the multi-unit examples check
-in). `test_binutils.py` covers the ELF files, the assembler,
+in). `test_runtime_library.py` links without the helpers' addresses,
+so that each program holds the helpers it calls from the runtime
+library, and runs each helper from C against Python with the
+simulator's own helpers removed. `test_binutils.py` covers the ELF files, the assembler,
 relaxation, `nm.py`, and `objdump.py`; its `TestAgainstDasm` compares
 the assembler with dasm and runs only where dasm is installed.
 
@@ -91,7 +94,8 @@ which aren't in this repository, and are skipped without them.
   character joins and Ali Baba retires) and checks what each
   reaches, and `TestRuns` plays them on the linked C program too and
   requires the same events, on `sim/ali_baba.py`, and the same
-  disks. `uv run python -m tests.test_ali_baba coverage`
+  disks. `TestReadmeLink` links the program by the README's command,
+  with no `--defsym`, and plays the game script on it. `uv run python -m tests.test_ali_baba coverage`
   lists the original's routines no script reaches.
 
 ## Chapter harnesses

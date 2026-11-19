@@ -40,8 +40,9 @@ parsed by any tool.
   and the limits.
 - `linker_scripts.md` — user guide to linking with `compile.py -T`:
   sections (the defaults and `[[c6502::section("name")]]`), the GNU
-  ld script subset, the section symbols, the startup copy and clear,
-  and how the linker computes the layout and writes the executable.
+  ld script subset, the runtime library and where its helpers go,
+  the section symbols, the startup copy and clear, and how the
+  linker computes the layout and writes the executable.
 - `calling_conventions.md` — user guide to c6502's two calling
   conventions. The soft stack: SSP and FP, a call traced through the
   caller's argument push, the prologue, the frame layout, and the

@@ -158,6 +158,49 @@ its `JMP`:
 `ENTRY`, `INCLUDE`, `/DISCARD/`, `FILL`, `BYTE`, `SORT`, and `. =`
 between output sections are errors.
 
+## The runtime library
+
+A multiplication, a division or remainder, and a shift by a variable
+count compile to calls of the runtime's helpers, such as `mul16`,
+`sdivmod16`, and `asl8`. The linker adds the helpers a program calls
+from the runtime library (passes/runtime_library.py), as a GCC
+toolchain adds routines from libgcc. Only those go in the program,
+together with the helpers they call (`sdivmod16` calls `udivmod16`).
+The library is one more input file to the link, named `runtime.o`,
+with each helper a function in `.text`, so a script places the
+helpers by that name:
+
+```
+    .runtime : { runtime.o(.text) } > rom
+```
+
+A pattern that takes every file's code, such as `*(.text .text.*)`,
+takes them too, and a script with neither fails the link on the
+first helper it leaves out:
+
+```
+compile.py: link error: no output section in the script takes `udivmod16` (section .text, runtime.o)
+```
+
+Without a script, the helpers follow the program's code in `.text`. A
+function that ends with a jump to a helper falls into it when the two
+end up next to each other, as with any two functions.
+
+A helper that a file defines, or whose address `--defsym` gives, isn't
+taken from the library. That's how the tests run a program on the
+simulator's copies of the helpers (`sim.linked.defsym_args`). The
+helpers for floating point, for 64-bit integers, and for calls
+through a pointer have no 6502 code yet, so a program that calls one
+links only when `--defsym` gives its address:
+
+```
+compile.py: link error: a.o: undefined symbol `fadd` (a runtime helper that has no 6502 code in the runtime library yet, so give its address with --defsym)
+```
+
+The helpers work in `HARGS`, at the address the linker gives it, and
+the linker makes the block as large as the largest of the helpers in
+the program needs.
+
 ## Symbols
 
 Each output section defines `__name_start` and `__name_end` (its run

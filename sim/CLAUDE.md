@@ -25,9 +25,12 @@ MPU until the boot stub's BRK fires.
   linking with `compile.py` wrote. It loads each segment at its load
   address, reads the symbols, and installs the runtime for the
   program's layout (its SSP, FP, HARGS, and DPTR symbols). A program
-  that calls the runtime's helpers is linked with their addresses
-  (`runtime_defsyms`, `defsym_args`), which are the same for every
-  layout, and `build_linked_sim` checks that they match.
+  linked without `--defsym` holds the helpers it calls from the
+  runtime library (`passes/runtime_library.py`) and runs them. One
+  linked with the simulator's helper addresses (`runtime_defsyms`,
+  `defsym_args`), which are the same for every layout, calls the
+  simulator's copies, and `build_linked_sim` checks that the
+  addresses match.
 - `apple2.py` — `Apple2`, a stand-in Apple II for running a whole
   program: the Monitor's `HOME`, `CLREOL`, `VTAB`, `RDKEY`, `GETLN1`,
   `COUT`, and `COUT1` over a 40-by-24 screen with its text window, a
@@ -74,14 +77,18 @@ MPU until the boot stub's BRK fires.
   reset vector, and Python-implemented hooks for the 6502 helpers
   (`mul*` / `divmod*` / `asl*` / `asr*` / `lsr*`, plus FP slots). Each
   helper is given a fixed trap address; the harness intercepts PC at
-  that address and dispatches to a Python implementation. This lets
-  every chapter test run end-to-end without the real 6502 runtime
-  library (not yet in the repo).
+  that address and dispatches to a Python implementation. The helpers
+  with 6502 code run as 6502 code, and the hooks cover the rest (the
+  64-bit and floating-point helpers), so every chapter test runs
+  end-to-end.
 - `runtime_helpers.py` — 6502 assembly implementations of the runtime
-  helpers, expressed as `asm_ast.Function` objects. `build_runtime`
-  assembles these alongside the user program and binds their symbols,
-  so a `JSR udivmod8` in user code lands on the real 6502 routine
-  instead of a Python trap.
+  helpers, expressed as `asm_ast.Function` objects. They're the
+  runtime library the linker adds to a program
+  (`passes/runtime_library.py`). `build_runtime` assembles them at
+  $E000 and binds their symbols, so a `JSR udivmod8` in a program the
+  harness runs lands on the 6502 routine instead of a Python trap.
+  Each was checked against its hook on edge cases and random operands
+  (`tests/test_runtime_library.py` does it through linked C).
 
 ## Notes
 

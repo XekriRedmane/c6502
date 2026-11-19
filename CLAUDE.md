@@ -380,8 +380,25 @@ Objects and linking:
   it). A name no object defines and the linker doesn't place is an
   error unless `--defsym NAME=VALUE` gives it. User guide:
   [docs/linker_scripts.md](docs/linker_scripts.md).
-- `sim/linked.py` runs an executable in the simulator, linked with
-  the runtime helpers' addresses (`sim.linked.defsym_args`).
+- The runtime helpers a program calls (`mul16`, `sdivmod16`, `asl8`,
+  and the rest with 6502 code in `sim/runtime_helpers.py`) come from
+  the runtime library (`passes/runtime_library.py`), as routines come
+  from libgcc. The linker takes each helper that some object names,
+  that no object defines, and that no `--defsym` gives, and the
+  helpers those call, and assembles them at link time into one more
+  object, `runtime.o`, with a section in `.text` for each. Without a
+  script they follow the program's code in `.text`, and a script
+  places them as `runtime.o(.text)` or with a pattern such as
+  `*(.text)`. They read and write the program's HARGS, and the
+  object's metadata gives their HARGS footprint, which the program's
+  block counts. The linker's `fall_through` can put a helper right
+  after a function that ends with a `JMP` to it.
+- `sim/linked.py` runs an executable in the simulator. A program
+  linked without `--defsym` runs the helpers it holds. One linked with
+  the simulator's helper addresses (`sim.linked.defsym_args`, as
+  `tests/link_helpers.link` does) calls the simulator's copies at
+  $E000 and its Python hooks, which also cover the helpers with no
+  6502 code.
 
 For the full optimizer walkthrough, see
 [passes/optimization/CLAUDE.md](passes/optimization/CLAUDE.md) and
@@ -1190,25 +1207,30 @@ an unwary contributor would otherwise discover by surprise.
 
 ### Not yet in the repo (programs assemble but won't link)
 
-The runtime header isn't in this repo:
+The runtime library (`passes/runtime_library.py`) has the integer
+helpers with 6502 code, `mul8/16/32`, `udivmod8/16/32`,
+`sdivmod8/16/32`, `asl8/16/32`, `asr8/16/32`, and `lsr8/16/32`, and
+the linker adds the ones a program calls. These aren't in the repo:
 
-- Symbol pinning for `SSP` / `FP` / `HARGS` / `DPTR`, `SSP`
-  initialization, reset vector.
-- Integer helpers: `mul8/16/32`, `udivmod8/16/32`, `sdivmod8/16/32`,
-  `asl8/16/32`, `asr8/16/32`, `lsr8/16/32`.
+- Startup code: setting `SSP`, and a reset vector. The simulator's
+  boot stub does both.
+- The 64-bit integer helpers: `mul64`, `udivmod64`, `sdivmod64`,
+  `asl64`, `asr64`, `lsr64`.
 - FP conversion helpers: 26 functions covering
   `{i,u,l,ul,ll,ull}{2f,2d}` and `{f,d}2{i,u,l,ul,ll,ull}` plus `f2d`
   / `d2f`.
 - FP arithmetic helpers: `fadd` / `fsub` / `fmul` / `fdiv` and the
   `d`-variants. The ordering helpers `flt` / `fle` / `dlt` / `dle`
   exist as Python hooks in the sim but not yet as 6502 routines.
-- `icall` trampoline (`JMP (DPTR)`).
+- `icall` trampoline (`JMP (DPTR)`), which the simulator lays down
+  itself. The linker rejects a function with an indirect call
+  anyway.
 
-Programs that hit any of `*` / `/` / `%` / `<<` / `>>` / FP↔int cast
-/ FP arithmetic / indirect call assemble cleanly but don't link until
-the runtime header lands, unless `--defsym` gives each helper an
-address, as `sim/linked.py` does with the simulator's. Python-implemented hooks
-in `sim/` cover all of these so simulation-based tests still pass.
+A program that calls one of these assembles but links only when
+`--defsym` gives the helper's address, as `sim/linked.py`'s
+`defsym_args` does with the simulator's, and the link error names
+the helper. Python-implemented hooks in `sim/` cover all of these so
+simulation-based tests still pass.
 
 ### Type-system limitations
 

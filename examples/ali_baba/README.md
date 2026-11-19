@@ -62,7 +62,13 @@ uv run python ../../compile.py -T ali_baba.ld \
 
 Each unit is compiled twice from the same source: to its `.asm`,
 which is checked in, and to its object, which the link reads. Neither
-the objects nor the executable are checked in.
+the objects nor the executable are checked in. The link needs no
+`--defsym`. A unit that multiplies, divides, or shifts by a variable
+count calls one of the runtime's helpers, and the linker adds each
+helper the program calls from the runtime library, as `runtime.o`,
+which the script's `*(.text ...)` puts in `$A900-$B2FF`. The units
+write those operations as the original does, so today the program
+calls none (UNITS.md, "Compiler gaps", item 6).
 
 The original's code shares its spans of memory with tables, which the
 C program defines where it uses them, so the linker script's regions
@@ -123,6 +129,11 @@ page 1, and the two streams must be the same up to the event at which
 the original's run ends, as must the disks afterwards. `COUT` isn't
 recorded, since the C program calls the HRCG directly where the
 original goes through `COUT`.
+
+The six scripts run on the program linked with the simulator's runtime
+helpers (`sim.linked.defsym_args`), and the game also runs on the
+program linked by the command above, which holds any helper it calls
+from the runtime library.
 
 The six scripts run 337 of the 387 code labels in the spans the C
 program replaces (`uv run python -m tests.test_ali_baba coverage`

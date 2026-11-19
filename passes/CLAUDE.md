@@ -444,7 +444,11 @@ this directory:
   leaves out of each pool the slots no unit's relocations name,
   unless the function takes a local's address. The bytes of
   `zeropage(addr)` parameters (`def` / `ext` `pinned=`) are reserved
-  like zero-page objects'. `sim/linked.py` runs an executable.
+  like zero-page objects'. The runtime helpers the units call and
+  don't define, and that `--defsym` doesn't give, come from the
+  runtime library (`_runtime_library`, `runtime_library.py`) as one
+  more unit, `runtime.o`, after the others, whose metadata's HARGS
+  need `_choose_layout` counts. `sim/linked.py` runs an executable.
 - `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
   `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
@@ -452,7 +456,8 @@ this directory:
   input description's file part (`Input.file`) is `*` or a pattern
   for a unit's object name without its directory
   (`zstring.o(.text)`), which `link_layout` matches. A C or `.asm`
-  input to a link goes by `<stem>.o`.
+  input to a link goes by `<stem>.o`, and the runtime library's
+  helpers by `runtime.o`.
 - `link_layout.py` — `lay_out` places every unit's items, its
   input sections, by a script, computing each address (sizes are
   known): each output section's run and load addresses, the
@@ -737,6 +742,15 @@ this directory:
   `memory_value_propagation`, `redundant_store`, `asm_remat`, and
   `asm_emit` read `current()`. `check_hargs` verifies the final code
   fits the size.
+- `runtime_library.py` — the runtime library: the helpers of
+  `sim/runtime_helpers.py`, which the linker adds to a program that
+  calls them. `needed` gives the helpers the objects name and neither
+  define nor get from `--defsym`, with the helpers those call
+  (`closure`), and `library_object` writes them with `asm_emit` and
+  assembles them into one object, `runtime.o` (`LIBRARY_NAME`), a
+  `.text` section per helper, with metadata whose `runtime` line gives
+  their HARGS footprint. `linker._runtime_library` adds it after the
+  units. `helper_sizes` gives each helper's bytes.
 - `zp_globals.py` — `allocate_zp_globals` / `place_zp_globals`. Gives
   each `[[c6502::zeropage]]` object an address (its own, or the
   lowest free run below `$80` after the runtime's block, which

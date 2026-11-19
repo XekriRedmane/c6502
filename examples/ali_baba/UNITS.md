@@ -1444,8 +1444,8 @@ and the units follow the workaround given for each.
    count while bit 7 of `PADDL[n]` is set) with the same soft-switch
    accesses.
 
-6. **The runtime helpers aren't in the repository**, so a program that
-   calls one doesn't link without `--defsym`.
+6. **The runtime helpers weren't in the repository**, so a program
+   that called one didn't link without `--defsym`.
 
    ```c
    a = (uint8_t)(b * 69 + 0x53);    /* JSR mul8 */
@@ -1453,16 +1453,20 @@ and the units follow the workaround given for each.
    a = b << n;  a = b >> n;         /* JSR asl16, JSR asr16 */
    ```
 
-   The link fails with `undefined symbol 'mul8' (a runtime helper; the
-   runtime library isn't in the repository yet, so give its address
-   with --defsym)`. Multiplications by 3, 4, and 20 compile inline.
-   The simulator has the helpers as Python hooks, but a program
-   relying on them wouldn't run on an Apple II, and the original has
-   no such calls. Units write these operations as the original does:
-   STEP_PRNG's `* 69` as shifts and adds, POS_TO_COLROW's division by
-   repeated subtraction, and shifts by a variable count as loops of
-   shifts by one, in `uint8_t` so that integer promotion doesn't make
-   them 16-bit signed shifts.
+   The link failed with `undefined symbol 'mul8' (a runtime helper;
+   the runtime library isn't in the repository yet, so give its
+   address with --defsym)`. Since 18 Nov 2026 the linker adds the
+   helpers a program calls from the runtime library
+   (`passes/runtime_library.py`), and with `ali_baba.ld` they go in
+   `spare` with the other code the script doesn't name. Sdivmod16,
+   udivmod16, asl16, and asr16 come to 228 bytes, and `spare` had
+   379 bytes free on 18 Nov 2026. Multiplications by 3, 4, and 20
+   compile inline. The original has no such calls, and the units
+   write these operations as the original does: STEP_PRNG's `* 69` as
+   shifts and adds, POS_TO_COLROW's division by repeated subtraction,
+   and shifts by a variable count as loops of shifts by one, in
+   `uint8_t` so that integer promotion doesn't make them 16-bit signed
+   shifts.
 
 7. **An ordering comparison with a `constexpr uint8_t` wasn't
    narrowed to a byte compare.** The read of the constant was folded

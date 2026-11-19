@@ -298,11 +298,13 @@ to that width (`tac_to_asm._odd_width_helper_op`).
 `icall`, the trampoline for calls through a pointer, is
 `JMP (DPTR)`.
 
-The layouts above are the ones `sim/runtime.py`'s Python hooks read.
-`passes/runtime_layout.py` records how many bytes of `HARGS` each
-6502 helper in `sim/runtime_helpers.py` touches, and a helper written
-outside the repository has to stay within those footprints, because
-`choose_layout` sizes a moved `HARGS` by them.
+The layouts above are the ones `sim/runtime.py`'s Python hooks read,
+and the 6502 helpers of `sim/runtime_helpers.py`, which the linker
+adds to a program from the runtime library, follow them too.
+`passes/runtime_layout.py` records how many bytes of `HARGS` each of
+the 6502 helpers touches, and a helper written outside the repository
+and given with `--defsym` has to stay within those footprints,
+because `choose_layout` sizes a moved `HARGS` by them.
 
 ## Output format
 
@@ -326,6 +328,7 @@ them again for the whole program, in this order.
 ```mermaid
 flowchart TD
     objs["the units' ELF objects"]
+    lib["the runtime helpers the units call and nothing defines assembled into one more unit, runtime.o, passes/runtime_library.py"]
     names["internal names that two units share renamed, every unit's link metadata merged, zp_abi and pool eligibility checked for the whole program"]
     zp["the runtime block's layout chosen, then the zero-page objects placed"]
     slots["zp_abi slots and private pools allocated over the whole call graph, from $80-$FF and then the free bytes below $80"]
@@ -334,8 +337,17 @@ flowchart TD
     own["the linker's own unit assembled: __zp_init, with the startup copies and clears of a script, and __spill"]
     lay["sections laid out by the script, or by default_script from $0800, link_layout.lay_out"]
     exe["relocations applied and the ELF executable written, with main as its entry, binutils/ld.py"]
-    objs --> names --> zp --> slots --> asm --> relax --> own --> lay --> exe
+    objs --> lib --> names --> zp --> slots --> asm --> relax --> own --> lay --> exe
 ```
 
-`sim/linked.py` runs the executable in the simulator, with the
-helpers' addresses given by `sim.linked.defsym_args`.
+The runtime library's unit holds only the helpers some unit calls and
+none defines, which `--defsym` doesn't give either, and the helpers
+those call. Its link metadata gives the `HARGS` bytes they touch, so
+the block the linker chooses is large enough for them. A script
+places their sections as `runtime.o(.text)` or with a pattern such as
+`*(.text)`, and without one they follow the program's code in
+`.text`.
+
+`sim/linked.py` runs the executable in the simulator. A program linked
+with the simulator's helper addresses (`sim.linked.defsym_args`) calls
+the simulator's copies instead of holding its own.

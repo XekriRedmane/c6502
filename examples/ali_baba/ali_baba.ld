@@ -50,7 +50,8 @@
     low takes main, the turn, combat, and the entities. mid takes
     input, events, the AI, and display, and spare takes map, util,
     text, and everything the script doesn't name (the linker's
-    __zp_init and __spill among them). The C units don't come out the
+    __zp_init and __spill among them, and the runtime library's
+    helpers, runtime.o, when a unit calls one). The C units don't come out the
     size of the original's code in each span, so the assignment is by
     what fits. The link fails with a message when a region overflows.
 

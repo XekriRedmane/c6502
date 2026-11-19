@@ -7,11 +7,16 @@ boot stub and the helpers, `sim/runtime.py`) for the program's
 runtime layout, which the executable's SSP, FP, HARGS, and DPTR
 symbols give.
 
-The runtime's helpers aren't a library a program links with yet, so a
-program that calls one is linked with each helper's address given as a
-`--defsym` (`runtime_defsyms`). The helpers sit at the same addresses
-for every runtime layout, and `build_linked_sim` checks that the
-executable's addresses for them are the runtime's.
+A program can get the runtime's helpers two ways. Linked without
+`--defsym`, it holds the helpers it calls from the runtime library
+(passes/runtime_library.py), and they run where the linker put them.
+Linked with each helper's address given as a `--defsym`
+(`runtime_defsyms`, `defsym_args`), it calls the simulator's copies:
+the 6502 helpers at $E000 and the Python hooks after them, for the
+helpers that have no 6502 code, such as the floating-point ones. The
+simulator's copies sit at the same addresses for every runtime
+layout, and `build_linked_sim` checks that the executable's absolute
+addresses for them are the runtime's.
 """
 from __future__ import annotations
 
@@ -51,11 +56,16 @@ def build_linked_sim(
         raise RuntimeError("build_linked_sim needs a linked executable")
     from passes.runtime_layout import CLASSIC, RuntimeLayout
     symbols: dict[str, int] = {}
+    # The names the program defines in its own sections, which include
+    # the helpers it holds from the runtime library.
+    own: set[str] = set()
     for s in exe.symbols:
         if not s.defined or s.type == E.STT_FILE:
             continue
         if s.is_global or s.name not in symbols:
             symbols[s.name] = s.value
+        if s.section != E.SHN_ABS:
+            own.add(s.name)
     layout = RuntimeLayout(
         ssp=symbols.get("SSP", CLASSIC.ssp),
         fp=symbols.get("FP", CLASSIC.fp),
@@ -64,6 +74,8 @@ def build_linked_sim(
     )
     runtime = rt_mod.build_runtime(layout)
     for name, addr in runtime.symbols.items():
+        if name in own:
+            continue
         if name in symbols and symbols[name] != addr:
             raise RuntimeError(
                 f"the executable has `{name}` at ${symbols[name]:04X}, "

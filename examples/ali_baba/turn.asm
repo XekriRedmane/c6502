@@ -860,10 +860,10 @@ move_loop:
    LDA   MOVE_POINTS
    BNE   .if_end@20
    LDA   STEPS_TAKEN
-   BNE   .move_loop@scfold@0
+   BNE   .move_loop@jthread@0
    LDA   CHAR_AI_MODE
    BEQ   .if_else@22
-.move_loop@scfold@0:
+.move_loop@jthread@0:
    LDA   #$03
    RTS
 .if_end@20:
@@ -977,10 +977,10 @@ move_loop:
    RTS
 .if_end@43:
    TXA
-   BEQ   .move_loop@scfold@1
+   BEQ   .move_loop@jthread@2
    LDA   __local_move_loop__0
    BEQ   .if_end@46
-.move_loop@scfold@1:
+.move_loop@jthread@2:
    LDX   #$00
    LDA   #$07
    JSR   tune_player

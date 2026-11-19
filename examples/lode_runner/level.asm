@@ -482,7 +482,7 @@ load_level:
    BNE   .jcmp_skip@0
    LDA   __local_load_level__dst
    CMP   #<HGR1
-   BEQ   .i0_loop@8_break
+   BEQ   .load_level@jthread@1
 .jcmp_skip@0:
    LDY   #$00
    LDA   (__local_load_level__src),Y
@@ -496,8 +496,6 @@ load_level:
    BNE   .i0_loop@8_continue
    INC   __local_load_level__0
    JMP   .i0_loop@8_continue
-.i0_loop@8_break:
-   RTS
 .i0_if_end@4:
    LDA   PLAYER_COL
    BMI   .if_end@12
@@ -525,8 +523,7 @@ load_level:
    BPL   .i0_loop@10_start
    DEC   GAME_ROWNUM
    BPL   .i0_loop@9_start
-   LDA   #$00
-   BNE   .if_end@12
+.load_level@jthread@1:
    RTS
 .if_end@12:
    LDA   DISK_LEVEL_LOC

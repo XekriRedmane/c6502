@@ -622,13 +622,11 @@ update_event_list:
    BNE   .if_end@9
    LDY   #$01
    LDA   (__local_update_event_list__e),Y
+   STA   __local_update_event_list__0
    CMP   #$C0
    BCC   .if_end@9
-   LDA   (__local_update_event_list__e),Y
    CMP   #$D1
    BCS   .if_end@9
-   LDA   (__local_update_event_list__e),Y
-   STA   __local_update_event_list__0
    INY
    LDA   (__local_update_event_list__e),Y
    ADC   __zpabi_update_event_list__value_0
@@ -967,7 +965,6 @@ process_char_events:
    BCC   .if_end@27
    CMP   #$80
    BCS   .if_end@27
-   LDA   (__local_process_char_events__e),Y
    SEC
    SBC   #$40
    STA   (__local_process_char_events__e),Y

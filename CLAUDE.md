@@ -344,7 +344,9 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
   3. TAC fixed-point loop: constant folding (incl. const-array-
      subscript fold), `(x - c) * k` on a widened byte as `x * k - c *
      k` (`distribute_constant`), strength reduction, comparison-against-zero /
-     jump fold, AND-zero-jump fold, unreachable-code elimination,
+     jump fold, AND-zero-jump fold, jump threading (an edge that
+     brings a tested join a constant goes where the test sends it,
+     `jump_thread.py`), unreachable-code elimination,
      common-subexpression elimination, loop-invariant extends,
      copy propagation, dead-store elimination, copy folding, Add-
      with-Constant and offset-constant reassociation, loop rotation,

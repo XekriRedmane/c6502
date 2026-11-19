@@ -165,6 +165,20 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   semantics (the parser silently drops the qualifier), this pass will
   currently delete loops the programmer marked volatile; preserving them
   requires plumbing volatile through the type system.
+- `jump_thread.py` — `ThreadConstantJumps` (raw FixedpointPass, right
+  before UCE). A block of its label, a `Phi` whose SSA result only a
+  `JumpIfTrue` / `JumpIfFalse` right after it reads, and that jump: an
+  edge whose `Phi` argument is an integer constant goes to the
+  successor the constant picks (the predecessor's jump is retargeted,
+  or a `Jump` added after its fall-through). An empty predecessor, or
+  one that only jumps to the block, reached only by jumps, has those
+  jumps retargeted instead, which is what `&&` / `||` leave. Each
+  `Phi` at the successor that took a value from the block takes it
+  from the new predecessor. Not when the predecessor already has an
+  edge to the successor, or the new edge would enter a loop's body
+  past its header. An inlined `return false;` tested by the caller no
+  longer loads 0 and branches on it. See
+  docs/optimizations/jump_thread.md.
 - `unreachable_code_elimination.py` — `EliminateUnreachableCode` (raw
   FixedpointPass — forward DFS from ENTRY). Prunes dead Phi args; folds
   singleton Phis to Copies; drops useless jumps / labels.
@@ -584,7 +598,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → reduce_strength → fold_producer_jumps
       (cmp_zero ∪ narrow_and ∪ lnot ∪ nonnegative_compare, one
       merged RuleSet)
-      → eliminate_dead_loops → UCE → cse → licm
+      → eliminate_dead_loops → thread_constant_jumps → UCE → cse → licm
       → copy_propagate → DSE → read_stored_globals → fold_copies
       → reassoc_constants
       → reassoc_offset_constant → direct_member_access

@@ -825,15 +825,15 @@ show_anim_line:
    INC   anim_count
    LDA   INPUT_MODE
    CMP   #$CB
-   BEQ   .show_anim_line@scfold@1
+   BEQ   .show_anim_line@jthread@0
    LDA   BUTN1
-   BMI   .show_anim_line@scfold@2
+   BMI   .show_anim_line@jthread@1
    LDA   BUTN0
-   BMI   .show_anim_line@scfold@2
-.show_anim_line@scfold@1:
+   BMI   .show_anim_line@jthread@1
+.show_anim_line@jthread@0:
    LDA   KBD
    BPL   .if_end@19
-.show_anim_line@scfold@2:
+.show_anim_line@jthread@1:
    LDA   KBD
    STA   game_over_key
    STA   KBDSTRB

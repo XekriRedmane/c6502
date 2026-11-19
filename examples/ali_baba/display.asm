@@ -644,12 +644,12 @@ display_char_stats:
    STA   KBDSTRB
 .loop@1_continue:
    LDA   KBD
-   BMI   .vthread@0
+   BMI   .loop@1_break
    LDA   INPUT_MODE
    BEQ   .loop@1_continue
    LDA   BUTN
-   BMI   .vthread@0
+   BMI   .loop@1_break
    LDA   BUTN+1
    BPL   .loop@1_continue
-.vthread@0:
+.loop@1_break:
    JMP   clear_map

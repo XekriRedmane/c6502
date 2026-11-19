@@ -507,12 +507,12 @@ num_to_decimal:
    AND   #$0F
    STA   __local_num_to_decimal__value_1
 .cond_end@1:
-   BNE   .num_to_decimal@scfold@0
+   BNE   .num_to_decimal@ssa_block@7
    LDA   __local_num_to_decimal__started
-   BNE   .num_to_decimal@scfold@0
+   BNE   .num_to_decimal@ssa_block@7
    LDA   __local_num_to_decimal__k
    BNE   .if_end@6
-.num_to_decimal@scfold@0:
+.num_to_decimal@ssa_block@7:
    LDA   #$B0
    CLC
    ADC   __local_num_to_decimal__value_1
@@ -675,10 +675,10 @@ display_message_loop:
    JMP   .loop@5_continue
 .display_message_loop@rot@4:
    LDA   MSG_LINE_COUNT
-   BEQ   .display_message_loop@scfold@0
+   BEQ   .display_message_loop@jthread@0
    CMP   #$81
    BCC   .if_else@20
-.display_message_loop@scfold@0:
+.display_message_loop@jthread@0:
    LDX   __local_display_message_loop__msg_1
    LDA   __local_display_message_loop__msg_0
    JSR   print_bottom_centered
@@ -704,11 +704,11 @@ display_message_loop:
 .carry_inc@1:
    LDA   MSG_LINE_COUNT
    CMP   #$02
-   BCS   .display_message_loop@scfold@1
+   BCS   .display_message_loop@jthread@1
    LDY   #$00
    LDA   (__local_display_message_loop__msg_0),Y
    BNE   .loop@5_continue
-.display_message_loop@scfold@1:
+.display_message_loop@jthread@1:
    JSR   delay_with_animation
    JSR   print_ctrl_ab
 .loop@5_continue:

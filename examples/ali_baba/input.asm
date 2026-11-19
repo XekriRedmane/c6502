@@ -995,10 +995,10 @@ input_loop:
 .i14@end:
    LDA   __local_input_loop__0
    CMP   CURRENT_SELECTION
-   BEQ   .input_loop@scfold@1
+   BEQ   .input_loop@jthread@0
    ORA   #$00
    BNE   .if_else@11
-.input_loop@scfold@1:
+.input_loop@jthread@0:
    LDX   #$00
    LDA   #$09
    JSR   tune_player
@@ -1119,12 +1119,12 @@ check_input:
    LDX   __local_check_input__dir
    LDA   __local_check_input__2
    CMP   DIR_KEYS,X
-   BEQ   .check_input@scfold@0
+   BEQ   .check_input@jthread@1
    CMP   DIR_KEYS+5,X
-   BEQ   .check_input@scfold@0
+   BEQ   .check_input@jthread@1
    CMP   DIR_KEYS+10,X
    BNE   .if_end@29
-.check_input@scfold@0:
+.check_input@jthread@1:
    TXA
    RTS
 .if_end@29:
@@ -1831,7 +1831,7 @@ format_scenario_disk:
    BCC   .if_end@70
    LDA   #$04
    JSR   rwts_dispatch
-   BCS   .format_scenario_disk@scfold@0
+   BCS   .format_scenario_disk@jthread@0
    LDX   #$00
 .format_scenario_disk@rot@8:
    LDA   DISK_SIGNATURE,X
@@ -1844,14 +1844,15 @@ format_scenario_disk:
    STA   __local_format_scenario_disk__tries
 .format_scenario_disk@rot@9:
    JSR   disk_write
-   BCC   .if_end@70
+   BCC   .if_end@73
    DEC   __local_format_scenario_disk__tries
    BNE   .format_scenario_disk@rot@9
-.format_scenario_disk@scfold@0:
+.format_scenario_disk@jthread@0:
    JSR   set_cursor_row21
    LDA   #$1B
    JSR   display_message
    JMP   scenario_done
+.if_end@73:
 .if_end@70:
    JSR   write_game_data
    JMP   scenario_done

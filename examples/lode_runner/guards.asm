@@ -119,11 +119,13 @@ __local_guard_find_candidate_row_below__0	EQU	$BF
 __local_guard_find_candidate_row_above__2	EQU	$C0
 __local_guard_find_candidate_row_below__1	EQU	$C0
 __local_guard_find_candidate_row_above__3	EQU	$C1
-__local_guard_find_candidate_row_below__row	EQU	$C1
+__local_guard_find_candidate_row_below__2	EQU	$C1
 __local_guard_find_candidate_row_above__4	EQU	$C2
-__local_guard_find_candidate_row_below__col	EQU	$C2
+__local_guard_find_candidate_row_below__3	EQU	$C2
 __local_guard_find_candidate_row_above__5	EQU	$C3
+__local_guard_find_candidate_row_below__row	EQU	$C3
 __local_guard_find_candidate_row_above__row	EQU	$C4
+__local_guard_find_candidate_row_below__col	EQU	$C4
 __local_guard_find_candidate_row_above__col	EQU	$C5
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
@@ -194,12 +196,12 @@ DISK_IO	EQU	$C088
 ; def guard_can_cross params=__zpabi_guard_can_cross__row,__zpabi_guard_can_cross__col locals=__local_guard_can_cross__0,__local_guard_can_cross__1,__local_guard_can_cross__row indirect=false in_cycle=false param_regs=A,X carry=true
 ; def guard_drop_gold params= locals=__local_guard_drop_gold__0,__local_guard_drop_gold__1,__local_guard_drop_gold__2,__local_guard_drop_gold__col indirect=false in_cycle=false
 ; def guard_find_candidate_row_above params=__zpabi_guard_find_candidate_row_above__row,__zpabi_guard_find_candidate_row_above__col locals=__local_guard_find_candidate_row_above__0,__local_guard_find_candidate_row_above__1,__local_guard_find_candidate_row_above__2,__local_guard_find_candidate_row_above__3,__local_guard_find_candidate_row_above__4,__local_guard_find_candidate_row_above__5,__local_guard_find_candidate_row_above__row,__local_guard_find_candidate_row_above__col indirect=false in_cycle=false param_regs=A,X
-; def guard_find_candidate_row_below params=__zpabi_guard_find_candidate_row_below__row,__zpabi_guard_find_candidate_row_below__col locals=__local_guard_find_candidate_row_below__right_row,__local_guard_find_candidate_row_below__0,__local_guard_find_candidate_row_below__1,__local_guard_find_candidate_row_below__row,__local_guard_find_candidate_row_below__col,__local_guard_find_candidate_row_below__2 indirect=false in_cycle=false param_regs=A,X
+; def guard_find_candidate_row_below params=__zpabi_guard_find_candidate_row_below__row,__zpabi_guard_find_candidate_row_below__col locals=__local_guard_find_candidate_row_below__right_row,__local_guard_find_candidate_row_below__0,__local_guard_find_candidate_row_below__1,__local_guard_find_candidate_row_below__2,__local_guard_find_candidate_row_below__3,__local_guard_find_candidate_row_below__row,__local_guard_find_candidate_row_below__col,__local_guard_find_candidate_row_below__4 indirect=false in_cycle=false param_regs=A,X
 ; def guard_in_hole params= locals=__local_guard_in_hole__0,__local_guard_in_hole__1 indirect=false in_cycle=false carry=true
 ; def guard_is_supported params= locals=__local_guard_is_supported__0,__local_guard_is_supported__1 indirect=false in_cycle=false carry=true
 ; def guard_take_move params= locals=__local_guard_take_move__c,__local_guard_take_move__col,__local_guard_take_move__0,__local_guard_take_move__1,__local_guard_take_move__2,__local_guard_take_move__row,__local_guard_take_move__3 indirect=false in_cycle=false
 ; def inc_guard_anim_state params=__zpabi_inc_guard_anim_state__first,__zpabi_inc_guard_anim_state__last locals=__local_inc_guard_anim_state__0,__local_inc_guard_anim_state__last,__local_inc_guard_anim_state__first indirect=false in_cycle=false param_regs=A,X
-; def is_floor params=__zpabi_is_floor__sprite locals=__local_is_floor__sprite indirect=false in_cycle=false param_regs=A carry=true
+; def is_floor params=__zpabi_is_floor__sprite locals=__local_is_floor__sprite.eqm0 indirect=false in_cycle=false param_regs=A carry=true
 ; def leave_cell params=__zpabi_leave_cell__row,__zpabi_leave_cell__col locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2,__local_leave_cell__row indirect=false in_cycle=false param_regs=A,X
 ; def load_guard_data params= locals= indirect=false in_cycle=false
 ; def move_guards params= locals=__local_move_guards__0,__local_move_guards__1,__local_move_guards__2,__local_move_guards__col,__local_move_guards__pattern indirect=false in_cycle=false
@@ -751,11 +753,11 @@ check_for_gold_picked_up_by_guard:
 
    LDA   GUARD_X_ADJ
    CMP   #$02
-   BNE   .check_for_gold_picked_up_by_guard@scfold@0
+   BNE   .check_for_gold_picked_up_by_guard@jthread@0
    LDA   GUARD_Y_ADJ
    CMP   #$02
    BEQ   .if_end@6
-.check_for_gold_picked_up_by_guard@scfold@0:
+.check_for_gold_picked_up_by_guard@jthread@0:
    RTS
 .if_end@6:
    LDA   GUARD_LOC_ROW
@@ -769,10 +771,10 @@ check_for_gold_picked_up_by_guard:
    LDY   GUARD_LOC_COL
    LDA   (__local_check_for_gold_picked_up_by_guard__0),Y
    CMP   #$07
-   BNE   .check_for_gold_picked_up_by_guard@scfold@1
+   BNE   .check_for_gold_picked_up_by_guard@jthread@1
    LDA   GUARD_GOLD_TIMER
    BPL   .if_end@9
-.check_for_gold_picked_up_by_guard@scfold@1:
+.check_for_gold_picked_up_by_guard@jthread@1:
    RTS
 .if_end@9:
    LDA   #$FF
@@ -802,10 +804,10 @@ guard_drop_gold:
    SUBROUTINE
 
    LDA   GUARD_GOLD_TIMER
-   BPL   .guard_drop_gold@scfold@0
+   BPL   .guard_drop_gold@jthread@0
    INC   GUARD_GOLD_TIMER
    BEQ   .if_end@12
-.guard_drop_gold@scfold@0:
+.guard_drop_gold@jthread@0:
    RTS
 .if_end@12:
    LDX   GUARD_LOC_ROW
@@ -930,9 +932,8 @@ is_floor:
 
    CMP   #$01
    BEQ   .or_true@27
+   AND   #$FE
    CMP   #$02
-   BEQ   .or_true@27
-   CMP   #$03
    BEQ   .or_true@27
    CLC
    RTS
@@ -963,7 +964,7 @@ guard_is_supported:
    LDA   GUARD_Y_ADJ
 .vthread@1:
    CMP   #$02
-   BCC   .guard_is_supported@scfold@0
+   BCC   .guard_is_supported@jthread@1
    CPX   #$0F
    BEQ   .tail@0
    LDA   LEVEL_BG@lo+1,X
@@ -971,10 +972,10 @@ guard_is_supported:
    LDA   LEVEL_MAP@hi+1,X
    STA   __local_guard_is_supported__1
    LDA   (__local_guard_is_supported__0),Y
-   BEQ   .guard_is_supported@scfold@0
+   BEQ   .guard_is_supported@jthread@1
    CMP   #$09
    BNE   .if_end@39
-.guard_is_supported@scfold@0:
+.guard_is_supported@jthread@1:
    CLC
    RTS
 .if_end@39:
@@ -1009,12 +1010,12 @@ try_guard_move_down:
    LDY   __local_try_guard_move_down__col
    LDA   (__local_try_guard_move_down__0),Y
    CMP   #$02
-   BEQ   .try_guard_move_down@scfold@0
+   BEQ   .try_guard_move_down@jthread@1
    CMP   #$08
-   BEQ   .try_guard_move_down@scfold@0
+   BEQ   .try_guard_move_down@jthread@1
    CMP   #$01
    BNE   .if_end@72
-.try_guard_move_down@scfold@0:
+.try_guard_move_down@jthread@1:
    RTS
 .if_end@72:
 .if_end@66:
@@ -1073,17 +1074,17 @@ try_guard_move_left:
    DEY
    LDA   (__local_try_guard_move_left__0),Y
    CMP   #$08
-   BEQ   .try_guard_move_left@scfold@0
+   BEQ   .try_guard_move_left@jthread@2
    CMP   #$02
-   BEQ   .try_guard_move_left@scfold@0
+   BEQ   .try_guard_move_left@jthread@2
    CMP   #$01
-   BEQ   .try_guard_move_left@scfold@0
+   BEQ   .try_guard_move_left@jthread@2
    LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_left__1
    LDA   (__local_try_guard_move_left__0),Y
    CMP   #$05
    BNE   .if_end@83
-.try_guard_move_left@scfold@0:
+.try_guard_move_left@jthread@2:
    RTS
 .if_end@83:
 .if_end@75:
@@ -1148,17 +1149,17 @@ try_guard_move_right:
    INY
    LDA   (__local_try_guard_move_right__0),Y
    CMP   #$08
-   BEQ   .try_guard_move_right@scfold@0
+   BEQ   .try_guard_move_right@jthread@2
    CMP   #$02
-   BEQ   .try_guard_move_right@scfold@0
+   BEQ   .try_guard_move_right@jthread@2
    CMP   #$01
-   BEQ   .try_guard_move_right@scfold@0
+   BEQ   .try_guard_move_right@jthread@2
    LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_right__1
    LDA   (__local_try_guard_move_right__0),Y
    CMP   #$05
    BNE   .if_end@96
-.try_guard_move_right@scfold@0:
+.try_guard_move_right@jthread@2:
    RTS
 .if_end@96:
 .if_end@88:
@@ -1389,7 +1390,7 @@ guard_take_move:
    CMP   #$03
    BCS   .i14_if_end@63
    LDX   GUARD_LOC_ROW
-   BEQ   .vthread@2
+   BEQ   .guard_take_move@ssa_block@42
    LDA   LEVEL_BG@lo-1,X
    STA   __local_guard_take_move__c
    LDA   LEVEL_MAP@hi-1,X
@@ -1397,14 +1398,14 @@ guard_take_move:
    LDY   GUARD_LOC_COL
    LDA   (__local_guard_take_move__c),Y
    CMP   #$01
-   BEQ   .vthread@2
+   BEQ   .guard_take_move@ssa_block@42
    CMP   #$02
-   BEQ   .vthread@2
+   BEQ   .guard_take_move@ssa_block@42
    CMP   #$05
-   BEQ   .vthread@2
+   BEQ   .guard_take_move@ssa_block@42
    CMP   #$08
    BNE   .i14_if_end@63
-.vthread@2:
+.guard_take_move@ssa_block@42:
    JSR   guard_in_hole
    BCC   .switch@1_break
    INC   GUARD_GOLD_TIMER
@@ -1496,7 +1497,7 @@ guard_find_candidate_row_above:
    LDY   __local_guard_find_candidate_row_above__2
    LDA   (__local_guard_find_candidate_row_above__4),Y
    JSR   is_floor
-   BCS   .guard_find_candidate_row_above@scfold@0
+   BCS   .guard_find_candidate_row_above@jthread@0
    LDX   __local_guard_find_candidate_row_above__3
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__0
@@ -1506,7 +1507,7 @@ guard_find_candidate_row_above:
    LDA   (__local_guard_find_candidate_row_above__0),Y
    CMP   #$04
    BNE   .if_end@119
-.guard_find_candidate_row_above@scfold@0:
+.guard_find_candidate_row_above@jthread@0:
    LDA   PLAYER_ROW
    CMP   __local_guard_find_candidate_row_above__3
    BCS   .tail@1
@@ -1527,7 +1528,7 @@ guard_find_candidate_row_above:
    LDY   __local_guard_find_candidate_row_above__2
    LDA   (__local_guard_find_candidate_row_above__0),Y
    JSR   is_floor
-   BCS   .guard_find_candidate_row_above@scfold@1
+   BCS   .guard_find_candidate_row_above@jthread@1
    LDX   __local_guard_find_candidate_row_above__3
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__0
@@ -1537,7 +1538,7 @@ guard_find_candidate_row_above:
    LDA   (__local_guard_find_candidate_row_above__0),Y
    CMP   #$04
    BNE   .if_end@125
-.guard_find_candidate_row_above@scfold@1:
+.guard_find_candidate_row_above@jthread@1:
    LDA   PLAYER_ROW
    CMP   __local_guard_find_candidate_row_above__3
    BCC   .if_end@126
@@ -1566,16 +1567,16 @@ guard_find_candidate_row_below:
 .lb_skip@6:
    LDX   __local_guard_find_candidate_row_below__row
    LDA   LEVEL_BG@lo+1,X
-   STA   __local_guard_find_candidate_row_below__right_row
+   STA   __local_guard_find_candidate_row_below__2
    LDA   LEVEL_BG@hi+1,X
-   STA   __local_guard_find_candidate_row_below__0
+   STA   __local_guard_find_candidate_row_below__3
    LDY   __local_guard_find_candidate_row_below__col
-   LDA   (__local_guard_find_candidate_row_below__right_row),Y
+   LDA   (__local_guard_find_candidate_row_below__2),Y
    CMP   #$01
-   BEQ   .guard_find_candidate_row_below@scfold@0
+   BEQ   .guard_find_candidate_row_below@jthread@0
    CMP   #$02
    BNE   .if_end@130
-.guard_find_candidate_row_below@scfold@0:
+.guard_find_candidate_row_below@jthread@0:
    TXA
    RTS
 .if_end@130:
@@ -1599,13 +1600,9 @@ guard_find_candidate_row_below:
    STA   __local_guard_find_candidate_row_below__right_row
    JMP   .if_end@133
 .if_else@134:
-   LDA   LEVEL_BG@lo+1,X
-   STA   __local_guard_find_candidate_row_below__0
-   LDA   LEVEL_BG@hi+1,X
-   STA   __local_guard_find_candidate_row_below__1
    INX
    STX   __local_guard_find_candidate_row_below__right_row
-   LDA   (__local_guard_find_candidate_row_below__0),Y
+   LDA   (__local_guard_find_candidate_row_below__2),Y
    JSR   is_floor
    BCC   .if_end@136
    LDA   __local_guard_find_candidate_row_below__row
@@ -1628,7 +1625,7 @@ guard_find_candidate_row_below:
    INY
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
    CMP   #$04
-   BEQ   .guard_find_candidate_row_below@scfold@1
+   BEQ   .guard_find_candidate_row_below@jthread@1
    LDX   __local_guard_find_candidate_row_below__row
    LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_find_candidate_row_below__right_row
@@ -1637,7 +1634,7 @@ guard_find_candidate_row_below:
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
    JSR   is_floor
    BCC   .if_end@142
-.guard_find_candidate_row_below@scfold@1:
+.guard_find_candidate_row_below@jthread@1:
    LDA   __local_guard_find_candidate_row_below__row
    CMP   PLAYER_ROW
    BCC   .if_end@143

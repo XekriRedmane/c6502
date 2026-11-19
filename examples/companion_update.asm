@@ -310,10 +310,10 @@ player_catch:
    STA   __local_player_catch__slot
    TXA
    CMP   #$40
-   BCC   .player_catch@scfold@0
+   BCC   .player_catch@jthread@0
    CMP   #$50
    BCC   .if_end@22
-.player_catch@scfold@0:
+.player_catch@jthread@0:
    RTS
 .if_end@22:
    LDA   __zpabi_player_catch__player_col
@@ -429,12 +429,12 @@ drift_step:
    TAX
    LDA   companion_row,X
    CMP   #$63
-   BEQ   .drift_step@scfold@0
+   BEQ   .drift_step@jthread@1
    CMP   #$8B
-   BEQ   .drift_step@scfold@0
+   BEQ   .drift_step@jthread@1
    CMP   #$B3
    BNE   .if_else@38
-.drift_step@scfold@0:
+.drift_step@jthread@1:
    SEC
    SBC   #$04
    LDY   #$00

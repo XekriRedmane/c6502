@@ -468,9 +468,7 @@ handle_timers:
    BEQ   .lb_skip@0
    JMP   .i2_i1_loop@1_start
 .lb_skip@0:
-   LDA   #$00
-   BNE   .loop@3_continue
-   BEQ   .i2_if_end@15
+   JMP   .i2_if_end@15
 .i2_if_else@16:
    CMP   #$07
    BNE   .i2_if_end@18

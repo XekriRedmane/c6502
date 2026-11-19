@@ -1574,10 +1574,10 @@ calc_combat_strength:
    ADC   #$01
    STA   COMBAT_STRENGTH
    LDA   CHAR_AI_MODE
-   BNE   .calc_combat_strength@scfold@1
+   BNE   .calc_combat_strength@jthread@0
    LDA   IS_PLAYER_TURN
    BEQ   .if_end@78
-.calc_combat_strength@scfold@1:
+.calc_combat_strength@jthread@0:
    RTS
 .if_end@78:
    LDY   #$00
@@ -1701,13 +1701,13 @@ player_attack:
 .lb_skip@2:
    LDA   COMBAT_STRENGTH
    CMP   #$0A
-   BCS   .player_attack@scfold@1
+   BCS   .player_attack@jthread@0
    LDA   __local_player_attack__2
    BMI   .if_end@97
    LDA   COMBAT_STRENGTH
    CMP   #$04
    BCC   .if_end@97
-.player_attack@scfold@1:
+.player_attack@jthread@0:
    LDA   __local_player_attack__1
    CMP   #$1F
    BCS   .if_else@99

@@ -687,10 +687,10 @@ enter_location:
    CMP   #$FE
    BEQ   .i3_if_end@12
    CMP   #$80
-   BCC   .enter_location@scfold@1
+   BCC   .enter_location@jthread@1
    CMP   #$C0
    BCC   .i3_if_end@12
-.enter_location@scfold@1:
+.enter_location@jthread@1:
    JSR   set_cursor_row21
    LDX   __local_enter_location__3
    LDA   __local_enter_location__2
@@ -730,12 +730,12 @@ enter_location:
    JSR   appearance_to_fontchar
    STA   FONT_CHARNUM
    TXA
-   BEQ   .enter_location@scfold@2
+   BEQ   .enter_location@jthread@2
    LDY   #$0C
    LDA   (MOB_PTR),Y
    AND   #$0F
    BEQ   .i3_if_else@17
-.enter_location@scfold@2:
+.enter_location@jthread@2:
    JSR   set_cursor_row21
    JSR   print_member_name
    JSR   draw_map_icon_b
@@ -756,15 +756,15 @@ check_at_boundary:
 
    JSR   pos_to_colrow
    CMP   VIEW_MIN_COL
-   BEQ   .check_at_boundary@scfold@0
+   BEQ   .check_at_boundary@jthread@2
    CMP   VIEW_MAX_COL
-   BEQ   .check_at_boundary@scfold@0
+   BEQ   .check_at_boundary@jthread@2
    TXA
    CMP   VIEW_MIN_ROW
-   BEQ   .check_at_boundary@scfold@0
+   BEQ   .check_at_boundary@jthread@2
    CMP   VIEW_MAX_ROW
    BNE   .if_end@27
-.check_at_boundary@scfold@0:
+.check_at_boundary@jthread@2:
    LDX   #$00
    LDA   #$01
    RTS

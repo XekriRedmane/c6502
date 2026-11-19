@@ -339,10 +339,10 @@ button_pressed:
    CMP   #$CB
    BEQ   .and_false@4
    LDA   BUTN1
-   BMI   .button_pressed@scfold@0
+   BMI   .button_pressed@ssa_block@4
    LDA   BUTN0
    BPL   .and_false@4
-.button_pressed@scfold@0:
+.button_pressed@ssa_block@4:
    SEC
    RTS
 .and_false@4:
@@ -414,10 +414,10 @@ check_for_input:
    CMP   #$01
    BNE   .if_end@24
    LDA   KBD
-   BMI   .check_for_input@scfold@0
+   BMI   .check_for_input@jthread@0
    JSR   button_pressed
    BCC   .i3_if_end@22
-.check_for_input@scfold@0:
+.check_for_input@jthread@0:
    LSR   DEMO_RUNNING
    LSR   ALIVE
    LDA   #$01

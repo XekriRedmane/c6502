@@ -433,7 +433,7 @@ record_hi_score_data_to_disk:
 .i0_loop@2_start:
    LDA   __local_record_hi_score_data_to_disk__i
    CMP   #$04
-   BCS   .vthread@0
+   BCS   .record_hi_score_data_to_disk@jthread@0
    LDA   #$03
    SEC
    SBC   __local_record_hi_score_data_to_disk__i
@@ -455,7 +455,7 @@ record_hi_score_data_to_disk:
    JMP   .i0_loop@2_start
 .i0@end:
    BNE   .loop@3_break
-.vthread@0:
+.record_hi_score_data_to_disk@jthread@0:
    INC   __local_record_hi_score_data_to_disk__n
    LDA   __local_record_hi_score_data_to_disk__n
    CMP   #$0B
@@ -553,10 +553,10 @@ record_hi_score_data_to_disk:
    CMP   #$A0
    BEQ   .if_end@20
    CMP   #$C1
-   BCC   .record_hi_score_data_to_disk@scfold@0
+   BCC   .record_hi_score_data_to_disk@jthread@2
    CMP   #$DB
    BCC   .if_end@20
-.record_hi_score_data_to_disk@scfold@0:
+.record_hi_score_data_to_disk@jthread@2:
    JSR   beep
    JMP   .loop@5_start
 .if_end@20:

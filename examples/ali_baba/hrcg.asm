@@ -694,29 +694,25 @@ hrcg_cout:
    RTS
 .if_else@24:
    CPX   #$20
-   BCS   .lb_skip@17
+   BCS   .lb_skip@14
    JMP   .if_else@26
-.lb_skip@17:
+.lb_skip@14:
    ORA   #$00
-   BEQ   .lb_skip@16
+   BEQ   .lb_skip@13
    JMP   .if_end@25
-.lb_skip@16:
+.lb_skip@13:
    TXA
    SBC   #$20
    STA   __local_hrcg_cout__0
    LDA   hrcg+2
-   BNE   .lb_skip@15
-   JMP   .hrcg_cout@scfold@0
-.lb_skip@15:
+   BEQ   .i9_and_false@5
    CPX   #$41
-   BCS   .lb_skip@14
-   JMP   .hrcg_cout@scfold@0
-.lb_skip@14:
+   BCC   .i9_and_false@5
    CPX   #$5B
-   BCC   .lb_skip@13
-   JMP   .hrcg_cout@scfold@0
-.lb_skip@13:
-.i9_if_end@9:
+   BCC   .hrcg_cout@ssa_block@11
+.i9_and_false@5:
+   LDX   __local_hrcg_cout__0
+.hrcg_cout@ssa_block@11:
    LDA   hrcg+3
    STA   hrcg_row_address@ret+1
    LDA   hrcg+4
@@ -796,9 +792,9 @@ hrcg_cout:
    CPX   #$03
    BEQ   .i8_case@10
    CPX   #$04
-   BNE   .lb_skip@18
+   BNE   .lb_skip@15
    JMP   .i8_case@11
-.lb_skip@18:
+.lb_skip@15:
    CPX   #$06
    BNE   .lb_skip@9
    JMP   .i8_case@12
@@ -953,9 +949,6 @@ hrcg_cout:
 .if_end@28:
 .if_end@25:
    RTS
-.hrcg_cout@scfold@0:
-   LDX   __local_hrcg_cout__0
-   JMP   .i9_if_end@9
 
 hrcg:
    DS.B  5

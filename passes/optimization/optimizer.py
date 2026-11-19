@@ -12,7 +12,8 @@ Pipeline shape (now driven by PhaseDriver):
        → SSA construction
        → fold_static_const_reads (one-shot, pre-fixedpoint)
        → (CF → strength_reduce → cmp_zero_jump_fold → and_zero_jump_fold →
-          lnot_jump_fold → dead_loop_elim → UCE → CopyProp → DSE →
+          lnot_jump_fold → dead_loop_elim → thread_constant_jumps →
+          UCE → CopyProp → DSE →
           CopyFold → ...)*
        → recognize_indirect_indexed (one-shot, post-fixedpoint)
        → hoist_subtract_to_compare, hoist_divmod_pairs,
@@ -99,6 +100,7 @@ from passes.optimization.lnot_jump_fold import (
 )
 from passes.optimization.dead_loop_elimination import EliminateDeadLoops
 from passes.optimization.unreachable_code_elimination import EliminateUnreachableCode
+from passes.optimization.jump_thread import ThreadConstantJumps
 from passes.optimization.copy_propagation import CopyPropagate
 from passes.optimization.cse import EliminateCommonSubexpressions
 from passes.optimization.licm import HoistLoopInvariants
@@ -184,6 +186,10 @@ _DRIVER = PhaseDriver(
                 LNOT_OF_ZERO_OR_ONE_RULE, NONNEGATIVE_COMPARE_RULE,
                 name="fold_producer_jumps"),
         EliminateDeadLoops(),
+        # An edge that brings a join a constant its test decides goes
+        # where the test sends it, so an inlined `return false;` doesn't
+        # load 0 and branch on it. Before UCE, which drops the join.
+        ThreadConstantJumps(),
         EliminateUnreachableCode(),
         # Replaces a repeated computation or load with a Copy from the
         # first one, which copy_propagate then forwards.

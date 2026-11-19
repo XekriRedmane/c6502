@@ -438,9 +438,9 @@ get_alphabet_for_char:
    RTS
 .if_end@18:
    ORA   #$00
-   BEQ   .get_alphabet_for_char@scfold@0
+   BEQ   .get_alphabet_for_char@jthread@2
    BPL   .if_end@21
-.get_alphabet_for_char@scfold@0:
+.get_alphabet_for_char@jthread@2:
    LDA   __local_get_alphabet_for_char__c
    RTS
 .if_end@21:

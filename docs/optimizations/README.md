@@ -271,6 +271,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Join store](join_store.md). Stores a value each arm of a branch leaves in a slot straight into the memory the join copies it to.
 - [Jump threading on known compares](known_compare_thread.md). Sends a jump past the equality tests at its target that its own path decided, so the test of `x == a` inside `if (x == a || x == b)` goes.
 - [Jump tables](jump_table.md). Dispatches a switch's chain of compares through a table of its cases' addresses.
+- [Jump threading on a constant](jump_thread.md). Sends a path that brings a join a constant straight to where the join's test of it goes, so an inlined `return false;` doesn't load 0 and branch on it.
 - [Load after read-modify-write](redundant_load_after_rmw.md). Deletes an unused load right after INC, DEC, or a shift of the same byte.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
 - [Link-time address arithmetic](label_offset_fold.md). Turns an add of a label's address and a constant into one immediate, `#<(name+k)`.
@@ -380,25 +381,26 @@ them whenever a pass is added or moved.
          a value that is 0 or 1, and the [signed compare of values
          that can't be negative](nonnegative_compare.md).
       6. [Dead loop elimination](dead_loop_elimination.md)
-      7. [Unreachable code elimination](unreachable_code_elimination.md)
-      8. [Common subexpression elimination](cse.md)
-      9. [Loop-invariant extends and truncates](licm.md)
-      10. [Copy propagation](copy_propagation.md)
-      11. [Dead-store elimination](dead_store_elimination.md)
-      12. [A global read after it's stored](read_stored_global.md)
-      13. [Copy folding](copy_folding.md)
-      14. [Combining added constants](reassoc_const.md)
-      15. [Moving a constant out of an offset](reassoc_offset.md)
-      16. [Direct member access](direct_member_access.md)
-      17. [Indexed store to a fixed address](recognize_indexed_store.md)
-      18. [Indexed load from a fixed address](recognize_indexed_load.md)
-      19. [Truncate of an extend](truncate_extend_fold.md), then an
+      7. [Jump threading on a constant](jump_thread.md)
+      8. [Unreachable code elimination](unreachable_code_elimination.md)
+      9. [Common subexpression elimination](cse.md)
+      10. [Loop-invariant extends and truncates](licm.md)
+      11. [Copy propagation](copy_propagation.md)
+      12. [Dead-store elimination](dead_store_elimination.md)
+      13. [A global read after it's stored](read_stored_global.md)
+      14. [Copy folding](copy_folding.md)
+      15. [Combining added constants](reassoc_const.md)
+      16. [Moving a constant out of an offset](reassoc_offset.md)
+      17. [Direct member access](direct_member_access.md)
+      18. [Indexed store to a fixed address](recognize_indexed_store.md)
+      19. [Indexed load from a fixed address](recognize_indexed_load.md)
+      20. [Truncate of an extend](truncate_extend_fold.md), then an
           extend of an extend
-      20. [Sinking increments](sink_increment.md)
-      21. [Sinking an AND past a bit test](sink_and_past_branch.md)
-      22. [Narrowing widened arithmetic](narrow_widened_arith.md)
-      23. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
-      24. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
+      21. [Sinking increments](sink_increment.md)
+      22. [Sinking an AND past a bit test](sink_and_past_branch.md)
+      23. [Narrowing widened arithmetic](narrow_widened_arith.md)
+      24. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
+      25. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
    6. [A choice of offsets from one pointer](phi_offset.md)
    7. [Indexed access to a static array of structs](static_indexed_access.md)
    8. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)

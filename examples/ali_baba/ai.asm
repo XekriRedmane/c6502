@@ -557,9 +557,7 @@ find_nearest_event:
    LDA   (__local_find_nearest_event__ev),Y
    CMP   #$C0
    BCS   .loop@0_continue
-   DEY
-   LDA   (__local_find_nearest_event__ev),Y
-   STA   __local_find_nearest_event__1
+   LDA   __local_find_nearest_event__1
    STA   CANDIDATE_POS
    LDY   #$03
    LDA   (ENTITY_PTR),Y
@@ -582,6 +580,7 @@ find_nearest_event:
 .loop@0_start:
    LDY   #$00
    LDA   (__local_find_nearest_event__ev),Y
+   STA   __local_find_nearest_event__1
    CMP   #$FF
    BNE   .find_nearest_event@rot@0
    LDA   NEAREST_POS
@@ -658,11 +657,11 @@ evaluate_direction:
    TXA
    AND   #$80
    STA   __local_evaluate_direction__0
-   BNE   .evaluate_direction@scfold@0
+   BNE   .evaluate_direction@jthread@1
    TXA
    ORA   __local_evaluate_direction__2
    BNE   .if_end@21
-.evaluate_direction@scfold@0:
+.evaluate_direction@jthread@1:
    RTS
 .if_end@21:
    TXA

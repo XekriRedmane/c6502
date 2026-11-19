@@ -146,7 +146,7 @@ DISK_IO	EQU	$C088
 ; def bg_row params=__zpabi_bg_row__row locals= indirect=false in_cycle=false param_regs=A
 ; def blocks_player params=__zpabi_blocks_player__sprite locals=__local_blocks_player__sprite indirect=false in_cycle=false param_regs=A carry=true
 ; def check_for_gold_picked_up_by_player params= locals=__local_check_for_gold_picked_up_by_player__0,__local_check_for_gold_picked_up_by_player__1,__local_check_for_gold_picked_up_by_player__2,__local_check_for_gold_picked_up_by_player__3 indirect=false in_cycle=false
-; def climb params= locals= indirect=false in_cycle=false
+; def climb params= locals= indirect=false in_cycle=false carry=true
 ; def draw_player params= locals=__local_draw_player__0,__local_draw_player__1,__local_draw_player__2 indirect=false in_cycle=false
 ; def enter_cell params= locals=__local_enter_cell__0,__local_enter_cell__1 indirect=false in_cycle=false
 ; def erase_player params= locals=__local_erase_player__0,__local_erase_player__1 indirect=false in_cycle=false
@@ -457,11 +457,11 @@ check_for_gold_picked_up_by_player:
 
    LDA   PLAYER_X_ADJ
    CMP   #$02
-   BNE   .check_for_gold_picked_up_by_player@scfold@0
+   BNE   .check_for_gold_picked_up_by_player@jthread@0
    LDA   PLAYER_Y_ADJ
    CMP   #$02
    BEQ   .if_end@5
-.check_for_gold_picked_up_by_player@scfold@0:
+.check_for_gold_picked_up_by_player@jthread@0:
    RTS
 .if_end@5:
    LDX   PLAYER_ROW
@@ -503,10 +503,10 @@ inc_anim_state:
 
    INC   PLAYER_ANIM_STATE
    CMP   PLAYER_ANIM_STATE
-   BCS   .inc_anim_state@scfold@0
+   BCS   .inc_anim_state@jthread@0
    CPX   PLAYER_ANIM_STATE
    BCS   .if_end@9
-.inc_anim_state@scfold@0:
+.inc_anim_state@jthread@0:
    STA   PLAYER_ANIM_STATE
 .if_end@9:
    RTS
@@ -725,7 +725,7 @@ climb:
    LDA   #$10
    JSR   inc_anim_state
    JSR   draw_player
-   LDA   #$00
+   CLC
    RTS
 
 try_moving_up:
@@ -767,7 +767,7 @@ try_moving_up:
    DEC   PLAYER_Y_ADJ
    BMI   .if_else@43
    JSR   check_for_gold_picked_up_by_player
-   JMP   .if_end@42
+   JMP   climb
 .if_else@43:
    JSR   leave_cell
    DEC   PLAYER_ROW
@@ -775,9 +775,7 @@ try_moving_up:
    LDA   #$04
    STA   PLAYER_Y_ADJ
 .if_end@42:
-   JSR   climb
-   CMP   #$01
-   RTS
+   JMP   climb
 
 try_moving_up@run1:
    SUBROUTINE
@@ -1031,9 +1029,8 @@ stands_on_something:
    LDA   (bg_row@ret),Y
    CMP   #$01
    BEQ   .or_true@75
+   AND   #$FE
    CMP   #$02
-   BEQ   .or_true@75
-   CMP   #$03
    BEQ   .or_true@75
 .tail@1:
    CLC
@@ -1058,17 +1055,17 @@ move_player:
    JSR   try_moving_up@run1
    BEQ   .if_end@84
    CMP   #$04
-   BNE   .move_player@scfold@0
+   BNE   .move_player@jthread@0
    LDA   PLAYER_Y_ADJ
    CMP   #$02
    BEQ   .if_end@84
-.move_player@scfold@0:
+.move_player@jthread@0:
    LDA   PLAYER_Y_ADJ
    CMP   #$02
-   BCC   .move_player@scfold@2
+   BCC   .move_player@jthread@1
    JSR   stands_on_something
    BCS   .if_end@87
-.move_player@scfold@2:
+.move_player@jthread@1:
    LDA   #$00
    STA   NOT_FALLING
    JSR   erase_player
@@ -1123,29 +1120,20 @@ move_player:
    BCC   .i7_if_end@44
    LDA   PLAYER_ROW
    CMP   #$0F
-   BCC   .i7_if_end@45
-   LDA   #$01
-   BNE   .i7@end
-.i7_if_end@45:
+   BCS   .switch@1_break
    ADC   #$01
    JSR   map_row
    LDY   PLAYER_COL
    LDA   (map_row@ret),Y
    CMP   #$02
-   BEQ   .move_player@scfold@3
+   BEQ   .switch@1_break
    CMP   #$01
-   BNE   .i7_if_end@48
-.move_player@scfold@3:
-   LDA   #$01
-   BNE   .i7@end
-.i7_if_end@48:
+   BEQ   .switch@1_break
 .i7_if_end@44:
    JSR   try_moving_up@run0
    JSR   step_down
    JSR   climb
-.i7@end:
-   ORA   #$00
-   BNE   .switch@1_break
+   BCS   .switch@1_break
    RTS
 .case@4:
    LDA   #$FF

@@ -329,10 +329,10 @@ poll_inputs:
    CMP   #$CB
    BEQ   .if_end@4
    LDA   BUTN1
-   BMI   .poll_inputs@scfold@0
+   BMI   .poll_inputs@jthread@0
    LDA   BUTN0
    BPL   .if_end@4
-.poll_inputs@scfold@0:
+.poll_inputs@jthread@0:
    JMP   start_at_level_1
 .if_end@4:
    LDA   KBD
@@ -504,10 +504,10 @@ play_level:
    CMP   #$02
    BNE   .if_end@27
    LDA   GOLD_COUNT
-   BEQ   .play_level@scfold@0
+   BEQ   .play_level@jthread@1
    CMP   #$FF
    BNE   .if_end@27
-.play_level@scfold@0:
+.play_level@jthread@1:
    SEC
    RTS
 .if_end@27:

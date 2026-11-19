@@ -8,9 +8,9 @@ Every routine UNITS.md gives the unit, `main.asm` lines 2434-2497,
 
 | Original | C |
 |---|---|
-| NUM_TO_DECIMAL $0DA1, NUM_TO_DECIMAL_CONT $0DA6 | `num_to_decimal(value, out)`, with the table `DECIMAL_PLACES` |
+| NUM_TO_DECIMAL $0DA1, NUM_TO_DECIMAL_CONT $0DA6 | `num_to_decimal(value, out)` |
 | TEXT_RENDERER $6C8E | `text_renderer`, `text_renderer_no_pause`, and the static `render_stream(i)` |
-| DISPLAY_MESSAGE $761E | `display_message(index)` |
+| DISPLAY_MESSAGE $761E | `display_message(index)`, and the static `next_string(s)` it shares with display_message_loop |
 | DISPLAY_MESSAGE_LOOP $764A | `display_message_loop(msg)` |
 | SCROLL_STATUS_LINE $769B | `scroll_status_line` |
 | SET_CURSOR_ROW21 $76BE, SET_TEXT_WINDOW_BOTTOM $76C2 | `set_cursor_row21`, `set_text_window_bottom`, and the static `set_cursor_row(row)` |
@@ -21,10 +21,9 @@ Every routine UNITS.md gives the unit, `main.asm` lines 2434-2497,
 | PRINT_STRING_AT_ADDR $7758, PRINT_STRING $775C | `print_string(s)` |
 | SET_TEXT_WINDOW_UPPER_LEFT_ALL $792D, _LOW $7932, SET_TEXT_WINDOW_UPPER_LEFT $7934 | the static `set_text_window_upper_left(row)` |
 
-The unit defines `DECIMAL_PLACES` (10 bytes) and moves no table of the
-original. Nothing is left incomplete. NUM_TO_DECIMAL's entries at +3,
-+$30, and +$3E, which only the dead ORPHANED_ENCOUNTER_HANDLER calls,
-aren't translated.
+The unit has no tables and moves none of the original's. Nothing is
+left incomplete. NUM_TO_DECIMAL's entries at +3, +$30, and +$3E, which
+only the dead ORPHANED_ENCOUNTER_HANDLER calls, aren't translated.
 
 ## Departures
 
@@ -42,12 +41,19 @@ The file's opening comment lists them. In short:
 - TEXT_RENDERER's `JMP MOVE_LOOP`, when the index passes 255 after a
   glyph, is a return. A position command that passes 255 wraps to
   index 0 and goes on, as in the original.
-- NUM_TO_DECIMAL divides with a local value and digit, and writes
-  NUM_DIVISOR, NUM_DIGIT, and NUM_LEADING with the original's values
-  at each digit. It writes NUM_DIVISOR's high byte for 10 and 1 too,
-  where the original writes only the low byte, which holds 0 already.
-- TEXT_STREAM_IDX is still written before each glyph, though the C
-  keeps the index in a local.
+- num_to_decimal divides with `/` and `%`, and its divisor, digit, and
+  leading-zero flag are locals, so it doesn't write NUM_DIVISOR,
+  NUM_DIGIT, and NUM_LEADING (`$5A1B`-`$5A1E`). Only NUM_TO_DECIMAL
+  reads those bytes in the original, and a save holds `$4000`-`$59FF`,
+  so no reader sees the difference. The declarations stay in
+  ali_baba.h, which other units share.
+- render_stream doesn't write TEXT_STREAM_IDX (`$5A98`), where the
+  original saves its index there across RENDER_FONT_CHAR. Nothing else
+  reads it.
+- The divisions call the runtime helpers `udivmod16` and `sdivmod16`,
+  which the harness links at the simulator's addresses. The original
+  calls no helper, and those helpers aren't in the repository as 6502
+  code, so the unit doesn't run on an Apple II until they are.
 
 ## Header changes needed
 
@@ -55,18 +61,43 @@ None.
 
 ## Compiler bugs and gaps
 
-None hit. These cost bytes against the original, for phase 5:
+No bug was hit. These cost bytes against the original:
 
-- `TEXT_COL += (space >> 1) + (space & 1);` in
-  print_centered_plus_col compiles to an LSR, an AND, and two adds,
-  42 bytes for the routine, where the original's `LSR; ADC
-  TEXT_COL` takes in the shifted-out bit as the carry, 19 bytes.
-- `msg += *msg + 1;` on a `const uint8_t *` compiles to an add of the
-  byte, a carry into the high byte, an add of 1, and a second carry.
-  The original sets the carry and does one `ADC`.
-- print_string and display_message_loop copy their pointer parameter
-  into a local pair before the loop that steps it. print_string is 41
-  bytes against PRINT_STRING's 18.
+1. A 16-bit `/` and `%` of the same operands call `udivmod16` twice,
+   though one call leaves both, and `place /= 10` calls it a third
+   time. num_to_decimal is 153 bytes and makes 15 helper calls for a
+   number, where the original's repeated subtraction is 132 bytes and
+   the old C's was 111 and a 10-byte table.
+
+   ```c
+   #include <stdint.h>
+   void f(uint16_t v, uint8_t *out) {
+       for (uint16_t p = 10000; p != 0; p /= 10, out++) {
+           *out = v / p;
+           v %= p;
+       }
+   }
+   ```
+
+2. `(space + 1) / 2`, with `space` a `uint8_t`, calls `sdivmod16`. The
+   dividend can't be negative, so a 9-bit shift right (`LSR` of the
+   high byte and `ROR` of the low) would do, and the original's `LSR;
+   ADC TEXT_COL` takes in the rounding as the carry. print_centered_plus_col
+   is 51 bytes, against the original's 19.
+
+   ```c
+   #include <stdint.h>
+   extern uint8_t COL [[c6502::zeropage(0x24)]];
+   void f(uint8_t space) { COL += (space + 1) / 2; }
+   ```
+
+3. `s + s[0] + 1` on a `const uint8_t *` adds the byte, carries into
+   the high byte, adds 1, and carries again, where the original sets
+   the carry and does one `ADC`. next_string is 27 bytes.
+
+4. print_string and display_message_loop copy their pointer parameter
+   into a local pair before the loop that steps it. print_string is 38
+   bytes against PRINT_STRING's 18.
 
 ## Size
 
@@ -74,19 +105,23 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 
 | Original | Bytes | C | Bytes |
 |---|---:|---|---:|
-| NUM_TO_DECIMAL | 132 | num_to_decimal | 107 + 10 table |
-| TEXT_RENDERER | 145 | render_stream, text_renderer, text_renderer_no_pause | 191 |
-| DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop | 190 |
-| SCROLL_STATUS_LINE | 21 | scroll_status_line | 31 |
-| SET_CURSOR_ROW21, SET_TEXT_WINDOW_BOTTOM | 20 | the same and set_cursor_row | 32 |
-| PRINT_BOTTOM_CENTERED | 11 | print_bottom_centered | 11 |
-| PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 42 |
-| SET_INVERSE_VIDEO, PRINT_CTRL_N | 10 | the same | 14 |
-| SET_TEXT_WINDOW_WRAP, SET_TEXT_WINDOW_SCROLL | 20 | the same, and an outlined ctrl-O | 27 |
-| PRINT_CTRL_AB | 10 | print_ctrl_ab | 14 |
-| PRINT_STRING_AT_ADDR, PRINT_STRING | 22 | print_string | 41 |
-| SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 15 |
-| **Total code** | **553** | | **715** |
+| NUM_TO_DECIMAL | 132 | num_to_decimal and its outlined tail | 153 |
+| TEXT_RENDERER | 145 | render_stream, text_renderer, text_renderer_no_pause | 180 |
+| DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop, next_string | 192 |
+| SCROLL_STATUS_LINE | 21 | scroll_status_line | 25 |
+| SET_CURSOR_ROW21, SET_TEXT_WINDOW_BOTTOM | 20 | the same and set_cursor_row | 24 |
+| PRINT_BOTTOM_CENTERED | 11 | print_bottom_centered | 15 |
+| PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 51 |
+| SET_INVERSE_VIDEO, PRINT_CTRL_N | 10 | the same | 10 |
+| SET_TEXT_WINDOW_WRAP, SET_TEXT_WINDOW_SCROLL | 20 | the same | 20 |
+| PRINT_CTRL_AB | 10 | print_ctrl_ab | 10 |
+| PRINT_STRING_AT_ADDR, PRINT_STRING | 22 | print_string | 38 |
+| SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 11 |
+| **Total code** | **553** | | **729** |
+
+The C's bytes are the symbol sizes of `nm.py -S text.o`. Before the
+rewrite into plain C on 18 Nov 2026, the unit was 668 bytes of code
+and 10 of data.
 
 ## Checked against the original
 
@@ -99,7 +134,9 @@ routines, scroll_status_line, text_renderer and text_renderer_no_pause
 on STATUS_BORDER_DATA and UI_TEXT_STREAM, and text_renderer on a
 stream with every kind of byte and a $7E pause, which runs the title
 tune and the status bar. Every case matched. The test patches $7A49 to
-`JMP TUNE_ADVANCE` in both programs, as INIT_GAME_STATE leaves it.
+`JMP TUNE_ADVANCE` in both programs, as INIT_GAME_STATE leaves it. The test ran on the C
+as it was before the rewrite into plain C on 18 Nov 2026, and the
+rewrite was checked only with the six scripts of TestRuns.
 
 ## Where the original's comments and code disagree
 

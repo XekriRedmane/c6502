@@ -117,6 +117,18 @@ No change is needed.
    Declaring the count `register` puts it in Y, which gives `DEY; BNE`,
    5 cycles.
 
+3. **`*++p` on a pointer in zero page adds 1 with a 16-bit add
+   through temporaries**, where `p++` as a statement compiles to `INC
+   p; BNE; INC p+1`. tune_player reads a note's duration with
+   `*++TUNE_PC`, which costs 14 bytes over `TUNE_PC++` followed by
+   `*TUNE_PC`.
+
+   ```c
+   #include <stdint.h>
+   extern const uint8_t *P [[c6502::zeropage(0xEC)]];
+   uint8_t f(void) { return *++P; }
+   ```
+
 ## Size
 
 Code bytes of the `-S -O` output, from the object's symbol sizes,
@@ -125,12 +137,14 @@ stores SOUND_ON and tone_padding) isn't counted.
 
 | Original | Bytes | C | Bytes |
 |---|---|---|---|
-| TUNE_PLAYER through TUNE_INC_PC ($795B-$7A7E) | 292 | tune_player | 373 |
-| PLAY_HIGH_TONE | 18 | play_high_tone | 31 |
-| PLAY_LOW_TONE | 27 | play_low_tone | 37 |
-| **Total** | **337** | | **441** |
+| TUNE_PLAYER through TUNE_INC_PC ($795B-$7A7E) | 292 | tune_player | 374 |
+| PLAY_HIGH_TONE | 18 | play_high_tone | 35 |
+| PLAY_LOW_TONE | 27 | play_low_tone | 41 |
+| **Total** | **337** | | **450** |
 
-The C is 104 bytes (31%) larger. The choice of tone accounts for 30
+The C is 113 bytes (34%) larger. It was 436 bytes before the rewrite
+into plain C on 18 Nov 2026, and gap 3 accounts for the 14 bytes it
+grew. The choice of tone accounts for 30
 bytes of it. The C compares both bytes of TUNE_ACTION_VEC (14 bytes)
 and copies the arguments into the chosen routine's parameters (16
 bytes), where the original's `JSR TUNE_ACTION_INDIRECT` and `JMP

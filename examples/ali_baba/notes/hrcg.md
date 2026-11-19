@@ -51,16 +51,47 @@ None.
 
 ## Compiler bugs and gaps
 
-None hit. Two places where the code is larger than it has to be, for
-phase 5:
+No bug was hit. These cost bytes:
 
-- A bool argument computed from a comparison
-  (`hrcg_control(ch, next == HRCG_NEXT_SHIFTED)`) compiled to a
-  compare and two branches that load 0 or 1. Splitting the function
-  into `hrcg_control` and `hrcg_shifted_control` saved the bytes.
-- `hrcg_select_font` builds `FONT_DATA[0] + ((uint16_t)(uint8_t)(i * 3)
-  << 8)` with a 16-bit add of a zero low byte and a carry, 48 bytes,
-  where the original's HRCG_CHARSET_SELECT is 19.
+1. A `uint8_t` divided by 8, or its remainder by 8, is a signed 16-bit
+   division, and `/` and `%` of the same operands call `sdivmod16`
+   twice. `AND #7` and three `LSR`s would do. hrcg_row_address is 114
+   bytes and two helper calls for every character drawn, where the old
+   C, with `row >> 3` and a 3-byte table, was 51.
+
+   ```c
+   #include <stdint.h>
+   uint8_t g(uint8_t row) { return 0x80 * (row % 8) + 0x28 * (row / 8); }
+   ```
+
+   This also makes the HRCG call a runtime helper, which the original
+   doesn't, and those helpers aren't in the repository as 6502 code.
+
+2. `row + 1 < WNDBTM`, with both bytes, is a signed 16-bit comparison
+   with an overflow test (`BVC; EOR #$80`). row + 1 is 1-256 and
+   WNDBTM 0-255, so an unsigned comparison would do. hrcg_scroll_up is
+   116 bytes, where it was 100.
+
+   ```c
+   #include <stdint.h>
+   extern uint8_t WNDTOP [[c6502::zeropage(0x22)]];
+   extern uint8_t WNDBTM [[c6502::zeropage(0x23)]];
+   void copy(uint8_t row);
+   void f(void) {
+       for (uint8_t row = WNDTOP; row + 1 < WNDBTM; row++)
+           copy(row);
+   }
+   ```
+
+3. A bool argument computed from a comparison
+   (`hrcg_control(ch, next == HRCG_NEXT_SHIFTED)`) compiled to a
+   compare and two branches that load 0 or 1. Splitting the function
+   into `hrcg_control` and `hrcg_shifted_control` saved the bytes. This
+   item was here before the rewrite and wasn't measured again.
+
+hrcg_select_font's `FONT_DATA[c - '1']` compiles to a lookup in two
+6-byte tables of the fonts' addresses that the compiler makes, 49
+bytes in all, where the old C's 16-bit add was 50.
 
 ## Size
 
@@ -68,8 +99,8 @@ From `objdump.py -t` of `hrcg.o` (before linking), against `main.lst`.
 
 | | Original | C |
 |---|---:|---:|
-| Code of the routines translated | 846 | 863 |
-| Dispatch table and row table | 66 | 3 |
+| Code of the routines translated | 846 | 901 |
+| Dispatch table and row table | 66 | 12 (the fonts' addresses, which the compiler makes) |
 | Variables | 21 (at $9305-$9319) | 10 in .bss, 4 in zero page |
 | Standard font | 768 | 768 |
 
@@ -77,7 +108,9 @@ The original's 846 bytes are the chunks that hold the translated paths
 ($92A8-$92AA, $92C5-$92E7, $93BE-$93ED, $9424-$94C0, $94C9-$94D0,
 $94E6-$94FD, $9519-$9544, $9561-$956E, $957C-$95D0, $95D3-$95F7,
 $95FA-$9732, and $9737-$9784), including the few shifted variants
-inside them. The unit's whole code is 1141 bytes.
+inside them. The unit's whole code is 1141 bytes. The C's are the
+symbol sizes of `nm.py -S hrcg.o`, and its code was 835 bytes before
+the rewrite into plain C on 18 Nov 2026.
 
 ## Checked against the original
 
@@ -94,7 +127,9 @@ $5A. A scripted run of every live code, the font selectors '0'-'9' and
 others, scrolling, wrapping, ctrl-B/C/D, and ctrl-V windows, and 25
 random runs of 1500 characters each, matched in every compared byte
 and event. $2A/$2B differ, because the C keeps the row pointer in a
-local, and the ROM's SCROLL sets them before it reads them.
+local, and the ROM's SCROLL sets them before it reads them. The test
+ran on the C as it was before the rewrite into plain C on 18 Nov 2026,
+and the rewrite was checked only with the six scripts of TestRuns.
 
 ## Where the original's comments and code disagree
 

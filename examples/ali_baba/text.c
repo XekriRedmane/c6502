@@ -28,13 +28,19 @@
       a glyph, which would run a turn from inside whatever called it.
       No stream on the disk is that long, and render_stream ends the
       stream there.
-    - NUM_TO_DECIMAL takes its divisors from DECIMAL_PLACES and keeps
-      the value and the digit in locals while it divides. It leaves
-      NUM_DIVISOR, NUM_DIGIT, and NUM_LEADING as the original does,
-      and writes all of NUM_DIVISOR where the original writes only the
-      low byte of 10 and 1. The entries at NUM_TO_DECIMAL+3, +$30, and
-      +$3E, which only the dead ORPHANED_ENCOUNTER_HANDLER calls, aren't
-      translated.
+    - NUM_TO_DECIMAL divides by repeated subtraction and keeps its
+      divisor, digit, and leading-zero flag in NUM_DIVISOR, NUM_DIGIT,
+      and NUM_LEADING. num_to_decimal divides with / and %, and those
+      three are locals, so it doesn't write $5A1B-$5A1E. Nothing else
+      in the game reads them, and a save doesn't hold page $5A. The
+      entries at NUM_TO_DECIMAL+3, +$30, and +$3E, which only the dead
+      ORPHANED_ENCOUNTER_HANDLER calls, aren't translated.
+    - TEXT_RENDERER saves its stream index in TEXT_STREAM_IDX ($5A98)
+      across RENDER_FONT_CHAR. render_stream keeps it in a local and
+      doesn't write TEXT_STREAM_IDX, which nothing else reads.
+    - The divisions in num_to_decimal and print_centered_plus_col call
+      the runtime helpers udivmod16 and sdivmod16, which the original
+      doesn't, and which aren't in this repository as 6502 code.
     - PRINT_STRING_AT_ADDR, which takes the string in X and Y, is
       print_string. SET_TEXT_WINDOW_UPPER_LEFT_ALL and
       SET_TEXT_WINDOW_UPPER_LEFT_LOW are set_text_window_upper_left(0)
@@ -527,28 +533,17 @@
 */
 #include "ali_baba.h"
 
-/* The places NUM_TO_DECIMAL divides by, one per digit. */
-static const uint16_t DECIMAL_PLACES[5] = { 10000, 1000, 100, 10, 1 };
-
-/* Leading zeros leave their bytes of `out` alone. NUM_LEADING is 1
- * from the first digit written, and always for the ones digit, so that
- * 0 is written as one '0'. */
+/* Writes the digits from the ten thousands down, one byte of `out` each.
+ * A leading zero leaves its byte alone, and the ones digit is written
+ * even when it is 0, so that 0 is written as one '0'. */
 void num_to_decimal(uint16_t value, uint8_t *out) {
-    NUM_LEADING = 0;
-    for (uint8_t i = 0; i < 5; i++) {
-        uint16_t place = DECIMAL_PLACES[i];
-        NUM_DIVISOR = place;
-        if (i == 4)
-            NUM_LEADING = 1;
-        uint8_t digit = 0xB0;
-        while (value >= place) {
-            value -= place;
-            digit++;
-        }
-        NUM_DIGIT = digit;
-        if (digit != 0xB0 || NUM_LEADING == 1) {
-            out[i] = digit;
-            NUM_LEADING = 1;
+    bool started = false;
+    for (uint16_t place = 10000; place != 0; place /= 10, out++) {
+        uint8_t digit = value / place;
+        value %= place;
+        if (digit != 0 || started || place == 1) {
+            *out = 0xB0 + digit;    /* high-bit ASCII */
+            started = true;
         }
     }
 }
@@ -595,7 +590,6 @@ static uint16_t render_stream(uint8_t i) {
             TEXT_RIGHT_MARGIN = MAP_WIDTH;
             i++;
         } else {
-            TEXT_STREAM_IDX = i;
             FONT_CHARNUM = b;
             FONT_CHARSET = 2;
             render_font_char();
@@ -631,17 +625,20 @@ void text_renderer_no_pause(void) {
     render_stream(0);
 }
 
+/* Returns the string after the length-prefixed string `s`. */
+static const uint8_t *next_string(const uint8_t *s) {
+    return s + s[0] + 1;
+}
+
 /* A message is a group of strings ended by a length of 0, and the
  * table is the groups one after another. */
 void display_message(uint8_t index) {
     const uint8_t *msg = ((struct location_header *)LOCATIONS)->msg_table;
     MSG_LINE_COUNT = 0;
     for (; index != 0; index--) {
-        uint8_t len;
-        do {
-            len = *msg;
-            msg += len + 1;
-        } while (len != 0);
+        while (*msg != 0)
+            msg = next_string(msg);
+        msg++;
     }
     display_message_loop(msg);
 }
@@ -650,31 +647,32 @@ void display_message(uint8_t index) {
  * status lines, which scroll up between strings. The message pauses,
  * with the blink running, after every string but a first one that has
  * more after it. MSG_LINE_COUNT counts the strings, from whatever the
- * caller left in it. */
+ * caller left in it, and every caller sets it to 0. */
 void display_message_loop(const uint8_t *msg) {
-    for (;;) {
-        if (*msg == 0) {
-            if (MSG_LINE_COUNT == 2)
-                scroll_status_line();
-            return;
-        }
+    while (*msg != 0) {
         /* The status lines scroll after the first string is printed,
-         * and before the third and each later one. The test for the
-         * first is the original's CMP #1 and BMI. */
+         * and before the third and each later one. The original tests
+         * for the first string with CMP #1 and BMI, which also takes a
+         * count of $81 or more, a count that only a group of more than
+         * 128 strings reaches. */
         uint8_t count = MSG_LINE_COUNT;
-        bool first = (int8_t)(count - 1) < 0;
-        if (!first && count != 1)
+        if (count == 0 || count > 0x80) {
+            print_bottom_centered(msg);
             scroll_status_line();
-        print_bottom_centered(msg);
-        if (first)
-            scroll_status_line();
+        } else {
+            if (count != 1)
+                scroll_status_line();
+            print_bottom_centered(msg);
+        }
         MSG_LINE_COUNT++;
-        msg += *msg + 1;
-        if (MSG_LINE_COUNT <= 1 && *msg != 0)
-            continue;
-        delay_with_animation();
-        print_ctrl_ab();
+        msg = next_string(msg);
+        if (MSG_LINE_COUNT > 1 || *msg == 0) {
+            delay_with_animation();
+            print_ctrl_ab();
+        }
     }
+    if (MSG_LINE_COUNT == 2)
+        scroll_status_line();
 }
 
 /* Moves the text window's top left corner to column 0 of `row`. */
@@ -728,10 +726,11 @@ void print_bottom_centered(const uint8_t *s) {
 
 /* The string starts (40 - length) / 2 columns from TEXT_COL, rounded
  * up, because the original's ADC takes in the bit its LSR shifts out.
- * The original's comment gives the division without the rounding. */
+ * The original's comment gives the division without the rounding. The
+ * 40 - length is a byte, as the original's SBC makes it. */
 void print_centered_plus_col(const uint8_t *s) {
     uint8_t space = 40 - s[0];
-    TEXT_COL += (space >> 1) + (space & 1);
+    TEXT_COL += (space + 1) / 2;
     print_ctrl_ab();
     print_string(s);
 }
@@ -758,10 +757,9 @@ void print_ctrl_ab(void) {
 /* The original counts the length down in X and stops when it goes
  * negative, so a length above 128 prints nothing. */
 void print_string(const uint8_t *s) {
-    uint8_t n = *s;
-    if (n == 0 || n > 128)
+    uint8_t len = s[0];
+    if (len > 128)
         return;
-    do {
-        hrcg_cout(*++s);
-    } while (--n);
+    for (uint8_t i = 1; i <= len; i++)
+        hrcg_cout(s[i]);
 }

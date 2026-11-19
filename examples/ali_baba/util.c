@@ -52,6 +52,16 @@
       pos_to_colrow returns them as the low and high bytes of a word.
     - The tables at $7AAD-$7ABF are statics here. WAIT_DURATION and
       DELAY_COUNT are constants, since nothing writes them.
+    - DEC_WAIT_IF_NONZERO isn't translated. idle_anim_handler subtracts
+      its 12 WAIT calls from WAIT_LOOP_COUNT at once, stopping at 0,
+      which leaves the byte as the 12 calls of the original do.
+    - COLD_RESTART fills each page from offset 0 and then from $FF
+      down, and the tail from $A56F down. cold_restart fills both from
+      the lowest address up, which stores the same bytes.
+    - pos_to_colrow divides with / and %, and random_in_range shifts by
+      a count with << and >>. Those call the runtime helpers sdivmod16,
+      asl8, asl16, and asr16, which the original doesn't, and which
+      aren't in this repository as 6502 code.
 
     Ali Baba, main.asm lines 1724-1941, 2057-2124, 2255-2386,
     2406-2433, 2862-2885, 3347-3433, 5387-5400, 14896-14947,
@@ -624,10 +634,8 @@ uint8_t anim_check_frame(void) {
 }
 
 void delay_with_animation(void) {
-    uint8_t n = DELAY_COUNT;
-    do {
+    for (uint8_t n = 0; n < DELAY_COUNT; n++)
         anim_tick_and_wait();
-    } while (--n != 0);
 }
 
 /* Waits four ticks with the sound off and one with it on. The original
@@ -640,15 +648,14 @@ void dispatch_on_mode(void) {
         delay_with_animation();
 }
 
-static void dec_wait_if_nonzero(void) {
-    if (WAIT_LOOP_COUNT != 0)
-        WAIT_LOOP_COUNT--;
-}
+/* The WAIT calls that one idle poll in joystick mode counts off. */
+constexpr uint8_t JOYSTICK_POLL_WAITS = 12;
 
 /* READ_KEYBOARD calls this once for each poll that finds no input. When
  * a tick's WAIT calls have all been spent, it starts the next tick. With
  * the keyboard it then makes one WAIT call, and with the joystick it
- * counts up to 12 of them off without waiting. */
+ * counts up to 12 of them off without waiting. The original counts them
+ * off one at a time with DEC_WAIT_IF_NONZERO. */
 void idle_anim_handler(void) {
     while (WAIT_LOOP_COUNT == 0) {
         anim_check_frame();
@@ -657,48 +664,43 @@ void idle_anim_handler(void) {
     if (INPUT_MODE == 0) {
         WAIT(WAIT_DURATION);
         WAIT_LOOP_COUNT--;
+    } else if (WAIT_LOOP_COUNT > JOYSTICK_POLL_WAITS) {
+        WAIT_LOOP_COUNT -= JOYSTICK_POLL_WAITS;
     } else {
-        for (uint8_t n = 12; n != 0; n--)
-            dec_wait_if_nonzero();
+        WAIT_LOOP_COUNT = 0;
     }
 }
 
 /* ---- Positions and records ------------------------------------------------ */
 
-/* Divides by repeated subtraction, as the original does. */
+/* The original divides by repeated subtraction. */
 uint16_t pos_to_colrow(uint8_t pos) {
-    uint8_t row = 0;
-    while (pos >= MAP_WIDTH) {
-        pos -= MAP_WIDTH;
-        row++;
-    }
-    return pos | (uint16_t)row << 8;
+    uint8_t col = pos % MAP_WIDTH;
+    uint8_t row = pos / MAP_WIDTH;
+    return col | (uint16_t)row << 8;
 }
 
 /* A sum past 255 wraps here. The original falls into NUM_TO_DECIMAL
  * instead, which no caller's arguments reach, since every row is 12 or
  * less and every column 19 or less. */
 uint8_t colrow_to_pos(uint8_t col, uint8_t row) {
-    for (; row != 0; row--)
-        col += MAP_WIDTH;
-    return col;
+    return col + MAP_WIDTH * row;
 }
 
 /* The base is the word at $4000, MOB_BASE in the original, which is
- * $4C80, MOBS. */
+ * $4C80, MOBS. An index of 0 is record 255, since the index - 1 is a
+ * byte in the original. */
 struct mob *get_mob_data(uint8_t index) {
-    return ((struct location_header *)LOCATIONS)->mob_base + (uint8_t)(index - 1);
+    uint8_t n = index - 1;
+    return ((struct location_header *)LOCATIONS)->mob_base + n;
 }
 
-/* An index of 129 or more counts as 0, as in the original, whose loop
- * counts the index down with DEX and BPL. */
+/* An index of 129 or more gives LOCATIONS[0], as in the original, whose
+ * loop counts the index down with DEX and BPL. */
 struct location *get_char_record(uint8_t index) {
     if (index > 128)
-        index = 0;
-    struct location *rec = LOCATIONS;
-    for (; index != 0; index--)
-        rec++;
-    return rec;
+        return LOCATIONS;
+    return LOCATIONS + index;
 }
 
 /* The life of a mob in MOB_PTR's record is raised to its strength, with
@@ -706,8 +708,7 @@ struct location *get_char_record(uint8_t index) {
  * at 31 and 63, which its code doesn't apply. */
 void clamp_char_field(void) {
     uint8_t floor = MOB_PTR->strength & STRENGTH_MASK;
-    uint8_t life = MOB_PTR->life & HP_MASK;
-    if (life < floor)
+    if ((MOB_PTR->life & HP_MASK) < floor)
         MOB_PTR->life = (MOB_PTR->life & HP_FLAGS_MASK) | floor;
 }
 
@@ -717,19 +718,21 @@ void clamp_char_field(void) {
 constexpr uint8_t NAME_BUF_LEN = 20;
 
 /* Points MOB_PTR at `m` and writes its name into S_ADD_NAME.name[1..20],
- * padded with $20, a low-ASCII space. The count of characters left is a
- * signed byte that wraps, as the original's X does, which makes a
- * difference only for a name of 128 characters or more. */
+ * padded with $20, a low-ASCII space. Character i is copied when the
+ * length minus i is 0 or more as a signed byte, which is the original's
+ * DEX and BPL. That differs from i <= length only for a name of 128
+ * characters or more. */
 static void copy_pc_name_to_buf(struct mob *m) {
     MOB_PTR = m;
     const uint8_t *name = m->name;
-    int8_t left = (int8_t)name[0];
     for (uint8_t i = 1; i <= NAME_BUF_LEN; i++)
-        S_ADD_NAME.name[i] = (--left >= 0) ? name[i] : 0x20;
+        S_ADD_NAME.name[i] = (int8_t)(name[0] - i) >= 0 ? name[i] : ' ';
 }
 
 /* A mob is a player character when its appearance is below $15. */
-#define IS_PLAYER_CHARACTER(m) ((m)->appearance < NPC_APPEARANCE_MIN)
+static bool is_player_character(const struct mob *m) {
+    return m->appearance < NPC_APPEARANCE_MIN;
+}
 
 /* Walks the list of mobs at no location from its head, leaving
  * BROWSE_CHAR_INDEX at each mob it looks at. */
@@ -738,7 +741,7 @@ bool find_first_pc(void) {
     while (index != 0) {
         BROWSE_CHAR_INDEX = index;
         struct mob *m = get_mob_data(index);
-        if (IS_PLAYER_CHARACTER(m)) {
+        if (is_player_character(m)) {
             copy_pc_name_to_buf(m);
             return true;
         }
@@ -759,7 +762,7 @@ static void find_next_pc(void) {
         }
         BROWSE_CHAR_INDEX = index;
         MOB_PTR = get_mob_data(index);
-        if (IS_PLAYER_CHARACTER(MOB_PTR)) {
+        if (is_player_character(MOB_PTR)) {
             copy_pc_name_to_buf(MOB_PTR);
             return;
         }
@@ -800,16 +803,11 @@ uint8_t init_char_select(void) {
 
 /* ---- Random numbers -------------------------------------------------------- */
 
-/* PRNG_STATE = 69 * PRNG_STATE + $53, and PRNG_OUTPUT is the state
- * shifted right once. 69 * s is 64 * s + 4 * s + s, which the original
- * computes with shifts, and a multiplication by 69 would call the
- * runtime's mul8. */
+/* PRNG_OUTPUT is the new state shifted right once, so it runs from 0 to
+ * $7F. */
 uint8_t step_prng(void) {
-    uint8_t s = PRNG_STATE;
-    uint8_t s4 = (uint8_t)(s << 2);
-    s = (uint8_t)(s4 << 4) + s4 + s + 0x53;
-    PRNG_STATE = s;
-    PRNG_OUTPUT = s >> 1;
+    PRNG_STATE = 69 * PRNG_STATE + 0x53;
+    PRNG_OUTPUT = PRNG_STATE >> 1;
     return PRNG_OUTPUT;
 }
 
@@ -820,12 +818,6 @@ uint8_t step_prng(void) {
     most the shifted limit, so the result runs from 0 to `limit`
     inclusive, although the original's comments say limit - 1.
 
-    The original's range tests are CMP and BPL, and its test of a
-    sample is CMP, BEQ, and BPL. Each tests bit 7 of a difference, as
-    the casts to int8_t and the test of bit 7 of `over` do, so the two
-    agree for all 256 limits. A limit of $80-$BF gets the mask $7F, and
-    a limit of $C0-$FF the mask $40, as in the original.
-
         limit       mask    shift
         1           $40     6
         2-3         $60     5
@@ -833,35 +825,35 @@ uint8_t step_prng(void) {
         8-15        $78     3
         16-31       $7C     2
         32-63       $7E     1
-        64-127      $7F     0
+        64-129      $7F     0
+        130-255     $40     6
+
+    The original chooses the mask with a chain of CMP #2^k and BPL, which
+    tests bit 7 of limit - 2^k. A limit of 130 or more fails the first
+    test, so it gets the mask of a limit of 1. The original's test of a
+    sample is CMP, BEQ, and BPL, which takes a sample when sample -
+    scaled is 0 or has bit 7 set. That is sample <= scaled for every
+    limit below 130, and the test here reads the sign of the difference
+    as the original does, because the two differ for the larger limits.
 */
 uint8_t random_in_range(uint8_t limit) {
     if (limit == 0)
         return 0;
 
-    uint8_t shift = 6;
-    uint8_t mask = 0x40;
-    uint8_t bound = 2;
-    while (shift != 0 && (int8_t)(limit - bound) >= 0) {
-        shift--;
-        mask = (uint8_t)(mask >> 1) | 0x40;
-        bound <<= 1;
-    }
-
-    uint8_t scaled = limit;
-    for (uint8_t n = shift; n != 0; n--)
-        scaled <<= 1;
+    uint8_t shift = 0;
+    if (limit >= 130)
+        shift = 6;
+    else
+        while (limit << shift < 0x40)
+            shift++;
+    uint8_t mask = (0x7F >> shift) << shift;
+    uint8_t scaled = limit << shift;
 
     uint8_t sample;
-    uint8_t over;
-    do {
+    do
         sample = step_prng() & mask;
-        over = sample - scaled;
-    } while (over != 0 && (over & 0x80) == 0);
-
-    for (; shift != 0; shift--)
-        sample >>= 1;
-    return sample;
+    while ((int8_t)(sample - scaled) > 0);
+    return sample >> shift;
 }
 
 /* ---- The integrity checks ---------------------------------------------------- */
@@ -907,25 +899,16 @@ void verify_disk_io(void) {
 
 /* ---- Restarting -------------------------------------------------------------- */
 
-/* Fills each page from $08 to $A4 with its own page number, offset 0
- * first and then $FF down to 1, and then $A56F down to $A501 with $A5,
- * and boots from the disk. It runs from $A56F, so its last store
- * overwrites its own first byte, which has already run. The stop values
- * $A500 and $6F come from that address. */
+/* Fills each byte from $0800 to $A4FF with its page number, and $A501
+ * to $A56F with $A5, and boots from the disk. It runs from $A56F, so
+ * its store there overwrites its own first byte, which has already run.
+ * The end $A56F comes from that address. The original stores each page
+ * from offset 0 and then from $FF down to 1, and the tail from $A56F
+ * down. Either order leaves the same bytes. */
 void cold_restart(void) {
-    uint8_t page = 0x08;
-    uint8_t *p;
-    do {
-        p = (uint8_t *)((uint16_t)page << 8);
-        uint8_t i = 0;
-        do {
-            p[i] = page;
-        } while (--i != 0);
-    } while (++page != 0xA5);
-    p = (uint8_t *)0xA500;
-    uint8_t i = 0x6F;
-    do {
-        p[i] = 0xA5;
-    } while (--i != 0);
+    for (uint8_t *p = (uint8_t *)0x0800; p != (uint8_t *)0xA500; p++)
+        *p = (uint16_t)p >> 8;
+    for (uint8_t *p = (uint8_t *)0xA501; p <= (uint8_t *)0xA56F; p++)
+        *p = 0xA5;
     DISK_BOOT_ROM();
 }

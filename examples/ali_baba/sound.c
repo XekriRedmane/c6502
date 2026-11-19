@@ -351,7 +351,10 @@ static uint8_t tone_padding [[c6502::zeropage(0xE3)]];
 /* Clicks the speaker 10 times `duration` times (0 meaning 256), with
  * `first` passes of 5 cycles before the next click the first time, and
  * `freq` passes after that. A count of 0 means 256 passes. The count
- * is a register local, so that the delay loop counts it down in Y. */
+ * is a register local, so that a pass of the delay loop is DEY and BNE,
+ * 5 cycles, as the original's DEX and BNE are. Without `register` the
+ * count goes to zero page, and a pass takes 8 cycles, which lowers the
+ * pitch. */
 static void play_high_tone(uint8_t freq, uint8_t duration, uint8_t first) {
     register uint8_t x = first;
     do {
@@ -389,7 +392,7 @@ static void play_low_tone(uint8_t freq, uint8_t duration, uint8_t first) {
 void tune_player(uint8_t tune, uint8_t strength) {
     /* The original's X, which the tone routines start their first
      * delay from. */
-    uint8_t x = tune << 1;
+    uint8_t x = 2 * tune;
 
     KBDSTRB = 0;
     ATTRACT_FLAG = tune == TUNE_ATTRACT;
@@ -405,10 +408,8 @@ void tune_player(uint8_t tune, uint8_t strength) {
     for (;;) {
         uint8_t op = *TUNE_PC;
         if (op >= TUNE_OP_NOTE) {
-            step_prng();
-            uint8_t freq = (PRNG_OUTPUT & TUNE_PRNG_MASK) ^ op;
-            TUNE_PC++;
-            uint8_t duration = *TUNE_PC;
+            uint8_t freq = op ^ (step_prng() & TUNE_PRNG_MASK);
+            uint8_t duration = *++TUNE_PC;
             if (SOUND_ON) {
                 if (TUNE_ACTION_VEC == PLAY_LOW_TONE_ADDR)
                     play_low_tone(freq, duration, x);

@@ -3,9 +3,8 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$1A
-FP	EQU	$1C
-ANIM_FRAME_CTR	EQU	$1E
+SSP	EQU	$1B
+FP	EQU	$1D
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -18,31 +17,33 @@ BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
-__local_cold_restart__0	EQU	$80
-__local_colrow_to_pos__row	EQU	$80
+ANIM_FRAME_CTR	EQU	$62
+__local_cold_restart__p	EQU	$80
 __local_delay_with_animation__n	EQU	$80
 __local_find_prev_pc__prev	EQU	$80
-__local_get_char_record__rec	EQU	$80
-__local_idle_anim_handler__n	EQU	$80
-__local_random_in_range__sample	EQU	$80
+__local_get_char_record__0	EQU	$80
+__local_pos_to_colrow__0	EQU	$80
 __zpabi_compute_checksum__end_0	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_clamp_char_field__1	EQU	$81
-__local_cold_restart__1	EQU	$81
-__local_colrow_to_pos__col	EQU	$81
+__local_cold_restart__0	EQU	$81
+__local_colrow_to_pos__0	EQU	$81
 __local_find_prev_pc__start	EQU	$81
-__local_get_char_record__index	EQU	$81
-__local_random_in_range__shift	EQU	$81
+__local_get_char_record__1	EQU	$81
+__local_pos_to_colrow__pos	EQU	$81
+__local_random_in_range__1	EQU	$81
 __zpabi_compute_checksum__end_1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
-__local_cold_restart__page	EQU	$82
-__local_random_in_range__bound	EQU	$82
-__local_random_in_range__scaled	EQU	$83
+__local_cold_restart__1	EQU	$82
+__local_colrow_to_pos__col	EQU	$82
+__local_get_char_record__index	EQU	$82
+__local_random_in_range__limit	EQU	$82
+__local_random_in_range__2	EQU	$83
 __local_compute_checksum__lo	EQU	$84
-__local_random_in_range__mask	EQU	$84
+__local_random_in_range__shift	EQU	$84
 __local_compute_checksum__hi	EQU	$85
 __local_find_first_pc__0	EQU	$85
 __local_compute_checksum__0	EQU	$86
@@ -51,15 +52,14 @@ __local_step_prng__1	EQU	$86
 __local_compute_checksum__p_0	EQU	$87
 __local_copy_pc_name_to_buf__m	EQU	$87
 __local_get_mob_data__index	EQU	$87
-__local_step_prng__s	EQU	$87
+__local_is_player_character__m	EQU	$87
 __local_compute_checksum__p_1	EQU	$88
 __local_copy_pc_name_to_buf__0	EQU	$88
 __local_get_mob_data__0	EQU	$88
-__local_copy_pc_name_to_buf__1	EQU	$89
+__local_is_player_character__0	EQU	$88
 __local_copy_pc_name_to_buf__i	EQU	$8A
-__local_copy_pc_name_to_buf__left	EQU	$8B
-__local_copy_pc_name_to_buf__2	EQU	$8C
-__local_copy_pc_name_to_buf__3	EQU	$8D
+__local_copy_pc_name_to_buf__2	EQU	$8B
+__local_copy_pc_name_to_buf__3	EQU	$8C
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -236,24 +236,24 @@ WAIT	EQU	$FCA8
 ; def anim_check_frame params= locals= indirect=false in_cycle=false
 ; def anim_tick_and_wait params= locals=__local_anim_tick_and_wait__0 indirect=false in_cycle=false
 ; def clamp_char_field params= locals=__local_clamp_char_field__0,__local_clamp_char_field__1 indirect=false in_cycle=false
-; def cold_restart params= locals=__local_cold_restart__0,__local_cold_restart__1,__local_cold_restart__page indirect=false in_cycle=false
-; def colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row locals=__local_colrow_to_pos__row,__local_colrow_to_pos__col indirect=false in_cycle=false param_regs=A,X
+; def cold_restart params= locals=__local_cold_restart__p,__local_cold_restart__0,__local_cold_restart__1 indirect=false in_cycle=false
+; def colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row locals=__local_colrow_to_pos__row,__local_colrow_to_pos__0,__local_colrow_to_pos__col indirect=false in_cycle=false param_regs=A,X
 ; def compute_checksum params=__zpabi_compute_checksum__p_0,__zpabi_compute_checksum__p_1,__zpabi_compute_checksum__end_0,__zpabi_compute_checksum__end_1 locals=__local_compute_checksum__lo,__local_compute_checksum__hi,__local_compute_checksum__0,__local_compute_checksum__p_0,__local_compute_checksum__p_1 indirect=false in_cycle=false param_regs=A,X,,
-; def copy_pc_name_to_buf params=__zpabi_copy_pc_name_to_buf__m_0,__zpabi_copy_pc_name_to_buf__m_1 locals=__local_copy_pc_name_to_buf__m,__local_copy_pc_name_to_buf__0,__local_copy_pc_name_to_buf__1,__local_copy_pc_name_to_buf__i,__local_copy_pc_name_to_buf__left,__local_copy_pc_name_to_buf__2,__local_copy_pc_name_to_buf__3 indirect=false in_cycle=false param_regs=A,X
-; def dec_wait_if_nonzero params= locals= indirect=false in_cycle=false
+; def copy_pc_name_to_buf params=__zpabi_copy_pc_name_to_buf__m_0,__zpabi_copy_pc_name_to_buf__m_1 locals=__local_copy_pc_name_to_buf__m,__local_copy_pc_name_to_buf__0,__local_copy_pc_name_to_buf__1,__local_copy_pc_name_to_buf__i,__local_copy_pc_name_to_buf__2,__local_copy_pc_name_to_buf__3 indirect=false in_cycle=false param_regs=A,X
 ; def delay_with_animation params= locals=__local_delay_with_animation__n indirect=false in_cycle=false
 ; def dispatch_on_mode params= locals= indirect=false in_cycle=false
 ; def find_first_pc params= locals=__local_find_first_pc__index,__local_find_first_pc__0,__local_find_first_pc__1 indirect=false in_cycle=false carry=true
 ; def find_next_pc params= locals=__local_find_next_pc__0 indirect=false in_cycle=false
 ; def find_next_pc_wrap params= locals= indirect=false in_cycle=false
 ; def find_prev_pc params= locals=__local_find_prev_pc__prev,__local_find_prev_pc__start,__local_find_prev_pc__0 indirect=false in_cycle=false
-; def get_char_record params=__zpabi_get_char_record__index locals=__local_get_char_record__rec,__local_get_char_record__index indirect=false in_cycle=false param_regs=A
+; def get_char_record params=__zpabi_get_char_record__index locals=__local_get_char_record__0,__local_get_char_record__1,__local_get_char_record__index indirect=false in_cycle=false param_regs=A
 ; def get_mob_data params=__zpabi_get_mob_data__index locals=__local_get_mob_data__index,__local_get_mob_data__0,__local_get_mob_data__1,__local_get_mob_data__2 indirect=false in_cycle=false param_regs=A
-; def idle_anim_handler params= locals=__local_idle_anim_handler__n indirect=false in_cycle=false
+; def idle_anim_handler params= locals= indirect=false in_cycle=false
 ; def init_char_select params= locals=__local_init_char_select__0 indirect=false in_cycle=false
-; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__pos indirect=false in_cycle=false param_regs=A
-; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__sample,__local_random_in_range__shift,__local_random_in_range__bound,__local_random_in_range__scaled,__local_random_in_range__mask indirect=false in_cycle=false param_regs=A
-; def step_prng params= locals=__local_step_prng__0,__local_step_prng__1,__local_step_prng__s indirect=false in_cycle=false
+; def is_player_character params=__zpabi_is_player_character__m_0,__zpabi_is_player_character__m_1 locals=__local_is_player_character__m,__local_is_player_character__0 indirect=false in_cycle=false param_regs=A,X carry=true
+; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__0,__local_pos_to_colrow__pos,__local_pos_to_colrow__1 indirect=false in_cycle=false param_regs=A
+; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__0,__local_random_in_range__1,__local_random_in_range__limit,__local_random_in_range__2,__local_random_in_range__shift indirect=false in_cycle=false param_regs=A
+; def step_prng params= locals=__local_step_prng__0,__local_step_prng__1 indirect=false in_cycle=false
 ; def tick_anim_counter params= locals=__local_tick_anim_counter__0 indirect=false in_cycle=false
 ; def timed_wait params= locals= indirect=false in_cycle=false
 ; def verify_disk_io params= locals= indirect=false in_cycle=false
@@ -428,9 +428,11 @@ WAIT	EQU	$FCA8
 ; call dispatch_on_mode -> delay_with_animation
 ; call find_first_pc -> copy_pc_name_to_buf
 ; call find_first_pc -> get_mob_data
+; call find_first_pc -> is_player_character
 ; call find_next_pc -> copy_pc_name_to_buf
 ; call find_next_pc -> find_first_pc
 ; call find_next_pc -> get_mob_data
+; call find_next_pc -> is_player_character
 ; call find_next_pc_wrap -> find_next_pc
 ; call find_prev_pc -> copy_pc_name_to_buf
 ; call find_prev_pc -> find_first_pc
@@ -438,7 +440,6 @@ WAIT	EQU	$FCA8
 ; call find_prev_pc -> get_mob_data
 ; call idle_anim_handler -> WAIT
 ; call idle_anim_handler -> anim_check_frame
-; call idle_anim_handler -> dec_wait_if_nonzero
 ; call idle_anim_handler -> tick_anim_counter
 ; call init_char_select -> find_first_pc
 ; call init_char_select -> scene_setup
@@ -453,14 +454,16 @@ WAIT	EQU	$FCA8
 ; item anim_check_frame section=.text local=false zero=false
 ; item delay_with_animation section=.text local=false zero=false
 ; item dispatch_on_mode section=.text local=false zero=false
-; item dec_wait_if_nonzero section=.text local=true zero=false
 ; item idle_anim_handler section=.text local=false zero=false
 ; item pos_to_colrow section=.text local=false zero=false
+; item pos_to_colrow@run0 section=.text local=true zero=false
+; item pos_to_colrow@run0@run1 section=.text local=true zero=false
 ; item colrow_to_pos section=.text local=false zero=false
 ; item get_mob_data section=.text local=false zero=false
 ; item get_char_record section=.text local=false zero=false
 ; item clamp_char_field section=.text local=false zero=false
 ; item copy_pc_name_to_buf section=.text local=true zero=false
+; item is_player_character section=.text local=true zero=false
 ; item find_first_pc section=.text local=false zero=false
 ; item find_next_pc section=.text local=true zero=false
 ; item find_next_pc_wrap section=.text local=false zero=false
@@ -480,7 +483,6 @@ WAIT	EQU	$FCA8
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
 ; zp NULL_PAGE_HIGH size=6 at=$0A def=false init=
-; zp ANIM_FRAME_CTR size=1 at=auto def=true init=$03 weight=5 local=true
 ; zp MONITOR_YSAV1_1F size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -492,13 +494,14 @@ WAIT	EQU	$FCA8
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
 ; zp DISK_VM_ZP size=16 at=$50 def=false init=
+; zp ANIM_FRAME_CTR size=1 at=auto def=true init=$03 weight=5 local=true
 ; zp MENU_DESC_PTR size=2 at=$C0 def=false init=
 ; zp MENU_OPTION_PTR size=2 at=$C2 def=false init=
 ; zp TUNE_PC size=2 at=$E4 def=false init=
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=11 hargs_need=7
 ; @zp-link-meta-end
 
 tick_anim_counter:
@@ -548,12 +551,14 @@ anim_check_frame:
 delay_with_animation:
    SUBROUTINE
 
-   LDA   #$04
+   LDA   #$00
    STA   __local_delay_with_animation__n
-.loop@1_start:
+.delay_with_animation@rot@1:
    JSR   anim_tick_and_wait
-   DEC   __local_delay_with_animation__n
-   BNE   .loop@1_start
+   INC   __local_delay_with_animation__n
+   LDA   __local_delay_with_animation__n
+   CMP   #$04
+   BCC   .delay_with_animation@rot@1
    RTS
 
 dispatch_on_mode:
@@ -565,70 +570,78 @@ dispatch_on_mode:
 .if_else@3:
    JMP   delay_with_animation
 
-dec_wait_if_nonzero:
-   SUBROUTINE
-
-   LDA   WAIT_LOOP_COUNT
-   BEQ   .if_end@4
-   DEC   WAIT_LOOP_COUNT
-.if_end@4:
-   RTS
-
 idle_anim_handler:
    SUBROUTINE
 
    JMP   .loop@2_continue
-.idle_anim_handler@rot@1:
+.idle_anim_handler@rot@2:
    JSR   anim_check_frame
    JSR   tick_anim_counter
 .loop@2_continue:
    LDA   WAIT_LOOP_COUNT
-   BEQ   .idle_anim_handler@rot@1
+   BEQ   .idle_anim_handler@rot@2
    LDA   INPUT_MODE
-   BNE   .if_else@6
+   BNE   .if_else@5
    LDA   #$50
    JSR   WAIT
    DEC   WAIT_LOOP_COUNT
    RTS
-.if_else@6:
-   LDA   #$0C
-   STA   __local_idle_anim_handler__n
-.idle_anim_handler@rot@2:
-   JSR   dec_wait_if_nonzero
-   DEC   __local_idle_anim_handler__n
-   BNE   .idle_anim_handler@rot@2
+.if_else@5:
+   LDA   WAIT_LOOP_COUNT
+   CMP   #$0D
+   BCC   .if_else@7
+   SBC   #$0C
+   STA   WAIT_LOOP_COUNT
+   RTS
+.if_else@7:
+   LDA   #$00
+   STA   WAIT_LOOP_COUNT
    RTS
 
 pos_to_colrow:
    SUBROUTINE
 
-   LDX   #$00
-   BEQ   .loop@4_continue
-.pos_to_colrow@rot@3:
-   SBC   #$14
-   INX
-.loop@4_continue:
-   CMP   #$14
-   BCS   .pos_to_colrow@rot@3
-   ORA   #$00
+   STA   __local_pos_to_colrow__pos
+   JSR   pos_to_colrow@run0
+   LDA   HARGS+6
+   STA   __local_pos_to_colrow__0
+   LDA   __local_pos_to_colrow__pos
+   JSR   pos_to_colrow@run0
+   LDX   HARGS+4
+   LDA   __local_pos_to_colrow__0
+   RTS
+
+pos_to_colrow@run0:
+   SUBROUTINE
+
+   JSR   pos_to_colrow@run0@run1
+   LDY   #$14
+   STY   HARGS+2
+   STA   HARGS+3
+   JMP   sdivmod16
+
+pos_to_colrow@run0@run1:
+   SUBROUTINE
+
+   STA   HARGS
+   LDA   #$00
+   STA   HARGS+1
    RTS
 
 colrow_to_pos:
    SUBROUTINE
 
    STA   __local_colrow_to_pos__col
-   STX   __local_colrow_to_pos__row
-   JMP   .loop@5_start
-.colrow_to_pos@rot@4:
-   LDA   __local_colrow_to_pos__col
+   TXA
+   ASL
+   ASL
+   STA   __local_colrow_to_pos__0
+   ASL
+   ASL
    CLC
-   ADC   #$14
-   STA   __local_colrow_to_pos__col
-   DEC   __local_colrow_to_pos__row
-.loop@5_start:
-   LDA   __local_colrow_to_pos__row
-   BNE   .colrow_to_pos@rot@4
-   LDA   __local_colrow_to_pos__col
+   ADC   __local_colrow_to_pos__0
+   CLC
+   ADC   __local_colrow_to_pos__col
    RTS
 
 get_mob_data:
@@ -661,27 +674,35 @@ get_char_record:
 
    STA   __local_get_char_record__index
    CMP   #$81
-   BCC   .if_end@7
-   LDA   #$00
-   STA   __local_get_char_record__index
-.if_end@7:
-   LDA   #<LOCATIONS
-   STA   __local_get_char_record__rec
+   BCC   .if_end@8
    LDX   #>LOCATIONS
-   JMP   .loop@6_start
-.get_char_record@rot@5:
-   LDA   __local_get_char_record__rec
-   CLC
-   ADC   #$09
-   STA   __local_get_char_record__rec
-   BCC   .carry_inc@0
-   INX
-.carry_inc@0:
-   DEC   __local_get_char_record__index
-.loop@6_start:
+   LDA   #<LOCATIONS
+   RTS
+.if_end@8:
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_get_char_record__1
    LDA   __local_get_char_record__index
-   BNE   .get_char_record@rot@5
-   LDA   __local_get_char_record__rec
+   ASL
+   ASL
+   ASL
+   CLC
+   ADC   __local_get_char_record__index
+   STA   __local_get_char_record__0
+   BCC   .carry_inc@0
+   INC   __local_get_char_record__1
+.carry_inc@0:
+   LDA   #<LOCATIONS
+   CLC
+   ADC   __local_get_char_record__0
+   STA   __local_get_char_record__0
+   LDA   #>LOCATIONS
+   ADC   __local_get_char_record__1
+   TAX
+   LDA   __local_get_char_record__0
    RTS
 
 clamp_char_field:
@@ -695,12 +716,12 @@ clamp_char_field:
    LDA   (MOB_PTR),Y
    AND   #$3F
    CMP   __local_clamp_char_field__1
-   BCS   .if_end@8
+   BCS   .if_end@9
    LDA   (MOB_PTR),Y
    AND   #$C0
    ORA   __local_clamp_char_field__1
    STA   (MOB_PTR),Y
-.if_end@8:
+.if_end@9:
    RTS
 
 copy_pc_name_to_buf:
@@ -716,74 +737,82 @@ copy_pc_name_to_buf:
    INY
    LDA   (__local_copy_pc_name_to_buf__m),Y
    STA   __local_copy_pc_name_to_buf__3
-   DEY
-   LDA   (__local_copy_pc_name_to_buf__2),Y
-   STA   __local_copy_pc_name_to_buf__left
    LDA   #$01
    STA   __local_copy_pc_name_to_buf__i
-.copy_pc_name_to_buf@rot@6:
-   DEC   __local_copy_pc_name_to_buf__left
-   BMI   .cond_else@9
+.copy_pc_name_to_buf@rot@3:
+   LDY   #$00
+   LDA   (__local_copy_pc_name_to_buf__2),Y
+   SEC
+   SBC   __local_copy_pc_name_to_buf__i
+   BMI   .cond_else@10
    LDY   __local_copy_pc_name_to_buf__i
    LDA   (__local_copy_pc_name_to_buf__2),Y
-   STA   __local_copy_pc_name_to_buf__1
-   JMP   .cond_end@10
-.cond_else@9:
-   LDY   #$20
-   STY   __local_copy_pc_name_to_buf__1
-.cond_end@10:
+   JMP   .cond_end@11
+.cond_else@10:
+   LDA   #$20
+.cond_end@11:
    LDX   __local_copy_pc_name_to_buf__i
-   LDA   __local_copy_pc_name_to_buf__1
    STA   S_ADD_NAME+4,X
    INC   __local_copy_pc_name_to_buf__i
    LDA   __local_copy_pc_name_to_buf__i
    CMP   #$15
-   BCC   .copy_pc_name_to_buf@rot@6
+   BCC   .copy_pc_name_to_buf@rot@3
+   RTS
+
+is_player_character:
+   SUBROUTINE
+
+   STA   __local_is_player_character__m
+   STX   __local_is_player_character__0
+   LDY   #$04
+   LDA   (__local_is_player_character__m),Y
+   STA   __local_is_player_character__m
+   LDA   #$15
+   CLC
+   SBC   __local_is_player_character__m
    RTS
 
 find_first_pc:
    SUBROUTINE
 
    LDA   LOCATIONS+2
-   JMP   .loop@8_continue
-.find_first_pc@rot@7:
+   JMP   .loop@4_continue
+.find_first_pc@rot@4:
    STA   BROWSE_CHAR_INDEX
    JSR   get_mob_data
    STA   __local_find_first_pc__0
    STX   __local_find_first_pc__1
-   LDY   #$04
-   LDA   (__local_find_first_pc__0),Y
-   CMP   #$15
-   BCS   .if_end@11
+   JSR   is_player_character
+   BCC   .if_end@12
+   LDX   __local_find_first_pc__1
    LDA   __local_find_first_pc__0
    JSR   copy_pc_name_to_buf
    SEC
    RTS
-.if_end@11:
+.if_end@12:
    LDY   #$02
    LDA   (__local_find_first_pc__0),Y
-.loop@8_continue:
-   BNE   .find_first_pc@rot@7
+.loop@4_continue:
+   BNE   .find_first_pc@rot@4
    CLC
    RTS
 
 find_next_pc:
    SUBROUTINE
 
-.loop@9_start:
+.loop@5_start:
    LDY   #$02
    LDA   (MOB_PTR),Y
-   BNE   .if_end@12
+   BNE   .if_end@13
    JMP   find_first_pc
-.if_end@12:
+.if_end@13:
    STA   BROWSE_CHAR_INDEX
    JSR   get_mob_data
    STA   MOB_PTR
    STX   MOB_PTR+1
-   LDY   #$04
-   LDA   (MOB_PTR),Y
-   CMP   #$15
-   BCS   .loop@9_start
+   JSR   is_player_character
+   BCC   .loop@5_start
+   LDX   MOB_PTR+1
    LDA   MOB_PTR
    JMP   copy_pc_name_to_buf
 
@@ -817,10 +846,10 @@ init_char_select:
    STA   SCENE_EVENT_RESULT
    JSR   scene_setup
    JSR   find_first_pc
-   BCC   .if_end@14
+   BCC   .if_end@15
    LDA   #$27
    RTS
-.if_end@14:
+.if_end@15:
    LDA   #$02
    RTS
 
@@ -828,7 +857,6 @@ step_prng:
    SUBROUTINE
 
    LDA   PRNG_STATE
-   STA   __local_step_prng__s
    ASL
    ASL
    STA   __local_step_prng__1
@@ -839,7 +867,7 @@ step_prng:
    CLC
    ADC   __local_step_prng__1
    CLC
-   ADC   __local_step_prng__s
+   ADC   PRNG_STATE
    CLC
    ADC   #$53
    STA   PRNG_STATE
@@ -850,59 +878,73 @@ step_prng:
 random_in_range:
    SUBROUTINE
 
-   STA   __local_random_in_range__scaled
+   STA   __local_random_in_range__limit
    ORA   #$00
-   BNE   .if_end@15
+   BNE   .if_end@16
    LDA   #$00
    RTS
-.if_end@15:
+.if_end@16:
+   CMP   #$82
+   BCC   .if_else@18
    LDA   #$06
    STA   __local_random_in_range__shift
-   LDA   #$40
-   STA   __local_random_in_range__mask
-   LDA   #$02
-   STA   __local_random_in_range__bound
-.loop@11_continue:
+   JMP   .if_end@17
+.if_else@18:
+   LDY   #$00
+   STY   __local_random_in_range__shift
+.loop@7_continue:
+   LDA   __local_random_in_range__limit
+   STA   HARGS
+   LDA   #$00
+   STA   HARGS+1
    LDA   __local_random_in_range__shift
-   BEQ   .vthread@1
-   LDA   __local_random_in_range__scaled
+   STA   HARGS+2
+   JSR   asl16
+   LDA   HARGS+3
    SEC
-   SBC   __local_random_in_range__bound
-   BMI   .loop@11_break
-   DEC   __local_random_in_range__shift
-   LDA   __local_random_in_range__mask
-   LSR
-   ORA   #$40
-   STA   __local_random_in_range__mask
-   ASL   __local_random_in_range__bound
-   JMP   .loop@11_continue
-.loop@11_break:
+   SBC   #$40
+   LDA   HARGS+4
+   SBC   #$00
+   BVC   .jcmp_novf@0
+   EOR   #$80
+.jcmp_novf@0:
+   BPL   .loop@7_break
+   INC   __local_random_in_range__shift
+   JMP   .loop@7_continue
+.loop@7_break:
+.if_end@17:
+   LDA   #$7F
+   JSR   pos_to_colrow@run0@run1
    LDA   __local_random_in_range__shift
-.vthread@1:
-   STA   __local_random_in_range__sample
-   JMP   .loop@12_start
-.random_in_range@rot@8:
-   ASL   __local_random_in_range__scaled
-   DEC   __local_random_in_range__sample
-.loop@12_start:
-   LDA   __local_random_in_range__sample
-   BNE   .random_in_range@rot@8
-.loop@13_start:
+   STA   HARGS+2
+   JSR   asr16
+   LDA   HARGS+3
+   STA   HARGS
+   LDA   __local_random_in_range__shift
+   STA   HARGS+1
+   JSR   asl8
+   LDA   HARGS+2
+   STA   __local_random_in_range__2
+   LDA   __local_random_in_range__limit
+   STA   HARGS
+   LDA   __local_random_in_range__shift
+   STA   HARGS+1
+   JSR   asl8
+.loop@8_start:
    JSR   step_prng
-   AND   __local_random_in_range__mask
-   STA   __local_random_in_range__sample
+   AND   __local_random_in_range__2
+   STA   __local_random_in_range__1
    SEC
-   SBC   __local_random_in_range__scaled
-   BEQ   .loop@14_start
-   BPL   .loop@13_start
-   JMP   .loop@14_start
-.random_in_range@rot@9:
-   LSR   __local_random_in_range__sample
-   DEC   __local_random_in_range__shift
-.loop@14_start:
+   SBC   HARGS+2
+   BMI   .jcmp_neg@1
+   BNE   .loop@8_start
+.jcmp_neg@1:
+   LDA   __local_random_in_range__1
+   JSR   pos_to_colrow@run0@run1
    LDA   __local_random_in_range__shift
-   BNE   .random_in_range@rot@9
-   LDA   __local_random_in_range__sample
+   STA   HARGS+2
+   JSR   asr16
+   LDA   HARGS+3
    RTS
 
 compute_checksum:
@@ -913,7 +955,7 @@ compute_checksum:
    LDA   #$00
    STA   __local_compute_checksum__lo
    STA   __local_compute_checksum__hi
-.loop@15_start:
+.loop@9_start:
    LDY   #$00
    LDA   (__local_compute_checksum__p_0),Y
    STA   __local_compute_checksum__0
@@ -927,11 +969,11 @@ compute_checksum:
    STA   __local_compute_checksum__lo
    LDA   __local_compute_checksum__p_1
    CMP   __zpabi_compute_checksum__end_1
-   BNE   .if_end@20
+   BNE   .if_end@19
    LDA   __local_compute_checksum__p_0
    CMP   __zpabi_compute_checksum__end_0
-   BEQ   .loop@15_break
-.if_end@20:
+   BEQ   .loop@9_break
+.if_end@19:
    LDY   #$00
    LDA   (__local_compute_checksum__p_0),Y
    STA   __local_compute_checksum__0
@@ -948,11 +990,11 @@ compute_checksum:
    STA   __local_compute_checksum__lo
    LDA   __local_compute_checksum__p_1
    CMP   __zpabi_compute_checksum__end_1
-   BNE   .loop@15_start
+   BNE   .loop@9_start
    LDA   __local_compute_checksum__p_0
    CMP   __zpabi_compute_checksum__end_0
-   BNE   .loop@15_start
-.loop@15_break:
+   BNE   .loop@9_start
+.loop@9_break:
    LDA   __local_compute_checksum__lo
    LDX   __local_compute_checksum__hi
    RTS
@@ -968,12 +1010,12 @@ verify_integrity:
    LDA   #<DISK_IO_CODE
    JSR   compute_checksum
    CPX   #$7A
-   BNE   .jcmp_skip@0
+   BNE   .jcmp_skip@2
    CMP   #$AE
-   BEQ   .if_end@22
-.jcmp_skip@0:
+   BEQ   .if_end@21
+.jcmp_skip@2:
    JSR   integrity_fail
-.if_end@22:
+.if_end@21:
    RTS
 
 verify_disk_io:
@@ -984,28 +1026,44 @@ verify_disk_io:
 cold_restart:
    SUBROUTINE
 
-   LDA   #$08
-   STA   __local_cold_restart__page
-.loop@16_start:
-   STA   __local_cold_restart__1
    LDA   #$00
    STA   __local_cold_restart__0
-   LDY   #$00
-.loop@17_start:
-   LDA   __local_cold_restart__page
-   STA   (__local_cold_restart__0),Y
-   DEY
-   BNE   .loop@17_start
-   INC   __local_cold_restart__page
-   LDA   __local_cold_restart__page
+   LDA   #$08
+   STA   __local_cold_restart__1
+.loop@10_start:
+   LDA   __local_cold_restart__1
    CMP   #$A5
-   BNE   .loop@16_start
-   LDX   #$6F
+   BNE   .vthread@1
+   LDA   __local_cold_restart__0
+   BEQ   .loop@10_break
+   LDA   __local_cold_restart__1
+.vthread@1:
+   LDY   #$00
+   STA   (__local_cold_restart__0),Y
+   INC   __local_cold_restart__0
+   BNE   .loop@10_start
+   INC   __local_cold_restart__1
+   JMP   .loop@10_start
+.loop@10_break:
+   LDA   #$01
+   STA   __local_cold_restart__p
    LDA   #$A5
-.loop@18_start:
-   STA   $A500,X
-   DEX
-   BNE   .loop@18_start
+   STA   __local_cold_restart__0
+   JMP   .loop@11_start
+.cold_restart@rot@5:
+   LDA   #$A5
+   LDY   #$00
+   STA   (__local_cold_restart__p),Y
+   INC   __local_cold_restart__p
+   BNE   .loop@11_start
+   INC   __local_cold_restart__0
+.loop@11_start:
+   LDA   #$6F
+   SEC
+   SBC   __local_cold_restart__p
+   LDA   #$A5
+   SBC   __local_cold_restart__0
+   BCS   .cold_restart@rot@5
    JMP   DISK_BOOT_ROM
 
 ANIM_INDEX:

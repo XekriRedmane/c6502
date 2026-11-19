@@ -20,7 +20,7 @@ integrity check and restart at `$A4E2`-`$A58F`.
 | TICK_ANIM_COUNTER | `tick_anim_counter` | |
 | ANIM_TICK_AND_WAIT, ANIM_CHECK_FRAME | `anim_tick_and_wait`, `anim_check_frame` | both return ANIM_FRAME_CTR |
 | TIMED_WAIT, CALL_ROM_WAIT | `timed_wait`, `WAIT(WAIT_DURATION)` | |
-| IDLE_ANIM_HANDLER, DEC_WAIT_IF_NONZERO | `idle_anim_handler`, static `dec_wait_if_nonzero` | |
+| IDLE_ANIM_HANDLER, DEC_WAIT_IF_NONZERO | `idle_anim_handler` | subtracts the 12 calls at once |
 | COLROW_TO_POS | `colrow_to_pos` | |
 | GET_CHAR_RECORD | `get_char_record` | |
 | RANDOM_IN_RANGE | `random_in_range` | |
@@ -69,11 +69,27 @@ Every routine of the unit is translated, and none is incomplete.
   should leave all of these out.
 - `colrow_to_pos` wraps a sum past 255, where the original falls into
   NUM_TO_DECIMAL. No caller passes such a column and row.
-- `cold_restart` stores the tail `$A56F`-`$A501` with `STA $A500,X`
-  where the original uses `STA (CLEAR_PTR),Y`. The bytes and their
-  order are the same. It uses only zero-page locals (`$80`-`$82` in
-  the unit's listing), no soft stack, and calls nothing but
-  DISK_BOOT_ROM, which the listing shows.
+- `idle_anim_handler` subtracts 12 from WAIT_LOOP_COUNT, or sets it to
+  0 when it holds 12 or less, where the original calls
+  DEC_WAIT_IF_NONZERO 12 times. The byte ends the same.
+- `cold_restart` fills `$0800`-`$A4FF` and then `$A501`-`$A56F` from the
+  lowest address up. The original fills each page from offset 0 and
+  then from `$FF` down, and the tail from `$A56F` down. The bytes are
+  the same. The one byte of cold_restart's own code in the range, at
+  `$A56F`, has already run when it is stored.
+- The C is written as plain arithmetic where the original loops:
+  `pos_to_colrow` divides with `/` and `%`, `colrow_to_pos` multiplies,
+  `get_char_record` indexes LOCATIONS, `step_prng` multiplies by 69,
+  and `random_in_range` shifts by its count. Every limit, sample, and
+  index gives the original's result (checked for all 256 limits and 128
+  samples of random_in_range). The division and the shifts by a
+  variable count call the runtime helpers `sdivmod16`, `asl8`, `asl16`,
+  and `asr16`, which the harness links at the simulator's addresses.
+  The original calls no helper, and those helpers aren't in the
+  repository as 6502 code, so the unit doesn't run on an Apple II
+  until they are.
+- `cold_restart` uses only zero-page locals, no soft stack, and calls
+  nothing but DISK_BOOT_ROM, which the listing shows.
 
 ## Where the original's comments and code disagree
 
@@ -95,23 +111,61 @@ None.
 
 ## Compiler gaps
 
-Item 1 was fixed on 18 Nov 2026, and util.c keeps its local.
+These don't stop the unit from compiling. Each costs bytes, and the
+first two call runtime helpers, which the original doesn't call.
 
-These don't stop the unit from compiling. Each costs bytes.
-
-1. A comparison of a masked byte with a byte is done at 16 bits,
-   signed.
+1. A division or remainder of a `uint8_t` by a constant is a signed
+   16-bit division, and `/` and `%` of the same operands call it twice.
+   `pos_to_colrow` is 38 bytes and two calls of `sdivmod16`, where the
+   repeated subtraction of the original is 13.
 
    ```c
-   extern uint8_t *P [[c6502::zeropage(0xF4)]];
-   bool cmp(uint8_t b) { return (P[6] & 0x3F) < b; }
+   uint16_t f(uint8_t pos) { return pos % 20 | (uint16_t)(pos / 20) << 8; }
    ```
 
-   compiles to `AND #$3F; LDY #0; SEC; SBC b; TYA; SBC #0; BVC; EOR
-   #$80; ASL`, where `AND #$3F; CMP b` would do. `clamp_char_field`
-   works around it with a `uint8_t` local.
+2. A shift of a `uint8_t` by a variable count is a 16-bit shift, signed
+   for `>>`, and a comparison of the shifted value with a constant is a
+   signed 16-bit comparison. `random_in_range` is 126 bytes with four
+   helper calls, where the old C, with loops of one-bit shifts, was 89.
 
-2. A 16-bit store to a member at an offset through a zero-page
+   ```c
+   uint8_t f(uint8_t x, uint8_t n) { return x >> n; }   /* JSR asr16 */
+   uint8_t g(uint8_t limit) {
+       uint8_t shift = 0;
+       while (limit << shift < 0x40)                    /* JSR asl16, 16-bit compare */
+           shift++;
+       return shift;
+   }
+   ```
+
+3. A small static function isn't inlined. `is_player_character` is 16
+   bytes, and each caller sets up a pointer in A and X for it, where
+   `LDY #4; LDA (m),Y; CMP #$15` in place would do.
+
+   ```c
+   struct mob { uint8_t a[4]; uint8_t appearance; };
+   extern struct mob *M [[c6502::zeropage(0xF4)]];
+   void hit(void);
+   static bool is_pc(const struct mob *m) { return m->appearance < 0x15; }
+   void f(void) { if (is_pc(M)) hit(); }
+   ```
+
+4. A loop that counts up from 0 and doesn't use its index keeps the
+   count-up: `LDA #0; STA n; ...; INC n; LDA n; CMP #4; BCC`. Counting
+   down to 0 would save the compare. `delay_with_animation` is 16 bytes,
+   where the old do-while that counted down was 12.
+
+   ```c
+   void tick(void);
+   void f(void) { for (uint8_t n = 0; n < 4; n++) tick(); }
+   ```
+
+5. `cold_restart`'s loops over a pointer compare both bytes of the
+   pointer on each pass, and the `p <= (uint8_t *)0xA56F` test of the
+   tail is a 16-bit subtraction. It is 70 bytes, where loops over a page
+   number and a byte index were 40.
+
+6. A 16-bit store to a member at an offset through a zero-page
    pointer builds the member's address in a temporary and in DPTR.
 
    ```c
@@ -121,15 +175,8 @@ These don't stop the unit from compiling. Each costs bytes.
    ```
 
    is 26 bytes, where `LDA #0; LDY #13; STA (P),Y; INY; STA (P),Y` is
-   9. map.c hits it twice.
-
-3. `colrow_to_pos` keeps both parameters in their zero-page slots
-   through the loop (`LDA col; CLC; ADC #20; STA col; DEC row`), 19
-   bytes against the original's 9, which keeps the sum in A.
-
-4. In `random_in_range`, the sample test ends `BEQ done; BPL retry; JMP
-   done`, where placing the shift loop after the test would make the
-   JMP unnecessary.
+   9. map.c hits it twice. This item was here before the rewrite and
+   wasn't measured again.
 
 ## Size
 
@@ -140,33 +187,38 @@ entry, as main.lst lays them out).
 | Original | Bytes | C | Bytes |
 |---|---|---|---|
 | CLAMP_CHAR_FIELD | 27 | clamp_char_field | 26 |
-| FIND_FIRST_PC | 32 | find_first_pc | 45 |
-| COPY_PC_NAME_TO_BUF | 48 | copy_pc_name_to_buf | 61 |
+| FIND_FIRST_PC | 32 | find_first_pc, is_player_character | 54 |
+| COPY_PC_NAME_TO_BUF | 48 | copy_pc_name_to_buf | 55 |
 | FIND_NEXT_PC_WRAP | 4 | find_next_pc_wrap | 3 |
-| FIND_NEXT_PC | 38 | find_next_pc (and its tail) | 41 |
-| FIND_PREV_PC | 39 | find_prev_pc | 36 |
+| FIND_NEXT_PC | 38 | find_next_pc | 31 |
+| FIND_PREV_PC | 39 | find_prev_pc | 34 |
 | INIT_CHAR_SELECT | 19 | init_char_select | 19 |
-| POS_TO_COLROW | 13 | pos_to_colrow | 17 |
-| GET_MOB_DATA | 31 | get_mob_data | 34 |
-| DELAY_WITH_ANIMATION | 14 | delay_with_animation | 12 |
+| POS_TO_COLROW | 13 | pos_to_colrow and its two outlined tails | 38 |
+| GET_MOB_DATA | 31 | get_mob_data | 32 |
+| DELAY_WITH_ANIMATION | 14 | delay_with_animation | 16 |
 | TICK_ANIM_COUNTER | 18 | tick_anim_counter | 17 |
 | ANIM_TICK_AND_WAIT, ANIM_CHECK_FRAME | 25 | anim_tick_and_wait, anim_check_frame | 25 |
 | TIMED_WAIT, CALL_ROM_WAIT | 21 | timed_wait | 17 |
-| IDLE_ANIM_HANDLER, DEC_WAIT_IF_NONZERO | 44 | idle_anim_handler, dec_wait_if_nonzero | 49 |
-| COLROW_TO_POS | 9 | colrow_to_pos | 19 |
-| GET_CHAR_RECORD | 28 | get_char_record | 38 |
-| RANDOM_IN_RANGE | 118 | random_in_range | 84 |
+| IDLE_ANIM_HANDLER, DEC_WAIT_IF_NONZERO | 44 | idle_anim_handler | 47 |
+| COLROW_TO_POS | 9 | colrow_to_pos | 16 |
+| GET_CHAR_RECORD | 28 | get_char_record | 47 |
+| RANDOM_IN_RANGE | 118 | random_in_range | 126 |
 | DISPATCH_ON_MODE | 13 | dispatch_on_mode | 11 |
-| STEP_PRNG | 31 | step_prng | 30 |
-| VERIFY_INTEGRITY | 34 | verify_integrity | 31 |
+| STEP_PRNG | 31 | step_prng | 29 |
+| VERIFY_INTEGRITY | 34 | verify_integrity | 27 |
 | VERIFY_DISK_IO | 31 | verify_disk_io | 1 |
-| COMPUTE_CHECKSUM | 70 | compute_checksum | 87 |
-| COLD_RESTART | 33 | cold_restart | 40 |
-| Total | 740 | | 743 |
+| COMPUTE_CHECKSUM | 70 | compute_checksum | 83 |
+| COLD_RESTART | 33 | cold_restart | 70 |
+| Total | 740 | | 824 |
 
-By section, the C has 584 bytes in `.text` (and the linker's 5-byte
-`__zp_init` for ANIM_FRAME_CTR), 119 in `.text.integrity`, which the
-original's `$A4E6`-`$A56E` (135 bytes) held, and 40 in `.cold_restart`
+The C's bytes are the symbol sizes of `nm.py -S util.o`. random_in_range
+also calls pos_to_colrow's 7-byte outlined tail, which is counted under
+pos_to_colrow. Before the rewrite into plain C on 18 Nov 2026, the same
+routines came to 722 bytes.
+
+By section, the C has 643 bytes in `.text` (and the linker's 5-byte
+`__zp_init` for ANIM_FRAME_CTR), 111 in `.text.integrity`, which the
+original's `$A4E6`-`$A56E` (135 bytes) held, and 70 in `.cold_restart`
 at `$A56F`. The data is 12 bytes of `.rodata`, 1 of `.data`
 (ANIM_INDEX), and 1 byte of zero page (ANIM_FRAME_CTR).
 

@@ -3,10 +3,9 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$15
-FP	EQU	$17
-DPTR	EQU	$19
-SOUND_ON	EQU	$1B
+SSP	EQU	$1A
+FP	EQU	$1C
+SOUND_ON	EQU	$1E
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -18,6 +17,7 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
+DPTR	EQU	$60
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_play_high_tone__first	EQU	$80
@@ -28,6 +28,7 @@ __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_tune_player__strength	EQU	$82
 __local_tune_player__tune	EQU	$83
+__local_tune_player__0	EQU	$84
 __local_play_high_tone__clicks	EQU	$85
 __local_play_low_tone__clicks	EQU	$85
 __local_play_high_tone__duration	EQU	$86
@@ -423,7 +424,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=5 hargs_need=0
+; runtime hargs_size=10 hargs_need=0
 ; @zp-link-meta-end
 
 play_high_tone:
@@ -527,16 +528,23 @@ tune_player:
    CMP   #$27
    BCC   .if_else@4
    JSR   step_prng
-   LDA   PRNG_OUTPUT
    AND   TUNE_PRNG_MASK
-   EOR   __local_tune_player__tune
    STA   __local_tune_player__strength
-   INC   TUNE_PC
-   BNE   .inc_done@0
-   INC   TUNE_PC+1
-.inc_done@0:
+   LDA   __local_tune_player__tune
+   EOR   __local_tune_player__strength
+   STA   __local_tune_player__0
+   LDA   TUNE_PC
+   CLC
+   ADC   #$01
+   STA   __local_tune_player__strength
+   LDA   TUNE_PC+1
+   ADC   #$00
+   STA   __local_tune_player__tune
+   STA   TUNE_PC+1
+   LDA   __local_tune_player__strength
+   STA   TUNE_PC
    LDY   #$00
-   LDA   (TUNE_PC),Y
+   LDA   (__local_tune_player__strength),Y
    TAX
    LDA   SOUND_ON
    BEQ   .if_end@5
@@ -548,16 +556,16 @@ tune_player:
    BNE   .if_else@7
    LDA   __local_tune_player__x
    STA   __zpabi_play_low_tone__first
-   LDA   __local_tune_player__strength
+   LDA   __local_tune_player__0
    JSR   play_low_tone
    JMP   .if_end@6
 .if_else@7:
    LDA   __local_tune_player__x
    STA   __zpabi_play_high_tone__first
-   LDA   __local_tune_player__strength
+   LDA   __local_tune_player__0
    JSR   play_high_tone
 .if_end@6:
-   LDA   __local_tune_player__strength
+   LDA   __local_tune_player__0
    STA   __local_tune_player__x
 .if_end@5:
    LDA   BORDER_ANIM_ON
@@ -586,9 +594,9 @@ tune_player:
    JMP   .default@16
 .case@8:
    INC   TUNE_PC
-   BNE   .inc_done@1
+   BNE   .inc_done@0
    INC   TUNE_PC+1
-.inc_done@1:
+.inc_done@0:
    LDA   TUNE_PC
    STA   TUNE_LOOP_ADDR
    LDA   TUNE_PC+1
@@ -596,9 +604,9 @@ tune_player:
    JMP   .loop@6_start
 .case@9:
    INC   TUNE_PC
-   BNE   .inc_done@2
+   BNE   .inc_done@1
    INC   TUNE_PC+1
-.inc_done@2:
+.inc_done@1:
    LDA   TUNE_PC
    STA   TUNE_GOSUB_ADDR
    LDA   TUNE_PC+1
@@ -648,9 +656,9 @@ tune_player:
 .switch@7_break:
 .if_end@3:
    INC   TUNE_PC
-   BNE   .inc_done@3
+   BNE   .inc_done@2
    INC   TUNE_PC+1
-.inc_done@3:
+.inc_done@2:
    LDA   ATTRACT_FLAG
    BEQ   .if_end@10
    LDA   KBD

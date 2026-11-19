@@ -62,9 +62,11 @@
       sets to HRCG_NEXT_PLAIN before it handles a character, where the
       original shifts it left twice.
     - HRCG_ROW_TABLE, twelve bytes indexed by row / 2 and halved with a
-      ROR, is HRCG_ROW_BASE, three bytes indexed by row / 8. The
-      original reads HRCG_TRAILING_DATA for rows past 23, which never
-      occur.
+      ROR, isn't kept, and hrcg_row_address computes a row's address
+      from row % 8 and row / 8. The original reads HRCG_TRAILING_DATA
+      for rows past 23, which never occur. The division calls the
+      runtime helper sdivmod16, which the original doesn't, and which
+      isn't in this repository as 6502 code.
     - STD_FONT_DATA is a const array in this file, with the 768 bytes
       the image holds at $97A5. Nothing else in the program computes
       its address.
@@ -845,11 +847,6 @@ static uint8_t hrcg_saved_ch;
 static uint8_t hrcg_saved_cv;
 static uint8_t hrcg_next;           /* HRCG_NEXT_ */
 
-/* The low byte of text row 8n's first scan line, indexed by n. The
- * original's HRCG_ROW_TABLE holds twice these values, indexed by
- * row / 2, and halves them with a ROR. */
-static const uint8_t HRCG_ROW_BASE[3] = { 0x00, 0x28, 0x50 };
-
 /* The standard font, which the ctrl-A selector '0' (or any selector
  * outside '1'-'9') chooses. */
 static const uint8_t STD_FONT_DATA[0x300] = {
@@ -952,14 +949,14 @@ static const uint8_t STD_FONT_DATA[0x300] = {
 };
 
 /* Returns the address of the top scan line of text row `row` at column
- * `col` of the window, for rows 0-23. The column is added to the
- * address's low byte without a carry into the high byte, as DRAW_CHAR's
- * ADC does. */
+ * `col` of the window, for rows 0-23. The rows of each third of the
+ * screen are $80 bytes apart, and the thirds are $28 bytes apart. The
+ * column is added to the address's low byte without a carry into the
+ * high byte, as DRAW_CHAR's ADC does. */
 static uint8_t *hrcg_row_address(uint8_t row, uint8_t col) {
-    uint8_t hi = HRCG_PAGE | ((row >> 1) & 3);
-    uint8_t lo = (uint8_t)(row << 7) | HRCG_ROW_BASE[row >> 3];
-    lo += WNDLFT + col;
-    return (uint8_t *)((uint16_t)hi << 8 | lo);
+    uint16_t line = (HRCG_PAGE << 8) + 0x80 * (row % 8) + 0x28 * (row / 8);
+    uint8_t lo = line + WNDLFT + col;
+    return (uint8_t *)((line & 0xFF00) | lo);
 }
 
 /* Fills the 8 scan lines of text row `row` with the mask, from column
@@ -989,14 +986,12 @@ static void hrcg_clear_from(uint8_t row, uint8_t col) {
  * clears its bottom row. The text page is scrolled by the Monitor's
  * SCROLL afterwards. */
 static void hrcg_scroll_up(void) {
-    for (uint8_t row = WNDTOP; (uint8_t)(row + 1) < WNDBTM; row++) {
+    for (uint8_t row = WNDTOP; row + 1 < WNDBTM; row++) {
         uint8_t *dst = hrcg_row_address(row, 0);
         const uint8_t *src = hrcg_row_address(row + 1, 0);
         for (uint8_t n = 0; n < 8; n++) {
-            for (uint8_t x = WNDWDTH; x != 0;) {
-                x--;
+            for (uint8_t x = 0; x < WNDWDTH; x++)
                 dst[x] = src[x];
-            }
             dst += HRCG_SCAN_LINE;
             src += HRCG_SCAN_LINE;
         }
@@ -1039,7 +1034,7 @@ static void hrcg_draw_char(uint8_t c, uint8_t raw) {
     uint8_t glyph = c - 0x20;
     if (hrcg.lowercase && c >= 'A' && c <= 'Z')
         glyph = c;
-    const uint8_t *src = hrcg.font + ((uint16_t)glyph << 3);
+    const uint8_t *src = hrcg.font + 8 * glyph;
     uint8_t *dst = hrcg_row_address(TEXT_ROW, TEXT_COL);
     BASL[TEXT_COL] = raw;
     for (uint8_t n = 0; n < 8; n++) {
@@ -1050,13 +1045,12 @@ static void hrcg_draw_char(uint8_t c, uint8_t raw) {
 }
 
 /* Chooses the font for selector `c`, the character after a ctrl-A
- * without its high bit. '1'-'9' are FONT_DATA + (c - '1') * $300, so
- * that '6'-'9' read whatever follows FONT_DATA's five fonts, as the
- * original's do. Any other selector is the standard font. */
+ * without its high bit. '1'-'9' are FONT_DATA[c - '1'], so that '6'-'9'
+ * read whatever follows FONT_DATA's five fonts, as the original's do.
+ * Any other selector is the standard font. */
 static void hrcg_select_font(uint8_t c) {
-    uint8_t i = c - '1';
-    if (i < 9)
-        hrcg.font = FONT_DATA[0] + ((uint16_t)(uint8_t)(i * 3) << 8);
+    if (c >= '1' && c <= '9')
+        hrcg.font = FONT_DATA[c - '1'];
     else
         hrcg.font = STD_FONT_DATA;
 }

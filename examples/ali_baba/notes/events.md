@@ -53,23 +53,32 @@ The unit defines no tables or variables. Everything is translated.
 - The scratch bytes are locals, parameters, and return values:
   NUM_VALUE, DECIMAL_OUT_PTR, EVENT_PTR, DATA_PTR, CHAR_INDEX ($F6),
   FACTION_MASK ($F7), and TRAP_TYPE ($5A58). PICK_RANDOM_MOB keeps its
-  count in MOB_PTR's low byte, and `pick_random_mob` does too.
+  count in MOB_PTR's low byte and stores it there after each location.
+  `pick_random_mob` keeps it in a local and stores its last value in
+  MOB_PTR's low byte once, which leaves the same byte there.
+- INC_STRENGTH and INC_LEVEL pass the field's offset in Y to their
+  shared body. `inc_stat` takes a pointer to the field.
 - DROP_GOLD_EXEC stores 0 in DROP_STEP's high byte before calling
   MODIFY_CURRENT_STATS and the random step's low byte after it, then
   increments it. `drop_gold_exec` stores the step, both bytes, once
   after the call. Nothing reads DROP_STEP in between.
-- INIT_DROP_GOLD stores DROP_AMOUNT's low byte (0) and then its high
-  byte. `init_drop_gold` stores the word, high byte first in the
-  listing, and when the high byte is 0 it stores the word again with
-  the low byte's mask, which writes 0 to the high byte a second time.
+- INIT_DROP_GOLD runs FIND_MSB on the gold's high byte, and on its
+  low byte when the high byte is 0, and stores DROP_AMOUNT a byte at a
+  time. `init_drop_gold` runs `find_msb` on the gold as a word and
+  stores DROP_AMOUNT once. Both give the highest power of 2 in the
+  gold, or 0.
+- UPDATE_EVENT_LIST adds the gold's low byte to the entry's value and
+  bits 8-10 with the carry to its type. `update_event_list` adds the
+  gold to the word whose high byte is the type and low byte the value,
+  which gives the same two bytes.
+- EVENT_FACTION_SCENE_CONT tests for location 1 by CHAR_PTR's low
+  byte, $09. `event_faction_scene_cont` compares CHAR_PTR with
+  `&LOCATIONS[1]`. CHAR_PTR holds a record from GET_CHAR_RECORD there,
+  which is one of records 0-128, and of those only record 1's address
+  has a low byte of $09.
 - The chain exits follow the header's rules. FLUSH_PENDING_XP's JMP
   DISPLAY_MESSAGE is a call and `return CHAIN_RETURN`, and ADJ_DROP's
   JMP INIT_DROP_GOLD is `return init_drop_gold();`.
-- ENTITY_PTR's gold and CHAR_PTR's event pointer are read a byte at a
-  time through the function-like macros `ENTITY_BYTE` and `CHAR_BYTE`,
-  as a workaround for compiler gap 1 below. In
-  `adj_drop`, `pickup_treasure`, `update_event_list`, and
-  `process_char_events` that saved 64 bytes.
 
 ## Where the original's comments and code disagree
 
@@ -106,118 +115,115 @@ defines it. main.c doesn't.
 
 ## Compiler gaps
 
-Item 1 was fixed on 18 Nov 2026 for a read. A store still computes the
-address. Items 2, 3, and 4 were fixed on the same day, and events.c
-keeps its workarounds.
+The routines were rewritten as plain C on 18 Nov 2026, after the
+gaps listed here before were fixed for a read of a 2-byte member
+through a zero-page pointer, the low byte of a constant address, `P =
+&LOCS[0]`, and `(int16_t)w <= 0`. The C no longer works around them.
+These remain.
 
-1. A 2-byte member at a nonzero offset, read or written through a
-   zero-page pointer, has its address computed first.
+1. A store to a 2-byte member through a zero-page pointer copies the
+   pointer to DPTR and stores the high byte through DPTR.
 
    ```c
    struct mob { const uint8_t *name; uint8_t b[11]; uint16_t gold; uint8_t flags; };
    extern struct mob *ENTITY_PTR [[c6502::zeropage(0xF8)]];
-   extern uint16_t X2 [[c6502::address(0x5A02)]];
-   void b(void) { X2 = ENTITY_PTR->gold; }
+   void z(void) { ENTITY_PTR->gold = 0; }
    ```
 
-   compiles to `LDA ENTITY_PTR; CLC; ADC #$0D; STA t; LDA ENTITY_PTR+1;
-   ADC #0; STA t+1; LDY #0; LDA (t),Y; STA X2; INY; LDA (t),Y; STA
-   X2+1`, where `LDY #$0D; LDA (ENTITY_PTR),Y; STA X2; INY; LDA
-   (ENTITY_PTR),Y; STA X2+1` does. Reading the bytes by offset through a
-   `uint8_t *` cast gives the short form, and that is the workaround
-   here. A 1-byte member and a 2-byte member at offset 0 compile to the
-   short form already. Storing to such a member (`ENTITY_PTR->gold =
-   0;`) also computes the address, and copies it to DPTR as well.
+   compiles to `LDA ENTITY_PTR; STA DPTR; LDA ENTITY_PTR+1; STA DPTR+1;
+   LDA #0; LDY #$0D; STA (ENTITY_PTR),Y; INY; STA (DPTR),Y`, where `LDA
+   #0; LDY #$0D; STA (ENTITY_PTR),Y; INY; STA (ENTITY_PTR),Y` does. It
+   costs 8 bytes in `pickup_treasure`'s fourth trap.
 
-2. The low byte of a constant address is computed at run time.
-
-   ```c
-   struct loc { const uint8_t *name; uint8_t a[7]; };
-   extern struct loc LOCS [[c6502::address(0x4000)]][63];
-   extern struct loc *P [[c6502::zeropage(0xFA)]];
-   extern uint8_t X1 [[c6502::address(0x5A00)]];
-   void a(void) { if ((uint8_t)(uint16_t)P == (uint8_t)(uint16_t)&LOCS[1]) X1 = 0; }
-   ```
-
-   compiles to `LDA #<LOCS; CLC; ADC #$09; STA t; LDA P; CMP t`, where
-   `LDA P; CMP #<(LOCS+9)` does. `event_faction_scene_cont` compares
-   with the constant `LOCATION_1_LO`.
-
-3. Storing an array's address in a pointer adds 0 with carry.
-
-   ```c
-   void b(void) { P = &LOCS[0]; }
-   ```
-
-   compiles to `LDA #<LOCS; CLC; STA P; LDA #>LOCS; ADC #0; STA P+1`.
-   `P = LOCS;` compiles to the four instructions without the CLC and
-   ADC, and `event_faction_scene_cont` writes it that way.
-
-4. `(int16_t)w <= 0` compiles to a 16-bit subtraction from 0 with an
-   overflow fix-up.
+2. A comparison of a 16-bit global with a 2-byte member through a
+   zero-page pointer copies both bytes of the member to temporaries.
 
    ```c
    extern uint16_t W [[c6502::address(0x5A02)]];
-   void f(void);
-   void d(void) { if ((int16_t)W <= 0) f(); }
+   uint8_t c(void) { return W <= ENTITY_PTR->gold; }
    ```
 
-   gives `LDA #0; SEC; SBC W; LDA #0; SBC W+1; BVC; EOR #$80; BMI`.
-   `drop_gold_exec` writes `(int16_t)DROP_AMOUNT < 0 || DROP_AMOUNT ==
-   0`, which compiles to a BMI on the subtraction's high byte and `LDA;
-   ORA; BNE`, as the original tests it.
+   gives `LDY #$0D; LDA (ENTITY_PTR),Y; STA t1; INY; LDA (ENTITY_PTR),Y;
+   STA t0; LDA t1; SEC; SBC W; LDA t0; SBC W+1`, where `LDY #$0D; LDA
+   (ENTITY_PTR),Y; CMP W; INY; LDA (ENTITY_PTR),Y; SBC W+1` does. It
+   costs 9 bytes in `adj_drop`.
 
-5. After a call that returns a byte in A, a test of the byte is `ORA
-   #$00` (in `pick_random_mob`, `pickup_treasure`, and `init_drop_gold`),
-   because the flags after the call aren't known. The original has the
-   same kind of byte (`CMP #$00`) at PICK_RANDOM_MOB and PICKUP_TREASURE.
+3. `(int16_t)w <= 0` right after a store to `w` copies both bytes to
+   temporaries before the test.
+
+   ```c
+   extern uint16_t W [[c6502::address(0x5A02)]];
+   extern uint16_t D [[c6502::address(0x5A04)]];
+   void f(void); void g(void);
+   void d(void) { W -= D; if ((int16_t)W <= 0) f(); else g(); }
+   ```
+
+   gives `STA W+1; STA t0; LDA W; STA t1; LDA t0; BMI; ORA t1; BNE`,
+   where `STA W+1; BMI; ORA W; BNE` does. It costs 5 bytes in
+   `drop_gold_exec`. The old C wrote `(int16_t)W < 0 || W == 0`, which
+   compiles to `BMI; LDA W; ORA W+1; BNE`.
+
+4. After a call that returns a byte in A, a test of the byte is `ORA
+   #$00` (in `pick_random_mob` and `pickup_treasure`), because the
+   flags after the call aren't known. The original has the same kind
+   of byte (`CMP #$00`) at PICK_RANDOM_MOB and PICKUP_TREASURE.
+
+Some of the growth comes from the C itself. `inc_stat` takes a
+pointer, and each call computes `&ENTITY_PTR->strength` or `->level`
+at run time (16 bytes more than passing the offset). `find_msb`
+scans a word (17 bytes more, and `init_drop_gold` 16 bytes less).
+`DROP_STEP = random_in_range(25) + 1` adds the carry into the high
+byte, since the compiler can't know that the sum is below 256, where
+the old C truncated it to a byte (2 bytes). The test for location 1
+compares both bytes of CHAR_PTR (6 bytes).
 
 ## Size
 
 The original's routines take 1,542 bytes (main.lst, the sizes in
-UNITS.md's table). The C takes 1,667 bytes in `events.asm`, 125 more.
+UNITS.md's table). The C takes 1,630 bytes in `events.asm`, 88 more.
+Before the rewrite to plain C it took 1,561 bytes with the same
+compiler.
 
 | Routine | Original | C |
 |---|---|---|
-| CHECK_CAN_LEAVE | 47 | 40 |
-| UPDATE_EVENT_LIST | 112 | 128 |
+| CHECK_CAN_LEAVE | 47 | 38 |
+| UPDATE_EVENT_LIST | 112 | 121 |
 | TRIGGER_SCENE_EVENT | 73 | 68 |
-| PICKUP_TREASURE | 272 | 313 |
-| INC_STRENGTH, INC_LEVEL | 24 | 18 |
-| CLEAR_TREASURE_DIGITS | 14 | 19 |
-| CLEAR_AND_DISPLAY | 8 | 16 |
-| RANDOM_EVENTS and the three EVENT_ stubs | 115 | 88 |
-| EVENT_FACTION_SCENE_CONT | 50 | 42 |
-| EVENT_SPAWN_MOB | 59 | 48 |
+| PICKUP_TREASURE | 272 | 315 |
+| INC_STRENGTH, INC_LEVEL | 24 | 24 |
+| CLEAR_TREASURE_DIGITS | 14 | 16 |
+| CLEAR_AND_DISPLAY | 8 | 8 |
+| RANDOM_EVENTS and the three EVENT_ stubs | 115 | 83 |
+| EVENT_FACTION_SCENE_CONT | 50 | 57 |
+| EVENT_SPAWN_MOB | 59 | 55 |
 | PICK_RANDOM_MOB, COPY_BE_TO_FA | 49 | 65 |
-| PICK_RANDOM_CHAR | 20 | 28 |
-| PROCESS_CHAR_EVENTS | 56 | 62 |
-| FIND_MOB_BY_FACTION | 40 | 38 |
-| CHECK_LOCATION_MATCH | 20 | 19 |
-| CHECK_SCENE_EVENTS | 96 | 119 |
-| SCAN_FOR_HOSTILE | 68 | 67 |
-| PROCESS_SCENE_GROUPS | 43 | 46 |
-| SCAN_AND_REORDER | 20 | 12 |
-| FLUSH_PENDING_XP | 46 | 61 |
-| INIT_DROP_GOLD | 59 | 73 |
-| INIT_DROP_DISPLAY | 32 | 36 |
-| ADJ_DROP_INC, ADJ_DROP_DEC | 67 | 98 |
-| DROP_GOLD_EXEC | 80 | 87 |
-| FIND_MSB | 16 | 22 |
-| ADD_DROP, SUB_DROP, HALVE_STEP | 56 | 20 |
-| Fragments the optimizer outlined and shared | | 34 |
-| Total | 1,542 | 1,667 |
+| PICK_RANDOM_CHAR | 20 | 24 |
+| PROCESS_CHAR_EVENTS | 56 | 63 |
+| FIND_MOB_BY_FACTION | 40 | 40 |
+| CHECK_LOCATION_MATCH | 20 | 17 |
+| CHECK_SCENE_EVENTS | 96 | 109 |
+| SCAN_FOR_HOSTILE | 68 | 59 |
+| PROCESS_SCENE_GROUPS | 43 | 43 |
+| SCAN_AND_REORDER | 20 | 16 |
+| FLUSH_PENDING_XP | 46 | 57 |
+| INIT_DROP_GOLD | 59 | 52 |
+| INIT_DROP_DISPLAY | 32 | 29 |
+| ADJ_DROP_INC, ADJ_DROP_DEC | 67 | 124 |
+| DROP_GOLD_EXEC | 80 | 89 |
+| FIND_MSB | 16 | 41 |
+| ADD_DROP, SUB_DROP, HALVE_STEP | 56 | 17 |
+| Total | 1,542 | 1,630 |
 
 The C counts include the outlined fragments of one routine
-(`check_can_leave@run3`, `random_events@run1`, `init_drop_gold@run6`)
-in that routine's row. ADD_DROP and HALVE_STEP are inline in C, and
-the 20 bytes are `adj_drop@run0`, the outlined `DROP_AMOUNT -=
-DROP_STEP`. The shared row is `trigger_scene_event@run4` and `@run5`
-and `event_spawn_mob@run2` and `@run7`.
+(`random_events@run1`, `adj_drop@run2`) in that routine's row.
+ADD_DROP and HALVE_STEP are inline in C, and the 17 bytes are
+`adj_drop@run0`, the outlined `DROP_AMOUNT -= DROP_STEP`, which
+`drop_gold_exec` calls too.
 
 The largest losses are the zp_abi argument stores before each call
 that takes A or a word in the original, CHECK_SCENE_EVENTS's
 comparisons (the original keeps 1 in A across four of them),
 PICKUP_TREASURE's gold word kept in two temporaries across
-MODIFY_CURRENT_STATS, and the chain routines' `LDA #state; RTS` in
+MODIFY_CURRENT_STATS, ADJ_DROP's `DROP_AMOUNT -= 2 * DROP_STEP`
+computed in temporaries, and the chain routines' `LDA #state; RTS` in
 place of a JMP.

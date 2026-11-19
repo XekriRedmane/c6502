@@ -55,8 +55,8 @@ __local_reorder_char__4	EQU	$88
 __local_reorder_char__5	EQU	$89
 __local_reorder_char__m	EQU	$8A
 __local_reorder_char__6	EQU	$8B
-__local_adjust_pc_count__loc	EQU	$8E
-__local_adjust_pc_count__1	EQU	$8F
+__local_adjust_pc_count__loc	EQU	$8F
+__local_adjust_pc_count__2	EQU	$90
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -230,7 +230,7 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def adjust_pc_count params=__zpabi_adjust_pc_count__loc_0,__zpabi_adjust_pc_count__loc_1,__zpabi_adjust_pc_count__m_0,__zpabi_adjust_pc_count__m_1,__zpabi_adjust_pc_count__delta locals=__local_adjust_pc_count__0,__local_adjust_pc_count__loc,__local_adjust_pc_count__1 indirect=false in_cycle=false param_regs=A,X,,,
+; def adjust_pc_count params=__zpabi_adjust_pc_count__loc_0,__zpabi_adjust_pc_count__loc_1,__zpabi_adjust_pc_count__m_0,__zpabi_adjust_pc_count__m_1,__zpabi_adjust_pc_count__delta locals=__local_adjust_pc_count__0,__local_adjust_pc_count__1,__local_adjust_pc_count__loc,__local_adjust_pc_count__2 indirect=false in_cycle=false param_regs=A,X,,,
 ; def appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance locals=__local_appearance_to_fontchar__sprite indirect=false in_cycle=false param_regs=A
 ; def classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 locals=__local_classify_entity_type__0,__local_classify_entity_type__e,__local_classify_entity_type__1 indirect=false in_cycle=false param_regs=A,X
 ; def draw_blink_alt params= locals=__local_draw_blink_alt__sprite indirect=false in_cycle=false
@@ -239,14 +239,14 @@ WAIT	EQU	$FCA8
 ; def draw_char_at_pos params=__zpabi_draw_char_at_pos__pos locals=__local_draw_char_at_pos__0,__local_draw_char_at_pos__1,__local_draw_char_at_pos__pos indirect=false in_cycle=false param_regs=A
 ; def find_entity_at_pos params=__zpabi_find_entity_at_pos__pos locals=__local_find_entity_at_pos__link,__local_find_entity_at_pos__ev,__local_find_entity_at_pos__0,__local_find_entity_at_pos__pos indirect=false in_cycle=false param_regs=A
 ; def first_group_member params= locals=__local_first_group_member__link indirect=false in_cycle=false
-; def follow_link params=__zpabi_follow_link__link locals=__local_follow_link__link indirect=false in_cycle=false param_regs=A
+; def follow_link params=__zpabi_follow_link__link locals=__local_follow_link__link,__local_follow_link__0 indirect=false in_cycle=false param_regs=A
 ; def font_pos_to_text_pos params= locals= indirect=false in_cycle=false
 ; def get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 locals=__local_get_entity_fontchar__sprite,__local_get_entity_fontchar__0,__local_get_entity_fontchar__e,__local_get_entity_fontchar__1 indirect=false in_cycle=false param_regs=A,X
 ; def load_char_name_ptr params= locals=__local_load_char_name_ptr__0 indirect=false in_cycle=false
 ; def load_char_to_fa params=__zpabi_load_char_to_fa__index locals=__local_load_char_to_fa__index indirect=false in_cycle=false param_regs=A
 ; def next_group_member params= locals=__local_next_group_member__0 indirect=false in_cycle=false
 ; def print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 locals=__local_print_entity_name__m,__local_print_entity_name__0,__local_print_entity_name__1 indirect=false in_cycle=false param_regs=A,X
-; def print_fontchar_at_text_pos params= locals=__local_print_fontchar_at_text_pos__selector indirect=false in_cycle=false
+; def print_fontchar_at_text_pos params= locals=__local_print_fontchar_at_text_pos__0 indirect=false in_cycle=false
 ; def print_member_name params= locals=__local_print_member_name__0 indirect=false in_cycle=false
 ; def print_mob_name params= locals=__local_print_mob_name__0 indirect=false in_cycle=false
 ; def render_font_char params= locals= indirect=false in_cycle=false
@@ -714,21 +714,21 @@ adjust_pc_count:
    SUBROUTINE
 
    STA   __local_adjust_pc_count__loc
-   STX   __local_adjust_pc_count__1
-   ORA   #$00
-   BNE   .if_end@24
-   RTS
-.if_end@24:
+   STX   __local_adjust_pc_count__2
+   CPX   #>LOCATIONS
+   BNE   .jcmp_skip@0
+   CMP   #<LOCATIONS
+   BEQ   .if_end@26
+.jcmp_skip@0:
    LDY   #$04
    LDA   (__zpabi_adjust_pc_count__m_0),Y
    CMP   #$15
-   BCC   .if_end@25
-   RTS
-.if_end@25:
+   BCS   .if_end@26
    LDY   #$08
    LDA   (__local_adjust_pc_count__loc),Y
    ADC   __zpabi_adjust_pc_count__delta
    STA   (__local_adjust_pc_count__loc),Y
+.if_end@26:
    RTS
 
 reorder_char:
@@ -761,10 +761,10 @@ reorder_char:
    STA   __local_reorder_char__5
    JSR   get_mob_data
    CPX   __local_reorder_char__6
-   BNE   .if_end@26
+   BNE   .if_end@27
    CMP   __local_reorder_char__m
    BEQ   .loop@3_break
-.if_end@26:
+.if_end@27:
    CLC
    ADC   #$02
    STA   __local_reorder_char__link
@@ -775,11 +775,11 @@ reorder_char:
 .loop@3_break:
    LDA   __local_reorder_char__5
    CMP   CURRENT_ROOM
-   BNE   .if_end@27
+   BNE   .if_end@28
    LDY   #$02
    LDA   (__local_reorder_char__m),Y
    STA   CURRENT_ROOM
-.if_end@27:
+.if_end@28:
    LDY   #$02
    LDA   (__local_reorder_char__m),Y
    LDY   #$00
@@ -812,20 +812,20 @@ reorder_char:
    STA   __local_reorder_char__1
    STX   __local_reorder_char__link
    LDA   ACTIVE_CHAR
-   BNE   .if_else@29
+   BNE   .if_else@30
    JSR   step_prng
    ORA   #$00
    BEQ   .loop@4_break
    CMP   #$81
-   BCC   .if_end@28
+   BCC   .if_end@29
    JMP   .loop@4_break
-.if_else@29:
+.if_else@30:
    LDY   #$0B
    LDA   (__local_reorder_char__1),Y
    AND   #$1F
    CMP   __local_reorder_char__4
    BCC   .loop@4_break
-.if_end@28:
+.if_end@29:
    LDA   __local_reorder_char__1
    CLC
    ADC   #$02
@@ -848,16 +848,16 @@ reorder_char:
    LDY   #$04
    LDA   (__local_reorder_char__m),Y
    CMP   #$15
-   BCS   .if_end@34
+   BCS   .if_end@35
    LDA   ACTIVE_CHAR
-   BNE   .if_end@35
-   DEC   TOTAL_MOB_COUNT
-.if_end@35:
-   LDA   SOURCE_CHAR
    BNE   .if_end@36
-   INC   TOTAL_MOB_COUNT
+   DEC   TOTAL_MOB_COUNT
 .if_end@36:
-.if_end@34:
+   LDA   SOURCE_CHAR
+   BNE   .if_end@37
+   INC   TOTAL_MOB_COUNT
+.if_end@37:
+.if_end@35:
    RTS
 
 print_entity_name:
@@ -898,80 +898,80 @@ classify_entity_type:
    STA   __local_classify_entity_type__e
    STX   __local_classify_entity_type__1
    TXA
-   BNE   .if_end@37
+   BNE   .if_end@38
    LDA   __local_classify_entity_type__e
    ORA   __local_classify_entity_type__1
-   BNE   .cond_else@38
+   BNE   .cond_else@39
    LDA   #<S_EMPTY_SPACE
    LDX   #>S_EMPTY_SPACE
    RTS
-.cond_else@38:
+.cond_else@39:
    LDA   #<S_A_WALL
    LDX   #>S_A_WALL
    RTS
-.if_end@37:
+.if_end@38:
    LDY   #$01
    LDA   (__local_classify_entity_type__e),Y
    CMP   #$80
    BCC   .tail@0
    CMP   #$C0
-   BCS   .if_end@41
+   BCS   .if_end@42
    LDX   #>S_EMPTY_SPACE
    LDA   #<S_EMPTY_SPACE
    RTS
-.if_end@41:
+.if_end@42:
    CMP   #$D2
-   BCS   .if_end@42
+   BCS   .if_end@43
    LDX   #>S_A_TREASURE_CHEST
    LDA   #<S_A_TREASURE_CHEST
    RTS
-.if_end@42:
+.if_end@43:
    CMP   #$D5
-   BCS   .if_end@43
+   BCS   .if_end@44
    LDX   #>S_SOME_RUNE_WRITING
    LDA   #<S_SOME_RUNE_WRITING
    RTS
-.if_end@43:
+.if_end@44:
    CMP   #$FE
-   BEQ   .if_end@44
+   BEQ   .if_end@45
    LDX   #>S_A_TRADING_OUTPOST
    LDA   #<S_A_TRADING_OUTPOST
    RTS
-.if_end@44:
+.if_end@45:
    LDY   #$02
    LDA   (__local_classify_entity_type__e),Y
    STA   __local_classify_entity_type__0
    AND   #$1F
    STA   __local_classify_entity_type__e
-   BNE   .if_end@45
+   BNE   .if_end@46
    LDX   #>S_AN_INVISIBLE_WALL
    LDA   #<S_AN_INVISIBLE_WALL
    RTS
-.if_end@45:
+.if_end@46:
    LDA   __local_classify_entity_type__0
    AND   #$C0
    CMP   #$C0
    BNE   .tail@1
    LDA   __local_classify_entity_type__e
    CMP   #$1B
-   BCS   .if_end@47
+   BCS   .if_end@48
    LDX   #>S_A_STATUE
    LDA   #<S_A_STATUE
    RTS
-.if_end@47:
+.if_end@48:
    CMP   #$1D
-   BCS   .if_end@48
+   BCS   .if_end@49
 .tail@0:
    LDX   #>S_A_DOOR
    LDA   #<S_A_DOOR
    RTS
-.if_end@48:
-   BNE   .if_end@49
+.if_end@49:
+   BNE   .if_end@50
 .tail@1:
    LDX   #>S_AN_ILLUSION
    LDA   #<S_AN_ILLUSION
    RTS
-.if_end@49:
+.if_end@50:
    LDX   #>S_A_WALL
    LDA   #<S_A_WALL
    RTS
@@ -980,15 +980,15 @@ follow_link:
    SUBROUTINE
 
    ORA   #$00
-   BNE   .if_else@51
+   BNE   .cond_else@51
    LDA   #$00
-   STA   MOB_PTR
    STA   MOB_PTR+1
-   RTS
-.if_else@51:
+   JMP   .cond_end@52
+.cond_else@51:
    JSR   get_mob_data
-   STA   MOB_PTR
    STX   MOB_PTR+1
+.cond_end@52:
+   STA   MOB_PTR
    RTS
 
 first_group_member:
@@ -996,9 +996,9 @@ first_group_member:
 
    LDY   #$02
    LDA   (CHAR_PTR),Y
-   BNE   .if_end@52
+   BNE   .if_end@53
    LDA   (MOB_PTR),Y
-.if_end@52:
+.if_end@53:
    JMP   follow_link
 
 next_group_member:
@@ -1034,7 +1034,7 @@ set_blink_target:
 
    LDA   IS_PLAYER_TURN
    CMP   #$01
-   BNE   .if_else@54
+   BNE   .if_else@55
    LDA   CURRENT_COL
    STA   BLINK_COL
    LDA   CURRENT_ROW
@@ -1044,7 +1044,7 @@ set_blink_target:
    JSR   get_entity_fontchar
    STA   BLINK_CHAR
    RTS
-.if_else@54:
+.if_else@55:
    LDY   #$03
    LDA   (MOB_PTR),Y
    JSR   pos_to_colrow
@@ -1075,14 +1075,14 @@ print_fontchar_at_text_pos:
 
    LDA   FONT_CHARSET
    CMP   #$02
-   BNE   .print_fontchar_at_text_pos@asm_ssa_split@0
+   BNE   .cond_else@56
    LDA   #$B3
-.if_end@55:
+   BNE   .cond_end@57
+.cond_else@56:
+   LDA   #$B1
+.cond_end@57:
    STA   s_PRINT_FONT_CHAR+2
    JMP   render_font_char_direct
-.print_fontchar_at_text_pos@asm_ssa_split@0:
-   LDA   #$B1
-   BNE   .if_end@55
 
 render_font_char_direct:
    SUBROUTINE
@@ -1127,9 +1127,9 @@ draw_blink_char:
 
    LDA   BLINK_COL
    CMP   #$14
-   BCC   .if_end@56
+   BCC   .if_end@58
    RTS
-.if_end@56:
+.if_end@58:
    STA   FONT_COL
    LDA   BLINK_ROW
    STA   FONT_ROW

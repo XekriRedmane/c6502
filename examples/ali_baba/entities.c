@@ -860,8 +860,8 @@ void load_char_name_ptr(void) {
     setup_text_pos_col20(ENTITY_PTR->name);
 }
 
-/* SETUP_CHAR_SPRITE's TAX writes X, which RENDER_FONT_CHAR sets before
- * it reads it. */
+/* Draws sprite CHAR_SPRITE at ENTITY_PTR's cell, and makes that cell
+ * the blinking one with the same sprite. */
 void setup_char_sprite(void) {
     uint16_t colrow = pos_to_colrow(ENTITY_PTR->pos);
     uint8_t col = (uint8_t)colrow;
@@ -893,7 +893,7 @@ entity_ref find_entity_at_pos(uint8_t pos) {
     }
     for (ev = CHAR_PTR->events; ev->pos != EVENT_END; ev++) {
         if (ev->pos == pos)
-            return (entity_ref)(uint16_t)ev;
+            return (entity_ref)ev;
     }
     return check_at_boundary(pos);
 }
@@ -940,17 +940,17 @@ uint8_t get_entity_fontchar(entity_ref e) {
 
 /* Each group of 21 appearances is a font group. Appearance r of a group
  * is sprite r + 1, except that the first four of every group but the
- * first are sprites $21-$24. The original divides by adding -21 until
- * the carry clears. */
+ * first are sprites $21-$24. The loop leaves appearance / 21 in `group`
+ * and appearance % 21 in `appearance`. It divides by subtraction because
+ * c6502 compiles `/` and `%` to calls of a runtime helper, which this
+ * program doesn't have. */
 uint16_t appearance_to_fontchar(uint8_t appearance) {
     uint8_t group = 0;
-    uint8_t sprite;
-
     while (appearance >= 21) {
         appearance -= 21;
         group++;
     }
-    sprite = appearance + 1;
+    uint8_t sprite = appearance + 1;
     if (sprite < 5 && group != 0)
         sprite += 0x20;
     return sprite | (uint16_t)group << 8;
@@ -961,18 +961,17 @@ void print_mob_name(void) {
     print_bottom_centered(ENTITY_PTR->name);
 }
 
-/* Adds `delta` (1 or 0xFF) to the location's count of player
+/* Adds `delta` (1 or -1) to the location's count of player
  * characters, when `m` is a player character and `loc` isn't record 0.
- * The original tests for record 0 by the low byte of its address, which
- * is 0 for no other record. Its comments describe byte 8 as a group
- * count in the mob record, where the code changes the location's. */
+ * The original tests for record 0 by the low byte of its address.
+ * get_char_record returns records 0-128, and of those only record 0's
+ * address has a low byte of 0. The original's comments describe byte 8
+ * as a group count in the mob record, where the code changes the
+ * location's. */
 static void adjust_pc_count(struct location *loc, const struct mob *m,
-                            uint8_t delta) {
-    if ((uint8_t)(uint16_t)loc == 0)
-        return;
-    if (m->appearance >= NPC_APPEARANCE_MIN)
-        return;
-    loc->pc_count += delta;
+                            int8_t delta) {
+    if (loc != &LOCATIONS[0] && m->appearance < NPC_APPEARANCE_MIN)
+        loc->pc_count += delta;
 }
 
 /*
@@ -992,15 +991,11 @@ static void adjust_pc_count(struct location *loc, const struct mob *m,
     player character an NPC.
 */
 void reorder_char(struct mob *m) {
-    struct location *loc;
-    uint8_t *link;
+    struct location *loc = get_char_record(SOURCE_CHAR);
+    adjust_pc_count(loc, m, -1);
+    uint8_t *link = &loc->mob_head;
     uint8_t index;
     struct mob *p;
-    uint8_t level;
-
-    loc = get_char_record(SOURCE_CHAR);
-    adjust_pc_count(loc, m, 0xFF);
-    link = &loc->mob_head;
     for (;;) {
         index = *link;
         p = get_mob_data(index);
@@ -1013,7 +1008,7 @@ void reorder_char(struct mob *m) {
         CURRENT_ROOM = m->next;
     *link = m->next;
 
-    level = m->level & LEVEL_MASK;
+    uint8_t level = m->level & LEVEL_MASK;
     loc = get_char_record(ACTIVE_CHAR);
     adjust_pc_count(loc, m, 1);
     link = &loc->mob_head;
@@ -1023,7 +1018,7 @@ void reorder_char(struct mob *m) {
             uint8_t r = step_prng();
             if (r == 0 || r > 0x80)
                 break;
-        } else if ((uint8_t)(p->level & LEVEL_MASK) < level) {
+        } else if ((p->level & LEVEL_MASK) < level) {
             break;
         }
         link = &p->next;
@@ -1068,13 +1063,10 @@ void draw_char_at_pos(uint8_t pos) {
     tagged address in $C000-$D47F, and so does this.
 */
 const uint8_t *classify_entity_type(entity_ref e) {
-    const uint8_t *rec;
-    uint8_t type, value, sprite;
-
     if ((e >> 8) == 0)
         return e == ENTITY_NONE ? S_EMPTY_SPACE : S_A_WALL;
-    rec = (const uint8_t *)e;
-    type = rec[MFIELD_TYPE];
+    const struct event *ev = ENTITY_EVENT(e);
+    uint8_t type = ev->type;
     if (type < 0x80)
         return S_A_DOOR;
     if (type < EVENT_ACTIVATED)
@@ -1086,8 +1078,8 @@ const uint8_t *classify_entity_type(entity_ref e) {
     if (type != EVENT_TYPE_OBJECT)
         return S_A_TRADING_OUTPOST;
 
-    value = rec[MFIELD_NEXT];
-    sprite = value & OBJECT_SPRITE_MASK;
+    uint8_t value = ev->value;
+    uint8_t sprite = value & OBJECT_SPRITE_MASK;
     if (sprite == 0)
         return S_AN_INVISIBLE_WALL;
     if ((value & OBJECT_CLASS_MASK) != OBJECT_CLASS_MASK)
@@ -1103,10 +1095,7 @@ const uint8_t *classify_entity_type(entity_ref e) {
 
 /* Points MOB_PTR at mob `link`, or at 0 for a link of 0. */
 static void follow_link(uint8_t link) {
-    if (link == 0)
-        MOB_PTR = 0;
-    else
-        MOB_PTR = get_mob_data(link);
+    MOB_PTR = link == 0 ? nullptr : get_mob_data(link);
 }
 
 void first_group_member(void) {
@@ -1139,7 +1128,7 @@ void set_blink_target(void) {
     if (IS_PLAYER_TURN == 1) {
         BLINK_COL = CURRENT_COL;
         BLINK_ROW = CURRENT_ROW;
-        BLINK_CHAR = get_entity_fontchar((entity_ref)(uint16_t)MOB_PTR);
+        BLINK_CHAR = get_entity_fontchar((entity_ref)MOB_PTR);
     } else {
         uint16_t colrow = pos_to_colrow(MOB_PTR->pos);
         BLINK_COL = (uint8_t)colrow;
@@ -1158,26 +1147,25 @@ void render_font_char(void) {
 }
 
 void print_fontchar_at_text_pos(void) {
-    uint8_t selector = FONT_SELECTOR_1;
+    uint8_t selector = FONT_CHARSET == 2 ? FONT_SELECTOR_1 + 2 : FONT_SELECTOR_1;
 
-    if (FONT_CHARSET == 2)
-        selector += 2;
     s_PRINT_FONT_CHAR.charset = selector;
     render_font_char_direct(selector);
 }
 
 /* The selector is that of the font before FONT_CHARNUM's, which is
- * written only when FONT_CHARNUM is 24 or more. */
+ * written only when FONT_CHARNUM is 24 or more. The loop adds
+ * FONT_CHARNUM / 24 to the selector and leaves FONT_CHARNUM % 24 in
+ * `sprite`, dividing by subtraction for the reason given at
+ * appearance_to_fontchar. */
 void render_font_char_direct(uint8_t charset_sel) {
     uint8_t sprite = FONT_CHARNUM;
-    uint8_t glyph;
-
     while (sprite >= SPRITES_PER_FONT) {
         charset_sel++;
         s_PRINT_FONT_CHAR.charset = charset_sel;
         sprite -= SPRITES_PER_FONT;
     }
-    glyph = sprite * 4 + FIRST_SPRITE_GLYPH;
+    uint8_t glyph = sprite * 4 + FIRST_SPRITE_GLYPH;
     s_PRINT_FONT_CHAR.upper_left = glyph;
     s_PRINT_FONT_CHAR.upper_right = glyph + 1;
     s_PRINT_FONT_CHAR.lower_left = glyph + 2;
@@ -1214,6 +1202,6 @@ void draw_blink_normal(void) {
 
 /* A map cell is 2 x 2 text cells. */
 void font_pos_to_text_pos(void) {
-    TEXT_COL = (uint8_t)(FONT_COL * 2);
-    TEXT_ROW = (uint8_t)(FONT_ROW * 2);
+    TEXT_COL = FONT_COL * 2;
+    TEXT_ROW = FONT_ROW * 2;
 }

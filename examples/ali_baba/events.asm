@@ -17,49 +17,55 @@ BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
-__local_trigger_scene_event__0	EQU	$80
+__local_random_events__i	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_adj_drop__0	EQU	$81
-__local_event_faction_scene_cont__0	EQU	$81
+__local_check_can_leave__1	EQU	$81
 __local_flush_pending_xp__1	EQU	$81
-__local_inc_stat__offset	EQU	$81
-__local_pick_random_mob__0	EQU	$81
-__local_process_char_events__0	EQU	$81
 __local_scan_for_hostile__0	EQU	$81
 __local_trigger_scene_event__ev	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
+__local_adj_drop__1	EQU	$82
 __local_drop_gold_exec__0	EQU	$82
-__local_event_faction_scene_cont__index	EQU	$82
+__local_event_faction_scene_cont__0	EQU	$82
 __local_flush_pending_xp__2	EQU	$82
+__local_pick_random_mob__index	EQU	$82
 __local_pickup_treasure__gold_hi	EQU	$82
-__local_process_char_events__e	EQU	$82
 __local_scan_for_hostile__1	EQU	$82
 __local_trigger_scene_event__1	EQU	$82
 __local_adj_drop__down	EQU	$83
-__local_pick_random_mob__2	EQU	$83
+__local_drop_gold_exec__1	EQU	$83
+__local_pick_random_mob__0	EQU	$83
 __local_pickup_treasure__0	EQU	$83
-__local_process_char_events__1	EQU	$83
-__local_update_event_list__0	EQU	$83
-__local_event_spawn_mob__index	EQU	$84
-__local_init_drop_display__i	EQU	$84
-__local_pick_random_mob__3	EQU	$84
+__local_process_char_events__e	EQU	$83
+__local_event_faction_scene_cont__index	EQU	$84
+__local_init_drop_gold__0	EQU	$84
+__local_pick_random_mob__1	EQU	$84
 __local_pickup_treasure__1	EQU	$84
-__local_process_char_events__index	EQU	$84
-__local_update_event_list__pos	EQU	$84
-__local_pick_random_mob__index	EQU	$85
+__local_process_char_events__1	EQU	$84
+__local_update_event_list__0	EQU	$84
+__local_pick_random_mob__2	EQU	$85
 __local_pickup_treasure__ev	EQU	$85
-__local_update_event_list__e	EQU	$85
-__local_find_msb__mask	EQU	$86
-__local_pick_random_char__0	EQU	$86
+__local_process_char_events__index	EQU	$85
+__local_update_event_list__pos	EQU	$85
+__local_event_spawn_mob__index	EQU	$86
+__local_find_msb__1	EQU	$86
+__local_pick_random_mob__remaining	EQU	$86
 __local_pickup_treasure__2	EQU	$86
-__local_update_event_list__1	EQU	$86
-__local_find_mob_by_faction__faction	EQU	$87
-__local_find_msb__v	EQU	$87
-__local_update_event_list__2	EQU	$87
-__local_clear_treasure_digits__i	EQU	$8A
+__local_update_event_list__e	EQU	$86
+__local_find_msb__mask	EQU	$87
+__local_pick_random_char__0	EQU	$87
+__local_update_event_list__1	EQU	$87
+__local_find_mob_by_faction__faction	EQU	$88
+__local_find_msb__2	EQU	$88
+__local_inc_stat__1	EQU	$88
+__local_update_event_list__2	EQU	$88
+__local_inc_stat__field	EQU	$89
+__local_find_msb__v_0	EQU	$8A
+__local_inc_stat__2	EQU	$8A
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -236,30 +242,30 @@ WAIT	EQU	$FCA8
 ; def adj_drop params=__zpabi_adj_drop__down locals=__local_adj_drop__0,__local_adj_drop__1,__local_adj_drop__down indirect=false in_cycle=false param_regs=A
 ; def adj_drop_dec params= locals=__local_adj_drop_dec__0 indirect=false in_cycle=false
 ; def adj_drop_inc params= locals=__local_adj_drop_inc__0 indirect=false in_cycle=false
-; def check_can_leave params= locals=__local_check_can_leave__0 indirect=false in_cycle=false carry=true
+; def check_can_leave params= locals=__local_check_can_leave__0,__local_check_can_leave__1 indirect=false in_cycle=false carry=true
 ; def check_location_match params= locals=__local_check_location_match__0 indirect=false in_cycle=false
 ; def check_scene_events params= locals= indirect=false in_cycle=false
 ; def clear_and_display params=__zpabi_clear_and_display__strings_0,__zpabi_clear_and_display__strings_1 locals=__local_clear_and_display__strings_1,__local_clear_and_display__strings_0 indirect=false in_cycle=false param_regs=A,X
 ; def clear_treasure_digits params= locals=__local_clear_treasure_digits__0,__local_clear_treasure_digits__1,__local_clear_treasure_digits__i indirect=false in_cycle=false
-; def drop_gold_exec params= locals=__local_drop_gold_exec__0 indirect=false in_cycle=false
-; def event_faction_scene_cont params=__zpabi_event_faction_scene_cont__index locals=__local_event_faction_scene_cont__0,__local_event_faction_scene_cont__index indirect=false in_cycle=false param_regs=A
+; def drop_gold_exec params= locals=__local_drop_gold_exec__0,__local_drop_gold_exec__1 indirect=false in_cycle=false
+; def event_faction_scene_cont params=__zpabi_event_faction_scene_cont__index locals=__local_event_faction_scene_cont__0,__local_event_faction_scene_cont__1,__local_event_faction_scene_cont__index indirect=false in_cycle=false param_regs=A
 ; def event_spawn_mob params= locals=__local_event_spawn_mob__0,__local_event_spawn_mob__index indirect=false in_cycle=false
-; def find_mob_by_faction params=__zpabi_find_mob_by_faction__faction locals=__local_find_mob_by_faction__link,__local_find_mob_by_faction__0,__local_find_mob_by_faction__faction indirect=false in_cycle=false param_regs=A carry=true
-; def find_msb params=__zpabi_find_msb__v locals=__local_find_msb__0,__local_find_msb__mask,__local_find_msb__v indirect=false in_cycle=false param_regs=A
+; def find_mob_by_faction params=__zpabi_find_mob_by_faction__faction locals=__local_find_mob_by_faction__link,__local_find_mob_by_faction__faction indirect=false in_cycle=false param_regs=A carry=true
+; def find_msb params=__zpabi_find_msb__v_0,__zpabi_find_msb__v_1 locals=__local_find_msb__0,__local_find_msb__1,__local_find_msb__mask,__local_find_msb__2,__local_find_msb__v_1,__local_find_msb__v_0 indirect=false in_cycle=false param_regs=A,X
 ; def flush_pending_xp params= locals=__local_flush_pending_xp__0,__local_flush_pending_xp__1,__local_flush_pending_xp__2 indirect=false in_cycle=false
-; def inc_stat params=__zpabi_inc_stat__offset locals=__local_inc_stat__0,__local_inc_stat__offset indirect=false in_cycle=false param_regs=A
+; def inc_stat params=__zpabi_inc_stat__field_0,__zpabi_inc_stat__field_1 locals=__local_inc_stat__0,__local_inc_stat__1,__local_inc_stat__field,__local_inc_stat__2 indirect=false in_cycle=false param_regs=A,X
 ; def init_drop_display params= locals=__local_init_drop_display__0,__local_init_drop_display__1,__local_init_drop_display__i indirect=false in_cycle=false
 ; def init_drop_gold params= locals=__local_init_drop_gold__0 indirect=false in_cycle=false
 ; def pick_random_char params= locals=__local_pick_random_char__0,__local_pick_random_char__1 indirect=false in_cycle=false
-; def pick_random_mob params= locals=__local_pick_random_mob__0,__local_pick_random_mob__1,__local_pick_random_mob__2,__local_pick_random_mob__3,__local_pick_random_mob__index indirect=false in_cycle=false
-; def pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 locals=__local_pickup_treasure__gold_hi,__local_pickup_treasure__0,__local_pickup_treasure__1,__local_pickup_treasure__ev,__local_pickup_treasure__2,__local_pickup_treasure__3 indirect=false in_cycle=false param_regs=A,X
+; def pick_random_mob params= locals=__local_pick_random_mob__index,__local_pick_random_mob__0,__local_pick_random_mob__1,__local_pick_random_mob__2,__local_pick_random_mob__remaining indirect=false in_cycle=false
+; def pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 locals=__local_pickup_treasure__gold_hi,__local_pickup_treasure__0,__local_pickup_treasure__1,__local_pickup_treasure__ev,__local_pickup_treasure__2 indirect=false in_cycle=false param_regs=A,X
 ; def process_char_events params=__zpabi_process_char_events__index locals=__local_process_char_events__0,__local_process_char_events__e,__local_process_char_events__1,__local_process_char_events__index indirect=false in_cycle=false param_regs=A
 ; def process_scene_groups params= locals= indirect=false in_cycle=false
-; def random_events params= locals=__local_random_events__0 indirect=false in_cycle=false
+; def random_events params= locals=__local_random_events__i,__local_random_events__0 indirect=false in_cycle=false
 ; def scan_and_reorder params= locals= indirect=false in_cycle=false
 ; def scan_for_hostile params= locals=__local_scan_for_hostile__link,__local_scan_for_hostile__0,__local_scan_for_hostile__1 indirect=false in_cycle=false
 ; def trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 locals=__local_trigger_scene_event__0,__local_trigger_scene_event__ev,__local_trigger_scene_event__1 indirect=false in_cycle=false param_regs=A,X
-; def update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 locals=__local_update_event_list__0,__local_update_event_list__pos,__local_update_event_list__e,__local_update_event_list__1,__local_update_event_list__2 indirect=false in_cycle=false param_regs=A,,
+; def update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 locals=__local_update_event_list__0,__local_update_event_list__pos,__local_update_event_list__e,__local_update_event_list__1,__local_update_event_list__2,__local_update_event_list__3 indirect=false in_cycle=false param_regs=A,, changes=__zpabi_update_event_list__value_0
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -502,7 +508,6 @@ WAIT	EQU	$FCA8
 ; call update_event_list -> display_message
 ; call update_event_list -> set_cursor_row21
 ; item check_can_leave section=.text local=false zero=false
-; item check_can_leave@run2 section=.text local=true zero=false
 ; item update_event_list section=.text local=false zero=false
 ; item trigger_scene_event section=.text local=false zero=false
 ; item inc_stat section=.text local=true zero=false
@@ -527,6 +532,7 @@ WAIT	EQU	$FCA8
 ; item init_drop_gold section=.text local=false zero=false
 ; item init_drop_display section=.text local=false zero=false
 ; item adj_drop section=.text local=true zero=false
+; item adj_drop@run2 section=.text local=true zero=false
 ; item adj_drop@run0 section=.text local=true zero=false
 ; item adj_drop_inc section=.text local=false zero=false
 ; item adj_drop_dec section=.text local=false zero=false
@@ -559,26 +565,25 @@ check_can_leave:
    SUBROUTINE
 
    JSR   step_prng
-   CMP   #$40
-   BCC   .if_end@0
-   JSR   check_can_leave@run2
-   LDA   #$1C
-   JSR   display_message
    SEC
-   RTS
-.if_end@0:
-   JSR   check_can_leave@run2
-   LDA   #$1D
-   JSR   display_message
-   CLC
-   RTS
-
-check_can_leave@run2:
-   SUBROUTINE
-
+   SBC   #$40
+   LDA   #$00
+   ROL
+   STA   __local_check_can_leave__1
    JSR   set_cursor_row21
    JSR   print_mob_name
-   JMP   scroll_status_line
+   JSR   scroll_status_line
+   LDA   __local_check_can_leave__1
+   BEQ   .cond_else@0
+   LDA   #$1C
+   BNE   .cond_end@1
+.cond_else@0:
+   LDA   #$1D
+.cond_end@1:
+   JSR   display_message
+   LDA   __local_check_can_leave__1
+   CMP   #$01
+   RTS
 
 update_event_list:
    SUBROUTINE
@@ -586,70 +591,65 @@ update_event_list:
    STA   __local_update_event_list__pos
    LDA   __zpabi_update_event_list__value_0
    ORA   __zpabi_update_event_list__value_1
-   BNE   .if_end@1
+   BNE   .if_end@2
    RTS
-.if_end@1:
+.if_end@2:
    LDA   __zpabi_update_event_list__value_1
    AND   #$07
    STA   __local_update_event_list__2
-   LDY   #$07
-   LDA   (CHAR_PTR),Y
-   DEY
-   STA   __local_update_event_list__1
+   LDY   #$06
    LDA   (CHAR_PTR),Y
    STA   __local_update_event_list__e
+   INY
+   LDA   (CHAR_PTR),Y
+   STA   __local_update_event_list__1
 .loop@0_start:
    LDY   #$00
    LDA   (__local_update_event_list__e),Y
    CMP   #$FF
-   BNE   .if_end@2
+   BNE   .if_end@3
    JSR   set_cursor_row21
    LDA   #$2A
    JMP   display_message
-.if_end@2:
+.if_end@3:
    CMP   #$FE
-   BNE   .if_end@3
+   BNE   .if_end@4
    LDA   __local_update_event_list__pos
    LDY   #$00
    STA   (__local_update_event_list__e),Y
-   LDA   __local_update_event_list__2
-   ORA   #$C0
+   LDA   #$C0
+   ORA   __local_update_event_list__2
    INY
    STA   (__local_update_event_list__e),Y
    LDA   __zpabi_update_event_list__value_0
    INY
    STA   (__local_update_event_list__e),Y
    RTS
-.if_end@3:
+.if_end@4:
    CMP   __local_update_event_list__pos
-   BNE   .if_end@8
+   BNE   .if_end@9
    LDY   #$01
    LDA   (__local_update_event_list__e),Y
    CMP   #$C0
-   BCC   .if_end@8
+   BCC   .if_end@9
    LDA   (__local_update_event_list__e),Y
    CMP   #$D1
-   BCS   .if_end@8
+   BCS   .if_end@9
+   LDA   (__local_update_event_list__e),Y
+   STA   __local_update_event_list__0
    INY
    LDA   (__local_update_event_list__e),Y
    ADC   __zpabi_update_event_list__value_0
-   STA   __local_update_event_list__0
-   STA   (__local_update_event_list__e),Y
-   CLC
-   DEY
-   LDA   (__local_update_event_list__e),Y
    STA   __local_update_event_list__pos
-   LDA   __zpabi_update_event_list__value_0
-   SBC   __local_update_event_list__0
-   LDA   #$00
-   ROL
-   CLC
+   LDA   __local_update_event_list__0
    ADC   __local_update_event_list__2
-   CLC
-   ADC   __local_update_event_list__pos
+   DEY
+   STA   (__local_update_event_list__e),Y
+   LDA   __local_update_event_list__pos
+   INY
    STA   (__local_update_event_list__e),Y
    RTS
-.if_end@8:
+.if_end@9:
    LDA   __local_update_event_list__e
    CLC
    ADC   #$03
@@ -675,19 +675,19 @@ trigger_scene_event:
    JSR   scene_loop
    LDY   #$01
    LDA   (__local_trigger_scene_event__ev),Y
-   STA   __local_trigger_scene_event__0
    CMP   #$D3
-   BCS   .if_end@9
+   BCS   .if_end@10
    RTS
-.if_end@9:
+.if_end@10:
    LDA   #$FE
    LDY   #$00
    STA   (__local_trigger_scene_event__ev),Y
-   LDA   __local_trigger_scene_event__0
+   INY
+   LDA   (__local_trigger_scene_event__ev),Y
    CMP   #$D3
-   BNE   .if_end@10
+   BNE   .if_end@11
    RTS
-.if_end@10:
+.if_end@11:
    LDA   #$0F
    JSR   scene_loop
    LDA   #$03
@@ -699,31 +699,32 @@ trigger_scene_event:
 inc_stat:
    SUBROUTINE
 
-   STA   __local_inc_stat__offset
-   LDY   __local_inc_stat__offset
-   LDA   (ENTITY_PTR),Y
+   STA   __local_inc_stat__field
+   STX   __local_inc_stat__2
+   LDY   #$00
+   LDA   (__local_inc_stat__field),Y
+   STA   __local_inc_stat__1
    AND   #$1F
    CMP   #$1F
-   BEQ   .if_end@11
+   BEQ   .if_end@12
+   LDA   __local_inc_stat__1
    CLC
-   LDA   (ENTITY_PTR),Y
    ADC   #$01
-   STA   (ENTITY_PTR),Y
-.if_end@11:
+   STA   (__local_inc_stat__field),Y
+.if_end@12:
    RTS
 
 clear_treasure_digits:
    SUBROUTINE
 
-   LDA   #$04
-   STA   __local_clear_treasure_digits__i
+   LDX   #$00
+.clear_treasure_digits@rot@0:
    LDA   #$20
-.loop@1_start:
-   LDX   __local_clear_treasure_digits__i
    STA   S_CHEST_MESSAGE+39,X
    STA   S_CHEST_MESSAGE+72,X
-   DEC   __local_clear_treasure_digits__i
-   BPL   .loop@1_start
+   INX
+   CPX   #$05
+   BCC   .clear_treasure_digits@rot@0
    RTS
 
 clear_and_display:
@@ -748,32 +749,46 @@ pickup_treasure:
    LDY   #$01
    LDA   (__local_pickup_treasure__ev),Y
    CMP   #$D1
-   BNE   .if_end@12
+   BNE   .if_end@13
    LDA   #$0B
    JSR   scene_loop
-   LDA   #$05
+   LDA   ENTITY_PTR
+   CLC
+   ADC   #$05
+   STA   __local_pickup_treasure__gold_hi
+   LDA   ENTITY_PTR+1
+   ADC   #$00
+   TAX
+   LDA   __local_pickup_treasure__gold_hi
    JSR   inc_stat
-   LDA   #$0B
+   LDA   ENTITY_PTR
+   CLC
+   ADC   #$0B
+   STA   __local_pickup_treasure__gold_hi
+   LDA   ENTITY_PTR+1
+   ADC   #$00
+   TAX
+   LDA   __local_pickup_treasure__gold_hi
    JSR   inc_stat
    LDA   #$03
    JSR   random_in_range
    ORA   #$00
-   BEQ   .if_end@13
+   BEQ   .if_end@14
    RTS
-.if_end@13:
+.if_end@14:
    LDA   #$0C
    JSR   scene_loop
    LDA   #$FE
    LDY   #$00
    STA   (__local_pickup_treasure__ev),Y
    RTS
-.if_end@12:
+.if_end@13:
    CMP   #$C9
-   BCS   .if_else@15
+   BCS   .if_else@16
    SEC
    SBC   #$C0
-   JMP   .if_end@14
-.if_else@15:
+   JMP   .if_end@15
+.if_else@16:
    LDA   #$06
    JSR   random_in_range
    AND   #$03
@@ -781,13 +796,13 @@ pickup_treasure:
    LDY   #$04
    LDA   (ENTITY_PTR),Y
    CMP   #$15
-   BCS   .if_end@16
+   BCS   .if_end@17
    JSR   set_cursor_row21
    LDA   #$36
    CLC
    ADC   __local_pickup_treasure__0
    JSR   scene_loop
-.if_end@16:
+.if_end@17:
    LDA   __local_pickup_treasure__0
    BEQ   .case@3
    CMP   #$01
@@ -820,28 +835,32 @@ pickup_treasure:
    STA   (ENTITY_PTR),Y
    JMP   .switch@2_break
 .default@6:
+   LDA   ENTITY_PTR
+   STA   DPTR
+   LDA   ENTITY_PTR+1
+   STA   DPTR+1
    LDA   #$00
    LDY   #$0D
    STA   (ENTITY_PTR),Y
    INY
-   STA   (ENTITY_PTR),Y
+   STA   (DPTR),Y
 .switch@2_break:
    LDY   #$02
    LDA   (ENTITY_PTR),Y
    CMP   CURRENT_ROOM
-   BEQ   .if_end@18
+   BEQ   .if_end@19
    DEY
    LDA   (__local_pickup_treasure__ev),Y
    SEC
    SBC   #$09
    STA   (__local_pickup_treasure__ev),Y
    RTS
-.if_end@18:
+.if_end@19:
    LDY   #$01
    LDA   (__local_pickup_treasure__ev),Y
    SEC
    SBC   #$C9
-.if_end@14:
+.if_end@15:
    LDY   #$02
    STA   __local_pickup_treasure__0
    LDA   (__local_pickup_treasure__ev),Y
@@ -854,7 +873,7 @@ pickup_treasure:
    LDY   #$04
    LDA   (ENTITY_PTR),Y
    CMP   #$15
-   BCS   .if_end@19
+   BCS   .if_end@20
    JSR   clear_treasure_digits
    LDA   #<(S_CHEST_MESSAGE+39)
    STA   __zpabi_num_to_decimal__out_0
@@ -863,13 +882,12 @@ pickup_treasure:
    LDX   __local_pickup_treasure__0
    LDA   __local_pickup_treasure__1
    JSR   num_to_decimal
-   LDY   #$0E
-   LDA   (ENTITY_PTR),Y
-   STA   __local_pickup_treasure__0
-   DEY
+   LDY   #$0D
    LDA   (ENTITY_PTR),Y
    STA   __local_pickup_treasure__gold_hi
-   LDX   __local_pickup_treasure__0
+   INY
+   LDA   (ENTITY_PTR),Y
+   TAX
    LDA   #<(S_CHEST_MESSAGE+72)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(S_CHEST_MESSAGE+72)
@@ -880,7 +898,7 @@ pickup_treasure:
    LDX   #>S_CHEST_MESSAGE
    LDA   #<S_CHEST_MESSAGE
    JSR   clear_and_display
-.if_end@19:
+.if_end@20:
    LDA   #$FE
    LDY   #$00
    STA   (__local_pickup_treasure__ev),Y
@@ -892,10 +910,10 @@ check_location_match:
    LDA   ACTIVE_CHAR
    JSR   get_char_record
    CMP   LOCATION_POS
-   BNE   .if_end@20
+   BNE   .if_end@21
    LDA   #$00
    STA   LOCATION_POS
-.if_end@20:
+.if_end@21:
    RTS
 
 pick_random_char:
@@ -917,36 +935,37 @@ pick_random_char:
 pick_random_mob:
    SUBROUTINE
 
+   LDA   TOTAL_MOB_COUNT
+   BNE   .vthread@0
+   JMP   pick_random_char
 .loop@7_start:
    LDA   TOTAL_MOB_COUNT
-   BNE   .if_end@21
-   JMP   pick_random_char
-.if_end@21:
+.vthread@0:
    JSR   random_in_range
+   STA   __local_pick_random_mob__remaining
    ORA   #$00
    BEQ   .loop@7_start
-   STA   MOB_PTR
    LDA   #$01
    STA   __local_pick_random_mob__index
-   JMP   .loop@8_start
-.pick_random_mob@rot@0:
-   BMI   .loop@8_break
-   INC   __local_pick_random_mob__index
 .loop@8_start:
    LDA   __local_pick_random_mob__index
    JSR   get_char_record
-   STA   __local_pick_random_mob__2
-   STX   __local_pick_random_mob__3
+   STA   __local_pick_random_mob__1
+   STX   __local_pick_random_mob__2
    LDY   #$08
-   LDA   (__local_pick_random_mob__2),Y
+   LDA   (__local_pick_random_mob__1),Y
    STA   __local_pick_random_mob__0
-   LDA   MOB_PTR
+   LDA   __local_pick_random_mob__remaining
    SEC
    SBC   __local_pick_random_mob__0
+   STA   __local_pick_random_mob__remaining
+   BMI   .pick_random_mob@scfold@0
+   BEQ   .pick_random_mob@scfold@0
+   INC   __local_pick_random_mob__index
+   BNE   .loop@8_start
+.pick_random_mob@scfold@0:
    STA   MOB_PTR
-   BNE   .pick_random_mob@rot@0
-.loop@8_break:
-   LDA   __local_pick_random_mob__2
+   LDA   __local_pick_random_mob__1
    STA   CHAR_PTR
    STX   CHAR_PTR+1
    LDA   __local_pick_random_mob__index
@@ -956,28 +975,28 @@ process_char_events:
    SUBROUTINE
 
    STA   __local_process_char_events__index
-   LDY   #$07
-   LDA   (CHAR_PTR),Y
-   DEY
-   STA   __local_process_char_events__1
+   LDY   #$06
    LDA   (CHAR_PTR),Y
    STA   __local_process_char_events__e
+   INY
+   LDA   (CHAR_PTR),Y
+   STA   __local_process_char_events__1
    JMP   .loop@9_start
 .process_char_events@rot@1:
    LDY   #$01
    LDA   (__local_process_char_events__e),Y
-   STA   __local_process_char_events__0
    CMP   #$40
-   BCC   .loop@9_continue
-   AND   #$80
-   BNE   .loop@9_continue
-   LDA   __local_process_char_events__0
+   BCC   .if_end@27
+   CMP   #$80
+   BCS   .if_end@27
+   LDA   (__local_process_char_events__e),Y
+   SEC
    SBC   #$40
    STA   (__local_process_char_events__e),Y
    LDA   __local_process_char_events__index
    STA   ACTIVE_CHAR
    JMP   check_location_match
-.loop@9_continue:
+.if_end@27:
    LDA   __local_process_char_events__e
    CLC
    ADC   #$03
@@ -1005,6 +1024,7 @@ find_mob_by_faction:
    LDY   #$0F
    LDA   (MOB_PTR),Y
    BPL   .if_end@30
+   LDA   (MOB_PTR),Y
    AND   #$70
    CMP   __local_find_mob_by_faction__faction
    BNE   .if_end@30
@@ -1054,8 +1074,11 @@ event_faction_scene_cont:
    SUBROUTINE
 
    STA   __local_event_faction_scene_cont__index
+   LDA   CHAR_PTR+1
+   CMP   #>(LOCATIONS+9)
+   BNE   .if_end@34
    LDA   CHAR_PTR
-   CMP   #$09
+   CMP   #<(LOCATIONS+9)
    BNE   .if_end@34
    RTS
 .if_end@34:
@@ -1106,15 +1129,19 @@ random_events:
    JSR   event_spawn_mob
 .if_end@40:
    JSR   random_events@run1
-   BCC   .if_end@41
-   RTS
-.if_end@41:
+   BCS   .if_end@41
+   LDA   #$00
+   STA   __local_random_events__i
+.random_events@rot@3:
    JSR   event_spawn_mob
-   JSR   event_spawn_mob
-   JSR   event_spawn_mob
-   JSR   event_spawn_mob
+   INC   __local_random_events__i
+   LDA   __local_random_events__i
+   CMP   #$04
+   BCC   .random_events@rot@3
    JSR   pick_random_char
-   JMP   event_faction_scene_cont
+   JSR   event_faction_scene_cont
+.if_end@41:
+   RTS
 
 random_events@run1:
    SUBROUTINE
@@ -1135,8 +1162,8 @@ scan_for_hostile:
    STX   MOB_PTR+1
    LDY   #$02
    LDA   (CHAR_PTR),Y
-   JMP   .loop@11_start
-.scan_for_hostile@rot@3:
+   JMP   .loop@12_start
+.scan_for_hostile@rot@4:
    CMP   SCENE_GROUP_IDX
    BNE   .if_end@42
    LDY   #$01
@@ -1152,8 +1179,8 @@ scan_for_hostile:
 .if_end@43:
    LDY   #$02
    LDA   (__local_scan_for_hostile__0),Y
-.loop@11_start:
-   BNE   .scan_for_hostile@rot@3
+.loop@12_start:
+   BNE   .scan_for_hostile@rot@4
    RTS
 
 scan_and_reorder:
@@ -1179,10 +1206,11 @@ process_scene_groups:
    LDA   #$3F
    STA   SCENE_GROUP_IDX
    JSR   scan_and_reorder
-   INC   SCENE_GROUP_IDX
-   INC   SCENE_GROUP_IDX
+   LDA   #$41
+   STA   SCENE_GROUP_IDX
    JSR   scan_and_reorder
-   INC   SCENE_GROUP_IDX
+   LDA   #$42
+   STA   SCENE_GROUP_IDX
    JSR   scan_and_reorder
    LDA   CURRENT_PLAYER
    JMP   load_char_to_fa
@@ -1284,68 +1312,71 @@ flush_pending_xp:
 find_msb:
    SUBROUTINE
 
-   STA   __local_find_msb__v
-   LDA   #$80
+   STA   __local_find_msb__v_0
+   LDA   #$00
    STA   __local_find_msb__mask
-.loop@12_continue:
-   LDA   __local_find_msb__mask
-   BEQ   .vthread@0
-   LDA   __local_find_msb__v
+   LDY   #$80
+   STY   __local_find_msb__2
+   JMP   .loop@13_continue
+.find_msb@rot@5:
+   LDA   __local_find_msb__v_0
    AND   __local_find_msb__mask
-   BNE   .loop@12_break
-   LSR   __local_find_msb__mask
-   JMP   .loop@12_continue
-.loop@12_break:
+   STA   __local_find_msb__1
+   TXA
+   AND   __local_find_msb__2
+   ORA   __local_find_msb__1
+   BNE   .loop@13_break
+   LSR   __local_find_msb__2
+   ROR   __local_find_msb__mask
+.loop@13_continue:
    LDA   __local_find_msb__mask
-.vthread@0:
+   ORA   __local_find_msb__2
+   BNE   .find_msb@rot@5
+.loop@13_break:
+   LDX   __local_find_msb__2
+   LDA   __local_find_msb__mask
    RTS
 
 init_drop_gold:
    SUBROUTINE
 
-   LDY   #$0E
-   LDA   (ENTITY_PTR),Y
-   JSR   find_msb
-   STA   DROP_AMOUNT+1
-   LDY   #$00
-   STY   DROP_AMOUNT
-   ORA   #$00
-   BNE   .if_end@56
    LDY   #$0D
    LDA   (ENTITY_PTR),Y
+   STA   __local_init_drop_gold__0
+   INY
+   LDA   (ENTITY_PTR),Y
+   TAX
+   LDA   __local_init_drop_gold__0
    JSR   find_msb
    STA   DROP_AMOUNT
-   LDY   #$00
-   STY   DROP_AMOUNT+1
-   ORA   #$00
-   BNE   .if_end@57
+   STX   DROP_AMOUNT+1
+   ORA   DROP_AMOUNT+1
+   BNE   .if_end@56
    JSR   set_cursor_row21
    LDA   #$2E
    JSR   display_message
    LDA   #$15
    RTS
-.if_end@57:
 .if_end@56:
-   LDA   DROP_AMOUNT
-   STA   DROP_STEP
-   LDA   DROP_AMOUNT+1
+   TXA
    LSR
    STA   DROP_STEP+1
-   ROR   DROP_STEP
+   LDA   DROP_AMOUNT
+   ROR
+   STA   DROP_STEP
    LDA   #$1D
    RTS
 
 init_drop_display:
    SUBROUTINE
 
-   LDA   #$04
-   STA   __local_init_drop_display__i
+   LDX   #$00
+.init_drop_display@rot@6:
    LDA   #$20
-.loop@13_start:
-   LDX   __local_init_drop_display__i
    STA   S_DUCATS_TO_DROP+18,X
-   DEC   __local_init_drop_display__i
-   BPL   .loop@13_start
+   INX
+   CPX   #$05
+   BCC   .init_drop_display@rot@6
    LDA   #<(S_DUCATS_TO_DROP+18)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(S_DUCATS_TO_DROP+18)
@@ -1358,45 +1389,63 @@ adj_drop:
    SUBROUTINE
 
    STA   __local_adj_drop__down
-.loop@14_start:
+.loop@15_start:
    LDA   DROP_STEP
    ORA   DROP_STEP+1
-   BNE   .if_end@58
+   BNE   .if_end@57
    JMP   init_drop_gold
-.if_end@58:
+.if_end@57:
    LDA   __local_adj_drop__down
-   BEQ   .if_end@59
+   BEQ   .if_end@58
    JSR   adj_drop@run0
    LSR   DROP_STEP+1
    ROR   DROP_STEP
    LDA   #$1D
    RTS
-.if_end@59:
+.if_end@58:
    LDA   DROP_AMOUNT
    CLC
    ADC   DROP_STEP
-   STA   DROP_AMOUNT
-   LDA   DROP_AMOUNT+1
+   JSR   adj_drop@run2
    ADC   DROP_STEP+1
    STA   DROP_AMOUNT+1
    LSR   DROP_STEP+1
    ROR   DROP_STEP
-   LDY   #$0E
+   LDY   #$0D
+   LDA   (ENTITY_PTR),Y
+   STA   __local_adj_drop__1
+   INY
    LDA   (ENTITY_PTR),Y
    STA   __local_adj_drop__0
-   DEY
-   LDA   (ENTITY_PTR),Y
+   LDA   __local_adj_drop__1
    SEC
    SBC   DROP_AMOUNT
    LDA   __local_adj_drop__0
    SBC   DROP_AMOUNT+1
-   BCC   .if_end@60
+   BCC   .if_end@59
    LDA   #$1D
    RTS
-.if_end@60:
-   JSR   adj_drop@run0
-   JSR   adj_drop@run0
-   JMP   .loop@14_start
+.if_end@59:
+   LDA   DROP_STEP
+   ASL
+   STA   __local_adj_drop__0
+   LDA   DROP_STEP+1
+   ROL
+   STA   __local_adj_drop__1
+   LDA   DROP_AMOUNT
+   SEC
+   SBC   __local_adj_drop__0
+   JSR   adj_drop@run2
+   SBC   __local_adj_drop__1
+   STA   DROP_AMOUNT+1
+   JMP   .loop@15_start
+
+adj_drop@run2:
+   SUBROUTINE
+
+   STA   DROP_AMOUNT
+   LDA   DROP_AMOUNT+1
+   RTS
 
 adj_drop@run0:
    SUBROUTINE
@@ -1404,8 +1453,7 @@ adj_drop@run0:
    LDA   DROP_AMOUNT
    SEC
    SBC   DROP_STEP
-   STA   DROP_AMOUNT
-   LDA   DROP_AMOUNT+1
+   JSR   adj_drop@run2
    SBC   DROP_STEP+1
    STA   DROP_AMOUNT+1
    RTS
@@ -1436,18 +1484,22 @@ drop_gold_exec:
    ADC   #$01
    STA   DROP_STEP
    LDA   #$00
+   ADC   #$00
    STA   DROP_STEP+1
    JSR   set_cursor_row21
    JSR   adj_drop@run0
-   BMI   .drop_gold_exec@scfold@0
+   STA   __local_drop_gold_exec__0
    LDA   DROP_AMOUNT
-   ORA   DROP_AMOUNT+1
-   BNE   .if_else@64
-.drop_gold_exec@scfold@0:
+   STA   __local_drop_gold_exec__1
+   LDA   __local_drop_gold_exec__0
+   BMI   .jcmp_neg@0
+   ORA   __local_drop_gold_exec__1
+   BNE   .if_else@61
+.jcmp_neg@0:
    LDA   #$2C
    JSR   display_message
-   JMP   .if_end@63
-.if_else@64:
+   JMP   .if_end@60
+.if_else@61:
    LDA   #$2D
    JSR   display_message
    LDY   #$03
@@ -1459,6 +1511,6 @@ drop_gold_exec:
    STA   __zpabi_update_event_list__value_1
    LDA   __local_drop_gold_exec__0
    JSR   update_event_list
-.if_end@63:
+.if_end@60:
    LDA   #$02
    RTS

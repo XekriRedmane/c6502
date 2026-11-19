@@ -29,9 +29,9 @@
       units read, and reads the entry through `ev`. Nothing it calls
       changes MOB_PTR in the original, and SCENE_LOOP restores it.
     - INC_STRENGTH and INC_LEVEL are one function, inc_stat, which takes
-      the field's offset as the original's shared body takes it in Y.
-      ADJ_DROP_INC and ADJ_DROP_DEC share adj_drop, which takes the
-      direction that the original passes in X.
+      a pointer to the field where the original's shared body takes its
+      offset in Y. ADJ_DROP_INC and ADJ_DROP_DEC share adj_drop, which
+      takes the direction that the original passes in X.
     - The chain routines' JMPs to MENU_DROP_GOLD, MENU_OTHER_OPTIONS,
       and MOVE_LOOP return the CHAIN_ states, and ADJ_DROP's JMP to
       INIT_DROP_GOLD returns what init_drop_gold returns.
@@ -43,13 +43,18 @@
       MODIFY_CURRENT_STATS and stores the random step's low byte after.
       drop_gold_exec stores both bytes after the call. Nothing reads
       DROP_STEP in between.
-    - INIT_DROP_GOLD stores DROP_AMOUNT a byte at a time, and
-      init_drop_gold stores the whole word, which writes the high byte
-      of 0 a second time when the gold is below 256.
-    - ENTITY_PTR's gold and CHAR_PTR's event pointer are read a byte at
-      a time by offset (ENTITY_BYTE and CHAR_BYTE), because c6502
-      computes the address of a 2-byte member before it reads the
-      member through a zero-page pointer.
+    - INIT_DROP_GOLD looks for the highest bit of the gold's high byte
+      and then of its low byte, with FIND_MSB, and stores DROP_AMOUNT a
+      byte at a time. init_drop_gold looks for the highest bit of the
+      gold as a word, with find_msb, and stores DROP_AMOUNT once. The
+      amount is the same.
+    - PICK_RANDOM_MOB stores the remaining count in MOB_PTR's low byte
+      after each location it takes a count from. pick_random_mob keeps
+      the count in a local and stores its last value there once.
+    - EVENT_FACTION_SCENE_CONT tests for location 1 by CHAR_PTR's low
+      byte, and event_faction_scene_cont compares CHAR_PTR with
+      &LOCATIONS[1]. Of the records GET_CHAR_RECORD returns, 0-128,
+      only record 1 has the low byte $09.
 
     Where the original's comments and its code disagree, the C follows
     the code, and the function comments say where.
@@ -1149,26 +1154,17 @@
  * the low bits of its type. EVENT_VALUE_HI_MASK in the original. */
 constexpr uint8_t EVENT_VALUE_HI_MASK = 0x07;
 
+/* The bits of a gold amount that an event entry holds, 0-10. */
+constexpr uint16_t EVENT_GOLD_MASK = 0x07FF;
+
 /* A location's faction, bits 6-5 of its style. */
 constexpr uint8_t STYLE_FACTION_MASK = 0x60;
 
-/* ENTITY_PTR's byte at `offset`, with which the gold is read a byte at
- * a time. c6502 reads a 2-byte member through a zero-page pointer by
- * computing the member's address first (notes/events.md), and this
- * reads the byte with LDY #offset and LDA (ENTITY_PTR),Y, as the
- * original does. */
-#define ENTITY_BYTE(offset) (((uint8_t *)ENTITY_PTR)[offset])
-
-/* CHAR_PTR's byte at `offset`, with which the event list's address,
- * bytes 6 and 7, is read a byte at a time for the same reason. */
-#define CHAR_BYTE(offset) (((uint8_t *)CHAR_PTR)[offset])
-
-/* The low byte of LOCATIONS[1]'s address, $4009. Location 1 is the only
- * record whose address has this low byte. */
-constexpr uint8_t LOCATION_1_LO = 0x09;
-
 /* A mob that a faction search finds has bit 7 of its flags set. */
 constexpr uint8_t FLAGS_CLASS_BIT = 0x80;
+
+/* A sleeping encounter's type is $40-$7F. */
+constexpr uint8_t EVENT_TYPE_MOB_END = 0x80;
 
 /* The scenes this unit plays. */
 enum {
@@ -1184,10 +1180,8 @@ enum {
 };
 
 /* The mob index CHECK_SCENE_EVENTS looks for in player 1's and 3's
- * lists, and the three that PROCESS_SCENE_GROUPS moves out of
- * location 3. */
+ * lists. */
 constexpr uint8_t SCENE_GROUP = 0x40;
-constexpr uint8_t SCENE_GROUP_FIRST = 0x3F;
 
 /* Message $2A, which UPDATE_EVENT_LIST prints when the list is full. Its
  * EQU name is MSG_ARMOR_WORTHLESS, which describes another message. */
@@ -1195,22 +1189,16 @@ constexpr uint8_t MSG_EVENT_LIST_FULL = 0x2A;
 
 /* ---- Leaving a fight ---------------------------------------------------- */
 
-/* One time in two, ENTITY_PTR gets away. The original compares the
- * PRNG's output, 0-127, with $40 as a signed byte, which is the same as
- * an unsigned comparison for those values. */
+/* Returns true one time in two, when ENTITY_PTR gets away. The original
+ * compares the PRNG's output, 0-127, with $40 as a signed byte, which is
+ * the same as an unsigned comparison for those values. */
 bool check_can_leave(void) {
-    if (step_prng() >= 0x40) {
-        set_cursor_row21();
-        print_mob_name();
-        scroll_status_line();
-        display_message(MSG_ESCAPE_FAIL);
-        return true;
-    }
+    bool leaves = step_prng() >= 0x40;
     set_cursor_row21();
     print_mob_name();
     scroll_status_line();
-    display_message(MSG_TACKLE_FAIL);
-    return false;
+    display_message(leaves ? MSG_ESCAPE_FAIL : MSG_TACKLE_FAIL);
+    return leaves;
 }
 
 /* ---- Gold on the map ----------------------------------------------------- */
@@ -1220,18 +1208,16 @@ bool check_can_leave(void) {
     there, of type $C0-$D0, takes the amount. Otherwise the first empty
     slot becomes a gold entry. Only bits 0-10 of the amount are kept.
 
-    The addition adds the low bytes, and then bits 8-10 and the carry
-    to the type, with nothing to stop the type passing $D0. A type of
-    $D1 or more then makes the entry a special chest, a scene, or a
-    shop.
+    An entry's type and value bytes are the high and low bytes of a word
+    whose bits 0-10 are the gold. The addition adds to that word, with
+    nothing to stop the type passing $D0. A type of $D1 or more then
+    makes the entry a special chest, a scene, or a shop.
 */
 void update_event_list(uint8_t pos, uint16_t value) {
     if (value == 0)
         return;
-    uint8_t value_hi = (uint8_t)(value >> 8) & EVENT_VALUE_HI_MASK;
-    uint8_t value_lo = (uint8_t)value;
-    for (struct event *e = (struct event *)((uint16_t)CHAR_BYTE(7) << 8 | CHAR_BYTE(6));
-         ; e++) {
+    value &= EVENT_GOLD_MASK;
+    for (struct event *e = CHAR_PTR->events; ; e++) {
         if (e->pos == EVENT_END) {
             set_cursor_row21();
             display_message(MSG_EVENT_LIST_FULL);
@@ -1239,14 +1225,14 @@ void update_event_list(uint8_t pos, uint16_t value) {
         }
         if (e->pos == EVENT_EMPTY) {
             e->pos = pos;
-            e->type = value_hi | EVENT_TYPE_GOLD;
-            e->value = value_lo;
+            e->type = EVENT_TYPE_GOLD | value >> 8;
+            e->value = value;
             return;
         }
         if (e->pos == pos && e->type >= EVENT_TYPE_GOLD && e->type <= EVENT_ACCUM_MAX) {
-            uint8_t sum = e->value + value_lo;
-            e->value = sum;
-            e->type += value_hi + (sum < value_lo);
+            uint16_t total = ((uint16_t)e->type << 8 | e->value) + value;
+            e->type = total >> 8;
+            e->value = total;
             return;
         }
     }
@@ -1262,30 +1248,28 @@ void trigger_scene_event(struct event *ev) {
     SAVED_EVENT_PTR = ev;
     commit_move();
     scene_loop(ev->value);
-    uint8_t type = ev->type;
-    if (type < EVENT_TYPE_SCENE_ONCE)
+    if (ev->type < EVENT_TYPE_SCENE_ONCE)
         return;
     ev->pos = EVENT_EMPTY;
-    if (type == EVENT_TYPE_SCENE_ONCE)
+    if (ev->type == EVENT_TYPE_SCENE_ONCE)
         return;
     scene_loop(SCENE_DAMAGE);
     apply_damage_to_current(random_in_range(3) + 1);
 }
 
-/* Adds 1 to ENTITY_PTR's byte at `offset`, whose bits 4-0 are a count,
- * unless the count is 31 already. INC_STRENGTH and INC_LEVEL's shared
- * body, which takes the offset in Y. */
-static void inc_stat(uint8_t offset) {
-    if ((ENTITY_BYTE(offset) & STRENGTH_MASK) != STRENGTH_MASK)
-        ENTITY_BYTE(offset)++;
+/* Adds 1 to the count in bits 4-0 of `*field`, unless the count is 31
+ * already. INC_STRENGTH and INC_LEVEL's shared body. */
+static void inc_stat(uint8_t *field) {
+    if ((*field & STRENGTH_MASK) != STRENGTH_MASK)
+        ++*field;
 }
 
 /* Fills the two five-digit fields of the chest message with $20, so
  * that the digits num_to_decimal leaves out show as spaces. */
 static void clear_treasure_digits(void) {
-    for (int8_t i = 4; i >= 0; i--) {
-        S_CHEST_MESSAGE.reveal_digits[i] = 0x20;
-        S_CHEST_MESSAGE.now_have_digits[i] = 0x20;
+    for (uint8_t i = 0; i < 5; i++) {
+        S_CHEST_MESSAGE.reveal_digits[i] = ' ';
+        S_CHEST_MESSAGE.now_have_digits[i] = ' ';
     }
 }
 
@@ -1315,20 +1299,19 @@ void pickup_treasure(struct event *ev) {
     set_char_state(0);
     MOB_PTR = (struct mob *)ev;
     commit_move();
-    uint8_t type = ev->type;
-    uint8_t gold_hi;
-    if (type == EVENT_TYPE_SPECIAL_CHEST) {
+    if (ev->type == EVENT_TYPE_SPECIAL_CHEST) {
         scene_loop(SCENE_SPECIAL_CHEST);
-        inc_stat(MFIELD_STRENGTH);
-        inc_stat(MFIELD_LEVEL);
+        inc_stat(&ENTITY_PTR->strength);
+        inc_stat(&ENTITY_PTR->level);
         if (random_in_range(3) != 0)
             return;
         scene_loop(SCENE_SPECIAL_BONUS);
         ev->pos = EVENT_EMPTY;
         return;
     }
-    if (type < EVENT_TYPE_TRAPPED_CHEST) {
-        gold_hi = type - EVENT_TYPE_GOLD;
+    uint8_t gold_hi;
+    if (ev->type < EVENT_TYPE_TRAPPED_CHEST) {
+        gold_hi = ev->type - EVENT_TYPE_GOLD;
     } else {
         uint8_t trap = random_in_range(6) & 3;
         if (ENTITY_PTR->appearance < NPC_APPEARANCE_MIN) {
@@ -1347,8 +1330,7 @@ void pickup_treasure(struct event *ev) {
                 ENTITY_PTR->level--;
             break;
         default:
-            ENTITY_BYTE(MFIELD_GOLD) = 0;
-            ENTITY_BYTE(MFIELD_GOLD + 1) = 0;
+            ENTITY_PTR->gold = 0;
             break;
         }
         if (ENTITY_PTR->next != CURRENT_ROOM) {
@@ -1362,8 +1344,7 @@ void pickup_treasure(struct event *ev) {
     if (ENTITY_PTR->appearance < NPC_APPEARANCE_MIN) {
         clear_treasure_digits();
         num_to_decimal(gold, S_CHEST_MESSAGE.reveal_digits);
-        num_to_decimal((uint16_t)ENTITY_BYTE(MFIELD_GOLD + 1) << 8 | ENTITY_BYTE(MFIELD_GOLD),
-                       S_CHEST_MESSAGE.now_have_digits);
+        num_to_decimal(ENTITY_PTR->gold, S_CHEST_MESSAGE.now_have_digits);
         set_cursor_row21();
         clear_and_display(S_CHEST_MESSAGE.opens);
     }
@@ -1393,29 +1374,29 @@ static uint8_t pick_random_char(void) {
     Points CHAR_PTR at a location chosen with a weight of its count of
     player characters, and returns its index. It draws a number from 1
     to TOTAL_MOB_COUNT, then takes each location's count from it in
-    turn until it reaches 0 or goes negative. With no characters in
-    play it picks as pick_random_char does.
+    turn until it reaches 0 or goes negative as a signed byte. With no
+    characters in play it picks as pick_random_char does. As in the
+    original, the walk also stops when the index wraps to 0, at record
+    255.
 
-    The number is kept in MOB_PTR's low byte, as in the original, which
-    leaves it there.
+    The number left is stored in MOB_PTR's low byte, as in the
+    original, which leaves it there.
 */
 static uint8_t pick_random_mob(void) {
+    if (TOTAL_MOB_COUNT == 0)
+        return pick_random_char();
     uint8_t r;
-    do {
-        if (TOTAL_MOB_COUNT == 0)
-            return pick_random_char();
+    do
         r = random_in_range(TOTAL_MOB_COUNT);
-    } while (r == 0);
-    *(uint8_t *)&MOB_PTR = r;
+    while (r == 0);
+    int8_t remaining = r;
     uint8_t index = 1;
     struct location *loc;
-    for (;;) {
+    do {
         loc = get_char_record(index);
-        *(uint8_t *)&MOB_PTR -= loc->pc_count;
-        if (*(uint8_t *)&MOB_PTR == 0 || (*(uint8_t *)&MOB_PTR & 0x80))
-            break;
-        index++;
-    }
+        remaining -= loc->pc_count;
+    } while (remaining > 0 && ++index != 0);
+    *(uint8_t *)&MOB_PTR = remaining;
     CHAR_PTR = loc;
     return index;
 }
@@ -1424,15 +1405,13 @@ static uint8_t pick_random_mob(void) {
  * of type $40-$7F, which becomes $00-$3F. Location `index` becomes
  * ACTIVE_CHAR. The walk tests empty slots' types like any other's. */
 static void process_char_events(uint8_t index) {
-    for (struct event *e = (struct event *)((uint16_t)CHAR_BYTE(7) << 8 | CHAR_BYTE(6));
-         e->pos != EVENT_END; e++) {
-        uint8_t type = e->type;
-        if (type < EVENT_TYPE_MOB || (type & 0x80))
-            continue;
-        e->type = type - EVENT_TYPE_MOB;
-        ACTIVE_CHAR = index;
-        check_location_match();
-        return;
+    for (struct event *e = CHAR_PTR->events; e->pos != EVENT_END; e++) {
+        if (e->type >= EVENT_TYPE_MOB && e->type < EVENT_TYPE_MOB_END) {
+            e->type -= EVENT_TYPE_MOB;
+            ACTIVE_CHAR = index;
+            check_location_match();
+            return;
+        }
     }
 }
 
@@ -1443,8 +1422,7 @@ static void process_char_events(uint8_t index) {
 static bool find_mob_by_faction(uint8_t faction) {
     for (uint8_t link = CHAR_PTR->mob_head; link != 0; link = MOB_PTR->next) {
         MOB_PTR = get_mob_data(link);
-        uint8_t flags = MOB_PTR->flags;
-        if ((flags & FLAGS_CLASS_BIT) && (flags & FLAGS_FACTION_MASK) == faction)
+        if ((MOB_PTR->flags & FLAGS_CLASS_BIT) && (MOB_PTR->flags & FLAGS_FACTION_MASK) == faction)
             return true;
     }
     return false;
@@ -1479,13 +1457,15 @@ static void event_spawn_mob(void) {
     header record, LOCATIONS[0], whose mob list holds the mobs at no
     location.
     When no mob matches, event_spawn_mob runs instead. Nothing happens
-    when the location picked is location 1.
+    when the location picked is location 1. The original tests only
+    the low byte of CHAR_PTR, and CHAR_PTR is a location record, for
+    which the low byte is $09 only at location 1.
 */
 static void event_faction_scene_cont(uint8_t index) {
-    if ((uint8_t)(uint16_t)CHAR_PTR == LOCATION_1_LO)
+    if (CHAR_PTR == &LOCATIONS[1])
         return;
     uint8_t faction = CHAR_PTR->style & STYLE_FACTION_MASK;
-    CHAR_PTR = LOCATIONS;
+    CHAR_PTR = &LOCATIONS[0];
     if (!find_mob_by_faction(faction)) {
         event_spawn_mob();
         return;
@@ -1515,13 +1495,11 @@ void random_events(void) {
         event_spawn_mob();
     if (step_prng() < EVENT_THRESHOLD)
         event_spawn_mob();
-    if (step_prng() >= EVENT_THRESHOLD)
-        return;
-    event_spawn_mob();
-    event_spawn_mob();
-    event_spawn_mob();
-    event_spawn_mob();
-    event_faction_scene_cont(pick_random_char());
+    if (step_prng() < EVENT_THRESHOLD) {
+        for (uint8_t i = 0; i < 4; i++)
+            event_spawn_mob();
+        event_faction_scene_cont(pick_random_char());
+    }
 }
 
 /* ---- The story's scenes ------------------------------------------------- */
@@ -1553,17 +1531,16 @@ static void scan_and_reorder(void) {
 
 /* Moves mobs $3F, $41, and $42 out of location 3 to no location, when
  * they are there, and points CHAR_PTR back at CURRENT_PLAYER's
- * location. */
+ * location. Mob $40 stays. */
 static void process_scene_groups(void) {
     SOURCE_CHAR = 3;
     load_char_to_fa(3);
     ACTIVE_CHAR = 0;
-    SCENE_GROUP_IDX = SCENE_GROUP_FIRST;
+    SCENE_GROUP_IDX = 0x3F;
     scan_and_reorder();
-    SCENE_GROUP_IDX++;          /* mob $40 stays */
-    SCENE_GROUP_IDX++;
+    SCENE_GROUP_IDX = 0x41;
     scan_and_reorder();
-    SCENE_GROUP_IDX++;
+    SCENE_GROUP_IDX = 0x42;
     scan_and_reorder();
     load_char_to_fa(CURRENT_PLAYER);
 }
@@ -1635,9 +1612,9 @@ uint8_t flush_pending_xp(void) {
     return CHAIN_RETURN;
 }
 
-/* Returns the mask of the highest bit set in `v`, or 0 for 0. */
-static uint8_t find_msb(uint8_t v) {
-    uint8_t mask = 0x80;
+/* Returns the highest power of 2 in `v`, or 0 for 0. */
+static uint16_t find_msb(uint16_t v) {
+    uint16_t mask = 0x8000;
     while (mask != 0 && (v & mask) == 0)
         mask >>= 1;
     return mask;
@@ -1651,33 +1628,27 @@ static uint8_t find_msb(uint8_t v) {
     has in mind.
 */
 uint8_t init_drop_gold(void) {
-    uint8_t mask = find_msb(ENTITY_BYTE(MFIELD_GOLD + 1));
-    DROP_AMOUNT = (uint16_t)mask << 8;
-    if (mask == 0) {
-        mask = find_msb(ENTITY_BYTE(MFIELD_GOLD));
-        DROP_AMOUNT = mask;
-        if (mask == 0) {
-            set_cursor_row21();
-            display_message(MSG_NO_GOLD);
-            return CHAIN_MENU_OTHER_OPTIONS;
-        }
+    DROP_AMOUNT = find_msb(ENTITY_PTR->gold);
+    if (DROP_AMOUNT == 0) {
+        set_cursor_row21();
+        display_message(MSG_NO_GOLD);
+        return CHAIN_MENU_OTHER_OPTIONS;
     }
-    DROP_STEP = DROP_AMOUNT;
-    DROP_STEP >>= 1;
+    DROP_STEP = DROP_AMOUNT / 2;
     return CHAIN_MENU_DROP_GOLD;
 }
 
 void init_drop_display(void) {
-    for (int8_t i = 4; i >= 0; i--)
-        S_DUCATS_TO_DROP.number[i] = 0x20;
+    for (uint8_t i = 0; i < 5; i++)
+        S_DUCATS_TO_DROP.number[i] = ' ';
     num_to_decimal(DROP_AMOUNT, S_DUCATS_TO_DROP.number);
 }
 
 /*
     Moves the amount by the step and halves the step: down for
     adj_drop_inc and up for adj_drop_dec, whatever their names say. An
-    amount moved up past ENTITY_PTR's gold goes back down by the halved
-    step twice, and the move up is tried again with the step it has
+    amount moved up past ENTITY_PTR's gold goes back down by twice the
+    halved step, and the move up is tried again with the step it has
     then. A step of 0 starts the menu over.
 */
 static uint8_t adj_drop(bool down) {
@@ -1686,15 +1657,14 @@ static uint8_t adj_drop(bool down) {
             return init_drop_gold();
         if (down) {
             DROP_AMOUNT -= DROP_STEP;
-            DROP_STEP >>= 1;
+            DROP_STEP /= 2;
             return CHAIN_MENU_DROP_GOLD;
         }
         DROP_AMOUNT += DROP_STEP;
-        DROP_STEP >>= 1;
-        if (((uint16_t)ENTITY_BYTE(MFIELD_GOLD + 1) << 8 | ENTITY_BYTE(MFIELD_GOLD)) >= DROP_AMOUNT)
+        DROP_STEP /= 2;
+        if (DROP_AMOUNT <= ENTITY_PTR->gold)
             return CHAIN_MENU_DROP_GOLD;
-        DROP_AMOUNT -= DROP_STEP;
-        DROP_AMOUNT -= DROP_STEP;
+        DROP_AMOUNT -= 2 * DROP_STEP;
     }
 }
 
@@ -1714,10 +1684,10 @@ uint8_t adj_drop_dec(void) {
 */
 uint8_t drop_gold_exec(void) {
     modify_current_stats(DROP_AMOUNT, false);
-    DROP_STEP = (uint8_t)(random_in_range(25) + 1);
+    DROP_STEP = random_in_range(25) + 1;
     set_cursor_row21();
     DROP_AMOUNT -= DROP_STEP;
-    if ((int16_t)DROP_AMOUNT < 0 || DROP_AMOUNT == 0) {
+    if ((int16_t)DROP_AMOUNT <= 0) {
         display_message(MSG_GOLD_LOST);
     } else {
         display_message(MSG_GOLD_DROPPED);

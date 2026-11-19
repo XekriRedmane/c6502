@@ -35,7 +35,7 @@ the low N bytes of the product, which is the result for both signed
 and unsigned C operands at the width the caller reads. `udivmod*`
 floor-divides unsigned operands, and `sdivmod*` truncates toward zero
 with the remainder taking the dividend's sign (C99 §6.5.5.6). The
-helpers with 6502 code (`sim/runtime_helpers.py`, the runtime
+helpers with 6502 code (`runtime/helpers.py`, the runtime
 library) run as 6502 code instead of their hooks.
 
 FP helpers (`i2f` / `u2f` / `f2i` / `f2d` / `fadd` / etc., plus the
@@ -242,7 +242,7 @@ def _fp_unimplemented(name: str) -> Hook:
 # IEEE 754 single / double (float / double) arithmetic helpers,
 # implemented via Python's built-in float — i.e. via the host's
 # native FP unit. These are stand-ins until the actual 6502 asm
-# implementations land in `sim/runtime_helpers.py`. They give
+# implementations land in `runtime/helpers.py`. They give
 # end-to-end FP correctness for the chapter tests today; the asm
 # versions are what'll let real c6502 binaries run.
 import struct as _struct
@@ -491,7 +491,7 @@ def build_runtime(layout=None) -> Runtime:
     when None).
 
     Helpers split into two pools:
-      - Real-asm helpers (`runtime_helpers.ASM_IMPLEMENTED`):
+      - Real-asm helpers (`runtime.helpers.ASM_IMPLEMENTED`):
         assembled into `helper_image` at `TRAP_BASE` (= $E000), with
         their resolved addresses recorded in `symbols`. Real 6502
         code runs when the user program JSRs to one of these names.
@@ -503,9 +503,9 @@ def build_runtime(layout=None) -> Runtime:
 
     Both pools share the same `symbols` table, so user code links
     uniformly via the helper name regardless of which pool fulfills
-    it. Adding a helper to `runtime_helpers.ASM_IMPLEMENTED` flips
+    it. Adding a helper to `runtime.helpers.ASM_IMPLEMENTED` flips
     it from Python to real asm without any changes elsewhere."""
-    from sim.runtime_helpers import ASM_IMPLEMENTED, all_helper_functions
+    from runtime.helpers import ASM_IMPLEMENTED, all_helper_functions
     from sim.assembler import assemble
     from passes.runtime_layout import CLASSIC
     import asm_ast

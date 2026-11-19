@@ -40,7 +40,7 @@ A helper reads its inputs from HARGS, writes its outputs there, and
 may use more of it as scratch: `mul32` works in HARGS+12..19. So a
 program needs the larger of its own highest HARGS offset and the
 footprint of every helper it calls. The footprints are measured from
-the 6502 helpers in `sim/runtime_helpers.py`, including the helpers
+the 6502 helpers in `runtime/helpers.py`, including the helpers
 they call. A helper that's only a Python hook in the simulator, such
 as the floating-point ones, uses no scratch, so the program's own
 offsets cover it. The runtime library the linker adds to a program
@@ -180,9 +180,9 @@ def _hargs_offsets(instrs) -> set[int]:
 
 @lru_cache(maxsize=1)
 def helper_footprints() -> dict[str, int]:
-    """For each 6502 helper in `sim/runtime_helpers.py`, the number
+    """For each 6502 helper in `runtime/helpers.py`, the number
     of HARGS bytes it touches, counting the helpers it calls."""
-    from sim.runtime_helpers import all_helper_functions
+    from runtime.helpers import all_helper_functions
     fns = {fn.name: fn for fn in all_helper_functions()}
     own = {
         name: max(_hargs_offsets(fn.instructions), default=-1) + 1

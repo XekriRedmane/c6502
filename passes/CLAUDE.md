@@ -794,13 +794,13 @@ this directory:
   DPTR go: the classic `$00`-`$25` unless a fixed zero-page object is
   there, else HARGS (sized to the program's offsets and the
   footprints of the helpers it calls, measured from
-  `sim/runtime_helpers.py`), SSP, FP, and DPTR in the lowest free
+  `runtime/helpers.py`), SSP, FP, and DPTR in the lowest free
   runs below `$80`. `asm_aliasing.runtime_zp_addrs`,
   `memory_value_propagation`, `redundant_store`, `asm_remat`, and
   `asm_emit` read `current()`. `check_hargs` verifies the final code
   fits the size.
 - `runtime_library.py` — the runtime library: the helpers of
-  `sim/runtime_helpers.py`, which the linker adds to a program that
+  `runtime/helpers.py`, which the linker adds to a program that
   calls them. `needed` gives the helpers the objects name and neither
   define nor get from `--defsym`, with the helpers those call
   (`closure`), and `library_object` writes them with `asm_emit` and

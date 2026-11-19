@@ -81,14 +81,8 @@ MPU until the boot stub's BRK fires.
   with 6502 code run as 6502 code, and the hooks cover the rest (the
   64-bit and floating-point helpers), so every chapter test runs
   end-to-end.
-- `runtime_helpers.py` — 6502 assembly implementations of the runtime
-  helpers, expressed as `asm_ast.Function` objects. They're the
-  runtime library the linker adds to a program
-  (`passes/runtime_library.py`). `build_runtime` assembles them at
-  $E000 and binds their symbols, so a `JSR udivmod8` in a program the
-  harness runs lands on the 6502 routine instead of a Python trap.
-  Each was checked against its hook on edge cases and random operands
-  (`tests/test_runtime_library.py` does it through linked C).
+- The runtime helpers' 6502 code, which `build_runtime` assembles
+  at $E000, is in `runtime/helpers.py` (see runtime/CLAUDE.md).
 
 ## Notes
 

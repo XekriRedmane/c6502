@@ -302,7 +302,7 @@ to that width (`tac_to_asm._odd_width_helper_op`).
 `JMP (DPTR)`.
 
 The layouts above are the ones `sim/runtime.py`'s Python hooks read,
-and the 6502 helpers of `sim/runtime_helpers.py`, which the linker
+and the 6502 helpers of `runtime/helpers.py`, which the linker
 adds to a program from the runtime library, follow them too.
 `passes/runtime_layout.py` records how many bytes of `HARGS` each of
 the 6502 helpers touches, and a helper written outside the repository

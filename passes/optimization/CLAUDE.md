@@ -279,7 +279,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   as a `ZeroExtend` of a byte (a `Truncate` of a wide one), so that
   `tac_to_asm` lowers it as an 8-by-8 loop. `pos / 20` on a byte had
   called `sdivmod16`, and `price * (((style >> 5) & 3) + 1)` `asr16`
-  and `mul16`. See docs/optimizations/narrow_byte_range.md.
+  and `mul16`. A `<<` by a constant from 0 to 7 of a value whose
+  bound shifted that far is at most 255 is a byte shift too, so the
+  high byte of `(row / 8) << 3` isn't computed. See
+  docs/optimizations/narrow_byte_range.md.
 - `recognize_indirect_indexed.py` — post-fixedpoint one-shot
   (`RecognizeIndirectIndexed`, PostFixedpointPass wrapping an internal
   `DefUsePass`, on `recognize_extend_add_chain`). Collapses
@@ -348,6 +351,50 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   successor gets `a.exit = t + b` instead (re-reading `b` from memory
   when it's a read of a global), so `a` dies at the subtract and the
   loop updates it in place.
+- `divmod_hoist.py` — `hoist_divmod_pairs` (`HoistDivmodPairs`,
+  PostFixedpointPass, after `hoist_subtract_to_compare`). A `/` and a
+  `%` of the same operands with a store, a call, or a branch between
+  them are computed next to each other, at the first when its block
+  dominates the other's and otherwise at the end of their nearest
+  common dominator, when every path from there to the exit passes one
+  of them. A destination SSA didn't rename gets a new temporary and a
+  `Copy` where the instruction was. No operand may be written on the
+  way, and for a global one no pointer store, `IndexedStore`, or call
+  may come either. `tac_to_asm._plan_divmod_pairs` then lowers the
+  pair with one loop or one helper call. Ali Baba's
+  `load_scene_from_disk` (`P->sector = s % 13; P->track = 0x11 + s /
+  13`) and `render_font_char_direct` (a `/` in an `if`, the `%` after
+  it). See docs/optimizations/divmod_hoist.md.
+- `count_down.py` — `count_loops_down` (`CountLoopsDown`,
+  PostFixedpointPass, after `hoist_divmod_pairs`). A loop's byte
+  counter read only by its own test (the first instruction after its
+  `Phi`, by `>=` / `==` to leave or `<` / `!=` to stay, with a constant
+  bound at least the start, or a loop-invariant SSA bound and a start
+  of 0) and by its `+ 1` step holds `n - i` instead: the `Phi` starts
+  at `c1 - c0` (or the bound), the step subtracts 1, and the test is
+  `== 0` or `!= 0`. The block the loop stays in must have the test's
+  as its only predecessor and dominate the step. `for (uint8_t i = 0;
+  i < 20; i++) out(0xA0);` ends `DEC i; BNE`. See
+  docs/optimizations/count_down.md.
+- `read_stored_global.py` — `read_stored_globals`
+  (`ReadStoredGlobals`, FixedpointPass, right before
+  `FoldCopiesInFixedpoint`). `Binary(..., T); Copy(T, G)` with `T` an
+  SSA name and `G` a non-volatile global of the same type, and one
+  more read of `T` later in the block (not in a `Phi`, an extend, or a
+  `Truncate`, and only as the pointer of a load or store through one),
+  with no write of `G`, pointer store, or call between: the read
+  reads `G`, and copy folding then makes the `Binary` write `G`.
+  `*++P` on a zero-page `P` is `INC P; BNE; INC P+1; LDA (P),Y`. See
+  docs/optimizations/read_stored_global.md.
+- `step_on_edge.py` — `move_steps_onto_edges` (`MoveStepsOntoEdges`,
+  PostDestructionPass, right after the post-destruction
+  `fold_copies`). `T = X op c` (`+`, `-`, `&`, `|`, `^`) whose `T` is
+  written there alone and read by one `Copy(T, Z)` alone, in the block
+  its block's jump goes to (with that jump its only way in) or falls
+  through to, goes in place of the `Copy` as `Z = X op c`, when
+  nothing on the way writes `X`. `X` and `T` must be SSA names.
+  `do g(i); while (i-- != first);` steps with `DEC i` on the back
+  edge. See docs/optimizations/step_on_edge.md.
 - `three_way_compare.py` — `split_three_way_compares`
   (`SplitThreeWayCompares`, PostDestructionPass, after the
   post-destruction `fold_copies`). A 2-byte unsigned ordering
@@ -451,7 +498,8 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → [constant_fold → reduce_strength → fold_producer_jumps
       (cmp_zero ∪ narrow_and ∪ lnot, one merged RuleSet)
       → eliminate_dead_loops → UCE → cse → licm
-      → copy_propagate → DSE → fold_copies → reassoc_constants
+      → copy_propagate → DSE → read_stored_globals → fold_copies
+      → reassoc_constants
       → reassoc_offset_constant → direct_member_access
       → recognize_indexed_store → recognize_indexed_load
       → fold_truncate_extend → fold_extend_extend → sink_increments
@@ -460,8 +508,11 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → static_indexed_access         (PostFixedpointPass, one-shot)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
    → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)
+   → hoist_divmod_pairs            (PostFixedpointPass, one-shot)
+   → count_loops_down              (PostFixedpointPass, one-shot)
    → from_ssa                      (owned by PhaseDriver)
    → fold_copies                   (PostDestructionPass, one-shot)
+   → move_steps_onto_edges         (PostDestructionPass, one-shot)
    → split_three_way_compares      (PostDestructionPass, one-shot)
    → fold_short_circuit_jump*      (PostDestructionFixedpointPass)
    → fn'

@@ -656,13 +656,15 @@ class TestNarrowOrderingAsmShape(unittest.TestCase):
         # The loop test in `for (uint8_t i = 0; i < 105; i++)` should
         # compile to a 1-byte unsigned compare-and-branch:
         #     LDA <i>; CMP #105; BCC <body>
-        # at the bottom of the loop (passes/rotate_loop_test.py).
+        # at the bottom of the loop (passes/rotate_loop_test.py). The
+        # body reads `i`, or the loop would count down to 0
+        # (passes/optimization/count_down.py) and have no compare.
         src = (
             "#include <stdint.h>\n"
             "int main(void) {\n"
             "    uint8_t i;\n"
             "    int sum = 0;\n"
-            "    for (i = 0; i < 105; i = i + 1) sum = sum + 1;\n"
+            "    for (i = 0; i < 105; i = i + 1) sum = sum + i;\n"
             "    return sum;\n"
             "}\n"
         )

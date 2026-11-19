@@ -178,6 +178,11 @@ None.
    `draw_border_strings` (35 to 44 bytes) and `move_border_icons` (64
    to 70) pay it.
 
+   Fixed on 19 Nov 2026. The step now goes in place of its copy on the
+   loop's back edge, where it's `DEC i`
+   (docs/optimizations/step_on_edge.md). `draw_border_strings` is 35
+   bytes and `move_border_icons` 61.
+
 5. **A loop over a fixed-address array by a 16-bit index adds the
    index to the base each time.**
 

@@ -94,6 +94,15 @@ The others look at one instruction, two, or three.
   rotating a set C in does, and A, N, and Z come out the same.
   `get_property_ptr` in Zork's `objects.c` computes `(uint8_t)(n <<
   1) + 1`.
+- `ADC #k1; CLC; ADC #k2` becomes `ADC #(k1 + k2)` when C and V are
+  dead after (`_try_fold_add_add`). The first add's carry in comes
+  through, so A is `A + k1 + C + k2` either way. An `SBC` in either
+  place, after a `SEC` for the second, subtracts its constant, and
+  the result is an `SBC` when the first was one: `SBC #k1; CLC; ADC
+  #k2` is `SBC #(k1 - k2)`. A byte divided by a constant leaves `ADC
+  #c` after its loop for the remainder ([a byte divided by a
+  constant](byte_divide.md)), so Ali Baba's `appearance % 21 + 1` was
+  `ADC #$15; CLC; ADC #$01` and is `ADC #$16`.
 - `CLC; ADC #$00` becomes `CLC`, and `SEC; SBC #$00` becomes `SEC`,
   when V is dead after and N and Z are dead or were set from A by the
   instruction before the `CLC` or `SEC`. The add leaves A and C as

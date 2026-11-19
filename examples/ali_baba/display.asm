@@ -464,18 +464,17 @@ print_panel_name:
    JSR   print_ctrl_ab
    LDA   #$8C
    JSR   hrcg_cout
-   LDA   #$00
+   LDA   #$14
    STA   __local_print_panel_name__i
 .print_panel_name@rot@0:
    LDA   #$A0
    JSR   hrcg_cout
-   INC   __local_print_panel_name__i
-   LDA   __local_print_panel_name__i
-   CMP   #$14
-   BCC   .print_panel_name@rot@0
+   DEC   __local_print_panel_name__i
+   BNE   .print_panel_name@rot@0
    LDA   #$14
    STA   TEXT_ROW
    LDA   #$0A
+   SEC
    SBC   TEXT_COL
    STA   TEXT_COL
    LDX   __zpabi_print_panel_name__name_1

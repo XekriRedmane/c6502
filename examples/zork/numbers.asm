@@ -564,8 +564,8 @@ print_number:
    LDY   __local_print_number__count
    STA   __local_print_number__digits,Y
    INC   __local_print_number__count
-   LDA   __local_print_number__n_0
-   ORA   __local_print_number__n_1
+   TXA
+   ORA   __local_print_number__n_0
    BNE   .loop@2_start
 .loop@3_start:
    DEC   __local_print_number__count

@@ -39,17 +39,16 @@ __zpabi_print_at__row	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_anim_border_icons__limit	EQU	$82
 __local_clear_hires_page1__i_1	EQU	$82
-__local_draw_border_strings__0	EQU	$82
 __local_move_border_icons__0	EQU	$82
 __local_plot_title_glyphs__end	EQU	$82
 __local_anim_border_icons__from	EQU	$83
 __local_clear_hires_page1__i_0	EQU	$83
+__local_draw_border_strings__s_1	EQU	$83
 __local_move_border_icons__cell	EQU	$83
 __local_print_at__s_0	EQU	$83
-__local_draw_border_strings__s_1	EQU	$84
+__local_draw_border_strings__s_0	EQU	$84
 __local_move_border_icons__first	EQU	$84
-__local_draw_border_strings__s_0	EQU	$85
-__local_draw_border_cell__cell	EQU	$87
+__local_draw_border_cell__cell	EQU	$86
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -229,18 +228,18 @@ WAIT	EQU	$FCA8
 ; def clear_hires_page1 params= locals=__local_clear_hires_page1__0,__local_clear_hires_page1__1,__local_clear_hires_page1__i_1,__local_clear_hires_page1__i_0 indirect=false in_cycle=false
 ; def draw_border_cell params=__zpabi_draw_border_cell__cell,__zpabi_draw_border_cell__glyph locals=__local_draw_border_cell__glyph,__local_draw_border_cell__cell indirect=false in_cycle=false param_regs=A,X
 ; def draw_border_labels params= locals= indirect=false in_cycle=false
-; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__0,__local_draw_border_strings__i,__local_draw_border_strings__s_1,__local_draw_border_strings__s_0 indirect=false in_cycle=false param_regs=A,X,, changes=__zpabi_draw_border_strings__last
+; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__i,__local_draw_border_strings__s_1,__local_draw_border_strings__s_0 indirect=false in_cycle=false param_regs=A,X,, changes=__zpabi_draw_border_strings__last
 ; def game_init params= locals= indirect=false in_cycle=false
 ; def init_disk_iob params= locals= indirect=false in_cycle=false
 ; def init_game_display params= locals= indirect=false in_cycle=false
 ; def init_game_state params= locals= indirect=false in_cycle=false
 ; def init_mob_count params= locals=__local_init_mob_count__0 indirect=false in_cycle=false
 ; def move_border_icon_list params=__zpabi_move_border_icon_list__first locals=__local_move_border_icon_list__first indirect=false in_cycle=false param_regs=A
-; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__0,__local_move_border_icons__cell,__local_move_border_icons__first,__local_move_border_icons__1 indirect=false in_cycle=false param_regs=A,X
+; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__0,__local_move_border_icons__cell,__local_move_border_icons__first indirect=false in_cycle=false param_regs=A,X
 ; def plot_title_glyphs params=__zpabi_plot_title_glyphs__first,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i,__local_plot_title_glyphs__end indirect=false in_cycle=false param_regs=A,X,
 ; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals=__local_print_at__s_1,__local_print_at__s_0 indirect=false in_cycle=false param_regs=A,X,,
 ; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1 indirect=false in_cycle=false
-; def start_border_passes params= locals=__local_start_border_passes__0 indirect=false in_cycle=false
+; def start_border_passes params= locals= indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -566,16 +565,11 @@ move_border_icons:
 .if_end@2:
 .if_end@0:
    LDA   __local_move_border_icons__cell
-   SEC
-   SBC   #$01
-   STA   __local_move_border_icons__0
-   LDA   __local_move_border_icons__cell
    CMP   __local_move_border_icons__first
    BNE   .move_border_icons@ssa_split@1
    RTS
 .move_border_icons@ssa_split@1:
-   LDA   __local_move_border_icons__0
-   STA   __local_move_border_icons__cell
+   DEC   __local_move_border_icons__cell
    JMP   .loop@0_start
 
 move_border_icon_list:
@@ -738,16 +732,11 @@ draw_border_strings:
    LDA   __local_draw_border_strings__s_0
    JSR   print_string
    LDA   __zpabi_draw_border_strings__last
-   SEC
-   SBC   #$01
-   STA   __local_draw_border_strings__0
-   LDA   __zpabi_draw_border_strings__last
    CMP   __zpabi_draw_border_strings__first
    BNE   .draw_border_strings@ssa_split@1
    RTS
 .draw_border_strings@ssa_split@1:
-   LDA   __local_draw_border_strings__0
-   STA   __zpabi_draw_border_strings__last
+   DEC   __zpabi_draw_border_strings__last
    JMP   .loop@7_start
 
 draw_border_labels:

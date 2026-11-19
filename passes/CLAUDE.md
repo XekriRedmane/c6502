@@ -260,6 +260,14 @@ this directory:
   consume directly once `asm_emit._emit_compare` and the in-sim
   `_emit_compare` dispatch IndexedData (added alongside this pass).
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
+- `adc_commute.py` — `apply_adc_commute` peephole. `STA t; LDA m;
+  CLC; ADC t` reads `m` in the `ADC` (and `AND`, `ORA`). Then
+  `apply_register_copy_commute`: `LDA #k` (or a non-volatile `LDA n`);
+  `CLC`; `ADC m` → `TXA; CLC; ADC #k` when X holds `m` from an `STX
+  m` or `LDX m` earlier in the straight-line code, with no write of X
+  or `m` since (a pointer store counts unless `m` is in
+  `unreachable_by_pointer`), and the same with Y. The byte division
+  loop's quotient in X plus a constant is `TXA; CLC; ADC #k`.
 - `carry_recompute.py` — `apply_carry_recompute_drop`. Within a basic
   block, follows what C holds (bit 7 of a byte after `LDA M` and `ASL`
   / `ROL A`, bit 0 after `LSR` / `ROR A`) and deletes a later `LDA M`
@@ -569,7 +577,11 @@ this directory:
   `CLC; ADC #1; STA M` (`DEC`: `SEC; SBC #1`) when C and V are dead
   after (`_rewrite_steps`). And the converse, `LDA M; ASL; STA M` →
   `ASL M` for one or two shifts when A is dead after and M isn't
-  volatile (`_shift_in_place`).
+  volatile (`_shift_in_place`). A loop of one-bit shifts of M
+  (`tac_to_asm._shift_loop`) right after `STA M`, with only the count
+  put in X, `CPX #0`, and a `BEQ` past it in between, and `LDA M`
+  right after it, shifts A instead, and the `LDA` becomes `STA M`,
+  when N/Z are dead after the load (`_shift_loop_in_a`).
 - `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
   the rule for when a constant shift is lowered inline (at most 8
   one-bit shift instructions after the byte moves, or any count of
@@ -1516,7 +1528,10 @@ document says whether it fires there.
   #C2` (or `SEC; SBC`) → `LDA #folded` when C and V are dead after,
   with a label's high byte as `C1` too (`#>(name+256*C2)`). `ASL A;
   CLC; ADC #1` → `SEC; ROL A` and `CLC; ADC #0` → `CLC` (`SEC; SBC
-  #0` → `SEC`) under the same conditions on C and V.
+  #0` → `SEC`) under the same conditions on C and V. `ADC #k1; CLC;
+  ADC #k2` → `ADC #(k1+k2)` (and the `SBC` / `SEC` mixes) when C and V
+  are dead after (`_try_fold_add_add`), which the remainder of the
+  byte division loop leaves.
 - `apply_round_trip_load_drop` — drops `STA M; LDA M` where the LDA's
   only observable side effect is re-loading A with A's already-current
   value. After an instruction that doesn't set N/Z from A (a `JSR`),

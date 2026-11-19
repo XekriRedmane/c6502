@@ -974,7 +974,6 @@ load_scene_from_disk:
    LDA   GAME_SIG_SECTOR
    CLC
    ADC   __local_load_scene_from_disk__scene
-   STA   __local_load_scene_from_disk__tries
    LDX   #$FF
    SEC
 .div_loop@1:
@@ -984,17 +983,10 @@ load_scene_from_disk:
    ADC   #$0D
    LDY   #$05
    STA   (__local_load_scene_from_disk__iob),Y
-   LDA   __local_load_scene_from_disk__tries
-   LDX   #$FF
-   SEC
-.div_loop@2:
-   INX
-   SBC   #$0D
-   BCS   .div_loop@2
-   STX   __local_load_scene_from_disk__scene
-   LDA   GAME_SIG_TRACK
-   ADC   __local_load_scene_from_disk__scene
-   LDY   #$04
+   TXA
+   CLC
+   ADC   GAME_SIG_TRACK
+   DEY
    STA   (__local_load_scene_from_disk__iob),Y
    LDA   #$02
    STA   __local_load_scene_from_disk__tries

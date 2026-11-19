@@ -164,7 +164,7 @@ DISK_IO	EQU	$C088
 ; def run_or_swing params=__zpabi_run_or_swing__first locals=__local_run_or_swing__0,__local_run_or_swing__1,__local_run_or_swing__first indirect=false in_cycle=false param_regs=A
 ; def stands_on_something params= locals=__local_stands_on_something__0,__local_stands_on_something__1 indirect=false in_cycle=false carry=true
 ; def start_digging params=__zpabi_start_digging__direction locals=__local_start_digging__direction indirect=false in_cycle=false param_regs=A carry=true
-; def step_down params= locals=__local_step_down__0 indirect=false in_cycle=false
+; def step_down params= locals= indirect=false in_cycle=false
 ; def stop_digging params= locals= indirect=false in_cycle=false carry=true
 ; def try_moving_down params= locals=__local_try_moving_down__0,__local_try_moving_down__1 indirect=false in_cycle=false carry=true
 ; def try_moving_left params= locals=__local_try_moving_left__0,__local_try_moving_left__1 indirect=false in_cycle=false

@@ -63,6 +63,11 @@ No bug was hit. These cost bytes:
    hrcg_row_address is 90 bytes, where the old C, with `row >> 3` and
    a 3-byte table, was 51.
 
+   The high byte was fixed on 19 Nov 2026: a left shift whose result
+   stays below 256 is a byte shift
+   (docs/optimizations/narrow_byte_range.md). hrcg_row_address is 73
+   bytes, and the products are still 16-bit arithmetic.
+
    ```c
    #include <stdint.h>
    uint16_t g(uint8_t row) { return 0x80 * (row % 8) + 0x28 * (row / 8); }

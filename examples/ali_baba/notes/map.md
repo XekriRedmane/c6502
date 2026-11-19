@@ -211,6 +211,10 @@ These don't stop the unit from compiling. Each costs bytes.
    the quotient goes through a temporary in `STX t; LDA
    GAME_SIG_TRACK; ADC t`, where `TXA; ADC GAME_SIG_TRACK` would do.
 
+   Fixed on 19 Nov 2026 (docs/optimizations/divmod_hoist.md). The two
+   share one loop, and the quotient is added with `TXA; CLC; ADC`.
+   load_scene_from_disk is 68 bytes.
+
    ```c
    #include <stdint.h>
    struct iob { uint8_t pad[4]; uint8_t track, sector; };

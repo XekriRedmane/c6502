@@ -154,6 +154,33 @@ class TestNarrowByteRange(unittest.TestCase):
             dst=_var("r")))
         self.assertIn(tac_ast.Copy(src=_int(0), dst=_var("r")), out)
 
+    def test_left_shift_that_stays_a_byte(self):
+        # `(b >> 3) << 3` is at most 248. The pass narrows the right
+        # shift on its first run and the left one on its second.
+        symbols = _symbols(_TYPES)
+        ctx = PassContext(symbols=symbols, ssa_dsts=_ssa())
+        fn = _fn(
+            tac_ast.Binary(op=tac_ast.RightShift(), src1=_var("ze"),
+                           src2=_int(3), dst=_var("t")),
+            tac_ast.Binary(op=tac_ast.LeftShift(), src1=_var("t"),
+                           src2=_int(3), dst=_var("r")))
+        for _ in range(2):
+            fn = NarrowByteRange().run(fn, ctx)
+        out = fn.instructions
+        sh = [i for i in out if isinstance(i, tac_ast.Binary)
+              and isinstance(i.op, tac_ast.LeftShift)]
+        self.assertEqual(len(sh), 1)
+        self.assertEqual(sh[0].src2, tac_ast.Constant(
+            const=tac_ast.ConstUChar(value=3)))
+        self.assertIn(tac_ast.ZeroExtend(src=sh[0].dst, dst=_var("r")),
+                      out)
+
+    def test_left_shift_past_a_byte_is_left(self):
+        body = tac_ast.Binary(op=tac_ast.LeftShift(), src1=_var("ze"),
+                              src2=_int(1), dst=_var("r"))
+        out, _ = _narrow(body)
+        self.assertIn(body, out)
+
     def test_bounded_wide_value_is_truncated(self):
         out, _ = _narrow(
             tac_ast.Binary(op=tac_ast.BitwiseAnd(), src1=_var("w"),

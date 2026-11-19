@@ -678,9 +678,9 @@ ascii_to_zchar:
    LDX   __local_ascii_to_zchar__dest
    LDA   __local_ascii_to_zchar__z
    STA   ZCHAR_SCRATCH2,X
-   INC   __local_ascii_to_zchar__dest
    DEC   __local_ascii_to_zchar__left
    BEQ   .loop@7_break
+   INC   __local_ascii_to_zchar__dest
 .if_end@25:
    LDA   __local_ascii_to_zchar__2
    JSR   get_alphabet_for_char

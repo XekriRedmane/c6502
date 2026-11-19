@@ -35,7 +35,6 @@ __local_guard_blocked_above__1	EQU	$81
 __local_guard_is_supported__1	EQU	$81
 __zpabi_consider_column__up	EQU	$81
 __local_move_guards__pattern	EQU	$82
-__local_move_guard__0	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -231,7 +230,7 @@ DISK_IO	EQU	$C088
 ; def leave_cell params=__zpabi_leave_cell__row,__zpabi_leave_cell__col locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2,__local_leave_cell__row indirect=false in_cycle=false param_regs=A,X
 ; def load_guard_data params= locals= indirect=false in_cycle=false
 ; def move_guard params= locals=__local_move_guard__0 indirect=false in_cycle=false
-; def move_guards params= locals=__local_move_guards__pattern,__local_move_guards__0 indirect=false in_cycle=false
+; def move_guards params= locals=__local_move_guards__pattern indirect=false in_cycle=false
 ; def nudge_guard_towards_exact_column params= locals= indirect=false in_cycle=false
 ; def nudge_guard_towards_exact_row params= locals= indirect=false in_cycle=false
 ; def pseudo_distance params=__zpabi_pseudo_distance__row,__zpabi_pseudo_distance__col locals=__local_pseudo_distance__col,__local_pseudo_distance__row indirect=false in_cycle=false param_regs=A,X
@@ -708,9 +707,7 @@ guard_drop_gold:
 
    LDA   GUARD_GOLD_TIMER
    BPL   .guard_drop_gold@scfold@0
-   CLC
-   ADC   #$01
-   STA   GUARD_GOLD_TIMER
+   INC   GUARD_GOLD_TIMER
    BEQ   .if_end@12
 .guard_drop_gold@scfold@0:
    RTS
@@ -1059,8 +1056,8 @@ try_guard_move_up:
    LDA   GUARD_LOC_ROW
    JSR   leave_cell
    DEC   GUARD_LOC_ROW
-   LDA   GUARD_LOC_ROW
    LDX   __local_try_guard_move_up__col
+   LDA   GUARD_LOC_ROW
    JSR   enter_cell
    LDA   #$04
    STA   GUARD_Y_ADJ
@@ -1122,8 +1119,8 @@ try_guard_move_down:
    LDA   GUARD_LOC_ROW
    JSR   leave_cell
    INC   GUARD_LOC_ROW
-   LDA   GUARD_LOC_ROW
    LDX   __local_try_guard_move_down__col
+   LDA   GUARD_LOC_ROW
    JSR   enter_cell
    LDA   #$00
    STA   GUARD_Y_ADJ
@@ -1178,9 +1175,8 @@ try_guard_move_left:
    LDX   GUARD_LOC_COL
    LDA   __local_try_guard_move_left__row
    JSR   leave_cell
+   DEC   GUARD_LOC_COL
    LDX   GUARD_LOC_COL
-   DEX
-   STX   GUARD_LOC_COL
    LDA   __local_try_guard_move_left__row
    JSR   enter_cell
    LDA   #$04
@@ -1256,9 +1252,8 @@ try_guard_move_right:
    LDX   GUARD_LOC_COL
    LDA   __local_try_guard_move_right__row
    JSR   leave_cell
+   INC   GUARD_LOC_COL
    LDX   GUARD_LOC_COL
-   INX
-   STX   GUARD_LOC_COL
    LDA   __local_try_guard_move_right__row
    JSR   enter_cell
    LDA   #$00
@@ -1311,13 +1306,9 @@ guard_take_move:
 move_guard:
    SUBROUTINE
 
-   LDA   GUARD_NUM
-   CLC
-   ADC   #$01
-   STA   __local_move_guard__0
-   STA   GUARD_NUM
+   INC   GUARD_NUM
    LDA   GUARD_COUNT
-   CMP   __local_move_guard__0
+   CMP   GUARD_NUM
    BCS   .if_end@101
    LDA   #$01
    STA   GUARD_NUM

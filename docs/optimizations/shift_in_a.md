@@ -168,6 +168,42 @@ matters for an I/O register. That's why Zork's `instr_random`
 (examples/zork/numbers.c) still shifts `RND`'s high byte
 in A.
 
+### A loop of one-bit shifts
+
+[Shifts by a loop](shift_loop.md) shifts a byte by a variable count in
+memory. When the byte was just stored from A and is loaded again right
+after the loop, the loop shifts A and the load becomes the store
+(`_shift_loop_in_a`). This listing compares two complete compiles of
+`uint8_t f(uint8_t x, uint8_t n) { return x >> n; }`, whose `x`
+arrives in A and `n` in X.
+
+```
+   STA   __local_f__x                  CPX   #$00
+   CPX   #$00                          BEQ   .shift_done@1
+   BEQ   .shift_done@1           ->  .shift_loop@0:
+.shift_loop@0:                         LSR
+   LSR   __local_f__x                  DEX
+   DEX                                 BNE   .shift_loop@0
+   BNE   .shift_loop@0               .shift_done@1:
+.shift_done@1:                         RTS
+   LDA   __local_f__x
+   RTS
+```
+
+Before the loop there may only be the count's setup, a load of X
+(`LDX n` or `LDX #k`), `CPX #0`, and the `BEQ` past the loop, none of
+which writes A or the byte. The loop is the shift, `DEX`, and `BNE`
+back, its label named by that `BNE` alone, and the label after it by
+the `BEQ` alone. The `STA` at the end leaves the byte as the loop did,
+on both ways out. N and Z come from `DEX` there where the `LDA` set
+them from the byte, so they must be dead after it. The first `STA`
+stays, and [asm dead-store elimination](asm_dead_store.md) deletes it
+when nothing reads the byte before the new one. A loop that shifts a
+byte left in memory with no load after it, as Ali Baba's
+`random_in_range` does three times, is left alone, since a load of
+the byte into A before the loop and a store after it would cost more
+than the loop saves.
+
 ## Related
 
 [Narrowing widened arithmetic](narrow_widened_arith.md) removes a

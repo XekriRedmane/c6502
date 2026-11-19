@@ -122,6 +122,8 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             i += 2
             continue
         summed = _try_fold_add(instrs, i)
+        if summed is None:
+            summed = _try_fold_add_add(instrs, i)
         if summed is not None:
             out.append(summed)
             i += 3
@@ -198,6 +200,38 @@ def _try_fold_add(instrs, i):
     if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
         return None
     return asm_ast.Mov(src=asm_ast.Imm(value=value), dst=a.dst)
+
+
+def _try_fold_add_add(instrs, i):
+    """One `ADC #k` for `ADC #k1; CLC; ADC #k2` at `instrs[i]`, with
+    `k = k1 + k2`, when C and V are dead after, else None. The first
+    add's carry in comes through, so A is `A + k1 + C + k2` either
+    way, and N and Z are set from it. An `SBC` in either place, after
+    a `SEC` for the second, subtracts its constant from `k`, and the
+    result is an `SBC` when the first was one: `SBC #k1; CLC; ADC #k2`
+    is `A - k1 - (1 - C) + k2`, which is `SBC #(k1 - k2)`. Only the C
+    and V of the second differ. After a byte divided by a constant,
+    `a % 21 + 1` is the loop's `ADC #$15` and then `CLC; ADC #$01`."""
+    if i + 2 >= len(instrs):
+        return None
+    first, flag, second = instrs[i:i + 3]
+    if not (isinstance(first, (asm_ast.Add, asm_ast.Sub))
+            and isinstance(first.src, asm_ast.Imm) and _is_reg_a(first.dst)
+            and isinstance(second, (asm_ast.Add, asm_ast.Sub))
+            and isinstance(second.src, asm_ast.Imm)
+            and _is_reg_a(second.dst)):
+        return None
+    if isinstance(second, asm_ast.Add) != isinstance(
+            flag, asm_ast.ClearCarry):
+        return None
+    if not isinstance(flag, (asm_ast.ClearCarry, asm_ast.SetCarry)):
+        return None
+    k1, k2 = first.src.value & 0xFF, second.src.value & 0xFF
+    same = isinstance(first, asm_ast.Add) == isinstance(second, asm_ast.Add)
+    value = (k1 + k2 if same else k1 - k2) & 0xFF
+    if not (c_dead_at(instrs, i + 3) and v_dead_at(instrs, i + 3)):
+        return None
+    return type(first)(src=asm_ast.Imm(value=value), dst=first.dst)
 
 
 def _shift_in_one(instrs, i):

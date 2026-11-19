@@ -92,6 +92,29 @@ pattern from matching, and the code stays `STA
 __local_accumulate__0; LDA #$07; STA other; LDA total; CLC; ADC
 __local_accumulate__0; STA total`.
 
+## A byte that X or Y holds
+
+`LDA #k; CLC; ADC m` becomes `TXA; CLC; ADC #k` when X holds the byte
+`m`, and the same with Y, `AND`, and `ORA`
+(`apply_register_copy_commute`, which `apply_adc_commute` runs after
+its own rewrite). The load may be of a byte `n` in memory in place of
+the constant, when it isn't a volatile access, and `ADC n` then reads
+it one instruction later. X holds `m` when the straight-line code
+before the load last stored X there or loaded X from it (not as a
+volatile access), and nothing since has written X or may have written
+`m`. A store through a pointer counts unless `m` is out of every
+pointer's reach (`asm_aliasing.unreachable_by_pointer`), and a label,
+a call, or an instruction of any other kind ends the search. The
+operation is commutative, so A and every flag come out the same.
+
+A byte divided by a constant leaves the quotient in X
+([a byte divided by a constant](byte_divide.md)). In Ali Baba's
+`load_scene_from_disk`, once its `%` and `/` share one loop, `0x11 +
+s / 13` comes out of the peephole fixed point as `STX t; LDY #$05;
+STA (P),Y; LDA #$11; CLC; ADC t` without this rewrite and as `LDY
+#$05; STA (P),Y; TXA; CLC; ADC #$11` with it, after the `STX t` that
+nothing reads any more goes.
+
 ## What it leaves alone
 
 - A subtract. `total -= sample();` keeps `LDA total; SEC; SBC

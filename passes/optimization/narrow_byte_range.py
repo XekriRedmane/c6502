@@ -1,6 +1,7 @@
 """TAC pass: a wide divide, remainder, or right shift of a value from
-0 to 255 is done on one byte, and a wide multiply of two such values
-reads them as zero-extended bytes.
+0 to 255 is done on one byte, and so is a left shift whose result
+stays below 256, and a wide multiply of two such values reads them as
+zero-extended bytes.
 
 # Motivating shapes
 
@@ -58,6 +59,12 @@ then give the same result, which is the unsigned byte one.
     of 8 or more gives 0 at either width, and the shift becomes a
     copy of 0. A variable count of 8 to 15 gives 0 at both widths,
     since the byte shift's loop shifts every bit out.
+  - `LeftShift`: the count is a constant `k` from 0 to 7 and the
+    shifted value's bound shifted left by `k` is at most 255, so the
+    bits shifted out of the low byte are zeros and the high bytes of
+    the result are 0. `0x28 * (row / 8)` on a byte `row`, which
+    strength reduction makes `((row / 8) << 3) + ((row / 8) << 5)`,
+    shifts `row / 8`, at most 31, by 3 as a byte.
   - `Multiply`: the destination is 2 bytes and both operands qualify,
     and at least one isn't already a byte constant or a ZeroExtend of
     a byte.
@@ -81,7 +88,8 @@ from passes.optimization.value_range import (
     int_width, is_unsigned_type, max_value,
 )
 
-_OPS = (tac_ast.Divide, tac_ast.Modulo, tac_ast.RightShift, tac_ast.Multiply)
+_OPS = (tac_ast.Divide, tac_ast.Modulo, tac_ast.RightShift, tac_ast.Multiply,
+        tac_ast.LeftShift)
 
 
 def _is_volatile(t) -> bool:
@@ -127,6 +135,20 @@ class NarrowByteRange(DefUsePass):
         if isinstance(binary.op, tac_ast.Multiply):
             return self._multiply(binary, dst, width, env, ctx, use_idx,
                                   bound)
+        if isinstance(binary.op, tac_ast.LeftShift):
+            # `(row / 8) << 3` is at most 248, so its high byte is 0.
+            count = b.const.value if (
+                isinstance(b, tac_ast.Constant)
+                and isinstance(getattr(b.const, "value", None), int)
+            ) else None
+            if count is None or not 0 <= count <= 7 or ma << count > 0xFF:
+                return None
+            pre = []
+            low = self._byte(a, env, ctx, use_idx, dst.name, pre)
+            return self._narrowed(
+                binary.op, low,
+                tac_ast.Constant(const=tac_ast.ConstUChar(value=count)),
+                dst, pre, ctx)
         if isinstance(binary.op, tac_ast.RightShift):
             count = b.const.value if (
                 isinstance(b, tac_ast.Constant)

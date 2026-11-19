@@ -53,7 +53,6 @@ __local_show_item__0	EQU	$87
 __local_award_xp__n	EQU	$88
 __local_evaluate_direction__2	EQU	$88
 __local_find_nearest_event__2	EQU	$88
-__local_show_item__1	EQU	$88
 __local_apply_shop_effect__3	EQU	$89
 __local_award_xp__2	EQU	$89
 __local_evaluate_direction__dir	EQU	$89
@@ -683,8 +682,8 @@ evaluate_direction:
    AND   #$80
    STA   __local_evaluate_direction__0
    BNE   .evaluate_direction@scfold@0
-   LDA   __local_evaluate_direction__2
-   ORA   __local_evaluate_direction__1
+   TXA
+   ORA   __local_evaluate_direction__2
    BNE   .if_end@21
 .evaluate_direction@scfold@0:
    RTS
@@ -1043,12 +1042,11 @@ show_item:
    LSR
    LSR
    AND   #$03
-   STA   __local_show_item__1
    STA   LOCATION_STYLE_BITS
    LDY   #$04
    LDA   (current_slot@ret),Y
    STA   __local_show_item__0
-   LDA   __local_show_item__1
+   LDA   LOCATION_STYLE_BITS
    CLC
    ADC   #$01
    STA   HARGS

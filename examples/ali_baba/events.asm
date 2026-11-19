@@ -1130,14 +1130,12 @@ random_events:
 .if_end@40:
    JSR   random_events@run1
    BCS   .if_end@41
-   LDA   #$00
+   LDA   #$04
    STA   __local_random_events__i
 .random_events@rot@3:
    JSR   event_spawn_mob
-   INC   __local_random_events__i
-   LDA   __local_random_events__i
-   CMP   #$04
-   BCC   .random_events@rot@3
+   DEC   __local_random_events__i
+   BNE   .random_events@rot@3
    JSR   pick_random_char
    JSR   event_faction_scene_cont
 .if_end@41:

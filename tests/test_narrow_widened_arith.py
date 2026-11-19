@@ -761,7 +761,9 @@ class TestVariableLeftShift(unittest.TestCase):
         from preprocessor import preprocess
         asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
         body = asm[asm.index("\ns:"):asm.index("\nmain:")]
-        self.assertIn("ASL   __local_s__v", body)
+        # `v` arrives in A, and the loop shifts it there
+        # (`shift_in_a._shift_loop_in_a`).
+        self.assertIn(".shift_loop@0:\n   ASL\n", body)
         self.assertNotIn("ROL", body)
         self.assertNotIn("JSR", body)
 

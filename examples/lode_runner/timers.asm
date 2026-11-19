@@ -385,9 +385,8 @@ kill_guard_in_hole:
    STA   GAME_ROWNUM
    JMP   .loop@2_continue
 .kill_guard_in_hole@rot@0:
-   INY
-   TYA
-   STA   GUARD_RESURRECT_COL
+   INC   GUARD_RESURRECT_COL
+   LDA   GUARD_RESURRECT_COL
    CMP   #$1C
    BCC   .loop@2_continue
    INC   GAME_ROWNUM

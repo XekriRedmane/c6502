@@ -52,7 +52,6 @@ __local_draw_option__1	EQU	$8C
 __local_validate_input__o_1	EQU	$8C
 __local_format_slot_number__ones	EQU	$8D
 __local_render_input_buffer__i	EQU	$8D
-__local_set_cursor_pos__pos	EQU	$8D
 __local_validate_input__1	EQU	$8D
 __local_check_combat_eligibility__0	EQU	$8E
 __local_validate_input__2	EQU	$8E
@@ -837,10 +836,9 @@ set_cursor_pos:
    BCS   .div_loop@0
    ADC   #$28
    STA   TEXT_COL
-   STX   __local_set_cursor_pos__pos
-   LDA   #$15
+   TXA
    CLC
-   ADC   __local_set_cursor_pos__pos
+   ADC   #$15
    STA   TEXT_ROW
    RTS
 .if_else@1:

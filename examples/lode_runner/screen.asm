@@ -79,8 +79,6 @@ __local_put_status_draw__2	EQU	$B3
 __local_put_status_draw__line176	EQU	$B4
 __local_put_status_draw__3	EQU	$B5
 __local_put_status_draw__4	EQU	$B6
-__local_char_to_sprite_num__i	EQU	$B8
-__local_char_to_sprite_num__c	EQU	$B9
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -565,7 +563,6 @@ put_digit:
 char_to_sprite_num:
    SUBROUTINE
 
-   STA   __local_char_to_sprite_num__c
    CMP   #$C1
    BCC   .if_end@6
    CMP   #$DB
@@ -579,21 +576,17 @@ char_to_sprite_num:
    LDA   #$00
    RTS
 .if_end@7:
-   LDA   #$00
-   STA   __local_char_to_sprite_num__i
+   LDX   #$00
 .char_to_sprite_num@rot@3:
-   LDX   __local_char_to_sprite_num__i
-   LDA   __local_char_to_sprite_num__c
    CMP   PUNCTUATION,X
    BNE   .if_end@8
-   LDA   #$5F
+   TXA
    CLC
-   ADC   __local_char_to_sprite_num__i
+   ADC   #$5F
    RTS
 .if_end@8:
-   INC   __local_char_to_sprite_num__i
-   LDA   __local_char_to_sprite_num__i
-   CMP   #$07
+   INX
+   CPX   #$07
    BCC   .char_to_sprite_num@rot@3
    LDA   #$10
    RTS

@@ -499,8 +499,8 @@ record_hi_score_data_to_disk:
    STA   HI_SCORES+3,X
    LDA   #>(HI_SCORES+4)
    STA   __local_record_hi_score_data_to_disk__3
-   LDA   #<(HI_SCORES+4)
-   ADC   __local_record_hi_score_data_to_disk__5
+   TXA
+   ADC   #<(HI_SCORES+4)
    STA   __local_record_hi_score_data_to_disk__2
    BCC   .carry_inc@0
    INC   __local_record_hi_score_data_to_disk__3

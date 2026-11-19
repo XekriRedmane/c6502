@@ -99,6 +99,13 @@ absolute byte, so the rule stops at two. The flags come out the same, from the l
 is left alone, since a read-modify-write instruction on the NMOS 6502
 writes the old value back before the new one.
 
+# A loop of one-bit shifts
+
+`STA m`, a count put in X, a loop of `ASL m; DEX; BNE`, and `LDA m`
+after it become the loop on A and `STA m` after it
+(`_shift_loop_in_a`), when the flags are dead after the load. Each
+pass of the loop is a byte shorter and 3 cycles faster in zero page.
+
 # Where it comes from
 
 A 1-byte constant shift is already lowered in A by `tac_to_asm`. A
@@ -129,7 +136,8 @@ def apply_shift_in_a(prog: asm_ast.Program) -> asm_ast.Program:
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             new_top.append(
-                _shift_in_place(_rewrite_steps(_rewrite_function(tl)))
+                _shift_loop_in_a(_shift_in_place(
+                    _rewrite_steps(_rewrite_function(tl))))
             )
         else:
             new_top.append(tl)
@@ -355,6 +363,107 @@ def _rewrite_steps(fn: asm_ast.Function) -> asm_ast.Function:
             i += 3
             continue
         i += 1
+    if not changed:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _labels_named(instrs) -> dict[str, int]:
+    """How many branches and jumps name each label."""
+    counts: dict[str, int] = {}
+    for ins in instrs:
+        target = getattr(ins, "target", None)
+        if isinstance(ins, (asm_ast.Branch, asm_ast.Jump)) and target:
+            counts[target] = counts.get(target, 0) + 1
+    return counts
+
+
+def _is_reg_x(op) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.X)
+
+
+def _shift_loop_in_a(fn: asm_ast.Function) -> asm_ast.Function:
+    """Shifts a byte in A through a loop of one-bit shifts counted in
+    X, as `tac_to_asm._shift_loop` writes it:
+
+        STA m                         STA m
+        LDX n                         LDX n
+        BEQ done                      BEQ done
+    loop:                         loop:
+        ASL m             ->          ASL A
+        DEX                           DEX
+        BNE loop                      BNE loop
+    done:                         done:
+        LDA m                         STA m
+
+    The `LDX n` may be `LDX #k` with no `BEQ` or `done`, or a `CPX #0`
+    when the count is already in X. A holds m at the `STA`, and
+    nothing before the loop writes A or m, so on both ways to `done`
+    A holds what m would, and the `STA m` there leaves m as the loop
+    did. Nothing in the loop reads m. C comes out the same from the
+    last shift, or untouched when there are none, but N and Z come
+    from `DEX` where the `LDA` set them from the byte, so they must be
+    dead after it. `m` is a `ZP` or `Data` byte and neither access is
+    volatile, the loop's label is named by its own `BNE` alone, and
+    `done` by the `BEQ` alone. The `STA m` in front stays, and
+    `asm_dead_store` deletes it when nothing reads m before the new
+    one. `x >> n` on a byte `x` that arrives in A is `CPX #0; BEQ;
+    LSR A; DEX; BNE`."""
+    from passes.asm_liveness import flags_dead_at
+    instrs = list(fn.instructions)
+    named = _labels_named(instrs)
+    changed = False
+    for i, store in enumerate(instrs):
+        if not (isinstance(store, asm_ast.Mov) and _is_reg_a(store.src)
+                and _mem(store.dst) and not store.is_volatile):
+            continue
+        m = store.dst
+        j = i + 1
+        done = None
+        while j < len(instrs):
+            ins = instrs[j]
+            if (isinstance(ins, asm_ast.Mov) and _is_reg_x(ins.dst)
+                    and (_imm(ins.src) or (_mem(ins.src) and ins.src != m))):
+                j += 1
+            elif (isinstance(ins, asm_ast.Compare) and _is_reg_x(ins.left)
+                    and _imm(ins.right)):
+                j += 1
+            elif (isinstance(ins, asm_ast.Branch)
+                    and isinstance(ins.cond, asm_ast.EQ) and done is None):
+                done = ins.target
+                j += 1
+            else:
+                break
+        if j + 3 >= len(instrs) or j == i + 1:
+            continue
+        label, shift, dec, back = instrs[j:j + 4]
+        if not (isinstance(label, asm_ast.Label)
+                and isinstance(shift, _SHIFTS) and shift.dst == m
+                and isinstance(dec, asm_ast.Dec) and _is_reg_x(dec.dst)
+                and isinstance(back, asm_ast.Branch)
+                and isinstance(back.cond, asm_ast.NE)
+                and back.target == label.name
+                and named.get(label.name) == 1):
+            continue
+        k = j + 4
+        if done is not None:
+            if not (k < len(instrs) and isinstance(instrs[k], asm_ast.Label)
+                    and instrs[k].name == done and named.get(done) == 1):
+                continue
+            k += 1
+        if k >= len(instrs):
+            continue
+        load = instrs[k]
+        if not (isinstance(load, asm_ast.Mov) and _is_reg_a(load.dst)
+                and load.src == m and not load.is_volatile
+                and flags_dead_at(instrs, k + 1)):
+            continue
+        instrs[j + 1] = type(shift)(dst=_REG_A)
+        instrs[k] = asm_ast.Mov(src=_REG_A, dst=m, is_volatile=False)
+        changed = True
     if not changed:
         return fn
     return asm_ast.Function(

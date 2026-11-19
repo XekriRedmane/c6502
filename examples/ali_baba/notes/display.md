@@ -84,6 +84,9 @@ preserves. Two more gaps come from the rewrite as plain C.
    counting from 20 to 0 compiles to `DEC i; BNE`, 3 bytes fewer.
    `print_panel_name` pays them (50 to 53 bytes).
 
+   Fixed on 19 Nov 2026 (docs/optimizations/count_down.md).
+   `print_panel_name` is 50 bytes.
+
 2. **A static function called once isn't inlined.**
 
    ```c

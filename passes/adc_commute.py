@@ -115,15 +115,16 @@ from passes.asm_aliasing import may_alias
 
 def apply_adc_commute(prog: asm_ast.Program) -> asm_ast.Program:
     """Walk every function once; rewrite each matching window in
-    a single forward pass. The peephole fixedpoint driver re-runs
-    until no further rewrites fire."""
+    a single forward pass, then read a byte that X or Y holds with
+    `apply_register_copy_commute`. The peephole fixedpoint driver
+    re-runs until no further rewrites fire."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             new_top.append(_rewrite_function(tl))
         else:
             new_top.append(tl)
-    return asm_ast.Program(top_level=new_top)
+    return apply_register_copy_commute(asm_ast.Program(top_level=new_top))
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
@@ -448,3 +449,140 @@ def _accesses_alias(
         if _maybe_aliases(instr.src, temp):
             return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# A constant plus a byte that X or Y still holds
+# ---------------------------------------------------------------------------
+
+_STRAIGHT_KINDS: tuple[type, ...] = (
+    asm_ast.Mov, asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    asm_ast.Xor, asm_ast.Compare, asm_ast.BitTest, asm_ast.ClearCarry,
+    asm_ast.SetCarry, asm_ast.Inc, asm_ast.Dec,
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight, asm_ast.Branch,
+)
+
+
+def _index_reg(op) -> str | None:
+    if isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.X):
+        return "X"
+    if isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.Y):
+        return "Y"
+    return None
+
+
+def _writes_reg(instr, reg: str) -> bool:
+    """True iff `instr`, as `asm_emit` writes it, may change `reg`
+    (X or Y)."""
+    from passes.asm_liveness import sets_up_y
+    if reg == "Y" and sets_up_y(instr):
+        return True
+    if isinstance(instr, (asm_ast.Mov, asm_ast.Inc, asm_ast.Dec)):
+        return _index_reg(instr.dst) == reg
+    return False
+
+
+def _writes_memory_alias(instr, mem) -> bool:
+    """True iff `instr` may write a byte that `mem` names."""
+    if isinstance(instr, (asm_ast.Mov, asm_ast.Inc, asm_ast.Dec,
+                          asm_ast.ArithmeticShiftLeft,
+                          asm_ast.LogicalShiftRight, asm_ast.RotateLeft,
+                          asm_ast.RotateRight)):
+        return _maybe_aliases(instr.dst, mem)
+    return False
+
+
+def _register_holding(instrs, i: int, mem) -> asm_ast.Reg | None:
+    """X or Y when the straight-line code before `instrs[i]` last set
+    it with `STX mem` / `LDX mem` (or Y's), not as a volatile access,
+    and nothing since has written that register or may have written
+    `mem`."""
+    k = i - 1
+    while k >= 0:
+        ins = instrs[k]
+        if not isinstance(ins, _STRAIGHT_KINDS):
+            return None
+        if isinstance(ins, asm_ast.Mov) and not ins.is_volatile:
+            reg_op = None
+            if _operands_equal(ins.dst, mem) and _index_reg(ins.src):
+                reg_op = ins.src
+            elif _operands_equal(ins.src, mem) and _index_reg(ins.dst):
+                reg_op = ins.dst
+            if reg_op is not None:
+                reg = _index_reg(reg_op)
+                if any(_writes_reg(instrs[m], reg) for m in range(k + 1, i)):
+                    return None
+                return reg_op
+        if _writes_memory_alias(ins, mem):
+            return None
+        k -= 1
+    return None
+
+
+def apply_register_copy_commute(prog: asm_ast.Program) -> asm_ast.Program:
+    """Rewrites `LDA #k; [CLC | SEC]; ADC m` (or `AND m`, `ORA m`) as
+    `TXA; [CLC | SEC]; ADC #k` when X holds the byte `m` (and the same
+    with Y), so that the `STX m` that put it there can go if nothing
+    else reads `m`. The load may be of a byte `n` in memory instead of
+    a constant, when it isn't a volatile access, and `ADC n` then
+    reads it one instruction later, with only the `CLC` or `SEC`
+    between. The operation is commutative, so A and every flag
+    come out the same, and the two forms differ only in A, N, and Z
+    between the load and the operation, which nothing there reads.
+
+    X holds `m` when the straight-line code before the load last
+    stored X there or loaded X from it (not as a volatile access), and
+    no instruction since has written X or may have written `m`. A
+    write through a pointer counts unless `m` is out of every
+    pointer's reach (`asm_aliasing.unreachable_by_pointer`), and a
+    label, a call, or any other kind of instruction ends the scan. A
+    quotient left in X by the byte division loop and then added to a
+    constant was `STX t; LDA #$11; CLC; ADC t` and is `TXA; CLC; ADC
+    #$11`."""
+    from passes.asm_aliasing import pointer_proof, unreachable_by_pointer
+    new_top: list[asm_ast.Type_top_level] = []
+    changed = False
+    with pointer_proof(unreachable_by_pointer(prog)):
+        for tl in prog.top_level:
+            if not isinstance(tl, asm_ast.Function):
+                new_top.append(tl)
+                continue
+            instrs = list(tl.instructions)
+            hit = False
+            for i in range(len(instrs) - 1):
+                load = instrs[i]
+                if not (isinstance(load, asm_ast.Mov)
+                        and isinstance(load.src, (asm_ast.Imm,
+                                                  asm_ast.Data, asm_ast.ZP))
+                        and not load.is_volatile
+                        and _is_reg_a(load.dst)):
+                    continue
+                k = i + 1
+                if _is_clc_or_sec(instrs[k]):
+                    k += 1
+                if k >= len(instrs):
+                    continue
+                op = instrs[k]
+                if not (isinstance(op, (asm_ast.Add, asm_ast.And,
+                                        asm_ast.Or))
+                        and _is_reg_a(op.dst)
+                        and isinstance(op.src, (asm_ast.Data, asm_ast.ZP))):
+                    continue
+                reg = _register_holding(instrs, i, op.src)
+                if reg is None:
+                    continue
+                instrs[i] = asm_ast.Mov(src=reg, dst=load.dst,
+                                        is_volatile=False)
+                instrs[k] = type(op)(src=load.src, dst=op.dst)
+                hit = True
+            if hit:
+                changed = True
+                tl = asm_ast.Function(
+                    name=tl.name, is_global=tl.is_global,
+                    params=list(tl.params), instructions=instrs,
+                )
+            new_top.append(tl)
+    if not changed:
+        return prog
+    return asm_ast.Program(top_level=new_top)

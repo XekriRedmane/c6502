@@ -38,24 +38,21 @@ __local_hrcg_draw_char__1	EQU	$85
 __local_hrcg_draw_char__2	EQU	$86
 __local_hrcg_draw_char__3	EQU	$87
 __local_hrcg_draw_char__raw	EQU	$88
-__local_hrcg_scroll_up__n	EQU	$8C
-__local_hrcg_scroll_up__src	EQU	$8D
-__local_hrcg_scroll_up__1	EQU	$8E
-__local_hrcg_scroll_up__dst	EQU	$8F
-__local_hrcg_scroll_up__2	EQU	$90
-__local_hrcg_scroll_up__row	EQU	$91
-__local_hrcg_fill_line__n	EQU	$93
-__local_hrcg_fill_line__line	EQU	$94
-__local_hrcg_fill_line__0	EQU	$95
-__local_hrcg_fill_line__col	EQU	$96
-__local_hrcg_row_address__0	EQU	$97
+__local_hrcg_scroll_up__n	EQU	$8B
+__local_hrcg_scroll_up__src	EQU	$8C
+__local_hrcg_scroll_up__1	EQU	$8D
+__local_hrcg_scroll_up__dst	EQU	$8E
+__local_hrcg_scroll_up__2	EQU	$8F
+__local_hrcg_scroll_up__row	EQU	$90
+__local_hrcg_fill_line__line	EQU	$93
+__local_hrcg_fill_line__0	EQU	$94
+__local_hrcg_fill_line__col	EQU	$95
+__local_hrcg_row_address__0	EQU	$96
+__local_hrcg_row_address__1	EQU	$97
 __local_hrcg_row_address__row	EQU	$98
-__local_hrcg_row_address__1	EQU	$99
-__local_hrcg_row_address__2	EQU	$9A
-__local_hrcg_row_address__3	EQU	$9B
-__local_hrcg_row_address__4	EQU	$9C
-__local_hrcg_row_address__5	EQU	$9D
-__local_hrcg_row_address__col	EQU	$9E
+__local_hrcg_row_address__2	EQU	$99
+__local_hrcg_row_address__3	EQU	$9A
+__local_hrcg_row_address__col	EQU	$9B
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -229,7 +226,7 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def hrcg_advance_cursor params= locals=__local_hrcg_advance_cursor__0 indirect=false in_cycle=false
+; def hrcg_advance_cursor params= locals= indirect=false in_cycle=false
 ; def hrcg_clear_from params=__zpabi_hrcg_clear_from__row,__zpabi_hrcg_clear_from__col locals=__local_hrcg_clear_from__row indirect=false in_cycle=false param_regs=A,X
 ; def hrcg_control params=__zpabi_hrcg_control__code locals=__local_hrcg_control__code indirect=false in_cycle=false param_regs=A
 ; def hrcg_cout params=__zpabi_hrcg_cout__c locals=__local_hrcg_cout__next,__local_hrcg_cout__0 indirect=false in_cycle=false param_regs=A
@@ -239,7 +236,7 @@ WAIT	EQU	$FCA8
 ; def hrcg_line_feed params= locals=__local_hrcg_line_feed__0 indirect=false in_cycle=false
 ; def hrcg_restore params= locals= indirect=false in_cycle=false
 ; def hrcg_restore_column params= locals=__local_hrcg_restore_column__old indirect=false in_cycle=false
-; def hrcg_row_address params=__zpabi_hrcg_row_address__row,__zpabi_hrcg_row_address__col locals=__local_hrcg_row_address__0,__local_hrcg_row_address__row,__local_hrcg_row_address__1,__local_hrcg_row_address__2,__local_hrcg_row_address__3,__local_hrcg_row_address__4,__local_hrcg_row_address__5,__local_hrcg_row_address__col indirect=false in_cycle=false param_regs=A,X
+; def hrcg_row_address params=__zpabi_hrcg_row_address__row,__zpabi_hrcg_row_address__col locals=__local_hrcg_row_address__0,__local_hrcg_row_address__1,__local_hrcg_row_address__row,__local_hrcg_row_address__2,__local_hrcg_row_address__3,__local_hrcg_row_address__col indirect=false in_cycle=false param_regs=A,X
 ; def hrcg_save params= locals= indirect=false in_cycle=false
 ; def hrcg_scroll_up params= locals=__local_hrcg_scroll_up__0,__local_hrcg_scroll_up__n,__local_hrcg_scroll_up__src,__local_hrcg_scroll_up__1,__local_hrcg_scroll_up__dst,__local_hrcg_scroll_up__2,__local_hrcg_scroll_up__row indirect=false in_cycle=false
 ; def hrcg_select_font params=__zpabi_hrcg_select_font__c locals=__local_hrcg_select_font__0,__local_hrcg_select_font__1 indirect=false in_cycle=false param_regs=A
@@ -508,50 +505,40 @@ hrcg_row_address:
    STX   __local_hrcg_row_address__col
    AND   #$07
    LSR
-   STA   __local_hrcg_row_address__5
+   STA   __local_hrcg_row_address__3
    LDA   #$00
    ROR
-   STA   __local_hrcg_row_address__4
+   STA   __local_hrcg_row_address__1
    LDA   __local_hrcg_row_address__row
    LSR
    LSR
    LSR
-   STA   __local_hrcg_row_address__0
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
-   STA   __local_hrcg_row_address__3
-   LDA   __local_hrcg_row_address__0
    ASL
    ASL
    ASL
    STA   __local_hrcg_row_address__0
    ASL
-   STA   __local_hrcg_row_address__1
-   LDA   __local_hrcg_row_address__3
+   STA   __local_hrcg_row_address__row
+   LDA   #$00
    ROL
-   ASL   __local_hrcg_row_address__1
+   ASL   __local_hrcg_row_address__row
    ROL
    STA   __local_hrcg_row_address__2
-   LDA   __local_hrcg_row_address__1
-   CLC
-   ADC   __local_hrcg_row_address__0
-   STA   __local_hrcg_row_address__row
-   LDA   __local_hrcg_row_address__2
-   ADC   __local_hrcg_row_address__3
-   STA   __local_hrcg_row_address__0
    LDA   __local_hrcg_row_address__row
    CLC
-   ADC   __local_hrcg_row_address__4
-   STA   __local_hrcg_row_address__row
-   LDA   __local_hrcg_row_address__0
-   ADC   __local_hrcg_row_address__5
+   ADC   __local_hrcg_row_address__0
+   BCC   .carry_inc@0
+   INC   __local_hrcg_row_address__2
+   CLC
+.carry_inc@0:
+   ADC   __local_hrcg_row_address__1
+   STA   __local_hrcg_row_address__1
+   LDA   __local_hrcg_row_address__2
+   ADC   __local_hrcg_row_address__3
    CLC
    ADC   #$20
    STA   __local_hrcg_row_address__2
-   LDA   __local_hrcg_row_address__row
+   LDA   __local_hrcg_row_address__1
    CLC
    ADC   WNDLFT
    CLC
@@ -571,8 +558,7 @@ hrcg_fill_line:
    STA   __local_hrcg_fill_line__line
    LDA   hrcg_row_address@ret+1
    STA   __local_hrcg_fill_line__0
-   LDA   #$00
-   STA   __local_hrcg_fill_line__n
+   LDX   #$08
 .hrcg_fill_line@rot@0:
    LDY   __local_hrcg_fill_line__col
 .loop@1_start:
@@ -585,10 +571,8 @@ hrcg_fill_line:
    CLC
    ADC   #$04
    STA   __local_hrcg_fill_line__0
-   INC   __local_hrcg_fill_line__n
-   LDA   __local_hrcg_fill_line__n
-   CMP   #$08
-   BCC   .hrcg_fill_line@rot@0
+   DEX
+   BNE   .hrcg_fill_line@rot@0
    RTS
 
 hrcg_clear_from:
@@ -643,12 +627,11 @@ hrcg_scroll_up:
    STA   __local_hrcg_scroll_up__src
    LDA   hrcg_row_address@ret+1
    STA   __local_hrcg_scroll_up__1
-   LDA   #$00
+   LDA   #$08
    STA   __local_hrcg_scroll_up__n
 .loop@4_start:
    LDA   __local_hrcg_scroll_up__n
-   CMP   #$08
-   BCS   .loop@3_start
+   BEQ   .loop@3_start
    LDY   #$00
    BEQ   .loop@5_start
 .hrcg_scroll_up@rot@1:
@@ -666,7 +649,7 @@ hrcg_scroll_up:
    CLC
    ADC   #$04
    STA   __local_hrcg_scroll_up__1
-   INC   __local_hrcg_scroll_up__n
+   DEC   __local_hrcg_scroll_up__n
    JMP   .loop@4_start
 .loop@3_break:
    LDA   WNDBTM

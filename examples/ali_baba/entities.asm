@@ -44,10 +44,11 @@ __local_render_font_char_direct__0	EQU	$84
 __local_reorder_char__1	EQU	$84
 __local_find_entity_at_pos__0	EQU	$85
 __local_get_entity_fontchar__e	EQU	$85
-__local_render_font_char_direct__charset_sel	EQU	$85
+__local_render_font_char_direct__1	EQU	$85
 __local_reorder_char__link	EQU	$85
 __local_find_entity_at_pos__pos	EQU	$86
 __local_get_entity_fontchar__1	EQU	$86
+__local_render_font_char_direct__charset_sel	EQU	$86
 __local_reorder_char__2	EQU	$86
 __local_appearance_to_fontchar__sprite	EQU	$87
 __local_reorder_char__3	EQU	$87
@@ -250,7 +251,7 @@ WAIT	EQU	$FCA8
 ; def print_member_name params= locals=__local_print_member_name__0 indirect=false in_cycle=false
 ; def print_mob_name params= locals=__local_print_mob_name__0 indirect=false in_cycle=false
 ; def render_font_char params= locals= indirect=false in_cycle=false
-; def render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel locals=__local_render_font_char_direct__0,__local_render_font_char_direct__charset_sel indirect=false in_cycle=false param_regs=A
+; def render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel locals=__local_render_font_char_direct__0,__local_render_font_char_direct__1,__local_render_font_char_direct__charset_sel indirect=false in_cycle=false param_regs=A
 ; def reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 locals=__local_reorder_char__0,__local_reorder_char__1,__local_reorder_char__link,__local_reorder_char__2,__local_reorder_char__3,__local_reorder_char__4,__local_reorder_char__5,__local_reorder_char__m,__local_reorder_char__6,__local_reorder_char__7 indirect=false in_cycle=false param_regs=A,X
 ; def reorder_current_char params= locals= indirect=false in_cycle=false
 ; def set_blink_target params= locals=__local_set_blink_target__0,__local_set_blink_target__1 indirect=false in_cycle=false
@@ -600,8 +601,7 @@ get_entity_fontchar:
    STA   FONT_CHARSET
    TXA
    BNE   .if_else@3
-   LDA   __local_get_entity_fontchar__e
-   ORA   __local_get_entity_fontchar__1
+   ORA   __local_get_entity_fontchar__e
    BNE   .cond_else@4
    LDA   BLINK_ALT_CHAR
    JMP   .if_end@2
@@ -679,9 +679,7 @@ appearance_to_fontchar:
    INX
    SBC   #$15
    BCS   .div_loop@0
-   ADC   #$15
-   CLC
-   ADC   #$01
+   ADC   #$16
    STA   __local_appearance_to_fontchar__sprite
    CMP   #$05
    BCS   .if_end@23
@@ -895,8 +893,7 @@ classify_entity_type:
    STX   __local_classify_entity_type__1
    TXA
    BNE   .if_end@38
-   LDA   __local_classify_entity_type__e
-   ORA   __local_classify_entity_type__1
+   ORA   __local_classify_entity_type__e
    BNE   .cond_else@39
    LDA   #<S_EMPTY_SPACE
    LDX   #>S_EMPTY_SPACE
@@ -1085,26 +1082,23 @@ render_font_char_direct:
 
    STA   __local_render_font_char_direct__charset_sel
    LDA   FONT_CHARNUM
-   CMP   #$18
-   BCC   .vthread@0
    LDX   #$FF
+   SEC
 .div_loop@2:
    INX
    SBC   #$18
    BCS   .div_loop@2
-   STX   __local_render_font_char_direct__0
-   LDA   __local_render_font_char_direct__charset_sel
-   ADC   __local_render_font_char_direct__0
-   STA   s_PRINT_FONT_CHAR+2
-   LDA   FONT_CHARNUM
-.vthread@0:
-   LDX   #$FF
-   SEC
-.div_loop@3:
-   INX
-   SBC   #$18
-   BCS   .div_loop@3
    ADC   #$18
+   STA   __local_render_font_char_direct__1
+   LDA   FONT_CHARNUM
+   CMP   #$18
+   BCC   .if_end@58
+   TXA
+   CLC
+   ADC   __local_render_font_char_direct__charset_sel
+   STA   s_PRINT_FONT_CHAR+2
+.if_end@58:
+   LDA   __local_render_font_char_direct__1
    ASL
    ASL
    CLC

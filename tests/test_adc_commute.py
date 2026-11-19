@@ -367,5 +367,56 @@ class TestNoStoreBack(unittest.TestCase):
             asm_ast.Return(save_a=True),
         ])
 
+
+class TestRegisterCopyCommute(unittest.TestCase):
+    """`LDA #k; CLC; ADC m` reads X when X holds `m`."""
+
+    def _prog(self, between, load=None):
+        t = _data("__local_f__t")
+        return _wrap([
+            asm_ast.Mov(src=_X, dst=t, is_volatile=False),   # STX t
+            *between,
+            _lda(load or asm_ast.Imm(value=0x11)),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=t, dst=_A),
+            asm_ast.Return(save_a=True),
+        ])
+
+    def test_constant_plus_stored_x(self):
+        out = _instrs(apply_adc_commute(self._prog([
+            asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_Y,
+                        is_volatile=False),
+        ])))
+        self.assertEqual(out[2:5], [
+            asm_ast.Mov(src=_X, dst=_A, is_volatile=False),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=0x11), dst=_A),
+        ])
+
+    def test_memory_plus_stored_x(self):
+        out = _instrs(apply_adc_commute(self._prog([], load=_data("g"))))
+        self.assertEqual(out[1:4], [
+            asm_ast.Mov(src=_X, dst=_A, is_volatile=False),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=_data("g"), dst=_A),
+        ])
+
+    def test_kept_when_x_changes(self):
+        prog = self._prog([asm_ast.Inc(dst=_X)])
+        self.assertEqual(apply_adc_commute(prog), prog)
+
+    def test_kept_when_the_byte_is_written(self):
+        prog = self._prog([_sta(_data("__local_f__t"))])
+        self.assertEqual(apply_adc_commute(prog), prog)
+
+    def test_kept_across_a_label(self):
+        prog = self._prog([asm_ast.Label(name=".l")])
+        self.assertEqual(apply_adc_commute(prog), prog)
+
+    def test_kept_across_a_call(self):
+        prog = self._prog([asm_ast.Call(name="g", reg_args=[],
+                                        preserves=[])])
+        self.assertEqual(apply_adc_commute(prog), prog)
+
 if __name__ == "__main__":
     unittest.main()

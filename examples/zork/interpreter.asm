@@ -251,14 +251,14 @@ __local_get_nonstack_var__var	EQU	$FB
 __local_instr_call__args	EQU	$FB
 __local_instr_get_prop__2	EQU	$FB
 __local_instr_insert_obj__5	EQU	$FB
-__local_pop__1	EQU	$FB
+__local_pop__0	EQU	$FB
 __local_print_number__n_0	EQU	$FB
 __local_print_zstring__ch	EQU	$FB
 __local_ascii_to_zchar__0	EQU	$FC
 __local_branch_to_offset__pages_0	EQU	$FC
 __local_get_nonstack_var__0	EQU	$FC
 __local_instr_call__2	EQU	$FC
-__local_pop__2	EQU	$FC
+__local_pop__1	EQU	$FC
 __local_print_number__digits	EQU	$FC
 __local_print_zstring__c_0	EQU	$FC
 __local_ascii_to_zchar__1	EQU	$FD
@@ -286,9 +286,9 @@ __main_end	EQU	$0947
 __main_load_end	EQU	$0947
 __text_load	EQU	$0947
 __text_start	EQU	$0947
-__text_size	EQU	$1004
-__text_end	EQU	$194B
-__text_load_end	EQU	$194B
+__text_size	EQU	$1003
+__text_end	EQU	$194A
+__text_load_end	EQU	$194A
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -2914,8 +2914,8 @@ print_number:
    LDY   __local_ascii_to_zchar__z
    STA   __local_ascii_to_zchar__0,Y
    INC   __local_ascii_to_zchar__z
-   LDA   __local_ascii_to_zchar__left
-   ORA   __local_ascii_to_zchar__dest
+   TXA
+   ORA   __local_ascii_to_zchar__left
    BNE   .loop@2_start
 .loop@3_start:
    DEC   __local_ascii_to_zchar__z
@@ -3259,9 +3259,9 @@ ascii_to_zchar:
    LDX   __local_ascii_to_zchar__dest
    LDA   __local_ascii_to_zchar__z
    STA   ZCHAR_SCRATCH2,X
-   INC   __local_ascii_to_zchar__dest
    DEC   __local_ascii_to_zchar__left
    BEQ   z_compress
+   INC   __local_ascii_to_zchar__dest
 .if_end@25:
    LDA   __local_ascii_to_zchar__2
    JSR   get_alphabet_for_char

@@ -129,6 +129,10 @@ No change is needed.
    uint8_t f(void) { return *++P; }
    ```
 
+   Fixed on 19 Nov 2026 (docs/optimizations/read_stored_global.md).
+   `*++P` is `INC P; BNE; INC P+1; LDY #0; LDA (P),Y`, and tune_player
+   is 361 bytes.
+
 ## Size
 
 Code bytes of the `-S -O` output, from the object's symbol sizes,

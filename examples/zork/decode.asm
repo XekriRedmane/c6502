@@ -2,10 +2,10 @@ HARGS	EQU	$00
 SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
+__local_pop__0	EQU	$0B
 __local_store_result__0	EQU	$0B
 __local_pop__1	EQU	$0C
 __local_store_result__value_1	EQU	$0C
-__local_pop__2	EQU	$0D
 __local_store_result__value_0	EQU	$0D
 __local_set_nonstack_var__var	EQU	$0E
 __local_push__value_0	EQU	$0F
@@ -152,7 +152,7 @@ COUT1	EQU	$FDF0
 ; def get_var_content params= locals=__local_get_var_content__0 indirect=false in_cycle=false
 ; def inc_var params= locals=__local_inc_var__0 indirect=false in_cycle=false
 ; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__i,__local_instr_call__args,__local_instr_call__2 indirect=false in_cycle=false
-; def pop params= locals=__local_pop__0,__local_pop__1,__local_pop__2 indirect=false in_cycle=false
+; def pop params= locals=__local_pop__0,__local_pop__1 indirect=false in_cycle=false
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals=__local_push__value_1,__local_push__value_0 indirect=false in_cycle=false param_regs=A,X
 ; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count,__local_return_value__value_1,__local_return_value__value_0 indirect=false in_cycle=false param_regs=A,X
 ; def set_nonstack_var params=__zpabi_set_nonstack_var__var,__zpabi_set_nonstack_var__value_0,__zpabi_set_nonstack_var__value_1 locals=__local_set_nonstack_var__var,__local_set_nonstack_var__0,__local_set_nonstack_var__1 indirect=false in_cycle=false param_regs=A,,
@@ -432,10 +432,10 @@ pop:
 
    LDY   #$00
    LDA   (Z_SP),Y
-   STA   __local_pop__2
+   STA   __local_pop__1
    INY
    LDA   (Z_SP),Y
-   STA   __local_pop__1
+   STA   __local_pop__0
    LDA   Z_SP
    CLC
    ADC   #$02
@@ -447,8 +447,8 @@ pop:
    BNE   .if_end@1
    JMP   internal_error
 .if_end@1:
-   LDX   __local_pop__2
-   LDA   __local_pop__1
+   LDX   __local_pop__1
+   LDA   __local_pop__0
    RTS
 
 get_nonstack_var:

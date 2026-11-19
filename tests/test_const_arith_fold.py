@@ -221,5 +221,56 @@ class TestConstArithFold(unittest.TestCase):
         ])
         self.assertEqual(apply_const_arith_fold(prog), prog)
 
+    def _two_adds(self, first, flag, second, after):
+        return _wrap([
+            asm_ast.Mov(src=asm_ast.Data(name="m", offset=0), dst=_A),
+            first(src=asm_ast.Imm(value=0x15), dst=_A),
+            flag,
+            second(src=asm_ast.Imm(value=0x01), dst=_A),
+            *after,
+            asm_ast.Return(save_a=True),
+        ])
+
+    def test_add_then_add_is_one_add(self):
+        # `a % 21 + 1` after the division loop: ADC #$15; CLC; ADC #$01.
+        prog = self._two_adds(asm_ast.Add, asm_ast.ClearCarry(),
+                              asm_ast.Add, [])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(out[1:2], [
+            asm_ast.Add(src=asm_ast.Imm(value=0x16), dst=_A),
+        ])
+        self.assertEqual(len(out), 3)
+
+    def test_subtract_then_add_is_one_subtract(self):
+        prog = self._two_adds(asm_ast.Sub, asm_ast.ClearCarry(),
+                              asm_ast.Add, [])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(out[1:2], [
+            asm_ast.Sub(src=asm_ast.Imm(value=0x14), dst=_A),
+        ])
+
+    def test_add_then_subtract_is_one_add(self):
+        prog = self._two_adds(asm_ast.Add, asm_ast.SetCarry(),
+                              asm_ast.Sub, [])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(out[1:2], [
+            asm_ast.Add(src=asm_ast.Imm(value=0x14), dst=_A),
+        ])
+
+    def test_two_adds_kept_when_carry_is_read(self):
+        prog = self._two_adds(asm_ast.Add, asm_ast.ClearCarry(),
+                              asm_ast.Add, [
+                                  asm_ast.Branch(cond=asm_ast.CS(),
+                                                 target=".t"),
+                                  asm_ast.Label(name=".t"),
+                              ])
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
+    def test_two_adds_kept_with_the_wrong_carry(self):
+        # `SEC; ADC #1` adds 2, which the fold doesn't model.
+        prog = self._two_adds(asm_ast.Add, asm_ast.SetCarry(),
+                              asm_ast.Add, [])
+        self.assertEqual(apply_const_arith_fold(prog), prog)
+
 if __name__ == "__main__":
     unittest.main()

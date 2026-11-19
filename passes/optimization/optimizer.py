@@ -15,8 +15,11 @@ Pipeline shape (now driven by PhaseDriver):
           lnot_jump_fold → dead_loop_elim → UCE → CopyProp → DSE →
           CopyFold → ...)*
        → recognize_indirect_indexed (one-shot, post-fixedpoint)
+       → hoist_subtract_to_compare, hoist_divmod_pairs,
+         count_loops_down (one-shots, post-fixedpoint)
        → SSA destruction
        → CopyFold (post-destruction)
+       → move_steps_onto_edges (post-destruction)
        → split_three_way_compares (post-destruction)
        → fold_short_circuit_jump* (post-destruction, until converged)
        → fn'
@@ -118,6 +121,10 @@ from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
 from passes.optimization.compare_subtract import HoistSubtractToCompare
 from passes.optimization.static_indexed_access import StaticIndexedAccess
 from passes.optimization.three_way_compare import SplitThreeWayCompares
+from passes.optimization.step_on_edge import MoveStepsOntoEdges
+from passes.optimization.divmod_hoist import HoistDivmodPairs
+from passes.optimization.count_down import CountLoopsDown
+from passes.optimization.read_stored_global import ReadStoredGlobals
 
 
 # Module-level driver instance, reused across all optimize_function calls.
@@ -167,6 +174,9 @@ _DRIVER = PhaseDriver(
         HoistLoopInvariants(),
         CopyPropagate(),
         EliminateDeadStores(),
+        # `*++P` on a global P reads P after the copy into it, so the
+        # copy folding next makes the add write P directly.
+        ReadStoredGlobals(),
         FoldCopiesInFixedpoint(),
         ReassocConstants(),
         ReassocOffsetConstant(),
@@ -219,6 +229,13 @@ _DRIVER = PhaseDriver(
         # of comparing too. After the fixed-point loop, whose sinking
         # passes would move it back.
         HoistSubtractToCompare(),
+        # A `/` and a `%` of the same operands with a store, a call, or
+        # a branch between them computed next to each other, so that
+        # tac_to_asm lowers them with one loop or one helper call.
+        HoistDivmodPairs(),
+        # A loop counter read only by its own test and step counts the
+        # passes left down to 0, so its test is `DEC i; BNE`.
+        CountLoopsDown(),
     ],
     post_destruction=[
         # Post-from_ssa copy folding. SSA destruction emits a Copy at
@@ -231,6 +248,10 @@ _DRIVER = PhaseDriver(
         # fixed-point loop) is enough because nothing later in the TAC
         # pipeline produces fresh fusable patterns.
         FoldCopiesPostDestruction(),
+        # `do ...; while (i-- != first);` computes `i - 1` before the
+        # test and copies it into `i` on the back edge alone. The step
+        # goes in place of that copy, where it's `DEC i`.
+        MoveStepsOntoEdges(),
         # `a < b` and `a == b` on the same 2-byte values as a compare
         # of the high bytes and then the low ones. After destruction,
         # since the new edges would require Phi arguments.

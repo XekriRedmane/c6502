@@ -28,7 +28,6 @@ __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_tune_player__strength	EQU	$82
 __local_tune_player__tune	EQU	$83
-__local_tune_player__0	EQU	$84
 __local_play_high_tone__clicks	EQU	$85
 __local_play_low_tone__clicks	EQU	$85
 __local_play_high_tone__duration	EQU	$86
@@ -532,19 +531,13 @@ tune_player:
    STA   __local_tune_player__strength
    LDA   __local_tune_player__tune
    EOR   __local_tune_player__strength
-   STA   __local_tune_player__0
-   LDA   TUNE_PC
-   CLC
-   ADC   #$01
    STA   __local_tune_player__strength
-   LDA   TUNE_PC+1
-   ADC   #$00
-   STA   __local_tune_player__tune
-   STA   TUNE_PC+1
-   LDA   __local_tune_player__strength
-   STA   TUNE_PC
+   INC   TUNE_PC
+   BNE   .inc_done@0
+   INC   TUNE_PC+1
+.inc_done@0:
    LDY   #$00
-   LDA   (__local_tune_player__strength),Y
+   LDA   (TUNE_PC),Y
    TAX
    LDA   SOUND_ON
    BEQ   .if_end@5
@@ -556,16 +549,16 @@ tune_player:
    BNE   .if_else@7
    LDA   __local_tune_player__x
    STA   __zpabi_play_low_tone__first
-   LDA   __local_tune_player__0
+   LDA   __local_tune_player__strength
    JSR   play_low_tone
    JMP   .if_end@6
 .if_else@7:
    LDA   __local_tune_player__x
    STA   __zpabi_play_high_tone__first
-   LDA   __local_tune_player__0
+   LDA   __local_tune_player__strength
    JSR   play_high_tone
 .if_end@6:
-   LDA   __local_tune_player__0
+   LDA   __local_tune_player__strength
    STA   __local_tune_player__x
 .if_end@5:
    LDA   BORDER_ANIM_ON
@@ -594,9 +587,9 @@ tune_player:
    JMP   .default@16
 .case@8:
    INC   TUNE_PC
-   BNE   .inc_done@0
+   BNE   .inc_done@1
    INC   TUNE_PC+1
-.inc_done@0:
+.inc_done@1:
    LDA   TUNE_PC
    STA   TUNE_LOOP_ADDR
    LDA   TUNE_PC+1
@@ -604,9 +597,9 @@ tune_player:
    JMP   .loop@6_start
 .case@9:
    INC   TUNE_PC
-   BNE   .inc_done@1
+   BNE   .inc_done@2
    INC   TUNE_PC+1
-.inc_done@1:
+.inc_done@2:
    LDA   TUNE_PC
    STA   TUNE_GOSUB_ADDR
    LDA   TUNE_PC+1
@@ -656,9 +649,9 @@ tune_player:
 .switch@7_break:
 .if_end@3:
    INC   TUNE_PC
-   BNE   .inc_done@2
+   BNE   .inc_done@3
    INC   TUNE_PC+1
-.inc_done@2:
+.inc_done@3:
    LDA   ATTRACT_FLAG
    BEQ   .if_end@10
    LDA   KBD

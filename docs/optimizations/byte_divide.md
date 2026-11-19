@@ -175,6 +175,10 @@ no operand is volatile, since the pair reads each once. The
 instructions lowered another way (a member computed in place, a
 rotate-in, or a value saved around a recursive call) aren't paired.
 
+A pair with a store, a call, or a branch between them is moved
+together by [a divide and a remainder computed
+together](divmod_hoist.md) before `tac_to_asm` runs.
+
 ## What it leaves alone
 
 - A 1-byte divide by a variable, which keeps its `udivmod8` call,

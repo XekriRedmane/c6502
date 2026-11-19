@@ -109,7 +109,7 @@ lowers the multiply as [a product of two bytes](byte_product.md).
 
 ## When it applies
 
-- The `Binary` is `/`, `%`, `>>`, or `*`, and its result is an
+- The `Binary` is `/`, `%`, `>>`, `<<`, or `*`, and its result is an
   integer wider than a byte. A `*` qualifies only for a 2-byte result.
 - The first operand is a non-volatile variable as wide as the result,
   or a constant, and `max_value` bounds it by 255.
@@ -118,6 +118,13 @@ lowers the multiply as [a product of two bytes](byte_product.md).
   undefined at either width.
 - For `*`, the second operand is bounded by 255 too, and at least one
   operand isn't already a byte constant or a `ZeroExtend` of a byte.
+- For `<<`, the count is a constant `k` from 0 to 7, and the bound of
+  the value shifted left by `k` is at most 255. The bits the byte
+  shift drops are then zeros, and the high bytes of the result are 0.
+  Strength reduction makes `0x28 * (row / 8)` on a byte `row` into
+  `((row / 8) << 3) + ((row / 8) << 5)`, and the first shift, of a
+  value at most 31, had computed its high byte with five `LSR`s. Ali
+  Baba's `hrcg_row_address` went from 90 bytes to 73.
 - For `>>`, a constant count of 8 or more gives 0 at either width, and
   the shift becomes a copy of 0. A variable count is read as the byte
   a `ZeroExtend` widened, since the lowering reads only the count's

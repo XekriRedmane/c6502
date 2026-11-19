@@ -148,6 +148,15 @@ _case("mask_shift",
       1, list(range(10)), None,
       lambda n: _wrap((0x7F >> n) << n, 8))
 
+# A left shift whose result stays below 256 is a byte shift
+# (`narrow_byte_range`), as in Ali Baba's `hrcg_row_address`.
+_case("row_address",
+      "uint16_t f(uint8_t row) "
+      "{ return 0x80 * (row % 8) + 0x28 * (row / 8); }",
+      2, _BYTES, None, lambda r: 0x80 * (r % 8) + 0x28 * (r // 8))
+_case("shift_back", "unsigned int f(uint8_t b) { return (b >> 3) << 3; }",
+      2, _BYTES, None, lambda b: (b >> 3) << 3)
+
 _MULTIPLIERS = [0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 100, 127, 128, 200, 254,
                 255]
 _case("mul8x8", "uint16_t f(uint8_t a, uint8_t b) { return a * b; }",

@@ -212,5 +212,56 @@ class TestShiftInPlace(unittest.TestCase):
         self.assertEqual(_run(list(instrs)), instrs)
 
 
+
+class TestShiftLoopInA(unittest.TestCase):
+    """A loop of one-bit shifts of a byte stored from A, loaded after
+    the loop, shifts A."""
+
+    def _loop(self, setup, after=(), done=True):
+        body = [
+            _mov(_A, _M),
+            *setup,
+            asm_ast.Label(name=".l"),
+            asm_ast.LogicalShiftRight(dst=_M),
+            asm_ast.Dec(dst=_X),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".l"),
+        ]
+        if done:
+            body.append(asm_ast.Label(name=".d"))
+        return body + [_mov(_M, _A), *after, _RTS_A]
+
+    _VARIABLE = [
+        asm_ast.Compare(left=_X, right=asm_ast.Imm(value=0)),
+        asm_ast.Branch(cond=asm_ast.EQ(), target=".d"),
+    ]
+
+    def test_variable_count(self) -> None:
+        out = _run(self._loop(self._VARIABLE))
+        self.assertEqual(out[4], asm_ast.LogicalShiftRight(dst=_A))
+        self.assertEqual(out[-2], _mov(_A, _M))
+        self.assertNotIn(asm_ast.LogicalShiftRight(dst=_M), out)
+
+    def test_constant_count(self) -> None:
+        out = _run(self._loop([_mov(asm_ast.Imm(value=3), _X)],
+                              done=False))
+        self.assertEqual(out[3], asm_ast.LogicalShiftRight(dst=_A))
+
+    def test_kept_when_flags_are_read(self) -> None:
+        instrs = self._loop(self._VARIABLE, after=[
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".z"),
+            asm_ast.Label(name=".z"),
+        ])
+        self.assertEqual(_run(instrs), instrs)
+
+    def test_kept_when_setup_writes_a(self) -> None:
+        instrs = self._loop([_mov(_N, _A), _mov(_A, _X),
+                             *self._VARIABLE])
+        self.assertEqual(_run(instrs), instrs)
+
+    def test_kept_when_loop_label_has_another_way_in(self) -> None:
+        instrs = self._loop(self._VARIABLE) + [
+            asm_ast.Jump(target=".l", reg_args=[])]
+        self.assertEqual(_run(instrs), instrs)
+
 if __name__ == "__main__":
     unittest.main()

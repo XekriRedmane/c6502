@@ -142,6 +142,11 @@ reorder_char compares the masked level without a cast. These remain.
    `appearance % 21 + 1` is `ADC #$15; CLC; ADC #$01`, where the carry
    is already clear and `ADC #$16` would do.
 
+   Fixed on 19 Nov 2026. A `/` and a `%` of the same operands are now
+   computed together wherever they are (docs/optimizations/divmod_hoist.md),
+   and `ADC #$15; CLC; ADC #$01` is `ADC #$16`. render_font_char_direct
+   is 72 bytes and appearance_to_fontchar 28.
+
 2. **Stores to different globals are reordered.** setup_char_sprite
    stores FONT_COL, FONT_ROW, BLINK_COL, and BLINK_ROW in the
    original's order, and the listing stores FONT_COL, BLINK_COL,

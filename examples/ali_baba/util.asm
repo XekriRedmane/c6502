@@ -253,7 +253,7 @@ WAIT	EQU	$FCA8
 ; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__pos indirect=false in_cycle=false param_regs=A
 ; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__0,__local_random_in_range__1,__local_random_in_range__2,__local_random_in_range__shift,__local_random_in_range__limit indirect=false in_cycle=false param_regs=A
 ; def step_prng params= locals=__local_step_prng__0,__local_step_prng__1 indirect=false in_cycle=false
-; def tick_anim_counter params= locals=__local_tick_anim_counter__0 indirect=false in_cycle=false
+; def tick_anim_counter params= locals= indirect=false in_cycle=false
 ; def timed_wait params= locals= indirect=false in_cycle=false
 ; def verify_disk_io params= locals= indirect=false in_cycle=false
 ; def verify_integrity params= locals=__local_verify_integrity__0,__local_verify_integrity__1 indirect=false in_cycle=false
@@ -548,14 +548,12 @@ anim_check_frame:
 delay_with_animation:
    SUBROUTINE
 
-   LDA   #$00
+   LDA   #$04
    STA   __local_delay_with_animation__n
 .delay_with_animation@rot@1:
    JSR   anim_tick_and_wait
-   INC   __local_delay_with_animation__n
-   LDA   __local_delay_with_animation__n
-   CMP   #$04
-   BCC   .delay_with_animation@rot@1
+   DEC   __local_delay_with_animation__n
+   BNE   .delay_with_animation@rot@1
    RTS
 
 dispatch_on_mode:

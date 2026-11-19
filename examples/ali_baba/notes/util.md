@@ -138,6 +138,14 @@ loop of subtractions, 11 bytes, where the original's is 13.
    and keeps the high byte and the signed comparison. random_in_range
    also loads the count into X again for each of its four shift loops.
 
+   Since 19 Nov 2026, f shifts A in its loop
+   (docs/optimizations/shift_in_a.md), `CPX #0; BEQ; LSR A; DEX; BNE`.
+   random_in_range's loops shift bytes that aren't loaded again right
+   after the loop, and they still shift memory. The comparison is still
+   16 bits. A narrower one needs a bound on the shifted value, which
+   comes only from C's rule that a signed shift may not overflow, and
+   a new lowering of a comparison of a shifted byte, which wasn't done.
+
 2. A small static function isn't inlined. `is_player_character` is 16
    bytes, and each caller sets up a pointer in A and X for it, where
    `LDY #4; LDA (m),Y; CMP #$15` in place would do.
@@ -154,6 +162,9 @@ loop of subtractions, 11 bytes, where the original's is 13.
    count-up: `LDA #0; STA n; ...; INC n; LDA n; CMP #4; BCC`. Counting
    down to 0 would save the compare. `delay_with_animation` is 16 bytes,
    where the old do-while that counted down was 12.
+
+   Fixed on 19 Nov 2026 (docs/optimizations/count_down.md).
+   `delay_with_animation` is 12 bytes.
 
    ```c
    void tick(void);

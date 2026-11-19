@@ -16,9 +16,9 @@ save to a new scenario disk, a load from it, a visit to the forest's
 shops, and a game with a second character, it makes the same
 soft-switch accesses, Monitor calls, and disk calls as the original,
 with the same hi-res page 1 at each one, and leaves the same disks
-(see "How it's compared"). Its code is about 4.9% larger than the code
+(see "How it's compared"). Its code is about 2.5% larger than the code
 it translates, counting the runtime helper the linker adds (see
-"Size"), and it fits by using `$A900-$B2FF`, which the original never
+"Size"), and it uses `$A900-$B2FF` too, which the original never
 touches.
 
 ## Files
@@ -77,9 +77,10 @@ The original's code shares its spans of memory with tables, which the
 C program defines where it uses them, so the linker script's regions
 are those spans: `$0800-$1FFF`, `$5B24-$5BFF`, `$5D00-$777F`,
 `$7780-$7D82`, `$92A5-$9AA4`, `$A441-$A56E`, and `$A56F-$A805`, with
-the dead code inside them reused. The C program is larger than the
-original, so the script also uses `$A900-$B2FF`, which holds zeros in
-the image and which no instruction of the original addresses. `main`
+the dead code inside them reused. The script also puts map's,
+util's, and text's code and the runtime library's helper in
+`$A900-$B2FF`, which holds zeros in the image and which no
+instruction of the original addresses. `main`
 is at `$0800`, where the loader enters the game, and `cold_restart` at
 `$A56F`, where the reset vector points. The rest of memory is read
 where the original's image puts it: the game's records at
@@ -151,25 +152,27 @@ uses.
 ## Size
 
 In bytes, for each file and the original's code and tables that it
-translates (the chunks of `main.asm` that `UNITS.md` gives it):
+translates (the chunks of `main.asm` that `UNITS.md` gives it, with
+the tables as the original's data). The difference is that of the C
+file's code and data together against the original's.
 
-| File | Original code | Original tables | C code | C data |
-|---|---:|---:|---:|---:|
-| `main.c` | 381 | 2 | 347 | 0 |
-| `init.c` | 972 | 355 | 807 | 362 |
-| `turn.c` | 616 | 6 | 1111 | 0 |
-| `input.c` | 1639 | 1313 | 1680 | 1256 |
-| `combat.c` | 2856 | 23 | 2926 | 0 |
-| `ai.c` | 1223 | 18 | 1347 | 27 |
-| `events.c` | 1542 | 8 | 1591 | 0 |
-| `entities.c` | 1033 | 8 | 1017 | 0 |
-| `map.c` | 993 | 43 | 963 | 8 |
-| `display.c` | 399 | 0 | 437 | 0 |
-| `util.c` | 866 | 119 | 773 | 13 |
-| `text.c` | 553 | 8 | 605 | 0 |
-| `sound.c` | 337 | 64 | 437 | 0 |
-| `hrcg.c` | 1141 | 907 | 825 | 790 |
-| **Total** | **14551** | **2874** | **14866** | **2456** |
+| File | Original code | Original data | C code | C data | Difference |
+|---|---:|---:|---:|---:|---:|
+| `main.c` | 381 | 2 | 347 | 0 | -9.4% |
+| `init.c` | 972 | 355 | 807 | 362 | -11.9% |
+| `turn.c` | 616 | 6 | 1111 | 0 | +78.6% |
+| `input.c` | 1639 | 1313 | 1680 | 1256 | -0.5% |
+| `combat.c` | 2856 | 23 | 2926 | 0 | +1.6% |
+| `ai.c` | 1223 | 18 | 1347 | 27 | +10.7% |
+| `events.c` | 1542 | 8 | 1591 | 0 | +2.6% |
+| `entities.c` | 1033 | 8 | 1017 | 0 | -2.3% |
+| `map.c` | 993 | 43 | 963 | 8 | -6.3% |
+| `display.c` | 399 | 0 | 437 | 0 | +9.5% |
+| `util.c` | 866 | 119 | 773 | 13 | -20.2% |
+| `text.c` | 553 | 8 | 605 | 0 | +7.8% |
+| `sound.c` | 337 | 64 | 437 | 0 | +9.0% |
+| `hrcg.c` | 1141 | 907 | 825 | 790 | -21.1% |
+| **Total** | **14551** | **2874** | **14866** | **2456** | **-0.6%** |
 
 The C counts are the symbol sizes of each unit's `-c -O` object
 (`nm.py -S`), and they leave out the `__zp_init` the linker writes.

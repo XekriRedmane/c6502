@@ -10,9 +10,9 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 15 bytes larger than the
-original, so it doesn't fit in the 26 sectors that Zork's boot loader
-reads (see "Size").
+(see "Compared with Zork's own code"). It is 83 bytes smaller than the
+original, but the linker script puts part of it past the 26 sectors
+that Zork's boot loader reads (see "Size").
 
 Two earlier examples, since removed, translated pieces of the same
 code, Zork's z-string printer and its `save` instruction. This example
@@ -159,30 +159,37 @@ routine's count of locals as a word whose high byte is whatever was
 in `SCRATCH2+1`, and this pushes 0 there. Nothing reads that byte.
 
 **Size.** In bytes, measured from the assembled programs, for each
-file and the original code it translates:
+file and the original code it translates.
 
-| File | Zork | C |
-|---|---:|---:|
-| `main.c` | 391 | 446 |
-| `decode.c` | 1859 | 1775 |
-| `objects.c` | 788 | 809 |
-| `numbers.c` | 436 | 419 |
-| `input.c` | 1018 | 1059 |
-| `pages.c` | 384 | 371 |
-| `zstring.c` | 383 | 385 |
-| `output.c` | 387 | 399 |
-| `disk.c` | 138 | 136 |
-| `prompts.c` | 534 | 527 |
-| `save.c` | 325 | 332 |
-| **Total** | **6643** | **6658** |
+The original's bytes come from dasm's listing of its source. A line of
+`HEX`, `DC`, `DS`, or `BYTE` counts as data, and every other line that
+assembles to bytes counts as code, with a macro's expansion counted
+with the line that invokes it. The C program's data is each file's
+constants, strings, and variables. The difference is that of the C
+file's code and data together against the original's.
 
-The counts include each file's constants and data, and leave out the
-page tables and `__zp_init`, 41 bytes of startup code the linker
-generates to clear the globals in zero page. The boot loader doesn't
+| File | Original code | Original data | C code | C data | Difference |
+|---|---:|---:|---:|---:|---:|
+| `main.c` | 351 | 40 | 401 | 40 | +12.8% |
+| `decode.c` | 1733 | 126 | 1711 | 0 | -8.0% |
+| `objects.c` | 788 | 0 | 803 | 0 | +1.9% |
+| `numbers.c` | 436 | 0 | 429 | 0 | -1.6% |
+| `input.c` | 1004 | 14 | 1012 | 14 | +0.8% |
+| `pages.c` | 384 | 0 | 374 | 0 | -2.6% |
+| `zstring.c` | 359 | 24 | 358 | 24 | -0.3% |
+| `output.c` | 380 | 7 | 392 | 7 | +3.1% |
+| `disk.c` | 117 | 21 | 115 | 21 | -1.4% |
+| `prompts.c` | 343 | 191 | 337 | 190 | -1.3% |
+| `save.c` | 325 | 0 | 332 | 0 | +2.2% |
+| **Total** | **6220** | **423** | **6264** | **296** | **-1.2%** |
+
+The C counts leave out the page tables and `__zp_init`, 45 bytes of
+startup code the linker generates to clear the globals in zero page.
+The boot loader doesn't
 run it, and the interpreter writes each of those globals before it
 reads it. A function that ends by jumping to another is placed
 right before that one and falls into it, as in Zork. The linker does
-that for 32 functions, which saves a 3-byte `JMP` in each. Each
+that for 26 functions, which saves a 3-byte `JMP` in each. Each
 function is counted with the file that defines it, wherever the
 linker places it. Zork's boot loader reads 26 sectors,
 `$0800`-`$21FF`, so on an Apple II this program would take a loader
@@ -191,15 +198,15 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 778 bytes with the handlers written
+The four dispatch switches take 900 bytes with the handlers written
 into their cases, not counting the tails they share with other
-functions (`do_2op` alone is 408), where Zork's four tables
+functions (`do_2op` alone is 399), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
 Each switch now dispatches through a table too, and a case that only
 calls a handler is the handler's address in the table, as in Zork's.
-`divu16` is 61 bytes against Zork's 78, `match_dictionary_word` 181
-against 190, and `mulu16` 41 against 69, since it computes only the
-low 16 bits of the product.
+`divu16` is 61 bytes against Zork's 78, and `match_dictionary_word`
+181 against 190. `mulu16`, which computes only the low 16 bits of
+the product, is inlined into `instr_mul`, its one caller.
 
 **Speed.** The first session takes 35,308,334 cycles against Zork's
 38,490,260, 8.3% fewer, and the second 6,879,995 against 7,434,428,

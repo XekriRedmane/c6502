@@ -12,10 +12,10 @@ It plays Lode Runner. On three scripted runs, the attract mode's demo,
 a game that ends in the high-score table, and a session in the level
 editor, it makes the same soft-switch accesses and RWTS calls as the
 original, with the same two high-resolution pages at each one, and
-leaves the same disk (see "How it's compared"). It is about 540 bytes
-larger than the code it translates (see "Size"), so it doesn't fit in
-the original's `$6000`-`$8E52`, and the linker script puts what
-doesn't fit in `$9000`-`$9AFF`, which the original never touches.
+leaves the same disk (see "How it's compared"). It is 92 bytes
+smaller than the code and data it translates (see "Size"). The
+linker script puts the editor and the code of the high-score table
+in `$9000`-`$9AFF`, which the original never touches.
 
 ## Files
 
@@ -105,38 +105,33 @@ minutes on the C program, so each script is a test method of its own.
 In bytes, measured from the linked program, for each file and the
 lines of `main.asm` it translates:
 
-| File | Original | C code | C data | C total |
-|---|---:|---:|---:|---:|
-| `main.c` | 699 | 615 | 71 | 686 |
-| `level.c` | 755 | 855 | 11 | 866 |
-| `player.c` | 1528 | 1299 | 93 | 1392 |
-| `input.c` | 918 | 959 | 11 | 970 |
-| `guards.c` | 2417 | 2303 | 65 | 2368 |
-| `timers.c` | 440 | 505 | 9 | 514 |
-| `screen.c` | 503 | 514 | 36 | 550 |
-| `hiscore.c` | 621 | 610 | 99 | 709 |
-| `editor.c` | 1898 | 1317 | 740 | 2057 |
-| `sprites.c` | 629 | 602 | 24 | 626 |
-| `sound.c` | 192 | 210 | 16 | 226 |
-| `wipe.c` | 1201 | 920 | 371 | 1291 |
-| **Total** | **11801** | **10709** | **1546** | **12255** |
+| File | Original code | Original data | C code | C data | Difference |
+|---|---:|---:|---:|---:|---:|
+| `main.c` | 538 | 161 | 588 | 71 | -5.7% |
+| `level.c` | 743 | 12 | 829 | 11 | +11.3% |
+| `player.c` | 1435 | 93 | 1252 | 93 | -12.0% |
+| `input.c` | 866 | 52 | 906 | 11 | -0.1% |
+| `guards.c` | 2343 | 75 | 2178 | 65 | -7.2% |
+| `timers.c` | 431 | 9 | 500 | 9 | +15.7% |
+| `screen.c` | 474 | 29 | 452 | 36 | -3.0% |
+| `hiscore.c` | 511 | 110 | 562 | 99 | +6.4% |
+| `editor.c` | 1113 | 787 | 1243 | 740 | +4.4% |
+| `sprites.c` | 598 | 31 | 561 | 24 | -7.0% |
+| `sound.c` | 176 | 16 | 194 | 16 | +9.4% |
+| `wipe.c` | 856 | 345 | 901 | 371 | +5.9% |
+| **Total** | **10084** | **1720** | **10166** | **1546** | **-0.8%** |
 
-The original's count is every byte its lines assemble to, code and
-data alike, since the original keeps its tables and messages among its
-routines. `main.c`'s lines include the 98-byte table MAIN relocates
-the game with, which the C program has no use for. The C counts leave
-out `__zp_init`, 47 bytes, and the 51 bytes of tables of row
-addresses that the linker keeps one copy of for the units that share
-them. A function that ends by jumping to another is placed right
-before that one and falls into it, as in the original.
+The original's bytes come from dasm's listing of its source. A line of
+`HEX`, `DC`, `DS`, or `BYTE` counts as data, and every other line that
+assembles to bytes counts as code, with a macro's expansion counted
+with the line that invokes it. The C program's data is each file's
+constants, strings, and variables. The difference is that of the C
+file's code and data together against the original's.
 
-The C code's largest differences from the original come in a few
-places. The guards' move routines take 60 bytes more, mostly in the
-two-dimensional lookups of `LEVEL_MAP` and `LEVEL_BG`, where the
-original keeps a row's two pointers in `PTR1` and `PTR2` and the C
-sets up a lookup's pointer again after a call or a change to the
-row. `editor.c` keeps its messages as
-data, where the original puts them after the `JSR` that prints them,
-so its code is smaller and its data larger.
-`add_and_update_score` adds a decimal digit at a time, where the
-original sets the 6502's decimal mode, and takes 65 bytes more.
+`main.c`'s lines include the 98-byte table MAIN relocates the game
+with, which the C program has no use for. The C counts leave out
+`__zp_init`, 47 bytes, and the 51 bytes of tables of row addresses
+that the linker keeps one copy of for the units that share them. A
+function that ends by jumping to another is placed right before that
+one and falls into it, as in the original.
+

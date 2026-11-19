@@ -370,7 +370,8 @@ this directory:
   exit of the CFG (`redundant_load._build_cfg_tolerant`). A `(zp),Y`
   pointer whose bytes hold a label's address halves reads or writes
   the label directly, `name,Y` (`_label_pointer_operand`), which is
-  how a pooled function's local array is indexed. A `(zp),Y` pointer whose bytes copy a named zero-page pointer
+  how a pooled function's local array is indexed, and so does an
+  access through DPTR holding them. A `(zp),Y` pointer whose bytes copy a named zero-page pointer
   (not a slot) reads or writes through that pointer
   (`_copied_pointer_operand`). A call to a function of the program
   with a summary of what it and its callees may write

@@ -224,5 +224,41 @@ class TestConstStaticFoldUnit(unittest.TestCase):
         self.assertIs(result, prog)
 
 
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestConstPointer(unittest.TestCase):
+    """A `static const` pointer initialized with an address is read as
+    the address's halves, and an access through it as one through the
+    address, where both had read the pointer from memory."""
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "uint8_t buf[8] = {1, 2, 3, 4, 5, 6, 7, 8};\n"
+        "static const uint8_t *const B = buf + 3;\n"
+        "uint8_t at(uint8_t i) { return B[i]; }\n"
+        "const uint8_t *ptr(void) { return B; }\n"
+        "int main(void) {\n"
+        "    int bad = 0;\n"
+        "    if (at(0) != 4 || at(4) != 8) bad |= 1;\n"
+        "    if (ptr() != &buf[3]) bad |= 2;\n"
+        "    return bad;\n"
+        "}\n"
+    )
+
+    def test_reads_the_address(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        at = asm[asm.index("\nat:"):asm.index("\nptr:")]
+        self.assertIn("buf+3,Y", at)
+        self.assertNotIn("DPTR", at)
+        self.assertNotIn("\nB:", asm)
+
+    def test_runs(self) -> None:
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run()
+                self.assertEqual(out.return_int(), 0)
+
 if __name__ == "__main__":
     unittest.main()

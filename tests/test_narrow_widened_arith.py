@@ -274,15 +274,17 @@ class TestNarrowWidenedArith(unittest.TestCase):
         )
         self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
 
-    def test_left_shift_by_variable_not_narrowed(self):
-        # LeftShift narrows only by a constant count, which is
-        # inlined; a variable count goes to the `asl*` helper either
-        # way.
+    def test_left_shift_by_variable_narrowed(self):
+        # A variable count goes to the `asl*` helper, and the narrow
+        # one, `asl8`, does less work. A count past the width gives 0
+        # at either width.
         instrs, symbols, ssa_dsts = _zext_add_trunc(tac_ast.LeftShift)
         out = narrow_widened_arith(
             _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
         )
-        self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
+        last = out.instructions[-1]
+        self.assertIsInstance(last, tac_ast.Binary)
+        self.assertIsInstance(last.op, tac_ast.LeftShift)
 
     def _shift_by(self, count):
         instrs = [
@@ -731,6 +733,42 @@ class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
                 out = build_sim(self._SRC, optimize=optimize).run()
                 self.assertEqual(out.return_int(), 0x0720)
 
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestVariableLeftShift(unittest.TestCase):
+    """A byte shifted left by a variable count is a 1-byte shift, which
+    calls `asl8`, where it had called `asl16`. A count of 8 or more
+    gives 0 at either width."""
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "uint8_t s(uint8_t v, uint8_t n) { v <<= n; return v; }\n"
+        "int main(void) {\n"
+        "    int bad = 0;\n"
+        "    if (s(3, 2) != 12) bad |= 1;\n"
+        "    if (s(0x81, 1) != 2) bad |= 2;\n"
+        "    if (s(5, 8) != 0) bad |= 4;\n"
+        "    if (s(5, 12) != 0) bad |= 8;\n"
+        "    if (s(5, 0) != 5) bad |= 16;\n"
+        "    return bad;\n"
+        "}\n"
+    )
+
+    def test_calls_asl8(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        body = asm[asm.index("\ns:"):asm.index("\nmain:")]
+        self.assertIn("JSR   asl8", body)
+        self.assertNotIn("asl16", body)
+
+    def test_runs(self):
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(self._SRC, optimize=optimize).run()
+                self.assertEqual(out.return_int(), 0)
 
 if __name__ == "__main__":
     unittest.main()

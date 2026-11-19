@@ -191,7 +191,11 @@ reach, found by reaching definitions over the control-flow graph.
 When the two bytes of a `(zp),Y` pointer hold the low and high bytes
 of one label's address, `#<name` and `#>name`, the access goes to the
 label directly. `(N),Y` becomes `name,Y` (`IndexedData`), and the
-constant-Y `IndirectZp(N, k)` becomes `Data(name, k)`. Adding Y
+constant-Y `IndirectZp(N, k)` becomes `Data(name, k)`. An access
+through DPTR counts as one through DPTR's pair, so `B[i]` with
+`static const uint8_t *const B = buf + 3;` reads `buf+3,Y` once
+[const-static fold](const_static_fold.md) has made B's bytes the
+address's halves. Adding Y
 carries into the high byte in both addressing modes, so they reach
 the same byte. A local array of a function with a private pool has a
 fixed address, so Zork's `print_number` (examples/zork/

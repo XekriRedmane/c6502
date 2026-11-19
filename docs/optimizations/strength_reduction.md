@@ -89,6 +89,13 @@ treat them like any other SSA temporary.
   [passes/shift_cost.py](../../passes/shift_cost.py) accepts every
   shift in the rewrite at the result's width. A value that fits both
   forms (only 3) takes the sum.
+- A multiply of a byte by a constant whose non-adjacent form has three
+  nonzero digits below bit 8, with the top one +1, takes the
+  three-term form: three shifts and two adds or subtracts. Ali Baba's
+  PRNG step, `69 * s + $53`, compiles to `ASL; ASL; STA t; ASL; ASL;
+  ASL; ASL; CLC; ADC t; CLC; ADC s` where it had called `mul8`. That's
+  4 or 5 bytes longer than the call and about 30 cycles against the
+  helper's few hundred.
 
 The `inline_shift_ok` gate keeps the two-term rewrite from trading one
 `mul16` call for an `asl16` call. It accepts a shift when it lowers to

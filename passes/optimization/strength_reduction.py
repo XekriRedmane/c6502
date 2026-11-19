@@ -11,6 +11,9 @@ Rewrites multiplicative ops by power-of-2 constants into shifts
   * `Multiply(x, 2^a ± 2^b)` → two shifts and an Add or Subtract,
     when `passes.shift_cost` says both shifts inline
     (`_two_term_multiply`).
+  * A 1-byte `Multiply(x, C)` whose constant is three signed powers
+    of two, such as 69 = 64 + 4 + 1, → three shifts of A and two Adds
+    or Subtracts (`_three_term_byte_multiply`).
   * `Multiply(x, 0)` / `Multiply(0, x)` → not handled here —
     `constant_folding` catches the all-constant case; the mixed
     `var * 0` case is left alone (constant folding via copy
@@ -93,9 +96,90 @@ def _build_multiply(
     for var_side, const_side in ((src1, src2), (src2, src1)):
         if isinstance(var_side, tac_ast.Var):
             rewrite = _two_term_multiply(var_side, const_side, dst, ctx)
+            if rewrite is None:
+                rewrite = _three_term_byte_multiply(
+                    var_side, const_side, dst, ctx)
             if rewrite is not None:
                 return rewrite
     return None
+
+
+def _three_term_byte_multiply(
+    x: tac_ast.Var,
+    const_side: tac_ast.Type_val,
+    dst: tac_ast.Var,
+    ctx: PassContext,
+) -> list | None:
+    """A 1-byte `Multiply(x, C)` with `C` mod 256 written as three
+    signed powers of two, `2^a ± 2^b ± 2^c` with a > b > c, as
+
+        t = x << c;  u = t << (b - c);  v = u << (a - b)
+        w = v ± u;   dst = w ± t
+
+    Ali Baba's PRNG step, `69 * s + $53`, had called `mul8`, which
+    takes the two operands in HARGS and loops over eight bits. The
+    shifts and adds, `ASL; ASL; STA t; ASL` four times, and two `CLC;
+    ADC`, are 4 or 5 bytes longer than the call's 11, and take about 30
+    cycles against the helper's few hundred. The original game
+    computes its PRNG step with shifts for the same reason. The digits are the constant's non-adjacent form, which
+    has the fewest nonzero ones. A digit at bit 8 or above adds a
+    multiple of 256, which is 0 in a byte, so it's dropped, and the
+    top digit left must be +1."""
+    c = const_side.const if isinstance(const_side, tac_ast.Constant) else None
+    if not isinstance(c, _INT_CONST_TYPES):
+        return None
+    if ctx.symbols is None or not isinstance(dst, tac_ast.Var):
+        return None
+    dst_sym = ctx.symbols.get(dst.name)
+    if dst_sym is None or _scalar_int_size(dst_sym.type) != 1:
+        return None
+    digits = [(k, s) for k, s in _non_adjacent_form(c.value & 0xFF) if k < 8]
+    if len(digits) != 3 or digits[-1][1] != 1:
+        return None
+    (k0, s0), (k1, s1), (k2, _) = digits
+    out: list = []
+    terms = []
+    prev, prev_k = x, 0
+    for k in (k0, k1, k2):
+        if k == prev_k:
+            terms.append(prev)
+            continue
+        t = tac_ast.Var(name=_fresh_name(ctx, dst.name))
+        _register_temp(ctx, dst.name, t.name)
+        out.append(tac_ast.Binary(
+            op=tac_ast.LeftShift(), src1=prev,
+            src2=_shift_count_const(k - prev_k, prev, ctx.symbols), dst=t,
+        ))
+        terms.append(t)
+        prev, prev_k = t, k
+    t0, t1, t2 = terms
+    w = tac_ast.Var(name=_fresh_name(ctx, dst.name))
+    _register_temp(ctx, dst.name, w.name)
+    out.append(tac_ast.Binary(
+        op=tac_ast.Add() if s1 > 0 else tac_ast.Subtract(),
+        src1=t2, src2=t1, dst=w,
+    ))
+    out.append(tac_ast.Binary(
+        op=tac_ast.Add() if s0 > 0 else tac_ast.Subtract(),
+        src1=w, src2=t0, dst=dst,
+    ))
+    return out
+
+
+def _non_adjacent_form(value: int) -> list[tuple[int, int]]:
+    """The nonzero digits `(position, ±1)` of `value`'s non-adjacent
+    form, lowest first. 69 is [(0, 1), (2, 1), (6, 1)], and 7 is
+    [(0, -1), (3, 1)]."""
+    out = []
+    k = 0
+    while value:
+        if value & 1:
+            d = 2 - (value & 3)
+            out.append((k, d))
+            value -= d
+        value >>= 1
+        k += 1
+    return out
 
 
 def _two_term_multiply(

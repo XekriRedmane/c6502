@@ -102,8 +102,12 @@ is passed in.
   screen` reads.
 - A static whose address is taken. `return &page2;` lowers to `LDA
   #<page2` and `LDA #>page2`, which require the symbol to exist.
-- Arrays, structs, strings, and a pointer initialized with the
-  address of another object (`AddressInit`). Constant reads of array
+- Arrays, structs, and strings. A pointer initialized with the
+  address of another object (`AddressInit`) folds to the address's
+  halves, `#<(buf+3)` and `#>(buf+3)`, in a load, an add, a subtract,
+  or a compare, and [memory value propagation](memory_value_propagation.md)
+  then reads `B[i]` as `buf+3,Y`. A read of it by any other
+  instruction keeps its storage. Constant reads of array
   elements are folded at the TAC level instead, by
   [constant folding](constant_folding.md).
 - A zero initializer. `static const unsigned char z = 0;` is emitted

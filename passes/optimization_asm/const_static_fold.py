@@ -99,11 +99,11 @@ def fold_const_statics(
 def _collect_candidates(
     prog: asm_ast.Type_program,
     symbols,
-) -> dict[str, list[int]]:
+) -> dict[str, list]:
     """Walk `StaticVariable` top-levels and pick the ones whose
     type is const-qualified, internal-linkage, and whose init is a
     single foldable scalar. Returns `{name: little-endian bytes}`."""
-    candidates: dict[str, list[int]] = {}
+    candidates: dict[str, list] = {}
     for tl in prog.top_level:
         if not isinstance(tl, asm_ast.StaticVariable):
             continue
@@ -145,7 +145,7 @@ def _is_const_qualified(t) -> bool:
 
 def _scalar_init_bytes(
     init: list[asm_ast.Type_static_init],
-) -> list[int] | None:
+) -> list | None:
     """Return the little-endian byte representation of a single
     foldable scalar `static_init` list, or None if not foldable.
     Foldable shapes:
@@ -155,12 +155,20 @@ def _scalar_init_bytes(
       * LongLongInit(v)    → 8 bytes
       * FloatInit(bits)    → 4 bytes (IEEE 754 single bit pattern)
       * DoubleInit(bits)   → 8 bytes (IEEE 754 double bit pattern)
-    Multi-element inits (arrays / structs), AddressInit (link-time
-    address — would need to fold to `ImmLabelLow/High`, deferred),
-    StringInit, ZeroInit are skipped — single-element scalar only."""
+      * AddressInit(name, k) → the address's halves, `#<(name+k)`
+        and `#>(name+k)`, so `static const uint8_t *const S_X = MSG +
+        39;` reads as the address in place of two loads from S_X
+    Multi-element inits (arrays / structs), StringInit, ZeroInit are
+    skipped — single-element scalar only. The bytes are ints, and a
+    pointer's are the label operands."""
     if len(init) != 1:
         return None
     item = init[0]
+    if isinstance(item, asm_ast.AddressInit):
+        return [
+            asm_ast.ImmLabelLow(name=item.name, offset=item.offset),
+            asm_ast.ImmLabelHigh(name=item.name, offset=item.offset),
+        ]
     if isinstance(item, asm_ast.CharInit):
         return [item.value & 0xFF]
     if isinstance(item, asm_ast.IntInit):
@@ -183,7 +191,7 @@ def _scalar_init_bytes(
 
 def _scan_disqualifying(
     prog: asm_ast.Type_program,
-    candidates: dict[str, list[int]],
+    candidates: dict[str, list],
 ) -> set[str]:
     """Walk the program; mark any candidate whose address is taken
     or that's written to / used as an indexed-load base."""
@@ -206,7 +214,7 @@ def _scan_disqualifying(
 
 def _scan_instr(
     instr: asm_ast.Type_instruction,
-    candidates: dict[str, list[int]],
+    candidates: dict[str, list],
     disqualified: set[str],
 ) -> None:
     """Mark candidates appearing in disqualifying contexts in this
@@ -320,7 +328,7 @@ def _operand_uses(
 
 def _rewrite_program(
     prog: asm_ast.Type_program,
-    surviving: dict[str, list[int]],
+    surviving: dict[str, list],
 ) -> asm_ast.Type_program:
     """Drop surviving statics; rewrite Pseudo and Data refs to them
     as Imm operands in every function. A static that something still
@@ -364,7 +372,7 @@ def _names_in(node, out: set[str]) -> None:
 
 def _rewrite_function(
     fn: asm_ast.Function,
-    surviving: dict[str, list[int]],
+    surviving: dict[str, list],
 ) -> asm_ast.Function:
     """Replace every `Pseudo(name=cand, offset=k)` USE in `fn` with
     `Imm(bytes[k])`. Defs aren't rewritten — disqualification has
@@ -379,13 +387,14 @@ def _rewrite_function(
 
 def _rewrite_instr(
     instr: asm_ast.Type_instruction,
-    surviving: dict[str, list[int]],
+    surviving: dict[str, list],
 ) -> asm_ast.Type_instruction:
     """Substitute every USE-position Pseudo whose name is a
     surviving candidate with an `Imm` carrying the corresponding
     byte. DEF-position operands are left alone."""
 
-    def sub(op: asm_ast.Type_operand) -> asm_ast.Type_operand:
+    def sub(op: asm_ast.Type_operand,
+            labels: bool = True) -> asm_ast.Type_operand:
         # A `Data` read is one the TAC optimizer made of a load
         # through the static's address, as `*p` after `p = &K`
         # becomes `IndexedLoad(K, 0)`, which tac_to_asm lowers to
@@ -395,13 +404,19 @@ def _rewrite_instr(
             and op.name in surviving
             and 0 <= op.offset < len(surviving[op.name])
         ):
-            byts = surviving[op.name]
-            return asm_ast.Imm(value=byts[op.offset])
+            byte = surviving[op.name][op.offset]
+            if isinstance(byte, int):
+                return asm_ast.Imm(value=byte)
+            # A label's half is an immediate only where `asm_emit`
+            # writes one (`LDA`, `ADC`, `SBC`, `CMP`). Elsewhere the
+            # read stays, and so does the storage it reads.
+            return byte if labels else op
         return op
 
     match instr:
         case asm_ast.DecimalArith():
-            return decimal_arith.map_reads(instr, sub)
+            return decimal_arith.map_reads(
+                instr, lambda op: sub(op, labels=False))
         case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             return asm_ast.Mov(src=sub(src), dst=dst, is_volatile=v)
         case asm_ast.Add(src=src, dst=dst):
@@ -409,13 +424,14 @@ def _rewrite_instr(
         case asm_ast.Sub(src=src, dst=dst):
             return asm_ast.Sub(src=sub(src), dst=dst)
         case asm_ast.And(src=src, dst=dst):
-            return asm_ast.And(src=sub(src), dst=dst)
+            return asm_ast.And(src=sub(src, labels=False), dst=dst)
         case asm_ast.Or(src=src, dst=dst):
-            return asm_ast.Or(src=sub(src), dst=dst)
+            return asm_ast.Or(src=sub(src, labels=False), dst=dst)
         case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
-            return asm_ast.Xor(src1=sub(s1), src2=sub(s2), dst=dst)
+            return asm_ast.Xor(src1=sub(s1, labels=False),
+                               src2=sub(s2, labels=False), dst=dst)
         case asm_ast.Push(src=src):
-            return asm_ast.Push(src=sub(src))
+            return asm_ast.Push(src=sub(src, labels=False))
         case asm_ast.Compare(left=left, right=right):
             return asm_ast.Compare(
                 left=sub(left), right=sub(right),

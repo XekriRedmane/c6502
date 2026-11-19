@@ -180,8 +180,12 @@ A `StaticVariable` top-level becomes a candidate when:
   (not recursed — `Pointer(Const(Int))` is `const int *` pointee, not
   a `int * const` pointer; that wouldn't be us),
 - `init` is a single CharInit / IntInit / LongInit / LongLongInit /
-  FloatInit / DoubleInit (one foldable scalar — arrays, AddressInit,
-  StringInit, ZeroInit are skipped).
+  FloatInit / DoubleInit, or a single AddressInit, whose two bytes are
+  the address's halves, `ImmLabelLow` / `ImmLabelHigh` (one foldable
+  scalar — arrays, StringInit, ZeroInit are skipped). A label's half
+  replaces a read only in a `Mov`, `Add`, `Sub`, or `Compare`, where
+  `asm_emit` writes it as an immediate, and a read anywhere else keeps
+  the storage.
 
 A candidate is then disqualified if it appears as:
 

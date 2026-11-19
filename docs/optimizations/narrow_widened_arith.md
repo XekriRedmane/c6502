@@ -81,8 +81,11 @@ truncate the value the comparison read, as below.
 - The `Truncate` reads an SSA-renamed variable defined by a
   `Binary` with one of these operators. `+`, `-`, `*`, `&`, `|`, and
   `^` qualify because carries only move from low bytes to high
-  bytes. `<<` qualifies only with a constant count less than the
-  number of bits in the truncated width. `>>` qualifies with such a
+  bytes. `<<` qualifies with a constant count less than the number
+  of bits in the truncated width, or with a variable count, which
+  then calls the narrow `asl*` helper (`asl8` for a byte) in place of
+  the wide one. A count that shifts every bit out gives 0 at either
+  width. `>>` qualifies with such a
   count when its first operand is a `ZeroExtend` of an unsigned
   variable or a `SignExtend` of a signed one, as wide as the
   truncate's destination. The bytes the extend adds hold 0 or copies
@@ -147,7 +150,6 @@ had stayed `LDA #$00; LSR; ROR ALIVE`, 12 bytes in all.
   lose them. A `ZeroExtend` of a signed byte isn't narrowed either,
   since its added byte isn't a copy of the sign bit, which an
   arithmetic shift of the byte would bring in.
-- A `<<` by a variable count, such as `a << n`.
 - A global or other non-SSA operand that may change between the
   wide `Binary` and the truncate, as in `int t = g + 1; h();
   (uint8_t)t` when `h` can write `g`, and a volatile one.

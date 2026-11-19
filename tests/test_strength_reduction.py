@@ -435,5 +435,40 @@ class TestInlineShiftByOne(unittest.TestCase):
         self.assertEqual(self._run(src, opt=True), -2)
 
 
+
+class TestThreeTermByteMultiply(unittest.TestCase):
+    """A byte times a constant of three signed powers of two is shifts
+    and adds, where it had called `mul8`."""
+
+    def test_prng_step(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t st;\n"
+            "uint8_t prng(void) { st = 69 * st + 0x53; return st >> 1; }\n"
+        )
+        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        self.assertNotIn("mul8", asm)
+
+    def test_every_byte_constant(self):
+        # Each constant from 0 to 255 times a few values, against
+        # Python, for the constants this rule takes and the others.
+        values = (0, 1, 2, 3, 0x45, 0x80, 0xAB, 0xFF)
+        lines = ["#include <stdint.h>",
+                 "volatile uint8_t v[8] = {" + ", ".join(map(str, values)) + "};",
+                 "uint16_t check(uint8_t c, uint8_t k);",
+                 "int main(void) {", "    uint16_t bad = 0;"]
+        for c in range(256):
+            lines.append(
+                f"    for (uint8_t k = 0; k < 8; k++) if ((uint8_t)(v[k] * {c}) "
+                f"!= (uint8_t)check({c}, k)) bad++;")
+        lines += ["    return bad;", "}",
+                  "uint16_t check(uint8_t c, uint8_t k) { return (uint8_t)(c * v[k]); }"]
+        src = "\n".join(lines) + "\n"
+        out = build_sim(src, optimize=True).run(max_cycles=200_000_000)
+        self.assertFalse(out.timed_out)
+        self.assertEqual(out.return_int(), 0)
+
 if __name__ == "__main__":
     unittest.main()

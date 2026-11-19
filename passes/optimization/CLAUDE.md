@@ -73,7 +73,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `Subtract` through fresh temps `<dst>.sr0` / `<dst>.sr1`
   (registered in the symbol table and `ctx.ssa_dsts`), made only
   when `passes/shift_cost.py` says every shift inlines at the dst's
-  width, so `mul*` is never traded for an `asl*` call. Signed
+  width, so `mul*` is never traded for an `asl*` call. A byte
+  `Multiply` by a constant of three signed powers of two (69 = 64 +
+  4 + 1) becomes three shifts and two adds
+  (`_three_term_byte_multiply`). Signed
   Divide / Modulo skipped (C99 truncation differs from arithmetic
   shift). Each `build` is computational (log2 / mask construction) —
   the table form splits the per-op dispatch into rules but keeps the
@@ -234,7 +237,8 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   DefUsePass). Folds `Truncate(Binary(safe_op, Extend(a), Extend(b) |
   Constant), u_n)` → `Binary(safe_op, a, b | narrowed_Constant, u_n)`
   at the narrow width. Wraparound-safe ops are Add / Subtract / Multiply
-  / BitwiseAnd / BitwiseOr / BitwiseXor, plus LeftShift by a constant
+  / BitwiseAnd / BitwiseOr / BitwiseXor, plus LeftShift by a variable
+  count (the narrow `asl*` helper) or by a constant
   below the narrow width (Divide / Modulo / RightShift excluded
   because high bytes contribute to low bytes of the result). An
   operand may also be any wider integer Var (a 16-bit global, say),

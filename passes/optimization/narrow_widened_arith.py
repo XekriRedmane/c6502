@@ -47,11 +47,13 @@ NOT safe (high bytes contribute to low bytes of the result):
     of an extended byte is the exception, below.
 
 LeftShift is safe in its first operand, since the low bytes of
-`x << k` depend only on the low bytes of `x`. It's narrowed only
-when the count is a Constant below the narrow width in bits. A
+`x << k` depend only on the low bytes of `x`. It's narrowed when the
+count is a Constant below the narrow width in bits, or a variable. A
 constant shift is inlined as ASL / ROL steps over every byte of the
 operand, so `(uint8_t)(len << 4)` with `len` promoted to `int` would
-otherwise shift a high byte that's thrown away.
+otherwise shift a high byte that's thrown away. A variable count calls
+the `asl*` helper of the narrow width, which shifts fewer bytes, and a
+count that shifts every bit out gives 0 at either width.
 
 RightShift is narrowed only when its first operand is a ZeroExtend of
 an unsigned Var or a SignExtend of a signed one, and its count is a
@@ -213,7 +215,16 @@ class NarrowWidenedArith(DefUsePass):
         dst_unsigned = _is_unsigned(dst_var, ctx.symbols)
         if dst_unsigned is None:
             return None
-        if is_shift:
+        if is_shift and isinstance(bin_instr.op, tac_ast.LeftShift) and (
+                isinstance(bin_instr.src2, tac_ast.Var)):
+            # A left shift by a variable count narrows too. The low
+            # bytes of `x << n` depend only on the low bytes of `x`, and
+            # a count that shifts every bit out gives 0 at either width,
+            # since the `asl*` helpers shift one bit per count and the
+            # simulator's model of them gives 0 for such a count.
+            # `scaled <<= shift` on a byte had called `asl16`.
+            pass
+        elif is_shift:
             count = bin_instr.src2
             if not (isinstance(count, tac_ast.Constant)
                     and isinstance(getattr(count.const, "value", None), int)

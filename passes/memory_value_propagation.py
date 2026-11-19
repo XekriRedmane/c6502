@@ -979,9 +979,34 @@ def _rewrite(
         state = bin.copy()
         for instr in block.instructions:
             ctx.index = len(out)
-            out.append(_rewrite_instr(instr, state, ctx))
-            _transfer(instr, state, ctx)
+            new = _rewrite_instr(instr, state, ctx)
+            out.append(new)
+            # A store through a pointer made a store to a label kills
+            # fewer facts, so the rewritten store updates the state, and
+            # the next store through the same pointer is rewritten in
+            # the same call. Twenty such stores had taken one call each
+            # and run past the peephole fixed point's cap. Any other
+            # instruction updates it as it was, since a read rewritten
+            # to its source would lose the fact that a byte copies the
+            # byte it was read from (`LDA p; STA DPTR` makes DPTR a
+            # copy of `p`, which `(p),Y` needs).
+            _transfer(new if _store_made_direct(instr, new) else instr,
+                      state, ctx)
     return out
+
+
+_THROUGH_POINTER = (
+    asm_ast.Indirect, asm_ast.IndirectY, asm_ast.IndirectZp,
+    asm_ast.IndirectZpY,
+)
+
+
+def _store_made_direct(old, new) -> bool:
+    """Whether the rewrite made a store through a pointer one to a
+    named byte."""
+    return (isinstance(old, asm_ast.Mov) and isinstance(new, asm_ast.Mov)
+            and isinstance(old.dst, _THROUGH_POINTER)
+            and not isinstance(new.dst, _THROUGH_POINTER))
 
 
 def _rewrite_instr(
@@ -1020,7 +1045,18 @@ def _label_pointer_operand(op, state: State):
     `IndirectZp(N, k)`, when the bytes at `N` and `N + 1` hold the low
     and high bytes of the address `name + off`. Adding Y carries into
     the high byte in both addressing modes, so they reach the same
-    byte. Otherwise `op`."""
+    byte. Otherwise `op`. An access through DPTR (`Indirect`,
+    `IndirectY`) is one through `N` = DPTR, as for `S_X[i]` with
+    `static const uint8_t *const S_X = MSG + 39`, whose bytes
+    `const_static_fold` makes the halves of `MSG+39`."""
+    if isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY)):
+        from passes.runtime_layout import current
+        dptr = current().dptr
+        through = (asm_ast.IndirectZp(address=dptr, offset=op.offset)
+                   if isinstance(op, asm_ast.Indirect)
+                   else asm_ast.IndirectZpY(address=dptr))
+        out = _label_pointer_operand(through, state)
+        return op if out is through else out
     if not isinstance(op, (asm_ast.IndirectZpY, asm_ast.IndirectZp)):
         return op
     lo = state.cells.get(op.address)

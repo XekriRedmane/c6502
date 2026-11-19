@@ -22,8 +22,9 @@ the original's run ends, and so must the disks the scripts write.
 
 Each script is a test method of its own, which pytest-xdist can give to
 a worker of its own. On the original, the attract mode takes about 9
-seconds, the game about 3, the save about 14, and the load about 18,
-of which 14 go to running the save for the disk it reads.
+seconds, the game about 3, the save about 14, the load about 18, of
+which 14 go to running the save for the disk it reads, and the forest
+and the party about 5 each.
 
 `uv run python -m tests.test_ali_baba coverage` prints, for each script, how
 many of the original's routines it executes, and the routines of the
@@ -136,8 +137,100 @@ _LOAD = Script(keys=_keys([
     (162, 0x0D), (193, "K"), (224, 0x0D), (285, "M"),
 ]), swaps=[(70, "scenario"), (101, "game")], end=350, events=9414)
 
+# Shopping in the forest. After the new game, Ali Baba walks onto the
+# dusty road (I I), right (K K K), up (I), right past the rune (K K K
+# K), and down (M M) through the door at row 6, column 18 into the
+# forest, at row 1, column 10. Seven J presses take him left to the
+# chest of 3 ducats at row 1, column 3 (PICKUP_TREASURE). K K K and M
+# take him to the weapon shop at row 2, column 6, whose scene Return
+# closes. The shop's menu shows AN IRON SWORD first. Space picks BUY
+# SOMETHING ELSE, which shows AN OAK CLUB, and I and Space buy it for
+# the 3 ducats (SHOP_BUY_EFFECT_2), after which the menu shows the
+# iron sword again. I and Space try to buy it with nothing left, which
+# moves on to the club, and M and Space pick NO SALE. J J J J, six M
+# presses, and J take him to the chest of 47 ducats at row 8, column
+# 1, and I I I and K K to the armor shop at row 5, column 3. The first
+# J waits 52 reads, since with the usual 31 a tiger that roams the
+# forest catches him on the way. Return closes the scene. I and Space
+# try to buy the RITHMIL PLATE ARMOR, which he can't afford, Space
+# skips the RITHMIL CHAIN MAIL, and I and Space buy the LEATHER ARMOR
+# for 8 ducats, which gives him experience to come (XP_AWARD_4,
+# AWARD_XP). M and Space pick NO SALE. Space, I I K, and Space open
+# OTHER OPTIONS, M and Space pick DROP GOLD, Space Space press #
+# twice, K and Space Space press @ twice, and M and Space drop 32 of
+# his 39 ducats (DROP_GOLD_EXEC). The tiger is in the cell above him.
+# Space, I, and Space pick ATTACK, and I and Space attack ABOVE
+# (ATTACK_UP). By his next turn the tiger has wounded him and moved
+# into his cell. Space, I I K, Space, I, and Space pick DROP ARMOR,
+# which turns the leather armor's experience into a level
+# (FLUSH_PENDING_XP). Space, I, and Space pick ATTACK again, which
+# with the tiger in his cell goes straight to it (NEXT_COLOCATED_MOB).
+# The run ends before the tiger's turn.
+_FOREST = Script(keys=_keys([
+    (10, " "), (12, " "), (18, 0x0D), (49, "I"), (80, "I"), (111, "K"),
+    (142, "K"), (173, "K"), (204, "I"), (235, "K"), (266, "K"), (297, "K"),
+    (328, "K"), (359, "M"), (390, "M"), (421, "J"), (452, "J"), (483, "J"),
+    (514, "J"), (545, "J"), (576, "J"), (607, "J"), (638, "K"), (669, "K"),
+    (700, "K"), (731, "M"), (762, 0x0D), (793, " "), (824, "I"),
+    (855, " "), (886, "I"), (917, " "), (948, "M"), (979, " "),
+    (1031, "J"), (1062, "J"), (1093, "J"), (1124, "J"), (1155, "M"),
+    (1186, "M"), (1217, "M"), (1248, "M"), (1279, "M"), (1310, "M"),
+    (1341, "J"), (1372, "I"), (1403, "I"), (1434, "I"), (1465, "K"),
+    (1496, "K"), (1527, 0x0D), (1558, "I"), (1589, " "), (1620, " "),
+    (1651, "I"), (1682, " "), (1713, "M"), (1744, " "), (1775, " "),
+    (1806, "I"), (1837, "I"), (1868, "K"), (1899, " "), (1930, "M"),
+    (1961, " "), (1992, " "), (2023, " "), (2054, "K"), (2085, " "),
+    (2116, " "), (2147, "M"), (2178, " "), (2209, " "), (2240, "I"),
+    (2271, " "), (2302, "I"), (2333, " "), (2364, " "), (2395, "I"),
+    (2426, "I"), (2457, "K"), (2488, " "), (2519, "I"), (2550, " "),
+    (2581, " "), (2612, "I"), (2643, " "),
+]), end=2674, events=100842)
+
+# A second character. At the start, M and K move to #, and Space
+# raises the slot number to 2 (SLOT_INC_ENTER). K and Space press @,
+# which lowers it to 1 again, and I and Return pick BEGIN NEW GAME.
+# Ali Baba walks onto the dusty road (I I) and right (K K K) to beside
+# the rune at row 5, column 15. Return, I, and Space pick ATTACK, and
+# K and Space attack the cell to his RIGHT. The rune is an entry of
+# the location's event list, so PLAYER_ATTACK runs and takes its
+# branch for a target that can't be hurt. Return, J I, and Space open
+# OTHER OPTIONS, and J and Space pick ADD SOMEONE, whose menu shows
+# ABOU HASSAN (CHAR_SELECT_INIT). K and Space press #, which shows
+# LUTHIEN, and K and Space press @, which shows ABOU HASSAN again. M
+# and Space pick TO THIS ROOM, M and Space TO ALI BABA'S HOME, and
+# Space ADD, and ABOU HASSAN joins (INIT_CHAR_SELECT). I and Space
+# pick MOVE. Return, J I, Space, K, and Space open OTHER OPT, the game
+# settings, and M and Space pick SAVE GAME. K and Space press #, K and
+# Space press @ (SLOT_INC_REENTER, SLOT_DEC_REENTER), and K and Space
+# save in slot 1. It's on a scenario disk, so the scene that explains
+# them plays (four Spaces). M and Space pick FORMAT AND USE NEW
+# SCENARIO DISK with the game disk still in the drive, so the game
+# prints INSERT SCENARIO DISK and shows the choices again
+# (SCENARIO_INSERT_PROMPT), and I and Space pick CANCEL REQUEST.
+# Return, J I, Space, K M, and Space pick RETIRE, and Ali Baba retires
+# (RETIRE_CHARACTER). The first K ends the scene, and Abou Hassan
+# walks right (K K K) onto the rune, whose scene plays (two Spaces)
+# and which hurts him (TRIGGER_SCENE_EVENT). M walks him into the wall
+# below, which stops him (SHOW_LOCKED_MSG).
+_PARTY = Script(keys=_keys([
+    (10, " "), (12, " "), (43, "M"), (74, "K"), (105, " "), (136, "K"),
+    (167, " "), (198, "I"), (229, 0x0D), (260, "I"), (291, "I"),
+    (322, "K"), (353, "K"), (384, "K"), (415, 0x0D), (446, "I"),
+    (477, " "), (508, "K"), (539, " "), (570, 0x0D), (601, "J"),
+    (632, "I"), (663, " "), (694, "J"), (725, " "), (756, "K"), (787, " "),
+    (818, "K"), (849, " "), (880, "M"), (911, " "), (942, "M"), (973, " "),
+    (1004, " "), (1035, "I"), (1066, " "), (1097, 0x0D), (1128, "J"),
+    (1159, "I"), (1190, " "), (1221, "K"), (1252, " "), (1283, "M"),
+    (1314, " "), (1345, "K"), (1376, " "), (1407, "K"), (1438, " "),
+    (1469, "K"), (1500, " "), (1531, " "), (1562, " "), (1593, " "),
+    (1624, " "), (1655, "M"), (1686, " "), (1717, "I"), (1748, " "),
+    (1779, 0x0D), (1810, "J"), (1841, "I"), (1872, " "), (1903, "K"),
+    (1934, "M"), (1965, " "), (1996, "K"), (2027, "K"), (2058, "K"),
+    (2089, "K"), (2120, " "), (2151, " "), (2182, "M"),
+]), end=2213, events=103140)
+
 _SCRIPTS = {"attract": _ATTRACT, "game": _GAME, "save": _SAVE,
-            "load": _LOAD}
+            "load": _LOAD, "forest": _FOREST, "party": _PARTY}
 
 
 # ---- Running them -------------------------------------------------------------
@@ -258,6 +351,28 @@ class TestOriginal(unittest.TestCase):
         self.assertIn((1, 1, 0), reads)
         self.assertIn((1, 2, 12), reads)
         self._reached(machine, "CONTINUE_GAME", "READ_GAME_DATA")
+
+    def test_forest(self) -> None:
+        machine = self._run(_FOREST)
+        self._reached(machine, "PICKUP_TREASURE", "DISPLAY_SHOP",
+                      "SHOP_BUY_HANDLER", "SHOP_BUY_EFFECT_2",
+                      "XP_AWARD_4", "AWARD_XP", "DROP_GOLD_EXEC",
+                      "FLUSH_PENDING_XP", "ATTACK_UP", "FIND_ATTACK_TARGET",
+                      "NEXT_COLOCATED_MOB")
+
+    def test_party(self) -> None:
+        machine = self._run(_PARTY)
+        # The save is cancelled, so nothing is written.
+        self.assertEqual([r for r in _disk_reads(machine) if r[0] == 2],
+                         [])
+        self._reached(machine, "SLOT_INC_ENTER", "SLOT_DEC_ENTER",
+                      "PLAYER_ATTACK", "CHAR_SELECT_INIT", "CHAR_SELECT_NEXT",
+                      "CHAR_SELECT_PREV", "CHAR_SELECT_HERE",
+                      "CHAR_SELECT_HOME", "INIT_CHAR_SELECT",
+                      "SLOT_INC_REENTER", "SLOT_DEC_REENTER",
+                      "SCENARIO_INSERT_PROMPT", "CANCEL_SCENARIO",
+                      "RETIRE_CHARACTER", "TRIGGER_SCENE_EVENT",
+                      "SHOW_LOCKED_MSG")
 
 
 class TestDisk(unittest.TestCase):
@@ -401,6 +516,12 @@ class TestRuns(unittest.TestCase):
 
     def test_load(self) -> None:
         self._compare(_LOAD)
+
+    def test_forest(self) -> None:
+        self._compare(_FOREST)
+
+    def test_party(self) -> None:
+        self._compare(_PARTY)
 
 
 def _print_coverage() -> None:

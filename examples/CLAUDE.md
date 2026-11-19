@@ -78,7 +78,7 @@ the decisions behind the header, and `notes/` has each unit's
 departures and size by routine. `tests/test_ali_baba.py` checks each
 unit's output against its `.asm` file and, when `ALI_BABA_DIR` names
 the reverse-engineering project's directory (after its `build.py` has
-made `output/main.bin`, `main.asm`, and `main.sym`), plays four scripts
+made `output/main.bin`, `main.asm`, and `main.sym`), plays six scripts
 on the linked program and on the original, on the stand-in Apple II in
 `sim/ali_baba.py` with the Disk II of `sim/disk2.py`, and compares
 every soft-switch access, Monitor call, and call into the disk code,

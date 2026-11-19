@@ -85,11 +85,13 @@ which aren't in this repository, and are skipped without them.
 - `test_ali_baba.py` checks each unit's output against its `.asm`
   file and round-trips disk images through `sim/disk2.py`. With
   `ALI_BABA_DIR` set to the ali_baba_reveng directory (after its
-  `build.py`), `TestOriginal` plays four scripts on the original
-  (the attract mode, a game, a save to a blank disk, and a load) and
-  checks what each reaches, and `TestRuns` plays them on the linked
-  C program too and requires the same events, on `sim/ali_baba.py`,
-  and the same disks. `uv run python -m tests.test_ali_baba coverage`
+  `build.py`), `TestOriginal` plays six scripts on the original
+  (the attract mode, a game, a save to a blank disk, a load, a visit
+  to the forest's chests and shops, and a game in which a second
+  character joins and Ali Baba retires) and checks what each
+  reaches, and `TestRuns` plays them on the linked C program too and
+  requires the same events, on `sim/ali_baba.py`, and the same
+  disks. `uv run python -m tests.test_ali_baba coverage`
   lists the original's routines no script reaches.
 
 ## Chapter harnesses

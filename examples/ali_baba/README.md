@@ -11,8 +11,9 @@ resident page `$0500-$07FF`, the disk code at `$B300-$BFFF` (a sector
 reader and DOS 3.3's RWTS), and the boot loader stay the original's,
 and the C program calls the disk code at its addresses.
 
-It plays Ali Baba. On four scripted runs, the attract mode, a game, a
-save to a new scenario disk, and a load from it, it makes the same
+It plays Ali Baba. On six scripted runs, the attract mode, a game, a
+save to a new scenario disk, a load from it, a visit to the forest's
+shops, and a game with a second character, it makes the same
 soft-switch accesses, Monitor calls, and disk calls as the original,
 with the same hi-res page 1 at each one, and leaves the same disks
 (see "How it's compared"). It is about 4.5% larger than the code it
@@ -89,7 +90,7 @@ leaves it. The program has `static` variables with initial values that
 file. With `ALI_BABA_DIR` set to the reverse-engineering project's
 directory, which holds the game's disk image and, after `build.py`,
 `output/main.bin` (the original's memory image, `$0500-$BFFF`),
-`output/main.asm`, and `output/main.sym`, it also plays four scripts
+`output/main.asm`, and `output/main.sym`, it also plays six scripts
 on the C program and on the original, on the stand-in Apple II in
 `sim/ali_baba.py`:
 
@@ -101,6 +102,13 @@ on the C program and on the original, on the stand-in Apple II in
 - A save. The settings change and change back, and the game is saved
   on a blank disk, which the game formats.
 - A load. The save is made again, and the game continues from it.
+- The forest. Ali Baba picks up two chests of gold, buys an oak club
+  and leather armor, drops some of his gold, turns the armor's
+  experience into a level, and attacks a tiger twice.
+- A party. The slot number at the start goes up and down, Ali Baba
+  attacks the rune on the dusty road, Abou Hassan joins him, a save is
+  begun and cancelled, Ali Baba retires, and Abou Hassan steps on the
+  rune.
 
 A script is the keys, each pressed before a numbered `KBD` read, and
 the disk swaps, found by running the original. Both programs start
@@ -116,10 +124,15 @@ the original's run ends, as must the disks afterwards. `COUT` isn't
 recorded, since the C program calls the HRCG directly where the
 original goes through `COUT`.
 
-The four scripts run 271 of the 387 code labels in the spans the C
+The six scripts run 337 of the 387 code labels in the spans the C
 program replaces (`uv run python -m tests.test_ali_baba coverage`
-lists the rest). Player attacks, the shops, treasure, dropping gold,
-experience, and choosing a character aren't reached yet.
+lists the rest). The code that no script reaches includes the menu
+that picks one of several mobs in a cell, attacks that open or topple an object,
+the weapons and armor other than the oak club and the leather armor,
+the trapped and special chests, the story scenes that move groups of
+mobs, the joystick, the integrity checks' range counters, and the
+HRCG's entry points and control characters that the game never
+uses.
 
 ## Size
 

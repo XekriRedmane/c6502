@@ -65,19 +65,9 @@ ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
 __zpabi_cout_string__s_0	EQU	$E0
-__zpabi_load_address__addr_0	EQU	$E0
-__zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
-__zpabi_print_number__n_0	EQU	$E0
-__zpabi_return_value__value_0	EQU	$E0
-__zpabi_store_result__value_0	EQU	$E0
 __zpabi_cout_string__s_1	EQU	$E1
-__zpabi_load_address__addr_1	EQU	$E1
-__zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
-__zpabi_print_number__n_1	EQU	$E1
-__zpabi_return_value__value_1	EQU	$E1
-__zpabi_store_result__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_write_to_sector__1	EQU	$E5
 __local_write_to_sector__2	EQU	$E6
@@ -154,21 +144,21 @@ COUT1	EQU	$FDF0
 ; ext instr_sread params=
 ; ext instr_test_attr params=
 ; ext internal_error params=
-; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1
-; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1
+; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 param_regs=A,X
+; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 param_regs=A,X
 ; ext new_line params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
 ; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
-; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1
+; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 param_regs=A,X
 ; ext print_obj params=__zpabi_print_obj__obj param_regs=A
 ; ext print_status_line params=
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext reset_window params=
 ; ext restart params=
-; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
-; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
+; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 param_regs=A,X
+; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 param_regs=A,X
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; call do_rwts_on_sector -> RWTS
 ; call inc_sector_and_read -> read_from_sector

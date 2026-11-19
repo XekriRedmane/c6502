@@ -23,102 +23,32 @@ border_anim_index	EQU	$63
 border_next	EQU	$64
 __local_clear_hires_page1__page	EQU	$80
 __local_init_mob_count__0	EQU	$80
-__zpabi_anim_border_icons__limit	EQU	$80
-__zpabi_appearance_to_fontchar__appearance	EQU	$80
-__zpabi_apply_damage_to_current__damage	EQU	$80
-__zpabi_check_adjacent_threats__pos	EQU	$80
-__zpabi_check_at_boundary__pos	EQU	$80
-__zpabi_check_encounter__pos	EQU	$80
-__zpabi_check_hostile__other_0	EQU	$80
-__zpabi_classify_entity_type__e_0	EQU	$80
-__zpabi_colrow_to_pos__col	EQU	$80
-__zpabi_display_message__index	EQU	$80
-__zpabi_display_message_loop__msg_0	EQU	$80
-__zpabi_display_shop__ev_0	EQU	$80
-__zpabi_draw_border_strings__s_0	EQU	$80
-__zpabi_draw_char_at_pos__pos	EQU	$80
-__zpabi_enter_combat_state__pos	EQU	$80
-__zpabi_find_entity_at_pos__pos	EQU	$80
-__zpabi_get_char_record__index	EQU	$80
-__zpabi_get_entity_fontchar__e_0	EQU	$80
-__zpabi_get_mob_data__index	EQU	$80
-__zpabi_handle_encounter__ev_0	EQU	$80
-__zpabi_handle_event_slot__ev_0	EQU	$80
-__zpabi_hrcg_cout__c	EQU	$80
-__zpabi_input_loop__m_0	EQU	$80
-__zpabi_load_char_to_fa__index	EQU	$80
-__zpabi_manhattan_distance__pos	EQU	$80
-__zpabi_modify_current_stats__amount_0	EQU	$80
-__zpabi_move_border_icons__last	EQU	$80
-__zpabi_num_to_decimal__value_0	EQU	$80
-__zpabi_pickup_treasure__ev_0	EQU	$80
-__zpabi_plot_title_glyphs__i	EQU	$80
-__zpabi_pos_to_colrow__pos	EQU	$80
-__zpabi_print_at__s_0	EQU	$80
-__zpabi_print_bottom_centered__s_0	EQU	$80
-__zpabi_print_centered_plus_col__s_0	EQU	$80
-__zpabi_print_entity_name__m_0	EQU	$80
-__zpabi_reorder_char__m_0	EQU	$80
-__zpabi_run_chain__state	EQU	$80
-__zpabi_rwts_dispatch__command	EQU	$80
-__zpabi_scene_loop__scene	EQU	$80
-__zpabi_set_char_state__state	EQU	$80
-__zpabi_setup_input__m_0	EQU	$80
-__zpabi_setup_text_pos__name_0	EQU	$80
-__zpabi_setup_text_pos_col20__name_0	EQU	$80
-__zpabi_trigger_scene_event__ev_0	EQU	$80
-__zpabi_tune_player__tune	EQU	$80
-__zpabi_update_event_list__pos	EQU	$80
+__local_move_border_icon_list__first	EQU	$80
+__zpabi_anim_border_icons__to	EQU	$80
+__zpabi_draw_border_strings__first	EQU	$80
+__zpabi_modify_current_stats__add	EQU	$80
+__zpabi_num_to_decimal__out_0	EQU	$80
+__zpabi_plot_title_glyphs__charset	EQU	$80
+__zpabi_print_at__col	EQU	$80
+__zpabi_update_event_list__value_0	EQU	$80
 __local_clear_hires_page1__0	EQU	$81
 __local_init_mob_count__1	EQU	$81
-__zpabi_anim_border_icons__from	EQU	$81
-__zpabi_check_hostile__other_1	EQU	$81
-__zpabi_classify_entity_type__e_1	EQU	$81
-__zpabi_colrow_to_pos__row	EQU	$81
-__zpabi_display_message_loop__msg_1	EQU	$81
-__zpabi_display_shop__ev_1	EQU	$81
-__zpabi_draw_border_strings__s_1	EQU	$81
-__zpabi_get_entity_fontchar__e_1	EQU	$81
-__zpabi_handle_encounter__ev_1	EQU	$81
-__zpabi_handle_event_slot__ev_1	EQU	$81
-__zpabi_input_loop__m_1	EQU	$81
-__zpabi_manhattan_distance__from	EQU	$81
-__zpabi_modify_current_stats__amount_1	EQU	$81
-__zpabi_move_border_icon_list__first	EQU	$81
-__zpabi_move_border_icons__first	EQU	$81
-__zpabi_num_to_decimal__value_1	EQU	$81
-__zpabi_pickup_treasure__ev_1	EQU	$81
-__zpabi_plot_title_glyphs__end	EQU	$81
-__zpabi_print_at__s_1	EQU	$81
-__zpabi_print_bottom_centered__s_1	EQU	$81
-__zpabi_print_centered_plus_col__s_1	EQU	$81
-__zpabi_print_entity_name__m_1	EQU	$81
-__zpabi_reorder_char__m_1	EQU	$81
-__zpabi_setup_input__m_1	EQU	$81
-__zpabi_setup_text_pos__name_1	EQU	$81
-__zpabi_setup_text_pos_col20__name_1	EQU	$81
-__zpabi_trigger_scene_event__ev_1	EQU	$81
-__zpabi_tune_player__strength	EQU	$81
-__zpabi_update_event_list__value_0	EQU	$81
+__local_plot_title_glyphs__i	EQU	$81
+__zpabi_draw_border_strings__last	EQU	$81
+__zpabi_num_to_decimal__out_1	EQU	$81
+__zpabi_print_at__row	EQU	$81
+__zpabi_update_event_list__value_1	EQU	$81
+__local_anim_border_icons__limit	EQU	$82
 __local_move_border_icons__carried	EQU	$82
-__zpabi_anim_border_icons__to	EQU	$82
-__zpabi_draw_border_strings__first	EQU	$82
-__zpabi_modify_current_stats__add	EQU	$82
-__zpabi_num_to_decimal__out_0	EQU	$82
-__zpabi_plot_title_glyphs__charset	EQU	$82
-__zpabi_print_at__col	EQU	$82
-__zpabi_update_event_list__value_1	EQU	$82
-__local_plot_title_glyphs__i	EQU	$83
-__local_select_input_mode__2	EQU	$83
-__zpabi_draw_border_cell__glyph	EQU	$83
-__zpabi_draw_border_strings__last	EQU	$83
-__zpabi_num_to_decimal__out_1	EQU	$83
-__zpabi_print_at__row	EQU	$83
-__zpabi_random_in_range__limit	EQU	$83
-__zpabi_draw_border_cell__cell	EQU	$84
-__zpabi_print_string__s_0	EQU	$84
-__zpabi_print_string__s_1	EQU	$85
-__zpabi_render_font_char_direct__charset_sel	EQU	$85
+__local_plot_title_glyphs__end	EQU	$82
+__local_select_input_mode__2	EQU	$82
+__local_anim_border_icons__from	EQU	$83
+__local_draw_border_strings__s_1	EQU	$83
+__local_move_border_icons__cell	EQU	$83
+__local_print_at__s_0	EQU	$83
+__local_draw_border_strings__s_0	EQU	$84
+__local_move_border_icons__first	EQU	$84
+__local_draw_border_cell__cell	EQU	$86
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -283,23 +213,23 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def anim_border_icons params=__zpabi_anim_border_icons__limit,__zpabi_anim_border_icons__from,__zpabi_anim_border_icons__to locals=__local_anim_border_icons__0 indirect=false in_cycle=false
+; def anim_border_icons params=__zpabi_anim_border_icons__limit,__zpabi_anim_border_icons__from,__zpabi_anim_border_icons__to locals=__local_anim_border_icons__limit,__local_anim_border_icons__from indirect=false in_cycle=false param_regs=A,X,
 ; def border_anim_step params= locals=__local_border_anim_step__0 indirect=false in_cycle=false
 ; def clear_hires_page1 params= locals=__local_clear_hires_page1__page,__local_clear_hires_page1__0 indirect=false in_cycle=false
-; def draw_border_cell params=__zpabi_draw_border_cell__cell,__zpabi_draw_border_cell__glyph locals= indirect=false in_cycle=false
+; def draw_border_cell params=__zpabi_draw_border_cell__cell,__zpabi_draw_border_cell__glyph locals=__local_draw_border_cell__glyph,__local_draw_border_cell__cell indirect=false in_cycle=false param_regs=A,X
 ; def draw_border_labels params= locals= indirect=false in_cycle=false
-; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__last indirect=false in_cycle=false changes=__zpabi_draw_border_strings__last
+; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__last,__local_draw_border_strings__s_1,__local_draw_border_strings__s_0 indirect=false in_cycle=false param_regs=A,X,, changes=__zpabi_draw_border_strings__last
 ; def game_init params= locals= indirect=false in_cycle=false
 ; def init_disk_iob params= locals= indirect=false in_cycle=false
 ; def init_game_display params= locals= indirect=false in_cycle=false
 ; def init_game_state params= locals= indirect=false in_cycle=false
 ; def init_mob_count params= locals=__local_init_mob_count__0,__local_init_mob_count__1 indirect=false in_cycle=false
-; def move_border_icon_list params=__zpabi_move_border_icon_list__first locals= indirect=false in_cycle=false
-; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__carried indirect=false in_cycle=false
-; def plot_title_glyphs params=__zpabi_plot_title_glyphs__i,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i indirect=false in_cycle=false
-; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals= indirect=false in_cycle=false
+; def move_border_icon_list params=__zpabi_move_border_icon_list__first locals=__local_move_border_icon_list__first indirect=false in_cycle=false param_regs=A
+; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__carried,__local_move_border_icons__cell,__local_move_border_icons__first indirect=false in_cycle=false param_regs=A,X
+; def plot_title_glyphs params=__zpabi_plot_title_glyphs__i,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i,__local_plot_title_glyphs__end indirect=false in_cycle=false param_regs=A,X,
+; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals=__local_print_at__s_1,__local_print_at__s_0 indirect=false in_cycle=false param_regs=A,X,,
 ; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1,__local_select_input_mode__2 indirect=false in_cycle=false
-; def start_border_passes params= locals=__local_start_border_passes__glyph indirect=false in_cycle=false
+; def start_border_passes params= locals=__local_start_border_passes__0 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -316,8 +246,8 @@ WAIT	EQU	$FCA8
 ; ext ai_choose_target params=
 ; ext anim_check_frame params=
 ; ext anim_tick_and_wait params=
-; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance
-; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage
+; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance param_regs=A
+; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
@@ -330,20 +260,20 @@ WAIT	EQU	$FCA8
 ; ext char_select_init params=
 ; ext char_select_next params=
 ; ext char_select_prev params=
-; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos
-; ext check_at_boundary params=__zpabi_check_at_boundary__pos
+; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos param_regs=A
+; ext check_at_boundary params=__zpabi_check_at_boundary__pos param_regs=A
 ; ext check_attack_eligible params= carry=true
 ; ext check_can_leave params= carry=true
-; ext check_encounter params=__zpabi_check_encounter__pos
-; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 carry=true
+; ext check_encounter params=__zpabi_check_encounter__pos param_regs=A
+; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 param_regs=A,X carry=true
 ; ext check_scene_events params=
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
-; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1
+; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext cold_restart params=
-; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row
+; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row param_regs=A,X
 ; ext commit_move params=
 ; ext configure_input params=
 ; ext continue_game params=
@@ -353,22 +283,22 @@ WAIT	EQU	$FCA8
 ; ext disk_write params= carry=true
 ; ext dispatch_on_mode params=
 ; ext display_char_stats params=
-; ext display_message params=__zpabi_display_message__index
-; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1
-; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1
+; ext display_message params=__zpabi_display_message__index param_regs=A
+; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 param_regs=A,X
+; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 param_regs=A,X
 ; ext display_status_bar params=
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
-; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos
+; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
-; ext enter_combat_state params=__zpabi_enter_combat_state__pos
+; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
 ; ext enter_save_game_slot params=
 ; ext enter_scenario_disk params=
 ; ext fill_map params=
 ; ext find_attack_target params=
-; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos
+; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos param_regs=A
 ; ext find_first_pc params= carry=true
 ; ext find_nearest_event params=
 ; ext find_next_pc_wrap params=
@@ -377,14 +307,14 @@ WAIT	EQU	$FCA8
 ; ext flush_pending_xp params=
 ; ext font_pos_to_text_pos params=
 ; ext format_scenario_disk params=
-; ext get_char_record params=__zpabi_get_char_record__index
-; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1
+; ext get_char_record params=__zpabi_get_char_record__index param_regs=A
+; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 param_regs=A,X
 ; ext get_input_table_ptr params=
-; ext get_mob_data params=__zpabi_get_mob_data__index
-; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1
-; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1
+; ext get_mob_data params=__zpabi_get_mob_data__index param_regs=A
+; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
+; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
-; ext hrcg_cout params=__zpabi_hrcg_cout__c
+; ext hrcg_cout params=__zpabi_hrcg_cout__c param_regs=A
 ; ext hrcg_init params=
 ; ext idle_anim_handler params=
 ; ext inc_threshold_wrap params=
@@ -393,12 +323,12 @@ WAIT	EQU	$FCA8
 ; ext init_drop_display params=
 ; ext init_drop_gold params=
 ; ext init_world params=
-; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1
+; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
 ; ext load_char_name_ptr params=
-; ext load_char_to_fa params=__zpabi_load_char_to_fa__index
+; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
-; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from
+; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
 ; ext menu_attack_target params=
 ; ext menu_check_attack params=
 ; ext menu_drop_dec params=
@@ -408,42 +338,42 @@ WAIT	EQU	$FCA8
 ; ext menu_game_settings_enter params=
 ; ext menu_other_options params=
 ; ext menu_see_your_lot params=
-; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add
+; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
 ; ext npc_move_ai params=
-; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1
+; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
 ; ext pick_random_member params=
-; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1
-; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos
-; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1
-; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1
+; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
+; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos param_regs=A
+; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 param_regs=A,X
+; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 param_regs=A,X
 ; ext print_ctrl_ab params=
 ; ext print_ctrl_n params=
-; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1
+; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 param_regs=A,X
 ; ext print_fontchar_at_text_pos params=
 ; ext print_member_name params=
 ; ext print_mob_name params=
-; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1
+; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
 ; ext random_events params=
-; ext random_in_range params=__zpabi_random_in_range__limit
+; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext read_keyboard params=
 ; ext render_font_char params=
-; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel
-; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1
+; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel param_regs=A
+; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 param_regs=A,X
 ; ext reorder_current_char params=
 ; ext reset_turn_pos params=
 ; ext resolve_attack params=
 ; ext retire_character params=
-; ext run_chain params=__zpabi_run_chain__state
-; ext rwts_dispatch params=__zpabi_rwts_dispatch__command carry=true
+; ext run_chain params=__zpabi_run_chain__state param_regs=A
+; ext rwts_dispatch params=__zpabi_rwts_dispatch__command param_regs=A carry=true
 ; ext save_game params=
-; ext scene_loop params=__zpabi_scene_loop__scene
+; ext scene_loop params=__zpabi_scene_loop__scene param_regs=A
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
 ; ext select_someone_else params=
 ; ext set_blink_target params=
-; ext set_char_state params=__zpabi_set_char_state__state
+; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_cursor_row21 params=
 ; ext set_inverse_video params=
 ; ext set_restricted params=
@@ -455,10 +385,10 @@ WAIT	EQU	$FCA8
 ; ext settings_speed_down params=
 ; ext settings_speed_up params=
 ; ext setup_char_sprite params=
-; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1
+; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 param_regs=A,X
 ; ext setup_scene_display params=
-; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1
-; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1
+; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
+; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
 ; ext show_locked_msg params=
 ; ext slot_dec_enter params=
@@ -474,9 +404,9 @@ WAIT	EQU	$FCA8
 ; ext tick_anim_counter params=
 ; ext timed_wait params=
 ; ext toggle_sound params=
-; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1
-; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength
-; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1
+; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
+; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength param_regs=A,X
+; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
@@ -516,8 +446,6 @@ WAIT	EQU	$FCA8
 ; call select_input_mode -> display_message
 ; call select_input_mode -> set_cursor_row21
 ; call start_border_passes -> draw_border_cell
-; share member=draw_border_cell:__zpabi_draw_border_cell__cell holder=move_border_icons live=move_border_icons:draw_border_cell forward=move_border_icons>draw_border_cell writer=move_border_icons
-; share member=move_border_icon_list:__zpabi_move_border_icon_list__first member=move_border_icons:__zpabi_move_border_icons__first forward=move_border_icon_list>move_border_icons
 ; item draw_border_cell section=.text local=true zero=false
 ; item move_border_icons section=.text local=true zero=false
 ; item move_border_icon_list section=.text local=true zero=false
@@ -527,7 +455,6 @@ WAIT	EQU	$FCA8
 ; item plot_title_glyphs section=.text local=true zero=false
 ; item draw_border_strings section=.text local=true zero=false
 ; item draw_border_labels section=.text local=true zero=false
-; item draw_border_labels@run1 section=.text local=true zero=false
 ; item print_at section=.text local=true zero=false
 ; item init_game_display section=.text local=true zero=false
 ; item init_game_display@run0 section=.text local=true zero=false
@@ -587,49 +514,50 @@ WAIT	EQU	$FCA8
 draw_border_cell:
    SUBROUTINE
 
-   LDA   __zpabi_draw_border_cell__glyph
-   STA   FONT_CHARNUM
-   LDX   __zpabi_draw_border_cell__cell
+   STA   __local_draw_border_cell__cell
+   STX   FONT_CHARNUM
+   LDX   __local_draw_border_cell__cell
    LDA   border_row,X
    STA   CV
    LDA   border_col,X
    STA   CH
    LDA   #$00
-   STA   __zpabi_render_font_char_direct__charset_sel
    JMP   render_font_char_direct
 
 move_border_icons:
    SUBROUTINE
 
-   LDA   __zpabi_move_border_icons__last
-   STA   __zpabi_draw_border_cell__cell
+   STA   __local_move_border_icons__first
+   STX   __local_move_border_icons__cell
    LDA   #$00
    STA   __local_move_border_icons__carried
 .loop@0_start:
    LDA   __local_move_border_icons__carried
    BEQ   .if_else@1
-   LDX   __zpabi_draw_border_cell__cell
+   LDX   __local_move_border_icons__cell
    STA   border_glyph,X
-   STA   __zpabi_draw_border_cell__glyph
+   LDX   __local_move_border_icons__carried
+   LDA   __local_move_border_icons__cell
    JSR   draw_border_cell
    LDA   #$00
    STA   __local_move_border_icons__carried
    JMP   .if_end@0
 .if_else@1:
-   LDX   __zpabi_draw_border_cell__cell
+   LDX   __local_move_border_icons__cell
    LDA   border_glyph,X
    STA   __local_move_border_icons__carried
    BEQ   .if_end@2
    LDA   #$00
    STA   border_glyph,X
-   STA   __zpabi_draw_border_cell__glyph
+   LDX   #$00
+   LDA   __local_move_border_icons__cell
    JSR   draw_border_cell
 .if_end@2:
 .if_end@0:
-   LDA   __zpabi_draw_border_cell__cell
-   CMP   __zpabi_move_border_icons__first
+   LDA   __local_move_border_icons__cell
+   CMP   __local_move_border_icons__first
    BEQ   .loop@0_break
-   DEC   __zpabi_draw_border_cell__cell
+   DEC   __local_move_border_icons__cell
    JMP   .loop@0_start
 .loop@0_break:
    RTS
@@ -637,22 +565,21 @@ move_border_icons:
 move_border_icon_list:
    SUBROUTINE
 
-   LDA   __zpabi_move_border_icons__first
+   STA   __local_move_border_icon_list__first
    CLC
    ADC   #$08
-   STA   __zpabi_move_border_icons__last
+   TAX
+   LDA   __local_move_border_icon_list__first
    JMP   move_border_icons
 
 start_border_passes:
    SUBROUTINE
 
-   LDA   border_anim_index
-   LDY   #$03
-   STY   border_pass
-   STA   border_glyph+9
-   LDY   #$09
-   STY   __zpabi_draw_border_cell__cell
-   STA   __zpabi_draw_border_cell__glyph
+   LDX   border_anim_index
+   LDA   #$03
+   STA   border_pass
+   STX   border_glyph+9
+   LDA   #$09
    JSR   draw_border_cell
    INC   border_anim_index
    LDA   border_anim_index
@@ -668,8 +595,7 @@ start_border_passes:
 anim_border_icons:
    SUBROUTINE
 
-   LDA   __zpabi_anim_border_icons__limit
-   STA   __zpabi_random_in_range__limit
+   STX   __local_anim_border_icons__from
    JSR   random_in_range
    CMP   #$02
    BCC   .if_end@5
@@ -681,18 +607,17 @@ anim_border_icons:
    ADC   #$09
    TAY
 .if_end@6:
-   LDX   __zpabi_anim_border_icons__from
+   LDX   __local_anim_border_icons__from
    LDA   border_glyph,X
-   STA   __zpabi_draw_border_cell__glyph
+   STA   __local_anim_border_icons__limit
    STA   border_glyph,Y
    LDA   #$00
    STA   border_glyph,X
-   STY   __zpabi_draw_border_cell__cell
+   LDX   __local_anim_border_icons__limit
+   TYA
    JSR   draw_border_cell
-   LDA   __zpabi_anim_border_icons__from
-   STA   __zpabi_draw_border_cell__cell
-   LDA   #$00
-   STA   __zpabi_draw_border_cell__glyph
+   LDX   #$00
+   LDA   __local_anim_border_icons__from
    JMP   draw_border_cell
 .anim_border_icons@asm_ssa_split@0:
    LDY   __zpabi_anim_border_icons__to
@@ -710,25 +635,19 @@ border_anim_step:
    JMP   .default@5
 .case@2:
    LDA   #$0A
-   STA   __zpabi_move_border_icon_list__first
    JSR   move_border_icon_list
    LDA   #$13
-   STA   __zpabi_move_border_icon_list__first
    JSR   move_border_icon_list
    JMP   .switch@1_break
 .case@3:
+   LDX   #$09
    LDA   #$00
-   STA   __zpabi_move_border_icons__first
-   LDA   #$09
-   STA   __zpabi_move_border_icons__last
    JSR   move_border_icons
    JMP   .switch@1_break
 .case@4:
    LDA   #$1C
-   STA   __zpabi_move_border_icon_list__first
    JSR   move_border_icon_list
    LDA   #$25
-   STA   __zpabi_move_border_icon_list__first
    JSR   move_border_icon_list
    JMP   .switch@1_break
 .default@5:
@@ -745,22 +664,19 @@ border_anim_step:
    LDA   border_pass
    CMP   #$01
    BNE   .if_else@11
-   LDA   #$04
-   STA   __zpabi_anim_border_icons__limit
-   LDA   #$07
-   STA   __zpabi_anim_border_icons__from
    LDA   #$12
    STA   __zpabi_anim_border_icons__to
+   LDX   #$07
+   LDA   #$04
    JSR   anim_border_icons
    JMP   .if_end@10
 .if_else@11:
    ORA   #$00
    BNE   .if_end@12
-   LDA   #$02
-   STA   __zpabi_anim_border_icons__limit
-   STA   __zpabi_anim_border_icons__from
    LDA   #$24
    STA   __zpabi_anim_border_icons__to
+   LDX   #$02
+   TXA
    JSR   anim_border_icons
 .if_end@12:
 .if_end@10:
@@ -776,8 +692,10 @@ border_anim_step:
 plot_title_glyphs:
    SUBROUTINE
 
-   LDX   __zpabi_plot_title_glyphs__i
+   STA   __local_plot_title_glyphs__i
+   STX   __local_plot_title_glyphs__end
 .loop@6_start:
+   LDX   __local_plot_title_glyphs__i
    LDA   TITLE_GLYPH,X
    STA   FONT_CHARNUM
    LDA   TITLE_GLYPH_COL,X
@@ -786,17 +704,18 @@ plot_title_glyphs:
    STA   CV
    LDA   __zpabi_plot_title_glyphs__charset
    STA   FONT_CHARSET
-   STX   __local_plot_title_glyphs__i
    JSR   print_fontchar_at_text_pos
-   LDX   __local_plot_title_glyphs__i
-   INX
-   CPX   __zpabi_plot_title_glyphs__end
+   INC   __local_plot_title_glyphs__i
+   LDA   __local_plot_title_glyphs__i
+   CMP   __local_plot_title_glyphs__end
    BNE   .loop@6_start
    RTS
 
 draw_border_strings:
    SUBROUTINE
 
+   STA   __local_draw_border_strings__s_0
+   STX   __local_draw_border_strings__s_1
    JMP   .loop@7_start
 .draw_border_strings@rot@0:
    DEC   __zpabi_draw_border_strings__last
@@ -806,10 +725,8 @@ draw_border_strings:
    STA   CH
    LDA   BORDER_LABEL_ROW,X
    STA   CV
-   LDA   __zpabi_draw_border_strings__s_0
-   STA   __zpabi_print_string__s_0
-   LDA   __zpabi_draw_border_strings__s_1
-   STA   __zpabi_print_string__s_1
+   LDX   __local_draw_border_strings__s_1
+   LDA   __local_draw_border_strings__s_0
    JSR   print_string
    LDA   __zpabi_draw_border_strings__last
    CMP   __zpabi_draw_border_strings__first
@@ -819,139 +736,108 @@ draw_border_strings:
 draw_border_labels:
    SUBROUTINE
 
-   JSR   draw_border_labels@run1
-   LDA   #$B2
-   STA   __zpabi_hrcg_cout__c
+   LDA   #$81
    JSR   hrcg_cout
-   LDA   #<BORDER_STR_HORIZ
-   STA   __zpabi_draw_border_strings__s_0
-   LDA   #>BORDER_STR_HORIZ
-   STA   __zpabi_draw_border_strings__s_1
+   LDA   #$B2
+   JSR   hrcg_cout
    LDA   #$00
    STA   __zpabi_draw_border_strings__first
    LDA   #$05
    STA   __zpabi_draw_border_strings__last
+   LDX   #>BORDER_STR_HORIZ
+   LDA   #<BORDER_STR_HORIZ
    JSR   draw_border_strings
-   LDA   #<BORDER_STR_VERT_L
-   STA   __zpabi_draw_border_strings__s_0
-   LDA   #>BORDER_STR_VERT_L
-   STA   __zpabi_draw_border_strings__s_1
    LDA   #$06
    STA   __zpabi_draw_border_strings__first
    LDA   #$0F
    STA   __zpabi_draw_border_strings__last
+   LDX   #>BORDER_STR_VERT_L
+   LDA   #<BORDER_STR_VERT_L
    JSR   draw_border_strings
-   LDA   #<BORDER_STR_VERT_R
-   STA   __zpabi_draw_border_strings__s_0
-   LDA   #>BORDER_STR_VERT_R
-   STA   __zpabi_draw_border_strings__s_1
    LDA   #$10
    STA   __zpabi_draw_border_strings__first
    LDA   #$19
    STA   __zpabi_draw_border_strings__last
+   LDX   #>BORDER_STR_VERT_R
+   LDA   #<BORDER_STR_VERT_R
    JMP   draw_border_strings
-
-draw_border_labels@run1:
-   SUBROUTINE
-
-   LDA   #$81
-   STA   __zpabi_hrcg_cout__c
-   JMP   hrcg_cout
 
 print_at:
    SUBROUTINE
 
+   STA   __local_print_at__s_0
    LDA   __zpabi_print_at__row
    STA   CV
    LDA   __zpabi_print_at__col
    STA   CH
-   LDA   __zpabi_print_at__s_0
-   STA   __zpabi_print_string__s_0
-   LDA   __zpabi_print_at__s_1
-   STA   __zpabi_print_string__s_1
+   LDA   __local_print_at__s_0
    JMP   print_string
 
 init_game_display:
    SUBROUTINE
 
    LDA   #$90
-   STA   __zpabi_hrcg_cout__c
    JSR   hrcg_cout
    LDA   #<UI_TEXT_STREAM
    STA   TEXT_STREAM_PTR
    LDA   #>UI_TEXT_STREAM
    STA   TEXT_STREAM_PTR+1
    JSR   text_renderer
-   LDA   #$00
-   STA   __zpabi_plot_title_glyphs__i
-   LDA   #$03
-   STA   __zpabi_plot_title_glyphs__end
    LDA   #$02
    STA   __zpabi_plot_title_glyphs__charset
+   LDX   #$03
+   LDA   #$00
    JSR   plot_title_glyphs
    JSR   draw_border_labels
-   LDA   #$03
-   STA   __zpabi_plot_title_glyphs__i
-   LDA   #$09
-   STA   __zpabi_plot_title_glyphs__end
    LDA   #$01
    STA   __zpabi_plot_title_glyphs__charset
+   LDX   #$09
+   LDA   #$03
    JSR   plot_title_glyphs
    JSR   print_ctrl_ab
-   LDA   #<S_COPYRIGHT
-   STA   __zpabi_print_at__s_0
-   LDA   #>S_COPYRIGHT
-   STA   __zpabi_print_at__s_1
    LDA   #$00
    STA   __zpabi_print_at__col
    LDA   #$15
    STA   __zpabi_print_at__row
+   LDX   #>S_COPYRIGHT
+   LDA   #<S_COPYRIGHT
    JSR   print_at
-   LDA   #<S_PRESS_SPACE_BOOT
-   STA   __zpabi_print_at__s_0
-   LDA   #>S_PRESS_SPACE_BOOT
-   STA   __zpabi_print_at__s_1
    LDA   #$00
    STA   __zpabi_print_at__col
    LDA   #$17
    STA   __zpabi_print_at__row
+   LDX   #>S_PRESS_SPACE_BOOT
+   LDA   #<S_PRESS_SPACE_BOOT
    JSR   print_at
-   JSR   draw_border_labels@run1
-   LDA   #$B5
-   STA   __zpabi_hrcg_cout__c
+   LDA   #$81
    JSR   hrcg_cout
-   LDA   #<S_DECOR_ROW1
-   STA   __zpabi_print_at__s_0
-   LDA   #>S_DECOR_ROW1
-   STA   __zpabi_print_at__s_1
+   LDA   #$B5
+   JSR   hrcg_cout
    LDA   #$1E
    STA   __zpabi_print_at__col
    LDA   #$15
    STA   __zpabi_print_at__row
+   LDX   #>S_DECOR_ROW1
+   LDA   #<S_DECOR_ROW1
+   JSR   print_at
    JSR   init_game_display@run0
+   LDX   #>S_DECOR_ROW2
    LDA   #<S_DECOR_ROW2
-   STA   __zpabi_print_at__s_0
-   LDA   #>S_DECOR_ROW2
-   STA   __zpabi_print_at__s_1
-   LDA   #$1E
-   STA   __zpabi_print_at__col
+   JSR   print_at
    JSR   init_game_display@run0
+   LDX   #>S_DECOR_ROW3
    LDA   #<S_DECOR_ROW3
-   STA   __zpabi_print_at__s_0
-   LDA   #>S_DECOR_ROW3
-   STA   __zpabi_print_at__s_1
-   LDA   #$1E
-   STA   __zpabi_print_at__col
    JMP   print_at
 
 init_game_display@run0:
    SUBROUTINE
 
-   JSR   print_at
    LDA   CV
    CLC
    ADC   #$01
    STA   __zpabi_print_at__row
+   LDA   #$1E
+   STA   __zpabi_print_at__col
    RTS
 
 init_game_state:
@@ -960,12 +846,12 @@ init_game_state:
    JSR   init_game_display
    LDA   #$03
    STA   border_next
-   STA   __zpabi_tune_player__tune
-   LDA   #$B1
-   STA   s_PRINT_FONT_CHAR+2
    LDA   #$00
    STA   INPUT_MODE
-   STA   __zpabi_tune_player__strength
+   LDA   #$B1
+   STA   s_PRINT_FONT_CHAR+2
+   LDX   #$00
+   LDA   #$03
    JSR   tune_player
    LDA   #$00
    STA   BORDER_ANIM_ON
@@ -975,7 +861,6 @@ select_input_mode:
    SUBROUTINE
 
    LDA   #$38
-   STA   __zpabi_display_message__index
    JSR   display_message
    LDA   BUTN
    AND   #$80
@@ -993,7 +878,6 @@ select_input_mode:
    STA   INPUT_MODE
    JSR   set_cursor_row21
    LDA   #$2F
-   STA   __zpabi_display_message__index
    JMP   display_message
 .loop@9_break:
    CMP   #$A0
@@ -1102,7 +986,6 @@ game_init:
    STA   ENTITY_PTR+1
    JSR   select_input_mode
    LDA   #$20
-   STA   __zpabi_run_chain__state
    JSR   run_chain
    JSR   init_mob_count
    LDA   #$01

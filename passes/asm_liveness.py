@@ -276,6 +276,13 @@ def reads_a(instr: asm_ast.Type_instruction) -> bool:
     return False
 
 
+# Destinations a move from X or Y reaches only through A.
+_THROUGH_A_DSTS = (
+    asm_ast.Frame, asm_ast.Stack, asm_ast.Indirect, asm_ast.IndirectY,
+    asm_ast.IndirectZp, asm_ast.IndirectZpY,
+)
+
+
 def kills_a(instr: asm_ast.Type_instruction) -> bool:
     """True iff `instr` writes `Reg(A)` without reading it first."""
     if isinstance(instr, asm_ast.Mov):
@@ -291,12 +298,23 @@ def kills_a(instr: asm_ast.Type_instruction) -> bool:
             return not src_reg or not (
                 is_reg_a(instr.src) or is_reg_a(instr.dst)
             )
+        # There's no `STX (zp),Y`, so a move from X or Y to the soft
+        # stack or through a pointer is `TXA` (`TYA`) and `STA`.
+        if src_reg and not is_reg_a(instr.src) and isinstance(
+            instr.dst, _THROUGH_A_DSTS,
+        ):
+            return True
     if isinstance(instr, asm_ast.Pop):
         if is_reg_a(instr.dst):
             return True
     if isinstance(instr, asm_ast.Call):
         return True
     if isinstance(instr, asm_ast.LoadAddress):
+        return True
+    if isinstance(instr, (asm_ast.FunctionPrologue, asm_ast.AllocateStack)):
+        # Both do their SSP and FP arithmetic in A. A register
+        # parameter arriving in A, pushed around a prologue, lost its
+        # PHA / PLA to `dead_pha_pla`, which asks this function.
         return True
     if isinstance(instr, asm_ast.DecimalArith):
         # Each byte of a BCD chain starts with an `LDA`.

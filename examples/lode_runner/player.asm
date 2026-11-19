@@ -25,52 +25,10 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
-__zpabi_bcd_to_decimal2__bcd	EQU	$80
-__zpabi_bg_row__row	EQU	$80
-__zpabi_blocks_player__sprite	EQU	$80
-__zpabi_char_to_sprite_num__c	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_inc_anim_state__last	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_put_char__c	EQU	$80
-__zpabi_put_digit__digit	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_row_to_addr__row	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_start_digging__direction	EQU	$80
-__zpabi_to_decimal3__n	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$81
-__zpabi_append_note__pitch	EQU	$81
-__zpabi_drop_player_in_hole__col	EQU	$81
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$81
-__zpabi_inc_anim_state__first	EQU	$81
-__zpabi_load_sound_data__notes_0	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_row_to_addr__page	EQU	$81
-__zpabi_run_or_swing__first	EQU	$81
-__zpabi_add_and_update_score__bcd_points_1	EQU	$82
-__zpabi_append_note__duration	EQU	$82
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$82
-__zpabi_draw_sprite_page1__sprite	EQU	$82
-__zpabi_draw_sprite_page2__sprite	EQU	$82
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$82
-__zpabi_half_screen_col_for__col	EQU	$82
-__zpabi_load_sound_data__notes_1	EQU	$82
-__zpabi_map_row__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__zpabi_screen_row_for__row	EQU	$82
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$83
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$83
-__zpabi_half_screen_col_for__x_adj	EQU	$83
-__zpabi_screen_row_for__y_adj	EQU	$83
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$84
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
+__local_move_player__note_y	EQU	$81
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -103,28 +61,31 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_move_player__note_y	EQU	$AE
-__local_try_moving_left__0	EQU	$B1
-__local_try_moving_right__0	EQU	$B1
-__local_try_moving_left__1	EQU	$B2
-__local_try_moving_right__1	EQU	$B2
-__local_keep_digging__2	EQU	$B3
-__local_run_or_swing__0	EQU	$B3
-__local_keep_digging__state	EQU	$B4
-__local_keep_digging__3	EQU	$B5
-__local_keep_digging__4	EQU	$B6
-__local_leave_cell__2	EQU	$B6
-__local_keep_digging__col	EQU	$B7
-__local_keep_digging__row	EQU	$B8
-__local_keep_digging__5	EQU	$B9
-__local_keep_digging__6	EQU	$BA
-__local_keep_digging__7	EQU	$BB
-__local_draw_player__0	EQU	$BE
-__local_erase_player__0	EQU	$BE
-__local_draw_player__1	EQU	$BF
-__local_erase_player__1	EQU	$BF
-__local_check_for_gold_picked_up_by_player__2	EQU	$C0
-__local_check_for_gold_picked_up_by_player__3	EQU	$C1
+__local_keep_digging__0	EQU	$AE
+__local_try_moving_left__0	EQU	$AE
+__local_try_moving_right__0	EQU	$AE
+__local_keep_digging__1	EQU	$AF
+__local_try_moving_left__1	EQU	$AF
+__local_try_moving_right__1	EQU	$AF
+__local_keep_digging__state	EQU	$B0
+__local_run_or_swing__0	EQU	$B0
+__local_keep_digging__2	EQU	$B1
+__local_keep_digging__3	EQU	$B2
+__local_leave_cell__2	EQU	$B2
+__local_run_or_swing__first	EQU	$B2
+__local_keep_digging__col	EQU	$B3
+__local_keep_digging__row	EQU	$B4
+__local_keep_digging__4	EQU	$B5
+__local_keep_digging__5	EQU	$B6
+__local_keep_digging__6	EQU	$B7
+__local_draw_player__0	EQU	$B9
+__local_drop_player_in_hole__0	EQU	$B9
+__local_erase_player__0	EQU	$B9
+__local_draw_player__1	EQU	$BA
+__local_erase_player__1	EQU	$BA
+__local_check_for_gold_picked_up_by_player__2	EQU	$BB
+__local_drop_player_in_hole__col	EQU	$BB
+__local_check_for_gold_picked_up_by_player__3	EQU	$BC
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -184,89 +145,89 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def bg_row params=__zpabi_bg_row__row locals= indirect=false in_cycle=false
-; def blocks_player params=__zpabi_blocks_player__sprite locals=__local_blocks_player__0 indirect=false in_cycle=false carry=true
+; def bg_row params=__zpabi_bg_row__row locals= indirect=false in_cycle=false param_regs=A
+; def blocks_player params=__zpabi_blocks_player__sprite locals=__local_blocks_player__sprite indirect=false in_cycle=false param_regs=A carry=true
 ; def check_for_gold_picked_up_by_player params= locals=__local_check_for_gold_picked_up_by_player__0,__local_check_for_gold_picked_up_by_player__1,__local_check_for_gold_picked_up_by_player__2,__local_check_for_gold_picked_up_by_player__3 indirect=false in_cycle=false
 ; def climb params= locals= indirect=false in_cycle=false carry=true
 ; def draw_player params= locals=__local_draw_player__0,__local_draw_player__1,__local_draw_player__2 indirect=false in_cycle=false
-; def drop_player_in_hole params=__zpabi_drop_player_in_hole__col locals=__local_drop_player_in_hole__0,__local_drop_player_in_hole__1,__local_drop_player_in_hole__2 indirect=false in_cycle=false
+; def drop_player_in_hole params=__zpabi_drop_player_in_hole__col locals=__local_drop_player_in_hole__0,__local_drop_player_in_hole__1,__local_drop_player_in_hole__col indirect=false in_cycle=false param_regs=A
 ; def enter_cell params= locals=__local_enter_cell__0,__local_enter_cell__1 indirect=false in_cycle=false
 ; def erase_player params= locals=__local_erase_player__0,__local_erase_player__1 indirect=false in_cycle=false
 ; def fall params= locals=__local_fall__0 indirect=false in_cycle=false
-; def inc_anim_state params=__zpabi_inc_anim_state__first,__zpabi_inc_anim_state__last locals= indirect=false in_cycle=false
-; def keep_digging params= locals=__local_keep_digging__0,__local_keep_digging__1,__local_keep_digging__2,__local_keep_digging__state,__local_keep_digging__3,__local_keep_digging__4,__local_keep_digging__col,__local_keep_digging__row,__local_keep_digging__5,__local_keep_digging__6,__local_keep_digging__7,__local_keep_digging__8,__local_keep_digging__9 indirect=false in_cycle=false carry=true
+; def inc_anim_state params=__zpabi_inc_anim_state__first,__zpabi_inc_anim_state__last locals=__local_inc_anim_state__last,__local_inc_anim_state__first indirect=false in_cycle=false param_regs=A,X
+; def keep_digging params= locals=__local_keep_digging__0,__local_keep_digging__1,__local_keep_digging__state,__local_keep_digging__2,__local_keep_digging__3,__local_keep_digging__col,__local_keep_digging__row,__local_keep_digging__4,__local_keep_digging__5,__local_keep_digging__6,__local_keep_digging__7 indirect=false in_cycle=false carry=true
 ; def leave_cell params= locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2 indirect=false in_cycle=false
-; def map_row params=__zpabi_map_row__row locals= indirect=false in_cycle=false
+; def map_row params=__zpabi_map_row__row locals= indirect=false in_cycle=false param_regs=A
 ; def move_player params= locals=__local_move_player__note_y,__local_move_player__0,__local_move_player__1 indirect=false in_cycle=false
 ; def nudge_player_towards_exact_column params= locals= indirect=false in_cycle=false
 ; def nudge_player_towards_exact_row params= locals= indirect=false in_cycle=false
-; def run_or_swing params=__zpabi_run_or_swing__first locals=__local_run_or_swing__0,__local_run_or_swing__1 indirect=false in_cycle=false
-; def stands_on_something params= locals=__local_stands_on_something__0,__local_stands_on_something__1,__local_stands_on_something__2 indirect=false in_cycle=false carry=true
-; def start_digging params=__zpabi_start_digging__direction locals=__local_start_digging__0 indirect=false in_cycle=false carry=true
+; def run_or_swing params=__zpabi_run_or_swing__first locals=__local_run_or_swing__0,__local_run_or_swing__1,__local_run_or_swing__first indirect=false in_cycle=false param_regs=A
+; def stands_on_something params= locals=__local_stands_on_something__0,__local_stands_on_something__1 indirect=false in_cycle=false carry=true
+; def start_digging params=__zpabi_start_digging__direction locals=__local_start_digging__direction indirect=false in_cycle=false param_regs=A carry=true
 ; def step_down params= locals=__local_step_down__0 indirect=false in_cycle=false
 ; def stop_digging params= locals= indirect=false in_cycle=false carry=true
 ; def try_moving_down params= locals=__local_try_moving_down__0,__local_try_moving_down__1 indirect=false in_cycle=false carry=true
 ; def try_moving_left params= locals=__local_try_moving_left__0,__local_try_moving_left__1 indirect=false in_cycle=false
 ; def try_moving_right params= locals=__local_try_moving_right__0,__local_try_moving_right__1 indirect=false in_cycle=false
-; def try_moving_up params= locals=__local_try_moving_up__0,__local_try_moving_up__1,__local_try_moving_up__2 indirect=false in_cycle=false carry=true
+; def try_moving_up params= locals=__local_try_moving_up__0,__local_try_moving_up__1 indirect=false in_cycle=false carry=true
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 param_regs=A,X
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
-; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd
+; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
-; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c
+; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext check_for_input params=
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
 ; ext detect_lack_of_joystick params=
-; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext iris_wipe params=
 ; ext level_editor params=
 ; ext load_guard_data params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
 ; ext move_guards params=
 ; ext newline params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
-; ext put_char params=__zpabi_put_char__c
-; ext put_digit params=__zpabi_put_digit__digit
+; ext put_char params=__zpabi_put_char__c param_regs=A
+; ext put_digit params=__zpabi_put_digit__digit param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
 ; ext put_status_lives params=
-; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1
+; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
-; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
-; ext to_decimal3 params=__zpabi_to_decimal3__n
-; ext wait_for_key params=__zpabi_wait_for_key__cursor
-; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
+; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
+; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
+; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call check_for_gold_picked_up_by_player -> add_and_update_score
 ; call check_for_gold_picked_up_by_player -> draw_sprite_page2
@@ -351,34 +312,25 @@ DISK_IO	EQU	$C088
 ; call try_moving_up -> leave_cell
 ; call try_moving_up -> map_row
 ; call try_moving_up -> nudge_player_towards_exact_column
-; share member=inc_anim_state:__zpabi_inc_anim_state__first member=run_or_swing:__zpabi_run_or_swing__first live=run_or_swing:bg_row
 ; item map_row section=.text local=true zero=false
 ; item bg_row section=.text local=true zero=false
 ; item erase_player section=.text local=true zero=false
-; item erase_player@run3 section=.text local=true zero=false
-; item erase_player@run2 section=.text local=true zero=false
 ; item draw_player section=.text local=true zero=false
 ; item check_for_gold_picked_up_by_player section=.text local=true zero=false
-; item check_for_gold_picked_up_by_player@run8 section=.text local=true zero=false
 ; item inc_anim_state section=.text local=true zero=false
 ; item nudge_player_towards_exact_column section=.text local=true zero=false
 ; item nudge_player_towards_exact_row section=.text local=true zero=false
 ; item leave_cell section=.text local=true zero=false
-; item leave_cell@run5 section=.text local=true zero=false
-; item leave_cell@run4 section=.text local=true zero=false
-; item leave_cell@run0 section=.text local=true zero=false
 ; item enter_cell section=.text local=true zero=false
 ; item blocks_player section=.text local=true zero=false
 ; item step_down section=.text local=true zero=false
 ; item run_or_swing section=.text local=true zero=false
 ; item try_moving_left section=.text local=true zero=false
-; item try_moving_left@run9 section=.text local=true zero=false
 ; item try_moving_right section=.text local=true zero=false
 ; item climb section=.text local=true zero=false
 ; item try_moving_up section=.text local=true zero=false
-; item try_moving_up@run7 section=.text local=true zero=false
-; item try_moving_up@run6 section=.text local=true zero=false
 ; item try_moving_up@run1 section=.text local=true zero=false
+; item try_moving_up@run0 section=.text local=true zero=false
 ; item try_moving_down section=.text local=true zero=false
 ; item drop_player_in_hole section=.text local=true zero=false
 ; item stop_digging section=.text local=true zero=false
@@ -455,7 +407,7 @@ DISK_IO	EQU	$C088
 map_row:
    SUBROUTINE
 
-   LDX   __zpabi_map_row__row
+   TAX
    LDA   LEVEL_BG@lo,X
    STA   map_row@ret
    LDA   LEVEL_MAP@hi,X
@@ -465,7 +417,7 @@ map_row:
 bg_row:
    SUBROUTINE
 
-   LDX   __zpabi_bg_row__row
+   TAX
    LDA   LEVEL_BG@lo,X
    STA   bg_row@ret
    LDA   LEVEL_BG@hi,X
@@ -478,33 +430,17 @@ erase_player:
    LDX   PLAYER_ANIM_STATE
    LDA   SPRITE_ANIM_SEQS,X
    STA   __local_erase_player__1
-   JSR   erase_player@run2
-   STA   __local_erase_player__0
-   JSR   erase_player@run3
-   STA   __zpabi_erase_sprite_at_pixel_coords__row
-   LDA   __local_erase_player__1
-   STA   __zpabi_erase_sprite_at_pixel_coords__sprite
-   LDA   __local_erase_player__0
-   STA   __zpabi_erase_sprite_at_pixel_coords__half_col
-   JMP   erase_sprite_at_pixel_coords
-
-erase_player@run3:
-   SUBROUTINE
-
-   LDA   PLAYER_ROW
-   STA   __zpabi_screen_row_for__row
-   LDA   PLAYER_Y_ADJ
-   STA   __zpabi_screen_row_for__y_adj
-   JMP   screen_row_for
-
-erase_player@run2:
-   SUBROUTINE
-
+   LDX   PLAYER_X_ADJ
    LDA   PLAYER_COL
-   STA   __zpabi_half_screen_col_for__col
-   LDA   PLAYER_X_ADJ
-   STA   __zpabi_half_screen_col_for__x_adj
-   JMP   half_screen_col_for
+   JSR   half_screen_col_for
+   STA   __local_erase_player__0
+   LDX   PLAYER_Y_ADJ
+   LDA   PLAYER_ROW
+   JSR   screen_row_for
+   STA   __zpabi_erase_sprite_at_pixel_coords__row
+   LDX   __local_erase_player__0
+   LDA   __local_erase_player__1
+   JMP   erase_sprite_at_pixel_coords
 
 draw_player:
    SUBROUTINE
@@ -512,14 +448,16 @@ draw_player:
    LDX   PLAYER_ANIM_STATE
    LDA   SPRITE_ANIM_SEQS,X
    STA   __local_draw_player__1
-   JSR   erase_player@run2
+   LDX   PLAYER_X_ADJ
+   LDA   PLAYER_COL
+   JSR   half_screen_col_for
    STA   __local_draw_player__0
-   JSR   erase_player@run3
+   LDX   PLAYER_Y_ADJ
+   LDA   PLAYER_ROW
+   JSR   screen_row_for
    STA   __zpabi_draw_sprite_at_pixel_coords__row
+   LDX   __local_draw_player__0
    LDA   __local_draw_player__1
-   STA   __zpabi_draw_sprite_at_pixel_coords__sprite
-   LDA   __local_draw_player__0
-   STA   __zpabi_draw_sprite_at_pixel_coords__half_col
    JSR   draw_sprite_at_pixel_coords
    ORA   #$00
    BEQ   .if_end@2
@@ -558,45 +496,32 @@ check_for_gold_picked_up_by_player:
    STY   GAME_COLNUM
    LDA   #$00
    STA   (__local_check_for_gold_picked_up_by_player__2),Y
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDX   GAME_COLNUM
-   LDA   HALF_SCREEN_COL_TABLE,X
+   LDY   HALF_SCREEN_COL_TABLE,X
    LDX   GAME_ROWNUM
-   LDY   #$07
-   STY   __zpabi_erase_sprite_at_pixel_coords__sprite
-   STA   __zpabi_erase_sprite_at_pixel_coords__half_col
    LDA   SCREEN_ROW_TABLE,X
-   JSR   check_for_gold_picked_up_by_player@run8
-   LDA   #$50
-   STA   __zpabi_add_and_update_score__bcd_points_0
-   LDA   #$02
-   STA   __zpabi_add_and_update_score__bcd_points_1
-   JSR   add_and_update_score
-   LDA   #<gold_tune
-   STA   __zpabi_load_sound_data__notes_0
-   LDA   #>gold_tune
-   STA   __zpabi_load_sound_data__notes_1
-   JMP   load_sound_data
-
-check_for_gold_picked_up_by_player@run8:
-   SUBROUTINE
-
    STA   __zpabi_erase_sprite_at_pixel_coords__row
-   JMP   erase_sprite_at_pixel_coords
+   TYA
+   TAX
+   LDA   #$07
+   JSR   erase_sprite_at_pixel_coords
+   LDX   #$02
+   LDA   #$50
+   JSR   add_and_update_score
+   LDX   #>gold_tune
+   LDA   #<gold_tune
+   JMP   load_sound_data
 
 inc_anim_state:
    SUBROUTINE
 
    INC   PLAYER_ANIM_STATE
-   LDA   __zpabi_inc_anim_state__first
    CMP   PLAYER_ANIM_STATE
-   BCS   .vthread@0
-   LDA   __zpabi_inc_anim_state__last
-   CMP   PLAYER_ANIM_STATE
+   BCS   .inc_anim_state@scfold@0
+   CPX   PLAYER_ANIM_STATE
    BCS   .if_end@9
-   LDA   __zpabi_inc_anim_state__first
-.vthread@0:
+.inc_anim_state@scfold@0:
    STA   PLAYER_ANIM_STATE
 .if_end@9:
    RTS
@@ -636,7 +561,10 @@ nudge_player_towards_exact_row:
 leave_cell:
    SUBROUTINE
 
-   JSR   leave_cell@run4
+   LDA   PLAYER_ROW
+   JSR   bg_row
+   LDY   PLAYER_COL
+   LDA   (bg_row@ret),Y
    STA   __local_leave_cell__2
    CMP   #$01
    BNE   .cond_else@16
@@ -644,38 +572,17 @@ leave_cell:
    STA   __local_leave_cell__2
 .cond_else@16:
    LDA   PLAYER_ROW
-   JSR   leave_cell@run5
+   JSR   map_row
    LDA   __local_leave_cell__2
    LDY   PLAYER_COL
    STA   (map_row@ret),Y
-   RTS
-
-leave_cell@run5:
-   SUBROUTINE
-
-   STA   __zpabi_map_row__row
-   JMP   map_row
-
-leave_cell@run4:
-   SUBROUTINE
-
-   LDA   PLAYER_ROW
-   JMP   leave_cell@run0
-
-leave_cell@run0:
-   SUBROUTINE
-
-   STA   __zpabi_bg_row__row
-   JSR   bg_row
-   LDY   PLAYER_COL
-   LDA   (bg_row@ret),Y
    RTS
 
 enter_cell:
    SUBROUTINE
 
    LDA   PLAYER_ROW
-   JSR   leave_cell@run5
+   JSR   map_row
    LDA   #$09
    LDY   PLAYER_COL
    STA   (map_row@ret),Y
@@ -684,7 +591,6 @@ enter_cell:
 blocks_player:
    SUBROUTINE
 
-   LDA   __zpabi_blocks_player__sprite
    CMP   #$01
    BEQ   .or_true@18
    CMP   #$02
@@ -715,26 +621,29 @@ step_down:
 run_or_swing:
    SUBROUTINE
 
-   JSR   leave_cell@run4
+   STA   __local_run_or_swing__first
+   LDA   PLAYER_ROW
+   JSR   bg_row
+   LDY   PLAYER_COL
+   LDA   (bg_row@ret),Y
    CMP   #$04
    BNE   .if_else@24
-   LDA   __zpabi_inc_anim_state__first
+   LDA   __local_run_or_swing__first
    CLC
    ADC   #$03
    STA   __local_run_or_swing__0
-   LDA   __zpabi_inc_anim_state__first
+   LDA   __local_run_or_swing__first
    CLC
    ADC   #$05
-   STA   __zpabi_inc_anim_state__last
+   TAX
    LDA   __local_run_or_swing__0
-   STA   __zpabi_inc_anim_state__first
    JSR   inc_anim_state
    JMP   draw_player
 .if_else@24:
-   LDA   __zpabi_inc_anim_state__first
-   CLC
-   ADC   #$02
-   STA   __zpabi_inc_anim_state__last
+   LDX   __local_run_or_swing__first
+   INX
+   INX
+   LDA   __local_run_or_swing__first
    JSR   inc_anim_state
 .if_end@23:
    JMP   draw_player
@@ -757,7 +666,7 @@ try_moving_left:
    LDY   PLAYER_COL
    DEY
    LDA   (__local_try_moving_left__0),Y
-   JSR   try_moving_left@run9
+   JSR   blocks_player
    BCC   .if_end@27
    RTS
 .if_end@27:
@@ -778,14 +687,7 @@ try_moving_left:
    STA   PLAYER_X_ADJ
 .if_end@28:
    LDA   #$00
-   STA   __zpabi_run_or_swing__first
    JMP   run_or_swing
-
-try_moving_left@run9:
-   SUBROUTINE
-
-   STA   __zpabi_blocks_player__sprite
-   JMP   blocks_player
 
 try_moving_right:
    SUBROUTINE
@@ -806,7 +708,7 @@ try_moving_right:
    LDY   PLAYER_COL
    INY
    LDA   (__local_try_moving_right__0),Y
-   JSR   try_moving_left@run9
+   JSR   blocks_player
    BCC   .if_end@32
    RTS
 .if_end@32:
@@ -829,16 +731,13 @@ try_moving_right:
    STA   PLAYER_X_ADJ
 .if_end@33:
    LDA   #$08
-   STA   __zpabi_run_or_swing__first
    JMP   run_or_swing
 
 climb:
    SUBROUTINE
 
+   LDX   #$11
    LDA   #$10
-   STA   __zpabi_inc_anim_state__first
-   LDA   #$11
-   STA   __zpabi_inc_anim_state__last
    JSR   inc_anim_state
    JSR   draw_player
    CLC
@@ -847,8 +746,9 @@ climb:
 try_moving_up:
    SUBROUTINE
 
-   JSR   leave_cell@run4
-   CMP   #$03
+   LDA   PLAYER_ROW
+   JSR   bg_row
+   JSR   try_moving_up@run1
    BNE   .if_else@36
    LDA   PLAYER_Y_ADJ
    CMP   #$03
@@ -857,23 +757,28 @@ try_moving_up:
    BEQ   .tail@0
    SEC
    SBC   #$01
-   JSR   try_moving_up@run1
-   JSR   try_moving_left@run9
+   JSR   map_row
+   LDY   PLAYER_COL
+   LDA   (map_row@ret),Y
+   JSR   blocks_player
    BCC   .if_end@35
    RTS
 .if_else@36:
    LDA   PLAYER_Y_ADJ
    CMP   #$03
    BCC   .tail@0
-   JSR   try_moving_up@run7
-   CMP   #$03
+   LDA   PLAYER_ROW
+   CLC
+   ADC   #$01
+   JSR   bg_row
+   JSR   try_moving_up@run1
    BEQ   .if_end@41
 .tail@0:
    SEC
    RTS
 .if_end@41:
 .if_end@35:
-   JSR   try_moving_up@run6
+   JSR   try_moving_up@run0
    DEC   PLAYER_Y_ADJ
    BMI   .if_else@43
    JSR   check_for_gold_picked_up_by_player
@@ -887,27 +792,19 @@ try_moving_up:
 .if_end@42:
    JMP   climb
 
-try_moving_up@run7:
+try_moving_up@run1:
    SUBROUTINE
 
-   LDA   PLAYER_ROW
-   CLC
-   ADC   #$01
-   JMP   leave_cell@run0
+   LDY   PLAYER_COL
+   LDA   (bg_row@ret),Y
+   CMP   #$03
+   RTS
 
-try_moving_up@run6:
+try_moving_up@run0:
    SUBROUTINE
 
    JSR   erase_player
    JMP   nudge_player_towards_exact_column
-
-try_moving_up@run1:
-   SUBROUTINE
-
-   JSR   leave_cell@run5
-   LDY   PLAYER_COL
-   LDA   (map_row@ret),Y
-   RTS
 
 try_moving_down:
    SUBROUTINE
@@ -919,7 +816,9 @@ try_moving_down:
    CMP   #$0F
    BCS   .try_moving_down@scfold@0
    ADC   #$01
-   JSR   try_moving_up@run1
+   JSR   map_row
+   LDY   PLAYER_COL
+   LDA   (map_row@ret),Y
    CMP   #$02
    BEQ   .try_moving_down@scfold@0
    CMP   #$01
@@ -929,34 +828,33 @@ try_moving_down:
    RTS
 .if_end@48:
 .if_end@44:
-   JSR   try_moving_up@run6
+   JSR   try_moving_up@run0
    JSR   step_down
    JMP   climb
 
 drop_player_in_hole:
    SUBROUTINE
 
+   STA   __local_drop_player_in_hole__col
    LDA   #$00
    STA   DIG_DIRECTION
    LDA   PLAYER_ROW
    CLC
    ADC   #$01
+   STA   __local_drop_player_in_hole__0
    STA   GAME_ROWNUM
-   STA   __zpabi_map_row__row
-   LDA   __zpabi_drop_player_in_hole__col
+   LDA   __local_drop_player_in_hole__col
    STA   GAME_COLNUM
+   LDA   __local_drop_player_in_hole__0
    JSR   map_row
    LDA   #$00
-   LDY   __zpabi_drop_player_in_hole__col
+   LDY   __local_drop_player_in_hole__col
    STA   (map_row@ret),Y
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    LDA   #$00
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    DEC   GAME_ROWNUM
    LDA   #$00
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    INC   GAME_ROWNUM
    LDX   #$00
@@ -992,25 +890,25 @@ keep_digging:
    SBC   DIG_DIRECTION
    LDA   #$00
    ROL
-   STA   __local_keep_digging__7
+   STA   __local_keep_digging__6
    BEQ   .cond_else@50
    LDA   #$0C
-   STA   __local_keep_digging__6
+   STA   __local_keep_digging__5
    JMP   .cond_end@51
 .cond_else@50:
    LDA   #$00
-   STA   __local_keep_digging__6
+   STA   __local_keep_digging__5
 .cond_end@51:
    CLC
    ADC   #$0C
-   STA   __local_keep_digging__5
+   STA   __local_keep_digging__4
    LDA   PLAYER_ROW
    STA   __local_keep_digging__row
    CMP   #$0F
    BCC   .if_end@52
    JMP   stop_digging
 .if_end@52:
-   LDA   __local_keep_digging__7
+   LDA   __local_keep_digging__6
    BEQ   .if_else@54
    LDA   PLAYER_COL
    CMP   #$1B
@@ -1032,7 +930,7 @@ keep_digging:
    LDA   __local_keep_digging__row
    CLC
    ADC   #$01
-   JSR   leave_cell@run5
+   JSR   map_row
    LDY   __local_keep_digging__col
    LDA   (map_row@ret),Y
    CMP   #$01
@@ -1041,11 +939,11 @@ keep_digging:
 .if_end@57:
    LDX   __local_keep_digging__col
    LDA   HALF_SCREEN_COL_TABLE,X
-   STA   __local_keep_digging__4
+   STA   __local_keep_digging__3
    LDX   __local_keep_digging__row
    LDA   SCREEN_ROW_TABLE,X
-   STA   __local_keep_digging__3
-   STX   __zpabi_map_row__row
+   STA   __local_keep_digging__2
+   TXA
    JSR   map_row
    LDY   __local_keep_digging__col
    LDA   (map_row@ret),Y
@@ -1056,36 +954,38 @@ keep_digging:
    STA   GAME_ROWNUM
    STY   GAME_COLNUM
    LDA   #$01
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    LDA   DIG_ANIM_STATE
-   CMP   __local_keep_digging__6
+   CMP   __local_keep_digging__5
    BEQ   .if_end@59
    TAX
    DEX
    LDA   dig_tables,X
-   STA   __zpabi_erase_sprite_at_pixel_coords__sprite
-   LDA   __local_keep_digging__4
-   STA   __zpabi_erase_sprite_at_pixel_coords__half_col
-   LDA   __local_keep_digging__3
-   JSR   check_for_gold_picked_up_by_player@run8
+   STA   __local_keep_digging__0
+   LDA   __local_keep_digging__2
+   STA   __zpabi_erase_sprite_at_pixel_coords__row
+   LDX   __local_keep_digging__3
+   LDA   __local_keep_digging__0
+   JSR   erase_sprite_at_pixel_coords
 .if_end@59:
    JMP   stop_digging
 .if_end@58:
-   JSR   try_moving_up@run6
+   JSR   try_moving_up@run0
    JSR   nudge_player_towards_exact_row
    LDA   DIG_ANIM_STATE
    STA   __local_keep_digging__state
    SEC
-   SBC   __local_keep_digging__6
-   STA   __local_keep_digging__2
-   LDX   __local_keep_digging__2
+   SBC   __local_keep_digging__5
+   STA   __local_keep_digging__1
+   LDX   __local_keep_digging__1
    LDA   dig_tables+36,X
-   STA   __zpabi_append_note__pitch
-   LDA   dig_tables+49,X
-   STA   __zpabi_append_note__duration
+   STA   __local_keep_digging__0
+   LDY   dig_tables+49,X
+   TYA
+   TAX
+   LDA   __local_keep_digging__0
    JSR   append_note
-   LDA   __local_keep_digging__7
+   LDA   __local_keep_digging__6
    BEQ   .if_else@61
    LDA   __local_keep_digging__state
    CMP   #$12
@@ -1110,24 +1010,24 @@ keep_digging:
 .if_end@60:
    JSR   draw_player
    LDA   __local_keep_digging__state
-   CMP   __local_keep_digging__5
+   CMP   __local_keep_digging__4
    BNE   .if_end@66
    LDA   __local_keep_digging__col
-   STA   __zpabi_drop_player_in_hole__col
    JSR   drop_player_in_hole
    SEC
    RTS
 .if_end@66:
-   CMP   __local_keep_digging__6
+   CMP   __local_keep_digging__5
    BEQ   .if_end@67
    TAX
    DEX
    LDA   dig_tables,X
-   STA   __zpabi_erase_sprite_at_pixel_coords__sprite
-   LDA   __local_keep_digging__4
-   STA   __zpabi_erase_sprite_at_pixel_coords__half_col
-   LDA   __local_keep_digging__3
-   JSR   check_for_gold_picked_up_by_player@run8
+   STA   __local_keep_digging__0
+   LDA   __local_keep_digging__2
+   STA   __zpabi_erase_sprite_at_pixel_coords__row
+   LDX   __local_keep_digging__3
+   LDA   __local_keep_digging__0
+   JSR   erase_sprite_at_pixel_coords
 .if_end@67:
    LDA   __local_keep_digging__col
    STA   GAME_COLNUM
@@ -1135,16 +1035,15 @@ keep_digging:
    STA   GAME_ROWNUM
    LDX   __local_keep_digging__state
    LDA   dig_tables,X
-   STA   __zpabi_draw_sprite_at_pixel_coords__sprite
-   LDA   __local_keep_digging__4
-   STA   __zpabi_draw_sprite_at_pixel_coords__half_col
-   LDA   __local_keep_digging__3
+   STA   __local_keep_digging__0
+   LDA   __local_keep_digging__2
    STA   __zpabi_draw_sprite_at_pixel_coords__row
+   LDX   __local_keep_digging__3
+   LDA   __local_keep_digging__0
    JSR   draw_sprite_at_pixel_coords
    INC   GAME_ROWNUM
-   LDX   __local_keep_digging__2
+   LDX   __local_keep_digging__1
    LDA   dig_tables+24,X
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    INC   DIG_ANIM_STATE
    CLC
@@ -1153,7 +1052,6 @@ keep_digging:
 start_digging:
    SUBROUTINE
 
-   LDA   __zpabi_start_digging__direction
    STA   DIG_DIRECTION
    STA   KEY_COMMAND
    STA   KEY_COMMAND_LR
@@ -1193,11 +1091,18 @@ stands_on_something:
    BEQ   .or_true@75
    CLC
    ADC   #$01
-   JSR   try_moving_up@run1
+   JSR   map_row
+   LDY   PLAYER_COL
+   LDA   (map_row@ret),Y
    BEQ   .tail@1
    CMP   #$08
    BEQ   .or_true@75
-   JSR   try_moving_up@run7
+   LDA   PLAYER_ROW
+   CLC
+   ADC   #$01
+   JSR   bg_row
+   LDY   PLAYER_COL
+   LDA   (bg_row@ret),Y
    CMP   #$01
    BEQ   .or_true@75
    CMP   #$02
@@ -1222,8 +1127,9 @@ move_player:
 .if_end@79:
    LDA   PLAYER_COL
    STA   __local_move_player__note_y
-   JSR   leave_cell@run4
-   CMP   #$03
+   LDA   PLAYER_ROW
+   JSR   bg_row
+   JSR   try_moving_up@run1
    BEQ   .if_end@84
    CMP   #$04
    BNE   .move_player@scfold@0
@@ -1248,12 +1154,10 @@ move_player:
 .if_end@84:
    LDA   NOT_FALLING
    BNE   .if_end@89
-   LDA   #$64
-   STA   __zpabi_play_note__pitch
-   LDA   #$08
-   STA   __zpabi_play_note__duration
    LDA   __local_move_player__note_y
    STA   __zpabi_play_note__y
+   LDX   #$08
+   LDA   #$64
    JSR   play_note
 .if_end@89:
    LDA   #$20
@@ -1280,13 +1184,11 @@ move_player:
    RTS
 .case@4:
    LDA   #$FF
-   STA   __zpabi_start_digging__direction
    JSR   start_digging
    BCS   .switch@1_break
    RTS
 .case@5:
    LDA   #$01
-   STA   __zpabi_start_digging__direction
    JSR   start_digging
    BCS   .if_end@93
    RTS

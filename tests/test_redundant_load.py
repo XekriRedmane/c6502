@@ -1627,5 +1627,23 @@ class TestRowsOfTwoTablesSim(unittest.TestCase):
                 self.assertEqual(out.return_int(), 7 + 7 * 16 + 256)
 
 
+
+class TestTransferBack(unittest.TestCase):
+
+    def test_tax_txa(self) -> None:
+        # `return add(v, v);` with v arriving in A.
+        fn = asm_ast.Function(name="f", is_global=True, params=[],
+                              instructions=[
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ])
+        out = apply_redundant_load_elimination(
+            asm_ast.Program(top_level=[fn])).top_level[0].instructions
+        self.assertEqual(out, [
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Return(save_a=True),
+        ])
+
 if __name__ == "__main__":
     unittest.main()

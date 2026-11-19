@@ -96,14 +96,15 @@ class TestObjectByteViewShape(unittest.TestCase):
                 self.assertNotIn("DPTR", _function(asm, "g"))
 
     def test_optimized_read_matches_byte_array(self) -> None:
-        # The shape a byte array at the same address gets.
+        # The shape a byte array at the same address gets. `i` arrives
+        # in A, and `f` stores it to subtract it from 3.
         asm = _asm(_PRELUDE + (
             "uint8_t f(uint8_t i) { return ZB[3 - i]; }\n"
         ), optimize=True)
         self.assertEqual(
             _function(asm, "f").split(),
-            "SUBROUTINE LDA #$03 SEC SBC __zpabi_f__i TAX LDA Z,X RTS"
-            .split(),
+            "SUBROUTINE STA __local_f__i LDA #$03 SEC SBC __local_f__i"
+            " TAX LDA Z,X RTS".split(),
         )
 
     def test_constant_index_is_absolute(self) -> None:
@@ -247,6 +248,20 @@ class TestObjectByteViewSim(unittest.TestCase):
             "    if (k(1) != 5) bad |= 8;\n"
             "    return bad;\n"
             "}\n"
+        )
+
+    def test_byte_write_from_a_register_parameter(self) -> None:
+        # `v` arrives in A, and backward copy propagation moved its
+        # store to `ZB[2]` up to the entry, in front of the stores of
+        # `Z`, since it took `Pseudo(Z, 2)` and `Data(Z, 2)` for
+        # different bytes.
+        self._check(
+            "uint32_t h(register uint8_t v) {\n"
+            "    Z = 0x01020304UL;\n"
+            "    ZB[2] = v;\n"
+            "    return Z;\n"
+            "}\n"
+            "int main(void) { return h(0x77) != 0x01770304UL; }\n"
         )
 
     def test_compound_assignment_and_increment(self) -> None:

@@ -2,19 +2,16 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_beam_target_draw__page_flag	EQU	$80
-__zpabi_draw_sprite__width	EQU	$81
-__zpabi_draw_sprite__height	EQU	$82
-__zpabi_draw_sprite__sprite_x	EQU	$83
-__zpabi_draw_sprite__sprite_y	EQU	$84
-__zpabi_draw_sprite__tile_src_0	EQU	$85
-__zpabi_draw_sprite__tile_src_1	EQU	$86
-__zpabi_draw_sprite__page_flag	EQU	$87
-__local_beam_target_draw__0	EQU	$89
+__zpabi_draw_sprite__sprite_x	EQU	$80
+__zpabi_draw_sprite__sprite_y	EQU	$81
+__zpabi_draw_sprite__tile_src_0	EQU	$82
+__zpabi_draw_sprite__tile_src_1	EQU	$83
+__zpabi_draw_sprite__page_flag	EQU	$84
+__local_beam_target_draw__page_flag	EQU	$86
 
 ; @zp-link-meta-begin
-; def beam_target_draw params=__zpabi_beam_target_draw__page_flag locals=__local_beam_target_draw__state,__local_beam_target_draw__0 indirect=false in_cycle=false
-; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag
+; def beam_target_draw params=__zpabi_beam_target_draw__page_flag locals=__local_beam_target_draw__state,__local_beam_target_draw__page_flag indirect=false in_cycle=false param_regs=A
+; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag param_regs=A,X,,,,,
 ; ext score_add params=
 ; call beam_target_draw -> draw_sprite
 ; call beam_target_draw -> score_add
@@ -27,6 +24,7 @@ __local_beam_target_draw__0	EQU	$89
 beam_target_draw:
    SUBROUTINE
 
+   STA   __local_beam_target_draw__page_flag
    LDA   beam_state
    BNE   .if_end@0
    RTS
@@ -36,16 +34,14 @@ beam_target_draw:
    LDA   floor_y_table,X
    SEC
    SBC   beam_y
+   TAX
    BNE   .if_end@1
    RTS
 .if_end@1:
-   CMP   #$05
+   CPX   #$05
    BCC   .cond_end@3
-   LDA   #$04
+   LDX   #$04
 .cond_end@3:
-   LDY   #$02
-   STY   __zpabi_draw_sprite__width
-   STA   __zpabi_draw_sprite__height
    LDA   #$24
    STA   __zpabi_draw_sprite__sprite_x
    LDA   beam_y
@@ -54,8 +50,9 @@ beam_target_draw:
    STA   __zpabi_draw_sprite__tile_src_0
    LDA   #>beam_spr
    STA   __zpabi_draw_sprite__tile_src_1
-   LDA   __zpabi_beam_target_draw__page_flag
+   LDA   __local_beam_target_draw__page_flag
    STA   __zpabi_draw_sprite__page_flag
+   LDA   #$02
    JSR   draw_sprite
    LDY   #$03
 .loop@0_start:
@@ -68,12 +65,12 @@ beam_target_draw:
    CMP   #$24
    BCC   .loop@0_continue
    LDA   enemy_y,Y
-   STA   __local_beam_target_draw__0
+   STA   __local_beam_target_draw__page_flag
    LDA   beam_y
-   CMP   __local_beam_target_draw__0
+   CMP   __local_beam_target_draw__page_flag
    BCS   .loop@0_continue
    ADC   #$03
-   CMP   __local_beam_target_draw__0
+   CMP   __local_beam_target_draw__page_flag
    BCC   .loop@0_continue
    LDA   #$00
    STA   enemy_flag,Y

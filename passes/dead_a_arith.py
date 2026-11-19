@@ -125,7 +125,8 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         prev_len = len(instrs)
         drop: list[bool] = [False] * len(instrs)
         for i, instr in enumerate(instrs):
-            if _is_dead_index_load(instrs, i):
+            if _is_dead_index_load(instrs, i) or _is_dead_pointer_load(
+                    instrs, i):
                 drop[i] = True
                 continue
             if not _writes_only_a_and_flags(instr):
@@ -189,6 +190,27 @@ def _is_dead_index_load(
         return False
     dead = x_dead_at if isinstance(ins.dst.reg, asm_ast.X) else y_dead_at
     return dead(instrs, i + 1) and flags_dead_at(instrs, i + 1)
+
+
+def _is_dead_pointer_load(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> bool:
+    """Whether `instrs[i]` is a non-volatile load into A through a
+    zero-page pointer whose value and N/Z nothing reads. `(zp),Y` with
+    a constant index (`IndirectZp`) sets Y with `LDY #k` first, so Y
+    must be dead too, and `(zp),Y` with Y as it is (`IndirectZpY`)
+    writes only A. `X1 = (uint8_t)((uint16_t)Q->name >> 8)` read the
+    low byte of the member as well."""
+    ins = instrs[i]
+    if not (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+            and is_reg_a(ins.dst)
+            and isinstance(ins.src, (asm_ast.IndirectZp,
+                                     asm_ast.IndirectZpY))):
+        return False
+    if not (a_dead_at(instrs, i + 1) and flags_dead_at(instrs, i + 1)):
+        return False
+    return (isinstance(ins.src, asm_ast.IndirectZpY)
+            or y_dead_at(instrs, i + 1))
 
 
 def _writes_only_a_and_flags(instr: asm_ast.Type_instruction) -> bool:

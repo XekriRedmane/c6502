@@ -29,63 +29,28 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$80
-__zpabi_append_note__pitch	EQU	$80
-__zpabi_bcd_to_decimal2__bcd	EQU	$80
-__zpabi_char_to_sprite_num__c	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_draw_sprite_page1__sprite	EQU	$80
-__zpabi_draw_sprite_page2__sprite	EQU	$80
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_half_screen_col_for__col	EQU	$80
-__zpabi_iris_wipe_step__r	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_load_sound_data__notes_0	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_put_char__c	EQU	$80
-__zpabi_put_digit__digit	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_screen_row_for__row	EQU	$80
-__zpabi_show_anim_line__rows_0	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_to_decimal3__n	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
-__zpabi_add_and_update_score__bcd_points_1	EQU	$81
-__zpabi_append_note__duration	EQU	$81
-__zpabi_div_by_7__x_0	EQU	$81
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_draw_wipe_row__row_0	EQU	$81
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_half_screen_col_for__x_adj	EQU	$81
-__zpabi_load_sound_data__notes_1	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_screen_row_for__y_adj	EQU	$81
-__zpabi_show_anim_line__rows_1	EQU	$81
-__zpabi_step_left__c_0	EQU	$81
-__zpabi_step_right__c_0	EQU	$81
-__zpabi_div_by_7__x_1	EQU	$82
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_draw_wipe_row__row_1	EQU	$82
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__zpabi_step_left__c_1	EQU	$82
-__zpabi_step_right__c_1	EQU	$82
-__local_step_left__0	EQU	$83
-__zpabi_div_by_7__c_0	EQU	$83
-__zpabi_draw_wipe_row__west_0	EQU	$83
-__local_spinning_game_over__i	EQU	$84
-__zpabi_div_by_7__c_1	EQU	$84
-__zpabi_draw_wipe_row__west_1	EQU	$84
+__local_spinning_game_over__0	EQU	$80
+__local_step_left__0	EQU	$80
+__zpabi_div_by_7__c_0	EQU	$80
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_draw_wipe_row__west_0	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
+__local_spinning_game_over__i	EQU	$81
+__local_step_left__c	EQU	$81
+__local_step_right__c	EQU	$81
+__zpabi_div_by_7__c_1	EQU	$81
+__zpabi_draw_wipe_row__west_1	EQU	$81
+__local_step_left__1	EQU	$82
+__local_step_right__1	EQU	$82
+__zpabi_draw_wipe_block__c_0	EQU	$82
+__zpabi_draw_wipe_row__east_0	EQU	$82
+__zpabi_draw_wipe_block__c_1	EQU	$83
+__zpabi_draw_wipe_row__east_1	EQU	$83
+__local_iris_wipe__r	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
-__local_iris_wipe__r	EQU	$88
 DIGITS	EQU	$89
 FRAME_PERIOD	EQU	$8C
 GUARD_COUNT	EQU	$8D
@@ -115,41 +80,37 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__zpabi_draw_wipe_block__line_0	EQU	$AE
-__zpabi_draw_wipe_block__line_1	EQU	$AF
-__zpabi_draw_wipe_block__c_0	EQU	$B0
-__zpabi_draw_wipe_row__east_0	EQU	$B0
-__zpabi_draw_wipe_block__c_1	EQU	$B1
-__zpabi_draw_wipe_row__east_1	EQU	$B1
-__zpabi_row_to_addr__row	EQU	$B2
-__zpabi_row_to_addr__page	EQU	$B3
-__local_iris_wipe_step__0	EQU	$B4
-__local_show_anim_line__y	EQU	$B4
-__local_iris_wipe_step__1	EQU	$B5
-__local_show_anim_line__x	EQU	$B5
-__local_iris_wipe_step__2	EQU	$B6
-__local_show_anim_line__0	EQU	$B6
-__local_iris_wipe_step__3	EQU	$B7
-__local_show_anim_line__1	EQU	$B7
-__local_iris_wipe_step__d_1	EQU	$B8
-__local_show_anim_line__2	EQU	$B8
-__local_iris_wipe_step__d_0	EQU	$B9
-__local_show_anim_line__3	EQU	$B9
-__local_iris_wipe_step__y	EQU	$BA
-__local_show_anim_line__4	EQU	$BA
-__local_iris_wipe_step__x	EQU	$BB
-__local_show_anim_line__rows	EQU	$BB
-__local_div_by_7__d_0	EQU	$BC
-__local_draw_wipe_block__0	EQU	$BC
-__local_show_anim_line__5	EQU	$BC
-__local_div_by_7__d_1	EQU	$BD
-__local_draw_wipe_block__1	EQU	$BD
-__local_draw_wipe_block__2	EQU	$BE
-__local_div_by_7__1	EQU	$BF
-__local_draw_wipe_block__3	EQU	$BF
-__local_div_by_7__q	EQU	$C0
-__local_div_by_7__n_1	EQU	$C1
-__local_div_by_7__n_0	EQU	$C2
+__local_iris_wipe_step__0	EQU	$AE
+__local_show_anim_line__y	EQU	$AE
+__local_iris_wipe_step__1	EQU	$AF
+__local_show_anim_line__x	EQU	$AF
+__local_iris_wipe_step__2	EQU	$B0
+__local_show_anim_line__0	EQU	$B0
+__local_iris_wipe_step__3	EQU	$B1
+__local_show_anim_line__1	EQU	$B1
+__local_iris_wipe_step__d_1	EQU	$B2
+__local_show_anim_line__2	EQU	$B2
+__local_iris_wipe_step__d_0	EQU	$B3
+__local_show_anim_line__3	EQU	$B3
+__local_iris_wipe_step__y	EQU	$B4
+__local_show_anim_line__4	EQU	$B4
+__local_iris_wipe_step__x	EQU	$B5
+__local_show_anim_line__rows_0	EQU	$B5
+__local_show_anim_line__rows_1	EQU	$B6
+__local_div_by_7__x_0	EQU	$B7
+__local_draw_wipe_row__row_1	EQU	$B7
+__local_div_by_7__d_1	EQU	$B8
+__local_draw_wipe_row__row_0	EQU	$B8
+__local_div_by_7__1	EQU	$BA
+__local_div_by_7__q	EQU	$BB
+__local_draw_wipe_block__0	EQU	$BB
+__local_div_by_7__n_0	EQU	$BC
+__local_draw_wipe_block__1	EQU	$BC
+__local_div_by_7__x_1	EQU	$BD
+__local_draw_wipe_block__2	EQU	$BD
+__local_draw_wipe_block__3	EQU	$BE
+__local_draw_wipe_block__line	EQU	$BF
+__local_draw_wipe_block__4	EQU	$C0
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -209,73 +170,73 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def div_by_7 params=__zpabi_div_by_7__x_0,__zpabi_div_by_7__x_1,__zpabi_div_by_7__c_0,__zpabi_div_by_7__c_1 locals=__local_div_by_7__d_0,__local_div_by_7__d_1,__local_div_by_7__0,__local_div_by_7__1,__local_div_by_7__q,__local_div_by_7__n_1,__local_div_by_7__n_0 indirect=false in_cycle=false
-; def draw_wipe_block params=__zpabi_draw_wipe_block__line_0,__zpabi_draw_wipe_block__line_1,__zpabi_draw_wipe_block__c_0,__zpabi_draw_wipe_block__c_1 locals=__local_draw_wipe_block__0,__local_draw_wipe_block__1,__local_draw_wipe_block__2,__local_draw_wipe_block__3 indirect=false in_cycle=false
-; def draw_wipe_row params=__zpabi_draw_wipe_row__row_0,__zpabi_draw_wipe_row__row_1,__zpabi_draw_wipe_row__east_0,__zpabi_draw_wipe_row__east_1,__zpabi_draw_wipe_row__west_0,__zpabi_draw_wipe_row__west_1 locals= indirect=false in_cycle=false
+; def div_by_7 params=__zpabi_div_by_7__x_0,__zpabi_div_by_7__x_1,__zpabi_div_by_7__c_0,__zpabi_div_by_7__c_1 locals=__local_div_by_7__x_0,__local_div_by_7__d_1,__local_div_by_7__0,__local_div_by_7__1,__local_div_by_7__q,__local_div_by_7__n_0,__local_div_by_7__x_1 indirect=false in_cycle=false param_regs=A,X,,
+; def draw_wipe_block params=__zpabi_draw_wipe_block__line_0,__zpabi_draw_wipe_block__line_1,__zpabi_draw_wipe_block__c_0,__zpabi_draw_wipe_block__c_1 locals=__local_draw_wipe_block__0,__local_draw_wipe_block__1,__local_draw_wipe_block__2,__local_draw_wipe_block__3,__local_draw_wipe_block__line,__local_draw_wipe_block__4 indirect=false in_cycle=false param_regs=A,X,,
+; def draw_wipe_row params=__zpabi_draw_wipe_row__row_0,__zpabi_draw_wipe_row__row_1,__zpabi_draw_wipe_row__east_0,__zpabi_draw_wipe_row__east_1,__zpabi_draw_wipe_row__west_0,__zpabi_draw_wipe_row__west_1 locals=__local_draw_wipe_row__row_1,__local_draw_wipe_row__row_0,__local_draw_wipe_row__0,__local_draw_wipe_row__1 indirect=false in_cycle=false param_regs=A,X,,,,
 ; def draw_wipe_step params= locals= indirect=false in_cycle=false
 ; def iris_wipe params= locals=__local_iris_wipe__r indirect=false in_cycle=false
-; def iris_wipe_step params=__zpabi_iris_wipe_step__r locals=__local_iris_wipe_step__0,__local_iris_wipe_step__1,__local_iris_wipe_step__2,__local_iris_wipe_step__3,__local_iris_wipe_step__d_1,__local_iris_wipe_step__d_0,__local_iris_wipe_step__y,__local_iris_wipe_step__x indirect=false in_cycle=false
-; def show_anim_line params=__zpabi_show_anim_line__rows_0,__zpabi_show_anim_line__rows_1 locals=__local_show_anim_line__y,__local_show_anim_line__x,__local_show_anim_line__0,__local_show_anim_line__1,__local_show_anim_line__2,__local_show_anim_line__3,__local_show_anim_line__4,__local_show_anim_line__rows,__local_show_anim_line__5 indirect=false in_cycle=false carry=true
-; def spinning_game_over params= locals=__local_spinning_game_over__0,__local_spinning_game_over__1,__local_spinning_game_over__i indirect=false in_cycle=false carry=true
-; def step_left params=__zpabi_step_left__c_0,__zpabi_step_left__c_1 locals=__local_step_left__0 indirect=false in_cycle=false
-; def step_right params=__zpabi_step_right__c_0,__zpabi_step_right__c_1 locals=__local_step_right__0 indirect=false in_cycle=false
+; def iris_wipe_step params=__zpabi_iris_wipe_step__r locals=__local_iris_wipe_step__0,__local_iris_wipe_step__1,__local_iris_wipe_step__2,__local_iris_wipe_step__3,__local_iris_wipe_step__d_1,__local_iris_wipe_step__d_0,__local_iris_wipe_step__y,__local_iris_wipe_step__x,__local_iris_wipe_step__4 indirect=false in_cycle=false param_regs=A
+; def show_anim_line params=__zpabi_show_anim_line__rows_0,__zpabi_show_anim_line__rows_1 locals=__local_show_anim_line__y,__local_show_anim_line__x,__local_show_anim_line__0,__local_show_anim_line__1,__local_show_anim_line__2,__local_show_anim_line__3,__local_show_anim_line__4,__local_show_anim_line__rows_0,__local_show_anim_line__rows_1 indirect=false in_cycle=false param_regs=A,X carry=true
+; def spinning_game_over params= locals=__local_spinning_game_over__0,__local_spinning_game_over__i indirect=false in_cycle=false carry=true
+; def step_left params=__zpabi_step_left__c_0,__zpabi_step_left__c_1 locals=__local_step_left__0,__local_step_left__c,__local_step_left__1 indirect=false in_cycle=false param_regs=A,X
+; def step_right params=__zpabi_step_right__c_0,__zpabi_step_right__c_1 locals=__local_step_right__0,__local_step_right__c,__local_step_right__1 indirect=false in_cycle=false param_regs=A,X
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 param_regs=A,X
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
-; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd
+; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
-; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c
+; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext check_for_input params=
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
 ; ext detect_lack_of_joystick params=
-; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext level_editor params=
 ; ext load_guard_data params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
 ; ext move_guards params=
 ; ext move_player params=
 ; ext newline params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
-; ext put_char params=__zpabi_put_char__c
-; ext put_digit params=__zpabi_put_digit__digit
+; ext put_char params=__zpabi_put_char__c param_regs=A
+; ext put_digit params=__zpabi_put_digit__digit param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
 ; ext put_status_lives params=
-; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1
+; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
-; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext start_level_editor params=
-; ext to_decimal3 params=__zpabi_to_decimal3__n
-; ext wait_for_key params=__zpabi_wait_for_key__cursor
-; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
+; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
+; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
+; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call draw_wipe_row -> draw_wipe_block
 ; call draw_wipe_row -> row_to_addr
@@ -289,15 +250,12 @@ DISK_IO	EQU	$C088
 ; call iris_wipe_step -> step_right
 ; call show_anim_line -> row_to_addr
 ; call spinning_game_over -> show_anim_line
-; share member=draw_wipe_block:__zpabi_draw_wipe_block__line_0,__zpabi_draw_wipe_block__line_1 holder=draw_wipe_row live=draw_wipe_row:draw_wipe_block forward=draw_wipe_row>draw_wipe_block writer=draw_wipe_row
 ; share member=draw_wipe_block:__zpabi_draw_wipe_block__c_0,__zpabi_draw_wipe_block__c_1 member=draw_wipe_row:__zpabi_draw_wipe_row__east_0,__zpabi_draw_wipe_row__east_1 live=draw_wipe_row:row_to_addr
-; share member=iris_wipe_step:__zpabi_iris_wipe_step__r holder=iris_wipe live=iris_wipe:iris_wipe_step writer=iris_wipe
 ; item div_by_7 section=.text local=true zero=false
 ; item step_right section=.text local=true zero=false
 ; item step_left section=.text local=true zero=false
 ; item draw_wipe_block section=.text local=true zero=false
 ; item draw_wipe_row section=.text local=true zero=false
-; item draw_wipe_row@run2 section=.text local=true zero=false
 ; item draw_wipe_step section=.text local=true zero=false
 ; item draw_wipe_step@run1 section=.text local=true zero=false
 ; item draw_wipe_step@run0 section=.text local=true zero=false
@@ -392,17 +350,17 @@ DISK_IO	EQU	$C088
 div_by_7:
    SUBROUTINE
 
-   LDA   __zpabi_div_by_7__x_0
+   STX   __local_div_by_7__x_1
    CLC
    ADC   #$23
    STA   __local_div_by_7__n_0
-   LDA   __zpabi_div_by_7__x_1
-   ADC   #$00
-   STA   __local_div_by_7__n_1
+   BCC   .carry_inc@0
+   INC   __local_div_by_7__x_1
+.carry_inc@0:
    LDA   #$00
    STA   __local_div_by_7__q
    LDA   #$C0
-   STA   __local_div_by_7__d_0
+   STA   __local_div_by_7__x_0
    LDY   #$01
    STY   __local_div_by_7__d_1
    JMP   .loop@0_start
@@ -410,20 +368,20 @@ div_by_7:
    ASL   __local_div_by_7__q
    LDA   __local_div_by_7__n_0
    SEC
-   SBC   __local_div_by_7__d_0
+   SBC   __local_div_by_7__x_0
    STA   __local_div_by_7__1
-   LDA   __local_div_by_7__n_1
+   LDA   __local_div_by_7__x_1
    SBC   __local_div_by_7__d_1
    BCC   .if_end@0
    INC   __local_div_by_7__q
-   STA   __local_div_by_7__n_1
+   STA   __local_div_by_7__x_1
    LDA   __local_div_by_7__1
    STA   __local_div_by_7__n_0
 .if_end@0:
    LSR   __local_div_by_7__d_1
-   ROR   __local_div_by_7__d_0
+   ROR   __local_div_by_7__x_0
 .loop@0_start:
-   LDA   __local_div_by_7__d_0
+   LDA   __local_div_by_7__x_0
    SEC
    SBC   #$07
    LDA   __local_div_by_7__d_1
@@ -442,47 +400,53 @@ div_by_7:
 step_right:
    SUBROUTINE
 
+   STA   __local_step_right__c
+   STX   __local_step_right__1
    CLC
    LDY   #$01
-   LDA   (__zpabi_step_right__c_0),Y
+   LDA   (__local_step_right__c),Y
    ADC   #$01
-   STA   (__zpabi_step_right__c_0),Y
+   STA   (__local_step_right__c),Y
    CMP   #$07
    BNE   .if_end@1
    LDA   #$00
-   STA   (__zpabi_step_right__c_0),Y
+   STA   (__local_step_right__c),Y
    DEY
-   LDA   (__zpabi_step_right__c_0),Y
+   LDA   (__local_step_right__c),Y
    CLC
    ADC   #$01
-   STA   (__zpabi_step_right__c_0),Y
+   STA   (__local_step_right__c),Y
 .if_end@1:
    RTS
 
 step_left:
    SUBROUTINE
 
+   STA   __local_step_left__c
+   STX   __local_step_left__1
    LDY   #$01
-   LDA   (__zpabi_step_left__c_0),Y
+   LDA   (__local_step_left__c),Y
    STA   __local_step_left__0
    BNE   .if_else@3
    LDA   #$06
-   STA   (__zpabi_step_left__c_0),Y
+   STA   (__local_step_left__c),Y
    DEY
-   LDA   (__zpabi_step_left__c_0),Y
+   LDA   (__local_step_left__c),Y
    SEC
    SBC   #$01
-   STA   (__zpabi_step_left__c_0),Y
+   STA   (__local_step_left__c),Y
    RTS
 .if_else@3:
    DEC   __local_step_left__0
    LDA   __local_step_left__0
-   STA   (__zpabi_step_left__c_0),Y
+   STA   (__local_step_left__c),Y
    RTS
 
 draw_wipe_block:
    SUBROUTINE
 
+   STA   __local_draw_wipe_block__line
+   STX   __local_draw_wipe_block__4
    LDY   #$00
    LDA   (__zpabi_draw_wipe_block__c_0),Y
    STA   __local_draw_wipe_block__3
@@ -493,7 +457,7 @@ draw_wipe_block:
    LDA   wipe_dir
    BNE   .if_else@6
    LDY   __local_draw_wipe_block__3
-   LDA   (__zpabi_draw_wipe_block__line_0),Y
+   LDA   (__local_draw_wipe_block__line),Y
    STA   __local_draw_wipe_block__1
    LDY   #$01
    LDA   (__zpabi_draw_wipe_block__c_0),Y
@@ -501,15 +465,15 @@ draw_wipe_block:
    LDA   __local_draw_wipe_block__1
    AND   WIPE_BLOCK_CLOSE_MASK,X
    LDY   __local_draw_wipe_block__3
-   STA   (__zpabi_draw_wipe_block__line_0),Y
+   STA   (__local_draw_wipe_block__line),Y
    RTS
 .if_else@6:
    LDY   __local_draw_wipe_block__3
-   LDA   (__zpabi_draw_wipe_block__line_0),Y
+   LDA   (__local_draw_wipe_block__line),Y
    STA   __local_draw_wipe_block__2
-   LDA   __zpabi_draw_wipe_block__line_0
+   LDA   __local_draw_wipe_block__line
    STA   __local_draw_wipe_block__0
-   LDA   __zpabi_draw_wipe_block__line_1
+   TXA
    ADC   #$20
    STA   __local_draw_wipe_block__1
    LDA   (__local_draw_wipe_block__0),Y
@@ -521,65 +485,57 @@ draw_wipe_block:
    AND   WIPE_BLOCK_OPEN_MASK,X
    ORA   __local_draw_wipe_block__2
    LDY   __local_draw_wipe_block__3
-   STA   (__zpabi_draw_wipe_block__line_0),Y
+   STA   (__local_draw_wipe_block__line),Y
    RTS
 
 draw_wipe_row:
    SUBROUTINE
 
-   LDA   __zpabi_draw_wipe_row__row_0
+   STA   __local_draw_wipe_row__row_0
    SEC
    SBC   #$B0
-   LDA   __zpabi_draw_wipe_row__row_1
+   TXA
    SBC   #$00
    BCC   .if_end@7
    RTS
 .if_end@7:
-   LDA   __zpabi_draw_wipe_row__row_0
-   JSR   draw_wipe_row@run2
-   STA   __zpabi_draw_wipe_block__line_0
-   STX   __zpabi_draw_wipe_block__line_1
+   LDX   #$20
+   LDA   __local_draw_wipe_row__row_0
+   JSR   row_to_addr
+   STA   __local_draw_wipe_row__row_0
+   STX   __local_draw_wipe_row__row_1
    JSR   draw_wipe_block
    LDA   __zpabi_draw_wipe_row__west_0
    STA   __zpabi_draw_wipe_block__c_0
    LDA   __zpabi_draw_wipe_row__west_1
    STA   __zpabi_draw_wipe_block__c_1
+   LDX   __local_draw_wipe_row__row_1
+   LDA   __local_draw_wipe_row__row_0
    JMP   draw_wipe_block
-
-draw_wipe_row@run2:
-   SUBROUTINE
-
-   STA   __zpabi_row_to_addr__row
-   LDA   #$20
-   STA   __zpabi_row_to_addr__page
-   JMP   row_to_addr
 
 draw_wipe_step:
    SUBROUTINE
 
+   JSR   draw_wipe_step@run0
+   LDX   row_plus_x+1
    LDA   row_plus_x
-   STA   __zpabi_draw_wipe_row__row_0
-   LDA   row_plus_x+1
-   JSR   draw_wipe_step@run0
-   LDA   row_minus_x
-   STA   __zpabi_draw_wipe_row__row_0
-   LDA   row_minus_x+1
-   JSR   draw_wipe_step@run0
-   LDA   row_plus_y
-   STA   __zpabi_draw_wipe_row__row_0
-   LDA   row_plus_y+1
-   JSR   draw_wipe_step@run1
    JSR   draw_wipe_row
-   LDA   row_minus_y
-   STA   __zpabi_draw_wipe_row__row_0
-   LDA   row_minus_y+1
+   JSR   draw_wipe_step@run0
+   LDX   row_minus_x+1
+   LDA   row_minus_x
+   JSR   draw_wipe_row
    JSR   draw_wipe_step@run1
+   LDX   row_plus_y+1
+   LDA   row_plus_y
+   JSR   draw_wipe_row
+   JSR   draw_wipe_step@run1
+   LDX   row_minus_y+1
+   LDA   row_minus_y
    JMP   draw_wipe_row
 
 draw_wipe_step@run1:
    SUBROUTINE
 
-   STA   __zpabi_draw_wipe_row__row_1
    LDA   #<col_plus_x
    STA   __zpabi_draw_wipe_row__east_0
    LDA   #>col_plus_x
@@ -593,7 +549,6 @@ draw_wipe_step@run1:
 draw_wipe_step@run0:
    SUBROUTINE
 
-   STA   __zpabi_draw_wipe_row__row_1
    LDA   #<col_plus_y
    STA   __zpabi_draw_wipe_row__east_0
    LDA   #>col_plus_y
@@ -602,12 +557,12 @@ draw_wipe_step@run0:
    STA   __zpabi_draw_wipe_row__west_0
    LDA   #>col_minus_y
    STA   __zpabi_draw_wipe_row__west_1
-   JMP   draw_wipe_row
+   RTS
 
 iris_wipe_step:
    SUBROUTINE
 
-   LDA   __zpabi_iris_wipe_step__r
+   STA   __local_iris_wipe_step__x
    ASL
    STA   __local_iris_wipe_step__1
    LDA   #$00
@@ -622,7 +577,7 @@ iris_wipe_step:
    STA   __local_iris_wipe_step__d_1
    LDA   #$58
    SEC
-   SBC   __zpabi_iris_wipe_step__r
+   SBC   __local_iris_wipe_step__x
    STA   row_minus_x
    LDA   #$00
    SBC   #$00
@@ -635,22 +590,23 @@ iris_wipe_step:
    LDY   #$00
    STY   row_plus_y+1
    CLC
-   ADC   __zpabi_iris_wipe_step__r
+   ADC   __local_iris_wipe_step__x
    STA   row_plus_x
    TYA
    ADC   #$00
    STA   row_plus_x+1
    LDA   #$8C
    SEC
-   SBC   __zpabi_iris_wipe_step__r
-   STA   __zpabi_div_by_7__x_0
+   SBC   __local_iris_wipe_step__x
+   STA   __local_iris_wipe_step__0
    TYA
    SBC   #$00
-   STA   __zpabi_div_by_7__x_1
+   TAX
    LDA   #<col_minus_x
    STA   __zpabi_div_by_7__c_0
    LDA   #>col_minus_x
    STA   __zpabi_div_by_7__c_1
+   LDA   __local_iris_wipe_step__0
    JSR   div_by_7
    LDA   #$14
    STA   col_plus_y
@@ -660,20 +616,19 @@ iris_wipe_step:
    STA   col_minus_y+1
    LDA   #$8C
    CLC
-   ADC   __zpabi_iris_wipe_step__r
-   STA   __zpabi_div_by_7__x_0
+   ADC   __local_iris_wipe_step__x
+   STA   __local_iris_wipe_step__0
    LDA   #$00
    ADC   #$00
-   STA   __zpabi_div_by_7__x_1
+   TAX
    LDA   #<col_plus_x
    STA   __zpabi_div_by_7__c_0
    LDA   #>col_plus_x
    STA   __zpabi_div_by_7__c_1
+   LDA   __local_iris_wipe_step__0
    JSR   div_by_7
-   LDA   __zpabi_iris_wipe_step__r
-   STA   __local_iris_wipe_step__x
-   LDY   #$00
-   STY   __local_iris_wipe_step__y
+   LDA   #$00
+   STA   __local_iris_wipe_step__y
 .loop@1_start:
    LDA   __local_iris_wipe_step__x
    CMP   __local_iris_wipe_step__y
@@ -741,43 +696,35 @@ iris_wipe_step:
    BNE   .inc_done@0
    INC   row_minus_x+1
 .inc_done@0:
+   LDX   #>col_plus_x
    LDA   #<col_plus_x
-   STA   __zpabi_step_left__c_0
-   LDA   #>col_plus_x
-   STA   __zpabi_step_left__c_1
    JSR   step_left
+   LDX   #>col_minus_x
    LDA   #<col_minus_x
-   STA   __zpabi_step_right__c_0
-   LDA   #>col_minus_x
-   STA   __zpabi_step_right__c_1
    JSR   step_right
    LDA   row_plus_x
-   BNE   .carry_inc@1
+   BNE   .carry_inc@2
    DEC   row_plus_x+1
-.carry_inc@1:
+.carry_inc@2:
    DEC   row_plus_x
 .if_end@10:
    INC   __local_iris_wipe_step__y
+   LDX   #>col_plus_y
    LDA   #<col_plus_y
-   STA   __zpabi_step_right__c_0
-   LDA   #>col_plus_y
-   STA   __zpabi_step_right__c_1
    JSR   step_right
    LDA   row_minus_y
    SEC
    SBC   #$01
    STA   row_minus_y
-   BCS   .carry_inc@2
+   BCS   .carry_inc@3
    DEC   row_minus_y+1
-.carry_inc@2:
+.carry_inc@3:
    INC   row_plus_y
    BNE   .inc_done@1
    INC   row_plus_y+1
 .inc_done@1:
+   LDX   #>col_minus_y
    LDA   #<col_minus_y
-   STA   __zpabi_step_left__c_0
-   LDA   #>col_minus_y
-   STA   __zpabi_step_left__c_1
    JSR   step_left
    JMP   .loop@1_start
 
@@ -789,10 +736,11 @@ iris_wipe:
    LDA   #$00
    STA   wipe_dir
    LDA   #$AA
-   STA   __zpabi_iris_wipe_step__r
+   STA   __local_iris_wipe__r
 .loop@2_start:
+   LDA   __local_iris_wipe__r
    JSR   iris_wipe_step
-   DEC   __zpabi_iris_wipe_step__r
+   DEC   __local_iris_wipe__r
    BNE   .loop@2_start
 .if_end@12:
    LDA   #$01
@@ -803,7 +751,6 @@ iris_wipe:
    LDA   #$01
    STA   __local_iris_wipe__r
 .loop@3_start:
-   STA   __zpabi_iris_wipe_step__r
    JSR   iris_wipe_step
    INC   __local_iris_wipe__r
    LDA   __local_iris_wipe__r
@@ -814,22 +761,21 @@ iris_wipe:
 show_anim_line:
    SUBROUTINE
 
+   STA   __local_show_anim_line__rows_0
+   STX   __local_show_anim_line__rows_1
    LDA   #$51
    STA   GAME_ROWNUM
-   LDA   __zpabi_show_anim_line__rows_0
-   STA   __local_show_anim_line__rows
-   LDA   __zpabi_show_anim_line__rows_1
-   STA   __local_show_anim_line__5
    JMP   .loop@4_start
 .show_anim_line@rot@2:
-   JSR   draw_wipe_row@run2
+   LDX   #$20
+   JSR   row_to_addr
    STA   __local_show_anim_line__4
    STX   __local_show_anim_line__3
    LDY   #$00
-   LDA   (__local_show_anim_line__rows),Y
-   INC   __local_show_anim_line__rows
+   LDA   (__local_show_anim_line__rows_0),Y
+   INC   __local_show_anim_line__rows_0
    BNE   .inc_done@2
-   INC   __local_show_anim_line__5
+   INC   __local_show_anim_line__rows_1
 .inc_done@2:
    ASL
    STA   __local_show_anim_line__x
@@ -915,9 +861,11 @@ spinning_game_over:
 .spinning_game_over@rot@3:
    LDX   __local_spinning_game_over__i
    LDA   SPIN_ORDER,X
-   STA   __zpabi_show_anim_line__rows_0
-   LDA   SPIN_ORDER+20,X
-   STA   __zpabi_show_anim_line__rows_1
+   STA   __local_spinning_game_over__0
+   LDY   SPIN_ORDER+20,X
+   TYA
+   TAX
+   LDA   __local_spinning_game_over__0
    JSR   show_anim_line
    BCS   .tail@0
    INC   __local_spinning_game_over__i
@@ -932,9 +880,11 @@ spinning_game_over:
 .spinning_game_over@rot@4:
    LDX   __local_spinning_game_over__i
    LDA   SPIN_ORDER,X
-   STA   __zpabi_show_anim_line__rows_0
-   LDA   SPIN_ORDER+20,X
-   STA   __zpabi_show_anim_line__rows_1
+   STA   __local_spinning_game_over__0
+   LDY   SPIN_ORDER+20,X
+   TYA
+   TAX
+   LDA   __local_spinning_game_over__0
    JSR   show_anim_line
    BCC   .if_end@21
 .tail@0:

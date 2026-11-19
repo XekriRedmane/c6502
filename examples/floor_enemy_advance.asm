@@ -3,16 +3,14 @@ FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
 jump_flag	EQU	$26
-__zpabi_floor_enemy_advance__move_dir	EQU	$80
-__zpabi_floor_enemy_advance__player_col	EQU	$81
-__zpabi_snd_delay_down__pitch	EQU	$82
-__zpabi_snd_delay_down__clicks	EQU	$83
-__local_floor_enemy_advance__step	EQU	$85
-__local_floor_enemy_advance__slot	EQU	$86
+__local_floor_enemy_advance__step	EQU	$81
+__local_floor_enemy_advance__slot	EQU	$82
+__local_floor_enemy_advance__player_col	EQU	$83
+__local_floor_enemy_advance__move_dir	EQU	$84
 
 ; @zp-link-meta-begin
-; def floor_enemy_advance params=__zpabi_floor_enemy_advance__move_dir,__zpabi_floor_enemy_advance__player_col locals=__local_floor_enemy_advance__0,__local_floor_enemy_advance__step,__local_floor_enemy_advance__slot indirect=false in_cycle=false
-; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks
+; def floor_enemy_advance params=__zpabi_floor_enemy_advance__move_dir,__zpabi_floor_enemy_advance__player_col locals=__local_floor_enemy_advance__0,__local_floor_enemy_advance__step,__local_floor_enemy_advance__slot,__local_floor_enemy_advance__player_col,__local_floor_enemy_advance__move_dir indirect=false in_cycle=false param_regs=A,X
+; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks param_regs=A,X
 ; call floor_enemy_advance -> snd_delay_down
 ; item floor_enemy_advance section=.text local=false zero=false
 ; item enemy_flag section=.bss local=false zero=true
@@ -27,6 +25,8 @@ __local_floor_enemy_advance__slot	EQU	$86
 floor_enemy_advance:
    SUBROUTINE
 
+   STA   __local_floor_enemy_advance__move_dir
+   STX   __local_floor_enemy_advance__player_col
    LDA   #$03
    STA   __local_floor_enemy_advance__slot
 .loop@0_start:
@@ -43,15 +43,13 @@ floor_enemy_advance:
 .lb_skip@1:
    LDA   #$00
    STA   jump_flag
-   LDX   __zpabi_floor_enemy_advance__player_col
+   LDX   __local_floor_enemy_advance__player_col
    LDA   floor_enemy_spawn_sched,X
    BPL   .lb_skip@0
    JMP   .if_end@0
 .lb_skip@0:
+   LDX   #$0A
    LDA   #$20
-   STA   __zpabi_snd_delay_down__pitch
-   LDA   #$0A
-   STA   __zpabi_snd_delay_down__clicks
    JSR   snd_delay_down
    LDA   smc_move_left_op
    STA   DPTR
@@ -74,14 +72,14 @@ floor_enemy_advance:
    LDA   #$4A
    STA   enemy_col,X
 .if_end@4:
-   LDA   __zpabi_floor_enemy_advance__player_col
+   LDA   __local_floor_enemy_advance__player_col
    CLC
    ADC   #$09
    STA   enemy_y,X
    JMP   .if_end@0
 .if_else@1:
    BPL   .if_else@7
-   LDA   __zpabi_floor_enemy_advance__move_dir
+   LDA   __local_floor_enemy_advance__move_dir
    BNE   .if_else@9
    LDA   #$07
    STA   __local_floor_enemy_advance__step
@@ -108,7 +106,7 @@ floor_enemy_advance:
    STA   enemy_flag,X
    JMP   .if_end@6
 .if_else@7:
-   LDA   __zpabi_floor_enemy_advance__move_dir
+   LDA   __local_floor_enemy_advance__move_dir
    BNE   .if_else@14
    LDA   #$07
    STA   __local_floor_enemy_advance__step

@@ -63,31 +63,21 @@ ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
 __zpabi_cout_string__s_0	EQU	$E0
-__zpabi_find_index_of_page_table__page_0	EQU	$E0
-__zpabi_load_address__addr_0	EQU	$E0
-__zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
-__zpabi_print_number__n_0	EQU	$E0
-__zpabi_return_value__value_0	EQU	$E0
-__zpabi_store_result__value_0	EQU	$E0
+__local_get_next_code_word__1	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
-__zpabi_find_index_of_page_table__page_1	EQU	$E1
-__zpabi_load_address__addr_1	EQU	$E1
-__zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
-__zpabi_print_number__n_1	EQU	$E1
-__zpabi_return_value__value_1	EQU	$E1
-__zpabi_store_result__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
+__local_get_next_code_byte2__page	EQU	$E5
 __local_get_next_code_byte__page	EQU	$E5
-__local_get_next_code_word__1	EQU	$E5
-__local_get_next_code_byte2__page	EQU	$E7
-__local_set_page_first__0	EQU	$E9
-__local_set_page_first__prev_first	EQU	$EA
+__local_set_page_first__0	EQU	$E8
+__local_set_page_first__prev_first	EQU	$E9
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
+__local_find_index_of_page_table__page_1	EQU	$F2
+__local_find_index_of_page_table__page_0	EQU	$F3
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -102,12 +92,12 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0 indirect=false in_cycle=false carry=true
-; def get_next_code_byte params= locals=__local_get_next_code_byte__found_1,__local_get_next_code_byte__page,__local_get_next_code_byte__found_0 indirect=false in_cycle=false
-; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page,__local_get_next_code_byte2__found_0 indirect=false in_cycle=false
+; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__page_1,__local_find_index_of_page_table__page_0 indirect=false in_cycle=false param_regs=A,X carry=true
+; def get_next_code_byte params= locals=__local_get_next_code_byte__found_1,__local_get_next_code_byte__page,__local_get_next_code_byte__found_0,__local_get_next_code_byte__0 indirect=false in_cycle=false
+; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page,__local_get_next_code_byte2__found_0,__local_get_next_code_byte2__0 indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
-; def load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 locals= indirect=false in_cycle=false
-; def load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 locals= indirect=false in_cycle=false
+; def load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 locals=__local_load_address__addr_1 indirect=false in_cycle=false param_regs=A,X
+; def load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 locals=__local_load_packed_address__addr_1 indirect=false in_cycle=false param_regs=A,X
 ; def set_page_first params=__zpabi_set_page_first__slot locals=__local_set_page_first__0,__local_set_page_first__prev_first indirect=false in_cycle=false param_regs=A
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -160,7 +150,7 @@ COUT1	EQU	$FDF0
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
 ; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
-; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1
+; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 param_regs=A,X
 ; ext print_obj params=__zpabi_print_obj__obj param_regs=A
 ; ext print_status_line params=
 ; ext print_string_literal params=
@@ -169,8 +159,8 @@ COUT1	EQU	$FDF0
 ; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
-; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
-; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
+; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 param_regs=A,X
+; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 param_regs=A,X
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext write_next_sector params= carry=true
 ; ext write_to_sector params= carry=true
@@ -181,7 +171,6 @@ COUT1	EQU	$FDF0
 ; call get_next_code_byte2 -> read_from_sector
 ; call get_next_code_byte2 -> set_page_first
 ; call get_next_code_word -> get_next_code_byte2
-; share member=find_index_of_page_table:__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 holder=get_next_code_byte holder=get_next_code_byte2 live=get_next_code_byte:find_index_of_page_table live=get_next_code_byte2:find_index_of_page_table forward=get_next_code_byte>find_index_of_page_table forward=get_next_code_byte2>find_index_of_page_table writer=get_next_code_byte writer=get_next_code_byte2
 ; item set_page_first section=.text local=true zero=false
 ; item find_index_of_page_table section=.text local=true zero=false
 ; item get_next_code_byte section=.text local=false zero=false
@@ -300,20 +289,21 @@ set_page_first:
 find_index_of_page_table:
    SUBROUTINE
 
+   STA   __local_find_index_of_page_table__page_0
+   STX   __local_find_index_of_page_table__page_1
    LDX   NUM_PAGE_TABLE_ENTRIES
    LDY   #$00
-   LDA   __zpabi_find_index_of_page_table__page_0
 .loop@0_start:
    CMP   (PAGE_L_TABLE),Y
    BNE   .if_end@5
    LDA   (PAGE_H_TABLE),Y
-   CMP   __zpabi_find_index_of_page_table__page_1
+   CMP   __local_find_index_of_page_table__page_1
    BNE   .find_index_of_page_table@lia@1
    CLC
    TYA
    RTS
 .find_index_of_page_table@lia@1:
-   LDA   __zpabi_find_index_of_page_table__page_0
+   LDA   __local_find_index_of_page_table__page_0
 .if_end@5:
    INY
    DEX
@@ -344,15 +334,15 @@ get_next_code_byte:
    RTS
 .if_end@6:
    LDA   Z_PC+1
-   STA   __zpabi_find_index_of_page_table__page_0
    STA   __local_get_next_code_byte__page
    LDA   Z_PC+2
-   STA   __zpabi_find_index_of_page_table__page_1
    BNE   .if_else@12
    LDA   __local_get_next_code_byte__page
    CMP   NUM_IMAGE_PAGES
    BCC   .vthread@0
 .if_else@12:
+   LDX   Z_PC+2
+   LDA   __local_get_next_code_byte__page
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX
    BCC   .if_end@13
@@ -361,6 +351,9 @@ get_next_code_byte:
    LDA   #$00
    STA   ZCODE_PAGE_VALID2
 .if_end@14:
+   LDA   __local_get_next_code_byte__page
+   STA   disk_sector
+   LDA   Z_PC+2
    JSR   get_next_code_byte@run0
    ADC   PAGE_TABLE_INDEX
    STA   disk_buffer+1
@@ -393,9 +386,6 @@ get_next_code_byte:
 get_next_code_byte@run0:
    SUBROUTINE
 
-   LDA   __zpabi_find_index_of_page_table__page_0
-   STA   disk_sector
-   LDA   __zpabi_find_index_of_page_table__page_1
    STA   disk_sector+1
    LDA   HIGH_MEM_ADDR
    CLC
@@ -406,10 +396,8 @@ get_next_code_byte@run0:
 load_address:
    SUBROUTINE
 
-   LDA   __zpabi_load_address__addr_0
    STA   Z_PC2
-   LDA   __zpabi_load_address__addr_1
-   STA   Z_PC2+1
+   STX   Z_PC2+1
    LDA   #$00
    STA   Z_PC2+2
    STA   ZCODE_PAGE_VALID2
@@ -418,12 +406,13 @@ load_address:
 load_packed_address:
    SUBROUTINE
 
-   LDA   __zpabi_load_packed_address__addr_0
    ASL
    STA   Z_PC2
-   LDA   __zpabi_load_packed_address__addr_1
+   TXA
    ROL
    STA   Z_PC2+1
+   TXA
+   ASL
    LDA   #$00
    ROL
    STA   Z_PC2+2
@@ -462,15 +451,15 @@ get_next_code_byte2:
    RTS
 .if_end@16:
    LDA   Z_PC2+1
-   STA   __zpabi_find_index_of_page_table__page_0
    STA   __local_get_next_code_byte2__page
    LDA   Z_PC2+2
-   STA   __zpabi_find_index_of_page_table__page_1
    BNE   .if_else@22
    LDA   __local_get_next_code_byte2__page
    CMP   NUM_IMAGE_PAGES
    BCC   .vthread@1
 .if_else@22:
+   LDX   Z_PC2+2
+   LDA   __local_get_next_code_byte2__page
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
    BCC   .if_end@23
@@ -479,6 +468,9 @@ get_next_code_byte2:
    LDA   #$00
    STA   ZCODE_PAGE_VALID
 .if_end@24:
+   LDA   __local_get_next_code_byte2__page
+   STA   disk_sector
+   LDA   Z_PC2+2
    JSR   get_next_code_byte@run0
    ADC   PAGE_TABLE_INDEX2
    STA   disk_buffer+1

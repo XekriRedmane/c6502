@@ -301,7 +301,14 @@ With `-O`, a function that qualifies gets its arguments in
 zero-page bytes set aside for it, keeps its locals in zero page too,
 and has no prologue or epilogue. It's a plain body ending in `RTS`.
 
-### Arguments in fixed zero-page bytes
+### Arguments in A, X, and zero-page bytes
+
+A function's leading parameters arrive in A and then X, as many whole
+integer or pointer parameters as fit in the two registers. So
+`f(unsigned char n)` takes `n` in A, `f(unsigned char a, unsigned
+char b)` takes `a` in A and `b` in X, and `f(const unsigned char *s)`
+takes `s` in A (the low byte) and X. The parameters after those each
+get zero-page bytes set aside for them.
 
 ```c
 unsigned char inner(unsigned char x) { return x * 2; }
@@ -315,146 +322,88 @@ unsigned char outer(unsigned char a, unsigned char b) {
 int main(void) { return outer(3, 4); }
 ```
 
-Each parameter gets a zero-page byte, named
-`__zpabi_<function>__<parameter>`, and the output binds each name
-with an `EQU` line. A declaration that leaves a parameter unnamed, as
-`void put(unsigned char);` does, names its byte by the parameter's
-position instead, `__zpabi_put__0`.
-
 ```
-__zpabi_outer__a	EQU	$80
-__zpabi_outer__b	EQU	$81
-__zpabi_inner__x	EQU	$82
-__zpabi_other__y	EQU	$82
-__local_outer__0	EQU	$84
-__local_outer__1	EQU	$85
-```
-
-The caller stores each argument in the callee's byte and calls it,
-and the callee reads its parameters from those bytes.
-
-```
-main:
-   LDA   #$03
-   STA   __zpabi_outer__a
-   LDA   #$04
-   STA   __zpabi_outer__b
-   JSR   outer
-   ...
-
 inner:
-   LDA   __zpabi_inner__x
    ASL
    RTS
+
+outer:
+   STA   __local_outer__a
+   STX   __local_outer__b
+   JSR   inner
+   STA   __local_outer__0
+   LDA   __local_outer__b
+   JSR   other
+   ...
+
+main:
+   LDX   #$04
+   LDA   #$03
+   JSR   outer
 ```
 
-A multi-byte parameter gets one byte per byte of its type, with
-`_0`, `_1`, and so on after its name, low byte first.
+The caller loads the arguments into the registers and calls. A
+parameter that arrives in a register has no zero-page byte of its
+own. The function copies it into a local as it starts, and the
+register allocator keeps that local in a register when the body
+allows, as `inner` keeps `x` in A. `outer` reads `a` and `b` after
+calls that change A and X, so it stores them in its own bytes first.
 
-### Why two functions can share a byte
+Before 18 Nov 2026 every parameter arrived in a zero-page byte, and
+each call stored each argument there, as in `LDA #$03; STA
+__zpabi_outer__a`. A call is 2 bytes shorter for each argument byte
+in a register, and a function that keeps the argument in memory pays
+2 bytes once to store it. The three multi-file example programs became
+65 (Zork), 398 (Lode Runner), and 742 (Ali Baba) bytes smaller.
 
-`inner` and `other` both use `$82`. That's safe because they're never
-running at the same time. `outer` calls `inner`, which returns, and
-only then calls `other`. Neither calls the other.
+`main` keeps its parameters in zero-page bytes, since the startup code
+that calls it sets no register. So does a function whose declaration
+names a register or an address for any parameter, with `register`,
+`in_a` and the like, or `zeropage(addr)`, as described below. Its
+parameters arrive exactly where those name, and the rest in zero-page
+bytes.
 
-`outer`'s bytes are a different matter. `outer` is still running
-while `inner` and `other` run, and it reads `a` again after `inner`
-returns, so `$80` and `$81` are kept apart from theirs. The compiler
-computes this from the *call graph*, the record of which function
-calls which. Two functions get different bytes when one can be
-running while the other is, that is, when one calls the other,
-directly or through other functions. Otherwise they may share.
-
-That's also why a recursive function can't use zp_abi. Its own
-earlier calls are still running, and every one of them would read
-the same bytes.
-
-A call to a function declared `[[noreturn]]` that passes no arguments
-isn't part of the call graph. Control never comes back from it, so
-from the moment of the call nothing reads the caller's bytes again,
-or the bytes of any function the caller was called from. The callee
-may use the same bytes, and it may even call the caller again. An old
-game's `JMP RESET_GAME` from deep inside nested subroutines is written
-as such a call.
+Each parameter that doesn't arrive in a register gets a zero-page
+byte, named `__zpabi_<function>__<parameter>`, and the output binds
+each name with an `EQU` line. A declaration that leaves a parameter
+unnamed, as `void put(unsigned char);` does, names its byte by the
+parameter's position instead, `__zpabi_put__0`. A multi-byte
+parameter gets one byte per byte of its type, with `_0`, `_1`, and so
+on after its name, low byte first. The caller stores the argument in
+those bytes, and the callee reads it from them.
 
 ```c
-[[noreturn]] void reset_game(void);
-
-static uint8_t get_key(void) {
-    uint8_t k = KBD;
-    if (k == 0x9B)
-        reset_game();     /* JMP reset_game */
-    return k;
+unsigned char three(unsigned char a, unsigned char b, unsigned char c) {
+    return a + b + c;
 }
+unsigned char g;
+void use(void) { g = three(1, 2, 3); }
 ```
 
-`reset_game` calls the functions that call `get_key`, but none of
-them is on a cycle, so they all keep zp_abi and their own bytes. A
-function is still on a cycle when it can return into itself through
-ordinary calls.
+```
+__zpabi_three__c	EQU	$80
 
-The call stays in the graph when it passes arguments, because the
-caller writes them into the callee's bytes while its own bytes are
-still in use. A cycle through such a call is an ordinary cycle.
+three:
+   STX   __local_three__b
+   CLC
+   ADC   __local_three__b
+   CLC
+   ADC   __zpabi_three__c
+   RTS
 
-C keeps the caller's objects alive while the callee runs, but c6502
-doesn't, so a pointer to a local of the caller, or of a function it
-was called from, must not be used after the call. Nothing checks
-this. Each trip around such a cycle also leaves the return addresses
-of the `JSR`s that led to the call on the hardware stack. The stack
-pointer wraps around within page 1, so later trips overwrite them.
-A function that still uses the soft stack leaves its frame behind
-too, and the soft stack doesn't wrap, so a cycle through one runs out
-of memory after enough trips. See
-[optimizations/noreturn_call.md](optimizations/noreturn_call.md).
-
-A value can also stay in a callee's bytes across calls. A function
-that passes its own parameter on unchanged to another function gets
-that function's bytes for the parameter, so its callers write the
-value where the callee reads it. And a caller that passes a local and
-needs it again afterwards keeps it in the callee's bytes, when nothing
-the call reaches changes them, so it doesn't copy the local there
-before each call. That's how Zork's code uses its global `SCRATCH2`,
-found from the call graph instead of written by hand; see
-[optimizations/slot_sharing.md](optimizations/slot_sharing.md).
-
-### Recursion that saves on the hardware stack
-
-A recursive function's locals get zero-page bytes of their own under
-`-O` when you mark the calls that recurse:
-
-```c
-void print_zstring(void) {
-    ...
-            load_packed_address();
-            [[c6502::save_hardware_stack]] print_zstring();
-    ...
-}
+use:
+   LDA   #$03
+   STA   __zpabi_three__c
+   LDX   #$02
+   LDA   #$01
+   JSR   three
+   ...
 ```
 
-The attribute applies to the calls in the statement or declaration
-it comes before, each of which has to be a direct call that can
-recurse. Before such
-a call, the caller pushes each local that's live across it with `LDA;
-PHA`, and after the call it pulls them back with `PLA; STA`. Because
-the caller saves what it needs, the function doesn't save anything
-at entry or exit, and it has no frame unless it has parameters or
-locals whose address is taken. Those stay on the soft stack, one
-copy per call.
+### Naming the registers
 
-It applies only when every call from one function on the cycle to
-another is marked. The compiler can't tell how deep the recursion
-goes, so the attribute is your promise that the hardware stack has
-room. Read the cautions in
-[attributes.md](attributes.md#save_hardware_stack) before using it,
-and see
-[saves around a recursive call](optimizations/recursion_saves.md) for
-the details.
-
-### Arguments in registers
-
-A parameter declared `register` arrives in a register instead. The
-first `register` byte goes in A and the second in X.
+A parameter declared `register` arrives in a register. The first
+`register` byte goes in A and the second in X.
 
 ```c
 unsigned char add(register unsigned char a, register unsigned char b) {
@@ -472,18 +421,14 @@ add:
    RTS
 
 twice:
-   LDX   __zpabi_twice__v
-   TXA
+   TAX
    JMP   add
 ```
 
 `add` uses `a` straight from A. The 6502 can't add X to A, so the
-first thing `add` does is store `b` in one of its local bytes. A
-register parameter has no zero-page byte of its own: the function
-copies it into a local as it starts, which stays in its register when
-the body allows. `twice`
-loads both arguments and jumps to `add`, since nothing is left to do
-after the call.
+first thing `add` does is store `b` in one of its local bytes. `v`
+arrives in A, so `twice` copies it to X for `add`'s second argument
+and jumps to `add`, since nothing is left to do after the call.
 
 A parameter can also name the register it arrives in, with
 `[[c6502::in_a]]`, `in_x`, or `in_y` after its name, or for a
@@ -536,13 +481,12 @@ or bytes at a fixed address, they're loaded with `LDX` / `LDY`
 directly, nothing in between touches A, and a peephole drops the
 `PHA` / `PLA`.
 
-A pointer can't be a `register` parameter by position. The 6502
-reaches memory through a pointer only with `(zp),Y` addressing, which
-reads the pointer's two bytes from consecutive zero-page addresses, so
-a pointer is only usable once it's in zero page. One that arrived in A
-and X would have to be stored to zero page before its first use. A
-pointer parameter's own zero-page bytes already serve as that base,
-with no extra step.
+A pointer can't be a `register` parameter by position, though it
+arrives in A and X when it leads the parameters and nothing in the
+declaration names a register. The 6502 reaches memory through a
+pointer only with `(zp),Y` addressing, which reads the pointer's two
+bytes from consecutive zero-page addresses, so a pointer that arrives
+in A and X is stored to zero page before its first use.
 
 ```c
 unsigned char first(const unsigned char *p) { return *p; }
@@ -550,13 +494,15 @@ unsigned char first(const unsigned char *p) { return *p; }
 
 ```
 first:
+   STA   __local_first__p
+   STX   __local_first__0
    LDY   #$00
-   LDA   (__zpabi_first__p_0),Y
+   LDA   (__local_first__p),Y
    RTS
 ```
 
-The caller stores the pointer's two bytes in `__zpabi_first__p_0` and
-`__zpabi_first__p_1`, and `first` reads through them directly.
+That's 4 bytes in `first`, and each call saves the 4 of its two
+stores to the pointer's bytes.
 
 A pointer can still name its registers, which is how a routine that
 takes one in registers is declared: DOS's RWTS takes its parameter
@@ -656,8 +602,8 @@ cycles, or 6 when the access crosses a page, and `STA (FP),Y` takes
 A zp_abi function has no prologue or epilogue, and an access to an
 argument or a local is a zero-page instruction. A zero-page `LDA`
 takes 3 cycles and 2 bytes. Passing an argument costs the caller a
-store to the callee's byte, or nothing more than loading it, for a
-`register` parameter.
+store to the callee's byte, or nothing more than loading it, for one
+that arrives in a register.
 
 The `add3` example shows the difference. Without `-O` it's
 74 instructions, and with `-O`, where it uses zp_abi, it's

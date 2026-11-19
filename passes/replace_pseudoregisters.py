@@ -727,7 +727,8 @@ def _expand_soft_stack_shifts(
     instrs: list[asm_ast.Type_instruction],
 ) -> list[asm_ast.Type_instruction]:
     """Rewrites each in-place shift or rotate of a `Frame` / `Stack`
-    byte as `Mov(byte, A); <shift> A; Mov(A, byte)`.
+    byte as `Mov(byte, A); <shift> A; Mov(A, byte)`, and each move
+    from X or Y to such a byte as `Mov(X, A); Mov(A, byte)`.
 
     The 6502 has no `(zp),Y` mode for ASL / LSR / ROL / ROR, so
     `asm_emit` would emit exactly this sequence anyway. Spelling it
@@ -746,6 +747,15 @@ def _expand_soft_stack_shifts(
             out.append(asm_ast.Mov(src=byte, dst=reg_a))
             out.append(type(instr)(dst=reg_a))
             out.append(asm_ast.Mov(src=reg_a, dst=byte))
+        elif (isinstance(instr, asm_ast.Mov)
+              and isinstance(instr.src, asm_ast.Reg)
+              and isinstance(instr.src.reg, (asm_ast.X, asm_ast.Y))
+              and isinstance(instr.dst, (asm_ast.Frame, asm_ast.Stack))):
+            # There's no `STX (zp),Y`, so `asm_emit` writes this as
+            # `TXA; STA (FP),Y`, and A is overwritten too.
+            out.append(asm_ast.Mov(src=instr.src, dst=reg_a))
+            out.append(asm_ast.Mov(src=reg_a, dst=instr.dst,
+                                   is_volatile=instr.is_volatile))
         else:
             out.append(instr)
     return out

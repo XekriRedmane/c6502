@@ -181,6 +181,11 @@ lists intact. The pass removes 8 bytes and 12 cycles here. The win
 grows with loop unrolling, where the same loads repeat once per
 unrolled iteration.
 
+A transfer straight back goes too: in `TAX; TXA` the second leaves A,
+X, and N/Z as the first left them. `return add(v, v);`, with `v`
+arriving in A and both of `add`'s arguments in registers, compiles to
+`TAX; JMP add`.
+
 ## When it applies
 
 - The instruction is a non-volatile `Mov` into a register, and the

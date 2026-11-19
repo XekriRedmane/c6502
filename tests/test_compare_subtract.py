@@ -97,17 +97,20 @@ class TestLoopInRegisters(unittest.TestCase):
     """`while (s >= k) s -= k;` on a 16-bit `s`, as Zork's
     `do_rwts_on_sector` does: `s` stays in A (low) and X (high), the
     exit adds `k` back, and a pass through the loop is `SBC; BCS` when
-    nothing is borrowed from the high byte."""
+    nothing is borrowed from the high byte. `f` takes `n0` in A, so
+    that `s` arrives in its slot and is loaded into A and X before the
+    loop."""
 
     def test_shape(self) -> None:
         src = """
         unsigned char k;
         unsigned char n;
-        unsigned char f(unsigned int s) {
+        unsigned char f(unsigned char n0 [[c6502::in_a]], unsigned int s) {
+            n = n0;
             while (s >= k) { s -= k; n++; }
             return (unsigned char)s;
         }
-        int main(void) { k = 16; return f(1000) + n; }
+        int main(void) { k = 16; return f(2, 1000) + n; }
         """
         asm = _run_stage("codegen", preprocess(src), optimize=True)
         body = asm.split("\nf:\n")[1].split("\nmain:\n")[0]
@@ -124,7 +127,7 @@ class TestLoopInRegisters(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 self.assertEqual(
                     build_sim(src, optimize=optimize).run().return_int(),
-                    1000 % 16 + 1000 // 16,
+                    1000 % 16 + 2 + 1000 // 16,
                 )
 
 

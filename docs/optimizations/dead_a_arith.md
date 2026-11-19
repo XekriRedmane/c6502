@@ -114,6 +114,13 @@ and N/Z are dead after it (`x_dead_at` / `y_dead_at`,
 Y by [redundant load elimination](redundant_load.md) loses its store
 to a later pass.
 
+A non-volatile load into A through a zero-page pointer, `LDA (p),Y`,
+goes when A and N/Z are dead after it, and, for the form with a
+constant index that sets Y with `LDY #k` first, Y is dead too.
+`X1 = (uint8_t)((uint16_t)Q->name >> 8)` reads the member's two
+bytes, and the low byte's load had stayed: `LDY #0; LDA (Q),Y; INY;
+LDA (Q),Y` is now `LDY #1; LDA (Q),Y`.
+
 The sweep repeats inside one call because another pass in the same
 round, such as [volatile read to CMP](volatile_void_read_cmp.md), can
 make A live across an instruction this pass would otherwise have
@@ -124,8 +131,9 @@ removed on its next call.
 - A volatile load, since the read itself is the effect of a volatile
   access.
 - An operand on the soft stack or behind a pointer (`Frame`, `Stack`,
-  and the `Indirect` forms). The emitted code for those starts with
-  `LDY #off`, which changes Y.
+  and the `Indirect` forms), as the source of an ALU instruction or
+  of a load that isn't the zero-page pointer case above. The emitted
+  code for those starts with `LDY #off`, which changes Y.
 - An instruction whose N or Z a branch reads, apart from the `TXA` /
   `TYA` case above. The backward search for that case stops at a
   label, a branch, a jump, a return, a call, and the compound

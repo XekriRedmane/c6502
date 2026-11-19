@@ -182,7 +182,9 @@ class TestLowering(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
     def test_conversion_is_a_zero_test(self) -> None:
         # Static, so that they return in A: main keeps their results
-        # as values (passes/carry_return_choice.py).
+        # as values (passes/carry_return_choice.py). `x` arrives in A
+        # (and X), so f tests A with `ORA #$00`, and g stores the low
+        # byte and ORs the high byte into it.
         asm = _codegen(
             "static bool f(unsigned char x) { return x; }"
             "static bool g(int x) { return x; }"
@@ -190,15 +192,16 @@ class TestLowering(unittest.TestCase):
         )
         self.assertEqual(_function_text(asm, "f").split(), [
             "SUBROUTINE",
-            "LDA", "__zpabi_f__x",
+            "ORA", "#$00",
             "BEQ", ".cmp_end@0",
             "LDA", "#$01",
             ".cmp_end@0:",
         ])
         self.assertEqual(_function_text(asm, "g").split(), [
             "SUBROUTINE",
-            "LDA", "__zpabi_g__x_1",
-            "ORA", "__zpabi_g__x_0",
+            "STA", "__local_g__x_0",
+            "TXA",
+            "ORA", "__local_g__x_0",
             "BEQ", ".cmp_end@1",
             "LDA", "#$01",
             ".cmp_end@1:",

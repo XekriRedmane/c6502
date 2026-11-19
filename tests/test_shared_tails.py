@@ -124,14 +124,18 @@ class TestPass(unittest.TestCase):
         self.assertEqual(apply_shared_tails(prog, {}), prog)
 
 
+# `store` takes its multiplier in X, so that `v` arrives in its slot
+# and each caller ends in the same stores into it, `STA v_0; LDA #0;
+# STA v_1; LDX #3; JMP store`. Passed in A and X, `v` left only `LDX
+# #0; JMP store`, which is too short to share.
 _SRC = """
 #include <stdint.h>
 uint16_t acc;
 uint8_t tab[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
-void store(uint16_t v) { acc = acc * 3 + v; }
-void f1(uint8_t i) { store(tab[i]); }
-void f2(uint8_t i) { store((uint8_t)(tab[i] + 1)); }
-void f3(uint8_t i) { store((uint8_t)(tab[i] << 1)); }
+void store(uint8_t m [[c6502::in_x]], uint16_t v) { acc = acc * m + v; }
+void f1(uint8_t i) { store(3, tab[i]); }
+void f2(uint8_t i) { store(3, (uint8_t)(tab[i] + 1)); }
+void f3(uint8_t i) { store(3, (uint8_t)(tab[i] << 1)); }
 int main(void) {
     f1(2); f2(5); f3(7); f1(0);
     return acc;

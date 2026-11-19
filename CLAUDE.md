@@ -211,6 +211,13 @@ Two key runtime conventions:
   vouches for the hardware stack's depth. See
   `passes/recursion_saves.py`; user guide, with the cautions, in
   [docs/attributes.md](docs/attributes.md#save_hardware_stack).
+- **Arguments in A and X by default.** Under `-O`, a zp_abi function
+  whose declaration names no register (`register`, `in_*`, or
+  `zeropage(addr)` on a parameter) takes its leading integer and
+  pointer parameters in A and then X, as many whole ones as fit, and
+  the rest in slots (`abi_selection._default_param_registers`).
+  `main` keeps its slots. Every unit decides it from the declaration,
+  and the link metadata's `param_regs` records it.
 - **The `register` keyword** requests 6502-register placement,
   refining the zp_abi calling convention. Placement is POSITIONAL:
   the first register arg-byte goes in **A**, the second in **X**

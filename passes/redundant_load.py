@@ -426,6 +426,11 @@ def _rewrite_with_in_states(
                               asm_ast.Ret, asm_ast.Return)):
             out.append(instr)
             continue
+        if _reverses_transfer(instrs, i):
+            # `TAX; TXA`: after the first, both registers and N/Z
+            # hold the value already. `twice(v) { return add(v, v); }`
+            # with `v` and both of add's arguments in registers.
+            continue
         if _is_redundant_load(instr, state) and _flags_redundant_at(
             instrs, i, state,
         ):
@@ -725,6 +730,23 @@ def _flags_redundant_at(
     if any(_operands_equal(z, instr.src) for z in state.z_reflects):
         return True
     return _flags_dead_at(instrs, i + 1)
+
+
+def _reverses_transfer(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> bool:
+    """Whether `instrs[i]` moves a register back into the register it
+    was just moved from (`TAX; TXA`, `TYA; TAY`, ...)."""
+    if i == 0:
+        return False
+    prev, ins = instrs[i - 1], instrs[i]
+    return (
+        isinstance(prev, asm_ast.Mov) and isinstance(ins, asm_ast.Mov)
+        and isinstance(prev.src, asm_ast.Reg)
+        and isinstance(prev.dst, asm_ast.Reg)
+        and prev.src != prev.dst
+        and ins.src == prev.dst and ins.dst == prev.src
+    )
 
 
 def _is_redundant_load(

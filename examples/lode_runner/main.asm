@@ -24,49 +24,13 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$80
-__zpabi_append_note__pitch	EQU	$80
-__zpabi_bcd_to_decimal2__bcd	EQU	$80
-__zpabi_char_to_sprite_num__c	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_draw_sprite_page1__sprite	EQU	$80
-__zpabi_draw_sprite_page2__sprite	EQU	$80
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_half_screen_col_for__col	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_load_sound_data__notes_0	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_poll_inputs__mode	EQU	$80
-__zpabi_put_char__c	EQU	$80
-__zpabi_put_digit__digit	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_row_to_addr__row	EQU	$80
-__zpabi_screen_row_for__row	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_to_decimal3__n	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
-__zpabi_add_and_update_score__bcd_points_1	EQU	$81
-__zpabi_append_note__duration	EQU	$81
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_half_screen_col_for__x_adj	EQU	$81
-__zpabi_load_sound_data__notes_1	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_poll_inputs__x	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_row_to_addr__page	EQU	$81
-__zpabi_screen_row_for__y_adj	EQU	$81
-__zpabi_append_level_cleared_note__n	EQU	$82
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__zpabi_poll_inputs__y	EQU	$82
-__zpabi_key_pressed__key	EQU	$83
-__zpabi_access_hi_score_data_from_disk__command	EQU	$84
+__local_init_game_data__0	EQU	$80
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
+__zpabi_poll_inputs__y	EQU	$80
+__local_level_cleared__n	EQU	$81
+__local_poll_inputs__x	EQU	$83
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -164,15 +128,15 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def append_level_cleared_note params=__zpabi_append_level_cleared_note__n locals= indirect=false in_cycle=false
+; def append_level_cleared_note params=__zpabi_append_level_cleared_note__n locals=__local_append_level_cleared_note__n indirect=false in_cycle=false param_regs=A
 ; def cold_start params= locals= indirect=false in_cycle=false
 ; def init_game_data params= locals=__local_init_game_data__0 indirect=false in_cycle=false
-; def key_pressed params=__zpabi_key_pressed__key locals= indirect=false in_cycle=false
-; def level_cleared params= locals= indirect=false in_cycle=false
+; def key_pressed params=__zpabi_key_pressed__key locals=__local_key_pressed__key indirect=false in_cycle=false param_regs=A
+; def level_cleared params= locals=__local_level_cleared__n indirect=false in_cycle=false
 ; def long_delay params= locals= indirect=false in_cycle=false
 ; def main params= locals= indirect=false in_cycle=false
 ; def play_level params= locals= indirect=false in_cycle=false carry=true
-; def poll_inputs params=__zpabi_poll_inputs__mode,__zpabi_poll_inputs__x,__zpabi_poll_inputs__y locals=__local_poll_inputs__mode,__local_poll_inputs__y,__local_poll_inputs__x indirect=false in_cycle=false changes=__zpabi_poll_inputs__x,__zpabi_poll_inputs__y
+; def poll_inputs params=__zpabi_poll_inputs__mode,__zpabi_poll_inputs__x,__zpabi_poll_inputs__y locals=__local_poll_inputs__mode,__local_poll_inputs__y,__local_poll_inputs__x indirect=false in_cycle=false param_regs=A,X, changes=__zpabi_poll_inputs__y
 ; def reset_game params= locals=__local_reset_game__0,__local_reset_game__p_0,__local_reset_game__p_1,__local_reset_game__1,__local_reset_game__2,__local_reset_game__row indirect=false in_cycle=false
 ; def show_hi_scores params= locals= indirect=false in_cycle=false
 ; def start_at_level_1 params= locals= indirect=false in_cycle=false
@@ -180,58 +144,58 @@ DISK_IO	EQU	$C088
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 param_regs=A,X
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
-; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd
+; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
-; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c
+; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext check_for_input params=
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext compress_and_save_level_data params=
 ; ext detect_lack_of_joystick params=
-; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext iris_wipe params=
 ; ext level_editor params=
 ; ext load_guard_data params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext move_guards params=
 ; ext move_player params=
 ; ext newline params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
-; ext put_char params=__zpabi_put_char__c
-; ext put_digit params=__zpabi_put_digit__digit
+; ext put_char params=__zpabi_put_char__c param_regs=A
+; ext put_digit params=__zpabi_put_digit__digit param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
 ; ext put_status_lives params=
-; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1
+; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
-; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
-; ext to_decimal3 params=__zpabi_to_decimal3__n
-; ext wait_for_key params=__zpabi_wait_for_key__cursor
-; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
+; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
+; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
+; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call append_level_cleared_note -> append_note
 ; call append_level_cleared_note -> play_sound
@@ -267,12 +231,10 @@ DISK_IO	EQU	$C088
 ; call start_level -> load_level
 ; call start_level -> wait_for_key_with_cursor_page_1
 ; call start_level -> wait_key
-; share member=append_level_cleared_note:__zpabi_append_level_cleared_note__n holder=level_cleared live=level_cleared:add_and_update_score,append_level_cleared_note forward=level_cleared>append_level_cleared_note writer=level_cleared
 ; item start_at_level_1 section=.text local=true zero=false
 ; item show_hi_scores section=.text local=true zero=false
 ; item poll_inputs section=.text local=true zero=false
 ; item key_pressed section=.text local=true zero=false
-; item key_pressed@run0 section=.text local=true zero=false
 ; item main section=.text local=false zero=false
 ; item cold_start section=.text local=false zero=false
 ; item reset_game section=.text local=false zero=false
@@ -367,7 +329,7 @@ show_hi_scores:
 poll_inputs:
    SUBROUTINE
 
-   LDA   __zpabi_poll_inputs__mode
+   STX   __local_poll_inputs__x
 .loop@0_start:
    CMP   #$CB
    BEQ   .if_end@4
@@ -380,10 +342,9 @@ poll_inputs:
 .if_end@4:
    LDA   KBD
    BPL   .if_end@5
-   STA   __zpabi_key_pressed__key
    JMP   key_pressed
 .if_end@5:
-   DEC   __zpabi_poll_inputs__x
+   DEC   __local_poll_inputs__x
    BNE   .if_end@10
    DEC   __zpabi_poll_inputs__y
    BNE   .if_end@10
@@ -415,7 +376,6 @@ poll_inputs:
 key_pressed:
    SUBROUTINE
 
-   LDA   __zpabi_key_pressed__key
    STA   KBDSTRB
    CMP   #$85
    BNE   .if_end@13
@@ -423,17 +383,11 @@ key_pressed:
 .if_end@13:
    CMP   #$8D
    BNE   .if_end@14
-   JSR   key_pressed@run0
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    JMP   show_hi_scores
 .if_end@14:
    JMP   start_at_level_1
-
-key_pressed@run0:
-   SUBROUTINE
-
-   LDA   #$01
-   STA   __zpabi_access_hi_score_data_from_disk__command
-   JMP   access_hi_score_data_from_disk
 
 main:
    SUBROUTINE
@@ -445,19 +399,18 @@ main:
    LDA   TXTPAGE1
    LDA   HIRES
    LDA   KBDSTRB
-   LDA   #$CA
-   STA   __zpabi_poll_inputs__mode
-   LDA   #$22
-   STA   __zpabi_poll_inputs__x
    LDA   #$02
    STA   __zpabi_poll_inputs__y
+   LDX   #$22
+   LDA   #$CA
    JMP   poll_inputs
 
 cold_start:
    SUBROUTINE
 
    JSR   detect_lack_of_joystick
-   JSR   key_pressed@run0
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    JMP   reset_game
 
 reset_game:
@@ -476,9 +429,7 @@ reset_game:
    STA   __local_reset_game__row
    JMP   .loop@1_start
 .reset_game@rot@0:
-   STA   __zpabi_row_to_addr__row
-   LDA   #$20
-   STA   __zpabi_row_to_addr__page
+   LDX   #$20
    JSR   row_to_addr
    STA   __local_reset_game__1
    STX   __local_reset_game__2
@@ -523,24 +474,20 @@ long_delay:
    JSR   wait_key
    LDA   #$03
    STA   GAME_ROWNUM
-   LDA   INPUT_MODE
-   STA   __zpabi_poll_inputs__mode
    LDA   #$FF
-   STA   __zpabi_poll_inputs__x
    STA   __zpabi_poll_inputs__y
+   LDX   #$FF
+   LDA   INPUT_MODE
    JMP   poll_inputs
 
 append_level_cleared_note:
    SUBROUTINE
 
-   LDA   __zpabi_append_level_cleared_note__n
    ASL
    ASL
    ASL
    ASL
-   STA   __zpabi_append_note__pitch
-   LDA   #$06
-   STA   __zpabi_append_note__duration
+   LDX   #$06
    JSR   append_note
    JMP   play_sound
 
@@ -548,7 +495,6 @@ start_level:
    SUBROUTINE
 
    LDA   #$01
-   STA   __zpabi_load_level__verbatim
    JSR   load_level
    LDA   #$00
    STA   KEY_COMMAND
@@ -562,7 +508,6 @@ start_level:
    LDA   PLAYER_ROW
    STA   GAME_ROWNUM
    LDA   #$09
-   STA   __zpabi_wait_for_key_with_cursor_page_1__cursor
    JSR   wait_for_key_with_cursor_page_1
 .if_end@18:
    LDA   #$00
@@ -631,17 +576,18 @@ level_cleared:
    INC   LIVES
 .if_end@30:
    LDA   #$0F
-   STA   __zpabi_append_level_cleared_note__n
+   STA   __local_level_cleared__n
 .level_cleared@rot@1:
+   LDX   #$01
    LDA   #$00
-   STA   __zpabi_add_and_update_score__bcd_points_0
-   LDA   #$01
-   STA   __zpabi_add_and_update_score__bcd_points_1
    JSR   add_and_update_score
+   LDA   __local_level_cleared__n
    JSR   append_level_cleared_note
+   LDA   __local_level_cleared__n
    JSR   append_level_cleared_note
+   LDA   __local_level_cleared__n
    JSR   append_level_cleared_note
-   DEC   __zpabi_append_level_cleared_note__n
+   DEC   __local_level_cleared__n
    BNE   .level_cleared@rot@1
    RTS
 
@@ -666,7 +612,8 @@ init_game_data:
    LDA   GAME_MODE
    CMP   #$02
    BCC   .if_end@33
-   JSR   key_pressed@run0
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    ORA   #$00
    BNE   .if_end@33
    JSR   bad_data_disk
@@ -684,10 +631,8 @@ init_game_data:
    BCS   .init_game_data@rot@2
    DEC   LIVES
    JSR   put_status_lives
+   LDX   #>DIED_TUNE
    LDA   #<DIED_TUNE
-   STA   __zpabi_load_sound_data__notes_0
-   LDA   #>DIED_TUNE
-   STA   __zpabi_load_sound_data__notes_1
    JSR   load_sound_data
 .loop@6_continue:
    JSR   play_sound
@@ -698,9 +643,10 @@ init_game_data:
    LDA   saved_enable_sound
    STA   ENABLE_SOUND
    LDA   KBD
-   STA   __zpabi_key_pressed__key
+   STA   __local_init_game_data__0
    LDA   DEMO_RUNNING
    BNE   .if_end@36
+   LDA   __local_init_game_data__0
    JMP   key_pressed
 .if_end@36:
    JMP   long_delay
@@ -711,7 +657,6 @@ init_game_data:
    JSR   spinning_game_over
    BCC   .if_end@38
    LDA   game_over_key
-   STA   __zpabi_key_pressed__key
    JMP   key_pressed
 .if_end@38:
    JMP   long_delay

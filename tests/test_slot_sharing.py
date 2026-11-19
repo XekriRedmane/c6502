@@ -10,6 +10,13 @@ units, where a `const` declaration lets a caller keep a value in the
 bytes of a function defined in the other, and checks the linker's
 errors when the promise doesn't hold. `TestPinnedParams` and
 `TestRegisterParams` cover the other two.
+
+Under `-O`, a function whose declaration names no register takes its
+leading parameters in A and X (`abi_selection._default_param_registers`),
+and a parameter in a register has no bytes to share. So each function
+here whose parameters are to arrive in slots names a register for one
+parameter, such as `[[c6502::in_a]]` on a byte, and the default is off
+for the rest of its parameters.
 """
 from __future__ import annotations
 
@@ -64,17 +71,18 @@ _PAGES = """
 #include <stdint.h>
 uint8_t buf[600];
 uint16_t sum;
-static void add_page(const uint8_t *p) {
-    uint8_t i = 0;
+static void add_page(uint8_t i [[c6502::in_a]], const uint8_t *p) {
     do { sum += p[i]; i++; } while (i != 0);
 }
-static void forward(const uint8_t *p) { add_page(p); }
+static void forward(uint8_t i [[c6502::in_a]], const uint8_t *p) {
+    add_page(i, p);
+}
 int main(void) {
     for (uint16_t k = 0; k < 600; k++) buf[k] = (uint8_t)(k * 7);
     const uint8_t *p = buf;
     uint8_t pages = 2;
     do {
-        forward(p);
+        forward(0, p);
         p += 0x100;
     } while (--pages != 0);
     return sum;
@@ -85,7 +93,9 @@ _PAGES_SUM = sum((k * 7) & 0xFF for k in range(512)) & 0xFFFF
 _FIRST = """
 #include <stdint.h>
 uint8_t a[2] = {10, 20}, b[2] = {3, 4};
-static uint8_t first(const uint8_t *p) { return p[0]; }
+static uint8_t first(uint8_t k [[c6502::in_a]], const uint8_t *p) {
+    return p[k];
+}
 """
 
 
@@ -121,15 +131,19 @@ class TestShares(unittest.TestCase):
     _STEPPED = """
 #include <stdint.h>
 uint16_t sum;
-static void take(const uint16_t s) { sum += s; }
-static void take_next(const uint16_t s) { take(s); }
+static void take(uint8_t w [[c6502::in_a]], const uint16_t s) {
+    sum += s + w;
+}
+static void take_next(uint8_t w [[c6502::in_a]], const uint16_t s) {
+    take(w, s);
+}
 static uint16_t first(void) { return 40; }
 int main(void) {
     uint16_t s = first();
-    take_next(++s);
-    take_next(++s);
-    take(++s);
-    take(++s);
+    take_next(1, ++s);
+    take_next(2, ++s);
+    take(3, ++s);
+    take(4, ++s);
     return sum;
 }
 """
@@ -158,16 +172,16 @@ int main(void) {
         self.assertFalse(
             [line for line in main if "__local_main__" in line], main,
         )
-        self._check_runs(self._STEPPED, 41 + 42 + 43 + 44)
+        self._check_runs(self._STEPPED, 41 + 42 + 43 + 44 + 1 + 2 + 3 + 4)
 
     def test_other_argument_while_live(self) -> None:
-        # `p` is still needed after `first(b)`, which writes the bytes.
+        # `p` is still needed after `first(0, b)`, which writes the bytes.
         src = _FIRST + """
         int main(void) {
             const uint8_t *p = a;
-            uint8_t s = first(p);
-            s += first(b);
-            return s + first(p);
+            uint8_t s = first(0, p);
+            s += first(0, b);
+            return s + first(0, p);
         }
         """
         self.assertEqual(_shares(_codegen(src)), [])
@@ -177,12 +191,12 @@ int main(void) {
         # `other`, which `p` is live across, passes `first` another
         # pointer.
         src = _FIRST + """
-        static uint8_t other(void) { return first(b); }
+        static uint8_t other(void) { return first(0, b); }
         int main(void) {
             const uint8_t *p = a;
-            uint8_t s = first(p);
+            uint8_t s = first(0, p);
             s += other();
-            return s + first(p);
+            return s + first(0, p);
         }
         """
         self.assertEqual(_shares(_codegen(src)), [])
@@ -192,7 +206,7 @@ int main(void) {
         # `store` passes its parameter on to `push` with it live across
         # `next_byte`, in another unit, which might call `store` (rule
         # 3), so `store` can't keep it in `push`'s bytes. `peek` can
-        # keep the value it pops there across `push(v)`, since `push`
+        # keep the value it pops there across `push(7, v)`, since `push`
         # is static. It had been dropped along with `store`, whose
         # external linkage made the share's owners global.
         src = """
@@ -201,13 +215,15 @@ int main(void) {
         void fail(void);
         uint16_t stack[8];
         uint8_t sp;
-        static void push(uint16_t value) {
+        static void push(uint8_t top [[c6502::in_a]], uint16_t value) {
             stack[sp++] = value;
-            if (sp > 7) fail();
+            if (sp > top) fail();
         }
         static uint16_t pop(void) { return stack[--sp]; }
-        void store(uint16_t value) { if (next_byte() == 0) push(value); }
-        uint16_t peek(void) { uint16_t v = pop(); push(v); return v; }
+        void store(uint8_t top [[c6502::in_a]], uint16_t value) {
+            if (next_byte() == 0) push(top, value);
+        }
+        uint16_t peek(void) { uint16_t v = pop(); push(7, v); return v; }
         """
         asm = _codegen(src)
         shares = _shares(asm)
@@ -223,7 +239,7 @@ int main(void) {
         src = """
         #include <stdint.h>
         uint8_t a[3] = {1, 2, 3};
-        static uint8_t sum(const uint8_t *p, uint8_t n) {
+        static uint8_t sum(const uint8_t *p, uint8_t n [[c6502::in_x]]) {
             uint8_t s = 0;
             do { s += *p++; } while (--n != 0);
             return s;
@@ -248,11 +264,11 @@ int main(void) {
         }
         int main(void) {
             const uint8_t *p = a;
-            uint8_t s = first(p);
+            uint8_t s = first(0, p);
             noise(5);
-            s += first(p);
+            s += first(0, p);
             noise(7);
-            return s + first(p) + out[7];
+            return s + first(0, p) + out[7];
         }
         """
         asm = _codegen(src)
@@ -268,8 +284,7 @@ int main(void) {
 _UNIT_DEF = """
 #include <stdint.h>
 uint16_t total;
-void add_page(const uint8_t *const p) {
-    uint8_t i = 0;
+void add_page(uint8_t i [[c6502::in_a]], const uint8_t *const p) {
     do { total += p[i]; i++; } while (i != 0);
 }
 """
@@ -277,14 +292,14 @@ void add_page(const uint8_t *const p) {
 _UNIT_USE = """
 #include <stdint.h>
 extern uint16_t total;
-void add_page(const uint8_t *const p);
+void add_page(uint8_t i [[c6502::in_a]], const uint8_t *const p);
 uint8_t buf[512];
 int main(void) {
     for (uint16_t k = 0; k < 512; k++) buf[k] = (uint8_t)(k * 7);
     const uint8_t *p = buf;
     uint8_t pages = 2;
     do {
-        add_page(p);
+        add_page(0, p);
         p += 0x100;
     } while (--pages != 0);
     return total;
@@ -366,12 +381,14 @@ class TestAcrossUnits(unittest.TestCase):
         #include <stdint.h>
         uint16_t total;
         uint8_t zeros[256];
-        static void scan(const uint8_t *p) {
-            uint8_t i = 0;
+        static void scan(uint8_t i [[c6502::in_a]], const uint8_t *p) {
             do { total += p[i]; i++; } while (i != 0);
         }
-        static void reset(void) { scan(zeros); }
-        void add_page(const uint8_t *const p) { scan(p); reset(); }
+        static void reset(void) { scan(0, zeros); }
+        void add_page(uint8_t i [[c6502::in_a]], const uint8_t *const p) {
+            scan(i, p);
+            reset();
+        }
         """
         rc, _, err = _link([src, _UNIT_USE])
         self.assertNotEqual(rc, 0)
@@ -628,22 +645,29 @@ class TestPassedToTwoCallees(unittest.TestCase):
     """A parameter passed on to two callees shares both callees'
     bytes, so the function copies it for neither, as Zork's
     `is_separator(c)` passes `c` to `is_dict_separator` and then to
-    `is_std_separator`."""
+    `is_std_separator`. Each function here takes a step count in X,
+    so that `c` arrives in its slot."""
 
     _SRC = """
     #include <stdint.h>
     #include <stdbool.h>
     uint8_t calls;
-    static bool is_a(uint8_t c) { calls++; return c == 'a'; }
-    static bool is_b(uint8_t c) { calls++; return c == 'b'; }
-    static bool is_ab(uint8_t c) {
-        if (is_a(c)) return true;
-        return is_b(c);
+    static bool is_a(uint8_t step [[c6502::in_x]], uint8_t c) {
+        calls += step;
+        return c == 'a';
+    }
+    static bool is_b(uint8_t step [[c6502::in_x]], uint8_t c) {
+        calls += step;
+        return c == 'b';
+    }
+    static bool is_ab(uint8_t step [[c6502::in_x]], uint8_t c) {
+        if (is_a(step, c)) return true;
+        return is_b(step, c);
     }
     int main(void) {
         uint8_t n = 0;
         for (uint8_t c = 'a'; c != 'e'; c++)
-            n = (uint8_t)(n << 1) | is_ab(c);
+            n = (uint8_t)(n << 1) | is_ab(1, c);
         return n * 16 + calls;
     }
     """

@@ -2,23 +2,23 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_draw_sprite_opaque__width	EQU	$80
-__zpabi_draw_sprite_opaque__height	EQU	$81
-__zpabi_draw_sprite_opaque__sprite_x	EQU	$82
-__zpabi_draw_sprite_opaque__sprite_y	EQU	$83
-__zpabi_draw_sprite_opaque__tile_src_0	EQU	$84
-__zpabi_draw_sprite_opaque__tile_src_1	EQU	$85
-__zpabi_draw_sprite_opaque__page_flag	EQU	$86
-__local_draw_sprite_opaque__x	EQU	$88
-__local_draw_sprite_opaque__row_remain	EQU	$89
-__local_draw_sprite_opaque__1	EQU	$8A
-__local_draw_sprite_opaque__2	EQU	$8B
-__local_draw_sprite_opaque__y	EQU	$8D
-__local_draw_sprite_opaque__3	EQU	$8E
-__local_draw_sprite_opaque__4	EQU	$8F
+__zpabi_draw_sprite_opaque__sprite_x	EQU	$80
+__zpabi_draw_sprite_opaque__sprite_y	EQU	$81
+__zpabi_draw_sprite_opaque__tile_src_0	EQU	$82
+__zpabi_draw_sprite_opaque__tile_src_1	EQU	$83
+__zpabi_draw_sprite_opaque__page_flag	EQU	$84
+__local_draw_sprite_opaque__x	EQU	$86
+__local_draw_sprite_opaque__row_remain	EQU	$87
+__local_draw_sprite_opaque__1	EQU	$88
+__local_draw_sprite_opaque__2	EQU	$89
+__local_draw_sprite_opaque__h	EQU	$8A
+__local_draw_sprite_opaque__y	EQU	$8B
+__local_draw_sprite_opaque__3	EQU	$8C
+__local_draw_sprite_opaque__4	EQU	$8D
+__local_draw_sprite_opaque__width	EQU	$8E
 
 ; @zp-link-meta-begin
-; def draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1,__zpabi_draw_sprite_opaque__page_flag locals=__local_draw_sprite_opaque__0,__local_draw_sprite_opaque__x,__local_draw_sprite_opaque__row_remain,__local_draw_sprite_opaque__1,__local_draw_sprite_opaque__2,__local_draw_sprite_opaque__h,__local_draw_sprite_opaque__y,__local_draw_sprite_opaque__3,__local_draw_sprite_opaque__4 indirect=false in_cycle=false changes=__zpabi_draw_sprite_opaque__height
+; def draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1,__zpabi_draw_sprite_opaque__page_flag locals=__local_draw_sprite_opaque__0,__local_draw_sprite_opaque__x,__local_draw_sprite_opaque__row_remain,__local_draw_sprite_opaque__1,__local_draw_sprite_opaque__2,__local_draw_sprite_opaque__h,__local_draw_sprite_opaque__y,__local_draw_sprite_opaque__3,__local_draw_sprite_opaque__4,__local_draw_sprite_opaque__width indirect=false in_cycle=false param_regs=A,X,,,,,
 ; item draw_sprite_opaque section=.text local=false zero=false
 ; item screen_row_addr_hi section=.rodata local=true zero=false
 ; item screen_row_addr_lo section=.rodata local=true zero=false
@@ -29,6 +29,8 @@ __local_draw_sprite_opaque__4	EQU	$8F
 draw_sprite_opaque:
    SUBROUTINE
 
+   STA   __local_draw_sprite_opaque__width
+   STX   __local_draw_sprite_opaque__h
    LDA   __zpabi_draw_sprite_opaque__page_flag
    BPL   .cond_else@0
    LDA   #<screen_row_addr_hi2
@@ -53,7 +55,7 @@ draw_sprite_opaque:
    STA   __local_draw_sprite_opaque__2
    LDA   screen_row_addr_lo,X
    STA   __local_draw_sprite_opaque__1
-   LDA   __zpabi_draw_sprite_opaque__width
+   LDA   __local_draw_sprite_opaque__width
    STA   __local_draw_sprite_opaque__row_remain
    LDA   __zpabi_draw_sprite_opaque__sprite_x
    STA   __local_draw_sprite_opaque__x
@@ -73,10 +75,10 @@ draw_sprite_opaque:
 .loop@1_start:
    LDA   __local_draw_sprite_opaque__row_remain
    BPL   .draw_sprite_opaque@rot@0
-   DEC   __zpabi_draw_sprite_opaque__height
+   DEC   __local_draw_sprite_opaque__h
    INX
 .loop@0_start:
-   LDA   __zpabi_draw_sprite_opaque__height
+   LDA   __local_draw_sprite_opaque__h
    BNE   .draw_sprite_opaque@rot@1
    RTS
 

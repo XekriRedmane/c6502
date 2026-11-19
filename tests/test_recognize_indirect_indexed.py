@@ -904,9 +904,10 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
     def test_indirect_indexed_load_emits_short_sequence(self) -> None:
         # `ptr[idx]` where ptr is a zp_abi parameter and idx is a
         # uchar local. The indirect-Y access should appear without
-        # a 16-bit Add chain; the `indirect_base_prop` pass further
-        # bypasses DPTR staging by using the zp_abi pointer's ZP
-        # bytes as the indirect base directly.
+        # a 16-bit Add chain, and DPTR staging is bypassed by using
+        # the pointer's ZP bytes as the indirect base directly. The
+        # pointer arrives in A and X, and `copy` stores it into a
+        # pair of its own zero-page bytes at entry.
         src = (
             "#include <stdint.h>\n"
             "static volatile uint8_t result;\n"
@@ -918,9 +919,9 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
         )
         asm = self._compile(src)
         # Expect an `LDA (symbol),Y` indirect-Y read (the ZP base
-        # is the zp_abi-pinned pointer slot, rendered by emit
-        # using the slot's symbolic name).
-        self.assertIn("LDA   (__zpabi_copy__src_0),Y", asm)
+        # is the local that holds the pointer, rendered by emit
+        # using the local's symbolic name).
+        self.assertIn("LDA   (__local_copy__src),Y", asm)
         # The unrecognized form would emit `CLC` for the 16-bit
         # Add inside `copy` — verify that's gone.
         body_start = asm.index("copy:")

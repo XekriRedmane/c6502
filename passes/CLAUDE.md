@@ -44,8 +44,10 @@ this directory:
   (`a_dead_at`, `x_dead_at`, `y_dead_at`) take a `JumpTable` to read A,
   write its index register, and go to each of its targets. `kills_a` counts every move
   `asm_emit` writes through A: a load into A, a move from memory or a
-  constant into memory (`LDA src; STA dst`), and a move between X and
-  Y (`TXA; TAY`).
+  constant into memory (`LDA src; STA dst`), a move between X and
+  Y (`TXA; TAY`), and a move from X or Y to the soft stack or through
+  a pointer (`TXA; STA (FP),Y`). It counts a `FunctionPrologue` and an
+  `AllocateStack` too, which do their SSP arithmetic in A.
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
 - `call_edges.py` — `graph_calls` / `abandons_caller`: which direct
   calls are edges of the call graph. A call to a `[[noreturn]]`
@@ -270,7 +272,9 @@ this directory:
   outer peephole fixedpoint relies on dead_a_arith leaving NO
   droppable atom behind in one call, because downstream passes
   (e.g. `volatile_void_read_cmp`) can extend A's liveness across
-  a rewrite and lock in a still-droppable atom.
+  a rewrite and lock in a still-droppable atom. Also drops a dead
+  `LDX` / `LDY`, and a dead non-volatile `LDA (zp),Y` when Y is dead
+  too (`_is_dead_pointer_load`).
 - `dec_branch_indirect_y_fold.py` —
   `apply_dec_branch_indirect_y_fold`. After `Dec(Reg(Y));
   Branch(NE, _)` fall-through, Y is provably 0. Rewrites a
@@ -1208,7 +1212,9 @@ Walks each function twice:
 
 After replacement, each in-place shift or rotate of a `Frame` /
 `Stack` byte is spelled out as `Mov(byte, A); <shift> A; Mov(A,
-byte)` (`_expand_soft_stack_shifts`). The 6502 has no `(zp),Y` shift,
+byte)` (`_expand_soft_stack_shifts`), and so is a move from X or Y
+to one, as `Mov(X, A); Mov(A, byte)`. The 6502 has no `(zp),Y` shift,
+nor `STX (zp),Y`,
 so `asm_emit` would emit that sequence anyway, and spelling it out
 lets the A-tracking peepholes see that A is overwritten. They treat
 a memory shift as leaving A alone, which holds for ZP and Data
@@ -1372,7 +1378,8 @@ document says whether it fires there.
   `LDA M` (or LDX/LDY M) is about to read M and the target register
   already mirrors M, drop the load. Two `IndexedData` operands match
   only when their index registers match too (`tab,X` isn't
-  `tab,Y`). Also drops reg-to-reg Movs
+  `tab,Y`). Drops a transfer straight back, the `TXA` of `TAX;
+  TXA` (`_reverses_transfer`). Also drops reg-to-reg Movs
   (TXA / TYA / TAX / TAY) when src's and dst's equivalence classes
   share at least one mirrored operand AND flags are dead (or the
   Z flag already reflects src's value). Also REWRITES `LDA M` to

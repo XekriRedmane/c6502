@@ -241,6 +241,22 @@ uint8_t f(uint8_t a, uint8_t b) {
 int main(void) { pool[0] = f(3, 4); return pool[0]; }
 """
 
+# `_FULL_POOL` with a byte `d` in X before the parameters of `f` and
+# `g`, so that `a`, `b`, and `x` arrive in slots. Without a register
+# named in the declaration, `a` and `b` arrive in A and X, and so does
+# `x`.
+_FULL_POOL_SLOTS = """
+#include <stdint.h>
+uint8_t pool [[c6502::zeropage(0x80)]][128];
+static uint8_t g(uint8_t d [[c6502::in_x]], uint8_t x) { return x + d; }
+uint8_t f(uint8_t d [[c6502::in_x]], uint8_t a, uint8_t b) {
+    uint8_t s = g(d, a);
+    uint8_t t = g(d, b);
+    return s + t + a + b;
+}
+int main(void) { pool[0] = f(1, 3, 4); return pool[0]; }
+"""
+
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestUnitFallback(unittest.TestCase):
@@ -252,7 +268,9 @@ class TestUnitFallback(unittest.TestCase):
     def test_slots_below_the_pool(self) -> None:
         from compile import _run_stage
         from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_FULL_POOL), optimize=True)
+        asm = _run_stage(
+            "codegen", preprocess(_FULL_POOL_SLOTS), optimize=True,
+        )
         equs = dict(
             (line.split("\t")[0], int(line.split("$")[1], 16))
             for line in asm.splitlines() if "\tEQU\t$" in line
@@ -265,8 +283,27 @@ class TestUnitFallback(unittest.TestCase):
 
     def test_runs(self) -> None:
         from sim.harness import build_sim
+        for src in (_FULL_POOL, _FULL_POOL_SLOTS):
+            with self.subTest(slots=src is _FULL_POOL_SLOTS):
+                self.assertEqual(
+                    build_sim(src, optimize=True).run().return_int(), 16,
+                )
+
+    def test_register_parameters_with_a_frame(self) -> None:
+        # With the pool full, f's locals are on the soft stack, so its
+        # prologue runs, and it does its arithmetic in A, where `a`
+        # arrives. The prologue's PHA / PLA was dropped, since
+        # `kills_a` didn't count the prologue, and `b` was stored with
+        # `TXA; STA (FP),Y`, which no pass saw writing A. f returned 8
+        # or 141.
+        from sim.harness import build_sim
+        src = _FULL_POOL.replace(
+            "uint8_t f(uint8_t a, uint8_t b)",
+            "uint8_t f(register uint8_t a, register uint8_t b)",
+        )
+        self.assertIn("register uint8_t b", src)
         self.assertEqual(
-            build_sim(_FULL_POOL, optimize=True).run().return_int(), 16,
+            build_sim(src, optimize=True).run().return_int(), 16,
         )
 
 

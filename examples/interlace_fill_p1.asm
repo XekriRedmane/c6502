@@ -2,11 +2,9 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_interlace_fill_p1__value	EQU	$80
-__zpabi_interlace_fill_p1__col	EQU	$81
 
 ; @zp-link-meta-begin
-; def interlace_fill_p1 params=__zpabi_interlace_fill_p1__value,__zpabi_interlace_fill_p1__col locals= indirect=false in_cycle=false
+; def interlace_fill_p1 params=__zpabi_interlace_fill_p1__value,__zpabi_interlace_fill_p1__col locals=__local_interlace_fill_p1__value indirect=false in_cycle=false param_regs=A,X
 ; item interlace_fill_p1 section=.text local=false zero=false
 ; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
@@ -14,8 +12,6 @@ __zpabi_interlace_fill_p1__col	EQU	$81
 interlace_fill_p1:
    SUBROUTINE
 
-   LDX   __zpabi_interlace_fill_p1__col
-   LDA   __zpabi_interlace_fill_p1__value
    STA   $20A8,X
    STA   $2328,X
    STA   $21D0,X

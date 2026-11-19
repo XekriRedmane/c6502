@@ -73,7 +73,7 @@ class TestElf(unittest.TestCase):
         )
         relocs = [(r.offset, r.type, r.symbol.name, r.addend)
                   for s in back.sections for r in s.relocs]
-        self.assertIn((1, E.R_MOS_ADDR8, "__zpabi_apply_bobble__slot", 0),
+        self.assertIn((1, E.R_MOS_ADDR8, "__local_apply_bobble__slot", 0),
                       relocs)
         self.assertEqual(back.link_text(), obj.link_text())
         self.assertEqual(back.source_text(), text)

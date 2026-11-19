@@ -25,51 +25,14 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$80
-__zpabi_append_note__pitch	EQU	$80
-__zpabi_bcd_to_decimal2__bcd	EQU	$80
-__zpabi_char_to_sprite_num__c	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_half_screen_col_for__col	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_load_sound_data__notes_0	EQU	$80
-__zpabi_past_threshold__threshold	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_put_char__c	EQU	$80
-__zpabi_put_digit__digit	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_row_to_addr__row	EQU	$80
-__zpabi_screen_row_for__row	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_to_decimal3__n	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
+__local_check_for_input__1	EQU	$81
 __local_detect_lack_of_joystick__n_1	EQU	$81
-__zpabi_add_and_update_score__bcd_points_1	EQU	$81
-__zpabi_append_note__duration	EQU	$81
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_draw_sprite_page1__sprite	EQU	$81
-__zpabi_draw_sprite_page2__sprite	EQU	$81
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_half_screen_col_for__x_adj	EQU	$81
-__zpabi_load_sound_data__notes_1	EQU	$81
-__zpabi_past_threshold__reading	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_poll_for_key__joystick_ends	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_row_to_addr__page	EQU	$81
-__zpabi_screen_row_for__y_adj	EQU	$81
 __local_detect_lack_of_joystick__n_0	EQU	$82
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__local_check_for_input__1	EQU	$83
-__local_poll_for_key__n	EQU	$84
+__local_poll_for_key__n	EQU	$82
+__local_poll_for_key__joystick_ends	EQU	$83
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -102,8 +65,10 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
+__local_past_threshold__threshold	EQU	$AE
 __local_return_handler__sprite	EQU	$AE
 __local_check_joystick_or_delay__x	EQU	$AF
+__local_past_threshold__reading	EQU	$AF
 __local_return_handler__g	EQU	$AF
 __local_return_handler__z	EQU	$B0
 __local_return_handler__x	EQU	$B1
@@ -172,70 +137,70 @@ DISK_IO	EQU	$C088
 ; def check_joystick_or_delay params= locals=__local_check_joystick_or_delay__button,__local_check_joystick_or_delay__x indirect=false in_cycle=false carry=true
 ; def detect_lack_of_joystick params= locals=__local_detect_lack_of_joystick__0,__local_detect_lack_of_joystick__n_1,__local_detect_lack_of_joystick__n_0 indirect=false in_cycle=false
 ; def paddle_timer_running params= locals=__local_paddle_timer_running__0,__local_paddle_timer_running__1 indirect=false in_cycle=false carry=true
-; def past_threshold params=__zpabi_past_threshold__reading,__zpabi_past_threshold__threshold locals=__local_past_threshold__0 indirect=false in_cycle=false carry=true
-; def poll_for_key params=__zpabi_poll_for_key__joystick_ends locals=__local_poll_for_key__0,__local_poll_for_key__n indirect=false in_cycle=false carry=true
+; def past_threshold params=__zpabi_past_threshold__reading,__zpabi_past_threshold__threshold locals=__local_past_threshold__threshold,__local_past_threshold__reading indirect=false in_cycle=false param_regs=A,X carry=true
+; def poll_for_key params=__zpabi_poll_for_key__joystick_ends locals=__local_poll_for_key__0,__local_poll_for_key__n,__local_poll_for_key__joystick_ends indirect=false in_cycle=false param_regs=A carry=true
 ; def read_joystick_for_command params= locals=__local_read_joystick_for_command__dig,__local_read_joystick_for_command__0 indirect=false in_cycle=false
 ; def read_paddles params= locals=__local_read_paddles__0,__local_read_paddles__1 indirect=false in_cycle=false
-; def return_handler params= locals=__local_return_handler__sprite,__local_return_handler__g,__local_return_handler__z,__local_return_handler__x,__local_return_handler__0,__local_return_handler__1 indirect=false in_cycle=false
-; def wait_for_key params=__zpabi_wait_for_key__cursor locals=__local_wait_for_key__0 indirect=false in_cycle=false
-; def wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor locals=__local_wait_for_key_with_cursor_page_1__0 indirect=false in_cycle=false
+; def return_handler params= locals=__local_return_handler__sprite,__local_return_handler__g,__local_return_handler__z,__local_return_handler__x,__local_return_handler__0 indirect=false in_cycle=false
+; def wait_for_key params=__zpabi_wait_for_key__cursor locals=__local_wait_for_key__cursor indirect=false in_cycle=false param_regs=A
+; def wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor locals=__local_wait_for_key_with_cursor_page_1__cursor indirect=false in_cycle=false param_regs=A
 ; def wait_key params= locals=__local_wait_key__0 indirect=false in_cycle=false
 ; def wait_key_queued params= locals=__local_wait_key_queued__0,__local_wait_key_queued__1 indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 param_regs=A,X
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
-; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd
+; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
-; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c
+; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
-; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext iris_wipe params=
 ; ext level_editor params=
 ; ext load_guard_data params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
 ; ext move_guards params=
 ; ext move_player params=
 ; ext newline params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
-; ext put_char params=__zpabi_put_char__c
-; ext put_digit params=__zpabi_put_digit__digit
+; ext put_char params=__zpabi_put_char__c param_regs=A
+; ext put_digit params=__zpabi_put_digit__digit param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
 ; ext put_status_lives params=
-; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1
+; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
-; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
-; ext to_decimal3 params=__zpabi_to_decimal3__n
+; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
 ; call check_for_input -> check_for_mode_1_input
 ; call check_for_input -> put_status_lives
 ; call check_for_input -> read_joystick_for_command
@@ -256,13 +221,11 @@ DISK_IO	EQU	$C088
 ; call wait_for_key -> poll_for_key
 ; call wait_for_key_with_cursor_page_1 -> draw_sprite_page1
 ; call wait_for_key_with_cursor_page_1 -> poll_for_key
-; share member=past_threshold:__zpabi_past_threshold__reading holder=read_joystick_for_command live=read_joystick_for_command:past_threshold writer=read_joystick_for_command
 ; item paddle_timer_running section=.text local=true zero=false
 ; item read_paddles section=.text local=true zero=false
 ; item past_threshold section=.text local=true zero=false
 ; item button_pressed section=.text local=true zero=false
 ; item read_joystick_for_command section=.text local=true zero=false
-; item read_joystick_for_command@run0 section=.text local=true zero=false
 ; item check_for_mode_1_input section=.text local=true zero=false
 ; item wait_key_queued section=.text local=true zero=false
 ; item check_for_input section=.text local=false zero=false
@@ -378,16 +341,18 @@ read_paddles:
 past_threshold:
    SUBROUTINE
 
-   LDA   __zpabi_past_threshold__threshold
+   STA   __local_past_threshold__reading
+   STX   __local_past_threshold__threshold
+   TXA
    CMP   #$2E
    BNE   .if_end@3
-   LDA   __zpabi_past_threshold__reading
+   LDA   __local_past_threshold__reading
    SEC
-   SBC   __zpabi_past_threshold__threshold
+   SBC   __local_past_threshold__threshold
    RTS
 .if_end@3:
    CLC
-   SBC   __zpabi_past_threshold__reading
+   SBC   __local_past_threshold__reading
    RTS
 
 button_pressed:
@@ -419,16 +384,16 @@ read_joystick_for_command:
    BMI   .if_end@10
    JSR   read_paddles
    LDA   PADDLE_VALUES
-   STA   __zpabi_past_threshold__reading
-   LDA   paddle_thresholds+1
-   JSR   read_joystick_for_command@run0
+   LDX   paddle_thresholds+1
+   JSR   past_threshold
    BCC   .if_else@13
    LDA   #$CC
    STA   KEY_COMMAND_LR
    JMP   .if_end@12
 .if_else@13:
-   LDA   paddle_thresholds
-   JSR   read_joystick_for_command@run0
+   LDX   paddle_thresholds
+   LDA   PADDLE_VALUES
+   JSR   past_threshold
    BCC   .if_else@15
    LDA   #$CA
    STA   KEY_COMMAND_LR
@@ -439,18 +404,15 @@ read_joystick_for_command:
 .if_end@14:
 .if_end@12:
    LDA   PADDLE_VALUES+1
-   STA   __zpabi_past_threshold__reading
-   LDA   paddle_thresholds+2
-   JSR   read_joystick_for_command@run0
+   LDX   paddle_thresholds+2
+   JSR   past_threshold
    BCC   .if_else@17
    LDA   #$C9
    STA   KEY_COMMAND
    RTS
 .if_else@17:
-   LDA   paddle_thresholds+3
-   STA   __zpabi_past_threshold__threshold
+   LDX   paddle_thresholds+3
    LDA   PADDLE_VALUES+1
-   STA   __zpabi_past_threshold__reading
    JSR   past_threshold
    BCC   .if_else@19
    LDA   #$CB
@@ -466,12 +428,6 @@ read_joystick_for_command:
    STA   KEY_COMMAND
    STA   KEY_COMMAND_LR
    RTS
-
-read_joystick_for_command@run0:
-   SUBROUTINE
-
-   STA   __zpabi_past_threshold__threshold
-   JMP   past_threshold
 
 check_for_mode_1_input:
    SUBROUTINE
@@ -706,7 +662,6 @@ return_handler:
    BNE   .if_end@39
    LDA   #$01
 .if_end@39:
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    DEC   GAME_COLNUM
    BPL   .return_handler@rot@0
@@ -726,19 +681,16 @@ return_handler:
    CMP   #$15
    BCC   .if_else@42
    LDA   #$00
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    JMP   .if_end@41
 .if_else@42:
    CMP   #$0B
    BCC   .if_else@44
    LDA   #$37
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    JMP   .if_end@43
 .if_else@44:
    LDA   #$38
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
 .if_end@43:
 .if_end@41:
@@ -766,7 +718,6 @@ return_handler:
 .cond_else@47:
    LDA   #$3A
 .cond_end@48:
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
 .loop@22_continue:
    DEC   __local_return_handler__g
@@ -819,6 +770,7 @@ check_joystick_or_delay:
 poll_for_key:
    SUBROUTINE
 
+   STA   __local_poll_for_key__joystick_ends
    LDA   #$68
    STA   __local_poll_for_key__n
 .poll_for_key@rot@5:
@@ -830,7 +782,7 @@ poll_for_key:
 .if_end@55:
    JSR   check_joystick_or_delay
    BCC   .if_end@58
-   LDA   __zpabi_poll_for_key__joystick_ends
+   LDA   __local_poll_for_key__joystick_ends
    BEQ   .if_end@58
    RTS
 .if_end@58:
@@ -842,29 +794,23 @@ poll_for_key:
 wait_for_key:
    SUBROUTINE
 
-   LDA   __zpabi_wait_for_key__cursor
    STA   cursor_sprite
 .loop@27_start:
    LDA   cursor_sprite
    BNE   .cond_end@60
    LDA   #$0A
 .cond_end@60:
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDA   #$00
-   STA   __zpabi_poll_for_key__joystick_ends
    JSR   poll_for_key
    BCS   .loop@27_break
    LDA   #$00
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDA   #$00
-   STA   __zpabi_poll_for_key__joystick_ends
    JSR   poll_for_key
    BCC   .loop@27_start
 .loop@27_break:
    LDA   cursor_sprite
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDA   wait_result
    RTS
@@ -872,7 +818,6 @@ wait_for_key:
 wait_for_key_with_cursor_page_1:
    SUBROUTINE
 
-   LDA   __zpabi_wait_for_key_with_cursor_page_1__cursor
    STA   cursor_sprite
 .loop@28_start:
    LDA   cursor_sprite
@@ -882,22 +827,17 @@ wait_for_key_with_cursor_page_1:
 .cond_else@62:
    LDA   #$0A
 .cond_end@63:
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    LDA   #$01
-   STA   __zpabi_poll_for_key__joystick_ends
    JSR   poll_for_key
    BCS   .loop@28_break
    LDA   cursor_sprite
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    LDA   #$01
-   STA   __zpabi_poll_for_key__joystick_ends
    JSR   poll_for_key
    BCC   .loop@28_start
 .loop@28_break:
    LDA   cursor_sprite
-   STA   __zpabi_draw_sprite_page1__sprite
    JSR   draw_sprite_page1
    LDA   wait_result
    RTS

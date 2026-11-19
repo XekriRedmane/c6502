@@ -62,24 +62,14 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__local_get_next_zchar__compound_literal_1	EQU	$E0
+__local_print_zstring__ch	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
-__zpabi_load_address__addr_0	EQU	$E0
-__zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
-__zpabi_print_number__n_0	EQU	$E0
-__zpabi_return_value__value_0	EQU	$E0
-__zpabi_store_result__value_0	EQU	$E0
+__local_print_zstring__c_0	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
-__zpabi_load_address__addr_1	EQU	$E1
-__zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
-__zpabi_print_number__n_1	EQU	$E1
-__zpabi_return_value__value_1	EQU	$E1
-__zpabi_store_result__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__local_print_zstring__ch	EQU	$E4
-__local_print_zstring__c_0	EQU	$E5
+__local_get_next_zchar__compound_literal_1	EQU	$E4
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -150,21 +140,21 @@ COUT1	EQU	$FDF0
 ; ext instr_sread params=
 ; ext instr_test_attr params=
 ; ext internal_error params=
-; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1
-; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1
+; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 param_regs=A,X
+; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 param_regs=A,X
 ; ext new_line params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
 ; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
-; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1
+; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 param_regs=A,X
 ; ext print_obj params=__zpabi_print_obj__obj param_regs=A
 ; ext print_status_line params=
 ; ext read_from_sector params= carry=true
 ; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
-; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
-; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
+; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 param_regs=A,X
+; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 param_regs=A,X
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext write_next_sector params= carry=true
 ; ext write_to_sector params= carry=true
@@ -275,15 +265,14 @@ print_zstring:
    BNE   .if_else@4
    JSR   get_next_zchar
    ASL
-   STA   __local_print_zstring__c_0
-   LDY   __local_print_zstring__c_0
-   LDA   (Z_ABBREV_TABLE),Y
    STA   __local_print_zstring__ch
+   LDY   __local_print_zstring__ch
+   LDA   (Z_ABBREV_TABLE),Y
+   STA   __local_print_zstring__c_0
    INY
    LDA   (Z_ABBREV_TABLE),Y
-   STA   __zpabi_load_packed_address__addr_0
-   LDA   __local_print_zstring__ch
-   STA   __zpabi_load_packed_address__addr_1
+   STA   __local_print_zstring__ch
+   LDX   __local_print_zstring__c_0
    LDA   LOCKED_ALPHABET
    PHA
    LDA   ZDECOMPRESS_STATE
@@ -298,6 +287,7 @@ print_zstring:
    PHA
    LDA   Z_PC2+2
    PHA
+   LDA   __local_print_zstring__ch
    JSR   load_packed_address
    JSR   print_zstring
    PLA

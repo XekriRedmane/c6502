@@ -2,14 +2,12 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_clear_page1__zp_clear_col	EQU	$80
-__zpabi_clear_page1__zp_clear_col_end	EQU	$81
-__zpabi_interlace_fill_p1__col	EQU	$82
-__zpabi_interlace_fill_p1__paint	EQU	$83
+__local_clear_page1__x	EQU	$80
+__local_clear_page1__zp_clear_col_end	EQU	$81
 
 ; @zp-link-meta-begin
-; def clear_page1 params=__zpabi_clear_page1__zp_clear_col,__zpabi_clear_page1__zp_clear_col_end locals=__local_clear_page1__x,__local_clear_page1__0 indirect=false in_cycle=false changes=__zpabi_clear_page1__zp_clear_col
-; ext interlace_fill_p1 params=__zpabi_interlace_fill_p1__col,__zpabi_interlace_fill_p1__paint
+; def clear_page1 params=__zpabi_clear_page1__zp_clear_col,__zpabi_clear_page1__zp_clear_col_end locals=__local_clear_page1__x,__local_clear_page1__zp_clear_col_end,__local_clear_page1__0 indirect=false in_cycle=false param_regs=A,X
+; ext interlace_fill_p1 params=__zpabi_interlace_fill_p1__col,__zpabi_interlace_fill_p1__paint param_regs=A,X
 ; call clear_page1 -> interlace_fill_p1
 ; item clear_page1 section=.text local=false zero=false
 ; item TEXT_STRIP_SRC section=.rodata local=false zero=false
@@ -19,8 +17,10 @@ __zpabi_interlace_fill_p1__paint	EQU	$83
 clear_page1:
    SUBROUTINE
 
+   STA   __local_clear_page1__x
+   STX   __local_clear_page1__zp_clear_col_end
 .loop@0_start:
-   LDX   __zpabi_clear_page1__zp_clear_col
+   LDX   __local_clear_page1__x
    LDA   #$00
    STA   $2600,X
    STA   $2A00,X
@@ -56,13 +56,13 @@ clear_page1:
    STA   $2028,X
    STA   $2428,X
    STA   $2828,X
-   STX   __zpabi_interlace_fill_p1__col
-   STA   __zpabi_interlace_fill_p1__paint
+   LDX   #$00
+   LDA   __local_clear_page1__x
    JSR   interlace_fill_p1
-   LDA   __zpabi_clear_page1__zp_clear_col
-   CMP   __zpabi_clear_page1__zp_clear_col_end
+   LDA   __local_clear_page1__x
+   CMP   __local_clear_page1__zp_clear_col_end
    BEQ   .loop@0_break
-   DEC   __zpabi_clear_page1__zp_clear_col
+   DEC   __local_clear_page1__x
    JMP   .loop@0_start
 .loop@0_break:
    LDX   #$27

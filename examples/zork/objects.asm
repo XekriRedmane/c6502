@@ -66,24 +66,13 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
+__local_instr_set_attr__0	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
-__zpabi_load_address__addr_0	EQU	$E0
-__zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
-__zpabi_print_number__n_0	EQU	$E0
-__zpabi_return_value__value_0	EQU	$E0
-__zpabi_set_attr_word__word_0	EQU	$E0
-__zpabi_store_result__value_0	EQU	$E0
 __local_instr_test_attr__1	EQU	$E1
 __local_next_property__y	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
-__zpabi_load_address__addr_1	EQU	$E1
-__zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
-__zpabi_print_number__n_1	EQU	$E1
-__zpabi_return_value__value_1	EQU	$E1
-__zpabi_set_attr_word__word_1	EQU	$E1
-__zpabi_store_result__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_instr_clear_attr__0	EQU	$E4
 __local_instr_get_next_prop__y	EQU	$E4
@@ -92,15 +81,16 @@ __local_instr_get_prop_addr__0	EQU	$E4
 __local_instr_get_prop_len__0	EQU	$E4
 __local_instr_insert_obj__0	EQU	$E4
 __local_print_obj__obj	EQU	$E4
+__local_store_and_branch_on__related	EQU	$E4
 __local_instr_clear_attr__1	EQU	$E5
 __local_instr_get_prop__y	EQU	$E5
 __local_instr_get_prop_addr__y	EQU	$E5
 __local_instr_get_prop_len__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
+__local_print_obj__0	EQU	$E5
 __local_instr_get_prop__1	EQU	$E6
 __local_instr_get_prop_len__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
-__local_store_and_branch_on__related	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E7
 __local_instr_get_prop__2	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
@@ -154,9 +144,9 @@ COUT1	EQU	$FDF0
 ; def instr_set_attr params= locals=__local_instr_set_attr__0,__local_instr_set_attr__1 indirect=false in_cycle=false
 ; def instr_test_attr params= locals=__local_instr_test_attr__0,__local_instr_test_attr__1 indirect=false in_cycle=false
 ; def next_property params=__zpabi_next_property__y locals=__local_next_property__0,__local_next_property__y indirect=false in_cycle=false param_regs=A
-; def print_obj params=__zpabi_print_obj__obj locals=__local_print_obj__obj,__local_print_obj__0,__local_print_obj__1 indirect=false in_cycle=false param_regs=A
+; def print_obj params=__zpabi_print_obj__obj locals=__local_print_obj__obj,__local_print_obj__0,__local_print_obj__1,__local_print_obj__2 indirect=false in_cycle=false param_regs=A
 ; def remove_obj params= locals=__local_remove_obj__child,__local_remove_obj__0,__local_remove_obj__1,__local_remove_obj__2,__local_remove_obj__3,__local_remove_obj__4 indirect=false in_cycle=false
-; def set_attr_word params=__zpabi_set_attr_word__word_0,__zpabi_set_attr_word__word_1 locals= indirect=false in_cycle=false
+; def set_attr_word params=__zpabi_set_attr_word__word_0,__zpabi_set_attr_word__word_1 locals=__local_set_attr_word__word_1,__local_set_attr_word__word_0 indirect=false in_cycle=false param_regs=A,X
 ; def store_and_branch_on params=__zpabi_store_and_branch_on__related locals=__local_store_and_branch_on__related indirect=false in_cycle=false param_regs=A
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -194,13 +184,13 @@ COUT1	EQU	$FDF0
 ; ext instr_save params=
 ; ext instr_sread params=
 ; ext internal_error params=
-; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1
-; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1
+; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 param_regs=A,X
+; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 param_regs=A,X
 ; ext new_line params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
 ; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
-; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1
+; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 param_regs=A,X
 ; ext print_status_line params=
 ; ext print_string_literal params=
 ; ext print_zstring params=
@@ -208,8 +198,8 @@ COUT1	EQU	$FDF0
 ; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
-; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
-; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
+; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 param_regs=A,X
+; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 param_regs=A,X
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext write_next_sector params= carry=true
 ; ext write_to_sector params= carry=true
@@ -263,11 +253,11 @@ COUT1	EQU	$FDF0
 ; item instr_insert_obj section=.text local=false zero=false
 ; item print_obj section=.text local=false zero=false
 ; item store_and_branch_on section=.text local=true zero=false
-; item store_and_branch_on@tail2 section=.text local=true zero=false
+; item store_and_branch_on@tail0 section=.text local=true zero=false
 ; item instr_get_sibling section=.text local=false zero=false
 ; item instr_get_child section=.text local=false zero=false
 ; item instr_get_parent section=.text local=false zero=false
-; item instr_get_parent@tail0 section=.text local=true zero=false
+; item instr_get_parent@tail1 section=.text local=true zero=false
 ; item instr_jin section=.text local=false zero=false
 ; item attr_ptr_and_mask section=.text local=true zero=false
 ; item set_attr_word section=.text local=true zero=false
@@ -279,9 +269,7 @@ COUT1	EQU	$FDF0
 ; item get_property_len section=.text local=true zero=false
 ; item next_property section=.text local=true zero=false
 ; item instr_get_prop section=.text local=false zero=false
-; item instr_get_prop@tail3 section=.text local=true zero=false
 ; item instr_get_prop_addr section=.text local=false zero=false
-; item instr_get_prop_addr@tail1 section=.text local=true zero=false
 ; item instr_get_next_prop section=.text local=false zero=false
 ; item instr_get_prop_len section=.text local=false zero=false
 ; item instr_put_prop section=.text local=false zero=false
@@ -485,15 +473,16 @@ print_obj:
    JSR   get_object_addr
    LDY   #$07
    LDA   (get_object_addr@ret),Y
-   STA   __local_print_obj__obj
+   STA   __local_print_obj__0
    INY
    LDA   (get_object_addr@ret),Y
-   CLC
-   ADC   #$01
-   STA   __zpabi_load_address__addr_0
+   STA   __local_print_obj__obj
+   LDX   __local_print_obj__0
+   INC   __local_print_obj__obj
+   BNE   .inc_done@0
+   INX
+.inc_done@0:
    LDA   __local_print_obj__obj
-   ADC   #$00
-   STA   __zpabi_load_address__addr_1
    JSR   load_address
    JMP   print_zstring
 
@@ -501,14 +490,12 @@ store_and_branch_on:
    SUBROUTINE
 
    STA   __local_store_and_branch_on__related
-   STA   __zpabi_store_result__value_0
-   LDA   #$00
-   STA   __zpabi_store_result__value_1
+   LDX   #$00
    JSR   store_result
    LDA   __local_store_and_branch_on__related
-   JMP   store_and_branch_on@tail2
+   JMP   store_and_branch_on@tail0
 
-store_and_branch_on@tail2:
+store_and_branch_on@tail0:
    SUBROUTINE
 
    BEQ   .cmp_end@0
@@ -541,14 +528,12 @@ instr_get_parent:
    JSR   get_object_addr
    LDY   #$04
    LDA   (get_object_addr@ret),Y
-   JMP   instr_get_parent@tail0
+   JMP   instr_get_parent@tail1
 
-instr_get_parent@tail0:
+instr_get_parent@tail1:
    SUBROUTINE
 
-   STA   __zpabi_store_result__value_0
-   LDA   #$00
-   STA   __zpabi_store_result__value_1
+   LDX   #$00
    JMP   store_result
 
 instr_jin:
@@ -617,10 +602,9 @@ attr_ptr_and_mask:
 set_attr_word:
    SUBROUTINE
 
-   LDA   __zpabi_set_attr_word__word_0
    LDY   #$01
    STA   (attr_ptr),Y
-   LDA   __zpabi_set_attr_word__word_1
+   TXA
    DEY
    STA   (attr_ptr),Y
    RTS
@@ -634,17 +618,18 @@ instr_test_attr:
    TXA
    AND   attr_mask+1
    ORA   __local_instr_test_attr__1
-   JMP   store_and_branch_on@tail2
+   JMP   store_and_branch_on@tail0
 
 instr_set_attr:
    SUBROUTINE
 
    JSR   attr_ptr_and_mask
    ORA   attr_mask
-   STA   __zpabi_set_attr_word__word_0
+   STA   __local_instr_set_attr__0
    TXA
    ORA   attr_mask+1
-   STA   __zpabi_set_attr_word__word_1
+   TAX
+   LDA   __local_instr_set_attr__0
    JMP   set_attr_word
 
 instr_clear_attr:
@@ -654,16 +639,17 @@ instr_clear_attr:
    STA   __local_instr_clear_attr__3
    LDA   attr_mask
    EOR   #$FF
-   STA   __local_instr_clear_attr__1
+   STA   __local_instr_clear_attr__0
    LDA   attr_mask+1
    EOR   #$FF
-   STA   __local_instr_clear_attr__0
+   STA   __local_instr_clear_attr__1
    LDA   __local_instr_clear_attr__3
-   AND   __local_instr_clear_attr__1
-   STA   __zpabi_set_attr_word__word_0
-   TXA
    AND   __local_instr_clear_attr__0
-   STA   __zpabi_set_attr_word__word_1
+   STA   __local_instr_clear_attr__0
+   TXA
+   AND   __local_instr_clear_attr__1
+   TAX
+   LDA   __local_instr_clear_attr__0
    JMP   set_attr_word
 
 get_property_ptr:
@@ -739,19 +725,18 @@ instr_get_prop:
    STA   __local_instr_get_prop__2
    LDA   OPERANDS+2
    ASL
-   STA   __local_instr_get_prop__y
+   STA   __local_instr_get_prop__0
    TAY
    DEY
    DEY
    LDA   (__local_instr_get_prop__1),Y
-   STA   __local_instr_get_prop__0
-   LDY   __local_instr_get_prop__y
+   STA   __local_instr_get_prop__y
+   LDY   __local_instr_get_prop__0
    DEY
    LDA   (__local_instr_get_prop__1),Y
 .xjump@0:
-   STA   __zpabi_store_result__value_0
-   LDA   __local_instr_get_prop__0
-   JMP   instr_get_prop@tail3
+   LDX   __local_instr_get_prop__y
+   JMP   store_result
 .if_end@6:
    LDA   __local_instr_get_prop__y
    JSR   next_property
@@ -767,23 +752,17 @@ instr_get_prop:
    ORA   #$00
    BNE   .if_else@8
    LDA   (props),Y
-   JMP   instr_get_parent@tail0
+   JMP   instr_get_parent@tail1
 .if_else@8:
    CMP   #$01
    BNE   .if_else@10
    LDA   (props),Y
-   STA   __local_instr_get_prop__0
+   STA   __local_instr_get_prop__y
    INY
    LDA   (props),Y
    JMP   .xjump@0
 .if_else@10:
    JMP   internal_error
-
-instr_get_prop@tail3:
-   SUBROUTINE
-
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
 
 instr_get_prop_addr:
    SUBROUTINE
@@ -802,31 +781,28 @@ instr_get_prop_addr:
    ADC   #$00
    STA   __local_instr_get_prop_addr__y
    INC   __local_instr_get_prop_addr__0
-   BNE   .inc_done@0
+   BNE   .inc_done@1
    INC   __local_instr_get_prop_addr__y
-.inc_done@0:
+.inc_done@1:
    LDA   __local_instr_get_prop_addr__0
    SEC
    SBC   Z_HEADER_ADDR
-   STA   __zpabi_store_result__value_0
+   STA   __local_instr_get_prop_addr__0
    LDA   __local_instr_get_prop_addr__y
    SBC   Z_HEADER_ADDR+1
-   JMP   instr_get_prop@tail3
+   TAX
+   LDA   __local_instr_get_prop_addr__0
+   JMP   store_result
 .if_end@11:
    BCS   .if_end@12
-   JMP   instr_get_prop_addr@tail1
+   LDX   #$00
+   TXA
+   JMP   store_result
 .if_end@12:
    LDA   __local_instr_get_prop_addr__y
    JSR   next_property
    STA   __local_instr_get_prop_addr__y
    JMP   .loop@3_start
-
-instr_get_prop_addr@tail1:
-   SUBROUTINE
-
-   LDA   #$00
-   STA   __zpabi_store_result__value_0
-   JMP   instr_get_prop@tail3
 
 instr_get_next_prop:
    SUBROUTINE
@@ -846,7 +822,9 @@ instr_get_next_prop:
    JMP   .loop@4_break
 .if_end@14:
    BCS   .if_end@15
-   JMP   instr_get_prop_addr@tail1
+   LDX   #$00
+   TXA
+   JMP   store_result
 .if_end@15:
    LDA   __local_instr_get_next_prop__y
    JSR   next_property
@@ -856,7 +834,7 @@ instr_get_next_prop:
 .if_end@13:
    LDA   __local_instr_get_next_prop__y
    JSR   get_property_num
-   JMP   instr_get_parent@tail0
+   JMP   instr_get_parent@tail1
 
 instr_get_prop_len:
    SUBROUTINE
@@ -882,9 +860,11 @@ instr_get_prop_len:
    LSR
    LSR
    LSR
-   CLC
-   ADC   #$01
-   JMP   instr_get_parent@tail0
+   STA   __local_instr_get_prop_len__0
+   INC   __local_instr_get_prop_len__0
+   LDX   #$00
+   LDA   __local_instr_get_prop_len__0
+   JMP   store_result
 
 instr_put_prop:
    SUBROUTINE

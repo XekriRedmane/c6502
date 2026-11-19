@@ -19,112 +19,47 @@ DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
 __local_cold_restart__0	EQU	$80
+__local_colrow_to_pos__row	EQU	$80
 __local_delay_with_animation__n	EQU	$80
+__local_find_prev_pc__prev	EQU	$80
+__local_get_char_record__rec	EQU	$80
 __local_idle_anim_handler__n	EQU	$80
-__zpabi_appearance_to_fontchar__appearance	EQU	$80
-__zpabi_apply_damage_to_current__damage	EQU	$80
-__zpabi_check_adjacent_threats__pos	EQU	$80
-__zpabi_check_at_boundary__pos	EQU	$80
-__zpabi_check_encounter__pos	EQU	$80
-__zpabi_check_hostile__other_0	EQU	$80
-__zpabi_classify_entity_type__e_0	EQU	$80
-__zpabi_colrow_to_pos__col	EQU	$80
-__zpabi_compute_checksum__p_0	EQU	$80
-__zpabi_copy_pc_name_to_buf__m_0	EQU	$80
-__zpabi_display_message__index	EQU	$80
-__zpabi_display_message_loop__msg_0	EQU	$80
-__zpabi_display_shop__ev_0	EQU	$80
-__zpabi_draw_char_at_pos__pos	EQU	$80
-__zpabi_enter_combat_state__pos	EQU	$80
-__zpabi_find_entity_at_pos__pos	EQU	$80
-__zpabi_get_char_record__index	EQU	$80
-__zpabi_get_entity_fontchar__e_0	EQU	$80
-__zpabi_get_mob_data__index	EQU	$80
-__zpabi_handle_encounter__ev_0	EQU	$80
-__zpabi_handle_event_slot__ev_0	EQU	$80
-__zpabi_hrcg_cout__c	EQU	$80
-__zpabi_input_loop__m_0	EQU	$80
-__zpabi_load_char_to_fa__index	EQU	$80
-__zpabi_manhattan_distance__pos	EQU	$80
-__zpabi_modify_current_stats__amount_0	EQU	$80
-__zpabi_num_to_decimal__value_0	EQU	$80
-__zpabi_pickup_treasure__ev_0	EQU	$80
-__zpabi_pos_to_colrow__pos	EQU	$80
-__zpabi_print_bottom_centered__s_0	EQU	$80
-__zpabi_print_centered_plus_col__s_0	EQU	$80
-__zpabi_print_entity_name__m_0	EQU	$80
-__zpabi_print_string__s_0	EQU	$80
-__zpabi_random_in_range__limit	EQU	$80
-__zpabi_render_font_char_direct__charset_sel	EQU	$80
-__zpabi_reorder_char__m_0	EQU	$80
-__zpabi_run_chain__state	EQU	$80
-__zpabi_rwts_dispatch__command	EQU	$80
-__zpabi_scene_loop__scene	EQU	$80
-__zpabi_set_char_state__state	EQU	$80
-__zpabi_setup_input__m_0	EQU	$80
-__zpabi_setup_text_pos__name_0	EQU	$80
-__zpabi_setup_text_pos_col20__name_0	EQU	$80
-__zpabi_trigger_scene_event__ev_0	EQU	$80
-__zpabi_tune_player__tune	EQU	$80
-__zpabi_update_event_list__pos	EQU	$80
+__local_random_in_range__sample	EQU	$80
+__zpabi_compute_checksum__end_0	EQU	$80
+__zpabi_modify_current_stats__add	EQU	$80
+__zpabi_num_to_decimal__out_0	EQU	$80
+__zpabi_update_event_list__value_0	EQU	$80
 __local_clamp_char_field__1	EQU	$81
 __local_cold_restart__1	EQU	$81
-__local_get_char_record__rec	EQU	$81
-__local_random_in_range__sample	EQU	$81
-__zpabi_check_hostile__other_1	EQU	$81
-__zpabi_classify_entity_type__e_1	EQU	$81
-__zpabi_colrow_to_pos__row	EQU	$81
-__zpabi_compute_checksum__p_1	EQU	$81
-__zpabi_copy_pc_name_to_buf__m_1	EQU	$81
-__zpabi_display_message_loop__msg_1	EQU	$81
-__zpabi_display_shop__ev_1	EQU	$81
-__zpabi_get_entity_fontchar__e_1	EQU	$81
-__zpabi_handle_encounter__ev_1	EQU	$81
-__zpabi_handle_event_slot__ev_1	EQU	$81
-__zpabi_input_loop__m_1	EQU	$81
-__zpabi_manhattan_distance__from	EQU	$81
-__zpabi_modify_current_stats__amount_1	EQU	$81
-__zpabi_num_to_decimal__value_1	EQU	$81
-__zpabi_pickup_treasure__ev_1	EQU	$81
-__zpabi_print_bottom_centered__s_1	EQU	$81
-__zpabi_print_centered_plus_col__s_1	EQU	$81
-__zpabi_print_entity_name__m_1	EQU	$81
-__zpabi_print_string__s_1	EQU	$81
-__zpabi_reorder_char__m_1	EQU	$81
-__zpabi_setup_input__m_1	EQU	$81
-__zpabi_setup_text_pos__name_1	EQU	$81
-__zpabi_setup_text_pos_col20__name_1	EQU	$81
-__zpabi_trigger_scene_event__ev_1	EQU	$81
-__zpabi_tune_player__strength	EQU	$81
-__zpabi_update_event_list__value_0	EQU	$81
+__local_colrow_to_pos__col	EQU	$81
+__local_find_prev_pc__start	EQU	$81
+__local_get_char_record__index	EQU	$81
+__local_random_in_range__shift	EQU	$81
+__zpabi_compute_checksum__end_1	EQU	$81
+__zpabi_num_to_decimal__out_1	EQU	$81
+__zpabi_update_event_list__value_1	EQU	$81
 __local_cold_restart__page	EQU	$82
-__local_find_prev_pc__prev	EQU	$82
-__local_random_in_range__shift	EQU	$82
-__zpabi_compute_checksum__end_0	EQU	$82
-__zpabi_modify_current_stats__add	EQU	$82
-__zpabi_num_to_decimal__out_0	EQU	$82
-__zpabi_update_event_list__value_1	EQU	$82
-__local_find_prev_pc__start	EQU	$83
-__local_random_in_range__bound	EQU	$83
-__zpabi_compute_checksum__end_1	EQU	$83
-__zpabi_num_to_decimal__out_1	EQU	$83
-__local_random_in_range__mask	EQU	$85
-__local_compute_checksum__lo	EQU	$86
-__local_compute_checksum__hi	EQU	$87
-__local_find_first_pc__0	EQU	$87
-__local_step_prng__1	EQU	$87
-__local_compute_checksum__0	EQU	$88
-__local_find_first_pc__1	EQU	$88
-__local_step_prng__s	EQU	$88
-__local_compute_checksum__p	EQU	$89
-__local_get_mob_data__0	EQU	$89
-__local_compute_checksum__1	EQU	$8A
-__local_get_mob_data__1	EQU	$8A
-__local_copy_pc_name_to_buf__2	EQU	$8B
-__local_copy_pc_name_to_buf__i	EQU	$8C
-__local_copy_pc_name_to_buf__left	EQU	$8D
-__local_copy_pc_name_to_buf__3	EQU	$8E
-__local_copy_pc_name_to_buf__4	EQU	$8F
+__local_random_in_range__bound	EQU	$82
+__local_random_in_range__scaled	EQU	$83
+__local_compute_checksum__lo	EQU	$84
+__local_random_in_range__mask	EQU	$84
+__local_compute_checksum__hi	EQU	$85
+__local_find_first_pc__0	EQU	$85
+__local_compute_checksum__0	EQU	$86
+__local_find_first_pc__1	EQU	$86
+__local_step_prng__1	EQU	$86
+__local_compute_checksum__p_0	EQU	$87
+__local_copy_pc_name_to_buf__m	EQU	$87
+__local_get_mob_data__index	EQU	$87
+__local_step_prng__s	EQU	$87
+__local_compute_checksum__p_1	EQU	$88
+__local_copy_pc_name_to_buf__0	EQU	$88
+__local_get_mob_data__0	EQU	$88
+__local_copy_pc_name_to_buf__1	EQU	$89
+__local_copy_pc_name_to_buf__i	EQU	$8A
+__local_copy_pc_name_to_buf__left	EQU	$8B
+__local_copy_pc_name_to_buf__2	EQU	$8C
+__local_copy_pc_name_to_buf__3	EQU	$8D
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -293,9 +228,9 @@ WAIT	EQU	$FCA8
 ; def anim_tick_and_wait params= locals=__local_anim_tick_and_wait__0 indirect=false in_cycle=false
 ; def clamp_char_field params= locals=__local_clamp_char_field__0,__local_clamp_char_field__1 indirect=false in_cycle=false
 ; def cold_restart params= locals=__local_cold_restart__0,__local_cold_restart__1,__local_cold_restart__page indirect=false in_cycle=false
-; def colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row locals=__local_colrow_to_pos__row,__local_colrow_to_pos__col indirect=false in_cycle=false changes=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row
-; def compute_checksum params=__zpabi_compute_checksum__p_0,__zpabi_compute_checksum__p_1,__zpabi_compute_checksum__end_0,__zpabi_compute_checksum__end_1 locals=__local_compute_checksum__lo,__local_compute_checksum__hi,__local_compute_checksum__0,__local_compute_checksum__p,__local_compute_checksum__1 indirect=false in_cycle=false
-; def copy_pc_name_to_buf params=__zpabi_copy_pc_name_to_buf__m_0,__zpabi_copy_pc_name_to_buf__m_1 locals=__local_copy_pc_name_to_buf__0,__local_copy_pc_name_to_buf__1,__local_copy_pc_name_to_buf__2,__local_copy_pc_name_to_buf__i,__local_copy_pc_name_to_buf__left,__local_copy_pc_name_to_buf__3,__local_copy_pc_name_to_buf__4 indirect=false in_cycle=false
+; def colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row locals=__local_colrow_to_pos__row,__local_colrow_to_pos__col indirect=false in_cycle=false param_regs=A,X
+; def compute_checksum params=__zpabi_compute_checksum__p_0,__zpabi_compute_checksum__p_1,__zpabi_compute_checksum__end_0,__zpabi_compute_checksum__end_1 locals=__local_compute_checksum__lo,__local_compute_checksum__hi,__local_compute_checksum__0,__local_compute_checksum__p_0,__local_compute_checksum__p_1 indirect=false in_cycle=false param_regs=A,X,,
+; def copy_pc_name_to_buf params=__zpabi_copy_pc_name_to_buf__m_0,__zpabi_copy_pc_name_to_buf__m_1 locals=__local_copy_pc_name_to_buf__m,__local_copy_pc_name_to_buf__0,__local_copy_pc_name_to_buf__1,__local_copy_pc_name_to_buf__i,__local_copy_pc_name_to_buf__left,__local_copy_pc_name_to_buf__2,__local_copy_pc_name_to_buf__3 indirect=false in_cycle=false param_regs=A,X
 ; def dec_wait_if_nonzero params= locals= indirect=false in_cycle=false
 ; def delay_with_animation params= locals=__local_delay_with_animation__n indirect=false in_cycle=false
 ; def dispatch_on_mode params= locals= indirect=false in_cycle=false
@@ -303,12 +238,12 @@ WAIT	EQU	$FCA8
 ; def find_next_pc params= locals=__local_find_next_pc__0 indirect=false in_cycle=false
 ; def find_next_pc_wrap params= locals= indirect=false in_cycle=false
 ; def find_prev_pc params= locals=__local_find_prev_pc__prev,__local_find_prev_pc__start,__local_find_prev_pc__0 indirect=false in_cycle=false
-; def get_char_record params=__zpabi_get_char_record__index locals=__local_get_char_record__rec,__local_get_char_record__index indirect=false in_cycle=false changes=__zpabi_get_char_record__index
-; def get_mob_data params=__zpabi_get_mob_data__index locals=__local_get_mob_data__0,__local_get_mob_data__1,__local_get_mob_data__2,__local_get_mob_data__3 indirect=false in_cycle=false
+; def get_char_record params=__zpabi_get_char_record__index locals=__local_get_char_record__rec,__local_get_char_record__index indirect=false in_cycle=false param_regs=A
+; def get_mob_data params=__zpabi_get_mob_data__index locals=__local_get_mob_data__index,__local_get_mob_data__0,__local_get_mob_data__1,__local_get_mob_data__2 indirect=false in_cycle=false param_regs=A
 ; def idle_anim_handler params= locals=__local_idle_anim_handler__n indirect=false in_cycle=false
 ; def init_char_select params= locals=__local_init_char_select__0 indirect=false in_cycle=false
-; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__pos indirect=false in_cycle=false
-; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__sample,__local_random_in_range__shift,__local_random_in_range__bound,__local_random_in_range__scaled,__local_random_in_range__mask indirect=false in_cycle=false changes=__zpabi_random_in_range__limit
+; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__pos indirect=false in_cycle=false param_regs=A
+; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__sample,__local_random_in_range__shift,__local_random_in_range__bound,__local_random_in_range__scaled,__local_random_in_range__mask indirect=false in_cycle=false param_regs=A
 ; def step_prng params= locals=__local_step_prng__0,__local_step_prng__1,__local_step_prng__s indirect=false in_cycle=false
 ; def tick_anim_counter params= locals=__local_tick_anim_counter__0 indirect=false in_cycle=false
 ; def timed_wait params= locals= indirect=false in_cycle=false
@@ -328,8 +263,8 @@ WAIT	EQU	$FCA8
 ; ext adj_drop_dec params=
 ; ext adj_drop_inc params=
 ; ext ai_choose_target params=
-; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance
-; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage
+; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance param_regs=A
+; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
@@ -343,15 +278,15 @@ WAIT	EQU	$FCA8
 ; ext char_select_init params=
 ; ext char_select_next params=
 ; ext char_select_prev params=
-; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos
-; ext check_at_boundary params=__zpabi_check_at_boundary__pos
+; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos param_regs=A
+; ext check_at_boundary params=__zpabi_check_at_boundary__pos param_regs=A
 ; ext check_attack_eligible params= carry=true
 ; ext check_can_leave params= carry=true
-; ext check_encounter params=__zpabi_check_encounter__pos
-; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 carry=true
+; ext check_encounter params=__zpabi_check_encounter__pos param_regs=A
+; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 param_regs=A,X carry=true
 ; ext check_scene_events params=
 ; ext check_threats_here params=
-; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1
+; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext commit_move params=
@@ -361,46 +296,46 @@ WAIT	EQU	$FCA8
 ; ext disk_read params= carry=true
 ; ext disk_write params= carry=true
 ; ext display_char_stats params=
-; ext display_message params=__zpabi_display_message__index
-; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1
-; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1
+; ext display_message params=__zpabi_display_message__index param_regs=A
+; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 param_regs=A,X
+; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 param_regs=A,X
 ; ext display_status_bar params=
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
-; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos
+; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
-; ext enter_combat_state params=__zpabi_enter_combat_state__pos
+; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
 ; ext enter_save_game_slot params=
 ; ext enter_scenario_disk params=
 ; ext fill_map params=
 ; ext find_attack_target params=
-; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos
+; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos param_regs=A
 ; ext find_nearest_event params=
 ; ext first_group_member params=
 ; ext flush_pending_xp params=
 ; ext font_pos_to_text_pos params=
 ; ext format_scenario_disk params=
 ; ext game_init params=
-; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1
+; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 param_regs=A,X
 ; ext get_input_table_ptr params=
-; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1
-; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1
+; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
+; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
-; ext hrcg_cout params=__zpabi_hrcg_cout__c
+; ext hrcg_cout params=__zpabi_hrcg_cout__c param_regs=A
 ; ext hrcg_init params=
 ; ext inc_threshold_wrap params=
 ; ext init_attack_display params=
 ; ext init_drop_display params=
 ; ext init_drop_gold params=
 ; ext init_world params=
-; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1
+; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
 ; ext load_char_name_ptr params=
-; ext load_char_to_fa params=__zpabi_load_char_to_fa__index
+; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
-; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from
+; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
 ; ext menu_attack_target params=
 ; ext menu_check_attack params=
 ; ext menu_drop_dec params=
@@ -410,40 +345,40 @@ WAIT	EQU	$FCA8
 ; ext menu_game_settings_enter params=
 ; ext menu_other_options params=
 ; ext menu_see_your_lot params=
-; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add
+; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
 ; ext npc_move_ai params=
-; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1
+; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
 ; ext pick_random_member params=
-; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1
-; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1
-; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1
+; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
+; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 param_regs=A,X
+; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 param_regs=A,X
 ; ext print_ctrl_ab params=
 ; ext print_ctrl_n params=
-; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1
+; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 param_regs=A,X
 ; ext print_fontchar_at_text_pos params=
 ; ext print_member_name params=
 ; ext print_mob_name params=
-; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1
+; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
 ; ext random_events params=
 ; ext read_keyboard params=
 ; ext render_font_char params=
-; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel
-; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1
+; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel param_regs=A
+; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 param_regs=A,X
 ; ext reorder_current_char params=
 ; ext reset_turn_pos params=
 ; ext resolve_attack params=
 ; ext retire_character params=
-; ext run_chain params=__zpabi_run_chain__state
-; ext rwts_dispatch params=__zpabi_rwts_dispatch__command carry=true
+; ext run_chain params=__zpabi_run_chain__state param_regs=A
+; ext rwts_dispatch params=__zpabi_rwts_dispatch__command param_regs=A carry=true
 ; ext save_game params=
-; ext scene_loop params=__zpabi_scene_loop__scene
+; ext scene_loop params=__zpabi_scene_loop__scene param_regs=A
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
 ; ext select_someone_else params=
 ; ext set_blink_target params=
-; ext set_char_state params=__zpabi_set_char_state__state
+; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_cursor_row21 params=
 ; ext set_inverse_video params=
 ; ext set_restricted params=
@@ -455,10 +390,10 @@ WAIT	EQU	$FCA8
 ; ext settings_speed_down params=
 ; ext settings_speed_up params=
 ; ext setup_char_sprite params=
-; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1
+; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 param_regs=A,X
 ; ext setup_scene_display params=
-; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1
-; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1
+; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
+; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
 ; ext show_locked_msg params=
 ; ext slot_dec_enter params=
@@ -471,9 +406,9 @@ WAIT	EQU	$FCA8
 ; ext text_renderer params=
 ; ext text_renderer_no_pause params=
 ; ext toggle_sound params=
-; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1
-; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength
-; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1
+; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
+; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength param_regs=A,X
+; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext use_scenario_disk params=
 ; call anim_check_frame -> draw_blink_normal
 ; call anim_tick_and_wait -> anim_check_frame
@@ -519,7 +454,6 @@ WAIT	EQU	$FCA8
 ; item copy_pc_name_to_buf section=.text local=true zero=false
 ; item find_first_pc section=.text local=false zero=false
 ; item find_next_pc section=.text local=true zero=false
-; item find_next_pc@tail0 section=.text local=true zero=false
 ; item find_next_pc_wrap section=.text local=false zero=false
 ; item find_prev_pc section=.text local=false zero=false
 ; item init_char_select section=.text local=false zero=false
@@ -660,8 +594,7 @@ pos_to_colrow:
    SUBROUTINE
 
    LDX   #$00
-   LDA   __zpabi_pos_to_colrow__pos
-   JMP   .loop@4_continue
+   BEQ   .loop@4_continue
 .pos_to_colrow@rot@3:
    SBC   #$14
    INX
@@ -674,53 +607,54 @@ pos_to_colrow:
 colrow_to_pos:
    SUBROUTINE
 
+   STA   __local_colrow_to_pos__col
+   STX   __local_colrow_to_pos__row
    JMP   .loop@5_start
 .colrow_to_pos@rot@4:
-   LDA   __zpabi_colrow_to_pos__col
+   LDA   __local_colrow_to_pos__col
    CLC
    ADC   #$14
-   STA   __zpabi_colrow_to_pos__col
-   DEC   __zpabi_colrow_to_pos__row
+   STA   __local_colrow_to_pos__col
+   DEC   __local_colrow_to_pos__row
 .loop@5_start:
-   LDA   __zpabi_colrow_to_pos__row
+   LDA   __local_colrow_to_pos__row
    BNE   .colrow_to_pos@rot@4
-   LDA   __zpabi_colrow_to_pos__col
+   LDA   __local_colrow_to_pos__col
    RTS
 
 get_mob_data:
    SUBROUTINE
 
-   LDA   __zpabi_get_mob_data__index
    SEC
    SBC   #$01
+   STA   __local_get_mob_data__index
+   LSR
+   LSR
+   LSR
+   LSR
    STA   __local_get_mob_data__0
-   LSR
-   LSR
-   LSR
-   LSR
-   STA   __local_get_mob_data__1
-   LDA   __local_get_mob_data__0
+   LDA   __local_get_mob_data__index
    ASL
    ASL
    ASL
    ASL
    CLC
    ADC   LOCATIONS
-   STA   __local_get_mob_data__0
+   STA   __local_get_mob_data__index
    LDA   LOCATIONS+1
-   ADC   __local_get_mob_data__1
+   ADC   __local_get_mob_data__0
    TAX
-   LDA   __local_get_mob_data__0
+   LDA   __local_get_mob_data__index
    RTS
 
 get_char_record:
    SUBROUTINE
 
-   LDA   __zpabi_get_char_record__index
+   STA   __local_get_char_record__index
    CMP   #$81
    BCC   .if_end@7
    LDA   #$00
-   STA   __zpabi_get_char_record__index
+   STA   __local_get_char_record__index
 .if_end@7:
    LDA   #<LOCATIONS
    STA   __local_get_char_record__rec
@@ -734,9 +668,9 @@ get_char_record:
    BCC   .carry_inc@0
    INX
 .carry_inc@0:
-   DEC   __zpabi_get_char_record__index
+   DEC   __local_get_char_record__index
 .loop@6_start:
-   LDA   __zpabi_get_char_record__index
+   LDA   __local_get_char_record__index
    BNE   .get_char_record@rot@5
    LDA   __local_get_char_record__rec
    RTS
@@ -763,18 +697,18 @@ clamp_char_field:
 copy_pc_name_to_buf:
    SUBROUTINE
 
-   LDA   __zpabi_copy_pc_name_to_buf__m_0
+   STA   __local_copy_pc_name_to_buf__m
+   STX   __local_copy_pc_name_to_buf__0
    STA   MOB_PTR
-   LDA   __zpabi_copy_pc_name_to_buf__m_1
-   STA   MOB_PTR+1
+   STX   MOB_PTR+1
    LDY   #$00
-   LDA   (__zpabi_copy_pc_name_to_buf__m_0),Y
-   STA   __local_copy_pc_name_to_buf__3
+   LDA   (__local_copy_pc_name_to_buf__m),Y
+   STA   __local_copy_pc_name_to_buf__2
    INY
-   LDA   (__zpabi_copy_pc_name_to_buf__m_0),Y
-   STA   __local_copy_pc_name_to_buf__4
+   LDA   (__local_copy_pc_name_to_buf__m),Y
+   STA   __local_copy_pc_name_to_buf__3
    DEY
-   LDA   (__local_copy_pc_name_to_buf__3),Y
+   LDA   (__local_copy_pc_name_to_buf__2),Y
    STA   __local_copy_pc_name_to_buf__left
    LDA   #$01
    STA   __local_copy_pc_name_to_buf__i
@@ -782,15 +716,15 @@ copy_pc_name_to_buf:
    DEC   __local_copy_pc_name_to_buf__left
    BMI   .cond_else@9
    LDY   __local_copy_pc_name_to_buf__i
-   LDA   (__local_copy_pc_name_to_buf__3),Y
-   STA   __local_copy_pc_name_to_buf__2
+   LDA   (__local_copy_pc_name_to_buf__2),Y
+   STA   __local_copy_pc_name_to_buf__1
    JMP   .cond_end@10
 .cond_else@9:
    LDY   #$20
-   STY   __local_copy_pc_name_to_buf__2
+   STY   __local_copy_pc_name_to_buf__1
 .cond_end@10:
    LDX   __local_copy_pc_name_to_buf__i
-   LDA   __local_copy_pc_name_to_buf__2
+   LDA   __local_copy_pc_name_to_buf__1
    STA   S_ADD_NAME+4,X
    INC   __local_copy_pc_name_to_buf__i
    LDA   __local_copy_pc_name_to_buf__i
@@ -805,7 +739,6 @@ find_first_pc:
    JMP   .loop@8_continue
 .find_first_pc@rot@7:
    STA   BROWSE_CHAR_INDEX
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
    STA   __local_find_first_pc__0
    STX   __local_find_first_pc__1
@@ -814,8 +747,6 @@ find_first_pc:
    CMP   #$15
    BCS   .if_end@11
    LDA   __local_find_first_pc__0
-   STA   __zpabi_copy_pc_name_to_buf__m_0
-   STX   __zpabi_copy_pc_name_to_buf__m_1
    JSR   copy_pc_name_to_buf
    SEC
    RTS
@@ -837,7 +768,6 @@ find_next_pc:
    JMP   find_first_pc
 .if_end@12:
    STA   BROWSE_CHAR_INDEX
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
    STA   MOB_PTR
    STX   MOB_PTR+1
@@ -846,13 +776,6 @@ find_next_pc:
    CMP   #$15
    BCS   .loop@9_start
    LDA   MOB_PTR
-   JMP   find_next_pc@tail0
-
-find_next_pc@tail0:
-   SUBROUTINE
-
-   STA   __zpabi_copy_pc_name_to_buf__m_0
-   STX   __zpabi_copy_pc_name_to_buf__m_1
    JMP   copy_pc_name_to_buf
 
 find_next_pc_wrap:
@@ -875,9 +798,8 @@ find_prev_pc:
    BNE   .vthread@0
    LDA   __local_find_prev_pc__prev
    STA   BROWSE_CHAR_INDEX
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
-   JMP   find_next_pc@tail0
+   JMP   copy_pc_name_to_buf
 
 init_char_select:
    SUBROUTINE
@@ -919,7 +841,8 @@ step_prng:
 random_in_range:
    SUBROUTINE
 
-   LDA   __zpabi_random_in_range__limit
+   STA   __local_random_in_range__scaled
+   ORA   #$00
    BNE   .if_end@15
    LDA   #$00
    RTS
@@ -930,8 +853,10 @@ random_in_range:
    STA   __local_random_in_range__mask
    LDA   #$02
    STA   __local_random_in_range__bound
-.random_in_range@rot@8:
-   LDA   __zpabi_random_in_range__limit
+.loop@11_continue:
+   LDA   __local_random_in_range__shift
+   BEQ   .vthread@1
+   LDA   __local_random_in_range__scaled
    SEC
    SBC   __local_random_in_range__bound
    BMI   .loop@11_break
@@ -941,71 +866,69 @@ random_in_range:
    ORA   #$40
    STA   __local_random_in_range__mask
    ASL   __local_random_in_range__bound
-   LDA   __local_random_in_range__shift
-   BNE   .random_in_range@rot@8
+   JMP   .loop@11_continue
 .loop@11_break:
    LDA   __local_random_in_range__shift
+.vthread@1:
    STA   __local_random_in_range__sample
    JMP   .loop@12_start
-.random_in_range@rot@9:
-   ASL   __zpabi_random_in_range__limit
+.random_in_range@rot@8:
+   ASL   __local_random_in_range__scaled
    DEC   __local_random_in_range__sample
 .loop@12_start:
    LDA   __local_random_in_range__sample
-   BNE   .random_in_range@rot@9
+   BNE   .random_in_range@rot@8
 .loop@13_start:
    JSR   step_prng
    AND   __local_random_in_range__mask
    STA   __local_random_in_range__sample
    SEC
-   SBC   __zpabi_random_in_range__limit
+   SBC   __local_random_in_range__scaled
    BEQ   .loop@14_start
    BPL   .loop@13_start
    JMP   .loop@14_start
-.random_in_range@rot@10:
+.random_in_range@rot@9:
    LSR   __local_random_in_range__sample
    DEC   __local_random_in_range__shift
 .loop@14_start:
    LDA   __local_random_in_range__shift
-   BNE   .random_in_range@rot@10
+   BNE   .random_in_range@rot@9
    LDA   __local_random_in_range__sample
    RTS
 
 compute_checksum:
    SUBROUTINE
 
-   LDA   __zpabi_compute_checksum__p_0
-   STA   __local_compute_checksum__p
-   LDA   __zpabi_compute_checksum__p_1
-   STA   __local_compute_checksum__1
+   STA   __local_compute_checksum__p_0
+   STX   __local_compute_checksum__p_1
    LDA   #$00
    STA   __local_compute_checksum__lo
    STA   __local_compute_checksum__hi
 .loop@15_start:
    LDY   #$00
-   LDA   (__local_compute_checksum__p),Y
+   LDA   (__local_compute_checksum__p_0),Y
    STA   __local_compute_checksum__0
-   INC   __local_compute_checksum__p
+   INC   __local_compute_checksum__p_0
    BNE   .inc_done@0
-   INC   __local_compute_checksum__1
+   INC   __local_compute_checksum__p_1
 .inc_done@0:
    LDA   __local_compute_checksum__lo
    CLC
    ADC   __local_compute_checksum__0
    STA   __local_compute_checksum__lo
-   LDA   __local_compute_checksum__1
+   LDA   __local_compute_checksum__p_1
    CMP   __zpabi_compute_checksum__end_1
    BNE   .if_end@20
-   LDA   __local_compute_checksum__p
+   LDA   __local_compute_checksum__p_0
    CMP   __zpabi_compute_checksum__end_0
    BEQ   .loop@15_break
 .if_end@20:
    LDY   #$00
-   LDA   (__local_compute_checksum__p),Y
+   LDA   (__local_compute_checksum__p_0),Y
    STA   __local_compute_checksum__0
-   INC   __local_compute_checksum__p
+   INC   __local_compute_checksum__p_0
    BNE   .inc_done@1
-   INC   __local_compute_checksum__1
+   INC   __local_compute_checksum__p_1
 .inc_done@1:
    LDA   __local_compute_checksum__hi
    CLC
@@ -1014,10 +937,10 @@ compute_checksum:
    LDA   __local_compute_checksum__lo
    EOR   __local_compute_checksum__hi
    STA   __local_compute_checksum__lo
-   LDA   __local_compute_checksum__1
+   LDA   __local_compute_checksum__p_1
    CMP   __zpabi_compute_checksum__end_1
    BNE   .loop@15_start
-   LDA   __local_compute_checksum__p
+   LDA   __local_compute_checksum__p_0
    CMP   __zpabi_compute_checksum__end_0
    BNE   .loop@15_start
 .loop@15_break:
@@ -1028,14 +951,12 @@ compute_checksum:
 verify_integrity:
    SUBROUTINE
 
-   LDA   #$00
-   STA   __zpabi_compute_checksum__p_0
-   LDA   #$B3
-   STA   __zpabi_compute_checksum__p_1
    LDA   #$43
    STA   __zpabi_compute_checksum__end_0
    LDA   #$B4
    STA   __zpabi_compute_checksum__end_1
+   LDX   #$B3
+   LDA   #$00
    JSR   compute_checksum
    CPX   #$7A
    BNE   .jcmp_skip@0

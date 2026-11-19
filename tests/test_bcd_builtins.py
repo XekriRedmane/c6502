@@ -276,10 +276,13 @@ class TestCodegen(unittest.TestCase):
             " score = __c6502_bcd_add(score, points); }"
         )
         asm = _codegen(src, optimize=True)
+        # `points` arrives in A and X, and `add` stores it before the
+        # chain, which needs A for each byte.
         self.assertEqual(_body(asm, "add"), [
+            "STA __local_add__points_0", "STX __local_add__points_1",
             "SED", "CLC",
-            "LDA score", "ADC __zpabi_add__points_0", "STA score",
-            "LDA score+1", "ADC __zpabi_add__points_1", "STA score+1",
+            "LDA score", "ADC __local_add__points_0", "STA score",
+            "LDA score+1", "ADC __local_add__points_1", "STA score+1",
             "LDA score+2", "ADC #$00", "STA score+2",
             "LDA score+3", "ADC #$00", "STA score+3",
             "CLD", "RTS",
@@ -287,7 +290,8 @@ class TestCodegen(unittest.TestCase):
 
     def test_member_in_place(self) -> None:
         # `in_place_member_update` computes the member in its own
-        # bytes, whichever operand it is.
+        # bytes, whichever operand it is. `x` arrives in A (and X), and
+        # each function stores it before the chain.
         src = (
             "#include <stdint.h>\n"
             "struct s { uint8_t tag; uint16_t score; } p;"
@@ -296,15 +300,17 @@ class TestCodegen(unittest.TestCase):
         )
         asm = _codegen(src, optimize=True)
         self.assertEqual(_body(asm, "add"), [
+            "STA __local_add__x",
             "SED", "CLC",
-            "LDA p+1", "ADC __zpabi_add__x", "STA p+1",
+            "LDA p+1", "ADC __local_add__x", "STA p+1",
             "LDA p+2", "ADC #$00", "STA p+2",
             "CLD", "RTS",
         ])
         self.assertEqual(_body(asm, "add2"), [
+            "STA __local_add2__x_0", "STX __local_add2__x_1",
             "SED", "CLC",
-            "LDA __zpabi_add2__x_0", "ADC p+1", "STA p+1",
-            "LDA __zpabi_add2__x_1", "ADC p+2", "STA p+2",
+            "LDA __local_add2__x_0", "ADC p+1", "STA p+1",
+            "LDA __local_add2__x_1", "ADC p+2", "STA p+2",
             "CLD", "RTS",
         ])
 

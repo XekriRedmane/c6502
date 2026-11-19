@@ -511,3 +511,50 @@ class TestDeadIndexLoad(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ]
         self.assertEqual(_rewritten(list(instrs)), instrs)
+
+
+class TestDeadPointerLoad(unittest.TestCase):
+    """A non-volatile load through a zero-page pointer whose value and
+    flags nothing reads goes. `IndirectZp` sets Y with `LDY #k`, so Y
+    must be dead too."""
+
+    _Q0 = asm_ast.IndirectZp(address=0xFA, offset=0)
+    _Q1 = asm_ast.IndirectZp(address=0xFA, offset=1)
+    _X1 = asm_ast.Data(name="X1", offset=0)
+
+    def test_low_byte_of_a_high_byte_read(self) -> None:
+        # `X1 = (uint8_t)((uint16_t)Q->name >> 8);`
+        out = _rewritten([
+            asm_ast.Mov(src=self._Q0, dst=_REG_A),
+            asm_ast.Mov(src=self._Q1, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=self._X1),
+            asm_ast.Return(save_a=False),
+        ])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=self._Q1, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=self._X1),
+            asm_ast.Return(save_a=False),
+        ])
+
+    def test_stays_when_y_is_read(self) -> None:
+        # The `LDY #0` of the dropped load is the index of the store.
+        instrs = [
+            asm_ast.Mov(src=self._Q0, dst=_REG_A),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectZpY(address=0xFA)),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs)
+
+    def test_volatile_stays(self) -> None:
+        instrs = [
+            asm_ast.Mov(src=self._Q0, dst=_REG_A, is_volatile=True),
+            asm_ast.Mov(src=self._Q1, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=self._X1),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -17,100 +17,46 @@ BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
+__local_classify_entity_type__0	EQU	$80
 __local_draw_blink_alt__sprite	EQU	$80
-__zpabi_apply_damage_to_current__damage	EQU	$80
-__zpabi_check_adjacent_threats__pos	EQU	$80
-__zpabi_check_encounter__pos	EQU	$80
-__zpabi_check_hostile__other_0	EQU	$80
-__zpabi_classify_entity_type__e_0	EQU	$80
-__zpabi_colrow_to_pos__col	EQU	$80
-__zpabi_display_message__index	EQU	$80
-__zpabi_display_message_loop__msg_0	EQU	$80
-__zpabi_display_shop__ev_0	EQU	$80
-__zpabi_draw_char_at_pos__pos	EQU	$80
-__zpabi_enter_combat_state__pos	EQU	$80
-__zpabi_follow_link__link	EQU	$80
-__zpabi_handle_encounter__ev_0	EQU	$80
-__zpabi_handle_event_slot__ev_0	EQU	$80
-__zpabi_hrcg_cout__c	EQU	$80
-__zpabi_input_loop__m_0	EQU	$80
-__zpabi_load_char_to_fa__index	EQU	$80
-__zpabi_manhattan_distance__pos	EQU	$80
-__zpabi_modify_current_stats__amount_0	EQU	$80
-__zpabi_num_to_decimal__value_0	EQU	$80
-__zpabi_pickup_treasure__ev_0	EQU	$80
-__zpabi_print_centered_plus_col__s_0	EQU	$80
-__zpabi_print_entity_name__m_0	EQU	$80
-__zpabi_random_in_range__limit	EQU	$80
-__zpabi_reorder_char__m_0	EQU	$80
-__zpabi_run_chain__state	EQU	$80
-__zpabi_rwts_dispatch__command	EQU	$80
-__zpabi_scene_loop__scene	EQU	$80
-__zpabi_set_char_state__state	EQU	$80
-__zpabi_setup_input__m_0	EQU	$80
-__zpabi_setup_text_pos__name_0	EQU	$80
-__zpabi_setup_text_pos_col20__name_0	EQU	$80
-__zpabi_trigger_scene_event__ev_0	EQU	$80
-__zpabi_tune_player__tune	EQU	$80
-__zpabi_update_event_list__pos	EQU	$80
-__zpabi_check_hostile__other_1	EQU	$81
-__zpabi_classify_entity_type__e_1	EQU	$81
-__zpabi_colrow_to_pos__row	EQU	$81
-__zpabi_display_message_loop__msg_1	EQU	$81
-__zpabi_display_shop__ev_1	EQU	$81
-__zpabi_find_entity_at_pos__pos	EQU	$81
-__zpabi_get_entity_fontchar__e_0	EQU	$81
-__zpabi_handle_encounter__ev_1	EQU	$81
-__zpabi_handle_event_slot__ev_1	EQU	$81
-__zpabi_input_loop__m_1	EQU	$81
-__zpabi_manhattan_distance__from	EQU	$81
-__zpabi_modify_current_stats__amount_1	EQU	$81
-__zpabi_num_to_decimal__value_1	EQU	$81
-__zpabi_pickup_treasure__ev_1	EQU	$81
-__zpabi_pos_to_colrow__pos	EQU	$81
-__zpabi_print_centered_plus_col__s_1	EQU	$81
-__zpabi_print_entity_name__m_1	EQU	$81
-__zpabi_render_font_char_direct__charset_sel	EQU	$81
-__zpabi_reorder_char__m_1	EQU	$81
-__zpabi_setup_input__m_1	EQU	$81
-__zpabi_setup_text_pos__name_1	EQU	$81
-__zpabi_setup_text_pos_col20__name_1	EQU	$81
-__zpabi_trigger_scene_event__ev_1	EQU	$81
-__zpabi_tune_player__strength	EQU	$81
-__zpabi_update_event_list__value_0	EQU	$81
-__local_classify_entity_type__0	EQU	$82
-__zpabi_adjust_pc_count__m_0	EQU	$82
-__zpabi_check_at_boundary__pos	EQU	$82
-__zpabi_get_char_record__index	EQU	$82
-__zpabi_get_entity_fontchar__e_1	EQU	$82
-__zpabi_get_mob_data__index	EQU	$82
-__zpabi_modify_current_stats__add	EQU	$82
-__zpabi_num_to_decimal__out_0	EQU	$82
-__zpabi_print_bottom_centered__s_0	EQU	$82
-__zpabi_print_string__s_0	EQU	$82
-__zpabi_update_event_list__value_1	EQU	$82
-__local_classify_entity_type__1	EQU	$83
-__zpabi_adjust_pc_count__m_1	EQU	$83
-__zpabi_appearance_to_fontchar__appearance	EQU	$83
-__zpabi_num_to_decimal__out_1	EQU	$83
-__zpabi_print_bottom_centered__s_1	EQU	$83
-__zpabi_print_string__s_1	EQU	$83
-__zpabi_adjust_pc_count__delta	EQU	$84
-__zpabi_adjust_pc_count__loc_0	EQU	$85
-__local_find_entity_at_pos__link	EQU	$86
-__local_get_entity_fontchar__sprite	EQU	$86
-__zpabi_adjust_pc_count__loc_1	EQU	$86
-__local_find_entity_at_pos__ev	EQU	$87
-__local_get_entity_fontchar__0	EQU	$87
-__local_reorder_char__0	EQU	$87
-__local_find_entity_at_pos__0	EQU	$88
-__local_render_font_char_direct__sprite	EQU	$88
-__local_reorder_char__1	EQU	$88
-__local_reorder_char__2	EQU	$89
-__local_reorder_char__link	EQU	$8A
-__local_reorder_char__3	EQU	$8B
-__local_reorder_char__4	EQU	$8C
-__local_reorder_char__5	EQU	$8D
+__local_load_char_name_ptr__0	EQU	$80
+__local_print_entity_name__m	EQU	$80
+__local_print_member_name__0	EQU	$80
+__local_print_mob_name__0	EQU	$80
+__zpabi_adjust_pc_count__m_0	EQU	$80
+__zpabi_modify_current_stats__add	EQU	$80
+__zpabi_num_to_decimal__out_0	EQU	$80
+__zpabi_update_event_list__value_0	EQU	$80
+__local_classify_entity_type__e	EQU	$81
+__local_print_entity_name__0	EQU	$81
+__zpabi_adjust_pc_count__m_1	EQU	$81
+__zpabi_num_to_decimal__out_1	EQU	$81
+__zpabi_update_event_list__value_1	EQU	$81
+__local_classify_entity_type__1	EQU	$82
+__local_draw_char_at_pos__pos	EQU	$82
+__zpabi_adjust_pc_count__delta	EQU	$82
+__local_find_entity_at_pos__link	EQU	$83
+__local_get_entity_fontchar__sprite	EQU	$83
+__local_reorder_char__0	EQU	$83
+__local_find_entity_at_pos__ev	EQU	$84
+__local_get_entity_fontchar__0	EQU	$84
+__local_render_font_char_direct__charset_sel	EQU	$84
+__local_reorder_char__1	EQU	$84
+__local_find_entity_at_pos__0	EQU	$85
+__local_get_entity_fontchar__e	EQU	$85
+__local_render_font_char_direct__sprite	EQU	$85
+__local_reorder_char__link	EQU	$85
+__local_find_entity_at_pos__pos	EQU	$86
+__local_get_entity_fontchar__1	EQU	$86
+__local_reorder_char__2	EQU	$86
+__local_appearance_to_fontchar__sprite	EQU	$87
+__local_reorder_char__3	EQU	$87
+__local_reorder_char__4	EQU	$88
+__local_reorder_char__5	EQU	$89
+__local_reorder_char__m	EQU	$8A
+__local_reorder_char__6	EQU	$8B
+__local_adjust_pc_count__loc	EQU	$8E
+__local_adjust_pc_count__1	EQU	$8F
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -275,28 +221,28 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def adjust_pc_count params=__zpabi_adjust_pc_count__loc_0,__zpabi_adjust_pc_count__loc_1,__zpabi_adjust_pc_count__m_0,__zpabi_adjust_pc_count__m_1,__zpabi_adjust_pc_count__delta locals=__local_adjust_pc_count__0 indirect=false in_cycle=false
-; def appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance locals=__local_appearance_to_fontchar__sprite indirect=false in_cycle=false changes=__zpabi_appearance_to_fontchar__appearance
-; def classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 locals=__local_classify_entity_type__0,__local_classify_entity_type__1 indirect=false in_cycle=false
+; def adjust_pc_count params=__zpabi_adjust_pc_count__loc_0,__zpabi_adjust_pc_count__loc_1,__zpabi_adjust_pc_count__m_0,__zpabi_adjust_pc_count__m_1,__zpabi_adjust_pc_count__delta locals=__local_adjust_pc_count__0,__local_adjust_pc_count__loc,__local_adjust_pc_count__1 indirect=false in_cycle=false param_regs=A,X,,,
+; def appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance locals=__local_appearance_to_fontchar__sprite indirect=false in_cycle=false param_regs=A
+; def classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 locals=__local_classify_entity_type__0,__local_classify_entity_type__e,__local_classify_entity_type__1 indirect=false in_cycle=false param_regs=A,X
 ; def draw_blink_alt params= locals=__local_draw_blink_alt__sprite indirect=false in_cycle=false
 ; def draw_blink_char params= locals= indirect=false in_cycle=false
 ; def draw_blink_normal params= locals= indirect=false in_cycle=false
-; def draw_char_at_pos params=__zpabi_draw_char_at_pos__pos locals=__local_draw_char_at_pos__0,__local_draw_char_at_pos__1 indirect=false in_cycle=false
-; def find_entity_at_pos params=__zpabi_find_entity_at_pos__pos locals=__local_find_entity_at_pos__link,__local_find_entity_at_pos__ev,__local_find_entity_at_pos__0 indirect=false in_cycle=false
+; def draw_char_at_pos params=__zpabi_draw_char_at_pos__pos locals=__local_draw_char_at_pos__0,__local_draw_char_at_pos__1,__local_draw_char_at_pos__pos indirect=false in_cycle=false param_regs=A
+; def find_entity_at_pos params=__zpabi_find_entity_at_pos__pos locals=__local_find_entity_at_pos__link,__local_find_entity_at_pos__ev,__local_find_entity_at_pos__0,__local_find_entity_at_pos__pos indirect=false in_cycle=false param_regs=A
 ; def first_group_member params= locals=__local_first_group_member__link indirect=false in_cycle=false
-; def follow_link params=__zpabi_follow_link__link locals= indirect=false in_cycle=false
+; def follow_link params=__zpabi_follow_link__link locals=__local_follow_link__link indirect=false in_cycle=false param_regs=A
 ; def font_pos_to_text_pos params= locals= indirect=false in_cycle=false
-; def get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 locals=__local_get_entity_fontchar__sprite,__local_get_entity_fontchar__0,__local_get_entity_fontchar__1 indirect=false in_cycle=false
-; def load_char_name_ptr params= locals= indirect=false in_cycle=false
-; def load_char_to_fa params=__zpabi_load_char_to_fa__index locals= indirect=false in_cycle=false
-; def next_group_member params= locals= indirect=false in_cycle=false
-; def print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 locals= indirect=false in_cycle=false
+; def get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 locals=__local_get_entity_fontchar__sprite,__local_get_entity_fontchar__0,__local_get_entity_fontchar__e,__local_get_entity_fontchar__1 indirect=false in_cycle=false param_regs=A,X
+; def load_char_name_ptr params= locals=__local_load_char_name_ptr__0 indirect=false in_cycle=false
+; def load_char_to_fa params=__zpabi_load_char_to_fa__index locals=__local_load_char_to_fa__index indirect=false in_cycle=false param_regs=A
+; def next_group_member params= locals=__local_next_group_member__0 indirect=false in_cycle=false
+; def print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 locals=__local_print_entity_name__m,__local_print_entity_name__0,__local_print_entity_name__1 indirect=false in_cycle=false param_regs=A,X
 ; def print_fontchar_at_text_pos params= locals=__local_print_fontchar_at_text_pos__selector indirect=false in_cycle=false
-; def print_member_name params= locals= indirect=false in_cycle=false
-; def print_mob_name params= locals= indirect=false in_cycle=false
+; def print_member_name params= locals=__local_print_member_name__0 indirect=false in_cycle=false
+; def print_mob_name params= locals=__local_print_mob_name__0 indirect=false in_cycle=false
 ; def render_font_char params= locals= indirect=false in_cycle=false
-; def render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel locals=__local_render_font_char_direct__charset_sel,__local_render_font_char_direct__sprite indirect=false in_cycle=false changes=__zpabi_render_font_char_direct__charset_sel
-; def reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 locals=__local_reorder_char__0,__local_reorder_char__1,__local_reorder_char__2,__local_reorder_char__link,__local_reorder_char__3,__local_reorder_char__4,__local_reorder_char__5,__local_reorder_char__6 indirect=false in_cycle=false
+; def render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel locals=__local_render_font_char_direct__charset_sel,__local_render_font_char_direct__sprite indirect=false in_cycle=false param_regs=A
+; def reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 locals=__local_reorder_char__0,__local_reorder_char__1,__local_reorder_char__link,__local_reorder_char__2,__local_reorder_char__3,__local_reorder_char__4,__local_reorder_char__5,__local_reorder_char__m,__local_reorder_char__6,__local_reorder_char__7 indirect=false in_cycle=false param_regs=A,X
 ; def reorder_current_char params= locals= indirect=false in_cycle=false
 ; def set_blink_target params= locals=__local_set_blink_target__0,__local_set_blink_target__1 indirect=false in_cycle=false
 ; def setup_char_sprite params= locals=__local_setup_char_sprite__0,__local_setup_char_sprite__1 indirect=false in_cycle=false
@@ -316,7 +262,7 @@ WAIT	EQU	$FCA8
 ; ext ai_choose_target params=
 ; ext anim_check_frame params=
 ; ext anim_tick_and_wait params=
-; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage
+; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
@@ -330,19 +276,19 @@ WAIT	EQU	$FCA8
 ; ext char_select_init params=
 ; ext char_select_next params=
 ; ext char_select_prev params=
-; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos
-; ext check_at_boundary params=__zpabi_check_at_boundary__pos
+; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos param_regs=A
+; ext check_at_boundary params=__zpabi_check_at_boundary__pos param_regs=A
 ; ext check_attack_eligible params= carry=true
 ; ext check_can_leave params= carry=true
-; ext check_encounter params=__zpabi_check_encounter__pos
-; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 carry=true
+; ext check_encounter params=__zpabi_check_encounter__pos param_regs=A
+; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 param_regs=A,X carry=true
 ; ext check_scene_events params=
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext cold_restart params=
-; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row
+; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row param_regs=A,X
 ; ext commit_move params=
 ; ext configure_input params=
 ; ext continue_game params=
@@ -352,13 +298,13 @@ WAIT	EQU	$FCA8
 ; ext disk_write params= carry=true
 ; ext dispatch_on_mode params=
 ; ext display_char_stats params=
-; ext display_message params=__zpabi_display_message__index
-; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1
-; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1
+; ext display_message params=__zpabi_display_message__index param_regs=A
+; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 param_regs=A,X
+; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 param_regs=A,X
 ; ext display_status_bar params=
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
-; ext enter_combat_state params=__zpabi_enter_combat_state__pos
+; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
 ; ext enter_save_game_slot params=
 ; ext enter_scenario_disk params=
@@ -371,13 +317,13 @@ WAIT	EQU	$FCA8
 ; ext flush_pending_xp params=
 ; ext format_scenario_disk params=
 ; ext game_init params=
-; ext get_char_record params=__zpabi_get_char_record__index
+; ext get_char_record params=__zpabi_get_char_record__index param_regs=A
 ; ext get_input_table_ptr params=
-; ext get_mob_data params=__zpabi_get_mob_data__index
-; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1
-; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1
+; ext get_mob_data params=__zpabi_get_mob_data__index param_regs=A
+; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
+; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
-; ext hrcg_cout params=__zpabi_hrcg_cout__c
+; ext hrcg_cout params=__zpabi_hrcg_cout__c param_regs=A
 ; ext hrcg_init params=
 ; ext idle_anim_handler params=
 ; ext inc_threshold_wrap params=
@@ -386,10 +332,10 @@ WAIT	EQU	$FCA8
 ; ext init_drop_display params=
 ; ext init_drop_gold params=
 ; ext init_world params=
-; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1
+; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
 ; ext main params=
-; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from
+; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
 ; ext menu_attack_target params=
 ; ext menu_check_attack params=
 ; ext menu_drop_dec params=
@@ -399,32 +345,32 @@ WAIT	EQU	$FCA8
 ; ext menu_game_settings_enter params=
 ; ext menu_other_options params=
 ; ext menu_see_your_lot params=
-; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add
+; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext npc_move_ai params=
-; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1
+; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
 ; ext pick_random_member params=
-; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1
-; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos
-; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1
-; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1
+; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
+; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos param_regs=A
+; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 param_regs=A,X
+; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 param_regs=A,X
 ; ext print_ctrl_ab params=
 ; ext print_ctrl_n params=
-; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1
+; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
 ; ext random_events params=
-; ext random_in_range params=__zpabi_random_in_range__limit
+; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext read_keyboard params=
 ; ext reset_turn_pos params=
 ; ext resolve_attack params=
 ; ext retire_character params=
-; ext run_chain params=__zpabi_run_chain__state
-; ext rwts_dispatch params=__zpabi_rwts_dispatch__command carry=true
+; ext run_chain params=__zpabi_run_chain__state param_regs=A
+; ext rwts_dispatch params=__zpabi_rwts_dispatch__command param_regs=A carry=true
 ; ext save_game params=
-; ext scene_loop params=__zpabi_scene_loop__scene
+; ext scene_loop params=__zpabi_scene_loop__scene param_regs=A
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
 ; ext select_someone_else params=
-; ext set_char_state params=__zpabi_set_char_state__state
+; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_cursor_row21 params=
 ; ext set_inverse_video params=
 ; ext set_restricted params=
@@ -435,10 +381,10 @@ WAIT	EQU	$FCA8
 ; ext settings_display_init params=
 ; ext settings_speed_down params=
 ; ext settings_speed_up params=
-; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1
+; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 param_regs=A,X
 ; ext setup_scene_display params=
-; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1
-; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1
+; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
+; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
 ; ext show_locked_msg params=
 ; ext slot_dec_enter params=
@@ -454,9 +400,9 @@ WAIT	EQU	$FCA8
 ; ext tick_anim_counter params=
 ; ext timed_wait params=
 ; ext toggle_sound params=
-; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1
-; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength
-; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1
+; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
+; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength param_regs=A,X
+; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
@@ -495,10 +441,8 @@ WAIT	EQU	$FCA8
 ; call set_blink_target -> pos_to_colrow
 ; call setup_char_sprite -> pos_to_colrow
 ; call setup_char_sprite -> render_font_char
-; share member=adjust_pc_count:__zpabi_adjust_pc_count__loc_0,__zpabi_adjust_pc_count__loc_1 holder=reorder_char live=reorder_char:adjust_pc_count,get_mob_data writer=reorder_char
 ; item load_char_name_ptr section=.text local=false zero=false
 ; item setup_char_sprite section=.text local=false zero=false
-; item setup_char_sprite@run1 section=.text local=true zero=false
 ; item setup_char_sprite@tail0 section=.text local=true zero=false
 ; item find_entity_at_pos section=.text local=false zero=false
 ; item get_entity_fontchar section=.text local=false zero=false
@@ -506,8 +450,6 @@ WAIT	EQU	$FCA8
 ; item print_mob_name section=.text local=false zero=false
 ; item adjust_pc_count section=.text local=true zero=false
 ; item reorder_char section=.text local=false zero=false
-; item reorder_char@run2 section=.text local=true zero=false
-; item reorder_char@run0 section=.text local=true zero=false
 ; item print_entity_name section=.text local=false zero=false
 ; item draw_char_at_pos section=.text local=false zero=false
 ; item classify_entity_type section=.text local=false zero=false
@@ -554,10 +496,11 @@ load_char_name_ptr:
 
    LDY   #$00
    LDA   (ENTITY_PTR),Y
-   STA   __zpabi_setup_text_pos_col20__name_0
+   STA   __local_load_char_name_ptr__0
    INY
    LDA   (ENTITY_PTR),Y
-   STA   __zpabi_setup_text_pos_col20__name_1
+   TAX
+   LDA   __local_load_char_name_ptr__0
    JMP   setup_text_pos_col20
 
 setup_char_sprite:
@@ -565,7 +508,7 @@ setup_char_sprite:
 
    LDY   #$03
    LDA   (ENTITY_PTR),Y
-   JSR   setup_char_sprite@run1
+   JSR   pos_to_colrow
    STA   FONT_COL
    STA   BLINK_COL
    TXA
@@ -575,12 +518,6 @@ setup_char_sprite:
    STA   FONT_CHARNUM
    STA   BLINK_CHAR
    JMP   setup_char_sprite@tail0
-
-setup_char_sprite@run1:
-   SUBROUTINE
-
-   STA   __zpabi_pos_to_colrow__pos
-   JMP   pos_to_colrow
 
 setup_char_sprite@tail0:
    SUBROUTINE
@@ -592,19 +529,18 @@ setup_char_sprite@tail0:
 find_entity_at_pos:
    SUBROUTINE
 
-   LDA   __zpabi_find_entity_at_pos__pos
+   STA   __local_find_entity_at_pos__pos
    STA   LOCATION_ID
    LDY   #$02
    LDA   (CHAR_PTR),Y
    JMP   .loop@0_start
 .find_entity_at_pos@rot@0:
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
    STA   __local_find_entity_at_pos__ev
    STX   __local_find_entity_at_pos__0
    LDY   #$03
    LDA   (__local_find_entity_at_pos__ev),Y
-   CMP   __zpabi_find_entity_at_pos__pos
+   CMP   __local_find_entity_at_pos__pos
    BNE   .if_end@0
    LDA   __local_find_entity_at_pos__ev
    STA   __local_find_entity_at_pos__link
@@ -626,7 +562,7 @@ find_entity_at_pos:
    STA   __local_find_entity_at_pos__0
    JMP   .loop@1_start
 .find_entity_at_pos@rot@1:
-   CMP   __zpabi_find_entity_at_pos__pos
+   CMP   __local_find_entity_at_pos__pos
    BNE   .if_end@1
    LDX   __local_find_entity_at_pos__0
    LDA   __local_find_entity_at_pos__ev
@@ -643,19 +579,20 @@ find_entity_at_pos:
    LDA   (__local_find_entity_at_pos__ev),Y
    CMP   #$FF
    BNE   .find_entity_at_pos@rot@1
-   LDA   __zpabi_find_entity_at_pos__pos
-   STA   __zpabi_check_at_boundary__pos
+   LDA   __local_find_entity_at_pos__pos
    JMP   check_at_boundary
 
 get_entity_fontchar:
    SUBROUTINE
 
+   STA   __local_get_entity_fontchar__e
+   STX   __local_get_entity_fontchar__1
    LDA   #$01
    STA   FONT_CHARSET
-   LDA   __zpabi_get_entity_fontchar__e_1
+   TXA
    BNE   .if_else@3
-   LDA   __zpabi_get_entity_fontchar__e_0
-   ORA   __zpabi_get_entity_fontchar__e_1
+   LDA   __local_get_entity_fontchar__e
+   ORA   __local_get_entity_fontchar__1
    BNE   .cond_else@4
    LDA   BLINK_ALT_CHAR
    JMP   .if_end@2
@@ -664,19 +601,18 @@ get_entity_fontchar:
    JMP   .if_end@2
 .if_else@3:
    BPL   .if_else@7
-   LDA   __zpabi_get_entity_fontchar__e_0
+   LDA   __local_get_entity_fontchar__e
    STA   __local_get_entity_fontchar__sprite
-   LDA   __zpabi_get_entity_fontchar__e_1
+   TXA
    AND   #$7F
    STA   __local_get_entity_fontchar__0
    LDY   #$04
    LDA   (__local_get_entity_fontchar__sprite),Y
-   STA   __zpabi_appearance_to_fontchar__appearance
    JSR   appearance_to_fontchar
    JMP   .if_end@6
 .if_else@7:
    LDY   #$01
-   LDA   (__zpabi_get_entity_fontchar__e_0),Y
+   LDA   (__local_get_entity_fontchar__e),Y
    STA   __local_get_entity_fontchar__0
    AND   #$C0
    BNE   .if_else@9
@@ -697,7 +633,7 @@ get_entity_fontchar:
    CMP   #$FE
    BNE   .if_else@15
    LDY   #$02
-   LDA   (__zpabi_get_entity_fontchar__e_0),Y
+   LDA   (__local_get_entity_fontchar__e),Y
    AND   #$1F
    BNE   .if_end@14
    LDA   BLINK_ALT_CHAR
@@ -728,27 +664,27 @@ get_entity_fontchar:
 appearance_to_fontchar:
    SUBROUTINE
 
+   STA   __local_appearance_to_fontchar__sprite
    LDX   #$00
-   LDA   __zpabi_appearance_to_fontchar__appearance
-   JMP   .loop@2_continue
+   BEQ   .loop@2_continue
 .appearance_to_fontchar@rot@2:
    SBC   #$15
-   STA   __zpabi_appearance_to_fontchar__appearance
+   STA   __local_appearance_to_fontchar__sprite
    INX
 .loop@2_continue:
    CMP   #$15
    BCS   .appearance_to_fontchar@rot@2
-   INC   __zpabi_appearance_to_fontchar__appearance
-   LDA   __zpabi_appearance_to_fontchar__appearance
+   INC   __local_appearance_to_fontchar__sprite
+   LDA   __local_appearance_to_fontchar__sprite
    CMP   #$05
    BCS   .vthread@0
    TXA
    BEQ   .if_end@23
-   LDA   __zpabi_appearance_to_fontchar__appearance
+   LDA   __local_appearance_to_fontchar__sprite
    ADC   #$20
-   STA   __zpabi_appearance_to_fontchar__appearance
+   STA   __local_appearance_to_fontchar__sprite
 .if_end@23:
-   LDA   __zpabi_appearance_to_fontchar__appearance
+   LDA   __local_appearance_to_fontchar__sprite
 .vthread@0:
    ORA   #$00
    RTS
@@ -758,16 +694,19 @@ print_mob_name:
 
    LDY   #$00
    LDA   (ENTITY_PTR),Y
-   STA   __zpabi_print_bottom_centered__s_0
+   STA   __local_print_mob_name__0
    INY
    LDA   (ENTITY_PTR),Y
-   STA   __zpabi_print_bottom_centered__s_1
+   TAX
+   LDA   __local_print_mob_name__0
    JMP   print_bottom_centered
 
 adjust_pc_count:
    SUBROUTINE
 
-   LDA   __zpabi_adjust_pc_count__loc_0
+   STA   __local_adjust_pc_count__loc
+   STX   __local_adjust_pc_count__1
+   ORA   #$00
    BNE   .if_end@24
    RTS
 .if_end@24:
@@ -778,81 +717,91 @@ adjust_pc_count:
    RTS
 .if_end@25:
    LDY   #$08
-   LDA   (__zpabi_adjust_pc_count__loc_0),Y
+   LDA   (__local_adjust_pc_count__loc),Y
    ADC   __zpabi_adjust_pc_count__delta
-   STA   (__zpabi_adjust_pc_count__loc_0),Y
+   STA   (__local_adjust_pc_count__loc),Y
    RTS
 
 reorder_char:
    SUBROUTINE
 
+   STA   __local_reorder_char__m
+   STX   __local_reorder_char__6
    LDA   SOURCE_CHAR
-   JSR   reorder_char@run2
-   JSR   reorder_char@run0
+   JSR   get_char_record
+   STA   __local_reorder_char__0
+   STX   __local_reorder_char__2
+   LDA   __local_reorder_char__m
+   STA   __zpabi_adjust_pc_count__m_0
+   LDA   __local_reorder_char__6
+   STA   __zpabi_adjust_pc_count__m_1
    LDA   #$FF
    STA   __zpabi_adjust_pc_count__delta
+   LDA   __local_reorder_char__0
    JSR   adjust_pc_count
-   LDA   __zpabi_adjust_pc_count__loc_0
+   LDA   __local_reorder_char__0
    CLC
    ADC   #$02
-   STA   __zpabi_adjust_pc_count__loc_0
+   STA   __local_reorder_char__link
    BCC   .carry_inc@1
-   INC   __zpabi_adjust_pc_count__loc_1
+   INC   __local_reorder_char__2
 .carry_inc@1:
 .loop@3_start:
    LDY   #$00
-   LDA   (__zpabi_adjust_pc_count__loc_0),Y
+   LDA   (__local_reorder_char__link),Y
    STA   __local_reorder_char__5
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
-   CPX   __zpabi_reorder_char__m_1
+   CPX   __local_reorder_char__6
    BNE   .if_end@26
-   CMP   __zpabi_reorder_char__m_0
+   CMP   __local_reorder_char__m
    BEQ   .loop@3_break
 .if_end@26:
    CLC
    ADC   #$02
-   STA   __zpabi_adjust_pc_count__loc_0
+   STA   __local_reorder_char__link
    TXA
    ADC   #$00
-   STA   __zpabi_adjust_pc_count__loc_1
+   STA   __local_reorder_char__2
    JMP   .loop@3_start
 .loop@3_break:
    LDA   __local_reorder_char__5
    CMP   CURRENT_ROOM
    BNE   .if_end@27
    LDY   #$02
-   LDA   (__zpabi_reorder_char__m_0),Y
+   LDA   (__local_reorder_char__m),Y
    STA   CURRENT_ROOM
 .if_end@27:
    LDY   #$02
-   LDA   (__zpabi_reorder_char__m_0),Y
+   LDA   (__local_reorder_char__m),Y
    LDY   #$00
-   STA   (__zpabi_adjust_pc_count__loc_0),Y
+   STA   (__local_reorder_char__link),Y
    LDY   #$0B
-   LDA   (__zpabi_reorder_char__m_0),Y
+   LDA   (__local_reorder_char__m),Y
    AND   #$1F
    STA   __local_reorder_char__4
    LDA   ACTIVE_CHAR
-   JSR   reorder_char@run2
+   JSR   get_char_record
    STA   __local_reorder_char__0
    STX   __local_reorder_char__3
-   JSR   reorder_char@run0
+   LDA   __local_reorder_char__m
+   STA   __zpabi_adjust_pc_count__m_0
+   LDA   __local_reorder_char__6
+   STA   __zpabi_adjust_pc_count__m_1
    LDA   #$01
    STA   __zpabi_adjust_pc_count__delta
+   LDA   __local_reorder_char__0
    JSR   adjust_pc_count
    LDA   __local_reorder_char__0
    CLC
    ADC   #$02
-   STA   __local_reorder_char__link
+   STA   __local_reorder_char__2
    BCC   .loop@4_continue
    INC   __local_reorder_char__3
    JMP   .loop@4_continue
 .reorder_char@rot@3:
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
    STA   __local_reorder_char__1
-   STX   __local_reorder_char__2
+   STX   __local_reorder_char__link
    LDA   ACTIVE_CHAR
    BNE   .if_else@29
    JSR   step_prng
@@ -871,24 +820,24 @@ reorder_char:
    LDA   __local_reorder_char__1
    CLC
    ADC   #$02
-   STA   __local_reorder_char__link
-   LDA   __local_reorder_char__2
+   STA   __local_reorder_char__2
+   LDA   __local_reorder_char__link
    ADC   #$00
    STA   __local_reorder_char__3
 .loop@4_continue:
    LDY   #$00
-   LDA   (__local_reorder_char__link),Y
+   LDA   (__local_reorder_char__2),Y
    BNE   .reorder_char@rot@3
 .loop@4_break:
    LDY   #$00
-   LDA   (__local_reorder_char__link),Y
+   LDA   (__local_reorder_char__2),Y
    LDY   #$02
-   STA   (__zpabi_reorder_char__m_0),Y
+   STA   (__local_reorder_char__m),Y
    LDA   __local_reorder_char__5
    LDY   #$00
-   STA   (__local_reorder_char__link),Y
+   STA   (__local_reorder_char__2),Y
    LDY   #$04
-   LDA   (__zpabi_reorder_char__m_0),Y
+   LDA   (__local_reorder_char__m),Y
    CMP   #$15
    BCS   .if_end@34
    LDA   ACTIVE_CHAR
@@ -902,58 +851,47 @@ reorder_char:
 .if_end@34:
    RTS
 
-reorder_char@run2:
-   SUBROUTINE
-
-   STA   __zpabi_get_char_record__index
-   JMP   get_char_record
-
-reorder_char@run0:
-   SUBROUTINE
-
-   STA   __zpabi_adjust_pc_count__loc_0
-   STX   __zpabi_adjust_pc_count__loc_1
-   LDA   __zpabi_reorder_char__m_0
-   STA   __zpabi_adjust_pc_count__m_0
-   LDA   __zpabi_reorder_char__m_1
-   STA   __zpabi_adjust_pc_count__m_1
-   RTS
-
 print_entity_name:
    SUBROUTINE
 
+   STA   __local_print_entity_name__m
+   STX   __local_print_entity_name__0
    JSR   set_cursor_row21
+   LDA   __local_print_entity_name__m
+   STA   DPTR
+   LDA   __local_print_entity_name__0
+   STA   DPTR+1
    LDY   #$00
-   LDA   (__zpabi_print_entity_name__m_0),Y
-   STA   __zpabi_print_bottom_centered__s_0
+   LDA   (__local_print_entity_name__m),Y
+   STA   __local_print_entity_name__m
    INY
-   LDA   (__zpabi_print_entity_name__m_0),Y
-   STA   __zpabi_print_bottom_centered__s_1
+   LDA   (DPTR),Y
+   TAX
+   LDA   __local_print_entity_name__m
    JSR   print_bottom_centered
    JMP   scroll_status_line
 
 draw_char_at_pos:
    SUBROUTINE
 
-   LDA   __zpabi_draw_char_at_pos__pos
-   JSR   setup_char_sprite@run1
+   STA   __local_draw_char_at_pos__pos
+   JSR   pos_to_colrow
    STA   FONT_COL
    STX   FONT_ROW
-   LDA   __zpabi_draw_char_at_pos__pos
-   STA   __zpabi_find_entity_at_pos__pos
+   LDA   __local_draw_char_at_pos__pos
    JSR   find_entity_at_pos
-   STA   __zpabi_get_entity_fontchar__e_0
-   STX   __zpabi_get_entity_fontchar__e_1
    JSR   get_entity_fontchar
    JMP   render_font_char
 
 classify_entity_type:
    SUBROUTINE
 
-   LDA   __zpabi_classify_entity_type__e_1
+   STA   __local_classify_entity_type__e
+   STX   __local_classify_entity_type__1
+   TXA
    BNE   .if_end@37
-   LDA   __zpabi_classify_entity_type__e_0
-   ORA   __zpabi_classify_entity_type__e_1
+   LDA   __local_classify_entity_type__e
+   ORA   __local_classify_entity_type__1
    BNE   .cond_else@38
    LDA   #<(MAP_OBJECT_NAMES+33)
    LDX   #>(MAP_OBJECT_NAMES+33)
@@ -964,7 +902,7 @@ classify_entity_type:
    RTS
 .if_end@37:
    LDY   #$01
-   LDA   (__zpabi_classify_entity_type__e_0),Y
+   LDA   (__local_classify_entity_type__e),Y
    CMP   #$80
    BCC   .tail@1
    CMP   #$C0
@@ -992,10 +930,10 @@ classify_entity_type:
    RTS
 .if_end@44:
    LDY   #$02
-   LDA   (__zpabi_classify_entity_type__e_0),Y
+   LDA   (__local_classify_entity_type__e),Y
    STA   __local_classify_entity_type__0
    AND   #$1F
-   STA   __local_classify_entity_type__1
+   STA   __local_classify_entity_type__e
    BNE   .if_end@45
    LDX   #>(MAP_OBJECT_NAMES+64)
    LDA   #<(MAP_OBJECT_NAMES+64)
@@ -1005,7 +943,7 @@ classify_entity_type:
    AND   #$C0
    CMP   #$C0
    BNE   .tail@2
-   LDA   __local_classify_entity_type__1
+   LDA   __local_classify_entity_type__e
    CMP   #$1B
    BCS   .if_end@47
    LDX   #>(MAP_OBJECT_NAMES+7)
@@ -1032,14 +970,13 @@ classify_entity_type:
 follow_link:
    SUBROUTINE
 
-   LDA   __zpabi_follow_link__link
+   ORA   #$00
    BNE   .if_else@51
    LDA   #$00
    STA   MOB_PTR
    STA   MOB_PTR+1
    RTS
 .if_else@51:
-   STA   __zpabi_get_mob_data__index
    JSR   get_mob_data
    STA   MOB_PTR
    STX   MOB_PTR+1
@@ -1053,7 +990,6 @@ first_group_member:
    BNE   .if_end@52
    LDA   (MOB_PTR),Y
 .if_end@52:
-   STA   __zpabi_follow_link__link
    JMP   follow_link
 
 next_group_member:
@@ -1061,7 +997,6 @@ next_group_member:
 
    LDY   #$02
    LDA   (MOB_PTR),Y
-   STA   __zpabi_follow_link__link
    JMP   follow_link
 
 print_member_name:
@@ -1069,10 +1004,11 @@ print_member_name:
 
    LDY   #$00
    LDA   (MOB_PTR),Y
-   STA   __zpabi_print_bottom_centered__s_0
+   STA   __local_print_member_name__0
    INY
    LDA   (MOB_PTR),Y
-   STA   __zpabi_print_bottom_centered__s_1
+   TAX
+   LDA   __local_print_member_name__0
    JMP   print_bottom_centered
 
 reorder_current_char:
@@ -1080,10 +1016,8 @@ reorder_current_char:
 
    LDA   CURRENT_PLAYER
    STA   SOURCE_CHAR
+   LDX   ENTITY_PTR+1
    LDA   ENTITY_PTR
-   STA   __zpabi_reorder_char__m_0
-   LDA   ENTITY_PTR+1
-   STA   __zpabi_reorder_char__m_1
    JMP   reorder_char
 
 set_blink_target:
@@ -1096,22 +1030,19 @@ set_blink_target:
    STA   BLINK_COL
    LDA   CURRENT_ROW
    STA   BLINK_ROW
+   LDX   MOB_PTR+1
    LDA   MOB_PTR
-   STA   __zpabi_get_entity_fontchar__e_0
-   LDA   MOB_PTR+1
-   STA   __zpabi_get_entity_fontchar__e_1
    JSR   get_entity_fontchar
    STA   BLINK_CHAR
    RTS
 .if_else@54:
    LDY   #$03
    LDA   (MOB_PTR),Y
-   JSR   setup_char_sprite@run1
+   JSR   pos_to_colrow
    STA   BLINK_COL
    STX   BLINK_ROW
    LDY   #$04
    LDA   (MOB_PTR),Y
-   STA   __zpabi_appearance_to_fontchar__appearance
    JSR   appearance_to_fontchar
    STA   BLINK_CHAR
    RTS
@@ -1119,8 +1050,7 @@ set_blink_target:
 load_char_to_fa:
    SUBROUTINE
 
-   LDA   __zpabi_load_char_to_fa__index
-   JSR   reorder_char@run2
+   JSR   get_char_record
    STA   CHAR_PTR
    STX   CHAR_PTR+1
    RTS
@@ -1140,7 +1070,6 @@ print_fontchar_at_text_pos:
    LDA   #$B3
 .if_end@55:
    STA   s_PRINT_FONT_CHAR+2
-   STA   __zpabi_render_font_char_direct__charset_sel
    JMP   render_font_char_direct
 .print_fontchar_at_text_pos@asm_ssa_split@0:
    LDA   #$B1
@@ -1149,12 +1078,13 @@ print_fontchar_at_text_pos:
 render_font_char_direct:
    SUBROUTINE
 
+   STA   __local_render_font_char_direct__charset_sel
    LDA   FONT_CHARNUM
    STA   __local_render_font_char_direct__sprite
    JMP   .loop@5_continue
 .render_font_char_direct@rot@4:
-   INC   __zpabi_render_font_char_direct__charset_sel
-   LDA   __zpabi_render_font_char_direct__charset_sel
+   INC   __local_render_font_char_direct__charset_sel
+   LDA   __local_render_font_char_direct__charset_sel
    STA   s_PRINT_FONT_CHAR+2
    LDA   __local_render_font_char_direct__sprite
    SBC   #$18
@@ -1166,23 +1096,21 @@ render_font_char_direct:
    ASL
    CLC
    ADC   #$20
-   STA   __zpabi_render_font_char_direct__charset_sel
+   STA   __local_render_font_char_direct__charset_sel
    STA   s_PRINT_FONT_CHAR+4
    CLC
    ADC   #$01
    STA   s_PRINT_FONT_CHAR+5
-   LDA   __zpabi_render_font_char_direct__charset_sel
+   LDA   __local_render_font_char_direct__charset_sel
    CLC
    ADC   #$02
    STA   s_PRINT_FONT_CHAR+7
-   LDA   __zpabi_render_font_char_direct__charset_sel
+   LDA   __local_render_font_char_direct__charset_sel
    CLC
    ADC   #$03
    STA   s_PRINT_FONT_CHAR+8
+   LDX   #>s_PRINT_FONT_CHAR
    LDA   #<s_PRINT_FONT_CHAR
-   STA   __zpabi_print_string__s_0
-   LDA   #>s_PRINT_FONT_CHAR
-   STA   __zpabi_print_string__s_1
    JMP   print_string
 
 draw_blink_char:

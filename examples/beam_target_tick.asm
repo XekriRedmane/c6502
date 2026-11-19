@@ -2,11 +2,11 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_beam_target_tick__beam_tick	EQU	$80
-__zpabi_beam_target_tick__beam_seed_floor	EQU	$81
+__local_beam_target_tick__beam_seed_floor	EQU	$81
+__local_beam_target_tick__beam_tick	EQU	$82
 
 ; @zp-link-meta-begin
-; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0 indirect=false in_cycle=false
+; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0,__local_beam_target_tick__beam_seed_floor,__local_beam_target_tick__beam_tick indirect=false in_cycle=false param_regs=A,X
 ; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks param_regs=A,X
 ; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks param_regs=A,X
 ; call beam_target_tick -> snd_delay_down
@@ -20,6 +20,8 @@ __zpabi_beam_target_tick__beam_seed_floor	EQU	$81
 beam_target_tick:
    SUBROUTINE
 
+   STA   __local_beam_target_tick__beam_tick
+   STX   __local_beam_target_tick__beam_seed_floor
    LDX   beam_snd_ctr
    BMI   .if_end@0
    LDA   beam_jingle,X
@@ -64,9 +66,9 @@ beam_target_tick:
    LDA   #$10
    JMP   snd_delay_up
 .if_end@3:
-   LDA   __zpabi_beam_target_tick__beam_tick
+   LDA   __local_beam_target_tick__beam_tick
    BNE   .if_end@5
-   LDX   __zpabi_beam_target_tick__beam_seed_floor
+   LDX   __local_beam_target_tick__beam_seed_floor
    LDA   floor_y_table,X
    STA   beam_y
    STX   beam_state

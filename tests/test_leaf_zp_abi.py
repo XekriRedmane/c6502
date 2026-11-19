@@ -84,8 +84,8 @@ class TestLeafZpAbi(unittest.TestCase):
         self.assertEqual(self._sim_return_int(src), 7)
 
     def test_zp_abi_caller_no_allocate_stack_pre_call(self) -> None:
-        # Caller (main) emits Movs to ZP $80/$81 and ZP $82/$83
-        # rather than AllocateStack(4) + Stack writes.
+        # Caller (main) loads `a` into A and X and stores `b` into
+        # its ZP slot, rather than AllocateStack(4) + Stack writes.
         src = (
             "[[c6502::zp_abi]] int add(int a, int b) { "
             "    return a + b; "
@@ -97,12 +97,18 @@ class TestLeafZpAbi(unittest.TestCase):
         # or end-of-output.
         main_idx = out.index("main:")
         main_body = out[main_idx:]
-        # Caller writes the args to `add`'s slot symbols directly
-        # (no SBC-against-SSP). dasm resolves the symbols via the
-        # EQU directives the emit stage prepended.
-        # 2-byte int params -> per-byte slot symbols suffixed _0/_1.
-        self.assertIn("STA   __zpabi_add__a_0", main_body)
+        # `add`'s declaration names no register, so its first
+        # parameter, `a`, arrives in A (low byte) and X (high byte).
+        # The caller writes `b` to `add`'s slot symbols directly (no
+        # SBC-against-SSP). dasm resolves the symbols via the EQU
+        # directives the emit stage prepended. 2-byte int params ->
+        # per-byte slot symbols suffixed _0/_1.
+        self.assertIn("LDA   #$03", main_body)
+        self.assertIn("LDX   #$00", main_body)
+        self.assertNotIn("__zpabi_add__a", main_body)
         self.assertIn("STA   __zpabi_add__b_0", main_body)
+        self.assertIn("STA   __zpabi_add__b_1", main_body)
+        self.assertNotIn("SSP", main_body)
 
     def test_caller_with_locals_calls_zp_abi_correctly(self) -> None:
         # Caller has its own body locals (x and y) AND calls a
@@ -159,9 +165,10 @@ class TestLeafZpAbi(unittest.TestCase):
         # sites should emit direct ZP writes (no AllocateStack / no
         # `(SSP),Y` arg writes) — the annotation propagates from
         # the declaration to the call site.
+        # `base` arrives in A and X, so `x` arrives in its slot.
         src = (
-            "[[c6502::zp_abi]] extern int helper(int x); "
-            "int main(void) { return helper(7); }"
+            "[[c6502::zp_abi]] extern int helper(int base, int x); "
+            "int main(void) { return helper(1, 7); }"
         )
         asm = self._codegen(src)
         # Symbolic slot write: `STA __zpabi_helper__x_0` for the
@@ -211,16 +218,18 @@ class TestLeafZpAbi(unittest.TestCase):
         # arg-write would clobber the caller's still-live params.
         # Verified end-to-end via the simulator (correctness) and
         # by inspecting the EQU directives in the emitted asm
-        # (allocation shape).
+        # (allocation shape). Each function's leading `v` or `w`
+        # arrives in A and X, so the parameters after it arrive in
+        # their slots.
         src = (
             "[[c6502::zp_abi]] "
-            "void noop(int x, int y) { (void)x; (void)y; } "
+            "void noop(int w, int x, int y) { (void)w; (void)x; (void)y; } "
             "[[c6502::zp_abi]] "
-            "int caller(int a, int b) { "
-            "  noop(a + 100, 0); "
+            "int caller(int v, int a, int b) { "
+            "  noop(v, a + 100, 0); "
             "  return b; "
             "} "
-            "int main(void) { return caller(2, 5); }"
+            "int main(void) { return caller(1, 2, 5); }"
         )
         # Correctness: `b` survives the call to `noop`.
         self.assertEqual(self._sim_return_int(src), 5)

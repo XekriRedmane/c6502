@@ -41,6 +41,11 @@ as they do when the linker allocates them for a whole program.
 
 Not every parameter gets a slot:
 
+- When nothing in the declaration names a register or an address for
+  a parameter, the leading integer and pointer parameters arrive in A
+  and then X, as many whole ones as fit, and are handled as `register`
+  parameters are (`abi_selection._default_param_registers`). `main`
+  keeps its slots, since the startup code sets no register.
 - A `register` parameter arrives in A, X, or Y, and the callee's
   first instructions copy it into a local of its own
   (`tac_to_asm._register_param_locals`), which the register allocator
@@ -155,16 +160,15 @@ main:
 ### After
 
 ```
-__zpabi_add3__a	EQU	$80
-__zpabi_add3__b	EQU	$81
-__zpabi_add3__c	EQU	$82
+__zpabi_add3__c	EQU	$80
+__local_add3__b	EQU	$82
 
 add3:
    SUBROUTINE
 
-   LDA   __zpabi_add3__a
+   STX   __local_add3__b
    CLC
-   ADC   __zpabi_add3__b
+   ADC   __local_add3__b
    CLC
    ADC   __zpabi_add3__c
    RTS
@@ -172,17 +176,16 @@ add3:
 main:
    SUBROUTINE
 
-   LDA   #$01
-   STA   __zpabi_add3__a
-   LDA   #$02
-   STA   __zpabi_add3__b
    LDA   #$03
    STA   __zpabi_add3__c
+   LDX   #$02
+   LDA   #$01
    JMP   add3
 ```
 
 `add3` shrinks from 72 bytes to 9, and the call in `main` from 32
-bytes to 15.
+bytes to 11. `a` and `b` arrive in A and X, as described above, and `c` in
+its slot.
 
 ## When it applies
 

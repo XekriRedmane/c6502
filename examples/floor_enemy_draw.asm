@@ -2,21 +2,19 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_floor_enemy_draw__page_flag	EQU	$80
-__zpabi_draw_sprite__width	EQU	$81
-__zpabi_draw_sprite__height	EQU	$82
-__zpabi_draw_sprite__sprite_x	EQU	$83
-__zpabi_draw_sprite__sprite_y	EQU	$84
-__zpabi_draw_sprite__tile_src_0	EQU	$85
-__zpabi_draw_sprite__tile_src_1	EQU	$86
-__zpabi_draw_sprite__page_flag	EQU	$87
-__local_floor_enemy_draw__1	EQU	$89
-__local_floor_enemy_draw__2	EQU	$8A
-__local_floor_enemy_draw__slot	EQU	$8B
+__zpabi_draw_sprite__sprite_x	EQU	$80
+__zpabi_draw_sprite__sprite_y	EQU	$81
+__zpabi_draw_sprite__tile_src_0	EQU	$82
+__zpabi_draw_sprite__tile_src_1	EQU	$83
+__zpabi_draw_sprite__page_flag	EQU	$84
+__local_floor_enemy_draw__1	EQU	$86
+__local_floor_enemy_draw__2	EQU	$87
+__local_floor_enemy_draw__slot	EQU	$88
+__local_floor_enemy_draw__page_flag	EQU	$89
 
 ; @zp-link-meta-begin
-; def floor_enemy_draw params=__zpabi_floor_enemy_draw__page_flag locals=__local_floor_enemy_draw__0,__local_floor_enemy_draw__1,__local_floor_enemy_draw__2,__local_floor_enemy_draw__slot indirect=false in_cycle=false
-; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag
+; def floor_enemy_draw params=__zpabi_floor_enemy_draw__page_flag locals=__local_floor_enemy_draw__0,__local_floor_enemy_draw__1,__local_floor_enemy_draw__2,__local_floor_enemy_draw__slot,__local_floor_enemy_draw__page_flag indirect=false in_cycle=false param_regs=A
+; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag param_regs=A,X,,,,,
 ; call floor_enemy_draw -> draw_sprite
 ; item floor_enemy_draw section=.text local=false zero=false
 ; item proj_screen_col section=.rodata local=true zero=false
@@ -35,12 +33,13 @@ __local_floor_enemy_draw__slot	EQU	$8B
 floor_enemy_draw:
    SUBROUTINE
 
-   LDX   #$03
+   STA   __local_floor_enemy_draw__page_flag
+   LDA   #$03
+   STA   __local_floor_enemy_draw__slot
 .loop@0_start:
+   LDX   __local_floor_enemy_draw__slot
    LDA   enemy_flag,X
-   BNE   .lb_skip@1
-   JMP   .loop@0_continue
-.lb_skip@1:
+   BEQ   .loop@0_continue
    LDY   enemy_col,X
    LDA   proj_screen_col,Y
    STA   __local_floor_enemy_draw__2
@@ -87,21 +86,17 @@ floor_enemy_draw:
    STA   __zpabi_draw_sprite__tile_src_1
    LDA   __local_floor_enemy_draw__1
    STA   __zpabi_draw_sprite__tile_src_0
-   LDA   #$01
-   STA   __zpabi_draw_sprite__width
-   LDA   #$05
-   STA   __zpabi_draw_sprite__height
-   LDA   __local_floor_enemy_draw__2
-   STA   __zpabi_draw_sprite__sprite_x
    LDA   enemy_y,X
    STA   __zpabi_draw_sprite__sprite_y
-   LDA   __zpabi_floor_enemy_draw__page_flag
+   LDA   __local_floor_enemy_draw__2
+   STA   __zpabi_draw_sprite__sprite_x
+   LDA   __local_floor_enemy_draw__page_flag
    STA   __zpabi_draw_sprite__page_flag
-   STX   __local_floor_enemy_draw__slot
+   LDX   #$05
+   LDA   #$01
    JSR   draw_sprite
-   LDX   __local_floor_enemy_draw__slot
 .loop@0_continue:
-   DEX
+   DEC   __local_floor_enemy_draw__slot
    BMI   .lb_skip@0
    JMP   .loop@0_start
 .lb_skip@0:

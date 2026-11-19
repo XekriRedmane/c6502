@@ -23,53 +23,21 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$80
-__zpabi_append_note__pitch	EQU	$80
-__zpabi_clear_page__page_0	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_half_screen_col_for__col	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_load_sound_data__notes_0	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_put_status_byte__col	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_row_to_addr__row	EQU	$80
-__zpabi_screen_row_for__row	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
-__zpabi_add_and_update_score__bcd_points_1	EQU	$81
-__zpabi_append_note__duration	EQU	$81
-__zpabi_clear_page__page_1	EQU	$81
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_half_screen_col_for__x_adj	EQU	$81
-__zpabi_load_sound_data__notes_1	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_put_status_byte__n	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_row_to_addr__page	EQU	$81
-__zpabi_screen_row_for__y_adj	EQU	$81
-__zpabi_to_decimal3__n	EQU	$81
-__zpabi_bcd_to_decimal2__bcd	EQU	$82
-__zpabi_char_to_sprite_num__c	EQU	$82
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__zpabi_put_char__c	EQU	$82
-__zpabi_put_digit__digit	EQU	$82
-__local_clear_page__page	EQU	$83
-__local_row_to_addr__1	EQU	$83
-__zpabi_draw_at_cursor__sprite	EQU	$83
-__local_char_to_sprite_num__i	EQU	$84
-__local_clear_page__0	EQU	$84
-__zpabi_draw_sprite_page1__sprite	EQU	$84
-__zpabi_draw_sprite_page2__sprite	EQU	$84
+__local_add_and_update_score__bcd_points_1	EQU	$80
+__local_row_to_addr__row	EQU	$80
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
+__local_add_and_update_score__i	EQU	$81
+__local_clear_page__page_0	EQU	$81
+__local_put_string__s_0	EQU	$81
+__local_row_to_addr__0	EQU	$81
+__local_clear_page__page_1	EQU	$82
+__local_put_string__s_1	EQU	$82
+__local_row_to_addr__page	EQU	$82
+__local_to_decimal3__n	EQU	$82
+__local_bcd_to_decimal2__bcd	EQU	$83
+__local_draw_at_cursor__sprite	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -111,9 +79,8 @@ __local_put_status_draw__2	EQU	$B3
 __local_put_status_draw__line176	EQU	$B4
 __local_put_status_draw__3	EQU	$B5
 __local_put_status_draw__4	EQU	$B6
-__local_add_and_update_score__i	EQU	$B8
-__local_put_string__s	EQU	$B8
-__local_put_string__1	EQU	$B9
+__local_char_to_sprite_num__i	EQU	$B8
+__local_char_to_sprite_num__c	EQU	$B9
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -173,68 +140,68 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 locals=__local_add_and_update_score__0,__local_add_and_update_score__i indirect=false in_cycle=false
-; def bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd locals= indirect=false in_cycle=false
-; def char_to_sprite_num params=__zpabi_char_to_sprite_num__c locals=__local_char_to_sprite_num__0,__local_char_to_sprite_num__i indirect=false in_cycle=false
+; def add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 locals=__local_add_and_update_score__bcd_points_1,__local_add_and_update_score__i,__local_add_and_update_score__0 indirect=false in_cycle=false param_regs=A,X
+; def bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd locals=__local_bcd_to_decimal2__bcd indirect=false in_cycle=false param_regs=A
+; def char_to_sprite_num params=__zpabi_char_to_sprite_num__c locals=__local_char_to_sprite_num__0,__local_char_to_sprite_num__i,__local_char_to_sprite_num__c indirect=false in_cycle=false param_regs=A
 ; def clear_hgr1 params= locals= indirect=false in_cycle=false
 ; def clear_hgr2 params= locals= indirect=false in_cycle=false
-; def clear_page params=__zpabi_clear_page__page_0,__zpabi_clear_page__page_1 locals=__local_clear_page__pages,__local_clear_page__page,__local_clear_page__0 indirect=false in_cycle=false
-; def draw_at_cursor params=__zpabi_draw_at_cursor__sprite locals= indirect=false in_cycle=false
+; def clear_page params=__zpabi_clear_page__page_0,__zpabi_clear_page__page_1 locals=__local_clear_page__pages,__local_clear_page__page_0,__local_clear_page__page_1 indirect=false in_cycle=false param_regs=A,X
+; def draw_at_cursor params=__zpabi_draw_at_cursor__sprite locals=__local_draw_at_cursor__sprite indirect=false in_cycle=false param_regs=A
 ; def newline params= locals= indirect=false in_cycle=false
-; def put_char params=__zpabi_put_char__c locals= indirect=false in_cycle=false
-; def put_digit params=__zpabi_put_digit__digit locals= indirect=false in_cycle=false
+; def put_char params=__zpabi_put_char__c locals=__local_put_char__c indirect=false in_cycle=false param_regs=A
+; def put_digit params=__zpabi_put_digit__digit locals=__local_put_digit__digit indirect=false in_cycle=false param_regs=A
 ; def put_status params= locals= indirect=false in_cycle=false
-; def put_status_byte params=__zpabi_put_status_byte__n,__zpabi_put_status_byte__col locals=__local_put_status_byte__0 indirect=false in_cycle=false
+; def put_status_byte params=__zpabi_put_status_byte__n,__zpabi_put_status_byte__col locals=__local_put_status_byte__col,__local_put_status_byte__n indirect=false in_cycle=false param_regs=A,X
 ; def put_status_draw params= locals=__local_put_status_draw__line179,__local_put_status_draw__0,__local_put_status_draw__line178,__local_put_status_draw__1,__local_put_status_draw__line177,__local_put_status_draw__2,__local_put_status_draw__line176,__local_put_status_draw__3,__local_put_status_draw__4 indirect=false in_cycle=false
 ; def put_status_level params= locals= indirect=false in_cycle=false
 ; def put_status_lives params= locals= indirect=false in_cycle=false
-; def put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 locals=__local_put_string__0,__local_put_string__s,__local_put_string__1 indirect=false in_cycle=false
-; def row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page locals=__local_row_to_addr__0,__local_row_to_addr__1 indirect=false in_cycle=false
-; def to_decimal3 params=__zpabi_to_decimal3__n locals=__local_to_decimal3__n indirect=false in_cycle=false
+; def put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 locals=__local_put_string__0,__local_put_string__s_0,__local_put_string__s_1 indirect=false in_cycle=false param_regs=A,X
+; def row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page locals=__local_row_to_addr__row,__local_row_to_addr__0,__local_row_to_addr__page indirect=false in_cycle=false param_regs=A,X
+; def to_decimal3 params=__zpabi_to_decimal3__n locals=__local_to_decimal3__n indirect=false in_cycle=false param_regs=A
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
 ; ext beep params=
 ; ext check_for_input params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
 ; ext detect_lack_of_joystick params=
-; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext iris_wipe params=
 ; ext level_editor params=
 ; ext load_guard_data params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
 ; ext move_guards params=
 ; ext move_player params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
-; ext wait_for_key params=__zpabi_wait_for_key__cursor
-; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
+; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
+; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call add_and_update_score -> bcd_to_decimal2
 ; call add_and_update_score -> put_digit
@@ -258,8 +225,6 @@ DISK_IO	EQU	$C088
 ; call put_status_level -> put_status_byte
 ; call put_status_lives -> put_status_byte
 ; call put_string -> put_char
-; share member=char_to_sprite_num:__zpabi_char_to_sprite_num__c member=put_char:__zpabi_put_char__c forward=put_char>char_to_sprite_num
-; share member=put_status_byte:__zpabi_put_status_byte__n member=to_decimal3:__zpabi_to_decimal3__n forward=put_status_byte>to_decimal3
 ; item clear_page section=.text local=true zero=false
 ; item clear_hgr1 section=.text local=false zero=false
 ; item clear_hgr2 section=.text local=false zero=false
@@ -267,7 +232,6 @@ DISK_IO	EQU	$C088
 ; item put_status_draw section=.text local=false zero=false
 ; item row_to_addr section=.text local=false zero=false
 ; item put_status_byte section=.text local=true zero=false
-; item put_status_byte@run0 section=.text local=true zero=false
 ; item put_status_lives section=.text local=false zero=false
 ; item put_status_level section=.text local=false zero=false
 ; item add_and_update_score section=.text local=false zero=false
@@ -341,19 +305,17 @@ DISK_IO	EQU	$C088
 clear_page:
    SUBROUTINE
 
-   LDA   __zpabi_clear_page__page_0
-   STA   __local_clear_page__page
-   LDA   __zpabi_clear_page__page_1
-   STA   __local_clear_page__0
+   STA   __local_clear_page__page_0
+   STX   __local_clear_page__page_1
    LDX   #$20
    LDA   #$80
 .clear_page@rot@0:
    LDY   #$00
 .loop@1_start:
-   STA   (__local_clear_page__page),Y
+   STA   (__local_clear_page__page_0),Y
    INY
    BNE   .loop@1_start
-   INC   __local_clear_page__0
+   INC   __local_clear_page__page_1
    DEX
    BNE   .clear_page@rot@0
    RTS
@@ -361,19 +323,15 @@ clear_page:
 clear_hgr1:
    SUBROUTINE
 
+   LDX   #>HGR1
    LDA   #<HGR1
-   STA   __zpabi_clear_page__page_0
-   LDA   #>HGR1
-   STA   __zpabi_clear_page__page_1
    JMP   clear_page
 
 clear_hgr2:
    SUBROUTINE
 
+   LDX   #>HGR2
    LDA   #<HGR2
-   STA   __zpabi_clear_page__page_0
-   LDA   #>HGR2
-   STA   __zpabi_clear_page__page_1
    JMP   clear_page
 
 put_status:
@@ -447,80 +405,69 @@ put_status_draw:
    STA   GAME_ROWNUM
    LDA   #$00
    STA   GAME_COLNUM
+   LDX   #>str@0
    LDA   #<str@0
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@0
-   STA   __zpabi_put_string__s_1
    JSR   put_string
    JSR   put_status_lives
    JSR   put_status_level
-   LDA   #$00
-   STA   __zpabi_add_and_update_score__bcd_points_0
-   STA   __zpabi_add_and_update_score__bcd_points_1
+   LDX   #$00
+   TXA
    JMP   add_and_update_score
 
 row_to_addr:
    SUBROUTINE
 
-   LDX   __zpabi_row_to_addr__row
+   STA   __local_row_to_addr__row
+   STX   __local_row_to_addr__page
+   LDX   __local_row_to_addr__row
    LDA   ROW_TO_OFFSET_LO,X
-   STA   __local_row_to_addr__1
+   STA   __local_row_to_addr__0
    LDA   ROW_TO_OFFSET_HI,X
-   ORA   __zpabi_row_to_addr__page
+   ORA   __local_row_to_addr__page
    TAX
-   LDA   __local_row_to_addr__1
+   LDA   __local_row_to_addr__0
    RTS
 
 put_status_byte:
    SUBROUTINE
 
-   LDA   __zpabi_put_status_byte__col
-   STA   GAME_COLNUM
+   STX   GAME_COLNUM
    JSR   to_decimal3
    LDA   #$10
    STA   GAME_ROWNUM
    LDA   DIGITS
-   JSR   put_status_byte@run0
+   JSR   put_digit
    LDA   DIGITS+1
-   JSR   put_status_byte@run0
+   JSR   put_digit
    LDA   DIGITS+2
-   STA   __zpabi_put_digit__digit
-   JMP   put_digit
-
-put_status_byte@run0:
-   SUBROUTINE
-
-   STA   __zpabi_put_digit__digit
    JMP   put_digit
 
 put_status_lives:
    SUBROUTINE
 
+   LDX   #$10
    LDA   LIVES
-   STA   __zpabi_put_status_byte__n
-   LDA   #$10
-   STA   __zpabi_put_status_byte__col
    JMP   put_status_byte
 
 put_status_level:
    SUBROUTINE
 
+   LDX   #$19
    LDA   LEVELNUM
-   STA   __zpabi_put_status_byte__n
-   LDA   #$19
-   STA   __zpabi_put_status_byte__col
    JMP   put_status_byte
 
 add_and_update_score:
    SUBROUTINE
 
+   STA   __local_add_and_update_score__i
+   STX   __local_add_and_update_score__bcd_points_1
    SED
    CLC
    LDA   SCORE
-   ADC   __zpabi_add_and_update_score__bcd_points_0
+   ADC   __local_add_and_update_score__i
    STA   SCORE
    LDA   SCORE+1
-   ADC   __zpabi_add_and_update_score__bcd_points_1
+   ADC   __local_add_and_update_score__bcd_points_1
    STA   SCORE+1
    LDA   SCORE+2
    ADC   #$00
@@ -534,37 +481,33 @@ add_and_update_score:
    LDA   #$10
    STA   GAME_ROWNUM
    LDA   SCORE+3
-   STA   __zpabi_bcd_to_decimal2__bcd
    JSR   bcd_to_decimal2
    LDA   DIGITS+2
-   JSR   put_status_byte@run0
-   LDX   #$02
+   JSR   put_digit
+   LDA   #$02
+   STA   __local_add_and_update_score__i
 .loop@3_start:
+   LDX   __local_add_and_update_score__i
    LDA   SCORE,X
-   STA   __zpabi_bcd_to_decimal2__bcd
-   STX   __local_add_and_update_score__i
    JSR   bcd_to_decimal2
    LDA   DIGITS+1
-   STA   __zpabi_put_digit__digit
    JSR   put_digit
    LDA   DIGITS+2
-   STA   __zpabi_put_digit__digit
    JSR   put_digit
-   LDX   __local_add_and_update_score__i
-   DEX
+   DEC   __local_add_and_update_score__i
    BPL   .loop@3_start
    RTS
 
 bcd_to_decimal2:
    SUBROUTINE
 
-   LDA   __zpabi_bcd_to_decimal2__bcd
+   STA   __local_bcd_to_decimal2__bcd
    LSR
    LSR
    LSR
    LSR
    STA   DIGITS+1
-   LDA   __zpabi_bcd_to_decimal2__bcd
+   LDA   __local_bcd_to_decimal2__bcd
    AND   #$0F
    STA   DIGITS+2
    RTS
@@ -572,15 +515,17 @@ bcd_to_decimal2:
 to_decimal3:
    SUBROUTINE
 
+   STA   __local_to_decimal3__n
    LDA   #$00
    STA   DIGITS+1
    STA   DIGITS
-   LDA   __zpabi_to_decimal3__n
    JMP   .loop@4_continue
 .to_decimal3@rot@1:
    INC   DIGITS
    SBC   #$64
+   STA   __local_to_decimal3__n
 .loop@4_continue:
+   LDA   __local_to_decimal3__n
    CMP   #$64
    BCS   .to_decimal3@rot@1
    JMP   .loop@5_continue
@@ -596,16 +541,15 @@ to_decimal3:
 draw_at_cursor:
    SUBROUTINE
 
+   STA   __local_draw_at_cursor__sprite
    LDA   DRAW_PAGE
    CMP   #$40
    BNE   .if_else@3
-   LDA   __zpabi_draw_at_cursor__sprite
-   STA   __zpabi_draw_sprite_page2__sprite
+   LDA   __local_draw_at_cursor__sprite
    JSR   draw_sprite_page2
    JMP   .if_end@2
 .if_else@3:
-   LDA   __zpabi_draw_at_cursor__sprite
-   STA   __zpabi_draw_sprite_page1__sprite
+   LDA   __local_draw_at_cursor__sprite
    JSR   draw_sprite_page1
 .if_end@2:
    INC   GAME_COLNUM
@@ -614,16 +558,14 @@ draw_at_cursor:
 put_digit:
    SUBROUTINE
 
-   LDA   __zpabi_put_digit__digit
    CLC
    ADC   #$3B
-   STA   __zpabi_draw_at_cursor__sprite
    JMP   draw_at_cursor
 
 char_to_sprite_num:
    SUBROUTINE
 
-   LDA   __zpabi_char_to_sprite_num__c
+   STA   __local_char_to_sprite_num__c
    CMP   #$C1
    BCC   .if_end@6
    CMP   #$DB
@@ -641,7 +583,7 @@ char_to_sprite_num:
    STA   __local_char_to_sprite_num__i
 .char_to_sprite_num@rot@3:
    LDX   __local_char_to_sprite_num__i
-   LDA   __zpabi_char_to_sprite_num__c
+   LDA   __local_char_to_sprite_num__c
    CMP   PUNCTUATION,X
    BNE   .if_end@8
    LDA   #$5F
@@ -659,13 +601,11 @@ char_to_sprite_num:
 put_char:
    SUBROUTINE
 
-   LDA   __zpabi_char_to_sprite_num__c
    CMP   #$8D
    BNE   .if_end@9
    JMP   newline
 .if_end@9:
    JSR   char_to_sprite_num
-   STA   __zpabi_draw_at_cursor__sprite
    JMP   draw_at_cursor
 
 newline:
@@ -679,21 +619,18 @@ newline:
 put_string:
    SUBROUTINE
 
-   LDA   __zpabi_put_string__s_0
-   STA   __local_put_string__s
-   LDA   __zpabi_put_string__s_1
-   STA   __local_put_string__1
+   STA   __local_put_string__s_0
+   STX   __local_put_string__s_1
    JMP   .loop@7_start
 .put_string@rot@4:
    ORA   #$80
-   STA   __zpabi_put_char__c
    JSR   put_char
-   INC   __local_put_string__s
+   INC   __local_put_string__s_0
    BNE   .loop@7_start
-   INC   __local_put_string__1
+   INC   __local_put_string__s_1
 .loop@7_start:
    LDY   #$00
-   LDA   (__local_put_string__s),Y
+   LDA   (__local_put_string__s_0),Y
    BNE   .put_string@rot@4
    RTS
 

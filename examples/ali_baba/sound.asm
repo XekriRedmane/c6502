@@ -18,88 +18,22 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
-__zpabi_appearance_to_fontchar__appearance	EQU	$80
-__zpabi_apply_damage_to_current__damage	EQU	$80
-__zpabi_check_adjacent_threats__pos	EQU	$80
-__zpabi_check_at_boundary__pos	EQU	$80
-__zpabi_check_encounter__pos	EQU	$80
-__zpabi_check_hostile__other_0	EQU	$80
-__zpabi_classify_entity_type__e_0	EQU	$80
-__zpabi_colrow_to_pos__col	EQU	$80
-__zpabi_display_message__index	EQU	$80
-__zpabi_display_message_loop__msg_0	EQU	$80
-__zpabi_display_shop__ev_0	EQU	$80
-__zpabi_draw_char_at_pos__pos	EQU	$80
-__zpabi_enter_combat_state__pos	EQU	$80
-__zpabi_find_entity_at_pos__pos	EQU	$80
-__zpabi_get_char_record__index	EQU	$80
-__zpabi_get_entity_fontchar__e_0	EQU	$80
-__zpabi_get_mob_data__index	EQU	$80
-__zpabi_handle_encounter__ev_0	EQU	$80
-__zpabi_handle_event_slot__ev_0	EQU	$80
-__zpabi_hrcg_cout__c	EQU	$80
-__zpabi_input_loop__m_0	EQU	$80
-__zpabi_load_char_to_fa__index	EQU	$80
-__zpabi_manhattan_distance__pos	EQU	$80
-__zpabi_modify_current_stats__amount_0	EQU	$80
-__zpabi_num_to_decimal__value_0	EQU	$80
-__zpabi_pickup_treasure__ev_0	EQU	$80
-__zpabi_pos_to_colrow__pos	EQU	$80
-__zpabi_print_bottom_centered__s_0	EQU	$80
-__zpabi_print_centered_plus_col__s_0	EQU	$80
-__zpabi_print_entity_name__m_0	EQU	$80
-__zpabi_print_string__s_0	EQU	$80
-__zpabi_random_in_range__limit	EQU	$80
-__zpabi_render_font_char_direct__charset_sel	EQU	$80
-__zpabi_reorder_char__m_0	EQU	$80
-__zpabi_run_chain__state	EQU	$80
-__zpabi_rwts_dispatch__command	EQU	$80
-__zpabi_scene_loop__scene	EQU	$80
-__zpabi_set_char_state__state	EQU	$80
-__zpabi_setup_input__m_0	EQU	$80
-__zpabi_setup_text_pos__name_0	EQU	$80
-__zpabi_setup_text_pos_col20__name_0	EQU	$80
-__zpabi_trigger_scene_event__ev_0	EQU	$80
-__zpabi_tune_player__tune	EQU	$80
-__zpabi_update_event_list__pos	EQU	$80
-__zpabi_check_hostile__other_1	EQU	$81
-__zpabi_classify_entity_type__e_1	EQU	$81
-__zpabi_colrow_to_pos__row	EQU	$81
-__zpabi_display_message_loop__msg_1	EQU	$81
-__zpabi_display_shop__ev_1	EQU	$81
-__zpabi_get_entity_fontchar__e_1	EQU	$81
-__zpabi_handle_encounter__ev_1	EQU	$81
-__zpabi_handle_event_slot__ev_1	EQU	$81
-__zpabi_input_loop__m_1	EQU	$81
-__zpabi_manhattan_distance__from	EQU	$81
-__zpabi_modify_current_stats__amount_1	EQU	$81
-__zpabi_num_to_decimal__value_1	EQU	$81
-__zpabi_pickup_treasure__ev_1	EQU	$81
-__zpabi_print_bottom_centered__s_1	EQU	$81
-__zpabi_print_centered_plus_col__s_1	EQU	$81
-__zpabi_print_entity_name__m_1	EQU	$81
-__zpabi_print_string__s_1	EQU	$81
-__zpabi_reorder_char__m_1	EQU	$81
-__zpabi_setup_input__m_1	EQU	$81
-__zpabi_setup_text_pos__name_1	EQU	$81
-__zpabi_setup_text_pos_col20__name_1	EQU	$81
-__zpabi_trigger_scene_event__ev_1	EQU	$81
-__zpabi_tune_player__strength	EQU	$81
-__zpabi_update_event_list__value_0	EQU	$81
-__zpabi_modify_current_stats__add	EQU	$82
-__zpabi_num_to_decimal__out_0	EQU	$82
-__zpabi_play_high_tone__freq	EQU	$82
-__zpabi_play_low_tone__duration	EQU	$82
-__zpabi_update_event_list__value_1	EQU	$82
-__zpabi_num_to_decimal__out_1	EQU	$83
-__zpabi_play_high_tone__duration	EQU	$83
-__zpabi_play_low_tone__first	EQU	$83
-__zpabi_play_high_tone__first	EQU	$84
-__zpabi_play_low_tone__freq	EQU	$85
-__local_tune_player__x	EQU	$86
-__local_tune_player__1	EQU	$88
-__local_play_high_tone__clicks	EQU	$89
-__local_play_low_tone__clicks	EQU	$89
+__zpabi_modify_current_stats__add	EQU	$80
+__zpabi_num_to_decimal__out_0	EQU	$80
+__zpabi_play_high_tone__first	EQU	$80
+__zpabi_play_low_tone__first	EQU	$80
+__zpabi_update_event_list__value_0	EQU	$80
+__local_tune_player__x	EQU	$81
+__zpabi_num_to_decimal__out_1	EQU	$81
+__zpabi_update_event_list__value_1	EQU	$81
+__local_tune_player__strength	EQU	$82
+__local_tune_player__tune	EQU	$83
+__local_play_high_tone__clicks	EQU	$85
+__local_play_low_tone__clicks	EQU	$85
+__local_play_high_tone__duration	EQU	$86
+__local_play_low_tone__duration	EQU	$86
+__local_play_high_tone__freq	EQU	$87
+__local_play_low_tone__freq	EQU	$87
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 tone_padding	EQU	$E3
@@ -265,9 +199,9 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def play_high_tone params=__zpabi_play_high_tone__freq,__zpabi_play_high_tone__duration,__zpabi_play_high_tone__first locals=__local_play_high_tone__clicks,__local_play_high_tone__duration indirect=false in_cycle=false changes=__zpabi_play_high_tone__duration
-; def play_low_tone params=__zpabi_play_low_tone__freq,__zpabi_play_low_tone__duration,__zpabi_play_low_tone__first locals=__local_play_low_tone__clicks,__local_play_low_tone__duration indirect=false in_cycle=false changes=__zpabi_play_low_tone__duration
-; def tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength locals=__local_tune_player__x,__local_tune_player__0,__local_tune_player__1 indirect=false in_cycle=false
+; def play_high_tone params=__zpabi_play_high_tone__freq,__zpabi_play_high_tone__duration,__zpabi_play_high_tone__first locals=__local_play_high_tone__clicks,__local_play_high_tone__duration,__local_play_high_tone__freq indirect=false in_cycle=false param_regs=A,X,
+; def play_low_tone params=__zpabi_play_low_tone__freq,__zpabi_play_low_tone__duration,__zpabi_play_low_tone__first locals=__local_play_low_tone__clicks,__local_play_low_tone__duration,__local_play_low_tone__freq indirect=false in_cycle=false param_regs=A,X,
+; def tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength locals=__local_tune_player__x,__local_tune_player__strength,__local_tune_player__tune,__local_tune_player__0 indirect=false in_cycle=false param_regs=A,X
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -284,8 +218,8 @@ WAIT	EQU	$FCA8
 ; ext ai_choose_target params=
 ; ext anim_check_frame params=
 ; ext anim_tick_and_wait params=
-; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance
-; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage
+; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance param_regs=A
+; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
@@ -299,20 +233,20 @@ WAIT	EQU	$FCA8
 ; ext char_select_init params=
 ; ext char_select_next params=
 ; ext char_select_prev params=
-; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos
-; ext check_at_boundary params=__zpabi_check_at_boundary__pos
+; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos param_regs=A
+; ext check_at_boundary params=__zpabi_check_at_boundary__pos param_regs=A
 ; ext check_attack_eligible params= carry=true
 ; ext check_can_leave params= carry=true
-; ext check_encounter params=__zpabi_check_encounter__pos
-; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 carry=true
+; ext check_encounter params=__zpabi_check_encounter__pos param_regs=A
+; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 param_regs=A,X carry=true
 ; ext check_scene_events params=
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
-; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1
+; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext cold_restart params=
-; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row
+; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row param_regs=A,X
 ; ext commit_move params=
 ; ext configure_input params=
 ; ext continue_game params=
@@ -322,22 +256,22 @@ WAIT	EQU	$FCA8
 ; ext disk_write params= carry=true
 ; ext dispatch_on_mode params=
 ; ext display_char_stats params=
-; ext display_message params=__zpabi_display_message__index
-; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1
-; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1
+; ext display_message params=__zpabi_display_message__index param_regs=A
+; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 param_regs=A,X
+; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 param_regs=A,X
 ; ext display_status_bar params=
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
-; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos
+; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
-; ext enter_combat_state params=__zpabi_enter_combat_state__pos
+; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
 ; ext enter_save_game_slot params=
 ; ext enter_scenario_disk params=
 ; ext fill_map params=
 ; ext find_attack_target params=
-; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos
+; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos param_regs=A
 ; ext find_first_pc params= carry=true
 ; ext find_nearest_event params=
 ; ext find_next_pc_wrap params=
@@ -347,14 +281,14 @@ WAIT	EQU	$FCA8
 ; ext font_pos_to_text_pos params=
 ; ext format_scenario_disk params=
 ; ext game_init params=
-; ext get_char_record params=__zpabi_get_char_record__index
-; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1
+; ext get_char_record params=__zpabi_get_char_record__index param_regs=A
+; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 param_regs=A,X
 ; ext get_input_table_ptr params=
-; ext get_mob_data params=__zpabi_get_mob_data__index
-; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1
-; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1
+; ext get_mob_data params=__zpabi_get_mob_data__index param_regs=A
+; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
+; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
-; ext hrcg_cout params=__zpabi_hrcg_cout__c
+; ext hrcg_cout params=__zpabi_hrcg_cout__c param_regs=A
 ; ext hrcg_init params=
 ; ext idle_anim_handler params=
 ; ext inc_threshold_wrap params=
@@ -363,12 +297,12 @@ WAIT	EQU	$FCA8
 ; ext init_drop_display params=
 ; ext init_drop_gold params=
 ; ext init_world params=
-; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1
+; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
 ; ext load_char_name_ptr params=
-; ext load_char_to_fa params=__zpabi_load_char_to_fa__index
+; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
-; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from
+; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
 ; ext menu_attack_target params=
 ; ext menu_check_attack params=
 ; ext menu_drop_dec params=
@@ -378,42 +312,42 @@ WAIT	EQU	$FCA8
 ; ext menu_game_settings_enter params=
 ; ext menu_other_options params=
 ; ext menu_see_your_lot params=
-; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add
+; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
 ; ext npc_move_ai params=
-; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1
+; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
 ; ext pick_random_member params=
-; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1
-; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos
-; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1
-; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1
+; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
+; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos param_regs=A
+; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 param_regs=A,X
+; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 param_regs=A,X
 ; ext print_ctrl_ab params=
 ; ext print_ctrl_n params=
-; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1
+; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 param_regs=A,X
 ; ext print_fontchar_at_text_pos params=
 ; ext print_member_name params=
 ; ext print_mob_name params=
-; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1
+; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
 ; ext random_events params=
-; ext random_in_range params=__zpabi_random_in_range__limit
+; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext read_keyboard params=
 ; ext render_font_char params=
-; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel
-; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1
+; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel param_regs=A
+; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 param_regs=A,X
 ; ext reorder_current_char params=
 ; ext reset_turn_pos params=
 ; ext resolve_attack params=
 ; ext retire_character params=
-; ext run_chain params=__zpabi_run_chain__state
-; ext rwts_dispatch params=__zpabi_rwts_dispatch__command carry=true
+; ext run_chain params=__zpabi_run_chain__state param_regs=A
+; ext rwts_dispatch params=__zpabi_rwts_dispatch__command param_regs=A carry=true
 ; ext save_game params=
-; ext scene_loop params=__zpabi_scene_loop__scene
+; ext scene_loop params=__zpabi_scene_loop__scene param_regs=A
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
 ; ext select_someone_else params=
 ; ext set_blink_target params=
-; ext set_char_state params=__zpabi_set_char_state__state
+; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_cursor_row21 params=
 ; ext set_inverse_video params=
 ; ext set_restricted params=
@@ -425,10 +359,10 @@ WAIT	EQU	$FCA8
 ; ext settings_speed_down params=
 ; ext settings_speed_up params=
 ; ext setup_char_sprite params=
-; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1
+; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 param_regs=A,X
 ; ext setup_scene_display params=
-; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1
-; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1
+; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
+; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
 ; ext show_locked_msg params=
 ; ext slot_dec_enter params=
@@ -444,8 +378,8 @@ WAIT	EQU	$FCA8
 ; ext tick_anim_counter params=
 ; ext timed_wait params=
 ; ext toggle_sound params=
-; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1
-; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1
+; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
+; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
@@ -453,7 +387,6 @@ WAIT	EQU	$FCA8
 ; call tune_player -> play_high_tone
 ; call tune_player -> play_low_tone
 ; call tune_player -> step_prng
-; share member=play_low_tone:__zpabi_play_low_tone__freq holder=tune_player live=tune_player:play_high_tone,play_low_tone forward=tune_player>play_low_tone writer=tune_player
 ; item play_high_tone section=.text local=true zero=false
 ; item play_low_tone section=.text local=true zero=false
 ; item tune_player section=.text local=false zero=false
@@ -487,6 +420,8 @@ WAIT	EQU	$FCA8
 play_high_tone:
    SUBROUTINE
 
+   STA   __local_play_high_tone__freq
+   STX   __local_play_high_tone__duration
    LDY   __zpabi_play_high_tone__first
 .loop@0_start:
    LDA   #$0A
@@ -498,19 +433,21 @@ play_high_tone:
    BNE   .loop@2_keep_start
    DEC   __local_play_high_tone__clicks
    BNE   .play_high_tone@asm_ssa_split@0
-   DEC   __zpabi_play_high_tone__duration
+   DEC   __local_play_high_tone__duration
    BNE   .play_high_tone@asm_ssa_split@1
    RTS
 .play_high_tone@asm_ssa_split@0:
-   LDY   __zpabi_play_high_tone__freq
+   LDY   __local_play_high_tone__freq
    JMP   .loop@1_start
 .play_high_tone@asm_ssa_split@1:
-   LDY   __zpabi_play_high_tone__freq
+   LDY   __local_play_high_tone__freq
    JMP   .loop@0_start
 
 play_low_tone:
    SUBROUTINE
 
+   STA   __local_play_low_tone__freq
+   STX   __local_play_low_tone__duration
    LDY   __zpabi_play_low_tone__first
 .loop@3_start:
    LDA   #$0A
@@ -525,25 +462,25 @@ play_low_tone:
    INC   tone_padding
    DEC   __local_play_low_tone__clicks
    BNE   .play_low_tone@asm_ssa_split@0
-   DEC   __zpabi_play_low_tone__duration
+   DEC   __local_play_low_tone__duration
    BNE   .play_low_tone@asm_ssa_split@1
    RTS
 .play_low_tone@asm_ssa_split@0:
-   LDY   __zpabi_play_low_tone__freq
+   LDY   __local_play_low_tone__freq
    JMP   .loop@4_start
 .play_low_tone@asm_ssa_split@1:
-   LDY   __zpabi_play_low_tone__freq
+   LDY   __local_play_low_tone__freq
    JMP   .loop@3_start
 
 tune_player:
    SUBROUTINE
 
-   LDA   __zpabi_tune_player__tune
+   STA   __local_tune_player__tune
    ASL
    STA   __local_tune_player__x
    LDA   #$00
    STA   KBDSTRB
-   LDA   __zpabi_tune_player__tune
+   LDA   __local_tune_player__tune
    CMP   #$03
    BEQ   .cmp_true@0
    LDA   #$00
@@ -552,21 +489,17 @@ tune_player:
    LDA   #$01
 .cmp_end@1:
    STA   ATTRACT_FLAG
-   LDA   __zpabi_tune_player__tune
+   LDA   __local_tune_player__tune
    CMP   #$01
    BNE   .if_else@1
-   LDA   __zpabi_tune_player__strength
-   SEC
-   SBC   #$01
-   STA   TUNE_1_COMBAT_HIT+14
+   DEX
+   STX   TUNE_1_COMBAT_HIT+14
    JMP   .if_end@0
 .if_else@1:
    CMP   #$02
    BNE   .if_end@2
-   LDA   __zpabi_tune_player__strength
-   SEC
-   SBC   #$01
-   STA   TUNE_2_COMBAT_DAMAGE+12
+   DEX
+   STX   TUNE_2_COMBAT_DAMAGE+12
 .if_end@2:
 .if_end@0:
    LDX   __local_tune_player__x
@@ -581,21 +514,21 @@ tune_player:
 .loop@6_start:
    LDY   #$00
    LDA   (TUNE_PC),Y
-   STA   __local_tune_player__1
+   STA   __local_tune_player__tune
    CMP   #$27
    BCC   .if_else@4
    JSR   step_prng
    LDA   PRNG_OUTPUT
    AND   TUNE_PRNG_MASK
-   EOR   __local_tune_player__1
-   STA   __zpabi_play_low_tone__freq
+   EOR   __local_tune_player__tune
+   STA   __local_tune_player__strength
    INC   TUNE_PC
    BNE   .inc_done@0
    INC   TUNE_PC+1
 .inc_done@0:
    LDY   #$00
    LDA   (TUNE_PC),Y
-   STA   __zpabi_play_high_tone__duration
+   TAX
    LDA   SOUND_ON
    BEQ   .if_end@5
    LDA   TUNE_ACTION_VEC+1
@@ -604,20 +537,18 @@ tune_player:
    LDA   TUNE_ACTION_VEC
    CMP   #$91
    BNE   .if_else@7
-   LDA   __zpabi_play_high_tone__duration
-   STA   __zpabi_play_low_tone__duration
    LDA   __local_tune_player__x
    STA   __zpabi_play_low_tone__first
+   LDA   __local_tune_player__strength
    JSR   play_low_tone
    JMP   .if_end@6
 .if_else@7:
-   LDA   __zpabi_play_low_tone__freq
-   STA   __zpabi_play_high_tone__freq
    LDA   __local_tune_player__x
    STA   __zpabi_play_high_tone__first
+   LDA   __local_tune_player__strength
    JSR   play_high_tone
 .if_end@6:
-   LDA   __zpabi_play_low_tone__freq
+   LDA   __local_tune_player__strength
    STA   __local_tune_player__x
 .if_end@5:
    LDA   BORDER_ANIM_ON
@@ -694,7 +625,7 @@ tune_player:
    JMP   .switch@7_break
 .default@16:
    LDA   TUNE_LOOP_CTR
-   CMP   __local_tune_player__1
+   CMP   __local_tune_player__tune
    BCS   .if_end@9
    INC   TUNE_LOOP_CTR
    LDA   TUNE_LOOP_ADDR

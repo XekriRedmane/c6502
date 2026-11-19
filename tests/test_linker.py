@@ -40,14 +40,15 @@ class TestLinkerHappyPath(unittest.TestCase):
         # TU A: defines main, calls extern helper.
         # TU B: defines helper.
         # Both are zp_abi-annotated. Linker re-allocates so the
-        # symbols agree across TUs.
+        # symbols agree across TUs. `base` arrives in A and X, so `x`
+        # arrives in its slot.
         tu_a = (
-            "[[c6502::zp_abi]] extern int helper(int x); "
-            "int main(void) { return helper(7); }"
+            "[[c6502::zp_abi]] extern int helper(int base, int x); "
+            "int main(void) { return helper(1, 7); }"
         )
         tu_b = (
-            "[[c6502::zp_abi]] int helper(int x) { "
-            "  return x + 1; "
+            "[[c6502::zp_abi]] int helper(int base, int x) { "
+            "  return base + x; "
             "}"
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -119,22 +120,23 @@ class TestLinkerHappyPath(unittest.TestCase):
 
     def test_linker_dedupe_externs(self) -> None:
         # Two TUs that both declare the same extern. The linker
-        # collapses them into one entry (no error).
+        # collapses them into one entry (no error). `base` arrives in
+        # A and X, so `x` arrives in its slot.
         tu_a = (
-            "[[c6502::zp_abi]] extern int helper(int x); "
+            "[[c6502::zp_abi]] extern int helper(int base, int x); "
             "[[c6502::zp_abi]] int caller_a(int n) { "
-            "  return helper(n); "
+            "  return helper(0, n); "
             "}"
         )
         tu_b = (
-            "[[c6502::zp_abi]] extern int helper(int x); "
+            "[[c6502::zp_abi]] extern int helper(int base, int x); "
             "[[c6502::zp_abi]] int caller_b(int n) { "
-            "  return helper(n + 1); "
+            "  return helper(0, n + 1); "
             "}"
         )
         tu_c = (
-            "[[c6502::zp_abi]] int helper(int x) { "
-            "  return x + 100; "
+            "[[c6502::zp_abi]] int helper(int base, int x) { "
+            "  return base + x + 100; "
             "}"
             "int main(void) { return 0; }"
         )
@@ -181,8 +183,10 @@ class TestLinkerErrors(unittest.TestCase):
 
     def test_unannotated_extern_accepted_under_default_zp_abi(self) -> None:
         # Under the default-zp_abi policy (`-O`), every
-        # extern is treated as zp_abi at the call site: args land
-        # in `__zpabi_<callee>_p<k>` slots, and the per-TU output
+        # extern is treated as zp_abi at the call site: here `x`
+        # arrives in A and X, since the declaration names no
+        # register, and any later args in the callee's
+        # `__zpabi_*` slots, and the per-TU output
         # advertises the extern in `; @zp-link-meta-begin`. The
         # linker's allocation accepts it, and the function's address
         # has to come from somewhere: no object defines it, so the
@@ -229,12 +233,17 @@ def _equs(text: str) -> dict[str, int]:
 class TestParameterNames(unittest.TestCase):
     """A zp_abi parameter's slot is named after the parameter, so a
     declaration whose names differ from the definition's spells the
-    same byte differently, and an unnamed one spells it by position."""
+    same byte differently, and an unnamed one spells it by position.
+    Each `put` here takes a leading `unsigned int`, which arrives in A
+    and X, so that the parameters after it arrive in their slots."""
 
-    _DEF = "unsigned char put(unsigned char c, int n) { return c + n; }"
+    _DEF = (
+        "unsigned char put(unsigned int w, unsigned char c, int n) "
+        "{ return w + c + n; }"
+    )
 
     def _link_with(self, decl: str) -> tuple[int, str, str]:
-        caller = decl + " int main(void) { return put(4, 300); }"
+        caller = decl + " int main(void) { return put(2, 4, 300); }"
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             a, b, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
@@ -250,7 +259,7 @@ class TestParameterNames(unittest.TestCase):
 
     def test_renamed_parameters_link(self) -> None:
         rc, err, text = self._link_with(
-            "unsigned char put(unsigned char x, int count);",
+            "unsigned char put(unsigned int w, unsigned char x, int count);",
         )
         self.assertEqual(rc, 0, err)
         self._assert_bound_like_definition(text, [
@@ -260,24 +269,27 @@ class TestParameterNames(unittest.TestCase):
         ])
 
     def test_unnamed_parameters_link(self) -> None:
-        rc, err, text = self._link_with("unsigned char put(unsigned char, int);")
+        rc, err, text = self._link_with(
+            "unsigned char put(unsigned int, unsigned char, int);",
+        )
         self.assertEqual(rc, 0, err)
         self._assert_bound_like_definition(text, [
-            ("__zpabi_put__0", "__zpabi_put__c"),
-            ("__zpabi_put__1_0", "__zpabi_put__n_0"),
-            ("__zpabi_put__1_1", "__zpabi_put__n_1"),
+            ("__zpabi_put__1", "__zpabi_put__c"),
+            ("__zpabi_put__2_0", "__zpabi_put__n_0"),
+            ("__zpabi_put__2_1", "__zpabi_put__n_1"),
         ])
 
     def test_swapped_names_rejected(self) -> None:
         # `__zpabi_put__a` would be the first byte in one unit and the
         # second in the other.
         definition = (
-            "unsigned char put(unsigned char a, unsigned char b) "
-            "{ return a - b; }"
+            "unsigned char put(unsigned int w, unsigned char a, "
+            "unsigned char b) { return w + a - b; }"
         )
         caller = (
-            "unsigned char put(unsigned char b, unsigned char a);"
-            " int main(void) { return put(4, 3); }"
+            "unsigned char put(unsigned int w, unsigned char b, "
+            "unsigned char a);"
+            " int main(void) { return put(0, 4, 3); }"
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -292,7 +304,7 @@ class TestParameterNames(unittest.TestCase):
         # `n` and `c` swap, but one is 1 byte and the other 2, so their
         # symbols (`__zpabi_put__n` and `__zpabi_put__n_0`) differ.
         rc, err, text = self._link_with(
-            "unsigned char put(unsigned char n, int c);",
+            "unsigned char put(unsigned int w, unsigned char n, int c);",
         )
         self.assertEqual(rc, 0, err)
         self._assert_bound_like_definition(text, [
@@ -301,7 +313,9 @@ class TestParameterNames(unittest.TestCase):
         ])
 
     def test_byte_count_mismatch_rejected(self) -> None:
-        rc, err, _ = self._link_with("unsigned char put(unsigned char c, long n);")
+        rc, err, _ = self._link_with(
+            "unsigned char put(unsigned int w, unsigned char c, long n);",
+        )
         self.assertEqual(rc, 1)
         self.assertIn("parameter byte", err)
 
@@ -320,13 +334,13 @@ class TestParameterNames(unittest.TestCase):
 
     def test_unnamed_prototype_then_definition_runs(self) -> None:
         from sim.harness import build_sim
-        src = ("unsigned char put(unsigned char, int);\n"
-               "int main(void) { return put(4, 300); }\n" + self._DEF)
+        src = ("unsigned char put(unsigned int, unsigned char, int);\n"
+               "int main(void) { return put(2, 4, 300); }\n" + self._DEF)
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 self.assertEqual(
                     build_sim(src, optimize=optimize).run().return_int(),
-                    (4 + 300) & 0xFF,
+                    (2 + 4 + 300) & 0xFF,
                 )
 
 
@@ -396,18 +410,19 @@ if __name__ == "__main__":
 class TestLowZeroPageFallback(unittest.TestCase):
     """When the pool, $80-$FF, has no room left, slots go in the free
     bytes below it, around the runtime's block, before they spill out
-    of zero page."""
+    of zero page. `add3`'s leading `base` arrives in A and X, so that
+    its other three parameters arrive in slots."""
 
     _A = (
         "#include <stdint.h>\n"
         "extern uint8_t busy [[c6502::zeropage(0x80)]][124];\n"
-        "uint16_t add3(uint16_t a, uint16_t b, uint16_t c);\n"
-        "int main(void) { return add3(1000, 200, 30) == 1230; }\n"
+        "uint16_t add3(uint16_t base, uint16_t a, uint16_t b, uint16_t c);\n"
+        "int main(void) { return add3(4, 1000, 200, 30) == 1234; }\n"
     )
     _B = (
         "#include <stdint.h>\n"
-        "uint16_t add3(uint16_t a, uint16_t b, uint16_t c) {\n"
-        "    return a + b + c;\n"
+        "uint16_t add3(uint16_t base, uint16_t a, uint16_t b, uint16_t c) {\n"
+        "    return base + a + b + c;\n"
         "}\n"
     )
 
@@ -445,20 +460,25 @@ class TestPointerInSharedSlotBytes(unittest.TestCase):
     pointer has to stay in each of them, where `asm_emit` names the
     pointer by that function's own slot. Moved into a function of its
     own by `shared_tails` or `outline_runs`, it was named by `f1`'s slot
-    alone, and `f2` read through `f1`'s bytes."""
+    alone, and `f2` read through `f1`'s bytes.
+
+    Each function here takes a byte in X, `[[c6502::in_x]]`, so that
+    the parameters after it arrive in their slots."""
 
     _MAIN = (
         "#include <stdint.h>\n"
         "extern uint8_t out[8];\n"
-        "void f1(uint8_t *p);\n"
-        "void f2(uint8_t *p);\n"
+        "void f1(uint8_t m [[c6502::in_x]], uint8_t *p);\n"
+        "void f2(uint8_t m [[c6502::in_x]], uint8_t *p);\n"
         "uint8_t A[3] = {1, 2, 3};\n"
         "uint8_t B[3] = {10, 20, 30};\n"
-        "void g(uint8_t k) { f2(k ? B : A); }\n"
+        "void g(uint8_t m [[c6502::in_x]], uint8_t k) {\n"
+        "    f2(m, k ? B : A);\n"
+        "}\n"
         "int main(void) {\n"
-        "    f1(A);\n"
-        "    g(1);\n"
-        "    return out[0] + out[1] + out[2] + out[7];\n"
+        "    f1(3, A);\n"
+        "    g(4, 1);\n"
+        "    return out[0] + out[1] + out[2] + out[3] + out[7];\n"
         "}\n"
     )
 
@@ -468,7 +488,8 @@ class TestPointerInSharedSlotBytes(unittest.TestCase):
             "#include <stdint.h>\n"
             "uint8_t out[8];\n"
             + "".join(
-                f"void f{n}(uint8_t *p) {{\n"
+                f"void f{n}(uint8_t m [[c6502::in_x]], uint8_t *p) {{\n"
+                "    out[3] = m;\n"
                 "    out[0] = p[0];\n"
                 "    out[1] = p[1];\n"
                 "    out[2] = p[2];\n"
@@ -496,14 +517,14 @@ class TestPointerInSharedSlotBytes(unittest.TestCase):
         # The functions differ only in their last store, so the reads
         # would be a run that `outline_runs` moves.
         result, text = self._run(self._readers(2))
-        self.assertEqual(result, 10 + 20 + 30 + 2)
+        self.assertEqual(result, 10 + 20 + 30 + 4 + 2)
         self.assertNotIn("@run", text)
 
     def test_tail_through_pointer_stays_in_each_function(self):
         # The functions are the same, so the reads would be in the tail
         # that `shared_tails` shares. The tail starts after them.
         result, text = self._run(self._readers(1))
-        self.assertEqual(result, 10 + 20 + 30 + 1)
+        self.assertEqual(result, 10 + 20 + 30 + 4 + 1)
         self.assertIn("@tail", text)
 
 
@@ -516,28 +537,30 @@ class TestStaticFunctionsInTwoUnits(unittest.TestCase):
     the slots with the function. Otherwise the merged metadata held
     two definitions of `f`, and the link failed. `main`'s `f` calls `a`, which calls the other
     unit's `f`, so the two functions' parameters must have different
-    bytes, since the first `f` reads its `x` after the call."""
+    bytes, since the first `f` reads its `x` after the call. Each `f`
+    takes `d` in A, `[[c6502::in_a]]`, so that `x` arrives in its
+    slot."""
 
     _A = (
         "#include <stdint.h>\n"
         "static uint8_t T[2] = {40, 50};\n"
         "static uint8_t *pick(uint8_t k) { return &T[k & 1]; }\n"
-        "static uint8_t f(uint8_t x) {\n"
-        "    uint8_t y = x + 1;\n"
+        "static uint8_t f(uint8_t d [[c6502::in_a]], uint8_t x) {\n"
+        "    uint8_t y = x + d;\n"
         "    return x + y + *pick(x);\n"
         "}\n"
-        "uint8_t a(uint8_t x) { return f(x) + f(x + 1); }\n"
+        "uint8_t a(uint8_t x) { return f(1, x) + f(1, x + 1); }\n"
     )
     _B = (
         "#include <stdint.h>\n"
         "uint8_t a(uint8_t x);\n"
         "static uint8_t T[2] = {1, 2};\n"
         "static uint8_t *pick(uint8_t k) { return &T[k & 1]; }\n"
-        "static uint8_t f(uint8_t x) {\n"
-        "    uint8_t y = a(x);\n"
+        "static uint8_t f(uint8_t d [[c6502::in_a]], uint8_t x) {\n"
+        "    uint8_t y = a(x) + d;\n"
         "    return x + y + *pick(x);\n"
         "}\n"
-        "int main(void) { return f(5); }\n"
+        "int main(void) { return f(0, 5); }\n"
     )
 
     def test_links_and_runs(self) -> None:
@@ -569,8 +592,11 @@ class TestStaticFunctionsInTwoUnits(unittest.TestCase):
         b = (
             "#include <stdint.h>\n"
             "uint8_t a(uint8_t x);\n"
-            "uint8_t f(uint8_t x) { uint8_t y = a(x); return x + y; }\n"
-            "int main(void) { return f(5); }\n"
+            "uint8_t f(uint8_t d [[c6502::in_a]], uint8_t x) {\n"
+            "    uint8_t y = a(x) + d;\n"
+            "    return x + y;\n"
+            "}\n"
+            "int main(void) { return f(0, 5); }\n"
         )
         from sim.linked import build_linked_sim
         with tempfile.TemporaryDirectory() as tmp:

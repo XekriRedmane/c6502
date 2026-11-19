@@ -22,112 +22,40 @@ hrcg_row_address@ret	EQU	$62
 hrcg_saved_ch	EQU	$64
 hrcg_next	EQU	$65
 hrcg_saved_cv	EQU	$66
-__zpabi_appearance_to_fontchar__appearance	EQU	$80
-__zpabi_apply_damage_to_current__damage	EQU	$80
-__zpabi_check_adjacent_threats__pos	EQU	$80
-__zpabi_check_at_boundary__pos	EQU	$80
-__zpabi_check_encounter__pos	EQU	$80
-__zpabi_check_hostile__other_0	EQU	$80
-__zpabi_classify_entity_type__e_0	EQU	$80
-__zpabi_colrow_to_pos__col	EQU	$80
-__zpabi_display_message__index	EQU	$80
-__zpabi_display_message_loop__msg_0	EQU	$80
-__zpabi_display_shop__ev_0	EQU	$80
-__zpabi_draw_char_at_pos__pos	EQU	$80
-__zpabi_enter_combat_state__pos	EQU	$80
-__zpabi_find_entity_at_pos__pos	EQU	$80
-__zpabi_get_char_record__index	EQU	$80
-__zpabi_get_entity_fontchar__e_0	EQU	$80
-__zpabi_get_mob_data__index	EQU	$80
-__zpabi_handle_encounter__ev_0	EQU	$80
-__zpabi_handle_event_slot__ev_0	EQU	$80
-__zpabi_hrcg_control__code	EQU	$80
-__zpabi_hrcg_draw_char__c	EQU	$80
-__zpabi_hrcg_select_font__c	EQU	$80
-__zpabi_hrcg_shifted_control__code	EQU	$80
-__zpabi_input_loop__m_0	EQU	$80
-__zpabi_load_char_to_fa__index	EQU	$80
-__zpabi_manhattan_distance__pos	EQU	$80
-__zpabi_modify_current_stats__amount_0	EQU	$80
-__zpabi_num_to_decimal__value_0	EQU	$80
-__zpabi_pickup_treasure__ev_0	EQU	$80
-__zpabi_pos_to_colrow__pos	EQU	$80
-__zpabi_print_bottom_centered__s_0	EQU	$80
-__zpabi_print_centered_plus_col__s_0	EQU	$80
-__zpabi_print_entity_name__m_0	EQU	$80
-__zpabi_print_string__s_0	EQU	$80
-__zpabi_random_in_range__limit	EQU	$80
-__zpabi_render_font_char_direct__charset_sel	EQU	$80
-__zpabi_reorder_char__m_0	EQU	$80
-__zpabi_run_chain__state	EQU	$80
-__zpabi_rwts_dispatch__command	EQU	$80
-__zpabi_scene_loop__scene	EQU	$80
-__zpabi_set_char_state__state	EQU	$80
-__zpabi_setup_input__m_0	EQU	$80
-__zpabi_setup_text_pos__name_0	EQU	$80
-__zpabi_setup_text_pos_col20__name_0	EQU	$80
-__zpabi_trigger_scene_event__ev_0	EQU	$80
-__zpabi_tune_player__tune	EQU	$80
-__zpabi_update_event_list__pos	EQU	$80
-__zpabi_check_hostile__other_1	EQU	$81
-__zpabi_classify_entity_type__e_1	EQU	$81
-__zpabi_colrow_to_pos__row	EQU	$81
-__zpabi_display_message_loop__msg_1	EQU	$81
-__zpabi_display_shop__ev_1	EQU	$81
-__zpabi_get_entity_fontchar__e_1	EQU	$81
-__zpabi_handle_encounter__ev_1	EQU	$81
-__zpabi_handle_event_slot__ev_1	EQU	$81
-__zpabi_hrcg_cout__c	EQU	$81
-__zpabi_hrcg_draw_char__raw	EQU	$81
-__zpabi_input_loop__m_1	EQU	$81
-__zpabi_manhattan_distance__from	EQU	$81
-__zpabi_modify_current_stats__amount_1	EQU	$81
-__zpabi_num_to_decimal__value_1	EQU	$81
-__zpabi_pickup_treasure__ev_1	EQU	$81
-__zpabi_print_bottom_centered__s_1	EQU	$81
-__zpabi_print_centered_plus_col__s_1	EQU	$81
-__zpabi_print_entity_name__m_1	EQU	$81
-__zpabi_print_string__s_1	EQU	$81
-__zpabi_reorder_char__m_1	EQU	$81
-__zpabi_setup_input__m_1	EQU	$81
-__zpabi_setup_text_pos__name_1	EQU	$81
-__zpabi_setup_text_pos_col20__name_1	EQU	$81
-__zpabi_trigger_scene_event__ev_1	EQU	$81
-__zpabi_tune_player__strength	EQU	$81
-__zpabi_update_event_list__value_0	EQU	$81
-__local_hrcg_select_font__0	EQU	$82
-__local_hrcg_set_top_left__top	EQU	$82
-__zpabi_hrcg_clear_from__row	EQU	$82
-__zpabi_modify_current_stats__add	EQU	$82
-__zpabi_num_to_decimal__out_0	EQU	$82
-__zpabi_update_event_list__value_1	EQU	$82
-__local_hrcg_select_font__1	EQU	$83
-__zpabi_hrcg_clear_from__col	EQU	$83
-__zpabi_num_to_decimal__out_1	EQU	$83
-__zpabi_hrcg_fill_line__col	EQU	$84
-__zpabi_hrcg_row_address__col	EQU	$85
-__zpabi_hrcg_fill_line__row	EQU	$86
-__zpabi_hrcg_row_address__row	EQU	$86
-__local_hrcg_cout__next	EQU	$87
-__local_hrcg_draw_char__glyph	EQU	$89
-__local_hrcg_draw_char__0	EQU	$8A
-__local_hrcg_draw_char__dst	EQU	$8B
-__local_hrcg_draw_char__1	EQU	$8C
-__local_hrcg_draw_char__2	EQU	$8D
-__local_hrcg_draw_char__3	EQU	$8E
-__local_hrcg_scroll_up__row	EQU	$90
-__local_hrcg_scroll_up__n	EQU	$91
-__local_hrcg_scroll_up__src	EQU	$92
-__local_hrcg_scroll_up__0	EQU	$93
-__local_hrcg_scroll_up__dst	EQU	$94
-__local_hrcg_scroll_up__1	EQU	$95
-__local_hrcg_scroll_up__2	EQU	$96
-__local_hrcg_fill_line__n	EQU	$98
-__local_hrcg_fill_line__line	EQU	$99
-__local_hrcg_fill_line__1	EQU	$9A
-__local_hrcg_row_address__0	EQU	$9B
-__local_hrcg_row_address__1	EQU	$9C
-__local_hrcg_row_address__2	EQU	$9D
+__local_hrcg_cout__next	EQU	$80
+__zpabi_modify_current_stats__add	EQU	$80
+__zpabi_num_to_decimal__out_0	EQU	$80
+__zpabi_update_event_list__value_0	EQU	$80
+__local_hrcg_cout__0	EQU	$81
+__zpabi_num_to_decimal__out_1	EQU	$81
+__zpabi_update_event_list__value_1	EQU	$81
+__local_hrcg_draw_char__glyph	EQU	$82
+__local_hrcg_select_font__c	EQU	$82
+__local_hrcg_clear_from__row	EQU	$83
+__local_hrcg_draw_char__0	EQU	$83
+__local_hrcg_select_font__0	EQU	$83
+__local_hrcg_set_top_left__top	EQU	$83
+__local_hrcg_draw_char__dst	EQU	$84
+__local_hrcg_draw_char__1	EQU	$85
+__local_hrcg_draw_char__2	EQU	$86
+__local_hrcg_draw_char__3	EQU	$87
+__local_hrcg_draw_char__raw	EQU	$88
+__local_hrcg_scroll_up__row	EQU	$8B
+__local_hrcg_scroll_up__n	EQU	$8C
+__local_hrcg_scroll_up__src	EQU	$8D
+__local_hrcg_scroll_up__0	EQU	$8E
+__local_hrcg_scroll_up__dst	EQU	$8F
+__local_hrcg_scroll_up__1	EQU	$90
+__local_hrcg_scroll_up__2	EQU	$91
+__local_hrcg_fill_line__n	EQU	$93
+__local_hrcg_fill_line__line	EQU	$94
+__local_hrcg_fill_line__0	EQU	$95
+__local_hrcg_fill_line__col	EQU	$96
+__local_hrcg_row_address__0	EQU	$97
+__local_hrcg_row_address__1	EQU	$98
+__local_hrcg_row_address__2	EQU	$99
+__local_hrcg_row_address__col	EQU	$9A
+__local_hrcg_row_address__row	EQU	$9B
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -293,21 +221,21 @@ WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
 ; def hrcg_advance_cursor params= locals=__local_hrcg_advance_cursor__0 indirect=false in_cycle=false
-; def hrcg_clear_from params=__zpabi_hrcg_clear_from__row,__zpabi_hrcg_clear_from__col locals=__local_hrcg_clear_from__col indirect=false in_cycle=false
-; def hrcg_control params=__zpabi_hrcg_control__code locals= indirect=false in_cycle=false
-; def hrcg_cout params=__zpabi_hrcg_cout__c locals=__local_hrcg_cout__next,__local_hrcg_cout__0 indirect=false in_cycle=false
-; def hrcg_draw_char params=__zpabi_hrcg_draw_char__c,__zpabi_hrcg_draw_char__raw locals=__local_hrcg_draw_char__glyph,__local_hrcg_draw_char__0,__local_hrcg_draw_char__dst,__local_hrcg_draw_char__1,__local_hrcg_draw_char__2,__local_hrcg_draw_char__3,__local_hrcg_draw_char__4 indirect=false in_cycle=false
-; def hrcg_fill_line params=__zpabi_hrcg_fill_line__row,__zpabi_hrcg_fill_line__col locals=__local_hrcg_fill_line__0,__local_hrcg_fill_line__n,__local_hrcg_fill_line__line,__local_hrcg_fill_line__1 indirect=false in_cycle=false
+; def hrcg_clear_from params=__zpabi_hrcg_clear_from__row,__zpabi_hrcg_clear_from__col locals=__local_hrcg_clear_from__row indirect=false in_cycle=false param_regs=A,X
+; def hrcg_control params=__zpabi_hrcg_control__code locals=__local_hrcg_control__code indirect=false in_cycle=false param_regs=A
+; def hrcg_cout params=__zpabi_hrcg_cout__c locals=__local_hrcg_cout__next,__local_hrcg_cout__0 indirect=false in_cycle=false param_regs=A
+; def hrcg_draw_char params=__zpabi_hrcg_draw_char__c,__zpabi_hrcg_draw_char__raw locals=__local_hrcg_draw_char__glyph,__local_hrcg_draw_char__0,__local_hrcg_draw_char__dst,__local_hrcg_draw_char__1,__local_hrcg_draw_char__2,__local_hrcg_draw_char__3,__local_hrcg_draw_char__raw indirect=false in_cycle=false param_regs=A,X
+; def hrcg_fill_line params=__zpabi_hrcg_fill_line__row,__zpabi_hrcg_fill_line__col locals=__local_hrcg_fill_line__row,__local_hrcg_fill_line__n,__local_hrcg_fill_line__line,__local_hrcg_fill_line__0,__local_hrcg_fill_line__col indirect=false in_cycle=false param_regs=A,X
 ; def hrcg_init params= locals= indirect=false in_cycle=false
 ; def hrcg_line_feed params= locals=__local_hrcg_line_feed__0 indirect=false in_cycle=false
 ; def hrcg_restore params= locals= indirect=false in_cycle=false
 ; def hrcg_restore_column params= locals=__local_hrcg_restore_column__old indirect=false in_cycle=false
-; def hrcg_row_address params=__zpabi_hrcg_row_address__row,__zpabi_hrcg_row_address__col locals=__local_hrcg_row_address__0,__local_hrcg_row_address__1,__local_hrcg_row_address__2 indirect=false in_cycle=false
+; def hrcg_row_address params=__zpabi_hrcg_row_address__row,__zpabi_hrcg_row_address__col locals=__local_hrcg_row_address__0,__local_hrcg_row_address__1,__local_hrcg_row_address__2,__local_hrcg_row_address__col,__local_hrcg_row_address__row indirect=false in_cycle=false param_regs=A,X
 ; def hrcg_save params= locals= indirect=false in_cycle=false
 ; def hrcg_scroll_up params= locals=__local_hrcg_scroll_up__row,__local_hrcg_scroll_up__n,__local_hrcg_scroll_up__src,__local_hrcg_scroll_up__0,__local_hrcg_scroll_up__dst,__local_hrcg_scroll_up__1,__local_hrcg_scroll_up__2 indirect=false in_cycle=false
-; def hrcg_select_font params=__zpabi_hrcg_select_font__c locals=__local_hrcg_select_font__0,__local_hrcg_select_font__1 indirect=false in_cycle=false
+; def hrcg_select_font params=__zpabi_hrcg_select_font__c locals=__local_hrcg_select_font__c,__local_hrcg_select_font__0 indirect=false in_cycle=false param_regs=A
 ; def hrcg_set_top_left params= locals=__local_hrcg_set_top_left__top indirect=false in_cycle=false
-; def hrcg_shifted_control params=__zpabi_hrcg_shifted_control__code locals= indirect=false in_cycle=false
+; def hrcg_shifted_control params=__zpabi_hrcg_shifted_control__code locals=__local_hrcg_shifted_control__code indirect=false in_cycle=false param_regs=A
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -324,8 +252,8 @@ WAIT	EQU	$FCA8
 ; ext ai_choose_target params=
 ; ext anim_check_frame params=
 ; ext anim_tick_and_wait params=
-; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance
-; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage
+; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance param_regs=A
+; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
@@ -339,20 +267,20 @@ WAIT	EQU	$FCA8
 ; ext char_select_init params=
 ; ext char_select_next params=
 ; ext char_select_prev params=
-; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos
-; ext check_at_boundary params=__zpabi_check_at_boundary__pos
+; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos param_regs=A
+; ext check_at_boundary params=__zpabi_check_at_boundary__pos param_regs=A
 ; ext check_attack_eligible params= carry=true
 ; ext check_can_leave params= carry=true
-; ext check_encounter params=__zpabi_check_encounter__pos
-; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 carry=true
+; ext check_encounter params=__zpabi_check_encounter__pos param_regs=A
+; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 param_regs=A,X carry=true
 ; ext check_scene_events params=
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
-; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1
+; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext cold_restart params=
-; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row
+; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row param_regs=A,X
 ; ext commit_move params=
 ; ext configure_input params=
 ; ext continue_game params=
@@ -362,22 +290,22 @@ WAIT	EQU	$FCA8
 ; ext disk_write params= carry=true
 ; ext dispatch_on_mode params=
 ; ext display_char_stats params=
-; ext display_message params=__zpabi_display_message__index
-; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1
-; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1
+; ext display_message params=__zpabi_display_message__index param_regs=A
+; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 param_regs=A,X
+; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 param_regs=A,X
 ; ext display_status_bar params=
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
-; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos
+; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
-; ext enter_combat_state params=__zpabi_enter_combat_state__pos
+; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
 ; ext enter_save_game_slot params=
 ; ext enter_scenario_disk params=
 ; ext fill_map params=
 ; ext find_attack_target params=
-; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos
+; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos param_regs=A
 ; ext find_first_pc params= carry=true
 ; ext find_nearest_event params=
 ; ext find_next_pc_wrap params=
@@ -387,12 +315,12 @@ WAIT	EQU	$FCA8
 ; ext font_pos_to_text_pos params=
 ; ext format_scenario_disk params=
 ; ext game_init params=
-; ext get_char_record params=__zpabi_get_char_record__index
-; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1
+; ext get_char_record params=__zpabi_get_char_record__index param_regs=A
+; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 param_regs=A,X
 ; ext get_input_table_ptr params=
-; ext get_mob_data params=__zpabi_get_mob_data__index
-; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1
-; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1
+; ext get_mob_data params=__zpabi_get_mob_data__index param_regs=A
+; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
+; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
 ; ext idle_anim_handler params=
 ; ext inc_threshold_wrap params=
@@ -401,12 +329,12 @@ WAIT	EQU	$FCA8
 ; ext init_drop_display params=
 ; ext init_drop_gold params=
 ; ext init_world params=
-; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1
+; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
 ; ext load_char_name_ptr params=
-; ext load_char_to_fa params=__zpabi_load_char_to_fa__index
+; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
-; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from
+; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
 ; ext menu_attack_target params=
 ; ext menu_check_attack params=
 ; ext menu_drop_dec params=
@@ -416,42 +344,42 @@ WAIT	EQU	$FCA8
 ; ext menu_game_settings_enter params=
 ; ext menu_other_options params=
 ; ext menu_see_your_lot params=
-; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add
+; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
 ; ext npc_move_ai params=
-; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1
+; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
 ; ext pick_random_member params=
-; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1
-; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos
-; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1
-; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1
+; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
+; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos param_regs=A
+; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 param_regs=A,X
+; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 param_regs=A,X
 ; ext print_ctrl_ab params=
 ; ext print_ctrl_n params=
-; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1
+; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 param_regs=A,X
 ; ext print_fontchar_at_text_pos params=
 ; ext print_member_name params=
 ; ext print_mob_name params=
-; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1
+; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
 ; ext random_events params=
-; ext random_in_range params=__zpabi_random_in_range__limit
+; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext read_keyboard params=
 ; ext render_font_char params=
-; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel
-; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1
+; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel param_regs=A
+; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 param_regs=A,X
 ; ext reorder_current_char params=
 ; ext reset_turn_pos params=
 ; ext resolve_attack params=
 ; ext retire_character params=
-; ext run_chain params=__zpabi_run_chain__state
-; ext rwts_dispatch params=__zpabi_rwts_dispatch__command carry=true
+; ext run_chain params=__zpabi_run_chain__state param_regs=A
+; ext rwts_dispatch params=__zpabi_rwts_dispatch__command param_regs=A carry=true
 ; ext save_game params=
-; ext scene_loop params=__zpabi_scene_loop__scene
+; ext scene_loop params=__zpabi_scene_loop__scene param_regs=A
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
 ; ext select_someone_else params=
 ; ext set_blink_target params=
-; ext set_char_state params=__zpabi_set_char_state__state
+; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_cursor_row21 params=
 ; ext set_inverse_video params=
 ; ext set_restricted params=
@@ -463,10 +391,10 @@ WAIT	EQU	$FCA8
 ; ext settings_speed_down params=
 ; ext settings_speed_up params=
 ; ext setup_char_sprite params=
-; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1
+; ext setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 param_regs=A,X
 ; ext setup_scene_display params=
-; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1
-; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1
+; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
+; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
 ; ext show_locked_msg params=
 ; ext slot_dec_enter params=
@@ -482,9 +410,9 @@ WAIT	EQU	$FCA8
 ; ext tick_anim_counter params=
 ; ext timed_wait params=
 ; ext toggle_sound params=
-; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1
-; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength
-; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1
+; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
+; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength param_regs=A,X
+; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
@@ -512,18 +440,15 @@ WAIT	EQU	$FCA8
 ; call hrcg_scroll_up -> hrcg_fill_line
 ; call hrcg_scroll_up -> hrcg_row_address
 ; call hrcg_set_top_left -> VTAB
-; share member=hrcg_cout:__zpabi_hrcg_cout__c member=hrcg_draw_char:__zpabi_hrcg_draw_char__raw forward=hrcg_cout>hrcg_draw_char
-; share member=hrcg_fill_line:__zpabi_hrcg_fill_line__row member=hrcg_row_address:__zpabi_hrcg_row_address__row holder=hrcg_clear_from live=hrcg_clear_from:hrcg_fill_line forward=hrcg_clear_from>hrcg_fill_line forward=hrcg_fill_line>hrcg_row_address writer=hrcg_clear_from
 ; item hrcg_row_address section=.text local=true zero=false
 ; item hrcg_fill_line section=.text local=true zero=false
-; item hrcg_fill_line@run0 section=.text local=true zero=false
 ; item hrcg_clear_from section=.text local=true zero=false
 ; item hrcg_scroll_up section=.text local=true zero=false
 ; item hrcg_line_feed section=.text local=true zero=false
 ; item hrcg_advance_cursor section=.text local=true zero=false
 ; item hrcg_draw_char section=.text local=true zero=false
 ; item hrcg_select_font section=.text local=true zero=false
-; item hrcg_select_font@run1 section=.text local=true zero=false
+; item hrcg_select_font@run0 section=.text local=true zero=false
 ; item hrcg_save section=.text local=true zero=false
 ; item hrcg_restore_column section=.text local=true zero=false
 ; item hrcg_restore section=.text local=true zero=false
@@ -569,17 +494,20 @@ WAIT	EQU	$FCA8
 hrcg_row_address:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_row_address__row
+   STA   __local_hrcg_row_address__row
+   STX   __local_hrcg_row_address__col
    LSR
    AND   #$03
    STA   __local_hrcg_row_address__0
    LDA   #$20
    ORA   __local_hrcg_row_address__0
    STA   __local_hrcg_row_address__2
+   LDA   __local_hrcg_row_address__row
+   LSR
    LDA   #$00
    ROR
    STA   __local_hrcg_row_address__1
-   LDA   __zpabi_hrcg_row_address__row
+   LDA   __local_hrcg_row_address__row
    LSR
    LSR
    LSR
@@ -589,7 +517,7 @@ hrcg_row_address:
    STA   __local_hrcg_row_address__1
    LDA   WNDLFT
    CLC
-   ADC   __zpabi_hrcg_row_address__col
+   ADC   __local_hrcg_row_address__col
    CLC
    ADC   __local_hrcg_row_address__1
    STA   hrcg_row_address@ret
@@ -600,55 +528,46 @@ hrcg_row_address:
 hrcg_fill_line:
    SUBROUTINE
 
-   JSR   hrcg_fill_line@run0
+   STX   __local_hrcg_fill_line__col
+   LDX   #$00
+   JSR   hrcg_row_address
+   LDA   hrcg_row_address@ret
    STA   __local_hrcg_fill_line__line
    LDA   hrcg_row_address@ret+1
-   STA   __local_hrcg_fill_line__1
+   STA   __local_hrcg_fill_line__0
    LDA   #$00
    STA   __local_hrcg_fill_line__n
 .hrcg_fill_line@rot@0:
-   LDY   __zpabi_hrcg_fill_line__col
+   LDY   __local_hrcg_fill_line__col
 .loop@1_start:
    LDA   hrcg
    STA   (__local_hrcg_fill_line__line),Y
    INY
    CPY   WNDWDTH
    BCC   .loop@1_start
-   LDA   __local_hrcg_fill_line__1
+   LDA   __local_hrcg_fill_line__0
    CLC
    ADC   #$04
-   STA   __local_hrcg_fill_line__1
+   STA   __local_hrcg_fill_line__0
    INC   __local_hrcg_fill_line__n
    LDA   __local_hrcg_fill_line__n
    CMP   #$08
    BCC   .hrcg_fill_line@rot@0
    RTS
 
-hrcg_fill_line@run0:
-   SUBROUTINE
-
-   LDA   #$00
-   STA   __zpabi_hrcg_row_address__col
-   JSR   hrcg_row_address
-   LDA   hrcg_row_address@ret
-   RTS
-
 hrcg_clear_from:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_clear_from__row
-   STA   __zpabi_hrcg_fill_line__row
-   LDA   __zpabi_hrcg_clear_from__col
+   STA   __local_hrcg_clear_from__row
 .loop@2_start:
-   STA   __zpabi_hrcg_fill_line__col
    JSR   hrcg_fill_line
-   INC   __zpabi_hrcg_fill_line__row
-   LDA   __zpabi_hrcg_fill_line__row
+   INC   __local_hrcg_clear_from__row
+   LDA   __local_hrcg_clear_from__row
    CMP   WNDBTM
    BCC   .hrcg_clear_from@asm_ssa_split@0
    RTS
 .hrcg_clear_from@asm_ssa_split@0:
-   LDA   #$00
+   LDX   #$00
    BEQ   .loop@2_start
 
 hrcg_scroll_up:
@@ -656,21 +575,19 @@ hrcg_scroll_up:
 
    LDA   WNDTOP
    STA   __local_hrcg_scroll_up__row
-.loop@3_start:
-   CLC
-   ADC   #$01
-   STA   __local_hrcg_scroll_up__2
-   CMP   WNDBTM
-   BCS   .loop@3_break
+   JMP   .loop@3_start
+.hrcg_scroll_up@rot@3:
+   LDX   #$00
    LDA   __local_hrcg_scroll_up__row
-   STA   __zpabi_hrcg_row_address__row
-   JSR   hrcg_fill_line@run0
+   JSR   hrcg_row_address
+   LDA   hrcg_row_address@ret
    STA   __local_hrcg_scroll_up__dst
    LDA   hrcg_row_address@ret+1
    STA   __local_hrcg_scroll_up__1
+   LDX   #$00
    LDA   __local_hrcg_scroll_up__2
-   STA   __zpabi_hrcg_row_address__row
-   JSR   hrcg_fill_line@run0
+   JSR   hrcg_row_address
+   LDA   hrcg_row_address@ret
    STA   __local_hrcg_scroll_up__src
    LDA   hrcg_row_address@ret+1
    STA   __local_hrcg_scroll_up__0
@@ -701,13 +618,15 @@ hrcg_scroll_up:
    BCC   .hrcg_scroll_up@rot@2
    LDA   __local_hrcg_scroll_up__2
    STA   __local_hrcg_scroll_up__row
-   JMP   .loop@3_start
-.loop@3_break:
+.loop@3_start:
+   CLC
+   ADC   #$01
+   STA   __local_hrcg_scroll_up__2
+   CMP   WNDBTM
+   BCC   .hrcg_scroll_up@rot@3
    LDA   WNDBTM
    SBC   #$01
-   STA   __zpabi_hrcg_fill_line__row
-   LDA   #$00
-   STA   __zpabi_hrcg_fill_line__col
+   LDX   #$00
    JMP   hrcg_fill_line
 
 hrcg_line_feed:
@@ -745,20 +664,19 @@ hrcg_advance_cursor:
 hrcg_draw_char:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_draw_char__c
+   STA   __local_hrcg_draw_char__glyph
+   STX   __local_hrcg_draw_char__raw
    SEC
    SBC   #$20
-   STA   __local_hrcg_draw_char__glyph
+   STA   __local_hrcg_draw_char__dst
    LDA   hrcg+2
-   BEQ   .if_end@9
-   LDA   __zpabi_hrcg_draw_char__c
-   CMP   #$41
-   BCC   .if_end@9
-   CMP   #$5B
-   BCS   .if_end@9
-   STA   __local_hrcg_draw_char__glyph
-.if_end@9:
+   BEQ   .hrcg_draw_char@scfold@0
    LDA   __local_hrcg_draw_char__glyph
+   CMP   #$41
+   BCC   .hrcg_draw_char@scfold@0
+   CMP   #$5B
+   BCS   .hrcg_draw_char@scfold@0
+.if_end@9:
    LSR
    LSR
    LSR
@@ -775,21 +693,19 @@ hrcg_draw_char:
    LDA   hrcg+4
    ADC   __local_hrcg_draw_char__0
    STA   __local_hrcg_draw_char__3
+   LDX   CH
    LDA   CV
-   STA   __zpabi_hrcg_row_address__row
-   LDA   CH
-   STA   __zpabi_hrcg_row_address__col
    JSR   hrcg_row_address
    LDA   hrcg_row_address@ret
    STA   __local_hrcg_draw_char__dst
    LDA   hrcg_row_address@ret+1
    STA   __local_hrcg_draw_char__1
-   LDA   __zpabi_hrcg_draw_char__raw
+   LDA   __local_hrcg_draw_char__raw
    LDY   CH
    STA   (BASL),Y
    LDX   #$00
    BEQ   .loop@6_start
-.hrcg_draw_char@rot@3:
+.hrcg_draw_char@rot@4:
    TXA
    TAY
    LDA   (__local_hrcg_draw_char__2),Y
@@ -802,37 +718,40 @@ hrcg_draw_char:
    INX
 .loop@6_start:
    CPX   #$08
-   BCC   .hrcg_draw_char@rot@3
+   BCC   .hrcg_draw_char@rot@4
    JMP   hrcg_advance_cursor
+.hrcg_draw_char@scfold@0:
+   LDA   __local_hrcg_draw_char__dst
+   STA   __local_hrcg_draw_char__glyph
+   JMP   .if_end@9
 
 hrcg_select_font:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_select_font__c
    SEC
    SBC   #$31
-   STA   __local_hrcg_select_font__1
+   STA   __local_hrcg_select_font__0
    CMP   #$09
    BCS   .if_else@11
    ASL
    CLC
-   ADC   __local_hrcg_select_font__1
-   STA   __local_hrcg_select_font__0
+   ADC   __local_hrcg_select_font__0
+   STA   __local_hrcg_select_font__c
    LDA   #$00
    CLC
    ADC   #<FONT_DATA
-   STA   __local_hrcg_select_font__1
-   LDA   __local_hrcg_select_font__0
+   STA   __local_hrcg_select_font__0
+   LDA   __local_hrcg_select_font__c
    ADC   #>FONT_DATA
    STA   hrcg+4
-   LDA   __local_hrcg_select_font__1
+   LDA   __local_hrcg_select_font__0
    STA   hrcg+3
    RTS
 .if_else@11:
-   JSR   hrcg_select_font@run1
+   JSR   hrcg_select_font@run0
    RTS
 
-hrcg_select_font@run1:
+hrcg_select_font@run0:
    SUBROUTINE
 
    LDA   #<STD_FONT_DATA
@@ -936,7 +855,6 @@ hrcg_set_top_left:
 hrcg_shifted_control:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_shifted_control__code
    CMP   #$13
    BNE   .if_else@19
    LDA   #$00
@@ -953,7 +871,6 @@ hrcg_shifted_control:
 hrcg_control:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_control__code
    CMP   #$01
    BEQ   .case@8
    CMP   #$02
@@ -990,10 +907,8 @@ hrcg_control:
 .case@11:
    JMP   hrcg_restore
 .case@12:
+   LDX   CH
    LDA   CV
-   STA   __zpabi_hrcg_clear_from__row
-   LDA   CH
-   STA   __zpabi_hrcg_clear_from__col
    JSR   hrcg_clear_from
    JMP   CLREOP
 .case@13:
@@ -1019,11 +934,10 @@ hrcg_control:
 .case@18:
    LDA   WNDTOP
    STA   CV
-   LDY   #$00
-   STY   CH
-   STA   __zpabi_hrcg_clear_from__row
    LDA   #$00
-   STA   __zpabi_hrcg_clear_from__col
+   STA   CH
+   LDX   #$00
+   LDA   WNDTOP
    JSR   hrcg_clear_from
    JMP   HOME
 .case@19:
@@ -1054,7 +968,7 @@ hrcg_init:
    LDA   #$18
    STA   WNDBTM
    JSR   VTAB
-   JSR   hrcg_select_font@run1
+   JSR   hrcg_select_font@run0
    LDA   TXTPAGE1
    LDA   TXTCLR
    RTS
@@ -1062,26 +976,24 @@ hrcg_init:
 hrcg_cout:
    SUBROUTINE
 
-   LDA   __zpabi_hrcg_draw_char__raw
+   TAX
    AND   #$7F
-   STA   __zpabi_hrcg_control__code
+   STA   __local_hrcg_cout__0
    LDA   hrcg_next
    STA   __local_hrcg_cout__next
    LDY   #$00
    STY   hrcg_next
    CMP   #$80
    BNE   .if_else@22
-   LDA   __zpabi_hrcg_control__code
-   STA   __zpabi_hrcg_select_font__c
+   LDA   __local_hrcg_cout__0
    JMP   hrcg_select_font
 .if_else@22:
-   LDA   __zpabi_hrcg_control__code
+   LDA   __local_hrcg_cout__0
    CMP   #$20
    BCC   .if_else@24
    LDA   __local_hrcg_cout__next
    BNE   .if_end@23
-   LDA   __zpabi_hrcg_control__code
-   STA   __zpabi_hrcg_draw_char__c
+   LDA   __local_hrcg_cout__0
    JMP   hrcg_draw_char
 .if_else@24:
    CMP   #$1B
@@ -1089,10 +1001,10 @@ hrcg_cout:
    LDA   __local_hrcg_cout__next
    CMP   #$40
    BNE   .if_else@28
-   LDA   __zpabi_hrcg_control__code
-   STA   __zpabi_hrcg_shifted_control__code
+   LDA   __local_hrcg_cout__0
    JMP   hrcg_shifted_control
 .if_else@28:
+   LDA   __local_hrcg_cout__0
    JSR   hrcg_control
 .if_end@26:
 .if_end@23:

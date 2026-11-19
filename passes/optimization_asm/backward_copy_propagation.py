@@ -293,7 +293,8 @@ def _operands_alias(
 
     Direct comparisons for the stable-name shapes:
 
-      * `Data` ↔ `Data` — same `(name, offset)`.
+      * `Data` or `Pseudo` ↔ `Data` or `Pseudo` — same
+        `(name, offset)`.
       * `Stack` ↔ `Stack` — same `offset`.
       * `ZP` ↔ `ZP` — same resolved `address+offset`.
 
@@ -307,7 +308,13 @@ def _operands_alias(
     backward-CP target into `Data("DPTR", k)` BEFORE an intermediate
     `Indirect` read would partially clobber the pointer DPTR uses,
     yielding a hybrid address."""
-    if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
+    if (isinstance(a, (asm_ast.Data, asm_ast.Pseudo))
+            and isinstance(b, (asm_ast.Data, asm_ast.Pseudo))):
+        # A static is still a `Pseudo` here where `tac_to_asm` wrote
+        # one, and a `Data` where it wrote that, as for a store to a
+        # constant byte of it, so `Pseudo(Z, 2)` and `Data(Z, 2)` are
+        # the same byte. `Z = 0x01020304UL; ZB[2] = v;` with `v` in A
+        # had moved the store of `v` in front of `Z`'s.
         return a.name == b.name and a.offset == b.offset
     if isinstance(a, asm_ast.Stack) and isinstance(b, asm_ast.Stack):
         return a.offset == b.offset

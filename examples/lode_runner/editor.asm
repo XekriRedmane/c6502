@@ -26,47 +26,19 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$80
-__zpabi_append_note__pitch	EQU	$80
-__zpabi_bcd_to_decimal2__bcd	EQU	$80
-__zpabi_char_to_sprite_num__c	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_draw_sprite_page2__sprite	EQU	$80
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$80
-__zpabi_half_screen_col_for__col	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_load_sound_data__notes_0	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_put_char__c	EQU	$80
-__zpabi_put_digit__digit	EQU	$80
-__zpabi_put_sprite_at_cursor__sprite	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_row_to_addr__row	EQU	$80
-__zpabi_screen_row_for__row	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_to_decimal3__n	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
-__zpabi_add_and_update_score__bcd_points_1	EQU	$81
-__zpabi_append_note__duration	EQU	$81
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_draw_sprite_page1__sprite	EQU	$81
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$81
-__zpabi_half_screen_col_for__x_adj	EQU	$81
-__zpabi_load_sound_data__notes_1	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_row_to_addr__page	EQU	$81
-__zpabi_screen_row_for__y_adj	EQU	$81
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__local_edit_level_key_loop__1	EQU	$83
-__local_editor_initialize_disk__saved_level	EQU	$84
+__local_format_patch__0	EQU	$80
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
+__local_edit_level_key_loop__1	EQU	$81
+__local_format_patch__b	EQU	$81
+__local_editor_initialize_disk__saved_level	EQU	$82
+__local_format_patch__tries_1	EQU	$82
+__local_get_level_from_keyboard__n	EQU	$82
+__local_format_patch__tries_0	EQU	$83
+__local_get_level_from_keyboard__level_1	EQU	$83
+__local_format_patch__slot16	EQU	$84
+__local_get_level_from_keyboard__level_0	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -99,16 +71,9 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_format_patch__0	EQU	$AE
-__local_get_level_from_keyboard__n	EQU	$AE
-__local_format_patch__b	EQU	$AF
-__local_get_level_from_keyboard__level_1	EQU	$AF
 __local_level_edit_save1__col	EQU	$AF
-__local_format_patch__tries_1	EQU	$B0
-__local_get_level_from_keyboard__level_0	EQU	$B0
 __local_level_edit_save1__row	EQU	$B0
-__local_format_patch__tries_0	EQU	$B1
-__local_format_patch__slot16	EQU	$B2
+__local_put_sprite_at_cursor__sprite	EQU	$B1
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -189,64 +154,64 @@ DISK_IO	EQU	$C088
 ; def level_edit_change_level params= locals=__local_level_edit_change_level__0 indirect=false in_cycle=false
 ; def level_edit_save1 params= locals=__local_level_edit_save1__0,__local_level_edit_save1__col,__local_level_edit_save1__row indirect=false in_cycle=false
 ; def level_editor params= locals= indirect=false in_cycle=false
-; def put_sprite_at_cursor params=__zpabi_put_sprite_at_cursor__sprite locals=__local_put_sprite_at_cursor__0,__local_put_sprite_at_cursor__1,__local_put_sprite_at_cursor__2 indirect=false in_cycle=false
+; def put_sprite_at_cursor params=__zpabi_put_sprite_at_cursor__sprite locals=__local_put_sprite_at_cursor__0,__local_put_sprite_at_cursor__1,__local_put_sprite_at_cursor__2,__local_put_sprite_at_cursor__sprite indirect=false in_cycle=false param_regs=A
 ; def start_level_editor params= locals= indirect=false in_cycle=false
 ; def start_message params= locals= indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
-; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 param_regs=A,X
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
+; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
-; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c
+; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext check_for_input params=
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
 ; ext detect_lack_of_joystick params=
-; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext iris_wipe params=
 ; ext load_guard_data params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
 ; ext move_guards params=
 ; ext move_player params=
 ; ext newline params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
-; ext put_char params=__zpabi_put_char__c
-; ext put_digit params=__zpabi_put_digit__digit
+; ext put_char params=__zpabi_put_char__c param_regs=A
+; ext put_digit params=__zpabi_put_digit__digit param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
 ; ext put_status_lives params=
-; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1
+; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
-; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
-; ext to_decimal3 params=__zpabi_to_decimal3__n
-; ext wait_for_key params=__zpabi_wait_for_key__cursor
-; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
+; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
+; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
+; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call bad_data_disk -> hit_key_to_continue
 ; call bad_data_disk -> put_string
@@ -328,28 +293,21 @@ DISK_IO	EQU	$C088
 ; call start_level_editor -> put_string
 ; call start_message -> clear_hgr2
 ; item editor_wait_for_key section=.text local=true zero=false
-; item editor_wait_for_key@run3 section=.text local=true zero=false
 ; item start_message section=.text local=true zero=false
-; item start_message@run6 section=.text local=true zero=false
+; item start_message@run0 section=.text local=true zero=false
 ; item hit_key_to_continue section=.text local=true zero=false
-; item hit_key_to_continue@run5 section=.text local=true zero=false
+; item hit_key_to_continue@run1 section=.text local=true zero=false
 ; item dont_manipulate_master_disk section=.text local=true zero=false
 ; item bad_data_disk section=.text local=false zero=false
 ; item check_for_valid_data_disk section=.text local=true zero=false
-; item check_for_valid_data_disk@run0 section=.text local=true zero=false
 ; item get_level_from_keyboard section=.text local=true zero=false
 ; item level_editor section=.text local=false zero=false
 ; item start_level_editor section=.text local=false zero=false
 ; item editor_play_level section=.text local=true zero=false
-; item editor_play_level@run1 section=.text local=true zero=false
 ; item editor_clear_level section=.text local=true zero=false
-; item editor_clear_level@tail1 section=.text local=true zero=false
 ; item editor_edit_level section=.text local=true zero=false
 ; item editor_move_level section=.text local=true zero=false
-; item editor_move_level@run4 section=.text local=true zero=false
-; item editor_move_level@run2 section=.text local=true zero=false
 ; item editor_initialize_disk section=.text local=true zero=false
-; item editor_initialize_disk@run7 section=.text local=true zero=false
 ; item editor_clear_high_scores section=.text local=true zero=false
 ; item editor_command_loop section=.text local=false zero=false
 ; item edit_level section=.text local=true zero=false
@@ -447,20 +405,13 @@ editor_wait_for_key:
    SUBROUTINE
 
    LDA   #$00
-   STA   __zpabi_wait_for_key_with_cursor_page_1__cursor
-   JSR   editor_wait_for_key@run3
+   JSR   wait_for_key_with_cursor_page_1
+   LDY   #$00
+   STY   KBDSTRB
    CMP   #$9B
    BNE   .if_end@0
    JMP   editor_command_loop
 .if_end@0:
-   RTS
-
-editor_wait_for_key@run3:
-   SUBROUTINE
-
-   JSR   wait_for_key_with_cursor_page_1
-   LDY   #$00
-   STY   KBDSTRB
    RTS
 
 start_message:
@@ -469,10 +420,10 @@ start_message:
    JSR   clear_hgr2
    LDA   #$40
    STA   DRAW_PAGE
-   JSR   start_message@run6
+   JSR   start_message@run0
    RTS
 
-start_message@run6:
+start_message@run0:
    SUBROUTINE
 
    LDA   #$00
@@ -483,22 +434,19 @@ start_message@run6:
 hit_key_to_continue:
    SUBROUTINE
 
+   LDX   #>str@0
    LDA   #<str@0
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@0
-   STA   __zpabi_put_string__s_1
-   JSR   hit_key_to_continue@run5
-   STA   __zpabi_wait_for_key__cursor
+   JSR   put_string
+   JSR   hit_key_to_continue@run1
    JSR   wait_for_key
    LDA   #$00
    STA   KBDSTRB
    STA   TXTPAGE1
    RTS
 
-hit_key_to_continue@run5:
+hit_key_to_continue@run1:
    SUBROUTINE
 
-   JSR   put_string
    JSR   beep
    LDA   #$00
    STA   TXTPAGE2
@@ -508,10 +456,8 @@ dont_manipulate_master_disk:
    SUBROUTINE
 
    JSR   start_message
+   LDX   #>str@1
    LDA   #<str@1
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@1
-   STA   __zpabi_put_string__s_1
    JSR   put_string
    JMP   hit_key_to_continue
 
@@ -519,17 +465,16 @@ bad_data_disk:
    SUBROUTINE
 
    JSR   start_message
+   LDX   #>str@2
    LDA   #<str@2
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@2
-   STA   __zpabi_put_string__s_1
    JSR   put_string
    JMP   hit_key_to_continue
 
 check_for_valid_data_disk:
    SUBROUTINE
 
-   JSR   check_for_valid_data_disk@run0
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    ORA   #$00
    BNE   .if_end@1
    JSR   bad_data_disk
@@ -542,20 +487,12 @@ check_for_valid_data_disk:
 .if_end@2:
    RTS
 
-check_for_valid_data_disk@run0:
-   SUBROUTINE
-
-   LDA   #$01
-   STA   __zpabi_access_hi_score_data_from_disk__command
-   JMP   access_hi_score_data_from_disk
-
 get_level_from_keyboard:
    SUBROUTINE
 
    LDA   DISK_LEVEL_LOC
    CLC
    ADC   #$01
-   STA   __zpabi_to_decimal3__n
    JSR   to_decimal3
    LDA   GAME_COLNUM
    STA   saved_game_colnum
@@ -564,7 +501,6 @@ get_level_from_keyboard:
 .get_level_from_keyboard@rot@0:
    LDX   kbd_entry_index
    LDA   DIGITS,X
-   STA   __zpabi_put_digit__digit
    JSR   put_digit
    INC   kbd_entry_index
    LDA   kbd_entry_index
@@ -606,7 +542,6 @@ get_level_from_keyboard:
    BCS   .switch@2_break
    LDX   kbd_entry_index
    STA   DIGITS,X
-   STA   __zpabi_put_digit__digit
    JSR   put_digit
    INC   kbd_entry_index
    LDA   kbd_entry_index
@@ -620,8 +555,9 @@ get_level_from_keyboard:
    LDA   #$3B
    CLC
    ADC   DIGITS,X
-   STA   __zpabi_wait_for_key_with_cursor_page_1__cursor
-   JSR   editor_wait_for_key@run3
+   JSR   wait_for_key_with_cursor_page_1
+   LDY   #$00
+   STY   KBDSTRB
    CMP   #$8D
    BNE   .get_level_from_keyboard@rot@1
    LDA   saved_game_colnum
@@ -719,22 +655,19 @@ start_level_editor:
    JSR   clear_hgr1
    LDA   #$20
    STA   DRAW_PAGE
-   JSR   start_message@run6
+   JSR   start_message@run0
+   LDX   #>str@3
    LDA   #<str@3
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@3
-   STA   __zpabi_put_string__s_1
    JSR   put_string
    JMP   editor_command_loop
 
 editor_play_level:
    SUBROUTINE
 
+   LDX   #>str@4
    LDA   #<str@4
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@4
-   STA   __zpabi_put_string__s_1
-   JSR   editor_play_level@run1
+   JSR   put_string
+   JSR   get_level_from_keyboard
    BCC   .if_end@10
    JMP   beep
 .if_end@10:
@@ -752,20 +685,13 @@ editor_play_level:
    STA   HI_SCORE_ELIGIBLE
    JMP   init_game_data
 
-editor_play_level@run1:
-   SUBROUTINE
-
-   JSR   put_string
-   JMP   get_level_from_keyboard
-
 editor_clear_level:
    SUBROUTINE
 
+   LDX   #>str@5
    LDA   #<str@5
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@5
-   STA   __zpabi_put_string__s_1
-   JSR   editor_play_level@run1
+   JSR   put_string
+   JSR   get_level_from_keyboard
    BCC   .if_end@11
    JMP   beep
 .if_end@11:
@@ -776,23 +702,16 @@ editor_clear_level:
    STA   DISK_BUFFER,X
    INX
    BNE   .loop@9_start
-   JMP   editor_clear_level@tail1
-
-editor_clear_level@tail1:
-   SUBROUTINE
-
    LDA   #$02
-   STA   __zpabi_access_compressed_level_data__command
    JMP   access_compressed_level_data
 
 editor_edit_level:
    SUBROUTINE
 
+   LDX   #>str@6
    LDA   #<str@6
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@6
-   STA   __zpabi_put_string__s_1
-   JSR   editor_play_level@run1
+   JSR   put_string
+   JSR   get_level_from_keyboard
    BCC   .if_end@12
    JMP   beep
 .if_end@12:
@@ -801,66 +720,50 @@ editor_edit_level:
 editor_move_level:
    SUBROUTINE
 
+   LDX   #>str@7
    LDA   #<str@7
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@7
-   STA   __zpabi_put_string__s_1
-   JSR   editor_play_level@run1
+   JSR   put_string
+   JSR   get_level_from_keyboard
    BCC   .if_end@13
    JMP   beep
 .if_end@13:
    LDA   DISK_LEVEL_LOC
    STA   editor_level_entry
+   LDX   #>str@8
    LDA   #<str@8
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@8
-   STA   __zpabi_put_string__s_1
-   JSR   editor_play_level@run1
+   JSR   put_string
+   JSR   get_level_from_keyboard
    BCC   .if_end@14
    JMP   beep
 .if_end@14:
    LDA   DISK_LEVEL_LOC
    STA   saved_vtoc_data
+   LDX   #>str@9
    LDA   #<str@9
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@9
-   STA   __zpabi_put_string__s_1
-   JSR   editor_move_level@run2
+   JSR   put_string
+   JSR   editor_wait_for_key
    JSR   check_for_valid_data_disk
    LDA   editor_level_entry
    STA   DISK_LEVEL_LOC
-   JSR   editor_move_level@run4
+   LDA   #$01
+   JSR   access_compressed_level_data
+   LDX   #>str@10
    LDA   #<str@10
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@10
-   STA   __zpabi_put_string__s_1
-   JSR   editor_move_level@run2
+   JSR   put_string
+   JSR   editor_wait_for_key
    JSR   check_for_valid_data_disk
    LDA   saved_vtoc_data
    STA   DISK_LEVEL_LOC
-   JMP   editor_clear_level@tail1
-
-editor_move_level@run4:
-   SUBROUTINE
-
-   LDA   #$01
-   STA   __zpabi_access_compressed_level_data__command
+   LDA   #$02
    JMP   access_compressed_level_data
-
-editor_move_level@run2:
-   SUBROUTINE
-
-   JSR   put_string
-   JMP   editor_wait_for_key
 
 editor_initialize_disk:
    SUBROUTINE
 
+   LDX   #>str@11
    LDA   #<str@11
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@11
-   STA   __zpabi_put_string__s_1
-   JSR   editor_move_level@run2
+   JSR   put_string
+   JSR   editor_wait_for_key
    CMP   #$D9
    BEQ   .if_end@15
    RTS
@@ -868,7 +771,6 @@ editor_initialize_disk:
    LDA   DISK_LEVEL_LOC
    STA   __local_editor_initialize_disk__saved_level
    LDA   #$04
-   STA   __zpabi_access_compressed_level_data__command
    JSR   access_compressed_level_data
    LDA   #<DISK_BOOT_SECTOR_DATA
    STA   DOS_IOB+8
@@ -882,7 +784,8 @@ editor_initialize_disk:
    JSR   access_disk_or_reset_game
    LDA   #$E0
    STA   DISK_LEVEL_LOC
-   JSR   editor_move_level@run4
+   LDA   #$01
+   JSR   access_compressed_level_data
    LDX   #$00
 .editor_initialize_disk@rot@4:
    LDA   saved_vtoc_data+1,X
@@ -890,10 +793,12 @@ editor_initialize_disk:
    INX
    CPX   #$38
    BCC   .editor_initialize_disk@rot@4
-   JSR   editor_initialize_disk@run7
+   LDA   #$02
+   JSR   access_compressed_level_data
    LDA   #$EF
    STA   DISK_LEVEL_LOC
-   JSR   editor_move_level@run4
+   LDA   #$01
+   JSR   access_compressed_level_data
    LDX   #$00
 .editor_initialize_disk@rot@5:
    LDA   SAVED_FILE_DESCRIPTIVE_ENTRY_DATA,X
@@ -901,8 +806,10 @@ editor_initialize_disk:
    INX
    CPX   #$21
    BCC   .editor_initialize_disk@rot@5
-   JSR   editor_initialize_disk@run7
-   JSR   check_for_valid_data_disk@run0
+   LDA   #$02
+   JSR   access_compressed_level_data
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    LDX   #$00
 .editor_initialize_disk@rot@6:
    LDA   HI_SCORE_DATA_MARKER,X
@@ -911,32 +818,24 @@ editor_initialize_disk:
    CPX   #$0B
    BCC   .editor_initialize_disk@rot@6
    LDA   #$02
-   STA   __zpabi_access_hi_score_data_from_disk__command
    JSR   access_hi_score_data_from_disk
    LDA   __local_editor_initialize_disk__saved_level
    STA   DISK_LEVEL_LOC
    RTS
 
-editor_initialize_disk@run7:
-   SUBROUTINE
-
-   LDA   #$02
-   STA   __zpabi_access_compressed_level_data__command
-   JMP   access_compressed_level_data
-
 editor_clear_high_scores:
    SUBROUTINE
 
+   LDX   #>str@12
    LDA   #<str@12
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@12
-   STA   __zpabi_put_string__s_1
-   JSR   editor_move_level@run2
+   JSR   put_string
+   JSR   editor_wait_for_key
    CMP   #$D9
    BEQ   .if_end@16
    RTS
 .if_end@16:
-   JSR   check_for_valid_data_disk@run0
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    ORA   #$00
    BNE   .if_end@17
    JSR   bad_data_disk
@@ -950,7 +849,6 @@ editor_clear_high_scores:
    CPX   #$50
    BCC   .editor_clear_high_scores@rot@7
    LDA   #$02
-   STA   __zpabi_access_hi_score_data_from_disk__command
    JMP   access_hi_score_data_from_disk
 
 editor_command_loop:
@@ -962,10 +860,8 @@ editor_command_loop:
    BCC   .if_end@18
    JMP   start_level_editor
 .if_end@18:
+   LDX   #>str@13
    LDA   #<str@13
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@13
-   STA   __zpabi_put_string__s_1
    JSR   put_string
    JSR   editor_wait_for_key
    CMP   #$D0
@@ -1016,14 +912,13 @@ edit_level:
    LDA   #$01
    STA   LEVEL_SAVED
    LDA   #$00
-   STA   __zpabi_load_level__verbatim
    JSR   load_level
    JMP   edit_level@tail0
 
 edit_level@tail0:
    SUBROUTINE
 
-   JSR   start_message@run6
+   JSR   start_message@run0
    JMP   edit_level_key_loop
 
 level_edit_save1:
@@ -1033,7 +928,8 @@ level_edit_save1:
    STA   __local_level_edit_save1__row
    LDA   GAME_COLNUM
    STA   __local_level_edit_save1__col
-   JSR   check_for_valid_data_disk@run0
+   LDA   #$01
+   JSR   access_hi_score_data_from_disk
    ORA   #$00
    BNE   .if_else@20
    JSR   bad_data_disk
@@ -1062,14 +958,12 @@ level_edit_change_level:
    LDA   LEVEL_SAVED
    BNE   .if_end@23
    JSR   start_message
+   LDX   #>str@14
    LDA   #<str@14
-   STA   __zpabi_put_string__s_0
-   LDA   #>str@14
-   STA   __zpabi_put_string__s_1
-   JSR   hit_key_to_continue@run5
+   JSR   put_string
+   JSR   hit_key_to_continue@run1
 .loop@23_start:
    LDA   #$00
-   STA   __zpabi_wait_for_key__cursor
    JSR   wait_for_key
    LDY   #$00
    STY   KBDSTRB
@@ -1105,25 +999,26 @@ get_key_for_edit_level:
    JSR   cursor_cell
    LDY   #$00
    LDA   (cursor_cell@ret),Y
-   STA   __zpabi_wait_for_key_with_cursor_page_1__cursor
-   JSR   editor_wait_for_key@run3
+   JSR   wait_for_key_with_cursor_page_1
+   LDY   #$00
+   STY   KBDSTRB
    RTS
 
 put_sprite_at_cursor:
    SUBROUTINE
 
+   STA   __local_put_sprite_at_cursor__sprite
    JSR   cursor_cell
    LDY   #$00
    LDA   (cursor_cell@ret),Y
-   CMP   __zpabi_put_sprite_at_cursor__sprite
+   CMP   __local_put_sprite_at_cursor__sprite
    BEQ   .if_end@26
    LDA   #$00
    STA   LEVEL_SAVED
 .if_end@26:
-   LDA   __zpabi_put_sprite_at_cursor__sprite
+   LDA   __local_put_sprite_at_cursor__sprite
    LDY   #$00
    STA   (cursor_cell@ret),Y
-   STA   __zpabi_draw_sprite_page1__sprite
    JMP   draw_sprite_page1
 
 edit_level_key_loop:
@@ -1131,7 +1026,6 @@ edit_level_key_loop:
 
    JMP   .loop@24_start
 .edit_level_key_loop@rot@8:
-   STA   __zpabi_put_sprite_at_cursor__sprite
    JSR   put_sprite_at_cursor
 .loop@24_start:
    JSR   get_key_for_edit_level

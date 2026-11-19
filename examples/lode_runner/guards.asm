@@ -25,76 +25,24 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__local_erase_guard__0	EQU	$80
 __local_guard_blocked_above__0	EQU	$80
 __local_guard_is_supported__0	EQU	$80
-__zpabi_access_compressed_level_data__command	EQU	$80
-__zpabi_access_hi_score_data_from_disk__command	EQU	$80
-__zpabi_add_and_update_score__bcd_points_0	EQU	$80
-__zpabi_append_note__pitch	EQU	$80
-__zpabi_bcd_to_decimal2__bcd	EQU	$80
-__zpabi_char_to_sprite_num__c	EQU	$80
-__zpabi_consider_column__up	EQU	$80
-__zpabi_draw_guard_sprite__sprite	EQU	$80
-__zpabi_draw_sprite_page1__sprite	EQU	$80
-__zpabi_draw_sprite_page2__sprite	EQU	$80
-__zpabi_enter_cell__row	EQU	$80
-__zpabi_guard_can_cross__col	EQU	$80
-__zpabi_guard_left_col_limit__row	EQU	$80
-__zpabi_guard_right_col_limit__row	EQU	$80
-__zpabi_inc_guard_anim_state__first	EQU	$80
-__zpabi_load_level__verbatim	EQU	$80
-__zpabi_load_sound_data__notes_0	EQU	$80
-__zpabi_play_note__pitch	EQU	$80
-__zpabi_put_char__c	EQU	$80
-__zpabi_put_digit__digit	EQU	$80
-__zpabi_put_string__s_0	EQU	$80
-__zpabi_row_to_addr__row	EQU	$80
-__zpabi_sound_delay1__count	EQU	$80
-__zpabi_sound_delay__index	EQU	$80
-__zpabi_to_decimal3__n	EQU	$80
-__zpabi_wait_for_key__cursor	EQU	$80
-__zpabi_wait_for_key_with_cursor_page_1__cursor	EQU	$80
-__local_erase_guard__1	EQU	$81
+__zpabi_consider_column__down	EQU	$80
+__zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
+__zpabi_play_note__y	EQU	$80
 __local_guard_blocked_above__1	EQU	$81
 __local_guard_is_supported__1	EQU	$81
-__zpabi_add_and_update_score__bcd_points_1	EQU	$81
-__zpabi_append_note__duration	EQU	$81
-__zpabi_consider_move__dist	EQU	$81
-__zpabi_enter_cell__col	EQU	$81
-__zpabi_guard_left_col_limit__col	EQU	$81
-__zpabi_guard_right_col_limit__col	EQU	$81
-__zpabi_inc_guard_anim_state__last	EQU	$81
-__zpabi_load_sound_data__notes_1	EQU	$81
-__zpabi_play_note__duration	EQU	$81
-__zpabi_pseudo_distance__row	EQU	$81
-__zpabi_put_string__s_1	EQU	$81
-__zpabi_row_to_addr__page	EQU	$81
-__zpabi_guard_run_at_player__col	EQU	$82
-__zpabi_leave_cell__row	EQU	$82
-__zpabi_play_note__y	EQU	$82
-__zpabi_consider_column__down	EQU	$83
-__zpabi_consider_move__action	EQU	$83
-__zpabi_leave_cell__col	EQU	$83
-__local_guard_run_at_player__col	EQU	$84
-__zpabi_consider_column__row	EQU	$84
-__zpabi_guard_find_candidate_row_above__row	EQU	$84
-__zpabi_guard_find_candidate_row_below__row	EQU	$84
+__zpabi_consider_column__up	EQU	$81
+__local_move_guards__pattern	EQU	$82
+__local_move_guard__0	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
-__local_draw_guard_sprite__0	EQU	$88
-__local_inc_guard_anim_state__0	EQU	$88
-__zpabi_consider_column__col	EQU	$88
-__zpabi_guard_find_candidate_row_above__col	EQU	$88
-__zpabi_guard_find_candidate_row_below__col	EQU	$88
-__zpabi_pseudo_distance__col	EQU	$88
 DIGITS	EQU	$89
 FRAME_PERIOD	EQU	$8C
 GUARD_COUNT	EQU	$8D
 SCORE	EQU	$8E
-__zpabi_guard_can_cross__row	EQU	$92
-__zpabi_guard_run_at_player__row	EQU	$92
 GOLD_COUNT	EQU	$93
 DIDNT_PICK_UP_GOLD	EQU	$94
 INPUT_MODE	EQU	$95
@@ -109,7 +57,6 @@ HI_SCORE_ELIGIBLE	EQU	$9D
 KEY_COMMAND	EQU	$9E
 KEY_COMMAND_LR	EQU	$9F
 DIG_ANIM_STATE	EQU	$A0
-__zpabi_is_floor__sprite	EQU	$A1
 VERBATIM	EQU	$A2
 LADDER_COUNT	EQU	$A3
 FALL_PITCH	EQU	$A4
@@ -121,68 +68,80 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_consider_column__0	EQU	$AE
-__local_enter_cell__0	EQU	$AE
-__local_guard_can_cross__0	EQU	$AE
-__local_guard_in_hole__0	EQU	$AE
-__local_leave_cell__0	EQU	$AE
-__zpabi_draw_sprite_at_pixel_coords__sprite	EQU	$AE
-__zpabi_erase_sprite_at_pixel_coords__sprite	EQU	$AE
-__zpabi_half_screen_col_for__col	EQU	$AE
-__zpabi_screen_row_for__row	EQU	$AE
-__local_consider_column__1	EQU	$AF
-__local_enter_cell__1	EQU	$AF
-__local_guard_can_cross__1	EQU	$AF
-__local_leave_cell__1	EQU	$AF
-__zpabi_draw_sprite_at_pixel_coords__half_col	EQU	$AF
-__zpabi_erase_sprite_at_pixel_coords__half_col	EQU	$AF
-__zpabi_half_screen_col_for__x_adj	EQU	$AF
-__zpabi_screen_row_for__y_adj	EQU	$AF
-__local_leave_cell__2	EQU	$B0
-__zpabi_draw_sprite_at_pixel_coords__row	EQU	$B0
-__zpabi_erase_sprite_at_pixel_coords__row	EQU	$B0
-__local_move_guards__pattern	EQU	$B1
-__local_move_guard__0	EQU	$B3
-__local_guard_fall__0	EQU	$B4
-__local_determine_guard_move__c	EQU	$B5
-__local_guard_fall__1	EQU	$B5
-__local_try_guard_move_down__0	EQU	$B5
-__local_try_guard_move_left__0	EQU	$B5
-__local_try_guard_move_right__0	EQU	$B5
-__local_determine_guard_move__0	EQU	$B6
-__local_guard_fall_into_row_below__0	EQU	$B6
-__local_try_guard_move_down__1	EQU	$B6
-__local_try_guard_move_left__1	EQU	$B6
-__local_try_guard_move_right__1	EQU	$B6
-__local_guard_fall_into_row_below__1	EQU	$B7
-__local_check_for_gold_picked_up_by_guard__0	EQU	$B8
-__local_guard_fall_into_row_below__2	EQU	$B8
-__local_check_for_gold_picked_up_by_guard__1	EQU	$B9
-__local_guard_drop_gold__1	EQU	$B9
-__local_guard_find_candidate_row_above__0	EQU	$B9
-__local_guard_find_candidate_row_below__right_row	EQU	$B9
-__local_guard_left_col_limit__col	EQU	$B9
-__local_guard_right_col_limit__col	EQU	$B9
-__local_check_for_gold_picked_up_by_guard__col	EQU	$BA
-__local_guard_drop_gold__2	EQU	$BA
-__local_guard_find_candidate_row_above__1	EQU	$BA
-__local_guard_find_candidate_row_below__0	EQU	$BA
-__local_guard_left_col_limit__0	EQU	$BA
-__local_guard_right_col_limit__0	EQU	$BA
-__local_check_for_gold_picked_up_by_guard__row	EQU	$BB
-__local_guard_find_candidate_row_above__2	EQU	$BB
-__local_guard_find_candidate_row_below__1	EQU	$BB
-__local_guard_left_col_limit__1	EQU	$BB
-__local_guard_right_col_limit__1	EQU	$BB
-__local_guard_find_candidate_row_above__3	EQU	$BC
-__local_guard_find_candidate_row_below__row	EQU	$BC
-__local_guard_left_col_limit__2	EQU	$BC
-__local_guard_right_col_limit__2	EQU	$BC
-__local_guard_find_candidate_row_above__4	EQU	$BD
-__local_guard_left_col_limit__3	EQU	$BD
-__local_guard_right_col_limit__3	EQU	$BD
-__local_guard_find_candidate_row_above__5	EQU	$BE
-__local_guard_find_candidate_row_above__row	EQU	$BF
+__local_determine_guard_move__c	EQU	$AE
+__local_guard_fall__0	EQU	$AE
+__local_try_guard_move_down__0	EQU	$AE
+__local_try_guard_move_left__0	EQU	$AE
+__local_try_guard_move_right__0	EQU	$AE
+__local_determine_guard_move__0	EQU	$AF
+__local_guard_fall__1	EQU	$AF
+__local_try_guard_move_down__1	EQU	$AF
+__local_try_guard_move_left__1	EQU	$AF
+__local_try_guard_move_right__1	EQU	$AF
+__local_try_guard_move_up__col	EQU	$AF
+__local_guard_fall_into_row_below__0	EQU	$B0
+__local_try_guard_move_down__col	EQU	$B0
+__local_guard_fall_into_row_below__1	EQU	$B1
+__local_try_guard_move_left__row	EQU	$B1
+__local_try_guard_move_right__row	EQU	$B1
+__local_check_for_gold_picked_up_by_guard__0	EQU	$B2
+__local_draw_guard_sprite__0	EQU	$B2
+__local_erase_guard__0	EQU	$B2
+__local_guard_fall_into_row_below__2	EQU	$B2
+__local_inc_guard_anim_state__0	EQU	$B2
+__local_check_for_gold_picked_up_by_guard__1	EQU	$B3
+__local_consider_column__0	EQU	$B3
+__local_draw_guard_sprite__sprite	EQU	$B3
+__local_erase_guard__1	EQU	$B3
+__local_guard_drop_gold__1	EQU	$B3
+__local_guard_fall_into_row_below__col	EQU	$B3
+__local_guard_in_hole__0	EQU	$B3
+__local_guard_left_col_limit__col	EQU	$B3
+__local_guard_right_col_limit__col	EQU	$B3
+__local_check_for_gold_picked_up_by_guard__col	EQU	$B4
+__local_consider_column__1	EQU	$B4
+__local_enter_cell__0	EQU	$B4
+__local_guard_drop_gold__2	EQU	$B4
+__local_guard_left_col_limit__0	EQU	$B4
+__local_guard_right_col_limit__0	EQU	$B4
+__local_guard_run_at_player__col	EQU	$B4
+__local_inc_guard_anim_state__first	EQU	$B4
+__local_leave_cell__0	EQU	$B4
+__local_check_for_gold_picked_up_by_guard__row	EQU	$B5
+__local_consider_column__col	EQU	$B5
+__local_enter_cell__1	EQU	$B5
+__local_guard_left_col_limit__1	EQU	$B5
+__local_guard_right_col_limit__1	EQU	$B5
+__local_guard_run_at_player__row	EQU	$B5
+__local_leave_cell__1	EQU	$B5
+__local_consider_column__row	EQU	$B6
+__local_enter_cell__row	EQU	$B6
+__local_guard_can_cross__0	EQU	$B6
+__local_guard_left_col_limit__2	EQU	$B6
+__local_guard_right_col_limit__2	EQU	$B6
+__local_leave_cell__2	EQU	$B6
+__local_guard_can_cross__1	EQU	$B7
+__local_guard_find_candidate_row_above__0	EQU	$B7
+__local_guard_find_candidate_row_below__right_row	EQU	$B7
+__local_guard_left_col_limit__3	EQU	$B7
+__local_guard_right_col_limit__3	EQU	$B7
+__local_leave_cell__row	EQU	$B7
+__local_pseudo_distance__col	EQU	$B7
+__local_guard_can_cross__row	EQU	$B8
+__local_guard_find_candidate_row_above__1	EQU	$B8
+__local_guard_find_candidate_row_below__0	EQU	$B8
+__local_guard_left_col_limit__row	EQU	$B8
+__local_guard_right_col_limit__row	EQU	$B8
+__local_pseudo_distance__row	EQU	$B8
+__local_guard_find_candidate_row_above__2	EQU	$B9
+__local_guard_find_candidate_row_below__1	EQU	$B9
+__local_guard_find_candidate_row_above__3	EQU	$BA
+__local_guard_find_candidate_row_below__row	EQU	$BA
+__local_guard_find_candidate_row_above__4	EQU	$BB
+__local_guard_find_candidate_row_below__col	EQU	$BB
+__local_guard_find_candidate_row_above__5	EQU	$BC
+__local_guard_find_candidate_row_above__row	EQU	$BD
+__local_guard_find_candidate_row_above__col	EQU	$BE
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -243,99 +202,99 @@ DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
 ; def check_for_gold_picked_up_by_guard params= locals=__local_check_for_gold_picked_up_by_guard__0,__local_check_for_gold_picked_up_by_guard__1,__local_check_for_gold_picked_up_by_guard__col,__local_check_for_gold_picked_up_by_guard__row indirect=false in_cycle=false
-; def consider_column params=__zpabi_consider_column__row,__zpabi_consider_column__col,__zpabi_consider_column__down,__zpabi_consider_column__up locals=__local_consider_column__0,__local_consider_column__1,__local_consider_column__2 indirect=false in_cycle=false
-; def consider_move params=__zpabi_consider_move__dist,__zpabi_consider_move__action locals= indirect=false in_cycle=false
-; def determine_guard_move params= locals=__local_determine_guard_move__c,__local_determine_guard_move__0,__local_determine_guard_move__1,__local_determine_guard_move__2 indirect=false in_cycle=false
-; def draw_gold_at_game_cell params= locals=__local_draw_gold_at_game_cell__0,__local_draw_gold_at_game_cell__1 indirect=false in_cycle=false
+; def consider_column params=__zpabi_consider_column__row,__zpabi_consider_column__col,__zpabi_consider_column__down,__zpabi_consider_column__up locals=__local_consider_column__0,__local_consider_column__1,__local_consider_column__col,__local_consider_column__row indirect=false in_cycle=false param_regs=A,X,,
+; def consider_move params=__zpabi_consider_move__dist,__zpabi_consider_move__action locals=__local_consider_move__action,__local_consider_move__dist indirect=false in_cycle=false param_regs=A,X
+; def determine_guard_move params= locals=__local_determine_guard_move__c,__local_determine_guard_move__0,__local_determine_guard_move__row,__local_determine_guard_move__col,__local_determine_guard_move__1 indirect=false in_cycle=false
+; def draw_gold_at_game_cell params= locals=__local_draw_gold_at_game_cell__0 indirect=false in_cycle=false
 ; def draw_guard params= locals=__local_draw_guard__0 indirect=false in_cycle=false
-; def draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite locals=__local_draw_guard_sprite__0 indirect=false in_cycle=false
-; def enter_cell params=__zpabi_enter_cell__row,__zpabi_enter_cell__col locals=__local_enter_cell__0,__local_enter_cell__1 indirect=false in_cycle=false
+; def draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite locals=__local_draw_guard_sprite__0,__local_draw_guard_sprite__sprite indirect=false in_cycle=false param_regs=A
+; def enter_cell params=__zpabi_enter_cell__row,__zpabi_enter_cell__col locals=__local_enter_cell__0,__local_enter_cell__1,__local_enter_cell__row indirect=false in_cycle=false param_regs=A,X
 ; def erase_guard params= locals=__local_erase_guard__0,__local_erase_guard__1 indirect=false in_cycle=false
 ; def guard_blocked_above params= locals=__local_guard_blocked_above__0,__local_guard_blocked_above__1 indirect=false in_cycle=false carry=true
-; def guard_can_cross params=__zpabi_guard_can_cross__row,__zpabi_guard_can_cross__col locals=__local_guard_can_cross__0,__local_guard_can_cross__1 indirect=false in_cycle=false carry=true
+; def guard_can_cross params=__zpabi_guard_can_cross__row,__zpabi_guard_can_cross__col locals=__local_guard_can_cross__0,__local_guard_can_cross__1,__local_guard_can_cross__row indirect=false in_cycle=false param_regs=A,X carry=true
 ; def guard_do_nothing params= locals=__local_guard_do_nothing__0 indirect=false in_cycle=false
 ; def guard_drop_gold params= locals=__local_guard_drop_gold__0,__local_guard_drop_gold__1,__local_guard_drop_gold__2,__local_guard_drop_gold__col indirect=false in_cycle=false
 ; def guard_fall params= locals=__local_guard_fall__0,__local_guard_fall__1 indirect=false in_cycle=false
-; def guard_fall_into_row_below params= locals=__local_guard_fall_into_row_below__0,__local_guard_fall_into_row_below__1,__local_guard_fall_into_row_below__2,__local_guard_fall_into_row_below__3 indirect=false in_cycle=false
-; def guard_find_candidate_row_above params=__zpabi_guard_find_candidate_row_above__row,__zpabi_guard_find_candidate_row_above__col locals=__local_guard_find_candidate_row_above__0,__local_guard_find_candidate_row_above__1,__local_guard_find_candidate_row_above__2,__local_guard_find_candidate_row_above__3,__local_guard_find_candidate_row_above__4,__local_guard_find_candidate_row_above__5,__local_guard_find_candidate_row_above__row indirect=false in_cycle=false
-; def guard_find_candidate_row_below params=__zpabi_guard_find_candidate_row_below__row,__zpabi_guard_find_candidate_row_below__col locals=__local_guard_find_candidate_row_below__right_row,__local_guard_find_candidate_row_below__0,__local_guard_find_candidate_row_below__1,__local_guard_find_candidate_row_below__row,__local_guard_find_candidate_row_below__2 indirect=false in_cycle=false
+; def guard_fall_into_row_below params= locals=__local_guard_fall_into_row_below__0,__local_guard_fall_into_row_below__1,__local_guard_fall_into_row_below__2,__local_guard_fall_into_row_below__col indirect=false in_cycle=false
+; def guard_find_candidate_row_above params=__zpabi_guard_find_candidate_row_above__row,__zpabi_guard_find_candidate_row_above__col locals=__local_guard_find_candidate_row_above__0,__local_guard_find_candidate_row_above__1,__local_guard_find_candidate_row_above__2,__local_guard_find_candidate_row_above__3,__local_guard_find_candidate_row_above__4,__local_guard_find_candidate_row_above__5,__local_guard_find_candidate_row_above__row,__local_guard_find_candidate_row_above__col indirect=false in_cycle=false param_regs=A,X
+; def guard_find_candidate_row_below params=__zpabi_guard_find_candidate_row_below__row,__zpabi_guard_find_candidate_row_below__col locals=__local_guard_find_candidate_row_below__right_row,__local_guard_find_candidate_row_below__0,__local_guard_find_candidate_row_below__1,__local_guard_find_candidate_row_below__row,__local_guard_find_candidate_row_below__col,__local_guard_find_candidate_row_below__2 indirect=false in_cycle=false param_regs=A,X
 ; def guard_half_col params= locals=__local_guard_half_col__0 indirect=false in_cycle=false
 ; def guard_in_hole params= locals=__local_guard_in_hole__0,__local_guard_in_hole__1 indirect=false in_cycle=false carry=true
 ; def guard_is_supported params= locals=__local_guard_is_supported__0,__local_guard_is_supported__1 indirect=false in_cycle=false carry=true
-; def guard_left_col_limit params=__zpabi_guard_left_col_limit__row,__zpabi_guard_left_col_limit__col locals=__local_guard_left_col_limit__col,__local_guard_left_col_limit__0,__local_guard_left_col_limit__1,__local_guard_left_col_limit__2,__local_guard_left_col_limit__3 indirect=false in_cycle=false
-; def guard_right_col_limit params=__zpabi_guard_right_col_limit__row,__zpabi_guard_right_col_limit__col locals=__local_guard_right_col_limit__col,__local_guard_right_col_limit__0,__local_guard_right_col_limit__1,__local_guard_right_col_limit__2,__local_guard_right_col_limit__3 indirect=false in_cycle=false
-; def guard_run_at_player params=__zpabi_guard_run_at_player__row,__zpabi_guard_run_at_player__col locals=__local_guard_run_at_player__0,__local_guard_run_at_player__col indirect=false in_cycle=false
+; def guard_left_col_limit params=__zpabi_guard_left_col_limit__row,__zpabi_guard_left_col_limit__col locals=__local_guard_left_col_limit__col,__local_guard_left_col_limit__0,__local_guard_left_col_limit__1,__local_guard_left_col_limit__2,__local_guard_left_col_limit__3,__local_guard_left_col_limit__row indirect=false in_cycle=false param_regs=A,X
+; def guard_right_col_limit params=__zpabi_guard_right_col_limit__row,__zpabi_guard_right_col_limit__col locals=__local_guard_right_col_limit__col,__local_guard_right_col_limit__0,__local_guard_right_col_limit__1,__local_guard_right_col_limit__2,__local_guard_right_col_limit__3,__local_guard_right_col_limit__row indirect=false in_cycle=false param_regs=A,X
+; def guard_run_at_player params=__zpabi_guard_run_at_player__row,__zpabi_guard_run_at_player__col locals=__local_guard_run_at_player__0,__local_guard_run_at_player__col,__local_guard_run_at_player__row indirect=false in_cycle=false param_regs=A,X
 ; def guard_screen_row params= locals=__local_guard_screen_row__0 indirect=false in_cycle=false
 ; def guard_take_move params= locals=__local_guard_take_move__0 indirect=false in_cycle=false
-; def inc_guard_anim_state params=__zpabi_inc_guard_anim_state__first,__zpabi_inc_guard_anim_state__last locals=__local_inc_guard_anim_state__0 indirect=false in_cycle=false
-; def is_floor params=__zpabi_is_floor__sprite locals=__local_is_floor__0 indirect=false in_cycle=false carry=true
-; def leave_cell params=__zpabi_leave_cell__row,__zpabi_leave_cell__col locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2 indirect=false in_cycle=false
+; def inc_guard_anim_state params=__zpabi_inc_guard_anim_state__first,__zpabi_inc_guard_anim_state__last locals=__local_inc_guard_anim_state__0,__local_inc_guard_anim_state__last,__local_inc_guard_anim_state__first indirect=false in_cycle=false param_regs=A,X
+; def is_floor params=__zpabi_is_floor__sprite locals=__local_is_floor__sprite indirect=false in_cycle=false param_regs=A carry=true
+; def leave_cell params=__zpabi_leave_cell__row,__zpabi_leave_cell__col locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2,__local_leave_cell__row indirect=false in_cycle=false param_regs=A,X
 ; def load_guard_data params= locals= indirect=false in_cycle=false
 ; def move_guard params= locals=__local_move_guard__0 indirect=false in_cycle=false
 ; def move_guards params= locals=__local_move_guards__pattern,__local_move_guards__0 indirect=false in_cycle=false
 ; def nudge_guard_towards_exact_column params= locals= indirect=false in_cycle=false
 ; def nudge_guard_towards_exact_row params= locals= indirect=false in_cycle=false
-; def pseudo_distance params=__zpabi_pseudo_distance__row,__zpabi_pseudo_distance__col locals=__local_pseudo_distance__0 indirect=false in_cycle=false
+; def pseudo_distance params=__zpabi_pseudo_distance__row,__zpabi_pseudo_distance__col locals=__local_pseudo_distance__col,__local_pseudo_distance__row indirect=false in_cycle=false param_regs=A,X
 ; def store_guard_data params= locals= indirect=false in_cycle=false
-; def try_guard_move_down params= locals=__local_try_guard_move_down__0,__local_try_guard_move_down__1,__local_try_guard_move_down__2 indirect=false in_cycle=false
-; def try_guard_move_left params= locals=__local_try_guard_move_left__0,__local_try_guard_move_left__1,__local_try_guard_move_left__col indirect=false in_cycle=false
-; def try_guard_move_right params= locals=__local_try_guard_move_right__0,__local_try_guard_move_right__1,__local_try_guard_move_right__col indirect=false in_cycle=false
-; def try_guard_move_up params= locals=__local_try_guard_move_up__0 indirect=false in_cycle=false
+; def try_guard_move_down params= locals=__local_try_guard_move_down__0,__local_try_guard_move_down__1,__local_try_guard_move_down__col indirect=false in_cycle=false
+; def try_guard_move_left params= locals=__local_try_guard_move_left__0,__local_try_guard_move_left__1,__local_try_guard_move_left__col,__local_try_guard_move_left__row indirect=false in_cycle=false
+; def try_guard_move_right params= locals=__local_try_guard_move_right__0,__local_try_guard_move_right__1,__local_try_guard_move_right__col,__local_try_guard_move_right__row indirect=false in_cycle=false
+; def try_guard_move_up params= locals=__local_try_guard_move_up__0,__local_try_guard_move_up__col indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
-; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command
+; ext access_compressed_level_data params=__zpabi_access_compressed_level_data__command param_regs=A
 ; ext access_disk_or_reset_game params=
-; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command
-; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1
-; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration
+; ext access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command param_regs=A
+; ext add_and_update_score params=__zpabi_add_and_update_score__bcd_points_0,__zpabi_add_and_update_score__bcd_points_1 param_regs=A,X
+; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
-; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd
+; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
-; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c
+; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext check_for_input params=
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
 ; ext detect_lack_of_joystick params=
-; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row
-; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite
-; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite
+; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
+; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
+; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
-; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row
-; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj
+; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext iris_wipe params=
 ; ext level_editor params=
-; ext load_level params=__zpabi_load_level__verbatim
-; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1
+; ext load_level params=__zpabi_load_level__verbatim param_regs=A
+; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
 ; ext move_player params=
 ; ext newline params=
-; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y
+; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
-; ext put_char params=__zpabi_put_char__c
-; ext put_digit params=__zpabi_put_digit__digit
+; ext put_char params=__zpabi_put_char__c param_regs=A
+; ext put_digit params=__zpabi_put_digit__digit param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
 ; ext put_status_lives params=
-; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1
+; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
-; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page
-; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj
-; ext sound_delay params=__zpabi_sound_delay__index
-; ext sound_delay1 params=__zpabi_sound_delay1__count
+; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
+; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
+; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
+; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
-; ext to_decimal3 params=__zpabi_to_decimal3__n
-; ext wait_for_key params=__zpabi_wait_for_key__cursor
-; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor
+; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
+; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
+; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call check_for_gold_picked_up_by_guard -> draw_sprite_page2
 ; call check_for_gold_picked_up_by_guard -> erase_sprite_at_pixel_coords
@@ -427,14 +386,6 @@ DISK_IO	EQU	$C088
 ; call try_guard_move_up -> inc_guard_anim_state
 ; call try_guard_move_up -> leave_cell
 ; call try_guard_move_up -> nudge_guard_towards_exact_column
-; share member=consider_column:__zpabi_consider_column__down member=consider_move:__zpabi_consider_move__action live=consider_column:guard_find_candidate_row_below,pseudo_distance
-; share member=guard_can_cross:__zpabi_guard_can_cross__row member=guard_run_at_player:__zpabi_guard_run_at_player__row holder=determine_guard_move live=determine_guard_move:consider_column,guard_in_hole,guard_left_col_limit,guard_right_col_limit,guard_run_at_player live=guard_run_at_player:guard_can_cross forward=determine_guard_move>guard_run_at_player forward=guard_run_at_player>guard_can_cross writer=determine_guard_move
-; share member=guard_can_cross:__zpabi_guard_can_cross__col holder=guard_run_at_player live=guard_run_at_player:guard_can_cross writer=guard_run_at_player
-; share member=consider_column:__zpabi_consider_column__row member=guard_find_candidate_row_above:__zpabi_guard_find_candidate_row_above__row member=guard_find_candidate_row_below:__zpabi_guard_find_candidate_row_below__row live=consider_column:consider_move,guard_find_candidate_row_below,pseudo_distance forward=consider_column>guard_find_candidate_row_above forward=consider_column>guard_find_candidate_row_below
-; share member=consider_column:__zpabi_consider_column__col member=guard_find_candidate_row_above:__zpabi_guard_find_candidate_row_above__col member=guard_find_candidate_row_below:__zpabi_guard_find_candidate_row_below__col member=pseudo_distance:__zpabi_pseudo_distance__col holder=determine_guard_move live=consider_column:consider_move,guard_find_candidate_row_above,guard_find_candidate_row_below,pseudo_distance live=determine_guard_move:consider_column forward=consider_column>guard_find_candidate_row_above forward=consider_column>guard_find_candidate_row_below forward=consider_column>pseudo_distance writer=determine_guard_move
-; share member=guard_run_at_player:__zpabi_guard_run_at_player__col holder=determine_guard_move live=determine_guard_move:consider_column,guard_in_hole,guard_left_col_limit,guard_right_col_limit,guard_run_at_player forward=determine_guard_move>guard_run_at_player writer=determine_guard_move
-; share member=leave_cell:__zpabi_leave_cell__row holder=try_guard_move_left holder=try_guard_move_right live=try_guard_move_left:check_for_gold_picked_up_by_guard,enter_cell,erase_guard,guard_drop_gold,leave_cell,nudge_guard_towards_exact_row live=try_guard_move_right:check_for_gold_picked_up_by_guard,enter_cell,erase_guard,guard_drop_gold,leave_cell,nudge_guard_towards_exact_row forward=try_guard_move_left>leave_cell forward=try_guard_move_right>leave_cell writer=try_guard_move_left writer=try_guard_move_right
-; share member=leave_cell:__zpabi_leave_cell__col holder=guard_fall_into_row_below holder=try_guard_move_down holder=try_guard_move_up live=guard_fall_into_row_below:draw_gold_at_game_cell,leave_cell live=try_guard_move_down:erase_guard,guard_drop_gold,leave_cell,nudge_guard_towards_exact_column live=try_guard_move_up:guard_drop_gold,leave_cell forward=guard_fall_into_row_below>leave_cell forward=try_guard_move_down>leave_cell forward=try_guard_move_up>leave_cell writer=guard_fall_into_row_below writer=try_guard_move_down writer=try_guard_move_up
 ; item move_guards section=.text local=false zero=false
 ; item guard_in_hole section=.text local=true zero=false
 ; item store_guard_data section=.text local=true zero=false
@@ -451,30 +402,24 @@ DISK_IO	EQU	$C088
 ; item nudge_guard_towards_exact_column section=.text local=true zero=false
 ; item nudge_guard_towards_exact_row section=.text local=true zero=false
 ; item leave_cell section=.text local=true zero=false
-; item leave_cell@run4 section=.text local=true zero=false
 ; item enter_cell section=.text local=true zero=false
 ; item is_floor section=.text local=true zero=false
 ; item guard_is_supported section=.text local=true zero=false
 ; item guard_fall_into_row_below section=.text local=true zero=false
-; item guard_fall_into_row_below@run1 section=.text local=true zero=false
 ; item guard_fall section=.text local=true zero=false
-; item guard_fall@run6 section=.text local=true zero=false
+; item guard_fall@run0 section=.text local=true zero=false
 ; item guard_do_nothing section=.text local=true zero=false
 ; item guard_blocked_above section=.text local=true zero=false
 ; item try_guard_move_up section=.text local=true zero=false
-; item try_guard_move_up@run2 section=.text local=true zero=false
+; item try_guard_move_up@tail1 section=.text local=true zero=false
 ; item try_guard_move_up@tail0 section=.text local=true zero=false
-; item try_guard_move_up@tail0@tail1 section=.text local=true zero=false
 ; item try_guard_move_down section=.text local=true zero=false
 ; item try_guard_move_left section=.text local=true zero=false
-; item try_guard_move_left@run5 section=.text local=true zero=false
-; item try_guard_move_left@run3 section=.text local=true zero=false
 ; item try_guard_move_right section=.text local=true zero=false
 ; item guard_take_move section=.text local=true zero=false
 ; item move_guard section=.text local=true zero=false
 ; item pseudo_distance section=.text local=true zero=false
 ; item guard_find_candidate_row_above section=.text local=true zero=false
-; item guard_find_candidate_row_above@run0 section=.text local=true zero=false
 ; item guard_find_candidate_row_below section=.text local=true zero=false
 ; item guard_left_col_limit section=.text local=true zero=false
 ; item guard_right_col_limit section=.text local=true zero=false
@@ -646,19 +591,15 @@ load_guard_data:
 guard_half_col:
    SUBROUTINE
 
+   LDX   GUARD_X_ADJ
    LDA   GUARD_LOC_COL
-   STA   __zpabi_half_screen_col_for__col
-   LDA   GUARD_X_ADJ
-   STA   __zpabi_half_screen_col_for__x_adj
    JMP   half_screen_col_for
 
 guard_screen_row:
    SUBROUTINE
 
+   LDX   GUARD_Y_ADJ
    LDA   GUARD_LOC_ROW
-   STA   __zpabi_screen_row_for__row
-   LDA   GUARD_Y_ADJ
-   STA   __zpabi_screen_row_for__y_adj
    JMP   screen_row_for
 
 erase_guard:
@@ -671,23 +612,20 @@ erase_guard:
    STA   __local_erase_guard__0
    JSR   guard_screen_row
    STA   __zpabi_erase_sprite_at_pixel_coords__row
+   LDX   __local_erase_guard__0
    LDA   __local_erase_guard__1
-   STA   __zpabi_erase_sprite_at_pixel_coords__sprite
-   LDA   __local_erase_guard__0
-   STA   __zpabi_erase_sprite_at_pixel_coords__half_col
    JMP   erase_sprite_at_pixel_coords
 
 draw_guard_sprite:
    SUBROUTINE
 
+   STA   __local_draw_guard_sprite__sprite
    JSR   guard_half_col
    STA   __local_draw_guard_sprite__0
    JSR   guard_screen_row
    STA   __zpabi_draw_sprite_at_pixel_coords__row
-   LDA   __zpabi_draw_guard_sprite__sprite
-   STA   __zpabi_draw_sprite_at_pixel_coords__sprite
-   LDA   __local_draw_guard_sprite__0
-   STA   __zpabi_draw_sprite_at_pixel_coords__half_col
+   LDX   __local_draw_guard_sprite__0
+   LDA   __local_draw_guard_sprite__sprite
    JMP   draw_sprite_at_pixel_coords
 
 draw_guard:
@@ -695,23 +633,21 @@ draw_guard:
 
    LDX   GUARD_ANIM_STATE
    LDA   GUARD_ANIM_SPRITES,X
-   STA   __zpabi_draw_guard_sprite__sprite
    JMP   draw_guard_sprite
 
 draw_gold_at_game_cell:
    SUBROUTINE
 
    LDA   #$07
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDX   GAME_COLNUM
-   LDA   HALF_SCREEN_COL_TABLE,X
+   LDY   HALF_SCREEN_COL_TABLE,X
    LDX   GAME_ROWNUM
-   LDY   #$07
-   STY   __zpabi_draw_sprite_at_pixel_coords__sprite
-   STA   __zpabi_draw_sprite_at_pixel_coords__half_col
    LDA   SCREEN_ROW_TABLE,X
    STA   __zpabi_draw_sprite_at_pixel_coords__row
+   TYA
+   TAX
+   LDA   #$07
    JMP   draw_sprite_at_pixel_coords
 
 check_for_gold_picked_up_by_guard:
@@ -756,16 +692,15 @@ check_for_gold_picked_up_by_guard:
    STA   (__local_check_for_gold_picked_up_by_guard__0),Y
    STX   GAME_ROWNUM
    STY   GAME_COLNUM
-   STA   __zpabi_draw_sprite_page2__sprite
    JSR   draw_sprite_page2
    LDX   __local_check_for_gold_picked_up_by_guard__col
-   LDA   HALF_SCREEN_COL_TABLE,X
+   LDY   HALF_SCREEN_COL_TABLE,X
    LDX   __local_check_for_gold_picked_up_by_guard__row
-   LDY   #$07
-   STY   __zpabi_erase_sprite_at_pixel_coords__sprite
-   STA   __zpabi_erase_sprite_at_pixel_coords__half_col
    LDA   SCREEN_ROW_TABLE,X
    STA   __zpabi_erase_sprite_at_pixel_coords__row
+   TYA
+   TAX
+   LDA   #$07
    JMP   erase_sprite_at_pixel_coords
 
 guard_drop_gold:
@@ -801,18 +736,17 @@ guard_drop_gold:
 inc_guard_anim_state:
    SUBROUTINE
 
+   STA   __local_inc_guard_anim_state__first
    LDA   GUARD_ANIM_STATE
    CLC
    ADC   #$01
    STA   __local_inc_guard_anim_state__0
    STA   GUARD_ANIM_STATE
-   LDA   __zpabi_inc_guard_anim_state__first
+   LDA   __local_inc_guard_anim_state__first
    CMP   __local_inc_guard_anim_state__0
    BCS   .vthread@0
-   LDA   __zpabi_inc_guard_anim_state__last
-   CMP   __local_inc_guard_anim_state__0
+   CPX   __local_inc_guard_anim_state__0
    BCS   .if_end@17
-   LDA   __zpabi_inc_guard_anim_state__first
 .vthread@0:
    STA   GUARD_ANIM_STATE
 .if_end@17:
@@ -853,11 +787,14 @@ nudge_guard_towards_exact_row:
 leave_cell:
    SUBROUTINE
 
-   JSR   leave_cell@run4
+   STA   __local_leave_cell__row
+   TXA
+   TAY
+   LDX   __local_leave_cell__row
+   LDA   LEVEL_BG@lo,X
    STA   __local_leave_cell__0
    LDA   LEVEL_BG@hi,X
    STA   __local_leave_cell__1
-   LDY   __zpabi_leave_cell__col
    LDA   (__local_leave_cell__0),Y
    STA   __local_leave_cell__2
    CMP   #$01
@@ -871,22 +808,17 @@ leave_cell:
    STA   (__local_leave_cell__0),Y
    RTS
 
-leave_cell@run4:
-   SUBROUTINE
-
-   LDX   __zpabi_leave_cell__row
-   LDA   LEVEL_BG@lo,X
-   RTS
-
 enter_cell:
    SUBROUTINE
 
-   LDX   __zpabi_enter_cell__row
+   STA   __local_enter_cell__row
+   TXA
+   TAY
+   LDX   __local_enter_cell__row
    LDA   LEVEL_BG@lo,X
    STA   __local_enter_cell__0
    LDA   LEVEL_MAP@hi,X
    STA   __local_enter_cell__1
-   LDY   __zpabi_enter_cell__col
    LDA   (__local_enter_cell__0),Y
    CMP   #$09
    BNE   .if_end@26
@@ -903,7 +835,6 @@ enter_cell:
 is_floor:
    SUBROUTINE
 
-   LDA   __zpabi_is_floor__sprite
    CMP   #$01
    BEQ   .or_true@27
    CMP   #$02
@@ -963,17 +894,18 @@ guard_is_supported:
    LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_is_supported__1
    LDA   (__local_guard_is_supported__0),Y
-   STA   __zpabi_is_floor__sprite
    JMP   is_floor
 
 guard_fall_into_row_below:
    SUBROUTINE
 
    LDA   GUARD_LOC_COL
-   STA   __zpabi_leave_cell__col
+   STA   __local_guard_fall_into_row_below__col
    LDA   #$00
    STA   GUARD_Y_ADJ
-   JSR   guard_fall_into_row_below@run1
+   LDX   GUARD_LOC_COL
+   LDA   GUARD_LOC_ROW
+   JSR   leave_cell
    LDA   GUARD_LOC_ROW
    CLC
    ADC   #$01
@@ -984,7 +916,7 @@ guard_fall_into_row_below:
    STA   __local_guard_fall_into_row_below__0
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_fall_into_row_below__1
-   LDY   __zpabi_leave_cell__col
+   LDY   __local_guard_fall_into_row_below__col
    LDA   (__local_guard_fall_into_row_below__0),Y
    CMP   #$01
    BNE   .if_end@43
@@ -1015,23 +947,14 @@ guard_fall_into_row_below:
    LDA   #$00
    STA   GUARD_GOLD_TIMER
 .if_end@43:
+   LDX   __local_guard_fall_into_row_below__col
    LDA   __local_guard_fall_into_row_below__2
-   STA   __zpabi_enter_cell__row
-   LDA   __zpabi_leave_cell__col
-   STA   __zpabi_enter_cell__col
    JMP   enter_cell
-
-guard_fall_into_row_below@run1:
-   SUBROUTINE
-
-   LDA   GUARD_LOC_ROW
-   STA   __zpabi_leave_cell__row
-   JMP   leave_cell
 
 guard_fall:
    SUBROUTINE
 
-   JSR   guard_fall@run6
+   JSR   guard_fall@run0
    LDA   GUARD_FACING_DIRECTION
    BPL   .cond_else@46
    LDA   #$06
@@ -1065,22 +988,18 @@ guard_fall:
 .if_end@52:
    LDA   GUARD_GOLD_TIMER_START_VALUE
    STA   GUARD_GOLD_TIMER
+   LDX   #$00
    LDA   #$75
-   STA   __zpabi_add_and_update_score__bcd_points_0
-   LDA   #$00
-   STA   __zpabi_add_and_update_score__bcd_points_1
    JSR   add_and_update_score
+   LDX   #>guard_in_hole_tune
    LDA   #<guard_in_hole_tune
-   STA   __zpabi_load_sound_data__notes_0
-   LDA   #>guard_in_hole_tune
-   STA   __zpabi_load_sound_data__notes_1
    JSR   load_sound_data
 .if_end@51:
 .if_end@50:
 .if_end@48:
    JMP   draw_guard
 
-guard_fall@run6:
+guard_fall@run0:
    SUBROUTINE
 
    JSR   erase_guard
@@ -1130,42 +1049,35 @@ try_guard_move_up:
    BCC   .if_end@63
    JMP   guard_do_nothing
 .if_end@63:
-   JSR   guard_fall@run6
+   JSR   guard_fall@run0
    LDA   GUARD_LOC_COL
-   STA   __zpabi_leave_cell__col
+   STA   __local_try_guard_move_up__col
    DEC   GUARD_Y_ADJ
    BPL   .if_else@65
    JSR   guard_drop_gold
-   JSR   guard_fall_into_row_below@run1
+   LDX   __local_try_guard_move_up__col
+   LDA   GUARD_LOC_ROW
+   JSR   leave_cell
    DEC   GUARD_LOC_ROW
-   JSR   try_guard_move_up@run2
+   LDA   GUARD_LOC_ROW
+   LDX   __local_try_guard_move_up__col
+   JSR   enter_cell
    LDA   #$04
    STA   GUARD_Y_ADJ
    JMP   .if_end@64
 .if_else@65:
    JSR   check_for_gold_picked_up_by_guard
 .if_end@64:
+   JMP   try_guard_move_up@tail1
+
+try_guard_move_up@tail1:
+   SUBROUTINE
+
+   LDX   #$0F
+   LDA   #$0E
    JMP   try_guard_move_up@tail0
 
-try_guard_move_up@run2:
-   SUBROUTINE
-
-   LDA   GUARD_LOC_ROW
-   STA   __zpabi_enter_cell__row
-   LDA   __zpabi_leave_cell__col
-   STA   __zpabi_enter_cell__col
-   JMP   enter_cell
-
 try_guard_move_up@tail0:
-   SUBROUTINE
-
-   LDA   #$0E
-   STA   __zpabi_inc_guard_anim_state__first
-   LDA   #$0F
-   STA   __zpabi_inc_guard_anim_state__last
-   JMP   try_guard_move_up@tail0@tail1
-
-try_guard_move_up@tail0@tail1:
    SUBROUTINE
 
    JSR   inc_guard_anim_state
@@ -1175,7 +1087,7 @@ try_guard_move_down:
    SUBROUTINE
 
    LDA   GUARD_LOC_COL
-   STA   __zpabi_leave_cell__col
+   STA   __local_try_guard_move_down__col
    LDA   GUARD_Y_ADJ
    CMP   #$02
    BCC   .if_end@66
@@ -1188,7 +1100,7 @@ try_guard_move_down:
    STA   __local_try_guard_move_down__0
    LDA   LEVEL_MAP@hi+1,X
    STA   __local_try_guard_move_down__1
-   LDY   __zpabi_leave_cell__col
+   LDY   __local_try_guard_move_down__col
    LDA   (__local_try_guard_move_down__0),Y
    CMP   #$02
    BEQ   .try_guard_move_down@scfold@0
@@ -1200,28 +1112,32 @@ try_guard_move_down:
    RTS
 .if_end@72:
 .if_end@66:
-   JSR   guard_fall@run6
+   JSR   guard_fall@run0
    INC   GUARD_Y_ADJ
    LDA   GUARD_Y_ADJ
    CMP   #$05
    BCC   .if_else@74
    JSR   guard_drop_gold
-   JSR   guard_fall_into_row_below@run1
+   LDX   __local_try_guard_move_down__col
+   LDA   GUARD_LOC_ROW
+   JSR   leave_cell
    INC   GUARD_LOC_ROW
-   JSR   try_guard_move_up@run2
+   LDA   GUARD_LOC_ROW
+   LDX   __local_try_guard_move_down__col
+   JSR   enter_cell
    LDA   #$00
    STA   GUARD_Y_ADJ
    JMP   .if_end@73
 .if_else@74:
    JSR   check_for_gold_picked_up_by_guard
 .if_end@73:
-   JMP   try_guard_move_up@tail0
+   JMP   try_guard_move_up@tail1
 
 try_guard_move_left:
    SUBROUTINE
 
    LDA   GUARD_LOC_ROW
-   STA   __zpabi_leave_cell__row
+   STA   __local_try_guard_move_left__row
    LDA   GUARD_X_ADJ
    CMP   #$03
    BCS   .if_end@75
@@ -1229,7 +1145,8 @@ try_guard_move_left:
    BNE   .if_end@76
    RTS
 .if_end@76:
-   JSR   leave_cell@run4
+   LDX   __local_try_guard_move_left__row
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_guard_move_left__0
    LDA   LEVEL_MAP@hi,X
    STA   __local_try_guard_move_left__1
@@ -1257,16 +1174,23 @@ try_guard_move_left:
    STA   GUARD_FACING_DIRECTION
    DEC   GUARD_X_ADJ
    BPL   .if_else@85
-   JSR   try_guard_move_left@run5
-   DEC   GUARD_LOC_COL
-   JSR   try_guard_move_left@run3
+   JSR   guard_drop_gold
+   LDX   GUARD_LOC_COL
+   LDA   __local_try_guard_move_left__row
+   JSR   leave_cell
+   LDX   GUARD_LOC_COL
+   DEX
+   STX   GUARD_LOC_COL
+   LDA   __local_try_guard_move_left__row
+   JSR   enter_cell
    LDA   #$04
    STA   GUARD_X_ADJ
    JMP   .if_end@84
 .if_else@85:
    JSR   check_for_gold_picked_up_by_guard
 .if_end@84:
-   JSR   leave_cell@run4
+   LDX   __local_try_guard_move_left__row
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_guard_move_left__0
    LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_left__1
@@ -1274,42 +1198,21 @@ try_guard_move_left:
    LDA   (__local_try_guard_move_left__0),Y
    CMP   #$04
    BNE   .if_else@87
+   LDX   #$05
    LDA   #$03
-   STA   __zpabi_inc_guard_anim_state__first
-   LDA   #$05
-   STA   __zpabi_inc_guard_anim_state__last
-   JMP   try_guard_move_up@tail0@tail1
+   JMP   try_guard_move_up@tail0
 .if_else@87:
+   LDX   #$02
    LDA   #$00
-   STA   __zpabi_inc_guard_anim_state__first
-   LDA   #$02
-   STA   __zpabi_inc_guard_anim_state__last
    JSR   inc_guard_anim_state
 .if_end@86:
    JMP   draw_guard
-
-try_guard_move_left@run5:
-   SUBROUTINE
-
-   JSR   guard_drop_gold
-   LDA   GUARD_LOC_COL
-   STA   __zpabi_leave_cell__col
-   JMP   leave_cell
-
-try_guard_move_left@run3:
-   SUBROUTINE
-
-   LDA   GUARD_LOC_COL
-   STA   __zpabi_enter_cell__col
-   LDA   __zpabi_leave_cell__row
-   STA   __zpabi_enter_cell__row
-   JMP   enter_cell
 
 try_guard_move_right:
    SUBROUTINE
 
    LDA   GUARD_LOC_ROW
-   STA   __zpabi_leave_cell__row
+   STA   __local_try_guard_move_right__row
    LDA   GUARD_X_ADJ
    CMP   #$02
    BCC   .if_end@88
@@ -1318,7 +1221,8 @@ try_guard_move_right:
    BNE   .if_end@89
    RTS
 .if_end@89:
-   JSR   leave_cell@run4
+   LDX   __local_try_guard_move_right__row
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_guard_move_right__0
    LDA   LEVEL_MAP@hi,X
    STA   __local_try_guard_move_right__1
@@ -1348,16 +1252,23 @@ try_guard_move_right:
    LDA   GUARD_X_ADJ
    CMP   #$05
    BCC   .if_else@98
-   JSR   try_guard_move_left@run5
-   INC   GUARD_LOC_COL
-   JSR   try_guard_move_left@run3
+   JSR   guard_drop_gold
+   LDX   GUARD_LOC_COL
+   LDA   __local_try_guard_move_right__row
+   JSR   leave_cell
+   LDX   GUARD_LOC_COL
+   INX
+   STX   GUARD_LOC_COL
+   LDA   __local_try_guard_move_right__row
+   JSR   enter_cell
    LDA   #$00
    STA   GUARD_X_ADJ
    JMP   .if_end@97
 .if_else@98:
    JSR   check_for_gold_picked_up_by_guard
 .if_end@97:
-   JSR   leave_cell@run4
+   LDX   __local_try_guard_move_right__row
+   LDA   LEVEL_BG@lo,X
    STA   __local_try_guard_move_right__0
    LDA   LEVEL_BG@hi,X
    STA   __local_try_guard_move_right__1
@@ -1365,16 +1276,12 @@ try_guard_move_right:
    LDA   (__local_try_guard_move_right__0),Y
    CMP   #$04
    BNE   .if_else@100
+   LDX   #$0C
    LDA   #$0A
-   STA   __zpabi_inc_guard_anim_state__first
-   LDA   #$0C
-   STA   __zpabi_inc_guard_anim_state__last
-   JMP   try_guard_move_up@tail0@tail1
+   JMP   try_guard_move_up@tail0
 .if_else@100:
+   LDX   #$09
    LDA   #$07
-   STA   __zpabi_inc_guard_anim_state__first
-   LDA   #$09
-   STA   __zpabi_inc_guard_anim_state__last
    JSR   inc_guard_anim_state
 .if_end@99:
    JMP   draw_guard
@@ -1456,10 +1363,11 @@ move_guard:
 pseudo_distance:
    SUBROUTINE
 
-   LDA   __zpabi_pseudo_distance__row
+   STA   __local_pseudo_distance__row
+   STX   __local_pseudo_distance__col
    CMP   PLAYER_ROW
    BNE   .if_end@111
-   LDA   __zpabi_pseudo_distance__col
+   TXA
    SEC
    SBC   GUARD_LOC_COL
    BCC   .if_end@112
@@ -1467,20 +1375,20 @@ pseudo_distance:
 .if_end@112:
    LDA   GUARD_LOC_COL
    SEC
-   SBC   __zpabi_pseudo_distance__col
+   SBC   __local_pseudo_distance__col
    RTS
 .if_end@111:
    LDA   PLAYER_ROW
-   CMP   __zpabi_pseudo_distance__row
+   CMP   __local_pseudo_distance__row
    BCS   .if_end@113
-   LDA   __zpabi_pseudo_distance__row
+   LDA   __local_pseudo_distance__row
    SEC
    SBC   PLAYER_ROW
    CLC
    ADC   #$C8
    RTS
 .if_end@113:
-   SBC   __zpabi_pseudo_distance__row
+   SBC   __local_pseudo_distance__row
    CLC
    ADC   #$64
    RTS
@@ -1488,15 +1396,15 @@ pseudo_distance:
 guard_find_candidate_row_above:
    SUBROUTINE
 
-   LDA   __zpabi_guard_find_candidate_row_above__row
    STA   __local_guard_find_candidate_row_above__row
+   STX   __local_guard_find_candidate_row_above__col
 .loop@6_start:
    LDX   __local_guard_find_candidate_row_above__row
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__4
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_above__5
-   LDY   __zpabi_guard_find_candidate_row_above__col
+   LDY   __local_guard_find_candidate_row_above__col
    LDA   (__local_guard_find_candidate_row_above__4),Y
    CMP   #$03
    BEQ   .if_end@114
@@ -1512,7 +1420,7 @@ guard_find_candidate_row_above:
    STA   __local_guard_find_candidate_row_above__2
    LDY   __local_guard_find_candidate_row_above__2
    LDA   (__local_guard_find_candidate_row_above__4),Y
-   JSR   guard_find_candidate_row_above@run0
+   JSR   is_floor
    BCS   .guard_find_candidate_row_above@scfold@0
    LDX   __local_guard_find_candidate_row_above__3
    LDA   LEVEL_BG@lo,X
@@ -1528,7 +1436,7 @@ guard_find_candidate_row_above:
    CMP   __local_guard_find_candidate_row_above__3
    BCS   .tail@1
 .if_end@119:
-   LDA   __zpabi_guard_find_candidate_row_above__col
+   LDA   __local_guard_find_candidate_row_above__col
    CMP   #$1B
    BEQ   .if_end@125
    LDX   __local_guard_find_candidate_row_above__row
@@ -1536,13 +1444,13 @@ guard_find_candidate_row_above:
    STA   __local_guard_find_candidate_row_above__0
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_above__1
-   LDA   __zpabi_guard_find_candidate_row_above__col
+   LDA   __local_guard_find_candidate_row_above__col
    CLC
    ADC   #$01
    STA   __local_guard_find_candidate_row_above__2
    LDY   __local_guard_find_candidate_row_above__2
    LDA   (__local_guard_find_candidate_row_above__0),Y
-   JSR   guard_find_candidate_row_above@run0
+   JSR   is_floor
    BCS   .guard_find_candidate_row_above@scfold@1
    LDX   __local_guard_find_candidate_row_above__3
    LDA   LEVEL_BG@lo,X
@@ -1569,29 +1477,23 @@ guard_find_candidate_row_above:
    STA   __local_guard_find_candidate_row_above__row
    JMP   .loop@6_start
 
-guard_find_candidate_row_above@run0:
-   SUBROUTINE
-
-   STA   __zpabi_is_floor__sprite
-   JMP   is_floor
-
 guard_find_candidate_row_below:
    SUBROUTINE
 
-   LDA   __zpabi_guard_find_candidate_row_below__row
    STA   __local_guard_find_candidate_row_below__row
+   STX   __local_guard_find_candidate_row_below__col
 .loop@7_start:
    LDA   __local_guard_find_candidate_row_below__row
    CMP   #$0F
-   BNE   .lb_skip@1
+   BNE   .lb_skip@0
    JMP   .loop@7_break
-.lb_skip@1:
+.lb_skip@0:
    LDX   __local_guard_find_candidate_row_below__row
    LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_find_candidate_row_below__right_row
    LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_find_candidate_row_below__0
-   LDY   __zpabi_guard_find_candidate_row_below__col
+   LDY   __local_guard_find_candidate_row_below__col
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
    CMP   #$01
    BEQ   .guard_find_candidate_row_below@scfold@0
@@ -1608,9 +1510,7 @@ guard_find_candidate_row_below:
    LDA   (__local_guard_find_candidate_row_below__0),Y
    BEQ   .loop@7_continue
    TYA
-   BNE   .lb_skip@0
-   JMP   .guard_find_candidate_row_below@asm_ssa_split@0
-.lb_skip@0:
+   BEQ   .guard_find_candidate_row_below@asm_ssa_split@0
    DEY
    LDA   (__local_guard_find_candidate_row_below__0),Y
    CMP   #$04
@@ -1630,7 +1530,7 @@ guard_find_candidate_row_below:
    INX
    STX   __local_guard_find_candidate_row_below__right_row
    LDA   (__local_guard_find_candidate_row_below__0),Y
-   JSR   guard_find_candidate_row_above@run0
+   JSR   is_floor
    BCC   .if_end@136
    LDA   __local_guard_find_candidate_row_below__row
    CMP   PLAYER_ROW
@@ -1640,7 +1540,7 @@ guard_find_candidate_row_below:
 .if_end@136:
 .if_end@133:
 .if_end@132:
-   LDA   __zpabi_guard_find_candidate_row_below__col
+   LDA   __local_guard_find_candidate_row_below__col
    CMP   #$1B
    BCS   .if_end@142
    LDX   __local_guard_find_candidate_row_below__right_row
@@ -1648,7 +1548,7 @@ guard_find_candidate_row_below:
    STA   __local_guard_find_candidate_row_below__right_row
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_find_candidate_row_below__0
-   LDY   __zpabi_guard_find_candidate_row_below__col
+   LDY   __local_guard_find_candidate_row_below__col
    INY
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
    CMP   #$04
@@ -1659,7 +1559,7 @@ guard_find_candidate_row_below:
    LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_find_candidate_row_below__0
    LDA   (__local_guard_find_candidate_row_below__right_row),Y
-   JSR   guard_find_candidate_row_above@run0
+   JSR   is_floor
    BCC   .if_end@142
 .guard_find_candidate_row_below@scfold@1:
    LDA   __local_guard_find_candidate_row_below__row
@@ -1681,11 +1581,12 @@ guard_find_candidate_row_below:
 guard_left_col_limit:
    SUBROUTINE
 
-   LDA   __zpabi_guard_left_col_limit__col
-   STA   __local_guard_left_col_limit__col
-   JMP   .loop@8_continue
-.guard_left_col_limit@rot@0:
-   LDX   __zpabi_guard_left_col_limit__row
+   STA   __local_guard_left_col_limit__row
+   STX   __local_guard_left_col_limit__col
+.loop@8_continue:
+   LDA   __local_guard_left_col_limit__col
+   BEQ   .vthread@2
+   LDX   __local_guard_left_col_limit__row
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_left_col_limit__2
    LDA   LEVEL_MAP@hi,X
@@ -1711,7 +1612,7 @@ guard_left_col_limit:
    LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_left_col_limit__0
    LDA   (__local_guard_left_col_limit__col),Y
-   JSR   guard_find_candidate_row_above@run0
+   JSR   is_floor
    BCS   .if_end@152
    LDA   __local_guard_left_col_limit__1
    STA   __local_guard_left_col_limit__col
@@ -1720,20 +1621,22 @@ guard_left_col_limit:
 .if_end@151:
    LDA   __local_guard_left_col_limit__1
    STA   __local_guard_left_col_limit__col
-.loop@8_continue:
-   BNE   .guard_left_col_limit@rot@0
+   JMP   .loop@8_continue
 .loop@8_break:
    LDA   __local_guard_left_col_limit__col
+.vthread@2:
    RTS
 
 guard_right_col_limit:
    SUBROUTINE
 
-   LDA   __zpabi_guard_right_col_limit__col
-   STA   __local_guard_right_col_limit__col
-   JMP   .loop@9_continue
-.guard_right_col_limit@rot@1:
-   LDX   __zpabi_guard_right_col_limit__row
+   STA   __local_guard_right_col_limit__row
+   STX   __local_guard_right_col_limit__col
+.loop@9_continue:
+   LDA   __local_guard_right_col_limit__col
+   CMP   #$1B
+   BEQ   .vthread@3
+   LDX   __local_guard_right_col_limit__row
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_right_col_limit__2
    LDA   LEVEL_MAP@hi,X
@@ -1759,7 +1662,7 @@ guard_right_col_limit:
    LDA   LEVEL_BG@hi+1,X
    STA   __local_guard_right_col_limit__0
    LDA   (__local_guard_right_col_limit__col),Y
-   JSR   guard_find_candidate_row_above@run0
+   JSR   is_floor
    BCS   .if_end@161
    LDA   __local_guard_right_col_limit__1
    STA   __local_guard_right_col_limit__col
@@ -1768,66 +1671,66 @@ guard_right_col_limit:
 .if_end@160:
    LDA   __local_guard_right_col_limit__1
    STA   __local_guard_right_col_limit__col
-.loop@9_continue:
-   CMP   #$1B
-   BNE   .guard_right_col_limit@rot@1
+   JMP   .loop@9_continue
 .loop@9_break:
    LDA   __local_guard_right_col_limit__col
+.vthread@3:
    RTS
 
 consider_move:
    SUBROUTINE
 
-   LDA   __zpabi_consider_move__dist
    CMP   best_guard_dist
    BCS   .if_end@162
    STA   best_guard_dist
-   LDA   __zpabi_consider_move__action
-   STA   guard_action
+   STX   guard_action
 .if_end@162:
    RTS
 
 consider_column:
    SUBROUTINE
 
-   LDA   __zpabi_guard_find_candidate_row_above__row
+   STA   __local_consider_column__row
+   STX   __local_consider_column__col
    CMP   #$0F
-   BEQ   .vthread@2
-   LDX   __zpabi_guard_find_candidate_row_above__row
+   BEQ   .if_end@163
+   LDX   __local_consider_column__row
    LDA   LEVEL_BG@lo+1,X
    STA   __local_consider_column__0
    LDA   LEVEL_BG@hi+1,X
    STA   __local_consider_column__1
-   LDY   __zpabi_guard_find_candidate_row_above__col
+   LDY   __local_consider_column__col
    LDA   (__local_consider_column__0),Y
    CMP   #$01
    BEQ   .if_end@166
    CMP   #$02
    BEQ   .if_end@166
+   LDX   __local_consider_column__col
+   LDA   __local_consider_column__row
    JSR   guard_find_candidate_row_below
-   STA   __zpabi_pseudo_distance__row
+   LDX   __local_consider_column__col
    JSR   pseudo_distance
-   STA   __zpabi_consider_move__dist
+   LDX   __zpabi_consider_column__down
    JSR   consider_move
 .if_end@166:
-   LDA   __zpabi_guard_find_candidate_row_above__row
+.if_end@163:
+   LDA   __local_consider_column__row
    BEQ   .if_end@169
-.vthread@2:
-   LDX   __zpabi_guard_find_candidate_row_above__row
+   LDX   __local_consider_column__row
    LDA   LEVEL_BG@lo,X
    STA   __local_consider_column__0
    LDA   LEVEL_BG@hi,X
    STA   __local_consider_column__1
-   LDY   __zpabi_guard_find_candidate_row_above__col
+   LDY   __local_consider_column__col
    LDA   (__local_consider_column__0),Y
    CMP   #$03
    BNE   .if_end@169
+   LDX   __local_consider_column__col
+   LDA   __local_consider_column__row
    JSR   guard_find_candidate_row_above
-   STA   __zpabi_pseudo_distance__row
+   LDX   __local_consider_column__col
    JSR   pseudo_distance
-   STA   __zpabi_consider_move__dist
-   LDA   __zpabi_consider_column__up
-   STA   __zpabi_consider_move__action
+   LDX   __zpabi_consider_column__up
    JSR   consider_move
 .if_end@169:
    RTS
@@ -1835,12 +1738,14 @@ consider_column:
 guard_can_cross:
    SUBROUTINE
 
-   LDX   __zpabi_guard_can_cross__row
+   STA   __local_guard_can_cross__row
+   TXA
+   TAY
+   LDX   __local_guard_can_cross__row
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_can_cross__0
    LDA   LEVEL_BG@hi,X
    STA   __local_guard_can_cross__1
-   LDY   __zpabi_guard_can_cross__col
    LDA   (__local_guard_can_cross__0),Y
    CMP   #$03
    BEQ   .tail@2
@@ -1866,25 +1771,26 @@ guard_can_cross:
 guard_run_at_player:
    SUBROUTINE
 
-   LDA   __zpabi_guard_run_at_player__col
-   STA   __zpabi_guard_can_cross__col
-   CMP   PLAYER_COL
+   STA   __local_guard_run_at_player__row
+   STX   __local_guard_run_at_player__col
+   CPX   PLAYER_COL
    BCS   .if_end@177
 .loop@10_start:
-   INC   __zpabi_guard_can_cross__col
+   INC   __local_guard_run_at_player__col
+   LDX   __local_guard_run_at_player__col
+   LDA   __local_guard_run_at_player__row
    JSR   guard_can_cross
    BCC   .tail@3
-   LDA   __zpabi_guard_can_cross__col
+   LDA   __local_guard_run_at_player__col
    CMP   PLAYER_COL
    BNE   .loop@10_start
    LDA   #$02
    RTS
 .if_end@177:
-   STA   __local_guard_run_at_player__col
 .loop@11_start:
    DEC   __local_guard_run_at_player__col
-   LDA   __local_guard_run_at_player__col
-   STA   __zpabi_guard_can_cross__col
+   LDX   __local_guard_run_at_player__col
+   LDA   __local_guard_run_at_player__row
    JSR   guard_can_cross
    BCS   .if_end@179
 .tail@3:
@@ -1900,16 +1806,12 @@ guard_run_at_player:
 determine_guard_move:
    SUBROUTINE
 
-   LDA   GUARD_LOC_COL
-   STA   __zpabi_guard_run_at_player__col
-   LDA   GUARD_LOC_ROW
-   STA   __zpabi_guard_run_at_player__row
-   LDX   __zpabi_guard_run_at_player__row
+   LDX   GUARD_LOC_ROW
    LDA   LEVEL_BG@lo,X
    STA   __local_determine_guard_move__c
    LDA   LEVEL_BG@hi,X
    STA   __local_determine_guard_move__0
-   LDY   __zpabi_guard_run_at_player__col
+   LDY   GUARD_LOC_COL
    LDA   (__local_determine_guard_move__c),Y
    CMP   #$01
    BNE   .if_end@182
@@ -1918,9 +1820,10 @@ determine_guard_move:
    LDA   #$03
    RTS
 .if_end@182:
-   LDA   __zpabi_guard_run_at_player__row
+   LDA   GUARD_LOC_ROW
    CMP   PLAYER_ROW
    BNE   .if_end@183
+   LDX   GUARD_LOC_COL
    JSR   guard_run_at_player
    ORA   #$00
    BEQ   .if_end@184
@@ -1931,54 +1834,47 @@ determine_guard_move:
    STA   guard_action
    LDA   #$FF
    STA   best_guard_dist
-   LDA   __zpabi_guard_run_at_player__row
-   STA   __zpabi_consider_column__row
-   LDA   __zpabi_guard_run_at_player__col
-   STA   __zpabi_consider_column__col
    LDA   #$04
    STA   __zpabi_consider_column__down
    LDA   #$03
    STA   __zpabi_consider_column__up
+   LDX   GUARD_LOC_COL
+   LDA   GUARD_LOC_ROW
    JSR   consider_column
-   LDA   __zpabi_guard_run_at_player__row
-   STA   __zpabi_guard_left_col_limit__row
-   LDA   __zpabi_guard_run_at_player__col
-   STA   __zpabi_guard_left_col_limit__col
+   LDX   GUARD_LOC_COL
+   LDA   GUARD_LOC_ROW
    JSR   guard_left_col_limit
-   STA   __zpabi_consider_column__col
+   STA   __local_determine_guard_move__c
    JMP   .loop@12_start
-.determine_guard_move@rot@2:
-   LDA   __zpabi_guard_run_at_player__row
-   STA   __zpabi_consider_column__row
+.determine_guard_move@rot@0:
    LDA   #$01
    STA   __zpabi_consider_column__down
    STA   __zpabi_consider_column__up
+   LDX   __local_determine_guard_move__c
+   LDA   GUARD_LOC_ROW
    JSR   consider_column
-   INC   __zpabi_consider_column__col
+   INC   __local_determine_guard_move__c
 .loop@12_start:
-   LDA   __zpabi_consider_column__col
-   CMP   __zpabi_guard_run_at_player__col
-   BNE   .determine_guard_move@rot@2
-   LDA   __zpabi_guard_run_at_player__row
-   STA   __zpabi_guard_right_col_limit__row
-   LDA   __zpabi_guard_run_at_player__col
-   STA   __zpabi_guard_right_col_limit__col
+   LDA   __local_determine_guard_move__c
+   CMP   GUARD_LOC_COL
+   BNE   .determine_guard_move@rot@0
+   LDX   GUARD_LOC_COL
+   LDA   GUARD_LOC_ROW
    JSR   guard_right_col_limit
    STA   __local_determine_guard_move__c
    JMP   .loop@13_start
-.determine_guard_move@rot@3:
-   STA   __zpabi_consider_column__col
-   LDA   __zpabi_guard_run_at_player__row
-   STA   __zpabi_consider_column__row
+.determine_guard_move@rot@1:
    LDA   #$02
    STA   __zpabi_consider_column__down
    STA   __zpabi_consider_column__up
+   LDX   __local_determine_guard_move__c
+   LDA   GUARD_LOC_ROW
    JSR   consider_column
    DEC   __local_determine_guard_move__c
 .loop@13_start:
    LDA   __local_determine_guard_move__c
-   CMP   __zpabi_guard_run_at_player__col
-   BNE   .determine_guard_move@rot@3
+   CMP   GUARD_LOC_COL
+   BNE   .determine_guard_move@rot@1
    LDA   guard_action
    RTS
 

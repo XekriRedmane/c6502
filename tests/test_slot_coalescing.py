@@ -203,11 +203,13 @@ class TestCalleeSlot(unittest.TestCase):
         self.assertEqual(out[-1], asm_ast.Jump(target="g", reg_args=[]))
 
 
+# `mul` takes the starting product first, which arrives in A and X, so
+# that `a` and `b` arrive in their slots, where `a <<= 1` and `b >>= 1`
+# shift them in place.
 _MULU16 = """
 #include <stdint.h>
 uint16_t t[6] = {0, 1, 7, 255, 300, 65535};
-static uint16_t mul(uint16_t a, uint16_t b) {
-    uint16_t product = 0;
+static uint16_t mul(uint16_t product, uint16_t a, uint16_t b) {
     while (b != 0) {
         if (b & 1)
             product += a;
@@ -233,7 +235,7 @@ int main(void) {
     uint16_t n = 0;
     for (uint8_t i = 0; i < 6; i++)
         for (uint8_t j = 0; j < 6; j++)
-            n = (uint16_t)(n * 3u + mul(t[i], t[j])
+            n = (uint16_t)(n * 3u + mul(0, t[i], t[j])
                            + (t[j] ? div(t[i], t[j]) : 0));
     return n;
 }

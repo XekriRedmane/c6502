@@ -23,115 +23,50 @@ under_level	EQU	$64
 joy_zone_x	EQU	$65
 joy_zone_y	EQU	$66
 safe_to_rest	EQU	$67
-__zpabi_appearance_to_fontchar__appearance	EQU	$80
-__zpabi_apply_damage_to_current__damage	EQU	$80
-__zpabi_char_select_patch__home_enabled	EQU	$80
-__zpabi_check_at_boundary__pos	EQU	$80
-__zpabi_check_hostile__other_0	EQU	$80
-__zpabi_classify_entity_type__e_0	EQU	$80
-__zpabi_colrow_to_pos__col	EQU	$80
-__zpabi_display_message__index	EQU	$80
-__zpabi_display_message_loop__msg_0	EQU	$80
-__zpabi_display_shop__ev_0	EQU	$80
-__zpabi_draw_char_at_pos__pos	EQU	$80
-__zpabi_enter_combat_state__pos	EQU	$80
-__zpabi_find_entity_at_pos__pos	EQU	$80
-__zpabi_get_char_record__index	EQU	$80
-__zpabi_get_entity_fontchar__e_0	EQU	$80
-__zpabi_get_mob_data__index	EQU	$80
-__zpabi_handle_encounter__ev_0	EQU	$80
-__zpabi_handle_event_slot__ev_0	EQU	$80
-__zpabi_load_char_to_fa__index	EQU	$80
-__zpabi_manhattan_distance__pos	EQU	$80
-__zpabi_modify_current_stats__amount_0	EQU	$80
-__zpabi_num_to_decimal__value_0	EQU	$80
-__zpabi_pickup_treasure__ev_0	EQU	$80
-__zpabi_pos_to_colrow__pos	EQU	$80
-__zpabi_print_bottom_centered__s_0	EQU	$80
-__zpabi_print_centered_plus_col__s_0	EQU	$80
-__zpabi_print_entity_name__m_0	EQU	$80
-__zpabi_random_in_range__limit	EQU	$80
-__zpabi_render_font_char_direct__charset_sel	EQU	$80
-__zpabi_reorder_char__m_0	EQU	$80
-__zpabi_run_chain__state	EQU	$80
-__zpabi_scene_loop__scene	EQU	$80
-__zpabi_set_char_state__state	EQU	$80
-__zpabi_setup_text_pos__name_0	EQU	$80
-__zpabi_setup_text_pos_col20__name_0	EQU	$80
-__zpabi_transfer_game_data__command	EQU	$80
-__zpabi_trigger_scene_event__ev_0	EQU	$80
-__zpabi_update_event_list__pos	EQU	$80
+__zpabi_modify_current_stats__add	EQU	$80
+__zpabi_num_to_decimal__out_0	EQU	$80
+__zpabi_update_event_list__value_0	EQU	$80
+__zpabi_validate_input__o_0	EQU	$80
 __local_write_disk_signature__tries	EQU	$81
-__zpabi_char_select_patch__here_enabled	EQU	$81
-__zpabi_check_hostile__other_1	EQU	$81
-__zpabi_classify_entity_type__e_1	EQU	$81
-__zpabi_colrow_to_pos__row	EQU	$81
-__zpabi_display_message_loop__msg_1	EQU	$81
-__zpabi_display_shop__ev_1	EQU	$81
-__zpabi_get_entity_fontchar__e_1	EQU	$81
-__zpabi_handle_encounter__ev_1	EQU	$81
-__zpabi_handle_event_slot__ev_1	EQU	$81
-__zpabi_manhattan_distance__from	EQU	$81
-__zpabi_modify_current_stats__amount_1	EQU	$81
-__zpabi_num_to_decimal__value_1	EQU	$81
-__zpabi_pickup_treasure__ev_1	EQU	$81
-__zpabi_print_bottom_centered__s_1	EQU	$81
-__zpabi_print_centered_plus_col__s_1	EQU	$81
-__zpabi_print_entity_name__m_1	EQU	$81
-__zpabi_reorder_char__m_1	EQU	$81
-__zpabi_rwts_dispatch__command	EQU	$81
-__zpabi_setup_text_pos__name_1	EQU	$81
-__zpabi_setup_text_pos_col20__name_1	EQU	$81
-__zpabi_trigger_scene_event__ev_1	EQU	$81
-__zpabi_update_event_list__value_0	EQU	$81
-__zpabi_input_loop__m_0	EQU	$82
-__zpabi_modify_current_stats__add	EQU	$82
-__zpabi_num_to_decimal__out_0	EQU	$82
-__zpabi_update_event_list__value_1	EQU	$82
+__zpabi_num_to_decimal__out_1	EQU	$81
+__zpabi_update_event_list__value_1	EQU	$81
+__zpabi_validate_input__o_1	EQU	$81
 __local_verify_disk_signature__0	EQU	$83
-__zpabi_input_loop__m_1	EQU	$83
-__zpabi_num_to_decimal__out_1	EQU	$83
+__local_transfer_game_data__left	EQU	$84
 __local_verify_disk_signature__tries	EQU	$84
 __local_verify_game_disk__tries	EQU	$84
-__zpabi_draw_option__o_0	EQU	$84
-__local_transfer_game_data__left	EQU	$85
-__zpabi_draw_option__o_1	EQU	$85
-__local_read_paddle__0	EQU	$86
-__local_transfer_game_data__tries	EQU	$86
-__zpabi_joy_to_zone__old_zone	EQU	$86
-__zpabi_print_string__s_0	EQU	$86
-__zpabi_set_cursor_pos__pos	EQU	$86
-__zpabi_setup_input__m_0	EQU	$86
-__zpabi_tune_player__tune	EQU	$86
-__zpabi_validate_input__dir	EQU	$86
+__local_transfer_game_data__tries	EQU	$85
+__local_transfer_game_data__command	EQU	$86
+__local_input_loop__m	EQU	$87
 __local_setup_slot_iob__slot	EQU	$87
-__zpabi_joy_to_zone__reading	EQU	$87
-__zpabi_print_string__s_1	EQU	$87
-__zpabi_setup_input__m_1	EQU	$87
-__zpabi_tune_player__strength	EQU	$87
-__zpabi_validate_input__o_0	EQU	$87
-__zpabi_call_input_init__init	EQU	$88
-__zpabi_copy_record_data__o_0	EQU	$88
-__zpabi_hrcg_cout__c	EQU	$88
-__zpabi_validate_input__o_1	EQU	$88
-__local_format_slot_number__n	EQU	$89
-__local_read_keyboard__1	EQU	$89
-__zpabi_check_adjacent_threats__pos	EQU	$89
-__zpabi_check_encounter__pos	EQU	$89
-__zpabi_copy_record_data__o_1	EQU	$89
-__zpabi_option__n	EQU	$89
-__local_render_input_buffer__i	EQU	$91
-__local_check_combat_eligibility__1	EQU	$92
-__local_check_input__dir	EQU	$92
-__local_check_input__2	EQU	$93
-__local_validate_input__1	EQU	$93
-__local_copy_record_data__i	EQU	$94
-__local_validate_input__2	EQU	$94
-__local_copy_record_data__1	EQU	$95
-__local_option__0	EQU	$95
-__local_copy_record_data__2	EQU	$96
-__local_option__1	EQU	$96
-__local_option__2	EQU	$97
+__local_input_loop__0	EQU	$88
+__local_draw_option__0	EQU	$8A
+__local_setup_input__m	EQU	$8A
+__local_draw_option__o	EQU	$8B
+__local_read_keyboard__1	EQU	$8B
+__local_setup_input__0	EQU	$8B
+__local_validate_input__o_0	EQU	$8B
+__local_draw_option__1	EQU	$8C
+__local_validate_input__o_1	EQU	$8C
+__local_format_slot_number__n	EQU	$8D
+__local_render_input_buffer__i	EQU	$8D
+__local_set_cursor_pos__pos	EQU	$8D
+__local_validate_input__1	EQU	$8D
+__local_check_input__dir	EQU	$8E
+__local_validate_input__2	EQU	$8E
+__local_check_combat_eligibility__1	EQU	$8F
+__local_check_input__2	EQU	$8F
+__local_validate_input__dir	EQU	$8F
+__local_copy_record_data__i	EQU	$90
+__local_copy_record_data__1	EQU	$91
+__local_option__n	EQU	$91
+__local_read_paddle__0	EQU	$91
+__local_copy_record_data__2	EQU	$92
+__local_option__0	EQU	$92
+__local_copy_record_data__o	EQU	$93
+__local_joy_to_zone__old_zone	EQU	$93
+__local_option__1	EQU	$93
+__local_copy_record_data__3	EQU	$94
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -297,13 +232,13 @@ WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
 ; def advance_sector params= locals=__local_advance_sector__0 indirect=false in_cycle=false
-; def call_input_init params=__zpabi_call_input_init__init locals= indirect=false in_cycle=false
+; def call_input_init params=__zpabi_call_input_init__init locals=__local_call_input_init__init indirect=false in_cycle=false param_regs=A
 ; def cancel_scenario params= locals= indirect=false in_cycle=false
 ; def char_select_here params= locals=__local_char_select_here__0 indirect=false in_cycle=false
 ; def char_select_home params= locals=__local_char_select_home__0 indirect=false in_cycle=false
 ; def char_select_init params= locals=__local_char_select_init__0 indirect=false in_cycle=false
 ; def char_select_next params= locals= indirect=false in_cycle=false
-; def char_select_patch params=__zpabi_char_select_patch__home_enabled,__zpabi_char_select_patch__here_enabled locals=__local_char_select_patch__0 indirect=false in_cycle=false
+; def char_select_patch params=__zpabi_char_select_patch__home_enabled,__zpabi_char_select_patch__here_enabled locals=__local_char_select_patch__here_enabled indirect=false in_cycle=false param_regs=A,X
 ; def char_select_prev params= locals= indirect=false in_cycle=false
 ; def check_combat_eligibility params= locals=__local_check_combat_eligibility__0,__local_check_combat_eligibility__1 indirect=false in_cycle=false
 ; def check_input params= locals=__local_check_input__0,__local_check_input__1,__local_check_input__dir,__local_check_input__2 indirect=false in_cycle=false
@@ -311,10 +246,10 @@ WAIT	EQU	$FCA8
 ; def clear_input_buffer params= locals= indirect=false in_cycle=false
 ; def configure_input params= locals=__local_configure_input__0 indirect=false in_cycle=false
 ; def continue_game params= locals=__local_continue_game__0 indirect=false in_cycle=false
-; def copy_record_data params=__zpabi_copy_record_data__o_0,__zpabi_copy_record_data__o_1 locals=__local_copy_record_data__0,__local_copy_record_data__i,__local_copy_record_data__1,__local_copy_record_data__2 indirect=false in_cycle=false
+; def copy_record_data params=__zpabi_copy_record_data__o_0,__zpabi_copy_record_data__o_1 locals=__local_copy_record_data__0,__local_copy_record_data__i,__local_copy_record_data__1,__local_copy_record_data__2,__local_copy_record_data__o,__local_copy_record_data__3 indirect=false in_cycle=false param_regs=A,X
 ; def display_insert_msg params= locals= indirect=false in_cycle=false
 ; def draw_input_options params= locals=__local_draw_input_options__0,__local_draw_input_options__1,__local_draw_input_options__2 indirect=false in_cycle=false
-; def draw_option params=__zpabi_draw_option__o_0,__zpabi_draw_option__o_1 locals= indirect=false in_cycle=false
+; def draw_option params=__zpabi_draw_option__o_0,__zpabi_draw_option__o_1 locals=__local_draw_option__0,__local_draw_option__o,__local_draw_option__1 indirect=false in_cycle=false param_regs=A,X
 ; def ensure_game_disk params= locals=__local_ensure_game_disk__0 indirect=false in_cycle=false
 ; def enter_char_select params= locals=__local_enter_char_select__0 indirect=false in_cycle=false
 ; def enter_save_game_slot params= locals=__local_enter_save_game_slot__0 indirect=false in_cycle=false
@@ -324,8 +259,8 @@ WAIT	EQU	$FCA8
 ; def format_slot_number params= locals=__local_format_slot_number__n indirect=false in_cycle=false
 ; def get_input_table_ptr params= locals= indirect=false in_cycle=false
 ; def init_world params= locals=__local_init_world__0 indirect=false in_cycle=false
-; def input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 locals=__local_input_loop__0 indirect=false in_cycle=false
-; def joy_to_zone params=__zpabi_joy_to_zone__old_zone,__zpabi_joy_to_zone__reading locals=__local_joy_to_zone__0,__local_joy_to_zone__1 indirect=false in_cycle=false
+; def input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 locals=__local_input_loop__m,__local_input_loop__0,__local_input_loop__1 indirect=false in_cycle=false param_regs=A,X
+; def joy_to_zone params=__zpabi_joy_to_zone__old_zone,__zpabi_joy_to_zone__reading locals=__local_joy_to_zone__reading,__local_joy_to_zone__0,__local_joy_to_zone__old_zone indirect=false in_cycle=false param_regs=A,X
 ; def menu_attack_target params= locals=__local_menu_attack_target__0 indirect=false in_cycle=false
 ; def menu_check_attack params= locals=__local_menu_check_attack__0 indirect=false in_cycle=false
 ; def menu_drop_dec params= locals= indirect=false in_cycle=false
@@ -336,7 +271,7 @@ WAIT	EQU	$FCA8
 ; def menu_other_options params= locals=__local_menu_other_options__0 indirect=false in_cycle=false
 ; def menu_see_your_lot params= locals= indirect=false in_cycle=false
 ; def menu_settings_init params= locals= indirect=false in_cycle=false
-; def option params=__zpabi_option__n locals=__local_option__0,__local_option__1,__local_option__2 indirect=false in_cycle=false
+; def option params=__zpabi_option__n locals=__local_option__n,__local_option__0,__local_option__1 indirect=false in_cycle=false param_regs=A
 ; def prompt_insert_disk params= locals= indirect=false in_cycle=false
 ; def read_game_data params= locals=__local_read_game_data__0 indirect=false in_cycle=false
 ; def read_keyboard params= locals=__local_read_keyboard__0,__local_read_keyboard__1 indirect=false in_cycle=false
@@ -345,13 +280,13 @@ WAIT	EQU	$FCA8
 ; def retire_character params= locals= indirect=false in_cycle=false
 ; def save_game params= locals=__local_save_game__0 indirect=false in_cycle=false
 ; def scenario_done params= locals= indirect=false in_cycle=false
-; def set_cursor_pos params=__zpabi_set_cursor_pos__pos locals=__local_set_cursor_pos__pos,__local_set_cursor_pos__row indirect=false in_cycle=false changes=__zpabi_set_cursor_pos__pos
+; def set_cursor_pos params=__zpabi_set_cursor_pos__pos locals=__local_set_cursor_pos__pos,__local_set_cursor_pos__row indirect=false in_cycle=false param_regs=A
 ; def settings_danger_down params= locals= indirect=false in_cycle=false
 ; def settings_danger_up params= locals= indirect=false in_cycle=false
 ; def settings_speed_down params= locals=__local_settings_speed_down__0 indirect=false in_cycle=false
 ; def settings_speed_up params= locals= indirect=false in_cycle=false
 ; def setup_data_iob params= locals= indirect=false in_cycle=false
-; def setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 locals= indirect=false in_cycle=false
+; def setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 locals=__local_setup_input__m,__local_setup_input__0 indirect=false in_cycle=false param_regs=A,X
 ; def setup_slot_iob params= locals=__local_setup_slot_iob__slot,__local_setup_slot_iob__0 indirect=false in_cycle=false
 ; def slot_dec params= locals=__local_slot_dec__0 indirect=false in_cycle=false
 ; def slot_dec_enter params= locals= indirect=false in_cycle=false
@@ -363,9 +298,9 @@ WAIT	EQU	$FCA8
 ; def start_game_input params= locals=__local_start_game_input__0 indirect=false in_cycle=false
 ; def store_selection_to_record params= locals= indirect=false in_cycle=false
 ; def teardown_input params= locals=__local_teardown_input__0 indirect=false in_cycle=false
-; def transfer_game_data params=__zpabi_transfer_game_data__command locals=__local_transfer_game_data__0,__local_transfer_game_data__left,__local_transfer_game_data__tries indirect=false in_cycle=false carry=true
+; def transfer_game_data params=__zpabi_transfer_game_data__command locals=__local_transfer_game_data__0,__local_transfer_game_data__left,__local_transfer_game_data__tries,__local_transfer_game_data__command indirect=false in_cycle=false param_regs=A carry=true
 ; def use_scenario_disk params= locals=__local_use_scenario_disk__0 indirect=false in_cycle=false
-; def validate_input params=__zpabi_validate_input__dir,__zpabi_validate_input__o_0,__zpabi_validate_input__o_1 locals=__local_validate_input__0,__local_validate_input__o_0,__local_validate_input__o_1,__local_validate_input__1,__local_validate_input__2 indirect=false in_cycle=false changes=__zpabi_validate_input__o_0,__zpabi_validate_input__o_1
+; def validate_input params=__zpabi_validate_input__dir,__zpabi_validate_input__o_0,__zpabi_validate_input__o_1 locals=__local_validate_input__0,__local_validate_input__o_0,__local_validate_input__o_1,__local_validate_input__1,__local_validate_input__2,__local_validate_input__dir,__local_validate_input__3 indirect=false in_cycle=false param_regs=A,,
 ; def verify_disk_signature params= locals=__local_verify_disk_signature__0,__local_verify_disk_signature__tries,__local_verify_disk_signature__1 indirect=false in_cycle=false carry=true
 ; def verify_game_disk params= locals=__local_verify_game_disk__0,__local_verify_game_disk__tries indirect=false in_cycle=false carry=true
 ; def wait_keypress params= locals=__local_wait_keypress__0 indirect=false in_cycle=false
@@ -387,8 +322,8 @@ WAIT	EQU	$FCA8
 ; ext ai_choose_target params=
 ; ext anim_check_frame params=
 ; ext anim_tick_and_wait params=
-; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance
-; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage
+; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance param_regs=A
+; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
@@ -396,20 +331,20 @@ WAIT	EQU	$FCA8
 ; ext auto_heal params=
 ; ext border_anim_step params=
 ; ext browse_handler params=
-; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos
-; ext check_at_boundary params=__zpabi_check_at_boundary__pos
+; ext check_adjacent_threats params=__zpabi_check_adjacent_threats__pos param_regs=A
+; ext check_at_boundary params=__zpabi_check_at_boundary__pos param_regs=A
 ; ext check_attack_eligible params= carry=true
 ; ext check_can_leave params= carry=true
-; ext check_encounter params=__zpabi_check_encounter__pos
-; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 carry=true
+; ext check_encounter params=__zpabi_check_encounter__pos param_regs=A
+; ext check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 param_regs=A,X carry=true
 ; ext check_scene_events params=
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
-; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1
+; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext cold_restart params=
-; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row
+; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row param_regs=A,X
 ; ext commit_move params=
 ; ext dec_threshold_wrap params=
 ; ext delay_with_animation params=
@@ -417,19 +352,19 @@ WAIT	EQU	$FCA8
 ; ext disk_write params= carry=true
 ; ext dispatch_on_mode params=
 ; ext display_char_stats params=
-; ext display_message params=__zpabi_display_message__index
-; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1
-; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1
+; ext display_message params=__zpabi_display_message__index param_regs=A
+; ext display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 param_regs=A,X
+; ext display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 param_regs=A,X
 ; ext display_status_bar params=
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
-; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos
+; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
-; ext enter_combat_state params=__zpabi_enter_combat_state__pos
+; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
 ; ext fill_map params=
 ; ext find_attack_target params=
-; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos
+; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos param_regs=A
 ; ext find_first_pc params= carry=true
 ; ext find_nearest_event params=
 ; ext find_next_pc_wrap params=
@@ -438,13 +373,13 @@ WAIT	EQU	$FCA8
 ; ext flush_pending_xp params=
 ; ext font_pos_to_text_pos params=
 ; ext game_init params=
-; ext get_char_record params=__zpabi_get_char_record__index
-; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1
-; ext get_mob_data params=__zpabi_get_mob_data__index
-; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1
-; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1
+; ext get_char_record params=__zpabi_get_char_record__index param_regs=A
+; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 param_regs=A,X
+; ext get_mob_data params=__zpabi_get_mob_data__index param_regs=A
+; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
+; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
-; ext hrcg_cout params=__zpabi_hrcg_cout__c
+; ext hrcg_cout params=__zpabi_hrcg_cout__c param_regs=A
 ; ext hrcg_init params=
 ; ext idle_anim_handler params=
 ; ext inc_threshold_wrap params=
@@ -454,42 +389,42 @@ WAIT	EQU	$FCA8
 ; ext init_drop_gold params=
 ; ext integrity_fail params=
 ; ext load_char_name_ptr params=
-; ext load_char_to_fa params=__zpabi_load_char_to_fa__index
+; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
-; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from
-; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add
+; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
+; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
 ; ext npc_move_ai params=
-; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1
+; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
 ; ext pick_random_member params=
-; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1
-; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos
-; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1
-; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1
+; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
+; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos param_regs=A
+; ext print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 param_regs=A,X
+; ext print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 param_regs=A,X
 ; ext print_ctrl_ab params=
 ; ext print_ctrl_n params=
-; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1
+; ext print_entity_name params=__zpabi_print_entity_name__m_0,__zpabi_print_entity_name__m_1 param_regs=A,X
 ; ext print_fontchar_at_text_pos params=
 ; ext print_member_name params=
 ; ext print_mob_name params=
-; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1
+; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
 ; ext random_events params=
-; ext random_in_range params=__zpabi_random_in_range__limit
+; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext render_font_char params=
-; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel
-; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1
+; ext render_font_char_direct params=__zpabi_render_font_char_direct__charset_sel param_regs=A
+; ext reorder_char params=__zpabi_reorder_char__m_0,__zpabi_reorder_char__m_1 param_regs=A,X
 ; ext reorder_current_char params=
 ; ext reset_turn_pos params=
 ; ext resolve_attack params=
-; ext run_chain params=__zpabi_run_chain__state
-; ext rwts_dispatch params=__zpabi_rwts_dispatch__command carry=true
-; ext scene_loop params=__zpabi_scene_loop__scene
+; ext run_chain params=__zpabi_run_chain__state param_regs=A
+; ext rwts_dispatch params=__zpabi_rwts_dispatch__command param_regs=A carry=true
+; ext scene_loop params=__zpabi_scene_loop__scene param_regs=A
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
 ; ext select_someone_else params=
 ; ext set_blink_target params=
-; ext set_char_state params=__zpabi_set_char_state__state
+; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_cursor_row21 params=
 ; ext set_inverse_video params=
 ; ext set_restricted params=
@@ -498,8 +433,8 @@ WAIT	EQU	$FCA8
 ; ext settings_display_init params=
 ; ext setup_char_sprite params=
 ; ext setup_scene_display params=
-; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1
-; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1
+; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
+; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
 ; ext show_locked_msg params=
 ; ext start_combat params=
@@ -509,9 +444,9 @@ WAIT	EQU	$FCA8
 ; ext tick_anim_counter params=
 ; ext timed_wait params=
 ; ext toggle_sound params=
-; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1
-; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength
-; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1
+; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
+; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength param_regs=A,X
+; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
 ; call call_input_init -> configure_input
@@ -650,8 +585,7 @@ WAIT	EQU	$FCA8
 ; call write_disk_signature -> disk_write
 ; call write_disk_signature -> setup_data_iob
 ; call write_game_data -> transfer_game_data
-; share member=draw_option:__zpabi_draw_option__o_0,__zpabi_draw_option__o_1 holder=input_loop live=input_loop:draw_option,read_keyboard,set_inverse_video,validate_input forward=input_loop>draw_option writer=input_loop
-; share member=option:__zpabi_option__n holder=validate_input live=validate_input:option forward=validate_input>option writer=validate_input
+; share member=validate_input:__zpabi_validate_input__o_0,__zpabi_validate_input__o_1 holder=input_loop live=input_loop:draw_option,read_keyboard,set_inverse_video,validate_input forward=input_loop>validate_input writer=input_loop
 ; item option section=.text local=true zero=false
 ; item set_cursor_pos section=.text local=true zero=false
 ; item draw_option section=.text local=true zero=false
@@ -720,8 +654,6 @@ WAIT	EQU	$FCA8
 ; item write_game_data section=.text local=true zero=false
 ; item read_game_data section=.text local=true zero=false
 ; item continue_game section=.text local=false zero=false
-; item continue_game@run1 section=.text local=true zero=false
-; item continue_game@run0 section=.text local=true zero=false
 ; item save_game section=.text local=false zero=false
 ; item enter_scenario_disk section=.text local=false zero=false
 ; item scenario_done section=.text local=true zero=false
@@ -833,27 +765,26 @@ WAIT	EQU	$FCA8
 option:
    SUBROUTINE
 
-   LDA   __zpabi_option__n
    SEC
    SBC   #$01
-   STA   __local_option__1
+   STA   __local_option__0
    ASL
    ASL
    ASL
    CLC
-   ADC   __local_option__1
-   STA   __local_option__2
+   ADC   __local_option__0
+   STA   __local_option__1
    LDY   #$03
    LDA   (MENU_DESC_PTR),Y
-   STA   __local_option__1
+   STA   __local_option__0
    INY
    LDA   (MENU_DESC_PTR),Y
-   STA   __local_option__0
-   LDA   __local_option__1
-   CLC
-   ADC   __local_option__2
-   STA   option@ret
+   STA   __local_option__n
    LDA   __local_option__0
+   CLC
+   ADC   __local_option__1
+   STA   option@ret
+   LDA   __local_option__n
    ADC   #$00
    STA   option@ret+1
    RTS
@@ -861,45 +792,45 @@ option:
 set_cursor_pos:
    SUBROUTINE
 
-   LDA   __zpabi_set_cursor_pos__pos
-   SEC
-   SBC   #$28
+   STA   __local_set_cursor_pos__pos
+   CMP   #$28
    BCC   .set_cursor_pos@asm_ssa_split@0
-   STA   __zpabi_set_cursor_pos__pos
+   SBC   #$28
+   STA   __local_set_cursor_pos__pos
    CMP   #$28
    BCC   .set_cursor_pos@asm_ssa_split@1
    SBC   #$28
-   STA   __zpabi_set_cursor_pos__pos
-   LDY   #$17
-   STY   CV
+   STA   __local_set_cursor_pos__pos
+   LDA   #$17
 .if_end@1:
 .if_end@0:
-   LDA   __zpabi_set_cursor_pos__pos
+   STA   CV
+   LDA   __local_set_cursor_pos__pos
    STA   CH
    RTS
 .set_cursor_pos@asm_ssa_split@0:
-   LDY   #$15
-   STY   CV
-   JMP   .if_end@0
+   LDA   #$15
+   BNE   .if_end@0
 .set_cursor_pos@asm_ssa_split@1:
    LDA   #$16
-   STA   CV
-   JMP   .if_end@1
+   BNE   .if_end@1
 
 draw_option:
    SUBROUTINE
 
+   STA   __local_draw_option__o
+   STX   __local_draw_option__1
    LDY   #$01
-   LDA   (__zpabi_draw_option__o_0),Y
-   STA   __zpabi_set_cursor_pos__pos
+   LDA   (__local_draw_option__o),Y
    JSR   set_cursor_pos
    JSR   print_ctrl_ab
    LDY   #$06
-   LDA   (__zpabi_draw_option__o_0),Y
-   STA   __zpabi_print_string__s_0
+   LDA   (__local_draw_option__o),Y
+   STA   __local_draw_option__0
    INY
-   LDA   (__zpabi_draw_option__o_0),Y
-   STA   __zpabi_print_string__s_1
+   LDA   (__local_draw_option__o),Y
+   TAX
+   LDA   __local_draw_option__0
    JSR   print_string
    JMP   print_ctrl_n
 
@@ -920,17 +851,19 @@ clear_input_buffer:
 copy_record_data:
    SUBROUTINE
 
+   STA   __local_copy_record_data__o
+   STX   __local_copy_record_data__3
    LDY   #$06
-   LDA   (__zpabi_copy_record_data__o_0),Y
+   LDA   (__local_copy_record_data__o),Y
    STA   __local_copy_record_data__1
    INY
-   LDA   (__zpabi_copy_record_data__o_0),Y
+   LDA   (__local_copy_record_data__o),Y
    STA   __local_copy_record_data__2
    LDY   #$00
    LDA   (__local_copy_record_data__1),Y
    STA   __local_copy_record_data__i
    INY
-   LDA   (__zpabi_copy_record_data__o_0),Y
+   LDA   (__local_copy_record_data__o),Y
    CLC
    ADC   __local_copy_record_data__i
    TAX
@@ -951,15 +884,12 @@ draw_input_options:
    LDA   (MENU_DESC_PTR),Y
    STA   INPUT_OPTION_COUNT
 .loop@2_start:
-   STA   __zpabi_option__n
    JSR   option
    LDY   #$00
    LDA   (option@ret),Y
    BEQ   .if_end@2
+   LDX   option@ret+1
    LDA   option@ret
-   STA   __zpabi_copy_record_data__o_0
-   LDA   option@ret+1
-   STA   __zpabi_copy_record_data__o_1
    JSR   copy_record_data
 .if_end@2:
    DEC   INPUT_OPTION_COUNT
@@ -978,7 +908,6 @@ render_input_buffer:
    LDX   #$00
 .render_input_buffer@rot@1:
    LDA   INPUT_BUFFER,X
-   STA   __zpabi_hrcg_cout__c
    STX   __local_render_input_buffer__i
    JSR   hrcg_cout
    LDX   __local_render_input_buffer__i
@@ -990,13 +919,12 @@ render_input_buffer:
 setup_input:
    SUBROUTINE
 
-   LDA   __zpabi_setup_input__m_0
+   STA   __local_setup_input__m
+   STX   __local_setup_input__0
    STA   MENU_DESC_PTR
-   LDA   __zpabi_setup_input__m_1
-   STA   MENU_DESC_PTR+1
+   STX   MENU_DESC_PTR+1
    LDY   #$02
-   LDA   (__zpabi_setup_input__m_0),Y
-   STA   __zpabi_call_input_init__init
+   LDA   (__local_setup_input__m),Y
    JSR   call_input_init
    JSR   clear_input_buffer
    JSR   draw_input_options
@@ -1005,19 +933,24 @@ setup_input:
 validate_input:
    SUBROUTINE
 
+   STA   __local_validate_input__dir
+   LDA   __zpabi_validate_input__o_0
+   STA   __local_validate_input__o_0
+   LDA   __zpabi_validate_input__o_1
+   STA   __local_validate_input__o_1
 .loop@4_start:
-   LDA   __zpabi_validate_input__dir
+   LDA   __local_validate_input__dir
    SEC
    SBC   #$01
    CLC
-   ADC   __zpabi_validate_input__o_0
+   ADC   __local_validate_input__o_0
    STA   __local_validate_input__1
    LDA   #$00
-   ADC   __zpabi_validate_input__o_1
+   ADC   __local_validate_input__o_1
    STA   __local_validate_input__2
    LDY   #$02
    LDA   (__local_validate_input__1),Y
-   STA   __zpabi_option__n
+   STA   __local_validate_input__1
    BEQ   .validate_input@scfold@0
    CMP   CURRENT_SELECTION
    BNE   .if_end@5
@@ -1026,62 +959,56 @@ validate_input:
 .if_end@5:
    JSR   option
    LDA   option@ret
-   STA   __zpabi_validate_input__o_0
+   STA   __local_validate_input__o_0
    LDA   option@ret+1
-   STA   __zpabi_validate_input__o_1
+   STA   __local_validate_input__o_1
    LDY   #$00
    LDA   (option@ret),Y
    BEQ   .loop@4_start
-   LDA   __zpabi_option__n
+   LDA   __local_validate_input__1
    RTS
 
 input_loop:
    SUBROUTINE
 
-   LDA   __zpabi_input_loop__m_0
-   STA   __zpabi_setup_input__m_0
-   LDA   __zpabi_input_loop__m_1
-   STA   __zpabi_setup_input__m_1
+   STA   __local_input_loop__m
+   STX   __local_input_loop__0
    JSR   setup_input
    LDY   #$01
-   LDA   (__zpabi_input_loop__m_0),Y
+   LDA   (__local_input_loop__m),Y
    STA   CURRENT_SELECTION
 .loop@5_start:
    LDA   CURRENT_SELECTION
-   STA   __zpabi_option__n
    JSR   option
    LDA   option@ret
-   STA   __zpabi_draw_option__o_0
+   STA   __zpabi_validate_input__o_0
    LDA   option@ret+1
-   STA   __zpabi_draw_option__o_1
+   STA   __zpabi_validate_input__o_1
    JSR   set_inverse_video
+   LDX   __zpabi_validate_input__o_1
+   LDA   __zpabi_validate_input__o_0
    JSR   draw_option
    JSR   read_keyboard
    ORA   #$00
    BNE   .if_end@7
    LDY   #$08
-   LDA   (__zpabi_draw_option__o_0),Y
+   LDA   (__zpabi_validate_input__o_0),Y
    RTS
 .if_end@7:
-   STA   __zpabi_validate_input__dir
-   LDA   __zpabi_draw_option__o_0
-   STA   __zpabi_validate_input__o_0
-   LDA   __zpabi_draw_option__o_1
-   STA   __zpabi_validate_input__o_1
    JSR   validate_input
    CMP   CURRENT_SELECTION
    BEQ   .input_loop@scfold@0
    ORA   #$00
    BNE   .if_else@11
 .input_loop@scfold@0:
+   LDX   #$00
    LDA   #$09
-   STA   __zpabi_tune_player__tune
-   LDA   #$00
-   STA   __zpabi_tune_player__strength
    JSR   tune_player
    JMP   .loop@5_start
 .if_else@11:
    STA   CURRENT_SELECTION
+   LDX   __zpabi_validate_input__o_1
+   LDA   __zpabi_validate_input__o_0
    JSR   draw_option
    JMP   .loop@5_start
 
@@ -1113,11 +1040,12 @@ read_paddle:
 joy_to_zone:
    SUBROUTINE
 
-   LDA   __zpabi_joy_to_zone__reading
+   STA   __local_joy_to_zone__old_zone
+   TXA
    LSR
    LSR
    LSR
-   LDX   __zpabi_joy_to_zone__old_zone
+   LDX   __local_joy_to_zone__old_zone
    CMP   ZONE_THRESH_PLUS,X
    BCC   .if_end@13
    LDA   #$00
@@ -1138,18 +1066,16 @@ check_joystick:
    JSR   WAIT
    LDX   #$00
    JSR   read_paddle
-   STA   __zpabi_joy_to_zone__reading
+   TAX
    LDA   joy_zone_x
-   STA   __zpabi_joy_to_zone__old_zone
    JSR   joy_to_zone
    STA   joy_zone_x
    LDA   #$C8
    JSR   WAIT
    LDX   #$01
    JSR   read_paddle
-   STA   __zpabi_joy_to_zone__reading
+   TAX
    LDA   joy_zone_y
-   STA   __zpabi_joy_to_zone__old_zone
    JSR   joy_to_zone
    STA   joy_zone_y
    CMP   #$01
@@ -1282,7 +1208,6 @@ check_combat_eligibility:
 .if_end@34:
    LDY   #$03
    LDA   (ENTITY_PTR),Y
-   STA   __zpabi_check_adjacent_threats__pos
    JSR   check_adjacent_threats
    LDA   ADJACENT_THREAT
    BEQ   .if_end@35
@@ -1290,7 +1215,6 @@ check_combat_eligibility:
 .if_end@35:
    LDY   #$03
    LDA   (ENTITY_PTR),Y
-   STA   __zpabi_check_encounter__pos
    JSR   check_encounter
    CMP   #$02
    BNE   .if_end@36
@@ -1338,8 +1262,6 @@ teardown_input:
    SUBROUTINE
 
    JSR   get_input_table_ptr
-   STA   __zpabi_input_loop__m_0
-   STX   __zpabi_input_loop__m_1
    JMP   input_loop
 
 menu_see_your_lot:
@@ -1357,19 +1279,15 @@ menu_check_attack:
    LDA   #$0E
    RTS
 .if_end@38:
+   LDX   #>ATTACK_DIR_TABLE
    LDA   #<ATTACK_DIR_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>ATTACK_DIR_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 menu_other_options:
    SUBROUTINE
 
+   LDX   #>OTHER_OPTIONS_TABLE
    LDA   #<OTHER_OPTIONS_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>OTHER_OPTIONS_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 retire_character:
@@ -1379,7 +1297,6 @@ retire_character:
    STA   ACTIVE_CHAR
    JSR   reorder_current_char
    LDA   #$23
-   STA   __zpabi_scene_loop__scene
    JMP   scene_loop
 
 menu_game_settings:
@@ -1392,10 +1309,8 @@ menu_game_settings:
 menu_game_settings_enter:
    SUBROUTINE
 
+   LDX   #>GAME_SETTINGS_TABLE
    LDA   #<GAME_SETTINGS_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>GAME_SETTINGS_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 menu_settings_init:
@@ -1451,19 +1366,15 @@ settings_danger_down:
 menu_attack_target:
    SUBROUTINE
 
+   LDX   #>ATTACK_TARGET_TABLE
    LDA   #<ATTACK_TARGET_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>ATTACK_TARGET_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 menu_drop_gold:
    SUBROUTINE
 
+   LDX   #>DROP_GOLD_TABLE
    LDA   #<DROP_GOLD_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>DROP_GOLD_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 menu_drop_inc:
@@ -1531,10 +1442,8 @@ slot_dec:
 init_world:
    SUBROUTINE
 
+   LDX   #>SAVE_LOAD_TABLE
    LDA   #<SAVE_LOAD_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>SAVE_LOAD_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 slot_inc_enter:
@@ -1554,10 +1463,8 @@ slot_dec_enter:
 enter_save_game_slot:
    SUBROUTINE
 
+   LDX   #>SAVE_GAME_SLOT_TABLE
    LDA   #<SAVE_GAME_SLOT_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>SAVE_GAME_SLOT_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 slot_dec_reenter:
@@ -1577,7 +1484,6 @@ slot_inc_reenter:
 call_input_init:
    SUBROUTINE
 
-   LDA   __zpabi_call_input_init__init
    CMP   #$01
    BEQ   .case@10
    CMP   #$02
@@ -1606,10 +1512,8 @@ call_input_init:
 enter_char_select:
    SUBROUTINE
 
+   LDX   #>CHAR_SELECT_TABLE
    LDA   #<CHAR_SELECT_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>CHAR_SELECT_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 char_select_init:
@@ -1621,7 +1525,6 @@ char_select_init:
 .if_end@44:
    JSR   set_cursor_row21
    LDA   #$35
-   STA   __zpabi_display_message__index
    JSR   display_message
    LDA   #$02
    RTS
@@ -1645,10 +1548,8 @@ char_select_prev:
 char_select_patch:
    SUBROUTINE
 
-   LDA   __zpabi_char_select_patch__home_enabled
    STA   CHAR_SELECT_OPTIONS+45
-   LDA   __zpabi_char_select_patch__here_enabled
-   STA   CHAR_SELECT_OPTIONS+36
+   STX   CHAR_SELECT_OPTIONS+36
    LDA   #$02
    STA   CHAR_SELECT_TABLE+1
    JMP   enter_char_select
@@ -1658,9 +1559,7 @@ char_select_here:
 
    LDA   #$01
    STA   ACTIVE_CHAR
-   STA   __zpabi_char_select_patch__home_enabled
-   LDA   #$00
-   STA   __zpabi_char_select_patch__here_enabled
+   LDX   #$00
    JMP   char_select_patch
 
 char_select_home:
@@ -1672,19 +1571,15 @@ char_select_home:
    JMP   char_select_here
 .if_end@45:
    STA   ACTIVE_CHAR
+   LDX   #$01
    LDA   #$00
-   STA   __zpabi_char_select_patch__home_enabled
-   LDA   #$01
-   STA   __zpabi_char_select_patch__here_enabled
    JMP   char_select_patch
 
 start_game_input:
    SUBROUTINE
 
+   LDX   #>ALT_INPUT_TABLE
    LDA   #<ALT_INPUT_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>ALT_INPUT_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 setup_data_iob:
@@ -1745,7 +1640,6 @@ wait_keypress:
    SUBROUTINE
 
    LDA   #$30
-   STA   __zpabi_display_message__index
    JSR   display_message
    LDA   #$00
    STA   KBDSTRB
@@ -1759,7 +1653,6 @@ prompt_insert_disk:
 
    JSR   set_cursor_row21
    LDA   #$03
-   STA   __zpabi_display_message__index
    JSR   display_message
    JMP   wait_keypress
 
@@ -1778,7 +1671,6 @@ format_disk_track:
    SUBROUTINE
 
    LDA   #$04
-   STA   __zpabi_rwts_dispatch__command
    JMP   rwts_dispatch
 
 write_disk_signature:
@@ -1900,14 +1792,14 @@ advance_sector:
 transfer_game_data:
    SUBROUTINE
 
+   STA   __local_transfer_game_data__command
    JSR   setup_slot_iob
    LDA   #$02
    STA   __local_transfer_game_data__tries
    LDA   #$1A
    STA   __local_transfer_game_data__left
 .loop@23_start:
-   LDA   __zpabi_transfer_game_data__command
-   STA   __zpabi_rwts_dispatch__command
+   LDA   __local_transfer_game_data__command
    JSR   rwts_dispatch
    BCC   .if_else@58
    DEC   __local_transfer_game_data__tries
@@ -1924,19 +1816,16 @@ write_game_data:
    SUBROUTINE
 
    LDA   #$02
-   STA   __zpabi_transfer_game_data__command
    JMP   transfer_game_data
 
 read_game_data:
    SUBROUTINE
 
    LDA   #$01
-   STA   __zpabi_transfer_game_data__command
    JSR   transfer_game_data
    BCC   .if_end@61
    JSR   set_cursor_row21
    LDA   #$3B
-   STA   __zpabi_display_message__index
    JSR   display_message
    JMP   cold_restart
 .if_end@61:
@@ -1953,11 +1842,15 @@ continue_game:
    LDA   #$00
    RTS
 .if_end@62:
-   JSR   continue_game@run0
+   JSR   set_cursor_row21
+   LDA   #$33
+   JSR   display_message
    JSR   wait_keypress
    JSR   verify_disk_signature
    BCC   .if_end@63
-   JSR   continue_game@run1
+   JSR   set_cursor_row21
+   LDA   #$16
+   JSR   display_message
    JSR   ensure_game_disk
    LDA   #$20
    RTS
@@ -1967,22 +1860,6 @@ continue_game:
    JSR   ensure_game_disk
    LDA   #$00
    RTS
-
-continue_game@run1:
-   SUBROUTINE
-
-   JSR   set_cursor_row21
-   LDA   #$16
-   STA   __zpabi_display_message__index
-   JMP   display_message
-
-continue_game@run0:
-   SUBROUTINE
-
-   JSR   set_cursor_row21
-   LDA   #$33
-   STA   __zpabi_display_message__index
-   JMP   display_message
 
 save_game:
    SUBROUTINE
@@ -1999,7 +1876,6 @@ save_game:
    BNE   .if_end@65
    JSR   ensure_game_disk
    LDA   #$42
-   STA   __zpabi_scene_loop__scene
    JSR   scene_loop
    LDA   #$01
    STA   scenario_init_flag
@@ -2009,10 +1885,8 @@ save_game:
 enter_scenario_disk:
    SUBROUTINE
 
+   LDX   #>SCENARIO_DISK_TABLE
    LDA   #<SCENARIO_DISK_TABLE
-   STA   __zpabi_input_loop__m_0
-   LDA   #>SCENARIO_DISK_TABLE
-   STA   __zpabi_input_loop__m_1
    JMP   input_loop
 
 scenario_done:
@@ -2035,7 +1909,6 @@ display_insert_msg:
 
    JSR   set_cursor_row21
    LDA   #$1B
-   STA   __zpabi_display_message__index
    JMP   display_message
 
 format_scenario_disk:
@@ -2043,7 +1916,9 @@ format_scenario_disk:
 
    JSR   verify_game_disk
    BCS   .if_end@66
-   JSR   continue_game@run0
+   JSR   set_cursor_row21
+   LDA   #$33
+   JSR   display_message
    JMP   enter_scenario_disk
 .if_end@66:
    JSR   verify_disk_signature
@@ -2065,7 +1940,9 @@ use_scenario_disk:
 
    JSR   verify_disk_signature
    BCC   .if_else@72
-   JSR   continue_game@run1
+   JSR   set_cursor_row21
+   LDA   #$16
+   JSR   display_message
    JMP   scenario_done
 .if_else@72:
    JSR   write_game_data

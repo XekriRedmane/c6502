@@ -2,18 +2,15 @@ HARGS	EQU	$00
 SSP	EQU	$05
 FP	EQU	$07
 DPTR	EQU	$09
-__local_branch_to_offset__0	EQU	$0B
-__local_return_value__0	EQU	$0B
-__local_return_value__1	EQU	$0C
-__local_return_value__x	EQU	$0D
-__local_branch_to_offset__pages_1	EQU	$0E
-__local_return_value__count	EQU	$0E
-__local_branch_to_offset__2	EQU	$0F
-__local_set_nonstack_var__var	EQU	$0F
-__local_pop__1	EQU	$10
-__local_set_nonstack_var__0	EQU	$10
-__local_pop__2	EQU	$11
-__local_set_nonstack_var__1	EQU	$11
+__local_store_result__0	EQU	$0B
+__local_pop__1	EQU	$0C
+__local_store_result__value_1	EQU	$0C
+__local_pop__2	EQU	$0D
+__local_store_result__value_0	EQU	$0D
+__local_set_nonstack_var__var	EQU	$0E
+__local_push__value_0	EQU	$0F
+__local_set_nonstack_var__0	EQU	$0F
+__local_set_nonstack_var__1	EQU	$10
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -74,62 +71,60 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__local_dec_var__0	EQU	$E0
-__local_inc_var__0	EQU	$E0
-__zpabi_branch_to_offset__offset_0	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
-__zpabi_load_address__addr_0	EQU	$E0
-__zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
-__zpabi_print_number__n_0	EQU	$E0
-__zpabi_return_value__value_0	EQU	$E0
-__zpabi_store_result__value_0	EQU	$E0
+__zpabi_set_nonstack_var__value_0	EQU	$E0
+__zpabi_var_put__value_0	EQU	$E0
 __local_get_const_word__1	EQU	$E1
-__local_var_put__var	EQU	$E1
-__zpabi_branch_to_offset__offset_1	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
-__zpabi_load_address__addr_1	EQU	$E1
-__zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
-__zpabi_print_number__n_1	EQU	$E1
-__zpabi_return_value__value_1	EQU	$E1
-__zpabi_store_result__value_1	EQU	$E1
+__zpabi_set_nonstack_var__value_1	EQU	$E1
+__zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__zpabi_push__value_0	EQU	$E4
-__zpabi_var_put__value_0	EQU	$E4
-__zpabi_push__value_1	EQU	$E5
-__zpabi_var_put__value_1	EQU	$E5
-__zpabi_set_nonstack_var__value_0	EQU	$E6
-__zpabi_set_nonstack_var__value_1	EQU	$E7
+__local_do_instruction__0	EQU	$E5
+__local_do_instruction__v_0	EQU	$E6
+__local_do_instruction__forms	EQU	$E7
+__local_do_instruction__1	EQU	$E8
+__local_do_1op__0	EQU	$E9
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
-__local_do_instruction__0	EQU	$F1
-__local_do_instruction__v_0	EQU	$F2
-__local_do_instruction__forms	EQU	$F3
-__local_do_instruction__1	EQU	$F4
-__local_do_2op__equal	EQU	$F5
-__local_do_var__n	EQU	$F5
-__local_do_2op__0	EQU	$F6
-__local_do_var__0	EQU	$F6
-__local_do_2op__1	EQU	$F7
-__local_do_var__1	EQU	$F7
-__local_do_2op__2	EQU	$F8
-__local_do_var__2	EQU	$F8
-__local_do_var__3	EQU	$F9
-__local_branch__offset_1	EQU	$FB
-__local_get_nonstack_var__var	EQU	$FB
-__local_instr_call__1	EQU	$FB
-__local_branch__offset_0	EQU	$FC
-__local_get_nonstack_var__0	EQU	$FC
-__local_instr_call__i	EQU	$FC
-__local_branch__condition	EQU	$FD
-__local_get_nonstack_var__1	EQU	$FD
-__local_instr_call__args	EQU	$FD
-__local_get_nonstack_var__2	EQU	$FE
-__local_instr_call__2	EQU	$FE
-__local_store_result__0	EQU	$FF
+__local_do_2op__equal	EQU	$F0
+__local_do_var__n	EQU	$F0
+__local_do_2op__0	EQU	$F1
+__local_do_var__0	EQU	$F1
+__local_do_2op__1	EQU	$F2
+__local_do_var__1	EQU	$F2
+__local_do_2op__2	EQU	$F3
+__local_do_var__2	EQU	$F3
+__local_do_var__3	EQU	$F4
+__local_branch__hi	EQU	$F6
+__local_dec_var__0	EQU	$F6
+__local_inc_var__0	EQU	$F6
+__local_instr_call__1	EQU	$F6
+__local_branch__offset_1	EQU	$F7
+__local_instr_call__i	EQU	$F7
+__local_var_get__var	EQU	$F7
+__local_branch__condition	EQU	$F8
+__local_instr_call__args	EQU	$F8
+__local_var_get__0	EQU	$F8
+__local_branch_to_offset__0	EQU	$F9
+__local_get_nonstack_var__var	EQU	$F9
+__local_instr_call__2	EQU	$F9
+__local_return_value__0	EQU	$F9
+__local_branch_to_offset__pages_0	EQU	$FA
+__local_get_nonstack_var__0	EQU	$FA
+__local_return_value__1	EQU	$FA
+__local_branch_to_offset__offset_0	EQU	$FB
+__local_get_nonstack_var__1	EQU	$FB
+__local_return_value__x	EQU	$FB
+__local_branch_to_offset__pages_1	EQU	$FC
+__local_get_nonstack_var__2	EQU	$FC
+__local_return_value__count	EQU	$FC
+__local_branch_to_offset__1	EQU	$FD
+__local_return_value__value_1	EQU	$FD
+__local_return_value__value_0	EQU	$FE
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -144,11 +139,11 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__condition indirect=false in_cycle=false param_regs=A
-; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false changes=__zpabi_branch_to_offset__offset_1
+; def branch params=__zpabi_branch__condition locals=__local_branch__hi,__local_branch__offset_1,__local_branch__condition indirect=false in_cycle=false param_regs=A
+; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__offset_0,__local_branch_to_offset__pages_1,__local_branch_to_offset__1 indirect=false in_cycle=false param_regs=A,X
 ; def dec_var params= locals=__local_dec_var__0 indirect=false in_cycle=false
 ; def do_0op params=__zpabi_do_0op__n locals=__local_do_0op__n indirect=false in_cycle=false param_regs=A
-; def do_1op params=__zpabi_do_1op__n locals=__local_do_1op__0,__local_do_1op__1,__local_do_1op__n indirect=false in_cycle=false param_regs=A
+; def do_1op params=__zpabi_do_1op__n locals=__local_do_1op__0,__local_do_1op__n indirect=false in_cycle=false param_regs=A
 ; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__1,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4 indirect=false in_cycle=false param_regs=A
 ; def do_instruction params= locals=__local_do_instruction__v_1,__local_do_instruction__0,__local_do_instruction__v_0,__local_do_instruction__forms,__local_do_instruction__1 indirect=false in_cycle=false
 ; def do_var params=__zpabi_do_var__n locals=__local_do_var__n,__local_do_var__0,__local_do_var__1,__local_do_var__2,__local_do_var__3 indirect=false in_cycle=false param_regs=A
@@ -158,11 +153,11 @@ COUT1	EQU	$FDF0
 ; def inc_var params= locals=__local_inc_var__0 indirect=false in_cycle=false
 ; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__i,__local_instr_call__args,__local_instr_call__2 indirect=false in_cycle=false
 ; def pop params= locals=__local_pop__0,__local_pop__1,__local_pop__2 indirect=false in_cycle=false
-; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals=__local_push__0 indirect=false in_cycle=false
-; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count indirect=false in_cycle=false
+; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals=__local_push__value_1,__local_push__value_0 indirect=false in_cycle=false param_regs=A,X
+; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count,__local_return_value__value_1,__local_return_value__value_0 indirect=false in_cycle=false param_regs=A,X
 ; def set_nonstack_var params=__zpabi_set_nonstack_var__var,__zpabi_set_nonstack_var__value_0,__zpabi_set_nonstack_var__value_1 locals=__local_set_nonstack_var__var,__local_set_nonstack_var__0,__local_set_nonstack_var__1 indirect=false in_cycle=false param_regs=A,,
-; def store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 locals=__local_store_result__0 indirect=false in_cycle=false
-; def var_get params=__zpabi_var_get__var locals=__local_var_get__var indirect=false in_cycle=false param_regs=A
+; def store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 locals=__local_store_result__0,__local_store_result__value_1,__local_store_result__value_0 indirect=false in_cycle=false param_regs=A,X
+; def var_get params=__zpabi_var_get__var locals=__local_var_get__var,__local_var_get__0 indirect=false in_cycle=false param_regs=A
 ; def var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 locals=__local_var_put__var indirect=false in_cycle=false param_regs=A,,
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -212,13 +207,13 @@ COUT1	EQU	$FDF0
 ; ext instr_sread params=
 ; ext instr_test_attr params=
 ; ext internal_error params=
-; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1
-; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1
+; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 param_regs=A,X
+; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 param_regs=A,X
 ; ext new_line params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
 ; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
-; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1
+; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 param_regs=A,X
 ; ext print_obj params=__zpabi_print_obj__obj param_regs=A
 ; ext print_status_line params=
 ; ext print_string_literal params=
@@ -311,8 +306,7 @@ COUT1	EQU	$FDF0
 ; call var_put -> pop
 ; call var_put -> push
 ; call var_put -> set_nonstack_var
-; share member=push:__zpabi_push__value_0,__zpabi_push__value_1 member=var_put:__zpabi_var_put__value_0,__zpabi_var_put__value_1 holder=dec_var holder=inc_var holder=var_get live=dec_var:var_put live=inc_var:var_put live=var_get:push live=var_put:pop forward=dec_var>var_put forward=inc_var>var_put forward=var_get>push forward=var_put>push writer=dec_var writer=inc_var writer=var_get
-; share member=return_value:__zpabi_return_value__value_0,__zpabi_return_value__value_1 member=store_result:__zpabi_store_result__value_0,__zpabi_store_result__value_1 live=return_value:pop forward=return_value>store_result
+; share member=set_nonstack_var:__zpabi_set_nonstack_var__value_0,__zpabi_set_nonstack_var__value_1 member=var_put:__zpabi_var_put__value_0,__zpabi_var_put__value_1 holder=dec_var holder=inc_var live=dec_var:var_put live=inc_var:var_put live=var_put:pop forward=dec_var>var_put forward=inc_var>var_put forward=var_put>set_nonstack_var writer=dec_var writer=inc_var
 ; item push section=.text local=true zero=false
 ; item pop section=.text local=true zero=false
 ; item get_nonstack_var section=.text local=true zero=false
@@ -325,19 +319,13 @@ COUT1	EQU	$FDF0
 ; item return_value section=.text local=false zero=false
 ; item branch_to_offset section=.text local=true zero=false
 ; item branch section=.text local=false zero=false
-; item branch@tail3 section=.text local=true zero=false
 ; item branch@tail1 section=.text local=true zero=false
-; item branch@tail0 section=.text local=true zero=false
 ; item instr_call section=.text local=true zero=false
-; item instr_call@run0 section=.text local=true zero=false
-; item instr_call@tail4 section=.text local=true zero=false
 ; item inc_var section=.text local=true zero=false
-; item inc_var@tail2 section=.text local=true zero=false
+; item inc_var@tail0 section=.text local=true zero=false
 ; item dec_var section=.text local=true zero=false
 ; item do_0op section=.text local=true zero=false
 ; item do_1op section=.text local=true zero=false
-; item do_1op@run1 section=.text local=true zero=false
-; item do_1op@tail5 section=.text local=true zero=false
 ; item do_2op section=.text local=true zero=false
 ; item do_var section=.text local=true zero=false
 ; item do_instruction section=.text local=false zero=false
@@ -414,12 +402,13 @@ COUT1	EQU	$FDF0
 push:
    SUBROUTINE
 
+   STA   __local_push__value_0
    LDA   Z_SP
    BNE   .carry_inc@0
    DEC   Z_SP+1
 .carry_inc@0:
    DEC   Z_SP
-   LDA   __zpabi_push__value_0
+   LDA   __local_push__value_0
    LDY   #$00
    STA   (Z_SP),Y
    LDA   Z_SP
@@ -427,7 +416,7 @@ push:
    DEC   Z_SP+1
 .carry_inc@1:
    DEC   Z_SP
-   LDA   __zpabi_push__value_1
+   TXA
    LDY   #$00
    STA   (Z_SP),Y
    INC   STACK_COUNT
@@ -543,11 +532,11 @@ var_get:
    ORA   #$00
    BNE   .if_end@4
    JSR   pop
-   STA   __zpabi_push__value_0
-   STX   __zpabi_push__value_1
+   STA   __local_var_get__0
+   STX   __local_var_get__var
    JSR   push
-   LDX   __zpabi_push__value_1
-   LDA   __zpabi_push__value_0
+   LDX   __local_var_get__var
+   LDA   __local_var_get__0
    RTS
 .if_end@4:
    JMP   get_nonstack_var
@@ -555,35 +544,31 @@ var_get:
 var_put:
    SUBROUTINE
 
-   STA   __local_var_put__var
    ORA   #$00
    BNE   .if_end@5
    JSR   pop
+   LDX   __zpabi_set_nonstack_var__value_1
+   LDA   __zpabi_set_nonstack_var__value_0
    JMP   push
 .if_end@5:
-   LDA   __zpabi_push__value_0
-   STA   __zpabi_set_nonstack_var__value_0
-   LDA   __zpabi_push__value_1
-   STA   __zpabi_set_nonstack_var__value_1
-   LDA   __local_var_put__var
    JMP   set_nonstack_var
 
 store_result:
    SUBROUTINE
 
+   STA   __local_store_result__value_0
+   STX   __local_store_result__value_1
    JSR   get_next_code_byte
    STA   __local_store_result__0
    ORA   #$00
    BNE   .if_else@7
-   LDA   __zpabi_store_result__value_0
-   STA   __zpabi_push__value_0
-   LDA   __zpabi_store_result__value_1
-   STA   __zpabi_push__value_1
+   LDX   __local_store_result__value_1
+   LDA   __local_store_result__value_0
    JMP   push
 .if_else@7:
-   LDA   __zpabi_store_result__value_0
+   LDA   __local_store_result__value_0
    STA   __zpabi_set_nonstack_var__value_0
-   LDA   __zpabi_store_result__value_1
+   LDA   __local_store_result__value_1
    STA   __zpabi_set_nonstack_var__value_1
    LDA   __local_store_result__0
    JMP   set_nonstack_var
@@ -610,6 +595,8 @@ get_var_content:
 return_value:
    SUBROUTINE
 
+   STA   __local_return_value__value_0
+   STX   __local_return_value__value_1
    LDA   FRAME_Z_SP
    STA   Z_SP
    LDA   FRAME_Z_SP+1
@@ -652,43 +639,47 @@ return_value:
    STA   FRAME_STACK_COUNT
    LDA   #$00
    STA   ZCODE_PAGE_VALID
+   LDX   __local_return_value__value_1
+   LDA   __local_return_value__value_0
    JMP   store_result
 
 branch_to_offset:
    SUBROUTINE
 
-   LDA   __zpabi_branch_to_offset__offset_1
+   STA   __local_branch_to_offset__offset_0
+   STX   __local_branch_to_offset__pages_0
+   TXA
    BPL   .branch_to_offset@asm_ssa_split@0
-   LDY   #$01
-   STY   __local_branch_to_offset__pages_1
+   LDA   #$01
+   STA   __local_branch_to_offset__pages_1
 .if_end@10:
    LDA   Z_PC
    CLC
-   ADC   __zpabi_branch_to_offset__offset_0
-   STA   __local_branch_to_offset__2
+   ADC   __local_branch_to_offset__offset_0
+   STA   __local_branch_to_offset__1
    BCC   .if_end@11
-   INC   __zpabi_branch_to_offset__offset_1
+   INC   __local_branch_to_offset__pages_0
    BNE   .inc_done@0
    INC   __local_branch_to_offset__pages_1
 .inc_done@0:
 .if_end@11:
-   LDA   __zpabi_branch_to_offset__offset_1
+   LDA   __local_branch_to_offset__pages_0
    ORA   __local_branch_to_offset__pages_1
    BNE   .if_end@12
-   LDA   __local_branch_to_offset__2
+   LDA   __local_branch_to_offset__1
    STA   Z_PC
    RTS
 .if_end@12:
    LDA   Z_PC+1
    CLC
-   ADC   __zpabi_branch_to_offset__offset_1
-   STA   __zpabi_branch_to_offset__offset_1
+   ADC   __local_branch_to_offset__pages_0
+   STA   __local_branch_to_offset__pages_0
    LDA   Z_PC+2
    ADC   __local_branch_to_offset__pages_1
    STA   __local_branch_to_offset__0
-   LDA   __local_branch_to_offset__2
+   LDA   __local_branch_to_offset__1
    STA   Z_PC
-   LDA   __zpabi_branch_to_offset__offset_1
+   LDA   __local_branch_to_offset__pages_0
    STA   Z_PC+1
    LDA   __local_branch_to_offset__0
    AND   #$01
@@ -706,83 +697,72 @@ branch:
 
    STA   __local_branch__condition
    JSR   get_next_code_byte
-   STA   __local_branch__offset_0
+   STA   __local_branch__offset_1
    AND   #$80
    BEQ   .cmp_end@0
    LDA   #$01
 .cmp_end@0:
    CMP   __local_branch__condition
    BEQ   .if_end@13
-   BIT   __local_branch__offset_0
+   BIT   __local_branch__offset_1
    BVS   .if_end@14
    JSR   get_next_code_byte
 .if_end@14:
    RTS
 .if_end@13:
-   BIT   __local_branch__offset_0
+   BIT   __local_branch__offset_1
    BVC   .if_else@16
-   LDA   __local_branch__offset_0
+   LDA   __local_branch__offset_1
    AND   #$3F
-   STA   __local_branch__offset_0
+   STA   __local_branch__condition
    LDA   #$00
    STA   __local_branch__offset_1
    JMP   .if_end@15
 .if_else@16:
-   LDA   __local_branch__offset_0
-   AND   #$3F
-   STA   __local_branch__offset_1
-   JSR   get_next_code_byte
-   STA   __local_branch__offset_0
    LDA   __local_branch__offset_1
+   AND   #$3F
+   STA   __local_branch__hi
+   JSR   get_next_code_byte
+   STA   __local_branch__condition
+   LDA   __local_branch__hi
    AND   #$20
    BEQ   .if_end@17
-   LDA   __local_branch__offset_1
+   LDA   __local_branch__hi
    ORA   #$C0
-   STA   __local_branch__offset_1
+   STA   __local_branch__hi
 .if_end@17:
+   LDA   __local_branch__hi
+   STA   __local_branch__offset_1
 .if_end@15:
-   LDA   __local_branch__offset_0
+   LDA   __local_branch__condition
    ORA   __local_branch__offset_1
    BNE   .if_end@18
-   JMP   branch@tail1
+   LDX   #$00
+   TXA
+   JMP   return_value
 .if_end@18:
    LDA   __local_branch__offset_1
    BNE   .if_end@19
-   LDA   __local_branch__offset_0
+   LDA   __local_branch__condition
    CMP   #$01
    BNE   .vthread@0
-   JMP   branch@tail0
+   JMP   branch@tail1
 .if_end@19:
-   LDA   __local_branch__offset_0
+   LDA   __local_branch__condition
 .vthread@0:
    SEC
    SBC   #$02
-   STA   __zpabi_branch_to_offset__offset_0
-   LDA   __local_branch__offset_1
-   JMP   branch@tail3
-
-branch@tail3:
-   SUBROUTINE
-
-   SBC   #$00
-   STA   __zpabi_branch_to_offset__offset_1
+   BCS   .carry_inc@3
+   DEC   __local_branch__offset_1
+.carry_inc@3:
+   LDX   __local_branch__offset_1
    JMP   branch_to_offset
 
 branch@tail1:
    SUBROUTINE
 
-   LDA   #$00
-   STA   __zpabi_return_value__value_0
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
-
-branch@tail0:
-   SUBROUTINE
-
+   LDX   #$00
    LDA   #$01
-   STA   __zpabi_return_value__value_0
-   LDA   #$00
-   STA   __zpabi_return_value__value_1
    JMP   return_value
 
 instr_call:
@@ -791,22 +771,20 @@ instr_call:
    LDA   OPERANDS
    ORA   OPERANDS+1
    BNE   .if_end@20
-   LDA   #$00
-   STA   __zpabi_store_result__value_0
-   JMP   instr_call@tail4
+   LDX   #$00
+   TXA
+   JMP   store_result
 .if_end@20:
    LDA   FRAME_STACK_COUNT
-   STA   __zpabi_push__value_0
-   LDA   Z_PC
-   JSR   instr_call@run0
+   LDX   Z_PC
+   JSR   push
+   LDX   FRAME_Z_SP+1
    LDA   FRAME_Z_SP
-   STA   __zpabi_push__value_0
-   LDA   FRAME_Z_SP+1
-   JSR   instr_call@run0
+   JSR   push
    LDA   Z_PC+1
-   STA   __zpabi_push__value_0
-   LDA   Z_PC+2
-   JSR   instr_call@run0
+   LDX   Z_PC+2
+   ORA   #$00
+   JSR   push
    LDA   #$00
    STA   ZCODE_PAGE_VALID
    LDA   OPERANDS
@@ -828,9 +806,9 @@ instr_call:
 .loop@1_start:
    LDX   __local_instr_call__args
    LDA   LOCAL_ZVARS,X
-   STA   __zpabi_push__value_1
+   STA   __local_instr_call__1
    LDA   LOCAL_ZVARS+1,X
-   STA   __zpabi_push__value_0
+   LDX   __local_instr_call__1
    JSR   push
    JSR   get_next_code_byte
    STA   __local_instr_call__1
@@ -865,10 +843,8 @@ instr_call:
 .loop@2_continue:
    LDA   __local_instr_call__args
    BNE   .instr_call@rot@0
+   LDX   #$00
    LDA   __local_instr_call__2
-   STA   __zpabi_push__value_0
-   LDA   #$00
-   STA   __zpabi_push__value_1
    JSR   push
    LDA   STACK_COUNT
    STA   FRAME_STACK_COUNT
@@ -877,18 +853,6 @@ instr_call:
    LDA   Z_SP+1
    STA   FRAME_Z_SP+1
    RTS
-
-instr_call@run0:
-   SUBROUTINE
-
-   STA   __zpabi_push__value_1
-   JMP   push
-
-instr_call@tail4:
-   SUBROUTINE
-
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
 
 inc_var:
    SUBROUTINE
@@ -903,9 +867,9 @@ inc_var:
    INC   __zpabi_var_put__value_1
 .inc_done@1:
    LDA   __local_inc_var__0
-   JMP   inc_var@tail2
+   JMP   inc_var@tail0
 
-inc_var@tail2:
+inc_var@tail0:
    SUBROUTINE
 
    JSR   var_put
@@ -923,11 +887,11 @@ dec_var:
    SEC
    SBC   #$01
    STA   __zpabi_var_put__value_0
-   BCS   .carry_inc@3
+   BCS   .carry_inc@4
    DEC   __zpabi_var_put__value_1
-.carry_inc@3:
+.carry_inc@4:
    LDA   __local_dec_var__0
-   JMP   inc_var@tail2
+   JMP   inc_var@tail0
 
 do_0op:
    SUBROUTINE
@@ -955,17 +919,17 @@ do_0op:
    DC.W  instr_quit-1
    DC.W  new_line-1
 .case@4:
-   JMP   branch@tail0
-.case@5:
    JMP   branch@tail1
+.case@5:
+   LDX   #$00
+   TXA
+   JMP   return_value
 .case@7:
    JSR   print_string_literal
    JSR   new_line
    JMP   .case@4
 .case@12:
    JSR   pop
-   STA   __zpabi_return_value__value_0
-   STX   __zpabi_return_value__value_1
    JMP   return_value
 .default@16:
    JMP   internal_error
@@ -975,6 +939,7 @@ do_0op:
 do_1op:
    SUBROUTINE
 
+   LDX   OPERANDS+1
    CMP   #$10
    BCC   .lb_skip@0
    JMP   internal_error
@@ -1004,7 +969,7 @@ do_1op:
    DC.W  .case@31-1
    DC.W  .case@32-1
 .case@18:
-   LDA   OPERANDS+1
+   TXA
    ORA   OPERANDS
    BEQ   .cmp_true@2
    LDA   #$00
@@ -1015,56 +980,38 @@ do_1op:
    JMP   branch
 .case@25:
    LDA   OPERANDS
-   STA   __zpabi_load_address__addr_0
-   LDA   OPERANDS+1
-   JSR   do_1op@run1
+   JSR   load_address
    JMP   print_zstring
 .case@27:
    LDA   OPERANDS
    JMP   print_obj
 .case@28:
    LDA   OPERANDS
-   STA   __zpabi_return_value__value_0
-   LDA   OPERANDS+1
-   STA   __zpabi_return_value__value_1
    JMP   return_value
 .case@29:
    LDA   OPERANDS
    SEC
    SBC   #$02
-   STA   __zpabi_branch_to_offset__offset_0
-   LDA   OPERANDS+1
-   JMP   branch@tail3
+   BCS   .carry_inc@5
+   DEX
+.carry_inc@5:
+   JMP   branch_to_offset
 .case@30:
    LDA   OPERANDS
-   STA   __zpabi_load_packed_address__addr_0
-   LDA   OPERANDS+1
-   STA   __zpabi_load_packed_address__addr_1
    JSR   load_packed_address
    JMP   print_zstring
 .case@31:
    LDA   OPERANDS
    JSR   var_get
-   JMP   do_1op@tail5
+   JMP   store_result
 .case@32:
    LDA   OPERANDS
    EOR   #$FF
-   STA   __zpabi_store_result__value_0
-   LDA   OPERANDS+1
+   STA   __local_do_1op__0
+   TXA
    EOR   #$FF
-   JMP   instr_call@tail4
-
-do_1op@run1:
-   SUBROUTINE
-
-   STA   __zpabi_load_address__addr_1
-   JMP   load_address
-
-do_1op@tail5:
-   SUBROUTINE
-
-   STA   __zpabi_store_result__value_0
-   STX   __zpabi_store_result__value_1
+   TAX
+   LDA   __local_do_1op__0
    JMP   store_result
 
 do_2op:
@@ -1239,18 +1186,20 @@ do_2op:
 .case@42:
    LDA   OPERANDS
    ORA   __local_do_2op__1
-   STA   __zpabi_store_result__value_0
+   STA   __local_do_2op__equal
    LDA   OPERANDS+1
    ORA   __local_do_2op__2
-   JMP   instr_call@tail4
+.xjump@0:
+   TAX
+   LDA   __local_do_2op__equal
+   JMP   store_result
 .case@43:
    LDA   OPERANDS
    AND   __local_do_2op__1
-   STA   __zpabi_store_result__value_0
+   STA   __local_do_2op__equal
    LDA   OPERANDS+1
    AND   __local_do_2op__2
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   .xjump@0
 .case@47:
    LDA   __local_do_2op__1
    STA   __zpabi_var_put__value_0
@@ -1264,43 +1213,43 @@ do_2op:
    LDA   OPERANDS
    CLC
    ADC   __local_do_2op__1
-   STA   __zpabi_load_address__addr_0
+   STA   __local_do_2op__equal
    LDA   OPERANDS+1
    ADC   __local_do_2op__2
-   JSR   do_1op@run1
+   TAX
+   LDA   __local_do_2op__equal
+   JSR   load_address
    JSR   get_next_code_word
-   JMP   do_1op@tail5
+   JMP   store_result
 .case@50:
    LDA   OPERANDS
    CLC
    ADC   __local_do_2op__1
-   STA   __zpabi_load_address__addr_0
+   STA   __local_do_2op__equal
    LDA   OPERANDS+1
    ADC   __local_do_2op__2
-   JSR   do_1op@run1
+   TAX
+   LDA   __local_do_2op__equal
+   JSR   load_address
    JSR   get_next_code_byte2
-   STA   __zpabi_store_result__value_0
-   LDA   #$00
-   STA   __zpabi_store_result__value_1
+   LDX   #$00
    JMP   store_result
 .case@54:
    LDA   OPERANDS
    CLC
    ADC   __local_do_2op__1
-   STA   __zpabi_store_result__value_0
+   STA   __local_do_2op__equal
    LDA   OPERANDS+1
    ADC   __local_do_2op__2
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   .xjump@0
 .case@55:
    LDA   OPERANDS
    SEC
    SBC   __local_do_2op__1
-   STA   __zpabi_store_result__value_0
+   STA   __local_do_2op__equal
    LDA   OPERANDS+1
    SBC   __local_do_2op__2
-   STA   __zpabi_store_result__value_1
-   JMP   store_result
+   JMP   .xjump@0
 
 do_var:
    SUBROUTINE
@@ -1378,16 +1327,12 @@ do_var:
    LDA   OPERANDS
    JMP   buffer_char
 .case@67:
+   LDX   OPERANDS+1
    LDA   OPERANDS
-   STA   __zpabi_print_number__n_0
-   LDA   OPERANDS+1
-   STA   __zpabi_print_number__n_1
    JMP   print_number
 .case@69:
+   LDX   OPERANDS+1
    LDA   OPERANDS
-   STA   __zpabi_push__value_0
-   LDA   OPERANDS+1
-   STA   __zpabi_push__value_1
    JMP   push
 .case@70:
    JSR   pop
@@ -1475,7 +1420,7 @@ do_instruction:
    AND   #$C0
    BNE   .if_else@41
    JSR   get_const_word
-.xjump@0:
+.xjump@1:
    STA   __local_do_instruction__v_0
    STX   __local_do_instruction__0
    JMP   .if_end@40
@@ -1483,7 +1428,7 @@ do_instruction:
    CMP   #$80
    BNE   .if_else@43
    JSR   get_var_content
-   JMP   .xjump@0
+   JMP   .xjump@1
 .if_else@43:
    CMP   #$40
    BNE   .loop@72_break

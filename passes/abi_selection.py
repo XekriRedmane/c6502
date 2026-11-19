@@ -75,6 +75,15 @@ any missing name.
 `_address_taken` walks the program once to compute the
 address-taken set — used by the per-function validation step.
 
+# Arguments in A and X by default
+
+A zp_abi function whose declaration names no register for any
+parameter takes its leading integer and pointer parameters in A and
+then X (`_default_param_registers`), as if they were `register`
+parameters, and the rest in its zero-page slots. `main` is left out,
+since the startup code sets no register. The caller loads a register
+where it had stored into a slot, 2 bytes less per argument byte.
+
 # Functions with a fixed address
 
 A function declared with `[[c6502::address(addr)]]` is code
@@ -386,6 +395,60 @@ def _assign_param_registers(
     return per_byte
 
 
+def _default_param_registers(
+    name: str,
+    fn_decl: c99_ast.Type_function_decl,
+    per_param_bytes: list[int],
+    per_byte: list[str | None],
+) -> list[str | None]:
+    """The registers of a zp_abi function whose declaration names
+    none: its leading integer and pointer parameters arrive in A and
+    then X, as many whole ones as fit in the two registers. So `f(uint8_t
+    n)` takes `n` in A, `f(uint8_t a, uint8_t b)` takes `a` in A and `b`
+    in X, and `f(const uint8_t *s)` takes `s` in A (low byte) and X.
+    The rest arrive in their zero-page slots.
+
+    The caller then loads an argument into a register, `LDA #3; JSR
+    f`, where it had stored it into the callee's slot, `LDA #3; STA
+    slot; JSR f`, two bytes at each call. The callee copies the
+    register into a local at entry, which the register allocator keeps
+    in a register when it can. Ali Baba's units made 284 calls whose
+    first argument was a byte in a slot.
+
+    Every unit decides this from the declaration alone, as it decides
+    the carry return of a `bool` function, so a call and the
+    definition agree across units, and the linker checks the
+    `param_regs` of each unit's metadata (`linker._arrivals`). A
+    declaration with any `register`, `in_*`, or `zeropage(addr)`
+    parameter keeps exactly the registers it names. `main` keeps its
+    slots, since the startup code that calls it sets no register."""
+    if name == "main" or any(per_byte) or any(fn_decl.param_registers):
+        return per_byte
+    fun_type = fn_decl.data_type
+    if not isinstance(fun_type, c99_ast.FunType):
+        return per_byte
+    out = list(per_byte)
+    flat = 0
+    free = list(_ARG_REGISTERS)
+    for param_t, n in zip(fun_type.params, per_param_bytes):
+        t = _strip_quals(param_t)
+        scalar = isinstance(t, c99_ast.Pointer) or _is_integer_type(t)
+        if not scalar or n > len(free):
+            break
+        for k in range(n):
+            out[flat + k] = free.pop(0)
+        flat += n
+    return out
+
+
+def _is_integer_type(t) -> bool:
+    return isinstance(t, (
+        c99_ast.Char, c99_ast.SChar, c99_ast.UChar, c99_ast.Short,
+        c99_ast.UShort, c99_ast.Int, c99_ast.UInt, c99_ast.BitInt,
+        c99_ast.Bool,
+    ))
+
+
 def _describe_markers(fn, markers: list[str]) -> str:
     """`markers` as the declarations spell them, e.g. "`register a`,
     `b`, `register c in_y`"."""
@@ -616,6 +679,9 @@ def _validate_zp_abi(
     per_byte_regs = _assign_param_registers(
         fn_decl, per_param_bytes, where=fn.name,
     )
+    per_byte_regs = _default_param_registers(
+        fn.name, fn_decl, per_param_bytes, per_byte_regs,
+    )
     return ZpLayout(
         slot_symbols=symbols, addrs=addrs,
         param_registers=per_byte_regs,
@@ -735,6 +801,9 @@ def _validate_zp_abi_extern(
     )
     per_byte_regs = _assign_param_registers(
         fn_decl, per_param_bytes, where=name,
+    )
+    per_byte_regs = _default_param_registers(
+        name, fn_decl, per_param_bytes, per_byte_regs,
     )
     return ZpLayout(
         slot_symbols=symbols, addrs=addrs,

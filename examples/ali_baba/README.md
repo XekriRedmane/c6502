@@ -15,7 +15,7 @@ It plays Ali Baba. On four scripted runs, the attract mode, a game, a
 save to a new scenario disk, and a load from it, it makes the same
 soft-switch accesses, Monitor calls, and disk calls as the original,
 with the same hi-res page 1 at each one, and leaves the same disks
-(see "How it's compared"). It is about 11% larger than the code it
+(see "How it's compared"). It is about 4.5% larger than the code it
 translates (see "Size"), and it fits by using `$A900-$B2FF`, which the
 original never touches.
 
@@ -128,32 +128,37 @@ translates (the chunks of `main.asm` that `UNITS.md` gives it):
 
 | File | Original code | Original tables | C code | C data |
 |---|---:|---:|---:|---:|
-| `main.c` | 381 | 2 | 386 | 0 |
-| `init.c` | 972 | 355 | 931 | 362 |
-| `turn.c` | 616 | 6 | 1254 | 0 |
-| `input.c` | 1639 | 1313 | 1821 | 1255 |
-| `combat.c` | 2856 | 23 | 3122 | 0 |
-| `ai.c` | 1223 | 18 | 1502 | 20 |
-| `events.c` | 1542 | 8 | 1667 | 0 |
-| `entities.c` | 1033 | 8 | 1170 | 0 |
-| `map.c` | 993 | 43 | 1058 | 8 |
-| `display.c` | 399 | 0 | 452 | 0 |
-| `util.c` | 866 | 119 | 748 | 13 |
-| `text.c` | 553 | 8 | 715 | 10 |
-| `sound.c` | 337 | 64 | 450 | 0 |
-| `hrcg.c` | 1141 | 907 | 874 | 781 |
-| **Total** | **14551** | **2874** | **16150** | **2449** |
+| `main.c` | 381 | 2 | 368 | 0 |
+| `init.c` | 972 | 355 | 836 | 362 |
+| `turn.c` | 616 | 6 | 1184 | 0 |
+| `input.c` | 1639 | 1313 | 1707 | 1256 |
+| `combat.c` | 2856 | 23 | 2973 | 0 |
+| `ai.c` | 1223 | 18 | 1427 | 20 |
+| `events.c` | 1542 | 8 | 1561 | 0 |
+| `entities.c` | 1033 | 8 | 1049 | 0 |
+| `map.c` | 993 | 43 | 1001 | 8 |
+| `display.c` | 399 | 0 | 437 | 0 |
+| `util.c` | 866 | 119 | 722 | 13 |
+| `text.c` | 553 | 8 | 668 | 10 |
+| `sound.c` | 337 | 64 | 436 | 0 |
+| `hrcg.c` | 1141 | 907 | 835 | 781 |
+| **Total** | **14551** | **2874** | **15204** | **2450** |
 
 The C counts are of each unit's object, and they leave out the
 `__zp_init` the linker writes. `hrcg.c` leaves out the HRCG's entry
 points and control characters that the game never uses.
 
-The largest difference is `turn.c`'s `run_chain`, 506 bytes. The
+The largest difference is `turn.c`'s `run_chain`, 502 bytes. The
 original's turn and menus are chains of `JMP`s that can lead back to
 where they started, and c6502 rejects recursion at the link, so each
 routine of a chain returns the next one's number and `run_chain` calls
 them in a loop. The rest comes mostly from code the compiler could
-write better, which the notes list unit by unit: a comparison of a
-masked byte done at 16 bits, a pointer's 2-byte member reached through
-a computed address (which c6502 now reads as `LDY #k; LDA (p),Y`),
-switches on 16-bit values, and loops that keep a pointer in a copy.
+write better, which the notes list unit by unit. The largest kinds
+left are tail calls between a unit's functions, which the original
+arranges to fall through or branch into each other, copies that the
+compiler puts after a function's end with a `JMP` back, a value
+chosen by an `if` that goes through a temporary at the join, and
+switches on 16-bit values. The gap was 11% before 18 Nov 2026, when
+c6502 began passing a function's leading arguments in A and X, which
+took 742 bytes off the units, and narrowed comparisons of masked
+bytes.

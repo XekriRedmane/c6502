@@ -53,6 +53,18 @@ Every routine of the unit is translated, and none is incomplete.
   CHECK_AT_BOUNDARY reads LOCATION_ID, which FIND_ENTITY_AT_POS stores
   just before. It returns ENTITY_EDGE or ENTITY_NONE where the original
   stores 1 or 0 in `$BE`/`$BF`.
+- `setup_scene_display` keeps its wait in a local where the original
+  keeps it in AI_WAIT_FLAG (`$5A06`), and `scene_setup` keeps the
+  location's bounds and the cell's column in locals where the original
+  uses BOUNDS_MIN_COL, BOUNDS_MAX_COL, BOUNDS_MIN_ROW, BOUNDS_MAX_ROW
+  (`$5A51-$5A54`) and FONT_COL. No other routine reads those bytes.
+- The scans of `enter_location` and `draw_map_entities` are `for` loops
+  over FONT_ROW and FONT_COL. DRAW_MAP_ENTITIES's scan ends with
+  FONT_COL at VIEW_MIN_COL, and the C's at one past VIEW_MAX_COL.
+  Every routine that draws at FONT_COL (SETUP_CHAR_SPRITE,
+  DRAW_CHAR_AT_POS, PLAYER_ATTACK, COMMIT_MOVE, TEXT_RENDERER,
+  DRAW_BLINK_CHAR, and this unit's) sets it first, and
+  MANHATTAN_DISTANCE writes it before it reads it.
 - `scene_loop` copies ENTITY_PTR and MOB_PTR to SAVED_ENTITY_PTR and
   SAVED_MOB_PTR and back, where the original calls SAVE_ZP_CONTEXT and
   RESTORE_ZP_CONTEXT, which also copy `$BC` and `$BE` to `$5A9A` and
@@ -108,13 +120,17 @@ Only a comment. The comment on `setup_scene_display` should read
 "with TUNE_AI_TURN and a wait of 20 WAIT calls for a player character's
 turn (CHAR_AI_MODE == 0)". UNITS.md's note on SETUP_SCENE_DISPLAY says
 the same thing the wrong way round. The declaration is right.
+AI_WAIT_FLAG ($5A06) and BOUNDS_MIN_COL, BOUNDS_MAX_COL,
+BOUNDS_MIN_ROW, and BOUNDS_MAX_ROW ($5A51-$5A54) are declared, and no
+unit uses them now.
 
 ## Compiler gaps
 
 These don't stop the unit from compiling. Each costs bytes.
 
-1. A 16-bit store to a member at an offset through a pointer builds
-   the member's address in a temporary and in DPTR.
+1. A 16-bit store to a member at an offset through a zero-page
+   pointer copies the pointer to DPTR and stores the high byte through
+   DPTR.
 
    ```c
    struct s { uint8_t a[13]; uint16_t g; };
@@ -122,7 +138,7 @@ These don't stop the unit from compiling. Each costs bytes.
    void f(void) { P->g = 0; }
    ```
 
-   is 26 bytes, where `LDA #0; LDY #13; STA (P),Y; INY; STA (P),Y` is
+   is 17 bytes, where `LDA #0; LDY #13; STA (P),Y; INY; STA (P),Y` is
    9. `scene_setup` (`MOB_PTR->gold = 0`) and `load_scene_from_disk`
    (`iob->buffer_addr = SCENE_TEXT_DATA`) each pay it.
 
@@ -138,44 +154,89 @@ These don't stop the unit from compiling. Each costs bytes.
 
    compiles to `LDA X; CLC; ADC #1; STA tmp; STA X; LDA M; CMP tmp`,
    where the same loop with `X++;` as a statement before the test
-   compiles to `INC X; LDA M; CMP X`. The unit's loops are written the
+   compiles to `INC X; LDA M; CMP X`. The unit's loops step their
+   counters in the `for` statement's third clause, which compiles the
    second way.
+
+3. A 16-bit value tested against 0 and then 1 is tested twice.
+
+   ```c
+   uint16_t find(void);
+   void draw(void);
+   void gap_a(void) {
+       uint16_t e = find();
+       if (e == 0 || e == 1)
+           return;
+       draw();
+   }
+   ```
+
+   compiles to `STA lo; STX hi; ORA hi; BEQ ret; TXA; BNE go; LDA lo;
+   CMP #1; BNE go`, where `AND #$FE; ORA hi; BEQ ret` (with the low
+   byte in A) is the same test. `draw_map_entities` tests the entity it
+   finds this way. Testing the high byte alone, as the previous version
+   of the C and the original do, is 9 bytes shorter, and it relies on
+   find_entity_at_pos returning no value from 2 to 255.
+
+4. A post-decrement of a global tested against 0 reloads the flags with
+   `ORA #0`.
+
+   ```c
+   extern uint8_t X [[c6502::address(0x5A0C)]];
+   void g(void);
+   void f(void) { for (;;) { if (X-- == 0) return; g(); } }
+   ```
+
+   compiles the test to `LDA X; DEC X; ORA #$00; BNE`, 10 bytes. The
+   original's FILL_MAP steps its column with `DEC FONT_COL; BPL`, which
+   tests the sign, and `fill_map` is 10 bytes larger than the previous
+   C, which wrote `(int8_t)--FONT_COL < 0`.
+
+5. A `for` loop whose first test is always true starts with a `JMP` to
+   the test, and a global just stored from X is loaded again to be
+   copied. `enter_location` stores the row from `pos_to_colrow`'s X in
+   VIEW_MIN_ROW, then copies it to FONT_ROW with `LDA VIEW_MIN_ROW; STA
+   FONT_ROW` where `STX FONT_ROW` would do, and jumps to the loops'
+   tests, which the previous `do`-`while` loops didn't. It is 4 bytes
+   larger.
 
 ## Size
 
-Code bytes in the `-S -O` output, from `objdump.py -t map.o`, against
-the original's bytes for the same routines. The compiler moved code
-that several functions share into helpers (`draw_map_col@run0` and
-`@run4`, `draw_map_entities@run1`, `setup_scene_display@run3`,
-`scene_setup@run2`), and each is counted with the routine it came from.
+Code bytes in the `-S -O` output, from `nm.py -S map.o`, against the
+original's bytes for the same routines.
 
 | Original | Bytes | C | Bytes |
 |---|---|---|---|
-| SETUP_SCENE_DISPLAY | 36 | setup_scene_display (and @run3) | 45 |
-| SCENE_SETUP | 124 | scene_setup (and @run2) | 159 |
-| CHECK_AT_BOUNDARY | 43 | check_at_boundary | 35 |
-| DISK_READ, DISK_WRITE, RWTS_DISPATCH | 28 | disk_read, disk_write, rwts_dispatch | 51 |
-| SCENE_LOOP | 87 | scene_loop | 130 |
-| LOAD_SCENE_DATA, INTEGRITY_FAIL_ADDR | 34 | load_scene_data, integrity_fail | 42 |
-| ENTER_LOCATION | 124 | enter_location (and @run1) | 134 |
-| DRAW_MAP_COL | 24 | draw_map_col (and @run0, @run4) | 34 |
-| DRAW_MAP_ENTITIES | 208 | draw_map_entities | 224 |
+| SETUP_SCENE_DISPLAY | 36 | setup_scene_display | 37 |
+| SCENE_SETUP | 124 | scene_setup | 120 |
+| CHECK_AT_BOUNDARY | 43 | check_at_boundary | 33 |
+| DISK_READ, DISK_WRITE, RWTS_DISPATCH | 28 | disk_read, disk_write, rwts_dispatch | 49 |
+| SCENE_LOOP | 87 | scene_loop | 124 |
+| LOAD_SCENE_DATA, INTEGRITY_FAIL_ADDR | 34 | load_scene_data, integrity_fail | 37 |
+| ENTER_LOCATION | 124 | enter_location | 133 |
+| DRAW_MAP_COL | 24 | draw_map_col | 18 |
+| DRAW_MAP_ENTITIES | 208 | draw_map_entities | 233 |
 | DRAW_MAP_ICON_B | 48 | draw_map_icon_b | 47 |
-| FILL_MAP | 49 | fill_map | 57 |
+| FILL_MAP | 49 | fill_map | 63 |
 | LOAD_MAP_TILES | 29 | load_map_tiles | 28 |
-| CLEAR_MAP | 14 | clear_map | 14 |
-| LOAD_SCENE_FROM_DISK, DISK_READ_JUMP, DISK_RTS | 74 | load_scene_from_disk | 84 |
-| Total | 922 | | 1084 |
+| CLEAR_MAP | 14 | clear_map | 15 |
+| LOAD_SCENE_FROM_DISK, DISK_READ_JUMP, DISK_RTS | 74 | load_scene_from_disk | 71 |
+| Total | 922 | | 1008 |
 
-The C's 1084 bytes are 1000 in `.text` and 84 in `.text.scene_disk`.
+The C's 1008 bytes are 937 in `.text` and 71 in `.text.scene_disk`.
 The data is 4 bytes of `.rodata` (TILE_FILL_TAB), 2 of `.data`
 (DEFAULT_CHAR and MAP_FILL_CHAR), and 2 of `.bss` (BLINK_ALT_CHAR and
 MAP_REDRAW_FLAG). The original's tables were 3 + 1 + 1 + 12 = 17 bytes
 at `$7AAC`-`$7ADB`.
 
-The largest losses are `scene_loop` (43 bytes, most of them the
+The largest losses are `scene_loop` (37 bytes, most of them the
 16-bit copies to and from SAVED_ENTITY_PTR and SAVED_MOB_PTR, which the
 original makes in SAVE_ZP_CONTEXT and RESTORE_ZP_CONTEXT, outside
-SCENE_LOOP's 87 bytes), `scene_setup` (35, of which gap 1 is 17), and
-the disk routines (23, the carry that `rwts_dispatch` turns into a
+SCENE_LOOP's 87 bytes), `draw_map_entities` (25, of which gap 3 is 9),
+and the disk routines (21, the carry that `rwts_dispatch` turns into a
 `bool` and back with `LDA #0; ROL; ...; CMP #1`).
+
+`load_scene_from_disk` finds the track and sector of a scene with a
+loop that subtracts 13, as the original does. `sector / 13` and
+`sector % 13` would each call `sdivmod16`, a runtime helper that the
+program doesn't have (see notes/input.md, gap 6).

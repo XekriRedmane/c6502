@@ -54,8 +54,8 @@
       INPUT_SCAN_OFFSET ($5B24), which is validate_input's `dir`.
       UNDER_LEVEL and SAFE_TO_REST, code bytes of INIT_GAME_STATE at
       $5B25 and $5B26, are the statics under_level and safe_to_rest.
-      INPUT_OPTION_COUNT ($5AAA) stays draw_input_options' counter, as
-      in the original.
+      INPUT_OPTION_COUNT ($5AAA), DRAW_INPUT_OPTIONS' counter, which
+      nothing else reads, is a local of draw_input_options.
     - CHECK_INPUT calls ROM PREAD, which returns its count in Y, and
       c6502 can't take a result in Y. read_paddle reads the paddle
       itself with PREAD's soft-switch accesses, a read of PTRIG and then
@@ -2190,6 +2190,7 @@ constexpr uint8_t JOY_SETTLE_DELAY = 0xC8;
 
 /* ---- Settings and save slots ----------------------------------------- */
 
+constexpr uint8_t MIN_GAME_SPEED = 1;
 constexpr uint8_t MAX_GAME_SPEED = 5;
 
 /* The save slot the save/load and save menus show, 1-16. Slots below
@@ -2221,21 +2222,17 @@ static uint8_t scenario_init_flag = 0;
 /* What check_combat_eligibility finds for configure_input. Code bytes of
  * INIT_GAME_STATE in the original, UNDER_LEVEL ($5B25) and SAFE_TO_REST
  * ($5B26). */
-static uint8_t under_level;
-static uint8_t safe_to_rest;
+static bool under_level;
+static bool safe_to_rest;
 
 static uint8_t check_input(void);
 
 /* ---- The menu driver ------------------------------------------------- */
 
-/* Returns option `n` (1-based) of the menu MENU_DESC_PTR points at. No
- * menu has more than 9 options, so the option's offset fits in a byte,
- * as CALC_RECORD_PTR assumes too. Computing it as a byte saves the
- * 16-bit multiplication that c6502 makes of `&options[n - 1]`.
+/* Returns option `n` (1-based) of the menu MENU_DESC_PTR points at.
  * CALC_RECORD_PTR. */
 static struct menu_option *option(uint8_t n) {
-    uint8_t offset = (uint8_t)((n - 1) * sizeof(struct menu_option));
-    return (struct menu_option *)((uint8_t *)MENU_DESC_PTR->options + offset);
+    return &MENU_DESC_PTR->options[n - 1];
 }
 
 /* Moves the cursor to an option's position: row 21, 22, or 23 for
@@ -2270,32 +2267,31 @@ static void call_input_init(uint8_t init);
 
 /* Fills the three menu rows with spaces. CLEAR_INPUT_BUFFER. */
 static void clear_input_buffer(void) {
-    for (uint8_t i = sizeof INPUT_BUFFER; i-- != 0;)
+    for (uint8_t i = 0; i < sizeof INPUT_BUFFER; i++)
         INPUT_BUFFER[i] = 0xA0;
 }
 
-/* Copies option `o`'s text into INPUT_BUFFER at its position, from the
- * last character to the first. COPY_RECORD_DATA. */
+/* Copies option `o`'s text into INPUT_BUFFER at its position.
+ * COPY_RECORD_DATA, which copies from the last character to the first. */
 static void copy_record_data(const struct menu_option *o) {
-    const uint8_t *text = o->text;
-    uint8_t i = text[0];
-    uint8_t at = o->position + i - 1;
-    do {
-        INPUT_BUFFER[at--] = text[i];
-    } while (--i != 0);
+    uint8_t length = o->text[0];
+    const uint8_t *chars = o->text + 1;
+    uint8_t *at = &INPUT_BUFFER[o->position];
+    for (uint8_t i = 0; i < length; i++)
+        at[i] = chars[i];
 }
 
 /* Copies the enabled options' text into INPUT_BUFFER, from the last
  * option to the first, so that an option drawn later covers one at the
- * same position. INPUT_OPTION_COUNT counts the options, as in the
- * original. DRAW_INPUT_OPTIONS. */
+ * same position. DRAW_INPUT_OPTIONS, which counts the options in
+ * INPUT_OPTION_COUNT ($5AAA). Nothing else reads that byte, and the
+ * count is a local here. */
 static void draw_input_options(void) {
-    INPUT_OPTION_COUNT = MENU_DESC_PTR->count;
-    do {
-        const struct menu_option *o = option(INPUT_OPTION_COUNT);
+    for (uint8_t n = MENU_DESC_PTR->count; n != 0; n--) {
+        const struct menu_option *o = option(n);
         if (o->enabled)
             copy_record_data(o);
-    } while (--INPUT_OPTION_COUNT != 0);
+    }
 }
 
 /* Draws the three menu rows, rows 21-23. RENDER_INPUT_BUFFER. */
@@ -2361,9 +2357,12 @@ static void store_selection_to_record(void) {
 
 /* Reads paddle `n` as ROM PREAD does, with PREAD's soft-switch accesses:
  * PTRIG, then PADDL[n] until bit 7 clears, counting the reads with bit 7
- * set up to 255. PREAD's loop takes 11 cycles a pass, and this one 14,
- * because the compiler stores each reading (see notes/input.md). */
-static uint8_t read_paddle(uint8_t n [[c6502::in_x]]) {
+ * set up to 255. The reading is the time the loop takes, so its cycles
+ * a pass matter, and `count` is `register` to keep it in Y, where PREAD
+ * counts. With the count in zero page, the loop would take 17 cycles a
+ * pass. PREAD's loop takes 11, and this one 14, because the compiler
+ * stores each reading (see notes/input.md). */
+static uint8_t read_paddle(uint8_t n) {
     register uint8_t count = 0;
     (void)PTRIG;
     while (PADDL[n] & 0x80) {
@@ -2416,7 +2415,7 @@ static uint8_t check_input(void) {
     if (INPUT_MODE != 0)
         return check_joystick();
     if (key & 0x80) {
-        for (uint8_t dir = 5; dir-- != 0;) {
+        for (uint8_t dir = 0; dir < 5; dir++) {
             if (key == DIR_KEYS[0][dir] || key == DIR_KEYS[1][dir]
                     || key == DIR_KEYS[2][dir])
                 return dir;
@@ -2436,7 +2435,7 @@ uint8_t read_keyboard(void) {
     for (;;) {
         step_prng();
         dir = check_input();
-        if (!(dir & 0x80))
+        if (dir != NO_INPUT)
             break;
         idle_anim_handler();
     }
@@ -2452,41 +2451,39 @@ uint8_t read_keyboard(void) {
  * safe_to_rest when its life is below its strength, no hostile mob is
  * next to it, and none shares its cell. CHECK_COMBAT_ELIGIBILITY. */
 static void check_combat_eligibility(void) {
-    safe_to_rest = 0;
-    under_level = 0;
-    /* The original tests the sign of the 8-bit difference. */
-    if ((int8_t)(((ENTITY_PTR->speed >> 1) & 7) - STEPS_TAKEN) < 0) {
-        under_level = 1;
+    safe_to_rest = false;
+    under_level = false;
+    /* The original tests the sign of the byte allowed - STEPS_TAKEN. A
+     * player's MOVE_POINTS can count down from 255, so STEPS_TAKEN can
+     * pass 135, where the sign and STEPS_TAKEN > allowed differ. */
+    uint8_t allowed = (ENTITY_PTR->speed >> 1) & 7;
+    if ((int8_t)(allowed - STEPS_TAKEN) < 0) {
+        under_level = true;
         return;
     }
     if (STEPS_TAKEN != 0)
         return;
     /* The original subtracts and tests the sign, which for these ranges
-     * is the same comparison. The two bytes are compared as uint8_t
-     * locals, because c6502 compares the two masked fields as ints
-     * otherwise (notes/input.md). */
-    uint8_t strength = ENTITY_PTR->strength & STRENGTH_MASK;
-    uint8_t life = ENTITY_PTR->life & HP_MASK;
-    if (life >= strength)
+     * is the same comparison. */
+    if ((ENTITY_PTR->life & HP_MASK) >= (ENTITY_PTR->strength & STRENGTH_MASK))
         return;
     check_adjacent_threats(ENTITY_PTR->pos);
     if (ADJACENT_THREAT != 0)
         return;
-    if (check_encounter(ENTITY_PTR->pos) == 2)
+    if (check_encounter(ENTITY_PTR->pos) == 2)     /* a hostile mob */
         return;
-    safe_to_rest = 1;
+    safe_to_rest = true;
 }
 
 uint8_t configure_input(void) {
     check_combat_eligibility();
     GAME_INPUT_OPTIONS[REST_OPTION].enabled = safe_to_rest;
     GAME_INPUT_OPTIONS[STOP_OPTION].enabled = under_level;
-    GAME_INPUT_OPTIONS[ATTACK_OPTION].enabled = under_level ^ 1;
-    GAME_INPUT_OPTIONS[DEFEND_OPTION].enabled = under_level ^ 1;
-    GAME_INPUT_TABLE.selection = under_level + 3;
-    GAME_INPUT_OPTIONS[MOVE_OPTION].enabled = MOVE_POINTS;
-    if (TURN_ACTIVE == 0)
-        GAME_INPUT_OPTIONS[MOVE_OPTION].enabled = 0;
+    GAME_INPUT_OPTIONS[ATTACK_OPTION].enabled = !under_level;
+    GAME_INPUT_OPTIONS[DEFEND_OPTION].enabled = !under_level;
+    /* The options are numbered from 1. */
+    GAME_INPUT_TABLE.selection = (under_level ? STOP_OPTION : DEFEND_OPTION) + 1;
+    GAME_INPUT_OPTIONS[MOVE_OPTION].enabled = TURN_ACTIVE != 0 ? MOVE_POINTS : 0;
     return GAME_INPUT_OPTIONS[MOVE_OPTION].enabled;
 }
 
@@ -2536,21 +2533,22 @@ uint8_t menu_game_settings_enter(void) {
  * MENU_SETTINGS_INIT. */
 static void menu_settings_init(void) {
     settings_display_init();
-    S_GAME_SPEED.digit = ANIM_INDEX | 0xB0;
+    S_GAME_SPEED.digit = 0xB0 + ANIM_INDEX;
 }
 
+/* Only these two change ANIM_INDEX, which starts at 2, so it stays
+ * within MIN_GAME_SPEED and MAX_GAME_SPEED. */
 uint8_t settings_speed_up(void) {
     store_selection_to_record();
-    ANIM_INDEX++;
-    if (ANIM_INDEX >= MAX_GAME_SPEED)
-        ANIM_INDEX = MAX_GAME_SPEED;
+    if (ANIM_INDEX < MAX_GAME_SPEED)
+        ANIM_INDEX++;
     return CHAIN_MENU_GAME_SETTINGS_ENTER;
 }
 
 uint8_t settings_speed_down(void) {
     store_selection_to_record();
-    if (--ANIM_INDEX == 0)
-        ANIM_INDEX++;
+    if (ANIM_INDEX > MIN_GAME_SPEED)
+        ANIM_INDEX--;
     return CHAIN_MENU_GAME_SETTINGS_ENTER;
 }
 
@@ -2593,16 +2591,16 @@ uint8_t menu_drop_dec(void) {
 /* Writes slot_number into the save/load and save menus' strings, with a
  * space for a tens digit of 0. FORMAT_SLOT_NUMBER. */
 static void format_slot_number(void) {
-    S_CONTINUE_GAME_NUMBER.number[0] = 0xA0;
-    S_SAVE_IN_SLOT.number[0] = 0xA0;
-    uint8_t n = slot_number;
-    if (n >= 10) {
-        n -= 10;
-        S_CONTINUE_GAME_NUMBER.number[0] = 0xB1;
-        S_SAVE_IN_SLOT.number[0] = 0xB1;
+    uint8_t tens = 0xA0;
+    uint8_t ones = slot_number;
+    if (ones >= 10) {
+        tens = 0xB1;
+        ones -= 10;
     }
-    S_CONTINUE_GAME_NUMBER.number[1] = n | 0xB0;
-    S_SAVE_IN_SLOT.number[1] = n | 0xB0;
+    S_CONTINUE_GAME_NUMBER.number[0] = tens;
+    S_SAVE_IN_SLOT.number[0] = tens;
+    S_CONTINUE_GAME_NUMBER.number[1] = 0xB0 + ones;
+    S_SAVE_IN_SLOT.number[1] = 0xB0 + ones;
 }
 
 /* Keeps the highlighted option and shows the new slot. SLOT_UPDATE. */
@@ -2613,15 +2611,14 @@ static void slot_update(void) {
 
 /* Step slot_number up or down, held within 1-16. SLOT_INC and SLOT_DEC. */
 static void slot_inc(void) {
-    slot_number++;
-    if (slot_number >= MAX_SLOT_NUMBER)
-        slot_number--;
+    if (slot_number < MAX_SLOT_NUMBER - 1)
+        slot_number++;
     slot_update();
 }
 
 static void slot_dec(void) {
-    if (--slot_number == 0)
-        slot_number++;
+    if (slot_number > 1)
+        slot_number--;
     slot_update();
 }
 
@@ -2789,7 +2786,7 @@ static bool format_disk_track(void) {
 /* Writes "ALI" at the start of track 0, sector 0, with three tries.
  * Returns true on an error. WRITE_DISK_SIGNATURE. */
 static bool write_disk_signature(void) {
-    for (uint8_t i = 3; i-- != 0;)
+    for (uint8_t i = 0; i < sizeof DISK_SIGNATURE; i++)
         SCENE_TEXT_DATA[i] = DISK_SIGNATURE[i];
     setup_data_iob();
     for (uint8_t tries = 3; tries != 0; tries--) {
@@ -2808,8 +2805,8 @@ static bool verify_disk_signature(void) {
         if (--tries == 0)
             return true;
     }
-    for (uint8_t i = 3; i-- != 0;) {
-        if (DISK_SIGNATURE[i] != SCENE_TEXT_DATA[i])
+    for (uint8_t i = 0; i < sizeof DISK_SIGNATURE; i++) {
+        if (SCENE_TEXT_DATA[i] != DISK_SIGNATURE[i])
             return true;
     }
     return false;
@@ -2818,29 +2815,21 @@ static bool verify_disk_signature(void) {
 /* Points the IOB at the first sector of slot_number's tracks, with the
  * game's records as the buffer. SETUP_SLOT_IOB. */
 static void setup_slot_iob(void) {
-    uint8_t slot = slot_number;
-    uint8_t disk = 0;
-    if (slot >= GAME_DISK_SLOTS) {
-        slot -= GAME_DISK_SLOTS;
-        disk = 1;
-    }
-    RWTS_IOB_PTR->track = (uint8_t)(slot << 1) + SAVE_TRACK_BASE[disk];
+    bool scenario = slot_number >= GAME_DISK_SLOTS;
+    uint8_t slot = scenario ? slot_number - GAME_DISK_SLOTS : slot_number;
+    RWTS_IOB_PTR->track = SAVE_TRACK_BASE[scenario] + 2 * slot;
     RWTS_IOB_PTR->sector = 0;
     RWTS_IOB_PTR->buffer_addr = (uint8_t *)LOCATIONS;
     RWTS_IOB_PTR->partial_byte_count = 0;
 }
 
-/* Steps the IOB to the next sector and the next page of the buffer,
- * stepping the buffer address's high byte without writing the low
- * byte. ADVANCE_SECTOR. */
+/* Steps the IOB to the next sector and the next page of the buffer.
+ * ADVANCE_SECTOR. */
 static void advance_sector(void) {
-    ((uint8_t *)&RWTS_IOB_PTR->buffer_addr)[1]++;
-    uint8_t sector = RWTS_IOB_PTR->sector + 1;
-    if (sector >= SECTORS_PER_TRACK) {
+    RWTS_IOB_PTR->buffer_addr += 0x100;
+    if (++RWTS_IOB_PTR->sector >= SECTORS_PER_TRACK) {
         RWTS_IOB_PTR->sector = 0;
         RWTS_IOB_PTR->track++;
-    } else {
-        RWTS_IOB_PTR->sector = sector;
     }
 }
 

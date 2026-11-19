@@ -17,22 +17,24 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
+__local_setup_scene_display__wait	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_load_scene_from_disk__sector	EQU	$81
+__local_scene_setup__1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
-__local_enter_location__1	EQU	$82
 __local_load_scene_from_disk__tries	EQU	$82
 __local_scene_setup__2	EQU	$82
 __local_clear_map__0	EQU	$83
 __local_load_scene_from_disk__iob	EQU	$83
 __local_scene_setup__3	EQU	$83
 __local_draw_map_entities__1	EQU	$84
-__local_integrity_fail__offset	EQU	$84
 __local_load_scene_from_disk__0	EQU	$84
+__local_scene_setup__4	EQU	$84
 __local_draw_map_entities__2	EQU	$85
+__local_integrity_fail__offset	EQU	$85
 __local_draw_map_entities__3	EQU	$86
 __local_rwts_dispatch__iob	EQU	$87
 __local_rwts_dispatch__0	EQU	$88
@@ -219,14 +221,14 @@ WAIT	EQU	$FCA8
 ; def draw_map_icon_b params= locals= indirect=false in_cycle=false
 ; def enter_location params= locals=__local_enter_location__0,__local_enter_location__1 indirect=false in_cycle=false
 ; def fill_map params= locals=__local_fill_map__0 indirect=false in_cycle=false
-; def integrity_fail params= locals=__local_integrity_fail__0,__local_integrity_fail__1,__local_integrity_fail__offset indirect=false in_cycle=false
+; def integrity_fail params= locals=__local_integrity_fail__0,__local_integrity_fail__1,__local_integrity_fail__2,__local_integrity_fail__offset indirect=false in_cycle=false
 ; def load_map_tiles params= locals=__local_load_map_tiles__0 indirect=false in_cycle=false
 ; def load_scene_data params= locals=__local_load_scene_data__0 indirect=false in_cycle=false
 ; def load_scene_from_disk params=__zpabi_load_scene_from_disk__scene locals=__local_load_scene_from_disk__sector,__local_load_scene_from_disk__tries,__local_load_scene_from_disk__iob,__local_load_scene_from_disk__0,__local_load_scene_from_disk__1 indirect=false in_cycle=false param_regs=A carry=true
 ; def rwts_dispatch params=__zpabi_rwts_dispatch__command locals=__local_rwts_dispatch__iob,__local_rwts_dispatch__0,__local_rwts_dispatch__command indirect=false in_cycle=false param_regs=A carry=true
 ; def scene_loop params=__zpabi_scene_loop__scene locals=__local_scene_loop__scene indirect=false in_cycle=false param_regs=A
-; def scene_setup params= locals=__local_scene_setup__0,__local_scene_setup__1,__local_scene_setup__2,__local_scene_setup__3 indirect=false in_cycle=false
-; def setup_scene_display params= locals= indirect=false in_cycle=false
+; def scene_setup params= locals=__local_scene_setup__0,__local_scene_setup__1,__local_scene_setup__2,__local_scene_setup__3,__local_scene_setup__4 indirect=false in_cycle=false
+; def setup_scene_display params= locals=__local_setup_scene_display__wait indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -542,12 +544,16 @@ fill_map:
    STA   FONT_CHARSET
    JSR   render_font_char
 .loop@0_start:
+   LDA   FONT_COL
    DEC   FONT_COL
-   BPL   .if_end@0
+   ORA   #$00
+   BNE   .if_end@0
    LDA   #$13
    STA   FONT_COL
+   LDA   FONT_ROW
    DEC   FONT_ROW
-   BPL   .if_end@1
+   ORA   #$00
+   BNE   .if_end@1
    RTS
 .if_end@1:
 .if_end@0:
@@ -621,65 +627,73 @@ draw_map_entities:
    STA   MAP_REDRAW_FLAG
    JMP   .if_end@3
 .if_else@4:
-   LDA   VIEW_MIN_COL
-   STA   FONT_COL
-   LDA   VIEW_MIN_ROW
-   STA   FONT_ROW
    LDY   #$02
    LDA   (CHAR_PTR),Y
    STA   __local_draw_map_entities__3
    LDA   #$00
    STA   (CHAR_PTR),Y
-.loop@1_start:
+   LDA   VIEW_MIN_ROW
+   STA   FONT_ROW
+   JMP   .loop@1_start
+.draw_map_entities@rot@1:
+   LDA   VIEW_MIN_COL
+   STA   FONT_COL
+   JMP   .loop@2_start
+.draw_map_entities@rot@0:
    LDX   FONT_ROW
    LDA   FONT_COL
    JSR   colrow_to_pos
    JSR   find_entity_at_pos
    STA   __local_draw_map_entities__1
    STX   __local_draw_map_entities__2
+   ORA   __local_draw_map_entities__2
+   BEQ   .loop@2_continue
    TXA
-   BEQ   .if_end@5
+   BNE   .if_end@7
+   LDA   __local_draw_map_entities__1
+   CMP   #$01
+   BEQ   .loop@2_continue
+.if_end@7:
    LDA   __local_draw_map_entities__1
    JSR   get_entity_fontchar
    LDY   #$01
    LDA   (__local_draw_map_entities__1),Y
    CMP   #$FE
-   BEQ   .if_end@10
+   BEQ   .if_end@12
    CMP   #$80
-   BCC   .draw_map_entities@scfold@0
+   BCC   .draw_map_entities@scfold@1
    CMP   #$C0
-   BCC   .if_end@10
-.draw_map_entities@scfold@0:
+   BCC   .if_end@12
+.draw_map_entities@scfold@1:
    JSR   set_cursor_row21
    LDX   __local_draw_map_entities__2
    LDA   __local_draw_map_entities__1
    JSR   classify_entity_type
    JSR   print_bottom_centered
    JSR   draw_map_icon_b
-.if_end@10:
-.if_end@5:
+.if_end@12:
+.loop@2_continue:
    INC   FONT_COL
+.loop@2_start:
    LDA   VIEW_MAX_COL
    CMP   FONT_COL
-   BCS   .if_end@11
-   LDA   VIEW_MIN_COL
-   STA   FONT_COL
+   BCS   .draw_map_entities@rot@0
    INC   FONT_ROW
-.if_end@11:
+.loop@1_start:
    LDA   VIEW_MAX_ROW
    CMP   FONT_ROW
-   BCS   .loop@1_start
+   BCS   .draw_map_entities@rot@1
    LDA   __local_draw_map_entities__3
    LDY   #$02
    STA   (CHAR_PTR),Y
    ORA   #$00
-   BNE   .if_end@12
+   BNE   .if_end@13
    RTS
-.if_end@12:
+.if_end@13:
 .if_end@3:
 .if_end@2:
    JSR   first_group_member
-.loop@2_start:
+.loop@3_start:
    LDY   #$03
    LDA   (MOB_PTR),Y
    JSR   pos_to_colrow
@@ -692,22 +706,23 @@ draw_map_entities:
    JSR   appearance_to_fontchar
    STA   FONT_CHARNUM
    TXA
-   BEQ   .draw_map_entities@scfold@1
+   BEQ   .draw_map_entities@scfold@2
    LDY   #$0C
    LDA   (MOB_PTR),Y
    AND   #$0F
-   BEQ   .if_else@16
-.draw_map_entities@scfold@1:
+   BEQ   .if_else@17
+.draw_map_entities@scfold@2:
    JSR   set_cursor_row21
    JSR   print_member_name
    JSR   draw_map_icon_b
-   JMP   .if_end@15
-.if_else@16:
+   JMP   .if_end@16
+.if_else@17:
    JSR   render_font_char
-.if_end@15:
+.if_end@16:
    JSR   next_group_member
-   LDA   MOB_PTR+1
-   BNE   .loop@2_start
+   LDA   MOB_PTR
+   ORA   MOB_PTR+1
+   BNE   .loop@3_start
    RTS
 
 enter_location:
@@ -715,9 +730,9 @@ enter_location:
 
    LDA   CHAR_PTR
    CMP   LOCATION_POS
-   BNE   .if_end@17
+   BNE   .if_end@18
    RTS
-.if_end@17:
+.if_end@18:
    STA   LOCATION_POS
    JSR   anim_tick_and_wait
    JSR   set_text_window_bottom
@@ -732,43 +747,45 @@ enter_location:
    LDA   (CHAR_PTR),Y
    AND   #$7F
    CMP   LOCATION_STYLE
-   BEQ   .if_end@18
+   BEQ   .if_end@19
    STA   LOCATION_STYLE
    JSR   load_map_tiles
    JSR   fill_map
-.if_end@18:
+.if_end@19:
    LDY   #$03
    LDA   (CHAR_PTR),Y
    JSR   pos_to_colrow
-   STA   __local_enter_location__1
-   TXA
-   STA   VIEW_MIN_ROW
-   STA   FONT_ROW
-   LDA   __local_enter_location__1
    STA   VIEW_MIN_COL
+   STX   VIEW_MIN_ROW
    LDY   #$04
    LDA   (CHAR_PTR),Y
    JSR   pos_to_colrow
    STA   VIEW_MAX_COL
    STX   VIEW_MAX_ROW
-.loop@3_start:
+   LDA   VIEW_MIN_ROW
+   STA   FONT_ROW
+   JMP   .loop@4_start
+.enter_location@rot@3:
    LDA   VIEW_MIN_COL
    STA   FONT_COL
-.loop@4_start:
+   JMP   .loop@5_start
+.enter_location@rot@2:
    JSR   draw_map_col
    INC   FONT_COL
+.loop@5_start:
    LDA   VIEW_MAX_COL
    CMP   FONT_COL
-   BCS   .loop@4_start
+   BCS   .enter_location@rot@2
    INC   FONT_ROW
+.loop@4_start:
    LDA   VIEW_MAX_ROW
    CMP   FONT_ROW
-   BCS   .loop@3_start
+   BCS   .enter_location@rot@3
    LDY   #$05
    LDA   (CHAR_PTR),Y
-   BMI   .if_end@19
+   BMI   .if_end@20
    JSR   draw_map_entities
-.if_end@19:
+.if_end@20:
    RTS
 
 check_at_boundary:
@@ -783,12 +800,12 @@ check_at_boundary:
    CMP   VIEW_MIN_ROW
    BEQ   .check_at_boundary@scfold@0
    CMP   VIEW_MAX_ROW
-   BNE   .if_end@26
+   BNE   .if_end@27
 .check_at_boundary@scfold@0:
    LDX   #$00
    LDA   #$01
    RTS
-.if_end@26:
+.if_end@27:
    LDX   #$00
    TXA
    RTS
@@ -796,60 +813,60 @@ check_at_boundary:
 setup_scene_display:
    SUBROUTINE
 
-   LDA   #$00
-   STA   AI_WAIT_FLAG
    LDA   CHAR_AI_MODE
-   BNE   .if_end@27
-   LDA   #$0A
-   STA   AI_WAIT_FLAG
+   BNE   .setup_scene_display@asm_ssa_split@0
    LDX   #$00
    LDA   #$08
    JSR   tune_player
-.if_end@27:
+   LDA   #$14
+   STA   __local_setup_scene_display__wait
+.if_end@28:
    JSR   setup_char_sprite
    JSR   load_char_name_ptr
-   LDA   AI_WAIT_FLAG
-   ASL
+   LDA   __local_setup_scene_display__wait
    STA   WAIT_LOOP_COUNT
    JMP   timed_wait
+.setup_scene_display@asm_ssa_split@0:
+   LDA   #$00
+   STA   __local_setup_scene_display__wait
+   JMP   .if_end@28
 
 scene_setup:
    SUBROUTINE
 
    LDA   ACTIVE_CHAR
    JSR   get_char_record
-   STA   __local_scene_setup__2
-   STX   __local_scene_setup__3
+   STA   __local_scene_setup__3
+   STX   __local_scene_setup__4
    LDY   #$03
-   LDA   (__local_scene_setup__2),Y
+   LDA   (__local_scene_setup__3),Y
    JSR   pos_to_colrow
-   STA   BOUNDS_MIN_COL
-   STX   BOUNDS_MIN_ROW
+   STA   __local_scene_setup__1
+   STX   __local_scene_setup__2
    LDY   #$04
-   LDA   (__local_scene_setup__2),Y
+   LDA   (__local_scene_setup__3),Y
    JSR   pos_to_colrow
-   STA   BOUNDS_MAX_COL
-   STX   BOUNDS_MAX_ROW
-   INC   BOUNDS_MIN_COL
-   INC   BOUNDS_MIN_ROW
+   STX   __local_scene_setup__3
+   INC   __local_scene_setup__1
+   INC   __local_scene_setup__2
    SEC
-   SBC   BOUNDS_MIN_COL
-   SEC
-   SBC   #$01
-   JSR   random_in_range
-   CLC
-   ADC   BOUNDS_MIN_COL
-   STA   FONT_COL
-   LDA   BOUNDS_MAX_ROW
-   SEC
-   SBC   BOUNDS_MIN_ROW
+   SBC   __local_scene_setup__1
    SEC
    SBC   #$01
    JSR   random_in_range
    CLC
-   ADC   BOUNDS_MIN_ROW
+   ADC   __local_scene_setup__1
+   STA   __local_scene_setup__1
+   LDA   __local_scene_setup__3
+   SEC
+   SBC   __local_scene_setup__2
+   SEC
+   SBC   #$01
+   JSR   random_in_range
+   CLC
+   ADC   __local_scene_setup__2
    TAX
-   LDA   FONT_COL
+   LDA   __local_scene_setup__1
    JSR   colrow_to_pos
    LDY   #$03
    STA   (MOB_PTR),Y
@@ -870,11 +887,11 @@ scene_setup:
    JSR   clamp_char_field
    LDA   CURRENT_PLAYER
    CMP   ACTIVE_CHAR
-   BNE   .if_end@28
+   BNE   .if_end@29
    LDY   #$03
    LDA   (MOB_PTR),Y
    JSR   draw_char_at_pos
-.if_end@28:
+.if_end@29:
    RTS
 
 rwts_dispatch:
@@ -920,7 +937,6 @@ integrity_fail:
    STA   __local_integrity_fail__offset
    JSR   step_prng
    LDX   __local_integrity_fail__offset
-   LDA   PRNG_OUTPUT
    STA   GAME_MESSAGE_STRINGS+1,X
    RTS
 
@@ -934,9 +950,9 @@ load_scene_data:
    LDA   #$00
    JSR   rwts_dispatch
    JSR   DISK_READ_FIELD
-   BCC   .if_end@29
+   BCC   .if_end@30
    JSR   integrity_fail
-.if_end@29:
+.if_end@30:
    RTS
 
 load_scene_from_disk:
@@ -960,13 +976,13 @@ load_scene_from_disk:
    LDA   GAME_SIG_SECTOR
    CLC
    ADC   __local_load_scene_from_disk__sector
-   JMP   .loop@5_continue
-.load_scene_from_disk@rot@0:
+   JMP   .loop@6_continue
+.load_scene_from_disk@rot@4:
    INC   __local_load_scene_from_disk__tries
    SBC   #$0D
-.loop@5_continue:
+.loop@6_continue:
    CMP   #$0D
-   BCS   .load_scene_from_disk@rot@0
+   BCS   .load_scene_from_disk@rot@4
    LDY   #$05
    STA   (__local_load_scene_from_disk__iob),Y
    LDA   __local_load_scene_from_disk__tries
@@ -974,13 +990,13 @@ load_scene_from_disk:
    STA   (__local_load_scene_from_disk__iob),Y
    LDA   #$02
    STA   __local_load_scene_from_disk__tries
-.loop@6_continue:
+.loop@7_continue:
    JSR   disk_read
-   BCC   .loop@6_break
+   BCC   .loop@7_break
    DEC   __local_load_scene_from_disk__tries
-   BNE   .loop@6_continue
+   BNE   .loop@7_continue
    RTS
-.loop@6_break:
+.loop@7_break:
    RTS
 
 scene_loop:
@@ -999,18 +1015,18 @@ scene_loop:
    STA   SAVED_MOB_PTR+1
    JSR   step_prng
    AND   #$0A
-   BNE   .if_end@31
+   BNE   .if_end@32
    JSR   load_scene_data
-.if_end@31:
-.loop@7_start:
+.if_end@32:
+.loop@8_start:
    LDA   SCENE_NUMBER
    JSR   load_scene_from_disk
-   BCC   .if_end@32
+   BCC   .if_end@33
    JSR   set_text_window_bottom
    LDA   #$1B
    JSR   display_message
-   JMP   .loop@7_break
-.if_end@32:
+   JMP   .loop@8_break
+.if_end@33:
    JSR   display_status_bar
    LDA   #<SCENE_TEXT_DATA
    STA   TEXT_STREAM_PTR
@@ -1021,10 +1037,10 @@ scene_loop:
    LDA   #$03
    JSR   tune_player
    LDA   SCENE_TEXT_DATA+255
-   BEQ   .loop@7_break
+   BEQ   .loop@8_break
    STA   SCENE_NUMBER
-   JMP   .loop@7_start
-.loop@7_break:
+   JMP   .loop@8_start
+.loop@8_break:
    JSR   set_text_window_bottom
    LDA   #$00
    STA   LOCATION_POS

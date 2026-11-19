@@ -40,6 +40,13 @@
     - INTEGRITY_FAIL_ADDR is the error tail of LOAD_SCENE_DATA, which
       VERIFY_INTEGRITY jumps to. integrity_fail is a function that
       load_scene_data and verify_integrity call.
+    - SETUP_SCENE_DISPLAY keeps its wait in AI_WAIT_FLAG, and SCENE_SETUP
+      keeps the location's bounds in BOUNDS_MIN_COL, BOUNDS_MAX_COL,
+      BOUNDS_MIN_ROW, and BOUNDS_MAX_ROW and the cell's column in
+      FONT_COL. Nothing else reads those bytes, and the C keeps them in
+      locals. DRAW_MAP_ENTITIES's scan leaves FONT_COL at VIEW_MIN_COL,
+      and draw_map_entities's at one past VIEW_MAX_COL. Every routine
+      that draws at FONT_COL sets it first.
     - RWTS_DISPATCH, DISK_READ, and DISK_WRITE return the carry, and
       their C versions return true on an error.
     - TUNE_PLAYER takes the tune number times 2 in X, and tune_player
@@ -564,9 +571,9 @@ static void load_map_tiles(void) {
     DEFAULT_CHAR = TILE_DEFAULT_CHAR;
 }
 
-/* Draws the map's glyph once at column 19 of row 9, and then prints the
- * same string, s_PRINT_FONT_CHAR, at each other cell from right to left
- * and from the bottom up. */
+/* Draws the map's glyph once at column 19 of row 9, which leaves the
+ * glyph's HRCG string in s_PRINT_FONT_CHAR, and then prints that string
+ * at each other cell, from right to left and from the bottom up. */
 void fill_map(void) {
     FONT_COL = MAP_WIDTH - 1;
     FONT_ROW = MAP_HEIGHT - 1;
@@ -574,9 +581,9 @@ void fill_map(void) {
     FONT_CHARSET = 1;
     render_font_char();
     for (;;) {
-        if ((int8_t)--FONT_COL < 0) {
+        if (FONT_COL-- == 0) {
             FONT_COL = MAP_WIDTH - 1;
-            if ((int8_t)--FONT_ROW < 0)
+            if (FONT_ROW-- == 0)
                 return;
         }
         font_pos_to_text_pos();
@@ -644,13 +651,15 @@ static void draw_map_entities(void) {
             display_message(MSG_ROCK_FALLS);
             MAP_REDRAW_FLAG = 0xFF;
         } else {
-            FONT_COL = VIEW_MIN_COL;
-            FONT_ROW = VIEW_MIN_ROW;
             uint8_t head = CHAR_PTR->mob_head;
             CHAR_PTR->mob_head = 0;
-            do {
-                entity_ref e = find_entity_at_pos(colrow_to_pos(FONT_COL, FONT_ROW));
-                if ((e >> 8) != 0) {
+            for (FONT_ROW = VIEW_MIN_ROW; FONT_ROW <= VIEW_MAX_ROW; FONT_ROW++) {
+                for (FONT_COL = VIEW_MIN_COL; FONT_COL <= VIEW_MAX_COL; FONT_COL++) {
+                    /* With the mob list empty, anything other than an
+                     * empty cell or an edge is an event entry. */
+                    entity_ref e = find_entity_at_pos(colrow_to_pos(FONT_COL, FONT_ROW));
+                    if (e == ENTITY_NONE || e == ENTITY_EDGE)
+                        continue;
                     get_entity_fontchar(e);
                     uint8_t type = ENTITY_EVENT(e)->type;
                     if (type != EVENT_TYPE_OBJECT
@@ -660,12 +669,7 @@ static void draw_map_entities(void) {
                         draw_map_icon_b();
                     }
                 }
-                FONT_COL++;
-                if (FONT_COL > VIEW_MAX_COL) {
-                    FONT_COL = VIEW_MIN_COL;
-                    FONT_ROW++;
-                }
-            } while (FONT_ROW <= VIEW_MAX_ROW);
+            }
             CHAR_PTR->mob_head = head;
             if (head == 0)
                 return;
@@ -678,6 +682,8 @@ static void draw_map_entities(void) {
         FONT_ROW = colrow >> 8;
         FONT_COL = (uint8_t)colrow;
         FONT_CHARSET = 1;
+        /* The font group is in the high byte, and group 0 is a player
+         * character's. */
         uint16_t glyph = appearance_to_fontchar(MOB_PTR->appearance);
         FONT_CHARNUM = (uint8_t)glyph;
         if ((glyph >> 8) == 0 || (MOB_PTR->speed & LOW_NIBBLE_MASK) != 0) {
@@ -688,7 +694,7 @@ static void draw_map_entities(void) {
             render_font_char();
         }
         next_group_member();
-    } while (((uint16_t)MOB_PTR >> 8) != 0);
+    } while (MOB_PTR != nullptr);
 }
 
 /*
@@ -703,7 +709,10 @@ static void draw_map_entities(void) {
     PRNG_OUTPUT. ENTITY_PTR is left there.
 
     The loops compare with CMP and BPL, a signed test, which is the
-    same as the unsigned one for columns 0-20 and rows 0-13.
+    same as the unsigned one for columns 0-20 and rows 0-13, and they
+    test at the end. Testing first makes no difference, because no
+    location's top-left corner is below or right of its bottom-right
+    one.
 */
 void enter_location(void) {
     uint8_t low = (uint8_t)(uint16_t)CHAR_PTR;
@@ -723,21 +732,15 @@ void enter_location(void) {
         fill_map();
     }
 
-    uint16_t colrow = pos_to_colrow(CHAR_PTR->min_pos);
-    VIEW_MIN_ROW = colrow >> 8;
-    FONT_ROW = colrow >> 8;
-    VIEW_MIN_COL = (uint8_t)colrow;
-    colrow = pos_to_colrow(CHAR_PTR->max_pos);
-    VIEW_MAX_ROW = colrow >> 8;
-    VIEW_MAX_COL = (uint8_t)colrow;
-    do {
-        FONT_COL = VIEW_MIN_COL;
-        do {
+    uint16_t min = pos_to_colrow(CHAR_PTR->min_pos);
+    VIEW_MIN_COL = (uint8_t)min;
+    VIEW_MIN_ROW = min >> 8;
+    uint16_t max = pos_to_colrow(CHAR_PTR->max_pos);
+    VIEW_MAX_COL = (uint8_t)max;
+    VIEW_MAX_ROW = max >> 8;
+    for (FONT_ROW = VIEW_MIN_ROW; FONT_ROW <= VIEW_MAX_ROW; FONT_ROW++)
+        for (FONT_COL = VIEW_MIN_COL; FONT_COL <= VIEW_MAX_COL; FONT_COL++)
             draw_map_col();
-            FONT_COL++;
-        } while (FONT_COL <= VIEW_MAX_COL);
-        FONT_ROW++;
-    } while (FONT_ROW <= VIEW_MAX_ROW);
 
     if ((CHAR_PTR->style & STYLE_DRAWN_BIT) == 0)
         draw_map_entities();
@@ -767,16 +770,17 @@ entity_ref check_at_boundary(uint8_t pos) {
  * the end of HRCG_COUT, reached from LOAD_CHAR_NAME_PTR's last
  * character, ctrl-K. HRCG_CTRL_K leaves the carry set only when the
  * character before it was ctrl-O, and the character before it is the
- * last of the mob's name, so the carry is clear. */
+ * last of the mob's name, so the carry is clear, and the wait is twice
+ * AI_WAIT_FLAG, which is 10 or 0. */
 void setup_scene_display(void) {
-    AI_WAIT_FLAG = 0;
+    uint8_t wait = 0;
     if (CHAR_AI_MODE == 0) {
-        AI_WAIT_FLAG = 10;
+        wait = 20;
         tune_player(TUNE_AI_TURN, 0);
     }
     setup_char_sprite();
     load_char_name_ptr();
-    WAIT_LOOP_COUNT = (uint8_t)(AI_WAIT_FLAG << 1);
+    WAIT_LOOP_COUNT = wait;
     timed_wait();
 }
 
@@ -786,18 +790,17 @@ void setup_scene_display(void) {
  * is between them. */
 void scene_setup(void) {
     struct location *loc = get_char_record(ACTIVE_CHAR);
-    uint16_t colrow = pos_to_colrow(loc->min_pos);
-    BOUNDS_MIN_COL = (uint8_t)colrow;
-    BOUNDS_MIN_ROW = colrow >> 8;
-    colrow = pos_to_colrow(loc->max_pos);
-    BOUNDS_MAX_COL = (uint8_t)colrow;
-    BOUNDS_MAX_ROW = colrow >> 8;
-    BOUNDS_MIN_COL++;
-    BOUNDS_MIN_ROW++;
+    uint16_t min = pos_to_colrow(loc->min_pos);
+    uint16_t max = pos_to_colrow(loc->max_pos);
+    uint8_t min_col = (uint8_t)min + 1;
+    uint8_t min_row = (min >> 8) + 1;
+    uint8_t max_col = (uint8_t)max;
+    uint8_t max_row = max >> 8;
 
-    FONT_COL = random_in_range(BOUNDS_MAX_COL - BOUNDS_MIN_COL - 1) + BOUNDS_MIN_COL;
-    uint8_t row = random_in_range(BOUNDS_MAX_ROW - BOUNDS_MIN_ROW - 1) + BOUNDS_MIN_ROW;
-    MOB_PTR->pos = colrow_to_pos(FONT_COL, row);
+    /* random_in_range's limit is inclusive. */
+    uint8_t col = min_col + random_in_range(max_col - min_col - 1);
+    uint8_t row = min_row + random_in_range(max_row - min_row - 1);
+    MOB_PTR->pos = colrow_to_pos(col, row);
 
     SOURCE_CHAR = 0;
     reorder_char(MOB_PTR);
@@ -832,8 +835,7 @@ bool disk_write(void) {
  * old output's offset from $9AA6. */
 void integrity_fail(void) {
     uint8_t offset = PRNG_OUTPUT;
-    step_prng();
-    (GAME_MESSAGE_STRINGS + 1)[offset] = PRNG_OUTPUT;
+    GAME_MESSAGE_STRINGS[offset + 1] = step_prng();
 }
 
 /* The copy protection's check. Seeks to track 5 and has the disk

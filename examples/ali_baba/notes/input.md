@@ -126,10 +126,15 @@ The file's opening comment lists them. In short:
   header specifies.
 - MENU_OPTION_PTR ($C2) isn't written. The option pointers are locals.
   Nothing outside these routines reads $C2.
-- `advance_sector` writes only the buffer address's high byte, the
-  sector, and the track, as ADVANCE_SECTOR does, and writes the sector
-  once. `setup_data_iob` and `setup_slot_iob` write the IOB's bytes in
-  the original's order.
+- INPUT_OPTION_COUNT ($5AAA), DRAW_INPUT_OPTIONS' counter, isn't
+  written. The count is a local of `draw_input_options`, and nothing
+  else reads that byte.
+- `advance_sector` adds $100 to the buffer address, which writes its
+  low byte back unchanged, where ADVANCE_SECTOR increments the high
+  byte alone, and it writes the sector twice when it wraps to 0. The
+  IOB is in RAM, so neither write is an event, and the IOB's bytes are
+  the same at each RWTS call. `setup_data_iob` and `setup_slot_iob`
+  write the IOB's bytes in the original's order.
 
 ## Where the original's comments and code disagree
 
@@ -157,23 +162,24 @@ The C follows the code in each case.
 
 ## Header and UNITS.md
 
-No change to `ali_baba.h` is needed. MENU_OPTION_PTR ($C2) is declared,
-and no unit uses it now. It could be removed, or kept as a reservation
-of $C2-$C3.
+No change to `ali_baba.h` is needed. MENU_OPTION_PTR ($C2) and
+INPUT_OPTION_COUNT ($5AAA) are declared, and no unit uses them now.
+They could be removed, or kept as reservations of $C2-$C3 and $5AAA.
 
 ## Compiler gaps
 
-Item 2 was fixed on 18 Nov 2026, and so was item 3 for a read. A store
-still computes the address.
+The comparison of two masked byte fields as ints was fixed on 18 Nov
+2026, and so was a pointer member's read through a zero-page pointer.
 
 Each of these makes correct code that is larger or slower than it
-needs to be. None blocked the translation.
+needs to be. None blocked the translation except item 6, which would
+make the program call a runtime helper that it doesn't have.
 
 1. **A volatile read through an index is stored to a dead local.**
 
    ```c
    extern volatile uint8_t PADDL [[c6502::address(0xC064)]][2];
-   static uint8_t read_paddle(uint8_t n [[c6502::in_x]]) {
+   static uint8_t read_paddle(uint8_t n) {
        register uint8_t count = 0;
        while (PADDL[n] & 0x80)
            if (++count == 0) return 0xFF;
@@ -186,42 +192,99 @@ needs to be. None blocked the translation.
    would be PREAD's own, 11 cycles a pass, and `read_paddle` would read
    the paddle exactly as PREAD does. A read of `KBD` with no index
    (`while (!(KBD & 0x80)) {}`) compiles to `LDA KBD; BPL` without the
-   store.
+   store. `count` is `register` because the reading is the loop's time,
+   and without it the count is in zero page and the loop takes 17
+   cycles a pass.
 
-2. **Two masked byte fields are compared as ints.**
-
-   ```c
-   if ((E->life & 0x3F) >= (E->strength & 0x1F)) r = 1;
-   ```
-
-   compiles to a 16-bit signed comparison (`SEC; SBC; LDA #0; SBC #0;
-   BVC; EOR #$80; BMI`), although both sides are 0-63. With the two
-   values in `uint8_t` locals it is `CMP; BCC`.
-   `check_combat_eligibility` uses the locals.
-
-3. **A pointer member read or written through a zero-page pointer
-   goes through a computed address and DPTR.**
+2. **A pointer member written through a zero-page pointer copies the
+   pointer to DPTR for the high byte.**
 
    ```c
    struct iob { uint8_t pad[8]; uint8_t *buffer; };
    extern struct iob *P [[c6502::zeropage(0x08)]];
-   uint8_t *get(void) { return P->buffer; }
+   extern uint8_t BUF[256];
    void put(void) { P->buffer = BUF; }
+   void step(void) { P->buffer += 0x100; }
    ```
 
-   Each adds 8 to P into a pair of locals, copies the pair to DPTR,
-   and reads or writes the low byte through the locals and the high
-   byte through DPTR, 18 instructions in all. `LDY #8; LDA (P),Y; INY;
-   LDA (P),Y` is enough, as it is for a byte member. This costs about
-   20 bytes in each of `setup_data_iob`, `setup_slot_iob`, and
-   `option` (which reads `MENU_DESC_PTR->options`).
+   `put` copies P to DPTR and stores the high byte with `STA (DPTR),Y`,
+   8 bytes more than `LDY #8; LDA #<BUF; STA (P),Y; INY; LDA #>BUF;
+   STA (P),Y`. `step` also reads both bytes into locals and writes both
+   back, 31 bytes before the RTS with the copy to DPTR, where `LDY #9;
+   LDA (P),Y; CLC; ADC #1; STA (P),Y` is 9. `setup_data_iob` and `setup_slot_iob` pay the first, and
+   `advance_sector` pays both, 16 bytes more than the previous C, which
+   incremented the high byte through a cast.
 
-4. **Indexing an array of 9-byte structs multiplies in 16 bits.**
-   `&MENU_DESC_PTR->options[n - 1]`, with `n` a `uint8_t`, extends
-   `n - 1` to 16 bits and multiplies by 9 with 16-bit shifts and adds,
-   about 30 bytes. `option` computes the offset as a `uint8_t`, which
-   is correct because no menu has more than 9 options, and the
-   multiplication is then `ASL; ASL; ASL; ADC`.
+3. **Indexing an array of 9-byte structs by a byte minus 1 multiplies
+   in 16 bits.**
+
+   ```c
+   static struct menu_option *option(uint8_t n) {
+       return &MENU_DESC_PTR->options[n - 1];
+   }
+   ```
+
+   extends `n - 1` to 16 bits and multiplies by 9 with 16-bit shifts and
+   adds, 69 bytes in all. The 16 bits are needed for an `n` above 29,
+   which no menu has. The previous C computed the offset as a
+   `uint8_t`, which is `ASL; ASL; ASL; ADC`, 38 bytes in all.
+
+4. **A copy from a pointer one past a length byte computes the source
+   address in 16 bits on each pass.**
+
+   ```c
+   extern uint8_t BUF [[c6502::address(0x5AAC)]][120];
+   void copy(const uint8_t *text, uint8_t pos) {
+       uint8_t length = text[0];
+       const uint8_t *chars = text + 1;
+       uint8_t *at = &BUF[pos];
+       for (uint8_t i = 0; i < length; i++)
+           at[i] = chars[i];
+   }
+   ```
+
+   The compiler folds `chars + i` into `(text + i)[1]` and adds `i` to
+   `text` in 16 bits on each pass, 24 bytes of loop body, where `TXA;
+   TAY; INY; LDA (text),Y; DEY; STA (at),Y; INX` is 11. `i` is at most
+   254, so `i + 1` fits in Y. `copy_record_data` pays it, 72 bytes
+   where the previous C, which copied backward with one index, was 42.
+
+5. **`!` of a `bool` and a ternary of constants go through branches.**
+
+   ```c
+   static bool flag;
+   extern uint8_t A [[c6502::address(0x5A00)]];
+   extern uint8_t B [[c6502::address(0x5A01)]];
+   void f(void) {
+       A = !flag;
+       B = (flag ? 3 : 2) + 1;
+   }
+   ```
+
+   compiles `!flag` to `LDA flag; BEQ t; LDA #0; BEQ e; t: LDA #1`,
+   where `LDA flag; EOR #1` gives the same 0 or 1, and the ternary to a
+   branch to `LDA #3` or `LDA #2` followed by `CLC; ADC #1`, where the
+   arms could be 4 and 3. `configure_input` pays both, 17 bytes more
+   than the previous C, which wrote `under_level ^ 1` and
+   `under_level + 3`.
+
+6. **A byte divided by a constant calls the 16-bit signed division
+   helper, once for `/` and again for `%`.**
+
+   ```c
+   extern uint8_t TEXT_ROW [[c6502::zeropage(0x25)]];
+   extern uint8_t TEXT_COL [[c6502::zeropage(0x24)]];
+   void set_cursor_pos(uint8_t pos) {
+       TEXT_ROW = 21 + pos / 40;
+       TEXT_COL = pos % 40;
+   }
+   ```
+
+   extends `pos` to 16 bits in HARGS and calls `sdivmod16` twice. The
+   program has no runtime helpers, so a division links only with
+   `--defsym`, as the harness links it, and wouldn't run on an Apple II.
+   `set_cursor_pos` therefore subtracts 40 as the original does, and
+   map.c's `load_scene_from_disk` subtracts 13 in a loop.
 
 ## Size
 
@@ -231,19 +294,108 @@ instruction bytes for the same routines, counted from `main.lst`
 
 | | Original | C |
 |---|---|---|
-| code | 1572 | 1919, of which `__zp_init` is 15 |
+| code | 1572 | 1808, of which `__zp_init` is 15 |
 | menus | 593 | 505 (11 descriptors of 5 bytes and 50 options of 9) |
 | menu strings | 679 | 677 |
 | other tables and variables | 39 | 34, of which `-O` moves the 5 variables to zero page |
 
-The code is 313 bytes, 20%, larger than the original's. The largest
-differences are the menu driver (`option`, `draw_option`, and
-`input_loop`, which pass option pointers in zero-page parameters where
-the original keeps one in $C2), the IOB setup (gap 3), and
+The code without `__zp_init` is 221 bytes, 14%, larger than the
+original's. The largest differences are the menu driver (`option`,
+`draw_option`, and `input_loop`, which pass option pointers in
+zero-page parameters where the original keeps one in $C2, and gap 3),
+`copy_record_data` (gap 4), the IOB setup (gap 2), and
 `check_joystick`, whose zone tests compile to separate loads and
 compares where the original keeps the zone in A.
 
-UNITS.md and PLAN.md give the unit 1414 code bytes. The count above is
+Each function's code bytes in the `-c -O` object, from `nm.py -S`,
+before and after the rewrite of 18 Nov 2026 as plain C. The two
+`@run` routines hold code that the compiler moved out of several
+functions, the IOB's sector and track stores and the copy of
+RWTS_IOB_PTR to DPTR.
+
+| C | Before | After |
+|---|---:|---:|
+| `option` | 38 | 69 |
+| `set_cursor_pos` | 35 | 35 |
+| `draw_option` | 32 | 32 |
+| `call_input_init` | 40 | 40 |
+| `clear_input_buffer` | 15 | 13 |
+| `copy_record_data` | 42 | 72 |
+| `draw_input_options` | 32 | 32 |
+| `render_input_buffer` | 29 | 29 |
+| `setup_input` | 24 | 24 |
+| `validate_input` | 60 | 60 |
+| `input_loop` | 85 | 85 |
+| `store_selection_to_record` | 8 | 8 |
+| `read_paddle` | 20 | 21 |
+| `joy_to_zone` | 27 | 27 |
+| `check_joystick` | 86 | 86 |
+| `check_input` | 56 | 47 |
+| `read_keyboard` | 50 | 48 |
+| `check_combat_eligibility` | 78 | 82 |
+| `configure_input` | 53 | 70 |
+| `get_input_table_ptr` | 5 | 5 |
+| `teardown_input` | 6 | 6 |
+| `menu_see_your_lot` | 6 | 6 |
+| `menu_check_attack` | 15 | 15 |
+| `menu_other_options` | 7 | 7 |
+| `retire_character` | 13 | 13 |
+| `menu_game_settings` | 8 | 8 |
+| `menu_game_settings_enter` | 7 | 7 |
+| `menu_settings_init` | 12 | 13 |
+| `settings_speed_up` | 21 | 16 |
+| `settings_speed_down` | 14 | 16 |
+| `settings_danger_up` | 9 | 9 |
+| `settings_danger_down` | 9 | 9 |
+| `menu_attack_target` | 7 | 7 |
+| `menu_drop_gold` | 7 | 7 |
+| `menu_drop_inc` | 6 | 6 |
+| `menu_drop_dec` | 6 | 6 |
+| `format_slot_number` | 39 | 36 |
+| `slot_update` | 6 | 6 |
+| `slot_inc` | 13 | 11 |
+| `slot_dec` | 9 | 11 |
+| `init_world` | 7 | 7 |
+| `slot_inc_enter` | 6 | 6 |
+| `slot_dec_enter` | 6 | 6 |
+| `enter_save_game_slot` | 7 | 7 |
+| `slot_dec_reenter` | 6 | 6 |
+| `slot_inc_reenter` | 6 | 6 |
+| `enter_char_select` | 7 | 7 |
+| `char_select_init` | 19 | 19 |
+| `char_select_next` | 9 | 9 |
+| `char_select_prev` | 9 | 9 |
+| `char_select_patch` | 14 | 14 |
+| `char_select_here` | 10 | 10 |
+| `char_select_home` | 20 | 20 |
+| `start_game_input` | 7 | 7 |
+| `setup_data_iob` | 29 | 24 |
+| `verify_game_disk` | 53 | 47 |
+| `wait_keypress` | 16 | 16 |
+| `prompt_insert_disk` | 11 | 11 |
+| `ensure_game_disk` | 12 | 12 |
+| `format_disk_track` | 5 | 5 |
+| `write_disk_signature` | 33 | 31 |
+| `verify_disk_signature` | 40 | 40 |
+| `setup_slot_iob` | 58 | 57 |
+| `advance_sector` | 36 | 52 |
+| `transfer_game_data` | 34 | 34 |
+| `write_game_data` | 5 | 5 |
+| `read_game_data` | 19 | 19 |
+| `continue_game` | 57 | 57 |
+| `save_game` | 36 | 36 |
+| `enter_scenario_disk` | 7 | 7 |
+| `scenario_done` | 9 | 9 |
+| `cancel_scenario` | 6 | 6 |
+| `display_insert_msg` | 8 | 8 |
+| `format_scenario_disk` | 43 | 43 |
+| `use_scenario_disk` | 22 | 22 |
+| `setup_data_iob@run0` | - | 9 |
+| `verify_game_disk@run1` | - | 10 |
+| `__zp_init` | 15 | 15 |
+| Total | 1722 | 1808 |
+
+UNITS.md and PLAN.md give the unit 1414 code bytes. The first table's count is
 every instruction in the routines UNITS.md lists for input, which also
 includes the instructions inside the table chunks (ENTER_ATTACK_MENU,
 MENU_ATTACK_TARGET, and the others).

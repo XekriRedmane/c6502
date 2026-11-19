@@ -37,36 +37,44 @@ __local_verify_disk_signature__tries	EQU	$84
 __local_verify_game_disk__tries	EQU	$84
 __local_transfer_game_data__tries	EQU	$85
 __local_transfer_game_data__command	EQU	$86
+__local_advance_sector__0	EQU	$87
 __local_input_loop__m	EQU	$87
-__local_setup_slot_iob__slot	EQU	$87
+__local_setup_slot_iob__0	EQU	$87
+__local_advance_sector__1	EQU	$88
 __local_input_loop__0	EQU	$88
 __local_draw_option__0	EQU	$8A
+__local_read_keyboard__0	EQU	$8A
 __local_setup_input__m	EQU	$8A
 __local_draw_option__o	EQU	$8B
-__local_read_keyboard__1	EQU	$8B
 __local_setup_input__0	EQU	$8B
 __local_validate_input__o_0	EQU	$8B
 __local_draw_option__1	EQU	$8C
 __local_validate_input__o_1	EQU	$8C
-__local_format_slot_number__n	EQU	$8D
+__local_format_slot_number__ones	EQU	$8D
 __local_render_input_buffer__i	EQU	$8D
 __local_set_cursor_pos__pos	EQU	$8D
 __local_validate_input__1	EQU	$8D
-__local_check_input__dir	EQU	$8E
+__local_check_combat_eligibility__0	EQU	$8E
 __local_validate_input__2	EQU	$8E
 __local_check_combat_eligibility__1	EQU	$8F
 __local_check_input__2	EQU	$8F
+__local_draw_input_options__n	EQU	$8F
 __local_validate_input__dir	EQU	$8F
-__local_copy_record_data__i	EQU	$90
-__local_copy_record_data__1	EQU	$91
+__local_copy_record_data__o	EQU	$90
+__local_copy_record_data__0	EQU	$91
 __local_option__n	EQU	$91
 __local_read_paddle__0	EQU	$91
-__local_copy_record_data__2	EQU	$92
+__local_copy_record_data__1	EQU	$92
 __local_option__0	EQU	$92
-__local_copy_record_data__o	EQU	$93
+__local_copy_record_data__2	EQU	$93
 __local_joy_to_zone__old_zone	EQU	$93
 __local_option__1	EQU	$93
 __local_copy_record_data__3	EQU	$94
+__local_option__2	EQU	$94
+__local_copy_record_data__4	EQU	$95
+__local_option__3	EQU	$95
+__local_copy_record_data__5	EQU	$96
+__local_option__4	EQU	$96
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -240,7 +248,7 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def advance_sector params= locals=__local_advance_sector__0 indirect=false in_cycle=false
+; def advance_sector params= locals=__local_advance_sector__0,__local_advance_sector__1 indirect=false in_cycle=false
 ; def call_input_init params=__zpabi_call_input_init__init locals=__local_call_input_init__init indirect=false in_cycle=false param_regs=A
 ; def cancel_scenario params= locals= indirect=false in_cycle=false
 ; def char_select_here params= locals=__local_char_select_here__0 indirect=false in_cycle=false
@@ -255,9 +263,9 @@ WAIT	EQU	$FCA8
 ; def clear_input_buffer params= locals= indirect=false in_cycle=false
 ; def configure_input params= locals=__local_configure_input__0 indirect=false in_cycle=false
 ; def continue_game params= locals=__local_continue_game__0 indirect=false in_cycle=false
-; def copy_record_data params=__zpabi_copy_record_data__o_0,__zpabi_copy_record_data__o_1 locals=__local_copy_record_data__0,__local_copy_record_data__i,__local_copy_record_data__1,__local_copy_record_data__2,__local_copy_record_data__o,__local_copy_record_data__3 indirect=false in_cycle=false param_regs=A,X
+; def copy_record_data params=__zpabi_copy_record_data__o_0,__zpabi_copy_record_data__o_1 locals=__local_copy_record_data__o,__local_copy_record_data__0,__local_copy_record_data__1,__local_copy_record_data__2,__local_copy_record_data__3,__local_copy_record_data__4,__local_copy_record_data__5 indirect=false in_cycle=false param_regs=A,X
 ; def display_insert_msg params= locals= indirect=false in_cycle=false
-; def draw_input_options params= locals=__local_draw_input_options__0,__local_draw_input_options__1,__local_draw_input_options__2 indirect=false in_cycle=false
+; def draw_input_options params= locals=__local_draw_input_options__0,__local_draw_input_options__1,__local_draw_input_options__2,__local_draw_input_options__n indirect=false in_cycle=false
 ; def draw_option params=__zpabi_draw_option__o_0,__zpabi_draw_option__o_1 locals=__local_draw_option__0,__local_draw_option__o,__local_draw_option__1 indirect=false in_cycle=false param_regs=A,X
 ; def ensure_game_disk params= locals=__local_ensure_game_disk__0 indirect=false in_cycle=false
 ; def enter_char_select params= locals=__local_enter_char_select__0 indirect=false in_cycle=false
@@ -265,7 +273,7 @@ WAIT	EQU	$FCA8
 ; def enter_scenario_disk params= locals=__local_enter_scenario_disk__0 indirect=false in_cycle=false
 ; def format_disk_track params= locals=__local_format_disk_track__0 indirect=false in_cycle=false carry=true
 ; def format_scenario_disk params= locals=__local_format_scenario_disk__0 indirect=false in_cycle=false
-; def format_slot_number params= locals=__local_format_slot_number__n indirect=false in_cycle=false
+; def format_slot_number params= locals=__local_format_slot_number__ones,__local_format_slot_number__tens indirect=false in_cycle=false
 ; def get_input_table_ptr params= locals= indirect=false in_cycle=false
 ; def init_world params= locals=__local_init_world__0 indirect=false in_cycle=false
 ; def input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 locals=__local_input_loop__m,__local_input_loop__0,__local_input_loop__1 indirect=false in_cycle=false param_regs=A,X
@@ -280,11 +288,11 @@ WAIT	EQU	$FCA8
 ; def menu_other_options params= locals=__local_menu_other_options__0 indirect=false in_cycle=false
 ; def menu_see_your_lot params= locals= indirect=false in_cycle=false
 ; def menu_settings_init params= locals= indirect=false in_cycle=false
-; def option params=__zpabi_option__n locals=__local_option__n,__local_option__0,__local_option__1 indirect=false in_cycle=false param_regs=A
+; def option params=__zpabi_option__n locals=__local_option__n,__local_option__0,__local_option__1,__local_option__2,__local_option__3,__local_option__4 indirect=false in_cycle=false param_regs=A
 ; def prompt_insert_disk params= locals= indirect=false in_cycle=false
 ; def read_game_data params= locals=__local_read_game_data__0 indirect=false in_cycle=false
 ; def read_keyboard params= locals=__local_read_keyboard__0,__local_read_keyboard__1 indirect=false in_cycle=false
-; def read_paddle params=__zpabi_read_paddle__n locals=__local_read_paddle__0 indirect=false in_cycle=false param_regs=X
+; def read_paddle params=__zpabi_read_paddle__n locals=__local_read_paddle__0 indirect=false in_cycle=false param_regs=A
 ; def render_input_buffer params= locals=__local_render_input_buffer__0,__local_render_input_buffer__i indirect=false in_cycle=false
 ; def retire_character params= locals= indirect=false in_cycle=false
 ; def save_game params= locals=__local_save_game__0 indirect=false in_cycle=false
@@ -292,12 +300,12 @@ WAIT	EQU	$FCA8
 ; def set_cursor_pos params=__zpabi_set_cursor_pos__pos locals=__local_set_cursor_pos__pos,__local_set_cursor_pos__row indirect=false in_cycle=false param_regs=A
 ; def settings_danger_down params= locals= indirect=false in_cycle=false
 ; def settings_danger_up params= locals= indirect=false in_cycle=false
-; def settings_speed_down params= locals=__local_settings_speed_down__0 indirect=false in_cycle=false
+; def settings_speed_down params= locals= indirect=false in_cycle=false
 ; def settings_speed_up params= locals= indirect=false in_cycle=false
 ; def setup_data_iob params= locals= indirect=false in_cycle=false
 ; def setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 locals=__local_setup_input__m,__local_setup_input__0 indirect=false in_cycle=false param_regs=A,X
-; def setup_slot_iob params= locals=__local_setup_slot_iob__slot,__local_setup_slot_iob__0 indirect=false in_cycle=false
-; def slot_dec params= locals=__local_slot_dec__0 indirect=false in_cycle=false
+; def setup_slot_iob params= locals=__local_setup_slot_iob__0,__local_setup_slot_iob__1 indirect=false in_cycle=false
+; def slot_dec params= locals= indirect=false in_cycle=false
 ; def slot_dec_enter params= locals= indirect=false in_cycle=false
 ; def slot_dec_reenter params= locals= indirect=false in_cycle=false
 ; def slot_inc params= locals= indirect=false in_cycle=false
@@ -650,7 +658,9 @@ WAIT	EQU	$FCA8
 ; item char_select_home section=.text local=false zero=false
 ; item start_game_input section=.text local=false zero=false
 ; item setup_data_iob section=.text local=true zero=false
+; item setup_data_iob@run0 section=.text local=true zero=false
 ; item verify_game_disk section=.text local=true zero=false
+; item verify_game_disk@run1 section=.text local=true zero=false
 ; item wait_keypress section=.text local=true zero=false
 ; item prompt_insert_disk section=.text local=true zero=false
 ; item ensure_game_disk section=.text local=true zero=false
@@ -745,7 +755,7 @@ WAIT	EQU	$FCA8
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
 ; zp NULL_PAGE_HIGH size=6 at=$0A def=false init=
-; zp slot_number size=1 at=auto def=true init=$01 weight=16 local=true
+; zp slot_number size=1 at=auto def=true init=$01 weight=14 local=true
 ; zp MONITOR_YSAV1_1F size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -774,27 +784,43 @@ WAIT	EQU	$FCA8
 option:
    SUBROUTINE
 
+   STA   __local_option__n
+   LDY   #$03
+   LDA   (MENU_DESC_PTR),Y
+   STA   __local_option__4
+   INY
+   LDA   (MENU_DESC_PTR),Y
+   STA   __local_option__3
+   LDA   __local_option__n
    SEC
    SBC   #$01
    STA   __local_option__0
-   ASL
-   ASL
-   ASL
-   CLC
-   ADC   __local_option__0
-   STA   __local_option__1
-   LDY   #$03
-   LDA   (MENU_DESC_PTR),Y
-   STA   __local_option__0
-   INY
-   LDA   (MENU_DESC_PTR),Y
+   LDA   #$00
+   SBC   #$00
    STA   __local_option__n
    LDA   __local_option__0
-   CLC
-   ADC   __local_option__1
-   STA   option@ret
+   ASL
+   STA   __local_option__1
    LDA   __local_option__n
-   ADC   #$00
+   ROL
+   ASL   __local_option__1
+   ROL
+   ASL   __local_option__1
+   ROL
+   STA   __local_option__2
+   LDA   __local_option__1
+   CLC
+   ADC   __local_option__0
+   STA   __local_option__0
+   LDA   __local_option__2
+   ADC   __local_option__n
+   STA   __local_option__n
+   LDA   __local_option__4
+   CLC
+   ADC   __local_option__0
+   STA   option@ret
+   LDA   __local_option__3
+   ADC   __local_option__n
    STA   option@ret+1
    RTS
 
@@ -846,44 +872,59 @@ draw_option:
 clear_input_buffer:
    SUBROUTINE
 
-   LDX   #$78
-   BNE   .loop@0_start
+   LDX   #$00
 .clear_input_buffer@rot@0:
    LDA   #$A0
    STA   INPUT_BUFFER,X
-.loop@0_start:
-   DEX
-   CPX   #$FF
-   BNE   .clear_input_buffer@rot@0
+   INX
+   CPX   #$78
+   BCC   .clear_input_buffer@rot@0
    RTS
 
 copy_record_data:
    SUBROUTINE
 
    STA   __local_copy_record_data__o
-   STX   __local_copy_record_data__3
+   STX   __local_copy_record_data__0
    LDY   #$06
    LDA   (__local_copy_record_data__o),Y
-   STA   __local_copy_record_data__1
+   STA   __local_copy_record_data__4
    INY
    LDA   (__local_copy_record_data__o),Y
-   STA   __local_copy_record_data__2
+   STA   __local_copy_record_data__5
    LDY   #$00
-   LDA   (__local_copy_record_data__1),Y
-   STA   __local_copy_record_data__i
+   LDA   (__local_copy_record_data__4),Y
+   STA   __local_copy_record_data__3
    INY
    LDA   (__local_copy_record_data__o),Y
+   STA   __local_copy_record_data__o
+   LDA   #<INPUT_BUFFER
    CLC
-   ADC   __local_copy_record_data__i
-   TAX
-   DEX
+   ADC   __local_copy_record_data__o
+   STA   __local_copy_record_data__1
+   LDA   #>INPUT_BUFFER
+   ADC   #$00
+   STA   __local_copy_record_data__2
+   LDX   #$00
+   BEQ   .loop@1_start
+.copy_record_data@rot@1:
+   TXA
+   ADC   __local_copy_record_data__4
+   STA   __local_copy_record_data__o
+   LDA   #$00
+   ADC   __local_copy_record_data__5
+   STA   __local_copy_record_data__0
+   LDY   #$01
+   LDA   (__local_copy_record_data__o),Y
+   STA   __local_copy_record_data__o
+   TXA
+   TAY
+   LDA   __local_copy_record_data__o
+   STA   (__local_copy_record_data__1),Y
+   INX
 .loop@1_start:
-   LDY   __local_copy_record_data__i
-   LDA   (__local_copy_record_data__1),Y
-   STA   INPUT_BUFFER,X
-   DEX
-   DEC   __local_copy_record_data__i
-   BNE   .loop@1_start
+   CPX   __local_copy_record_data__3
+   BCC   .copy_record_data@rot@1
    RTS
 
 draw_input_options:
@@ -891,8 +932,9 @@ draw_input_options:
 
    LDY   #$00
    LDA   (MENU_DESC_PTR),Y
-   STA   INPUT_OPTION_COUNT
-.loop@2_start:
+   STA   __local_draw_input_options__n
+   JMP   .loop@2_start
+.draw_input_options@rot@2:
    JSR   option
    LDY   #$00
    LDA   (option@ret),Y
@@ -901,9 +943,10 @@ draw_input_options:
    LDA   option@ret
    JSR   copy_record_data
 .if_end@2:
-   DEC   INPUT_OPTION_COUNT
-   LDA   INPUT_OPTION_COUNT
-   BNE   .loop@2_start
+   DEC   __local_draw_input_options__n
+.loop@2_start:
+   LDA   __local_draw_input_options__n
+   BNE   .draw_input_options@rot@2
    RTS
 
 render_input_buffer:
@@ -915,14 +958,14 @@ render_input_buffer:
    STA   TEXT_COL
    JSR   print_ctrl_ab
    LDX   #$00
-.render_input_buffer@rot@1:
+.render_input_buffer@rot@3:
    LDA   INPUT_BUFFER,X
    STX   __local_render_input_buffer__i
    JSR   hrcg_cout
    LDX   __local_render_input_buffer__i
    INX
    CPX   #$78
-   BCC   .render_input_buffer@rot@1
+   BCC   .render_input_buffer@rot@3
    RTS
 
 setup_input:
@@ -1032,6 +1075,7 @@ store_selection_to_record:
 read_paddle:
    SUBROUTINE
 
+   TAX
    LDA   PTRIG
    LDY   #$00
 .loop@6_continue:
@@ -1073,7 +1117,7 @@ check_joystick:
 
    LDA   #$C8
    JSR   WAIT
-   LDX   #$00
+   LDA   #$00
    JSR   read_paddle
    TAX
    LDA   joy_zone_x
@@ -1081,7 +1125,7 @@ check_joystick:
    STA   joy_zone_x
    LDA   #$C8
    JSR   WAIT
-   LDX   #$01
+   LDA   #$01
    JSR   read_paddle
    TAX
    LDA   joy_zone_y
@@ -1132,25 +1176,21 @@ check_input:
 .if_end@23:
    LDA   __local_check_input__2
    BPL   .if_end@24
-   LDA   #$05
-   STA   __local_check_input__dir
-.loop@7_start:
-   DEC   __local_check_input__dir
-   LDA   __local_check_input__dir
-   CMP   #$FF
-   BEQ   .loop@7_break
-   LDX   __local_check_input__dir
-   LDA   __local_check_input__2
+   LDX   #$00
+.check_input@rot@4:
    CMP   DIR_KEYS,X
    BEQ   .check_input@scfold@0
    CMP   DIR_KEYS+5,X
    BEQ   .check_input@scfold@0
    CMP   DIR_KEYS+10,X
-   BNE   .loop@7_start
+   BNE   .if_end@29
 .check_input@scfold@0:
    TXA
    RTS
-.loop@7_break:
+.if_end@29:
+   INX
+   CPX   #$05
+   BCC   .check_input@rot@4
 .if_end@24:
    LDA   #$FF
    STA   KBDSTRB
@@ -1169,18 +1209,17 @@ read_keyboard:
 .if_end@30:
    JSR   tick_anim_counter
    JMP   .loop@8_start
-.read_keyboard@rot@2:
+.read_keyboard@rot@5:
    JSR   idle_anim_handler
 .loop@8_start:
    JSR   step_prng
    JSR   check_input
-   STA   __local_read_keyboard__1
-   AND   #$80
-   BNE   .read_keyboard@rot@2
-   LDA   __local_read_keyboard__1
+   STA   __local_read_keyboard__0
+   CMP   #$FF
+   BEQ   .read_keyboard@rot@5
    STA   KBDSTRB
    JSR   anim_check_frame
-   LDA   __local_read_keyboard__1
+   LDA   __local_read_keyboard__0
    RTS
 
 check_combat_eligibility:
@@ -1204,14 +1243,16 @@ check_combat_eligibility:
    BEQ   .if_end@33
    RTS
 .if_end@33:
-   LDY   #$05
-   LDA   (ENTITY_PTR),Y
-   AND   #$1F
-   STA   __local_check_combat_eligibility__1
-   INY
+   LDY   #$06
    LDA   (ENTITY_PTR),Y
    AND   #$3F
-   CMP   __local_check_combat_eligibility__1
+   STA   __local_check_combat_eligibility__1
+   DEY
+   LDA   (ENTITY_PTR),Y
+   AND   #$1F
+   STA   __local_check_combat_eligibility__0
+   LDA   __local_check_combat_eligibility__1
+   CMP   __local_check_combat_eligibility__0
    BCC   .if_end@34
    RTS
 .if_end@34:
@@ -1241,23 +1282,39 @@ configure_input:
    STA   GAME_INPUT_OPTIONS+45
    LDA   under_level
    STA   GAME_INPUT_OPTIONS+27
-   EOR   #$01
+   BEQ   .lnot_true@0
+   LDA   #$00
+   BEQ   .lnot_end@1
+.lnot_true@0:
+   LDA   #$01
+.lnot_end@1:
    STA   GAME_INPUT_OPTIONS+9
    LDA   under_level
-   EOR   #$01
+   BEQ   .lnot_true@2
+   LDA   #$00
+   BEQ   .lnot_end@3
+.lnot_true@2:
+   LDA   #$01
+.lnot_end@3:
    STA   GAME_INPUT_OPTIONS+18
    LDA   under_level
+   BEQ   .cond_else@37
+   LDA   #$03
+   BNE   .cond_end@38
+.cond_else@37:
+   LDA   #$02
+.cond_end@38:
    CLC
-   ADC   #$03
+   ADC   #$01
    STA   GAME_INPUT_TABLE+1
-   LDA   MOVE_POINTS
-   STA   GAME_INPUT_OPTIONS
    LDA   TURN_ACTIVE
-   BNE   .if_end@37
+   BEQ   .cond_else@39
+   LDA   MOVE_POINTS
+   JMP   .cond_end@40
+.cond_else@39:
    LDA   #$00
+.cond_end@40:
    STA   GAME_INPUT_OPTIONS
-.if_end@37:
-   LDA   GAME_INPUT_OPTIONS
    RTS
 
 get_input_table_ptr:
@@ -1284,10 +1341,10 @@ menu_check_attack:
    SUBROUTINE
 
    JSR   check_attack_eligible
-   BCC   .if_end@38
+   BCC   .if_end@41
    LDA   #$0E
    RTS
-.if_end@38:
+.if_end@41:
    LDX   #>ATTACK_DIR_TABLE
    LDA   #<ATTACK_DIR_TABLE
    JMP   input_loop
@@ -1326,8 +1383,9 @@ menu_settings_init:
    SUBROUTINE
 
    JSR   settings_display_init
-   LDA   ANIM_INDEX
-   ORA   #$B0
+   LDA   #$B0
+   CLC
+   ADC   ANIM_INDEX
    STA   S_GAME_SPEED+14
    RTS
 
@@ -1335,13 +1393,11 @@ settings_speed_up:
    SUBROUTINE
 
    JSR   store_selection_to_record
-   INC   ANIM_INDEX
    LDA   ANIM_INDEX
    CMP   #$05
-   BCC   .if_end@39
-   LDA   #$05
-   STA   ANIM_INDEX
-.if_end@39:
+   BCS   .if_end@42
+   INC   ANIM_INDEX
+.if_end@42:
    LDA   #$17
    RTS
 
@@ -1349,10 +1405,11 @@ settings_speed_down:
    SUBROUTINE
 
    JSR   store_selection_to_record
+   LDA   ANIM_INDEX
+   CMP   #$02
+   BCC   .if_end@43
    DEC   ANIM_INDEX
-   BNE   .if_end@40
-   INC   ANIM_INDEX
-.if_end@40:
+.if_end@43:
    LDA   #$17
    RTS
 
@@ -1403,24 +1460,25 @@ menu_drop_dec:
 format_slot_number:
    SUBROUTINE
 
-   LDA   #$A0
-   STA   S_CONTINUE_GAME_NUMBER+22
-   STA   S_SAVE_IN_SLOT+26
    LDA   slot_number
-   STA   __local_format_slot_number__n
+   STA   __local_format_slot_number__ones
    CMP   #$0A
-   BCC   .if_end@41
+   BCC   .format_slot_number@asm_ssa_split@0
    SBC   #$0A
-   STA   __local_format_slot_number__n
+   STA   __local_format_slot_number__ones
    LDA   #$B1
+.if_end@44:
    STA   S_CONTINUE_GAME_NUMBER+22
    STA   S_SAVE_IN_SLOT+26
-.if_end@41:
-   LDA   __local_format_slot_number__n
-   ORA   #$B0
+   LDA   #$B0
+   CLC
+   ADC   __local_format_slot_number__ones
    STA   S_CONTINUE_GAME_NUMBER+23
    STA   S_SAVE_IN_SLOT+27
    RTS
+.format_slot_number@asm_ssa_split@0:
+   LDA   #$A0
+   BNE   .if_end@44
 
 slot_update:
    SUBROUTINE
@@ -1431,21 +1489,21 @@ slot_update:
 slot_inc:
    SUBROUTINE
 
-   INC   slot_number
    LDA   slot_number
-   CMP   #$11
-   BCC   .if_end@42
-   DEC   slot_number
-.if_end@42:
+   CMP   #$10
+   BCS   .if_end@45
+   INC   slot_number
+.if_end@45:
    JMP   slot_update
 
 slot_dec:
    SUBROUTINE
 
+   LDA   slot_number
+   CMP   #$02
+   BCC   .if_end@46
    DEC   slot_number
-   BNE   .if_end@43
-   INC   slot_number
-.if_end@43:
+.if_end@46:
    JMP   slot_update
 
 init_world:
@@ -1529,9 +1587,9 @@ char_select_init:
    SUBROUTINE
 
    JSR   find_first_pc
-   BCC   .if_end@44
+   BCC   .if_end@47
    JMP   char_select_home
-.if_end@44:
+.if_end@47:
    JSR   set_cursor_row21
    LDA   #$35
    JSR   display_message
@@ -1576,9 +1634,9 @@ char_select_home:
 
    LDA   CURRENT_PLAYER
    CMP   #$09
-   BNE   .if_end@45
+   BNE   .if_end@48
    JMP   char_select_here
-.if_end@45:
+.if_end@48:
    STA   ACTIVE_CHAR
    LDX   #$01
    LDA   #$00
@@ -1599,10 +1657,7 @@ setup_data_iob:
    STA   (RWTS_IOB_PTR),Y
    INY
    STA   (RWTS_IOB_PTR),Y
-   LDA   RWTS_IOB_PTR
-   STA   DPTR
-   LDA   RWTS_IOB_PTR+1
-   STA   DPTR+1
+   JSR   setup_data_iob@run0
    LDA   #<SCENE_TEXT_DATA
    LDY   #$08
    STA   (RWTS_IOB_PTR),Y
@@ -1611,16 +1666,21 @@ setup_data_iob:
    STA   (DPTR),Y
    RTS
 
+setup_data_iob@run0:
+   SUBROUTINE
+
+   LDA   RWTS_IOB_PTR
+   STA   DPTR
+   LDA   RWTS_IOB_PTR+1
+   STA   DPTR+1
+   RTS
+
 verify_game_disk:
    SUBROUTINE
 
    JSR   setup_data_iob
    LDA   #$11
-   LDY   #$04
-   STA   (RWTS_IOB_PTR),Y
-   LDA   #$00
-   INY
-   STA   (RWTS_IOB_PTR),Y
+   JSR   verify_game_disk@run1
    LDA   #$02
    STA   __local_verify_game_disk__tries
 .loop@16_continue:
@@ -1632,17 +1692,27 @@ verify_game_disk:
 .loop@16_break:
    LDA   SCENE_TEXT_DATA
    CMP   #$03
-   BNE   .or_true@47
+   BNE   .or_true@50
    LDA   SCENE_TEXT_DATA+1
    CMP   #$0F
-   BNE   .or_true@47
+   BNE   .or_true@50
    LDA   SCENE_TEXT_DATA+2
    CMP   #$10
-   BNE   .or_true@47
+   BNE   .or_true@50
    CLC
    RTS
-.or_true@47:
+.or_true@50:
    SEC
+   RTS
+
+verify_game_disk@run1:
+   SUBROUTINE
+
+   LDY   #$04
+   STA   (RWTS_IOB_PTR),Y
+   LDA   #$00
+   INY
+   STA   (RWTS_IOB_PTR),Y
    RTS
 
 wait_keypress:
@@ -1669,11 +1739,11 @@ ensure_game_disk:
    SUBROUTINE
 
    JMP   .loop@18_continue
-.ensure_game_disk@rot@3:
+.ensure_game_disk@rot@6:
    JSR   prompt_insert_disk
 .loop@18_continue:
    JSR   verify_game_disk
-   BCS   .ensure_game_disk@rot@3
+   BCS   .ensure_game_disk@rot@6
    RTS
 
 format_disk_track:
@@ -1685,25 +1755,23 @@ format_disk_track:
 write_disk_signature:
    SUBROUTINE
 
-   LDX   #$03
-   BNE   .loop@19_start
-.write_disk_signature@rot@4:
+   LDX   #$00
+.write_disk_signature@rot@7:
    LDA   DISK_SIGNATURE,X
    STA   SCENE_TEXT_DATA,X
-.loop@19_start:
-   DEX
-   CPX   #$FF
-   BNE   .write_disk_signature@rot@4
+   INX
+   CPX   #$03
+   BCC   .write_disk_signature@rot@7
    JSR   setup_data_iob
    LDA   #$03
    STA   __local_write_disk_signature__tries
-.write_disk_signature@rot@5:
+.write_disk_signature@rot@8:
    JSR   disk_write
-   BCS   .if_end@51
+   BCS   .if_end@54
    RTS
-.if_end@51:
+.if_end@54:
    DEC   __local_write_disk_signature__tries
-   BNE   .write_disk_signature@rot@5
+   BNE   .write_disk_signature@rot@8
    RTS
 
 verify_disk_signature:
@@ -1719,19 +1787,19 @@ verify_disk_signature:
    BNE   .loop@21_continue
    RTS
 .loop@21_break:
-   LDX   #$03
-.loop@22_start:
-   DEX
-   CPX   #$FF
-   BEQ   .loop@22_break
-   LDA   SCENE_TEXT_DATA,X
-   STA   __local_verify_disk_signature__0
+   LDX   #$00
+.verify_disk_signature@rot@9:
    LDA   DISK_SIGNATURE,X
+   STA   __local_verify_disk_signature__0
+   LDA   SCENE_TEXT_DATA,X
    CMP   __local_verify_disk_signature__0
-   BEQ   .loop@22_start
+   BEQ   .if_end@56
    SEC
    RTS
-.loop@22_break:
+.if_end@56:
+   INX
+   CPX   #$03
+   BCC   .verify_disk_signature@rot@9
    CLC
    RTS
 
@@ -1739,25 +1807,27 @@ setup_slot_iob:
    SUBROUTINE
 
    LDA   slot_number
-   STA   __local_setup_slot_iob__slot
-   CMP   #$01
-   BCC   .setup_slot_iob@asm_ssa_split@0
-   DEC   __local_setup_slot_iob__slot
-   LDX   #$01
-.if_end@54:
-   LDA   __local_setup_slot_iob__slot
-   ASL
-   CLC
-   ADC   SAVE_TRACK_BASE,X
-   LDY   #$04
-   STA   (RWTS_IOB_PTR),Y
+   SEC
+   SBC   #$01
    LDA   #$00
-   INY
-   STA   (RWTS_IOB_PTR),Y
-   LDA   RWTS_IOB_PTR
-   STA   DPTR
-   LDA   RWTS_IOB_PTR+1
-   STA   DPTR+1
+   ROL
+   TAX
+   BEQ   .cond_else@57
+   LDA   slot_number
+   SEC
+   SBC   #$01
+   STA   __local_setup_slot_iob__0
+   JMP   .cond_end@58
+.cond_else@57:
+   LDA   slot_number
+   STA   __local_setup_slot_iob__0
+.cond_end@58:
+   LDA   SAVE_TRACK_BASE,X
+   ASL   __local_setup_slot_iob__0
+   CLC
+   ADC   __local_setup_slot_iob__0
+   JSR   verify_game_disk@run1
+   JSR   setup_data_iob@run0
    LDA   #<LOCATIONS
    LDY   #$08
    STA   (RWTS_IOB_PTR),Y
@@ -1768,24 +1838,31 @@ setup_slot_iob:
    LDY   #$0B
    STA   (RWTS_IOB_PTR),Y
    RTS
-.setup_slot_iob@asm_ssa_split@0:
-   LDX   #$00
-   BEQ   .if_end@54
 
 advance_sector:
    SUBROUTINE
 
    CLC
-   LDY   #$09
+   JSR   setup_data_iob@run0
+   LDY   #$08
+   LDA   (RWTS_IOB_PTR),Y
+   STA   __local_advance_sector__1
+   INY
+   LDA   (RWTS_IOB_PTR),Y
+   STA   __local_advance_sector__0
+   INC   __local_advance_sector__0
+   LDA   __local_advance_sector__1
+   DEY
+   STA   (RWTS_IOB_PTR),Y
+   LDA   __local_advance_sector__0
+   INY
+   STA   (DPTR),Y
+   LDY   #$05
    LDA   (RWTS_IOB_PTR),Y
    ADC   #$01
    STA   (RWTS_IOB_PTR),Y
-   LDY   #$05
-   LDA   (RWTS_IOB_PTR),Y
-   CLC
-   ADC   #$01
    CMP   #$0D
-   BCC   .if_else@56
+   BCC   .if_end@59
    LDA   #$00
    STA   (RWTS_IOB_PTR),Y
    CLC
@@ -1793,9 +1870,7 @@ advance_sector:
    LDA   (RWTS_IOB_PTR),Y
    ADC   #$01
    STA   (RWTS_IOB_PTR),Y
-   RTS
-.if_else@56:
-   STA   (RWTS_IOB_PTR),Y
+.if_end@59:
    RTS
 
 transfer_game_data:
@@ -1810,11 +1885,11 @@ transfer_game_data:
 .loop@23_start:
    LDA   __local_transfer_game_data__command
    JSR   rwts_dispatch
-   BCC   .if_else@58
+   BCC   .if_else@61
    DEC   __local_transfer_game_data__tries
    BNE   .loop@23_start
    RTS
-.if_else@58:
+.if_else@61:
    JSR   advance_sector
    DEC   __local_transfer_game_data__left
    BNE   .loop@23_start
@@ -1832,12 +1907,12 @@ read_game_data:
 
    LDA   #$01
    JSR   transfer_game_data
-   BCC   .if_end@61
+   BCC   .if_end@64
    JSR   set_cursor_row21
    LDA   #$3B
    JSR   display_message
    JMP   cold_restart
-.if_end@61:
+.if_end@64:
    RTS
 
 continue_game:
@@ -1845,25 +1920,25 @@ continue_game:
 
    LDA   slot_number
    CMP   #$01
-   BCS   .if_end@62
+   BCS   .if_end@65
    JSR   ensure_game_disk
    JSR   read_game_data
    LDA   #$00
    RTS
-.if_end@62:
+.if_end@65:
    JSR   set_cursor_row21
    LDA   #$33
    JSR   display_message
    JSR   wait_keypress
    JSR   verify_disk_signature
-   BCC   .if_end@63
+   BCC   .if_end@66
    JSR   set_cursor_row21
    LDA   #$16
    JSR   display_message
    JSR   ensure_game_disk
    LDA   #$20
    RTS
-.if_end@63:
+.if_end@66:
    JSR   read_game_data
    JSR   prompt_insert_disk
    JSR   ensure_game_disk
@@ -1875,20 +1950,20 @@ save_game:
 
    LDA   slot_number
    CMP   #$01
-   BCS   .if_end@64
+   BCS   .if_end@67
    JSR   ensure_game_disk
    JSR   write_game_data
    LDA   #$02
    RTS
-.if_end@64:
+.if_end@67:
    LDA   scenario_init_flag
-   BNE   .if_end@65
+   BNE   .if_end@68
    JSR   ensure_game_disk
    LDA   #$42
    JSR   scene_loop
    LDA   #$01
    STA   scenario_init_flag
-.if_end@65:
+.if_end@68:
    JMP   enter_scenario_disk
 
 enter_scenario_disk:
@@ -1924,23 +1999,23 @@ format_scenario_disk:
    SUBROUTINE
 
    JSR   verify_game_disk
-   BCS   .if_end@66
+   BCS   .if_end@69
    JSR   set_cursor_row21
    LDA   #$33
    JSR   display_message
    JMP   enter_scenario_disk
-.if_end@66:
+.if_end@69:
    JSR   verify_disk_signature
-   BCC   .if_end@67
+   BCC   .if_end@70
    JSR   format_disk_track
    BCS   .format_scenario_disk@scfold@0
    JSR   write_disk_signature
-   BCC   .if_end@70
+   BCC   .if_end@73
 .format_scenario_disk@scfold@0:
    JSR   display_insert_msg
    JMP   scenario_done
+.if_end@73:
 .if_end@70:
-.if_end@67:
    JSR   write_game_data
    JMP   scenario_done
 
@@ -1948,14 +2023,14 @@ use_scenario_disk:
    SUBROUTINE
 
    JSR   verify_disk_signature
-   BCC   .if_else@72
+   BCC   .if_else@75
    JSR   set_cursor_row21
    LDA   #$16
    JSR   display_message
    JMP   scenario_done
-.if_else@72:
+.if_else@75:
    JSR   write_game_data
-.if_end@71:
+.if_end@74:
    JMP   scenario_done
 
 GAME_INPUT_TABLE:

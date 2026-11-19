@@ -845,6 +845,8 @@ class Simulator:
             case tac_ast.Negate():     return (-_to_signed(v_u, w)) & m
             case tac_ast.Complement(): return (~v_u) & m
             case tac_ast.LogicalNot(): return 1 if v_u == 0 else 0
+            case tac_ast.BinToBcd():
+                return builtin_functions.bin_to_bcd(v_u)
         raise TacSimError(f"unsupported unary op: {type(op).__name__}")
 
     @staticmethod

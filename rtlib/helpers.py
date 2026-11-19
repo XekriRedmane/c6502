@@ -31,6 +31,13 @@ the remainder, and a quotient of all ones from `udivmod`, and from
 negative one. The 64-bit helpers, the floating-point ones, and
 `icall` are only Python hooks (and 3 bytes for `icall`) in the
 simulator.
+
+`bin16_to_bcd` converts a 16-bit value to five packed BCD digits for
+`__c6502_bin_to_bcd`. It is the one helper that runs with the decimal
+flag set, and the only code besides a packed BCD chain that writes
+`SED` and `CLD` (`DECIMAL_MODE_HELPERS`). On 19 Nov 2026 it gave the
+same bytes as its Python hook on all 65536 inputs
+(`tests/test_bin_to_bcd.py`).
 """
 
 from __future__ import annotations
@@ -897,6 +904,70 @@ def sdivmod32_function() -> a.Function:
     )
 
 
+def bin16_to_bcd_function() -> a.Function:
+    """Converts the 16-bit binary value at HARGS+0..1 to five packed
+    BCD digits at HARGS+2..4: the ones and tens in HARGS+2, the
+    hundreds and thousands in HARGS+3, and the ten-thousands in the
+    low nibble of HARGS+4, whose high nibble is 0. The input survives
+    the call, since the loop shifts a copy of it in HARGS+5..6.
+
+    It doubles the BCD result in the 6502's decimal mode once for
+    each bit of the input, from the most significant bit down, with
+    that bit as the carry into the doubling. After bit k the result
+    holds the value of the bits above and including k. That is,
+    bcd(N) = 2 * bcd(N-1) + bit(16 - N), computed as an `ADC` of each
+    BCD byte to itself. The input is at most 65535, so HARGS+4 is at
+    most $06 before its last doubling, and no carry leaves it.
+
+    The decimal flag is set from the `SED` before the loop to the
+    `CLD` before the `RTS`, so the helper returns with it clear. The
+    `ASL` and `ROL` in the loop don't depend on it. An interrupt
+    handler that runs during the loop runs with the flag set
+    (docs/builtins.md, "Interrupts"). It takes 46 bytes, and a call
+    takes 712 cycles with its `JSR` and `RTS` for every input, or 727
+    when the loop's `BNE` crosses a page."""
+    loop = ".bin16_to_bcd_loop"
+    body: list[a.Type_instruction] = [
+        # The working copy of the input, HARGS+5..6.
+        *_copy_n_via_a(0, 5, 2),
+        a.SetDecimal(),
+        # result := 0.
+        a.Mov(src=_imm(0), dst=_REG_A),
+        a.Mov(src=_REG_A, dst=_hargs(2)),
+        a.Mov(src=_REG_A, dst=_hargs(3)),
+        a.Mov(src=_REG_A, dst=_hargs(4)),
+        a.Mov(src=_imm(16), dst=_REG_X),
+        a.Label(name=loop),
+        # The top bit of the copy into C.
+        a.ArithmeticShiftLeft(dst=_hargs(5)),
+        a.RotateLeft(dst=_hargs(6)),
+    ]
+    # result := result + result + C, in decimal.
+    for k in (2, 3, 4):
+        body += [
+            a.Mov(src=_hargs(k), dst=_REG_A),
+            a.Add(src=_hargs(k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(k)),
+        ]
+    body += [
+        a.Dec(dst=_REG_X),
+        a.Branch(cond=a.NE(), target=loop),
+        a.ClearDecimal(),
+        a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+    ]
+    return a.Function(
+        name="bin16_to_bcd", is_global=True, params=[],
+        instructions=body,
+    )
+
+
+# The helpers that set the decimal flag themselves. `ir_check`
+# checks that each `RTS` in them has a `CLD` right before it, in
+# place of the rule for compiled code, which allows `SED` only at the
+# start of a packed BCD chain.
+DECIMAL_MODE_HELPERS: frozenset[str] = frozenset({"bin16_to_bcd"})
+
+
 # Names of the helpers that have 6502 code. `sim/runtime.py` reads
 # this list and doesn't install Python hooks for these names, and the
 # 6502 code runs instead, assembled at $E000.
@@ -908,6 +979,7 @@ ASM_IMPLEMENTED: tuple[str, ...] = (
     "asl8", "asr8", "lsr8",
     "asl16", "asr16", "lsr16",
     "asl32", "asr32", "lsr32",
+    "bin16_to_bcd",
 )
 
 
@@ -935,4 +1007,5 @@ def all_helper_functions() -> list[a.Function]:
         asl32_function(),
         asr32_function(),
         lsr32_function(),
+        bin16_to_bcd_function(),
     ]

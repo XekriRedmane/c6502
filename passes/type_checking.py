@@ -3243,6 +3243,8 @@ class TypeChecker:
             )
         if name in (builtin_functions.BCD_ADD, builtin_functions.BCD_SUB):
             return self._check_bcd_call(exp, name, args)
+        if name == builtin_functions.BIN_TO_BCD:
+            return self._check_bin_to_bcd_call(exp, name, args)
         if name in builtin_functions.STDBIT_BUILTINS:
             return self._check_stdbit_call(exp, name, args)
         raise AssertionError(f"no type rule for builtin {name}")
@@ -3307,6 +3309,38 @@ class TypeChecker:
             const=_const_for_value(value, value_t), data_type=value_t,
         )
         return result_t
+
+    def _check_bin_to_bcd_call(
+        self, exp: c99_ast.FunctionCall, name: str, args,
+    ) -> Type:
+        """`__c6502_bin_to_bcd(x)`. The argument has any integer type
+        and is converted to `unsigned int` as by assignment, so a
+        negative value or one wider than 16 bits is taken modulo
+        65536. The result is an `unsigned long` holding the value's
+        five decimal digits in packed BCD (docs/builtins.md). A
+        constant argument becomes a `Constant` of `unsigned int`,
+        which c99_to_tac folds."""
+        arg = args[0]
+        self._check_exp(arg)
+        arg = _decay_if_array(arg)
+        t = _strip_quals(arg.data_type)
+        if not _is_integer_type(t):
+            raise TypeCheckError(
+                f"the argument of {name} has type {_c_type(t)}; it "
+                f"converts an integer to packed BCD, and takes an "
+                f"argument of integer type"
+            )
+        args[0] = _convert_to(arg, UInt())
+        exp.data_type = ULong()
+        try:
+            value, _ = evaluate_integer_constant_expression(args[0])
+        except ConstantExpressionError:
+            return exp.data_type
+        args[0] = c99_ast.Constant(
+            const=_const_for_value(value & 0xFFFF, UInt()),
+            data_type=UInt(),
+        )
+        return exp.data_type
 
     def _check_bcd_call(
         self, exp: c99_ast.FunctionCall, name: str, args,

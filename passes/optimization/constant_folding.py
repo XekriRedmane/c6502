@@ -869,6 +869,14 @@ def _truth_value(c: tac_ast.Type_const) -> bool | None:
 def _fold_unary(
     op: tac_ast.Type_unary_operator, c: tac_ast.Type_const,
 ) -> tac_ast.Type_const | None:
+    # `BinToBcd` (`__c6502_bin_to_bcd`) takes an `unsigned int` and
+    # gives an `unsigned long` of packed BCD digits.
+    if isinstance(op, tac_ast.BinToBcd):
+        if not _is_integer_const(c):
+            return None
+        return tac_ast.ConstULong(
+            value=builtin_functions.bin_to_bcd(_operand_value(c)),
+        )
     # LogicalNot is defined for both integer and FP operands and
     # always yields ConstInt (per C99 §6.5.3.3.5).
     if isinstance(op, tac_ast.LogicalNot):

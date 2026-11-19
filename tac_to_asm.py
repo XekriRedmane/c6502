@@ -197,6 +197,11 @@ asr/lsr right-shift split: signed `/` and `%` route to `sdivmod*`
   asl32/     val:+0..+3, count:+4     → result:+5..+8 (1-byte count: shifts
    asr32/     ≥32 are UB)
    lsr32
+  bin16_to_  val:+0..+1               → five packed BCD digits:+2..+4,
+   bcd                                   ones in the low nibble of +2
+                                         (`__c6502_bin_to_bcd`; it
+                                         shifts a copy of val in
+                                         +5..+6, so val survives)
 
 `RightShift` dispatches by operand signedness — signed → `asr*`
 (arithmetic, sign-preserving), unsigned → `lsr*` (logical, zero-
@@ -568,6 +573,11 @@ _SDIVMOD32 = "sdivmod32"
 _ASL32 = "asl32"
 _ASR32 = "asr32"
 _LSR32 = "lsr32"
+# `__c6502_bin_to_bcd` (TAC `Unary(BinToBcd)`):
+#   bin16_to_bcd in:  val=HARGS+0..1
+#                     out: five packed BCD digits=HARGS+2..4
+#                          (HARGS+5..6 scratch)
+_BIN16_TO_BCD = "bin16_to_bcd"
 # 64-bit integer helpers (LongLong / ULongLong). HARGS layout:
 #   mul64     in:  A=HARGS+0..7, B=HARGS+8..15
 #                                       out: result=HARGS+16..23 (8B,
@@ -2680,6 +2690,15 @@ class Translator:
             return self._translate_logical_not(
                 src_op, dst_op, src, self._size_of(dst),
             )
+        if isinstance(op, tac_ast.BinToBcd):
+            # `__c6502_bin_to_bcd`: the helper writes the three low
+            # bytes of the `unsigned long`, and the top byte is 0.
+            return _translate_helper_call(
+                inputs=[(src_op, 2)], helper=_BIN16_TO_BCD,
+                output_offset=2, output_size=3, dst_op=dst_op,
+            ) + [asm_ast.Mov(
+                src=asm_ast.Imm(value=0), dst=_byte_at(dst_op, 3),
+            )]
         size = self._size_of(src)
         if size == 1:
             return (

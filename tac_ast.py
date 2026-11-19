@@ -298,6 +298,11 @@ class LogicalNot(Type_unary_operator):
 
 
 @dataclass
+class BinToBcd(Type_unary_operator):
+    pass
+
+
+@dataclass
 class Type_binary_operator:
     pass
 

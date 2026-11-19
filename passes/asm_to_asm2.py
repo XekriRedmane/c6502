@@ -499,6 +499,10 @@ def _xlate_instruction(
             return [asm2_ast.Pop(dst=_xlate_op(d))]
         case asm_ast.DecimalArith():
             return expand_decimal_arith(instr)
+        case asm_ast.SetDecimal():
+            return [asm2_ast.SetDecimal()]
+        case asm_ast.ClearDecimal():
+            return [asm2_ast.ClearDecimal()]
         case asm_ast.Xor(src1=s1, src2=s2, dst=d):
             return [asm2_ast.Xor(
                 src1=_xlate_op(s1),

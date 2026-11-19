@@ -130,12 +130,15 @@ this directory:
   dominates every read; outside SSA, every `%` temporary read is
   defined. `check_asm` runs after `tac_to_asm`, the asm optimizer,
   each peephole sweep, and at the end: labels unique and branched to,
-  no `Phi` outside SSA, no `Pseudo` once they're replaced, and each
-  `DecimalArith` of a well-formed shape. `check_asm2` runs at the end
-  of `asm_to_asm2`: every `SED` begins a packed BCD chain of exactly
-  `CLC` (`SEC`) and `LDA; ADC (SBC); STA` per byte, a `CLD` ends it,
-  and no `CLD` or unclosed `SED` is anywhere else
-  (`decimal_region_problems`).
+  no `Phi` outside SSA, no `Pseudo` once they're replaced, each
+  `DecimalArith` of a well-formed shape, and no `SetDecimal` or
+  `ClearDecimal`, which only the runtime helpers write. `check_asm2`
+  runs at the end of `asm_to_asm2`: every `SED` begins a packed BCD
+  chain of exactly `CLC` (`SEC`) and `LDA; ADC (SBC); STA` per byte,
+  a `CLD` ends it, and no `CLD` or unclosed `SED` is anywhere else
+  (`decimal_region_problems`). A runtime helper that sets the flag
+  itself (`rtlib.helpers.DECIMAL_MODE_HELPERS`, `bin16_to_bcd`)
+  passes instead with a `CLD` right before each `RTS`.
 - `designators.py` — `normalize_initializer`, which rewrites a braced
   list with designators (`[2] = v`, `.x = v`, `.a[2].b = v`, C23
   §6.7.11) into the positional form every later pass handles: one

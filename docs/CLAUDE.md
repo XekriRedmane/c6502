@@ -30,7 +30,11 @@ parsed by any tool.
   model of the NMOS 6502), constant folding, the code they compile
   to, the guarantee that the decimal flag is set only across the
   chain, the caution about interrupt handlers on an NMOS 6502, a
-  score as the example, the errors, and the limits.
+  score as the example, the errors, and the limits. Then
+  `__c6502_bin_to_bcd`: its types, the runtime helper `bin16_to_bcd`
+  (the doubling algorithm, its `HARGS` layout, bytes, and cycles),
+  constant folding, printing a number as the example, and the
+  errors.
 - `stdbit.md` — user guide to `<stdbit.h>`: the forms of one type
   and the type-generic forms, the types they take and return, each
   function's result with the values for 0 and all ones, constant

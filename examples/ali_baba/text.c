@@ -30,17 +30,19 @@
       stream there.
     - NUM_TO_DECIMAL divides by repeated subtraction and keeps its
       divisor, digit, and leading-zero flag in NUM_DIVISOR, NUM_DIGIT,
-      and NUM_LEADING. num_to_decimal divides with / and %, and those
-      three are locals, so it doesn't write $5A1B-$5A1E. Nothing else
-      in the game reads them, and a save doesn't hold page $5A. The
-      entries at NUM_TO_DECIMAL+3, +$30, and +$3E, which only the dead
-      ORPHANED_ENCOUNTER_HANDLER calls, aren't translated.
+      and NUM_LEADING. num_to_decimal converts the value to packed BCD
+      with __c6502_bin_to_bcd and reads the digits from its nibbles,
+      and its digit and flag are locals, so it doesn't write
+      $5A1B-$5A1E. Nothing else in the game reads them, and a save
+      doesn't hold page $5A. The entries at NUM_TO_DECIMAL+3, +$30,
+      and +$3E, which only the dead ORPHANED_ENCOUNTER_HANDLER calls,
+      aren't translated.
     - TEXT_RENDERER saves its stream index in TEXT_STREAM_IDX ($5A98)
       across RENDER_FONT_CHAR. render_stream keeps it in a local and
       doesn't write TEXT_STREAM_IDX, which nothing else reads.
-    - num_to_decimal's 16-bit divisions call the runtime helper
-      udivmod16, which the original doesn't, and which the linker adds
-      from the runtime library.
+    - num_to_decimal's conversion calls the runtime helper
+      bin16_to_bcd, which the original doesn't, and which the linker
+      adds from the runtime library.
     - PRINT_STRING_AT_ADDR, which takes the string in X and Y, is
       print_string. SET_TEXT_WINDOW_UPPER_LEFT_ALL and
       SET_TEXT_WINDOW_UPPER_LEFT_LOW are set_text_window_upper_left(0)
@@ -535,13 +537,20 @@
 
 /* Writes the digits from the ten thousands down, one byte of `out` each.
  * A leading zero leaves its byte alone, and the ones digit is written
- * even when it is 0, so that 0 is written as one '0'. */
+ * even when it is 0, so that 0 is written as one '0'. The digits come
+ * from the value in packed BCD, digit k (0 for the ones) in the low
+ * nibble of packed[k / 2] for an even k and the high nibble for an odd
+ * one. */
 void num_to_decimal(uint16_t value, uint8_t *out) {
+    uint32_t bcd = __c6502_bin_to_bcd(value);
+    uint8_t packed[3] = {
+        (uint8_t)bcd, (uint8_t)(bcd >> 8), (uint8_t)(bcd >> 16),
+    };
     bool started = false;
-    for (uint16_t place = 10000; place != 0; place /= 10, out++) {
-        uint8_t digit = value / place;
-        value %= place;
-        if (digit != 0 || started || place == 1) {
+    for (uint8_t k = 5; k-- != 0; out++) {
+        uint8_t byte = packed[k / 2];
+        uint8_t digit = (k & 1) ? byte >> 4 : byte & 0x0F;
+        if (digit != 0 || started || k == 0) {
             *out = 0xB0 + digit;    /* high-bit ASCII */
             started = true;
         }

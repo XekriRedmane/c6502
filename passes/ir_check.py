@@ -36,6 +36,8 @@ sweep):
   * Every `DecimalArith` (packed BCD) has lists of one length, at
     least one byte long, and operands of the forms its expansion
     takes (`passes/decimal_arith.form_problems`).
+  * No `SetDecimal` or `ClearDecimal`, which only the runtime helpers
+    write.
 
 Asm2 (`check_asm2`, after `asm_to_asm2`):
 
@@ -46,6 +48,11 @@ Asm2 (`check_asm2`, after `asm_to_asm2`):
     them, no `CLD` is anywhere else, and no function ends with the
     flag set. A soft-stack operand's `LDY #off` is part of its
     access, so it's inside the chain too.
+  * A runtime helper that sets the flag itself
+    (`rtlib.helpers.DECIMAL_MODE_HELPERS`, which never runs through
+    the asm passes) passes with a `CLD` right before each `RTS`
+    instead, so that it returns with the flag clear. A compiled
+    function of the same name passes by either rule.
 """
 from __future__ import annotations
 
@@ -292,6 +299,10 @@ def _asm_problems(fn, pseudos, phis) -> list[str]:
         if isinstance(instr, asm_ast.DecimalArith):
             from passes.decimal_arith import form_problems
             problems += form_problems(instr)
+        if isinstance(instr, (asm_ast.SetDecimal, asm_ast.ClearDecimal)):
+            problems.append(
+                f"{type(instr).__name__} outside a runtime helper"
+            )
     return problems
 
 
@@ -305,9 +316,12 @@ def check_asm2(prog: asm2_ast.Program, *, after: str) -> None:
     across a packed BCD chain (see the module docstring)."""
     if not _enabled:
         return
+    from rtlib.helpers import DECIMAL_MODE_HELPERS
     for tl in prog.top_level:
         if isinstance(tl, asm2_ast.Function):
             problems = decimal_region_problems(tl.instructions)
+            if problems and tl.name in DECIMAL_MODE_HELPERS:
+                problems = _helper_decimal_problems(tl.instructions)
             if problems:
                 raise IRCheckError(
                     f"after {after}, function '{tl.name}': "
@@ -328,6 +342,21 @@ _CHAIN_DESTS = (asm2_ast.Data, asm2_ast.ZP, asm2_ast.Frame, asm2_ast.Stack)
 
 def _is_a2(op) -> bool:
     return isinstance(op, asm2_ast.Reg) and isinstance(op.reg, asm2_ast.A)
+
+
+def _helper_decimal_problems(instrs) -> list[str]:
+    """What's wrong with the decimal flag in a runtime helper that sets
+    it itself: an `RTS` without a `CLD` right before it, or a last
+    instruction that isn't an `RTS`."""
+    problems = [
+        f"RTS at {i} without a CLD before it"
+        for i, ins in enumerate(instrs)
+        if isinstance(ins, asm2_ast.Return)
+        and not (i > 0 and isinstance(instrs[i - 1], asm2_ast.ClearDecimal))
+    ]
+    if not instrs or not isinstance(instrs[-1], asm2_ast.Return):
+        problems.append("the helper doesn't end with an RTS")
+    return problems
 
 
 def decimal_region_problems(instrs) -> list[str]:

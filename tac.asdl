@@ -209,7 +209,11 @@ module TAC {
         | Phi(val dst, phi_arg* args)
     phi_arg = PhiArg(identifier pred_label, val source)
     val = Constant(const) | Var(identifier name)
-    unary_operator = Complement | Negate | LogicalNot
+    -- `BinToBcd` is `__c6502_bin_to_bcd`: `src` is an `unsigned int`,
+    -- and `dst` an `unsigned long` that gets src's five decimal
+    -- digits in packed BCD. tac_to_asm lowers it to a call of the
+    -- runtime helper `bin16_to_bcd`.
+    unary_operator = Complement | Negate | LogicalNot | BinToBcd
     binary_operator =
         Add | Subtract | Multiply | Divide | Modulo
         | BitwiseAnd | BitwiseOr | BitwiseXor

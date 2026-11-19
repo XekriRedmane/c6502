@@ -146,7 +146,20 @@ Two key runtime conventions:
   atoms `SetDecimal` / `ClearDecimal`. `ir_check.check_asm2` checks
   that nothing else runs with the decimal flag set. The arithmetic
   (`adc_byte` / `sbc_byte`) copies py65's decimal mode, for digits
-  that aren't 0-9 too. User guide: [docs/builtins.md](docs/builtins.md).
+  that aren't 0-9 too. `__c6502_bin_to_bcd(x)` converts `x`, as an
+  `unsigned int`, to its five decimal digits in packed BCD in an
+  `unsigned long` (`type_checking._check_bin_to_bcd_call`, any integer
+  argument). A constant argument folds (`builtin_functions.bin_to_bcd`)
+  in the type checker, `c99_to_tac`, `constant_expression`, and
+  `constant_folding._fold_unary`, and any other call is TAC
+  `Unary(BinToBcd)`, which `tac_to_asm` lowers to a call of the
+  runtime helper `bin16_to_bcd` (input `HARGS+0..1`, result
+  `HARGS+2..4`). That helper doubles a BCD number in decimal mode
+  with the asm atoms `SetDecimal` / `ClearDecimal`, which only the
+  helpers write (`check_asm` rejects them elsewhere), and
+  `check_asm2` checks that it clears the flag before its `RTS`
+  (`rtlib.helpers.DECIMAL_MODE_HELPERS`). User guide:
+  [docs/builtins.md](docs/builtins.md).
   The other 84 builtins are `<stdbit.h>`'s (C23 §7.18):
   `__c6502_stdc_<op>` for each of the 14 operations in its
   type-generic form and `__c6502_stdc_<op>_uc` / `_us` / `_ui` /

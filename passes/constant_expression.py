@@ -393,6 +393,14 @@ def evaluate_integer_constant_expression(
             )
             return fold(a, b, _sizeof(t)), t
         case c99_ast.FunctionCall(name=name, args=[arg]) if (
+            name == builtin_functions.BIN_TO_BCD
+        ):
+            # `__c6502_bin_to_bcd` of a constant, which the type
+            # checker converted to `unsigned int`.
+            t = _result_type(exp)
+            v, _ = evaluate_integer_constant_expression(arg)
+            return builtin_functions.bin_to_bcd(v), t
+        case c99_ast.FunctionCall(name=name, args=[arg]) if (
             name in builtin_functions.STDBIT_BUILTINS
         ):
             # A <stdbit.h> builtin of a constant argument, which the

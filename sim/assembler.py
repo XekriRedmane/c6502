@@ -331,6 +331,8 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return _bit_test_size(src)
         case asm_ast.ClearCarry() | asm_ast.SetCarry():
             return 1
+        case asm_ast.SetDecimal() | asm_ast.ClearDecimal():
+            return 1
         case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
             return _inc_dec_size(dst)
         case asm_ast.Push() | asm_ast.Pop():
@@ -496,6 +498,10 @@ def _emit_instr(
             return bytes([_IMPLIED["CLC"]])
         case asm_ast.SetCarry():
             return bytes([_IMPLIED["SEC"]])
+        case asm_ast.SetDecimal():
+            return bytes([_IMPLIED["SED"]])
+        case asm_ast.ClearDecimal():
+            return bytes([_IMPLIED["CLD"]])
         case asm_ast.Inc(dst=dst):
             return _emit_inc_dec(dst, "Inc", syms)
         case asm_ast.Dec(dst=dst):

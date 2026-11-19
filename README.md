@@ -92,6 +92,13 @@ These parts work.
   compiler folds a call of a constant, which makes it a constant
   expression, and writes a short loop in place for any other call
   ([docs/stdbit.md](docs/stdbit.md)).
+- Three builtins work with packed BCD in the 6502's decimal mode.
+  `__c6502_bcd_add` and `__c6502_bcd_sub` add and subtract BCD
+  numbers, for scores and other decimal counters, and
+  `__c6502_bin_to_bcd` converts a 16-bit value to its five decimal
+  digits, two to a byte, for printing a number without dividing by
+  ten. A call of constants folds to a constant
+  ([docs/builtins.md](docs/builtins.md)).
 - C23's `constexpr` declares an object whose value is fixed when the
   program is compiled, alone or with `static` or `register`. The
   object is `const`, and its name is a constant, so after `constexpr
@@ -158,8 +165,9 @@ These parts are missing.
 - The runtime library has only the integer helpers. Multiplying,
   dividing, and taking a remainder by a value that isn't a constant,
   and shifting by a variable count, compile to calls of helper
-  routines (`mul16`, `udivmod16`, `asl16`, and so on), and the linker
-  adds the ones a program calls from the runtime library
+  routines (`mul16`, `udivmod16`, `asl16`, and so on), and so does
+  `__c6502_bin_to_bcd` (`bin16_to_bcd`). The linker adds the ones a
+  program calls from the runtime library
   (`passes/runtime_library.py`). Every floating-point operation, the
   64-bit integer operations, and calling through a function pointer
   call helpers (`fadd`, `mul64`, `icall`, and so on) that have no
@@ -421,7 +429,8 @@ down in X or Y.
 - [docs/builtins.md](docs/builtins.md) describes
   `__c6502_bcd_add` and `__c6502_bcd_sub`, which add and subtract
   packed BCD numbers with the 6502's decimal mode, for scores and
-  other decimal counters.
+  other decimal counters, and `__c6502_bin_to_bcd`, which converts a
+  16-bit value to packed BCD for printing it.
 - [docs/stdbit.md](docs/stdbit.md) describes C23's `<stdbit.h>`, the
   bit counts, the bit searches, and the powers of 2 it rounds to,
   what each returns, and the loops they compile to.

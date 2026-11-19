@@ -190,6 +190,15 @@ module ASM {
         -- pass uses).
         | DecimalArith(bool subtract, operand* left, operand* right,
                        operand* dst)
+        -- SED / CLD. Only the runtime helpers in rtlib/helpers.py
+        -- write them (`bin16_to_bcd` doubles a BCD number in a loop
+        -- with the decimal flag set). Compiled code sets the flag
+        -- only through `DecimalArith`, and `ir_check.check_asm`
+        -- rejects these two anywhere else. No asm pass handles them,
+        -- since the helpers go straight to `asm_to_asm2`, `asm_emit`,
+        -- and the simulator's assembler.
+        | SetDecimal
+        | ClearDecimal
         | Compare(operand left, operand right)
         -- BitTest(src) — emits `BIT src` (NMOS 6502: zp and abs
         -- addressing only). Sets N to bit 7 of src, V to bit 6 of

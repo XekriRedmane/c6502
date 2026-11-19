@@ -41,17 +41,18 @@ The file's opening comment lists them. In short:
 - TEXT_RENDERER's `JMP MOVE_LOOP`, when the index passes 255 after a
   glyph, is a return. A position command that passes 255 wraps to
   index 0 and goes on, as in the original.
-- num_to_decimal divides with `/` and `%`, and its divisor, digit, and
-  leading-zero flag are locals, so it doesn't write NUM_DIVISOR,
-  NUM_DIGIT, and NUM_LEADING (`$5A1B`-`$5A1E`). Only NUM_TO_DECIMAL
+- num_to_decimal converts the value to packed BCD with
+  `__c6502_bin_to_bcd` and reads the digits from its nibbles, and its
+  digit and leading-zero flag are locals, so it doesn't write
+  NUM_DIVISOR, NUM_DIGIT, and NUM_LEADING (`$5A1B`-`$5A1E`). Only NUM_TO_DECIMAL
   reads those bytes in the original, and a save holds `$4000`-`$59FF`,
   so no reader sees the difference. The declarations stay in
   ali_baba.h, which other units share.
 - render_stream doesn't write TEXT_STREAM_IDX (`$5A98`), where the
   original saves its index there across RENDER_FONT_CHAR. Nothing else
   reads it.
-- num_to_decimal's 16-bit divisions call the runtime helper
-  `udivmod16`, which the linker adds from the runtime library. The
+- num_to_decimal's conversion calls the runtime helper
+  `bin16_to_bcd`, which the linker adds from the runtime library. The
   original calls no helper.
 
 ## Header changes needed
@@ -70,6 +71,15 @@ No bug was hit. These cost bytes against the original:
    table of the places. A 16-bit value divided by the constant 10 could
    be done inline, and a loop over the five places, which are
    constants, could be unrolled into five divisions by constants.
+
+   On 19 Nov 2026 num_to_decimal was rewritten with the new builtin
+   `__c6502_bin_to_bcd`, which converts the value to five packed BCD
+   digits with one call of the runtime helper `bin16_to_bcd` (46
+   bytes, docs/builtins.md). The loop reads each digit from a nibble,
+   and the function is 96 bytes. It wrote the same five bytes as the
+   version with `/` and `%` for all 65536 values, in the simulator,
+   in both pipelines. A division of a 16-bit value by a constant is
+   still a helper call.
 
    ```c
    #include <stdint.h>
@@ -148,7 +158,7 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 
 | Original | Bytes | C | Bytes |
 |---|---:|---|---:|
-| NUM_TO_DECIMAL | 132 | num_to_decimal | 125 |
+| NUM_TO_DECIMAL | 132 | num_to_decimal | 96 |
 | TEXT_RENDERER | 145 | render_stream, text_renderer, text_renderer_no_pause | 180 |
 | DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop, next_string | 158 |
 | SCROLL_STATUS_LINE | 21 | scroll_status_line | 25 |
@@ -160,15 +170,17 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 | PRINT_CTRL_AB | 10 | print_ctrl_ab | 10 |
 | PRINT_STRING_AT_ADDR, PRINT_STRING | 22 | print_string | 38 |
 | SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 11 |
-| **Total code** | **553** | | **642** |
+| **Total code** | **553** | | **613** |
 
 The C's bytes are the symbol sizes of `nm.py -S text.o`. Before the
 rewrite into plain C on 18 Nov 2026, the unit was 668 bytes of code
 and 10 of data. It was 729 bytes after the rewrite, and 692 once c6502
 shared one call of `udivmod16` between a `/` and a `%` and divided a
 byte by 2 without `sdivmod16`. On 19 Nov 2026 it was 642, after the
-fixes listed under "Compiler bugs and gaps". The linker adds
-`udivmod16`'s 49 bytes to the program from the runtime library.
+fixes listed under "Compiler bugs and gaps", and 613 once
+num_to_decimal used `__c6502_bin_to_bcd`. The linker adds
+`bin16_to_bcd`'s 46 bytes to the program from the runtime library,
+where it added `udivmod16`'s 49 before.
 
 ## Checked against the original
 

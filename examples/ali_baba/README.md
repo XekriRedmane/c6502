@@ -65,12 +65,13 @@ Each unit is compiled twice from the same source: to its `.asm`,
 which is checked in, and to its object, which the link reads. Neither
 the objects nor the executable are checked in. The link needs no
 `--defsym`. c6502 compiles most multiplications, divisions, and shifts
-by a variable count inline, and calls a runtime helper for the rest.
-The linker adds each helper the program calls from the runtime
-library, as `runtime.o`, and the script's last pattern in `.spare`,
-`*(.text ...)`, puts it in `$A900-$B2FF` after map's, util's, and
-text's code. Ali Baba calls one, `udivmod16`, 49 bytes, for the 16-bit
-divisions of `num_to_decimal` in text.c.
+by a variable count inline, and calls a runtime helper for the rest,
+and for the builtin `__c6502_bin_to_bcd`. The linker adds each helper
+the program calls from the runtime library, as `runtime.o`, and the
+script's last pattern in `.spare`, `*(.text ...)`, puts it in
+`$A900-$B2FF` after map's, util's, and text's code. Ali Baba calls
+one, `bin16_to_bcd`, 46 bytes, which converts a number to decimal
+digits for `num_to_decimal` in text.c.
 
 The original's code shares its spans of memory with tables, which the
 C program defines where it uses them, so the linker script's regions
@@ -135,7 +136,7 @@ original goes through `COUT`.
 The six scripts run on the program linked with the simulator's runtime
 helpers (`sim.linked.defsym_args`), and the game also runs on the
 program linked by the command above, which holds its own copy of
-`udivmod16` from the runtime library.
+`bin16_to_bcd` from the runtime library.
 
 The six scripts run 337 of the 387 code labels in the spans the C
 program replaces (`uv run python -m tests.test_ali_baba coverage`
@@ -165,16 +166,16 @@ translates (the chunks of `main.asm` that `UNITS.md` gives it):
 | `map.c` | 993 | 43 | 985 | 8 |
 | `display.c` | 399 | 0 | 446 | 0 |
 | `util.c` | 866 | 119 | 787 | 13 |
-| `text.c` | 553 | 8 | 690 | 0 |
+| `text.c` | 553 | 8 | 613 | 0 |
 | `sound.c` | 337 | 64 | 437 | 0 |
 | `hrcg.c` | 1141 | 907 | 846 | 790 |
-| **Total** | **14551** | **2874** | **15213** | **2456** |
+| **Total** | **14551** | **2874** | **15136** | **2456** |
 
 The C counts are the symbol sizes of each unit's `-c -O` object
 (`nm.py -S`), and they leave out the `__zp_init` the linker writes.
-The link also adds the runtime library's `udivmod16`, 49 bytes of code,
-which brings the C program's code to 15,262 bytes, 4.9% more than the
-original's. `hrcg.c` leaves out the HRCG's entry points and control
+The link also adds the runtime library's `bin16_to_bcd`, 46 bytes of
+code, which brings the C program's code to 15,182 bytes, 4.3% more
+than the original's. `hrcg.c` leaves out the HRCG's entry points and control
 characters that the game never uses.
 
 The largest difference is `turn.c`'s `run_chain`, 461 bytes. The

@@ -297,6 +297,7 @@ to that width (`tac_to_asm._odd_width_helper_op`).
 | `i2f`, `u2f`, `l2f`, `ul2f`, `ll2f`, `ull2f` and the `2d` forms | a 2-, 4-, or 8-byte integer at `+0` | the `float` or `double` right after it |
 | `f2i`, `f2u`, `f2l`, `f2ul`, `f2ll`, `f2ull` and the `d2` forms | a `float` or `double` at `+0` | the integer right after it, truncated toward zero |
 | `f2d`, `d2f` | the value at `+0` | the result at `+4` or `+8` |
+| `bin16_to_bcd` | a 2-byte value at `+0` | its five decimal digits in packed BCD at `+2`-`+4`, the ones in the low nibble of `+2` and the ten-thousands in the low nibble of `+4`. It shifts a copy of the value in `+5`-`+6`. |
 
 `icall`, the trampoline for calls through a pointer, is
 `JMP (DPTR)`.

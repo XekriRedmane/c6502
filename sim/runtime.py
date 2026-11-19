@@ -214,6 +214,20 @@ def _make_lsr(value_size: int) -> Hook:
     return hook
 
 
+def _bin16_to_bcd_hook() -> Hook:
+    """`bin16_to_bcd`: the 16-bit value at HARGS+0..1 as five packed
+    BCD digits at HARGS+2..4, with the copy the 6502 code shifts to
+    zero left at HARGS+5..6, as the 6502 code leaves it. The input
+    survives."""
+    from builtin_functions import bin_to_bcd
+
+    def hook(mem: bytearray) -> None:
+        v = _read_int(mem, HARGS + 0, 2)
+        _write_int(mem, HARGS + 2, bin_to_bcd(v), 3)
+        _write_int(mem, HARGS + 5, 0, 2)
+    return hook
+
+
 def _make_asr(value_size: int) -> Hook:
     """Arithmetic shift right (sign-fill). The value's MSB is
     replicated into the high bits."""
@@ -407,6 +421,9 @@ _HELPERS: list[tuple[str, Hook]] = [
     ("asl32",     _make_asl(4)),
     ("asr32",     _make_asr(4)),
     ("lsr32",     _make_lsr(4)),
+    # Binary to packed BCD (`__c6502_bin_to_bcd`): in HARGS+0..1,
+    # out HARGS+2..4, scratch HARGS+5..6.
+    ("bin16_to_bcd", _bin16_to_bcd_hook()),
     # 8-byte integer (LongLong / ULongLong). HARGS layout for
     # udivmod64 / sdivmod64: num=HARGS+0..7, den=HARGS+8..15,
     # quot=HARGS+16..23, rem=HARGS+24..31. mul64 uses HARGS+0..15

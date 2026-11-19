@@ -12,19 +12,24 @@ in `type_checking._check_builtin_call`, and a case in
 `c99_to_tac.Translator._translate_builtin`. Every other part of the
 front end calls `is_builtin`.
 
-Two builtins do packed BCD arithmetic with the 6502's decimal mode
+Three builtins work with packed BCD in the 6502's decimal mode
 (docs/builtins.md), and the rest are C23's bit and byte utilities,
 which <stdbit.h> names (docs/stdbit.md).
 
   `__c6502_bcd_add(a, b)` is `a + b` in packed BCD.
   `__c6502_bcd_sub(a, b)` is `a - b` in packed BCD.
+  `__c6502_bin_to_bcd(x)` is the 16-bit `x` as five packed BCD digits.
 
 Packed BCD holds two decimal digits in each byte, the higher digit
 in the high nibble, and a multi-byte value keeps its low byte first
 like any c6502 integer, so 0x0250 is 250. Each builtin lowers to
 TAC `Binary(BcdAdd)` or `Binary(BcdSubtract)`, and tac_to_asm emits
 one asm `DecimalArith` for it, which `asm_to_asm2` expands into
-`SED; CLC; LDA; ADC; STA; ...; CLD`.
+`SED; CLC; LDA; ADC; STA; ...; CLD`. `__c6502_bin_to_bcd` lowers to
+TAC `Unary(BinToBcd)`, an `unsigned int` source and an `unsigned long`
+destination, which tac_to_asm lowers to a call of the runtime helper
+`bin16_to_bcd` (rtlib/helpers.py), and `bin_to_bcd` gives its value
+for constant folding.
 
 `adc_byte` and `sbc_byte` copy py65's `opADC` and `opSBC` in decimal
 mode (py65/devices/mpu6502.py), so constant folding, tac_sim, and
@@ -47,6 +52,7 @@ from __future__ import annotations
 
 BCD_ADD = "__c6502_bcd_add"
 BCD_SUB = "__c6502_bcd_sub"
+BIN_TO_BCD = "__c6502_bin_to_bcd"
 
 # C23's bit and byte utilities (§7.18), in the standard's order.
 STDBIT_OPERATIONS = (
@@ -84,6 +90,7 @@ STDBIT_FUNCTIONS: dict[str, str] = {
 BUILTINS: dict[str, int] = {
     BCD_ADD: 2,
     BCD_SUB: 2,
+    BIN_TO_BCD: 1,
     **{name: 1 for name in STDBIT_BUILTINS},
 }
 
@@ -150,6 +157,19 @@ def bcd_sub(a: int, b: int, nbytes: int) -> int:
     for k in range(nbytes):
         r, carry = sbc_byte((a >> 8 * k) & 0xFF, (b >> 8 * k) & 0xFF, carry)
         out |= r << 8 * k
+    return out
+
+
+def bin_to_bcd(value: int) -> int:
+    """Returns the low 16 bits of `value` as five packed BCD digits,
+    the ones in bits 0-3 and the ten-thousands in bits 16-19, as the
+    runtime helper `bin16_to_bcd` computes them. The result is at most
+    0x65535."""
+    v = value & 0xFFFF
+    out = 0
+    for k in range(5):
+        out |= (v % 10) << 4 * k
+        v //= 10
     return out
 
 

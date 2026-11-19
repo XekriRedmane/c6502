@@ -320,6 +320,33 @@ class TestHelpers(unittest.TestCase):
         self._check({"asr32"}, S32, COUNT, [("x >> y", lambda x, y: x >> y)],
                     counts=range(32))
 
+    def test_bin16_to_bcd(self) -> None:
+        # `__c6502_bin_to_bcd` of a variable calls the helper, and a
+        # constant argument folds, so a program with only constants
+        # doesn't hold it.
+        from builtin_functions import bin_to_bcd
+        rng = random.Random("bin16_to_bcd")
+        xs = U16.values(rng, self.N)
+        src = (
+            "#include <stdint.h>\n"
+            f"uint16_t xs[{self.N}] = {{{', '.join(map(str, xs))}}};\n"
+            f"uint32_t out0[{self.N}];\n"
+            "int main(void) {\n"
+            f"    for (uint8_t i = 0; i < {self.N}; i++)"
+            " out0[i] = __c6502_bin_to_bcd(xs[i]);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        exe = _build(src)
+        self.assertEqual(set(_own_helpers(exe)), {"bin16_to_bcd"})
+        got = _read(_run(exe), "out0", U32, self.N)
+        self.assertEqual(got, [bin_to_bcd(x) for x in xs])
+        exe = _build(
+            "#include <stdint.h>\nuint32_t v;\n"
+            "int main(void) { v = __c6502_bin_to_bcd(12345); return 0; }\n"
+        )
+        self.assertEqual(_own_helpers(exe), {})
+
     def test_every_helper_is_tested(self) -> None:
         tested = {name[len("test_"):] for name in dir(self)
                   if name.startswith("test_")}

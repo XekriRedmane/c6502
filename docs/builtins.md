@@ -9,8 +9,8 @@ program's own names can't collide with them. A program can't declare
 one of them, and can't use one as a value, such as by taking its
 address.
 
-The two builtins this document describes do packed BCD arithmetic
-with the 6502's decimal mode. The functions of C23's `<stdbit.h>` are
+The three builtins this document describes work with packed BCD in
+the 6502's decimal mode. The functions of C23's `<stdbit.h>` are
 builtins too, named `__c6502_stdc_...`, and
 [stdbit.md](stdbit.md) describes them.
 
@@ -18,6 +18,10 @@ builtins too, named `__c6502_stdc_...`, and
 |---|---|
 | `__c6502_bcd_add(a, b)` | `a + b` in packed BCD |
 | `__c6502_bcd_sub(a, b)` | `a - b` in packed BCD |
+| `__c6502_bin_to_bcd(x)` | the 16-bit `x` as five packed BCD digits |
+
+The first two are described up to "Limits", and the third under
+"Converting a number to packed BCD".
 
 ## Packed BCD
 
@@ -266,3 +270,173 @@ won't do.
 mode, and the compiler reads no flag the chain leaves. A test of the
 result, such as `if (__c6502_bcd_add(a, b) == 0)`, loads the result
 again and tests it in binary.
+
+## Converting a number to packed BCD
+
+`__c6502_bin_to_bcd(x)` gives the five decimal digits of a 16-bit
+value in packed BCD, which is what a program needs to print a binary
+number. Each digit is then a nibble to shift or mask out, where
+printing from binary takes a division by ten for each digit.
+
+| Call | Result |
+|---|---|
+| `__c6502_bin_to_bcd(0)` | `0x00000` |
+| `__c6502_bin_to_bcd(1234)` | `0x01234` |
+| `__c6502_bin_to_bcd(65535)` | `0x65535` |
+| `__c6502_bin_to_bcd(-1)` | `0x65535`, since -1 converts to 65535 |
+| `__c6502_bin_to_bcd(70000L)` | `0x04464`, since 70000 converts to 4464 |
+
+### Types
+
+The argument may have any integer type, and it's converted to
+`unsigned int` as an assignment would convert it. A 16-bit value
+passes unchanged, a narrower one is extended, a negative value is
+taken modulo 65536 (so -1 is 65535), and a wider one keeps its low 16
+bits (so 70000 is 4464). A floating argument, a pointer or array, and
+a structure or union are errors, as is a call with other than one
+argument.
+
+The result is an `unsigned long`. Bits 0-3 hold the ones, bits 4-7
+the tens, and so on up to the ten-thousands in bits 16-19. Bits 20-31
+are 0. Seen as bytes, low byte first, the result is the ones and tens,
+then the hundreds and thousands, then the ten-thousands, and a zero
+byte.
+
+### Constants
+
+A constant argument gives a constant result, in both pipelines, and
+no code is written for the call. The optimizer also folds a call
+whose argument becomes a constant. A call of a constant is an integer
+constant expression, so it can initialize a static object, label a
+`case`, or size an array.
+
+```c
+static uint32_t limit = __c6502_bin_to_bcd(9999);   /* 0x09999 */
+```
+
+### The helper
+
+Any other call stores the argument in `HARGS` and calls the runtime
+helper `bin16_to_bcd`, which the linker adds to the program from the
+runtime library (`--defsym` can give another address for it).
+
+| `HARGS` bytes | What they hold |
+|---|---|
+| `+0`-`+1` | the value, low byte first, unchanged by the call |
+| `+2` | the tens (high nibble) and the ones (low nibble) |
+| `+3` | the thousands and the hundreds |
+| `+4` | the ten-thousands in the low nibble, and 0 in the high nibble |
+| `+5`-`+6` | a copy of the value, which the helper shifts to 0 |
+
+The helper doubles a BCD number once for each bit of the value, from
+the top bit down, with that bit as the carry into the doubling. After
+the top n bits the BCD number holds the value of those n bits, so
+after all 16 it holds the value. Doubling is an `ADC` of each BCD byte
+to itself in decimal mode.
+
+```
+    LDA HARGS       ; copy the value to HARGS+5..6
+    STA HARGS+5
+    LDA HARGS+1
+    STA HARGS+6
+    SED
+    LDA #0
+    STA HARGS+2     ; the BCD number := 0
+    STA HARGS+3
+    STA HARGS+4
+    LDX #16
+loop:
+    ASL HARGS+5     ; the top bit of the copy into C
+    ROL HARGS+6
+    LDA HARGS+2     ; the BCD number := 2 * itself + C
+    ADC HARGS+2
+    STA HARGS+2
+    LDA HARGS+3
+    ADC HARGS+3
+    STA HARGS+3
+    LDA HARGS+4
+    ADC HARGS+4
+    STA HARGS+4
+    DEX
+    BNE loop
+    CLD
+    RTS
+```
+
+The value is at most 65535, so `HARGS+4` is at most `$06` before its
+last doubling, and no carry leaves it. The helper is 46 bytes, and a
+call takes 712 cycles with its `JSR` and `RTS`, whatever the value,
+or 727 when the loop's `BNE` crosses a page. The caller's code for the
+call is the stores of the argument, the `JSR`, and a load and store
+for each result byte it keeps.
+
+The helper sets the decimal flag for its loop and clears it before it
+returns. Compiled code otherwise sets the flag only across one
+`DecimalArith` chain, and with `C6502_CHECK_IR=1` the check after
+`asm_to_asm2` holds the helper to its own rule, a `CLD` right before
+each `RTS`. An interrupt during the loop runs its handler with the
+flag set, as described under "Interrupts" above.
+
+### Example: printing a number
+
+The program below prints a number with the Apple II Monitor's `COUT`,
+with no leading zeros. Ali Baba's `num_to_decimal`
+(examples/ali_baba/text.c) is written the same way, and dropped from
+125 bytes to 96 when it changed from dividing by each power of ten to
+this.
+
+```c
+#include <stdint.h>
+#include <apple2/monitor_io.h>
+
+/* Prints `n` in decimal with no leading zeros. Digit k of the BCD
+ * number, 0 for the ones, is in the low nibble of packed[k / 2] for
+ * an even k and in the high nibble for an odd one. */
+void print_number(uint16_t n) {
+    uint32_t bcd = __c6502_bin_to_bcd(n);
+    uint8_t packed[3] = {
+        (uint8_t)bcd, (uint8_t)(bcd >> 8), (uint8_t)(bcd >> 16),
+    };
+    bool started = false;
+    for (uint8_t k = 5; k-- != 0;) {
+        uint8_t byte = packed[k / 2];
+        uint8_t digit = (k & 1) ? byte >> 4 : byte & 0x0F;
+        if (digit != 0 || started || k == 0) {
+            COUT(0xB0 + digit);     /* '0' is $B0 in high-bit ASCII */
+            started = true;
+        }
+    }
+}
+```
+
+With `-O` it's 81 bytes. The three result bytes go to a local array,
+which the loop indexes with Y, `LDA packed,Y`, after `LSR` puts the
+low bit of `k` in C to pick the nibble.
+
+```
+print_number:
+    STA   HARGS
+    STX   HARGS+1
+    JSR   bin16_to_bcd
+    LDA   HARGS+2
+    STA   __local_print_number__packed
+    LDA   HARGS+3
+    STA   __local_print_number__packed+1
+    LDA   HARGS+4
+    STA   __local_print_number__packed+2
+    ...
+.print_number@rot@0:
+    LSR
+    TAY
+    LDA   __local_print_number__packed,Y
+    BCC   .cond_else@0
+    LSR
+    LSR
+    LSR
+    LSR
+    ...
+```
+
+Shifting the whole `uint32_t` left by 4 for each digit reads more
+simply, but a 32-bit shift by 4 calls the helper `asl32`, and the
+function grows to 107 bytes.

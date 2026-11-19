@@ -232,6 +232,10 @@ Mapping:
                                  the result type, and emits
                                  Binary(BcdAdd | BcdSubtract), or a
                                  constant when both are constants.
+                                 `__c6502_bin_to_bcd` emits
+                                 Unary(BinToBcd) of its `unsigned
+                                 int` argument into an `unsigned
+                                 long`, or a constant.
   C99 FunctionCall(name, args) -> evaluate each arg in source order
                                  (left-most temp first), mint a
                                  fresh typed dst temp, emit one
@@ -1855,9 +1859,24 @@ class Translator:
         `Binary(BcdSubtract)`. The type checker converted both
         operands to the result type, and when both are constants the
         result is folded here, in both pipelines. A <stdbit.h> builtin
-        goes to `_translate_stdbit`."""
+        goes to `_translate_stdbit`. `__c6502_bin_to_bcd` becomes
+        `Unary(BinToBcd)` of the `unsigned int` the type checker
+        converted its argument to, or the folded constant."""
         if name in builtin_functions.STDBIT_BUILTINS:
             return self._translate_stdbit(exp, name, args, instrs)
+        if name == builtin_functions.BIN_TO_BCD:
+            v = self.translate_exp(args[0], instrs)
+            if isinstance(v, tac_ast.Constant):
+                return tac_ast.Constant(const=tac_ast.ConstULong(
+                    value=builtin_functions.bin_to_bcd(v.const.value),
+                ))
+            dst = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.ULong()),
+            )
+            instrs.append(tac_ast.Unary(
+                op=tac_ast.BinToBcd(), src=v, dst=dst,
+            ))
+            return dst
         a = self.translate_exp(args[0], instrs)
         b = self.translate_exp(args[1], instrs)
         add = name == builtin_functions.BCD_ADD

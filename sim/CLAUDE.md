@@ -17,7 +17,9 @@ MPU until the boot stub's BRK fires.
   BCD `DecimalArith` assembles as `asm_to_asm2.expand_decimal_arith`
   writes it, `SED`, `CLC` or `SEC`, an `LDA` / `ADC` (`SBC`) / `STA`
   per byte, and `CLD`. py65 runs `ADC` and `SBC` in decimal mode as
-  `builtin_functions.adc_byte` / `sbc_byte` compute them.
+  `builtin_functions.adc_byte` / `sbc_byte` compute them. The asm
+  atoms `SetDecimal` and `ClearDecimal` assemble as `SED` and `CLD`,
+  for the runtime helper `bin16_to_bcd`.
 - `harness.py` — top-level test harness: take C source, run the full
   compiler pipeline, assemble with a runtime stub, and execute on a
   py65 6502 simulator until BRK.

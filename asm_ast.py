@@ -256,6 +256,16 @@ class DecimalArith(Type_instruction):
 
 
 @dataclass
+class SetDecimal(Type_instruction):
+    pass
+
+
+@dataclass
+class ClearDecimal(Type_instruction):
+    pass
+
+
+@dataclass
 class Compare(Type_instruction):
     left: Type_operand
     right: Type_operand

@@ -22,5 +22,13 @@ that bare name and fail to import the package.
   there. Each was checked against its hook on edge cases and random
   operands; `tests/test_runtime_helpers.py` tests them through the
   harness, and `tests/test_runtime_library.py` through linked C.
+  `bin16_to_bcd`, the helper behind `__c6502_bin_to_bcd`, converts a
+  16-bit value to five packed BCD digits by doubling in decimal mode.
+  It is the one helper that sets the decimal flag (`SED` and `CLD`,
+  the asm atoms `SetDecimal` and `ClearDecimal`, which only helpers
+  write), so it's named in `DECIMAL_MODE_HELPERS`, and `ir_check`
+  checks that it clears the flag before its `RTS` in place of the
+  rule for compiled code. `tests/test_bin_to_bcd.py` runs it on py65
+  against its hook for all 65536 inputs.
 
 `docs/linker_scripts.md` says where a linker script puts the helpers.

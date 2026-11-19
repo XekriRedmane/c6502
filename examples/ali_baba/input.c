@@ -1894,7 +1894,10 @@ struct chest_message S_CHEST_MESSAGE = {
     { 0xB0, 0xA0, 0xC4, 0xD5, 0xC3, 0xC1, 0xD4, 0xD3, 0xAE },
     0x00,
 };
-/* $7BDB "CONTINUE GAME NUMBER NN", whose NN format_slot_number writes. */
+/* $7BDB "CONTINUE GAME NUMBER NN", the save/load menu's option to load
+ * a saved game. format_slot_number writes slot_number into NN, with a
+ * space for a tens digit of 0, each time the menu is entered and
+ * each time slot_update changes the number. The "NN" here is the original's placeholder. */
 struct continue_game_string {
     uint8_t text[22];           /* the length, 23, and "CONTINUE GAME NUMBER " */
     uint8_t number[2];          /* S_CONTINUE_TENS and S_CONTINUE_ONES */
@@ -1999,7 +2002,9 @@ static uint8_t S_OTHER_OPTIONS[14] = {  /* $7D45 "OTHER OPTIONS" */
 static uint8_t S_MOVE[5] = {            /* $7D53 "MOVE" */
     0x04, 0xCD, 0xCF, 0xD6, 0xC5,
 };
-/* $7D58 "GAME SPEED : 0", whose digit menu_settings_init writes. */
+/* $7D58 "GAME SPEED : 0", the game settings menu's speed
+ * setting. menu_settings_init writes the game speed, ANIM_INDEX, into
+ * the digit each time the menu is entered. */
 struct game_speed_string {
     uint8_t text[14];           /* the length, 14, and "GAME SPEED : " */
     uint8_t digit;              /* S_GAME_SPEED_DIGIT */
@@ -2011,8 +2016,9 @@ static struct game_speed_string S_GAME_SPEED = {
     },
     0xB0,
 };
-/* $7D67 "SAVE GAME IN SLOT NUMBER 00", whose 00 format_slot_number
- * writes. */
+/* $7D67 "SAVE GAME IN SLOT NUMBER 00", the save menu's option to save
+ * the game. format_slot_number writes slot_number into the 00 as it
+ * does for S_CONTINUE_GAME_NUMBER, and the two show the same number. */
 struct save_in_slot_string {
     uint8_t text[26];           /* the length, 27, and "SAVE GAME IN SLOT NUMBER " */
     uint8_t number[2];          /* S_SAVE_SLOT_TENS and S_SAVE_SLOT_ONES */

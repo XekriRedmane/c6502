@@ -1031,30 +1031,54 @@ extern struct menu ALT_INPUT_TABLE;
 
 /*
     The menu strings other units write, each a length byte and high-bit
-    ASCII. A string with places that other units write is a struct whose
-    members are the places and the text around them, and code that
-    prints the whole string passes the struct's address as a uint8_t
-    pointer. The comments give the original's labels of the places.
+    ASCII. Most menu strings are fixed text and are plain uint8_t arrays
+    in input.c. A string with a part that the program fills in before
+    it's shown, such as a number or a name, is a struct instead. Its
+    members are the parts that change and the fixed text around them,
+    in the original's order, so the string's bytes are still one run
+    that print_string prints by its length byte. Code that prints the
+    whole string passes the struct's address as a uint8_t pointer, and
+    code that fills in a part writes the member, where the original
+    writes through a label inside the string. The member comments give
+    those labels.
+
+    The initial bytes of a part that changes are what the original's
+    image holds there, which a menu shows until the part is written.
     NUM_TO_DECIMAL writes digits $B0-$B9 and skips leading zeros, so its
     callers first fill a number's 5 places with $20, a low-ASCII space.
+    A number in a string that shows ducats is followed by a fixed "0",
+    so the menu shows ten times the value written.
 */
-struct sound_is_on_string {     /* $7B04 "SOUND IS ON " */
+
+/* The sound option of the game settings menu, "SOUND IS ON " or "SOUND
+ * IS OFF". toggle_sound (main.c) writes the last two characters each
+ * time the option is chosen. */
+struct sound_is_on_string {     /* $7B04 */
     uint8_t text[11];           /* the length, 12, and "SOUND IS O" */
     uint8_t state[2];           /* S_SOUND_CHAR1 and S_SOUND_CHAR2: "N " or "FF" */
 };
+/* The danger setting in the game settings menu, "DANGER :" and
+ * EVENT_THRESHOLD in decimal. settings_display_init (main.c) writes the
+ * number each time the menu is entered. */
 struct danger_string {          /* $7B1B "DANGER :   " */
     uint8_t text[7];            /* the length, 11, and "DANGER" */
     /* S_DANGER_OUT, NUM_TO_DECIMAL's 5 places. The danger is at most 99,
      * so [0] and [1] keep " :". */
     uint8_t number[5];
 };
-struct add_name_string {        /* $7B47 "ADD " and a name */
+/* The character select menu's option to add a player character to the
+ * party, "ADD" and the character's name. copy_pc_name_to_buf (util.c)
+ * writes the name of the character the menu is showing. */
+struct add_name_string {        /* $7B47 */
     uint8_t text[4];            /* the length, 24, and "ADD" */
     uint8_t name[21];           /* CHAR_SELECT_NAME: a space, then the name in [1..20] */
 };
-/* $7B84-$7BDA: "THE TREASURE CHEST OPENS UP", "TO REVEAL ... GOLD
- * DUCATS.", "YOU NOW HAVE ... DUCATS.", and a $00, printed as one group
- * by DISPLAY_MESSAGE_LOOP from `opens`. */
+/* $7B84-$7BDA: "THE TREASURE CHEST OPENS UP", "TO REVEAL n0 GOLD
+ * DUCATS.", "YOU NOW HAVE n0 DUCATS.", and a $00, printed as one group
+ * by DISPLAY_MESSAGE_LOOP from `opens`. pickup_treasure (events.c)
+ * writes the gold in the chest and the character's gold with it added
+ * into the two sets of digits, after clear_treasure_digits fills them
+ * with spaces. */
 struct chest_message {
     uint8_t opens[28];          /* S_CHEST_OPENS: the length, 27, and the text */
     uint8_t reveal_gold[11];    /* S_REVEAL_GOLD: the length, 29, and "TO REVEAL " */
@@ -1065,18 +1089,26 @@ struct chest_message {
     uint8_t now_have_rest[9];   /* "0 DUCATS." */
     uint8_t end;                /* 0, which ends the group */
 };
-struct attack_target_string {   /* $7C94 "ATTACK " and a name */
+/* The attack target menu's option to attack a mob, "ATTACK" and the
+ * mob's name. init_attack_display (combat.c) writes MOB_PTR's name. */
+struct attack_target_string {   /* $7C94 */
     uint8_t text[7];            /* the length, 27, and "ATTACK" */
     /* ATTACK_NAME_BUF: a space, then the name in [1..20], padded with
      * $20. */
     uint8_t name[21];
 };
-struct ducats_to_drop_string {  /* $7CD9 "DUCATS TO DROP :" and digits */
+/* The amount in the drop gold menu, "DUCATS TO DROP : n0".
+ * init_drop_display (events.c) writes DROP_AMOUNT each time the menu
+ * is entered. */
+struct ducats_to_drop_string {  /* $7CD9 */
     uint8_t text[18];           /* the length, 23, and "DUCATS TO DROP : " */
     uint8_t number[5];          /* DROP_DISPLAY_BUF, NUM_TO_DECIMAL's 5 places */
     uint8_t zero;               /* the "0" after them */
 };
-struct pay_for_string {         /* $7CFF "PAY 000000 FOR " and an item */
+/* A shop's offer, "PAY n0 FOR " and an item's name. show_item (ai.c)
+ * writes the item's price at this location, SHOP_PRICE, and its name,
+ * after filling both with spaces. */
+struct pay_for_string {         /* $7CFF */
     uint8_t text[5];            /* the length, 35, and "PAY " */
     uint8_t price[5];           /* SHOP_PRICE_DIGITS, NUM_TO_DECIMAL's 5 places */
     uint8_t text_2[6];          /* "0 FOR " */

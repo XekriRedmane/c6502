@@ -366,12 +366,13 @@ class TestNarrowWidenedArith(unittest.TestCase):
         self.assertIsInstance(new, tac_ast.Binary)
         self.assertEqual(new.src1, _var("a"))
 
-    def test_signed_right_shift_by_three_not_narrowed(self):
-        # A 1-byte arithmetic shift by 3 would call `asr8`.
+    def test_signed_right_shift_by_three_narrowed(self):
+        # A 1-byte arithmetic shift by 3 is a loop, and so is the
+        # 16-bit one, so the narrow one shifts fewer bytes.
         out = self._right_shift(
             3, src_type=c99_ast.SChar(), extend=tac_ast.SignExtend,
         )
-        self.assertIsInstance(out[-1], tac_ast.Truncate)
+        self.assertIsInstance(out[-1], tac_ast.Binary)
 
     def test_zero_extended_signed_byte_not_narrowed(self):
         # A ZeroExtend of a signed byte doesn't fill with copies of
@@ -738,8 +739,8 @@ class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestVariableLeftShift(unittest.TestCase):
     """A byte shifted left by a variable count is a 1-byte shift, which
-    calls `asl8`, where it had called `asl16`. A count of 8 or more
-    gives 0 at either width."""
+    `tac_to_asm` lowers as a loop of `ASL`s, where it had called
+    `asl16`. A count of 8 or more gives 0 at either width."""
 
     _SRC = (
         "#include <stdint.h>\n"
@@ -755,13 +756,14 @@ class TestVariableLeftShift(unittest.TestCase):
         "}\n"
     )
 
-    def test_calls_asl8(self):
+    def test_shifts_one_byte(self):
         from compile import _run_stage
         from preprocessor import preprocess
         asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
         body = asm[asm.index("\ns:"):asm.index("\nmain:")]
-        self.assertIn("JSR   asl8", body)
-        self.assertNotIn("asl16", body)
+        self.assertIn("ASL   __local_s__v", body)
+        self.assertNotIn("ROL", body)
+        self.assertNotIn("JSR", body)
 
     def test_runs(self):
         from sim.harness import build_sim

@@ -104,13 +104,14 @@ class TestWidenedByteShift(unittest.TestCase):
                 self.assertNotIn("asl16", asm)
 
     def test_sign_extended_byte_shifts_every_byte(self):
-        # A negative `signed char` widens to a nonzero high byte.
+        # A negative `signed char` widens to a nonzero high byte, so the
+        # shift is a loop over both bytes.
         src = """
         unsigned int g;
         void f(signed char c) { g = (unsigned int)c << 5; }
         """
         asm = _run_stage("codegen", preprocess(src), optimize=True)
-        self.assertIn("asl16", asm)
+        self.assertIn("ROL   g+1", asm)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

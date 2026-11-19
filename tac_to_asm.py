@@ -101,6 +101,10 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                result from a fixed offset later in
                                the block (see the constants section
                                for each helper's layout).
+                               The byte forms below are inline, and
+                               a `/` and a `%` of the same operands
+                               share one call
+                               (`_plan_divmod_pairs`).
   FunctionCall(name, args,  -> AllocateStack(total_arg_bytes); write
               dst)             each arg's bytes into Stack(off..off+
                                size-1) in source order; Call name;
@@ -264,8 +268,18 @@ the 6502's CMP / SBC + branch atoms cover these):
     target)`. The OR chain sets Z=1 iff every byte is zero, which
     is the whole-value "is zero" test.
 
-  Mul / Div / Mod / LeftShift / RightShift are TAC-only — they
-    lower via the runtime-helper path above, not inline.
+  Mul / Div / Mod / LeftShift / RightShift lower via the
+    runtime-helper path above, except for these inline forms:
+      - A shift by a constant that `inline_shift_ok` accepts (above).
+      - A 1- or 2-byte shift by a variable, or by any other constant,
+        as a loop of one-bit shifts with the count in X
+        (`_shift_loop`). A signed right shift of a value whose top
+        byte is zero (`passes/significant_bytes.py`) is logical.
+      - An unsigned 1-byte `/` or `%` by a constant from 1 to 255, as
+        a loop of subtractions with the quotient in X and the
+        remainder in A (`_inline_byte_divide`).
+      - A 16-bit `*` of two values with one significant byte, as an
+        8-by-8 shift-and-add loop (`_inline_byte_product`).
 
 Cast lowering specifics (SignExtend / ZeroExtend / Truncate carry
 no width info themselves; tac_to_asm reads the symbol-table widths
@@ -1195,6 +1209,195 @@ def _shift_byte_in_a(
     )
 
 
+def _shift_loop(
+    src_op: asm_ast.Type_operand,
+    count_op: asm_ast.Type_operand | None,
+    count: int | None,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    kind: str,
+    loop: str,
+    done: str,
+    count_in_dst: bool,
+) -> list[asm_ast.Type_instruction]:
+    """A shift of a 1- or 2-byte value by a count in X, one bit per
+    pass of a loop, where it called a shift helper. `kind` is "asl",
+    "lsr", or "asr". The value is copied into `dst`, which the loop
+    shifts in place:
+
+        LDX n           ; or LDA n; TAX
+        CPX #0          ; these two only for a variable count
+        BEQ done
+    loop:
+        ASL dst         ; ROL dst+1          (asl)
+        LSR dst+1       ; ROR dst            (lsr)
+        LDA dst+1; ASL A; ROR dst+1; ROR dst (asr)
+        DEX
+        BNE loop
+    done:
+
+    `count` is a constant count from 1 to 255, or None for the
+    variable `count_op`, whose low byte is read. A count of the width
+    in bits or more shifts every bit out, which leaves 0 (or every
+    bit a copy of the sign for "asr"), as the `asl*` / `lsr*` / `asr*`
+    helpers do. The count goes in X because a soft-stack operand is
+    reached through Y. When the count is the destination
+    (`count_in_dst`), it's read before the copy."""
+    out: list[asm_ast.Type_instruction] = []
+
+    def copy() -> None:
+        for k in range(size):
+            out.append(asm_ast.Mov(
+                src=_byte_at(src_op, k), dst=_byte_at(dst_op, k),
+            ))
+
+    if count is None:
+        load = [
+            asm_ast.Mov(src=_byte_at(count_op, 0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+        ]
+        if count_in_dst:
+            out.extend(load)
+            copy()
+        else:
+            copy()
+            out.extend(load)
+        # `redundant_compare` drops the CPX after an LDX of the count.
+        # The branch doesn't read the flags of the TAX, since the asm
+        # optimizer drops `TXA; TAX` when the count is already in X.
+        out.append(asm_ast.Compare(left=_REG_X, right=asm_ast.Imm(value=0)))
+        out.append(asm_ast.Branch(cond=asm_ast.EQ(), target=done))
+    else:
+        copy()
+        out.append(asm_ast.Mov(src=asm_ast.Imm(value=count), dst=_REG_X))
+    out.append(asm_ast.Label(name=loop))
+    lo, hi = _byte_at(dst_op, 0), _byte_at(dst_op, size - 1)
+    if kind == "asl":
+        out.append(asm_ast.ArithmeticShiftLeft(dst=lo))
+        if size == 2:
+            out.append(asm_ast.RotateLeft(dst=hi))
+    else:
+        if kind == "asr":
+            out.append(asm_ast.Mov(src=hi, dst=_REG_A))
+            out.append(asm_ast.ArithmeticShiftLeft(dst=_REG_A))
+            out.append(asm_ast.RotateRight(dst=hi))
+        else:
+            out.append(asm_ast.LogicalShiftRight(dst=hi))
+        if size == 2:
+            out.append(asm_ast.RotateRight(dst=lo))
+    out.append(asm_ast.Dec(dst=_REG_X))
+    out.append(asm_ast.Branch(cond=asm_ast.NE(), target=loop))
+    if count is None:
+        out.append(asm_ast.Label(name=done))
+    return out
+
+
+def _inline_byte_divide(
+    src_op: asm_ast.Type_operand,
+    divisor: int,
+    quot_op: asm_ast.Type_operand | None,
+    rem_op: asm_ast.Type_operand | None,
+    loop: str,
+) -> list[asm_ast.Type_instruction]:
+    """An unsigned byte divided by a constant from 1 to 255, by
+    repeated subtraction, where it called `udivmod8`:
+
+        LDA x
+        LDX #$FF
+        SEC
+    loop:
+        INX
+        SBC #c
+        BCS loop
+        ADC #c          ; only for the remainder
+        STA rem
+        STX quot
+
+    The loop runs once more than the quotient, and the last `SBC`
+    borrows, so X is the quotient and A the remainder less `c`, which
+    `ADC #c` (with C clear) puts back. The remainder is stored first,
+    since a store of X to a soft-stack byte goes through A. It's 11
+    bytes before the stores against the call's 15, and takes about 7
+    cycles a unit of the quotient, so `x / 3` of 255 takes some 600
+    cycles where `udivmod8`'s eight steps take about 250."""
+    imm = asm_ast.Imm(value=divisor)
+    out: list[asm_ast.Type_instruction] = [
+        asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+        asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_REG_X),
+        asm_ast.SetCarry(),
+        asm_ast.Label(name=loop),
+        asm_ast.Inc(dst=_REG_X),
+        asm_ast.Sub(src=imm, dst=_REG_A),
+        asm_ast.Branch(cond=asm_ast.CS(), target=loop),
+    ]
+    if rem_op is not None:
+        out.append(asm_ast.Add(src=imm, dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(rem_op, 0)))
+    if quot_op is not None:
+        out.append(asm_ast.Mov(src=_REG_X, dst=_byte_at(quot_op, 0)))
+    return out
+
+
+def _inline_byte_product(
+    a_op: asm_ast.Type_operand,
+    b_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    loop: str,
+    skip: str,
+) -> list[asm_ast.Type_instruction]:
+    """The 16-bit product of two bytes (the low bytes of `a_op` and
+    `b_op`), by shifting and adding, where it called `mul16`:
+
+        LDA b
+        STA HARGS       ; the multiplier, and then the low byte
+        LDA #0          ; the high byte
+        LDX #8
+        LSR HARGS
+    loop:
+        BCC skip
+        CLC
+        ADC a
+    skip:
+        ROR A
+        ROR HARGS
+        DEX
+        BNE loop
+        STA dst+1
+        LDA HARGS
+        STA dst
+
+    Each pass adds `a` to the high byte when the multiplier's low bit
+    is set, then shifts the high byte and the multiplier right
+    together, so the product's low bits fill the multiplier's byte
+    from the top. The multiplier is in HARGS, whose byte is in zero
+    page under every layout, because a soft-stack byte can't be
+    rotated without going through A, which holds the high byte. It's
+    27 bytes with the stores against about the same for `mul16` and
+    its four HARGS bytes, and the simulator counts about 170 cycles
+    for 200 times 255 against about 580 for `mul16`'s sixteen 16-bit
+    steps, each with the call of the function."""
+    work = _hargs(0)
+    return [
+        asm_ast.Mov(src=_byte_at(b_op, 0), dst=_REG_A),
+        asm_ast.Mov(src=_REG_A, dst=work),
+        asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+        asm_ast.Mov(src=asm_ast.Imm(value=8), dst=_REG_X),
+        asm_ast.LogicalShiftRight(dst=work),
+        asm_ast.Label(name=loop),
+        asm_ast.Branch(cond=asm_ast.CC(), target=skip),
+        asm_ast.ClearCarry(),
+        asm_ast.Add(src=_byte_at(a_op, 0), dst=_REG_A),
+        asm_ast.Label(name=skip),
+        asm_ast.RotateRight(dst=_REG_A),
+        asm_ast.RotateRight(dst=work),
+        asm_ast.Dec(dst=_REG_X),
+        asm_ast.Branch(cond=asm_ast.NE(), target=loop),
+        asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
+        asm_ast.Mov(src=work, dst=_REG_A),
+        asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+    ]
+
+
 def _load_y_index(idx_op: asm_ast.Type_operand) -> list[asm_ast.Type_instruction]:
     """Sets Y to the index of an indirect-indexed access. A constant
     index is a single `LDY #k`. Anything else goes through A (`LDA
@@ -1745,6 +1948,11 @@ class Translator:
                 self._tac_defs = _defs_by_name(instrs)
                 self._tac_uses = count_uses(instrs)
                 self._rotations, rotate_skip = self._plan_rotations(instrs)
+                self._divmod_pairs, pair_skip = self._plan_divmod_pairs(
+                    instrs, in_place | rotate_skip
+                    | (set(plan.skip) if plan is not None else set()),
+                )
+                rotate_skip = rotate_skip | pair_skip
                 for i, instr in enumerate(instrs):
                     self._prev_tac = instrs[i - 1] if i else None
                     self._tac_list, self._tac_index = instrs, i
@@ -1996,6 +2204,11 @@ class Translator:
                 )
                 if rotation is not None:
                     return self._rotate_in(dst, *rotation)
+                pair = getattr(self, "_divmod_pairs", {}).get(
+                    getattr(self, "_tac_index", -1),
+                )
+                if pair is not None:
+                    return self._translate_divmod_pair(src1, src2, *pair)
                 return self.translate_binary(op, src1, src2, dst)
             case tac_ast.Copy(src=src, dst=dst):
                 return self._translate_copy(src, dst)
@@ -3662,6 +3875,17 @@ class Translator:
                 # 16-bit: mul16  result at HARGS+4..5 (2B).
                 # 32-bit: mul32  result at HARGS+8..11 (4B).
                 # 64-bit: mul64  result at HARGS+16..23 (8B).
+                if (size == 2 and self._byte_valued(src1)
+                        and self._byte_valued(src2)):
+                    # Two bytes, as `narrow_byte_range` leaves a
+                    # product of two values from 0 to 255.
+                    a, b = (src1_op, src2_op)
+                    if isinstance(src2, tac_ast.Constant):
+                        a, b = b, a
+                    return _inline_byte_product(
+                        a, b, dst_op, self.make_label("mul_loop"),
+                        self.make_label("mul_skip"),
+                    )
                 if size == 1:
                     helper, out_off = _MUL8, 2
                 elif size == 2:
@@ -3684,6 +3908,12 @@ class Translator:
                 # below). After the C99 §6.3.1.8 promotions both
                 # operands share a common type, so checking either
                 # one's signedness is enough.
+                divisor = self._byte_divisor(src1, src2, size)
+                if divisor is not None:
+                    return _inline_byte_divide(
+                        src1_op, divisor, dst_op, None,
+                        self.make_label("div_loop"),
+                    )
                 if self._is_unsigned_val(src1):
                     helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32, _UDIVMOD64)
                 else:
@@ -3707,6 +3937,12 @@ class Translator:
                 # follows the quotient in the helper's output area:
                 # 8-bit rem at HARGS+3, 16-bit rem at HARGS+6..7,
                 # 32-bit rem at HARGS+12..15, 64-bit rem at HARGS+24..31.
+                divisor = self._byte_divisor(src1, src2, size)
+                if divisor is not None:
+                    return _inline_byte_divide(
+                        src1_op, divisor, None, dst_op,
+                        self.make_label("div_loop"),
+                    )
                 if self._is_unsigned_val(src1):
                     helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32, _UDIVMOD64)
                 else:
@@ -3764,6 +4000,11 @@ class Translator:
                     return _inline_left_shift_const(
                         src1_op, dst_op, size, cnt,
                     )
+                if size <= 2:
+                    return self._shift_loop(
+                        src1, src2, src1_op, src2_op, dst, dst_op, size,
+                        "asl",
+                    )
                 # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
                 # asl32: 4B value + 1B count → 4B result at HARGS+5.
@@ -3812,6 +4053,12 @@ class Translator:
                 # ROR chain.
                 cnt = _shift_count_const_value(src2)
                 signed_shift = not self._is_unsigned_val(src1)
+                if (signed_shift and isinstance(src1, tac_ast.Var)
+                        and getattr(self, "_significant", {}).get(
+                            src1.name, size) < size):
+                    # The top byte is zero, so the value isn't negative
+                    # and shifts as an unsigned one.
+                    signed_shift = False
                 # Only the low byte of the result is read, and it
                 # comes from two bytes of the source, whatever the
                 # signedness (passes/significant_bytes.py).
@@ -3830,7 +4077,12 @@ class Translator:
                     return _inline_right_shift_const(
                         src1_op, dst_op, size, cnt, signed=signed_shift,
                     )
-                if self._is_unsigned_val(src1):
+                if size <= 2:
+                    return self._shift_loop(
+                        src1, src2, src1_op, src2_op, dst, dst_op, size,
+                        "asr" if signed_shift else "lsr",
+                    )
+                if not signed_shift:
                     helpers = (_LSR8, _LSR16, _LSR32, _LSR64)
                 else:
                     helpers = (_ASR8, _ASR16, _ASR32, _ASR64)
@@ -3922,6 +4174,160 @@ class Translator:
                     src2_op, src1_op, dst_op, size, asm_ast.PL(), dst_size,
                 )
         raise TypeError(f"unexpected binary operator: {op!r}")
+
+    def _shift_loop(
+        self, src1, src2, src1_op, src2_op, dst, dst_op, size: int,
+        kind: str,
+    ) -> list[asm_ast.Type_instruction]:
+        """A 1- or 2-byte shift the inline lowerings above don't take
+        (a variable count, or a constant one `inline_shift_ok`
+        rejects) as a loop (`_shift_loop` at module level). A constant
+        count of 0 is a copy."""
+        cnt = _shift_count_const_value(src2)
+        if cnt is not None:
+            cnt &= 0xFF
+            if cnt == 0:
+                return [
+                    asm_ast.Mov(src=_byte_at(src1_op, k),
+                                dst=_byte_at(dst_op, k))
+                    for k in range(size)
+                ]
+        count_in_dst = (
+            cnt is None and isinstance(src2, tac_ast.Var)
+            and isinstance(dst, tac_ast.Var) and src2.name == dst.name
+        )
+        return _shift_loop(
+            src1_op, None if cnt is not None else src2_op, cnt, dst_op,
+            size, kind, self.make_label("shift_loop"),
+            self.make_label("shift_done"), count_in_dst,
+        )
+
+    def _byte_divisor(self, src1, src2, size: int) -> int | None:
+        """The divisor of an unsigned 1-byte divide or remainder by a
+        constant from 1 to 255, which `_inline_byte_divide` lowers,
+        else None."""
+        if size != 1 or not self._is_unsigned_val(src1):
+            return None
+        if not isinstance(src2, tac_ast.Constant):
+            return None
+        c = getattr(src2.const, "value", None)
+        if not isinstance(c, int) or not 1 <= c <= 0xFF:
+            return None
+        return c
+
+    def _byte_valued(self, val: tac_ast.Type_val) -> bool:
+        """True when only the low byte of `val` can be nonzero: a
+        constant from 0 to 255, or a local whose other bytes are zero
+        (`passes/significant_bytes.py`)."""
+        if isinstance(val, tac_ast.Constant):
+            v = getattr(val.const, "value", None)
+            return isinstance(v, int) and 0 <= v <= 0xFF
+        return (isinstance(val, tac_ast.Var)
+                and getattr(self, "_significant", {}).get(val.name, 2) <= 1)
+
+    def _plan_divmod_pairs(self, instrs, exclude: set[int]):
+        """Pairs a divide and a remainder of the same operands, so that
+        one loop of `_inline_byte_divide`, or one call of a `divmod`
+        helper, gives both: `{i: (quot, rem)}` for the first of each
+        pair, `instrs[i]`, and the indices of the seconds, which aren't
+        lowered on their own. `digit = value / place; value %= place;`
+        in Ali Baba's `num_to_decimal` called `udivmod16` twice.
+
+        The second is at most 8 instructions later in the same straight
+        run, with no store or call between, and nothing that writes an
+        operand or reads or writes the second's destination, which is
+        written at the first. The first's destination isn't an
+        operand, which the second reads, and no operand is volatile,
+        since the pair reads each once. Neither instruction is in
+        `exclude`, the instructions lowered some other way."""
+        pairs: dict[int, tuple] = {}
+        skip: set[int] = set()
+        from passes.optimization.var_visit import defs_in, uses_in
+        ops = (tac_ast.Divide, tac_ast.Modulo)
+        barriers = (
+            tac_ast.Label, tac_ast.Jump, tac_ast.JumpIfTrue,
+            tac_ast.JumpIfFalse, tac_ast.JumpIfCmp, tac_ast.JumpIfMasked,
+            tac_ast.Ret, tac_ast.FunctionCall, tac_ast.IndirectCall,
+        )
+        writes_memory = (
+            tac_ast.Store, tac_ast.IndexedStore,
+            tac_ast.IndexedSymbolStore, tac_ast.IndirectIndexedStore,
+        )
+        for i, a in enumerate(instrs):
+            if i in skip or i in exclude or not (
+                isinstance(a, tac_ast.Binary) and isinstance(a.op, ops)
+                and isinstance(a.dst, tac_ast.Var)
+                and isinstance(a.src1, tac_ast.Var)
+                and isinstance(a.src2, (tac_ast.Var, tac_ast.Constant))
+                and self._size_of(a.src1) in (1, 2, 4, 8)
+                and not self._is_fp_val(a.src1)
+            ):
+                continue
+            x = a.src1
+            operands = {x.name}
+            if isinstance(a.src2, tac_ast.Var):
+                operands.add(a.src2.name)
+            if a.dst.name in operands or any(
+                    self._is_volatile_name(n) for n in operands):
+                continue
+            # The second's destination is written at the first, so
+            # nothing between may read or write it.
+            touched: set[str] = set()
+            for j in range(i + 1, min(i + 9, len(instrs))):
+                b = instrs[j]
+                if (isinstance(b, tac_ast.Binary)
+                        and isinstance(b.op, ops)
+                        and type(b.op) is not type(a.op)
+                        and b.src1 == x and b.src2 == a.src2
+                        and isinstance(b.dst, tac_ast.Var)):
+                    if (b.dst.name not in touched | {a.dst.name}
+                            and j not in exclude):
+                        if isinstance(a.op, tac_ast.Divide):
+                            pairs[i] = (a.dst, b.dst)
+                        else:
+                            pairs[i] = (b.dst, a.dst)
+                        skip.add(j)
+                    break
+                if isinstance(b, barriers + writes_memory):
+                    break
+                defs = {v.name for v in defs_in(b)}
+                if defs & operands:
+                    break
+                touched |= defs | {v.name for v in uses_in(b)}
+        return pairs, skip
+
+    def _translate_divmod_pair(self, src1, src2, quot, rem):
+        """A divide and a remainder of `src1` by `src2` planned by
+        `_plan_divmod_pairs`, into `quot` and `rem`: one inline loop
+        for a byte divided by a constant, or else one call of the
+        `divmod` helper, whose quotient and remainder are both read
+        from HARGS."""
+        size = self._size_of(src1)
+        divisor = self._byte_divisor(src1, src2, size)
+        if divisor is not None:
+            return _inline_byte_divide(
+                translate_val(src1), divisor, translate_val(quot),
+                translate_val(rem), self.make_label("div_loop"),
+            )
+        sign = "u" if self._is_unsigned_val(src1) else "s"
+        helper = f"{sign}divmod{8 * size}"
+        out = _translate_helper_call(
+            inputs=[(translate_val(src1), size), (translate_val(src2), size)],
+            helper=helper, output_offset=2 * size, output_size=size,
+            dst_op=translate_val(quot),
+        )
+        rem_op = translate_val(rem)
+        for k in range(size):
+            out.append(asm_ast.Mov(src=_hargs(3 * size + k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(rem_op, k)))
+        return out
+
+    def _is_volatile_name(self, name: str) -> bool:
+        sym = self._symbols.get(name) if self._symbols is not None else None
+        t = getattr(sym, "type", None)
+        while isinstance(t, c99_ast.Const):
+            t = t.referenced_type
+        return isinstance(t, c99_ast.Volatile)
 
     def _odd_width_helper_op(
         self,

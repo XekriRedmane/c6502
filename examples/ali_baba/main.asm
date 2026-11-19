@@ -3,8 +3,9 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$1A
-FP	EQU	$1C
+SSP	EQU	$11
+FP	EQU	$13
+DPTR	EQU	$15
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -16,7 +17,6 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
-DPTR	EQU	$60
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
@@ -448,7 +448,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 main:

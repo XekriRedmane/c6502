@@ -426,52 +426,55 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
-    def test_binary_left_shift_lowered_to_asl8_call(self):
-        # asl8: value → HARGS+0, count → HARGS+1, Call, result
-        # (HARGS+2) → dst. The count is a variable, since a constant
-        # count is inlined as ASL steps.
+    def test_binary_left_shift_by_variable_is_a_loop(self):
+        # The value is copied into dst, the count goes in X, and a
+        # loop shifts dst one bit a pass (`_shift_loop`), where it
+        # called asl8.
         instr = tac_ast.Binary(
             op=tac_ast.LeftShift(),
             src1=tac_ast.Var(name="%0"),
             src2=tac_ast.Var(name="%c"),
             dst=tac_ast.Var(name="%1"),
         )
-        self.assertEqual(
-            translate_instruction(instr),
-            [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%c", offset=0), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
-                asm_ast.Call(name="asl8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1", offset=0)),
-            ],
-        )
+        out = translate_instruction(instr)
+        dst = asm_ast.Pseudo(name="%1", offset=0)
+        loop = next(i.name for i in out if isinstance(i, asm_ast.Label))
+        done = next(i.target for i in out if isinstance(i, asm_ast.Branch))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=dst),
+            asm_ast.Mov(src=asm_ast.Pseudo(name="%c", offset=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Compare(left=_REG_X, right=asm_ast.Imm(value=0)),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=done),
+            asm_ast.Label(name=loop),
+            asm_ast.ArithmeticShiftLeft(dst=dst),
+            asm_ast.Dec(dst=_REG_X),
+            asm_ast.Branch(cond=asm_ast.NE(), target=loop),
+            asm_ast.Label(name=done),
+        ])
 
-    def test_binary_right_shift_lowered_to_asr8_call(self):
-        # `>>` is arithmetic — c6502 currently treats every integer
-        # as signed for shift purposes, so it goes through asr8
-        # (sign-preserving) rather than a logical-right-shift helper.
-        # The count is a variable, since a constant count is inlined.
+    def test_binary_right_shift_of_signed_value_is_arithmetic_loop(self):
+        # A signed `>>` by a variable copies the sign bit into C before
+        # each `ROR` of the loop, where it called asr8.
         instr = tac_ast.Binary(
             op=tac_ast.RightShift(),
             src1=tac_ast.Constant(const=tac_ast.ConstChar(value=64)),
             src2=tac_ast.Var(name="%c"),
             dst=tac_ast.Var(name="%0"),
         )
-        self.assertEqual(
-            translate_instruction(instr),
-            [
-                asm_ast.Mov(src=asm_ast.Imm(value=64), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%c", offset=0), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
-                asm_ast.Call(name="asr8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0", offset=0)),
-            ],
-        )
+        out = translate_instruction(instr)
+        dst = asm_ast.Pseudo(name="%0", offset=0)
+        self.assertNotIn(asm_ast.Call, [type(i) for i in out])
+        self.assertEqual(out[0], asm_ast.Mov(src=asm_ast.Imm(value=64), dst=dst))
+        body = out[out.index(next(
+            i for i in out if isinstance(i, asm_ast.Label))) + 1:][:5]
+        self.assertEqual(body, [
+            asm_ast.Mov(src=dst, dst=_REG_A),
+            asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+            asm_ast.RotateRight(dst=dst),
+            asm_ast.Dec(dst=_REG_X),
+            asm_ast.Branch(cond=asm_ast.NE(), target=out[5].name),
+        ])
 
     def test_left_shift_by_byte_aligned_constant_emits_byte_moves(self):
         # `Binary(LeftShift, x_2B, ConstInt(8))` is a 1-byte byte
@@ -577,10 +580,10 @@ class TestTranslateInstruction(unittest.TestCase):
             ),
         ])
 
-    def test_signed_right_shift_by_8_still_calls_asr16(self):
+    def test_signed_right_shift_by_8_is_a_loop(self):
         # Signed RightShift by N*8 would need a sign-fill on the
-        # vacated high bytes; the byte-shuffle path is unsigned-only,
-        # so signed routes through `asr*`.
+        # vacated high bytes. The byte-shuffle path is unsigned-only,
+        # so a signed one is a loop of eight passes with no helper.
         from passes.type_checking import (
             LocalAttr, Symbol, SymbolTable,
         )
@@ -596,13 +599,15 @@ class TestTranslateInstruction(unittest.TestCase):
             dst=tac_ast.Var(name="%1"),
         ))
         self.assertEqual(
-            [c.name for c in out if isinstance(c, asm_ast.Call)],
-            ["asr16"],
+            [c.name for c in out if isinstance(c, asm_ast.Call)], [],
+        )
+        self.assertIn(
+            asm_ast.Mov(src=asm_ast.Imm(value=8), dst=_REG_X), out,
         )
 
-    def test_left_shift_by_size_in_bits_falls_through_to_helper(self):
-        # Shift count >= size*8 is UB per C99 §6.5.7.4 — punt to the
-        # helper rather than try to define behavior at this layer.
+    def test_left_shift_by_size_in_bits_is_a_loop(self):
+        # Shift count >= size*8 is UB per C99 §6.5.7.4. The loop gives
+        # 0, as the `asl16` helper does.
         from passes.type_checking import (
             LocalAttr, Symbol, SymbolTable,
         )
@@ -618,8 +623,10 @@ class TestTranslateInstruction(unittest.TestCase):
             dst=tac_ast.Var(name="%1"),
         ))
         self.assertEqual(
-            [c.name for c in out if isinstance(c, asm_ast.Call)],
-            ["asl16"],
+            [c.name for c in out if isinstance(c, asm_ast.Call)], [],
+        )
+        self.assertIn(
+            asm_ast.Mov(src=asm_ast.Imm(value=16), dst=_REG_X), out,
         )
 
     def test_binary_modulo_lowered_to_sdivmod8_remainder(self):

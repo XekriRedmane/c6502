@@ -195,8 +195,10 @@ The unoptimized pipeline runs the peephole fixed point once.
 
 ## Alphabetical list
 
+- [A byte divided by a constant](byte_divide.md). Lowers an unsigned byte's `/` or `%` by a constant as a loop of subtractions, with one loop for a divide and a remainder of the same operands, and one helper call for such a pair of any other width.
 - [A call that doesn't return](noreturn_call.md). Ends the path at a call to a `[[noreturn]]` function, so nothing after it has to survive the call.
 - [A parameter's copy in the parameter's slot](slot_coalescing.md). Renames a zero-page local that copies a parameter to the parameter's own slot, or that's copied into a callee's slot for the call, when they're never live with different values.
+- [A product of two bytes](byte_product.md). Lowers a 16-bit product of two values from 0 to 255 as an 8-by-8 shift-and-add loop where it called `mul16`.
 - [A pointer returned in zero page](return_in_zero_page.md). Makes a `static` function returning a pointer leave it in a zero-page pointer of its own, which its callers read through.
 - [Address of a zero-page local](lower_data_load_address.md). Splits a fixed-address LoadAddress into two immediate stores so peepholes can fold them.
 - [Address-taken locals in zero page](address_taken_zp.md). Puts address-taken locals in free private-pool bytes instead of the frame.
@@ -272,6 +274,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Moving a constant out of an offset](reassoc_offset.md). Rewrites `p + (x + k)` as `(p + x) + k` so subscripts share `p + x`.
 - [Multi-byte INC](inc_peephole.md). Rewrites an in-place add of 1 to memory as an INC and BNE chain.
 - [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md). Does a promoted byte's `&`, `|`, or `^` at one byte when the result's high bytes are zero, so a comparison of it narrows.
+- [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md). Does a promoted byte's `/`, `%`, and `>>` on one byte, and reads the operands of a 16-bit product of two such values as bytes, when the values are bounded by 255.
 - [Narrowing widened arithmetic](narrow_widened_arith.md). Does promoted byte arithmetic at one byte when only the low byte is used.
 - [Operands without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`, and the same for `ADC`, `SBC`, `AND`, `ORA`, and `EOR`.
 - [OR-with-zero absorb](or_zero_absorb.md). Rewrites `LDA #0; ORA x` as `LDA x` before move coalescing.
@@ -295,6 +298,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Self-store drop](self_store_drop.md). Deletes the `STA M` of an adjacent `LDA M; STA M` pair.
 - [Sign-bit test without AND](and_sign_bit_branch.md). Turns `LDA M; AND #$80; BEQ/BNE` into `LDA M; BPL/BMI`, and `AND #$01; BEQ/BNE` into `LSR; BCC/BCS`.
 - [Shifting a bit in through the carry](rotate_in.md). Lowers `(x << 1) | b`, with `b` 0 or 1, as `LDA b; LSR` and a `ROL` of each byte, or just the `ROL`s when C already holds `b`.
+- [Shifts by a loop](shift_loop.md). Lowers a 1- or 2-byte shift by a variable count, or by a constant too large for a fixed run of shifts, as a loop of one-bit shifts with the count in X.
 - [Signed countdown loop rotation](loop_rotate.md). Moves the `i >= 0` test of a signed countdown for loop to the bottom.
 - [Sinking an AND past a bit test](sink_and_past_branch.md). Moves a byte AND past a bit-7 test into both successor blocks.
 - [Sinking increments](sink_increment.md). Moves `Y = X ± c` past X's last read so X and Y share a register.
@@ -367,7 +371,8 @@ them whenever a pass is added or moved.
       17. [Sinking increments](sink_increment.md)
       18. [Sinking an AND past a bit test](sink_and_past_branch.md)
       19. [Narrowing widened arithmetic](narrow_widened_arith.md)
-      20. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
+      20. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
+      21. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
    6. [Indexed access to a static array of structs](static_indexed_access.md)
    7. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
    8. [Compare and subtract of the same operands](compare_subtract.md)
@@ -385,8 +390,10 @@ them whenever a pass is added or moved.
    bytes](slot_sharing.md), then parameter slot allocation.
 5. Translation to asm, with [saves around a recursive
    call](recursion_saves.md), [members of a static object computed in
-   place](in_place_member_update.md), and [shifting a bit in through
-   the carry](rotate_in.md).
+   place](in_place_member_update.md), [shifting a bit in through
+   the carry](rotate_in.md), [a byte divided by a
+   constant](byte_divide.md), [shifts by a loop](shift_loop.md), and
+   [a product of two bytes](byte_product.md).
 6. Asm SSA optimizer, run once to measure each function's local
    bytes. Its output is discarded. The steps are the same as in step
    8.

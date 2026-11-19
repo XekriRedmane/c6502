@@ -3,9 +3,12 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$1A
-FP	EQU	$1C
-border_pass	EQU	$1E
+SSP	EQU	$11
+FP	EQU	$13
+DPTR	EQU	$15
+border_pass	EQU	$17
+border_next	EQU	$18
+border_anim_index	EQU	$19
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -17,9 +20,6 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
-DPTR	EQU	$60
-border_next	EQU	$62
-border_anim_index	EQU	$63
 __local_clear_hires_page1__0	EQU	$80
 __local_init_mob_count__0	EQU	$80
 __local_move_border_icon_list__first	EQU	$80
@@ -499,6 +499,8 @@ WAIT	EQU	$FCA8
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
 ; zp NULL_PAGE_HIGH size=6 at=$0A def=false init=
 ; zp border_pass size=1 at=auto def=true init=$00 weight=7 local=true
+; zp border_next size=1 at=auto def=true init=$00 weight=5 local=true
+; zp border_anim_index size=1 at=auto def=true init=$06 weight=4 local=true
 ; zp MONITOR_YSAV1_1F size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -510,15 +512,13 @@ WAIT	EQU	$FCA8
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
 ; zp DISK_VM_ZP size=16 at=$50 def=false init=
-; zp border_next size=1 at=auto def=true init=$00 weight=5 local=true
-; zp border_anim_index size=1 at=auto def=true init=$06 weight=4 local=true
 ; zp MENU_DESC_PTR size=2 at=$C0 def=false init=
 ; zp MENU_OPTION_PTR size=2 at=$C2 def=false init=
 ; zp TUNE_PC size=2 at=$E4 def=false init=
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 draw_border_cell:

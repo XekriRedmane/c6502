@@ -5,7 +5,11 @@ PLAYER_Y_ADJ	EQU	$03
 PLAYER_ANIM_STATE	EQU	$04
 PLAYER_FACING_DIRECTION	EQU	$05
 HARGS	EQU	$06
-SSP	EQU	$10
+SSP	EQU	$07
+FP	EQU	$09
+DPTR	EQU	$0B
+cursor_sprite	EQU	$0D
+wait_result	EQU	$0E
 GUARD_LOC_COL	EQU	$12
 GUARD_LOC_ROW	EQU	$13
 GUARD_ANIM_STATE	EQU	$14
@@ -14,10 +18,6 @@ GUARD_GOLD_TIMER	EQU	$16
 GUARD_X_ADJ	EQU	$17
 GUARD_Y_ADJ	EQU	$18
 GUARD_NUM	EQU	$19
-FP	EQU	$1A
-DPTR	EQU	$1C
-cursor_sprite	EQU	$1E
-wait_result	EQU	$1F
 __dos_zp	EQU	$26
 GUARD_RESURRECT_COL	EQU	$53
 NOTE_INDEX	EQU	$54
@@ -247,6 +247,8 @@ DISK_IO	EQU	$C088
 ; zp PLAYER_Y_ADJ size=1 at=$03 def=false init=
 ; zp PLAYER_ANIM_STATE size=1 at=$04 def=false init=
 ; zp PLAYER_FACING_DIRECTION size=1 at=$05 def=false init=
+; zp cursor_sprite size=1 at=auto def=true init=$06 weight=36 local=true
+; zp wait_result size=1 at=auto def=true init=$00 weight=19 local=true
 ; zp GUARD_LOC_COL size=1 at=$12 def=false init=
 ; zp GUARD_LOC_ROW size=1 at=$13 def=false init=
 ; zp GUARD_ANIM_STATE size=1 at=$14 def=false init=
@@ -255,8 +257,6 @@ DISK_IO	EQU	$C088
 ; zp GUARD_X_ADJ size=1 at=$17 def=false init=
 ; zp GUARD_Y_ADJ size=1 at=$18 def=false init=
 ; zp GUARD_NUM size=1 at=$19 def=false init=
-; zp cursor_sprite size=1 at=auto def=true init=$06 weight=36 local=true
-; zp wait_result size=1 at=auto def=true init=$00 weight=19 local=true
 ; zp __dos_zp size=42 at=$26 def=false init=
 ; zp GUARD_RESURRECT_COL size=1 at=$53 def=false init=
 ; zp NOTE_INDEX size=1 at=$54 def=false init=
@@ -297,7 +297,7 @@ DISK_IO	EQU	$C088
 ; zp DEMO_RUNNING size=1 at=$AC def=false init=
 ; zp LEVEL_SAVED size=1 at=$AD def=false init=
 ; zp BLOCK_DATA size=33 at=$DF def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 paddle_timer_running:

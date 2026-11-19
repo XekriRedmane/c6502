@@ -112,6 +112,7 @@ from passes.optimization.sink_increment import SinkIncrements
 from passes.optimization.sink_and_past_branch import SinkAndPastBranch
 from passes.optimization.narrow_widened_arith import NarrowWidenedArith
 from passes.optimization.narrow_byte_bitwise import NarrowByteBitwise
+from passes.optimization.narrow_byte_range import NarrowByteRange
 from passes.optimization.recognize_indirect_indexed import RecognizeIndirectIndexed
 from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
 from passes.optimization.compare_subtract import HoistSubtractToCompare
@@ -187,6 +188,10 @@ _DRIVER = PhaseDriver(
         # force the AND result to live across the branch and spill
         # to memory.
         NarrowWidenedArith(),
+        # `pos / 20`, `(style >> 5)`, and `price * (tier + 1)` on bytes
+        # promoted to `int` as byte operations, when value_range bounds
+        # the operands by 255.
+        NarrowByteRange(),
         # `(x & 0x3F) < 3` on a byte x as a byte `&`, zero-extended, so
         # the comparison narrows. After sink_and_past_branch for the
         # same reason as narrow_widened_arith.

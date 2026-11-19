@@ -41,7 +41,6 @@ __local_display_shop__ev	EQU	$85
 __local_evaluate_direction__0	EQU	$85
 __local_join_party__1	EQU	$85
 __local_shop_buy_handler__3	EQU	$85
-__local_apply_shop_effect__0	EQU	$86
 __local_award_xp__0	EQU	$86
 __local_display_shop__3	EQU	$86
 __local_evaluate_direction__test_pos	EQU	$86
@@ -51,14 +50,15 @@ __local_award_xp__1	EQU	$87
 __local_evaluate_direction__1	EQU	$87
 __local_find_nearest_event__ev	EQU	$87
 __local_show_item__0	EQU	$87
-__local_apply_shop_effect__2	EQU	$88
 __local_award_xp__n	EQU	$88
 __local_evaluate_direction__2	EQU	$88
 __local_find_nearest_event__2	EQU	$88
+__local_show_item__1	EQU	$88
 __local_apply_shop_effect__3	EQU	$89
 __local_award_xp__2	EQU	$89
 __local_evaluate_direction__dir	EQU	$89
 __local_show_item__i	EQU	$89
+__local_apply_shop_effect__4	EQU	$8A
 __local_award_xp__armor	EQU	$8A
 __local_show_item__to	EQU	$8A
 __local_award_xp__3	EQU	$8B
@@ -244,7 +244,7 @@ WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
 ; def ai_choose_target params= locals=__local_ai_choose_target__best_pos,__local_ai_choose_target__best_strength,__local_ai_choose_target__0,__local_ai_choose_target__1 indirect=false in_cycle=false
-; def apply_shop_effect params=__zpabi_apply_shop_effect__n locals=__local_apply_shop_effect__0,__local_apply_shop_effect__1,__local_apply_shop_effect__2,__local_apply_shop_effect__3 indirect=false in_cycle=false param_regs=A
+; def apply_shop_effect params=__zpabi_apply_shop_effect__n locals=__local_apply_shop_effect__0,__local_apply_shop_effect__1,__local_apply_shop_effect__2,__local_apply_shop_effect__3,__local_apply_shop_effect__4 indirect=false in_cycle=false param_regs=A
 ; def award_xp params=__zpabi_award_xp__n locals=__local_award_xp__0,__local_award_xp__1,__local_award_xp__n,__local_award_xp__2,__local_award_xp__armor,__local_award_xp__3,__local_award_xp__4 indirect=false in_cycle=false param_regs=A
 ; def browse_handler params= locals=__local_browse_handler__0 indirect=false in_cycle=false
 ; def current_slot params= locals=__local_current_slot__0 indirect=false in_cycle=false
@@ -516,7 +516,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=10 hargs_need=10
+; runtime hargs_size=10 hargs_need=1
 ; @zp-link-meta-end
 
 manhattan_distance:
@@ -1043,25 +1043,30 @@ show_item:
    LSR
    LSR
    AND   #$03
-   STA   __local_show_item__0
+   STA   __local_show_item__1
    STA   LOCATION_STYLE_BITS
    LDY   #$04
    LDA   (current_slot@ret),Y
-   STA   HARGS
-   LDA   __local_show_item__0
+   STA   __local_show_item__0
+   LDA   __local_show_item__1
    CLC
    ADC   #$01
-   STA   HARGS+2
+   STA   HARGS
    LDA   #$00
-   ADC   #$00
-   STA   HARGS+3
-   LDA   #$00
-   STA   HARGS+1
-   JSR   mul16
-   LDA   HARGS+4
-   STA   SHOP_PRICE
-   LDA   HARGS+5
+   LDX   #$08
+   LSR   HARGS
+.mul_loop@0:
+   BCC   .mul_skip@1
+   CLC
+   ADC   __local_show_item__0
+.mul_skip@1:
+   ROR
+   ROR   HARGS
+   DEX
+   BNE   .mul_loop@0
    STA   SHOP_PRICE+1
+   LDA   HARGS
+   STA   SHOP_PRICE
    LDA   #$00
    STA   __local_show_item__i
 .show_item@rot@4:
@@ -1178,36 +1183,34 @@ apply_shop_effect:
    BCS   .cond_else@54
    LDA   ENTITY_PTR
    ADC   #$07
-   STA   __local_apply_shop_effect__2
+   STA   __local_apply_shop_effect__3
    LDA   ENTITY_PTR+1
    ADC   #$00
-   STA   __local_apply_shop_effect__3
+   STA   __local_apply_shop_effect__4
    JMP   .cond_end@55
 .cond_else@54:
    LDA   ENTITY_PTR
    CLC
    ADC   #$09
-   STA   __local_apply_shop_effect__2
+   STA   __local_apply_shop_effect__3
    LDA   ENTITY_PTR+1
    ADC   #$00
-   STA   __local_apply_shop_effect__3
+   STA   __local_apply_shop_effect__4
 .cond_end@55:
    LDY   #$05
    LDA   (ENTITY_PTR),Y
-   STA   __local_apply_shop_effect__0
-   LDA   SHOP_EFFECT_TABLE,X
-   CLC
-   ADC   LOCATION_STYLE_BITS
-   STA   __local_apply_shop_effect__1
-   LDA   __local_apply_shop_effect__0
    LSR
    LSR
    LSR
    AND   #$03
+   STA   __local_apply_shop_effect__1
+   LDA   SHOP_EFFECT_TABLE,X
+   CLC
+   ADC   LOCATION_STYLE_BITS
    CLC
    ADC   __local_apply_shop_effect__1
    LDY   #$00
-   STA   (__local_apply_shop_effect__2),Y
+   STA   (__local_apply_shop_effect__3),Y
    RTS
 
 pending_xp:

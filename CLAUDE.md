@@ -321,7 +321,10 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
      copy propagation, dead-store elimination, copy folding, Add-
      with-Constant and offset-constant reassociation, loop rotation,
      sink-increment, IndexedLoad / IndexedStore / IndirectIndexed
-     recognizers.
+     recognizers, and the narrowing of promoted bytes' arithmetic
+     (`narrow_widened_arith`, `narrow_byte_range` for `/`, `%`, `>>`,
+     and a 16-bit `*` of operands `value_range` bounds by 255,
+     `narrow_byte_bitwise`).
   4. TAC SSA destruction + post-destruction copy folding.
   5. Asm-level const-static fold (drops scalar `static T const`
      storage, replacing references with immediates).
@@ -1123,6 +1126,15 @@ cross-cutting facts other docs / readers need at orientation level:
   typically one pass per byte with the 6502's carry flag threading
   naturally between them. (FP arithmetic isn't lowered inline; it
   dispatches to runtime helpers via the HARGS block.)
+- **Inline arithmetic**: a 1- or 2-byte shift by a variable is a
+  loop of one-bit shifts with the count in X (`_shift_loop`), an
+  unsigned byte divided by a constant a loop of subtractions
+  (`_inline_byte_divide`, one loop for a `/` and a `%` of the same
+  operands, and one helper call for such a pair of another width),
+  and a 16-bit product of two bytes an 8-by-8 shift-and-add loop
+  (`_inline_byte_product`). Each has a document in
+  docs/optimizations/ (`shift_loop.md`, `byte_divide.md`,
+  `byte_product.md`).
 - **HARGS** is the runtime-helper exchange block — 32 bytes of
   zero-page at `$04`–`$23` in the classic layout.
   [docs/architecture.md](docs/architecture.md) gives each helper's

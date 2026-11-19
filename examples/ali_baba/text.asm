@@ -28,7 +28,6 @@ __local_text_renderer__stream_0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_display_message__1	EQU	$82
-__local_num_to_decimal__0	EQU	$82
 __local_text_renderer__at_0	EQU	$82
 __local_display_message__index	EQU	$83
 __local_num_to_decimal__value_1	EQU	$83
@@ -45,12 +44,13 @@ __local_print_bottom_centered__s_0	EQU	$88
 __local_next_string__1	EQU	$89
 __local_num_to_decimal__1	EQU	$89
 __local_print_centered_plus_col__0	EQU	$89
-__local_print_centered_plus_col__s	EQU	$8A
-__local_print_centered_plus_col__1	EQU	$8B
-__local_print_string__i	EQU	$8D
-__local_print_string__1	EQU	$8E
-__local_print_string__s	EQU	$8F
-__local_print_string__2	EQU	$90
+__local_print_centered_plus_col__1	EQU	$8A
+__local_print_centered_plus_col__s	EQU	$8B
+__local_print_centered_plus_col__2	EQU	$8C
+__local_print_string__i	EQU	$8E
+__local_print_string__1	EQU	$8F
+__local_print_string__s	EQU	$90
+__local_print_string__2	EQU	$91
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -227,9 +227,9 @@ WAIT	EQU	$FCA8
 ; def display_message params=__zpabi_display_message__index locals=__local_display_message__msg,__local_display_message__0,__local_display_message__1,__local_display_message__index indirect=false in_cycle=false param_regs=A
 ; def display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 locals=__local_display_message_loop__count,__local_display_message_loop__msg_0,__local_display_message_loop__msg_1 indirect=false in_cycle=false param_regs=A,X
 ; def next_string params=__zpabi_next_string__s_0,__zpabi_next_string__s_1 locals=__local_next_string__0,__local_next_string__s,__local_next_string__1 indirect=false in_cycle=false param_regs=A,X
-; def num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 locals=__local_num_to_decimal__0,__local_num_to_decimal__value_1,__local_num_to_decimal__value_0,__local_num_to_decimal__place_1,__local_num_to_decimal__place_0,__local_num_to_decimal__started,__local_num_to_decimal__out,__local_num_to_decimal__1,__local_num_to_decimal__2 indirect=false in_cycle=false param_regs=A,X,,
+; def num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 locals=__local_num_to_decimal__0,__local_num_to_decimal__value_1,__local_num_to_decimal__value_0,__local_num_to_decimal__place_1,__local_num_to_decimal__place_0,__local_num_to_decimal__started,__local_num_to_decimal__out,__local_num_to_decimal__1 indirect=false in_cycle=false param_regs=A,X,,
 ; def print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 locals=__local_print_bottom_centered__s_1,__local_print_bottom_centered__s_0 indirect=false in_cycle=false param_regs=A,X
-; def print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 locals=__local_print_centered_plus_col__0,__local_print_centered_plus_col__s,__local_print_centered_plus_col__1 indirect=false in_cycle=false param_regs=A,X
+; def print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 locals=__local_print_centered_plus_col__0,__local_print_centered_plus_col__1,__local_print_centered_plus_col__s,__local_print_centered_plus_col__2 indirect=false in_cycle=false param_regs=A,X
 ; def print_ctrl_ab params= locals= indirect=false in_cycle=false
 ; def print_ctrl_n params= locals= indirect=false in_cycle=false
 ; def print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 locals=__local_print_string__0,__local_print_string__i,__local_print_string__1,__local_print_string__s,__local_print_string__2 indirect=false in_cycle=false param_regs=A,X
@@ -442,7 +442,6 @@ WAIT	EQU	$FCA8
 ; call text_renderer -> tune_player
 ; call text_renderer_no_pause -> render_stream
 ; item num_to_decimal section=.text local=false zero=false
-; item num_to_decimal@run0 section=.text local=true zero=false
 ; item render_stream section=.text local=true zero=false
 ; item text_renderer section=.text local=false zero=false
 ; item text_renderer_no_pause section=.text local=false zero=false
@@ -484,7 +483,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=11 hargs_need=11
+; runtime hargs_size=11 hargs_need=9
 ; @zp-link-meta-end
 
 num_to_decimal:
@@ -505,9 +504,7 @@ num_to_decimal:
 .loop@0_start:
    LDA   __local_num_to_decimal__place_0
    ORA   __local_num_to_decimal__place_1
-   BNE   .lb_skip@1
-   JMP   .loop@0_break
-.lb_skip@1:
+   BEQ   .loop@0_break
    LDA   __local_num_to_decimal__value_0
    STA   HARGS
    LDA   __local_num_to_decimal__value_1
@@ -515,22 +512,13 @@ num_to_decimal:
    LDA   __local_num_to_decimal__place_0
    STA   HARGS+2
    LDA   __local_num_to_decimal__place_1
-   JSR   num_to_decimal@run0
-   LDA   HARGS+4
-   STA   __local_num_to_decimal__0
-   LDA   __local_num_to_decimal__value_0
-   STA   HARGS
-   LDA   __local_num_to_decimal__value_1
-   STA   HARGS+1
-   LDA   __local_num_to_decimal__place_0
-   STA   HARGS+2
-   LDA   __local_num_to_decimal__place_1
-   JSR   num_to_decimal@run0
+   STA   HARGS+3
+   JSR   udivmod16
    LDA   HARGS+6
    STA   __local_num_to_decimal__value_0
    LDA   HARGS+7
    STA   __local_num_to_decimal__value_1
-   LDA   __local_num_to_decimal__0
+   LDA   HARGS+4
    BNE   .num_to_decimal@scfold@0
    LDA   __local_num_to_decimal__started
    BNE   .num_to_decimal@scfold@0
@@ -542,7 +530,7 @@ num_to_decimal:
 .num_to_decimal@scfold@0:
    LDA   #$B0
    CLC
-   ADC   __local_num_to_decimal__0
+   ADC   HARGS+4
    LDY   #$00
    STA   (__local_num_to_decimal__out),Y
    LDA   #$01
@@ -556,25 +544,18 @@ num_to_decimal:
    LDA   #$0A
    STA   HARGS+2
    LDA   #$00
-   JSR   num_to_decimal@run0
+   STA   HARGS+3
+   JSR   udivmod16
    LDA   HARGS+4
    STA   __local_num_to_decimal__place_0
    LDA   HARGS+5
    STA   __local_num_to_decimal__place_1
    INC   __local_num_to_decimal__out
-   BEQ   .lb_skip@0
-   JMP   .loop@0_start
-.lb_skip@0:
+   BNE   .loop@0_start
    INC   __local_num_to_decimal__1
    JMP   .loop@0_start
 .loop@0_break:
    RTS
-
-num_to_decimal@run0:
-   SUBROUTINE
-
-   STA   HARGS+3
-   JMP   udivmod16
 
 render_stream:
    SUBROUTINE
@@ -858,7 +839,7 @@ print_centered_plus_col:
    SUBROUTINE
 
    STA   __local_print_centered_plus_col__s
-   STX   __local_print_centered_plus_col__1
+   STX   __local_print_centered_plus_col__2
    LDY   #$00
    LDA   (__local_print_centered_plus_col__s),Y
    STA   __local_print_centered_plus_col__0
@@ -867,20 +848,17 @@ print_centered_plus_col:
    SBC   __local_print_centered_plus_col__0
    CLC
    ADC   #$01
-   STA   HARGS
+   STA   __local_print_centered_plus_col__1
    TYA
    ADC   #$00
-   STA   HARGS+1
-   LDA   #$02
-   STA   HARGS+2
-   STY   HARGS+3
-   JSR   sdivmod16
-   LDA   TEXT_COL
+   LSR
+   LDA   __local_print_centered_plus_col__1
+   ROR
    CLC
-   ADC   HARGS+4
+   ADC   TEXT_COL
    STA   TEXT_COL
    JSR   print_ctrl_ab
-   LDX   __local_print_centered_plus_col__1
+   LDX   __local_print_centered_plus_col__2
    LDA   __local_print_centered_plus_col__s
    JMP   print_string
 

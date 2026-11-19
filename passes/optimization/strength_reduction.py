@@ -19,15 +19,16 @@ Rewrites multiplicative ops by power-of-2 constants into shifts
     `var * 0` case is left alone (constant folding via copy
     propagation usually unblocks it later).
   * `Divide(x, 2^k)` UNSIGNED → `RightShift(x, k)`. Signed
-    `Divide(x, 2^k)` is NOT rewritten — C99 §6.5.5.6 truncates
-    toward zero, while arithmetic right shift rounds toward
-    negative infinity. They disagree on negative dividends:
-    `-3 / 2 == -1` but `-3 >> 1 == -2`.
+    `Divide(x, 2^k)` is rewritten only when `x` can't be negative
+    (`_nonnegative`), since C99 §6.5.5.6 truncates toward zero,
+    while arithmetic right shift rounds toward negative infinity.
+    They disagree on negative dividends: `-3 / 2 == -1` but
+    `-3 >> 1 == -2`.
   * `Divide(x, 1)` → `Copy(x, dst)` (any signedness).
   * `Modulo(x, 2^k)` UNSIGNED → `BitwiseAnd(x, 2^k - 1)`. Signed
-    modulo by 2^k is similarly NOT rewritten (sign of the result
-    follows the dividend, while bit-AND can't produce a negative
-    result).
+    modulo by 2^k is rewritten only for an `x` that can't be
+    negative, for the same reason (the sign of the result follows
+    the dividend, while bit-AND can't produce a negative result).
   * `Modulo(x, 1)` → `Copy(0, dst)` of the appropriate constant
     variant (any value mod 1 is 0).
 
@@ -296,8 +297,9 @@ def _build_divide(
     m: MatchResult, env: RuleEnv, ctx: PassContext,
 ) -> list | None:
     """Unsigned `Divide(x, 2^k)` → `RightShift(x, k)`; `Divide(x, 1)`
-    → `Copy(x)`. Not commutative — only `x / const`. Signed `/2^k`
-    skipped: arithmetic shift rounds toward -inf, C99 toward zero."""
+    → `Copy(x)`. Not commutative — only `x / const`. A signed `/2^k`
+    of a value that may be negative is skipped: arithmetic shift
+    rounds toward -inf, C99 toward zero."""
     binop = m.bindings['binop']
     src1, src2, dst = binop.src1, binop.src2, binop.dst
     c = _power_of_two_const(src2)
@@ -308,7 +310,8 @@ def _build_divide(
         if isinstance(src1, tac_ast.Constant):
             return None
         return [tac_ast.Copy(src=src1, dst=dst)]
-    if not _is_unsigned(src1, ctx.symbols):
+    if not _is_unsigned(src1, ctx.symbols) and not _nonnegative(
+            src1, env, ctx):
         return None
     count = _shift_count_const(k, src1, ctx.symbols)
     return [tac_ast.Binary(
@@ -316,12 +319,24 @@ def _build_divide(
     )]
 
 
+def _nonnegative(val: tac_ast.Type_val, env: RuleEnv, ctx: PassContext) -> bool:
+    """True when `val` can't be negative (`value_range.max_value`). A
+    signed divide or remainder of such a value by a power of two is
+    then the unsigned one, since truncating toward zero and rounding
+    down agree on a nonnegative quotient. `(space + 1) / 2` on a
+    `uint8_t space` is `ZeroExtend(space) + 1`, at most 256, so it's a
+    shift where it had called `sdivmod16`."""
+    from passes.optimization.value_range import max_value
+    return max_value(val, env.def_of, ctx.symbols, ctx.ssa_dsts) is not None
+
+
 def _build_modulo(
     m: MatchResult, env: RuleEnv, ctx: PassContext,
 ) -> list | None:
     """Unsigned `Modulo(x, 2^k)` → `BitwiseAnd(x, 2^k - 1)`;
-    `Modulo(x, 1)` → `Copy(typed-zero)`. Signed `%2^k` skipped (the
-    result sign follows the dividend; bit-AND can't be negative)."""
+    `Modulo(x, 1)` → `Copy(typed-zero)`. A signed `%2^k` of a value
+    that may be negative is skipped (the result sign follows the
+    dividend; bit-AND can't be negative)."""
     binop = m.bindings['binop']
     src1, src2, dst = binop.src1, binop.src2, binop.dst
     c = _power_of_two_const(src2)
@@ -333,7 +348,8 @@ def _build_modulo(
         if zero is None:
             return None
         return [tac_ast.Copy(src=tac_ast.Constant(const=zero), dst=dst)]
-    if not _is_unsigned(src1, ctx.symbols):
+    if not _is_unsigned(src1, ctx.symbols) and not _nonnegative(
+            src1, env, ctx):
         return None
     # x % 2^k → x & (2^k - 1). Build the mask as a constant of the same
     # variant as src2 (the type checker stamped it to match src1's

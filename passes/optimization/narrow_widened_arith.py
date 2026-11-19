@@ -51,15 +51,18 @@ LeftShift is safe in its first operand, since the low bytes of
 count is a Constant below the narrow width in bits, or a variable. A
 constant shift is inlined as ASL / ROL steps over every byte of the
 operand, so `(uint8_t)(len << 4)` with `len` promoted to `int` would
-otherwise shift a high byte that's thrown away. A variable count calls
-the `asl*` helper of the narrow width, which shifts fewer bytes, and a
-count that shifts every bit out gives 0 at either width.
+otherwise shift a high byte that's thrown away. A variable count is a
+loop of one-bit shifts (`tac_to_asm._shift_loop`), which shifts fewer
+bytes at the narrow width, and a count that shifts every bit out gives
+0 at either width.
 
 RightShift is narrowed only when its first operand is a ZeroExtend of
 an unsigned Var or a SignExtend of a signed one, and its count is a
-Constant below the narrow width in bits that the lowering inlines at
-the narrow width (`shift_cost.inline_shift_ok`), since a 1-byte
-arithmetic shift by 3 calls `asr8`. The extended bytes hold 0 or
+Constant below the narrow width in bits. When the lowering inlines
+the wide shift (`shift_cost.inline_shift_ok`) and not the narrow one,
+the narrow one would be a loop, which is slower, and the shift is left
+wide. A byte's arithmetic shift by 3 is a loop of three passes, and so
+is the 16-bit one, so it narrows. The extended bytes hold 0 or
 copies of the sign bit, which are the bits a narrow logical or
 arithmetic shift of the Var brings in, so `(uint8_t)(props[y] >> 5)`
 is a 1-byte shift. It had shifted the extension's high byte, known to
@@ -220,9 +223,9 @@ class NarrowWidenedArith(DefUsePass):
             # A left shift by a variable count narrows too. The low
             # bytes of `x << n` depend only on the low bytes of `x`, and
             # a count that shifts every bit out gives 0 at either width,
-            # since the `asl*` helpers shift one bit per count and the
-            # simulator's model of them gives 0 for such a count.
-            # `scaled <<= shift` on a byte had called `asl16`.
+            # since the loop of `tac_to_asm._shift_loop` and the `asl*`
+            # helpers shift one bit per count. `scaled <<= shift` on a
+            # byte had called `asl16`.
             pass
         elif is_shift:
             count = bin_instr.src2
@@ -230,16 +233,21 @@ class NarrowWidenedArith(DefUsePass):
                     and isinstance(getattr(count.const, "value", None), int)
                     and 0 <= count.const.value < 8 * dst_width):
                 return None
-            # A narrow shift the lowering doesn't inline calls a
-            # helper, where the wide one may have been inline: a
-            # 1-byte arithmetic shift by 3 calls `asr8`.
+            # A narrow shift the lowering doesn't inline is a loop,
+            # which is slower than a wide shift it inlines.
+            # `_extended_shift_source` made a right shift's first
+            # operand an extend of a Var.
+            signed_right = isinstance(
+                bin_instr.op, tac_ast.RightShift) and not _is_unsigned(
+                env.def_of(bin_instr.src1).src, ctx.symbols)
             if (isinstance(bin_instr.op, tac_ast.RightShift)
                     and count.const.value
                     and not inline_shift_ok(
                         dst_width, count.const.value,
-                        signed_right=not _is_unsigned(
-                            env.def_of(bin_instr.src1).src, ctx.symbols),
-                    )):
+                        signed_right=signed_right)
+                    and inline_shift_ok(
+                        bin_width, count.const.value,
+                        signed_right=signed_right)):
                 return None
 
         trunc_idx = _truncate_index(m, env)

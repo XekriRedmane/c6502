@@ -83,18 +83,19 @@ truncate the value the comparison read, as below.
   `^` qualify because carries only move from low bytes to high
   bytes. `<<` qualifies with a constant count less than the number
   of bits in the truncated width, or with a variable count, which
-  then calls the narrow `asl*` helper (`asl8` for a byte) in place of
-  the wide one. A count that shifts every bit out gives 0 at either
-  width. `>>` qualifies with such a
+  `tac_to_asm` then lowers as a loop of one-bit shifts of the narrow
+  value ([shifts by a loop](shift_loop.md)). A count that shifts every
+  bit out gives 0 at either width. `>>` qualifies with such a
   count when its first operand is a `ZeroExtend` of an unsigned
   variable or a `SignExtend` of a signed one, as wide as the
   truncate's destination. The bytes the extend adds hold 0 or copies
   of the sign bit, and a narrow logical or arithmetic shift brings in
   the same bits, so `(uint8_t)(props[y] >> 5)` is `LDA (props),Y;
-  LSR` five times. The narrow shift also has to be one `tac_to_asm`
-  lowers inline (`shift_cost.inline_shift_ok`). A 1-byte arithmetic
-  shift by 1 is `CMP #$80; ROR`, while one by 3 would call `asr8`, so
-  a `signed char` shifted by more than 1 keeps its 16-bit shift.
+  LSR` five times. When `tac_to_asm` lowers the wide shift inline
+  (`shift_cost.inline_shift_ok`) and would lower the narrow one as a
+  loop, which is slower, the shift stays wide. A `signed char`
+  shifted by 3 narrows, since its byte shift and its 16-bit shift are
+  both loops of three passes.
 - The `Binary`'s result is wider than the truncate's destination.
 - Each operand is one of these:
   - a constant, which is reduced modulo the narrow width and takes a

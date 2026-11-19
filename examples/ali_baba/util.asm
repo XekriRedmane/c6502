@@ -22,7 +22,7 @@ __local_cold_restart__p	EQU	$80
 __local_delay_with_animation__n	EQU	$80
 __local_find_prev_pc__prev	EQU	$80
 __local_get_char_record__0	EQU	$80
-__local_pos_to_colrow__0	EQU	$80
+__local_random_in_range__0	EQU	$80
 __zpabi_compute_checksum__end_0	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
@@ -32,7 +32,6 @@ __local_cold_restart__0	EQU	$81
 __local_colrow_to_pos__0	EQU	$81
 __local_find_prev_pc__start	EQU	$81
 __local_get_char_record__1	EQU	$81
-__local_pos_to_colrow__pos	EQU	$81
 __local_random_in_range__1	EQU	$81
 __zpabi_compute_checksum__end_1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
@@ -40,10 +39,10 @@ __zpabi_update_event_list__value_1	EQU	$81
 __local_cold_restart__1	EQU	$82
 __local_colrow_to_pos__col	EQU	$82
 __local_get_char_record__index	EQU	$82
-__local_random_in_range__limit	EQU	$82
-__local_random_in_range__2	EQU	$83
+__local_random_in_range__2	EQU	$82
+__local_random_in_range__shift	EQU	$83
 __local_compute_checksum__lo	EQU	$84
-__local_random_in_range__shift	EQU	$84
+__local_random_in_range__limit	EQU	$84
 __local_compute_checksum__hi	EQU	$85
 __local_find_first_pc__0	EQU	$85
 __local_compute_checksum__0	EQU	$86
@@ -251,8 +250,8 @@ WAIT	EQU	$FCA8
 ; def idle_anim_handler params= locals= indirect=false in_cycle=false
 ; def init_char_select params= locals=__local_init_char_select__0 indirect=false in_cycle=false
 ; def is_player_character params=__zpabi_is_player_character__m_0,__zpabi_is_player_character__m_1 locals=__local_is_player_character__m,__local_is_player_character__0 indirect=false in_cycle=false param_regs=A,X carry=true
-; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__0,__local_pos_to_colrow__pos,__local_pos_to_colrow__1 indirect=false in_cycle=false param_regs=A
-; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__0,__local_random_in_range__1,__local_random_in_range__limit,__local_random_in_range__2,__local_random_in_range__shift indirect=false in_cycle=false param_regs=A
+; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__pos indirect=false in_cycle=false param_regs=A
+; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__0,__local_random_in_range__1,__local_random_in_range__2,__local_random_in_range__shift,__local_random_in_range__limit indirect=false in_cycle=false param_regs=A
 ; def step_prng params= locals=__local_step_prng__0,__local_step_prng__1 indirect=false in_cycle=false
 ; def tick_anim_counter params= locals=__local_tick_anim_counter__0 indirect=false in_cycle=false
 ; def timed_wait params= locals= indirect=false in_cycle=false
@@ -456,8 +455,6 @@ WAIT	EQU	$FCA8
 ; item dispatch_on_mode section=.text local=false zero=false
 ; item idle_anim_handler section=.text local=false zero=false
 ; item pos_to_colrow section=.text local=false zero=false
-; item pos_to_colrow@run0 section=.text local=true zero=false
-; item pos_to_colrow@run0@run1 section=.text local=true zero=false
 ; item colrow_to_pos section=.text local=false zero=false
 ; item get_mob_data section=.text local=false zero=false
 ; item get_char_record section=.text local=false zero=false
@@ -501,7 +498,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=11 hargs_need=7
+; runtime hargs_size=11 hargs_need=0
 ; @zp-link-meta-end
 
 tick_anim_counter:
@@ -601,31 +598,13 @@ idle_anim_handler:
 pos_to_colrow:
    SUBROUTINE
 
-   STA   __local_pos_to_colrow__pos
-   JSR   pos_to_colrow@run0
-   LDA   HARGS+6
-   STA   __local_pos_to_colrow__0
-   LDA   __local_pos_to_colrow__pos
-   JSR   pos_to_colrow@run0
-   LDX   HARGS+4
-   LDA   __local_pos_to_colrow__0
-   RTS
-
-pos_to_colrow@run0:
-   SUBROUTINE
-
-   JSR   pos_to_colrow@run0@run1
-   LDY   #$14
-   STY   HARGS+2
-   STA   HARGS+3
-   JMP   sdivmod16
-
-pos_to_colrow@run0@run1:
-   SUBROUTINE
-
-   STA   HARGS
-   LDA   #$00
-   STA   HARGS+1
+   LDX   #$FF
+   SEC
+.div_loop@0:
+   INX
+   SBC   #$14
+   BCS   .div_loop@0
+   ADC   #$14
    RTS
 
 colrow_to_pos:
@@ -894,57 +873,70 @@ random_in_range:
    STY   __local_random_in_range__shift
 .loop@7_continue:
    LDA   __local_random_in_range__limit
-   STA   HARGS
+   STA   __local_random_in_range__0
    LDA   #$00
-   STA   HARGS+1
-   LDA   __local_random_in_range__shift
-   STA   HARGS+2
-   JSR   asl16
-   LDA   HARGS+3
+   STA   __local_random_in_range__1
+   LDX   __local_random_in_range__shift
+   BEQ   .shift_done@2
+.shift_loop@1:
+   ASL   __local_random_in_range__0
+   ROL   __local_random_in_range__1
+   DEX
+   BNE   .shift_loop@1
+.shift_done@2:
+   LDA   __local_random_in_range__0
    SEC
    SBC   #$40
-   LDA   HARGS+4
+   LDA   __local_random_in_range__1
    SBC   #$00
-   BVC   .jcmp_novf@0
+   BVC   .jcmp_novf@3
    EOR   #$80
-.jcmp_novf@0:
+.jcmp_novf@3:
    BPL   .loop@7_break
    INC   __local_random_in_range__shift
    JMP   .loop@7_continue
 .loop@7_break:
 .if_end@17:
    LDA   #$7F
-   JSR   pos_to_colrow@run0@run1
-   LDA   __local_random_in_range__shift
-   STA   HARGS+2
-   JSR   asr16
-   LDA   HARGS+3
-   STA   HARGS
-   LDA   __local_random_in_range__shift
-   STA   HARGS+1
-   JSR   asl8
-   LDA   HARGS+2
    STA   __local_random_in_range__2
-   LDA   __local_random_in_range__limit
-   STA   HARGS
-   LDA   __local_random_in_range__shift
-   STA   HARGS+1
-   JSR   asl8
+   LDX   __local_random_in_range__shift
+   BEQ   .shift_done@5
+.shift_loop@4:
+   LSR   __local_random_in_range__2
+   DEX
+   BNE   .shift_loop@4
+.shift_done@5:
+   LDX   __local_random_in_range__shift
+   BEQ   .shift_done@7
+.shift_loop@6:
+   ASL   __local_random_in_range__2
+   DEX
+   BNE   .shift_loop@6
+.shift_done@7:
+   LDX   __local_random_in_range__shift
+   BEQ   .shift_done@9
+.shift_loop@8:
+   ASL   __local_random_in_range__limit
+   DEX
+   BNE   .shift_loop@8
+.shift_done@9:
 .loop@8_start:
    JSR   step_prng
    AND   __local_random_in_range__2
    STA   __local_random_in_range__1
    SEC
-   SBC   HARGS+2
-   BMI   .jcmp_neg@1
+   SBC   __local_random_in_range__limit
+   BMI   .jcmp_neg@10
    BNE   .loop@8_start
-.jcmp_neg@1:
+.jcmp_neg@10:
+   LDX   __local_random_in_range__shift
+   BEQ   .shift_done@12
+.shift_loop@11:
+   LSR   __local_random_in_range__1
+   DEX
+   BNE   .shift_loop@11
+.shift_done@12:
    LDA   __local_random_in_range__1
-   JSR   pos_to_colrow@run0@run1
-   LDA   __local_random_in_range__shift
-   STA   HARGS+2
-   JSR   asr16
-   LDA   HARGS+3
    RTS
 
 compute_checksum:
@@ -1010,10 +1002,10 @@ verify_integrity:
    LDA   #<DISK_IO_CODE
    JSR   compute_checksum
    CPX   #$7A
-   BNE   .jcmp_skip@2
+   BNE   .jcmp_skip@13
    CMP   #$AE
    BEQ   .if_end@21
-.jcmp_skip@2:
+.jcmp_skip@13:
    JSR   integrity_fail
 .if_end@21:
    RTS

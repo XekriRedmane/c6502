@@ -3,9 +3,9 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$15
-FP	EQU	$17
-DPTR	EQU	$19
+SSP	EQU	$11
+FP	EQU	$13
+DPTR	EQU	$15
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -509,7 +509,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=5 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 load_map_tiles:

@@ -574,8 +574,9 @@ this directory:
   the rule for when a constant shift is lowered inline (at most 8
   one-bit shift instructions after the byte moves, or any count of
   the form `8q + 7`, which `tac_to_asm` lowers as a shift by `8(q +
-  1)` and one bit back) instead of by an `asl*` / `lsr*` / `asr*`
-  call. `tac_to_asm` and the two-term
+  1)` and one bit back) instead of as a loop of one-bit shifts (1 or
+  2 bytes, `tac_to_asm._shift_loop`) or by an `asl*` / `lsr*` /
+  `asr*` call (4 or 8 bytes). `tac_to_asm` and the two-term
   multiply rule in `optimization/strength_reduction.py` both use it.
 - `significant_bytes.py` — `significant_bytes`: for each local of a
   TAC function, how many low bytes can be nonzero, from its
@@ -588,7 +589,10 @@ this directory:
   the locals read only through a `Truncate` to one byte, and
   `tac_to_asm` computes just the low byte of a constant right shift
   into one of them (`_inline_right_shift_to_byte`), so
-  `(uint8_t)(w >> 5)` doesn't call `lsr16`.
+  `(uint8_t)(w >> 5)` doesn't call `lsr16`. A 16-bit multiply of two
+  values with one significant byte is an 8-by-8 loop
+  (`_inline_byte_product`), and a signed right shift of a value whose
+  top byte is zero is a logical one.
 - `slot_coalescing.py` — `apply_slot_coalescing`. Renames a
   function's `__local_F__*` byte that holds a copy of one of its own
   parameter bytes to the parameter's slot, when the two never

@@ -78,7 +78,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   4 + 1) becomes three shifts and two adds
   (`_three_term_byte_multiply`). Signed
   Divide / Modulo skipped (C99 truncation differs from arithmetic
-  shift). Each `build` is computational (log2 / mask construction) —
+  shift), unless `value_range.max_value` shows the dividend can't
+  be negative, which makes `(space + 1) / 2` on a byte a shift. Each
+  `build` is computational (log2 / mask construction) —
   the table form splits the per-op dispatch into rules but keeps the
   arithmetic in the build, per "RuleSet" in
   [framework/CLAUDE.md](framework/CLAUDE.md).
@@ -238,7 +240,7 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   Constant), u_n)` → `Binary(safe_op, a, b | narrowed_Constant, u_n)`
   at the narrow width. Wraparound-safe ops are Add / Subtract / Multiply
   / BitwiseAnd / BitwiseOr / BitwiseXor, plus LeftShift by a variable
-  count (the narrow `asl*` helper) or by a constant
+  count (a loop of one-bit shifts at the narrow width) or by a constant
   below the narrow width (Divide / Modulo / RightShift excluded
   because high bytes contribute to low bytes of the result). An
   operand may also be any wider integer Var (a 16-bit global, say),
@@ -260,6 +262,24 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   A `Truncate` of a comparison becomes the comparison with the narrow
   dst and its operands unchanged (`_narrow_compare`), since its result
   is 0 or 1, so `bool b = (x & 0x80) != 0;` gets a 1-byte result.
+- `value_range.py` — `max_value(val, def_of, symbols, ssa_dsts)`:
+  the largest value an operand can hold when it can't be negative,
+  from its type (an unsigned type's largest value) and, for an SSA
+  name, from its definition (an extend, a copy, `&`, `|`, `^`, `+`,
+  `*`, `<<` that doesn't wrap, `>>`, `/`, `%`, a `Phi`), walking back
+  at most 12 definitions. `narrow_byte_range` and strength reduction
+  use it.
+- `narrow_byte_range.py` — `NarrowByteRange` (DefUsePass), right
+  after `narrow_widened_arith` in the fixed point. A wide `/` or `%`
+  whose dividend `max_value` bounds by 255, by a constant from 1 to
+  255 or a value bounded by 255, becomes the unsigned byte operation
+  into a new `uchar` and a `ZeroExtend` of it, and so does a wide
+  `>>` of such a value (by any count; a constant count of 8 or more
+  is a copy of 0). A 2-byte `*` of two such values reads each operand
+  as a `ZeroExtend` of a byte (a `Truncate` of a wide one), so that
+  `tac_to_asm` lowers it as an 8-by-8 loop. `pos / 20` on a byte had
+  called `sdivmod16`, and `price * (((style >> 5) & 3) + 1)` `asr16`
+  and `mul16`. See docs/optimizations/narrow_byte_range.md.
 - `recognize_indirect_indexed.py` — post-fixedpoint one-shot
   (`RecognizeIndirectIndexed`, PostFixedpointPass wrapping an internal
   `DefUsePass`, on `recognize_extend_add_chain`). Collapses
@@ -436,7 +456,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → recognize_indexed_store → recognize_indexed_load
       → fold_truncate_extend → fold_extend_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith
-      → narrow_byte_bitwise]*                          (FixedpointPass loop)
+      → narrow_byte_range → narrow_byte_bitwise]*      (FixedpointPass loop)
    → static_indexed_access         (PostFixedpointPass, one-shot)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
    → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)

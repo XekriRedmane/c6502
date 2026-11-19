@@ -5,7 +5,9 @@ PLAYER_Y_ADJ	EQU	$03
 PLAYER_ANIM_STATE	EQU	$04
 PLAYER_FACING_DIRECTION	EQU	$05
 HARGS	EQU	$06
-SSP	EQU	$10
+SSP	EQU	$07
+FP	EQU	$09
+DPTR	EQU	$0B
 GUARD_LOC_COL	EQU	$12
 GUARD_LOC_ROW	EQU	$13
 GUARD_ANIM_STATE	EQU	$14
@@ -14,8 +16,6 @@ GUARD_GOLD_TIMER	EQU	$16
 GUARD_X_ADJ	EQU	$17
 GUARD_Y_ADJ	EQU	$18
 GUARD_NUM	EQU	$19
-FP	EQU	$1A
-DPTR	EQU	$1C
 __dos_zp	EQU	$26
 GUARD_RESURRECT_COL	EQU	$53
 NOTE_INDEX	EQU	$54
@@ -275,7 +275,7 @@ DISK_IO	EQU	$C088
 ; zp DEMO_RUNNING size=1 at=$AC def=false init=
 ; zp LEVEL_SAVED size=1 at=$AD def=false init=
 ; zp BLOCK_DATA size=33 at=$DF def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 guard_resurrections:

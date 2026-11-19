@@ -82,6 +82,17 @@ treat them like any other SSA temporary.
   dividend. The pass counts `unsigned char`, plain `char`, `unsigned
   int`, `unsigned long`, `unsigned long long`, and pointer variables
   as unsigned, along with the unsigned constant variants.
+- A signed dividend qualifies too when it can't be negative, by
+  `max_value` in
+  [passes/optimization/value_range.py](../../passes/optimization/value_range.py)
+  (see [narrowing arithmetic on values from 0 to
+  255](narrow_byte_range.md)). Rounding toward zero and rounding down
+  agree on a nonnegative quotient, and the remainder of a nonnegative
+  value is its low bits. `TEXT_COL += (space + 1) / 2;` on a `uint8_t
+  space` divides `ZeroExtend(space) + 1`, which is at most 256, so it
+  becomes `Binary(>>, %15.1, 1, %16.1)`, and the code became `CLC;
+  ADC #$01; STA t; LDA #$00; ADC #$00; LSR; LDA t; ROR`, where it had
+  called `sdivmod16`.
 - A multiply by a constant that is not a power of two takes the
   two-term form when the constant equals `2^a + 2^b` or `2^a - 2^b`
   with `a > b >= 0`, the other operand is a variable, the result has
@@ -97,20 +108,22 @@ treat them like any other SSA temporary.
   4 or 5 bytes longer than the call and about 30 cycles against the
   helper's few hundred.
 
-The `inline_shift_ok` gate keeps the two-term rewrite from trading one
-`mul16` call for an `asl16` call. It accepts a shift when it lowers to
+The `inline_shift_ok` gate keeps the two-term rewrite to shifts that
+lower to a fixed run of instructions, which take a few cycles each,
+where any other shift of 1 or 2 bytes is [a loop](shift_loop.md) and
+a wider one calls a helper. It accepts a shift when it lowers to
 at most 8 one-bit shift instructions after any whole-byte moves, or
 when the count is 1, a multiple of 8, or of the form `8q + 7`. For a
 16-bit value that means a shift by up to 4 bits.
 
 ## What it leaves alone
 
-- A signed divide or modulo by a power of two. C99 rounds a quotient
-  toward zero and an arithmetic right shift rounds toward negative
-  infinity, so `-3 / 2` is -1 where `-3 >> 1` is -2. The sign of a
-  remainder follows the dividend, and a mask can't produce a negative
-  result. A run on `int x` with `x / 2` and `x % 4` reports 0
-  changes.
+- A signed divide or modulo by a power of two of a value that may be
+  negative. C99 rounds a quotient toward zero and an arithmetic right
+  shift rounds toward negative infinity, so `-3 / 2` is -1 where `-3
+  >> 1` is -2. The sign of a remainder follows the dividend, and a
+  mask can't produce a negative result. A run on `int x` with `x / 2`
+  and `x % 4` reports 0 changes.
 - A two-term multiply whose shifts would call a helper. For `unsigned
   int x`, `x * 96` is `64 + 32`, and the first shift by 5 bits of a
   16-bit value takes 10 shift instructions, so the run reports 0
@@ -126,9 +139,10 @@ when the count is 1, a multiple of 8, or of the form `8q + 7`. For a
 
 The single power-of-two rewrite has no shift-cost gate. For `unsigned
 int x`, `x * 64` becomes `x << 6`, which `tac_to_asm` lowers to a
-`JSR asl16` because a 6-bit shift of 16 bits takes 12 shift
-instructions inline. That still replaces a multiply loop with a shift
-loop, which is the cheaper helper.
+loop of six passes of `ASL; ROL` ([shifts by a loop](shift_loop.md))
+because a 6-bit shift of 16 bits takes 12 shift instructions inline.
+That still replaces the `mul16` call with a shorter and faster
+loop.
 
 When only the low byte of `x` can be nonzero, as for a widened byte
 or a value masked to one (`passes/significant_bytes.py`), `tac_to_asm`

@@ -119,7 +119,8 @@ is dropped from the output.
   fold, to an infinity or a NaN.
 - A shift whose count is negative or at least the width of the
   shifted value, since C99 §6.5.7 leaves the result undefined.
-  `1 << 16` on an `int` stays a call to `asl16`.
+  `1 << 16` on an `int` stays a shift, a loop of 16 passes that
+  leaves 0 ([shifts by a loop](shift_loop.md)).
 - `/` and `%` whose constants differ in signedness, and comparisons
   whose constants differ in variant, because the result depends on
   which interpretation wins.

@@ -3,9 +3,10 @@ TEXT_STREAM_PTR	EQU	$06
 RWTS_IOB_PTR	EQU	$08
 NULL_PAGE_HIGH	EQU	$0A
 HARGS	EQU	$10
-SSP	EQU	$1A
-FP	EQU	$1C
-SOUND_ON	EQU	$1E
+SSP	EQU	$15
+FP	EQU	$17
+DPTR	EQU	$19
+SOUND_ON	EQU	$1B
 MONITOR_YSAV1_1F	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -17,7 +18,6 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
-DPTR	EQU	$60
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_play_high_tone__first	EQU	$80
@@ -424,7 +424,7 @@ WAIT	EQU	$FCA8
 ; zp MOB_PTR size=2 at=$F4 def=false init=
 ; zp ENTITY_PTR size=2 at=$F8 def=false init=
 ; zp CHAR_PTR size=2 at=$FA def=false init=
-; runtime hargs_size=10 hargs_need=0
+; runtime hargs_size=5 hargs_need=0
 ; @zp-link-meta-end
 
 play_high_tone:

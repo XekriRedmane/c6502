@@ -111,9 +111,12 @@ class TestHargsSize(unittest.TestCase):
     def test_relocated_hargs_fits_the_program(self) -> None:
         cases = {
             "no helper": ("int f(int a) { return a + 1; }\n", 1),
+            # An `unsigned char` product is promoted to `int` and
+            # done by an inline loop, so the one-byte `mul8` comes from
+            # an `unsigned _BitInt(8)`.
             "8-bit multiply":
-                ("unsigned char f(unsigned char a, unsigned char b) "
-                 "{ return a * b; }\n", 5),
+                ("unsigned _BitInt(8) f(unsigned _BitInt(8) a, "
+                 "unsigned _BitInt(8) b) { return a * b; }\n", 5),
             "32-bit divide":
                 ("long f(long a, long b) { return a / b; }\n", 22),
         }

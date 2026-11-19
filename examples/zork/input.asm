@@ -1,14 +1,14 @@
 HARGS	EQU	$00
-SSP	EQU	$05
-FP	EQU	$07
-DPTR	EQU	$09
-get_dictionary_addr@ret	EQU	$0B
-input_ptr	EQU	$0D
-char_count	EQU	$0E
-input_count	EQU	$0F
-token_idx	EQU	$10
-parse	EQU	$11
-text	EQU	$13
+SSP	EQU	$01
+FP	EQU	$03
+DPTR	EQU	$05
+get_dictionary_addr@ret	EQU	$07
+input_ptr	EQU	$09
+char_count	EQU	$0A
+input_count	EQU	$0B
+token_idx	EQU	$0C
+parse	EQU	$0D
+text	EQU	$0F
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -321,7 +321,7 @@ COUT1	EQU	$FDF0
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
 ; zp disk_buffer size=2 at=auto def=false init=
 ; zp disk_sector size=2 at=auto def=false init=
-; runtime hargs_size=5 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 print_status_line:

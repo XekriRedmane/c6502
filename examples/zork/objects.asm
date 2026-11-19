@@ -1,11 +1,11 @@
 HARGS	EQU	$00
-SSP	EQU	$05
-FP	EQU	$07
-DPTR	EQU	$09
-get_object_addr@ret	EQU	$0B
-attr_mask	EQU	$0D
-props	EQU	$0F
-attr_ptr	EQU	$11
+SSP	EQU	$01
+FP	EQU	$03
+DPTR	EQU	$05
+get_object_addr@ret	EQU	$07
+attr_mask	EQU	$09
+props	EQU	$0B
+attr_ptr	EQU	$0D
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -345,7 +345,7 @@ COUT1	EQU	$FDF0
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
 ; zp disk_buffer size=2 at=auto def=false init=
 ; zp disk_sector size=2 at=auto def=false init=
-; runtime hargs_size=5 hargs_need=0
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 get_object_addr:

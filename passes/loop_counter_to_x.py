@@ -147,6 +147,7 @@ from __future__ import annotations
 import dataclasses
 
 import asm_ast
+from passes.asm_aliasing import is_pointer_byte, pointer_byte_addresses
 from passes.asm_liveness import a_dead_at, call_preserves, sets_up_y
 
 
@@ -158,11 +159,17 @@ _FLAG_NZ_BRANCHES: tuple[type, ...] = (
 _CPX_OPERANDS = (asm_ast.Imm, asm_ast.Data, asm_ast.ZP)
 
 
-def apply_loop_counter_to_x(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_loop_counter_to_x(
+    prog: asm_ast.Program, zp_symbol_addrs: dict[str, int] | None = None,
+) -> asm_ast.Program:
+    """Promotes one loop counter per function to X. `zp_symbol_addrs`
+    gives the addresses of the slot and zero-page symbols, so that a
+    byte of a `(zp),Y` pointer, which the pointer's reads name by
+    address, is never taken for a counter."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(_rewrite_function(tl, zp_symbol_addrs))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
@@ -207,15 +214,17 @@ def _mem_op_from_key(key):
     return asm_ast.ZP(address=key[1], offset=key[2])
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _rewrite_function(
+    fn: asm_ast.Function, zp_symbol_addrs=None,
+) -> asm_ast.Function:
     instrs = fn.instructions
-    plan = _plan_promotion(instrs)
+    plan = _plan_promotion(instrs, zp_symbol_addrs)
     if plan is None:
         return fn
     return _apply_plan(fn, plan)
 
 
-def _plan_promotion(instrs):
+def _plan_promotion(instrs, zp_symbol_addrs=None):
     """Identify a candidate counter slot M and verify the
     transformation can be applied. Returns a plan dict or None.
 
@@ -229,7 +238,7 @@ def _plan_promotion(instrs):
       'call_indices'    — indices of Call instructions to wrap.
     """
     # Step 1: find counter-slot candidates by use-pattern.
-    cand = _find_counter_candidate(instrs)
+    cand = _find_counter_candidate(instrs, zp_symbol_addrs)
     if cand is None:
         return None
     m_key = cand['m_key']
@@ -575,14 +584,22 @@ def _try_collect_pivot_range(instrs, start: int, m_key):
     return j
 
 
-def _find_counter_candidate(instrs):
+def _find_counter_candidate(instrs, zp_symbol_addrs=None):
     """Identify a memory slot M with the loop-counter use pattern.
     Returns a dict with 'm_key', 'init_idx', 'dec_idx' (the index of
     the step, a `Dec(M)` or an `Inc(M)`), 'step_is_inc',
     'loop_top_lda_idx', 'lda_m_indices', or None. A count-down
     counter needs its `DEC` to branch back to a loop-top `LDX M`; a
     count-up counter has no loop-top reload to find, since its loop
-    tests the counter with `LDA M; CMP` instead."""
+    tests the counter with `LDA M; CMP` instead.
+
+    A byte of a `(zp),Y` pointer is never a candidate. A read through
+    the pointer reads the byte too, and names it by the pointer's
+    address, which the scan below doesn't count as a use, so the
+    reads would see the byte in memory after the step had moved to
+    X. The single `INC` that `carry_in_add` leaves on the high byte
+    of `msg = msg + msg[0] + 1` was taken for a counter that way."""
+    pointer_addrs = pointer_byte_addresses(instrs)
     init_idx: dict[tuple, int] = {}
     init_count: dict[tuple, int] = {}
     dec_idx: dict[tuple, int] = {}
@@ -597,6 +614,9 @@ def _find_counter_candidate(instrs):
         for role, op in _operand_roles(instr):
             key = _operand_key(op)
             if key is None:
+                continue
+            if is_pointer_byte(op, pointer_addrs, zp_symbol_addrs):
+                disqualified.add(key)
                 continue
             if role == 'init':
                 init_count[key] = init_count.get(key, 0) + 1

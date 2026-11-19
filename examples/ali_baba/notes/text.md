@@ -110,10 +110,15 @@ No bug was hit. These cost bytes against the original:
 
    The same day next_string was inlined into its two callers
    (docs/optimizations/inline_functions.md). display_message is 58
-   bytes and display_message_loop 106. That is 6 bytes more than the
-   17-byte next_string and callers of 52 and 89 bytes that call it,
-   most of it in display_message_loop, whose copy adds 17 bytes. The
-   cause of that hasn't been looked into yet.
+   bytes and display_message_loop 95, 5 fewer than the 17-byte
+   next_string and callers of 52 and 89 bytes that call it. The
+   inlined copy first came out 11 bytes longer, because
+   loop_counter_to_x took msg's high byte, which `carry_in_add`
+   steps with one `INC`, for a loop counter and kept it in X around
+   each of the four calls. The tests of `*msg` after the step then
+   read through the old high byte, 256 bytes below the string, and
+   the forest script's run differed from the original's. That was
+   fixed the same day (docs/optimizations/loop_counter_to_x.md).
 
 4. print_string and display_message_loop copy their pointer parameter
    into a local pair before the loop that steps it. print_string is 38

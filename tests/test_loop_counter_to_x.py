@@ -434,5 +434,53 @@ class TestLoopCounterToXSim(unittest.TestCase):
                 self.assertEqual(r.return_int(), 4)
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestPointerHighByteSim(unittest.TestCase):
+    """`msg = msg + msg[0] + 1` steps the pointer's high byte with one
+    `INC`, after `SEC; ADC (msg),Y` (passes/carry_in_add.py). The pass
+    once took that byte for a loop counter and stepped it in X, while
+    the reads through `(msg),Y` still found the old high byte in
+    memory, so a step across a page read the byte 256 below."""
+
+    _SRC = r'''
+    #include <stdint.h>
+    uint8_t buf[1100];
+    uint8_t count;
+    uint8_t calls;
+    uint16_t seen;
+    void ext(const uint8_t *p) { seen += p[1]; }
+    void ext2(void) { calls++; }
+    void walk(const uint8_t *msg) {
+        while (*msg != 0) {
+            ext(msg);
+            count++;
+            msg = msg + msg[0] + 1;
+            if (count > 1 || *msg == 0)
+                ext2();
+        }
+    }
+    int main(void) {
+        for (uint16_t i = 0; i < 3; i++) {
+            buf[OFF + i * 255] = 254;
+            for (uint16_t j = 1; j < 255; j++)
+                buf[OFF + i * 255 + j] = (uint8_t)(i + 1);
+        }
+        walk(buf + OFF);
+        return calls * 256 + seen * 16 + count;
+    }
+    '''
+
+    def test_steps_across_pages(self):
+        # Each string is 255 bytes long, so a step from any start other
+        # than a page boundary crosses a page.
+        for off in (0, 5, 200):
+            for optimize in (False, True):
+                with self.subTest(off=off, optimize=optimize):
+                    src = self._SRC.replace("OFF", str(off))
+                    r = build_sim(src, optimize=optimize).run()
+                    self.assertFalse(r.timed_out)
+                    self.assertEqual(r.return_int(), 2 * 256 + 6 * 16 + 3)
+
+
 if __name__ == "__main__":
     unittest.main()

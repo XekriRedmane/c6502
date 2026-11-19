@@ -691,23 +691,19 @@ display_message_loop:
    CMP   #$81
    BCC   .if_else@18
 .display_message_loop@scfold@0:
+   LDX   __local_display_message_loop__msg_1
    LDA   __local_display_message_loop__msg_0
-   STX   __local_display_message_loop__msg_1
    JSR   print_bottom_centered
    JSR   scroll_status_line
-   LDX   __local_display_message_loop__msg_1
    JMP   .if_end@17
 .if_else@18:
    CMP   #$01
    BEQ   .if_end@19
-   STX   __local_display_message_loop__msg_1
    JSR   scroll_status_line
-   LDX   __local_display_message_loop__msg_1
 .if_end@19:
-   LDA   __local_display_message_loop__msg_0
-   STX   __local_display_message_loop__msg_1
-   JSR   print_bottom_centered
    LDX   __local_display_message_loop__msg_1
+   LDA   __local_display_message_loop__msg_0
+   JSR   print_bottom_centered
 .if_end@17:
    INC   MSG_LINE_COUNT
    LDY   #$00
@@ -716,7 +712,7 @@ display_message_loop:
    ADC   (__local_display_message_loop__msg_0),Y
    STA   __local_display_message_loop__msg_0
    BCC   .carry_inc@1
-   INX
+   INC   __local_display_message_loop__msg_1
 .carry_inc@1:
    LDA   MSG_LINE_COUNT
    CMP   #$02
@@ -725,10 +721,8 @@ display_message_loop:
    LDA   (__local_display_message_loop__msg_0),Y
    BNE   .loop@5_continue
 .display_message_loop@scfold@1:
-   STX   __local_display_message_loop__msg_1
    JSR   delay_with_animation
    JSR   print_ctrl_ab
-   LDX   __local_display_message_loop__msg_1
 .loop@5_continue:
    LDY   #$00
    LDA   (__local_display_message_loop__msg_0),Y

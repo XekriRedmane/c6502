@@ -515,7 +515,8 @@ this directory:
   promotions" below).
 - `counter_to_index_reg.py` — `apply_counter_to_index_reg`. Moves a
   pure count-down counter (one init store, one `DEC M; BNE` back
-  edge, no other reads) from memory into X, or Y when the loop uses
+  edge, no other reads, not a byte of a `(zp),Y` pointer the
+  function uses) from memory into X, or Y when the loop uses
   X: `STA M` becomes `TAX` (folded to `LDX n` later) and `DEC M`
   becomes `DEX`. The register may be touched only where the DEC
   can't be reached again (an exit path). A call to a routine that
@@ -1874,7 +1875,10 @@ counter pseudo to `Reg(X)` when the live range fits the X pivot
 pattern: the counter is initialized once, used as an `LDX` source,
 and stepped once, by a `DEC` at the loop bottom or by an `INC` in a
 loop that counts up and tests the counter at the top. Any other use
-of the slot, including a shift or rotate of it, disqualifies it.
+of the slot, including a shift or rotate of it, disqualifies it, and
+so does a `(zp),Y` access through a pointer the slot is a byte of,
+which names the pointer by address (`asm_aliasing.is_pointer_byte`,
+with `compile.py`'s slot and zero-page addresses).
 A call is wrapped with `STX` / `LDX` when the counter is read after
 it, unless the callee is declared `preserves_x`. Also accepts
 `LDA M` body uses (rewritten to `TXA` since X = M is the promotion

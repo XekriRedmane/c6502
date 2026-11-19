@@ -241,6 +241,37 @@ def through_slot_pointer(ins, slot_addrs) -> bool:
     return False
 
 
+def pointer_byte_addresses(instrs) -> frozenset[int]:
+    """The addresses of both bytes of every `(zp),Y` pointer
+    (`IndirectZp`, `IndirectZpY`) that an instruction in `instrs`
+    reads or writes through."""
+    out: set[int] = set()
+    for ins in instrs:
+        for op in _instruction_operands(ins):
+            if isinstance(op, (asm_ast.IndirectZp, asm_ast.IndirectZpY)):
+                out.update((op.address, op.address + 1))
+    return frozenset(out)
+
+
+def is_pointer_byte(op, pointer_addrs, zp_symbol_addrs) -> bool:
+    """Whether the `Data` or `ZP` byte `op` is one of `pointer_addrs`
+    (from `pointer_byte_addresses`). A `(zp),Y` operand carries the
+    pointer's address, and a `Data` operand a symbol, which
+    `zp_symbol_addrs` resolves. A compiler slot or runtime byte it
+    doesn't resolve counts as a pointer byte whenever the function
+    has a pointer, since it may be one."""
+    if not pointer_addrs:
+        return False
+    if isinstance(op, asm_ast.ZP):
+        return op.address + op.offset in pointer_addrs
+    if isinstance(op, asm_ast.Data):
+        addr = (zp_symbol_addrs or {}).get(op.name)
+        if addr is None:
+            return _is_zp_symbol(op.name)
+        return addr + op.offset in pointer_addrs
+    return False
+
+
 class pointer_proof:
     """Installs `names` (from `unreachable_by_pointer`) as the bytes
     `may_alias` treats as out of reach of the indirect operands, for

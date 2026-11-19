@@ -683,10 +683,11 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # whose lifetime is a single loop. See the pass docstring
     # for the exact eligibility shape.
     asm3 = apply_promote_loop_carried_to_a(asm3)
-    asm3 = apply_loop_counter_to_x(asm3)
+    pointer_symbols = {**all_slot_symbols, **zp.addrs}
+    asm3 = apply_loop_counter_to_x(asm3, pointer_symbols)
     # A count-down counter used only by its DEC goes in X (or
     # Y) when the loop leaves that register alone.
-    asm3 = apply_counter_to_index_reg(asm3)
+    asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
     # Catch cases the X-pivot promotion couldn't reach: a
     # Pseudo that got X-colored upstream but kept an
     # `LDA M`-style read of its spill home M for arg
@@ -749,7 +750,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         asm3, zp_slot_symbols=all_slot_symbols,
         zp_global_symbols=zp.addrs, noreturn=noreturn,
     )
-    asm3 = apply_counter_to_index_reg(asm3)
+    asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
         zp_global_symbols=zp.addrs, noreturn=noreturn,

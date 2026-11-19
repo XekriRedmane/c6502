@@ -144,6 +144,16 @@ pattern, and promotes only the first one it finds.
 - `LDA M` may read it. No other instruction may name it, so an `ADC
   M`, a `CMP M`, a shift or rotate of `M`, a `BIT M`, or a push
   disqualifies it.
+- `M` isn't a byte of a `(zp),Y` pointer the function reads or
+  writes through. Such an access reads `M` too, and names the
+  pointer by its address, which the pass resolves each slot's
+  symbol to. On 19 Nov 2026 the pass took the high byte of `msg`
+  in `msg = msg + msg[0] + 1` for a counter, since `carry_in_add`
+  leaves one `INC` on it, and the reads through `(msg),Y` after
+  the step went to the old page. Ali Baba's `map_value_to_string`
+  and, once next_string was inlined, `display_message_loop` were
+  compiled that way (tests/test_loop_counter_to_x.py,
+  `TestPointerHighByteSim`).
 - For a `DEC` step, the next instruction after any labels is a `BEQ`,
   `BNE`, `BMI`, or `BPL` whose target, after following jumps, is one
   of the `LDX M` reloads. That reload is the loop top. None of the

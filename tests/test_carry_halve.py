@@ -9,6 +9,7 @@ import unittest
 import asm_ast
 from passes.carry_halve import apply_carry_halve
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _A = asm_ast.Reg(reg=asm_ast.A())
 _Y = asm_ast.Reg(reg=asm_ast.Y())
@@ -116,6 +117,7 @@ class TestRuns(unittest.TestCase):
                 r = build_sim(_SRC, optimize=optimize).run()
                 self.assertEqual(r.return_int(), _expected())
 
+    @no_inlining()
     def test_no_high_byte(self):
         from compile import _run_stage
         from preprocessor import preprocess

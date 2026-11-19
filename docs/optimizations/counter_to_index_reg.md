@@ -89,6 +89,10 @@ counter goes in X and the loop is `LDA speaker; DEX; BNE`.
   the function. The first is a non-volatile store into `M` from an
   immediate, a register, a `Data` or `ZP` byte, or an `abs,X` /
   `abs,Y` byte. The second is `DEC M`.
+- `M` isn't a byte of a `(zp),Y` pointer the function reads or
+  writes through. Such an access reads `M` too, but names the
+  pointer by its address, so it isn't one of the two instructions
+  above.
 - The `DEC` is directly followed by a `BNE` or `BEQ` whose target
   label lies after the store and at or before the `DEC`. That branch
   is the back edge.

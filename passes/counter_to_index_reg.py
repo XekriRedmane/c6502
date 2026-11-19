@@ -67,6 +67,7 @@ which folds the `LDA n; TAX` the rewrite leaves.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import is_pointer_byte, pointer_byte_addresses
 from passes import decimal_arith
 from passes.asm_liveness import call_preserves, x_dead_at, y_dead_at
 
@@ -75,13 +76,19 @@ _SETUP_USES_Y = (
 )
 
 
-def apply_counter_to_index_reg(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_counter_to_index_reg(
+    prog: asm_ast.Program, zp_symbol_addrs: dict[str, int] | None = None,
+) -> asm_ast.Program:
+    """Moves each pure count-down counter into X or Y.
+    `zp_symbol_addrs` gives the addresses of the slot and zero-page
+    symbols, so that a byte of a `(zp),Y` pointer, which the
+    pointer's reads name by address, is never taken for a counter."""
     out = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             instrs = list(tl.instructions)
             while True:
-                new = _rewrite_one(instrs)
+                new = _rewrite_one(instrs, zp_symbol_addrs)
                 if new is None:
                     break
                 instrs = new
@@ -243,20 +250,26 @@ def _loop_region(instrs, init_i: int, dec_i: int, label_at):
     return loop
 
 
-def _rewrite_one(instrs):
+def _rewrite_one(instrs, zp_symbol_addrs=None):
+    pointer_addrs = pointer_byte_addresses(instrs)
     refs: dict[tuple, list[int]] = {}
+    pointer_keys: set[tuple] = set()
     for i, ins in enumerate(instrs):
         for op in _operands(ins):
             k = _key(op)
             if k is not None:
                 refs.setdefault(k, []).append(i)
+                # A read through a `(zp),Y` pointer reads its bytes
+                # by address, which `refs` doesn't count.
+                if is_pointer_byte(op, pointer_addrs, zp_symbol_addrs):
+                    pointer_keys.add(k)
     label_at = {
         ins.name: i for i, ins in enumerate(instrs)
         if isinstance(ins, asm_ast.Label)
     }
     for k, idxs in refs.items():
         idxs = sorted(set(idxs))
-        if len(idxs) != 2:
+        if len(idxs) != 2 or k in pointer_keys:
             continue
         init_i, dec_i = idxs
         init, dec = instrs[init_i], instrs[dec_i]

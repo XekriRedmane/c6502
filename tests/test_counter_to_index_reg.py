@@ -76,6 +76,53 @@ class TestCounterToIndexReg(unittest.TestCase):
         self.assertEqual(out[0], asm_ast.Mov(src=_N, dst=_X, is_volatile=False))
 
 
+class TestPointerByte(unittest.TestCase):
+    """A counter that is a byte of a `(zp),Y` pointer the loop reads
+    through. The read names the pointer by its address, so the two
+    references to the byte look like a pure counter's."""
+
+    _P = asm_ast.Data(name="__local_f__p", offset=1)
+    _ADDRS = {"__local_f__p": 0x83}
+
+    def _instrs(self, counter):
+        return [
+            asm_ast.Mov(src=_N, dst=counter, is_volatile=False),
+            asm_ast.Label(name=".loop"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_Y, is_volatile=False),
+            asm_ast.Mov(
+                src=asm_ast.IndirectZpY(address=0x83), dst=_A,
+                is_volatile=False,
+            ),
+            asm_ast.Mov(
+                src=_A, dst=asm_ast.Data(name="t", offset=0),
+                is_volatile=False,
+            ),
+            asm_ast.Dec(dst=counter),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop"),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def _run(self, instrs):
+        prog = asm_ast.Program(top_level=[asm_ast.Function(
+            name="f", is_global=True, params=[], instructions=instrs,
+        )])
+        return apply_counter_to_index_reg(
+            prog, self._ADDRS,
+        ).top_level[0].instructions
+
+    def test_slot_named_by_symbol_stays_in_memory(self):
+        instrs = self._instrs(self._P)
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_zero_page_byte_stays_in_memory(self):
+        instrs = self._instrs(asm_ast.ZP(address=0x84, offset=0))
+        self.assertEqual(self._run(instrs), instrs)
+
+    def test_byte_after_the_pointer_moves_to_x(self):
+        out = self._run(self._instrs(asm_ast.ZP(address=0x85, offset=0)))
+        self.assertEqual(out[0], asm_ast.Mov(src=_N, dst=_X, is_volatile=False))
+
+
 class TestInitFromARegister(unittest.TestCase):
     """An init stored from X or Y. The 6502 has no TXY or TYX."""
 

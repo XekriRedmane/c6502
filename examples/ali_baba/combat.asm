@@ -1637,7 +1637,6 @@ map_value_to_string:
    STA   __local_map_value_to_string__verb
    LDY   #>ATTACK_VERB_STRINGS
    STY   __local_map_value_to_string__1
-   LDX   __local_map_value_to_string__1
    JMP   .loop@13_continue
 .map_value_to_string@rot@1:
    LDY   #$00
@@ -1645,10 +1644,11 @@ map_value_to_string:
    ADC   (__local_map_value_to_string__verb),Y
    STA   __local_map_value_to_string__verb
    BCC   .loop@13_continue
-   INX
+   INC   __local_map_value_to_string__1
 .loop@13_continue:
    DEC   __local_map_value_to_string__index
    BNE   .map_value_to_string@rot@1
+   LDX   __local_map_value_to_string__1
    JMP   print_bottom_centered
 
 player_attack:

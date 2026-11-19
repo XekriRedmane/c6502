@@ -9,6 +9,7 @@ import unittest
 import asm_ast
 from passes.ret_slot_coalescing import apply_ret_slot_coalescing
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _A = asm_ast.Reg(reg=asm_ast.A())
 _X = asm_ast.Reg(reg=asm_ast.X())
@@ -170,6 +171,7 @@ class TestRuns(unittest.TestCase):
                 r = build_sim(_SRC, optimize=optimize).run()
                 self.assertEqual(r.return_int(), _expected())
 
+    @no_inlining()
     def test_no_copy_of_the_result(self):
         from compile import _run_stage
         from preprocessor import preprocess

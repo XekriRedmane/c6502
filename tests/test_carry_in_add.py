@@ -9,6 +9,7 @@ import unittest
 import asm_ast
 from passes.carry_in_add import apply_carry_in_add
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _A = asm_ast.Reg(reg=asm_ast.A())
 _M = asm_ast.Data(name="m", offset=0)
@@ -111,6 +112,7 @@ class TestRuns(unittest.TestCase):
                 r = build_sim(_SRC, optimize=optimize).run()
                 self.assertEqual(r.return_int(), _expected())
 
+    @no_inlining()
     def test_one_add(self):
         from compile import _run_stage
         from preprocessor import preprocess

@@ -109,7 +109,6 @@ __local_var_get__var	EQU	$F7
 __local_branch__condition	EQU	$F8
 __local_instr_call__args	EQU	$F8
 __local_var_get__0	EQU	$F8
-__local_branch_to_offset__0	EQU	$F9
 __local_get_nonstack_var__var	EQU	$F9
 __local_instr_call__2	EQU	$F9
 __local_return_value__0	EQU	$F9
@@ -676,12 +675,10 @@ branch_to_offset:
    STA   __local_branch_to_offset__pages_0
    LDA   Z_PC+2
    ADC   __local_branch_to_offset__pages_1
-   STA   __local_branch_to_offset__0
-   LDA   __local_branch_to_offset__1
-   STA   Z_PC
-   LDA   __local_branch_to_offset__pages_0
-   STA   Z_PC+1
-   LDA   __local_branch_to_offset__0
+   LDX   __local_branch_to_offset__1
+   STX   Z_PC
+   LDX   __local_branch_to_offset__pages_0
+   STX   Z_PC+1
    AND   #$01
    STA   Z_PC+2
    LDA   #$00
@@ -1017,12 +1014,10 @@ do_1op:
 do_2op:
    SUBROUTINE
 
-   STA   __local_do_2op__equal
-   LDA   OPERANDS+2
-   STA   __local_do_2op__1
-   LDA   OPERANDS+3
-   STA   __local_do_2op__2
-   LDA   __local_do_2op__equal
+   LDX   OPERANDS+2
+   STX   __local_do_2op__1
+   LDX   OPERANDS+3
+   STX   __local_do_2op__2
    CMP   #$19
    BCC   .lb_skip@1
    JMP   internal_error

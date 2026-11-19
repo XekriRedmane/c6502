@@ -143,7 +143,16 @@ A pair merges when all of these are true.
   is. When the larger node has more than one byte, the pass instead
   renames each byte of every multi-byte name, recomputes liveness,
   and merges when no two names that would share a byte are live at
-  once.
+  once. That check follows Chaitin's rule for a move: a copy's write
+  of its destination doesn't make it interfere with the copy's
+  source, since the two hold one value right after it, and only a
+  later write of either while the other is live does.
+  `display_message` in `examples/ali_baba/text.c` copies `msg` into
+  the pointer it reads through at the top of each pass, and still
+  reads `msg` on the way out of the loop. Without the rule, the copy
+  kept the two apart, and the function stepped `msg` through a third
+  pair, `l0 + 1` stored to `msg`, where it now does `INC msg; BNE;
+  INC msg+1`, 8 bytes shorter.
 - Neither `Mov` is volatile.
 
 Each round takes its pairs in instruction order, with the A-routed

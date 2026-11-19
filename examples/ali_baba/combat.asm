@@ -1144,12 +1144,10 @@ apply_damage:
    JSR   modify_char_stats
    LDY   #$03
    LDA   (__local_apply_damage__rec),Y
-   STA   __local_apply_damage__0
-   LDA   __zpabi_modify_char_stats__amount_0
-   STA   __zpabi_update_event_list__value_0
-   LDA   __zpabi_modify_char_stats__amount_1
-   STA   __zpabi_update_event_list__value_1
-   LDA   __local_apply_damage__0
+   LDX   __zpabi_modify_char_stats__amount_0
+   STX   __zpabi_update_event_list__value_0
+   LDX   __zpabi_modify_char_stats__amount_1
+   STX   __zpabi_update_event_list__value_1
    JSR   update_event_list
    LDY   #$03
    LDA   (__local_apply_damage__rec),Y
@@ -1621,24 +1619,18 @@ map_value_to_string:
    STA   __local_map_value_to_string__verb
    LDY   #>ATTACK_VERB_STRINGS
    STY   __local_map_value_to_string__1
+   LDX   __local_map_value_to_string__1
    JMP   .loop@13_continue
 .map_value_to_string@rot@1:
    LDY   #$00
-   LDA   (__local_map_value_to_string__verb),Y
-   CLC
-   ADC   __local_map_value_to_string__verb
-   BCC   .carry_inc@0
-   INC   __local_map_value_to_string__1
-   CLC
-.carry_inc@0:
-   ADC   #$01
+   SEC
+   ADC   (__local_map_value_to_string__verb),Y
    STA   __local_map_value_to_string__verb
    BCC   .loop@13_continue
-   INC   __local_map_value_to_string__1
+   INX
 .loop@13_continue:
    DEC   __local_map_value_to_string__index
    BNE   .map_value_to_string@rot@1
-   LDX   __local_map_value_to_string__1
    JMP   print_bottom_centered
 
 player_attack:
@@ -2376,9 +2368,9 @@ modify_char_stats:
    CLC
    ADC   STAT_SCALE
    STA   __local_modify_char_stats__threshold_0
-   BCC   .carry_inc@2
+   BCC   .carry_inc@1
    INC   __local_modify_char_stats__threshold_1
-.carry_inc@2:
+.carry_inc@1:
    LDA   __local_modify_char_stats__gold_0
    SEC
    SBC   __local_modify_char_stats__threshold_0

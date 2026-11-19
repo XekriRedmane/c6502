@@ -152,5 +152,80 @@ class TestCopyThroughIndex(unittest.TestCase):
         self.assertEqual(self._run(list(instrs)), instrs)
 
 
+class TestConstantsThroughIndex(unittest.TestCase):
+    """`STA t; LDA #k1; STA D1; LDA #k2; STA D2; LDA t` as `LDY #k1;
+    STY D1; LDY #k2; STY D2`, as at the entry of Ali Baba's
+    `print_bottom_centered`, whose argument arrives in A and X."""
+
+    T = asm_ast.Data(name="__local_f__t", offset=0)
+    ROW = asm_ast.Data(name="TEXT_ROW", offset=0)
+    COL = asm_ast.Data(name="TEXT_COL", offset=0)
+
+    def _run(self, instrs):
+        from passes.via_a_store_fold import apply_copy_through_index
+        fn = asm_ast.Function(
+            name="f", is_global=True, params=[], instructions=instrs,
+        )
+        out = apply_copy_through_index(asm_ast.Program(top_level=[fn]))
+        return out.top_level[0].instructions
+
+    def _entry(self, *body):
+        return [
+            asm_ast.Mov(src=A, dst=self.T),
+            *body,
+            asm_ast.Mov(src=self.T, dst=A),
+            asm_ast.Jump(target="g", reg_args=["A", "X"]),
+        ]
+
+    def test_constants_through_y(self):
+        out = self._run(self._entry(
+            asm_ast.Mov(src=asm_ast.Imm(value=23), dst=self.ROW),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=self.COL),
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Imm(value=23), dst=Y),
+            asm_ast.Mov(src=Y, dst=self.ROW),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=Y),
+            asm_ast.Mov(src=Y, dst=self.COL),
+            asm_ast.Jump(target="g", reg_args=["A", "X"]),
+        ])
+
+    def test_one_constant_loaded_once(self):
+        zero = asm_ast.Imm(value=0)
+        out = self._run(self._entry(
+            asm_ast.Mov(src=zero, dst=self.ROW),
+            asm_ast.Mov(src=zero, dst=self.COL),
+        ))
+        self.assertEqual(out[:3], [
+            asm_ast.Mov(src=zero, dst=Y),
+            asm_ast.Mov(src=Y, dst=self.ROW),
+            asm_ast.Mov(src=Y, dst=self.COL),
+        ])
+
+    def test_store_before_the_first_load_stays_a(self):
+        out = self._run(self._entry(
+            asm_ast.Mov(src=A, dst=self.ROW),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=A),
+            asm_ast.Mov(src=A, dst=self.COL),
+        ))
+        self.assertEqual(out[0], asm_ast.Mov(src=A, dst=self.ROW))
+        self.assertEqual(out[2], asm_ast.Mov(src=Y, dst=self.COL))
+
+    def test_kept_when_x_and_y_are_both_read(self):
+        instrs = self._entry(
+            asm_ast.Mov(src=asm_ast.Imm(value=23), dst=self.ROW),
+        )
+        instrs[-1] = asm_ast.Jump(target="g", reg_args=["A", "X", "Y"])
+        self.assertEqual(self._run(list(instrs)), instrs)
+
+    def test_kept_when_the_body_reads_a(self):
+        instrs = self._entry(
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=A),
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=A),
+            asm_ast.Mov(src=A, dst=self.ROW),
+        )
+        self.assertEqual(self._run(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,33 +18,25 @@ DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
 next_string@ret	EQU	$62
-__local_display_message__msg	EQU	$80
 __local_text_renderer__stream_1	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
-__local_display_message__0	EQU	$81
 __local_text_renderer__stream_0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
-__local_display_message__1	EQU	$82
 __local_text_renderer__at_0	EQU	$82
 __local_display_message__index	EQU	$83
 __local_num_to_decimal__value_1	EQU	$83
 __local_num_to_decimal__value_0	EQU	$84
-__local_display_message_loop__msg_0	EQU	$85
 __local_num_to_decimal__place_1	EQU	$85
 __local_render_stream__i	EQU	$85
-__local_display_message_loop__msg_1	EQU	$86
 __local_num_to_decimal__place_0	EQU	$86
 __local_num_to_decimal__started	EQU	$87
-__local_print_bottom_centered__s	EQU	$87
 __local_next_string__s	EQU	$88
 __local_num_to_decimal__out	EQU	$88
-__local_print_centered_plus_col__0	EQU	$88
 __local_next_string__1	EQU	$89
 __local_num_to_decimal__1	EQU	$89
-__local_print_centered_plus_col__1	EQU	$89
 __local_print_centered_plus_col__s	EQU	$8A
 __local_print_centered_plus_col__2	EQU	$8B
 __local_print_string__i	EQU	$8D
@@ -224,7 +216,7 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def display_message params=__zpabi_display_message__index locals=__local_display_message__msg,__local_display_message__0,__local_display_message__1,__local_display_message__index indirect=false in_cycle=false param_regs=A
+; def display_message params=__zpabi_display_message__index locals=__local_display_message__0,__local_display_message__msg_0,__local_display_message__msg_1,__local_display_message__index indirect=false in_cycle=false param_regs=A
 ; def display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 locals=__local_display_message_loop__count,__local_display_message_loop__msg_0,__local_display_message_loop__msg_1 indirect=false in_cycle=false param_regs=A,X
 ; def next_string params=__zpabi_next_string__s_0,__zpabi_next_string__s_1 locals=__local_next_string__0,__local_next_string__s,__local_next_string__1 indirect=false in_cycle=false param_regs=A,X
 ; def num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 locals=__local_num_to_decimal__0,__local_num_to_decimal__value_1,__local_num_to_decimal__value_0,__local_num_to_decimal__place_1,__local_num_to_decimal__place_0,__local_num_to_decimal__started,__local_num_to_decimal__out,__local_num_to_decimal__1 indirect=false in_cycle=false param_regs=A,X,,
@@ -664,15 +656,10 @@ next_string:
    STA   __local_next_string__s
    STX   __local_next_string__1
    LDY   #$00
-   CLC
+   SEC
    ADC   (__local_next_string__s),Y
-   BCC   .carry_inc@0
-   INC   __local_next_string__1
-   CLC
-.carry_inc@0:
-   ADC   #$01
    STA   next_string@ret
-   LDA   __local_next_string__1
+   TXA
    ADC   #$00
    STA   next_string@ret+1
    RTS
@@ -682,45 +669,37 @@ display_message:
 
    STA   __local_display_message__index
    LDA   LOCATIONS+5
-   STA   __local_display_message__msg
-   LDX   LOCATIONS+6
-   LDY   #$00
-   STY   MSG_LINE_COUNT
+   STA   next_string@ret
+   LDA   LOCATIONS+6
+   STA   next_string@ret+1
+   LDA   #$00
+   STA   MSG_LINE_COUNT
    JMP   .loop@3_start
 .display_message@rot@1:
-   LDX   __local_display_message__1
-   LDA   __local_display_message__0
-   JSR   next_string
+   LDX   next_string@ret+1
    LDA   next_string@ret
-   STA   __local_display_message__0
-   LDA   next_string@ret+1
-   STA   __local_display_message__1
+   JSR   next_string
 .loop@4_continue:
    LDY   #$00
-   LDA   (__local_display_message__0),Y
+   LDA   (next_string@ret),Y
    BNE   .display_message@rot@1
-   LDA   __local_display_message__0
-   CLC
-   ADC   #$01
-   STA   __local_display_message__msg
-   LDA   __local_display_message__1
-   ADC   #$00
-   TAX
+   INC   next_string@ret
+   BNE   .inc_done@1
+   INC   next_string@ret+1
+.inc_done@1:
    DEC   __local_display_message__index
 .loop@3_start:
-   LDA   __local_display_message__msg
-   STA   __local_display_message__0
-   STX   __local_display_message__1
    LDA   __local_display_message__index
    BNE   .loop@4_continue
-   LDA   __local_display_message__msg
+   LDX   next_string@ret+1
+   LDA   next_string@ret
    JMP   display_message_loop
 
 display_message_loop:
    SUBROUTINE
 
-   STA   __local_display_message_loop__msg_0
-   STX   __local_display_message_loop__msg_1
+   STA   next_string@ret
+   STX   next_string@ret+1
    JMP   .loop@5_continue
 .display_message_loop@rot@3:
    LDA   MSG_LINE_COUNT
@@ -728,8 +707,8 @@ display_message_loop:
    CMP   #$81
    BCC   .if_else@18
 .display_message_loop@scfold@0:
-   LDX   __local_display_message_loop__msg_1
-   LDA   __local_display_message_loop__msg_0
+   LDX   next_string@ret+1
+   LDA   next_string@ret
    JSR   print_bottom_centered
    JSR   scroll_status_line
    JMP   .if_end@17
@@ -738,18 +717,14 @@ display_message_loop:
    BEQ   .if_end@19
    JSR   scroll_status_line
 .if_end@19:
-   LDX   __local_display_message_loop__msg_1
-   LDA   __local_display_message_loop__msg_0
+   LDX   next_string@ret+1
+   LDA   next_string@ret
    JSR   print_bottom_centered
 .if_end@17:
    INC   MSG_LINE_COUNT
-   LDX   __local_display_message_loop__msg_1
-   LDA   __local_display_message_loop__msg_0
-   JSR   next_string
+   LDX   next_string@ret+1
    LDA   next_string@ret
-   STA   __local_display_message_loop__msg_0
-   LDA   next_string@ret+1
-   STA   __local_display_message_loop__msg_1
+   JSR   next_string
    LDA   MSG_LINE_COUNT
    CMP   #$02
    BCS   .display_message_loop@scfold@1
@@ -761,7 +736,7 @@ display_message_loop:
    JSR   print_ctrl_ab
 .loop@5_continue:
    LDY   #$00
-   LDA   (__local_display_message_loop__msg_0),Y
+   LDA   (next_string@ret),Y
    BNE   .display_message_loop@rot@3
    LDA   MSG_LINE_COUNT
    CMP   #$02
@@ -826,12 +801,10 @@ set_text_window_bottom:
 print_bottom_centered:
    SUBROUTINE
 
-   STA   __local_print_bottom_centered__s
-   LDA   #$17
-   STA   TEXT_ROW
-   LDA   #$00
-   STA   TEXT_COL
-   LDA   __local_print_bottom_centered__s
+   LDY   #$17
+   STY   TEXT_ROW
+   LDY   #$00
+   STY   TEXT_COL
    JMP   print_centered_plus_col
 
 print_centered_plus_col:
@@ -840,18 +813,11 @@ print_centered_plus_col:
    STA   __local_print_centered_plus_col__s
    STX   __local_print_centered_plus_col__2
    LDY   #$00
-   LDA   (__local_print_centered_plus_col__s),Y
-   STA   __local_print_centered_plus_col__0
    LDA   #$28
    SEC
-   SBC   __local_print_centered_plus_col__0
+   SBC   (__local_print_centered_plus_col__s),Y
    CLC
    ADC   #$01
-   STA   __local_print_centered_plus_col__1
-   TYA
-   ADC   #$00
-   LSR
-   LDA   __local_print_centered_plus_col__1
    ROR
    CLC
    ADC   TEXT_COL

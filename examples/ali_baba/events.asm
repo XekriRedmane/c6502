@@ -30,7 +30,6 @@ __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_adj_drop__1	EQU	$82
 __local_drop_gold_exec__0	EQU	$82
-__local_event_faction_scene_cont__0	EQU	$82
 __local_flush_pending_xp__2	EQU	$82
 __local_pick_random_mob__index	EQU	$82
 __local_pickup_treasure__gold_hi	EQU	$82
@@ -38,7 +37,6 @@ __local_scan_for_hostile__1	EQU	$82
 __local_trigger_scene_event__1	EQU	$82
 __local_adj_drop__down	EQU	$83
 __local_drop_gold_exec__1	EQU	$83
-__local_pick_random_mob__0	EQU	$83
 __local_pickup_treasure__0	EQU	$83
 __local_process_char_events__e	EQU	$83
 __local_event_faction_scene_cont__index	EQU	$84
@@ -948,11 +946,9 @@ pick_random_mob:
    STA   __local_pick_random_mob__1
    STX   __local_pick_random_mob__2
    LDY   #$08
-   LDA   (__local_pick_random_mob__1),Y
-   STA   __local_pick_random_mob__0
    LDA   __local_pick_random_mob__remaining
    SEC
-   SBC   __local_pick_random_mob__0
+   SBC   (__local_pick_random_mob__1),Y
    STA   __local_pick_random_mob__remaining
    BMI   .pick_random_mob@scfold@0
    BEQ   .pick_random_mob@scfold@0
@@ -1080,12 +1076,10 @@ event_faction_scene_cont:
    LDY   #$05
    LDA   (CHAR_PTR),Y
    AND   #$60
-   STA   __local_event_faction_scene_cont__0
-   LDA   #<LOCATIONS
-   STA   CHAR_PTR
-   LDA   #>LOCATIONS
-   STA   CHAR_PTR+1
-   LDA   __local_event_faction_scene_cont__0
+   LDX   #<LOCATIONS
+   STX   CHAR_PTR
+   LDX   #>LOCATIONS
+   STX   CHAR_PTR+1
    JSR   find_mob_by_faction
    BCS   .if_end@35
    JMP   event_spawn_mob
@@ -1491,12 +1485,10 @@ drop_gold_exec:
    JSR   display_message
    LDY   #$03
    LDA   (ENTITY_PTR),Y
-   STA   __local_drop_gold_exec__0
-   LDA   DROP_AMOUNT
-   STA   __zpabi_update_event_list__value_0
-   LDA   DROP_AMOUNT+1
-   STA   __zpabi_update_event_list__value_1
-   LDA   __local_drop_gold_exec__0
+   LDX   DROP_AMOUNT
+   STX   __zpabi_update_event_list__value_0
+   LDX   DROP_AMOUNT+1
+   STX   __zpabi_update_event_list__value_1
    JSR   update_event_list
 .if_end@60:
    LDA   #$02

@@ -409,8 +409,8 @@ main:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_main__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
-   ADC   Z_HEADER_ADDR
+   LDA   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   GLOBAL_ZVARS_ADDR
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__0
@@ -419,9 +419,9 @@ main:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_main__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   Z_ABBREV_TABLE
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__0

@@ -356,9 +356,9 @@ get_object_addr:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_get_object_addr__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   __local_get_object_addr__3
    LDA   Z_HEADER_ADDR+1
    ADC   __local_get_object_addr__0
@@ -661,9 +661,9 @@ get_property_ptr:
    LDA   (get_object_addr@ret),Y
    STA   __local_get_property_ptr__0
    INY
-   LDA   (get_object_addr@ret),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (get_object_addr@ret),Y
    STA   props
    LDA   Z_HEADER_ADDR+1
    ADC   __local_get_property_ptr__0
@@ -717,8 +717,8 @@ instr_get_prop:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_instr_get_prop__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
-   ADC   Z_HEADER_ADDR
+   LDA   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   __local_instr_get_prop__1
    LDA   Z_HEADER_ADDR+1
    ADC   __local_instr_get_prop__0

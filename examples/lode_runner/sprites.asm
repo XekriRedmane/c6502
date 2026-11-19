@@ -92,10 +92,6 @@ __local_erase_sprite_at_pixel_coords__6	EQU	$B8
 __local_draw_sprite_at_pixel_coords__6	EQU	$B9
 __local_erase_sprite_at_pixel_coords__7	EQU	$B9
 __local_compute_shifted_sprite__shift	EQU	$BA
-__local_compute_shifted_sprite__sprite	EQU	$BB
-__local_compute_shifted_sprite__0	EQU	$BC
-__local_compute_shifted_sprite__1	EQU	$BD
-__local_compute_shifted_sprite__2	EQU	$BE
 __local_compute_shifted_sprite__i	EQU	$BF
 __local_compute_shifted_sprite__data	EQU	$C0
 __local_compute_shifted_sprite__3	EQU	$C1
@@ -328,7 +324,7 @@ shifted_pixels:
 compute_shifted_sprite:
    SUBROUTINE
 
-   STA   __local_compute_shifted_sprite__sprite
+   STA   shifted_pixels@ret
    STX   __local_compute_shifted_sprite__shift
    LDA   #<PIXEL_SHIFT_TABLE
    CLC
@@ -336,7 +332,7 @@ compute_shifted_sprite:
    LDA   #>PIXEL_SHIFT_TABLE
    ADC   __local_compute_shifted_sprite__shift
    STA   __local_compute_shifted_sprite__4
-   LDA   __local_compute_shifted_sprite__sprite
+   LDA   shifted_pixels@ret
    CLC
    ADC   #<SPRITE_DATA
    STA   __local_compute_shifted_sprite__shift
@@ -360,16 +356,12 @@ compute_shifted_sprite:
    LDX   __local_compute_shifted_sprite__4
    LDA   __local_compute_shifted_sprite__5
    JSR   shifted_pixels
-   LDA   shifted_pixels@ret
-   STA   __local_compute_shifted_sprite__sprite
-   LDA   shifted_pixels@ret+1
-   STA   __local_compute_shifted_sprite__0
    LDY   #$00
    LDA   (shifted_pixels@ret),Y
    LDX   __local_compute_shifted_sprite__i
    STA   BLOCK_DATA,X
    INY
-   LDA   (__local_compute_shifted_sprite__sprite),Y
+   LDA   (shifted_pixels@ret),Y
    STA   BLOCK_DATA+1,X
    LDY   #$68
    LDA   (__local_compute_shifted_sprite__data),Y
@@ -377,10 +369,6 @@ compute_shifted_sprite:
    LDX   __local_compute_shifted_sprite__4
    LDA   __local_compute_shifted_sprite__5
    JSR   shifted_pixels
-   LDA   shifted_pixels@ret
-   STA   __local_compute_shifted_sprite__1
-   LDA   shifted_pixels@ret+1
-   STA   __local_compute_shifted_sprite__2
    LDA   __local_compute_shifted_sprite__i
    CLC
    ADC   #$01
@@ -391,7 +379,7 @@ compute_shifted_sprite:
    ORA   (shifted_pixels@ret),Y
    STA   BLOCK_DATA,X
    INY
-   LDA   (__local_compute_shifted_sprite__1),Y
+   LDA   (shifted_pixels@ret),Y
    LDX   __local_compute_shifted_sprite__i
    STA   BLOCK_DATA+2,X
    LDA   __local_compute_shifted_sprite__data
@@ -539,8 +527,8 @@ erase_sprite_at_pixel_coords:
    LDA   __local_erase_sprite_at_pixel_coords__5
    ADC   #$20
    STA   __local_erase_sprite_at_pixel_coords__sprite
-   LDA   (__local_erase_sprite_at_pixel_coords__0),Y
-   ORA   __local_erase_sprite_at_pixel_coords__1
+   LDA   __local_erase_sprite_at_pixel_coords__1
+   ORA   (__local_erase_sprite_at_pixel_coords__0),Y
    STA   (__local_erase_sprite_at_pixel_coords__4),Y
    INC   __local_erase_sprite_at_pixel_coords__b
 .loop@3_start:
@@ -603,10 +591,8 @@ draw_sprite_at_pixel_coords:
    LDA   __local_draw_sprite_at_pixel_coords__4
    ADC   #$20
    STA   __local_draw_sprite_at_pixel_coords__sprite
-   LDA   (__local_draw_sprite_at_pixel_coords__0),Y
-   STA   __local_draw_sprite_at_pixel_coords__0
    LDA   __local_draw_sprite_at_pixel_coords__1
-   EOR   __local_draw_sprite_at_pixel_coords__0
+   EOR   (__local_draw_sprite_at_pixel_coords__0),Y
    STA   __local_draw_sprite_at_pixel_coords__0
    LDA   __local_draw_sprite_at_pixel_coords__i
    CLC

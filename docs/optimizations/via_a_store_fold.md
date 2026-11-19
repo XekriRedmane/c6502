@@ -80,6 +80,30 @@ destination a byte `STX` can store, and N and Z are dead after, since
 they now come from the source. X must be dead from the `STA` on, or
 else Y, which takes its place. A ends with the value it had.
 
+The copies may be several, each a load and any number of stores or a
+memory-to-memory `Mov`, and a constant already in the register isn't
+loaded again. `print_bottom_centered` in `examples/ali_baba/text.c`
+gets its pointer in A and X and sets the cursor before passing it on.
+The tail call reads X, so Y carries the constants:
+
+```
+   STA   __local_print_bottom_centered__s       LDY   #$17
+   LDA   #$17                                   STY   TEXT_ROW
+   STA   TEXT_ROW                        ->     LDY   #$00
+   LDA   #$00                                   STY   TEXT_COL
+   STA   TEXT_COL                               JMP   print_centered_plus_col
+   LDA   __local_print_bottom_centered__s
+   JMP   print_centered_plus_col
+```
+
+A store before the first load stays `STA`, since A still holds the
+parked value there. That form, an argument in A held around constant
+stores at a function's entry, saved 4 bytes each in Ali Baba's
+`print_bottom_centered`, `print_at`, `apply_damage`,
+`event_faction_scene_cont`, `drop_gold_exec`, and `rwts_dispatch`,
+Zork's `branch_to_offset`, `do_2op`, and `instr_mod`, and Lode
+Runner's `drop_player_in_hole`, 40 bytes in all.
+
 It runs once, after the last peephole run, `carry_known`, and the
 [jump tables](jump_table.md). Inside the peephole fixed point it took
 the `LDA` of copies that other folds remove outright, and Zork's

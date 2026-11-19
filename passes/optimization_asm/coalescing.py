@@ -86,6 +86,16 @@ because one side is a byte of a multi-byte name, such as a pointer
 used as a `(zp),Y` base being advanced through 1-byte SSA temps at
 the bottom of a loop.
 
+The byte-level check (`_byte_edges`) applies Chaitin's rule for a
+move: a copy's write of its destination doesn't make the destination
+interfere with the copy's source, since both hold one value right
+after it. A later write of either while the other is live still adds
+the edge. Without the rule, a loop that starts each pass by copying a
+1-byte name into a byte of a pointer, and still reads the name on the
+path that leaves the loop, kept the two apart. `display_message` in
+`examples/ali_baba/text.c` copied `msg` into a second pair on every
+pass that way, and stepped `msg` through a third.
+
 P_a is often byte k of a multi-byte name. A constant shift is
 lowered to ASL / ROL on its destination in place, and asm-SSA keeps
 any name that's the target of such a read-modify-write as one
@@ -355,14 +365,16 @@ def _byte_edges(
     edges: set[frozenset[str]] = set()
     for bid, blk in liveness.cfg.blocks.items():
         live = set(liveness.live_out[bid])
-        for instr in reversed(blk.instructions):
+        for k in range(len(blk.instructions) - 1, -1, -1):
+            instr = blk.instructions[k]
             if isinstance(instr, asm_ast.Phi):
                 continue
             defs = list(_defs_in(instr))
             after = live | {dv.name for dv in defs}
+            source = _copied_from(blk.instructions, k)
             for dv in defs:
                 for n in after:
-                    if n != dv.name:
+                    if n != dv.name and n != source:
                         edges.add(frozenset((dv.name, n)))
             for dv in defs:
                 live.discard(dv.name)
@@ -383,6 +395,30 @@ def _byte_edges(
                 if n != dst:
                     edges.add(frozenset((dst, n)))
     return edges
+
+
+def _copied_from(instrs, k: int) -> str | None:
+    """The name whose value `instrs[k]` copies into its Pseudo
+    destination, or None. That's the source of `Mov(P_a, P_b)`, or of
+    `Mov(P_a, A)` right before `Mov(A, P_b)`. Both names hold one
+    value just after the copy, so the copy's write of P_b doesn't make
+    them interfere (Chaitin's rule for a move); a later write of
+    either while the other is live still does."""
+    ins = instrs[k]
+    if not (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+            and isinstance(ins.dst, asm_ast.Pseudo)):
+        return None
+    src = ins.src
+    if isinstance(src, asm_ast.Reg) and isinstance(src.reg, asm_ast.A):
+        prev = instrs[k - 1] if k else None
+        if not (isinstance(prev, asm_ast.Mov) and not prev.is_volatile
+                and isinstance(prev.dst, asm_ast.Reg)
+                and isinstance(prev.dst.reg, asm_ast.A)):
+            return None
+        src = prev.src
+    if isinstance(src, asm_ast.Pseudo) and src.name != ins.dst.name:
+        return src.name
+    return None
 
 
 def _move_related_pairs(

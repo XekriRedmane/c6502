@@ -38,7 +38,6 @@ __local_draw_map_entities__3	EQU	$86
 __local_draw_map_entities__4	EQU	$87
 __local_rwts_dispatch__iob	EQU	$87
 __local_rwts_dispatch__0	EQU	$88
-__local_rwts_dispatch__command	EQU	$89
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -888,12 +887,10 @@ scene_setup:
 rwts_dispatch:
    SUBROUTINE
 
-   STA   __local_rwts_dispatch__command
-   LDA   RWTS_IOB_PTR
-   STA   __local_rwts_dispatch__iob
-   LDA   RWTS_IOB_PTR+1
-   STA   __local_rwts_dispatch__0
-   LDA   __local_rwts_dispatch__command
+   LDX   RWTS_IOB_PTR
+   STX   __local_rwts_dispatch__iob
+   LDX   RWTS_IOB_PTR+1
+   STX   __local_rwts_dispatch__0
    LDY   #$0C
    STA   (RWTS_IOB_PTR),Y
    LDA   #$00

@@ -270,6 +270,10 @@ this directory:
   IndexedData on the right is exactly the addressing mode CMP can
   consume directly once `asm_emit._emit_compare` and the in-sim
   `_emit_compare` dispatch IndexedData (added alongside this pass).
+  An `ADC` / `SBC` / `AND` / `ORA` / `EOR` of the temporary folds the
+  same way for an immediate, `Data` / `ZP`, `IndexedData`, or
+  `IndirectZpY` source, the last with a Y-safe `other` (`40 - s[0]`
+  is `LDA #$28; SEC; SBC (s),Y`).
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
 - `adc_commute.py` — `apply_adc_commute` peephole. `STA t; LDA m;
   CLC; ADC t` reads `m` in the `ADC` (and `AND`, `ORA`). Then
@@ -285,6 +289,18 @@ this directory:
   and shift that would set C the same way, when A and N/Z are dead
   after it: statements taking bytes of one shifted value
   (`load_packed_address`) share one `ASL` / `ROL` / `ROL` chain.
+- `carry_halve.py` — `apply_carry_halve`. `ADC s; STA t; LDA #0;
+  ADC #0; LSR; LDA t; ROR` (a byte sum promoted to `int`, halved, and
+  truncated) → `ADC s; ROR`, since C after the `ADC` is the sum's bit
+  8, when `t` is dead after its load and V is dead after the `ROR`.
+  The `LDA #0` may be a `TXA` / `TYA` of a register the block set to
+  0. `(space + 1) / 2` in Ali Baba's `print_centered_plus_col`.
+- `carry_in_add.py` — `apply_carry_in_add`. The two 16-bit adds of
+  `p + b + 1` (second operand's high byte 0) → one add after `SEC`,
+  when C and V are dead after, the temporaries are the function's own
+  slots dead after their loads, and the high byte read after the
+  first store is a constant or another own slot. Ali Baba's
+  `next_string`. Runs before `carry_inc`.
 - `label_offset_fold.py` — `apply_label_offset_fold`. A 2-byte add of
   a label's halves and a constant (`LDA #k; CLC; ADC #<r; STA d0;
   LDA #k2; ADC #>r; STA d1`) becomes `LDA #<(r+K); STA d0; LDA
@@ -664,6 +680,21 @@ this directory:
   Runs once after the third peephole fixed point and `carry_known`,
   after the passes that look for `__local_*` slots. User guide:
   docs/optimizations/slot_coalescing.md.
+- `ret_slot_coalescing.py` — `apply_ret_slot_coalescing`. Renames a
+  pair of `G`'s `__local_G__*` bytes that `G` copies from `F@ret`
+  (`return_in_zero_page`) to `F@ret`'s two bytes, `(zp),Y` bases at
+  the pair's address included, when no instruction writes one byte
+  while its partner is live (except a copy of one into the other).
+  `G` must call `F` (so its callers already drop their facts about
+  `F@ret` at a call of it), have a private pool, be off every cycle,
+  and make no
+  `save_hardware_stack` call (`compile._ret_coalescing_eligible`). A
+  call writes `F@ret` when its callee is `F` or leads to `F` in the
+  unit, or when it leaves the unit and some entry point (a global or
+  address-taken function) leads to `F` without leading to `G`; one
+  that leads to `G` would be a cycle the linker rejects. Runs right
+  after `slot_coalescing`. Ali Baba's `display_message`. User guide:
+  docs/optimizations/ret_slot_coalescing.md.
 - `slot_sharing.py` — `find_shares`: values kept in a callee's
   parameter bytes across calls. A parameter passed on unchanged
   aliases the callee's slot (a share *member*), and a local a caller
@@ -712,7 +743,12 @@ this directory:
   `apply_copy_through_index`, run once after the jump tables, turns
   `STA t; LDA M; STA D; LDA t` into `LDX M; STX D` (or Y) when `t` is
   the function's own slot, dead after, X (or Y) is dead, and N/Z are
-  dead after.
+  dead after. The run between the `STA t` and the `LDA t` may hold
+  several copies, each a load and stores or a memory-to-memory `Mov`,
+  and a constant already in the register isn't loaded again, so an
+  argument in A held around constant stores at a function's entry
+  keeps A (`print_bottom_centered`: `LDY #$17; STY TEXT_ROW; LDY #0;
+  STY TEXT_COL; JMP`).
 - `index_inc_cmp_y.py` — `apply_index_inc_cmp_y`. Promotes the
   5-atom `Mov(IndexedData(_, index=X), Reg(A)); Mov(Reg(A),
   <tmp>); Inc/Dec(<tmp>); Mov(<tmp>, Reg(A)); Compare(Reg(A),
@@ -1383,6 +1419,10 @@ safety net.
 
 Always-on (runs in both optimized AND unoptimized pipelines):
 
+- `apply_carry_halve` — a halved byte sum's high byte dropped, `ADC
+  s; ROR`. See the module docstring in `carry_halve.py`.
+- `apply_carry_in_add` — `p + b + 1` as one add after `SEC`. See the
+  module docstring in `carry_in_add.py`.
 - `apply_inc_peephole` — multi-byte ADC-#1 chains on stable memory →
   `INC + BNE` chains. See "Multi-byte INC peephole" below.
 - `apply_inc_low_byte_test` — a test of an INC chain's low byte

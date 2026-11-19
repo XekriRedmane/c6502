@@ -475,7 +475,7 @@ class TestPinnedParams(unittest.TestCase):
         equs = _equs(asm)
         self.assertEqual(equs["__zpabi_sum__p_0"], 0x30)
         self.assertEqual(equs["__zpabi_sum__p_1"], 0x31)
-        self.assertIn("LDA (__zpabi_sum__p_0),Y", _body(asm, "sum"))
+        self.assertIn("ADC (__zpabi_sum__p_0),Y", _body(asm, "sum"))
         self.assertIn("STA   __zpabi_sum__p_0", asm)
         self.assertIn("pinned=$30,$31,", asm)
         for optimize in (False, True):

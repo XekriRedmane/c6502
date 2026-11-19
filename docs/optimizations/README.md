@@ -200,8 +200,10 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [A call that doesn't return](noreturn_call.md). Ends the path at a call to a `[[noreturn]]` function, so nothing after it has to survive the call.
 - [A choice of offsets from one pointer](phi_offset.md). Makes a join of `p + k1` and `p + k2` a choice of `k1` or `k2` added to `p`, which becomes `(p),Y` with the offset in Y.
 - [A compound assignment's call first](calls_first.md). Evaluates the right operand of `lval OP= rval` first when only it calls a function, so the left one isn't kept across the call.
+- [A copy of a returned pointer kept in its zero-page bytes](ret_slot_coalescing.md). Renames a local pair that copies a `static` function's zero-page result to the result's own bytes, when they're never live with different values.
 - [A divide and a remainder computed together](divmod_hoist.md). Computes a `/` and a `%` of the same operands at one place when a store, a call, or a branch comes between them, so they share one loop or helper call.
 - [A global read after it's stored](read_stored_global.md). Makes an instruction read a global just stored from a temporary, as `*++P` does, so the temporary folds away.
+- [A halved sum's ninth bit from the carry](carry_halve.md). Drops the high byte of `(x + y) / 2` on bytes, whose ninth bit `ROR` takes from the carry of the add.
 - [A loop counted down to 0](count_down.md). Makes a byte loop counter that only its own test and step read count the passes left, so the test is `DEC i; BNE`.
 - [A parameter's copy in the parameter's slot](slot_coalescing.md). Renames a zero-page local that copies a parameter to the parameter's own slot, or that's copied into a callee's slot for the call, when they're never live with different values.
 - [A pointer returned in zero page](return_in_zero_page.md). Makes a `static` function returning a pointer leave it in a zero-page pointer of its own, which its callers read through.
@@ -280,13 +282,14 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Memory constant propagation](mem_const_prop.md). Replaces reads of bytes known to hold a constant in a block with immediates.
 - [Memory value propagation](memory_value_propagation.md). Rewrites reads of staged zero-page bytes, and `(DPTR),Y`, to their original source.
 - [Memory-to-memory move splitting](split_mem_to_mem.md). Splits memory-to-memory moves into LDA and STA atoms that other peepholes rewrite, and X-to-Y moves into the two transfers through A.
-- [Move coalescing](coalescing.md). Merges copy-joined values in the interference graph so both share one byte.
+- [Move coalescing](coalescing.md). Merges copy-joined values in the interference graph so both share one byte, with Chaitin's rule for a copy when a byte joins a multi-byte value.
 - [Moving a constant out of an offset](reassoc_offset.md). Rewrites `p + (x + k)` as `(p + x) + k` so subscripts share `p + x`.
 - [Multi-byte INC](inc_peephole.md). Rewrites an in-place add of 1 to memory as an INC and BNE chain.
 - [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md). Does a promoted byte's `&`, `|`, or `^` at one byte when the result's high bytes are zero, so a comparison of it narrows.
 - [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md). Does a promoted byte's `/`, `%`, `>>`, and a `<<` that stays below 256 on one byte, and reads the operands of a 16-bit product of two such values as bytes, when the values are bounded by 255.
 - [Narrowing widened arithmetic](narrow_widened_arith.md). Does promoted byte arithmetic at one byte when only the low byte is used.
-- [Operands without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`, and the same for `ADC`, `SBC`, `AND`, `ORA`, and `EOR`.
+- [Operands without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`, and the same for `ADC`, `SBC`, `AND`, `ORA`, and `EOR`, with a source read through `(zp),Y` too.
+- [One add with the carry set for `p + b + 1`](carry_in_add.md). Folds the two 16-bit adds of `p + b + 1` into one that starts with `SEC`.
 - [OR-with-zero absorb](or_zero_absorb.md). Rewrites `LDA #0; ORA x` as `LDA x` before move coalescing.
 - [Outlined runs](outline_runs.md). Moves a run of instructions that several places in a unit repeat into a function of its own, which each place calls.
 - [PHA and PLA removal](dead_pha_pla.md). Drops a PHA/PLA pair around instructions that leave A untouched.
@@ -314,7 +317,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Sinking an AND past a bit test](sink_and_past_branch.md). Moves a byte AND past a bit-7 test into both successor blocks.
 - [Sinking increments](sink_increment.md). Moves `Y = X ± c` past X's last read so X and Y share a register.
 - [Static const reads](static_const_fold.md). Replaces reads of static const scalars, including fixed-address const pointers, with their values.
-- [Store X or Y directly](via_a_store_fold.md). Turns `TXA; STA M` into `STX M` (and TYA into STY) when A is dead.
+- [Store X or Y directly](via_a_store_fold.md). Turns `TXA; STA M` into `STX M` (and TYA into STY) when A is dead, and copies bytes and constants through X or Y while A holds a value.
 - [Strength reduction](strength_reduction.md). Rewrites multiply, divide, and modulo by constants as shifts, masks, adds, or copies.
 - [Subtract-and-test fusion](sub1_test_zero_peephole.md). Drops `LDA #0; CMP i` after `SBC #1` and branches on the inverted carry.
 - [Tables split into low and high bytes](split_tables.md). Stores a table of 2-byte elements read by a byte index as its low bytes and then its high bytes, so the index needs no shift.
@@ -456,24 +459,26 @@ them whenever a pass is added or moved.
 20. Peephole fixed point, third run.
 21. [Carry already known](carry_known.md)
 22. [A parameter's copy in the parameter's slot](slot_coalescing.md)
-23. [Loop-invariant compare key in A](loop_invariant_a.md)
-24. [Loop test at the bottom](rotate_loop_test.md)
-25. Peephole fixed point, fourth run, since the rotation leaves
+23. [A copy of a returned pointer kept in its zero-page
+    bytes](ret_slot_coalescing.md)
+24. [Loop-invariant compare key in A](loop_invariant_a.md)
+25. [Loop test at the bottom](rotate_loop_test.md)
+26. Peephole fixed point, fourth run, since the rotation leaves
     shapes such as `DEC i; LDA i; BNE` at a loop's new bottom.
-26. [Count-down counter in X or Y](counter_to_index_reg.md), once
+27. [Count-down counter in X or Y](counter_to_index_reg.md), once
     more, for a counter whose test the rotation moved next to its
     `DEC`.
-27. Peephole fixed point, fifth run.
-28. [Carry already known](carry_known.md), once more.
-29. [Jump tables](jump_table.md)
-30. [Store X or Y directly](via_a_store_fold.md), for a byte copied
+28. Peephole fixed point, fifth run.
+29. [Carry already known](carry_known.md), once more.
+30. [Jump tables](jump_table.md)
+31. [Store X or Y directly](via_a_store_fold.md), for a byte copied
     through X or Y while A is busy.
-31. Long-branch expansion.
-32. [Shorter jumps](short_jumps.md)
-33. [Shared function tails](shared_tails.md)
-34. [Outlined runs](outline_runs.md)
-35. Zero-page global placement, and lowering to `asm2_ast`.
-36. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+32. Long-branch expansion.
+33. [Shorter jumps](short_jumps.md)
+34. [Shared function tails](shared_tails.md)
+35. [Outlined runs](outline_runs.md)
+36. Zero-page global placement, and lowering to `asm2_ast`.
+37. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,
@@ -481,57 +486,59 @@ in order, as one *fixed point*. Its loop is capped at 16 sweeps, and
 reaching the cap raises an error.
 
 1. [Memory-to-memory move splitting](split_mem_to_mem.md)
-2. [Multi-byte INC](inc_peephole.md)
-3. [Testing the low byte after an INC chain](inc_low_byte_test.md)
-4. [Carry INC](carry_inc.md)
-5. [DEC](dec_peephole.md)
-6. [Subtract-and-test fusion](sub1_test_zero_peephole.md)
-7. [Direct load into X or Y](direct_index_load.md)
-8. [PHA and PLA removal](dead_pha_pla.md)
-9. [CPX and CPY](cpx_cpy_peephole.md)
-10. [Memory value propagation](memory_value_propagation.md)
-11. [Shift in A](shift_in_a.md)
-12. [Load after read-modify-write](redundant_load_after_rmw.md)
-13. [Redundant load elimination](redundant_load.md)
-14. [Redundant store elimination](redundant_store.md)
-15. [Constant store order](constant_store_order.md)
-16. [Join store](join_store.md)
-17. [Rematerialization of staged values](asm_remat.md)
-18. [Asm dead-store elimination](asm_dead_store.md)
-19. [Loop constant in A](loop_constant_a.md)
-20. [Dead A arithmetic](dead_a_arith.md)
-21. [Dead label drop](dead_label_drop.md)
-22. [Unreachable code drop](unreachable_drop.md)
-23. [Branch inversion](branch_invert.md)
-24. [Branch to next label](branch_to_next_drop.md)
-25. [Branch through jump](branch_through_jump.md)
-26. [Branch threading on a known flag](branch_thread.md)
-27. [Branch threading on known values](branch_value_thread.md)
-28. [DEX and DEY for a register counter](dec_register_peephole.md)
-29. [TXA past a branch](transfer_past_branch.md)
-30. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
-31. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
-32. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
-33. [Memory constant propagation](mem_const_prop.md)
-34. [Constant AND and ORA fold](const_arith_fold.md)
-35. [Link-time address arithmetic](label_offset_fold.md)
-36. [Carry set again by a shift](carry_recompute.md)
-37. [Carry-flag return peepholes](carry_return.md), which are three
+2. [A halved sum's ninth bit from the carry](carry_halve.md)
+3. [One add with the carry set for `p + b + 1`](carry_in_add.md)
+4. [Multi-byte INC](inc_peephole.md)
+5. [Testing the low byte after an INC chain](inc_low_byte_test.md)
+6. [Carry INC](carry_inc.md)
+7. [DEC](dec_peephole.md)
+8. [Subtract-and-test fusion](sub1_test_zero_peephole.md)
+9. [Direct load into X or Y](direct_index_load.md)
+10. [PHA and PLA removal](dead_pha_pla.md)
+11. [CPX and CPY](cpx_cpy_peephole.md)
+12. [Memory value propagation](memory_value_propagation.md)
+13. [Shift in A](shift_in_a.md)
+14. [Load after read-modify-write](redundant_load_after_rmw.md)
+15. [Redundant load elimination](redundant_load.md)
+16. [Redundant store elimination](redundant_store.md)
+17. [Constant store order](constant_store_order.md)
+18. [Join store](join_store.md)
+19. [Rematerialization of staged values](asm_remat.md)
+20. [Asm dead-store elimination](asm_dead_store.md)
+21. [Loop constant in A](loop_constant_a.md)
+22. [Dead A arithmetic](dead_a_arith.md)
+23. [Dead label drop](dead_label_drop.md)
+24. [Unreachable code drop](unreachable_drop.md)
+25. [Branch inversion](branch_invert.md)
+26. [Branch to next label](branch_to_next_drop.md)
+27. [Branch through jump](branch_through_jump.md)
+28. [Branch threading on a known flag](branch_thread.md)
+29. [Branch threading on known values](branch_value_thread.md)
+30. [DEX and DEY for a register counter](dec_register_peephole.md)
+31. [TXA past a branch](transfer_past_branch.md)
+32. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
+33. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
+34. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
+35. [Memory constant propagation](mem_const_prop.md)
+36. [Constant AND and ORA fold](const_arith_fold.md)
+37. [Link-time address arithmetic](label_offset_fold.md)
+38. [Carry set again by a shift](carry_recompute.md)
+39. [Carry-flag return peepholes](carry_return.md), which are three
     passes run back to back.
-38. [Round-trip load drop](round_trip_load.md)
-39. [Sign-bit test without AND](and_sign_bit_branch.md)
-40. [Self-store drop](self_store_drop.md)
-41. [A byte written back through its pointer](pointer_self_store.md)
-42. [Redundant compare](redundant_compare.md)
-43. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-44. [Commuted ADC, AND, and ORA](adc_commute.md)
-45. [CMP and SBC fusion](cmp_sbc_fusion.md)
-46. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-47. [Tail call](tail_call.md)
-48. [Tail merge](tail_merge.md)
-49. [Cross jumping](cross_jump.md)
-50. [Store X or Y directly](via_a_store_fold.md)
-51. [Transfer plus or minus one](transfer_pm1_store.md)
+40. [Round-trip load drop](round_trip_load.md)
+41. [Sign-bit test without AND](and_sign_bit_branch.md)
+42. [Self-store drop](self_store_drop.md)
+43. [A byte written back through its pointer](pointer_self_store.md)
+44. [Redundant compare](redundant_compare.md)
+45. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+46. [Commuted ADC, AND, and ORA](adc_commute.md)
+47. [CMP and SBC fusion](cmp_sbc_fusion.md)
+48. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+49. [Tail call](tail_call.md)
+50. [Tail merge](tail_merge.md)
+51. [Cross jumping](cross_jump.md)
+52. [Store X or Y directly](via_a_store_fold.md)
+53. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `-O`
 

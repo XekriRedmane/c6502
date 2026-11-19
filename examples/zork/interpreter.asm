@@ -178,7 +178,6 @@ __local_main__sector	EQU	$E7
 __local_instr_clear_attr__0	EQU	$E8
 __local_instr_div__quotient	EQU	$E8
 __local_instr_get_prop_len__0	EQU	$E8
-__local_instr_mod__0	EQU	$E8
 __local_instr_mul__product	EQU	$E8
 __local_instr_restore__pages	EQU	$E8
 __local_instr_save__pages	EQU	$E8
@@ -246,7 +245,7 @@ __local_print_number__n_1	EQU	$FA
 __local_print_obj__0	EQU	$FA
 __local_var_get__0	EQU	$FA
 __local_ascii_to_zchar__left	EQU	$FB
-__local_branch_to_offset__0	EQU	$FB
+__local_branch_to_offset__pages_0	EQU	$FB
 __local_get_nonstack_var__var	EQU	$FB
 __local_instr_call__args	EQU	$FB
 __local_instr_get_prop__2	EQU	$FB
@@ -255,24 +254,23 @@ __local_pop__0	EQU	$FB
 __local_print_number__n_0	EQU	$FB
 __local_print_zstring__ch	EQU	$FB
 __local_ascii_to_zchar__0	EQU	$FC
-__local_branch_to_offset__pages_0	EQU	$FC
+__local_branch_to_offset__offset_0	EQU	$FC
 __local_get_nonstack_var__0	EQU	$FC
 __local_instr_call__2	EQU	$FC
 __local_pop__1	EQU	$FC
 __local_print_number__digits	EQU	$FC
 __local_print_zstring__c_0	EQU	$FC
 __local_ascii_to_zchar__1	EQU	$FD
-__local_branch_to_offset__offset_0	EQU	$FD
+__local_branch_to_offset__pages_1	EQU	$FD
 __local_dump_buffer_with_more__0	EQU	$FD
 __local_get_nonstack_var__1	EQU	$FD
 __local_store_result__0	EQU	$FD
 __local_ascii_to_zchar__2	EQU	$FE
-__local_branch_to_offset__pages_1	EQU	$FE
+__local_branch_to_offset__1	EQU	$FE
 __local_dump_buffer_with_more__end	EQU	$FE
 __local_get_nonstack_var__2	EQU	$FE
 __local_store_result__value_1	EQU	$FE
 __local_ascii_to_zchar__index	EQU	$FF
-__local_branch_to_offset__1	EQU	$FF
 __local_store_result__value_0	EQU	$FF
 __main_size	EQU	$0146
 BUFF_AREA	EQU	$0200
@@ -286,9 +284,9 @@ __main_end	EQU	$0946
 __main_load_end	EQU	$0946
 __text_load	EQU	$0946
 __text_start	EQU	$0946
-__text_size	EQU	$0FFC
-__text_end	EQU	$1942
-__text_load_end	EQU	$1942
+__text_size	EQU	$0FF0
+__text_end	EQU	$1936
+__text_load_end	EQU	$1936
 RWTS	EQU	$2900
 __text_rest_load	EQU	$2C00
 __text_rest_start	EQU	$2C00
@@ -457,8 +455,8 @@ main:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_main__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
-   ADC   Z_HEADER_ADDR
+   LDA   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   GLOBAL_ZVARS_ADDR
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__0
@@ -467,9 +465,9 @@ main:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_main__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   Z_ABBREV_TABLE
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__0
@@ -816,9 +814,9 @@ do_0op:
    PHA
    RTS
 .jtab@0:
-   DC.B  $6C, $0B, $6F, $0B, $1B, $11, $75, $0B
+   DC.B  $6C, $0B, $6F, $0B, $17, $11, $75, $0B
    DC.B  $87, $0B, $2F, $32, $D0, $32, $24, $2C
-   DC.B  $7E, $0B, $6E, $09, $2A, $2C, $2E, $12
+   DC.B  $7E, $0B, $6E, $09, $2A, $2C, $2A, $12
 .case@4:
    JMP   branch@tail1
 .case@5:
@@ -851,9 +849,9 @@ do_1op:
    PHA
    RTS
 .jtab@1:
-   DC.B  $BC, $0B, $77, $14, $42, $15, $4E, $15
-   DC.B  $19, $17, $13, $0B, $2E, $0B, $CA, $0B
-   DC.B  $40, $2C, $13, $13, $D2, $0B, $D7, $0B
+   DC.B  $BC, $0B, $73, $14, $3A, $15, $46, $15
+   DC.B  $11, $17, $13, $0B, $2E, $0B, $CA, $0B
+   DC.B  $40, $2C, $0F, $13, $D2, $0B, $D7, $0B
    DC.B  $DC, $0B, $E7, $0B, $EF, $0B, $F7, $0B
 .case@18:
    TXA
@@ -914,8 +912,8 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.B  $73, $0A, $2C, $0C, $5D, $0C, $45, $17
-   DC.B  $71, $2F, $7E, $0C, $83, $0C, $C8, $18
+   DC.B  $73, $0A, $2C, $0C, $5D, $0C, $3D, $17
+   DC.B  $71, $2F, $7E, $0C, $83, $0C, $BC, $18
    DC.B  $8A, $0C, $91, $0C
 .case@62:
    LDA   Z_HEADER_ADDR
@@ -1142,31 +1140,29 @@ do_instruction:
    AND   #$1F
 do_2op:
    SUBROUTINE
-   STA   __local_do_2op__equal
-   LDA   OPERANDS+2
-   STA   __local_do_2op__1
-   LDA   OPERANDS+3
-   STA   __local_do_2op__2
-   LDA   __local_do_2op__equal
+   LDX   OPERANDS+2
+   STX   __local_do_2op__1
+   LDX   OPERANDS+3
+   STX   __local_do_2op__2
    CMP   #$19
    BCC   .lb_skip@1
    JMP   internal_error
 .lb_skip@1:
    ASL
    TAY
-   LDA   $0DD4,Y
+   LDA   $0DD0,Y
    PHA
    LDA   .jtab@2,Y
    PHA
    RTS
 .jtab@2:
-   DC.B  $40, $2C, $04, $0E, $65, $0E, $79, $0E
-   DC.B  $89, $0E, $99, $0E, $5C, $15, $B0, $0E
-   DC.B  $CD, $0E, $DD, $0E, $BE, $15, $CD, $15
-   DC.B  $E3, $15, $EA, $0E, $54, $13, $F7, $0E
-   DC.B  $12, $0F, $3E, $16, $A1, $16, $E3, $16
-   DC.B  $2B, $0F, $39, $0F, $0A, $18, $6E, $18
-   DC.B  $AC, $18
+   DC.B  $40, $2C, $00, $0E, $61, $0E, $75, $0E
+   DC.B  $85, $0E, $95, $0E, $54, $15, $AC, $0E
+   DC.B  $C9, $0E, $D9, $0E, $B6, $15, $C5, $15
+   DC.B  $DB, $15, $E6, $0E, $50, $13, $F3, $0E
+   DC.B  $0E, $0F, $36, $16, $99, $16, $DB, $16
+   DC.B  $27, $0F, $35, $0F, $02, $18, $66, $18
+   DC.B  $A4, $18
 .case@35:
    LDA   OPERAND_COUNT
    SEC
@@ -1926,9 +1922,9 @@ get_object_addr:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_divu16__partial_1
    INY
-   LDA   (Z_HEADER_ADDR),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   __local_divu16__quotient
    LDA   Z_HEADER_ADDR+1
    ADC   __local_divu16__partial_1
@@ -2257,42 +2253,40 @@ branch:
    LDX   __local_ascii_to_zchar__z
 branch_to_offset:
    SUBROUTINE
-   STA   __local_ascii_to_zchar__1
-   STX   __local_ascii_to_zchar__0
+   STA   __local_ascii_to_zchar__0
+   STX   __local_ascii_to_zchar__left
    TXA
    BPL   .branch_to_offset@asm_ssa_split@0
    LDA   #$01
-   STA   __local_ascii_to_zchar__2
+   STA   __local_ascii_to_zchar__1
 .if_end@10:
    LDA   Z_PC
    CLC
-   ADC   __local_ascii_to_zchar__1
-   STA   __local_ascii_to_zchar__index
+   ADC   __local_ascii_to_zchar__0
+   STA   __local_ascii_to_zchar__2
    BCC   .if_end@11
-   INC   __local_ascii_to_zchar__0
+   INC   __local_ascii_to_zchar__left
    BNE   .if_end@11
-   INC   __local_ascii_to_zchar__2
+   INC   __local_ascii_to_zchar__1
 .if_end@11:
 .inc_done@0:
-   LDA   __local_ascii_to_zchar__0
-   ORA   __local_ascii_to_zchar__2
+   LDA   __local_ascii_to_zchar__left
+   ORA   __local_ascii_to_zchar__1
    BNE   .if_end@12
-   LDA   __local_ascii_to_zchar__index
+   LDA   __local_ascii_to_zchar__2
    STA   Z_PC
    RTS
 .if_end@12:
    LDA   Z_PC+1
    CLC
-   ADC   __local_ascii_to_zchar__0
-   STA   __local_ascii_to_zchar__0
-   LDA   Z_PC+2
-   ADC   __local_ascii_to_zchar__2
+   ADC   __local_ascii_to_zchar__left
    STA   __local_ascii_to_zchar__left
-   LDA   __local_ascii_to_zchar__index
-   STA   Z_PC
-   LDA   __local_ascii_to_zchar__0
-   STA   Z_PC+1
-   LDA   __local_ascii_to_zchar__left
+   LDA   Z_PC+2
+   ADC   __local_ascii_to_zchar__1
+   LDX   __local_ascii_to_zchar__2
+   STX   Z_PC
+   LDX   __local_ascii_to_zchar__left
+   STX   Z_PC+1
    AND   #$01
    STA   Z_PC+2
    LDA   #$00
@@ -2300,7 +2294,7 @@ branch_to_offset:
    RTS
 .branch_to_offset@asm_ssa_split@0:
    LDA   #$00
-   STA   __local_ascii_to_zchar__2
+   STA   __local_ascii_to_zchar__1
    JMP   .if_end@10
 instr_get_child:
    SUBROUTINE
@@ -2430,9 +2424,9 @@ get_property_ptr:
    LDA   (get_object_addr@ret),Y
    STA   __local_attr_ptr_and_mask__n
    INY
-   LDA   (get_object_addr@ret),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (get_object_addr@ret),Y
    STA   props
    LDA   Z_HEADER_ADDR+1
    ADC   __local_attr_ptr_and_mask__n
@@ -2478,8 +2472,8 @@ instr_get_prop:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_branch__hi
    INY
-   LDA   (Z_HEADER_ADDR),Y
-   ADC   Z_HEADER_ADDR
+   LDA   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   __local_ascii_to_zchar__dest
    LDA   Z_HEADER_ADDR+1
    ADC   __local_branch__hi
@@ -2844,12 +2838,10 @@ instr_mod:
    SUBROUTINE
    JSR   instr_mul@run0
    JSR   check_sign
-   STA   __local_instr_clear_attr__0
-   LDA   __local_do_1op__0
-   STA   __local_attr_ptr_and_mask__n
-   LDA   __local_dec_var__0
-   STA   __local_attr_ptr_and_mask__0
-   LDA   __local_instr_clear_attr__0
+   LDY   __local_do_1op__0
+   STY   __local_attr_ptr_and_mask__n
+   LDY   __local_dec_var__0
+   STY   __local_attr_ptr_and_mask__0
    JSR   divu16
    LDX   remainder+1
    LDA   remainder
@@ -3087,9 +3079,9 @@ get_dictionary_addr:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_attr_ptr_and_mask__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   get_dictionary_addr@ret
    LDA   Z_HEADER_ADDR+1
    ADC   __local_attr_ptr_and_mask__0

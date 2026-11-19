@@ -36,7 +36,6 @@ __local_random_in_range__1	EQU	$81
 __zpabi_compute_checksum__end_1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
-__local_cold_restart__1	EQU	$82
 __local_colrow_to_pos__col	EQU	$82
 __local_get_char_record__index	EQU	$82
 __local_random_in_range__2	EQU	$82
@@ -235,7 +234,7 @@ WAIT	EQU	$FCA8
 ; def anim_check_frame params= locals= indirect=false in_cycle=false
 ; def anim_tick_and_wait params= locals=__local_anim_tick_and_wait__0 indirect=false in_cycle=false
 ; def clamp_char_field params= locals=__local_clamp_char_field__0,__local_clamp_char_field__1 indirect=false in_cycle=false
-; def cold_restart params= locals=__local_cold_restart__p,__local_cold_restart__0,__local_cold_restart__1 indirect=false in_cycle=false
+; def cold_restart params= locals=__local_cold_restart__p,__local_cold_restart__0 indirect=false in_cycle=false
 ; def colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row locals=__local_colrow_to_pos__row,__local_colrow_to_pos__0,__local_colrow_to_pos__col indirect=false in_cycle=false param_regs=A,X
 ; def compute_checksum params=__zpabi_compute_checksum__p_0,__zpabi_compute_checksum__p_1,__zpabi_compute_checksum__end_0,__zpabi_compute_checksum__end_1 locals=__local_compute_checksum__lo,__local_compute_checksum__hi,__local_compute_checksum__0,__local_compute_checksum__p_0,__local_compute_checksum__p_1 indirect=false in_cycle=false param_regs=A,X,,
 ; def copy_pc_name_to_buf params=__zpabi_copy_pc_name_to_buf__m_0,__zpabi_copy_pc_name_to_buf__m_1 locals=__local_copy_pc_name_to_buf__m,__local_copy_pc_name_to_buf__0,__local_copy_pc_name_to_buf__1,__local_copy_pc_name_to_buf__i,__local_copy_pc_name_to_buf__2,__local_copy_pc_name_to_buf__3 indirect=false in_cycle=false param_regs=A,X
@@ -742,11 +741,9 @@ is_player_character:
    STA   __local_is_player_character__m
    STX   __local_is_player_character__0
    LDY   #$04
-   LDA   (__local_is_player_character__m),Y
-   STA   __local_is_player_character__m
    LDA   #$15
    CLC
-   SBC   __local_is_player_character__m
+   SBC   (__local_is_player_character__m),Y
    RTS
 
 find_first_pc:
@@ -1017,22 +1014,22 @@ cold_restart:
    SUBROUTINE
 
    LDA   #$00
-   STA   __local_cold_restart__0
+   STA   __local_cold_restart__p
    LDA   #$08
-   STA   __local_cold_restart__1
+   STA   __local_cold_restart__0
 .loop@10_start:
-   LDA   __local_cold_restart__1
+   LDA   __local_cold_restart__0
    CMP   #$A5
    BNE   .vthread@1
-   LDA   __local_cold_restart__0
+   LDA   __local_cold_restart__p
    BEQ   .loop@10_break
-   LDA   __local_cold_restart__1
+   LDA   __local_cold_restart__0
 .vthread@1:
    LDY   #$00
-   STA   (__local_cold_restart__0),Y
-   INC   __local_cold_restart__0
+   STA   (__local_cold_restart__p),Y
+   INC   __local_cold_restart__p
    BNE   .loop@10_start
-   INC   __local_cold_restart__1
+   INC   __local_cold_restart__0
    JMP   .loop@10_start
 .loop@10_break:
    LDA   #$01

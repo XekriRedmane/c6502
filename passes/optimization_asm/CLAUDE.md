@@ -154,6 +154,12 @@ pass renames each byte of every multi-byte name, recomputes liveness,
 and allows the merge when no two names that would share a byte are
 live at once. That's what lets a loop advance a `(zp),Y` base
 pointer in place, as `LDA p; CLC; ADC len; STA p; BCC; INC p+1`.
+That byte-level check follows Chaitin's rule for a move: a copy's
+write of its destination doesn't make it interfere with the copy's
+source (`_copied_from`, for `Mov(P_a, P_b)` and `Mov(P_a, A); Mov(A,
+P_b)`), so a loop that copies a 1-byte name into a pointer's byte at
+each pass, and still reads the name on its way out, gets one pair
+(Ali Baba's `display_message`).
 
 The `CoalesceResult.representative` map projects every coalesced non-
 rep name to its rep. The optimizer driver expands the post-coloring

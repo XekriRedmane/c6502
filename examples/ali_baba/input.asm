@@ -44,9 +44,7 @@ __local_read_keyboard__0	EQU	$8A
 __local_setup_input__m	EQU	$8A
 __local_draw_option__o	EQU	$8B
 __local_setup_input__0	EQU	$8B
-__local_validate_input__o_0	EQU	$8B
 __local_draw_option__1	EQU	$8C
-__local_validate_input__o_1	EQU	$8C
 __local_format_slot_number__ones	EQU	$8D
 __local_render_input_buffer__i	EQU	$8D
 __local_validate_input__1	EQU	$8D
@@ -885,11 +883,9 @@ copy_record_data:
    LDA   (__local_copy_record_data__4),Y
    STA   __local_copy_record_data__3
    INY
-   LDA   (__local_copy_record_data__o),Y
-   STA   __local_copy_record_data__o
    LDA   #<INPUT_BUFFER
    CLC
-   ADC   __local_copy_record_data__o
+   ADC   (__local_copy_record_data__o),Y
    STA   __local_copy_record_data__1
    LDA   #>INPUT_BUFFER
    ADC   #$00
@@ -976,18 +972,18 @@ validate_input:
 
    STA   __local_validate_input__dir
    LDA   __zpabi_validate_input__o_0
-   STA   __local_validate_input__o_0
+   STA   option@ret
    LDA   __zpabi_validate_input__o_1
-   STA   __local_validate_input__o_1
+   STA   option@ret+1
 .loop@4_start:
    LDA   __local_validate_input__dir
    SEC
    SBC   #$01
    CLC
-   ADC   __local_validate_input__o_0
+   ADC   option@ret
    STA   __local_validate_input__1
    LDA   #$00
-   ADC   __local_validate_input__o_1
+   ADC   option@ret+1
    STA   __local_validate_input__2
    LDY   #$02
    LDA   (__local_validate_input__1),Y
@@ -999,10 +995,6 @@ validate_input:
    RTS
 .if_end@5:
    JSR   option
-   LDA   option@ret
-   STA   __local_validate_input__o_0
-   LDA   option@ret+1
-   STA   __local_validate_input__o_1
    LDY   #$00
    LDA   (option@ret),Y
    BEQ   .loop@4_start

@@ -57,6 +57,32 @@ Zork's `do_var` (examples/zork/decode.c) copies
 `OPERANDS[0]` into a slot on entry while A holds the opcode it
 dispatches on. It saves 4 bytes with the bytes in zero page.
 
+The copies between the `STA t` and the `LDA t` may be several, and
+each may be a load and any number of stores, or a memory-to-memory
+`Mov(M, D)`, which `asm_emit` writes as `LDA M; STA D`. A constant
+already in the register isn't loaded again. Ali Baba's
+`print_bottom_centered` (examples/ali_baba/text.c) gets its pointer in
+A and X and stores two constants before passing it on, so X is read
+by the tail call and Y carries them:
+
+    STA   t                     LDY   #$17
+    LDA   #$17                  STY   TEXT_ROW
+    STA   TEXT_ROW      ->      LDY   #$00
+    LDA   #$00                  STY   TEXT_COL
+    STA   TEXT_COL              JMP   print_centered_plus_col
+    LDA   t
+    JMP   print_centered_plus_col
+
+The conditions are the ones above, for every copy: nothing in the run
+reads or writes `t`, every load is a byte or a constant the register
+can load and every store a `Data` or `ZP` byte, X (or Y) is dead from
+the `STA t` on, which also means no copy reads it, and N and Z are
+dead after the `LDA t`, since the last load sets them. C and V are
+unchanged both ways. A store before the run's first load stores A,
+which holds the parked value both ways. A volatile load or store
+stays one access of the same byte in the same order, through the
+other register.
+
 `apply_copy_through_index` runs once, after the last peephole run,
 `carry_known`, and the jump tables. Before the jump table, `do_var`'s
 dispatch starts with a `BEQ` that reads the Z from `LDA t`. Inside
@@ -123,33 +149,28 @@ def apply_copy_through_index(
 def _copy_through_index(
     fn: asm_ast.Function, zp_slot_symbols,
 ) -> asm_ast.Function:
-    """`STA t; LDA M; STA D; LDA t` as `LDX M; STX D` (or `LDY` /
-    `STY`). See "A copy while A is busy" above."""
+    """`STA t; LDA M; STA D; ...; LDA t` as `LDX M; STX D; ...` (or
+    `LDY` / `STY`). See "A copy while A is busy" above."""
     from passes.asm_dead_store import mem_dead_after
     instrs = list(fn.instructions)
     changed = False
     i = 0
     while i + 3 < len(instrs):
-        park, load, store, back = instrs[i:i + 4]
+        park = instrs[i]
         t = getattr(park, "dst", None)
         if not (isinstance(park, asm_ast.Mov) and not park.is_volatile
                 and _is_reg_a(park.src)
                 and isinstance(t, asm_ast.Data)
-                and t.name.startswith(f"__local_{fn.name}__")
-                and isinstance(load, asm_ast.Mov) and not load.is_volatile
-                and _is_reg_a(load.dst)
-                and isinstance(load.src, (asm_ast.Data, asm_ast.ZP,
-                                          asm_ast.Imm))
-                and load.src != t
-                and _is_a_store_to_addressable(store)
-                and store.dst != t
-                and isinstance(back, asm_ast.Mov) and not back.is_volatile
-                and back.src == t and _is_reg_a(back.dst)):
+                and t.name.startswith(f"__local_{fn.name}__")):
             i += 1
             continue
-        after = i + 4
+        back = _copies_end(instrs, i + 1, t)
+        if back is None:
+            i += 1
+            continue
+        after = back + 1
         if not (flags_dead_at(instrs, after)
-                and mem_dead_after(instrs, i + 3, t, fn_name=fn.name,
+                and mem_dead_after(instrs, back, t, fn_name=fn.name,
                                    zp_slot_symbols=zp_slot_symbols)):
             i += 1
             continue
@@ -160,18 +181,77 @@ def _copy_through_index(
         else:
             i += 1
             continue
-        instrs[i:after] = [
-            asm_ast.Mov(src=load.src, dst=reg),
-            asm_ast.Mov(src=reg, dst=store.dst),
-        ]
+        instrs[i:after] = _through_index(instrs[i + 1:back], reg)
         changed = True
-        i += 2
+        i += back - i - 1
     if not changed:
         return fn
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=instrs,
     )
+
+
+_INDEX_LOADABLE = (asm_ast.Data, asm_ast.ZP, asm_ast.Imm,
+                   asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)
+_INDEX_STORABLE = (asm_ast.Data, asm_ast.ZP)
+
+
+def _copies_end(instrs, start: int, t) -> int | None:
+    """Returns the index of the `LDA t` that ends a run of copies
+    starting at `instrs[start]`, or None when the instructions from
+    there aren't such a run. The run holds loads into A of a byte or a
+    constant (`_INDEX_LOADABLE`), stores of A into `Data` / `ZP`, and
+    copies from one to the other (`Mov(M, D)`, which `asm_emit` writes
+    as `LDA M; STA D`), none of them reading or writing `t`, with at
+    least one load or copy."""
+    loads = 0
+    k = start
+    while k < len(instrs):
+        ins = instrs[k]
+        if not isinstance(ins, asm_ast.Mov) or t in (ins.src, ins.dst):
+            if (isinstance(ins, asm_ast.Mov) and ins.src == t
+                    and _is_reg_a(ins.dst) and not ins.is_volatile
+                    and loads):
+                return k
+            return None
+        if _is_reg_a(ins.dst):
+            if not isinstance(ins.src, _INDEX_LOADABLE):
+                return None
+            loads += 1
+        elif _is_reg_a(ins.src):
+            if not isinstance(ins.dst, _INDEX_STORABLE):
+                return None
+        elif (isinstance(ins.src, _INDEX_LOADABLE)
+                and isinstance(ins.dst, _INDEX_STORABLE)
+                and not ins.is_volatile):
+            loads += 1
+        else:
+            return None
+        k += 1
+    return None
+
+
+_CONSTANTS = (asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)
+
+
+def _through_index(body, reg):
+    """The copies of `body` through `reg`. A store before the first
+    load stores A, which still holds the parked value. A constant
+    already in `reg` isn't loaded again."""
+    out = []
+    held = None     # what `reg` holds: None before the first load
+    for ins in body:
+        if _is_reg_a(ins.dst) or not _is_reg_a(ins.src):
+            if not (isinstance(ins.src, _CONSTANTS) and ins.src == held):
+                out.append(asm_ast.Mov(src=ins.src, dst=reg,
+                                       is_volatile=ins.is_volatile))
+            held = ins.src
+        if not _is_reg_a(ins.dst):
+            out.append(asm_ast.Mov(
+                src=asm_ast.Reg(reg=asm_ast.A()) if held is None else reg,
+                dst=ins.dst, is_volatile=ins.is_volatile))
+    return out
 
 
 def _is_reg(op, regtype) -> bool:

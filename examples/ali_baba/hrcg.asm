@@ -33,19 +33,13 @@ __local_hrcg_draw_char__glyph	EQU	$82
 __local_hrcg_clear_from__row	EQU	$83
 __local_hrcg_draw_char__0	EQU	$83
 __local_hrcg_set_top_left__top	EQU	$83
-__local_hrcg_draw_char__dst	EQU	$84
-__local_hrcg_draw_char__1	EQU	$85
 __local_hrcg_draw_char__2	EQU	$86
 __local_hrcg_draw_char__3	EQU	$87
 __local_hrcg_draw_char__raw	EQU	$88
 __local_hrcg_scroll_up__n	EQU	$8B
-__local_hrcg_scroll_up__src	EQU	$8C
-__local_hrcg_scroll_up__1	EQU	$8D
 __local_hrcg_scroll_up__dst	EQU	$8E
 __local_hrcg_scroll_up__2	EQU	$8F
 __local_hrcg_scroll_up__row	EQU	$90
-__local_hrcg_fill_line__line	EQU	$93
-__local_hrcg_fill_line__0	EQU	$94
 __local_hrcg_fill_line__col	EQU	$95
 __local_hrcg_row_address__0	EQU	$96
 __local_hrcg_row_address__1	EQU	$97
@@ -554,23 +548,19 @@ hrcg_fill_line:
    STX   __local_hrcg_fill_line__col
    LDX   #$00
    JSR   hrcg_row_address
-   LDA   hrcg_row_address@ret
-   STA   __local_hrcg_fill_line__line
-   LDA   hrcg_row_address@ret+1
-   STA   __local_hrcg_fill_line__0
    LDX   #$08
 .hrcg_fill_line@rot@0:
    LDY   __local_hrcg_fill_line__col
 .loop@1_start:
    LDA   hrcg
-   STA   (__local_hrcg_fill_line__line),Y
+   STA   (hrcg_row_address@ret),Y
    INY
    CPY   WNDWDTH
    BCC   .loop@1_start
-   LDA   __local_hrcg_fill_line__0
+   LDA   hrcg_row_address@ret+1
    CLC
    ADC   #$04
-   STA   __local_hrcg_fill_line__0
+   STA   hrcg_row_address@ret+1
    DEX
    BNE   .hrcg_fill_line@rot@0
    RTS
@@ -599,11 +589,11 @@ hrcg_scroll_up:
    LDA   __local_hrcg_scroll_up__row
    CLC
    ADC   #$01
-   STA   __local_hrcg_scroll_up__src
+   STA   hrcg_row_address@ret
    LDA   #$00
    ADC   #$00
    STA   __local_hrcg_scroll_up__n
-   LDA   __local_hrcg_scroll_up__src
+   LDA   hrcg_row_address@ret
    SEC
    SBC   WNDBTM
    LDA   __local_hrcg_scroll_up__n
@@ -620,10 +610,6 @@ hrcg_scroll_up:
    LDX   #$00
    LDA   __local_hrcg_scroll_up__row
    JSR   hrcg_row_address
-   LDA   hrcg_row_address@ret
-   STA   __local_hrcg_scroll_up__src
-   LDA   hrcg_row_address@ret+1
-   STA   __local_hrcg_scroll_up__1
    LDA   #$08
    STA   __local_hrcg_scroll_up__n
 .loop@4_start:
@@ -632,7 +618,7 @@ hrcg_scroll_up:
    LDY   #$00
    BEQ   .loop@5_start
 .hrcg_scroll_up@rot@1:
-   LDA   (__local_hrcg_scroll_up__src),Y
+   LDA   (hrcg_row_address@ret),Y
    STA   (__local_hrcg_scroll_up__dst),Y
    INY
 .loop@5_start:
@@ -642,10 +628,10 @@ hrcg_scroll_up:
    CLC
    ADC   #$04
    STA   __local_hrcg_scroll_up__2
-   LDA   __local_hrcg_scroll_up__1
+   LDA   hrcg_row_address@ret+1
    CLC
    ADC   #$04
-   STA   __local_hrcg_scroll_up__1
+   STA   hrcg_row_address@ret+1
    DEC   __local_hrcg_scroll_up__n
    JMP   .loop@4_start
 .loop@3_break:
@@ -693,7 +679,7 @@ hrcg_draw_char:
    STX   __local_hrcg_draw_char__raw
    SEC
    SBC   #$20
-   STA   __local_hrcg_draw_char__dst
+   STA   hrcg_row_address@ret
    LDA   hrcg+2
    BEQ   .hrcg_draw_char@scfold@0
    LDA   __local_hrcg_draw_char__glyph
@@ -721,10 +707,6 @@ hrcg_draw_char:
    LDX   TEXT_COL
    LDA   TEXT_ROW
    JSR   hrcg_row_address
-   LDA   hrcg_row_address@ret
-   STA   __local_hrcg_draw_char__dst
-   LDA   hrcg_row_address@ret+1
-   STA   __local_hrcg_draw_char__1
    LDA   __local_hrcg_draw_char__raw
    LDY   TEXT_COL
    STA   (BASL),Y
@@ -736,17 +718,17 @@ hrcg_draw_char:
    LDA   (__local_hrcg_draw_char__2),Y
    EOR   hrcg
    LDY   #$00
-   STA   (__local_hrcg_draw_char__dst),Y
-   LDA   __local_hrcg_draw_char__1
+   STA   (hrcg_row_address@ret),Y
+   LDA   hrcg_row_address@ret+1
    ADC   #$04
-   STA   __local_hrcg_draw_char__1
+   STA   hrcg_row_address@ret+1
    INX
 .loop@6_start:
    CPX   #$08
    BCC   .hrcg_draw_char@rot@2
    JMP   hrcg_advance_cursor
 .hrcg_draw_char@scfold@0:
-   LDA   __local_hrcg_draw_char__dst
+   LDA   hrcg_row_address@ret
    STA   __local_hrcg_draw_char__glyph
    JMP   .if_end@9
 

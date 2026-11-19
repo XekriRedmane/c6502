@@ -101,6 +101,9 @@ from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 from passes.tail_call import apply_tail_call
 from passes.split_mem_to_mem import apply_split_mem_to_mem
+from passes.carry_halve import apply_carry_halve
+from passes.carry_in_add import apply_carry_in_add
+from passes.ret_slot_coalescing import apply_ret_slot_coalescing
 from passes.via_a_store_fold import apply_via_a_store_fold
 from passes.transfer_pm1_store import apply_transfer_pm1_store
 from passes.transfer_past_branch import apply_transfer_past_branch
@@ -267,6 +270,12 @@ def _peephole_fixedpoint(
     zp_cells = {**(zp_slot_symbols or {}), **(zp_global_symbols or {})}
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
         new_prog = apply_split_mem_to_mem(prog)
+        new_prog = apply_carry_halve(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
+        new_prog = apply_carry_in_add(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
         new_prog = apply_inc_peephole(new_prog)
         new_prog = apply_inc_low_byte_test(new_prog)
         new_prog = apply_carry_inc_peephole(new_prog)
@@ -713,6 +722,13 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm3, coalesced_params = apply_slot_coalescing(
         asm3, abi, shares, all_slot_symbols,
     )
+    # A local pair holding a copy of a static function's zero-page
+    # result, `F@ret`, becomes `F@ret` itself when the two are never
+    # live with different values (passes/ret_slot_coalescing.py).
+    asm3 = apply_ret_slot_coalescing(
+        asm3, slot_symbols=all_slot_symbols, zp_addrs=zp.addrs,
+        eligible=_ret_coalescing_eligible(tac, pooled, recursion),
+    )
     # Keep a loop-invariant compare key in A across its loop
     # (see passes/loop_invariant_a.py). Runs after the
     # peepholes have settled the layout it inspects.
@@ -783,6 +799,19 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         zp_records=zp_records, shares=shares, bindings=bindings,
         coalesced_params=coalesced_params,
     )
+
+
+def _ret_coalescing_eligible(tac, pooled, recursion) -> set[str]:
+    """The functions `ret_slot_coalescing` may change: those with
+    private pools, off every cycle, that make no
+    `save_hardware_stack` call."""
+    import tac_ast
+    saving = {
+        tl.name for tl in tac.top_level
+        if isinstance(tl, tac_ast.Function)
+        and any(getattr(i, "hw_stack_save", False) for i in tl.instructions)
+    }
+    return set(pooled) - set(recursion) - saving
 
 
 def _with_coalesced(changes: dict, coalesced: dict) -> dict:

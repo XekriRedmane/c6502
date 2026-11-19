@@ -442,9 +442,9 @@ get_dictionary_addr:
    LDA   (Z_HEADER_ADDR),Y
    STA   __local_get_dictionary_addr__0
    INY
-   LDA   (Z_HEADER_ADDR),Y
+   LDA   Z_HEADER_ADDR
    CLC
-   ADC   Z_HEADER_ADDR
+   ADC   (Z_HEADER_ADDR),Y
    STA   get_dictionary_addr@ret
    LDA   Z_HEADER_ADDR+1
    ADC   __local_get_dictionary_addr__0

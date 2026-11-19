@@ -82,7 +82,6 @@ __local_store_with_sign__n_0	EQU	$E5
 __zpabi_divu16__divisor_1	EQU	$E5
 __zpabi_mulu16__b_1	EQU	$E5
 __local_instr_div__quotient	EQU	$E6
-__local_instr_mod__0	EQU	$E6
 __local_instr_mul__product	EQU	$E6
 __local_instr_random__0	EQU	$E6
 __local_instr_div__0	EQU	$E7
@@ -491,12 +490,10 @@ instr_mod:
 
    JSR   instr_mul@run0
    JSR   check_sign
-   STA   __local_instr_mod__0
-   LDA   __zpabi_check_sign__b_0
-   STA   __zpabi_divu16__divisor_0
-   LDA   __zpabi_check_sign__b_1
-   STA   __zpabi_divu16__divisor_1
-   LDA   __local_instr_mod__0
+   LDY   __zpabi_check_sign__b_0
+   STY   __zpabi_divu16__divisor_0
+   LDY   __zpabi_check_sign__b_1
+   STY   __zpabi_divu16__divisor_1
    JSR   divu16
    LDX   remainder+1
    LDA   remainder

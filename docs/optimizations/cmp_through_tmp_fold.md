@@ -102,6 +102,26 @@ operand that reaches the temporary from a table or a global does the
 same in `s += arr[i]`, which becomes `CLC; ADC arr,X` with the sum
 kept in A.
 
+A byte read through a zero-page pointer with Y already loaded,
+`(zp),Y`, folds the same way, with `other` one that loads without
+setting Y, so Y still holds the offset at the `SBC`. In
+`print_centered_plus_col` (`examples/ali_baba/text.c`), `40 - s[0]`
+had been
+
+```
+   LDY   #$00
+   LDA   (__local_print_centered_plus_col__s),Y
+   STA   __local_print_centered_plus_col__0
+   LDA   #$28
+   SEC
+   SBC   __local_print_centered_plus_col__0
+```
+
+and is now the original's `LDY #$00; LDA #$28; SEC; SBC
+(__local_print_centered_plus_col__s),Y`, 4 bytes shorter. A `(zp),Y`
+source that loads its own Y (`IndirectZp`) is left for the compare
+alone.
+
 ## When it applies
 
 - The four instructions are adjacent, except for a `CLC` or `SEC`

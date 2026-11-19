@@ -24,8 +24,14 @@ subtracts a zero-extended global that way:
 
 becomes `LDA __local_do_rwts_on_sector__sector_0; SEC; SBC
 SECTORS_PER_TRACK`. For these the source must be one the
-instruction can address: an immediate, `Data` / `ZP`, or `abs,X` /
-`abs,Y` (`asm_emit._emit_acc_arith_src`).
+instruction can address: an immediate, `Data` / `ZP`, `abs,X` /
+`abs,Y` (`asm_emit._emit_acc_arith_src`), or `(zp),Y` with Y already
+loaded (`IndirectZpY`). The last takes the same Y-safe `other` as a
+compare of one (see Eligibility), so Y still holds the offset at the
+`SBC`, and the `SEC` or `CLC` between doesn't change Y.
+`print_centered_plus_col` in `examples/ali_baba/text.c` computes `40
+- s[0]` as `LDY #$00; LDA #$28; SEC; SBC (s),Y`. An `IndirectZp`
+source, which loads its own Y, is left alone.
 
 The middle pair stages `src`'s value through a memory temporary so
 the final CMP can compare A (= other) against the staged copy. But
@@ -286,10 +292,12 @@ def _with_src(d, src):
 
 def _alu_src_eligible(src) -> bool:
     """A source `ADC` / `SBC` / `AND` / `ORA` / `EOR` can address
-    (`asm_emit._emit_acc_arith_src`, less the soft-stack modes)."""
+    (`asm_emit._emit_acc_arith_src`, less the soft-stack modes and the
+    `(zp),Y` that loads its own Y)."""
     return isinstance(src, (
         asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
         asm_ast.Data, asm_ast.ZP, asm_ast.IndexedData,
+        asm_ast.IndirectZpY,
     ))
 
 

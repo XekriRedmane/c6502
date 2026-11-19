@@ -79,7 +79,6 @@ __local_keep_digging__4	EQU	$B5
 __local_keep_digging__5	EQU	$B6
 __local_keep_digging__6	EQU	$B7
 __local_draw_player__0	EQU	$B9
-__local_drop_player_in_hole__0	EQU	$B9
 __local_erase_player__0	EQU	$B9
 __local_draw_player__1	EQU	$BA
 __local_erase_player__1	EQU	$BA
@@ -841,11 +840,9 @@ drop_player_in_hole:
    LDA   PLAYER_ROW
    CLC
    ADC   #$01
-   STA   __local_drop_player_in_hole__0
    STA   GAME_ROWNUM
-   LDA   __local_drop_player_in_hole__col
-   STA   GAME_COLNUM
-   LDA   __local_drop_player_in_hole__0
+   LDX   __local_drop_player_in_hole__col
+   STX   GAME_COLNUM
    JSR   map_row
    LDA   #$00
    LDY   __local_drop_player_in_hole__col

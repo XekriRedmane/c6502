@@ -87,6 +87,14 @@ No bug was hit. These cost bytes against the original:
    takes in the rounding as the carry, which is the same sum.
    print_centered_plus_col is 42 bytes, against the original's 19.
 
+   This was fixed on 19 Nov 2026 (docs/optimizations/carry_halve.md):
+   the add's carry is the sum's ninth bit, so `CLC; ADC #1; ROR`
+   computes the quotient. The same day, `40 - s[0]` subtracted the
+   byte through the pointer instead of a copy of it
+   (docs/optimizations/cmp_through_tmp_fold.md), and the function is
+   30 bytes. It still adds 1 where the original's `ADC` takes in the
+   bit its `LSR` shifts out.
+
    ```c
    #include <stdint.h>
    extern uint8_t COL [[c6502::zeropage(0x24)]];
@@ -97,9 +105,30 @@ No bug was hit. These cost bytes against the original:
    the high byte, adds 1, and carries again, where the original sets
    the carry and does one `ADC`. next_string is 27 bytes.
 
+   This was fixed on 19 Nov 2026 (docs/optimizations/carry_in_add.md),
+   and next_string is the original's `SEC; ADC`, 17 bytes.
+
 4. print_string and display_message_loop copy their pointer parameter
    into a local pair before the loop that steps it. print_string is 38
    bytes against PRINT_STRING's 18.
+
+   On 19 Nov 2026 display_message_loop came to keep its pointer in
+   `next_string@ret`, where next_string returns the next one
+   (docs/optimizations/ret_slot_coalescing.md), so the copy after each
+   call of next_string went, and so did display_message's. The copy of
+   the argument into that pair at entry stays, since the loop reads
+   through it. print_string is unchanged.
+
+These were fixed on 19 Nov 2026 too, and weren't listed:
+
+- print_bottom_centered kept its argument's low byte in a local
+  across its two constant stores. The constants go through Y now,
+  since the tail call reads X (docs/optimizations/via_a_store_fold.md),
+  and the function is the original's 11 bytes.
+- display_message copied `msg` into a second local pair at the top of
+  each pass and stepped it through a third. Move coalescing gives the
+  copy one pair (docs/optimizations/coalescing.md), and the step is
+  `INC`.
 
 ## Size
 
@@ -109,24 +138,25 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 |---|---:|---|---:|
 | NUM_TO_DECIMAL | 132 | num_to_decimal | 125 |
 | TEXT_RENDERER | 145 | render_stream, text_renderer, text_renderer_no_pause | 180 |
-| DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop, next_string | 192 |
+| DISPLAY_MESSAGE, DISPLAY_MESSAGE_LOOP | 125 | display_message, display_message_loop, next_string | 158 |
 | SCROLL_STATUS_LINE | 21 | scroll_status_line | 25 |
 | SET_CURSOR_ROW21, SET_TEXT_WINDOW_BOTTOM | 20 | the same and set_cursor_row | 24 |
-| PRINT_BOTTOM_CENTERED | 11 | print_bottom_centered | 15 |
-| PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 42 |
+| PRINT_BOTTOM_CENTERED | 11 | print_bottom_centered | 11 |
+| PRINT_CENTERED_PLUS_COL | 19 | print_centered_plus_col | 30 |
 | SET_INVERSE_VIDEO, PRINT_CTRL_N | 10 | the same | 10 |
 | SET_TEXT_WINDOW_WRAP, SET_TEXT_WINDOW_SCROLL | 20 | the same | 20 |
 | PRINT_CTRL_AB | 10 | print_ctrl_ab | 10 |
 | PRINT_STRING_AT_ADDR, PRINT_STRING | 22 | print_string | 38 |
 | SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 11 |
-| **Total code** | **553** | | **692** |
+| **Total code** | **553** | | **642** |
 
 The C's bytes are the symbol sizes of `nm.py -S text.o`. Before the
 rewrite into plain C on 18 Nov 2026, the unit was 668 bytes of code
 and 10 of data. It was 729 bytes after the rewrite, and 692 once c6502
 shared one call of `udivmod16` between a `/` and a `%` and divided a
-byte by 2 without `sdivmod16`. The linker adds `udivmod16`'s 49 bytes
-to the program from the runtime library.
+byte by 2 without `sdivmod16`. On 19 Nov 2026 it was 642, after the
+fixes listed under "Compiler bugs and gaps". The linker adds
+`udivmod16`'s 49 bytes to the program from the runtime library.
 
 ## Checked against the original
 

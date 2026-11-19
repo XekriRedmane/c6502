@@ -197,6 +197,49 @@ class TestCoalescingUnit(unittest.TestCase):
         result = coalesce_moves(_fn(instrs), graph)
         self.assertEqual(result.resolve("s"), "s")
 
+    def test_byte_level_check_allows_a_copy_of_a_live_byte(self) -> None:
+        # `p[0] = s` while `s` is still read later: the copy's write of
+        # p[0] doesn't make the two interfere, since both hold one
+        # value after it (`display_message` in Ali Baba's text.c).
+        p = lambda k: _pseudo("p", k)
+        a = asm_ast.Reg(reg=asm_ast.A())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_pseudo("s")),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=p(1)),
+            asm_ast.Mov(src=_pseudo("s"), dst=p(0)),
+            asm_ast.Mov(src=p(1), dst=a),
+            asm_ast.Mov(src=_pseudo("s"), dst=a),
+            asm_ast.Mov(src=p(0), dst=a),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        graph = InterferenceGraph()
+        graph.nodes["p"] = _node("p", width=2)
+        graph.nodes["s"] = _node("s")
+        graph.add_edge("p", "s")
+        result = coalesce_moves(_fn(instrs), graph)
+        self.assertEqual(result.resolve("s"), "p")
+
+    def test_byte_level_check_rejects_a_later_write(self) -> None:
+        # The same copy, but p[0] is written again while `s` is live.
+        p = lambda k: _pseudo("p", k)
+        a = asm_ast.Reg(reg=asm_ast.A())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_pseudo("s")),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=p(1)),
+            asm_ast.Mov(src=_pseudo("s"), dst=p(0)),
+            asm_ast.Mov(src=asm_ast.Imm(value=9), dst=p(0)),
+            asm_ast.Mov(src=p(1), dst=a),
+            asm_ast.Mov(src=_pseudo("s"), dst=a),
+            asm_ast.Mov(src=p(0), dst=a),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        graph = InterferenceGraph()
+        graph.nodes["p"] = _node("p", width=2)
+        graph.nodes["s"] = _node("s")
+        graph.add_edge("p", "s")
+        result = coalesce_moves(_fn(instrs), graph)
+        self.assertEqual(result.resolve("s"), "s")
+
     def test_excluded_name_not_coalesced(self) -> None:
         # Static / address-taken / param names aren't in the graph
         # at all. Coalescing skips them — no merge attempted.

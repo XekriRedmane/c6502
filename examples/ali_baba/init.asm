@@ -41,7 +41,6 @@ __local_anim_border_icons__limit	EQU	$82
 __local_clear_hires_page1__i_1	EQU	$82
 __local_move_border_icons__0	EQU	$82
 __local_plot_title_glyphs__end	EQU	$82
-__local_print_at__s	EQU	$82
 __local_anim_border_icons__from	EQU	$83
 __local_clear_hires_page1__i_0	EQU	$83
 __local_draw_border_strings__s_1	EQU	$83
@@ -769,12 +768,10 @@ draw_border_labels:
 print_at:
    SUBROUTINE
 
-   STA   __local_print_at__s
-   LDA   __zpabi_print_at__row
-   STA   TEXT_ROW
-   LDA   __zpabi_print_at__col
-   STA   TEXT_COL
-   LDA   __local_print_at__s
+   LDY   __zpabi_print_at__row
+   STY   TEXT_ROW
+   LDY   __zpabi_print_at__col
+   STY   TEXT_COL
    JMP   print_string
 
 init_game_display:

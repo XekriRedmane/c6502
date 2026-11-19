@@ -332,6 +332,34 @@ class TestCmpThroughTmpFoldIndirect(unittest.TestCase):
         out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
         self.assertEqual(out, instrs)
 
+    def test_sbc_through_a_pointer(self):
+        # `40 - s[0]`: `LDA (s),Y; STA t; LDA #$28; SEC; SBC t` is
+        # `LDA #$28; SEC; SBC (s),Y`, with Y loaded before as it was.
+        src = asm_ast.IndirectZpY(address=0x90)
+        tmp = asm_ast.ZP(address=0x84, offset=0)
+        forty = asm_ast.Imm(value=40)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(forty), asm_ast.SetCarry(),
+            asm_ast.Sub(src=tmp, dst=_A),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(instrs)))
+        self.assertEqual(out[:3], [
+            _lda(forty), asm_ast.SetCarry(), asm_ast.Sub(src=src, dst=_A),
+        ])
+
+    def test_sbc_through_a_pointer_after_a_frame_load_kept(self):
+        # Loading `other` from the soft stack loads Y first.
+        src = asm_ast.IndirectZpY(address=0x90)
+        tmp = asm_ast.ZP(address=0x84, offset=0)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(asm_ast.Frame(offset=3)),
+            asm_ast.SetCarry(), asm_ast.Sub(src=tmp, dst=_A),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
     def test_y_setup_other_blocks_fold(self):
         # `other` loaded through an operand with an LDY setup would
         # change the Y that `(p),Y` reads.

@@ -5,13 +5,15 @@
     The HRCG is Applesoft Toolkit's "HI-RES CHAR GEN VERSION 1.0",
     carried in the game's own image. A character from $20 to $7F,
     after its high bit is dropped, is drawn as an 8-line glyph of the
-    current font at the text cursor CH, CV inside the Monitor's text
-    window, and the cursor moves right. A control character changes the
-    font, the video, the window, or the cursor. The HRCG keeps the text
-    page in step with the high-resolution page as well. Each character
-    drawn is also stored on the text page at BASL[CH], and a clear, a
-    home, or a scroll of the high-resolution window is followed by the
-    Monitor's CLREOP, HOME, or SCROLL.
+    current font at the text cursor inside the Monitor's text window,
+    and the cursor moves right. The cursor is the Monitor's CH and CV,
+    which ali_baba.h declares as TEXT_COL and TEXT_ROW. A control
+    character changes the font, the video, the window, or the cursor.
+    The HRCG keeps the text page in step with the high-resolution page
+    as well. Each character drawn is also stored on the text page at
+    BASL[TEXT_COL], and a clear, a home, or a scroll of the
+    high-resolution window is followed by the Monitor's CLREOP, HOME,
+    or SCROLL.
 
     A font is 96 glyphs of 8 bytes, for the characters $20-$7F. A
     ctrl-A followed by '1'-'5' chooses one of FONT_DATA's five fonts,
@@ -812,10 +814,10 @@
  * address. The original keeps it in HRCG_VIDEO_MODE, which only the
  * shifted ctrl-A and ctrl-B change from $20, and the game sends
  * neither. */
-#define HRCG_PAGE 0x20
+constexpr uint8_t HRCG_PAGE = 0x20;
 
 /* A row of text is 8 scan lines, $400 bytes apart. */
-#define HRCG_SCAN_LINE 0x400
+constexpr uint16_t HRCG_SCAN_LINE = 0x400;
 
 /* What the next character is, after a ctrl-A or a ctrl-O. The
  * original's HRCG_MODE_FLAGS holds $80, $40, or 0, and shifts it left
@@ -1006,13 +1008,13 @@ static void hrcg_scroll_up(void) {
  * top in wrap mode, and otherwise the window scrolls and the cursor
  * stays on the bottom row. */
 static void hrcg_line_feed(void) {
-    if (++CV < WNDBTM) {
-        VTABZ(CV);
+    if (++TEXT_ROW < WNDBTM) {
+        VTABZ(TEXT_ROW);
     } else if (hrcg.wrap) {
-        CV = WNDTOP;
-        VTABZ(CV);
+        TEXT_ROW = WNDTOP;
+        VTABZ(TEXT_ROW);
     } else {
-        CV--;
+        TEXT_ROW--;
         hrcg_scroll_up();
         SCROLL();
     }
@@ -1021,24 +1023,25 @@ static void hrcg_line_feed(void) {
 /* Moves the cursor right a column, and to the start of the next row
  * past the window's right edge. */
 static void hrcg_advance_cursor(void) {
-    if (++CH < WNDWDTH)
+    if (++TEXT_COL < WNDWDTH)
         return;
-    CH = 0;
+    TEXT_COL = 0;
     hrcg_line_feed();
 }
 
 /* Draws character `c`, $20-$7F, at the cursor and advances the cursor.
  * `raw` is the character as hrcg_cout received it, high bit and all,
- * which goes on the text page at BASL[CH]. BASL is whatever the last
- * VTAB, VTABZ, HOME, CLREOP, or SCROLL left, so that byte can land on
- * a different row from the cursor's when the game has moved CV itself. */
+ * which goes on the text page at BASL[TEXT_COL]. BASL is whatever the
+ * last VTAB, VTABZ, HOME, CLREOP, or SCROLL left, so that byte can land
+ * on a different row from the cursor's when the game has moved TEXT_ROW
+ * itself. */
 static void hrcg_draw_char(uint8_t c, uint8_t raw) {
     uint8_t glyph = c - 0x20;
     if (hrcg.lowercase && c >= 'A' && c <= 'Z')
         glyph = c;
     const uint8_t *src = hrcg.font + ((uint16_t)glyph << 3);
-    uint8_t *dst = hrcg_row_address(CV, CH);
-    BASL[CH] = raw;
+    uint8_t *dst = hrcg_row_address(TEXT_ROW, TEXT_COL);
+    BASL[TEXT_COL] = raw;
     for (uint8_t n = 0; n < 8; n++) {
         *dst = src[n] ^ hrcg.mask;
         dst += HRCG_SCAN_LINE;
@@ -1065,15 +1068,15 @@ static void hrcg_save(void) {
         hrcg_saved_valid = true;
         hrcg_saved = hrcg;
     }
-    hrcg_saved_ch = CH;
-    hrcg_saved_cv = CV;
+    hrcg_saved_ch = TEXT_COL;
+    hrcg_saved_cv = TEXT_ROW;
 }
 
 /* Moves the cursor to the saved column, and to the next row unless that
  * moves it right. The normal ctrl-C. */
 static void hrcg_restore_column(void) {
-    uint8_t old = CH;
-    CH = hrcg_saved_ch;
+    uint8_t old = TEXT_COL;
+    TEXT_COL = hrcg_saved_ch;
     if (hrcg_saved_ch <= old)
         hrcg_line_feed();
 }
@@ -1093,13 +1096,13 @@ static void hrcg_restore(void) {
  * window's column 0. The normal ctrl-V. The carry into WNDLFT's add is
  * clear, because the dispatch reached here through a BCS not taken. */
 static void hrcg_set_top_left(void) {
-    uint8_t left = CH + WNDLFT;
+    uint8_t left = TEXT_COL + WNDLFT;
     if (left >= 40)
         left = 39;
     WNDLFT = left;
-    WNDWDTH -= CH;
-    CH = 0;
-    uint8_t top = CV;
+    WNDWDTH -= TEXT_COL;
+    TEXT_COL = 0;
+    uint8_t top = TEXT_ROW;
     if (top >= 24)
         top = 23;
     WNDTOP = top;
@@ -1135,7 +1138,7 @@ static void hrcg_control(uint8_t code) {
         hrcg_restore();
         break;
     case HRCG_CTRL_F & 0x7F:
-        hrcg_clear_from(CV, CH);
+        hrcg_clear_from(TEXT_ROW, TEXT_COL);
         CLREOP();
         break;
     case HRCG_CTRL_I & 0x7F:
@@ -1154,8 +1157,8 @@ static void hrcg_control(uint8_t code) {
         hrcg_next = HRCG_NEXT_SHIFTED;
         break;
     case HRCG_CTRL_P & 0x7F:
-        CV = WNDTOP;
-        CH = 0;
+        TEXT_ROW = WNDTOP;
+        TEXT_COL = 0;
         hrcg_clear_from(WNDTOP, 0);
         HOME();
         break;
@@ -1179,7 +1182,7 @@ void hrcg_init(void) {
     /* HRCG_RESET_WINDOW sets the window to the whole screen and keeps
      * the cursor's place on it. The carry into its add is clear on the
      * one path that reaches it. */
-    CH += WNDLFT;
+    TEXT_COL += WNDLFT;
     WNDLFT = 0;
     WNDTOP = 0;
     WNDWDTH = 40;

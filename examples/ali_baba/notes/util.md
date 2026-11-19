@@ -34,8 +34,8 @@ integrity check and restart at `$A4E2`-`$A58F`.
 The tables: `ANIM_INDEX` (`$7ABD`, the header's extern, initially 2),
 `ANIM_FRAME_CTR` (static, initially 3, which `-O` puts in zero page),
 `ANIM_WAIT_TABLE`, and `ANIM_FRAME_TABLE` (static const).
-WAIT_DURATION and DELAY_COUNT are `#define`s, because nothing writes
-them.
+WAIT_DURATION and DELAY_COUNT are `constexpr uint8_t` constants,
+because nothing writes them.
 
 Not translated: SAVE_ZP_CONTEXT and RESTORE_ZP_CONTEXT (map's
 `scene_loop` saves what is needed), and LOAD_END_OFFSET,

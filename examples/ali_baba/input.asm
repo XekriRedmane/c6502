@@ -11,8 +11,8 @@ WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
 WNDTOP	EQU	$22
 WNDBTM	EQU	$23
-CH	EQU	$24
-CV	EQU	$25
+TEXT_COL	EQU	$24
+TEXT_ROW	EQU	$25
 MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
@@ -197,7 +197,15 @@ S_PRESS_BUTTON	EQU	$7EBA
 SHOP_TABLE	EQU	$7EDD
 SHOP_EFFECT_TABLE	EQU	$7F6D
 XP_AWARD_TABLE	EQU	$7FBE
-MAP_OBJECT_NAMES	EQU	$7FC3
+S_A_WALL	EQU	$7FC3
+S_A_STATUE	EQU	$7FCA
+S_A_TREASURE_CHEST	EQU	$7FD3
+S_EMPTY_SPACE	EQU	$7FE4
+S_AN_ILLUSION	EQU	$7FF0
+S_A_DOOR	EQU	$7FFC
+S_AN_INVISIBLE_WALL	EQU	$8003
+S_SOME_RUNE_WRITING	EQU	$8016
+S_A_TRADING_OUTPOST	EQU	$8028
 ATTACK_VERB_STRINGS	EQU	$803A
 s_PRINT_FONT_CHAR	EQU	$80A4
 TUNE_TABLE	EQU	$80AE
@@ -206,6 +214,7 @@ TUNE_1_COMBAT_HIT	EQU	$80C7
 TUNE_2_COMBAT_DAMAGE	EQU	$80D7
 FONT_DATA	EQU	$83A5
 GAME_MESSAGE_STRINGS	EQU	$9AA5
+DISK_IO_CODE	EQU	$B300
 DISK_READ_FIELD	EQU	$B300
 RWTS_ENTRY	EQU	$B7B5
 RWTS_IOB	EQU	$B7E8
@@ -284,14 +293,14 @@ WAIT	EQU	$FCA8
 ; def settings_danger_down params= locals= indirect=false in_cycle=false
 ; def settings_danger_up params= locals= indirect=false in_cycle=false
 ; def settings_speed_down params= locals=__local_settings_speed_down__0 indirect=false in_cycle=false
-; def settings_speed_up params= locals= indirect=false in_cycle=false
+; def settings_speed_up params= locals=__local_settings_speed_up__0 indirect=false in_cycle=false
 ; def setup_data_iob params= locals= indirect=false in_cycle=false
 ; def setup_input params=__zpabi_setup_input__m_0,__zpabi_setup_input__m_1 locals=__local_setup_input__m,__local_setup_input__0 indirect=false in_cycle=false param_regs=A,X
 ; def setup_slot_iob params= locals=__local_setup_slot_iob__slot,__local_setup_slot_iob__0 indirect=false in_cycle=false
 ; def slot_dec params= locals=__local_slot_dec__0 indirect=false in_cycle=false
 ; def slot_dec_enter params= locals= indirect=false in_cycle=false
 ; def slot_dec_reenter params= locals= indirect=false in_cycle=false
-; def slot_inc params= locals= indirect=false in_cycle=false
+; def slot_inc params= locals=__local_slot_inc__0 indirect=false in_cycle=false
 ; def slot_inc_enter params= locals= indirect=false in_cycle=false
 ; def slot_inc_reenter params= locals= indirect=false in_cycle=false
 ; def slot_update params= locals= indirect=false in_cycle=false
@@ -654,6 +663,7 @@ WAIT	EQU	$FCA8
 ; item write_game_data section=.text local=true zero=false
 ; item read_game_data section=.text local=true zero=false
 ; item continue_game section=.text local=false zero=false
+; item continue_game@run0 section=.text local=true zero=false
 ; item save_game section=.text local=false zero=false
 ; item enter_scenario_disk section=.text local=false zero=false
 ; item scenario_done section=.text local=true zero=false
@@ -742,8 +752,8 @@ WAIT	EQU	$FCA8
 ; zp WNDWDTH size=1 at=$21 def=false init=
 ; zp WNDTOP size=1 at=$22 def=false init=
 ; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
+; zp TEXT_COL size=1 at=$24 def=false init=
+; zp TEXT_ROW size=1 at=$25 def=false init=
 ; zp MONITOR_GBAS size=2 at=$26 def=false init=
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
@@ -804,9 +814,9 @@ set_cursor_pos:
    LDA   #$17
 .if_end@1:
 .if_end@0:
-   STA   CV
+   STA   TEXT_ROW
    LDA   __local_set_cursor_pos__pos
-   STA   CH
+   STA   TEXT_COL
    RTS
 .set_cursor_pos@asm_ssa_split@0:
    LDA   #$15
@@ -901,9 +911,9 @@ render_input_buffer:
    SUBROUTINE
 
    LDA   #$15
-   STA   CV
+   STA   TEXT_ROW
    LDA   #$00
-   STA   CH
+   STA   TEXT_COL
    JSR   print_ctrl_ab
    LDX   #$00
 .render_input_buffer@rot@1:
@@ -1328,8 +1338,14 @@ settings_speed_up:
    JSR   store_selection_to_record
    INC   ANIM_INDEX
    LDA   ANIM_INDEX
-   CMP   #$05
-   BCC   .if_end@39
+   SEC
+   SBC   #$05
+   LDA   #$00
+   SBC   #$00
+   BVC   .jcmp_novf@0
+   EOR   #$80
+.jcmp_novf@0:
+   BMI   .if_end@39
    LDA   #$05
    STA   ANIM_INDEX
 .if_end@39:
@@ -1424,8 +1440,14 @@ slot_inc:
 
    INC   slot_number
    LDA   slot_number
-   CMP   #$11
-   BCC   .if_end@42
+   SEC
+   SBC   #$11
+   LDA   #$00
+   SBC   #$00
+   BVC   .jcmp_novf@1
+   EOR   #$80
+.jcmp_novf@1:
+   BMI   .if_end@42
    DEC   slot_number
 .if_end@42:
    JMP   slot_update
@@ -1834,9 +1856,11 @@ read_game_data:
 continue_game:
    SUBROUTINE
 
-   LDA   slot_number
-   CMP   #$01
-   BCS   .if_end@62
+   JSR   continue_game@run0
+   BVC   .jcmp_novf@2
+   EOR   #$80
+.jcmp_novf@2:
+   BPL   .if_end@62
    JSR   ensure_game_disk
    JSR   read_game_data
    LDA   #$00
@@ -1861,12 +1885,24 @@ continue_game:
    LDA   #$00
    RTS
 
-save_game:
+continue_game@run0:
    SUBROUTINE
 
    LDA   slot_number
-   CMP   #$01
-   BCS   .if_end@64
+   SEC
+   SBC   #$01
+   LDA   #$00
+   SBC   #$00
+   RTS
+
+save_game:
+   SUBROUTINE
+
+   JSR   continue_game@run0
+   BVC   .jcmp_novf@3
+   EOR   #$80
+.jcmp_novf@3:
+   BPL   .if_end@64
    JSR   ensure_game_disk
    JSR   write_game_data
    LDA   #$02
@@ -2016,36 +2052,47 @@ ALT_INPUT_TABLE:
    DC.W  ALT_INPUT_OPTIONS
 
 S_SOUND_IS_ON:
-   DC.B  $0C, $D3, $CF, $D5, $CE, $C4, $A0, $C9, $D3, $A0, $CF, $CE, $A0
+   DC.B  $0C, $D3, $CF, $D5, $CE, $C4, $A0, $C9, $D3, $A0, $CF
+   DC.B  $CE, $A0
 
 S_DANGER:
-   DC.B  $0B, $C4, $C1, $CE, $C7, $C5, $D2, $A0, $BA, $A0, $A0, $A0
+   DC.B  $0B, $C4, $C1, $CE, $C7, $C5, $D2
+   DC.B  $A0, $BA, $A0, $A0, $A0
 
 S_ADD_NAME:
-   DC.B  $18, $C1, $C4, $C4, $A0, $B1, $A0, $A0, $AE, $A0, $A0, $AE, $B5, $A0, $C6, $CC
-   DC.B  $FE, $A0, $D8, $C1, $A0, $B5, $A0, $F2, $C2
+   DC.B  $18, $C1, $C4, $C4
+   DC.B  $A0, $B1, $A0, $A0, $AE, $A0, $A0, $AE, $B5, $A0, $C6, $CC, $FE, $A0, $D8, $C1
+   DC.B  $A0, $B5, $A0, $F2, $C2
 
 S_CHEST_MESSAGE:
    DC.B  $1B, $D4, $C8, $C5, $A0, $D4, $D2, $C5, $C1, $D3, $D5, $D2, $C5, $A0, $C3, $C8
-   DC.B  $C5, $D3, $D4, $A0, $CF, $D0, $C5, $CE, $D3, $A0, $D5, $D0, $1D, $D4, $CF, $A0
-   DC.B  $D2, $C5, $D6, $C5, $C1, $CC, $A0, $A0, $A0, $CC, $A0, $EB, $B0, $A0, $C7, $CF
-   DC.B  $CC, $C4, $A0, $C4, $D5, $C3, $C1, $D4, $D3, $AE, $1B, $D9, $CF, $D5, $A0, $CE
-   DC.B  $CF, $D7, $A0, $C8, $C1, $D6, $C5, $A0, $A0, $E4, $CF, $D2, $A0, $B0, $A0, $C4
-   DC.B  $D5, $C3, $C1, $D4, $D3, $AE, $00
+   DC.B  $C5, $D3, $D4, $A0, $CF, $D0, $C5, $CE, $D3, $A0, $D5, $D0
+   DC.B  $1D, $D4, $CF, $A0, $D2, $C5, $D6, $C5, $C1, $CC, $A0
+   DC.B  $A0, $A0, $CC, $A0, $EB
+   DC.B  $B0, $A0, $C7, $CF, $CC, $C4, $A0, $C4, $D5, $C3, $C1, $D4, $D3, $AE
+   DC.B  $1B, $D9, $CF, $D5, $A0, $CE, $CF, $D7, $A0, $C8, $C1, $D6, $C5, $A0
+   DC.B  $A0, $E4, $CF, $D2, $A0
+   DC.B  $B0, $A0, $C4, $D5, $C3, $C1, $D4, $D3, $AE
+   DS.B  1
 
 S_ATTACK_TARGET:
-   DC.B  $1B, $C1, $D4, $D4, $C1, $C3, $CB, $A0, $B5, $E9, $BC, $A5, $A0, $D3, $C9, $C2
-   DC.B  $C3, $CD, $A0, $A0, $D4, $B1, $A0, $A0, $A0, $A0, $A0, $C9
+   DC.B  $1B, $C1, $D4, $D4, $C1, $C3, $CB
+   DC.B  $A0, $B5, $E9, $BC, $A5, $A0, $D3, $C9, $C2, $C3, $CD, $A0, $A0, $D4, $B1, $A0
+   DC.B  $A0, $A0, $A0, $A0, $C9
 
 S_MISSES:
    DC.B  $06, $CD, $C9, $D3, $D3, $C5, $D3
 
 S_DUCATS_TO_DROP:
    DC.B  $17, $C4, $D5, $C3, $C1, $D4, $D3, $A0, $D4, $CF, $A0, $C4, $D2, $CF, $D0, $A0
-   DC.B  $BA, $A0, $A0, $B4, $CC, $A0, $BA, $B0
+   DC.B  $BA, $A0
+   DC.B  $A0, $B4, $CC, $A0, $BA
+   DC.B  $B0
 
 S_PAY_FOR:
-   DC.B  $23, $D0, $C1, $D9, $A0, $B0, $B0, $B0, $B0, $B0, $B0, $A0, $C6, $CF, $D2, $A0
+   DC.B  $23, $D0, $C1, $D9, $A0
+   DC.B  $B0, $B0, $B0, $B0, $B0
+   DC.B  $B0, $A0, $C6, $CF, $D2, $A0
    DC.B  $A0, $DF, $A0, $A0, $A0, $A0, $D9, $A0, $E0, $A0, $A0, $A0, $C2, $B7, $A0, $B1
    DC.B  $C5, $A0, $C1, $F5
 
@@ -2097,7 +2144,8 @@ S_STOP:
 
 S_CONTINUE_GAME_NUMBER:
    DC.B  $17, $C3, $CF, $CE, $D4, $C9, $CE, $D5, $C5, $A0, $C7, $C1, $CD, $C5, $A0, $CE
-   DC.B  $D5, $CD, $C2, $C5, $D2, $A0, $CE, $CE
+   DC.B  $D5, $CD, $C2, $C5, $D2, $A0
+   DC.B  $CE, $CE
 
 S_BEGIN_NEW_GAME:
    DC.B  $0E, $C2, $C5, $C7, $C9, $CE, $A0, $CE, $C5, $D7, $A0, $C7, $C1, $CD, $C5
@@ -2156,11 +2204,13 @@ S_MOVE:
    DC.B  $04, $CD, $CF, $D6, $C5
 
 S_GAME_SPEED:
-   DC.B  $0E, $C7, $C1, $CD, $C5, $A0, $D3, $D0, $C5, $C5, $C4, $A0, $BA, $A0, $B0
+   DC.B  $0E, $C7, $C1, $CD, $C5, $A0, $D3, $D0, $C5, $C5, $C4, $A0, $BA, $A0
+   DC.B  $B0
 
 S_SAVE_IN_SLOT:
    DC.B  $1B, $D3, $C1, $D6, $C5, $A0, $C7, $C1, $CD, $C5, $A0, $C9, $CE, $A0, $D3, $CC
-   DC.B  $CF, $D4, $A0, $CE, $D5, $CD, $C2, $C5, $D2, $A0, $B0, $B0
+   DC.B  $CF, $D4, $A0, $CE, $D5, $CD, $C2, $C5, $D2, $A0
+   DC.B  $B0, $B0
 
 GAME_INPUT_OPTIONS:
    DC.B  $01

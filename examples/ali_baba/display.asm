@@ -11,8 +11,8 @@ WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
 WNDTOP	EQU	$22
 WNDBTM	EQU	$23
-CH	EQU	$24
-CV	EQU	$25
+TEXT_COL	EQU	$24
+TEXT_ROW	EQU	$25
 MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
@@ -156,7 +156,15 @@ S_PRESS_BUTTON	EQU	$7EBA
 SHOP_TABLE	EQU	$7EDD
 SHOP_EFFECT_TABLE	EQU	$7F6D
 XP_AWARD_TABLE	EQU	$7FBE
-MAP_OBJECT_NAMES	EQU	$7FC3
+S_A_WALL	EQU	$7FC3
+S_A_STATUE	EQU	$7FCA
+S_A_TREASURE_CHEST	EQU	$7FD3
+S_EMPTY_SPACE	EQU	$7FE4
+S_AN_ILLUSION	EQU	$7FF0
+S_A_DOOR	EQU	$7FFC
+S_AN_INVISIBLE_WALL	EQU	$8003
+S_SOME_RUNE_WRITING	EQU	$8016
+S_A_TRADING_OUTPOST	EQU	$8028
 ATTACK_VERB_STRINGS	EQU	$803A
 s_PRINT_FONT_CHAR	EQU	$80A4
 TUNE_TABLE	EQU	$80AE
@@ -165,6 +173,7 @@ TUNE_1_COMBAT_HIT	EQU	$80C7
 TUNE_2_COMBAT_DAMAGE	EQU	$80D7
 FONT_DATA	EQU	$83A5
 GAME_MESSAGE_STRINGS	EQU	$9AA5
+DISK_IO_CODE	EQU	$B300
 DISK_READ_FIELD	EQU	$B300
 RWTS_ENTRY	EQU	$B7B5
 RWTS_IOB	EQU	$B7E8
@@ -402,8 +411,8 @@ WAIT	EQU	$FCA8
 ; zp WNDWDTH size=1 at=$21 def=false init=
 ; zp WNDTOP size=1 at=$22 def=false init=
 ; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
+; zp TEXT_COL size=1 at=$24 def=false init=
+; zp TEXT_ROW size=1 at=$25 def=false init=
 ; zp MONITOR_GBAS size=2 at=$26 def=false init=
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
@@ -429,7 +438,7 @@ display_status_bar:
    JSR   text_renderer_no_pause
    JSR   print_ctrl_ab
    LDA   #$17
-   STA   CV
+   STA   TEXT_ROW
    LDA   INPUT_MODE
    BEQ   .cond_else@0
    LDA   #<S_PRESS_BUTTON
@@ -440,15 +449,15 @@ display_status_bar:
    LDX   #>S_PRESS_SPACE
 .cond_end@1:
    LDY   #$04
-   STY   CH
+   STY   TEXT_COL
    JMP   print_string
 
 print_panel_name:
    SUBROUTINE
 
-   STA   CH
+   STA   TEXT_COL
    LDA   #$14
-   STA   CV
+   STA   TEXT_ROW
    JSR   print_ctrl_ab
    LDA   #$8C
    JSR   hrcg_cout
@@ -460,11 +469,11 @@ print_panel_name:
    DEC   __local_print_panel_name__i
    BNE   .print_panel_name@rot@0
    LDA   #$14
-   STA   CV
+   STA   TEXT_ROW
    LDA   #$0A
    SEC
-   SBC   CH
-   STA   CH
+   SBC   TEXT_COL
+   STA   TEXT_COL
    LDX   __zpabi_print_panel_name__name_1
    LDA   __zpabi_print_panel_name__name_0
    JSR   print_centered_plus_col
@@ -610,16 +619,16 @@ display_char_stats:
    JSR   scroll_status_line
    JSR   print_ctrl_ab
    LDA   #$15
-   STA   CV
+   STA   TEXT_ROW
    LDA   #$00
-   STA   CH
+   STA   TEXT_COL
    LDX   #>STATS_TEMPLATE
    LDA   #<STATS_TEMPLATE
    JSR   print_string
    LDA   #$14
-   STA   CV
+   STA   TEXT_ROW
    LDA   #$00
-   STA   CH
+   STA   TEXT_COL
    LDA   INPUT_MODE
    BEQ   .cond_else@5
    LDA   #<STATS_PROMPT_JOYSTICK

@@ -47,9 +47,9 @@
       init_drop_gold stores the whole word, which writes the high byte
       of 0 a second time when the gold is below 256.
     - ENTITY_PTR's gold and CHAR_PTR's event pointer are read a byte at
-      a time by offset (GOLD_LO, GOLD_HI, ENTITY_GOLD, CHAR_EVENTS),
-      because c6502 computes the address of a 2-byte member before it
-      reads the member through a zero-page pointer.
+      a time by offset (ENTITY_BYTE and CHAR_BYTE), because c6502
+      computes the address of a 2-byte member before it reads the
+      member through a zero-page pointer.
 
     Where the original's comments and its code disagree, the C follows
     the code, and the function comments say where.
@@ -1147,51 +1147,51 @@
 
 /* The mask of a gold amount's bits 8-10, which an event entry keeps in
  * the low bits of its type. EVENT_VALUE_HI_MASK in the original. */
-#define EVENT_VALUE_HI_MASK 0x07
+constexpr uint8_t EVENT_VALUE_HI_MASK = 0x07;
 
 /* A location's faction, bits 6-5 of its style. */
-#define STYLE_FACTION_MASK 0x60
+constexpr uint8_t STYLE_FACTION_MASK = 0x60;
 
-/* ENTITY_PTR's byte at `offset`, and its gold read a byte at a time.
- * c6502 reads a 2-byte member through a zero-page pointer by computing
- * the member's address first (notes/events.md), and these read each
- * byte with LDY #offset and LDA (ENTITY_PTR),Y, as the original does. */
+/* ENTITY_PTR's byte at `offset`, with which the gold is read a byte at
+ * a time. c6502 reads a 2-byte member through a zero-page pointer by
+ * computing the member's address first (notes/events.md), and this
+ * reads the byte with LDY #offset and LDA (ENTITY_PTR),Y, as the
+ * original does. */
 #define ENTITY_BYTE(offset) (((uint8_t *)ENTITY_PTR)[offset])
-#define GOLD_LO ENTITY_BYTE(MFIELD_GOLD)
-#define GOLD_HI ENTITY_BYTE(MFIELD_GOLD + 1)
-#define ENTITY_GOLD ((uint16_t)GOLD_HI << 8 | GOLD_LO)
 
-/* CHAR_PTR's event list, read a byte at a time for the same reason. */
+/* CHAR_PTR's byte at `offset`, with which the event list's address,
+ * bytes 6 and 7, is read a byte at a time for the same reason. */
 #define CHAR_BYTE(offset) (((uint8_t *)CHAR_PTR)[offset])
-#define CHAR_EVENTS ((struct event *)((uint16_t)CHAR_BYTE(7) << 8 | CHAR_BYTE(6)))
 
 /* The low byte of LOCATIONS[1]'s address, $4009. Location 1 is the only
  * record whose address has this low byte. */
-#define LOCATION_1_LO 0x09
+constexpr uint8_t LOCATION_1_LO = 0x09;
 
 /* A mob that a faction search finds has bit 7 of its flags set. */
-#define FLAGS_CLASS_BIT 0x80
+constexpr uint8_t FLAGS_CLASS_BIT = 0x80;
 
 /* The scenes this unit plays. */
-#define SCENE_SPECIAL_CHEST 0x0B
-#define SCENE_SPECIAL_BONUS 0x0C
-#define SCENE_DAMAGE 0x0F
-#define SCENE_TRAP_0 0x36       /* one scene for each trap, $36-$39 */
-#define SCENE_P1_HOSTILE 0x04
-#define SCENE_P3 0x05
-#define SCENE_P1_FIRST 0x06
-#define SCENE_P1_SECOND 0x07
-#define SCENE_P1_COMBAT 0x08
+enum {
+    SCENE_SPECIAL_CHEST = 0x0B,
+    SCENE_SPECIAL_BONUS = 0x0C,
+    SCENE_DAMAGE = 0x0F,
+    SCENE_TRAP_0 = 0x36,        /* one scene for each trap, $36-$39 */
+    SCENE_P1_HOSTILE = 0x04,
+    SCENE_P3 = 0x05,
+    SCENE_P1_FIRST = 0x06,
+    SCENE_P1_SECOND = 0x07,
+    SCENE_P1_COMBAT = 0x08,
+};
 
 /* The mob index CHECK_SCENE_EVENTS looks for in player 1's and 3's
  * lists, and the three that PROCESS_SCENE_GROUPS moves out of
  * location 3. */
-#define SCENE_GROUP 0x40
-#define SCENE_GROUP_FIRST 0x3F
+constexpr uint8_t SCENE_GROUP = 0x40;
+constexpr uint8_t SCENE_GROUP_FIRST = 0x3F;
 
 /* Message $2A, which UPDATE_EVENT_LIST prints when the list is full. Its
  * EQU name is MSG_ARMOR_WORTHLESS, which describes another message. */
-#define MSG_EVENT_LIST_FULL 0x2A
+constexpr uint8_t MSG_EVENT_LIST_FULL = 0x2A;
 
 /* ---- Leaving a fight ---------------------------------------------------- */
 
@@ -1230,7 +1230,8 @@ void update_event_list(uint8_t pos, uint16_t value) {
         return;
     uint8_t value_hi = (uint8_t)(value >> 8) & EVENT_VALUE_HI_MASK;
     uint8_t value_lo = (uint8_t)value;
-    for (struct event *e = CHAR_EVENTS;; e++) {
+    for (struct event *e = (struct event *)((uint16_t)CHAR_BYTE(7) << 8 | CHAR_BYTE(6));
+         ; e++) {
         if (e->pos == EVENT_END) {
             set_cursor_row21();
             display_message(MSG_EVENT_LIST_FULL);
@@ -1283,8 +1284,8 @@ static void inc_stat(uint8_t offset) {
  * that the digits num_to_decimal leaves out show as spaces. */
 static void clear_treasure_digits(void) {
     for (int8_t i = 4; i >= 0; i--) {
-        S_REVEAL_DIGITS[i] = 0x20;
-        S_NOW_HAVE_DIGITS[i] = 0x20;
+        S_CHEST_MESSAGE.reveal_digits[i] = 0x20;
+        S_CHEST_MESSAGE.now_have_digits[i] = 0x20;
     }
 }
 
@@ -1346,8 +1347,8 @@ void pickup_treasure(struct event *ev) {
                 ENTITY_PTR->level--;
             break;
         default:
-            GOLD_LO = 0;
-            GOLD_HI = 0;
+            ENTITY_BYTE(MFIELD_GOLD) = 0;
+            ENTITY_BYTE(MFIELD_GOLD + 1) = 0;
             break;
         }
         if (ENTITY_PTR->next != CURRENT_ROOM) {
@@ -1360,10 +1361,11 @@ void pickup_treasure(struct event *ev) {
     modify_current_stats(gold, true);
     if (ENTITY_PTR->appearance < NPC_APPEARANCE_MIN) {
         clear_treasure_digits();
-        num_to_decimal(gold, S_REVEAL_DIGITS);
-        num_to_decimal(ENTITY_GOLD, S_NOW_HAVE_DIGITS);
+        num_to_decimal(gold, S_CHEST_MESSAGE.reveal_digits);
+        num_to_decimal((uint16_t)ENTITY_BYTE(MFIELD_GOLD + 1) << 8 | ENTITY_BYTE(MFIELD_GOLD),
+                       S_CHEST_MESSAGE.now_have_digits);
         set_cursor_row21();
-        clear_and_display(S_CHEST_OPENS);
+        clear_and_display(S_CHEST_MESSAGE.opens);
     }
     ev->pos = EVENT_EMPTY;
 }
@@ -1404,13 +1406,13 @@ static uint8_t pick_random_mob(void) {
             return pick_random_char();
         r = random_in_range(TOTAL_MOB_COUNT);
     } while (r == 0);
-    MOB_PTR_LO = r;
+    *(uint8_t *)&MOB_PTR = r;
     uint8_t index = 1;
     struct location *loc;
     for (;;) {
         loc = get_char_record(index);
-        MOB_PTR_LO -= loc->pc_count;
-        if (MOB_PTR_LO == 0 || (MOB_PTR_LO & 0x80))
+        *(uint8_t *)&MOB_PTR -= loc->pc_count;
+        if (*(uint8_t *)&MOB_PTR == 0 || (*(uint8_t *)&MOB_PTR & 0x80))
             break;
         index++;
     }
@@ -1422,7 +1424,8 @@ static uint8_t pick_random_mob(void) {
  * of type $40-$7F, which becomes $00-$3F. Location `index` becomes
  * ACTIVE_CHAR. The walk tests empty slots' types like any other's. */
 static void process_char_events(uint8_t index) {
-    for (struct event *e = CHAR_EVENTS; e->pos != EVENT_END; e++) {
+    for (struct event *e = (struct event *)((uint16_t)CHAR_BYTE(7) << 8 | CHAR_BYTE(6));
+         e->pos != EVENT_END; e++) {
         uint8_t type = e->type;
         if (type < EVENT_TYPE_MOB || (type & 0x80))
             continue;
@@ -1473,7 +1476,8 @@ static void event_spawn_mob(void) {
 /*
     Moves the first mob of CHAR_PTR's faction that is at no location
     into location `index` at a random position. CHAR_PTR is left at the
-    header record, LOCATIONS[0], whose mob list is CHAR_LIST_HEAD's.
+    header record, LOCATIONS[0], whose mob list holds the mobs at no
+    location.
     When no mob matches, event_spawn_mob runs instead. Nothing happens
     when the location picked is location 1.
 */
@@ -1647,10 +1651,10 @@ static uint8_t find_msb(uint8_t v) {
     has in mind.
 */
 uint8_t init_drop_gold(void) {
-    uint8_t mask = find_msb(GOLD_HI);
+    uint8_t mask = find_msb(ENTITY_BYTE(MFIELD_GOLD + 1));
     DROP_AMOUNT = (uint16_t)mask << 8;
     if (mask == 0) {
-        mask = find_msb(GOLD_LO);
+        mask = find_msb(ENTITY_BYTE(MFIELD_GOLD));
         DROP_AMOUNT = mask;
         if (mask == 0) {
             set_cursor_row21();
@@ -1665,8 +1669,8 @@ uint8_t init_drop_gold(void) {
 
 void init_drop_display(void) {
     for (int8_t i = 4; i >= 0; i--)
-        DROP_DISPLAY_BUF[i] = 0x20;
-    num_to_decimal(DROP_AMOUNT, DROP_DISPLAY_BUF);
+        S_DUCATS_TO_DROP.number[i] = 0x20;
+    num_to_decimal(DROP_AMOUNT, S_DUCATS_TO_DROP.number);
 }
 
 /*
@@ -1687,7 +1691,7 @@ static uint8_t adj_drop(bool down) {
         }
         DROP_AMOUNT += DROP_STEP;
         DROP_STEP >>= 1;
-        if (ENTITY_GOLD >= DROP_AMOUNT)
+        if (((uint16_t)ENTITY_BYTE(MFIELD_GOLD + 1) << 8 | ENTITY_BYTE(MFIELD_GOLD)) >= DROP_AMOUNT)
             return CHAIN_MENU_DROP_GOLD;
         DROP_AMOUNT -= DROP_STEP;
         DROP_AMOUNT -= DROP_STEP;

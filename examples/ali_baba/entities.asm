@@ -10,8 +10,8 @@ WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
 WNDTOP	EQU	$22
 WNDBTM	EQU	$23
-CH	EQU	$24
-CV	EQU	$25
+TEXT_COL	EQU	$24
+TEXT_ROW	EQU	$25
 MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
@@ -187,7 +187,15 @@ S_PRESS_BUTTON	EQU	$7EBA
 SHOP_TABLE	EQU	$7EDD
 SHOP_EFFECT_TABLE	EQU	$7F6D
 XP_AWARD_TABLE	EQU	$7FBE
-MAP_OBJECT_NAMES	EQU	$7FC3
+S_A_WALL	EQU	$7FC3
+S_A_STATUE	EQU	$7FCA
+S_A_TREASURE_CHEST	EQU	$7FD3
+S_EMPTY_SPACE	EQU	$7FE4
+S_AN_ILLUSION	EQU	$7FF0
+S_A_DOOR	EQU	$7FFC
+S_AN_INVISIBLE_WALL	EQU	$8003
+S_SOME_RUNE_WRITING	EQU	$8016
+S_A_TRADING_OUTPOST	EQU	$8028
 ATTACK_VERB_STRINGS	EQU	$803A
 s_PRINT_FONT_CHAR	EQU	$80A4
 TUNE_TABLE	EQU	$80AE
@@ -196,6 +204,7 @@ TUNE_1_COMBAT_HIT	EQU	$80C7
 TUNE_2_COMBAT_DAMAGE	EQU	$80D7
 FONT_DATA	EQU	$83A5
 GAME_MESSAGE_STRINGS	EQU	$9AA5
+DISK_IO_CODE	EQU	$B300
 DISK_READ_FIELD	EQU	$B300
 RWTS_ENTRY	EQU	$B7B5
 RWTS_IOB	EQU	$B7E8
@@ -225,7 +234,7 @@ WAIT	EQU	$FCA8
 ; def appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance locals=__local_appearance_to_fontchar__sprite indirect=false in_cycle=false param_regs=A
 ; def classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 locals=__local_classify_entity_type__0,__local_classify_entity_type__e,__local_classify_entity_type__1 indirect=false in_cycle=false param_regs=A,X
 ; def draw_blink_alt params= locals=__local_draw_blink_alt__sprite indirect=false in_cycle=false
-; def draw_blink_char params= locals= indirect=false in_cycle=false
+; def draw_blink_char params= locals=__local_draw_blink_char__0 indirect=false in_cycle=false
 ; def draw_blink_normal params= locals= indirect=false in_cycle=false
 ; def draw_char_at_pos params=__zpabi_draw_char_at_pos__pos locals=__local_draw_char_at_pos__0,__local_draw_char_at_pos__1,__local_draw_char_at_pos__pos indirect=false in_cycle=false param_regs=A
 ; def find_entity_at_pos params=__zpabi_find_entity_at_pos__pos locals=__local_find_entity_at_pos__link,__local_find_entity_at_pos__ev,__local_find_entity_at_pos__0,__local_find_entity_at_pos__pos indirect=false in_cycle=false param_regs=A
@@ -476,8 +485,8 @@ WAIT	EQU	$FCA8
 ; zp WNDWDTH size=1 at=$21 def=false init=
 ; zp WNDTOP size=1 at=$22 def=false init=
 ; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
+; zp TEXT_COL size=1 at=$24 def=false init=
+; zp TEXT_ROW size=1 at=$25 def=false init=
 ; zp MONITOR_GBAS size=2 at=$26 def=false init=
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
@@ -893,40 +902,40 @@ classify_entity_type:
    LDA   __local_classify_entity_type__e
    ORA   __local_classify_entity_type__1
    BNE   .cond_else@38
-   LDA   #<(MAP_OBJECT_NAMES+33)
-   LDX   #>(MAP_OBJECT_NAMES+33)
+   LDA   #<S_EMPTY_SPACE
+   LDX   #>S_EMPTY_SPACE
    RTS
 .cond_else@38:
-   LDX   #>MAP_OBJECT_NAMES
-   LDA   #<MAP_OBJECT_NAMES
+   LDA   #<S_A_WALL
+   LDX   #>S_A_WALL
    RTS
 .if_end@37:
    LDY   #$01
    LDA   (__local_classify_entity_type__e),Y
    CMP   #$80
-   BCC   .tail@1
+   BCC   .tail@0
    CMP   #$C0
    BCS   .if_end@41
-   LDX   #>(MAP_OBJECT_NAMES+33)
-   LDA   #<(MAP_OBJECT_NAMES+33)
+   LDX   #>S_EMPTY_SPACE
+   LDA   #<S_EMPTY_SPACE
    RTS
 .if_end@41:
    CMP   #$D2
    BCS   .if_end@42
-   LDX   #>(MAP_OBJECT_NAMES+16)
-   LDA   #<(MAP_OBJECT_NAMES+16)
+   LDX   #>S_A_TREASURE_CHEST
+   LDA   #<S_A_TREASURE_CHEST
    RTS
 .if_end@42:
    CMP   #$D5
    BCS   .if_end@43
-   LDX   #>(MAP_OBJECT_NAMES+83)
-   LDA   #<(MAP_OBJECT_NAMES+83)
+   LDX   #>S_SOME_RUNE_WRITING
+   LDA   #<S_SOME_RUNE_WRITING
    RTS
 .if_end@43:
    CMP   #$FE
    BEQ   .if_end@44
-   LDX   #>(MAP_OBJECT_NAMES+101)
-   LDA   #<(MAP_OBJECT_NAMES+101)
+   LDX   #>S_A_TRADING_OUTPOST
+   LDA   #<S_A_TRADING_OUTPOST
    RTS
 .if_end@44:
    LDY   #$02
@@ -935,36 +944,36 @@ classify_entity_type:
    AND   #$1F
    STA   __local_classify_entity_type__e
    BNE   .if_end@45
-   LDX   #>(MAP_OBJECT_NAMES+64)
-   LDA   #<(MAP_OBJECT_NAMES+64)
+   LDX   #>S_AN_INVISIBLE_WALL
+   LDA   #<S_AN_INVISIBLE_WALL
    RTS
 .if_end@45:
    LDA   __local_classify_entity_type__0
    AND   #$C0
    CMP   #$C0
-   BNE   .tail@2
+   BNE   .tail@1
    LDA   __local_classify_entity_type__e
    CMP   #$1B
    BCS   .if_end@47
-   LDX   #>(MAP_OBJECT_NAMES+7)
-   LDA   #<(MAP_OBJECT_NAMES+7)
+   LDX   #>S_A_STATUE
+   LDA   #<S_A_STATUE
    RTS
 .if_end@47:
    CMP   #$1D
    BCS   .if_end@48
-.tail@1:
-   LDX   #>(MAP_OBJECT_NAMES+57)
-   LDA   #<(MAP_OBJECT_NAMES+57)
+.tail@0:
+   LDX   #>S_A_DOOR
+   LDA   #<S_A_DOOR
    RTS
 .if_end@48:
    BNE   .if_end@49
-.tail@2:
-   LDX   #>(MAP_OBJECT_NAMES+45)
-   LDA   #<(MAP_OBJECT_NAMES+45)
+.tail@1:
+   LDX   #>S_AN_ILLUSION
+   LDA   #<S_AN_ILLUSION
    RTS
 .if_end@49:
-   LDA   #<MAP_OBJECT_NAMES
-   LDX   #>MAP_OBJECT_NAMES
+   LDX   #>S_A_WALL
+   LDA   #<S_A_WALL
    RTS
 
 follow_link:
@@ -1117,10 +1126,17 @@ draw_blink_char:
    SUBROUTINE
 
    LDA   BLINK_COL
-   CMP   #$14
-   BCC   .if_end@56
+   SEC
+   SBC   #$14
+   LDA   #$00
+   SBC   #$00
+   BVC   .jcmp_novf@0
+   EOR   #$80
+.jcmp_novf@0:
+   BMI   .if_end@56
    RTS
 .if_end@56:
+   LDA   BLINK_COL
    STA   FONT_COL
    LDA   BLINK_ROW
    STA   FONT_ROW
@@ -1151,8 +1167,8 @@ font_pos_to_text_pos:
 
    LDA   FONT_COL
    ASL
-   STA   CH
+   STA   TEXT_COL
    LDA   FONT_ROW
    ASL
-   STA   CV
+   STA   TEXT_ROW
    RTS

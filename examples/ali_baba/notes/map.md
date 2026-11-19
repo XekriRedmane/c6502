@@ -30,8 +30,8 @@ The variables: `DEFAULT_CHAR` (initially `$2C`) and `BLINK_ALT_CHAR`
 (initially 0), which the header declares, and the statics
 `MAP_FILL_CHAR` (initially `$25`, which `fill_map` uses when GAME_INIT
 calls it before any location has loaded its tiles), `MAP_REDRAW_FLAG`,
-and `TILE_FILL_TAB`. BLINK_DELAY is a `#define`, because nothing writes
-it.
+and `TILE_FILL_TAB`. BLINK_DELAY is a `constexpr uint8_t`, because
+nothing writes it.
 
 Not translated: CLEAR_STRENGTH_FLAGS, LOAD_SCENE_DISK_ENTRY, and
 SETUP_AND_READ_DISK, which have no callers that run.

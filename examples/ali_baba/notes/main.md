@@ -31,7 +31,8 @@ it.
   in C.
 - `toggle_sound` tests and flips `SOUND_ON` where TOGGLE_SOUND tests
   and patches the first bytes of PLAY_HIGH_TONE and PLAY_LOW_TONE. It
-  writes `S_SOUND_CHAR1` and `S_SOUND_CHAR2` as the original does, and
+  writes `S_SOUND_IS_ON.state`, the original's S_SOUND_CHAR1 and
+  S_SOUND_CHAR2, as the original does, and
   returns `CHAIN_MENU_GAME_SETTINGS` for the JMP MENU_GAME_SETTINGS.
 - `dec_threshold_wrap` and `inc_threshold_wrap` are each a tail jump to
   the static routine, where the original has JSR and RTS.
@@ -91,7 +92,7 @@ Item 1 was fixed on 18 Nov 2026, and main.c keeps its cast.
 ## Size
 
 The original's routines take 381 bytes (main.lst, the sizes in
-UNITS.md's table). The C takes 386 bytes in `main.asm`.
+UNITS.md's table). The C takes 395 bytes in `main.asm`.
 
 | Routine | Original | C |
 |---|---|---|
@@ -103,11 +104,13 @@ UNITS.md's table). The C takes 386 bytes in `main.asm`.
 | TOGGLE_SOUND | 40 | 39 |
 | SETTINGS_DISPLAY_INIT | 31 | 33 |
 | DEC_/INC_THRESHOLD_WRAP | 8 | 6 |
-| DEC_/INC_EVENT_THRESHOLD | 20 | 20 |
+| DEC_/INC_EVENT_THRESHOLD | 20 | 29 |
 | ATTRACT_SCREEN | 35 | 35 |
-| Total | 381 | 386 |
+| Total | 381 | 395 |
 
 The C's extra bytes are the zp_abi argument stores (`STA
 __zpabi_...`) before calls that take A in the original, and
 START_MOB_TURN's JMP to GAME_TURN_LOOP becoming a store of the chain
-state and a JMP to `run_chain`.
+state and a JMP to `run_chain`. INC_EVENT_THRESHOLD's comparison with
+MAX_THRESHOLD, a `constexpr uint8_t`, is a 16-bit signed compare that
+costs 9 bytes (UNITS.md, compiler gap 7).

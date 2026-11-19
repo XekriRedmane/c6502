@@ -535,15 +535,15 @@ uint8_t BLINK_ALT_CHAR = 0x00;
  * BLINK_ALT_CHAR for each style, which hold $2C and $00 for every
  * style. */
 static const uint8_t TILE_FILL_TAB[4] = { 0x25, 0x2A, 0x20, 0x29 };
-#define TILE_DEFAULT_CHAR 0x2C
-#define TILE_BLINK_CHAR 0x00
+constexpr uint8_t TILE_DEFAULT_CHAR = 0x2C;
+constexpr uint8_t TILE_BLINK_CHAR = 0x00;
 
 /* Bits 6-5 of a location's style select its tiles, and a location with
  * either set gets the rock-fall message in draw_map_entities. Bit 7 is
  * set once the location's entities have been drawn. */
-#define STYLE_TILES_MASK 0x60
-#define STYLE_ID_MASK 0x7F
-#define STYLE_DRAWN_BIT 0x80
+constexpr uint8_t STYLE_TILES_MASK = 0x60;
+constexpr uint8_t STYLE_ID_MASK = 0x7F;
+constexpr uint8_t STYLE_DRAWN_BIT = 0x80;
 
 /* Nonzero once draw_map_entities has printed the rock-fall message,
  * after which it draws only the mobs of every location. Nothing clears
@@ -552,7 +552,7 @@ static uint8_t MAP_REDRAW_FLAG = 0;
 
 /* The WAIT calls draw_map_icon_b spends with the location's tile shown
  * in a cell. */
-#define BLINK_DELAY 0x2D
+constexpr uint8_t BLINK_DELAY = 0x2D;
 
 /* Sets the tiles for LOCATION_STYLE. The original's index is LOCATION_STYLE
  * rotated left four times through the carry and masked with 3, which is
@@ -580,7 +580,7 @@ void fill_map(void) {
                 return;
         }
         font_pos_to_text_pos();
-        print_string(s_PRINT_FONT_CHAR);
+        print_string((const uint8_t *)&s_PRINT_FONT_CHAR);
     }
 }
 
@@ -876,7 +876,7 @@ static bool load_scene_from_disk(uint8_t scene) {
 
 /* The bits of a new PRNG_OUTPUT that skip the copy protection's check
  * when either is set, which is three times in four. */
-#define PRNG_SCENE_SKIP_MASK 0x0A
+constexpr uint8_t PRNG_SCENE_SKIP_MASK = 0x0A;
 
 /* Plays scene `scene`, and each scene the last byte of its sector names
  * after it, with the title tune after each, and then redraws the
@@ -901,9 +901,10 @@ void scene_loop(uint8_t scene) {
         TEXT_STREAM_PTR = SCENE_TEXT_DATA;
         text_renderer();
         tune_player(TUNE_ATTRACT, 0);
-        if (SCENE_TRANSITION == 0)
+        /* The sector's last byte names the next scene, or 0 for none. */
+        if (SCENE_TEXT_DATA[0xFF] == 0)
             break;
-        SCENE_NUMBER = SCENE_TRANSITION;
+        SCENE_NUMBER = SCENE_TEXT_DATA[0xFF];
     }
 
     set_text_window_bottom();

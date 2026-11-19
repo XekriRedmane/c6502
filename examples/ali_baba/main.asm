@@ -10,8 +10,8 @@ WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
 WNDTOP	EQU	$22
 WNDBTM	EQU	$23
-CH	EQU	$24
-CV	EQU	$25
+TEXT_COL	EQU	$24
+TEXT_ROW	EQU	$25
 MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
@@ -152,7 +152,15 @@ S_PRESS_BUTTON	EQU	$7EBA
 SHOP_TABLE	EQU	$7EDD
 SHOP_EFFECT_TABLE	EQU	$7F6D
 XP_AWARD_TABLE	EQU	$7FBE
-MAP_OBJECT_NAMES	EQU	$7FC3
+S_A_WALL	EQU	$7FC3
+S_A_STATUE	EQU	$7FCA
+S_A_TREASURE_CHEST	EQU	$7FD3
+S_EMPTY_SPACE	EQU	$7FE4
+S_AN_ILLUSION	EQU	$7FF0
+S_A_DOOR	EQU	$7FFC
+S_AN_INVISIBLE_WALL	EQU	$8003
+S_SOME_RUNE_WRITING	EQU	$8016
+S_A_TRADING_OUTPOST	EQU	$8028
 ATTACK_VERB_STRINGS	EQU	$803A
 s_PRINT_FONT_CHAR	EQU	$80A4
 TUNE_TABLE	EQU	$80AE
@@ -161,6 +169,7 @@ TUNE_1_COMBAT_HIT	EQU	$80C7
 TUNE_2_COMBAT_DAMAGE	EQU	$80D7
 FONT_DATA	EQU	$83A5
 GAME_MESSAGE_STRINGS	EQU	$9AA5
+DISK_IO_CODE	EQU	$B300
 DISK_READ_FIELD	EQU	$B300
 RWTS_ENTRY	EQU	$B7B5
 RWTS_IOB	EQU	$B7E8
@@ -190,7 +199,7 @@ WAIT	EQU	$FCA8
 ; def check_mob_needs_turn params= locals=__local_check_mob_needs_turn__0 indirect=false in_cycle=false carry=true
 ; def dec_event_threshold params= locals= indirect=false in_cycle=false
 ; def dec_threshold_wrap params= locals= indirect=false in_cycle=false
-; def inc_event_threshold params= locals= indirect=false in_cycle=false
+; def inc_event_threshold params= locals=__local_inc_event_threshold__0 indirect=false in_cycle=false
 ; def inc_threshold_wrap params= locals= indirect=false in_cycle=false
 ; def main params= locals=__local_main__0 indirect=false in_cycle=false
 ; def process_mob_groups params= locals=__local_process_mob_groups__0 indirect=false in_cycle=false
@@ -427,8 +436,8 @@ WAIT	EQU	$FCA8
 ; zp WNDWDTH size=1 at=$21 def=false init=
 ; zp WNDTOP size=1 at=$22 def=false init=
 ; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
+; zp TEXT_COL size=1 at=$24 def=false init=
+; zp TEXT_ROW size=1 at=$25 def=false init=
 ; zp MONITOR_GBAS size=2 at=$26 def=false init=
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
@@ -629,8 +638,14 @@ inc_event_threshold:
    SUBROUTINE
 
    LDA   EVENT_THRESHOLD
-   CMP   #$63
-   BCS   .if_end@16
+   SEC
+   SBC   #$63
+   LDA   #$00
+   SBC   #$00
+   BVC   .jcmp_novf@0
+   EOR   #$80
+.jcmp_novf@0:
+   BPL   .if_end@16
    INC   EVENT_THRESHOLD
 .if_end@16:
    RTS

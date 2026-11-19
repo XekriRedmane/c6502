@@ -27,7 +27,7 @@ The file's opening comment lists them. In short:
 - `print_panel_name` computes `TEXT_COL = 10 - TEXT_COL` from the
   column the HRCG left after the 20 spaces, as the original does. That
   column depends on hrcg_cout's handling of the row's end, so the C
-  reads CH there rather than computing a constant.
+  reads TEXT_COL there rather than computing a constant.
 
 ## Where the original's comments and code disagree
 
@@ -50,9 +50,10 @@ The C follows the code in each case.
   header's field and the stats screen's label.
 - Its "cosmetic" test is described as blanking a "0" tens digit when
   the hundreds digit is blank. STATS_DUCATS is one place after
-  STATS_DUCATS_OUT, so STATS_DUCATS+2 and +3 are the gold's tens and
-  ones places. The test blanks the ones digit when the gold is 0, so
-  no gold shows no digits.
+  STATS_DUCATS_OUT, so STATS_DUCATS+2 and +3
+  (`STATS_TEMPLATE.ducats[3]` and `[4]`) are the gold's tens and ones
+  places. The test blanks the ones digit when the gold is 0, so no
+  gold shows no digits.
 - UNITS.md says the routine stores `anim_check_frame()`'s value to
   KBDSTRB. The code calls ANIM_TICK_AND_WAIT, which falls into
   ANIM_CHECK_FRAME, and stores its result. The C stores

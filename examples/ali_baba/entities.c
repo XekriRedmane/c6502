@@ -836,22 +836,24 @@
 
 /* The HRCG font selector, after HRCG_CTRL_A, of the first font of
  * FONT_CHARSET 1. FONT_CHARSET 2 starts two fonts further on. */
-#define FONT_SELECTOR_1 0xB1
+constexpr uint8_t FONT_SELECTOR_1 = 0xB1;
 /* The sprites in one font of 96 glyphs, and the glyph of a font's
  * first sprite. */
-#define SPRITES_PER_FONT 24
-#define FIRST_SPRITE_GLYPH 0x20
+constexpr uint8_t SPRITES_PER_FONT = 24;
+constexpr uint8_t FIRST_SPRITE_GLYPH = 0x20;
 
 /* The sprites GET_ENTITY_FONTCHAR draws for event entries. */
-#define SPRITE_RANDOM_ENCOUNTER 0x1B    /* types $00-$3F */
-#define SPRITE_MOB_ENCOUNTER 0x1C       /* types $40-$7F */
-#define SPRITE_TREASURE 0x1A            /* types $C0-$D1 */
-#define SPRITE_SCENE 0x18               /* types $D2-$D4 */
-#define SPRITE_SHOP 0x1D                /* types $D5-$FD and $FF */
+enum {
+    SPRITE_RANDOM_ENCOUNTER = 0x1B,     /* types $00-$3F */
+    SPRITE_MOB_ENCOUNTER = 0x1C,        /* types $40-$7F */
+    SPRITE_TREASURE = 0x1A,             /* types $C0-$D1 */
+    SPRITE_SCENE = 0x18,                /* types $D2-$D4 */
+    SPRITE_SHOP = 0x1D,                 /* types $D5-$FD and $FF */
+};
 /* An object entry (type $FE) draws the sprite in bits 4-0 of its
  * value. Bits 7-6 set make CLASSIFY_ENTITY_TYPE look at the sprite. */
-#define OBJECT_SPRITE_MASK 0x1F
-#define OBJECT_CLASS_MASK 0xC0
+constexpr uint8_t OBJECT_SPRITE_MASK = 0x1F;
+constexpr uint8_t OBJECT_CLASS_MASK = 0xC0;
 
 /* Prints ENTITY_PTR's name centered in the right-hand panel. */
 void load_char_name_ptr(void) {
@@ -883,7 +885,7 @@ entity_ref find_entity_at_pos(uint8_t pos) {
     struct mob *m;
     struct event *ev;
 
-    ENTITY_SEARCH_POS = pos;
+    LOCATION_ID = pos;      /* ENTITY_SEARCH_POS */
     for (link = CHAR_PTR->mob_head; link != 0; link = m->next) {
         m = get_mob_data(link);
         if (m->pos == pos)
@@ -1160,7 +1162,7 @@ void print_fontchar_at_text_pos(void) {
 
     if (FONT_CHARSET == 2)
         selector += 2;
-    CHAR_CHARSET = selector;
+    s_PRINT_FONT_CHAR.charset = selector;
     render_font_char_direct(selector);
 }
 
@@ -1172,15 +1174,15 @@ void render_font_char_direct(uint8_t charset_sel) {
 
     while (sprite >= SPRITES_PER_FONT) {
         charset_sel++;
-        CHAR_CHARSET = charset_sel;
+        s_PRINT_FONT_CHAR.charset = charset_sel;
         sprite -= SPRITES_PER_FONT;
     }
     glyph = sprite * 4 + FIRST_SPRITE_GLYPH;
-    CHAR_UPPER_LEFT = glyph;
-    CHAR_UPPER_RIGHT = glyph + 1;
-    CHAR_LOWER_LEFT = glyph + 2;
-    CHAR_LOWER_RIGHT = glyph + 3;
-    print_string(s_PRINT_FONT_CHAR);
+    s_PRINT_FONT_CHAR.upper_left = glyph;
+    s_PRINT_FONT_CHAR.upper_right = glyph + 1;
+    s_PRINT_FONT_CHAR.lower_left = glyph + 2;
+    s_PRINT_FONT_CHAR.lower_right = glyph + 3;
+    print_string((const uint8_t *)&s_PRINT_FONT_CHAR);
 }
 
 /* Draws the blinking cell, unless BLINK_COL turns the blink off. */

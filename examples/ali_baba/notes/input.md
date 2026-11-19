@@ -81,7 +81,7 @@ Tables and variables:
 | DIR_KEYS_UPPER, _LOWER, _CTRL | `DIR_KEYS[3][5]` |
 | JOY_AXIS_X, JOY_AXIS_Y | `joy_zone_x`, `joy_zone_y` |
 | JOY_THRESH_LO, JOY_THRESH_HI | `ZONE_THRESH_PLUS`, `ZONE_THRESH_MINUS` |
-| JOY_SETTLE_DELAY, MAX_GAME_SPEED, GAME_DISK_SLOTS, MAX_SLOT_NUMBER, SAVE_SECTOR_COUNT | `#define`s |
+| JOY_SETTLE_DELAY, MAX_GAME_SPEED, GAME_DISK_SLOTS, MAX_SLOT_NUMBER, SAVE_SECTOR_COUNT | `constexpr uint8_t` |
 | SLOT_NUMBER | `slot_number` |
 | SAVE_TRACK_BASE, DISK_SIGNATURE | `static const` arrays |
 | GAME_SIG_TRACK, GAME_SIG_SECTOR | the header's `const uint8_t`s, defined here |
@@ -231,12 +231,15 @@ instruction bytes for the same routines, counted from `main.lst`
 
 | | Original | C |
 |---|---|---|
-| code | 1572 | 1885, of which `__zp_init` is 15 |
+| code | 1572 | 1919, of which `__zp_init` is 15 |
 | menus | 593 | 505 (11 descriptors of 5 bytes and 50 options of 9) |
 | menu strings | 679 | 677 |
 | other tables and variables | 39 | 34, of which `-O` moves the 5 variables to zero page |
 
-The code is 313 bytes, 20%, larger than the original's. The largest
+The code is 347 bytes, 22%, larger than the original's. The four
+comparisons with MAX_GAME_SPEED, MAX_SLOT_NUMBER, and GAME_DISK_SLOTS,
+which are `constexpr uint8_t` constants, compile to 16-bit signed
+compares and take 34 of those bytes (UNITS.md, compiler gap 7). The largest
 differences are the menu driver (`option`, `draw_option`, and
 `input_loop`, which pass option pointers in zero-page parameters where
 the original keeps one in $C2), the IOB setup (gap 3), and

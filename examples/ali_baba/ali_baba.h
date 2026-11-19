@@ -71,8 +71,8 @@
  * 20 * row + col, 0-199. POS_TO_COLROW gives col = pos % 20 and
  * row = pos / 20 for any byte, so a wrapped position such as 245 has
  * row 12. */
-#define MAP_WIDTH 20
-#define MAP_HEIGHT 10
+constexpr uint8_t MAP_WIDTH = 20;
+constexpr uint8_t MAP_HEIGHT = 10;
 
 /* A move's direction, as READ_KEYBOARD and NPC_MOVE_AI return it and
  * as a menu option's neighbors are indexed. GAME_TURN_LOOP tests for
@@ -114,7 +114,8 @@ struct location {
 };
 
 /* Record 0 at $4000, the same 9 bytes seen as a header. Its mob list
- * (CHAR_LIST_HEAD) holds the mobs that are at no location. */
+ * (CHAR_LIST_HEAD) holds the mobs that are at no location. The
+ * comments give the original's EQU names of the fields. */
 struct location_header {
     struct mob *mob_base;   /* +0: MOB_BASE_LO/HI, $4C80, GET_MOB_DATA's base */
     uint8_t char_list_head; /* +2: CHAR_LIST_HEAD */
@@ -178,16 +179,16 @@ enum {
 };
 
 /* Bits and masks of a mob's fields. */
-#define STRENGTH_MASK 0x1F
-#define HP_MASK 0x3F
-#define HP_FLAGS_MASK 0xC0
-#define LEVEL_MASK 0x1F
-#define LOW_NIBBLE_MASK 0x0F
-#define FLAGS_STATE_MASK 0x03
-#define FLAGS_ENGAGED_BIT 0x04
-#define FLAGS_DEAD_BIT 0x10
-#define FLAGS_FACTION_MASK 0x70
-#define NPC_APPEARANCE_MIN 0x15     /* appearance below this: a player character */
+constexpr uint8_t STRENGTH_MASK = 0x1F;
+constexpr uint8_t HP_MASK = 0x3F;
+constexpr uint8_t HP_FLAGS_MASK = 0xC0;
+constexpr uint8_t LEVEL_MASK = 0x1F;
+constexpr uint8_t LOW_NIBBLE_MASK = 0x0F;
+constexpr uint8_t FLAGS_STATE_MASK = 0x03;
+constexpr uint8_t FLAGS_ENGAGED_BIT = 0x04;
+constexpr uint8_t FLAGS_DEAD_BIT = 0x10;
+constexpr uint8_t FLAGS_FACTION_MASK = 0x70;
+constexpr uint8_t NPC_APPEARANCE_MIN = 0x15;    /* appearance below this: a player character */
 
 /*
     An event-list entry: 3 bytes. A location's `events` points at its
@@ -242,8 +243,8 @@ enum {
     tests the high byte, so 0 with a nonzero low byte is the edge.
 */
 typedef uint16_t entity_ref;
-#define ENTITY_NONE 0x0000
-#define ENTITY_EDGE 0x0001
+constexpr entity_ref ENTITY_NONE = 0x0000;
+constexpr entity_ref ENTITY_EDGE = 0x0001;
 #define ENTITY_IS_MOB(e) (((e) & 0x8000) != 0)
 #define ENTITY_IS_EVENT(e) ((e) > 0x00FF && !ENTITY_IS_MOB(e))
 #define ENTITY_MOB(e) ((struct mob *)((e) & 0x7FFF))
@@ -416,7 +417,7 @@ enum {
 
 /* SCENE_LOOP's scene for a character's retirement. Other scene numbers
  * appear as constants in the code that plays them. */
-#define SCENE_RETIRE 0x23
+constexpr uint8_t SCENE_RETIRE = 0x23;
 
 /* TUNE_PLAYER's tune numbers. The original passes the number times 2
  * in X, and tune_player takes the number itself. */
@@ -476,20 +477,21 @@ extern const uint8_t *TEXT_STREAM_PTR [[c6502::zeropage(0x06)]];
 extern struct rwts_iob *RWTS_IOB_PTR [[c6502::zeropage(0x08)]];
 
 /* The Monitor's text window and cursor. The HRCG and the ROM routines
- * it calls read and write them, and so does the game. */
+ * it calls read and write them, and so does the game. TEXT_COL and
+ * TEXT_ROW are the game's names for the Monitor's CH and CV. c6502
+ * rejects two objects at one address, so the Monitor's names aren't
+ * declared, and hrcg.c uses the game's. */
 extern uint8_t MONITOR_YSAV1_1F [[c6502::zeropage(0x1F)]];
 extern uint8_t WNDLFT [[c6502::zeropage(0x20)]];
 extern uint8_t WNDWDTH [[c6502::zeropage(0x21)]];
 extern uint8_t WNDTOP [[c6502::zeropage(0x22)]];
 extern uint8_t WNDBTM [[c6502::zeropage(0x23)]];
-extern uint8_t CH [[c6502::zeropage(0x24)]];
-extern uint8_t CV [[c6502::zeropage(0x25)]];
-#define TEXT_COL CH
-#define TEXT_ROW CV
+extern uint8_t TEXT_COL [[c6502::zeropage(0x24)]];
+extern uint8_t TEXT_ROW [[c6502::zeropage(0x25)]];
 /* $26-$27: GBASL/GBASH, which DOS's RWTS also uses. */
 extern uint8_t MONITOR_GBAS [[c6502::zeropage(0x26)]][2];
 /* The text-page line VTAB, VTABZ, HOME, CLREOP, and SCROLL leave. The
- * HRCG stores each character it draws at BASL[CH] as well, which can
+ * HRCG stores each character it draws at BASL[TEXT_COL] as well, which can
  * be several calls after the VTAB that set BASL. */
 extern uint8_t *BASL [[c6502::zeropage(0x28)]];
 /* $2A-$4F: the Monitor's BAS2L/BAS2H and the rest of its bytes, and
@@ -508,9 +510,9 @@ extern struct menu_option *MENU_OPTION_PTR [[c6502::zeropage(0xC2)]];
 extern const uint8_t *TUNE_PC [[c6502::zeropage(0xE4)]];
 /* The mob or event entry being looked at. Combat, the AI, and the
  * events point it at mobs, PICKUP_TREASURE at an event entry, and
- * PICK_RANDOM_MOB uses its low byte as a counter (MOB_PTR_LO). */
+ * PICK_RANDOM_MOB uses its low byte, *(uint8_t *)&MOB_PTR, as a counter
+ * (MOB_PTR_LO in the original). */
 extern struct mob *MOB_PTR [[c6502::zeropage(0xF4)]];
-#define MOB_PTR_LO (*(uint8_t *)&MOB_PTR)
 /* The mob whose turn it is, set by PROCESS_MOB_GROUPS. ENTER_LOCATION
  * points it at CANDIDATE_POS ($5A15), so that its pos byte is
  * PRNG_OUTPUT, and leaves it there. */
@@ -520,11 +522,10 @@ extern struct location *CHAR_PTR [[c6502::zeropage(0xFA)]];
 
 /* ---- The game's records, $4000-$59FF ------------------------------- */
 
+/* The header's fields are read as ((struct location_header
+ * *)LOCATIONS)->mob_base and so on. c6502 rejects a second object at
+ * $4000, so the header has no name of its own. */
 extern struct location LOCATIONS [[c6502::address(0x4000)]][63];
-#define LOCATION_HEADER (*(struct location_header *)LOCATIONS)
-#define MOB_BASE (LOCATION_HEADER.mob_base)
-#define CHAR_LIST_HEAD (LOCATION_HEADER.char_list_head)
-#define MSG_TABLE_PTR (LOCATION_HEADER.msg_table)
 /* $FFFF after the last location. MAIN_ENTRY ends its walk when byte 1
  * of the record after the last ($4238) is $FF. */
 extern const uint16_t LOCATIONS_END [[c6502::address(0x4237)]];
@@ -542,8 +543,9 @@ extern struct mob MOBS [[c6502::address(0x4C80)]][128];
 /* ---- The variables of page $5A ----------------------------------- */
 
 /*
-    One declaration per address. Where several EQU names share a byte,
-    the others are #defines. The bytes UNITS.md lists as locals aren't
+    One declaration per address, since c6502 rejects two objects at one
+    address. Where several EQU names share a byte, the declaration takes
+    one of them, and the C uses it for all. The bytes UNITS.md lists as locals aren't
     declared: $5A11, $5A12, $5A14, $5A1A, $5A2A-$5A2C, $5A58, $5A60,
     $5A69, $5A6F, and $5A70. $5A2D-$5A50, $5A95, $5AA5, and $5AA8 hold
     leftover assembler text that nothing reads.
@@ -576,8 +578,9 @@ extern uint8_t NEAREST_POS [[c6502::address(0x5A13)]];
  * the record's pos byte is PRNG_OUTPUT. */
 extern uint8_t CANDIDATE_POS [[c6502::address(0x5A15)]];
 extern uint8_t HEAL_NOTIFIED [[c6502::address(0x5A16)]];
+/* Also ENTITY_SEARCH_POS, where the original's FIND_ENTITY_AT_POS
+ * stores the position that its CHECK_AT_BOUNDARY reads. */
 extern uint8_t LOCATION_ID [[c6502::address(0x5A17)]];
-#define ENTITY_SEARCH_POS LOCATION_ID
 /* STEP_PRNG's state and output. Combat also stores RANDOM_IN_RANGE's
  * results in PRNG_OUTPUT ($1C13, $1DBB), which READ_KEYBOARD and
  * LOAD_SCENE_DATA read later. */
@@ -695,30 +698,41 @@ extern uint8_t PWREDUP [[c6502::address(0x03F4)]];
 
 /* The scene sector LOAD_SCENE_FROM_DISK reads, over the original's
  * border code. The disk-signature routines use its first bytes too.
- * Its last byte is SCENE_TRANSITION, nonzero for a new scene. */
+ * Its last byte, SCENE_TEXT_DATA[0xFF] (SCENE_TRANSITION in the
+ * original), is nonzero for a new scene. */
 extern uint8_t SCENE_TEXT_DATA [[c6502::address(0x5C00)]][256];
-#define SCENE_TRANSITION (SCENE_TEXT_DATA[0xFF])
 
-/* The stats screen, a text stream that DISPLAY_CHAR_STATS fills in.
- * Each _OUT field is where NUM_TO_DECIMAL writes a number. */
-extern uint8_t STATS_TEMPLATE [[c6502::address(0x7D83)]][0x7E01 - 0x7D83];
-#define STATS_LIFE_OUT (STATS_TEMPLATE + 0x0A)
-#define STATS_LIFE (STATS_TEMPLATE + 0x0D)
-#define STATS_STR_OUT (STATS_TEMPLATE + 0x19)
-#define STATS_STR (STATS_TEMPLATE + 0x1C)
-#define STATS_DUCATS_OUT (STATS_TEMPLATE + 0x33)
-#define STATS_DUCATS (STATS_TEMPLATE + 0x34)
-#define STATS_SPEED_OUT (STATS_TEMPLATE + 0x43)
-#define STATS_SPEED (STATS_TEMPLATE + 0x46)
-#define STATS_SWORD_OUT (STATS_TEMPLATE + 0x4F)
-#define STATS_SWORD (STATS_TEMPLATE + 0x52)
-#define STATS_WEAP_OUT (STATS_TEMPLATE + 0x5E)
-#define STATS_WEAP STATS_WEAP_OUT
-#define STATS_ARMOR (STATS_TEMPLATE + 0x62)
-#define STATS_DEXT_OUT (STATS_TEMPLATE + 0x6D)
-#define STATS_DEXT (STATS_TEMPLATE + 0x70)
-#define STATS_DAGGR_OUT (STATS_TEMPLATE + 0x79)
-#define STATS_DAGGR (STATS_TEMPLATE + 0x7C)
+/*
+    The stats screen, $7D83-$7E00, a length byte ($7D) and 125
+    characters, which DISPLAY_CHAR_STATS fills in and prints with
+    print_string. Each array of 5 is where NUM_TO_DECIMAL writes a
+    number, and only its last places are digits on the screen. The
+    places before them hold the text in front of the number ("CE " of
+    "LIFE FORCE" in `life`), which NUM_TO_DECIMAL leaves alone as long
+    as the number has no digit there. The comments give the original's
+    _OUT label of each array and the label of its first digit on the
+    screen.
+*/
+struct stats_screen {
+    uint8_t length;         /* $7D */
+    uint8_t text_0[9];
+    uint8_t life[5];        /* +$0A STATS_LIFE_OUT; [3] STATS_LIFE */
+    uint8_t text_1[10];
+    uint8_t strength[5];    /* +$19 STATS_STR_OUT; [3] STATS_STR */
+    uint8_t text_2[21];
+    uint8_t ducats[5];      /* +$33 STATS_DUCATS_OUT; [1] STATS_DUCATS */
+    uint8_t text_3[11];
+    uint8_t speed[5];       /* +$43 STATS_SPEED_OUT; [3] STATS_SPEED */
+    uint8_t text_4[7];
+    uint8_t sword[5];       /* +$4F STATS_SWORD_OUT; [3] STATS_SWORD */
+    uint8_t text_5[10];
+    uint8_t armor[5];       /* +$5E STATS_WEAP_OUT; [4] STATS_ARMOR */
+    uint8_t text_6[10];
+    uint8_t dexterity[5];   /* +$6D STATS_DEXT_OUT; [3] STATS_DEXT */
+    uint8_t text_7[7];
+    uint8_t dagger[5];      /* +$79 STATS_DAGGR_OUT; [3] STATS_DAGGR */
+};
+extern struct stats_screen STATS_TEMPLATE [[c6502::address(0x7D83)]];
 extern const uint8_t STATS_PROMPT_KEYBOARD [[c6502::address(0x7E01)]][0x17];
 extern const uint8_t STATS_PROMPT_JOYSTICK [[c6502::address(0x7E18)]][0x17];
 /* The status bar's text stream, which DISPLAY_STATUS_BAR renders. */
@@ -734,29 +748,36 @@ extern const uint8_t SHOP_EFFECT_TABLE [[c6502::address(0x7F6D)]][5];
 extern const uint8_t XP_AWARD_TABLE [[c6502::address(0x7FBE)]][5];
 
 /* CLASSIFY_ENTITY_TYPE's nine names, each a length byte and high-bit
- * ASCII, one after another. */
-extern const uint8_t MAP_OBJECT_NAMES [[c6502::address(0x7FC3)]][0x803A - 0x7FC3];
-#define S_A_WALL (MAP_OBJECT_NAMES + 0x00)
-#define S_A_STATUE (MAP_OBJECT_NAMES + 0x07)
-#define S_A_TREASURE_CHEST (MAP_OBJECT_NAMES + 0x10)
-#define S_EMPTY_SPACE (MAP_OBJECT_NAMES + 0x21)
-#define S_AN_ILLUSION (MAP_OBJECT_NAMES + 0x2D)
-#define S_A_DOOR (MAP_OBJECT_NAMES + 0x39)
-#define S_AN_INVISIBLE_WALL (MAP_OBJECT_NAMES + 0x40)
-#define S_SOME_RUNE_WRITING (MAP_OBJECT_NAMES + 0x53)
-#define S_A_TRADING_OUTPOST (MAP_OBJECT_NAMES + 0x65)
+ * ASCII, one after another in MAP_OBJECT_NAMES, $7FC3-$8039. The
+ * comments give each one's offset in the table. */
+extern const uint8_t S_A_WALL [[c6502::address(0x7FC3)]][7];                /* +$00 */
+extern const uint8_t S_A_STATUE [[c6502::address(0x7FCA)]][9];              /* +$07 */
+extern const uint8_t S_A_TREASURE_CHEST [[c6502::address(0x7FD3)]][17];     /* +$10 */
+extern const uint8_t S_EMPTY_SPACE [[c6502::address(0x7FE4)]][12];          /* +$21 */
+extern const uint8_t S_AN_ILLUSION [[c6502::address(0x7FF0)]][12];          /* +$2D */
+extern const uint8_t S_A_DOOR [[c6502::address(0x7FFC)]][7];                /* +$39 */
+extern const uint8_t S_AN_INVISIBLE_WALL [[c6502::address(0x8003)]][19];    /* +$40 */
+extern const uint8_t S_SOME_RUNE_WRITING [[c6502::address(0x8016)]][18];    /* +$53 */
+extern const uint8_t S_A_TRADING_OUTPOST [[c6502::address(0x8028)]][18];    /* +$65 */
 /* Combat's verbs, length-prefixed strings one after another. */
 extern const uint8_t ATTACK_VERB_STRINGS [[c6502::address(0x803A)]][0x80A4 - 0x803A];
 
-/* RENDER_FONT_CHAR's string: a length byte (9), then ctrl-A and the
- * font selector, ctrl-B, two glyphs, ctrl-C, two glyphs, ctrl-D. The
- * fields are written before each print. */
-extern uint8_t s_PRINT_FONT_CHAR [[c6502::address(0x80A4)]][10];
-#define CHAR_CHARSET (s_PRINT_FONT_CHAR[2])
-#define CHAR_UPPER_LEFT (s_PRINT_FONT_CHAR[4])
-#define CHAR_UPPER_RIGHT (s_PRINT_FONT_CHAR[5])
-#define CHAR_LOWER_LEFT (s_PRINT_FONT_CHAR[7])
-#define CHAR_LOWER_RIGHT (s_PRINT_FONT_CHAR[8])
+/* RENDER_FONT_CHAR's string, which draws a 2 x 2 sprite. The selector
+ * and the glyphs are written before each print. The comments give the
+ * original's labels. */
+struct font_char_string {
+    uint8_t length;         /* 9 */
+    uint8_t ctrl_a;         /* HRCG_CTRL_A */
+    uint8_t charset;        /* CHAR_CHARSET: the font selector */
+    uint8_t ctrl_b;         /* HRCG_CTRL_B */
+    uint8_t upper_left;     /* CHAR_UPPER_LEFT */
+    uint8_t upper_right;    /* CHAR_UPPER_RIGHT */
+    uint8_t ctrl_c;         /* HRCG_CTRL_C */
+    uint8_t lower_left;     /* CHAR_LOWER_LEFT */
+    uint8_t lower_right;    /* CHAR_LOWER_RIGHT */
+    uint8_t ctrl_d;         /* HRCG_CTRL_D */
+};
+extern struct font_char_string s_PRINT_FONT_CHAR [[c6502::address(0x80A4)]];
 
 /* The tunes' bytecode. TUNE_TABLE points at TUNE_0..TUNE_2 here and at
  * TUNE_3..TUNE_11 in $A300-$A440. TUNE_PLAYER writes the repeat count
@@ -772,15 +793,15 @@ extern uint8_t TUNE_2_COMBAT_DAMAGE [[c6502::address(0x80D7)]][14];
  * and up read whatever follows. */
 extern const uint8_t FONT_DATA [[c6502::address(0x83A5)]][5][0x300];
 
-/* The messages, length-prefixed strings that MSG_TABLE_PTR points into.
+/* The messages, length-prefixed strings that the location header's
+ * msg_table points into.
  * integrity_fail writes a random byte at [1 + PRNG_OUTPUT]. */
 extern uint8_t GAME_MESSAGE_STRINGS [[c6502::address(0x9AA5)]][0xA264 - 0x9AA5];
 
-/* The disk reader's code, $B300-$B442, which VERIFY_INTEGRITY
- * checksums. These are addresses rather than an object because
- * DISK_READ_FIELD is at the first one. */
-#define DISK_IO_START ((const uint8_t *)0xB300)
-#define DISK_IO_END ((const uint8_t *)0xB443)
+/* The disk reader's code, $B300-$B442 (DISK_IO_START to DISK_IO_END in
+ * the original), which VERIFY_INTEGRITY checksums. DISK_READ_FIELD
+ * below is its first routine. */
+extern const uint8_t DISK_IO_CODE [[c6502::address(0xB300)]][0xB443 - 0xB300];
 
 /* ---- DOS's RWTS and the disk reader ------------------------------------ */
 
@@ -835,7 +856,7 @@ bool DISK_READ_FIELD(void);
  * cycles, the game's unit of time. */
 [[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFCA8)]]
 void WAIT(register uint8_t a);
-/* Sets BASL to the start of line CV. VTABZ takes the line in A. */
+/* Sets BASL to the start of line TEXT_ROW. VTABZ takes the line in A. */
 [[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFC22)]]
 void VTAB(void);
 [[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFC24)]]
@@ -997,40 +1018,73 @@ extern struct menu OTHER_OPTIONS_TABLE;
 extern struct menu GAME_SETTINGS_TABLE;
 extern struct menu ATTACK_TARGET_TABLE;
 extern struct menu DROP_GOLD_TABLE;
-extern struct menu SAVE_LOAD_TABLE;
-#define WORLD_INIT_DATA SAVE_LOAD_TABLE
+extern struct menu SAVE_LOAD_TABLE;        /* WORLD_INIT_DATA in the original */
 extern struct menu SAVE_GAME_SLOT_TABLE;
 extern struct menu SCENARIO_DISK_TABLE;
 extern struct menu CHAR_SELECT_TABLE;
 extern struct menu ALT_INPUT_TABLE;
 
-/* The menu strings other units write, each a length byte and high-bit
- * ASCII. The fields are macros. NUM_TO_DECIMAL writes digits $B0-$B9
- * and skips leading zeros, so its callers first fill a field with $20,
- * a low-ASCII space. */
-extern uint8_t S_SOUND_IS_ON[13];                       /* $7B04 "SOUND IS ON " */
-#define S_SOUND_CHAR1 (S_SOUND_IS_ON[11])               /* $C6 'F' or $CE 'N' */
-#define S_SOUND_CHAR2 (S_SOUND_IS_ON[12])               /* $C6 'F' or $A0 ' ' */
-extern uint8_t S_DANGER[12];                            /* $7B1B "DANGER :   " */
-#define S_DANGER_OUT (S_DANGER + 7)                     /* NUM_TO_DECIMAL's 5 places */
-extern uint8_t S_ADD_NAME[25];                          /* $7B47 "ADD " and a name */
-#define CHAR_SELECT_NAME (S_ADD_NAME + 4)               /* name in [1..20] */
-/* $7B84-$7BDA: three strings and a $00, printed as one group by
- * DISPLAY_MESSAGE_LOOP, so they stay together in this order. */
-extern uint8_t S_CHEST_MESSAGE[87];
-#define S_CHEST_OPENS (S_CHEST_MESSAGE + 0)
-#define S_REVEAL_GOLD (S_CHEST_MESSAGE + 28)
-#define S_REVEAL_DIGITS (S_REVEAL_GOLD + 11)            /* 5 places */
-#define S_NOW_HAVE_GOLD (S_CHEST_MESSAGE + 58)
-#define S_NOW_HAVE_DIGITS (S_NOW_HAVE_GOLD + 14)        /* 5 places */
-extern uint8_t S_ATTACK_TARGET[28];                     /* $7C94 "ATTACK " and a name */
-#define ATTACK_NAME_BUF (S_ATTACK_TARGET + 7)           /* name in [1..20], padded with $20 */
+/*
+    The menu strings other units write, each a length byte and high-bit
+    ASCII. A string with places that other units write is a struct whose
+    members are the places and the text around them, and code that
+    prints the whole string passes the struct's address as a uint8_t
+    pointer. The comments give the original's labels of the places.
+    NUM_TO_DECIMAL writes digits $B0-$B9 and skips leading zeros, so its
+    callers first fill a number's 5 places with $20, a low-ASCII space.
+*/
+struct sound_is_on_string {     /* $7B04 "SOUND IS ON " */
+    uint8_t text[11];           /* the length, 12, and "SOUND IS O" */
+    uint8_t state[2];           /* S_SOUND_CHAR1 and S_SOUND_CHAR2: "N " or "FF" */
+};
+struct danger_string {          /* $7B1B "DANGER :   " */
+    uint8_t text[7];            /* the length, 11, and "DANGER" */
+    /* S_DANGER_OUT, NUM_TO_DECIMAL's 5 places. The danger is at most 99,
+     * so [0] and [1] keep " :". */
+    uint8_t number[5];
+};
+struct add_name_string {        /* $7B47 "ADD " and a name */
+    uint8_t text[4];            /* the length, 24, and "ADD" */
+    uint8_t name[21];           /* CHAR_SELECT_NAME: a space, then the name in [1..20] */
+};
+/* $7B84-$7BDA: "THE TREASURE CHEST OPENS UP", "TO REVEAL ... GOLD
+ * DUCATS.", "YOU NOW HAVE ... DUCATS.", and a $00, printed as one group
+ * by DISPLAY_MESSAGE_LOOP from `opens`. */
+struct chest_message {
+    uint8_t opens[28];          /* S_CHEST_OPENS: the length, 27, and the text */
+    uint8_t reveal_gold[11];    /* S_REVEAL_GOLD: the length, 29, and "TO REVEAL " */
+    uint8_t reveal_digits[5];   /* S_REVEAL_DIGITS, NUM_TO_DECIMAL's 5 places */
+    uint8_t reveal_rest[14];    /* "0 GOLD DUCATS." */
+    uint8_t now_have_gold[14];  /* S_NOW_HAVE_GOLD: the length, 27, and "YOU NOW HAVE " */
+    uint8_t now_have_digits[5]; /* S_NOW_HAVE_DIGITS, NUM_TO_DECIMAL's 5 places */
+    uint8_t now_have_rest[9];   /* "0 DUCATS." */
+    uint8_t end;                /* 0, which ends the group */
+};
+struct attack_target_string {   /* $7C94 "ATTACK " and a name */
+    uint8_t text[7];            /* the length, 27, and "ATTACK" */
+    /* ATTACK_NAME_BUF: a space, then the name in [1..20], padded with
+     * $20. */
+    uint8_t name[21];
+};
+struct ducats_to_drop_string {  /* $7CD9 "DUCATS TO DROP :" and digits */
+    uint8_t text[18];           /* the length, 23, and "DUCATS TO DROP : " */
+    uint8_t number[5];          /* DROP_DISPLAY_BUF, NUM_TO_DECIMAL's 5 places */
+    uint8_t zero;               /* the "0" after them */
+};
+struct pay_for_string {         /* $7CFF "PAY 000000 FOR " and an item */
+    uint8_t text[5];            /* the length, 35, and "PAY " */
+    uint8_t price[5];           /* SHOP_PRICE_DIGITS, NUM_TO_DECIMAL's 5 places */
+    uint8_t text_2[6];          /* "0 FOR " */
+    uint8_t item[20];           /* SHOP_ITEM_NAME */
+};
+extern struct sound_is_on_string S_SOUND_IS_ON;
+extern struct danger_string S_DANGER;
+extern struct add_name_string S_ADD_NAME;
+extern struct chest_message S_CHEST_MESSAGE;
+extern struct attack_target_string S_ATTACK_TARGET;
 extern uint8_t S_MISSES[7];                             /* $7CD2 "MISSES" */
-extern uint8_t S_DUCATS_TO_DROP[24];                    /* $7CD9 "DUCATS TO DROP :" and digits */
-#define DROP_DISPLAY_BUF (S_DUCATS_TO_DROP + 18)        /* 5 places */
-extern uint8_t S_PAY_FOR[36];                           /* $7CFF "PAY 000000 FOR " and an item */
-#define SHOP_PRICE_DIGITS (S_PAY_FOR + 5)               /* 5 places */
-#define SHOP_ITEM_NAME (S_PAY_FOR + 16)                 /* 20 places */
+extern struct ducats_to_drop_string S_DUCATS_TO_DROP;
+extern struct pay_for_string S_PAY_FOR;
 
 /* The game disk's signature sector, track $11 sector 0. */
 extern const uint8_t GAME_SIG_TRACK;
@@ -1081,7 +1135,7 @@ uint8_t find_attack_target(void);
 /* Moves MOB_PTR to the next mob in the same cell and reopens the attack
  * menu. SELECT_SOMEONE_ELSE $155E, a menu exit. */
 uint8_t select_someone_else(void);
-/* Writes MOB_PTR's name into ATTACK_NAME_BUF. INIT_ATTACK_DISPLAY $1537,
+/* Writes MOB_PTR's name into S_ATTACK_TARGET.name. INIT_ATTACK_DISPLAY $1537,
  * called by input's MENU_ATTACK_INIT. */
 void init_attack_display(void);
 /* Returns true when a hostile mob shares ENTITY_PTR's cell, leaving
@@ -1157,7 +1211,7 @@ void random_events(void);
 /* Plays the story's scenes when their conditions are met.
  * CHECK_SCENE_EVENTS $6DFA. */
 void check_scene_events(void);
-/* Fills DROP_DISPLAY_BUF with DROP_AMOUNT. INIT_DROP_DISPLAY $6F52,
+/* Fills S_DUCATS_TO_DROP.number with DROP_AMOUNT. INIT_DROP_DISPLAY $6F52,
  * called by input's MENU_DROP_GOLD_INIT. */
 void init_drop_display(void);
 /* The drop-gold and "DROP ARMOR" menu exits. FLUSH_PENDING_XP $6EE9,
@@ -1178,7 +1232,7 @@ void load_char_name_ptr(void);
  * cell. SETUP_CHAR_SPRITE $0933. */
 void setup_char_sprite(void);
 /* Returns what is at `pos` in CHAR_PTR's location, as an entity_ref,
- * and stores pos in ENTITY_SEARCH_POS. FIND_ENTITY_AT_POS $0B62, pos in
+ * and stores pos in LOCATION_ID. FIND_ENTITY_AT_POS $0B62, pos in
  * A, result in ENTITY_REC ($BE/$BF). */
 entity_ref find_entity_at_pos(uint8_t pos);
 /* Sets FONT_CHARSET to 1 and FONT_CHARNUM to the glyph for `e`, and
@@ -1198,7 +1252,7 @@ void reorder_char(struct mob *m);
 void print_entity_name(const struct mob *m);
 /* Redraws the cell at `pos`. DRAW_CHAR_AT_POS $1156, pos in A. */
 void draw_char_at_pos(uint8_t pos);
-/* Returns the name (one of the MAP_OBJECT_NAMES strings) of what `e` is.
+/* Returns the name (S_A_WALL or one of the eight after it) of what `e` is.
  * CLASSIFY_ENTITY_TYPE $116B, e in ENTITY_REC, result in HANDLER_PTR
  * ($BC). */
 const uint8_t *classify_entity_type(entity_ref e);
@@ -1297,8 +1351,8 @@ void display_char_stats(void);
 /* Raises MOB_PTR->life to its strength when it is lower.
  * CLAMP_CHAR_FIELD $0A93, mob in MOB_PTR. */
 void clamp_char_field(void);
-/* Finds the first player character in CHAR_LIST_HEAD's list, points
- * MOB_PTR at it, and copies its name into CHAR_SELECT_NAME. Returns
+/* Finds the first player character in the list of mobs at no location,
+ * points MOB_PTR at it, and copies its name into S_ADD_NAME.name. Returns
  * true when it found one (the original's carry clear). FIND_FIRST_PC
  * $0AAE. */
 bool find_first_pc(void);
@@ -1312,8 +1366,9 @@ uint8_t init_char_select(void);
 /* Returns pos % 20 in the low byte and pos / 20 in the high byte.
  * POS_TO_COLROW $0C25, pos in A, column in A, row in Y. */
 uint16_t pos_to_colrow(uint8_t pos);
-/* Returns mob `index`'s record, MOB_BASE + 16 * (index - 1). GET_MOB_DATA
- * $0C32, index in A, result in MOB_DATA_PTR ($BA). */
+/* Returns mob `index`'s record, the location header's mob_base plus
+ * 16 * (index - 1). GET_MOB_DATA $0C32, index in A, result in
+ * MOB_DATA_PTR ($BA). */
 struct mob *get_mob_data(uint8_t index);
 /* Wait with the blink running: four anim_tick_and_wait calls
  * (delay_with_animation), or a timed wait and a frame check
@@ -1372,8 +1427,8 @@ void num_to_decimal(uint16_t value, uint8_t *out);
  * is the same without it, for display_status_bar. TEXT_RENDERER $6C8E. */
 void text_renderer(void);
 void text_renderer_no_pause(void);
-/* Prints message `index` from MSG_TABLE_PTR's table, a group of strings
- * ended by a length of 0. DISPLAY_MESSAGE $761E, index in A. */
+/* Prints message `index` from the location header's msg_table, a group
+ * of strings ended by a length of 0. DISPLAY_MESSAGE $761E, index in A. */
 void display_message(uint8_t index);
 /* Prints the group of strings at `msg`. DISPLAY_MESSAGE_LOOP $764A, the
  * middle entry of DISPLAY_MESSAGE, msg in PRINT_STRING_ADDR and

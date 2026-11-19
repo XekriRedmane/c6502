@@ -555,7 +555,7 @@ void num_to_decimal(uint16_t value, uint8_t *out) {
 
 /* What render_stream returns when it reaches the end of the stream. A
  * value below this is the index of a $7E byte. */
-#define STREAM_END 0x100
+constexpr uint16_t STREAM_END = 0x100;
 
 /* Renders TEXT_STREAM_PTR from index `i` with the scene's layout, until
  * a $7F, which ends the stream, or a $7E, which pauses it. Returns
@@ -634,7 +634,7 @@ void text_renderer_no_pause(void) {
 /* A message is a group of strings ended by a length of 0, and the
  * table is the groups one after another. */
 void display_message(uint8_t index) {
-    const uint8_t *msg = MSG_TABLE_PTR;
+    const uint8_t *msg = ((struct location_header *)LOCATIONS)->msg_table;
     MSG_LINE_COUNT = 0;
     for (; index != 0; index--) {
         uint8_t len;

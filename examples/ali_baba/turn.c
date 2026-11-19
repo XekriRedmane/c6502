@@ -491,32 +491,40 @@
 #include "ali_baba.h"
 
 /* CHECK_ENCOUNTER's results, as ENCOUNTER_RESULT keeps them. */
-#define ENCOUNTER_NONE 0
-#define ENCOUNTER_FRIENDLY 1
-#define ENCOUNTER_HOSTILE 2
+enum {
+    ENCOUNTER_NONE = 0,
+    ENCOUNTER_FRIENDLY = 1,
+    ENCOUNTER_HOSTILE = 2,
+};
 
 /* SELECT_COMBAT_TARGET's results. */
-#define ACTION_ATTACK 1
-#define ACTION_ENTER_COMBAT 2
+enum {
+    ACTION_ATTACK = 1,
+    ACTION_ENTER_COMBAT = 2,
+};
 
 /* The mob states of bits 1-0 of a mob's flags that turn sets. */
-#define STATE_IDLE 0
-#define STATE_FIGHTING 1
+enum {
+    STATE_IDLE = 0,
+    STATE_FIGHTING = 1,
+};
 
 /* NPC_MOVE_AI's commands after the directions. */
-#define AI_PASS 5
-#define AI_ATTACK 6
-#define AI_ENTER_COMBAT 7
-#define AI_REST 9
+enum {
+    AI_PASS = 5,
+    AI_ATTACK = 6,
+    AI_ENTER_COMBAT = 7,
+    AI_REST = 9,
+};
 
 /* The position ENTER_COMBAT_STATE is given from the menu, where the
  * original's JMP (INPUT_JMP_VEC) leaves the high byte of the handler's
  * address, $14B7, in A. */
-#define MENU_COMBAT_POS 0x14
+constexpr uint8_t MENU_COMBAT_POS = 0x14;
 
 /* TURN_TUNE_GUARD while COMMIT_MOVE's tune hasn't played: TUNE_MOVEMENT
  * times 2, which the original passes to TUNE_PLAYER from the guard. */
-#define TURN_TUNE_ARMED (TUNE_MOVEMENT * 2)
+constexpr uint8_t TURN_TUNE_ARMED = TUNE_MOVEMENT * 2;
 
 uint8_t TURN_ACTIVE = 0x4B;
 

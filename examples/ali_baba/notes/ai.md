@@ -65,7 +65,7 @@ the pending amount is 0, the group walks are do-while loops that call
 CHECK_HOSTILE once even on an empty list, and they test only MOB_PTR's
 high byte (`IN_PAGE_0`). The name copy in `show_item` runs down to a
 negative index as the original's does, so a length of 0 copies one
-byte to `SHOP_ITEM_NAME[255]`.
+byte to `S_PAY_FOR.item[255]`.
 
 ## Where the original's comments and code disagree
 

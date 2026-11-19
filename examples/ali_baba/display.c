@@ -280,7 +280,7 @@
 #include "ali_baba.h"
 
 /* A space with bit 7 set, as the HRCG draws it. */
-#define SPACE 0xA0
+constexpr uint8_t SPACE = 0xA0;
 
 void display_status_bar(void) {
     hrcg_cout(HRCG_CTRL_P);
@@ -323,37 +323,37 @@ void setup_text_pos_col20(const uint8_t *name) {
 void display_char_stats(void) {
     /* num_to_decimal leaves the places of leading zeros as they are, so
      * the places that would show a stale digit are cleared first. */
-    *STATS_LIFE = SPACE;
-    STATS_DUCATS[0] = SPACE;
-    STATS_DUCATS[1] = SPACE;
-    STATS_DUCATS[2] = SPACE;
-    *STATS_SWORD = SPACE;
-    *STATS_DAGGR = SPACE;
-    *STATS_STR = SPACE;
-    *STATS_SPEED = SPACE;
-    *STATS_DEXT = SPACE;
+    STATS_TEMPLATE.life[3] = SPACE;
+    STATS_TEMPLATE.ducats[1] = SPACE;
+    STATS_TEMPLATE.ducats[2] = SPACE;
+    STATS_TEMPLATE.ducats[3] = SPACE;
+    STATS_TEMPLATE.sword[3] = SPACE;
+    STATS_TEMPLATE.dagger[3] = SPACE;
+    STATS_TEMPLATE.strength[3] = SPACE;
+    STATS_TEMPLATE.speed[3] = SPACE;
+    STATS_TEMPLATE.dexterity[3] = SPACE;
 
-    num_to_decimal(ENTITY_PTR->life & HP_MASK, STATS_LIFE_OUT);
-    num_to_decimal(ENTITY_PTR->armor & LOW_NIBBLE_MASK, STATS_WEAP_OUT);
-    num_to_decimal((ENTITY_PTR->sword & LOW_NIBBLE_MASK) + 1, STATS_SWORD_OUT);
-    num_to_decimal((ENTITY_PTR->dagger & LOW_NIBBLE_MASK) + 1, STATS_DAGGR_OUT);
-    num_to_decimal(ENTITY_PTR->strength & STRENGTH_MASK, STATS_STR_OUT);
-    num_to_decimal(ENTITY_PTR->speed & LOW_NIBBLE_MASK, STATS_SPEED_OUT);
-    num_to_decimal(ENTITY_PTR->level & LEVEL_MASK, STATS_DEXT_OUT);
-    num_to_decimal(ENTITY_PTR->gold, STATS_DUCATS_OUT);
+    num_to_decimal(ENTITY_PTR->life & HP_MASK, STATS_TEMPLATE.life);
+    num_to_decimal(ENTITY_PTR->armor & LOW_NIBBLE_MASK, STATS_TEMPLATE.armor);
+    num_to_decimal((ENTITY_PTR->sword & LOW_NIBBLE_MASK) + 1, STATS_TEMPLATE.sword);
+    num_to_decimal((ENTITY_PTR->dagger & LOW_NIBBLE_MASK) + 1, STATS_TEMPLATE.dagger);
+    num_to_decimal(ENTITY_PTR->strength & STRENGTH_MASK, STATS_TEMPLATE.strength);
+    num_to_decimal(ENTITY_PTR->speed & LOW_NIBBLE_MASK, STATS_TEMPLATE.speed);
+    num_to_decimal(ENTITY_PTR->level & LEVEL_MASK, STATS_TEMPLATE.dexterity);
+    num_to_decimal(ENTITY_PTR->gold, STATS_TEMPLATE.ducats);
 
-    /* STATS_DUCATS[2] and [3] are the gold's tens and ones places. A
-     * blank tens place and a '0' in the ones place mean no gold, and
-     * the 0 is blanked, so that no gold shows as no digits. The
-     * original's comments call these the hundreds and tens places. */
-    if (STATS_DUCATS[2] == SPACE && STATS_DUCATS[3] == 0xB0)
-        STATS_DUCATS[3] = SPACE;
+    /* ducats[3] and [4] are the gold's tens and ones places. A blank
+     * tens place and a '0' in the ones place mean no gold, and the 0 is
+     * blanked, so that no gold shows as no digits. The original's
+     * comments call these the hundreds and tens places. */
+    if (STATS_TEMPLATE.ducats[3] == SPACE && STATS_TEMPLATE.ducats[4] == 0xB0)
+        STATS_TEMPLATE.ducats[4] = SPACE;
 
     scroll_status_line();
     print_ctrl_ab();
     TEXT_ROW = 21;
     TEXT_COL = 0;
-    print_string(STATS_TEMPLATE);
+    print_string((const uint8_t *)&STATS_TEMPLATE);
     TEXT_ROW = 20;
     TEXT_COL = 0;
     print_string(INPUT_MODE != 0 ? STATS_PROMPT_JOYSTICK : STATS_PROMPT_KEYBOARD);

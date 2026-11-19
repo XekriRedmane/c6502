@@ -125,12 +125,14 @@ Notes:
   them as the low and high byte of a `uint16_t`.
 - TOGGLE_SOUND tests whether PLAY_HIGH_TONE's first byte is `$60`
   (RTS), which means sound is off. In C it tests `!SOUND_ON`. Sound
-  off turns on: `S_SOUND_CHAR1 = 0xCE` ('N'), `S_SOUND_CHAR2 = 0xA0`,
-  `SOUND_ON = true`. Sound on turns off: both characters `0xC6` ('F'),
-  `SOUND_ON = false`. Both paths return `CHAIN_MENU_GAME_SETTINGS`.
-  The `BNE .patch_tones` after `LDA #$60` is always taken.
-- SETTINGS_DISPLAY_INIT stores `$20` in `S_DANGER_OUT[2..4]`, then
-  `num_to_decimal(EVENT_THRESHOLD, S_DANGER_OUT)` as a tail call.
+  off turns on: `S_SOUND_IS_ON.state[0] = 0xCE` ('N'),
+  `S_SOUND_IS_ON.state[1] = 0xA0`, `SOUND_ON = true`. Sound on turns
+  off: both characters `0xC6` ('F'), `SOUND_ON = false`. Both paths
+  return `CHAIN_MENU_GAME_SETTINGS`. The `BNE .patch_tones` after `LDA
+  #$60` is always taken.
+- SETTINGS_DISPLAY_INIT stores `$20` in `S_DANGER.number[2..4]`
+  (S_DANGER_OUT), then `num_to_decimal(EVENT_THRESHOLD,
+  S_DANGER.number)` as a tail call.
 - DEC/INC_THRESHOLD_WRAP clamp at 0 and at `$63` (MAX_THRESHOLD, 99).
   They don't wrap, whatever the names say. The dossier lists their
   callers as SETTINGS_SPEED_UP at `$6239` and `$6230`, which are
@@ -197,9 +199,10 @@ DISPATCH_VEC (`$F6/$F7`) becomes init's private state, the handler
 Kept objects it uses: `SOFTEV`, `INPUT_MODE`, `TOTAL_MOB_COUNT`,
 `CURRENT_PLAYER`, `FONT_CHARNUM`, `FONT_CHARSET`, `LOCATION_POS`,
 `LOCATION_STYLE`, `BLINK_COL`, `ENTITY_PTR`, `CHAR_PTR`, `LOCATIONS`,
-`CHAR_CHARSET` ($80A6), `TEXT_COL`/`TEXT_ROW`, `TEXT_STREAM_PTR`,
-`RWTS_IOB_PTR`, `RWTS_IOB`, `KBD`, `KBDSTRB`, `BUTN`, and the soft
-switches `TXTCLR`, `MIXCLR`, `TXTPAGE1`, `HIRES`.
+`s_PRINT_FONT_CHAR.charset` ($80A6, CHAR_CHARSET),
+`TEXT_COL`/`TEXT_ROW`, `TEXT_STREAM_PTR`, `RWTS_IOB_PTR`, `RWTS_IOB`,
+`KBD`, `KBDSTRB`, `BUTN`, and the soft switches `TXTCLR`, `MIXCLR`,
+`TXTPAGE1`, `HIRES`.
 
 Notes:
 
@@ -218,7 +221,7 @@ Notes:
   the source pages hold zeros there, so running it would destroy the
   HRCG and the disk reader.
 - INIT_GAME_STATE: `init_game_display(); DISPATCH_VEC =
-  GAME_ACTION_HANDLER; INPUT_MODE = 0; CHAR_CHARSET = 0xB1;
+  GAME_ACTION_HANDLER; INPUT_MODE = 0; s_PRINT_FONT_CHAR.charset = 0xB1;
   tune_player(TUNE_ATTRACT, 0);` and then `BORDER_ANIM_ON = false;` in
   place of the three stores to `$7A49-$7A4B`. The original's comment
   "LDA (zp),Y opcode" on the `$B1` is wrong: `$B1` is the font
@@ -554,7 +557,7 @@ statics, and the translator reads main.asm for the rest.
 | MODIFY_CURRENT_STATS | $70D4 | 11 | header | `modify_current_stats(amount, add)` |
 
 Variables combat defines: WAIT_LOOP_INIT ($7ABE, `$20`), read-only,
-becomes `#define WAIT_LOOP_INIT 0x20`.
+becomes `constexpr uint8_t WAIT_LOOP_INIT = 0x20;`.
 
 Kept objects it uses: the page `$5A` variables DAMAGE_AMOUNT,
 HEAL_NOTIFIED, ENCOUNTER_RESULT, COLOCATE_LINK/POS/WRAPPED,
@@ -565,7 +568,7 @@ STAT_LEVEL_BITS, TARGET_PTR, BEST_THREAT, IS_PLAYER_TURN,
 CURRENT_COL/ROW, TURN_START_COL/ROW, MOVE_POINTS, STEPS_TAKEN,
 WAIT_LOOP_COUNT, PRNG_OUTPUT; `SCENE_COMBAT_FLAG`, `ATTACK_VERB_STRINGS`,
 `MOBS`, `ENTITY_PTR`, `MOB_PTR`, `CHAR_PTR`, and input's
-`S_ATTACK_TARGET` (`ATTACK_NAME_BUF`) and `S_MISSES`.
+`S_ATTACK_TARGET` (`.name`, ATTACK_NAME_BUF) and `S_MISSES`.
 
 Notes:
 
@@ -645,7 +648,8 @@ Kept objects it uses: `SHOP_TABLE` ($7EDD), `SHOP_EFFECT_TABLE`,
 `NEAREST_POS`, `CANDIDATE_POS`, `AI_PREV_DIR`, `EVENT_POS`,
 `AI_BEST_DIST`, `DIR_SCORES`, `AI_TARGET_POS/COL/ROW`, `FONT_COL/ROW`,
 `TOTAL_MOB_COUNT`, `CHAR_AI_MODE`, `ENTITY_PTR`, `MOB_PTR`, `CHAR_PTR`,
-and input's `S_PAY_FOR` (`SHOP_PRICE_DIGITS`, `SHOP_ITEM_NAME`).
+and input's `S_PAY_FOR` (`.price` and `.item`, SHOP_PRICE_DIGITS and
+SHOP_ITEM_NAME).
 
 Notes:
 
@@ -739,8 +743,10 @@ Kept objects it uses: `EVENT_THRESHOLD`, `SCENE_COMBAT_FLAG`,
 `LOCATION_POS`, `MSG_LINE_COUNT`, `SAVED_EVENT_PTR` ($5A5B),
 `DROP_AMOUNT`, `DROP_STEP`, `SCENE_FOUND_FLAG`, `SCENE_HOSTILE_FLAG`,
 `SCENE_GROUP_IDX`, `LOCATIONS`, `ENTITY_PTR`, `MOB_PTR`, `CHAR_PTR`,
-and input's `S_CHEST_MESSAGE` (`S_CHEST_OPENS`, `S_REVEAL_DIGITS`,
-`S_NOW_HAVE_DIGITS`) and `S_DUCATS_TO_DROP` (`DROP_DISPLAY_BUF`).
+and input's `S_CHEST_MESSAGE` (`.opens`, `.reveal_digits`, and
+`.now_have_digits`, S_CHEST_OPENS, S_REVEAL_DIGITS, and
+S_NOW_HAVE_DIGITS) and `S_DUCATS_TO_DROP` (`.number`,
+DROP_DISPLAY_BUF).
 
 Notes:
 
@@ -753,8 +759,8 @@ Notes:
   or drop it.
 - PICKUP_TREASURE stores the entry pointer in MOB_PTR, and leaves it
   there. PICK_RANDOM_MOB uses MOB_PTR's low byte as its counter
-  (`MOB_PTR_LO`) and leaves it. Keep both stores, since other units
-  read MOB_PTR.
+  (MOB_PTR_LO, `*(uint8_t *)&MOB_PTR`) and leaves it. Keep both
+  stores, since other units read MOB_PTR.
 - PICK_RANDOM_MOB branches into PICK_RANDOM_CHAR when TOTAL_MOB_COUNT
   is 0, and both end with COPY_BE_TO_FA (`CHAR_PTR = record`).
 - EVENT_FACTION_SCENE_CONT returns when CHAR_PTR's low byte is `$09`
@@ -770,7 +776,7 @@ Notes:
   is 0, against its comment. Its scene_loop calls at the ends of paths
   are tail calls.
 - CLEAR_AND_DISPLAY sets MSG_LINE_COUNT = 0 and calls text's
-  `display_message_loop(S_CHEST_OPENS)`, which prints the three
+  `display_message_loop(S_CHEST_MESSAGE.opens)`, which prints the three
   strings up to the `$00`.
 - UPDATE_EVENT_LIST adds to a gold entry's type with an 8-bit add and
   carry, so a type can pass `$D0`. Keep it. Its end of list prints
@@ -813,13 +819,15 @@ Notes:
 
 Entities defines no movable tables or variables.
 
-Kept objects it uses: `LOCATIONS`, `MOBS`, `MAP_OBJECT_NAMES`,
-`s_PRINT_FONT_CHAR` (with `CHAR_CHARSET` and the four glyph bytes),
+Kept objects it uses: `LOCATIONS`, `MOBS`, the nine names of
+MAP_OBJECT_NAMES (`S_A_WALL` and the rest), `s_PRINT_FONT_CHAR` (with
+the selector, `.charset`, and the four glyph bytes),
 `TOTAL_MOB_COUNT`, `CURRENT_PLAYER`, `CURRENT_ROOM`, `CHAR_SPRITE`,
-`FONT_COL/ROW/CHARNUM/CHARSET`, `ENTITY_SEARCH_POS`, `PRNG_OUTPUT`,
-`SOURCE_CHAR`, `ACTIVE_CHAR`, `CURRENT_COL/ROW`, `IS_PLAYER_TURN`,
-`BLINK_COL/ROW/CHAR`, `TEXT_COL`/`TEXT_ROW`, `ENTITY_PTR`, `MOB_PTR`,
-`CHAR_PTR`, and map's `DEFAULT_CHAR` and `BLINK_ALT_CHAR`.
+`FONT_COL/ROW/CHARNUM/CHARSET`, `LOCATION_ID` (ENTITY_SEARCH_POS),
+`PRNG_OUTPUT`, `SOURCE_CHAR`, `ACTIVE_CHAR`, `CURRENT_COL/ROW`,
+`IS_PLAYER_TURN`, `BLINK_COL/ROW/CHAR`, `TEXT_COL`/`TEXT_ROW`,
+`ENTITY_PTR`, `MOB_PTR`, `CHAR_PTR`, and map's `DEFAULT_CHAR` and
+`BLINK_ALT_CHAR`.
 
 Notes:
 
@@ -849,10 +857,11 @@ Notes:
   handler address.
 - RENDER_FONT_CHAR_DIRECT reads its selector only for glyphs 24 and
   up, and otherwise leaves CHAR_CHARSET as it was. It writes the four
-  glyphs `g = n * 4 + $20` .. `g + 3` into s_PRINT_FONT_CHAR and prints
-  it with `print_string(s_PRINT_FONT_CHAR)`. The highest selector seen
-  in a run of the original was `$B5`. A selector above that reads past
-  FONT_DATA, as the HRCG does in the original.
+  glyphs `g = n * 4 + $20` .. `g + 3` into s_PRINT_FONT_CHAR and
+  prints it with `print_string((const uint8_t *)&s_PRINT_FONT_CHAR)`.
+  The highest selector seen in a run of the original was `$B5`. A
+  selector above that reads past FONT_DATA, as the HRCG does in the
+  original.
 - DRAW_BLINK_CHAR returns at once when BLINK_COL is 20 or more. It
   saves PRINT_STRING_ADDR around RENDER_FONT_CHAR because
   DISPLAY_MESSAGE reads it afterwards. In C text keeps it in a local,
@@ -907,15 +916,16 @@ Tables and variables map defines (from main.bin):
 TUNE_END_MARKER (`$A440`) is the END byte of tune 11, kept with the
 tunes.
 
-Kept objects it uses: `SCENE_TEXT_DATA` and `SCENE_TRANSITION`,
-`GAME_MESSAGE_STRINGS` (integrity_fail), `RWTS_IOB_PTR`, `DOS_ZP`
-(`$48`), `LOCATIONS`, `MOBS`, `CHAR_AI_MODE`, `AI_WAIT_FLAG`,
-`VIEW_MIN/MAX_COL/ROW`, `FONT_COL/ROW`, `CANDIDATE_POS`, `LOCATION_ID`,
-`SOURCE_CHAR`, `ACTIVE_CHAR`, `BOUNDS_*`, `LOCATION_POS`,
-`LOCATION_STYLE`, `EVENT_POS`, `WAIT_LOOP_COUNT`, `SCENE_NUMBER`,
-`BLINK_ROW/CHAR`, `SAVED_ENTITY_PTR`, `SAVED_MOB_PTR`,
-`SCENE_EVENT_RESULT`, `PRNG_OUTPUT`, `ENTITY_PTR`, `MOB_PTR`,
-`CHAR_PTR`, `DISK_MOTOR_ON`, `RWTS_ENTRY`, and `DISK_READ_FIELD`.
+Kept objects it uses: `SCENE_TEXT_DATA` and its last byte
+(SCENE_TRANSITION), `GAME_MESSAGE_STRINGS` (integrity_fail),
+`RWTS_IOB_PTR`, `DOS_ZP` (`$48`), `LOCATIONS`, `MOBS`, `CHAR_AI_MODE`,
+`AI_WAIT_FLAG`, `VIEW_MIN/MAX_COL/ROW`, `FONT_COL/ROW`,
+`CANDIDATE_POS`, `LOCATION_ID`, `SOURCE_CHAR`, `ACTIVE_CHAR`,
+`BOUNDS_*`, `LOCATION_POS`, `LOCATION_STYLE`, `EVENT_POS`,
+`WAIT_LOOP_COUNT`, `SCENE_NUMBER`, `BLINK_ROW/CHAR`,
+`SAVED_ENTITY_PTR`, `SAVED_MOB_PTR`, `SCENE_EVENT_RESULT`,
+`PRNG_OUTPUT`, `ENTITY_PTR`, `MOB_PTR`, `CHAR_PTR`, `DISK_MOTOR_ON`,
+`RWTS_ENTRY`, and `DISK_READ_FIELD`.
 
 Notes:
 
@@ -935,8 +945,8 @@ Notes:
   PRNG_OUTPUT, and leaves it there.
 - CHECK_AT_BOUNDARY reads the position from LOCATION_ID (`$5A17`),
   which FIND_ENTITY_AT_POS stored. In C it takes `pos`, returns
-  ENTITY_EDGE or ENTITY_NONE, and the store to ENTITY_SEARCH_POS
-  stays in FIND_ENTITY_AT_POS.
+  ENTITY_EDGE or ENTITY_NONE, and the store to LOCATION_ID
+  (ENTITY_SEARCH_POS) stays in FIND_ENTITY_AT_POS.
 - RWTS_DISPATCH stores the command at IOB+`$0C` and 0 at IOB+3 through
   RWTS_IOB_PTR, calls `RWTS_ENTRY(RWTS_IOB_PTR)`, stores 0 to `$48`
   (`DOS_ZP[0x48 - 0x2A]`), and returns the carry. DISK_READ loads
@@ -973,10 +983,11 @@ display has no full report.
 
 Display defines no movable tables or variables.
 
-Kept objects it uses: `STATS_TEMPLATE` and its fields,
-`STATS_PROMPT_KEYBOARD`, `STATS_PROMPT_JOYSTICK`, `STATUS_BORDER_DATA`,
-`S_PRESS_SPACE`, `S_PRESS_BUTTON`, `INPUT_MODE`, `ENTITY_PTR`,
-`TEXT_STREAM_PTR`, `TEXT_COL`/`TEXT_ROW`, `KBD`, `KBDSTRB`, `BUTN`.
+Kept objects it uses: `STATS_TEMPLATE` (a `struct stats_screen`) and
+its fields, `STATS_PROMPT_KEYBOARD`, `STATS_PROMPT_JOYSTICK`,
+`STATUS_BORDER_DATA`, `S_PRESS_SPACE`, `S_PRESS_BUTTON`, `INPUT_MODE`,
+`ENTITY_PTR`, `TEXT_STREAM_PTR`, `TEXT_COL`/`TEXT_ROW`, `KBD`,
+`KBDSTRB`, `BUTN`.
 
 Notes:
 
@@ -1040,11 +1051,12 @@ Tables and variables util defines (from main.bin):
 | INTEGRITY_DATA | $A4E2 | 4 | AE 7A 4F 87, section `.rodata.integrity` | VERIFY_INTEGRITY |
 | CKSUM_ACC | $A527 | 2 | code bytes used as the checksum's accumulators, which become locals | COMPUTE_CHECKSUM |
 
-Kept objects it uses: `LOCATIONS` (`MOB_BASE`, `CHAR_LIST_HEAD`),
-`MOBS`, `SCENE_EVENT_RESULT`, `INPUT_MODE`, `BROWSE_CHAR_INDEX`,
-`PRNG_OUTPUT`, `PRNG_STATE`, `WAIT_LOOP_COUNT`, `MOB_PTR`,
-`DISK_IO_START`/`DISK_IO_END`, input's `CHAR_SELECT_NAME`, and sound's
-`SOUND_ON`.
+Kept objects it uses: `LOCATIONS` (the header's `mob_base` and
+`char_list_head`, MOB_BASE and CHAR_LIST_HEAD), `MOBS`,
+`SCENE_EVENT_RESULT`, `INPUT_MODE`, `BROWSE_CHAR_INDEX`, `PRNG_OUTPUT`,
+`PRNG_STATE`, `WAIT_LOOP_COUNT`, `MOB_PTR`, `DISK_IO_CODE`
+(DISK_IO_START to DISK_IO_END), input's `S_ADD_NAME.name`
+(CHAR_SELECT_NAME), and sound's `SOUND_ON`.
 
 Notes:
 
@@ -1088,9 +1100,9 @@ Notes:
   the original used INPUT_BUFFER[0..1]. If the starting mob is no
   longer a player character it loops forever, as in the original.
 - FIND_FIRST_PC branches into COPY_PC_NAME_TO_BUF on a find.
-  COPY_PC_NAME_TO_BUF pads CHAR_SELECT_NAME[1..20] with `$20`, a
-  low-ASCII space. FIND_NEXT_PC loops to its own entry over non-player
-  mobs and calls FIND_FIRST_PC at the end of the list.
+  COPY_PC_NAME_TO_BUF pads CHAR_SELECT_NAME[1..20] (`S_ADD_NAME.name`)
+  with `$20`, a low-ASCII space. FIND_NEXT_PC loops to its own entry
+  over non-player mobs and calls FIND_FIRST_PC at the end of the list.
 - INIT_CHAR_SELECT: `SCENE_EVENT_RESULT = 1; scene_setup();` then
   `find_first_pc()`, and returns `CHAIN_MOVE_LOOP` when none is found
   (carry set) and `CHAIN_ENTER_CHAR_SELECT` otherwise.
@@ -1135,9 +1147,10 @@ text has no full report.
 
 Text defines no movable tables or variables.
 
-Kept objects it uses: `MSG_TABLE_PTR` and `GAME_MESSAGE_STRINGS`,
-`NUM_DIGIT`, `NUM_DIVISOR`, `NUM_LEADING`, `MSG_LINE_COUNT`,
-`TEXT_LEFT_MARGIN`, `TEXT_RIGHT_MARGIN`, `TEXT_STREAM_IDX`,
+Kept objects it uses: the location header's `msg_table`
+(MSG_TABLE_PTR) and `GAME_MESSAGE_STRINGS`, `NUM_DIGIT`,
+`NUM_DIVISOR`, `NUM_LEADING`, `MSG_LINE_COUNT`, `TEXT_LEFT_MARGIN`,
+`TEXT_RIGHT_MARGIN`, `TEXT_STREAM_IDX`,
 `FONT_COL/ROW/CHARNUM/CHARSET`, `TEXT_STREAM_PTR`,
 `TEXT_COL`/`TEXT_ROW`.
 
@@ -1275,9 +1288,9 @@ Tables and variables hrcg defines:
 | HRCG_FONT_BASE | $92AC | 2 | `$83A5`; use FONT_DATA | |
 
 Kept objects it uses: `FONT_DATA`, `WNDLFT`, `WNDWDTH`, `WNDTOP`,
-`WNDBTM`, `CH`, `CV`, `BASL`, the Monitor routines `VTAB`, `VTABZ`,
-`CLREOP`, `HOME`, `SCROLL`, and the soft switches `MIXCLR`, `HIRES`,
-`TXTPAGE1`, `TXTCLR`.
+`WNDBTM`, `TEXT_COL` and `TEXT_ROW` (the Monitor's CH and CV), `BASL`,
+the Monitor routines `VTAB`, `VTABZ`, `CLREOP`, `HOME`, `SCROLL`, and
+the soft switches `MIXCLR`, `HIRES`, `TXTPAGE1`, `TXTCLR`.
 
 Notes:
 
@@ -1384,14 +1397,22 @@ and the units follow the workaround given for each.
    ```
 
    is `error: ... overlaps`. The header declares one object per
-   address and gives the other EQU names as `#define`s
-   (`ENTITY_SEARCH_POS`, `WORLD_INIT_DATA`, `TEXT_COL`, ...). Record 0
-   of LOCATIONS is also MOB_BASE, CHAR_LIST_HEAD, and MSG_TABLE_PTR,
-   which are fields of `struct location_header` through a cast of
-   LOCATIONS. The disk reader's code range is a pair of address
-   constants, because DISK_READ_FIELD sits at its first byte. Fields
-   inside strings (`S_REVEAL_DIGITS`, `ATTACK_NAME_BUF`, the STATS_
-   fields, `CHAR_CHARSET`) are macros on their string.
+   address under one of its EQU names, and the C uses that name where
+   the original uses the others: `LOCATION_ID` for ENTITY_SEARCH_POS,
+   `SAVE_LOAD_TABLE` for WORLD_INIT_DATA, and `TEXT_COL` and
+   `TEXT_ROW` for the Monitor's CH and CV, in hrcg.c too. Record 0 of
+   LOCATIONS is also MOB_BASE, CHAR_LIST_HEAD, and MSG_TABLE_PTR,
+   which the C reads as fields of `struct location_header` through a
+   cast of LOCATIONS. A named place inside a table at a fixed address
+   is a member of a struct declared at the table's address
+   (`STATS_TEMPLATE.life`, `s_PRINT_FONT_CHAR.charset`), or an object
+   of its own at its address when the C never names the table itself
+   (`S_A_WALL` and the other eight names in MAP_OBJECT_NAMES). The
+   disk reader's code is
+   `DISK_IO_CODE`, at the address of the function DISK_READ_FIELD,
+   which the check leaves alone. A named place inside a string that
+   input.c defines is a member of the string's struct
+   (`S_CHEST_MESSAGE.reveal_digits`, `S_ATTACK_TARGET.name`).
 
 4. **Recursion is a link error** unless every call in the cycle is
    marked `[[c6502::save_hardware_stack]]`.
@@ -1443,6 +1464,26 @@ and the units follow the workaround given for each.
    shifts by one, in `uint8_t` so that integer promotion doesn't make
    them 16-bit signed shifts.
 
+7. **An ordering comparison with a `constexpr uint8_t` isn't
+   narrowed to a byte compare.** With an `int` constant, an enumeration
+   constant, or a cast literal it is.
+
+   ```c
+   constexpr uint8_t MAX_GAME_SPEED = 5;
+   if (ANIM_INDEX >= MAX_GAME_SPEED)    /* SEC; SBC #5; LDA #0; SBC #0; BVC; EOR #$80; BMI */
+   if (ANIM_INDEX >= 5)                 /* CMP #5; BCC */
+   ```
+
+   The optimized TAC of the first still holds a `JumpIfCmp` of
+   `ZeroExtend(ANIM_INDEX)` against `ConstInt(5)`, the shape that
+   `cmp_zero_jump_fold._try_narrow_compare` narrows, so the fold
+   presumably runs before the constant replaces the read of
+   MAX_GAME_SPEED, but that hasn't been traced. `==` and `!=` come out
+   as a byte compare either way. The units declare such constants `uint8_t` all the same, and
+   the six comparisons it affects (MAX_THRESHOLD in main.c, MAP_WIDTH
+   in entities.c, and MAX_GAME_SPEED, MAX_SLOT_NUMBER, and
+   GAME_DISK_SLOTS twice in input.c) cost 55 bytes until it's fixed.
+
 ## For the harness
 
 - The C program starts from main.bin as it is, with the C build's
@@ -1478,8 +1519,8 @@ and the units follow the workaround given for each.
   boot ROM, which reboots from the disk. RESET goes there too through
   SOFTEV.
 - The resident routines at `$0500-$07FF` sit on the text page, and the
-  HRCG's text-page writes (`BASL[CH]`) and the Monitor's HOME, CLREOP,
-  and SCROLL overwrite them. Both programs do this.
+  HRCG's text-page writes (`BASL[TEXT_COL]`) and the Monitor's HOME,
+  CLREOP, and SCROLL overwrite them. Both programs do this.
 - The linker script puts map, util, display, and everything it
   doesn't name in `$A900-$B2FF` (RUNTIME_DATA_AREA, zeros in the
   image). No absolute operand of the original addresses that range,

@@ -52,7 +52,7 @@
       original returns 2 for a distance of 129 or more, which
       MANHATTAN_DISTANCE can't return, since a position's column is at
       most 19 and its row at most 12.
-    - WAIT_LOOP_INIT, a constant byte at $7ABE, is a #define.
+    - WAIT_LOOP_INIT, a constant byte at $7ABE, is a constexpr.
 
     The original's quirks are kept.
 
@@ -1931,15 +1931,13 @@
 /* The number of ROM WAIT calls TIMED_WAIT makes while a specific
  * encounter carries the mob off. The original keeps it in a code-page
  * byte, $7ABE, which nothing writes. */
-#define WAIT_LOOP_INIT 0x20
-
-/* The high byte of MOB_PTR, which the original tests for the end of a
- * location's mob list. */
-#define MOB_PTR_HI ((uint8_t)((uint16_t)MOB_PTR >> 8))
+constexpr uint8_t WAIT_LOOP_INIT = 0x20;
 
 /* CHAR_AI_MODE values from which SELECT_COMBAT_TARGET hunts a target. */
-#define AI_MODE_HUNT_CLOSEST 3
-#define AI_MODE_HUNT_STRONGEST 5
+enum {
+    AI_MODE_HUNT_CLOSEST = 3,
+    AI_MODE_HUNT_STRONGEST = 5,
+};
 
 static uint8_t find_mob_at_same_pos(void);
 static void sum_hostile_at_pos(uint8_t pos);
@@ -2312,7 +2310,7 @@ void init_attack_display(void) {
         uint8_t c = name[i];
         if ((int8_t)--left < 0)
             c = 0x20;
-        ATTACK_NAME_BUF[i] = c;
+        S_ATTACK_TARGET.name[i] = c;
     }
 }
 
@@ -2580,7 +2578,8 @@ static uint8_t get_entity_threat(void) {
     target, or with a lower mode, returns 2 to enter combat when it has
     moved, when a hostile mob shares its cell, or when the hostile
     strength next to it is more than its defense, and 4 to rest
-    otherwise.
+    otherwise. The walks of the location's mobs end when the high byte
+    of MOB_PTR is 0, which is the only byte the original tests.
 */
 uint8_t select_combat_target(void) {
     if (CHAR_AI_MODE >= AI_MODE_HUNT_CLOSEST) {
@@ -2596,7 +2595,7 @@ uint8_t select_combat_target(void) {
                     }
                 }
                 next_group_member();
-            } while (MOB_PTR_HI != 0);
+            } while ((uint8_t)((uint16_t)MOB_PTR >> 8) != 0);
         } else {
             BEST_THREAT = 0;
             first_group_member();
@@ -2607,7 +2606,7 @@ uint8_t select_combat_target(void) {
                     TARGET_PTR = MOB_PTR;
                 }
                 next_group_member();
-            } while (MOB_PTR_HI != 0);
+            } while ((uint8_t)((uint16_t)MOB_PTR >> 8) != 0);
         }
         if (BEST_THREAT != 0)
             return 1;
@@ -2837,8 +2836,9 @@ uint8_t handle_mob_encounter(void) {
     if (check_encounter(ENTITY_PTR->pos) < 2)
         return check_threats_here() == 1 ? CHAIN_MOVE_LOOP : CHAIN_END_TURN;
 
+    /* The walk ends when MOB_PTR's high byte is 0, as in the original. */
     first_group_member();
-    while (MOB_PTR_HI != 0) {
+    while ((uint8_t)((uint16_t)MOB_PTR >> 8) != 0) {
         if (ENTITY_PTR->pos == MOB_PTR->pos)
             set_target_restricted();
         next_group_member();

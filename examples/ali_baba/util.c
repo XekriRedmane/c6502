@@ -570,10 +570,10 @@
 
 /* WAIT's argument for one unit of the game's time. WAIT($50) takes
  * (26 + 27 * 80 + 5 * 80 * 80) / 2 = 17,093 cycles. */
-#define WAIT_DURATION 0x50
+constexpr uint8_t WAIT_DURATION = 0x50;
 
 /* The number of anim_tick_and_wait calls in delay_with_animation. */
-#define DELAY_COUNT 4
+constexpr uint8_t DELAY_COUNT = 4;
 
 /* The game speed, 1-5, which input's settings change. It indexes the
  * two tables below, whose entry 0 is never used. */
@@ -684,9 +684,10 @@ uint8_t colrow_to_pos(uint8_t col, uint8_t row) {
     return col;
 }
 
-/* The base is the word at $4000, MOB_BASE, which is $4C80, MOBS. */
+/* The base is the word at $4000, MOB_BASE in the original, which is
+ * $4C80, MOBS. */
 struct mob *get_mob_data(uint8_t index) {
-    return MOB_BASE + (uint8_t)(index - 1);
+    return ((struct location_header *)LOCATIONS)->mob_base + (uint8_t)(index - 1);
 }
 
 /* An index of 129 or more counts as 0, as in the original, whose loop
@@ -712,10 +713,10 @@ void clamp_char_field(void) {
 
 /* ---- Choosing a character to add -------------------------------------------- */
 
-/* The length of the name field in the "ADD " string. */
-#define NAME_BUF_LEN 20
+/* The length of the name in S_ADD_NAME.name. */
+constexpr uint8_t NAME_BUF_LEN = 20;
 
-/* Points MOB_PTR at `m` and writes its name into CHAR_SELECT_NAME[1..20],
+/* Points MOB_PTR at `m` and writes its name into S_ADD_NAME.name[1..20],
  * padded with $20, a low-ASCII space. The count of characters left is a
  * signed byte that wraps, as the original's X does, which makes a
  * difference only for a name of 128 characters or more. */
@@ -724,7 +725,7 @@ static void copy_pc_name_to_buf(struct mob *m) {
     const uint8_t *name = m->name;
     int8_t left = (int8_t)name[0];
     for (uint8_t i = 1; i <= NAME_BUF_LEN; i++)
-        CHAR_SELECT_NAME[i] = (--left >= 0) ? name[i] : 0x20;
+        S_ADD_NAME.name[i] = (--left >= 0) ? name[i] : 0x20;
 }
 
 /* A mob is a player character when its appearance is below $15. */
@@ -733,7 +734,7 @@ static void copy_pc_name_to_buf(struct mob *m) {
 /* Walks the list of mobs at no location from its head, leaving
  * BROWSE_CHAR_INDEX at each mob it looks at. */
 bool find_first_pc(void) {
-    uint8_t index = CHAR_LIST_HEAD;
+    uint8_t index = ((struct location_header *)LOCATIONS)->char_list_head;
     while (index != 0) {
         BROWSE_CHAR_INDEX = index;
         struct mob *m = get_mob_data(index);
@@ -867,7 +868,7 @@ uint8_t random_in_range(uint8_t limit) {
 
 /* The checksum of the disk reader at $B300-$B442. The original keeps it
  * in INTEGRITY_DATA ($A4E2), with $4F $87 after it for VERIFY_DISK_IO. */
-#define DISK_IO_CHECKSUM 0x7AAE
+constexpr uint16_t DISK_IO_CHECKSUM = 0x7AAE;
 
 /* Sums the bytes from `p` up to `end`, alternately into the low byte and
  * into the high byte, which is then XORed into the low byte. Each add is
@@ -892,7 +893,8 @@ static uint16_t compute_checksum(const uint8_t *p, const uint8_t *end) {
  * writes a random byte into the messages. */
 [[c6502::section(".text.integrity")]]
 void verify_integrity(void) {
-    if (compute_checksum(DISK_IO_START, DISK_IO_END) != DISK_IO_CHECKSUM)
+    if (compute_checksum(DISK_IO_CODE, DISK_IO_CODE + sizeof DISK_IO_CODE)
+        != DISK_IO_CHECKSUM)
         integrity_fail();
 }
 

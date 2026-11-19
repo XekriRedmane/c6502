@@ -351,14 +351,14 @@
 /* A pass over the locations ends at the record whose name pointer's
  * high byte is $FF, which is LOCATIONS_END's at $4237. The test reads
  * that one byte, as the original does. */
-#define LOCATION_LIST_END 0xFF
+constexpr uint8_t LOCATION_LIST_END = 0xFF;
 #define NAME_HIGH_BYTE(loc) (((const uint8_t *)(loc))[1])
 
 /* MAX_THRESHOLD in the original, the highest danger setting (99). */
-#define MAX_THRESHOLD 0x63
+constexpr uint8_t MAX_THRESHOLD = 0x63;
 
 /* The scene SCENE_LOOP plays on the attract screen. */
-#define SCENE_ATTRACT 0x26
+constexpr uint8_t SCENE_ATTRACT = 0x26;
 
 static void attract_screen(void);
 static void process_mob_groups(void);
@@ -460,22 +460,22 @@ static void process_mob_groups(void) {
 
 uint8_t toggle_sound(void) {
     if (!SOUND_ON) {
-        S_SOUND_CHAR1 = 0xCE;   /* 'N' */
-        S_SOUND_CHAR2 = 0xA0;   /* ' ' */
+        S_SOUND_IS_ON.state[0] = 0xCE;  /* 'N' */
+        S_SOUND_IS_ON.state[1] = 0xA0;  /* ' ' */
         SOUND_ON = true;
     } else {
-        S_SOUND_CHAR1 = 0xC6;   /* 'F' */
-        S_SOUND_CHAR2 = 0xC6;   /* 'F' */
+        S_SOUND_IS_ON.state[0] = 0xC6;  /* 'F' */
+        S_SOUND_IS_ON.state[1] = 0xC6;  /* 'F' */
         SOUND_ON = false;
     }
     return CHAIN_MENU_GAME_SETTINGS;
 }
 
 void settings_display_init(void) {
-    S_DANGER_OUT[2] = 0x20;
-    S_DANGER_OUT[3] = 0x20;
-    S_DANGER_OUT[4] = 0x20;
-    num_to_decimal(EVENT_THRESHOLD, S_DANGER_OUT);
+    S_DANGER.number[2] = 0x20;
+    S_DANGER.number[3] = 0x20;
+    S_DANGER.number[4] = 0x20;
+    num_to_decimal(EVENT_THRESHOLD, S_DANGER.number);
 }
 
 /* Steps EVENT_THRESHOLD down, holding it at 0. The original decrements

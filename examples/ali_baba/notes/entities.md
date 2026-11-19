@@ -101,8 +101,8 @@ None. Every routine keeps the header's declaration.
 ## Compiler gaps
 
 Items 1 and 2 were fixed on 18 Nov 2026. classify_entity_type returns
-each name's address as `LDX #>(MAP_OBJECT_NAMES+k); LDA
-#<(MAP_OBJECT_NAMES+k); RTS`.
+each name's address as `LDX #>S_A_DOOR; LDA #<S_A_DOOR; RTS`, and
+each name is now an object declared at its own address.
 
 1. **An address-attributed object plus a constant isn't folded into
    one immediate.**
@@ -129,8 +129,8 @@ each name's address as `LDX #>(MAP_OBJECT_NAMES+k); LDA
    folded either. classify_entity_type has 13 such returns, one per
    name of MAP_OBJECT_NAMES, so it is 227 bytes against the
    original's 145. With the fold it would be about 125. The routine
-   uses the header's `S_` names, which are `MAP_OBJECT_NAMES + k`, and
-   isn't rewritten around an offset to work around the gap.
+   uses the header's `S_` names, which were then `MAP_OBJECT_NAMES +
+   k`, and isn't rewritten around an offset to work around the gap.
 
 2. **A comparison of a masked byte is done in 16 bits, signed.**
 
@@ -184,9 +184,9 @@ The bytes of code in `entities.c -c -O` (the `.text` sections, from
 | LOAD_CHAR_TO_FA | 12 | 10 |
 | RENDER_FONT_CHAR group | 66 | 6 + 21 + 68 |
 | DRAW_BLINK_ALT | 18 | 20 |
-| DRAW_BLINK_NORMAL/CHAR | 47 | 6 + 26 |
+| DRAW_BLINK_NORMAL/CHAR | 47 | 6 + 38 |
 | FONT_POS_TO_TEXT_POS | 13 | 13 |
-| Total | 1033 | 1189 |
+| Total | 1033 | 1201 |
 
 The `+` terms are the pieces the optimizer outlined into shared
 subroutines (`@run`, `@tail`), each counted once under the routine it
@@ -195,4 +195,6 @@ bytes. The rest of the difference is mostly the copying of pointer
 arguments into the callee's fixed zero-page slots (reorder_char's
 calls of adjust_pc_count and get_mob_data), and appearance_to_fontchar
 and render_font_char_direct keeping their counters in memory where the
-original keeps them in A and Y.
+original keeps them in A and Y. draw_blink_char's test of BLINK_COL
+against MAP_WIDTH, a `constexpr uint8_t`, is a 16-bit signed compare
+that costs 12 bytes (UNITS.md, compiler gap 7).

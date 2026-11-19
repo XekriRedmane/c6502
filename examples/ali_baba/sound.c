@@ -335,11 +335,11 @@ enum {
 
 /* The original's tone routines, whose addresses TUNE_ACTION_VEC
  * holds. */
-#define PLAY_HIGH_TONE_ADDR 0x7A7F
-#define PLAY_LOW_TONE_ADDR 0x7A91
+constexpr uint16_t PLAY_HIGH_TONE_ADDR = 0x7A7F;
+constexpr uint16_t PLAY_LOW_TONE_ADDR = 0x7A91;
 
 /* Each unit of a note's duration is this many clicks. */
-#define CLICKS_PER_UNIT 10
+constexpr uint8_t CLICKS_PER_UNIT = 10;
 
 bool SOUND_ON = true;
 

@@ -839,8 +839,8 @@
     The original's handlers point at the runs' byte offsets, 0, $1E,
     $39, $54, and $6F.
 */
-#define BORDER_CELLS 46
-#define BORDER_TICK_CELL 9
+constexpr uint8_t BORDER_CELLS = 46;
+constexpr uint8_t BORDER_TICK_CELL = 9;
 
 static uint8_t border_glyph[BORDER_CELLS] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0x00, 0x00, 0x00, 0x00,
@@ -896,8 +896,8 @@ bool BORDER_ANIM_ON = true;
     the border holds is below 24: the cells start with $05-$14, and
     start_border_passes stores 5-$15. So the selector passed here is
     unused, and the glyph is drawn with the selector that
-    init_game_state left in CHAR_CHARSET. The original passes the high
-    byte of its table pointer, or a table index.
+    init_game_state left in s_PRINT_FONT_CHAR.charset. The original
+    passes the high byte of its table pointer, or a table index.
 */
 static void draw_border_cell(uint8_t cell, uint8_t glyph)
 {
@@ -1188,7 +1188,7 @@ static void init_game_state(void)
     init_game_display();
     border_next = BORDER_RESTART;
     INPUT_MODE = 0;
-    CHAR_CHARSET = 0xB1;
+    s_PRINT_FONT_CHAR.charset = 0xB1;
     tune_player(TUNE_ATTRACT, 0);
     BORDER_ANIM_ON = false;
 }

@@ -23,7 +23,7 @@ load_target_ptr, calc_combat_strength, map_value_to_string,
 player_attack, process_entity_script, mob_attack, get_entity_threat,
 event_prng_check, set_target_restricted, and modify_char_stats.
 ADD_WILLINGNESS is the `+=` on COMBAT_WILLINGNESS where it is called.
-WAIT_LOOP_INIT is `#define WAIT_LOOP_INIT 0x20`.
+WAIT_LOOP_INIT is `constexpr uint8_t WAIT_LOOP_INIT = 0x20;`.
 
 No routine is left out or incomplete.
 

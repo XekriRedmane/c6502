@@ -1825,15 +1825,16 @@ static uint8_t S_ADD_SOMEONE[12] = {    /* $7AEE "ADD SOMEONE" */
 static uint8_t S_DROP_GOLD[10] = {      /* $7AFA "DROP GOLD" */
     0x09, 0xC4, 0xD2, 0xCF, 0xD0, 0xA0, 0xC7, 0xCF, 0xCC, 0xC4,
 };
-uint8_t S_SOUND_IS_ON[13] = {           /* $7B04 "SOUND IS ON " */
-    0x0C, 0xD3, 0xCF, 0xD5, 0xCE, 0xC4, 0xA0, 0xC9, 0xD3, 0xA0, 0xCF, 0xCE,
-    0xA0,
+struct sound_is_on_string S_SOUND_IS_ON = {     /* $7B04 "SOUND IS ON " */
+    { 0x0C, 0xD3, 0xCF, 0xD5, 0xCE, 0xC4, 0xA0, 0xC9, 0xD3, 0xA0, 0xCF },
+    { 0xCE, 0xA0 },
 };
 static uint8_t S_SAVE_GAME[10] = {      /* $7B11 "SAVE GAME" */
     0x09, 0xD3, 0xC1, 0xD6, 0xC5, 0xA0, 0xC7, 0xC1, 0xCD, 0xC5,
 };
-uint8_t S_DANGER[12] = {                /* $7B1B "DANGER :   " */
-    0x0B, 0xC4, 0xC1, 0xCE, 0xC7, 0xC5, 0xD2, 0xA0, 0xBA, 0xA0, 0xA0, 0xA0,
+struct danger_string S_DANGER = {               /* $7B1B "DANGER :   " */
+    { 0x0B, 0xC4, 0xC1, 0xCE, 0xC7, 0xC5, 0xD2 },
+    { 0xA0, 0xBA, 0xA0, 0xA0, 0xA0 },
 };
 static uint8_t S_TO_THIS_ROOM[13] = {   /* $7B27 "TO THIS ROOM" */
     0x0C, 0xD4, 0xCF, 0xA0, 0xD4, 0xC8, 0xC9, 0xD3, 0xA0, 0xD2, 0xCF, 0xCF,
@@ -1843,10 +1844,12 @@ static uint8_t S_TO_ALI_BABAS_HOME[19] = {  /* $7B34 "TO ALI BABA'S HOME" */
     0x12, 0xD4, 0xCF, 0xA0, 0xC1, 0xCC, 0xC9, 0xA0, 0xC2, 0xC1, 0xC2, 0xC1,
     0xA7, 0xD3, 0xA0, 0xC8, 0xCF, 0xCD, 0xC5,
 };
-uint8_t S_ADD_NAME[25] = {              /* $7B47 "ADD " and a name */
-    0x18, 0xC1, 0xC4, 0xC4, 0xA0, 0xB1, 0xA0, 0xA0, 0xAE, 0xA0, 0xA0, 0xAE,
-    0xB5, 0xA0, 0xC6, 0xCC, 0xFE, 0xA0, 0xD8, 0xC1, 0xA0, 0xB5, 0xA0, 0xF2,
-    0xC2,
+struct add_name_string S_ADD_NAME = {           /* $7B47 "ADD " and a name */
+    { 0x18, 0xC1, 0xC4, 0xC4 },
+    {
+        0xA0, 0xB1, 0xA0, 0xA0, 0xAE, 0xA0, 0xA0, 0xAE, 0xB5, 0xA0, 0xC6,
+        0xCC, 0xFE, 0xA0, 0xD8, 0xC1, 0xA0, 0xB5, 0xA0, 0xF2, 0xC2,
+    },
 };
 /* The original's labels say "increase" for '#' and "decrease" for '@',
  * and that is how the slot, speed, and danger menus use them. The
@@ -1870,26 +1873,39 @@ static uint8_t S_DEFEND[7] = {          /* $7B78 "DEFEND" */
 static uint8_t S_STOP[5] = {            /* $7B7F "STOP" */
     0x04, 0xD3, 0xD4, 0xCF, 0xD0,
 };
-/* $7B84-$7BDA: "THE TREASURE CHEST OPENS UP", "TO REVEAL ... GOLD
- * DUCATS.", "YOU NOW HAVE ... DUCATS.", and the 0 that ends the group,
- * which events.c prints as one message. */
-uint8_t S_CHEST_MESSAGE[87] = {
-    0x1B, 0xD4, 0xC8, 0xC5, 0xA0, 0xD4, 0xD2, 0xC5, 0xC1, 0xD3, 0xD5, 0xD2,
-    0xC5, 0xA0, 0xC3, 0xC8, 0xC5, 0xD3, 0xD4, 0xA0, 0xCF, 0xD0, 0xC5, 0xCE,
-    0xD3, 0xA0, 0xD5, 0xD0, 0x1D, 0xD4, 0xCF, 0xA0, 0xD2, 0xC5, 0xD6, 0xC5,
-    0xC1, 0xCC, 0xA0, 0xA0, 0xA0, 0xCC, 0xA0, 0xEB, 0xB0, 0xA0, 0xC7, 0xCF,
-    0xCC, 0xC4, 0xA0, 0xC4, 0xD5, 0xC3, 0xC1, 0xD4, 0xD3, 0xAE, 0x1B, 0xD9,
-    0xCF, 0xD5, 0xA0, 0xCE, 0xCF, 0xD7, 0xA0, 0xC8, 0xC1, 0xD6, 0xC5, 0xA0,
-    0xA0, 0xE4, 0xCF, 0xD2, 0xA0, 0xB0, 0xA0, 0xC4, 0xD5, 0xC3, 0xC1, 0xD4,
-    0xD3, 0xAE, 0x00,
+/* $7B84-$7BDA, which events.c prints as one message. */
+struct chest_message S_CHEST_MESSAGE = {
+    {
+        0x1B, 0xD4, 0xC8, 0xC5, 0xA0, 0xD4, 0xD2, 0xC5, 0xC1, 0xD3, 0xD5,
+        0xD2, 0xC5, 0xA0, 0xC3, 0xC8, 0xC5, 0xD3, 0xD4, 0xA0, 0xCF, 0xD0,
+        0xC5, 0xCE, 0xD3, 0xA0, 0xD5, 0xD0,
+    },
+    { 0x1D, 0xD4, 0xCF, 0xA0, 0xD2, 0xC5, 0xD6, 0xC5, 0xC1, 0xCC, 0xA0 },
+    { 0xA0, 0xA0, 0xCC, 0xA0, 0xEB },
+    {
+        0xB0, 0xA0, 0xC7, 0xCF, 0xCC, 0xC4, 0xA0, 0xC4, 0xD5, 0xC3, 0xC1,
+        0xD4, 0xD3, 0xAE,
+    },
+    {
+        0x1B, 0xD9, 0xCF, 0xD5, 0xA0, 0xCE, 0xCF, 0xD7, 0xA0, 0xC8, 0xC1,
+        0xD6, 0xC5, 0xA0,
+    },
+    { 0xA0, 0xE4, 0xCF, 0xD2, 0xA0 },
+    { 0xB0, 0xA0, 0xC4, 0xD5, 0xC3, 0xC1, 0xD4, 0xD3, 0xAE },
+    0x00,
 };
 /* $7BDB "CONTINUE GAME NUMBER NN", whose NN format_slot_number writes. */
-static uint8_t S_CONTINUE_GAME_NUMBER[24] = {
-    0x17, 0xC3, 0xCF, 0xCE, 0xD4, 0xC9, 0xCE, 0xD5, 0xC5, 0xA0, 0xC7, 0xC1,
-    0xCD, 0xC5, 0xA0, 0xCE, 0xD5, 0xCD, 0xC2, 0xC5, 0xD2, 0xA0, 0xCE, 0xCE,
+struct continue_game_string {
+    uint8_t text[22];           /* the length, 23, and "CONTINUE GAME NUMBER " */
+    uint8_t number[2];          /* S_CONTINUE_TENS and S_CONTINUE_ONES */
 };
-#define S_CONTINUE_TENS (S_CONTINUE_GAME_NUMBER[22])
-#define S_CONTINUE_ONES (S_CONTINUE_GAME_NUMBER[23])
+static struct continue_game_string S_CONTINUE_GAME_NUMBER = {
+    {
+        0x17, 0xC3, 0xCF, 0xCE, 0xD4, 0xC9, 0xCE, 0xD5, 0xC5, 0xA0, 0xC7,
+        0xC1, 0xCD, 0xC5, 0xA0, 0xCE, 0xD5, 0xCD, 0xC2, 0xC5, 0xD2, 0xA0,
+    },
+    { 0xCE, 0xCE },
+};
 static uint8_t S_BEGIN_NEW_GAME[15] = { /* $7BF3 "BEGIN NEW GAME" */
     0x0E, 0xC2, 0xC5, 0xC7, 0xC9, 0xCE, 0xA0, 0xCE, 0xC5, 0xD7, 0xA0, 0xC7,
     0xC1, 0xCD, 0xC5,
@@ -1926,10 +1942,12 @@ static uint8_t S_ATTACK_BELOW[17] = {   /* $7C83 "ATTACK BELOW YOU" */
     0x10, 0xC1, 0xD4, 0xD4, 0xC1, 0xC3, 0xCB, 0xA0, 0xC2, 0xC5, 0xCC, 0xCF,
     0xD7, 0xA0, 0xD9, 0xCF, 0xD5,
 };
-uint8_t S_ATTACK_TARGET[28] = {         /* $7C94 "ATTACK " and a name */
-    0x1B, 0xC1, 0xD4, 0xD4, 0xC1, 0xC3, 0xCB, 0xA0, 0xB5, 0xE9, 0xBC, 0xA5,
-    0xA0, 0xD3, 0xC9, 0xC2, 0xC3, 0xCD, 0xA0, 0xA0, 0xD4, 0xB1, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xC9,
+struct attack_target_string S_ATTACK_TARGET = { /* $7C94 "ATTACK " and a name */
+    { 0x1B, 0xC1, 0xD4, 0xD4, 0xC1, 0xC3, 0xCB },
+    {
+        0xA0, 0xB5, 0xE9, 0xBC, 0xA5, 0xA0, 0xD3, 0xC9, 0xC2, 0xC3, 0xCD,
+        0xA0, 0xA0, 0xD4, 0xB1, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xC9,
+    },
 };
 static uint8_t S_ATTACK_SOMEONE_ELSE[20] = {    /* $7CB0 "ATTACK SOMEONE ELSE" */
     0x13, 0xC1, 0xD4, 0xD4, 0xC1, 0xC3, 0xCB, 0xA0, 0xD3, 0xCF, 0xCD, 0xC5,
@@ -1942,18 +1960,27 @@ static uint8_t S_CANCEL_ATTACK[14] = {  /* $7CC4 "CANCEL ATTACK" */
 uint8_t S_MISSES[7] = {                 /* $7CD2 "MISSES" */
     0x06, 0xCD, 0xC9, 0xD3, 0xD3, 0xC5, 0xD3,
 };
-uint8_t S_DUCATS_TO_DROP[24] = {        /* $7CD9 "DUCATS TO DROP :" and digits */
-    0x17, 0xC4, 0xD5, 0xC3, 0xC1, 0xD4, 0xD3, 0xA0, 0xD4, 0xCF, 0xA0, 0xC4,
-    0xD2, 0xCF, 0xD0, 0xA0, 0xBA, 0xA0, 0xA0, 0xB4, 0xCC, 0xA0, 0xBA, 0xB0,
+/* $7CD9 "DUCATS TO DROP :" and digits */
+struct ducats_to_drop_string S_DUCATS_TO_DROP = {
+    {
+        0x17, 0xC4, 0xD5, 0xC3, 0xC1, 0xD4, 0xD3, 0xA0, 0xD4, 0xCF, 0xA0,
+        0xC4, 0xD2, 0xCF, 0xD0, 0xA0, 0xBA, 0xA0,
+    },
+    { 0xA0, 0xB4, 0xCC, 0xA0, 0xBA },
+    0xB0,
 };
 static uint8_t S_KEEP_ALL_GOLD[14] = {  /* $7CF1 "KEEP ALL GOLD" */
     0x0D, 0xCB, 0xC5, 0xC5, 0xD0, 0xA0, 0xC1, 0xCC, 0xCC, 0xA0, 0xC7, 0xCF,
     0xCC, 0xC4,
 };
-uint8_t S_PAY_FOR[36] = {               /* $7CFF "PAY 000000 FOR " and an item */
-    0x23, 0xD0, 0xC1, 0xD9, 0xA0, 0xB0, 0xB0, 0xB0, 0xB0, 0xB0, 0xB0, 0xA0,
-    0xC6, 0xCF, 0xD2, 0xA0, 0xA0, 0xDF, 0xA0, 0xA0, 0xA0, 0xA0, 0xD9, 0xA0,
-    0xE0, 0xA0, 0xA0, 0xA0, 0xC2, 0xB7, 0xA0, 0xB1, 0xC5, 0xA0, 0xC1, 0xF5,
+struct pay_for_string S_PAY_FOR = {     /* $7CFF "PAY 000000 FOR " and an item */
+    { 0x23, 0xD0, 0xC1, 0xD9, 0xA0 },
+    { 0xB0, 0xB0, 0xB0, 0xB0, 0xB0 },
+    { 0xB0, 0xA0, 0xC6, 0xCF, 0xD2, 0xA0 },
+    {
+        0xA0, 0xDF, 0xA0, 0xA0, 0xA0, 0xA0, 0xD9, 0xA0, 0xE0, 0xA0, 0xA0,
+        0xA0, 0xC2, 0xB7, 0xA0, 0xB1, 0xC5, 0xA0, 0xC1, 0xF5,
+    },
 };
 static uint8_t S_BUY_SOMETHING_ELSE[19] = { /* $7D23 "BUY SOMETHING ELSE" */
     0x12, 0xC2, 0xD5, 0xD9, 0xA0, 0xD3, 0xCF, 0xCD, 0xC5, 0xD4, 0xC8, 0xC9,
@@ -1973,20 +2000,31 @@ static uint8_t S_MOVE[5] = {            /* $7D53 "MOVE" */
     0x04, 0xCD, 0xCF, 0xD6, 0xC5,
 };
 /* $7D58 "GAME SPEED : 0", whose digit menu_settings_init writes. */
-static uint8_t S_GAME_SPEED[15] = {
-    0x0E, 0xC7, 0xC1, 0xCD, 0xC5, 0xA0, 0xD3, 0xD0, 0xC5, 0xC5, 0xC4, 0xA0,
-    0xBA, 0xA0, 0xB0,
+struct game_speed_string {
+    uint8_t text[14];           /* the length, 14, and "GAME SPEED : " */
+    uint8_t digit;              /* S_GAME_SPEED_DIGIT */
 };
-#define S_GAME_SPEED_DIGIT (S_GAME_SPEED[14])
+static struct game_speed_string S_GAME_SPEED = {
+    {
+        0x0E, 0xC7, 0xC1, 0xCD, 0xC5, 0xA0, 0xD3, 0xD0, 0xC5, 0xC5, 0xC4,
+        0xA0, 0xBA, 0xA0,
+    },
+    0xB0,
+};
 /* $7D67 "SAVE GAME IN SLOT NUMBER 00", whose 00 format_slot_number
  * writes. */
-static uint8_t S_SAVE_IN_SLOT[28] = {
-    0x1B, 0xD3, 0xC1, 0xD6, 0xC5, 0xA0, 0xC7, 0xC1, 0xCD, 0xC5, 0xA0, 0xC9,
-    0xCE, 0xA0, 0xD3, 0xCC, 0xCF, 0xD4, 0xA0, 0xCE, 0xD5, 0xCD, 0xC2, 0xC5,
-    0xD2, 0xA0, 0xB0, 0xB0,
+struct save_in_slot_string {
+    uint8_t text[26];           /* the length, 27, and "SAVE GAME IN SLOT NUMBER " */
+    uint8_t number[2];          /* S_SAVE_SLOT_TENS and S_SAVE_SLOT_ONES */
 };
-#define S_SAVE_SLOT_TENS (S_SAVE_IN_SLOT[26])
-#define S_SAVE_SLOT_ONES (S_SAVE_IN_SLOT[27])
+static struct save_in_slot_string S_SAVE_IN_SLOT = {
+    {
+        0x1B, 0xD3, 0xC1, 0xD6, 0xC5, 0xA0, 0xC7, 0xC1, 0xCD, 0xC5, 0xA0,
+        0xC9, 0xCE, 0xA0, 0xD3, 0xCC, 0xCF, 0xD4, 0xA0, 0xCE, 0xD5, 0xCD,
+        0xC2, 0xC5, 0xD2, 0xA0,
+    },
+    { 0xB0, 0xB0 },
+};
 
 /* ---- Menus ---------------------------------------------------------- */
 
@@ -2008,12 +2046,15 @@ static struct menu_option GAME_INPUT_OPTIONS[7] = {
     { 1, 0x64, { 6, 5, 4, 1 }, S_SEE_YOUR_LOT, CHAIN_MENU_SEE_YOUR_LOT },
 };
 struct menu GAME_INPUT_TABLE = { 7, 3, MENU_INIT_CONFIGURE_INPUT, GAME_INPUT_OPTIONS };
-/* The options configure_input enables and disables. */
-#define MOVE_OPTION (GAME_INPUT_OPTIONS[0])
-#define ATTACK_OPTION (GAME_INPUT_OPTIONS[1])
-#define DEFEND_OPTION (GAME_INPUT_OPTIONS[2])
-#define STOP_OPTION (GAME_INPUT_OPTIONS[3])
-#define REST_OPTION (GAME_INPUT_OPTIONS[5])
+/* The indexes in GAME_INPUT_OPTIONS of the options configure_input
+ * enables and disables. */
+enum {
+    MOVE_OPTION = 0,
+    ATTACK_OPTION = 1,
+    DEFEND_OPTION = 2,
+    STOP_OPTION = 3,
+    REST_OPTION = 5,
+};
 
 static struct menu_option ATTACK_DIR_OPTIONS[5] = {
     { 1, 0x39, { 3, 5, 2, 4 }, S_DEFEND, CHAIN_ENTER_COMBAT_STATE },
@@ -2036,11 +2077,11 @@ struct menu OTHER_OPTIONS_TABLE = { 6, 1, MENU_INIT_NONE, OTHER_OPTIONS_OPTIONS 
 
 static struct menu_option GAME_SETTINGS_OPTIONS[9] = {
     { 1, 0x03, { 5, 9, 8, 3 }, S_MOVE, CHAIN_MOVE_LOOP },
-    { 1, 0x13, { 0, 0, 0, 0 }, S_GAME_SPEED, CHAIN_RETURN },
+    { 1, 0x13, { 0, 0, 0, 0 }, (uint8_t *)&S_GAME_SPEED, CHAIN_RETURN },
     { 1, 0x23, { 7, 7, 1, 4 }, S_INCREASE, CHAIN_SETTINGS_SPEED_UP },
     { 1, 0x25, { 8, 8, 3, 9 }, S_DECREASE, CHAIN_SETTINGS_SPEED_DOWN },
-    { 1, 0x53, { 9, 1, 9, 7 }, S_SOUND_IS_ON, CHAIN_TOGGLE_SOUND },
-    { 1, 0x66, { 0, 0, 0, 0 }, S_DANGER, CHAIN_RETURN },
+    { 1, 0x53, { 9, 1, 9, 7 }, (uint8_t *)&S_SOUND_IS_ON, CHAIN_TOGGLE_SOUND },
+    { 1, 0x66, { 0, 0, 0, 0 }, (uint8_t *)&S_DANGER, CHAIN_RETURN },
     { 1, 0x73, { 3, 3, 5, 8 }, S_INCREASE, CHAIN_SETTINGS_DANGER_UP },
     { 1, 0x75, { 4, 4, 7, 1 }, S_DECREASE, CHAIN_SETTINGS_DANGER_DOWN },
     { 1, 0x2B, { 1, 5, 4, 5 }, S_SAVE_GAME, CHAIN_ENTER_SAVE_GAME_SLOT },
@@ -2048,7 +2089,7 @@ static struct menu_option GAME_SETTINGS_OPTIONS[9] = {
 struct menu GAME_SETTINGS_TABLE = { 9, 1, MENU_INIT_SETTINGS, GAME_SETTINGS_OPTIONS };
 
 static struct menu_option ATTACK_TARGET_OPTIONS[3] = {
-    { 1, 0x06, { 3, 2, 0, 0 }, S_ATTACK_TARGET, CHAIN_RESOLVE_ATTACK },
+    { 1, 0x06, { 3, 2, 0, 0 }, (uint8_t *)&S_ATTACK_TARGET, CHAIN_RESOLVE_ATTACK },
     { 1, 0x2E, { 1, 3, 0, 0 }, S_ATTACK_SOMEONE_ELSE, CHAIN_SELECT_SOMEONE_ELSE },
     { 1, 0x56, { 2, 1, 0, 0 }, S_CANCEL_ATTACK, CHAIN_RETURN },
 };
@@ -2056,7 +2097,7 @@ struct menu ATTACK_TARGET_TABLE = { 3, 2, MENU_INIT_ATTACK, ATTACK_TARGET_OPTION
 
 /* Option 1 is a label. Its exit, MENU_DROP_GOLD, can't be reached. */
 static struct menu_option DROP_GOLD_OPTIONS[5] = {
-    { 1, 0x2A, { 0, 0, 0, 0 }, S_DUCATS_TO_DROP, CHAIN_MENU_DROP_GOLD },
+    { 1, 0x2A, { 0, 0, 0, 0 }, (uint8_t *)&S_DUCATS_TO_DROP, CHAIN_MENU_DROP_GOLD },
     { 1, 0x43, { 4, 4, 4, 3 }, S_INCREASE, CHAIN_MENU_DROP_DEC },
     { 1, 0x45, { 4, 4, 2, 4 }, S_DECREASE, CHAIN_MENU_DROP_INC },
     { 1, 0x52, { 2, 3, 3, 5 }, S_DROP_GOLD, CHAIN_DROP_GOLD_EXEC },
@@ -2068,7 +2109,7 @@ struct menu DROP_GOLD_TABLE = { 5, 2, MENU_INIT_DROP_GOLD, DROP_GOLD_OPTIONS };
  * chain to game_init. */
 static struct menu_option SAVE_LOAD_OPTIONS[4] = {
     { 1, 0x05, { 2, 2, 0, 0 }, S_BEGIN_NEW_GAME, CHAIN_RETURN },
-    { 1, 0x55, { 1, 1, 4, 3 }, S_CONTINUE_GAME_NUMBER, CHAIN_CONTINUE_GAME },
+    { 1, 0x55, { 1, 1, 4, 3 }, (uint8_t *)&S_CONTINUE_GAME_NUMBER, CHAIN_CONTINUE_GAME },
     { 1, 0x6F, { 1, 1, 2, 4 }, S_INCREASE, CHAIN_SLOT_INC_ENTER },
     { 1, 0x71, { 1, 1, 3, 2 }, S_DECREASE, CHAIN_SLOT_DEC_ENTER },
 };
@@ -2076,7 +2117,7 @@ struct menu SAVE_LOAD_TABLE = { 4, 1, MENU_INIT_SAVE_LOAD, SAVE_LOAD_OPTIONS };
 
 static struct menu_option SAVE_GAME_SLOT_OPTIONS[4] = {
     { 1, 0x04, { 2, 2, 2, 2 }, S_MOVE, CHAIN_MOVE_LOOP },
-    { 1, 0x2C, { 1, 1, 4, 3 }, S_SAVE_IN_SLOT, CHAIN_SAVE_GAME },
+    { 1, 0x2C, { 1, 1, 4, 3 }, (uint8_t *)&S_SAVE_IN_SLOT, CHAIN_SAVE_GAME },
     { 1, 0x49, { 1, 1, 2, 4 }, S_INCREASE, CHAIN_SLOT_INC_REENTER },
     { 1, 0x4B, { 1, 1, 3, 2 }, S_DECREASE, CHAIN_SLOT_DEC_REENTER },
 };
@@ -2093,19 +2134,19 @@ struct menu SCENARIO_DISK_TABLE = { 3, 1, MENU_INIT_NONE, SCENARIO_DISK_OPTIONS 
  * them. */
 static struct menu_option CHAR_SELECT_OPTIONS[6] = {
     { 1, 0x05, { 6, 2, 6, 2 }, S_MOVE, CHAIN_MOVE_LOOP },
-    { 1, 0x2D, { 1, 5, 1, 3 }, S_ADD_NAME, CHAIN_INIT_CHAR_SELECT },
+    { 1, 0x2D, { 1, 5, 1, 3 }, (uint8_t *)&S_ADD_NAME, CHAIN_INIT_CHAR_SELECT },
     { 1, 0x49, { 1, 5, 2, 4 }, S_INCREASE, CHAIN_CHAR_SELECT_NEXT },
     { 1, 0x4B, { 1, 5, 3, 5 }, S_DECREASE, CHAIN_CHAR_SELECT_PREV },
     { 1, 0x55, { 2, 6, 4, 6 }, S_TO_THIS_ROOM, CHAIN_CHAR_SELECT_HERE },
     { 0, 0x55, { 5, 1, 5, 1 }, S_TO_ALI_BABAS_HOME, CHAIN_CHAR_SELECT_HOME },
 };
 struct menu CHAR_SELECT_TABLE = { 6, 2, MENU_INIT_NONE, CHAR_SELECT_OPTIONS };
-#define THIS_ROOM_OPTION (CHAR_SELECT_OPTIONS[4])
-#define ALI_BABAS_HOME_OPTION (CHAR_SELECT_OPTIONS[5])
+/* The indexes in CHAR_SELECT_OPTIONS of options 5 and 6. */
+enum { THIS_ROOM_OPTION = 4, ALI_BABAS_HOME_OPTION = 5 };
 
 /* The shop's menu. */
 static struct menu_option ALT_INPUT_OPTIONS[3] = {
-    { 1, 0x05, { 3, 2, 0, 0 }, S_PAY_FOR, CHAIN_SHOP_BUY_HANDLER },
+    { 1, 0x05, { 3, 2, 0, 0 }, (uint8_t *)&S_PAY_FOR, CHAIN_SHOP_BUY_HANDLER },
     { 1, 0x2D, { 1, 3, 0, 0 }, S_BUY_SOMETHING_ELSE, CHAIN_BROWSE_HANDLER },
     { 1, 0x55, { 2, 1, 0, 0 }, S_NO_SALE, CHAIN_RETURN },
 };
@@ -2114,7 +2155,7 @@ struct menu ALT_INPUT_TABLE = { 3, 2, MENU_INIT_NONE, ALT_INPUT_OPTIONS };
 /* ---- Keys and the joystick ------------------------------------------- */
 
 /* What check_input returns when there is no direction or fire. */
-#define NO_INPUT 0xFF
+constexpr uint8_t NO_INPUT = 0xFF;
 
 /* The keys for each DIR_, fire first: space, I, M, J, and K; return and
  * the lower-case letters; and ESC and the arrow keys (ctrl-K, ctrl-J,
@@ -2145,26 +2186,25 @@ static uint8_t joy_zone_y = ZONE_CENTER;
 
 /* The WAIT before each paddle read, about 100,000 cycles, which lets the
  * other paddle's timer run out first. JOY_SETTLE_DELAY. */
-#define JOY_SETTLE_DELAY 0xC8
+constexpr uint8_t JOY_SETTLE_DELAY = 0xC8;
 
 /* ---- Settings and save slots ----------------------------------------- */
 
-#define MAX_GAME_SPEED 5
+constexpr uint8_t MAX_GAME_SPEED = 5;
 
 /* The save slot the save/load and save menus show, 1-16. Slots below
  * GAME_DISK_SLOTS are on the game disk and the rest on a scenario disk,
  * so every slot is on a scenario disk. */
 static uint8_t slot_number = 1;
-#define GAME_DISK_SLOTS 1
-#define MAX_SLOT_NUMBER 0x11        /* one past the last slot */
+constexpr uint8_t GAME_DISK_SLOTS = 1;
+constexpr uint8_t MAX_SLOT_NUMBER = 0x11;   /* one past the last slot */
 
 /* A slot takes two tracks, from this track on the game disk ([0]) or a
  * scenario disk ([1]). It holds the game's records, $4000-$59FF, in 26
  * sectors, 13 to a track. */
 static const uint8_t SAVE_TRACK_BASE[2] = { 0x13, 0x01 };
-#define SAVE_SECTOR_COUNT 26
-#define SECTORS_PER_TRACK 13
-#define SAVE_BUFFER ((uint8_t *)LOCATIONS)
+constexpr uint8_t SAVE_SECTOR_COUNT = 26;
+constexpr uint8_t SECTORS_PER_TRACK = 13;
 
 /* The VTOC's sector, whose first bytes verify_game_disk checks. */
 const uint8_t GAME_SIG_TRACK = 0x11;
@@ -2183,10 +2223,6 @@ static uint8_t scenario_init_flag = 0;
  * ($5B26). */
 static uint8_t under_level;
 static uint8_t safe_to_rest;
-
-/* The high byte of the IOB's buffer address, which advance_sector steps
- * without writing the low byte. */
-#define IOB_BUFFER_PAGE (((uint8_t *)&RWTS_IOB_PTR->buffer_addr)[1])
 
 static uint8_t check_input(void);
 
@@ -2443,15 +2479,15 @@ static void check_combat_eligibility(void) {
 
 uint8_t configure_input(void) {
     check_combat_eligibility();
-    REST_OPTION.enabled = safe_to_rest;
-    STOP_OPTION.enabled = under_level;
-    ATTACK_OPTION.enabled = under_level ^ 1;
-    DEFEND_OPTION.enabled = under_level ^ 1;
+    GAME_INPUT_OPTIONS[REST_OPTION].enabled = safe_to_rest;
+    GAME_INPUT_OPTIONS[STOP_OPTION].enabled = under_level;
+    GAME_INPUT_OPTIONS[ATTACK_OPTION].enabled = under_level ^ 1;
+    GAME_INPUT_OPTIONS[DEFEND_OPTION].enabled = under_level ^ 1;
     GAME_INPUT_TABLE.selection = under_level + 3;
-    MOVE_OPTION.enabled = MOVE_POINTS;
+    GAME_INPUT_OPTIONS[MOVE_OPTION].enabled = MOVE_POINTS;
     if (TURN_ACTIVE == 0)
-        MOVE_OPTION.enabled = 0;
-    return MOVE_OPTION.enabled;
+        GAME_INPUT_OPTIONS[MOVE_OPTION].enabled = 0;
+    return GAME_INPUT_OPTIONS[MOVE_OPTION].enabled;
 }
 
 struct menu *get_input_table_ptr(void) {
@@ -2500,7 +2536,7 @@ uint8_t menu_game_settings_enter(void) {
  * MENU_SETTINGS_INIT. */
 static void menu_settings_init(void) {
     settings_display_init();
-    S_GAME_SPEED_DIGIT = ANIM_INDEX | 0xB0;
+    S_GAME_SPEED.digit = ANIM_INDEX | 0xB0;
 }
 
 uint8_t settings_speed_up(void) {
@@ -2557,16 +2593,16 @@ uint8_t menu_drop_dec(void) {
 /* Writes slot_number into the save/load and save menus' strings, with a
  * space for a tens digit of 0. FORMAT_SLOT_NUMBER. */
 static void format_slot_number(void) {
-    S_CONTINUE_TENS = 0xA0;
-    S_SAVE_SLOT_TENS = 0xA0;
+    S_CONTINUE_GAME_NUMBER.number[0] = 0xA0;
+    S_SAVE_IN_SLOT.number[0] = 0xA0;
     uint8_t n = slot_number;
     if (n >= 10) {
         n -= 10;
-        S_CONTINUE_TENS = 0xB1;
-        S_SAVE_SLOT_TENS = 0xB1;
+        S_CONTINUE_GAME_NUMBER.number[0] = 0xB1;
+        S_SAVE_IN_SLOT.number[0] = 0xB1;
     }
-    S_CONTINUE_ONES = n | 0xB0;
-    S_SAVE_SLOT_ONES = n | 0xB0;
+    S_CONTINUE_GAME_NUMBER.number[1] = n | 0xB0;
+    S_SAVE_IN_SLOT.number[1] = n | 0xB0;
 }
 
 /* Keeps the highlighted option and shows the new slot. SLOT_UPDATE. */
@@ -2670,8 +2706,8 @@ uint8_t char_select_prev(void) {
  * other destination, highlights the name, and reopens the menu. The
  * shared tail of CHAR_SELECT_HERE and CHAR_SELECT_HOME. */
 static uint8_t char_select_patch(uint8_t home_enabled, uint8_t here_enabled) {
-    ALI_BABAS_HOME_OPTION.enabled = home_enabled;
-    THIS_ROOM_OPTION.enabled = here_enabled;
+    CHAR_SELECT_OPTIONS[ALI_BABAS_HOME_OPTION].enabled = home_enabled;
+    CHAR_SELECT_OPTIONS[THIS_ROOM_OPTION].enabled = here_enabled;
     CHAR_SELECT_TABLE.selection = 2;
     return enter_char_select();
 }
@@ -2790,14 +2826,15 @@ static void setup_slot_iob(void) {
     }
     RWTS_IOB_PTR->track = (uint8_t)(slot << 1) + SAVE_TRACK_BASE[disk];
     RWTS_IOB_PTR->sector = 0;
-    RWTS_IOB_PTR->buffer_addr = SAVE_BUFFER;
+    RWTS_IOB_PTR->buffer_addr = (uint8_t *)LOCATIONS;
     RWTS_IOB_PTR->partial_byte_count = 0;
 }
 
-/* Steps the IOB to the next sector and the next page of the buffer.
- * ADVANCE_SECTOR. */
+/* Steps the IOB to the next sector and the next page of the buffer,
+ * stepping the buffer address's high byte without writing the low
+ * byte. ADVANCE_SECTOR. */
 static void advance_sector(void) {
-    IOB_BUFFER_PAGE++;
+    ((uint8_t *)&RWTS_IOB_PTR->buffer_addr)[1]++;
     uint8_t sector = RWTS_IOB_PTR->sector + 1;
     if (sector >= SECTORS_PER_TRACK) {
         RWTS_IOB_PTR->sector = 0;

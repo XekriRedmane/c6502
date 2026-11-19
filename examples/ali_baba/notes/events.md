@@ -66,8 +66,8 @@ The unit defines no tables or variables. Everything is translated.
   DISPLAY_MESSAGE is a call and `return CHAIN_RETURN`, and ADJ_DROP's
   JMP INIT_DROP_GOLD is `return init_drop_gold();`.
 - ENTITY_PTR's gold and CHAR_PTR's event pointer are read a byte at a
-  time through macros (`GOLD_LO`, `GOLD_HI`, `ENTITY_GOLD`,
-  `CHAR_EVENTS`), as a workaround for compiler gap 1 below. In
+  time through the function-like macros `ENTITY_BYTE` and `CHAR_BYTE`,
+  as a workaround for compiler gap 1 below. In
   `adj_drop`, `pickup_treasure`, `update_event_list`, and
   `process_char_events` that saved 64 bytes.
 

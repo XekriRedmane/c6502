@@ -940,22 +940,22 @@ enum {
 };
 
 /* The random amount npc_move_ai adds to each score is 0 to this. */
-#define AI_RANDOM_NORMAL 0x06
-#define AI_RANDOM_WANDER 0x0F
+constexpr uint8_t AI_RANDOM_NORMAL = 0x06;
+constexpr uint8_t AI_RANDOM_WANDER = 0x0F;
 
 /* The class bits of a mob's flags, and the rest. */
-#define FLAGS_CLASS_MASK 0xC0
-#define FLAGS_STATUS_MASK 0x3F
+constexpr uint8_t FLAGS_CLASS_MASK = 0xC0;
+constexpr uint8_t FLAGS_STATUS_MASK = 0x3F;
 
 /* The flag bits above the level in a mob's level byte. */
-#define LEVEL_FLAG_MASK 0xE0
+constexpr uint8_t LEVEL_FLAG_MASK = 0xE0;
 /* One unit of the pending level amount, bits 6-4 of a mob's armor. */
-#define PENDING_XP_UNIT 0x10
+constexpr uint8_t PENDING_XP_UNIT = 0x10;
 
 /* The low-ASCII space that fills S_PAY_FOR's fields before they are
  * written, since num_to_decimal leaves the places of leading zeros as
  * they are. */
-#define LOW_SPACE 0x20
+constexpr uint8_t LOW_SPACE = 0x20;
 
 /* The original tests only the high byte of a pointer the group walk
  * leaves, so a pointer into page 0 counts as none. */
@@ -1170,7 +1170,7 @@ static void next_slot(void) {
 }
 
 /* Shows the first enabled slot from the current one on: its price for
- * this location in S_PAY_FOR's digits, and its name. */
+ * this location in S_PAY_FOR.price, and its name in S_PAY_FOR.item. */
 static uint8_t show_item(void) {
     while ((SHOP_VALID_MASK & SHOP_ITEM_MASK) == 0)
         next_slot();
@@ -1184,19 +1184,19 @@ static uint8_t show_item(void) {
     } while (tier-- != 0);
 
     for (uint8_t i = 0; i < 5; i++)
-        SHOP_PRICE_DIGITS[i] = LOW_SPACE;
+        S_PAY_FOR.price[i] = LOW_SPACE;
     for (uint8_t i = 0; i < 20; i++)
-        SHOP_ITEM_NAME[i] = LOW_SPACE;
-    num_to_decimal(SHOP_PRICE, SHOP_PRICE_DIGITS);
+        S_PAY_FOR.item[i] = LOW_SPACE;
+    num_to_decimal(SHOP_PRICE, S_PAY_FOR.price);
 
     /* The copy runs down from the last character and ends when the
      * index turns negative, so a length of 0 copies the length byte
-     * to SHOP_ITEM_NAME[255]. */
+     * to S_PAY_FOR.item[255]. */
     const uint8_t *name = slot->name;
     uint8_t from = name[0];
     uint8_t to = from - 1;
     do {
-        SHOP_ITEM_NAME[to] = name[from];
+        S_PAY_FOR.item[to] = name[from];
         from--;
         to--;
     } while ((int8_t)to >= 0);

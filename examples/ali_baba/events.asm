@@ -10,8 +10,8 @@ WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
 WNDTOP	EQU	$22
 WNDBTM	EQU	$23
-CH	EQU	$24
-CV	EQU	$25
+TEXT_COL	EQU	$24
+TEXT_ROW	EQU	$25
 MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
@@ -52,11 +52,11 @@ __local_update_event_list__pos	EQU	$84
 __local_pick_random_mob__index	EQU	$85
 __local_pickup_treasure__ev	EQU	$85
 __local_update_event_list__e	EQU	$85
-__local_find_mob_by_faction__faction	EQU	$86
 __local_find_msb__mask	EQU	$86
 __local_pick_random_char__0	EQU	$86
 __local_pickup_treasure__2	EQU	$86
 __local_update_event_list__1	EQU	$86
+__local_find_mob_by_faction__faction	EQU	$87
 __local_find_msb__v	EQU	$87
 __local_update_event_list__2	EQU	$87
 __local_clear_treasure_digits__i	EQU	$8A
@@ -190,7 +190,15 @@ S_PRESS_BUTTON	EQU	$7EBA
 SHOP_TABLE	EQU	$7EDD
 SHOP_EFFECT_TABLE	EQU	$7F6D
 XP_AWARD_TABLE	EQU	$7FBE
-MAP_OBJECT_NAMES	EQU	$7FC3
+S_A_WALL	EQU	$7FC3
+S_A_STATUE	EQU	$7FCA
+S_A_TREASURE_CHEST	EQU	$7FD3
+S_EMPTY_SPACE	EQU	$7FE4
+S_AN_ILLUSION	EQU	$7FF0
+S_A_DOOR	EQU	$7FFC
+S_AN_INVISIBLE_WALL	EQU	$8003
+S_SOME_RUNE_WRITING	EQU	$8016
+S_A_TRADING_OUTPOST	EQU	$8028
 ATTACK_VERB_STRINGS	EQU	$803A
 s_PRINT_FONT_CHAR	EQU	$80A4
 TUNE_TABLE	EQU	$80AE
@@ -199,6 +207,7 @@ TUNE_1_COMBAT_HIT	EQU	$80C7
 TUNE_2_COMBAT_DAMAGE	EQU	$80D7
 FONT_DATA	EQU	$83A5
 GAME_MESSAGE_STRINGS	EQU	$9AA5
+DISK_IO_CODE	EQU	$B300
 DISK_READ_FIELD	EQU	$B300
 RWTS_ENTRY	EQU	$B7B5
 RWTS_IOB	EQU	$B7E8
@@ -235,7 +244,7 @@ WAIT	EQU	$FCA8
 ; def drop_gold_exec params= locals=__local_drop_gold_exec__0 indirect=false in_cycle=false
 ; def event_faction_scene_cont params=__zpabi_event_faction_scene_cont__index locals=__local_event_faction_scene_cont__0,__local_event_faction_scene_cont__index indirect=false in_cycle=false param_regs=A
 ; def event_spawn_mob params= locals=__local_event_spawn_mob__0,__local_event_spawn_mob__index indirect=false in_cycle=false
-; def find_mob_by_faction params=__zpabi_find_mob_by_faction__faction locals=__local_find_mob_by_faction__link,__local_find_mob_by_faction__faction indirect=false in_cycle=false param_regs=A carry=true
+; def find_mob_by_faction params=__zpabi_find_mob_by_faction__faction locals=__local_find_mob_by_faction__link,__local_find_mob_by_faction__0,__local_find_mob_by_faction__faction indirect=false in_cycle=false param_regs=A carry=true
 ; def find_msb params=__zpabi_find_msb__v locals=__local_find_msb__0,__local_find_msb__mask,__local_find_msb__v indirect=false in_cycle=false param_regs=A
 ; def flush_pending_xp params= locals=__local_flush_pending_xp__0,__local_flush_pending_xp__1,__local_flush_pending_xp__2 indirect=false in_cycle=false
 ; def inc_stat params=__zpabi_inc_stat__offset locals=__local_inc_stat__0,__local_inc_stat__offset indirect=false in_cycle=false param_regs=A
@@ -531,8 +540,8 @@ WAIT	EQU	$FCA8
 ; zp WNDWDTH size=1 at=$21 def=false init=
 ; zp WNDTOP size=1 at=$22 def=false init=
 ; zp WNDBTM size=1 at=$23 def=false init=
-; zp CH size=1 at=$24 def=false init=
-; zp CV size=1 at=$25 def=false init=
+; zp TEXT_COL size=1 at=$24 def=false init=
+; zp TEXT_ROW size=1 at=$25 def=false init=
 ; zp MONITOR_GBAS size=2 at=$26 def=false init=
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=

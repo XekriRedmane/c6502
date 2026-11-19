@@ -243,7 +243,9 @@ this directory:
   `reg_args` on either) goes to `f`; a label nothing names after a
   terminator goes, with its code up to the next label; and `LDA` /
   `LDX` / `LDY #k; JMP .L` becomes `BEQ` (k = 0) or `BNE .L` when the
-  branch reaches with a byte to spare each way. Each change only
+  branch reaches with a byte to spare each way, and so does a `JMP .L`
+  right after a conditional branch, which becomes the branch on the
+  opposite condition. Each change only
   removes bytes, so no branch falls out of reach.
 - `tail_call.py` — `apply_tail_call`. `JSR f; RTS` becomes `JMP f`,
   and a `JMP` to a label whose first instruction is a bare `RTS`

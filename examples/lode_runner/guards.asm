@@ -1303,7 +1303,7 @@ guard_take_move:
    STA   __local_guard_take_move__c
 .i15_i10_loop@8_continue:
    BNE   .guard_take_move@rot@0
-   JMP   .i15_loop@12_start
+   BEQ   .i15_loop@12_start
 .guard_take_move@rot@1:
    LDA   #$01
    STA   __zpabi_consider_column__down
@@ -1357,7 +1357,7 @@ guard_take_move:
 .i15_i11_loop@9_continue:
    CMP   #$1B
    BNE   .guard_take_move@rot@2
-   JMP   .i15_loop@13_start
+   BEQ   .i15_loop@13_start
 .guard_take_move@rot@3:
    LDA   #$02
    STA   __zpabi_consider_column__down
@@ -1489,7 +1489,7 @@ guard_find_candidate_row_above:
    DEX
    STX   __local_guard_find_candidate_row_above__3
    TYA
-   BEQ   .if_end@119
+   BEQ   .guard_find_candidate_row_above@cthread@0
    SEC
    SBC   #$01
    STA   __local_guard_find_candidate_row_above__2
@@ -1514,6 +1514,7 @@ guard_find_candidate_row_above:
    LDA   __local_guard_find_candidate_row_above__col
    CMP   #$1B
    BEQ   .if_end@125
+.guard_find_candidate_row_above@cthread@0:
    LDX   __local_guard_find_candidate_row_above__row
    LDA   LEVEL_BG@lo,X
    STA   __local_guard_find_candidate_row_above__0
@@ -1659,7 +1660,7 @@ consider_column:
    STA   __local_consider_column__row
    STX   __local_consider_column__col
    CMP   #$0F
-   BEQ   .if_end@163
+   BEQ   .consider_column@cthread@0
    LDX   __local_consider_column__row
    LDA   LEVEL_BG@lo+1,X
    STA   __local_consider_column__0
@@ -1683,9 +1684,9 @@ consider_column:
    STA   guard_action
 .i0_if_end@162:
 .if_end@166:
-.if_end@163:
    LDA   __local_consider_column__row
    BEQ   .if_end@169
+.consider_column@cthread@0:
    TAX
    LDA   LEVEL_BG@lo,X
    STA   __local_consider_column__0

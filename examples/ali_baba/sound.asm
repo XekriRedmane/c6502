@@ -584,7 +584,7 @@ tune_player:
    BEQ   .case@14
    CMP   #$26
    BEQ   .case@15
-   JMP   .default@16
+   BNE   .default@16
 .case@8:
    INC   TUNE_PC
    BNE   .inc_done@1

@@ -479,7 +479,7 @@ handle_timers:
 .lb_skip@0:
    LDA   #$00
    BNE   .loop@3_continue
-   JMP   .i2_if_end@15
+   BEQ   .i2_if_end@15
 .i2_if_else@16:
    CMP   #$07
    BNE   .i2_if_end@18
@@ -498,16 +498,13 @@ handle_timers:
    STA   GAME_ROWNUM
    LDA   __local_handle_timers__0
    CMP   #$14
-   BEQ   .vthread@0
+   BEQ   .handle_timers@ssa_block@24
    CMP   #$0A
    BNE   .if_end@24
-   CMP   #$14
-   BNE   .cond_else@25
-.vthread@0:
-   LDA   #$37
-   BNE   .cond_end@26
-.cond_else@25:
    LDA   #$38
+   BNE   .cond_end@26
+.handle_timers@ssa_block@24:
+   LDA   #$37
 .cond_end@26:
    JSR   draw_sprite_page2
    LDX   GAME_COLNUM

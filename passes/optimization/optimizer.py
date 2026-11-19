@@ -124,6 +124,7 @@ from passes.optimization.narrow_byte_bitwise import NarrowByteBitwise
 from passes.optimization.narrow_byte_range import NarrowByteRange
 from passes.optimization.recognize_indirect_indexed import RecognizeIndirectIndexed
 from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
+from passes.optimization.known_compare_thread import ThreadKnownCompares
 from passes.optimization.compare_subtract import HoistSubtractToCompare
 from passes.optimization.static_indexed_access import StaticIndexedAccess
 from passes.optimization.three_way_compare import SplitThreeWayCompares
@@ -287,6 +288,10 @@ _DRIVER = PhaseDriver(
         # convergence so nested patterns (`(a && b) || c` and similar)
         # peel off one short-circuit at a time.
         FoldShortCircuitJump(),
+        # A jump whose target tests what the jump's own path decided,
+        # as the second test of `x == a || x == b` reaching a test of
+        # `x == a` in the `if`, goes past the test.
+        ThreadKnownCompares(),
     ],
 )
 

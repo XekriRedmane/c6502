@@ -669,7 +669,7 @@ instr_sread:
 .vthread@0:
    CMP   #$06
    BNE   .if_end@49
-   JMP   .i4_loop@4_continue
+   BEQ   .i4_loop@4_continue
 .instr_sread@rot@2:
    LDY   input_ptr
    LDA   (text),Y

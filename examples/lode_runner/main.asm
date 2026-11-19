@@ -446,7 +446,7 @@ reset_game:
    STA   (__local_reset_game__1),Y
    INX
    BMI   .loop@2_break
-   JMP   .loop@2_start
+   BPL   .loop@2_start
 .if_else@16:
    LDX   __local_reset_game__0
    JMP   .loop@2_start

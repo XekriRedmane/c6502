@@ -514,7 +514,7 @@ get_level_from_keyboard:
    BEQ   .case@4
    CMP   #$9B
    BEQ   .case@5
-   JMP   .default@6
+   BNE   .default@6
 .case@3:
    LDA   kbd_entry_index
    BEQ   .switch@2_break
@@ -543,7 +543,7 @@ get_level_from_keyboard:
    LDA   kbd_entry_index
    CMP   #$03
    BCC   .loop@1_start
-   JMP   .xjump@0
+   BCS   .xjump@0
 .switch@2_break:
    JSR   beep
 .loop@1_start:
@@ -869,7 +869,7 @@ editor_command_loop:
    BEQ   .case@20
    CMP   #$D3
    BEQ   .case@21
-   JMP   .default@22
+   BNE   .default@22
 .case@16:
    JSR   editor_play_level
    JMP   .loop@14_start
@@ -1033,7 +1033,7 @@ edit_level_key_loop:
    BEQ   .case@32
    CMP   #$91
    BEQ   .case@33
-   JMP   .switch@25_break
+   BNE   .switch@25_break
 .case@26:
    LDA   GAME_COLNUM
    BEQ   .switch@25_break

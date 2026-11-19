@@ -268,6 +268,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Inlining small functions](inline_functions.md). Replaces the calls of a `static` function with copies of its body, when the copies are estimated to take no more bytes than the calls and the function.
 - [INY and CPY for an incremented table byte](index_inc_cmp_y.md). Does table-byte plus or minus one and its compare in Y instead of a temporary.
 - [Join store](join_store.md). Stores a value each arm of a branch leaves in a slot straight into the memory the join copies it to.
+- [Jump threading on known compares](known_compare_thread.md). Sends a jump past the equality tests at its target that its own path decided, so the test of `x == a` inside `if (x == a || x == b)` goes.
 - [Jump tables](jump_table.md). Dispatches a switch's chain of compares through a table of its cases' addresses.
 - [Load after read-modify-write](redundant_load_after_rmw.md). Deletes an unused load right after INC, DEC, or a shift of the same byte.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
@@ -306,7 +307,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Row-address tables](row_address_tables.md). Looks up the address of a row of a 2-D array, whose rows aren't a power of two bytes long, in a table of the rows' addresses.
 - [Saves around a recursive call](recursion_saves.md). Pushes the values live across a marked recursive call so the function can have a private pool.
 - [Second index in Y](dual_index_promotion.md). Loads a byte reloaded into X several times into Y once at entry.
-- [Shorter jumps](short_jumps.md). Sends jumps and jump-table entries for a stub that jumps to another function there, drops the stub, and makes a JMP after a constant load a branch.
+- [Shorter jumps](short_jumps.md). Sends jumps and jump-table entries for a stub that jumps to another function there, drops the stub, and makes a JMP after a constant load or a conditional branch a branch.
 - [Shared function tails](shared_tails.md). Moves the instructions several functions end with alike into a function of their own, which each jumps to.
 - [Shift in A](shift_in_a.md). Turns `STA t; ASL t; LDA t` into `ASL A; STA t`, for any run of shifts and rotates or a loop of one-bit shifts, and `LDA g; ASL; STA g` into `ASL g`.
 - [Self-store drop](self_store_drop.md). Deletes the `STA M` of an adjacent `LDA M; STA M` pair.
@@ -408,7 +409,8 @@ them whenever a pass is added or moved.
    14. [A step moved onto its edge](step_on_edge.md)
    15. [Byte-by-byte three-way compare](three_way_compare.md)
    16. *Fixed point*: [branching directly on `&&` and
-      `||`](short_circuit_jump_fold.md)
+      `||`](short_circuit_jump_fold.md), then [jump threading on
+      known compares](known_compare_thread.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    then [tables split into low and high bytes](split_tables.md),
    each over the whole program.

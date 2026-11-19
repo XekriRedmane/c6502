@@ -3,7 +3,7 @@
 `apply_short_jumps` in [passes/short_jumps.py](../../passes/short_jumps.py)
 shortens jumps once the branches have their final reach. It runs
 once, right after long-branch expansion, at the end of the
-`-O` asm pipeline, and makes three changes, each of which
+`-O` asm pipeline, and makes four changes, each of which
 only removes bytes, so no branch falls out of reach.
 
 - A `JMP .L`, or a [jump table](jump_table.md)'s entry for `.L`, where
@@ -21,6 +21,14 @@ only removes bytes, so no branch falls out of reach.
   the branch is always taken. `tac_to_asm` lowers a comparison kept
   as a value as `Bcc t; LDA #0; JMP end; t: LDA #1; end:`, whose
   `JMP` is one of these.
+- A conditional branch followed by `JMP .L`, with no label between,
+  becomes the branch and then the branch on the opposite condition to
+  `.L`, under the same condition on reach. The `JMP` runs only when
+  the first branch isn't taken, so the opposite condition holds there.
+  [Jump threading on known compares](known_compare_thread.md) can
+  leave `BEQ .a; JMP .b` where neither `.a` nor `.b` comes next, and
+  Lode Runner's `handle_timers` has a `JMP .i2_if_end@15` after a
+  `BNE` that became `BEQ .i2_if_end@15`.
 
 A jump table's entry is the address the dispatch's `RTS` goes to
 minus one, so an entry may name any function. The function returns
@@ -100,17 +108,17 @@ the rest of Zork's interpreter 9.
 - A stub goes only when no branch, jump, jump table, or operand names
   its label, and the instruction before the label is a `JMP`, `RTS`,
   or jump table.
-- The load before a `JMP` that becomes a branch is a `Mov` of an
-  immediate into A, X, or Y, and the `JMP`'s target is a label in the
-  function. The displacement is measured on the code as it stands,
+- The instruction before a `JMP` that becomes a branch is a `Mov` of
+  an immediate into A, X, or Y, or a conditional branch, and the
+  `JMP`'s target is a label in the function. The displacement is measured on the code as it stands,
   less a byte, since the `JMP` itself loses one.
 
 ## What it leaves alone
 
 - A branch to a stub, since a branch can't leave its function. The
   stub stays for it.
-- A `JMP` after anything but a load of a constant, since the flags
-  aren't known there.
+- A `JMP` after anything but a load of a constant or a conditional
+  branch, since the flags aren't known there.
 - The unoptimized pipeline.
 
 ## Related

@@ -808,7 +808,7 @@ reorder_char:
    BEQ   .loop@3_break
    CMP   #$81
    BCC   .if_end@29
-   JMP   .loop@3_break
+   BCS   .loop@3_break
 .if_else@30:
    LDY   #$0B
    LDA   (__local_reorder_char__1),Y

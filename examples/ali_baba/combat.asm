@@ -823,14 +823,14 @@ check_adjacent_threats:
    LDY   #$00
    STY   ADJACENT_THREAT
    ORA   #$00
-   BEQ   .if_end@14
+   BEQ   .check_adjacent_threats@cthread@0
    SEC
    SBC   #$01
    JSR   sum_hostile_at_pos
-.if_end@14:
    LDA   __local_check_adjacent_threats__pos
    CMP   #$C7
    BEQ   .vthread@0
+.check_adjacent_threats@cthread@0:
    CLC
    ADC   #$01
    JSR   sum_hostile_at_pos
@@ -1382,7 +1382,7 @@ resolve_attack:
    BEQ   .case@11
    CMP   #$03
    BEQ   .case@12
-   JMP   .switch@9_break
+   BNE   .switch@9_break
 .case@10:
    LDA   __local_resolve_attack__damage
    CLC
@@ -1853,7 +1853,7 @@ select_combat_target:
    JSR   next_group_member
    LDA   MOB_PTR+1
    BNE   .loop@14_start
-   JMP   .if_end@117
+   BEQ   .if_end@117
 .if_else@118:
    LDA   #$00
    STA   BEST_THREAT

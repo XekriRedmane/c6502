@@ -31,6 +31,13 @@ when `end` is within a branch's reach, 1 byte shorter. A load of a
 constant other than 0 clears Z, so its `JMP` is `BNE`. The same goes
 for `LDX` and `LDY`.
 
+A `JMP` right after a conditional branch, with no label between, runs
+only when the branch isn't taken. The branch's condition is false
+there, so the branch on the opposite condition is always taken. A
+jump threaded past a test on the TAC
+(`optimization/known_compare_thread.py`) leaves `BEQ .a; JMP .b`
+where neither place comes next, and the `JMP` becomes `BNE .b`.
+
 # Rules
 
 - A `JMP .L`, with no register arguments, where the first instruction
@@ -43,7 +50,8 @@ for `LDX` and `LDY`.
 - `LDA #k`, `LDX #k`, or `LDY #k` and then `JMP .L` to a label in the
   function: the `JMP` becomes `BEQ .L` for `k` of 0 and `BNE .L`
   otherwise, when the branch reaches `.L` with a margin of a byte
-  each way. The displacements come from the code as it stands, and
+  each way. So does a `JMP .L` right after a conditional branch,
+  which becomes the branch on the opposite condition. The displacements come from the code as it stands, and
   every rewrite here only removes bytes, so a branch that reaches its
   label still does after the others.
 
@@ -58,6 +66,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import asm_ast
+from passes.long_branches import _invert
 from sim.assembler import instruction_size
 
 _TERMINATORS = (
@@ -167,16 +176,23 @@ def _constant_jumps_to_branches(instrs):
     for k in range(1, len(instrs)):
         load, jump = instrs[k - 1], instrs[k]
         if not (isinstance(jump, asm_ast.Jump) and not jump.reg_args
-                and jump.target in labels
-                and isinstance(load, asm_ast.Mov)
+                and jump.target in labels):
+            continue
+        if (isinstance(load, asm_ast.Mov)
                 and isinstance(load.src, asm_ast.Imm)
                 and isinstance(load.dst, asm_ast.Reg)):
+            cond = (asm_ast.EQ() if load.src.value & 0xFF == 0
+                    else asm_ast.NE())
+        elif isinstance(load, asm_ast.Branch):
+            # Reached only when the branch before isn't taken, so its
+            # condition is false here and the opposite one is true.
+            cond = _invert(load.cond)
+        else:
             continue
         # The displacement as a 2-byte branch here, a byte to spare
         # each way for the byte it saves.
         disp = labels[jump.target] - (addrs[k] + 2)
         if not -127 <= disp <= 126:
             continue
-        cond = asm_ast.EQ() if load.src.value & 0xFF == 0 else asm_ast.NE()
         out[k] = asm_ast.Branch(cond=cond, target=jump.target)
     return out

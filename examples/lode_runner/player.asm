@@ -1112,7 +1112,7 @@ move_player:
    BEQ   .case@4
    CMP   #$CF
    BEQ   .case@5
-   JMP   .switch@1_break
+   BNE   .switch@1_break
 .case@2:
    JSR   try_moving_up
    BCS   .switch@1_break

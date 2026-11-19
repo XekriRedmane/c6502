@@ -91,5 +91,37 @@ class TestConstantJumps(unittest.TestCase):
         self.assertEqual(out[2], asm_ast.Branch(cond=asm_ast.EQ(), target=".end"))
 
 
+class TestJumpAfterBranch(unittest.TestCase):
+
+    def _code(self, gap=0, label_between=False):
+        return [
+            asm_ast.Branch(cond=asm_ast.CS(), target=".a"),
+            *([asm_ast.Label(name=".m")] if label_between else []),
+            asm_ast.Jump(target=".b"),
+            asm_ast.Label(name=".a"),
+            *[asm_ast.ClearCarry()] * gap,
+            _ret(),
+            asm_ast.Label(name=".b"),
+            _ret(),
+        ]
+
+    def test_jump_becomes_the_opposite_branch(self):
+        out = _run(self._code())
+        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.CC(), target=".b"))
+
+    def test_label_between_stays_a_jump(self):
+        # `.m` may be reached with C set.
+        out = _run(self._code(label_between=True))
+        self.assertEqual(out[2], asm_ast.Jump(target=".b"))
+
+    def test_out_of_reach_stays_a_jump(self):
+        # `.b` is `2 + gap` bytes past the end of the branch: the
+        # `JMP`'s third byte, the CLCs, and the `RTS`.
+        out = _run(self._code(gap=125))
+        self.assertEqual(out[1], asm_ast.Jump(target=".b"))
+        out = _run(self._code(gap=124))
+        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.CC(), target=".b"))
+
+
 if __name__ == "__main__":
     unittest.main()

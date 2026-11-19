@@ -781,7 +781,7 @@ pickup_treasure:
    BEQ   .case@4
    CMP   #$02
    BEQ   .case@5
-   JMP   .default@6
+   BNE   .default@6
 .case@3:
    LDA   #$05
    JSR   random_in_range

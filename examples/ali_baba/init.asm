@@ -621,7 +621,7 @@ border_anim_step:
    BEQ   .case@3
    ORA   #$00
    BEQ   .case@4
-   JMP   .default@5
+   BNE   .default@5
 .case@2:
    LDA   #$1C
    JSR   move_border_icon_list

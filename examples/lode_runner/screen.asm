@@ -524,7 +524,7 @@ to_decimal3:
    LDA   __local_to_decimal3__n
    CMP   #$64
    BCS   .to_decimal3@rot@1
-   JMP   .loop@5_continue
+   BCC   .loop@5_continue
 .to_decimal3@rot@2:
    INC   DIGITS+1
    SBC   #$0A

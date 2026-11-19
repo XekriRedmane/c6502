@@ -840,7 +840,7 @@ setup_input:
    BEQ   .i11_case@14
    CMP   #$06
    BEQ   .i11_case@15
-   JMP   .i11_switch@9_break
+   BNE   .i11_switch@9_break
 .i11_case@10:
    JSR   configure_input
    JMP   .i11_switch@9_break

@@ -567,7 +567,7 @@ record_hi_score_data_to_disk:
    LDA   kbd_entry_index
    CMP   #$03
    BCC   .loop@5_start
-   JMP   .if_end@11
+   BCS   .if_end@11
 .loop@5_break:
    LDA   #$20
    STA   DRAW_PAGE

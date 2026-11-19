@@ -469,6 +469,24 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `x == a` and `x == b`, with `a` and `b` one bit `p` apart, one jump on
   `(x & ~p) == min(a, b)` (a non-volatile integer `x`), so `e == 0 ||
   e == 1` is `AND #$FE; ORA hi; BEQ`.
+- `known_compare_thread.py` — `thread_known_compares`
+  (`ThreadKnownCompares`, PostDestructionFixedpointPass, after
+  `FoldShortCircuitJump`). A scan follows the `==` / `!=` facts the
+  conditional jumps it passes give about non-volatile integer Vars
+  (`JumpIfCmp` with an integer constant, `JumpIfTrue` / `JumpIfFalse`
+  against 0), dropping a Var's at a write of it and all of them at a
+  label or at an instruction other than the jumps and those that
+  write only their `dst`. A jump goes past the labels, the tests its
+  edge decides, and the `Copy`s into locals dead where it lands
+  (`_liveness`) at its target, to a `.<fn>@cthread@N` label if needed,
+  and a conditional jump the code before it decided becomes a `Jump`
+  or goes. Then the blocks nothing reaches go, and a conditional
+  jump's target block is swapped in front of the block after the
+  `Jump` that follows it, when that block ends in a `Jump` to where
+  the target falls through, so `branch_invert` makes one branch.
+  `if (t == 20 || t == 10) f(t == 20 ? a : b);` tests 20 once
+  (Lode Runner's `handle_timers`). See
+  docs/optimizations/known_compare_thread.md.
 - `dispatch_pointer_array.py` — `dispatch_const_pointer_arrays`
   (`DispatchConstPointerArrays`, ProgramPass). Runs at the program level
   after `optimize_tac` (post-from_ssa). Recognizes the
@@ -584,7 +602,8 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → fold_copies                   (PostDestructionPass, one-shot)
    → move_steps_onto_edges         (PostDestructionPass, one-shot)
    → split_three_way_compares      (PostDestructionPass, one-shot)
-   → fold_short_circuit_jump*      (PostDestructionFixedpointPass)
+   → [fold_short_circuit_jump
+      → thread_known_compares]*     (PostDestructionFixedpointPass)
    → fn'
 ```
 
@@ -664,6 +683,11 @@ stage:
      Sound only post-destruction: pre-destruction the tail is
      split across two SSA-renamed `%t` defs merged by a Phi,
      which complicates the pattern match.
+   - **`thread_known_compares`** (`known_compare_thread.py`, in the
+     same fixed point, after the fold) — a jump goes past the
+     equality tests at its target that its own path decided, and the
+     block a conditional jump goes to is placed after the `Jump` that
+     follows it (covered above).
 
 8. After post-destruction folds the function is non-SSA TAC,
    ready for `tac_to_asm` in bare-exit mode.

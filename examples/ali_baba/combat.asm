@@ -37,51 +37,52 @@ __zpabi_modify_char_stats__add	EQU	$83
 __zpabi_modify_current_stats__add	EQU	$83
 __zpabi_update_event_list__value_0	EQU	$83
 __local_check_encounter__ref_1	EQU	$84
-__local_init_attack_display__left	EQU	$84
+__local_init_attack_display__3	EQU	$84
 __zpabi_update_event_list__value_1	EQU	$84
 __local_check_encounter__ref_0	EQU	$85
-__local_handle_encounter__dest	EQU	$85
-__local_handle_event_slot__keep	EQU	$85
-__local_init_attack_display__2	EQU	$85
+__local_handle_event_slot__0	EQU	$85
+__local_init_attack_display__4	EQU	$85
 __local_handle_encounter__ev	EQU	$86
-__local_handle_event_slot__0	EQU	$86
-__local_init_attack_display__3	EQU	$86
+__local_handle_event_slot__1	EQU	$86
+__local_init_attack_display__5	EQU	$86
 __local_handle_encounter__0	EQU	$87
 __local_handle_event_slot__ev	EQU	$87
-__local_handle_event_slot__1	EQU	$88
-__local_check_adjacent_threats__pos	EQU	$8A
+__local_handle_event_slot__2	EQU	$88
 __local_find_attack_target__1	EQU	$8A
-__local_resolve_attack__0	EQU	$8B
-__local_resolve_attack__1	EQU	$8C
-__local_sum_hostile_at_pos__0	EQU	$8C
-__local_check_hostile__other	EQU	$8D
-__local_player_attack__0	EQU	$8D
-__local_check_hostile__0	EQU	$8E
-__local_find_mob_at_same_pos__1	EQU	$8E
-__local_mob_attack__1	EQU	$8E
-__local_player_attack__1	EQU	$8E
-__local_find_mob_at_same_pos__2	EQU	$8F
-__local_player_attack__2	EQU	$8F
-__local_find_mob_at_same_pos__link	EQU	$90
-__local_player_attack__target	EQU	$90
-__local_player_attack__3	EQU	$91
-__local_calc_combat_strength__strength	EQU	$92
-__local_apply_damage__msg	EQU	$93
-__local_calc_combat_strength__attacker	EQU	$93
-__local_apply_damage__tune	EQU	$94
-__local_calc_combat_strength__0	EQU	$94
-__local_apply_damage__0	EQU	$95
+__local_check_adjacent_threats__pos	EQU	$8B
+__local_resolve_attack__willingness	EQU	$8B
+__local_resolve_attack__0	EQU	$8C
+__local_sum_hostile_at_pos__0	EQU	$8D
+__local_check_hostile__other	EQU	$8E
+__local_defense__m	EQU	$8E
+__local_player_attack__0	EQU	$8E
+__local_check_hostile__0	EQU	$8F
+__local_defense__0	EQU	$8F
+__local_find_mob_at_same_pos__1	EQU	$8F
+__local_mob_attack__1	EQU	$8F
+__local_player_attack__1	EQU	$8F
+__local_find_mob_at_same_pos__2	EQU	$90
+__local_player_attack__2	EQU	$90
+__local_find_mob_at_same_pos__link	EQU	$91
+__local_player_attack__target	EQU	$91
+__local_player_attack__3	EQU	$92
+__local_calc_combat_strength__0	EQU	$93
+__local_apply_damage__0	EQU	$94
+__local_calc_combat_strength__1	EQU	$94
+__local_apply_damage__tune	EQU	$95
 __local_calc_combat_strength__weapon	EQU	$95
-__local_apply_damage__rec	EQU	$96
-__local_apply_damage__1	EQU	$97
-__local_modify_char_stats__levels	EQU	$98
-__local_modify_char_stats__0	EQU	$99
-__local_modify_char_stats__threshold_1	EQU	$9A
-__local_modify_char_stats__threshold_0	EQU	$9B
-__local_modify_char_stats__gold_1	EQU	$9C
-__local_modify_char_stats__gold_0	EQU	$9D
-__local_modify_char_stats__rec	EQU	$9E
-__local_modify_char_stats__1	EQU	$9F
+__local_apply_damage__1	EQU	$96
+__local_calc_combat_strength__2	EQU	$96
+__local_apply_damage__rec	EQU	$97
+__local_apply_damage__2	EQU	$98
+__local_modify_char_stats__levels	EQU	$99
+__local_modify_char_stats__0	EQU	$9A
+__local_modify_char_stats__threshold_1	EQU	$9B
+__local_modify_char_stats__threshold_0	EQU	$9C
+__local_modify_char_stats__gold_1	EQU	$9D
+__local_modify_char_stats__gold_0	EQU	$9E
+__local_modify_char_stats__rec	EQU	$9F
+__local_modify_char_stats__1	EQU	$A0
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -255,7 +256,7 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def apply_damage params=__zpabi_apply_damage__rec_0,__zpabi_apply_damage__rec_1,__zpabi_apply_damage__damage locals=__local_apply_damage__msg,__local_apply_damage__tune,__local_apply_damage__0,__local_apply_damage__rec,__local_apply_damage__1 indirect=false in_cycle=false param_regs=A,X,
+; def apply_damage params=__zpabi_apply_damage__rec_0,__zpabi_apply_damage__rec_1,__zpabi_apply_damage__damage locals=__local_apply_damage__0,__local_apply_damage__tune,__local_apply_damage__1,__local_apply_damage__rec,__local_apply_damage__2 indirect=false in_cycle=false param_regs=A,X,
 ; def apply_damage_to_current params=__zpabi_apply_damage_to_current__damage locals= indirect=false in_cycle=false param_regs=A
 ; def apply_damage_to_mob params=__zpabi_apply_damage_to_mob__damage locals= indirect=false in_cycle=false param_regs=A
 ; def attack_down params= locals=__local_attack_down__0 indirect=false in_cycle=false
@@ -263,12 +264,13 @@ WAIT	EQU	$FCA8
 ; def attack_right params= locals=__local_attack_right__0 indirect=false in_cycle=false
 ; def attack_up params= locals=__local_attack_up__0 indirect=false in_cycle=false
 ; def auto_heal params= locals=__local_auto_heal__0 indirect=false in_cycle=false
-; def calc_combat_strength params= locals=__local_calc_combat_strength__strength,__local_calc_combat_strength__attacker,__local_calc_combat_strength__0,__local_calc_combat_strength__weapon,__local_calc_combat_strength__1,__local_calc_combat_strength__2 indirect=false in_cycle=false
+; def calc_combat_strength params= locals=__local_calc_combat_strength__0,__local_calc_combat_strength__1,__local_calc_combat_strength__weapon,__local_calc_combat_strength__2,__local_calc_combat_strength__3,__local_calc_combat_strength__4 indirect=false in_cycle=false
 ; def check_adjacent_threats params=__zpabi_check_adjacent_threats__pos locals=__local_check_adjacent_threats__0,__local_check_adjacent_threats__pos indirect=false in_cycle=false param_regs=A
 ; def check_attack_eligible params= locals=__local_check_attack_eligible__0 indirect=false in_cycle=false carry=true
 ; def check_encounter params=__zpabi_check_encounter__pos locals=__local_check_encounter__result,__local_check_encounter__ref_1,__local_check_encounter__ref_0,__local_check_encounter__0 indirect=false in_cycle=false param_regs=A
 ; def check_hostile params=__zpabi_check_hostile__other_0,__zpabi_check_hostile__other_1 locals=__local_check_hostile__other,__local_check_hostile__0,__local_check_hostile__1 indirect=false in_cycle=false param_regs=A,X carry=true
 ; def check_threats_here params= locals=__local_check_threats_here__0 indirect=false in_cycle=false
+; def defense params=__zpabi_defense__m_0,__zpabi_defense__m_1 locals=__local_defense__m,__local_defense__0 indirect=false in_cycle=false param_regs=A,X
 ; def enter_combat_state params=__zpabi_enter_combat_state__pos locals=__local_enter_combat_state__pos,__local_enter_combat_state__0 indirect=false in_cycle=false param_regs=A
 ; def event_prng_check params= locals=__local_event_prng_check__0 indirect=false in_cycle=false
 ; def find_attack_target params= locals=__local_find_attack_target__0,__local_find_attack_target__1 indirect=false in_cycle=false
@@ -276,10 +278,10 @@ WAIT	EQU	$FCA8
 ; def get_entity_threat params= locals=__local_get_entity_threat__0 indirect=false in_cycle=false
 ; def get_hostility params=__zpabi_get_hostility__group locals=__local_get_hostility__group indirect=false in_cycle=false param_regs=A
 ; def handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 locals=__local_handle_encounter__dest,__local_handle_encounter__ev,__local_handle_encounter__0,__local_handle_encounter__1 indirect=false in_cycle=false param_regs=A,X
-; def handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 locals=__local_handle_event_slot__keep,__local_handle_event_slot__0,__local_handle_event_slot__ev,__local_handle_event_slot__1 indirect=false in_cycle=false param_regs=A,X
+; def handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 locals=__local_handle_event_slot__0,__local_handle_event_slot__1,__local_handle_event_slot__ev,__local_handle_event_slot__2,__local_handle_event_slot__3 indirect=false in_cycle=false param_regs=A,X
 ; def handle_mob_encounter params= locals=__local_handle_mob_encounter__courage,__local_handle_mob_encounter__0,__local_handle_mob_encounter__1 indirect=false in_cycle=false
 ; def increment_hp params= locals=__local_increment_hp__0 indirect=false in_cycle=false
-; def init_attack_display params= locals=__local_init_attack_display__0,__local_init_attack_display__1,__local_init_attack_display__c,__local_init_attack_display__i,__local_init_attack_display__left,__local_init_attack_display__2,__local_init_attack_display__3 indirect=false in_cycle=false
+; def init_attack_display params= locals=__local_init_attack_display__0,__local_init_attack_display__1,__local_init_attack_display__2,__local_init_attack_display__i,__local_init_attack_display__3,__local_init_attack_display__4,__local_init_attack_display__5 indirect=false in_cycle=false
 ; def load_target_ptr params= locals= indirect=false in_cycle=false
 ; def map_value_to_string params=__zpabi_map_value_to_string__value locals=__local_map_value_to_string__0,__local_map_value_to_string__index,__local_map_value_to_string__verb,__local_map_value_to_string__1 indirect=false in_cycle=false param_regs=A
 ; def mob_attack params= locals=__local_mob_attack__0,__local_mob_attack__1 indirect=false in_cycle=false
@@ -289,7 +291,7 @@ WAIT	EQU	$FCA8
 ; def pick_random_member params= locals=__local_pick_random_member__0,__local_pick_random_member__n indirect=false in_cycle=false
 ; def player_attack params= locals=__local_player_attack__0,__local_player_attack__1,__local_player_attack__2,__local_player_attack__target,__local_player_attack__3 indirect=false in_cycle=false
 ; def process_entity_script params= locals=__local_process_entity_script__0,__local_process_entity_script__entry,__local_process_entity_script__1 indirect=false in_cycle=false
-; def resolve_attack params= locals=__local_resolve_attack__0,__local_resolve_attack__1 indirect=false in_cycle=false
+; def resolve_attack params= locals=__local_resolve_attack__willingness,__local_resolve_attack__0,__local_resolve_attack__1 indirect=false in_cycle=false
 ; def select_combat_target params= locals=__local_select_combat_target__0 indirect=false in_cycle=false
 ; def select_someone_else params= locals= indirect=false in_cycle=false
 ; def set_target_restricted params= locals=__local_set_target_restricted__0 indirect=false in_cycle=false
@@ -482,6 +484,7 @@ WAIT	EQU	$FCA8
 ; call calc_combat_strength -> random_in_range
 ; call calc_combat_strength -> scene_loop
 ; call calc_combat_strength -> set_cursor_row21
+; call check_adjacent_threats -> defense
 ; call check_adjacent_threats -> sum_hostile_at_pos
 ; call check_attack_eligible -> check_hostile
 ; call check_attack_eligible -> find_mob_at_same_pos
@@ -593,6 +596,7 @@ WAIT	EQU	$FCA8
 ; call process_entity_script -> dispatch_on_mode
 ; call process_entity_script -> draw_char_at_pos
 ; call process_entity_script -> tune_player
+; call resolve_attack -> defense
 ; call resolve_attack -> delay_with_animation
 ; call resolve_attack -> mob_attack
 ; call resolve_attack -> player_attack
@@ -622,6 +626,7 @@ WAIT	EQU	$FCA8
 ; call sum_hostile_at_pos -> find_mob_at_same_pos
 ; share member=modify_char_stats:__zpabi_modify_char_stats__amount_0,__zpabi_modify_char_stats__amount_1 holder=apply_damage live=apply_damage:modify_char_stats forward=apply_damage>modify_char_stats writer=apply_damage
 ; share member=modify_char_stats:__zpabi_modify_char_stats__add member=modify_current_stats:__zpabi_modify_current_stats__add forward=modify_current_stats>modify_char_stats
+; item defense section=.text local=true zero=false
 ; item check_encounter section=.text local=false zero=false
 ; item check_encounter@run3 section=.text local=true zero=false
 ; item find_mob_at_same_pos section=.text local=true zero=false
@@ -694,6 +699,17 @@ WAIT	EQU	$FCA8
 ; zp CHAR_PTR size=2 at=$FA def=false init=
 ; runtime hargs_size=10 hargs_need=0
 ; @zp-link-meta-end
+
+defense:
+   SUBROUTINE
+
+   STA   __local_defense__m
+   STX   __local_defense__0
+   LDY   #$05
+   LDA   (__local_defense__m),Y
+   LSR
+   AND   #$0F
+   RTS
 
 check_encounter:
    SUBROUTINE
@@ -866,10 +882,9 @@ check_adjacent_threats:
    ADC   #$14
    JSR   sum_hostile_at_pos
 .if_end@17:
-   LDY   #$05
-   LDA   (ENTITY_PTR),Y
-   LSR
-   AND   #$0F
+   LDX   ENTITY_PTR+1
+   LDA   ENTITY_PTR
+   JSR   defense
    SEC
    SBC   ADJACENT_THREAT
    LDA   #$00
@@ -955,8 +970,8 @@ pick_random_member:
    LDY   #$08
    LDA   (CHAR_PTR),Y
    BNE   .if_end@24
-   STA   MOB_PTR
    LDA   #$00
+   STA   MOB_PTR
    STA   MOB_PTR+1
    RTS
 .if_end@24:
@@ -1005,74 +1020,82 @@ apply_damage:
    SUBROUTINE
 
    STA   __local_apply_damage__rec
-   STX   __local_apply_damage__1
+   STX   __local_apply_damage__2
    LDA   __zpabi_apply_damage__damage
    AND   #$1F
-   STA   __local_apply_damage__tune
+   STA   __local_apply_damage__0
    STA   DAMAGE_AMOUNT
    JSR   set_cursor_row21
-   LDA   #$03
-   STA   __local_apply_damage__msg
-.loop@7_start:
-   INC   __local_apply_damage__msg
+   LDA   __local_apply_damage__0
+   ORA   #$01
+   STA   __local_apply_damage__tune
+   LDA   #$00
+   STA   __local_apply_damage__0
+   JMP   .stdbit_test@32
+.stdbit_body@31:
    LSR   __local_apply_damage__tune
-   BNE   .loop@7_start
-   LDA   __local_apply_damage__msg
+   INC   __local_apply_damage__0
+.stdbit_test@32:
+   LDA   __local_apply_damage__tune
+   BNE   .stdbit_body@31
+   LDA   #$03
+   CLC
+   ADC   __local_apply_damage__0
    JSR   display_message
    LDX   DAMAGE_AMOUNT
    LDA   #$02
    JSR   tune_player
    LDY   #$06
    LDA   (__local_apply_damage__rec),Y
-   STA   __local_apply_damage__0
+   STA   __local_apply_damage__1
    AND   #$3F
-   STA   __local_apply_damage__msg
+   STA   __local_apply_damage__0
    LDA   DAMAGE_AMOUNT
-   CMP   __local_apply_damage__msg
-   BCS   .if_end@30
-   LDA   __local_apply_damage__msg
+   CMP   __local_apply_damage__0
+   BCS   .if_end@33
+   LDA   __local_apply_damage__0
    SEC
    SBC   DAMAGE_AMOUNT
    STA   __local_apply_damage__tune
    STA   DAMAGE_AMOUNT
-   LDA   __local_apply_damage__0
+   LDA   __local_apply_damage__1
    AND   #$C0
    ORA   __local_apply_damage__tune
    STA   (__local_apply_damage__rec),Y
    JSR   set_cursor_row21
    LDA   __local_apply_damage__tune
    CMP   #$03
-   BCS   .if_else@32
+   BCS   .if_end@34
    LDY   #$0F
    LDA   (__local_apply_damage__rec),Y
    AND   #$F8
    ORA   #$04
    STA   (__local_apply_damage__rec),Y
-   LDX   __local_apply_damage__1
+.if_end@34:
+   LDX   __local_apply_damage__2
    LDA   __local_apply_damage__rec
    JSR   print_entity_name
+   LDA   __local_apply_damage__tune
+   CMP   #$03
+   BCS   .cond_else@35
    LDA   #$09
-   JMP   display_message
-.if_else@32:
+   BNE   .cond_end@36
+.cond_else@35:
    CMP   #$08
-   BCS   .if_else@34
-   LDX   __local_apply_damage__1
-   LDA   __local_apply_damage__rec
-   JSR   print_entity_name
+   BCS   .cond_else@37
    LDA   #$0A
-   JMP   display_message
-.if_else@34:
-   LDX   __local_apply_damage__1
-   LDA   __local_apply_damage__rec
-   JSR   print_entity_name
+   BNE   .cond_end@38
+.cond_else@37:
    LDA   #$0B
+.cond_end@38:
+.cond_end@36:
    JMP   display_message
-.if_end@30:
+.if_end@33:
    LDY   #$04
    LDA   (__local_apply_damage__rec),Y
    CMP   #$15
    BCS   .lb_skip@0
-   JMP   .apply_damage@asm_ssa_split@1
+   JMP   .apply_damage@asm_ssa_split@0
 .lb_skip@0:
    LDY   #$0F
    LDA   (__local_apply_damage__rec),Y
@@ -1080,24 +1103,24 @@ apply_damage:
    STA   (__local_apply_damage__rec),Y
    LDA   #$05
    STA   __local_apply_damage__tune
-.if_end@35:
-   LDX   __local_apply_damage__1
+.if_end@39:
+   LDX   __local_apply_damage__2
    LDA   __local_apply_damage__rec
    JSR   print_entity_name
    LDA   #$03
    JSR   random_in_range
    ORA   #$00
-   BEQ   .if_else@37
+   BEQ   .cond_else@40
    LDA   #$0E
-   BNE   .if_end@36
-.if_else@37:
+   BNE   .cond_end@41
+.cond_else@40:
    LDA   #$02
    JSR   random_in_range
-   STA   __local_apply_damage__msg
+   STA   __local_apply_damage__0
    LDA   #$27
    CLC
-   ADC   __local_apply_damage__msg
-.if_end@36:
+   ADC   __local_apply_damage__0
+.cond_end@41:
    JSR   display_message
    LDX   #$00
    LDA   __local_apply_damage__tune
@@ -1106,7 +1129,7 @@ apply_damage:
    STA   ACTIVE_CHAR
    LDA   CURRENT_PLAYER
    STA   SOURCE_CHAR
-   LDX   __local_apply_damage__1
+   LDX   __local_apply_damage__2
    LDA   __local_apply_damage__rec
    JSR   reorder_char
    LDY   #$0D
@@ -1117,25 +1140,25 @@ apply_damage:
    STA   __zpabi_modify_char_stats__amount_1
    LDA   #$00
    STA   __zpabi_modify_char_stats__add
-   LDX   __local_apply_damage__1
+   LDX   __local_apply_damage__2
    LDA   __local_apply_damage__rec
    JSR   modify_char_stats
    LDY   #$03
    LDA   (__local_apply_damage__rec),Y
-   STA   __local_apply_damage__msg
+   STA   __local_apply_damage__0
    LDA   __zpabi_modify_char_stats__amount_0
    STA   __zpabi_update_event_list__value_0
    LDA   __zpabi_modify_char_stats__amount_1
    STA   __zpabi_update_event_list__value_1
-   LDA   __local_apply_damage__msg
+   LDA   __local_apply_damage__0
    JSR   update_event_list
    LDY   #$03
    LDA   (__local_apply_damage__rec),Y
    JMP   draw_char_at_pos
-.apply_damage@asm_ssa_split@1:
+.apply_damage@asm_ssa_split@0:
    LDA   #$04
    STA   __local_apply_damage__tune
-   JMP   .if_end@35
+   JMP   .if_end@39
 
 apply_damage_to_current:
    SUBROUTINE
@@ -1163,12 +1186,12 @@ increment_hp:
    STA   (ENTITY_PTR),Y
    AND   #$3F
    CMP   #$03
-   BNE   .if_end@38
+   BNE   .if_end@42
    JSR   increment_hp@run0
    LDA   #$22
    STA   HEAL_NOTIFIED
    JSR   display_message
-.if_end@38:
+.if_end@42:
    RTS
 
 increment_hp@run0:
@@ -1185,33 +1208,32 @@ auto_heal:
    LDA   (ENTITY_PTR),Y
    AND   #$3F
    CMP   #$28
-   BCC   .if_end@39
+   BCC   .if_end@43
    RTS
-.if_end@39:
+.if_end@43:
    LDA   #$01
    JSR   random_in_range
    ORA   #$00
-   BNE   .if_end@40
+   BNE   .if_end@44
    RTS
-.if_end@40:
+.if_end@44:
    LDA   #$00
    STA   HEAL_NOTIFIED
-.loop@8_start:
+.loop@7_start:
    JSR   increment_hp
    JSR   step_prng
-   SEC
-   SBC   #$50
-   BPL   .loop@8_start
+   CMP   #$50
+   BCS   .loop@7_start
    LDY   #$04
    LDA   (ENTITY_PTR),Y
    CMP   #$15
-   BCS   .if_end@43
+   BCS   .if_end@47
    LDA   HEAL_NOTIFIED
-   BNE   .if_end@43
+   BNE   .if_end@47
    JSR   increment_hp@run0
    LDA   #$21
    JSR   display_message
-.if_end@43:
+.if_end@47:
    RTS
 
 enter_combat_state:
@@ -1222,9 +1244,9 @@ enter_combat_state:
    JSR   clear_restricted
    LDA   __local_enter_combat_state__pos
    CMP   #$02
-   BNE   .if_end@44
+   BNE   .if_end@48
    JSR   set_restricted
-.if_end@44:
+.if_end@48:
    LDA   #$02
    JMP   set_char_state
 
@@ -1251,27 +1273,27 @@ attack_right:
    SUBROUTINE
 
    INC   CURRENT_COL
-   BMI   .if_end@45
+   BMI   .if_end@49
    JMP   find_attack_target
-.if_end@45:
+.if_end@49:
    JMP   attack_left
 
 attack_left:
    SUBROUTINE
 
    DEC   CURRENT_COL
-   BMI   .if_end@46
+   BMI   .if_end@50
    JMP   find_attack_target
-.if_end@46:
+.if_end@50:
    JMP   attack_up
 
 attack_up:
    SUBROUTINE
 
    DEC   CURRENT_ROW
-   BMI   .if_end@47
+   BMI   .if_end@51
    JMP   find_attack_target
-.if_end@47:
+.if_end@51:
    JMP   attack_down
 
 attack_down:
@@ -1288,30 +1310,30 @@ find_attack_target:
    JSR   find_entity_at_pos
    STA   __local_find_attack_target__1
    TXA
-   BMI   .if_else@49
+   BMI   .if_else@53
    LDA   #$01
    STA   IS_PLAYER_TURN
    LDA   __local_find_attack_target__1
    STA   MOB_PTR
    STX   MOB_PTR+1
-   JMP   .if_end@48
-.if_else@49:
+   JMP   .if_end@52
+.if_else@53:
    LDA   #$00
    STA   IS_PLAYER_TURN
    LDA   __local_find_attack_target__1
    JSR   check_encounter@run3
    JSR   find_mob_at_same_pos
    ORA   #$00
-   BEQ   .if_end@50
+   BEQ   .if_end@54
    JSR   next_colocated_mob
    JSR   next_colocated_mob
    ORA   #$00
-   BEQ   .if_end@51
+   BEQ   .if_end@55
    LDA   #$1C
    RTS
-.if_end@51:
-.if_end@50:
-.if_end@48:
+.if_end@55:
+.if_end@54:
+.if_end@52:
    JSR   resolve_attack
    LDA   #$00
    RTS
@@ -1321,22 +1343,26 @@ init_attack_display:
 
    LDY   #$00
    LDA   (MOB_PTR),Y
-   STA   __local_init_attack_display__2
+   STA   __local_init_attack_display__4
    INY
    LDA   (MOB_PTR),Y
-   STA   __local_init_attack_display__3
+   STA   __local_init_attack_display__5
    DEY
-   LDA   (__local_init_attack_display__2),Y
-   STA   __local_init_attack_display__left
-   LDA   #$01
-   STA   __local_init_attack_display__i
+   LDA   (__local_init_attack_display__4),Y
+   STA   __local_init_attack_display__3
+   INY
+   STY   __local_init_attack_display__i
 .init_attack_display@rot@0:
+   LDA   __local_init_attack_display__3
+   SEC
+   SBC   __local_init_attack_display__i
+   BMI   .cond_else@56
    LDY   __local_init_attack_display__i
-   LDA   (__local_init_attack_display__2),Y
-   DEC   __local_init_attack_display__left
-   BPL   .if_end@52
+   LDA   (__local_init_attack_display__4),Y
+   JMP   .cond_end@57
+.cond_else@56:
    LDA   #$20
-.if_end@52:
+.cond_end@57:
    LDX   __local_init_attack_display__i
    STA   S_ATTACK_TARGET+7,X
    INC   __local_init_attack_display__i
@@ -1358,125 +1384,128 @@ resolve_attack:
    JSR   set_blink_target
    LDA   IS_PLAYER_TURN
    CMP   #$01
-   BNE   .if_else@54
+   BNE   .if_else@59
    LDA   #$1C
    STA   COMBAT_WILLINGNESS
-   JMP   .if_end@53
-.if_else@54:
+   JMP   .if_end@58
+.if_else@59:
    LDY   #$0B
    LDA   (ENTITY_PTR),Y
    STA   __local_resolve_attack__0
    AND   #$1F
-   STA   COMBAT_WILLINGNESS
+   STA   __local_resolve_attack__willingness
    LDA   __local_resolve_attack__0
    AND   #$20
-   BEQ   .if_end@55
+   BEQ   .if_end@60
    LDA   __local_resolve_attack__0
    AND   #$EF
    STA   (ENTITY_PTR),Y
-   LDA   COMBAT_WILLINGNESS
+   LDA   __local_resolve_attack__willingness
    CLC
    ADC   #$18
-   STA   COMBAT_WILLINGNESS
-.if_end@55:
+   STA   __local_resolve_attack__willingness
+.if_end@60:
    LDA   (MOB_PTR),Y
-   STA   __local_resolve_attack__0
    AND   #$40
-   BEQ   .if_end@56
-   LDA   COMBAT_WILLINGNESS
+   BEQ   .if_end@61
+   LDA   __local_resolve_attack__willingness
    SEC
    SBC   #$04
-   STA   COMBAT_WILLINGNESS
-.if_end@56:
-   LDA   __local_resolve_attack__0
-   BPL   .if_end@57
-   LDA   COMBAT_WILLINGNESS
+   STA   __local_resolve_attack__willingness
+.if_end@61:
+   LDA   (MOB_PTR),Y
+   BPL   .if_end@62
+   LDA   __local_resolve_attack__willingness
    CLC
    ADC   #$08
-   STA   COMBAT_WILLINGNESS
-.if_end@57:
+   STA   __local_resolve_attack__willingness
+.if_end@62:
    LDY   #$0F
    LDA   (MOB_PTR),Y
-   STA   __local_resolve_attack__1
    AND   #$04
-   BEQ   .if_end@58
-   LDA   COMBAT_WILLINGNESS
+   BEQ   .if_end@63
+   LDA   __local_resolve_attack__willingness
    CLC
    ADC   #$06
-   STA   COMBAT_WILLINGNESS
-.if_end@58:
-   LDA   __local_resolve_attack__1
+   STA   __local_resolve_attack__willingness
+.if_end@63:
+   LDA   (MOB_PTR),Y
    AND   #$03
-   BEQ   .case@11
+   BEQ   .case@10
    CMP   #$01
-   BEQ   .case@12
+   BEQ   .case@11
    CMP   #$03
-   BEQ   .case@13
-   JMP   .switch@10_break
-.case@11:
-   LDA   COMBAT_WILLINGNESS
+   BEQ   .case@12
+   JMP   .switch@9_break
+.case@10:
+   LDA   __local_resolve_attack__willingness
    CLC
    ADC   #$03
-   STA   COMBAT_WILLINGNESS
-   JMP   .switch@10_break
+   STA   __local_resolve_attack__willingness
+   JMP   .switch@9_break
+.case@11:
+   DEC   __local_resolve_attack__willingness
+   JMP   .switch@9_break
 .case@12:
-   DEC   COMBAT_WILLINGNESS
-   JMP   .switch@10_break
-.case@13:
-   LDA   COMBAT_WILLINGNESS
+   LDA   __local_resolve_attack__willingness
    SEC
    SBC   #$03
-   STA   COMBAT_WILLINGNESS
-.switch@10_break:
+   STA   __local_resolve_attack__willingness
+.switch@9_break:
    JSR   resolve_attack@run6
-   BCS   .if_end@59
-   LDA   COMBAT_WILLINGNESS
+   BCS   .if_end@64
+   LDA   __local_resolve_attack__willingness
    ADC   #$18
-   STA   COMBAT_WILLINGNESS
-.if_end@59:
+   STA   __local_resolve_attack__willingness
+.if_end@64:
    LDY   #$03
    LDA   (ENTITY_PTR),Y
    CMP   (MOB_PTR),Y
-   BNE   .if_end@60
-   LDY   #$05
-   LDA   (MOB_PTR),Y
-   LSR
-   AND   #$0F
+   BNE   .if_end@65
+   LDX   MOB_PTR+1
+   LDA   MOB_PTR
+   JSR   defense
    STA   TARGET_DEFENSE
-   LDA   (ENTITY_PTR),Y
-   LSR
-   AND   #$0F
+   LDX   ENTITY_PTR+1
+   LDA   ENTITY_PTR
+   JSR   defense
    SEC
    SBC   TARGET_DEFENSE
    CLC
-   ADC   COMBAT_WILLINGNESS
-   STA   COMBAT_WILLINGNESS
-.if_end@60:
-   LDA   COMBAT_WILLINGNESS
-   BPL   .if_else@62
+   ADC   __local_resolve_attack__willingness
+   STA   __local_resolve_attack__willingness
+.if_end@65:
+   LDA   __local_resolve_attack__willingness
+   BPL   .if_else@67
    LDA   #$00
-   STA   COMBAT_WILLINGNESS
-   JMP   .if_end@61
-.if_else@62:
-   CMP   #$1F
-   BCC   .if_end@63
+   STA   __local_resolve_attack__willingness
+   JMP   .if_end@66
+.if_else@67:
+   SEC
+   SBC   #$1F
+   BVC   .jcmp_novf@0
+   EOR   #$80
+.jcmp_novf@0:
+   BMI   .if_end@68
    LDA   #$1E
+   STA   __local_resolve_attack__willingness
+.if_end@68:
+.if_end@66:
+   LDA   __local_resolve_attack__willingness
    STA   COMBAT_WILLINGNESS
-.if_end@63:
-.if_end@61:
-.if_end@53:
+.if_end@58:
    LDA   #$1F
    JSR   random_in_range
-   STA   __local_resolve_attack__0
+   STA   __local_resolve_attack__willingness
    LDA   COMBAT_WILLINGNESS
-   CMP   __local_resolve_attack__0
-   BCC   .if_end@64
+   CMP   __local_resolve_attack__willingness
+   BCC   .if_end@69
    LDA   IS_PLAYER_TURN
-   BEQ   .if_else@66
+   BEQ   .if_else@71
    JMP   player_attack
-.if_else@66:
+.if_else@71:
    JMP   mob_attack
-.if_end@64:
+.if_end@69:
    JSR   increment_hp@run0
    LDX   #>S_MISSES
    LDA   #<S_MISSES
@@ -1484,9 +1513,9 @@ resolve_attack:
    JSR   scroll_status_line
    LDA   IS_PLAYER_TURN
    CMP   #$01
-   BEQ   .if_end@67
+   BEQ   .if_end@72
    JSR   print_member_name
-.if_end@67:
+.if_end@72:
    JMP   delay_with_animation
 
 resolve_attack@run6:
@@ -1501,56 +1530,64 @@ resolve_attack@run6:
 calc_combat_strength:
    SUBROUTINE
 
+   LDA   ENTITY_PTR
+   CLC
+   ADC   #$07
+   STA   __local_calc_combat_strength__weapon
+   LDA   ENTITY_PTR+1
+   ADC   #$00
+   STA   __local_calc_combat_strength__2
    LDA   IS_PLAYER_TURN
    CMP   #$01
-   BEQ   .calc_combat_strength@scfold@0
+   BEQ   .if_end@75
    LDY   #$03
    LDA   (MOB_PTR),Y
    CMP   (ENTITY_PTR),Y
-   BNE   .calc_combat_strength@scfold@0
-   LDA   #$09
-   STA   __local_calc_combat_strength__weapon
-.if_end@70:
+   BNE   .if_end@75
    LDA   ENTITY_PTR
-   STA   __local_calc_combat_strength__attacker
+   CLC
+   ADC   #$09
+   STA   __local_calc_combat_strength__weapon
    LDA   ENTITY_PTR+1
-   STA   __local_calc_combat_strength__0
-   LDY   __local_calc_combat_strength__weapon
-   LDA   (ENTITY_PTR),Y
+   ADC   #$00
+   STA   __local_calc_combat_strength__2
+.if_end@75:
+   LDY   #$00
+   LDA   (__local_calc_combat_strength__weapon),Y
    AND   #$0F
-   STA   __local_calc_combat_strength__strength
+   STA   __local_calc_combat_strength__0
    JSR   random_in_range
-   STA   COMBAT_STRENGTH
-   LDA   __local_calc_combat_strength__strength
+   STA   __local_calc_combat_strength__1
+   LDA   __local_calc_combat_strength__0
    JSR   random_in_range
    CLC
-   ADC   COMBAT_STRENGTH
+   ADC   __local_calc_combat_strength__1
    CLC
    ADC   #$01
    STA   COMBAT_STRENGTH
    LDA   CHAR_AI_MODE
    BNE   .calc_combat_strength@scfold@1
    LDA   IS_PLAYER_TURN
-   BEQ   .if_end@73
+   BEQ   .if_end@78
 .calc_combat_strength@scfold@1:
    RTS
-.if_end@73:
-   LDY   __local_calc_combat_strength__weapon
-   LDA   (__local_calc_combat_strength__attacker),Y
-   BPL   .cond_else@74
+.if_end@78:
+   LDY   #$00
+   LDA   (__local_calc_combat_strength__weapon),Y
+   BPL   .cond_else@79
    LDA   #$50
-   BNE   .cond_end@75
-.cond_else@74:
+   BNE   .cond_end@80
+.cond_else@79:
    LDA   #$0D
-.cond_end@75:
+.cond_end@80:
    JSR   random_in_range
    ORA   #$00
-   BEQ   .if_end@76
+   BEQ   .if_end@81
    RTS
-.if_end@76:
+.if_end@81:
    LDA   #$81
-   LDY   __local_calc_combat_strength__weapon
-   STA   (__local_calc_combat_strength__attacker),Y
+   LDY   #$00
+   STA   (__local_calc_combat_strength__weapon),Y
    JSR   set_cursor_row21
    LDA   #$01
    JSR   scene_loop
@@ -1561,42 +1598,38 @@ calc_combat_strength:
    CLC
    ADC   #$01
    CMP   #$1F
-   BCC   .if_end@77
+   BCC   .cond_end@83
    LDA   #$1F
-.if_end@77:
+.cond_end@83:
    STA   COMBAT_STRENGTH
    RTS
-.calc_combat_strength@scfold@0:
-   LDA   #$07
-   STA   __local_calc_combat_strength__weapon
-   JMP   .if_end@70
 
 map_value_to_string:
    SUBROUTINE
 
    STA   __local_map_value_to_string__index
    CMP   #$10
-   BCC   .if_else@79
+   BCC   .if_else@85
    LSR
    LSR
    AND   #$03
    ORA   #$0C
    STA   __local_map_value_to_string__index
-   JMP   .if_end@78
-.if_else@79:
+   JMP   .if_end@84
+.if_else@85:
    CMP   #$08
-   BCC   .if_end@80
+   BCC   .if_end@86
    LSR
    AND   #$03
    ORA   #$08
    STA   __local_map_value_to_string__index
-.if_end@80:
-.if_end@78:
+.if_end@86:
+.if_end@84:
    LDA   #<ATTACK_VERB_STRINGS
    STA   __local_map_value_to_string__verb
    LDY   #>ATTACK_VERB_STRINGS
    STY   __local_map_value_to_string__1
-   JMP   .loop@14_continue
+   JMP   .loop@13_continue
 .map_value_to_string@rot@1:
    LDY   #$00
    LDA   (__local_map_value_to_string__verb),Y
@@ -1608,9 +1641,9 @@ map_value_to_string:
 .carry_inc@0:
    ADC   #$01
    STA   __local_map_value_to_string__verb
-   BCC   .loop@14_continue
+   BCC   .loop@13_continue
    INC   __local_map_value_to_string__1
-.loop@14_continue:
+.loop@13_continue:
    DEC   __local_map_value_to_string__index
    BNE   .map_value_to_string@rot@1
    LDX   __local_map_value_to_string__1
@@ -1637,7 +1670,7 @@ player_attack:
    LDA   (__local_player_attack__target),Y
    CMP   #$FE
    BEQ   .lb_skip@3
-   JMP   .if_else@82
+   JMP   .if_else@88
 .lb_skip@3:
    LDY   #$02
    LDA   (__local_player_attack__target),Y
@@ -1649,44 +1682,44 @@ player_attack:
    STA   __local_player_attack__1
    LDA   __local_player_attack__0
    CMP   #$C0
-   BNE   .if_else@84
+   BNE   .if_else@90
    LDA   __local_player_attack__1
    CMP   #$1D
    BCC   .lb_skip@2
-   JMP   .if_end@81
+   JMP   .if_end@87
 .lb_skip@2:
    JSR   process_entity_script
    JSR   set_cursor_row21
    LDA   #$02
    JMP   scene_loop
-.if_else@84:
+.if_else@90:
    ORA   #$00
    BNE   .lb_skip@1
-   JMP   .if_end@81
+   JMP   .if_end@87
 .lb_skip@1:
    LDA   COMBAT_STRENGTH
    CMP   #$0A
    BCS   .player_attack@scfold@1
    LDA   __local_player_attack__2
-   BMI   .if_end@91
+   BMI   .if_end@97
    LDA   COMBAT_STRENGTH
    CMP   #$04
-   BCC   .if_end@91
+   BCC   .if_end@97
 .player_attack@scfold@1:
    LDA   __local_player_attack__1
    CMP   #$1F
-   BCS   .if_else@93
+   BCS   .if_else@99
    JSR   process_entity_script
    JSR   set_cursor_row21
    LDY   #$02
    LDA   (__local_player_attack__target),Y
    AND   #$1F
    CMP   #$1B
-   BCS   .if_end@92
+   BCS   .if_end@98
    LDA   #$03
    JSR   scene_loop
    JMP   event_prng_check
-.if_else@93:
+.if_else@99:
    LDA   __local_player_attack__2
    SBC   #$01
    STA   (__local_player_attack__target),Y
@@ -1698,22 +1731,22 @@ player_attack:
    LDA   (__local_player_attack__target),Y
    JSR   draw_char_at_pos
    JSR   set_cursor_row21
-.if_end@92:
+.if_end@98:
    LDA   #$12
    JSR   display_message
    JMP   event_prng_check
-.if_end@91:
+.if_end@97:
    JSR   dispatch_on_mode
    JSR   set_cursor_row21
    LDA   #$10
    JMP   display_message
-.if_else@82:
+.if_else@88:
    CMP   #$40
-   BCS   .if_end@97
+   BCS   .if_end@103
    LDA   #$0D
    JSR   random_in_range
    CMP   COMBAT_STRENGTH
-   BCS   .if_end@97
+   BCS   .if_end@103
    JSR   dispatch_on_mode
    LDY   #$01
    LDA   (__local_player_attack__target),Y
@@ -1729,8 +1762,8 @@ player_attack:
    JSR   get_entity_fontchar
    JSR   render_font_char
    JMP   player_attack@tail0
-.if_end@97:
-.if_end@81:
+.if_end@103:
+.if_end@87:
    JSR   dispatch_on_mode
    JSR   scroll_status_line
    LDA   #$14
@@ -1782,48 +1815,48 @@ mob_attack:
    LDY   #$04
    LDA   (ENTITY_PTR),Y
    CMP   #$15
-   BCS   .if_end@98
+   BCS   .if_end@104
    LDA   #$00
    STA   SCENE_COMBAT_FLAG
-.if_end@98:
+.if_end@104:
    JSR   dispatch_on_mode
    LDY   #$08
    LDA   (MOB_PTR),Y
    STA   MOB_DEFENSE
    AND   #$0F
-   BNE   .if_end@99
+   BNE   .if_end@105
    LDA   COMBAT_STRENGTH
    JMP   apply_damage_to_mob
-.if_end@99:
+.if_end@105:
    JSR   scroll_status_line
    LDA   MOB_DEFENSE
-   BPL   .cond_else@100
+   BPL   .cond_else@106
    LDA   #$17
    STA   __local_mob_attack__1
-   JMP   .cond_end@101
-.cond_else@100:
+   JMP   .cond_end@107
+.cond_else@106:
    LDY   #$18
    STY   __local_mob_attack__1
-.cond_end@101:
+.cond_end@107:
    LDA   MOB_DEFENSE
    AND   #$0F
    STA   MOB_DEFENSE
+   CMP   COMBAT_STRENGTH
+   BCS   .if_else@109
    LDA   COMBAT_STRENGTH
    SEC
    SBC   MOB_DEFENSE
-   BEQ   .if_else@105
-   BMI   .if_else@105
    STA   COMBAT_STRENGTH
    LDA   __local_mob_attack__1
    JSR   display_message
    LDA   COMBAT_STRENGTH
    JMP   apply_damage_to_mob
-.if_else@105:
+.if_else@109:
    JSR   resolve_attack@run6
-   BCS   .if_else@107
+   BCS   .if_else@111
    LDA   #$34
    JMP   display_message
-.if_else@107:
+.if_else@111:
    LDA   __local_mob_attack__1
    CLC
    ADC   #$02
@@ -1835,7 +1868,7 @@ get_entity_threat:
    LDX   ENTITY_PTR+1
    LDA   ENTITY_PTR
    JSR   check_hostile
-   BCC   .cond_else@110
+   BCC   .cond_else@114
    LDY   #$03
    LDA   (MOB_PTR),Y
    STA   __local_get_entity_threat__0
@@ -1844,15 +1877,15 @@ get_entity_threat:
    LDA   __local_get_entity_threat__0
    JSR   manhattan_distance
    CMP   #$01
-   BNE   .if_end@109
+   BNE   .if_end@113
    LDA   #$01
    RTS
-.if_end@109:
+.if_end@113:
    ORA   #$00
-   BNE   .cond_else@110
+   BNE   .cond_else@114
    LDA   #$02
    RTS
-.cond_else@110:
+.cond_else@114:
    LDA   #$00
    RTS
 
@@ -1861,59 +1894,63 @@ select_combat_target:
 
    LDA   CHAR_AI_MODE
    CMP   #$03
-   BCC   .if_end@112
+   BCC   .if_end@116
    CMP   #$05
-   BCC   .if_else@114
+   BCC   .if_else@118
    JSR   first_group_member
    LDA   #$00
    STA   BEST_THREAT
-.loop@15_start:
+.loop@14_start:
    JSR   get_entity_threat
    ORA   #$00
-   BEQ   .if_end@115
+   BEQ   .if_end@119
    LDY   #$05
    LDA   (MOB_PTR),Y
    AND   #$1F
    CMP   BEST_THREAT
-   BCC   .if_end@116
+   BCC   .if_end@120
    STA   BEST_THREAT
    LDA   MOB_PTR
    STA   TARGET_PTR
    LDA   MOB_PTR+1
    STA   TARGET_PTR+1
-.if_end@116:
-.if_end@115:
+.if_end@120:
+.if_end@119:
    JSR   next_group_member
+   SEC
    LDA   MOB_PTR+1
-   BNE   .loop@15_start
-   JMP   .if_end@113
-.if_else@114:
+   SBC   #$01
+   BCS   .loop@14_start
+   JMP   .if_end@117
+.if_else@118:
    LDA   #$00
    STA   BEST_THREAT
    JSR   first_group_member
-.loop@16_start:
+.loop@15_start:
    JSR   get_entity_threat
    STA   __local_select_combat_target__0
    LDA   BEST_THREAT
    CMP   __local_select_combat_target__0
-   BCS   .if_end@117
+   BCS   .if_end@121
    LDA   __local_select_combat_target__0
    STA   BEST_THREAT
    LDA   MOB_PTR
    STA   TARGET_PTR
    LDA   MOB_PTR+1
    STA   TARGET_PTR+1
-.if_end@117:
+.if_end@121:
    JSR   next_group_member
+   SEC
    LDA   MOB_PTR+1
-   BNE   .loop@16_start
-.if_end@113:
+   SBC   #$01
+   BCS   .loop@15_start
+.if_end@117:
    LDA   BEST_THREAT
-   BEQ   .if_end@118
+   BEQ   .if_end@122
    LDA   #$01
    RTS
-.if_end@118:
-.if_end@112:
+.if_end@122:
+.if_end@116:
    LDA   STEPS_TAKEN
    BNE   .tail@1
    LDY   #$03
@@ -1923,11 +1960,11 @@ select_combat_target:
    BEQ   .tail@1
    JSR   check_threats_here
    CMP   #$01
-   BEQ   .if_end@121
+   BEQ   .if_end@125
 .tail@1:
    LDA   #$02
    RTS
-.if_end@121:
+.if_end@125:
    LDA   #$04
    RTS
 
@@ -1941,11 +1978,11 @@ handle_encounter:
    LDY   #$01
    LDA   (__local_handle_encounter__ev),Y
    CMP   #$40
-   BCS   .if_end@122
+   BCS   .if_end@126
    LDA   #$14
    JSR   random_in_range
    JSR   handle_encounter@run2
-   BCC   .if_end@123
+   BCC   .if_end@127
    LDY   #$01
    LDA   (__local_handle_encounter__ev),Y
    ORA   #$40
@@ -1958,26 +1995,23 @@ handle_encounter:
    LDA   FONT_CHARNUM
    STA   BLINK_CHAR
    JMP   player_attack@tail0
-.if_end@123:
+.if_end@127:
    JSR   step_prng
-   STA   __local_handle_encounter__dest
-   LDA   #$74
-   SEC
-   SBC   __local_handle_encounter__dest
-   BPL   .if_end@124
+   CMP   #$75
+   BCC   .if_end@128
    JSR   set_cursor_row21
    LDA   #$09
    JSR   scene_loop
    LDA   #$01
    JMP   apply_damage_to_current
-.if_end@124:
+.if_end@128:
    JSR   set_cursor_row21
    LDA   #$01
    JSR   display_message
    LDX   #$00
    LDA   #$0A
    JMP   tune_player
-.if_end@122:
+.if_end@126:
    LDY   #$00
    LDA   (__local_handle_encounter__ev),Y
    STA   EVENT_POS
@@ -1986,26 +2020,26 @@ handle_encounter:
    LDY   #$01
    LDA   (__local_handle_encounter__ev),Y
    AND   #$3F
-   BNE   .if_end@125
+   BNE   .if_end@129
    JSR   step_prng
    LSR
    LSR
    AND   #$1C
    ORA   #$01
-.if_end@125:
+.if_end@129:
    STA   ACTIVE_CHAR
    LSR
-   BCC   .if_end@126
+   BCC   .if_end@130
    LDY   #$04
    LDA   (ENTITY_PTR),Y
    CMP   #$2A
-   BCC   .if_end@129
+   BCC   .if_end@133
    CMP   #$3F
-   BCS   .if_end@129
+   BCS   .if_end@133
    LDA   #$00
    STA   ACTIVE_CHAR
-.if_end@129:
-.if_end@126:
+.if_end@133:
+.if_end@130:
    LDY   #$02
    LDA   (__local_handle_encounter__ev),Y
    STA   EVENT_DEST_POS
@@ -2019,9 +2053,9 @@ handle_encounter:
    STA   (ENTITY_PTR),Y
    LDA   ACTIVE_CHAR
    CMP   CURRENT_PLAYER
-   BEQ   .if_end@130
+   BEQ   .if_end@134
    JMP   reset_turn_pos
-.if_end@130:
+.if_end@134:
    LDA   EVENT_DEST_POS
    JSR   pos_to_colrow
    STA   CURRENT_COL
@@ -2060,54 +2094,54 @@ handle_event_slot:
    SUBROUTINE
 
    STA   __local_handle_event_slot__ev
-   STX   __local_handle_event_slot__1
+   STX   __local_handle_event_slot__2
    LDA   #$00
    JSR   set_char_state
    LDY   #$02
    LDA   (__local_handle_event_slot__ev),Y
-   STA   __local_handle_event_slot__0
+   STA   __local_handle_event_slot__1
    STA   EVENT_SLOT_BYTE
    AND   #$C0
-   STA   __local_handle_event_slot__keep
+   STA   __local_handle_event_slot__0
    CMP   #$C0
-   BNE   .if_end@131
-   LDA   __local_handle_event_slot__0
+   BNE   .if_end@135
+   LDA   __local_handle_event_slot__1
    AND   #$1F
-   STA   __local_handle_event_slot__keep
+   STA   __local_handle_event_slot__0
    CMP   #$1D
-   BCS   .if_end@132
+   BCS   .if_end@136
    LDA   #$FE
    LDY   #$00
    STA   (__local_handle_event_slot__ev),Y
-   LDA   __local_handle_event_slot__keep
-   BEQ   .if_end@133
+   LDA   __local_handle_event_slot__0
+   BEQ   .if_end@137
    LDA   #$0A
    JSR   scene_loop
-.if_end@133:
-.if_end@132:
+.if_end@137:
+.if_end@136:
    JSR   commit_move
    JSR   check_threats_here
    ORA   #$00
-   BNE   .if_end@134
+   BNE   .if_end@138
    LDA   #$00
    STA   MOVE_POINTS
-.if_end@134:
+.if_end@138:
    LDA   #$02
    RTS
-.if_end@131:
+.if_end@135:
    LDX   #$00
    LDA   #$07
    JSR   tune_player
-   LDA   __local_handle_event_slot__keep
-   BNE   .if_end@135
-   LDA   EVENT_SLOT_BYTE
+   LDA   __local_handle_event_slot__0
+   BNE   .if_end@139
+   LDA   __local_handle_event_slot__1
    AND   #$1F
    CMP   #$1B
-   BCC   .if_end@136
+   BCC   .if_end@140
    JSR   show_locked_msg
    LDA   #$00
    RTS
-.if_end@136:
+.if_end@140:
    JSR   increment_hp@run0
    LDA   #$0D
    JSR   display_message
@@ -2115,17 +2149,17 @@ handle_event_slot:
    JSR   apply_damage_to_current
    LDA   #$00
    RTS
-.if_end@135:
+.if_end@139:
    CMP   #$40
-   BEQ   .if_end@137
+   BEQ   .if_end@141
    LDA   #$19
    JSR   random_in_range
    JSR   handle_encounter@run2
-   BCS   .if_end@138
+   BCS   .if_end@142
    JSR   set_cursor_row21
    LDA   #$10
    JSR   display_message
-   LDA   EVENT_SLOT_BYTE
+   LDA   __local_handle_event_slot__1
    AND   #$3F
    ORA   #$40
    LDY   #$02
@@ -2133,37 +2167,40 @@ handle_event_slot:
    JSR   event_prng_check
    LDA   #$00
    RTS
-.if_end@138:
-.if_end@137:
-   LDA   EVENT_SLOT_BYTE
+.if_end@142:
+.if_end@141:
+   LDA   __local_handle_event_slot__1
    AND   #$1F
+   STA   __local_handle_event_slot__0
    STA   EVENT_SUB_VALUE
    JSR   set_cursor_row21
-   LDA   EVENT_SUB_VALUE
+   LDA   __local_handle_event_slot__0
    CMP   #$1B
-   BCS   .if_else@140
+   BCS   .if_else@144
    LDA   #$13
    JSR   scene_loop
-   JMP   .vthread@3
-.if_else@140:
+   JMP   .if_end@143
+.if_else@144:
    LDA   #$12
    JSR   display_message
-   LDA   EVENT_SUB_VALUE
+.if_end@143:
+   LDA   __local_handle_event_slot__0
    CMP   #$1F
-   BCC   .vthread@3
-   DEC   EVENT_SUB_VALUE
-   LDA   EVENT_SLOT_BYTE
+   BNE   .if_else@146
+   SEC
+   SBC   #$01
+   STA   EVENT_SUB_VALUE
+   LDA   __local_handle_event_slot__1
    AND   #$E0
    ORA   EVENT_SUB_VALUE
    LDY   #$02
    STA   (__local_handle_event_slot__ev),Y
-   LDA   #$01
-   BNE   .if_end@142
-.vthread@3:
+   JMP   .if_end@145
+.if_else@146:
    LDA   #$FE
    LDY   #$00
    STA   (__local_handle_event_slot__ev),Y
-.if_end@142:
+.if_end@145:
    JSR   handle_encounter@run1
    JSR   anim_tick_and_wait
    JSR   event_prng_check
@@ -2174,11 +2211,10 @@ event_prng_check:
    SUBROUTINE
 
    JSR   step_prng
-   SEC
-   SBC   #$14
-   BMI   .if_end@143
+   CMP   #$14
+   BCC   .if_end@147
    RTS
-.if_end@143:
+.if_end@147:
    JSR   set_cursor_row21
    LDA   #$11
    JSR   display_message
@@ -2187,12 +2223,12 @@ event_prng_check:
    JSR   delay_with_animation
    JSR   step_prng
    AND   #$40
-   BEQ   .cond_else@144
+   BEQ   .cond_else@148
    LDA   #$02
-   BNE   .cond_end@145
-.cond_else@144:
+   BNE   .cond_end@149
+.cond_else@148:
    LDA   #$01
-.cond_end@145:
+.cond_end@149:
    JMP   apply_damage_to_current
 
 set_target_restricted:
@@ -2213,7 +2249,7 @@ handle_mob_encounter:
    JSR   colrow_to_pos
    JSR   sum_hostile_at_pos
    LDA   ADJACENT_THREAT
-   BEQ   .if_end@146
+   BEQ   .if_end@150
    LDY   #$05
    LDA   (ENTITY_PTR),Y
    AND   #$1F
@@ -2222,28 +2258,32 @@ handle_mob_encounter:
    SEC
    SBC   ADJACENT_THREAT
    STA   __local_handle_mob_encounter__courage
-   BPL   .if_else@148
+   BPL   .if_else@152
    LDA   #$04
    STA   __local_handle_mob_encounter__courage
-   JMP   .if_end@147
-.if_else@148:
-   CMP   #$1D
-   BCC   .if_end@149
+   JMP   .if_end@151
+.if_else@152:
+   SEC
+   SBC   #$1D
+   BVC   .jcmp_novf@1
+   EOR   #$80
+.jcmp_novf@1:
+   BMI   .if_end@153
    LDA   #$1C
    STA   __local_handle_mob_encounter__courage
-.if_end@149:
-.if_end@147:
+.if_end@153:
+.if_end@151:
    ASL   __local_handle_mob_encounter__courage
    ASL   __local_handle_mob_encounter__courage
    LDA   __local_handle_mob_encounter__courage
-   ORA   #$03
+   CLC
+   ADC   #$03
    STA   __local_handle_mob_encounter__0
    JSR   step_prng
    STA   __local_handle_mob_encounter__courage
    LDA   __local_handle_mob_encounter__0
-   SEC
-   SBC   __local_handle_mob_encounter__courage
-   BPL   .if_end@150
+   CMP   __local_handle_mob_encounter__courage
+   BCS   .if_end@154
    JSR   increment_hp@run0
    LDA   #$1E
    JSR   display_message
@@ -2253,33 +2293,35 @@ handle_mob_encounter:
    STA   CURRENT_ROW
    LDA   #$03
    RTS
+.if_end@154:
 .if_end@150:
-.if_end@146:
    JSR   commit_move
    LDY   #$03
    LDA   (ENTITY_PTR),Y
    JSR   check_encounter
    CMP   #$02
-   BCS   .if_end@151
+   BCS   .if_end@155
    JSR   check_threats_here
    CMP   #$01
    BNE   .tail@2
    LDA   #$02
    RTS
-.if_end@151:
+.if_end@155:
    JSR   first_group_member
-   JMP   .loop@17_continue
+   JMP   .loop@16_continue
 .handle_mob_encounter@rot@2:
    LDY   #$03
    LDA   (ENTITY_PTR),Y
    CMP   (MOB_PTR),Y
-   BNE   .if_end@154
+   BNE   .if_end@158
    JSR   set_target_restricted
-.if_end@154:
+.if_end@158:
    JSR   next_group_member
-.loop@17_continue:
+.loop@16_continue:
+   SEC
    LDA   MOB_PTR+1
-   BNE   .handle_mob_encounter@rot@2
+   SBC   #$01
+   BCS   .handle_mob_encounter@rot@2
    JSR   increment_hp@run0
    LDA   #$1F
    JSR   display_message
@@ -2301,15 +2343,15 @@ modify_char_stats:
    LDA   (__local_modify_char_stats__rec),Y
    STA   __local_modify_char_stats__levels
    LDA   __zpabi_modify_char_stats__add
-   BEQ   .if_else@156
+   BEQ   .if_else@160
    LDA   __local_modify_char_stats__0
    ADC   __zpabi_modify_char_stats__amount_0
    STA   __local_modify_char_stats__gold_0
    LDA   __local_modify_char_stats__levels
    ADC   __zpabi_modify_char_stats__amount_1
    STA   __local_modify_char_stats__gold_1
-   JMP   .if_end@155
-.if_else@156:
+   JMP   .if_end@159
+.if_else@160:
    LDA   __local_modify_char_stats__0
    SEC
    SBC   __zpabi_modify_char_stats__amount_0
@@ -2317,7 +2359,7 @@ modify_char_stats:
    LDA   __local_modify_char_stats__levels
    SBC   __zpabi_modify_char_stats__amount_1
    STA   __local_modify_char_stats__gold_1
-.if_end@155:
+.if_end@159:
    STX   DPTR+1
    LDA   __local_modify_char_stats__gold_0
    LDY   #$0D
@@ -2348,7 +2390,7 @@ modify_char_stats:
    STA   STAT_LEVEL_BITS
    STA   __local_modify_char_stats__threshold_0
    STA   __local_modify_char_stats__threshold_1
-.loop@18_continue:
+.loop@17_continue:
    LDA   __local_modify_char_stats__levels
    BEQ   .vthread@2
    LDA   __local_modify_char_stats__threshold_0
@@ -2363,14 +2405,14 @@ modify_char_stats:
    SBC   __local_modify_char_stats__threshold_0
    LDA   __local_modify_char_stats__gold_1
    SBC   __local_modify_char_stats__threshold_1
-   BCC   .loop@18_break
+   BCC   .loop@17_break
    DEC   __local_modify_char_stats__levels
    LDA   STAT_LEVEL_BITS
    CLC
    ADC   #$10
    STA   STAT_LEVEL_BITS
-   BNE   .loop@18_continue
-.loop@18_break:
+   BNE   .loop@17_continue
+.loop@17_break:
    LDA   __local_modify_char_stats__levels
 .vthread@2:
    ORA   STAT_LEVEL_BITS

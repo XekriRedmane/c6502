@@ -41,13 +41,13 @@
     - SHOP_DATA_PTR ($E6) points at the shop's record of SHOP_TABLE,
       which DISPLAY_SHOP finds by calling ADVANCE_SHOP_PTR once for
       each record it skips. Here the record is the static pointer
-      `shop`, which display_shop steps through the records the same
-      way. ADD_PRICE_COMPONENT is the body of the loop that multiplies
-      the price.
+      `shop`, which display_shop sets by indexing SHOP_TABLE.
+      ADD_PRICE_COMPONENT, which the original calls once for each tier
+      and once more, is a multiplication.
     - The entry's slot is SHOP_ITEM_OFFSET bytes into the record, as in
-      the original, which the C reads through a byte pointer. The
-      offset is always a multiple of 5, and dividing it by 5 would call
-      a runtime helper.
+      the original, and the C adds that byte offset to the record's
+      address. The header keeps SHOP_ITEM_OFFSET at $5A85, where the
+      original keeps it.
     - SHOP_BUY_HANDLER jumps through the slot's handler word to one of
       SHOP_BUY_EFFECT_0-4 or XP_AWARD_0-4, each of which loads its
       number and branches to APPLY_SHOP_EFFECT or AWARD_XP, which jump
@@ -1027,6 +1027,17 @@ static void evaluate_direction(uint8_t dir, uint8_t test_pos) {
         DIR_SCORES[dir] += 7;       /* the viewport's edge */
 }
 
+/* The direction back from each direction, which the next step's scores
+ * penalize. The original takes it with an XOR, which gives DIR_LEFT for
+ * staying put. */
+static const uint8_t REVERSE_DIR[] = {
+    [DIR_NONE] = DIR_LEFT,
+    [DIR_UP] = DIR_DOWN,
+    [DIR_DOWN] = DIR_UP,
+    [DIR_LEFT] = DIR_RIGHT,
+    [DIR_RIGHT] = DIR_LEFT,
+};
+
 uint8_t npc_move_ai(void) {
     anim_tick_and_wait();
     if (CHAR_AI_MODE != AI_MODE_WANDER && AI_TARGET_POS == 0)
@@ -1051,10 +1062,8 @@ uint8_t npc_move_ai(void) {
     evaluate_direction(DIR_RIGHT, pos + 1);
 
     uint8_t range = CHAR_AI_MODE == AI_MODE_WANDER ? AI_RANDOM_WANDER : AI_RANDOM_NORMAL;
-    for (uint8_t dir = DIR_RIGHT + 1; dir-- != 0;) {
-        DIR_SCORES[dir] <<= 2;
-        DIR_SCORES[dir] += random_in_range(range);
-    }
+    for (uint8_t dir = DIR_RIGHT + 1; dir-- != 0;)
+        DIR_SCORES[dir] = 4 * DIR_SCORES[dir] + random_in_range(range);
 
     /* The lowest score wins, and a tie goes to the higher direction.
      * Every score is below $7F, so some direction always wins. */
@@ -1067,8 +1076,7 @@ uint8_t npc_move_ai(void) {
         }
     }
 
-    /* The direction back, which the next step's scores penalize. */
-    AI_PREV_DIR = best < DIR_LEFT ? best ^ 3 : best ^ 7;
+    AI_PREV_DIR = REVERSE_DIR[best];
     return best;
 }
 
@@ -1178,10 +1186,7 @@ static uint8_t show_item(void) {
     const struct shop_slot *slot = current_slot();
     uint8_t tier = (LOCATION_STYLE >> 5) & 3;
     LOCATION_STYLE_BITS = tier;
-    SHOP_PRICE = 0;
-    do {
-        SHOP_PRICE += slot->price;
-    } while (tier-- != 0);
+    SHOP_PRICE = slot->price * (tier + 1);
 
     for (uint8_t i = 0; i < 5; i++)
         S_PAY_FOR.price[i] = LOW_SPACE;
@@ -1207,11 +1212,7 @@ static uint8_t show_item(void) {
 uint8_t display_shop(struct event *ev) {
     if (CHAR_AI_MODE != 0)
         return CHAIN_RETURN;
-    /* Step through the records one at a time, since multiplying by
-     * the record's 41 bytes would call a runtime helper. */
-    shop = SHOP_TABLE;
-    for (uint8_t n = ev->type - EVENT_TYPE_WEAPON_SHOP; n != 0; n--)
-        shop++;
+    shop = &SHOP_TABLE[ev->type - EVENT_TYPE_WEAPON_SHOP];
     SHOP_VALID_MASK = ev->value;
     set_cursor_row21();
     scene_loop(shop->scene);
@@ -1231,10 +1232,8 @@ uint8_t browse_handler(void) {
  * effect's value plus the location's tier, and adds the strength's
  * bits 4-3. SHOP_BUY_EFFECT_0-4 and APPLY_SHOP_EFFECT. */
 static void apply_shop_effect(uint8_t n) {
-    uint8_t *rec = (uint8_t *)ENTITY_PTR;
-    uint8_t field = n < 3 ? MFIELD_ATTACK : MFIELD_DEFENSE;
-    rec[field] = SHOP_EFFECT_TABLE[n] + LOCATION_STYLE_BITS;
-    rec[field] += (ENTITY_PTR->strength >> 3) & 3;
+    uint8_t *weapon = n < 3 ? &ENTITY_PTR->sword : &ENTITY_PTR->dagger;
+    *weapon = SHOP_EFFECT_TABLE[n] + LOCATION_STYLE_BITS + ((ENTITY_PTR->strength >> 3) & 3);
 }
 
 /* The pending level amount in an armor byte. EXTRACT_PENDING_XP. */
@@ -1252,15 +1251,10 @@ static void award_xp(uint8_t n) {
     uint8_t total = (level & LEVEL_MASK) + pending_xp(ENTITY_PTR->armor);
 
     uint8_t armor = XP_AWARD_TABLE[n] + LOCATION_STYLE_BITS;
-    uint8_t pending;
-    for (;;) {
-        ENTITY_PTR->armor = armor;
-        pending = pending_xp(armor);
-        if (pending < total)
-            break;
+    while (pending_xp(armor) >= total)
         armor -= PENDING_XP_UNIT;
-    }
-    ENTITY_PTR->level |= total - pending;
+    ENTITY_PTR->armor = armor;
+    ENTITY_PTR->level |= total - pending_xp(armor);
 }
 
 /* The addresses of the original's SHOP_BUY_EFFECT_0-4 and

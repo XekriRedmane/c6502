@@ -44,10 +44,10 @@
       which ignore it. The original leaves whatever Y holds.
     - The original compares some bytes as signed numbers. Where both
       operands are small enough that a signed and an unsigned
-      comparison agree, the C compares them unsigned. The comparisons
-      with the PRNG's output, which covers the whole byte, keep the
-      signed test, in AUTO_HEAL, HANDLE_ENCOUNTER, HANDLE_MOB_ENCOUNTER,
-      and EVENT_PRNG_CHECK.
+      comparison agree, the C compares them unsigned. That includes the
+      comparisons with STEP_PRNG's output in AUTO_HEAL,
+      HANDLE_ENCOUNTER, HANDLE_MOB_ENCOUNTER, and EVENT_PRNG_CHECK,
+      since the output is the state shifted right by one, 0-127.
     - GET_ENTITY_THREAT returns 0 for every distance from 2 up. The
       original returns 2 for a distance of 129 or more, which
       MANHATTAN_DISTANCE can't return, since a position's column is at
@@ -1926,6 +1926,8 @@
     WAIT_LOOP_INIT:
         DC.B    $20                     ; initial wait loop count
 */
+#include <stdbit.h>
+
 #include "ali_baba.h"
 
 /* The number of ROM WAIT calls TIMED_WAIT makes while a specific
@@ -1948,6 +1950,15 @@ static void mob_attack(void);
 static void process_entity_script(void);
 static void event_prng_check(void);
 
+/* The original tests only the high byte of a pointer the group walk
+ * leaves, so a pointer into page 0 counts as none. */
+#define IN_PAGE_0(p) ((uint16_t)(p) < 0x0100)
+
+/* Returns the defense in bits 4-1 of a mob's strength byte. */
+static uint8_t defense(const struct mob *m) {
+    return (m->strength >> 1) & 0x0F;
+}
+
 /* ---- Who is where, and who is hostile -------------------------------- */
 
 /* Looks through MOB_PTR's cell for a mob that is conscious and hostile
@@ -1969,8 +1980,7 @@ uint8_t check_encounter(uint8_t pos) {
                 result = 1;
                 break;
             }
-            uint8_t hp = MOB_PTR->life & HP_MASK;
-            if (hp >= 3 && check_hostile(ref)) {
+            if ((MOB_PTR->life & HP_MASK) >= 3 && check_hostile(ref)) {
                 result = 2;
                 break;
             }
@@ -2041,8 +2051,7 @@ uint8_t check_adjacent_threats(uint8_t pos) {
         sum_hostile_at_pos(pos - MAP_WIDTH);
     if (pos < MAP_WIDTH * (MAP_HEIGHT - 1))
         sum_hostile_at_pos(pos + MAP_WIDTH);
-    uint8_t defense = (ENTITY_PTR->strength >> 1) & 0x0F;
-    return defense >= ADJACENT_THREAT;
+    return defense(ENTITY_PTR) >= ADJACENT_THREAT;
 }
 
 /* Adds the strength of each mob at `pos` that is hostile to ENTITY_PTR
@@ -2089,11 +2098,7 @@ void pick_random_member(void) {
     do {
         uint8_t count = CHAR_PTR->pc_count;
         if (count == 0) {
-            /* This stores count, which is 0, as the original does. A
-             * constant 0 makes c6502 address MOB_PTR's fields in the
-             * loop below through a copy of the pointer (see
-             * notes/combat.md). */
-            MOB_PTR = (struct mob *)(uint16_t)count;
+            MOB_PTR = nullptr;
             return;
         }
         n = random_in_range(count);
@@ -2131,12 +2136,7 @@ static void apply_damage(struct mob *rec, uint8_t damage) {
     set_cursor_row21();
     /* The message is 4 for a blow of 0 or 1, and one more for each
      * further bit of the blow, up to 8 for 16-31. */
-    uint8_t msg = 3;
-    do {
-        msg++;
-        damage >>= 1;
-    } while (damage != 0);
-    display_message(msg);
+    display_message(3 + stdc_bit_width_uc(damage | 1));
     tune_player(TUNE_COMBAT_DAMAGE, DAMAGE_AMOUNT);
 
     uint8_t life = rec->life;
@@ -2146,17 +2146,12 @@ static void apply_damage(struct mob *rec, uint8_t damage) {
         DAMAGE_AMOUNT = left;
         rec->life = (life & HP_FLAGS_MASK) | left;
         set_cursor_row21();
-        if (left < 3) {
+        if (left < 3)
             rec->flags = (rec->flags & 0xF8) | FLAGS_ENGAGED_BIT;
-            print_entity_name(rec);
-            display_message(MSG_FEELING_WEAK);
-        } else if (left < 8) {
-            print_entity_name(rec);
-            display_message(MSG_LOTS_OF_FIGHT);
-        } else {
-            print_entity_name(rec);
-            display_message(MSG_HIT_WALL);
-        }
+        print_entity_name(rec);
+        display_message(left < 3 ? MSG_FEELING_WEAK
+                        : left < 8 ? MSG_LOTS_OF_FIGHT
+                        : MSG_HIT_WALL);
         return;
     }
 
@@ -2166,11 +2161,7 @@ static void apply_damage(struct mob *rec, uint8_t damage) {
         tune = TUNE_NPC_DEATH;
     }
     print_entity_name(rec);
-    if (random_in_range(3) != 0)
-        msg = 0x0E;
-    else
-        msg = 0x27 + random_in_range(2);
-    display_message(msg);
+    display_message(random_in_range(3) != 0 ? 0x0E : 0x27 + random_in_range(2));
     tune_player(tune, 0);
 
     ACTIVE_CHAR = 0;
@@ -2206,19 +2197,17 @@ static void increment_hp(void) {
 }
 
 /* Half the time, adds 1 to the life of an ENTITY_PTR below 40 and keeps
- * adding while the PRNG's output is from $50 to $CF, which the
- * original's signed comparison with $50 selects. A player character
+ * adding while the PRNG's output is $50 or more. A player character
  * that wasn't announced on reaching 3 then gets a message of its own. */
 void auto_heal(void) {
-    uint8_t hp = ENTITY_PTR->life & HP_MASK;
-    if (hp >= 40)
+    if ((ENTITY_PTR->life & HP_MASK) >= 40)
         return;
     if (random_in_range(1) == 0)
         return;
     HEAL_NOTIFIED = 0;
     do {
         increment_hp();
-    } while ((int8_t)(step_prng() - 0x50) >= 0);
+    } while (step_prng() >= 0x50);
     if (ENTITY_PTR->appearance < NPC_APPEARANCE_MIN && HEAL_NOTIFIED == 0) {
         set_cursor_row21();
         print_mob_name();
@@ -2301,17 +2290,13 @@ uint8_t find_attack_target(void) {
 }
 
 /* Copies MOB_PTR's name into the attack menu's 20 places, with $20 after
- * the name's end. The count of characters left is tested as a signed
- * byte, as in the original. */
+ * the name's end. The original's test for the end is a signed one of
+ * the length less the place's index. */
 void init_attack_display(void) {
     const uint8_t *name = MOB_PTR->name;
-    uint8_t left = name[0];
-    for (uint8_t i = 1; i <= 20; i++) {
-        uint8_t c = name[i];
-        if ((int8_t)--left < 0)
-            c = 0x20;
-        S_ATTACK_TARGET.name[i] = c;
-    }
+    uint8_t length = name[0];
+    for (uint8_t i = 1; i <= 20; i++)
+        S_ATTACK_TARGET.name[i] = (int8_t)(length - i) >= 0 ? name[i] : 0x20;
 }
 
 uint8_t select_someone_else(void) {
@@ -2333,38 +2318,37 @@ void resolve_attack(void) {
     if (IS_PLAYER_TURN == 1) {
         COMBAT_WILLINGNESS = 28;
     } else {
+        /* The sum runs from -22 to 111, so it doesn't wrap. */
         uint8_t level = ENTITY_PTR->level;
-        COMBAT_WILLINGNESS = level & LEVEL_MASK;
+        int8_t willingness = level & LEVEL_MASK;
         if (level & 0x20) {
             /* The original clears bit 4, the top bit of the level, and
              * leaves the rage bit set. */
             ENTITY_PTR->level = level & 0xEF;
-            COMBAT_WILLINGNESS += 24;
+            willingness += 24;
         }
-        uint8_t target_level = MOB_PTR->level;
-        if (target_level & 0x40)
-            COMBAT_WILLINGNESS -= 4;
-        if (target_level & 0x80)
-            COMBAT_WILLINGNESS += 8;
-        uint8_t flags = MOB_PTR->flags;
-        if (flags & FLAGS_ENGAGED_BIT)
-            COMBAT_WILLINGNESS += 6;
-        switch (flags & FLAGS_STATE_MASK) {
-        case 0: COMBAT_WILLINGNESS += 3; break;
-        case 1: COMBAT_WILLINGNESS -= 1; break;
-        case 3: COMBAT_WILLINGNESS -= 3; break;
+        if (MOB_PTR->level & 0x40)
+            willingness -= 4;
+        if (MOB_PTR->level & 0x80)
+            willingness += 8;
+        if (MOB_PTR->flags & FLAGS_ENGAGED_BIT)
+            willingness += 6;
+        switch (MOB_PTR->flags & FLAGS_STATE_MASK) {
+        case 0: willingness += 3; break;
+        case 1: willingness -= 1; break;
+        case 3: willingness -= 3; break;
         }
-        uint8_t hp = MOB_PTR->life & HP_MASK;
-        if (hp < 3)
-            COMBAT_WILLINGNESS += 24;
+        if ((MOB_PTR->life & HP_MASK) < 3)
+            willingness += 24;
         if (ENTITY_PTR->pos == MOB_PTR->pos) {
-            TARGET_DEFENSE = (MOB_PTR->strength >> 1) & 0x0F;
-            COMBAT_WILLINGNESS += ((ENTITY_PTR->strength >> 1) & 0x0F) - TARGET_DEFENSE;
+            TARGET_DEFENSE = defense(MOB_PTR);
+            willingness += defense(ENTITY_PTR) - TARGET_DEFENSE;
         }
-        if ((int8_t)COMBAT_WILLINGNESS < 0)
-            COMBAT_WILLINGNESS = 0;
-        else if (COMBAT_WILLINGNESS >= 31)
-            COMBAT_WILLINGNESS = 30;
+        if (willingness < 0)
+            willingness = 0;
+        else if (willingness > 30)
+            willingness = 30;
+        COMBAT_WILLINGNESS = willingness;
     }
 
     if (random_in_range(31) <= COMBAT_WILLINGNESS) {
@@ -2392,25 +2376,21 @@ void resolve_attack(void) {
     plays scene 1, and adds 1-11 to the strength, up to 31.
 */
 static void calc_combat_strength(void) {
-    uint8_t weapon = MFIELD_ATTACK;
+    uint8_t *weapon = &ENTITY_PTR->sword;
     if (IS_PLAYER_TURN != 1 && MOB_PTR->pos == ENTITY_PTR->pos)
-        weapon = MFIELD_DEFENSE;
-    uint8_t *attacker = (uint8_t *)ENTITY_PTR;
-    uint8_t skill = attacker[weapon] & 0x0F;
-    COMBAT_STRENGTH = random_in_range(skill);
-    COMBAT_STRENGTH += random_in_range(skill) + 1;
+        weapon = &ENTITY_PTR->dagger;
+    uint8_t skill = *weapon & 0x0F;
+    COMBAT_STRENGTH = random_in_range(skill) + random_in_range(skill) + 1;
 
     if (CHAR_AI_MODE != 0 || IS_PLAYER_TURN != 0)
         return;
-    if (random_in_range((attacker[weapon] & 0x80) ? 0x50 : 0x0D) != 0)
+    if (random_in_range((*weapon & 0x80) ? 0x50 : 0x0D) != 0)
         return;
-    attacker[weapon] = 0x81;
+    *weapon = 0x81;
     set_cursor_row21();
     scene_loop(1);
     uint8_t strength = random_in_range(10) + COMBAT_STRENGTH + 1;
-    if (strength >= 31)
-        strength = 31;
-    COMBAT_STRENGTH = strength;
+    COMBAT_STRENGTH = strength < 31 ? strength : 31;
 }
 
 /* Prints the verb for an attack of strength `value`. Verbs 1-7 are for
@@ -2469,8 +2449,7 @@ static void player_attack(void) {
                 if (sub < 0x1F) {
                     process_entity_script();
                     set_cursor_row21();
-                    uint8_t kept = target->value & 0x1F;
-                    if (kept < 0x1B) {
+                    if ((target->value & 0x1F) < 0x1B) {
                         scene_loop(3);
                         event_prng_check();
                         return;
@@ -2524,7 +2503,9 @@ static void process_entity_script(void) {
 /* Makes ENTITY_PTR's attack on the mob MOB_PTR. The target's armor
  * (bits 3-0 of its armor byte) is taken off the strength, and bit 7 of
  * that byte picks the message. The original's comment calls MOB_PTR
- * the attacker, which the code doesn't bear out. */
+ * the attacker, which the code doesn't bear out. The original tests
+ * the strength left with a signed comparison, which agrees with the
+ * unsigned one here because the strength is 1-31 and the armor 1-15. */
 static void mob_attack(void) {
     calc_combat_strength();
     set_cursor_row21();
@@ -2546,12 +2527,11 @@ static void mob_attack(void) {
     scroll_status_line();
     uint8_t msg = (MOB_DEFENSE & 0x80) ? 0x17 : 0x18;
     MOB_DEFENSE &= 0x0F;
-    uint8_t through = COMBAT_STRENGTH - MOB_DEFENSE;
-    if (through != 0 && (int8_t)through >= 0) {
-        COMBAT_STRENGTH = through;
+    if (COMBAT_STRENGTH > MOB_DEFENSE) {
+        COMBAT_STRENGTH -= MOB_DEFENSE;
         display_message(msg);
         apply_damage_to_mob(COMBAT_STRENGTH);
-    } else if ((uint8_t)(MOB_PTR->life & HP_MASK) < 3) {
+    } else if ((MOB_PTR->life & HP_MASK) < 3) {
         display_message(MSG_ENOUGH);
     } else {
         display_message(msg + 2);
@@ -2595,7 +2575,7 @@ uint8_t select_combat_target(void) {
                     }
                 }
                 next_group_member();
-            } while ((uint8_t)((uint16_t)MOB_PTR >> 8) != 0);
+            } while (!IN_PAGE_0(MOB_PTR));
         } else {
             BEST_THREAT = 0;
             first_group_member();
@@ -2606,7 +2586,7 @@ uint8_t select_combat_target(void) {
                     TARGET_PTR = MOB_PTR;
                 }
                 next_group_member();
-            } while ((uint8_t)((uint16_t)MOB_PTR >> 8) != 0);
+            } while (!IN_PAGE_0(MOB_PTR));
         }
         if (BEST_THREAT != 0)
             return 1;
@@ -2635,8 +2615,7 @@ void handle_encounter(struct event *ev) {
     set_char_state(0);
     if (ev->type < EVENT_TYPE_MOB) {
         PRNG_OUTPUT = random_in_range(20);
-        uint8_t strength = ENTITY_PTR->strength & STRENGTH_MASK;
-        if (strength >= PRNG_OUTPUT) {
+        if ((ENTITY_PTR->strength & STRENGTH_MASK) >= PRNG_OUTPUT) {
             ev->type |= 0x40;
             TURN_START_COL = CURRENT_COL;
             TURN_START_ROW = CURRENT_ROW;
@@ -2649,9 +2628,7 @@ void handle_encounter(struct event *ev) {
             display_message(MSG_INSERT_DISK);
             return;
         }
-        /* The original compares $74 with the PRNG's output as signed
-         * numbers, so outputs from $75 to $F4 play the scene. */
-        if ((int8_t)(0x74 - step_prng()) < 0) {
+        if (step_prng() > 0x74) {
             set_cursor_row21();
             scene_loop(9);
             apply_damage_to_current(1);
@@ -2733,8 +2710,7 @@ uint8_t handle_event_slot(struct event *ev) {
 
     tune_player(TUNE_ENTITY_INTERACTION, 0);
     if (kind == 0) {
-        uint8_t sub = EVENT_SLOT_BYTE & 0x1F;
-        if (sub >= 0x1B) {
+        if ((value & 0x1F) >= 0x1B) {
             show_locked_msg();
             return CHAIN_RETURN;
         }
@@ -2748,31 +2724,28 @@ uint8_t handle_event_slot(struct event *ev) {
 
     if (kind != 0x40) {
         PRNG_OUTPUT = random_in_range(0x19);
-        uint8_t strength = ENTITY_PTR->strength & STRENGTH_MASK;
-        if (strength < PRNG_OUTPUT) {
+        if ((ENTITY_PTR->strength & STRENGTH_MASK) < PRNG_OUTPUT) {
             set_cursor_row21();
             display_message(MSG_HEAVY_ROCK);
-            ev->value = (EVENT_SLOT_BYTE & 0x3F) | 0x40;
+            ev->value = (value & 0x3F) | 0x40;
             event_prng_check();
             return CHAIN_RETURN;
         }
     }
 
-    EVENT_SUB_VALUE = EVENT_SLOT_BYTE & 0x1F;
-    bool keep = false;
+    uint8_t sub = value & 0x1F;
+    EVENT_SUB_VALUE = sub;
     set_cursor_row21();
-    if (EVENT_SUB_VALUE < 0x1B) {
+    if (sub < 0x1B)
         scene_loop(0x13);
-    } else {
+    else
         display_message(MSG_TOPPLES);
-        if (EVENT_SUB_VALUE >= 0x1F) {
-            EVENT_SUB_VALUE--;
-            ev->value = (EVENT_SLOT_BYTE & 0xE0) | EVENT_SUB_VALUE;
-            keep = true;
-        }
-    }
-    if (!keep)
+    if (sub == 0x1F) {
+        EVENT_SUB_VALUE = sub - 1;
+        ev->value = (value & 0xE0) | EVENT_SUB_VALUE;
+    } else {
         ev->pos = EVENT_EMPTY;
+    }
     TURN_START_COL = CURRENT_COL;
     TURN_START_ROW = CURRENT_ROW;
     reset_turn_pos();
@@ -2781,12 +2754,11 @@ uint8_t handle_event_slot(struct event *ev) {
     return CHAIN_RETURN;
 }
 
-/* Springs a trap on ENTITY_PTR when the PRNG's next output is below $14
- * or from $94 up, which the original's signed comparison with $14
- * selects. The trap restricts the mob and costs it 1 or 2 points of
- * life, 2 when bit 6 of the output after that is set. */
+/* Springs a trap on ENTITY_PTR when the PRNG's next output is below
+ * $14. The trap restricts the mob and costs it 1 or 2 points of life, 2
+ * when bit 6 of the output after that is set. */
 static void event_prng_check(void) {
-    if ((int8_t)(step_prng() - 0x14) >= 0)
+    if (step_prng() >= 0x14)
         return;
     set_cursor_row21();
     display_message(MSG_DUST_CLOUD);
@@ -2813,15 +2785,15 @@ uint8_t handle_mob_encounter(void) {
     ADJACENT_THREAT = 0;
     sum_hostile_at_pos(colrow_to_pos(CURRENT_COL, CURRENT_ROW));
     if (ADJACENT_THREAT != 0) {
-        uint8_t courage = (ENTITY_PTR->strength & STRENGTH_MASK) + 0x10 - ADJACENT_THREAT;
-        if ((int8_t)courage < 0)
+        /* The courage runs from -111 to 47 before it is held within
+         * 4-$1C, so it doesn't wrap. */
+        int8_t courage = (ENTITY_PTR->strength & STRENGTH_MASK) + 0x10 - ADJACENT_THREAT;
+        if (courage < 0)
             courage = 4;
-        else if (courage >= 0x1D)
+        else if (courage > 0x1C)
             courage = 0x1C;
-        uint8_t limit = (courage << 2) | 3;
-        /* The original compares the limit with the PRNG's output as
-         * signed numbers. */
-        if ((int8_t)(limit - step_prng()) < 0) {
+        uint8_t limit = 4 * courage + 3;
+        if (step_prng() > limit) {
             set_cursor_row21();
             print_mob_name();
             scroll_status_line();
@@ -2838,7 +2810,7 @@ uint8_t handle_mob_encounter(void) {
 
     /* The walk ends when MOB_PTR's high byte is 0, as in the original. */
     first_group_member();
-    while ((uint8_t)((uint16_t)MOB_PTR >> 8) != 0) {
+    while (!IN_PAGE_0(MOB_PTR)) {
         if (ENTITY_PTR->pos == MOB_PTR->pos)
             set_target_restricted();
         next_group_member();
@@ -2866,7 +2838,7 @@ static void modify_char_stats(struct mob *rec, uint16_t amount, bool add) {
     else
         gold -= amount;
     rec->gold = gold;
-    STAT_SCALE = (uint8_t)(rec->strength << 3);
+    STAT_SCALE = rec->strength << 3;
     uint8_t speed = rec->speed;
     uint8_t levels = (speed & 0x0F) + (speed >> 4);
     STAT_LEVEL_BITS = 0;

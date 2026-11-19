@@ -16,16 +16,18 @@ Every routine UNITS.md gives the unit, from `main.asm` lines 3434-3528,
 | BROWSE_HANDLER $7194 | `browse_handler()` |
 | the body DISPLAY_SHOP and BROWSE_HANDLER share | the static `show_item()`, `next_slot()`, and `current_slot()` |
 | SHOP_BUY_HANDLER $71AC | `shop_buy_handler()` |
-| ADVANCE_SHOP_PTR $71F0 | the loop in `display_shop` that steps `shop` |
-| ADD_PRICE_COMPONENT $71FC | the loop in `show_item` that multiplies the price |
+| ADVANCE_SHOP_PTR $71F0 | the index into SHOP_TABLE in `display_shop` |
+| ADD_PRICE_COMPONENT $71FC | the multiplication of the price in `show_item` |
 | SHOP_BUY_EFFECT_0-4, APPLY_SHOP_EFFECT $720B-$7248 | the static `apply_shop_effect(n)` |
 | XP_AWARD_0-4, AWARD_XP, EXTRACT_PENDING_XP $7249-$72A6 | the static `award_xp(n)` and `pending_xp(armor)` |
 
 The unit defines no movable table of the original's. It reads
 SHOP_TABLE, SHOP_EFFECT_TABLE, and XP_AWARD_TABLE where the header puts
-them, and adds two tables of its own, `WEAPON_EFFECT_ADDRS` and
-`ARMOR_EFFECT_ADDRS`, which hold the ten handler addresses that
-shop_buy_handler compares a slot's word with. Every routine is
+them, and adds three tables of its own. `WEAPON_EFFECT_ADDRS` and
+`ARMOR_EFFECT_ADDRS` hold the ten handler addresses that
+shop_buy_handler compares a slot's word with, and `REVERSE_DIR` holds
+the direction back from each direction, which NPC_MOVE_AI computes
+with an XOR. Every routine is
 translated, and none is left incomplete.
 
 ## Departures
@@ -40,14 +42,15 @@ The file's opening comment lists them. In short:
   $BE, $BF, and NUM_VALUE are parameters and locals.
 - UNITS.md proposes `static uint8_t shop_number` in place of
   SHOP_DATA_PTR. The C keeps the pointer as the static `shop`, which
-  display_shop steps one record at a time from SHOP_TABLE, as
-  ADVANCE_SHOP_PTR does. `&SHOP_TABLE[n]` multiplies by the record's
-  41 bytes, which calls `mul8` (see below), and a pointer saves
-  computing the address on every menu round trip. Types $D7-$DA step
+  display_shop sets to `&SHOP_TABLE[type - $D5]`, so that the address
+  isn't computed again on every menu round trip. Types $D7-$DA point
   past the table's two records as in the original.
-- The slot is SHOP_ITEM_OFFSET bytes into the record, which the C reads
-  through a byte pointer, because `SHOP_ITEM_OFFSET / 5` would call a
-  runtime helper.
+- The slot is SHOP_ITEM_OFFSET bytes into the record, and the C adds
+  that byte offset to the record's address, since the header keeps
+  SHOP_ITEM_OFFSET at $5A85 as the original's byte offset.
+- The price, which ADD_PRICE_COMPONENT adds up once for each tier and
+  once more, is `slot->price * (tier + 1)`. The multiplication calls
+  `mul16` (see below).
 - SHOP_BUY_HANDLER's `JMP (NUM_VALUE)` is a loop over the two tables of
   addresses that calls `apply_shop_effect(n)` or `award_xp(n)`. A junk
   slot's word, which only the slots that no shipped mask enables hold,
@@ -57,6 +60,12 @@ The file's opening comment lists them. In short:
 - `npc_move_ai` starts its best direction at DIR_NONE. The original
   leaves $BB as it was, but every score is below $7F, so some
   direction always replaces it.
+- The direction back is `REVERSE_DIR[best]`, where the original takes
+  `best ^ 3` for directions 0-2 and `best ^ 7` for 3-4. The table keeps
+  the XOR's DIR_LEFT for DIR_NONE.
+- award_xp lowers the armor in a local and stores it once, where
+  AWARD_XP stores each value it tries. apply_shop_effect stores the
+  weapon once, where SHOP_BUY_EFFECT stores it and then adds the bonus.
 
 The quirks UNITS.md lists are kept. FIND_NEAREST_EVENT returns the
 previous NEAREST_POS when nothing qualifies, the shop's slot search
@@ -92,52 +101,68 @@ are.
 
 ## Compiler bugs and gaps
 
-Items 1, 3, and 4 were fixed on 18 Nov 2026.
+Items 1, 3, and 4 of the earlier list were fixed on 18 Nov 2026: a
+crash on `keep` before a `for (;;)` with a `break`, a `uint16_t` member
+read through a pointer that built the member's address, and a
+comparison of two masked bytes made as a signed 16-bit comparison. The
+earlier item 2, `&SHOP_TABLE[n]` calling `mul8`, compiles inline now,
+as `n * 41` in shifts and adds, so display_shop indexes the table.
 
-1. **A crash on `keep` before a `for (;;)` with a `break`.** This
-   fails in `cfg.build_cfg` with `KeyError: '.loop@0_break'`:
+None of the gaps below is a miscompile.
+
+1. **A byte times a small byte plus 1 calls `mul16`.** show_item's
+   price is a byte times 1-4, whose result takes 16 bits.
 
    ```c
    #include <stdint.h>
-   void f(uint8_t x) {
-       [[c6502::keep]] for (;;) {
-           if (--x == 0) break;
-       }
-   }
+   extern uint16_t PRICE [[c6502::address(0x5A81)]];
+   void f(uint8_t price, uint8_t tier) { PRICE = price * (tier + 1); }
    ```
 
-   Without `keep` it compiles. Sound.c needed a loop of that shape and
-   used `for (; tone_padding++, --x;)` instead (see notes/sound.md).
-   The `break` jumped to the loop's break label without the `_keep`
-   mark the kept loop's labels carry. This was fixed on 18 Nov 2026.
+   compiles to `STA HARGS; TXA; CLC; ADC #1; STA HARGS+2; LDA #0; ADC
+   #0; STA HARGS+3; LDA #0; STA HARGS+1; JSR mul16` and two copies out
+   of HARGS+4 and HARGS+5. The old C added the price tier + 1 times in
+   a loop of 16-bit adds, as the original does, and show_item is 4
+   bytes larger with the call. The call also makes the linked program
+   depend on a runtime helper, which this repository doesn't have as
+   6502 code (UNITS.md, "Compiler gaps", item 6). With `price * (((style
+   >> 5) & 3) + 1)`, where `style` is a parameter, the shift also calls
+   `asr16`, where the shift alone compiles to five `LSR`s.
 
-2. **`&SHOP_TABLE[n]` calls `mul8`.** The record is 41 bytes, which is
-   32 + 8 + 1, and the index is a byte, but the multiplication isn't
-   done inline. display_shop steps a pointer instead.
+2. **A pointer to one of two members of ENTITY_PTR's record is
+   computed as a 16-bit address**, as in notes/combat.md, gap 3.
+   apply_shop_effect's `n < 3 ? &ENTITY_PTR->sword : &ENTITY_PTR->dagger`
+   costs 7 bytes against the old C's field index.
 
-3. **A `uint16_t` member read through a pointer builds the member's
-   address.** `ENTITY_PTR->gold < SHOP_PRICE` compiles to an addition
-   of 13 to ENTITY_PTR into two zero-page pairs and two reads through
-   them, 30 bytes, where `LDY #$0D; LDA (ENTITY_PTR),Y; ... INY; LDA
-   (ENTITY_PTR),Y` would do.
+3. **A compound assignment to a member through a zero-page pointer,
+   with a call on its right side, computes the member's address before
+   the call.**
 
    ```c
-   struct mob { uint8_t pad[13]; uint16_t gold; uint8_t flags; };
+   #include <stdint.h>
+   struct mob { uint8_t pad[11]; uint8_t level; };
    extern struct mob *E [[c6502::zeropage(0xF8)]];
-   extern uint16_t PRICE [[c6502::address(0x5A81)]];
-   uint8_t gold_ok(void) { return E->gold < PRICE; }
+   uint8_t h(uint8_t x);
+   void f(uint8_t x) { E->level |= h(x); }
    ```
 
-4. **A comparison of two masked bytes is done as a signed 16-bit
-   comparison.** `(a & 0x3F) >= (b & 0x1F)` compiles to `SEC; SBC; LDA
-   #0; SBC #0; BVC; EOR #$80; BMI`, although both operands are known
-   to be in 0-63 after the masks and `CMP; BCS` gives the same result.
-   ai_choose_target's mode 2 test has this shape.
+   compiles to `LDA E; CLC; ADC #$0B; STA t; LDA E+1; ADC #0; STA t+1;
+   LDY #0; LDA (t),Y; ...; JSR h; ORA ...; LDY #0; STA (t),Y`, where
+   calling h first and then `LDY #$0B; ORA (E),Y; STA (E),Y` would do,
+   since C leaves the order of the two sides open. award_xp's
+   `ENTITY_PTR->level |= total - pending_xp(armor)` has this shape, and
+   award_xp is 21 bytes larger than the old C, which read the pending
+   amount into a local in its loop.
+
+4. **The static `shop` stays in `.bss`.** With the loop that stepped it
+   gone, `-O` no longer promotes it into zero page, and `shop->scene`
+   copies it into DPTR for the read. display_shop is 11 bytes larger,
+   most of it the inline multiplication by 41 and the copy.
 
 5. **A `switch` on a `uint16_t` with ten cases that share a high byte**
    compiles to a chain that tests the high byte again before every low
    byte. With the switch, shop_buy_handler was 357 bytes. With a loop
-   over two tables of the addresses it is 167 bytes and the tables 20.
+   over two tables of the addresses it is 140 bytes and the tables 20.
 
 6. Smaller things seen in the listing: `STA AI_BEST_DIST; ORA #$00;
    BEQ` sets the flags again after a store that already set them, and
@@ -147,32 +172,39 @@ Items 1, 3, and 4 were fixed on 18 Nov 2026.
 ## Size
 
 Code bytes of the `-S -O` output, from the object's symbol sizes,
-against the original's from `main.lst`. `__zp_init` (7 bytes) stores
-`shop`'s initial value and isn't counted.
+against the original's from `main.lst`.
 
 | Original | Bytes | C | Bytes |
 |---|---|---|---|
-| FIND_NEAREST_EVENT | 78 | find_nearest_event | 96 |
-| MANHATTAN_DISTANCE | 43 | manhattan_distance, manhattan_distance@run2 | 71 |
-| NPC_MOVE_AI | 211 | npc_move_ai | 256 |
-| EVALUATE_DIRECTION, INC_MOB_COUNTERS | 150 | evaluate_direction (and @run1), event_penalty | 166 |
-| AI_CHOOSE_TARGET | 285 | ai_choose_target, join_party | 317 |
-| DISPLAY_SHOP, BROWSE_HANDLER, ADVANCE_SHOP_PTR, ADD_PRICE_COMPONENT | 232 | display_shop, browse_handler, show_item, next_slot (and @run0), current_slot | 315 |
-| SHOP_BUY_HANDLER | 68 | shop_buy_handler | 167 |
-| SHOP_BUY_EFFECT_0-4, APPLY_SHOP_EFFECT | 62 | apply_shop_effect | 59 |
-| XP_AWARD_0-4, AWARD_XP, EXTRACT_PENDING_XP | 94 | award_xp, pending_xp | 88 |
-| **Total** | **1223** | | **1535** |
+| FIND_NEAREST_EVENT | 78 | find_nearest_event | 82 |
+| MANHATTAN_DISTANCE | 43 | manhattan_distance | 66 |
+| NPC_MOVE_AI | 211 | npc_move_ai | 217 |
+| EVALUATE_DIRECTION, INC_MOB_COUNTERS | 150 | evaluate_direction, event_penalty | 174 |
+| AI_CHOOSE_TARGET | 285 | ai_choose_target, join_party | 289 |
+| DISPLAY_SHOP, BROWSE_HANDLER, ADVANCE_SHOP_PTR, ADD_PRICE_COMPONENT | 232 | display_shop, browse_handler, show_item, next_slot (and @run0), current_slot | 321 |
+| SHOP_BUY_HANDLER | 68 | shop_buy_handler | 140 |
+| SHOP_BUY_EFFECT_0-4, APPLY_SHOP_EFFECT | 62 | apply_shop_effect | 63 |
+| XP_AWARD_0-4, AWARD_XP, EXTRACT_PENDING_XP | 94 | award_xp, pending_xp | 107 |
+| **Total** | **1223** | | **1459** |
 
-The C also has 20 bytes of read-only data, the two tables of handler
-addresses. It is 312 bytes (26%) larger in code. The largest losses
-are in show_item and shop_buy_handler, where much of the difference is
-gap 3, the copies of zero-page parameters around calls, and the
-zero-page loop counters of gap 6.
+The C also has 25 bytes of read-only data, the two tables of handler
+addresses and REVERSE_DIR, and the 2 bytes of `shop` in `.bss`. It is
+236 bytes (19%) larger in code. The largest losses are in show_item
+and shop_buy_handler, where much of the difference is the copies of
+zero-page parameters around calls and the zero-page loop counters of
+gap 6.
+
+Before the rewrite of 18 Nov 2026 the unit's code was 1427 bytes, with
+7 bytes of `__zp_init` for `shop` beside it. award_xp grew by 21 bytes
+(gap 3), display_shop by 11 (gap 4), apply_shop_effect by 7 (gap 2),
+and show_item by 4 (gap 1), and npc_move_ai shrank by 13 with
+REVERSE_DIR's 5 bytes in place of the XORs.
 
 ## For the integrator
 
-- `shop` is a zero-initialized static that `-O` promotes into zero page,
-  so `__zp_init` has to run, as for every unit.
+- `shop` is a static in the unit's `.bss`, and ai.c has no `__zp_init`.
+- show_item calls the runtime helper `mul16`, so the program links only
+  with `--defsym` for it (the tests use `sim.linked.defsym_args()`).
 - display_shop, browse_handler, and shop_buy_handler return
   `CHAIN_START_GAME_INPUT`, `CHAIN_START_GAME_INPUT`, and
   `CHAIN_BROWSE_HANDLER` (or `CHAIN_RETURN` from display_shop for an AI

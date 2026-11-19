@@ -21,8 +21,10 @@ find_mob_at_same_pos, get_hostility, sum_hostile_at_pos,
 next_colocated_mob, apply_damage, apply_damage_to_mob, increment_hp,
 load_target_ptr, calc_combat_strength, map_value_to_string,
 player_attack, process_entity_script, mob_attack, get_entity_threat,
-event_prng_check, set_target_restricted, and modify_char_stats.
-ADD_WILLINGNESS is the `+=` on COMBAT_WILLINGNESS where it is called.
+event_prng_check, set_target_restricted, modify_char_stats, and
+defense, which has no routine of its own in the original.
+ADD_WILLINGNESS is the `+=` on resolve_attack's local `willingness`
+where it is called.
 WAIT_LOOP_INIT is `constexpr uint8_t WAIT_LOOP_INIT = 0x20;`.
 
 No routine is left out or incomplete.
@@ -54,11 +56,23 @@ No routine is left out or incomplete.
 - tune_player gets a strength of 0 for every tune other than 1 and 2,
   which ignore it. The original passes whatever Y holds.
 - Where the original compares as signed and both operands are small
-  enough that the result is the same, the C compares unsigned. The
-  comparisons with PRNG_OUTPUT or STEP_PRNG's result keep the signed
-  test, because those bytes take every value (AUTO_HEAL's loop,
+  enough that the result is the same, the C compares unsigned. That
+  includes the comparisons with STEP_PRNG's result (AUTO_HEAL's loop,
   HANDLE_ENCOUNTER's roll against $74, HANDLE_MOB_ENCOUNTER's roll
-  against the courage limit, and EVENT_PRNG_CHECK).
+  against the courage limit, and EVENT_PRNG_CHECK), since STEP_PRNG
+  returns the state shifted right by one, 0-127. MOB_ATTACK's test of
+  the strength left after the armor is `COMBAT_STRENGTH > MOB_DEFENSE`,
+  since the strength is 1-31 and the armor 1-15.
+- RESOLVE_ATTACK's willingness and HANDLE_MOB_ENCOUNTER's courage are
+  `int8_t` locals, which the C stores in COMBAT_WILLINGNESS once it is
+  held within 0-30. The willingness runs from -22 to 111 and the
+  courage from -111 to 47 before they are held, so neither wraps.
+- APPLY_DAMAGE's message for the size of the blow, which the original
+  counts with a loop of RORs, is `3 + stdc_bit_width_uc(damage | 1)`.
+- CALC_COMBAT_STRENGTH's field index is a pointer to the sword or the
+  dagger member. The defense, bits 4-1 of the strength byte, is the
+  static `defense(m)`, which check_adjacent_threats and resolve_attack
+  call.
 - get_entity_threat returns 0 for a distance of 2 or more. The original
   returns 2 for 129 or more, which MANHATTAN_DISTANCE can't return
   (column 19 and row 12 are the largest).
@@ -116,118 +130,167 @@ it is.
 
 ## Compiler gaps
 
-Items 1 and 2 were fixed on 18 Nov 2026, and item 3 for a read. A
-store still computes the address. combat.c keeps its workarounds for
-the first two.
+None of these is a miscompile. Each makes the code larger than it has
+to be, and combat.c works around none of them. The comparisons of
+masked bytes, the signed byte's `> 0`, and the computed copy of a
+pointer after a constant store, which combat.c worked around until 18
+Nov 2026, compile to byte tests and `LDY #k; LDA (P),Y` now, so the C
+compares masked bytes in place, writes `COMBAT_STRENGTH > MOB_DEFENSE`,
+and stores `nullptr` in pick_random_member.
 
-None of these is a miscompile. Each makes code larger than it has to
-be, and the first two have workarounds in combat.c.
-
-1. A comparison of a masked byte with a constant, and a signed byte's
-   `> 0`, are made at 16 bits with the overflow test.
-
-   ```c
-   void f(void);
-   void g(uint8_t *p) { if ((p[6] & 0x3F) >= 40) f(); }
-   void h(uint8_t a, uint8_t b) { int8_t d = (int8_t)(a - b); if (d > 0) f(); }
-   ```
-
-   g compiles to `AND #$3F; LDY #0; SEC; SBC #$28; TYA; SBC #0; BVC;
-   EOR #$80; BMI`, where `uint8_t v = p[6] & 0x3F; if (v >= 40)` gives
-   `AND #$3F; CMP #$28; BCC`. h sign-extends d and subtracts it from 0
-   at 16 bits. combat.c puts each masked byte in a `uint8_t` local, or
-   casts it to `uint8_t`, before comparing it (eight places), and writes `d > 0` as `d != 0 && (int8_t)d >=
-   0` (mob_attack), which compiles to byte tests.
-
-2. Storing a constant to a zero-page pointer global makes every field
-   access through that pointer in the same function go through a
-   computed copy of the pointer.
-
-   ```c
-   struct mob { uint8_t a, b, c, d, look; };
-   extern struct mob *P [[c6502::zeropage(0xF4)]];
-   void next(void);
-   void walk(uint8_t n) {
-       if (n == 0) { P = 0; return; }
-       while (P->look >= 0x15) next();
-   }
-   ```
-
-   The loop compiles to `LDA P; CLC; ADC #4; STA t; LDA P+1; ADC #0;
-   STA t+1; LDY #0; LDA (t),Y` in place of `LDY #4; LDA (P),Y`.
-   Storing a variable that holds 0 (`P = (struct mob *)(uint16_t)n;`)
-   gives `LDY #4; LDA (P),Y`. pick_random_member stores its count,
-   which is 0 there, as the original does with `STA MOB_PTR`.
-
-3. A 16-bit member read or written through a pointer parameter is
-   reached through a computed pointer to the member, and a second copy
-   of it in DPTR, where `LDY #13; LDA (r),Y; ... INY` would do.
+1. A 16-bit member read or written through a pointer parameter takes
+   the second byte through a copy of the pointer in DPTR, where `INY`
+   and the same pointer would do.
 
    ```c
    struct rec { uint8_t pad[13]; uint16_t gold; };
    uint16_t get(struct rec *r) { return r->gold; }
    ```
 
-   compiles to 19 bytes of address arithmetic and copies before the
-   two loads. This costs modify_char_stats and apply_damage about 20
-   bytes each. No workaround is in combat.c.
+   compiles to `STA r; STX r+1; STA DPTR; STX DPTR+1; LDY #$0D; LDA
+   (r),Y; STA r; INY; LDA (DPTR),Y`. modify_char_stats and apply_damage
+   pay for it.
+
+2. The test that a pointer is out of page 0, `(uint16_t)p >= 0x0100`
+   (`IN_PAGE_0`), compiles to `SEC; LDA p+1; SBC #1; BCS`, 3 bytes
+   more than `LDA p+1; BNE`.
+
+   ```c
+   struct mob { uint8_t a, b; };
+   extern struct mob *P [[c6502::zeropage(0xF4)]];
+   void next(void);
+   void walk(void) { do next(); while ((uint16_t)P >= 0x0100); }
+   ```
+
+   This costs select_combat_target 6 bytes and handle_mob_encounter
+   3.
+
+3. A pointer to one of two members of the record a zero-page pointer
+   points at is computed as a 16-bit address, where the member's
+   offset in Y would do.
+
+   ```c
+   struct mob { uint8_t pad[7]; uint8_t sword, armor, dagger; };
+   extern struct mob *E [[c6502::zeropage(0xF8)]];
+   void set(uint8_t n, uint8_t v) {
+       uint8_t *w = n < 3 ? &E->sword : &E->dagger;
+       *w = v;
+   }
+   ```
+
+   compiles to an `LDA E; CLC; ADC #k; STA w; LDA E+1; ADC #0; STA
+   w+1` for each member and `LDY #0; STA (w),Y`. The field index of the
+   old C (`LDA #7` or `LDA #9` into a byte, then `LDY k; STA (E),Y`)
+   was 5 bytes shorter in calc_combat_strength.
+
+4. `stdc_bit_width_uc(x | 1)` compiles to a loop with its test at the
+   top and a separate count, and the `3 +` around it is a separate add.
+
+   ```c
+   #include <stdbit.h>
+   void show(uint8_t m);
+   void f(uint8_t d) { show(3 + stdc_bit_width_uc(d | 1)); }
+   ```
+
+   gives `ORA #1; STA t; LDA #0; STA n; JMP test; body: LSR t; INC n;
+   test: LDA t; BNE body; LDA #3; CLC; ADC n`, 24 bytes. The operand
+   is nonzero, so a loop with its test at the bottom and the count
+   starting at 3 (`ORA #1; STA t; LDA #3; STA n; loop: INC n; LSR t;
+   BNE loop; LDA n`) gives the same result in 16. The old C's loop was
+   that one without the `ORA`.
+
+5. An `int8_t` that a branch has shown to be nonnegative is compared
+   with a positive constant with the overflow test.
+
+   ```c
+   void f(void);
+   void g(int8_t c) { if (c < 0) return; if (c > 0x1C) f(); }
+   ```
+
+   The second test compiles to `SEC; SBC #$1D; BVC; EOR #$80; BMI`,
+   where `CMP #$1D; BCC` gives the same result. This costs
+   handle_mob_encounter 5 bytes.
+
+6. `(int8_t)(length - i) >= 0` in a loop over `i` is computed afresh
+   in each pass, where a counter stepped down with `i` (the old C's
+   `DEC left; BPL`) is 5 bytes shorter in init_attack_display, and the
+   `?:` that picks the byte jumps over its second arm.
+
+   ```c
+   extern uint8_t OUT [[c6502::address(0x7000)]][21];
+   void f(const uint8_t *name) {
+       uint8_t length = name[0];
+       for (uint8_t i = 1; i <= 20; i++)
+           OUT[i] = (int8_t)(length - i) >= 0 ? name[i] : 0x20;
+   }
+   ```
 
 ## Size
 
-combat.c's code is 3146 bytes in the `-O` output, against the
-original's 2856 bytes for the same routines (UNITS.md's sizes, from
-main.lst), 290 bytes or 10% more. The compiler factors code shared by
-several functions into `name@runN` pieces, and the table counts each
-piece under the function whose name it carries, so a function that
-lends its pieces to others looks larger than it is.
+combat.c's code is 2992 bytes in the `-O` output, from the object's
+symbol sizes, against the original's 2856 bytes for the same routines
+(UNITS.md's sizes, from main.lst), 136 bytes or 4.8% more. The
+compiler factors code shared by several functions into `name@runN`
+pieces, and the table counts each piece under the function whose name
+it carries, so a function that lends its pieces to others looks larger
+than it is.
 
 | Routine | Original | C |
 |---|---|---|
-| check_encounter | 71 | 88 |
-| find_mob_at_same_pos | 69 | 73 |
-| check_hostile | 50 | 60 |
-| get_hostility | 14 | 16 |
-| check_adjacent_threats | 88 | 75 |
-| sum_hostile_at_pos | 59 | 64 |
-| apply_damage | 211 | 302 |
-| map_value_to_string | 53 | 72 |
-| pick_random_member | 42 | 46 |
-| apply_damage_to_current | 13 | 11 |
-| apply_damage_to_mob | 13 | 11 |
-| auto_heal | 67 | 63 |
+| check_encounter | 71 | 77 |
+| find_mob_at_same_pos | 69 | 71 |
+| check_hostile | 50 | 58 |
+| get_hostility | 14 | 14 |
+| check_adjacent_threats | 88 | 70 |
+| sum_hostile_at_pos | 59 | 58 |
+| apply_damage | 211 | 276 |
+| map_value_to_string | 53 | 68 |
+| pick_random_member | 42 | 44 |
+| apply_damage_to_current | 13 | 9 |
+| apply_damage_to_mob | 13 | 9 |
+| auto_heal | 67 | 58 |
 | increment_hp | 33 | 36 |
-| enter_combat_state | 22 | 24 |
-| start_combat | 11 | 13 |
+| enter_combat_state | 22 | 22 |
+| start_combat | 11 | 11 |
 | attack_right, _left, _up, _down | 18 | 39 |
-| find_attack_target | 77 | 61 |
-| init_attack_display | 39 | 44 |
+| find_attack_target | 77 | 64 |
+| init_attack_display | 39 | 49 |
 | select_someone_else | 6 | 6 |
-| check_attack_eligible | 38 | 39 |
+| check_attack_eligible | 38 | 35 |
 | next_colocated_mob | 33 | 33 |
-| resolve_attack and add_willingness | 248 | 278 |
-| calc_combat_strength | 113 | 143 |
-| player_attack | 248 | 314 |
-| process_entity_script | 23 | 23 |
-| mob_attack | 132 | 117 |
+| resolve_attack and add_willingness | 248 | 259 |
+| defense | | 12 |
+| calc_combat_strength | 113 | 135 |
+| player_attack | 248 | 274 |
+| process_entity_script | 23 | 25 |
+| mob_attack | 132 | 124 |
 | select_combat_target | 149 | 145 |
-| get_entity_threat | 36 | 43 |
+| get_entity_threat | 36 | 40 |
 | load_target_ptr | 16 | 16 |
-| handle_encounter | 240 | 253 |
-| show_locked_msg | 19 | 17 |
-| handle_event_slot and event_prng_check | 269 | 268 |
-| handle_mob_encounter | 169 | 150 |
+| handle_encounter | 240 | 228 |
+| show_locked_msg | 19 | 13 |
+| handle_event_slot and event_prng_check | 269 | 264 |
+| handle_mob_encounter | 169 | 163 |
 | set_target_restricted | 9 | 9 |
-| check_threats_here | 12 | 21 |
-| modify_char_stats | 135 | 162 |
+| check_threats_here | 12 | 16 |
+| modify_char_stats | 135 | 151 |
 | modify_current_stats | 11 | 11 |
-| Total | 2856 | 3146 |
+| Total | 2856 | 2992 |
 
-The ATTACK_ entries are 11 bytes each in C against the original's 5,
-since each is an increment, a branch, and two jumps. Much of
-apply_damage's and player_attack's excess is the stores of each
-argument into its callee's zero-page slot, where the original passes
-it in A or leaves it in EFFECT_REC, and apply_damage also pays for
-gap 3.
+The original computes the defense inline in CHECK_ADJACENT_THREATS and
+RESOLVE_ATTACK. The ATTACK_ entries are 11 bytes each in C against the
+original's 5, since each is an increment, a branch, and two jumps.
+Much of apply_damage's and player_attack's excess is the stores of
+each argument into its callee's zero-page slot, where the original
+passes it in A or leaves it in EFFECT_REC, and apply_damage also pays
+for gaps 1 and 4.
+
+Before the rewrite of 18 Nov 2026, which removed the workarounds and
+wrote the comparisons, the clamps, and the field accesses as plain C,
+the unit's code was 2973 bytes. The routines that grew most are
+init_attack_display (+5, gap 6), calc_combat_strength (+5, gap 3),
+handle_mob_encounter (+8, gap 5), select_combat_target (+6, gap 2), and
+apply_damage (+4, gap 4), and resolve_attack shrank by 13.
 
 ## For the integrator
 
@@ -238,4 +301,4 @@ gap 3.
 - PLAYER_ATTACK and PICK_RANDOM_MEMBER reach $0000-$0004 through
   MOB_PTR = 0 or 1, as the header's NULL_PAGE_LOW reservation expects.
 - combat.c uses DPTR (`$24`/`$25` in the classic layout) through the
-  compiler's own code for gap 3.
+  compiler's own code for gap 1.

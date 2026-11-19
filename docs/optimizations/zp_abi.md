@@ -50,9 +50,15 @@ Not every parameter gets a slot:
   first instructions copy it into a local of its own
   (`tac_to_asm._register_param_locals`), which the register allocator
   keeps in the register when it can and in the function's pool
-  otherwise. The copies from A come first, and the local is never put
-  in a register another parameter arrives in, so no copy overwrites a
-  register another copy still reads (`optimizer._entry_register_limits`).
+  otherwise. The copies from A come first, and no byte of the local
+  is put in a register another byte arrives in, so no copy overwrites
+  a register another copy still reads (`optimizer._entry_register_limits`).
+  A byte may stay in the register it arrives in, so the high byte of
+  an `unsigned int` arriving in A and X stays in X:
+  `unsigned int widen(unsigned int y) { return y - k; }` is `SEC; SBC
+  k; BCS skip; DEX; skip: RTS`, where until 19 Nov 2026 both bytes
+  were kept out of X and the high byte went through Y, 19 bytes in
+  all.
 - A parameter declared `[[c6502::zeropage(addr)]]` is at that
   address. Its bytes are kept off everything else of the compiler's.
   A function defined here copies such a parameter into a local as it

@@ -24,7 +24,6 @@ GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
 __local_add_and_update_score__bcd_points_1	EQU	$80
-__local_row_to_addr__row	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
@@ -415,9 +414,8 @@ put_status_draw:
 row_to_addr:
    SUBROUTINE
 
-   STA   __local_row_to_addr__row
    STX   __local_row_to_addr__page
-   LDX   __local_row_to_addr__row
+   TAX
    LDA   ROW_TO_OFFSET_LO,X
    STA   __local_row_to_addr__0
    LDA   ROW_TO_OFFSET_HI,X

@@ -826,12 +826,17 @@ def _erase_bool(decls, symbols, types) -> None:
     holding 0 or 1, so the back end needs no `bool` of its own. The
     expression nodes keep their `bool`, so translating the program
     again still lowers its conversions."""
-    from passes.type_checking import FunAttr
+    from passes.type_checking import FunAttr, LocalAttr, StaticAttr
     for _, sym in symbols.items():
         if (isinstance(sym.attrs, FunAttr)
                 and isinstance(sym.type, c99_ast.FunType)
                 and isinstance(_unqualified(sym.type.ret), c99_ast.Bool)):
             sym.attrs = dataclasses.replace(sym.attrs, returns_bool=True)
+        if (isinstance(sym.attrs, (LocalAttr, StaticAttr))
+                and isinstance(_unqualified(sym.type), c99_ast.Bool)):
+            # The byte holds 0 or 1, which `!` can flip with an `^ 1`
+            # (passes/optimization/lnot_jump_fold.py).
+            sym.attrs = dataclasses.replace(sym.attrs, was_bool=True)
         sym.type = _bool_to_uchar(sym.type)
     if types is not None:
         for _, layout in types.items():

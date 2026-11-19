@@ -266,9 +266,193 @@ def _is_a(op) -> bool:
     return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
 
 
+# The branch on N or Z that replaces a branch on C after `CMP #k`,
+# keyed by k and the branch's condition, when N and Z were set from
+# the register. `CMP #$80` sets C to bit 7, which N holds, and `CMP
+# #1` sets C when the register isn't 0, which Z tells.
+_BRANCH_FOR_COMPARE = {
+    (0x80, asm_ast.CS): asm_ast.MI, (0x80, asm_ast.CC): asm_ast.PL,
+    (0x01, asm_ast.CS): asm_ast.NE, (0x01, asm_ast.CC): asm_ast.EQ,
+}
+
+
+def _compares_as_flags(instrs) -> dict[int, asm_ast.Type_instruction | None]:
+    """The rewrites of a compare with $80 or 1 whose branch on C can
+    branch on N or Z instead: each dropped instruction's index to None
+    and the branch's to the new branch.
+
+    `CMP #$80; BCS L` (`CPX`, `CPY`) becomes `BMI L`, and `BCC` `BPL`,
+    when the instruction that set the register set N and Z from it
+    (`_flags_from`). `CMP #1; BCC L` becomes `BEQ L`, and `BCS` `BNE`.
+    The compare writes N, Z, and C and nothing else, so N, Z, and C
+    must be dead after the branch on both paths, since they now hold
+    what the load set and C what it held before.
+
+    `SEC; SBC #1; BCC L` on A becomes `BEQ L` the same way (`BCS`:
+    `BNE`), with the `SEC` before the `SBC` or before the load whose
+    flags reach it gone too. The subtract also writes A and V, so
+    those must be dead after the branch as well. `LDA MOB_PTR+1; SBC
+    #1; BCS loop` ends three loops over a group in Ali Baba."""
+    from passes.asm_liveness import (
+        a_dead_at, c_dead_at, flags_dead_at, v_dead_at,
+    )
+    labels = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    refs = _label_refs(instrs)
+    refs[_TABLE_TARGETS] = {
+        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
+        for t in ins.targets
+    }
+    out: dict[int, asm_ast.Type_instruction | None] = {}
+    for c, ins in enumerate(instrs[:-1]):
+        branch = instrs[c + 1]
+        if not (isinstance(branch, asm_ast.Branch)
+                and isinstance(branch.cond, (asm_ast.CC, asm_ast.CS))
+                and branch.target in labels):
+            continue
+        both = (c + 2, labels[branch.target])
+        if not all(flags_dead_at(instrs, k) and c_dead_at(instrs, k)
+                   for k in both):
+            continue
+        drop: list[int] = [c]
+        if (isinstance(ins, asm_ast.Compare)
+                and isinstance(ins.left, asm_ast.Reg)
+                and isinstance(ins.right, asm_ast.Imm)):
+            k = ins.right.value & 0xFF
+            reg = ins.left
+            at = c
+        elif (isinstance(ins, asm_ast.Sub) and _is_a(ins.dst)
+                and isinstance(ins.src, asm_ast.Imm)
+                and ins.src.value & 0xFF == 1
+                and all(a_dead_at(instrs, j) and v_dead_at(instrs, j)
+                        for j in both)):
+            k, reg = 1, ins.dst
+            if c >= 1 and isinstance(instrs[c - 1], asm_ast.SetCarry):
+                drop.append(c - 1)
+                at = c - 1
+            elif (c >= 2 and isinstance(instrs[c - 2], asm_ast.SetCarry)
+                    and isinstance(instrs[c - 1], asm_ast.Mov)
+                    and _is_a(instrs[c - 1].dst)):
+                # `SEC; LDA m; SBC #1`: the load sets N and Z.
+                drop.append(c - 2)
+                at = c
+            else:
+                continue
+        else:
+            continue
+        new_cond = _BRANCH_FOR_COMPARE.get((k, type(branch.cond)))
+        if new_cond is None or not _flags_from(instrs, at, reg, refs):
+            continue
+        if any(j in out for j in (*drop, c + 1)):
+            continue
+        for j in drop:
+            out[j] = None
+        out[c + 1] = asm_ast.Branch(cond=new_cond(), target=branch.target)
+    return out
+
+
+def _a_nonnegative_at(instrs, s: int, refs) -> bool:
+    """True when A holds a value from 0 to 127 at `instrs[s]` on every
+    way in: `s` follows a run of labels, each way into which is a `BPL`
+    to one of them, or a fall-through from a `BMI` before them, on N
+    set from A (`_flags_from`), with nothing but labels and branches
+    between the branch and `s`."""
+    k = s
+    names = []
+    while k > 0 and isinstance(instrs[k - 1], asm_ast.Label):
+        k -= 1
+        names.append(instrs[k].name)
+    if not names or k == 0:
+        return False
+    for name in names:
+        if name in refs.get(_TABLE_TARGETS, ()):
+            return False
+        for p in refs.get(name, []):
+            ins = instrs[p] if p >= 0 else None
+            if not (isinstance(ins, asm_ast.Branch)
+                    and isinstance(ins.cond, asm_ast.PL)
+                    and _flags_from(instrs, p, _A, refs)):
+                return False
+    before = instrs[k - 1]
+    if isinstance(before, (*_NO_FALL_THROUGH, asm_ast.JumpTable)):
+        return True
+    return (isinstance(before, asm_ast.Branch)
+            and isinstance(before.cond, asm_ast.MI)
+            and _flags_from(instrs, k - 1, _A, refs))
+
+
+def _signed_compare_of_nonnegative(
+    instrs,
+) -> dict[int, asm_ast.Type_instruction | None]:
+    """The rewrites of the signed byte compare `SEC; SBC #k; BVC L; EOR
+    #$80; L: BMI T` (or `BPL`) of a value A holds that can't be
+    negative (`_a_nonnegative_at`), with k from 0 to 128: each dropped
+    instruction's index to None, and each replaced one's to its
+    replacement.
+
+    A from 0 to 127 less k from 0 to 128 is from -128 to 127, so the
+    subtract never overflows. V is clear, the `BVC` is always taken,
+    and the `EOR` never runs, so both go. With no overflow, N after the
+    subtract is set exactly when A is below k, which is when C is
+    clear, and when A and V are dead after the branch on both paths,
+    `CMP #k; BCC T` (for `BPL`, `BCS`) does it in a byte less: the
+    compare sets N, Z, and C as the subtract does, and leaves A and V
+    alone. `if (c < 0) return; if (c > 0x1C) f();` on an `int8_t c`
+    is the shape, in Ali Baba's `handle_mob_encounter`."""
+    from passes.asm_liveness import a_dead_at, v_dead_at
+    labels = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    refs = _label_refs(instrs)
+    refs[_TABLE_TARGETS] = {
+        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
+        for t in ins.targets
+    }
+    out: dict[int, asm_ast.Type_instruction | None] = {}
+    for s in range(len(instrs) - 5):
+        sec, sub, bvc, eor, lab, br = instrs[s:s + 6]
+        if not (isinstance(sec, asm_ast.SetCarry)
+                and isinstance(sub, asm_ast.Sub) and _is_a(sub.dst)
+                and isinstance(sub.src, asm_ast.Imm)
+                and 0 <= sub.src.value <= 0x80
+                and isinstance(bvc, asm_ast.Branch)
+                and isinstance(bvc.cond, asm_ast.VC)
+                and isinstance(eor, asm_ast.Xor) and _is_a(eor.dst)
+                and _is_a(eor.src1) and eor.src2 == asm_ast.Imm(value=0x80)
+                and isinstance(lab, asm_ast.Label)
+                and bvc.target == lab.name
+                and refs.get(lab.name) == [s + 2]
+                and isinstance(br, asm_ast.Branch)
+                and isinstance(br.cond, (asm_ast.MI, asm_ast.PL))
+                and _a_nonnegative_at(instrs, s, refs)):
+            continue
+        out[s + 2] = None
+        out[s + 3] = None
+        out[s + 4] = None
+        if br.target in labels and all(
+            a_dead_at(instrs, j) and v_dead_at(instrs, j)
+            for j in (s + 6, labels[br.target])
+        ):
+            out[s] = None
+            out[s + 1] = asm_ast.Compare(left=_A, right=sub.src)
+            out[s + 5] = asm_ast.Branch(
+                cond=(asm_ast.CC() if isinstance(br.cond, asm_ast.MI)
+                      else asm_ast.CS()),
+                target=br.target,
+            )
+        return out
+    return out
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
-    carry = _carry_of_add(instrs)
+    # Each set of rewrites goes in a sweep of its own, and the peephole
+    # fixed point runs this again.
+    carry = (_carry_of_add(instrs) or _compares_as_flags(instrs)
+             or _signed_compare_of_nonnegative(instrs))
     if carry:
         out = []
         for i, ins in enumerate(instrs):

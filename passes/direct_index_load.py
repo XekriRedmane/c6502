@@ -21,6 +21,11 @@ addressable by `LDX` / `LDY` directly:
                             = 4 bytes / 6 cycles).
   * `ZP`    — `LDX zp`     (2 bytes / 3 cycles vs `LDA zp; TAX`
                             = 3 bytes / 5 cycles).
+  * `IndexedData` by the other register — `LDX abs,Y` or `LDY abs,X`
+                            (3 bytes vs `LDA abs,Y; TAX` = 4 bytes).
+                            There's no `LDX abs,X` or `LDY abs,Y`, so
+                            a load indexed by the register it writes
+                            stays.
 
 Saves 1 byte / 2 cycles per occurrence.
 
@@ -30,8 +35,9 @@ The fusion fires when:
 
   * Two consecutive instructions match the pattern
     `Mov(src=M, dst=Reg(A)); Mov(src=Reg(A), dst=Reg(X|Y))`.
-  * `M` is one of `Data` / `ZP` / `Imm` — the addressing modes
-    `LDX` / `LDY` support directly.
+  * `M` is one of `Data` / `ZP` / `Imm`, or `IndexedData` indexed
+    by the other register — the addressing modes `LDX` / `LDY`
+    support directly.
   * `Reg(A)` is dead immediately after the second `Mov`. If the
     next instruction reads A (or could observe A's value before
     a redefinition), we'd be losing the load.
@@ -112,7 +118,8 @@ def _try_fuse(
     instrs: list[asm_ast.Type_instruction],
     after_idx: int,
 ) -> asm_ast.Type_instruction | None:
-    """If `first` is `Mov(M, Reg(A))` with M ∈ Data/ZP/Imm, and
+    """If `first` is `Mov(M, Reg(A))` with M ∈ Data/ZP/Imm (or
+    IndexedData by the register `second` doesn't write), and
     `second` is `Mov(Reg(A), Reg(X|Y))`, and Reg(A)'s value is
     dead at `after_idx`, return the fused `Mov(M, Reg(X|Y))`.
     Otherwise None."""
@@ -120,7 +127,8 @@ def _try_fuse(
         return None
     if not _is_reg_a(first.dst):
         return None
-    if not isinstance(first.src, (
+    indexed = isinstance(first.src, asm_ast.IndexedData)
+    if not indexed and not isinstance(first.src, (
         asm_ast.Data, asm_ast.ZP, asm_ast.Imm,
         asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
     )):
@@ -134,6 +142,9 @@ def _try_fuse(
     if not _is_reg_a(second.src):
         return None
     if not _is_reg_x_or_y(second.dst):
+        return None
+    # `LDX abs,Y` and `LDY abs,X` exist, and `LDX abs,X` doesn't.
+    if indexed and type(first.src.index) is type(second.dst.reg):
         return None
     if not _a_dead_at(instrs, after_idx):
         return None

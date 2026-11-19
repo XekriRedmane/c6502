@@ -1271,30 +1271,18 @@ configure_input:
    STA   GAME_INPUT_OPTIONS+45
    LDA   under_level
    STA   GAME_INPUT_OPTIONS+27
-   BEQ   .lnot_true@1
-   LDA   #$00
-   BEQ   .lnot_end@2
-.lnot_true@1:
-   LDA   #$01
-.lnot_end@2:
+   EOR   #$01
    STA   GAME_INPUT_OPTIONS+9
    LDA   under_level
-   BEQ   .lnot_true@3
-   LDA   #$00
-   BEQ   .lnot_end@4
-.lnot_true@3:
-   LDA   #$01
-.lnot_end@4:
+   EOR   #$01
    STA   GAME_INPUT_OPTIONS+18
    LDA   under_level
    BEQ   .cond_else@37
-   LDA   #$03
+   LDA   #$04
    BNE   .cond_end@38
 .cond_else@37:
-   LDA   #$02
+   LDA   #$03
 .cond_end@38:
-   CLC
-   ADC   #$01
    STA   GAME_INPUT_TABLE+1
    LDA   TURN_ACTIVE
    BEQ   .cond_else@39
@@ -1888,8 +1876,7 @@ continue_game:
    SUBROUTINE
 
    LDA   slot_number
-   CMP   #$01
-   BCS   .if_end@65
+   BNE   .if_end@65
    JSR   ensure_game_disk
    JSR   read_game_data
    LDA   #$00
@@ -1918,8 +1905,7 @@ save_game:
    SUBROUTINE
 
    LDA   slot_number
-   CMP   #$01
-   BCS   .if_end@67
+   BNE   .if_end@67
    JSR   ensure_game_disk
    JSR   write_game_data
    LDA   #$02

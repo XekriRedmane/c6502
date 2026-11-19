@@ -51,9 +51,9 @@ Ret(None)
 The listing prints constants in decimal, so 8192 is 0x2000 and 8448
 is 0x2100. The indexed-store recognizer then turns the last three
 instructions into one `IndexedStore`. `col` arrives in A and `v` in
-X, and the function compiles to `STA __local_plot__col; STX
-__local_plot__v; LDX __local_plot__col; LDA __local_plot__v; STA
-$2100,X; RTS`.
+X, and the function compiles to `STA __local_plot__col; TXA; LDX
+__local_plot__col; STA $2100,X; RTS`, which swaps the two arguments
+through `col`'s byte ([redundant load elimination](redundant_load.md)).
 
 ## When it applies
 

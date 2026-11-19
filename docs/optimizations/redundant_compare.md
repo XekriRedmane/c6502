@@ -182,6 +182,64 @@ N and Z must be dead after the branch on both paths
 (`_carry_of_add`). V comes out the same, since `CMP` leaves it alone.
 It saves 2 bytes and 3 cycles with `m` in zero page.
 
+A compare with $80 or 1 whose branch on C can branch on N or Z goes
+too (`_compares_as_flags`). `CMP #$80` sets C to bit 7 of the
+register, which N holds when the instruction that set the register
+set N from it, so `CMP #$80; BCS` is `BMI` and `BCC` is `BPL`. `CMP
+#1` sets C when the register isn't 0, which Z tells, so `BCC` is `BEQ`
+and `BCS` is `BNE`. The compare writes N, Z, and C and nothing else,
+so N, Z, and C must be dead after the branch on both paths. `SEC; SBC
+#1; BCC` on A becomes `BEQ` the same way, with the `SEC` gone, when A
+and V are dead too, since the subtract writes them.
+
+```
+   LDA   KBD                        LDA   KBD
+   CMP   #$80              ->       BMI   .if_end@5
+   BCS   .if_end@5
+```
+
+That's `if ((c = KBD) < 0x80)` in Ali Baba's `select_input_mode`, and
+`SEC; LDA MOB_PTR+1; SBC #$01; BCS .loop@3_start` becomes `LDA
+MOB_PTR+1; BNE .loop@3_start` at the bottom of three loops over a
+group in `ai_choose_target`. Both listings are from two compiles,
+before and after the rewrite was added.
+
+A signed byte compare of a value that a branch has shown to be
+nonnegative drops its overflow test (`_signed_compare_of_nonnegative`).
+The compare `SEC; SBC #k; BVC L; EOR #$80; L: BMI T` with k from 0 to
+128 can't overflow when A is from 0 to 127, so V is clear, the `BVC`
+is always taken, and the `EOR` never runs. A is from 0 to 127 when
+every way into the run of labels before the `SEC` is a `BPL`, or a
+fall-through from a `BMI`, on N set from A. With no overflow, N is
+set exactly when C is clear, and when A and V are dead after the
+branch, `CMP #k; BCC T` (for `BPL`, `BCS`) does it in a byte less,
+since the compare leaves A and V alone.
+
+```c
+#include <stdint.h>
+void h(void);
+void g(int8_t c) { if (c < 0) return; if (c > 0x1C) h(); }
+```
+
+```
+   ORA   #$00                       ORA   #$00
+   BPL   .if_end@0                  BPL   .if_end@0
+   RTS                              RTS
+.if_end@0:                        .if_end@0:
+   SEC                              CMP   #$1D
+   SBC   #$1D                       BCC   .if_end@1
+   BVC   .jcmp_novf@1               JSR   h
+   EOR   #$80                     .if_end@1:
+.jcmp_novf@1:                       RTS
+   BMI   .if_end@1
+   JSR   h
+.if_end@1:
+   RTS
+```
+
+Ali Baba's `handle_mob_encounter` and `resolve_attack` test a value
+they have checked for a negative this way.
+
 The pass doesn't check for a volatile operand. According to the
 module docstring, none can reach it, because `volatile_void_read_cmp`
 turns a volatile read into a compare only when the flags are dead, so

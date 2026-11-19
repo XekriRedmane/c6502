@@ -74,6 +74,36 @@ fold can then fold the new jump on a later round. That is how
 - A `!` that isn't adjacent to its jump, until copy propagation and
   dead-store elimination close the gap on a later round.
 
+## A `!` of a value that is 0 or 1
+
+`LNOT_OF_ZERO_OR_ONE_RULE`, in the same module and right after
+`LNOT_RULE` in the rule set, rewrites a `!` that no jump tests when
+its operand can only be 0 or 1. Then `!x` is `x ^ 1`, which
+`tac_to_asm` lowers as `EOR #$01` where `!` branches to load 0 or 1.
+
+```c
+#include <stdint.h>
+static bool flag;
+extern uint8_t A [[c6502::address(0x5A00)]];
+void f(void) { A = !flag; }
+```
+
+`Unary(!, flag, %0.1); Truncate(%0.1, A)` becomes `Binary(^, flag,
+1uc, A)` once the truncate of the extend folds, and the code goes from
+`LDA flag; BEQ .lnot_true@0; LDA #$00; BEQ .lnot_end@1; .lnot_true@0:
+LDA #$01; .lnot_end@1: STA A` to `LDA flag; EOR #$01; STA A`, 6 bytes
+less. That's the listing of two compiles, before and after the rule
+was added.
+
+An operand is 0 or 1 when it's an object whose type was `bool` (the
+symbol's `was_bool`, which `c99_to_tac._erase_bool` sets when it makes
+the type `unsigned char`), or an SSA name defined by a comparison, a
+`!`, or an extend or copy of such a value. The `^` is done at the
+operand's width, a byte for a `bool`, and a `ZeroExtend` (or
+`Truncate`) makes the `int` result. A `!` whose result is the
+condition of a `JumpIfTrue` or `JumpIfFalse` is left to `LNOT_RULE`,
+which drops it and flips the jump, and that's shorter than an `EOR`.
+
 ## Related
 
 [Short-circuit jump fold](short_circuit_jump_fold.md) removes the

@@ -10,6 +10,10 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
 ## Module roster
 
 - `optimizer.py` — driver (`optimize_program`, `optimize_function`).
+  `_entry_register_limits` keeps each byte of a register parameter's
+  local (`<param>.reg.b<k>`, looked up by `_entry_limit`) out of X
+  and Y when another byte arrives there, so a byte may stay in the
+  register it arrives in, as an `unsigned int`'s high byte in X does.
   Orchestrates the prepasses, then per-function SSA construction,
   coalescing, fixed-point copy-prop / DCE bracket, regalloc, and SSA
   destruction. Before SSA construction, `_explicit_index_tests` puts a

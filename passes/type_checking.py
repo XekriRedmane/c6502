@@ -345,8 +345,13 @@ class LocalAttr(IdAttr):
     parameter is passed positionally in A / X). Used by the AddressOf
     check below (taking the address of a `register` object is rejected
     per C99 §6.5.3.2.1) and by codegen to route the object through a
-    6502 register at the call boundary."""
+    6502 register at the call boundary.
+
+    `was_bool` is True when the object's type was `bool` before
+    `c99_to_tac` made it `unsigned char` (`_erase_bool`), so it holds
+    0 or 1."""
     register: bool = False
+    was_bool: bool = False
 
 
 @dataclass(frozen=True)
@@ -377,7 +382,11 @@ class StaticAttr(IdAttr):
     `mergeable` marks one of those objects. Only the table's lookups
     read it, so a program behaves the same when they read another
     unit's object with the same bytes, and the linker keeps one copy
-    of the two (passes/linker.py)."""
+    of the two (passes/linker.py).
+
+    `was_bool` is True when the object's type was `bool` before
+    `c99_to_tac` made it `unsigned char` (`_erase_bool`), so it holds
+    0 or 1."""
     initial_value: InitialValue
     is_global: bool
     zeropage: bool = False
@@ -386,6 +395,7 @@ class StaticAttr(IdAttr):
     section: str | None = None
     planes: tuple[str, ...] | None = None
     mergeable: bool = False
+    was_bool: bool = False
 
 
 @dataclass(frozen=True)

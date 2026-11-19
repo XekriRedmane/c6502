@@ -36,9 +36,8 @@ __local_editor_initialize_disk__saved_level	EQU	$82
 __local_format_patch__tries_1	EQU	$82
 __local_get_level_from_keyboard__n	EQU	$82
 __local_format_patch__tries_0	EQU	$83
-__local_get_level_from_keyboard__level_1	EQU	$83
+__local_get_level_from_keyboard__level	EQU	$83
 __local_format_patch__slot16	EQU	$84
-__local_get_level_from_keyboard__level_0	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -149,7 +148,7 @@ DISK_IO	EQU	$C088
 ; def editor_wait_for_key params= locals=__local_editor_wait_for_key__0 indirect=false in_cycle=false
 ; def format_patch params=__zpabi_format_patch__slot16 locals=__local_format_patch__0,__local_format_patch__b,__local_format_patch__tries_1,__local_format_patch__tries_0,__local_format_patch__slot16 indirect=false in_cycle=false param_regs=X
 ; def get_key_for_edit_level params= locals=__local_get_key_for_edit_level__0,__local_get_key_for_edit_level__1 indirect=false in_cycle=false
-; def get_level_from_keyboard params= locals=__local_get_level_from_keyboard__n,__local_get_level_from_keyboard__level_1,__local_get_level_from_keyboard__level_0 indirect=false in_cycle=false carry=true
+; def get_level_from_keyboard params= locals=__local_get_level_from_keyboard__n,__local_get_level_from_keyboard__level indirect=false in_cycle=false carry=true
 ; def hit_key_to_continue params= locals= indirect=false in_cycle=false
 ; def level_edit_change_level params= locals=__local_level_edit_change_level__0 indirect=false in_cycle=false
 ; def level_edit_save1 params= locals=__local_level_edit_save1__0,__local_level_edit_save1__col,__local_level_edit_save1__row indirect=false in_cycle=false
@@ -498,11 +497,13 @@ get_level_from_keyboard:
    STA   saved_game_colnum
    LDA   #$00
    STA   kbd_entry_index
+   JMP   .loop@0_start
 .get_level_from_keyboard@rot@0:
-   LDX   kbd_entry_index
+   TAX
    LDA   DIGITS,X
    JSR   put_digit
    INC   kbd_entry_index
+.loop@0_start:
    LDA   kbd_entry_index
    CMP   #$03
    BCC   .get_level_from_keyboard@rot@0
@@ -567,16 +568,16 @@ get_level_from_keyboard:
    LDA   DIGITS
    STA   __local_get_level_from_keyboard__n
    LDA   #$00
-   STA   __local_get_level_from_keyboard__level_0
-   STA   __local_get_level_from_keyboard__level_1
-   JMP   .loop@7_start
+   STA   __local_get_level_from_keyboard__level
+   LDX   #$00
+   BEQ   .loop@7_start
 .get_level_from_keyboard@rot@2:
-   LDA   __local_get_level_from_keyboard__level_0
+   LDA   __local_get_level_from_keyboard__level
    CLC
    ADC   #$64
-   STA   __local_get_level_from_keyboard__level_0
+   STA   __local_get_level_from_keyboard__level
    BCC   .carry_inc@0
-   INC   __local_get_level_from_keyboard__level_1
+   INX
 .carry_inc@0:
    DEC   __local_get_level_from_keyboard__n
 .loop@7_start:
@@ -586,35 +587,32 @@ get_level_from_keyboard:
    STA   __local_get_level_from_keyboard__n
    JMP   .loop@8_start
 .get_level_from_keyboard@rot@3:
-   LDA   __local_get_level_from_keyboard__level_0
+   LDA   __local_get_level_from_keyboard__level
    CLC
    ADC   #$0A
-   STA   __local_get_level_from_keyboard__level_0
+   STA   __local_get_level_from_keyboard__level
    BCC   .carry_inc@1
-   INC   __local_get_level_from_keyboard__level_1
+   INX
 .carry_inc@1:
    DEC   __local_get_level_from_keyboard__n
 .loop@8_start:
    LDA   __local_get_level_from_keyboard__n
    BNE   .get_level_from_keyboard@rot@3
-   LDA   __local_get_level_from_keyboard__level_0
+   LDA   __local_get_level_from_keyboard__level
    CLC
    ADC   DIGITS+2
    STA   __local_get_level_from_keyboard__n
    BCC   .carry_inc@2
-   INC   __local_get_level_from_keyboard__level_1
+   INX
 .carry_inc@2:
-   LDA   #$FF
-   SEC
-   SBC   __local_get_level_from_keyboard__n
-   TYA
-   SBC   __local_get_level_from_keyboard__level_1
-   BCS   .if_end@8
+   TXA
+   BEQ   .if_end@8
    SEC
    RTS
 .if_end@8:
    LDA   __local_get_level_from_keyboard__n
    STA   LEVELNUM
+   SEC
    SBC   #$01
    STA   DISK_LEVEL_LOC
    SEC

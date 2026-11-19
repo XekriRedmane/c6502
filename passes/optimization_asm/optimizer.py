@@ -301,13 +301,17 @@ def _param_register_hints(fn, layout, symbols) -> dict[str, str]:
 
 
 def _entry_register_limits(fn, layout, symbols) -> dict[str, set[str]]:
-    """The registers the local a `register` parameter is copied into
-    at entry (`tac_to_asm._register_param_locals`) mustn't be colored:
-    X or Y when another parameter (or the parameter's other byte)
-    arrives in it, since the copy would overwrite it before its own
-    copy reads it. Keyed by the local's name. (A soft-stack prologue
-    writes Y too, but it saves Y around itself when Y is live,
-    `prologue_synthesis`.)"""
+    """The registers each byte of the local a `register` parameter is
+    copied into at entry (`tac_to_asm._register_param_locals`) mustn't
+    be colored: X or Y when another byte (of this parameter or
+    another) arrives in it, since that byte's copy would overwrite the
+    register before the other byte's copy reads it. A byte may take
+    the register it arrives in, where its copy is a move of the
+    register to itself, which emits nothing, and no other copy writes
+    that register, since every other byte is kept out of it. Keyed by
+    `<local>.b<k>`, as `_entry_limit` looks them up. (A soft-stack
+    prologue writes Y too, but it saves Y around itself when Y is
+    live, `prologue_synthesis`.)"""
     from passes.abi_selection import ZpLayout
     from passes.replace_pseudoregisters import sizeof
     from passes.zp_slot_naming import register_param_local
@@ -319,14 +323,27 @@ def _entry_register_limits(fn, layout, symbols) -> dict[str, set[str]]:
     for pname in fn.params:
         sym = symbols.get(pname)
         n = sizeof(sym.type, None) if sym is not None else 1
-        regs = [r for r in layout.param_registers[off:off + n] if r]
+        regs = list(layout.param_registers[off:off + n])
         off += n
-        if not regs:
+        if not any(regs):
             continue
-        others = incoming - (set(regs) if n == 1 else set())
-        if others & {"X", "Y"}:
-            out[register_param_local(pname)] = others & {"X", "Y"}
+        for k, reg in enumerate(regs):
+            others = (incoming - {reg}) & {"X", "Y"}
+            if others:
+                out[f"{register_param_local(pname)}.b{k}"] = others
     return out
+
+
+def _entry_limit(entry_limits: dict[str, set[str]], name: str) -> set[str]:
+    """The registers `_entry_register_limits` keeps the asm-SSA name
+    `name` (`<base>.b<k>.v<n>`) out of, empty for a name it doesn't
+    limit."""
+    import re
+    from passes.optimization_asm.hwreg_eligibility import _ssa_base
+    m = re.match(r"^(.*?)\.b(\d+)\.v\d+$", name)
+    if m is None:
+        return set()
+    return entry_limits.get(f"{_ssa_base(m.group(1))}.b{m.group(2)}", set())
 
 
 def _optimize_function(
@@ -411,7 +428,6 @@ def _optimize_function(
         fn, register_pins=local_pins, register_hints=param_hints,
     )
     if entry_limits:
-        from passes.optimization_asm.hwreg_eligibility import _ssa_base
         for sets, reg in (
             ((raw_eligibility.eligible_x, raw_eligibility.hints_x), "X"),
             ((raw_eligibility.eligible_y, raw_eligibility.hints_y), "Y"),
@@ -419,11 +435,11 @@ def _optimize_function(
             for s in sets:
                 s -= {
                     n for n in s
-                    if reg in entry_limits.get(_ssa_base(n), ())
+                    if reg in _entry_limit(entry_limits, n)
                 }
         raw_eligibility.hints_carry -= {
             n for n in raw_eligibility.hints_carry
-            if entry_limits.get(_ssa_base(n))
+            if _entry_limit(entry_limits, n)
         }
     rep_eligibility = _project_eligibility(
         raw_eligibility, coalesce_result, all_names=_all_pseudo_names(fn),

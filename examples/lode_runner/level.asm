@@ -292,7 +292,7 @@ draw_level_page2:
    LDA   #$1B
    STA   GAME_COLNUM
 .loop@1_start:
-   LDY   GAME_COLNUM
+   TAY
    LDX   GAME_ROWNUM
    LDA   LEVEL_BG@lo,X
    STA   __local_draw_level_page2__sprite
@@ -394,6 +394,7 @@ draw_level_page2:
 .vthread@0:
    JSR   draw_sprite_page2
    DEC   GAME_COLNUM
+   LDA   GAME_COLNUM
    BMI   .lb_skip@1
    JMP   .loop@1_start
 .lb_skip@1:
@@ -451,11 +452,9 @@ draw_level_page2:
    STA   __local_draw_level_page2__dst
    LDY   GAME_COLNUM
    LDA   (__local_draw_level_page2__sprite),Y
-   CMP   #$09
-   BEQ   .draw_level_page2@scfold@0
+   AND   #$FE
    CMP   #$08
    BNE   .if_end@8
-.draw_level_page2@scfold@0:
    LDA   #$00
    JSR   draw_sprite_page2
 .if_end@8:

@@ -451,7 +451,7 @@ main:
    JSR   do_instruction
    JMP   .loop@4_start
 .main@asm_ssa_split@0:
-   LDY   __local_main__sector
+   TAY
    JMP   .loop@2_start
 
 instr_restart:

@@ -41,14 +41,13 @@ __local_anim_border_icons__limit	EQU	$82
 __local_clear_hires_page1__i_1	EQU	$82
 __local_move_border_icons__0	EQU	$82
 __local_plot_title_glyphs__end	EQU	$82
+__local_print_at__s	EQU	$82
 __local_anim_border_icons__from	EQU	$83
 __local_clear_hires_page1__i_0	EQU	$83
 __local_draw_border_strings__s_1	EQU	$83
 __local_move_border_icons__cell	EQU	$83
-__local_print_at__s_0	EQU	$83
 __local_draw_border_strings__s_0	EQU	$84
 __local_move_border_icons__first	EQU	$84
-__local_draw_border_cell__cell	EQU	$86
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -237,7 +236,7 @@ WAIT	EQU	$FCA8
 ; def move_border_icon_list params=__zpabi_move_border_icon_list__first locals=__local_move_border_icon_list__first indirect=false in_cycle=false param_regs=A
 ; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__0,__local_move_border_icons__cell,__local_move_border_icons__first indirect=false in_cycle=false param_regs=A,X
 ; def plot_title_glyphs params=__zpabi_plot_title_glyphs__first,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i,__local_plot_title_glyphs__end indirect=false in_cycle=false param_regs=A,X,
-; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals=__local_print_at__s_1,__local_print_at__s_0 indirect=false in_cycle=false param_regs=A,X,,
+; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals=__local_print_at__s indirect=false in_cycle=false param_regs=A,X,,
 ; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1 indirect=false in_cycle=false
 ; def start_border_passes params= locals= indirect=false in_cycle=false
 ; ext CLREOL params=
@@ -523,9 +522,8 @@ WAIT	EQU	$FCA8
 draw_border_cell:
    SUBROUTINE
 
-   STA   __local_draw_border_cell__cell
    STX   FONT_CHARNUM
-   LDX   __local_draw_border_cell__cell
+   TAX
    LDA   border_row,X
    STA   TEXT_ROW
    LDA   border_col,X
@@ -558,8 +556,8 @@ move_border_icons:
    BEQ   .if_end@2
    LDA   #$00
    STA   border_glyph,X
+   TXA
    LDX   #$00
-   LDA   __local_move_border_icons__cell
    JSR   draw_border_cell
    LDY   __local_move_border_icons__0
 .if_end@2:
@@ -771,12 +769,12 @@ draw_border_labels:
 print_at:
    SUBROUTINE
 
-   STA   __local_print_at__s_0
+   STA   __local_print_at__s
    LDA   __zpabi_print_at__row
    STA   TEXT_ROW
    LDA   __zpabi_print_at__col
    STA   TEXT_COL
-   LDA   __local_print_at__s_0
+   LDA   __local_print_at__s
    JMP   print_string
 
 init_game_display:
@@ -876,8 +874,7 @@ select_input_mode:
    STA   KBDSTRB
 .loop@9_continue:
    LDA   KBD
-   CMP   #$80
-   BCS   .loop@9_break
+   BMI   .loop@9_break
    LDA   BUTN
    AND   #$80
    CMP   __local_select_input_mode__1

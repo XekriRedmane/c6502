@@ -131,6 +131,7 @@ from passes.asm_liveness import y_dead_at as _y_dead_at
 from passes.asm_liveness import call_preserves as _call_preserves
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 from passes.asm_liveness import sets_up_y as _sets_up_y
+from passes.asm_dead_store import mem_dead_after as _mem_dead_after
 from passes.optimization_asm.cfg import (
     CFG, ENTRY_ID, EXIT_ID, BasicBlock, build_cfg,
 )
@@ -426,10 +427,11 @@ def _rewrite_with_in_states(
                               asm_ast.Ret, asm_ast.Return)):
             out.append(instr)
             continue
-        if _reverses_transfer(instrs, i):
+        if _reverses_transfer(instrs, i) or _repeats_transfer(instrs, i):
             # `TAX; TXA`: after the first, both registers and N/Z
             # hold the value already. `twice(v) { return add(v, v); }`
-            # with `v` and both of add's arguments in registers.
+            # with `v` and both of add's arguments in registers. And
+            # `TXA; BEQ l; TXA`, where only branches come between.
             continue
         if _is_redundant_load(instr, state) and _flags_redundant_at(
             instrs, i, state,
@@ -469,6 +471,18 @@ def _rewrite_with_in_states(
             # since X == M under the mirror invariant. Pairs with
             # `via_a_store_fold` downstream, which then collapses
             # `TXA;STA N` to `STX N` when A is dead at N+1.
+            out.append(redirected)
+            _update_state(redirected, state)
+            continue
+        redirected = _redirect_index_load_to_transfer(
+            instr, state, out[-1] if out else None,
+        )
+        if redirected is not None and (
+            _named_object(instr.src) or _mem_dead_after(
+                instrs, i, instr.src, fn_name=fn.name,
+                zp_slot_symbols=_ZP_ADDRS,
+            )
+        ):
             out.append(redirected)
             _update_state(redirected, state)
             continue
@@ -544,6 +558,15 @@ def _reorder_with_in_states(
                 _update_state(instrs[k], state)
             changed = True
             i += 4
+            continue
+        if _swap_loads_ok(instrs, i, state):
+            # `LDX M1; LDA M2` with X already holding M2: `LDA M2;
+            # LDX M1`, whose `LDA M2` the second phase makes `TXA`.
+            for k in (i + 1, i):
+                out.append(instrs[k])
+                _update_state(instrs[k], state)
+            changed = True
+            i += 2
             continue
         stored = _store_from_a(instr, state)
         if stored is not None and _flags_redundant_at(instrs, i, state):
@@ -749,6 +772,28 @@ def _reverses_transfer(
     )
 
 
+def _repeats_transfer(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> bool:
+    """Whether `instrs[i]` is a transfer between registers that the
+    instruction before a run of conditional branches ending at `i`
+    already made, as in `TXA; BEQ two; TXA; BPL three`. A branch
+    changes no register and no flag, and with no label in the run the
+    second transfer is reached only from the first, so both registers
+    and N and Z already hold what it would put there. A volatile
+    transfer, which reads or writes a `register volatile` local, stays."""
+    ins = instrs[i]
+    if not (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+            and isinstance(ins.src, asm_ast.Reg)
+            and isinstance(ins.dst, asm_ast.Reg)
+            and ins.src != ins.dst):
+        return False
+    k = i - 1
+    while k >= 0 and isinstance(instrs[k], asm_ast.Branch):
+        k -= 1
+    return k < i - 1 and k >= 0 and instrs[k] == ins
+
+
 def _is_redundant_load(
     instr: asm_ast.Type_instruction, state: _RegState,
 ) -> bool:
@@ -915,6 +960,61 @@ def _swap_pairs_ok(
     return _a_dead_at(instrs, i + 4) and _flags_dead_at(instrs, i + 4)
 
 
+def _swap_loads_ok(
+    instrs: list[asm_ast.Type_instruction], i: int, state: _RegState,
+) -> bool:
+    """Whether `instrs[i:i+2]` is `LDX M1; LDA M2` (or `LDY M1`) with X
+    (Y) already mirroring M2 and A not, so that `LDA M2; LDX M1` does
+    the same and its `LDA M2` becomes `TXA` (`TYA`) in the second
+    phase. Swapping a function's two register arguments, `g(b, a)` in
+    `f(a, b)`, is `STA a; STX b; LDX a; LDA b` and becomes `STA a;
+    STX b; TXA; LDX a`, and the store of `b` then goes when nothing
+    reads it.
+
+    A load writes only its register and N/Z, so after either order A
+    holds M2 and X holds M1. The loads mustn't be volatile, since the
+    order of volatile reads is the program's, and neither operand may
+    be lowered with an `LDY #off` setup, which writes Y too. M2 may
+    not be indexed by the register M1 goes into, which would read M2
+    at another address once the load of M1 comes after it. N/Z,
+    which end up set from M1 instead of M2, must be dead after."""
+    if i + 2 > len(instrs):
+        return False
+    first, second = instrs[i:i + 2]
+    for ins in (first, second):
+        if (not isinstance(ins, asm_ast.Mov) or ins.is_volatile
+                or isinstance(ins.src, asm_ast.Reg)
+                or not isinstance(ins.dst, asm_ast.Reg)
+                or _sets_up_y(ins)):
+            return False
+    if not isinstance(second.dst.reg, asm_ast.A):
+        return False
+    reg = first.dst.reg
+    if isinstance(reg, asm_ast.X):
+        mirror = state.x
+    elif isinstance(reg, asm_ast.Y):
+        mirror = state.y
+    else:
+        return False
+    if (isinstance(second.src, asm_ast.IndexedData)
+            and type(second.src.index) is type(reg)):
+        return False
+    if not any(_operands_equal(c, second.src) for c in mirror):
+        return False
+    if any(_operands_equal(c, second.src) for c in state.a):
+        return False
+    # `transfer_pm1_store` makes `LDA M1; SEC; SBC #k; STA M1; LDX M1`
+    # a `DEX` of M1, as in Zork's `return_value`, so the load right
+    # after `STA M1` stays.
+    prev = instrs[i - 1] if i else None
+    if (isinstance(prev, asm_ast.Mov)
+            and isinstance(prev.src, asm_ast.Reg)
+            and isinstance(prev.src.reg, asm_ast.A)
+            and _operands_equal(prev.dst, first.src)):
+        return False
+    return _flags_dead_at(instrs, i + 2)
+
+
 def _pointer_bytes(op: asm_ast.Type_operand) -> list[asm_ast.Type_operand]:
     """The bytes that hold the address `op` is reached through: a
     zero-page pointer's two bytes, DPTR's, FP's, or SSP's."""
@@ -1027,6 +1127,75 @@ def _redirect_lda_to_transfer(
                 is_volatile=False,
             )
     return None
+
+
+def _redirect_index_load_to_transfer(
+    instr: asm_ast.Type_instruction, state: _RegState,
+    prev: asm_ast.Type_instruction | None,
+) -> asm_ast.Mov | None:
+    """When `instr` is `LDX M` or `LDY M` (a non-volatile load from
+    memory or an immediate) and A already mirrors M, returns `TAX` or
+    `TAY`, which sets the register and N/Z to the same value, in one
+    byte and two cycles. Otherwise returns None.
+
+    A parameter arriving in A that a loop counts down in Y is `STA d;
+    LDY d`, which becomes `STA d; TAY`, and the store goes once
+    nothing reads `d` again.
+
+    The caller rewrites a load of a byte the compiler allocated only
+    when nothing reads M after it (`asm_dead_store.mem_dead_after`),
+    so that the store of M goes too. A load of such a byte that's
+    still read, such as a loop counter's `LDX i` at the top of a loop
+    that tests `LDA i; CMP #n`, stays, since `loop_counter_to_x` and
+    the other register promotions after the first peephole fixed
+    point look for the counter's `LDX`. A load of a named object
+    (`_named_object`), which those promotions leave alone, is
+    rewritten either way: `A1 = A2 = C1; B1 = B2 = C2; pos(C1, C2)`
+    passes C2 with `TAX` after the stores.
+
+    The load is left alone right after `LDA M`, where
+    `direct_index_load` makes `LDA M; TAX` the `LDX M` it was when A
+    is dead after it, so the two passes don't undo each other.
+
+    A volatile load qualifies only right after a store of A to M that
+    isn't volatile. Every access of a volatile byte carries the flag,
+    so M isn't volatile, and the flag comes from the register, which a
+    `register volatile` local lives in (`wait`'s `y`). `TAY` writes
+    that register once, as `LDY M` did, and keeps the flag."""
+    if not isinstance(instr, asm_ast.Mov):
+        return None
+    if not (isinstance(instr.dst, asm_ast.Reg)
+            and isinstance(instr.dst.reg, (asm_ast.X, asm_ast.Y))):
+        return None
+    if isinstance(instr.src, asm_ast.Reg) or _sets_up_y(instr):
+        return None
+    if instr.is_volatile and not (
+        isinstance(prev, asm_ast.Mov) and not prev.is_volatile
+        and isinstance(prev.src, asm_ast.Reg)
+        and isinstance(prev.src.reg, asm_ast.A)
+        and _operands_equal(prev.dst, instr.src)
+    ):
+        return None
+    if not any(_operands_equal(c, instr.src) for c in state.a):
+        return None
+    if (isinstance(prev, asm_ast.Mov)
+            and isinstance(prev.dst, asm_ast.Reg)
+            and isinstance(prev.dst.reg, asm_ast.A)
+            and _operands_equal(prev.src, instr.src)):
+        return None
+    return asm_ast.Mov(
+        src=asm_ast.Reg(reg=asm_ast.A()), dst=instr.dst,
+        is_volatile=instr.is_volatile,
+    )
+
+
+def _named_object(op: asm_ast.Type_operand) -> bool:
+    """True for a byte of an object the program names, a `Data`
+    operand that isn't one of the compiler's zero-page slots
+    (`__local_*`, `__zpabi_*`) or the runtime's bytes."""
+    return (isinstance(op, asm_ast.Data)
+            and not op.name.startswith(("__local_", "__zpabi_"))
+            and op.name not in ("SSP", "FP", "HARGS", "DPTR"))
 
 
 def _stores_held_value(
@@ -1306,6 +1475,12 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
             _set_reg(state, mov.dst.reg, [])
             if not isinstance(mov.src, asm_ast.Reg):
                 state.z_reflects = [mov.src]
+            elif (isinstance(mov.src.reg, asm_ast.A)
+                    and not isinstance(mov.dst.reg, asm_ast.A)):
+                # A volatile `TAX` / `TAY` writes the register a
+                # `register volatile` local lives in. A keeps its
+                # value, and N/Z are set from it.
+                state.z_reflects = list(state.a)
             else:
                 state.z_reflects = []
             return

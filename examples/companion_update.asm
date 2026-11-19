@@ -215,9 +215,8 @@ entity_proximity:
 smc_body_draw:
    SUBROUTINE
 
-   STA   __local_smc_body_draw__hi
    STX   __local_smc_body_draw__sprite_x
-   LDX   __local_smc_body_draw__hi
+   TAX
    LDA   companion_dir,X
    AND   #$80
    BEQ   .cmp_end@0
@@ -523,13 +522,13 @@ companion_update:
 .if_else@44:
    LDA   companion_dir,X
    BPL   .cond_else@45
+   TXA
    LDX   __zpabi_companion_update__player_floor
-   LDA   __local_companion_update__slot
    JSR   active_neg_step
    JMP   .cond_end@46
 .cond_else@45:
+   TXA
    LDX   __zpabi_companion_update__player_floor
-   LDA   __local_companion_update__slot
    JSR   active_pos_step
 .cond_end@46:
    ORA   #$00

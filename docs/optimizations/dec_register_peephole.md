@@ -62,6 +62,13 @@ temporary takes the same byte.
 counter's storage is Y itself, and `DEY` reads and writes Y once, so
 the rewrite keeps the one read and one write that `--y` performs.
 
+Since 19 Nov 2026, [redundant load elimination](redundant_load.md)
+makes `STA __local_wait__delay; LDY __local_wait__delay` a `TAY`, and
+the same for the temporary inside the loop, so the pass meets the
+five instructions `TYA; SEC; SBC #$01; TAY; BNE .loop@0_continue`, and
+the whole function is `TAY; .loop@0_continue: DEY; BNE
+.loop@0_continue; RTS`. The listing above is from before that change.
+
 ## When it applies
 
 - Six consecutive instructions, `TXA` or `TYA`, `SEC`, `SBC #1`, a
@@ -76,12 +83,17 @@ the rewrite keeps the one read and one write that `--y` performs.
   to a label outside the function counts as dead.
 - The temporary isn't read by any instruction after the pattern, in
   program order.
+- Or five instructions, the same with `TAX` or `TAY` in place of the
+  store and the load (`_match_transfer_back`). `DEY` leaves A, C, and
+  V alone where the `SBC` wrote them, so this form needs A, C, and V
+  dead after the branch by `asm_liveness`, which counts a return of a
+  value in A as a read of it.
 
 The check on the temporary doesn't look at instructions before the
 pattern, so a read that a loop's back edge reaches isn't seen. No C
 program has been found that puts such a read there.
 
-The pass doesn't check C or V. `SBC` sets both and `DEY` leaves them
+For the six instructions, the pass doesn't check C or V. `SBC` sets both and `DEY` leaves them
 alone, so the rewrite relies on c6502's rule that no flag is read
 across separate operations and every add and subtract starts with its
 own `CLC` or `SEC`.

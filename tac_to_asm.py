@@ -1452,6 +1452,33 @@ def _constant_on_right(op, src1, src2, *, unsigned: bool):
     return tac_ast.LessThan(), src1, bumped
 
 
+def _variable_first(op, src1, src2, size: int):
+    """An unsigned ordering `JumpIfCmp` of `size` bytes (2 or more) with
+    a constant, as `x < k` or `x >= k` with the constant on the right.
+    `x > k` is `x >= k + 1` and `x <= k` is `x < k + 1`, unless `k` is
+    the type's largest value, where `k + 1` wraps. The lowering then
+    subtracts the constant from `x`, as it would `k` from `x` after
+    swapping the operands, in as many bytes, and a constant whose low
+    byte is 0 drops that byte's subtract in the peepholes: `e > 0xFF`
+    on a `uint16_t` is `e >= 0x100`, whose test of the high byte against
+    1 `redundant_compare` makes a `BNE`."""
+    if (isinstance(src1, tac_ast.Constant)
+            and not isinstance(src2, tac_ast.Constant)
+            and type(op) in _MIRRORED):
+        op, src1, src2 = _MIRRORED[type(op)](), src2, src1
+    if not (isinstance(op, (tac_ast.GreaterThan, tac_ast.LessOrEqual))
+            and isinstance(src2, tac_ast.Constant)
+            and not isinstance(src1, tac_ast.Constant)):
+        return op, src1, src2
+    value = getattr(src2.const, "value", None)
+    if not isinstance(value, int) or not 0 <= value < (1 << 8 * size) - 1:
+        return op, src1, src2
+    bumped = tac_ast.Constant(const=type(src2.const)(value=value + 1))
+    if isinstance(op, tac_ast.GreaterThan):
+        return tac_ast.GreaterOrEqual(), src1, bumped
+    return tac_ast.LessThan(), src1, bumped
+
+
 def _imm_zero(op: asm_ast.Type_operand) -> bool:
     """True when `op` is the constant 0."""
     return isinstance(op, asm_ast.Imm) and op.value == 0
@@ -4839,8 +4866,6 @@ class Translator:
         JumpIf was a JumpIfFalse, so this lowering always means
         "jump if op(src1, src2) is true".
         """
-        src1_op = translate_val(src1)
-        src2_op = translate_val(src2)
         size = self._size_of(src1)
         unsigned_cmp = (
             self._is_unsigned_val(src1) or self._is_unsigned_val(src2)
@@ -4849,6 +4874,10 @@ class Translator:
             self._is_pointer_val(src1) or self._is_pointer_val(src2)
         )
         fp = self._is_fp_val(src1) or self._is_fp_val(src2)
+        if (unsigned_cmp or pointer_cmp) and not fp and size > 1:
+            op, src1, src2 = _variable_first(op, src1, src2, size)
+        src1_op = translate_val(src1)
+        src2_op = translate_val(src2)
         if not fp:
             fused = self._fused_subtract(
                 op, src1, src2, target, size,

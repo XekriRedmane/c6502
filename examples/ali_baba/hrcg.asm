@@ -608,10 +608,7 @@ hrcg_scroll_up:
    SBC   WNDBTM
    LDA   __local_hrcg_scroll_up__n
    SBC   #$00
-   BVC   .jcmp_novf@0
-   EOR   #$80
-.jcmp_novf@0:
-   BPL   .loop@3_break
+   BCS   .loop@3_break
    LDX   #$00
    LDA   __local_hrcg_scroll_up__row
    JSR   hrcg_row_address
@@ -653,7 +650,6 @@ hrcg_scroll_up:
    JMP   .loop@4_start
 .loop@3_break:
    LDA   WNDBTM
-   SEC
    SBC   #$01
    LDX   #$00
    JMP   hrcg_fill_line

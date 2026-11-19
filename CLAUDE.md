@@ -567,7 +567,9 @@ to `x != 0`, skipping it for a value that is already 0 or 1 (a
 comparison, `!`, `&&`, `||`, a `bool`), and makes `++` store 1 and
 `--` store `x == 0`. Then it replaces `Bool` with `UChar` in the
 symbol table, the struct layouts, and the top-level declaration
-types, so no pass after it sees `Bool`. tac_to_asm lowers a `!= 0`
+types, so no pass after it sees `Bool`. It marks each such object's
+`LocalAttr` / `StaticAttr` `was_bool`, which lets `!` of it be `^ 1`
+(passes/optimization/lnot_jump_fold.py). tac_to_asm lowers a `!= 0`
 with a 1-byte result as `LDA x; ORA ...; BEQ end; LDA #1`.
 
 `BitInt(width, is_signed)` is C23's `_BitInt(N)` (`is_signed`, for

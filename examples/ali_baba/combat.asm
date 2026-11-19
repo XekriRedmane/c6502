@@ -916,8 +916,7 @@ sum_hostile_at_pos:
    AND   #$1F
    CLC
    ADC   ADJACENT_THREAT
-   CMP   #$80
-   BCC   .if_end@22
+   BPL   .if_end@22
    LDA   #$7F
 .if_end@22:
    STA   ADJACENT_THREAT
@@ -1478,20 +1477,13 @@ resolve_attack:
    LDA   __local_resolve_attack__willingness
    BPL   .if_else@67
    LDA   #$00
-   STA   __local_resolve_attack__willingness
-   JMP   .if_end@66
+   BEQ   .if_end@66
 .if_else@67:
-   SEC
-   SBC   #$1F
-   BVC   .jcmp_novf@0
-   EOR   #$80
-.jcmp_novf@0:
-   BMI   .if_end@68
+   CMP   #$1F
+   BCC   .if_end@68
    LDA   #$1E
-   STA   __local_resolve_attack__willingness
 .if_end@68:
 .if_end@66:
-   LDA   __local_resolve_attack__willingness
    STA   COMBAT_WILLINGNESS
 .if_end@58:
    LDA   #$1F
@@ -1659,7 +1651,7 @@ player_attack:
    STA   __local_player_attack__target
    LDA   MOB_PTR+1
    STA   __local_player_attack__3
-   LDX   MOB_PTR+1
+   TAX
    LDA   MOB_PTR
    JSR   classify_entity_type
    JSR   print_bottom_centered
@@ -1917,10 +1909,8 @@ select_combat_target:
 .if_end@120:
 .if_end@119:
    JSR   next_group_member
-   SEC
    LDA   MOB_PTR+1
-   SBC   #$01
-   BCS   .loop@14_start
+   BNE   .loop@14_start
    JMP   .if_end@117
 .if_else@118:
    LDA   #$00
@@ -1940,10 +1930,8 @@ select_combat_target:
    STA   TARGET_PTR+1
 .if_end@121:
    JSR   next_group_member
-   SEC
    LDA   MOB_PTR+1
-   SBC   #$01
-   BCS   .loop@15_start
+   BNE   .loop@15_start
 .if_end@117:
    LDA   BEST_THREAT
    BEQ   .if_end@122
@@ -2263,12 +2251,8 @@ handle_mob_encounter:
    STA   __local_handle_mob_encounter__courage
    JMP   .if_end@151
 .if_else@152:
-   SEC
-   SBC   #$1D
-   BVC   .jcmp_novf@1
-   EOR   #$80
-.jcmp_novf@1:
-   BMI   .if_end@153
+   CMP   #$1D
+   BCC   .if_end@153
    LDA   #$1C
    STA   __local_handle_mob_encounter__courage
 .if_end@153:
@@ -2318,10 +2302,8 @@ handle_mob_encounter:
 .if_end@158:
    JSR   next_group_member
 .loop@16_continue:
-   SEC
    LDA   MOB_PTR+1
-   SBC   #$01
-   BCS   .handle_mob_encounter@rot@2
+   BNE   .handle_mob_encounter@rot@2
    JSR   increment_hp@run0
    LDA   #$1F
    JSR   display_message

@@ -210,6 +210,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [A widened byte multiplied before the constant](distribute_constant.md). Rewrites `(x - c) * k` on a zero-extended byte as `x * k - c * k`, so the product is of one byte.
 - [Address of a zero-page local](lower_data_load_address.md). Splits a fixed-address LoadAddress into two immediate stores so peepholes can fold them.
 - [Address-taken locals in zero page](address_taken_zp.md). Puts address-taken locals in free private-pool bytes instead of the frame.
+- [An operation of a choice of constants](phi_constant_fold.md). Computes an operation on a `Phi` of constants in the `Phi`'s arguments, so `(c ? 3 : 2) + 1` picks 4 or 3.
 - [AND jump fold](and_zero_jump_fold.md). Turns `if (byte & mask)` into a one-byte `JumpIfMasked` test with no temporaries.
 - [Asm copy propagation](asm_copy_propagation.md). Replaces reads of a byte copied by a direct Mov with its source.
 - [Asm dead-store elimination](asm_dead_store.md). Drops stores to memory that no reachable instruction reads before overwrite or return.
@@ -292,9 +293,9 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Private local pools](zp_local_pools.md). Gives each eligible function body-local zero-page bytes that no coexisting function uses.
 - [Prologue synthesis](prologue_synthesis.md). Adds a soft-stack prologue and epilogue only to functions that need a frame.
 - [Reads of X's save slot](x_save_slot_load.md). Rewrites loads of X's spill byte as TXA or STX.
-- [Redundant compare](redundant_compare.md). Deletes a compare reached only through the branches after an identical compare, and a compare with 0 whose flags are already set.
+- [Redundant compare](redundant_compare.md). Deletes a compare reached only through the branches after an identical compare, a compare with 0 whose flags are already set, and a compare with $80 or 1 whose branch can test N or Z, and drops the overflow test of a signed compare of a value a branch showed nonnegative.
 - [Redundant LDY setup](y_peephole.md). Drops `LDY #n`, or makes it INY or DEY, when Y's value is known.
-- [Redundant load elimination](redundant_load.md). Drops loads into A, X, or Y when the register already holds the value, and stores into a byte that already holds it.
+- [Redundant load elimination](redundant_load.md). Drops loads into A, X, or Y when the register already holds the value and stores into a byte that already holds it, and loads a register from another one that holds the value.
 - [Redundant store elimination](redundant_store.md). Drops a repeated `LDA S; STA D` copy when D still holds S.
 - [Rematerialization of staged values](asm_remat.md). Reloads a staged value from its source so the staging-slot store dies.
 - [Round-trip load drop](round_trip_load.md). Deletes `LDA M` after `STA M` when the flags already reflect A.
@@ -308,6 +309,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Sign-bit test without AND](and_sign_bit_branch.md). Turns `LDA M; AND #$80; BEQ/BNE` into `LDA M; BPL/BMI`, and `AND #$01; BEQ/BNE` into `LSR; BCC/BCS`.
 - [Shifting a bit in through the carry](rotate_in.md). Lowers `(x << 1) | b`, with `b` 0 or 1, as `LDA b; LSR` and a `ROL` of each byte, or just the `ROL`s when C already holds `b`.
 - [Shifts by a loop](shift_loop.md). Lowers a 1- or 2-byte shift by a variable count, or by a constant too large for a fixed run of shifts, as a loop of one-bit shifts with the count in X.
+- [Signed compare of values that can't be negative](nonnegative_compare.md). Does a signed ordering compare of two values that can't be negative as an unsigned one, without the overflow test.
 - [Signed countdown loop rotation](loop_rotate.md). Moves the `i >= 0` test of a signed countdown for loop to the bottom.
 - [Sinking an AND past a bit test](sink_and_past_branch.md). Moves a byte AND past a bit-7 test into both successor blocks.
 - [Sinking increments](sink_increment.md). Moves `Y = X ± c` past X's last read so X and Y share a register.
@@ -360,32 +362,35 @@ them whenever a pass is added or moved.
       1. [Constant folding](constant_folding.md)
       2. [A widened byte multiplied before the
          constant](distribute_constant.md)
-      3. [Strength reduction](strength_reduction.md)
-      4. The three jump folds, run as one rule set. They are the
+      3. [An operation of a choice of constants](phi_constant_fold.md)
+      4. [Strength reduction](strength_reduction.md)
+      5. The jump folds, run as one rule set. They are the
          [comparison and jump fold](cmp_zero_jump_fold.md), with
          its narrowing of a comparison kept as a value, the
-         [AND jump fold](and_zero_jump_fold.md), and the
-         [logical-not jump fold](lnot_jump_fold.md).
-      5. [Dead loop elimination](dead_loop_elimination.md)
-      6. [Unreachable code elimination](unreachable_code_elimination.md)
-      7. [Common subexpression elimination](cse.md)
-      8. [Loop-invariant extends and truncates](licm.md)
-      9. [Copy propagation](copy_propagation.md)
-      10. [Dead-store elimination](dead_store_elimination.md)
-      11. [A global read after it's stored](read_stored_global.md)
-      12. [Copy folding](copy_folding.md)
-      13. [Combining added constants](reassoc_const.md)
-      14. [Moving a constant out of an offset](reassoc_offset.md)
-      15. [Direct member access](direct_member_access.md)
-      16. [Indexed store to a fixed address](recognize_indexed_store.md)
-      17. [Indexed load from a fixed address](recognize_indexed_load.md)
-      18. [Truncate of an extend](truncate_extend_fold.md), then an
+         [AND jump fold](and_zero_jump_fold.md), the
+         [logical-not jump fold](lnot_jump_fold.md), with its `!` of
+         a value that is 0 or 1, and the [signed compare of values
+         that can't be negative](nonnegative_compare.md).
+      6. [Dead loop elimination](dead_loop_elimination.md)
+      7. [Unreachable code elimination](unreachable_code_elimination.md)
+      8. [Common subexpression elimination](cse.md)
+      9. [Loop-invariant extends and truncates](licm.md)
+      10. [Copy propagation](copy_propagation.md)
+      11. [Dead-store elimination](dead_store_elimination.md)
+      12. [A global read after it's stored](read_stored_global.md)
+      13. [Copy folding](copy_folding.md)
+      14. [Combining added constants](reassoc_const.md)
+      15. [Moving a constant out of an offset](reassoc_offset.md)
+      16. [Direct member access](direct_member_access.md)
+      17. [Indexed store to a fixed address](recognize_indexed_store.md)
+      18. [Indexed load from a fixed address](recognize_indexed_load.md)
+      19. [Truncate of an extend](truncate_extend_fold.md), then an
           extend of an extend
-      19. [Sinking increments](sink_increment.md)
-      20. [Sinking an AND past a bit test](sink_and_past_branch.md)
-      21. [Narrowing widened arithmetic](narrow_widened_arith.md)
-      22. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
-      23. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
+      20. [Sinking increments](sink_increment.md)
+      21. [Sinking an AND past a bit test](sink_and_past_branch.md)
+      22. [Narrowing widened arithmetic](narrow_widened_arith.md)
+      23. [Narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
+      24. [Narrowing a bitwise operation on a byte](narrow_byte_bitwise.md)
    6. [A choice of offsets from one pointer](phi_offset.md)
    7. [Indexed access to a static array of structs](static_indexed_access.md)
    8. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)

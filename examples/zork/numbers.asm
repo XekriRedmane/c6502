@@ -323,12 +323,10 @@ divu16:
    SUBROUTINE
 
    STA   __local_divu16__quotient
-   TXA
-   TAY
    LDA   #$00
    STA   __local_divu16__partial_0
    STA   __local_divu16__partial_1
-   LDX   #$11
+   LDY   #$11
 .divu16@rot@1:
    LDA   __local_divu16__partial_0
    SEC
@@ -344,12 +342,12 @@ divu16:
 .if_end@1:
    LSR
    ROL   __local_divu16__quotient
-   TYA
+   TXA
    ROL
-   TAY
+   TAX
    ROL   __local_divu16__partial_0
    ROL   __local_divu16__partial_1
-   DEX
+   DEY
    BNE   .divu16@rot@1
    LDA   __local_divu16__partial_1
    LSR
@@ -357,8 +355,6 @@ divu16:
    LDA   __local_divu16__partial_0
    ROR
    STA   remainder
-   TYA
-   TAX
    LDA   __local_divu16__quotient
    RTS
 .divu16@asm_ssa_split@0:

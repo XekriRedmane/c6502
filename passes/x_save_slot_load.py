@@ -169,10 +169,13 @@ def _x_write_keeps_slot(instrs, i: int, key) -> bool:
             return True
         if _is_reg_a(instr.src) and i > 0:
             prev = instrs[i - 1]
+            # The store before the `TAX` has to leave A equal to M: a
+            # store of A, or a move through A. `STX M; TAX` puts A's
+            # other value in X.
             return (
                 isinstance(prev, asm_ast.Mov)
                 and _op_key(prev.dst) == key
-                and not _is_reg(prev.src, asm_ast.Y)
+                and not _is_reg(prev.src, (asm_ast.X, asm_ast.Y))
             )
         return False
     if isinstance(instr, asm_ast.Call) and i + 1 < len(instrs):

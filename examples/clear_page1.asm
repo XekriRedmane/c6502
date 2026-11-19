@@ -56,8 +56,8 @@ clear_page1:
    STA   $2028,X
    STA   $2428,X
    STA   $2828,X
+   TXA
    LDX   #$00
-   LDA   __local_clear_page1__x
    JSR   interlace_fill_p1
    LDA   __local_clear_page1__x
    CMP   __local_clear_page1__zp_clear_col_end

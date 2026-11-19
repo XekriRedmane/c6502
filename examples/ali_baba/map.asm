@@ -35,6 +35,7 @@ __local_scene_setup__4	EQU	$84
 __local_draw_map_entities__2	EQU	$85
 __local_integrity_fail__offset	EQU	$85
 __local_draw_map_entities__3	EQU	$86
+__local_draw_map_entities__4	EQU	$87
 __local_rwts_dispatch__iob	EQU	$87
 __local_rwts_dispatch__0	EQU	$88
 __local_rwts_dispatch__command	EQU	$89
@@ -626,7 +627,7 @@ draw_map_entities:
 .if_else@4:
    LDY   #$02
    LDA   (CHAR_PTR),Y
-   STA   __local_draw_map_entities__3
+   STA   __local_draw_map_entities__4
    LDA   #$00
    STA   (CHAR_PTR),Y
    LDA   VIEW_MIN_ROW
@@ -641,20 +642,17 @@ draw_map_entities:
    LDA   FONT_COL
    JSR   colrow_to_pos
    JSR   find_entity_at_pos
+   STA   __local_draw_map_entities__2
+   STX   __local_draw_map_entities__3
+   AND   #$FE
    STA   __local_draw_map_entities__1
-   STX   __local_draw_map_entities__2
-   ORA   __local_draw_map_entities__2
-   BEQ   .loop@2_continue
    TXA
-   BNE   .if_end@7
-   LDA   __local_draw_map_entities__1
-   CMP   #$01
+   ORA   __local_draw_map_entities__1
    BEQ   .loop@2_continue
-.if_end@7:
-   LDA   __local_draw_map_entities__1
+   LDA   __local_draw_map_entities__2
    JSR   get_entity_fontchar
    LDY   #$01
-   LDA   (__local_draw_map_entities__1),Y
+   LDA   (__local_draw_map_entities__2),Y
    CMP   #$FE
    BEQ   .if_end@12
    CMP   #$80
@@ -663,8 +661,8 @@ draw_map_entities:
    BCC   .if_end@12
 .draw_map_entities@scfold@1:
    JSR   set_cursor_row21
-   LDX   __local_draw_map_entities__2
-   LDA   __local_draw_map_entities__1
+   LDX   __local_draw_map_entities__3
+   LDA   __local_draw_map_entities__2
    JSR   classify_entity_type
    JSR   print_bottom_centered
    JSR   draw_map_icon_b
@@ -680,7 +678,7 @@ draw_map_entities:
    LDA   VIEW_MAX_ROW
    CMP   FONT_ROW
    BCS   .draw_map_entities@rot@1
-   LDA   __local_draw_map_entities__3
+   LDA   __local_draw_map_entities__4
    LDY   #$02
    STA   (CHAR_PTR),Y
    ORA   #$00
@@ -967,10 +965,10 @@ load_scene_from_disk:
    ADC   __local_load_scene_from_disk__scene
    LDX   #$FF
    SEC
-.div_loop@1:
+.div_loop@0:
    INX
    SBC   #$0D
-   BCS   .div_loop@1
+   BCS   .div_loop@0
    ADC   #$0D
    LDY   #$05
    STA   (__local_load_scene_from_disk__iob),Y

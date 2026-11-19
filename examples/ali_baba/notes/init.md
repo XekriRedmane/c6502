@@ -212,6 +212,11 @@ None.
    old `(BUTN[0] ^ button) & 0x80` gave `EOR button; BPL`. Together they
    cost `select_input_mode` 4 bytes.
 
+   The first was fixed on 19 Nov 2026, and `LDA KBD; BMI` saves 2 of
+   the 4 bytes (docs/optimizations/redundant_compare.md). The second
+   is a rewrite only when `button` has no bit set but bit 7, which
+   the compiler doesn't follow from `button = BUTN[0] & 0x80`.
+
 ## Size
 
 Bytes of code in the `-c -O` object (`nm.py -S`) against main.lst's

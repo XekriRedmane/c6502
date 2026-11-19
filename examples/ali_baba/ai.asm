@@ -46,7 +46,6 @@ __local_evaluate_direction__test_pos	EQU	$86
 __local_find_nearest_event__1	EQU	$86
 __local_apply_shop_effect__1	EQU	$87
 __local_award_xp__armor	EQU	$87
-__local_evaluate_direction__1	EQU	$87
 __local_find_nearest_event__ev	EQU	$87
 __local_show_item__0	EQU	$87
 __local_award_xp__1	EQU	$88
@@ -613,8 +612,7 @@ event_penalty:
    STX   __local_event_penalty__1
    LDY   #$01
    LDA   (__local_event_penalty__ev),Y
-   CMP   #$80
-   BCC   .tail@0
+   BPL   .tail@0
    CMP   #$C0
    BCS   .if_end@9
    LDA   #$06
@@ -675,7 +673,6 @@ evaluate_direction:
    LDA   __local_evaluate_direction__test_pos
    JSR   find_entity_at_pos
    STA   __local_evaluate_direction__2
-   STX   __local_evaluate_direction__1
    TXA
    AND   #$80
    STA   __local_evaluate_direction__0
@@ -686,12 +683,8 @@ evaluate_direction:
 .evaluate_direction@scfold@0:
    RTS
 .if_end@21:
-   LDA   #$FF
-   SEC
-   SBC   __local_evaluate_direction__2
-   LDA   #$00
-   SBC   __local_evaluate_direction__1
-   BCS   .if_else@25
+   TXA
+   BEQ   .if_else@25
    LDA   __local_evaluate_direction__0
    BNE   .if_else@25
    LDA   __local_evaluate_direction__2
@@ -742,9 +735,8 @@ npc_move_ai:
 .if_end@29:
    LDA   AI_PREV_DIR
    BEQ   .if_end@30
-   STA   __local_npc_move_ai__best_score
    CLC
-   LDX   __local_npc_move_ai__best_score
+   TAX
    LDA   DIR_SCORES,X
    ADC   #$03
    STA   DIR_SCORES,X
@@ -867,10 +859,8 @@ ai_choose_target:
    CMP   #$02
    BCS   .vthread@0
    JSR   pick_random_member
-   SEC
    LDA   MOB_PTR+1
-   SBC   #$01
-   BCC   .vthread@1
+   BEQ   .vthread@1
    JMP   join_party
 .vthread@0:
    BNE   .if_else@37
@@ -920,10 +910,8 @@ ai_choose_target:
 .if_end@43:
 .if_end@42:
    JSR   next_group_member
-   SEC
    LDA   MOB_PTR+1
-   SBC   #$01
-   BCS   .loop@3_start
+   BNE   .loop@3_start
    LDA   AI_TARGET_COL
    CMP   #$3C
    BNE   .if_end@40
@@ -957,10 +945,8 @@ ai_choose_target:
 .if_end@48:
 .if_end@47:
    JSR   next_group_member
-   SEC
    LDA   MOB_PTR+1
-   SBC   #$01
-   BCS   .loop@4_start
+   BNE   .loop@4_start
    LDA   __local_ai_choose_target__best_strength
    BNE   .cond_end@50
    LDA   EVENT_POS

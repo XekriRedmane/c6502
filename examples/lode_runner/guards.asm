@@ -508,7 +508,7 @@ move_guards:
    LDA   #$00
    STA   GUARD_PHASE
 .if_end@1:
-   LDX   GUARD_PHASE
+   TAX
    LDA   GUARD_PATTERNS,X
    STA   __local_move_guards__pattern
 .loop@0_start:
@@ -1696,8 +1696,8 @@ consider_column:
    BEQ   .if_end@166
    CMP   #$02
    BEQ   .if_end@166
+   TXA
    LDX   __local_consider_column__col
-   LDA   __local_consider_column__row
    JSR   guard_find_candidate_row_below
    LDX   __local_consider_column__col
    JSR   pseudo_distance
@@ -1707,7 +1707,7 @@ consider_column:
 .if_end@163:
    LDA   __local_consider_column__row
    BEQ   .if_end@169
-   LDX   __local_consider_column__row
+   TAX
    LDA   LEVEL_BG@lo,X
    STA   __local_consider_column__0
    LDA   LEVEL_BG@hi,X
@@ -1716,8 +1716,8 @@ consider_column:
    LDA   (__local_consider_column__0),Y
    CMP   #$03
    BNE   .if_end@169
+   TXA
    LDX   __local_consider_column__col
-   LDA   __local_consider_column__row
    JSR   guard_find_candidate_row_above
    LDX   __local_consider_column__col
    JSR   pseudo_distance

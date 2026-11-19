@@ -16,7 +16,7 @@ save to a new scenario disk, a load from it, a visit to the forest's
 shops, and a game with a second character, it makes the same
 soft-switch accesses, Monitor calls, and disk calls as the original,
 with the same hi-res page 1 at each one, and leaves the same disks
-(see "How it's compared"). Its code is about 7.5% larger than the code
+(see "How it's compared"). Its code is about 4.9% larger than the code
 it translates, counting the runtime helper the linker adds (see
 "Size"), and it fits by using `$A900-$B2FF`, which the original never
 touches.
@@ -154,26 +154,26 @@ translates (the chunks of `main.asm` that `UNITS.md` gives it):
 
 | File | Original code | Original tables | C code | C data |
 |---|---:|---:|---:|---:|
-| `main.c` | 381 | 2 | 369 | 0 |
-| `init.c` | 972 | 355 | 858 | 362 |
-| `turn.c` | 616 | 6 | 1160 | 0 |
-| `input.c` | 1639 | 1313 | 1793 | 1256 |
-| `combat.c` | 2856 | 23 | 2992 | 0 |
-| `ai.c` | 1223 | 18 | 1457 | 27 |
-| `events.c` | 1542 | 8 | 1630 | 0 |
-| `entities.c` | 1033 | 8 | 1056 | 0 |
-| `map.c` | 993 | 43 | 1020 | 8 |
-| `display.c` | 399 | 0 | 449 | 0 |
-| `util.c` | 866 | 119 | 791 | 13 |
-| `text.c` | 553 | 8 | 692 | 0 |
-| `sound.c` | 337 | 64 | 450 | 0 |
-| `hrcg.c` | 1141 | 907 | 877 | 790 |
-| **Total** | **14551** | **2874** | **15594** | **2456** |
+| `main.c` | 381 | 2 | 361 | 0 |
+| `init.c` | 972 | 355 | 834 | 362 |
+| `turn.c` | 616 | 6 | 1150 | 0 |
+| `input.c` | 1639 | 1313 | 1723 | 1256 |
+| `combat.c` | 2856 | 23 | 2957 | 0 |
+| `ai.c` | 1223 | 18 | 1374 | 27 |
+| `events.c` | 1542 | 8 | 1606 | 0 |
+| `entities.c` | 1033 | 8 | 1017 | 0 |
+| `map.c` | 993 | 43 | 985 | 8 |
+| `display.c` | 399 | 0 | 446 | 0 |
+| `util.c` | 866 | 119 | 787 | 13 |
+| `text.c` | 553 | 8 | 690 | 0 |
+| `sound.c` | 337 | 64 | 437 | 0 |
+| `hrcg.c` | 1141 | 907 | 846 | 790 |
+| **Total** | **14551** | **2874** | **15213** | **2456** |
 
 The C counts are the symbol sizes of each unit's `-c -O` object
 (`nm.py -S`), and they leave out the `__zp_init` the linker writes.
 The link also adds the runtime library's `udivmod16`, 49 bytes of code,
-which brings the C program's code to 15,643 bytes, 7.5% more than the
+which brings the C program's code to 15,262 bytes, 4.9% more than the
 original's. `hrcg.c` leaves out the HRCG's entry points and control
 characters that the game never uses.
 

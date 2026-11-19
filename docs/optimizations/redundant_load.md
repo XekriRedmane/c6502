@@ -186,8 +186,18 @@ lists intact. The pass removes 8 bytes and 12 cycles here. The win
 grows with loop unrolling, where the same loads repeat once per
 unrolled iteration.
 
+Since 19 Nov 2026 the function is 3 bytes shorter again: `STA
+__local_fill__col; TXA; LDX __local_fill__col; STA row0,X; STA
+row1,X; STA row2,X; RTS`. The first phase swaps `LDX
+__local_fill__col; LDA __local_fill__color`, since X still holds
+`color` (described below), and the store of `color` goes once nothing
+reads it.
+
 A transfer straight back goes too: in `TAX; TXA` the second leaves A,
-X, and N/Z as the first left them. `return add(v, v);`, with `v`
+X, and N/Z as the first left them. So does a transfer the instruction
+before a run of branches already made, the second `TXA` of `TXA; BEQ
+two; TXA; BPL three` (`_repeats_transfer`), since a branch changes no
+register or flag and nothing else reaches the second. `return add(v, v);`, with `v`
 arriving in A and both of `add`'s arguments in registers, compiles to
 `TAX; JMP add`.
 
@@ -242,6 +252,61 @@ its address. Changing X or Y, by a load,
 `INX` / `DEX`, or the `LDY #off` that sets up a `Frame`, `Stack`, or
 `Indirect` access, also removes every indexed operand whose address
 depends on that register.
+
+## Loads that come from a register
+
+Two more rewrites put a value into a register from the register that
+holds it.
+
+The first phase swaps `LDX M1; LDA M2` (or `LDY M1`) to `LDA M2; LDX
+M1` when X holds M2 and A doesn't, and the second phase then makes the
+`LDA M2` a `TXA` (`_swap_loads_ok`). A load writes only its register
+and N and Z, so A holds M2 and X holds M1 after either order, and N
+and Z, which end up set from M1, must be dead after the pair. Neither
+load may be volatile or set up through Y, M2 may not be indexed by
+the register M1 goes into, and the pair is left alone right after
+`STA M1`, whose `LDX M1` [transfer plus or minus
+one](transfer_pm1_store.md) looks for after a step of M1 (Zork's
+`return_value`). That's how a function passes its two byte arguments
+on in the other order:
+
+```c
+#include <stdint.h>
+void g(uint8_t a, uint8_t b);
+void f(uint8_t a, uint8_t b) { g(b, a); }
+```
+
+```
+   STA   __local_f__a               STA   __local_f__a
+   STX   __local_f__b       ->      TXA
+   LDX   __local_f__a               LDX   __local_f__a
+   LDA   __local_f__b               JMP   g
+   JMP   g
+```
+
+The 6502 has no exchange of A and X, and a byte in zero page with one
+transfer, 5 bytes, is the shortest swap. Through Y it takes `TAY` and
+a move from Y to X, which goes through A or memory, and through the
+stack it takes `PHA; TXA; TAY; PLA; TAX; TYA`, 6 bytes.
+
+The second phase makes `LDX M` or `LDY M` a `TAX` or `TAY` when A
+holds M (`_redirect_index_load_to_transfer`), which sets the register
+and N and Z the same way in one byte. For one of the compiler's own
+zero-page bytes, it does so only when nothing reads M after the load
+(`asm_dead_store.mem_dead_after`), so that the store of M goes too. A
+loop counter's `LDX i`, with `i` still read at the loop's test, stays,
+since [the loop counter in X](loop_counter_to_x.md) looks for it. A
+named object is rewritten either way, so `A1 = A2 = C1; B1 = B2 = C2;
+return pos(C1, C2);` passes `C2` with a `TAX` after its stores. The
+load stays right after `LDA M`, which [direct load into X or
+Y](direct_index_load.md) makes an `LDX M`. A volatile load is rewritten
+only right after a store of A to M that isn't volatile, since every
+access of a volatile byte carries the flag, and the flag then comes
+from the register a `register volatile` local lives in. `TAY` writes
+that register once, as `LDY M` did. A parameter arriving in A that a
+loop counts down in Y, `STA d; LDY d`, becomes `TAY`, and [DEX and DEY
+for a register counter](dec_register_peephole.md) then makes the loop
+`DEY; BNE`.
 
 ## What it leaves alone
 

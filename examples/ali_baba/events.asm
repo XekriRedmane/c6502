@@ -244,7 +244,7 @@ WAIT	EQU	$FCA8
 ; def check_can_leave params= locals=__local_check_can_leave__0,__local_check_can_leave__1 indirect=false in_cycle=false carry=true
 ; def check_location_match params= locals=__local_check_location_match__0 indirect=false in_cycle=false
 ; def check_scene_events params= locals= indirect=false in_cycle=false
-; def clear_and_display params=__zpabi_clear_and_display__strings_0,__zpabi_clear_and_display__strings_1 locals=__local_clear_and_display__strings_1,__local_clear_and_display__strings_0 indirect=false in_cycle=false param_regs=A,X
+; def clear_and_display params=__zpabi_clear_and_display__strings_0,__zpabi_clear_and_display__strings_1 locals=__local_clear_and_display__strings indirect=false in_cycle=false param_regs=A,X
 ; def clear_treasure_digits params= locals=__local_clear_treasure_digits__0,__local_clear_treasure_digits__1,__local_clear_treasure_digits__i indirect=false in_cycle=false
 ; def drop_gold_exec params= locals=__local_drop_gold_exec__0,__local_drop_gold_exec__1 indirect=false in_cycle=false
 ; def event_faction_scene_cont params=__zpabi_event_faction_scene_cont__index locals=__local_event_faction_scene_cont__0,__local_event_faction_scene_cont__1,__local_event_faction_scene_cont__index indirect=false in_cycle=false param_regs=A

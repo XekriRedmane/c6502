@@ -895,8 +895,7 @@ classify_entity_type:
 .if_end@38:
    LDY   #$01
    LDA   (__local_classify_entity_type__e),Y
-   CMP   #$80
-   BCC   .tail@0
+   BPL   .tail@0
    CMP   #$C0
    BCS   .if_end@42
    LDX   #>S_EMPTY_SPACE

@@ -918,7 +918,7 @@ instr_sread:
    TAY
    LDA   input_ptr
    STA   (parse),Y
-   LDY   input_ptr
+   TAY
    LDA   (text),Y
    STA   __local_instr_sread__1
    JSR   is_dict_separator

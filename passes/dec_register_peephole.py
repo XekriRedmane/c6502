@@ -83,6 +83,13 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     label_to_index = _build_label_index(instrs)
     i = 0
     while i < len(instrs):
+        short = _match_transfer_back(instrs, i, label_to_index)
+        if short is not None:
+            reg_kind, branch = short
+            out.append(asm_ast.Dec(dst=asm_ast.Reg(reg=reg_kind())))
+            out.append(branch)
+            i += 5
+            continue
         match = _match_dec_register_pattern(instrs, i, label_to_index)
         if match is not None:
             reg_kind, branch = match
@@ -176,6 +183,55 @@ def _match_dec_register_pattern(
     #     read again. Conservatively gate on the simplest case:
     #     no read of `tmp` after `e` in the rest of the function.
     if _operand_read_after(tmp, instrs, i + 6):
+        return None
+    return reg_kind, f
+
+
+def _match_transfer_back(
+    instrs: list[asm_ast.Type_instruction],
+    i: int,
+    label_to_index: dict[str, int],
+):
+    """Returns `(reg_kind_class, branch_instr)` when `instrs[i:i+5]` is
+    `TXA; SEC; SBC #1; TAX; BNE|BEQ` (or the Y form), else None. That's
+    the six-instruction pattern once `redundant_load` has made its `STA
+    tmp; LDY tmp` a `TAY` and the store has gone.
+
+    `DEY` sets Y and N/Z as `TAY` did from `Y - 1`. It leaves A, C, and
+    V alone, where the `SBC` wrote all three, so A must be dead at both
+    successors, as for the six-instruction pattern, and C and V must
+    be dead after the branch (`asm_liveness`, which counts a return of
+    a value in A as a read). A volatile transfer reads and writes the
+    register the volatile local lives in, once each, as `DEY` does."""
+    if i + 4 >= len(instrs):
+        return None
+    a, b, c, d, f = instrs[i:i + 5]
+    if not (isinstance(a, asm_ast.Mov)
+            and isinstance(a.src, asm_ast.Reg)
+            and isinstance(a.src.reg, (asm_ast.X, asm_ast.Y))
+            and isinstance(a.dst, asm_ast.Reg)
+            and isinstance(a.dst.reg, asm_ast.A)):
+        return None
+    reg_kind = type(a.src.reg)
+    if not isinstance(b, asm_ast.SetCarry):
+        return None
+    if not (isinstance(c, asm_ast.Sub)
+            and isinstance(c.src, asm_ast.Imm) and c.src.value == 1
+            and isinstance(c.dst, asm_ast.Reg)
+            and isinstance(c.dst.reg, asm_ast.A)):
+        return None
+    if not (isinstance(d, asm_ast.Mov)
+            and isinstance(d.src, asm_ast.Reg)
+            and isinstance(d.src.reg, asm_ast.A)
+            and isinstance(d.dst, asm_ast.Reg)
+            and type(d.dst.reg) is reg_kind):
+        return None
+    if not (isinstance(f, asm_ast.Branch)
+            and isinstance(f.cond, (asm_ast.NE, asm_ast.EQ))):
+        return None
+    from passes.asm_liveness import a_dead_at, c_dead_at, v_dead_at
+    if not (c_dead_at(instrs, i + 4) and v_dead_at(instrs, i + 4)
+            and a_dead_at(instrs, i + 4)):
         return None
     return reg_kind, f
 

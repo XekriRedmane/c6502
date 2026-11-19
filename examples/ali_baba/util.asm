@@ -1037,8 +1037,8 @@ cold_restart:
 .loop@10_break:
    LDA   #$01
    STA   __local_cold_restart__p
-   LDA   #$A5
-   STA   __local_cold_restart__0
+   LDY   #$A5
+   STY   __local_cold_restart__0
    JMP   .loop@11_start
 .cold_restart@rot@5:
    LDA   #$A5
@@ -1048,12 +1048,12 @@ cold_restart:
    BNE   .loop@11_start
    INC   __local_cold_restart__0
 .loop@11_start:
-   LDA   #$6F
+   LDA   __local_cold_restart__p
    SEC
-   SBC   __local_cold_restart__p
-   LDA   #$A5
-   SBC   __local_cold_restart__0
-   BCS   .cold_restart@rot@5
+   SBC   #$70
+   LDA   __local_cold_restart__0
+   SBC   #$A5
+   BCC   .cold_restart@rot@5
    JMP   DISK_BOOT_ROM
 
 ANIM_INDEX:

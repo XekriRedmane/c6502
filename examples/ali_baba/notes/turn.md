@@ -122,6 +122,11 @@ without a cast.
    BLINK_COL, FONT_COL, BLINK_ROW, FONT_ROW, where the original stores
    FONT_COL first, and the bytes are the same once the routine
    returns.
+
+   Partly fixed on 19 Nov 2026. The `LDX` of the row after its stores
+   is `TAX` (docs/optimizations/redundant_load.md), and commit_move is
+   54 bytes. The column is still loaded again, since A holds the row
+   by then.
 3. **A test that repeats one the code has already made is made
    again.** `move_loop` tests `ENTITY_IS_MOB(e)` and returns, and then
    `!ENTITY_IS_EVENT(e)`, which is `!(e > 0x00FF && !ENTITY_IS_MOB(e))`.
@@ -146,6 +151,13 @@ without a cast.
    C's, and `type < EVENT_ACTIVATED`, which replaced `(type &
    EVENT_ACTIVATED) != EVENT_ACTIVATED`, saved 6, so move_loop grew 11
    bytes (316 to 327).
+
+   Partly fixed on 19 Nov 2026. `e > 0xFF` is a test of the high byte,
+   `TXA; BEQ two` (docs/optimizations/cmp_zero_jump_fold.md), and
+   move_loop is 319 bytes. The bit-15 test is still made again. In
+   the minimal example above it's a `BPL three` after the `BEQ two`,
+   whose `TXA` goes (docs/optimizations/redundant_load.md), and in
+   move_loop it's the byte `AND #$80; STA t` described above.
 4. **The chain costs a dispatcher.** The original's JMPs between
    chain routines cost nothing beyond the JMP. run_chain is 461 bytes,
    a 118-byte table of case addresses and 6 to 13 bytes a case for

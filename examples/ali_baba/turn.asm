@@ -997,12 +997,8 @@ move_loop:
    LDA   #$11
    RTS
 .if_end@43:
-   LDA   #$FF
-   SEC
-   SBC   __local_move_loop__1
-   LDA   #$00
-   SBC   __local_move_loop__2
-   BCS   .move_loop@scfold@1
+   TXA
+   BEQ   .move_loop@scfold@1
    LDA   __local_move_loop__0
    BEQ   .if_end@46
 .move_loop@scfold@1:
@@ -1061,7 +1057,7 @@ commit_move:
    LDA   CURRENT_ROW
    STA   BLINK_ROW
    STA   FONT_ROW
-   LDX   CURRENT_ROW
+   TAX
    LDA   CURRENT_COL
    JSR   colrow_to_pos
    LDY   #$03

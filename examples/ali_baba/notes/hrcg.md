@@ -89,6 +89,10 @@ No bug was hit. These cost bytes:
    }
    ```
 
+   Fixed on 19 Nov 2026. A signed compare of two values that can't be
+   negative is done unsigned (docs/optimizations/nonnegative_compare.md),
+   and hrcg_scroll_up is 111 bytes.
+
 3. A bool argument computed from a comparison
    (`hrcg_control(ch, next == HRCG_NEXT_SHIFTED)`) compiled to a
    compare and two branches that load 0 or 1. Splitting the function

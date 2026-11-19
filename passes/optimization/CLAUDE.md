@@ -139,6 +139,20 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   - `fold_lnot_jump` (`LNOT_RULE`): folds `Unary(LogicalNot, src, %t);
     JumpIf{True,False}(%t, target)` to a sense-flipped direct JumpIf
     when %t is single-use.
+  - `LNOT_OF_ZERO_OR_ONE_RULE` (same module, right after `LNOT_RULE`):
+    a `!` that no jump tests, of a value that is 0 or 1 (an object
+    whose `LocalAttr` / `StaticAttr.was_bool` says it was a `bool`,
+    or an SSA name from a comparison, a `!`, or an extend or copy of
+    one), is `x ^ 1` at x's width, then extended or truncated to the
+    result's, so `A = !flag` is `LDA flag; EOR #$01; STA A`.
+  - `NONNEGATIVE_COMPARE_RULE` (`nonnegative_compare.py`, last in the
+    rule set): a signed ordering `JumpIfCmp` or comparison of two
+    values `value_range.max_value` bounds (neither can be negative),
+    each a signed integer of 2 bytes or more and no constant 0, is
+    done unsigned: a constant becomes the unsigned constant of its
+    width, or the first Var is copied into a new unsigned temporary,
+    a copy copy propagation keeps. `row + 1 < WNDBTM` on bytes loses
+    its overflow test.
 - `dead_loop_elimination.py` — `eliminate_dead_loops`
   (`EliminateDeadLoops`, raw FixedpointPass — CFG-shaped back-edge
   detection). Detects natural loops (back-edges via
@@ -154,6 +168,15 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 - `unreachable_code_elimination.py` — `EliminateUnreachableCode` (raw
   FixedpointPass — forward DFS from ENTRY). Prunes dead Phi args; folds
   singleton Phis to Copies; drops useless jumps / labels.
+- `phi_constant_fold.py` — `FoldIntoConstantPhi` (raw
+  FixedpointPass, right after `ConstantFold`). A `Phi` of integer
+  constants whose SSA dst has one reader, a `Unary`, a `Binary` with
+  a constant other operand, or a `Truncate` that `constant_folding._fold`
+  folds for every argument, takes the reader's operation in its
+  arguments: the Phi defines the reader's dst (an SSA name) and the
+  reader goes, or a new temporary that the reader becomes a copy of.
+  An extend isn't taken, since a byte Phi of 0 and 1 is what
+  `rotate_in` looks for. `B = (flag ? 3 : 2) + 1` loads 4 or 3.
 - `cse.py` — `eliminate_common_subexpressions`
   (`EliminateCommonSubexpressions`, raw FixedpointPass — dominator-
   tree walk). Replaces a repeated pure computation (`Binary`, `Unary`,
@@ -441,7 +464,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   materialize the fall-through. Copies on the short-circuit arm alone
   (before `Copy(C_sc, %t)`) go first on the chain's path. Covers all four `(C_ft, C_sc) ×
   consumer-kind` combinations and nested short-circuits (`(a && b) || c`
-  style) via transitive closure on the retarget map.
+  style) via transitive closure on the retarget map. After each sweep,
+  `merge_equality_jumps` makes two adjacent jumps to one target on
+  `x == a` and `x == b`, with `a` and `b` one bit `p` apart, one jump on
+  `(x & ~p) == min(a, b)` (a non-volatile integer `x`), so `e == 0 ||
+  e == 1` is `AND #$FE; ORA hi; BEQ`.
 - `dispatch_pointer_array.py` — `dispatch_const_pointer_arrays`
   (`DispatchConstPointerArrays`, ProgramPass). Runs at the program level
   after `optimize_tac` (post-from_ssa). Recognizes the
@@ -511,9 +538,10 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → noreturn_calls                (PreSsaPass, one-shot)
    → to_ssa                        (owned by PhaseDriver)
    → fold_static_const_reads       (PreFixedpointPass, one-shot)
-   → [constant_fold → distribute_constant → reduce_strength
-      → fold_producer_jumps
-      (cmp_zero ∪ narrow_and ∪ lnot, one merged RuleSet)
+   → [constant_fold → distribute_constant → fold_into_constant_phi
+      → reduce_strength → fold_producer_jumps
+      (cmp_zero ∪ narrow_and ∪ lnot ∪ nonnegative_compare, one
+      merged RuleSet)
       → eliminate_dead_loops → UCE → cse → licm
       → copy_propagate → DSE → read_stored_globals → fold_copies
       → reassoc_constants

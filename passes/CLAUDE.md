@@ -188,6 +188,15 @@ this directory:
   after `LDA m; CLC; ADC x` (stores from A between), which sets C
   opposite to the add's carry: the compare goes and the `BCC` / `BCS`
   after it flips, when N/Z are dead on both paths (`_carry_of_add`).
+  `CMP #$80; BCS / BCC` is `BMI / BPL` and `CMP #1; BCC / BCS` is
+  `BEQ / BNE` when N and Z were set from the register and N, Z, and C
+  are dead after on both paths, and so is `SEC; SBC #1; BCC / BCS`
+  when A and V are dead too (`_compares_as_flags`). A signed byte
+  compare `SEC; SBC #k; BVC L; EOR #$80; L: BMI / BPL` with k from 0
+  to 128, at labels every way into which is a `BPL` (or a fall-through
+  from a `BMI`) on N from A, can't overflow, so the `BVC` and `EOR` go,
+  and with A and V dead it's `CMP #k; BCC / BCS`
+  (`_signed_compare_of_nonnegative`).
 - `jump_table.py` — `apply_jump_tables`. A chain of `CMP #k; BEQ
   case` on A (at least four, constants 0 to 127, the case for 0 maybe
   a `BEQ` right after the load or after an `ORA #$00`, which goes) becomes `CMP #max+1; BCS default`
@@ -312,7 +321,9 @@ this directory:
   Folds the 6-instruction `Mov(R, A); SEC; Sub(Imm(1), A);
   Mov(A, tmp); Mov(tmp, R); Branch(NE|EQ, _)` chain to
   `Dec(R); Branch(NE|EQ, _)` when R is X / Y and A is dead at
-  both Branch successors. Volatile-safe because DEC R is a single
+  both Branch successors, and the 5-instruction `TYA; SEC; SBC #1;
+  TAY; BNE` that `redundant_load` leaves of it when A, C, and V are
+  dead after (`_match_transfer_back`). Volatile-safe because DEC R is a single
   R-M-W of the named register, which IS the pinned volatile
   variable's storage. Targets the inner-counter shape of
   `while (--counter != 0) { … }` when the counter is pinned to
@@ -554,7 +565,15 @@ this directory:
 - `loop_labeling.py` — pass 5 (see below).
 - `mem_const_prop.py` — `apply_mem_const_prop` peephole.
 - `prologue_synthesis.py` — late prologue / epilogue synthesis.
-- `redundant_load.py` — `apply_redundant_load_elimination`.
+- `redundant_load.py` — `apply_redundant_load_elimination`. Besides
+  the loads it drops (see the peephole catalog), its first phase
+  swaps `LDX M1; LDA M2` when X holds M2 and N/Z are dead after, so
+  the `LDA` becomes `TXA` (`_swap_loads_ok`), and its second makes
+  `LDX M` / `LDY M` a `TAX` / `TAY` when A holds M, for a named
+  object, or for a compiler slot nothing reads after
+  (`_redirect_index_load_to_transfer`). A transfer that the
+  instruction before a run of branches already made goes
+  (`_repeats_transfer`).
 - `redundant_load_after_rmw.py` — `apply_redundant_load_after_rmw`.
 - `redundant_store.py` — `apply_redundant_store_elimination`.
 - `replace_pseudoregisters.py` — pass 9 (see below).
@@ -1382,7 +1401,8 @@ Always-on (runs in both optimized AND unoptimized pipelines):
   `DEC M; BNE label` (or inverted variant) since DEC's flag side-
   effect IS the post-decrement zero test.
 - `apply_direct_index_load` — `LDA M; TAX` → `LDX M` when M is
-  `Imm`/`Data`/`ZP` and `Reg(A)` is dead after. See "Direct-into-X/Y
+  `Imm`/`Data`/`ZP`, or `IndexedData` by the other register (`LDX
+  abs,Y`, `LDY abs,X`), and `Reg(A)` is dead after. See "Direct-into-X/Y
   peephole" below.
 - `apply_dead_pha_pla` — drops `PHA / body / PLA` when the body
   preserves `Reg(A)` and the PLA's N/Z flag effect is dead. The

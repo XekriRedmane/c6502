@@ -265,8 +265,7 @@ print_zstring:
    BNE   .if_else@4
    JSR   get_next_zchar
    ASL
-   STA   __local_print_zstring__ch
-   LDY   __local_print_zstring__ch
+   TAY
    LDA   (Z_ABBREV_TABLE),Y
    STA   __local_print_zstring__c_0
    INY

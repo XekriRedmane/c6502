@@ -155,6 +155,7 @@ per-arm Copy chains into the canonical 5-instruction tail above.
 """
 from __future__ import annotations
 
+import c99_ast
 import tac_ast
 from passes.optimization.var_visit import count_uses
 
@@ -414,4 +415,138 @@ class FoldShortCircuitJump(PostDestructionFixedpointPass):
     name = "fold_short_circuit_jump"
 
     def run(self, fn, ctx):
-        return fold_short_circuit_jump(fn)
+        return merge_equality_jumps(
+            fold_short_circuit_jump(fn), symbols=ctx.symbols,
+        )
+
+
+# The bit width of each integer constant class.
+_CONST_BITS = {
+    tac_ast.ConstChar: 8, tac_ast.ConstUChar: 8,
+    tac_ast.ConstInt: 16, tac_ast.ConstUInt: 16,
+    tac_ast.ConstLong: 32, tac_ast.ConstULong: 32,
+    tac_ast.ConstLongLong: 64, tac_ast.ConstULongLong: 64,
+}
+
+
+def _jump_if_equal(instr) -> tuple[str, object, str] | None:
+    """`(name, constant, target)` when `instr` jumps to `target` when
+    the Var `name` equals an integer constant: `JumpIfFalse(x, T)`,
+    whose constant is None for 0 of x's width, or `JumpIfCmp(Equal, x,
+    k, T)` with the constant on either side."""
+    if (isinstance(instr, tac_ast.JumpIfFalse)
+            and isinstance(instr.condition, tac_ast.Var)):
+        return instr.condition.name, None, instr.target
+    if isinstance(instr, tac_ast.JumpIfCmp) and isinstance(
+            instr.op, tac_ast.Equal):
+        for v, k in ((instr.src1, instr.src2), (instr.src2, instr.src1)):
+            if (isinstance(v, tac_ast.Var)
+                    and isinstance(k, tac_ast.Constant)
+                    and type(k.const) in _CONST_BITS):
+                return v.name, k.const, instr.target
+    return None
+
+
+def merge_equality_jumps(fn: tac_ast.Function, *, symbols=None):
+    """Returns `fn` with each pair of adjacent jumps to one target on
+    `x == a` and `x == b`, where `a` and `b` differ in one bit `p` only,
+    replaced by one jump on `(x & ~p) == min(a, b)`.
+
+    `e == 0 || e == 1`, once the short-circuit fold has sent both
+    tests to the `if`'s target, is `JumpIfFalse(e, T); JumpIfCmp(==, e,
+    1, T)`, which becomes `JumpIfFalse(e & ~1, T)`: on a `uint16_t`,
+    `AND #$FE; ORA hi; BEQ` where the two tests read each byte and
+    compared the low one with 1.
+
+    Clearing bit `p` maps `a` and `b` to `a` (the one without the bit)
+    and every other value to something else, so the one jump is taken
+    for the same values of x. The second jump directly follows the
+    first, with no label before it, so it's reached only when the
+    first isn't taken, and nothing writes x between them. `x` must be
+    a non-volatile integer Var, since the merged test reads it once,
+    and the `&` goes into a new temporary of x's type."""
+    if symbols is None:
+        return fn
+    from passes.optimization.value_range import int_width
+    from passes.type_checking import LocalAttr, Symbol
+    instrs = fn.instructions
+    out: list[tac_ast.Type_instruction] = []
+    changed = False
+    i = 0
+    while i < len(instrs):
+        first = _jump_if_equal(instrs[i])
+        second = (_jump_if_equal(instrs[i + 1])
+                  if i + 1 < len(instrs) else None)
+        merged = None
+        if (first is not None and second is not None
+                and first[0] == second[0] and first[2] == second[2]):
+            merged = _merged_test(first, second, symbols, int_width)
+        if merged is None:
+            out.append(instrs[i])
+            i += 1
+            continue
+        name, mask, low, target = merged
+        sym = symbols.get(name)
+        k = 0
+        while f"{name}.eqm{k}" in symbols:
+            k += 1
+        tmp = tac_ast.Var(name=f"{name}.eqm{k}")
+        symbols[tmp.name] = Symbol(type=sym.type, attrs=LocalAttr())
+        out.append(tac_ast.Binary(
+            op=tac_ast.BitwiseAnd(), src1=tac_ast.Var(name=name),
+            src2=tac_ast.Constant(const=mask), dst=tmp,
+        ))
+        if low.value == 0:
+            out.append(tac_ast.JumpIfFalse(condition=tmp, target=target))
+        else:
+            out.append(tac_ast.JumpIfCmp(
+                op=tac_ast.Equal(), src1=tmp,
+                src2=tac_ast.Constant(const=low), target=target,
+            ))
+        changed = True
+        i += 2
+    if not changed:
+        return fn
+    return tac_ast.Function(
+        name=fn.name, is_global=fn.is_global, params=list(fn.params),
+        instructions=out,
+    )
+
+
+def _merged_test(first, second, symbols, int_width):
+    """`(name, mask, low, target)` for two equality jumps on one Var
+    whose constants differ in one bit, or None. See
+    `merge_equality_jumps`."""
+    name, k1, target = first
+    _, k2, _ = second
+    sym = symbols.get(name)
+    if sym is None:
+        return None
+    t = sym.type
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    if isinstance(t, c99_ast.Volatile):
+        return None
+    width = int_width(t)
+    if width is None:
+        return None
+    cls = next((type(k) for k in (k1, k2) if k is not None), None)
+    if cls is None or _CONST_BITS[cls] != 8 * width:
+        return None
+    if any(k is not None and type(k) is not cls for k in (k1, k2)):
+        return None
+    full = (1 << (8 * width)) - 1
+    a = 0 if k1 is None else k1.value & full
+    b = 0 if k2 is None else k2.value & full
+    p = a ^ b
+    if p == 0 or p & (p - 1):
+        return None
+    low = min(a, b)
+
+    def const(v):
+        if cls in (tac_ast.ConstChar, tac_ast.ConstInt, tac_ast.ConstLong,
+                   tac_ast.ConstLongLong) and v > full >> 1:
+            v -= full + 1
+        return cls(value=v)
+
+    return name, const(full & ~p), const(low), target

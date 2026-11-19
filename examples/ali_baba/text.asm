@@ -38,19 +38,19 @@ __local_render_stream__i	EQU	$85
 __local_display_message_loop__msg_1	EQU	$86
 __local_num_to_decimal__place_0	EQU	$86
 __local_num_to_decimal__started	EQU	$87
+__local_print_bottom_centered__s	EQU	$87
 __local_next_string__s	EQU	$88
 __local_num_to_decimal__out	EQU	$88
-__local_print_bottom_centered__s_0	EQU	$88
+__local_print_centered_plus_col__0	EQU	$88
 __local_next_string__1	EQU	$89
 __local_num_to_decimal__1	EQU	$89
-__local_print_centered_plus_col__0	EQU	$89
-__local_print_centered_plus_col__1	EQU	$8A
-__local_print_centered_plus_col__s	EQU	$8B
-__local_print_centered_plus_col__2	EQU	$8C
-__local_print_string__i	EQU	$8E
-__local_print_string__1	EQU	$8F
-__local_print_string__s	EQU	$90
-__local_print_string__2	EQU	$91
+__local_print_centered_plus_col__1	EQU	$89
+__local_print_centered_plus_col__s	EQU	$8A
+__local_print_centered_plus_col__2	EQU	$8B
+__local_print_string__i	EQU	$8D
+__local_print_string__1	EQU	$8E
+__local_print_string__s	EQU	$8F
+__local_print_string__2	EQU	$90
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -228,7 +228,7 @@ WAIT	EQU	$FCA8
 ; def display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 locals=__local_display_message_loop__count,__local_display_message_loop__msg_0,__local_display_message_loop__msg_1 indirect=false in_cycle=false param_regs=A,X
 ; def next_string params=__zpabi_next_string__s_0,__zpabi_next_string__s_1 locals=__local_next_string__0,__local_next_string__s,__local_next_string__1 indirect=false in_cycle=false param_regs=A,X
 ; def num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 locals=__local_num_to_decimal__0,__local_num_to_decimal__value_1,__local_num_to_decimal__value_0,__local_num_to_decimal__place_1,__local_num_to_decimal__place_0,__local_num_to_decimal__started,__local_num_to_decimal__out,__local_num_to_decimal__1 indirect=false in_cycle=false param_regs=A,X,,
-; def print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 locals=__local_print_bottom_centered__s_1,__local_print_bottom_centered__s_0 indirect=false in_cycle=false param_regs=A,X
+; def print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 locals=__local_print_bottom_centered__s indirect=false in_cycle=false param_regs=A,X
 ; def print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 locals=__local_print_centered_plus_col__0,__local_print_centered_plus_col__1,__local_print_centered_plus_col__s,__local_print_centered_plus_col__2 indirect=false in_cycle=false param_regs=A,X
 ; def print_ctrl_ab params= locals= indirect=false in_cycle=false
 ; def print_ctrl_n params= locals= indirect=false in_cycle=false
@@ -826,12 +826,12 @@ set_text_window_bottom:
 print_bottom_centered:
    SUBROUTINE
 
-   STA   __local_print_bottom_centered__s_0
+   STA   __local_print_bottom_centered__s
    LDA   #$17
    STA   TEXT_ROW
    LDA   #$00
    STA   TEXT_COL
-   LDA   __local_print_bottom_centered__s_0
+   LDA   __local_print_bottom_centered__s
    JMP   print_centered_plus_col
 
 print_centered_plus_col:

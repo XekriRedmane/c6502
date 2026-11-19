@@ -138,6 +138,51 @@ The pass runs after SSA destruction because before it the two
 copies write different SSA names and a `Phi` joins them, which this
 match doesn't recognize.
 
+## Two equality tests as one
+
+`merge_equality_jumps`, in the same module and run by the same pass
+after each fold, makes one test of two adjacent jumps to the same
+target on `x == a` and `x == b`, when `a` and `b` differ in a single
+bit `p`. Clearing that bit maps both to the smaller of the two and
+every other value to something else, so `JumpIfFalse(x, T);
+JumpIfCmp(==, x, 1, T)` becomes `Binary(&, x, ~1, t); JumpIfFalse(t,
+T)`. The second jump follows the first with no label between them,
+so it runs only when the first isn't taken, and nothing writes `x`
+between them. `x` must be a non-volatile integer, since the one test
+reads it once.
+
+```c
+#include <stdint.h>
+uint16_t find(void);
+void draw(void);
+void gap_a(void) {
+    uint16_t e = find();
+    if (e == 0 || e == 1)
+        return;
+    draw();
+}
+```
+
+The two compiles, before and after the rewrite was added, give
+
+```
+   JSR   find                        JSR   find
+   STA   __local_gap_a__1            AND   #$FE
+   STX   __local_gap_a__0            STA   __local_gap_a__1
+   ORA   __local_gap_a__0            TXA
+   BEQ   .gap_a@scfold@0             ORA   __local_gap_a__1
+   TXA                               BNE   .if_end@4
+   BNE   .if_end@4                   RTS
+   LDA   __local_gap_a__1
+   CMP   #$01
+   BNE   .if_end@4
+.gap_a@scfold@0:
+   RTS
+```
+
+which is 8 bytes less. Ali Baba's `draw_map_entities` tests the
+entity it finds this way.
+
 ## Related
 
 The [comparison jump fold](cmp_zero_jump_fold.md) and the

@@ -87,12 +87,16 @@ from passes.optimization.loop_rotate import RotateSignedCountdownLoops
 from passes.optimization.noreturn_call import NoreturnCalls
 from passes.optimization.static_const_fold import FoldStaticConstReads
 from passes.optimization.constant_folding import ConstantFold
+from passes.optimization.phi_constant_fold import FoldIntoConstantPhi
 from passes.optimization.strength_reduction import STRENGTH_RULES
 from passes.optimization.cmp_zero_jump_fold import (
     CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE, NARROW_JUMP_COMPARE_RULE,
 )
+from passes.optimization.nonnegative_compare import NONNEGATIVE_COMPARE_RULE
 from passes.optimization.and_zero_jump_fold import AND_ZERO_RULE
-from passes.optimization.lnot_jump_fold import LNOT_RULE
+from passes.optimization.lnot_jump_fold import (
+    LNOT_RULE, LNOT_OF_ZERO_OR_ONE_RULE,
+)
 from passes.optimization.dead_loop_elimination import EliminateDeadLoops
 from passes.optimization.unreachable_code_elimination import EliminateUnreachableCode
 from passes.optimization.copy_propagation import CopyPropagate
@@ -154,6 +158,9 @@ _DRIVER = PhaseDriver(
         # `(x - c) * k` on a widened byte `x` as `x * k - c * k`, before
         # strength reduction makes the multiply shifts.
         DistributeConstant(),
+        # An operation of a Phi of constants is computed in the Phi's
+        # arguments, so `(c ? 3 : 2) + 1` joins 4 and 3.
+        FoldIntoConstantPhi(),
         # Strength reduction split into per-op rules (Multiply / Divide
         # / Modulo by powers of two) in one RuleSet.
         RuleSet(*STRENGTH_RULES, name="reduce_strength"),
@@ -167,9 +174,13 @@ _DRIVER = PhaseDriver(
         # comparison fold, tried first at the same position, finds no
         # jump on its result. A JumpIfCmp made before its operand's
         # extend was exposed (through a cast that copy propagation
-        # removed later) narrows the same way.
+        # removed later) narrows the same way. A `!` of a value that
+        # is 0 or 1 and that no jump tests is `^ 1`. A signed ordering
+        # compare of two values that can't be negative is done
+        # unsigned, last, once nothing narrows it.
         RuleSet(CMP_ZERO_RULE, NARROW_VALUE_COMPARE_RULE,
                 NARROW_JUMP_COMPARE_RULE, AND_ZERO_RULE, LNOT_RULE,
+                LNOT_OF_ZERO_OR_ONE_RULE, NONNEGATIVE_COMPARE_RULE,
                 name="fold_producer_jumps"),
         EliminateDeadLoops(),
         EliminateUnreachableCode(),

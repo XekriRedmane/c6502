@@ -64,6 +64,14 @@ so the `JumpIfCmp` always jumps when its operator holds.
   .if_end@0)`, which lowers to `CMP #$05; BEQ .if_end@0`.
 - For `signed char a`, `a >= 0` becomes `JumpIfCmp(<, @0.a, 0c,
   .if_end@0)`, which lowers to `ORA #$00; BMI .if_end@0`.
+- For `uint16_t e`, `e > 0xFF` becomes `JumpIfCmp(<=, @0.e, 255u,
+  .if_end@0)`. `tac_to_asm` lowers an unsigned compare of 2 bytes or
+  more with a constant as `e < k` or `e >= k` with the constant on the
+  right (`_variable_first`), here `e >= 0x100`, whose low byte's
+  subtract of 0 the peepholes drop. The compare of the high byte with
+  1 that's left becomes a test of it ([redundant
+  compare](redundant_compare.md)), so the final code is `TXA; BEQ
+  .if_end@0` with `e` returned in A and X.
 - For `int a, b`, `a < b` becomes `JumpIfCmp(>=, @0.a, @1.b,
   .if_end@0)` at full width, which lowers to a 2-byte `SBC` chain
   with the overflow correction and one `BPL`.

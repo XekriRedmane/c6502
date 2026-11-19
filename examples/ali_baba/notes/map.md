@@ -180,6 +180,11 @@ These don't stop the unit from compiling. Each costs bytes.
    of the C and the original do, is 9 bytes shorter, and it relies on
    find_entity_at_pos returning no value from 2 to 255.
 
+   Fixed on 19 Nov 2026. The two tests are one, `AND #$FE; STA t;
+   TXA; ORA t; BEQ ret`
+   (docs/optimizations/short_circuit_jump_fold.md), and
+   `draw_map_entities` is 229 bytes, where it was 233.
+
 4. A post-decrement of a global tested against 0 reloads the flags with
    `ORA #0`.
 

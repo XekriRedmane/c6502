@@ -349,6 +349,15 @@ register allocator keeps that local in a register when the body
 allows, as `inner` keeps `x` in A. `outer` reads `a` and `b` after
 calls that change A and X, so it stores them in its own bytes first.
 
+Each byte of such a local is placed on its own, so the high byte of a
+2-byte parameter can stay in X, where it arrives.
+`unsigned int widen(unsigned int y) { return y - k; }` with `k` an
+`unsigned char` is `SEC; SBC k; BCS skip; DEX; skip: RTS`. A function
+that passes its two byte arguments on in the other order,
+`void f(unsigned char a, unsigned char b) { g(b, a); }`, swaps them
+through one byte of its own, `STA __local_f__a; TXA; LDX
+__local_f__a; JMP g`, since the 6502 can't exchange A and X.
+
 Before 18 Nov 2026 every parameter arrived in a zero-page byte, and
 each call stored each argument there, as in `LDA #$03; STA
 __zpabi_outer__a`. A call is 2 bytes shorter for each argument byte

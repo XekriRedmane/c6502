@@ -473,8 +473,8 @@ fill_hole:
    STA   __local_fill_hole__1
    LDA   #$01
    STA   (__local_fill_hole__0),Y
+   TXA
    LDX   __local_fill_hole__2
-   LDA   __local_fill_hole__3
    JSR   draw_brick
    JSR   kill_guard_in_hole
    BCC   .if_end@15

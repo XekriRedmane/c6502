@@ -276,6 +276,11 @@ needs to be. None blocked the translation.
    than the previous C, which wrote `under_level ^ 1` and
    `under_level + 3`.
 
+   Fixed on 19 Nov 2026. `!` of a `bool` is `EOR #1`
+   (docs/optimizations/lnot_jump_fold.md), and the `+ 1` moves into
+   the ternary's arms (docs/optimizations/phi_constant_fold.md), so
+   `configure_input` is 55 bytes, where it was 70.
+
 A byte divided by a constant called the 16-bit signed division helper
 `sdivmod16`, once for `/` and again for `%`, until 18 Nov 2026, so
 set_cursor_pos subtracted 40 as the original does. c6502 now divides a

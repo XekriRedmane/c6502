@@ -52,7 +52,10 @@ constant `int` return, where `LDA #$00; TAX` becomes `LDX #$00`.
 
 The two instructions must be consecutive, a `Mov(M, A)` followed by a
 `Mov(A, X)` or `Mov(A, Y)`. M must be an `Imm`, `ImmLabelLow`,
-`ImmLabelHigh`, `Data`, or `ZP` operand. A must be dead after the
+`ImmLabelHigh`, `Data`, or `ZP` operand, or an `IndexedData` operand
+indexed by the register the transfer doesn't write, since the 6502
+has `LDX abs,Y` and `LDY abs,X` but no `LDX abs,X` or `LDY abs,Y`.
+`LDA enemy_col,Y; TAX` in `beam_target_draw` is `LDX enemy_col,Y`. A must be dead after the
 transfer along every path, which `asm_liveness.a_dead_at` checks by
 walking forward through branches and jumps until each path writes A
 without reading it.

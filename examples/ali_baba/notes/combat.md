@@ -218,6 +218,12 @@ and stores `nullptr` in pick_random_member.
    where `CMP #$1D; BCC` gives the same result. This costs
    handle_mob_encounter 5 bytes.
 
+   Fixed on 19 Nov 2026. The compare after a `BPL` on the value is
+   `CMP #$1D; BCC` (docs/optimizations/redundant_compare.md), and
+   handle_mob_encounter is 155 bytes, where it was 163, since another
+   compare in it became a branch on Z. resolve_attack, which tests a
+   nonnegative byte the same way, went from 250 bytes to 238.
+
 6. `(int8_t)(length - i) >= 0` in a loop over `i` is computed afresh
    in each pass, where a counter stepped down with `i` (the old C's
    `DEC left; BPL`) is 5 bytes shorter in init_attack_display, and the

@@ -108,6 +108,13 @@ No bug was hit. These cost bytes against the original:
    This was fixed on 19 Nov 2026 (docs/optimizations/carry_in_add.md),
    and next_string is the original's `SEC; ADC`, 17 bytes.
 
+   The same day next_string was inlined into its two callers
+   (docs/optimizations/inline_functions.md). display_message is 58
+   bytes and display_message_loop 106. That is 6 bytes more than the
+   17-byte next_string and callers of 52 and 89 bytes that call it,
+   most of it in display_message_loop, whose copy adds 17 bytes. The
+   cause of that hasn't been looked into yet.
+
 4. print_string and display_message_loop copy their pointer parameter
    into a local pair before the loop that steps it. print_string is 38
    bytes against PRINT_STRING's 18.

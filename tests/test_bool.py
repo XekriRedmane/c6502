@@ -37,6 +37,7 @@ from passes.type_checking import TypeCheckError, check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.no_inlining import no_inlining
 
 
 def _check(src: str):
@@ -154,6 +155,7 @@ def _tac_instrs(src: str, fn: str) -> list:
     raise AssertionError(fn)
 
 
+@no_inlining()
 class TestLowering(unittest.TestCase):
     def test_zero_or_one_values_skip_the_comparison(self) -> None:
         for body in (

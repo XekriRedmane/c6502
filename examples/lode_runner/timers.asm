@@ -23,13 +23,11 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
+__local_draw_brick__row	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
-__local_handle_timers__0	EQU	$81
-__local_handle_timers__i	EQU	$82
-__local_draw_brick__row	EQU	$83
-__local_draw_brick__0	EQU	$84
+__local_draw_brick__0	EQU	$81
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -62,17 +60,12 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_fill_hole__0	EQU	$AE
-__local_guard_resurrections__0	EQU	$AE
-__local_fill_hole__1	EQU	$AF
-__local_guard_resurrections__1	EQU	$AF
-__local_fill_hole__2	EQU	$B0
-__local_guard_resurrections__g	EQU	$B0
-__local_fill_hole__3	EQU	$B1
-__local_guard_resurrections__saved_guard_num	EQU	$B1
-__local_kill_guard_in_hole__0	EQU	$B2
-__local_kill_guard_in_hole__1	EQU	$B3
-__local_kill_guard_in_hole__g	EQU	$B4
+__local_handle_timers__0	EQU	$AE
+__local_handle_timers__1	EQU	$AF
+__local_handle_timers__g	EQU	$B0
+__local_handle_timers__saved_guard_num	EQU	$B1
+__local_handle_timers__2	EQU	$B2
+__local_handle_timers__i	EQU	$B3
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -133,10 +126,7 @@ DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
 ; def draw_brick params=__zpabi_draw_brick__row,__zpabi_draw_brick__col locals=__local_draw_brick__row,__local_draw_brick__0 indirect=false in_cycle=false param_regs=A,X
-; def fill_hole params=__zpabi_fill_hole__i locals=__local_fill_hole__0,__local_fill_hole__1,__local_fill_hole__2,__local_fill_hole__3 indirect=false in_cycle=false param_regs=A
-; def guard_resurrections params= locals=__local_guard_resurrections__0,__local_guard_resurrections__1,__local_guard_resurrections__g,__local_guard_resurrections__saved_guard_num indirect=false in_cycle=false
-; def handle_timers params= locals=__local_handle_timers__0,__local_handle_timers__i indirect=false in_cycle=false
-; def kill_guard_in_hole params= locals=__local_kill_guard_in_hole__0,__local_kill_guard_in_hole__1,__local_kill_guard_in_hole__g indirect=false in_cycle=false carry=true
+; def handle_timers params= locals=__local_handle_timers__0,__local_handle_timers__1,__local_handle_timers__g,__local_handle_timers__saved_guard_num,__local_handle_timers__2,__local_handle_timers__i indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -163,10 +153,13 @@ DISK_IO	EQU	$C088
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
 ; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext fill_hole params=__zpabi_fill_hole__i param_regs=A
+; ext guard_resurrections params=
 ; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext hi_score_screen params=
 ; ext init_game_data params=
 ; ext iris_wipe params=
+; ext kill_guard_in_hole params=
 ; ext level_editor params=
 ; ext load_guard_data params=
 ; ext load_level params=__zpabi_load_level__verbatim param_regs=A
@@ -198,24 +191,16 @@ DISK_IO	EQU	$C088
 ; ext wait_key params=
 ; call draw_brick -> draw_sprite_page1
 ; call draw_brick -> draw_sprite_page2
-; call fill_hole -> draw_brick
-; call fill_hole -> kill_guard_in_hole
-; call guard_resurrections -> draw_guard_sprite
-; call guard_resurrections -> draw_sprite_page1
-; call guard_resurrections -> draw_sprite_page2
-; call guard_resurrections -> load_guard_data
-; call guard_resurrections -> load_sound_data
+; call handle_timers -> add_and_update_score
+; call handle_timers -> draw_brick
+; call handle_timers -> draw_guard_sprite
+; call handle_timers -> draw_sprite_page1
 ; call handle_timers -> draw_sprite_page2
+; call handle_timers -> erase_guard
 ; call handle_timers -> erase_sprite_at_pixel_coords
-; call handle_timers -> fill_hole
-; call handle_timers -> guard_resurrections
-; call kill_guard_in_hole -> add_and_update_score
-; call kill_guard_in_hole -> erase_guard
-; call kill_guard_in_hole -> load_guard_data
-; item guard_resurrections section=.text local=true zero=false
-; item kill_guard_in_hole section=.text local=true zero=false
+; call handle_timers -> load_guard_data
+; call handle_timers -> load_sound_data
 ; item draw_brick section=.text local=true zero=false
-; item fill_hole section=.text local=true zero=false
 ; item handle_timers section=.text local=false zero=false
 ; item guard_hatched_tune section=.rodata local=true zero=false
 ; item LEVEL_BG@lo section=.rodata local=true zero=false merge=true
@@ -278,154 +263,6 @@ DISK_IO	EQU	$C088
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
-guard_resurrections:
-   SUBROUTINE
-
-   LDA   GUARD_COUNT
-   STA   __local_guard_resurrections__g
-   BNE   .if_end@0
-   RTS
-.if_end@0:
-   LDA   GUARD_NUM
-   STA   __local_guard_resurrections__saved_guard_num
-.loop@0_start:
-   LDX   __local_guard_resurrections__g
-   LDA   GUARD_RESURRECTION_TIMERS,X
-   BNE   .lb_skip@1
-   JMP   .loop@0_continue
-.lb_skip@1:
-   STX   GUARD_NUM
-   JSR   load_guard_data
-   LDX   __local_guard_resurrections__g
-   LDA   #$7F
-   STA   GUARD_GOLD_TIMERS,X
-   LDA   GUARD_LOCS_COL,X
-   STA   GAME_COLNUM
-   LDA   GUARD_LOCS_ROW,X
-   STA   GAME_ROWNUM
-   LDA   GUARD_RESURRECTION_TIMERS,X
-   SEC
-   SBC   #$01
-   STA   GUARD_RESURRECTION_TIMERS,X
-   BNE   .if_else@3
-   LDA   #$01
-   STA   GUARD_RESURRECTION_TIMERS,X
-   LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_resurrections__0
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_guard_resurrections__1
-   LDY   GAME_COLNUM
-   LDA   (__local_guard_resurrections__0),Y
-   BNE   .if_end@2
-   LDA   #$08
-   STA   (__local_guard_resurrections__0),Y
-   LDA   #$00
-   JSR   draw_sprite_page2
-   LDX   __local_guard_resurrections__g
-   LDA   #$00
-   STA   GUARD_GOLD_TIMERS,X
-   STA   GUARD_RESURRECTION_TIMERS,X
-   LDA   #$08
-   JSR   draw_sprite_page1
-   LDX   #>guard_hatched_tune
-   LDA   #<guard_hatched_tune
-   JSR   load_sound_data
-   JMP   .if_end@2
-.if_else@3:
-   CMP   #$13
-   BNE   .if_else@6
-   LDA   #$39
-   JSR   draw_sprite_page2
-   LDA   #$39
-   JSR   draw_guard_sprite
-   JMP   .if_end@5
-.if_else@6:
-   CMP   #$0A
-   BNE   .if_end@7
-   LDA   #$3A
-   JSR   draw_sprite_page2
-   LDA   #$3A
-   JSR   draw_guard_sprite
-.if_end@7:
-.if_end@5:
-.if_end@2:
-.loop@0_continue:
-   DEC   __local_guard_resurrections__g
-   BEQ   .lb_skip@0
-   JMP   .loop@0_start
-.lb_skip@0:
-   LDA   __local_guard_resurrections__saved_guard_num
-   STA   GUARD_NUM
-   RTS
-
-kill_guard_in_hole:
-   SUBROUTINE
-
-   LDA   GUARD_COUNT
-   STA   __local_kill_guard_in_hole__g
-.loop@1_start:
-   LDX   __local_kill_guard_in_hole__g
-   LDA   GUARD_LOCS_COL,X
-   CMP   GAME_COLNUM
-   BNE   .if_end@10
-   LDA   GUARD_LOCS_ROW,X
-   CMP   GAME_ROWNUM
-   BNE   .if_end@10
-   LDA   GUARD_GOLD_TIMERS,X
-   BPL   .if_end@11
-   DEC   GOLD_COUNT
-.if_end@11:
-   LDA   #$7F
-   STA   GUARD_GOLD_TIMERS,X
-   STX   GUARD_NUM
-   JSR   load_guard_data
-   JSR   erase_guard
-   LDA   #$01
-   STA   GAME_ROWNUM
-   JMP   .loop@2_continue
-.kill_guard_in_hole@rot@0:
-   INC   GUARD_RESURRECT_COL
-   LDA   GUARD_RESURRECT_COL
-   CMP   #$1C
-   BCC   .loop@2_continue
-   INC   GAME_ROWNUM
-   LDA   #$00
-   STA   GUARD_RESURRECT_COL
-.loop@2_continue:
-   LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_kill_guard_in_hole__0
-   LDA   LEVEL_BG@hi,X
-   STA   __local_kill_guard_in_hole__1
-   LDY   GUARD_RESURRECT_COL
-   LDA   (__local_kill_guard_in_hole__0),Y
-   BNE   .kill_guard_in_hole@rot@0
-   LDX   __local_kill_guard_in_hole__g
-   TYA
-   STA   GUARD_LOCS_COL,X
-   LDA   GAME_ROWNUM
-   STA   GUARD_LOCS_ROW,X
-   LDA   #$14
-   STA   GUARD_RESURRECTION_TIMERS,X
-   LDA   #$02
-   STA   GUARD_Y_ADJS,X
-   STA   GUARD_X_ADJS,X
-   LDA   #$00
-   STA   GUARD_ANIM_STATES,X
-   LDX   #$00
-   LDA   #$75
-   JSR   add_and_update_score
-   SEC
-   RTS
-.if_end@10:
-   DEC   __local_kill_guard_in_hole__g
-   BEQ   .lb_skip@2
-   JMP   .loop@1_start
-.lb_skip@2:
-   CLC
-   RTS
-
 draw_brick:
    SUBROUTINE
 
@@ -443,57 +280,86 @@ draw_brick:
    LDA   #$01
    JMP   draw_sprite_page2
 
-fill_hole:
-   SUBROUTINE
-
-   TAX
-   LDA   BRICK_DIG_ROWS,X
-   STA   __local_fill_hole__3
-   LDA   BRICK_DIG_COLS,X
-   STA   __local_fill_hole__2
-   LDA   BRICK_DIG_ROWS,X
-   STA   GAME_ROWNUM
-   LDA   BRICK_DIG_COLS,X
-   STA   GAME_COLNUM
-   LDX   __local_fill_hole__3
-   LDA   LEVEL_BG@lo,X
-   STA   __local_fill_hole__0
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_fill_hole__1
-   LDY   __local_fill_hole__2
-   LDA   (__local_fill_hole__0),Y
-   CMP   #$09
-   BNE   .if_else@14
-   LSR   ALIVE
-   JMP   .if_end@13
-.if_else@14:
-   CMP   #$08
-   BNE   .if_else@16
-   LDA   LEVEL_BG@hi,X
-   STA   __local_fill_hole__1
-   LDA   #$01
-   STA   (__local_fill_hole__0),Y
-   TXA
-   LDX   __local_fill_hole__2
-   JSR   draw_brick
-   JSR   kill_guard_in_hole
-   BCC   .if_end@15
-   RTS
-.if_else@16:
-   CMP   #$07
-   BNE   .if_end@18
-   DEC   GOLD_COUNT
-.if_end@18:
-.if_end@15:
-.if_end@13:
-   LDX   __local_fill_hole__2
-   LDA   __local_fill_hole__3
-   JMP   draw_brick
-
 handle_timers:
    SUBROUTINE
 
-   JSR   guard_resurrections
+   LDA   GUARD_COUNT
+   STA   __local_handle_timers__g
+   BNE   .lb_skip@7
+   JMP   .i0@end
+.lb_skip@7:
+   LDA   GUARD_NUM
+   STA   __local_handle_timers__saved_guard_num
+.i0_loop@0_start:
+   LDX   __local_handle_timers__g
+   LDA   GUARD_RESURRECTION_TIMERS,X
+   BNE   .lb_skip@6
+   JMP   .i0_loop@0_continue
+.lb_skip@6:
+   STX   GUARD_NUM
+   JSR   load_guard_data
+   LDX   __local_handle_timers__g
+   LDA   #$7F
+   STA   GUARD_GOLD_TIMERS,X
+   LDA   GUARD_LOCS_COL,X
+   STA   GAME_COLNUM
+   LDA   GUARD_LOCS_ROW,X
+   STA   GAME_ROWNUM
+   LDA   GUARD_RESURRECTION_TIMERS,X
+   SEC
+   SBC   #$01
+   STA   GUARD_RESURRECTION_TIMERS,X
+   BNE   .i0_if_else@3
+   LDA   #$01
+   STA   GUARD_RESURRECTION_TIMERS,X
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_handle_timers__0
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_handle_timers__1
+   LDY   GAME_COLNUM
+   LDA   (__local_handle_timers__0),Y
+   BNE   .i0_if_end@2
+   LDA   #$08
+   STA   (__local_handle_timers__0),Y
+   LDA   #$00
+   JSR   draw_sprite_page2
+   LDX   __local_handle_timers__g
+   LDA   #$00
+   STA   GUARD_GOLD_TIMERS,X
+   STA   GUARD_RESURRECTION_TIMERS,X
+   LDA   #$08
+   JSR   draw_sprite_page1
+   LDX   #>guard_hatched_tune
+   LDA   #<guard_hatched_tune
+   JSR   load_sound_data
+   JMP   .i0_if_end@2
+.i0_if_else@3:
+   CMP   #$13
+   BNE   .i0_if_else@6
+   LDA   #$39
+   JSR   draw_sprite_page2
+   LDA   #$39
+   JSR   draw_guard_sprite
+   JMP   .i0_if_end@5
+.i0_if_else@6:
+   CMP   #$0A
+   BNE   .i0_if_end@7
+   LDA   #$3A
+   JSR   draw_sprite_page2
+   LDA   #$3A
+   JSR   draw_guard_sprite
+.i0_if_end@7:
+.i0_if_end@5:
+.i0_if_end@2:
+.i0_loop@0_continue:
+   DEC   __local_handle_timers__g
+   BEQ   .lb_skip@5
+   JMP   .i0_loop@0_start
+.lb_skip@5:
+   LDA   __local_handle_timers__saved_guard_num
+   STA   GUARD_NUM
+.i0@end:
    INC   GUARD_RESURRECT_COL
    LDA   GUARD_RESURRECT_COL
    CMP   #$1C
@@ -503,17 +369,127 @@ handle_timers:
 .if_end@19:
    LDA   #$1E
    STA   __local_handle_timers__i
-.handle_timers@rot@1:
+.loop@3_start:
+   LDA   __local_handle_timers__i
+   BPL   .lb_skip@4
+   JMP   .loop@3_break
+.lb_skip@4:
    LDX   __local_handle_timers__i
    LDA   BRICK_FILL_TIMERS,X
    STA   __local_handle_timers__0
-   BEQ   .loop@3_continue
+   BNE   .lb_skip@3
+   JMP   .loop@3_continue
+.lb_skip@3:
    DEC   __local_handle_timers__0
    LDA   __local_handle_timers__0
    STA   BRICK_FILL_TIMERS,X
-   BNE   .if_end@21
+   BEQ   .lb_skip@2
+   JMP   .if_end@21
+.lb_skip@2:
+   LDA   BRICK_DIG_ROWS,X
+   STA   __local_handle_timers__2
+   LDA   BRICK_DIG_COLS,X
+   STA   __local_handle_timers__saved_guard_num
+   LDA   BRICK_DIG_ROWS,X
+   STA   GAME_ROWNUM
+   LDA   BRICK_DIG_COLS,X
+   STA   GAME_COLNUM
+   LDX   __local_handle_timers__2
+   LDA   LEVEL_BG@lo,X
+   STA   __local_handle_timers__0
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_handle_timers__1
+   LDY   __local_handle_timers__saved_guard_num
+   LDA   (__local_handle_timers__0),Y
+   CMP   #$09
+   BNE   .i2_if_else@14
+   LSR   ALIVE
+   JMP   .i2_if_end@13
+.i2_if_else@14:
+   CMP   #$08
+   BEQ   .lb_skip@1
+   JMP   .i2_if_else@16
+.lb_skip@1:
+   LDA   LEVEL_BG@hi,X
+   STA   __local_handle_timers__1
+   LDA   #$01
+   STA   (__local_handle_timers__0),Y
    TXA
-   JSR   fill_hole
+   LDX   __local_handle_timers__saved_guard_num
+   JSR   draw_brick
+   LDA   GUARD_COUNT
+   STA   __local_handle_timers__g
+.i2_i1_loop@1_start:
+   LDX   __local_handle_timers__g
+   LDA   GUARD_LOCS_COL,X
+   CMP   GAME_COLNUM
+   BNE   .i2_i1_if_end@10
+   LDA   GUARD_LOCS_ROW,X
+   CMP   GAME_ROWNUM
+   BNE   .i2_i1_if_end@10
+   LDA   GUARD_GOLD_TIMERS,X
+   BPL   .i2_i1_if_end@11
+   DEC   GOLD_COUNT
+.i2_i1_if_end@11:
+   LDA   #$7F
+   STA   GUARD_GOLD_TIMERS,X
+   STX   GUARD_NUM
+   JSR   load_guard_data
+   JSR   erase_guard
+   LDA   #$01
+   STA   GAME_ROWNUM
+   JMP   .i2_i1_loop@2_continue
+.handle_timers@rot@0:
+   INC   GUARD_RESURRECT_COL
+   LDA   GUARD_RESURRECT_COL
+   CMP   #$1C
+   BCC   .i2_i1_loop@2_continue
+   INC   GAME_ROWNUM
+   LDA   #$00
+   STA   GUARD_RESURRECT_COL
+.i2_i1_loop@2_continue:
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_handle_timers__0
+   LDA   LEVEL_BG@hi,X
+   STA   __local_handle_timers__1
+   LDY   GUARD_RESURRECT_COL
+   LDA   (__local_handle_timers__0),Y
+   BNE   .handle_timers@rot@0
+   LDX   __local_handle_timers__g
+   TYA
+   STA   GUARD_LOCS_COL,X
+   LDA   GAME_ROWNUM
+   STA   GUARD_LOCS_ROW,X
+   LDA   #$14
+   STA   GUARD_RESURRECTION_TIMERS,X
+   LDA   #$02
+   STA   GUARD_Y_ADJS,X
+   STA   GUARD_X_ADJS,X
+   LDA   #$00
+   STA   GUARD_ANIM_STATES,X
+   LDX   #$00
+   LDA   #$75
+   JSR   add_and_update_score
+   JMP   .loop@3_continue
+.i2_i1_if_end@10:
+   DEC   __local_handle_timers__g
+   BEQ   .lb_skip@0
+   JMP   .i2_i1_loop@1_start
+.lb_skip@0:
+   LDA   #$00
+   BNE   .loop@3_continue
+   JMP   .i2_if_end@15
+.i2_if_else@16:
+   CMP   #$07
+   BNE   .i2_if_end@18
+   DEC   GOLD_COUNT
+.i2_if_end@18:
+.i2_if_end@15:
+.i2_if_end@13:
+   LDX   __local_handle_timers__saved_guard_num
+   LDA   __local_handle_timers__2
+   JSR   draw_brick
    JMP   .loop@3_continue
 .if_end@21:
    LDA   BRICK_DIG_COLS,X
@@ -546,7 +522,8 @@ handle_timers:
 .if_end@24:
 .loop@3_continue:
    DEC   __local_handle_timers__i
-   BPL   .handle_timers@rot@1
+   JMP   .loop@3_start
+.loop@3_break:
    RTS
 
 guard_hatched_tune:

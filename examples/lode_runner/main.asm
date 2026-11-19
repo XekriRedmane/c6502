@@ -24,12 +24,11 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__local_init_game_data__0	EQU	$80
+__local_init_game_data__n	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
 __zpabi_poll_inputs__y	EQU	$80
-__local_level_cleared__n	EQU	$81
 __local_poll_inputs__x	EQU	$83
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
@@ -130,9 +129,8 @@ DISK_IO	EQU	$C088
 ; @zp-link-meta-begin
 ; def append_level_cleared_note params=__zpabi_append_level_cleared_note__n locals=__local_append_level_cleared_note__n indirect=false in_cycle=false param_regs=A
 ; def cold_start params= locals= indirect=false in_cycle=false
-; def init_game_data params= locals=__local_init_game_data__0 indirect=false in_cycle=false
+; def init_game_data params= locals=__local_init_game_data__n,__local_init_game_data__0 indirect=false in_cycle=false
 ; def key_pressed params=__zpabi_key_pressed__key locals=__local_key_pressed__key indirect=false in_cycle=false param_regs=A
-; def level_cleared params= locals=__local_level_cleared__n indirect=false in_cycle=false
 ; def long_delay params= locals= indirect=false in_cycle=false
 ; def main params= locals= indirect=false in_cycle=false
 ; def play_level params= locals= indirect=false in_cycle=false carry=true
@@ -140,7 +138,6 @@ DISK_IO	EQU	$C088
 ; def reset_game params= locals=__local_reset_game__0,__local_reset_game__p_0,__local_reset_game__p_1,__local_reset_game__1,__local_reset_game__2,__local_reset_game__row indirect=false in_cycle=false
 ; def show_hi_scores params= locals= indirect=false in_cycle=false
 ; def start_at_level_1 params= locals= indirect=false in_cycle=false
-; def start_level params= locals=__local_start_level__0 indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -170,6 +167,7 @@ DISK_IO	EQU	$C088
 ; ext handle_timers params=
 ; ext hi_score_screen params=
 ; ext iris_wipe params=
+; ext level_cleared params=
 ; ext level_editor params=
 ; ext load_guard_data params=
 ; ext load_level params=__zpabi_load_level__verbatim param_regs=A
@@ -192,6 +190,7 @@ DISK_IO	EQU	$C088
 ; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
 ; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
+; ext start_level params=
 ; ext start_level_editor params=
 ; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
 ; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
@@ -202,9 +201,11 @@ DISK_IO	EQU	$C088
 ; call cold_start -> access_hi_score_data_from_disk
 ; call cold_start -> detect_lack_of_joystick
 ; call init_game_data -> access_hi_score_data_from_disk
+; call init_game_data -> add_and_update_score
+; call init_game_data -> append_level_cleared_note
 ; call init_game_data -> bad_data_disk
 ; call init_game_data -> key_pressed
-; call init_game_data -> level_cleared
+; call init_game_data -> load_level
 ; call init_game_data -> load_sound_data
 ; call init_game_data -> play_level
 ; call init_game_data -> play_sound
@@ -212,10 +213,9 @@ DISK_IO	EQU	$C088
 ; call init_game_data -> put_status_lives
 ; call init_game_data -> record_hi_score_data_to_disk
 ; call init_game_data -> spinning_game_over
-; call init_game_data -> start_level
+; call init_game_data -> wait_for_key_with_cursor_page_1
+; call init_game_data -> wait_key
 ; call key_pressed -> access_hi_score_data_from_disk
-; call level_cleared -> add_and_update_score
-; call level_cleared -> append_level_cleared_note
 ; call long_delay -> poll_inputs
 ; call long_delay -> wait_key
 ; call main -> poll_inputs
@@ -228,9 +228,6 @@ DISK_IO	EQU	$C088
 ; call reset_game -> clear_hgr1
 ; call reset_game -> row_to_addr
 ; call show_hi_scores -> hi_score_screen
-; call start_level -> load_level
-; call start_level -> wait_for_key_with_cursor_page_1
-; call start_level -> wait_key
 ; item start_at_level_1 section=.text local=true zero=false
 ; item show_hi_scores section=.text local=true zero=false
 ; item poll_inputs section=.text local=true zero=false
@@ -240,9 +237,7 @@ DISK_IO	EQU	$C088
 ; item reset_game section=.text local=false zero=false
 ; item long_delay section=.text local=false zero=false
 ; item append_level_cleared_note section=.text local=true zero=false
-; item start_level section=.text local=true zero=false
 ; item play_level section=.text local=true zero=false
-; item level_cleared section=.text local=true zero=false
 ; item init_game_data section=.text local=false zero=false
 ; item TIMES_3_TABLE section=.rodata local=true zero=false
 ; item GUARD_GOLD_TIMER_START_VALUES section=.rodata local=true zero=false
@@ -491,44 +486,6 @@ append_level_cleared_note:
    JSR   append_note
    JMP   play_sound
 
-start_level:
-   SUBROUTINE
-
-   LDA   #$01
-   JSR   load_level
-   LDA   #$00
-   STA   KEY_COMMAND
-   STA   KEY_COMMAND_LR
-   LDA   GAME_MODE
-   CMP   #$02
-   BCC   .if_end@18
-   JSR   wait_key
-   LDA   PLAYER_COL
-   STA   GAME_COLNUM
-   LDA   PLAYER_ROW
-   STA   GAME_ROWNUM
-   LDA   #$09
-   JSR   wait_for_key_with_cursor_page_1
-.if_end@18:
-   LDA   #$00
-   STA   DIG_DIRECTION
-   STA   NOTE_INDEX
-   LDA   GUARD_PATTERN_OFFSET
-   CLC
-   ADC   GUARD_COUNT
-   TAX
-   LDY   TIMES_3_TABLE,X
-   LDA   GUARD_PATTERNS_LIST,Y
-   STA   GUARD_PATTERNS
-   LDA   GUARD_PATTERNS_LIST+1,Y
-   STA   GUARD_PATTERNS+1
-   LDA   GUARD_PATTERNS_LIST+2,Y
-   STA   GUARD_PATTERNS+2
-   LDX   GUARD_PATTERN_OFFSET
-   LDA   GUARD_GOLD_TIMER_START_VALUES,X
-   STA   GUARD_GOLD_TIMER_START_VALUE
-   RTS
-
 play_level:
    SUBROUTINE
 
@@ -565,32 +522,6 @@ play_level:
    CLC
    RTS
 
-level_cleared:
-   SUBROUTINE
-
-   INC   LEVELNUM
-   INC   DISK_LEVEL_LOC
-   LDA   LIVES
-   CMP   #$FF
-   BEQ   .if_end@30
-   INC   LIVES
-.if_end@30:
-   LDA   #$0F
-   STA   __local_level_cleared__n
-.level_cleared@rot@1:
-   LDX   #$01
-   LDA   #$00
-   JSR   add_and_update_score
-   LDA   __local_level_cleared__n
-   JSR   append_level_cleared_note
-   LDA   __local_level_cleared__n
-   JSR   append_level_cleared_note
-   LDA   __local_level_cleared__n
-   JSR   append_level_cleared_note
-   DEC   __local_level_cleared__n
-   BNE   .level_cleared@rot@1
-   RTS
-
 init_game_data:
    SUBROUTINE
 
@@ -622,13 +553,66 @@ init_game_data:
    JSR   put_status
    LDA   #$00
    STA   TXTPAGE1
-   JMP   .loop@5_start
-.init_game_data@rot@2:
-   JSR   level_cleared
 .loop@5_start:
-   JSR   start_level
+   LDA   #$01
+   JSR   load_level
+   LDA   #$00
+   STA   KEY_COMMAND
+   STA   KEY_COMMAND_LR
+   LDA   GAME_MODE
+   CMP   #$02
+   BCC   .i0_if_end@18
+   JSR   wait_key
+   LDA   PLAYER_COL
+   STA   GAME_COLNUM
+   LDA   PLAYER_ROW
+   STA   GAME_ROWNUM
+   LDA   #$09
+   JSR   wait_for_key_with_cursor_page_1
+.i0_if_end@18:
+   LDA   #$00
+   STA   DIG_DIRECTION
+   STA   NOTE_INDEX
+   LDA   GUARD_PATTERN_OFFSET
+   CLC
+   ADC   GUARD_COUNT
+   TAX
+   LDY   TIMES_3_TABLE,X
+   LDA   GUARD_PATTERNS_LIST,Y
+   STA   GUARD_PATTERNS
+   LDA   GUARD_PATTERNS_LIST+1,Y
+   STA   GUARD_PATTERNS+1
+   LDA   GUARD_PATTERNS_LIST+2,Y
+   STA   GUARD_PATTERNS+2
+   LDX   GUARD_PATTERN_OFFSET
+   LDA   GUARD_GOLD_TIMER_START_VALUES,X
+   STA   GUARD_GOLD_TIMER_START_VALUE
    JSR   play_level
-   BCS   .init_game_data@rot@2
+   BCC   .if_end@34
+   INC   LEVELNUM
+   INC   DISK_LEVEL_LOC
+   LDA   LIVES
+   CMP   #$FF
+   BEQ   .i1_if_end@30
+   INC   LIVES
+.i1_if_end@30:
+   LDA   #$0F
+   STA   __local_init_game_data__n
+.i1_loop@4_start:
+   LDA   __local_init_game_data__n
+   BEQ   .loop@5_start
+   LDX   #$01
+   LDA   #$00
+   JSR   add_and_update_score
+   LDA   __local_init_game_data__n
+   JSR   append_level_cleared_note
+   LDA   __local_init_game_data__n
+   JSR   append_level_cleared_note
+   LDA   __local_init_game_data__n
+   JSR   append_level_cleared_note
+   DEC   __local_init_game_data__n
+   JMP   .i1_loop@4_start
+.if_end@34:
    DEC   LIVES
    JSR   put_status_lives
    LDX   #>DIED_TUNE
@@ -643,16 +627,18 @@ init_game_data:
    LDA   saved_enable_sound
    STA   ENABLE_SOUND
    LDA   KBD
-   STA   __local_init_game_data__0
+   STA   __local_init_game_data__n
    LDA   DEMO_RUNNING
    BNE   .if_end@36
-   LDA   __local_init_game_data__0
+   LDA   __local_init_game_data__n
    JMP   key_pressed
 .if_end@36:
    JMP   long_delay
 .if_end@35:
    LDA   LIVES
-   BNE   .loop@5_start
+   BEQ   .lb_skip@0
+   JMP   .loop@5_start
+.lb_skip@0:
    JSR   record_hi_score_data_to_disk
    JSR   spinning_game_over
    BCC   .if_end@38

@@ -6,6 +6,7 @@ import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 
 def _chosen(src: str) -> set[str]:
@@ -32,6 +33,7 @@ _HEAD = "#include <stdint.h>\n#include <stdbool.h>\nuint8_t g;\n"
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@no_inlining()
 class TestChoice(unittest.TestCase):
 
     def test_branched_on(self):

@@ -17,25 +17,26 @@ BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
-next_string@ret	EQU	$62
 __local_text_renderer__stream_1	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
+__local_display_message__msg_0	EQU	$81
 __local_text_renderer__stream_0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
+__local_display_message__msg_1	EQU	$82
 __local_text_renderer__at_0	EQU	$82
 __local_display_message__index	EQU	$83
 __local_num_to_decimal__value_1	EQU	$83
 __local_num_to_decimal__value_0	EQU	$84
+__local_display_message_loop__msg_0	EQU	$85
 __local_num_to_decimal__place_1	EQU	$85
 __local_render_stream__i	EQU	$85
+__local_display_message_loop__msg_1	EQU	$86
 __local_num_to_decimal__place_0	EQU	$86
 __local_num_to_decimal__started	EQU	$87
-__local_next_string__s	EQU	$88
 __local_num_to_decimal__out	EQU	$88
-__local_next_string__1	EQU	$89
 __local_num_to_decimal__1	EQU	$89
 __local_print_centered_plus_col__s	EQU	$8A
 __local_print_centered_plus_col__2	EQU	$8B
@@ -218,7 +219,6 @@ WAIT	EQU	$FCA8
 ; @zp-link-meta-begin
 ; def display_message params=__zpabi_display_message__index locals=__local_display_message__0,__local_display_message__msg_0,__local_display_message__msg_1,__local_display_message__index indirect=false in_cycle=false param_regs=A
 ; def display_message_loop params=__zpabi_display_message_loop__msg_0,__zpabi_display_message_loop__msg_1 locals=__local_display_message_loop__count,__local_display_message_loop__msg_0,__local_display_message_loop__msg_1 indirect=false in_cycle=false param_regs=A,X
-; def next_string params=__zpabi_next_string__s_0,__zpabi_next_string__s_1 locals=__local_next_string__0,__local_next_string__s,__local_next_string__1 indirect=false in_cycle=false param_regs=A,X
 ; def num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 locals=__local_num_to_decimal__0,__local_num_to_decimal__value_1,__local_num_to_decimal__value_0,__local_num_to_decimal__place_1,__local_num_to_decimal__place_0,__local_num_to_decimal__started,__local_num_to_decimal__out,__local_num_to_decimal__1 indirect=false in_cycle=false param_regs=A,X,,
 ; def print_bottom_centered params=__zpabi_print_bottom_centered__s_0,__zpabi_print_bottom_centered__s_1 locals=__local_print_bottom_centered__s indirect=false in_cycle=false param_regs=A,X
 ; def print_centered_plus_col params=__zpabi_print_centered_plus_col__s_0,__zpabi_print_centered_plus_col__s_1 locals=__local_print_centered_plus_col__0,__local_print_centered_plus_col__1,__local_print_centered_plus_col__s,__local_print_centered_plus_col__2 indirect=false in_cycle=false param_regs=A,X
@@ -231,7 +231,6 @@ WAIT	EQU	$FCA8
 ; def set_cursor_row21 params= locals= indirect=false in_cycle=false
 ; def set_inverse_video params= locals= indirect=false in_cycle=false
 ; def set_text_window_bottom params= locals= indirect=false in_cycle=false
-; def set_text_window_scroll params= locals= indirect=false in_cycle=false
 ; def set_text_window_upper_left params=__zpabi_set_text_window_upper_left__row locals=__local_set_text_window_upper_left__row indirect=false in_cycle=false param_regs=A
 ; def set_text_window_wrap params= locals= indirect=false in_cycle=false
 ; def text_renderer params= locals=__local_text_renderer__stream_1,__local_text_renderer__stream_0,__local_text_renderer__at_0,__local_text_renderer__0 indirect=false in_cycle=false
@@ -346,6 +345,7 @@ WAIT	EQU	$FCA8
 ; ext menu_see_your_lot params=
 ; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
+; ext next_string params=__zpabi_next_string__s_0,__zpabi_next_string__s_1 param_regs=A,X
 ; ext npc_move_ai params=
 ; ext pick_random_member params=
 ; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
@@ -374,6 +374,7 @@ WAIT	EQU	$FCA8
 ; ext set_blink_target params=
 ; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
 ; ext set_restricted params=
+; ext set_text_window_scroll params=
 ; ext settings_danger_down params=
 ; ext settings_danger_up params=
 ; ext settings_display_init params=
@@ -404,9 +405,7 @@ WAIT	EQU	$FCA8
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
 ; call display_message -> display_message_loop
-; call display_message -> next_string
 ; call display_message_loop -> delay_with_animation
-; call display_message_loop -> next_string
 ; call display_message_loop -> print_bottom_centered
 ; call display_message_loop -> print_ctrl_ab
 ; call display_message_loop -> scroll_status_line
@@ -418,7 +417,6 @@ WAIT	EQU	$FCA8
 ; call print_string -> hrcg_cout
 ; call render_stream -> render_font_char
 ; call scroll_status_line -> hrcg_cout
-; call scroll_status_line -> set_text_window_scroll
 ; call scroll_status_line -> set_text_window_upper_left
 ; call scroll_status_line -> set_text_window_wrap
 ; call set_cursor_row -> hrcg_cout
@@ -426,7 +424,6 @@ WAIT	EQU	$FCA8
 ; call set_cursor_row21 -> set_cursor_row
 ; call set_inverse_video -> hrcg_cout
 ; call set_text_window_bottom -> set_cursor_row
-; call set_text_window_scroll -> hrcg_cout
 ; call set_text_window_upper_left -> hrcg_cout
 ; call set_text_window_wrap -> hrcg_cout
 ; call text_renderer -> display_status_bar
@@ -437,11 +434,9 @@ WAIT	EQU	$FCA8
 ; item render_stream section=.text local=true zero=false
 ; item text_renderer section=.text local=false zero=false
 ; item text_renderer_no_pause section=.text local=false zero=false
-; item next_string section=.text local=true zero=false
 ; item display_message section=.text local=false zero=false
 ; item display_message_loop section=.text local=false zero=false
 ; item set_text_window_upper_left section=.text local=true zero=false
-; item set_text_window_scroll section=.text local=true zero=false
 ; item scroll_status_line section=.text local=false zero=false
 ; item set_cursor_row section=.text local=true zero=false
 ; item set_cursor_row21 section=.text local=false zero=false
@@ -468,7 +463,6 @@ WAIT	EQU	$FCA8
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
 ; zp DISK_VM_ZP size=16 at=$50 def=false init=
-; zp next_string@ret size=2 at=auto def=true init= local=true
 ; zp MENU_DESC_PTR size=2 at=$C0 def=false init=
 ; zp MENU_OPTION_PTR size=2 at=$C2 def=false init=
 ; zp TUNE_PC size=2 at=$E4 def=false init=
@@ -650,56 +644,46 @@ text_renderer_no_pause:
    LDA   #$00
    JMP   render_stream
 
-next_string:
-   SUBROUTINE
-
-   STA   __local_next_string__s
-   STX   __local_next_string__1
-   LDY   #$00
-   SEC
-   ADC   (__local_next_string__s),Y
-   STA   next_string@ret
-   TXA
-   ADC   #$00
-   STA   next_string@ret+1
-   RTS
-
 display_message:
    SUBROUTINE
 
    STA   __local_display_message__index
    LDA   LOCATIONS+5
-   STA   next_string@ret
+   STA   __local_display_message__msg_0
    LDA   LOCATIONS+6
-   STA   next_string@ret+1
+   STA   __local_display_message__msg_1
    LDA   #$00
    STA   MSG_LINE_COUNT
    JMP   .loop@3_start
 .display_message@rot@1:
-   LDX   next_string@ret+1
-   LDA   next_string@ret
-   JSR   next_string
+   LDY   #$00
+   LDA   __local_display_message__msg_0
+   SEC
+   ADC   (__local_display_message__msg_0),Y
+   STA   __local_display_message__msg_0
+   BCC   .loop@4_continue
+   INC   __local_display_message__msg_1
 .loop@4_continue:
    LDY   #$00
-   LDA   (next_string@ret),Y
+   LDA   (__local_display_message__msg_0),Y
    BNE   .display_message@rot@1
-   INC   next_string@ret
+   INC   __local_display_message__msg_0
    BNE   .inc_done@1
-   INC   next_string@ret+1
+   INC   __local_display_message__msg_1
 .inc_done@1:
    DEC   __local_display_message__index
 .loop@3_start:
    LDA   __local_display_message__index
    BNE   .loop@4_continue
-   LDX   next_string@ret+1
-   LDA   next_string@ret
+   LDX   __local_display_message__msg_1
+   LDA   __local_display_message__msg_0
    JMP   display_message_loop
 
 display_message_loop:
    SUBROUTINE
 
-   STA   next_string@ret
-   STX   next_string@ret+1
+   STA   __local_display_message_loop__msg_0
+   STX   __local_display_message_loop__msg_1
    JMP   .loop@5_continue
 .display_message_loop@rot@3:
    LDA   MSG_LINE_COUNT
@@ -707,36 +691,47 @@ display_message_loop:
    CMP   #$81
    BCC   .if_else@18
 .display_message_loop@scfold@0:
-   LDX   next_string@ret+1
-   LDA   next_string@ret
+   LDA   __local_display_message_loop__msg_0
+   STX   __local_display_message_loop__msg_1
    JSR   print_bottom_centered
    JSR   scroll_status_line
+   LDX   __local_display_message_loop__msg_1
    JMP   .if_end@17
 .if_else@18:
    CMP   #$01
    BEQ   .if_end@19
+   STX   __local_display_message_loop__msg_1
    JSR   scroll_status_line
+   LDX   __local_display_message_loop__msg_1
 .if_end@19:
-   LDX   next_string@ret+1
-   LDA   next_string@ret
+   LDA   __local_display_message_loop__msg_0
+   STX   __local_display_message_loop__msg_1
    JSR   print_bottom_centered
+   LDX   __local_display_message_loop__msg_1
 .if_end@17:
    INC   MSG_LINE_COUNT
-   LDX   next_string@ret+1
-   LDA   next_string@ret
-   JSR   next_string
+   LDY   #$00
+   LDA   __local_display_message_loop__msg_0
+   SEC
+   ADC   (__local_display_message_loop__msg_0),Y
+   STA   __local_display_message_loop__msg_0
+   BCC   .carry_inc@1
+   INX
+.carry_inc@1:
    LDA   MSG_LINE_COUNT
    CMP   #$02
    BCS   .display_message_loop@scfold@1
    LDY   #$00
-   LDA   (next_string@ret),Y
+   LDA   (__local_display_message_loop__msg_0),Y
    BNE   .loop@5_continue
 .display_message_loop@scfold@1:
+   STX   __local_display_message_loop__msg_1
    JSR   delay_with_animation
    JSR   print_ctrl_ab
+   LDX   __local_display_message_loop__msg_1
 .loop@5_continue:
    LDY   #$00
-   LDA   (next_string@ret),Y
+   LDA   (__local_display_message_loop__msg_0),Y
    BNE   .display_message_loop@rot@3
    LDA   MSG_LINE_COUNT
    CMP   #$02
@@ -754,18 +749,13 @@ set_text_window_upper_left:
    LDA   #$96
    JMP   hrcg_cout
 
-set_text_window_scroll:
+scroll_status_line:
    SUBROUTINE
 
    LDA   #$8F
    JSR   hrcg_cout
    LDA   #$93
-   JMP   hrcg_cout
-
-scroll_status_line:
-   SUBROUTINE
-
-   JSR   set_text_window_scroll
+   JSR   hrcg_cout
    LDA   #$15
    JSR   set_text_window_upper_left
    LDA   #$17

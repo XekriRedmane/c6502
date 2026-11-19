@@ -23,6 +23,7 @@ from pathlib import Path
 from binutils import elf as E
 from binutils.assembler import AssemblerError, assemble
 from binutils.ld import Placed, Resolver, relax, relocate
+from tests.no_inlining import no_inlining
 
 _ROOT = Path(__file__).parent.parent
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -319,7 +320,9 @@ class TestTools(unittest.TestCase):
         ), 0)
         self.assertEqual(E.read_file("prog").symbol("rom").value, 0xE000)
 
+    @no_inlining()
     def test_nm(self) -> None:
+        # `twice` stays a function of its own, a local symbol.
         import nm
         self.assertEqual(self._compile("-O", "-c", "b.c"), 0)
         rc, out = _run(nm, ["nm.py", "b.o"])

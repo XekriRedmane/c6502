@@ -158,6 +158,11 @@ loop of subtractions, 11 bytes, where the original's is 13.
    void f(void) { if (is_pc(M)) hit(); }
    ```
 
+   Fixed on 19 Nov 2026 (docs/optimizations/inline_functions.md). `f`
+   is `LDY #4; LDA (M),Y; CMP #$15; BCS`. `is_player_character` is
+   inlined into `find_first_pc` and `find_next_pc`, which are 39 and
+   32 bytes, 14 fewer than the three functions were.
+
 3. A loop that counts up from 0 and doesn't use its index keeps the
    count-up: `LDA #0; STA n; ...; INC n; LDA n; CMP #4; BCC`. Counting
    down to 0 would save the compare. `delay_with_animation` is 16 bytes,

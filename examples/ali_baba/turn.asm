@@ -21,14 +21,14 @@ DISK_VM_ZP	EQU	$50
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
-__local_move_loop__0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
-__local_move_loop__dir	EQU	$82
-__local_move_loop__1	EQU	$83
-__local_move_loop__2	EQU	$84
-__local_check_and_restrict__0	EQU	$85
-__local_set_char_state__state	EQU	$86
+__local_move_loop__0	EQU	$82
+__local_move_loop__dir	EQU	$83
+__local_move_loop__1	EQU	$84
+__local_move_loop__2	EQU	$85
+__local_check_and_restrict__0	EQU	$86
+__local_set_char_state__state	EQU	$87
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -205,15 +205,12 @@ WAIT	EQU	$FCA8
 ; def check_and_restrict params= locals=__local_check_and_restrict__0,__local_check_and_restrict__1 indirect=false in_cycle=false
 ; def clear_restricted params= locals=__local_clear_restricted__0 indirect=false in_cycle=false
 ; def commit_move params= locals=__local_commit_move__0 indirect=false in_cycle=false
-; def end_turn params= locals=__local_end_turn__0 indirect=false in_cycle=false
-; def game_turn_loop params= locals=__local_game_turn_loop__0,__local_game_turn_loop__1 indirect=false in_cycle=false
 ; def move_loop params= locals=__local_move_loop__0,__local_move_loop__dir,__local_move_loop__1,__local_move_loop__2 indirect=false in_cycle=false
 ; def reset_turn_pos params= locals=__local_reset_turn_pos__0 indirect=false in_cycle=false
-; def run_chain params=__zpabi_run_chain__state locals=__local_run_chain__state indirect=false in_cycle=false param_regs=A
+; def run_chain params=__zpabi_run_chain__state locals=__local_run_chain__state,__local_run_chain__0 indirect=false in_cycle=false param_regs=A
 ; def set_char_state params=__zpabi_set_char_state__state locals=__local_set_char_state__0,__local_set_char_state__state indirect=false in_cycle=false param_regs=A
 ; def set_restricted params= locals=__local_set_restricted__0 indirect=false in_cycle=false
 ; def set_state_fight params= locals= indirect=false in_cycle=false
-; def turn_dispatch params= locals=__local_turn_dispatch__0 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -274,6 +271,7 @@ WAIT	EQU	$FCA8
 ; ext draw_blink_normal params=
 ; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
+; ext end_turn params=
 ; ext enter_char_select params=
 ; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
 ; ext enter_location params=
@@ -291,6 +289,7 @@ WAIT	EQU	$FCA8
 ; ext font_pos_to_text_pos params=
 ; ext format_scenario_disk params=
 ; ext game_init params=
+; ext game_turn_loop params=
 ; ext get_char_record params=__zpabi_get_char_record__index param_regs=A
 ; ext get_entity_fontchar params=__zpabi_get_entity_fontchar__e_0,__zpabi_get_entity_fontchar__e_1 param_regs=A,X
 ; ext get_input_table_ptr params=
@@ -386,6 +385,7 @@ WAIT	EQU	$FCA8
 ; ext toggle_sound params=
 ; ext trigger_scene_event params=__zpabi_trigger_scene_event__ev_0,__zpabi_trigger_scene_event__ev_1 param_regs=A,X
 ; ext tune_player params=__zpabi_tune_player__tune,__zpabi_tune_player__strength param_regs=A,X
+; ext turn_dispatch params=
 ; ext update_event_list params=__zpabi_update_event_list__pos,__zpabi_update_event_list__value_0,__zpabi_update_event_list__value_1 param_regs=A,,
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
@@ -396,15 +396,6 @@ WAIT	EQU	$FCA8
 ; call commit_move -> colrow_to_pos
 ; call commit_move -> render_font_char
 ; call commit_move -> reset_turn_pos
-; call end_turn -> check_and_restrict
-; call end_turn -> set_state_fight
-; call game_turn_loop -> ai_choose_target
-; call game_turn_loop -> check_encounter
-; call game_turn_loop -> check_threats_here
-; call game_turn_loop -> clear_restricted
-; call game_turn_loop -> pos_to_colrow
-; call game_turn_loop -> random_in_range
-; call game_turn_loop -> set_restricted
 ; call move_loop -> auto_heal
 ; call move_loop -> check_and_restrict
 ; call move_loop -> check_can_leave
@@ -434,6 +425,7 @@ WAIT	EQU	$FCA8
 ; call reset_turn_pos -> tune_player
 ; call run_chain -> adj_drop_dec
 ; call run_chain -> adj_drop_inc
+; call run_chain -> ai_choose_target
 ; call run_chain -> attack_down
 ; call run_chain -> attack_left
 ; call run_chain -> attack_right
@@ -446,9 +438,12 @@ WAIT	EQU	$FCA8
 ; call run_chain -> char_select_init
 ; call run_chain -> char_select_next
 ; call run_chain -> char_select_prev
+; call run_chain -> check_and_restrict
+; call run_chain -> check_encounter
+; call run_chain -> check_threats_here
+; call run_chain -> clear_restricted
 ; call run_chain -> continue_game
 ; call run_chain -> drop_gold_exec
-; call run_chain -> end_turn
 ; call run_chain -> enter_char_select
 ; call run_chain -> enter_combat_state
 ; call run_chain -> enter_save_game_slot
@@ -456,7 +451,6 @@ WAIT	EQU	$FCA8
 ; call run_chain -> find_attack_target
 ; call run_chain -> flush_pending_xp
 ; call run_chain -> format_scenario_disk
-; call run_chain -> game_turn_loop
 ; call run_chain -> handle_mob_encounter
 ; call run_chain -> init_char_select
 ; call run_chain -> init_drop_gold
@@ -471,10 +465,14 @@ WAIT	EQU	$FCA8
 ; call run_chain -> menu_other_options
 ; call run_chain -> menu_see_your_lot
 ; call run_chain -> move_loop
+; call run_chain -> pos_to_colrow
+; call run_chain -> random_in_range
 ; call run_chain -> resolve_attack
 ; call run_chain -> retire_character
 ; call run_chain -> save_game
+; call run_chain -> select_combat_target
 ; call run_chain -> select_someone_else
+; call run_chain -> set_restricted
 ; call run_chain -> set_state_fight
 ; call run_chain -> settings_danger_down
 ; call run_chain -> settings_danger_up
@@ -485,23 +483,16 @@ WAIT	EQU	$FCA8
 ; call run_chain -> slot_dec_reenter
 ; call run_chain -> slot_inc_enter
 ; call run_chain -> slot_inc_reenter
+; call run_chain -> start_combat
 ; call run_chain -> start_game_input
 ; call run_chain -> teardown_input
 ; call run_chain -> toggle_sound
-; call run_chain -> turn_dispatch
 ; call run_chain -> use_scenario_disk
 ; call set_state_fight -> set_char_state
-; call turn_dispatch -> auto_heal
-; call turn_dispatch -> enter_combat_state
-; call turn_dispatch -> select_combat_target
-; call turn_dispatch -> start_combat
 ; item run_chain section=.text local=false zero=false
-; item turn_dispatch section=.text local=true zero=false
-; item game_turn_loop section=.text local=true zero=false
 ; item move_loop section=.text local=true zero=false
 ; item commit_move section=.text local=false zero=false
 ; item reset_turn_pos section=.text local=false zero=false
-; item end_turn section=.text local=true zero=false
 ; item set_state_fight section=.text local=true zero=false
 ; item check_and_restrict section=.text local=true zero=false
 ; item set_char_state section=.text local=false zero=false
@@ -512,7 +503,7 @@ WAIT	EQU	$FCA8
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
 ; zp NULL_PAGE_HIGH size=6 at=$0A def=false init=
-; zp TURN_ACTIVE size=1 at=auto def=true init=$4B weight=10
+; zp TURN_ACTIVE size=1 at=auto def=true init=$4B weight=24
 ; zp MONITOR_YSAV1_1F size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -611,17 +602,104 @@ run_chain:
 .jtdef@0:
    RTS
 .case@2:
-   JSR   game_turn_loop
-   JMP   .loop@0_continue
+   LDA   #$01
+   STA   TURN_ACTIVE
+   LDY   #$03
+   LDA   (ENTITY_PTR),Y
+   JSR   pos_to_colrow
+   STA   TURN_START_COL
+   STA   CURRENT_COL
+   TXA
+   STA   TURN_START_ROW
+   STA   CURRENT_ROW
+   LDA   #$00
+   STA   STEPS_TAKEN
+   JSR   clear_restricted
+   LDY   #$06
+   LDA   (ENTITY_PTR),Y
+   AND   #$3F
+   CMP   #$03
+   BCS   .i0_if_end@5
+   JSR   set_restricted
+.i0_if_end@5:
+   LDY   #$03
+   LDA   (ENTITY_PTR),Y
+   JSR   check_encounter
+   CMP   #$02
+   BNE   .i0_if_end@6
+   JSR   set_restricted
+.i0_if_end@6:
+   LDA   CHAR_AI_MODE
+   BEQ   .i0_if_end@7
+   JSR   ai_choose_target
+.i0_if_end@7:
+   LDY   #$0C
+   LDA   (ENTITY_PTR),Y
+   AND   #$0F
+   STA   MOVE_POINTS
+   LDA   ENCOUNTER_RESULT
+   CMP   #$02
+   BNE   .i0_if_else@9
+   LDA   MOVE_POINTS
+   CMP   #$02
+   BCC   .i0_if_end@8
+   LDA   #$01
+   JSR   random_in_range
+   CLC
+   ADC   #$01
+   STA   MOVE_POINTS
+   JMP   .i0_if_end@8
+.i0_if_else@9:
+   JSR   check_threats_here
+   CMP   #$01
+   BEQ   .i0_if_end@13
+   LDA   MOVE_POINTS
+   CMP   #$02
+   BCC   .i0_if_end@13
+   JSR   random_in_range
+   ORA   #$00
+   BEQ   .i0_if_else@15
+   STA   MOVE_POINTS
+   JMP   .i0_if_end@14
+.i0_if_else@15:
+   LDA   #$01
+   JSR   random_in_range
+   CLC
+   ADC   #$01
+   STA   MOVE_POINTS
+.i0_if_end@14:
+.i0_if_end@13:
+.i0_if_end@8:
 .case@3:
    JSR   move_loop
    JMP   .loop@0_continue
 .case@4:
-   JSR   end_turn
-   JMP   .loop@0_continue
+   LDA   #$00
+   STA   TURN_ACTIVE
+   JSR   check_and_restrict
+   LDA   STEPS_TAKEN
+   BEQ   .case@5
+   LDY   #$0C
+   LDA   (ENTITY_PTR),Y
+   LSR
+   AND   #$07
+   SEC
+   SBC   STEPS_TAKEN
+   BPL   .case@5
+   JMP   set_state_fight
 .case@5:
-   JSR   turn_dispatch
-   JMP   .loop@0_continue
+   LDA   CHAR_AI_MODE
+   BEQ   .case@19
+   JSR   select_combat_target
+   CMP   #$02
+   BNE   .i1_if_else@2
+   LDA   #$02
+   JMP   enter_combat_state
+.i1_if_else@2:
+   BCS   .i1_if_else@4
+   JMP   start_combat
+.i1_if_else@4:
+   JMP   auto_heal
 .case@7:
    JSR   toggle_sound
    JMP   .loop@0_continue
@@ -775,105 +853,6 @@ run_chain:
 .loop@0_break:
    RTS
 
-turn_dispatch:
-   SUBROUTINE
-
-   LDA   CHAR_AI_MODE
-   BNE   .if_end@0
-   LDA   #$12
-   RTS
-.if_end@0:
-   JSR   select_combat_target
-   CMP   #$02
-   BNE   .if_else@2
-   LDA   #$02
-   JSR   enter_combat_state
-   JMP   .if_end@1
-.if_else@2:
-   BCS   .if_else@4
-   JSR   start_combat
-   JMP   .if_end@3
-.if_else@4:
-   JSR   auto_heal
-.if_end@3:
-.if_end@1:
-   LDA   #$00
-   RTS
-
-game_turn_loop:
-   SUBROUTINE
-
-   LDA   #$01
-   STA   TURN_ACTIVE
-   LDY   #$03
-   LDA   (ENTITY_PTR),Y
-   JSR   pos_to_colrow
-   STA   TURN_START_COL
-   STA   CURRENT_COL
-   TXA
-   STA   TURN_START_ROW
-   STA   CURRENT_ROW
-   LDA   #$00
-   STA   STEPS_TAKEN
-   JSR   clear_restricted
-   LDY   #$06
-   LDA   (ENTITY_PTR),Y
-   AND   #$3F
-   CMP   #$03
-   BCS   .if_end@5
-   JSR   set_restricted
-.if_end@5:
-   LDY   #$03
-   LDA   (ENTITY_PTR),Y
-   JSR   check_encounter
-   CMP   #$02
-   BNE   .if_end@6
-   JSR   set_restricted
-.if_end@6:
-   LDA   CHAR_AI_MODE
-   BEQ   .if_end@7
-   JSR   ai_choose_target
-.if_end@7:
-   LDY   #$0C
-   LDA   (ENTITY_PTR),Y
-   AND   #$0F
-   STA   MOVE_POINTS
-   LDA   ENCOUNTER_RESULT
-   CMP   #$02
-   BNE   .if_else@9
-   LDA   MOVE_POINTS
-   CMP   #$02
-   BCC   .if_end@8
-   LDA   #$01
-   JSR   random_in_range
-   CLC
-   ADC   #$01
-   STA   MOVE_POINTS
-   JMP   .if_end@8
-.if_else@9:
-   JSR   check_threats_here
-   CMP   #$01
-   BEQ   .if_end@13
-   LDA   MOVE_POINTS
-   CMP   #$02
-   BCC   .if_end@13
-   JSR   random_in_range
-   ORA   #$00
-   BEQ   .if_else@15
-   STA   MOVE_POINTS
-   JMP   .if_end@14
-.if_else@15:
-   LDA   #$01
-   JSR   random_in_range
-   CLC
-   ADC   #$01
-   STA   MOVE_POINTS
-.if_end@14:
-.if_end@13:
-.if_end@8:
-   LDA   #$02
-   RTS
-
 move_loop:
    SUBROUTINE
 
@@ -954,10 +933,10 @@ move_loop:
    INC   STEPS_TAKEN
    LDA   __local_move_loop__dir
    CMP   #$02
-   BCS   .vthread@0
+   BCS   .vthread@1
    DEC   CURRENT_ROW
    JMP   .if_end@35
-.vthread@0:
+.vthread@1:
    BNE   .if_else@38
    INC   CURRENT_ROW
    JMP   .if_end@37
@@ -1091,29 +1070,6 @@ reset_turn_pos:
    LDA   #$0B
    JSR   tune_player
 .if_end@52:
-   RTS
-
-end_turn:
-   SUBROUTINE
-
-   LDA   #$00
-   STA   TURN_ACTIVE
-   JSR   check_and_restrict
-   LDA   STEPS_TAKEN
-   BEQ   .tail@1
-   LDY   #$0C
-   LDA   (ENTITY_PTR),Y
-   LSR
-   AND   #$07
-   SEC
-   SBC   STEPS_TAKEN
-   BMI   .if_end@54
-.tail@1:
-   LDA   #$04
-   RTS
-.if_end@54:
-   JSR   set_state_fight
-   LDA   #$00
    RTS
 
 set_state_fight:

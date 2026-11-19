@@ -18,6 +18,7 @@ import tac_ast
 from passes.return_in_zero_page import return_pointers_in_zero_page
 from passes.type_checking import FunAttr, StaticAttr, Symbol
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 
 def _var(name):
@@ -152,6 +153,7 @@ class TestPrograms(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@no_inlining()
 class TestCodegen(unittest.TestCase):
 
     def test_read_right_after_the_call_goes_through_the_object(self):

@@ -16,6 +16,7 @@ from pathlib import Path
 import asm_ast
 from passes.outline_runs import apply_outline_runs
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _A = asm_ast.Reg(reg=asm_ast.A())
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -160,6 +161,7 @@ def _expected():
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@no_inlining()
 class TestPrograms(unittest.TestCase):
 
     def test_outlined_and_runs(self):

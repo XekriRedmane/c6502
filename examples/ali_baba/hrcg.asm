@@ -22,31 +22,28 @@ hrcg_saved_valid	EQU	$64
 hrcg_saved_ch	EQU	$65
 hrcg_next	EQU	$66
 hrcg_saved_cv	EQU	$67
-__local_hrcg_cout__next	EQU	$80
+__local_hrcg_cout__old	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
 __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_hrcg_cout__0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
-__local_hrcg_draw_char__glyph	EQU	$82
-__local_hrcg_clear_from__row	EQU	$83
-__local_hrcg_draw_char__0	EQU	$83
-__local_hrcg_set_top_left__top	EQU	$83
-__local_hrcg_draw_char__2	EQU	$86
-__local_hrcg_draw_char__3	EQU	$87
-__local_hrcg_draw_char__raw	EQU	$88
-__local_hrcg_scroll_up__n	EQU	$8B
-__local_hrcg_scroll_up__dst	EQU	$8E
-__local_hrcg_scroll_up__2	EQU	$8F
-__local_hrcg_scroll_up__row	EQU	$90
-__local_hrcg_fill_line__col	EQU	$95
-__local_hrcg_row_address__0	EQU	$96
-__local_hrcg_row_address__1	EQU	$97
-__local_hrcg_row_address__row	EQU	$98
-__local_hrcg_row_address__2	EQU	$99
-__local_hrcg_row_address__3	EQU	$9A
-__local_hrcg_row_address__col	EQU	$9B
+__local_hrcg_cout__2	EQU	$84
+__local_hrcg_cout__3	EQU	$85
+__local_hrcg_cout__c	EQU	$86
+__local_hrcg_clear_from__row	EQU	$87
+__local_hrcg_line_feed__n	EQU	$88
+__local_hrcg_line_feed__dst	EQU	$8B
+__local_hrcg_line_feed__2	EQU	$8C
+__local_hrcg_line_feed__row	EQU	$8D
+__local_hrcg_fill_line__col	EQU	$92
+__local_hrcg_row_address__0	EQU	$93
+__local_hrcg_row_address__1	EQU	$94
+__local_hrcg_row_address__row	EQU	$95
+__local_hrcg_row_address__2	EQU	$96
+__local_hrcg_row_address__3	EQU	$97
+__local_hrcg_row_address__col	EQU	$98
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -220,22 +217,12 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def hrcg_advance_cursor params= locals= indirect=false in_cycle=false
 ; def hrcg_clear_from params=__zpabi_hrcg_clear_from__row,__zpabi_hrcg_clear_from__col locals=__local_hrcg_clear_from__row indirect=false in_cycle=false param_regs=A,X
-; def hrcg_control params=__zpabi_hrcg_control__code locals=__local_hrcg_control__code indirect=false in_cycle=false param_regs=A
-; def hrcg_cout params=__zpabi_hrcg_cout__c locals=__local_hrcg_cout__next,__local_hrcg_cout__0 indirect=false in_cycle=false param_regs=A
-; def hrcg_draw_char params=__zpabi_hrcg_draw_char__c,__zpabi_hrcg_draw_char__raw locals=__local_hrcg_draw_char__glyph,__local_hrcg_draw_char__0,__local_hrcg_draw_char__dst,__local_hrcg_draw_char__1,__local_hrcg_draw_char__2,__local_hrcg_draw_char__3,__local_hrcg_draw_char__raw indirect=false in_cycle=false param_regs=A,X
+; def hrcg_cout params=__zpabi_hrcg_cout__c locals=__local_hrcg_cout__old,__local_hrcg_cout__0,__local_hrcg_cout__dst,__local_hrcg_cout__1,__local_hrcg_cout__2,__local_hrcg_cout__3,__local_hrcg_cout__c indirect=false in_cycle=false param_regs=A
 ; def hrcg_fill_line params=__zpabi_hrcg_fill_line__row,__zpabi_hrcg_fill_line__col locals=__local_hrcg_fill_line__row,__local_hrcg_fill_line__n,__local_hrcg_fill_line__line,__local_hrcg_fill_line__0,__local_hrcg_fill_line__col indirect=false in_cycle=false param_regs=A,X
 ; def hrcg_init params= locals= indirect=false in_cycle=false
-; def hrcg_line_feed params= locals=__local_hrcg_line_feed__0 indirect=false in_cycle=false
-; def hrcg_restore params= locals= indirect=false in_cycle=false
-; def hrcg_restore_column params= locals=__local_hrcg_restore_column__old indirect=false in_cycle=false
+; def hrcg_line_feed params= locals=__local_hrcg_line_feed__0,__local_hrcg_line_feed__n,__local_hrcg_line_feed__src,__local_hrcg_line_feed__1,__local_hrcg_line_feed__dst,__local_hrcg_line_feed__2,__local_hrcg_line_feed__row indirect=false in_cycle=false
 ; def hrcg_row_address params=__zpabi_hrcg_row_address__row,__zpabi_hrcg_row_address__col locals=__local_hrcg_row_address__0,__local_hrcg_row_address__1,__local_hrcg_row_address__row,__local_hrcg_row_address__2,__local_hrcg_row_address__3,__local_hrcg_row_address__col indirect=false in_cycle=false param_regs=A,X
-; def hrcg_save params= locals= indirect=false in_cycle=false
-; def hrcg_scroll_up params= locals=__local_hrcg_scroll_up__0,__local_hrcg_scroll_up__n,__local_hrcg_scroll_up__src,__local_hrcg_scroll_up__1,__local_hrcg_scroll_up__dst,__local_hrcg_scroll_up__2,__local_hrcg_scroll_up__row indirect=false in_cycle=false
-; def hrcg_select_font params=__zpabi_hrcg_select_font__c locals=__local_hrcg_select_font__0,__local_hrcg_select_font__1 indirect=false in_cycle=false param_regs=A
-; def hrcg_set_top_left params= locals=__local_hrcg_set_top_left__top indirect=false in_cycle=false
-; def hrcg_shifted_control params=__zpabi_hrcg_shifted_control__code locals=__local_hrcg_shifted_control__code indirect=false in_cycle=false param_regs=A
 ; ext CLREOL params=
 ; ext CLREOP params=
 ; ext DISK_BOOT_ROM params=
@@ -322,6 +309,16 @@ WAIT	EQU	$FCA8
 ; ext handle_encounter params=__zpabi_handle_encounter__ev_0,__zpabi_handle_encounter__ev_1 param_regs=A,X
 ; ext handle_event_slot params=__zpabi_handle_event_slot__ev_0,__zpabi_handle_event_slot__ev_1 param_regs=A,X
 ; ext handle_mob_encounter params=
+; ext hrcg_advance_cursor params=
+; ext hrcg_control params=__zpabi_hrcg_control__code param_regs=A
+; ext hrcg_draw_char params=__zpabi_hrcg_draw_char__c,__zpabi_hrcg_draw_char__raw param_regs=A,X
+; ext hrcg_restore params=
+; ext hrcg_restore_column params=
+; ext hrcg_save params=
+; ext hrcg_scroll_up params=
+; ext hrcg_select_font params=__zpabi_hrcg_select_font__c param_regs=A
+; ext hrcg_set_top_left params=
+; ext hrcg_shifted_control params=__zpabi_hrcg_shifted_control__code param_regs=A
 ; ext idle_anim_handler params=
 ; ext inc_threshold_wrap params=
 ; ext init_attack_display params=
@@ -416,46 +413,25 @@ WAIT	EQU	$FCA8
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
-; call hrcg_advance_cursor -> hrcg_line_feed
 ; call hrcg_clear_from -> hrcg_fill_line
-; call hrcg_control -> CLREOP
-; call hrcg_control -> HOME
-; call hrcg_control -> hrcg_clear_from
-; call hrcg_control -> hrcg_restore
-; call hrcg_control -> hrcg_restore_column
-; call hrcg_control -> hrcg_save
-; call hrcg_control -> hrcg_set_top_left
-; call hrcg_cout -> hrcg_control
-; call hrcg_cout -> hrcg_draw_char
-; call hrcg_cout -> hrcg_select_font
-; call hrcg_cout -> hrcg_shifted_control
-; call hrcg_draw_char -> hrcg_advance_cursor
-; call hrcg_draw_char -> hrcg_row_address
+; call hrcg_cout -> CLREOP
+; call hrcg_cout -> HOME
+; call hrcg_cout -> VTAB
+; call hrcg_cout -> hrcg_clear_from
+; call hrcg_cout -> hrcg_line_feed
+; call hrcg_cout -> hrcg_row_address
 ; call hrcg_fill_line -> hrcg_row_address
 ; call hrcg_init -> VTAB
 ; call hrcg_line_feed -> SCROLL
 ; call hrcg_line_feed -> VTABZ
-; call hrcg_line_feed -> hrcg_scroll_up
-; call hrcg_restore_column -> hrcg_line_feed
-; call hrcg_scroll_up -> hrcg_fill_line
-; call hrcg_scroll_up -> hrcg_row_address
-; call hrcg_set_top_left -> VTAB
+; call hrcg_line_feed -> hrcg_fill_line
+; call hrcg_line_feed -> hrcg_row_address
 ; item hrcg_row_address section=.text local=true zero=false
 ; item hrcg_fill_line section=.text local=true zero=false
 ; item hrcg_clear_from section=.text local=true zero=false
-; item hrcg_scroll_up section=.text local=true zero=false
 ; item hrcg_line_feed section=.text local=true zero=false
-; item hrcg_advance_cursor section=.text local=true zero=false
-; item hrcg_draw_char section=.text local=true zero=false
-; item hrcg_select_font section=.text local=true zero=false
-; item hrcg_select_font@run0 section=.text local=true zero=false
-; item hrcg_save section=.text local=true zero=false
-; item hrcg_restore_column section=.text local=true zero=false
-; item hrcg_restore section=.text local=true zero=false
-; item hrcg_set_top_left section=.text local=true zero=false
-; item hrcg_shifted_control section=.text local=true zero=false
-; item hrcg_control section=.text local=true zero=false
 ; item hrcg_init section=.text local=false zero=false
+; item hrcg_init@run0 section=.text local=true zero=false
 ; item hrcg_cout section=.text local=false zero=false
 ; item hrcg section=.bss local=true zero=true
 ; item hrcg_saved section=.bss local=true zero=true
@@ -580,66 +556,6 @@ hrcg_clear_from:
    LDX   #$00
    BEQ   .loop@2_start
 
-hrcg_scroll_up:
-   SUBROUTINE
-
-   LDA   WNDTOP
-   STA   __local_hrcg_scroll_up__row
-.loop@3_start:
-   LDA   __local_hrcg_scroll_up__row
-   CLC
-   ADC   #$01
-   STA   hrcg_row_address@ret
-   LDA   #$00
-   ADC   #$00
-   STA   __local_hrcg_scroll_up__n
-   LDA   hrcg_row_address@ret
-   SEC
-   SBC   WNDBTM
-   LDA   __local_hrcg_scroll_up__n
-   SBC   #$00
-   BCS   .loop@3_break
-   LDX   #$00
-   LDA   __local_hrcg_scroll_up__row
-   JSR   hrcg_row_address
-   LDA   hrcg_row_address@ret
-   STA   __local_hrcg_scroll_up__dst
-   LDA   hrcg_row_address@ret+1
-   STA   __local_hrcg_scroll_up__2
-   INC   __local_hrcg_scroll_up__row
-   LDX   #$00
-   LDA   __local_hrcg_scroll_up__row
-   JSR   hrcg_row_address
-   LDA   #$08
-   STA   __local_hrcg_scroll_up__n
-.loop@4_start:
-   LDA   __local_hrcg_scroll_up__n
-   BEQ   .loop@3_start
-   LDY   #$00
-   BEQ   .loop@5_start
-.hrcg_scroll_up@rot@1:
-   LDA   (hrcg_row_address@ret),Y
-   STA   (__local_hrcg_scroll_up__dst),Y
-   INY
-.loop@5_start:
-   CPY   WNDWDTH
-   BCC   .hrcg_scroll_up@rot@1
-   LDA   __local_hrcg_scroll_up__2
-   CLC
-   ADC   #$04
-   STA   __local_hrcg_scroll_up__2
-   LDA   hrcg_row_address@ret+1
-   CLC
-   ADC   #$04
-   STA   hrcg_row_address@ret+1
-   DEC   __local_hrcg_scroll_up__n
-   JMP   .loop@4_start
-.loop@3_break:
-   LDA   WNDBTM
-   SBC   #$01
-   LDX   #$00
-   JMP   hrcg_fill_line
-
 hrcg_line_feed:
    SUBROUTINE
 
@@ -656,290 +572,63 @@ hrcg_line_feed:
    JMP   VTABZ
 .if_else@3:
    DEC   TEXT_ROW
-   JSR   hrcg_scroll_up
-   JMP   SCROLL
-
-hrcg_advance_cursor:
-   SUBROUTINE
-
-   INC   TEXT_COL
-   LDA   TEXT_COL
-   CMP   WNDWDTH
-   BCS   .if_end@4
-   RTS
-.if_end@4:
-   LDA   #$00
-   STA   TEXT_COL
-   JMP   hrcg_line_feed
-
-hrcg_draw_char:
-   SUBROUTINE
-
-   STA   __local_hrcg_draw_char__glyph
-   STX   __local_hrcg_draw_char__raw
-   SEC
-   SBC   #$20
-   STA   hrcg_row_address@ret
-   LDA   hrcg+2
-   BEQ   .hrcg_draw_char@scfold@0
-   LDA   __local_hrcg_draw_char__glyph
-   CMP   #$41
-   BCC   .hrcg_draw_char@scfold@0
-   CMP   #$5B
-   BCS   .hrcg_draw_char@scfold@0
-.if_end@9:
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
-   STA   __local_hrcg_draw_char__0
-   LDA   __local_hrcg_draw_char__glyph
-   ASL
-   ASL
-   ASL
+   LDA   WNDTOP
+   STA   __local_hrcg_line_feed__row
+.i5_loop@3_start:
+   LDA   __local_hrcg_line_feed__row
    CLC
-   ADC   hrcg+3
-   STA   __local_hrcg_draw_char__2
-   LDA   hrcg+4
-   ADC   __local_hrcg_draw_char__0
-   STA   __local_hrcg_draw_char__3
-   LDX   TEXT_COL
-   LDA   TEXT_ROW
-   JSR   hrcg_row_address
-   LDA   __local_hrcg_draw_char__raw
-   LDY   TEXT_COL
-   STA   (BASL),Y
+   ADC   #$01
+   STA   hrcg_row_address@ret
+   LDA   #$00
+   ADC   #$00
+   STA   __local_hrcg_line_feed__n
+   LDA   hrcg_row_address@ret
+   SEC
+   SBC   WNDBTM
+   LDA   __local_hrcg_line_feed__n
+   SBC   #$00
+   BCS   .i5_loop@3_break
    LDX   #$00
-   BEQ   .loop@6_start
-.hrcg_draw_char@rot@2:
-   TXA
-   TAY
-   LDA   (__local_hrcg_draw_char__2),Y
-   EOR   hrcg
-   LDY   #$00
-   STA   (hrcg_row_address@ret),Y
+   LDA   __local_hrcg_line_feed__row
+   JSR   hrcg_row_address
+   LDA   hrcg_row_address@ret
+   STA   __local_hrcg_line_feed__dst
    LDA   hrcg_row_address@ret+1
+   STA   __local_hrcg_line_feed__2
+   INC   __local_hrcg_line_feed__row
+   LDX   #$00
+   LDA   __local_hrcg_line_feed__row
+   JSR   hrcg_row_address
+   LDA   #$08
+   STA   __local_hrcg_line_feed__n
+.i5_loop@4_start:
+   LDA   __local_hrcg_line_feed__n
+   BEQ   .i5_loop@3_start
+   LDY   #$00
+   BEQ   .i5_loop@5_start
+.hrcg_line_feed@rot@1:
+   LDA   (hrcg_row_address@ret),Y
+   STA   (__local_hrcg_line_feed__dst),Y
+   INY
+.i5_loop@5_start:
+   CPY   WNDWDTH
+   BCC   .hrcg_line_feed@rot@1
+   LDA   __local_hrcg_line_feed__2
+   CLC
+   ADC   #$04
+   STA   __local_hrcg_line_feed__2
+   LDA   hrcg_row_address@ret+1
+   CLC
    ADC   #$04
    STA   hrcg_row_address@ret+1
-   INX
-.loop@6_start:
-   CPX   #$08
-   BCC   .hrcg_draw_char@rot@2
-   JMP   hrcg_advance_cursor
-.hrcg_draw_char@scfold@0:
-   LDA   hrcg_row_address@ret
-   STA   __local_hrcg_draw_char__glyph
-   JMP   .if_end@9
-
-hrcg_select_font:
-   SUBROUTINE
-
-   TAX
-   CPX   #$31
-   BCC   .if_else@13
-   CPX   #$3A
-   BCS   .if_else@13
-   LDA   FONT_DATA@lo-49,X
-   STA   hrcg+3
-   LDA   FONT_DATA@hi-49,X
-   STA   hrcg+4
-   RTS
-.if_else@13:
-   JSR   hrcg_select_font@run0
-   RTS
-
-hrcg_select_font@run0:
-   SUBROUTINE
-
-   LDA   #<STD_FONT_DATA
-   STA   hrcg+3
-   LDA   #>STD_FONT_DATA
-   STA   hrcg+4
-   RTS
-
-hrcg_save:
-   SUBROUTINE
-
-   LDA   hrcg_saved_valid
-   BNE   .if_end@14
-   LDA   #$01
-   STA   hrcg_saved_valid
-   LDA   hrcg
-   STA   hrcg_saved
-   LDA   hrcg+1
-   STA   hrcg_saved+1
-   LDA   hrcg+2
-   STA   hrcg_saved+2
-   LDA   hrcg+3
-   STA   hrcg_saved+3
-   LDA   hrcg+4
-   STA   hrcg_saved+4
-.if_end@14:
-   LDA   TEXT_COL
-   STA   hrcg_saved_ch
-   LDA   TEXT_ROW
-   STA   hrcg_saved_cv
-   RTS
-
-hrcg_restore_column:
-   SUBROUTINE
-
-   LDA   TEXT_COL
-   LDX   hrcg_saved_ch
-   STX   TEXT_COL
-   CMP   hrcg_saved_ch
-   BCC   .if_end@15
-   JSR   hrcg_line_feed
-.if_end@15:
-   RTS
-
-hrcg_restore:
-   SUBROUTINE
-
-   LDA   hrcg_saved_valid
-   BNE   .if_end@16
-   RTS
-.if_end@16:
-   LDA   hrcg_saved
-   STA   hrcg
-   LDA   hrcg_saved+1
-   STA   hrcg+1
-   LDA   hrcg_saved+2
-   STA   hrcg+2
-   LDA   hrcg_saved+3
-   STA   hrcg+3
-   LDA   hrcg_saved+4
-   STA   hrcg+4
-   LDA   #$00
-   STA   hrcg_saved_valid
-   STA   hrcg_saved_ch
-   LDA   WNDTOP
-   STA   hrcg_saved_cv
-   RTS
-
-hrcg_set_top_left:
-   SUBROUTINE
-
-   LDA   TEXT_COL
-   CLC
-   ADC   WNDLFT
-   CMP   #$28
-   BCC   .if_end@17
-   LDA   #$27
-.if_end@17:
-   STA   WNDLFT
-   LDA   WNDWDTH
-   SEC
-   SBC   TEXT_COL
-   STA   WNDWDTH
-   LDA   #$00
-   STA   TEXT_COL
-   LDA   TEXT_ROW
-   STA   __local_hrcg_set_top_left__top
-   CMP   #$18
-   BCC   .if_end@18
-   LDA   #$17
-   STA   __local_hrcg_set_top_left__top
-.if_end@18:
-   STA   WNDTOP
-   LDA   hrcg_saved_valid
-   BNE   .if_end@19
-   LDA   __local_hrcg_set_top_left__top
-   STA   hrcg_saved_cv
-.if_end@19:
-   JMP   VTAB
-
-hrcg_shifted_control:
-   SUBROUTINE
-
-   CMP   #$13
-   BNE   .if_else@21
-   LDA   #$00
-   STA   hrcg+1
-   RTS
-.if_else@21:
-   CMP   #$17
-   BNE   .if_end@22
-   LDA   #$01
-   STA   hrcg+1
-.if_end@22:
-   RTS
-
-hrcg_control:
-   SUBROUTINE
-
-   CMP   #$01
-   BEQ   .case@8
-   CMP   #$02
-   BEQ   .case@9
-   CMP   #$03
-   BEQ   .case@10
-   CMP   #$04
-   BEQ   .case@11
-   CMP   #$06
-   BEQ   .case@12
-   CMP   #$09
-   BEQ   .case@13
-   CMP   #$0B
-   BEQ   .case@14
-   CMP   #$0C
-   BEQ   .case@15
-   CMP   #$0E
-   BEQ   .case@16
-   CMP   #$0F
-   BEQ   .case@17
-   CMP   #$10
-   BEQ   .case@18
-   CMP   #$16
-   BEQ   .case@19
-   RTS
-.case@8:
-   LDA   #$80
-   STA   hrcg_next
-   RTS
-.case@9:
-   JMP   hrcg_save
-.case@10:
-   JMP   hrcg_restore_column
-.case@11:
-   JMP   hrcg_restore
-.case@12:
-   LDX   TEXT_COL
-   LDA   TEXT_ROW
-   JSR   hrcg_clear_from
-   JMP   CLREOP
-.case@13:
-   LDA   #$7F
-   STA   hrcg
-   RTS
-.case@14:
-   LDA   #$00
-   STA   hrcg+2
-   RTS
-.case@15:
-   LDA   #$01
-   STA   hrcg+2
-   RTS
-.case@16:
-   LDA   #$00
-   STA   hrcg
-   RTS
-.case@17:
-   LDA   #$40
-   STA   hrcg_next
-   RTS
-.case@18:
-   LDA   WNDTOP
-   STA   TEXT_ROW
-   LDA   #$00
-   STA   TEXT_COL
+   DEC   __local_hrcg_line_feed__n
+   JMP   .i5_loop@4_start
+.i5_loop@3_break:
+   LDA   WNDBTM
+   SBC   #$01
    LDX   #$00
-   LDA   WNDTOP
-   JSR   hrcg_clear_from
-   JMP   HOME
-.case@19:
-   JMP   hrcg_set_top_left
+   JSR   hrcg_fill_line
+   JMP   SCROLL
 
 hrcg_init:
    SUBROUTINE
@@ -966,47 +655,307 @@ hrcg_init:
    LDA   #$18
    STA   WNDBTM
    JSR   VTAB
-   JSR   hrcg_select_font@run0
+   JSR   hrcg_init@run0
    LDA   TXTPAGE1
    LDA   TXTCLR
+   RTS
+
+hrcg_init@run0:
+   SUBROUTINE
+
+   LDA   #<STD_FONT_DATA
+   STA   hrcg+3
+   LDA   #>STD_FONT_DATA
+   STA   hrcg+4
    RTS
 
 hrcg_cout:
    SUBROUTINE
 
-   TAX
+   STA   __local_hrcg_cout__c
    AND   #$7F
-   STA   __local_hrcg_cout__0
+   TAX
    LDA   hrcg_next
-   STA   __local_hrcg_cout__next
    LDY   #$00
    STY   hrcg_next
    CMP   #$80
    BNE   .if_else@24
-   LDA   __local_hrcg_cout__0
-   JMP   hrcg_select_font
+   CPX   #$31
+   BCC   .i2_if_else@13
+   CPX   #$3A
+   BCS   .i2_if_else@13
+   LDA   FONT_DATA@lo-49,X
+   STA   hrcg+3
+   LDA   FONT_DATA@hi-49,X
+   STA   hrcg+4
+   RTS
+.i2_if_else@13:
+   JSR   hrcg_init@run0
+   RTS
 .if_else@24:
-   LDA   __local_hrcg_cout__0
-   CMP   #$20
-   BCC   .if_else@26
-   LDA   __local_hrcg_cout__next
-   BNE   .if_end@25
-   LDA   __local_hrcg_cout__0
-   JMP   hrcg_draw_char
+   CPX   #$20
+   BCS   .lb_skip@17
+   JMP   .if_else@26
+.lb_skip@17:
+   ORA   #$00
+   BEQ   .lb_skip@16
+   JMP   .if_end@25
+.lb_skip@16:
+   TXA
+   SBC   #$20
+   STA   __local_hrcg_cout__0
+   LDA   hrcg+2
+   BNE   .lb_skip@15
+   JMP   .hrcg_cout@scfold@0
+.lb_skip@15:
+   CPX   #$41
+   BCS   .lb_skip@14
+   JMP   .hrcg_cout@scfold@0
+.lb_skip@14:
+   CPX   #$5B
+   BCC   .lb_skip@13
+   JMP   .hrcg_cout@scfold@0
+.lb_skip@13:
+.i9_if_end@9:
+   LDA   hrcg+3
+   STA   hrcg_row_address@ret+1
+   LDA   hrcg+4
+   STA   hrcg_row_address@ret
+   TXA
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_hrcg_cout__0
+   TXA
+   ASL
+   ASL
+   ASL
+   CLC
+   ADC   hrcg_row_address@ret+1
+   STA   __local_hrcg_cout__2
+   LDA   hrcg_row_address@ret
+   ADC   __local_hrcg_cout__0
+   STA   __local_hrcg_cout__3
+   LDX   TEXT_COL
+   LDA   TEXT_ROW
+   JSR   hrcg_row_address
+   LDA   __local_hrcg_cout__c
+   LDY   TEXT_COL
+   STA   (BASL),Y
+   LDX   #$00
+   BEQ   .i9_loop@6_start
+.hrcg_cout@rot@2:
+   TXA
+   TAY
+   LDA   (__local_hrcg_cout__2),Y
+   EOR   hrcg
+   LDY   #$00
+   STA   (hrcg_row_address@ret),Y
+   LDA   hrcg_row_address@ret+1
+   ADC   #$04
+   STA   hrcg_row_address@ret+1
+   INX
+.i9_loop@6_start:
+   CPX   #$08
+   BCC   .hrcg_cout@rot@2
+   INC   TEXT_COL
+   LDA   TEXT_COL
+   CMP   WNDWDTH
+   BCS   .lb_skip@12
+   JMP   .if_end@25
+.lb_skip@12:
+   LDA   #$00
+   STA   TEXT_COL
+   JMP   hrcg_line_feed
 .if_else@26:
-   CMP   #$1B
-   BCS   .if_end@28
-   LDA   __local_hrcg_cout__next
+   CPX   #$1B
+   BCC   .lb_skip@11
+   JMP   .if_end@28
+.lb_skip@11:
    CMP   #$40
    BNE   .if_else@30
-   LDA   __local_hrcg_cout__0
-   JMP   hrcg_shifted_control
+   CPX   #$13
+   BNE   .i4_if_else@21
+   STY   hrcg+1
+   RTS
+.i4_if_else@21:
+   CPX   #$17
+   BEQ   .lb_skip@10
+   JMP   .if_end@29
+.lb_skip@10:
+   LDA   #$01
+   STA   hrcg+1
+   RTS
 .if_else@30:
-   LDA   __local_hrcg_cout__0
-   JSR   hrcg_control
+   CPX   #$01
+   BEQ   .i8_case@8
+   CPX   #$02
+   BEQ   .i8_case@9
+   CPX   #$03
+   BEQ   .i8_case@10
+   CPX   #$04
+   BNE   .lb_skip@18
+   JMP   .i8_case@11
+.lb_skip@18:
+   CPX   #$06
+   BNE   .lb_skip@9
+   JMP   .i8_case@12
+.lb_skip@9:
+   CPX   #$09
+   BNE   .lb_skip@8
+   JMP   .i8_case@13
+.lb_skip@8:
+   CPX   #$0B
+   BNE   .lb_skip@7
+   JMP   .i8_case@14
+.lb_skip@7:
+   CPX   #$0C
+   BNE   .lb_skip@6
+   JMP   .i8_case@15
+.lb_skip@6:
+   CPX   #$0E
+   BNE   .lb_skip@5
+   JMP   .i8_case@16
+.lb_skip@5:
+   CPX   #$0F
+   BNE   .lb_skip@4
+   JMP   .i8_case@17
+.lb_skip@4:
+   CPX   #$10
+   BNE   .lb_skip@3
+   JMP   .i8_case@18
+.lb_skip@3:
+   CPX   #$16
+   BNE   .lb_skip@2
+   JMP   .i8_case@19
+.lb_skip@2:
+   RTS
+.i8_case@8:
+   LDA   #$80
+   STA   hrcg_next
+   RTS
+.i8_case@9:
+   LDA   hrcg_saved_valid
+   BNE   .i8_i1_if_end@14
+   LDA   #$01
+   STA   hrcg_saved_valid
+   LDA   hrcg
+   STA   hrcg_saved
+   LDA   hrcg+1
+   STA   hrcg_saved+1
+   LDA   hrcg+2
+   STA   hrcg_saved+2
+   LDA   hrcg+3
+   STA   hrcg_saved+3
+   LDA   hrcg+4
+   STA   hrcg_saved+4
+.i8_i1_if_end@14:
+   LDA   TEXT_COL
+   STA   hrcg_saved_ch
+   LDA   TEXT_ROW
+   STA   hrcg_saved_cv
+   RTS
+.i8_case@10:
+   LDA   TEXT_COL
+   LDX   hrcg_saved_ch
+   STX   TEXT_COL
+   CMP   hrcg_saved_ch
+   BCS   .lb_skip@1
+   JMP   .i8_switch@7_break
+.lb_skip@1:
+   JMP   hrcg_line_feed
+.i8_case@11:
+   LDA   hrcg_saved_valid
+   BNE   .lb_skip@0
+   JMP   .i8_switch@7_break
+.lb_skip@0:
+   LDA   hrcg_saved
+   STA   hrcg
+   LDA   hrcg_saved+1
+   STA   hrcg+1
+   LDA   hrcg_saved+2
+   STA   hrcg+2
+   LDA   hrcg_saved+3
+   STA   hrcg+3
+   LDA   hrcg_saved+4
+   STA   hrcg+4
+   LDA   #$00
+   STA   hrcg_saved_valid
+   STA   hrcg_saved_ch
+   LDA   WNDTOP
+   STA   hrcg_saved_cv
+   RTS
+.i8_case@12:
+   LDX   TEXT_COL
+   LDA   TEXT_ROW
+   JSR   hrcg_clear_from
+   JMP   CLREOP
+.i8_case@13:
+   LDA   #$7F
+   STA   hrcg
+   RTS
+.i8_case@14:
+   STY   hrcg+2
+   RTS
+.i8_case@15:
+   LDA   #$01
+   STA   hrcg+2
+   RTS
+.i8_case@16:
+   STY   hrcg
+   RTS
+.i8_case@17:
+   LDA   #$40
+   STA   hrcg_next
+   RTS
+.i8_case@18:
+   LDA   WNDTOP
+   STA   TEXT_ROW
+   LDA   #$00
+   STA   TEXT_COL
+   LDX   #$00
+   LDA   WNDTOP
+   JSR   hrcg_clear_from
+   JMP   HOME
+.i8_case@19:
+   LDA   TEXT_COL
+   CLC
+   ADC   WNDLFT
+   CMP   #$28
+   BCC   .i8_i3_if_end@17
+   LDA   #$27
+.i8_i3_if_end@17:
+   STA   WNDLFT
+   LDA   WNDWDTH
+   SEC
+   SBC   TEXT_COL
+   STA   WNDWDTH
+   LDA   #$00
+   STA   TEXT_COL
+   LDA   TEXT_ROW
+   STA   __local_hrcg_cout__old
+   CMP   #$18
+   BCC   .i8_i3_if_end@18
+   LDA   #$17
+   STA   __local_hrcg_cout__old
+.i8_i3_if_end@18:
+   STA   WNDTOP
+   LDA   hrcg_saved_valid
+   BNE   .i8_i3_if_end@19
+   LDA   __local_hrcg_cout__old
+   STA   hrcg_saved_cv
+.i8_i3_if_end@19:
+   JSR   VTAB
+.i8_switch@7_break:
+.if_end@29:
 .if_end@28:
 .if_end@25:
    RTS
+.hrcg_cout@scfold@0:
+   LDX   __local_hrcg_cout__0
+   JMP   .i9_if_end@9
 
 hrcg:
    DS.B  5

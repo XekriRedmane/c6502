@@ -72,6 +72,8 @@ C source
   → type_checking                       → c99_ast (+ SymbolTable, TypeTable)
   → (-O: unroll_program — [[c6502::unroll]] for loops)
   → c99_to_tac                          → tac_ast
+  → (-O: inline_functions — calls of small static functions
+     replaced by copies of their bodies)
   → (-O: return_pointers_in_zero_page — a static's pointer result in F@ret)
   → (-O: apply_row_address_tables — 2-D rows from a table of row addresses)
   → (-O: TAC fixed-point opts)
@@ -307,7 +309,16 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`,
      `[[c6502::unroll]]`. Runs after parsing and
      before identifier resolution. See
      [passes/optimization_ast/CLAUDE.md](passes/optimization_ast/CLAUDE.md).
-  0a. Row-address tables (`passes.optimization.row_address_tables`) —
+  0a. Inlining (`passes.optimization.inline_functions`), in
+     `compile.translate_for_codegen` right after `c99_to_tac`. The
+     calls of a `static` function whose address isn't taken, that
+     isn't recursive, and that has no attribute setting its
+     convention or placement are replaced by renamed copies of its
+     body when a byte estimate says the copies take no more than the
+     calls and the function (`_Inliner._pays`, with constants fitted
+     to the examples), and a function with no call left is dropped.
+     See [docs/optimizations/inline_functions.md](docs/optimizations/inline_functions.md).
+  0b. Row-address tables (`passes.optimization.row_address_tables`) —
      `A[i]` on a static 2-D array whose rows aren't a power of two
      bytes long reads the row's address from a table of row addresses
      split into low and high bytes, when the unit saves bytes by it.

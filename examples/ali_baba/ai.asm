@@ -17,7 +17,6 @@ BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
 DPTR	EQU	$60
-current_slot@ret	EQU	$62
 __local_ai_choose_target__best_pos	EQU	$80
 __local_npc_move_ai__0	EQU	$80
 __zpabi_modify_current_stats__add	EQU	$80
@@ -25,34 +24,29 @@ __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
 __local_ai_choose_target__best_strength	EQU	$81
 __local_npc_move_ai__best_score	EQU	$81
+__local_shop_buy_handler__0	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_display_shop__0	EQU	$82
 __local_npc_move_ai__dir	EQU	$82
-__local_shop_buy_handler__1	EQU	$82
+__local_shop_buy_handler__armor	EQU	$82
 __local_display_shop__1	EQU	$83
 __local_npc_move_ai__1	EQU	$83
-__local_shop_buy_handler__n	EQU	$83
+__local_shop_buy_handler__1	EQU	$83
 __local_display_shop__2	EQU	$84
 __local_find_nearest_event__nearest_dist	EQU	$84
 __local_shop_buy_handler__2	EQU	$84
 __local_display_shop__ev	EQU	$85
 __local_evaluate_direction__0	EQU	$85
-__local_join_party__1	EQU	$85
-__local_shop_buy_handler__3	EQU	$85
-__local_award_xp__0	EQU	$86
 __local_display_shop__3	EQU	$86
 __local_evaluate_direction__test_pos	EQU	$86
 __local_find_nearest_event__1	EQU	$86
-__local_apply_shop_effect__1	EQU	$87
-__local_award_xp__armor	EQU	$87
+__local_shop_buy_handler__3	EQU	$86
 __local_find_nearest_event__ev	EQU	$87
+__local_shop_buy_handler__4	EQU	$87
 __local_show_item__0	EQU	$87
-__local_award_xp__1	EQU	$88
 __local_evaluate_direction__2	EQU	$88
 __local_find_nearest_event__2	EQU	$88
-__local_apply_shop_effect__3	EQU	$89
-__local_award_xp__n	EQU	$89
 __local_evaluate_direction__dir	EQU	$89
 __local_show_item__i	EQU	$89
 __local_show_item__to	EQU	$8A
@@ -240,20 +234,15 @@ WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
 ; def ai_choose_target params= locals=__local_ai_choose_target__best_pos,__local_ai_choose_target__best_strength,__local_ai_choose_target__0,__local_ai_choose_target__1 indirect=false in_cycle=false
-; def apply_shop_effect params=__zpabi_apply_shop_effect__n locals=__local_apply_shop_effect__0,__local_apply_shop_effect__1,__local_apply_shop_effect__2,__local_apply_shop_effect__3 indirect=false in_cycle=false param_regs=A
-; def award_xp params=__zpabi_award_xp__n locals=__local_award_xp__0,__local_award_xp__armor,__local_award_xp__1,__local_award_xp__n,__local_award_xp__2 indirect=false in_cycle=false param_regs=A
 ; def browse_handler params= locals=__local_browse_handler__0 indirect=false in_cycle=false
-; def current_slot params= locals=__local_current_slot__0 indirect=false in_cycle=false
 ; def display_shop params=__zpabi_display_shop__ev_0,__zpabi_display_shop__ev_1 locals=__local_display_shop__0,__local_display_shop__1,__local_display_shop__2,__local_display_shop__ev,__local_display_shop__3 indirect=false in_cycle=false param_regs=A,X
 ; def evaluate_direction params=__zpabi_evaluate_direction__dir,__zpabi_evaluate_direction__test_pos locals=__local_evaluate_direction__0,__local_evaluate_direction__test_pos,__local_evaluate_direction__1,__local_evaluate_direction__2,__local_evaluate_direction__dir,__local_evaluate_direction__3 indirect=false in_cycle=false param_regs=A,X
 ; def event_penalty params=__zpabi_event_penalty__ev_0,__zpabi_event_penalty__ev_1 locals=__local_event_penalty__0,__local_event_penalty__ev,__local_event_penalty__1 indirect=false in_cycle=false param_regs=A,X
 ; def find_nearest_event params= locals=__local_find_nearest_event__nearest_dist,__local_find_nearest_event__0,__local_find_nearest_event__1,__local_find_nearest_event__ev,__local_find_nearest_event__2 indirect=false in_cycle=false
-; def join_party params= locals=__local_join_party__0,__local_join_party__1 indirect=false in_cycle=false
 ; def manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from locals=__local_manhattan_distance__from,__local_manhattan_distance__pos,__local_manhattan_distance__0,__local_manhattan_distance__1,__local_manhattan_distance__2 indirect=false in_cycle=false param_regs=A,X
 ; def next_slot params= locals= indirect=false in_cycle=false
 ; def npc_move_ai params= locals=__local_npc_move_ai__0,__local_npc_move_ai__best_score,__local_npc_move_ai__dir,__local_npc_move_ai__1,__local_npc_move_ai__2 indirect=false in_cycle=false
-; def pending_xp params=__zpabi_pending_xp__armor locals=__local_pending_xp__armor indirect=false in_cycle=false param_regs=A
-; def shop_buy_handler params= locals=__local_shop_buy_handler__0,__local_shop_buy_handler__1,__local_shop_buy_handler__n,__local_shop_buy_handler__2,__local_shop_buy_handler__3 indirect=false in_cycle=false
+; def shop_buy_handler params= locals=__local_shop_buy_handler__0,__local_shop_buy_handler__armor,__local_shop_buy_handler__1,__local_shop_buy_handler__2,__local_shop_buy_handler__n,__local_shop_buy_handler__3,__local_shop_buy_handler__4 indirect=false in_cycle=false
 ; def show_item params= locals=__local_show_item__0,__local_show_item__1,__local_show_item__i,__local_show_item__to,__local_show_item__2,__local_show_item__3,__local_show_item__4,__local_show_item__5 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
@@ -272,11 +261,13 @@ WAIT	EQU	$FCA8
 ; ext anim_tick_and_wait params=
 ; ext appearance_to_fontchar params=__zpabi_appearance_to_fontchar__appearance param_regs=A
 ; ext apply_damage_to_current params=__zpabi_apply_damage_to_current__damage param_regs=A
+; ext apply_shop_effect params=__zpabi_apply_shop_effect__n param_regs=A
 ; ext attack_down params=
 ; ext attack_left params=
 ; ext attack_right params=
 ; ext attack_up params=
 ; ext auto_heal params=
+; ext award_xp params=__zpabi_award_xp__n param_regs=A
 ; ext border_anim_step params=
 ; ext cancel_scenario params=
 ; ext char_select_here params=
@@ -301,6 +292,7 @@ WAIT	EQU	$FCA8
 ; ext commit_move params=
 ; ext configure_input params=
 ; ext continue_game params=
+; ext current_slot params=
 ; ext dec_threshold_wrap params=
 ; ext delay_with_animation params=
 ; ext disk_read params= carry=true
@@ -348,6 +340,7 @@ WAIT	EQU	$FCA8
 ; ext init_world params=
 ; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
+; ext join_party params=
 ; ext load_char_name_ptr params=
 ; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
@@ -363,6 +356,7 @@ WAIT	EQU	$FCA8
 ; ext modify_current_stats params=__zpabi_modify_current_stats__amount_0,__zpabi_modify_current_stats__amount_1,__zpabi_modify_current_stats__add param_regs=A,X,
 ; ext next_group_member params=
 ; ext num_to_decimal params=__zpabi_num_to_decimal__value_0,__zpabi_num_to_decimal__value_1,__zpabi_num_to_decimal__out_0,__zpabi_num_to_decimal__out_1 param_regs=A,X,,
+; ext pending_xp params=__zpabi_pending_xp__armor param_regs=A
 ; ext pick_random_member params=
 ; ext pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 param_regs=A,X
 ; ext pos_to_colrow params=__zpabi_pos_to_colrow__pos param_regs=A
@@ -431,14 +425,17 @@ WAIT	EQU	$FCA8
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
 ; call ai_choose_target -> check_hostile
+; call ai_choose_target -> delay_with_animation
+; call ai_choose_target -> display_message
 ; call ai_choose_target -> find_nearest_event
 ; call ai_choose_target -> first_group_member
-; call ai_choose_target -> join_party
 ; call ai_choose_target -> manhattan_distance
 ; call ai_choose_target -> next_group_member
 ; call ai_choose_target -> pick_random_member
 ; call ai_choose_target -> pos_to_colrow
-; call award_xp -> pending_xp
+; call ai_choose_target -> print_member_name
+; call ai_choose_target -> scroll_status_line
+; call ai_choose_target -> set_cursor_row21
 ; call browse_handler -> next_slot
 ; call browse_handler -> show_item
 ; call display_shop -> load_char_name_ptr
@@ -450,23 +447,14 @@ WAIT	EQU	$FCA8
 ; call evaluate_direction -> find_entity_at_pos
 ; call evaluate_direction -> manhattan_distance
 ; call find_nearest_event -> manhattan_distance
-; call join_party -> delay_with_animation
-; call join_party -> display_message
-; call join_party -> print_member_name
-; call join_party -> scroll_status_line
-; call join_party -> set_cursor_row21
 ; call manhattan_distance -> pos_to_colrow
 ; call npc_move_ai -> anim_tick_and_wait
 ; call npc_move_ai -> evaluate_direction
 ; call npc_move_ai -> manhattan_distance
 ; call npc_move_ai -> random_in_range
-; call shop_buy_handler -> apply_shop_effect
-; call shop_buy_handler -> award_xp
-; call shop_buy_handler -> current_slot
 ; call shop_buy_handler -> display_message
 ; call shop_buy_handler -> modify_current_stats
 ; call shop_buy_handler -> set_cursor_row21
-; call show_item -> current_slot
 ; call show_item -> next_slot
 ; call show_item -> num_to_decimal
 ; item manhattan_distance section=.text local=false zero=false
@@ -474,17 +462,12 @@ WAIT	EQU	$FCA8
 ; item event_penalty section=.text local=true zero=false
 ; item evaluate_direction section=.text local=true zero=false
 ; item npc_move_ai section=.text local=false zero=false
-; item join_party section=.text local=true zero=false
 ; item ai_choose_target section=.text local=false zero=false
-; item current_slot section=.text local=true zero=false
 ; item next_slot section=.text local=true zero=false
 ; item next_slot@run0 section=.text local=true zero=false
 ; item show_item section=.text local=true zero=false
 ; item display_shop section=.text local=false zero=false
 ; item browse_handler section=.text local=false zero=false
-; item apply_shop_effect section=.text local=true zero=false
-; item pending_xp section=.text local=true zero=false
-; item award_xp section=.text local=true zero=false
 ; item shop_buy_handler section=.text local=false zero=false
 ; item REVERSE_DIR section=.rodata local=true zero=false
 ; item shop section=.bss local=true zero=true
@@ -505,7 +488,6 @@ WAIT	EQU	$FCA8
 ; zp BASL size=2 at=$28 def=false init=
 ; zp DOS_ZP size=38 at=$2A def=false init=
 ; zp DISK_VM_ZP size=16 at=$50 def=false init=
-; zp current_slot@ret size=2 at=auto def=true init= local=true
 ; zp MENU_DESC_PTR size=2 at=$C0 def=false init=
 ; zp MENU_OPTION_PTR size=2 at=$C2 def=false init=
 ; zp TUNE_PC size=2 at=$E4 def=false init=
@@ -816,9 +798,17 @@ npc_move_ai:
    TYA
    RTS
 
-join_party:
+ai_choose_target:
    SUBROUTINE
 
+   LDA   CHAR_AI_MODE
+   LDY   #$00
+   STY   AI_PREV_DIR
+   CMP   #$02
+   BCS   .vthread@0
+   JSR   pick_random_member
+   LDA   MOB_PTR+1
+   BEQ   .vthread@1
    JSR   set_cursor_row21
    LDA   #$24
    JSR   display_message
@@ -837,10 +827,10 @@ join_party:
    LDY   #$0F
    LDA   (ENTITY_PTR),Y
    AND   #$3F
-   STA   __local_join_party__1
+   STA   __local_ai_choose_target__best_strength
    LDA   (MOB_PTR),Y
    AND   #$C0
-   ORA   __local_join_party__1
+   ORA   __local_ai_choose_target__best_strength
    STA   (ENTITY_PTR),Y
    CLC
    LDY   #$08
@@ -849,19 +839,6 @@ join_party:
    STA   (CHAR_PTR),Y
    INC   TOTAL_MOB_COUNT
    RTS
-
-ai_choose_target:
-   SUBROUTINE
-
-   LDA   CHAR_AI_MODE
-   LDY   #$00
-   STY   AI_PREV_DIR
-   CMP   #$02
-   BCS   .vthread@0
-   JSR   pick_random_member
-   LDA   MOB_PTR+1
-   BEQ   .vthread@1
-   JMP   join_party
 .vthread@0:
    BNE   .if_else@37
 .vthread@1:
@@ -963,18 +940,6 @@ ai_choose_target:
    STX   AI_TARGET_ROW
    RTS
 
-current_slot:
-   SUBROUTINE
-
-   LDA   shop
-   CLC
-   ADC   SHOP_ITEM_OFFSET
-   STA   current_slot@ret
-   LDA   shop+1
-   ADC   #$00
-   STA   current_slot@ret+1
-   RTS
-
 next_slot:
    SUBROUTINE
 
@@ -1010,10 +975,12 @@ show_item:
    LDA   SHOP_VALID_MASK
    AND   SHOP_ITEM_MASK
    BEQ   .show_item@rot@3
-   JSR   current_slot
-   LDA   current_slot@ret
+   LDA   shop
+   CLC
+   ADC   SHOP_ITEM_OFFSET
    STA   __local_show_item__4
-   LDA   current_slot@ret+1
+   LDA   shop+1
+   ADC   #$00
    STA   __local_show_item__5
    LDA   LOCATION_STYLE
    LSR
@@ -1024,7 +991,7 @@ show_item:
    AND   #$03
    STA   LOCATION_STYLE_BITS
    LDY   #$04
-   LDA   (current_slot@ret),Y
+   LDA   (__local_show_item__4),Y
    STA   __local_show_item__0
    LDA   LOCATION_STYLE_BITS
    CLC
@@ -1149,92 +1116,6 @@ browse_handler:
    JSR   next_slot
    JMP   show_item
 
-apply_shop_effect:
-   SUBROUTINE
-
-   TAX
-   CPX   #$03
-   BCS   .cond_else@54
-   LDA   #$07
-   STA   __local_apply_shop_effect__3
-   JMP   .cond_end@55
-.cond_else@54:
-   LDA   #$09
-   STA   __local_apply_shop_effect__3
-.cond_end@55:
-   LDY   #$05
-   LDA   (ENTITY_PTR),Y
-   LSR
-   LSR
-   LSR
-   AND   #$03
-   STA   __local_apply_shop_effect__1
-   LDA   SHOP_EFFECT_TABLE,X
-   CLC
-   ADC   LOCATION_STYLE_BITS
-   CLC
-   ADC   __local_apply_shop_effect__1
-   LDY   __local_apply_shop_effect__3
-   STA   (ENTITY_PTR),Y
-   RTS
-
-pending_xp:
-   SUBROUTINE
-
-   LSR
-   LSR
-   LSR
-   LSR
-   AND   #$07
-   RTS
-
-award_xp:
-   SUBROUTINE
-
-   STA   __local_award_xp__n
-   LDY   #$0B
-   LDA   (ENTITY_PTR),Y
-   STA   __local_award_xp__armor
-   AND   #$E0
-   STA   (ENTITY_PTR),Y
-   LDA   __local_award_xp__armor
-   AND   #$1F
-   STA   __local_award_xp__armor
-   LDY   #$08
-   LDA   (ENTITY_PTR),Y
-   JSR   pending_xp
-   CLC
-   ADC   __local_award_xp__armor
-   STA   __local_award_xp__1
-   LDX   __local_award_xp__n
-   LDA   XP_AWARD_TABLE,X
-   CLC
-   ADC   LOCATION_STYLE_BITS
-   STA   __local_award_xp__armor
-   JMP   .loop@9_continue
-.award_xp@rot@6:
-   LDA   __local_award_xp__armor
-   SBC   #$10
-   STA   __local_award_xp__armor
-.loop@9_continue:
-   JSR   pending_xp
-   CMP   __local_award_xp__1
-   BCS   .award_xp@rot@6
-   LDA   __local_award_xp__armor
-   LDY   #$08
-   STA   (ENTITY_PTR),Y
-   JSR   pending_xp
-   STA   __local_award_xp__0
-   LDY   #$0B
-   LDA   (ENTITY_PTR),Y
-   STA   __local_award_xp__armor
-   LDA   __local_award_xp__1
-   SEC
-   SBC   __local_award_xp__0
-   ORA   __local_award_xp__armor
-   STA   (ENTITY_PTR),Y
-   RTS
-
 shop_buy_handler:
    SUBROUTINE
 
@@ -1260,51 +1141,120 @@ shop_buy_handler:
    JSR   set_cursor_row21
    LDA   #$26
    JSR   display_message
-   JSR   current_slot
+   LDA   shop
+   CLC
+   ADC   SHOP_ITEM_OFFSET
+   STA   __local_shop_buy_handler__0
+   LDA   shop+1
+   ADC   #$00
+   STA   __local_shop_buy_handler__armor
    LDY   #$00
-   LDA   (current_slot@ret),Y
-   STA   __local_shop_buy_handler__3
+   LDA   (__local_shop_buy_handler__0),Y
+   STA   __local_shop_buy_handler__4
    INY
-   LDA   (current_slot@ret),Y
-   STA   __local_shop_buy_handler__2
+   LDA   (__local_shop_buy_handler__0),Y
+   STA   __local_shop_buy_handler__3
    LDX   #$00
-   BEQ   .loop@10_start
-.shop_buy_handler@rot@7:
-   ASL
-   TAY
-   LDA   WEAPON_EFFECT_ADDRS,X
-   STA   __local_shop_buy_handler__1
-   LDA   __local_shop_buy_handler__2
-   CMP   WEAPON_EFFECT_ADDRS+5,X
-   BNE   .if_else@58
-   LDA   __local_shop_buy_handler__3
-   CMP   __local_shop_buy_handler__1
-   BNE   .if_else@58
-   TXA
-   STX   __local_shop_buy_handler__n
-   JSR   apply_shop_effect
-   LDX   __local_shop_buy_handler__n
-   JMP   .if_end@57
-.if_else@58:
-   LDA   ARMOR_EFFECT_ADDRS,Y
-   STA   __local_shop_buy_handler__1
-   LDA   __local_shop_buy_handler__2
-   CMP   ARMOR_EFFECT_ADDRS+1,Y
-   BNE   .if_end@59
-   LDA   __local_shop_buy_handler__3
-   CMP   __local_shop_buy_handler__1
-   BNE   .if_end@59
-   TXA
-   STX   __local_shop_buy_handler__n
-   JSR   award_xp
-   LDX   __local_shop_buy_handler__n
-.if_end@59:
-.if_end@57:
-   INX
 .loop@10_start:
    TXA
    CMP   #$05
-   BCC   .shop_buy_handler@rot@7
+   BCC   .lb_skip@0
+   JMP   .loop@10_break
+.lb_skip@0:
+   ASL
+   TAY
+   LDA   WEAPON_EFFECT_ADDRS,X
+   STA   __local_shop_buy_handler__armor
+   LDA   __local_shop_buy_handler__3
+   CMP   WEAPON_EFFECT_ADDRS+5,X
+   BNE   .if_else@58
+   LDA   __local_shop_buy_handler__4
+   CMP   __local_shop_buy_handler__armor
+   BNE   .if_else@58
+   CPX   #$03
+   BCS   .i0_cond_else@54
+   LDA   #$07
+   STA   __local_shop_buy_handler__2
+   JMP   .i0_cond_end@55
+.i0_cond_else@54:
+   LDA   #$09
+   STA   __local_shop_buy_handler__2
+.i0_cond_end@55:
+   LDY   #$05
+   LDA   (ENTITY_PTR),Y
+   LSR
+   LSR
+   LSR
+   AND   #$03
+   STA   __local_shop_buy_handler__armor
+   LDA   SHOP_EFFECT_TABLE,X
+   CLC
+   ADC   LOCATION_STYLE_BITS
+   CLC
+   ADC   __local_shop_buy_handler__armor
+   LDY   __local_shop_buy_handler__2
+   STA   (ENTITY_PTR),Y
+   JMP   .if_end@57
+.if_else@58:
+   LDA   ARMOR_EFFECT_ADDRS,Y
+   STA   __local_shop_buy_handler__armor
+   LDA   __local_shop_buy_handler__3
+   CMP   ARMOR_EFFECT_ADDRS+1,Y
+   BNE   .if_end@59
+   LDA   __local_shop_buy_handler__4
+   CMP   __local_shop_buy_handler__armor
+   BNE   .if_end@59
+   LDY   #$0B
+   LDA   (ENTITY_PTR),Y
+   STA   __local_shop_buy_handler__armor
+   AND   #$E0
+   STA   (ENTITY_PTR),Y
+   LDA   __local_shop_buy_handler__armor
+   AND   #$1F
+   STA   __local_shop_buy_handler__armor
+   LDY   #$08
+   LDA   (ENTITY_PTR),Y
+   LSR
+   LSR
+   LSR
+   LSR
+   AND   #$07
+   CLC
+   ADC   __local_shop_buy_handler__armor
+   STA   __local_shop_buy_handler__1
+   LDA   XP_AWARD_TABLE,X
+   CLC
+   ADC   LOCATION_STYLE_BITS
+   STA   __local_shop_buy_handler__armor
+   JMP   .i7_loop@9_continue
+.shop_buy_handler@rot@6:
+   LDA   __local_shop_buy_handler__armor
+   SBC   #$10
+   STA   __local_shop_buy_handler__armor
+.i7_loop@9_continue:
+   LSR
+   LSR
+   LSR
+   LSR
+   AND   #$07
+   STA   __local_shop_buy_handler__0
+   CMP   __local_shop_buy_handler__1
+   BCS   .shop_buy_handler@rot@6
+   LDA   __local_shop_buy_handler__armor
+   STA   (ENTITY_PTR),Y
+   LDY   #$0B
+   LDA   (ENTITY_PTR),Y
+   STA   __local_shop_buy_handler__armor
+   LDA   __local_shop_buy_handler__1
+   SEC
+   SBC   __local_shop_buy_handler__0
+   ORA   __local_shop_buy_handler__armor
+   STA   (ENTITY_PTR),Y
+.if_end@59:
+.if_end@57:
+   INX
+   JMP   .loop@10_start
+.loop@10_break:
    LDA   #$3A
    RTS
 

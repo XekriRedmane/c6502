@@ -26,15 +26,16 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
+__local_edit_level_key_loop__0	EQU	$80
 __local_format_patch__0	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
-__local_edit_level_key_loop__1	EQU	$81
 __local_format_patch__b	EQU	$81
 __local_editor_initialize_disk__saved_level	EQU	$82
 __local_format_patch__tries_1	EQU	$82
 __local_get_level_from_keyboard__n	EQU	$82
+__local_edit_level_key_loop__3	EQU	$83
 __local_format_patch__tries_0	EQU	$83
 __local_get_level_from_keyboard__level	EQU	$83
 __local_format_patch__slot16	EQU	$84
@@ -72,7 +73,6 @@ DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
 __local_level_edit_save1__col	EQU	$AF
 __local_level_edit_save1__row	EQU	$B0
-__local_put_sprite_at_cursor__sprite	EQU	$B1
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -137,7 +137,7 @@ DISK_IO	EQU	$C088
 ; def cursor_cell params= locals=__local_cursor_cell__0,__local_cursor_cell__1,__local_cursor_cell__2 indirect=false in_cycle=false
 ; def dont_manipulate_master_disk params= locals= indirect=false in_cycle=false
 ; def edit_level params= locals= indirect=false in_cycle=false
-; def edit_level_key_loop params= locals=__local_edit_level_key_loop__0,__local_edit_level_key_loop__1 indirect=false in_cycle=false
+; def edit_level_key_loop params= locals=__local_edit_level_key_loop__0,__local_edit_level_key_loop__1,__local_edit_level_key_loop__2,__local_edit_level_key_loop__3 indirect=false in_cycle=false
 ; def editor_clear_high_scores params= locals=__local_editor_clear_high_scores__i indirect=false in_cycle=false
 ; def editor_clear_level params= locals=__local_editor_clear_level__0 indirect=false in_cycle=false
 ; def editor_command_loop params= locals=__local_editor_command_loop__0 indirect=false in_cycle=false
@@ -147,13 +147,11 @@ DISK_IO	EQU	$C088
 ; def editor_play_level params= locals=__local_editor_play_level__0 indirect=false in_cycle=false
 ; def editor_wait_for_key params= locals=__local_editor_wait_for_key__0 indirect=false in_cycle=false
 ; def format_patch params=__zpabi_format_patch__slot16 locals=__local_format_patch__0,__local_format_patch__b,__local_format_patch__tries_1,__local_format_patch__tries_0,__local_format_patch__slot16 indirect=false in_cycle=false param_regs=X
-; def get_key_for_edit_level params= locals=__local_get_key_for_edit_level__0,__local_get_key_for_edit_level__1 indirect=false in_cycle=false
 ; def get_level_from_keyboard params= locals=__local_get_level_from_keyboard__n,__local_get_level_from_keyboard__level indirect=false in_cycle=false carry=true
 ; def hit_key_to_continue params= locals= indirect=false in_cycle=false
 ; def level_edit_change_level params= locals=__local_level_edit_change_level__0 indirect=false in_cycle=false
 ; def level_edit_save1 params= locals=__local_level_edit_save1__0,__local_level_edit_save1__col,__local_level_edit_save1__row indirect=false in_cycle=false
 ; def level_editor params= locals= indirect=false in_cycle=false
-; def put_sprite_at_cursor params=__zpabi_put_sprite_at_cursor__sprite locals=__local_put_sprite_at_cursor__0,__local_put_sprite_at_cursor__1,__local_put_sprite_at_cursor__2,__local_put_sprite_at_cursor__sprite indirect=false in_cycle=false param_regs=A
 ; def start_level_editor params= locals= indirect=false in_cycle=false
 ; def start_message params= locals= indirect=false in_cycle=false
 ; ext DSKFORM params=
@@ -180,6 +178,7 @@ DISK_IO	EQU	$C088
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
 ; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext get_key_for_edit_level params=
 ; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
@@ -196,6 +195,7 @@ DISK_IO	EQU	$C088
 ; ext play_sound params= carry=true
 ; ext put_char params=__zpabi_put_char__c param_regs=A
 ; ext put_digit params=__zpabi_put_digit__digit param_regs=A
+; ext put_sprite_at_cursor params=__zpabi_put_sprite_at_cursor__sprite param_regs=A
 ; ext put_status params=
 ; ext put_status_draw params=
 ; ext put_status_level params=
@@ -226,10 +226,11 @@ DISK_IO	EQU	$C088
 ; call edit_level -> load_level
 ; call edit_level -> put_status_draw
 ; call edit_level_key_loop -> beep
-; call edit_level_key_loop -> get_key_for_edit_level
+; call edit_level_key_loop -> cursor_cell
+; call edit_level_key_loop -> draw_sprite_page1
 ; call edit_level_key_loop -> level_edit_change_level
 ; call edit_level_key_loop -> level_edit_save1
-; call edit_level_key_loop -> put_sprite_at_cursor
+; call edit_level_key_loop -> wait_for_key_with_cursor_page_1
 ; call editor_clear_high_scores -> access_hi_score_data_from_disk
 ; call editor_clear_high_scores -> bad_data_disk
 ; call editor_clear_high_scores -> editor_wait_for_key
@@ -268,8 +269,6 @@ DISK_IO	EQU	$C088
 ; call editor_wait_for_key -> wait_for_key_with_cursor_page_1
 ; call format_patch -> SEEKABS
 ; call format_patch -> dont_manipulate_master_disk
-; call get_key_for_edit_level -> cursor_cell
-; call get_key_for_edit_level -> wait_for_key_with_cursor_page_1
 ; call get_level_from_keyboard -> beep
 ; call get_level_from_keyboard -> put_digit
 ; call get_level_from_keyboard -> to_decimal3
@@ -286,8 +285,6 @@ DISK_IO	EQU	$C088
 ; call level_edit_save1 -> bad_data_disk
 ; call level_edit_save1 -> compress_and_save_level_data
 ; call level_edit_save1 -> dont_manipulate_master_disk
-; call put_sprite_at_cursor -> cursor_cell
-; call put_sprite_at_cursor -> draw_sprite_page1
 ; call start_level_editor -> clear_hgr1
 ; call start_level_editor -> put_string
 ; call start_message -> clear_hgr2
@@ -314,8 +311,6 @@ DISK_IO	EQU	$C088
 ; item level_edit_save1 section=.text local=true zero=false
 ; item level_edit_change_level section=.text local=true zero=false
 ; item cursor_cell section=.text local=true zero=false
-; item get_key_for_edit_level section=.text local=true zero=false
-; item put_sprite_at_cursor section=.text local=true zero=false
 ; item edit_level_key_loop section=.text local=true zero=false
 ; item format_patch section=format_patch local=false zero=false
 ; item str@0 section=.rodata local=true zero=false
@@ -991,48 +986,37 @@ cursor_cell:
    STA   cursor_cell@ret+1
    RTS
 
-get_key_for_edit_level:
-   SUBROUTINE
-
-   JSR   cursor_cell
-   LDY   #$00
-   LDA   (cursor_cell@ret),Y
-   JSR   wait_for_key_with_cursor_page_1
-   LDY   #$00
-   STY   KBDSTRB
-   RTS
-
-put_sprite_at_cursor:
-   SUBROUTINE
-
-   STA   __local_put_sprite_at_cursor__sprite
-   JSR   cursor_cell
-   LDY   #$00
-   LDA   (cursor_cell@ret),Y
-   CMP   __local_put_sprite_at_cursor__sprite
-   BEQ   .if_end@26
-   LDA   #$00
-   STA   LEVEL_SAVED
-.if_end@26:
-   LDA   __local_put_sprite_at_cursor__sprite
-   LDY   #$00
-   STA   (cursor_cell@ret),Y
-   JMP   draw_sprite_page1
-
 edit_level_key_loop:
    SUBROUTINE
 
    JMP   .loop@24_start
 .edit_level_key_loop@rot@8:
-   JSR   put_sprite_at_cursor
+   JSR   cursor_cell
+   LDY   #$00
+   LDA   (cursor_cell@ret),Y
+   CMP   __local_edit_level_key_loop__3
+   BEQ   .i1_if_end@26
+   LDA   #$00
+   STA   LEVEL_SAVED
+.i1_if_end@26:
+   LDA   __local_edit_level_key_loop__3
+   LDY   #$00
+   STA   (cursor_cell@ret),Y
+   JSR   draw_sprite_page1
 .loop@24_start:
-   JSR   get_key_for_edit_level
-   STA   __local_edit_level_key_loop__1
+   JSR   cursor_cell
+   LDY   #$00
+   LDA   (cursor_cell@ret),Y
+   JSR   wait_for_key_with_cursor_page_1
+   STA   __local_edit_level_key_loop__0
+   LDY   #$00
+   STY   KBDSTRB
    SEC
    SBC   #$B0
+   STA   __local_edit_level_key_loop__3
    CMP   #$0A
    BCC   .edit_level_key_loop@rot@8
-   LDA   __local_edit_level_key_loop__1
+   LDA   __local_edit_level_key_loop__0
    CMP   #$CA
    BEQ   .case@26
    CMP   #$C9

@@ -13,6 +13,7 @@ from passes.optimization.framework import PassContext
 from passes.optimization.three_way_compare import split_three_way_compares
 from passes.type_checking import LocalAttr, Symbol, SymbolTable
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 # Values on both sides of each byte's edges, so every outcome of each
 # byte's compare comes up.
@@ -117,6 +118,7 @@ def _function_asm(src: str, name: str) -> str:
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@no_inlining()
 class TestRuns(unittest.TestCase):
 
     def test_shapes(self):

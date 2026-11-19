@@ -44,6 +44,13 @@ categories:
   matching `chapter_<N>/` directory of C sources) — drive each
   chapter end-to-end through `-S`.
 
+Under `-O` a small `static` function is inlined into its callers and
+dropped (`passes/optimization/inline_functions.py`). A test that
+checks such a function's own code, its calling convention, or the
+call graph decorates its class or method with
+`tests.no_inlining.no_inlining()`, which turns inlining off for the
+compiles made in the test's process.
+
 Tests that link go through `link_helpers.py`: `compile_object` (`-c
 -O` on a source string), `link` (with the runtime helpers' addresses,
 so the simulator can run the executable), `linked_text` (the

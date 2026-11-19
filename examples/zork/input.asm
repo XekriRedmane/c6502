@@ -4,11 +4,11 @@ FP	EQU	$03
 DPTR	EQU	$05
 get_dictionary_addr@ret	EQU	$07
 input_ptr	EQU	$09
-char_count	EQU	$0A
-input_count	EQU	$0B
-token_idx	EQU	$0C
-parse	EQU	$0D
-text	EQU	$0F
+input_count	EQU	$0A
+char_count	EQU	$0B
+text	EQU	$0C
+token_idx	EQU	$0E
+parse	EQU	$0F
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -72,41 +72,33 @@ ZCHAR_SCRATCH2	EQU	$DA
 __local_get_alphabet_for_char__c	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
+__local_is_separator__c	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__local_instr_sread__1	EQU	$E5
-__local_read_line__c	EQU	$E6
-__local_z_compress__0	EQU	$E6
-__local_is_separator__c	EQU	$E7
-__local_print_status_line__1	EQU	$E7
-__local_read_line__left	EQU	$E7
-__local_z_compress__1	EQU	$E7
-__local_get_dictionary_addr__0	EQU	$E8
-__local_print_status_line__2	EQU	$E8
-__local_read_line__n	EQU	$E8
-__local_z_compress__2	EQU	$E8
-__local_z_compress__3	EQU	$E9
+__local_instr_sread__z	EQU	$E4
+__local_instr_sread__dest	EQU	$E5
+__local_instr_sread__left	EQU	$E6
+__local_instr_sread__0	EQU	$E7
+__local_instr_sread__1	EQU	$E8
+__local_instr_sread__2	EQU	$E9
+__local_instr_sread__index	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
-__local_ascii_to_zchar__z	EQU	$F0
 __local_match_dictionary_word__0	EQU	$F0
-__local_ascii_to_zchar__dest	EQU	$F1
-__local_ascii_to_zchar__left	EQU	$F2
-__local_ascii_to_zchar__0	EQU	$F3
-__local_ascii_to_zchar__1	EQU	$F4
+__local_print_status_line__1	EQU	$F1
+__local_print_status_line__2	EQU	$F2
 __local_is_dict_separator__c	EQU	$F4
 __local_match_dictionary_word__count_0	EQU	$F4
-__local_ascii_to_zchar__2	EQU	$F5
-__local_ascii_to_zchar__index	EQU	$F6
 __local_match_dictionary_word__5	EQU	$F6
 __local_match_dictionary_word__6	EQU	$F7
 __local_match_dictionary_word__count_1	EQU	$F9
 __local_match_dictionary_word__8	EQU	$FA
 __local_match_dictionary_word__entry_0	EQU	$FB
 __local_match_dictionary_word__entry_1	EQU	$FC
+__local_get_dictionary_addr__0	EQU	$FD
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -121,19 +113,14 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def ascii_to_zchar params= locals=__local_ascii_to_zchar__z,__local_ascii_to_zchar__dest,__local_ascii_to_zchar__left,__local_ascii_to_zchar__0,__local_ascii_to_zchar__1,__local_ascii_to_zchar__2,__local_ascii_to_zchar__index indirect=false in_cycle=false
 ; def get_alphabet_for_char params=__zpabi_get_alphabet_for_char__c locals=__local_get_alphabet_for_char__c indirect=false in_cycle=false param_regs=A
 ; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
-; def instr_sread params= locals=__local_instr_sread__0,__local_instr_sread__1 indirect=false in_cycle=false
+; def instr_sread params= locals=__local_instr_sread__z,__local_instr_sread__dest,__local_instr_sread__left,__local_instr_sread__0,__local_instr_sread__1,__local_instr_sread__2,__local_instr_sread__index indirect=false in_cycle=false
 ; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__0,__local_is_dict_separator__n,__local_is_dict_separator__1,__local_is_dict_separator__2,__local_is_dict_separator__c indirect=false in_cycle=false param_regs=A carry=true
 ; def is_separator params=__zpabi_is_separator__c locals=__local_is_separator__0,__local_is_separator__c indirect=false in_cycle=false param_regs=A carry=true
 ; def is_std_separator params=__zpabi_is_std_separator__c locals=__local_is_std_separator__0,__local_is_std_separator__c indirect=false in_cycle=false param_regs=A carry=true
 ; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__1,__local_match_dictionary_word__2,__local_match_dictionary_word__3,__local_match_dictionary_word__count_0,__local_match_dictionary_word__4,__local_match_dictionary_word__5,__local_match_dictionary_word__6,__local_match_dictionary_word__7,__local_match_dictionary_word__count_1,__local_match_dictionary_word__8,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
 ; def print_status_line params= locals=__local_print_status_line__0,__local_print_status_line__1,__local_print_status_line__2 indirect=false in_cycle=false
-; def read_line params= locals=__local_read_line__c,__local_read_line__left,__local_read_line__n indirect=false in_cycle=false
-; def search_nonalpha_table params=__zpabi_search_nonalpha_table__c locals=__local_search_nonalpha_table__0,__local_search_nonalpha_table__c indirect=false in_cycle=false param_regs=A
-; def skip_separators params= locals=__local_skip_separators__0 indirect=false in_cycle=false
-; def z_compress params= locals=__local_z_compress__0,__local_z_compress__1,__local_z_compress__2,__local_z_compress__3 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -144,6 +131,7 @@ COUT1	EQU	$FDF0
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
+; ext ascii_to_zchar params=
 ; ext branch params=__zpabi_branch__condition param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
@@ -194,26 +182,28 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext read_from_sector params= carry=true
+; ext read_line params=
 ; ext read_next_sector params= carry=true
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 param_regs=A,X
+; ext search_nonalpha_table params=__zpabi_search_nonalpha_table__c param_regs=A
+; ext skip_separators params=
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 param_regs=A,X
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext write_next_sector params= carry=true
 ; ext write_to_sector params= carry=true
-; call ascii_to_zchar -> A_mod_3
-; call ascii_to_zchar -> get_alphabet_for_char
-; call ascii_to_zchar -> search_nonalpha_table
-; call ascii_to_zchar -> z_compress
-; call instr_sread -> ascii_to_zchar
+; ext z_compress params=
+; call instr_sread -> A_mod_3
+; call instr_sread -> GETLN1
+; call instr_sread -> dump_buffer_line
+; call instr_sread -> dump_buffer_to_printer
+; call instr_sread -> get_alphabet_for_char
 ; call instr_sread -> is_dict_separator
 ; call instr_sread -> is_separator
 ; call instr_sread -> is_std_separator
 ; call instr_sread -> match_dictionary_word
 ; call instr_sread -> print_status_line
-; call instr_sread -> read_line
-; call instr_sread -> skip_separators
 ; call is_dict_separator -> get_dictionary_addr
 ; call is_separator -> is_dict_separator
 ; call is_separator -> is_std_separator
@@ -227,33 +217,24 @@ COUT1	EQU	$FDF0
 ; call print_status_line -> print_number
 ; call print_status_line -> print_obj
 ; call print_status_line -> var_get
-; call read_line -> GETLN1
-; call read_line -> dump_buffer_line
-; call read_line -> dump_buffer_to_printer
-; call skip_separators -> is_separator
 ; item print_status_line section=.text local=false zero=false
-; item read_line section=.text local=true zero=false
 ; item get_dictionary_addr section=.text local=true zero=false
 ; item is_dict_separator section=.text local=true zero=false
 ; item is_std_separator section=.text local=true zero=false
 ; item is_separator section=.text local=true zero=false
-; item skip_separators section=.text local=true zero=false
 ; item get_alphabet_for_char section=.text local=true zero=false
-; item search_nonalpha_table section=.text local=true zero=false
-; item z_compress section=.text local=true zero=false
-; item ascii_to_zchar section=.text local=true zero=false
 ; item match_dictionary_word section=.text local=true zero=false
 ; item instr_sread section=.text local=false zero=false
 ; item sScore section=.rodata local=true zero=false
 ; item SEPARATORS_TABLE section=.rodata local=true zero=false
 ; item __zp_init section=.text local=false zero=false
 ; zp get_dictionary_addr@ret size=2 at=auto def=true init= local=true
-; zp input_ptr size=1 at=auto def=true init=$00 weight=145 local=true
-; zp char_count size=1 at=auto def=true init=$00 weight=129 local=true
-; zp input_count size=1 at=auto def=true init=$00 weight=121 local=true
+; zp input_ptr size=1 at=auto def=true init=$00 weight=369 local=true
+; zp input_count size=1 at=auto def=true init=$00 weight=345 local=true
+; zp char_count size=1 at=auto def=true init=$00 weight=297 local=true
+; zp text size=2 at=auto def=true init=$00,$00 weight=107 local=true
 ; zp token_idx size=1 at=auto def=true init=$00 weight=49 local=true
 ; zp parse size=2 at=auto def=true init=$00,$00 weight=58 local=true
-; zp text size=2 at=auto def=true init=$00,$00 weight=51 local=true
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -372,69 +353,6 @@ print_status_line:
    STA   CH
    JMP   VTAB
 
-read_line:
-   SUBROUTINE
-
-   JSR   dump_buffer_line
-   LDA   WNDTOP
-   STA   CURR_LINE
-   JSR   GETLN1
-   INC   CURR_LINE
-   LDX   #$00
-   BEQ   .loop@0_continue
-.read_line@rot@0:
-   INX
-.loop@0_continue:
-   LDA   BUFF_AREA,X
-   CMP   #$8D
-   BNE   .read_line@rot@0
-   INX
-   STX   __local_read_line__n
-   LDY   #$11
-   LDA   (Z_HEADER_ADDR),Y
-   LSR
-   BCC   .if_end@0
-   STX   BUFF_END
-   JSR   dump_buffer_to_printer
-   LDA   #$00
-   STA   BUFF_END
-.if_end@0:
-   LDY   #$00
-   LDA   __local_read_line__n
-   CMP   (text),Y
-   BCC   .if_end@1
-   LDA   (text),Y
-   STA   __local_read_line__n
-.if_end@1:
-   ORA   #$00
-   BEQ   .if_end@2
-   LDX   #$00
-   STA   __local_read_line__left
-.loop@1_start:
-   LDA   BUFF_AREA,X
-   AND   #$7F
-   STA   __local_read_line__c
-   CMP   #$41
-   BCC   .if_end@5
-   CMP   #$5B
-   BCS   .if_end@5
-   ORA   #$20
-   STA   __local_read_line__c
-.if_end@5:
-   INX
-   TXA
-   TAY
-   LDA   __local_read_line__c
-   STA   (text),Y
-   CMP   #$0D
-   BEQ   .loop@1_break
-   DEC   __local_read_line__left
-   BNE   .loop@1_start
-.loop@1_break:
-.if_end@2:
-   LDA   __local_read_line__n
-   RTS
-
 get_dictionary_addr:
    SUBROUTINE
 
@@ -478,7 +396,7 @@ is_std_separator:
    SUBROUTINE
 
    LDX   #$00
-.is_std_separator@rot@1:
+.is_std_separator@rot@0:
    CMP   SEPARATORS_TABLE,X
    BNE   .if_end@10
    SEC
@@ -486,7 +404,7 @@ is_std_separator:
 .if_end@10:
    INX
    CPX   #$08
-   BNE   .is_std_separator@rot@1
+   BNE   .is_std_separator@rot@0
    CLC
    RTS
 
@@ -500,25 +418,6 @@ is_separator:
 .if_end@11:
    LDA   __local_is_separator__c
    JMP   is_std_separator
-
-skip_separators:
-   SUBROUTINE
-
-   JMP   .loop@4_continue
-.skip_separators@rot@2:
-   LDY   input_ptr
-   LDA   (text),Y
-   JSR   is_separator
-   BCC   .if_end@12
-   RTS
-.if_end@12:
-   INC   input_ptr
-   DEC   input_count
-   INC   char_count
-.loop@4_continue:
-   LDA   input_count
-   BNE   .skip_separators@rot@2
-   RTS
 
 get_alphabet_for_char:
    SUBROUTINE
@@ -547,194 +446,6 @@ get_alphabet_for_char:
 .if_end@21:
    LDA   #$02
    RTS
-
-search_nonalpha_table:
-   SUBROUTINE
-
-   LDX   #$17
-.loop@5_start:
-   CMP   a2_table,X
-   BNE   .if_end@22
-   TXA
-   CLC
-   ADC   #$08
-   RTS
-.if_end@22:
-   DEX
-   CPX   #$FF
-   BNE   .loop@5_start
-   LDA   #$00
-   RTS
-
-z_compress:
-   SUBROUTINE
-
-   LDA   ZCHAR_SCRATCH2
-   ASL
-   ASL
-   STA   __local_z_compress__3
-   LDA   ZCHAR_SCRATCH2+1
-   LSR
-   LSR
-   LSR
-   STA   __local_z_compress__0
-   LDA   ZCHAR_SCRATCH2+1
-   ASL
-   ASL
-   ASL
-   ASL
-   ASL
-   STA   __local_z_compress__2
-   LDA   __local_z_compress__3
-   ORA   __local_z_compress__0
-   STA   __local_z_compress__1
-   LDA   __local_z_compress__2
-   ORA   ZCHAR_SCRATCH2+2
-   STA   ZCHAR_SCRATCH2
-   LDA   __local_z_compress__1
-   STA   ZCHAR_SCRATCH2+1
-   LDA   ZCHAR_SCRATCH2+3
-   ASL
-   ASL
-   STA   __local_z_compress__2
-   LDA   ZCHAR_SCRATCH2+4
-   LSR
-   LSR
-   LSR
-   STA   __local_z_compress__0
-   LDA   ZCHAR_SCRATCH2+4
-   ASL
-   ASL
-   ASL
-   ASL
-   ASL
-   STA   __local_z_compress__1
-   LDA   __local_z_compress__2
-   ORA   __local_z_compress__0
-   STA   __local_z_compress__2
-   LDA   __local_z_compress__1
-   ORA   ZCHAR_SCRATCH2+5
-   STA   ZCHAR_SCRATCH2+2
-   LDA   __local_z_compress__2
-   ORA   #$80
-   STA   ZCHAR_SCRATCH2+3
-   RTS
-
-ascii_to_zchar:
-   SUBROUTINE
-
-   LDA   #$00
-   STA   LOCKED_ALPHABET
-   LDX   #$00
-.ascii_to_zchar@rot@3:
-   LDA   #$05
-   STA   ZCHAR_SCRATCH2,X
-   INX
-   CPX   #$06
-   BNE   .ascii_to_zchar@rot@3
-   LDA   #$06
-   STA   __local_ascii_to_zchar__left
-   LDA   #$00
-   STA   __local_ascii_to_zchar__dest
-   STA   __local_ascii_to_zchar__index
-.loop@7_start:
-   LDX   __local_ascii_to_zchar__index
-   LDA   ZCHAR_SCRATCH1,X
-   STA   __local_ascii_to_zchar__2
-   INC   __local_ascii_to_zchar__index
-   ORA   #$00
-   BNE   .if_else@24
-   LDA   #$05
-   JMP   .if_end@23
-.if_else@24:
-   JSR   get_alphabet_for_char
-   STA   __local_ascii_to_zchar__1
-   CMP   LOCKED_ALPHABET
-   BEQ   .if_end@25
-   SEC
-   SBC   LOCKED_ALPHABET
-   CLC
-   ADC   #$03
-   JSR   A_mod_3
-   STA   __local_ascii_to_zchar__0
-   LDX   __local_ascii_to_zchar__index
-   LDA   ZCHAR_SCRATCH1,X
-   JSR   get_alphabet_for_char
-   CMP   __local_ascii_to_zchar__1
-   BNE   .if_else@27
-   LDA   __local_ascii_to_zchar__0
-   CLC
-   ADC   #$03
-   STA   __local_ascii_to_zchar__z
-   LDA   __local_ascii_to_zchar__1
-   STA   LOCKED_ALPHABET
-   JMP   .if_end@26
-.if_else@27:
-   LDA   __local_ascii_to_zchar__0
-   CLC
-   ADC   #$01
-   STA   __local_ascii_to_zchar__z
-.if_end@26:
-   LDX   __local_ascii_to_zchar__dest
-   LDA   __local_ascii_to_zchar__z
-   STA   ZCHAR_SCRATCH2,X
-   DEC   __local_ascii_to_zchar__left
-   BEQ   .loop@7_break
-   INC   __local_ascii_to_zchar__dest
-.if_end@25:
-   LDA   __local_ascii_to_zchar__2
-   JSR   get_alphabet_for_char
-   SEC
-   SBC   #$01
-   BPL   .if_else@30
-   LDA   __local_ascii_to_zchar__2
-   SEC
-   SBC   #$5B
-   JMP   .if_end@29
-.if_else@30:
-   BNE   .if_else@32
-   LDA   __local_ascii_to_zchar__2
-   SEC
-   SBC   #$3B
-   JMP   .if_end@31
-.if_else@32:
-   LDA   __local_ascii_to_zchar__2
-   JSR   search_nonalpha_table
-   ORA   #$00
-   BNE   .if_end@33
-   LDX   __local_ascii_to_zchar__dest
-   LDA   #$06
-   STA   ZCHAR_SCRATCH2,X
-   INX
-   DEC   __local_ascii_to_zchar__left
-   BEQ   .loop@7_break
-   LDA   __local_ascii_to_zchar__2
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
-   AND   #$03
-   STA   ZCHAR_SCRATCH2,X
-   INX
-   STX   __local_ascii_to_zchar__dest
-   DEC   __local_ascii_to_zchar__left
-   BEQ   .loop@7_break
-   LDA   __local_ascii_to_zchar__2
-   AND   #$1F
-.if_end@33:
-.if_end@31:
-.if_end@29:
-.if_end@23:
-   LDX   __local_ascii_to_zchar__dest
-   STA   ZCHAR_SCRATCH2,X
-   INC   __local_ascii_to_zchar__dest
-   DEC   __local_ascii_to_zchar__left
-   BEQ   .lb_skip@0
-   JMP   .loop@7_start
-.lb_skip@0:
-.loop@7_break:
-   JMP   z_compress
 
 match_dictionary_word:
    SUBROUTINE
@@ -873,7 +584,64 @@ instr_sread:
    LDA   Z_HEADER_ADDR+1
    ADC   OPERANDS+3
    STA   parse+1
-   JSR   read_line
+   JSR   dump_buffer_line
+   LDA   WNDTOP
+   STA   CURR_LINE
+   JSR   GETLN1
+   INC   CURR_LINE
+   LDX   #$00
+   BEQ   .i0_loop@0_continue
+.instr_sread@rot@1:
+   INX
+.i0_loop@0_continue:
+   LDA   BUFF_AREA,X
+   CMP   #$8D
+   BNE   .instr_sread@rot@1
+   INX
+   STX   __local_instr_sread__left
+   LDY   #$11
+   LDA   (Z_HEADER_ADDR),Y
+   LSR
+   BCC   .i0_if_end@0
+   STX   BUFF_END
+   JSR   dump_buffer_to_printer
+   LDA   #$00
+   STA   BUFF_END
+.i0_if_end@0:
+   LDY   #$00
+   LDA   __local_instr_sread__left
+   CMP   (text),Y
+   BCC   .i0_if_end@1
+   LDA   (text),Y
+   STA   __local_instr_sread__left
+.i0_if_end@1:
+   ORA   #$00
+   BEQ   .i0_if_end@2
+   LDX   #$00
+   STA   __local_instr_sread__dest
+.i0_loop@1_start:
+   LDA   BUFF_AREA,X
+   AND   #$7F
+   STA   __local_instr_sread__z
+   CMP   #$41
+   BCC   .i0_if_end@5
+   CMP   #$5B
+   BCS   .i0_if_end@5
+   ORA   #$20
+   STA   __local_instr_sread__z
+.i0_if_end@5:
+   INX
+   TXA
+   TAY
+   LDA   __local_instr_sread__z
+   STA   (text),Y
+   CMP   #$0D
+   BEQ   .i0_loop@1_break
+   DEC   __local_instr_sread__dest
+   BNE   .i0_loop@1_start
+.i0_loop@1_break:
+.i0_if_end@2:
+   LDA   __local_instr_sread__left
    STA   input_count
    LDA   #$00
    STA   char_count
@@ -901,17 +669,29 @@ instr_sread:
 .vthread@0:
    CMP   #$06
    BNE   .if_end@49
-   JSR   skip_separators
+   JMP   .i4_loop@4_continue
+.instr_sread@rot@2:
+   LDY   input_ptr
+   LDA   (text),Y
+   JSR   is_separator
+   BCS   .i4@end
+   INC   input_ptr
+   DEC   input_count
+   INC   char_count
+.i4_loop@4_continue:
+   LDA   input_count
+   BNE   .instr_sread@rot@2
+.i4@end:
 .if_end@49:
    LDA   char_count
    BNE   .if_end@50
    LDX   #$00
-.instr_sread@rot@4:
+.instr_sread@rot@3:
    LDA   #$00
    STA   ZCHAR_SCRATCH1,X
    INX
    CPX   #$06
-   BNE   .instr_sread@rot@4
+   BNE   .instr_sread@rot@3
    LDA   token_idx
    CLC
    ADC   #$03
@@ -920,10 +700,10 @@ instr_sread:
    STA   (parse),Y
    TAY
    LDA   (text),Y
-   STA   __local_instr_sread__1
+   STA   __local_instr_sread__dest
    JSR   is_dict_separator
    BCC   .if_end@51
-   LDA   __local_instr_sread__1
+   LDA   __local_instr_sread__dest
    STA   ZCHAR_SCRATCH1
    INC   char_count
    DEC   input_count
@@ -963,14 +743,185 @@ instr_sread:
    INY
    INY
    STA   (parse),Y
-   JSR   ascii_to_zchar
-   JSR   match_dictionary_word
+   LDA   #$00
+   STA   LOCKED_ALPHABET
+   LDX   #$00
+.instr_sread@rot@4:
+   LDA   #$05
+   STA   ZCHAR_SCRATCH2,X
+   INX
+   CPX   #$06
+   BNE   .instr_sread@rot@4
+   LDA   #$06
+   STA   __local_instr_sread__left
+   LDA   #$00
+   STA   __local_instr_sread__dest
+   STA   __local_instr_sread__index
+.i3_loop@7_start:
+   LDX   __local_instr_sread__index
+   LDA   ZCHAR_SCRATCH1,X
+   STA   __local_instr_sread__2
+   INC   __local_instr_sread__index
+   ORA   #$00
+   BNE   .i3_if_else@24
+   LDA   #$05
+   JMP   .i3_if_end@23
+.i3_if_else@24:
+   JSR   get_alphabet_for_char
    STA   __local_instr_sread__1
+   CMP   LOCKED_ALPHABET
+   BEQ   .i3_if_end@25
+   SEC
+   SBC   LOCKED_ALPHABET
+   CLC
+   ADC   #$03
+   JSR   A_mod_3
+   STA   __local_instr_sread__0
+   LDX   __local_instr_sread__index
+   LDA   ZCHAR_SCRATCH1,X
+   JSR   get_alphabet_for_char
+   CMP   __local_instr_sread__1
+   BNE   .i3_if_else@27
+   LDA   __local_instr_sread__0
+   CLC
+   ADC   #$03
+   STA   __local_instr_sread__z
+   LDA   __local_instr_sread__1
+   STA   LOCKED_ALPHABET
+   JMP   .i3_if_end@26
+.i3_if_else@27:
+   LDA   __local_instr_sread__0
+   CLC
+   ADC   #$01
+   STA   __local_instr_sread__z
+.i3_if_end@26:
+   LDX   __local_instr_sread__dest
+   LDA   __local_instr_sread__z
+   STA   ZCHAR_SCRATCH2,X
+   DEC   __local_instr_sread__left
+   BEQ   .i3_loop@7_break
+   INC   __local_instr_sread__dest
+.i3_if_end@25:
+   LDA   __local_instr_sread__2
+   JSR   get_alphabet_for_char
+   SEC
+   SBC   #$01
+   BPL   .i3_if_else@30
+   LDA   __local_instr_sread__2
+   SEC
+   SBC   #$5B
+   JMP   .i3_if_end@29
+.i3_if_else@30:
+   BNE   .i3_if_else@32
+   LDA   __local_instr_sread__2
+   SEC
+   SBC   #$3B
+   JMP   .i3_if_end@31
+.i3_if_else@32:
+   LDX   #$17
+.i3_i1_loop@5_start:
+   LDA   __local_instr_sread__2
+   CMP   a2_table,X
+   BNE   .i3_i1_if_end@22
+   TXA
+   CLC
+   ADC   #$08
+   JMP   .i3_i1@end
+.i3_i1_if_end@22:
+   DEX
+   CPX   #$FF
+   BNE   .i3_i1_loop@5_start
+   LDA   #$00
+.i3_i1@end:
+   BNE   .i3_if_end@33
+   LDX   __local_instr_sread__dest
+   LDA   #$06
+   STA   ZCHAR_SCRATCH2,X
+   INX
+   DEC   __local_instr_sread__left
+   BEQ   .i3_loop@7_break
+   LDA   __local_instr_sread__2
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   AND   #$03
+   STA   ZCHAR_SCRATCH2,X
+   INX
+   STX   __local_instr_sread__dest
+   DEC   __local_instr_sread__left
+   BEQ   .i3_loop@7_break
+   LDA   __local_instr_sread__2
+   AND   #$1F
+.i3_if_end@33:
+.i3_if_end@31:
+.i3_if_end@29:
+.i3_if_end@23:
+   LDX   __local_instr_sread__dest
+   STA   ZCHAR_SCRATCH2,X
+   INC   __local_instr_sread__dest
+   DEC   __local_instr_sread__left
+   BEQ   .lb_skip@0
+   JMP   .i3_loop@7_start
+.lb_skip@0:
+.i3_loop@7_break:
+   LDA   ZCHAR_SCRATCH2
+   ASL
+   ASL
+   STA   __local_instr_sread__0
+   LDA   ZCHAR_SCRATCH2+1
+   LSR
+   LSR
+   LSR
+   STA   __local_instr_sread__z
+   LDA   ZCHAR_SCRATCH2+1
+   ASL
+   ASL
+   ASL
+   ASL
+   ASL
+   STA   __local_instr_sread__left
+   LDA   __local_instr_sread__0
+   ORA   __local_instr_sread__z
+   STA   __local_instr_sread__dest
+   LDA   __local_instr_sread__left
+   ORA   ZCHAR_SCRATCH2+2
+   STA   ZCHAR_SCRATCH2
+   LDA   __local_instr_sread__dest
+   STA   ZCHAR_SCRATCH2+1
+   LDA   ZCHAR_SCRATCH2+3
+   ASL
+   ASL
+   STA   __local_instr_sread__left
+   LDA   ZCHAR_SCRATCH2+4
+   LSR
+   LSR
+   LSR
+   STA   __local_instr_sread__z
+   LDA   ZCHAR_SCRATCH2+4
+   ASL
+   ASL
+   ASL
+   ASL
+   ASL
+   STA   __local_instr_sread__dest
+   LDA   __local_instr_sread__left
+   ORA   __local_instr_sread__z
+   STA   __local_instr_sread__left
+   LDA   __local_instr_sread__dest
+   ORA   ZCHAR_SCRATCH2+5
+   STA   ZCHAR_SCRATCH2+2
+   LDA   __local_instr_sread__left
+   ORA   #$80
+   STA   ZCHAR_SCRATCH2+3
+   JSR   match_dictionary_word
+   STA   __local_instr_sread__dest
    TXA
    LDY   token_idx
    STA   (parse),Y
    INY
-   LDA   __local_instr_sread__1
+   LDA   __local_instr_sread__dest
    STA   (parse),Y
    LDA   token_idx
    CLC

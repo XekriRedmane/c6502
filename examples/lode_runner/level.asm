@@ -25,17 +25,17 @@ GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
 __local_access_hi_score_data_from_disk__0	EQU	$80
 __local_compress_and_save_level_data__0	EQU	$80
-__local_load_level__verbatim	EQU	$80
+__local_load_level__sprite	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
 __local_compress_and_save_level_data__1	EQU	$81
-__local_load_level__0	EQU	$81
+__local_load_level__dst	EQU	$81
 __local_access_hi_score_data_from_disk__differ	EQU	$82
 __local_compress_and_save_level_data__row	EQU	$82
-__local_load_level__sprite	EQU	$82
+__local_load_level__0	EQU	$82
 __local_compress_and_save_level_data__low	EQU	$83
-__local_load_level__row	EQU	$83
+__local_load_level__src	EQU	$83
 __local_compress_and_save_level_data__index	EQU	$84
 __local_load_level__index	EQU	$84
 GAME_COLNUM	EQU	$85
@@ -70,16 +70,11 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_draw_level_page2__sprite	EQU	$AE
 __local_access_compressed_level_data__1	EQU	$AF
-__local_draw_level_page2__dst	EQU	$AF
 __local_enable_next_level_ladders__1	EQU	$AF
 __local_access_compressed_level_data__2	EQU	$B0
-__local_draw_level_page2__0	EQU	$B0
 __local_enable_next_level_ladders__2	EQU	$B0
-__local_draw_level_page2__src	EQU	$B1
 __local_enable_next_level_ladders__3	EQU	$B1
-__local_draw_level_page2__1	EQU	$B2
 __local_enable_next_level_ladders__4	EQU	$B2
 __local_enable_next_level_ladders__5	EQU	$B3
 __local_enable_next_level_ladders__6	EQU	$B4
@@ -147,9 +142,8 @@ DISK_IO	EQU	$C088
 ; def access_disk_or_reset_game params= locals=__local_access_disk_or_reset_game__0 indirect=false in_cycle=false
 ; def access_hi_score_data_from_disk params=__zpabi_access_hi_score_data_from_disk__command locals=__local_access_hi_score_data_from_disk__0,__local_access_hi_score_data_from_disk__1,__local_access_hi_score_data_from_disk__differ indirect=false in_cycle=false param_regs=A
 ; def compress_and_save_level_data params= locals=__local_compress_and_save_level_data__0,__local_compress_and_save_level_data__1,__local_compress_and_save_level_data__row,__local_compress_and_save_level_data__low,__local_compress_and_save_level_data__index indirect=false in_cycle=false
-; def draw_level_page2 params= locals=__local_draw_level_page2__sprite,__local_draw_level_page2__dst,__local_draw_level_page2__0,__local_draw_level_page2__src,__local_draw_level_page2__1 indirect=false in_cycle=false carry=true
 ; def enable_next_level_ladders params= locals=__local_enable_next_level_ladders__0,__local_enable_next_level_ladders__1,__local_enable_next_level_ladders__2,__local_enable_next_level_ladders__3,__local_enable_next_level_ladders__4,__local_enable_next_level_ladders__5,__local_enable_next_level_ladders__6,__local_enable_next_level_ladders__n indirect=false in_cycle=false
-; def load_level params=__zpabi_load_level__verbatim locals=__local_load_level__verbatim,__local_load_level__0,__local_load_level__sprite,__local_load_level__row,__local_load_level__index indirect=false in_cycle=false param_regs=A
+; def load_level params=__zpabi_load_level__verbatim locals=__local_load_level__sprite,__local_load_level__dst,__local_load_level__0,__local_load_level__src,__local_load_level__index indirect=false in_cycle=false param_regs=A
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -165,6 +159,7 @@ DISK_IO	EQU	$C088
 ; ext cold_start params=
 ; ext detect_lack_of_joystick params=
 ; ext draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite param_regs=A
+; ext draw_level_page2 params=
 ; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
 ; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
 ; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
@@ -208,13 +203,11 @@ DISK_IO	EQU	$C088
 ; call access_disk_or_reset_game -> RWTS
 ; call access_hi_score_data_from_disk -> RWTS
 ; call compress_and_save_level_data -> access_compressed_level_data
-; call draw_level_page2 -> draw_sprite_page2
-; call draw_level_page2 -> iris_wipe
 ; call enable_next_level_ladders -> draw_sprite_at_pixel_coords
 ; call enable_next_level_ladders -> draw_sprite_page2
 ; call load_level -> access_compressed_level_data
-; call load_level -> draw_level_page2
-; item draw_level_page2 section=.text local=true zero=false
+; call load_level -> draw_sprite_page2
+; call load_level -> iris_wipe
 ; item load_level section=.text local=false zero=false
 ; item compress_and_save_level_data section=.text local=false zero=false
 ; item access_compressed_level_data section=.text local=false zero=false
@@ -283,189 +276,6 @@ DISK_IO	EQU	$C088
 ; runtime hargs_size=10 hargs_need=0
 ; @zp-link-meta-end
 
-draw_level_page2:
-   SUBROUTINE
-
-   LDA   #$0F
-   STA   GAME_ROWNUM
-.loop@0_start:
-   LDA   #$1B
-   STA   GAME_COLNUM
-.loop@1_start:
-   TAY
-   LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_draw_level_page2__sprite
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_draw_level_page2__dst
-   LDA   (__local_draw_level_page2__sprite),Y
-   STA   __local_draw_level_page2__sprite
-   LDA   VERBATIM
-   BNE   .lb_skip@2
-   JMP   .if_end@0
-.lb_skip@2:
-   LDA   __local_draw_level_page2__sprite
-   CMP   #$06
-   BEQ   .case@3
-   CMP   #$07
-   BEQ   .case@4
-   CMP   #$08
-   BEQ   .case@5
-   CMP   #$09
-   BEQ   .case@6
-   CMP   #$05
-   BEQ   .case@7
-   JMP   .vthread@0
-.case@3:
-   LDA   LADDER_COUNT
-   CMP   #$2D
-   BCS   .draw_level_page2@remove
-   TAX
-   INX
-   STX   LADDER_COUNT
-   LDA   GAME_ROWNUM
-   STA   LADDER_LOCS_ROW,X
-   TYA
-   STA   LADDER_LOCS_COL,X
-   JMP   .draw_level_page2@remove
-.case@4:
-   INC   GOLD_COUNT
-   JMP   .switch@2_break
-.case@5:
-   LDA   GUARD_COUNT
-   CMP   #$05
-   BCS   .draw_level_page2@remove
-   TAX
-   INX
-   STX   GUARD_COUNT
-   TYA
-   STA   GUARD_LOCS_COL,X
-   LDA   GAME_ROWNUM
-   STA   GUARD_LOCS_ROW,X
-   LDA   #$00
-   STA   GUARD_GOLD_TIMERS,X
-   STA   GUARD_ANIM_STATES,X
-   LDA   #$02
-   STA   GUARD_X_ADJS,X
-   STA   GUARD_Y_ADJS,X
-   LDX   GAME_ROWNUM
-.xjump@0:
-   LDA   LEVEL_BG@lo,X
-   STA   __local_draw_level_page2__dst
-   LDA   LEVEL_BG@hi,X
-   STA   __local_draw_level_page2__0
-   LDA   #$00
-   STA   (__local_draw_level_page2__dst),Y
-   JMP   .switch@2_break
-.case@6:
-   LDA   PLAYER_COL
-   BPL   .draw_level_page2@remove
-   STY   PLAYER_COL
-   STX   PLAYER_ROW
-   LDA   #$02
-   STA   PLAYER_X_ADJ
-   STA   PLAYER_Y_ADJ
-   LDA   #$08
-   STA   PLAYER_ANIM_STATE
-   JMP   .xjump@0
-.case@7:
-   LDA   #$01
-   STA   __local_draw_level_page2__sprite
-   JMP   .switch@2_break
-.draw_level_page2@remove:
-   LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_draw_level_page2__sprite
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_draw_level_page2__dst
-   LDA   #$00
-   STA   (__local_draw_level_page2__sprite),Y
-   LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_draw_level_page2__sprite
-   LDA   LEVEL_BG@hi,X
-   STA   __local_draw_level_page2__dst
-   LDA   #$00
-   STA   (__local_draw_level_page2__sprite),Y
-   STA   __local_draw_level_page2__sprite
-.switch@2_break:
-.if_end@0:
-   LDA   __local_draw_level_page2__sprite
-.vthread@0:
-   JSR   draw_sprite_page2
-   DEC   GAME_COLNUM
-   LDA   GAME_COLNUM
-   BMI   .lb_skip@1
-   JMP   .loop@1_start
-.lb_skip@1:
-   DEC   GAME_ROWNUM
-   BMI   .lb_skip@0
-   JMP   .loop@0_start
-.lb_skip@0:
-   LDA   VERBATIM
-   BNE   .if_end@4
-   LDA   #<HGR2
-   STA   __local_draw_level_page2__src
-   LDA   #>HGR2
-   STA   __local_draw_level_page2__1
-   LDA   #<HGR1
-   STA   __local_draw_level_page2__dst
-   LDA   #>HGR1
-   STA   __local_draw_level_page2__0
-.loop@8_continue:
-   LDA   __local_draw_level_page2__0
-   CMP   #>(HGR1+8192)
-   BNE   .jcmp_skip@0
-   LDA   __local_draw_level_page2__dst
-   CMP   #<HGR1
-   BEQ   .tail@0
-.jcmp_skip@0:
-   LDY   #$00
-   LDA   (__local_draw_level_page2__src),Y
-   INC   __local_draw_level_page2__src
-   BNE   .inc_done@0
-   INC   __local_draw_level_page2__1
-.inc_done@0:
-   LDY   #$00
-   STA   (__local_draw_level_page2__dst),Y
-   INC   __local_draw_level_page2__dst
-   BNE   .loop@8_continue
-   INC   __local_draw_level_page2__0
-   JMP   .loop@8_continue
-.if_end@4:
-   LDA   PLAYER_COL
-   BPL   .if_end@5
-   SEC
-   RTS
-.if_end@5:
-   JSR   iris_wipe
-   LDA   #$0F
-   STA   GAME_ROWNUM
-.loop@9_start:
-   LDA   #$1B
-   STA   GAME_COLNUM
-.loop@10_start:
-   LDX   GAME_ROWNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_draw_level_page2__sprite
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_draw_level_page2__dst
-   LDY   GAME_COLNUM
-   LDA   (__local_draw_level_page2__sprite),Y
-   AND   #$FE
-   CMP   #$08
-   BNE   .if_end@8
-   LDA   #$00
-   JSR   draw_sprite_page2
-.if_end@8:
-   DEC   GAME_COLNUM
-   BPL   .loop@10_start
-   DEC   GAME_ROWNUM
-   BPL   .loop@9_start
-.tail@0:
-   CLC
-   RTS
-
 load_level:
    SUBROUTINE
 
@@ -496,7 +306,7 @@ load_level:
    JSR   access_compressed_level_data
    LDA   #$00
    STA   __local_load_level__index
-   STA   __local_load_level__row
+   STA   __local_load_level__src
 .load_level@rot@3:
    LDY   #$00
 .load_level@rot@2:
@@ -509,39 +319,214 @@ load_level:
    LSR
    LSR
    LSR
-   STA   __local_load_level__sprite
+   STA   __local_load_level__0
    INC   __local_load_level__index
    JMP   .if_end@9
 .if_else@10:
    LDA   DISK_BUFFER,X
    AND   #$0F
-   STA   __local_load_level__sprite
+   STA   __local_load_level__0
 .if_end@9:
    CMP   #$0A
    BCC   .if_end@11
    LDA   #$00
-   STA   __local_load_level__sprite
+   STA   __local_load_level__0
 .if_end@11:
-   LDX   __local_load_level__row
+   LDX   __local_load_level__src
    LDA   LEVEL_BG@lo,X
-   STA   __local_load_level__verbatim
+   STA   __local_load_level__sprite
    LDA   LEVEL_MAP@hi,X
-   STA   __local_load_level__0
-   LDA   __local_load_level__sprite
-   STA   (__local_load_level__verbatim),Y
+   STA   __local_load_level__dst
+   LDA   __local_load_level__0
+   STA   (__local_load_level__sprite),Y
    LDA   LEVEL_BG@hi,X
-   STA   __local_load_level__0
-   LDA   __local_load_level__sprite
-   STA   (__local_load_level__verbatim),Y
+   STA   __local_load_level__dst
+   LDA   __local_load_level__0
+   STA   (__local_load_level__sprite),Y
    INY
    CPY   #$1C
    BCC   .load_level@rot@2
-   INC   __local_load_level__row
-   LDA   __local_load_level__row
+   INC   __local_load_level__src
+   LDA   __local_load_level__src
    CMP   #$10
    BCC   .load_level@rot@3
-   JSR   draw_level_page2
-   BCS   .if_end@12
+   LDA   #$0F
+   STA   GAME_ROWNUM
+.i0_loop@0_start:
+   LDA   #$1B
+   STA   GAME_COLNUM
+.i0_loop@1_start:
+   TAY
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__sprite
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_load_level__dst
+   LDA   (__local_load_level__sprite),Y
+   STA   __local_load_level__sprite
+   LDA   VERBATIM
+   BNE   .lb_skip@2
+   JMP   .i0_if_end@0
+.lb_skip@2:
+   LDA   __local_load_level__sprite
+   CMP   #$06
+   BEQ   .i0_case@3
+   CMP   #$07
+   BEQ   .i0_case@4
+   CMP   #$08
+   BEQ   .i0_case@5
+   CMP   #$09
+   BEQ   .i0_case@6
+   CMP   #$05
+   BEQ   .i0_case@7
+   JMP   .vthread@0
+.i0_case@3:
+   LDA   LADDER_COUNT
+   CMP   #$2D
+   BCS   .i0_draw_level_page2@remove
+   TAX
+   INX
+   STX   LADDER_COUNT
+   LDA   GAME_ROWNUM
+   STA   LADDER_LOCS_ROW,X
+   TYA
+   STA   LADDER_LOCS_COL,X
+   JMP   .i0_draw_level_page2@remove
+.i0_case@4:
+   INC   GOLD_COUNT
+   JMP   .i0_switch@2_break
+.i0_case@5:
+   LDA   GUARD_COUNT
+   CMP   #$05
+   BCS   .i0_draw_level_page2@remove
+   TAX
+   INX
+   STX   GUARD_COUNT
+   TYA
+   STA   GUARD_LOCS_COL,X
+   LDA   GAME_ROWNUM
+   STA   GUARD_LOCS_ROW,X
+   LDA   #$00
+   STA   GUARD_GOLD_TIMERS,X
+   STA   GUARD_ANIM_STATES,X
+   LDA   #$02
+   STA   GUARD_X_ADJS,X
+   STA   GUARD_Y_ADJS,X
+   LDX   GAME_ROWNUM
+.xjump@0:
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__dst
+   LDA   LEVEL_BG@hi,X
+   STA   __local_load_level__0
+   LDA   #$00
+   STA   (__local_load_level__dst),Y
+   JMP   .i0_switch@2_break
+.i0_case@6:
+   LDA   PLAYER_COL
+   BPL   .i0_draw_level_page2@remove
+   STY   PLAYER_COL
+   STX   PLAYER_ROW
+   LDA   #$02
+   STA   PLAYER_X_ADJ
+   STA   PLAYER_Y_ADJ
+   LDA   #$08
+   STA   PLAYER_ANIM_STATE
+   JMP   .xjump@0
+.i0_case@7:
+   LDA   #$01
+   STA   __local_load_level__sprite
+   JMP   .i0_switch@2_break
+.i0_draw_level_page2@remove:
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__sprite
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_load_level__dst
+   LDA   #$00
+   STA   (__local_load_level__sprite),Y
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__sprite
+   LDA   LEVEL_BG@hi,X
+   STA   __local_load_level__dst
+   LDA   #$00
+   STA   (__local_load_level__sprite),Y
+   STA   __local_load_level__sprite
+.i0_switch@2_break:
+.i0_if_end@0:
+   LDA   __local_load_level__sprite
+.vthread@0:
+   JSR   draw_sprite_page2
+   DEC   GAME_COLNUM
+   LDA   GAME_COLNUM
+   BMI   .lb_skip@1
+   JMP   .i0_loop@1_start
+.lb_skip@1:
+   DEC   GAME_ROWNUM
+   BMI   .lb_skip@0
+   JMP   .i0_loop@0_start
+.lb_skip@0:
+   LDA   VERBATIM
+   BNE   .i0_if_end@4
+   LDA   #<HGR2
+   STA   __local_load_level__src
+   LDA   #>HGR2
+   STA   __local_load_level__index
+   LDA   #<HGR1
+   STA   __local_load_level__dst
+   LDA   #>HGR1
+   STA   __local_load_level__0
+.i0_loop@8_continue:
+   LDA   __local_load_level__0
+   CMP   #>(HGR1+8192)
+   BNE   .jcmp_skip@0
+   LDA   __local_load_level__dst
+   CMP   #<HGR1
+   BEQ   .i0_loop@8_break
+.jcmp_skip@0:
+   LDY   #$00
+   LDA   (__local_load_level__src),Y
+   INC   __local_load_level__src
+   BNE   .inc_done@0
+   INC   __local_load_level__index
+.inc_done@0:
+   LDY   #$00
+   STA   (__local_load_level__dst),Y
+   INC   __local_load_level__dst
+   BNE   .i0_loop@8_continue
+   INC   __local_load_level__0
+   JMP   .i0_loop@8_continue
+.i0_loop@8_break:
+   RTS
+.i0_if_end@4:
+   LDA   PLAYER_COL
+   BMI   .if_end@12
+   JSR   iris_wipe
+   LDA   #$0F
+   STA   GAME_ROWNUM
+.i0_loop@9_start:
+   LDA   #$1B
+   STA   GAME_COLNUM
+.i0_loop@10_start:
+   LDX   GAME_ROWNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_load_level__sprite
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_load_level__dst
+   LDY   GAME_COLNUM
+   LDA   (__local_load_level__sprite),Y
+   AND   #$FE
+   CMP   #$08
+   BNE   .i0_if_end@8
+   LDA   #$00
+   JSR   draw_sprite_page2
+.i0_if_end@8:
+   DEC   GAME_COLNUM
+   BPL   .i0_loop@10_start
+   DEC   GAME_ROWNUM
+   BPL   .i0_loop@9_start
+   LDA   #$00
+   BNE   .if_end@12
    RTS
 .if_end@12:
    LDA   DISK_LEVEL_LOC

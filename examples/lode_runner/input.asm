@@ -25,13 +25,16 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
+__local_check_for_input__sprite	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
-__local_check_for_input__1	EQU	$81
-__local_detect_lack_of_joystick__n_1	EQU	$81
-__local_detect_lack_of_joystick__n_0	EQU	$82
+__local_check_for_input__g	EQU	$81
+__local_check_for_input__z	EQU	$82
+__local_detect_lack_of_joystick__n_1	EQU	$82
 __local_poll_for_key__n	EQU	$82
+__local_check_for_input__x	EQU	$83
+__local_detect_lack_of_joystick__n_0	EQU	$83
 __local_poll_for_key__joystick_ends	EQU	$83
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
@@ -65,13 +68,9 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_past_threshold__threshold	EQU	$AE
-__local_return_handler__sprite	EQU	$AE
 __local_check_joystick_or_delay__x	EQU	$AF
-__local_past_threshold__reading	EQU	$AF
-__local_return_handler__g	EQU	$AF
-__local_return_handler__z	EQU	$B0
-__local_return_handler__x	EQU	$B1
+__local_past_threshold__threshold	EQU	$B0
+__local_past_threshold__reading	EQU	$B1
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -132,20 +131,16 @@ DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
 ; def button_pressed params= locals=__local_button_pressed__0 indirect=false in_cycle=false carry=true
-; def check_for_input params= locals=__local_check_for_input__0,__local_check_for_input__1 indirect=false in_cycle=false
-; def check_for_mode_1_input params= locals=__local_check_for_mode_1_input__0 indirect=false in_cycle=false
+; def check_for_input params= locals=__local_check_for_input__sprite,__local_check_for_input__g,__local_check_for_input__z,__local_check_for_input__x,__local_check_for_input__0 indirect=false in_cycle=false
 ; def check_joystick_or_delay params= locals=__local_check_joystick_or_delay__button,__local_check_joystick_or_delay__x indirect=false in_cycle=false carry=true
-; def detect_lack_of_joystick params= locals=__local_detect_lack_of_joystick__0,__local_detect_lack_of_joystick__n_1,__local_detect_lack_of_joystick__n_0 indirect=false in_cycle=false
-; def paddle_timer_running params= locals=__local_paddle_timer_running__0,__local_paddle_timer_running__1 indirect=false in_cycle=false carry=true
+; def detect_lack_of_joystick params= locals=__local_detect_lack_of_joystick__0,__local_detect_lack_of_joystick__1,__local_detect_lack_of_joystick__n_1,__local_detect_lack_of_joystick__n_0 indirect=false in_cycle=false
 ; def past_threshold params=__zpabi_past_threshold__reading,__zpabi_past_threshold__threshold locals=__local_past_threshold__threshold,__local_past_threshold__reading indirect=false in_cycle=false param_regs=A,X carry=true
 ; def poll_for_key params=__zpabi_poll_for_key__joystick_ends locals=__local_poll_for_key__0,__local_poll_for_key__n,__local_poll_for_key__joystick_ends indirect=false in_cycle=false param_regs=A carry=true
 ; def read_joystick_for_command params= locals=__local_read_joystick_for_command__dig,__local_read_joystick_for_command__0 indirect=false in_cycle=false
 ; def read_paddles params= locals=__local_read_paddles__0,__local_read_paddles__1 indirect=false in_cycle=false
-; def return_handler params= locals=__local_return_handler__sprite,__local_return_handler__g,__local_return_handler__z,__local_return_handler__x,__local_return_handler__0 indirect=false in_cycle=false
 ; def wait_for_key params=__zpabi_wait_for_key__cursor locals=__local_wait_for_key__cursor indirect=false in_cycle=false param_regs=A
 ; def wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor locals=__local_wait_for_key_with_cursor_page_1__cursor indirect=false in_cycle=false param_regs=A
 ; def wait_key params= locals=__local_wait_key__0 indirect=false in_cycle=false
-; def wait_key_queued params= locals=__local_wait_key_queued__0,__local_wait_key_queued__1 indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -158,6 +153,7 @@ DISK_IO	EQU	$C088
 ; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
 ; ext beep params=
 ; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
+; ext check_for_mode_1_input params=
 ; ext clear_hgr1 params=
 ; ext clear_hgr2 params=
 ; ext cold_start params=
@@ -183,6 +179,7 @@ DISK_IO	EQU	$C088
 ; ext move_guards params=
 ; ext move_player params=
 ; ext newline params=
+; ext paddle_timer_running params=
 ; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
 ; ext play_sound params= carry=true
 ; ext put_char params=__zpabi_put_char__c param_regs=A
@@ -194,6 +191,7 @@ DISK_IO	EQU	$C088
 ; ext put_string params=__zpabi_put_string__s_0,__zpabi_put_string__s_1 param_regs=A,X
 ; ext record_hi_score_data_to_disk params=
 ; ext reset_game params=
+; ext return_handler params=
 ; ext row_to_addr params=__zpabi_row_to_addr__row,__zpabi_row_to_addr__page param_regs=A,X
 ; ext screen_row_for params=__zpabi_screen_row_for__row,__zpabi_screen_row_for__y_adj param_regs=A,X
 ; ext sound_delay params=__zpabi_sound_delay__index param_regs=A
@@ -201,35 +199,26 @@ DISK_IO	EQU	$C088
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
 ; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
-; call check_for_input -> check_for_mode_1_input
+; ext wait_key_queued params=
+; call check_for_input -> button_pressed
+; call check_for_input -> clear_hgr2
+; call check_for_input -> draw_sprite_page2
+; call check_for_input -> hi_score_screen
 ; call check_for_input -> put_status_lives
 ; call check_for_input -> read_joystick_for_command
-; call check_for_input -> return_handler
-; call check_for_input -> wait_key_queued
-; call check_for_mode_1_input -> button_pressed
 ; call check_joystick_or_delay -> read_paddles
-; call detect_lack_of_joystick -> paddle_timer_running
 ; call poll_for_key -> check_joystick_or_delay
 ; call read_joystick_for_command -> past_threshold
 ; call read_joystick_for_command -> read_paddles
-; call read_paddles -> paddle_timer_running
-; call return_handler -> button_pressed
-; call return_handler -> clear_hgr2
-; call return_handler -> draw_sprite_page2
-; call return_handler -> hi_score_screen
 ; call wait_for_key -> draw_sprite_page2
 ; call wait_for_key -> poll_for_key
 ; call wait_for_key_with_cursor_page_1 -> draw_sprite_page1
 ; call wait_for_key_with_cursor_page_1 -> poll_for_key
-; item paddle_timer_running section=.text local=true zero=false
 ; item read_paddles section=.text local=true zero=false
 ; item past_threshold section=.text local=true zero=false
 ; item button_pressed section=.text local=true zero=false
 ; item read_joystick_for_command section=.text local=true zero=false
-; item check_for_mode_1_input section=.text local=true zero=false
-; item wait_key_queued section=.text local=true zero=false
 ; item check_for_input section=.text local=false zero=false
-; item return_handler section=.text local=true zero=false
 ; item check_joystick_or_delay section=.text local=true zero=false
 ; item poll_for_key section=.text local=true zero=false
 ; item wait_for_key section=.text local=false zero=false
@@ -300,19 +289,6 @@ DISK_IO	EQU	$C088
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
-paddle_timer_running:
-   SUBROUTINE
-
-   LDA   PADDL
-   ORA   PADDL+1
-   AND   #$80
-   BEQ   .cmp_end@0
-   SEC
-   RTS
-.cmp_end@0:
-   CMP   #$01
-   RTS
-
 read_paddles:
    SUBROUTINE
 
@@ -329,8 +305,9 @@ read_paddles:
    BPL   .if_end@1
    INC   PADDLE_VALUES
 .if_end@1:
-   JSR   paddle_timer_running
-   BCS   .if_end@2
+   LDA   PADDL
+   ORA   PADDL+1
+   BMI   .if_end@2
    RTS
 .if_end@2:
    LDA   PADDLE_VALUES
@@ -429,22 +406,26 @@ read_joystick_for_command:
    STA   KEY_COMMAND_LR
    RTS
 
-check_for_mode_1_input:
+check_for_input:
    SUBROUTINE
 
+.loop@2_start:
+   LDA   GAME_MODE
+   CMP   #$01
+   BNE   .if_end@24
    LDA   KBD
-   BMI   .check_for_mode_1_input@scfold@0
+   BMI   .check_for_input@scfold@0
    JSR   button_pressed
-   BCC   .if_end@22
-.check_for_mode_1_input@scfold@0:
+   BCC   .i3_if_end@22
+.check_for_input@scfold@0:
    LSR   DEMO_RUNNING
    LSR   ALIVE
    LDA   #$01
    STA   LIVES
    RTS
-.if_end@22:
+.i3_if_end@22:
    LDA   DEMO_MOVE_TURNS
-   BNE   .if_end@23
+   BNE   .i3_if_end@23
    LDY   #$00
    LDA   (DEMO_PTR),Y
    STA   DEMO_MOVE
@@ -457,7 +438,7 @@ check_for_mode_1_input:
    BCC   .carry_inc@0
    INC   DEMO_PTR+1
 .carry_inc@0:
-.if_end@23:
+.i3_if_end@23:
    LDA   DEMO_MOVE
    AND   #$0F
    TAX
@@ -473,27 +454,9 @@ check_for_mode_1_input:
    STA   KEY_COMMAND_LR
    DEC   DEMO_MOVE_TURNS
    RTS
-
-wait_key_queued:
-   SUBROUTINE
-
-.loop@1_start:
-   LDA   KBD
-   BPL   .loop@1_start
-   STA   KBDSTRB
-   RTS
-
-check_for_input:
-   SUBROUTINE
-
-.loop@2_start:
-   LDA   GAME_MODE
-   CMP   #$01
-   BNE   .if_end@24
-   JMP   check_for_mode_1_input
 .if_end@24:
    LDA   KBD
-   STA   __local_check_for_input__1
+   STA   __local_check_for_input__g
    STA   KBDSTRB
    BMI   .if_end@25
    LDA   INPUT_MODE
@@ -522,19 +485,21 @@ check_for_input:
    CMP   #$88
    BEQ   .case@13
    CMP   #$95
-   BEQ   .case@14
+   BNE   .lb_skip@6
+   JMP   .case@14
+.lb_skip@6:
    CMP   #$98
-   BNE   .lb_skip@4
+   BNE   .lb_skip@5
    JMP   .case@15
-.lb_skip@4:
+.lb_skip@5:
    CMP   #$99
-   BNE   .lb_skip@3
+   BNE   .lb_skip@4
    JMP   .case@16
-.lb_skip@3:
+.lb_skip@4:
    CMP   #$8D
-   BNE   .lb_skip@2
+   BNE   .lb_skip@3
    JMP   .case@17
-.lb_skip@2:
+.lb_skip@3:
    JMP   .switch@3_break
 .case@4:
    INC   LIVES
@@ -554,7 +519,10 @@ check_for_input:
    JMP   .loop@2_start
 .case@6:
 .loop@7_continue:
-   JSR   wait_key_queued
+.i2_loop@1_start:
+   LDA   KBD
+   BPL   .i2_loop@1_start
+   STA   KBDSTRB
    CMP   #$9B
    BNE   .loop@7_continue
    JMP   .loop@2_start
@@ -582,16 +550,16 @@ check_for_input:
 .case@13:
    LDA   FRAME_PERIOD
    CMP   #$0F
-   BNE   .lb_skip@1
+   BNE   .lb_skip@2
    JMP   .loop@2_start
-.lb_skip@1:
+.lb_skip@2:
    INC   FRAME_PERIOD
    JMP   .loop@2_start
 .case@14:
    LDA   FRAME_PERIOD
-   BNE   .lb_skip@0
+   BNE   .lb_skip@1
    JMP   .loop@2_start
-.lb_skip@0:
+.lb_skip@1:
    DEC   FRAME_PERIOD
    JMP   .loop@2_start
 .case@15:
@@ -607,123 +575,117 @@ check_for_input:
    STA   paddle_thresholds+3
    JMP   .loop@2_start
 .case@17:
-   JSR   return_handler
-   JMP   .loop@2_start
-.switch@3_break:
-   LDA   INPUT_MODE
-   CMP   #$CA
-   BNE   .if_else@31
-   JMP   read_joystick_for_command
-.if_else@31:
-   LDA   __local_check_for_input__1
-   STA   KEY_COMMAND
-   STA   KEY_COMMAND_LR
-   RTS
-
-return_handler:
-   SUBROUTINE
-
    JSR   hi_score_screen
    LDA   #$FF
-   STA   __local_return_handler__x
-   STA   __local_return_handler__sprite
+   STA   __local_check_for_input__x
+   STA   __local_check_for_input__sprite
    LDA   #$04
-   STA   __local_return_handler__z
-.loop@18_start:
+   STA   __local_check_for_input__z
+.i4_loop@18_start:
    JSR   button_pressed
-   BCS   .loop@18_break
+   BCS   .i4_loop@18_break
    LDA   KBD
-   BMI   .loop@18_break
-   DEC   __local_return_handler__x
-   BNE   .loop@18_start
-   DEC   __local_return_handler__sprite
-   BNE   .loop@18_start
-   DEC   __local_return_handler__z
-   BNE   .loop@18_start
-.loop@18_break:
+   BMI   .i4_loop@18_break
+   DEC   __local_check_for_input__x
+   BNE   .i4_loop@18_start
+   DEC   __local_check_for_input__sprite
+   BNE   .i4_loop@18_start
+   DEC   __local_check_for_input__z
+   BNE   .i4_loop@18_start
+.i4_loop@18_break:
    LDA   #$00
    STA   KBDSTRB
    STA   TXTPAGE1
    JSR   clear_hgr2
    LDA   #$0F
    STA   GAME_ROWNUM
-.return_handler@rot@1:
+.check_for_input@rot@1:
    LDA   #$1B
    STA   GAME_COLNUM
-.return_handler@rot@0:
+.check_for_input@rot@0:
    LDX   GAME_ROWNUM
    LDA   LEVEL_BG@lo,X
-   STA   __local_return_handler__sprite
+   STA   __local_check_for_input__sprite
    LDA   LEVEL_BG@hi,X
-   STA   __local_return_handler__g
+   STA   __local_check_for_input__g
    LDY   GAME_COLNUM
-   LDA   (__local_return_handler__sprite),Y
+   LDA   (__local_check_for_input__sprite),Y
    CMP   #$05
-   BNE   .if_end@39
+   BNE   .i4_if_end@39
    LDA   #$01
-.if_end@39:
+.i4_if_end@39:
    JSR   draw_sprite_page2
    DEC   GAME_COLNUM
-   BPL   .return_handler@rot@0
+   BPL   .check_for_input@rot@0
    DEC   GAME_ROWNUM
-   BPL   .return_handler@rot@1
+   BPL   .check_for_input@rot@1
    LDA   #$1E
-   STA   __local_return_handler__g
-.return_handler@rot@2:
-   LDX   __local_return_handler__g
+   STA   __local_check_for_input__g
+.check_for_input@rot@2:
+   LDX   __local_check_for_input__g
    LDA   BRICK_FILL_TIMERS,X
-   BEQ   .loop@21_continue
+   BEQ   .i4_loop@21_continue
    LDA   BRICK_DIG_ROWS,X
    STA   GAME_ROWNUM
    LDA   BRICK_DIG_COLS,X
    STA   GAME_COLNUM
    LDA   BRICK_FILL_TIMERS,X
    CMP   #$15
-   BCC   .if_else@42
+   BCC   .i4_if_else@42
    LDA   #$00
    JSR   draw_sprite_page2
-   JMP   .if_end@41
-.if_else@42:
+   JMP   .i4_if_end@41
+.i4_if_else@42:
    CMP   #$0B
-   BCC   .if_else@44
+   BCC   .i4_if_else@44
    LDA   #$37
    JSR   draw_sprite_page2
-   JMP   .if_end@43
-.if_else@44:
+   JMP   .i4_if_end@43
+.i4_if_else@44:
    LDA   #$38
    JSR   draw_sprite_page2
-.if_end@43:
-.if_end@41:
-.loop@21_continue:
-   DEC   __local_return_handler__g
-   BPL   .return_handler@rot@2
+.i4_if_end@43:
+.i4_if_end@41:
+.i4_loop@21_continue:
+   DEC   __local_check_for_input__g
+   BPL   .check_for_input@rot@2
    LDA   GUARD_COUNT
-   STA   __local_return_handler__g
-   JMP   .loop@22_start
-.return_handler@rot@3:
-   LDX   __local_return_handler__g
+   STA   __local_check_for_input__g
+.i4_loop@22_start:
+   LDA   __local_check_for_input__g
+   BNE   .lb_skip@0
+   JMP   .loop@2_start
+.lb_skip@0:
+   LDX   __local_check_for_input__g
    LDA   GUARD_RESURRECTION_TIMERS,X
-   BEQ   .loop@22_continue
+   BEQ   .i4_loop@22_continue
    LDA   GUARD_LOCS_COL,X
    STA   GAME_COLNUM
    LDA   GUARD_LOCS_ROW,X
    STA   GAME_ROWNUM
    LDA   GUARD_RESURRECTION_TIMERS,X
    CMP   #$14
-   BCS   .loop@22_continue
+   BCS   .i4_loop@22_continue
    CMP   #$0B
-   BCC   .cond_else@47
+   BCC   .i4_cond_else@47
    LDA   #$39
-   BNE   .cond_end@48
-.cond_else@47:
+   BNE   .i4_cond_end@48
+.i4_cond_else@47:
    LDA   #$3A
-.cond_end@48:
+.i4_cond_end@48:
    JSR   draw_sprite_page2
-.loop@22_continue:
-   DEC   __local_return_handler__g
-.loop@22_start:
-   LDA   __local_return_handler__g
-   BNE   .return_handler@rot@3
+.i4_loop@22_continue:
+   DEC   __local_check_for_input__g
+   JMP   .i4_loop@22_start
+.switch@3_break:
+   LDA   INPUT_MODE
+   CMP   #$CA
+   BNE   .if_else@31
+   JMP   read_joystick_for_command
+.if_else@31:
+   LDA   __local_check_for_input__g
+   STA   KEY_COMMAND
+   STA   KEY_COMMAND_LR
    RTS
 
 check_joystick_or_delay:
@@ -746,7 +708,7 @@ check_joystick_or_delay:
 .if_end@49:
    JSR   read_paddles
    LDX   #$00
-.check_joystick_or_delay@rot@4:
+.check_joystick_or_delay@rot@3:
    LDA   PADDLE_VALUES,X
    CMP   #$12
    BCC   .tail@0
@@ -754,7 +716,7 @@ check_joystick_or_delay:
    BCS   .tail@0
    INX
    CPX   #$02
-   BCC   .check_joystick_or_delay@rot@4
+   BCC   .check_joystick_or_delay@rot@3
    LDA   BUTN1
    BMI   .tail@0
    LDA   BUTN0
@@ -773,7 +735,7 @@ poll_for_key:
    STA   __local_poll_for_key__joystick_ends
    LDA   #$68
    STA   __local_poll_for_key__n
-.poll_for_key@rot@5:
+.poll_for_key@rot@4:
    LDA   KBD
    BPL   .if_end@55
    STA   wait_result
@@ -787,7 +749,7 @@ poll_for_key:
    RTS
 .if_end@58:
    DEC   __local_poll_for_key__n
-   BNE   .poll_for_key@rot@5
+   BNE   .poll_for_key@rot@4
    CLC
    RTS
 
@@ -861,19 +823,21 @@ detect_lack_of_joystick:
    LDY   #$10
    STY   __local_detect_lack_of_joystick__n_1
    JMP   .loop@30_start
-.detect_lack_of_joystick@rot@6:
-   JSR   paddle_timer_running
-   BCS   .if_end@65
+.detect_lack_of_joystick@rot@5:
+   LDA   PADDL
+   ORA   PADDL+1
+   BMI   .if_end@65
    RTS
 .if_end@65:
    LDA   __local_detect_lack_of_joystick__n_0
+   SEC
    SBC   #$01
    STA   __local_detect_lack_of_joystick__n_0
    BCS   .loop@30_start
    DEC   __local_detect_lack_of_joystick__n_1
 .loop@30_start:
    ORA   __local_detect_lack_of_joystick__n_1
-   BNE   .detect_lack_of_joystick@rot@6
+   BNE   .detect_lack_of_joystick@rot@5
    LDA   #$CB
    STA   INPUT_MODE
    RTS

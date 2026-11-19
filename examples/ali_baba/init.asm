@@ -20,8 +20,6 @@ MONITOR_GBAS	EQU	$26
 BASL	EQU	$28
 DOS_ZP	EQU	$2A
 DISK_VM_ZP	EQU	$50
-__local_clear_hires_page1__0	EQU	$80
-__local_init_mob_count__0	EQU	$80
 __local_move_border_icon_list__first	EQU	$80
 __zpabi_anim_border_icons__to	EQU	$80
 __zpabi_draw_border_strings__first	EQU	$80
@@ -30,23 +28,23 @@ __zpabi_num_to_decimal__out_0	EQU	$80
 __zpabi_plot_title_glyphs__charset	EQU	$80
 __zpabi_print_at__col	EQU	$80
 __zpabi_update_event_list__value_0	EQU	$80
-__local_clear_hires_page1__1	EQU	$81
-__local_plot_title_glyphs__i	EQU	$81
-__local_select_input_mode__1	EQU	$81
 __zpabi_draw_border_strings__last	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_print_at__row	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __local_anim_border_icons__limit	EQU	$82
-__local_clear_hires_page1__i_1	EQU	$82
+__local_game_init__0	EQU	$82
 __local_move_border_icons__0	EQU	$82
-__local_plot_title_glyphs__end	EQU	$82
 __local_anim_border_icons__from	EQU	$83
-__local_clear_hires_page1__i_0	EQU	$83
-__local_draw_border_strings__s_1	EQU	$83
+__local_game_init__1	EQU	$83
 __local_move_border_icons__cell	EQU	$83
-__local_draw_border_strings__s_0	EQU	$84
+__local_game_init__i_1	EQU	$84
 __local_move_border_icons__first	EQU	$84
+__local_game_init__i_0	EQU	$85
+__local_plot_title_glyphs__i	EQU	$86
+__local_draw_border_strings__s_1	EQU	$87
+__local_plot_title_glyphs__end	EQU	$87
+__local_draw_border_strings__s_0	EQU	$88
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -223,20 +221,13 @@ WAIT	EQU	$FCA8
 ; @zp-link-meta-begin
 ; def anim_border_icons params=__zpabi_anim_border_icons__limit,__zpabi_anim_border_icons__from,__zpabi_anim_border_icons__to locals=__local_anim_border_icons__limit,__local_anim_border_icons__from indirect=false in_cycle=false param_regs=A,X,
 ; def border_anim_step params= locals=__local_border_anim_step__0 indirect=false in_cycle=false
-; def clear_hires_page1 params= locals=__local_clear_hires_page1__0,__local_clear_hires_page1__1,__local_clear_hires_page1__i_1,__local_clear_hires_page1__i_0 indirect=false in_cycle=false
 ; def draw_border_cell params=__zpabi_draw_border_cell__cell,__zpabi_draw_border_cell__glyph locals=__local_draw_border_cell__glyph,__local_draw_border_cell__cell indirect=false in_cycle=false param_regs=A,X
-; def draw_border_labels params= locals= indirect=false in_cycle=false
 ; def draw_border_strings params=__zpabi_draw_border_strings__s_0,__zpabi_draw_border_strings__s_1,__zpabi_draw_border_strings__first,__zpabi_draw_border_strings__last locals=__local_draw_border_strings__i,__local_draw_border_strings__s_1,__local_draw_border_strings__s_0 indirect=false in_cycle=false param_regs=A,X,, changes=__zpabi_draw_border_strings__last
-; def game_init params= locals= indirect=false in_cycle=false
-; def init_disk_iob params= locals= indirect=false in_cycle=false
-; def init_game_display params= locals= indirect=false in_cycle=false
-; def init_game_state params= locals= indirect=false in_cycle=false
-; def init_mob_count params= locals=__local_init_mob_count__0 indirect=false in_cycle=false
+; def game_init params= locals=__local_game_init__0,__local_game_init__1,__local_game_init__i_1,__local_game_init__i_0 indirect=false in_cycle=false
 ; def move_border_icon_list params=__zpabi_move_border_icon_list__first locals=__local_move_border_icon_list__first indirect=false in_cycle=false param_regs=A
 ; def move_border_icons params=__zpabi_move_border_icons__first,__zpabi_move_border_icons__last locals=__local_move_border_icons__0,__local_move_border_icons__cell,__local_move_border_icons__first indirect=false in_cycle=false param_regs=A,X
 ; def plot_title_glyphs params=__zpabi_plot_title_glyphs__first,__zpabi_plot_title_glyphs__end,__zpabi_plot_title_glyphs__charset locals=__local_plot_title_glyphs__i,__local_plot_title_glyphs__end indirect=false in_cycle=false param_regs=A,X,
 ; def print_at params=__zpabi_print_at__s_0,__zpabi_print_at__s_1,__zpabi_print_at__col,__zpabi_print_at__row locals=__local_print_at__s indirect=false in_cycle=false param_regs=A,X,,
-; def select_input_mode params= locals=__local_select_input_mode__0,__local_select_input_mode__1 indirect=false in_cycle=false
 ; def start_border_passes params= locals= indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
@@ -278,6 +269,7 @@ WAIT	EQU	$FCA8
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
 ; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
+; ext clear_hires_page1 params=
 ; ext clear_map params=
 ; ext clear_restricted params=
 ; ext cold_restart params=
@@ -297,6 +289,7 @@ WAIT	EQU	$FCA8
 ; ext display_status_bar params=
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
+; ext draw_border_labels params=
 ; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
@@ -328,8 +321,12 @@ WAIT	EQU	$FCA8
 ; ext inc_threshold_wrap params=
 ; ext init_attack_display params=
 ; ext init_char_select params=
+; ext init_disk_iob params=
 ; ext init_drop_display params=
 ; ext init_drop_gold params=
+; ext init_game_display params=
+; ext init_game_state params=
+; ext init_mob_count params=
 ; ext init_world params=
 ; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
@@ -379,6 +376,7 @@ WAIT	EQU	$FCA8
 ; ext scene_setup params=
 ; ext scroll_status_line params=
 ; ext select_combat_target params=
+; ext select_input_mode params=
 ; ext select_someone_else params=
 ; ext set_blink_target params=
 ; ext set_char_state params=__zpabi_set_char_state__state param_regs=A
@@ -425,34 +423,26 @@ WAIT	EQU	$FCA8
 ; call border_anim_step -> move_border_icons
 ; call border_anim_step -> start_border_passes
 ; call draw_border_cell -> render_font_char_direct
-; call draw_border_labels -> draw_border_strings
-; call draw_border_labels -> hrcg_cout
 ; call draw_border_strings -> print_string
 ; call game_init -> SETPWRC
-; call game_init -> clear_hires_page1
+; call game_init -> display_message
+; call game_init -> draw_border_strings
 ; call game_init -> fill_map
+; call game_init -> hrcg_cout
 ; call game_init -> hrcg_init
-; call game_init -> init_disk_iob
-; call game_init -> init_game_state
-; call game_init -> init_mob_count
+; call game_init -> plot_title_glyphs
+; call game_init -> print_at
+; call game_init -> print_ctrl_ab
 ; call game_init -> run_chain
-; call game_init -> select_input_mode
+; call game_init -> set_cursor_row21
 ; call game_init -> set_text_window_bottom
 ; call game_init -> set_text_window_wrap
-; call init_game_display -> draw_border_labels
-; call init_game_display -> hrcg_cout
-; call init_game_display -> plot_title_glyphs
-; call init_game_display -> print_at
-; call init_game_display -> print_ctrl_ab
-; call init_game_display -> text_renderer
-; call init_game_state -> init_game_display
-; call init_game_state -> tune_player
+; call game_init -> text_renderer
+; call game_init -> tune_player
 ; call move_border_icon_list -> move_border_icons
 ; call move_border_icons -> draw_border_cell
 ; call plot_title_glyphs -> print_fontchar_at_text_pos
 ; call print_at -> print_string
-; call select_input_mode -> display_message
-; call select_input_mode -> set_cursor_row21
 ; call start_border_passes -> draw_border_cell
 ; item draw_border_cell section=.text local=true zero=false
 ; item move_border_icons section=.text local=true zero=false
@@ -462,16 +452,9 @@ WAIT	EQU	$FCA8
 ; item border_anim_step section=.text local=false zero=false
 ; item plot_title_glyphs section=.text local=true zero=false
 ; item draw_border_strings section=.text local=true zero=false
-; item draw_border_labels section=.text local=true zero=false
 ; item print_at section=.text local=true zero=false
-; item init_game_display section=.text local=true zero=false
-; item init_game_display@run0 section=.text local=true zero=false
-; item init_game_state section=.text local=true zero=false
-; item select_input_mode section=.text local=true zero=false
-; item init_mob_count section=.text local=true zero=false
-; item init_disk_iob section=.text local=true zero=false
-; item clear_hires_page1 section=.text local=true zero=false
 ; item game_init section=.text local=false zero=false
+; item game_init@run0 section=.text local=true zero=false
 ; item BORDER_ANIM_ON section=.data local=false zero=false
 ; item border_glyph section=.data local=true zero=false
 ; item border_row section=.rodata local=true zero=false
@@ -736,9 +719,70 @@ draw_border_strings:
    DEC   __zpabi_draw_border_strings__last
    JMP   .loop@7_start
 
-draw_border_labels:
+print_at:
    SUBROUTINE
 
+   LDY   __zpabi_print_at__row
+   STY   TEXT_ROW
+   LDY   __zpabi_print_at__col
+   STY   TEXT_COL
+   JMP   print_string
+
+game_init:
+   SUBROUTINE
+
+   LDA   #$6F
+   STA   SOFTEV
+   LDA   #$A5
+   STA   SOFTEV+1
+   JSR   SETPWRC
+   LDA   #$14
+   STA   BLINK_COL
+   LDA   #$00
+   STA   __local_game_init__i_0
+   LDY   #$00
+   STY   __local_game_init__i_1
+   JMP   .i0_loop@11_start
+.game_init@rot@1:
+   LDA   #<HIRES_PAGE_1
+   ADC   __local_game_init__i_0
+   STA   __local_game_init__0
+   LDA   #>HIRES_PAGE_1
+   ADC   __local_game_init__i_1
+   STA   __local_game_init__1
+   LDA   #$00
+   LDY   #$00
+   STA   (__local_game_init__0),Y
+   INC   __local_game_init__i_0
+   BNE   .i0_loop@11_start
+   INC   __local_game_init__i_1
+.i0_loop@11_start:
+   SEC
+   LDA   __local_game_init__i_1
+   SBC   #$20
+   BCC   .game_init@rot@1
+   LDA   TXTCLR
+   LDA   MIXCLR
+   LDA   TXTPAGE1
+   LDA   HIRES
+   LDA   #<RWTS_IOB
+   STA   RWTS_IOB_PTR
+   LDA   #>RWTS_IOB
+   STA   RWTS_IOB_PTR+1
+   JSR   hrcg_init
+   JSR   set_text_window_wrap
+   LDA   #$90
+   JSR   hrcg_cout
+   LDA   #<UI_TEXT_STREAM
+   STA   TEXT_STREAM_PTR
+   LDA   #>UI_TEXT_STREAM
+   STA   TEXT_STREAM_PTR+1
+   JSR   text_renderer
+   LDA   #$02
+   STA   __zpabi_plot_title_glyphs__charset
+   LDX   #$03
+   LDA   #$00
+   JSR   plot_title_glyphs
    LDA   #$81
    JSR   hrcg_cout
    LDA   #$B2
@@ -763,33 +807,7 @@ draw_border_labels:
    STA   __zpabi_draw_border_strings__last
    LDX   #>BORDER_STR_VERT_R
    LDA   #<BORDER_STR_VERT_R
-   JMP   draw_border_strings
-
-print_at:
-   SUBROUTINE
-
-   LDY   __zpabi_print_at__row
-   STY   TEXT_ROW
-   LDY   __zpabi_print_at__col
-   STY   TEXT_COL
-   JMP   print_string
-
-init_game_display:
-   SUBROUTINE
-
-   LDA   #$90
-   JSR   hrcg_cout
-   LDA   #<UI_TEXT_STREAM
-   STA   TEXT_STREAM_PTR
-   LDA   #>UI_TEXT_STREAM
-   STA   TEXT_STREAM_PTR+1
-   JSR   text_renderer
-   LDA   #$02
-   STA   __zpabi_plot_title_glyphs__charset
-   LDX   #$03
-   LDA   #$00
-   JSR   plot_title_glyphs
-   JSR   draw_border_labels
+   JSR   draw_border_strings
    LDA   #$01
    STA   __zpabi_plot_title_glyphs__charset
    LDX   #$09
@@ -821,30 +839,14 @@ init_game_display:
    LDX   #>S_DECOR_ROW1
    LDA   #<S_DECOR_ROW1
    JSR   print_at
-   JSR   init_game_display@run0
+   JSR   game_init@run0
    LDX   #>S_DECOR_ROW2
    LDA   #<S_DECOR_ROW2
    JSR   print_at
-   JSR   init_game_display@run0
+   JSR   game_init@run0
    LDX   #>S_DECOR_ROW3
    LDA   #<S_DECOR_ROW3
-   JMP   print_at
-
-init_game_display@run0:
-   SUBROUTINE
-
-   LDA   TEXT_ROW
-   CLC
-   ADC   #$01
-   STA   __zpabi_print_at__row
-   LDA   #$1E
-   STA   __zpabi_print_at__col
-   RTS
-
-init_game_state:
-   SUBROUTINE
-
-   JSR   init_game_display
+   JSR   print_at
    LDA   #$03
    STA   border_next
    LDA   #$00
@@ -856,52 +858,52 @@ init_game_state:
    JSR   tune_player
    LDA   #$00
    STA   BORDER_ANIM_ON
-   RTS
-
-select_input_mode:
-   SUBROUTINE
-
+   JSR   fill_map
+   JSR   set_text_window_bottom
+   LDA   #$00
+   STA   LOCATION_POS
+   STA   LOCATION_STYLE
+   STA   ENTITY_PTR+1
    LDA   #$38
    JSR   display_message
    LDA   BUTN
    AND   #$80
-   STA   __local_select_input_mode__1
-.loop@8_start:
+   STA   __local_game_init__1
+.i3_loop@8_start:
    LDA   #$00
    STA   KBDSTRB
-.loop@9_continue:
+.i3_loop@9_continue:
    LDA   KBD
-   BMI   .loop@9_break
+   BMI   .i3_loop@9_break
    LDA   BUTN
    AND   #$80
-   CMP   __local_select_input_mode__1
-   BEQ   .loop@9_continue
+   CMP   __local_game_init__1
+   BEQ   .i3_loop@9_continue
    LDA   #$01
    STA   INPUT_MODE
    JSR   set_cursor_row21
    LDA   #$2F
-   JMP   display_message
-.loop@9_break:
+   JSR   display_message
+   JMP   .i3@end
+.i3_loop@9_break:
    CMP   #$A0
-   BNE   .loop@8_start
+   BNE   .i3_loop@8_start
    LDA   #$00
    STA   INPUT_MODE
-   RTS
-
-init_mob_count:
-   SUBROUTINE
-
+.i3@end:
+   LDA   #$20
+   JSR   run_chain
    LDA   #$00
    STA   TOTAL_MOB_COUNT
    LDA   #<(LOCATIONS+9)
    STA   CHAR_PTR
    LDA   #>(LOCATIONS+9)
    STA   CHAR_PTR+1
-   JMP   .loop@10_continue
-.init_mob_count@rot@1:
+   JMP   .i2_loop@10_continue
+.game_init@rot@2:
    LDY   #$08
    LDA   (CHAR_PTR),Y
-   STA   __local_init_mob_count__0
+   STA   __local_game_init__0
    CLC
    ADC   TOTAL_MOB_COUNT
    STA   TOTAL_MOB_COUNT
@@ -913,86 +915,29 @@ init_mob_count:
    INC   CHAR_PTR+1
 .carry_inc@0:
    LDA   TOTAL_MOB_COUNT
-   CMP   __local_init_mob_count__0
-   BCS   .loop@10_continue
+   CMP   __local_game_init__0
+   BCS   .i2_loop@10_continue
    INC   CHAR_PTR
-   BNE   .loop@10_continue
+   BNE   .i2_loop@10_continue
    INC   CHAR_PTR+1
-.loop@10_continue:
+.i2_loop@10_continue:
    LDY   #$01
    LDA   (CHAR_PTR),Y
    CMP   #$FF
-   BNE   .init_mob_count@rot@1
-   RTS
-
-init_disk_iob:
-   SUBROUTINE
-
-   LDA   #<RWTS_IOB
-   STA   RWTS_IOB_PTR
-   LDA   #>RWTS_IOB
-   STA   RWTS_IOB_PTR+1
-   RTS
-
-clear_hires_page1:
-   SUBROUTINE
-
-   LDA   #$00
-   STA   __local_clear_hires_page1__i_0
-   LDY   #$00
-   STY   __local_clear_hires_page1__i_1
-   JMP   .loop@11_start
-.clear_hires_page1@rot@2:
-   LDA   #<HIRES_PAGE_1
-   ADC   __local_clear_hires_page1__i_0
-   STA   __local_clear_hires_page1__0
-   LDA   #>HIRES_PAGE_1
-   ADC   __local_clear_hires_page1__i_1
-   STA   __local_clear_hires_page1__1
-   LDA   #$00
-   LDY   #$00
-   STA   (__local_clear_hires_page1__0),Y
-   INC   __local_clear_hires_page1__i_0
-   BNE   .loop@11_start
-   INC   __local_clear_hires_page1__i_1
-.loop@11_start:
-   SEC
-   LDA   __local_clear_hires_page1__i_1
-   SBC   #$20
-   BCC   .clear_hires_page1@rot@2
-   RTS
-
-game_init:
-   SUBROUTINE
-
-   LDA   #$6F
-   STA   SOFTEV
-   LDA   #$A5
-   STA   SOFTEV+1
-   JSR   SETPWRC
-   LDA   #$14
-   STA   BLINK_COL
-   JSR   clear_hires_page1
-   LDA   TXTCLR
-   LDA   MIXCLR
-   LDA   TXTPAGE1
-   LDA   HIRES
-   JSR   init_disk_iob
-   JSR   hrcg_init
-   JSR   set_text_window_wrap
-   JSR   init_game_state
-   JSR   fill_map
-   JSR   set_text_window_bottom
-   LDA   #$00
-   STA   LOCATION_POS
-   STA   LOCATION_STYLE
-   STA   ENTITY_PTR+1
-   JSR   select_input_mode
-   LDA   #$20
-   JSR   run_chain
-   JSR   init_mob_count
+   BNE   .game_init@rot@2
    LDA   #$01
    STA   CURRENT_PLAYER
+   RTS
+
+game_init@run0:
+   SUBROUTINE
+
+   LDA   TEXT_ROW
+   CLC
+   ADC   #$01
+   STA   __zpabi_print_at__row
+   LDA   #$1E
+   STA   __zpabi_print_at__col
    RTS
 
 BORDER_ANIM_ON:

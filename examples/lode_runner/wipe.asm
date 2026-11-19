@@ -96,21 +96,21 @@ __local_iris_wipe_step__y	EQU	$B4
 __local_show_anim_line__4	EQU	$B4
 __local_iris_wipe_step__x	EQU	$B5
 __local_show_anim_line__rows_0	EQU	$B5
+__local_div_by_7__x_0	EQU	$B6
+__local_draw_wipe_row__row_1	EQU	$B6
 __local_show_anim_line__rows_1	EQU	$B6
-__local_div_by_7__x_0	EQU	$B7
-__local_draw_wipe_row__row_1	EQU	$B7
-__local_div_by_7__d_1	EQU	$B8
-__local_draw_wipe_row__row_0	EQU	$B8
-__local_div_by_7__1	EQU	$BA
-__local_div_by_7__q	EQU	$BB
-__local_draw_wipe_block__0	EQU	$BB
-__local_div_by_7__n_0	EQU	$BC
-__local_draw_wipe_block__1	EQU	$BC
-__local_div_by_7__x_1	EQU	$BD
-__local_draw_wipe_block__2	EQU	$BD
-__local_draw_wipe_block__3	EQU	$BE
-__local_draw_wipe_block__line	EQU	$BF
-__local_draw_wipe_block__4	EQU	$C0
+__local_div_by_7__d_1	EQU	$B7
+__local_draw_wipe_row__row_0	EQU	$B7
+__local_div_by_7__1	EQU	$B9
+__local_div_by_7__q	EQU	$BA
+__local_draw_wipe_block__0	EQU	$BA
+__local_div_by_7__n_0	EQU	$BB
+__local_draw_wipe_block__1	EQU	$BB
+__local_div_by_7__x_1	EQU	$BC
+__local_draw_wipe_block__2	EQU	$BC
+__local_draw_wipe_block__3	EQU	$BD
+__local_draw_wipe_block__line	EQU	$BE
+__local_draw_wipe_block__4	EQU	$BF
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -173,9 +173,8 @@ DISK_IO	EQU	$C088
 ; def div_by_7 params=__zpabi_div_by_7__x_0,__zpabi_div_by_7__x_1,__zpabi_div_by_7__c_0,__zpabi_div_by_7__c_1 locals=__local_div_by_7__x_0,__local_div_by_7__d_1,__local_div_by_7__0,__local_div_by_7__1,__local_div_by_7__q,__local_div_by_7__n_0,__local_div_by_7__x_1 indirect=false in_cycle=false param_regs=A,X,,
 ; def draw_wipe_block params=__zpabi_draw_wipe_block__line_0,__zpabi_draw_wipe_block__line_1,__zpabi_draw_wipe_block__c_0,__zpabi_draw_wipe_block__c_1 locals=__local_draw_wipe_block__0,__local_draw_wipe_block__1,__local_draw_wipe_block__2,__local_draw_wipe_block__3,__local_draw_wipe_block__line,__local_draw_wipe_block__4 indirect=false in_cycle=false param_regs=A,X,,
 ; def draw_wipe_row params=__zpabi_draw_wipe_row__row_0,__zpabi_draw_wipe_row__row_1,__zpabi_draw_wipe_row__east_0,__zpabi_draw_wipe_row__east_1,__zpabi_draw_wipe_row__west_0,__zpabi_draw_wipe_row__west_1 locals=__local_draw_wipe_row__row_1,__local_draw_wipe_row__row_0,__local_draw_wipe_row__0,__local_draw_wipe_row__1 indirect=false in_cycle=false param_regs=A,X,,,,
-; def draw_wipe_step params= locals= indirect=false in_cycle=false
 ; def iris_wipe params= locals=__local_iris_wipe__r indirect=false in_cycle=false
-; def iris_wipe_step params=__zpabi_iris_wipe_step__r locals=__local_iris_wipe_step__0,__local_iris_wipe_step__1,__local_iris_wipe_step__2,__local_iris_wipe_step__3,__local_iris_wipe_step__d_1,__local_iris_wipe_step__d_0,__local_iris_wipe_step__y,__local_iris_wipe_step__x,__local_iris_wipe_step__4 indirect=false in_cycle=false param_regs=A
+; def iris_wipe_step params=__zpabi_iris_wipe_step__r locals=__local_iris_wipe_step__0,__local_iris_wipe_step__1,__local_iris_wipe_step__2,__local_iris_wipe_step__3,__local_iris_wipe_step__d_1,__local_iris_wipe_step__d_0,__local_iris_wipe_step__y,__local_iris_wipe_step__x indirect=false in_cycle=false param_regs=A
 ; def show_anim_line params=__zpabi_show_anim_line__rows_0,__zpabi_show_anim_line__rows_1 locals=__local_show_anim_line__y,__local_show_anim_line__x,__local_show_anim_line__0,__local_show_anim_line__1,__local_show_anim_line__2,__local_show_anim_line__3,__local_show_anim_line__4,__local_show_anim_line__rows_0,__local_show_anim_line__rows_1 indirect=false in_cycle=false param_regs=A,X carry=true
 ; def spinning_game_over params= locals=__local_spinning_game_over__0,__local_spinning_game_over__i indirect=false in_cycle=false carry=true
 ; def step_left params=__zpabi_step_left__c_0,__zpabi_step_left__c_1 locals=__local_step_left__0,__local_step_left__c,__local_step_left__1 indirect=false in_cycle=false param_regs=A,X
@@ -202,6 +201,7 @@ DISK_IO	EQU	$C088
 ; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
 ; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
 ; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
+; ext draw_wipe_step params=
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_guard params=
@@ -240,12 +240,11 @@ DISK_IO	EQU	$C088
 ; ext wait_key params=
 ; call draw_wipe_row -> draw_wipe_block
 ; call draw_wipe_row -> row_to_addr
-; call draw_wipe_step -> draw_wipe_row
 ; call iris_wipe -> iris_wipe_step
 ; call iris_wipe -> put_status_level
 ; call iris_wipe -> put_status_lives
 ; call iris_wipe_step -> div_by_7
-; call iris_wipe_step -> draw_wipe_step
+; call iris_wipe_step -> draw_wipe_row
 ; call iris_wipe_step -> step_left
 ; call iris_wipe_step -> step_right
 ; call show_anim_line -> row_to_addr
@@ -256,10 +255,9 @@ DISK_IO	EQU	$C088
 ; item step_left section=.text local=true zero=false
 ; item draw_wipe_block section=.text local=true zero=false
 ; item draw_wipe_row section=.text local=true zero=false
-; item draw_wipe_step section=.text local=true zero=false
-; item draw_wipe_step@run1 section=.text local=true zero=false
-; item draw_wipe_step@run0 section=.text local=true zero=false
 ; item iris_wipe_step section=.text local=true zero=false
+; item iris_wipe_step@run1 section=.text local=true zero=false
+; item iris_wipe_step@run0 section=.text local=true zero=false
 ; item iris_wipe section=.text local=false zero=false
 ; item show_anim_line section=.text local=true zero=false
 ; item spinning_game_over section=.text local=false zero=false
@@ -299,11 +297,11 @@ DISK_IO	EQU	$C088
 ; zp GUARD_X_ADJ size=1 at=$17 def=false init=
 ; zp GUARD_Y_ADJ size=1 at=$18 def=false init=
 ; zp GUARD_NUM size=1 at=$19 def=false init=
-; zp row_minus_x size=2 at=auto def=true init=$00,$00 weight=26 local=true
-; zp row_minus_y size=2 at=auto def=true init=$00,$00 weight=26 local=true
-; zp row_plus_x size=2 at=auto def=true init=$00,$00 weight=26 local=true
+; zp row_minus_x size=2 at=auto def=true init=$00,$00 weight=33 local=true
+; zp row_minus_y size=2 at=auto def=true init=$00,$00 weight=33 local=true
+; zp row_plus_x size=2 at=auto def=true init=$00,$00 weight=33 local=true
 ; zp __dos_zp size=42 at=$26 def=false init=
-; zp row_plus_y size=2 at=auto def=true init=$00,$00 weight=26 local=true
+; zp row_plus_y size=2 at=auto def=true init=$00,$00 weight=33 local=true
 ; zp wipe_dir size=1 at=auto def=true init=$00 weight=3 local=true
 ; zp GUARD_RESURRECT_COL size=1 at=$53 def=false init=
 ; zp NOTE_INDEX size=1 at=$54 def=false init=
@@ -513,52 +511,6 @@ draw_wipe_row:
    LDA   __local_draw_wipe_row__row_0
    JMP   draw_wipe_block
 
-draw_wipe_step:
-   SUBROUTINE
-
-   JSR   draw_wipe_step@run0
-   LDX   row_plus_x+1
-   LDA   row_plus_x
-   JSR   draw_wipe_row
-   JSR   draw_wipe_step@run0
-   LDX   row_minus_x+1
-   LDA   row_minus_x
-   JSR   draw_wipe_row
-   JSR   draw_wipe_step@run1
-   LDX   row_plus_y+1
-   LDA   row_plus_y
-   JSR   draw_wipe_row
-   JSR   draw_wipe_step@run1
-   LDX   row_minus_y+1
-   LDA   row_minus_y
-   JMP   draw_wipe_row
-
-draw_wipe_step@run1:
-   SUBROUTINE
-
-   LDA   #<col_plus_x
-   STA   __zpabi_draw_wipe_row__east_0
-   LDA   #>col_plus_x
-   STA   __zpabi_draw_wipe_row__east_1
-   LDA   #<col_minus_x
-   STA   __zpabi_draw_wipe_row__west_0
-   LDA   #>col_minus_x
-   STA   __zpabi_draw_wipe_row__west_1
-   RTS
-
-draw_wipe_step@run0:
-   SUBROUTINE
-
-   LDA   #<col_plus_y
-   STA   __zpabi_draw_wipe_row__east_0
-   LDA   #>col_plus_y
-   STA   __zpabi_draw_wipe_row__east_1
-   LDA   #<col_minus_y
-   STA   __zpabi_draw_wipe_row__west_0
-   LDA   #>col_minus_y
-   STA   __zpabi_draw_wipe_row__west_1
-   RTS
-
 iris_wipe_step:
    SUBROUTINE
 
@@ -635,7 +587,22 @@ iris_wipe_step:
    BCS   .if_end@8
    RTS
 .if_end@8:
-   JSR   draw_wipe_step
+   JSR   iris_wipe_step@run0
+   LDX   row_plus_x+1
+   LDA   row_plus_x
+   JSR   draw_wipe_row
+   JSR   iris_wipe_step@run0
+   LDX   row_minus_x+1
+   LDA   row_minus_x
+   JSR   draw_wipe_row
+   JSR   iris_wipe_step@run1
+   LDX   row_plus_y+1
+   LDA   row_plus_y
+   JSR   draw_wipe_row
+   JSR   iris_wipe_step@run1
+   LDX   row_minus_y+1
+   LDA   row_minus_y
+   JSR   draw_wipe_row
    LDA   __local_iris_wipe_step__y
    CMP   __local_iris_wipe_step__x
    BNE   .if_end@9
@@ -727,6 +694,32 @@ iris_wipe_step:
    LDA   #<col_minus_y
    JSR   step_left
    JMP   .loop@1_start
+
+iris_wipe_step@run1:
+   SUBROUTINE
+
+   LDA   #<col_plus_x
+   STA   __zpabi_draw_wipe_row__east_0
+   LDA   #>col_plus_x
+   STA   __zpabi_draw_wipe_row__east_1
+   LDA   #<col_minus_x
+   STA   __zpabi_draw_wipe_row__west_0
+   LDA   #>col_minus_x
+   STA   __zpabi_draw_wipe_row__west_1
+   RTS
+
+iris_wipe_step@run0:
+   SUBROUTINE
+
+   LDA   #<col_plus_y
+   STA   __zpabi_draw_wipe_row__east_0
+   LDA   #>col_plus_y
+   STA   __zpabi_draw_wipe_row__east_1
+   LDA   #<col_minus_y
+   STA   __zpabi_draw_wipe_row__west_0
+   LDA   #>col_minus_y
+   STA   __zpabi_draw_wipe_row__west_1
+   RTS
 
 iris_wipe:
    SUBROUTINE

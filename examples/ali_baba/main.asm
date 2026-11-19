@@ -195,17 +195,11 @@ CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 
 ; @zp-link-meta-begin
-; def attract_screen params= locals= indirect=false in_cycle=false
 ; def check_mob_needs_turn params= locals=__local_check_mob_needs_turn__0 indirect=false in_cycle=false carry=true
-; def dec_event_threshold params= locals= indirect=false in_cycle=false
 ; def dec_threshold_wrap params= locals= indirect=false in_cycle=false
-; def inc_event_threshold params= locals= indirect=false in_cycle=false
 ; def inc_threshold_wrap params= locals= indirect=false in_cycle=false
-; def main params= locals=__local_main__0 indirect=false in_cycle=false
-; def process_mob_groups params= locals=__local_process_mob_groups__0 indirect=false in_cycle=false
+; def main params= locals=__local_main__0,__local_main__1 indirect=false in_cycle=false
 ; def settings_display_init params= locals=__local_settings_display_init__0 indirect=false in_cycle=false
-; def show_idle_status params= locals= indirect=false in_cycle=false
-; def start_mob_turn params= locals=__local_start_mob_turn__0,__local_start_mob_turn__1 indirect=false in_cycle=false
 ; def toggle_sound params= locals= indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext CLREOP params=
@@ -229,6 +223,7 @@ WAIT	EQU	$FCA8
 ; ext attack_left params=
 ; ext attack_right params=
 ; ext attack_up params=
+; ext attract_screen params=
 ; ext auto_heal params=
 ; ext border_anim_step params=
 ; ext browse_handler params=
@@ -255,6 +250,7 @@ WAIT	EQU	$FCA8
 ; ext commit_move params=
 ; ext configure_input params=
 ; ext continue_game params=
+; ext dec_event_threshold params=
 ; ext delay_with_animation params=
 ; ext disk_read params= carry=true
 ; ext disk_write params= carry=true
@@ -295,6 +291,7 @@ WAIT	EQU	$FCA8
 ; ext hrcg_cout params=__zpabi_hrcg_cout__c param_regs=A
 ; ext hrcg_init params=
 ; ext idle_anim_handler params=
+; ext inc_event_threshold params=
 ; ext init_attack_display params=
 ; ext init_char_select params=
 ; ext init_drop_display params=
@@ -330,6 +327,7 @@ WAIT	EQU	$FCA8
 ; ext print_member_name params=
 ; ext print_mob_name params=
 ; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
+; ext process_mob_groups params=
 ; ext random_events params=
 ; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext read_keyboard params=
@@ -365,6 +363,7 @@ WAIT	EQU	$FCA8
 ; ext setup_text_pos params=__zpabi_setup_text_pos__name_0,__zpabi_setup_text_pos__name_1 param_regs=A,X
 ; ext setup_text_pos_col20 params=__zpabi_setup_text_pos_col20__name_0,__zpabi_setup_text_pos_col20__name_1 param_regs=A,X
 ; ext shop_buy_handler params=
+; ext show_idle_status params=
 ; ext show_locked_msg params=
 ; ext slot_dec_enter params=
 ; ext slot_dec_reenter params=
@@ -372,6 +371,7 @@ WAIT	EQU	$FCA8
 ; ext slot_inc_reenter params=
 ; ext start_combat params=
 ; ext start_game_input params=
+; ext start_mob_turn params=
 ; ext step_prng params=
 ; ext teardown_input params=
 ; ext text_renderer params=
@@ -384,49 +384,35 @@ WAIT	EQU	$FCA8
 ; ext use_scenario_disk params=
 ; ext verify_disk_io params=
 ; ext verify_integrity params=
-; call attract_screen -> get_mob_data
-; call attract_screen -> scene_loop
-; call attract_screen -> scene_setup
-; call attract_screen -> set_cursor_row21
 ; call check_mob_needs_turn -> check_adjacent_threats
 ; call check_mob_needs_turn -> check_encounter
 ; call check_mob_needs_turn -> clear_restricted
-; call dec_threshold_wrap -> dec_event_threshold
-; call inc_threshold_wrap -> inc_event_threshold
-; call main -> attract_screen
+; call main -> appearance_to_fontchar
+; call main -> auto_heal
+; call main -> check_mob_needs_turn
 ; call main -> check_scene_events
+; call main -> clear_map
+; call main -> display_message
 ; call main -> enter_location
 ; call main -> game_init
-; call main -> process_mob_groups
+; call main -> get_mob_data
+; call main -> print_mob_name
 ; call main -> random_events
-; call process_mob_groups -> auto_heal
-; call process_mob_groups -> clear_map
-; call process_mob_groups -> get_mob_data
-; call process_mob_groups -> show_idle_status
-; call process_mob_groups -> start_mob_turn
-; call process_mob_groups -> step_prng
-; call process_mob_groups -> verify_disk_io
+; call main -> run_chain
+; call main -> scene_loop
+; call main -> scene_setup
+; call main -> scroll_status_line
+; call main -> set_cursor_row21
+; call main -> setup_scene_display
+; call main -> step_prng
+; call main -> verify_disk_io
 ; call settings_display_init -> num_to_decimal
-; call show_idle_status -> display_message
-; call show_idle_status -> print_mob_name
-; call show_idle_status -> scroll_status_line
-; call start_mob_turn -> appearance_to_fontchar
-; call start_mob_turn -> check_mob_needs_turn
-; call start_mob_turn -> run_chain
-; call start_mob_turn -> set_cursor_row21
-; call start_mob_turn -> setup_scene_display
 ; item main section=.main local=false zero=false
-; item show_idle_status section=.text local=true zero=false
 ; item check_mob_needs_turn section=.text local=true zero=false
-; item start_mob_turn section=.text local=true zero=false
-; item process_mob_groups section=.text local=true zero=false
 ; item toggle_sound section=.text local=false zero=false
 ; item settings_display_init section=.text local=false zero=false
-; item dec_event_threshold section=.text local=true zero=false
-; item inc_event_threshold section=.text local=true zero=false
 ; item dec_threshold_wrap section=.text local=false zero=false
 ; item inc_threshold_wrap section=.text local=false zero=false
-; item attract_screen section=.text local=true zero=false
 ; zp NULL_PAGE_LOW size=6 at=$00 def=false init=
 ; zp TEXT_STREAM_PTR size=2 at=$06 def=false init=
 ; zp RWTS_IOB_PTR size=2 at=$08 def=false init=
@@ -462,14 +448,28 @@ main:
    STA   CHAR_PTR+1
    LDA   TOTAL_MOB_COUNT
    BNE   .if_end@0
-   JSR   attract_screen
+   LDA   #$01
+   STA   ACTIVE_CHAR
+   LDY   #$01
+   STY   SCENE_EVENT_RESULT
+   JSR   get_mob_data
+   STA   MOB_PTR
+   STX   MOB_PTR+1
+   JSR   scene_setup
+   LDA   #$00
+   STA   LOCATION_POS
+   JSR   set_cursor_row21
+   LDA   #$26
+   JSR   scene_loop
 .if_end@0:
    LDA   #$01
    STA   CURRENT_PLAYER
 .loop@1_start:
    LDY   #$08
    LDA   (CHAR_PTR),Y
-   BEQ   .if_end@1
+   BNE   .lb_skip@1
+   JMP   .if_end@1
+.lb_skip@1:
    JSR   enter_location
    LDA   CURRENT_PLAYER
    AND   #$FD
@@ -477,7 +477,54 @@ main:
    BNE   .if_end@4
    JSR   check_scene_events
 .if_end@4:
-   JSR   process_mob_groups
+   LDY   #$02
+   LDA   (CHAR_PTR),Y
+   STA   CURRENT_ROOM
+   JSR   clear_map
+   JSR   step_prng
+   AND   #$17
+   BNE   .i5_loop@2_continue
+   JSR   verify_disk_io
+   JMP   .i5_loop@2_continue
+.main@rot@0:
+   JSR   get_mob_data
+   STA   ENTITY_PTR
+   STX   ENTITY_PTR+1
+   LDY   #$02
+   LDA   (ENTITY_PTR),Y
+   STA   CURRENT_ROOM
+   LDY   #$06
+   LDA   (ENTITY_PTR),Y
+   AND   #$3F
+   CMP   #$03
+   BCS   .i5_if_else@12
+   JSR   scroll_status_line
+   JSR   print_mob_name
+   JSR   scroll_status_line
+   LDA   #$20
+   JSR   display_message
+   JSR   auto_heal
+   JMP   .i5_loop@2_continue
+.i5_if_else@12:
+   LDY   #$04
+   LDA   (ENTITY_PTR),Y
+   JSR   appearance_to_fontchar
+   STA   CHAR_SPRITE
+   STX   CHAR_AI_MODE
+   JSR   check_mob_needs_turn
+   BCC   .i5_i4@end
+   JSR   set_cursor_row21
+   JSR   setup_scene_display
+   LDA   CHAR_AI_MODE
+   STA   SAVED_AI_MODE
+   LDA   #$01
+   JSR   run_chain
+.i5_i4@end:
+   LDA   #$14
+   STA   BLINK_COL
+.i5_loop@2_continue:
+   LDA   CURRENT_ROOM
+   BNE   .main@rot@0
 .if_end@1:
    INC   CURRENT_PLAYER
    LDA   CHAR_PTR
@@ -490,18 +537,11 @@ main:
    LDY   #$01
    LDA   (CHAR_PTR),Y
    CMP   #$FF
-   BNE   .loop@1_start
+   BEQ   .lb_skip@0
+   JMP   .loop@1_start
+.lb_skip@0:
    JSR   random_events
    JMP   .loop@0_start
-
-show_idle_status:
-   SUBROUTINE
-
-   JSR   scroll_status_line
-   JSR   print_mob_name
-   JSR   scroll_status_line
-   LDA   #$20
-   JMP   display_message
 
 check_mob_needs_turn:
    SUBROUTINE
@@ -528,61 +568,6 @@ check_mob_needs_turn:
 .if_end@8:
    JSR   clear_restricted
    CLC
-   RTS
-
-start_mob_turn:
-   SUBROUTINE
-
-   LDY   #$04
-   LDA   (ENTITY_PTR),Y
-   JSR   appearance_to_fontchar
-   STA   CHAR_SPRITE
-   STX   CHAR_AI_MODE
-   JSR   check_mob_needs_turn
-   BCS   .if_end@9
-   RTS
-.if_end@9:
-   JSR   set_cursor_row21
-   JSR   setup_scene_display
-   LDA   CHAR_AI_MODE
-   STA   SAVED_AI_MODE
-   LDA   #$01
-   JMP   run_chain
-
-process_mob_groups:
-   SUBROUTINE
-
-   LDY   #$02
-   LDA   (CHAR_PTR),Y
-   STA   CURRENT_ROOM
-   JSR   clear_map
-   JSR   step_prng
-   AND   #$17
-   BNE   .loop@2_continue
-   JSR   verify_disk_io
-   JMP   .loop@2_continue
-.process_mob_groups@rot@0:
-   JSR   get_mob_data
-   STA   ENTITY_PTR
-   STX   ENTITY_PTR+1
-   LDY   #$02
-   LDA   (ENTITY_PTR),Y
-   STA   CURRENT_ROOM
-   LDY   #$06
-   LDA   (ENTITY_PTR),Y
-   AND   #$3F
-   CMP   #$03
-   BCS   .if_else@12
-   JSR   show_idle_status
-   JSR   auto_heal
-   JMP   .loop@2_continue
-.if_else@12:
-   JSR   start_mob_turn
-   LDA   #$14
-   STA   BLINK_COL
-.loop@2_continue:
-   LDA   CURRENT_ROOM
-   BNE   .process_mob_groups@rot@0
    RTS
 
 toggle_sound:
@@ -621,48 +606,21 @@ settings_display_init:
    LDA   EVENT_THRESHOLD
    JMP   num_to_decimal
 
-dec_event_threshold:
-   SUBROUTINE
-
-   DEC   EVENT_THRESHOLD
-   BPL   .if_end@15
-   INC   EVENT_THRESHOLD
-.if_end@15:
-   RTS
-
-inc_event_threshold:
-   SUBROUTINE
-
-   LDA   EVENT_THRESHOLD
-   CMP   #$63
-   BCS   .if_end@16
-   INC   EVENT_THRESHOLD
-.if_end@16:
-   RTS
-
 dec_threshold_wrap:
    SUBROUTINE
 
-   JMP   dec_event_threshold
+   DEC   EVENT_THRESHOLD
+   BPL   .i1_if_end@15
+   INC   EVENT_THRESHOLD
+.i1_if_end@15:
+   RTS
 
 inc_threshold_wrap:
    SUBROUTINE
 
-   JMP   inc_event_threshold
-
-attract_screen:
-   SUBROUTINE
-
-   LDA   #$01
-   STA   ACTIVE_CHAR
-   LDY   #$01
-   STY   SCENE_EVENT_RESULT
-   JSR   get_mob_data
-   STA   MOB_PTR
-   STX   MOB_PTR+1
-   JSR   scene_setup
-   LDA   #$00
-   STA   LOCATION_POS
-   JSR   set_cursor_row21
-   LDA   #$26
-   JMP   scene_loop
+   LDA   EVENT_THRESHOLD
+   CMP   #$63
+   BCS   .i2_if_end@16
+   INC   EVENT_THRESHOLD
+.i2_if_end@16:
+   RTS

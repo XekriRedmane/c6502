@@ -25,6 +25,7 @@ import c99_ast
 from passes.optimization.cmp_zero_jump_fold import fold_cmp_zero_jump
 from passes.type_checking import LocalAttr, Symbol, SymbolTable
 from sim.harness import build_sim, run_c_program
+from tests.no_inlining import no_inlining
 
 
 def _var(name: str) -> tac_ast.Var:
@@ -978,6 +979,7 @@ class TestMultiUseSsaExtend(unittest.TestCase):
             )
 
 
+@no_inlining()
 class TestValueCompareNarrowing(unittest.TestCase):
     """A comparison kept as a value narrows its operands through their
     ZeroExtends (`NARROW_VALUE_COMPARE_RULE`), so `(int)x < 10` on a

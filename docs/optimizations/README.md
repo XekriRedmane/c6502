@@ -62,7 +62,7 @@ run of the allocator.
 
 ```mermaid
 flowchart TD
-    tacin["TAC from c99_to_tac and return_pointers_in_zero_page"]
+    tacin["TAC from c99_to_tac, inline_functions, and return_pointers_in_zero_page"]
     rows["apply_row_address_tables, over the program"]
     tacopt["the TAC optimizer, optimize_tac, once per function"]
     tables["dispatch_const_pointer_arrays, then apply_split_tables, over the program"]
@@ -265,6 +265,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Indexed load from a fixed address](recognize_indexed_load.md). Turns a byte load through a constant address plus a byte index into `LDA C,X`.
 - [Indexed store to a fixed address](recognize_indexed_store.md). Turns a byte store through a constant address plus a byte index into `STA C,X`.
 - [Indirect-indexed access through a pointer](recognize_indirect_indexed.md). Turns a byte access through a pointer plus a byte index or constant into `(zp),Y`.
+- [Inlining small functions](inline_functions.md). Replaces the calls of a `static` function with copies of its body, when the copies are estimated to take no more bytes than the calls and the function.
 - [INY and CPY for an incremented table byte](index_inc_cmp_y.md). Does table-byte plus or minus one and its compare in Y instead of a temporary.
 - [Join store](join_store.md). Stores a value each arm of a branch leaves in a slot straight into the memory the join copies it to.
 - [Jump tables](jump_table.md). Dispatches a switch's chain of compares through a table of its cases' addresses.
@@ -352,9 +353,11 @@ them whenever a pass is added or moved.
    2. Identifier resolution, string lifting, label resolution, loop
       labeling, type checking, and translation to TAC, with [a
       compound assignment's call first](calls_first.md).
-   3. [A pointer returned in zero page](return_in_zero_page.md)
-   4. [Zero-page promotion](zp_promotion.md)
-   5. [Row-address tables](row_address_tables.md), over the whole
+   3. [Inlining small functions](inline_functions.md), over the whole
+      program.
+   4. [A pointer returned in zero page](return_in_zero_page.md)
+   5. [Zero-page promotion](zp_promotion.md)
+   6. [Row-address tables](row_address_tables.md), over the whole
       program.
 2. TAC optimizer, once per function:
    1. [Signed countdown loop rotation](loop_rotate.md)

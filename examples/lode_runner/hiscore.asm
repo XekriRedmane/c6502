@@ -62,21 +62,17 @@ LEVEL_SAVED	EQU	$AD
 __local_record_hi_score_data_to_disk__0	EQU	$AE
 __local_record_hi_score_data_to_disk__initials	EQU	$AF
 __local_record_hi_score_data_to_disk__1	EQU	$B0
-__local_record_hi_score_data_to_disk__2	EQU	$B1
-__local_record_hi_score_data_to_disk__3	EQU	$B2
-__local_record_hi_score_data_to_disk__5	EQU	$B4
+__local_record_hi_score_data_to_disk__i	EQU	$B1
+__local_record_hi_score_data_to_disk__2	EQU	$B2
+__local_record_hi_score_data_to_disk__3	EQU	$B3
+__local_record_hi_score_data_to_disk__4	EQU	$B4
 __local_record_hi_score_data_to_disk__n	EQU	$B5
-__local_beats__0	EQU	$B6
-__local_hi_score_screen__0	EQU	$B6
-__local_beats__1	EQU	$B7
-__local_hi_score_screen__1	EQU	$B7
-__local_hi_score_screen__i	EQU	$B8
-__local_beats__i	EQU	$B9
-__local_hi_score_screen__2	EQU	$B9
-__local_beats__entry	EQU	$BA
-__local_hi_score_screen__3	EQU	$BA
-__local_beats__3	EQU	$BB
-__local_hi_score_screen__n	EQU	$BB
+__local_hi_score_screen__0	EQU	$B8
+__local_hi_score_screen__1	EQU	$B9
+__local_hi_score_screen__i	EQU	$BA
+__local_hi_score_screen__2	EQU	$BB
+__local_hi_score_screen__3	EQU	$BC
+__local_hi_score_screen__n	EQU	$BD
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -136,9 +132,8 @@ ROMIN_RDROM_WRRAM2	EQU	$C081
 DISK_IO	EQU	$C088
 
 ; @zp-link-meta-begin
-; def beats params=__zpabi_beats__entry_0,__zpabi_beats__entry_1 locals=__local_beats__0,__local_beats__1,__local_beats__2,__local_beats__i,__local_beats__entry,__local_beats__3 indirect=false in_cycle=false param_regs=A,X carry=true
 ; def hi_score_screen params= locals=__local_hi_score_screen__0,__local_hi_score_screen__1,__local_hi_score_screen__i,__local_hi_score_screen__2,__local_hi_score_screen__3,__local_hi_score_screen__n indirect=false in_cycle=false
-; def record_hi_score_data_to_disk params= locals=__local_record_hi_score_data_to_disk__0,__local_record_hi_score_data_to_disk__initials,__local_record_hi_score_data_to_disk__1,__local_record_hi_score_data_to_disk__2,__local_record_hi_score_data_to_disk__3,__local_record_hi_score_data_to_disk__4,__local_record_hi_score_data_to_disk__5,__local_record_hi_score_data_to_disk__n indirect=false in_cycle=false
+; def record_hi_score_data_to_disk params= locals=__local_record_hi_score_data_to_disk__0,__local_record_hi_score_data_to_disk__initials,__local_record_hi_score_data_to_disk__1,__local_record_hi_score_data_to_disk__i,__local_record_hi_score_data_to_disk__2,__local_record_hi_score_data_to_disk__3,__local_record_hi_score_data_to_disk__4,__local_record_hi_score_data_to_disk__n,__local_record_hi_score_data_to_disk__5,__local_record_hi_score_data_to_disk__6 indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -149,6 +144,7 @@ DISK_IO	EQU	$C088
 ; ext append_note params=__zpabi_append_note__pitch,__zpabi_append_note__duration param_regs=A,X
 ; ext bad_data_disk params=
 ; ext bcd_to_decimal2 params=__zpabi_bcd_to_decimal2__bcd param_regs=A
+; ext beats params=__zpabi_beats__entry_0,__zpabi_beats__entry_1 param_regs=A,X
 ; ext beep params=
 ; ext char_to_sprite_num params=__zpabi_char_to_sprite_num__c param_regs=A
 ; ext check_for_input params=
@@ -205,14 +201,12 @@ DISK_IO	EQU	$C088
 ; call hi_score_screen -> put_string
 ; call hi_score_screen -> to_decimal3
 ; call record_hi_score_data_to_disk -> access_hi_score_data_from_disk
-; call record_hi_score_data_to_disk -> beats
 ; call record_hi_score_data_to_disk -> beep
 ; call record_hi_score_data_to_disk -> char_to_sprite_num
 ; call record_hi_score_data_to_disk -> hi_score_screen
 ; call record_hi_score_data_to_disk -> put_char
 ; call record_hi_score_data_to_disk -> wait_for_key
 ; item hi_score_screen section=.text local=false zero=false
-; item beats section=.text local=true zero=false
 ; item record_hi_score_data_to_disk section=.text local=false zero=false
 ; item str@0 section=.rodata local=true zero=false
 ; item str@1 section=.rodata local=true zero=false
@@ -385,49 +379,6 @@ hi_score_screen:
    STA   DRAW_PAGE
    RTS
 
-beats:
-   SUBROUTINE
-
-   STA   __local_beats__entry
-   STX   __local_beats__3
-   LDY   #$03
-   LDA   (__local_beats__entry),Y
-   STA   __local_beats__0
-   LDA   LEVELNUM
-   CMP   __local_beats__0
-   BNE   .tail@0
-   LDA   #$00
-   STA   __local_beats__i
-.beats@rot@1:
-   LDA   #$03
-   SEC
-   SBC   __local_beats__i
-   TAX
-   LDA   __local_beats__i
-   CLC
-   ADC   __local_beats__entry
-   STA   __local_beats__0
-   LDA   #$00
-   ADC   __local_beats__3
-   STA   __local_beats__1
-   LDY   #$04
-   LDA   (__local_beats__0),Y
-   STA   __local_beats__0
-   LDA   SCORE,X
-   CMP   __local_beats__0
-   BEQ   .if_end@4
-.tail@0:
-   CLC
-   SBC   __local_beats__0
-   RTS
-.if_end@4:
-   INC   __local_beats__i
-   LDA   __local_beats__i
-   CMP   #$04
-   BCC   .beats@rot@1
-   CLC
-   RTS
-
 record_hi_score_data_to_disk:
    SUBROUTINE
 
@@ -456,17 +407,55 @@ record_hi_score_data_to_disk:
    ASL
    ASL
    ASL
-   STA   __local_record_hi_score_data_to_disk__5
+   STA   __local_record_hi_score_data_to_disk__4
    LDA   #<HI_SCORES
    CLC
-   ADC   __local_record_hi_score_data_to_disk__5
-   STA   __local_record_hi_score_data_to_disk__0
+   ADC   __local_record_hi_score_data_to_disk__4
+   STA   __local_record_hi_score_data_to_disk__3
    LDA   #>HI_SCORES
    ADC   #$00
+   STA   __local_record_hi_score_data_to_disk__2
+   LDX   __local_record_hi_score_data_to_disk__4
+   LDA   HI_SCORES+3,X
+   STA   __local_record_hi_score_data_to_disk__0
+   LDA   LEVELNUM
+   CMP   __local_record_hi_score_data_to_disk__0
+   BEQ   .i0_if_end@3
+.xjump@0:
+   CLC
+   SBC   __local_record_hi_score_data_to_disk__0
+   LDA   #$00
+   ROL
+   JMP   .i0@end
+.i0_if_end@3:
+   LDA   #$00
+   STA   __local_record_hi_score_data_to_disk__i
+.i0_loop@2_start:
+   LDA   __local_record_hi_score_data_to_disk__i
+   CMP   #$04
+   BCS   .vthread@0
+   LDA   #$03
+   SEC
+   SBC   __local_record_hi_score_data_to_disk__i
    TAX
-   LDA   __local_record_hi_score_data_to_disk__0
-   JSR   beats
-   BCS   .loop@3_break
+   LDA   __local_record_hi_score_data_to_disk__i
+   CLC
+   ADC   __local_record_hi_score_data_to_disk__3
+   STA   __local_record_hi_score_data_to_disk__0
+   LDA   #$00
+   ADC   __local_record_hi_score_data_to_disk__2
+   STA   __local_record_hi_score_data_to_disk__initials
+   LDY   #$04
+   LDA   (__local_record_hi_score_data_to_disk__0),Y
+   STA   __local_record_hi_score_data_to_disk__0
+   LDA   SCORE,X
+   CMP   __local_record_hi_score_data_to_disk__0
+   BNE   .xjump@0
+   INC   __local_record_hi_score_data_to_disk__i
+   JMP   .i0_loop@2_start
+.i0@end:
+   BNE   .loop@3_break
+.vthread@0:
    INC   __local_record_hi_score_data_to_disk__n
    LDA   __local_record_hi_score_data_to_disk__n
    CMP   #$0B
@@ -475,22 +464,22 @@ record_hi_score_data_to_disk:
 .loop@3_break:
    LDX   #$48
    BNE   .loop@4_start
-.record_hi_score_data_to_disk@rot@2:
+.record_hi_score_data_to_disk@rot@1:
    DEX
    LDA   HI_SCORES,X
    STA   HI_SCORES+8,X
 .loop@4_start:
-   CPX   __local_record_hi_score_data_to_disk__5
-   BNE   .record_hi_score_data_to_disk@rot@2
+   CPX   __local_record_hi_score_data_to_disk__4
+   BNE   .record_hi_score_data_to_disk@rot@1
    LDA   #<HI_SCORES
    CLC
-   ADC   __local_record_hi_score_data_to_disk__5
+   ADC   __local_record_hi_score_data_to_disk__4
    STA   __local_record_hi_score_data_to_disk__initials
    LDA   #>HI_SCORES
    ADC   #$00
    STA   __local_record_hi_score_data_to_disk__1
    CLC
-   LDX   __local_record_hi_score_data_to_disk__5
+   LDX   __local_record_hi_score_data_to_disk__4
    LDA   #$A0
    STA   HI_SCORES,X
    STA   HI_SCORES+1,X
@@ -498,25 +487,25 @@ record_hi_score_data_to_disk:
    LDA   LEVELNUM
    STA   HI_SCORES+3,X
    LDA   #>(HI_SCORES+4)
-   STA   __local_record_hi_score_data_to_disk__3
+   STA   __local_record_hi_score_data_to_disk__2
    TXA
    ADC   #<(HI_SCORES+4)
-   STA   __local_record_hi_score_data_to_disk__2
+   STA   __local_record_hi_score_data_to_disk__i
    BCC   .carry_inc@0
-   INC   __local_record_hi_score_data_to_disk__3
+   INC   __local_record_hi_score_data_to_disk__2
 .carry_inc@0:
    LDA   SCORE+3
    LDY   #$00
-   STA   (__local_record_hi_score_data_to_disk__2),Y
+   STA   (__local_record_hi_score_data_to_disk__i),Y
    LDA   SCORE+2
    INY
-   STA   (__local_record_hi_score_data_to_disk__2),Y
+   STA   (__local_record_hi_score_data_to_disk__i),Y
    LDA   SCORE+1
    INY
-   STA   (__local_record_hi_score_data_to_disk__2),Y
+   STA   (__local_record_hi_score_data_to_disk__i),Y
    LDA   SCORE
    INY
-   STA   (__local_record_hi_score_data_to_disk__2),Y
+   STA   (__local_record_hi_score_data_to_disk__i),Y
    JSR   hi_score_screen
    LDA   #$40
    STA   DRAW_PAGE

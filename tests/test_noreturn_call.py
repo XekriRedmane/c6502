@@ -16,6 +16,7 @@ from passes.optimization.noreturn_call import noreturn_calls
 from passes.type_checking import FunAttr, Symbol, SymbolTable
 from preprocessor import preprocess
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
 
@@ -205,6 +206,7 @@ void command_loop(void) {
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@no_inlining()
 class TestCallGraph(unittest.TestCase):
 
     def test_call_marked_noreturn(self) -> None:

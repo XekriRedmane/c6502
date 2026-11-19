@@ -498,6 +498,30 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `const` bytes whose `Initial` tuple holds the bytes in the new order,
   integers or `AddressByteInit`s, which `constant_folding._fold_plane_load`
   reads. See docs/optimizations/split_tables.md.
+- `inline_functions.py` — `inline_functions`. Runs at the program
+  level in `compile.translate_for_codegen` (and the `--tac -O`
+  stage), right after `c99_to_tac` and before
+  `return_pointers_in_zero_page`, so every later pass reads only the
+  functions left. A `static` function whose address isn't taken, on
+  no call cycle, with no convention or placement attribute
+  (`zp_abi`, `section`, `address`, `return_bool_in_carry`,
+  `noreturn`, a `register`, `in_*`, or `zeropage(addr)` parameter, a
+  `register` local), with scalar parameters and result, and with no
+  indirect call, `save_hardware_stack` call, address-taken local, or
+  block-scope `static` in its body, has all its calls inlined or
+  none. Each call becomes copies of the arguments into renamed
+  parameters (`@N.name` or `%N` with a fresh N, the symbols copied),
+  the body with its labels prefixed `.ik_`, and each `Ret(v)` as
+  `Copy(v, d); Jump(.ik@end)`. A call followed by a `Ret` of its
+  result, or by a bare `Ret`, keeps the body's `Ret`s. Callers with a
+  `register` local are skipped. Candidates go leaves first.
+  `_Inliner._pays` compares `(n - 1) * BYTES_PER_COST * cost`, the
+  cost of an optimized copy of the callee, plus `EARLY_RETURN_BYTES`
+  for each early return at each call not in tail position, with
+  `n * (CALL_BYTES + ARGUMENT_BYTE_COST * a + RESULT_BYTE_COST * r) +
+  1`. A function with no call left is dropped. See
+  docs/optimizations/inline_functions.md for the measurements behind
+  the constants.
 - `row_address_tables.py` — `apply_row_address_tables`. Runs at the
   program level at the start of `compile.optimized_asm`, before
   `optimize_tac`, on the TAC from `c99_to_tac`, since strength

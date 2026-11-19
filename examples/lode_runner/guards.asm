@@ -25,16 +25,28 @@ GUARD_GOLD_TIMER_START_VALUE	EQU	$5F
 GUARD_PATTERNS	EQU	$60
 GUARD_PHASE	EQU	$64
 PADDLE_VALUES	EQU	$65
-__local_guard_blocked_above__0	EQU	$80
+__local_guard_can_cross__0	EQU	$80
+__local_guard_in_hole__0	EQU	$80
 __local_guard_is_supported__0	EQU	$80
 __zpabi_consider_column__down	EQU	$80
 __zpabi_draw_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_erase_sprite_at_pixel_coords__row	EQU	$80
 __zpabi_play_note__y	EQU	$80
-__local_guard_blocked_above__1	EQU	$81
+__local_guard_can_cross__1	EQU	$81
 __local_guard_is_supported__1	EQU	$81
+__local_try_guard_move_down__0	EQU	$81
+__local_try_guard_move_left__0	EQU	$81
+__local_try_guard_move_right__0	EQU	$81
 __zpabi_consider_column__up	EQU	$81
-__local_move_guards__pattern	EQU	$82
+__local_guard_can_cross__row	EQU	$82
+__local_pseudo_distance__col	EQU	$82
+__local_try_guard_move_down__1	EQU	$82
+__local_try_guard_move_left__1	EQU	$82
+__local_try_guard_move_right__1	EQU	$82
+__local_pseudo_distance__row	EQU	$83
+__local_try_guard_move_down__col	EQU	$83
+__local_try_guard_move_left__row	EQU	$84
+__local_try_guard_move_right__row	EQU	$84
 GAME_COLNUM	EQU	$85
 GAME_ROWNUM	EQU	$86
 DRAW_PAGE	EQU	$87
@@ -67,80 +79,52 @@ DEMO_MOVE	EQU	$AA
 DEMO_MOVE_TURNS	EQU	$AB
 DEMO_RUNNING	EQU	$AC
 LEVEL_SAVED	EQU	$AD
-__local_determine_guard_move__c	EQU	$AE
-__local_guard_fall__0	EQU	$AE
-__local_try_guard_move_down__0	EQU	$AE
-__local_try_guard_move_left__0	EQU	$AE
-__local_try_guard_move_right__0	EQU	$AE
-__local_determine_guard_move__0	EQU	$AF
-__local_guard_fall__1	EQU	$AF
-__local_try_guard_move_down__1	EQU	$AF
-__local_try_guard_move_left__1	EQU	$AF
-__local_try_guard_move_right__1	EQU	$AF
-__local_try_guard_move_up__col	EQU	$AF
-__local_guard_fall_into_row_below__0	EQU	$B0
-__local_try_guard_move_down__col	EQU	$B0
-__local_guard_fall_into_row_below__1	EQU	$B1
-__local_try_guard_move_left__row	EQU	$B1
-__local_try_guard_move_right__row	EQU	$B1
-__local_check_for_gold_picked_up_by_guard__0	EQU	$B2
-__local_draw_guard_sprite__0	EQU	$B2
-__local_erase_guard__0	EQU	$B2
-__local_guard_fall_into_row_below__2	EQU	$B2
-__local_inc_guard_anim_state__0	EQU	$B2
-__local_check_for_gold_picked_up_by_guard__1	EQU	$B3
-__local_consider_column__0	EQU	$B3
-__local_draw_guard_sprite__sprite	EQU	$B3
-__local_erase_guard__1	EQU	$B3
-__local_guard_drop_gold__1	EQU	$B3
-__local_guard_fall_into_row_below__col	EQU	$B3
-__local_guard_in_hole__0	EQU	$B3
-__local_guard_left_col_limit__col	EQU	$B3
-__local_guard_right_col_limit__col	EQU	$B3
-__local_check_for_gold_picked_up_by_guard__col	EQU	$B4
-__local_consider_column__1	EQU	$B4
-__local_enter_cell__0	EQU	$B4
-__local_guard_drop_gold__2	EQU	$B4
-__local_guard_left_col_limit__0	EQU	$B4
-__local_guard_right_col_limit__0	EQU	$B4
-__local_guard_run_at_player__col	EQU	$B4
-__local_inc_guard_anim_state__first	EQU	$B4
-__local_leave_cell__0	EQU	$B4
-__local_check_for_gold_picked_up_by_guard__row	EQU	$B5
-__local_consider_column__col	EQU	$B5
-__local_enter_cell__1	EQU	$B5
-__local_guard_left_col_limit__1	EQU	$B5
-__local_guard_right_col_limit__1	EQU	$B5
-__local_guard_run_at_player__row	EQU	$B5
-__local_leave_cell__1	EQU	$B5
-__local_consider_column__row	EQU	$B6
-__local_enter_cell__row	EQU	$B6
-__local_guard_can_cross__0	EQU	$B6
-__local_guard_left_col_limit__2	EQU	$B6
-__local_guard_right_col_limit__2	EQU	$B6
-__local_leave_cell__2	EQU	$B6
-__local_guard_can_cross__1	EQU	$B7
-__local_guard_find_candidate_row_above__0	EQU	$B7
-__local_guard_find_candidate_row_below__right_row	EQU	$B7
-__local_guard_left_col_limit__3	EQU	$B7
-__local_guard_right_col_limit__3	EQU	$B7
-__local_leave_cell__row	EQU	$B7
-__local_pseudo_distance__col	EQU	$B7
-__local_guard_can_cross__row	EQU	$B8
-__local_guard_find_candidate_row_above__1	EQU	$B8
-__local_guard_find_candidate_row_below__0	EQU	$B8
-__local_guard_left_col_limit__row	EQU	$B8
-__local_guard_right_col_limit__row	EQU	$B8
-__local_pseudo_distance__row	EQU	$B8
-__local_guard_find_candidate_row_above__2	EQU	$B9
-__local_guard_find_candidate_row_below__1	EQU	$B9
-__local_guard_find_candidate_row_above__3	EQU	$BA
-__local_guard_find_candidate_row_below__row	EQU	$BA
-__local_guard_find_candidate_row_above__4	EQU	$BB
-__local_guard_find_candidate_row_below__col	EQU	$BB
-__local_guard_find_candidate_row_above__5	EQU	$BC
-__local_guard_find_candidate_row_above__row	EQU	$BD
-__local_guard_find_candidate_row_above__col	EQU	$BE
+__local_move_guards__0	EQU	$AE
+__local_move_guards__1	EQU	$AF
+__local_move_guards__2	EQU	$B0
+__local_move_guards__col	EQU	$B1
+__local_move_guards__pattern	EQU	$B2
+__local_guard_take_move__c	EQU	$B3
+__local_guard_take_move__col	EQU	$B4
+__local_guard_take_move__0	EQU	$B5
+__local_guard_take_move__1	EQU	$B6
+__local_guard_take_move__2	EQU	$B7
+__local_check_for_gold_picked_up_by_guard__0	EQU	$BA
+__local_consider_column__0	EQU	$BA
+__local_draw_guard_sprite__0	EQU	$BA
+__local_enter_cell__0	EQU	$BA
+__local_erase_guard__0	EQU	$BA
+__local_inc_guard_anim_state__0	EQU	$BA
+__local_leave_cell__0	EQU	$BA
+__local_check_for_gold_picked_up_by_guard__1	EQU	$BB
+__local_consider_column__1	EQU	$BB
+__local_draw_guard_sprite__sprite	EQU	$BB
+__local_enter_cell__1	EQU	$BB
+__local_erase_guard__1	EQU	$BB
+__local_guard_drop_gold__1	EQU	$BB
+__local_leave_cell__1	EQU	$BB
+__local_check_for_gold_picked_up_by_guard__col	EQU	$BC
+__local_consider_column__col	EQU	$BC
+__local_enter_cell__row	EQU	$BC
+__local_guard_drop_gold__2	EQU	$BC
+__local_inc_guard_anim_state__first	EQU	$BC
+__local_leave_cell__2	EQU	$BC
+__local_check_for_gold_picked_up_by_guard__row	EQU	$BD
+__local_consider_column__row	EQU	$BD
+__local_leave_cell__row	EQU	$BD
+__local_guard_find_candidate_row_above__0	EQU	$BE
+__local_guard_find_candidate_row_below__right_row	EQU	$BE
+__local_guard_find_candidate_row_above__1	EQU	$BF
+__local_guard_find_candidate_row_below__0	EQU	$BF
+__local_guard_find_candidate_row_above__2	EQU	$C0
+__local_guard_find_candidate_row_below__1	EQU	$C0
+__local_guard_find_candidate_row_above__3	EQU	$C1
+__local_guard_find_candidate_row_below__row	EQU	$C1
+__local_guard_find_candidate_row_above__4	EQU	$C2
+__local_guard_find_candidate_row_below__col	EQU	$C2
+__local_guard_find_candidate_row_above__5	EQU	$C3
+__local_guard_find_candidate_row_above__row	EQU	$C4
+__local_guard_find_candidate_row_above__col	EQU	$C5
 BLOCK_DATA	EQU	$DF
 DOS_CURRENT_TRACK	EQU	$0478
 LEVEL_MAP	EQU	$0800
@@ -202,43 +186,29 @@ DISK_IO	EQU	$C088
 ; @zp-link-meta-begin
 ; def check_for_gold_picked_up_by_guard params= locals=__local_check_for_gold_picked_up_by_guard__0,__local_check_for_gold_picked_up_by_guard__1,__local_check_for_gold_picked_up_by_guard__col,__local_check_for_gold_picked_up_by_guard__row indirect=false in_cycle=false
 ; def consider_column params=__zpabi_consider_column__row,__zpabi_consider_column__col,__zpabi_consider_column__down,__zpabi_consider_column__up locals=__local_consider_column__0,__local_consider_column__1,__local_consider_column__col,__local_consider_column__row indirect=false in_cycle=false param_regs=A,X,,
-; def consider_move params=__zpabi_consider_move__dist,__zpabi_consider_move__action locals=__local_consider_move__action,__local_consider_move__dist indirect=false in_cycle=false param_regs=A,X
-; def determine_guard_move params= locals=__local_determine_guard_move__c,__local_determine_guard_move__0,__local_determine_guard_move__row,__local_determine_guard_move__col,__local_determine_guard_move__1 indirect=false in_cycle=false
 ; def draw_gold_at_game_cell params= locals=__local_draw_gold_at_game_cell__0 indirect=false in_cycle=false
 ; def draw_guard params= locals=__local_draw_guard__0 indirect=false in_cycle=false
 ; def draw_guard_sprite params=__zpabi_draw_guard_sprite__sprite locals=__local_draw_guard_sprite__0,__local_draw_guard_sprite__sprite indirect=false in_cycle=false param_regs=A
 ; def enter_cell params=__zpabi_enter_cell__row,__zpabi_enter_cell__col locals=__local_enter_cell__0,__local_enter_cell__1,__local_enter_cell__row indirect=false in_cycle=false param_regs=A,X
 ; def erase_guard params= locals=__local_erase_guard__0,__local_erase_guard__1 indirect=false in_cycle=false
-; def guard_blocked_above params= locals=__local_guard_blocked_above__0,__local_guard_blocked_above__1 indirect=false in_cycle=false carry=true
 ; def guard_can_cross params=__zpabi_guard_can_cross__row,__zpabi_guard_can_cross__col locals=__local_guard_can_cross__0,__local_guard_can_cross__1,__local_guard_can_cross__row indirect=false in_cycle=false param_regs=A,X carry=true
-; def guard_do_nothing params= locals=__local_guard_do_nothing__0 indirect=false in_cycle=false
 ; def guard_drop_gold params= locals=__local_guard_drop_gold__0,__local_guard_drop_gold__1,__local_guard_drop_gold__2,__local_guard_drop_gold__col indirect=false in_cycle=false
-; def guard_fall params= locals=__local_guard_fall__0,__local_guard_fall__1 indirect=false in_cycle=false
-; def guard_fall_into_row_below params= locals=__local_guard_fall_into_row_below__0,__local_guard_fall_into_row_below__1,__local_guard_fall_into_row_below__2,__local_guard_fall_into_row_below__col indirect=false in_cycle=false
 ; def guard_find_candidate_row_above params=__zpabi_guard_find_candidate_row_above__row,__zpabi_guard_find_candidate_row_above__col locals=__local_guard_find_candidate_row_above__0,__local_guard_find_candidate_row_above__1,__local_guard_find_candidate_row_above__2,__local_guard_find_candidate_row_above__3,__local_guard_find_candidate_row_above__4,__local_guard_find_candidate_row_above__5,__local_guard_find_candidate_row_above__row,__local_guard_find_candidate_row_above__col indirect=false in_cycle=false param_regs=A,X
 ; def guard_find_candidate_row_below params=__zpabi_guard_find_candidate_row_below__row,__zpabi_guard_find_candidate_row_below__col locals=__local_guard_find_candidate_row_below__right_row,__local_guard_find_candidate_row_below__0,__local_guard_find_candidate_row_below__1,__local_guard_find_candidate_row_below__row,__local_guard_find_candidate_row_below__col,__local_guard_find_candidate_row_below__2 indirect=false in_cycle=false param_regs=A,X
-; def guard_half_col params= locals=__local_guard_half_col__0 indirect=false in_cycle=false
 ; def guard_in_hole params= locals=__local_guard_in_hole__0,__local_guard_in_hole__1 indirect=false in_cycle=false carry=true
 ; def guard_is_supported params= locals=__local_guard_is_supported__0,__local_guard_is_supported__1 indirect=false in_cycle=false carry=true
-; def guard_left_col_limit params=__zpabi_guard_left_col_limit__row,__zpabi_guard_left_col_limit__col locals=__local_guard_left_col_limit__col,__local_guard_left_col_limit__0,__local_guard_left_col_limit__1,__local_guard_left_col_limit__2,__local_guard_left_col_limit__3,__local_guard_left_col_limit__row indirect=false in_cycle=false param_regs=A,X
-; def guard_right_col_limit params=__zpabi_guard_right_col_limit__row,__zpabi_guard_right_col_limit__col locals=__local_guard_right_col_limit__col,__local_guard_right_col_limit__0,__local_guard_right_col_limit__1,__local_guard_right_col_limit__2,__local_guard_right_col_limit__3,__local_guard_right_col_limit__row indirect=false in_cycle=false param_regs=A,X
-; def guard_run_at_player params=__zpabi_guard_run_at_player__row,__zpabi_guard_run_at_player__col locals=__local_guard_run_at_player__0,__local_guard_run_at_player__col,__local_guard_run_at_player__row indirect=false in_cycle=false param_regs=A,X
-; def guard_screen_row params= locals=__local_guard_screen_row__0 indirect=false in_cycle=false
-; def guard_take_move params= locals=__local_guard_take_move__0 indirect=false in_cycle=false
+; def guard_take_move params= locals=__local_guard_take_move__c,__local_guard_take_move__col,__local_guard_take_move__0,__local_guard_take_move__1,__local_guard_take_move__2,__local_guard_take_move__row,__local_guard_take_move__3 indirect=false in_cycle=false
 ; def inc_guard_anim_state params=__zpabi_inc_guard_anim_state__first,__zpabi_inc_guard_anim_state__last locals=__local_inc_guard_anim_state__0,__local_inc_guard_anim_state__last,__local_inc_guard_anim_state__first indirect=false in_cycle=false param_regs=A,X
 ; def is_floor params=__zpabi_is_floor__sprite locals=__local_is_floor__sprite indirect=false in_cycle=false param_regs=A carry=true
 ; def leave_cell params=__zpabi_leave_cell__row,__zpabi_leave_cell__col locals=__local_leave_cell__0,__local_leave_cell__1,__local_leave_cell__2,__local_leave_cell__row indirect=false in_cycle=false param_regs=A,X
 ; def load_guard_data params= locals= indirect=false in_cycle=false
-; def move_guard params= locals=__local_move_guard__0 indirect=false in_cycle=false
-; def move_guards params= locals=__local_move_guards__pattern indirect=false in_cycle=false
+; def move_guards params= locals=__local_move_guards__0,__local_move_guards__1,__local_move_guards__2,__local_move_guards__col,__local_move_guards__pattern indirect=false in_cycle=false
 ; def nudge_guard_towards_exact_column params= locals= indirect=false in_cycle=false
 ; def nudge_guard_towards_exact_row params= locals= indirect=false in_cycle=false
 ; def pseudo_distance params=__zpabi_pseudo_distance__row,__zpabi_pseudo_distance__col locals=__local_pseudo_distance__col,__local_pseudo_distance__row indirect=false in_cycle=false param_regs=A,X
-; def store_guard_data params= locals= indirect=false in_cycle=false
 ; def try_guard_move_down params= locals=__local_try_guard_move_down__0,__local_try_guard_move_down__1,__local_try_guard_move_down__col indirect=false in_cycle=false
 ; def try_guard_move_left params= locals=__local_try_guard_move_left__0,__local_try_guard_move_left__1,__local_try_guard_move_left__col,__local_try_guard_move_left__row indirect=false in_cycle=false
 ; def try_guard_move_right params= locals=__local_try_guard_move_right__0,__local_try_guard_move_right__1,__local_try_guard_move_right__col,__local_try_guard_move_right__row indirect=false in_cycle=false
-; def try_guard_move_up params= locals=__local_try_guard_move_up__0,__local_try_guard_move_up__col indirect=false in_cycle=false
 ; ext DSKFORM params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
 ; ext SEEKABS params=__zpabi_SEEKABS__track param_regs=A
@@ -256,13 +226,24 @@ DISK_IO	EQU	$C088
 ; ext clear_hgr2 params=
 ; ext cold_start params=
 ; ext compress_and_save_level_data params=
+; ext consider_move params=__zpabi_consider_move__dist,__zpabi_consider_move__action param_regs=A,X
 ; ext detect_lack_of_joystick params=
+; ext determine_guard_move params=
 ; ext draw_sprite_at_pixel_coords params=__zpabi_draw_sprite_at_pixel_coords__sprite,__zpabi_draw_sprite_at_pixel_coords__half_col,__zpabi_draw_sprite_at_pixel_coords__row param_regs=A,X,
 ; ext draw_sprite_page1 params=__zpabi_draw_sprite_page1__sprite param_regs=A
 ; ext draw_sprite_page2 params=__zpabi_draw_sprite_page2__sprite param_regs=A
 ; ext editor_command_loop params=
 ; ext enable_next_level_ladders params=
 ; ext erase_sprite_at_pixel_coords params=__zpabi_erase_sprite_at_pixel_coords__sprite,__zpabi_erase_sprite_at_pixel_coords__half_col,__zpabi_erase_sprite_at_pixel_coords__row param_regs=A,X,
+; ext guard_blocked_above params=
+; ext guard_do_nothing params=
+; ext guard_fall params=
+; ext guard_fall_into_row_below params=
+; ext guard_half_col params=
+; ext guard_left_col_limit params=__zpabi_guard_left_col_limit__row,__zpabi_guard_left_col_limit__col param_regs=A,X
+; ext guard_right_col_limit params=__zpabi_guard_right_col_limit__row,__zpabi_guard_right_col_limit__col param_regs=A,X
+; ext guard_run_at_player params=__zpabi_guard_run_at_player__row,__zpabi_guard_run_at_player__col param_regs=A,X
+; ext guard_screen_row params=
 ; ext half_screen_col_for params=__zpabi_half_screen_col_for__col,__zpabi_half_screen_col_for__x_adj param_regs=A,X
 ; ext handle_timers params=
 ; ext hi_score_screen params=
@@ -272,6 +253,7 @@ DISK_IO	EQU	$C088
 ; ext load_level params=__zpabi_load_level__verbatim param_regs=A
 ; ext load_sound_data params=__zpabi_load_sound_data__notes_0,__zpabi_load_sound_data__notes_1 param_regs=A,X
 ; ext long_delay params=
+; ext move_guard params=
 ; ext move_player params=
 ; ext newline params=
 ; ext play_note params=__zpabi_play_note__pitch,__zpabi_play_note__duration,__zpabi_play_note__y param_regs=A,X,
@@ -291,64 +273,58 @@ DISK_IO	EQU	$C088
 ; ext sound_delay1 params=__zpabi_sound_delay1__count param_regs=A
 ; ext spinning_game_over params= carry=true
 ; ext start_level_editor params=
+; ext store_guard_data params=
 ; ext to_decimal3 params=__zpabi_to_decimal3__n param_regs=A
+; ext try_guard_move_up params=
 ; ext wait_for_key params=__zpabi_wait_for_key__cursor param_regs=A
 ; ext wait_for_key_with_cursor_page_1 params=__zpabi_wait_for_key_with_cursor_page_1__cursor param_regs=A
 ; ext wait_key params=
 ; call check_for_gold_picked_up_by_guard -> draw_sprite_page2
 ; call check_for_gold_picked_up_by_guard -> erase_sprite_at_pixel_coords
-; call consider_column -> consider_move
 ; call consider_column -> guard_find_candidate_row_above
 ; call consider_column -> guard_find_candidate_row_below
 ; call consider_column -> pseudo_distance
-; call determine_guard_move -> consider_column
-; call determine_guard_move -> guard_in_hole
-; call determine_guard_move -> guard_left_col_limit
-; call determine_guard_move -> guard_right_col_limit
-; call determine_guard_move -> guard_run_at_player
 ; call draw_gold_at_game_cell -> draw_sprite_at_pixel_coords
 ; call draw_gold_at_game_cell -> draw_sprite_page2
 ; call draw_guard -> draw_guard_sprite
 ; call draw_guard_sprite -> draw_sprite_at_pixel_coords
-; call draw_guard_sprite -> guard_half_col
-; call draw_guard_sprite -> guard_screen_row
+; call draw_guard_sprite -> half_screen_col_for
+; call draw_guard_sprite -> screen_row_for
 ; call erase_guard -> erase_sprite_at_pixel_coords
-; call erase_guard -> guard_half_col
-; call erase_guard -> guard_screen_row
-; call guard_do_nothing -> guard_in_hole
+; call erase_guard -> half_screen_col_for
+; call erase_guard -> screen_row_for
 ; call guard_drop_gold -> draw_gold_at_game_cell
-; call guard_fall -> add_and_update_score
-; call guard_fall -> check_for_gold_picked_up_by_guard
-; call guard_fall -> draw_guard
-; call guard_fall -> erase_guard
-; call guard_fall -> guard_fall_into_row_below
-; call guard_fall -> load_sound_data
-; call guard_fall -> nudge_guard_towards_exact_column
-; call guard_fall_into_row_below -> draw_gold_at_game_cell
-; call guard_fall_into_row_below -> enter_cell
-; call guard_fall_into_row_below -> leave_cell
 ; call guard_find_candidate_row_above -> is_floor
 ; call guard_find_candidate_row_below -> is_floor
-; call guard_half_col -> half_screen_col_for
 ; call guard_is_supported -> is_floor
-; call guard_left_col_limit -> is_floor
-; call guard_right_col_limit -> is_floor
-; call guard_run_at_player -> guard_can_cross
-; call guard_screen_row -> screen_row_for
-; call guard_take_move -> determine_guard_move
+; call guard_take_move -> check_for_gold_picked_up_by_guard
+; call guard_take_move -> consider_column
+; call guard_take_move -> draw_guard
+; call guard_take_move -> enter_cell
+; call guard_take_move -> erase_guard
+; call guard_take_move -> guard_can_cross
+; call guard_take_move -> guard_drop_gold
+; call guard_take_move -> guard_in_hole
+; call guard_take_move -> inc_guard_anim_state
+; call guard_take_move -> is_floor
+; call guard_take_move -> leave_cell
+; call guard_take_move -> nudge_guard_towards_exact_column
 ; call guard_take_move -> try_guard_move_down
 ; call guard_take_move -> try_guard_move_left
 ; call guard_take_move -> try_guard_move_right
-; call guard_take_move -> try_guard_move_up
-; call move_guard -> draw_guard
-; call move_guard -> erase_guard
-; call move_guard -> guard_fall
-; call move_guard -> guard_in_hole
-; call move_guard -> guard_is_supported
-; call move_guard -> guard_take_move
-; call move_guard -> load_guard_data
-; call move_guard -> store_guard_data
-; call move_guards -> move_guard
+; call move_guards -> add_and_update_score
+; call move_guards -> check_for_gold_picked_up_by_guard
+; call move_guards -> draw_gold_at_game_cell
+; call move_guards -> draw_guard
+; call move_guards -> enter_cell
+; call move_guards -> erase_guard
+; call move_guards -> guard_in_hole
+; call move_guards -> guard_is_supported
+; call move_guards -> guard_take_move
+; call move_guards -> leave_cell
+; call move_guards -> load_guard_data
+; call move_guards -> load_sound_data
+; call move_guards -> nudge_guard_towards_exact_column
 ; call nudge_guard_towards_exact_column -> check_for_gold_picked_up_by_guard
 ; call nudge_guard_towards_exact_row -> check_for_gold_picked_up_by_guard
 ; call try_guard_move_down -> check_for_gold_picked_up_by_guard
@@ -375,22 +351,11 @@ DISK_IO	EQU	$C088
 ; call try_guard_move_right -> inc_guard_anim_state
 ; call try_guard_move_right -> leave_cell
 ; call try_guard_move_right -> nudge_guard_towards_exact_row
-; call try_guard_move_up -> check_for_gold_picked_up_by_guard
-; call try_guard_move_up -> draw_guard
-; call try_guard_move_up -> enter_cell
-; call try_guard_move_up -> erase_guard
-; call try_guard_move_up -> guard_blocked_above
-; call try_guard_move_up -> guard_do_nothing
-; call try_guard_move_up -> guard_drop_gold
-; call try_guard_move_up -> inc_guard_anim_state
-; call try_guard_move_up -> leave_cell
-; call try_guard_move_up -> nudge_guard_towards_exact_column
 ; item move_guards section=.text local=false zero=false
+; item move_guards@run1 section=.text local=true zero=false
+; item move_guards@run0 section=.text local=true zero=false
 ; item guard_in_hole section=.text local=true zero=false
-; item store_guard_data section=.text local=true zero=false
 ; item load_guard_data section=.text local=false zero=false
-; item guard_half_col section=.text local=true zero=false
-; item guard_screen_row section=.text local=true zero=false
 ; item erase_guard section=.text local=false zero=false
 ; item draw_guard_sprite section=.text local=false zero=false
 ; item draw_guard section=.text local=true zero=false
@@ -404,29 +369,17 @@ DISK_IO	EQU	$C088
 ; item enter_cell section=.text local=true zero=false
 ; item is_floor section=.text local=true zero=false
 ; item guard_is_supported section=.text local=true zero=false
-; item guard_fall_into_row_below section=.text local=true zero=false
-; item guard_fall section=.text local=true zero=false
-; item guard_fall@run0 section=.text local=true zero=false
-; item guard_do_nothing section=.text local=true zero=false
-; item guard_blocked_above section=.text local=true zero=false
-; item try_guard_move_up section=.text local=true zero=false
-; item try_guard_move_up@tail1 section=.text local=true zero=false
-; item try_guard_move_up@tail0 section=.text local=true zero=false
 ; item try_guard_move_down section=.text local=true zero=false
+; item try_guard_move_down@tail1 section=.text local=true zero=false
+; item try_guard_move_down@tail0 section=.text local=true zero=false
 ; item try_guard_move_left section=.text local=true zero=false
 ; item try_guard_move_right section=.text local=true zero=false
 ; item guard_take_move section=.text local=true zero=false
-; item move_guard section=.text local=true zero=false
 ; item pseudo_distance section=.text local=true zero=false
 ; item guard_find_candidate_row_above section=.text local=true zero=false
 ; item guard_find_candidate_row_below section=.text local=true zero=false
-; item guard_left_col_limit section=.text local=true zero=false
-; item guard_right_col_limit section=.text local=true zero=false
-; item consider_move section=.text local=true zero=false
 ; item consider_column section=.text local=true zero=false
 ; item guard_can_cross section=.text local=true zero=false
-; item guard_run_at_player section=.text local=true zero=false
-; item determine_guard_move section=.text local=true zero=false
 ; item GUARD_PATTERNS_LIST section=.rodata local=false zero=false
 ; item GUARD_ANIM_SPRITES section=.rodata local=true zero=false
 ; item GUARD_X_ADJ_TABLE section=.rodata local=true zero=false
@@ -449,8 +402,8 @@ DISK_IO	EQU	$C088
 ; zp GUARD_X_ADJ size=1 at=$17 def=false init=
 ; zp GUARD_Y_ADJ size=1 at=$18 def=false init=
 ; zp GUARD_NUM size=1 at=$19 def=false init=
-; zp best_guard_dist size=1 at=auto def=true init=$00 weight=3 local=true
-; zp guard_action size=1 at=auto def=true init=$00 weight=3 local=true
+; zp best_guard_dist size=1 at=auto def=true init=$00 weight=5 local=true
+; zp guard_action size=1 at=auto def=true init=$00 weight=4 local=true
 ; zp __dos_zp size=42 at=$26 def=false init=
 ; zp GUARD_RESURRECT_COL size=1 at=$53 def=false init=
 ; zp NOTE_INDEX size=1 at=$54 def=false init=
@@ -513,8 +466,163 @@ move_guards:
    STA   __local_move_guards__pattern
 .loop@0_start:
    LSR
-   BCC   .if_end@2
-   JSR   move_guard
+   BCS   .lb_skip@3
+   JMP   .if_end@2
+.lb_skip@3:
+   INC   GUARD_NUM
+   LDA   GUARD_COUNT
+   CMP   GUARD_NUM
+   BCS   .i16_if_end@101
+   LDA   #$01
+   STA   GUARD_NUM
+.i16_if_end@101:
+   JSR   load_guard_data
+   JSR   guard_in_hole
+   BCC   .i16_if_else@103
+   DEC   GUARD_GOLD_TIMER
+   LDA   GUARD_GOLD_TIMER
+   CMP   #$0D
+   BCC   .i16_if_else@105
+   LDX   GUARD_NUM
+   LDA   GUARD_RESURRECTION_TIMERS,X
+   BEQ   .lb_skip@2
+   JMP   .i16_if_end@102
+.lb_skip@2:
+   JSR   draw_guard
+   JMP   .i16_if_end@102
+.i16_if_else@105:
+   CMP   #$07
+   BCC   .i16_if_else@108
+   JSR   erase_guard
+   LDA   GUARD_GOLD_TIMER
+   SEC
+   SBC   #$07
+   TAX
+   LDA   GUARD_X_ADJ_TABLE,X
+   STA   GUARD_X_ADJ
+   JSR   draw_guard
+   JMP   .i16_if_end@102
+.i16_if_else@108:
+   JSR   guard_take_move
+   JMP   .i16_if_end@102
+.i16_if_else@103:
+   JSR   guard_is_supported
+   BCC   .i16_if_else@110
+   JSR   guard_take_move
+   JMP   .i16_if_end@109
+.i16_if_else@110:
+   JSR   move_guards@run1
+   LDA   GUARD_FACING_DIRECTION
+   BPL   .i16_i13_cond_else@46
+   LDA   #$06
+   BNE   .i16_i13_cond_end@47
+.i16_i13_cond_else@46:
+   LDA   #$0D
+.i16_i13_cond_end@47:
+   STA   GUARD_ANIM_STATE
+   INC   GUARD_Y_ADJ
+   LDA   GUARD_Y_ADJ
+   CMP   #$05
+   BCS   .lb_skip@1
+   JMP   .i16_i13_if_else@49
+.lb_skip@1:
+   LDA   GUARD_LOC_COL
+   STA   __local_move_guards__col
+   LDA   #$00
+   STA   GUARD_Y_ADJ
+   LDX   GUARD_LOC_COL
+   LDA   GUARD_LOC_ROW
+   JSR   leave_cell
+   LDA   GUARD_LOC_ROW
+   CLC
+   ADC   #$01
+   STA   __local_move_guards__2
+   STA   GUARD_LOC_ROW
+   LDX   __local_move_guards__2
+   LDA   LEVEL_BG@lo,X
+   STA   __local_move_guards__0
+   LDA   LEVEL_BG@hi,X
+   STA   __local_move_guards__1
+   LDY   __local_move_guards__col
+   LDA   (__local_move_guards__0),Y
+   CMP   #$01
+   BNE   .i16_i13_i9_if_end@43
+   LDA   GUARD_GOLD_TIMER
+   BPL   .i16_i13_i9_if_end@43
+   DEX
+   STX   GAME_ROWNUM
+   STY   GAME_COLNUM
+   LDA   LEVEL_BG@lo,X
+   STA   __local_move_guards__0
+   LDA   LEVEL_BG@hi,X
+   STA   __local_move_guards__1
+   LDA   (__local_move_guards__0),Y
+   BNE   .i16_i13_i9_if_else@45
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_move_guards__1
+   LDA   #$07
+   STA   (__local_move_guards__0),Y
+   LDA   LEVEL_BG@hi,X
+   STA   __local_move_guards__1
+   LDA   #$07
+   STA   (__local_move_guards__0),Y
+   JSR   draw_gold_at_game_cell
+   JMP   .i16_i13_i9_if_end@44
+.i16_i13_i9_if_else@45:
+   DEC   GOLD_COUNT
+.i16_i13_i9_if_end@44:
+   LDA   #$00
+   STA   GUARD_GOLD_TIMER
+.i16_i13_i9_if_end@43:
+   LDX   __local_move_guards__col
+   LDA   __local_move_guards__2
+   JSR   enter_cell
+   JMP   .i16_i13_if_end@48
+.i16_i13_if_else@49:
+   CMP   #$02
+   BNE   .i16_i13_if_end@50
+   JSR   check_for_gold_picked_up_by_guard
+   JSR   move_guards@run0
+   STA   __local_move_guards__0
+   LDA   LEVEL_BG@hi,X
+   STA   __local_move_guards__1
+   LDY   GUARD_LOC_COL
+   LDA   (__local_move_guards__0),Y
+   CMP   #$01
+   BNE   .i16_i13_if_end@51
+   LDA   GUARD_GOLD_TIMER
+   BPL   .i16_i13_if_end@52
+   DEC   GOLD_COUNT
+.i16_i13_if_end@52:
+   LDA   GUARD_GOLD_TIMER_START_VALUE
+   STA   GUARD_GOLD_TIMER
+   LDX   #$00
+   LDA   #$75
+   JSR   add_and_update_score
+   LDX   #>guard_in_hole_tune
+   LDA   #<guard_in_hole_tune
+   JSR   load_sound_data
+.i16_i13_if_end@51:
+.i16_i13_if_end@50:
+.i16_i13_if_end@48:
+   JSR   draw_guard
+.i16_if_end@109:
+.i16_if_end@102:
+   LDX   GUARD_NUM
+   LDA   GUARD_LOC_COL
+   STA   GUARD_LOCS_COL,X
+   LDA   GUARD_LOC_ROW
+   STA   GUARD_LOCS_ROW,X
+   LDA   GUARD_X_ADJ
+   STA   GUARD_X_ADJS,X
+   LDA   GUARD_Y_ADJ
+   STA   GUARD_Y_ADJS,X
+   LDA   GUARD_GOLD_TIMER
+   STA   GUARD_GOLD_TIMERS,X
+   LDA   GUARD_FACING_DIRECTION
+   STA   GUARD_FACING_DIRECTIONS,X
+   LDA   GUARD_ANIM_STATE
+   STA   GUARD_ANIM_STATES,X
    LDA   ALIVE
    BNE   .if_end@3
    RTS
@@ -522,7 +630,22 @@ move_guards:
 .if_end@2:
    LSR   __local_move_guards__pattern
    LDA   __local_move_guards__pattern
-   BNE   .loop@0_start
+   BEQ   .lb_skip@0
+   JMP   .loop@0_start
+.lb_skip@0:
+   RTS
+
+move_guards@run1:
+   SUBROUTINE
+
+   JSR   erase_guard
+   JMP   nudge_guard_towards_exact_column
+
+move_guards@run0:
+   SUBROUTINE
+
+   LDX   GUARD_LOC_ROW
+   LDA   LEVEL_BG@lo,X
    RTS
 
 guard_in_hole:
@@ -547,26 +670,6 @@ guard_in_hole:
    ASL
    RTS
 
-store_guard_data:
-   SUBROUTINE
-
-   LDX   GUARD_NUM
-   LDA   GUARD_LOC_COL
-   STA   GUARD_LOCS_COL,X
-   LDA   GUARD_LOC_ROW
-   STA   GUARD_LOCS_ROW,X
-   LDA   GUARD_X_ADJ
-   STA   GUARD_X_ADJS,X
-   LDA   GUARD_Y_ADJ
-   STA   GUARD_Y_ADJS,X
-   LDA   GUARD_GOLD_TIMER
-   STA   GUARD_GOLD_TIMERS,X
-   LDA   GUARD_FACING_DIRECTION
-   STA   GUARD_FACING_DIRECTIONS,X
-   LDA   GUARD_ANIM_STATE
-   STA   GUARD_ANIM_STATES,X
-   RTS
-
 load_guard_data:
    SUBROUTINE
 
@@ -587,29 +690,19 @@ load_guard_data:
    STA   GUARD_GOLD_TIMER
    RTS
 
-guard_half_col:
-   SUBROUTINE
-
-   LDX   GUARD_X_ADJ
-   LDA   GUARD_LOC_COL
-   JMP   half_screen_col_for
-
-guard_screen_row:
-   SUBROUTINE
-
-   LDX   GUARD_Y_ADJ
-   LDA   GUARD_LOC_ROW
-   JMP   screen_row_for
-
 erase_guard:
    SUBROUTINE
 
    LDX   GUARD_ANIM_STATE
    LDA   GUARD_ANIM_SPRITES,X
    STA   __local_erase_guard__1
-   JSR   guard_half_col
+   LDX   GUARD_X_ADJ
+   LDA   GUARD_LOC_COL
+   JSR   half_screen_col_for
    STA   __local_erase_guard__0
-   JSR   guard_screen_row
+   LDX   GUARD_Y_ADJ
+   LDA   GUARD_LOC_ROW
+   JSR   screen_row_for
    STA   __zpabi_erase_sprite_at_pixel_coords__row
    LDX   __local_erase_guard__0
    LDA   __local_erase_guard__1
@@ -619,9 +712,13 @@ draw_guard_sprite:
    SUBROUTINE
 
    STA   __local_draw_guard_sprite__sprite
-   JSR   guard_half_col
+   LDX   GUARD_X_ADJ
+   LDA   GUARD_LOC_COL
+   JSR   half_screen_col_for
    STA   __local_draw_guard_sprite__0
-   JSR   guard_screen_row
+   LDX   GUARD_Y_ADJ
+   LDA   GUARD_LOC_ROW
+   JSR   screen_row_for
    STA   __zpabi_draw_sprite_at_pixel_coords__row
    LDX   __local_draw_guard_sprite__0
    LDA   __local_draw_guard_sprite__sprite
@@ -665,8 +762,7 @@ check_for_gold_picked_up_by_guard:
    STA   __local_check_for_gold_picked_up_by_guard__row
    LDA   GUARD_LOC_COL
    STA   __local_check_for_gold_picked_up_by_guard__col
-   LDX   GUARD_LOC_ROW
-   LDA   LEVEL_BG@lo,X
+   JSR   move_guards@run0
    STA   __local_check_for_gold_picked_up_by_guard__0
    LDA   LEVEL_BG@hi,X
    STA   __local_check_for_gold_picked_up_by_guard__1
@@ -893,193 +989,6 @@ guard_is_supported:
    LDA   (__local_guard_is_supported__0),Y
    JMP   is_floor
 
-guard_fall_into_row_below:
-   SUBROUTINE
-
-   LDA   GUARD_LOC_COL
-   STA   __local_guard_fall_into_row_below__col
-   LDA   #$00
-   STA   GUARD_Y_ADJ
-   LDX   GUARD_LOC_COL
-   LDA   GUARD_LOC_ROW
-   JSR   leave_cell
-   LDA   GUARD_LOC_ROW
-   CLC
-   ADC   #$01
-   STA   __local_guard_fall_into_row_below__2
-   STA   GUARD_LOC_ROW
-   LDX   __local_guard_fall_into_row_below__2
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_fall_into_row_below__0
-   LDA   LEVEL_BG@hi,X
-   STA   __local_guard_fall_into_row_below__1
-   LDY   __local_guard_fall_into_row_below__col
-   LDA   (__local_guard_fall_into_row_below__0),Y
-   CMP   #$01
-   BNE   .if_end@43
-   LDA   GUARD_GOLD_TIMER
-   BPL   .if_end@43
-   DEX
-   STX   GAME_ROWNUM
-   STY   GAME_COLNUM
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_fall_into_row_below__0
-   LDA   LEVEL_BG@hi,X
-   STA   __local_guard_fall_into_row_below__1
-   LDA   (__local_guard_fall_into_row_below__0),Y
-   BNE   .if_else@45
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_guard_fall_into_row_below__1
-   LDA   #$07
-   STA   (__local_guard_fall_into_row_below__0),Y
-   LDA   LEVEL_BG@hi,X
-   STA   __local_guard_fall_into_row_below__1
-   LDA   #$07
-   STA   (__local_guard_fall_into_row_below__0),Y
-   JSR   draw_gold_at_game_cell
-   JMP   .if_end@44
-.if_else@45:
-   DEC   GOLD_COUNT
-.if_end@44:
-   LDA   #$00
-   STA   GUARD_GOLD_TIMER
-.if_end@43:
-   LDX   __local_guard_fall_into_row_below__col
-   LDA   __local_guard_fall_into_row_below__2
-   JMP   enter_cell
-
-guard_fall:
-   SUBROUTINE
-
-   JSR   guard_fall@run0
-   LDA   GUARD_FACING_DIRECTION
-   BPL   .cond_else@46
-   LDA   #$06
-   BNE   .cond_end@47
-.cond_else@46:
-   LDA   #$0D
-.cond_end@47:
-   STA   GUARD_ANIM_STATE
-   INC   GUARD_Y_ADJ
-   LDA   GUARD_Y_ADJ
-   CMP   #$05
-   BCC   .if_else@49
-   JSR   guard_fall_into_row_below
-   JMP   draw_guard
-.if_else@49:
-   CMP   #$02
-   BNE   .if_end@50
-   JSR   check_for_gold_picked_up_by_guard
-   LDX   GUARD_LOC_ROW
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_fall__0
-   LDA   LEVEL_BG@hi,X
-   STA   __local_guard_fall__1
-   LDY   GUARD_LOC_COL
-   LDA   (__local_guard_fall__0),Y
-   CMP   #$01
-   BNE   .if_end@51
-   LDA   GUARD_GOLD_TIMER
-   BPL   .if_end@52
-   DEC   GOLD_COUNT
-.if_end@52:
-   LDA   GUARD_GOLD_TIMER_START_VALUE
-   STA   GUARD_GOLD_TIMER
-   LDX   #$00
-   LDA   #$75
-   JSR   add_and_update_score
-   LDX   #>guard_in_hole_tune
-   LDA   #<guard_in_hole_tune
-   JSR   load_sound_data
-.if_end@51:
-.if_end@50:
-.if_end@48:
-   JMP   draw_guard
-
-guard_fall@run0:
-   SUBROUTINE
-
-   JSR   erase_guard
-   JMP   nudge_guard_towards_exact_column
-
-guard_do_nothing:
-   SUBROUTINE
-
-   JSR   guard_in_hole
-   BCC   .if_end@53
-   INC   GUARD_GOLD_TIMER
-.if_end@53:
-   RTS
-
-guard_blocked_above:
-   SUBROUTINE
-
-   LDX   GUARD_LOC_ROW
-   BEQ   .or_true@55
-   LDA   LEVEL_BG@lo-1,X
-   STA   __local_guard_blocked_above__0
-   LDA   LEVEL_MAP@hi-1,X
-   STA   __local_guard_blocked_above__1
-   LDY   GUARD_LOC_COL
-   LDA   (__local_guard_blocked_above__0),Y
-   CMP   #$01
-   BEQ   .or_true@55
-   CMP   #$02
-   BEQ   .or_true@55
-   CMP   #$05
-   BEQ   .or_true@55
-   CMP   #$08
-   BEQ   .or_true@55
-   CLC
-   RTS
-.or_true@55:
-   SEC
-   RTS
-
-try_guard_move_up:
-   SUBROUTINE
-
-   LDA   GUARD_Y_ADJ
-   CMP   #$03
-   BCS   .if_end@63
-   JSR   guard_blocked_above
-   BCC   .if_end@63
-   JMP   guard_do_nothing
-.if_end@63:
-   JSR   guard_fall@run0
-   LDA   GUARD_LOC_COL
-   STA   __local_try_guard_move_up__col
-   DEC   GUARD_Y_ADJ
-   BPL   .if_else@65
-   JSR   guard_drop_gold
-   LDX   __local_try_guard_move_up__col
-   LDA   GUARD_LOC_ROW
-   JSR   leave_cell
-   DEC   GUARD_LOC_ROW
-   LDX   __local_try_guard_move_up__col
-   LDA   GUARD_LOC_ROW
-   JSR   enter_cell
-   LDA   #$04
-   STA   GUARD_Y_ADJ
-   JMP   .if_end@64
-.if_else@65:
-   JSR   check_for_gold_picked_up_by_guard
-.if_end@64:
-   JMP   try_guard_move_up@tail1
-
-try_guard_move_up@tail1:
-   SUBROUTINE
-
-   LDX   #$0F
-   LDA   #$0E
-   JMP   try_guard_move_up@tail0
-
-try_guard_move_up@tail0:
-   SUBROUTINE
-
-   JSR   inc_guard_anim_state
-   JMP   draw_guard
-
 try_guard_move_down:
    SUBROUTINE
 
@@ -1109,7 +1018,7 @@ try_guard_move_down:
    RTS
 .if_end@72:
 .if_end@66:
-   JSR   guard_fall@run0
+   JSR   move_guards@run1
    INC   GUARD_Y_ADJ
    LDA   GUARD_Y_ADJ
    CMP   #$05
@@ -1128,7 +1037,20 @@ try_guard_move_down:
 .if_else@74:
    JSR   check_for_gold_picked_up_by_guard
 .if_end@73:
-   JMP   try_guard_move_up@tail1
+   JMP   try_guard_move_down@tail1
+
+try_guard_move_down@tail1:
+   SUBROUTINE
+
+   LDX   #$0F
+   LDA   #$0E
+   JMP   try_guard_move_down@tail0
+
+try_guard_move_down@tail0:
+   SUBROUTINE
+
+   JSR   inc_guard_anim_state
+   JMP   draw_guard
 
 try_guard_move_left:
    SUBROUTINE
@@ -1196,7 +1118,7 @@ try_guard_move_left:
    BNE   .if_else@87
    LDX   #$05
    LDA   #$03
-   JMP   try_guard_move_up@tail0
+   JMP   try_guard_move_down@tail0
 .if_else@87:
    LDX   #$02
    LDA   #$00
@@ -1273,7 +1195,7 @@ try_guard_move_right:
    BNE   .if_else@100
    LDX   #$0C
    LDA   #$0A
-   JMP   try_guard_move_up@tail0
+   JMP   try_guard_move_down@tail0
 .if_else@100:
    LDX   #$09
    LDA   #$07
@@ -1284,7 +1206,171 @@ try_guard_move_right:
 guard_take_move:
    SUBROUTINE
 
-   JSR   determine_guard_move
+   JSR   move_guards@run0
+   STA   __local_guard_take_move__c
+   LDA   LEVEL_BG@hi,X
+   STA   __local_guard_take_move__col
+   LDY   GUARD_LOC_COL
+   LDA   (__local_guard_take_move__c),Y
+   CMP   #$01
+   BNE   .i15_if_end@182
+   JSR   guard_in_hole
+   BCC   .lb_skip@5
+   JMP   .case@4
+.lb_skip@5:
+.i15_if_end@182:
+   LDA   GUARD_LOC_ROW
+   CMP   PLAYER_ROW
+   BNE   .i15_if_end@183
+   LDA   GUARD_LOC_COL
+   CMP   PLAYER_COL
+   BCS   .i15_i12_if_end@177
+   STA   __local_guard_take_move__col
+.i15_i12_loop@10_start:
+   INC   __local_guard_take_move__col
+   LDX   __local_guard_take_move__col
+   LDA   GUARD_LOC_ROW
+   JSR   guard_can_cross
+   BCC   .i15_if_end@183
+   LDA   __local_guard_take_move__col
+   CMP   PLAYER_COL
+   BNE   .i15_i12_loop@10_start
+   JMP   try_guard_move_right
+.i15_i12_if_end@177:
+   STA   __local_guard_take_move__col
+.i15_i12_loop@11_start:
+   DEC   __local_guard_take_move__col
+   LDX   __local_guard_take_move__col
+   LDA   GUARD_LOC_ROW
+   JSR   guard_can_cross
+   BCC   .i15_if_end@183
+   LDA   __local_guard_take_move__col
+   CMP   PLAYER_COL
+   BNE   .i15_i12_loop@11_start
+   LDA   #$01
+   BEQ   .lb_skip@4
+   JMP   try_guard_move_left
+.lb_skip@4:
+.i15_if_end@183:
+   LDA   #$00
+   STA   guard_action
+   LDA   #$FF
+   STA   best_guard_dist
+   LDA   #$04
+   STA   __zpabi_consider_column__down
+   LDA   #$03
+   STA   __zpabi_consider_column__up
+   LDX   GUARD_LOC_COL
+   LDA   GUARD_LOC_ROW
+   JSR   consider_column
+   LDA   GUARD_LOC_COL
+   STA   __local_guard_take_move__c
+   JMP   .i15_i10_loop@8_continue
+.guard_take_move@rot@0:
+   JSR   move_guards@run0
+   STA   __local_guard_take_move__1
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_guard_take_move__2
+   LDA   __local_guard_take_move__c
+   SEC
+   SBC   #$01
+   STA   __local_guard_take_move__0
+   LDY   __local_guard_take_move__0
+   LDA   (__local_guard_take_move__1),Y
+   CMP   #$01
+   BEQ   .i15_loop@12_start
+   CMP   #$02
+   BEQ   .i15_loop@12_start
+   CMP   #$03
+   BEQ   .i15_i10_if_end@151
+   CMP   #$04
+   BEQ   .i15_i10_if_end@151
+   CPX   #$0F
+   BEQ   .i15_i10_if_end@151
+   LDA   LEVEL_BG@lo+1,X
+   STA   __local_guard_take_move__c
+   LDA   LEVEL_BG@hi+1,X
+   STA   __local_guard_take_move__col
+   LDA   (__local_guard_take_move__c),Y
+   JSR   is_floor
+   BCS   .i15_i10_if_end@152
+   LDA   __local_guard_take_move__0
+   STA   __local_guard_take_move__c
+   JMP   .i15_loop@12_start
+.i15_i10_if_end@152:
+.i15_i10_if_end@151:
+   LDA   __local_guard_take_move__0
+   STA   __local_guard_take_move__c
+.i15_i10_loop@8_continue:
+   BNE   .guard_take_move@rot@0
+   JMP   .i15_loop@12_start
+.guard_take_move@rot@1:
+   LDA   #$01
+   STA   __zpabi_consider_column__down
+   STA   __zpabi_consider_column__up
+   LDX   __local_guard_take_move__c
+   LDA   GUARD_LOC_ROW
+   JSR   consider_column
+   INC   __local_guard_take_move__c
+.i15_loop@12_start:
+   LDA   __local_guard_take_move__c
+   CMP   GUARD_LOC_COL
+   BNE   .guard_take_move@rot@1
+   LDA   GUARD_LOC_COL
+   STA   __local_guard_take_move__c
+   JMP   .i15_i11_loop@9_continue
+.guard_take_move@rot@2:
+   JSR   move_guards@run0
+   STA   __local_guard_take_move__1
+   LDA   LEVEL_MAP@hi,X
+   STA   __local_guard_take_move__2
+   LDA   __local_guard_take_move__c
+   CLC
+   ADC   #$01
+   STA   __local_guard_take_move__0
+   LDY   __local_guard_take_move__0
+   LDA   (__local_guard_take_move__1),Y
+   CMP   #$01
+   BEQ   .i15_loop@13_start
+   CMP   #$02
+   BEQ   .i15_loop@13_start
+   CMP   #$03
+   BEQ   .i15_i11_if_end@160
+   CMP   #$04
+   BEQ   .i15_i11_if_end@160
+   CPX   #$0F
+   BEQ   .i15_i11_if_end@160
+   LDA   LEVEL_BG@lo+1,X
+   STA   __local_guard_take_move__c
+   LDA   LEVEL_BG@hi+1,X
+   STA   __local_guard_take_move__col
+   LDA   (__local_guard_take_move__c),Y
+   JSR   is_floor
+   BCS   .i15_i11_if_end@161
+   LDA   __local_guard_take_move__0
+   STA   __local_guard_take_move__c
+   JMP   .i15_loop@13_start
+.i15_i11_if_end@161:
+.i15_i11_if_end@160:
+   LDA   __local_guard_take_move__0
+   STA   __local_guard_take_move__c
+.i15_i11_loop@9_continue:
+   CMP   #$1B
+   BNE   .guard_take_move@rot@2
+   JMP   .i15_loop@13_start
+.guard_take_move@rot@3:
+   LDA   #$02
+   STA   __zpabi_consider_column__down
+   STA   __zpabi_consider_column__up
+   LDX   __local_guard_take_move__c
+   LDA   GUARD_LOC_ROW
+   JSR   consider_column
+   DEC   __local_guard_take_move__c
+.i15_loop@13_start:
+   LDA   __local_guard_take_move__c
+   CMP   GUARD_LOC_COL
+   BNE   .guard_take_move@rot@3
+   LDA   guard_action
    CMP   #$01
    BEQ   .case@2
    CMP   #$02
@@ -1299,57 +1385,55 @@ guard_take_move:
 .case@3:
    JMP   try_guard_move_right
 .case@4:
-   JMP   try_guard_move_up
-.case@5:
-   JMP   try_guard_move_down
-
-move_guard:
-   SUBROUTINE
-
-   INC   GUARD_NUM
-   LDA   GUARD_COUNT
-   CMP   GUARD_NUM
-   BCS   .if_end@101
-   LDA   #$01
-   STA   GUARD_NUM
-.if_end@101:
-   JSR   load_guard_data
+   LDA   GUARD_Y_ADJ
+   CMP   #$03
+   BCS   .i14_if_end@63
+   LDX   GUARD_LOC_ROW
+   BEQ   .vthread@2
+   LDA   LEVEL_BG@lo-1,X
+   STA   __local_guard_take_move__c
+   LDA   LEVEL_MAP@hi-1,X
+   STA   __local_guard_take_move__col
+   LDY   GUARD_LOC_COL
+   LDA   (__local_guard_take_move__c),Y
+   CMP   #$01
+   BEQ   .vthread@2
+   CMP   #$02
+   BEQ   .vthread@2
+   CMP   #$05
+   BEQ   .vthread@2
+   CMP   #$08
+   BNE   .i14_if_end@63
+.vthread@2:
    JSR   guard_in_hole
-   BCC   .if_else@103
-   DEC   GUARD_GOLD_TIMER
-   LDA   GUARD_GOLD_TIMER
-   CMP   #$0D
-   BCC   .if_else@105
-   LDX   GUARD_NUM
-   LDA   GUARD_RESURRECTION_TIMERS,X
-   BNE   .if_end@102
-   JSR   draw_guard
-   JMP   store_guard_data
-.if_else@105:
-   CMP   #$07
-   BCC   .if_else@108
-   JSR   erase_guard
-   LDA   GUARD_GOLD_TIMER
-   SEC
-   SBC   #$07
-   TAX
-   LDA   GUARD_X_ADJ_TABLE,X
-   STA   GUARD_X_ADJ
-   JSR   draw_guard
-   JMP   store_guard_data
-.if_else@108:
-   JSR   guard_take_move
-   JMP   store_guard_data
-.if_else@103:
-   JSR   guard_is_supported
-   BCC   .if_else@110
-   JSR   guard_take_move
-   JMP   store_guard_data
-.if_else@110:
-   JSR   guard_fall
-.if_end@109:
-.if_end@102:
-   JMP   store_guard_data
+   BCC   .switch@1_break
+   INC   GUARD_GOLD_TIMER
+   RTS
+.i14_if_end@63:
+   JSR   move_guards@run1
+   LDA   GUARD_LOC_COL
+   STA   __local_guard_take_move__col
+   DEC   GUARD_Y_ADJ
+   BPL   .i14_if_else@65
+   JSR   guard_drop_gold
+   LDX   __local_guard_take_move__col
+   LDA   GUARD_LOC_ROW
+   JSR   leave_cell
+   DEC   GUARD_LOC_ROW
+   LDX   __local_guard_take_move__col
+   LDA   GUARD_LOC_ROW
+   JSR   enter_cell
+   LDA   #$04
+   STA   GUARD_Y_ADJ
+   JMP   .i14_if_end@64
+.i14_if_else@65:
+   JSR   check_for_gold_picked_up_by_guard
+.i14_if_end@64:
+   JMP   try_guard_move_down@tail1
+.case@5:
+   JSR   try_guard_move_down
+.switch@1_break:
+   RTS
 
 pseudo_distance:
    SUBROUTINE
@@ -1476,9 +1560,9 @@ guard_find_candidate_row_below:
 .loop@7_start:
    LDA   __local_guard_find_candidate_row_below__row
    CMP   #$0F
-   BNE   .lb_skip@0
+   BNE   .lb_skip@6
    JMP   .loop@7_break
-.lb_skip@0:
+.lb_skip@6:
    LDX   __local_guard_find_candidate_row_below__row
    LDA   LEVEL_BG@lo+1,X
    STA   __local_guard_find_candidate_row_below__right_row
@@ -1569,115 +1653,6 @@ guard_find_candidate_row_below:
    STX   __local_guard_find_candidate_row_below__right_row
    JMP   .if_end@132
 
-guard_left_col_limit:
-   SUBROUTINE
-
-   STA   __local_guard_left_col_limit__row
-   STX   __local_guard_left_col_limit__col
-.loop@8_continue:
-   LDA   __local_guard_left_col_limit__col
-   BEQ   .vthread@2
-   LDX   __local_guard_left_col_limit__row
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_left_col_limit__2
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_guard_left_col_limit__3
-   LDA   __local_guard_left_col_limit__col
-   SEC
-   SBC   #$01
-   STA   __local_guard_left_col_limit__1
-   LDY   __local_guard_left_col_limit__1
-   LDA   (__local_guard_left_col_limit__2),Y
-   CMP   #$01
-   BEQ   .loop@8_break
-   CMP   #$02
-   BEQ   .loop@8_break
-   CMP   #$03
-   BEQ   .if_end@151
-   CMP   #$04
-   BEQ   .if_end@151
-   CPX   #$0F
-   BEQ   .if_end@151
-   LDA   LEVEL_BG@lo+1,X
-   STA   __local_guard_left_col_limit__col
-   LDA   LEVEL_BG@hi+1,X
-   STA   __local_guard_left_col_limit__0
-   LDA   (__local_guard_left_col_limit__col),Y
-   JSR   is_floor
-   BCS   .if_end@152
-   LDA   __local_guard_left_col_limit__1
-   STA   __local_guard_left_col_limit__col
-   JMP   .loop@8_break
-.if_end@152:
-.if_end@151:
-   LDA   __local_guard_left_col_limit__1
-   STA   __local_guard_left_col_limit__col
-   JMP   .loop@8_continue
-.loop@8_break:
-   LDA   __local_guard_left_col_limit__col
-.vthread@2:
-   RTS
-
-guard_right_col_limit:
-   SUBROUTINE
-
-   STA   __local_guard_right_col_limit__row
-   STX   __local_guard_right_col_limit__col
-.loop@9_continue:
-   LDA   __local_guard_right_col_limit__col
-   CMP   #$1B
-   BEQ   .vthread@3
-   LDX   __local_guard_right_col_limit__row
-   LDA   LEVEL_BG@lo,X
-   STA   __local_guard_right_col_limit__2
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_guard_right_col_limit__3
-   LDA   __local_guard_right_col_limit__col
-   CLC
-   ADC   #$01
-   STA   __local_guard_right_col_limit__1
-   LDY   __local_guard_right_col_limit__1
-   LDA   (__local_guard_right_col_limit__2),Y
-   CMP   #$01
-   BEQ   .loop@9_break
-   CMP   #$02
-   BEQ   .loop@9_break
-   CMP   #$03
-   BEQ   .if_end@160
-   CMP   #$04
-   BEQ   .if_end@160
-   CPX   #$0F
-   BEQ   .if_end@160
-   LDA   LEVEL_BG@lo+1,X
-   STA   __local_guard_right_col_limit__col
-   LDA   LEVEL_BG@hi+1,X
-   STA   __local_guard_right_col_limit__0
-   LDA   (__local_guard_right_col_limit__col),Y
-   JSR   is_floor
-   BCS   .if_end@161
-   LDA   __local_guard_right_col_limit__1
-   STA   __local_guard_right_col_limit__col
-   JMP   .loop@9_break
-.if_end@161:
-.if_end@160:
-   LDA   __local_guard_right_col_limit__1
-   STA   __local_guard_right_col_limit__col
-   JMP   .loop@9_continue
-.loop@9_break:
-   LDA   __local_guard_right_col_limit__col
-.vthread@3:
-   RTS
-
-consider_move:
-   SUBROUTINE
-
-   CMP   best_guard_dist
-   BCS   .if_end@162
-   STA   best_guard_dist
-   STX   guard_action
-.if_end@162:
-   RTS
-
 consider_column:
    SUBROUTINE
 
@@ -1701,8 +1676,12 @@ consider_column:
    JSR   guard_find_candidate_row_below
    LDX   __local_consider_column__col
    JSR   pseudo_distance
-   LDX   __zpabi_consider_column__down
-   JSR   consider_move
+   CMP   best_guard_dist
+   BCS   .i0_if_end@162
+   STA   best_guard_dist
+   LDA   __zpabi_consider_column__down
+   STA   guard_action
+.i0_if_end@162:
 .if_end@166:
 .if_end@163:
    LDA   __local_consider_column__row
@@ -1721,8 +1700,12 @@ consider_column:
    JSR   guard_find_candidate_row_above
    LDX   __local_consider_column__col
    JSR   pseudo_distance
-   LDX   __zpabi_consider_column__up
-   JSR   consider_move
+   CMP   best_guard_dist
+   BCS   .i1_if_end@162
+   STA   best_guard_dist
+   LDA   __zpabi_consider_column__up
+   STA   guard_action
+.i1_if_end@162:
 .if_end@169:
    RTS
 
@@ -1757,116 +1740,6 @@ guard_can_cross:
    RTS
 .and_false@175:
    CLC
-   RTS
-
-guard_run_at_player:
-   SUBROUTINE
-
-   STA   __local_guard_run_at_player__row
-   STX   __local_guard_run_at_player__col
-   CPX   PLAYER_COL
-   BCS   .if_end@177
-.loop@10_start:
-   INC   __local_guard_run_at_player__col
-   LDX   __local_guard_run_at_player__col
-   LDA   __local_guard_run_at_player__row
-   JSR   guard_can_cross
-   BCC   .tail@3
-   LDA   __local_guard_run_at_player__col
-   CMP   PLAYER_COL
-   BNE   .loop@10_start
-   LDA   #$02
-   RTS
-.if_end@177:
-.loop@11_start:
-   DEC   __local_guard_run_at_player__col
-   LDX   __local_guard_run_at_player__col
-   LDA   __local_guard_run_at_player__row
-   JSR   guard_can_cross
-   BCS   .if_end@179
-.tail@3:
-   LDA   #$00
-   RTS
-.if_end@179:
-   LDA   __local_guard_run_at_player__col
-   CMP   PLAYER_COL
-   BNE   .loop@11_start
-   LDA   #$01
-   RTS
-
-determine_guard_move:
-   SUBROUTINE
-
-   LDX   GUARD_LOC_ROW
-   LDA   LEVEL_BG@lo,X
-   STA   __local_determine_guard_move__c
-   LDA   LEVEL_BG@hi,X
-   STA   __local_determine_guard_move__0
-   LDY   GUARD_LOC_COL
-   LDA   (__local_determine_guard_move__c),Y
-   CMP   #$01
-   BNE   .if_end@182
-   JSR   guard_in_hole
-   BCC   .if_end@182
-   LDA   #$03
-   RTS
-.if_end@182:
-   LDA   GUARD_LOC_ROW
-   CMP   PLAYER_ROW
-   BNE   .if_end@183
-   LDX   GUARD_LOC_COL
-   JSR   guard_run_at_player
-   ORA   #$00
-   BEQ   .if_end@184
-   RTS
-.if_end@184:
-.if_end@183:
-   LDA   #$00
-   STA   guard_action
-   LDA   #$FF
-   STA   best_guard_dist
-   LDA   #$04
-   STA   __zpabi_consider_column__down
-   LDA   #$03
-   STA   __zpabi_consider_column__up
-   LDX   GUARD_LOC_COL
-   LDA   GUARD_LOC_ROW
-   JSR   consider_column
-   LDX   GUARD_LOC_COL
-   LDA   GUARD_LOC_ROW
-   JSR   guard_left_col_limit
-   STA   __local_determine_guard_move__c
-   JMP   .loop@12_start
-.determine_guard_move@rot@0:
-   LDA   #$01
-   STA   __zpabi_consider_column__down
-   STA   __zpabi_consider_column__up
-   LDX   __local_determine_guard_move__c
-   LDA   GUARD_LOC_ROW
-   JSR   consider_column
-   INC   __local_determine_guard_move__c
-.loop@12_start:
-   LDA   __local_determine_guard_move__c
-   CMP   GUARD_LOC_COL
-   BNE   .determine_guard_move@rot@0
-   LDX   GUARD_LOC_COL
-   LDA   GUARD_LOC_ROW
-   JSR   guard_right_col_limit
-   STA   __local_determine_guard_move__c
-   JMP   .loop@13_start
-.determine_guard_move@rot@1:
-   LDA   #$02
-   STA   __zpabi_consider_column__down
-   STA   __zpabi_consider_column__up
-   LDX   __local_determine_guard_move__c
-   LDA   GUARD_LOC_ROW
-   JSR   consider_column
-   DEC   __local_determine_guard_move__c
-.loop@13_start:
-   LDA   __local_determine_guard_move__c
-   CMP   GUARD_LOC_COL
-   BNE   .determine_guard_move@rot@1
-   LDA   guard_action
    RTS
 
 GUARD_PATTERNS_LIST:

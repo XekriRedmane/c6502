@@ -11,6 +11,7 @@ from passes.abi_selection import ZpLayout
 from passes.slot_coalescing import apply_slot_coalescing
 from passes.slot_sharing import SlotShare
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _A = asm_ast.Reg(reg=asm_ast.A())
 _X = asm_ast.Reg(reg=asm_ast.X())
@@ -253,6 +254,7 @@ def _expected() -> int:
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@no_inlining()
 class TestRuns(unittest.TestCase):
 
     def test_multiply_and_divide(self):

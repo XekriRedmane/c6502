@@ -43,21 +43,19 @@ __local_random_in_range__shift	EQU	$83
 __local_compute_checksum__lo	EQU	$84
 __local_random_in_range__limit	EQU	$84
 __local_compute_checksum__hi	EQU	$85
-__local_find_first_pc__0	EQU	$85
 __local_compute_checksum__0	EQU	$86
-__local_find_first_pc__1	EQU	$86
+__local_find_first_pc__0	EQU	$86
 __local_step_prng__1	EQU	$86
 __local_compute_checksum__p_0	EQU	$87
-__local_copy_pc_name_to_buf__m	EQU	$87
-__local_get_mob_data__index	EQU	$87
-__local_is_player_character__m	EQU	$87
+__local_find_first_pc__1	EQU	$87
 __local_compute_checksum__p_1	EQU	$88
-__local_copy_pc_name_to_buf__0	EQU	$88
-__local_get_mob_data__0	EQU	$88
-__local_is_player_character__0	EQU	$88
-__local_copy_pc_name_to_buf__i	EQU	$8A
-__local_copy_pc_name_to_buf__2	EQU	$8B
-__local_copy_pc_name_to_buf__3	EQU	$8C
+__local_copy_pc_name_to_buf__m	EQU	$88
+__local_get_mob_data__index	EQU	$88
+__local_copy_pc_name_to_buf__0	EQU	$89
+__local_get_mob_data__0	EQU	$89
+__local_copy_pc_name_to_buf__i	EQU	$8B
+__local_copy_pc_name_to_buf__2	EQU	$8C
+__local_copy_pc_name_to_buf__3	EQU	$8D
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -241,14 +239,13 @@ WAIT	EQU	$FCA8
 ; def delay_with_animation params= locals=__local_delay_with_animation__n indirect=false in_cycle=false
 ; def dispatch_on_mode params= locals= indirect=false in_cycle=false
 ; def find_first_pc params= locals=__local_find_first_pc__index,__local_find_first_pc__0,__local_find_first_pc__1 indirect=false in_cycle=false carry=true
-; def find_next_pc params= locals=__local_find_next_pc__0 indirect=false in_cycle=false
+; def find_next_pc params= locals=__local_find_next_pc__m,__local_find_next_pc__0 indirect=false in_cycle=false
 ; def find_next_pc_wrap params= locals= indirect=false in_cycle=false
 ; def find_prev_pc params= locals=__local_find_prev_pc__prev,__local_find_prev_pc__start,__local_find_prev_pc__0 indirect=false in_cycle=false
 ; def get_char_record params=__zpabi_get_char_record__index locals=__local_get_char_record__0,__local_get_char_record__1,__local_get_char_record__index indirect=false in_cycle=false param_regs=A
 ; def get_mob_data params=__zpabi_get_mob_data__index locals=__local_get_mob_data__index,__local_get_mob_data__0,__local_get_mob_data__1,__local_get_mob_data__2 indirect=false in_cycle=false param_regs=A
 ; def idle_anim_handler params= locals= indirect=false in_cycle=false
 ; def init_char_select params= locals=__local_init_char_select__0 indirect=false in_cycle=false
-; def is_player_character params=__zpabi_is_player_character__m_0,__zpabi_is_player_character__m_1 locals=__local_is_player_character__m,__local_is_player_character__0 indirect=false in_cycle=false param_regs=A,X carry=true
 ; def pos_to_colrow params=__zpabi_pos_to_colrow__pos locals=__local_pos_to_colrow__pos indirect=false in_cycle=false param_regs=A
 ; def random_in_range params=__zpabi_random_in_range__limit locals=__local_random_in_range__0,__local_random_in_range__1,__local_random_in_range__2,__local_random_in_range__shift,__local_random_in_range__limit indirect=false in_cycle=false param_regs=A
 ; def step_prng params= locals=__local_step_prng__0,__local_step_prng__1 indirect=false in_cycle=false
@@ -339,6 +336,7 @@ WAIT	EQU	$FCA8
 ; ext init_world params=
 ; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext integrity_fail params=
+; ext is_player_character params=__zpabi_is_player_character__m_0,__zpabi_is_player_character__m_1 param_regs=A,X
 ; ext load_char_name_ptr params=
 ; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
 ; ext main params=
@@ -426,11 +424,9 @@ WAIT	EQU	$FCA8
 ; call dispatch_on_mode -> delay_with_animation
 ; call find_first_pc -> copy_pc_name_to_buf
 ; call find_first_pc -> get_mob_data
-; call find_first_pc -> is_player_character
 ; call find_next_pc -> copy_pc_name_to_buf
 ; call find_next_pc -> find_first_pc
 ; call find_next_pc -> get_mob_data
-; call find_next_pc -> is_player_character
 ; call find_next_pc_wrap -> find_next_pc
 ; call find_prev_pc -> copy_pc_name_to_buf
 ; call find_prev_pc -> find_first_pc
@@ -459,7 +455,6 @@ WAIT	EQU	$FCA8
 ; item get_char_record section=.text local=false zero=false
 ; item clamp_char_field section=.text local=false zero=false
 ; item copy_pc_name_to_buf section=.text local=true zero=false
-; item is_player_character section=.text local=true zero=false
 ; item find_first_pc section=.text local=false zero=false
 ; item find_next_pc section=.text local=true zero=false
 ; item find_next_pc_wrap section=.text local=false zero=false
@@ -735,17 +730,6 @@ copy_pc_name_to_buf:
    BCC   .copy_pc_name_to_buf@rot@3
    RTS
 
-is_player_character:
-   SUBROUTINE
-
-   STA   __local_is_player_character__m
-   STX   __local_is_player_character__0
-   LDY   #$04
-   LDA   #$15
-   CLC
-   SBC   (__local_is_player_character__m),Y
-   RTS
-
 find_first_pc:
    SUBROUTINE
 
@@ -756,9 +740,10 @@ find_first_pc:
    JSR   get_mob_data
    STA   __local_find_first_pc__0
    STX   __local_find_first_pc__1
-   JSR   is_player_character
-   BCC   .if_end@12
-   LDX   __local_find_first_pc__1
+   LDY   #$04
+   LDA   (__local_find_first_pc__0),Y
+   CMP   #$15
+   BCS   .if_end@12
    LDA   __local_find_first_pc__0
    JSR   copy_pc_name_to_buf
    SEC
@@ -784,9 +769,10 @@ find_next_pc:
    JSR   get_mob_data
    STA   MOB_PTR
    STX   MOB_PTR+1
-   JSR   is_player_character
-   BCC   .loop@5_start
-   LDX   MOB_PTR+1
+   LDY   #$04
+   LDA   (MOB_PTR),Y
+   CMP   #$15
+   BCS   .loop@5_start
    LDA   MOB_PTR
    JMP   copy_pc_name_to_buf
 

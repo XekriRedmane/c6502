@@ -41,28 +41,31 @@ __local_pickup_treasure__0	EQU	$83
 __local_process_char_events__e	EQU	$83
 __local_event_faction_scene_cont__index	EQU	$84
 __local_pick_random_mob__1	EQU	$84
-__local_pickup_treasure__1	EQU	$84
+__local_pickup_treasure__i	EQU	$84
 __local_process_char_events__1	EQU	$84
 __local_update_event_list__0	EQU	$84
+__local_init_drop_gold__1	EQU	$85
 __local_pick_random_mob__2	EQU	$85
-__local_pickup_treasure__ev	EQU	$85
+__local_pickup_treasure__1	EQU	$85
 __local_process_char_events__index	EQU	$85
 __local_update_event_list__pos	EQU	$85
 __local_event_spawn_mob__index	EQU	$86
-__local_find_msb__1	EQU	$86
+__local_init_drop_gold__mask	EQU	$86
 __local_pick_random_mob__remaining	EQU	$86
 __local_pickup_treasure__2	EQU	$86
 __local_update_event_list__e	EQU	$86
-__local_find_msb__mask	EQU	$87
+__local_init_drop_gold__2	EQU	$87
 __local_pick_random_char__0	EQU	$87
+__local_pickup_treasure__ev	EQU	$87
 __local_update_event_list__1	EQU	$87
 __local_find_mob_by_faction__faction	EQU	$88
-__local_find_msb__2	EQU	$88
-__local_inc_stat__1	EQU	$88
+__local_init_drop_gold__3	EQU	$88
+__local_pickup_treasure__3	EQU	$88
 __local_update_event_list__2	EQU	$88
-__local_inc_stat__field	EQU	$89
-__local_find_msb__v_0	EQU	$8A
-__local_inc_stat__2	EQU	$8A
+__local_init_drop_gold__4	EQU	$89
+__local_inc_stat__1	EQU	$8A
+__local_inc_stat__field	EQU	$8B
+__local_inc_stat__2	EQU	$8C
 MENU_DESC_PTR	EQU	$C0
 MENU_OPTION_PTR	EQU	$C2
 TUNE_PC	EQU	$E4
@@ -242,22 +245,18 @@ WAIT	EQU	$FCA8
 ; def check_can_leave params= locals=__local_check_can_leave__0,__local_check_can_leave__1 indirect=false in_cycle=false carry=true
 ; def check_location_match params= locals=__local_check_location_match__0 indirect=false in_cycle=false
 ; def check_scene_events params= locals= indirect=false in_cycle=false
-; def clear_and_display params=__zpabi_clear_and_display__strings_0,__zpabi_clear_and_display__strings_1 locals=__local_clear_and_display__strings indirect=false in_cycle=false param_regs=A,X
-; def clear_treasure_digits params= locals=__local_clear_treasure_digits__0,__local_clear_treasure_digits__1,__local_clear_treasure_digits__i indirect=false in_cycle=false
 ; def drop_gold_exec params= locals=__local_drop_gold_exec__0,__local_drop_gold_exec__1 indirect=false in_cycle=false
 ; def event_faction_scene_cont params=__zpabi_event_faction_scene_cont__index locals=__local_event_faction_scene_cont__0,__local_event_faction_scene_cont__1,__local_event_faction_scene_cont__index indirect=false in_cycle=false param_regs=A
 ; def event_spawn_mob params= locals=__local_event_spawn_mob__0,__local_event_spawn_mob__index indirect=false in_cycle=false
 ; def find_mob_by_faction params=__zpabi_find_mob_by_faction__faction locals=__local_find_mob_by_faction__link,__local_find_mob_by_faction__faction indirect=false in_cycle=false param_regs=A carry=true
-; def find_msb params=__zpabi_find_msb__v_0,__zpabi_find_msb__v_1 locals=__local_find_msb__0,__local_find_msb__1,__local_find_msb__mask,__local_find_msb__2,__local_find_msb__v_1,__local_find_msb__v_0 indirect=false in_cycle=false param_regs=A,X
 ; def flush_pending_xp params= locals=__local_flush_pending_xp__0,__local_flush_pending_xp__1,__local_flush_pending_xp__2 indirect=false in_cycle=false
 ; def inc_stat params=__zpabi_inc_stat__field_0,__zpabi_inc_stat__field_1 locals=__local_inc_stat__0,__local_inc_stat__1,__local_inc_stat__field,__local_inc_stat__2 indirect=false in_cycle=false param_regs=A,X
 ; def init_drop_display params= locals=__local_init_drop_display__0,__local_init_drop_display__1,__local_init_drop_display__i indirect=false in_cycle=false
-; def init_drop_gold params= locals=__local_init_drop_gold__0 indirect=false in_cycle=false
+; def init_drop_gold params= locals=__local_init_drop_gold__0,__local_init_drop_gold__1,__local_init_drop_gold__mask,__local_init_drop_gold__2,__local_init_drop_gold__3,__local_init_drop_gold__4 indirect=false in_cycle=false
 ; def pick_random_char params= locals=__local_pick_random_char__0,__local_pick_random_char__1 indirect=false in_cycle=false
 ; def pick_random_mob params= locals=__local_pick_random_mob__index,__local_pick_random_mob__0,__local_pick_random_mob__1,__local_pick_random_mob__2,__local_pick_random_mob__remaining indirect=false in_cycle=false
-; def pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 locals=__local_pickup_treasure__gold_hi,__local_pickup_treasure__0,__local_pickup_treasure__1,__local_pickup_treasure__ev,__local_pickup_treasure__2 indirect=false in_cycle=false param_regs=A,X
+; def pickup_treasure params=__zpabi_pickup_treasure__ev_0,__zpabi_pickup_treasure__ev_1 locals=__local_pickup_treasure__gold_hi,__local_pickup_treasure__0,__local_pickup_treasure__i,__local_pickup_treasure__1,__local_pickup_treasure__2,__local_pickup_treasure__ev,__local_pickup_treasure__3 indirect=false in_cycle=false param_regs=A,X
 ; def process_char_events params=__zpabi_process_char_events__index locals=__local_process_char_events__0,__local_process_char_events__e,__local_process_char_events__1,__local_process_char_events__index indirect=false in_cycle=false param_regs=A
-; def process_scene_groups params= locals= indirect=false in_cycle=false
 ; def random_events params= locals=__local_random_events__i,__local_random_events__0 indirect=false in_cycle=false
 ; def scan_and_reorder params= locals= indirect=false in_cycle=false
 ; def scan_for_hostile params= locals=__local_scan_for_hostile__link,__local_scan_for_hostile__0,__local_scan_for_hostile__1 indirect=false in_cycle=false
@@ -300,8 +299,10 @@ WAIT	EQU	$FCA8
 ; ext check_threats_here params=
 ; ext clamp_char_field params=
 ; ext classify_entity_type params=__zpabi_classify_entity_type__e_0,__zpabi_classify_entity_type__e_1 param_regs=A,X
+; ext clear_and_display params=__zpabi_clear_and_display__strings_0,__zpabi_clear_and_display__strings_1 param_regs=A,X
 ; ext clear_map params=
 ; ext clear_restricted params=
+; ext clear_treasure_digits params=
 ; ext cold_restart params=
 ; ext colrow_to_pos params=__zpabi_colrow_to_pos__col,__zpabi_colrow_to_pos__row param_regs=A,X
 ; ext commit_move params=
@@ -329,6 +330,7 @@ WAIT	EQU	$FCA8
 ; ext find_attack_target params=
 ; ext find_entity_at_pos params=__zpabi_find_entity_at_pos__pos param_regs=A
 ; ext find_first_pc params= carry=true
+; ext find_msb params=__zpabi_find_msb__v_0,__zpabi_find_msb__v_1 param_regs=A,X
 ; ext find_nearest_event params=
 ; ext find_next_pc_wrap params=
 ; ext find_prev_pc params=
@@ -380,6 +382,7 @@ WAIT	EQU	$FCA8
 ; ext print_member_name params=
 ; ext print_mob_name params=
 ; ext print_string params=__zpabi_print_string__s_0,__zpabi_print_string__s_1 param_regs=A,X
+; ext process_scene_groups params=
 ; ext random_in_range params=__zpabi_random_in_range__limit param_regs=A
 ; ext read_keyboard params=
 ; ext render_font_char params=
@@ -442,12 +445,12 @@ WAIT	EQU	$FCA8
 ; call check_can_leave -> set_cursor_row21
 ; call check_can_leave -> step_prng
 ; call check_location_match -> get_char_record
-; call check_scene_events -> process_scene_groups
+; call check_scene_events -> load_char_to_fa
+; call check_scene_events -> scan_and_reorder
 ; call check_scene_events -> scan_for_hostile
 ; call check_scene_events -> scene_loop
 ; call check_scene_events -> scroll_status_line
 ; call check_scene_events -> set_cursor_row21
-; call clear_and_display -> display_message_loop
 ; call drop_gold_exec -> display_message
 ; call drop_gold_exec -> modify_current_stats
 ; call drop_gold_exec -> random_in_range
@@ -466,7 +469,6 @@ WAIT	EQU	$FCA8
 ; call flush_pending_xp -> set_cursor_row21
 ; call init_drop_display -> num_to_decimal
 ; call init_drop_gold -> display_message
-; call init_drop_gold -> find_msb
 ; call init_drop_gold -> set_cursor_row21
 ; call pick_random_char -> get_char_record
 ; call pick_random_char -> random_in_range
@@ -474,9 +476,8 @@ WAIT	EQU	$FCA8
 ; call pick_random_mob -> pick_random_char
 ; call pick_random_mob -> random_in_range
 ; call pickup_treasure -> apply_damage_to_current
-; call pickup_treasure -> clear_and_display
-; call pickup_treasure -> clear_treasure_digits
 ; call pickup_treasure -> commit_move
+; call pickup_treasure -> display_message_loop
 ; call pickup_treasure -> inc_stat
 ; call pickup_treasure -> modify_current_stats
 ; call pickup_treasure -> num_to_decimal
@@ -485,8 +486,6 @@ WAIT	EQU	$FCA8
 ; call pickup_treasure -> set_char_state
 ; call pickup_treasure -> set_cursor_row21
 ; call process_char_events -> check_location_match
-; call process_scene_groups -> load_char_to_fa
-; call process_scene_groups -> scan_and_reorder
 ; call random_events -> event_faction_scene_cont
 ; call random_events -> event_spawn_mob
 ; call random_events -> pick_random_char
@@ -508,8 +507,6 @@ WAIT	EQU	$FCA8
 ; item update_event_list section=.text local=false zero=false
 ; item trigger_scene_event section=.text local=false zero=false
 ; item inc_stat section=.text local=true zero=false
-; item clear_treasure_digits section=.text local=true zero=false
-; item clear_and_display section=.text local=true zero=false
 ; item pickup_treasure section=.text local=false zero=false
 ; item check_location_match section=.text local=true zero=false
 ; item pick_random_char section=.text local=true zero=false
@@ -522,10 +519,8 @@ WAIT	EQU	$FCA8
 ; item random_events@run1 section=.text local=true zero=false
 ; item scan_for_hostile section=.text local=true zero=false
 ; item scan_and_reorder section=.text local=true zero=false
-; item process_scene_groups section=.text local=true zero=false
 ; item check_scene_events section=.text local=false zero=false
 ; item flush_pending_xp section=.text local=false zero=false
-; item find_msb section=.text local=true zero=false
 ; item init_drop_gold section=.text local=false zero=false
 ; item init_drop_display section=.text local=false zero=false
 ; item adj_drop section=.text local=true zero=false
@@ -711,36 +706,16 @@ inc_stat:
 .if_end@12:
    RTS
 
-clear_treasure_digits:
-   SUBROUTINE
-
-   LDX   #$00
-.clear_treasure_digits@rot@0:
-   LDA   #$20
-   STA   S_CHEST_MESSAGE+39,X
-   STA   S_CHEST_MESSAGE+72,X
-   INX
-   CPX   #$05
-   BCC   .clear_treasure_digits@rot@0
-   RTS
-
-clear_and_display:
-   SUBROUTINE
-
-   LDY   #$00
-   STY   MSG_LINE_COUNT
-   JMP   display_message_loop
-
 pickup_treasure:
    SUBROUTINE
 
    STA   __local_pickup_treasure__ev
-   STX   __local_pickup_treasure__2
+   STX   __local_pickup_treasure__3
    LDA   #$00
    JSR   set_char_state
    LDA   __local_pickup_treasure__ev
    STA   MOB_PTR
-   LDA   __local_pickup_treasure__2
+   LDA   __local_pickup_treasure__3
    STA   MOB_PTR+1
    JSR   commit_move
    LDY   #$01
@@ -855,25 +830,35 @@ pickup_treasure:
    SBC   #$C9
 .if_end@15:
    LDY   #$02
-   STA   __local_pickup_treasure__0
-   LDA   (__local_pickup_treasure__ev),Y
    STA   __local_pickup_treasure__1
+   LDA   (__local_pickup_treasure__ev),Y
+   STA   __local_pickup_treasure__2
    LDA   #$01
    STA   __zpabi_modify_current_stats__add
-   LDX   __local_pickup_treasure__0
-   LDA   __local_pickup_treasure__1
+   LDX   __local_pickup_treasure__1
+   LDA   __local_pickup_treasure__2
    JSR   modify_current_stats
    LDY   #$04
    LDA   (ENTITY_PTR),Y
    CMP   #$15
    BCS   .if_end@20
-   JSR   clear_treasure_digits
+   LDA   #$00
+   STA   __local_pickup_treasure__i
+.pickup_treasure@rot@0:
+   LDX   __local_pickup_treasure__i
+   LDA   #$20
+   STA   S_CHEST_MESSAGE+39,X
+   STA   S_CHEST_MESSAGE+72,X
+   INC   __local_pickup_treasure__i
+   LDA   __local_pickup_treasure__i
+   CMP   #$05
+   BCC   .pickup_treasure@rot@0
    LDA   #<(S_CHEST_MESSAGE+39)
    STA   __zpabi_num_to_decimal__out_0
    LDA   #>(S_CHEST_MESSAGE+39)
    STA   __zpabi_num_to_decimal__out_1
-   LDX   __local_pickup_treasure__0
-   LDA   __local_pickup_treasure__1
+   LDX   __local_pickup_treasure__1
+   LDA   __local_pickup_treasure__2
    JSR   num_to_decimal
    LDY   #$0D
    LDA   (ENTITY_PTR),Y
@@ -888,9 +873,11 @@ pickup_treasure:
    LDA   __local_pickup_treasure__gold_hi
    JSR   num_to_decimal
    JSR   set_cursor_row21
+   LDA   #$00
+   STA   MSG_LINE_COUNT
    LDX   #>S_CHEST_MESSAGE
    LDA   #<S_CHEST_MESSAGE
-   JSR   clear_and_display
+   JSR   display_message_loop
 .if_end@20:
    LDA   #$FE
    LDY   #$00
@@ -1182,26 +1169,6 @@ scan_and_reorder:
 .if_end@44:
    RTS
 
-process_scene_groups:
-   SUBROUTINE
-
-   LDA   #$03
-   STA   SOURCE_CHAR
-   JSR   load_char_to_fa
-   LDA   #$00
-   STA   ACTIVE_CHAR
-   LDA   #$3F
-   STA   SCENE_GROUP_IDX
-   JSR   scan_and_reorder
-   LDA   #$41
-   STA   SCENE_GROUP_IDX
-   JSR   scan_and_reorder
-   LDA   #$42
-   STA   SCENE_GROUP_IDX
-   JSR   scan_and_reorder
-   LDA   CURRENT_PLAYER
-   JMP   load_char_to_fa
-
 check_scene_events:
    SUBROUTINE
 
@@ -1246,7 +1213,22 @@ check_scene_events:
    STA   SCENE_HOSTILE_DONE
    LDA   #$06
    JSR   scene_loop
-   JSR   process_scene_groups
+   LDA   #$03
+   STA   SOURCE_CHAR
+   JSR   load_char_to_fa
+   LDA   #$00
+   STA   ACTIVE_CHAR
+   LDA   #$3F
+   STA   SCENE_GROUP_IDX
+   JSR   scan_and_reorder
+   LDA   #$41
+   STA   SCENE_GROUP_IDX
+   JSR   scan_and_reorder
+   LDA   #$42
+   STA   SCENE_GROUP_IDX
+   JSR   scan_and_reorder
+   LDA   CURRENT_PLAYER
+   JSR   load_char_to_fa
    LDA   SCENE_EVENT_RESULT
    BEQ   .if_end@51
    RTS
@@ -1296,46 +1278,40 @@ flush_pending_xp:
    LDA   #$00
    RTS
 
-find_msb:
-   SUBROUTINE
-
-   STA   __local_find_msb__v_0
-   LDA   #$00
-   STA   __local_find_msb__mask
-   LDY   #$80
-   STY   __local_find_msb__2
-   JMP   .loop@13_continue
-.find_msb@rot@5:
-   LDA   __local_find_msb__v_0
-   AND   __local_find_msb__mask
-   STA   __local_find_msb__1
-   TXA
-   AND   __local_find_msb__2
-   ORA   __local_find_msb__1
-   BNE   .loop@13_break
-   LSR   __local_find_msb__2
-   ROR   __local_find_msb__mask
-.loop@13_continue:
-   LDA   __local_find_msb__mask
-   ORA   __local_find_msb__2
-   BNE   .find_msb@rot@5
-.loop@13_break:
-   LDX   __local_find_msb__2
-   LDA   __local_find_msb__mask
-   RTS
-
 init_drop_gold:
    SUBROUTINE
 
-   LDY   #$0E
+   LDY   #$0D
    LDA   (ENTITY_PTR),Y
-   TAX
-   DEY
+   STA   __local_init_drop_gold__4
+   INY
    LDA   (ENTITY_PTR),Y
-   JSR   find_msb
+   STA   __local_init_drop_gold__3
+   LDA   #$00
+   STA   __local_init_drop_gold__mask
+   LDY   #$80
+   STY   __local_init_drop_gold__2
+   JMP   .i2_loop@13_continue
+.init_drop_gold@rot@5:
+   LDA   __local_init_drop_gold__4
+   AND   __local_init_drop_gold__mask
+   STA   __local_init_drop_gold__1
+   LDA   __local_init_drop_gold__3
+   AND   __local_init_drop_gold__2
+   ORA   __local_init_drop_gold__1
+   BNE   .i2_loop@13_break
+   LSR   __local_init_drop_gold__2
+   ROR   __local_init_drop_gold__mask
+.i2_loop@13_continue:
+   LDA   __local_init_drop_gold__mask
+   ORA   __local_init_drop_gold__2
+   BNE   .init_drop_gold@rot@5
+.i2_loop@13_break:
+   LDA   __local_init_drop_gold__mask
    STA   DROP_AMOUNT
-   STX   DROP_AMOUNT+1
-   ORA   DROP_AMOUNT+1
+   LDA   __local_init_drop_gold__2
+   STA   DROP_AMOUNT+1
+   ORA   DROP_AMOUNT
    BNE   .if_end@56
    JSR   set_cursor_row21
    LDA   #$2E
@@ -1343,7 +1319,7 @@ init_drop_gold:
    LDA   #$15
    RTS
 .if_end@56:
-   TXA
+   LDA   DROP_AMOUNT+1
    LSR
    STA   DROP_STEP+1
    LDA   DROP_AMOUNT

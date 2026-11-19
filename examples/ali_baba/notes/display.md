@@ -109,6 +109,12 @@ preserves. Two more gaps come from the rewrite as plain C.
    the original's do. `key_or_button` costs 9 bytes this way (24
    bytes, against the 15 it took off `display_char_stats`).
 
+   Fixed on 19 Nov 2026 (docs/optimizations/inline_functions.md).
+   `ready` is inlined into `f`, whose tests branch back to the loop or
+   out of it, `LDA KBD; BMI; LDA MODE; BEQ; ...`. `key_or_button` is
+   inlined into `display_char_stats`, which is 323 bytes, 9 fewer than
+   the two functions were.
+
 ## Size
 
 Code bytes, from the `-c -O` object (`nm.py -S`), against the

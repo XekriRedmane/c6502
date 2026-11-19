@@ -25,17 +25,17 @@ __local_load_scene_from_disk__scene	EQU	$81
 __local_scene_setup__1	EQU	$81
 __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
+__local_enter_location__1	EQU	$82
 __local_load_scene_from_disk__tries	EQU	$82
 __local_scene_setup__2	EQU	$82
+__local_enter_location__2	EQU	$83
 __local_load_scene_from_disk__iob	EQU	$83
 __local_scene_setup__3	EQU	$83
-__local_draw_map_entities__1	EQU	$84
+__local_enter_location__3	EQU	$84
+__local_integrity_fail__offset	EQU	$84
 __local_load_scene_from_disk__0	EQU	$84
 __local_scene_setup__4	EQU	$84
-__local_draw_map_entities__2	EQU	$85
-__local_integrity_fail__offset	EQU	$85
-__local_draw_map_entities__3	EQU	$86
-__local_draw_map_entities__4	EQU	$87
+__local_enter_location__4	EQU	$85
 __local_rwts_dispatch__iob	EQU	$87
 __local_rwts_dispatch__0	EQU	$88
 MENU_DESC_PTR	EQU	$C0
@@ -215,14 +215,10 @@ WAIT	EQU	$FCA8
 ; def clear_map params= locals=__local_clear_map__0 indirect=false in_cycle=false
 ; def disk_read params= locals=__local_disk_read__0 indirect=false in_cycle=false carry=true
 ; def disk_write params= locals=__local_disk_write__0 indirect=false in_cycle=false carry=true
-; def draw_map_col params= locals=__local_draw_map_col__0 indirect=false in_cycle=false
-; def draw_map_entities params= locals=__local_draw_map_entities__0,__local_draw_map_entities__1,__local_draw_map_entities__2,__local_draw_map_entities__3,__local_draw_map_entities__4 indirect=false in_cycle=false
 ; def draw_map_icon_b params= locals= indirect=false in_cycle=false
-; def enter_location params= locals=__local_enter_location__0,__local_enter_location__1 indirect=false in_cycle=false
+; def enter_location params= locals=__local_enter_location__0,__local_enter_location__1,__local_enter_location__2,__local_enter_location__3,__local_enter_location__4 indirect=false in_cycle=false
 ; def fill_map params= locals=__local_fill_map__0 indirect=false in_cycle=false
 ; def integrity_fail params= locals=__local_integrity_fail__0,__local_integrity_fail__1,__local_integrity_fail__2,__local_integrity_fail__offset indirect=false in_cycle=false
-; def load_map_tiles params= locals=__local_load_map_tiles__0 indirect=false in_cycle=false
-; def load_scene_data params= locals=__local_load_scene_data__0 indirect=false in_cycle=false
 ; def load_scene_from_disk params=__zpabi_load_scene_from_disk__scene locals=__local_load_scene_from_disk__scene,__local_load_scene_from_disk__tries,__local_load_scene_from_disk__iob,__local_load_scene_from_disk__0,__local_load_scene_from_disk__1 indirect=false in_cycle=false param_regs=A carry=true
 ; def rwts_dispatch params=__zpabi_rwts_dispatch__command locals=__local_rwts_dispatch__iob,__local_rwts_dispatch__0,__local_rwts_dispatch__command indirect=false in_cycle=false param_regs=A carry=true
 ; def scene_loop params=__zpabi_scene_loop__scene locals=__local_scene_loop__scene indirect=false in_cycle=false param_regs=A
@@ -285,6 +281,8 @@ WAIT	EQU	$FCA8
 ; ext draw_blink_alt params=
 ; ext draw_blink_normal params=
 ; ext draw_char_at_pos params=__zpabi_draw_char_at_pos__pos param_regs=A
+; ext draw_map_col params=
+; ext draw_map_entities params=
 ; ext drop_gold_exec params=
 ; ext enter_char_select params=
 ; ext enter_combat_state params=__zpabi_enter_combat_state__pos param_regs=A
@@ -320,6 +318,8 @@ WAIT	EQU	$FCA8
 ; ext input_loop params=__zpabi_input_loop__m_0,__zpabi_input_loop__m_1 param_regs=A,X
 ; ext load_char_name_ptr params=
 ; ext load_char_to_fa params=__zpabi_load_char_to_fa__index param_regs=A
+; ext load_map_tiles params=
+; ext load_scene_data params=
 ; ext main params=
 ; ext manhattan_distance params=__zpabi_manhattan_distance__pos,__zpabi_manhattan_distance__from param_regs=A,X
 ; ext menu_attack_target params=
@@ -403,24 +403,6 @@ WAIT	EQU	$FCA8
 ; call clear_map -> setup_text_pos
 ; call disk_read -> rwts_dispatch
 ; call disk_write -> rwts_dispatch
-; call draw_map_col -> colrow_to_pos
-; call draw_map_col -> find_entity_at_pos
-; call draw_map_col -> get_entity_fontchar
-; call draw_map_col -> render_font_char
-; call draw_map_entities -> appearance_to_fontchar
-; call draw_map_entities -> classify_entity_type
-; call draw_map_entities -> colrow_to_pos
-; call draw_map_entities -> display_message
-; call draw_map_entities -> draw_map_icon_b
-; call draw_map_entities -> find_entity_at_pos
-; call draw_map_entities -> first_group_member
-; call draw_map_entities -> get_entity_fontchar
-; call draw_map_entities -> next_group_member
-; call draw_map_entities -> pos_to_colrow
-; call draw_map_entities -> print_bottom_centered
-; call draw_map_entities -> print_member_name
-; call draw_map_entities -> render_font_char
-; call draw_map_entities -> set_cursor_row21
 ; call draw_map_icon_b -> anim_tick_and_wait
 ; call draw_map_icon_b -> draw_blink_alt
 ; call draw_map_icon_b -> draw_blink_normal
@@ -428,28 +410,37 @@ WAIT	EQU	$FCA8
 ; call draw_map_icon_b -> scroll_status_line
 ; call draw_map_icon_b -> timed_wait
 ; call enter_location -> anim_tick_and_wait
+; call enter_location -> appearance_to_fontchar
+; call enter_location -> classify_entity_type
 ; call enter_location -> clear_map
-; call enter_location -> draw_map_col
-; call enter_location -> draw_map_entities
+; call enter_location -> colrow_to_pos
+; call enter_location -> display_message
+; call enter_location -> draw_map_icon_b
 ; call enter_location -> fill_map
+; call enter_location -> find_entity_at_pos
 ; call enter_location -> find_nearest_event
-; call enter_location -> load_map_tiles
+; call enter_location -> first_group_member
+; call enter_location -> get_entity_fontchar
+; call enter_location -> next_group_member
 ; call enter_location -> pos_to_colrow
+; call enter_location -> print_bottom_centered
+; call enter_location -> print_member_name
+; call enter_location -> render_font_char
+; call enter_location -> set_cursor_row21
 ; call enter_location -> set_text_window_bottom
 ; call fill_map -> font_pos_to_text_pos
 ; call fill_map -> print_string
 ; call fill_map -> render_font_char
 ; call integrity_fail -> step_prng
-; call load_scene_data -> DISK_READ_FIELD
-; call load_scene_data -> integrity_fail
-; call load_scene_data -> rwts_dispatch
 ; call load_scene_from_disk -> disk_read
 ; call rwts_dispatch -> RWTS_ENTRY
+; call scene_loop -> DISK_READ_FIELD
 ; call scene_loop -> display_message
 ; call scene_loop -> display_status_bar
 ; call scene_loop -> enter_location
-; call scene_loop -> load_scene_data
+; call scene_loop -> integrity_fail
 ; call scene_loop -> load_scene_from_disk
+; call scene_loop -> rwts_dispatch
 ; call scene_loop -> set_text_window_bottom
 ; call scene_loop -> step_prng
 ; call scene_loop -> text_renderer
@@ -465,12 +456,9 @@ WAIT	EQU	$FCA8
 ; call setup_scene_display -> setup_char_sprite
 ; call setup_scene_display -> timed_wait
 ; call setup_scene_display -> tune_player
-; item load_map_tiles section=.text local=true zero=false
 ; item fill_map section=.text local=false zero=false
 ; item clear_map section=.text local=false zero=false
-; item draw_map_col section=.text local=true zero=false
 ; item draw_map_icon_b section=.text local=true zero=false
-; item draw_map_entities section=.text local=true zero=false
 ; item enter_location section=.text local=false zero=false
 ; item check_at_boundary section=.text local=false zero=false
 ; item setup_scene_display section=.text local=false zero=false
@@ -479,7 +467,6 @@ WAIT	EQU	$FCA8
 ; item disk_read section=.text local=false zero=false
 ; item disk_write section=.text local=false zero=false
 ; item integrity_fail section=.text local=false zero=false
-; item load_scene_data section=.text local=true zero=false
 ; item load_scene_from_disk section=.text.scene_disk local=true zero=false
 ; item scene_loop section=.text local=false zero=false
 ; item DEFAULT_CHAR section=.data local=false zero=false
@@ -510,25 +497,6 @@ WAIT	EQU	$FCA8
 ; zp CHAR_PTR size=2 at=$FA def=false init=
 ; runtime hargs_size=11 hargs_need=0
 ; @zp-link-meta-end
-
-load_map_tiles:
-   SUBROUTINE
-
-   LDA   LOCATION_STYLE
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
-   AND   #$03
-   TAX
-   LDA   #$00
-   STA   BLINK_ALT_CHAR
-   LDA   TILE_FILL_TAB,X
-   STA   MAP_FILL_CHAR
-   LDA   #$2C
-   STA   DEFAULT_CHAR
-   RTS
 
 fill_map:
    SUBROUTINE
@@ -572,16 +540,6 @@ clear_map:
    LDA   (CHAR_PTR),Y
    JMP   setup_text_pos
 
-draw_map_col:
-   SUBROUTINE
-
-   LDX   FONT_ROW
-   LDA   FONT_COL
-   JSR   colrow_to_pos
-   JSR   find_entity_at_pos
-   JSR   get_entity_fontchar
-   JMP   render_font_char
-
 draw_map_icon_b:
    SUBROUTINE
 
@@ -601,122 +559,6 @@ draw_map_icon_b:
    JSR   anim_tick_and_wait
    LDA   #$14
    STA   BLINK_COL
-   RTS
-
-draw_map_entities:
-   SUBROUTINE
-
-   LDY   #$05
-   LDA   (CHAR_PTR),Y
-   ORA   #$80
-   STA   (CHAR_PTR),Y
-   LDA   MAP_REDRAW_FLAG
-   BEQ   .lb_skip@0
-   JMP   .if_end@2
-.lb_skip@0:
-   LDA   LOCATION_STYLE
-   AND   #$60
-   BEQ   .if_else@4
-   JSR   set_cursor_row21
-   LDA   #$0F
-   JSR   display_message
-   LDA   #$FF
-   STA   MAP_REDRAW_FLAG
-   JMP   .if_end@3
-.if_else@4:
-   LDY   #$02
-   LDA   (CHAR_PTR),Y
-   STA   __local_draw_map_entities__4
-   LDA   #$00
-   STA   (CHAR_PTR),Y
-   LDA   VIEW_MIN_ROW
-   STA   FONT_ROW
-   JMP   .loop@1_start
-.draw_map_entities@rot@1:
-   LDA   VIEW_MIN_COL
-   STA   FONT_COL
-   JMP   .loop@2_start
-.draw_map_entities@rot@0:
-   LDX   FONT_ROW
-   LDA   FONT_COL
-   JSR   colrow_to_pos
-   JSR   find_entity_at_pos
-   STA   __local_draw_map_entities__2
-   STX   __local_draw_map_entities__3
-   AND   #$FE
-   STA   __local_draw_map_entities__1
-   TXA
-   ORA   __local_draw_map_entities__1
-   BEQ   .loop@2_continue
-   LDA   __local_draw_map_entities__2
-   JSR   get_entity_fontchar
-   LDY   #$01
-   LDA   (__local_draw_map_entities__2),Y
-   CMP   #$FE
-   BEQ   .if_end@12
-   CMP   #$80
-   BCC   .draw_map_entities@scfold@1
-   CMP   #$C0
-   BCC   .if_end@12
-.draw_map_entities@scfold@1:
-   JSR   set_cursor_row21
-   LDX   __local_draw_map_entities__3
-   LDA   __local_draw_map_entities__2
-   JSR   classify_entity_type
-   JSR   print_bottom_centered
-   JSR   draw_map_icon_b
-.if_end@12:
-.loop@2_continue:
-   INC   FONT_COL
-.loop@2_start:
-   LDA   VIEW_MAX_COL
-   CMP   FONT_COL
-   BCS   .draw_map_entities@rot@0
-   INC   FONT_ROW
-.loop@1_start:
-   LDA   VIEW_MAX_ROW
-   CMP   FONT_ROW
-   BCS   .draw_map_entities@rot@1
-   LDA   __local_draw_map_entities__4
-   LDY   #$02
-   STA   (CHAR_PTR),Y
-   ORA   #$00
-   BNE   .if_end@13
-   RTS
-.if_end@13:
-.if_end@3:
-.if_end@2:
-   JSR   first_group_member
-.loop@3_start:
-   LDY   #$03
-   LDA   (MOB_PTR),Y
-   JSR   pos_to_colrow
-   STA   FONT_COL
-   STX   FONT_ROW
-   LDA   #$01
-   STA   FONT_CHARSET
-   LDY   #$04
-   LDA   (MOB_PTR),Y
-   JSR   appearance_to_fontchar
-   STA   FONT_CHARNUM
-   TXA
-   BEQ   .draw_map_entities@scfold@2
-   LDY   #$0C
-   LDA   (MOB_PTR),Y
-   AND   #$0F
-   BEQ   .if_else@17
-.draw_map_entities@scfold@2:
-   JSR   set_cursor_row21
-   JSR   print_member_name
-   JSR   draw_map_icon_b
-   JMP   .if_end@16
-.if_else@17:
-   JSR   render_font_char
-.if_end@16:
-   JSR   next_group_member
-   LDA   MOB_PTR
-   ORA   MOB_PTR+1
-   BNE   .loop@3_start
    RTS
 
 enter_location:
@@ -743,7 +585,19 @@ enter_location:
    CMP   LOCATION_STYLE
    BEQ   .if_end@19
    STA   LOCATION_STYLE
-   JSR   load_map_tiles
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   AND   #$03
+   TAX
+   LDA   #$00
+   STA   BLINK_ALT_CHAR
+   LDA   TILE_FILL_TAB,X
+   STA   MAP_FILL_CHAR
+   LDA   #$2C
+   STA   DEFAULT_CHAR
    JSR   fill_map
 .if_end@19:
    LDY   #$03
@@ -759,26 +613,141 @@ enter_location:
    LDA   VIEW_MIN_ROW
    STA   FONT_ROW
    JMP   .loop@4_start
-.enter_location@rot@3:
+.enter_location@rot@1:
    LDA   VIEW_MIN_COL
    STA   FONT_COL
    JMP   .loop@5_start
-.enter_location@rot@2:
-   JSR   draw_map_col
+.enter_location@rot@0:
+   LDX   FONT_ROW
+   LDA   FONT_COL
+   JSR   colrow_to_pos
+   JSR   find_entity_at_pos
+   JSR   get_entity_fontchar
+   JSR   render_font_char
    INC   FONT_COL
 .loop@5_start:
    LDA   VIEW_MAX_COL
    CMP   FONT_COL
-   BCS   .enter_location@rot@2
+   BCS   .enter_location@rot@0
    INC   FONT_ROW
 .loop@4_start:
    LDA   VIEW_MAX_ROW
    CMP   FONT_ROW
-   BCS   .enter_location@rot@3
+   BCS   .enter_location@rot@1
    LDY   #$05
    LDA   (CHAR_PTR),Y
-   BMI   .if_end@20
-   JSR   draw_map_entities
+   BPL   .lb_skip@1
+   JMP   .if_end@20
+.lb_skip@1:
+   LDA   (CHAR_PTR),Y
+   ORA   #$80
+   STA   (CHAR_PTR),Y
+   LDA   MAP_REDRAW_FLAG
+   BEQ   .lb_skip@0
+   JMP   .i3_if_end@2
+.lb_skip@0:
+   LDA   LOCATION_STYLE
+   AND   #$60
+   BEQ   .i3_if_else@4
+   JSR   set_cursor_row21
+   LDA   #$0F
+   JSR   display_message
+   LDA   #$FF
+   STA   MAP_REDRAW_FLAG
+   JMP   .i3_if_end@3
+.i3_if_else@4:
+   LDY   #$02
+   LDA   (CHAR_PTR),Y
+   STA   __local_enter_location__4
+   LDA   #$00
+   STA   (CHAR_PTR),Y
+   LDA   VIEW_MIN_ROW
+   STA   FONT_ROW
+   JMP   .i3_loop@1_start
+.enter_location@rot@3:
+   LDA   VIEW_MIN_COL
+   STA   FONT_COL
+   JMP   .i3_loop@2_start
+.enter_location@rot@2:
+   LDX   FONT_ROW
+   LDA   FONT_COL
+   JSR   colrow_to_pos
+   JSR   find_entity_at_pos
+   STA   __local_enter_location__2
+   STX   __local_enter_location__3
+   AND   #$FE
+   STA   __local_enter_location__1
+   TXA
+   ORA   __local_enter_location__1
+   BEQ   .i3_loop@2_continue
+   LDA   __local_enter_location__2
+   JSR   get_entity_fontchar
+   LDY   #$01
+   LDA   (__local_enter_location__2),Y
+   CMP   #$FE
+   BEQ   .i3_if_end@12
+   CMP   #$80
+   BCC   .enter_location@scfold@1
+   CMP   #$C0
+   BCC   .i3_if_end@12
+.enter_location@scfold@1:
+   JSR   set_cursor_row21
+   LDX   __local_enter_location__3
+   LDA   __local_enter_location__2
+   JSR   classify_entity_type
+   JSR   print_bottom_centered
+   JSR   draw_map_icon_b
+.i3_if_end@12:
+.i3_loop@2_continue:
+   INC   FONT_COL
+.i3_loop@2_start:
+   LDA   VIEW_MAX_COL
+   CMP   FONT_COL
+   BCS   .enter_location@rot@2
+   INC   FONT_ROW
+.i3_loop@1_start:
+   LDA   VIEW_MAX_ROW
+   CMP   FONT_ROW
+   BCS   .enter_location@rot@3
+   LDA   __local_enter_location__4
+   LDY   #$02
+   STA   (CHAR_PTR),Y
+   ORA   #$00
+   BEQ   .i3@end
+.i3_if_end@3:
+.i3_if_end@2:
+   JSR   first_group_member
+.i3_loop@3_start:
+   LDY   #$03
+   LDA   (MOB_PTR),Y
+   JSR   pos_to_colrow
+   STA   FONT_COL
+   STX   FONT_ROW
+   LDA   #$01
+   STA   FONT_CHARSET
+   LDY   #$04
+   LDA   (MOB_PTR),Y
+   JSR   appearance_to_fontchar
+   STA   FONT_CHARNUM
+   TXA
+   BEQ   .enter_location@scfold@2
+   LDY   #$0C
+   LDA   (MOB_PTR),Y
+   AND   #$0F
+   BEQ   .i3_if_else@17
+.enter_location@scfold@2:
+   JSR   set_cursor_row21
+   JSR   print_member_name
+   JSR   draw_map_icon_b
+   JMP   .i3_if_end@16
+.i3_if_else@17:
+   JSR   render_font_char
+.i3_if_end@16:
+   JSR   next_group_member
+   LDA   MOB_PTR
+   ORA   MOB_PTR+1
+   BNE   .i3_loop@3_start
+.i3@end:
 .if_end@20:
    RTS
 
@@ -928,21 +897,6 @@ integrity_fail:
    STA   GAME_MESSAGE_STRINGS+1,X
    RTS
 
-load_scene_data:
-   SUBROUTINE
-
-   LDA   DISK_MOTOR_ON
-   LDA   #$05
-   LDY   #$04
-   STA   (RWTS_IOB_PTR),Y
-   LDA   #$00
-   JSR   rwts_dispatch
-   JSR   DISK_READ_FIELD
-   BCC   .if_end@30
-   JSR   integrity_fail
-.if_end@30:
-   RTS
-
 load_scene_from_disk:
    SUBROUTINE
 
@@ -1002,7 +956,16 @@ scene_loop:
    JSR   step_prng
    AND   #$0A
    BNE   .if_end@32
-   JSR   load_scene_data
+   LDA   DISK_MOTOR_ON
+   LDA   #$05
+   LDY   #$04
+   STA   (RWTS_IOB_PTR),Y
+   LDA   #$00
+   JSR   rwts_dispatch
+   JSR   DISK_READ_FIELD
+   BCC   .i2_if_end@30
+   JSR   integrity_fail
+.i2_if_end@30:
 .if_end@32:
 .loop@7_start:
    LDA   SCENE_NUMBER

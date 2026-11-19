@@ -95,22 +95,18 @@ __local_do_var__n	EQU	$F0
 __local_do_2op__0	EQU	$F1
 __local_do_var__0	EQU	$F1
 __local_do_2op__1	EQU	$F2
-__local_do_var__1	EQU	$F2
+__local_do_var__i	EQU	$F2
 __local_do_2op__2	EQU	$F3
-__local_do_var__2	EQU	$F3
-__local_do_var__3	EQU	$F4
+__local_do_var__args	EQU	$F3
+__local_do_var__1	EQU	$F4
 __local_branch__hi	EQU	$F6
 __local_dec_var__0	EQU	$F6
 __local_inc_var__0	EQU	$F6
-__local_instr_call__1	EQU	$F6
 __local_branch__offset_1	EQU	$F7
-__local_instr_call__i	EQU	$F7
 __local_var_get__var	EQU	$F7
 __local_branch__condition	EQU	$F8
-__local_instr_call__args	EQU	$F8
 __local_var_get__0	EQU	$F8
 __local_get_nonstack_var__var	EQU	$F9
-__local_instr_call__2	EQU	$F9
 __local_return_value__0	EQU	$F9
 __local_branch_to_offset__pages_0	EQU	$FA
 __local_get_nonstack_var__0	EQU	$FA
@@ -145,12 +141,11 @@ COUT1	EQU	$FDF0
 ; def do_1op params=__zpabi_do_1op__n locals=__local_do_1op__0,__local_do_1op__n indirect=false in_cycle=false param_regs=A
 ; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__1,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4 indirect=false in_cycle=false param_regs=A
 ; def do_instruction params= locals=__local_do_instruction__v_1,__local_do_instruction__0,__local_do_instruction__v_0,__local_do_instruction__forms,__local_do_instruction__1 indirect=false in_cycle=false
-; def do_var params=__zpabi_do_var__n locals=__local_do_var__n,__local_do_var__0,__local_do_var__1,__local_do_var__2,__local_do_var__3 indirect=false in_cycle=false param_regs=A
+; def do_var params=__zpabi_do_var__n locals=__local_do_var__n,__local_do_var__0,__local_do_var__i,__local_do_var__args,__local_do_var__1 indirect=false in_cycle=false param_regs=A
 ; def get_const_word params= locals=__local_get_const_word__0,__local_get_const_word__1 indirect=false in_cycle=false
 ; def get_nonstack_var params=__zpabi_get_nonstack_var__var locals=__local_get_nonstack_var__var,__local_get_nonstack_var__0,__local_get_nonstack_var__1,__local_get_nonstack_var__2 indirect=false in_cycle=false param_regs=A
 ; def get_var_content params= locals=__local_get_var_content__0 indirect=false in_cycle=false
 ; def inc_var params= locals=__local_inc_var__0 indirect=false in_cycle=false
-; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__i,__local_instr_call__args,__local_instr_call__2 indirect=false in_cycle=false
 ; def pop params= locals=__local_pop__0,__local_pop__1 indirect=false in_cycle=false
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals=__local_push__value_1,__local_push__value_0 indirect=false in_cycle=false param_regs=A,X
 ; def return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 locals=__local_return_value__0,__local_return_value__1,__local_return_value__x,__local_return_value__count,__local_return_value__value_1,__local_return_value__value_0 indirect=false in_cycle=false param_regs=A,X
@@ -182,6 +177,7 @@ COUT1	EQU	$FDF0
 ; ext home params=
 ; ext inc_sector_and_read params= carry=true
 ; ext inc_sector_and_write params= carry=true
+; ext instr_call params=
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -277,13 +273,14 @@ COUT1	EQU	$FDF0
 ; call do_instruction -> get_next_code_byte
 ; call do_instruction -> get_var_content
 ; call do_var -> buffer_char
-; call do_var -> instr_call
+; call do_var -> get_next_code_byte
 ; call do_var -> instr_put_prop
 ; call do_var -> instr_random
 ; call do_var -> instr_sread
 ; call do_var -> pop
 ; call do_var -> print_number
 ; call do_var -> push
+; call do_var -> store_result
 ; call do_var -> var_put
 ; call get_const_word -> get_next_code_byte
 ; call get_var_content -> get_next_code_byte
@@ -291,9 +288,6 @@ COUT1	EQU	$FDF0
 ; call get_var_content -> pop
 ; call inc_var -> var_get
 ; call inc_var -> var_put
-; call instr_call -> get_next_code_byte
-; call instr_call -> push
-; call instr_call -> store_result
 ; call return_value -> pop
 ; call return_value -> store_result
 ; call store_result -> get_next_code_byte
@@ -319,7 +313,6 @@ COUT1	EQU	$FDF0
 ; item branch_to_offset section=.text local=true zero=false
 ; item branch section=.text local=false zero=false
 ; item branch@tail1 section=.text local=true zero=false
-; item instr_call section=.text local=true zero=false
 ; item inc_var section=.text local=true zero=false
 ; item inc_var@tail0 section=.text local=true zero=false
 ; item dec_var section=.text local=true zero=false
@@ -762,95 +755,6 @@ branch@tail1:
    LDA   #$01
    JMP   return_value
 
-instr_call:
-   SUBROUTINE
-
-   LDA   OPERANDS
-   ORA   OPERANDS+1
-   BNE   .if_end@20
-   LDX   #$00
-   TXA
-   JMP   store_result
-.if_end@20:
-   LDA   FRAME_STACK_COUNT
-   LDX   Z_PC
-   JSR   push
-   LDX   FRAME_Z_SP+1
-   LDA   FRAME_Z_SP
-   JSR   push
-   LDA   Z_PC+1
-   LDX   Z_PC+2
-   ORA   #$00
-   JSR   push
-   LDA   #$00
-   STA   ZCODE_PAGE_VALID
-   LDA   OPERANDS
-   ASL
-   STA   Z_PC
-   LDA   OPERANDS+1
-   ROL
-   STA   Z_PC+1
-   LDA   #$00
-   ROL
-   STA   Z_PC+2
-   JSR   get_next_code_byte
-   STA   __local_instr_call__2
-   ORA   #$00
-   BEQ   .if_end@21
-   LDY   #$00
-   STY   __local_instr_call__args
-   STA   __local_instr_call__i
-.loop@1_start:
-   LDX   __local_instr_call__args
-   LDA   LOCAL_ZVARS,X
-   STA   __local_instr_call__1
-   LDA   LOCAL_ZVARS+1,X
-   LDX   __local_instr_call__1
-   JSR   push
-   JSR   get_next_code_byte
-   STA   __local_instr_call__1
-   JSR   get_next_code_byte
-   LDX   __local_instr_call__args
-   STA   LOCAL_ZVARS+1,X
-   LDA   __local_instr_call__1
-   STA   LOCAL_ZVARS,X
-   INX
-   INX
-   STX   __local_instr_call__args
-   DEC   __local_instr_call__i
-   BNE   .loop@1_start
-.if_end@21:
-   LDA   OPERAND_COUNT
-   SEC
-   SBC   #$01
-   STA   __local_instr_call__args
-   LDY   #$00
-   STY   __local_instr_call__i
-   JMP   .loop@2_continue
-.instr_call@rot@0:
-   LDA   __local_instr_call__i
-   ASL
-   TAX
-   LDA   OPERANDS+3,X
-   STA   LOCAL_ZVARS,X
-   LDA   OPERANDS+2,X
-   STA   LOCAL_ZVARS+1,X
-   INC   __local_instr_call__i
-   DEC   __local_instr_call__args
-.loop@2_continue:
-   LDA   __local_instr_call__args
-   BNE   .instr_call@rot@0
-   LDX   #$00
-   LDA   __local_instr_call__2
-   JSR   push
-   LDA   STACK_COUNT
-   STA   FRAME_STACK_COUNT
-   LDA   Z_SP
-   STA   FRAME_Z_SP
-   LDA   Z_SP+1
-   STA   FRAME_Z_SP+1
-   RTS
-
 inc_var:
    SUBROUTINE
 
@@ -1261,7 +1165,7 @@ do_var:
    PHA
    RTS
 .jtab@3:
-   DC.W  instr_call-1
+   DC.W  .case@61-1
    DC.W  .case@62-1
    DC.W  .case@63-1
    DC.W  instr_put_prop-1
@@ -1271,6 +1175,92 @@ do_var:
    DC.W  instr_random-1
    DC.W  .case@69-1
    DC.W  .case@70-1
+.case@61:
+   LDA   OPERANDS
+   ORA   OPERANDS+1
+   BNE   .i0_if_end@20
+   LDX   #$00
+   TXA
+   JMP   store_result
+.i0_if_end@20:
+   LDA   FRAME_STACK_COUNT
+   LDX   Z_PC
+   JSR   push
+   LDX   FRAME_Z_SP+1
+   LDA   FRAME_Z_SP
+   JSR   push
+   LDA   Z_PC+1
+   LDX   Z_PC+2
+   ORA   #$00
+   JSR   push
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID
+   LDA   OPERANDS
+   ASL
+   STA   Z_PC
+   LDA   OPERANDS+1
+   ROL
+   STA   Z_PC+1
+   LDA   #$00
+   ROL
+   STA   Z_PC+2
+   JSR   get_next_code_byte
+   STA   __local_do_var__1
+   ORA   #$00
+   BEQ   .i0_if_end@21
+   LDY   #$00
+   STY   __local_do_var__args
+   STA   __local_do_var__i
+.i0_loop@1_start:
+   LDX   __local_do_var__args
+   LDA   LOCAL_ZVARS,X
+   STA   __local_do_var__0
+   LDA   LOCAL_ZVARS+1,X
+   LDX   __local_do_var__0
+   JSR   push
+   JSR   get_next_code_byte
+   STA   __local_do_var__0
+   JSR   get_next_code_byte
+   LDX   __local_do_var__args
+   STA   LOCAL_ZVARS+1,X
+   LDA   __local_do_var__0
+   STA   LOCAL_ZVARS,X
+   INX
+   INX
+   STX   __local_do_var__args
+   DEC   __local_do_var__i
+   BNE   .i0_loop@1_start
+.i0_if_end@21:
+   LDA   OPERAND_COUNT
+   SEC
+   SBC   #$01
+   STA   __local_do_var__args
+   LDY   #$00
+   STY   __local_do_var__i
+   JMP   .i0_loop@2_continue
+.do_var@rot@0:
+   LDA   __local_do_var__i
+   ASL
+   TAX
+   LDA   OPERANDS+3,X
+   STA   LOCAL_ZVARS,X
+   LDA   OPERANDS+2,X
+   STA   LOCAL_ZVARS+1,X
+   INC   __local_do_var__i
+   DEC   __local_do_var__args
+.i0_loop@2_continue:
+   LDA   __local_do_var__args
+   BNE   .do_var@rot@0
+   LDX   #$00
+   LDA   __local_do_var__1
+   JSR   push
+   LDA   STACK_COUNT
+   STA   FRAME_STACK_COUNT
+   LDA   Z_SP
+   STA   FRAME_Z_SP
+   LDA   Z_SP+1
+   STA   FRAME_Z_SP+1
+   RTS
 .case@62:
    LDA   Z_HEADER_ADDR
    CLC
@@ -1280,18 +1270,18 @@ do_var:
    ADC   OPERANDS+1
    STA   __local_do_var__n
    LDA   OPERANDS+2
-   STA   __local_do_var__2
+   STA   __local_do_var__args
    LDA   OPERANDS+3
-   ASL   __local_do_var__2
+   ASL   __local_do_var__args
    ROL
-   STA   __local_do_var__3
+   STA   __local_do_var__1
    LDA   __local_do_var__0
    CLC
-   ADC   __local_do_var__2
+   ADC   __local_do_var__args
    STA   __local_do_var__0
    LDA   __local_do_var__n
-   ADC   __local_do_var__3
-   STA   __local_do_var__1
+   ADC   __local_do_var__1
+   STA   __local_do_var__i
    LDA   OPERANDS+5
    LDY   #$00
    STA   (__local_do_var__0),Y
@@ -1306,13 +1296,13 @@ do_var:
    STA   __local_do_var__n
    LDA   OPERANDS+1
    ADC   OPERANDS+3
-   STA   __local_do_var__1
+   STA   __local_do_var__i
    LDA   Z_HEADER_ADDR
    CLC
    ADC   __local_do_var__n
    STA   __local_do_var__n
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_do_var__1
+   ADC   __local_do_var__i
    STA   __local_do_var__0
    LDA   OPERANDS+4
    LDY   #$00

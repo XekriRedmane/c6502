@@ -62,16 +62,17 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__local_main__0	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
-__local_main__sector	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__local_locate_last_ram_page__2	EQU	$E6
-__local_locate_last_ram_page__3	EQU	$E7
-__local_locate_last_ram_page__page	EQU	$E8
+__local_main__0	EQU	$E4
+__local_main__sector	EQU	$E5
+__local_main__1	EQU	$E6
+__local_main__2	EQU	$E7
+__local_main__page	EQU	$E8
+__local_main__3	EQU	$E9
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -93,8 +94,7 @@ COUT1	EQU	$FDF0
 ; def instr_quit params= locals= indirect=false in_cycle=false
 ; def instr_restart params= locals= indirect=false in_cycle=false
 ; def internal_error params= locals= indirect=false in_cycle=false
-; def locate_last_ram_page params= locals=__local_locate_last_ram_page__0,__local_locate_last_ram_page__1,__local_locate_last_ram_page__2,__local_locate_last_ram_page__3,__local_locate_last_ram_page__page indirect=false in_cycle=false
-; def main params= locals=__local_main__0,__local_main__sector indirect=false in_cycle=false
+; def main params= locals=__local_main__0,__local_main__sector,__local_main__1,__local_main__2,__local_main__page,__local_main__3 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -144,6 +144,7 @@ COUT1	EQU	$FDF0
 ; ext instr_test_attr params=
 ; ext load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 param_regs=A,X
 ; ext load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 param_regs=A,X
+; ext locate_last_ram_page params=
 ; ext new_line params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
@@ -168,10 +169,8 @@ COUT1	EQU	$FDF0
 ; call internal_error -> dump_buffer_with_more
 ; call internal_error -> print_ascii_string
 ; call main -> do_instruction
-; call main -> locate_last_ram_page
 ; call main -> read_from_sector
 ; call main -> reset_window
-; item locate_last_ram_page section=.text local=true zero=false
 ; item main section=.text.main local=false zero=false
 ; item instr_restart section=.text local=false zero=false
 ; item instr_quit section=.text local=false zero=false
@@ -249,30 +248,6 @@ COUT1	EQU	$FDF0
 ; zp disk_sector size=2 at=auto def=false init=
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
-
-locate_last_ram_page:
-   SUBROUTINE
-
-   LDA   #$C0
-   STA   __local_locate_last_ram_page__page
-.loop@0_start:
-   DEC   __local_locate_last_ram_page__page
-   LDA   #$FF
-   STA   __local_locate_last_ram_page__2
-   LDA   __local_locate_last_ram_page__page
-   STA   __local_locate_last_ram_page__3
-   LDY   #$00
-   LDA   (__local_locate_last_ram_page__2),Y
-   CMP   (__local_locate_last_ram_page__2),Y
-   BNE   .loop@0_start
-   EOR   #$FF
-   STA   (__local_locate_last_ram_page__2),Y
-   CMP   (__local_locate_last_ram_page__2),Y
-   BNE   .loop@0_start
-   EOR   #$FF
-   STA   (__local_locate_last_ram_page__2),Y
-   LDA   __local_locate_last_ram_page__page
-   RTS
 
 main:
    SUBROUTINE
@@ -432,13 +407,31 @@ main:
    LDA   Z_HEADER_ADDR+1
    ADC   NUM_IMAGE_PAGES
    STA   HIGH_MEM_ADDR+1
-   STA   __local_main__sector
-   JSR   locate_last_ram_page
-   CMP   __local_main__sector
+   STA   __local_main__3
+   LDA   #$C0
+   STA   __local_main__page
+.i0_loop@0_start:
+   DEC   __local_main__page
+   LDA   #$FF
+   STA   __local_main__1
+   LDA   __local_main__page
+   STA   __local_main__2
+   LDY   #$00
+   LDA   (__local_main__1),Y
+   CMP   (__local_main__1),Y
+   BNE   .i0_loop@0_start
+   EOR   #$FF
+   STA   (__local_main__1),Y
+   CMP   (__local_main__1),Y
+   BNE   .i0_loop@0_start
+   EOR   #$FF
+   STA   (__local_main__1),Y
+   LDA   __local_main__page
+   CMP   __local_main__3
    BCS   .if_end@5
    JMP   internal_error
 .if_end@5:
-   SBC   __local_main__sector
+   SBC   __local_main__3
    TAY
    STY   LAST_Z_PAGE
    TYA

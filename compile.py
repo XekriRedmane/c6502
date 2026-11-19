@@ -196,6 +196,7 @@ from passes.type_checking import (
 )
 from c99_to_tac import translate_program as translate_to_tac
 from passes.return_in_zero_page import return_pointers_in_zero_page
+from passes.optimization.inline_functions import inline_functions
 from passes.constant_store_order import apply_constant_store_order
 from passes.shared_tails import apply_shared_tails
 from passes.outline_runs import apply_outline_runs
@@ -370,13 +371,15 @@ def _format_tokens(source: str) -> str:
 
 def translate_for_codegen(prog, symbols, types, optimize: bool):
     """Translates the type-checked `prog` to TAC for code generation.
-    Under `-O` it then returns each `static` function's pointer result
-    in a zero-page object of its own
-    (`passes.return_in_zero_page`), which adds the objects to
-    `symbols` before `plan_zero_page` places them. The CLI and the
+    Under `-O` it then inlines the calls of small `static` functions
+    (`passes.optimization.inline_functions`), and returns each
+    remaining `static` function's pointer result in a zero-page object
+    of its own (`passes.return_in_zero_page`), which adds the objects
+    to `symbols` before `plan_zero_page` places them. The CLI and the
     simulator harness both start their compiles here."""
     tac = translate_to_tac(prog, symbols, types)
     if optimize:
+        tac = inline_functions(tac, symbols, prog)
         tac = return_pointers_in_zero_page(tac, symbols)
     return tac
 
@@ -401,6 +404,7 @@ def _run_stage(
         )
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
+            tac = inline_functions(tac, symbols, prog)
             tac = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":

@@ -33,6 +33,7 @@ from parser import ParserError, parse
 from passes.abi_selection import AbiSelectionError
 from preprocessor import preprocess
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
 
@@ -100,6 +101,7 @@ static uint8_t first(uint8_t k [[c6502::in_a]], const uint8_t *p) {
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@no_inlining()
 class TestShares(unittest.TestCase):
 
     def _check_runs(self, src: str, expected: int) -> None:
@@ -327,6 +329,7 @@ def _link(sources: list[str]) -> tuple[int, str, str]:
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@no_inlining()
 class TestAcrossUnits(unittest.TestCase):
 
     def test_const_declaration_lets_the_caller_hold(self) -> None:

@@ -23,6 +23,7 @@ from passes.asm_aliasing import may_alias
 from passes.asm_liveness import sets_flags
 from preprocessor import preprocess
 from sim.harness import build_sim
+from tests.no_inlining import no_inlining
 
 _DIVIDE = """
 #include <stdint.h>
@@ -95,6 +96,7 @@ def _function(src: str, name: str) -> str:
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@no_inlining()
 class TestDivideLoop(unittest.TestCase):
 
     def test_runs(self):

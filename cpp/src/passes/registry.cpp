@@ -25,14 +25,21 @@
 #include "passes/self_store_drop.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
+#include "passes/capture_args.h"
+#include "passes/carry_halve.h"
+#include "passes/carry_in_add.h"
 #include "passes/carry_inc.h"
+#include "passes/carry_recompute.h"
+#include "passes/dec_branch_indirect_y_fold.h"
 #include "passes/dec_inc_branch_fold.h"
 #include "passes/dec_peephole.h"
 #include "passes/inc_low_byte_test.h"
 #include "passes/inc_peephole.h"
+#include "passes/label_offset_fold.h"
 #include "passes/self_store_drop.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/sub1_test_zero_peephole.h"
+#include "passes/volatile_void_read_cmp.h"
 
 namespace c6502::passes {
 
@@ -200,6 +207,42 @@ std::string run_dec_inc_branch_fold(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_dec_inc_branch_fold(std::move(input)));
 }
 
+std::string run_carry_halve(asm_ast::Program input, const AsmContext& ctx,
+                            const json::Value&, const json::Value& kwargs) {
+  const auto slots =
+      capture_args::symbol_addrs(capture_args::kwarg(kwargs, "zp_slot_symbols"));
+  return asdl::dump(
+      apply_carry_halve(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
+std::string run_carry_in_add(asm_ast::Program input, const AsmContext& ctx,
+                             const json::Value&, const json::Value& kwargs) {
+  const auto slots =
+      capture_args::symbol_addrs(capture_args::kwarg(kwargs, "zp_slot_symbols"));
+  return asdl::dump(
+      apply_carry_in_add(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
+std::string run_volatile_void_read_cmp(asm_ast::Program input, const AsmContext&,
+                                       const json::Value&, const json::Value&) {
+  return asdl::dump(apply_volatile_void_read_cmp(std::move(input)));
+}
+
+std::string run_dec_branch_indirect_y_fold(asm_ast::Program input, const AsmContext&,
+                                           const json::Value&, const json::Value&) {
+  return asdl::dump(apply_dec_branch_indirect_y_fold(std::move(input)));
+}
+
+std::string run_label_offset_fold(asm_ast::Program input, const AsmContext&,
+                                  const json::Value&, const json::Value&) {
+  return asdl::dump(apply_label_offset_fold(std::move(input)));
+}
+
+std::string run_carry_recompute_drop(asm_ast::Program input, const AsmContext&,
+                                     const json::Value&, const json::Value&) {
+  return asdl::dump(apply_carry_recompute_drop(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -241,11 +284,17 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"remat", run_remat},
       {"asm_dead_store", run_asm_dead_store},
       {"mem_const_prop", run_mem_const_prop},
+      {"carry_halve", run_carry_halve},
+      {"carry_in_add", run_carry_in_add},
       {"inc_peephole", run_inc_peephole},
       {"inc_low_byte_test", run_inc_low_byte_test},
       {"carry_inc", run_carry_inc},
       {"dec_peephole", run_dec_peephole},
       {"sub1_test_zero", run_sub1_test_zero},
+      {"volatile_void_read_cmp", run_volatile_void_read_cmp},
+      {"dec_branch_indirect_y_fold", run_dec_branch_indirect_y_fold},
+      {"label_offset_fold", run_label_offset_fold},
+      {"carry_recompute_drop", run_carry_recompute_drop},
       {"self_store_drop", run_self_store_drop},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},
   };

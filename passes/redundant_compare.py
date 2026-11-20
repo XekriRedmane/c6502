@@ -106,6 +106,19 @@ def _label_refs(instrs) -> dict[str, list[int]]:
     return refs
 
 
+def _refs_with_tables(instrs) -> dict:
+    """Returns `_label_refs(instrs)` with the labels a `JumpTable` names
+    under `_TABLE_TARGETS`. `_rewrite_function` makes it once for the
+    function and hands it to each sweep, since none of them changes
+    it."""
+    refs: dict = _label_refs(instrs)
+    refs[_TABLE_TARGETS] = {
+        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
+        for t in ins.targets
+    }
+    return refs
+
+
 def _compare_before(instrs, b: int):
     """The instruction before the run of branches that ends with the
     branch at `b`, or None at the start of the function."""
@@ -177,18 +190,13 @@ def _flags_from(instrs, c: int, reg, refs=None, seen=None) -> bool:
     return False
 
 
-def _drop_compares_with_zero(instrs) -> set[int]:
+def _drop_compares_with_zero(instrs, refs) -> set[int]:
     """The indexes of the `CMP #$00` (or `CPX` / `CPY`) with C dead
     after, and of the `ORA #$00`, `AND #$FF`, and `EOR #$00`, whose N
     and Z the instruction that set the register already set. The
     `EOR #$00` comes from the low bytes of the mask that restores a
     signed bit-precise type's padding (bit_precise.py)."""
     from passes.asm_liveness import c_dead_at
-    refs = _label_refs(instrs)
-    refs[_TABLE_TARGETS] = {
-        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
-        for t in ins.targets
-    }
     drop: set[int] = set()
     for c, ins in enumerate(instrs):
         if (isinstance(ins, asm_ast.Compare)
@@ -276,7 +284,9 @@ _BRANCH_FOR_COMPARE = {
 }
 
 
-def _compares_as_flags(instrs) -> dict[int, asm_ast.Type_instruction | None]:
+def _compares_as_flags(
+    instrs, refs,
+) -> dict[int, asm_ast.Type_instruction | None]:
     """The rewrites of a compare with $80 or 1 whose branch on C can
     branch on N or Z instead: each dropped instruction's index to None
     and the branch's to the new branch.
@@ -299,11 +309,6 @@ def _compares_as_flags(instrs) -> dict[int, asm_ast.Type_instruction | None]:
     labels = {
         ins.name: k for k, ins in enumerate(instrs)
         if isinstance(ins, asm_ast.Label)
-    }
-    refs = _label_refs(instrs)
-    refs[_TABLE_TARGETS] = {
-        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
-        for t in ins.targets
     }
     out: dict[int, asm_ast.Type_instruction | None] = {}
     for c, ins in enumerate(instrs[:-1]):
@@ -384,7 +389,7 @@ def _a_nonnegative_at(instrs, s: int, refs) -> bool:
 
 
 def _signed_compare_of_nonnegative(
-    instrs,
+    instrs, refs,
 ) -> dict[int, asm_ast.Type_instruction | None]:
     """The rewrites of the signed byte compare `SEC; SBC #k; BVC L; EOR
     #$80; L: BMI T` (or `BPL`) of a value A holds that can't be
@@ -405,11 +410,6 @@ def _signed_compare_of_nonnegative(
     labels = {
         ins.name: k for k, ins in enumerate(instrs)
         if isinstance(ins, asm_ast.Label)
-    }
-    refs = _label_refs(instrs)
-    refs[_TABLE_TARGETS] = {
-        t for ins in instrs if isinstance(ins, asm_ast.JumpTable)
-        for t in ins.targets
     }
     out: dict[int, asm_ast.Type_instruction | None] = {}
     for s in range(len(instrs) - 5):
@@ -451,8 +451,9 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
     # Each set of rewrites goes in a sweep of its own, and the peephole
     # fixed point runs this again.
-    carry = (_carry_of_add(instrs) or _compares_as_flags(instrs)
-             or _signed_compare_of_nonnegative(instrs))
+    refs = _refs_with_tables(instrs)
+    carry = (_carry_of_add(instrs) or _compares_as_flags(instrs, refs)
+             or _signed_compare_of_nonnegative(instrs, refs))
     if carry:
         out = []
         for i, ins in enumerate(instrs):
@@ -465,11 +466,10 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             name=fn.name, is_global=fn.is_global, params=list(fn.params),
             instructions=out,
         )
-    refs = _label_refs(instrs)
     # The compares with 0 go in a sweep of their own, since one of
     # them may be the compare that a later identical one relies on for
     # C. The peephole fixed point runs this again.
-    drop: set[int] = _drop_compares_with_zero(instrs)
+    drop: set[int] = _drop_compares_with_zero(instrs, refs)
     if drop:
         return asm_ast.Function(
             name=fn.name, is_global=fn.is_global, params=list(fn.params),

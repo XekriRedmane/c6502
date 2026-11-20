@@ -65,8 +65,7 @@ this directory:
   returns a kept map when the list is the same object as before and,
   compared with the copy of its items kept with the map, holds the
   same or equal instructions at every position. A `Label` renamed in
-  place would
-  go unseen, and no pass renames one. `asm_dead_store` and
+  place would go unseen, and no pass renames one. `asm_dead_store` and
   `transfer_past_branch` use the same map.
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
 - `call_edges.py` — `graph_calls` / `abandons_caller`: which direct
@@ -231,7 +230,9 @@ this directory:
   to 128, at labels every way into which is a `BPL` (or a fall-through
   from a `BMI`) on N from A, can't overflow, so the `BVC` and `EOR` go,
   and with A and V dead it's `CMP #k; BCC / BCS`
-  (`_signed_compare_of_nonnegative`).
+  (`_signed_compare_of_nonnegative`). Each function's map of the
+  branches and jumps to each label (`_refs_with_tables`) is made once
+  and shared by the four sweeps, none of which changes it.
 - `jump_table.py` — `apply_jump_tables`. A chain of `CMP #k; BEQ
   case` on A (at least four, constants 0 to 127, the case for 0 maybe
   a `BEQ` right after the load or after an `ORA #$00`, which goes) becomes `CMP #max+1; BCS default`

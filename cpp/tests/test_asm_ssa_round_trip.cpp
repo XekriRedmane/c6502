@@ -3049,3 +3049,58 @@ TEST_CASE("from_ssa: test_bcd_builtins.TestCodegen.test_unused_top_bytes_go (10)
       "])\n",
       "");
 }
+
+TEST_CASE("from_ssa: both edges of a branch to the label after it get the move") {
+  // `.p` ends in a branch to `.m`, the label right after it, so the Phi
+  // at `.m` has an argument from `.p` for each edge. The split block of
+  // each edge copies v1 into the Phi's destination, where the
+  // fall-through's split block had no move. The Python test is
+  // TestBranchToNextLabel in tests/test_asm_ssa_destruction.py.
+  check_stage_case(
+      "from_ssa",
+      "{\"args\": [], \"kwargs\": {}}",
+      "Function(\"f\" false [] [\n"
+      "  Label(\".f@asm_ssa_block@0\")\n"
+      "  Mov(Imm(1) Pseudo(\"v.b0.v1\" 0) false)\n"
+      "  Mov(Data(\"flag\" 0) Reg(A) false)\n"
+      "  Compare(Reg(A) Imm(0))\n"
+      "  Branch(EQ \".other\")\n"
+      "  Label(\".p\")\n"
+      "  Mov(Data(\"flag\" 1) Reg(A) false)\n"
+      "  Compare(Reg(A) Imm(3))\n"
+      "  Branch(EQ \".m\")\n"
+      "  Label(\".m\")\n"
+      "  Phi(Pseudo(\"v.b0.v3\" 0) [AsmPhiArg(\".p\" Pseudo(\"v.b0.v1\" 0)) AsmPhiArg(\".p\" Pseudo(\"v.b0.v1\" 0)) AsmPhiArg(\".other\" Pseudo(\"v.b0.v2\" 0))])\n"
+      "  Mov(Pseudo(\"v.b0.v3\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Return(false false false)\n"
+      "  Label(\".other\")\n"
+      "  Mov(Imm(2) Pseudo(\"v.b0.v2\" 0) false)\n"
+      "  Jump(\".m\" [])\n"
+      "])\n",
+      "Function(\"f\" false [] [\n"
+      "  Label(\".f@asm_ssa_block@0\")\n"
+      "  Mov(Imm(1) Pseudo(\"v.b0.v1\" 0) false)\n"
+      "  Mov(Data(\"flag\" 0) Reg(A) false)\n"
+      "  Compare(Reg(A) Imm(0))\n"
+      "  Branch(EQ \".other\")\n"
+      "  Label(\".p\")\n"
+      "  Mov(Data(\"flag\" 1) Reg(A) false)\n"
+      "  Compare(Reg(A) Imm(3))\n"
+      "  Branch(EQ \".f@asm_ssa_split@0\")\n"
+      "  Label(\".f@asm_ssa_split@1\")\n"
+      "  Mov(Pseudo(\"v.b0.v1\" 0) Pseudo(\"v.b0.v3\" 0) false)\n"
+      "  Label(\".m\")\n"
+      "  Mov(Pseudo(\"v.b0.v3\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Return(false false false)\n"
+      "  Label(\".other\")\n"
+      "  Mov(Imm(2) Pseudo(\"v.b0.v2\" 0) false)\n"
+      "  Mov(Pseudo(\"v.b0.v2\" 0) Pseudo(\"v.b0.v3\" 0) false)\n"
+      "  Jump(\".m\" [])\n"
+      "  Label(\".f@asm_ssa_split@0\")\n"
+      "  Mov(Pseudo(\"v.b0.v1\" 0) Pseudo(\"v.b0.v3\" 0) false)\n"
+      "  Jump(\".m\" [])\n"
+      "])\n",
+      "");
+}

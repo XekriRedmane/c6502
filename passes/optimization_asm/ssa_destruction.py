@@ -280,8 +280,15 @@ def _rewrite_phi_pred_label(
     new_pred_label: str,
 ) -> None:
     """In every Phi at the block whose leading Label is
-    `merge_label`, rewrite each `args[i]` whose `pred_label ==
-    old_pred_label` to use `new_pred_label`."""
+    `merge_label`, rewrite the first `args[i]` whose `pred_label ==
+    old_pred_label` to use `new_pred_label`.
+
+    A Phi has one argument per edge, so it has two from P only when
+    P ends in a Branch to the label right after it, and both of P's
+    edges go to the merge. `to_ssa` adds the taken edge's argument
+    first, and the taken edge is split first, so each split takes one
+    of the two. Renaming both for the taken edge's split left the
+    fall-through's split with no move."""
     in_target_block = False
     for instr in instrs:
         if isinstance(instr, asm_ast.Label):
@@ -300,6 +307,7 @@ def _rewrite_phi_pred_label(
                     pred_label=new_pred_label,
                     source=arg.source,
                 )
+                break
 
 
 def _safe_dst_xy_split(

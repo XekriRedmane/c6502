@@ -196,5 +196,53 @@ class TestFromSsaParallelCopyOrdering(unittest.TestCase):
         )
 
 
+class TestBranchToNextLabel(unittest.TestCase):
+    def test_both_edges_get_the_move(self) -> None:
+        # `.p` ends in a branch to the label right after it, so both of
+        # its edges go to `.m`, whose Phi has an argument from `.p` for
+        # each. Each edge is split, and each split block has to copy v1
+        # into the Phi's destination. The fall-through's split had no
+        # move, so `.m` read v3 unset on that path.
+        fn = _fn(
+            _mov(_imm(1), _ps("v")),
+            _mov(asm_ast.Data(name="flag", offset=0), _A()),
+            _branch(".other"),
+            _label(".p"),
+            _mov(asm_ast.Data(name="flag", offset=1), _A()),
+            _branch(".m"),
+            _label(".m"),
+            _mov(_ps("v"), _A()),
+            _mov(_A(), asm_ast.Data(name="out", offset=0)),
+            _ret_bare(),
+            _label(".other"),
+            _mov(_imm(2), _ps("v")),
+            _jump(".m"),
+        )
+        ssa = to_ssa(fn)
+        phi = next(i for i in ssa.instructions if isinstance(i, asm_ast.Phi))
+        self.assertEqual(
+            [a.pred_label for a in phi.args], [".p", ".p", ".other"],
+        )
+        out = from_ssa(ssa).instructions
+        # Each edge into `.m` is the end of a block, and each such block
+        # writes the Phi's destination just before it.
+        dst = phi.dst
+        writes_before: dict[str, bool] = {}
+        current = None
+        wrote = False
+        for instr in out:
+            if isinstance(instr, asm_ast.Label):
+                if current is not None and instr.name == ".m":
+                    # The fall-through into `.m`.
+                    writes_before[current] = wrote
+                current, wrote = instr.name, False
+            elif isinstance(instr, asm_ast.Mov) and instr.dst == dst:
+                wrote = True
+            elif isinstance(instr, asm_ast.Jump) and instr.target == ".m":
+                writes_before[current] = wrote
+        self.assertEqual(len(writes_before), 3)
+        self.assertTrue(all(writes_before.values()), writes_before)
+
+
 if __name__ == "__main__":
     unittest.main()

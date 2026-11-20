@@ -86,7 +86,13 @@ std::string mint_split_label(const std::string& fn_name, int n) {
 }
 
 // In every `Phi` of the block whose leading label is `merge_label`,
-// renames each argument from `old_pred_label` to `new_pred_label`.
+// renames the first argument from `old_pred_label` to `new_pred_label`.
+// A `Phi` has one argument per edge, so it has two from P only when P
+// ends in a `Branch` to the label right after it and both of P's edges
+// go to the merge. `to_ssa` adds the taken edge's argument first, and
+// the taken edge is split first, so each split takes one of the two.
+// Renaming both for the taken edge's split left the fall-through's
+// split with no move.
 void rewrite_phi_pred_label(std::vector<ir::Type_instruction>& instrs,
                             const std::string& merge_label, const std::string& old_pred_label,
                             const std::string& new_pred_label) {
@@ -109,6 +115,7 @@ void rewrite_phi_pred_label(std::vector<ir::Type_instruction>& instrs,
       auto& arg = std::get<ir::AsmPhiArg>(a);
       if (arg.pred_label == old_pred_label) {
         arg.pred_label = new_pred_label;
+        break;
       }
     }
   }

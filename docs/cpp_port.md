@@ -411,3 +411,8 @@ something a straightforward C++ port could change.
   `copy_propagate` and `backward_copy_propagate`, 5,975 of `byte_dce`,
   3,926 of `absorb_zero_load`, 6,300 of `from_ssa`, and 8,499 of
   `order_parallel_copies`.
+  A bug found on the way was fixed in both compilers. When a block ended
+  in a branch to the label right after it, and that label's block had
+  `Phi`s, `from_ssa` gave both of each `Phi`'s arguments from it to the
+  split of the taken edge, so the path that fell through skipped the
+  moves. No program of the corpus has that shape.

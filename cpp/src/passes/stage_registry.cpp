@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "passes/prologue_synthesis.h"
 #include "tagged_json.h"
 
 namespace c6502::passes {
@@ -31,6 +32,20 @@ using Dims = DictOf<Str, FrameDimsC>;
 
 template <class C>
 constexpr RoundTrip rt = &round_trip<C>;
+
+const json::Value& arg(const json::Value& args, std::size_t i) {
+  if (i >= args.items.size()) {
+    throw std::runtime_error("the call has too few positional arguments");
+  }
+  return args.items[i];
+}
+
+StageOutput run_synthesize_prologue(const capture::Call& call, const AsmContext&,
+                                    const json::Value& args, const json::Value&) {
+  auto prog = asdl::load<asm_ast::Program>(call.input);
+  const auto dims = Dims::decode(arg(args, 0));
+  return {asdl::dump(synthesize_program(std::move(prog), dims)), ""};
+}
 
 std::vector<StageSignature> make_signatures() {
   return {
@@ -142,7 +157,8 @@ std::vector<StageSignature> make_signatures() {
        .kwargs = {{"slot_symbols", rt<Addrs>}, {"byte_names", rt<ByteNames>}}},
       {.name = "synthesize_prologue",
        .input = "asm_ast",
-       .args = {rt<Dims>}},
+       .args = {rt<Dims>},
+       .run = &run_synthesize_prologue},
       {.name = "fixed_address_layouts",
        .input = "tac_ast",
        .args = {rt<C99ProgramC>, rt<Types>},

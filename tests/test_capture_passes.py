@@ -211,7 +211,7 @@ class TestStageCapture(unittest.TestCase):
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("synthesize_prologue: 1 calls, 1 round-trip",
+        self.assertIn("synthesize_prologue: 1 calls, 1 round-trip, 1 match, 0 differ",
                       result.stdout)
 
 

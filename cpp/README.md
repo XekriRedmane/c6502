@@ -359,6 +359,15 @@ These conventions apply to every pass ported after
   `asdl::isa<ir::C, ir::D>(x)`. A chain of `isinstance` tests on one
   value with more than three branches is a `switch (ir::kind(x))`.
   `==` between IR values compares as Python's does.
+- **Dispatch on several constructors with a switch over `kind`.** On
+  20 Nov 2026 the Release build of MSVC 19.36 ran a helper of
+  `asm_remat` written as `std::visit` with a generic lambda, which set
+  a captured `bool` from the `dst` of the constructors an
+  `if constexpr` chain named, as if it returned false for a `Sub` into
+  A, and the pass matched Python on 5479 of 6783 calls. GCC 12.2 ran
+  the same source correctly, and so did MSVC once the helper was a
+  `switch (ir::kind(instr))` with a `std::get` in each case. The
+  passes ported that day dispatch that way.
 - **Python's arithmetic.** C++'s `/` and `%` round toward zero, so
   Python's `//` and `%` on values that can be negative are
   `asdl::floor_div` and `asdl::floor_mod`. A Python dict iterates in

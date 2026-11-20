@@ -16,6 +16,7 @@
 #include "passes/rotate_loop_test.h"
 #include "passes/registry_control_flow.h"
 #include "passes/asm_dead_store.h"
+#include "passes/asm_remat.h"
 #include "passes/mem_const_prop.h"
 #include "passes/redundant_store.h"
 #include "passes/registry_args.h"
@@ -120,6 +121,12 @@ std::string run_redundant_store(asm_ast::Program input, const AsmContext& ctx,
   return asdl::dump(apply_redundant_store_elimination(std::move(input), ctx));
 }
 
+std::string run_remat(asm_ast::Program input, const AsmContext& ctx,
+                      const json::Value&, const json::Value& kwargs) {
+  const auto slots = symbol_addrs_kwarg(kwargs, "zp_slot_symbols");
+  return asdl::dump(apply_remat(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
 std::string run_asm_dead_store(asm_ast::Program input, const AsmContext& ctx,
                                const json::Value&, const json::Value& kwargs) {
   const auto slots = symbol_addrs_kwarg(kwargs, "zp_slot_symbols");
@@ -168,6 +175,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"shared_tails", registry::run_shared_tails},
       {"outline_runs", registry::run_outline_runs},
       {"redundant_store", run_redundant_store},
+      {"remat", run_remat},
       {"asm_dead_store", run_asm_dead_store},
       {"mem_const_prop", run_mem_const_prop},
   };

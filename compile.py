@@ -55,8 +55,10 @@ own `-o` is not forwarded; this driver's `-o` is for the final output.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
+import asm_ast
 import diagnostics
 from asm_emit import emit_program
 from tac_to_asm import translate_program as translate_to_asm
@@ -158,6 +160,7 @@ from passes.zp_local_allocation import (
 )
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization.pool import Pool
+from passes.peephole_memo import FunctionMemo, PeepholeMemo
 from passes.slot_coalescing import apply_slot_coalescing
 import tac_ast
 from passes.slot_sharing import (
@@ -242,13 +245,74 @@ def _resolved(source: str, *, optimize: bool = False):
 _PEEPHOLE_FIXEDPOINT_CAP = 16
 
 
+# The scopes of the passes in `_peephole_fixedpoint`'s sweep, for the
+# memo of the functions each pass left unchanged
+# (passes/peephole_memo.py).
+#
+# - `_FUNCTION`: the pass rewrites each function from that function
+#   and the pass's keyword arguments alone, and passes the statics
+#   through. `_run_on_changed` runs it on a program of the statics and
+#   the functions the memo doesn't record unchanged.
+# - `_PROGRAM`: each function's rewrite also reads a value the pass
+#   computes from the whole program (another function's instructions,
+#   the labels of every function, the statics' initializers). The
+#   pass takes a `memo` keyword, computes that value from the whole
+#   program as before, and skips a function the memo records
+#   unchanged under an equal value.
+# - `_ALWAYS`: the pass runs on the whole program every time.
+_FUNCTION = "function"
+_PROGRAM = "program"
+_ALWAYS = "always"
+
+# With `C6502_CHECK_PEEPHOLE_MEMO=1`, each pass of the fixed point also
+# runs on the whole program without the memo, and a result that
+# differs raises. That doubles the fixed point's time, so it's for
+# checking a change to a pass's scope or context.
+_CHECK_PEEPHOLE_MEMO = os.environ.get("C6502_CHECK_PEEPHOLE_MEMO") == "1"
+
+
+def _run_on_changed(apply, prog, memo: FunctionMemo):
+    """Runs the function-scope pass `apply` on the statics of `prog` and
+    the functions `memo` doesn't record unchanged, and returns `prog`
+    with their results in place. The statics are the context, so a
+    change to one of them runs the pass on every function again."""
+    top = prog.top_level
+    statics = memo.context(tuple(
+        tl for tl in top if not isinstance(tl, asm_ast.Function)
+    ))
+    run = [
+        i for i, tl in enumerate(top)
+        if not isinstance(tl, asm_ast.Function)
+        or not memo.unchanged(tl, statics)
+    ]
+    if len(run) == len(statics):
+        return asm_ast.Program(top_level=list(top))
+    out = apply(asm_ast.Program(top_level=[top[i] for i in run])).top_level
+    if len(out) != len(run):
+        raise AssertionError(
+            "a function-scope peephole pass changed the number of "
+            "top-level items",
+        )
+    new_top = list(top)
+    for i, new in zip(run, out):
+        old = top[i]
+        if isinstance(old, asm_ast.Function):
+            if not (isinstance(new, asm_ast.Function)
+                    and new.name == old.name):
+                raise AssertionError(
+                    "a function-scope peephole pass reordered or "
+                    "renamed the functions",
+                )
+            new = memo.record(old, new, statics)
+        new_top[i] = new
+    return asm_ast.Program(top_level=new_top)
+
+
 def _peephole_fixedpoint(
     prog, *, zp_slot_symbols=None, zp_global_symbols=None,
-    noreturn=frozenset(),
+    noreturn=frozenset(), memo: PeepholeMemo | None = None,
 ):
-    """Run apply_inc_peephole → apply_dec_peephole → apply_direct_
-    index_load → apply_redundant_load_elimination →
-    apply_redundant_store_elimination in sequence, repeating until
+    """Runs the peephole passes below in sequence, repeating until
     a full sweep produces no further change. Each pass can enable
     the next: `inc_peephole` / `dec_peephole` may shorten chains
     that `direct_index_load` then collapses; `direct_index_load`'s
@@ -268,84 +332,148 @@ def _peephole_fixedpoint(
     `memory_value_propagation` gets them, so it can use a zero-page
     pointer global as an `(zp),Y` base. It gets `noreturn` too, the
     functions that never return, whose calls end its call summaries'
-    paths."""
+    paths.
+
+    A pass isn't run on a function it left unchanged when it last saw
+    the same function with the same context (passes/peephole_memo.py).
+    The result is the one the pass would give, so every sweep sees the
+    program it would see without the memo, and the number of sweeps
+    stays the same. `memo` carries the records from one fixed point to
+    the next; `optimized_asm` passes one to all five of its fixed
+    points, whose keyword arguments are equal. Without it, the records
+    last for this call.
+
+    Each pass's scope (`_FUNCTION`, `_PROGRAM`, or `_ALWAYS`, above) is
+    what its rewrite of one function reads.
+
+    - Function scope (the function and the keyword arguments): every
+      pass not listed below. Each one's `apply_*` maps a rewrite of
+      one function over the program's functions, with nothing
+      computed from the program first.
+    - Program scope, with the context each one computes:
+      `inc_peephole`, `carry_inc`, `branch_thread`,
+      `branch_value_thread`, and `cross_jump` (the next number for
+      their labels, from every function's labels);
+      `memory_value_propagation` (the summaries of what each function
+      of the program and its callees may write); `redundant_load`,
+      `pointer_self_store`, `transfer_pm1_store`, and the second stage
+      of `adc_commute` (`asm_aliasing.unreachable_by_pointer`, from
+      the statics and every function's operands); `asm_remat` (the
+      private statics, from the statics and every function's
+      operands).
+    - Always run: `tail_merge`, whose rewrite reads the set of every
+      label in the program, which changes whenever a label anywhere
+      comes or goes, and gains the labels each function adds.
+
+    A pass that comes to read anything more must say so in its context,
+    or move to the program scope. `C6502_CHECK_PEEPHOLE_MEMO=1` checks
+    each pass's result against a run without the memo."""
     zp_cells = {**(zp_slot_symbols or {}), **(zp_global_symbols or {})}
-    for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
-        new_prog = apply_split_mem_to_mem(prog)
-        new_prog = apply_carry_halve(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_carry_in_add(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_inc_peephole(new_prog)
-        new_prog = apply_inc_low_byte_test(new_prog)
-        new_prog = apply_carry_inc_peephole(new_prog)
-        new_prog = apply_dec_peephole(new_prog)
-        new_prog = apply_sub1_test_zero_peephole(new_prog)
-        new_prog = apply_element_in_place(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_direct_index_load(new_prog)
-        new_prog = apply_dead_pha_pla(new_prog)
-        new_prog = apply_cpx_cpy_peephole(new_prog)
-        new_prog = apply_memory_value_propagation(
-            new_prog, zp_symbol_addrs=zp_cells or None, noreturn=noreturn,
-        )
-        new_prog = apply_shift_in_a(new_prog)
-        new_prog = apply_redundant_load_after_rmw(new_prog)
-        new_prog = apply_redundant_load_elimination(
-            new_prog, zp_symbol_addrs=zp_cells or None,
-        )
-        new_prog = apply_redundant_store_elimination(new_prog)
-        new_prog = apply_constant_store_order(new_prog)
-        new_prog = apply_join_store(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_remat(new_prog, zp_slot_symbols=zp_slot_symbols)
-        new_prog = apply_asm_dead_store(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_loop_constant_a(new_prog)
-        new_prog = apply_dead_a_arith_elimination(new_prog)
-        new_prog = apply_dead_label_drop(new_prog)
-        new_prog = apply_unreachable_drop(new_prog)
-        new_prog = apply_branch_invert(new_prog)
-        new_prog = apply_branch_to_next_drop(new_prog)
-        new_prog = apply_branch_through_jump(new_prog)
-        new_prog = apply_branch_thread(new_prog)
-        new_prog = apply_branch_value_thread(new_prog)
-        new_prog = apply_dec_register_peephole(new_prog)
-        new_prog = apply_transfer_past_branch(new_prog)
-        new_prog = apply_index_inc_cmp_y(new_prog)
-        new_prog = apply_volatile_void_read_cmp(new_prog)
-        new_prog = apply_dec_branch_indirect_y_fold(new_prog)
-        new_prog = apply_mem_const_prop(new_prog)
-        new_prog = apply_const_arith_fold(new_prog)
-        new_prog = apply_label_offset_fold(new_prog)
-        new_prog = apply_carry_recompute_drop(new_prog)
-        new_prog = apply_carry_return_tails(new_prog)
-        new_prog = apply_carry_const_fold(new_prog)
-        new_prog = apply_carry_branch_fold(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_round_trip_load_drop(new_prog)
-        new_prog = apply_and_sign_bit_branch(new_prog)
-        new_prog = apply_self_store_drop(new_prog)
-        new_prog = apply_pointer_self_store_drop(
-            new_prog, zp_symbol_addrs=zp_cells or None,
-        )
-        new_prog = apply_redundant_compare(new_prog)
-        new_prog = apply_cmp_through_tmp_fold(
-            new_prog, zp_slot_symbols=zp_slot_symbols,
-        )
-        new_prog = apply_adc_commute(new_prog)
-        new_prog = apply_cmp_sbc_fusion(new_prog)
-        new_prog = apply_dec_inc_branch_fold(new_prog)
-        new_prog = apply_tail_call(new_prog)
-        new_prog = apply_tail_merge(new_prog)
-        new_prog = apply_cross_jump(new_prog)
-        new_prog = apply_via_a_store_fold(new_prog)
+    arguments = (
+        dict(zp_slot_symbols or {}), dict(zp_global_symbols or {}),
+        frozenset(noreturn),
+    )
+    memo = (memo or PeepholeMemo()).for_arguments(arguments)
+    zp_addrs = zp_cells or None
+    F, P = _FUNCTION, _PROGRAM
+    sweep = (
+        (F, "split_mem_to_mem", lambda p, m: apply_split_mem_to_mem(p)),
+        (F, "carry_halve", lambda p, m: apply_carry_halve(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (F, "carry_in_add", lambda p, m: apply_carry_in_add(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (P, "inc_peephole", lambda p, m: apply_inc_peephole(p, memo=m)),
+        (F, "inc_low_byte_test", lambda p, m: apply_inc_low_byte_test(p)),
+        (P, "carry_inc", lambda p, m: apply_carry_inc_peephole(p, memo=m)),
+        (F, "dec_peephole", lambda p, m: apply_dec_peephole(p)),
+        (F, "sub1_test_zero",
+         lambda p, m: apply_sub1_test_zero_peephole(p)),
+        (F, "element_in_place", lambda p, m: apply_element_in_place(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (F, "direct_index_load", lambda p, m: apply_direct_index_load(p)),
+        (F, "dead_pha_pla", lambda p, m: apply_dead_pha_pla(p)),
+        (F, "cpx_cpy", lambda p, m: apply_cpx_cpy_peephole(p)),
+        (P, "memory_value_propagation",
+         lambda p, m: apply_memory_value_propagation(
+             p, zp_symbol_addrs=zp_addrs, noreturn=noreturn, memo=m,
+         )),
+        (F, "shift_in_a", lambda p, m: apply_shift_in_a(p)),
+        (F, "redundant_load_after_rmw",
+         lambda p, m: apply_redundant_load_after_rmw(p)),
+        (P, "redundant_load",
+         lambda p, m: apply_redundant_load_elimination(
+             p, zp_symbol_addrs=zp_addrs, memo=m,
+         )),
+        (F, "redundant_store",
+         lambda p, m: apply_redundant_store_elimination(p)),
+        (F, "constant_store_order",
+         lambda p, m: apply_constant_store_order(p)),
+        (F, "join_store", lambda p, m: apply_join_store(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (P, "remat", lambda p, m: apply_remat(
+            p, zp_slot_symbols=zp_slot_symbols, memo=m,
+        )),
+        (F, "asm_dead_store", lambda p, m: apply_asm_dead_store(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (F, "loop_constant_a", lambda p, m: apply_loop_constant_a(p)),
+        (F, "dead_a_arith",
+         lambda p, m: apply_dead_a_arith_elimination(p)),
+        (F, "dead_label_drop", lambda p, m: apply_dead_label_drop(p)),
+        (F, "unreachable_drop", lambda p, m: apply_unreachable_drop(p)),
+        (F, "branch_invert", lambda p, m: apply_branch_invert(p)),
+        (F, "branch_to_next_drop",
+         lambda p, m: apply_branch_to_next_drop(p)),
+        (F, "branch_through_jump",
+         lambda p, m: apply_branch_through_jump(p)),
+        (P, "branch_thread", lambda p, m: apply_branch_thread(p, memo=m)),
+        (P, "branch_value_thread",
+         lambda p, m: apply_branch_value_thread(p, memo=m)),
+        (F, "dec_register_peephole",
+         lambda p, m: apply_dec_register_peephole(p)),
+        (F, "transfer_past_branch",
+         lambda p, m: apply_transfer_past_branch(p)),
+        (F, "index_inc_cmp_y", lambda p, m: apply_index_inc_cmp_y(p)),
+        (F, "volatile_void_read_cmp",
+         lambda p, m: apply_volatile_void_read_cmp(p)),
+        (F, "dec_branch_indirect_y_fold",
+         lambda p, m: apply_dec_branch_indirect_y_fold(p)),
+        (F, "mem_const_prop", lambda p, m: apply_mem_const_prop(p)),
+        (F, "const_arith_fold", lambda p, m: apply_const_arith_fold(p)),
+        (F, "label_offset_fold", lambda p, m: apply_label_offset_fold(p)),
+        (F, "carry_recompute_drop",
+         lambda p, m: apply_carry_recompute_drop(p)),
+        (F, "carry_return_tails",
+         lambda p, m: apply_carry_return_tails(p)),
+        (F, "carry_const_fold", lambda p, m: apply_carry_const_fold(p)),
+        (F, "carry_branch_fold", lambda p, m: apply_carry_branch_fold(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (F, "round_trip_load_drop",
+         lambda p, m: apply_round_trip_load_drop(p)),
+        (F, "and_sign_bit_branch",
+         lambda p, m: apply_and_sign_bit_branch(p)),
+        (F, "self_store_drop", lambda p, m: apply_self_store_drop(p)),
+        (P, "pointer_self_store_drop",
+         lambda p, m: apply_pointer_self_store_drop(
+             p, zp_symbol_addrs=zp_addrs, memo=m,
+         )),
+        (F, "redundant_compare", lambda p, m: apply_redundant_compare(p)),
+        (F, "cmp_through_tmp_fold", lambda p, m: apply_cmp_through_tmp_fold(
+            p, zp_slot_symbols=zp_slot_symbols,
+        )),
+        (P, "adc_commute", lambda p, m: apply_adc_commute(p, memo=m)),
+        (F, "cmp_sbc_fusion", lambda p, m: apply_cmp_sbc_fusion(p)),
+        (F, "dec_inc_branch_fold",
+         lambda p, m: apply_dec_inc_branch_fold(p)),
+        (F, "tail_call", lambda p, m: apply_tail_call(p)),
+        (_ALWAYS, "tail_merge", lambda p, m: apply_tail_merge(p)),
+        (P, "cross_jump", lambda p, m: apply_cross_jump(p, memo=m)),
+        (F, "via_a_store_fold", lambda p, m: apply_via_a_store_fold(p)),
         # Runs last so the round-trip-through-temp shape
         # (`STA __local; LDA __local; STA M`) has already been
         # collapsed by `round_trip_load_drop` + `asm_dead_store` into
@@ -353,7 +481,26 @@ def _peephole_fixedpoint(
         # would rewrite to `STX __local; LDA __local; STA M` — a
         # shape no downstream pass collapses (the LDA reads from X-
         # synced storage, not A-synced).
-        new_prog = apply_transfer_pm1_store(new_prog)
+        (P, "transfer_pm1_store",
+         lambda p, m: apply_transfer_pm1_store(p, memo=m)),
+    )
+    for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
+        new_prog = prog
+        for scope, name, run in sweep:
+            before = new_prog
+            if scope == _FUNCTION:
+                new_prog = _run_on_changed(
+                    lambda p: run(p, None), before, memo.of(name),
+                )
+            elif scope == _PROGRAM:
+                new_prog = run(before, memo.of(name))
+            else:
+                new_prog = run(before, None)
+            if _CHECK_PEEPHOLE_MEMO and scope != _ALWAYS:
+                if run(before, None) != new_prog:
+                    raise AssertionError(
+                        f"the peephole memo changed {name}'s result",
+                    )
         # With `C6502_CHECK_IR=1` (passes/ir_check.py).
         ir_check.check_asm(new_prog, after="a peephole sweep")
         if new_prog == prog:
@@ -676,9 +823,14 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # no Call — conservative to sidestep zp_abi clobber
     # questions).
     asm2 = apply_licm(asm2, {**all_slot_symbols, **zp.addrs})
+    # The five peephole fixed points below share one record of the
+    # functions each pass left unchanged (passes/peephole_memo.py),
+    # since their keyword arguments are equal. A function that the
+    # passes between them leave alone isn't rewritten again.
+    peephole_memo = PeepholeMemo()
     asm3 = _peephole_fixedpoint(
         asm2, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn,
+        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
     )
     # Promote a reg('A')-param's body-local spill to live in
     # A across the loop body (parks it in Y during the
@@ -705,7 +857,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # Y-pivot embedded in loop_counter_to_x freed up X).
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn,
+        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
     )
     # Y-promote a Data symbol that's loaded into X multiple
     # times when Y is otherwise unused — saves the
@@ -716,7 +868,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm3 = apply_dual_index_promotion(asm3)
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn,
+        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
     )
     # Drop a SEC or CLC where C already has that value, or move one in
     # front of a loop whose back edges have it (passes/carry_known.py).
@@ -752,12 +904,12 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # bottom, so both run again, and carry_known after them.
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn,
+        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
     )
     asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
     asm3 = _peephole_fixedpoint(
         asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn,
+        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
     )
     asm3 = apply_carry_known(asm3)
     # A chain of compares of A with constants becomes a jump table

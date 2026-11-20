@@ -660,6 +660,18 @@ this directory:
   `N + 1`, at a write `may_alias` says may reach the byte (with
   `pointer_proof`), and at a call, label, or branch.
   `P->buf += 0x100` is `LDY #k+1; LDA (P),Y; CLC; ADC #1; STA (P),Y`.
+- `peephole_memo.py` — `PeepholeMemo` / `FunctionMemo`, the record
+  of the functions each pass of the peephole fixed point left
+  unchanged and the context it read then, so that the next run of the
+  pass on the same function (the same instruction objects,
+  `same_function`) with an equal context is skipped. A function-scope
+  pass runs on the statics and the other functions
+  (`compile._run_on_changed`); a program-scope pass takes `memo=` and
+  passes its context to `rewrite_function` or, for one that numbers
+  its labels, `rewrite_numbered`. `compile._peephole_fixedpoint`'s
+  docstring classifies every pass, and `optimized_asm` shares one
+  memo among its five fixed points. `C6502_CHECK_PEEPHOLE_MEMO=1`
+  runs each pass without the memo too and raises on a difference.
 - `pointer_restage.py` — the rules `tac_to_asm._restage` applies under
   `-O`: a load or store of 2 bytes or more through a zero-page pointer
   at a constant offset copies the pointer into DPTR again before each
@@ -1462,7 +1474,12 @@ under `passes/`; see the module docstring for the full rationale and
 motivating shape. Order matters — each pass can enable the next
 (e.g. INC chains shorten, freeing up direct-LDX/LDY rewrites). The
 loop is capped at `_PEEPHOLE_FIXEDPOINT_CAP = 16` iterations as a
-safety net.
+safety net. A pass isn't run on a function it left unchanged when it
+last saw the same function with an equal context
+(`peephole_memo.py`), which gives the result the run would and saves
+about a third of the fixed point's time. A new pass whose rewrite of
+a function reads anything beyond the function and its keyword
+arguments goes in the program scope, with that value as its context.
 
 Always-on (runs in both optimized AND unoptimized pipelines):
 

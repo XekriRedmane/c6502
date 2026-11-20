@@ -40,6 +40,7 @@ from __future__ import annotations
 import re
 
 import asm_ast
+from passes.peephole_memo import FunctionMemo, rewrite_numbered
 
 # Each condition, its opposite, and the flag both test.
 _OPPOSITE: dict[type, type] = {
@@ -51,10 +52,16 @@ _OPPOSITE: dict[type, type] = {
 _LABEL_RE = re.compile(r"\.thread@(\d+)$")
 
 
-def apply_branch_thread(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_branch_thread(
+    prog: asm_ast.Program, *, memo: FunctionMemo | None = None,
+) -> asm_ast.Program:
     """Retargets every branch whose target is a branch on the same
     flag, in every function. Labels are numbered across the program,
-    since the sim's assembler rejects one name in two functions."""
+    since the sim's assembler rejects one name in two functions.
+
+    Each function's rewrite reads the function and the next label
+    number, which is its context in `memo`
+    (passes/peephole_memo.py)."""
     counter = 1 + max(
         (int(m.group(1))
          for tl in prog.top_level if isinstance(tl, asm_ast.Function)
@@ -66,7 +73,9 @@ def apply_branch_thread(prog: asm_ast.Program) -> asm_ast.Program:
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            tl, counter = _rewrite_function(tl, counter)
+            tl, counter = rewrite_numbered(
+                memo, tl, counter, _rewrite_function,
+            )
         new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 

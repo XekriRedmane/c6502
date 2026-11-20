@@ -78,10 +78,13 @@ addressing-mode awareness, not from any post-regalloc state.
 from __future__ import annotations
 
 import asm_ast
+from passes.peephole_memo import FunctionMemo, rewrite_numbered
 from passes.asm_liveness import a_dead_at, c_dead_at, v_dead_at
 
 
-def apply_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_inc_peephole(
+    prog: asm_ast.Program, *, memo: FunctionMemo | None = None,
+) -> asm_ast.Program:
     """Walk every Function top-level and rewrite multi-byte add-1
     chains into INC chains where eligible. `StaticVariable`s and
     other top-levels pass through unchanged.
@@ -89,7 +92,11 @@ def apply_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
     Labels are numbered past every `.inc_done@N` already in the
     program. The peephole fixed point runs this pass many times, and
     a count restarted at 0 each time gave a function two
-    `.inc_done@0` labels, which dasm rejects."""
+    `.inc_done@0` labels, which dasm rejects.
+
+    Each function's rewrite reads the function and the next label
+    number, which is its context in `memo`
+    (passes/peephole_memo.py)."""
     counter = 1 + max(
         (int(ins.name[len(".inc_done@"):])
          for tl in prog.top_level if isinstance(tl, asm_ast.Function)
@@ -102,7 +109,9 @@ def apply_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_fn, counter = _rewrite_function(tl, counter)
+            new_fn, counter = rewrite_numbered(
+                memo, tl, counter, _rewrite_function,
+            )
             new_top.append(new_fn)
         else:
             new_top.append(tl)

@@ -144,6 +144,7 @@ from typing import Optional
 import asm_ast
 from passes import decimal_arith
 from passes.asm_liveness import sets_up_y
+from passes.peephole_memo import FunctionMemo, rewrite_function
 from passes.optimization_asm.cfg import (
     BasicBlock, CFG, build_cfg, ENTRY_ID, EXIT_ID,
 )
@@ -271,22 +272,29 @@ def apply_memory_value_propagation(
     *,
     zp_symbol_addrs: dict[str, int] | None = None,
     noreturn: frozenset[str] = frozenset(),
+    memo: FunctionMemo | None = None,
 ) -> asm_ast.Program:
     """Top-level entry. `zp_symbol_addrs` extends the runtime-symbol
     table with caller-supplied `Data(name)` → byte-address bindings
     (typically the `__zpabi_*` and `__local_*` slot symbols).
     `noreturn` names the functions that never return
     (`[[noreturn]]`), whose calls don't reach the code after them
-    (see `_call_summaries`)."""
+    (see `_call_summaries`). Each function's rewrite reads the
+    function, the addresses, and the call summaries, which are its
+    context in `memo` (passes/peephole_memo.py)."""
     from passes.asm_aliasing import runtime_zp_addrs
     addrs = dict(runtime_zp_addrs())
     if zp_symbol_addrs:
         addrs.update(zp_symbol_addrs)
     summaries = _call_summaries(prog, addrs, noreturn)
+    ctx = memo.context(summaries) if memo is not None else None
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl, addrs, summaries))
+            new_top.append(rewrite_function(
+                memo, tl, ctx,
+                lambda fn: _rewrite_function(fn, addrs, summaries),
+            ))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)

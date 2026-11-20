@@ -111,20 +111,32 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_aliasing import may_alias
+from passes.peephole_memo import FunctionMemo, rewrite_function
 
 
-def apply_adc_commute(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_adc_commute(
+    prog: asm_ast.Program, *, memo: FunctionMemo | None = None,
+) -> asm_ast.Program:
     """Walk every function once; rewrite each matching window in
     a single forward pass, then read a byte that X or Y holds with
     `apply_register_copy_commute`. The peephole fixedpoint driver
-    re-runs until no further rewrites fire."""
+    re-runs until no further rewrites fire. The first stage reads
+    only the function, and the second reads the names no pointer
+    reaches in the first stage's result, so each has a memo of its
+    own in `memo` (passes/peephole_memo.py)."""
+    first = memo.child("commute") if memo is not None else None
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(
+                rewrite_function(first, tl, None, _rewrite_function),
+            )
         else:
             new_top.append(tl)
-    return apply_register_copy_commute(asm_ast.Program(top_level=new_top))
+    return apply_register_copy_commute(
+        asm_ast.Program(top_level=new_top),
+        memo=memo.child("register copy") if memo is not None else None,
+    )
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
@@ -533,7 +545,9 @@ def _register_holding(instrs, i: int, mem) -> asm_ast.Reg | None:
     return None
 
 
-def apply_register_copy_commute(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_register_copy_commute(
+    prog: asm_ast.Program, *, memo: FunctionMemo | None = None,
+) -> asm_ast.Program:
     """Rewrites `LDA #k; [CLC | SEC]; ADC m` (or `AND m`, `ORA m`) as
     `TXA; [CLC | SEC]; ADC #k` when X holds the byte `m` (and the same
     with Y), so that the `STX m` that put it there can go if nothing
@@ -552,50 +566,63 @@ def apply_register_copy_commute(prog: asm_ast.Program) -> asm_ast.Program:
     label, a call, or any other kind of instruction ends the scan. A
     quotient left in X by the byte division loop and then added to a
     constant was `STX t; LDA #$11; CLC; ADC t` and is `TXA; CLC; ADC
-    #$11`."""
+    #$11`.
+
+    Each function's rewrite reads the function and the names no
+    pointer reaches, which are its context in `memo`
+    (passes/peephole_memo.py)."""
     from passes.asm_aliasing import pointer_proof, unreachable_by_pointer
     new_top: list[asm_ast.Type_top_level] = []
     changed = False
-    with pointer_proof(unreachable_by_pointer(prog)):
+    unreachable = unreachable_by_pointer(prog)
+    ctx = memo.context(unreachable) if memo is not None else None
+    with pointer_proof(unreachable):
         for tl in prog.top_level:
-            if not isinstance(tl, asm_ast.Function):
-                new_top.append(tl)
-                continue
-            instrs = list(tl.instructions)
-            hit = False
-            for i in range(len(instrs) - 1):
-                load = instrs[i]
-                if not (isinstance(load, asm_ast.Mov)
-                        and isinstance(load.src, (asm_ast.Imm,
-                                                  asm_ast.Data, asm_ast.ZP))
-                        and not load.is_volatile
-                        and _is_reg_a(load.dst)):
-                    continue
-                k = i + 1
-                if _is_clc_or_sec(instrs[k]):
-                    k += 1
-                if k >= len(instrs):
-                    continue
-                op = instrs[k]
-                if not (isinstance(op, (asm_ast.Add, asm_ast.And,
-                                        asm_ast.Or))
-                        and _is_reg_a(op.dst)
-                        and isinstance(op.src, (asm_ast.Data, asm_ast.ZP))):
-                    continue
-                reg = _register_holding(instrs, i, op.src)
-                if reg is None:
-                    continue
-                instrs[i] = asm_ast.Mov(src=reg, dst=load.dst,
-                                        is_volatile=False)
-                instrs[k] = type(op)(src=load.src, dst=op.dst)
-                hit = True
-            if hit:
-                changed = True
-                tl = asm_ast.Function(
-                    name=tl.name, is_global=tl.is_global,
-                    params=list(tl.params), instructions=instrs,
-                )
+            if isinstance(tl, asm_ast.Function):
+                new = rewrite_function(memo, tl, ctx, _register_copy_function)
+                changed = changed or new is not tl
+                tl = new
             new_top.append(tl)
     if not changed:
         return prog
     return asm_ast.Program(top_level=new_top)
+
+
+def _register_copy_function(tl: asm_ast.Function) -> asm_ast.Function:
+    """Applies `apply_register_copy_commute`'s rewrite to one function,
+    with the names no pointer reaches installed by `pointer_proof`.
+    Returns `tl` itself when nothing changes."""
+    instrs = list(tl.instructions)
+    hit = False
+    for i in range(len(instrs) - 1):
+        load = instrs[i]
+        if not (isinstance(load, asm_ast.Mov)
+                and isinstance(load.src, (asm_ast.Imm,
+                                          asm_ast.Data, asm_ast.ZP))
+                and not load.is_volatile
+                and _is_reg_a(load.dst)):
+            continue
+        k = i + 1
+        if _is_clc_or_sec(instrs[k]):
+            k += 1
+        if k >= len(instrs):
+            continue
+        op = instrs[k]
+        if not (isinstance(op, (asm_ast.Add, asm_ast.And,
+                                asm_ast.Or))
+                and _is_reg_a(op.dst)
+                and isinstance(op.src, (asm_ast.Data, asm_ast.ZP))):
+            continue
+        reg = _register_holding(instrs, i, op.src)
+        if reg is None:
+            continue
+        instrs[i] = asm_ast.Mov(src=reg, dst=load.dst,
+                                is_volatile=False)
+        instrs[k] = type(op)(src=load.src, dst=op.dst)
+        hit = True
+    if not hit:
+        return tl
+    return asm_ast.Function(
+        name=tl.name, is_global=tl.is_global,
+        params=list(tl.params), instructions=instrs,
+    )

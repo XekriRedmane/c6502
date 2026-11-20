@@ -132,6 +132,7 @@ from passes.asm_liveness import call_preserves as _call_preserves
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 from passes.asm_liveness import sets_up_y as _sets_up_y
 from passes.asm_dead_store import mem_dead_after as _mem_dead_after
+from passes.peephole_memo import FunctionMemo, rewrite_function
 from passes.optimization_asm.cfg import (
     CFG, ENTRY_ID, EXIT_ID, BasicBlock, build_cfg,
 )
@@ -160,19 +161,26 @@ _ZP_ADDRS: dict[str, int] = {}
 
 def apply_redundant_load_elimination(
     prog: asm_ast.Program, *, zp_symbol_addrs: dict[str, int] | None = None,
+    memo: FunctionMemo | None = None,
 ) -> asm_ast.Program:
     """`zp_symbol_addrs` maps slot symbols and zero-page objects to
     their addresses. Without it, a store to any slot may write the
     pointer of an `(zp),Y` access, which keeps the two stores of
-    `_swap_pairs_ok` apart."""
+    `_swap_pairs_ok` apart. Each function's rewrite reads the
+    function, `zp_symbol_addrs`, and the names no pointer reaches,
+    which are its context in `memo` (passes/peephole_memo.py)."""
     global _ZP_ADDRS
     new_top: list[asm_ast.Type_top_level] = []
     saved, _ZP_ADDRS = _ZP_ADDRS, dict(zp_symbol_addrs or {})
     try:
-        with pointer_proof(unreachable_by_pointer(prog)):
+        unreachable = unreachable_by_pointer(prog)
+        ctx = memo.context(unreachable) if memo is not None else None
+        with pointer_proof(unreachable):
             for tl in prog.top_level:
                 if isinstance(tl, asm_ast.Function):
-                    new_top.append(_rewrite_function(tl))
+                    new_top.append(
+                        rewrite_function(memo, tl, ctx, _rewrite_function),
+                    )
                 else:
                     new_top.append(tl)
     finally:

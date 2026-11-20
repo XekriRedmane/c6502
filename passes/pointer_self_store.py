@@ -65,20 +65,28 @@ from passes import decimal_arith
 from passes.asm_aliasing import (
     may_alias, pointer_proof, runtime_zp_addrs, unreachable_by_pointer,
 )
+from passes.peephole_memo import FunctionMemo, rewrite_function
 
 
 def apply_pointer_self_store_drop(
     prog: asm_ast.Program, *, zp_symbol_addrs: dict[str, int] | None = None,
+    memo: FunctionMemo | None = None,
 ) -> asm_ast.Program:
     """Drops each store through a zero-page pointer of the byte read
     from the same place, when nothing in between can have changed it.
     `zp_symbol_addrs` gives the zero-page addresses of the slot
-    symbols and zero-page objects."""
+    symbols and zero-page objects. Each function's rewrite reads the
+    function, the addresses, and the names no pointer reaches, which
+    are its context in `memo` (passes/peephole_memo.py)."""
     addrs = dict(runtime_zp_addrs())
     addrs.update(zp_symbol_addrs or {})
-    with pointer_proof(unreachable_by_pointer(prog)):
+    unreachable = unreachable_by_pointer(prog)
+    ctx = memo.context(unreachable) if memo is not None else None
+    with pointer_proof(unreachable):
         top = [
-            _rewrite_function(tl, addrs) if isinstance(tl, asm_ast.Function)
+            rewrite_function(
+                memo, tl, ctx, lambda fn: _rewrite_function(fn, addrs),
+            ) if isinstance(tl, asm_ast.Function)
             else tl
             for tl in prog.top_level
         ]

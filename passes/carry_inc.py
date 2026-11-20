@@ -82,6 +82,7 @@ from __future__ import annotations
 import re
 
 import asm_ast
+from passes.peephole_memo import FunctionMemo, rewrite_numbered
 from passes.asm_liveness import a_dead_at, c_dead_at, flags_dead_at, v_dead_at
 from passes.inc_peephole import _is_inc_eligible_operand, _operands_equal
 
@@ -89,7 +90,9 @@ _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _LABEL_RE = re.compile(r"\.carry_inc@(\d+)$")
 
 
-def apply_carry_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_carry_inc_peephole(
+    prog: asm_ast.Program, *, memo: FunctionMemo | None = None,
+) -> asm_ast.Program:
     """Rewrites every eligible run of `LDA M; ADC #0; STA M` in every
     Function to a `BCC` / `INC` chain, and every eligible `LDA M;
     SBC #0; STA M` to `BCS skip; DEC M; skip:`. Other top-levels pass
@@ -98,7 +101,11 @@ def apply_carry_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
     Labels are numbered across the whole program, past any from an
     earlier run of the fixed-point loop. dasm scopes a `.` label to
     its SUBROUTINE, but the sim's assembler (`sim/assembler.py`)
-    rejects the same label in two functions."""
+    rejects the same label in two functions.
+
+    Each function's rewrite reads the function and the next label
+    number, which is its context in `memo`
+    (passes/peephole_memo.py)."""
     counter = 1 + max(
         (int(m.group(1))
          for tl in prog.top_level if isinstance(tl, asm_ast.Function)
@@ -110,7 +117,9 @@ def apply_carry_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            tl, counter = _rewrite_function(tl, counter)
+            tl, counter = rewrite_numbered(
+                memo, tl, counter, _rewrite_function,
+            )
         new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 

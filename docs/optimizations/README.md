@@ -491,7 +491,10 @@ them whenever a pass is added or moved.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,
 in order, as one *fixed point*. Its loop is capped at 16 sweeps, and
-reaching the cap raises an error.
+reaching the cap raises an error. A pass isn't run again on a function
+it left unchanged when nothing it reads has changed since
+(`passes/peephole_memo.py`), which leaves the output as it was and
+saves about a third of the fixed point's time.
 
 1. [Memory-to-memory move splitting](split_mem_to_mem.md)
 2. [A halved sum's ninth bit from the carry](carry_halve.md)

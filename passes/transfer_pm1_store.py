@@ -135,20 +135,30 @@ from passes.asm_aliasing import unreachable_by_pointer
 from passes.asm_liveness import (
     a_dead_at, c_dead_at, v_dead_at, x_dead_at, y_dead_at,
 )
+from passes.peephole_memo import FunctionMemo, rewrite_function
 
 
-def apply_transfer_pm1_store(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_transfer_pm1_store(
+    prog: asm_ast.Program, *, memo: FunctionMemo | None = None,
+) -> asm_ast.Program:
+    """Rewrites each function's steps through a register (see the
+    module docstring). Each function's rewrite reads the function and
+    the names no pointer reaches, which are its context in `memo`
+    (passes/peephole_memo.py)."""
     unaliased = unreachable_by_pointer(prog)
+    ctx = memo.context(unaliased) if memo is not None else None
+
+    def rewrite(fn: asm_ast.Function) -> asm_ast.Function:
+        return _rewrite_step_then_reload(
+            _rewrite_steps_across_transfer(_rewrite_index_steps(
+                _rewrite_function(fn), unaliased,
+            ))
+        )
+
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(
-                _rewrite_step_then_reload(
-                    _rewrite_steps_across_transfer(_rewrite_index_steps(
-                        _rewrite_function(tl), unaliased,
-                    ))
-                )
-            )
+            new_top.append(rewrite_function(memo, tl, ctx, rewrite))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)

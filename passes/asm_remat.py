@@ -86,12 +86,14 @@ import asm_ast
 from passes import decimal_arith
 from passes.asm_liveness import sets_up_y
 from passes.asm_aliasing import may_alias, runtime_zp_addrs
+from passes.peephole_memo import FunctionMemo, rewrite_function
 
 
 def apply_remat(
     prog: asm_ast.Program,
     *,
     zp_slot_symbols: dict[str, int] | None = None,
+    memo: FunctionMemo | None = None,
 ) -> asm_ast.Program:
     """Forward recomputable defs of `__local_<fn>__*` staging cells
     to their consumers, leaving the staging Mov dead for downstream
@@ -102,14 +104,21 @@ def apply_remat(
     detect when a slot is referenced indirectly (via an
     `IndirectZp(addr, off)` pointer pair, for instance) — without
     address resolution we'd miss pointer-aliased reads and drop
-    stores that were keeping a multi-byte pointer pair alive."""
+    stores that were keeping a multi-byte pointer pair alive.
+
+    Each function's rewrite reads the function, `zp_slot_symbols`,
+    and the private statics (`_collect_private_statics`), which are
+    its context in `memo` (passes/peephole_memo.py)."""
     private = _collect_private_statics(prog)
+    ctx = memo.context(private) if memo is not None else None
+    slots = zp_slot_symbols or {}
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(
-                _rewrite_function(tl, zp_slot_symbols or {}, private),
-            )
+            new_top.append(rewrite_function(
+                memo, tl, ctx,
+                lambda fn: _rewrite_function(fn, slots, private),
+            ))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)

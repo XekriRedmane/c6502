@@ -15,6 +15,10 @@
 #include "passes/promote_loop_carried_to_a.h"
 #include "passes/rotate_loop_test.h"
 #include "passes/registry_control_flow.h"
+#include "passes/asm_dead_store.h"
+#include "passes/mem_const_prop.h"
+#include "passes/redundant_store.h"
+#include "passes/registry_args.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
 
@@ -111,6 +115,23 @@ std::string run_rotate_loop_test(asm_ast::Program input, const AsmContext& ctx,
   return asdl::dump(apply_rotate_loop_test(std::move(input), ctx));
 }
 
+std::string run_redundant_store(asm_ast::Program input, const AsmContext& ctx,
+                                const json::Value&, const json::Value&) {
+  return asdl::dump(apply_redundant_store_elimination(std::move(input), ctx));
+}
+
+std::string run_asm_dead_store(asm_ast::Program input, const AsmContext& ctx,
+                               const json::Value&, const json::Value& kwargs) {
+  const auto slots = symbol_addrs_kwarg(kwargs, "zp_slot_symbols");
+  return asdl::dump(
+      apply_asm_dead_store(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
+std::string run_mem_const_prop(asm_ast::Program input, const AsmContext&,
+                               const json::Value&, const json::Value&) {
+  return asdl::dump(apply_mem_const_prop(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -146,6 +167,9 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"short_jumps", registry::run_short_jumps},
       {"shared_tails", registry::run_shared_tails},
       {"outline_runs", registry::run_outline_runs},
+      {"redundant_store", run_redundant_store},
+      {"asm_dead_store", run_asm_dead_store},
+      {"mem_const_prop", run_mem_const_prop},
   };
   return passes;
 }

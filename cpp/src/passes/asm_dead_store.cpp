@@ -1,12 +1,46 @@
-// The walk of asm-level dead-store elimination, which other passes
-// share through `mem_dead_after`.
+// Asm-level dead-store elimination over the whole function, and the
+// walk that other passes share through `mem_dead_after`.
 //
-// The Python pass drops any `Mov(Reg, M)` (an STA, STX, or STY) into a
-// memory operand `M` whose value no instruction reachable from the
-// store reads. The walk goes forward from the store through the
-// function's control flow, and the store is dead when every path
-// either writes `M` again before reading it, or reaches the function's
-// exit with `M` dead there.
+// The pass drops any `Mov(Reg, M)` (an STA, STX, or STY) into a memory
+// operand `M` whose value no instruction reachable from the store
+// reads. The walk goes forward from the store through the function's
+// control flow, and the store is dead when every path either writes
+// `M` again before reading it, or reaches the function's exit with `M`
+// dead there. Within a block that is a write of the same byte before
+// any read, the shape of a cache that is overwritten, and across blocks
+// the walk follows every jump and branch.
+//
+// The case that made the walk cross blocks is the group b=6 of the
+// unrolled body of paint_hud_strip_p1.c, after the register allocator
+// and `redundant_load`:
+//
+//     LDA $A30D,Y         ; A = pixels.6
+//     STA $80             ; caches pixels in zero page (the candidate)
+//     INY
+//     STA $258C,X         ; row 1 (uses A, the same pixels)
+//     ... 6 more STAs to the frame buffer ...
+//     .loop@0_continue:   ; the back edge's target, no LDA $80 anywhere
+//     DEX
+//     BPL .split          ; or falls through to RTS
+//     .ssa_block@0:
+//     RTS
+//     .split:
+//     JMP .loop@0_start
+//
+// No path forward, neither the fall-through to the RTS nor the back
+// edge through the whole unrolled body, reads $80 before writing it
+// again or returning, so the store is dead.
+//
+// A `Mov(<non-Reg src>, <mem dst>)` is emitted as `LDA src; STA dst`.
+// When its store is dead, the load may still be needed for A's new
+// value and the N/Z flags it sets, so the move becomes
+// `Mov(src, Reg(A))`, the load alone. An `INC`, `DEC`, or shift of one
+// of the compiler's `__local_*` slots goes when nothing reads the slot
+// after it and the flags it sets are dead too: N and Z for an `INC` or
+// `DEC`, and C as well for a shift or rotate. The in-place lowering of
+// `w << 1` shifts both bytes of a copy, and `(uint8_t)(w << 1)` reads
+// only the low one. A volatile move is never a candidate, since every
+// store to a volatile byte is observed (C99 §6.7.3.6).
 //
 // Dead at the exit
 //
@@ -45,6 +79,7 @@
 // `LoadAddress` came before the next write of DPTR.
 #include "passes/asm_dead_store.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 #include "passes/asm_aliasing.h"
@@ -105,6 +140,8 @@ bool operands_equal_exact(const ir::Type_operand& a, const ir::Type_operand& b) 
   }
   return false;
 }
+
+}  // namespace
 
 // Returns whether the byte `target` written at `instrs[start]` is read
 // on no path forward: each path writes the same byte before reading it,
@@ -193,7 +230,6 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
   return true;
 }
 
-}  // namespace
 
 bool is_opaque(const ir::Type_instruction& instr) {
   return isa<ir::Call, ir::FunctionPrologue, ir::AllocateStack>(instr);
@@ -498,3 +534,140 @@ std::vector<ir::Type_operand> ptr_source_reads(const ir::Type_operand& op) {
 }
 
 }  // namespace c6502::passes::asm_dead_store
+
+namespace c6502::passes {
+
+namespace {
+
+namespace ir = ::c6502::asm_ast;
+using ::c6502::asdl::as;
+using ::c6502::asdl::isa;
+
+// What the pass does with a dead candidate (`candidate_kind`).
+enum class Candidate {
+  kNone,
+  // `Mov(Reg, <ZP or Data>)`, a pure store, which goes when it is dead.
+  kPureStore,
+  // `Mov(<not a Reg>, <ZP or Data>)`, emitted as `LDA src; STA dst`,
+  // whose store half goes, keeping the load.
+  kMemToMem,
+  // An `INC`, `DEC`, or shift of a `__local_*` slot, which the
+  // compiler's slots never make volatile. It goes when it is dead and
+  // the flags it sets are dead too.
+  kDeadRmw,
+};
+
+// Returns the operand a read-modify-write instruction writes in place,
+// or null for any other instruction.
+const ir::Type_operand* rmw_dst(const ir::Type_instruction& instr) {
+  using K = ir::Kind_instruction;
+  switch (ir::kind(instr)) {
+    case K::Inc:
+      return &std::get<ir::Inc>(instr).dst;
+    case K::Dec:
+      return &std::get<ir::Dec>(instr).dst;
+    case K::ArithmeticShiftLeft:
+      return &std::get<ir::ArithmeticShiftLeft>(instr).dst;
+    case K::LogicalShiftRight:
+      return &std::get<ir::LogicalShiftRight>(instr).dst;
+    case K::RotateLeft:
+      return &std::get<ir::RotateLeft>(instr).dst;
+    case K::RotateRight:
+      return &std::get<ir::RotateRight>(instr).dst;
+    default:
+      return nullptr;
+  }
+}
+
+Candidate candidate_kind(const ir::Type_instruction& instr) {
+  if (const ir::Type_operand* dst = rmw_dst(instr)) {
+    const auto* d = as<ir::Data>(*dst);
+    if (d != nullptr && d->name.starts_with("__local_")) {
+      return Candidate::kDeadRmw;
+    }
+  }
+  const auto* mov = as<ir::Mov>(instr);
+  if (mov == nullptr || mov->is_volatile || !isa<ir::ZP, ir::Data>(mov->dst)) {
+    return Candidate::kNone;
+  }
+  return isa<ir::Reg>(mov->src) ? Candidate::kPureStore : Candidate::kMemToMem;
+}
+
+// Drops or shortens each store of the function whose value no
+// instruction reachable from it reads.
+void rewrite_function(ir::Function& fn, const AsmContext& ctx,
+                      const SymbolAddrs* zp_slot_symbols) {
+  const Instrs instrs = fn.instructions;
+  if (std::none_of(instrs.begin(), instrs.end(), [](const auto& i) {
+        return candidate_kind(i) != Candidate::kNone;
+      })) {
+    return;
+  }
+  const LabelMap labels(instrs);
+  // The names whose address the function builds, which decide whether a
+  // `Call` can reach one of the function's `__local_<fn>__*` slots.
+  const NameSet address_taken_names = asm_dead_store::collect_address_taken_names(instrs);
+  const std::string local_prefix = "__local_" + fn.name + "__";
+  std::vector<ir::Type_instruction> out;
+  out.reserve(instrs.size());
+  bool changed = false;
+  for (std::size_t i = 0; i < instrs.size(); ++i) {
+    const ir::Type_instruction& instr = instrs[i];
+    const Candidate kind = candidate_kind(instr);
+    if (kind == Candidate::kNone) {
+      out.push_back(instr);
+      continue;
+    }
+    const ir::Type_operand& target =
+        kind == Candidate::kDeadRmw ? *rmw_dst(instr) : std::get<ir::Mov>(instr).dst;
+    if (!asm_dead_store::is_dead_cfg(instrs, i, labels, ctx, zp_slot_symbols,
+                                     local_prefix, address_taken_names, target)) {
+      out.push_back(instr);
+      continue;
+    }
+    switch (kind) {
+      case Candidate::kPureStore:
+        changed = true;
+        break;
+      case Candidate::kDeadRmw: {
+        // The new value isn't read. The flags it sets have to be dead
+        // too: N and Z for INC / DEC, and C as well for a shift or
+        // rotate.
+        const bool flags_dead = isa<ir::Inc, ir::Dec>(instr)
+                                    ? flags_dead_at(instrs, labels, i + 1)
+                                    : all_flags_dead_at(instrs, labels, i + 1);
+        if (flags_dead) {
+          changed = true;
+        } else {
+          out.push_back(instr);
+        }
+        break;
+      }
+      case Candidate::kMemToMem:
+        // The load half stays, as a move into A.
+        out.push_back(ir::Mov{.src = std::get<ir::Mov>(instr).src,
+                              .dst = ir::Reg{.reg = ir::A{}}});
+        changed = true;
+        break;
+      case Candidate::kNone:
+        break;
+    }
+  }
+  if (changed) {
+    fn.instructions = std::move(out);
+  }
+}
+
+}  // namespace
+
+asm_ast::Program apply_asm_dead_store(asm_ast::Program prog, const AsmContext& ctx,
+                                      const SymbolAddrs* zp_slot_symbols) {
+  for (auto& tl : prog.top_level) {
+    if (auto* fn = as<ir::Function>(tl)) {
+      rewrite_function(*fn, ctx, zp_slot_symbols);
+    }
+  }
+  return prog;
+}
+
+}  // namespace c6502::passes

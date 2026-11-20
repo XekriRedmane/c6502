@@ -2041,6 +2041,23 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         self.assertIn("SignExtend", kinds)
         self.assertIn("Truncate", kinds)
 
+    def test_out_of_range_fp_cast_folds_into_the_type(self):
+        # A floating constant whose integer part the target can't hold
+        # makes the conversion undefined (C99 §6.3.1.4). The fold gives
+        # the value modulo 2^N in the type's range, where it once gave
+        # a TAC constant of the whole value, 1000 bits for 200e300.
+        tac = self._tac(
+            "unsigned long f(void) { return (unsigned long)200e300; }\n"
+            "int g(void) { return (int)2147483649.0; }\n"
+            "int h(void) { return (int)32768.0; }\n"
+        )
+        consts = [tl.instructions[0].val.const for tl in tac.top_level]
+        self.assertEqual(consts, [
+            tac_ast.ConstULong(value=0),
+            tac_ast.ConstInt(value=1),
+            tac_ast.ConstInt(value=-32768),
+        ])
+
     def test_identity_cast_emits_no_conversion(self):
         # `(int)x` where `x` is already Int — same source and target
         # types, so no SignExtend / Truncate gets emitted.

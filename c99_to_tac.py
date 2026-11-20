@@ -1099,6 +1099,26 @@ def _tac_storage_const(t: c99_ast.BitInt, bits: int) -> tac_ast.Constant:
     ))
 
 
+def _fp_to_integer(target: c99_ast.Type_data_type, to_int, bits: int) -> int:
+    """The floating value with IEEE 754 `bits` converted to the integer
+    or pointer type `target` by `to_int`, which truncates toward zero
+    (C99 §6.3.1.4). A value out of `target`'s range makes the conversion
+    undefined, and the result is then the truncated value modulo 2^N in
+    `target`'s range, so the TAC constant holds a value of its type.
+    `(unsigned long)200e300` in a branch that never runs once gave a
+    `ConstULong` of 1000 bits. An infinity or a NaN, which has no
+    integer part, gives 0."""
+    rng = _int_range(target)
+    try:
+        value = to_int(bits)
+    except (OverflowError, ValueError):
+        return 0
+    if rng is None or isinstance(_strip_quals_c99(target), c99_ast.Bool):
+        return value
+    lo, hi = rng
+    return (value - lo) % (hi - lo + 1) + lo
+
+
 def _fold_fp_cast_constant(
     target: c99_ast.Type_data_type,
     c: tac_ast.Type_const,
@@ -1122,7 +1142,9 @@ def _fold_fp_cast_constant(
             return tac_ast.ConstDouble(
                 bits=fp_arith.single_bits_to_double_bits(c.bits),
             )
-        return _tac_const_for(target, fp_arith.single_bits_to_int(c.bits))
+        return _tac_const_for(target, _fp_to_integer(
+            target, fp_arith.single_bits_to_int, c.bits,
+        ))
     if isinstance(c, tac_ast.ConstDouble):
         if isinstance(target, c99_ast.Double):
             return tac_ast.ConstDouble(bits=c.bits)
@@ -1130,7 +1152,9 @@ def _fold_fp_cast_constant(
             return tac_ast.ConstFloat(
                 bits=fp_arith.double_bits_to_single_bits(c.bits),
             )
-        return _tac_const_for(target, fp_arith.double_bits_to_int(c.bits))
+        return _tac_const_for(target, _fp_to_integer(
+            target, fp_arith.double_bits_to_int, c.bits,
+        ))
     # Integer source: signedness rides on the variant. For unsigned
     # variants, mask to the source's bit-pattern range so a negative
     # TAC int (canonicalized at the variant's width) becomes its

@@ -6,6 +6,7 @@
 #include "passes/asm_licm.h"
 #include "passes/counter_to_index_reg.h"
 #include "passes/dual_index_promotion.h"
+#include "passes/element_in_place.h"
 #include "passes/loop_constant_a.h"
 #include "passes/loop_counter_to_x.h"
 #include "passes/loop_invariant_a.h"
@@ -40,6 +41,13 @@ std::string run_licm(asm_ast::Program input, const AsmContext& ctx,
 std::string run_split_mem_to_mem(asm_ast::Program input, const AsmContext&,
                                  const json::Value&, const json::Value&) {
   return asdl::dump(apply_split_mem_to_mem(std::move(input)));
+}
+
+std::string run_element_in_place(asm_ast::Program input, const AsmContext& ctx,
+                                 const json::Value&, const json::Value& kwargs) {
+  const auto slots = symbol_addrs_arg(kwargs.get("zp_slot_symbols"));
+  return asdl::dump(
+      apply_element_in_place(std::move(input), ctx, slots ? &*slots : nullptr));
 }
 
 std::string run_loop_constant_a(asm_ast::Program input, const AsmContext&,
@@ -90,6 +98,7 @@ const std::vector<RegisteredPass>& registered_passes() {
   static const std::vector<RegisteredPass> passes = {
       {"licm", run_licm},
       {"split_mem_to_mem", run_split_mem_to_mem},
+      {"element_in_place", run_element_in_place},
       {"loop_constant_a", run_loop_constant_a},
       {"loop_counter_to_x", run_loop_counter_to_x},
       {"counter_to_index_reg", run_counter_to_index_reg},

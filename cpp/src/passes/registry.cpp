@@ -7,6 +7,7 @@
 #include "passes/dual_index_promotion.h"
 #include "passes/loop_constant_a.h"
 #include "passes/loop_invariant_a.h"
+#include "passes/rotate_loop_test.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
 
@@ -61,6 +62,11 @@ std::string run_loop_invariant_a(asm_ast::Program input, const AsmContext& ctx,
       apply_loop_invariant_a(std::move(input), ctx, slots ? &*slots : nullptr));
 }
 
+std::string run_rotate_loop_test(asm_ast::Program input, const AsmContext& ctx,
+                                 const json::Value&, const json::Value&) {
+  return asdl::dump(apply_rotate_loop_test(std::move(input), ctx));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -71,6 +77,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"x_save_slot_load", run_x_save_slot_load},
       {"dual_index_promotion", run_dual_index_promotion},
       {"loop_invariant_a", run_loop_invariant_a},
+      {"rotate_loop_test", run_rotate_loop_test},
   };
   return passes;
 }

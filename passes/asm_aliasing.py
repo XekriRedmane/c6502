@@ -185,19 +185,10 @@ def unreachable_by_pointer(prog: asm_ast.Program) -> frozenset[str]:
                 )):
                     taken.add(init.name)
         elif isinstance(tl, asm_ast.Function):
-            for ins in tl.instructions:
-                if isinstance(ins, asm_ast.Call):
-                    named.add(ins.name)
-                if isinstance(ins, asm_ast.LoadAddress):
-                    name = getattr(ins.src, "name", None)
-                    if name is not None:
-                        taken.add(name)
-                for op in _instruction_operands(ins):
-                    if isinstance(op, (asm_ast.ImmLabelLow,
-                                       asm_ast.ImmLabelHigh)):
-                        taken.add(op.name)
-                    elif isinstance(op, asm_ast.Data):
-                        seen.add(op.name)
+            called, fn_taken, fn_seen = _function_names(tl.instructions)
+            named |= called
+            taken |= fn_taken
+            seen |= fn_seen
 
     def own_slot(name: str) -> bool:
         owners = [
@@ -209,6 +200,62 @@ def unreachable_by_pointer(prog: asm_ast.Program) -> frozenset[str]:
 
     slots = {n for n in seen if own_slot(n)}
     return frozenset((statics | slots) - taken)
+
+
+# `_function_names`' cache, from the ids of a function's instructions to
+# the instructions and their names. Holding the instructions keeps their
+# ids from being reused while the entry exists, so an entry found by a
+# list's ids was made from the very same objects. The oldest entry goes
+# first when the cache is full.
+_NAMES_CACHE_SIZE = 1024
+_FUNCTION_NAMES: dict[
+    tuple[int, ...],
+    tuple[tuple, tuple[frozenset[str], frozenset[str], frozenset[str]]],
+] = {}
+
+
+def _function_names(
+    instrs: list[asm_ast.Type_instruction],
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """Returns, for `unreachable_by_pointer`, the names `instrs` calls,
+    the names whose address it takes (with `LoadAddress`, `#<name`, or
+    `#>name`), and the names of its `Data` operands.
+
+    The peephole fixed point calls `unreachable_by_pointer` four times a
+    sweep, each time on a new program, but most functions come through
+    a sweep as the same instruction objects in a new list. So the names
+    of the last `_NAMES_CACHE_SIZE` lists are kept, under the ids of
+    their instructions. A kept entry is correct as long as nothing
+    changes an instruction in place after `_function_names` has read
+    it. The asm
+    passes build a new instruction for each change. The one exception
+    is the asm SSA round trip, which renames the `Pseudo` operands of
+    its `Phi` nodes in place, and a `Pseudo` gives none of these names."""
+    key = tuple(map(id, instrs))
+    entry = _FUNCTION_NAMES.get(key)
+    if entry is not None:
+        return entry[1]
+    called: set[str] = set()
+    taken: set[str] = set()
+    seen: set[str] = set()
+    for ins in instrs:
+        if isinstance(ins, asm_ast.Call):
+            called.add(ins.name)
+        if isinstance(ins, asm_ast.LoadAddress):
+            name = getattr(ins.src, "name", None)
+            if name is not None:
+                taken.add(name)
+        for op in _instruction_operands(ins):
+            if isinstance(op, (asm_ast.ImmLabelLow,
+                               asm_ast.ImmLabelHigh)):
+                taken.add(op.name)
+            elif isinstance(op, asm_ast.Data):
+                seen.add(op.name)
+    names = (frozenset(called), frozenset(taken), frozenset(seen))
+    if len(_FUNCTION_NAMES) >= _NAMES_CACHE_SIZE:
+        del _FUNCTION_NAMES[next(iter(_FUNCTION_NAMES))]
+    _FUNCTION_NAMES[key] = (tuple(instrs), names)
+    return names
 
 
 # Classes of field values that are neither an operand nor a dataclass,
@@ -279,6 +326,13 @@ def is_pointer_byte(op, pointer_addrs, zp_symbol_addrs) -> bool:
     return False
 
 
+# The operand classes that `may_alias` takes to be values. The set
+# serves its test of an operand's exact class, and the tuple its
+# `isinstance` test.
+_IMM_KINDS = (asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)
+_IMM_CLASSES = frozenset(_IMM_KINDS)
+
+
 class pointer_proof:
     """Installs `names` (from `unreachable_by_pointer`) as the bytes
     `may_alias` treats as out of reach of the indirect operands, for
@@ -324,12 +378,24 @@ def may_alias(
     Data name that *looks* like a ZP slot symbol (per
     `_is_zp_symbol`) — sound but pessimistic; callers that have
     the map should always pass it."""
+    # The two commonest cases, decided by the exact classes before the
+    # general rules below. They give what those rules give: two `Data`
+    # operands reach the `Data` vs `Data` rule, and an operand of an
+    # immediate class the first rule. In 20 `fuzz.stmts` programs, 83
+    # percent of the calls are two `Data` operands and 13 percent have
+    # an immediate.
+    ta = type(a)
+    tb = type(b)
+    if ta is asm_ast.Data and tb is asm_ast.Data:
+        return a.name == b.name and a.offset == b.offset
+    if ta in _IMM_CLASSES or tb in _IMM_CLASSES:
+        return False
     # Imm / ImmLabelLow / ImmLabelHigh are values, not memory —
     # they never alias a memory operand. `LDA #<label` loads the
     # immediate low byte of the resolved address; it doesn't read
     # the memory the label names. Same byte-emit shape as `LDA
     # #imm`, same aliasing behaviour.
-    _imm_kinds = (asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)
+    _imm_kinds = _IMM_KINDS
     if isinstance(a, _imm_kinds) or isinstance(b, _imm_kinds):
         return False
     # Normalize so the same-kind cases each get one branch by

@@ -30,7 +30,16 @@ this directory:
   liveness. `may_alias` takes a `Data` operand naming a user
   zero-page object (Lode Runner's `GAME_COLNUM`) to be out of reach of
   an indexed access to another object outside zero page, as it does
-  a literal `ZP` operand.
+  a literal `ZP` operand. `may_alias` decides two `Data` operands and
+  an immediate operand by their exact classes before its general
+  rules, with the same results. `unreachable_by_pointer` keeps the
+  names each function's instructions call, take the address of, and
+  name in `Data` operands, under the ids of the instructions, since
+  most functions come through a peephole sweep as the same objects.
+  The kept names are correct as long as no pass changes an
+  instruction in place after they are read, and the asm passes build
+  a new instruction for each change (the asm SSA round trip renames
+  `Phi` operands in place, which are `Pseudo`s that give no names).
 - `asm_dead_store.py` — `apply_asm_dead_store` CFG-wide DSE.
 - `asm_licm.py` — `apply_licm` for loop-invariant constant stores.
 - `asm_liveness.py` — per-block liveness used by several peepholes.

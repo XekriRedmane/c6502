@@ -521,6 +521,9 @@ Other root-level files:
   of `tokenize`.
 - `asdl.py` — code generator for `*_ast.py` from `*.asdl`, and with
   `--cpp` for the C++ port's IR classes in cpp/generated/.
+- `ir_dump.py` — the dump format, a canonical text form of any IR
+  value (`dump`, `load`) that the C++ port reads and writes too. Its
+  docstring gives the grammar.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

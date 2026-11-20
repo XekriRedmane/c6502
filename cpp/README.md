@@ -6,8 +6,9 @@ Each stage moves to C++ only when it produces the same output as the
 Python code it replaces, byte for byte, and the Python compiler stays
 the reference until the port is done.
 
-So far the port has the build and the IR classes generated from the
-four `.asdl` files.
+So far the port has the build, the IR classes generated from the four
+`.asdl` files, and the dump format that carries an IR value between
+the two compilers.
 
 ## Building
 
@@ -33,7 +34,9 @@ ctest --test-dir cpp/build --output-on-failure
 
 The executables go in `cpp/build/bin` with either generator, and a
 Debug build of the Visual Studio generator puts them in
-`cpp/build/bin/debug`. `cpp/build/` is ignored by git.
+`cpp/build/bin/debug`. `cpp/build/` is ignored by git. The tests in
+`tests/` that use the CLI look for it in `cpp/build/bin`, or at the
+path in `C6502_CPP`, and are skipped when it isn't built.
 
 On 19 Nov 2026 the build was clean with MSVC 19.36 (Build Tools 14.36),
 and with GCC 12.2 and Clang 14.0.6 on Debian 12, the distribution the
@@ -47,7 +50,8 @@ The build makes three targets.
   and `generated/`). A `.cpp` file added under `src/`, `src/asdl/`, or
   `src/passes/` is picked up the next time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
-- `c6502cpp`, the CLI (`src/main.cpp`), which has no commands yet.
+- `c6502cpp`, the CLI (`src/main.cpp`), which for now holds the checks
+  below.
 
 Warnings are on (`/W4`, `-Wall -Wextra`) and aren't errors yet.
 
@@ -127,3 +131,25 @@ A string (`identifier` or `string`) is a `std::string` in UTF-8. A
 Python `str` that holds bytes, such as `StringInit.str`, holds them as
 the code points 0 to 255, which take two bytes each in UTF-8 from 0x80
 up, so code that needs the bytes decodes the string.
+
+## The dump format
+
+`ir_dump.py` describes the format and is its Python side. The C++ side
+is the generated `read` and `write` functions with `asdl::Reader` and
+`asdl::Writer`, through `asdl::dump(v)` and `asdl::load<T>(text)`. A
+dump names the constructor of every value and gives the fields in
+order, with each top-level item and each instruction on a line of its
+own:
+
+```
+Program([
+  Function("f" true [] [
+    Mov(Imm(1) Reg(A) false)
+    Return(true false false)
+  ])
+])
+```
+
+`c6502cpp roundtrip <module> [<file>]` reads a dump and writes it again,
+and `tests/test_ir_dump.py` checks that it gives the Python dump's
+bytes for the four IRs of a compiled example.

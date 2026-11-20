@@ -61,6 +61,24 @@ def items(prog: asm_ast.Program, symbols) -> list[ItemMeta]:
     return out
 
 
+def section_info(prog: asm_ast.Program, symbols) -> dict:
+    """What `items` reads of the symbol of each top-level name of
+    `prog` that has one: `(section, is_const, mergeable)`, with
+    `section` None when no attribute names one. The C++ back end
+    (cpp_backend.py) takes this in place of the symbol table, and the
+    capture harness records it for `section_items`."""
+    out = {}
+    for tl in prog.top_level:
+        sym = symbols.get(tl.name)
+        if sym is None:
+            continue
+        out[tl.name] = (
+            getattr(sym.attrs, "section", None), _is_const(sym.type),
+            bool(getattr(sym.attrs, "mergeable", False)),
+        )
+    return out
+
+
 def _is_const(t) -> bool:
     """True iff an object of type `t` is read-only: `t` is `const`, or
     an array of `const` elements."""

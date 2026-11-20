@@ -23,8 +23,11 @@ struct Call {
   // The context of the compile, the JSON object of the `context` line,
   // or empty for a capture of version 1, which has none.
   std::string context_json;
-  // The dump of the program the pass was given.
+  // The dump of the program the pass was given, or, when
+  // `input_is_json`, the tagged JSON of a first argument that isn't an
+  // IR value, such as `format_metadata`'s `LinkMetadata`.
   std::string input;
+  bool input_is_json = false;
   // The dump of the program the pass returned, or, when
   // `output_is_json`, the tagged JSON of a result that isn't a
   // program, such as a tuple.

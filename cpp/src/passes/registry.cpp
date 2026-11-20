@@ -47,6 +47,7 @@
 #include "passes/redundant_load_after_rmw.h"
 #include "passes/redundant_store.h"
 #include "passes/registry_control_flow.h"
+#include "passes/registry_emission.h"
 #include "passes/rotate_loop_test.h"
 #include "passes/round_trip_load.h"
 #include "passes/self_store_drop.h"
@@ -379,7 +380,8 @@ std::string run_via_a_store_fold(asm_ast::Program input, const AsmContext&,
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
-  static const std::vector<RegisteredPass> passes = {
+  static const std::vector<RegisteredPass> passes = [] {
+    std::vector<RegisteredPass> all = {
       {"licm", run_licm},
       {"split_mem_to_mem", run_split_mem_to_mem},
       {"element_in_place", run_element_in_place},
@@ -453,7 +455,12 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"via_a_store_fold", run_via_a_store_fold},
       {"transfer_pm1_store", run_transfer_pm1_store},
       {"carry_known", run_carry_known},
-  };
+    };
+    // The work after the region, and emission (registry_emission.cpp).
+    const std::vector<RegisteredPass>& emission = registry::emission_passes();
+    all.insert(all.end(), emission.begin(), emission.end());
+    return all;
+  }();
   return passes;
 }
 

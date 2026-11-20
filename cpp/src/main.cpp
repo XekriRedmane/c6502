@@ -56,9 +56,12 @@ const char kUsage[] =
     "compares them with the recorded ones.\n"
     "\n"
     "backend reads a request of compile.py's (cpp_backend.py) from stdin,\n"
-    "runs the back end's region on its program, and writes the result to\n"
-    "stdout. A problem with the request exits with status 1 and a bug in\n"
-    "the compiler with status 3, each with its message on stderr.\n"
+    "runs the back end's region on its program, or the region and the work\n"
+    "through emission, and writes the result to stdout. A problem with the\n"
+    "request exits with status 1, a bug in the compiler with status 3, and\n"
+    "a problem with the program being compiled with status 4, each with\n"
+    "its message on stderr, which for status 4 follows the line with the\n"
+    "Python type of the error.\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -130,6 +133,15 @@ struct PassCount {
   std::size_t matched = 0;
 };
 
+// Returns whether the program dump `text` of the IR module `module`
+// (`asm_ast` or `asm2_ast`) reads and writes back as the same bytes.
+bool dump_roundtrips(const std::string& text, std::string_view module) {
+  if (module == "asm2_ast") {
+    return asdl::dump(asdl::load<asm2_ast::Program>(text)) == text;
+  }
+  return asdl::dump(asdl::load<asm_ast::Program>(text)) == text;
+}
+
 int cmd_check_captures(const std::vector<std::string>& args) {
   std::string only;
   bool verbose = false;
@@ -164,14 +176,22 @@ int cmd_check_captures(const std::vector<std::string>& args) {
       continue;
     }
     const std::string where = path.string() + " (" + call.source + ")";
+    const passes::RegisteredPass* pass = passes::find_pass(call.pass);
+    // A function whose input or output isn't an asm program names the
+    // module of its dump.
+    const std::string_view input_module = pass != nullptr ? pass->input_module : "asm_ast";
+    const std::string_view output_module = pass != nullptr ? pass->output_module : "asm_ast";
     asm_ast::Program input;
     try {
-      input = asdl::load<asm_ast::Program>(call.input);
-      if (asdl::dump(input) != call.input) {
+      if (!call.input_is_json && input_module == "asm_ast") {
+        input = asdl::load<asm_ast::Program>(call.input);
+        if (asdl::dump(input) != call.input) {
+          throw std::runtime_error("the input's dump differs from the recorded one");
+        }
+      } else if (!call.input_is_json && !dump_roundtrips(call.input, input_module)) {
         throw std::runtime_error("the input's dump differs from the recorded one");
       }
-      if (!call.output_is_json &&
-          asdl::dump(asdl::load<asm_ast::Program>(call.output)) != call.output) {
+      if (!call.output_is_json && !dump_roundtrips(call.output, output_module)) {
         throw std::runtime_error("the output's dump differs from the recorded one");
       }
     } catch (const std::exception& e) {
@@ -179,7 +199,6 @@ int cmd_check_captures(const std::vector<std::string>& args) {
       std::printf("ROUNDTRIP %s: %s\n", where.c_str(), e.what());
       continue;
     }
-    const passes::RegisteredPass* pass = passes::find_pass(call.pass);
     if (pass == nullptr) {
       ++unported[call.pass];
       continue;
@@ -193,9 +212,15 @@ int cmd_check_captures(const std::vector<std::string>& args) {
       const json::Value empty_object{.kind = json::Value::Kind::kObject};
       const json::Value* positional = call_args.get("args");
       const json::Value* keywords = call_args.get("kwargs");
-      got = pass->run(std::move(input), capture::context(call),
-                      positional ? *positional : empty_array,
-                      keywords ? *keywords : empty_object);
+      if (pass->run_text != nullptr) {
+        got = pass->run_text(call.input, capture::context(call),
+                             positional ? *positional : empty_array,
+                             keywords ? *keywords : empty_object);
+      } else {
+        got = pass->run(std::move(input), capture::context(call),
+                        positional ? *positional : empty_array,
+                        keywords ? *keywords : empty_object);
+      }
     } catch (const std::exception& e) {
       got = std::string("exception: ") + e.what() + "\n";
     }
@@ -399,7 +424,14 @@ int main(int argc, char** argv) {
       return cmd_check_helpers(args);
     }
     if (command == "backend" && args.empty()) {
-      write_stdout(backend::respond(read_stdin()));
+      // A problem with the program goes back with its Python type, so
+      // that cpp_backend.py raises the exception compile.py would.
+      try {
+        write_stdout(backend::respond(read_stdin()));
+      } catch (const c6502::CompileError& e) {
+        std::fprintf(stderr, "%s\n%s", e.python_type().c_str(), e.what());
+        return 4;
+      }
       return 0;
     }
     if (command == "sweep-passes" && args.empty()) {

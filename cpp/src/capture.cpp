@@ -44,7 +44,14 @@ Call parse(const std::string& text) {
   if (version == "2") {
     call.context_json = take_line(text, pos, "context ");
   }
-  take_line(text, pos, "input");
+  // `input-json` holds the tagged JSON of a first argument that isn't an
+  // IR value, on one line.
+  const std::string input_kind = take_line(text, pos, "input");
+  if (input_kind == "-json") {
+    call.input_is_json = true;
+  } else if (!input_kind.empty()) {
+    throw std::runtime_error("expected an input line");
+  }
   // The input's dump ends with a newline, and the `output` line follows
   // it. No line of a dump can be `output`, since every line of one
   // starts with a name, a bracket, or indentation, followed by more.

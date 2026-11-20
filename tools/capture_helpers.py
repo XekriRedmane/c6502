@@ -503,7 +503,12 @@ def _record_tac(prog) -> None:
 
 def _wrap_pass(fn):
     def wrapper(*args, **kwargs):
-        _record_program(args[0], kwargs)
+        import asm_ast
+        # The table also holds emission's functions, of which
+        # `emit_program` takes an asm2 program and `format_metadata` a
+        # `LinkMetadata`. Neither reads the shared helpers.
+        if isinstance(args[0], asm_ast.Program):
+            _record_program(args[0], kwargs)
         return fn(*args, **kwargs)
     return wrapper
 

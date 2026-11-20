@@ -16,7 +16,9 @@ tools/check_captures.py) runs the C++ port of the pass on each one.
 
 The passes are the asm passes of `compile.optimized_asm` from
 `apply_licm` on, which include every pass of `_peephole_fixedpoint`,
-under the names in `PASSES`. The unoptimized pipeline runs
+and the functions after them through emission (`place_zp_globals`,
+`lower_to_asm2`, `emit_program`, and the rest), under the names in
+`PASSES`. The unoptimized pipeline runs
 `_peephole_fixedpoint` and `expand_long_branches` too. The harness
 replaces each chosen pass's function in `compile`'s namespace with a
 wrapper that records the call and returns the pass's result, so the
@@ -52,7 +54,14 @@ A capture file is text with LF line endings:
 
 When the result isn't an IR value (`apply_slot_coalescing` returns a
 tuple), the `output` line is `output-json` and the result's tagged
-JSON follows on one line. The tagged JSON of the arguments is an object
+JSON follows on one line. When the first argument isn't one
+(`format_metadata` takes a `LinkMetadata`), the `input` line is
+`input-json` and its tagged JSON follows on one line. Two kinds of call
+are recorded with other arguments than the function is given:
+`section_items` with what it reads of the symbol table
+(`sections.section_info`) in place of the table, and `hargs_need` and
+`place_zp_globals` with the helpers' HARGS footprints, which they read
+inside the call, as the keyword argument `footprints`. The tagged JSON of the arguments is an object
 `{"args": [...], "kwargs": {...}}`, and `encode` gives the encoding of
 each Python value: JSON's own types for None, bools, ints, strings,
 and lists, and an object with one tag for the rest, `{"tuple": [...]}`,
@@ -175,6 +184,18 @@ PIPELINE_PASSES = {
     "short_jumps": "apply_short_jumps",
     "shared_tails": "apply_shared_tails",
     "outline_runs": "apply_outline_runs",
+    # The work between the region and emission that reads the asm
+    # program, and emission, which `_codegen` and the end of
+    # `optimized_asm` run.
+    "link_records": "link_records",
+    "place_zp_globals": "place_zp_globals",
+    "check_shares": "check_shares",
+    "prune_unused_locals": "prune_unused_locals",
+    "lower_to_asm2": "lower_to_asm2",
+    "hargs_need": "hargs_need",
+    "section_items": "section_items",
+    "format_metadata": "format_metadata",
+    "emit_program": "emit_program",
 }
 
 PASSES = {**SWEEP_PASSES, **PIPELINE_PASSES}
@@ -254,11 +275,11 @@ def context_json() -> str:
     }, separators=(",", ":"))
 
 
-def _record(name: str, input_dump: str, args_json: str, result) -> None:
+def _record(name: str, input_section: str, args_json: str, result) -> None:
     import ir_dump
     context = context_json()
     key = hashlib.sha1(
-        f"{name}\n{args_json}\n{context}\n{input_dump}".encode("utf-8")
+        f"{name}\n{args_json}\n{context}\n{input_section}".encode("utf-8")
     ).hexdigest()
     _COUNTS[name] = _COUNTS.get(name, 0) + 1
     path = _OUT / name / f"{key}.txt"
@@ -270,7 +291,7 @@ def _record(name: str, input_dump: str, args_json: str, result) -> None:
         output = "output-json\n" + json.dumps(encode(result)) + "\n"
     text = (
         f"c6502-capture 2\npass {name}\nsource {_SOURCE}\n"
-        f"args {args_json}\ncontext {context}\ninput\n{input_dump}{output}"
+        f"args {args_json}\ncontext {context}\n{input_section}{output}"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{key}.{os.getpid()}.tmp")
@@ -279,17 +300,53 @@ def _record(name: str, input_dump: str, args_json: str, result) -> None:
     os.replace(tmp, path)
 
 
+def _section_items_args(args, kwargs):
+    """`section_items(prog, symbols)` reads only a little of each
+    top-level name's symbol, and a symbol table can hold floats, which
+    the C++ JSON reader takes no fractions of, so the harness records
+    what it reads (`sections.section_info`) in place of the table."""
+    from passes.sections import section_info
+    return (args[0], section_info(args[0], args[1])), kwargs
+
+
+def _with_footprints(args, kwargs):
+    """`hargs_need` and `place_zp_globals` read the helpers' HARGS
+    footprints from rtlib/helpers.py inside the call, so the harness
+    records them beside the arguments, as the keyword `footprints`."""
+    from passes.runtime_layout import helper_footprints
+    return args, {**kwargs, "footprints": helper_footprints()}
+
+
+# The calls whose record differs from the arguments the function is
+# given, each with the function that gives what is recorded.
+_RECORDED_ARGS = {
+    "section_items": _section_items_args,
+    "hargs_need": _with_footprints,
+    "place_zp_globals": _with_footprints,
+}
+
+
 def _wrap(name: str, fn):
     def wrapper(*args, **kwargs):
         import ir_dump
         # The input and the arguments are encoded before the call, in
-        # case the pass changes them in place.
+        # case the pass changes them in place. A first argument that
+        # isn't an IR value (`format_metadata`'s `LinkMetadata`) is
+        # recorded as its tagged JSON under `input-json`.
         try:
-            input_dump = ir_dump.dump(args[0])
+            rec_args, rec_kwargs = _RECORDED_ARGS.get(
+                name, lambda a, k: (a, k),
+            )(args, kwargs)
+            if type(rec_args[0]).__module__ in _IR_MODULES:
+                input_section = "input\n" + ir_dump.dump(rec_args[0])
+            else:
+                input_section = (
+                    "input-json\n" + json.dumps(encode(rec_args[0])) + "\n"
+                )
             args_json = json.dumps({
-                "args": [encode(a) for a in args[1:]],
+                "args": [encode(a) for a in rec_args[1:]],
                 "kwargs": {
-                    k: encode(v) for k, v in kwargs.items() if k != "memo"
+                    k: encode(v) for k, v in rec_kwargs.items() if k != "memo"
                 },
             })
         except (ir_dump.DumpError, TypeError) as e:
@@ -297,7 +354,7 @@ def _wrap(name: str, fn):
             return fn(*args, **kwargs)
         result = fn(*args, **kwargs)
         try:
-            _record(name, input_dump, args_json, result)
+            _record(name, input_section, args_json, result)
         except (ir_dump.DumpError, TypeError) as e:
             _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
         return result

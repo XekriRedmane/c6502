@@ -1,11 +1,22 @@
-// The helpers of passes/dead_a_arith.py that other passes import. The
-// pass itself isn't ported yet.
+// The port of passes/dead_a_arith.py: the pass, and the helpers that
+// other passes import from it.
 #pragma once
 
 #include <cstddef>
 
 #include "asm_ast.h"
 #include "passes/asm_liveness.h"
+
+namespace c6502::passes {
+
+// Drops each instruction of the program's functions whose only effects
+// are writes to A and the flags when A and those flags are dead after
+// it, each load into X or Y, and each load into A through a zero-page
+// pointer, whose value and flags nothing reads. The comment at the top of
+// dead_a_arith.cpp gives the shapes and the reasons.
+asm_ast::Program apply_dead_a_arith_elimination(asm_ast::Program prog);
+
+}  // namespace c6502::passes
 
 namespace c6502::passes::dead_a_arith {
 

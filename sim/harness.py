@@ -30,7 +30,6 @@ from py65.devices.mpu6502 import MPU
 
 import asm_ast
 from preprocessor import preprocess
-from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from c99_to_tac import translate_program as translate_to_tac
@@ -106,18 +105,18 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp, tac):
     # Unoptimized path: the same passes `compile.py -S` runs
     # without `-O`, including the full peephole fixedpoint,
     # so the sim executes the code the CLI emits.
-    from compile import _peephole_fixedpoint
+    from compile import unoptimized_tail
     # Calls to a zp_abi routine with a fixed address pass their
     # arguments in registers here too, since the routine's
     # convention can't depend on the pipeline.
     fixed_abi = fixed_address_layouts(tac, ast5, types)
     asm0 = translate_to_asm(tac, syms, types, abi=fixed_abi)
-    asm = expand_long_branches(_peephole_fixedpoint(
+    asm = unoptimized_tail(
         replace_pseudoregs(
             asm0, extra_statics=statics, symbols=syms, types=types,
         ),
-        zp_global_symbols=zp.addrs,
-    ))
+        zp,
+    )
     from passes.abi_selection import pinned_slot_symbols
     return place_zp_globals(asm, zp), syms, types, {
         **pinned_slot_symbols(fixed_abi), **zp.equs(),

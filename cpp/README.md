@@ -8,10 +8,11 @@ the reference until the port is done.
 
 So far the port has the build, the IR classes generated from the four
 `.asdl` files, the dump format that carries an IR value between the
-two compilers, one asm pass, `split_mem_to_mem`, which matches the
-Python pass on every call the corpus makes, and the helpers that the
-asm passes share, which match the Python helpers on every input of the
-corpus they were checked on.
+two compilers, the helpers that the asm passes share, and every asm
+pass of the back end after prologue synthesis, each of which matches
+the Python code on every input of the corpus it was checked on. The
+back end's region runs in C++ when compile.py is run with
+`C6502_CPP_BACKEND=1` ("The back end through c6502cpp", below).
 
 ## Building
 
@@ -55,7 +56,7 @@ The build makes three targets.
   picked up the next time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
 - `c6502cpp`, the CLI (`src/main.cpp`), which for now holds the checks
-  below.
+  below and the back end that compile.py runs through it.
 
 Warnings are on (`/W4`, `-Wall -Wextra`) and aren't errors yet.
 
@@ -72,7 +73,11 @@ cpp/
     json.*            the reader of the capture harness's JSON
     capture.*         the reader of capture files and their contexts
     helper_checks.*   the C++ side of tools/capture_helpers.py
+    backend.*         the `c6502cpp backend` command's request and response
     passes/           one .cpp/.h per Python pass module, mirroring passes/
+      peephole_fixedpoint.*   compile.py's _peephole_fixedpoint
+      optimized_asm.* the region of compile.py's optimized_asm, and the
+                      unoptimized pipeline's fixed point and long branches
       asm_context.*   AsmContext, the compile's state the asm passes read
       asm_operands.h  for_each_operand, a walk over an instruction's operands
       optimization_asm/cfg.*   the asm CFG and its dominators
@@ -453,6 +458,52 @@ what it knows of a byte in the order it learned it, where Python keeps
 a set: two different equalities for one byte can only be known on a
 path that no run takes, and the corpus has no call where the order
 changes the result.
+
+## The back end through c6502cpp
+
+`passes::peephole_fixedpoint` (`src/passes/peephole_fixedpoint.*`) is
+compile.py's `_peephole_fixedpoint`: `peephole_sweep` lists the passes
+of the sweep in its order, each with its keyword arguments bound, and
+`run_to_fixed_point` repeats the sweep until a sweep leaves the program
+equal to what it started with, giving up with Python's message after
+16 sweeps. The Python memo (`passes/peephole_memo.py`) gives the
+results a run without it gives, so the C++ fixed point has none.
+`c6502cpp sweep-passes` lists the sweep, and `tests/test_cpp_backend.py`
+checks the list against `tools/capture_passes.SWEEP_PASSES`, which
+`tests/test_capture_passes.py` checks against compile.py.
+
+`passes::optimized_region` (`src/passes/optimized_asm.*`) runs the
+passes of `optimized_asm` from `apply_licm` through
+`apply_outline_runs`, with Python's arguments, on the program after
+`synthesize_prologue`. Its `RegionArgs` are the values compile.py
+computes for those passes: `all_slot_symbols`, `zp.addrs`, `noreturn`,
+what `apply_slot_coalescing` reads of `abi` and `shares`, the set
+`_ret_coalescing_eligible` returns, and the zero-page names and slot
+addresses of the last two passes. It returns the program, the slots
+`apply_slot_coalescing` made each function write, and the functions
+`apply_shared_tails` and `apply_outline_runs` made, each with the
+function whose symbol it copies. `passes::unoptimized_region` is the
+unoptimized pipeline's fixed point and long branches.
+
+`c6502cpp backend` (`src/backend.*`) reads a request on stdin: the mode
+(`optimized` or `unoptimized`), the compile's context as the capture
+harness's `context` line gives it, the arguments as an object in the
+harness's tagged JSON, and the program's dump. It writes the slots, the
+functions made, and the result's dump. The arguments are decoded with
+the same `capture_args` functions as the captured calls. A bug the
+passes report (`InternalError`) exits with status 3.
+
+With `C6502_CPP_BACKEND=1`, compile.py hands the region to it through
+`cpp_backend.py`, one process per compile, and goes on with the result,
+so `place_zp_globals` and everything after it run as before. Without
+`-O` the same holds for `compile.unoptimized_tail`, which the
+simulator harness calls too. `cpp_backend.py` gives each function made
+a copy of its owner's symbol with internal linkage, as the Python
+passes do, and raises an exit status of 3 as an `AssertionError` with
+the C++ message. Under `C6502_CHECK_IR=1`, compile.py checks the result
+once, since `ir_check` isn't ported and the checks after each sweep
+happened in Python. compile.py reads the variable at each compile and,
+without it, imports none of this.
 
 ## Status
 

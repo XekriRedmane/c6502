@@ -818,119 +818,8 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         },
     )
     asm2 = synthesize_prologue(asm1, dims_by_fn)
-    # LICM-lite: hoist loop-invariant constant stores out
-    # of natural loops (only fires when the loop body has
-    # no Call — conservative to sidestep zp_abi clobber
-    # questions).
-    asm2 = apply_licm(asm2, {**all_slot_symbols, **zp.addrs})
-    # The five peephole fixed points below share one record of the
-    # functions each pass left unchanged (passes/peephole_memo.py),
-    # since their keyword arguments are equal. A function that the
-    # passes between them leave alone isn't rewritten again.
-    peephole_memo = PeepholeMemo()
-    asm3 = _peephole_fixedpoint(
-        asm2, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
-    )
-    # Promote a reg('A')-param's body-local spill to live in
-    # A across the loop body (parks it in Y during the
-    # preamble's A-clobbering staging). Runs alongside the
-    # X-pivot promotion below — both target a memory cell
-    # whose lifetime is a single loop. See the pass docstring
-    # for the exact eligibility shape.
-    asm3 = apply_promote_loop_carried_to_a(asm3)
-    pointer_symbols = {**all_slot_symbols, **zp.addrs}
-    asm3 = apply_loop_counter_to_x(asm3, pointer_symbols)
-    # A count-down counter used only by its DEC goes in X (or
-    # Y) when the loop leaves that register alone.
-    asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
-    # Catch cases the X-pivot promotion couldn't reach: a
-    # Pseudo that got X-colored upstream but kept an
-    # `LDA M`-style read of its spill home M for arg
-    # passing, which reads stale M after DEX. Rewrite those
-    # LDA M to TXA. Runs before the post-promotion peephole
-    # fixedpoint so the now-dead STX M / LDX M wraps get
-    # cleaned up downstream.
-    asm3 = apply_x_save_slot_load(asm3)
-    # Second pass of peephole catches what the promotion
-    # exposed (e.g., redundant LDX/STX pairs after the
-    # Y-pivot embedded in loop_counter_to_x freed up X).
-    asm3 = _peephole_fixedpoint(
-        asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
-    )
-    # Y-promote a Data symbol that's loaded into X multiple
-    # times when Y is otherwise unused — saves the
-    # per-occurrence `LDX abs` reload by loading once into
-    # Y at function entry. Re-run the peephole fixedpoint
-    # so dead LDA/STA pairs around the dropped LDX get
-    # collected.
-    asm3 = apply_dual_index_promotion(asm3)
-    asm3 = _peephole_fixedpoint(
-        asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
-    )
-    # Drop a SEC or CLC where C already has that value, or move one in
-    # front of a loop whose back edges have it (passes/carry_known.py).
-    # After the peepholes, several of which match a SEC or CLC.
-    asm3 = apply_carry_known(asm3)
-    # A local holding a copy of a parameter gets the parameter's own
-    # slot when the two are never live with different values
-    # (passes/slot_coalescing.py). After the promotions and peepholes
-    # that look for `__local_*` slots, and before the fixed points
-    # after the loop rotation, which drop the copies it leaves as
-    # `LDA P; STA P`.
-    asm3, coalesced_params = apply_slot_coalescing(
-        asm3, abi, shares, all_slot_symbols,
-    )
-    # A local pair holding a copy of a static function's zero-page
-    # result, `F@ret`, becomes `F@ret` itself when the two are never
-    # live with different values (passes/ret_slot_coalescing.py).
-    asm3 = apply_ret_slot_coalescing(
-        asm3, slot_symbols=all_slot_symbols, zp_addrs=zp.addrs,
-        eligible=_ret_coalescing_eligible(tac, pooled, recursion),
-    )
-    # Keep a loop-invariant compare key in A across its loop
-    # (see passes/loop_invariant_a.py). Runs after the
-    # peepholes have settled the layout it inspects.
-    asm3 = apply_loop_invariant_a(
-        asm3, zp_slot_symbols=all_slot_symbols,
-    )
-    # Move each loop's test to its bottom (passes/rotate_loop_test.py).
-    # After loop_invariant_a, which looks for the test at the top.
-    asm3 = apply_rotate_loop_test(asm3)
-    # The rotation leaves shapes the peepholes and the counter
-    # promotion look for, such as `DEC i; LDA i; BNE` at a loop's new
-    # bottom, so both run again, and carry_known after them.
-    asm3 = _peephole_fixedpoint(
-        asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
-    )
-    asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
-    asm3 = _peephole_fixedpoint(
-        asm3, zp_slot_symbols=all_slot_symbols,
-        zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
-    )
-    asm3 = apply_carry_known(asm3)
-    # A chain of compares of A with constants becomes a jump table
-    # (passes/jump_table.py), after every pass that follows control
-    # flow.
-    asm3 = apply_jump_tables(asm3)
-    # A byte copied while A is busy goes through X or Y
-    # (passes/via_a_store_fold.py), once the peepholes that fold the
-    # loads around such a copy have run, and after the jump tables,
-    # whose bounds check makes N and Z dead after a switch's load.
-    asm3 = apply_copy_through_index(
-        asm3, zp_slot_symbols=all_slot_symbols,
-    )
-    asm4 = expand_long_branches(asm3)
-    # Jumps to tail-call stubs and jumps after a constant load, with
-    # the branches' final reach (passes/short_jumps.py).
-    asm4 = apply_short_jumps(asm4)
-    # Code that two functions end with alike goes in a function of its
-    # own, which each jumps to (passes/shared_tails.py).
     # The names that are zero-page bytes, for the sizes of the code
-    # the next two passes move.
+    # that `apply_shared_tails` and `apply_outline_runs` move.
     from sim.assembler import DEFAULT_ZP_SYMBOLS
     zp_names = frozenset(
         n for n, a in {**all_slot_symbols, **zp.addrs}.items() if a <= 0xFF
@@ -940,14 +829,140 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     slot_addrs = frozenset(
         a for a in all_slot_symbols.values() if a <= 0xFF
     )
-    asm4 = apply_shared_tails(
-        asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
-    )
-    # A run of instructions repeated in the unit goes in a function of
-    # its own, which each place calls (passes/outline_runs.py).
-    asm4 = apply_outline_runs(
-        asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
-    )
+    if _cpp_backend():
+        # The passes below, from `apply_licm` through
+        # `apply_outline_runs`, run in C++ (cpp_backend.py), which
+        # enters the functions the last two make in `symbols`. The IR
+        # checks that the Python fixed points make after each sweep
+        # happen once, on the result.
+        import cpp_backend
+        asm4, coalesced_params = cpp_backend.optimized_region(
+            asm2, symbols, slot_symbols=all_slot_symbols,
+            zp_addrs=zp.addrs, noreturn=noreturn, abi=abi, shares=shares,
+            ret_eligible=_ret_coalescing_eligible(tac, pooled, recursion),
+            zp_names=zp_names, slot_addrs=slot_addrs,
+        )
+        ir_check.check_asm(asm4, after="the C++ back end")
+    else:
+        # LICM-lite: hoist loop-invariant constant stores out
+        # of natural loops (only fires when the loop body has
+        # no Call — conservative to sidestep zp_abi clobber
+        # questions).
+        asm2 = apply_licm(asm2, {**all_slot_symbols, **zp.addrs})
+        # The five peephole fixed points below share one record of the
+        # functions each pass left unchanged (passes/peephole_memo.py),
+        # since their keyword arguments are equal. A function that the
+        # passes between them leave alone isn't rewritten again.
+        peephole_memo = PeepholeMemo()
+        asm3 = _peephole_fixedpoint(
+            asm2, zp_slot_symbols=all_slot_symbols,
+            zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
+        )
+        # Promote a reg('A')-param's body-local spill to live in
+        # A across the loop body (parks it in Y during the
+        # preamble's A-clobbering staging). Runs alongside the
+        # X-pivot promotion below — both target a memory cell
+        # whose lifetime is a single loop. See the pass docstring
+        # for the exact eligibility shape.
+        asm3 = apply_promote_loop_carried_to_a(asm3)
+        pointer_symbols = {**all_slot_symbols, **zp.addrs}
+        asm3 = apply_loop_counter_to_x(asm3, pointer_symbols)
+        # A count-down counter used only by its DEC goes in X (or
+        # Y) when the loop leaves that register alone.
+        asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
+        # Catch cases the X-pivot promotion couldn't reach: a
+        # Pseudo that got X-colored upstream but kept an
+        # `LDA M`-style read of its spill home M for arg
+        # passing, which reads stale M after DEX. Rewrite those
+        # LDA M to TXA. Runs before the post-promotion peephole
+        # fixedpoint so the now-dead STX M / LDX M wraps get
+        # cleaned up downstream.
+        asm3 = apply_x_save_slot_load(asm3)
+        # Second pass of peephole catches what the promotion
+        # exposed (e.g., redundant LDX/STX pairs after the
+        # Y-pivot embedded in loop_counter_to_x freed up X).
+        asm3 = _peephole_fixedpoint(
+            asm3, zp_slot_symbols=all_slot_symbols,
+            zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
+        )
+        # Y-promote a Data symbol that's loaded into X multiple
+        # times when Y is otherwise unused — saves the
+        # per-occurrence `LDX abs` reload by loading once into
+        # Y at function entry. Re-run the peephole fixedpoint
+        # so dead LDA/STA pairs around the dropped LDX get
+        # collected.
+        asm3 = apply_dual_index_promotion(asm3)
+        asm3 = _peephole_fixedpoint(
+            asm3, zp_slot_symbols=all_slot_symbols,
+            zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
+        )
+        # Drop a SEC or CLC where C already has that value, or move one in
+        # front of a loop whose back edges have it (passes/carry_known.py).
+        # After the peepholes, several of which match a SEC or CLC.
+        asm3 = apply_carry_known(asm3)
+        # A local holding a copy of a parameter gets the parameter's own
+        # slot when the two are never live with different values
+        # (passes/slot_coalescing.py). After the promotions and peepholes
+        # that look for `__local_*` slots, and before the fixed points
+        # after the loop rotation, which drop the copies it leaves as
+        # `LDA P; STA P`.
+        asm3, coalesced_params = apply_slot_coalescing(
+            asm3, abi, shares, all_slot_symbols,
+        )
+        # A local pair holding a copy of a static function's zero-page
+        # result, `F@ret`, becomes `F@ret` itself when the two are never
+        # live with different values (passes/ret_slot_coalescing.py).
+        asm3 = apply_ret_slot_coalescing(
+            asm3, slot_symbols=all_slot_symbols, zp_addrs=zp.addrs,
+            eligible=_ret_coalescing_eligible(tac, pooled, recursion),
+        )
+        # Keep a loop-invariant compare key in A across its loop
+        # (see passes/loop_invariant_a.py). Runs after the
+        # peepholes have settled the layout it inspects.
+        asm3 = apply_loop_invariant_a(
+            asm3, zp_slot_symbols=all_slot_symbols,
+        )
+        # Move each loop's test to its bottom (passes/rotate_loop_test.py).
+        # After loop_invariant_a, which looks for the test at the top.
+        asm3 = apply_rotate_loop_test(asm3)
+        # The rotation leaves shapes the peepholes and the counter
+        # promotion look for, such as `DEC i; LDA i; BNE` at a loop's new
+        # bottom, so both run again, and carry_known after them.
+        asm3 = _peephole_fixedpoint(
+            asm3, zp_slot_symbols=all_slot_symbols,
+            zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
+        )
+        asm3 = apply_counter_to_index_reg(asm3, pointer_symbols)
+        asm3 = _peephole_fixedpoint(
+            asm3, zp_slot_symbols=all_slot_symbols,
+            zp_global_symbols=zp.addrs, noreturn=noreturn, memo=peephole_memo,
+        )
+        asm3 = apply_carry_known(asm3)
+        # A chain of compares of A with constants becomes a jump table
+        # (passes/jump_table.py), after every pass that follows control
+        # flow.
+        asm3 = apply_jump_tables(asm3)
+        # A byte copied while A is busy goes through X or Y
+        # (passes/via_a_store_fold.py), once the peepholes that fold the
+        # loads around such a copy have run, and after the jump tables,
+        # whose bounds check makes N and Z dead after a switch's load.
+        asm3 = apply_copy_through_index(
+            asm3, zp_slot_symbols=all_slot_symbols,
+        )
+        asm4 = expand_long_branches(asm3)
+        # Jumps to tail-call stubs and jumps after a constant load, with
+        # the branches' final reach (passes/short_jumps.py).
+        asm4 = apply_short_jumps(asm4)
+        # Code that two functions end with alike goes in a function of its
+        # own, which each jumps to (passes/shared_tails.py).
+        asm4 = apply_shared_tails(
+            asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
+        )
+        # A run of instructions repeated in the unit goes in a function of
+        # its own, which each place calls (passes/outline_runs.py).
+        asm4 = apply_outline_runs(
+            asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
+        )
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     zp_records = link_records(asm4, zp)
@@ -960,6 +975,28 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         zp_records=zp_records, shares=shares, bindings=bindings,
         coalesced_params=coalesced_params,
     )
+
+
+def _cpp_backend() -> bool:
+    """Whether `C6502_CPP_BACKEND=1` hands the asm back end's region to
+    the C++ port (cpp_backend.py). The variable is read at each call, so
+    a process can set it before compiling."""
+    return os.environ.get("C6502_CPP_BACKEND") == "1"
+
+
+def unoptimized_tail(asm1, zp):
+    """The unoptimized pipeline after `replace_pseudoregisters`: the
+    peephole fixed point, with the user zero-page globals of `zp`, and
+    the expansion of long branches. `_codegen` and the simulator harness
+    (`sim.harness`) both call this, so the simulator runs the code the
+    CLI emits. Under `C6502_CPP_BACKEND=1` it runs in C++."""
+    if _cpp_backend():
+        import cpp_backend
+        out = cpp_backend.unoptimized_region(asm1, zp_addrs=zp.addrs)
+        ir_check.check_asm(out, after="the C++ back end")
+        return out
+    asm2 = _peephole_fixedpoint(asm1, zp_global_symbols=zp.addrs)
+    return expand_long_branches(asm2)
 
 
 def _ret_coalescing_eligible(tac, pooled, recursion) -> set[str]:
@@ -1073,8 +1110,7 @@ def _codegen(
     asm1 = replace_pseudoregs(
         asm0, extra_statics=statics, symbols=symbols, types=types,
     )
-    asm2 = _peephole_fixedpoint(asm1, zp_global_symbols=zp.addrs)
-    asm_unplaced = expand_long_branches(asm2)
+    asm_unplaced = unoptimized_tail(asm1, zp)
     asm3 = place_zp_globals(asm_unplaced, zp)
     ir_check.check_asm(asm3, after="the pipeline")
     asm4 = lower_to_asm2(asm3)

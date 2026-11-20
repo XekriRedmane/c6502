@@ -309,7 +309,22 @@ cmake --build cpp/build --config Release --parallel
 ctest --test-dir cpp/build -C Release --output-on-failure
 uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
 uv run python tools/check_captures.py split_mem_to_mem   # C++ vs the calls
+C6502_CPP_BACKEND=1 uv run python compile.py <source.c> -S -O   # back end in C++
 ```
+
+With `C6502_CPP_BACKEND=1`, compile.py runs the asm back end's region
+in the C++ port: the passes of `optimized_asm` from `apply_licm`
+through `apply_outline_runs`, and without `-O` the fixed point and
+long branches of `unoptimized_tail`, which `sim/harness.py` calls too.
+`cpp_backend.py` starts `c6502cpp backend` once per compile (from
+`C6502_CPP` or cpp/build/bin), sends it the program as a dump with the
+arguments in the capture harness's encoding, and enters the functions
+`shared_tails` and `outline_runs` make in the symbol table. Everything
+before and after the region is the Python code. The variable is read at
+each compile, and without it compile.py imports nothing new. Under
+`C6502_CHECK_IR=1` the result is checked once, since the checks after
+each sweep aren't ported. cpp/README.md has the details ("The back
+end through c6502cpp").
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
 module is library-only. Flags `compile.py` doesn't recognize are
@@ -529,6 +544,8 @@ Other root-level files:
 - `tools/capture_passes.py` — records the calls of chosen asm passes
   over the corpus, for checking their C++ ports, and
   `tools/check_captures.py` runs the check.
+- `cpp_backend.py` — the Python side of `C6502_CPP_BACKEND=1`, which
+  runs the back end's region through `c6502cpp backend`.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

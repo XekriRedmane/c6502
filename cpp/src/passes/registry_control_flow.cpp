@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "passes/branch_invert.h"
+#include "passes/capture_args.h"
 #include "passes/branch_thread.h"
 #include "passes/branch_through_jump.h"
 #include "passes/branch_to_next_drop.h"
@@ -47,83 +48,11 @@ const Value& arg(const Value& args, std::size_t i) {
   return args.items[i];
 }
 
-// Returns the elements of a list, a tuple, a set, or a frozenset in the
-// harness's tagged JSON.
-const std::vector<Value>& items_of(const Value& v) {
-  if (v.kind == Value::Kind::kArray) {
-    return v.items;
-  }
-  for (const char* tag : {"tuple", "set"}) {
-    if (const Value* inner = v.get(tag)) {
-      return inner->items;
-    }
-  }
-  throw std::runtime_error("expected a list, a tuple, or a set");
-}
+SymbolAddrs symbol_addrs(const Value& v) { return capture_args::addrs_of(v); }
 
-// Returns the [key, value] pairs of a tagged dict.
-const std::vector<Value>& dict_items(const Value& v) {
-  const Value* inner = v.get("dict");
-  if (inner == nullptr) {
-    throw std::runtime_error("expected a dict");
-  }
-  return inner->items;
-}
+NameSet name_set(const Value& v) { return capture_args::names_of(v); }
 
-SymbolAddrs symbol_addrs(const Value& v) {
-  SymbolAddrs out;
-  for (const auto& kv : dict_items(v)) {
-    out[kv.items.at(0).string] = kv.items.at(1).integer;
-  }
-  return out;
-}
-
-NameSet name_set(const Value& v) {
-  NameSet out;
-  for (const auto& x : items_of(v)) {
-    out.insert(x.string);
-  }
-  return out;
-}
-
-std::set<asdl::Int> int_set(const Value& v) {
-  std::set<asdl::Int> out;
-  for (const auto& x : items_of(v)) {
-    out.insert(x.integer);
-  }
-  return out;
-}
-
-std::vector<std::string> strings(const Value& v) {
-  std::vector<std::string> out;
-  for (const auto& x : items_of(v)) {
-    out.push_back(x.string);
-  }
-  return out;
-}
-
-// Returns a function's layout in `abi`: a `ZpLayout`'s fields, or
-// nothing for any other class.
-std::optional<ZpLayout> zp_layout(const Value& v) {
-  const Value* cls = v.get("object");
-  if (cls == nullptr || cls->string != "passes.abi_selection.ZpLayout") {
-    return std::nullopt;
-  }
-  const Value& fields = *v.get("fields");
-  ZpLayout out;
-  out.slot_symbols = strings(*fields.get("slot_symbols"));
-  for (const auto& r : items_of(*fields.get("param_registers"))) {
-    out.param_registers.push_back(
-        r.kind == Value::Kind::kNull ? std::nullopt
-                                     : std::optional<std::string>(r.string));
-  }
-  for (const auto& p : items_of(*fields.get("pinned"))) {
-    out.pinned.push_back(p.kind == Value::Kind::kNull
-                             ? std::nullopt
-                             : std::optional<asdl::Int>(p.integer));
-  }
-  return out;
-}
+std::set<asdl::Int> int_set(const Value& v) { return capture_args::ints_of(v); }
 
 std::string program_json(const asm_ast::Program& prog) {
   std::string out = R"({"asdl": "asm_ast", "dump": )";
@@ -251,19 +180,8 @@ std::string run_cross_jump(asm_ast::Program input, const AsmContext&,
 
 std::string run_slot_coalescing(asm_ast::Program input, const AsmContext&,
                                 const json::Value& args, const json::Value&) {
-  AbiLayouts abi;
-  for (const auto& kv : dict_items(arg(args, 0))) {
-    abi.emplace_back(kv.items.at(0).string, zp_layout(kv.items.at(1)));
-  }
-  std::vector<SlotShare> shares;
-  for (const auto& share : items_of(arg(args, 1))) {
-    SlotShare s;
-    for (const auto& member : items_of(*share.get("fields")->get("members"))) {
-      const auto& pair = items_of(member);
-      s.members.emplace_back(pair.at(0).string, strings(pair.at(1)));
-    }
-    shares.push_back(std::move(s));
-  }
+  const AbiLayouts abi = capture_args::abi_layouts(arg(args, 0));
+  const std::vector<SlotShare> shares = capture_args::slot_shares(arg(args, 1));
   const SymbolAddrs slot_symbols = symbol_addrs(arg(args, 2));
   auto [prog, written] =
       apply_slot_coalescing(std::move(input), abi, shares, slot_symbols);

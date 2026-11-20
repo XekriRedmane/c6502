@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace c6502::passes::capture_args {
 
@@ -55,6 +56,102 @@ bool boolean(const json::Value* v, bool fallback) {
     throw std::runtime_error("an argument that should be a bool isn't one");
   }
   return v->boolean;
+}
+
+const std::vector<json::Value>& items_of(const json::Value& v) {
+  if (v.kind == json::Value::Kind::kArray) {
+    return v.items;
+  }
+  for (const char* tag : {"tuple", "set"}) {
+    if (const json::Value* inner = v.get(tag)) {
+      return inner->items;
+    }
+  }
+  throw std::runtime_error("expected a list, a tuple, or a set");
+}
+
+NameSet names_of(const json::Value& v) {
+  NameSet out;
+  for (const auto& x : items_of(v)) {
+    out.insert(x.string);
+  }
+  return out;
+}
+
+std::set<asdl::Int> ints_of(const json::Value& v) {
+  std::set<asdl::Int> out;
+  for (const auto& x : items_of(v)) {
+    out.insert(x.integer);
+  }
+  return out;
+}
+
+SymbolAddrs addrs_of(const json::Value& v) {
+  auto out = symbol_addrs(&v);
+  if (!out) {
+    throw std::runtime_error("a symbol map's argument is None");
+  }
+  return std::move(*out);
+}
+
+namespace {
+
+std::vector<std::string> strings_of(const json::Value& v) {
+  std::vector<std::string> out;
+  for (const auto& x : items_of(v)) {
+    out.push_back(x.string);
+  }
+  return out;
+}
+
+// Returns a function's layout in `abi`: a `ZpLayout`'s fields, or
+// nothing for any other class.
+std::optional<ZpLayout> zp_layout(const json::Value& v) {
+  const json::Value* cls = v.get("object");
+  if (cls == nullptr || cls->string != "passes.abi_selection.ZpLayout") {
+    return std::nullopt;
+  }
+  const json::Value& fields = *v.get("fields");
+  ZpLayout out;
+  out.slot_symbols = strings_of(*fields.get("slot_symbols"));
+  for (const auto& r : items_of(*fields.get("param_registers"))) {
+    out.param_registers.push_back(r.kind == json::Value::Kind::kNull
+                                      ? std::nullopt
+                                      : std::optional<std::string>(r.string));
+  }
+  for (const auto& p : items_of(*fields.get("pinned"))) {
+    out.pinned.push_back(p.kind == json::Value::Kind::kNull
+                             ? std::nullopt
+                             : std::optional<asdl::Int>(p.integer));
+  }
+  return out;
+}
+
+}  // namespace
+
+AbiLayouts abi_layouts(const json::Value& v) {
+  const json::Value* pairs = v.get("dict");
+  if (pairs == nullptr) {
+    throw std::runtime_error("the abi argument isn't a tagged dict");
+  }
+  AbiLayouts abi;
+  for (const auto& kv : pairs->items) {
+    abi.emplace_back(kv.items.at(0).string, zp_layout(kv.items.at(1)));
+  }
+  return abi;
+}
+
+std::vector<SlotShare> slot_shares(const json::Value& v) {
+  std::vector<SlotShare> shares;
+  for (const auto& share : items_of(v)) {
+    SlotShare s;
+    for (const auto& member : items_of(*share.get("fields")->get("members"))) {
+      const auto& pair = items_of(member);
+      s.members.emplace_back(pair.at(0).string, strings_of(pair.at(1)));
+    }
+    shares.push_back(std::move(s));
+  }
+  return shares;
 }
 
 }  // namespace c6502::passes::capture_args

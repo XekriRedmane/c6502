@@ -1,6 +1,7 @@
 // c6502cpp, the CLI of the C++ port. Until the port reaches the
 // compiler's own command line, it holds the checks the port is
-// measured by (cpp/README.md).
+// measured by (cpp/README.md) and the back end that compile.py runs
+// through it under `C6502_CPP_BACKEND=1`.
 #include <algorithm>
 #include <cstdio>
 #include <exception>
@@ -20,11 +21,13 @@
 #include "asdl/runtime.h"
 #include "asm2_ast.h"
 #include "asm_ast.h"
+#include "backend.h"
 #include "c99_ast.h"
 #include "capture.h"
 #include "errors.h"
 #include "helper_checks.h"
 #include "json.h"
+#include "passes/peephole_fixedpoint.h"
 #include "passes/registry.h"
 #include "tac_ast.h"
 
@@ -37,6 +40,8 @@ const char kUsage[] =
     "usage: c6502cpp roundtrip <module> [<file>]\n"
     "       c6502cpp check-captures [--pass <name>] [--verbose] <path>...\n"
     "       c6502cpp check-helpers [--verbose] <path>...\n"
+    "       c6502cpp backend\n"
+    "       c6502cpp sweep-passes\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
     "tac_ast, or c99_ast) from <file> or stdin and writes its dump again.\n"
@@ -48,7 +53,15 @@ const char kUsage[] =
     "\n"
     "check-helpers reads the records of tools/capture_helpers.py under each\n"
     "<path>, computes the values of the shared asm helpers in C++, and\n"
-    "compares them with the recorded ones.\n";
+    "compares them with the recorded ones.\n"
+    "\n"
+    "backend reads a request of compile.py's (cpp_backend.py) from stdin,\n"
+    "runs the back end's region on its program, and writes the result to\n"
+    "stdout. A problem with the request exits with status 1 and a bug in\n"
+    "the compiler with status 3, each with its message on stderr.\n"
+    "\n"
+    "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
+    "order, one per line.\n";
 
 std::string read_stdin() {
 #ifdef _WIN32
@@ -384,6 +397,18 @@ int main(int argc, char** argv) {
     }
     if (command == "check-helpers") {
       return cmd_check_helpers(args);
+    }
+    if (command == "backend" && args.empty()) {
+      write_stdout(backend::respond(read_stdin()));
+      return 0;
+    }
+    if (command == "sweep-passes" && args.empty()) {
+      std::string names;
+      for (const auto& p : passes::peephole_sweep(passes::AsmContext{}, nullptr, nullptr, {})) {
+        names += std::string(p.name) + "\n";
+      }
+      write_stdout(names);
+      return 0;
     }
     if (command == "--help" || command == "-h") {
       std::fputs(kUsage, stdout);

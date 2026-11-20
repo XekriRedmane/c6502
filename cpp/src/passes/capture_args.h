@@ -4,10 +4,13 @@
 #pragma once
 
 #include <optional>
+#include <set>
 #include <string_view>
+#include <vector>
 
 #include "json.h"
 #include "passes/asm_context.h"
+#include "passes/slot_coalescing.h"
 
 namespace c6502::passes::capture_args {
 
@@ -30,5 +33,30 @@ NameSet name_set(const json::Value* v);
 
 // Returns the bool that `v` encodes, or `fallback` when `v` is null.
 bool boolean(const json::Value* v, bool fallback);
+
+// Returns the elements of a list, a tuple, a set, or a frozenset in the
+// tagged JSON. Throws `std::runtime_error` for any other value.
+const std::vector<json::Value>& items_of(const json::Value& v);
+
+// Returns the names of a list, a tuple, a set, or a frozenset of
+// strings.
+NameSet names_of(const json::Value& v);
+
+// Returns the integers of a list, a tuple, a set, or a frozenset of
+// ints.
+std::set<asdl::Int> ints_of(const json::Value& v);
+
+// Returns the map of names to addresses of a tagged dict, as
+// `symbol_addrs` does, for a value that must be present.
+SymbolAddrs addrs_of(const json::Value& v);
+
+// Returns each function's calling convention from the tagged dict
+// `abi`, in the dict's order: a `ZpLayout`'s fields for a
+// `passes.abi_selection.ZpLayout`, and nothing for any other class.
+AbiLayouts abi_layouts(const json::Value& v);
+
+// Returns the members of each `slot_sharing.SlotShare` of the list or
+// tuple `v`.
+std::vector<SlotShare> slot_shares(const json::Value& v);
 
 }  // namespace c6502::passes::capture_args

@@ -29,7 +29,10 @@
 #include "passes/carry_halve.h"
 #include "passes/carry_in_add.h"
 #include "passes/carry_inc.h"
+#include "passes/carry_known.h"
 #include "passes/carry_recompute.h"
+#include "passes/carry_return.h"
+#include "passes/const_arith_fold.h"
 #include "passes/dec_branch_indirect_y_fold.h"
 #include "passes/dec_inc_branch_fold.h"
 #include "passes/dec_peephole.h"
@@ -243,6 +246,34 @@ std::string run_carry_recompute_drop(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_carry_recompute_drop(std::move(input)));
 }
 
+std::string run_const_arith_fold(asm_ast::Program input, const AsmContext&,
+                                 const json::Value&, const json::Value&) {
+  return asdl::dump(apply_const_arith_fold(std::move(input)));
+}
+
+std::string run_carry_return_tails(asm_ast::Program input, const AsmContext&,
+                                   const json::Value&, const json::Value&) {
+  return asdl::dump(apply_carry_return_tails(std::move(input)));
+}
+
+std::string run_carry_const_fold(asm_ast::Program input, const AsmContext&,
+                                 const json::Value&, const json::Value&) {
+  return asdl::dump(apply_carry_const_fold(std::move(input)));
+}
+
+std::string run_carry_branch_fold(asm_ast::Program input, const AsmContext& ctx,
+                                  const json::Value&, const json::Value& kwargs) {
+  const auto slots =
+      capture_args::symbol_addrs(capture_args::kwarg(kwargs, "zp_slot_symbols"));
+  return asdl::dump(
+      apply_carry_branch_fold(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
+std::string run_carry_known(asm_ast::Program input, const AsmContext&,
+                            const json::Value&, const json::Value&) {
+  return asdl::dump(apply_carry_known(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -293,10 +324,15 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"sub1_test_zero", run_sub1_test_zero},
       {"volatile_void_read_cmp", run_volatile_void_read_cmp},
       {"dec_branch_indirect_y_fold", run_dec_branch_indirect_y_fold},
+      {"const_arith_fold", run_const_arith_fold},
       {"label_offset_fold", run_label_offset_fold},
       {"carry_recompute_drop", run_carry_recompute_drop},
+      {"carry_return_tails", run_carry_return_tails},
+      {"carry_const_fold", run_carry_const_fold},
+      {"carry_branch_fold", run_carry_branch_fold},
       {"self_store_drop", run_self_store_drop},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},
+      {"carry_known", run_carry_known},
   };
   return passes;
 }

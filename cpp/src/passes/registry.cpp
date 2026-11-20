@@ -8,6 +8,7 @@
 #include "passes/dec_register_peephole.h"
 #include "passes/dual_index_promotion.h"
 #include "passes/element_in_place.h"
+#include "passes/index_inc_cmp_y.h"
 #include "passes/loop_constant_a.h"
 #include "passes/loop_counter_to_x.h"
 #include "passes/loop_invariant_a.h"
@@ -61,6 +62,11 @@ std::string run_dec_register_peephole(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_dec_register_peephole(std::move(input)));
 }
 
+std::string run_index_inc_cmp_y(asm_ast::Program input, const AsmContext& ctx,
+                                const json::Value&, const json::Value&) {
+  return asdl::dump(apply_index_inc_cmp_y(std::move(input), ctx));
+}
+
 std::string run_loop_counter_to_x(asm_ast::Program input, const AsmContext&,
                                   const json::Value& args, const json::Value& kwargs) {
   const auto addrs = symbol_addrs_arg(
@@ -107,6 +113,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"element_in_place", run_element_in_place},
       {"loop_constant_a", run_loop_constant_a},
       {"dec_register_peephole", run_dec_register_peephole},
+      {"index_inc_cmp_y", run_index_inc_cmp_y},
       {"loop_counter_to_x", run_loop_counter_to_x},
       {"counter_to_index_reg", run_counter_to_index_reg},
       {"x_save_slot_load", run_x_save_slot_load},

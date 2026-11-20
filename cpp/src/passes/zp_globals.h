@@ -6,10 +6,12 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "asm_ast.h"
+#include "ordered_map.h"
 #include "passes/asm_context.h"
 #include "passes/zp_link_metadata.h"
 
@@ -24,25 +26,39 @@ inline constexpr const char* kZpInitFunction = "__zp_init";
 // rtlib/helpers.py).
 using HelperFootprints = std::map<std::string, asdl::Int, std::less<>>;
 
-// What these functions read of Python's `ZpGlobals`.
+// The zero-page objects of a unit (Python's `ZpGlobals`, whose
+// docstring gives each field's meaning), with its fields in Python's
+// order. The maps keep the order of Python's dicts, which the tagged
+// JSON of a capture writes, and the functions that list the objects
+// sort them as Python does.
 struct ZpGlobals {
-  // `addrs`: each zero-page object's address.
-  SymbolAddrs addrs;
-  // `owned`: the objects the unit defines, whose initial values
-  // `__zp_init` stores.
+  // Each zero-page object's address.
+  OrderedMap<std::string, asdl::Int> addrs;
+  // Every byte the objects occupy, which the allocators avoid.
+  std::set<asdl::Int> reserved;
+  // The objects the unit defines, whose initial values `__zp_init`
+  // stores.
   NameSet owned;
-  // `sizes`: each object's size in bytes.
-  SymbolAddrs sizes;
-  // `pinned`: the objects declared with an address.
-  NameSet pinned;
-  // `external`: each `extern` object that another unit defines and the
-  // linker places, with its size.
-  SymbolAddrs external;
-  // `promoted`: each object `-O` moved into zero page, with its weight.
-  SymbolAddrs promoted;
-  // `layout`: the runtime's zero-page layout, whose HARGS size
-  // `check_hargs` checks the program against.
+  // Each function and object placed with `address(addr)` at $100 or
+  // above, with its address, which gets only an `EQU` line.
+  OrderedMap<std::string, asdl::Int> fixed;
+  // The runtime's zero-page layout, whose HARGS size `check_hargs`
+  // checks the program against.
   RuntimeLayout layout;
+  // Each object's size in bytes.
+  OrderedMap<std::string, asdl::Int> sizes;
+  // The objects declared with an address.
+  NameSet pinned;
+  // Each `extern` object that another unit defines and the linker
+  // places, with its size.
+  OrderedMap<std::string, asdl::Int> external;
+  // Each object `-O` moved into zero page, with its weight.
+  OrderedMap<std::string, asdl::Int> promoted;
+  // The bytes of the `zeropage(addr)` parameters, which are in
+  // `reserved` too.
+  std::set<asdl::Int> param_bytes;
+
+  bool operator==(const ZpGlobals&) const = default;
 };
 
 // Returns `prog` without the `StaticVariable` of any zero-page object,

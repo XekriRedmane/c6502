@@ -62,6 +62,30 @@ void memory_writes(const ir::Type_instruction& instr, Fn&& fn) {
 
 }  // namespace
 
+std::size_t SlotShare::width() const { return members.at(0).second.size(); }
+
+NameSet SlotShare::functions() const {
+  NameSet out = owners();
+  out.insert(holders.begin(), holders.end());
+  return out;
+}
+
+NameSet SlotShare::owners() const {
+  NameSet out;
+  for (const auto& [fn, syms] : members) {
+    out.insert(fn);
+  }
+  return out;
+}
+
+NameSet SlotShare::slots() const {
+  NameSet out;
+  for (const auto& [fn, syms] : members) {
+    out.insert(syms.begin(), syms.end());
+  }
+  return out;
+}
+
 void check_shares(const asm_ast::Program& prog, const std::vector<SlotShare>& shares) {
   std::map<std::string, NameSet, std::less<>> own;
   for (const auto& share : shares) {

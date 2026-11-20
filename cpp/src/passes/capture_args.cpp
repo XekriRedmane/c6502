@@ -4,6 +4,8 @@
 #include <string>
 #include <utility>
 
+#include "tagged_json.h"
+
 namespace c6502::passes::capture_args {
 
 const json::Value* kwarg(const json::Value& kwargs, std::string_view name) {
@@ -96,14 +98,6 @@ SymbolAddrs addrs_of(const json::Value& v) {
 
 namespace {
 
-std::vector<std::string> strings_of(const json::Value& v) {
-  std::vector<std::string> out;
-  for (const auto& x : items_of(v)) {
-    out.push_back(x.string);
-  }
-  return out;
-}
-
 // Returns a function's layout in `abi`: a `ZpLayout`'s fields, or
 // nothing for any other class.
 std::optional<ZpLayout> zp_layout(const json::Value& v) {
@@ -111,20 +105,7 @@ std::optional<ZpLayout> zp_layout(const json::Value& v) {
   if (cls == nullptr || cls->string != "passes.abi_selection.ZpLayout") {
     return std::nullopt;
   }
-  const json::Value& fields = *v.get("fields");
-  ZpLayout out;
-  out.slot_symbols = strings_of(*fields.get("slot_symbols"));
-  for (const auto& r : items_of(*fields.get("param_registers"))) {
-    out.param_registers.push_back(r.kind == json::Value::Kind::kNull
-                                      ? std::nullopt
-                                      : std::optional<std::string>(r.string));
-  }
-  for (const auto& p : items_of(*fields.get("pinned"))) {
-    out.pinned.push_back(p.kind == json::Value::Kind::kNull
-                             ? std::nullopt
-                             : std::optional<asdl::Int>(p.integer));
-  }
-  return out;
+  return tagged::ZpLayoutC::decode(v);
 }
 
 }  // namespace
@@ -144,12 +125,7 @@ AbiLayouts abi_layouts(const json::Value& v) {
 std::vector<SlotShare> slot_shares(const json::Value& v) {
   std::vector<SlotShare> shares;
   for (const auto& share : items_of(v)) {
-    SlotShare s;
-    for (const auto& member : items_of(*share.get("fields")->get("members"))) {
-      const auto& pair = items_of(member);
-      s.members.emplace_back(pair.at(0).string, strings_of(pair.at(1)));
-    }
-    shares.push_back(std::move(s));
+    shares.push_back(tagged::SlotShareC::decode(share));
   }
   return shares;
 }

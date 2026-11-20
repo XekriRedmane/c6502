@@ -25,9 +25,15 @@ struct Call {
   std::string context_json;
   // The dump of the program the pass was given, or, when
   // `input_is_json`, the tagged JSON of a first argument that isn't an
-  // IR value, such as `format_metadata`'s `LinkMetadata`.
+  // IR value, such as `format_metadata`'s `LinkMetadata` or the pools
+  // that `build_local_slot_symbols` takes first.
   std::string input;
   bool input_is_json = false;
+  // For a call of `STAGE_PASSES` that changed arguments in place, the
+  // tagged JSON object `{"args": {"<index>": ...}, "kwargs": {...}}`
+  // of their encodings after the call, by position in `args_json`'s
+  // list or by keyword, and empty otherwise.
+  std::string mutated_json;
   // The dump of the program the pass returned, or, when
   // `output_is_json`, the tagged JSON of a result that isn't a
   // program, such as a tuple.

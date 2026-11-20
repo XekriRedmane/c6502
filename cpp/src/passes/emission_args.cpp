@@ -4,6 +4,7 @@
 
 #include "passes/capture_args.h"
 #include "passes/registry_control_flow.h"
+#include "tagged_json.h"
 
 namespace c6502::passes::emission_args {
 
@@ -71,15 +72,6 @@ std::vector<std::pair<std::string, std::string>> string_pairs(const Value& v) {
   return out;
 }
 
-std::vector<std::pair<std::string, std::vector<std::string>>> named_lists(const Value& v) {
-  std::vector<std::pair<std::string, std::vector<std::string>>> out;
-  for (const auto& pair : items_of(v)) {
-    const auto& two = items_of(pair);
-    out.emplace_back(two.at(0).string, strings(two.at(1)));
-  }
-  return out;
-}
-
 std::string int_json(asdl::Int v) { return asdl::int_to_string(v); }
 
 const char* bool_json(bool b) { return b ? "true" : "false"; }
@@ -94,35 +86,7 @@ OrderedSymbolAddrs ordered_addrs(const Value& v) {
   return out;
 }
 
-namespace {
-
-SymbolAddrs addrs_map(const Value& v) {
-  SymbolAddrs out;
-  for (const auto& kv : dict_pairs(v)) {
-    out[kv.items.at(0).string] = kv.items.at(1).integer;
-  }
-  return out;
-}
-
-}  // namespace
-
-ZpGlobals zp_globals(const Value& v) {
-  const Value& f = fields_of(v);
-  ZpGlobals zp;
-  zp.addrs = addrs_map(field(f, "addrs"));
-  zp.owned = capture_args::names_of(field(f, "owned"));
-  zp.sizes = addrs_map(field(f, "sizes"));
-  zp.pinned = capture_args::names_of(field(f, "pinned"));
-  zp.external = addrs_map(field(f, "external"));
-  zp.promoted = addrs_map(field(f, "promoted"));
-  const Value& layout = fields_of(field(f, "layout"));
-  zp.layout = RuntimeLayout{.ssp = field(layout, "ssp").integer,
-                            .fp = field(layout, "fp").integer,
-                            .hargs = field(layout, "hargs").integer,
-                            .hargs_size = field(layout, "hargs_size").integer,
-                            .dptr = field(layout, "dptr").integer};
-  return zp;
-}
+ZpGlobals zp_globals(const Value& v) { return tagged::ZpGlobalsC::decode(v); }
 
 HelperFootprints footprints(const Value& v) {
   HelperFootprints out;
@@ -177,16 +141,7 @@ LinkMetadata link_metadata(const Value& v) {
   meta.calls = string_pairs(field(f, "calls"));
   meta.saved_calls = string_pairs(field(f, "saved_calls"));
   for (const auto& z : items_of(field(f, "zp_objects"))) {
-    const Value& zf = fields_of(z);
-    meta.zp_objects.push_back(ZpObjectMeta{
-        .name = field(zf, "name").string,
-        .size = field(zf, "size").integer,
-        .at = optional_int(field(zf, "at")),
-        .defined = field(zf, "defined").boolean,
-        .init = strings(field(zf, "init")),
-        .weight = optional_int(field(zf, "weight")),
-        .local = field(zf, "local").boolean,
-    });
+    meta.zp_objects.push_back(tagged::ZpObjectMetaC::decode(z));
   }
   meta.hargs_size = optional_int(field(f, "hargs_size"));
   meta.hargs_need = optional_int(field(f, "hargs_need"));
@@ -201,14 +156,7 @@ LinkMetadata link_metadata(const Value& v) {
     });
   }
   for (const auto& s : items_of(field(f, "shares"))) {
-    const Value& sf = fields_of(s);
-    meta.shares.push_back(ShareMeta{
-        .members = named_lists(field(sf, "members")),
-        .holders = strings(field(sf, "holders")),
-        .live = named_lists(field(sf, "live")),
-        .forwards = string_pairs(field(sf, "forwards")),
-        .writers = strings(field(sf, "writers")),
-    });
+    meta.shares.push_back(tagged::SlotShareC::decode(s));
   }
   return meta;
 }

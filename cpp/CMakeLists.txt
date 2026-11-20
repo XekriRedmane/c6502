@@ -36,6 +36,7 @@ file(GLOB C6502_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/asdl/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/passes/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/passes/optimization/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/passes/optimization_asm/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/sim/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/generated/*.cpp")

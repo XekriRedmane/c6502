@@ -272,13 +272,18 @@ std::vector<ZpObjectMeta> link_records(const asm_ast::Program& prog, const ZpGlo
         }
       }
     }
-    if (const auto it = zp.promoted.find(name); it != zp.promoted.end()) {
-      meta.weight = it->second;
+    if (const asdl::Int* weight = zp.promoted.find(name)) {
+      meta.weight = *weight;
     }
     meta.local = internal.contains(name);
     out.push_back(std::move(meta));
   }
-  for (const auto& [name, size] : zp.external) {
+  // Python lists the external objects by name (`sorted(zp.external)`),
+  // and the map keeps the dict's order.
+  std::vector<std::pair<std::string, asdl::Int>> external(zp.external.begin(),
+                                                          zp.external.end());
+  std::sort(external.begin(), external.end());
+  for (const auto& [name, size] : external) {
     out.push_back(ZpObjectMeta{.name = name, .size = size, .defined = false});
   }
   return out;

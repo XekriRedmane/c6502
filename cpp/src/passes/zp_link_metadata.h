@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "asdl/runtime.h"
+#include "passes/slot_sharing.h"
 
 namespace c6502::passes {
 
@@ -69,15 +70,6 @@ struct ZpObjectMeta {
   bool operator==(const ZpObjectMeta&) const = default;
 };
 
-// What the metadata writes of a `slot_sharing.SlotShare`.
-struct ShareMeta {
-  std::vector<std::pair<std::string, std::vector<std::string>>> members;
-  std::vector<std::string> holders;
-  std::vector<std::pair<std::string, std::vector<std::string>>> live;
-  std::vector<std::pair<std::string, std::string>> forwards;
-  std::vector<std::string> writers;
-};
-
 // The unit's metadata (Python's `LinkMetadata`).
 struct LinkMetadata {
   std::vector<FunctionMeta> defs;
@@ -90,7 +82,7 @@ struct LinkMetadata {
   std::optional<asdl::Int> hargs_size;
   std::optional<asdl::Int> hargs_need;
   std::vector<ItemMeta> items;
-  std::vector<ShareMeta> shares;
+  std::vector<SlotShare> shares;
 };
 
 // Returns the metadata block as lines of the output, each a comment

@@ -44,6 +44,22 @@ class TestPassTable(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue(callable(getattr(compile_module, attr)))
 
+    def test_every_stage_function_resolves(self):
+        for name, target in capture_passes.STAGE_PASSES.items():
+            with self.subTest(name=name):
+                module, attr = capture_passes.resolve(target)
+                self.assertTrue(callable(getattr(module, attr)))
+
+    def test_every_stage_function_has_a_cpp_signature(self):
+        # Each stage call's codecs are in cpp/src/passes/stage_registry.cpp,
+        # in the table's order. The corpus check (`check-captures` on a
+        # capture of the stage calls) tests the codecs themselves.
+        registry = (
+            _ROOT / "cpp" / "src" / "passes" / "stage_registry.cpp"
+        ).read_text(encoding="utf-8")
+        names = re.findall(r'\{\.name = "(\w+)"', registry)
+        self.assertEqual(names, list(capture_passes.STAGE_PASSES))
+
 
 @dataclass
 class _Point:
@@ -59,6 +75,10 @@ class TestEncode(unittest.TestCase):
         self.assertEqual(enc({"b", "a"}), {"set": ["a", "b"]})
         self.assertEqual(enc({2: "x"}), {"dict": [[2, "x"]]})
         self.assertEqual(enc(range(0, 0x80)), {"range": [0, 128, 1]})
+        # A float is the bits of its IEEE 754 double, so -0.0 and a
+        # NaN's payload make the trip.
+        self.assertEqual(enc(1.0), {"float": 0x3FF0000000000000})
+        self.assertEqual(enc(-0.0), {"float": 0x8000000000000000})
         self.assertEqual(
             enc(asm_ast.Imm(value=3)), {"asdl": "asm_ast", "dump": "Imm(3)\n"},
         )
@@ -134,6 +154,65 @@ class TestCapture(unittest.TestCase):
             f"split_mem_to_mem: {len(self.files)} calls, "
             f"{len(self.files)} match, 0 differ", result.stdout,
         )
+
+
+class TestStageCapture(unittest.TestCase):
+    """Records the stage calls on one example and checks the records:
+    a call whose first argument isn't a program, a call that changes
+    its arguments, and that the C++ side reads every value back."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = Path(cls.tmp.name) / "captures"
+        saved = []
+        for target in capture_passes.STAGE_PASSES.values():
+            module, attr = capture_passes.resolve(target)
+            saved.append((module, attr, getattr(module, attr)))
+        try:
+            capture_passes.install(list(capture_passes.STAGE_PASSES), cls.out)
+            capture_passes._SOURCE = "examples/sfx_tone.c -S -O"
+            src = _ROOT / "examples" / "sfx_tone.c"
+            with mock.patch.dict(os.environ):
+                os.environ.pop("C6502_CPP_BACKEND", None)
+                assert compile_module.main([
+                    "compile.py", str(src), "-S", "-O",
+                    "-o", os.path.join(cls.tmp.name, "out.s"),
+                ]) == 0
+        finally:
+            for module, attr, fn in saved:
+                setattr(module, attr, fn)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _texts(self, name):
+        return [p.read_bytes().decode("utf-8")
+                for p in sorted((self.out / name).glob("*.txt"))]
+
+    def test_records(self):
+        [text] = self._texts("local_slot_symbols")
+        # The pools come first, so they are the record's `input-json`.
+        self.assertIn("\ninput-json\n{\"dict\": ", text)
+        [text] = self._texts("synthesize_prologue")
+        self.assertIn("\ninput\nProgram([", text)
+        # tac_to_asm adds the `.reg` locals of register parameters to
+        # the symbol table, which the record keeps on its `mutated` line
+        # only when there are some.
+        for text in self._texts("tac_to_asm"):
+            lines = text.split("\n")
+            self.assertTrue(lines[5].startswith(("mutated ", "input")))
+
+    @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+    def test_cpp_reads_every_value_back(self):
+        result = subprocess.run(
+            [cpp_cli(), "check-captures", str(self.out)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("synthesize_prologue: 1 calls, 1 round-trip",
+                      result.stdout)
 
 
 if __name__ == "__main__":

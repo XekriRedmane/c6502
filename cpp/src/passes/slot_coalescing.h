@@ -9,31 +9,17 @@
 #include <vector>
 
 #include "asm_ast.h"
+#include "passes/abi_selection.h"
 #include "passes/asm_context.h"
 #include "passes/asm_liveness.h"
+#include "passes/slot_sharing.h"
 
 namespace c6502::passes {
 
-// What the pass reads of a zp_abi function's calling convention
-// (Python's `abi_selection.ZpLayout`): the symbol of each parameter
-// byte's slot, the register each byte arrives in, if any, and the
-// address `zeropage(addr)` pins each byte to, if any. An empty
-// `param_registers` or `pinned` means none, as in Python.
-struct ZpLayout {
-  std::vector<std::string> slot_symbols;
-  std::vector<std::optional<std::string>> param_registers;
-  std::vector<std::optional<asdl::Int>> pinned;
-};
-
-// Each function's calling convention, in the order of Python's `abi`
-// dict: a `ZpLayout`, or nothing for a soft-stack function.
+// Each function's calling convention as the pass reads it, in the
+// order of Python's `abi` dict: a `ZpLayout`, or nothing for a
+// soft-stack function.
 using AbiLayouts = std::vector<std::pair<std::string, std::optional<ZpLayout>>>;
-
-// What the pass reads of a `slot_sharing.SlotShare`: the slot symbols of
-// each function in it.
-struct SlotShare {
-  std::vector<std::pair<std::string, std::vector<std::string>>> members;
-};
 
 // The slots each function now writes, by function, in the order of the
 // program (the second item of Python's result).

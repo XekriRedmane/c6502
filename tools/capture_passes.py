@@ -67,10 +67,26 @@ each Python value: JSON's own types for None, bools, ints, strings,
 and lists, and an object with one tag for the rest, `{"tuple": [...]}`,
 `{"set": [...]}` (sorted by encoding, for a set or a frozenset),
 `{"dict": [[key, value], ...]}` (in insertion order),
-`{"range": [start, stop, step]}`, `{"asdl": module, "dump": text}` for
-an IR value, `{"enum": "module.Class", "name": name}`, and
+`{"range": [start, stop, step]}`, `{"float": bits}` with the bits of
+the IEEE 754 double, `{"asdl": module, "dump": text}` for an IR value,
+`{"enum": "module.Class", "name": name}`, and
 `{"object": "module.Class", "fields": {...}}` for any other object,
 from its dataclass fields or its `__dict__`.
+
+The calls of `STAGE_PASSES`, the stages of code generation before
+`apply_licm` (`--passes stage` records them all), are recorded the same
+way, with `input-json` for a first argument that isn't an IR value
+(`build_local_slot_symbols` takes the pools first), and with one more
+line. A call that changes an argument in place (`choose_carry_returns`
+sets attributes in the symbol table, and `tac_to_asm` adds locals to
+it) has a line
+
+    mutated {"args": {"<index>": ...}, "kwargs": {...}}
+
+after the context line, with the tagged JSON of each changed argument
+after the call, by its position in `args` or its keyword. The context is
+taken before the call, since `plan_zero_page` runs before the zero-page
+plan is in effect.
 
 The context is the state of the compile that the asm passes read from
 module globals and the C++ passes receive as an `AsmContext`
@@ -91,6 +107,7 @@ import importlib
 import io
 import json
 import os
+import struct
 import sys
 import tempfile
 import time
@@ -200,6 +217,60 @@ PIPELINE_PASSES = {
 
 PASSES = {**SWEEP_PASSES, **PIPELINE_PASSES}
 
+# The calls of step 4 of the port (docs/cpp_port.md), the stages of
+# code generation before `apply_licm`, by the name the harness records
+# each under, with the function to wrap: a name in `compile`'s
+# namespace, or `module:name` for one that compile.py reaches through
+# its module (`asm_opt.optimize_program`) or imports inside a function.
+# Their inputs are TAC or asm programs with the compile's tables, and
+# not every one's first argument is a program (the module docstring
+# describes the records). tests/test_capture_passes.py checks that each
+# one resolves.
+STAGE_PASSES = {
+    "plan_zero_page": "plan_zero_page",
+    "select_abi": "select_abi",
+    "choose_global_carry_returns": "choose_global_carry_returns",
+    "choose_carry_returns": "choose_carry_returns",
+    "recursive_pool_functions": "recursive_pool_functions",
+    "pool_eligible": "pool_eligible",
+    "find_shares": "find_shares",
+    "allocate_zp_slots": "allocate_zp_slots",
+    "pinned_param_copies": "pinned_param_copies",
+    "slot_aliases": "slot_aliases",
+    "tac_to_asm": "translate_to_asm",
+    "asm_optimizer": "passes.optimization_asm.optimizer:optimize_program",
+    "compute_local_bytes": "compute_local_bytes",
+    "compute_address_taken_bytes": "compute_address_taken_bytes",
+    "allocate_function_locals": "allocate_function_locals",
+    "address_taken_assignments": "compute_address_taken_assignments",
+    "address_taken_slot_symbols": "_addr_taken_slot_symbols",
+    "replace_pseudoregisters_bare_exit": "replace_pseudoregs_bare_exit",
+    "local_slot_names": "passes.zp_slot_naming:compute_local_slot_names",
+    "local_slot_symbols": "build_local_slot_symbols",
+    "lower_data_load_address":
+        "passes.lower_data_load_address:lower_data_load_address",
+    "synthesize_prologue": "synthesize_prologue",
+    "fixed_address_layouts": "fixed_address_layouts",
+    "replace_pseudoregisters": "replace_pseudoregs",
+}
+
+
+def all_passes() -> dict[str, str]:
+    """Every call the harness can record, `PASSES` and `STAGE_PASSES`
+    together."""
+    return {**PASSES, **STAGE_PASSES}
+
+
+def resolve(target: str):
+    """Returns the module object and the attribute name that a table
+    entry names: `compile` and the name, or the module before the colon
+    and the name after it."""
+    import compile as compile_module
+    if ":" in target:
+        module, _, attr = target.partition(":")
+        return importlib.import_module(module), attr
+    return compile_module, target
+
 _GAMES = ("ali_baba", "lode_runner", "zork")
 _FUZZERS = ("stmts", "calls", "exprs")
 
@@ -215,6 +286,8 @@ def encode(v):
     import ir_dump
     if v is None or type(v) in (bool, int, str):
         return v
+    if type(v) is float:
+        return {"float": struct.unpack("<Q", struct.pack("<d", v))[0]}
     if type(v) is list:
         return [encode(e) for e in v]
     if type(v) is tuple:
@@ -275,9 +348,11 @@ def context_json() -> str:
     }, separators=(",", ":"))
 
 
-def _record(name: str, input_section: str, args_json: str, result) -> None:
+def _record(name: str, input_section: str, args_json: str, result,
+            mutated: str | None = None, context: str | None = None) -> None:
     import ir_dump
-    context = context_json()
+    if context is None:
+        context = context_json()
     key = hashlib.sha1(
         f"{name}\n{args_json}\n{context}\n{input_section}".encode("utf-8")
     ).hexdigest()
@@ -289,9 +364,10 @@ def _record(name: str, input_section: str, args_json: str, result) -> None:
         output = "output\n" + ir_dump.dump(result)
     else:
         output = "output-json\n" + json.dumps(encode(result)) + "\n"
+    extra = "" if mutated is None else f"mutated {mutated}\n"
     text = (
         f"c6502-capture 2\npass {name}\nsource {_SOURCE}\n"
-        f"args {args_json}\ncontext {context}\n{input_section}{output}"
+        f"args {args_json}\ncontext {context}\n{extra}{input_section}{output}"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{key}.{os.getpid()}.tmp")
@@ -361,13 +437,91 @@ def _wrap(name: str, fn):
     return wrapper
 
 
+def _encode_call(args, kwargs) -> tuple[list[str], dict[str, str]]:
+    """The JSON text of each argument's tagged encoding."""
+    return (
+        [json.dumps(encode(a)) for a in args],
+        {k: json.dumps(encode(v)) for k, v in kwargs.items() if k != "memo"},
+    )
+
+
+def _call_json(args: list[str], kwargs: dict[str, str]) -> str:
+    """The `args` line of a record from the texts `_encode_call` gives,
+    which is `json.dumps` of the call's tagged arguments."""
+    return (
+        '{"args": [' + ", ".join(args) + '], "kwargs": {'
+        + ", ".join(f"{json.dumps(k)}: {v}" for k, v in kwargs.items())
+        + "}}"
+    )
+
+
+def _wrap_stage(name: str, fn):
+    """The wrapper of a call of `STAGE_PASSES`. The first argument is the
+    record's input, an IR value's dump or the `input-json` line of any
+    other value, as for the other passes. Each argument is encoded again
+    after the call, and those the call changed in place
+    (`choose_carry_returns` sets attributes in `symbols`, and
+    `tac_to_asm` adds the `.reg` locals to it) are recorded on the
+    `mutated` line with their new encoding, by position in `args` or by
+    keyword."""
+    def wrapper(*args, **kwargs):
+        import ir_dump
+
+        def input_section():
+            if type(args[0]).__module__ in _IR_MODULES:
+                return "input\n" + ir_dump.dump(args[0])
+            return "input-json\n" + json.dumps(encode(args[0])) + "\n"
+
+        rest = args[1:]
+        context = context_json()
+        try:
+            input_text = input_section()
+            before = _encode_call(rest, kwargs)
+        except (ir_dump.DumpError, TypeError) as e:
+            _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
+            return fn(*args, **kwargs)
+        result = fn(*args, **kwargs)
+        try:
+            after = _encode_call(rest, kwargs)
+            changed_args = {
+                str(i): a for i, (a, b) in enumerate(zip(after[0], before[0]))
+                if a != b
+            }
+            changed_kwargs = {
+                k: v for k, v in after[1].items() if v != before[1][k]
+            }
+            mutated = None
+            if changed_args or changed_kwargs:
+                mutated = (
+                    '{"args": {' + ", ".join(
+                        f'"{i}": {v}' for i, v in changed_args.items())
+                    + '}, "kwargs": {' + ", ".join(
+                        f"{json.dumps(k)}: {v}"
+                        for k, v in changed_kwargs.items())
+                    + "}}"
+                )
+            if input_section() != input_text:
+                raise TypeError("the call changed its first argument in place")
+            _record(name, input_text, _call_json(*before), result,
+                    mutated=mutated, context=context)
+        except (ir_dump.DumpError, TypeError) as e:
+            _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
+        return result
+    return wrapper
+
+
 def install(passes: list[str], out: Path) -> None:
-    """Replaces each pass of `passes` in `compile`'s namespace with a
-    wrapper that records its calls under `out`."""
+    """Replaces each pass of `passes` in `compile`'s namespace (or, for
+    an entry of `STAGE_PASSES` that names a module, in that module)
+    with a wrapper that records its calls under `out`."""
     global _OUT
     import compile as compile_module
     _OUT = out
     for name in passes:
+        if name in STAGE_PASSES:
+            module, attr = resolve(STAGE_PASSES[name])
+            setattr(module, attr, _wrap_stage(name, getattr(module, attr)))
+            continue
         attr = PASSES[name]
         setattr(compile_module, attr, _wrap(name, getattr(compile_module, attr)))
 
@@ -449,7 +603,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Record the asm passes' calls over the corpus.",
     )
     ap.add_argument("--passes", required=True,
-                    help="comma-separated pass names, or 'all'")
+                    help="comma-separated pass names, 'all' for those of "
+                         "PASSES, or 'stage' for those of STAGE_PASSES")
     ap.add_argument("--out", default=str(_ROOT / "captures"),
                     help="where to write the captures (default captures/)")
     ap.add_argument("--corpus", default="examples,games,chapters,fuzz")
@@ -458,8 +613,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="O for -S -O, unopt for -S")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ns = ap.parse_args(argv)
-    passes = list(PASSES) if ns.passes == "all" else ns.passes.split(",")
-    unknown = [p for p in passes if p not in PASSES]
+    if ns.passes == "all":
+        passes = list(PASSES)
+    elif ns.passes == "stage":
+        passes = list(STAGE_PASSES)
+    else:
+        passes = ns.passes.split(",")
+    unknown = [p for p in passes if p not in all_passes()]
     if unknown:
         ap.error(f"unknown passes: {', '.join(unknown)}")
     modes = ns.modes.split(",")

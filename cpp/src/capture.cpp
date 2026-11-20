@@ -44,6 +44,9 @@ Call parse(const std::string& text) {
   if (version == "2") {
     call.context_json = take_line(text, pos, "context ");
   }
+  if (text.compare(pos, 8, "mutated ") == 0) {
+    call.mutated_json = take_line(text, pos, "mutated ");
+  }
   // `input-json` holds the tagged JSON of a first argument that isn't an
   // IR value, on one line.
   const std::string input_kind = take_line(text, pos, "input");

@@ -29,6 +29,8 @@
 #include "json.h"
 #include "passes/peephole_fixedpoint.h"
 #include "passes/registry.h"
+#include "passes/stage_registry.h"
+#include "stage_checks.h"
 #include "tac_ast.h"
 
 namespace {
@@ -142,6 +144,16 @@ bool dump_roundtrips(const std::string& text, std::string_view module) {
   return asdl::dump(asdl::load<asm_ast::Program>(text)) == text;
 }
 
+// The count of one stage call's records that `check-captures` checked:
+// those whose values all made the trip to C++ and back, and for a
+// ported call those whose results matched.
+struct StageCount {
+  std::size_t calls = 0;
+  std::size_t round_tripped = 0;
+  bool ported = false;
+  std::size_t matched = 0;
+};
+
 int cmd_check_captures(const std::vector<std::string>& args) {
   std::string only;
   bool verbose = false;
@@ -168,6 +180,7 @@ int cmd_check_captures(const std::vector<std::string>& args) {
   std::sort(files.begin(), files.end());
   std::map<std::string, PassCount> ported;
   std::map<std::string, std::size_t> unported;
+  std::map<std::string, StageCount> stages;
   std::size_t roundtrip_failures = 0;
   std::size_t mismatches = 0;
   for (const auto& path : files) {
@@ -176,6 +189,29 @@ int cmd_check_captures(const std::vector<std::string>& args) {
       continue;
     }
     const std::string where = path.string() + " (" + call.source + ")";
+    if (const passes::StageSignature* sig = passes::find_stage(call.pass)) {
+      StageCount& count = stages[call.pass];
+      ++count.calls;
+      const stage_checks::Result r = stage_checks::check(call, *sig);
+      if (r.tables_error.empty()) {
+        ++count.round_tripped;
+      } else {
+        ++roundtrip_failures;
+        std::printf("ROUNDTRIP %s: %s\n", where.c_str(), r.tables_error.c_str());
+      }
+      count.ported = r.ported;
+      if (r.matched) {
+        ++count.matched;
+        if (verbose) {
+          std::printf("ok %s\n", where.c_str());
+        }
+      } else if (r.ported) {
+        ++mismatches;
+        std::printf("MISMATCH %s: %s, %s\n", where.c_str(), call.pass.c_str(),
+                    r.mismatch.c_str());
+      }
+      continue;
+    }
     const passes::RegisteredPass* pass = passes::find_pass(call.pass);
     // A function whose input or output isn't an asm program names the
     // module of its dump.
@@ -239,6 +275,14 @@ int cmd_check_captures(const std::vector<std::string>& args) {
   for (const auto& [name, count] : ported) {
     std::printf("%s: %zu calls, %zu match, %zu differ\n", name.c_str(),
                 count.calls, count.matched, count.calls - count.matched);
+  }
+  for (const auto& [name, count] : stages) {
+    std::printf("%s: %zu calls, %zu round-trip", name.c_str(), count.calls,
+                count.round_tripped);
+    if (count.ported) {
+      std::printf(", %zu match, %zu differ", count.matched, count.calls - count.matched);
+    }
+    std::printf("\n");
   }
   std::size_t unported_calls = 0;
   for (const auto& [name, n] : unported) {

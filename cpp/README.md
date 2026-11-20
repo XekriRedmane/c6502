@@ -369,7 +369,12 @@ These conventions apply to every pass ported after
   A, and the pass matched Python on 5479 of 6783 calls. GCC 12.2 ran
   the same source correctly, and so did MSVC once the helper was a
   `switch (ir::kind(instr))` with a `std::get` in each case. The
-  passes ported that day dispatch that way.
+  passes ported that day dispatch that way. The `std::visit` version
+  matched on every call in MSVC's Debug build, and in a Clang build
+  with `-fsanitize=address,undefined`, which reported nothing, so the
+  fault is in MSVC's optimizer and not in undefined behavior of the
+  pass. Building it with a second copy of the helper beside it, to
+  compare the two, made the difference disappear.
 - **Python's arithmetic.** C++'s `/` and `%` round toward zero, so
   Python's `//` and `%` on values that can be negative are
   `asdl::floor_div` and `asdl::floor_mod`. A Python dict iterates in

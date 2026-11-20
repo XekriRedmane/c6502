@@ -1,0 +1,78 @@
+# Porting c6502 to C++
+
+Robert decided on 19 Nov 2026 to port the compiler from Python to C++.
+The Python compiler had been made about twice as fast that day, and 20
+`fuzz.stmts` programs still took 16.9 seconds against a target of 5.
+This document records the decisions and the plan, and is updated as
+stages land.
+
+## Decisions
+
+- **One stage at a time, with the Python compiler as the reference.**
+  Each part of the pipeline moves to C++ only when it produces
+  byte-for-byte the same output as the Python code it replaces. While
+  the port is under way, the Python front end hands its IR to the C++
+  stages through a text dump, and the boundary moves toward the front
+  until no Python is left in the compiler.
+- **The Python compiler is frozen for features.** Bug fixes still go
+  in, and each is ported too, so the C++ code aims at a fixed target.
+- **Scope.** Everything `compile.py`, `nm.py`, and `objdump.py` do
+  moves to C++: preprocessing, parsing, every pass, assembly to ELF,
+  and linking. The simulator (`sim/`, on py65), the tests, and the
+  fuzzers stay in Python and drive the C++ executables.
+- **The parser is written by hand,** as recursive descent with
+  precedence climbing for expressions. It must give the ASTs and the
+  error messages that `parser.py` gives today. `c99.lark` stops being
+  the source of truth when it lands.
+- **Build.** CMake and C++20. MSVC 2022 Build Tools on Windows, and
+  GCC or Clang in the Docker image.
+
+## How each stage is checked
+
+- **The IR is defined once.** `asdl.py` generates the C++ IR classes
+  from the same four `.asdl` files as the Python dataclasses, and a
+  text dump format with a reader and a writer on both sides. A Python
+  dump read by C++ and dumped again must come out the same bytes.
+- **Each pass is checked on real inputs.** A capture harness runs the
+  Python pipeline over the corpus and records every call of a pass:
+  its input, its arguments, and its output. The C++ port of the pass
+  must turn each recorded input into the recorded output.
+- **The corpus.** The examples (`examples/*.c` and the three games'
+  units), every C file under `tests/chapter_*/`, and seeds of the
+  `fuzz.stmts`, `fuzz.calls`, `fuzz.exprs`, and `fuzz.yarpgen`
+  programs, each compiled with `-S` and with `-S -O`.
+- **End to end.** Once a contiguous run of stages is in C++, the
+  pipeline that uses them must give the same `-S` output as the
+  Python one on the whole corpus, and the suite and the fuzzers must
+  pass with it.
+
+## Order
+
+1. **Groundwork.** The `cpp/` tree with its CMake build and a test
+   runner, the generated C++ IR for `asm.asdl` (then the other three),
+   the dump format on both sides, and the capture harness. One small
+   asm pass ported end to end shows that the pieces fit.
+2. **The asm back end after prologue synthesis.** The region of
+   `compile.optimized_asm` from `apply_licm` through `apply_shared_tails`
+   and `apply_outline_runs`: the peephole fixed points, the counter
+   promotions, slot coalescing, carry tracking, jump tables, long
+   branches, and short jumps. It took about three quarters of the
+   fuzzers' time. Python hands it the asm program and the symbol tables
+   it reads.
+3. **Emission.** `asm_to_asm2` and `asm_emit`, so that the C++ side
+   writes the `-S` text.
+4. **The asm optimizer and code generation.** `tac_to_asm`, the asm SSA
+   round trip and register allocation, `replace_pseudoregisters`, and
+   the zero-page allocators.
+5. **The TAC optimizer,** with `c99_to_tac` and the inliner.
+6. **The front end.** The preprocessor, the hand-written parser, and
+   the c99 passes through the type checker.
+7. **Assembler and linker.** `binutils/` and `passes/linker.py`, with
+   `nm` and `objdump`.
+8. **Retiring the Python compiler.** The tests that call Python passes
+   directly are ported to C++ unit tests or replaced by the corpus
+   checks, and the Python compiler is removed.
+
+## Status
+
+- 19 Nov 2026: decisions made, groundwork started.

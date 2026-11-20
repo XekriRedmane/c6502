@@ -19,6 +19,7 @@
 #include "passes/asm_remat.h"
 #include "passes/mem_const_prop.h"
 #include "passes/memory_value_propagation.h"
+#include "passes/redundant_load.h"
 #include "passes/redundant_store.h"
 #include "passes/registry_args.h"
 #include "passes/split_mem_to_mem.h"
@@ -125,6 +126,13 @@ std::string run_memory_value_propagation(asm_ast::Program input, const AsmContex
                                                    name_set_kwarg(kwargs, "noreturn")));
 }
 
+std::string run_redundant_load(asm_ast::Program input, const AsmContext& ctx,
+                               const json::Value&, const json::Value& kwargs) {
+  const auto addrs = symbol_addrs_kwarg(kwargs, "zp_symbol_addrs");
+  return asdl::dump(
+      apply_redundant_load_elimination(std::move(input), ctx, addrs ? &*addrs : nullptr));
+}
+
 std::string run_redundant_store(asm_ast::Program input, const AsmContext& ctx,
                                 const json::Value&, const json::Value&) {
   return asdl::dump(apply_redundant_store_elimination(std::move(input), ctx));
@@ -184,6 +192,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"shared_tails", registry::run_shared_tails},
       {"outline_runs", registry::run_outline_runs},
       {"memory_value_propagation", run_memory_value_propagation},
+      {"redundant_load", run_redundant_load},
       {"redundant_store", run_redundant_store},
       {"remat", run_remat},
       {"asm_dead_store", run_asm_dead_store},

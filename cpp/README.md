@@ -478,3 +478,10 @@ changes the result.
   tables, copies through an index register, long branches, short
   jumps, shared tails, and outlined runs. Each matches the Python pass
   on every distinct call of the corpus.
+- 20 Nov 2026: the dataflow passes of the peephole fixed point,
+  `redundant_load`, `memory_value_propagation`, `remat`,
+  `asm_dead_store`, `redundant_store`, and `mem_const_prop`, each in
+  `src/passes/<module>.*`. Each matches the Python pass on every
+  distinct call of the corpus. Their tests (`tests/test_<module>.cpp`)
+  are the calls that the Python unit tests make, recorded with the
+  Python pass's results and checked through `tests/pass_case.h`.

@@ -124,3 +124,14 @@ stages land.
   Each matches the Python pass on every distinct call that the default
   corpus makes of it, 60,282 calls in all (cpp/README.md, "The
   control-flow and whole-program passes").
+- 20 Nov 2026: the dataflow passes of the fixed point are ported:
+  `redundant_load` (7,036 distinct calls of the corpus),
+  `memory_value_propagation` (7,038), `remat` (6,783),
+  `asm_dead_store` (6,746), `redundant_store` (6,779), and
+  `mem_const_prop` (4,980), each with no difference. Two bugs found on
+  the way were fixed in both compilers. `mem_const_prop` kept the
+  constant it knew A held across a move that `asm_emit` writes through
+  A, such as `Mov(#7, M)`, and `memory_value_propagation` gave Y a new
+  identity only at a `Mov` or a write of X or Y, so an `arr,Y` it had
+  recorded outlived the `LDY #off` of a `CMP (zp),Y` or an `ADC
+  (zp),Y`.

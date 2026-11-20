@@ -18,6 +18,7 @@
 #include "passes/asm_dead_store.h"
 #include "passes/asm_remat.h"
 #include "passes/mem_const_prop.h"
+#include "passes/memory_value_propagation.h"
 #include "passes/redundant_store.h"
 #include "passes/registry_args.h"
 #include "passes/split_mem_to_mem.h"
@@ -116,6 +117,14 @@ std::string run_rotate_loop_test(asm_ast::Program input, const AsmContext& ctx,
   return asdl::dump(apply_rotate_loop_test(std::move(input), ctx));
 }
 
+std::string run_memory_value_propagation(asm_ast::Program input, const AsmContext& ctx,
+                                         const json::Value&, const json::Value& kwargs) {
+  const auto addrs = symbol_addrs_kwarg(kwargs, "zp_symbol_addrs");
+  return asdl::dump(apply_memory_value_propagation(std::move(input), ctx,
+                                                   addrs ? &*addrs : nullptr,
+                                                   name_set_kwarg(kwargs, "noreturn")));
+}
+
 std::string run_redundant_store(asm_ast::Program input, const AsmContext& ctx,
                                 const json::Value&, const json::Value&) {
   return asdl::dump(apply_redundant_store_elimination(std::move(input), ctx));
@@ -174,6 +183,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"short_jumps", registry::run_short_jumps},
       {"shared_tails", registry::run_shared_tails},
       {"outline_runs", registry::run_outline_runs},
+      {"memory_value_propagation", run_memory_value_propagation},
       {"redundant_store", run_redundant_store},
       {"remat", run_remat},
       {"asm_dead_store", run_asm_dead_store},

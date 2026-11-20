@@ -31,7 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lark import Token, Transformer, Tree
-from lark.exceptions import UnexpectedInput, UnexpectedToken
+from lark.exceptions import (
+    UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken,
+)
 from lark.lexer import BasicLexer
 from lark.parsers.lalr_analysis import Shift
 from lark.visitors import v_args
@@ -4844,6 +4846,25 @@ def _c23_keyword_as_name(e: UnexpectedInput) -> str | None:
     )
 
 
+def _sort_expected(e: UnexpectedInput) -> None:
+    """Sorts the names of the terminals that the message of `e` lists
+    after "Expected one of", so that the message is the same on every
+    run. Lark gives them as a set, or for an `UnexpectedEOF` as a
+    list, in an order that follows its parse table's, and that order
+    differed between two runs of the same program, even with
+    `PYTHONHASHSEED` fixed."""
+    if isinstance(e, UnexpectedToken):
+        # `accepts` is computed when first read and then kept in
+        # `_accepts`, which `__str__` reads.
+        if e.accepts:
+            e._accepts = sorted(e.accepts)
+        e.expected = sorted(e.expected)
+    elif isinstance(e, UnexpectedEOF):
+        e.expected = sorted(e.expected)
+    elif isinstance(e, UnexpectedCharacters) and e.allowed:
+        e.allowed = sorted(e.allowed)
+
+
 def parse(source: str) -> c99_ast.Type_program:
     global _CTX
     _CTX = _ParseContext()
@@ -4853,6 +4874,7 @@ def parse(source: str) -> c99_ast.Type_program:
         message = _c23_keyword_as_name(e) or _enum_type_without_list(e)
         if message is not None:
             raise ParserError(message) from None
+        _sort_expected(e)
         if "__attribute__" not in source:
             raise
         raise ParserError(

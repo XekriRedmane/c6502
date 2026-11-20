@@ -917,6 +917,10 @@ notes that aren't visible from the grammar alone:
   binds to the nearest `if`; `IDENTIFIER COLON` at statement-start
   picks the labeled-statement branch; `(` followed by a type-
   specifier token picks the cast branch.
+- A syntax error that `parse` passes on from Lark lists the terminals
+  it could take after "Expected one of" in sorted order
+  (`_sort_expected`). Lark gives them in an order that follows its
+  parse table's, which differed between two runs of the same program.
 
 ### Typedef names
 

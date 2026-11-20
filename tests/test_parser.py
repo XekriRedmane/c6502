@@ -3471,5 +3471,37 @@ class TestFunctionReturningFunctionPointer(unittest.TestCase):
         ))
 
 
+class TestSyntaxErrorMessage(unittest.TestCase):
+    """The terminals a syntax error lists after "Expected one of" come
+    in sorted order. Lark gives them in an order that follows its
+    parse table's, and the message for `long_constant_as_var.c` in
+    tests/chapter_11/invalid_parse differed between two runs."""
+
+    def _listed(self, source: str) -> list[str]:
+        with self.assertRaises(UnexpectedInput) as cm:
+            parse(source)
+        message = str(cm.exception)
+        tail = message.split("Expected one of:", 1)[1]
+        return [
+            line.strip()[2:] for line in tail.splitlines()
+            if line.strip().startswith("* ")
+        ]
+
+    def test_unexpected_token(self):
+        listed = self._listed("int main(void) { int 3x; }")
+        self.assertGreater(len(listed), 5)
+        self.assertEqual(listed, sorted(listed))
+
+    def test_unexpected_end_of_input(self):
+        listed = self._listed("int main(void) { return 0")
+        self.assertGreater(len(listed), 5)
+        self.assertEqual(listed, sorted(listed))
+
+    def test_unexpected_character(self):
+        listed = self._listed("int main(void) { return @; }")
+        self.assertGreater(len(listed), 5)
+        self.assertEqual(listed, sorted(listed))
+
+
 if __name__ == "__main__":
     unittest.main()

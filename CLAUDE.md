@@ -467,6 +467,17 @@ uv run python asdl.py asm.asdl asm_ast.py
 uv run python asdl.py asm2.asdl asm2_ast.py
 ```
 
+The C++ port's IR classes (cpp/generated/, checked in) come from the
+same files, and `tests/test_asdl_cpp.py` fails until they are
+regenerated too:
+
+```sh
+uv run python asdl.py --cpp c99.asdl cpp/generated
+uv run python asdl.py --cpp tac.asdl cpp/generated
+uv run python asdl.py --cpp asm.asdl cpp/generated
+uv run python asdl.py --cpp asm2.asdl cpp/generated
+```
+
 The generator emits one `@dataclass` per type. Sum-type bases are
 named `Type_<name>` (to avoid colliding with Python builtins like
 `int`); constructor classes keep their ASDL names. Fields become
@@ -508,7 +519,8 @@ Other root-level files:
   half of one, and the parser is built in memory when the file can't
   be read or written. `lexer.py` builds its parser on the first call
   of `tokenize`.
-- `asdl.py` — code generator for `*_ast.py` from `*.asdl`.
+- `asdl.py` — code generator for `*_ast.py` from `*.asdl`, and with
+  `--cpp` for the C++ port's IR classes in cpp/generated/.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

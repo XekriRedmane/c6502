@@ -112,8 +112,8 @@ stages land.
   `dec_register_peephole`, and `index_inc_cmp_y`. Each matches the
   Python pass on every distinct call of the corpus, from 926 calls of
   most of the pipeline's passes to 7051 of `element_in_place`.
-  `long_branches._invert`, which `rotate_loop_test` reads, is
-  `passes::invert_condition` in `src/passes/branch_condition.*`.
+  `rotate_loop_test` reads `long_branches._invert` as
+  `passes::long_branches::invert`.
 - 20 Nov 2026: the control-flow and whole-program passes of stage 2,
   which are the branch and jump peepholes (`dead_label_drop`,
   `unreachable_drop`, `branch_invert`, `branch_to_next_drop`,

@@ -247,7 +247,7 @@ import, are ported with only the parts those passes use.
 | `dead_a_arith._flags_reflect_src_reg`, `_writes_reg_setting_n_z` | `src/passes/dead_a_arith.*` | `passes::dead_a_arith` |
 | `passes/call_edges.py` | `src/passes/call_edges.*` | `passes` |
 | `sim.assembler.instruction_size` | `src/sim/assembler.*` | `sim` |
-| `long_branches._invert` | `src/passes/branch_condition.*` (`invert_condition`) | `passes` |
+| `long_branches._invert` | `src/passes/long_branches.*` (`invert`) | `passes::long_branches` |
 
 A public Python name keeps its name in `c6502::passes`. A name that
 was private to its module (a leading underscore) and that other
@@ -461,8 +461,8 @@ changes the result.
   `dec_register_peephole`, and `index_inc_cmp_y`. Each matches the
   Python pass on every distinct call of the corpus, from 926 calls of
   most of the pipeline's passes to 7051 of `element_in_place`.
-  `long_branches._invert`, which `rotate_loop_test` reads, is
-  `passes::invert_condition` in `src/passes/branch_condition.*`.
+  `rotate_loop_test` reads `long_branches._invert` as
+  `passes::long_branches::invert`.
 - 20 Nov 2026: the control-flow and whole-program passes: the ten
   branch and jump peepholes of the fixed point from `dead_label_drop`
   to `cross_jump`, slot coalescing for parameters and for `F@ret`, jump

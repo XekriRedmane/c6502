@@ -68,7 +68,7 @@
 
 #include "passes/asm_aliasing.h"
 #include "passes/asm_liveness.h"
-#include "passes/branch_condition.h"
+#include "passes/long_branches.h"
 #include "sim/assembler.h"
 
 namespace c6502::passes {
@@ -489,7 +489,7 @@ std::optional<InstrVec> rotate_one(const InstrVec& instrs, const std::string& fn
     out.insert(out.end(), body.begin(), body.end());
     out.push_back(instrs[l]);
     out.insert(out.end(), test.begin(), test.end() - 1);
-    out.push_back(ir::Branch{.cond = invert_condition(branch.cond), .target = body_label});
+    out.push_back(ir::Branch{.cond = long_branches::invert(branch.cond), .target = body_label});
     out.insert(out.end(), instrs.begin() + static_cast<std::ptrdiff_t>(j + 1),
                instrs.end());
     // The loop's label stays where the test went, for the other jumps

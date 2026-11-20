@@ -8,11 +8,13 @@ the reference until the port is done.
 
 So far the port has the build, the IR classes generated from the four
 `.asdl` files, the dump format that carries an IR value between the
-two compilers, the helpers that the asm passes share, and every asm
-pass of the back end after prologue synthesis, each of which matches
-the Python code on every input of the corpus it was checked on. The
-back end's region runs in C++ when compile.py is run with
-`C6502_CPP_BACKEND=1` ("The back end through c6502cpp", below).
+two compilers, the helpers that the asm passes share, every asm pass
+of the back end after prologue synthesis, and the work from there to
+the `-S` text (`asm_to_asm2`, `asm_emit`, and the steps between them
+that read the asm program), each of which matches the Python code on
+every input of the corpus it was checked on. With
+`C6502_CPP_BACKEND=1`, compile.py's `-S` text comes from C++ ("The back
+end through c6502cpp" and "Emission", below).
 
 ## Building
 
@@ -74,10 +76,16 @@ cpp/
     capture.*         the reader of capture files and their contexts
     helper_checks.*   the C++ side of tools/capture_helpers.py
     backend.*         the `c6502cpp backend` command's request and response
+    asm_emit.*        asm_emit.py, the asm2 program as dasm's text
+    pyrepr.*          Python's repr and formatting, for messages and text
     passes/           one .cpp/.h per Python pass module, mirroring passes/
       peephole_fixedpoint.*   compile.py's _peephole_fixedpoint
       optimized_asm.* the region of compile.py's optimized_asm, and the
                       unoptimized pipeline's fixed point and long branches
+      codegen.*       the region through emission, the end of `_codegen`
+      asm_to_asm2.*   the lowering to the asm2 IR
+      emission_args.* the decoders of the arguments of the work after the
+                      region, for the backend command and the registry
       asm_context.*   AsmContext, the compile's state the asm passes read
       asm_operands.h  for_each_operand, a walk over an instruction's operands
       optimization_asm/cfg.*   the asm CFG and its dominators
@@ -87,6 +95,8 @@ cpp/
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
     asm_text.h        a test's program and expected instructions as dump text
+    call_case.h       a recorded call of a function of emission, for the
+                      tests recorded from the Python unit tests
   third_party/doctest doctest.h 2.4.12 and its MIT license
 ```
 
@@ -493,21 +503,108 @@ functions made, and the result's dump. The arguments are decoded with
 the same `capture_args` functions as the captured calls. A bug the
 passes report (`InternalError`) exits with status 3.
 
-With `C6502_CPP_BACKEND=1`, compile.py hands the region to it through
-`cpp_backend.py`, one process per compile, and goes on with the result,
-so `place_zp_globals` and everything after it run as before. Without
-`-O` the same holds for `compile.unoptimized_tail`, which the
-simulator harness calls too. `cpp_backend.py` gives each function made
-a copy of its owner's symbol with internal linkage, as the Python
-passes do, and raises an exit status of 3 as an `AssertionError` with
-the C++ message. Under `C6502_CHECK_IR=1`, compile.py checks the result
-once, since `ir_check` isn't ported and the checks after each sweep
-happened in Python. compile.py reads the variable at each compile and,
-without it, imports none of this.
+With `C6502_CPP_BACKEND=1`, compile.py's `_codegen` hands the region
+and everything after it to `c6502cpp backend` through `cpp_backend.py`,
+one process per compile, and the `-S` text comes back ("Emission",
+below). The simulator harness calls `optimized_asm` and
+`compile.unoptimized_tail`, which hand only the region to C++ and go
+on with the result in Python, since the harness assembles the asm
+program. `cpp_backend.py` gives each function made a copy of its
+owner's symbol with internal linkage, as the Python passes do, and
+raises an exit status of 3 as an `AssertionError` with the C++
+message. Under `C6502_CHECK_IR=1`, compile.py checks the result once,
+since `ir_check` isn't ported and the checks after each sweep happened
+in Python. compile.py reads the variable at each compile and, without
+it, imports none of this.
 
 `tools/compare_backends.py` compiles the corpus of the capture harness
 with `-S` and `-S -O`, once with the variable and once without, and
 requires the same `-S` text, exit status, messages, and exceptions.
+
+## Emission
+
+`passes::lower_to_asm2` (`src/passes/asm_to_asm2.*`) and
+`asm_emit::emit_program` (`src/asm_emit.*`) are `asm_to_asm2` and
+`asm_emit`, and `passes/y_peephole.py`, which `emit_program` runs on its
+lines, is `passes::apply_y_peephole`. The work between the region and
+emission is in a file per Python module: `place_zp_globals` and
+`link_records` in `src/passes/zp_globals.*`, with `hargs_need` and
+`check_hargs` of passes/runtime_layout.py; `check_shares` in
+`src/passes/slot_sharing.*`; `prune_unused_locals` in
+`src/passes/prune_unused_slots.*`; `items` as `section_items` in
+`src/passes/sections.*`; and the records of the link metadata with
+`format_metadata` in `src/passes/zp_link_metadata.*`.
+`passes::optimized_text` and `unoptimized_text` (`src/passes/codegen.*`)
+run the region and all of these in compile.py's order and return the
+text, which `c6502cpp backend` gives in its `optimized-text` and
+`unoptimized-text` modes (`src/backend.h`).
+
+The boundary between the two compilers follows what each function
+reads.
+
+- **In C++**: everything that reads the asm program after the region.
+  `link_records`, `place_zp_globals`, `check_shares`,
+  `prune_unused_locals`, `hargs_need`, and `section_items` read the
+  finished program, and `asm_to_asm2` and `asm_emit` turn it into the
+  text, so running them in Python would mean reading the program back.
+  `format_metadata` is in C++ too, since three of its kinds of records
+  (the items, the zero-page objects, and the HARGS need) and the
+  `changes` of each `def` (`compile._with_coalesced`, which adds the
+  slots `slot_coalescing` made each function write) come from the
+  region and the finished program.
+- **In Python, computed before the call**: `build_metadata` reads the
+  TAC and the ABI layouts, and `changed_param_slots`,
+  `_carry_functions`, and `preferred_symbols` read the TAC, the symbol
+  table, and the bindings of `find_shares`. Their results go in the
+  request, as the `LinkMetadata` without its items, zero-page records,
+  and HARGS need. `section_items` reads only three things of a
+  top-level name's symbol, its section, whether its type is `const`,
+  and whether it is mergeable, which `sections.section_info` gives for
+  each top-level name of the program sent. A function that
+  `shared_tails` or `outline_runs` makes takes its owner's, as its
+  Python symbol is a copy of the owner's. The HARGS footprints of the
+  runtime helpers (`runtime_layout.helper_footprints`) are measured
+  from rtlib/helpers.py, which stays in Python with the simulator, so
+  they go in the request too. The `ZpGlobals` of the unit, which
+  `plan_zero_page` computes from the TAC, go as they are.
+
+Python reads the response's text and nothing else. Under
+`C6502_CHECK_IR=1` the response also holds the finished asm program and
+the asm2 program, which Python checks with `ir_check.check_asm` and
+`check_asm2`, since `ir_check` isn't ported. A problem with the program
+that a function of emission reports (a `FrameSizeError`, a
+`RuntimeLayoutError`, or the `ValueError` of an operand the 6502 can't
+encode) is a `CompileError` with its Python type, which `c6502cpp
+backend` writes on stderr with exit status 4, and `cpp_backend.py`
+raises the Python exception of that type with the message.
+
+The simulator harness assembles the asm program in Python, so it still
+calls `optimized_asm` and `unoptimized_tail`, whose region alone runs
+in C++ with the variable set (the `optimized` and `unoptimized` modes).
+
+The messages of the ported functions quote IR values and strings as
+Python's `repr` does (`src/pyrepr.*`), and the hexadecimal and signed
+forms of the text are Python's format specifications, so the text and
+every message are the Python ones. A `StringInit` holds its bytes as
+code points, which `pyrepr::code_points` decodes from the UTF-8.
+
+The capture harness records the calls of these functions under their
+names in compile.py (`link_records`, `place_zp_globals`,
+`check_shares`, `prune_unused_locals`, `lower_to_asm2`, `hargs_need`,
+`section_items`, `format_metadata`, and `emit_program`). A capture
+whose first argument isn't an IR value (`format_metadata`'s
+`LinkMetadata`) holds its tagged JSON under `input-json`, and a
+registry entry for a function whose input isn't an asm program sets
+`run_text` and the module of its dumps (`input_module`,
+`output_module`). `section_items` is recorded with what
+`section_info` gives in place of the symbol table, since a table can
+hold floats, which the C++ JSON reader takes no fractions of, and
+`hargs_need` and `place_zp_globals` with the footprints as a keyword
+argument. The unit tests in `tests/test_asm_emit.cpp`,
+`test_asm_to_asm2.cpp`, `test_y_peephole.cpp`, and
+`test_emission_work.cpp` are the calls that the Python unit tests make
+of these functions, with the results and the exceptions they gave,
+recorded by wrapping the Python functions while those tests ran.
 
 ## Status
 
@@ -578,3 +675,13 @@ requires the same `-S` text, exit status, messages, and exceptions.
   all 3,576 compiles of the corpus with and without the variable, and
   the suite and the four fuzzers pass with it set. The build is clean
   with MSVC 19.36, GCC 12.2, and Clang 14.0.6.
+- 20 Nov 2026: emission ("Emission"): `lower_to_asm2`, `asm_emit`
+  with its Y peephole, and the work between the region and emission
+  that reads the asm program, run with the region by
+  `passes::optimized_text` and `unoptimized_text`. With
+  `C6502_CPP_BACKEND=1` the `-S` text comes from `c6502cpp backend`.
+  Each function matches the Python one on every distinct call of the
+  corpus, 11,580 calls in all, from 855 of `format_metadata` to 2,058
+  of `place_zp_globals`, and `tools/compare_backends.py` found the same
+  output for all 3,576 compiles. The build is clean with MSVC 19.36,
+  GCC 12.2, and Clang 14.0.6.

@@ -167,3 +167,27 @@ stages land.
   of the units' time, and in the fuzzer most of the Python time is the
   TAC optimizer (with the IR checks the fuzzers turn on), the asm
   optimizer, and the Lark parser.
+- 20 Nov 2026: stage 3 is done. `asm_to_asm2`, `asm_emit` with its Y
+  peephole, and the work between the region and emission that reads
+  the asm program (`link_records`, `place_zp_globals`, `check_shares`,
+  `prune_unused_locals`, `hargs_need`, `section_items`, and the
+  formatting of the link metadata) are ported. With
+  `C6502_CPP_BACKEND=1`, one call of `c6502cpp backend` runs the region
+  and all of them, so the `-S` text comes from C++ and Python reads no
+  program back (cpp/README.md, "Emission"). The link metadata's records
+  that read the TAC, the ABI, or the symbol table are still computed in
+  Python and sent with the program. Each ported function matches the
+  Python one on every distinct call of the corpus, 11,580 calls, and
+  `tools/compare_backends.py` found the same output, exit status, and
+  messages for all 3,576 compiles. The suite passes with the variable
+  set and without it. The four fuzzers pass with it set, none wrong,
+  though they run the simulator harness, which sends only the region to
+  C++. A bug found on the way was fixed: without -O, a function whose
+  arguments sat above `Frame(255)` made `asm_emit` raise a
+  `ValueError`, and `asm_to_asm2` now reports it as a `FrameSizeError`
+  (`fuzz.exprs` seed 43). With the variable unset and set, guards.c
+  took 2.2 and 1.9 seconds, the Lode Runner units 15.8 and 14.0, and
+  20 `fuzz.stmts` programs 18.8 and 10.6. A compile of guards.c spends
+  0.22 s in the C++ process. The rest is Python's imports (0.6 s), the
+  TAC optimizer with the inliner's cost estimates, the asm optimizer,
+  and the parser.

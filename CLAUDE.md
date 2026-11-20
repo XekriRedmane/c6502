@@ -313,20 +313,30 @@ C6502_CPP_BACKEND=1 uv run python compile.py <source.c> -S -O   # back end in C+
 uv run python tools/compare_backends.py -j 12   # both back ends on the corpus
 ```
 
-With `C6502_CPP_BACKEND=1`, compile.py runs the asm back end's region
-in the C++ port: the passes of `optimized_asm` from `apply_licm`
-through `apply_outline_runs`, and without `-O` the fixed point and
-long branches of `unoptimized_tail`, which `sim/harness.py` calls too.
-`cpp_backend.py` starts `c6502cpp backend` once per compile (from
-`C6502_CPP` or cpp/build/bin), sends it the program as a dump with the
+With `C6502_CPP_BACKEND=1`, the `-S` text comes from the C++ port.
+compile.py runs everything up to the back end's region in Python
+(`_optimized_front` under `-O`, `replace_pseudoregisters` without it),
+and one call of `c6502cpp backend` runs the rest: the passes of
+`optimized_asm` from `apply_licm` through `apply_outline_runs` (or the
+fixed point and long branches of `unoptimized_tail`), `link_records`,
+`place_zp_globals`, `check_shares`, `prune_unused_locals`,
+`asm_to_asm2`, the link metadata's records that read the finished
+program, and `asm_emit`. The records that read the TAC, the ABI, or
+the symbol table (`build_metadata`, the `ext` records,
+`sections.section_info`) are computed in Python and sent with the
+program. `cpp_backend.py` starts the process once per compile (from
+`C6502_CPP` or cpp/build/bin), sends the program as a dump with the
 arguments in the capture harness's encoding, and enters the functions
-`shared_tails` and `outline_runs` make in the symbol table. Everything
-before and after the region is the Python code. The variable is read at
-each compile, and without it compile.py imports nothing new. Under
-`C6502_CHECK_IR=1` the result is checked once, since the checks after
-each sweep aren't ported. `tools/compare_backends.py` compiles the
-whole corpus both ways and requires the same output and errors
-(cpp/README.md, "The back end through c6502cpp").
+`shared_tails` and `outline_runs` make in the symbol table. Python
+reads no program back, except under `C6502_CHECK_IR=1`, where the
+response holds the finished asm and asm2 programs, which `ir_check`
+checks, since it isn't ported. The simulator harness, which assembles
+the asm program, still runs only the region in C++
+(`cpp_backend.optimized_region`). The variable is read at each
+compile, and without it compile.py imports nothing new.
+`tools/compare_backends.py` compiles the whole corpus both ways and
+requires the same output and errors (cpp/README.md, "The back end
+through c6502cpp" and "Emission").
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
 module is library-only. Flags `compile.py` doesn't recognize are
@@ -547,7 +557,9 @@ Other root-level files:
   over the corpus, for checking their C++ ports, and
   `tools/check_captures.py` runs the check.
 - `cpp_backend.py` — the Python side of `C6502_CPP_BACKEND=1`, which
-  runs the back end's region through `c6502cpp backend`.
+  runs the back end's region and emission through `c6502cpp backend`
+  (`optimized_text`, `unoptimized_text`), or the region alone for the
+  simulator harness.
   `tools/compare_backends.py` compiles the corpus with and without it
   and compares the outputs.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL

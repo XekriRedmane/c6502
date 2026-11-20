@@ -24,8 +24,11 @@ identity op. The store to `M_hi` becomes dead and falls to
 # Tracked state (basic-block scope)
 
   * `a_value` — Python int when A's value is a known immediate;
-    `None` otherwise. Updated by `Mov(Imm, A)` (set), any other
-    write to A (cleared).
+    `None` otherwise. Updated by `Mov(Imm, A)` and `Mov(Imm, <mem>)`,
+    which `asm_emit` writes as `LDA #imm; STA mem` (set), and any
+    other write to A (cleared), including the `LDA src` of a move
+    from memory to memory, the `TXA` of a move from X or Y that `STX`
+    / `STY` can't make, and a `PLA`.
   * `mem_value` — dict mapping `(MemKey, name|addr, offset)` to
     a known immediate Python int. Updated by `Mov(Reg(A), <mem>)`
     when `a_value` is known, by `Mov(Imm(c), <mem>)` directly
@@ -239,7 +242,17 @@ def _update_state(instr, state: _BlockState) -> None:
                 # Other src — A's value isn't a known immediate.
                 state.a_value = None
             return
-        # Mov(<src>, <mem>): a write to memory.
+        # Mov(<src>, <mem>): a write to memory. `asm_emit` writes a
+        # move of a constant or a memory byte into memory as `LDA src;
+        # STA dst`, and a move from X or Y to anything but a `Data` or
+        # `ZP` byte through A as well (`TXA; STA (FP),Y`, `TXA; TAY`),
+        # so A then holds what is moved. Keeping the value A held
+        # before made `LDA #5; Mov(#7, M); STA N` record N as 5.
+        if (isinstance(instr.src, asm_ast.Imm)
+                and not isinstance(instr.dst, asm_ast.Reg)):
+            state.a_value = instr.src.value & 0xFF
+        elif _writes_a_through_move(instr):
+            state.a_value = None
         dst = instr.dst
         key = _mem_key(dst)
         if key is None:
@@ -309,7 +322,29 @@ def _update_state(instr, state: _BlockState) -> None:
         _invalidate_alias(state, dst)
         return
 
-    # SetCarry / ClearCarry / Compare / Push / Pop: no A or memory
-    # value change relevant here (Compare reads but doesn't write;
-    # Push / Pop touch the hardware stack, not our tracked cells).
+    if isinstance(instr, asm_ast.Pop):
+        # PLA writes A with a value pulled from the hardware stack, which
+        # isn't followed.
+        if _is_reg_a(instr.dst):
+            state.a_value = None
+        elif not isinstance(instr.dst, asm_ast.Reg):
+            _invalidate_alias(state, instr.dst)
+        return
+
+    # SetCarry / ClearCarry / Compare / Push: no A or memory value
+    # change relevant here (Compare reads but doesn't write; Push
+    # touches the hardware stack, not our tracked cells).
     return
+
+
+def _writes_a_through_move(instr: asm_ast.Mov) -> bool:
+    """Whether `asm_emit` writes the move `instr`, whose destination
+    isn't A, through A: a move of anything but a register into memory
+    (`LDA src; STA dst`), or a move from X or Y into a register or into
+    a byte that `STX` / `STY` can't reach (`TXA; TAY`, `TXA; STA
+    (FP),Y`)."""
+    if not isinstance(instr.src, asm_ast.Reg):
+        return not isinstance(instr.dst, asm_ast.Reg)
+    if _is_reg_a(instr.src) or instr.src == instr.dst:
+        return False
+    return not isinstance(instr.dst, (asm_ast.Data, asm_ast.ZP))

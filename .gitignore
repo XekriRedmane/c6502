@@ -233,5 +233,7 @@ fuzz_out/
 a.out
 examples/zork/interpreter
 
-# The C++ port's build tree (cpp/README.md).
+# The C++ port's build tree (cpp/README.md) and the pass calls that
+# tools/capture_passes.py records.
 cpp/build/
+/captures/

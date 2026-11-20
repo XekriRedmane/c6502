@@ -307,6 +307,7 @@ uv run python objdump.py -d a.o                 # disassemble (dasm syntax)
 cmake -S cpp -B cpp/build -G "Visual Studio 17 2022" -A x64
 cmake --build cpp/build --config Release --parallel
 ctest --test-dir cpp/build -C Release --output-on-failure
+uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
 ```
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
@@ -524,6 +525,8 @@ Other root-level files:
 - `ir_dump.py` — the dump format, a canonical text form of any IR
   value (`dump`, `load`) that the C++ port reads and writes too. Its
   docstring gives the grammar.
+- `tools/capture_passes.py` — records the calls of chosen asm passes
+  over the corpus, for checking their C++ ports.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

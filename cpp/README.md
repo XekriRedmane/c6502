@@ -153,3 +153,24 @@ Program([
 `c6502cpp roundtrip <module> [<file>]` reads a dump and writes it again,
 and `tests/test_ir_dump.py` checks that it gives the Python dump's
 bytes for the four IRs of a compiled example.
+
+## The captured calls
+
+`tools/capture_passes.py` runs the Python compiler over the corpus
+and records each call of the chosen asm passes, with its arguments,
+its input program, and its output, under `captures/` (ignored by git).
+Its docstring describes the corpus and the file format.
+The C++ side doesn't read them yet.
+
+```sh
+uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
+```
+
+The whole corpus took 73 seconds with 16 processes and gave 7535 calls
+of `split_mem_to_mem`, 7049 of them distinct, in 215 MB. Of its 3576
+compiles, 1306 fail, which are the chapters' programs that c6502 must
+reject or can't compile and 14 fuzz programs whose unoptimized frames
+are over the 253-byte limit. A capture of every pass takes much more
+space. The examples and the games alone gave 21545 distinct calls of
+the 73 passes in about 1 GB, so a capture is best limited to the passes
+being ported.

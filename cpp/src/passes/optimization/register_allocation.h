@@ -1,12 +1,18 @@
 // The result of the asm optimizer's register allocation, Python's
-// `Coloring` in passes/optimization/register_allocation.py.
+// `Coloring` in passes/optimization/register_allocation.py, and the two
+// helpers of that module that the asm allocator reuses, `_blocked_bytes`
+// and `_find_fit`.
 #pragma once
 
+#include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 
 #include "asdl/runtime.h"
 #include "ordered_map.h"
 #include "passes/asm_context.h"
+#include "passes/optimization/interference.h"
 #include "passes/optimization/pool.h"
 
 namespace c6502::passes {
@@ -26,5 +32,22 @@ struct Coloring {
   OrderedMap<std::string, std::string> hwreg_assignments;
   bool operator==(const Coloring&) const = default;
 };
+
+namespace register_allocation {
+
+// Returns the zero-page bytes that the colored neighbors of `name` in
+// `graph` occupy, each neighbor's base in `assignments` and the bytes of
+// its width after it. A neighbor that isn't colored, or was spilled,
+// adds nothing, since a spilled value lives in the frame.
+std::set<asdl::Int> blocked_bytes(std::string_view name, const InterferenceGraph& graph,
+                                  const OrderedMap<std::string, asdl::Int>& assignments);
+
+// Returns the lowest base in `byte_range` such that the `width` bytes
+// from it are all inside the range and none is in `blocked`, or nothing
+// when there is no such base. The range's step isn't read, as in Python.
+std::optional<asdl::Int> find_fit(const Range& byte_range, const asdl::Int& width,
+                                  const std::set<asdl::Int>& blocked);
+
+}  // namespace register_allocation
 
 }  // namespace c6502::passes

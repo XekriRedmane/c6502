@@ -155,6 +155,7 @@ def _xlate_op(op: asm_ast.Type_operand) -> asm2_ast.Type_operand:
         case asm_ast.Stack(offset=o):
             return asm2_ast.Stack(offset=o)
         case asm_ast.Frame(offset=o):
+            _check_frame_offset(o)
             return asm2_ast.Frame(offset=o)
         case asm_ast.Data(name=n, offset=o):
             return asm2_ast.Data(name=n, offset=o)
@@ -353,7 +354,6 @@ def _function_prologue(
     ]
     out += _ssp_sub(local_bytes + 2)
     out += _save_fp_into_slot(local_bytes)
-    _check_frame_bytes(arg_bytes, local_bytes)
     out += _set_fp_to_ssp()
     for i, addr in enumerate(callee_saved_addrs):
         out += _save_zp_byte_to_frame(addr, i + 1)
@@ -427,19 +427,21 @@ def _check_local_bytes(m: int) -> None:
         )
 
 
-def _check_frame_bytes(arg_bytes: int, local_bytes: int) -> None:
-    # The arguments sit above the locals and the saved FP, so the last
-    # one is at `Frame(local_bytes + 2 + arg_bytes)`, which must fit in
-    # a byte too. Without this check, `asm_emit` met the frame access
-    # of such an argument and raised a ValueError with no function
-    # named (`fuzz.exprs` seed 43 without -O).
-    top = local_bytes + 2 + arg_bytes
-    if top > 0xFF:
+def _check_frame_offset(offset: int) -> None:
+    # An access of the frame is `LDY #offset` and `(FP),Y`, so its
+    # offset must fit in a byte. The arguments sit above the locals and
+    # the saved FP, and a function whose locals fit in 253 bytes may
+    # still read an argument byte past Frame(255). Only the accesses
+    # count: an argument that's never read through the frame, such as
+    # a struct copied out by address, may sit past Frame(255) without
+    # harm. Without this check, `asm_emit` met such an access and raised
+    # a ValueError with no function named (`fuzz.exprs` seed 43 without
+    # -O).
+    if offset > 0xFF:
         raise FrameSizeError(
-            f"its arguments and locals need {top} bytes on the soft "
-            f"stack, with the saved frame pointer between them, but the "
-            f"`LDY #offset` of each frame access reaches at most 255 "
-            f"(frame offset {top} out of range 1..255); a large array "
+            f"it reads or writes the byte at frame offset {offset}, but "
+            f"the `LDY #offset` of each frame access reaches at most 255 "
+            f"(frame offset {offset} out of range 1..255); a large array "
             f"fits better as a `static` or a global"
         )
 

@@ -93,6 +93,8 @@ out::Type_condition condition(const in::Type_condition& c) {
   throw InternalError("unexpected condition");
 }
 
+void check_frame_offset(asdl::Int offset);
+
 out::Type_operand operand(const in::Type_operand& op) {
   switch (in::kind(op)) {
     case in::Kind_operand::Imm:
@@ -105,8 +107,11 @@ out::Type_operand operand(const in::Type_operand& op) {
                              ") reached asm_to_asm2; replace_pseudoregisters must run first");
     case in::Kind_operand::Stack:
       return out::Stack{.offset = std::get<in::Stack>(op).offset};
-    case in::Kind_operand::Frame:
-      return out::Frame{.offset = std::get<in::Frame>(op).offset};
+    case in::Kind_operand::Frame: {
+      const asdl::Int offset = std::get<in::Frame>(op).offset;
+      check_frame_offset(offset);
+      return out::Frame{.offset = offset};
+    }
     case in::Kind_operand::Data: {
       const auto& d = std::get<in::Data>(op);
       return out::Data{.name = d.name, .offset = d.offset};
@@ -252,18 +257,20 @@ void check_local_bytes(asdl::Int m) {
   }
 }
 
-// Checks that the last argument byte, at `Frame(local_bytes + 2 +
-// arg_bytes)` above the locals and the saved FP, is in reach of an
-// `LDY` immediate too. Without this check `asm_emit` met the frame
-// access of such an argument and raised a ValueError with no function
-// named (`fuzz.exprs` seed 43 without -O).
-void check_frame_bytes(asdl::Int arg_bytes, asdl::Int local_bytes) {
-  const asdl::Int top = local_bytes + 2 + arg_bytes;
-  if (top > 0xFF) {
-    const std::string n = pyrepr::integer(top);
-    throw FrameSize("its arguments and locals need " + n +
-                    " bytes on the soft stack, with the saved frame pointer between them, but "
-                    "the `LDY #offset` of each frame access reaches at most 255 (frame offset " +
+// Checks that a frame access's offset is in reach of the `LDY #offset`
+// before its `(FP),Y`. The arguments sit above the locals and the saved
+// FP, and a function whose locals fit in 253 bytes may still read an
+// argument byte past Frame(255). Only the accesses count: an argument
+// that's never read through the frame, such as a struct copied out by
+// address, may sit past Frame(255) without harm. Without this check
+// `asm_emit` met such an access and raised a ValueError with no
+// function named (`fuzz.exprs` seed 43 without -O).
+void check_frame_offset(asdl::Int offset) {
+  if (offset > 0xFF) {
+    const std::string n = pyrepr::integer(offset);
+    throw FrameSize("it reads or writes the byte at frame offset " + n +
+                    ", but the `LDY #offset` of each frame access reaches at most 255 (frame "
+                    "offset " +
                     n + " out of range 1..255); a large array fits better as a `static` or a "
                     "global");
   }
@@ -334,7 +341,6 @@ void function_prologue(const in::FunctionPrologue& p, Instrs& outs) {
   outs.push_back(out::Comment{.text = std::move(note)});
   ssp_sub(p.local_bytes + 2, outs);
   save_fp_into_slot(p.local_bytes, outs);
-  check_frame_bytes(p.arg_bytes, p.local_bytes);
   set_fp_to_ssp(outs);
   for (std::size_t i = 0; i < p.callee_saved_addrs.size(); ++i) {
     save_zp_byte_to_frame(p.callee_saved_addrs[i], static_cast<asdl::Int>(static_cast<int>(i) + 1),

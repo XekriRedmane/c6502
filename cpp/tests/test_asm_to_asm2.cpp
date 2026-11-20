@@ -104,7 +104,58 @@ TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_amt_one_emits_full_
       "])\n");
 }
 
-TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_arguments_past_the_ldy_reach_are_a_frame_size_error (call 1)") {
+TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_a_frame_access_past_the_ldy_reach_is_a_frame_size_error (call 1)") {
+  c6502::testing::check_call(
+      "lower_to_asm2",
+      "{\"args\": [], \"kwargs\": {}}",
+      "{\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}",
+      false,
+      "Program([\n"
+      "  Function(\"f\" true [] [\n"
+      "    FunctionPrologue(4 250 [])\n"
+      "    Mov(Frame(256) Reg(A) false)\n"
+      "  ])\n"
+      "])\n",
+      "exception: FrameSizeError: function 'f': it reads or writes the byte at frame offset 256, but the `LDY #offset` of each frame access reaches at most 255 (frame offset 256 out of range 1..255); a large array fits better as a `static` or a global\n");
+}
+
+TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_a_frame_access_past_the_ldy_reach_is_a_frame_size_error (call 2)") {
+  c6502::testing::check_call(
+      "lower_to_asm2",
+      "{\"args\": [], \"kwargs\": {}}",
+      "{\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}",
+      false,
+      "Program([\n"
+      "  Function(\"f\" true [] [\n"
+      "    FunctionPrologue(4 250 [])\n"
+      "    Mov(Frame(255) Reg(A) false)\n"
+      "  ])\n"
+      "])\n",
+      "Program([\n"
+      "  Function(\"f\" true [] [\n"
+      "    Comment(\"prologue: 4 arg bytes, 250 local bytes\")\n"
+      "    SetCarry\n"
+      "    Mov(Data(\"SSP\" 0) Reg(A))\n"
+      "    Sub(Imm(252) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"SSP\" 0))\n"
+      "    Mov(Data(\"SSP\" 1) Reg(A))\n"
+      "    Sub(Imm(0) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"SSP\" 1))\n"
+      "    Mov(Data(\"FP\" 0) Reg(A))\n"
+      "    Mov(Reg(A) Stack(251))\n"
+      "    Mov(Data(\"FP\" 1) Reg(A))\n"
+      "    Mov(Reg(A) Stack(252))\n"
+      "    Mov(Data(\"SSP\" 0) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"FP\" 0))\n"
+      "    Mov(Data(\"SSP\" 1) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"FP\" 1))\n"
+      "    Blank\n"
+      "    Mov(Frame(255) Reg(A))\n"
+      "  ])\n"
+      "])\n");
+}
+
+TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_arguments_past_the_ldy_reach_that_arent_read_are_allowed (call 1)") {
   c6502::testing::check_call(
       "lower_to_asm2",
       "{\"args\": [], \"kwargs\": {}}",
@@ -115,23 +166,9 @@ TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_arguments_past_the_
       "    FunctionPrologue(4 250 [])\n"
       "  ])\n"
       "])\n",
-      "exception: FrameSizeError: function 'f': its arguments and locals need 256 bytes on the soft stack, with the saved frame pointer between them, but the `LDY #offset` of each frame access reaches at most 255 (frame offset 256 out of range 1..255); a large array fits better as a `static` or a global\n");
-}
-
-TEST_CASE("lower_to_asm2: TestFunctionPrologueExpansion.test_arguments_past_the_ldy_reach_are_a_frame_size_error (call 2)") {
-  c6502::testing::check_call(
-      "lower_to_asm2",
-      "{\"args\": [], \"kwargs\": {}}",
-      "{\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}",
-      false,
       "Program([\n"
       "  Function(\"f\" true [] [\n"
-      "    FunctionPrologue(3 250 [])\n"
-      "  ])\n"
-      "])\n",
-      "Program([\n"
-      "  Function(\"f\" true [] [\n"
-      "    Comment(\"prologue: 3 arg bytes, 250 local bytes\")\n"
+      "    Comment(\"prologue: 4 arg bytes, 250 local bytes\")\n"
       "    SetCarry\n"
       "    Mov(Data(\"SSP\" 0) Reg(A))\n"
       "    Sub(Imm(252) Reg(A))\n"

@@ -91,8 +91,9 @@ class TestWithTheVariable(unittest.TestCase):
         # with its Python type, so compile.py reports it as a one-line
         # error, as it does without the variable.
         source = (
-            "unsigned char f(unsigned long long a, unsigned long long b) "
-            "{ unsigned char t[230]; t[0] = 1; return t[0]; }"
+            "unsigned char f(unsigned long long a, unsigned long long b, "
+            "unsigned long long c, unsigned char d) "
+            "{ unsigned char t[225]; t[0] = d; return t[0]; }"
         )
         results = []
         for cpp in (True, False):
@@ -108,7 +109,7 @@ class TestWithTheVariable(unittest.TestCase):
             results.append((done.returncode, done.stderr))
         self.assertEqual(results[0], results[1])
         self.assertEqual(results[0][0], 1)
-        self.assertIn("frame offset 258 out of range", results[0][1])
+        self.assertIn("frame offset 261 out of range", results[0][1])
 
     def test_python_reads_no_program_back(self):
         # Without the IR checks, the text comes from c6502cpp and Python

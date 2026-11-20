@@ -89,17 +89,28 @@ class TestCliErrors(unittest.TestCase):
         self.assertIn("a frame holds at most 253", err)
 
     def test_arguments_past_the_frame_reach(self) -> None:
-        # The locals fit in 253 bytes, but the arguments above them and
-        # the saved frame pointer don't fit below Frame(256). This used
-        # to raise a ValueError from `asm_emit` (`fuzz.exprs` seed 43).
+        # The locals fit in 253 bytes, but `d` sits above them, the
+        # saved frame pointer, and the other arguments, past Frame(255),
+        # and the function reads it. This used to raise a ValueError
+        # from `asm_emit` (`fuzz.exprs` seed 43).
+        rc, err = _compile(
+            "unsigned char f(unsigned long long a, unsigned long long b, "
+            "unsigned long long c, unsigned char d) "
+            "{ unsigned char t[225]; t[0] = d; return t[0]; }",
+        )
+        self.assertEqual(rc, 1)
+        self.assertTrue(err.startswith("<stdin>: error: function 'f': "), err)
+        self.assertIn("frame offset 261 out of range 1..255", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_unread_arguments_past_the_frame_reach(self) -> None:
+        # `b` sits past Frame(255), but nothing reads it through the
+        # frame, so the function compiles.
         rc, err = _compile(
             "unsigned char f(unsigned long long a, unsigned long long b) "
             "{ unsigned char t[230]; t[0] = 1; return t[0]; }",
         )
-        self.assertEqual(rc, 1)
-        self.assertTrue(err.startswith("<stdin>: error: function 'f': "), err)
-        self.assertIn("out of range 1..255", err)
-        self.assertNotIn("Traceback", err)
+        self.assertEqual(rc, 0, err)
 
     def test_one_line_errors(self) -> None:
         for label, (src, needle) in self._CASES.items():

@@ -145,17 +145,29 @@ class TestFunctionPrologueExpansion(unittest.TestCase):
         ))
         self.assertEqual(len(out) - len(no_saves), 4)
 
-    def test_arguments_past_the_ldy_reach_are_a_frame_size_error(self):
-        # The last argument byte is at Frame(250 + 2 + 4) = Frame(256),
-        # which `LDY #offset` can't reach, although the locals fit.
+    def test_a_frame_access_past_the_ldy_reach_is_a_frame_size_error(self):
+        # `LDY #offset` can't reach Frame(256), although the locals fit.
         from passes.asm_to_asm2 import FrameSizeError
         with self.assertRaisesRegex(
             FrameSizeError, r"function 'f': .*frame offset 256 out of range",
         ):
-            _lower(asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=250))
+            _lower(
+                asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=250),
+                asm_ast.Mov(src=asm_ast.Frame(offset=256), dst=asm_ast.Reg(reg=asm_ast.A())),
+            )
         # Frame(255) is still in reach.
+        self.assertTrue(_lower(
+            asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=250),
+            asm_ast.Mov(src=asm_ast.Frame(offset=255), dst=asm_ast.Reg(reg=asm_ast.A())),
+        ))
+
+    def test_arguments_past_the_ldy_reach_that_arent_read_are_allowed(self):
+        # The last argument byte is at Frame(250 + 2 + 4) = Frame(256),
+        # but nothing reads it through the frame, so the function
+        # compiles, as tests/chapter_18's param_calling_conventions.c
+        # does with a struct argument.
         self.assertTrue(
-            _lower(asm_ast.FunctionPrologue(arg_bytes=3, local_bytes=250)),
+            _lower(asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=250)),
         )
 
 

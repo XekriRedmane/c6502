@@ -182,10 +182,15 @@ stages land.
   messages for all 3,576 compiles. The suite passes with the variable
   set and without it. The four fuzzers pass with it set, none wrong,
   though they run the simulator harness, which sends only the region to
-  C++. A bug found on the way was fixed: without -O, a function whose
-  arguments sat above `Frame(255)` made `asm_emit` raise a
-  `ValueError`, and `asm_to_asm2` now reports it as a `FrameSizeError`
-  (`fuzz.exprs` seed 43). With the variable unset and set, guards.c
+  C++. A bug found on the way was fixed: without -O, a function that
+  read an argument above `Frame(255)` made `asm_emit` raise a
+  `ValueError`, and `asm_to_asm2` now reports such an access as a
+  `FrameSizeError` (`fuzz.exprs` seed 43). The first version of that
+  fix rejected any function whose arguments reached past `Frame(255)`,
+  read or not, which turned away two programs that compiled correctly
+  before, among them tests/chapter_18's
+  `param_calling_conventions.c`, so the check moved to the frame
+  accesses themselves. With the variable unset and set, guards.c
   took 2.2 and 1.9 seconds, the Lode Runner units 15.8 and 14.0, and
   20 `fuzz.stmts` programs 18.8 and 10.6. A compile of guards.c spends
   0.22 s in the C++ process. The rest is Python's imports (0.6 s), the

@@ -51,6 +51,14 @@ this directory:
   Y (`TXA; TAY`), and a move from X or Y to the soft stack or through
   a pointer (`TXA; STA (FP),Y`). It counts a `FunctionPrologue` and an
   `AllocateStack` too, which do their SSP arithmetic in A.
+  Every walk finds its jump targets through `label_map`, which keeps
+  the maps of the last eight instruction lists it was given. It
+  returns a kept map when the list is the same object as before and,
+  compared with the copy of its items kept with the map, holds the
+  same or equal instructions at every position. A `Label` renamed in
+  place would
+  go unseen, and no pass renames one. `asm_dead_store` and
+  `transfer_past_branch` use the same map.
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
 - `call_edges.py` — `graph_calls` / `abandons_caller`: which direct
   calls are edges of the call graph. A call to a `[[noreturn]]`

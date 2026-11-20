@@ -67,7 +67,7 @@ to see the TXA in a different basic block.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at
+from passes.asm_liveness import a_dead_at, label_map
 from passes.dead_a_arith import _writes_reg_setting_n_z
 
 
@@ -83,7 +83,7 @@ def apply_transfer_past_branch(prog: asm_ast.Program) -> asm_ast.Program:
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
-    label_to_index = _build_label_map(instrs)
+    label_to_index = label_map(instrs)
     out: list[asm_ast.Type_instruction] = []
     i = 0
     changed = False
@@ -154,13 +154,3 @@ def _can_swap(
         # TXA outright. No motion required.
         return False
     return True
-
-
-def _build_label_map(
-    instrs: list[asm_ast.Type_instruction],
-) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for j, ins in enumerate(instrs):
-        if isinstance(ins, asm_ast.Label):
-            out[ins.name] = j
-    return out

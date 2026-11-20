@@ -81,7 +81,7 @@ from __future__ import annotations
 import asm_ast
 from passes import decimal_arith
 from passes.asm_aliasing import may_alias as _may_alias
-from passes.asm_liveness import all_flags_dead_at, flags_dead_at
+from passes.asm_liveness import all_flags_dead_at, flags_dead_at, label_map
 
 
 # Asm-level regalloc pool range (default `Pool(start=0x80)` splits
@@ -305,14 +305,8 @@ _RMW = (
 )
 
 
-def _build_label_map(
-    instrs: list[asm_ast.Type_instruction],
-) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for i, ins in enumerate(instrs):
-        if isinstance(ins, asm_ast.Label):
-            out[ins.name] = i
-    return out
+# The shared, cached map of each label's index (`asm_liveness.label_map`).
+_build_label_map = label_map
 
 
 def _successors(

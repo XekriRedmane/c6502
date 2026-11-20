@@ -66,6 +66,22 @@ counts as a read.
 - `DecimalArith` (a packed BCD chain) kills A, writes every flag
   without reading one, and kills Y when an operand is a soft-stack
   slot (`passes/decimal_arith.py`).
+
+# The label map
+
+Every query here walks the CFG through a map from each label's name to
+its index (`label_map`). The peephole passes make about a hundred
+thousand of these queries in compiling 20 `fuzz.stmts` programs, nearly
+all of them on a few instruction lists that don't change between
+queries, so `label_map` keeps the maps of the last
+`_LABEL_MAP_CACHE_SIZE` lists it was given, each with a copy of the
+list's items. It returns a kept map when the list is the same object
+as before and holds, at every position, the same instruction as the
+copy or one equal to it. The map depends only on the class of each
+item and the name of each `Label`, which equal items share, so it is
+the map a fresh walk returns. The comparison detects an item replaced,
+inserted, or removed. A `Label` renamed in place would go undetected,
+and no pass renames one, since each builds a new `Label` instead.
 """
 
 from __future__ import annotations
@@ -230,14 +246,38 @@ def _kills_reg(instr: asm_ast.Type_instruction, reg: str) -> bool:
     return kills_y(instr)
 
 
-def _build_label_map(
+# `label_map`'s cache: `id(instrs)` -> (instrs, a copy of its items,
+# the map). Holding `instrs` keeps its id from being reused while the
+# entry exists. The oldest entry goes first when the cache is full.
+_LABEL_MAP_CACHE_SIZE = 8
+_LABEL_MAPS: dict[int, tuple[list, list, dict[str, int]]] = {}
+
+
+def label_map(
     instrs: list[asm_ast.Type_instruction],
 ) -> dict[str, int]:
+    """Returns the index in `instrs` of each `Label`, by name, the
+    last one where a name repeats. The map may be shared with other
+    callers, so the caller must not change it. See "The label map"
+    in the module docstring for when a kept map is returned."""
+    entry = _LABEL_MAPS.get(id(instrs))
+    # `==` on lists compares by identity before calling `__eq__`, so an
+    # unchanged list compares at C speed.
+    if entry is not None and entry[0] is instrs and entry[1] == instrs:
+        return entry[2]
     out: dict[str, int] = {}
     for i, ins in enumerate(instrs):
         if isinstance(ins, asm_ast.Label):
             out[ins.name] = i
+    if isinstance(instrs, list):
+        if (id(instrs) not in _LABEL_MAPS
+                and len(_LABEL_MAPS) >= _LABEL_MAP_CACHE_SIZE):
+            del _LABEL_MAPS[next(iter(_LABEL_MAPS))]
+        _LABEL_MAPS[id(instrs)] = (instrs, list(instrs), out)
     return out
+
+
+_build_label_map = label_map
 
 
 def reads_a(instr: asm_ast.Type_instruction) -> bool:
@@ -653,10 +693,7 @@ def _one_flag_dead(instrs, idx, readers, branches, writers) -> bool:
     forward until one of `writers` sets it. A `Return` or `Ret` ends
     a path with the flag dead, except that a carry-flag return reads
     C (`branches` holding `CC` marks the walk as one for C)."""
-    labels = {
-        x.name: i for i, x in enumerate(instrs)
-        if isinstance(x, asm_ast.Label)
-    }
+    labels = label_map(instrs)
     visited: set[int] = set()
     stack = [idx]
     while stack:

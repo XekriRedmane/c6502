@@ -87,3 +87,20 @@ stages land.
   records the calls of the passes of `optimized_asm` from `apply_licm`
   on. `split_mem_to_mem` is ported and matches the Python pass on all
   7,049 distinct calls of the corpus.
+- 19 Nov 2026: the helpers that the asm passes of stage 2 share are
+  ported: `asm_liveness`, `asm_aliasing`, what the asm passes use of
+  `decimal_arith`, the asm CFG with its dominators and the tolerant
+  builder from `redundant_load`, the helpers that other passes import
+  from `asm_dead_store`, `inc_peephole`, and `dead_a_arith`,
+  `call_edges`, and the instruction sizes of `sim/assembler.py`. The
+  runtime layout, the user zero-page globals, and the pointer proof,
+  which Python keeps in module globals, are one `AsmContext` that
+  every C++ asm pass receives (`cpp/README.md`, "The compile's
+  context"), and the pass captures record the context of each call.
+  The helpers are checked on what the passes see:
+  `tools/capture_helpers.py` evaluates each one on every function each
+  pass is given over the examples, the games, and the fuzz seeds, at
+  every instruction index or on every pair of operands, and `c6502cpp
+  check-helpers` compares the C++ values with those, about 2.1 billion
+  values in 54,677 records, with no difference. The passes of the
+  region can now be ported, several at a time.

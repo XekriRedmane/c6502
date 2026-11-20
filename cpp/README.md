@@ -8,8 +8,10 @@ the reference until the port is done.
 
 So far the port has the build, the IR classes generated from the four
 `.asdl` files, the dump format that carries an IR value between the
-two compilers, and one asm pass, `split_mem_to_mem`, which matches the
-Python pass on every call the corpus makes.
+two compilers, one asm pass, `split_mem_to_mem`, which matches the
+Python pass on every call the corpus makes, and the helpers that the
+asm passes share, which match the Python helpers on every input of the
+corpus they were checked on.
 
 ## Building
 
@@ -48,8 +50,9 @@ CMake, so it would need `apt-get install cmake` first.
 The build makes three targets.
 
 - `c6502`, a static library with all of the compiler's code (`src/`
-  and `generated/`). A `.cpp` file added under `src/`, `src/asdl/`, or
-  `src/passes/` is picked up the next time CMake runs.
+  and `generated/`). A `.cpp` file added under `src/`, `src/asdl/`,
+  `src/passes/`, `src/passes/optimization_asm/`, or `src/sim/` is
+  picked up the next time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
 - `c6502cpp`, the CLI (`src/main.cpp`), which for now holds the checks
   below.
@@ -67,9 +70,14 @@ cpp/
     asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer
     errors.h          CompileError, InternalError
     json.*            the reader of the capture harness's JSON
-    capture.*         the reader of capture files
+    capture.*         the reader of capture files and their contexts
+    helper_checks.*   the C++ side of tools/capture_helpers.py
     passes/           one .cpp/.h per Python pass module, mirroring passes/
+      asm_context.*   AsmContext, the compile's state the asm passes read
+      asm_operands.h  for_each_operand, a walk over an instruction's operands
+      optimization_asm/cfg.*   the asm CFG and its dominators
       registry.*      the ported passes, by name, for check-captures
+    sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
   third_party/doctest doctest.h 2.4.12 and its MIT license
@@ -185,6 +193,138 @@ space. The examples and the games alone gave 21545 distinct calls of
 the 73 passes in about 1 GB, so a capture is best limited to the passes
 being ported.
 
+## The compile's context
+
+The Python asm passes read three pieces of state that the driver sets
+for a compile in module globals: the runtime's zero-page layout
+(`runtime_layout.current()`), the user globals that
+`[[c6502::zeropage]]` puts in zero page (`asm_aliasing`'s
+`_USER_ZP_GLOBALS` and `_USER_ZP_BYTES`, set by
+`set_user_zp_globals`), and the names `may_alias` takes to be out of
+reach of a pointer while a pass runs (`asm_aliasing.pointer_proof`).
+In C++ they are one value, `passes::AsmContext`
+(`src/passes/asm_context.h`), which every asm pass takes as `const
+AsmContext& ctx` after the program and passes on to each helper that
+reads it.
+
+- `ctx.layout` is a `RuntimeLayout`, whose defaults are the classic
+  layout, and `ctx.layout.addr("DPTR")` gives a runtime symbol's
+  address as `current().addrs().get(name)` does.
+- `ctx.user_zp` holds the zero-page globals by name and the bytes they
+  occupy. `ctx.is_user_zp_global(name)`, `ctx.user_zp_address(name)`,
+  and `ctx.is_user_zp_byte(addr)` stand for `is_user_zp_global`, the
+  lookup in `_zp_data_alias`, and `is_user_zp_byte`.
+- `ctx.pointer_proof` is null outside a pass that installs one. A pass
+  that runs `with pointer_proof(unreachable_by_pointer(prog)):` makes
+  `const AsmContext inner = ctx.with_pointer_proof(names);` and gives
+  `inner` to the helpers it calls inside the block.
+
+The tables are held through `shared_ptr<const ...>`, so a copy of a
+context costs two reference counts and the tables are never changed
+after they are built. A keyword argument that a Python pass is given,
+such as `zp_slot_symbols`, stays a parameter of the C++ pass, as a
+`const SymbolAddrs*` that may be null where Python's default is
+`None`.
+
+A capture of version 2 (`tools/capture_passes.py`) records the
+context of each call on its `context` line, and `capture::context(call)`
+returns it, which `check-captures` passes to the registered pass.
+
+## The shared helpers
+
+These Python modules, which the asm passes from `apply_licm` on
+import, are ported with only the parts those passes use.
+
+| Python | C++ | Namespace |
+|---|---|---|
+| `passes/asm_liveness.py` | `src/passes/asm_liveness.*` | `passes` |
+| `passes/asm_aliasing.py` | `src/passes/asm_aliasing.*` | `passes` |
+| `passes/decimal_arith.py` (`reads`, `writes`, `operands`, `writes_y`, `map_operands`) | `src/passes/decimal_arith.*` | `passes::decimal_arith` |
+| `passes/optimization_asm/cfg.py` | `src/passes/optimization_asm/cfg.*` | `passes` |
+| `redundant_load._build_cfg_tolerant` | `src/passes/redundant_load.*` | `passes` |
+| `passes/asm_dead_store.py`'s helpers (`mem_dead_after`, `_reads`, `_successors`, ...) | `src/passes/asm_dead_store.*` | `passes::asm_dead_store` |
+| `inc_peephole.is_x_indexed`, `_is_inc_eligible_operand`, `_operands_equal` | `src/passes/inc_peephole.*` | `passes`, `passes::inc_peephole` |
+| `dead_a_arith._flags_reflect_src_reg`, `_writes_reg_setting_n_z` | `src/passes/dead_a_arith.*` | `passes::dead_a_arith` |
+| `passes/call_edges.py` | `src/passes/call_edges.*` | `passes` |
+| `sim.assembler.instruction_size` | `src/sim/assembler.*` | `sim` |
+
+A public Python name keeps its name in `c6502::passes`. A name that
+was private to its module (a leading underscore) and that other
+modules import goes in a namespace named for the module, without the
+underscore, and so do `decimal_arith`'s, which Python always writes
+with the module's name in front (`decimal_arith.reads`). The
+exception is `asm_aliasing._is_zp_symbol` and `_instruction_operands`,
+which became `passes::is_zp_symbol` and `instruction_operands`.
+
+Some of the Python helpers keep caches that C++ does without.
+
+- **The label map.** Every walk of `asm_liveness` and `asm_dead_store`
+  finds jump targets through a map of label indices, and Python keeps
+  the maps of the last eight lists it was given. In C++ each walk has
+  an overload that takes a `LabelMap`, and one that builds it. A pass
+  that asks many questions of one list builds `LabelMap labels(instrs)`
+  once, and builds it again after it changes the list.
+- **The names of each function.** `unreachable_by_pointer` keeps the
+  names each function's instructions call, take the address of, and
+  read, under the ids of the instructions. C++ computes them each time
+  (`function_names`). A pass that calls it often on mostly unchanged
+  programs may want a cache keyed by the function's index and a
+  generation count, since C++ has no object identity to key on.
+
+The walks take the instructions as `passes::Instrs`, a
+`std::span<const asm_ast::Type_instruction>`, so a pass can pass a
+function's vector or a part of one. A `Cfg` keeps index ranges into
+the function's instructions where the Python CFG copies them into its
+blocks, so the function has to outlive the CFG and stay unchanged
+while it is used. `cfg.instructions(id)` gives a block's span. The
+synthetic `Label; Return` blocks that `build_cfg_tolerant` adds for
+targets outside the function live in `cfg.extra`. SSA construction,
+which rewrites blocks in place, will need blocks that own their
+instructions when it is ported.
+
+`sim/assembler.py` stays in Python with the simulator, but
+`instruction_size` is the compiler's, since six passes size code with
+it. It throws `InternalError` with Python's message (`AssemblerError:
+...`) for an instruction the assembler can't encode.
+
+## Checking the helpers
+
+Helpers aren't passes, so they are checked on the inputs the passes
+see. `tools/capture_helpers.py` compiles a corpus (by default the
+examples, the games, and the fuzz seeds, in both modes), wraps every
+pass of the capture harness's table, and evaluates each helper on each
+function the passes are given, in the context of the call: at every
+instruction index for the walks, on every instruction for the
+predicates, on every operand the function contains, and on every pair
+of operands for `may_alias` and `_operands_equal`. Its docstring
+describes the records and `function_values` the encoding of each
+value. `c6502cpp check-helpers <path>...` computes the same values in
+C++ (`src/helper_checks.cpp`) and compares them with the records,
+reporting the number of values compared for each helper.
+
+```sh
+uv run python tools/capture_helpers.py -j 15
+cpp/build/bin/c6502cpp check-helpers captures/helpers
+```
+
+On 19 Nov 2026 the capture of the default corpus (712 compiles, 14 of
+which fail as they do for `capture_passes.py`) took about 15 minutes
+with 15 processes and wrote 48786 function records, 4064 program
+records, and 1827 TAC records in 2.7 GB. `check-helpers` took 9.5
+minutes in one process and compared about 2.1 billion values with no
+difference. Most of them are the matrices over pairs of operands: 255
+million values each for the three `may_alias` contexts and for
+`_operands_equal`, and 200 million each for the three forms of `_reads`
+and for `_writes_same`. Every walk and every predicate of
+`asm_liveness` compared 7.6 million values, `mem_dead_after` 5.2
+million in each context, `unreachable_by_pointer` 80167 names, and
+`call_edges` 46308 instructions. 23 of the functions hold a
+`DecimalArith`, and 39611 records have user zero-page globals in their
+context (Lode Runner's).
+
+A helper that a pass reads should be added to both sides when it is
+ported, so the check covers it.
+
 ## Porting a pass
 
 These conventions apply to every pass ported after
@@ -199,10 +339,12 @@ These conventions apply to every pass ported after
   and a leading underscore dropped. Types are CamelCase, constants
   `kName`. An IR module is aliased as `namespace ir = ::c6502::asm_ast;`.
 - **Signatures.** A pass takes the program by value and returns it,
-  `asm_ast::Program apply_x(asm_ast::Program prog, ...)`, and rewrites
-  a function in place only when it changes something, so a caller that
-  moves the program in copies nothing. Keyword arguments become
-  parameters in the same order, with the Python defaults.
+  `asm_ast::Program apply_x(asm_ast::Program prog, const AsmContext&
+  ctx, ...)`, and rewrites a function in place only when it changes
+  something, so a caller that moves the program in copies nothing. A
+  pass that reads none of the context, such as `split_mem_to_mem`,
+  leaves the parameter out. Keyword arguments become parameters in the
+  same order, with the Python defaults.
 - **Comments.** The module's docstring, rewritten in the project's
   prose rules (full sentences, no "X, not Y"), opens the `.cpp` as a
   block comment, and keeps every reason and every example of a bug the
@@ -234,8 +376,9 @@ These conventions apply to every pass ported after
   since the tests compare them.
 - **Registration and checks.** Each ported pass gets an entry in
   `src/passes/registry.cpp` under its name in
-  `tools/capture_passes.py`'s `PASSES`, with a function that decodes
-  the call's tagged-JSON arguments and returns the result's dump. The
+  `tools/capture_passes.py`'s `PASSES`, with a function that takes the
+  call's context, decodes its tagged-JSON arguments, and returns the
+  result's dump. The
   Python tests of the pass (`tests/test_<name>.py`) are ported to
   `tests/test_<name>.cpp`. A pass is done when `tools/check_captures.py
   <name>` reports no difference on a capture of the whole corpus.
@@ -249,3 +392,13 @@ These conventions apply to every pass ported after
   IRs; the capture harness for the passes of `optimized_asm` from
   `apply_licm` on; and `split_mem_to_mem`, which matches on all 7049
   distinct calls of the corpus.
+- 19 Nov 2026: the helpers that the asm passes share, which are
+  `asm_liveness`, `asm_aliasing`, the parts of `decimal_arith` the asm
+  passes use, the asm CFG and `redundant_load`'s tolerant builder,
+  the helpers other passes import from `asm_dead_store`,
+  `inc_peephole`, and `dead_a_arith`, `call_edges`, and
+  `sim.assembler.instruction_size`. The compile's state that Python
+  keeps in module globals is `AsmContext`, and pass captures record it
+  (version 2). `tools/capture_helpers.py` and `c6502cpp
+  check-helpers` compare every helper on the corpus, about 2.1 billion
+  values with no difference.

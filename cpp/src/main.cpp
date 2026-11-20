@@ -23,6 +23,7 @@
 #include "c99_ast.h"
 #include "capture.h"
 #include "errors.h"
+#include "helper_checks.h"
 #include "json.h"
 #include "passes/registry.h"
 #include "tac_ast.h"
@@ -35,6 +36,7 @@ using namespace c6502;
 const char kUsage[] =
     "usage: c6502cpp roundtrip <module> [<file>]\n"
     "       c6502cpp check-captures [--pass <name>] [--verbose] <path>...\n"
+    "       c6502cpp check-helpers [--verbose] <path>...\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
     "tac_ast, or c99_ast) from <file> or stdin and writes its dump again.\n"
@@ -42,7 +44,11 @@ const char kUsage[] =
     "check-captures reads the capture files under each <path> (a file or a\n"
     "directory), checks that each one's input and output dumps read and\n"
     "write back as the same bytes, and runs each ported pass on its\n"
-    "recorded input, checking the result against the recorded output.\n";
+    "recorded input, checking the result against the recorded output.\n"
+    "\n"
+    "check-helpers reads the records of tools/capture_helpers.py under each\n"
+    "<path>, computes the values of the shared asm helpers in C++, and\n"
+    "compares them with the recorded ones.\n";
 
 std::string read_stdin() {
 #ifdef _WIN32
@@ -211,6 +217,155 @@ int cmd_check_captures(const std::vector<std::string>& args) {
   return (mismatches == 0 && roundtrip_failures == 0) ? 0 : 1;
 }
 
+// The count of one helper's values that `check-helpers` compared.
+struct HelperCount {
+  std::size_t values = 0;
+  std::size_t records = 0;
+  std::size_t mismatches = 0;
+};
+
+// Returns the 0-based offset of the first character where `a` and `b`
+// differ.
+std::size_t first_char_difference(const std::string& a, const std::string& b) {
+  std::size_t i = 0;
+  while (i < a.size() && i < b.size() && a[i] == b[i]) {
+    ++i;
+  }
+  return i;
+}
+
+// Collects the `.txt` files under each path, sorted.
+bool collect_files(const std::vector<std::string>& paths,
+                   std::vector<fs::path>& files) {
+  for (const auto& p : paths) {
+    if (fs::is_directory(p)) {
+      for (const auto& entry : fs::recursive_directory_iterator(p)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".txt") {
+          files.push_back(entry.path());
+        }
+      }
+    } else if (fs::is_regular_file(p)) {
+      files.emplace_back(p);
+    } else {
+      std::fprintf(stderr, "c6502cpp: no such file or directory: %s\n", p.c_str());
+      return false;
+    }
+  }
+  std::sort(files.begin(), files.end());
+  return true;
+}
+
+int cmd_check_helpers(const std::vector<std::string>& args) {
+  bool verbose = false;
+  std::vector<std::string> paths;
+  for (const auto& a : args) {
+    if (a == "--verbose") {
+      verbose = true;
+    } else {
+      paths.push_back(a);
+    }
+  }
+  std::vector<fs::path> files;
+  if (!collect_files(paths, files)) {
+    return 2;
+  }
+  std::map<std::string, HelperCount> counts;
+  std::size_t failures = 0;
+  std::size_t records = 0;
+  for (const auto& path : files) {
+    const std::string text = capture::read_file(path);
+    try {
+      // The header: the version, the source, the context of a function
+      // record, and the kind of the dump that follows.
+      std::size_t pos = 0;
+      const auto line = [&]() {
+        const std::size_t end = text.find('\n', pos);
+        if (end == std::string::npos) {
+          throw std::runtime_error("truncated record");
+        }
+        std::string l = text.substr(pos, end - pos);
+        pos = end + 1;
+        return l;
+      };
+      if (line() != "c6502-helpers 1") {
+        throw std::runtime_error("not a helper record");
+      }
+      const std::string source = line().substr(7);
+      std::string kind = line();
+      std::string context;
+      if (kind.rfind("context ", 0) == 0) {
+        context = kind.substr(8);
+        kind = line();
+      }
+      const std::size_t values_at = text.find("\nvalues\n", pos - 1);
+      if (values_at == std::string::npos) {
+        throw std::runtime_error("no values section");
+      }
+      const std::string dump = text.substr(pos, values_at + 1 - pos);
+      helper_checks::Values recorded;
+      std::size_t vpos = values_at + 8;
+      while (vpos < text.size()) {
+        const std::size_t end = text.find('\n', vpos);
+        const std::string l = text.substr(vpos, end - vpos);
+        const std::size_t sp = l.find(' ');
+        recorded.emplace_back(l.substr(0, sp), l.substr(sp + 1));
+        vpos = end + 1;
+      }
+      helper_checks::Values got;
+      if (kind == "function") {
+        const auto fn = std::get<asm_ast::Function>(
+            asdl::load<asm_ast::Type_top_level>(dump));
+        got = helper_checks::function_values(
+            fn, helper_checks::parse_context(json::parse(context)));
+      } else if (kind == "program") {
+        got = helper_checks::program_values(asdl::load<asm_ast::Program>(dump));
+      } else if (kind == "tac") {
+        const auto fn = std::get<tac_ast::Function>(
+            asdl::load<tac_ast::Type_top_level>(dump));
+        got = helper_checks::tac_values(fn);
+      } else {
+        throw std::runtime_error("unknown record kind " + kind);
+      }
+      ++records;
+      std::map<std::string, std::string> mine(got.begin(), got.end());
+      for (const auto& [name, value] : recorded) {
+        HelperCount& count = counts[name];
+        ++count.records;
+        count.values += helper_checks::value_count(name, value);
+        const auto it = mine.find(name);
+        if (it == mine.end()) {
+          ++count.mismatches;
+          std::printf("MISSING %s (%s): %s\n", path.string().c_str(),
+                      source.c_str(), name.c_str());
+        } else if (it->second != value) {
+          ++count.mismatches;
+          std::printf("MISMATCH %s (%s): %s differs at character %zu\n",
+                      path.string().c_str(), source.c_str(), name.c_str(),
+                      first_char_difference(it->second, value));
+        } else if (verbose) {
+          std::printf("ok %s %s\n", path.string().c_str(), name.c_str());
+        }
+      }
+      if (got.size() != recorded.size()) {
+        ++failures;
+        std::printf("COUNT %s: %zu values recorded, %zu computed\n",
+                    path.string().c_str(), recorded.size(), got.size());
+      }
+    } catch (const std::exception& e) {
+      ++failures;
+      std::printf("ERROR %s: %s\n", path.string().c_str(), e.what());
+    }
+  }
+  std::size_t mismatches = 0;
+  for (const auto& [name, count] : counts) {
+    std::printf("%s: %zu values in %zu records, %zu records differ\n",
+                name.c_str(), count.values, count.records, count.mismatches);
+    mismatches += count.mismatches;
+  }
+  std::printf("%zu records checked\n", records);
+  return (mismatches == 0 && failures == 0) ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -226,6 +381,9 @@ int main(int argc, char** argv) {
     }
     if (command == "check-captures") {
       return cmd_check_captures(args);
+    }
+    if (command == "check-helpers") {
+      return cmd_check_helpers(args);
     }
     if (command == "--help" || command == "-h") {
       std::fputs(kUsage, stdout);

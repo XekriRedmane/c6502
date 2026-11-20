@@ -53,6 +53,25 @@ shares a segment when that's smaller before the link too, when `s +
 3n < n * s`. It looks for the most bytes saved first, adds every
 other function that ends with the same segment, and repeats.
 
+# Cost of the search
+
+The search compares every two ends of every two functions, and for
+each match counts the other functions that end with the same segment.
+It used to compute each segment's normal form again at every
+comparison, and the check that no outside jump goes into a segment
+scanned the whole function each time. Guards.c called `_form` 57,598
+times, a quarter of its compile. The search now keeps a `_Fn` for each
+function object, with its instructions' shapes, the positions that
+name each label, and each segment's form and size once computed. A
+pass that changes a function makes a new `asm_ast.Function`, so a
+`_Fn` is reused only for the object it was made from, across the
+rounds of `apply_shared_tails` too. Two ends are compared only when
+their last instructions have the same shape, since segments that end
+differently can't match, and the other functions that end with a
+form are looked up in a table of each length's forms. The pairs are
+taken in the same order and the first segment with the most bytes
+saved still wins, so the pass chooses the same segments as before.
+
 # Where it runs
 
 Last in `compile.optimized_asm`, after `apply_short_jumps`, which
@@ -84,8 +103,9 @@ def apply_shared_tails(
     `(zp),Y` pointer in a segment may have."""
     top = list(prog.top_level)
     count = 0
+    infos: dict[int, _Fn] = {}
     while True:
-        best = _best_share(top, zp_names, slot_addrs)
+        best = _best_share(top, zp_names, slot_addrs, infos)
         if best is None:
             return asm_ast.Program(top_level=top)
         owner, segments = best
@@ -120,69 +140,189 @@ def apply_shared_tails(
         ))
 
 
-def _eligible(tl) -> bool:
-    return (isinstance(tl, asm_ast.Function)
-            and not any(isinstance(i, asm_ast.FunctionPrologue)
-                        for i in tl.instructions))
+class _Fn:
+    """What `_best_share` reads of one function, computed once per
+    function object: each instruction's shape (`_shape`), which of them
+    may not be in a segment, the positions that name each label, the
+    positions of its ends, and the normal form (`_form`) and size of
+    each segment as it's asked for. A function that changes is a new
+    `asm_ast.Function`, so a `_Fn` stays valid for the object it was
+    made from."""
+
+    def __init__(self, fn, zp_names, slot_addrs) -> None:
+        self.fn = fn
+        instrs = fn.instructions
+        self.instrs = instrs
+        self.zp_names = zp_names
+        self.eligible = not any(
+            isinstance(i, asm_ast.FunctionPrologue) for i in instrs)
+        self.shapes = [_shape(ins) for ins in instrs]
+        self.blocked = [
+            isinstance(ins, asm_ast.JumpTable)
+            or through_slot_pointer(ins, slot_addrs)
+            for ins in instrs
+        ]
+        self.ends = [k for k, ins in enumerate(instrs)
+                     if isinstance(ins, _ENDS)]
+        # The ends of each shape, in order.
+        self.ends_by_shape: dict = {}
+        for k in self.ends:
+            self.ends_by_shape.setdefault(self.shapes[k], []).append(k)
+        # The positions of the jumps and branches to each label.
+        self.refs: dict[str, list[int]] = {}
+        for k, ins in enumerate(instrs):
+            if isinstance(ins, (asm_ast.Branch, asm_ast.Jump)):
+                self.refs.setdefault(ins.target, []).append(k)
+            elif isinstance(ins, asm_ast.JumpTable):
+                for x in ins.targets:
+                    self.refs.setdefault(x, []).append(k)
+        self._forms: dict[tuple[int, int], tuple | None] = {}
+        self._sizes: dict[tuple[int, int], int] = {}
+
+    def form(self, s: int, t: int):
+        """`_form(instrs, s, t, slot_addrs)`, computed once."""
+        key = (s, t)
+        try:
+            return self._forms[key]
+        except KeyError:
+            pass
+        out = self._forms[key] = self._form(s, t)
+        return out
+
+    def _form(self, s: int, t: int):
+        instrs = self.instrs
+        if s > t or s < 0 or t >= len(instrs):
+            return None
+        if isinstance(instrs[s], asm_ast.Label):
+            return None
+        if not isinstance(instrs[t], _ENDS):
+            return None
+        inside = {}
+        n = 0
+        for k in range(s, t + 1):
+            ins = instrs[k]
+            if isinstance(ins, asm_ast.Label):
+                inside[ins.name] = n
+                n += 1
+        out = []
+        shapes = self.shapes
+        blocked = self.blocked
+        for k in range(s, t + 1):
+            if blocked[k]:
+                return None
+            ins = instrs[k]
+            if isinstance(ins, asm_ast.Label):
+                out.append(("label", inside[ins.name]))
+            elif isinstance(ins, asm_ast.Branch):
+                if ins.target not in inside:
+                    return None
+                out.append(("branch", shapes[k][1], inside[ins.target]))
+            elif isinstance(ins, asm_ast.Jump) and ins.target.startswith("."):
+                if ins.target not in inside:
+                    return None
+                out.append(("jump", inside[ins.target]))
+            else:
+                out.append(shapes[k])
+        # Nothing outside the segment may go to a label inside it.
+        for name in inside:
+            for k in self.refs.get(name, ()):
+                if k < s or k > t:
+                    return None
+        return tuple(out)
+
+    def size(self, s: int, t: int) -> int:
+        """The bytes of `instrs[s..t]`."""
+        key = (s, t)
+        size = self._sizes.get(key)
+        if size is None:
+            size = self._sizes[key] = sum(
+                instruction_size(x, zp_names=self.zp_names)
+                for x in self.instrs[s:t + 1])
+        return size
 
 
-def _best_share(top, zp_names=None, slot_addrs=frozenset()):
+def _info(infos, fn, zp_names, slot_addrs) -> _Fn:
+    """The `_Fn` of `fn` in `infos`, made if it isn't there."""
+    info = infos.get(id(fn))
+    if info is None or info.fn is not fn:
+        info = infos[id(fn)] = _Fn(fn, zp_names, slot_addrs)
+    return info
+
+
+def _best_share(top, zp_names=None, slot_addrs=frozenset(), infos=None):
     """`(owner, {key: (function index, start, end)})` for the segment
-    that saves the most bytes, or None."""
-    fns = [(i, tl) for i, tl in enumerate(top) if _eligible(tl)]
-    ends = {i: [k for k, ins in enumerate(tl.instructions)
-                if isinstance(ins, _ENDS)] for i, tl in fns}
+    that saves the most bytes, or None. `infos` keeps each function's
+    `_Fn` between calls."""
+    if infos is None:
+        infos = {}
+    fns = []
+    for i, tl in enumerate(top):
+        if isinstance(tl, asm_ast.Function):
+            info = _info(infos, tl, zp_names, slot_addrs)
+            if info.eligible:
+                fns.append((i, info))
+    # For each segment length, each normal form's first end in each
+    # function, in the order of `fns`.
+    by_length: dict[int, dict] = {}
+
+    def ends_with(length: int, form) -> dict[int, int]:
+        index = by_length.get(length)
+        if index is None:
+            index = by_length[length] = {}
+            for fc, c in fns:
+                for tc in c.ends:
+                    f = c.form(tc - length + 1, tc)
+                    if f is not None:
+                        index.setdefault(f, {}).setdefault(fc, tc)
+        return index.get(form, {})
+
     best = None
     best_gain = 0
     for ai, (fa, a) in enumerate(fns):
         for fb, b in fns[ai + 1:]:
-            for ta in ends[fa]:
-                for tb in ends[fb]:
-                    seg = _common(a.instructions, ta, b.instructions, tb,
-                                  slot_addrs)
+            for ta in a.ends:
+                # Segments that end in different shapes don't match.
+                for tb in b.ends_by_shape.get(a.shapes[ta], ()):
+                    seg = _common(a, ta, b, tb)
                     if seg is None:
                         continue
                     sa, sb, form = seg
-                    size = sum(instruction_size(x, zp_names=zp_names)
-                               for x in a.instructions[sa:ta + 1])
-                    members = {fa: (sa, ta), fb: (sb, tb)}
-                    for fc, c in fns:
-                        if fc in members:
-                            continue
-                        for tc in ends[fc]:
-                            sc = tc - (ta - sa)
-                            if sc >= 0 and _form(
-                                c.instructions, sc, tc, slot_addrs,
-                            ) == form:
-                                members[fc] = (sc, tc)
-                                break
-                    n = len(members)
+                    size = a.size(sa, ta)
+                    length = ta - sa + 1
+                    others = ends_with(length, form)
+                    n = 2 + len(others) - (fa in others) - (fb in others)
                     gain = n * size - (size + 3 * n)
                     if gain > best_gain:
                         best_gain = gain
-                        best = (a.name, {f: (f, s, t)
-                                         for f, (s, t) in members.items()})
+                        members = {fa: (sa, ta), fb: (sb, tb)}
+                        for fc, tc in others.items():
+                            if fc not in members:
+                                members[fc] = (tc - length + 1, tc)
+                        best = (a.fn.name, {f: (f, s, t)
+                                            for f, (s, t) in members.items()})
     return best
 
 
-def _common(a, ta, b, tb, slot_addrs=frozenset()):
+def _common(a: _Fn, ta: int, b: _Fn, tb: int):
     """`(start in a, start in b, normal form)` of the longest matching
     segments that end at `a[ta]` and `b[tb]`, or None."""
+    sa_shapes, sb_shapes = a.shapes, b.shapes
     k = 0
     while (ta - k >= 0 and tb - k >= 0
-           and _shape(a[ta - k]) == _shape(b[tb - k])):
+           and sa_shapes[ta - k] == sb_shapes[tb - k]):
         k += 1
     for length in range(k, 0, -1):
         sa, sb = ta - length + 1, tb - length + 1
-        form = _form(a, sa, ta, slot_addrs)
-        if form is not None and form == _form(b, sb, tb, slot_addrs):
+        form = a.form(sa, ta)
+        if form is not None and form == b.form(sb, tb):
             return sa, sb, form
     return None
 
 
 def _shape(ins):
     """An instruction with its local labels blanked, to find how far
-    back two segments can match."""
+    back two segments can match. An instruction with no label is its
+    `repr`, which is also its entry in a normal form."""
     if isinstance(ins, asm_ast.Label):
         return ("label",)
     if isinstance(ins, asm_ast.Branch):
@@ -190,45 +330,3 @@ def _shape(ins):
     if isinstance(ins, asm_ast.Jump) and ins.target.startswith("."):
         return ("jump",)
     return repr(ins)
-
-
-def _form(instrs, s, t, slot_addrs=frozenset()):
-    """The segment `instrs[s..t]` with its labels numbered in order,
-    or None when it isn't a segment (see the module docstring)."""
-    seg = instrs[s:t + 1]
-    if not seg or isinstance(seg[0], asm_ast.Label):
-        return None
-    if not isinstance(seg[-1], _ENDS):
-        return None
-    inside = {ins.name: n for n, ins in enumerate(
-        x for x in seg if isinstance(x, asm_ast.Label))}
-    out = []
-    for ins in seg:
-        if isinstance(ins, asm_ast.JumpTable):
-            return None
-        if through_slot_pointer(ins, slot_addrs):
-            return None
-        if isinstance(ins, asm_ast.Label):
-            out.append(("label", inside[ins.name]))
-        elif isinstance(ins, asm_ast.Branch):
-            if ins.target not in inside:
-                return None
-            out.append(("branch", repr(ins.cond), inside[ins.target]))
-        elif isinstance(ins, asm_ast.Jump) and ins.target.startswith("."):
-            if ins.target not in inside:
-                return None
-            out.append(("jump", inside[ins.target]))
-        else:
-            out.append(repr(ins))
-    # Nothing outside the segment may go to a label inside it.
-    for k, ins in enumerate(instrs):
-        if s <= k <= t:
-            continue
-        targets = []
-        if isinstance(ins, (asm_ast.Branch, asm_ast.Jump)):
-            targets = [ins.target]
-        elif isinstance(ins, asm_ast.JumpTable):
-            targets = list(ins.targets)
-        if any(x in inside for x in targets):
-            return None
-    return tuple(out)

@@ -241,7 +241,13 @@ this directory:
   each of them ends with `JMP F@tail<n>`, when that's smaller before
   the link too. The linker's `fall_through` puts one of them right
   before it. The new function's symbol is a copy of the first
-  sharer's, for its section.
+  sharer's, for its section. The search keeps each function object's
+  instruction shapes and each segment's normal form and size once
+  computed (`_Fn`), compares two ends only when their last
+  instructions have the same shape, and finds the other functions that
+  end with a form in a table by length, so guards.c's search takes
+  0.06 s where it took a quarter of the compile, with the same choices
+  in the same order.
 - `short_jumps.py` — `apply_short_jumps`. Runs once right after
   `expand_long_branches`. A `JMP .L` or a `JumpTable` entry `.L`
   whose first instruction is a `JMP f` out of the function (no

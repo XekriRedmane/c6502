@@ -22,6 +22,7 @@
 #include "passes/redundant_load.h"
 #include "passes/redundant_store.h"
 #include "passes/registry_args.h"
+#include "passes/self_store_drop.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
 
@@ -156,6 +157,11 @@ std::string run_mem_const_prop(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_mem_const_prop(std::move(input)));
 }
 
+std::string run_self_store_drop(asm_ast::Program input, const AsmContext&,
+                                const json::Value&, const json::Value&) {
+  return asdl::dump(apply_self_store_drop(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -197,6 +203,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"remat", run_remat},
       {"asm_dead_store", run_asm_dead_store},
       {"mem_const_prop", run_mem_const_prop},
+      {"self_store_drop", run_self_store_drop},
   };
   return passes;
 }

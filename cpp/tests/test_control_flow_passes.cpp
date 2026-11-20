@@ -34,9 +34,9 @@
 
 namespace ir = c6502::asm_ast;
 using namespace c6502::passes;
-using asm_text::dump;
-using asm_text::function;
-using asm_text::program;
+using c6502::asm_text::dump;
+using c6502::asm_text::function;
+using c6502::asm_text::top_level;
 
 namespace {
 
@@ -293,10 +293,10 @@ TEST_CASE("shared_tails moves a common tail into a function of its own") {
   const std::string tail = R"(
     Mov(Reg(A) Data("__zpabi_store__v_0" 0) false) Mov(Imm(0) Reg(A) false)
     Mov(Reg(A) Data("__zpabi_store__v_1" 0) false) Jump("store" []))";
-  const auto in = program(R"(Function("g" true [] [Mov(Data("x" 0) Reg(A) false) )" +
+  const auto in = top_level(R"(Function("g" true [] [Mov(Data("x" 0) Reg(A) false) )" +
                           tail + R"(]) Function("h" true [] [Mov(Data("y" 0) Reg(A) false) )" +
                           tail + "])");
-  const auto want = program(R"(
+  const auto want = top_level(R"(
     Function("g" true [] [Mov(Data("x" 0) Reg(A) false) Jump("g@tail0" ["A" "X" "Y"])])
     Function("g@tail0" false [] [)" + tail + R"(])
     Function("h" true [] [Mov(Data("y" 0) Reg(A) false) Jump("g@tail0" ["A" "X" "Y"])]))");
@@ -310,11 +310,11 @@ TEST_CASE("outline_runs calls a run that two functions repeat") {
     Mov(Data("ops" 2) Reg(A) false) Mov(Reg(A) Data("__zpabi_cs__b_0" 0) false)
     Mov(Data("ops" 3) Reg(A) false) Mov(Reg(A) Data("__zpabi_cs__b_1" 0) false)
     Call("cs" [] []))";
-  const auto in = program(R"(Function("g" true [] [)" + setup +
+  const auto in = top_level(R"(Function("g" true [] [)" + setup +
                           R"( Mov(Reg(A) Data("r" 0) false) Return(false false false)])
     Function("h" true [] [)" + setup +
                           R"( Mov(Reg(A) Data("s" 0) false) Return(false false false)]))");
-  const auto want = program(R"(
+  const auto want = top_level(R"(
     Function("g" true [] [Call("g@run0" [] []) Mov(Reg(A) Data("r" 0) false)
       Return(false false false)])
     Function("g@run0" false [] [
@@ -351,7 +351,7 @@ TEST_CASE("slot_coalescing gives a copy of a parameter the parameter's slot") {
 }
 
 TEST_CASE("ret_slot_coalescing keeps a copy of F@ret in F@ret") {
-  const auto in = program(R"(
+  const auto in = top_level(R"(
     StaticVariable("g@ret" false [ZeroInit(2)])
     Function("g" true [] [Mov(Imm(1) Reg(A) false) Mov(Reg(A) Data("g@ret" 0) false)
       Mov(Reg(A) Data("g@ret" 1) false) Return(false false false)])
@@ -360,7 +360,7 @@ TEST_CASE("ret_slot_coalescing keeps a copy of F@ret in F@ret") {
       Mov(Reg(A) Data("__local_f__p_1" 0) false) Inc(Data("__local_f__p_0" 0))
       Mov(Data("__local_f__p_0" 0) Reg(A) false) Mov(Data("__local_f__p_1" 0) Reg(X) false)
       Return(true true false)]))");
-  const auto want = program(R"(
+  const auto want = top_level(R"(
     StaticVariable("g@ret" false [ZeroInit(2)])
     Function("g" true [] [Mov(Imm(1) Reg(A) false) Mov(Reg(A) Data("g@ret" 0) false)
       Mov(Reg(A) Data("g@ret" 1) false) Return(false false false)])

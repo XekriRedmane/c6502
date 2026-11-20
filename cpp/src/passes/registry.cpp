@@ -25,6 +25,14 @@
 #include "passes/self_store_drop.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
+#include "passes/carry_inc.h"
+#include "passes/dec_inc_branch_fold.h"
+#include "passes/dec_peephole.h"
+#include "passes/inc_low_byte_test.h"
+#include "passes/inc_peephole.h"
+#include "passes/self_store_drop.h"
+#include "passes/split_mem_to_mem.h"
+#include "passes/sub1_test_zero_peephole.h"
 
 namespace c6502::passes {
 
@@ -162,6 +170,36 @@ std::string run_self_store_drop(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_self_store_drop(std::move(input)));
 }
 
+std::string run_inc_peephole(asm_ast::Program input, const AsmContext&,
+                             const json::Value&, const json::Value&) {
+  return asdl::dump(apply_inc_peephole(std::move(input)));
+}
+
+std::string run_inc_low_byte_test(asm_ast::Program input, const AsmContext&,
+                                  const json::Value&, const json::Value&) {
+  return asdl::dump(apply_inc_low_byte_test(std::move(input)));
+}
+
+std::string run_carry_inc(asm_ast::Program input, const AsmContext&,
+                          const json::Value&, const json::Value&) {
+  return asdl::dump(apply_carry_inc_peephole(std::move(input)));
+}
+
+std::string run_dec_peephole(asm_ast::Program input, const AsmContext&,
+                             const json::Value&, const json::Value&) {
+  return asdl::dump(apply_dec_peephole(std::move(input)));
+}
+
+std::string run_sub1_test_zero(asm_ast::Program input, const AsmContext&,
+                               const json::Value&, const json::Value&) {
+  return asdl::dump(apply_sub1_test_zero_peephole(std::move(input)));
+}
+
+std::string run_dec_inc_branch_fold(asm_ast::Program input, const AsmContext&,
+                                    const json::Value&, const json::Value&) {
+  return asdl::dump(apply_dec_inc_branch_fold(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -203,7 +241,13 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"remat", run_remat},
       {"asm_dead_store", run_asm_dead_store},
       {"mem_const_prop", run_mem_const_prop},
+      {"inc_peephole", run_inc_peephole},
+      {"inc_low_byte_test", run_inc_low_byte_test},
+      {"carry_inc", run_carry_inc},
+      {"dec_peephole", run_dec_peephole},
+      {"sub1_test_zero", run_sub1_test_zero},
       {"self_store_drop", run_self_store_drop},
+      {"dec_inc_branch_fold", run_dec_inc_branch_fold},
   };
   return passes;
 }

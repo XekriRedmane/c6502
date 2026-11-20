@@ -1,0 +1,242 @@
+// Fuses a subtract of 1 with the test of its operand against zero.
+//
+// A post-decrement loop test such as
+//
+//     for (uint8_t i = N; i-- > 0; ) { ... }
+//
+// is lowered through TAC's `JumpIfCmp(LessOrEqual, i, 0)` to asm that
+// computes `i - 1` with an SBC and tests `i` against 0 separately with
+// `LDA #0; CMP i`:
+//
+//     LDA M       ; load i (M is the induction variable's storage)
+//     SEC
+//     SBC #$01    ; A = i - 1
+//     Mov(A, dst) ; store the new value (usually TAX or STA tmp)
+//     LDA #$00
+//     CMP M       ; test i against 0 (C = 1 exactly when 0 >= M, M == 0)
+//     Branch      ; BCC .skip / JMP .break (the long form), or BCS .break
+//
+// The SBC already sets C with the opposite of the information the test
+// needs:
+//
+//   * After the SBC, C = 1 exactly when M >= 1, and C = 0 (a borrow)
+//     exactly when M == 0.
+//   * After the compare against 0, C = 1 exactly when 0 >= M, which is
+//     when M == 0.
+//
+// So the `LDA #0; CMP M` pair can go, with the branch reading the SBC's
+// C and its sense flipped:
+//
+//   * `Branch(CC, target)` (the long form that skips the break when M is
+//     positive) becomes `Branch(CS, target)`.
+//   * `Branch(CS, target)` (the unexpanded form that breaks when M is
+//     zero) becomes `Branch(CC, target)`.
+//   * A branch on Z after the compare isn't flipped. Z is set exactly
+//     when M == 0 after the compare against 0, and the SBC sets Z
+//     exactly when M - 1 == 0, which is when M == 1, a different
+//     condition, so those are skipped.
+//
+// Eligibility
+//
+// The pattern is seven consecutive instructions:
+//
+//     Mov(M, Reg(A))         # i0: load the induction variable
+//     SetCarry               # i1
+//     Sub(Imm(1), Reg(A))    # i2: A = M - 1
+//     Mov(Reg(A), <dst>)     # i3: the new value goes somewhere
+//     Mov(Imm(0), Reg(A))    # i4: LDA #0
+//     Compare(Reg(A), M)     # i5: CMP M (the same M)
+//     Branch(CC|CS, target)  # i6
+//
+//   * M in i0 and i5 is the same `Data`, `ZP`, or `Pseudo` operand.
+//   * <dst> in i3 isn't M. The in-place form is `dec_peephole`'s.
+//   * The branch is on CC or CS only. C has the opposite meaning after
+//     the compare against 0 and after the SBC, and Z and N don't
+//     correspond.
+//   * A, N, Z, and C are dead on both successors of the branch. In the
+//     original, A holds 0 after it, N and Z come from the CMP, and C is
+//     set exactly when M == 0. After the rewrite A holds M - 1, N and Z
+//     come from the SBC, and C is set exactly when M != 0.
+//
+// The rewrite drops i4 (`LDA #0`) and i5 (`CMP M`) and flips the
+// branch, so seven instructions become five.
+//
+// Where it runs
+//
+// After `replace_pseudoregisters` (so M is concrete) and after
+// `inc_peephole` and `dec_peephole` (so the in-place case is gone), and
+// before `expand_long_branches`, since the rewrite only shrinks code.
+#include "passes/sub1_test_zero_peephole.h"
+
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include "passes/asm_liveness.h"
+
+namespace c6502::passes {
+
+namespace {
+
+namespace ir = ::c6502::asm_ast;
+using ::c6502::asdl::as;
+using ::c6502::asdl::isa;
+
+bool is_reg_a_op(const ir::Type_operand& op) {
+  const auto* r = as<ir::Reg>(op);
+  return r != nullptr && isa<ir::A>(r->reg);
+}
+
+bool is_imm(const ir::Type_operand& op, int value) {
+  const auto* imm = as<ir::Imm>(op);
+  return imm != nullptr && imm->value == value;
+}
+
+// Returns whether `op` can be both a `Mov`'s source and a `Compare`'s
+// right operand. CMP has zero-page, absolute, and immediate forms, and
+// `Pseudo` is taken too, so the peephole can match before the pseudo-
+// registers are replaced with concrete slots. What makes the rewrite
+// sound is that the operand is the same in both places.
+bool is_compareable_operand(const ir::Type_operand& op) {
+  return isa<ir::Data, ir::ZP, ir::Pseudo>(op);
+}
+
+bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
+  if (const auto* da = as<ir::Data>(a)) {
+    const auto* db = as<ir::Data>(b);
+    return db != nullptr && da->name == db->name && da->offset == db->offset;
+  }
+  if (const auto* za = as<ir::ZP>(a)) {
+    const auto* zb = as<ir::ZP>(b);
+    return zb != nullptr && za->address == zb->address && za->offset == zb->offset;
+  }
+  if (const auto* pa = as<ir::Pseudo>(a)) {
+    const auto* pb = as<ir::Pseudo>(b);
+    return pb != nullptr && pa->name == pb->name && pa->offset == pb->offset;
+  }
+  return false;
+}
+
+// Returns the index of the first `Label` named `name`, or nothing when
+// the function has no such label.
+std::optional<std::size_t> label_index(Instrs instrs, const std::string& name) {
+  for (std::size_t k = 0; k < instrs.size(); ++k) {
+    const auto* label = as<ir::Label>(instrs[k]);
+    if (label != nullptr && label->name == name) {
+      return k;
+    }
+  }
+  return std::nullopt;
+}
+
+// Returns whether A, N, Z, and C, the values the rewrite changes, are
+// all dead at `instrs[idx]`. A path that leaves the end of the
+// instructions reads nothing.
+bool outputs_dead_at(Instrs instrs, const LabelMap& labels, std::size_t idx) {
+  if (idx >= instrs.size()) {
+    return true;
+  }
+  return a_dead_at(instrs, labels, idx) && flags_dead_at(instrs, labels, idx) &&
+         c_dead_at(instrs, labels, idx);
+}
+
+// Matches the seven instructions at `instrs[start]` and returns the
+// branch that replaces the last three (the first four stay), or
+// nothing.
+std::optional<ir::Branch> try_match(Instrs instrs, const LabelMap& labels, std::size_t start) {
+  if (start + 7 > instrs.size()) {
+    return std::nullopt;
+  }
+  const auto* i0 = as<ir::Mov>(instrs[start]);
+  if (i0 == nullptr || i0->is_volatile || !is_reg_a_op(i0->dst) ||
+      !is_compareable_operand(i0->src)) {
+    return std::nullopt;
+  }
+  const ir::Type_operand& m = i0->src;
+  if (!isa<ir::SetCarry>(instrs[start + 1])) {
+    return std::nullopt;
+  }
+  const auto* i2 = as<ir::Sub>(instrs[start + 2]);
+  if (i2 == nullptr || !is_imm(i2->src, 1) || !is_reg_a_op(i2->dst)) {
+    return std::nullopt;
+  }
+  // The store of the new value goes somewhere other than M, since the
+  // in-place form is dec_peephole's.
+  const auto* i3 = as<ir::Mov>(instrs[start + 3]);
+  if (i3 == nullptr || !is_reg_a_op(i3->src) || operands_equal(i3->dst, m)) {
+    return std::nullopt;
+  }
+  const auto* i4 = as<ir::Mov>(instrs[start + 4]);
+  if (i4 == nullptr || !is_imm(i4->src, 0) || !is_reg_a_op(i4->dst)) {
+    return std::nullopt;
+  }
+  const auto* i5 = as<ir::Compare>(instrs[start + 5]);
+  if (i5 == nullptr || !is_reg_a_op(i5->left) || !operands_equal(i5->right, m)) {
+    return std::nullopt;
+  }
+  // Only C has the opposite meaning after the compare against 0 and
+  // after the SBC, so a branch on EQ, NE, MI, PL, VC, or VS is left
+  // alone.
+  const auto* i6 = as<ir::Branch>(instrs[start + 6]);
+  if (i6 == nullptr) {
+    return std::nullopt;
+  }
+  ir::Type_condition flipped;
+  if (isa<ir::CC>(i6->cond)) {
+    flipped = ir::CS{};
+  } else if (isa<ir::CS>(i6->cond)) {
+    flipped = ir::CC{};
+  } else {
+    return std::nullopt;
+  }
+  // After the branch the original leaves A = 0, N and Z from the `CMP`,
+  // and C set exactly when M == 0. The rewrite leaves A = M - 1, N and
+  // Z from the `SBC` (or from the `TAX` / `TAY` of i3), and C set
+  // exactly when M != 0. So all four must be dead on both successors.
+  const std::optional<std::size_t> taken = label_index(instrs, i6->target);
+  if (!taken) {
+    return std::nullopt;
+  }
+  if (!outputs_dead_at(instrs, labels, start + 7) || !outputs_dead_at(instrs, labels, *taken)) {
+    return std::nullopt;
+  }
+  return ir::Branch{.cond = flipped, .target = i6->target};
+}
+
+void rewrite_function(ir::Function& fn) {
+  const auto& instrs = fn.instructions;
+  const LabelMap labels(instrs);
+  std::vector<ir::Type_instruction> out;
+  bool changed = false;
+  std::size_t i = 0;
+  while (i < instrs.size()) {
+    std::optional<ir::Branch> branch = try_match(instrs, labels, i);
+    if (!branch) {
+      out.push_back(instrs[i]);
+      ++i;
+      continue;
+    }
+    for (std::size_t k = 0; k < 4; ++k) {
+      out.push_back(instrs[i + k]);
+    }
+    out.push_back(std::move(*branch));
+    changed = true;
+    i += 7;
+  }
+  if (changed) {
+    fn.instructions = std::move(out);
+  }
+}
+
+}  // namespace
+
+asm_ast::Program apply_sub1_test_zero_peephole(asm_ast::Program prog) {
+  for (auto& tl : prog.top_level) {
+    if (auto* fn = as<ir::Function>(tl)) {
+      rewrite_function(*fn);
+    }
+  }
+  return prog;
+}
+
+}  // namespace c6502::passes

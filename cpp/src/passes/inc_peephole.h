@@ -1,10 +1,18 @@
-// The helpers of passes/inc_peephole.py that other passes import. The
-// pass itself isn't ported yet.
+// The port of passes/inc_peephole.py: the multi-byte INC peephole, and
+// the operand tests that other passes import from it.
 #pragma once
 
 #include "asm_ast.h"
 
 namespace c6502::passes {
+
+// Rewrites every in-place add of 1 to a value in memory or in X or Y
+// (the per-byte ADC chain `tac_to_asm` writes for it) in the program's
+// functions to an `INC; BNE done; INC; ...; done:` chain, where the
+// operands allow it. The labels it adds are numbered past every
+// `.inc_done@N` already in the program. The comment at the top of
+// inc_peephole.cpp gives the rules.
+asm_ast::Program apply_inc_peephole(asm_ast::Program prog);
 
 // Returns whether `op` is an array element indexed by X,
 // `IndexedData(name, k, X)`, the one indexed form that `INC`, `DEC`,

@@ -14,6 +14,7 @@
 #include "passes/loop_invariant_a.h"
 #include "passes/promote_loop_carried_to_a.h"
 #include "passes/rotate_loop_test.h"
+#include "passes/registry_control_flow.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
 
@@ -127,6 +128,24 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"dual_index_promotion", run_dual_index_promotion},
       {"loop_invariant_a", run_loop_invariant_a},
       {"rotate_loop_test", run_rotate_loop_test},
+      {"dead_label_drop", registry::run_dead_label_drop},
+      {"unreachable_drop", registry::run_unreachable_drop},
+      {"branch_invert", registry::run_branch_invert},
+      {"branch_to_next_drop", registry::run_branch_to_next_drop},
+      {"branch_through_jump", registry::run_branch_through_jump},
+      {"branch_thread", registry::run_branch_thread},
+      {"branch_value_thread", registry::run_branch_value_thread},
+      {"tail_call", registry::run_tail_call},
+      {"tail_merge", registry::run_tail_merge},
+      {"cross_jump", registry::run_cross_jump},
+      {"slot_coalescing", registry::run_slot_coalescing, true},
+      {"ret_slot_coalescing", registry::run_ret_slot_coalescing},
+      {"jump_tables", registry::run_jump_tables},
+      {"copy_through_index", registry::run_copy_through_index},
+      {"long_branches", registry::run_long_branches},
+      {"short_jumps", registry::run_short_jumps},
+      {"shared_tails", registry::run_shared_tails},
+      {"outline_runs", registry::run_outline_runs},
   };
   return passes;
 }

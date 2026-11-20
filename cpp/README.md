@@ -384,6 +384,56 @@ These conventions apply to every pass ported after
   `tests/test_<name>.cpp`. A pass is done when `tools/check_captures.py
   <name>` reports no difference on a capture of the whole corpus.
 
+## The control-flow and whole-program passes
+
+The branch and jump peepholes of the fixed point (`dead_label_drop`,
+`unreachable_drop`, `branch_invert`, `branch_to_next_drop`,
+`branch_through_jump`, `branch_thread`, `branch_value_thread`,
+`tail_call`, `tail_merge`, `cross_jump`) and the passes after it
+(`apply_slot_coalescing`, `apply_ret_slot_coalescing`,
+`apply_jump_tables`, `apply_copy_through_index`,
+`expand_long_branches`, `apply_short_jumps`, `apply_shared_tails`,
+`apply_outline_runs`) each have a file of their own under
+`src/passes/`. Their registry entries are in
+`src/passes/registry_control_flow.*`, and their tests in
+`tests/test_control_flow_passes.cpp`, with `tests/asm_text.h`, which
+builds a test's program from the dump format. These pieces are shared
+among them.
+
+- `next_label_number` (`src/passes/label_numbers.*`) gives the number
+  after the largest of a label family such as `.thread@N` in the
+  program, which `branch_thread`, `branch_value_thread`, `cross_jump`,
+  and `jump_table` start their counters from, as the Python passes do
+  with a regular expression.
+- `for_each_operand_mut` (`src/passes/operand_rewrite.h`) visits every
+  operand of an instruction so that it can be changed in place, which
+  is what the generic `_rename` of `slot_coalescing` and
+  `ret_slot_coalescing` does over a dataclass's fields.
+- `long_branches::invert` gives a branch's opposite condition, as
+  Python's `_invert` does.
+- `slot_coalescing::excluded`, `successors`, and `copy_sources` are the
+  helpers `ret_slot_coalescing` imports.
+
+`apply_copy_through_index` is in `src/passes/copy_through_index.*`,
+since the other pass of `via_a_store_fold.py` belongs to the sweep and
+was ported apart from it.
+
+The Python passes that key by `repr` (`tail_merge`'s tails,
+`shared_tails`' shapes and normal forms, `outline_runs`' runs) key by
+the dump in C++, which is equal for two values exactly when the
+`repr`s are. `shared_tails` and `outline_runs` add each function they
+make to the symbol table Python passes them. The C++ passes report
+each one as a `NewFunction`, the new name and the function whose
+symbol it copies, for the caller to do the same.
+`apply_slot_coalescing` returns the program and the slots each
+function now writes, as Python's tuple does, and its registry entry
+writes the pair as the tagged JSON of the capture (`json_quote` writes
+a string as Python's `json.dumps` does). `branch_value_thread` keeps
+what it knows of a byte in the order it learned it, where Python keeps
+a set: two different equalities for one byte can only be known on a
+path that no run takes, and the corpus has no call where the order
+changes the result.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -413,3 +463,9 @@ These conventions apply to every pass ported after
   most of the pipeline's passes to 7051 of `element_in_place`.
   `long_branches._invert`, which `rotate_loop_test` reads, is
   `passes::invert_condition` in `src/passes/branch_condition.*`.
+- 20 Nov 2026: the control-flow and whole-program passes: the ten
+  branch and jump peepholes of the fixed point from `dead_label_drop`
+  to `cross_jump`, slot coalescing for parameters and for `F@ret`, jump
+  tables, copies through an index register, long branches, short
+  jumps, shared tails, and outlined runs. Each matches the Python pass
+  on every distinct call of the corpus.

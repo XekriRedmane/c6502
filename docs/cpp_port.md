@@ -114,3 +114,13 @@ stages land.
   most of the pipeline's passes to 7051 of `element_in_place`.
   `long_branches._invert`, which `rotate_loop_test` reads, is
   `passes::invert_condition` in `src/passes/branch_condition.*`.
+- 20 Nov 2026: the control-flow and whole-program passes of stage 2,
+  which are the branch and jump peepholes (`dead_label_drop`,
+  `unreachable_drop`, `branch_invert`, `branch_to_next_drop`,
+  `branch_through_jump`, `branch_thread`, `branch_value_thread`,
+  `tail_call`, `tail_merge`, `cross_jump`), `slot_coalescing`,
+  `ret_slot_coalescing`, `jump_table`, `copy_through_index`,
+  `long_branches`, `short_jumps`, `shared_tails`, and `outline_runs`.
+  Each matches the Python pass on every distinct call that the default
+  corpus makes of it, 60,282 calls in all (cpp/README.md, "The
+  control-flow and whole-program passes").

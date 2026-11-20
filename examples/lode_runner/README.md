@@ -12,7 +12,7 @@ It plays Lode Runner. On three scripted runs, the attract mode's demo,
 a game that ends in the high-score table, and a session in the level
 editor, it makes the same soft-switch accesses and RWTS calls as the
 original, with the same two high-resolution pages at each one, and
-leaves the same disk (see "How it's compared"). It is 168 bytes
+leaves the same disk (see "How it's compared"). It is 190 bytes
 smaller than the code and data it translates (see "Size"). The
 linker script puts the editor and the code of the high-score table
 in `$9000`-`$9AFF`, which the original never touches.
@@ -111,15 +111,15 @@ lines of `main.asm` it translates:
 | `level.c` | 743 | 12 | 819 | 11 | +9.9% |
 | `player.c` | 1435 | 93 | 1232 | 93 | -13.3% |
 | `input.c` | 866 | 52 | 906 | 11 | -0.1% |
-| `guards.c` | 2343 | 75 | 2164 | 65 | -7.8% |
+| `guards.c` | 2343 | 75 | 2144 | 65 | -8.6% |
 | `timers.c` | 431 | 9 | 475 | 9 | +10.0% |
 | `screen.c` | 474 | 29 | 451 | 36 | -3.2% |
 | `hiscore.c` | 511 | 110 | 561 | 99 | +6.3% |
 | `editor.c` | 1113 | 787 | 1239 | 740 | +4.2% |
 | `sprites.c` | 598 | 31 | 561 | 24 | -7.0% |
-| `sound.c` | 176 | 16 | 194 | 16 | +9.4% |
+| `sound.c` | 176 | 16 | 192 | 16 | +8.3% |
 | `wipe.c` | 856 | 345 | 901 | 371 | +5.9% |
-| **Total** | **10084** | **1720** | **10090** | **1546** | **-1.4%** |
+| **Total** | **10084** | **1720** | **10068** | **1546** | **-1.6%** |
 
 The original's bytes come from dasm's listing of its source. A line of
 `HEX`, `DC`, `DS`, or `BYTE` counts as data, and every other line that

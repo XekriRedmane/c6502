@@ -161,7 +161,7 @@ file's code and data together against the original's.
 | `main.c` | 381 | 2 | 347 | 0 | -9.4% |
 | `init.c` | 972 | 355 | 806 | 362 | -12.0% |
 | `turn.c` | 616 | 6 | 1111 | 0 | +78.6% |
-| `input.c` | 1639 | 1313 | 1679 | 1256 | -0.6% |
+| `input.c` | 1639 | 1313 | 1675 | 1256 | -0.7% |
 | `combat.c` | 2856 | 23 | 2924 | 0 | +1.6% |
 | `ai.c` | 1223 | 18 | 1346 | 27 | +10.6% |
 | `events.c` | 1542 | 8 | 1584 | 0 | +2.2% |
@@ -172,12 +172,12 @@ file's code and data together against the original's.
 | `text.c` | 553 | 8 | 605 | 0 | +7.8% |
 | `sound.c` | 337 | 64 | 436 | 0 | +8.7% |
 | `hrcg.c` | 1141 | 907 | 813 | 790 | -21.7% |
-| **Total** | **14551** | **2874** | **14840** | **2456** | **-0.7%** |
+| **Total** | **14551** | **2874** | **14836** | **2456** | **-0.8%** |
 
 The C counts are the symbol sizes of each unit's `-c -O` object
 (`nm.py -S`), and they leave out the `__zp_init` the linker writes.
 The link also adds the runtime library's `bin16_to_bcd`, 46 bytes of
-code, which brings the C program's code to 14,886 bytes, 2.3% more
+code, which brings the C program's code to 14,882 bytes, 2.3% more
 than the original's. `hrcg.c` leaves out the HRCG's entry points and control
 characters that the game never uses.
 

@@ -33,13 +33,20 @@
 #include "passes/carry_recompute.h"
 #include "passes/carry_return.h"
 #include "passes/const_arith_fold.h"
+#include "passes/constant_store_order.h"
+#include "passes/cpx_cpy_peephole.h"
+#include "passes/dead_a_arith.h"
+#include "passes/dead_pha_pla.h"
 #include "passes/dec_branch_indirect_y_fold.h"
 #include "passes/dec_inc_branch_fold.h"
 #include "passes/dec_peephole.h"
+#include "passes/direct_index_load.h"
 #include "passes/inc_low_byte_test.h"
 #include "passes/inc_peephole.h"
 #include "passes/label_offset_fold.h"
+#include "passes/redundant_load_after_rmw.h"
 #include "passes/self_store_drop.h"
+#include "passes/shift_in_a.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/sub1_test_zero_peephole.h"
 #include "passes/volatile_void_read_cmp.h"
@@ -274,6 +281,41 @@ std::string run_carry_known(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_carry_known(std::move(input)));
 }
 
+std::string run_direct_index_load(asm_ast::Program input, const AsmContext&,
+                                  const json::Value&, const json::Value&) {
+  return asdl::dump(apply_direct_index_load(std::move(input)));
+}
+
+std::string run_dead_pha_pla(asm_ast::Program input, const AsmContext&,
+                             const json::Value&, const json::Value&) {
+  return asdl::dump(apply_dead_pha_pla(std::move(input)));
+}
+
+std::string run_cpx_cpy(asm_ast::Program input, const AsmContext& ctx,
+                        const json::Value&, const json::Value&) {
+  return asdl::dump(apply_cpx_cpy_peephole(std::move(input), ctx));
+}
+
+std::string run_shift_in_a(asm_ast::Program input, const AsmContext&,
+                           const json::Value&, const json::Value&) {
+  return asdl::dump(apply_shift_in_a(std::move(input)));
+}
+
+std::string run_redundant_load_after_rmw(asm_ast::Program input, const AsmContext&,
+                                         const json::Value&, const json::Value&) {
+  return asdl::dump(apply_redundant_load_after_rmw(std::move(input)));
+}
+
+std::string run_constant_store_order(asm_ast::Program input, const AsmContext&,
+                                     const json::Value&, const json::Value&) {
+  return asdl::dump(apply_constant_store_order(std::move(input)));
+}
+
+std::string run_dead_a_arith(asm_ast::Program input, const AsmContext&,
+                             const json::Value&, const json::Value&) {
+  return asdl::dump(apply_dead_a_arith_elimination(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -322,6 +364,13 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"carry_inc", run_carry_inc},
       {"dec_peephole", run_dec_peephole},
       {"sub1_test_zero", run_sub1_test_zero},
+      {"direct_index_load", run_direct_index_load},
+      {"dead_pha_pla", run_dead_pha_pla},
+      {"cpx_cpy", run_cpx_cpy},
+      {"shift_in_a", run_shift_in_a},
+      {"redundant_load_after_rmw", run_redundant_load_after_rmw},
+      {"constant_store_order", run_constant_store_order},
+      {"dead_a_arith", run_dead_a_arith},
       {"volatile_void_read_cmp", run_volatile_void_read_cmp},
       {"dec_branch_indirect_y_fold", run_dec_branch_indirect_y_fold},
       {"const_arith_fold", run_const_arith_fold},

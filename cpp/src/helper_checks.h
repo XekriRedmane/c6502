@@ -43,6 +43,17 @@ Values program_values(const asm_ast::Program& prog);
 // Returns `call_edges`'s values on the TAC function `fn`.
 Values tac_values(const tac_ast::Function& fn);
 
+// Returns the values `stage_values` in tools/capture_helpers.py gives
+// for the code generation helpers on a `tables` record, whose JSON
+// object `v` holds the TAC program, the symbol and type tables, the
+// shares, and the runtime layout that `find_shares` was given and
+// returned (src/stage_helper_checks.cpp).
+Values stage_values(const json::Value& v);
+
+// Returns `parse_pseudo_name` of each name of a `pseudos` record, whose
+// JSON object `v` holds the names.
+Values pseudo_values(const json::Value& v);
+
 // Returns how many values the recorded value of helper `name` holds:
 // the number of fields separated by spaces for a helper whose value is
 // a list, one for a CFG and for the count of operands, and otherwise

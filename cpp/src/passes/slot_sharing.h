@@ -7,12 +7,14 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "asm_ast.h"
 #include "ordered_map.h"
 #include "passes/asm_context.h"
+#include "tac_ast.h"
 
 namespace c6502::passes {
 
@@ -54,5 +56,26 @@ using Bindings = OrderedMap<std::string, OrderedMap<std::string, std::vector<std
 // that never assign the parameter, so such a write would be one that a
 // pass after it made up.
 void check_shares(const asm_ast::Program& prog, const std::vector<SlotShare>& shares);
+
+// Each function a program defines, in the program's order, with every
+// function it can call, directly or not.
+using ReachSets = OrderedMap<std::string, NameSet>;
+
+// Returns each function defined in `prog` mapped to every function it
+// can call, directly or not. A function without a body here is a leaf.
+// A call that abandons its caller isn't followed (call_edges.h), since
+// the caller and the functions it was called from are never on the call
+// stack with the callee again.
+ReachSets reach_sets(const tac_ast::Program& prog);
+
+// Returns whether `a` and `b` can be on the call stack together: they
+// are the same function, or one can call the other.
+bool coexist(std::string_view a, std::string_view b, const ReachSets& reach);
+
+// Returns the indices in `shares` of the shares whose bytes `fn`'s own
+// bytes must avoid, those with a function that can be on the call stack
+// with `fn`, in order. Python returns the shares themselves.
+std::vector<std::size_t> share_conflicts(std::string_view fn, const std::vector<SlotShare>& shares,
+                                         const ReachSets& reach);
 
 }  // namespace c6502::passes

@@ -41,6 +41,17 @@ A function record is text with LF line endings:
 and a program or TAC record is the same with `program` or `tac` in
 place of `function` and no context line. Each value is one line, and
 `function_values` describes the encoding of each.
+
+The helpers that the code generation passes share (step 4 of the port,
+docs/cpp_port.md) have two more records, which `--stage-only` makes
+without the others. A `tables` record, made at each call of
+`find_shares`, holds one line of tagged JSON (tools/capture_passes.py's
+`encode`) with the TAC program, the symbol table, the type table, the
+shares `find_shares` returned, and the runtime's layout, and
+`stage_values` gives its values. A `pseudos` record, made at each call
+of `replace_pseudoregisters` and `replace_program_bare_exit`, holds the
+names of the pseudos of the program and of the colorings, and
+`pseudo_values` gives `parse_pseudo_name` of each.
 """
 from __future__ import annotations
 
@@ -425,6 +436,99 @@ def tac_values(fn) -> list[tuple[str, str]]:
     ]
 
 
+def _val_text(v) -> str:
+    """A TAC value in the stage records: a `Var`'s name, or `#` and a
+    constant's dump with `_` for each space."""
+    import tac_ast
+    if isinstance(v, tac_ast.Var):
+        return v.name
+    return "#" + _dump1(v).replace(" ", "_")
+
+
+def _fields(xs) -> str:
+    """A list of fields in the stage records, with "-" for an empty
+    field."""
+    return " ".join(x or "-" for x in xs) or "-"
+
+
+def stage_values(tac, symbols, types, shares, layout) -> list[tuple[str, str]]:
+    """The values of the helpers that the code generation passes share
+    (step 4 of the port), on the TAC program, the tables, and the shares
+    `find_shares` is given and returns. Each is a list of fields, one per
+    symbol, member, instruction, or function, separated by spaces, with
+    the items of a field separated by commas and "-" for an empty one."""
+    import tac_ast
+    from passes.optimization.var_visit import (
+        count_uses, defs_in, uses_in, vals_in,
+    )
+    from passes.replace_pseudoregisters import size_of_name, sizeof
+    from passes.runtime_layout import RuntimeLayout
+    from passes.slot_sharing import coexist, reach_sets, share_conflicts
+    from passes.type_checking import FunAttr
+    from passes.zp_slot_naming import param_slot_symbols, source_spelling
+    names = [n for n, _ in symbols.items()]
+    fns = [tl for tl in tac.top_level if isinstance(tl, tac_ast.Function)]
+    instrs = [i for fn in fns for i in fn.instructions]
+
+    def slots_of(fn):
+        sym = symbols.get(fn.name)
+        if sym is None or not isinstance(sym.attrs, FunAttr):
+            return "-"
+        return _try(lambda: ",".join(param_slot_symbols(
+            fn.name, list(fn.params),
+            [sizeof(p, types) for p in sym.type.params],
+        )))
+
+    reach = reach_sets(tac)
+    keys = list(reach)
+    return [
+        ("size_of_name", _fields(
+            str(size_of_name(n, symbols, types)) for n in names)),
+        ("size_of_name_untyped", _fields(
+            str(size_of_name(n, symbols, None)) for n in names)),
+        ("sizeof_members", _fields(
+            ",".join(str(sizeof(m.type, types)) for m in layout_.members)
+            for _, layout_ in types.items())),
+        ("source_spelling", _fields(source_spelling(n) for n in names)),
+        ("param_slot_symbols", _fields(slots_of(fn) for fn in fns)),
+        ("vals_in", _fields(
+            ",".join(_val_text(v) for v in vals_in(i)) for i in instrs)),
+        ("uses_in", _fields(",".join(v.name for v in uses_in(i)) for i in instrs)),
+        ("defs_in", _fields(",".join(v.name for v in defs_in(i)) for i in instrs)),
+        ("count_uses", _fields(
+            ",".join(f"{n}:{c}" for n, c in count_uses(fn.instructions).items())
+            for fn in fns)),
+        ("reach_sets", _fields(
+            f"{f}:" + ",".join(sorted(reach[f])) for f in keys)),
+        ("coexist", _bits(coexist(a, b, reach) for a in keys for b in keys)),
+        ("share_conflicts", _fields(
+            ",".join(str(_index_by_identity(shares, s))
+                     for s in share_conflicts(f, shares, reach))
+            for f in keys)),
+        ("slot_share_sets", _fields(
+            f"{s.width}:" + ",".join(sorted(s.functions())) + ":"
+            + ",".join(sorted(s.owners())) + ":" + ",".join(sorted(s.slots()))
+            for s in shares)),
+        ("runtime_bytes", _ints(sorted(RuntimeLayout(*layout).bytes()))),
+    ]
+
+
+def _index_by_identity(xs, x) -> int:
+    return next(k for k, y in enumerate(xs) if y is x)
+
+
+def pseudo_values(names) -> list[tuple[str, str]]:
+    """`parse_pseudo_name` of each name, as `source|byte`, with "-" for
+    a name with no source."""
+    from passes.zp_slot_naming import parse_pseudo_name
+
+    def text(n):
+        src, byte = parse_pseudo_name(n)
+        return f"{'-' if src is None else src}|{byte}"
+
+    return [("parse_pseudo_name", _fields(text(n) for n in names))]
+
+
 # --- Recording ---
 
 _OUT: Path | None = None
@@ -436,7 +540,7 @@ _SLOTS: dict | None = None
 # the context's text) for the ones seen as objects, kept with the
 # instructions so the ids stay theirs.
 _DONE: dict = {}
-_COUNTS = {"fn": 0, "prog": 0, "tac": 0}
+_COUNTS = {"fn": 0, "prog": 0, "tac": 0, "tables": 0, "pseudos": 0}
 
 
 def _record_program(prog, kwargs) -> None:
@@ -521,6 +625,60 @@ def _wrap_fixedpoint(fn):
     return wrapper
 
 
+def _record_stage_tables(tac, symbols, types, shares) -> None:
+    import json as json_module
+    from passes.runtime_layout import current
+    layout = current()
+    layout_list = [layout.ssp, layout.fp, layout.hargs, layout.hargs_size,
+                   layout.dptr]
+    body = json_module.dumps({
+        "tac": capture_passes.encode(tac),
+        "symbols": capture_passes.encode(symbols),
+        "types": capture_passes.encode(types),
+        "shares": capture_passes.encode(shares),
+        "layout": layout_list,
+    }) + "\n"
+    k = hashlib.sha1(body.encode("utf-8")).hexdigest()
+    _write_keyed(
+        "tables", k, f"c6502-helpers 1\nsource {_SOURCE}\ntables\n" + body,
+        stage_values(tac, symbols, types, shares, layout_list),
+    )
+
+
+def _wrap_find_shares(fn):
+    def wrapper(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        tac, _abi, symbols, types = args[:4]
+        _record_stage_tables(tac, symbols, types, result[0])
+        return result
+    return wrapper
+
+
+def _record_pseudos(prog, colorings) -> None:
+    import json as json_module
+    import re
+    import ir_dump
+    names: dict[str, None] = {}
+    for name in re.findall(r'Pseudo\("([^"]*)"', ir_dump.dump(prog)):
+        names.setdefault(name, None)
+    for coloring in (colorings or {}).values():
+        for name in coloring.assignments:
+            names.setdefault(name, None)
+    body = json_module.dumps({"names": list(names)}) + "\n"
+    k = hashlib.sha1(body.encode("utf-8")).hexdigest()
+    _write_keyed(
+        "pseudos", k, f"c6502-helpers 1\nsource {_SOURCE}\npseudos\n" + body,
+        pseudo_values(list(names)),
+    )
+
+
+def _wrap_replace(fn):
+    def wrapper(*args, **kwargs):
+        _record_pseudos(args[0], kwargs.get("colorings"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def _wrap_select_abi(fn):
     def wrapper(*args, **kwargs):
         _record_tac(args[0])
@@ -528,25 +686,32 @@ def _wrap_select_abi(fn):
     return wrapper
 
 
-def install(out: Path) -> None:
+def install(out: Path, stage_only: bool = False) -> None:
     """Wraps the passes in `compile`'s namespace to record the helpers'
-    values under `out`."""
+    values under `out`. With `stage_only`, only the records of the code
+    generation helpers (`tables` and `pseudos`) are made."""
     global _OUT
     import compile as compile_module
     _OUT = out
-    for attr in capture_passes.PASSES.values():
-        setattr(compile_module, attr, _wrap_pass(getattr(compile_module, attr)))
-    compile_module._peephole_fixedpoint = _wrap_fixedpoint(
-        compile_module._peephole_fixedpoint)
-    compile_module.select_abi = _wrap_select_abi(compile_module.select_abi)
+    if not stage_only:
+        for attr in capture_passes.PASSES.values():
+            setattr(compile_module, attr,
+                    _wrap_pass(getattr(compile_module, attr)))
+        compile_module._peephole_fixedpoint = _wrap_fixedpoint(
+            compile_module._peephole_fixedpoint)
+        compile_module.select_abi = _wrap_select_abi(compile_module.select_abi)
+    compile_module.find_shares = _wrap_find_shares(compile_module.find_shares)
+    for attr in ("replace_pseudoregs", "replace_pseudoregs_bare_exit"):
+        setattr(compile_module, attr,
+                _wrap_replace(getattr(compile_module, attr)))
 
 
-def _init_worker(out: str) -> None:
+def _init_worker(out: str, stage_only: bool) -> None:
     # The values recorded are those the Python passes see, and they
     # don't run when C6502_CPP_BACKEND=1 hands the back end to the C++
     # port.
     os.environ.pop("C6502_CPP_BACKEND", None)
-    install(Path(out))
+    install(Path(out), stage_only)
 
 
 def _run_job(job) -> tuple[str, bool, dict[str, int]]:
@@ -589,6 +754,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fuzz-seeds", default="0-99")
     ap.add_argument("--modes", default="O,unopt")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
+    ap.add_argument("--stage-only", action="store_true",
+                    help="record only the code generation helpers")
     ns = ap.parse_args(argv)
     jobs = [
         (label, args, mode)
@@ -599,10 +766,10 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(ns.out)
     out.mkdir(parents=True, exist_ok=True)
     start = time.time()
-    totals = {"fn": 0, "prog": 0, "tac": 0}
+    totals = dict.fromkeys(_COUNTS, 0)
     failed = 0
     with ProcessPoolExecutor(
-        max_workers=ns.j, initializer=_init_worker, initargs=(str(out),),
+        max_workers=ns.j, initializer=_init_worker, initargs=(str(out), ns.stage_only),
     ) as pool:
         for label, ok, counts in pool.map(_run_job, jobs, chunksize=1):
             if not ok:

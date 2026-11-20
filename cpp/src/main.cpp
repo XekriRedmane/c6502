@@ -405,6 +405,10 @@ int cmd_check_helpers(const std::vector<std::string>& args) {
         const auto fn = std::get<tac_ast::Function>(
             asdl::load<tac_ast::Type_top_level>(dump));
         got = helper_checks::tac_values(fn);
+      } else if (kind == "tables") {
+        got = helper_checks::stage_values(json::parse(dump));
+      } else if (kind == "pseudos") {
+        got = helper_checks::pseudo_values(json::parse(dump));
       } else {
         throw std::runtime_error("unknown record kind " + kind);
       }

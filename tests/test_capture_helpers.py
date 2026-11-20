@@ -34,7 +34,8 @@ class TestCaptureHelpers(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.out = Path(cls.tmp.name) / "helpers"
         names = [*capture_passes.PASSES.values(), "_peephole_fixedpoint",
-                 "select_abi"]
+                 "select_abi", "find_shares", "replace_pseudoregs",
+                 "replace_pseudoregs_bare_exit"]
         saved = {n: getattr(compile_module, n) for n in names}
         try:
             capture_helpers.install(cls.out)
@@ -59,7 +60,7 @@ class TestCaptureHelpers(unittest.TestCase):
         cls.tmp.cleanup()
 
     def test_records_are_written(self):
-        for kind in ("fn", "prog", "tac"):
+        for kind in ("fn", "prog", "tac", "tables", "pseudos"):
             with self.subTest(kind=kind):
                 files = list((self.out / kind).glob("*.txt"))
                 self.assertTrue(files)
@@ -88,6 +89,9 @@ class TestCaptureHelpers(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("MISMATCH", result.stdout)
         self.assertIn("may_alias:", result.stdout)
+        # The code generation helpers' records (`stage_values`).
+        self.assertIn("size_of_name:", result.stdout)
+        self.assertIn("parse_pseudo_name:", result.stdout)
 
 
 if __name__ == "__main__":

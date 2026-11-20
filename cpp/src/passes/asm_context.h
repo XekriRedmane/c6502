@@ -37,6 +37,10 @@ struct RuntimeLayout {
   // or DPTR), or null for any other name, as `addrs().get(name)` does.
   const asdl::Int* addr(std::string_view name) const;
 
+  // Returns every byte the block occupies: two each for SSP, FP, and
+  // DPTR, and `hargs_size` for HARGS.
+  std::set<asdl::Int> bytes() const;
+
   bool operator==(const RuntimeLayout&) const = default;
 };
 

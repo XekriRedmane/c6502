@@ -542,7 +542,14 @@ std::size_t value_count(const std::string& name, const std::string& value) {
       "collect_address_taken_names", "runtime_zp_addrs",
       "pointer_byte_addresses", "decimal_arith", "graph_calls",
       "unreachable_by_pointer",
+      // The code generation helpers' (`stage_values`, `pseudo_values`).
+      "size_of_name", "size_of_name_untyped", "sizeof_members", "source_spelling",
+      "param_slot_symbols", "vals_in", "uses_in", "defs_in", "count_uses",
+      "reach_sets", "share_conflicts", "slot_share_sets", "parse_pseudo_name",
   };
+  if (name == "runtime_bytes") {
+    return static_cast<std::size_t>(std::count(value.begin(), value.end(), ',')) + 1;
+  }
   if (name == "operands" || name == "build_cfg" || name == "build_cfg_tolerant") {
     return 1;
   }

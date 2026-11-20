@@ -20,6 +20,17 @@ const asdl::Int* RuntimeLayout::addr(std::string_view name) const {
   return nullptr;
 }
 
+std::set<asdl::Int> RuntimeLayout::bytes() const {
+  std::set<asdl::Int> out;
+  for (const auto& [base, n] : {std::pair{ssp, asdl::Int(2)}, std::pair{fp, asdl::Int(2)},
+                                std::pair{dptr, asdl::Int(2)}, std::pair{hargs, hargs_size}}) {
+    for (asdl::Int b = base; b < base + n; ++b) {
+      out.insert(b);
+    }
+  }
+  return out;
+}
+
 bool AsmContext::is_user_zp_global(std::string_view name) const {
   return user_zp->addrs.find(name) != user_zp->addrs.end();
 }

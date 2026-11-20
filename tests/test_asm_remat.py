@@ -169,6 +169,86 @@ class TestApplyRemat(unittest.TestCase):
 
 
 
+class TestRematCost(unittest.TestCase):
+    """A load of `arr,X` takes 3 bytes where a load of a zero-page
+    slot takes 2, so it replaces a read of the slot only when the
+    store into the slot goes with it (`_costs_more`, `_store_dies`)."""
+
+    _SLOTS = {"__local_f__0": 0x80}
+
+    def _copy(self):
+        return asm_ast.Mov(src=_data(), dst=_A(), is_volatile=False)
+
+    def _store(self, name):
+        return asm_ast.Mov(src=_A(), dst=_data(name), is_volatile=False)
+
+    def _stage(self):
+        return [
+            asm_ast.Mov(src=_indexed(), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A(), is_volatile=False),
+            self._store("o"),
+        ]
+
+    def test_kept_when_the_slot_is_read_again_later(self):
+        # The read after the label stays, so the store into the slot
+        # stays, and `LDA arr,X` would only add a byte.
+        instrs = self._stage() + [
+            self._copy(), self._store("d"),
+            asm_ast.Label(name=".l"),
+            self._copy(), self._store("e"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(_wrap(list(instrs), self._SLOTS))
+        self.assertEqual(out[4], self._copy())
+
+    def test_rewritten_when_its_reads_all_go(self):
+        instrs = self._stage() + [
+            self._copy(), self._store("d"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(_wrap(list(instrs), self._SLOTS))
+        self.assertIn(
+            asm_ast.Mov(src=_indexed(), dst=_A(), is_volatile=False),
+            out[2:],
+        )
+
+    def test_kept_when_too_many_reads_would_take_the_longer_form(self):
+        # Three loads of `arr,X` cost 3 bytes more, and the store into
+        # the slot saves 2.
+        instrs = self._stage() + [
+            self._copy(), self._store("d"),
+            asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_A(), is_volatile=False),
+            self._store("p"),
+            self._copy(), self._store("e"),
+            asm_ast.Mov(src=asm_ast.Imm(value=3), dst=_A(), is_volatile=False),
+            self._store("q"),
+            self._copy(), self._store("g"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(_wrap(list(instrs), self._SLOTS))
+        self.assertEqual(out.count(self._copy()), 3)
+
+    def test_zero_page_source_rewritten_while_the_slot_is_read(self):
+        # A zero-page byte costs what the slot costs.
+        slots = {"__local_f__0": 0x80, "__local_f__z": 0x90}
+        z = _data("__local_f__z")
+        instrs = [
+            asm_ast.Mov(src=z, dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A(), is_volatile=False),
+            self._store("o"),
+            self._copy(), self._store("d"),
+            asm_ast.Label(name=".l"),
+            self._copy(), self._store("e"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(_wrap(list(instrs), slots))
+        self.assertEqual(
+            out[4], asm_ast.Mov(src=z, dst=_A(), is_volatile=False),
+        )
+
+
 class TestRematYSetup(unittest.TestCase):
     """An operand lowered with an `LDY #off` setup writes Y, so an
     `abs,Y` load can't be recomputed past it."""
@@ -310,3 +390,50 @@ class TestRematPointerStore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRematCostSim(unittest.TestCase):
+    """The shapes of `TestRematCost` and of Lode Runner's
+    `enable_next_level_ladders` (a table byte copied into a local and
+    a zero-page global, the local read again after a call) run to the
+    same results in both pipelines."""
+
+    _SRC = r'''
+#include <stdint.h>
+uint8_t ROWS[6] = {1, 4, 9, 16, 25, 36};
+uint8_t COLS[6] = {2, 3, 5, 7, 11, 13};
+uint8_t GR [[c6502::zeropage]];
+uint8_t GC [[c6502::zeropage]];
+uint16_t sum;
+void touch(void) { sum += GR + GC; }
+int main(void) {
+    for (uint8_t i = 5; i != 0; i--) {
+        uint8_t col = COLS[i];
+        if (col == 5)
+            continue;
+        uint8_t row = ROWS[i];
+        GR = row;
+        GC = col;
+        touch();
+        sum += (uint16_t)(row * 3) + col;
+    }
+    return sum;
+}
+'''
+
+    def test_runs(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp CLI not available")
+        from sim.harness import build_sim
+        rows = [1, 4, 9, 16, 25, 36]
+        cols = [2, 3, 5, 7, 11, 13]
+        want = 0
+        for i in range(5, 0, -1):
+            if cols[i] == 5:
+                continue
+            want += rows[i] + cols[i] + rows[i] * 3 + cols[i]
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(self._SRC, optimize=optimize).run()
+                self.assertEqual(got.return_int(), want)

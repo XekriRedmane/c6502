@@ -781,10 +781,6 @@ check_for_gold_picked_up_by_guard:
    SEC
    SBC   GUARD_RESURRECT_COL
    STA   GUARD_GOLD_TIMER
-   LDA   LEVEL_BG@lo,X
-   STA   __local_check_for_gold_picked_up_by_guard__0
-   LDA   LEVEL_BG@hi,X
-   STA   __local_check_for_gold_picked_up_by_guard__1
    LDA   #$00
    STA   (__local_check_for_gold_picked_up_by_guard__0),Y
    STX   GAME_ROWNUM
@@ -919,10 +915,6 @@ enter_cell:
    BNE   .if_end@26
    LSR   ALIVE
 .if_end@26:
-   LDA   LEVEL_BG@lo,X
-   STA   __local_enter_cell__0
-   LDA   LEVEL_MAP@hi,X
-   STA   __local_enter_cell__1
    LDA   #$08
    STA   (__local_enter_cell__0),Y
    RTS

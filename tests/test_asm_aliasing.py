@@ -266,3 +266,38 @@ class TestIndexedStaticAgainstPointer(unittest.TestCase):
         with pointer_proof(frozenset({"T@lo"})):
             self.assertFalse(may_alias(row, through))
             self.assertFalse(may_alias(through, row))
+
+
+class TestUserZeroPageObjectAgainstIndexed(unittest.TestCase):
+    """A `Data` operand naming a user zero-page object, Lode Runner's
+    `GAME_COLNUM` at $85, against an indexed access to an object
+    outside zero page reaches another byte, as a literal `ZP` operand
+    does."""
+
+    def setUp(self):
+        from passes import asm_aliasing
+        self.aliasing = asm_aliasing
+        asm_aliasing.set_user_zp_globals(
+            {"GAME_COLNUM": 0x85, "ZARR": 0x40},
+            frozenset({0x85, 0x40, 0x41, 0x42}),
+        )
+
+    def tearDown(self):
+        self.aliasing.set_user_zp_globals({})
+
+    def test_other_object_outside_zero_page(self):
+        col = _data("GAME_COLNUM")
+        rows = _idata("LADDER_LOCS_ROW")
+        self.assertFalse(may_alias(col, rows))
+        self.assertFalse(may_alias(rows, col))
+
+    def test_indexed_zero_page_object_may_reach_it(self):
+        self.assertTrue(may_alias(_data("GAME_COLNUM"), _idata("ZARR")))
+
+    def test_same_object_indexed(self):
+        self.assertTrue(may_alias(_data("ZARR", 1), _idata("ZARR")))
+
+    def test_not_a_zero_page_object(self):
+        # Without the zero-page binding, `G` may be any byte, which an
+        # indexed access may reach.
+        self.assertTrue(may_alias(_data("G"), _idata("LADDER_LOCS_ROW")))

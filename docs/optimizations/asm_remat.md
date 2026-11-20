@@ -153,6 +153,15 @@ and take an earlier load for A's value, which rematerialized
 - A read into the index register of an indexed source, such as `LDX
   local` after `LDA tab,X; STA local`. The 6502 has no `LDX abs,X` or
   `LDY abs,Y`.
+- A read from a source that costs more than the slot, while the slot
+  stays read elsewhere. A load of an absolute byte or of an `abs,X` / `abs,Y` element takes
+  3 bytes and a cycle more than a load of a zero-page slot, so such a
+  rewrite pays for itself only through the store into the slot, 2
+  bytes, which goes once nothing reads the slot. The pass makes it only
+  when every read of the slot in the function is rewritten and there
+  are at most two of them (`_costs_more`, `_store_dies`). A source in
+  zero page, or an immediate, costs what the slot costs, and the pass
+  rewrites a read from one whatever else reads the slot.
 
 ## Related
 

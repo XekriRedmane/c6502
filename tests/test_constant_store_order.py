@@ -142,18 +142,30 @@ class TestLoadedValueStoreOrder(unittest.TestCase):
                   _mem_load(self._ROWS), _store("c")]
         self.assertEqual(_run(instrs), instrs)
 
-    def test_store_into_data_source_left_alone(self):
+    def test_load_of_a_byte_the_run_stored_goes_with_its_value(self):
+        # After `STA g`, `LDA g` reads the 1 just stored there, so `STA
+        # c` joins the stores of 1. The first `LDA g` reads `g` before
+        # the run writes it, and stays first.
         g = asm_ast.Data(name="g", offset=0)
         instrs = [_mem_load(g), _store("a"), _load(1), _store("g"),
                   _mem_load(g), _store("c")]
-        self.assertEqual(_run(instrs), instrs)
+        self.assertEqual(_run(instrs), [
+            _mem_load(g), _store("a"), _load(1), _store("g"),
+            _store("c"),
+        ])
 
-    def test_last_value_moved_past_a_store_of_its_byte_left_alone(self):
-        # Grouping would move the load of `g` after `STA g`.
+    def test_first_load_of_a_byte_the_run_stores_stays_before_it(self):
+        # The run from the first `LDA g` stores into `g`, which that
+        # load reads, so it's left alone. The run from `LDA #1` reloads
+        # the 1 it stored into `g`, so `STA c` joins the stores of 1,
+        # and the first load of `g` still reads it before `STA g`.
         g = asm_ast.Data(name="g", offset=0)
         instrs = [_mem_load(g), _store("a"), _load(1), _store("b"),
                   _load(1), _store("g"), _mem_load(g), _store("c")]
-        self.assertEqual(_run(instrs), instrs)
+        self.assertEqual(_run(instrs), [
+            _mem_load(g), _store("a"), _load(1), _store("b"),
+            _store("g"), _store("c"),
+        ])
 
     def test_index_register_changed_left_alone(self):
         # After `LDX`, `ROWS,X` names another byte.
@@ -260,11 +272,12 @@ int main(void) {
         lines = asm.split("\nmain:\n")[1].splitlines()
         # The first load of each table byte stores it into the local
         # and then into the global.
-        rows = lines.index("   LDA   ROWS,X")
-        self.assertEqual(lines[rows + 2], "   STA   GROW")
-        cols = lines.index("   LDA   COLS,X")
-        self.assertEqual(cols, rows + 3)
-        self.assertEqual(lines[cols + 2], "   STA   GCOL")
+        for table, glob in (("ROWS", "GROW"), ("COLS", "GCOL")):
+            load = f"   LDA   {table},X"
+            self.assertEqual(lines.count(load), 1)
+            at = lines.index(load)
+            self.assertTrue(lines[at + 1].startswith("   STA   __local_main__"))
+            self.assertEqual(lines[at + 2], f"   STA   {glob}")
 
     def test_store_into_source_runs(self):
         # The rows read are 8, 7, 3 (stored by the iteration before), and 5.

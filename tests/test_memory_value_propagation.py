@@ -405,6 +405,50 @@ class TestSlotReadsFixedSource(unittest.TestCase):
         self.assertEqual(out[9].src, _data("__local_f__t"))
 
 
+class TestDearerReads(unittest.TestCase):
+    """A read of a zero-page slot that holds a copy of `arr,X` reads
+    `arr,X` (3 bytes for the slot's 2) only when every read the slot's
+    stores reach is rewritten, so the store goes, and at most two of
+    them are (`_dearer_read`)."""
+
+    _T = _data("__local_f__t")
+
+    def _arr(self):
+        return asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X())
+
+    def _run(self, reads):
+        instrs = [_load(self._arr()), _store(self._T)]
+        for k, after in enumerate(reads):
+            instrs += [_load(asm_ast.Imm(value=k)),
+                       _store(_data("OPS")), *after,
+                       _load(self._T), _store(_data("OPS", 1))]
+        return _run_slots(instrs + [asm_ast.Return()])
+
+    def _reads_of_t(self, out):
+        return sum(1 for i in out if isinstance(i, asm_ast.Mov)
+                   and i.src == self._T)
+
+    def test_one_read_rewritten(self):
+        out = self._run([[]])
+        self.assertEqual(self._reads_of_t(out), 0)
+
+    def test_two_reads_rewritten(self):
+        out = self._run([[], []])
+        self.assertEqual(self._reads_of_t(out), 0)
+
+    def test_three_reads_left_alone(self):
+        out = self._run([[], [], []])
+        self.assertEqual(self._reads_of_t(out), 3)
+
+    def test_read_that_stays_keeps_the_others(self):
+        # After `LDX #5`, `arr,X` names another byte, so the second
+        # read stays, and the store with it, and the first read
+        # stays too.
+        ldx = asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_X(), is_volatile=False)
+        out = self._run([[], [ldx]])
+        self.assertEqual(self._reads_of_t(out), 2)
+
+
 class TestCopiedPointer(unittest.TestCase):
     """A `(zp),Y` access through a slot pair that holds a copy of a
     named zero-page pointer goes through that pointer, which is what

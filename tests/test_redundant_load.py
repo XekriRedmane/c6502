@@ -1322,11 +1322,32 @@ class TestSwapPairs(unittest.TestCase):
         self.assertEqual(_rewritten(list(instrs)), instrs)
 
     def test_kept_when_a_is_read_after(self):
+        # A `PHA` reads A, which holds X after the swap. (A store from
+        # A right after the pair would only join the second group.)
         instrs = self._join(
             _d("p0"), _d("t"), _d("p1"),
-            after=[asm_ast.Mov(src=_REG_A, dst=_d("q"))],
+            after=[asm_ast.Push(src=_REG_A)],
         )
         self.assertEqual(_rewritten(list(instrs)), instrs)
+
+    def test_swapped_with_several_stores_in_each_group(self):
+        # `LDA lo; STA p0; STA p2; LDA t; STA p1; STA p3` with A holding
+        # `t`: the second group's stores go first, and its load goes.
+        instrs = [
+            asm_ast.Mov(src=_d("hi"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_d("t")),
+            asm_ast.Mov(src=_d("lo"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_d("p0")),
+            asm_ast.Mov(src=_REG_A, dst=_d("p2")),
+            asm_ast.Mov(src=_d("t"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_d("p1")),
+            asm_ast.Mov(src=_REG_A, dst=_d("p3")),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), [
+            *instrs[:2], instrs[6], instrs[7], *instrs[2:5], *instrs[8:],
+        ])
 
     def test_next_block_sees_the_swap(self):
         # Both ways into `.join` leave 0 in A, until the swap leaves

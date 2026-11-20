@@ -37,8 +37,9 @@ The pass has five more rewrites that use the same lists.
   first `Mov(#$FF, SCRATCH1)` now leaves both `SCRATCH1` and `#$FF`
   in A's list.)
 - `LDA X; STA D1; LDA M; STA D2`, with A already holding M, becomes
-  `STA D2; LDA X; STA D1`, when neither store writes what the other
-  pair reads or stores (D1 against M and D2, D2 against X) and A
+  `STA D2; LDA X; STA D1`, with one or more stores after each load,
+  when no store of one group writes what the other group reads or
+  stores (each D1 against M and each D2, each D2 against X) and A
   and N/Z are dead after. Nor may D1 be a byte of the pointer that
   D2 is stored through, or D2 a byte of X's pointer, which the pass
   checks with the addresses of the unit's zero-page slots

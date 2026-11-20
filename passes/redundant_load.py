@@ -549,15 +549,19 @@ def _reorder_with_in_states(
             changed = True
             i += consumed
             continue
-        if _swap_pairs_ok(instrs, i, state):
+        swap = _swap_pairs_ok(instrs, i, state)
+        if swap is not None:
             # `LDA X; STA D1; LDA M; STA D2` with A already holding
             # M: `LDA M; STA D2; LDA X; STA D1`, whose `LDA M` the
-            # second phase drops.
-            for k in (i + 2, i + 3, i, i + 1):
+            # second phase drops. Each load may have several stores.
+            n1, n2 = swap
+            second = list(range(i + 1 + n1, i + 2 + n1 + n2))
+            first = list(range(i, i + 1 + n1))
+            for k in second + first:
                 out.append(instrs[k])
                 _update_state(instrs[k], state)
             changed = True
-            i += 4
+            i += 2 + n1 + n2
             continue
         if _swap_loads_ok(instrs, i, state):
             # `LDX M1; LDA M2` with X already holding M2: `LDA M2;
@@ -912,52 +916,91 @@ def _reloads_a(
 
 def _swap_pairs_ok(
     instrs: list[asm_ast.Type_instruction], i: int, state: _RegState,
-) -> bool:
-    """Whether `instrs[i:i+4]` is `LDA X; STA D1; LDA M; STA D2` with A
-    already mirroring M, and the pairs can trade places: `STA D2; LDA
-    X; STA D1` does the same.
+) -> tuple[int, int] | None:
+    """The numbers of stores `(n1, n2)` when `instrs[i:]` starts `LDA X;
+    STA D1 (n1 of them); LDA M; STA D2 (n2 of them)` with A already
+    mirroring M, and the two groups can trade places: `STA D2...; LDA
+    X; STA D1...` does the same. None otherwise.
 
-    Neither store may change what the other pair reads or writes
-    (`D1` against `M` and `D2`, `D2` against `X`), and A and N/Z,
-    which end up holding X instead of M, must be dead after.
+    No store of one group may change what the other group reads or
+    writes (each `D1` against `M` and each `D2`, each `D2` against
+    `X`), and A and N/Z, which end up holding X instead of M, must be
+    dead after.
 
     That's the join of `floor_enemy_draw`'s dispatch: every case
     leaves the high byte of a pointer in A, and the join stores the
-    low byte to a parameter first."""
-    if i + 4 > len(instrs):
-        return False
-    load_x, store_1, load_m, store_2 = instrs[i:i + 4]
+    low byte to a parameter first. Lode Runner's
+    `enable_next_level_ladders` stores the row into a local and into
+    `GAME_ROWNUM` and then copies the column, which A still holds,
+    from its local into `GAME_COLNUM`."""
     a = asm_ast.Reg(reg=asm_ast.A())
-    for ins, is_load in ((load_x, True), (store_1, False),
-                         (load_m, True), (store_2, False)):
-        if not isinstance(ins, asm_ast.Mov) or ins.is_volatile:
-            return False
-        if is_load and (ins.dst != a or isinstance(ins.src, asm_ast.Reg)):
-            return False
-        if not is_load and (
-            ins.src != a or isinstance(ins.dst, asm_ast.Reg)
-        ):
-            return False
+
+    def is_load(ins) -> bool:
+        return (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+                and ins.dst == a and not isinstance(ins.src, asm_ast.Reg))
+
+    def is_store(ins) -> bool:
+        return (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+                and ins.src == a and not isinstance(ins.dst, asm_ast.Reg))
+
+    def stores_after(k: int) -> int:
+        n = 0
+        while k + n < len(instrs) and is_store(instrs[k + n]):
+            n += 1
+        return n
+
+    if i >= len(instrs) or not is_load(instrs[i]):
+        return None
+    n1 = stores_after(i + 1)
+    j = i + 1 + n1
+    if n1 == 0 or j >= len(instrs) or not is_load(instrs[j]):
+        return None
+    n2 = stores_after(j + 1)
+    if n2 == 0:
+        return None
+    load_x, load_m = instrs[i], instrs[j]
+    d1s = [ins.dst for ins in instrs[i + 1:j]]
+    d2s = [ins.dst for ins in instrs[j + 1:j + 1 + n2]]
+    window = instrs[i:j + 1 + n2]
     if not any(_operands_equal(c, load_m.src) for c in state.a):
-        return False
+        return None
     if any(_operands_equal(c, load_x.src) for c in state.a):
-        return False
-    d1, d2, x, m = store_1.dst, store_2.dst, load_x.src, load_m.src
-    if (_may_alias(d1, m) or _may_alias(d2, x)
-            or (_may_alias(d1, d2) and not _same_index_apart(
-                d1, d2, instrs[i:i + 4]))):
-        return False
-    # Nor may the first store write the pointer that the second
-    # store's address is read through, or the second store the one
-    # the first load's is: `LDA t,X; STA p+1; LDA #7; STA (p),Y`
-    # with A holding 7 had stored through the old `p`.
-    if any(_may_alias(d1, b, zp_slot_symbols=_ZP_ADDRS)
-           for b in _pointer_bytes(d2)) or any(
-        _may_alias(d2, b, zp_slot_symbols=_ZP_ADDRS)
-        for b in _pointer_bytes(x)
-    ):
-        return False
-    return _a_dead_at(instrs, i + 4) and _flags_dead_at(instrs, i + 4)
+        return None
+    x, m = load_x.src, load_m.src
+    for d1 in d1s:
+        if _may_alias(d1, m):
+            return None
+        for d2 in d2s:
+            if _may_alias(d1, d2) and not _same_index_apart(
+                    d1, d2, window):
+                return None
+    for d2 in d2s:
+        if _may_alias(d2, x):
+            return None
+    # Nor may a store of the first group write the pointer that a
+    # store of the second group's address is read through, or a store
+    # of the second group the one the first load's is: `LDA t,X; STA
+    # p+1; LDA #7; STA (p),Y` with A holding 7 had stored through the
+    # old `p`.
+    for d1 in d1s:
+        for d2 in d2s:
+            if any(_may_alias(d1, b, zp_slot_symbols=_ZP_ADDRS)
+                   for b in _pointer_bytes(d2)):
+                return None
+    for d2 in d2s:
+        if any(_may_alias(d2, b, zp_slot_symbols=_ZP_ADDRS)
+               for b in _pointer_bytes(x)):
+            return None
+    for d1 in d1s:
+        # The first group's stores move after the second load, whose
+        # address may be read through a pointer the stores write.
+        if any(_may_alias(d1, b, zp_slot_symbols=_ZP_ADDRS)
+               for b in _pointer_bytes(m)):
+            return None
+    end = j + 1 + n2
+    if not (_a_dead_at(instrs, end) and _flags_dead_at(instrs, end)):
+        return None
+    return n1, n2
 
 
 def _swap_loads_ok(
@@ -1038,7 +1081,7 @@ def _same_index_apart(
     """Whether `a` and `b` are `name+k1,R` and `name+k2,R` with `k1`
     and `k2` different and less than 256 apart, and nothing in
     `window` writes R, so the two stores in it reach different bytes.
-    The four instructions `_swap_pairs_ok` looks at write no register
+    The loads and stores `_swap_pairs_ok` looks at write no register
     but A, except the `LDY #off` of an operand lowered through Y.
     `hi, lo` stored to `LOCAL_ZVARS[x]` and `LOCAL_ZVARS[x + 1]` in
     Zork's `instr_call` are this."""

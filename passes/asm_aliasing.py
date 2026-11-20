@@ -378,6 +378,17 @@ def may_alias(
         a, asm_ast.IndexedData,
     ) and _is_zp_symbol(b.name):
         return False
+    # A user zero-page object named by a `Data` operand, such as Lode
+    # Runner's `GAME_COLNUM` at $85, against an indexed access to an
+    # object outside zero page: the same reasoning as the literal `ZP`
+    # operand above, since the name stands for its zero-page address.
+    for d, x in ((a, b), (b, a)):
+        if (isinstance(d, asm_ast.Data) and isinstance(x, asm_ast.IndexedData)
+                and d.name in _USER_ZP_GLOBALS
+                and d.name != x.name
+                and x.name not in _USER_ZP_GLOBALS
+                and not _is_zp_symbol(x.name)):
+            return False
     # Frame / Stack vs ZP: FP / SSP point into the soft stack
     # (main RAM, ≥ $0800); offsets 0..255 don't reach ZP.
     if isinstance(a, (asm_ast.Frame, asm_ast.Stack)) and isinstance(

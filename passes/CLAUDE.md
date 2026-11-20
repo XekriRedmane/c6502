@@ -27,7 +27,10 @@ this directory:
   `[[c6502::zp_abi]]` and mints `__zpabi_<fn>_p<k>` slot symbols.
 - `and_sign_bit_branch.py` — `apply_and_sign_bit_branch` peephole.
 - `asm_aliasing.py` — asm-level aliasing helpers used by dead-store /
-  liveness.
+  liveness. `may_alias` takes a `Data` operand naming a user
+  zero-page object (Lode Runner's `GAME_COLNUM`) to be out of reach of
+  an indexed access to another object outside zero page, as it does
+  a literal `ZP` operand.
 - `asm_dead_store.py` — `apply_asm_dead_store` CFG-wide DSE.
 - `asm_licm.py` — `apply_licm` for loop-invariant constant stores.
 - `asm_liveness.py` — per-block liveness used by several peepholes.
@@ -322,9 +325,10 @@ this directory:
   first load, keeping the last value last, when that drops a load. No
   load may be volatile, and no store may write a byte a load reads.
   An indexed load of `n` counts as reading every byte of `n`, and one
-  of a slot or runtime symbol leaves the run alone. Lode Runner's `fill_hole`
-  stores `BRICK_DIG_ROWS,X` into a local and `GAME_ROWNUM` after one
-  load.
+  of a slot or runtime symbol leaves the run alone. A load of a byte
+  an earlier part of the run stored gives the value loaded there
+  (`_value_keys`). Lode Runner's `fill_hole` stores `BRICK_DIG_ROWS,X`
+  into a local and `GAME_ROWNUM` after one load.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
   folding for case labels, static initializers, and, through the
   parser, array sizes and enumeration constants).
@@ -620,7 +624,8 @@ this directory:
   object, or for a compiler slot nothing reads after
   (`_redirect_index_load_to_transfer`). A transfer that the
   instruction before a run of branches already made goes
-  (`_repeats_transfer`).
+  (`_repeats_transfer`). `_swap_pairs_ok` swaps `LDA X; STA D1...;
+  LDA M; STA D2...` (one or more stores each) when A holds M.
 - `redundant_load_after_rmw.py` — `apply_redundant_load_after_rmw`.
 - `redundant_store.py` — `apply_redundant_store_elimination`.
 - `replace_pseudoregisters.py` — pass 9 (see below).

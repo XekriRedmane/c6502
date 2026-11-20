@@ -31,7 +31,7 @@ which drops each load after the first, 2 bytes and 2 cycles each.
 The same applies to a value loaded from memory that the run doesn't
 change. Lode Runner's `fill_hole` copies a brick's row and column into
 locals and then into `GAME_ROWNUM` and `GAME_COLNUM`, and
-rematerialization (`asm_remat`, `memory_value_propagation`) turns each
+rematerialization (`asm_remat`, `memory_value_propagation`) can turn each
 copy of a local into a second load of the table,
 
     LDA   BRICK_DIG_ROWS,X
@@ -51,6 +51,27 @@ which the pass writes with one load of each table byte,
     LDA   BRICK_DIG_COLS,X
     STA   __local_handle_timers__saved_guard_num
     STA   GAME_COLNUM
+
+# Copies within the run
+
+A load of a `Data` byte that an earlier group of the run stored gives
+A the value that group loaded, since nothing else in the run writes
+the byte, so it joins that group. The rematerializations above leave a
+copy of a local in place when the local is read again later, because a
+load of `BRICK_DIG_ROWS,X` takes a byte more than a load of the local
+(`asm_remat._costs_more`), and
+
+    LDA   BRICK_DIG_ROWS,X
+    STA   __local_handle_timers__2
+    LDA   BRICK_DIG_COLS,X
+    STA   __local_handle_timers__saved_guard_num
+    STA   GAME_COLNUM
+    LDA   __local_handle_timers__2
+    STA   GAME_ROWNUM
+
+becomes the same code as above. Such a load reads nothing once the
+run is rewritten, so the condition below on the bytes the loads read
+leaves it out.
 
 # Conditions
 
@@ -194,19 +215,46 @@ def _run(instrs, i):
     return groups, j
 
 
+def _value_keys(groups):
+    """The value each group's load gives A, as a key, and whether the
+    load reads a byte an earlier group of the run stored, in which
+    case it gives the value that group loaded."""
+    keys: list[str] = []
+    copies: list[bool] = []
+    stored: dict[tuple[str, int], str] = {}
+    for load, stores in groups:
+        src = load.src
+        byte = ((src.name, src.offset)
+                if isinstance(src, asm_ast.Data) else None)
+        if byte in stored:
+            keys.append(stored[byte])
+            copies.append(True)
+        else:
+            keys.append(repr(src))
+            copies.append(False)
+        for s in stores:
+            stored[(s.dst.name, s.dst.offset)] = keys[-1]
+    return keys, copies
+
+
 def _merged(groups):
     """`groups` with each value's stores after its first load, the
     last value last, or None when that drops no load or the run
     breaks a condition."""
-    keys = [repr(load.src) for load, _ in groups]
+    keys, copies = _value_keys(groups)
     if len(set(keys)) == len(keys):
         return None
     targets = [(s.dst.name, s.dst.offset) for _, ss in groups for s in ss]
     if len(set(targets)) != len(targets):
         return None
-    sources = [load.src for load, _ in groups]
+    # A load of a byte the run stored earlier goes with the load whose
+    # value was stored there, so it reads nothing once the run is
+    # rewritten, and only the other loads' bytes must stay unwritten.
+    sources = [load.src for (load, _), copy in zip(groups, copies)
+               if not copy]
     names = [name for name, _ in targets] + [
-        src.name for src in sources if isinstance(src, asm_ast.Data)]
+        load.src.name for load, _ in groups
+        if isinstance(load.src, asm_ast.Data)]
     owners = {_slot_owner(name) for name in names} - {None}
     if len(owners) > 1:
         return None

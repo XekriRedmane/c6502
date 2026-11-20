@@ -105,6 +105,40 @@ same effect. The change takes 6 bytes off `handle_timers` (475 to
 469), and 5 off `enable_next_level_ladders` in level.c, where the
 column's copy was already in A.
 
+## Copies of a value the run stored
+
+A load of a byte that an earlier part of the run stored reads the
+value loaded there, since nothing else in the run writes the byte,
+and it joins that value's stores. `fill_hole`'s copies of its locals
+into `GAME_ROWNUM` and `GAME_COLNUM` keep `LDA` of the locals when the
+locals are read again later, since a load of `BRICK_DIG_ROWS,X` costs
+a byte more than a load of a zero-page local and saves nothing while
+the local's store stays (asm_remat.md, memory_value_propagation.md).
+The pass groups them all the same:
+
+```
+   LDA   BRICK_DIG_ROWS,X
+   STA   __local_handle_timers__2
+   LDA   BRICK_DIG_COLS,X
+   STA   __local_handle_timers__saved_guard_num
+   STA   GAME_COLNUM
+   LDA   __local_handle_timers__2
+   STA   GAME_ROWNUM
+```
+
+becomes
+
+```
+   LDA   BRICK_DIG_COLS,X
+   STA   __local_handle_timers__saved_guard_num
+   STA   GAME_COLNUM
+   LDA   BRICK_DIG_ROWS,X
+   STA   __local_handle_timers__2
+   STA   GAME_ROWNUM
+```
+
+with the value loaded last, the row, still last.
+
 ## When it applies
 
 - The run is a straight sequence of loads into A, each followed by

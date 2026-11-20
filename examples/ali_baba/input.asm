@@ -32,7 +32,6 @@ __zpabi_num_to_decimal__out_1	EQU	$81
 __zpabi_update_event_list__value_1	EQU	$81
 __zpabi_validate_input__o_1	EQU	$81
 __local_transfer_game_data__0	EQU	$82
-__local_verify_disk_signature__0	EQU	$82
 __local_verify_disk_signature__tries	EQU	$83
 __local_input_loop__m	EQU	$84
 __local_transfer_game_data__left	EQU	$84
@@ -1643,10 +1642,8 @@ verify_disk_signature:
 .loop@21_break:
    LDX   #$00
 .verify_disk_signature@rot@7:
-   LDA   DISK_SIGNATURE,X
-   STA   __local_verify_disk_signature__0
    LDA   SCENE_TEXT_DATA,X
-   CMP   __local_verify_disk_signature__0
+   CMP   DISK_SIGNATURE,X
    BEQ   .if_end@56
    SEC
    RTS

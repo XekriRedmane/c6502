@@ -116,6 +116,17 @@ that byte instead (`_fixed_source`), when every read reached by the
 slot's stores can (`_allowed_slot_reads`), so the stores go. A first
 walk of the rewriter only records the candidates.
 
+# Reads that cost more
+
+A fact may give a slot's value as an absolute `Data` byte or an
+`abs,X` / `abs,Y` element, whose load takes 3 bytes and a cycle more
+than the zero-page slot's 2. Such a read replaces the slot's only
+when the store into the slot goes with it: the slot must be one of
+the function's `__local_*` slots, every read its stores reach must be
+rewritten, and at most two of them may take the longer form
+(`_dearer_read`, `_allowed_slot_reads`). A zero-page byte or an
+immediate costs what the slot costs, and replaces it at every read.
+
 # Where to run
 
 After `replace_pseudoregisters_bare_exit` (operands concrete) and
@@ -456,6 +467,9 @@ class _Ctx:
     # is rewritten. Then only the reads in `allowed` are.
     probe: Optional[set[tuple[int, int]]] = None
     allowed: frozenset[tuple[int, int]] = frozenset()
+    # The probed reads whose new form is a byte longer than the slot's
+    # (`_dearer_read`), which `_allowed_slot_reads` limits in number.
+    dearer: set[tuple[int, int]] = field(default_factory=set)
     index: int = 0
     # What each call may write (`_call_summaries`).
     summaries: dict = field(default_factory=dict)
@@ -1234,7 +1248,8 @@ def _rewrite_src(
     if isinstance(fact, ImmLabelHighExpr):
         return asm_ast.ImmLabelHigh(name=fact.name, offset=fact.offset)
     if isinstance(fact, DataExpr):
-        return asm_ast.Data(name=fact.name, offset=fact.offset)
+        new = asm_ast.Data(name=fact.name, offset=fact.offset)
+        return _dearer_read(op, new, addr, ctx)
     if isinstance(fact, IndexedDataExpr):
         if not allow_indexed:
             return op
@@ -1249,10 +1264,55 @@ def _rewrite_src(
         if current_token is None or current_token != fact.idx_token:
             return op
         idx_reg = asm_ast.X() if fact.idx_is_x else asm_ast.Y()
-        return asm_ast.IndexedData(
+        new = asm_ast.IndexedData(
             name=fact.name, offset=fact.offset, index=idx_reg,
         )
+        return _dearer_read(op, new, addr, ctx)
     return op
+
+
+# The most reads of one slot's value that may take a form a byte longer
+# than the slot's (`_dearer_read`). The store into the slot that they let
+# go is 2 bytes.
+_MAX_DEARER_READS = 2
+
+
+def _dearer_read(
+    op: asm_ast.Type_operand, new: asm_ast.Type_operand, addr: int,
+    ctx: "_Ctx",
+) -> asm_ast.Type_operand:
+    """Returns `new`, the read of a slot's value from where it came
+    from, in place of `op`, the read of the zero-page slot, when that
+    costs no more. An absolute `Data` byte and an `abs,X` / `abs,Y`
+    element take 3 bytes and a cycle more than the slot's 2, so they
+    replace a read only when the store into the slot goes. That needs
+    `op` to be one of the function's `__local_*` slots, every read
+    its stores reach to be rewritten, and at most `_MAX_DEARER_READS`
+    of them (`_allowed_slot_reads`). Otherwise `op` stays."""
+    if _new_read_in_zero_page(new, ctx):
+        return new
+    if not (isinstance(op, asm_ast.Data) and op.name.startswith("__local_")):
+        return op
+    key = (ctx.index, addr)
+    if ctx.probe is not None:
+        ctx.probe.add(key)
+        ctx.dearer.add(key)
+        return op
+    if key not in ctx.allowed:
+        return op
+    return new
+
+
+def _new_read_in_zero_page(
+    new: asm_ast.Type_operand, ctx: "_Ctx",
+) -> bool:
+    """Whether `new`, a `Data` byte or an indexed element, is in zero
+    page, which a read reaches in 2 bytes."""
+    from passes.asm_aliasing import is_user_zp_global
+    base = ctx.zp_addrs.get(new.name)
+    if base is not None:
+        return base + new.offset <= 0xFF
+    return is_user_zp_global(new.name)
 
 
 # The compiler's own zero-page slots. The linker gives them new
@@ -1374,9 +1434,17 @@ def _allowed_slot_reads(cfg: CFG, ctx: "_Ctx") -> frozenset[tuple[int, int]]:
             for a in writes[i]:
                 state[a] = frozenset((i,))
     bad = set()
+    dearer: dict = {}
     for key, web in read_webs:
         if web is not None and key not in probe:
             bad.add(find(web))
+        if web is not None and key in ctx.dearer:
+            dearer[find(web)] = dearer.get(find(web), 0) + 1
+    # A web whose reads take a longer form pays for them only with the
+    # store it drops, so it may have only a few of them.
+    for root, n in dearer.items():
+        if n > _MAX_DEARER_READS:
+            bad.add(root)
     return frozenset(
         key for key, web in read_webs
         if key in probe and web is not None and find(web) not in bad

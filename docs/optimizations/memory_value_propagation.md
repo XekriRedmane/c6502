@@ -322,10 +322,14 @@ rewrite is made only when every read of a slot's stores can be.
   `(DPTR),Y` access with an offset) counts as a write to Y, so a
   fact about `arr,Y` is cleared there.
 
-The second rewrite doesn't check that the store it feeds becomes
-dead. When the staged byte is also read at a point where no fact
-about it is recorded, for example after a call, the store stays and the rewritten read
-costs 1 byte and 1 cycle more than the zero-page read it replaced.
+- A read of a slot whose fact is an absolute byte or an `abs,X` /
+  `abs,Y` element, unless the store into the slot goes. Those loads
+  take 3 bytes and a cycle more than the slot's 2, so the second
+  rewrite replaces such a read only when every read the slot's stores
+  reach is rewritten, the slot is one of the function's `__local_*`
+  slots, and at most two reads take the longer form. Until 19 Nov
+  2026 it didn't check, and a read it rewrote while the store stayed,
+  as for a local read again after a call, cost 1 byte and 1 cycle.
 
 ## Related
 

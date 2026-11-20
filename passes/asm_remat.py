@@ -30,12 +30,15 @@ Net cost vs. the staging shape (single-instruction recomputes):
 - `IndexedData(name, off, X|Y)`: 3-byte abs,X/Y LDA replaces a
   2-byte LDA-from-zp. +1 byte at the use site.
 
-But in every case, the dropped `STA <stage>` (2 bytes / 3 cycles)
-plus the dropped initial `LDA <recomputable_src>` (2-3 bytes /
-2-4 cycles, since A was being clobbered anyway) more than cover
-the +1 byte at the use site. Net: −2 to −4 bytes, −3 to −5 cycles
-per occurrence, plus the staging slot is freed from the function's
-private ZP pool.
+The dropped `STA <stage>` (2 bytes / 3 cycles), and the initial
+`LDA <recomputable_src>` when nothing else reads A after it, pay for
+the extra byte only when the store does go. A read that costs a byte
+more is rewritten only when every read of the slot in the function
+is, and when there are at most `_MAX_DEARER_READS` (2) of them
+(`_costs_more`, `_store_dies`). Rewriting such a read while another
+read keeps the store cost 1 byte and 1 cycle each time, as in Lode
+Runner's `fill_hole` and `enable_next_level_ladders` until 19 Nov
+2026.
 
 # Eligibility
 
@@ -118,7 +121,9 @@ def _rewrite_function(
     private: frozenset[str],
 ) -> asm_ast.Function:
     writable = _collect_writable_names(fn.instructions)
-    out = _rewrite_uses(list(fn.instructions), writable, private)
+    out = _rewrite_uses(
+        list(fn.instructions), writable, private, zp_slot_symbols,
+    )
     out = _drop_dead_stage_dsts(out, zp_slot_symbols)
     return asm_ast.Function(
         name=fn.name,
@@ -132,7 +137,9 @@ def _rewrite_uses(
     instrs: list[asm_ast.Type_instruction],
     writable: set[str],
     private: frozenset[str],
+    zp_slot_symbols: dict[str, int] | None = None,
 ) -> list[asm_ast.Type_instruction]:
+    zp_slot_symbols = zp_slot_symbols or {}
     out: list[asm_ast.Type_instruction] = list(instrs)
     for i, defn in enumerate(out):
         stage = _classify_stage_def(out, i)
@@ -140,37 +147,114 @@ def _rewrite_uses(
             continue
         recomp, range_start = stage
         local_name = defn.dst.name
-        # Walk forward in the same block for matching uses; rewrite
-        # each that's still eligible. Multiple uses are allowed —
-        # each gets the same recomputed src.
-        for j in range(i + 1, len(out)):
+        uses = _eligible_uses(
+            out, i, recomp, range_start, local_name, writable, private,
+        )
+        if not uses:
+            continue
+        if (_costs_more(recomp, local_name, zp_slot_symbols)
+                and not _store_dies(
+                    out, uses, local_name, zp_slot_symbols,
+                )):
+            continue
+        for j in uses:
             cur = out[j]
-            if _is_block_boundary(cur):
-                break
-            if _writes_local(cur, local_name):
-                break
-            if not (
-                isinstance(cur, asm_ast.Mov)
-                and not cur.is_volatile
-                and _matches_local(cur.src, local_name)
-            ):
-                continue
-            # There's no `LDX abs,X` or `LDY abs,Y`, so an indexed
-            # read can't load its own index register.
-            if (isinstance(recomp, asm_ast.IndexedData)
-                    and isinstance(cur.dst, asm_ast.Reg)
-                    and type(cur.dst.reg) is type(recomp.index)):
-                continue
-            if not _can_remat(
-                recomp, out, range_start, j, writable, private,
-            ):
-                break
             out[j] = asm_ast.Mov(
                 src=recomp,
                 dst=cur.dst,
                 is_volatile=cur.is_volatile,
             )
     return out
+
+
+# A recompute that costs a byte more than the read it replaces pays for
+# itself only through the store into the slot, which goes once nothing
+# reads the slot. That store is 2 bytes, so at most this many reads may
+# take the dearer form.
+_MAX_DEARER_READS = 2
+
+
+def _is_zero_page_name(name: str, zp_slot_symbols: dict[str, int]) -> bool:
+    """Whether `name` is a byte in zero page, which an `LDA` reads in 2
+    bytes: a slot the unit placed there, one of the runtime's bytes, or
+    a zero-page object."""
+    from passes.asm_aliasing import is_user_zp_global
+    addr = zp_slot_symbols.get(name)
+    if addr is None:
+        addr = runtime_zp_addrs().get(name)
+    if addr is not None:
+        return addr < 0x100
+    return is_user_zp_global(name)
+
+
+def _costs_more(
+    recomp: asm_ast.Type_operand, local_name: str,
+    zp_slot_symbols: dict[str, int],
+) -> bool:
+    """Whether reading `recomp` takes a byte more than reading the
+    slot `local_name`. An absolute `Data` byte and an `abs,X` /
+    `abs,Y` element do (3 bytes and a cycle more) when the slot is in
+    zero page (2 bytes). An immediate or a zero-page byte doesn't."""
+    if not isinstance(recomp, (asm_ast.Data, asm_ast.IndexedData)):
+        return False
+    if _is_zero_page_name(recomp.name, zp_slot_symbols):
+        return False
+    return _is_zero_page_name(local_name, zp_slot_symbols)
+
+
+def _store_dies(
+    instrs: list[asm_ast.Type_instruction], uses: list[int],
+    local_name: str, zp_slot_symbols: dict[str, int],
+) -> bool:
+    """Whether rewriting the reads at `uses` leaves the slot
+    `local_name` with no read anywhere in the function, by name, as a
+    pointer's byte, or through its address, so that the store into it
+    goes, and whether there are few enough of them to pay for it."""
+    if len(uses) > _MAX_DEARER_READS:
+        return False
+    addr = zp_slot_symbols.get(local_name)
+    if addr is None:
+        return False
+    rest = [ins for k, ins in enumerate(instrs) if k not in set(uses)]
+    if addr in _collect_referenced_addrs(rest, zp_slot_symbols):
+        return False
+    return local_name not in _collect_escaped_names(rest)
+
+
+def _eligible_uses(
+    out: list[asm_ast.Type_instruction], i: int,
+    recomp: asm_ast.Type_operand, range_start: int, local_name: str,
+    writable: set[str], private: frozenset[str],
+) -> list[int]:
+    """The indexes of the reads of `local_name` after the staging def
+    at `i`, in its block, that can read `recomp` instead."""
+    uses: list[int] = []
+    # Walk forward in the same block for matching uses. Multiple
+    # uses are allowed, and each gets the same recomputed src.
+    for j in range(i + 1, len(out)):
+        cur = out[j]
+        if _is_block_boundary(cur):
+            break
+        if _writes_local(cur, local_name):
+            break
+        if not (
+            isinstance(cur, asm_ast.Mov)
+            and not cur.is_volatile
+            and _matches_local(cur.src, local_name)
+        ):
+            continue
+        # There's no `LDX abs,X` or `LDY abs,Y`, so an indexed
+        # read can't load its own index register.
+        if (isinstance(recomp, asm_ast.IndexedData)
+                and isinstance(cur.dst, asm_ast.Reg)
+                and type(cur.dst.reg) is type(recomp.index)):
+            continue
+        if not _can_remat(
+            recomp, out, range_start, j, writable, private,
+        ):
+            break
+        uses.append(j)
+    return uses
 
 
 def _classify_stage_def(

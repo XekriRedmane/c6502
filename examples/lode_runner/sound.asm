@@ -326,7 +326,6 @@ append_note:
    INC   NOTE_INDEX
    LDX   NOTE_INDEX
    STA   SOUND_PITCH,X
-   LDX   NOTE_INDEX
    LDA   __local_append_note__duration
    STA   SOUND_DURATION,X
    RTS

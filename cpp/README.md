@@ -54,8 +54,9 @@ The build makes three targets.
 
 - `c6502`, a static library with all of the compiler's code (`src/`
   and `generated/`). A `.cpp` file added under `src/`, `src/asdl/`,
-  `src/passes/`, `src/passes/optimization_asm/`, or `src/sim/` is
-  picked up the next time CMake runs.
+  `src/passes/`, `src/passes/optimization/`,
+  `src/passes/optimization_asm/`, or `src/sim/` is picked up the next
+  time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
 - `c6502cpp`, the CLI (`src/main.cpp`), which for now holds the checks
   below and the back end that compile.py runs through it.
@@ -78,6 +79,10 @@ cpp/
     backend.*         the `c6502cpp backend` command's request and response
     asm_emit.*        asm_emit.py, the asm2 program as dasm's text
     pyrepr.*          Python's repr and formatting, for messages and text
+    ordered_map.h     OrderedMap, a map in the order of insertion, as a dict
+    tagged_json.*     the codecs of the compile's tables (step 4)
+    stage_checks.*    check-captures' checks of the stage calls
+    stage_helper_checks.cpp   the code generation helpers' records
     passes/           one .cpp/.h per Python pass module, mirroring passes/
       peephole_fixedpoint.*   compile.py's _peephole_fixedpoint
       optimized_asm.* the region of compile.py's optimized_asm, and the
@@ -90,6 +95,8 @@ cpp/
       asm_operands.h  for_each_operand, a walk over an instruction's operands
       optimization_asm/cfg.*   the asm CFG and its dominators
       registry.*      the ported passes, by name, for check-captures
+      stage_registry.*  the stage calls' signatures and runners (step 4)
+      optimization/   pool and register_allocation's types, var_visit
       capture_args.*  the decoders of a captured call's keyword arguments
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
@@ -247,6 +254,82 @@ A capture of version 2 (`tools/capture_passes.py`) records the
 context of each call on its `context` line, and `capture::context(call)`
 returns it, which `check-captures` passes to the registered pass.
 
+## The compile's tables
+
+The stages before `apply_licm` (step 4, docs/cpp_port.md) read values
+that aren't IR: the symbol table with each symbol's attributes, the
+type table of struct and union layouts, the calling conventions
+(`abi`), the shares and bindings of `slot_sharing`, the pools, the
+colorings of the register allocation, the frames
+`replace_pseudoregisters` computes, and the zero-page plan. Each is a
+C++ type written by hand after the Python dataclass, with the same
+fields in the same order, in the header named for the Python module
+that defines it.
+
+| Python | C++ | Header |
+|---|---|---|
+| `SymbolTable`, `Symbol`, `LocalAttr`, `StaticAttr`, `FunAttr`, the initial values | `SymbolTable`, `Symbol`, `IdAttr`, ..., `ValueTree` | `src/passes/type_checking.h` |
+| `TypeTable`, `StructLayout`, `MemberInfo` | the same names | `src/passes/type_checking.h` |
+| `ZpLayout`, `SoftStackLayout`, `abi` | `ZpLayout`, `SoftStackLayout`, `ParamLayout`, `Abi` | `src/passes/abi_selection.h` |
+| `SlotShare`, the bindings | `SlotShare`, `Bindings` | `src/passes/slot_sharing.h` |
+| `Pool`, a `range` | `Pool`, `Range` | `src/passes/optimization/pool.h` |
+| `Coloring` | `Coloring` | `src/passes/optimization/register_allocation.h` |
+| `FrameDims` | `FrameDims` | `src/passes/replace_pseudoregisters.h` |
+| `ZpGlobals`, `ZpObjectMeta` | the same names | `src/passes/zp_globals.h`, `zp_link_metadata.h` |
+
+Emission reads the same types: `place_zp_globals` and `link_records`
+take the `ZpGlobals`, `link_records` returns `ZpObjectMeta`s, and the
+link metadata's shares are `SlotShare`s.
+
+A Python dict that a pass walks is an `OrderedMap` (`src/ordered_map.h`),
+which iterates in the order of insertion as a dict does: the symbol
+table, the type table, the ABI, the colorings' `assignments`, and every
+map from functions to their values. A set is a `std::set`, since no
+pass's output may depend on a Python set's order. A type C++ has no
+field for is held with its Python meaning: a c99 type is the generated
+`c99_ast::Type_data_type`, an initial value's float is the bits of the
+double, and a tuple is a `std::vector`.
+
+These values reach C++ as the capture harness's tagged JSON
+(`tools/capture_passes.encode`, which gained `{"float": bits}` for
+them). `src/tagged_json.h` has a codec for each form: a struct with a
+`type`, a `decode` from a `json::Value` that throws `DecodeError` for a
+class or a field the C++ type doesn't hold, and an `encode` that writes
+the text Python's `json.dumps(encode(v))` writes, byte for byte. The
+codecs of containers take their elements' codecs, so a
+`dict[str, list[int]]` is `DictOf<Str, ListOf<IntC>>`, and `SetOf`
+writes its elements sorted by their JSON text, as the harness does
+(`10` before `9`). A later step that runs the stage in C++ from
+compile.py, as `c6502cpp backend` runs the region, can send the tables
+in the same form.
+
+### The stage calls
+
+`tools/capture_passes.py --passes stage` records the calls of
+`STAGE_PASSES`, the stage's entry points, with their arguments, their
+results, and the arguments they changed in place (the module docstring
+describes the records). `src/passes/stage_registry.cpp` gives each call
+a signature, the codec of each positional and keyword argument and of
+the result, and a runner when the call is ported. For each recorded
+call `c6502cpp check-captures` reads every value into its C++ type and
+writes it back, and requires the text of the record: the input's dump,
+the `args` line, the `mutated` line, and the result. For a ported call
+it runs the C++ function and compares its result and the arguments it
+changed with the record. It reports `<name>: N calls, N round-trip`,
+and `M match, 0 differ` after it for a ported one.
+
+```sh
+uv run python tools/capture_passes.py --passes stage -j 14
+cpp/build/bin/c6502cpp check-captures captures
+```
+
+On 20 Nov 2026 the capture of the whole corpus took about 125 seconds
+with 14 processes and wrote 1.5 GB, most of it the symbol tables, one
+per call. Every value of the 30,273 distinct calls of the 24 entries
+made the trip, from 215 calls of `slot_aliases` to 3,798 of
+`address_taken_slot_symbols`, and `synthesize_prologue` matched on all
+937 of its distinct calls.
+
 ## The shared helpers
 
 These Python modules, which the asm passes from `apply_licm` on
@@ -265,6 +348,22 @@ import, are ported with only the parts those passes use.
 | `passes/call_edges.py` | `src/passes/call_edges.*` | `passes` |
 | `sim.assembler.instruction_size` | `src/sim/assembler.*` | `sim` |
 | `long_branches._invert` | `src/passes/long_branches.*` (`invert`) | `passes::long_branches` |
+
+The code generation passes of step 4 share these, which are ported
+with the parts they use.
+
+| Python | C++ | Namespace |
+|---|---|---|
+| `replace_pseudoregisters.sizeof`, `size_of_name` | `src/passes/replace_pseudoregisters.*` (`sizeof_type`, since `sizeof` is a keyword) | `passes` |
+| `zp_slot_naming.register_param_local`, `source_spelling`, `parse_pseudo_name`, `param_slot_symbols` | `src/passes/zp_slot_naming.*` | `passes` |
+| `optimization/var_visit.py` (`vals_in`, `uses_in`, `defs_in`, `count_uses`) | `src/passes/optimization/var_visit.*` | `passes` |
+| `slot_sharing.reach_sets`, `coexist`, `share_conflicts`, `SlotShare`'s methods | `src/passes/slot_sharing.*` | `passes` |
+| `optimization/pool.py`, `RuntimeLayout.bytes` | `src/passes/optimization/pool.*`, `src/passes/asm_context.*` | `passes` |
+
+`uses_in` and `defs_in` return the names as `std::string_view`s into
+the instruction, since a `tac_ast::Var` is only its name, and
+`share_conflicts` returns the indices of the shares where Python
+returns the shares.
 
 A public Python name keeps its name in `c6502::passes`. A name that
 was private to its module (a leading underscore) and that other
@@ -343,6 +442,22 @@ context (Lode Runner's).
 A helper that a pass reads should be added to both sides when it is
 ported, so the check covers it.
 
+The code generation helpers have records of their own, which
+`capture_helpers.py --stage-only` writes without the others. A `tables`
+record holds the TAC program, the tables, and the shares each call of
+`find_shares` sees, and gives each helper's values over every symbol,
+member, TAC instruction, function, pair of functions, and share
+(`stage_values`). A `pseudos` record holds the pseudo names of each
+program `replace_pseudoregisters` is given, with the names of the
+colorings, and gives `parse_pseudo_name` of each. `check-helpers`
+computes them in `src/stage_helper_checks.cpp`. On 20 Nov 2026 the
+whole corpus gave 1,110 `tables` records and 1,812 `pseudos` records in
+62 MB, with no difference among about 1.04 million values: 190,396 each
+for `size_of_name` with and without the type table and for
+`source_spelling`, 133,093 for `parse_pseudo_name`, 69,990 each for
+`vals_in`, `uses_in`, and `defs_in`, 33,493 for `coexist`, and from
+1,117 to 41,173 for the others.
+
 ## Porting a pass
 
 These conventions apply to every pass ported after
@@ -418,6 +533,12 @@ These conventions apply to every pass ported after
   `zp_slot_symbols` is decoded with `src/passes/capture_args.h`. A pass
   is done when `tools/check_captures.py <name>` reports no difference
   on a capture of the whole corpus.
+- **The stage calls.** A call of step 4 that takes the compile's tables
+  is registered by giving its entry in `src/passes/stage_registry.cpp`
+  a `run`, which decodes the arguments with the codecs of
+  `src/tagged_json.h` and returns the result's dump or tagged JSON and,
+  for a call that changes an argument in place, the `mutated` line it
+  would record. `synthesize_prologue` is the model.
 
 ## The control-flow and whole-program passes
 
@@ -685,3 +806,10 @@ recorded by wrapping the Python functions while those tests ran.
   of `place_zp_globals`, and `tools/compare_backends.py` found the same
   output for all 3,576 compiles. The build is clean with MSVC 19.36,
   GCC 12.2, and Clang 14.0.6.
+- 20 Nov 2026: the groundwork of step 4. The compile's tables are C++
+  types with codecs for the capture harness's tagged JSON ("The
+  compile's tables"), the harness records the 24 entry points of the
+  stage, and every value of their 30,273 distinct calls on the corpus
+  reads into C++ and writes back unchanged. The helpers the stage's
+  groups share are ported and match on about 1.04 million values, and
+  `synthesize_prologue` matches on all 937 of its distinct calls.

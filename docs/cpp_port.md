@@ -73,6 +73,190 @@ stages land.
    directly are ported to C++ unit tests or replaced by the corpus
    checks, and the Python compiler is removed.
 
+## Step 4: code generation and the asm optimizer
+
+Step 4 is the part of a compile between the TAC optimizer and
+`apply_licm`. The TAC passes at the start of `optimized_asm`
+(`apply_row_address_tables`, `optimize_tac`,
+`dispatch_const_pointer_arrays`, `apply_split_tables`) belong to step
+5. This section lists the calls of the stage, what each reads, and the
+groups in which several agents can port them at once. The survey was
+made on 20 Nov 2026 from compile.py at de336d0.
+
+### The calls
+
+Under `-O`, `_run_stage` and `optimized_asm` make these calls in this
+order. "Tables" means the symbol table, the type table, or both. Each
+has an entry in `tools/capture_passes.STAGE_PASSES` under the name in
+the first column.
+
+| Capture name | Python | Lines | Reads besides its IR | Returns |
+|---|---|---|---|---|
+| `plan_zero_page` | `zp_globals.plan_zero_page` | 570 | TAC, tables, `promote` | `ZpGlobals` |
+| `select_abi` | `abi_selection.select_abi` | 1165 | TAC, the c99 program, types | the ABI |
+| `choose_global_carry_returns`, `choose_carry_returns` | `carry_return_choice` | 240 | TAC, symbols, ABI | a set, and sets `FunAttr.carry_return` in `symbols` |
+| `recursive_pool_functions`, `pool_eligible` | `zp_local_allocation` | 580 | TAC, ABI | cycles, a set |
+| `find_shares` | `slot_sharing.find_shares` | 965 | TAC, ABI, tables, three sets | the shares and the bindings |
+| `allocate_zp_slots` | `zp_slot_allocation` | 400 | TAC, ABI, shares, reserved bytes, ranges | the ABI with addresses, the slot symbols |
+| `pinned_param_copies`, `slot_aliases` | `slot_sharing` | | TAC, ABI, tables / the shares | |
+| `tac_to_asm` | `tac_to_asm.translate_program` | 5600 | TAC, tables, ABI, cycles, bindings, copies, aliases, the user zero-page globals | asm with pseudos, and the `<param>.reg` locals added to `symbols` |
+| `asm_optimizer` | `optimization_asm.optimizer.optimize_program` | 6500 | asm, ABI, symbols, pools, reserved bytes, cycles | asm, the colorings |
+| `compute_local_bytes`, `compute_address_taken_bytes` | `function_local_sizing` | 240 | asm, tables | bytes by function |
+| `allocate_function_locals` | `zp_local_allocation` | | TAC, ABI, byte counts, shares, ranges | the pools |
+| `address_taken_assignments`, `address_taken_slot_symbols` | `address_taken_zp` | 230 | asm, pools, colorings, tables | addresses and names |
+| `replace_pseudoregisters_bare_exit` | `replace_pseudoregisters` | 900 | asm, tables, colorings, ABI, pools, assignments | asm, the frames |
+| `local_slot_names`, `local_slot_symbols` | `zp_slot_naming`, `zp_local_allocation` | 290 | pools, colorings, assignments | names, addresses |
+| `lower_data_load_address` | `lower_data_load_address` | 170 | asm, slot symbols, byte names | asm |
+| `synthesize_prologue` | `prologue_synthesis` | 190 | asm, the frames | asm |
+
+The asm optimizer runs once to size each function's locals and then
+once more for each allocation of the pools, up to four times
+(`_POOL_RETRIES`). After the back end's region, step 3 ported the
+work that reads the asm program (`link_records`, `place_zp_globals`,
+`check_shares`, `prune_unused_locals`, `hargs_need`, `section_items`,
+and the formatting of the link metadata). What is left there in Python
+reads the TAC or the tables: `changed_param_slots`,
+`preferred_symbols`, and `build_metadata`. Without `-O`, `_codegen`
+calls `fixed_address_layouts`, `tac_to_asm` with that ABI,
+`replace_pseudoregisters`, the region and emission, and
+`pinned_slot_symbols`. `plan_zero_page` runs
+`tac_to_asm` itself, only when the runtime's block has to move, to
+measure the HARGS bytes the program uses.
+
+Every value these read is in the compile's tables or the
+`AsmContext`. None of them reads `os.environ`, and the only module
+state they read is what `AsmContext` holds: `runtime_layout.current()`,
+and the user zero-page globals, which `tac_to_asm` reads through
+`pointer_restage.pointer_in_zero_page`. cpp/README.md ("The compile's
+tables") describes the C++ form of the tables and the check that they
+make the trip from Python and back.
+
+### The helpers the groups share
+
+These are ported and checked on the corpus (cpp/README.md, "Checking
+the helpers").
+
+- `replace_pseudoregisters.sizeof` (`sizeof_type` in C++) and
+  `size_of_name`, which abi_selection, slot_sharing, zp_globals, the
+  sizing passes, the asm optimizer, and replace_pseudoregisters call.
+- `zp_slot_naming`'s `register_param_local`, `source_spelling`,
+  `parse_pseudo_name`, and `param_slot_symbols`.
+- `optimization.var_visit`'s `vals_in`, `uses_in`, `defs_in`, and
+  `count_uses`, which the TAC side reads everywhere.
+- `slot_sharing.reach_sets`, `coexist`, `share_conflicts`, and the
+  methods of `SlotShare`.
+- `Pool`, `Range` (a Python `range`), and `RuntimeLayout.bytes`.
+
+These are shared too but belong to one group, which ports them first
+and says so to the others.
+
+- The TAC CFG (`passes/optimization/cfg.py`, 340 lines) and
+  `recursion_saves._live_out` and `defs_in`, which `find_shares`,
+  `plan_saves` (for `tac_to_asm`), and `hw_stack_cycles` read. Group A.
+- `ssa_destruction._order_parallel_copies`, which `tac_to_asm` calls
+  for the register arguments of a call. Group D.
+- An asm CFG whose blocks own their instructions. The ported
+  `optimization_asm/cfg` keeps index ranges into the function, and SSA
+  construction and destruction edit the blocks in place. Group D.
+- `optimizer._all_operands_in`, which regalloc and
+  `function_local_sizing` call too. Group F.
+
+### The groups
+
+Each group ports its modules with the conventions of cpp/README.md
+("Porting a pass"), registers each capture name it ports with a runner
+in `src/passes/stage_registry.cpp`, and checks it on a capture of the
+whole corpus. A group that ports a function the table above doesn't
+record, such as one of the asm optimizer's sub-passes, adds it to
+`STAGE_PASSES` with a signature, as `module:name` when its caller
+reaches it through its module. `_optimize_function` calls the
+sub-passes by the names it imports, so `to_ssa` is
+`passes.optimization_asm.optimizer:to_ssa`.
+
+- **A. The ABI and the call graph, on TAC.** `abi_selection`
+  (`select_abi`, `fixed_address_layouts`, `pinned_slot_symbols`),
+  `carry_return_choice`, the eligibility parts of `zp_local_allocation`
+  (`pool_eligible`, `recursive_pool_functions`, `_determine_eligibility`),
+  `recursion_saves`, and the TAC CFG. About 2,300 lines.
+- **B. Sharing and the zero-page allocators.** `slot_sharing`
+  (`find_shares`, `pinned_param_copies`, `slot_aliases`,
+  `changed_param_slots`, `preferred_symbols`), `zp_slot_allocation`,
+  `zp_local_allocation.allocate_function_locals` and
+  `build_local_slot_symbols`, `zp_globals` (`plan_zero_page`,
+  `allocate_zp_globals`, `access_weights`), `runtime_layout`
+  (`choose_layout`), and `zp_link_metadata.build_metadata`. About 2,400
+  lines. Step 3 ported `check_shares`, `place_zp_globals`,
+  `link_records`, `hargs_need`, and `check_hargs`. B reads A's
+  `_live_out`, and `plan_zero_page` reads `tac_to_asm` when the
+  runtime's block moves, which it can take as a function argument
+  until group C lands.
+- **C. `tac_to_asm`**, with `pointer_restage`, `significant_bytes`,
+  `in_place_member_update`, `shift_cost`, and the pieces of
+  `bit_precise`, `split_tables.plane_init`, and
+  `compare_subtract.compared_difference` it calls. 5,600 lines in
+  three parts that share about 300 lines of the `Translator`'s queries
+  (`_size_of`, `_is_*_val`, `make_label`, `_byte_at`, `_hargs`,
+  `_translate_helper_call`), which C1 ports first.
+  - C1: the driver, calls and the ABI, and memory and pointers (lines
+    1566-2316, 2322-2520, 2892-3171, 3176-3678).
+  - C2: arithmetic, the inline shifts, divisions, and products, and
+    the free shift and divide helpers (723-1414, 3683-4590).
+  - C3: casts, unary operators, conditional jumps, and comparisons
+    (2521-2891, 4591-5328).
+  It calls `plan_saves` from A and `_order_parallel_copies` from D.
+  Its labels are numbered by two counters over the whole program, so
+  the order of the lowering is part of its output.
+- **D. The asm SSA round trip.** `optimization_asm`'s
+  `ssa_construction`, `ssa_destruction`, `copy_propagation`,
+  `backward_copy_propagation`, `byte_dce`, and `or_zero_absorb`, the
+  asm CFG with blocks of their own, and `decimal_arith`'s
+  `pseudo_reads`, `pseudo_writes`, `map_reads`, `map_writes`, and
+  `early_write_pairs`. About 2,300 lines.
+- **E. Register allocation.** `optimization_asm`'s `liveness`,
+  `interference`, `coalescing`, `hwreg_eligibility`, and `regalloc`,
+  with `register_allocation`'s `_find_fit` and `_blocked_bytes` and the
+  `InterferenceGraph`. About 2,200 lines. It works on the SSA form D
+  gives, and it can start on captured calls of `compute_liveness` and
+  `color_graph` before D lands.
+- **F. The program level and the end of the stage.**
+  `optimizer.optimize_program` and `_optimize_function`,
+  `apply_coloring`, `const_static_fold`, `dead_static`,
+  `function_local_sizing`, `address_taken_zp`, `zp_slot_naming`'s
+  `local_slot_names` and `compute_local_slot_names`,
+  `replace_pseudoregisters` (both forms), `lower_data_load_address`,
+  and last the stage's driver in C++, compile.py's
+  sequence from `select_abi` to `synthesize_prologue` with the pool
+  retries, so that the stage, the region, and emission run as one
+  process. About 2,700 lines.
+
+A, C, and D can start at once, and B, E, and F once the helpers they
+read from A and D exist or have an agreed interface. The groups should
+agree first on the fields of `HwRegEligibility` (E and F), the SSA
+names (`<name>.b<k>.v<N>`, D and E), and `_all_operands_in` (E and F).
+`Coloring`, `FrameDims`, the ABI, the shares, the pools, and
+`ZpGlobals` are already C++ types (src/tagged_json.h lists them).
+
+### What the port has to keep
+
+The surveys found these places where the Python output depends on
+something a straightforward C++ port could change.
+
+- `find_shares` keys its bindings by `id()` (slot_sharing.py:327,
+  :527), and `allocate_zp_slots` its shares (zp_slot_allocation.py:211,
+  :259). The C++ port keys them by index.
+- The order of `Coloring.assignments` decides the slot names
+  (zp_slot_naming.py:178, the first name from the source at an address
+  names it). It is the reverse of the elimination order, then the
+  leftovers sorted, then the coalesced names in `rep_map`'s order
+  (regalloc.py:505, optimizer.py:458).
+- The order of the `Phi`s in a block follows the `defs` dict of SSA
+  construction, which decides the order of the moves `from_ssa` writes.
+- The symbol table's order decides where `plan_zero_page` places the
+  zero-page objects, and its promotion sorts by a float key `-w/size`
+  (zp_globals.py:316).
+- `const_static_fold` takes bytes of Python ints that may be negative
+  or wider than 64 bits.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -196,3 +380,22 @@ stages land.
   0.22 s in the C++ process. The rest is Python's imports (0.6 s), the
   TAC optimizer with the inliner's cost estimates, the asm optimizer,
   and the parser.
+- 20 Nov 2026: the groundwork of step 4 ("Step 4" above). The symbol
+  and type tables, the ABI, the shares, the pools, the colorings, the
+  frames, and the zero-page plan are C++ types, read from and written to
+  the capture harness's tagged JSON byte for byte (cpp/README.md, "The
+  compile's tables"). `tools/capture_passes.py --passes stage` records
+  the 24 entry points of the stage that emission's table doesn't, and
+  `check-captures` reads every value of each of the 30,273 distinct
+  calls of the corpus into C++ and
+  writes it back unchanged. The helpers the groups share (`sizeof`,
+  `size_of_name`, the slot-name spellings, `var_visit`, `reach_sets`,
+  `Pool`) match on about 1.04 million values of the corpus
+  (`capture_helpers.py --stage-only`), and `synthesize_prologue` is
+  ported and matches on all 937 of its distinct calls. The capture
+  found two bugs, fixed in Python, since neither pass is ported:
+  `c99_to_tac` folded an out-of-range floating cast to a constant of the
+  whole value (a 1000-bit `ConstULong` for `(unsigned long)200e300`),
+  and the type checker let fourteen invalid programs through to crash
+  in later passes, such as `10 & ptr` and `foo(s)` with a struct for an
+  `int` parameter.

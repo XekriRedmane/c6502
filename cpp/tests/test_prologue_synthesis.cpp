@@ -38,7 +38,7 @@ TEST_CASE("prologue_synthesis adds the prologue and makes each Return a Ret") {
 TEST_CASE("prologue_synthesis moves the register parameters' copies in front") {
   // The copy of A into its local goes first, past the label, and A is
   // read again after it, so the prologue is wrapped in PHA / PLA. Y is
-  // overwritten before it is read, so it needs no save.
+  // overwritten before it is read, so the prologue saves only A.
   CHECK(run("Label(\"top\") Mov(Reg(A) Data(\"a.reg\" 0) false) "
             "Add(Data(\"t\" 0) Reg(A)) Mov(Imm(0) Reg(Y) false) Return(true false false)",
             FrameDims{.local_bytes = 1}) ==

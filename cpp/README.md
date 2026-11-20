@@ -505,6 +505,10 @@ once, since `ir_check` isn't ported and the checks after each sweep
 happened in Python. compile.py reads the variable at each compile and,
 without it, imports none of this.
 
+`tools/compare_backends.py` compiles the corpus of the capture harness
+with `-S` and `-S -O`, once with the variable and once without, and
+requires the same `-S` text, exit status, messages, and exceptions.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,

@@ -310,6 +310,7 @@ ctest --test-dir cpp/build -C Release --output-on-failure
 uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
 uv run python tools/check_captures.py split_mem_to_mem   # C++ vs the calls
 C6502_CPP_BACKEND=1 uv run python compile.py <source.c> -S -O   # back end in C++
+uv run python tools/compare_backends.py -j 12   # both back ends on the corpus
 ```
 
 With `C6502_CPP_BACKEND=1`, compile.py runs the asm back end's region
@@ -323,8 +324,9 @@ arguments in the capture harness's encoding, and enters the functions
 before and after the region is the Python code. The variable is read at
 each compile, and without it compile.py imports nothing new. Under
 `C6502_CHECK_IR=1` the result is checked once, since the checks after
-each sweep aren't ported. cpp/README.md has the details ("The back
-end through c6502cpp").
+each sweep aren't ported. `tools/compare_backends.py` compiles the
+whole corpus both ways and requires the same output and errors
+(cpp/README.md, "The back end through c6502cpp").
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
 module is library-only. Flags `compile.py` doesn't recognize are
@@ -546,6 +548,8 @@ Other root-level files:
   `tools/check_captures.py` runs the check.
 - `cpp_backend.py` — the Python side of `C6502_CPP_BACKEND=1`, which
   runs the back end's region through `c6502cpp backend`.
+  `tools/compare_backends.py` compiles the corpus with and without it
+  and compares the outputs.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

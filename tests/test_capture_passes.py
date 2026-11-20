@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,8 @@ import ir_dump
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "tools"))
 import capture_passes  # noqa: E402
+
+from tests.test_ir_dump import cpp_cli  # noqa: E402
 
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -107,6 +110,18 @@ class TestCapture(unittest.TestCase):
             self.assertEqual(
                 ir_dump.dump(apply_split_mem_to_mem(prog)), output_text,
             )
+
+    @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+    def test_cpp_port_matches(self):
+        result = subprocess.run(
+            [cpp_cli(), "check-captures", str(self.files[0].parent)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            f"split_mem_to_mem: {len(self.files)} calls, "
+            f"{len(self.files)} match, 0 differ", result.stdout,
+        )
 
 
 if __name__ == "__main__":

@@ -7,8 +7,9 @@ Python code it replaces, byte for byte, and the Python compiler stays
 the reference until the port is done.
 
 So far the port has the build, the IR classes generated from the four
-`.asdl` files, and the dump format that carries an IR value between
-the two compilers.
+`.asdl` files, the dump format that carries an IR value between the
+two compilers, and one asm pass, `split_mem_to_mem`, which matches the
+Python pass on every call the corpus makes.
 
 ## Building
 
@@ -65,6 +66,10 @@ cpp/
   src/
     asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer
     errors.h          CompileError, InternalError
+    json.*            the reader of the capture harness's JSON
+    capture.*         the reader of capture files
+    passes/           one .cpp/.h per Python pass module, mirroring passes/
+      registry.*      the ported passes, by name, for check-captures
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
   third_party/doctest doctest.h 2.4.12 and its MIT license
@@ -160,10 +165,15 @@ bytes for the four IRs of a compiled example.
 and records each call of the chosen asm passes, with its arguments,
 its input program, and its output, under `captures/` (ignored by git).
 Its docstring describes the corpus and the file format.
-The C++ side doesn't read them yet.
+`c6502cpp check-captures <path>...` reads the files under each path.
+It checks that each file's dumps read and write back as the same bytes
+in C++, and for each pass in `src/passes/registry.cpp` it runs the C++
+pass on the recorded input and compares the dump of the result with
+the recorded output.
 
 ```sh
 uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
+uv run python tools/check_captures.py split_mem_to_mem
 ```
 
 The whole corpus took 73 seconds with 16 processes and gave 7535 calls
@@ -174,3 +184,68 @@ are over the 253-byte limit. A capture of every pass takes much more
 space. The examples and the games alone gave 21545 distinct calls of
 the 73 passes in about 1 GB, so a capture is best limited to the passes
 being ported.
+
+## Porting a pass
+
+These conventions apply to every pass ported after
+`split_mem_to_mem`, which is the model.
+
+- **Files and names.** The Python module `passes/<name>.py` becomes
+  `src/passes/<name>.h` and `.cpp`, and `passes/<dir>/<name>.py`
+  becomes `src/passes/<dir>/<name>.*` (add the directory to
+  `CMakeLists.txt`'s glob). Code is in namespace `c6502::passes`, and
+  each function keeps its Python name in snake_case (`apply_<name>`,
+  `rewrite_function`), with private helpers in an anonymous namespace
+  and a leading underscore dropped. Types are CamelCase, constants
+  `kName`. An IR module is aliased as `namespace ir = ::c6502::asm_ast;`.
+- **Signatures.** A pass takes the program by value and returns it,
+  `asm_ast::Program apply_x(asm_ast::Program prog, ...)`, and rewrites
+  a function in place only when it changes something, so a caller that
+  moves the program in copies nothing. Keyword arguments become
+  parameters in the same order, with the Python defaults.
+- **Comments.** The module's docstring, rewritten in the project's
+  prose rules (full sentences, no "X, not Y"), opens the `.cpp` as a
+  block comment, and keeps every reason and every example of a bug the
+  pass once had. The header gets a short comment on the entry point.
+  Each function's docstring becomes the comment above it, opening with
+  a third-person verb, and each comment inside a body stays next to
+  the code it explains.
+- **isinstance.** `isinstance(x, C)` is `asdl::as<ir::C>(x)`, which
+  returns a pointer or null, or `asdl::isa<ir::C>(x)` when only the
+  answer is needed, and `isinstance(x, (C, D))` is
+  `asdl::isa<ir::C, ir::D>(x)`. A chain of `isinstance` tests on one
+  value with more than three branches is a `switch (ir::kind(x))`.
+  `==` between IR values compares as Python's does.
+- **Python's arithmetic.** C++'s `/` and `%` round toward zero, so
+  Python's `//` and `%` on values that can be negative are
+  `asdl::floor_div` and `asdl::floor_mod`. A Python dict iterates in
+  insertion order, so a map that a pass iterates is a vector of pairs
+  or an insertion-ordered map, never `std::unordered_map`. A Python
+  set's iteration order depends on hashing, and a pass whose output
+  depends on one is a bug to fix in Python first.
+- **Identity.** The C++ IR has value semantics, so a Python test of
+  `is` between IR nodes, or a cache keyed by `id()`, needs another key,
+  such as the instruction's index.
+- **Errors.** A Python exception that `compile._source_errors` lists
+  (a problem with the program) is thrown as
+  `c6502::CompileError("<Python type>", "<the same message>")`, and an
+  `AssertionError` or `IRCheckError` as `c6502::InternalError`
+  (`src/errors.h`). The messages are the Python ones, word for word,
+  since the tests compare them.
+- **Registration and checks.** Each ported pass gets an entry in
+  `src/passes/registry.cpp` under its name in
+  `tools/capture_passes.py`'s `PASSES`, with a function that decodes
+  the call's tagged-JSON arguments and returns the result's dump. The
+  Python tests of the pass (`tests/test_<name>.py`) are ported to
+  `tests/test_<name>.cpp`. A pass is done when `tools/check_captures.py
+  <name>` reports no difference on a capture of the whole corpus.
+
+## Status
+
+- 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
+  and Clang; doctest; the C++ IR generated from all four `.asdl`
+  files; the dump format on both sides, with the Python round trip and
+  the Python-to-C++-to-Python byte check on a compiled example's four
+  IRs; the capture harness for the passes of `optimized_asm` from
+  `apply_licm` on; and `split_mem_to_mem`, which matches on all 7049
+  distinct calls of the corpus.

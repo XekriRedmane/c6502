@@ -308,6 +308,7 @@ cmake -S cpp -B cpp/build -G "Visual Studio 17 2022" -A x64
 cmake --build cpp/build --config Release --parallel
 ctest --test-dir cpp/build -C Release --output-on-failure
 uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
+uv run python tools/check_captures.py split_mem_to_mem   # C++ vs the calls
 ```
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
@@ -526,7 +527,8 @@ Other root-level files:
   value (`dump`, `load`) that the C++ port reads and writes too. Its
   docstring gives the grammar.
 - `tools/capture_passes.py` — records the calls of chosen asm passes
-  over the corpus, for checking their C++ ports.
+  over the corpus, for checking their C++ ports, and
+  `tools/check_captures.py` runs the check.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

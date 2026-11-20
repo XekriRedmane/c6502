@@ -57,7 +57,9 @@
 #include "passes/shift_in_a.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/sub1_test_zero_peephole.h"
+#include "passes/transfer_past_branch.h"
 #include "passes/transfer_pm1_store.h"
+#include "passes/via_a_store_fold.h"
 #include "passes/volatile_void_read_cmp.h"
 
 namespace c6502::passes {
@@ -361,6 +363,11 @@ std::string run_join_store(asm_ast::Program input, const AsmContext& ctx,
   return asdl::dump(apply_join_store(std::move(input), ctx, slots ? &*slots : nullptr));
 }
 
+std::string run_transfer_past_branch(asm_ast::Program input, const AsmContext&,
+                                     const json::Value&, const json::Value&) {
+  return asdl::dump(apply_transfer_past_branch(std::move(input)));
+}
+
 std::string run_and_sign_bit_branch(asm_ast::Program input, const AsmContext&,
                                     const json::Value&, const json::Value&) {
   return asdl::dump(apply_and_sign_bit_branch(std::move(input)));
@@ -377,6 +384,11 @@ std::string run_cmp_through_tmp_fold(asm_ast::Program input, const AsmContext& c
       capture_args::symbol_addrs(capture_args::kwarg(kwargs, "zp_slot_symbols"));
   return asdl::dump(
       apply_cmp_through_tmp_fold(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
+std::string run_via_a_store_fold(asm_ast::Program input, const AsmContext&,
+                                 const json::Value&, const json::Value&) {
+  return asdl::dump(apply_via_a_store_fold(std::move(input)));
 }
 
 }  // namespace
@@ -435,6 +447,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"constant_store_order", run_constant_store_order},
       {"join_store", run_join_store},
       {"dead_a_arith", run_dead_a_arith},
+      {"transfer_past_branch", run_transfer_past_branch},
       {"volatile_void_read_cmp", run_volatile_void_read_cmp},
       {"dec_branch_indirect_y_fold", run_dec_branch_indirect_y_fold},
       {"const_arith_fold", run_const_arith_fold},
@@ -452,6 +465,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"adc_commute", run_adc_commute},
       {"cmp_sbc_fusion", run_cmp_sbc_fusion},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},
+      {"via_a_store_fold", run_via_a_store_fold},
       {"transfer_pm1_store", run_transfer_pm1_store},
       {"carry_known", run_carry_known},
   };

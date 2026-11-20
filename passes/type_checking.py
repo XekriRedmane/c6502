@@ -2319,6 +2319,17 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
             f"cannot implicitly convert {exp.data_type!r} to void; "
             f"use an explicit `(void)expr` cast to discard a value"
         )
+    # A struct or union value converts only to its own type, which the
+    # test above lets through, so `foo(s)` for an `int` parameter is a
+    # constraint violation (C99 §6.5.2.2p2, §6.5.16.1p1). The cast this
+    # once made reached `c99_to_tac`, which has no width for it.
+    if _is_struct_or_union(target) or (
+        exp.data_type is not None and _is_struct_or_union(exp.data_type)
+    ):
+        raise TypeCheckError(
+            f"cannot convert {exp.data_type!r} to {target!r}; a struct "
+            f"or union value converts only to its own type"
+        )
     # A `nullptr_t` value converts to a pointer type, giving a null
     # pointer, and to `bool`, giving false (C23 §6.3.2.4p1), and
     # §6.5.17.2p1 lets assignment do either. Only a null pointer
@@ -2495,6 +2506,33 @@ class TypeChecker:
                 raise TypeCheckError(
                     f"{where}: incomplete type '{kw} {t.tag}' "
                     f"(C99 §6.7.2.1.8)"
+                )
+
+    def _require_complete_pointee(self, ptr: Type, where: str) -> None:
+        """Rejects pointer arithmetic (`where`: `p + n`, `p += n`,
+        `p[n]`) on a pointer to `void`, to a function, or to an
+        incomplete struct or union, since C99 §6.5.6p2 requires a
+        pointer to a complete object type and the step is the
+        pointee's size, which those don't have. `c99_to_tac` once
+        raised its own `TypeError` sizing one (`buff += 3` on a `void
+        *`, `ptr + 0` on a `struct s *` with no body)."""
+        pointee = _strip_quals(_strip_quals(ptr).referenced_type)
+        if isinstance(pointee, Void):
+            raise TypeCheckError(
+                f"{where} is not defined on a pointer to void ({ptr!r})"
+            )
+        if isinstance(pointee, FunType):
+            raise TypeCheckError(
+                f"{where} is not defined on a pointer to a function "
+                f"({ptr!r})"
+            )
+        if isinstance(pointee, (Structure, Union)):
+            layout = self.types.get(pointee.tag)
+            if layout is None or not layout.complete:
+                kw = "union" if isinstance(pointee, Union) else "struct"
+                raise TypeCheckError(
+                    f"{where} is not defined on a pointer to the "
+                    f"incomplete type '{kw} {pointee.tag}' (C99 §6.5.6)"
                 )
 
     def check_program(
@@ -5266,6 +5304,10 @@ class TypeChecker:
                                 f"void pointer operands "
                                 f"({tl!r} {op_name} {tr!r})"
                             )
+                        if isinstance(t, Pointer):
+                            self._require_complete_pointee(
+                                t, f"binary '{op_name}'",
+                            )
                     if _is_floating_type(tl) or _is_floating_type(tr):
                         raise TypeCheckError(
                             f"binary '{op_name}' is not defined on a "
@@ -5334,14 +5376,11 @@ class TypeChecker:
                     return exp.data_type
                 # Bitwise / shift / modulo (C99 §6.5.5.2 / §6.5.7.2 /
                 # §6.5.10.2 / §6.5.11.2 / §6.5.12.2): operands must
-                # have integer type. Reject Float / Double directly.
-                # Pointer operands for non-shift bitwise / modulo
-                # ops fall through to `_common_type` which crashes
-                # on Pointer; the chapter_14 pointer-bitwise tests
-                # rely on that path's crash for rejection. Shifts
-                # are special — they skip `_common_type` (per the
-                # branch below), so Pointer-typed shift operands
-                # need an explicit rejection here.
+                # have integer type, so a floating or pointer operand
+                # is rejected here. A pointer operand of `&`, `|`, or
+                # `^` once went on to `_common_type` and the crash
+                # there, or to `c99_to_tac`, which has no width for
+                # the result (`10 & ptr`, `"s" & 100`).
                 if (
                     isinstance(op, (
                         c99_ast.Modulo,
@@ -5353,15 +5392,7 @@ class TypeChecker:
                     ))
                     and (
                         _is_floating_type(tl) or _is_floating_type(tr)
-                        or (
-                            isinstance(op, (
-                                c99_ast.LeftShift, c99_ast.RightShift,
-                            ))
-                            and (
-                                _is_pointer_type(tl)
-                                or _is_pointer_type(tr)
-                            )
-                        )
+                        or _is_pointer_type(tl) or _is_pointer_type(tr)
                     )
                 ):
                     op_name = {
@@ -5515,6 +5546,17 @@ class TypeChecker:
                 # matching pointer width); lval stays pointer. No
                 # intermediate type — c99_to_tac dispatches on the
                 # pointer-arith path before consulting it.
+                if _is_pointer_type(tl) and not isinstance(
+                    op, (c99_ast.Add, c99_ast.Subtract),
+                ):
+                    # C99 §6.5.16.2p1: a pointer left operand takes
+                    # only `+=` and `-=`. `x /= y` and `ptr &= 0` on
+                    # pointers once reached `_common_type` or
+                    # `c99_to_tac` and crashed there.
+                    raise TypeCheckError(
+                        f"compound `{op!r}` is not defined on a pointer "
+                        f"left operand ({tl!r}, {tr!r})"
+                    )
                 if (
                     isinstance(op, (c99_ast.Add, c99_ast.Subtract))
                     and _is_pointer_type(tl)
@@ -5524,6 +5566,7 @@ class TypeChecker:
                             f"pointer compound +/- requires integer "
                             f"rhs ({tl!r}, {tr!r})"
                         )
+                    self._require_complete_pointee(tl, "compound +/-")
                     exp.rval = _convert_to(rv, c99_ast.Int())
                     exp.intermediate_type = tl
                     exp.data_type = tl
@@ -5558,6 +5601,16 @@ class TypeChecker:
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
                 _require_not_function(tl, "assignment")
+                # `*p = e` for a `void *p` assigns to an expression of
+                # type void, which isn't an lvalue (C99 §6.3.2.1p1).
+                # With a void `e` too, as in `*x = foo();`,
+                # `_convert_to` saw two equal types and let it through
+                # to `c99_to_tac`, which stored no value.
+                if _is_void(tl):
+                    raise TypeCheckError(
+                        f"cannot assign to an expression of type void: "
+                        f"{lv!r}"
+                    )
                 # Reject assignment to a const-qualified lvalue
                 # (C99 §6.5.16.1 constraint: "An assignment operator
                 # shall have a modifiable lvalue as its left
@@ -6019,6 +6072,10 @@ class TypeChecker:
                         "subscript of pointer-to-function is not "
                         "supported"
                     )
+                # `v[0]` on a `void *` is `*(v + 0)`, pointer
+                # arithmetic on a pointer to void (C99 §6.5.2.1p1).
+                if _is_void(ptr_type_uq.referenced_type):
+                    self._require_complete_pointee(ptr_type_uq, "subscript")
                 # Widen the index to Int (the 2-byte type matching
                 # pointer width) so c99_to_tac can use a uniform
                 # 2-byte add to compute the byte address.

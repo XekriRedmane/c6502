@@ -344,6 +344,9 @@ def corpus(kinds: list[str], seeds: range) -> list[tuple[str, list[str]]]:
 
 
 def _init_worker(passes: list[str], out: str) -> None:
+    # The calls recorded are the Python passes', which don't run when
+    # C6502_CPP_BACKEND=1 hands the back end to the C++ port.
+    os.environ.pop("C6502_CPP_BACKEND", None)
     install(passes, Path(out))
 
 

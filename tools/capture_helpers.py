@@ -537,6 +537,10 @@ def install(out: Path) -> None:
 
 
 def _init_worker(out: str) -> None:
+    # The values recorded are those the Python passes see, and they
+    # don't run when C6502_CPP_BACKEND=1 hands the back end to the C++
+    # port.
+    os.environ.pop("C6502_CPP_BACKEND", None)
     install(Path(out))
 
 

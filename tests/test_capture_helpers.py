@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import asm_ast
 import compile as compile_module
@@ -39,10 +40,14 @@ class TestCaptureHelpers(unittest.TestCase):
             capture_helpers.install(cls.out)
             capture_helpers._SOURCE = "examples/sfx_tone.c -S -O"
             src = _ROOT / "examples" / "sfx_tone.c"
-            assert compile_module.main([
-                "compile.py", str(src), "-S", "-O",
-                "-o", os.path.join(cls.tmp.name, "out.s"),
-            ]) == 0
+            # The harness records what the Python passes see, and they
+            # don't run under C6502_CPP_BACKEND=1.
+            with mock.patch.dict(os.environ):
+                os.environ.pop("C6502_CPP_BACKEND", None)
+                assert compile_module.main([
+                    "compile.py", str(src), "-S", "-O",
+                    "-o", os.path.join(cls.tmp.name, "out.s"),
+                ]) == 0
         finally:
             for n, f in saved.items():
                 setattr(compile_module, n, f)

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from unittest import mock
 
 import asm_ast
 import compile as compile_module
@@ -81,10 +82,14 @@ class TestCapture(unittest.TestCase):
             capture_passes.install(["split_mem_to_mem"], out)
             capture_passes._SOURCE = "examples/sfx_tone.c -S -O"
             src = _ROOT / "examples" / "sfx_tone.c"
-            assert compile_module.main([
-                "compile.py", str(src), "-S", "-O",
-                "-o", os.path.join(cls.tmp.name, "out.s"),
-            ]) == 0
+            # The harness records the Python passes, which don't run
+            # under C6502_CPP_BACKEND=1.
+            with mock.patch.dict(os.environ):
+                os.environ.pop("C6502_CPP_BACKEND", None)
+                assert compile_module.main([
+                    "compile.py", str(src), "-S", "-O",
+                    "-o", os.path.join(cls.tmp.name, "out.s"),
+                ]) == 0
         finally:
             compile_module.apply_split_mem_to_mem = saved
         cls.files = sorted((out / "split_mem_to_mem").glob("*.txt"))

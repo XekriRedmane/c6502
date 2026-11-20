@@ -32,6 +32,7 @@
 #include "passes/carry_known.h"
 #include "passes/carry_recompute.h"
 #include "passes/carry_return.h"
+#include "passes/cmp_sbc_fusion.h"
 #include "passes/const_arith_fold.h"
 #include "passes/constant_store_order.h"
 #include "passes/cpx_cpy_peephole.h"
@@ -45,6 +46,7 @@
 #include "passes/inc_peephole.h"
 #include "passes/label_offset_fold.h"
 #include "passes/redundant_load_after_rmw.h"
+#include "passes/round_trip_load.h"
 #include "passes/self_store_drop.h"
 #include "passes/shift_in_a.h"
 #include "passes/split_mem_to_mem.h"
@@ -316,6 +318,16 @@ std::string run_dead_a_arith(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_dead_a_arith_elimination(std::move(input)));
 }
 
+std::string run_round_trip_load_drop(asm_ast::Program input, const AsmContext&,
+                                     const json::Value&, const json::Value&) {
+  return asdl::dump(apply_round_trip_load_drop(std::move(input)));
+}
+
+std::string run_cmp_sbc_fusion(asm_ast::Program input, const AsmContext&,
+                               const json::Value&, const json::Value&) {
+  return asdl::dump(apply_cmp_sbc_fusion(std::move(input)));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -379,7 +391,9 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"carry_return_tails", run_carry_return_tails},
       {"carry_const_fold", run_carry_const_fold},
       {"carry_branch_fold", run_carry_branch_fold},
+      {"round_trip_load_drop", run_round_trip_load_drop},
       {"self_store_drop", run_self_store_drop},
+      {"cmp_sbc_fusion", run_cmp_sbc_fusion},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},
       {"carry_known", run_carry_known},
   };

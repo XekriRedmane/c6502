@@ -35,6 +35,7 @@
 #include "passes/carry_recompute.h"
 #include "passes/carry_return.h"
 #include "passes/cmp_sbc_fusion.h"
+#include "passes/cmp_through_tmp_fold.h"
 #include "passes/const_arith_fold.h"
 #include "passes/constant_store_order.h"
 #include "passes/cpx_cpy_peephole.h"
@@ -46,6 +47,7 @@
 #include "passes/direct_index_load.h"
 #include "passes/inc_low_byte_test.h"
 #include "passes/inc_peephole.h"
+#include "passes/join_store.h"
 #include "passes/label_offset_fold.h"
 #include "passes/pointer_self_store.h"
 #include "passes/redundant_compare.h"
@@ -352,6 +354,13 @@ std::string run_transfer_pm1_store(asm_ast::Program input, const AsmContext& ctx
   return asdl::dump(apply_transfer_pm1_store(std::move(input), ctx));
 }
 
+std::string run_join_store(asm_ast::Program input, const AsmContext& ctx,
+                           const json::Value&, const json::Value& kwargs) {
+  const auto slots =
+      capture_args::symbol_addrs(capture_args::kwarg(kwargs, "zp_slot_symbols"));
+  return asdl::dump(apply_join_store(std::move(input), ctx, slots ? &*slots : nullptr));
+}
+
 std::string run_and_sign_bit_branch(asm_ast::Program input, const AsmContext&,
                                     const json::Value&, const json::Value&) {
   return asdl::dump(apply_and_sign_bit_branch(std::move(input)));
@@ -360,6 +369,14 @@ std::string run_and_sign_bit_branch(asm_ast::Program input, const AsmContext&,
 std::string run_redundant_compare(asm_ast::Program input, const AsmContext& ctx,
                                   const json::Value&, const json::Value&) {
   return asdl::dump(apply_redundant_compare(std::move(input), ctx));
+}
+
+std::string run_cmp_through_tmp_fold(asm_ast::Program input, const AsmContext& ctx,
+                                     const json::Value&, const json::Value& kwargs) {
+  const auto slots =
+      capture_args::symbol_addrs(capture_args::kwarg(kwargs, "zp_slot_symbols"));
+  return asdl::dump(
+      apply_cmp_through_tmp_fold(std::move(input), ctx, slots ? &*slots : nullptr));
 }
 
 }  // namespace
@@ -416,6 +433,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"shift_in_a", run_shift_in_a},
       {"redundant_load_after_rmw", run_redundant_load_after_rmw},
       {"constant_store_order", run_constant_store_order},
+      {"join_store", run_join_store},
       {"dead_a_arith", run_dead_a_arith},
       {"volatile_void_read_cmp", run_volatile_void_read_cmp},
       {"dec_branch_indirect_y_fold", run_dec_branch_indirect_y_fold},
@@ -430,6 +448,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"self_store_drop", run_self_store_drop},
       {"pointer_self_store_drop", run_pointer_self_store_drop},
       {"redundant_compare", run_redundant_compare},
+      {"cmp_through_tmp_fold", run_cmp_through_tmp_fold},
       {"adc_commute", run_adc_commute},
       {"cmp_sbc_fusion", run_cmp_sbc_fusion},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},

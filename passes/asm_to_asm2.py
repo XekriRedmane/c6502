@@ -353,6 +353,7 @@ def _function_prologue(
     ]
     out += _ssp_sub(local_bytes + 2)
     out += _save_fp_into_slot(local_bytes)
+    _check_frame_bytes(arg_bytes, local_bytes)
     out += _set_fp_to_ssp()
     for i, addr in enumerate(callee_saved_addrs):
         out += _save_zp_byte_to_frame(addr, i + 1)
@@ -423,6 +424,23 @@ def _check_local_bytes(m: int) -> None:
             f"holds at most 253 (local_bytes {m} out of range 0..253, "
             f"limited by the `LDY #offset` of each frame access); a "
             f"large array fits better as a `static` or a global"
+        )
+
+
+def _check_frame_bytes(arg_bytes: int, local_bytes: int) -> None:
+    # The arguments sit above the locals and the saved FP, so the last
+    # one is at `Frame(local_bytes + 2 + arg_bytes)`, which must fit in
+    # a byte too. Without this check, `asm_emit` met the frame access
+    # of such an argument and raised a ValueError with no function
+    # named (`fuzz.exprs` seed 43 without -O).
+    top = local_bytes + 2 + arg_bytes
+    if top > 0xFF:
+        raise FrameSizeError(
+            f"its arguments and locals need {top} bytes on the soft "
+            f"stack, with the saved frame pointer between them, but the "
+            f"`LDY #offset` of each frame access reaches at most 255 "
+            f"(frame offset {top} out of range 1..255); a large array "
+            f"fits better as a `static` or a global"
         )
 
 

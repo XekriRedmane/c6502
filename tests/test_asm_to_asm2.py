@@ -145,6 +145,19 @@ class TestFunctionPrologueExpansion(unittest.TestCase):
         ))
         self.assertEqual(len(out) - len(no_saves), 4)
 
+    def test_arguments_past_the_ldy_reach_are_a_frame_size_error(self):
+        # The last argument byte is at Frame(250 + 2 + 4) = Frame(256),
+        # which `LDY #offset` can't reach, although the locals fit.
+        from passes.asm_to_asm2 import FrameSizeError
+        with self.assertRaisesRegex(
+            FrameSizeError, r"function 'f': .*frame offset 256 out of range",
+        ):
+            _lower(asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=250))
+        # Frame(255) is still in reach.
+        self.assertTrue(
+            _lower(asm_ast.FunctionPrologue(arg_bytes=3, local_bytes=250)),
+        )
+
 
 class TestRetExpansion(unittest.TestCase):
     """`Ret` expands to:

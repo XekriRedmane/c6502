@@ -16,17 +16,17 @@ from tools.capture_passes import SWEEP_PASSES
 _ROOT = Path(__file__).resolve().parent.parent
 
 
-def _compile(args: list[str], cpp: bool) -> bytes:
-    """Returns the `-S` text of `compile.py <args>` with the C++ back end
-    on or off."""
+def _compile(args: list[str], cpp: bool, stage: str = "-S") -> bytes:
+    """Returns the `-S` text (or with `stage` "-c", the object) of
+    `compile.py <args>` with the C++ back end on or off."""
     env = dict(os.environ)
     env.pop("C6502_CPP_BACKEND", None)
     if cpp:
         env["C6502_CPP_BACKEND"] = "1"
     with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "out.s")
+        out = os.path.join(tmp, "out.s" if stage == "-S" else "out.o")
         subprocess.run(
-            [sys.executable, "compile.py", *args, "-S", "-o", out],
+            [sys.executable, "compile.py", *args, stage, "-o", out],
             cwd=_ROOT, env=env, check=True, capture_output=True,
         )
         with open(out, "rb") as f:
@@ -74,6 +74,72 @@ class TestWithTheVariable(unittest.TestCase):
                         _compile(args + mode, cpp=True),
                         _compile(args + mode, cpp=False),
                     )
+
+    def test_objects_are_python_s(self):
+        # Without -O, only the text of `-c` has the link metadata block, whose
+        # items, zero-page records, and HARGS need come from C++. (The
+        # `-S -O` text above always has the block.)
+        game = _ROOT / "examples" / "lode_runner"
+        args = [str(game / "guards.c"), "-I", str(game)]
+        self.assertEqual(
+            _compile(args, cpp=True, stage="-c"),
+            _compile(args, cpp=False, stage="-c"),
+        )
+
+    def test_a_frame_error_keeps_its_message(self):
+        # The FrameSizeError of `asm_to_asm2` comes back from c6502cpp
+        # with its Python type, so compile.py reports it as a one-line
+        # error, as it does without the variable.
+        source = (
+            "unsigned char f(unsigned long long a, unsigned long long b) "
+            "{ unsigned char t[230]; t[0] = 1; return t[0]; }"
+        )
+        results = []
+        for cpp in (True, False):
+            env = dict(os.environ)
+            env.pop("C6502_CPP_BACKEND", None)
+            if cpp:
+                env["C6502_CPP_BACKEND"] = "1"
+            done = subprocess.run(
+                [sys.executable, "compile.py", "-", "-S", "-o", "-"],
+                cwd=_ROOT, env=env, input=source, capture_output=True,
+                text=True,
+            )
+            results.append((done.returncode, done.stderr))
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[0][0], 1)
+        self.assertIn("frame offset 258 out of range", results[0][1])
+
+    def test_python_reads_no_program_back(self):
+        # Without the IR checks, the text comes from c6502cpp and Python
+        # loads no dump. With them, it loads the finished asm and asm2
+        # programs to check them.
+        code = (
+            "import sys, compile, ir_dump\n"
+            "from passes import ir_check\n"
+            "loads = []\n"
+            "real = ir_dump.load\n"
+            "ir_dump.load = lambda *a: loads.append(1) or real(*a)\n"
+            "ir_check.enable(sys.argv[2] == '1')\n"
+            "for mode in ([], ['-O']):\n"
+            "    compile.main(['compile.py', 'examples/sfx_tone.c', '-S',"
+            " '-o', sys.argv[1], *mode])\n"
+            "print(len(loads))\n"
+        )
+        env = dict(os.environ)
+        env["C6502_CPP_BACKEND"] = "1"
+        env.pop("C6502_CHECK_IR", None)
+        counts = []
+        for check in ("0", "1"):
+            with tempfile.TemporaryDirectory() as tmp:
+                done = subprocess.run(
+                    [sys.executable, "-c", code, os.path.join(tmp, "out.s"),
+                     check],
+                    cwd=_ROOT, env=env, check=True, capture_output=True,
+                    text=True,
+                )
+            counts.append(int(done.stdout))
+        self.assertEqual(counts, [0, 4])
 
 
 if __name__ == "__main__":

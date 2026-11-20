@@ -98,12 +98,17 @@ def _compiled_irs():
         return seen["asm2"]
 
     compile_module.lower_to_asm2 = lower
+    # The programs are the Python back end's, whose `lower_to_asm2` the
+    # C++ one under C6502_CPP_BACKEND=1 doesn't call.
+    saved_backend = os.environ.pop("C6502_CPP_BACKEND", None)
     try:
         zp = plan_zero_page(tac, symbols, types, promote=True)
         with zero_page_in_effect(zp):
             compile_module._codegen(prog, symbols, types, True, zp, tac)
     finally:
         compile_module.lower_to_asm2 = real_lower
+        if saved_backend is not None:
+            os.environ["C6502_CPP_BACKEND"] = saved_backend
     return {"c99_ast": prog, "tac_ast": tac, "asm_ast": seen["asm"],
             "asm2_ast": seen["asm2"]}
 

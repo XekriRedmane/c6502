@@ -594,6 +594,27 @@ class OptimizedAsm:
     coalesced_params: dict = field(default_factory=dict)
 
 
+@dataclass
+class _OptimizedFront:
+    """What `_optimized_front` returns: `asm`, the program after
+    `synthesize_prologue`, the values computed for it that the rest of
+    `optimized_asm` and the link metadata read, and the arguments of
+    the back end's region (`noreturn`, `ret_eligible`, `zp_names`, and
+    `slot_addrs`)."""
+    asm: object
+    tac: object
+    abi: dict
+    local_pools: dict
+    slot_names_by_fn: dict
+    slot_symbols: dict[str, int]
+    shares: list
+    bindings: dict
+    noreturn: frozenset
+    ret_eligible: set
+    zp_names: frozenset
+    slot_addrs: frozenset
+
+
 # How many times `optimized_asm` grows the pools of functions whose
 # final register allocation spilled more than the preliminary one.
 _POOL_RETRIES = 3
@@ -613,13 +634,10 @@ def _pool_shortfalls(prelim, final, local_pools) -> dict[str, int]:
     return out
 
 
-def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
-    """Runs the `-O` pipeline from the unoptimized TAC `tac` to
-    the finished asm IR. `compile.py -S -O` and the
-    simulator harness (`sim.harness.compile_to_asm`) both call this,
-    so the simulator runs the code the CLI emits. `statics` names
-    every static-storage object, and `zp` is the translation unit's
-    zero-page plan (passes/zp_globals.py), which must be in effect."""
+def _optimized_front(prog, symbols, types, zp, tac, statics) -> _OptimizedFront:
+    """Runs the `-O` pipeline from the unoptimized TAC `tac` through
+    `synthesize_prologue`, the part of `optimized_asm` before the back
+    end's region, with the arguments of `optimized_asm`."""
     # The address of a row of a 2-D array whose rows aren't a power of
     # two bytes long comes from a table of row addresses, when that's
     # smaller (passes/optimization/row_address_tables.py). This runs
@@ -829,6 +847,27 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     slot_addrs = frozenset(
         a for a in all_slot_symbols.values() if a <= 0xFF
     )
+    return _OptimizedFront(
+        asm=asm2, tac=tac, abi=abi, local_pools=local_pools,
+        slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
+        shares=shares, bindings=bindings, noreturn=noreturn,
+        ret_eligible=_ret_coalescing_eligible(tac, pooled, recursion),
+        zp_names=zp_names, slot_addrs=slot_addrs,
+    )
+
+
+def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
+    """Runs the `-O` pipeline from the unoptimized TAC `tac` to
+    the finished asm IR. `compile.py -S -O` and the
+    simulator harness (`sim.harness.compile_to_asm`) both call this,
+    so the simulator runs the code the CLI emits. `statics` names
+    every static-storage object, and `zp` is the translation unit's
+    zero-page plan (passes/zp_globals.py), which must be in effect.
+    Under `C6502_CPP_BACKEND=1`, `compile.py -S -O` runs the steps after
+    `_optimized_front` in C++ instead, with emission (`_codegen`)."""
+    front = _optimized_front(prog, symbols, types, zp, tac, statics)
+    asm2, all_slot_symbols = front.asm, front.slot_symbols
+    abi, shares, noreturn = front.abi, front.shares, front.noreturn
     if _cpp_backend():
         # The passes below, from `apply_licm` through
         # `apply_outline_runs`, run in C++ (cpp_backend.py), which
@@ -837,10 +876,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         # happen once, on the result.
         import cpp_backend
         asm4, coalesced_params = cpp_backend.optimized_region(
-            asm2, symbols, slot_symbols=all_slot_symbols,
-            zp_addrs=zp.addrs, noreturn=noreturn, abi=abi, shares=shares,
-            ret_eligible=_ret_coalescing_eligible(tac, pooled, recursion),
-            zp_names=zp_names, slot_addrs=slot_addrs,
+            asm2, symbols, **_region_kwargs(front, zp),
         )
         ir_check.check_asm(asm4, after="the C++ back end")
     else:
@@ -914,7 +950,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         # live with different values (passes/ret_slot_coalescing.py).
         asm3 = apply_ret_slot_coalescing(
             asm3, slot_symbols=all_slot_symbols, zp_addrs=zp.addrs,
-            eligible=_ret_coalescing_eligible(tac, pooled, recursion),
+            eligible=front.ret_eligible,
         )
         # Keep a loop-invariant compare key in A across its loop
         # (see passes/loop_invariant_a.py). Runs after the
@@ -956,24 +992,38 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         # Code that two functions end with alike goes in a function of its
         # own, which each jumps to (passes/shared_tails.py).
         asm4 = apply_shared_tails(
-            asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
+            asm4, symbols, zp_names=front.zp_names,
+            slot_addrs=front.slot_addrs,
         )
         # A run of instructions repeated in the unit goes in a function of
         # its own, which each place calls (passes/outline_runs.py).
         asm4 = apply_outline_runs(
-            asm4, symbols, zp_names=zp_names, slot_addrs=slot_addrs,
+            asm4, symbols, zp_names=front.zp_names,
+            slot_addrs=front.slot_addrs,
         )
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     zp_records = link_records(asm4, zp)
     asm4 = place_zp_globals(asm4, zp)
     ir_check.check_asm(asm4, after="the -O pipeline")
-    check_shares(asm4, shares, bindings)
+    check_shares(asm4, shares, front.bindings)
     return OptimizedAsm(
-        asm=asm4, tac=tac, abi=abi, local_pools=local_pools,
-        slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
-        zp_records=zp_records, shares=shares, bindings=bindings,
+        asm=asm4, tac=front.tac, abi=abi, local_pools=front.local_pools,
+        slot_names_by_fn=front.slot_names_by_fn,
+        slot_symbols=all_slot_symbols, zp_records=zp_records,
+        shares=shares, bindings=front.bindings,
         coalesced_params=coalesced_params,
+    )
+
+
+def _region_kwargs(front: _OptimizedFront, zp) -> dict:
+    """The keyword arguments of `cpp_backend.optimized_region` and
+    `optimized_text` for the back end's region."""
+    return dict(
+        slot_symbols=front.slot_symbols, zp_addrs=zp.addrs,
+        noreturn=front.noreturn, abi=front.abi, shares=front.shares,
+        ret_eligible=front.ret_eligible, zp_names=front.zp_names,
+        slot_addrs=front.slot_addrs,
     )
 
 
@@ -1069,6 +1119,8 @@ def _codegen(
         # ZP-ABI params resolve to ZP operands) →
         # synthesize_prologue (collapses prologue/epilogue when
         # nothing needs spilling).
+        if _cpp_backend():
+            return _cpp_optimized_text(prog, symbols, types, zp, tac, statics)
         opt = optimized_asm(prog, symbols, types, zp, tac, statics)
         asm4, abi, local_pools = opt.asm, opt.abi, opt.local_pools
         all_slot_symbols = opt.slot_symbols
@@ -1110,6 +1162,10 @@ def _codegen(
     asm1 = replace_pseudoregs(
         asm0, extra_statics=statics, symbols=symbols, types=types,
     )
+    if _cpp_backend():
+        return _cpp_unoptimized_text(
+            asm1, symbols, zp, fixed_abi, link_metadata,
+        )
     asm_unplaced = unoptimized_tail(asm1, zp)
     asm3 = place_zp_globals(asm_unplaced, zp)
     ir_check.check_asm(asm3, after="the pipeline")
@@ -1117,16 +1173,9 @@ def _codegen(
     equs = {**pinned_slot_symbols(fixed_abi), **zp.equs()}
     meta_lines = None
     if link_metadata:
-        from passes.zp_link_metadata import ExternMeta, LinkMetadata
+        from passes.zp_link_metadata import LinkMetadata
         meta = LinkMetadata(
-            externs=[
-                ExternMeta(
-                    name=name, params=list(layout.slot_symbols),
-                    param_regs=[r or "" for r in layout.param_registers],
-                    pinned=list(layout.pinned),
-                )
-                for name, layout in sorted(fixed_abi.items())
-            ],
+            externs=_extern_records(fixed_abi),
             items=section_items(asm3, symbols),
             zp_objects=link_records(asm_unplaced, zp),
             hargs_size=zp.layout.hargs_size,
@@ -1135,6 +1184,63 @@ def _codegen(
         meta_lines = format_metadata(meta)
     return emit_program(
         asm4, zp_slot_symbols=equs or None, link_metadata_lines=meta_lines,
+    )
+
+
+def _extern_records(fixed_abi) -> list:
+    """The unoptimized link metadata's `ext` records: the routines with
+    fixed addresses whose parameters the unit passes in zero page."""
+    from passes.zp_link_metadata import ExternMeta
+    return [
+        ExternMeta(
+            name=name, params=list(layout.slot_symbols),
+            param_regs=[r or "" for r in layout.param_registers],
+            pinned=list(layout.pinned),
+        )
+        for name, layout in sorted(fixed_abi.items())
+    ]
+
+
+def _cpp_optimized_text(prog, symbols, types, zp, tac, statics) -> str:
+    """The `-S -O` text under `C6502_CPP_BACKEND=1`. `_optimized_front`
+    runs in Python, and the back end's region, the rest of
+    `optimized_asm`, and the rest of `_codegen` run in one call of
+    `c6502cpp backend` (cpp_backend.py). The link metadata's records
+    that read the TAC, the ABI, and the symbol table are built here
+    first, and C++ adds the ones that read the finished program."""
+    front = _optimized_front(prog, symbols, types, zp, tac, statics)
+    link_meta = build_metadata(
+        front.tac, front.abi, front.local_pools,
+        slot_names_by_fn=front.slot_names_by_fn,
+        changes=changed_param_slots(front.tac, front.abi, symbols, types),
+        carry=_carry_functions(symbols),
+    )
+    link_meta.shares = front.shares
+    link_meta.hargs_size = zp.layout.hargs_size
+    import cpp_backend
+    return cpp_backend.optimized_text(
+        front.asm, symbols, zp=zp, meta=link_meta,
+        preferred_symbols=preferred_symbols(front.bindings),
+        **_region_kwargs(front, zp),
+    )
+
+
+def _cpp_unoptimized_text(asm1, symbols, zp, fixed_abi, link_metadata) -> str:
+    """The `-S` text under `C6502_CPP_BACKEND=1`: `unoptimized_tail`
+    and the rest of `_codegen` on `asm1`, the program after
+    `replace_pseudoregisters`, in one call of `c6502cpp backend`.
+    With `link_metadata`, the text has the block `-c` assembles."""
+    meta = None
+    if link_metadata:
+        from passes.zp_link_metadata import LinkMetadata
+        meta = LinkMetadata(
+            externs=_extern_records(fixed_abi),
+            hargs_size=zp.layout.hargs_size,
+        )
+    import cpp_backend
+    return cpp_backend.unoptimized_text(
+        asm1, symbols, zp=zp,
+        equs={**pinned_slot_symbols(fixed_abi), **zp.equs()}, meta=meta,
     )
 
 

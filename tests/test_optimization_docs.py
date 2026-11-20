@@ -154,11 +154,20 @@ class TestOptimizationDocs(unittest.TestCase):
         )
 
     def test_optimized_asm_order(self):
-        code = _called_stems(
-            compile_module.optimized_asm, compile_module,
+        # `optimized_asm` runs `_optimized_front` (through
+        # `synthesize_prologue`) and then the back end's region.
+        pattern = (
             r"apply_\w+|synthesize_prologue|lower_data_load_address"
             r"|dispatch_const_pointer_arrays|select_abi"
-            r"|allocate_function_locals",
+            r"|allocate_function_locals"
+        )
+        code = _dedupe(
+            _called_stems(
+                compile_module._optimized_front, compile_module, pattern,
+            )
+            + _called_stems(
+                compile_module.optimized_asm, compile_module, pattern,
+            )
         )
         self.assertTrue(
             _is_subsequence(code, self.order),

@@ -25,6 +25,7 @@
 #include "passes/self_store_drop.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
+#include "passes/adc_commute.h"
 #include "passes/capture_args.h"
 #include "passes/carry_halve.h"
 #include "passes/carry_in_add.h"
@@ -45,12 +46,14 @@
 #include "passes/inc_low_byte_test.h"
 #include "passes/inc_peephole.h"
 #include "passes/label_offset_fold.h"
+#include "passes/pointer_self_store.h"
 #include "passes/redundant_load_after_rmw.h"
 #include "passes/round_trip_load.h"
 #include "passes/self_store_drop.h"
 #include "passes/shift_in_a.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/sub1_test_zero_peephole.h"
+#include "passes/transfer_pm1_store.h"
 #include "passes/volatile_void_read_cmp.h"
 
 namespace c6502::passes {
@@ -323,9 +326,28 @@ std::string run_round_trip_load_drop(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_round_trip_load_drop(std::move(input)));
 }
 
+std::string run_pointer_self_store_drop(asm_ast::Program input,
+                                        const AsmContext& ctx, const json::Value&,
+                                        const json::Value& kwargs) {
+  const auto addrs = capture_args::symbol_addrs(
+      capture_args::kwarg(kwargs, "zp_symbol_addrs"));
+  return asdl::dump(apply_pointer_self_store_drop(std::move(input), ctx,
+                                                  addrs ? &*addrs : nullptr));
+}
+
+std::string run_adc_commute(asm_ast::Program input, const AsmContext& ctx,
+                            const json::Value&, const json::Value&) {
+  return asdl::dump(apply_adc_commute(std::move(input), ctx));
+}
+
 std::string run_cmp_sbc_fusion(asm_ast::Program input, const AsmContext&,
                                const json::Value&, const json::Value&) {
   return asdl::dump(apply_cmp_sbc_fusion(std::move(input)));
+}
+
+std::string run_transfer_pm1_store(asm_ast::Program input, const AsmContext& ctx,
+                                   const json::Value&, const json::Value&) {
+  return asdl::dump(apply_transfer_pm1_store(std::move(input), ctx));
 }
 
 }  // namespace
@@ -393,8 +415,11 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"carry_branch_fold", run_carry_branch_fold},
       {"round_trip_load_drop", run_round_trip_load_drop},
       {"self_store_drop", run_self_store_drop},
+      {"pointer_self_store_drop", run_pointer_self_store_drop},
+      {"adc_commute", run_adc_commute},
       {"cmp_sbc_fusion", run_cmp_sbc_fusion},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},
+      {"transfer_pm1_store", run_transfer_pm1_store},
       {"carry_known", run_carry_known},
   };
   return passes;

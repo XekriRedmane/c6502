@@ -5,6 +5,7 @@
 
 #include "passes/asm_licm.h"
 #include "passes/dual_index_promotion.h"
+#include "passes/loop_constant_a.h"
 #include "passes/loop_invariant_a.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
@@ -38,6 +39,11 @@ std::string run_split_mem_to_mem(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_split_mem_to_mem(std::move(input)));
 }
 
+std::string run_loop_constant_a(asm_ast::Program input, const AsmContext&,
+                                const json::Value&, const json::Value&) {
+  return asdl::dump(apply_loop_constant_a(std::move(input)));
+}
+
 std::string run_x_save_slot_load(asm_ast::Program input, const AsmContext&,
                                  const json::Value&, const json::Value&) {
   return asdl::dump(apply_x_save_slot_load(std::move(input)));
@@ -61,6 +67,7 @@ const std::vector<RegisteredPass>& registered_passes() {
   static const std::vector<RegisteredPass> passes = {
       {"licm", run_licm},
       {"split_mem_to_mem", run_split_mem_to_mem},
+      {"loop_constant_a", run_loop_constant_a},
       {"x_save_slot_load", run_x_save_slot_load},
       {"dual_index_promotion", run_dual_index_promotion},
       {"loop_invariant_a", run_loop_invariant_a},

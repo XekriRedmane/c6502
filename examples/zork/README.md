@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 83 bytes smaller than the
+(see "Compared with Zork's own code"). It is 84 bytes smaller than the
 original, but the linker script puts part of it past the 26 sectors
 that Zork's boot loader reads (see "Size").
 
@@ -174,14 +174,14 @@ file's code and data together against the original's.
 | `decode.c` | 1733 | 126 | 1711 | 0 | -8.0% |
 | `objects.c` | 788 | 0 | 803 | 0 | +1.9% |
 | `numbers.c` | 436 | 0 | 429 | 0 | -1.6% |
-| `input.c` | 1004 | 14 | 1012 | 14 | +0.8% |
+| `input.c` | 1004 | 14 | 1011 | 14 | +0.7% |
 | `pages.c` | 384 | 0 | 374 | 0 | -2.6% |
 | `zstring.c` | 359 | 24 | 358 | 24 | -0.3% |
 | `output.c` | 380 | 7 | 392 | 7 | +3.1% |
 | `disk.c` | 117 | 21 | 115 | 21 | -1.4% |
 | `prompts.c` | 343 | 191 | 337 | 190 | -1.3% |
 | `save.c` | 325 | 0 | 332 | 0 | +2.2% |
-| **Total** | **6220** | **423** | **6264** | **296** | **-1.2%** |
+| **Total** | **6220** | **423** | **6263** | **296** | **-1.3%** |
 
 The C counts leave out the page tables and `__zp_init`, 45 bytes of
 startup code the linker generates to clear the globals in zero page.

@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "passes/optimization_asm/ssa_stage.h"
 #include "passes/prologue_synthesis.h"
 #include "tagged_json.h"
 
@@ -166,6 +167,30 @@ std::vector<StageSignature> make_signatures() {
       {.name = "replace_pseudoregisters",
        .input = "asm_ast",
        .kwargs = {{"extra_statics", rt<NameSetC>}, {"symbols", rt<Sym>}, {"types", rt<Types>}}},
+      // The asm SSA round trip, each on one asm function.
+      {.name = "to_ssa",
+       .input = "asm_ast",
+       .kwargs = {{"statics", rt<NameSetC>}},
+       .run = &ssa_stage::run_to_ssa},
+      {.name = "copy_propagate",
+       .input = "asm_ast",
+       .kwargs = {{"statics", rt<NameSetC>}},
+       .run = &ssa_stage::run_copy_propagate},
+      {.name = "backward_copy_propagate",
+       .input = "asm_ast",
+       .kwargs = {{"statics", rt<NameSetC>}},
+       .run = &ssa_stage::run_backward_copy_propagate},
+      {.name = "byte_dce",
+       .input = "asm_ast",
+       .kwargs = {{"statics", rt<NameSetC>}},
+       .run = &ssa_stage::run_byte_dce},
+      {.name = "absorb_zero_load", .input = "asm_ast", .run = &ssa_stage::run_absorb_zero_load},
+      {.name = "from_ssa", .input = "asm_ast", .run = &ssa_stage::run_from_ssa},
+      {.name = "order_parallel_copies",
+       .input_json = &ssa_stage::round_trip_instructions,
+       .kwargs = {{"fn_name", rt<Str>}, {"cycle_counter", rt<ListOf<IntC>>}},
+       .output = &ssa_stage::round_trip_instructions,
+       .run = &ssa_stage::run_order_parallel_copies},
   };
 }
 

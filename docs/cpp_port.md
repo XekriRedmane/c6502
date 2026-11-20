@@ -399,3 +399,15 @@ something a straightforward C++ port could change.
   and the type checker let fourteen invalid programs through to crash
   in later passes, such as `10 & ptr` and `foo(s)` with a struct for an
   `int` parameter.
+- 20 Nov 2026: group D of step 4, the asm SSA round trip. `to_ssa`,
+  `copy_propagate`, `backward_copy_propagate`, `byte_dce`,
+  `absorb_zero_load`, `from_ssa`, and `_order_parallel_copies` (as
+  `order_parallel_copies` in `src/passes/optimization_asm/parallel_copies.h`,
+  for group C) are ported, with an asm CFG whose blocks own their
+  instructions (`owned_cfg.h`) and `decimal_arith`'s `pseudo_reads`,
+  `pseudo_writes`, `map_reads`, `map_writes`, and `early_write_pairs`.
+  Each is a stage call of `STAGE_PASSES` and matches the Python function
+  on every distinct call of the corpus: 3,670 of `to_ssa`, 6,275 each of
+  `copy_propagate` and `backward_copy_propagate`, 5,975 of `byte_dce`,
+  3,926 of `absorb_zero_load`, 6,300 of `from_ssa`, and 8,499 of
+  `order_parallel_copies`.

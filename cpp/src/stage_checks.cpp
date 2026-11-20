@@ -18,6 +18,7 @@ using json::Value;
 // Returns the dump of the program `text` holds in module `module`,
 // read and written again.
 std::string redump(std::string_view module, const std::string& text) {
+  if (module == "asm_ast" && text.rfind("Function(", 0) == 0) return asdl::dump(asdl::load<asm_ast::Type_top_level>(text));
   if (module == "tac_ast") {
     return asdl::dump(asdl::load<tac_ast::Program>(text));
   }

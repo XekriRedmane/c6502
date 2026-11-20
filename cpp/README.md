@@ -94,6 +94,10 @@ cpp/
       asm_context.*   AsmContext, the compile's state the asm passes read
       asm_operands.h  for_each_operand, a walk over an instruction's operands
       optimization_asm/cfg.*   the asm CFG and its dominators
+      optimization_asm/owned_cfg.*   the asm CFG with blocks that own
+                      their instructions
+      optimization_asm/ssa_*, parallel_copies.*, copy_propagation.*, ...
+                      the asm SSA round trip (step 4, group D)
       registry.*      the ported passes, by name, for check-captures
       stage_registry.*  the stage calls' signatures and runners (step 4)
       optimization/   pool and register_allocation's types, var_visit
@@ -395,9 +399,9 @@ the function's instructions where the Python CFG copies them into its
 blocks, so the function has to outlive the CFG and stay unchanged
 while it is used. `cfg.instructions(id)` gives a block's span. The
 synthetic `Label; Return` blocks that `build_cfg_tolerant` adds for
-targets outside the function live in `cfg.extra`. SSA construction,
-which rewrites blocks in place, will need blocks that own their
-instructions when it is ported.
+targets outside the function live in `cfg.extra`. SSA construction and
+destruction, which rewrite blocks in place, use `OwnedCfg`, whose
+blocks own their instructions ("The asm SSA round trip").
 
 `sim/assembler.py` stays in Python with the simulator, but
 `instruction_size` is the compiler's, since six passes size code with
@@ -727,6 +731,51 @@ argument. The unit tests in `tests/test_asm_emit.cpp`,
 of these functions, with the results and the exceptions they gave,
 recorded by wrapping the Python functions while those tests ran.
 
+## The asm SSA round trip
+
+The passes of `_optimize_function` around the register allocation are
+each in a file under `src/passes/optimization_asm/`, named for the
+Python module: `to_ssa` (`ssa_construction.*`), `copy_propagate`,
+`backward_copy_propagate`, `byte_dce`, `absorb_zero_load`
+(`or_zero_absorb.*`), and `from_ssa` (`ssa_destruction.*`). Each takes
+one asm function and the static names (`StaticNames`, the set codec's
+type) where the Python one takes `statics`. These pieces are shared
+with the other groups of step 4.
+
+- `order_parallel_copies` (`parallel_copies.h`) is
+  `ssa_destruction._order_parallel_copies`, which `tac_to_asm` calls
+  for the arguments of a call that go in the callee's slots. The
+  Python list of one int that counts the temporaries is an `int&`.
+- `OwnedCfg` (`owned_cfg.h`) is the asm CFG with a vector of
+  instructions per block, which SSA construction and destruction edit
+  in place. Its `graph` is a `Cfg` whose instruction ranges are unused,
+  so the dominator functions of `cfg.h` take it unchanged.
+- `excluded_pseudo_names` (`ssa_construction.h`) gives the names every
+  pass of the round trip leaves unversioned.
+- `decimal_arith.h` has `pseudo_reads`, `pseudo_writes`, `map_reads`,
+  `map_writes`, `later_sources`, and `early_write_pairs`.
+- `ssa_operands.h` has the two walks over an instruction's operands
+  that the passes share, all of them and those read.
+
+The Python passes keep pairs of a name and a byte in sets, which C++
+keeps in ordered sets, since their order changes no result. SSA
+construction places a `Phi` for each pair in the order of the pair's
+first definition, which is the order of the Python dict, and so the
+order of the `Phi`s in a block and of the moves `from_ssa` writes.
+
+`tools/capture_passes.py` records the seven calls as stage calls under
+these names, with each function's dump as the input (`stage_checks`
+reads a dump that starts with `Function(` as a top-level item), and
+`order_parallel_copies` with its list of moves as tagged JSON and the
+counter on the `mutated` line when a cycle took a temporary. `from_ssa`
+renames the predecessor labels of its input's `Phi`s in place, which
+its caller never reads again, so the harness gives it a copy
+(`_COPIES_INPUT`). The tests in `tests/test_asm_ssa_round_trip.cpp`
+are the calls that the Python unit tests of the six modules make, and
+the calls on a function with a `DecimalArith` that
+`tests/test_bcd_builtins.py`'s compiles make, recorded with the
+Python results through `tests/stage_case.h`.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -813,3 +862,10 @@ recorded by wrapping the Python functions while those tests ran.
   reads into C++ and writes back unchanged. The helpers the stage's
   groups share are ported and match on about 1.04 million values, and
   `synthesize_prologue` matches on all 937 of its distinct calls.
+- 20 Nov 2026: the asm SSA round trip (group D of step 4): `to_ssa`,
+  `copy_propagate`, `backward_copy_propagate`, `byte_dce`,
+  `absorb_zero_load`, `from_ssa`, and `order_parallel_copies`, with the
+  asm CFG with owned blocks and `decimal_arith`'s Pseudo helpers ("The
+  asm SSA round trip"). Each matches the Python function on every
+  distinct call of the corpus, from 3,670 calls of `to_ssa` to 8,499 of
+  `order_parallel_copies`.

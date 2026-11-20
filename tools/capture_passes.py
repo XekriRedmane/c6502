@@ -100,6 +100,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import dataclasses
 import enum
 import hashlib
@@ -252,7 +253,25 @@ STAGE_PASSES = {
     "synthesize_prologue": "synthesize_prologue",
     "fixed_address_layouts": "fixed_address_layouts",
     "replace_pseudoregisters": "replace_pseudoregs",
+    # The asm SSA round trip of `_optimize_function`, under the names
+    # optimizer.py imports, and the ordering of a parallel copy, which
+    # `from_ssa` and `tac_to_asm` both call through its module.
+    "to_ssa": "passes.optimization_asm.optimizer:to_ssa",
+    "copy_propagate": "passes.optimization_asm.optimizer:copy_propagate",
+    "backward_copy_propagate":
+        "passes.optimization_asm.optimizer:backward_copy_propagate",
+    "byte_dce": "passes.optimization_asm.optimizer:byte_dce",
+    "absorb_zero_load": "passes.optimization_asm.optimizer:absorb_zero_load",
+    "from_ssa": "passes.optimization_asm.optimizer:from_ssa",
+    "order_parallel_copies":
+        "passes.optimization_asm.ssa_destruction:_order_parallel_copies",
 }
+
+# The stage calls that change their first argument in place where the
+# caller never reads it again, so the harness gives each a copy and
+# records the argument as the caller gave it. `from_ssa` rewrites the
+# predecessor labels of its input's `Phi`s when it splits an edge.
+_COPIES_INPUT = frozenset({"from_ssa"})
 
 
 def all_passes() -> dict[str, str]:
@@ -373,7 +392,15 @@ def _record(name: str, input_section: str, args_json: str, result,
     tmp = path.with_name(f"{key}.{os.getpid()}.tmp")
     with open(tmp, "wb") as f:
         f.write(text.encode("utf-8"))
-    os.replace(tmp, path)
+    try:
+        os.replace(tmp, path)
+    except PermissionError:
+        # On Windows the rename fails while another worker renames its
+        # copy of the same record into place. That record has the same
+        # key, so it holds the same text.
+        if not path.exists():
+            raise
+        tmp.unlink()
 
 
 def _section_items_args(args, kwargs):
@@ -480,7 +507,10 @@ def _wrap_stage(name: str, fn):
         except (ir_dump.DumpError, TypeError) as e:
             _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
             return fn(*args, **kwargs)
-        result = fn(*args, **kwargs)
+        if name in _COPIES_INPUT:
+            result = fn(copy.deepcopy(args[0]), *rest, **kwargs)
+        else:
+            result = fn(*args, **kwargs)
         try:
             after = _encode_call(rest, kwargs)
             changed_args = {

@@ -269,7 +269,7 @@ def _rewrite_steps_across_transfer(fn: asm_ast.Function) -> asm_ast.Function:
                 and a_dead_at(instrs, after) and c_dead_at(instrs, after)
                 and v_dead_at(instrs, after)):
             step, k = found
-            rewritten = [third] + [step(dst=third.dst)] * k
+            rewritten = [third] + [step(dst=third.dst) for _ in range(k)]
         found = _small_step(second, third)
         if (rewritten is None and found is not None
                 and _transfer(first, (asm_ast.X, asm_ast.Y), asm_ast.A)):
@@ -283,11 +283,11 @@ def _rewrite_steps_across_transfer(fn: asm_ast.Function) -> asm_ast.Function:
                     and c_dead_at(instrs, after + 1)
                     and v_dead_at(instrs, after + 1)):
                 # `TXA; CLC; ADC #1; TAX` is `INX`.
-                rewritten = [step(dst=reg)] * k
+                rewritten = [step(dst=reg) for _ in range(k)]
                 after += 1
             elif (reg_dead(instrs, after) and c_dead_at(instrs, after)
                     and v_dead_at(instrs, after)):
-                rewritten = [step(dst=reg)] * k + [first]
+                rewritten = [step(dst=reg) for _ in range(k)] + [first]
         if rewritten is None:
             i += 1
             continue
@@ -331,7 +331,7 @@ def _rewrite_step_then_reload(fn: asm_ast.Function) -> asm_ast.Function:
             continue
         step, k = found
         reg = reload.dst
-        instrs[i:after] = [reload] + [step(dst=reg)] * k + [
+        instrs[i:after] = [reload] + [step(dst=reg) for _ in range(k)] + [
             asm_ast.Mov(src=reg, dst=load.src),
         ]
         changed = True

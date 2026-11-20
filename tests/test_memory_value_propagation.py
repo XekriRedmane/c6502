@@ -449,6 +449,30 @@ class TestDearerReads(unittest.TestCase):
         self.assertEqual(self._reads_of_t(out), 2)
 
 
+class TestRepeatedInstructionObject(unittest.TestCase):
+    """One `INX` object at two positions (as `[step] * k` lists made)
+    is two writes of X. A copy of `arr,X` made between them isn't
+    `arr,X` after the second, so its read stays a read of the slot."""
+
+    def test_second_write_ends_the_fact(self):
+        inx = asm_ast.Inc(dst=_X())
+        arr = asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X())
+        t = _data("__local_f__t")
+        instrs = [
+            inx,
+            _load(arr), _store(t),
+            inx,
+            _load(t), _store(_data("OPS")),
+            asm_ast.Return(),
+        ]
+        out = _run_slots(instrs)
+        self.assertEqual(out[4].src, t)
+        # The instructions the pass leaves alone are the objects that
+        # came in.
+        self.assertIs(out[0], inx)
+        self.assertIs(out[3], inx)
+
+
 class TestCopiedPointer(unittest.TestCase):
     """A `(zp),Y` access through a slot pair that holds a copy of a
     named zero-page pointer goes through that pointer, which is what

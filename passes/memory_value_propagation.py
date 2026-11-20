@@ -425,6 +425,14 @@ def _rewrite_function(
     # function's own instructions. Zork's interpreter has 32
     # functions that end in a tail call.
     from passes.redundant_load import _build_cfg_tolerant
+    # The X and Y tokens below are keyed on each instruction object, so
+    # an object that appears at two positions, as `[step] * k` lists
+    # make, would give both writes one token, and a fact recorded
+    # between them would outlive the second write. Each repeat is
+    # analyzed as a copy of its own, and an instruction the rewrite
+    # leaves alone goes back as the object it came in as.
+    originals = fn.instructions
+    fn = _with_distinct_instructions(fn)
     cfg = _build_cfg_tolerant(fn)
     # Precompute the set of `Data(name)` symbols this function
     # writes anywhere. A DataExpr fact about an unmutated name is
@@ -454,9 +462,35 @@ def _rewrite_function(
     ctx.probe = None
     # One instruction out for each one in, the synthetic tail last.
     new_instrs = _rewrite(cfg, in_states, ctx)[:len(fn.instructions)]
+    new_instrs = [
+        orig if new is analyzed else new
+        for orig, analyzed, new in zip(originals, fn.instructions, new_instrs)
+    ]
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
+    )
+
+
+def _with_distinct_instructions(fn: asm_ast.Function) -> asm_ast.Function:
+    """Returns `fn` with each instruction object that appears a second
+    time replaced by a shallow copy, so that no object is at two
+    positions, or `fn` itself when none repeats."""
+    import copy
+    seen: set[int] = set()
+    out: list[asm_ast.Type_instruction] = []
+    repeated = False
+    for ins in fn.instructions:
+        if id(ins) in seen:
+            ins = copy.copy(ins)
+            repeated = True
+        seen.add(id(ins))
+        out.append(ins)
+    if not repeated:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=out,
     )
 
 

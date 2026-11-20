@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "passes/asm_licm.h"
+#include "passes/counter_to_index_reg.h"
 #include "passes/dual_index_promotion.h"
 #include "passes/loop_constant_a.h"
 #include "passes/loop_invariant_a.h"
@@ -45,6 +46,14 @@ std::string run_loop_constant_a(asm_ast::Program input, const AsmContext&,
   return asdl::dump(apply_loop_constant_a(std::move(input)));
 }
 
+std::string run_counter_to_index_reg(asm_ast::Program input, const AsmContext&,
+                                     const json::Value& args, const json::Value& kwargs) {
+  const auto addrs = symbol_addrs_arg(
+      args.items.empty() ? kwargs.get("zp_symbol_addrs") : &args.items[0]);
+  return asdl::dump(
+      apply_counter_to_index_reg(std::move(input), addrs ? &*addrs : nullptr));
+}
+
 std::string run_x_save_slot_load(asm_ast::Program input, const AsmContext&,
                                  const json::Value&, const json::Value&) {
   return asdl::dump(apply_x_save_slot_load(std::move(input)));
@@ -74,6 +83,7 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"licm", run_licm},
       {"split_mem_to_mem", run_split_mem_to_mem},
       {"loop_constant_a", run_loop_constant_a},
+      {"counter_to_index_reg", run_counter_to_index_reg},
       {"x_save_slot_load", run_x_save_slot_load},
       {"dual_index_promotion", run_dual_index_promotion},
       {"loop_invariant_a", run_loop_invariant_a},

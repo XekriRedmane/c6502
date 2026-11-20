@@ -247,6 +247,7 @@ import, are ported with only the parts those passes use.
 | `dead_a_arith._flags_reflect_src_reg`, `_writes_reg_setting_n_z` | `src/passes/dead_a_arith.*` | `passes::dead_a_arith` |
 | `passes/call_edges.py` | `src/passes/call_edges.*` | `passes` |
 | `sim.assembler.instruction_size` | `src/sim/assembler.*` | `sim` |
+| `long_branches._invert` | `src/passes/branch_condition.*` (`invert_condition`) | `passes` |
 
 A public Python name keeps its name in `c6502::passes`. A name that
 was private to its module (a leading underscore) and that other
@@ -402,3 +403,13 @@ These conventions apply to every pass ported after
   (version 2). `tools/capture_helpers.py` and `c6502cpp
   check-helpers` compare every helper on the corpus, about 2.1 billion
   values with no difference.
+- 20 Nov 2026: the twelve passes of the loops and the index
+  registers: `apply_licm`, `promote_loop_carried_to_a`,
+  `loop_counter_to_x`, `counter_to_index_reg`, `x_save_slot_load`,
+  `dual_index_promotion`, `loop_invariant_a`, `rotate_loop_test`, and
+  the peephole fixed point's `element_in_place`, `loop_constant_a`,
+  `dec_register_peephole`, and `index_inc_cmp_y`. Each matches the
+  Python pass on every distinct call of the corpus, from 926 calls of
+  most of the pipeline's passes to 7051 of `element_in_place`.
+  `long_branches._invert`, which `rotate_loop_test` reads, is
+  `passes::invert_condition` in `src/passes/branch_condition.*`.

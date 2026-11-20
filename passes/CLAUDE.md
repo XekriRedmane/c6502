@@ -659,7 +659,13 @@ this directory:
   (`_redirect_index_load_to_transfer`). A transfer that the
   instruction before a run of branches already made goes
   (`_repeats_transfer`). `_swap_pairs_ok` swaps `LDA X; STA D1...;
-  LDA M; STA D2...` (one or more stores each) when A holds M.
+  LDA M; STA D2...` (one or more stores each) when A holds M. The
+  state holds each operand as an interned `_Atom`, so equality is
+  identity, and within one call each instruction keeps the states it
+  has been applied to with their results, and each pair of atoms its
+  `may_alias`. The update reads nothing else, and nothing changes an
+  instruction or operand during the call, so a repeat gives the same
+  result (the module docstring's "What is computed once").
 - `redundant_load_after_rmw.py` — `apply_redundant_load_after_rmw`.
 - `redundant_store.py` — `apply_redundant_store_elimination`.
 - `replace_pseudoregisters.py` — pass 9 (see below).

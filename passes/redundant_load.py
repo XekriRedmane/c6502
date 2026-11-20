@@ -60,7 +60,7 @@ would have produced. Two independent paths to soundness:
      `LDA M`'s flag effect is redundant. `z_reflects` tracks
      which operands' zeroness Z currently reflects.
 
-`z_reflects` is a LIST because multiple cells can be
+`z_reflects` holds several operands because multiple cells can be
 simultaneously zero-equivalent: after `LDA M; STA N; STA P`,
 Z reflects M === N === P. Same shape as `state.a/x/y`. Update
 rules track every flag-affecting opcode (LDA, ADC, SBC, AND,
@@ -91,7 +91,7 @@ preds → reset). The intersection-based join recovers it whenever
 
 State lattice (per register / per z_reflects):
 
-  * Bottom = `[]` (no equivalences known).
+  * Bottom = `()` (no equivalences known).
   * Per-block transfer ADDS equivalences (loads, stores tracked
     as new mirrors) and REMOVES them (clobbering writes via the
     aliasing lattice).
@@ -108,6 +108,33 @@ declared `preserves_x` / `preserves_y` keeps an immediate that X
 memory equivalence still goes, since the callee may write the
 memory.
 
+# What is computed once
+
+The dataflow visits a block again whenever its IN changes, and each
+round of the first phase starts the analysis over, so the same
+instructions are applied to the same states many times. Within one
+call of `apply_redundant_load_elimination`, these are kept:
+
+  * Each operand's `_Atom`, which every operand equal to it under
+    `_operands_equal` shares (`_atom`), so equality is identity and
+    the facts the updates read about an operand (its index register,
+    whether it is stable memory or a constant) are found once.
+  * Each instruction's facts (`_facts`), which are its effect on
+    `z_tracks_a`, whether its addressing-mode setup writes Y, its
+    operands' atoms, and every state it has been applied to with the
+    state it gave.
+    The update is a function of the instruction and the state's six
+    fields alone, and the fields are tuples of atoms that no update
+    changes in place, so a state seen before gives the same result.
+  * `_may_alias` of each pair of atoms (`_without_aliasing`), which
+    reads only the operands' fields and the `pointer_proof` set for
+    the call.
+
+The maps hold their instructions and operands, so no other object
+takes one's `id` while they exist. Nothing changes an instruction or
+an operand in place during the call, and the maps are emptied when it
+returns, since later passes may and since `pointer_proof` changes.
+
 # Where it runs
 
 After `replace_pseudoregisters` (operands are concrete) and
@@ -119,8 +146,9 @@ keeps us symmetric with `inc_peephole` and
 """
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
@@ -185,12 +213,19 @@ def apply_redundant_load_elimination(
                     new_top.append(tl)
     finally:
         _ZP_ADDRS = saved
+        # The maps hold what this run's `pointer_proof` gave, and the
+        # instructions and operands of this run, which a later pass
+        # may change.
+        _FACTS.clear()
+        _ALIAS.clear()
+        _INTERN.clear()
+        _ATOM_OF.clear()
     return asm_ast.Program(top_level=new_top)
 
 
-@dataclass
+@dataclass(slots=True)
 class _RegState:
-    """Per-block register tracking. Each field is the LIST of
+    """Per-block register tracking. Each field is the tuple of
     operands the corresponding register is known to mirror — empty
     when unknown. A register can simultaneously mirror multiple
     operands when, e.g., we LDA M (now A === M) and then STA N
@@ -198,9 +233,16 @@ class _RegState:
     while leaving A unchanged). Either equivalence is grounds for
     dropping a redundant LDA M / LDA N later.
 
-    Stored as `list` rather than `set` because operand objects
-    aren't hashable (dataclasses are by default but operand types
-    are sum types not all of which are frozen).
+    Each operand is held as its `_Atom`, which every operand equal to
+    it under `_operands_equal` shares, so a membership test is `in`
+    on atoms. Each field is a tuple in source order. The order
+    decides which memory group a load takes (`_load_list`) and the
+    order of the joined lists, and some operands (`IndirectZp`, the
+    label immediates) equal no operand, themselves included, so a
+    set wouldn't do. The tuples are never changed in place, so
+    `_clone_state` copies only the references, an update replaces a
+    field with a new tuple, and `_update_state` can look a state up
+    by its fields (`_state_tuple`).
 
     `z_reflects` separately tracks which operands' current values
     the Z flag matches the zeroness of. See the module docstring's
@@ -211,10 +253,10 @@ class _RegState:
     when an instruction overwrites only one (e.g., `INC P` keeps
     A's value but sets Z to (P's new value == 0) — state.a stays,
     z_reflects becomes [P])."""
-    a: list[asm_ast.Type_operand] = field(default_factory=list)
-    x: list[asm_ast.Type_operand] = field(default_factory=list)
-    y: list[asm_ast.Type_operand] = field(default_factory=list)
-    z_reflects: list[asm_ast.Type_operand] = field(default_factory=list)
+    a: tuple[_Atom, ...] = ()
+    x: tuple[_Atom, ...] = ()
+    y: tuple[_Atom, ...] = ()
+    z_reflects: tuple[_Atom, ...] = ()
     # True when the last flag-setting instruction set N/Z from A's
     # current value (a load or computation into A, TAX / TAY). An
     # empty `z_reflects` alone doesn't say that: the flags may come
@@ -227,15 +269,15 @@ class _RegState:
     # the register mirror all of them again (`_load_list`). After
     # `LDA t,X; STA p; LDA u,X; STA p+1; LDA (p),Y; ...; LDA t,X;
     # STA p`, the last store writes the value `p` holds, and goes.
-    mem: list[list[asm_ast.Type_operand]] = field(default_factory=list)
+    mem: tuple[tuple[_Atom, ...], ...] = ()
 
     def reset(self) -> None:
-        self.a = []
-        self.x = []
-        self.y = []
-        self.z_reflects = []
+        self.a = ()
+        self.x = ()
+        self.y = ()
+        self.z_reflects = ()
         self.z_tracks_a = False
-        self.mem = []
+        self.mem = ()
 
 
 def _rewrite_function(
@@ -293,6 +335,9 @@ def _rewrite_function(
     in_worklist: set[int] = set(worklist)
     max_iters = 1000 * (len(cfg.blocks) + 1)
     iters = 0
+    # The instructions of each block that change the state, found on
+    # the first visit of the block.
+    bodies: dict[int, tuple[asm_ast.Type_instruction, ...]] = {}
     while worklist and iters < max_iters:
         iters += 1
         bid = worklist.pop(0)
@@ -316,7 +361,10 @@ def _rewrite_function(
         if old_in is not None and _state_equal(new_in, old_in):
             continue
         in_state[bid] = new_in
-        new_out = _transfer_block(block, new_in)
+        body = bodies.get(bid)
+        if body is None:
+            body = bodies[bid] = _block_body(block)
+        new_out = _transfer_block(body, new_in)
         old_out = out_state[bid]
         if old_out is None or not _state_equal(new_out, old_out):
             out_state[bid] = new_out
@@ -372,22 +420,31 @@ def _build_cfg_tolerant(fn: asm_ast.Function) -> CFG:
     return build_cfg(synthetic)
 
 
+_PASSIVE = frozenset((
+    asm_ast.Label, asm_ast.Jump, asm_ast.Branch, asm_ast.Ret,
+    asm_ast.Return,
+))
+
+
+def _block_body(block: BasicBlock) -> tuple[asm_ast.Type_instruction, ...]:
+    """Returns the instructions of `block` that `_transfer_block`
+    applies. It
+    skips the block's leading `Label` (a marker, not a state-changing
+    instruction) and its trailing terminator (`Jump` / `Branch` /
+    `Ret` / `Return`), since terminators don't modify register state
+    in our model and the CFG carries the state into successors
+    directly."""
+    return tuple(ins for ins in block.instructions
+                 if type(ins) not in _PASSIVE)
+
+
 def _transfer_block(
-    block: BasicBlock, in_state: _RegState,
+    body: tuple[asm_ast.Type_instruction, ...], in_state: _RegState,
 ) -> _RegState:
-    """Apply `block`'s instructions to a copy of `in_state` and
-    return the resulting out-state. Skips the block's leading
-    `Label` (a marker, not a state-changing instruction) and its
-    trailing terminator (`Jump` / `Branch` / `Ret` / `Return`)
-    — terminators don't modify register state in our model; the
-    CFG carries the state into successors directly."""
+    """Applies a block's instructions (`_block_body`) to a copy of
+    `in_state` and returns the resulting out-state."""
     state = _clone_state(in_state)
-    for instr in block.instructions:
-        if isinstance(instr, asm_ast.Label):
-            continue
-        if isinstance(instr, (asm_ast.Jump, asm_ast.Branch,
-                              asm_ast.Ret, asm_ast.Return)):
-            continue
+    for instr in body:
         _update_state(instr, state)
     return state
 
@@ -424,16 +481,17 @@ def _rewrite_with_in_states(
             last_block = cur_block
         # Labels are block markers — skip the per-instruction
         # update (no state change) but keep them in the output.
-        if isinstance(instr, asm_ast.Label):
-            out.append(instr)
-            continue
         # Terminators don't modify state in our model; emit them
         # as-is. (`_update_state` would reset on Jump/Ret/Return,
         # which is moot because the next instruction starts a new
         # block where we restore IN[block] anyway.)
-        if isinstance(instr, (asm_ast.Jump, asm_ast.Branch,
-                              asm_ast.Ret, asm_ast.Return)):
+        if type(instr) in _PASSIVE:
             out.append(instr)
+            continue
+        if type(instr) is not _MOV:
+            # Every rewrite below is of a `Mov`.
+            out.append(instr)
+            _update_state(instr, state)
             continue
         if _reverses_transfer(instrs, i) or _repeats_transfer(instrs, i):
             # `TAX; TXA`: after the first, both registers and N/Z
@@ -441,9 +499,8 @@ def _rewrite_with_in_states(
             # with `v` and both of add's arguments in registers. And
             # `TXA; BEQ l; TXA`, where only branches come between.
             continue
-        if _is_redundant_load(instr, state) and _flags_redundant_at(
-            instrs, i, state,
-        ):
+        redundant = _is_redundant_load(instr, state)
+        if redundant and _flags_redundant_at(instrs, i, state):
             # Drop the load entirely — A / X / Y already mirror
             # the load's source, and either:
             #   - Z is already set to what the LDA would set it to
@@ -452,7 +509,7 @@ def _rewrite_with_in_states(
             #   - No reachable Branch reads Z before another
             #     instruction overwrites it (`_flags_dead_at`).
             continue
-        if (_is_redundant_load(instr, state)
+        if (redundant
                 and isinstance(instr.dst.reg, asm_ast.A)
                 and not isinstance(instr.src, asm_ast.Reg)):
             # A holds M, but a branch reads the flags the `LDA M`
@@ -462,7 +519,7 @@ def _rewrite_with_in_states(
             # unchanged, so every operand it mirrors is still there,
             # and Z now reflects all of them.
             out.append(asm_ast.Or(src=asm_ast.Imm(value=0), dst=instr.dst))
-            state.z_reflects = list(state.a)
+            state.z_reflects = state.a
             continue
         if _stores_held_value(instr, state):
             # The byte already holds the register's value: a group
@@ -540,9 +597,14 @@ def _reorder_with_in_states(
             )
             state = _clone_state(block_in) if block_in is not None else _RegState()
             last_block = cur_block
-        if isinstance(instr, (asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
-                              asm_ast.Ret, asm_ast.Return)):
+        if type(instr) in _PASSIVE:
             out.append(instr)
+            i += 1
+            continue
+        if type(instr) is not _MOV:
+            # Each rewrite below starts at a `Mov`.
+            out.append(instr)
+            _update_state(instr, state)
             i += 1
             continue
         via = _store_const_via_index(instrs, i, state)
@@ -601,14 +663,12 @@ def _reorder_with_in_states(
 
 
 def _clone_state(s: _RegState) -> _RegState:
-    return _RegState(
-        a=list(s.a), x=list(s.x), y=list(s.y),
-        z_reflects=list(s.z_reflects), z_tracks_a=s.z_tracks_a,
-        mem=[list(g) for g in s.mem],
-    )
+    """Returns a copy of `s`. Its fields are tuples that no update
+    changes in place, so the copy shares them."""
+    return _RegState(s.a, s.x, s.y, s.z_reflects, s.z_tracks_a, s.mem)
 
 
-def _memory_groups(s: _RegState) -> list[list[asm_ast.Type_operand]]:
+def _memory_groups(s: _RegState) -> list[tuple[_Atom, ...]]:
     """Every group of operands `s` knows to hold one value: its
     memory groups and the lists of its registers."""
     return [*s.mem, s.a, s.x, s.y]
@@ -616,27 +676,31 @@ def _memory_groups(s: _RegState) -> list[list[asm_ast.Type_operand]]:
 
 def _join_memory(
     result: _RegState, states: list[_RegState],
-) -> list[list[asm_ast.Type_operand]]:
+) -> tuple[tuple[_Atom, ...], ...]:
     """The memory groups that hold on every path in: each group of at
     least two operands that one group of every state contains, less
     the operands a register of the joined state still mirrors, which
     stay in that register's list."""
-    groups = [list(g) for g in _memory_groups(states[0])]
+    groups = _memory_groups(states[0])
     for s in states[1:]:
         merged = []
+        others = [g2 for g2 in _memory_groups(s) if g2]
         for g1 in groups:
-            for g2 in _memory_groups(s):
+            if not g1:
+                continue
+            for g2 in others:
                 inter = _intersect_operands(g1, g2)
                 if len(inter) >= 2:
                     merged.append(inter)
         groups = merged
-    in_regs = [*result.a, *result.x, *result.y]
-    out: list[list[asm_ast.Type_operand]] = []
+    in_regs = {a for a in (*result.a, *result.x, *result.y)
+               if a.key is not None}
+    out: list[tuple[_Atom, ...]] = []
     for g in groups:
-        g = [op for op in g if not any(_operands_equal(op, r) for r in in_regs)]
+        g = tuple(a for a in g if a not in in_regs)
         if len(g) >= 2 and not any(_operand_list_equal(g, o) for o in out):
             out.append(g)
-    return out
+    return tuple(out)
 
 
 def _join_states(states: Iterable[_RegState]) -> _RegState:
@@ -666,31 +730,31 @@ def _join_states(states: Iterable[_RegState]) -> _RegState:
         result.x = _intersect_operands(result.x, s.x)
         result.y = _intersect_operands(result.y, s.y)
     if len(states) > 1:
-        result.z_reflects = []
+        result.z_reflects = ()
         result.z_tracks_a = False
         result.mem = _join_memory(result, states)
     return result
 
 
 def _intersect_operands(
-    l1: list[asm_ast.Type_operand],
-    l2: list[asm_ast.Type_operand],
-) -> list[asm_ast.Type_operand]:
+    l1: tuple[_Atom, ...], l2: tuple[_Atom, ...],
+) -> tuple[_Atom, ...]:
     """Multiset-style intersection on `_operands_equal`. Preserves
-    `l1`'s element order so the dataflow is deterministic."""
-    return [
-        op for op in l1
-        if any(_operands_equal(op, b) for b in l2)
-    ]
+    `l1`'s element order so the dataflow is deterministic. An atom
+    with a key is the only one with that key (`_atom`), so `in`
+    compares keys; an atom without one equals nothing."""
+    if not l1 or not l2:
+        return ()
+    return tuple(a for a in l1 if a.key is not None and a in l2)
 
 
 def _state_equal(s1: _RegState, s2: _RegState) -> bool:
     return (
-        _operand_list_equal(s1.a, s2.a)
+        s1.z_tracks_a == s2.z_tracks_a
+        and _operand_list_equal(s1.a, s2.a)
         and _operand_list_equal(s1.x, s2.x)
         and _operand_list_equal(s1.y, s2.y)
         and _operand_list_equal(s1.z_reflects, s2.z_reflects)
-        and s1.z_tracks_a == s2.z_tracks_a
         and len(s1.mem) == len(s2.mem)
         and all(any(_operand_list_equal(g1, g2) for g2 in s2.mem)
                 for g1 in s1.mem)
@@ -698,24 +762,34 @@ def _state_equal(s1: _RegState, s2: _RegState) -> bool:
 
 
 def _operand_list_equal(
-    l1: list[asm_ast.Type_operand],
-    l2: list[asm_ast.Type_operand],
+    l1: tuple[_Atom, ...], l2: tuple[_Atom, ...],
 ) -> bool:
     """Order-insensitive equality on `_operands_equal`. Used by the
     dataflow fixed-point check — two states are equal iff their
     register equivalence lists contain the same operands (any
-    order)."""
-    if len(l1) != len(l2):
+    order). An operand that equals nothing (an atom without a key)
+    makes the lists unequal, even to themselves. Otherwise equality
+    is identity of atoms, so a greedy matching of the two lists
+    succeeds exactly when they are equal as multisets."""
+    n = len(l1)
+    if n != len(l2):
         return False
-    matched = [False] * len(l2)
-    for op in l1:
-        for j, op2 in enumerate(l2):
-            if not matched[j] and _operands_equal(op, op2):
-                matched[j] = True
-                break
-        else:
+    if n == 0:
+        return True
+    if n == 1:
+        a = l1[0]
+        return a is l2[0] and a.key is not None
+    for a in l1:
+        if a.key is None:
             return False
-    return True
+    for a in l2:
+        if a.key is None:
+            return False
+    if n == 2:
+        a, b = l1
+        c, d = l2
+        return (a is c and b is d) or (a is d and b is c)
+    return Counter(l1) == Counter(l2)
 
 
 def _flags_redundant_at(
@@ -756,13 +830,10 @@ def _flags_redundant_at(
         # == 0), and src.mirrors contains M, so src equals M and
         # Z reflects (src == 0).
         src_cur = _get_reg(state, instr.src.reg)
-        if any(
-            _operands_equal(z, sm)
-            for z in state.z_reflects for sm in src_cur
-        ):
+        if _intersects(state.z_reflects, src_cur):
             return True
         return _flags_dead_at(instrs, i + 1)
-    if any(_operands_equal(z, instr.src) for z in state.z_reflects):
+    if _has(state.z_reflects, instr.src):
         return True
     return _flags_dead_at(instrs, i + 1)
 
@@ -827,13 +898,8 @@ def _is_redundant_load(
         # via `_flags_redundant_at`.
         src_cur = _get_reg(state, instr.src.reg)
         dst_cur = _get_reg(state, instr.dst.reg)
-        if not src_cur or not dst_cur:
-            return False
-        return any(
-            _operands_equal(s, d) for s in src_cur for d in dst_cur
-        )
-    cur = _get_reg(state, instr.dst.reg)
-    return any(_operands_equal(c, instr.src) for c in cur)
+        return _intersects(src_cur, dst_cur)
+    return _has(_get_reg(state, instr.dst.reg), instr.src)
 
 
 def _store_const_via_index(
@@ -851,8 +917,14 @@ def _store_const_via_index(
     needs no copy of it in a local: `LDY #$FF; STY SHIFT_ALPHABET`, as
     in Zork's code. The two forms are the same size and speed, so
     the rewrite costs nothing when no reload goes."""
-    a = asm_ast.Reg(reg=asm_ast.A())
     first = instrs[i]
+    # Both forms start with a `Mov` of a constant, and both need A to
+    # hold a byte of memory, so anything else returns None at once.
+    if type(first) is not asm_ast.Mov or type(first.src) not in _IMMEDIATE:
+        return None
+    if not any(held.data_or_zp for held in state.a):
+        return None
+    a = asm_ast.Reg(reg=asm_ast.A())
     if (isinstance(first, asm_ast.Mov) and _immediates([first.src])
             and isinstance(first.dst, (asm_ast.Data, asm_ast.ZP))):
         # The one-atom form, `Mov(#k, M)`, which emits as the pair.
@@ -871,11 +943,13 @@ def _store_const_via_index(
     if not (isinstance(store, asm_ast.Mov) and store.src == a
             and isinstance(store.dst, (asm_ast.Data, asm_ast.ZP))):
         return None
-    if not any(isinstance(op, (asm_ast.Data, asm_ast.ZP)) for op in state.a):
+    if not any(held.data_or_zp for held in state.a):
+        return None
+    # `_reloads_a` usually looks at one or two instructions, so it
+    # goes before the liveness walk. Both are pure.
+    if not _reloads_a(instrs, after, state.a, store.dst):
         return None
     if not _a_dead_at(instrs, after):
-        return None
-    if not _reloads_a(instrs, after, state.a, store.dst):
         return None
     for reg_cls, dead in ((asm_ast.Y, _y_dead_at), (asm_ast.X, _x_dead_at)):
         if dead(instrs, i):
@@ -906,7 +980,7 @@ def _reloads_a(
             reg=asm_ast.A(),
         ):
             return (not ins.is_volatile
-                    and any(_operands_equal(h, ins.src) for h in held)
+                    and _has(held, ins.src)
                     and not any(_may_alias(w, ins.src) for w in written))
         if isinstance(ins, (asm_ast.Inc, asm_ast.Dec)) and not isinstance(
             ins.dst, asm_ast.Reg,
@@ -941,38 +1015,22 @@ def _swap_pairs_ok(
     `enable_next_level_ladders` stores the row into a local and into
     `GAME_ROWNUM` and then copies the column, which A still holds,
     from its local into `GAME_COLNUM`."""
-    a = asm_ast.Reg(reg=asm_ast.A())
-
-    def is_load(ins) -> bool:
-        return (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
-                and ins.dst == a and not isinstance(ins.src, asm_ast.Reg))
-
-    def is_store(ins) -> bool:
-        return (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
-                and ins.src == a and not isinstance(ins.dst, asm_ast.Reg))
-
-    def stores_after(k: int) -> int:
-        n = 0
-        while k + n < len(instrs) and is_store(instrs[k + n]):
-            n += 1
-        return n
-
-    if i >= len(instrs) or not is_load(instrs[i]):
+    if i >= len(instrs) or not _is_a_load(instrs[i]):
         return None
-    n1 = stores_after(i + 1)
+    n1 = _stores_of_a_after(instrs, i + 1)
     j = i + 1 + n1
-    if n1 == 0 or j >= len(instrs) or not is_load(instrs[j]):
+    if n1 == 0 or j >= len(instrs) or not _is_a_load(instrs[j]):
         return None
-    n2 = stores_after(j + 1)
+    n2 = _stores_of_a_after(instrs, j + 1)
     if n2 == 0:
         return None
     load_x, load_m = instrs[i], instrs[j]
     d1s = [ins.dst for ins in instrs[i + 1:j]]
     d2s = [ins.dst for ins in instrs[j + 1:j + 1 + n2]]
     window = instrs[i:j + 1 + n2]
-    if not any(_operands_equal(c, load_m.src) for c in state.a):
+    if not _has(state.a, load_m.src):
         return None
-    if any(_operands_equal(c, load_x.src) for c in state.a):
+    if _has(state.a, load_x.src):
         return None
     x, m = load_x.src, load_m.src
     for d1 in d1s:
@@ -1011,6 +1069,33 @@ def _swap_pairs_ok(
     return n1, n2
 
 
+def _is_reg_a(op: asm_ast.Type_operand) -> bool:
+    """Returns whether `op` is `Reg(A)`."""
+    return type(op) is asm_ast.Reg and type(op.reg) is asm_ast.A
+
+
+def _is_a_load(ins: asm_ast.Type_instruction) -> bool:
+    """Returns whether `ins` is a non-volatile `LDA` of memory or a
+    constant."""
+    return (type(ins) is asm_ast.Mov and not ins.is_volatile
+            and _is_reg_a(ins.dst) and type(ins.src) is not asm_ast.Reg)
+
+
+def _stores_of_a_after(
+    instrs: list[asm_ast.Type_instruction], k: int,
+) -> int:
+    """Counts the non-volatile stores of A into memory that come in a row
+    from `instrs[k]`."""
+    n = 0
+    while k + n < len(instrs):
+        ins = instrs[k + n]
+        if not (type(ins) is asm_ast.Mov and not ins.is_volatile
+                and _is_reg_a(ins.src) and type(ins.dst) is not asm_ast.Reg):
+            break
+        n += 1
+    return n
+
+
 def _swap_loads_ok(
     instrs: list[asm_ast.Type_instruction], i: int, state: _RegState,
 ) -> bool:
@@ -1032,6 +1117,14 @@ def _swap_loads_ok(
     if i + 2 > len(instrs):
         return False
     first, second = instrs[i:i + 2]
+    # These register checks come first because they cost less than
+    # `_sets_up_y`.
+    if not (type(first) is asm_ast.Mov and type(second) is asm_ast.Mov
+            and type(first.dst) is asm_ast.Reg
+            and type(second.dst) is asm_ast.Reg
+            and type(second.dst.reg) is asm_ast.A
+            and type(first.dst.reg) in (asm_ast.X, asm_ast.Y)):
+        return False
     for ins in (first, second):
         if (not isinstance(ins, asm_ast.Mov) or ins.is_volatile
                 or isinstance(ins.src, asm_ast.Reg)
@@ -1050,9 +1143,9 @@ def _swap_loads_ok(
     if (isinstance(second.src, asm_ast.IndexedData)
             and type(second.src.index) is type(reg)):
         return False
-    if not any(_operands_equal(c, second.src) for c in mirror):
+    if not _has(mirror, second.src):
         return False
-    if any(_operands_equal(c, second.src) for c in state.a):
+    if _has(state.a, second.src):
         return False
     # `transfer_pm1_store` makes `LDA M1; SEC; SBC #k; STA M1; LDX M1`
     # a `DEX` of M1, as in Zork's `return_value`, so the load right
@@ -1124,7 +1217,7 @@ def _store_from_a(
         return None
     if instr.is_volatile and not _immediates([instr.src]):
         return None
-    if not any(_operands_equal(c, instr.src) for c in state.a):
+    if not _has(state.a, instr.src):
         return None
     return asm_ast.Mov(
         src=asm_ast.Reg(reg=asm_ast.A()), dst=instr.dst,
@@ -1166,12 +1259,12 @@ def _redirect_lda_to_transfer(
     if isinstance(instr.src, asm_ast.Reg):
         return None
     # Already-mirrors-A is `_is_redundant_load`'s territory.
-    if any(_operands_equal(c, instr.src) for c in state.a):
+    if _has(state.a, instr.src):
         return None
     # Search X first, then Y. Both transfers are the same length;
     # X-first is arbitrary.
     for reg_cls, mirror in ((asm_ast.X, state.x), (asm_ast.Y, state.y)):
-        if any(_operands_equal(m, instr.src) for m in mirror):
+        if _has(mirror, instr.src):
             return asm_ast.Mov(
                 src=asm_ast.Reg(reg=reg_cls()),
                 dst=instr.dst,
@@ -1227,7 +1320,7 @@ def _redirect_index_load_to_transfer(
         and _operands_equal(prev.dst, instr.src)
     ):
         return None
-    if not any(_operands_equal(c, instr.src) for c in state.a):
+    if not _has(state.a, instr.src):
         return None
     if (isinstance(prev, asm_ast.Mov)
             and isinstance(prev.dst, asm_ast.Reg)
@@ -1260,29 +1353,181 @@ def _stores_held_value(
             and isinstance(instr.src, asm_ast.Reg)
             and isinstance(instr.dst, (asm_ast.Data, asm_ast.ZP))):
         return False
-    return any(_operands_equal(op, instr.dst)
-               for op in _get_reg(state, instr.src.reg))
+    return _has(_get_reg(state, instr.src.reg), instr.dst)
 
 
-def _drop_dependent(state: _RegState, reg: asm_ast.Type_reg) -> None:
-    """Drops from every memory group the operands whose address
-    depends on `reg`, which has just changed, and the groups left
-    with fewer than two operands."""
-    groups = [[op for op in g if not _depends_on_reg(op, reg)]
-              for g in state.mem]
-    state.mem = [g for g in groups if len(g) >= 2]
+_A, _X, _Y = asm_ast.A, asm_ast.X, asm_ast.Y
+_MOV = asm_ast.Mov
+_REG = asm_ast.Reg
+_Y_INDEXED = frozenset((asm_ast.IndirectY, asm_ast.IndirectZpY))
+_STABLE = frozenset(_STABLE_MEM_TYPES)
+_GROUPABLE = frozenset((*_STABLE_MEM_TYPES, asm_ast.IndexedData))
+_IMMEDIATE = frozenset((asm_ast.Imm, asm_ast.ImmLabelLow,
+                        asm_ast.ImmLabelHigh))
+_Y_SETUP = frozenset((asm_ast.Frame, asm_ast.Stack, asm_ast.Indirect,
+                      asm_ast.IndirectZp))
 
 
-def _load_list(
-    state: _RegState, src: asm_ast.Type_operand,
-) -> list[asm_ast.Type_operand]:
+class _Atom:
+    """One operand as the state tracks it, with the facts about it
+    that the updates read. `op` is the first operand met with this
+    `key` (`_key`), and every operand with that key gets this atom
+    (`_atom`), so two atoms with keys are equal under
+    `_operands_equal` exactly when they are the same object. An
+    operand without a key equals nothing, so its atom has `key` None
+    and matches no atom, itself included.
+
+    `dep` is the class of the register whose value the operand's
+    address depends on. For `IndexedData(_, _, index=R)` it's R's
+    class, since the address is `name + offset + R_value`, and for
+    `IndirectY` / `IndirectZpY` it's Y, since they index with whatever
+    Y holds. It's None for the rest."""
+    __slots__ = ("op", "key", "dep", "stable", "groupable",
+                 "immediate", "data_or_zp")
+
+    def __init__(self, op: asm_ast.Type_operand, key) -> None:
+        t = type(op)
+        self.op = op
+        self.key = key
+        if t is asm_ast.IndexedData:
+            self.dep = type(op.index)
+        elif t in _Y_INDEXED:
+            self.dep = _Y
+        else:
+            self.dep = None
+        self.stable = t in _STABLE
+        self.groupable = t in _GROUPABLE
+        self.immediate = t in _IMMEDIATE
+        self.data_or_zp = t is asm_ast.Data or t is asm_ast.ZP
+
+
+# The atom of each key, and of each operand object by its `id`, for
+# the run of `apply_redundant_load_elimination` in progress, which
+# empties both when it returns. An entry of `_ATOM_OF` holds its
+# operand, so no other object takes the operand's `id` while it
+# exists, and no operand is changed in place during the run.
+_INTERN: dict = {}
+_ATOM_OF: dict[int, tuple] = {}
+
+
+def _atom(op: asm_ast.Type_operand) -> _Atom:
+    """Returns the atom that stands for `op` in a state."""
+    e = _ATOM_OF.get(id(op))
+    if e is not None and e[0] is op:
+        return e[1]
+    k = _key(op)
+    if k is None:
+        a = _Atom(op, None)
+    else:
+        a = _INTERN.get(k)
+        if a is None:
+            a = _INTERN[k] = _Atom(op, k)
+    _ATOM_OF[id(op)] = (op, a)
+    return a
+
+
+def _drop_dependent_groups(
+    mem: tuple[tuple[_Atom, ...], ...], rc: type,
+) -> tuple[tuple[_Atom, ...], ...]:
+    """Returns `mem` less the operands whose address depends on the
+    register of class `rc`, and less the groups left with fewer than
+    two. When nothing goes, it returns `mem` itself."""
+    changed = False
+    out = []
+    for g in mem:
+        g2 = _without_dependent(g, rc)
+        if len(g2) >= 2:
+            out.append(g2)
+            if g2 is not g:
+                changed = True
+        else:
+            changed = True
+    return tuple(out) if changed else mem
+
+
+def _without_dependent(
+    atoms: tuple[_Atom, ...], rc: type,
+) -> tuple[_Atom, ...]:
+    """Returns `atoms` less those whose address depends on the
+    register of class `rc` (`_Atom.dep`), or `atoms` itself when none
+    does."""
+    for a in atoms:
+        if a.dep is rc:
+            break
+    else:
+        return atoms
+    return tuple(a for a in atoms if a.dep is not rc)
+
+
+def _load_list(state: _RegState, src: _Atom) -> tuple[_Atom, ...]:
     """What a register mirrors after a load of `src`: the memory group
     that holds `src`, which leaves the groups, or `src` alone."""
-    for i, g in enumerate(state.mem):
-        if any(_operands_equal(op, src) for op in g):
-            del state.mem[i]
-            return g
-    return [src]
+    if src.key is not None:
+        mem = state.mem
+        for i, g in enumerate(mem):
+            if src in g:
+                state.mem = mem[:i] + mem[i + 1:]
+                return g
+    return (src,)
+
+
+# What `_update_state` needs of each instruction object, found on its
+# first update. Each entry is `(instr, z_effect, setup_writes_y,
+# dst_setup_writes_y, src, dst, results)`, where `z_effect` is
+# `_z_from_a(instr)`, `setup_writes_y` says whether any operand is
+# lowered with an `LDY #off` setup, `dst_setup_writes_y` whether the
+# destination of a `Mov` or `Pop` is, `src` and `dst` are the
+# atoms of a `Mov`'s memory operands and of the memory operand a
+# shift, `INC`, or `DEC` writes (None for a register or another
+# instruction), and `results` maps each state the instruction has been
+# applied to, as `_state_tuple` gives it, to the state it gave. The
+# update is a function of the instruction and those six fields alone,
+# and two tuples of atoms are equal only when they hold the same
+# atoms, so a state found in `results` gives the same result again.
+# The dataflow, the first phase, and the second phase apply most
+# instructions to the same states. Each entry holds its instruction,
+# so no other object takes its `id` while the entry exists, and
+# `apply_redundant_load_elimination` empties the map when it returns.
+# No instruction is changed in place during the pass, so an entry
+# stays right for as long as it exists.
+_FACTS: dict[int, tuple] = {}
+
+_WRITES_DST = frozenset((
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight, asm_ast.Inc, asm_ast.Dec,
+))
+
+
+def _facts(instr: asm_ast.Type_instruction) -> tuple:
+    """Returns the `_FACTS` entry of `instr`, making it on first use."""
+    f = _FACTS.get(id(instr))
+    if f is not None and f[0] is instr:
+        return f
+    t = type(instr)
+    setup_y = any(type(op) in _Y_SETUP for op in _operands_of(instr))
+    dst_y = (setup_y and t in (asm_ast.Mov, asm_ast.Pop)
+             and type(instr.dst) in _Y_SETUP)
+    src = dst = None
+    if t is _MOV:
+        if type(instr.src) is not _REG:
+            src = _atom(instr.src)
+        if type(instr.dst) is not _REG:
+            dst = _atom(instr.dst)
+    elif t in _WRITES_DST:
+        # An `INC A` takes the memory path of `_core_step`, as it
+        # always has.
+        if not (type(instr.dst) is _REG
+                and type(instr.dst.reg) in (_X, _Y)):
+            dst = _atom(instr.dst)
+    f = (instr, _z_from_a(instr), setup_y, dst_y, src, dst, {})
+    _FACTS[id(instr)] = f
+    return f
+
+
+def _state_tuple(state: _RegState) -> tuple:
+    """Returns the six fields of `state` as a tuple."""
+    return (state.a, state.x, state.y, state.z_reflects,
+            state.z_tracks_a, state.mem)
 
 
 def _update_state(
@@ -1298,27 +1543,31 @@ def _update_state(
     the instruction's last emitted opcode and doesn't itself set N/Z
     (a store, as in `LDY #off; STA (FP),Y`), the flags afterwards
     reflect the offset, so z_reflects is cleared."""
-    _update_state_core(instr, state, branch_targets)
-    effect = _z_from_a(instr)
+    f = _facts(instr)
+    if branch_targets is None:
+        before = _state_tuple(state)
+        after = f[6].get(before)
+        if after is not None:
+            (state.a, state.x, state.y, state.z_reflects,
+             state.z_tracks_a, state.mem) = after
+            return
+    if type(instr) is _MOV:
+        _update_for_mov(instr, state, f[4], f[5])
+    else:
+        handler = _CORE.get(type(instr))
+        if handler is not None:
+            handler(instr, state, branch_targets, f)
+    effect = f[1]
     if effect is not None:
         state.z_tracks_a = effect
-    ops = _operands_of(instr)
-    if not any(_setup_writes_y(op) for op in ops):
-        return
-    _set_reg(state, asm_ast.Y(), [])
-    _drop_dependent(state, asm_ast.Y())
-    state.a = [op for op in state.a if not _depends_on_reg(op, asm_ast.Y())]
-    state.x = [op for op in state.x if not _depends_on_reg(op, asm_ast.Y())]
-    state.z_reflects = [
-        op for op in state.z_reflects
-        if not _depends_on_reg(op, asm_ast.Y())
-    ]
-    if (
-        isinstance(instr, (asm_ast.Mov, asm_ast.Pop))
-        and _setup_writes_y(instr.dst)
-    ):
-        state.z_reflects = []
-        state.z_tracks_a = False
+    if f[2]:
+        _set_reg(state, _Y, ())
+        state.z_reflects = _without_dependent(state.z_reflects, _Y)
+        if f[3]:
+            state.z_reflects = ()
+            state.z_tracks_a = False
+    if branch_targets is None:
+        f[6][before] = _state_tuple(state)
 
 
 def _z_from_a(instr: asm_ast.Type_instruction) -> bool | None:
@@ -1356,16 +1605,6 @@ def _z_from_a(instr: asm_ast.Type_instruction) -> bool | None:
     return False
 
 
-def _setup_writes_y(op: asm_ast.Type_operand) -> bool:
-    """True iff `op`'s emitted addressing-mode setup is an `LDY #off`
-    (soft-stack `Frame` / `Stack` slots and the offset forms of the
-    indirect pointers)."""
-    return isinstance(op, (
-        asm_ast.Frame, asm_ast.Stack,
-        asm_ast.Indirect, asm_ast.IndirectZp,
-    ))
-
-
 def _operands_of(
     instr: asm_ast.Type_instruction,
 ) -> list[asm_ast.Type_operand]:
@@ -1391,156 +1630,159 @@ def _immediates(
 ) -> list[asm_ast.Type_operand]:
     """The operands in `ops` that are constants, whose value no store
     can change."""
-    return [
-        op for op in ops
-        if isinstance(op, (asm_ast.Imm, asm_ast.ImmLabelLow,
-                           asm_ast.ImmLabelHigh))
-    ]
+    return [op for op in ops if type(op) in _IMMEDIATE]
 
 
-def _update_state_core(
-    instr: asm_ast.Type_instruction, state: _RegState,
-    branch_targets: set[str] | None = None,
-) -> None:
-    """Apply `instr`'s own effect to the tracked register AND
-    z_reflects state. SBC/ADC/AND/OR/XOR/shift-of-A clear state.a and
-    z_reflects in parallel, which is what the STA equivalence-class
-    code in `_update_for_mov` relies on for the "both empty" branch.
-    """
-    if isinstance(instr, asm_ast.Mov):
-        _update_for_mov(instr, state)
-        return
-    if isinstance(instr, asm_ast.Label):
-        # Reset at join points only — a fall-through-only label
-        # preserves the prior block's register state.
-        if branch_targets is None or instr.name in branch_targets:
-            state.reset()
-        return
-    if isinstance(instr, (asm_ast.Jump,
-                          asm_ast.Ret, asm_ast.Return)):
+def _core_label(instr, state, branch_targets, f) -> None:
+    # Reset at join points only — a fall-through-only label
+    # preserves the prior block's register state.
+    if branch_targets is None or instr.name in branch_targets:
         state.reset()
-        return
-    if isinstance(instr, asm_ast.Branch):
-        # Fall-through preserves register state (Branch writes
-        # neither registers nor flags).
-        return
-    if isinstance(instr, asm_ast.Call):
-        # JSR may clobber any register, memory, or flag. An X or Y
-        # the callee preserves keeps its value, which still equals
-        # an immediate it mirrored, but memory may have changed.
-        x = _immediates(state.x) if _call_preserves(instr, "X") else []
-        y = _immediates(state.y) if _call_preserves(instr, "Y") else []
-        state.reset()
-        state.x, state.y = x, y
-        return
-    if isinstance(instr, (asm_ast.FunctionPrologue,
-                          asm_ast.AllocateStack,
-                          asm_ast.LoadAddress,
-                          asm_ast.DecimalArith)):
-        # These expand into multi-instruction sequences in
-        # asm_to_asm2; their inner effects exceed the tracker.
-        state.reset()
-        return
-    if isinstance(instr, asm_ast.Pop):
-        # PLA/PLX/PLY: dest register loaded with unknown value;
-        # N/Z set off that value.
-        if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, [])
-        state.z_reflects = []
-        return
-    if isinstance(instr, asm_ast.Push):
-        return
-    if isinstance(instr, (asm_ast.SetCarry, asm_ast.ClearCarry)):
-        return
-    if isinstance(instr, (asm_ast.Compare, asm_ast.BitTest)):
-        # CMP and BIT both set Z to a relation between A and the
-        # operand, not to "operand's zeroness" — clear z_reflects.
-        state.z_reflects = []
-        return
-    if isinstance(instr, (asm_ast.Add, asm_ast.Sub,
-                          asm_ast.And, asm_ast.Or, asm_ast.Xor)):
-        # ADC/SBC/AND/ORA/EOR always write Reg(A) in our IR. A's
-        # identity is lost; Z reflects A's new (untracked) value.
-        if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, [])
-        state.z_reflects = []
-        return
-    if isinstance(instr, (asm_ast.ArithmeticShiftLeft,
-                          asm_ast.LogicalShiftRight,
-                          asm_ast.RotateLeft, asm_ast.RotateRight)):
-        if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, [])
-            state.z_reflects = []
-            return
-        # A shift of a memory byte sets N/Z from the byte's new
-        # value, so Z reflects that byte and nothing it reflected
-        # before. `LDA t; STA t2; LSR M; LDA t2; BEQ` must keep the
-        # second load, whose Z the `BEQ` reads.
-        _invalidate_aliasing(state, instr.dst)
-        state.z_reflects = [instr.dst]
-        return
-    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-        if isinstance(instr.dst, asm_ast.Reg) and isinstance(
-            instr.dst.reg, (asm_ast.X, asm_ast.Y)
-        ):
-            # INX/DEX/INY/DEY: drop the register's own equivalences
-            # AND any other register's tracking of an
-            # IndexedData(_, _, index=changed_reg) operand whose
-            # address depended on the prior register value.
-            changed_reg = instr.dst.reg
-            _set_reg(state, changed_reg, [])
-            _drop_dependent(state, changed_reg)
-            state.a = [
-                op for op in state.a
-                if not _depends_on_reg(op, changed_reg)
-            ]
-            state.x = [
-                op for op in state.x
-                if not _depends_on_reg(op, changed_reg)
-            ]
-            state.y = [
-                op for op in state.y
-                if not _depends_on_reg(op, changed_reg)
-            ]
-            state.z_reflects = []
-            return
-        # Inc/Dec on a memory operand: Z = (cell's new value == 0).
-        _invalidate_aliasing(state, instr.dst)
-        state.z_reflects = [instr.dst]
-        return
+
+
+def _core_reset(instr, state, branch_targets, f) -> None:
+    # Jump / Ret / Return end the block. FunctionPrologue,
+    # AllocateStack, LoadAddress, and DecimalArith expand into
+    # multi-instruction sequences in asm_to_asm2; their inner
+    # effects exceed the tracker.
+    state.reset()
+
+
+def _core_none(instr, state, branch_targets, f) -> None:
+    # Branch: fall-through preserves register state (Branch writes
+    # neither registers nor flags). Push, SEC, and CLC leave both
+    # alone too.
     return
 
 
-def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
+def _core_call(instr, state, branch_targets, f) -> None:
+    # JSR may clobber any register, memory, or flag. An X or Y
+    # the callee preserves keeps its value, which still equals
+    # an immediate it mirrored, but memory may have changed.
+    x = (tuple(a for a in state.x if a.immediate)
+         if _call_preserves(instr, "X") else ())
+    y = (tuple(a for a in state.y if a.immediate)
+         if _call_preserves(instr, "Y") else ())
+    state.reset()
+    state.x, state.y = x, y
+
+
+def _core_pop(instr, state, branch_targets, f) -> None:
+    # PLA/PLX/PLY: dest register loaded with unknown value;
+    # N/Z set off that value.
+    if type(instr.dst) is _REG:
+        _set_reg(state, type(instr.dst.reg), ())
+    state.z_reflects = ()
+
+
+def _core_compare(instr, state, branch_targets, f) -> None:
+    # CMP and BIT both set Z to a relation between A and the
+    # operand, not to "operand's zeroness" — clear z_reflects.
+    state.z_reflects = ()
+
+
+def _core_alu(instr, state, branch_targets, f) -> None:
+    # ADC/SBC/AND/ORA/EOR always write Reg(A) in our IR. A's
+    # identity is lost; Z reflects A's new (untracked) value.
+    if type(instr.dst) is _REG:
+        _set_reg(state, type(instr.dst.reg), ())
+    state.z_reflects = ()
+
+
+def _core_shift(instr, state, branch_targets, f) -> None:
+    if type(instr.dst) is _REG:
+        _set_reg(state, type(instr.dst.reg), ())
+        state.z_reflects = ()
+        return
+    # A shift of a memory byte sets N/Z from the byte's new
+    # value, so Z reflects that byte and nothing it reflected
+    # before. `LDA t; STA t2; LSR M; LDA t2; BEQ` must keep the
+    # second load, whose Z the `BEQ` reads.
+    dst = f[5]
+    _invalidate_aliasing(state, dst)
+    state.z_reflects = (dst,)
+
+
+def _core_step(instr, state, branch_targets, f) -> None:
+    dst = f[5]
+    if dst is None:
+        # INX/DEX/INY/DEY: drop the register's own equivalences
+        # AND any other register's tracking of an
+        # IndexedData(_, _, index=changed_reg) operand whose
+        # address depended on the prior register value
+        # (`_set_reg` drops both).
+        _set_reg(state, type(instr.dst.reg), ())
+        state.z_reflects = ()
+        return
+    # Inc/Dec on a memory operand: Z = (cell's new value == 0).
+    _invalidate_aliasing(state, dst)
+    state.z_reflects = (dst,)
+
+
+_CORE = {
+    asm_ast.Label: _core_label,
+    asm_ast.Jump: _core_reset,
+    asm_ast.Ret: _core_reset,
+    asm_ast.Return: _core_reset,
+    asm_ast.Branch: _core_none,
+    asm_ast.Call: _core_call,
+    asm_ast.FunctionPrologue: _core_reset,
+    asm_ast.AllocateStack: _core_reset,
+    asm_ast.LoadAddress: _core_reset,
+    asm_ast.DecimalArith: _core_reset,
+    asm_ast.Pop: _core_pop,
+    asm_ast.Push: _core_none,
+    asm_ast.SetCarry: _core_none,
+    asm_ast.ClearCarry: _core_none,
+    asm_ast.Compare: _core_compare,
+    asm_ast.BitTest: _core_compare,
+    asm_ast.Add: _core_alu,
+    asm_ast.Sub: _core_alu,
+    asm_ast.And: _core_alu,
+    asm_ast.Or: _core_alu,
+    asm_ast.Xor: _core_alu,
+    asm_ast.ArithmeticShiftLeft: _core_shift,
+    asm_ast.LogicalShiftRight: _core_shift,
+    asm_ast.RotateLeft: _core_shift,
+    asm_ast.RotateRight: _core_shift,
+    asm_ast.Inc: _core_step,
+    asm_ast.Dec: _core_step,
+}
+
+
+def _update_for_mov(
+    mov: asm_ast.Mov, state: _RegState, s: _Atom | None, d: _Atom | None,
+) -> None:
     """Apply a Mov's effect to state.a/x/y and z_reflects. Mov has
     four shapes: register-transfer, load, store, and mem-to-mem
-    (emit lowers to `LDA src; STA dst`).
+    (emit lowers to `LDA src; STA dst`). `s` and `d` are the atoms of
+    the source and destination, None for a register.
     """
     if mov.is_volatile:
-        if isinstance(mov.dst, asm_ast.Reg):
+        if d is None:
             # Volatile LDA M: clear state.<reg> so no future LDA M
             # can elide. z_reflects gets M because Z's current
             # value IS (M-at-read == 0) for the immediate downstream
             # Branch; a later LDA M wouldn't elide anyway (the
             # volatile gate rejects).
-            _set_reg(state, mov.dst.reg, [])
-            if not isinstance(mov.src, asm_ast.Reg):
-                state.z_reflects = [mov.src]
-            elif (isinstance(mov.src.reg, asm_ast.A)
-                    and not isinstance(mov.dst.reg, asm_ast.A)):
+            dst_rc = type(mov.dst.reg)
+            _set_reg(state, dst_rc, ())
+            if s is not None:
+                state.z_reflects = (s,)
+            elif type(mov.src.reg) is _A and dst_rc is not _A:
                 # A volatile `TAX` / `TAY` writes the register a
                 # `register volatile` local lives in. A keeps its
                 # value, and N/Z are set from it.
-                state.z_reflects = list(state.a)
+                state.z_reflects = state.a
             else:
-                state.z_reflects = []
+                state.z_reflects = ()
             return
-        if isinstance(mov.src, asm_ast.Reg):
+        if s is None:
             # Volatile STA M. Don't add M to the source register's
             # equivalence class — a future LDA M wouldn't be
             # elidable anyway, so the equivalence is unreachable.
-            _invalidate_aliasing(state, mov.dst)
-            _invalidate_z_aliasing(state, mov.dst)
+            _invalidate_aliasing(state, d)
+            _invalidate_z_aliasing(state, d)
             return
         # Volatile memory-to-memory Mov: emit lowers to
         # `LDA src; STA dst` (and drops a self-Mov, as below). The
@@ -1552,78 +1794,62 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
         # `LDA src`. A volatile `LDA src` doesn't elide anyway. The
         # same holds for dst: a non-volatile `LDA dst` exists only
         # when dst isn't the volatile side.
-        if _operands_equal(mov.src, mov.dst):
+        if s is d and s.key is not None:
             return
-        _invalidate_aliasing(state, mov.dst)
-        _invalidate_z_aliasing(state, mov.dst)
-        known = [
-            op for op in (mov.src, mov.dst)
-            if isinstance(op, (*_STABLE_MEM_TYPES, asm_ast.Imm))
-        ]
-        state.a = list(known)
-        state.z_reflects = list(known)
+        _invalidate_aliasing(state, d)
+        _invalidate_z_aliasing(state, d)
+        known = tuple(
+            a for a in (s, d)
+            if a.stable or type(a.op) is asm_ast.Imm
+        )
+        state.a = known
+        state.z_reflects = known
         return
-    src_is_reg = isinstance(mov.src, asm_ast.Reg)
-    dst_is_reg = isinstance(mov.dst, asm_ast.Reg)
-    if src_is_reg and dst_is_reg:
+    if s is None and d is None:
         # TAX / TAY / TXA / TYA: dst now mirrors whatever src mirrors.
         # Z is set based on dst's new value (== src's value).
         # Conservative: if src's identity is tracked (state[src]
         # non-empty), z_reflects matches that list — both reflect
         # the same value. Otherwise clear.
-        new_value = list(_get_reg(state, mov.src.reg))
-        _set_reg(state, mov.dst.reg, new_value)
+        new_value = _get_reg(state, mov.src.reg)
+        _set_reg(state, type(mov.dst.reg), new_value)
         # Transfers between registers DO set N/Z (except TXS, which
         # asm_ast doesn't model). For TAX/TAY/TXA/TYA, Z reflects
         # the transferred byte's zeroness — same as the source
         # register's identity.
-        state.z_reflects = list(new_value)
+        state.z_reflects = new_value
         return
-    if dst_is_reg and not src_is_reg:
+    if d is None:
         # Load: the register now mirrors the source operand, and
         # the memory group that holds it (`_load_list`). Any prior
         # equivalences are wiped out (the previous value in the
         # register is gone). Z reflects (src == 0).
-        _set_reg(state, mov.dst.reg, [])
-        if isinstance(mov.dst.reg, (asm_ast.X, asm_ast.Y)):
-            _drop_dependent(state, mov.dst.reg)
-        _set_reg(state, mov.dst.reg, _load_list(state, mov.src))
-        state.z_reflects = [mov.src]
-        # When the load writes X or Y, also drop any tracking
-        # in the OTHER registers that depends on the changed
-        # index register — e.g. `IndexedData(_, _, index=X)`
-        # entries in state.a become stale the moment X holds a
-        # different value. Without this, a `LDA arr,X; LDX
-        # #N; LDA arr,X` chain would incorrectly drop the
-        # second load on the assumption that A still mirrors
-        # `arr,X`. Mirrors the INX/DEX/INY/DEY invalidation
-        # done lower in `_update_state`.
-        if isinstance(mov.dst.reg, (asm_ast.X, asm_ast.Y)):
-            changed_reg = mov.dst.reg
-            if isinstance(changed_reg, asm_ast.X):
-                state.a = [
-                    op for op in state.a
-                    if not _depends_on_reg(op, changed_reg)
-                ]
-                state.y = [
-                    op for op in state.y
-                    if not _depends_on_reg(op, changed_reg)
-                ]
-            else:  # Y
-                state.a = [
-                    op for op in state.a
-                    if not _depends_on_reg(op, changed_reg)
-                ]
-                state.x = [
-                    op for op in state.x
-                    if not _depends_on_reg(op, changed_reg)
-                ]
-            state.z_reflects = [
-                op for op in state.z_reflects
-                if not _depends_on_reg(op, changed_reg)
-            ]
+        #
+        # When the load writes X or Y, `_set_reg` also drops any
+        # tracking in the OTHER registers and the memory groups
+        # that depends on the changed index register — e.g.
+        # `IndexedData(_, _, index=X)` entries in state.a become
+        # stale the moment X holds a different value. Without
+        # this, a `LDA arr,X; LDX #N; LDA arr,X` chain would
+        # incorrectly drop the second load on the assumption that
+        # A still mirrors `arr,X`. Mirrors the INX/DEX/INY/DEY
+        # invalidation in `_core_step`. The list the load gives
+        # the register, and z_reflects, lose such operands too.
+        rc = type(mov.dst.reg)
+        _set_reg(state, rc, ())
+        loaded = _load_list(state, s)
+        if rc is _A:
+            state.a = loaded
+            state.z_reflects = (s,)
+        else:
+            loaded = _without_dependent(loaded, rc)
+            if rc is _X:
+                state.x = loaded
+            elif rc is _Y:
+                state.y = loaded
+            state.z_reflects = (s,) if s.dep is not rc else ()
         return
-    if src_is_reg and not dst_is_reg:
+    if s is None:
         # Store. STA/STX/STY don't touch N/Z. Add dst to the source
         # register's equivalence class so a later `LDA dst` can
         # elide. Add dst to z_reflects only when Z was already
@@ -1638,35 +1864,33 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
         # old M + 1, so an `LDA M` before a `BEQ` must stay. A store
         # of a register that already mirrors dst writes the value dst
         # holds, and leaves Z's reflection of it alone.
-        if not any(
-            _operands_equal(c, mov.dst)
-            for c in _get_reg(state, mov.src.reg)
-        ):
-            _invalidate_z_aliasing(state, mov.dst)
-        _invalidate_aliasing(state, mov.dst)
-        if isinstance(mov.dst, _STABLE_MEM_TYPES):
-            cur = _get_reg(state, mov.src.reg)
+        reg = mov.src.reg
+        keyed = d.key is not None
+        if not (keyed and d in _get_reg(state, reg)):
+            _invalidate_z_aliasing(state, d)
+        _invalidate_aliasing(state, d)
+        if d.stable:
+            cur = _get_reg(state, reg)
             cur_was_empty = not cur
-            if not any(_operands_equal(c, mov.dst) for c in cur):
-                cur.append(mov.dst)
-            cur_pre_existing = [c for c in cur if c is not mov.dst]
+            if d not in cur:
+                cur = cur + (d,)
+                _assign_reg(state, reg, cur)
+            z = state.z_reflects
+            # Whether Z reflects an operand of the class other than
+            # dst. Every atom equal to dst is left out. An operand
+            # equal to dst that Z reflects would mean that Z already
+            # reflects dst, and then nothing is added either way.
             shared = any(
-                _operands_equal(z, c)
-                for z in state.z_reflects
-                for c in cur_pre_existing
+                c is not d and c.key is not None and c in z for c in cur
             )
             # Z reflects A's value either through an entry it shares
             # with A's class, or, when nothing is known about either,
             # because the last flag-setter set Z from A itself.
             if shared or (
-                not state.z_reflects and cur_was_empty
-                and state.z_tracks_a
+                not z and cur_was_empty and state.z_tracks_a
             ):
-                if not any(
-                    _operands_equal(z, mov.dst)
-                    for z in state.z_reflects
-                ):
-                    state.z_reflects.append(mov.dst)
+                if d not in z:
+                    state.z_reflects = z + (d,)
         return
     # Memory-to-memory Mov: emit lowers to `LDA src; STA dst`. The
     # emit-time LDA sets Z to (src == 0); dst now holds that value
@@ -1680,96 +1904,165 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
     # A is NOT loaded and state shouldn't pretend it was. This
     # arises from SSA destruction emitting an intra-color copy
     # when a Phi src and dst land at the same byte.
-    if _operands_equal(mov.src, mov.dst):
+    if s is d and s.key is not None:
         return
-    _invalidate_aliasing(state, mov.dst)
-    _invalidate_z_aliasing(state, mov.dst)
+    _invalidate_aliasing(state, d)
+    _invalidate_z_aliasing(state, d)
     # The emitted `LDA src` sets N/Z from the moved value, so Z now
     # reflects dst (and nothing older). A constant source still
     # equals A too, whatever the store wrote.
-    known = [op for op in (mov.dst,) if isinstance(op, _STABLE_MEM_TYPES)]
-    known += _immediates([mov.src])
-    state.a = list(known)
-    state.z_reflects = list(known)
+    known = (d,) if d.stable else ()
+    if s.immediate:
+        known += (s,)
+    state.a = known
+    state.z_reflects = known
 
 
-def _get_reg(state: _RegState, reg: asm_ast.Type_reg) -> list[asm_ast.Type_operand]:
-    if isinstance(reg, asm_ast.A):
+def _get_reg(state: _RegState, reg: asm_ast.Type_reg) -> tuple[_Atom, ...]:
+    rc = type(reg)
+    if rc is _A:
         return state.a
-    if isinstance(reg, asm_ast.X):
+    if rc is _X:
         return state.x
-    if isinstance(reg, asm_ast.Y):
+    if rc is _Y:
         return state.y
-    return []
+    return ()
 
 
-def _set_reg(
-    state: _RegState, reg: asm_ast.Type_reg,
-    value: list[asm_ast.Type_operand],
+def _assign_reg(
+    state: _RegState, reg: asm_ast.Type_reg, value: tuple[_Atom, ...],
 ) -> None:
-    """Sets what `reg` mirrors. The memory operands of its old list
-    still hold one value, so two or more of them become a memory
-    group, less any whose address depends on `reg` itself."""
-    old = [op for op in _get_reg(state, reg)
-           if isinstance(op, (*_STABLE_MEM_TYPES, asm_ast.IndexedData))
-           and not _depends_on_reg(op, reg)]
-    if len(old) >= 2 and not any(
-        _operand_list_equal(old, g) for g in state.mem
-    ):
-        state.mem.append(old)
-    if isinstance(reg, (asm_ast.X, asm_ast.Y)):
-        # An operand indexed by the register now names another byte,
-        # in the memory groups, in the other registers' lists, and in
-        # the value given, as `TAX` after `LDA t,X` gives.
-        _drop_dependent(state, reg)
-        value = [op for op in value if not _depends_on_reg(op, reg)]
-        state.a = [op for op in state.a if not _depends_on_reg(op, reg)]
-        state.x = [op for op in state.x if not _depends_on_reg(op, reg)]
-        state.y = [op for op in state.y if not _depends_on_reg(op, reg)]
-    if isinstance(reg, asm_ast.A):
+    """Sets what `reg` mirrors, with none of `_set_reg`'s other
+    updates."""
+    rc = type(reg)
+    if rc is _A:
         state.a = value
-    elif isinstance(reg, asm_ast.X):
+    elif rc is _X:
         state.x = value
-    elif isinstance(reg, asm_ast.Y):
+    elif rc is _Y:
         state.y = value
 
 
-def _invalidate_aliasing(
-    state: _RegState, write_dst: asm_ast.Type_operand,
+def _set_reg(
+    state: _RegState, rc: type, value: tuple[_Atom, ...],
 ) -> None:
+    """Sets what the register of class `rc` mirrors. The memory
+    operands of its old list still hold one value, so two or more of
+    them become a memory group, less any whose address depends on the
+    register itself."""
+    if rc is _A:
+        cur = state.a
+    elif rc is _X:
+        cur = state.x
+    elif rc is _Y:
+        cur = state.y
+    else:
+        return
+    if len(cur) >= 2:
+        old = tuple(a for a in cur if a.groupable and a.dep is not rc)
+        if len(old) >= 2 and not any(
+            _operand_list_equal(old, g) for g in state.mem
+        ):
+            state.mem = state.mem + (old,)
+    if rc is _A:
+        state.a = value
+        return
+    # An operand indexed by the register now names another byte, in
+    # the memory groups, in the other registers' lists, and in the
+    # value given, as `TAX` after `LDA t,X` gives.
+    if state.mem:
+        state.mem = _drop_dependent_groups(state.mem, rc)
+    value = _without_dependent(value, rc)
+    state.a = _without_dependent(state.a, rc)
+    if rc is _X:
+        state.y = _without_dependent(state.y, rc)
+        state.x = value
+    else:
+        state.x = _without_dependent(state.x, rc)
+        state.y = value
+
+
+# `_may_alias(a.op, d.op)` for each pair of atoms `(a, d)` that
+# `_without_aliasing` has asked about. Two operands with one key are
+# the same in every field, so the atom's `op` gives the result its
+# operands would. `_may_alias` reads only the operands' fields and the
+# module state that `pointer_proof` sets for the whole pass, so an
+# entry stays right until `apply_redundant_load_elimination` empties
+# the map when it returns.
+_ALIAS: dict[tuple[_Atom, _Atom], bool] = {}
+
+
+def _without_aliasing(
+    atoms: tuple[_Atom, ...], d: _Atom,
+) -> tuple[_Atom, ...]:
+    """Returns `atoms` less those that might alias `d`, or `atoms`
+    itself when none might."""
+    keep = []
+    memo = _ALIAS
+    for a in atoms:
+        r = memo.get((a, d))
+        if r is None:
+            r = memo[(a, d)] = _may_alias(a.op, d.op)
+        if not r:
+            keep.append(a)
+    return atoms if len(keep) == len(atoms) else tuple(keep)
+
+
+def _invalidate_aliasing(state: _RegState, d: _Atom) -> None:
     """For each tracked register, filter out equivalence entries
-    whose operand might alias `write_dst`."""
-    state.a = [op for op in state.a if not _may_alias(op, write_dst)]
-    state.x = [op for op in state.x if not _may_alias(op, write_dst)]
-    state.y = [op for op in state.y if not _may_alias(op, write_dst)]
-    groups = [[op for op in g if not _may_alias(op, write_dst)]
-              for g in state.mem]
-    state.mem = [g for g in groups if len(g) >= 2]
+    whose operand might alias `d`, the atom of a write's
+    destination."""
+    if state.a:
+        state.a = _without_aliasing(state.a, d)
+    if state.x:
+        state.x = _without_aliasing(state.x, d)
+    if state.y:
+        state.y = _without_aliasing(state.y, d)
+    if state.mem:
+        changed = False
+        out = []
+        for g in state.mem:
+            g2 = _without_aliasing(g, d)
+            if len(g2) >= 2:
+                out.append(g2)
+                if g2 is not g:
+                    changed = True
+            else:
+                changed = True
+        if changed:
+            state.mem = tuple(out)
 
 
-def _invalidate_z_aliasing(
-    state: _RegState, write_dst: asm_ast.Type_operand,
-) -> None:
-    """Drop z_reflects entries whose operand may alias `write_dst`."""
-    state.z_reflects = [
-        op for op in state.z_reflects if not _may_alias(op, write_dst)
-    ]
+def _invalidate_z_aliasing(state: _RegState, d: _Atom) -> None:
+    """Drop z_reflects entries whose operand may alias `d`."""
+    if state.z_reflects:
+        state.z_reflects = _without_aliasing(state.z_reflects, d)
 
 
-def _depends_on_reg(
-    op: asm_ast.Type_operand, reg: asm_ast.Type_reg,
-) -> bool:
-    """True iff `op`'s value depends on the runtime value of the
-    register `reg`. `IndexedData(_, _, index=R)` does (its address
-    is `name + offset + R_value`), and so do `IndirectY` /
-    `IndirectZpY`, which index with whatever Y holds."""
-    if isinstance(op, asm_ast.IndexedData):
-        return type(op.index) is type(reg)
-    if isinstance(reg, asm_ast.Y) and isinstance(
-        op, (asm_ast.IndirectY, asm_ast.IndirectZpY),
-    ):
-        return True
-    return False
+# The `_key` of each operand kind that `_operands_equal` compares,
+# which is the kind and every field of it. An operand of a kind left
+# out equals no operand, itself included.
+_KEY_OF = {
+    asm_ast.Imm: lambda o: (asm_ast.Imm, o.value),
+    asm_ast.ZP: lambda o: (asm_ast.ZP, o.address, o.offset),
+    asm_ast.Data: lambda o: (asm_ast.Data, o.name, o.offset),
+    # `tab,X` and `tab,Y` name different bytes unless X == Y,
+    # which the tracker doesn't know. Treating them as equal
+    # dropped the `LDA tab,Y` in `j = tab[i]; ...; g = tab[j];`.
+    asm_ast.IndexedData: lambda o: (
+        asm_ast.IndexedData, o.name, o.offset, type(o.index)),
+    asm_ast.Frame: lambda o: (asm_ast.Frame, o.offset),
+    asm_ast.Stack: lambda o: (asm_ast.Stack, o.offset),
+    asm_ast.Indirect: lambda o: (asm_ast.Indirect, o.offset),
+}
+
+
+def _key(op: asm_ast.Type_operand):
+    """Returns a hashable value that two operands share exactly when
+    `_operands_equal` holds between them, or None for an operand that
+    equals nothing."""
+    f = _KEY_OF.get(type(op))
+    return None if f is None else f(op)
 
 
 def _operands_equal(
@@ -1777,29 +2070,24 @@ def _operands_equal(
 ) -> bool:
     """Structural equality on the operand kinds we track. Distinct
     types are never equal; for matching types, compare the
-    relevant fields."""
-    if type(a) is not type(b):
+    relevant fields (`_KEY_OF`)."""
+    k = _key(a)
+    return k is not None and k == _key(b)
+
+
+def _has(atoms: tuple[_Atom, ...], op: asm_ast.Type_operand) -> bool:
+    """Returns whether some operand of `atoms` equals `op`
+    (`_operands_equal`)."""
+    a = _atom(op)
+    return a.key is not None and a in atoms
+
+
+def _intersects(l1: tuple[_Atom, ...], l2: tuple[_Atom, ...]) -> bool:
+    """Returns whether some operand of `l1` equals some operand of
+    `l2`."""
+    if not l1 or not l2:
         return False
-    if isinstance(a, asm_ast.Imm):
-        return a.value == b.value
-    if isinstance(a, asm_ast.ZP):
-        return a.address == b.address and a.offset == b.offset
-    if isinstance(a, asm_ast.Data):
-        return a.name == b.name and a.offset == b.offset
-    if isinstance(a, asm_ast.IndexedData):
-        # `tab,X` and `tab,Y` name different bytes unless X == Y,
-        # which the tracker doesn't know. Treating them as equal
-        # dropped the `LDA tab,Y` in `j = tab[i]; ...; g = tab[j];`.
-        return (
-            a.name == b.name and a.offset == b.offset
-            and type(a.index) is type(b.index)
-        )
-    if isinstance(a, asm_ast.Frame):
-        return a.offset == b.offset
-    if isinstance(a, asm_ast.Stack):
-        return a.offset == b.offset
-    if isinstance(a, asm_ast.Indirect):
-        return a.offset == b.offset
+    for a in l1:
+        if a.key is not None and a in l2:
+            return True
     return False
-
-

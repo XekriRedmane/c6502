@@ -3,30 +3,11 @@
 #include <optional>
 #include <utility>
 
-#include "passes/asm_licm.h"
-#include "passes/counter_to_index_reg.h"
-#include "passes/dec_register_peephole.h"
-#include "passes/dual_index_promotion.h"
-#include "passes/element_in_place.h"
-#include "passes/index_inc_cmp_y.h"
-#include "passes/loop_constant_a.h"
-#include "passes/loop_counter_to_x.h"
-#include "passes/loop_invariant_a.h"
-#include "passes/promote_loop_carried_to_a.h"
-#include "passes/rotate_loop_test.h"
-#include "passes/registry_control_flow.h"
-#include "passes/asm_dead_store.h"
-#include "passes/asm_remat.h"
-#include "passes/mem_const_prop.h"
-#include "passes/memory_value_propagation.h"
-#include "passes/redundant_load.h"
-#include "passes/redundant_store.h"
-#include "passes/registry_args.h"
-#include "passes/self_store_drop.h"
-#include "passes/split_mem_to_mem.h"
-#include "passes/x_save_slot_load.h"
 #include "passes/adc_commute.h"
 #include "passes/and_sign_bit_branch.h"
+#include "passes/asm_dead_store.h"
+#include "passes/asm_licm.h"
+#include "passes/asm_remat.h"
 #include "passes/capture_args.h"
 #include "passes/carry_halve.h"
 #include "passes/carry_in_add.h"
@@ -38,51 +19,55 @@
 #include "passes/cmp_through_tmp_fold.h"
 #include "passes/const_arith_fold.h"
 #include "passes/constant_store_order.h"
+#include "passes/counter_to_index_reg.h"
 #include "passes/cpx_cpy_peephole.h"
 #include "passes/dead_a_arith.h"
 #include "passes/dead_pha_pla.h"
 #include "passes/dec_branch_indirect_y_fold.h"
 #include "passes/dec_inc_branch_fold.h"
 #include "passes/dec_peephole.h"
+#include "passes/dec_register_peephole.h"
 #include "passes/direct_index_load.h"
+#include "passes/dual_index_promotion.h"
+#include "passes/element_in_place.h"
 #include "passes/inc_low_byte_test.h"
 #include "passes/inc_peephole.h"
+#include "passes/index_inc_cmp_y.h"
 #include "passes/join_store.h"
 #include "passes/label_offset_fold.h"
+#include "passes/loop_constant_a.h"
+#include "passes/loop_counter_to_x.h"
+#include "passes/loop_invariant_a.h"
+#include "passes/mem_const_prop.h"
+#include "passes/memory_value_propagation.h"
 #include "passes/pointer_self_store.h"
+#include "passes/promote_loop_carried_to_a.h"
 #include "passes/redundant_compare.h"
+#include "passes/redundant_load.h"
 #include "passes/redundant_load_after_rmw.h"
+#include "passes/redundant_store.h"
+#include "passes/registry_control_flow.h"
+#include "passes/rotate_loop_test.h"
 #include "passes/round_trip_load.h"
 #include "passes/self_store_drop.h"
+#include "passes/self_store_drop.h"
 #include "passes/shift_in_a.h"
+#include "passes/split_mem_to_mem.h"
 #include "passes/split_mem_to_mem.h"
 #include "passes/sub1_test_zero_peephole.h"
 #include "passes/transfer_past_branch.h"
 #include "passes/transfer_pm1_store.h"
 #include "passes/via_a_store_fold.h"
 #include "passes/volatile_void_read_cmp.h"
+#include "passes/x_save_slot_load.h"
 
 namespace c6502::passes {
 
 namespace {
 
-// Returns the symbol map that the tagged JSON `v` holds, a
-// `{"dict": [[name, address], ...]}` object, or nothing when `v` is
-// null or JSON null (Python's `None`).
-std::optional<SymbolAddrs> symbol_addrs_arg(const json::Value* v) {
-  if (v == nullptr || v->kind == json::Value::Kind::kNull) {
-    return std::nullopt;
-  }
-  SymbolAddrs m;
-  for (const auto& pair : v->get("dict")->items) {
-    m[pair.items[0].string] = pair.items[1].integer;
-  }
-  return m;
-}
-
 std::string run_licm(asm_ast::Program input, const AsmContext& ctx,
                      const json::Value& args, const json::Value&) {
-  const auto zp_cells = symbol_addrs_arg(args.items.empty() ? nullptr : &args.items[0]);
+  const auto zp_cells = capture_args::symbol_addrs(args.items.empty() ? nullptr : &args.items[0]);
   return asdl::dump(apply_licm(std::move(input), ctx, zp_cells ? &*zp_cells : nullptr));
 }
 
@@ -93,7 +78,7 @@ std::string run_split_mem_to_mem(asm_ast::Program input, const AsmContext&,
 
 std::string run_element_in_place(asm_ast::Program input, const AsmContext& ctx,
                                  const json::Value&, const json::Value& kwargs) {
-  const auto slots = symbol_addrs_arg(kwargs.get("zp_slot_symbols"));
+  const auto slots = capture_args::symbol_addrs(kwargs.get("zp_slot_symbols"));
   return asdl::dump(
       apply_element_in_place(std::move(input), ctx, slots ? &*slots : nullptr));
 }
@@ -120,14 +105,14 @@ std::string run_promote_loop_carried_to_a(asm_ast::Program input, const AsmConte
 
 std::string run_loop_counter_to_x(asm_ast::Program input, const AsmContext&,
                                   const json::Value& args, const json::Value& kwargs) {
-  const auto addrs = symbol_addrs_arg(
+  const auto addrs = capture_args::symbol_addrs(
       args.items.empty() ? kwargs.get("zp_symbol_addrs") : &args.items[0]);
   return asdl::dump(apply_loop_counter_to_x(std::move(input), addrs ? &*addrs : nullptr));
 }
 
 std::string run_counter_to_index_reg(asm_ast::Program input, const AsmContext&,
                                      const json::Value& args, const json::Value& kwargs) {
-  const auto addrs = symbol_addrs_arg(
+  const auto addrs = capture_args::symbol_addrs(
       args.items.empty() ? kwargs.get("zp_symbol_addrs") : &args.items[0]);
   return asdl::dump(
       apply_counter_to_index_reg(std::move(input), addrs ? &*addrs : nullptr));
@@ -145,7 +130,7 @@ std::string run_dual_index_promotion(asm_ast::Program input, const AsmContext&,
 
 std::string run_loop_invariant_a(asm_ast::Program input, const AsmContext& ctx,
                                  const json::Value&, const json::Value& kwargs) {
-  const auto slots = symbol_addrs_arg(kwargs.get("zp_slot_symbols"));
+  const auto slots = capture_args::symbol_addrs(kwargs.get("zp_slot_symbols"));
   return asdl::dump(
       apply_loop_invariant_a(std::move(input), ctx, slots ? &*slots : nullptr));
 }
@@ -157,15 +142,15 @@ std::string run_rotate_loop_test(asm_ast::Program input, const AsmContext& ctx,
 
 std::string run_memory_value_propagation(asm_ast::Program input, const AsmContext& ctx,
                                          const json::Value&, const json::Value& kwargs) {
-  const auto addrs = symbol_addrs_kwarg(kwargs, "zp_symbol_addrs");
+  const auto addrs = capture_args::symbol_addrs(kwargs.get("zp_symbol_addrs"));
   return asdl::dump(apply_memory_value_propagation(std::move(input), ctx,
                                                    addrs ? &*addrs : nullptr,
-                                                   name_set_kwarg(kwargs, "noreturn")));
+                                                   capture_args::name_set(kwargs.get("noreturn"))));
 }
 
 std::string run_redundant_load(asm_ast::Program input, const AsmContext& ctx,
                                const json::Value&, const json::Value& kwargs) {
-  const auto addrs = symbol_addrs_kwarg(kwargs, "zp_symbol_addrs");
+  const auto addrs = capture_args::symbol_addrs(kwargs.get("zp_symbol_addrs"));
   return asdl::dump(
       apply_redundant_load_elimination(std::move(input), ctx, addrs ? &*addrs : nullptr));
 }
@@ -177,13 +162,13 @@ std::string run_redundant_store(asm_ast::Program input, const AsmContext& ctx,
 
 std::string run_remat(asm_ast::Program input, const AsmContext& ctx,
                       const json::Value&, const json::Value& kwargs) {
-  const auto slots = symbol_addrs_kwarg(kwargs, "zp_slot_symbols");
+  const auto slots = capture_args::symbol_addrs(kwargs.get("zp_slot_symbols"));
   return asdl::dump(apply_remat(std::move(input), ctx, slots ? &*slots : nullptr));
 }
 
 std::string run_asm_dead_store(asm_ast::Program input, const AsmContext& ctx,
                                const json::Value&, const json::Value& kwargs) {
-  const auto slots = symbol_addrs_kwarg(kwargs, "zp_slot_symbols");
+  const auto slots = capture_args::symbol_addrs(kwargs.get("zp_slot_symbols"));
   return asdl::dump(
       apply_asm_dead_store(std::move(input), ctx, slots ? &*slots : nullptr));
 }

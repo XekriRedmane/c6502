@@ -29,6 +29,24 @@ std::optional<SymbolAddrs> symbol_addrs(const json::Value* v) {
   return out;
 }
 
+NameSet name_set(const json::Value* v) {
+  NameSet out;
+  if (v == nullptr || v->kind == json::Value::Kind::kNull) {
+    return out;
+  }
+  const json::Value* names = v->get("set");
+  if (names == nullptr || names->kind != json::Value::Kind::kArray) {
+    throw std::runtime_error("a name set's argument isn't a tagged set");
+  }
+  for (const auto& item : names->items) {
+    if (item.kind != json::Value::Kind::kString) {
+      throw std::runtime_error("a name set's entry isn't a name");
+    }
+    out.insert(item.string);
+  }
+  return out;
+}
+
 bool boolean(const json::Value* v, bool fallback) {
   if (v == nullptr) {
     return fallback;

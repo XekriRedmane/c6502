@@ -22,6 +22,12 @@ const json::Value* kwarg(const json::Value& kwargs, std::string_view name);
 // `std::runtime_error` for any other value.
 std::optional<SymbolAddrs> symbol_addrs(const json::Value* v);
 
+// Returns the set of names that `v` encodes as `{"set": [name, ...]}`,
+// or an empty set when `v` is null or JSON's null, which is how a call
+// that leaves a keyword argument such as `noreturn` at its default of
+// `None` is recorded. Throws `std::runtime_error` for any other value.
+NameSet name_set(const json::Value* v);
+
 // Returns the bool that `v` encodes, or `fallback` when `v` is null.
 bool boolean(const json::Value* v, bool fallback);
 

@@ -58,6 +58,11 @@ file holds the project overview and notes about root-level files
   classes, and YARPGen's programs, built with a 16-bit `int` by
   `fuzz/build_yarpgen.py`), a runner that checks every execution path
   with the IR checks on, and a reducer for failing programs.
+- [cpp/README.md](cpp/README.md) — the C++ port
+  ([docs/cpp_port.md](docs/cpp_port.md) has the plan): its build, the
+  IR classes `asdl.py --cpp` generates, the dump format's C++ side, the
+  check of each ported pass against the calls `tools/capture_passes.py`
+  records, and the conventions for porting a pass.
 
 ## Pipeline at a glance
 
@@ -296,6 +301,12 @@ uv run python compile.py -O -c a.c b.c          # objects a.o and b.o
 uv run python compile.py a.o b.o -o prog        # link them (ELF executable)
 uv run python nm.py a.o                         # list an object's symbols
 uv run python objdump.py -d a.o                 # disassemble (dasm syntax)
+
+# The C++ port (cpp/README.md). On Linux, leave out -G, -A, and
+# --config, and add -DCMAKE_BUILD_TYPE=Release to the first command.
+cmake -S cpp -B cpp/build -G "Visual Studio 17 2022" -A x64
+cmake --build cpp/build --config Release --parallel
+ctest --test-dir cpp/build -C Release --output-on-failure
 ```
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other

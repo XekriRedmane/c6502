@@ -232,3 +232,6 @@ fuzz_out/
 *.o
 a.out
 examples/zork/interpreter
+
+# The C++ port's build tree (cpp/README.md).
+cpp/build/

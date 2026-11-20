@@ -40,10 +40,11 @@ Each is compiled with `-S -O` and with `-S` (`--modes O,unopt`).
 
 A capture file is text with LF line endings:
 
-    c6502-capture 1
+    c6502-capture 2
     pass <name>
     source <the compile that first made the call>
     args <tagged JSON, one line>
+    context <JSON, one line>
     input
     <the input program's dump (ir_dump.py)>
     output
@@ -61,6 +62,14 @@ and lists, and an object with one tag for the rest, `{"tuple": [...]}`,
 an IR value, `{"enum": "module.Class", "name": name}`, and
 `{"object": "module.Class", "fields": {...}}` for any other object,
 from its dataclass fields or its `__dict__`.
+
+The context is the state of the compile that the asm passes read from
+module globals and the C++ passes receive as an `AsmContext`
+(cpp/README.md): `{"layout": [ssp, fp, hargs, hargs_size, dptr],
+"user_zp_globals": [[name, address], ...], "user_zp_bytes": [...]}`,
+from `runtime_layout.current()` and `asm_aliasing.set_user_zp_globals`,
+sorted. A pass that installs a pointer proof computes it from its
+program, so the proof isn't part of the context.
 """
 from __future__ import annotations
 
@@ -230,10 +239,26 @@ _COUNTS: dict[str, int] = {}
 _FAILURES: dict[str, str] = {}
 
 
+def context_json() -> str:
+    """The context line's JSON for the compile under way (the module
+    docstring describes it)."""
+    from passes import asm_aliasing
+    from passes.runtime_layout import current
+    layout = current()
+    return json.dumps({
+        "layout": [layout.ssp, layout.fp, layout.hargs, layout.hargs_size,
+                   layout.dptr],
+        "user_zp_globals": sorted(
+            [k, v] for k, v in asm_aliasing._USER_ZP_GLOBALS.items()),
+        "user_zp_bytes": sorted(asm_aliasing._USER_ZP_BYTES),
+    }, separators=(",", ":"))
+
+
 def _record(name: str, input_dump: str, args_json: str, result) -> None:
     import ir_dump
+    context = context_json()
     key = hashlib.sha1(
-        f"{name}\n{args_json}\n{input_dump}".encode("utf-8")
+        f"{name}\n{args_json}\n{context}\n{input_dump}".encode("utf-8")
     ).hexdigest()
     _COUNTS[name] = _COUNTS.get(name, 0) + 1
     path = _OUT / name / f"{key}.txt"
@@ -244,8 +269,8 @@ def _record(name: str, input_dump: str, args_json: str, result) -> None:
     else:
         output = "output-json\n" + json.dumps(encode(result)) + "\n"
     text = (
-        f"c6502-capture 1\npass {name}\nsource {_SOURCE}\n"
-        f"args {args_json}\ninput\n{input_dump}{output}"
+        f"c6502-capture 2\npass {name}\nsource {_SOURCE}\n"
+        f"args {args_json}\ncontext {context}\ninput\n{input_dump}{output}"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{key}.{os.getpid()}.tmp")

@@ -8,8 +8,8 @@ namespace c6502::passes {
 
 namespace {
 
-std::string run_split_mem_to_mem(asm_ast::Program input, const json::Value&,
-                                 const json::Value&) {
+std::string run_split_mem_to_mem(asm_ast::Program input, const AsmContext&,
+                                 const json::Value&, const json::Value&) {
   return asdl::dump(apply_split_mem_to_mem(std::move(input)));
 }
 

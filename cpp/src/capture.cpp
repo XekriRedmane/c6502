@@ -1,9 +1,13 @@
 #include "capture.h"
 
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
+
+#include "json.h"
 
 namespace c6502::capture {
 
@@ -29,12 +33,17 @@ std::string take_line(const std::string& text, std::size_t& pos,
 Call parse(const std::string& text) {
   Call call;
   std::size_t pos = 0;
-  if (take_line(text, pos, "c6502-capture ") != "1") {
+  // Version 2 added the context line.
+  const std::string version = take_line(text, pos, "c6502-capture ");
+  if (version != "1" && version != "2") {
     throw std::runtime_error("unknown capture file version");
   }
   call.pass = take_line(text, pos, "pass ");
   call.source = take_line(text, pos, "source ");
   call.args_json = take_line(text, pos, "args ");
+  if (version == "2") {
+    call.context_json = take_line(text, pos, "context ");
+  }
   take_line(text, pos, "input");
   // The input's dump ends with a newline, and the `output` line follows
   // it. No line of a dump can be `output`, since every line of one
@@ -54,6 +63,34 @@ Call parse(const std::string& text) {
   }
   call.input = text.substr(pos, mark + 1 - pos);
   return call;
+}
+
+passes::AsmContext context(const Call& call) {
+  if (call.context_json.empty()) {
+    return passes::AsmContext{};
+  }
+  return context_from_json(json::parse(call.context_json));
+}
+
+passes::AsmContext context_from_json(const json::Value& v) {
+  passes::AsmContext ctx;
+  const json::Value& layout = *v.get("layout");
+  ctx.layout = passes::RuntimeLayout{
+      .ssp = layout.items.at(0).integer,
+      .fp = layout.items.at(1).integer,
+      .hargs = layout.items.at(2).integer,
+      .hargs_size = layout.items.at(3).integer,
+      .dptr = layout.items.at(4).integer,
+  };
+  auto user = std::make_shared<passes::UserZpGlobals>();
+  for (const auto& pair : v.get("user_zp_globals")->items) {
+    user->addrs[pair.items.at(0).string] = pair.items.at(1).integer;
+  }
+  for (const auto& b : v.get("user_zp_bytes")->items) {
+    user->bytes.insert(b.integer);
+  }
+  ctx.user_zp = std::move(user);
+  return ctx;
 }
 
 std::string read_file(const std::filesystem::path& path) {

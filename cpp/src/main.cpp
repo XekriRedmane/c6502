@@ -174,7 +174,8 @@ int cmd_check_captures(const std::vector<std::string>& args) {
       const json::Value empty_object{.kind = json::Value::Kind::kObject};
       const json::Value* positional = call_args.get("args");
       const json::Value* keywords = call_args.get("kwargs");
-      got = pass->run(std::move(input), positional ? *positional : empty_array,
+      got = pass->run(std::move(input), capture::context(call),
+                      positional ? *positional : empty_array,
                       keywords ? *keywords : empty_object);
     } catch (const std::exception& e) {
       got = std::string("exception: ") + e.what() + "\n";

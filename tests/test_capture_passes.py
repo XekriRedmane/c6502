@@ -100,11 +100,18 @@ class TestCapture(unittest.TestCase):
             text = path.read_bytes().decode("utf-8")
             head, _, rest = text.partition("\ninput\n")
             self.assertEqual(head.split("\n")[:3], [
-                "c6502-capture 1", "pass split_mem_to_mem",
+                "c6502-capture 2", "pass split_mem_to_mem",
                 "source examples/sfx_tone.c -S -O",
             ])
             self.assertEqual(head.split("\n")[3],
                              'args {"args": [], "kwargs": {}}')
+            # sfx_tone.c has no zero-page globals, so the runtime's
+            # block keeps its classic layout.
+            self.assertEqual(
+                head.split("\n")[4],
+                'context {"layout":[0,2,4,32,36],"user_zp_globals":[],'
+                '"user_zp_bytes":[]}',
+            )
             input_text, _, output_text = rest.partition("\noutput\n")
             prog = ir_dump.load(input_text, asm_ast)
             self.assertEqual(

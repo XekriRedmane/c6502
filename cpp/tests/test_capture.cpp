@@ -51,3 +51,28 @@ TEST_CASE("capture::parse splits a capture file into its sections") {
   CHECK(json_call.input == "Program([])\n");
   CHECK(json_call.output == "{\"tuple\": []}\n");
 }
+
+TEST_CASE("capture::parse reads a version 2 capture's context") {
+  const auto call = c6502::capture::parse(
+      "c6502-capture 2\npass p\nsource s\nargs {}\n"
+      "context {\"layout\":[0,2,64,8,72],\"user_zp_globals\":[[\"G\",133]],"
+      "\"user_zp_bytes\":[133,134]}\n"
+      "input\nProgram([])\noutput\nProgram([])\n");
+  CHECK(call.input == "Program([])\n");
+  const auto ctx = c6502::capture::context(call);
+  CHECK(ctx.layout.hargs == 64);
+  CHECK(ctx.layout.hargs_size == 8);
+  CHECK(ctx.layout.dptr == 72);
+  CHECK(ctx.is_user_zp_global("G"));
+  CHECK_FALSE(ctx.is_user_zp_global("H"));
+  CHECK(*ctx.user_zp_address("G") == 133);
+  CHECK(ctx.is_user_zp_byte(134));
+  CHECK_FALSE(ctx.is_user_zp_byte(135));
+
+  // A version 1 capture has no context, which reads as the default.
+  const auto old = c6502::capture::context(c6502::capture::parse(
+      "c6502-capture 1\npass p\nsource s\nargs {}\ninput\nProgram([])\n"
+      "output\nProgram([])\n"));
+  CHECK(old.layout == c6502::passes::RuntimeLayout{});
+  CHECK_FALSE(old.is_user_zp_global("G"));
+}

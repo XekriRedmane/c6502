@@ -738,14 +738,23 @@ def _transfer(
         return
     # Block-terminator atoms are visited too (they end blocks, but
     # the dataflow framework still calls transfer on them); they
-    # don't have memory effects, so no-op. Compare / BitTest only
-    # set flags; SetCarry / ClearCarry only set the C flag.
+    # don't have memory effects, so no-op. BitTest only sets flags;
+    # SetCarry / ClearCarry only set the C flag.
     if isinstance(instr, (
         asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
         asm_ast.Ret, asm_ast.Return,
-        asm_ast.SetCarry, asm_ast.ClearCarry,
-        asm_ast.Compare, asm_ast.BitTest,
+        asm_ast.SetCarry, asm_ast.ClearCarry, asm_ast.BitTest,
     )):
+        return
+    # Each instruction below may have an operand lowered with an `LDY
+    # #off` setup, which writes Y, as `CMP (zp),Y` with a constant Y
+    # does, so each gives Y its token after its other effects (a
+    # `Mov`'s source is read before the setup of its destination).
+    # Only a `Mov` and a write of X or Y used to, and a slot holding
+    # `arr,Y` was read back as `LDA arr,Y` after a `CMP (zp),Y` or an
+    # `ADC (zp),Y` had loaded Y.
+    if isinstance(instr, asm_ast.Compare):
+        _bump_index_tokens(instr, state, ctx)
         return
     # Mov: the main vehicle for establishing and killing facts.
     if isinstance(instr, asm_ast.Mov):
@@ -761,12 +770,14 @@ def _transfer(
             state.a_value = None
         else:
             _kill_writes(instr.dst, state, ctx.zp_addrs)
+        _bump_index_tokens(instr, state, ctx)
         return
     if isinstance(instr, asm_ast.Xor):
         if _is_reg_a(instr.dst):
             state.a_value = None
         else:
             _kill_writes(instr.dst, state, ctx.zp_addrs)
+        _bump_index_tokens(instr, state, ctx)
         return
     # In-place RMW on a memory cell (or register).
     if isinstance(instr, (
@@ -781,6 +792,7 @@ def _transfer(
                 _bump_index_tokens(instr, state, ctx)
             return
         _kill_writes(instr.dst, state, ctx.zp_addrs)
+        _bump_index_tokens(instr, state, ctx)
         return
     # Pop: stack pop into A / X / Y / memory.
     if isinstance(instr, asm_ast.Pop):
@@ -791,9 +803,11 @@ def _transfer(
                 _bump_index_tokens(instr, state, ctx)
             return
         _kill_writes(instr.dst, state, ctx.zp_addrs)
+        _bump_index_tokens(instr, state, ctx)
         return
     # Push: reads only, no memory effect on tracked cells.
     if isinstance(instr, asm_ast.Push):
+        _bump_index_tokens(instr, state, ctx)
         return
 
 

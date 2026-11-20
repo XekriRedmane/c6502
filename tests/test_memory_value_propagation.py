@@ -323,6 +323,42 @@ class TestYSetupInvalidates(unittest.TestCase):
         out = _instrs(_wrap(self._program(middle)))
         self.assertEqual(out[3].src, _zp(0x84))
 
+    def _run_with_zero_page_array(self, middle):
+        # With `arr` in zero page, `LDA arr,Y` costs what `LDA $84` does,
+        # so the read is rewritten whenever the fact holds.
+        fn = asm_ast.Function(
+            name="f", is_global=True, params=[],
+            instructions=self._program(middle),
+        )
+        prog = asm_ast.Program(top_level=[fn])
+        return _instrs(apply_memory_value_propagation(
+            prog, zp_symbol_addrs={"arr": 0x40},
+        ))
+
+    def test_fact_used_without_setup(self):
+        middle = asm_ast.ClearCarry()
+        out = self._run_with_zero_page_array(middle)
+        self.assertEqual(out[3].src, asm_ast.IndexedData(
+            name="arr", offset=0, index=asm_ast.Y(),
+        ))
+
+    def test_compare_setup_kills_fact(self):
+        # `CMP (zp),Y` with a constant Y is `LDY #3; CMP ($90),Y`. Only a
+        # `Mov` used to give Y a new token, and the read after the compare
+        # became `LDA arr,Y` with Y holding 3.
+        middle = asm_ast.Compare(
+            left=_A(), right=asm_ast.IndirectZp(address=0x90, offset=3),
+        )
+        out = self._run_with_zero_page_array(middle)
+        self.assertEqual(out[3].src, _zp(0x84))
+
+    def test_alu_setup_kills_fact(self):
+        middle = asm_ast.Add(
+            src=asm_ast.IndirectZp(address=0x90, offset=3), dst=_A(),
+        )
+        out = self._run_with_zero_page_array(middle)
+        self.assertEqual(out[3].src, _zp(0x84))
+
 
 def _data(name, off=0):
     return asm_ast.Data(name=name, offset=off)

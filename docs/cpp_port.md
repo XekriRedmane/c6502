@@ -135,3 +135,11 @@ stages land.
   identity only at a `Mov` or a write of X or Y, so an `arr,Y` it had
   recorded outlived the `LDY #off` of a `CMP (zp),Y` or an `ADC
   (zp),Y`.
+- 20 Nov 2026: the arithmetic, carry, and load/store peepholes of the
+  fixed point are ported, 36 of the passes that
+  `tools/capture_passes.py` records, among them `carry_known`, which
+  runs between the fixed points, and both stages of `adc_commute`.
+  Each matches the Python pass on every distinct call of the whole
+  corpus in both modes. The calls checked per pass run from 1,180 for
+  `carry_known` to 7,052 for `carry_halve` and `carry_in_add`, and the
+  Python tests that run each pass on asm are ported to doctest.

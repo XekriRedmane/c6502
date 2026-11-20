@@ -77,9 +77,11 @@ cpp/
       asm_operands.h  for_each_operand, a walk over an instruction's operands
       optimization_asm/cfg.*   the asm CFG and its dominators
       registry.*      the ported passes, by name, for check-captures
+      capture_args.*  the decoders of a captured call's keyword arguments
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
+    asm_text.h        a test's program and expected instructions as dump text
   third_party/doctest doctest.h 2.4.12 and its MIT license
 ```
 
@@ -390,8 +392,12 @@ These conventions apply to every pass ported after
   call's context, decodes its tagged-JSON arguments, and returns the
   result's dump. The
   Python tests of the pass (`tests/test_<name>.py`) are ported to
-  `tests/test_<name>.cpp`. A pass is done when `tools/check_captures.py
-  <name>` reports no difference on a capture of the whole corpus.
+  `tests/test_<name>.cpp`, where `tests/asm_text.h` builds a test's
+  program from the dump format and compares the instructions as dump
+  text, so a failure shows both listings. A keyword argument such as
+  `zp_slot_symbols` is decoded with `src/passes/capture_args.h`. A pass
+  is done when `tools/check_captures.py <name>` reports no difference
+  on a capture of the whole corpus.
 
 ## The control-flow and whole-program passes
 
@@ -485,3 +491,22 @@ changes the result.
   distinct call of the corpus. Their tests (`tests/test_<module>.cpp`)
   are the calls that the Python unit tests make, recorded with the
   Python pass's results and checked through `tests/pass_case.h`.
+- 20 Nov 2026: the arithmetic, carry, and load/store peepholes of the
+  fixed point (group C of step 2b), 36 entries of the registry:
+  `inc_peephole`, `inc_low_byte_test`, `carry_inc`, `dec_peephole`,
+  `sub1_test_zero`, `carry_halve`, `carry_in_add`,
+  `carry_recompute_drop`, `carry_known`, the three passes of
+  `carry_return`, `const_arith_fold`, `label_offset_fold`,
+  `shift_in_a`, `dead_a_arith`, `redundant_load_after_rmw`,
+  `dec_inc_branch_fold`, `cmp_sbc_fusion`, `adc_commute` (both
+  stages), `transfer_pm1_store`, `round_trip_load_drop`,
+  `self_store_drop`, `pointer_self_store_drop`, `and_sign_bit_branch`,
+  `cmp_through_tmp_fold`, `via_a_store_fold`, `direct_index_load`,
+  `cpx_cpy`, `dead_pha_pla`, `volatile_void_read_cmp`,
+  `dec_branch_indirect_y_fold`, `transfer_past_branch`,
+  `constant_store_order`, `join_store`, and `redundant_compare`. Each
+  matches the Python pass on every distinct call of the corpus, from
+  1180 calls of `carry_known` to 7052 of `carry_halve`.
+  `src/passes/capture_args.*` decodes the keyword arguments of a
+  captured call, and the unit tests write their programs in the dump
+  format with `tests/asm_text.h`.

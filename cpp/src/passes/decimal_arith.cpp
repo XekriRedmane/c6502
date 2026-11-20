@@ -21,9 +21,10 @@
 //     through a function, for the passes that rename or resolve
 //     operands.
 //
-// The rest of the Python module (the Pseudo reads and writes, the
-// early-write pairs, and the form check) serves the asm SSA round trip
-// and the IR check, which are ported with those stages.
+// The asm SSA round trip reads `pseudo_reads`, `pseudo_writes`,
+// `map_reads`, and `map_writes`, and the interference graphs
+// `early_write_pairs`. The form check serves the IR check, which isn't
+// ported.
 #include "passes/decimal_arith.h"
 
 namespace c6502::passes::decimal_arith {
@@ -56,6 +57,57 @@ bool writes_y(const ir::DecimalArith& instr) {
     }
   }
   return false;
+}
+
+std::vector<ir::Pseudo> pseudo_reads(const ir::DecimalArith& instr) {
+  std::vector<ir::Pseudo> out;
+  for (const auto* list : {&instr.left, &instr.right}) {
+    for (const auto& op : *list) {
+      if (const auto* p = asdl::as<ir::Pseudo>(op)) {
+        out.push_back(*p);
+      }
+    }
+  }
+  return out;
+}
+
+std::vector<ir::Pseudo> pseudo_writes(const ir::DecimalArith& instr) {
+  std::vector<ir::Pseudo> out;
+  for (const auto& op : instr.dst) {
+    if (const auto* p = asdl::as<ir::Pseudo>(op)) {
+      out.push_back(*p);
+    }
+  }
+  return out;
+}
+
+std::vector<ir::Type_operand> later_sources(const ir::DecimalArith& instr, std::size_t k) {
+  std::vector<ir::Type_operand> out;
+  for (std::size_t j = k + 1; j < instr.left.size(); ++j) {
+    out.push_back(instr.left[j]);
+  }
+  for (std::size_t j = k + 1; j < instr.right.size(); ++j) {
+    out.push_back(instr.right[j]);
+  }
+  return out;
+}
+
+std::vector<std::pair<std::string, std::string>> early_write_pairs(
+    const ir::DecimalArith& instr) {
+  std::vector<std::pair<std::string, std::string>> out;
+  for (std::size_t k = 0; k < instr.dst.size(); ++k) {
+    const auto* d = asdl::as<ir::Pseudo>(instr.dst[k]);
+    if (d == nullptr) {
+      continue;
+    }
+    for (const auto& s : later_sources(instr, k)) {
+      const auto* sp = asdl::as<ir::Pseudo>(s);
+      if (sp != nullptr && sp->name != d->name) {
+        out.emplace_back(d->name, sp->name);
+      }
+    }
+  }
+  return out;
 }
 
 }  // namespace c6502::passes::decimal_arith

@@ -26,6 +26,7 @@
 #include "passes/split_mem_to_mem.h"
 #include "passes/x_save_slot_load.h"
 #include "passes/adc_commute.h"
+#include "passes/and_sign_bit_branch.h"
 #include "passes/capture_args.h"
 #include "passes/carry_halve.h"
 #include "passes/carry_in_add.h"
@@ -47,6 +48,7 @@
 #include "passes/inc_peephole.h"
 #include "passes/label_offset_fold.h"
 #include "passes/pointer_self_store.h"
+#include "passes/redundant_compare.h"
 #include "passes/redundant_load_after_rmw.h"
 #include "passes/round_trip_load.h"
 #include "passes/self_store_drop.h"
@@ -350,6 +352,16 @@ std::string run_transfer_pm1_store(asm_ast::Program input, const AsmContext& ctx
   return asdl::dump(apply_transfer_pm1_store(std::move(input), ctx));
 }
 
+std::string run_and_sign_bit_branch(asm_ast::Program input, const AsmContext&,
+                                    const json::Value&, const json::Value&) {
+  return asdl::dump(apply_and_sign_bit_branch(std::move(input)));
+}
+
+std::string run_redundant_compare(asm_ast::Program input, const AsmContext& ctx,
+                                  const json::Value&, const json::Value&) {
+  return asdl::dump(apply_redundant_compare(std::move(input), ctx));
+}
+
 }  // namespace
 
 const std::vector<RegisteredPass>& registered_passes() {
@@ -414,8 +426,10 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"carry_const_fold", run_carry_const_fold},
       {"carry_branch_fold", run_carry_branch_fold},
       {"round_trip_load_drop", run_round_trip_load_drop},
+      {"and_sign_bit_branch", run_and_sign_bit_branch},
       {"self_store_drop", run_self_store_drop},
       {"pointer_self_store_drop", run_pointer_self_store_drop},
+      {"redundant_compare", run_redundant_compare},
       {"adc_commute", run_adc_commute},
       {"cmp_sbc_fusion", run_cmp_sbc_fusion},
       {"dec_inc_branch_fold", run_dec_inc_branch_fold},

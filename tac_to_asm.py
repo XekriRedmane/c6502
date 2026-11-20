@@ -366,6 +366,7 @@ TAC-level passes (see `passes/optimization/CLAUDE.md`).
 from __future__ import annotations
 
 
+from passes.dataclass_fields import fields_of
 from passes.shift_cost import inline_shift_ok
 import asm_ast
 import bit_precise
@@ -5461,7 +5462,7 @@ def _rename_pseudos(
             return operand(node)
         if dataclasses.is_dataclass(node) and not isinstance(node, type):
             changes = {}
-            for f in dataclasses.fields(node):
+            for f in fields_of(node):
                 old = getattr(node, f.name)
                 new = walk(old)
                 if new is not old:

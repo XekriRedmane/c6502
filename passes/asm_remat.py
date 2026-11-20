@@ -80,12 +80,11 @@ fixedpoint iteration by the existing DSE/DCE peepholes.
 """
 from __future__ import annotations
 
-import dataclasses
-
 import asm_ast
 from passes import decimal_arith
 from passes.asm_liveness import sets_up_y
 from passes.asm_aliasing import may_alias, runtime_zp_addrs
+from passes.dataclass_fields import fields_of
 from passes.peephole_memo import FunctionMemo, rewrite_function
 
 
@@ -795,7 +794,7 @@ def _all_operands(instr) -> list:
     """Returns every operand-valued field of `instr`, read or
     written, including those inside list-valued fields."""
     out: list = []
-    for f in dataclasses.fields(instr):
+    for f in fields_of(instr):
         v = getattr(instr, f.name)
         vals = v if isinstance(v, list) else [v]
         for item in vals:

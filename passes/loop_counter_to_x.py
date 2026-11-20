@@ -149,6 +149,7 @@ import dataclasses
 import asm_ast
 from passes.asm_aliasing import is_pointer_byte, pointer_byte_addresses
 from passes.asm_liveness import a_dead_at, call_preserves, sets_up_y
+from passes.dataclass_fields import fields_of
 
 
 _FLAG_NZ_BRANCHES: tuple[type, ...] = (
@@ -766,7 +767,7 @@ def _operand_roles(instr):
     # doesn't rewrite, so it disqualifies the slot. Missing one would
     # leave X stale: `STA M; ROL M; INC M; LDX M` once promoted M to
     # X with the `ROL` still updating memory.
-    for f in dataclasses.fields(instr):
+    for f in fields_of(instr):
         field = getattr(instr, f.name)
         # `DecimalArith` keeps its operands in lists.
         for op in field if isinstance(field, list) else (field,):

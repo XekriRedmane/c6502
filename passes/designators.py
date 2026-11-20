@@ -48,11 +48,11 @@ The rules come from §6.7.11p17-22.
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass, field
 from typing import Callable
 
 import c99_ast
+from passes.dataclass_fields import fields_of
 
 
 # `layout_of(tag)` gives the members of the struct or union `tag` as
@@ -396,6 +396,6 @@ def _has_side_effects(node) -> bool:
     if isinstance(node, c99_ast.Type_exp):
         return any(
             _has_side_effects(getattr(node, f.name))
-            for f in dataclasses.fields(node)
+            for f in fields_of(node)
         )
     return False

@@ -115,6 +115,7 @@ from dataclasses import dataclass, field
 import c99_ast
 import tac_ast
 from passes.call_edges import graph_calls
+from passes.dataclass_fields import fields_of
 from passes.optimization.pool import Pool
 from passes.optimization.var_visit import vals_in
 from passes.zp_slot_naming import param_slot_symbols
@@ -698,7 +699,7 @@ def _has_register_local(node) -> bool:
         if isinstance(node.storage_class, c99_ast.Register):
             return True
     if dataclasses.is_dataclass(node):
-        for f in dataclasses.fields(node):
+        for f in fields_of(node):
             if _has_register_local(getattr(node, f.name)):
                 return True
     elif isinstance(node, (list, tuple)):

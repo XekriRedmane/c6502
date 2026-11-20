@@ -66,6 +66,11 @@ this directory:
   set by `c99_to_tac`, and empty `args`) isn't. Every pass that walks
   the call graph takes its edges from here (see "A call that abandons
   its caller" below).
+- `dataclass_fields.py` — `fields_of` and `field_names`, which give
+  what `dataclasses.fields` gives, computed once per class, since a
+  dataclass's fields are fixed when the class is made. Every walk over
+  the fields of IR nodes in `passes/`, `c99_to_tac.py`, and
+  `tac_to_asm.py` uses them.
 - `dead_pha_pla.py` — `apply_dead_pha_pla`. Drops `Push(Reg(A)) /
   body / Pop(Reg(A))` triples when the body preserves A and the
   PLA's N/Z flag effect is dead. Always-on. Headline case: the

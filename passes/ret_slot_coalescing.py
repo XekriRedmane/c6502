@@ -74,6 +74,7 @@ import dataclasses
 
 import asm_ast
 from passes.asm_aliasing import _instruction_operands, unreachable_by_pointer
+from passes.dataclass_fields import fields_of
 from passes.return_in_zero_page import return_slot_name
 from passes.slot_coalescing import _copy_sources, _excluded, _successors
 
@@ -324,7 +325,7 @@ def _canonical(ins, names, cells, a0):
         return x
     return dataclasses.replace(ins, **{
         fld.name: rename(getattr(ins, fld.name))
-        for fld in dataclasses.fields(ins)
+        for fld in fields_of(ins)
     })
 
 
@@ -408,7 +409,7 @@ def _rename(node, renames, a0, ret_addr):
         return [_rename(x, renames, a0, ret_addr) for x in node]
     if dataclasses.is_dataclass(node) and not isinstance(node, type):
         changes = {}
-        for fld in dataclasses.fields(node):
+        for fld in fields_of(node):
             val = getattr(node, fld.name)
             new = _rename(val, renames, a0, ret_addr)
             if new is not val:

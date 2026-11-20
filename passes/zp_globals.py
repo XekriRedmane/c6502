@@ -115,6 +115,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes.dataclass_fields import fields_of
 from passes.runtime_layout import CLASSIC, RuntimeLayout, choose_layout
 from passes.type_checking import TypeCheckError
 
@@ -333,7 +334,7 @@ def access_weights(tac) -> dict[str, int]:
             for x in node:
                 names(x, found)
         elif dataclasses.is_dataclass(node):
-            for f in dataclasses.fields(node):
+            for f in fields_of(node):
                 if f.name != "target":
                     names(getattr(node, f.name), found)
 

@@ -108,6 +108,7 @@ from passes.abi_selection import (
     _address_taken, _function_decls_by_name, _has_register_local,
     _has_register_request,
 )
+from passes.dataclass_fields import fields_of
 from passes.type_checking import FunAttr, LocalAttr, StaticAttr, Symbol
 
 
@@ -622,7 +623,7 @@ def _rename(node, locals_: dict[str, str], labels: dict[str, str]):
         return node
     label_field = _LABEL_FIELDS.get(type(node))
     kwargs = {}
-    for f in dataclasses.fields(node):
+    for f in fields_of(node):
         value = getattr(node, f.name)
         if f.name == label_field:
             value = labels.get(value, value)

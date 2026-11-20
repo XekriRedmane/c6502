@@ -35,6 +35,7 @@ import dataclasses
 
 import builtin_functions
 import c99_ast
+from passes.dataclass_fields import fields_of
 
 def parameter(name: str) -> str:
     """The resolved name of the parameter of the definition of `name`.
@@ -54,7 +55,7 @@ def _referenced_names(node, names: set[str]) -> None:
         for item in node:
             _referenced_names(item, names)
     elif dataclasses.is_dataclass(node) and not isinstance(node, type):
-        for f in dataclasses.fields(node):
+        for f in fields_of(node):
             value = getattr(node, f.name)
             if isinstance(value, list) or dataclasses.is_dataclass(value):
                 _referenced_names(value, names)

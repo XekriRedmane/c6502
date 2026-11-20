@@ -392,6 +392,7 @@ import builtin_functions
 import c99_ast
 import fp_arith
 import tac_ast
+from passes.dataclass_fields import fields_of
 from passes.type_checking import (
     AddressInit,
     FunAttr,
@@ -497,7 +498,7 @@ def _calls_or_writes(node) -> bool:
     if isinstance(node, c99_ast.Type_exp):
         return any(
             _calls_or_writes(getattr(node, f.name))
-            for f in dataclasses.fields(node)
+            for f in fields_of(node)
         )
     return False
 
@@ -513,7 +514,7 @@ def _calls(node) -> bool:
         return any(_calls(n) for n in node)
     if isinstance(node, c99_ast.Type_exp):
         return any(
-            _calls(getattr(node, f.name)) for f in dataclasses.fields(node)
+            _calls(getattr(node, f.name)) for f in fields_of(node)
         )
     return False
 
@@ -621,7 +622,7 @@ def _bit_precise_to_storage(t):
     if not dataclasses.is_dataclass(t):
         return t
     changes = {}
-    for f in dataclasses.fields(t):
+    for f in fields_of(t):
         v = getattr(t, f.name)
         if isinstance(v, list):
             nv = [_bit_precise_to_storage(x) for x in v]
@@ -704,7 +705,7 @@ def _bool_to_uchar(t):
     if not dataclasses.is_dataclass(t):
         return t
     changes = {}
-    for f in dataclasses.fields(t):
+    for f in fields_of(t):
         v = getattr(t, f.name)
         if isinstance(v, list):
             nv = [_bool_to_uchar(x) for x in v]
@@ -729,7 +730,7 @@ def _short_to_int(node):
     if isinstance(node, tuple):
         return tuple(_short_to_int(x) for x in node)
     if dataclasses.is_dataclass(node) and not isinstance(node, type):
-        for f in dataclasses.fields(node):
+        for f in fields_of(node):
             value = getattr(node, f.name)
             new = _short_to_int(value)
             if new is not value:
@@ -781,7 +782,7 @@ def _nullptr_to_void_pointer(node):
     if isinstance(node, tuple):
         return tuple(_nullptr_to_void_pointer(x) for x in node)
     if dataclasses.is_dataclass(node) and not isinstance(node, type):
-        for f in dataclasses.fields(node):
+        for f in fields_of(node):
             value = getattr(node, f.name)
             new = _nullptr_to_void_pointer(value)
             if new is not value:
@@ -2931,7 +2932,7 @@ class Translator:
             return exp
         changes = {
             field.name: self._materialize_compound_literal(value, instrs)
-            for field in dataclasses.fields(exp)
+            for field in fields_of(exp)
             if isinstance(
                 value := getattr(exp, field.name), c99_ast.CompoundLiteral,
             )

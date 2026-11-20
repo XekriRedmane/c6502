@@ -55,6 +55,7 @@ from typing import Iterable
 
 import asm_ast
 from passes import decimal_arith
+from passes.dataclass_fields import fields_of
 import c99_ast
 
 
@@ -366,7 +367,7 @@ def _names_in(node, out: set[str]) -> None:
         for n in node:
             _names_in(n, out)
     elif dataclasses.is_dataclass(node):
-        for f in dataclasses.fields(node):
+        for f in fields_of(node):
             _names_in(getattr(node, f.name), out)
 
 

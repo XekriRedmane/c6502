@@ -51,11 +51,11 @@ with `--defsym`, has to keep each helper within them too.
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from functools import lru_cache
 
 import asm_ast
+from passes.dataclass_fields import fields_of
 from passes.type_checking import TypeCheckError
 
 
@@ -168,7 +168,7 @@ def _hargs_offsets(instrs) -> set[int]:
     """The HARGS byte offsets that `instrs` reads or writes."""
     out: set[int] = set()
     for instr in instrs:
-        for f in dataclasses.fields(instr):
+        for f in fields_of(instr):
             field = getattr(instr, f.name)
             # `DecimalArith` keeps its operands in lists.
             for op in field if isinstance(field, list) else (field,):

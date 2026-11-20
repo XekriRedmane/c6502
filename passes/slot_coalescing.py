@@ -115,6 +115,7 @@ import dataclasses
 import asm_ast
 from passes import decimal_arith
 from passes.asm_aliasing import _instruction_operands, unreachable_by_pointer
+from passes.dataclass_fields import fields_of
 
 _RMW = (
     asm_ast.Inc, asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
@@ -619,7 +620,7 @@ def _rename(node, renames: dict[str, str]):
         return [_rename(x, renames) for x in node]
     if dataclasses.is_dataclass(node) and not isinstance(node, type):
         changes = {}
-        for f in dataclasses.fields(node):
+        for f in fields_of(node):
             val = getattr(node, f.name)
             new = _rename(val, renames)
             if new is not val:

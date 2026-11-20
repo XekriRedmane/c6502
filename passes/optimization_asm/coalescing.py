@@ -130,6 +130,7 @@ from dataclasses import dataclass, field
 
 import asm_ast
 from passes import decimal_arith
+from passes.dataclass_fields import fields_of
 from passes.optimization.interference import InterferenceGraph
 
 
@@ -353,7 +354,7 @@ def _byte_edges(
         if dataclasses.is_dataclass(x) and not isinstance(x, type):
             return dataclasses.replace(x, **{
                 f.name: rename(getattr(x, f.name))
-                for f in dataclasses.fields(x)
+                for f in fields_of(x)
             })
         return x
 

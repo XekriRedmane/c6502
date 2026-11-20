@@ -102,6 +102,7 @@ from __future__ import annotations
 import dataclasses
 
 import asm_ast
+from passes.dataclass_fields import field_names
 
 
 # Default asm-level regalloc pool range. Bytes here are
@@ -210,15 +211,21 @@ def unreachable_by_pointer(prog: asm_ast.Program) -> frozenset[str]:
     return frozenset((statics | slots) - taken)
 
 
+# Classes of field values that are neither an operand nor a dataclass,
+# which `_instruction_operands` passes over without calling
+# `dataclasses.is_dataclass`.
+_PLAIN = frozenset({str, int, bool, type(None)})
+
+
 def _instruction_operands(ins):
     """Every operand in `ins`, in any field, including those inside a
     list (a `Phi`'s arguments)."""
-    for f in dataclasses.fields(ins):
-        value = getattr(ins, f.name)
+    for name in field_names(ins):
+        value = getattr(ins, name)
         for v in value if isinstance(value, list) else (value,):
             if isinstance(v, asm_ast.Type_operand):
                 yield v
-            elif dataclasses.is_dataclass(v):
+            elif type(v) not in _PLAIN and dataclasses.is_dataclass(v):
                 yield from _instruction_operands(v)
 
 

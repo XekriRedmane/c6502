@@ -485,6 +485,18 @@ Other root-level files:
 - `objdump.py` — shows the headers, symbols, relocations, link
   metadata, and disassembly (in dasm's syntax) of objects and
   executables, as GNU objdump does.
+- `lark_cache.py` — `open_lalr`, which builds the Lark LALR parser
+  of `c99.lark` that `parser.py` runs, and the one whose lexer
+  `lexer.tokenize` runs, once, and saves the tables in
+  `__pycache__/c99-<options>-<key>.lark.pickle`. Every later process
+  loads them from there instead of computing them again (about 0.6 s
+  each). The key hashes the grammar's text, the options, Lark's
+  version, and Python's, so a changed grammar is never read from a
+  stale file. The file is written under a temporary name and renamed,
+  so pytest-xdist and fuzzer workers that start together never read
+  half of one, and the parser is built in memory when the file can't
+  be read or written. `lexer.py` builds its parser on the first call
+  of `tokenize`.
 - `asdl.py` — code generator for `*_ast.py` from `*.asdl`.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.

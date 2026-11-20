@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from lark import Lark, Token, Transformer, Tree
+from lark import Token, Transformer, Tree
 from lark.exceptions import UnexpectedInput, UnexpectedToken
 from lark.lexer import BasicLexer
 from lark.parsers.lalr_analysis import Shift
@@ -40,6 +40,7 @@ import c99_ast
 import fp_arith
 from builtin_functions import is_builtin
 import pp_numbers
+from lark_cache import open_lalr
 from lexer import NUMBER_TERMINALS, check_number
 
 
@@ -4771,10 +4772,10 @@ class _TypedefLexer(BasicLexer):
 _BUILDER = _ASTBuilder()
 # The AST builder runs as the parser reduces each rule, rather than on
 # the finished tree, so declarations take effect while later tokens
-# are still to be lexed.
-_LARK = Lark.open(
-    str(_GRAMMAR_PATH),
-    parser="lalr",
+# are still to be lexed. The parse table is computed once and loaded
+# from `__pycache__` by every later process (lark_cache.py).
+_LARK = open_lalr(
+    _GRAMMAR_PATH,
     lexer=_TypedefLexer,
     transformer=_BUILDER,
     # `start` is the real translation-unit entry point; `lex_only`

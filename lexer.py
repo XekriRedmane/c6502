@@ -12,6 +12,7 @@ from lark import Lark
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput
 
 import pp_numbers
+from lark_cache import open_lalr
 
 
 KEYWORDS = frozenset({
@@ -121,15 +122,25 @@ class LexError(Exception):
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
-_LARK = Lark.open(
-    str(_GRAMMAR_PATH),
-    parser="lalr",
-    lexer="basic",
-    # `lex_only` is a secondary start that references every terminal, so
-    # Lark doesn't drop unused ones while the real parser rules are still
-    # partial. `.lex()` then sees the full terminal set.
-    start=["start", "lex_only"],
-)
+_LARK: Lark | None = None
+
+
+def _lark() -> Lark:
+    """Returns the Lark parser whose lexer `tokenize` runs, built (or
+    loaded from its cache file, lark_cache.py) on the first call, since
+    only `tokenize` uses it and most processes never call it."""
+    global _LARK
+    if _LARK is None:
+        _LARK = open_lalr(
+            _GRAMMAR_PATH,
+            lexer="basic",
+            # `lex_only` is a secondary start that references every
+            # terminal, so Lark doesn't drop unused ones while the real
+            # parser rules are still partial. `.lex()` then sees the
+            # full terminal set.
+            start=["start", "lex_only"],
+        )
+    return _LARK
 
 
 # Each keyword has its own terminal in c99.lark. Terminal names are the
@@ -222,7 +233,7 @@ def check_number(source: str, lt) -> None:
 def tokenize(source: str) -> Iterator[Token]:
     prev: Token | None = None
     try:
-        for lt in _LARK.lex(source):
+        for lt in _lark().lex(source):
             if lt.type in NUMBER_TERMINALS:
                 check_number(source, lt)
             if lt.type == "INVALID_NUMBER":

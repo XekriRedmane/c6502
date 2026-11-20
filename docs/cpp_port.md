@@ -143,3 +143,27 @@ stages land.
   corpus in both modes. The calls checked per pass run from 1,180 for
   `carry_known` to 7,052 for `carry_halve` and `carry_in_add`, and the
   Python tests that run each pass on asm are ported to doctest.
+- 20 Nov 2026: stage 2 is done. The peephole fixed point and the
+  region of `optimized_asm` from `apply_licm` through
+  `apply_outline_runs` are one C++ driver (`passes::optimized_region`),
+  and so are the unoptimized pipeline's fixed point and long branches.
+  With `C6502_CPP_BACKEND=1`, compile.py hands the region to `c6502cpp
+  backend` (cpp/README.md, "The back end through c6502cpp") and goes on
+  with the result. `tools/compare_backends.py` compiled the 3,576
+  compiles of the corpus (1,788 programs, each with `-S` and `-S -O`)
+  both ways, and every output, exit status, and message was the same.
+  The suite passes with the variable set (4,840 tests, with
+  `C6502_CHECK_IR=1`) and without it, and so do the four fuzzers with
+  it set (300 programs each of `exprs`, `calls`, and `stmts`, and 100
+  of `yarpgen`, none wrong). The times with the variable unset and set
+  were 2.1 and 1.9 seconds for guards.c, 15.2 to 16.1 and 14.6 seconds
+  for the Lode Runner units, and 18.5 to 19.0 and 10.6 seconds for 20
+  `fuzz.stmts` programs. A compile of guards.c spends 0.16 s of its
+  1.9 s in the C++ process, and the 20 fuzz programs 2.5 s of 9.8 s,
+  of which reading and writing the dumps on the C++ side is about 1 ms
+  per call. Most of the C++ time is the fixed point, where
+  `redundant_load` and `memory_value_propagation` take the most. Each
+  separate compile starts with 0.62 s of Python imports, which is half
+  of the units' time, and in the fuzzer most of the Python time is the
+  TAC optimizer (with the IR checks the fuzzers turn on), the asm
+  optimizer, and the Lark parser.

@@ -570,3 +570,11 @@ requires the same `-S` text, exit status, messages, and exceptions.
   `src/passes/capture_args.*` decodes the keyword arguments of a
   captured call, and the unit tests write their programs in the dump
   format with `tests/asm_text.h`.
+- 20 Nov 2026: the driver of the back end's region,
+  `passes::peephole_fixedpoint` and `passes::optimized_region`, the
+  `c6502cpp backend` and `sweep-passes` commands, and
+  `C6502_CPP_BACKEND=1` in compile.py ("The back end through
+  c6502cpp"). `tools/compare_backends.py` found the same output for
+  all 3,576 compiles of the corpus with and without the variable, and
+  the suite and the four fuzzers pass with it set. The build is clean
+  with MSVC 19.36, GCC 12.2, and Clang 14.0.6.

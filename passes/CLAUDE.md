@@ -144,6 +144,11 @@ this directory:
   (`decimal_region_problems`). A runtime helper that sets the flag
   itself (`rtlib.helpers.DECIMAL_MODE_HELPERS`, `bin16_to_bcd`)
   passes instead with a `CLD` right before each `RTS`.
+  `check_tac` finds each instruction's reads and writes once per
+  check, and keeps the blocks and dominators of the SSA test for each
+  control skeleton (the labels and block-ending instructions, which
+  are all `build_cfg` reads, taken afresh each check), so most checks
+  in the fixed point skip `build_cfg` and `immediate_dominators`.
 - `designators.py` — `normalize_initializer`, which rewrites a braced
   list with designators (`[2] = v`, `.x = v`, `.a[2].b = v`, C23
   §6.7.11) into the positional form every later pass handles: one

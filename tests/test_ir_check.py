@@ -123,6 +123,110 @@ class TestTacChecks(unittest.TestCase):
         with self.assertRaisesRegex(ir_check.IRCheckError, "%3"):
             self._check(fn, _symbols("%3"))
 
+    def _loop(self, phi_pred="B", phi_src="b.2"):
+        # a.1 = 0; L: b.1 = Phi(a.1 from entry, b.2 from B); B: b.2 =
+        # b.1 + 1; jump L. The block before L is labelled E.
+        return _fn(
+            tac_ast.Label(name="E"),
+            tac_ast.Copy(src=_one(0), dst=_var("a.1")),
+            tac_ast.Label(name="L"),
+            tac_ast.Phi(dst=_var("b.1"), args=[
+                tac_ast.PhiArg(source=_var("a.1"), pred_label="E"),
+                tac_ast.PhiArg(source=_var(phi_src), pred_label=phi_pred),
+            ]),
+            tac_ast.JumpIfTrue(condition=_var("b.1"), target="X"),
+            tac_ast.Label(name="B"),
+            tac_ast.Binary(op=tac_ast.Add(), src1=_var("b.1"),
+                           src2=_one(1), dst=_var("b.2")),
+            tac_ast.Jump(target="L"),
+            tac_ast.Label(name="X"),
+            tac_ast.Ret(val=_var("b.1")),
+        )
+
+    def _loop_names(self):
+        return _symbols("a.1", "b.1", "b.2"), {"a.1", "b.1", "b.2"}
+
+    def test_good_loop(self) -> None:
+        self._check(self._loop(), *self._loop_names())
+
+    def test_phi_argument_from_missing_label(self) -> None:
+        with self.assertRaisesRegex(ir_check.IRCheckError,
+                                    "Phi argument from missing label Q"):
+            self._check(self._loop(phi_pred="Q"), *self._loop_names())
+
+    def test_phi_argument_not_dominated_at_its_predecessor(self) -> None:
+        # b.2 is defined in B, which doesn't dominate the end of E.
+        fn = self._loop()
+        fn.instructions[3] = tac_ast.Phi(dst=_var("b.1"), args=[
+            tac_ast.PhiArg(source=_var("b.2"), pred_label="E"),
+            tac_ast.PhiArg(source=_var("b.2"), pred_label="B"),
+        ])
+        with self.assertRaisesRegex(ir_check.IRCheckError,
+                                    "Phi reads b.2, whose definition doesn't"):
+            self._check(fn, *self._loop_names())
+
+    def test_same_control_flow_other_body(self) -> None:
+        # The second function has the first one's labels and jumps, so
+        # its blocks come from the first check, and its own reads are
+        # still checked.
+        self._check(self._loop(), *self._loop_names())
+        fn = self._loop()
+        fn.instructions[6] = tac_ast.Binary(
+            op=tac_ast.Add(), src1=_var("c.1"), src2=_one(1),
+            dst=_var("b.2"),
+        )
+        symbols, ssa = self._loop_names()
+        symbols.update(_symbols("c.1"))
+        with self.assertRaisesRegex(ir_check.IRCheckError,
+                                    "Binary reads c.1, which nothing"):
+            self._check(fn, symbols, ssa | {"c.1"})
+
+    def test_jump_changed_in_place(self) -> None:
+        # A pass may change an instruction in place, so the blocks of
+        # the first check mustn't be used for the second. Once the jump
+        # goes to L, a.1's definition no longer dominates L.
+        fn = _fn(
+            tac_ast.Label(name="E"),
+            tac_ast.JumpIfTrue(condition=_var("p"), target="M"),
+            tac_ast.Copy(src=_one(1), dst=_var("a.1")),
+            tac_ast.Label(name="L"),
+            tac_ast.Ret(val=_var("a.1")),
+            tac_ast.Label(name="M"),
+            tac_ast.Ret(val=_var("p")),
+            params=["p"],
+        )
+        names = _symbols("a.1", "p"), {"a.1", "p"}
+        self._check(fn, *names)
+        fn.instructions[1].target = "L"
+        with self.assertRaisesRegex(ir_check.IRCheckError,
+                                    "Ret reads a.1, whose definition"):
+            self._check(fn, *names)
+
+    def test_every_problem_is_reported(self) -> None:
+        fn = _fn(
+            tac_ast.Copy(src=_var("%1"), dst=_var("x")),
+            tac_ast.Copy(src=_var("%2"), dst=_var("y")),
+            tac_ast.Ret(val=_var("%2")),
+        )
+        with self.assertRaisesRegex(
+                ir_check.IRCheckError,
+                "Copy reads %1, which nothing defines; Copy reads %2, "
+                "which nothing defines; Ret reads %2, which nothing "
+                "defines$"):
+            self._check(fn, _symbols("%1", "%2", "x", "y"))
+        with self.assertRaisesRegex(
+                ir_check.IRCheckError,
+                ": %2 isn't in the symbol table; x isn't in the symbol "
+                "table$"):
+            self._check(fn, _symbols("%1", "y"))
+
+    def test_temporary_in_memory_needs_no_definition(self) -> None:
+        fn = _fn(
+            tac_ast.GetAddress(operand=_var("%1"), dst=_var("p")),
+            tac_ast.Ret(val=_var("%1")),
+        )
+        self._check(fn, _symbols("%1", "p"))
+
     def test_off_by_default(self) -> None:
         ir_check.enable(False)
         self._check(_fn(tac_ast.Jump(target="L")), _symbols())

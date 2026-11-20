@@ -25,6 +25,20 @@ TAC (`check_tac`, after each TAC optimizer pass):
     is defined somewhere in the function, unless it's an object
     accessed in memory (its address taken, or indexed by name).
 
+`check_tac` runs after every TAC pass, about 15,000 times in 20 fuzzer
+programs, so it finds each instruction's reads and writes once per
+check and gives them to every test. Nothing found about an
+instruction is kept for the next check, since a pass may change an
+instruction in place (unreachable-code elimination rewrites a Phi's
+arguments). The blocks and dominators of the SSA test are kept,
+keyed by the function's control skeleton (`_control_skeleton`): the
+number of instructions and the position, name, type, and target of
+each label and block-ending instruction, which is everything
+`build_cfg` reads. The skeleton is taken afresh at each check, so an
+entry is used only for a function whose CFG is the one it was
+computed from, and a pass that changes a jump in place gets a new
+one.
+
 Asm (`check_asm`, at the stage boundaries and after each peephole
 sweep):
 
@@ -121,32 +135,98 @@ def _tac_problems(fn, symbols, ssa_dsts) -> list[str]:
     for instr in instrs:
         if isinstance(instr, _JUMPS) and instr.target not in labels:
             problems.append(f"jump to missing label {instr.target}")
+    # The names each instruction reads and writes, found once and read
+    # by every check below. They're found again on each call, since a
+    # pass may change an instruction in place (UCE rewrites a Phi's
+    # arguments), so nothing about a function is kept between two
+    # checks of it.
+    uses = [[v.name for v in uses_in(instr)] for instr in instrs]
+    defs = [[v.name for v in defs_in(instr)] for instr in instrs]
     if symbols is not None:
-        names = {
-            v.name for instr in instrs
-            for v in (*uses_in(instr), *defs_in(instr))
-        }
-        for n in sorted(names - set(fn.params)):
-            if symbols.get(n) is None:
-                problems.append(f"{n} isn't in the symbol table")
+        names: set[str] = set()
+        for u in uses:
+            names.update(u)
+        for d in defs:
+            names.update(d)
+        names.difference_update(fn.params)
+        # A SymbolTable's own dict, which `get` reads.
+        table = getattr(symbols, "_table", symbols)
+        for n in sorted(n for n in names if table.get(n) is None):
+            problems.append(f"{n} isn't in the symbol table")
     if problems:
         return problems
     if ssa_dsts is not None:
-        problems += _ssa_problems(fn, ssa_dsts)
+        problems += _ssa_problems(fn, ssa_dsts, uses, defs)
     else:
-        problems += _temp_problems(fn)
+        problems += _temp_problems(fn, uses, defs)
     return problems
 
 
-def _ssa_problems(fn, ssa_dsts) -> list[str]:
-    from passes.optimization.cfg import (
-        ENTRY_ID, build_cfg, immediate_dominators,
-    )
-    from passes.optimization.var_visit import uses_in
-    from passes.recursion_saves import defs_in
-    problems: list[str] = []
+def _control_skeleton(instrs) -> tuple:
+    """Everything `build_cfg` reads of `instrs`: their count, and the
+    position and name of each label and the position, type, and target
+    of each instruction that ends a block. Two functions with equal
+    skeletons have the same blocks and edges."""
+    from passes.optimization.cfg import _TERMINATOR_TYPES
+    out: list = [len(instrs)]
+    for k, instr in enumerate(instrs):
+        if isinstance(instr, tac_ast.Label):
+            out.append((k, None, instr.name))
+        elif isinstance(instr, _TERMINATOR_TYPES):
+            out.append((k, type(instr), getattr(instr, "target", None)))
+    return tuple(out)
+
+
+# The block structure of each control skeleton checked recently
+# (`_cfg_shape`). An entry depends on the skeleton alone, so it can't
+# go stale. It's cleared when it reaches `_SHAPES_KEPT` entries.
+_SHAPES: dict[tuple, tuple] = {}
+_SHAPES_KEPT = 512
+
+
+def _cfg_shape(fn):
+    """`(spans, idom, label_block)` for `fn`: each block of
+    `build_cfg(fn)` in `block_order` as `(id, start, end)`, the slice
+    of `fn.instructions` it holds, `immediate_dominators` of that CFG,
+    and the block of each label. Most passes leave the labels and
+    jumps alone, so the CFG and its dominators are computed once for
+    each skeleton (`_control_skeleton`) and reused by later checks.
+    The skeleton is taken afresh on every check, so a pass that
+    changes a label or a jump in place gets a new entry."""
+    from passes.optimization.cfg import build_cfg, immediate_dominators
+    key = _control_skeleton(fn.instructions)
+    shape = _SHAPES.get(key)
+    if shape is not None:
+        return shape
     cfg = build_cfg(fn)
     idom = immediate_dominators(cfg)
+    # `build_cfg` puts every instruction in one block, in order, so the
+    # blocks of `block_order` one after another are `fn.instructions`.
+    spans = []
+    label_block: dict[str, int] = {}
+    at = 0
+    for bid in cfg.block_order:
+        block = cfg.blocks[bid].instructions
+        spans.append((bid, at, at + len(block)))
+        at += len(block)
+        for instr in block:
+            if isinstance(instr, tac_ast.Label):
+                label_block[instr.name] = bid
+    assert at == len(fn.instructions)
+    if len(_SHAPES) >= _SHAPES_KEPT:
+        _SHAPES.clear()
+    shape = _SHAPES[key] = (tuple(spans), idom, label_block)
+    return shape
+
+
+def _ssa_problems(fn, ssa_dsts, uses, defs) -> list[str]:
+    """The SSA problems of `fn`, whose instructions read the names
+    `uses[i]` and write `defs[i]`."""
+    from passes.optimization.cfg import ENTRY_ID
+    problems: list[str] = []
+    instrs = fn.instructions
+    spans, idom, label_block = _cfg_shape(fn)
+    block_len = {bid: end - start for bid, start, end in spans}
     # Where each SSA name is defined: (block, index in block). A
     # parameter's first SSA value is defined at entry. Unreachable
     # blocks are skipped: renaming never visits them, so they keep
@@ -154,19 +234,16 @@ def _ssa_problems(fn, ssa_dsts) -> list[str]:
     def_at: dict[str, tuple[int, int]] = {
         p: (ENTRY_ID, -1) for p in fn.params if p in ssa_dsts
     }
-    label_block: dict[str, int] = {}
-    for bid in cfg.block_order:
-        for k, instr in enumerate(cfg.blocks[bid].instructions):
-            if isinstance(instr, tac_ast.Label):
-                label_block[instr.name] = bid
-            if bid not in idom:
-                continue
-            for d in defs_in(instr):
-                if d.name not in ssa_dsts:
+    for bid, start, end in spans:
+        if bid not in idom:
+            continue
+        for i in range(start, end):
+            for d in defs[i]:
+                if d not in ssa_dsts:
                     continue
-                if d.name in def_at:
-                    problems.append(f"SSA name {d.name} defined twice")
-                def_at[d.name] = (bid, k)
+                if d in def_at:
+                    problems.append(f"SSA name {d} defined twice")
+                def_at[d] = (bid, i - start)
 
     def dominates(a: int, b: int) -> bool:
         cur = b
@@ -192,11 +269,11 @@ def _ssa_problems(fn, ssa_dsts) -> list[str]:
                 f"{what} reads {name}, whose definition doesn't dominate it"
             )
 
-    for bid in cfg.block_order:
+    for bid, start, end in spans:
         if bid not in idom:
             continue  # unreachable; UCE drops it
-        for k, instr in enumerate(cfg.blocks[bid].instructions):
-            what = type(instr).__name__
+        for i in range(start, end):
+            instr = instrs[i]
             if isinstance(instr, tac_ast.Phi):
                 for arg in instr.args:
                     src = arg.source
@@ -210,38 +287,36 @@ def _ssa_problems(fn, ssa_dsts) -> list[str]:
                         continue
                     if pred in idom:
                         # Read at the end of the predecessor.
-                        check_read(
-                            src.name, pred,
-                            len(cfg.blocks[pred].instructions), what,
-                        )
+                        check_read(src.name, pred, block_len[pred], "Phi")
                 continue
-            for u in uses_in(instr):
-                if u.name in ssa_dsts:
-                    check_read(u.name, bid, k, what)
+            for u in uses[i]:
+                if u in ssa_dsts:
+                    check_read(u, bid, i - start, type(instr).__name__)
     return problems
 
 
-def _temp_problems(fn) -> list[str]:
-    from passes.optimization.var_visit import uses_in
-    from passes.recursion_saves import defs_in
+def _temp_problems(fn, uses, defs) -> list[str]:
+    """The undefined temporaries `fn` reads, whose instructions read
+    the names `uses[i]` and write `defs[i]`."""
     defined: set[str] = set(fn.params)
+    for d in defs:
+        defined.update(d)
     in_memory: set[str] = set()
     for instr in fn.instructions:
-        defined |= {d.name for d in defs_in(instr)}
         match instr:
             case tac_ast.GetAddress(operand=tac_ast.Var(name=n)):
                 in_memory.add(n)
             case tac_ast.IndexedLoad(name=n) | tac_ast.IndexedSymbolStore(name=n):
                 in_memory.add(n)
     problems: list[str] = []
-    for instr in fn.instructions:
-        for u in uses_in(instr):
+    for instr, u in zip(fn.instructions, uses):
+        for name in u:
             if (
-                u.name.startswith("%") and u.name not in defined
-                and u.name not in in_memory
+                name.startswith("%") and name not in defined
+                and name not in in_memory
             ):
                 problems.append(
-                    f"{type(instr).__name__} reads {u.name}, which nothing "
+                    f"{type(instr).__name__} reads {name}, which nothing "
                     f"defines"
                 )
     return problems

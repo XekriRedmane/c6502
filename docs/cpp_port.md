@@ -76,3 +76,14 @@ stages land.
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
+- 19 Nov 2026: the groundwork landed. The CMake build works with MSVC,
+  GCC, and Clang, with doctest for the C++ tests (`cpp/README.md` has
+  the commands and the conventions for porting a pass). The C++ IR is
+  generated from all four `.asdl` files (`asdl.py --cpp`, into
+  `cpp/generated/`). The dump format (`ir_dump.py`) has a reader and a
+  writer on both sides, and a compiled example's four IRs make the
+  trip from Python to C++ and back byte for byte. The capture harness
+  (`tools/capture_passes.py`, checked with `tools/check_captures.py`)
+  records the calls of the passes of `optimized_asm` from `apply_licm`
+  on. `split_mem_to_mem` is ported and matches the Python pass on all
+  7,049 distinct calls of the corpus.

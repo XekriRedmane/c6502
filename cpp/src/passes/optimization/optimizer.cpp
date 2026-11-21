@@ -96,6 +96,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
+#include "passes/optimization/jump_thread.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
@@ -170,7 +171,7 @@ PhaseDriver make_driver() {
       // An edge that brings a join a constant its test decides goes
       // where the test sends it, so an inlined `return false;` doesn't
       // load 0 and branch on it. Before UCE, which drops the join.
-      {"thread_constant_jumps", nullptr},
+      {"thread_constant_jumps", &thread_constant_jumps},
       {"eliminate_unreachable_code", &eliminate_unreachable_code},
       // Replaces a repeated computation or load with a Copy from the
       // first one, which copy_propagate then forwards.

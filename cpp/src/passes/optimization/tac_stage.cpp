@@ -12,6 +12,7 @@
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/framework.h"
+#include "passes/optimization/jump_thread.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/optimizer.h"
@@ -200,7 +201,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_reduce_strength", &run_tac_pass<&reduce_strength>),
       tac_pass("tac_fold_producer_jumps"),
       tac_pass("tac_eliminate_dead_loops", &run_tac_pass<&eliminate_dead_loops>),
-      tac_pass("tac_thread_constant_jumps"),
+      tac_pass("tac_thread_constant_jumps", &run_tac_pass<&thread_constant_jumps>),
       tac_pass("tac_eliminate_unreachable_code", &run_tac_pass<&eliminate_unreachable_code>),
       tac_pass("tac_eliminate_common_subexpressions"),
       tac_pass("tac_hoist_loop_invariants"),

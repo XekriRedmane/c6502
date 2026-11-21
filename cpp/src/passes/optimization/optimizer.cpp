@@ -91,6 +91,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include <utility>
 
 #include "passes/optimization/constant_folding.h"
+#include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
@@ -128,7 +129,7 @@ PhaseDriver make_driver() {
       {"constant_fold", &constant_fold},
       // `(x - c) * k` on a widened byte `x` as `x * k - c * k`, before
       // strength reduction makes the multiply shifts.
-      {"distribute_constant", nullptr},
+      {"distribute_constant", &distribute_constant},
       // An operation of a Phi of constants is computed in the Phi's
       // arguments, so `(c ? 3 : 2) + 1` joins 4 and 3.
       {"fold_into_constant_phi", &fold_into_constant_phis},

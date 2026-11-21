@@ -6,6 +6,7 @@
 
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/direct_member_access.h"
+#include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/framework.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
@@ -186,7 +187,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_noreturn_calls", &run_tac_pass<&noreturn_calls>),
       tac_pass("tac_fold_static_const_reads", &run_tac_pass<&fold_static_const_reads>),
       tac_pass("tac_constant_fold", &run_tac_pass<&constant_fold>),
-      tac_pass("tac_distribute_constant"),
+      tac_pass("tac_distribute_constant", &run_tac_pass<&distribute_constant>),
       tac_pass("tac_fold_into_constant_phi", &run_tac_pass<&fold_into_constant_phis>),
       tac_pass("tac_reduce_strength"),
       tac_pass("tac_fold_producer_jumps"),

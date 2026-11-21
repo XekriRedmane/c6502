@@ -17,8 +17,9 @@ end, and emission, each of which matches the Python code on every input
 of the corpus it was checked on. With `C6502_CPP_BACKEND=1`, compile.py
 hands the type-checked c99 program to C++ and takes the `-S` text back
 ("The stage's driver", "The back end through c6502cpp", and
-"Emission", below). Of the front end, the pieces its passes share and
-`loop_labeling` are ported ("The front end's calls").
+"Emission", below). Of the front end, the pieces its passes share,
+`loop_labeling`, and the type checker are ported ("The front end's
+calls").
 
 ## Building
 
@@ -170,6 +171,13 @@ cpp/
       type_checking_types.*   the type queries of type_checking.py
                       that the front end's passes share (step 6)
       loop_labeling.* loop_labeling.py (step 6)
+      type_checker.h  the TypeChecker class and the free functions of
+                      type_checking.py, which the four parts share
+      type_checker.cpp, type_checker_init.cpp, type_checker_decls.cpp,
+                      type_checker_exp.cpp   type_checking.py's parts
+                      T-A to T-D (step 6, group T)
+      constant_expression.*, designators.*, stdbit_functions.*   the
+                      modules the type checker reads (group T)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -1104,6 +1112,8 @@ cpp/build/bin/c6502cpp check-captures captures
 cpp/build/bin/c6502cpp check-helpers captures/helpers
 ```
 
+- The type checker (group T), described below in "The type checker".
+
 On 21 Nov 2026 every value of the 20,177 distinct records of the front
 end's calls on the corpus made the trip, and `check-captures` took 4
 seconds over them. `pp_number_at`, `pp_parse_integer`, and
@@ -1111,6 +1121,62 @@ seconds over them. `pp_number_at`, `pp_parse_integer`, and
 `loop_labeling` on all 1,477 of its calls, 10 of which raise. The 1,154
 `c99types` records gave 2.3 million values with no difference, 1.77
 million of them `common_type`.
+
+### The type checker
+
+`passes::type_checking::check_program` (`src/passes/type_checker.h`)
+is the port of type_checking.py's `check_program`. It stamps the c99
+program it is given in place, as Python's does, and returns the symbol
+table and the type table. The `TypeChecker` class is declared once in
+type_checker.h, and its methods are defined in the files of the
+survey's four parts: `type_checker.cpp` (the free functions that every
+part reads, with `sizeof_type`, `check_well_formed_type`, the null
+pointer constants, `convert_to`, and `decay_if_array`),
+`type_checker_init.cpp` (static initializers and `constexpr`),
+`type_checker_decls.cpp` (`check_program`, declarations, layouts,
+functions, calls, and statements), and `type_checker_exp.cpp`
+(`check_exp`). A method that Python gives an expression it changes
+takes a reference to the expression's slot, and a function that
+returns a new expression wrapping its argument, such as `convert_to`,
+takes the expression by value, so a caller writes `e =
+convert_to(std::move(e), t)`. `TypeCheckError` and
+`constant_expression::ConstantExpressionError` are `CompileError`s of
+those Python types, so a `catch` names the class as Python's `except`
+does.
+
+`constant_expression.h` has the evaluator and the validator, and
+`NamedConstants`, the RAII form of Python's `with
+named_constants(resolver):`, whose stack is kept per thread.
+`designators.h` has `normalize_initializer`, which string_lifting will
+call, and `stdbit_functions.h` has `add_definitions`. The parser's
+folds (parser.py:2422-2663) make a checker of their own, fill its
+public `symbols`, `types` (through `check_struct_decl`), and
+`constexpr_values`, install its `named_constant` with
+`NamedConstants`, and call `check_exp` or `check_block_var`.
+
+Two things the Python objects carry don't fit the C++ IR. Python's
+checker gives a `String` it checks a `data_type` attribute of
+`char[N+1]`, which the dataclass takes though it has no such field, so
+`check_exp` computes that type where Python reads it back, and so does
+the evaluator for `sizeof "abc"`. And loop_labeling puts one expression
+object in both a `SwitchStmt`'s `cases` and the body's `CaseStmt`, so
+Python's check of the case value stamps both, while the dump holds two
+copies, so `check_switch` copies each stamped value into the body's
+`CaseStmt` with the same label.
+
+On 21 Nov 2026 the port matched Python on all 1,467 distinct calls of
+`type_checking` that the corpus makes in both modes, 313 of which
+raise, with the builds of MSVC and GCC. The Python suite, run with
+`check_program` wrapped by `capture_passes._wrap_front` in a pytest
+plugin, made 3,204 distinct calls, and all of them matched too.
+`tests/test_type_checking_calls.cpp` holds the 151 of them that reach
+the 615 lines of type_checking.py, constant_expression.py,
+designators.py, and stdbit_functions.py that the corpus doesn't reach,
+found with a line trace, and the smallest call for each of the 149
+error messages the corpus never gives, 223 calls in all.
+`tests/test_designators.cpp` holds the unit tests' 314 distinct calls
+of `normalize_initializer`, and `tests/test_constant_expression.cpp`
+their 40 calls of the evaluator and the validator.
 
 ## The TAC optimizer's driver
 

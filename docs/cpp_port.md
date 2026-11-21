@@ -1505,3 +1505,21 @@ separator, a binary prefix, or a `wb` suffix.
   the `NotImplementedError` the parser raises for a variable-length
   array, a K&R parameter list, or `[static 3]`, and it now reports it as
   a one-line error.
+- 21 Nov 2026: group T of step 6, the type checker. `check_program`
+  with all of type_checking.py, constant_expression.py, designators.py,
+  and stdbit_functions.py is ported in the survey's four parts, which
+  share the `TypeChecker` class's declaration in
+  `src/passes/type_checker.h` (cpp/README.md, "The type checker"). It
+  matches the Python function on all 1,467 distinct calls of the corpus
+  in both modes, the 313 that raise included, with the program stamped
+  in place and both tables, and on all 3,204 distinct calls that the
+  Python suite makes, 512 of which raise, in the builds of MSVC 19.36
+  and GCC 12.2. 151 of the suite's calls reach the 615 lines of the four
+  modules that no call of the corpus reaches, and they and the smallest
+  call for each of the 149 messages the corpus never gives are C++
+  cases (`tests/test_type_checking_calls.cpp`), as are the 314 distinct
+  calls of `normalize_initializer` and the 40 of the constant evaluator
+  that the unit tests make. The parser's folds and string_lifting will
+  call `check_exp`, `check_struct_decl`, `check_block_var`,
+  `named_constant`, `size_from_initializer`, and
+  `designators::normalize_initializer` through the same headers.

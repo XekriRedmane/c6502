@@ -9,6 +9,7 @@
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_folding.h"
 #include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/count_down.h"
 #include "passes/optimization/cse.h"
 #include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
@@ -240,7 +241,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_recognize_indirect_indexed", &run_tac_pass<&recognize_indirect_indexed>),
       tac_pass("tac_hoist_subtract_to_compare", &run_tac_pass<&hoist_subtract_to_compare>),
       tac_pass("tac_hoist_divmod_pairs", &run_tac_pass<&hoist_divmod_pairs>),
-      tac_pass("tac_count_loops_down"),
+      tac_pass("tac_count_loops_down", &run_tac_pass<&count_loops_down>),
       tac_pass("tac_fold_copies_post_destruction", &run_tac_pass<&fold_copies_post_destruction>),
       tac_pass("tac_move_steps_onto_edges"),
       tac_pass("tac_split_three_way_compares", &run_tac_pass<&split_three_way_compares>),

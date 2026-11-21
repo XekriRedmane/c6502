@@ -350,6 +350,50 @@ class Descent {
 
   // --- R3's helpers, which part R3 declares here as it needs them ---
 
+  // `statement` after the attributes `attrs` that came before it, which
+  // a block item takes first, since they can begin a declaration too.
+  c99_ast::Type_statement parse_statement_after(std::optional<Attributes> attrs);
+  // The `unlabeled_stmt` alternatives.
+  c99_ast::Type_statement parse_unlabeled_statement();
+  // `for_stmt`, at its `for`.
+  c99_ast::Type_statement parse_for_statement();
+  // One `block_item`, with the action of `stmt_item` or `decl_item`,
+  // appended to `items`.
+  void parse_block_item(std::vector<c99_ast::Type_block_item>& items);
+  // `conditional_exp`.
+  Exp parse_conditional_exp();
+  // The left-associative binary levels of the grammar, from
+  // `logical_or_exp` (level 0) to `mul_exp` (level 9).
+  Exp parse_binary_exp(int level);
+  // `cast_exp`.
+  Exp parse_cast_exp();
+  // `unary_exp`.
+  Exp parse_unary_exp();
+  // The postfix operators after `operand`, which is a `postfix_exp`.
+  Exp parse_postfix_ops(Exp operand);
+  // The expression that starts at a `(`: a cast when `cast_allowed`, a
+  // compound literal, or a parenthesized expression, with the postfix
+  // operators after the last two.
+  Exp parse_parenthesized(bool cast_allowed);
+  // An `atom` other than a parenthesized expression.
+  Exp parse_atom();
+  // The rest of a compound literal of type `target`, from its `{`, with
+  // the storage-class specifiers `storage` that came after its `(`.
+  Exp parse_compound_literal_rest(Type target, const std::vector<lark::Token>& storage);
+  // The items of a braced list, from the `{` through the `}`.
+  std::vector<Exp> parse_braced_items();
+  // An `init_item`: an initializer, or a `designation`.
+  Exp parse_init_item();
+  // The action of `identifier` for the token `name`.
+  Exp identifier_exp(const lark::Token& name);
+  // The action of `const` and `constant` for the token `token`.
+  Exp constant_exp_of(const lark::Token& token);
+
+  // A primary expression the statement parser has already taken, an
+  // identifier at the start of a statement that turned out not to be a
+  // label, which `parse_atom` returns before it reads a token.
+  std::optional<Exp> pending_primary;
+
  private:
   ParseContext& ctx_;
   const lark_table::Table& table_;

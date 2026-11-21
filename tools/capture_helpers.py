@@ -481,7 +481,7 @@ def stage_values(tac, symbols, types, shares, layout) -> list[tuple[str, str]]:
 
     reach = reach_sets(tac)
     keys = list(reach)
-    return [
+    return _cfg_values(fns, instrs) + [
         ("size_of_name", _fields(
             str(size_of_name(n, symbols, types)) for n in names)),
         ("size_of_name_untyped", _fields(
@@ -510,6 +510,48 @@ def stage_values(tac, symbols, types, shares, layout) -> list[tuple[str, str]]:
             + ",".join(sorted(s.owners())) + ":" + ",".join(sorted(s.slots()))
             for s in shares)),
         ("runtime_bytes", _ints(sorted(RuntimeLayout(*layout).bytes()))),
+    ]
+
+
+def _cfg_values(fns, instrs) -> list[tuple[str, str]]:
+    """The TAC CFG's values (passes/optimization/cfg.py) on each
+    function, and `recursion_saves.defs_in` on each instruction. A
+    dominance frontier and a loop body are sets, and they are written in
+    the order Python iterates them, since the passes that read them walk
+    them in that order. A block is `id/instructions/predecessors/
+    successors`, with the lists' items separated by `.`."""
+    from passes.optimization import cfg as tac_cfg
+    from passes.recursion_saves import defs_in as saves_defs_in
+
+    def dots(xs):
+        return ".".join(str(x) for x in xs)
+
+    def graph(fn):
+        c = tac_cfg.build_cfg(fn)
+        blocks = ";".join(
+            f"{b}/{len(blk.instructions)}/{dots(blk.predecessors)}/"
+            f"{dots(blk.successors)}" for b, blk in c.blocks.items())
+        return f"{blocks}|{dots(c.block_order)}"
+
+    def per_fn(f):
+        return _fields(_try(lambda fn=fn: f(tac_cfg.build_cfg(fn))) for fn in fns)
+
+    return [
+        ("tac_cfg", _fields(_try(lambda fn=fn: graph(fn)) for fn in fns)),
+        ("reverse_postorder", per_fn(
+            lambda c: dots(tac_cfg.reverse_postorder(c)))),
+        ("immediate_dominators", per_fn(lambda c: ";".join(
+            f"{b}:{p}" for b, p in tac_cfg.immediate_dominators(c).items()))),
+        ("dominator_tree_children", per_fn(lambda c: ";".join(
+            f"{b}:{dots(ch)}" for b, ch in tac_cfg.dominator_tree_children(
+                tac_cfg.immediate_dominators(c)).items()))),
+        ("dominance_frontiers", per_fn(lambda c: ";".join(
+            f"{b}:{dots(df)}"
+            for b, df in tac_cfg.dominance_frontiers(c).items()))),
+        ("natural_loops", per_fn(lambda c: ";".join(
+            f"{h}:{dots(body)}" for h, body in tac_cfg.natural_loops(c)))),
+        ("recursion_saves_defs_in", _fields(
+            ",".join(v.name for v in saves_defs_in(i)) for i in instrs)),
     ]
 
 

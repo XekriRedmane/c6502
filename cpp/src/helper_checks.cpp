@@ -546,6 +546,10 @@ std::size_t value_count(const std::string& name, const std::string& value) {
       "size_of_name", "size_of_name_untyped", "sizeof_members", "source_spelling",
       "param_slot_symbols", "vals_in", "uses_in", "defs_in", "count_uses",
       "reach_sets", "share_conflicts", "slot_share_sets", "parse_pseudo_name",
+      // The TAC CFG's, one value per function, and `recursion_saves`'s
+      // `defs_in`, one per instruction (`_cfg_values`).
+      "tac_cfg", "reverse_postorder", "immediate_dominators", "dominator_tree_children",
+      "dominance_frontiers", "natural_loops", "recursion_saves_defs_in",
   };
   if (name == "runtime_bytes") {
     return static_cast<std::size_t>(std::count(value.begin(), value.end(), ',')) + 1;

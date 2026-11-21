@@ -50,6 +50,12 @@ Values tac_values(const tac_ast::Function& fn);
 // returned (src/stage_helper_checks.cpp).
 Values stage_values(const json::Value& v);
 
+// Returns the values of the TAC CFG and its analyses on each function
+// of `fns`, and of `recursion_saves::defs_in` on each instruction of
+// `instrs`, as `_cfg_values` in tools/capture_helpers.py gives them.
+Values cfg_values(const std::vector<const tac_ast::Function*>& fns,
+                  const std::vector<const tac_ast::Type_instruction*>& instrs);
+
 // Returns `parse_pseudo_name` of each name of a `pseudos` record, whose
 // JSON object `v` holds the names.
 Values pseudo_values(const json::Value& v);

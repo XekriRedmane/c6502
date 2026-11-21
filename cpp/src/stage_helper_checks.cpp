@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "helper_checks.h"
+#include "passes/optimization/cfg.h"
 #include "passes/optimization/var_visit.h"
+#include "passes/recursion_saves.h"
 #include "passes/replace_pseudoregisters.h"
 #include "passes/slot_sharing.h"
 #include "passes/zp_slot_naming.h"
@@ -67,7 +69,71 @@ std::string val_text(const tac::Type_val& v) {
 
 std::string str(std::string_view s) { return std::string(s); }
 
+template <class Seq>
+std::string dots(const Seq& xs) {
+  return join(xs, [](auto x) { return std::to_string(x); }, '.');
+}
+
+// Returns `f()`, or "E" when it throws, as `_try` gives.
+template <class F>
+std::string attempt(F f) {
+  try {
+    return f();
+  } catch (const std::exception&) {
+    return "E";
+  }
+}
+
 }  // namespace
+
+Values cfg_values(const std::vector<const tac::Function*>& fns,
+                  const std::vector<const tac::Type_instruction*>& instrs) {
+  namespace cfg = ::c6502::passes::tac_cfg;
+  const auto per_fn = [&](auto f) {
+    std::vector<std::string> out;
+    for (const auto* fn : fns) {
+      out.push_back(attempt([&] { return f(cfg::build_cfg(*fn)); }));
+    }
+    return fields(out);
+  };
+  const auto graph = [](const cfg::Cfg& c) {
+    std::string blocks = join(c.blocks, [](const auto& kv) {
+      const auto& [b, blk] = kv;
+      return std::to_string(b) + "/" + std::to_string(blk.instructions.size()) + "/" +
+             dots(blk.predecessors) + "/" + dots(blk.successors);
+    }, ';');
+    return blocks + "|" + dots(c.block_order);
+  };
+  std::vector<std::string> defs;
+  for (const auto* i : instrs) {
+    defs.push_back(join(recursion_saves::defs_in(*i), str));
+  }
+  return {
+      {"tac_cfg", per_fn(graph)},
+      {"reverse_postorder", per_fn([](const cfg::Cfg& c) { return dots(cfg::reverse_postorder(c)); })},
+      {"immediate_dominators", per_fn([](const cfg::Cfg& c) {
+         return join(cfg::immediate_dominators(c), [](const auto& kv) {
+           return std::to_string(kv.first) + ":" + std::to_string(kv.second);
+         }, ';');
+       })},
+      {"dominator_tree_children", per_fn([](const cfg::Cfg& c) {
+         return join(cfg::dominator_tree_children(cfg::immediate_dominators(c)),
+                     [](const auto& kv) { return std::to_string(kv.first) + ":" + dots(kv.second); },
+                     ';');
+       })},
+      {"dominance_frontiers", per_fn([](const cfg::Cfg& c) {
+         return join(cfg::dominance_frontiers(c), [](const auto& kv) {
+           return std::to_string(kv.first) + ":" + dots(kv.second.items());
+         }, ';');
+       })},
+      {"natural_loops", per_fn([](const cfg::Cfg& c) {
+         return join(cfg::natural_loops(c), [](const auto& loop) {
+           return std::to_string(loop.first) + ":" + dots(loop.second.items());
+         }, ';');
+       })},
+      {"recursion_saves_defs_in", fields(defs)},
+  };
+}
 
 Values stage_values(const json::Value& v) {
   const auto prog = tagged::TacProgramC::decode(*v.get("tac"));
@@ -163,7 +229,8 @@ Values stage_values(const json::Value& v) {
   }
   const std::string runtime =
       join(layout.bytes(), [](asdl::Int b) { return asdl::int_to_string(b); });
-  return {
+  Values out = cfg_values(fns, instrs);
+  const Values rest = {
       {"size_of_name", fields(sizes)},
       {"size_of_name_untyped", fields(sizes_untyped)},
       {"sizeof_members", fields(members)},
@@ -179,6 +246,8 @@ Values stage_values(const json::Value& v) {
       {"slot_share_sets", fields(share_sets)},
       {"runtime_bytes", runtime.empty() ? "-" : runtime},
   };
+  out.insert(out.end(), rest.begin(), rest.end());
+  return out;
 }
 
 Values pseudo_values(const json::Value& v) {

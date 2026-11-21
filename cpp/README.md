@@ -85,6 +85,7 @@ cpp/
     tagged_json.*     the codecs of the compile's tables (step 4)
     stage_checks.*    check-captures' checks of the stage calls
     stage_helper_checks.cpp   the code generation helpers' records
+    tac_helper_checks.cpp     the TAC optimizer's helpers' records
     passes/           one .cpp/.h per Python pass module, mirroring passes/
       peephole_fixedpoint.*   compile.py's _peephole_fixedpoint
       optimized_asm.* the region of compile.py's optimized_asm, and the
@@ -122,6 +123,9 @@ cpp/
                       end of the stage (step 4, part F2)
       stage_registry_frames.*  the runners of part F2's stage calls
       optimization/   pool, register_allocation, the interference graph, var_visit
+      optimization/framework.*, value_range.*, truncate_extend_fold.*,
+                      tac_stage.*   the TAC optimizer's run loops, helpers,
+                      passes, and the signatures of step 5's calls
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -648,6 +652,58 @@ with Python's results (the per-function calls as the program-level
 call on a program of the one function), and three cases written by
 hand for the two errors and for the fallbacks of `local_slot_names`.
 
+## The TAC optimizer's calls
+
+Step 5 (docs/cpp_port.md) ports `c99_to_tac`, the inliner, and the TAC
+optimizer. `tools/capture_passes.py --passes tac` records each call
+that the optimizer's driver (`PhaseDriver.apply`) makes on one
+function, as `tac_<name>` for each pass and `tac_to_ssa` and
+`tac_from_ssa` for SSA construction and destruction, and `--passes
+tac-stage` records the program-level calls of its `TAC_STAGE_PASSES`,
+`c99_to_tac` through `split_tables`, with `tac_optimize_function` for
+each function the optimizer is run on. Their signatures are in
+`src/passes/optimization/tac_stage.cpp`, which `stage_signatures`
+appends to those of step 4, so `check-captures` reads them as it reads
+the stage calls. A signature's `output_module` names the IR of a
+result the record holds as a dump, a TAC program or function here.
+
+A call of the driver is recorded with the function as its input and
+two keyword arguments, `symbols` and `ssa_dsts`. The symbol table the
+record holds is a part of the compile's: the harness hands the pass a
+view of the table that passes each read and write on and notes the
+names, and the record holds each symbol the call read before it wrote
+it, in the table's order. A pass that walks every entry
+(`fold_static_const_reads`) gets the whole table. The `mutated` line
+holds the symbols read or added after the call, and the SSA names,
+when either changed, and the C++ runner (`run_tac_pass` in
+tac_stage.cpp) writes the same line, with the symbols a pass adds at
+the end of the table as Python adds them. `c99_to_tac` changes the
+c99 program it is given in place, and its `mutated` line holds the
+program after the call under `input`, which `stage_checks.cpp` reads
+with the c99 codec.
+
+The passes of step 5 take the function and a
+`passes::framework::PassContext`, the symbol table and the SSA names,
+either of which may be null, where Python's may be None.
+`src/passes/optimization/framework.h` has the run loops of the
+framework's base classes (`run_window`, `run_rules`, `run_def_use`,
+`run_sink`, `run_operand_rewrite`), each of which takes the pass's
+matching and rewrite as one function that returns none where the
+Python pattern doesn't match or the rewrite declines, since the
+pattern DSL of framework/patterns.py isn't ported.
+`fold_truncate_extend` and `fold_extend_extend`
+(`src/passes/optimization/truncate_extend_fold.*`) are the model of a
+pass on `run_def_use`.
+
+The helpers that the TAC passes share have records of their own, which
+`tools/capture_helpers.py --tac-only` makes at each call of a pass of
+the driver. A `tacopt` record holds the function, the symbols of its
+operands, and the SSA names, and gives `value_range.max_value` of each
+operand, `int_width`, `type_max`, and `is_unsigned_type` of each
+symbol's type, and `rewrite_uses_in` of each instruction with two
+mappers (`tac_opt_values`). `check-helpers` computes them in
+`src/tac_helper_checks.cpp`.
+
 ## The shared helpers
 
 These Python modules, which the asm passes from `apply_licm` on
@@ -679,6 +735,18 @@ with the parts they use.
 | `optimization/pool.py`, `RuntimeLayout.bytes` | `src/passes/optimization/pool.*`, `src/passes/asm_context.*` | `passes` |
 | `optimization/cfg.py`, the TAC CFG | `src/passes/optimization/cfg.*` | `passes::tac_cfg` |
 | `recursion_saves._live_out`, `defs_in` | `src/passes/recursion_saves.*` (`live_out`, `defs_in`) | `passes::recursion_saves` |
+
+The TAC optimizer's passes of step 5 share these.
+
+| Python | C++ | Namespace |
+|---|---|---|
+| `optimization/var_visit.py`'s `rewrite_uses_in` | `src/passes/optimization/var_visit.*` | `passes` |
+| `optimization/value_range.py` | `src/passes/optimization/value_range.*` | `passes::value_range` |
+| `optimization/framework/` (the run loops, `PassContext`, `DefUseEnv`, `RuleEnv`, `single_use`) | `src/passes/optimization/framework.*` | `passes::framework` |
+
+`rewrite_uses_in` takes a mapper that returns none to leave an operand,
+where Python's returns the same object, and returns none when nothing
+changed, where Python returns the same instruction.
 
 `uses_in` and `defs_in` return the names as `std::string_view`s into
 the instruction, since a `tac_ast::Var` is only its name, and
@@ -1273,3 +1341,12 @@ Python results through `tests/stage_case.h`.
   `tools/compare_backends.py` found the same output for all 3,576
   compiles, and the C++ tests pass in the builds of MSVC 19.36 and GCC
   12.2.
+- 21 Nov 2026: the groundwork of step 5 ("The TAC optimizer's calls"):
+  the captures of every call of the TAC optimizer's driver and of the
+  program-level calls of step 5, with their signatures in
+  `src/passes/optimization/tac_stage.cpp`, which read all 355,075
+  distinct records of the corpus back; `rewrite_uses_in`,
+  `value_range`, and the framework's run loops, which match on 26,982
+  helper records; and `fold_truncate_extend` and `fold_extend_extend`,
+  which match on every distinct call of the corpus. The build is clean
+  with MSVC 19.36 and GCC 12.2.

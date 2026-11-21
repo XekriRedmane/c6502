@@ -262,6 +262,281 @@ something a straightforward C++ port could change.
   is the order of CPython's hash table, which `PyIntSet`
   (`cpp/src/py_int_set.h`) reproduces.
 
+## Step 5: the TAC optimizer, c99_to_tac, and the inliner
+
+Step 5 is the part of a compile between the type checker and the TAC
+that `C6502_CPP_BACKEND=1` hands to C++: `c99_to_tac`, the passes of
+`translate_for_codegen`, those of `_optimized_tac`, and the TAC
+optimizer they call. `unroll_program` works on the c99 AST and belongs
+to step 6. This section lists the calls, what each reads, the helpers
+the passes share, and the groups in which several agents can port them
+at once. The survey was made on 21 Nov 2026 from compile.py at
+039efa2.
+
+### The calls
+
+Under `-O`, `translate_for_codegen` and `_optimized_tac` make these
+calls in this order. Without `-O` only `c99_to_tac` runs, and the
+`--tac -O` stage runs `c99_to_tac`, `inline_functions`, and
+`optimize_tac`. Each has an entry in
+`tools/capture_passes.TAC_STAGE_PASSES` under the name in the first
+column.
+
+| Capture name | Python | Lines | Reads besides its IR | Returns, and what it changes |
+|---|---|---|---|---|
+| `c99_to_tac` | `c99_to_tac.translate_program` | 5350 | the type-checked c99 program, the symbol and type tables, `check_marked_calls` | the TAC program. It changes the c99 program (`short` and `nullptr` everywhere, `bool` and the bit-precise types in the top-level declarations), adds a symbol per temporary, gives the symbols their erased types with `returns_bool` and `was_bool`, and erases the type table's member types. |
+| `inline_functions` | `optimization.inline_functions` | 640 | every symbol (for the next free `@N` and `%N`), the c99 declarations, `abi_selection`'s `_address_taken`, `_function_decls_by_name`, `_has_register_local`, `_has_register_request`, and `optimize_function` of a copy of each candidate | the TAC program, with a symbol for each copied local |
+| `return_pointers_in_zero_page` | `return_in_zero_page` | 120 | symbols, `_address_taken` | the TAC program, with an `F@ret` zero-page static |
+| `row_address_tables` | `optimization.row_address_tables` | 440 | symbols, types, `split_tables.plane_init`, `strength_reduction._two_power_terms`, `shift_cost` | the TAC program, with the `A@rows`, `A@lo`, and `A@hi` tables |
+| `optimize_tac` | `optimization.optimize_program` | 330 | symbols | the TAC program, with `optimize_function` of each function |
+| `tac_optimize_function` | `optimization.optimizer.optimize_function` | | symbols | the function, run through the driver below |
+| `dispatch_const_pointer_arrays` | `optimization.dispatch_pointer_array` | 370 | symbols (the `AddressInit`s of `static const` pointer arrays) | the TAC program |
+| `split_tables` | `optimization.split_tables` | 540 | symbols | the TAC program, with each split table's symbol replaced by an array of bytes in plane order |
+
+`optimize_function` runs `PhaseDriver.apply` (framework/driver.py) on
+one function. Each pass takes the function and a `PassContext`, which
+holds the symbol table and, in SSA form, `ssa_dsts`, the names SSA
+construction renamed. The driver runs the passes of six lists in this
+order, and `tools/capture_passes.tac_passes()` records each call as
+`tac_<name>` with the pass's `name`.
+
+1. `pre_ssa`, once each: `rotate_signed_countdown_loops` (700 lines)
+   and `noreturn_calls` (80).
+2. `to_ssa` (`tac_to_ssa`, 650 lines), which returns the function and
+   `ssa_dsts` and adds a symbol for each SSA name.
+3. `pre_fixedpoint`: `fold_static_const_reads` (150), which reads
+   every symbol of the table.
+4. `fixedpoint`, swept until a sweep leaves the function equal to what
+   it started with, or 256 times: `constant_fold` (1200),
+   `distribute_constant` (155), `fold_into_constant_phi` (145),
+   `reduce_strength` (530), `fold_producer_jumps` (the rules of
+   `cmp_zero_jump_fold`, `and_zero_jump_fold`, `lnot_jump_fold`, and
+   `nonnegative_compare`, 1350 in all), `eliminate_dead_loops` (225),
+   `thread_constant_jumps` (370), `eliminate_unreachable_code` (240),
+   `eliminate_common_subexpressions` (180), `hoist_loop_invariants`
+   (120), `copy_propagate` (330), `eliminate_dead_stores` (200),
+   `read_stored_globals` (170), `fold_copies_in_fixedpoint` (300),
+   `reassoc_constants` (260), `reassoc_offset_constant` (145),
+   `direct_member_access` (195), `recognize_indexed_store` (130),
+   `recognize_indexed_load` (110), `fold_truncate_extend` and
+   `fold_extend_extend` (230), `sink_increments` (405),
+   `sink_and_past_branch` (645), `narrow_widened_arith` (630),
+   `narrow_byte_range` (285), and `narrow_byte_bitwise` (190).
+5. `post_fixedpoint`, once each: `phi_offset` (265),
+   `static_indexed_access` (220), `recognize_indirect_indexed` (605),
+   `hoist_subtract_to_compare` (375), `hoist_divmod_pairs` (325), and
+   `count_loops_down` (230).
+6. `from_ssa` (`tac_from_ssa`, 330), which adds a symbol for each
+   temporary that breaks a cycle of copies.
+7. `post_destruction`, once each: `fold_copies_post_destruction`,
+   `move_steps_onto_edges` (190), and `split_three_way_compares` (615).
+8. `post_destruction_fixedpoint`, swept like the first:
+   `fold_short_circuit_jump` (550) and `thread_known_compares` (565).
+
+Most passes read the symbols of the names they see. Seventeen add
+symbols for new temporaries, each named by probing the table for the
+first free `<base>.<tag><k>`, and thirteen add the new names to
+`ssa_dsts` too. Under `C6502_CHECK_IR=1` the driver checks the TAC
+after every pass, which the C++ driver can leave to one check of its
+result, as step 4 does. No pass reads `os.environ` or module state
+apart from the driver's `observer`, which only `fuzz/tac_passes.py`
+sets.
+
+### The helpers the groups share
+
+These are ported and checked on the corpus.
+
+- From earlier steps: the TAC CFG (`passes::tac_cfg`), `var_visit`'s
+  `vals_in`, `uses_in`, `defs_in`, and `count_uses`,
+  `recursion_saves::defs_in`, `shift_cost`, `split_tables::plane_init`,
+  `compare_subtract::compared_difference`, and the parts of
+  `bit_precise` that code generation reads.
+- `var_visit.rewrite_uses_in` (`passes::rewrite_uses_in`), which the
+  framework's operand rewrite, `phi_constant_fold`,
+  `read_stored_global`, and `compare_subtract` call.
+- `value_range` (`passes::value_range`: `int_width`, `type_max`,
+  `is_unsigned_type`, `max_value`), which strength reduction,
+  `narrow_byte_range`, `nonnegative_compare`, `lnot_jump_fold`,
+  `short_circuit_jump_fold`, and `known_compare_thread` read.
+- The run loops of framework/ (`passes::framework` in
+  `src/passes/optimization/framework.h`): `PassContext`, the window scan
+  of `WindowPass` (`run_window`) and of `RuleSet` (`run_rules`, with
+  `RuleEnv`, `single_use`, and `observable_names`), the def-use walk of
+  `DefUsePass` (`run_def_use`, with `DefUseEnv` and `DefUseRewrite`),
+  `SinkPass` (`run_sink`), and `OperandRewritePass`
+  (`run_operand_rewrite`). The pattern DSL of framework/patterns.py
+  isn't ported. Each loop takes one function that matches and rewrites,
+  testing the instruction's kind and fields directly, and returns none
+  where the Python pattern doesn't match or the rewrite declines.
+
+These are shared too but belong to one group, which ports them first
+and says so to the others.
+
+- `fp_arith` (250 lines) and `builtin_functions`' `bcd_add`, `bcd_sub`,
+  `bin_to_bcd`, and `stdbit`, which `c99_to_tac` and constant folding
+  both call. Group C.
+- `c99_to_tac._tac_const_for`, which `static_const_fold` calls. Group A,
+  or group C as a copy until A lands.
+- `cmp_zero_jump_fold.extend_source_unchanged` and
+  `narrow_widened_arith`'s `var_unchanged`, `_register_temp`,
+  `_byte_width`, `_is_unsigned`, and `_narrow_constant`, which
+  `recognize_indirect_indexed` and `sink_increment` read. Group D.
+- `extend_add_chain` (195 lines), whose `is_1_byte_val` constant folding's
+  `distribute_constant` reads. Group F.
+- `constant_folding._fold` and `_is_integer_const`, which
+  `phi_constant_fold` and `jump_thread` read, and
+  `strength_reduction`'s `_zero_for_c99_type`, `_scalar_int_size`, and
+  `_two_power_terms`, which `narrow_byte_range`, `reassoc_offset`, and
+  `row_address_tables` read. Group C.
+- `split_tables._width`, which `recognize_indirect_indexed` reads.
+  Group H.
+
+### The groups
+
+Each group ports its modules with the conventions of cpp/README.md
+("Porting a pass"), gives each capture name it ports a runner in
+`src/passes/optimization/tac_stage.cpp`, as `tac_fold_truncate_extend`
+has, and checks it on a capture of the whole corpus (`--passes` with
+the group's names). The lines below count the Python modules.
+
+- **A. `c99_to_tac`**, about 5,350 lines in two parts that share the
+  `Translator`'s queries (`make_temporary_variable_name`, `make_label`,
+  `_sizeof`, the volatile helpers), which A1 ports first.
+  - A1: the free functions of the module (lines 419-1799: the erasure
+    of `short`, `nullptr_t`, `bool`, and the bit-precise types, the TAC
+    constants, the static initializers, the index scales), and the
+    Translator's driver, builtins, `<stdbit.h>` loops, functions,
+    statics, blocks, and declarations (1800-2577).
+  - A2: statements, calls, expressions, pointer arithmetic,
+    initializers, lvalues and subscripts, increments, compound
+    assignments, casts, the bit-precise padding, conversions to
+    `bool`, and the short-circuit operators (2578-5333).
+  Its temporaries and labels are numbered by two counters over the
+  program, so the order of the lowering is part of its output, and it
+  changes its three inputs in place, which its runner reports on the
+  `mutated` line.
+- **B. The driver and SSA.** `optimizer.py`, `PhaseDriver.apply` with
+  its two fixed points and their caps, `ssa_construction`,
+  `ssa_destruction`, and the two passes before SSA, `loop_rotate` and
+  `noreturn_call`. About 2,100 lines. The driver can't run in C++ until
+  every pass of its lists is ported, so B ports it with a table of the
+  passes, which the other groups fill, and checks SSA construction and
+  destruction on their own captures (`tac_to_ssa`, `tac_from_ssa`).
+- **C. Folding.** `constant_folding` (with the const-array and plane
+  loads), `phi_constant_fold`, `static_const_fold`,
+  `distribute_constant`, `strength_reduction`, `reassoc_const`,
+  `reassoc_offset`, and `fp_arith` and `builtin_functions`. About 3,050
+  lines.
+- **D. Jump folds and narrowing.** `cmp_zero_jump_fold`,
+  `and_zero_jump_fold`, `lnot_jump_fold`, `nonnegative_compare` (the
+  rules of `fold_producer_jumps`, which run as one `RuleSet` in that
+  order), `narrow_widened_arith`, `narrow_byte_range`, and
+  `narrow_byte_bitwise`. About 2,450 lines.
+- **E. Dataflow over the CFG.** `copy_propagation`,
+  `dead_store_elimination`, `unreachable_code_elimination`,
+  `dead_loop_elimination`, `jump_thread`, `cse`, `licm`,
+  `copy_folding` (both phases), and `read_stored_global`. About 2,130
+  lines.
+- **F. Addressing and sinking.** `extend_add_chain`, the three
+  recognizers, `direct_member_access`, `static_indexed_access`,
+  `phi_offset`, `sink_increment`, and `sink_and_past_branch`. About
+  2,770 lines.
+- **G. After the fixed point and after SSA.** `compare_subtract`,
+  `divmod_hoist`, `count_down`, `step_on_edge`, `three_way_compare`,
+  `short_circuit_jump_fold`, and `known_compare_thread`. About 2,850
+  lines.
+- **H. The program level.** `return_in_zero_page`,
+  `row_address_tables`, `dispatch_pointer_array`, `split_tables`, and
+  last `inline_functions`, whose cost estimates run the whole TAC
+  optimizer on copies of the callees, so it can be checked only once B
+  to G are done. Then the sequence of `translate_for_codegen` and
+  `_optimized_tac` as one C++ function, so that compile.py can hand
+  C++ the c99 program and the tables. About 2,100 lines. The tests
+  that check a `static` function's own code turn the inliner off by
+  patching `compile.inline_functions` (`tests/no_inlining.py`), so the
+  request to C++ needs a way to say so.
+
+A, B, C, D, E, F, and G can start at once. D's and F's helpers are read
+across the two groups, and C's by D, E, and H, so those groups agree
+first on the signatures of the helpers listed above.
+
+### What the port has to keep
+
+- **The order of sets.** Two compiles of the corpus with
+  `PYTHONHASHSEED` 1 and 2 (3,156 compiles: the examples, the games,
+  the chapters, and seeds 0-29 of the three fuzzers, each with `--tac
+  -O` and `-S -O`) gave the same output for every one, so no output of
+  the corpus depends on the order of a set of strings. The sets of
+  block ids that SSA construction (dominance frontiers),
+  `dead_loop_elimination`, `licm`, and `jump_thread` (loop bodies) walk
+  iterate in the order of CPython's table, which `PyIntSet` reproduces.
+- **Identity.** Five passes find an instruction's index by identity
+  (`cmp_zero_jump_fold.py:218`, `narrow_byte_bitwise.py:118`,
+  `narrow_byte_range.py:120`, `narrow_widened_arith.py:332`, and
+  `recognize_indirect_indexed.py:359` and `:487`), which picks the
+  first position of an object that sits at two. A C++ port that passes
+  the index along differs only for such a shared object, which is worth
+  checking for when a capture differs. The framework and
+  `rewrite_uses_in` test `is` to see whether anything changed, and the
+  driver's fixed point compares by `==`, so a C++ pass that rebuilds an
+  equal function changes nothing.
+- **Two indexes of definitions.** `DefUsePass` indexes each name by the
+  instruction whose `dst` field is that Var, which takes an
+  `IndirectIndexedLoad`, and `RuleSet` by `defs_in`, which leaves it
+  out (`framework::dst_name` and `make_rule_env`).
+- **Ints wider than 64 bits.** `value_range` multiplies and shifts
+  bounds of up to 2^64 - 1, which the C++ port tests against the
+  destination's largest value before forming the result. Constant
+  folding multiplies 8-byte constants, and `double_bits_to_int` gives
+  the exact integer of a double up to 2^1024, which its callers reduce
+  modulo 2^N, except that `c99_to_tac._fp_to_integer` returns it whole
+  for a `bool` target.
+- **Floats.** `fp_arith` runs through numpy, and `np.float32` of a
+  string parses it as a double first, so a decimal string or an integer
+  converts to a `float` with two roundings:
+  `1.0000001788139343261718749` gives 0x3F800002, where one rounding
+  gives 0x3F800001. The C++ port converts through a double too. The
+  arithmetic is the SSE unit's in both, which C++ keeps only without
+  `-ffast-math` and with no contraction into fused multiply-adds.
+- **Names and counters.** `c99_to_tac` numbers `%N` and its labels over
+  the program, and the passes number their labels per function
+  (`.<fn>@ssa_split@N`, `@scfold@N`, `@cthread@N`) and their
+  temporaries by probing the symbol table. The inliner takes its next
+  `@N` and `%N` from the largest in the whole table.
+- **The inliner's estimate.** `_optimized_cost` runs the optimizer on a
+  deep copy of the callee and a shallow copy of the symbol table, which
+  shares its `Symbol` objects with the compile's table, so a pass that
+  changed a symbol in place would change the compile's table during an
+  estimate.
+
+### The captures
+
+`tools/capture_passes.py --passes tac` records each call the driver
+makes on a function, and `--passes tac-stage` the calls of
+`TAC_STAGE_PASSES`. A call of the driver is recorded with the
+function, and with the keyword arguments `symbols` and `ssa_dsts`: the
+symbols the call read before it wrote them, in the table's order, and
+the SSA names. A view of the table (`_recording_table`) passes every
+read and write on to the compile's table and notes the names, so that
+a record holds a few symbols where the whole table would take most of
+its bytes, and a call that walks the whole table (`items`, `len`), as
+`fold_static_const_reads` does, holds all of it. The `mutated` line
+holds the symbols the call read or added, and the SSA names, when they
+changed. `c99_to_tac` changes the c99 program it is given, which its
+`mutated` line holds under `input`. `c6502cpp check-captures` reads
+each record of step 5 with the signatures of
+`src/passes/optimization/tac_stage.cpp`, which take a c99 program, a
+TAC program, or a TAC function as their input, and a TAC dump as their
+result.
+
+On 21 Nov 2026 the capture of every call of step 5 over the whole
+corpus took 254 seconds with 14 processes. Every value of its 355,075
+distinct records made the trip to C++ and back, from 1,110 records of
+`split_tables` to 12,931 of `tac_constant_fold`, which took
+`check-captures` 31 minutes in one process. The capture found that
+unreachable-code elimination changed the Phis of its input in place
+(Status, 21 Nov 2026).
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -547,3 +822,24 @@ something a straightforward C++ port could change.
   checks the fuzzers turn on, 2.2 s in the parser, 1.5 s in the TAC
   interpreter, 1.4 s in the simulator's assembler, and 2.0 s in writing
   the requests and reading the programs back.
+- 21 Nov 2026: the groundwork of step 5 ("Step 5" above). The survey
+  splits the step into eight groups, A to H. `tools/capture_passes.py`
+  records every call of the TAC optimizer's driver on a function
+  (`--passes tac`) and the program-level calls from `c99_to_tac` to
+  `split_tables` (`--passes tac-stage`), each driver call with only the
+  symbols it read, and every value of the 355,075 distinct records of
+  the corpus makes the trip to C++ and back, the c99 program and the
+  tables of `c99_to_tac` among them. The helpers the groups share are
+  ported: `rewrite_uses_in`, `value_range`, and the run loops of the
+  pass framework (`src/passes/optimization/framework.h`), which match
+  the Python helpers on 26,982 records of `capture_helpers.py
+  --tac-only`, 2.44 million operands of `max_value` among them.
+  `fold_truncate_extend` and `fold_extend_extend` are ported on the
+  framework's def-use walk and match on all 9,273 and 9,268 of their
+  distinct calls. The capture found a bug, fixed in Python, since
+  neither pass is ported: unreachable-code elimination pruned a join's
+  Phis in place, and dead-loop elimination retagged an exit Phi in
+  place, which changed the function each pass was given, so a sweep of
+  the fixed point whose only change was that looked like no change.
+  351 calls of the corpus changed their input, though no output of the
+  corpus changed with the fix.

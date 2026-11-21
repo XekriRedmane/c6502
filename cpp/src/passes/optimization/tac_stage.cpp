@@ -7,6 +7,7 @@
 #include "c99_to_tac_stage.h"
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
@@ -29,6 +30,7 @@
 #include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/strength_reduction.h"
 #include "passes/optimization/truncate_extend_fold.h"
+#include "passes/optimization/unreachable_code_elimination.h"
 #include "tagged_json.h"
 
 namespace c6502::passes::tac_stage {
@@ -197,9 +199,9 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_fold_into_constant_phi", &run_tac_pass<&fold_into_constant_phis>),
       tac_pass("tac_reduce_strength", &run_tac_pass<&reduce_strength>),
       tac_pass("tac_fold_producer_jumps"),
-      tac_pass("tac_eliminate_dead_loops"),
+      tac_pass("tac_eliminate_dead_loops", &run_tac_pass<&eliminate_dead_loops>),
       tac_pass("tac_thread_constant_jumps"),
-      tac_pass("tac_eliminate_unreachable_code"),
+      tac_pass("tac_eliminate_unreachable_code", &run_tac_pass<&eliminate_unreachable_code>),
       tac_pass("tac_eliminate_common_subexpressions"),
       tac_pass("tac_hoist_loop_invariants"),
       tac_pass("tac_copy_propagate", &run_tac_pass<&copy_propagate>),

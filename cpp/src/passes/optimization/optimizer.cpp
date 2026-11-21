@@ -92,6 +92,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
@@ -110,6 +111,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/strength_reduction.h"
 #include "passes/optimization/truncate_extend_fold.h"
+#include "passes/optimization/unreachable_code_elimination.h"
 
 namespace c6502::passes {
 
@@ -164,12 +166,12 @@ PhaseDriver make_driver() {
       // can't be negative is done unsigned, last, once nothing narrows
       // it.
       {"fold_producer_jumps", nullptr},
-      {"eliminate_dead_loops", nullptr},
+      {"eliminate_dead_loops", &eliminate_dead_loops},
       // An edge that brings a join a constant its test decides goes
       // where the test sends it, so an inlined `return false;` doesn't
       // load 0 and branch on it. Before UCE, which drops the join.
       {"thread_constant_jumps", nullptr},
-      {"eliminate_unreachable_code", nullptr},
+      {"eliminate_unreachable_code", &eliminate_unreachable_code},
       // Replaces a repeated computation or load with a Copy from the
       // first one, which copy_propagate then forwards.
       {"eliminate_common_subexpressions", nullptr},

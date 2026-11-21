@@ -80,6 +80,7 @@ cpp/
     asm_emit.*        asm_emit.py, the asm2 program as dasm's text
     pyrepr.*          Python's repr and formatting, for messages and text
     ordered_map.h     OrderedMap, a map in the order of insertion, as a dict
+    py_int_set.h      PyIntSet, a set of ints that iterates as CPython's does
     tagged_json.*     the codecs of the compile's tables (step 4)
     stage_checks.*    check-captures' checks of the stage calls
     stage_helper_checks.cpp   the code generation helpers' records
@@ -104,6 +105,7 @@ cpp/
                       group E), and its codecs and runners
       registry.*      the ported passes, by name, for check-captures
       stage_registry.*  the stage calls' signatures and runners (step 4)
+      stage_registry_abi.*  the runners of group A's stage calls
       optimization/   pool, register_allocation, the interference graph, var_visit
       capture_args.*  the decoders of a captured call's keyword arguments
     sim/assembler.*   instruction_size, from sim/assembler.py
@@ -391,6 +393,42 @@ packed BCD chain, 8 a `register` local, and 13 a spill, and none raises
 the Python tests of coalescing and of the eligibility and checks the
 coloring of those paths against what the Python functions gave.
 
+### The ABI and the call graph
+
+Group A of step 4 ported `select_abi`, `fixed_address_layouts`, and
+`pinned_slot_symbols` (`src/passes/abi_selection.*`), the carry-return
+choices (`src/passes/carry_return_choice.*`), the pool eligibility of
+`zp_local_allocation` (`pool_eligible`, `recursive_pool_functions`,
+`zp_local_allocation::determine_eligibility`), all of `recursion_saves`
+(`call_graph`, `cycles`, `check_marked_calls`, `hw_stack_cycles`,
+`plan_saves`, `recursion_saves::live_out` and `defs_in`), and the TAC
+CFG. Their runners are in `src/passes/stage_registry_abi.*`, with the
+codecs of a `SavePlan` and a `CFG`. Besides `pinned_slot_symbols`,
+`STAGE_PASSES` records the calls that compile.py doesn't make itself
+where their callers reach them. Those are `cycles` and
+`hw_stack_cycles` in `zp_local_allocation`, `check_marked_calls` and
+`plan_saves` in `recursion_saves`, `live_out` where `find_shares` calls
+it, and `build_cfg` where `_live_out` calls it. A record whose input is a TAC `Function` holds its dump under
+`input`, which `check-captures` reads as a `Type_top_level`.
+
+Python builds each call graph as a dict from a set of names, whose
+order follows the hashes of strings and changes from run to run, and
+nothing reads that order, so `CallGraph` is a sorted `std::map`. The
+functions that return a dict in an order that reaches their callers
+(`select_abi`'s ABI, `cycles`, `pinned_slot_symbols`, the save plan's
+maps) return an `OrderedMap` in Python's order. An `AbiSelectionError`
+and a `RecursionSaveError` are `CompileError`s with Python's messages.
+
+The capture of the whole corpus on 20 Nov 2026 gave from 16 distinct
+calls of `plan_saves` and 58 of `pinned_slot_symbols` to 3,394 of
+`build_cfg`, and every one matched. Few of them raise or give a
+non-empty result, so `tests/test_abi_stage_calls.cpp` holds the calls
+that the Python unit tests make, recorded with their results and
+exceptions, and `tests/test_tac_cfg_cases.cpp` the CFG's values on each
+function that tests/test_cfg.py builds a CFG of. The capture helpers'
+`tables` records give the CFG's analyses on every function that
+`find_shares` sees (`_cfg_values`).
+
 ## The shared helpers
 
 These Python modules, which the asm passes from `apply_licm` on
@@ -420,11 +458,28 @@ with the parts they use.
 | `optimization/var_visit.py` (`vals_in`, `uses_in`, `defs_in`, `count_uses`) | `src/passes/optimization/var_visit.*` | `passes` |
 | `slot_sharing.reach_sets`, `coexist`, `share_conflicts`, `SlotShare`'s methods | `src/passes/slot_sharing.*` | `passes` |
 | `optimization/pool.py`, `RuntimeLayout.bytes` | `src/passes/optimization/pool.*`, `src/passes/asm_context.*` | `passes` |
+| `optimization/cfg.py`, the TAC CFG | `src/passes/optimization/cfg.*` | `passes::tac_cfg` |
+| `recursion_saves._live_out`, `defs_in` | `src/passes/recursion_saves.*` (`live_out`, `defs_in`) | `passes::recursion_saves` |
 
 `uses_in` and `defs_in` return the names as `std::string_view`s into
 the instruction, since a `tac_ast::Var` is only its name, and
 `share_conflicts` returns the indices of the shares where Python
 returns the shares.
+
+The TAC CFG is in namespace `passes::tac_cfg`, since the asm CFG of
+`src/passes/optimization_asm/cfg.h` has the same names. Its blocks own
+copies of their instructions, as the Python blocks hold lists of their
+own, so a pass can edit them and flatten the graph with
+`cfg_to_function`. Python keeps a dominance frontier and a loop body in
+a `set` of block ids, and SSA construction and the loop passes walk
+those sets, so their order reaches the output. The order of a set of
+ints doesn't change from run to run, since an int's hash is its value,
+but it is the order of the slots of CPython's hash table.
+`src/py_int_set.h` keeps the same table, with the probing and resizing
+of CPython 3.11's `setobject.c`, and iterates as CPython does. It gave
+CPython 3.11.3's order for 200,000 random sequences of additions.
+`recursion_saves::defs_in` differs from var_visit's `defs_in` only for
+an `IndirectIndexedLoad`, whose destination it counts.
 
 A public Python name keeps its name in `c6502::passes`. A name that
 was private to its module (a leading underscore) and that other
@@ -937,3 +992,9 @@ Python results through `tests/stage_case.h`.
   `InterferenceGraph`, `blocked_bytes`, `find_fit`, and
   `all_operands_in`. Each entry point matches the Python function on
   every distinct call of the corpus, 20,897 calls in all.
+- 20 Nov 2026: group A of step 4, the ABI and the call graph ("The ABI
+  and the call graph"): `select_abi`, `fixed_address_layouts`,
+  `pinned_slot_symbols`, the carry-return choices, the pool eligibility,
+  `recursion_saves`, and the TAC CFG, each matching the Python function
+  on every distinct call of the corpus, with `PyIntSet` for the sets of
+  block ids whose order the TAC passes read.

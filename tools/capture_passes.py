@@ -239,6 +239,17 @@ STAGE_PASSES = {
     "choose_carry_returns": "choose_carry_returns",
     "recursive_pool_functions": "recursive_pool_functions",
     "pool_eligible": "pool_eligible",
+    # Group A's calls inside its own modules. `cycles` and
+    # `hw_stack_cycles` are recorded where the pool eligibility calls
+    # them, `_live_out` where `find_shares` calls it, and `build_cfg`
+    # where `_live_out` calls it, from `find_shares` and `plan_saves`.
+    "pinned_slot_symbols": "pinned_slot_symbols",
+    "cycles": "passes.zp_local_allocation:cycles",
+    "hw_stack_cycles": "passes.zp_local_allocation:hw_stack_cycles",
+    "check_marked_calls": "passes.recursion_saves:check_marked_calls",
+    "plan_saves": "passes.recursion_saves:plan_saves",
+    "live_out": "passes.slot_sharing:_live_out",
+    "build_cfg": "passes.recursion_saves:build_cfg",
     "find_shares": "find_shares",
     "allocate_zp_slots": "allocate_zp_slots",
     "pinned_param_copies": "pinned_param_copies",

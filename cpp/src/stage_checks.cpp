@@ -20,6 +20,9 @@ using json::Value;
 // optimizer's calls on one function, is read as a top-level item.
 std::string redump(std::string_view module, const std::string& text) {
   if (module == "asm_ast" && text.rfind("Function(", 0) == 0) return asdl::dump(asdl::load<asm_ast::Type_top_level>(text));
+  if (module == "tac_ast" && text.rfind("Function(", 0) == 0) {
+    return asdl::dump(asdl::load<tac_ast::Type_top_level>(text));
+  }
   if (module == "tac_ast") {
     return asdl::dump(asdl::load<tac_ast::Program>(text));
   }

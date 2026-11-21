@@ -256,6 +256,11 @@ something a straightforward C++ port could change.
   (zp_globals.py:316).
 - `const_static_fold` takes bytes of Python ints that may be negative
   or wider than 64 bits.
+- The TAC CFG's dominance frontiers and natural loop bodies, and the set
+  of reachable blocks `natural_loops` walks, are Python sets of block
+  ids, and SSA construction and the loop passes walk them. Their order
+  is the order of CPython's hash table, which `PyIntSet`
+  (`cpp/src/py_int_set.h`) reproduces.
 
 ## Status
 
@@ -432,3 +437,17 @@ something a straightforward C++ port could change.
   `decimal_arith` helpers, with `pseudo_reads` and `pseudo_writes` as
   pointers into the instruction (`pseudo_read_ptrs`,
   `pseudo_write_ptrs`).
+- 20 Nov 2026: group A of step 4, the ABI and the call graph on TAC.
+  `select_abi`, `fixed_address_layouts`, `pinned_slot_symbols`,
+  `choose_global_carry_returns`, `choose_carry_returns`,
+  `pool_eligible`, `recursive_pool_functions`, all of
+  `recursion_saves`, and the TAC CFG are ported, and each matches the
+  Python function on every distinct call of the corpus: 1,150 calls of
+  `select_abi` and of `fixed_address_layouts`, 1,110 of each carry
+  choice, 952 of each pool function and of `hw_stack_cycles`, 786 of
+  `cycles`, 1,149 of `check_marked_calls`, 16 of `plan_saves`, 58 of
+  `pinned_slot_symbols`, 3,382 of `live_out`, and 3,394 of `build_cfg`.
+  The CFG's dominators, frontiers, and loops match on every function of
+  the capture helpers' 1,110 `tables` records. Groups B and C read
+  `src/passes/recursion_saves.h` (`plan_saves`, `recursion_saves::live_out`
+  and `defs_in`) and `src/passes/optimization/cfg.h`.

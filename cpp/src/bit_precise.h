@@ -75,4 +75,22 @@ bool has_padding(const c99_ast::BitInt& t);
 // 4, and 8 bytes, and `BitInt(8 * bytes)` for the other sizes.
 c99_ast::Type_data_type storage_type(const c99_ast::BitInt& t);
 
+// The widest bit-precise type, the least C23 allows, since the
+// runtime's helpers stop at 8 bytes (Python's `BITINT_MAXWIDTH`).
+inline constexpr int kBitIntMaxWidth = 64;
+
+// Returns the width N of the type of a `wb` constant (`is_signed`) or a
+// `uwb` one whose value has `bit_length` bits: the smallest N greater
+// than 1 that holds the value and the sign bit, or the smallest N
+// greater than 0 that holds the value (C23 §6.4.4.2p6). The value isn't
+// negative. Python's `constant_width` takes the value, and this takes
+// its `int.bit_length()`, since a constant may be wider than any C++
+// integer.
+inline int constant_width(int bit_length, bool is_signed) {
+  if (is_signed) {
+    return bit_length + 1 > 2 ? bit_length + 1 : 2;
+  }
+  return bit_length > 1 ? bit_length : 1;
+}
+
 }  // namespace c6502::bit_precise

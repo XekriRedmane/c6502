@@ -59,6 +59,13 @@ record of their own, which `--tac-only` makes without the others. A
 (`PhaseDriver`), holds one line of tagged JSON with the function the
 pass is given, the symbols of its operands, and the SSA names, and
 `tac_opt_values` gives its values.
+
+The c99 type queries that the front end's passes share (step 6) have a
+record of their own too, which `--front-only` makes without the others.
+A `c99types` record, made at each call of the type checker, holds one
+line of JSON with the dumps of the types of the type-checked program
+and its symbol table, of its top-level declarations, and the names of
+its symbol table, and `front_values` gives its values.
 """
 from __future__ import annotations
 
@@ -589,7 +596,8 @@ _SLOTS: dict | None = None
 # the context's text) for the ones seen as objects, kept with the
 # instructions so the ids stay theirs.
 _DONE: dict = {}
-_COUNTS = {"fn": 0, "prog": 0, "tac": 0, "tables": 0, "pseudos": 0, "tacopt": 0}
+_COUNTS = {"fn": 0, "prog": 0, "tac": 0, "tables": 0, "pseudos": 0, "tacopt": 0,
+           "c99types": 0}
 
 
 def tac_opt_values(fn, symbols, ssa_dsts) -> list[tuple[str, str]]:
@@ -659,6 +667,174 @@ def tac_opt_values(fn, symbols, ssa_dsts) -> list[tuple[str, str]]:
         ("rewrite_vars", _fields(rewritten(rename))),
         ("rewrite_consts", _fields(rewritten(constants))),
     ]
+
+
+# The values `c99_coerce` reduces to each integer type: the edges of each
+# width's range and values past them, negative ones among them.
+_COERCE_VALUES = (
+    0, 1, -1, 2, 127, 128, -128, -129, 255, 256, 32767, 32768, -32768,
+    65535, 65536, -65536, 2**31 - 1, 2**31, -(2**31), 2**32 - 1, 2**32,
+    2**63 - 1, 2**63, -(2**63), 2**64 - 1, 2**64, -(2**64), 12345678901,
+)
+
+
+def _c99_types(prog, symbols) -> list:
+    """Every c99 type the type-checked `prog` and its symbol table hold,
+    the types inside other types among them, each once (by its repr),
+    in the order of a walk over the program's fields and then the
+    table, with the types that have no fields first so that every one
+    is there."""
+    import dataclasses
+    import c99_ast
+    from passes.dataclass_fields import fields_of
+    seen: dict[str, object] = {}
+
+    def add(t) -> None:
+        seen.setdefault(repr(t), t)
+
+    for cls in (c99_ast.Int, c99_ast.Long, c99_ast.LongLong, c99_ast.UInt,
+                c99_ast.ULong, c99_ast.ULongLong, c99_ast.Float,
+                c99_ast.Double, c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+                c99_ast.Short, c99_ast.UShort, c99_ast.Bool,
+                c99_ast.NullptrT, c99_ast.Void):
+        add(cls())
+    # The corpus has few bit-precise types and qualified pointers, so a
+    # set of them is in every record too.
+    for width in (1, 2, 3, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 48, 63, 64):
+        add(c99_ast.BitInt(width=width, is_signed=False))
+        if width >= 2:
+            add(c99_ast.BitInt(width=width, is_signed=True))
+    add(c99_ast.Const(referenced_type=c99_ast.Volatile(
+        referenced_type=c99_ast.Int())))
+    add(c99_ast.Pointer(referenced_type=c99_ast.Const(
+        referenced_type=c99_ast.Void())))
+    add(c99_ast.Volatile(referenced_type=c99_ast.Pointer(
+        referenced_type=c99_ast.Void())))
+
+    def walk(v) -> None:
+        if isinstance(v, list):
+            for x in v:
+                walk(x)
+            return
+        if not dataclasses.is_dataclass(v) or isinstance(v, type):
+            return
+        if isinstance(v, c99_ast.Type_data_type):
+            add(v)
+        for f in fields_of(v):
+            walk(getattr(v, f.name))
+
+    walk(prog)
+    for _, sym in symbols.items():
+        walk(sym.type)
+    return list(seen.values())
+
+
+def front_values(types, decls, names) -> list[tuple[str, str]]:
+    """The values of the c99 type queries that the front end's passes
+    share (step 6 of the port), on the types of a type-checked program,
+    its top-level declarations, and the names of its symbol table. Each
+    value is the JSON list of one string per type (or per pair of
+    types, declaration, or name), with "." where a query doesn't apply.
+
+    - `c99_repr_type`, `c99_repr_decl`: Python's repr of each type and
+      declaration.
+    - `c99_strip_quals`, `c99_promote`: the repr of `_strip_quals` and
+      `_promote_integer` of each type.
+    - `c99_predicates`: a 0 or 1 for each of `_is_integer_type`,
+      `_is_floating_type`, `_is_pointer_type`, `_is_struct_or_union`,
+      `_is_array_type`, `_is_nullptr_type`, `_is_void`, and
+      `_is_void_pointer`.
+    - `c99_c_type`: `_c_type` of each type.
+    - `c99_int_queries`: `_int_width`, `_int_bits`, and `_is_signed` of
+      each integer type.
+    - `c99_rank`: `_rank` of each integer type the promotions leave.
+    - `c99_coerce`: `_coerce_int_to_type` of each of `_COERCE_VALUES`
+      for each integer type.
+    - `c99_common_type`: the repr of `_common_type` of each ordered pair
+      of the promoted arithmetic types, which are each arithmetic type's
+      `_promote_integer`, each once, in the order of the types.
+    - `c99_display_name`: `_display_name` of each name."""
+    from passes import type_checking as tc
+
+    def js(xs) -> str:
+        return json.dumps(list(xs))
+
+    def bit(b) -> str:
+        return "1" if b else "0"
+
+    ints = [tc._is_integer_type(t) for t in types]
+    promoted: dict[str, object] = {}
+    for t in types:
+        if tc._is_integer_type(t) or tc._is_floating_type(t):
+            p = tc._promote_integer(t)
+            promoted.setdefault(repr(p), p)
+    arith = list(promoted.values())
+    ranked = (tc.Int, tc.UInt, tc.Long, tc.ULong, tc.LongLong, tc.ULongLong,
+              tc.BitInt)
+    return [
+        ("c99_repr_type", js(repr(t) for t in types)),
+        ("c99_repr_decl", js(repr(d) for d in decls)),
+        ("c99_strip_quals", js(repr(tc._strip_quals(t)) for t in types)),
+        ("c99_promote", js(repr(tc._promote_integer(t)) for t in types)),
+        ("c99_predicates", js(
+            "".join(bit(f(t)) for f in (
+                tc._is_integer_type, tc._is_floating_type,
+                tc._is_pointer_type, tc._is_struct_or_union,
+                tc._is_array_type, tc._is_nullptr_type, tc._is_void,
+                tc._is_void_pointer,
+            ))
+            for t in types)),
+        ("c99_c_type", js(tc._c_type(t) for t in types)),
+        ("c99_int_queries", js(
+            f"{tc._int_width(t)},{tc._int_bits(t)},{bit(tc._is_signed(t))}"
+            if is_int else "."
+            for t, is_int in zip(types, ints))),
+        ("c99_rank", js(
+            ",".join(map(str, tc._rank(t))) if isinstance(t, ranked) else "."
+            for t in types)),
+        ("c99_coerce", js(
+            ",".join(str(tc._coerce_int_to_type(v, t))
+                     for v in _COERCE_VALUES) if is_int else "."
+            for t, is_int in zip(types, ints))),
+        ("c99_common_type", js(
+            repr(tc._common_type(a, b)) for a in arith for b in arith)),
+        ("c99_display_name", js(tc._display_name(n) for n in names)),
+    ]
+
+
+def _record_front(result) -> None:
+    """Writes a `c99types` record of what the type checker returned:
+    one line of JSON with the dumps of its types (`_c99_types`) and of
+    its top-level declarations, and the names of its symbol table."""
+    import c99_ast
+    prog, symbols, _ = result
+    types = _c99_types(prog, symbols)
+    decls = prog.declaration
+    names = [name for name, _ in symbols.items()]
+    body = json.dumps({
+        "types": [capture_passes.dump(t) for t in types],
+        "decls": [
+            capture_passes.dump(c99_ast.Program(declaration=[d]))
+            for d in decls
+        ],
+        "names": names,
+    }) + "\n"
+    k = hashlib.sha1(body.encode("utf-8")).hexdigest()
+    if (_OUT / "c99types" / f"{k}.txt").exists():
+        return
+    _write_keyed(
+        "c99types", k,
+        f"c6502-helpers 1\nsource {_SOURCE}\nc99types\n" + body,
+        front_values(types, decls, names),
+    )
+
+
+def _wrap_type_check(fn):
+    def wrapper(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        _record_front(result)
+        return result
+    return wrapper
 
 
 def _record_tac_opt(fn, ctx) -> None:
@@ -746,7 +922,16 @@ def _write_keyed(kind: str, key: str, head: str, values) -> None:
     tmp = path.with_name(f"{key}.{os.getpid()}.tmp")
     with open(tmp, "wb") as f:
         f.write(text.encode("utf-8"))
-    os.replace(tmp, path)
+    try:
+        os.replace(tmp, path)
+    except PermissionError:
+        # On Windows the rename fails while another worker renames its
+        # copy of the same record into place, which has the same key and
+        # so the same text (capture_passes._record does the same).
+        if not path.exists():
+            raise
+        tmp.unlink()
+        return
     _COUNTS[kind] += 1
 
 
@@ -843,15 +1028,22 @@ def _wrap_select_abi(fn):
     return wrapper
 
 
-def install(out: Path, stage_only: bool = False, tac_only: bool = False) -> None:
+def install(out: Path, stage_only: bool = False, tac_only: bool = False,
+            front_only: bool = False) -> None:
     """Wraps the passes in `compile`'s namespace to record the helpers'
     values under `out`. With `stage_only`, only the records of the code
-    generation helpers (`tables` and `pseudos`) are made, and with
+    generation helpers (`tables` and `pseudos`) are made, with
     `tac_only` only those of the TAC optimizer's helpers (`tacopt`),
-    made at each call of a pass of its driver."""
+    made at each call of a pass of its driver, and with `front_only`
+    only those of the c99 type queries (`c99types`), made at each call
+    of the type checker."""
     global _OUT
     import compile as compile_module
     _OUT = out
+    if front_only:
+        compile_module.type_check_program = _wrap_type_check(
+            compile_module.type_check_program)
+        return
     if tac_only:
         from passes.optimization.optimizer import _DRIVER
         for slot in capture_passes._DRIVER_SLOTS:
@@ -871,12 +1063,13 @@ def install(out: Path, stage_only: bool = False, tac_only: bool = False) -> None
                 _wrap_replace(getattr(compile_module, attr)))
 
 
-def _init_worker(out: str, stage_only: bool, tac_only: bool = False) -> None:
+def _init_worker(out: str, stage_only: bool, tac_only: bool = False,
+                 front_only: bool = False) -> None:
     # The values recorded are those the Python passes see, and they
     # don't run when C6502_CPP_BACKEND=1 hands the back end to the C++
     # port.
     os.environ.pop("C6502_CPP_BACKEND", None)
-    install(Path(out), stage_only, tac_only)
+    install(Path(out), stage_only, tac_only, front_only)
 
 
 def _run_job(job) -> tuple[str, bool, dict[str, int]]:
@@ -923,6 +1116,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="record only the code generation helpers")
     ap.add_argument("--tac-only", action="store_true",
                     help="record only the TAC optimizer's helpers")
+    ap.add_argument("--front-only", action="store_true",
+                    help="record only the c99 type queries of the front end")
     ns = ap.parse_args(argv)
     jobs = [
         (label, args, mode)
@@ -937,7 +1132,7 @@ def main(argv: list[str] | None = None) -> int:
     failed = 0
     with ProcessPoolExecutor(
         max_workers=ns.j, initializer=_init_worker,
-        initargs=(str(out), ns.stage_only, ns.tac_only),
+        initargs=(str(out), ns.stage_only, ns.tac_only, ns.front_only),
     ) as pool:
         for label, ok, counts in pool.map(_run_job, jobs, chunksize=1):
             if not ok:

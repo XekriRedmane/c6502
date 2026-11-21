@@ -10,8 +10,22 @@ std::string string(std::string_view s) {
   const char quote = (has_single && !has_double) ? '"' : '\'';
   static constexpr char kDigits[] = "0123456789abcdef";
   std::string out(1, quote);
-  for (const char ch : s) {
+  for (std::size_t i = 0; i < s.size(); ++i) {
+    const char ch = s[i];
     const auto c = static_cast<unsigned char>(ch);
+    // U+0080 to U+00A0 and U+00AD, which a `str` that holds bytes
+    // spells as code points, aren't printable, so Python writes them
+    // as `\x80` and so on. They are 0xC2 and a second byte in UTF-8.
+    if (c == 0xC2 && i + 1 < s.size()) {
+      const auto next = static_cast<unsigned char>(s[i + 1]);
+      if ((next >= 0x80 && next <= 0xA0) || next == 0xAD) {
+        out += "\\x";
+        out += kDigits[next >> 4];
+        out += kDigits[next & 0xF];
+        ++i;
+        continue;
+      }
+    }
     if (ch == quote || ch == '\\') {
       out += '\\';
       out += ch;

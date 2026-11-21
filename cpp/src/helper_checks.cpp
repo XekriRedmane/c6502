@@ -554,6 +554,10 @@ std::size_t value_count(const std::string& name, const std::string& value) {
       // (`tac_opt_values`).
       "max_value", "type_queries", "rewrite_vars", "rewrite_consts",
   };
+  // The c99 type queries' (`front_values`), a JSON list each.
+  if (name.rfind("c99_", 0) == 0) {
+    return json::parse(value).items.size();
+  }
   if (name == "runtime_bytes") {
     return static_cast<std::size_t>(std::count(value.begin(), value.end(), ',')) + 1;
   }

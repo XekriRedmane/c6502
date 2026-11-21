@@ -421,6 +421,8 @@ int cmd_check_helpers(const std::vector<std::string>& args) {
         got = helper_checks::pseudo_values(json::parse(dump));
       } else if (kind == "tacopt") {
         got = helper_checks::tac_opt_values(json::parse(dump));
+      } else if (kind == "c99types") {
+        got = helper_checks::front_values(json::parse(dump));
       } else {
         throw std::runtime_error("unknown record kind " + kind);
       }

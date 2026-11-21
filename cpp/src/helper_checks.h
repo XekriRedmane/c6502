@@ -66,6 +66,13 @@ Values pseudo_values(const json::Value& v);
 // operands, and the SSA names (src/tac_helper_checks.cpp).
 Values tac_opt_values(const json::Value& v);
 
+// Returns the values `front_values` in tools/capture_helpers.py gives
+// for the c99 type queries on a `c99types` record, whose JSON object
+// `v` holds the dumps of the types and the top-level declarations of a
+// type-checked program and the names of its symbol table
+// (src/front_helper_checks.cpp).
+Values front_values(const json::Value& v);
+
 // Returns how many values the recorded value of helper `name` holds:
 // the number of fields separated by spaces for a helper whose value is
 // a list, one for a CFG and for the count of operands, and otherwise

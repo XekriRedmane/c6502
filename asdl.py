@@ -637,6 +637,14 @@ def _cpp_header(mod: Module, source: str, name: str) -> str:
                     f"{c.name} read({_RT}::Reader& r, {_RT}::Tag<{c.name}>);"
                 )
     out.append("")
+    out.append("// Python's `repr` of each value, the dataclass's: the class name")
+    out.append("// and each field as `name=value`. `asdl::py_repr` returns it.")
+    for t in mod.types:
+        out.append(f"void repr(std::string& out, const Type_{t.name}& v);")
+        if not t.is_product:
+            for c in t.constructors:
+                out.append(f"void repr(std::string& out, const {c.name}& v);")
+    out.append("")
     out.append(f"}}  // namespace c6502::{name}")
     return "\n".join(out) + "\n"
 
@@ -736,12 +744,68 @@ def _cpp_body_functions(
     return out
 
 
+def _cpp_repr_value(f: Field, expr: str, group: set[str],
+                    indent: str) -> list[str]:
+    """Returns the statements that append Python's `repr` of one element
+    `expr` of field `f` to `out`."""
+    if f.type in ("identifier", "string"):
+        return [f"{indent}out += ::c6502::pyrepr::string({expr});"]
+    if f.type == "int":
+        return [f"{indent}out += {_RT}::int_to_string({expr});"]
+    if f.type == "bool":
+        return [f'{indent}out += {expr} ? "True" : "False";']
+    if f.type in group and not f.sequence:
+        return [f"{indent}repr(out, *{expr});"]
+    return [f"{indent}repr(out, {expr});"]
+
+
+def _cpp_repr_field(f: Field, expr: str, group: set[str]) -> list[str]:
+    if f.sequence:
+        out = ['  out += "[";', "  {", "    bool first = true;"]
+        out.append(f"    for (const auto& e : {expr}) {{")
+        out.append('      if (!first) out += ", ";')
+        out.append("      first = false;")
+        out.extend(_cpp_repr_value(f, "e", group, "      "))
+        out.append("    }")
+        out.append("  }")
+        out.append('  out += "]";')
+        return out
+    if f.optional:
+        out = [f"  if ({expr}) {{"]
+        out.extend(_cpp_repr_value(f, f"(*{expr})", group, "    "))
+        out.append("  } else {")
+        out.append('    out += "None";')
+        out.append("  }")
+        return out
+    return _cpp_repr_value(f, expr, group, "  ")
+
+
+def _cpp_repr_function(struct: str, fields: list[Field],
+                       group: set[str]) -> list[str]:
+    """Returns the function that appends the Python dataclass's `repr`
+    of a constructor's (or product's) struct to `out`: the class name
+    and each field as `name=value`, in the order of the fields."""
+    param = " v" if fields else ""
+    out = [f"void repr(std::string& out, const {struct}&{param}) {{"]
+    out.append(f'  out += "{struct}(";')
+    for i, f in enumerate(fields):
+        sep = ", " if i else ""
+        out.append(f'  out += "{sep}{_field_name(f)}=";')
+        out.extend(_cpp_repr_field(f, f"v.{_cpp_member(f)}", group))
+    out.append('  out += ")";')
+    out.append("}")
+    out.append("")
+    return out
+
+
 def _cpp_source(mod: Module, source: str, name: str) -> str:
     out: list[str] = [
         f"// Generated from {source} by `asdl.py --cpp`. Do not edit.",
         f'#include "{name}.h"',
         "",
         "#include <utility>",
+        "",
+        '#include "pyrepr.h"',
         "",
         f"namespace c6502::{name} {{",
         "",
@@ -752,6 +816,7 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
             if t.is_product:
                 struct = f"Type_{t.name}"
                 out.extend(_cpp_body_functions(struct, t.name, t.fields, group))
+                out.extend(_cpp_repr_function(struct, t.fields, group))
                 out.append(
                     f"{struct} read({_RT}::Reader& r, {_RT}::Tag<{struct}>) {{"
                 )
@@ -763,6 +828,9 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
             for c in t.constructors:
                 out.extend(_cpp_body_functions(
                     c.name, c.name, _ctor_fields(t, c), group,
+                ))
+                out.extend(_cpp_repr_function(
+                    c.name, _ctor_fields(t, c), group,
                 ))
                 out.append(
                     f"{c.name} read({_RT}::Reader& r, {_RT}::Tag<{c.name}>) {{"
@@ -777,6 +845,15 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
             for i, c in enumerate(t.constructors):
                 out.append(f"    case {i}:")
                 out.append(f"      write(w, *std::get_if<{i}>(&v));")
+                out.append("      return;")
+            out.append("  }")
+            out.append("}")
+            out.append("")
+            out.append(f"void repr(std::string& out, const {sum_t}& v) {{")
+            out.append("  switch (v.index()) {")
+            for i, c in enumerate(t.constructors):
+                out.append(f"    case {i}:")
+                out.append(f"      repr(out, *std::get_if<{i}>(&v));")
                 out.append("      return;")
             out.append("  }")
             out.append("}")
@@ -804,9 +881,10 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
 
 def generate_cpp(mod: Module, source: str, name: str) -> dict[str, str]:
     """Returns the C++ files for module `mod` as a map from file name
-    to text: `<name>.h` with the types, their equality, and the dump
-    format's declarations, and `<name>.cpp` with the dump format's
-    readers and writers. `source` is the .asdl file's name, for the
+    to text: `<name>.h` with the types, their equality, and the
+    declarations of the dump format's functions and of Python's `repr`,
+    and `<name>.cpp` with the dump format's readers and writers and the
+    `repr` of each value. `source` is the .asdl file's name, for the
     header comment."""
     return {
         f"{name}.h": _cpp_header(mod, source, name),

@@ -206,6 +206,15 @@ std::string dump(const T& v) {
   return std::move(w.str());
 }
 
+// Returns Python's `repr` of the IR value `v`, as the generated
+// dataclass gives it, which the front end's messages show.
+template <class T>
+std::string py_repr(const T& v) {
+  std::string out;
+  repr(out, v);
+  return out;
+}
+
 // Returns the value of type `T` that `text` holds in the dump format.
 template <class T>
 T load(std::string_view text) {

@@ -15,8 +15,12 @@ namespace c6502::pyrepr {
 // Returns Python's `repr` of the string `s`: in single quotes, or in
 // double quotes when `s` holds a single quote and no double quote,
 // with a backslash, the quote, and the control characters escaped as
-// Python escapes them. Bytes from 0x80 up are copied, which gives
-// Python's form for a UTF-8 string of printable characters.
+// Python escapes them, and the code points U+0080 to U+00A0 and U+00AD
+// as `\x80` and so on, as Python writes those of a `str` that holds
+// bytes. Every other code point from U+0080 up is copied, which gives
+// Python's form for a UTF-8 string of printable characters. Python
+// escapes the unprintable ones above U+00FF too, which no message has
+// needed so far.
 std::string string(std::string_view s);
 
 // Returns `v` in decimal, as Python's `str` and `repr` give an int.

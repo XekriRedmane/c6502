@@ -1,8 +1,10 @@
-// The parts of passes/zp_globals.py that read the finished asm program:
+// The port of passes/zp_globals.py. `allocate_zp_globals`,
+// `plan_zero_page`, and `access_weights` (zp_globals_plan.cpp) decide
+// where each zero-page object goes before code generation, and the work
+// that reads the finished asm program (zp_globals.cpp) is
 // `place_zp_globals`, which drops the storage of the zero-page objects
 // and adds `__zp_init`, and `link_records`, which lists them for the
-// link metadata. Where each object goes is decided in Python
-// (`allocate_zp_globals`) before the back end runs.
+// link metadata.
 #pragma once
 
 #include <map>
@@ -13,7 +15,10 @@
 #include "asm_ast.h"
 #include "ordered_map.h"
 #include "passes/asm_context.h"
+#include "passes/runtime_layout.h"
+#include "passes/type_checking.h"
 #include "passes/zp_link_metadata.h"
+#include "tac_ast.h"
 
 namespace c6502::passes {
 
@@ -60,6 +65,43 @@ struct ZpGlobals {
 
   bool operator==(const ZpGlobals&) const = default;
 };
+
+// Returns where every `zeropage` object of `symbols` goes: the address
+// it was declared with, or the lowest free run below $80. The fixed
+// addresses are placed first, in the symbol table's order, then the
+// runtime's block (`choose_layout`, which calls `hargs_need` for the
+// number of HARGS bytes the program needs when the block has to move,
+// and takes the classic 32 when `hargs_need` is empty), then the rest.
+// An `extern` with no address and no definition goes in `external`
+// instead. With `weights` (the `access_weights` of the unit), the
+// globals that pay for it are then promoted into the bytes left. Also
+// collects the `address(addr)` functions and objects outside zero page
+// into `fixed`. Throws `CompileError("ZpGlobalError", ...)` for an
+// address out of range, an overlap, or a full range, and
+// `CompileError("RuntimeLayoutError", ...)` when the runtime's block
+// doesn't fit.
+ZpGlobals allocate_zp_globals(const SymbolTable& symbols, const TypeTable* types,
+                              const HargsNeed& hargs_need,
+                              const OrderedMap<std::string, asdl::Int>* weights);
+
+// Returns each name's weighted count of references in the TAC program
+// `prog`: every mention in an instruction other than `GetAddress`,
+// `Label`, or a jump's target, times 8 for each loop around it, up to 3
+// deep. A loop is the span from a label to a jump back to it. The names
+// are in the order of their first mention, as Python's dict holds them.
+OrderedMap<std::string, asdl::Int> access_weights(const tac_ast::Program& prog);
+
+// Returns `allocate_zp_globals` for a unit whose unoptimized TAC is
+// `prog`, with the weights of `access_weights` when `promote` (under
+// -O). Python sizes HARGS, when the runtime's block has to move, by
+// translating `prog` to asm with `tac_to_asm` and measuring it with
+// `hargs_need`. `unoptimized_hargs_need` stands for that measurement,
+// since `tac_to_asm` is ported by group C of step 4, and group F
+// connects it to that port when it builds the stage's driver. The
+// registry's runner gives it the HARGS size the record's result holds.
+ZpGlobals plan_zero_page(const tac_ast::Program& prog, const SymbolTable& symbols,
+                         const TypeTable* types, bool promote,
+                         const HargsNeed& unoptimized_hargs_need);
 
 // Returns `prog` without the `StaticVariable` of any zero-page object,
 // and with a function `__zp_init` that stores the initial bytes of

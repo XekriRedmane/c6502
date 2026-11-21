@@ -1,10 +1,10 @@
-// The helpers of passes/optimization/narrow_widened_arith.py that other
-// passes read: whether a Var keeps its value between two instructions,
-// the registration of a new temporary, the byte width and signedness of
-// a Var's type, and the narrowing of a constant to a width.
-// `recognize_indirect_indexed` and `sink_increment` read them. The pass
-// itself, `narrow_widened_arith`, is group D's of step 5, which adds it
-// to these files.
+// The port of passes/optimization/narrow_widened_arith.py: the pass
+// that narrows arithmetic on promoted bytes, and the helpers that other
+// passes read, which are whether a Var keeps its value between two
+// instructions, the registration of a new temporary, the byte width and
+// signedness of a Var's type, and the narrowing of a constant to a
+// width. `recognize_indirect_indexed` and `sink_increment` read the
+// helpers.
 #pragma once
 
 #include <optional>
@@ -27,6 +27,15 @@ namespace c6502::passes {
 // nothing in it. `ctx.ssa_dsts` and `ctx.symbols` must not be null.
 bool var_unchanged(const tac_ast::Var& var, std::size_t start, std::size_t end,
                    const framework::DefUseEnv& env, const framework::PassContext& ctx);
+
+// Returns `fn` with each `Truncate` of a wide Binary on promoted
+// operands replaced by the Binary at the Truncate's width, by the rules
+// of the .cpp's module comment (Python's `NarrowWidenedArith`), or `fn`
+// itself when none is. Outside SSA form, or without a symbol table, it
+// returns `fn`. A wide operand read through a new Truncate adds the
+// temporary `<src>.lo1` or `<src>.lo2` to the symbols and the SSA names.
+tac_ast::Function apply_narrow_widened_arith(tac_ast::Function fn,
+                                             const framework::PassContext& ctx);
 
 }  // namespace c6502::passes
 

@@ -102,6 +102,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/jump_thread.h"
 #include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
+#include "passes/optimization/narrow_widened_arith.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
 #include "passes/optimization/phi_offset.h"
@@ -206,7 +207,7 @@ PhaseDriver make_driver() {
       // %x, ConstUChar(C), %t)) wouldn't match the sinking pass's strict
       // shape, which would leave the AND's result live across the
       // branch and spill it to memory.
-      {"narrow_widened_arith", nullptr},
+      {"narrow_widened_arith", &apply_narrow_widened_arith},
       // `pos / 20`, `(style >> 5)`, and `price * (tier + 1)` on bytes
       // promoted to `int` as byte operations, when value_range bounds
       // the operands by 255.

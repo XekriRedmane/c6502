@@ -18,8 +18,11 @@ stages land.
   in, and each is ported too, so the C++ code aims at a fixed target.
 - **Scope.** Everything `compile.py`, `nm.py`, and `objdump.py` do
   moves to C++: preprocessing, parsing, every pass, assembly to ELF,
-  and linking. The simulator (`sim/`, on py65), the tests, and the
-  fuzzers stay in Python and drive the C++ executables.
+  and linking. On 21 Nov 2026 Robert widened the scope to the rest of
+  the repository's Python: the simulator (`sim/`, on py65), the test
+  suite, and the fuzzers move to C++ too, so that no Python is left.
+  Until step 9, the simulator, the tests, and the fuzzers stay in
+  Python and drive the C++ executables.
 - **The parser is written by hand,** as recursive descent with
   precedence climbing for expressions. It must give the ASTs and the
   error messages that `parser.py` gives today. `c99.lark` stops being
@@ -72,6 +75,14 @@ stages land.
 8. **Retiring the Python compiler.** The tests that call Python passes
    directly are ported to C++ unit tests or replaced by the corpus
    checks, and the Python compiler is removed.
+9. **The simulator, the tests, and the fuzzers.** A C++ 6502 simulator
+   replaces py65 and `sim/`, with the Python hooks that stand in for
+   the runtime helpers that have no 6502 code yet. It is checked
+   against py65 instruction by instruction (the registers, the flags,
+   the memory written, and the cycles) on the corpus's programs and on
+   the games' scripted runs. The test suite, the TAC interpreter
+   `tac_sim`, and the fuzzers with their reducer move to C++ programs
+   and doctest, and then no Python is left in the repository.
 
 ## Step 4: code generation and the asm optimizer
 

@@ -49,9 +49,10 @@ parsed by any tool.
   linker computes the layout and writes the executable.
 - `cpp_port.md` — the port of the compiler to C++, decided on 19 Nov
   2026: the decisions (stage by stage with the frozen Python compiler
-  as the byte-identical reference, the scope, the hand-written parser,
-  the build), how each stage is checked, the order of the stages, and
-  their status.
+  as the byte-identical reference, the scope, which since 21 Nov 2026
+  takes in the simulator, the tests, and the fuzzers, the hand-written
+  parser, the build), how each stage is checked, the order of the
+  stages, the surveys and groups of steps 4 to 6, and their status.
 - `calling_conventions.md` — user guide to c6502's two calling
   conventions. The soft stack: SSP and FP, a call traced through the
   caller's argument push, the prologue, the frame layout, and the

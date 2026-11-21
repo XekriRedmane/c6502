@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 
+#include "c99_to_tac_stage.h"
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
@@ -227,11 +228,13 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_fold_short_circuit_jump"),
       tac_pass("tac_thread_known_compares"),
       // The program-level calls. `c99_to_tac` changes the c99 program
-      // it is given, which its `mutated` line holds under `input`.
+      // it is given, which its `mutated` line holds under `input`. The
+      // unit tests pass no type table.
       {.name = "c99_to_tac",
        .input = "c99_ast",
-       .args = {rt<Sym>, rt<Types>},
-       .output_module = "tac_ast"},
+       .args = {rt<Sym>, rt<Optional<Types>>},
+       .output_module = "tac_ast",
+       .run = &c99_to_tac::run_c99_to_tac},
       {.name = "inline_functions",
        .input = "tac_ast",
        .args = {rt<Sym>, rt<C99ProgramC>},

@@ -215,5 +215,140 @@ class TestStageCapture(unittest.TestCase):
                       result.stdout)
 
 
+class TestTacTables(unittest.TestCase):
+    def test_every_tac_stage_function_resolves(self):
+        for name, target in capture_passes.TAC_STAGE_PASSES.items():
+            with self.subTest(name=name):
+                module, attr = capture_passes.resolve(target)
+                self.assertTrue(callable(getattr(module, attr)))
+
+    def test_tac_names_are_new(self):
+        # The names of step 5 don't take one of the asm passes' or the
+        # stage calls', which `install` would wrap instead.
+        older = {**capture_passes.PASSES, **capture_passes.STAGE_PASSES}
+        for name in [*capture_passes.tac_passes(),
+                     *capture_passes.TAC_STAGE_PASSES]:
+            self.assertNotIn(name, older)
+
+    def test_every_tac_call_has_a_cpp_signature(self):
+        # The signatures of step 5 are in
+        # cpp/src/passes/optimization/tac_stage.cpp, in the harness's
+        # order: the driver's calls on one function, then the
+        # program-level ones.
+        source = (
+            _ROOT / "cpp" / "src" / "passes" / "optimization" / "tac_stage.cpp"
+        ).read_text(encoding="utf-8")
+        names = re.findall(r'(?:\{\.name = |tac_pass\()"(\w+)"', source)
+        self.assertEqual(names, [*capture_passes.tac_passes(),
+                                 *capture_passes.TAC_STAGE_PASSES])
+
+
+class TestTacCapture(unittest.TestCase):
+    """Records the TAC optimizer's calls of `fold_truncate_extend` and
+    the calls of `c99_to_tac` on one example, and checks that the
+    symbols a record holds are enough to run the pass again."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = Path(cls.tmp.name) / "captures"
+        saved = compile_module.translate_to_tac
+        try:
+            capture_passes.install(
+                ["tac_fold_truncate_extend", "tac_to_ssa", "c99_to_tac"],
+                cls.out,
+            )
+            capture_passes._SOURCE = "examples/apply_bobble.c -S -O"
+            src = _ROOT / "examples" / "apply_bobble.c"
+            with mock.patch.dict(os.environ):
+                os.environ.pop("C6502_CPP_BACKEND", None)
+                assert compile_module.main([
+                    "compile.py", str(src), "-S", "-O",
+                    "-o", os.path.join(cls.tmp.name, "out.s"),
+                ]) == 0
+        finally:
+            compile_module.translate_to_tac = saved
+            capture_passes.uninstall_tac()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _texts(self, name):
+        return [p.read_bytes().decode("utf-8")
+                for p in sorted((self.out / name).glob("*.txt"))]
+
+    def test_recorded_symbols_are_enough(self):
+        import json
+        import tac_ast
+        from passes.optimization.framework import PassContext
+        from passes.optimization.truncate_extend_fold import FoldTruncateExtend
+        texts = self._texts("tac_fold_truncate_extend")
+        self.assertTrue(texts)
+        for text in texts:
+            head, _, rest = text.partition("\ninput\n")
+            args = json.loads(head.split("\n")[3][len("args "):])
+            symbols = _decode_table(args["kwargs"]["symbols"])
+            ssa = set(args["kwargs"]["ssa_dsts"]["set"])
+            input_text, _, output_text = rest.partition("\noutput\n")
+            fn = ir_dump.load(input_text, tac_ast)
+            got = FoldTruncateExtend().run(
+                fn, PassContext(symbols=symbols, ssa_dsts=ssa))
+            self.assertEqual(ir_dump.dump(got), output_text)
+
+    def test_to_ssa_records_the_symbols_it_adds(self):
+        [text] = self._texts("tac_to_ssa")
+        self.assertIn("\nmutated {\"args\": {}, \"kwargs\": {\"symbols\": ",
+                      text)
+        self.assertIn("\noutput-json\n{\"tuple\": [", text)
+
+    def test_c99_to_tac_records_its_tables(self):
+        [text] = self._texts("c99_to_tac")
+        self.assertIn("\ninput\nProgram([", text)
+        # It adds its temporaries to the symbol table.
+        self.assertIn("\nmutated {\"args\": {\"0\": ", text)
+
+    @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+    def test_cpp_reads_every_value_back(self):
+        result = subprocess.run(
+            [cpp_cli(), "check-captures", str(self.out)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        n = len(self._texts("tac_fold_truncate_extend"))
+        self.assertIn(f"tac_fold_truncate_extend: {n} calls, {n} round-trip",
+                      result.stdout)
+
+
+def _decode_table(v):
+    """The `SymbolTable` of a record's tagged JSON, with the symbols'
+    types and attributes as the type checker makes them."""
+    import c99_ast
+    from passes import type_checking
+    table = type_checking.SymbolTable()
+    for name, sym in v["fields"]["_table"]["dict"]:
+        f = sym["fields"]
+        attrs = f["attrs"]
+        cls = getattr(type_checking, attrs["object"].rsplit(".", 1)[1])
+        table[name] = type_checking.Symbol(
+            type=ir_dump.load(f["type"]["dump"], c99_ast),
+            attrs=_decode_attrs(cls, attrs["fields"]),
+        )
+    return table
+
+
+def _decode_attrs(cls, fields):
+    """An attribute object of `cls` from its recorded fields. Only the
+    plain fields of `LocalAttr` and the like are decoded; a field of
+    another form is left at its default, since `fold_truncate_extend`
+    reads only the types."""
+    plain = {k: v for k, v in fields.items()
+             if v is None or type(v) in (bool, int, str)}
+    try:
+        return cls(**plain)
+    except TypeError:
+        return cls.__new__(cls)
+
+
 if __name__ == "__main__":
     unittest.main()

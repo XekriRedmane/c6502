@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "passes/optimization/tac_stage.h"
 #include "passes/optimization_asm/optimizer_stage.h"
 #include "passes/optimization_asm/regalloc_stage.h"
 #include "passes/optimization_asm/ssa_stage.h"
@@ -352,7 +353,14 @@ std::vector<StageSignature> make_signatures() {
 }  // namespace
 
 const std::vector<StageSignature>& stage_signatures() {
-  static const std::vector<StageSignature> signatures = make_signatures();
+  static const std::vector<StageSignature> signatures = [] {
+    // The calls of step 4, then those of step 5.
+    std::vector<StageSignature> all = make_signatures();
+    for (auto& s : tac_stage::signatures()) {
+      all.push_back(std::move(s));
+    }
+    return all;
+  }();
   return signatures;
 }
 

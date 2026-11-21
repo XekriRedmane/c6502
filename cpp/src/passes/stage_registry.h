@@ -50,9 +50,13 @@ struct StageSignature {
   std::vector<RoundTrip> args;
   // The codecs of the keyword arguments the call may be given.
   std::vector<std::pair<std::string_view, RoundTrip>> kwargs;
-  // The codec of the result, or null for a result that is an asm
-  // program, which the record holds as its dump.
+  // The codec of the result, or null for a result that is an IR value,
+  // which the record holds as its dump.
   RoundTrip output = nullptr;
+  // The IR module of a result that the record holds as its dump: an asm
+  // program for the calls of step 4, and a TAC program or function for
+  // those of step 5 (src/passes/optimization/tac_stage.h).
+  std::string_view output_module = "asm_ast";
   // The port of the call, or null when it isn't ported yet.
   StageRun run = nullptr;
 };

@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "asm_ast.h"
+#include "c99_ast.h"
 #include "json.h"
 #include "tac_ast.h"
 #include "tagged_json.h"
@@ -16,9 +17,12 @@ namespace {
 using json::Value;
 
 // Returns the dump of the program `text` holds in module `module`,
-// read and written again. An asm function, the input of the asm
-// optimizer's calls on one function, is read as a top-level item.
+// read and written again. An asm or TAC function, the input of the
+// calls on one function, is read as a top-level item.
 std::string redump(std::string_view module, const std::string& text) {
+  if (module == "c99_ast") {
+    return asdl::dump(asdl::load<c99_ast::Program>(text));
+  }
   if (module == "asm_ast" && text.rfind("Function(", 0) == 0) return asdl::dump(asdl::load<asm_ast::Type_top_level>(text));
   if (module == "tac_ast" && text.rfind("Function(", 0) == 0) {
     return asdl::dump(asdl::load<tac_ast::Type_top_level>(text));
@@ -83,7 +87,16 @@ std::string redo_mutated(const passes::StageSignature& sig, const Value& mutated
   if (positional == nullptr || keywords == nullptr) {
     throw std::runtime_error("the mutated line isn't {\"args\": ..., \"kwargs\": ...}");
   }
-  std::string out = "{\"args\": {";
+  std::string out = "{";
+  // A call that changes its first argument (`c99_to_tac`) records it as
+  // it is after the call under `input`.
+  if (const Value* input = mutated.get("input")) {
+    if (sig.input != "c99_ast") {
+      throw std::runtime_error("the mutated line changes an input the signature can't read");
+    }
+    out += "\"input\": " + tagged::round_trip<tagged::C99ProgramC>(*input) + ", ";
+  }
+  out += "\"args\": {";
   for (std::size_t i = 0; i < positional->items.size(); ++i) {
     if (i != 0) {
       out += ", ";
@@ -148,7 +161,7 @@ void check_tables(const capture::Call& call, const passes::StageSignature& sig) 
     }
   } else if (sig.output != nullptr) {
     throw std::runtime_error("the result is a dump, and the signature has a codec for JSON");
-  } else if (redump("asm_ast", call.output) != call.output) {
+  } else if (redump(sig.output_module, call.output) != call.output) {
     throw std::runtime_error("the result's dump differs from the recorded one");
   }
 }

@@ -315,11 +315,74 @@ STAGE_PASSES = {
 # predecessor labels of its input's `Phi`s when it splits an edge.
 _COPIES_INPUT = frozenset({"from_ssa"})
 
+# The program-level calls of step 5 of the port (docs/cpp_port.md):
+# `c99_to_tac`, the inliner, and the TAC passes that
+# `translate_for_codegen` and `_optimized_tac` run, with the TAC
+# optimizer's calls of `optimize_function`. They are recorded as the
+# calls of `STAGE_PASSES` are, under these names, and
+# tests/test_capture_passes.py checks the table against
+# cpp/src/passes/optimization/tac_stage.cpp.
+TAC_STAGE_PASSES = {
+    "c99_to_tac": "translate_to_tac",
+    "inline_functions": "inline_functions",
+    "return_pointers_in_zero_page": "return_pointers_in_zero_page",
+    "row_address_tables": "apply_row_address_tables",
+    "optimize_tac": "optimize_tac",
+    "tac_optimize_function": "passes.optimization.optimizer:optimize_function",
+    "dispatch_const_pointer_arrays": "dispatch_const_pointer_arrays",
+    "split_tables": "apply_split_tables",
+}
+
+# The stage calls that change their first argument in place where the
+# caller reads it again. `c99_to_tac` replaces `short`, `nullptr_t`,
+# `bool`, and the bit-precise types in the c99 program it is given, and
+# compile.py hands that program to `select_abi` afterward, so the
+# record's `mutated` line holds the program after the call under
+# `input`.
+_MUTATES_INPUT = frozenset({"c99_to_tac"})
+
+# The prefix of the capture names of the TAC optimizer's per-function
+# calls (`tac_passes`), which keeps them apart from the asm passes of
+# the same name, such as `copy_propagate`.
+TAC_PREFIX = "tac_"
+
+
+def tac_passes() -> dict[str, tuple[str, int]]:
+    """Every call the TAC optimizer's `PhaseDriver` makes on one
+    function, by capture name: `tac_<name>` for each pass of its six
+    lists, by the pass's `name`, with the list and the position of the
+    pass in it, and `tac_to_ssa` and `tac_from_ssa` for the SSA
+    construction and destruction it runs between them, with the list
+    "driver"."""
+    from passes.optimization.optimizer import _DRIVER
+    out: dict[str, tuple[str, int]] = {
+        f"{TAC_PREFIX}to_ssa": ("driver", 0),
+        f"{TAC_PREFIX}from_ssa": ("driver", 1),
+    }
+    for slot in _DRIVER_SLOTS:
+        for i, p in enumerate(getattr(_DRIVER, slot)):
+            name = f"{TAC_PREFIX}{p.name}"
+            if name in out:
+                raise AssertionError(f"two TAC passes are named {p.name}")
+            out[name] = (slot, i)
+    return out
+
+
+# The lists of `PhaseDriver`, in the order it runs them.
+_DRIVER_SLOTS = (
+    "pre_ssa", "pre_fixedpoint", "fixedpoint", "post_fixedpoint",
+    "post_destruction", "post_destruction_fixedpoint",
+)
+
 
 def all_passes() -> dict[str, str]:
-    """Every call the harness can record, `PASSES` and `STAGE_PASSES`
-    together."""
-    return {**PASSES, **STAGE_PASSES}
+    """Every call the harness can record, `PASSES`, `STAGE_PASSES`,
+    `TAC_STAGE_PASSES`, and the TAC optimizer's per-function calls
+    (`tac_passes`), the last by the list each pass is in."""
+    return {
+        **PASSES, **STAGE_PASSES, **TAC_STAGE_PASSES,
+        **{name: slot for name, (slot, _) in tac_passes().items()},
+    }
 
 
 def resolve(target: str):
@@ -614,18 +677,13 @@ def _wrap_stage(name: str, fn):
             changed_kwargs = {
                 k: v for k, v in after[1].items() if v != before[1][k]
             }
-            mutated = None
-            if changed_args or changed_kwargs:
-                mutated = (
-                    '{"args": {' + ", ".join(
-                        f'"{i}": {v}' for i, v in changed_args.items())
-                    + '}, "kwargs": {' + ", ".join(
-                        f"{json.dumps(k)}: {v}"
-                        for k, v in changed_kwargs.items())
-                    + "}}"
-                )
+            input_after = None
             if input_section() != input_text:
-                raise TypeError("the call changed its first argument in place")
+                if name not in _MUTATES_INPUT:
+                    raise TypeError(
+                        "the call changed its first argument in place")
+                input_after = json.dumps(encode(args[0]))
+            mutated = _mutated_json(changed_args, changed_kwargs, input_after)
             _record(name, input_text, _call_json(*before), result,
                     mutated=mutated, context=context)
         except (ir_dump.DumpError, TypeError) as e:
@@ -634,20 +692,273 @@ def _wrap_stage(name: str, fn):
     return wrapper
 
 
+def _mutated_json(changed_args: dict[str, str], changed_kwargs: dict[str, str],
+                  input_after: str | None = None) -> str | None:
+    """The `mutated` line's JSON from the texts of the changed arguments'
+    encodings, by position and by keyword, and of the first argument
+    after the call when the call changed it (`_MUTATES_INPUT`), or None
+    when the call changed nothing."""
+    if not changed_args and not changed_kwargs and input_after is None:
+        return None
+    head = "{" if input_after is None else '{"input": ' + input_after + ", "
+    return (
+        head + '"args": {' + ", ".join(
+            f'"{i}": {v}' for i, v in changed_args.items())
+        + '}, "kwargs": {' + ", ".join(
+            f"{json.dumps(k)}: {v}" for k, v in changed_kwargs.items())
+        + "}}"
+    )
+
+
+# --- The TAC optimizer's per-function calls ---
+
+def _table_positions(table: dict) -> dict[str, int]:
+    """The position of each name in a symbol table's dict. The dict only
+    grows, so the positions are computed again only when its length
+    changes."""
+    cached = _POSITIONS.get(id(table))
+    if cached is None or cached[0] != len(table) or cached[2] is not table:
+        cached = (len(table), {k: i for i, k in enumerate(table)}, table)
+        _POSITIONS[id(table)] = cached
+    return cached[1]
+
+
+_POSITIONS: dict[int, tuple] = {}
+
+
+def _encode_table(entries: list) -> dict:
+    """The tagged JSON that `encode` gives a `SymbolTable` holding
+    `entries`, a list of (name, encoded symbol) pairs."""
+    return {"object": "passes.type_checking.SymbolTable",
+            "fields": {"_table": {"dict": [[k, v] for k, v in entries]}}}
+
+
+def _recording_table(real):
+    """A `SymbolTable` that passes every read and write on to `real` and
+    keeps the names a call reads and writes, so that the record holds
+    only the symbols the call looked at (`Recording`). The class is
+    made on first use, since passes.type_checking imports the front
+    end."""
+    global _RecordingTable
+    if _RecordingTable is None:
+        from passes.type_checking import SymbolTable
+
+        class Recording(SymbolTable):
+            """The symbol table one recorded call sees. `seen` maps each
+            name read before the call wrote it to the encoding of its
+            symbol at that read, or None when the table didn't hold it.
+            `written` lists the names written, in order. A call that
+            walks every entry (`items`, `len`) reads the whole table, and
+            is recorded with all of it (`full`)."""
+
+            def __init__(self, real):  # noqa: D107 - documented above
+                self.real = real
+                self.root = (real.root if isinstance(real, Recording)
+                             else real._table)
+                self.seen: dict[str, object] = {}
+                self.written: dict[str, None] = {}
+                self.full = False
+
+            def _read(self, name):
+                if name not in self.seen and name not in self.written:
+                    sym = self.real.get(name)
+                    self.seen[name] = None if sym is None else encode(sym)
+
+            def __contains__(self, name):
+                self._read(name)
+                return name in self.real
+
+            def __getitem__(self, name):
+                self._read(name)
+                return self.real[name]
+
+            def get(self, name):
+                self._read(name)
+                return self.real.get(name)
+
+            def __setitem__(self, name, sym):
+                self._read(name)
+                self.written.setdefault(name, None)
+                self.real[name] = sym
+
+            def items(self):
+                self.full = True
+                return self.real.items()
+
+            def __len__(self):
+                self.full = True
+                return len(self.real)
+
+            def before(self) -> dict:
+                """The encoding of the symbols the call read, as they
+                were before it, in the table's order. A full table
+                leaves out the names the call added."""
+                if self.full:
+                    names = [k for k in self.root
+                             if k not in self.written
+                             or self.seen.get(k) is not None]
+                else:
+                    pos = _table_positions(self.root)
+                    names = sorted(
+                        (k for k, v in self.seen.items() if v is not None),
+                        key=pos.__getitem__,
+                    )
+                return _encode_table([
+                    (k, self.seen[k] if self.seen.get(k) is not None
+                     else encode(self.root[k]))
+                    for k in names
+                ])
+
+            def after(self) -> dict:
+                """The encoding of the symbols the call read or wrote, as
+                they are after it, in the table's order."""
+                if self.full:
+                    names = list(self.root)
+                else:
+                    pos = _table_positions(self.root)
+                    names = sorted(
+                        {*(k for k, v in self.seen.items() if v is not None),
+                         *self.written},
+                        key=pos.__getitem__,
+                    )
+                return _encode_table([(k, encode(self.root[k])) for k in names])
+
+        _RecordingTable = Recording
+    return _RecordingTable(real)
+
+
+_RecordingTable = None
+
+
+def _tac_record(name: str, fn, symbols, ssa_dsts, call, result_of):
+    """Runs `call(table)` for one of the TAC optimizer's calls on the
+    function `fn`, where `table` is a recording view of `symbols`
+    (`_recording_table`), and records the call with the symbols it read
+    and `ssa_dsts` as the keyword arguments `symbols` and `ssa_dsts`,
+    the ones it changed on the `mutated` line, and the result and the
+    SSA names after it that `result_of` takes from what `call`
+    returns. Returns what `call` returns."""
+    import ir_dump
+    context = context_json()
+    try:
+        input_text = "input\n" + ir_dump.dump(fn)
+        ssa_before = json.dumps(encode(ssa_dsts))
+    except (ir_dump.DumpError, TypeError) as e:
+        _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
+        return call(symbols)
+    table = None if symbols is None else _recording_table(symbols)
+    returned = call(table)
+    try:
+        result, ssa_after = result_of(returned)
+        before = {
+            "symbols": "null" if table is None else json.dumps(table.before()),
+            "ssa_dsts": ssa_before,
+        }
+        changed = {}
+        if table is not None:
+            after = json.dumps(table.after())
+            if after != before["symbols"]:
+                changed["symbols"] = after
+        ssa_now = json.dumps(encode(ssa_after))
+        if ssa_now != ssa_before:
+            changed["ssa_dsts"] = ssa_now
+        if "input\n" + ir_dump.dump(fn) != input_text:
+            raise TypeError("the call changed its function in place")
+        _record(name, input_text, _call_json([], before), result,
+                mutated=_mutated_json({}, changed), context=context)
+    except (ir_dump.DumpError, TypeError) as e:
+        _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
+    return returned
+
+
+def _wrap_tac_pass(name: str, run):
+    """The wrapper of a pass's `run(fn, ctx)` in the TAC optimizer's
+    `PhaseDriver`. The pass sees a recording view of `ctx.symbols` for
+    the call, and `ctx.ssa_dsts` itself, which some passes add to."""
+    def wrapper(fn, ctx):
+        real = ctx.symbols
+        ssa = ctx.ssa_dsts
+        before = None if ssa is None else set(ssa)
+
+        def call(table):
+            ctx.symbols = table
+            try:
+                return run(fn, ctx)
+            finally:
+                ctx.symbols = real
+
+        return _tac_record(name, fn, real, before, call,
+                           lambda r: (r, ctx.ssa_dsts))
+    return wrapper
+
+
+def _wrap_tac_ssa(name: str, function):
+    """The wrapper of `to_ssa(fn, symbols)` and `from_ssa(fn, symbols=)`
+    where the driver calls them. `to_ssa` returns the function and its
+    SSA names as a tuple, which is the record's result."""
+    def wrapper(fn, *args, **kwargs):
+        symbols = args[0] if args else kwargs.get("symbols")
+
+        def call(table):
+            if args:
+                return function(fn, table, *args[1:], **kwargs)
+            return function(fn, **{**kwargs, "symbols": table})
+
+        return _tac_record(name, fn, symbols, None, call,
+                           lambda r: (r, None))
+    return wrapper
+
+
 def install(passes: list[str], out: Path) -> None:
     """Replaces each pass of `passes` in `compile`'s namespace (or, for
-    an entry of `STAGE_PASSES` that names a module, in that module)
-    with a wrapper that records its calls under `out`."""
+    an entry of `STAGE_PASSES` or `TAC_STAGE_PASSES` that names a
+    module, in that module) with a wrapper that records its calls under
+    `out`. A pass of the TAC optimizer's driver (`tac_passes`) gets the
+    wrapper as its instance's `run`, and `tac_to_ssa` and
+    `tac_from_ssa` replace the names the driver's module calls;
+    `uninstall_tac` takes them out again."""
     global _OUT
     import compile as compile_module
     _OUT = out
+    tac = tac_passes()
     for name in passes:
-        if name in STAGE_PASSES:
-            module, attr = resolve(STAGE_PASSES[name])
+        if name in STAGE_PASSES or name in TAC_STAGE_PASSES:
+            target = STAGE_PASSES.get(name) or TAC_STAGE_PASSES[name]
+            module, attr = resolve(target)
             setattr(module, attr, _wrap_stage(name, getattr(module, attr)))
+            continue
+        if name in tac:
+            _install_tac(name, *tac[name])
             continue
         attr = PASSES[name]
         setattr(compile_module, attr, _wrap(name, getattr(compile_module, attr)))
+
+
+def _install_tac(name: str, slot: str, index: int) -> None:
+    """Wraps the TAC optimizer's call `name`, the pass at `index` in the
+    driver's list `slot`, or SSA construction or destruction."""
+    from passes.optimization.framework import driver
+    from passes.optimization.optimizer import _DRIVER
+    if slot == "driver":
+        attr = ("to_ssa", "from_ssa")[index]
+        setattr(driver, attr, _wrap_tac_ssa(name, getattr(driver, attr)))
+        return
+    p = getattr(_DRIVER, slot)[index]
+    p.run = _wrap_tac_pass(name, p.run)
+
+
+def uninstall_tac() -> None:
+    """Takes the wrappers of the TAC optimizer's calls out again, for
+    the tests, which install them in their own process."""
+    from passes.optimization.framework import driver
+    from passes.optimization.optimizer import _DRIVER
+    from passes.optimization.ssa_construction import to_ssa
+    from passes.optimization.ssa_destruction import from_ssa
+    driver.to_ssa = to_ssa
+    driver.from_ssa = from_ssa
+    for slot in _DRIVER_SLOTS:
+        for p in getattr(_DRIVER, slot):
+            p.__dict__.pop("run", None)
 
 
 # --- The corpus ---
@@ -728,7 +1039,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--passes", required=True,
                     help="comma-separated pass names, 'all' for those of "
-                         "PASSES, or 'stage' for those of STAGE_PASSES")
+                         "PASSES, 'stage' for those of STAGE_PASSES, "
+                         "'tac-stage' for those of TAC_STAGE_PASSES, or "
+                         "'tac' for the TAC optimizer's calls on one "
+                         "function")
     ap.add_argument("--out", default=str(_ROOT / "captures"),
                     help="where to write the captures (default captures/)")
     ap.add_argument("--corpus", default="examples,games,chapters,fuzz")
@@ -741,6 +1055,10 @@ def main(argv: list[str] | None = None) -> int:
         passes = list(PASSES)
     elif ns.passes == "stage":
         passes = list(STAGE_PASSES)
+    elif ns.passes == "tac-stage":
+        passes = list(TAC_STAGE_PASSES)
+    elif ns.passes == "tac":
+        passes = list(tac_passes())
     else:
         passes = ns.passes.split(",")
     unknown = [p for p in passes if p not in all_passes()]

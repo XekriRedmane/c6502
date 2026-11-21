@@ -6,6 +6,8 @@
 #include <utility>
 
 #include "passes/address_taken_zp.h"
+#include "passes/lower_data_load_address.h"
+#include "passes/replace_pseudoregisters.h"
 #include "passes/zp_slot_naming.h"
 #include "tagged_json.h"
 
@@ -21,6 +23,8 @@ using Colorings = DictOf<Str, ColoringC>;
 using Assignments = DictOf<Str, DictOf<Str, IntC>>;
 using AssignmentSymbols = DictOf<Str, DictOf<Str, Str>>;
 using SlotNames = DictOf<Str, ListOf<Str>>;
+using ByteNames = DictOf<Str, DictOf<IntC, Str>>;
+using Dims = DictOf<Str, FrameDimsC>;
 
 // Returns the argument at position `index` when the call gave that many
 // positional arguments, else the keyword argument `name`, or null when
@@ -82,6 +86,29 @@ StageOutput run_address_taken_slot_symbols(const capture::Call& call, const AsmC
   return {encode<DictOf<Str, Str>>(out), ""};
 }
 
+StageOutput run_replace_pseudoregisters_bare_exit(const capture::Call& call, const AsmContext&,
+                                                  const json::Value& args,
+                                                  const json::Value& kwargs) {
+  auto prog = asm_program(call);
+  const auto statics = decode_opt<NameSetC>(param(args, 0, kwargs, "extra_statics"));
+  const auto symbols = decode_opt<SymbolTableC>(param(args, 1, kwargs, "symbols"));
+  const auto types = decode_opt<TypeTableC>(param(args, 2, kwargs, "types"));
+  const auto colorings = decode_opt<Colorings>(param(args, 3, kwargs, "colorings"));
+  const auto layouts = decode_opt<AbiC>(param(args, 4, kwargs, "param_layouts"));
+  const auto pools = decode_opt<Pools>(param(args, 5, kwargs, "local_pools"));
+  const auto assignments =
+      decode_opt<Assignments>(param(args, 6, kwargs, "address_taken_assignments"));
+  const auto slot_symbols =
+      decode_opt<AssignmentSymbols>(param(args, 7, kwargs, "address_taken_symbols"));
+  const BareExitTables tables{.param_layouts = ptr(layouts),
+                              .local_pools = ptr(pools),
+                              .address_taken_assignments = ptr(assignments),
+                              .address_taken_symbols = ptr(slot_symbols)};
+  auto result = replace_program_bare_exit(std::move(prog), statics.value_or(NameSet{}),
+                                          ptr(symbols), ptr(types), ptr(colorings), tables);
+  return {encode<Pair<AsmProgramC, Dims>>(result), ""};
+}
+
 StageOutput run_local_slot_names(const capture::Call& call, const AsmContext&,
                                  const json::Value& args, const json::Value& kwargs) {
   const auto pools = Pools::decode(json::parse(call.input));
@@ -98,6 +125,28 @@ StageOutput run_local_slot_names(const capture::Call& call, const AsmContext&,
       decode_opt<AssignmentSymbols>(param(args, 2, kwargs, "address_taken_symbols"));
   return {encode<SlotNames>(
               compute_local_slot_names(pools, colorings, ptr(assignments), ptr(slot_symbols))),
+          ""};
+}
+
+StageOutput run_lower_data_load_address(const capture::Call& call, const AsmContext&,
+                                        const json::Value&, const json::Value& kwargs) {
+  auto prog = asm_program(call);
+  // Both are keyword-only in Python.
+  const auto slot_symbols = decode_opt<Addrs>(param(json::Value{}, 0, kwargs, "slot_symbols"));
+  const auto byte_names = decode_opt<ByteNames>(param(json::Value{}, 0, kwargs, "byte_names"));
+  return {asdl::dump(lower_data_load_address(std::move(prog), ptr(slot_symbols), ptr(byte_names))),
+          ""};
+}
+
+StageOutput run_replace_pseudoregisters(const capture::Call& call, const AsmContext&,
+                                        const json::Value& args, const json::Value& kwargs) {
+  auto prog = asm_program(call);
+  const auto statics = decode_opt<NameSetC>(param(args, 0, kwargs, "extra_statics"));
+  const auto symbols = decode_opt<SymbolTableC>(param(args, 1, kwargs, "symbols"));
+  const auto types = decode_opt<TypeTableC>(param(args, 2, kwargs, "types"));
+  const auto colorings = decode_opt<Colorings>(param(args, 3, kwargs, "colorings"));
+  return {asdl::dump(replace_program(std::move(prog), statics.value_or(NameSet{}), ptr(symbols),
+                                     ptr(types), ptr(colorings))),
           ""};
 }
 

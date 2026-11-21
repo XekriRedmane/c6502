@@ -9,9 +9,9 @@
 
 namespace c6502::passes {
 
-// Each function's frame, by name, as `replace_program_bare_exit`
-// returns it.
-using FrameDimsByFunction = OrderedMap<std::string, FrameDims>;
+// `FrameDimsByFunction`, each function's frame by name, is in
+// passes/replace_pseudoregisters.h with `replace_program_bare_exit`,
+// which returns it.
 
 // Returns `prog` with each function's prologue added and each bare
 // `Return` made a full `Ret`, from the function's frame in

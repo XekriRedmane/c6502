@@ -31,6 +31,7 @@
 #include "passes/peephole_fixedpoint.h"
 #include "passes/registry.h"
 #include "passes/stage_registry.h"
+#include "preprocessor_cases.h"
 #include "stage_checks.h"
 #include "tac_ast.h"
 
@@ -43,6 +44,7 @@ const char kUsage[] =
     "usage: c6502cpp roundtrip <module> [<file>]\n"
     "       c6502cpp check-captures [--pass <name>] [--verbose] [--got <dir>] <path>...\n"
     "       c6502cpp check-helpers [--verbose] <path>...\n"
+    "       c6502cpp check-preprocess [--verbose] <path>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
     "\n"
@@ -57,6 +59,11 @@ const char kUsage[] =
     "check-helpers reads the records of tools/capture_helpers.py under each\n"
     "<path>, computes the values of the shared asm helpers in C++, and\n"
     "compares them with the recorded ones.\n"
+    "\n"
+    "check-preprocess runs the preprocessor on each recorded call of\n"
+    "preprocessor.preprocess in the .json files under each <path>, with the\n"
+    "files the record holds, and compares the text, the error, the\n"
+    "warnings, and stderr with Python's (src/preprocessor_cases.h).\n"
     "\n"
     "backend reads a request of compile.py's (cpp_backend.py) from stdin,\n"
     "runs the back end's region on its program, or the region and the work\n"
@@ -466,6 +473,44 @@ int cmd_check_helpers(const std::vector<std::string>& args) {
   return (mismatches == 0 && failures == 0) ? 0 : 1;
 }
 
+// `check-preprocess`: checks each recorded call of the preprocessor
+// (src/preprocessor_cases.h), one JSON record per `.json` file.
+int cmd_check_preprocess(const std::vector<std::string>& args) {
+  bool verbose = false;
+  std::vector<fs::path> files;
+  for (const auto& a : args) {
+    if (a == "--verbose") {
+      verbose = true;
+    } else if (fs::is_directory(a)) {
+      for (const auto& entry : fs::recursive_directory_iterator(a)) {
+        if (entry.path().extension() == ".json") files.push_back(entry.path());
+      }
+    } else {
+      files.push_back(a);
+    }
+  }
+  std::sort(files.begin(), files.end());
+  std::size_t mismatches = 0;
+  for (const auto& path : files) {
+    std::ifstream in(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string mismatch;
+    try {
+      mismatch = preprocessor::check_recorded_call(text);
+    } catch (const std::exception& e) {
+      mismatch = std::string("exception: ") + e.what();
+    }
+    if (!mismatch.empty()) {
+      ++mismatches;
+      std::printf("MISMATCH %s: %s\n", path.string().c_str(),
+                  verbose ? mismatch.c_str() : mismatch.substr(0, mismatch.find('\n')).c_str());
+    }
+  }
+  std::printf("preprocess: %zu records, %zu match, %zu differ\n", files.size(),
+              files.size() - mismatches, mismatches);
+  return mismatches == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -484,6 +529,9 @@ int main(int argc, char** argv) {
     }
     if (command == "check-helpers") {
       return cmd_check_helpers(args);
+    }
+    if (command == "check-preprocess") {
+      return cmd_check_preprocess(args);
     }
     if (command == "backend" && args.empty()) {
       // A problem with the program goes back with its Python type, so

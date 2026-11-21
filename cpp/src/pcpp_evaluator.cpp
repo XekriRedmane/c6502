@@ -862,8 +862,8 @@ std::string EvalResult::str() const {
 
 std::string repr_str(std::string_view s) {
   const CodePoints cps = pyrepr::code_points(s);
-  const bool has_single = std::find(cps.begin(), cps.end(), '\'') != cps.end();
-  const bool has_double = std::find(cps.begin(), cps.end(), '"') != cps.end();
+  const bool has_single = std::find(cps.begin(), cps.end(), std::uint32_t{'\''}) != cps.end();
+  const bool has_double = std::find(cps.begin(), cps.end(), std::uint32_t{'"'}) != cps.end();
   const char quote = has_single && !has_double ? '"' : '\'';
   std::string out(1, quote);
   for (const auto c : cps) {

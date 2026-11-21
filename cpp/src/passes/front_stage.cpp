@@ -9,6 +9,7 @@
 #include "passes/label_resolution.h"
 #include "passes/loop_labeling.h"
 #include "passes/optimization_ast/unroll.h"
+#include "passes/preprocess_stage.h"
 #include "passes/type_checker.h"
 #include "pp_numbers.h"
 #include "tagged_json.h"
@@ -126,7 +127,8 @@ std::vector<StageSignature> signatures() {
       {.name = "preprocess",
        .input_json = rt<Str>,
        .args = {rt<ListOf<Str>>, rt<Optional<Str>>},
-       .output = rt<Str>},
+       .output = rt<Str>,
+       .run = &preprocess_stage::run},
       {.name = "parse", .input_json = rt<Str>, .output_module = "c99_ast"},
       {.name = "unroll_program",
        .input = "c99_ast",

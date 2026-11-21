@@ -93,6 +93,8 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
+#include "passes/optimization/phi_constant_fold.h"
+#include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/truncate_extend_fold.h"
 
 namespace c6502::passes {
@@ -120,7 +122,7 @@ PhaseDriver make_driver() {
       // can fold the arithmetic after it. SSA construction is done by
       // then, so the substitution doesn't disturb the chains of
       // definitions and uses (statics aren't promoted anyway).
-      {"fold_static_const_reads", nullptr},
+      {"fold_static_const_reads", &fold_static_const_reads},
   };
   d.fixedpoint = {
       {"constant_fold", &constant_fold},
@@ -129,7 +131,7 @@ PhaseDriver make_driver() {
       {"distribute_constant", nullptr},
       // An operation of a Phi of constants is computed in the Phi's
       // arguments, so `(c ? 3 : 2) + 1` joins 4 and 3.
-      {"fold_into_constant_phi", nullptr},
+      {"fold_into_constant_phi", &fold_into_constant_phis},
       // Strength reduction, as one RuleSet of rules for each operation
       // (a Multiply, Divide, or Modulo by a power of two).
       {"reduce_strength", nullptr},

@@ -10,6 +10,7 @@
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/optimizer.h"
+#include "passes/optimization/phi_constant_fold.h"
 #include "passes/optimization/phi_offset.h"
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
@@ -18,6 +19,7 @@
 #include "passes/optimization/sink_increment.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
+#include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
@@ -182,10 +184,10 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_rotate_signed_countdown_loops",
                &run_tac_pass<&rotate_signed_countdown_loops>),
       tac_pass("tac_noreturn_calls", &run_tac_pass<&noreturn_calls>),
-      tac_pass("tac_fold_static_const_reads"),
+      tac_pass("tac_fold_static_const_reads", &run_tac_pass<&fold_static_const_reads>),
       tac_pass("tac_constant_fold", &run_tac_pass<&constant_fold>),
       tac_pass("tac_distribute_constant"),
-      tac_pass("tac_fold_into_constant_phi"),
+      tac_pass("tac_fold_into_constant_phi", &run_tac_pass<&fold_into_constant_phis>),
       tac_pass("tac_reduce_strength"),
       tac_pass("tac_fold_producer_jumps"),
       tac_pass("tac_eliminate_dead_loops"),

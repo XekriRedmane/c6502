@@ -2165,6 +2165,32 @@ class TestPointerDeclarations(unittest.TestCase):
             ),
         )
 
+    def test_qualifiers_after_a_star_qualify_that_pointer(self):
+        # The first `*` written makes the pointer to the base type, so
+        # in `int * const * volatile p` the `const` qualifies the
+        # pointer to int, and `p` is a volatile pointer to it (C99
+        # §6.7.5.1p1). The parser used to apply the levels the other
+        # way round, which made `p` itself const.
+        ast = parse(
+            "int * const * volatile p;\n"
+            "unsigned n = sizeof(char * const *);\n"
+        )
+        cp_int = c99_ast.Const(
+            referenced_type=c99_ast.Pointer(referenced_type=c99_ast.Int()),
+        )
+        self.assertEqual(
+            ast.declaration[0].var_decl.data_type,
+            c99_ast.Volatile(
+                referenced_type=c99_ast.Pointer(referenced_type=cp_int),
+            ),
+        )
+        self.assertEqual(
+            ast.declaration[1].var_decl.init.target_type,
+            c99_ast.Pointer(referenced_type=c99_ast.Const(
+                referenced_type=c99_ast.Pointer(referenced_type=c99_ast.Char()),
+            )),
+        )
+
     def test_pointer_var_inside_function(self):
         # Block-scope pointer variable.
         ast = parse("int main(void) { int *q; return 0; }")

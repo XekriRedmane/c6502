@@ -2106,17 +2106,19 @@ def _typedef_declaration(prefix_attrs, init_decls, struct_decls):
 
 def _wrap_pointers(pointer_tree, base_type):
     """`pointer: STAR type_qualifier* pointer?`. Walks the nested
-    `pointer` chain (innermost-first in the parse tree, outermost-
-    last). Each level wraps `base_type` in `Pointer(...)` and applies
-    that level's `const` / `volatile` qualifiers via
-    `_apply_qualifiers` — e.g. `int * const` becomes
-    `Const(Pointer(Int))`, `volatile int *` becomes
-    `Pointer(Volatile(Int))`, `int * volatile` becomes
-    `Volatile(Pointer(Int))`. `restrict` is silently dropped."""
-    # Collect the per-level qualifier lists, innermost first. The
-    # parse tree's outermost `pointer` is the FIRST modifier, but we
-    # apply modifiers innermost-first as we wrap, so we walk the
-    # chain and reverse when applying.
+    `pointer` chain, whose outermost tree is the first `*` written.
+    Each level wraps `base_type` in `Pointer(...)` and applies that
+    level's `const` / `volatile` qualifiers via `_apply_qualifiers` —
+    e.g. `int * const` becomes `Const(Pointer(Int))`, `volatile int *`
+    becomes `Pointer(Volatile(Int))`, `int * volatile` becomes
+    `Volatile(Pointer(Int))`. `restrict` is silently dropped.
+
+    The first `*` written makes the pointer to the base type, and the
+    qualifiers after it qualify that pointer (C99 §6.7.5.1p1), so
+    `int * const * p` is a pointer to a const pointer to int,
+    `Pointer(Const(Pointer(Int)))`."""
+    # Collect the per-level qualifier lists in the order they're
+    # written, which is the order they wrap the base type in.
     levels: list[list] = []
     cur = pointer_tree
     while True:
@@ -2136,9 +2138,8 @@ def _wrap_pointers(pointer_tree, base_type):
         if inner is None:
             break
         cur = inner
-    # Apply innermost-first: levels[-1] is the deepest `*`, applied
-    # to the base type first.
-    for quals in reversed(levels):
+    # levels[0] is the first `*`, which applies to the base type first.
+    for quals in levels:
         base_type = c99_ast.Pointer(referenced_type=base_type)
         base_type = _apply_qualifiers(base_type, quals)
     return base_type

@@ -134,7 +134,7 @@ c6502 doesn't take GCC's `__attribute__((...))`; it takes C23 attributes, such a
 ])
 )~~"},
     {R"~~(int * const * pc; int *volatile pv;)~~", true, R"~~()~~", R"~~(Program([
-  VarDecl(var_decl("pc" None Const(Pointer(Pointer(Int))) None None None None false))
+  VarDecl(var_decl("pc" None Pointer(Const(Pointer(Int))) None None None None false))
   VarDecl(var_decl("pv" None Volatile(Pointer(Int)) None None None None false))
 ])
 )~~"},
@@ -196,6 +196,11 @@ c6502 doesn't take GCC's `__attribute__((...))`; it takes C23 attributes, such a
   VarDecl(var_decl("b" None Bool None None None None false))
   VarDecl(var_decl("b2" None Bool None None None None false))
   VarDecl(var_decl("cv" None Const(Volatile(Int)) None None None None false))
+])
+)~~"},
+    {R"~~(int * const * volatile p; unsigned n = sizeof(char * const *);)~~", true, R"~~()~~", R"~~(Program([
+  VarDecl(var_decl("p" None Volatile(Pointer(Const(Pointer(Int)))) None None None None false))
+  VarDecl(var_decl("n" SizeOfType(Pointer(Const(Pointer(Char))) None) UInt None None None None false))
 ])
 )~~"},
 };

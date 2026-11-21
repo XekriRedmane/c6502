@@ -23,13 +23,14 @@ namespace ir = c99_ast;
 namespace {
 
 // Returns `base` inside the pointers of `levels`, the qualifier tokens of
-// each `*` from the first one written. The last `*` applies to the base
+// each `*` from the first one written. The first `*` applies to the base
 // type first, and each level's `const` and `volatile` qualify the
-// pointer it makes (parser.py's `_wrap_pointers`).
+// pointer it makes (C99 §6.7.5.1p1), so `int * const * p` is a pointer
+// to a const pointer to int (parser.py's `_wrap_pointers`).
 Type wrap_pointers(const std::vector<std::vector<lark::Token>>& levels, Type base) {
-  for (auto it = levels.rbegin(); it != levels.rend(); ++it) {
+  for (const auto& quals : levels) {
     base = ir::Pointer{.referenced_type = std::move(base)};
-    base = apply_qualifiers(base, qualifier_kinds(*it));
+    base = apply_qualifiers(base, qualifier_kinds(quals));
   }
   return base;
 }

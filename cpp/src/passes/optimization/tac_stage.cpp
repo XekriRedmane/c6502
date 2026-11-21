@@ -4,19 +4,20 @@
 #include <string>
 #include <utility>
 
+#include "passes/optimization/constant_folding.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/framework.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/optimizer.h"
-#include "passes/optimization/ssa_construction.h"
-#include "passes/optimization/ssa_destruction.h"
 #include "passes/optimization/phi_offset.h"
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
 #include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/sink_increment.h"
+#include "passes/optimization/ssa_construction.h"
+#include "passes/optimization/ssa_destruction.h"
 #include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
@@ -182,7 +183,7 @@ std::vector<StageSignature> signatures() {
                &run_tac_pass<&rotate_signed_countdown_loops>),
       tac_pass("tac_noreturn_calls", &run_tac_pass<&noreturn_calls>),
       tac_pass("tac_fold_static_const_reads"),
-      tac_pass("tac_constant_fold"),
+      tac_pass("tac_constant_fold", &run_tac_pass<&constant_fold>),
       tac_pass("tac_distribute_constant"),
       tac_pass("tac_fold_into_constant_phi"),
       tac_pass("tac_reduce_strength"),

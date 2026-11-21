@@ -90,6 +90,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 
 #include <utility>
 
+#include "passes/optimization/constant_folding.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/truncate_extend_fold.h"
@@ -122,7 +123,7 @@ PhaseDriver make_driver() {
       {"fold_static_const_reads", nullptr},
   };
   d.fixedpoint = {
-      {"constant_fold", nullptr},
+      {"constant_fold", &constant_fold},
       // `(x - c) * k` on a widened byte `x` as `x * k - c * k`, before
       // strength reduction makes the multiply shifts.
       {"distribute_constant", nullptr},

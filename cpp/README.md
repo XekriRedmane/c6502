@@ -130,6 +130,13 @@ cpp/
                       ssa_destruction.*, loop_rotate.*, noreturn_call.*
                       the TAC optimizer's driver, its table of passes,
                       SSA, and the passes before SSA (step 5, group B)
+      optimization/extend_add_chain.*, recognize_indexed_load.*,
+                      recognize_indexed_store.*, recognize_indirect_indexed.*,
+                      direct_member_access.*, static_indexed_access.*,
+                      phi_offset.*, sink_increment.*, sink_and_past_branch.*
+                      the addressing and sinking passes (step 5, group F)
+      optimization/narrow_widened_arith.*   the helpers of that module that
+                      group F's passes read
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -698,6 +705,65 @@ pattern DSL of framework/patterns.py isn't ported.
 `fold_truncate_extend` and `fold_extend_extend`
 (`src/passes/optimization/truncate_extend_fold.*`) are the model of a
 pass on `run_def_use`.
+
+### Addressing and sinking (group F)
+
+The passes of group F of step 5 each have a header named for their
+Python module under `src/passes/optimization/`, and each takes the
+function and the `PassContext`, as the driver calls it:
+`recognize_indexed_load`, `recognize_indexed_store`, and
+`recognize_indirect_indexed`, which share the walk of
+`extend_add_chain.h`; `direct_member_access`; `static_indexed_access`;
+`phi_offset`; `sink_increments` (`sink_increment.h`); and
+`sink_and_past_branch`. Python's `DefUsePass` keeps the use counts of
+`prepare_extra` in `env.extra`, which the C++ `DefUseEnv` doesn't have,
+so each recognizer computes `count_uses` before the walk and reads it
+with `use_count` (`extend_add_chain.h`).
+
+These are the pieces that other groups read.
+
+- `extend_add_chain.h`: `is_1_byte_var` and `is_1_byte_val`, which
+  constant folding's `distribute_constant` reads, the walk
+  `recognize_extend_add_chain`, `UseCounts` and `use_count`, and
+  `all_dsts`.
+- `narrow_widened_arith.h`: `passes::var_unchanged` and, in
+  `passes::narrow_widened_arith`, `register_temp`, `narrow_constant`,
+  `byte_width`, and `is_unsigned`, the helpers of
+  narrow_widened_arith.py that `recognize_indirect_indexed` and
+  `sink_increment` read. Group D ports the module's pass into the same
+  files. `var_unchanged` reads an entry of `env.instructions` that an
+  earlier rewrite made a bare list as an instruction that does nothing.
+- `split_tables.h`: `width`, Python's `split_tables._width`.
+
+`recognize_indirect_indexed` finds the index of the access it rewrites
+by identity in Python (`recognize_indirect_indexed.py:359` and
+`:487`), which gives the first position of an object that sits at two.
+The C++ pass takes the index at which `run_def_use` calls the rewrite,
+which it counts in the rewrite, and every distinct call of the corpus
+matched. The temporaries that pass and `static_indexed_access` add
+(`<addr>.base`, `<ptr>.y<k>`, `<dst>.base<n>`) are registered before
+the rewrite is known to go ahead, as in Python, so a rewrite that
+declines or conflicts still leaves its symbol.
+
+On 21 Nov 2026 each pass matched the Python pass on every distinct
+call of the corpus: 9,273 calls each of `tac_recognize_indexed_load`
+and `tac_recognize_indexed_store`, 3,942 each of
+`tac_recognize_indirect_indexed`, `tac_static_indexed_access`, and
+`tac_phi_offset`, 9,275 of `tac_direct_member_access`, 9,267 of
+`tac_sink_increments`, and 9,243 of `tac_sink_and_past_branch`. Few of
+them change the function (2 of the indexed load's, 4 of the store's, 1
+of `phi_offset`'s, and 1 of `sink_and_past_branch`'s), so
+`tests/test_<module>.cpp` holds the calls that the Python unit tests
+of the eight modules make, recorded with the capture harness's wrappers
+on the driver's passes and on the entry points the tests call. Of their
+1,336 distinct calls, 1,334 matched, and the other two give a symbol a
+`StaticAttr` with no initial value, which the codec can't read, and
+match with a `NoInitializer` in its place. The tests hold the 230
+that changed the function or the symbols, or that a test of synthetic
+TAC made of an entry point, and the corpus calls that changed the
+function for the four passes above.
+`tests/test_extend_add_chain.cpp` holds cases of the walk's gates
+written by hand, with Python's results.
 
 The helpers that the TAC passes share have records of their own, which
 `tools/capture_helpers.py --tac-only` makes at each call of a pass of
@@ -1393,3 +1459,10 @@ Python results through `tests/stage_case.h`.
   `tac_noreturn_calls`, and on the 31 distinct calls of the Python unit
   tests (`tests/test_tac_ssa_calls.cpp`). The build is clean with MSVC
   19.36 and GCC 12.2.
+- 21 Nov 2026: group F of step 5 ("Addressing and sinking"): the three
+  addressing-mode recognizers and their shared walk,
+  `direct_member_access`, `static_indexed_access`, `phi_offset`,
+  `sink_increments`, and `sink_and_past_branch`, each matching the
+  Python pass on every distinct call of the corpus, 58,157 calls in
+  all, and on the calls of the Python unit tests, in the builds of
+  MSVC 19.36 and GCC 12.2.

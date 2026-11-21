@@ -860,3 +860,27 @@ unreachable-code elimination changed the Phis of its input in place
   the Python unit tests are C++ cases too. The runners of
   `tac_optimize_function` and `optimize_tac` are set once the table is
   full.
+- 21 Nov 2026: group F of step 5, addressing and sinking.
+  `recognize_indexed_load`, `recognize_indexed_store`, and
+  `recognize_indirect_indexed`, with the walk of `extend_add_chain`
+  they share, `direct_member_access`, `static_indexed_access`,
+  `phi_offset`, `sink_increments`, and `sink_and_past_branch` are
+  ported, each in `src/passes/optimization/<module>.*` with a runner in
+  tac_stage.cpp, and each matches the Python pass on every distinct
+  call of the corpus in the builds of MSVC 19.36 and GCC 12.2: 9,273
+  calls each of the two absolute,X recognizers, 3,942 each of
+  `recognize_indirect_indexed`, `static_indexed_access`, and
+  `phi_offset`, 9,275 of `direct_member_access`, 9,267 of
+  `sink_increments`, and 9,243 of `sink_and_past_branch`. Few corpus
+  calls of four of them change the function, so the C++ tests hold 230
+  calls that the Python unit tests make, recorded with Python's results
+  (cpp/README.md, "Addressing and sinking"). The helpers of
+  narrow_widened_arith.py that two of the passes read (`var_unchanged`,
+  `_register_temp`, `_byte_width`, `_is_unsigned`, and
+  `_narrow_constant`) are in
+  `src/passes/optimization/narrow_widened_arith.*`, which group D's
+  port of the module's pass extends, and `split_tables._width` is
+  `split_tables::width`. The one place among these passes that finds
+  an instruction by identity, the access of
+  `recognize_indirect_indexed`, takes the index at which the walk calls
+  the rewrite, and every call gave Python's result.

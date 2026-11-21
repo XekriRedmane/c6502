@@ -126,12 +126,22 @@ def _remove_unreachable_blocks(cfg: CFG) -> None:
         blk.successors = [s for s in blk.successors if s in reachable]
         if not dropped_labels:
             continue
-        for instr in blk.instructions:
-            if isinstance(instr, tac_ast.Phi):
-                instr.args = [
-                    a for a in instr.args
-                    if a.pred_label not in dropped_labels
-                ]
+        _filter_phi_args(blk, lambda a: a.pred_label not in dropped_labels)
+
+
+def _filter_phi_args(blk, keep) -> None:
+    """Replaces each `Phi` of `blk` with one holding the arguments
+    `keep` accepts. The Phi is a new object, since the block's
+    instructions are those of the function the pass was given, and
+    the driver's fixed point compares the function after a sweep with
+    the one before it: pruning the arguments in place changed both, so
+    a sweep whose only change was the pruning looked like no change,
+    and the passes that the pruning enables didn't run again."""
+    for k, instr in enumerate(blk.instructions):
+        if isinstance(instr, tac_ast.Phi):
+            blk.instructions[k] = tac_ast.Phi(
+                dst=instr.dst, args=[a for a in instr.args if keep(a)],
+            )
 
 
 def _prune_dead_phi_edges(cfg: CFG) -> None:
@@ -155,12 +165,7 @@ def _prune_dead_phi_edges(cfg: CFG) -> None:
             leading_label[p] for p in blk.predecessors
             if p in leading_label
         }
-        for instr in blk.instructions:
-            if isinstance(instr, tac_ast.Phi):
-                instr.args = [
-                    a for a in instr.args
-                    if a.pred_label in valid_pred_labels
-                ]
+        _filter_phi_args(blk, lambda a: a.pred_label in valid_pred_labels)
 
 
 def _fold_singleton_phis(cfg: CFG) -> None:

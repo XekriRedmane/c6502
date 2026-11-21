@@ -189,9 +189,13 @@ def _try_eliminate(
     ):
         src_label = src_blk.instructions[0].name
     if src_label is not None and src_label != header_label:
-        for instr in exit_blk.instructions:
+        # Each Phi is a new object, since the block's instructions are
+        # those of the function the pass was given, which a change in
+        # place would change too (unreachable_code_elimination.py's
+        # `_filter_phi_args` has the reason).
+        for k, instr in enumerate(exit_blk.instructions):
             if isinstance(instr, tac_ast.Phi):
-                instr.args = [
+                exit_blk.instructions[k] = tac_ast.Phi(dst=instr.dst, args=[
                     tac_ast.PhiArg(
                         source=a.source,
                         pred_label=(
@@ -201,7 +205,7 @@ def _try_eliminate(
                         ),
                     )
                     for a in instr.args
-                ]
+                ])
 
     # Rewrite the header: keep its label so anything still jumping
     # in lands somewhere valid, then unconditionally jump past the

@@ -266,5 +266,62 @@ class TestPreservedAttributesAndShape(unittest.TestCase):
         self.assertEqual(once, twice)
 
 
+def _stale_phi_edge():
+    """A join whose Phi has an argument from `p`, which isn't one of
+    its predecessors, and two equal arguments from the blocks that
+    are."""
+    var = tac_ast.Var
+    return _fn(
+        tac_ast.JumpIfTrue(condition=var(name="c"), target="a"),
+        tac_ast.JumpIfFalse(condition=var(name="e"), target="p"),
+        tac_ast.JumpIfTrue(condition=var(name="d"), target="q"),
+        tac_ast.Label(name="p"),
+        _ret(0),
+        tac_ast.Label(name="a"),
+        tac_ast.Jump(target="join"),
+        tac_ast.Label(name="q"),
+        tac_ast.Label(name="join"),
+        tac_ast.Phi(dst=var(name="x"), args=[
+            tac_ast.PhiArg(pred_label="a", source=_ci(1)),
+            tac_ast.PhiArg(pred_label="q", source=_ci(1)),
+            tac_ast.PhiArg(pred_label="p", source=_ci(2)),
+        ]),
+        tac_ast.Ret(val=var(name="x")),
+    )
+
+
+class TestInputUnchanged(unittest.TestCase):
+    """The pass builds new Phis. It used to prune their arguments in
+    place, which changed the function it was given, and the driver's
+    fixed point, which compares the function after a sweep with the
+    one before it, saw no change in a sweep whose only change was the
+    pruning."""
+
+    def test_pruning_leaves_the_input(self):
+        import ir_dump
+        fn = _stale_phi_edge()
+        before = ir_dump.dump(fn)
+        out = eliminate_unreachable_code(fn)
+        self.assertEqual(ir_dump.dump(fn), before)
+        self.assertEqual(len(out.instructions[9].args), 2)
+
+    def test_fixed_point_folds_the_pruned_phi(self):
+        # After the pruning, both arguments are 1, which the next
+        # sweep's constant folding makes a Copy.
+        from passes.optimization.constant_folding import ConstantFold
+        from passes.optimization.framework import PassContext, PhaseDriver
+        from passes.optimization.unreachable_code_elimination import (
+            EliminateUnreachableCode,
+        )
+        driver = PhaseDriver(
+            fixedpoint=[ConstantFold(), EliminateUnreachableCode()],
+        )
+        out = driver.apply(_stale_phi_edge(), PassContext())
+        self.assertEqual(
+            out.instructions[9],
+            tac_ast.Copy(src=_ci(1), dst=tac_ast.Var(name="x")),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,8 @@
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
+#include "passes/optimization/sink_and_past_branch.h"
+#include "passes/optimization/sink_increment.h"
 #include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
@@ -201,8 +203,8 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_recognize_indexed_load", &run_tac_pass<&recognize_indexed_load>),
       tac_pass("tac_fold_truncate_extend", &run_tac_pass<&fold_truncate_extend>),
       tac_pass("tac_fold_extend_extend", &run_tac_pass<&fold_extend_extend>),
-      tac_pass("tac_sink_increments"),
-      tac_pass("tac_sink_and_past_branch"),
+      tac_pass("tac_sink_increments", &run_tac_pass<&sink_increments>),
+      tac_pass("tac_sink_and_past_branch", &run_tac_pass<&sink_and_past_branch>),
       tac_pass("tac_narrow_widened_arith"),
       tac_pass("tac_narrow_byte_range"),
       tac_pass("tac_narrow_byte_bitwise"),

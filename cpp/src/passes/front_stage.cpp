@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "c99_ast.h"
+#include "passes/loop_labeling.h"
 #include "pp_numbers.h"
 #include "tagged_json.h"
 
@@ -32,6 +33,12 @@ const json::Value& arg(const json::Value& args, std::size_t i) {
     throw std::runtime_error("the call has too few positional arguments");
   }
   return args.items[i];
+}
+
+StageOutput run_loop_labeling(const capture::Call& call, const AsmContext&, const json::Value&,
+                              const json::Value&) {
+  auto prog = asdl::load<c99_ast::Program>(call.input);
+  return {asdl::dump(label_program(std::move(prog))), "", ""};
 }
 
 StageOutput run_pp_number_at(const capture::Call& call, const AsmContext&,
@@ -84,7 +91,10 @@ std::vector<StageSignature> signatures() {
       {.name = "identifier_resolution", .input = "c99_ast", .output_module = "c99_ast"},
       {.name = "string_lifting", .input = "c99_ast", .output_module = "c99_ast"},
       {.name = "label_resolution", .input = "c99_ast", .output_module = "c99_ast"},
-      {.name = "loop_labeling", .input = "c99_ast", .output_module = "c99_ast"},
+      {.name = "loop_labeling",
+       .input = "c99_ast",
+       .output_module = "c99_ast",
+       .run = &run_loop_labeling},
       // The type checker stamps the program it is given and returns it
       // with the two tables, so its record's `mutated` line holds the
       // program after the call under `input`.

@@ -749,12 +749,18 @@ class Inliner {
   }
 
   std::string fresh_local(const std::string& name) {
+    // The names are appended piece by piece, since GCC 12 reports a
+    // false -Wrestrict for `"@" + std::to_string(n)`.
     std::string fresh;
     if (const auto m = at_name(name)) {
-      fresh = "@" + std::to_string(next_at_) + "." + std::string(m->second);
+      fresh = '@';
+      fresh += std::to_string(next_at_);
+      fresh += '.';
+      fresh += m->second;
       ++next_at_;
     } else {
-      fresh = "%" + std::to_string(next_temp_);
+      fresh = '%';
+      fresh += std::to_string(next_temp_);
       ++next_temp_;
     }
     if (symbols_.contains(fresh)) {

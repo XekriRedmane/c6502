@@ -52,6 +52,19 @@ namespace c6502::backend {
 //
 // where each length counts the bytes after its line.
 //
+// The four stage modes, `stage-optimized-text`, `stage-unoptimized-text`,
+// `stage-optimized`, and `stage-unoptimized`, run code generation from
+// the TAC (src/passes/codegen_stage.h). Their request has no context
+// line and no input line. The mode is followed by the `args` line, with
+// `symbols`, `types`, `statics`, `footprints`, `check_ir`, and
+// `link_metadata`, and then by the sections `c99 <length>`,
+// `tac <length>`, and under -O `optimized-tac <length>`, each the dump
+// of a program. A text mode's response is the one above with a
+// `reg_locals` and a `carry` line after `new_functions`, the changes to
+// the symbol table. The other two give those three lines, a `symbols`
+// line, and the finished asm program's `asm` section, for the simulator
+// harness.
+//
 // Throws `std::runtime_error` for a request that can't be read, and
 // passes on the exceptions of the passes.
 std::string respond(const std::string& text);

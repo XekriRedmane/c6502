@@ -135,8 +135,11 @@ cpp/
                       direct_member_access.*, static_indexed_access.*,
                       phi_offset.*, sink_increment.*, sink_and_past_branch.*
                       the addressing and sinking passes (step 5, group F)
-      optimization/narrow_widened_arith.*   the helpers of that module that
-                      group F's passes read
+      optimization/cmp_zero_jump_fold.*, and_zero_jump_fold.*,
+                      lnot_jump_fold.*, nonnegative_compare.*,
+                      fold_producer_jumps.*, narrow_widened_arith.*,
+                      narrow_byte_range.*, narrow_byte_bitwise.*
+                      the jump folds and the narrowing (step 5, group D)
       optimization/constant_folding.*, phi_constant_fold.*,
                       static_const_fold.*, distribute_constant.*,
                       strength_reduction.*, reassoc_const.*, reassoc_offset.*
@@ -747,8 +750,8 @@ These are the pieces that other groups read.
   `passes::narrow_widened_arith`, `register_temp`, `narrow_constant`,
   `byte_width`, and `is_unsigned`, the helpers of
   narrow_widened_arith.py that `recognize_indirect_indexed` and
-  `sink_increment` read. Group D ports the module's pass into the same
-  files. `var_unchanged` reads an entry of `env.instructions` that an
+  `sink_increment` read. The module's pass is in the same files
+  (group D). `var_unchanged` reads an entry of `env.instructions` that an
   earlier rewrite made a bare list as an instruction that does nothing.
 - `split_tables.h`: `width`, Python's `split_tables._width`.
 
@@ -851,6 +854,51 @@ that change the function. Every distinct call the unit tests make
 matched, 534 in all, except three of `read_stored_globals` that give a
 symbol a `StaticAttr` with no initial value, which the codec can't
 read, and which match with a `NoInitializer` in its place.
+### Jump folds and narrowing (group D)
+
+The rule set `fold_producer_jumps` of Python's optimizer.py is
+`passes::fold_producer_jumps` (`src/passes/optimization/fold_producer_jumps.h`),
+which runs the seven rules of cmp_zero_jump_fold.py,
+and_zero_jump_fold.py, lnot_jump_fold.py, and nonnegative_compare.py in
+the driver's order on the framework's `run_rules`. Each rule is a
+function in the header named for its module, which tests its window and
+its guards and returns the replacement or none, and
+`run_jump_fold_rules` runs any of them in a given order, as the Python
+unit tests run rule sets of one rule. The narrowing passes are
+`apply_narrow_widened_arith` (`narrow_widened_arith.h`, beside group
+F's helpers, since a function can't share the name of that namespace),
+`narrow_byte_range`, and `narrow_byte_bitwise`.
+
+`passes::extend_source_unchanged` (`cmp_zero_jump_fold.h`) is the test
+that an extend's source holds the same value at a later instruction,
+which `and_zero_jump_fold`, `narrow_byte_range`, and
+`narrow_byte_bitwise` read. It takes the extend's source and dst in
+place of the instruction, and has an overload for a `DefUsePass`'s view
+of the instructions, where an entry an earlier rewrite made a list
+fails the test, as Python's type test of a list does. A position of -1,
+where Python found none, passes only an SSA-renamed source.
+
+Python finds an instruction's position by identity in four places
+(`cmp_zero_jump_fold.py`'s compare and `JumpIfCmp`,
+`narrow_widened_arith._truncate_index`, and the use positions of
+`narrow_byte_range` and `narrow_byte_bitwise`), which gives the first
+position of an object that sits at two. The C++ rules take the window's
+position, and the passes on `run_def_use` count the calls of the
+rewrite, and every distinct call of the corpus matched.
+
+On 21 Nov 2026 each matched the Python pass on every distinct call of
+the corpus: 12,839 calls of `tac_fold_producer_jumps`, of which 1,937
+changed the function, 9,243 of `tac_narrow_widened_arith` (1,246
+changed), and 9,045 each of `tac_narrow_byte_range` (984) and
+`tac_narrow_byte_bitwise` (289). The tests
+`tests/test_<module>_calls.cpp` hold the calls of the Python unit tests
+of the seven modules and of test_flag_compares.py,
+test_truncate_extend_fold.py, and test_bool.py that changed their
+function, and every call those tests make of a pass on its own, 179 in
+all, and `tests/test_jump_fold_rules_calls.cpp` the 56 calls of rule
+sets of one rule, checked with `tests/tac_rules_case.h`. A static that a
+synthetic test gives no initial value, which the codec can't read, has
+a `NoInitializer` in its place.
 
 ## The TAC optimizer's driver
 
@@ -1637,3 +1685,13 @@ Python results through `tests/stage_case.h`.
   call of the corpus, 108,880 calls in all, and on the calls of the
   Python unit tests, in the builds of MSVC 19.36 and GCC 12.2. Their
   entries in the driver's table are filled.
+- 21 Nov 2026: group D of step 5, the jump folds and the narrowing
+  ("Jump folds and narrowing (group D)"): the seven rules of
+  `fold_producer_jumps` from `cmp_zero_jump_fold`,
+  `and_zero_jump_fold`, `lnot_jump_fold`, and `nonnegative_compare`,
+  `narrow_widened_arith`, `narrow_byte_range`, and
+  `narrow_byte_bitwise`, with `extend_source_unchanged`. Each pass
+  matches the Python pass on every distinct call of the corpus, 40,172
+  calls in all, and on the 235 calls of the Python unit tests that the
+  tests hold, in the builds of MSVC 19.36 and GCC 12.2. Their entries in
+  the driver's table are filled.

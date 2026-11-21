@@ -943,3 +943,22 @@ unreachable-code elimination changed the Phis of its input in place
   "Dataflow over the CFG (group E)"). Dead-loop elimination reads group
   A's `c99_to_tac::kKeepLoopMark`. The entries of group E's passes in
   the driver's table are filled.
+- 21 Nov 2026: group D of step 5, jump folds and narrowing. The rule
+  set `fold_producer_jumps`, whose seven rules come from
+  `cmp_zero_jump_fold`, `and_zero_jump_fold`, `lnot_jump_fold`, and
+  `nonnegative_compare`, and the passes `narrow_widened_arith`,
+  `narrow_byte_range`, and `narrow_byte_bitwise` are ported, and each
+  matches the Python pass on every distinct call of the corpus in the
+  builds of MSVC 19.36 and GCC 12.2: 12,839 calls of
+  `tac_fold_producer_jumps`, 9,243 of `tac_narrow_widened_arith`, and
+  9,045 each of `tac_narrow_byte_range` and `tac_narrow_byte_bitwise`.
+  The 235 calls of the Python unit tests that changed their function, or
+  that the tests make of a pass or a rule on its own, are C++ cases.
+  `extend_source_unchanged`, which the narrowing passes read, is in
+  `src/passes/optimization/cmp_zero_jump_fold.h`, and the narrowing pass
+  of narrow_widened_arith.py is `apply_narrow_widened_arith`, in the
+  files that hold group F's helpers of that module. Python finds an
+  instruction's position by identity in four places of these passes,
+  and the C++ passes take the position at which the scan reaches the
+  instruction. The entries of group D's passes in the driver's table are
+  filled.

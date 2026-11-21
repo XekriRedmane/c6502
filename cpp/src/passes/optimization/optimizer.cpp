@@ -90,16 +90,20 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 
 #include <utility>
 
+#include "passes/optimization/compare_subtract.h"
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_folding.h"
 #include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/count_down.h"
 #include "passes/optimization/cse.h"
 #include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
+#include "passes/optimization/divmod_hoist.h"
 #include "passes/optimization/fold_producer_jumps.h"
 #include "passes/optimization/jump_thread.h"
+#include "passes/optimization/known_compare_thread.h"
 #include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/narrow_byte_bitwise.h"
@@ -114,11 +118,14 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
+#include "passes/optimization/short_circuit_jump_fold.h"
 #include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/sink_increment.h"
 #include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/static_indexed_access.h"
+#include "passes/optimization/step_on_edge.h"
 #include "passes/optimization/strength_reduction.h"
+#include "passes/optimization/three_way_compare.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "passes/optimization/unreachable_code_elimination.h"
 
@@ -243,14 +250,14 @@ PhaseDriver make_driver() {
       // whether it runs, so tac_to_asm branches on its flags in place
       // of comparing too. After the fixed point, whose sinking passes
       // would move it back.
-      {"hoist_subtract_to_compare", nullptr},
+      {"hoist_subtract_to_compare", &hoist_subtract_to_compare},
       // A `/` and a `%` of the same operands with a store, a call, or a
       // branch between them computed next to each other, so that
       // tac_to_asm lowers them with one loop or one helper call.
-      {"hoist_divmod_pairs", nullptr},
+      {"hoist_divmod_pairs", &hoist_divmod_pairs},
       // A loop counter read only by its own test and step counts the
       // passes left down to 0, so its test is `DEC i; BNE`.
-      {"count_loops_down", nullptr},
+      {"count_loops_down", &count_loops_down},
   };
   d.post_destruction = {
       // Copy folding after from_ssa. SSA destruction emits a Copy at
@@ -265,11 +272,11 @@ PhaseDriver make_driver() {
       // `do ...; while (i-- != first);` computes `i - 1` before the test
       // and copies it into `i` on the back edge alone. The step goes in
       // place of that copy, where it's `DEC i`.
-      {"move_steps_onto_edges", nullptr},
+      {"move_steps_onto_edges", &move_steps_onto_edges},
       // `a < b` and `a == b` on the same 2-byte values as a compare of
       // the high bytes and then the low ones. After destruction, since
       // the new edges would need Phi arguments.
-      {"split_three_way_compares", nullptr},
+      {"split_three_way_compares", &split_three_way_compares},
   };
   d.post_destruction_fixedpoint = {
       // The short-circuit fold after destruction: the tail of `&&` or
@@ -280,11 +287,11 @@ PhaseDriver make_driver() {
       // tail of five instructions this pass matches. The fixed point
       // peels nested shapes (`(a && b) || c` and the like) one
       // short-circuit at a time.
-      {"fold_short_circuit_jump", nullptr},
+      {"fold_short_circuit_jump", &fold_short_circuit_jumps},
       // A jump whose target tests what the jump's own path decided, as
       // the second test of `x == a || x == b` reaching a test of
       // `x == a` in the `if`, goes past the test.
-      {"thread_known_compares", nullptr},
+      {"thread_known_compares", &thread_known_compares},
   };
   return d;
 }

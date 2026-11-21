@@ -641,6 +641,48 @@ void SlotShareC::encode(std::string& out, const type& x) {
   TupleOf<Str>::encode(w.field("writers"), x.writers);
 }
 
+// --- The front end's values ---
+
+namespace {
+
+constexpr std::string_view kIntegerConstant = "pp_numbers.IntegerConstant";
+
+// Returns the number of bits of the nonnegative `v`, as Python's
+// `int.bit_length()` gives it.
+int bit_length(asdl::Int v) {
+  int bits = 0;
+  while (v > 0) {
+    v = v / 2;
+    ++bits;
+  }
+  return bits;
+}
+
+}  // namespace
+
+IntegerConstantC::type IntegerConstantC::decode(const Value& v) {
+  const Value& f = object_fields(v, kIntegerConstant, {"value", "base", "unsigned", "length"});
+  pp_numbers::IntegerConstant c;
+  c.value = IntC::decode(at(f, 0));
+  c.base = static_cast<int>(IntC::decode(at(f, 1)));
+  c.is_unsigned = BoolC::decode(at(f, 2));
+  c.length = Str::decode(at(f, 3));
+  c.bits = bit_length(c.value);
+  return c;
+}
+void IntegerConstantC::encode(std::string& out, const type& x) {
+  if (!x.fits()) {
+    // The JSON reader takes ints of 128 bits, so a wider constant has no
+    // form here.
+    throw DecodeError("an integer constant wider than 127 bits");
+  }
+  ObjectWriter w(out, kIntegerConstant);
+  IntC::encode(w.field("value"), x.value);
+  IntC::encode(w.field("base"), x.base);
+  BoolC::encode(w.field("unsigned"), x.is_unsigned);
+  Str::encode(w.field("length"), x.length);
+}
+
 }  // namespace c6502::tagged
 
 namespace c6502::passes {

@@ -23,7 +23,9 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "asdl/runtime.h"
@@ -31,6 +33,7 @@
 #include "c99_ast.h"
 #include "json.h"
 #include "ordered_map.h"
+#include "pp_numbers.h"
 #include "passes/abi_selection.h"
 #include "passes/asm_context.h"
 #include "passes/optimization/pool.h"
@@ -260,6 +263,42 @@ struct Pair {
   }
 };
 
+// A tuple of three values of different forms, such as the program and
+// the two tables that the type checker returns.
+template <class A, class B, class C>
+struct Triple {
+  using type = std::tuple<typename A::type, typename B::type, typename C::type>;
+  static type decode(const json::Value& v) {
+    const auto& items = tagged_items(v, "tuple");
+    if (items.size() != 3) {
+      throw DecodeError("a triple isn't a tuple of three");
+    }
+    return {A::decode(items[0]), B::decode(items[1]), C::decode(items[2])};
+  }
+  static void encode(std::string& out, const type& x) {
+    out += "{\"tuple\": [";
+    A::encode(out, std::get<0>(x));
+    out += ", ";
+    B::encode(out, std::get<1>(x));
+    out += ", ";
+    C::encode(out, std::get<2>(x));
+    out += "]}";
+  }
+};
+
+// Python's None, the result of a function that returns nothing, such as
+// `pp_numbers.check`.
+struct NoneC {
+  using type = std::monostate;
+  static type decode(const json::Value& v) {
+    if (v.kind != json::Value::Kind::kNull) {
+      throw DecodeError("expected None");
+    }
+    return {};
+  }
+  static void encode(std::string& out, const type&) { out += "null"; }
+};
+
 // An IR value of module `Module` and C++ type `T`, as its dump.
 template <class T, const char* Module>
 struct Asdl {
@@ -312,6 +351,7 @@ C6502_TAGGED_CODEC(RuntimeLayoutC, passes::RuntimeLayout);
 C6502_TAGGED_CODEC(ZpGlobalsC, passes::ZpGlobals);
 C6502_TAGGED_CODEC(ZpObjectMetaC, passes::ZpObjectMeta);
 C6502_TAGGED_CODEC(SlotShareC, passes::SlotShare);
+C6502_TAGGED_CODEC(IntegerConstantC, pp_numbers::IntegerConstant);
 
 #undef C6502_TAGGED_CODEC
 

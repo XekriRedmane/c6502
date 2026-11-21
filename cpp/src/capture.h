@@ -39,6 +39,15 @@ struct Call {
   // program, such as a tuple.
   std::string output;
   bool output_is_json = false;
+  // For a call of the front end (step 6) that raised, the record's
+  // `output-error` section, whose output is the JSON object
+  // `{"type": ..., "message": ...}` of the exception's class and
+  // message, on one line.
+  bool output_is_error = false;
+  // The JSON list of `[where, message]` pairs on the `warnings` line,
+  // the warnings a call of the front end issued, or empty when it
+  // issued none.
+  std::string warnings_json;
 };
 
 // Returns the call recorded in the text of a capture file. Raises

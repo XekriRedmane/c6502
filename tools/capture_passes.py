@@ -93,6 +93,19 @@ after the call, by its position in `args` or its keyword. The context is
 taken before the call, since `plan_zero_page` runs before the zero-page
 plan is in effect.
 
+The calls of `FRONT`, the front end of step 6 (`--passes front`), are
+recorded as the calls of `STAGE_PASSES` are, with three differences. A
+call that raised is recorded with an `output-error` section in place of
+its output, the JSON object `{"type": <the exception's class>,
+"message": <str(e)>}` on one line, and the exception is raised again. A
+call that issued warnings (diagnostics.py) has a line
+
+    warnings [[<where>, <message>], ...]
+
+after the `mutated` line. And any call may change its input in place,
+which the `mutated` line holds under `input`, as for `c99_to_tac`. A c99
+program is dumped with "" for each unnamed parameter (`dump`).
+
 The context is the state of the compile that the asm passes read from
 module globals and the C++ passes receive as an `AsmContext`
 (cpp/README.md): `{"layout": [ssp, fp, hargs, hargs_size, dptr],
@@ -341,6 +354,41 @@ TAC_STAGE_PASSES = {
 # `input`.
 _MUTATES_INPUT = frozenset({"c99_to_tac"})
 
+# The calls of step 6 of the port (docs/cpp_port.md), the front end:
+# the preprocessor, the parser, and the passes on the c99 program
+# through the type checker, by the name the harness records each under,
+# with the name of the function in `compile`'s namespace. Their records
+# hold what the call raised when it raised (`output-error`), and the
+# warnings it issued (the `warnings` line), and each may change its
+# input in place, which its `mutated` line holds under `input`.
+# tests/test_capture_passes.py checks the table against
+# cpp/src/passes/front_stage.cpp.
+FRONT_PASSES = {
+    "preprocess": "preprocess",
+    "parse": "parse",
+    "unroll_program": "unroll_program",
+    "identifier_resolution": "resolve_identifiers",
+    "string_lifting": "lift_strings",
+    "label_resolution": "resolve_labels",
+    "loop_labeling": "label_loops",
+    "type_checking": "type_check_program",
+}
+
+# The functions of pp_numbers.py, which the lexer, the parser, and the
+# preprocessor's `#if` call through the module, so that their C++ port
+# is checked on every number the corpus spells. `pp_check` calls the
+# others, which are recorded there too.
+FRONT_HELPERS = {
+    "pp_number_at": "pp_numbers:pp_number_at",
+    "pp_is_floating": "pp_numbers:is_floating",
+    "pp_parse_integer": "pp_numbers:parse_integer",
+    "pp_check_floating": "pp_numbers:check_floating",
+    "pp_bit_precise_width": "pp_numbers:bit_precise_width",
+    "pp_check": "pp_numbers:check",
+}
+
+FRONT = {**FRONT_PASSES, **FRONT_HELPERS}
+
 # The prefix of the capture names of the TAC optimizer's per-function
 # calls (`tac_passes`), which keeps them apart from the asm passes of
 # the same name, such as `copy_propagate`.
@@ -380,7 +428,7 @@ def all_passes() -> dict[str, str]:
     `TAC_STAGE_PASSES`, and the TAC optimizer's per-function calls
     (`tac_passes`), the last by the list each pass is in."""
     return {
-        **PASSES, **STAGE_PASSES, **TAC_STAGE_PASSES,
+        **PASSES, **STAGE_PASSES, **TAC_STAGE_PASSES, **FRONT,
         **{name: slot for name, (slot, _) in tac_passes().items()},
     }
 
@@ -451,6 +499,19 @@ _CAPTURE_FORMS = {
 }
 
 
+def dump(v) -> str:
+    """Returns the dump of the IR value `v` (ir_dump.py). A c99 program
+    may leave a parameter of a declaration unnamed, which
+    `function_decl.params` holds as None, and the dump format has no
+    form for None in an `identifier*`, so a c99 value is dumped as
+    `cpp_backend` sends it to C++, with "" for each unnamed parameter."""
+    if type(v).__module__ == "c99_ast":
+        from cpp_backend import _dump_c99
+        return _dump_c99(v)
+    import ir_dump
+    return ir_dump.dump(v)
+
+
 def encode(v):
     """Returns the tagged JSON form of a Python value (the module
     docstring lists the forms)."""
@@ -472,7 +533,7 @@ def encode(v):
     if isinstance(v, range):
         return {"range": [v.start, v.stop, v.step]}
     if type(v).__module__ in _IR_MODULES:
-        return {"asdl": type(v).__module__, "dump": ir_dump.dump(v)}
+        return {"asdl": type(v).__module__, "dump": dump(v)}
     if isinstance(v, enum.Enum):
         return {"enum": _qualname(type(v)), "name": v.name}
     form = _CAPTURE_FORMS.get(_qualname(type(v)))
@@ -525,8 +586,13 @@ def context_json() -> str:
 
 
 def _record(name: str, input_section: str, args_json: str, result,
-            mutated: str | None = None, context: str | None = None) -> None:
-    import ir_dump
+            mutated: str | None = None, context: str | None = None,
+            error: Exception | None = None,
+            warnings: str | None = None) -> None:
+    """Writes the record of a call, unless an identical call was
+    recorded before. A call that raised `error` is recorded with the
+    exception's class and message in place of its result, and one that
+    issued warnings with the `warnings` line's JSON."""
     if context is None:
         context = context_json()
     key = hashlib.sha1(
@@ -536,11 +602,16 @@ def _record(name: str, input_section: str, args_json: str, result,
     path = _OUT / name / f"{key}.txt"
     if path.exists():
         return
-    if type(result).__module__ in _IR_MODULES:
-        output = "output\n" + ir_dump.dump(result)
+    if error is not None:
+        output = "output-error\n" + json.dumps(
+            {"type": type(error).__name__, "message": str(error)}) + "\n"
+    elif type(result).__module__ in _IR_MODULES:
+        output = "output\n" + dump(result)
     else:
         output = "output-json\n" + json.dumps(encode(result)) + "\n"
     extra = "" if mutated is None else f"mutated {mutated}\n"
+    if warnings is not None:
+        extra += f"warnings {warnings}\n"
     text = (
         f"c6502-capture 2\npass {name}\nsource {_SOURCE}\n"
         f"args {args_json}\ncontext {context}\n{extra}{input_section}{output}"
@@ -598,7 +669,7 @@ def _wrap(name: str, fn):
                 name, lambda a, k: (a, k),
             )(args, kwargs)
             if type(rec_args[0]).__module__ in _IR_MODULES:
-                input_section = "input\n" + ir_dump.dump(rec_args[0])
+                input_section = "input\n" + dump(rec_args[0])
             else:
                 input_section = (
                     "input-json\n" + json.dumps(encode(rec_args[0])) + "\n"
@@ -653,7 +724,7 @@ def _wrap_stage(name: str, fn):
 
         def input_section():
             if type(args[0]).__module__ in _IR_MODULES:
-                return "input\n" + ir_dump.dump(args[0])
+                return "input\n" + dump(args[0])
             return "input-json\n" + json.dumps(encode(args[0])) + "\n"
 
         rest = args[1:]
@@ -708,6 +779,105 @@ def _mutated_json(changed_args: dict[str, str], changed_kwargs: dict[str, str],
             f"{json.dumps(k)}: {v}" for k, v in changed_kwargs.items())
         + "}}"
     )
+
+
+# --- The front end's calls ---
+
+def _pp_number_at_args(args, kwargs):
+    """`pp_number_at(text, pos)` reads the pp-number at `text[pos]`, and
+    the regular expression stops at the first position where none of its
+    alternatives matches, which it decides from that character and the
+    one after it. So the harness records the text from `pos` to two
+    characters past the match, at position 0, in place of the whole
+    source."""
+    import pp_numbers
+    text, pos = args
+    m = pp_numbers.PP_NUMBER_RE.match(text, pos)
+    end = m.end() if m else pos
+    return (text[pos:end + 2], 0), kwargs
+
+
+# The front end's calls whose record differs from the arguments the
+# function is given, each with the function that gives what is recorded.
+_FRONT_RECORDED_ARGS = {
+    "pp_number_at": _pp_number_at_args,
+}
+
+
+def _wrap_front(name: str, fn):
+    """The wrapper of a call of `FRONT`. The first argument is the
+    record's input: a c99 program's dump, or the `input-json` line of
+    any other value, such as the source text that `preprocess` and
+    `parse` take. A call that raises is recorded with the exception
+    (`output-error`) and the exception raised again, since the front
+    end's errors are what most of the chapters' programs test. The
+    warnings the call issues (diagnostics.py) are collected in a block
+    of the wrapper's own, recorded on the `warnings` line as a list of
+    `[where, message]` pairs, and issued again to the caller's block.
+    A change the call makes to its input in place (the type checker
+    stamps each expression's type) is recorded under `input` on the
+    `mutated` line, and so is a change to an argument after it, as for
+    `_wrap_stage`. A call that raises has no `mutated` line, since its
+    caller reads nothing it changed."""
+    def wrapper(*args, **kwargs):
+        import diagnostics
+        import ir_dump
+        rec_args, rec_kwargs = _FRONT_RECORDED_ARGS.get(
+            name, lambda a, k: (a, k),
+        )(args, kwargs)
+
+        def input_section():
+            if type(rec_args[0]).__module__ in _IR_MODULES:
+                return "input\n" + dump(rec_args[0])
+            return "input-json\n" + json.dumps(encode(rec_args[0])) + "\n"
+
+        rest = rec_args[1:]
+        context = context_json()
+        try:
+            input_text = input_section()
+            before = _encode_call(rest, rec_kwargs)
+        except (ir_dump.DumpError, TypeError) as e:
+            _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
+            return fn(*args, **kwargs)
+        error = None
+        result = None
+        with diagnostics.collecting() as found:
+            try:
+                result = fn(*args, **kwargs)
+            except Exception as e:  # noqa: BLE001 - recorded and raised again
+                error = e
+        for w in found:
+            diagnostics.warn(w.where, w.message)
+        try:
+            mutated = None
+            if error is None:
+                after = _encode_call(rest, rec_kwargs)
+                changed_args = {
+                    str(i): a
+                    for i, (a, b) in enumerate(zip(after[0], before[0]))
+                    if a != b
+                }
+                changed_kwargs = {
+                    k: v for k, v in after[1].items() if v != before[1][k]
+                }
+                input_after = None
+                if input_section() != input_text:
+                    input_after = json.dumps(encode(rec_args[0]))
+                mutated = _mutated_json(
+                    changed_args, changed_kwargs, input_after,
+                )
+            warnings = None
+            if found:
+                warnings = json.dumps([[w.where, w.message] for w in found])
+            _record(name, input_text, _call_json(*before), result,
+                    mutated=mutated, context=context, error=error,
+                    warnings=warnings)
+        except (ir_dump.DumpError, TypeError) as e:
+            _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
+        if error is not None:
+            raise error
+        return result
+    return wrapper
 
 
 # --- The TAC optimizer's per-function calls ---
@@ -841,7 +1011,7 @@ def _tac_record(name: str, fn, symbols, ssa_dsts, call, result_of):
     import ir_dump
     context = context_json()
     try:
-        input_text = "input\n" + ir_dump.dump(fn)
+        input_text = "input\n" + dump(fn)
         ssa_before = json.dumps(encode(ssa_dsts))
     except (ir_dump.DumpError, TypeError) as e:
         _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
@@ -862,7 +1032,7 @@ def _tac_record(name: str, fn, symbols, ssa_dsts, call, result_of):
         ssa_now = json.dumps(encode(ssa_after))
         if ssa_now != ssa_before:
             changed["ssa_dsts"] = ssa_now
-        if "input\n" + ir_dump.dump(fn) != input_text:
+        if "input\n" + dump(fn) != input_text:
             raise TypeError("the call changed its function in place")
         _record(name, input_text, _call_json([], before), result,
                 mutated=_mutated_json({}, changed), context=context)
@@ -922,6 +1092,10 @@ def install(passes: list[str], out: Path) -> None:
     _OUT = out
     tac = tac_passes()
     for name in passes:
+        if name in FRONT:
+            module, attr = resolve(FRONT[name])
+            setattr(module, attr, _wrap_front(name, getattr(module, attr)))
+            continue
         if name in STAGE_PASSES or name in TAC_STAGE_PASSES:
             target = STAGE_PASSES.get(name) or TAC_STAGE_PASSES[name]
             module, attr = resolve(target)
@@ -1040,9 +1214,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--passes", required=True,
                     help="comma-separated pass names, 'all' for those of "
                          "PASSES, 'stage' for those of STAGE_PASSES, "
-                         "'tac-stage' for those of TAC_STAGE_PASSES, or "
+                         "'tac-stage' for those of TAC_STAGE_PASSES, "
                          "'tac' for the TAC optimizer's calls on one "
-                         "function")
+                         "function, or 'front' for those of FRONT")
     ap.add_argument("--out", default=str(_ROOT / "captures"),
                     help="where to write the captures (default captures/)")
     ap.add_argument("--corpus", default="examples,games,chapters,fuzz")
@@ -1059,6 +1233,8 @@ def main(argv: list[str] | None = None) -> int:
         passes = list(TAC_STAGE_PASSES)
     elif ns.passes == "tac":
         passes = list(tac_passes())
+    elif ns.passes == "front":
+        passes = list(FRONT)
     else:
         passes = ns.passes.split(",")
     unknown = [p for p in passes if p not in all_passes()]

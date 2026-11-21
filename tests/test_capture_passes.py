@@ -320,6 +320,113 @@ class TestTacCapture(unittest.TestCase):
                       f"{n} match, 0 differ", result.stdout)
 
 
+class TestFrontTables(unittest.TestCase):
+    def test_every_front_function_resolves(self):
+        for name, target in capture_passes.FRONT.items():
+            with self.subTest(name=name):
+                module, attr = capture_passes.resolve(target)
+                self.assertTrue(callable(getattr(module, attr)))
+
+    def test_front_names_are_new(self):
+        older = {**capture_passes.PASSES, **capture_passes.STAGE_PASSES,
+                 **capture_passes.TAC_STAGE_PASSES,
+                 **capture_passes.tac_passes()}
+        for name in capture_passes.FRONT:
+            self.assertNotIn(name, older)
+
+    def test_every_front_call_has_a_cpp_signature(self):
+        # The signatures of step 6 are in cpp/src/passes/front_stage.cpp,
+        # in the harness's order.
+        source = (
+            _ROOT / "cpp" / "src" / "passes" / "front_stage.cpp"
+        ).read_text(encoding="utf-8")
+        names = re.findall(r'\{\.name = "(\w+)"', source)
+        self.assertEqual(names, list(capture_passes.FRONT))
+
+
+class TestFrontCapture(unittest.TestCase):
+    """Records the front end's calls on one example and on a program
+    the parser rejects, and checks the records' forms."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = Path(cls.tmp.name) / "captures"
+        saved = []
+        for target in capture_passes.FRONT.values():
+            module, attr = capture_passes.resolve(target)
+            saved.append((module, attr, getattr(module, attr)))
+        try:
+            capture_passes.install(list(capture_passes.FRONT), cls.out)
+            capture_passes._SOURCE = "examples/apply_bobble.c -S -O"
+            src = _ROOT / "examples" / "apply_bobble.c"
+            bad = Path(cls.tmp.name) / "bad.c"
+            bad.write_text("int main(void) { while (1) {} break; }\n"
+                           "int f(void) { return 1 +; }\n", encoding="utf-8")
+            loop = Path(cls.tmp.name) / "loop.c"
+            loop.write_text("int main(void) { break; }\n", encoding="utf-8")
+            with mock.patch.dict(os.environ):
+                os.environ.pop("C6502_CPP_BACKEND", None)
+                assert compile_module.main([
+                    "compile.py", str(src), "-S", "-O",
+                    "-o", os.path.join(cls.tmp.name, "out.s"),
+                ]) == 0
+                with mock.patch("sys.stderr"):
+                    for path in (bad, loop):
+                        assert compile_module.main([
+                            "compile.py", str(path), "-S",
+                            "-o", os.path.join(cls.tmp.name, "out.s"),
+                        ]) == 1
+        finally:
+            for module, attr, fn in saved:
+                setattr(module, attr, fn)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _texts(self, name):
+        return [p.read_bytes().decode("utf-8")
+                for p in sorted((self.out / name).glob("*.txt"))]
+
+    def test_parse_records_the_text_and_the_errors(self):
+        texts = self._texts("parse")
+        self.assertEqual(len(texts), 3)
+        for text in texts:
+            self.assertIn("\ninput-json\n\"", text)
+        errors = [t for t in texts if "\noutput-error\n" in t]
+        self.assertEqual(len(errors), 1)
+        self.assertIn('{"type": "UnexpectedToken", "message": "Unexpected '
+                      "token Token('SEMICOLON', ';') at line 2", errors[0])
+
+    def test_type_checking_records_its_changes(self):
+        [text] = self._texts("type_checking")
+        self.assertIn("\nmutated {\"input\": {\"asdl\": \"c99_ast\"", text)
+        self.assertIn("\noutput-json\n{\"tuple\": [{\"asdl\": \"c99_ast\"",
+                      text)
+
+    def test_loop_labeling_records_its_error(self):
+        errors = [t for t in self._texts("loop_labeling")
+                  if "\noutput-error\n" in t]
+        self.assertEqual(len(errors), 1)
+        self.assertIn('{"type": "LoopLabelingError", "message": "\'break\' '
+                      'statement not inside a loop or switch"}', errors[0])
+
+    @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+    def test_cpp_port_matches(self):
+        result = subprocess.run(
+            [cpp_cli(), "check-captures", str(self.out)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        n = len(self._texts("parse"))
+        self.assertIn(f"parse: {n} calls, {n} round-trip\n", result.stdout)
+        for name in ("pp_number_at",):
+            n = len(self._texts(name))
+            self.assertIn(f"{name}: {n} calls, {n} round-trip, "
+                          f"{n} match, 0 differ", result.stdout)
+
+
 def _decode_table(v):
     """The `SymbolTable` of a record's tagged JSON, with the symbols'
     types and attributes as the type checker makes them."""

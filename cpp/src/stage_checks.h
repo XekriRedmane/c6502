@@ -28,6 +28,11 @@ struct Result {
   std::string got;
 };
 
+// Returns the JSON object `{"type": ..., "message": ...}` that the
+// harness records for an exception of the Python class `type` with the
+// message `message` (`str(e)`).
+std::string error_text(std::string_view type, std::string_view message);
+
 // Checks `call` against the signature `sig`, and runs it when it is
 // ported.
 Result check(const capture::Call& call, const passes::StageSignature& sig);

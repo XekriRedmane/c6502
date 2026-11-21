@@ -47,6 +47,9 @@ Call parse(const std::string& text) {
   if (text.compare(pos, 8, "mutated ") == 0) {
     call.mutated_json = take_line(text, pos, "mutated ");
   }
+  if (text.compare(pos, 9, "warnings ") == 0) {
+    call.warnings_json = take_line(text, pos, "warnings ");
+  }
   // `input-json` holds the tagged JSON of a first argument that isn't an
   // IR value, on one line.
   const std::string input_kind = take_line(text, pos, "input");
@@ -58,19 +61,32 @@ Call parse(const std::string& text) {
   // The input's dump ends with a newline, and the `output` line follows
   // it. No line of a dump can be `output`, since every line of one
   // starts with a name, a bracket, or indentation, followed by more.
-  const std::size_t plain = text.find("\noutput\n", pos - 1);
-  const std::size_t json = text.find("\noutput-json\n", pos - 1);
-  std::size_t mark;
-  if (plain != std::string::npos && (json == std::string::npos || plain < json)) {
-    mark = plain;
-    call.output = text.substr(plain + 8);
-  } else if (json != std::string::npos) {
-    mark = json;
-    call.output_is_json = true;
-    call.output = text.substr(json + 13);
-  } else {
+  // The output section is the first of the three kinds of output line.
+  struct Marker {
+    std::string_view line;
+    bool is_json;
+    bool is_error;
+  };
+  static constexpr Marker kMarkers[] = {
+      {"\noutput\n", false, false},
+      {"\noutput-json\n", true, false},
+      {"\noutput-error\n", false, true},
+  };
+  std::size_t mark = std::string::npos;
+  const Marker* found = nullptr;
+  for (const Marker& m : kMarkers) {
+    const std::size_t at = text.find(m.line, pos - 1);
+    if (at != std::string::npos && (mark == std::string::npos || at < mark)) {
+      mark = at;
+      found = &m;
+    }
+  }
+  if (found == nullptr) {
     throw std::runtime_error("no output section");
   }
+  call.output_is_json = found->is_json;
+  call.output_is_error = found->is_error;
+  call.output = text.substr(mark + found->line.size());
   call.input = text.substr(pos, mark + 1 - pos);
   return call;
 }

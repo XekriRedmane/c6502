@@ -29,6 +29,9 @@ using RoundTrip = std::string (*)(const json::Value& v);
 struct StageOutput {
   std::string output;
   std::string mutated;
+  // The `warnings` line's JSON for a call of the front end that issued
+  // warnings, or empty.
+  std::string warnings;
 };
 
 // Runs a ported call on its recorded first argument (`call.input`, a
@@ -54,8 +57,9 @@ struct StageSignature {
   // which the record holds as its dump.
   RoundTrip output = nullptr;
   // The IR module of a result that the record holds as its dump: an asm
-  // program for the calls of step 4, and a TAC program or function for
-  // those of step 5 (src/passes/optimization/tac_stage.h).
+  // program for the calls of step 4, a TAC program or function for
+  // those of step 5 (src/passes/optimization/tac_stage.h), and a c99
+  // program for those of step 6 (src/passes/front_stage.h).
   std::string_view output_module = "asm_ast";
   // The port of the call, or null when it isn't ported yet.
   StageRun run = nullptr;

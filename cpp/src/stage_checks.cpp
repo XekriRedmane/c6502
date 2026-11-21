@@ -6,6 +6,7 @@
 
 #include "asm_ast.h"
 #include "c99_ast.h"
+#include "errors.h"
 #include "json.h"
 #include "tac_ast.h"
 #include "tagged_json.h"
@@ -132,6 +133,17 @@ std::size_t first_line(const std::string& a, const std::string& b) {
   return line;
 }
 
+// Returns the JSON object `{"type": ..., "message": ...}` of a recorded
+// error, read and written again, as the harness writes it.
+std::string error_json(const Value& v) {
+  const Value* type = v.get("type");
+  const Value* message = v.get("message");
+  if (type == nullptr || message == nullptr || v.items.size() != 2) {
+    throw std::runtime_error("the error isn't {\"type\": ..., \"message\": ...}");
+  }
+  return error_text(type->string, message->string);
+}
+
 void check_tables(const capture::Call& call, const passes::StageSignature& sig) {
   if ((sig.input_json != nullptr) != call.input_is_json) {
     throw std::runtime_error("the record's input doesn't match the signature's");
@@ -151,7 +163,17 @@ void check_tables(const capture::Call& call, const passes::StageSignature& sig) 
       redo_mutated(sig, json::parse(call.mutated_json)) != call.mutated_json) {
     throw std::runtime_error("the changed arguments' JSON differs from the recorded one");
   }
-  if (call.output_is_json) {
+  if (!call.warnings_json.empty() &&
+      tagged::round_trip<tagged::ListOf<tagged::ListOf<tagged::Str>>>(
+          json::parse(call.warnings_json)) != call.warnings_json) {
+    throw std::runtime_error("the warnings' JSON differs from the recorded one");
+  }
+  if (call.output_is_error) {
+    // The harness ends the error's JSON with a newline.
+    if (error_json(json::parse(call.output)) + "\n" != call.output) {
+      throw std::runtime_error("the error's JSON differs from the recorded one");
+    }
+  } else if (call.output_is_json) {
     if (sig.output == nullptr) {
       throw std::runtime_error("the result is JSON, and the signature has no codec for it");
     }
@@ -167,6 +189,15 @@ void check_tables(const capture::Call& call, const passes::StageSignature& sig) 
 }
 
 }  // namespace
+
+std::string error_text(std::string_view type, std::string_view message) {
+  std::string out = "{\"type\": ";
+  tagged::write_string(out, type);
+  out += ", \"message\": ";
+  tagged::write_string(out, message);
+  out += '}';
+  return out;
+}
 
 Result check(const capture::Call& call, const passes::StageSignature& sig) {
   Result r;
@@ -186,6 +217,10 @@ Result check(const capture::Call& call, const passes::StageSignature& sig) {
     if (call.output_is_json) {
       got.output += "\n";
     }
+  } catch (const CompileError& e) {
+    // A problem with the program, which the record of a call of the
+    // front end holds as the exception's class and message.
+    got.output = error_text(e.python_type(), e.what()) + "\n";
   } catch (const std::exception& e) {
     got.output = std::string("exception: ") + e.what() + "\n";
   }
@@ -195,6 +230,8 @@ Result check(const capture::Call& call, const passes::StageSignature& sig) {
                  std::to_string(first_line(got.output, call.output));
   } else if (got.mutated != call.mutated_json) {
     r.mismatch = "the arguments it changed differ";
+  } else if (got.warnings != call.warnings_json) {
+    r.mismatch = "the warnings differ";
   } else {
     r.matched = true;
   }

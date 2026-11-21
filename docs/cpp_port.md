@@ -537,6 +537,448 @@ distinct records made the trip to C++ and back, from 1,110 records of
 unreachable-code elimination changed the Phis of its input in place
 (Status, 21 Nov 2026).
 
+## Step 6: the front end
+
+Step 6 is the part of a compile before the type-checked c99 program
+that `C6502_CPP_BACKEND=1` hands to C++: the preprocessor (pcpp with
+the hooks of preprocessor.py), the parser, the unroller under `-O`,
+the three passes that resolve names, string lifting, and the type
+checker. Once it is done, compile.py can hand C++ the source text. This
+section lists the calls, what each reads, the pieces the groups share,
+the groups, and separate plans for the parser and the preprocessor,
+since each of them has to reproduce a library (Lark and pcpp) along
+with the Python code around it. The
+survey was made on 21 Nov 2026 from compile.py at 00d161f.
+
+### The calls
+
+`compile._compile_c` and `_resolved` make these calls in this order,
+and the type checker runs from `_run_stage`. `unroll_program` runs only
+under `-O`. Each has an entry in `tools/capture_passes.FRONT_PASSES`
+under the name in the first column. The line counts are of the Python
+modules each call runs.
+
+| Capture name | Python | Lines | Reads besides its input | Returns, and what it changes |
+|---|---|---|---|---|
+| `preprocess` | `preprocessor.preprocess` and pcpp 1.30 | 591, and 2,519 of pcpp (preprocessor.py 1,400, evaluator.py 725, parser.py 394) with PLY's lex and yacc | `pcpp_args`, the file name, the files it includes from `-I` and include/, and pp_numbers | the text, and the `_Bool` warnings through diagnostics |
+| `parse` | `parser.parse`, with c99.lark, lexer.py, and lark_cache.py | 4,884, 854, 283, 139 | the type checker, constant_expression, and designators for its folds, pp_numbers, fp_arith, builtin_functions, and Lark | a new c99 program |
+| `unroll_program` | `optimization_ast.unroll` | 772 | `_common_type`, `_promote_integer`, and `_coerce_int_to_type` of the type checker | a new program, in which each copy of a body is a `copy.deepcopy` |
+| `identifier_resolution` | `identifier_resolution.resolve_program` | 1,322 | `builtin_functions.is_builtin` | a new program with `@N.orig`, `@N.tag`, and `@N.compound_literal` names from one counter |
+| `string_lifting` | `string_lifting.lift_program` | 564 | `designators.normalize_initializer` | a new program with a `str@N` static for each literal it lifts, in front of the declarations |
+| `label_resolution` | `label_resolution.resolve_program` | 344 | | a new program with `.<fn>@<label>` labels |
+| `loop_labeling` | `loop_labeling.label_program` | 422 | | a new program with `.loop@N`, `.switch@N`, `.case@N`, and `.default@N` labels from one counter |
+| `type_checking` | `type_checking.check_program` | 6,206, with constant_expression 663, designators 401, and stdbit_functions 123 | | the program stamped in place, the symbol table, and the type table |
+
+The first five passes build new programs, and none of them changed its
+input on 677 programs of the corpus, though every output shares nodes
+with the input. The type checker changed its input on 671 of 674, and
+returns the same root. It stamps each expression's `data_type`, wraps
+operands in implicit `Cast`s and `AddressOf`s, replaces initializers and
+case values, swaps the operands of `3[a]`, makes a file-scope
+`constexpr` object `static`, and `stdbit_functions.add_definitions`
+rewrites the declaration list. Each pass raises its own error class,
+which `compile._source_errors` lists, and the corpus's compiles that
+fail stop in these passes: 221 calls of `parse` raise (173
+`UnexpectedToken`, 11 `UnexpectedCharacters`, 36 `ParserError`, and one
+`NotImplementedError`), 79 of `identifier_resolution`, 10 of
+`label_resolution`, 10 of `loop_labeling`, and 313 of `type_checking`.
+
+Besides its IR, the front end keeps this state.
+
+- **The parser's context** (`_ParseContext`, parser.py:278-437), made
+  anew by each `parse`: a stack of scopes, each with its names
+  (`_Binding`: a typedef's type, an enumeration constant's value and
+  type, a `constexpr` object's value, the type of an object for
+  `typeof` and `auto`) and its struct, union, and enum tags; a scope per
+  brace and per `for`; the stack of specifier lists; the types of the
+  last two tokens; the counter of `__anonymous_struct_N` and
+  `__anonymous_union_N`; the stack of the fixed types of enums; and
+  every struct body parsed so far, which the folds read.
+- **The type checker's tables.** `SymbolTable` and `TypeTable` are
+  C++ types already (src/passes/type_checking.h, from step 4), and so
+  are every attribute and initial value. An `Initial` of a `float` or a
+  `double` holds the integer bits of the IEEE pattern, so no Python
+  float reaches the tables. The named constants of
+  `constexpr` objects (`TypeChecker._constexpr`), the stack of tag
+  scopes, and the stack of resolvers in constant_expression
+  (`_RESOLVERS`, `named_constants`) live only while the checker runs,
+  and the parser makes a checker of its own for each fold.
+- **The diagnostics.** Only the preprocessor issues a warning (for each
+  `_Bool`), through `diagnostics.warn` into the innermost
+  `diagnostics.collecting()` block, which compile.py opens around each
+  C input.
+
+### The pieces the groups share
+
+These are ported and checked on the corpus (cpp/README.md, "The front
+end's calls").
+
+- `pp_numbers` (`src/pp_numbers.*`), which the lexer, the parser, and
+  the preprocessor's `#if` read. A constant may have any number of
+  digits, so `IntegerConstant` holds the exact bit length and the value
+  when it fits in 127 bits.
+- `diagnostics` (`src/diagnostics.*`), with the innermost block kept per
+  thread.
+- Python's `repr` of every IR value (`asdl::py_repr`, generated by
+  `asdl.py --cpp` with the dump format), which 65 of the type
+  checker's 201 messages and those of identifier_resolution and
+  constant_expression show, as in `binary operator on non-object types:
+  Structure(tag='s'), Pointer(referenced_type=Int())`.
+- The type checker's type queries (`src/passes/type_checking_types.*`,
+  namespace `passes::type_checking`): `_strip_quals`, the predicates,
+  `_display_name`, `_c_type`, `_int_width`, `_int_bits`, `_is_signed`,
+  `_rank`, `_promote_integer`, `_coerce_int_to_type`, `_common_type`, and
+  `_common_bit_precise_type`. The parser, designators, and the unroller
+  read some of them, and every part of the type checker reads most.
+
+These are shared too but belong to one group, which ports them first
+and says so to the others.
+
+- `constant_expression` (`evaluate_integer_constant_expression`,
+  `named_constants`, and `named_constant`), which the type checker calls
+  12 times and the parser 12 times. Group T-A.
+- The type checker's `_sizeof` (constant_expression has a copy of it),
+  `_check_well_formed_type`, `_convert_to`, and `_decay_if_array`, which
+  every part of the type checker calls. Group T-A.
+- `designators.normalize_initializer`, which string_lifting and the type
+  checker call, and `_size_from_initializer`, which the parser calls.
+  Group T-B.
+- `_check_exp`, `_check_struct_decl`, `_check_block_var`, and
+  `_named_constant`, which the parser's folds call on a checker of their
+  own (parser.py:2422-2663). Groups T-B, T-C, and T-D, behind a
+  `TypeChecker` class whose declaration T-A writes first.
+
+### The groups
+
+Each group ports its modules with the conventions of cpp/README.md
+("Porting a pass"), gives each capture name it ports a runner in
+`src/passes/front_stage.cpp`, as `loop_labeling` has, and checks it on a
+capture of the whole corpus (`--passes front`, or the group's names),
+errors included. The line counts are of the Python modules.
+
+- **P. The preprocessor**, about 3,100 lines of Python and pcpp, which
+  the plan below describes. It needs only pp_numbers and diagnostics, so
+  it can start at once.
+- **R. The parser**, about 6,200 lines with the grammar and the lexer,
+  in three parts, which the plan below describes. R1 can start at once,
+  and R2 and R3 can build and check every AST shape that needs no fold
+  while the type checker is ported, since the folds reach the parser
+  through one interface (`_fold_integer_constant`, `_expression_type`,
+  and `_fold_named_constant`).
+  - R1: the lexer, the table of Lark's LALR automaton and the recognizer
+    that runs it, and the syntax errors.
+  - R2: declarations, declarators, specifiers, typedef names, struct,
+    union, and enum, attributes, `auto`, `typeof`, and `constexpr`
+    (parser.py:525-1678, 1991-2847, and the methods of 2849-3350,
+    3506-3606, and 3717-4169).
+  - R3: statements, expressions, constants, initializers, designators,
+    and compound literals (1679-1990, 3352-3505, 3607-3716, and
+    4170-4673).
+- **T. The type checker and constant_expression**, about 7,300 lines in
+  four parts that share the `TypeChecker` class's declaration
+  (type_checking.py:2407-2537, its fields, tag scopes, and `_require_*`
+  methods), which T-A writes first.
+  - T-A: the type queries not yet ported, `_sizeof`,
+    `_check_well_formed_type`, the null pointer constants,
+    `_convert_to`, `_decay_if_array`, and all of constant_expression
+    (type_checking.py:127-490 and 1200-2406), about 1,900 lines.
+  - T-B: static initializers and `constexpr` (491-1199 and 3637-4438)
+    with designators.py, about 1,700 lines.
+  - T-C: `check_program`, file-scope and struct declarations, layouts,
+    functions, calls and the builtins' checks, and statements
+    (2538-3636 and 4439-4775) with stdbit_functions.py, about 1,600
+    lines.
+  - T-D: expressions, `_check_exp` and its cases (4776-6197), about
+    1,420 lines, with 63 of the raise sites and most of the messages
+    that show a repr.
+- **N. The name passes.** `identifier_resolution` (1,322 lines),
+  `string_lifting` (564, which needs T-B's designators), and
+  `label_resolution` (344). `loop_labeling` is ported.
+- **U. The unroller** (772 lines), which reads the ported type queries
+  and two module globals of file-scope constant arrays that it sets
+  around each call (`_CURRENT_CONST_ARRAYS`, unroll.py:98-142).
+- **D. The driver.** Last, compile.py's `_compile_c` up to the type
+  checker as one C++ function, so that `C6502_CPP_BACKEND=1` hands C++
+  the source text and the arguments, and the request no longer carries
+  the c99 program and its tables.
+
+P, R1, T-A, N's identifier_resolution and label_resolution, and U can
+start at once. T-B, T-C, and T-D start once T-A's header is agreed, and
+R2 and R3 connect the folds once T is done.
+
+### The plan for the parser
+
+The decision is a parser written by hand, recursive descent with
+precedence climbing for expressions, that gives parser.py's ASTs and
+messages. parser.py builds the AST inside Lark's LALR parse, with the
+transformer `_ASTBuilder` called as each rule reduces (Lark calls it
+from `feed_token`, so a `ParserError` from a callback isn't wrapped in
+a `VisitError`), and `_TypedefLexer` retypes an identifier to
+`TYPEDEF_NAME` when the name is a typedef in scope and the parser
+could shift a `TYPEDEF_NAME` there. The hand-written parser has to
+reproduce these.
+
+- **The AST shapes.** A declarator stays a Lark `Tree` that
+  `_apply_declarator` walks, so the C++ parser keeps a declarator tree
+  of its own. A forward declaration parses as a `var_decl` and becomes
+  a `FunctionDecl` with no body when its type is a `FunType`, with
+  `param_registers` of `""` for each parameter and the parameters of a
+  function typed through a typedef None (the empty string in C++, as
+  `cpp_backend` sends it). A struct body is a `StructDecl` in front of
+  its declaration, and a typedef declaration leaves only forward
+  `StructDecl`s. An enumeration constant is a `Constant(ConstInt(v &
+  0xFFFF))`, or a constant of the enum's fixed type, or a `Cast` of a
+  `ConstInt` for `char`, `signed char`, `short`, and `unsigned short`
+  (`_enum_constant`, 2339). A character constant is a `ConstInt` of its
+  byte, adjacent strings are joined as one Latin-1 string, and an
+  attribute's string argument is the raw text of the literal. A typedef's
+  type is deep-copied at each use, while the declarators of one
+  declaration share their specifier's type object, which matters only to
+  code that compares by identity.
+- **The order of the actions.** The lexer runs one token ahead: token
+  k is lexed after token k-1 is fed, so the action of a construct that
+  ends at k-1 runs after k is lexed. That decides when scopes open and
+  close (the lexer pushes a scope at each `{` that isn't a struct,
+  union, or enum body, including initializer braces), when
+  `init_declarator` declares its name (after its initializer, so in
+  `int T = sizeof(T);` the inner `T` is still the typedef), the retyping
+  of the token after a `for` statement (`retype_lookahead`), and that a
+  `LexError` of token k comes before a `ParserError` of a reduction that
+  k causes. A recursive-descent parser that lexes the next token
+  whenever it takes one, and runs a construct's action when the
+  construct returns, has the same order.
+- **The typedef positions.** Lark's table has 976 states, and
+  `TYPEDEF_NAME` can be shifted in 43 of them. Every one is a place
+  where a type can begin: the start of a declaration or block item
+  (after attributes and storage classes too), after the qualifiers of a
+  specifier list, a member, a parameter after `(` or `,`, after `(` in
+  an expression (a cast, a compound literal, or a parenthesized
+  expression), after `sizeof (`, `typeof (`, `typeof_unqual (`, and `for
+  (`, after `enum ... :`, and the start of a `type_name`. No state
+  shifts one after a type specifier, which is why `int T;` declares a
+  variable named T.
+- **The folds.** An array size, an enumeration value, a `_BitInt`
+  width, a designator's index, and a `constexpr` initializer are folded
+  through a `TypeChecker` of the parser's own (`_fold_integer_constant`,
+  `_checker_with_named_constants`, `_fold_named_constant`), with each
+  named constant and struct body seen so far, and `typeof` and `auto`
+  type an expression the same way (`_expression_type`). So the parser's
+  port depends on T, and the parts of a capture that need no fold can be
+  checked before it.
+- **The syntax errors.** The corpus's 221 rejected programs give 194
+  distinct messages, 184 of them Lark's with 37 distinct sets of
+  expected terminals. A pytest plugin that recorded each exception of
+  `parse` during the suite counted 1,052 of them, with 471 distinct
+  messages. Together they are 509 distinct messages: 243 of Lark's,
+  with 42 distinct sets of expected terminals, and 266 of the parser's
+  own (`ParserError`, `LexError`, and `NotImplementedError`). An
+  `UnexpectedToken` reads
+
+  ```
+  Unexpected token Token('RETURN', 'return') at line 3, column 5.
+  Expected one of: 
+  	* AMP
+  	...
+  ```
+
+  with the terminals of Lark's `accepts`, which feeds each terminal of
+  the state's action table to a copy of the parser and keeps those that
+  end in a shift, or the raw set of the table when that is empty, sorted
+  by `_sort_expected` (by code point, so `$END` comes first). An
+  `UnexpectedCharacters` has the context line and a caret, the 63
+  terminals of the lexer, and a `Previous tokens` line. A program that
+  ends early gets an `UnexpectedToken` of `Token('$END', '')` at the
+  last token's position. `_c23_keyword_as_name`,
+  `_enum_type_without_list`, and the note about `__attribute__` (added
+  when the source holds that word anywhere) read `e.expected`, the raw
+  set. Lines and columns count code points, and only `WS` and
+  `ATTR_OPEN` hold newlines.
+
+The proposal for the expected sets is a table generated from c99.lark
+by Lark itself: the action table and the gotos of
+`_LARK.parser.parser._parse_table`, built with the four start rules
+parser.py builds (`start`, `lex_only`, `declarator`, `type_name`),
+since the states the start rules share carry `$END` among their raw
+lookaheads, and the 715 rules' origins and lengths. That is 976 states
+by 112 terminals, 52,540 of the cells holding an action, plus 2,702
+gotos over 100 nonterminals, about 220 KB as a dense table of 16-bit
+cells. The state numbers change from one build of the table to the
+next, but the sorted sets don't. The C++ parser feeds each token, as
+retyped, to a recognizer that runs this table without actions, before
+the recursive descent takes the token. The recognizer then reports the
+syntax error at Lark's token with Lark's `expected` and `accepts`, having
+made the same reductions of merged lookaheads first. It also answers
+whether `TYPEDEF_NAME` can be shifted, as `_can_shift` does. LALR
+detects an error at the first token that can't extend a viable prefix,
+and a correct recursive-descent parser of the same language fails at
+the same token, but the expected set depends on the LALR state after
+its reductions, which the descent doesn't know. The descent has to copy
+the grammar's two shift-reduce resolutions, the dangling `else` and
+`(void)`. A test (`tests/test_asdl_cpp.py` is the model) regenerates the
+table and compares it with the checked-in one, so c99.lark and the
+table can't drift apart until c99.lark stops being the source of truth.
+The one place this can still differ is a `ParserError` raised by the
+action of a reduction that the recognizer makes before the error, which
+Python raises in place of the syntax error. A differential run of the
+two parsers on the fuzzers' programs and on mutated corpus files would
+find it.
+
+The lexer is Lark's basic lexer, which takes the first terminal in
+Lark's order that matches (longest regex source first, for terminals of
+equal priority), whatever the length of its match, so `08` is `0` and `8`, `1.e`
+is `1.` and `e`, and `1e` is `INVALID_NUMBER`. `WS` is `[ \t\n\f]+`, so
+a carriage return or a vertical tab is an `UnexpectedCharacters`. The
+possessive quantifiers and lookaheads of `INVALID_NUMBER` have no
+`std::regex` form, so every terminal is matched by hand and checked on
+the corpus's tokens and on tables of spellings.
+
+### The plan for the preprocessor
+
+pcpp's output has to come out byte for byte, so the C++ preprocessor
+reproduces pcpp 1.30 with preprocessor.py's hooks: about 2,000 to 2,300
+lines in seven parts, which one agent can port in this order.
+
+1. The lexer, in PLY's order (the function rules in the order of their
+   source lines, then the string rules by the length of their regex,
+   with VERBOSE and UNICODE flags): `CPP_INTEGER` is pp_numbers'
+   pp-number, `\w` is Unicode, `^=` lexes as `^` and `=`, an unclosed
+   `/*` or `"` is punctuation, and a character PLY can't match is an
+   error token. About 300 lines, written by hand.
+2. The lines: Python's `str.splitlines()` and `rstrip()`, which split
+   and strip at Unicode line breaks and spaces (`\f`, `\v`, `\x1c` to
+   `\x1e`, U+0085, U+2028, and U+2029), trigraphs, and line
+   continuations. About 80 lines.
+3. Macros: definitions, `#undef`, the collection of arguments, and
+   pcpp's expansion, which marks each token with an `expanded_from`
+   list where most preprocessors use Prosser's hide sets, with its
+   quirks: a token from an expansion takes the line of
+   the invocation, a space is inserted after an identifier that follows
+   a function-like expansion, `#` escapes every backslash and quote,
+   `##` lexes the joined text again, and `, ## __VA_ARGS__` swallows the
+   comma. About 550 lines.
+4. Directives: the stack of conditionals, `#include` with its search
+   (`-I` then include/ for `<...>`, the directories of the open files
+   then the path for `"..."`, and none for a source read from stdin),
+   `include_once` and the guard heuristic, pass-through of unknown
+   directives, and pcpp's rewriting of paths relative to the current
+   directory, which the warnings' `line N of <path>` shows. About 550
+   lines.
+5. `#if`: pcpp's grammar (a PLY yacc grammar of 64-bit values with an
+   `unsigned` flag), with true division then `int()` for `/`, floored
+   `%`, a left-associative `?:`, the error values that make `0 && 1/0`
+   0, and `_NumberEvaluator`'s rewriting of each number. About 400
+   lines.
+6. The output, pcpp's `write`: blank lines as the difference of line
+   numbers of the tokens, which drifts after an `#include`, the
+   rightmost whitespace token of a run kept, a block comment as a
+   space, a `//` comment as a newline, and the last line ending in a
+   newline. About 120 lines.
+7. preprocessor.py's hooks and arguments: `parse_args`, the three
+   predefined macros and pcpp's `__DATE__`, `__TIME__`, and `__PCPP__`,
+   `true` and `false` in `#if`, the `_Bool` warning (issued when pcpp
+   flushes a line's tokens, so a `_Bool` before an error isn't warned
+   about), the rejection of `#pragma c6502` and the blanking of the
+   other pragmas, and pcpp's own errors, which print `<file>:<line>
+   error: ...` to stderr and don't raise. About 300 lines.
+
+The corpus uses little of this: object-like and function-like macros
+(the latter in two games), `##` only in stdint.h's bodies, `#ifdef`,
+`#ifndef`, `#if` with `defined`, `!`, and `&&`, and `#include` of
+stdint.h, stdbool.h, apple2/monitor_io.h, stdbit.h, and 26 quoted
+headers. All 289 pragmas are in disabled blocks, and no input has
+`#elif`, `#undef`, `#error`, `#line`, a variadic macro, `#`, a line
+continuation, or a carriage return. The Python tests add 2,835 sources,
+function-like macros of stdbit.h, `#` and `##` in expansions, `#elif`,
+`#undef`, `-D`, `-I`, `--passthru-unknown-exprs`, and the 21 calls that
+raise `PreprocessorError` (14 for pragmas, 7 for numbers in `#if`).
+
+The check is the capture of `preprocess` (the source text, the
+arguments, and the file name in, the text and the warnings out, or the
+error), with the files it includes read from their paths, which stay
+in place while the captures are checked. A record could also hold the
+current directory and each file pcpp opens with its bytes, which a
+record made elsewhere would need. The corpus's 2,088 distinct calls and
+the tests' 4,478 distinct inputs are the material, with a generated set
+for what both leave out: macros with `#`, `##`, and `__VA_ARGS__`, `?:`,
+`%`, `/` and large constants in `#if`, comments that span lines, form
+feeds, carriage returns, and the drift of line numbers after an
+include. pcpp's own tests and the mcpp suite it runs are in its
+repository and aren't installed.
+
+### What the port has to keep
+
+The surveys found these places where the Python output depends on
+something a straightforward C++ port could change.
+
+- **Python's repr in messages.** The messages show the repr of strings
+  (single quotes unless the string holds one and no double quote), of
+  AST nodes and types with every field, of Lark's tokens, of a rule's
+  alias (`got 'array_size_static'`), and of class names
+  (`type(x).__name__`). `asdl::py_repr` gives the IR values', and
+  `pyrepr::string` escapes the code points that a `str` of bytes holds
+  as Python does up to U+00FF. Some messages are rewritten after the
+  fact (`str(e).replace(repr(vd.name), repr(name))`, type_checking.py:4044).
+- **The order of names.** Each resolution pass numbers its names in the
+  order of its walk, with one counter per program, and the resolved
+  names appear in the messages of programs that fail
+  (`'@105.hswd'`), so the walk's order is part of the output even for
+  an error.
+- **Set order.** The parser's `_names_in` returns a set, and
+  `_expression_type` (parser.py:2589) iterates it to choose which
+  name's hidden tag to report when several qualify, so that message
+  depends on the hash seed. Every other set of the front end is only
+  tested for membership or sorted (`sorted(preserves)`).
+- **Identity.** The parser compares scopes by identity
+  (`remove_scope`, the `tag_scopes` of a binding), so a C++ scope must
+  not reuse a dead scope's address. The other identity tests choose no
+  behavior by object.
+- **Ints wider than 64 bits.** Literals reach 2^64 - 1 and longer
+  spellings are compared against the limits, attribute arguments and
+  array sizes are unbounded, and constant_expression multiplies two
+  `unsigned long long` operands to as much as 2^128 before reducing,
+  which `asdl::Int` can't hold signed, so the C++ multiplies them in
+  unsigned 128-bit arithmetic. One message prints the unreduced product
+  (`85070591730234615847396907784232501249 does not fit in
+  LongLong()`).
+- **Floats.** `fp_arith` converts a decimal string to a `float` through
+  a double, two roundings, as numpy does, which the C++ `fp_arith`
+  already reproduces. pcpp's `/` in `#if` is Python's true division, so
+  it loses precision above 2^53.
+- **Encodings.** compile.py reads a source as UTF-8, and pcpp opens
+  each header with the locale's encoding (cp1252 here, UTF-8 on Linux),
+  with universal newlines. The shipped headers have non-ASCII only in
+  comments.
+- **An unnamed parameter** is None in `function_decl.params`, which the
+  dump format has no form for, so the captures and `cpp_backend` send
+  the empty string, and a C++ pass reads an empty name as Python's None.
+
+### The captures
+
+`tools/capture_passes.py --passes front` records each call of
+`FRONT_PASSES` and of `FRONT_HELPERS`, the functions of pp_numbers.py,
+where the lexer, the parser, and the preprocessor call them through the
+module. A record of the front end can end in an `output-error` section,
+the JSON object of the exception's class and message, for a call that
+raised, which is then raised again, and can have a `warnings` line, the
+`[where, message]` pairs the call issued. A change to the input in place
+is on the `mutated` line under `input`, as for `c99_to_tac`. The source
+text of `preprocess` and `parse` is the record's `input-json` line, and
+`pp_number_at` is recorded with the text from its position to two
+characters past the match, which is all its regular expression reads.
+`c6502cpp check-captures` reads each record with the signatures of
+`src/passes/front_stage.cpp` and compares a ported call's
+`CompileError` with the recorded error.
+
+On 21 Nov 2026 the capture of the whole corpus took 107 seconds with 12
+processes and wrote 149 MB: 2,088 distinct calls of `preprocess`, 1,788
+of `parse`, 1,562 of `unroll_program`, 1,566 of `identifier_resolution`,
+1,487 each of `string_lifting` and `label_resolution`, 1,477 of
+`loop_labeling`, 1,467 of `type_checking`, 5,137 of `pp_number_at`, 2,117
+of `pp_parse_integer`, and one of `pp_is_floating`. No call failed to
+record. The corpus never calls `pp_check`, `pp_check_floating`, or
+`pp_bit_precise_width`, since the lexer checks only a number with a
+separator, a binary prefix, or a `wb` suffix.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -1032,3 +1474,23 @@ unreachable-code elimination changed the Phis of its input in place
   IR checks the fuzzers turn on, 1.5 s in the simulator's assembler,
   0.6 s in the preprocessor, and 0.5 s in building the simulator's
   runtime. The TAC interpreter's own run took 0.06 s.
+- 21 Nov 2026: the groundwork of step 6 ("Step 6" above). The survey
+  splits the front end into the groups P, R, T, N, U, and D, with plans
+  for the parser and the preprocessor. `tools/capture_passes.py
+  --passes front` records every call of the front end, errors and
+  warnings included, and every value of its 20,177 distinct records of
+  the corpus makes the trip to C++ and back. The pieces the groups share
+  are ported: pp_numbers, which matches on all 7,255 distinct calls of
+  the corpus and on 98 spellings and 69 positions in 19 texts written to
+  reach every branch;
+  diagnostics; Python's repr of every IR value, generated by `asdl.py
+  --cpp`; and the type checker's type queries, which match on 2.3
+  million values of 1,154 `c99types` records (`capture_helpers.py
+  --front-only`), 1.77 million of them `common_type` of pairs of types.
+  `loop_labeling` is ported and matches on all 1,477 distinct calls of
+  the corpus, the 10 that raise `LoopLabelingError` included, and on the
+  38 programs of the Python unit tests, in the builds of MSVC 19.36 and
+  GCC 12.2. The survey found that compile.py printed a traceback for
+  the `NotImplementedError` the parser raises for a variable-length
+  array, a K&R parameter list, or `[static 3]`, and it now reports it as
+  a one-line error.

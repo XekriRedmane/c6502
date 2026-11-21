@@ -17,7 +17,8 @@ end, and emission, each of which matches the Python code on every input
 of the corpus it was checked on. With `C6502_CPP_BACKEND=1`, compile.py
 hands the type-checked c99 program to C++ and takes the `-S` text back
 ("The stage's driver", "The back end through c6502cpp", and
-"Emission", below).
+"Emission", below). Of the front end, the pieces its passes share and
+`loop_labeling` are ported ("The front end's calls").
 
 ## Building
 
@@ -74,7 +75,8 @@ cpp/
   generated/          asdl.py --cpp output, checked in, never edited
     asm_ast.h/.cpp    one header and one source per .asdl module
   src/
-    asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer
+    asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer,
+                      py_repr
     errors.h          CompileError, InternalError
     json.*            the reader of the capture harness's JSON
     capture.*         the reader of capture files and their contexts
@@ -164,6 +166,10 @@ cpp/
                       dispatch_pointer_array.*, split_tables.*
                       the passes over the whole TAC program (step 5,
                       group H)
+      front_stage.*   the signatures and runners of step 6's calls
+      type_checking_types.*   the type queries of type_checking.py
+                      that the front end's passes share (step 6)
+      loop_labeling.* loop_labeling.py (step 6)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -178,8 +184,11 @@ cpp/
     fp_arith.*        fp_arith.py, the IEEE 754 patterns and their arithmetic
     builtin_functions.*   builtin_functions.py: the builtins' names, the
                       packed BCD arithmetic, and the <stdbit.h> operations
-    bit_precise.*     the parts of bit_precise.py code generation and
-                      c99_to_tac read
+    bit_precise.*     the parts of bit_precise.py code generation,
+                      c99_to_tac, and pp_numbers read
+    pp_numbers.*      pp_numbers.py, the spelling of numbers (step 6)
+    diagnostics.*     diagnostics.py, the warnings (step 6)
+    front_helper_checks.cpp   the c99 type queries' records (step 6)
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
@@ -1012,6 +1021,97 @@ of the unit tests matched, 159 in all, except two of
 (`_saving`) with one that makes every table pay, which the C++ pass
 doesn't have. The tests hold 142 calls.
 
+## The front end's calls
+
+Step 6 (docs/cpp_port.md) ports the preprocessor, the parser, and the
+passes on the c99 program through the type checker.
+`tools/capture_passes.py --passes front` records the calls of its
+`FRONT_PASSES`, from `preprocess` to `type_checking`, and of its
+`FRONT_HELPERS`, the functions of pp_numbers.py, and
+`src/passes/front_stage.cpp` gives each a signature, which
+`stage_signatures` appends to those of steps 4 and 5. The source text
+that `preprocess` and `parse` take is the record's `input-json` line, a
+JSON string, and a c99 program is a dump, with "" for an unnamed
+parameter, which the C++ IR holds in place of Python's None.
+
+A call of the front end that raised is recorded with an `output-error`
+section, `{"type": ..., "message": ...}` with the exception's class and
+`str(e)`, which `capture::Call` reads as `output_is_error`. A ported
+runner throws `CompileError` with the Python class as its
+`python_type()` and the same message, and `check-captures` writes the
+same JSON for it (`stage_checks::error_text`) and compares the two. A
+call that issued warnings has a `warnings` line, the JSON list of
+`[where, message]` pairs, which a runner returns in
+`StageOutput::warnings`. The type checker stamps the program it is
+given, and its record's `mutated` line holds the program after the call
+under `input`, as `c99_to_tac`'s does. `check-captures` reads and writes
+back every value of every record, the errors and the warnings included.
+
+These pieces of the front end are ported.
+
+- `pp_numbers` (`src/pp_numbers.*`, namespace `pp_numbers`):
+  `pp_number_at`, `is_floating`, `parse_integer`, `check_floating`,
+  `bit_precise_width`, and `check`, which throw `NumberError`, a
+  `CompileError` of type "NumberError", with Python's messages. Python
+  keeps the value of a constant as an int of any size, so
+  `IntegerConstant` holds its exact `bit_length` in `bits` and the value
+  when that is at most 127, which every caller checks first, since a
+  constant of more than 64 bits has no type. The module tests `in` on
+  one-character strings that may be empty, and `py_in` keeps Python's
+  meaning, in which the empty string is in every string. The corpus
+  spells few numbers that the lexer checks, so `tests/test_pp_numbers.cpp`
+  holds Python's results on spellings that reach every branch, written
+  by a script from the Python module.
+- `diagnostics` (`src/diagnostics.*`): `CompileWarning`, `warn`, and
+  `Collecting`, the RAII form of `collecting()`, whose innermost block
+  is kept per thread as Python keeps it in a context variable.
+- Python's `repr` of every IR value. `asdl.py --cpp` writes a `repr`
+  for each struct and sum type beside the dump format's functions, the
+  dataclass's `ClassName(field=value, ...)` with the fields in the
+  `.asdl`'s order, and `asdl::py_repr(v)` returns it. Strings go through
+  `pyrepr::string`, which now writes U+0080 to U+00A0 and U+00AD as
+  `\x80` and so on, as Python does for a `str` of bytes.
+- The type queries of type_checking.py (`src/passes/type_checking_types.*`,
+  namespace `passes::type_checking`): `strip_quals`, which returns a
+  reference into the type, the predicates, `display_name`, `c_type`,
+  `int_width`, `int_bits`, `is_signed`, `rank`, `promote_integer`,
+  `coerce_int_to_type`, `common_type`, and `common_bit_precise_type`. A
+  query that raises `TypeError` or `KeyError` in Python, for a type it
+  doesn't apply to, throws `InternalError`.
+- `loop_labeling` (`src/passes/loop_labeling.*`), `label_program`,
+  which labels the program it takes by value, where Python builds a new
+  one, and throws `CompileError` of type "LoopLabelingError".
+  `tests/test_loop_labeling.cpp` holds the 38 distinct programs that the
+  Python unit tests label, recorded with Python's results, a call of
+  `label_function` on the legacy `Function` as the call of
+  `label_program` on the program of the `function_decl` it builds.
+
+The type queries and the repr are checked on what the type checker
+returns. `tools/capture_helpers.py --front-only` writes a `c99types`
+record at each call of the type checker, with the dumps of every type of
+the program and its symbol table (and a set of bit-precise types and
+qualified pointers, which the corpus has few of), of its top-level
+declarations, and the names of its symbol table, and `front_values`
+gives each query's value on each type, on each pair of the promoted
+arithmetic types for `common_type`, and on 28 values for
+`coerce_int_to_type`. `check-helpers` computes them in
+`src/front_helper_checks.cpp`.
+
+```sh
+uv run python tools/capture_passes.py --passes front -j 12
+uv run python tools/capture_helpers.py --front-only --corpus examples,games,chapters,fuzz -j 12
+cpp/build/bin/c6502cpp check-captures captures
+cpp/build/bin/c6502cpp check-helpers captures/helpers
+```
+
+On 21 Nov 2026 every value of the 20,177 distinct records of the front
+end's calls on the corpus made the trip, and `check-captures` took 4
+seconds over them. `pp_number_at`, `pp_parse_integer`, and
+`pp_is_floating` matched on all 5,137, 2,117, and 1 of their calls, and
+`loop_labeling` on all 1,477 of its calls, 10 of which raise. The 1,154
+`c99types` records gave 2.3 million values with no difference, 1.77
+million of them `common_type`.
+
 ## The TAC optimizer's driver
 
 `passes::framework::PhaseDriver` (`src/passes/optimization/driver.h`)
@@ -1842,3 +1942,11 @@ Python results through `tests/stage_case.h`.
   `C6502_CPP_BACKEND=1` compile.py hands C++ the type-checked c99
   program. `tools/compare_backends.py` found the same output for all
   3,576 compiles.
+- 21 Nov 2026: the groundwork of step 6 ("The front end's calls"): the
+  captures of the front end, with their errors and warnings, whose
+  20,177 distinct records of the corpus all make the trip; pp_numbers,
+  diagnostics, Python's repr of the IR values, and the type checker's
+  type queries, each matching the Python code on the corpus; and
+  `loop_labeling`, which matches on all 1,477 distinct calls of the
+  corpus and on the Python unit tests' programs, in the builds of MSVC
+  19.36 and GCC 12.2.

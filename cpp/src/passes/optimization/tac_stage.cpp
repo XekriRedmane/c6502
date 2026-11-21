@@ -38,6 +38,7 @@
 #include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/strength_reduction.h"
+#include "passes/optimization/three_way_compare.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "passes/optimization/unreachable_code_elimination.h"
 #include "tagged_json.h"
@@ -238,7 +239,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_count_loops_down"),
       tac_pass("tac_fold_copies_post_destruction", &run_tac_pass<&fold_copies_post_destruction>),
       tac_pass("tac_move_steps_onto_edges"),
-      tac_pass("tac_split_three_way_compares"),
+      tac_pass("tac_split_three_way_compares", &run_tac_pass<&split_three_way_compares>),
       tac_pass("tac_fold_short_circuit_jump"),
       tac_pass("tac_thread_known_compares"),
       // The program-level calls. `c99_to_tac` changes the c99 program

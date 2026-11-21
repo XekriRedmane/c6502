@@ -1,8 +1,9 @@
-// The parts of passes/slot_sharing.py ported so far: the shares of
-// parameter slots between functions and the bindings of variables to
-// them, which other passes read, and `check_shares`, which reads the
-// finished asm program. Finding the shares (`find_shares`) reads the TAC
-// and stays in Python for now.
+// The port of passes/slot_sharing.py: the shares of parameter slots
+// between functions and the bindings of variables to them
+// (`find_shares`), what the allocators, `tac_to_asm`, the link metadata,
+// and emission read of them, and `check_shares`, which reads the
+// finished asm program. The linker's half (`merge_shares`,
+// `check_linked_shares`) isn't ported.
 #pragma once
 
 #include <cstddef>
@@ -13,7 +14,9 @@
 
 #include "asm_ast.h"
 #include "ordered_map.h"
+#include "passes/abi_selection.h"
 #include "passes/asm_context.h"
+#include "passes/type_checking.h"
 #include "tac_ast.h"
 
 namespace c6502::passes {
@@ -77,5 +80,54 @@ bool coexist(std::string_view a, std::string_view b, const ReachSets& reach);
 // with `fn`, in order. Python returns the shares themselves.
 std::vector<std::size_t> share_conflicts(std::string_view fn, const std::vector<SlotShare>& shares,
                                          const ReachSets& reach);
+
+// Returns the shares for `prog` (see the top of slot_sharing.cpp), and
+// for each function the variables it keeps in a share, each mapped to
+// the slot symbols, low byte first, that its operands become.
+// `eligible` is the functions with private pools, `fixed` the routines
+// with fixed addresses, and `recursion` the functions on a cycle.
+// `types` may be null, as Python's default None.
+std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac_ast::Program& prog,
+                                                        const Abi& abi,
+                                                        const SymbolTable& symbols,
+                                                        const TypeTable* types,
+                                                        const NameSet& eligible,
+                                                        const NameSet& fixed,
+                                                        const NameSet& recursion);
+
+// Returns each slot symbol in one of `shares` mapped to one spelling for
+// its byte, the first member's. The allocators and the linker give a
+// share's slots one address, so a store from one of them to another of
+// the same byte is a store of the byte to itself.
+OrderedMap<std::string, std::string> slot_aliases(const std::vector<SlotShare>& shares);
+
+// Returns, for each zp_abi function defined in `prog`, the slot symbols
+// of the parameters it assigns, takes the address of, or indexes by
+// name, for the link metadata: a unit that declares one of them `const`
+// keeps a value there.
+OrderedMap<std::string, std::vector<std::string>> changed_param_slots(const tac_ast::Program& prog,
+                                                                      const Abi& abi,
+                                                                      const SymbolTable& symbols,
+                                                                      const TypeTable* types);
+
+// Returns the `zeropage(addr)` parameters of the zp_abi functions
+// defined in `prog` that their function copies into a local of its own
+// as it starts (`tac_to_asm._pinned_param_locals`), by function. A
+// function keeps such a parameter in its bytes unless something it
+// calls might write them while it runs: a function with a
+// `zeropage(addr)` parameter on any of the same bytes, since its callers
+// store the argument there, or a function this unit doesn't define,
+// other than a routine with an `address` (`addressed`), since it might
+// call one.
+OrderedMap<std::string, NameSet> pinned_param_copies(const tac_ast::Program& prog, const Abi& abi,
+                                                     const SymbolTable& symbols,
+                                                     const TypeTable* types,
+                                                     const NameSet& addressed);
+
+// Returns, for each function, the slot symbols its variables live in,
+// which `asm_emit` names a `(zp),Y` pointer by in that function's body,
+// so the linker, which binds each symbol again, keeps the pointer where
+// the function keeps the value.
+OrderedMap<std::string, NameSet> preferred_symbols(const Bindings& bindings);
 
 }  // namespace c6502::passes

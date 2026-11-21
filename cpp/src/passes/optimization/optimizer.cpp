@@ -91,13 +91,21 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include <utility>
 
 #include "passes/optimization/constant_folding.h"
+#include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
+#include "passes/optimization/phi_offset.h"
 #include "passes/optimization/reassoc_const.h"
 #include "passes/optimization/reassoc_offset.h"
+#include "passes/optimization/recognize_indexed_load.h"
+#include "passes/optimization/recognize_indexed_store.h"
+#include "passes/optimization/recognize_indirect_indexed.h"
+#include "passes/optimization/sink_and_past_branch.h"
+#include "passes/optimization/sink_increment.h"
 #include "passes/optimization/static_const_fold.h"
+#include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/strength_reduction.h"
 #include "passes/optimization/truncate_extend_fold.h"
 
@@ -175,13 +183,13 @@ PhaseDriver make_driver() {
       // `g.m` and `r.m` as direct byte accesses in place of a store
       // through `&g + k`. After the reassociations, so the offset is one
       // Constant.
-      {"direct_member_access", nullptr},
-      {"recognize_indexed_store", nullptr},
-      {"recognize_indexed_load", nullptr},
+      {"direct_member_access", &direct_member_access},
+      {"recognize_indexed_store", &recognize_indexed_store},
+      {"recognize_indexed_load", &recognize_indexed_load},
       {"fold_truncate_extend", &fold_truncate_extend},
       {"fold_extend_extend", &fold_extend_extend},
-      {"sink_increments", nullptr},
-      {"sink_and_past_branch", nullptr},
+      {"sink_increments", &sink_increments},
+      {"sink_and_past_branch", &sink_and_past_branch},
       // After sink_and_past_branch, so that the latter sees the wide
       // `ZeroExtend + BitwiseAnd + Truncate + JumpIfMasked` trio it
       // matches. The narrow form this pass makes (Binary(BitwiseAnd,
@@ -202,12 +210,12 @@ PhaseDriver make_driver() {
       // A join choosing `p + k1` or `p + k2` as a choice of `k1` or `k2`
       // added to `p` after it, which the next two passes make an
       // indexed access.
-      {"phi_offset", nullptr},
+      {"phi_offset", &phi_offset},
       // `o[i].m` on a static array as `IndexedLoad(o, i, offset=m)`
       // (abs,X), and `(&o + i) + m` as `(&o + m) + i`. Before the
       // indirect-indexed recognizer, which would otherwise take the
       // access as `(zp),Y` through a pointer.
-      {"static_indexed_access", nullptr},
+      {"static_indexed_access", &static_indexed_access},
       // The indirect-indexed recognizer runs after the fixed point has
       // converged on constant folding. Inside the loop it could lock in
       // an IndirectIndexed form for an address chain whose pointer is
@@ -217,7 +225,7 @@ PhaseDriver make_driver() {
       // (through recognize_indexed_store), and only the cases with a
       // pointer at run time (zp_abi parameters, pointer locals whose
       // address is taken) are left for the (zp),Y lowering.
-      {"recognize_indirect_indexed", nullptr},
+      {"recognize_indirect_indexed", &recognize_indirect_indexed},
       // `t = a - b` next to the `a < b` (or `>=`, ...) that decides
       // whether it runs, so tac_to_asm branches on its flags in place
       // of comparing too. After the fixed point, whose sinking passes

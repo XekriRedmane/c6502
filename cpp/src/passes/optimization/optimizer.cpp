@@ -102,6 +102,8 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/jump_thread.h"
 #include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
+#include "passes/optimization/narrow_byte_bitwise.h"
+#include "passes/optimization/narrow_byte_range.h"
 #include "passes/optimization/narrow_widened_arith.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
@@ -211,11 +213,11 @@ PhaseDriver make_driver() {
       // `pos / 20`, `(style >> 5)`, and `price * (tier + 1)` on bytes
       // promoted to `int` as byte operations, when value_range bounds
       // the operands by 255.
-      {"narrow_byte_range", nullptr},
+      {"narrow_byte_range", &narrow_byte_range},
       // `(x & 0x3F) < 3` on a byte x as a byte `&`, zero-extended, so
       // the comparison narrows. After sink_and_past_branch for the same
       // reason as narrow_widened_arith.
-      {"narrow_byte_bitwise", nullptr},
+      {"narrow_byte_bitwise", &narrow_byte_bitwise},
   };
   d.post_fixedpoint = {
       // A join choosing `p + k1` or `p + k2` as a choice of `k1` or `k2`

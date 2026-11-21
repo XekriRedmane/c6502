@@ -18,6 +18,8 @@
 #include "passes/optimization/jump_thread.h"
 #include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
+#include "passes/optimization/narrow_byte_bitwise.h"
+#include "passes/optimization/narrow_byte_range.h"
 #include "passes/optimization/narrow_widened_arith.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/optimizer.h"
@@ -226,8 +228,8 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_sink_increments", &run_tac_pass<&sink_increments>),
       tac_pass("tac_sink_and_past_branch", &run_tac_pass<&sink_and_past_branch>),
       tac_pass("tac_narrow_widened_arith", &run_tac_pass<&apply_narrow_widened_arith>),
-      tac_pass("tac_narrow_byte_range"),
-      tac_pass("tac_narrow_byte_bitwise"),
+      tac_pass("tac_narrow_byte_range", &run_tac_pass<&narrow_byte_range>),
+      tac_pass("tac_narrow_byte_bitwise", &run_tac_pass<&narrow_byte_bitwise>),
       tac_pass("tac_phi_offset", &run_tac_pass<&phi_offset>),
       tac_pass("tac_static_indexed_access", &run_tac_pass<&static_indexed_access>),
       tac_pass("tac_recognize_indirect_indexed", &run_tac_pass<&recognize_indirect_indexed>),

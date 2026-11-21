@@ -632,6 +632,25 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
             "never terminates",
         )
 
+    def test_short_cycle_never_terminates(self) -> None:
+        # Stepping by 256 brings a short back to 0 after 256 passes,
+        # within the cap. The message's table of type names had no
+        # entry for short, so the check raised a KeyError.
+        self._expect_unroll_error(
+            """
+            [[c6502::unroll]] for (short i = 0; i <= 32767; i += 256) i;
+            """,
+            "wraps at the width of `short`",
+        )
+
+    def test_ushort_cycle_never_terminates(self) -> None:
+        self._expect_unroll_error(
+            """
+            [[c6502::unroll]] for (unsigned short i = 0; i < 65535u; i += 256) i;
+            """,
+            "wraps at the width of `unsigned short`",
+        )
+
     def test_cli_reports_one_line_error(self) -> None:
         import io
         from unittest.mock import patch

@@ -682,6 +682,8 @@ _C_TYPE_NAME: dict[type, str] = {
     c99_ast.Char: "char",
     c99_ast.SChar: "signed char",
     c99_ast.UChar: "unsigned char",
+    c99_ast.Short: "short",
+    c99_ast.UShort: "unsigned short",
 }
 
 

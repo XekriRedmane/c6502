@@ -137,6 +137,10 @@ cpp/
                       the addressing and sinking passes (step 5, group F)
       optimization/narrow_widened_arith.*   the helpers of that module that
                       group F's passes read
+      optimization/constant_folding.*, phi_constant_fold.*,
+                      static_const_fold.*, distribute_constant.*,
+                      strength_reduction.*, reassoc_const.*, reassoc_offset.*
+                      the folding passes of step 5 (group C)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -145,6 +149,11 @@ cpp/
       tac_to_asm_compare.cpp   the Translator and the parts of the lowering
     tac_to_asm_stage.*  the runner of the stage call `tac_to_asm`
     bit_precise.*     the parts of bit_precise.py code generation reads
+    fp_arith.*        fp_arith.py, the IEEE 754 patterns and their arithmetic
+    builtin_functions.*   builtin_functions.py: the builtins' names, the
+                      packed BCD arithmetic, and the <stdbit.h> operations
+    c99_to_tac.*      c99_to_tac.py's `_tac_const_for`, which group A's port
+                      of the module replaces
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
@@ -841,6 +850,25 @@ The TAC optimizer's passes of step 5 share these.
 | `optimization/var_visit.py`'s `rewrite_uses_in` | `src/passes/optimization/var_visit.*` | `passes` |
 | `optimization/value_range.py` | `src/passes/optimization/value_range.*` | `passes::value_range` |
 | `optimization/framework/` (the run loops, `PassContext`, `DefUseEnv`, `RuleEnv`, `single_use`) | `src/passes/optimization/framework.*` | `passes::framework` |
+| `fp_arith.py` | `src/fp_arith.*` | `fp_arith` |
+| `builtin_functions.py` | `src/builtin_functions.*` | `builtin_functions` |
+| `constant_folding._fold`, `_is_integer_const` | `src/passes/optimization/constant_folding.*` (`fold`, `is_integer_const`) | `passes::constant_folding` |
+| `strength_reduction._scalar_int_size`, `_zero_for_c99_type`, `_two_power_terms` | `src/passes/optimization/strength_reduction.*` | `passes::strength_reduction` |
+| `c99_to_tac._tac_const_for` | `src/c99_to_tac.*` (`tac_const_for`) | `c99_to_tac` |
+
+`constant_folding::fold` returns a `FoldResult`, whose outcome is
+`kUnchanged` where Python returns the instruction itself, `kDropped`
+where it returns None (a jump never taken), and `kReplaced` with the
+folded instruction. `fp_arith` takes and returns the bit patterns as
+`asdl::Int`s. It converts an integer or a decimal string to a `float`
+through a `double`, as numpy does, so the result is rounded twice, and
+`single_bits_to_int` and `double_bits_to_int` return the integer part
+as a `TruncatedInt`, since a double's can take 1,024 bits. A caller
+reduces it modulo 2^N with `wrapped`, or takes it whole with `exact`
+when it fits in an `asdl::Int`, as c99_to_tac does for a conversion
+to `bool`. `c99_to_tac::tac_const_for` is the piece of c99_to_tac.py
+that the folding passes read, which group A's port of the module
+replaces. `distribute_constant` reads group F's `is_1_byte_val`.
 
 `rewrite_uses_in` takes a mapper that returns none to leave an operand,
 where Python's returns the same object, and returns none when nothing
@@ -1466,3 +1494,12 @@ Python results through `tests/stage_case.h`.
   Python pass on every distinct call of the corpus, 58,157 calls in
   all, and on the calls of the Python unit tests, in the builds of
   MSVC 19.36 and GCC 12.2.
+- 21 Nov 2026: group C of step 5, folding: `constant_fold` (with the
+  loads from constant arrays and from tables split into byte planes),
+  `fold_into_constant_phi`, `fold_static_const_reads`,
+  `distribute_constant`, `reduce_strength`, `reassoc_constants`, and
+  `reassoc_offset_constant`, with `fp_arith` and `builtin_functions`.
+  Each pass matches the Python pass on every distinct call of the
+  corpus, and on the 273 calls the Python unit tests make that the
+  tests `test_<module>_calls.cpp` hold. Their entries in the driver's
+  table, and group F's, are filled.

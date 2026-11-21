@@ -884,3 +884,28 @@ unreachable-code elimination changed the Phis of its input in place
   an instruction by identity, the access of
   `recognize_indirect_indexed`, takes the index at which the walk calls
   the rewrite, and every call gave Python's result.
+- 21 Nov 2026: group C of step 5, folding. `constant_fold` (with the
+  loads from constant arrays and from tables split into byte planes),
+  `fold_into_constant_phi`, `fold_static_const_reads`,
+  `distribute_constant`, `reduce_strength`, `reassoc_constants`, and
+  `reassoc_offset_constant` are ported, with all of `fp_arith` and
+  `builtin_functions`, and each pass matches the Python pass on every
+  distinct call of the corpus: 12,931 calls of `tac_constant_fold`,
+  12,891 each of `tac_fold_into_constant_phi` and
+  `tac_distribute_constant`, 4,054 of `tac_fold_static_const_reads`,
+  12,852 of `tac_reduce_strength`, 9,288 of `tac_reassoc_constants`,
+  and 9,280 of `tac_reassoc_offset_constant`, in the builds of MSVC and
+  GCC. The 273 calls of the Python unit tests that changed their
+  function, or that the tests of the pass itself make, are C++ cases,
+  and `fp_arith` and the BCD and <stdbit.h> arithmetic match the Python
+  results on tables of patterns that include both zeros, subnormals,
+  infinities, and quiet and signaling NaNs. `fp_arith` converts an
+  integer to a `float` through a `double`, as numpy does, and returns
+  the integer part of a floating value as a `TruncatedInt`, which a
+  caller reduces modulo 2^N. `fold`, `is_integer_const`, and the
+  helpers of strength reduction that groups D, E, and H read are in
+  `src/passes/optimization/constant_folding.h` and
+  `strength_reduction.h`. `c99_to_tac::tac_const_for` (src/c99_to_tac.h)
+  is the piece of c99_to_tac.py these passes read, which group A's port
+  of the module replaces. The entries of group C's passes and of group
+  F's in the driver's table (`passes::tac_driver()`) are filled.

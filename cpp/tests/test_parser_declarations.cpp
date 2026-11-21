@@ -206,6 +206,11 @@ c6502 doesn't take GCC's `__attribute__((...))`; it takes C23 attributes, such a
     {R"~~(int h(int x[const]);)~~", false, R"~~(NotImplementedError)~~", R"~~(type-qualified array sizes aren't supported)~~"},
     {R"~~(int a[*"ab" + 1];)~~", false, R"~~(NotImplementedError)~~", R"~~(array size must be an integer constant expression: expression is not an integer constant expression: Dereference(exp=AddressOf(exp=String(str='ab'), data_type=Pointer(referenced_type=Char())), data_type=Char()))~~"},
     {R"~~(int a[*(int*)0 + 1];)~~", false, R"~~(NotImplementedError)~~", R"~~(array size must be an integer constant expression: expression is not an integer constant expression: Dereference(exp=Cast(target_type=Pointer(referenced_type=Int()), exp=Constant(const=ConstInt(value=0), data_type=Int()), data_type=Pointer(referenced_type=Int())), data_type=Int()))~~"},
+    {R"~~([[c6502::address(0x1'2345'6789'ABCD'EF01'2345'6789'ABCD'EF01)]] void f(void);)~~", false, R"~~(ParserError)~~", R"~~(address $123456789ABCDEF0123456789ABCDEF01 on function declaration 'f' is outside $0000-$FFFF)~~"},
+    {R"~~([[c6502::address(340282366920938463463374607431768211457u)]] extern int x;)~~", false, R"~~(ParserError)~~", R"~~(address $100000000000000000000000000000001 on object `x` is outside $0000-$FFFF)~~"},
+    {R"~~(extern int z [[c6502::zeropage(340282366920938463463374607431768211457)]];)~~", false, R"~~(ParserError)~~", R"~~(zero-page address $100000000000000000000000000000001 for `z` is outside $00-$FF)~~"},
+    {R"~~(void g(int a [[c6502::zeropage(077777777777777777777777777777777777777777777777777)]]);)~~", false, R"~~(ParserError)~~", R"~~(zero-page address $3FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF for a parameter is outside $00-$FF)~~"},
+    {R"~~([[c6502::section(340282366920938463463374607431768211457)]] int s;)~~", false, R"~~(ParserError)~~", R"~~(`[[c6502::section(...)]]` takes the section's name as a string, such as `section(".text.boot")`; saw 340282366920938463463374607431768211457 on `s`)~~"},
 };
 
 }  // namespace

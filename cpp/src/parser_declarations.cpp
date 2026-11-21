@@ -1611,6 +1611,7 @@ std::optional<AttributeArg> attribute_argument(Descent& p, const std::string& sp
     AttributeArg arg;
     arg.kind = AttributeArg::Kind::kInt;
     arg.integer = p.parse_integer_token(tokens[0].value).constant;
+    arg.spelling = tokens[0].value;
     return arg;
   }
   if (tokens.size() == 1 && tokens[0].type == t.STRING_LITERAL) {

@@ -4,9 +4,11 @@
 // attributes (parser.py:1091-1678), and the helpers of the shared
 // interface that build types and constants from them.
 #include <algorithm>
+#include <cstdint>
 #include <set>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "bit_precise.h"
 #include "parser_declarations.h"
@@ -177,11 +179,83 @@ void type_tags_into(const Type& t, std::vector<std::pair<std::string, bool>>& ou
   }
 }
 
+// The value of the integer constant `spelling`, with any number of
+// digits, as limbs of 32 bits from the lowest. The lexer has checked
+// the spelling, so it is a prefix, digits with separators, and a
+// suffix of `u`s and `l`s.
+std::vector<std::uint32_t> wide_value(std::string_view spelling) {
+  unsigned base = 10;
+  std::size_t i = 0;
+  if (spelling.size() > 1 && spelling[0] == '0' &&
+      (spelling[1] == 'x' || spelling[1] == 'X')) {
+    base = 16;
+    i = 2;
+  } else if (spelling.size() > 1 && spelling[0] == '0' &&
+             (spelling[1] == 'b' || spelling[1] == 'B')) {
+    base = 2;
+    i = 2;
+  } else if (!spelling.empty() && spelling[0] == '0') {
+    base = 8;
+  }
+  std::vector<std::uint32_t> limbs;
+  for (; i < spelling.size(); ++i) {
+    const char c = spelling[i];
+    unsigned digit = 0;
+    if (c == '\'') {
+      continue;
+    }
+    if (c >= '0' && c <= '9') {
+      digit = static_cast<unsigned>(c - '0');
+    } else if (base == 16 && c >= 'a' && c <= 'f') {
+      digit = static_cast<unsigned>(c - 'a' + 10);
+    } else if (base == 16 && c >= 'A' && c <= 'F') {
+      digit = static_cast<unsigned>(c - 'A' + 10);
+    } else {
+      break;  // the suffix
+    }
+    std::uint64_t carry = digit;
+    for (std::uint32_t& limb : limbs) {
+      const std::uint64_t v = static_cast<std::uint64_t>(limb) * base + carry;
+      limb = static_cast<std::uint32_t>(v);
+      carry = v >> 32;
+    }
+    if (carry != 0) {
+      limbs.push_back(static_cast<std::uint32_t>(carry));
+    }
+  }
+  return limbs;
+}
+
+// Returns the digits of `limbs` in `base`, 10 or 16, with uppercase
+// hexadecimal digits, as Python's `str` and `format(x, "X")` write them.
+std::string wide_digits(std::vector<std::uint32_t> limbs, unsigned base) {
+  std::string out;
+  while (!limbs.empty()) {
+    std::uint64_t rem = 0;
+    for (auto it = limbs.rbegin(); it != limbs.rend(); ++it) {
+      const std::uint64_t v = (rem << 32) | *it;
+      *it = static_cast<std::uint32_t>(v / base);
+      rem = v % base;
+    }
+    out.push_back("0123456789ABCDEF"[rem]);
+    while (!limbs.empty() && limbs.back() == 0) {
+      limbs.pop_back();
+    }
+  }
+  if (out.empty()) {
+    out = "0";
+  }
+  return {out.rbegin(), out.rend()};
+}
+
 std::string arg_repr(const AttributeArg& arg) {
   switch (arg.kind) {
     case AttributeArg::Kind::kNone:
       return "None";
     case AttributeArg::Kind::kInt:
+      if (!arg.integer.fits()) {
+        return wide_digits(wide_value(arg.spelling), 10);
+      }
       return pyrepr::integer(arg.integer.value);
     case AttributeArg::Kind::kString:
       return repr(arg.string);
@@ -196,9 +270,8 @@ bool int_in_range(const AttributeArg& arg, asdl::Int high) {
 
 std::string arg_hex(const AttributeArg& arg) {
   if (!arg.integer.fits()) {
-    // Python prints every digit of a value wider than 127 bits, which
-    // no message the tests reach has needed.
-    throw InternalError("parser: an attribute's address is wider than 127 bits");
+    // Python prints every digit of a value wider than 127 bits.
+    return wide_digits(wide_value(arg.spelling), 16);
   }
   return pyrepr::hex(arg.integer.value, 0);
 }

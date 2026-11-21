@@ -106,11 +106,13 @@ const Terminals& terminals();
 // The argument of an attribute that means something to c6502
 // (parser.py's `_attribute_argument`): none, one integer constant, whose
 // value may be any size, or the text of one string literal between its
-// quotes.
+// quotes. An integer's `spelling` is the constant as written, which
+// gives the digits of a value too wide for `integer.value`.
 struct AttributeArg {
   enum class Kind { kNone, kInt, kString };
   Kind kind = Kind::kNone;
   pp_numbers::IntegerConstant integer;
+  std::string spelling;
   std::string string;
 
   bool is_none() const { return kind == Kind::kNone; }

@@ -309,15 +309,15 @@ class TestTacCapture(unittest.TestCase):
         self.assertIn("\nmutated {\"args\": {\"0\": ", text)
 
     @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
-    def test_cpp_reads_every_value_back(self):
+    def test_cpp_port_matches(self):
         result = subprocess.run(
             [cpp_cli(), "check-captures", str(self.out)],
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         n = len(self._texts("tac_fold_truncate_extend"))
-        self.assertIn(f"tac_fold_truncate_extend: {n} calls, {n} round-trip",
-                      result.stdout)
+        self.assertIn(f"tac_fold_truncate_extend: {n} calls, {n} round-trip, "
+                      f"{n} match, 0 differ", result.stdout)
 
 
 def _decode_table(v):

@@ -1,5 +1,11 @@
 #include "passes/optimization/tac_stage.h"
 
+#include <stdexcept>
+#include <string>
+#include <utility>
+
+#include "passes/optimization/framework.h"
+#include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
 
 namespace c6502::passes::tac_stage {
@@ -8,6 +14,7 @@ namespace {
 
 namespace ir = ::c6502::tac_ast;
 using namespace ::c6502::tagged;
+using framework::PassContext;
 
 using Sym = SymbolTableC;
 using Types = TypeTableC;
@@ -15,6 +22,56 @@ using TacFunctionC = Asdl<ir::Type_top_level, kTacAst>;
 
 template <class C>
 constexpr RoundTrip rt = &round_trip<C>;
+
+// A pass of the TAC optimizer's driver, as the C++ port runs it: the
+// function and the context, which it may add to.
+using TacPass = ir::Function (*)(ir::Function fn, const PassContext& ctx);
+
+const json::Value& kwarg(const json::Value& kwargs, std::string_view name) {
+  const json::Value* v = kwargs.get(name);
+  if (v == nullptr) {
+    throw std::runtime_error("the call has no keyword argument " + std::string(name));
+  }
+  return *v;
+}
+
+// Runs the ported pass `Pass` on a recorded call of the TAC optimizer's
+// driver, whose keyword arguments are the symbols the call read and the
+// SSA names (tools/capture_passes.py, `_tac_record`), and gives the
+// result's dump and the `mutated` line for the symbols the pass added
+// and the SSA names it changed, in that order, as the harness writes
+// it.
+template <TacPass Pass>
+StageOutput run_tac_pass(const capture::Call& call, const AsmContext&, const json::Value&,
+                         const json::Value& kwargs) {
+  auto fn = std::get<ir::Function>(asdl::load<ir::Type_top_level>(call.input));
+  std::optional<SymbolTable> symbols = Optional<Sym>::decode(kwarg(kwargs, "symbols"));
+  std::optional<NameSet> ssa = Optional<NameSetC>::decode(kwarg(kwargs, "ssa_dsts"));
+  const std::string symbols_before = encode<Optional<Sym>>(symbols);
+  const std::string ssa_before = encode<Optional<NameSetC>>(ssa);
+  const PassContext ctx{
+      .symbols = symbols ? &*symbols : nullptr,
+      .ssa_dsts = ssa ? &*ssa : nullptr,
+  };
+  ir::Function out = Pass(std::move(fn), ctx);
+  StageOutput result{asdl::dump(ir::Type_top_level{std::move(out)}), ""};
+  std::string changed;
+  const std::string symbols_after = encode<Optional<Sym>>(symbols);
+  if (symbols_after != symbols_before) {
+    changed += "\"symbols\": " + symbols_after;
+  }
+  const std::string ssa_after = encode<Optional<NameSetC>>(ssa);
+  if (ssa_after != ssa_before) {
+    if (!changed.empty()) {
+      changed += ", ";
+    }
+    changed += "\"ssa_dsts\": " + ssa_after;
+  }
+  if (!changed.empty()) {
+    result.mutated = "{\"args\": {}, \"kwargs\": {" + changed + "}}";
+  }
+  return result;
+}
 
 // The signature of one of the TAC optimizer's calls on a function.
 // `run` is null until the pass is ported.
@@ -60,8 +117,8 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_direct_member_access"),
       tac_pass("tac_recognize_indexed_store"),
       tac_pass("tac_recognize_indexed_load"),
-      tac_pass("tac_fold_truncate_extend"),
-      tac_pass("tac_fold_extend_extend"),
+      tac_pass("tac_fold_truncate_extend", &run_tac_pass<&fold_truncate_extend>),
+      tac_pass("tac_fold_extend_extend", &run_tac_pass<&fold_extend_extend>),
       tac_pass("tac_sink_increments"),
       tac_pass("tac_sink_and_past_branch"),
       tac_pass("tac_narrow_widened_arith"),

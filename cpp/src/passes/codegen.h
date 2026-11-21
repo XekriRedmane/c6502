@@ -56,9 +56,27 @@ struct EmitResult {
   asm2_ast::Program asm2_prog;
 };
 
+// What `optimized_program` gives: the finished asm program, what the
+// region returns besides it, and the link metadata's records of the
+// zero-page objects, which `link_records` takes from the program before
+// `place_zp_globals`.
+struct OptimizedProgram {
+  asm_ast::Program prog;
+  WrittenSlots coalesced_params;
+  std::vector<NewFunction> new_functions;
+  std::vector<ZpObjectMeta> zp_records;
+};
+
+// Runs the end of `optimized_asm` on `prog`, the program after
+// `synthesize_prologue`: the region, `link_records`, `place_zp_globals`,
+// and `check_shares`. The simulator harness assembles the program it
+// gives.
+OptimizedProgram optimized_program(asm_ast::Program prog, const AsmContext& ctx,
+                                   const RegionArgs& region, const ZpGlobals& zp,
+                                   const HelperFootprints& footprints);
+
 // Runs the end of `_codegen` under `-O` on `prog`, the program after
-// `synthesize_prologue`: the region of `optimized_asm`, `link_records`,
-// `place_zp_globals`, `check_shares`, `prune_unused_locals`,
+// `synthesize_prologue`: `optimized_program`, then `prune_unused_locals`,
 // `lower_to_asm2`, the link metadata, and `emit_program`.
 EmitResult optimized_text(asm_ast::Program prog, const AsmContext& ctx, const RegionArgs& region,
                           const EmitArgs& args);

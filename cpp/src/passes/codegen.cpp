@@ -45,16 +45,28 @@ OrderedSymbolAddrs merged(OrderedSymbolAddrs first, const OrderedSymbolAddrs& se
 
 }  // namespace
 
-EmitResult optimized_text(asm_ast::Program prog, const AsmContext& ctx, const RegionArgs& region,
-                          const EmitArgs& args) {
+OptimizedProgram optimized_program(asm_ast::Program prog, const AsmContext& ctx,
+                                   const RegionArgs& region, const ZpGlobals& zp,
+                                   const HelperFootprints& footprints) {
   RegionResult r = optimized_region(std::move(prog), ctx, region);
-  EmitResult out;
-  out.new_functions = r.new_functions;
+  OptimizedProgram out;
+  out.coalesced_params = std::move(r.coalesced_params);
+  out.new_functions = std::move(r.new_functions);
   // Zero-page globals: their records for the link metadata, then their
   // storage dropped and `__zp_init` added (passes/zp_globals.py).
-  std::vector<ZpObjectMeta> zp_records = link_records(r.prog, args.zp);
-  out.asm_prog = place_zp_globals(std::move(r.prog), args.zp, args.footprints);
-  check_shares(out.asm_prog, region.shares);
+  out.zp_records = link_records(r.prog, zp);
+  out.prog = place_zp_globals(std::move(r.prog), zp, footprints);
+  check_shares(out.prog, region.shares);
+  return out;
+}
+
+EmitResult optimized_text(asm_ast::Program prog, const AsmContext& ctx, const RegionArgs& region,
+                          const EmitArgs& args) {
+  OptimizedProgram r = optimized_program(std::move(prog), ctx, region, args.zp, args.footprints);
+  EmitResult out;
+  out.new_functions = r.new_functions;
+  std::vector<ZpObjectMeta> zp_records = std::move(r.zp_records);
+  out.asm_prog = std::move(r.prog);
   // The `__local_*` slots that the peepholes left unread lose their EQU
   // lines. The bytes stay reserved by each function's `local_bytes`.
   const OrderedSymbolAddrs emit_slot_symbols = prune_unused_locals(out.asm_prog, args.slot_symbols);

@@ -52,6 +52,13 @@ shares `find_shares` returned, and the runtime's layout, and
 of `replace_pseudoregisters` and `replace_program_bare_exit`, holds the
 names of the pseudos of the program and of the colorings, and
 `pseudo_values` gives `parse_pseudo_name` of each.
+
+The helpers that the TAC optimizer's passes share (step 5) have a
+record of their own, which `--tac-only` makes without the others. A
+`tacopt` record, made at each call of a pass of the optimizer's driver
+(`PhaseDriver`), holds one line of tagged JSON with the function the
+pass is given, the symbols of its operands, and the SSA names, and
+`tac_opt_values` gives its values.
 """
 from __future__ import annotations
 
@@ -582,7 +589,115 @@ _SLOTS: dict | None = None
 # the context's text) for the ones seen as objects, kept with the
 # instructions so the ids stay theirs.
 _DONE: dict = {}
-_COUNTS = {"fn": 0, "prog": 0, "tac": 0, "tables": 0, "pseudos": 0}
+_COUNTS = {"fn": 0, "prog": 0, "tac": 0, "tables": 0, "pseudos": 0, "tacopt": 0}
+
+
+def tac_opt_values(fn, symbols, ssa_dsts) -> list[tuple[str, str]]:
+    """The values of the helpers that the TAC optimizer's passes share
+    (step 5 of the port), on a function one of them is given, with the
+    symbols of its operands and the SSA names. Each is a list of fields,
+    one per instruction or symbol, separated by spaces, with "-" for an
+    empty field.
+
+    - `max_value`: `value_range.max_value` of each operand `vals_in`
+      gives, in order, separated by commas, with "." for None. A Var's
+      definition is the one `DefUsePass` indexes.
+    - `type_queries`: `int_width`, `type_max`, and `is_unsigned_type` of
+      each symbol's type, separated by commas, with "." for None.
+    - `rewrite_vars` and `rewrite_consts`: `var_visit.rewrite_uses_in`
+      of each instruction, with a mapper that renames every Var `x` to
+      `x'`, and one that makes every constant the `int` 7. A field is
+      "=" when the same instruction comes back, and otherwise the dump
+      of the new one with "_" for each space."""
+    import tac_ast
+    from passes.optimization.framework.defuse import _build_def_idx
+    from passes.optimization.value_range import (
+        int_width, is_unsigned_type, max_value, type_max,
+    )
+    from passes.optimization.var_visit import rewrite_uses_in, vals_in
+    instrs = fn.instructions
+    def_idx = _build_def_idx(instrs)
+
+    def def_of(v):
+        i = def_idx.get(v.name)
+        return None if i is None else instrs[i]
+
+    def opt(x):
+        return "." if x is None else str(x)
+
+    bounds = [
+        ",".join(opt(max_value(v, def_of, symbols, ssa_dsts))
+                 for v in vals_in(ins))
+        for ins in instrs
+    ]
+    queries = [
+        ",".join((opt(int_width(sym.type)), opt(type_max(sym.type)),
+                  "1" if is_unsigned_type(sym.type) else "0"))
+        for _, sym in symbols.items()
+    ]
+
+    def rename(v):
+        if isinstance(v, tac_ast.Var):
+            return tac_ast.Var(name=v.name + "'")
+        return v
+
+    seven = tac_ast.Constant(const=tac_ast.ConstInt(value=7))
+
+    def constants(v):
+        return seven if isinstance(v, tac_ast.Constant) else v
+
+    def rewritten(mapper):
+        out = []
+        for ins in instrs:
+            new = rewrite_uses_in(ins, mapper)
+            out.append("=" if new is ins else _dump1(new).replace(" ", "_"))
+        return out
+
+    return [
+        ("max_value", _fields(bounds)),
+        ("type_queries", _fields(queries)),
+        ("rewrite_vars", _fields(rewritten(rename))),
+        ("rewrite_consts", _fields(rewritten(constants))),
+    ]
+
+
+def _record_tac_opt(fn, ctx) -> None:
+    """Writes a `tacopt` record of the function a pass of the TAC
+    optimizer's driver is given, with the symbols of its operands, in
+    the table's order, and the SSA names."""
+    import ir_dump
+    from passes.optimization.var_visit import vals_in
+    from passes.type_checking import SymbolTable
+    import tac_ast
+    if ctx.symbols is None:
+        return
+    names = {
+        v.name for ins in fn.instructions for v in vals_in(ins)
+        if isinstance(v, tac_ast.Var)
+    }
+    table = SymbolTable()
+    for name, sym in ctx.symbols.items():
+        if name in names:
+            table[name] = sym
+    body = json.dumps({
+        "function": {"asdl": "tac_ast", "dump": ir_dump.dump(fn)},
+        "symbols": capture_passes.encode(table),
+        "ssa_dsts": capture_passes.encode(ctx.ssa_dsts),
+    }) + "\n"
+    k = hashlib.sha1(body.encode("utf-8")).hexdigest()
+    if (_OUT / "tacopt" / f"{k}.txt").exists():
+        return
+    _write_keyed(
+        "tacopt", k, f"c6502-helpers 1\nsource {_SOURCE}\ntacopt\n" + body,
+        tac_opt_values(fn, table, ctx.ssa_dsts),
+    )
+
+
+def _wrap_tac_pass(run):
+    def wrapper(fn, ctx):
+        _record_tac_opt(fn, ctx)
+        return run(fn, ctx)
+    return wrapper
 
 
 def _record_program(prog, kwargs) -> None:
@@ -728,13 +843,21 @@ def _wrap_select_abi(fn):
     return wrapper
 
 
-def install(out: Path, stage_only: bool = False) -> None:
+def install(out: Path, stage_only: bool = False, tac_only: bool = False) -> None:
     """Wraps the passes in `compile`'s namespace to record the helpers'
     values under `out`. With `stage_only`, only the records of the code
-    generation helpers (`tables` and `pseudos`) are made."""
+    generation helpers (`tables` and `pseudos`) are made, and with
+    `tac_only` only those of the TAC optimizer's helpers (`tacopt`),
+    made at each call of a pass of its driver."""
     global _OUT
     import compile as compile_module
     _OUT = out
+    if tac_only:
+        from passes.optimization.optimizer import _DRIVER
+        for slot in capture_passes._DRIVER_SLOTS:
+            for p in getattr(_DRIVER, slot):
+                p.run = _wrap_tac_pass(p.run)
+        return
     if not stage_only:
         for attr in capture_passes.PASSES.values():
             setattr(compile_module, attr,
@@ -748,12 +871,12 @@ def install(out: Path, stage_only: bool = False) -> None:
                 _wrap_replace(getattr(compile_module, attr)))
 
 
-def _init_worker(out: str, stage_only: bool) -> None:
+def _init_worker(out: str, stage_only: bool, tac_only: bool = False) -> None:
     # The values recorded are those the Python passes see, and they
     # don't run when C6502_CPP_BACKEND=1 hands the back end to the C++
     # port.
     os.environ.pop("C6502_CPP_BACKEND", None)
-    install(Path(out), stage_only)
+    install(Path(out), stage_only, tac_only)
 
 
 def _run_job(job) -> tuple[str, bool, dict[str, int]]:
@@ -798,6 +921,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--stage-only", action="store_true",
                     help="record only the code generation helpers")
+    ap.add_argument("--tac-only", action="store_true",
+                    help="record only the TAC optimizer's helpers")
     ns = ap.parse_args(argv)
     jobs = [
         (label, args, mode)
@@ -811,7 +936,8 @@ def main(argv: list[str] | None = None) -> int:
     totals = dict.fromkeys(_COUNTS, 0)
     failed = 0
     with ProcessPoolExecutor(
-        max_workers=ns.j, initializer=_init_worker, initargs=(str(out), ns.stage_only),
+        max_workers=ns.j, initializer=_init_worker,
+        initargs=(str(out), ns.stage_only, ns.tac_only),
     ) as pool:
         for label, ok, counts in pool.map(_run_job, jobs, chunksize=1):
             if not ok:

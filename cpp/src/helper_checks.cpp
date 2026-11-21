@@ -550,6 +550,9 @@ std::size_t value_count(const std::string& name, const std::string& value) {
       // `defs_in`, one per instruction (`_cfg_values`).
       "tac_cfg", "reverse_postorder", "immediate_dominators", "dominator_tree_children",
       "dominance_frontiers", "natural_loops", "recursion_saves_defs_in",
+      // The TAC optimizer's helpers, one value per instruction or symbol
+      // (`tac_opt_values`).
+      "max_value", "type_queries", "rewrite_vars", "rewrite_consts",
   };
   if (name == "runtime_bytes") {
     return static_cast<std::size_t>(std::count(value.begin(), value.end(), ',')) + 1;

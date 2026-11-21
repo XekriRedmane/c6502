@@ -307,6 +307,151 @@ std::vector<std::string_view> uses_in(const ir::Type_instruction& instr) {
   return out;
 }
 
+namespace {
+
+// Calls `f` on each operand `instr` reads, in the order Python's
+// `rewrite_uses_in` passes them to its mapper. `Instr` is a const or a
+// mutable instruction, so one walk serves both the test of whether
+// anything changes and the rewrite.
+template <class Instr, class F>
+void for_each_use(Instr& instr, F f) {
+  switch (ir::kind(instr)) {
+    case K::Ret: {
+      auto& i = std::get<ir::Ret>(instr);
+      if (i.val) {
+        f(*i.val);
+      }
+      return;
+    }
+#define C6502_SRC(Name)          \
+  case K::Name:                  \
+    f(std::get<ir::Name>(instr).src); \
+    return;
+    C6502_SRC(SignExtend)
+    C6502_SRC(ZeroExtend)
+    C6502_SRC(Truncate)
+    C6502_SRC(IntToFloat)
+    C6502_SRC(IntToDouble)
+    C6502_SRC(FloatToInt)
+    C6502_SRC(DoubleToInt)
+    C6502_SRC(FloatToDouble)
+    C6502_SRC(DoubleToFloat)
+    C6502_SRC(Unary)
+    C6502_SRC(Copy)
+#undef C6502_SRC
+    case K::Binary: {
+      auto& i = std::get<ir::Binary>(instr);
+      f(i.src1);
+      f(i.src2);
+      return;
+    }
+    case K::Load:
+      f(std::get<ir::Load>(instr).src_ptr);
+      return;
+    case K::Store: {
+      auto& i = std::get<ir::Store>(instr);
+      f(i.src);
+      f(i.dst_ptr);
+      return;
+    }
+    case K::IndexedLoad:
+      f(std::get<ir::IndexedLoad>(instr).index);
+      return;
+    case K::IndexedStore: {
+      auto& i = std::get<ir::IndexedStore>(instr);
+      f(i.index);
+      f(i.src);
+      return;
+    }
+    case K::IndexedSymbolStore: {
+      auto& i = std::get<ir::IndexedSymbolStore>(instr);
+      f(i.index);
+      f(i.src);
+      return;
+    }
+    case K::IndexedConstLoad:
+      f(std::get<ir::IndexedConstLoad>(instr).index);
+      return;
+    case K::IndirectIndexedLoad: {
+      auto& i = std::get<ir::IndirectIndexedLoad>(instr);
+      f(i.ptr);
+      f(i.index);
+      return;
+    }
+    case K::IndirectIndexedStore: {
+      auto& i = std::get<ir::IndirectIndexedStore>(instr);
+      f(i.ptr);
+      f(i.index);
+      f(i.src);
+      return;
+    }
+    case K::JumpIfTrue:
+      f(std::get<ir::JumpIfTrue>(instr).condition);
+      return;
+    case K::JumpIfFalse:
+      f(std::get<ir::JumpIfFalse>(instr).condition);
+      return;
+    case K::JumpIfCmp: {
+      auto& i = std::get<ir::JumpIfCmp>(instr);
+      f(i.src1);
+      f(i.src2);
+      return;
+    }
+    case K::JumpIfMasked:
+      f(std::get<ir::JumpIfMasked>(instr).val);
+      return;
+    case K::FunctionCall:
+      for (auto& a : std::get<ir::FunctionCall>(instr).args) {
+        f(a);
+      }
+      return;
+    case K::IndirectCall: {
+      auto& i = std::get<ir::IndirectCall>(instr);
+      f(i.ptr);
+      for (auto& a : i.args) {
+        f(a);
+      }
+      return;
+    }
+    case K::Phi:
+      for (auto& a : std::get<ir::Phi>(instr).args) {
+        f(std::get<ir::PhiArg>(a).source);
+      }
+      return;
+    default:
+      // A `GetAddress`'s operand names a storage cell, and the jumps
+      // and labels read no value.
+      return;
+  }
+}
+
+}  // namespace
+
+std::optional<ir::Type_instruction> rewrite_uses_in(const ir::Type_instruction& instr,
+                                                    const ValMapper& mapper) {
+  // Each operand's replacement, in the order of the walk, computed on
+  // the instruction as it is so that nothing is copied when nothing
+  // changes.
+  std::vector<std::optional<ir::Type_val>> replacements;
+  bool changed = false;
+  for_each_use(instr, [&](const ir::Type_val& v) {
+    replacements.push_back(mapper(v));
+    changed = changed || replacements.back().has_value();
+  });
+  if (!changed) {
+    return std::nullopt;
+  }
+  ir::Type_instruction out = instr;
+  std::size_t k = 0;
+  for_each_use(out, [&](ir::Type_val& v) {
+    if (replacements[k]) {
+      v = std::move(*replacements[k]);
+    }
+    ++k;
+  });
+  return out;
+}
+
 OrderedMap<std::string, std::size_t> count_uses(const std::vector<ir::Type_instruction>& instrs) {
   OrderedMap<std::string, std::size_t> counts;
   for (const auto& instr : instrs) {

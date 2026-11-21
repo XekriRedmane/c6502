@@ -11,6 +11,7 @@
 #include "passes/optimization/optimizer.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
+#include "passes/optimization/phi_offset.h"
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
@@ -205,7 +206,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_narrow_widened_arith"),
       tac_pass("tac_narrow_byte_range"),
       tac_pass("tac_narrow_byte_bitwise"),
-      tac_pass("tac_phi_offset"),
+      tac_pass("tac_phi_offset", &run_tac_pass<&phi_offset>),
       tac_pass("tac_static_indexed_access", &run_tac_pass<&static_indexed_access>),
       tac_pass("tac_recognize_indirect_indexed", &run_tac_pass<&recognize_indirect_indexed>),
       tac_pass("tac_hoist_subtract_to_compare"),

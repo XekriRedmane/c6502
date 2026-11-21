@@ -35,6 +35,7 @@
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
+#include "passes/optimization/row_address_tables.h"
 #include "passes/optimization/short_circuit_jump_fold.h"
 #include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/sink_increment.h"
@@ -199,6 +200,23 @@ StageOutput run_return_in_zero_page(const capture::Call& call, const AsmContext&
   return program_output(return_pointers_in_zero_page(std::move(prog), symbols), before, symbols);
 }
 
+// Runs the tables of row addresses on a recorded call, whose arguments
+// after the program are the symbol table and the type table. compile.py
+// passes both, and a unit test may leave the type table out, which is
+// None in Python.
+StageOutput run_row_address_tables(const capture::Call& call, const AsmContext&,
+                                   const json::Value& args, const json::Value&) {
+  auto prog = asdl::load<ir::Program>(call.input);
+  const auto& items = array_items(args);
+  SymbolTable symbols = Sym::decode(items.at(0));
+  const std::optional<TypeTable> types =
+      items.size() > 1 ? Optional<Types>::decode(items[1]) : std::nullopt;
+  const std::string before = encode<Sym>(symbols);
+  return program_output(
+      apply_row_address_tables(std::move(prog), &symbols, types ? &*types : nullptr), before,
+      symbols);
+}
+
 // Returns `run` when every pass of the driver's table is ported, and
 // null otherwise, for the calls that run the whole driver.
 StageRun when_driver_complete(StageRun run) {
@@ -290,7 +308,8 @@ std::vector<StageSignature> signatures() {
       {.name = "row_address_tables",
        .input = "tac_ast",
        .args = {rt<Sym>, rt<Types>},
-       .output_module = "tac_ast"},
+       .output_module = "tac_ast",
+       .run = &run_row_address_tables},
       {.name = "optimize_tac",
        .input = "tac_ast",
        .args = {rt<Sym>},

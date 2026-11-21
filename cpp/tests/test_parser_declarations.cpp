@@ -203,6 +203,7 @@ c6502 doesn't take GCC's `__attribute__((...))`; it takes C23 attributes, such a
   VarDecl(var_decl("n" SizeOfType(Pointer(Const(Pointer(Char))) None) UInt None None None None false))
 ])
 )~~"},
+    {R"~~(int h(int x[const]);)~~", false, R"~~(NotImplementedError)~~", R"~~(type-qualified array sizes aren't supported)~~"},
 };
 
 }  // namespace

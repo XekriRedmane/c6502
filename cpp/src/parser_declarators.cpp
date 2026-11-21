@@ -73,15 +73,9 @@ asdl::Int array_size(Descent& p, const ArraySuffix& suffix) {
   if (children == 0) {
     return 0;
   }
-  if (children > 1) {
+  // A qualifier with or without a size, as in `int a[const]`.
+  if (children > 1 || !suffix.size) {
     throw NotImplemented("type-qualified array sizes aren't supported");
-  }
-  if (!suffix.size) {
-    // Python folds the qualifier token as the size, and its type checker
-    // raises TypeError for it.
-    throw CompileError("TypeError",
-                       "unexpected exp: " + lark::token_repr(suffix.qualifiers[0],
-                                                             lark_table::c99_table()));
   }
   const Exp& size = *suffix.size;
   const auto* constant = std::get_if<ir::Constant>(&size);

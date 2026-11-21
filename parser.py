@@ -2680,7 +2680,10 @@ def _array_size_from_suffix(suffix):
         )
     if len(suffix.children) == 0:
         return 0
-    if len(suffix.children) > 1:
+    # The children are the qualifier tokens and then the size, so a
+    # lone child that's a token is a qualifier with no size, as in
+    # `int a[const]`.
+    if len(suffix.children) > 1 or isinstance(suffix.children[0], Token):
         raise NotImplementedError(
             "type-qualified array sizes aren't supported"
         )

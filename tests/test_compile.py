@@ -52,6 +52,12 @@ class TestCompileDriver(unittest.TestCase):
              "K&R-style identifier-list functions aren't supported"),
             ("int g(int x[static 3]);",
              "only plain array sizes are supported"),
+            # A qualifier with no size used to reach the size's fold
+            # as if it were the size, which raised TypeError.
+            ("int h(int x[const]);",
+             "type-qualified array sizes aren't supported"),
+            ("int a[volatile];",
+             "type-qualified array sizes aren't supported"),
         ):
             with self.subTest(src=src):
                 rc, _, err = self._run(["compile.py", "-", "-S"], stdin=src)

@@ -107,6 +107,10 @@ cpp/
       stage_registry.*  the stage calls' signatures and runners (step 4)
       stage_registry_abi.*  the runners of group A's stage calls
       stage_registry_sharing.*  the runners of group B's stage calls
+      address_taken_zp.*, local_slot_names.*, lower_data_load_address.*,
+                      replace_pseudoregisters.*, zp_slot_naming.*   the
+                      end of the stage (step 4, part F2)
+      stage_registry_frames.*  the runners of part F2's stage calls
       optimization/   pool, register_allocation, the interference graph, var_visit
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
@@ -534,6 +538,50 @@ and exceptions (`tests/sharing_case.h`), among them 12 of
 `choose_layout` and 74 of `allocate_zp_globals`, and
 `tests/test_zp_allocator_errors.cpp` the allocators' errors that no
 test reaches.
+
+### The end of the stage
+
+Part F2 of step 4 ported the work between the asm optimizer's last run
+and `synthesize_prologue`. `compute_address_taken_assignments` and
+`address_taken_zp::slot_symbols` (`src/passes/address_taken_zp.*`) put
+the address-taken locals of a function with a private pool in the pool
+bytes its coloring leaves free and name them. `local_slot_names`
+(`src/passes/local_slot_names.*`, a file of its own because the asm
+optimizer's `apply_coloring` calls it too) names one pool's bytes, and
+`compute_local_slot_names` (`src/passes/zp_slot_naming.*`) every
+pool's. `replace_program` and `replace_program_bare_exit`
+(`src/passes/replace_pseudoregisters.*`) replace the pseudos and lay
+out the frames, the second returning the `FrameDims` by function that
+`synthesize_program` reads, and `lower_data_load_address`
+(`src/passes/lower_data_load_address.*`) splits each `LoadAddress` of a
+`Data` source. The runners are in `src/passes/stage_registry_frames.*`.
+
+The stage's driver calls them in compile.py's order:
+`compute_address_taken_assignments` on the pools of the functions off
+every cycle, `slot_symbols` for each function, `replace_program_bare_exit`
+with a `BareExitTables` of the ABI, the pools, and those two maps, then
+`local_slots`, which is `compute_local_slot_names` followed by
+`build_local_slot_symbols` and gives both the names and the `EQU`
+table, and last `lower_data_load_address` with the table merged with
+the zp_abi slots and each pool's bytes zipped with its names. The
+unoptimized pipeline calls `replace_program` after `tac_to_asm`. A
+pseudo of none of the four kinds, and a `Phi`, throw `InternalError`
+with Python's message, since Python raises `ValueError` and
+`TypeError`, which aren't errors of the program.
+
+On 20 Nov 2026 the capture of the seven calls over the whole corpus
+took 104 seconds with 12 processes and wrote 637 MB, and every distinct
+call matched in the builds of MSVC 19.36 and GCC 12.2: 1,110 of `address_taken_assignments`, 3,798 of
+`address_taken_slot_symbols`, 1,110 of
+`replace_pseudoregisters_bare_exit`, 855 of `local_slot_names`, 778 of
+`local_slot_symbols`, 938 of `lower_data_load_address`, and 1,146 of
+`replace_pseudoregisters`. No function of the corpus has two
+address-taken locals with one source name, so
+`tests/test_frames_stage_calls.cpp` holds the 66 distinct calls that
+the Python unit tests of the four modules make, recorded as stage calls
+with Python's results (the per-function calls as the program-level
+call on a program of the one function), and three cases written by
+hand for the two errors and for the fallbacks of `local_slot_names`.
 
 ## The shared helpers
 
@@ -1118,3 +1166,10 @@ Python results through `tests/stage_case.h`.
   matching the Python function on every distinct call of the corpus,
   10,838 calls in all, and on 551 calls that the unit tests make or
   that reach the allocators' errors.
+- 20 Nov 2026: part F2 of step 4, the end of the stage ("The end of the
+  stage"): `compute_address_taken_assignments`, `slot_symbols`,
+  `local_slot_names`, `compute_local_slot_names`, both forms of
+  `replace_pseudoregisters`, and `lower_data_load_address`, each
+  matching the Python function on every distinct call of the corpus,
+  9,735 calls in all, on the 66 distinct calls of the unit tests, and on
+  three cases written by hand.

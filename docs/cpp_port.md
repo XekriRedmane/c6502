@@ -484,3 +484,18 @@ something a straightforward C++ port could change.
   zero-page allocators"). `plan_zero_page` takes the HARGS measurement
   of `tac_to_asm`'s translation as a function argument, which group F
   connects to group C's port.
+- 20 Nov 2026: part F2 of step 4, the end of the stage.
+  `compute_address_taken_assignments` and `slot_symbols` of
+  `address_taken_zp`, `local_slot_names` and `compute_local_slot_names`
+  of `zp_slot_naming`, `replace_program` and `replace_program_bare_exit`,
+  and `lower_data_load_address` are ported, and each stage call matches
+  the Python function on every distinct call of the corpus: 1,110 calls
+  of `address_taken_assignments`, 3,798 of `address_taken_slot_symbols`,
+  1,110 of `replace_pseudoregisters_bare_exit`, 855 of
+  `local_slot_names`, 778 of `local_slot_symbols`, 938 of
+  `lower_data_load_address`, and 1,146 of `replace_pseudoregisters`.
+  `local_slots` (src/passes/zp_slot_naming.h) gives the driver the
+  names of the pools' bytes and group B's `build_local_slot_symbols` of
+  them in one call, and `local_slot_names` is in a file of its own,
+  which part F1's `apply_coloring` shares. The Python unit tests' 66
+  distinct calls are recorded as C++ cases.

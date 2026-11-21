@@ -2,8 +2,10 @@
 function's `bool` in the carry flag, without the annotation, when
 every call to it suits the carry."""
 
+import os
 import shutil
 import unittest
+from unittest import mock
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
@@ -23,7 +25,11 @@ def _chosen(src: str) -> set[str]:
 
     C.choose_carry_returns = spy
     try:
-        C._run_stage("codegen", preprocess(src), optimize=True)
+        # The spy is on the Python pass, which doesn't run under
+        # C6502_CPP_BACKEND=1.
+        with mock.patch.dict(os.environ):
+            os.environ.pop("C6502_CPP_BACKEND", None)
+            C._run_stage("codegen", preprocess(src), optimize=True)
     finally:
         C.choose_carry_returns = orig
     return picked
@@ -135,7 +141,11 @@ def _global_chosen(src: str) -> set[str]:
 
     C.choose_global_carry_returns = spy
     try:
-        C._run_stage("codegen", preprocess(src), optimize=True)
+        # The spy is on the Python pass, which doesn't run under
+        # C6502_CPP_BACKEND=1.
+        with mock.patch.dict(os.environ):
+            os.environ.pop("C6502_CPP_BACKEND", None)
+            C._run_stage("codegen", preprocess(src), optimize=True)
     finally:
         C.choose_global_carry_returns = orig
     return picked

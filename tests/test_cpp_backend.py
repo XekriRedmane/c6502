@@ -1,6 +1,7 @@
-"""Tests of `C6502_CPP_BACKEND=1`, which runs the asm back end's region
-in the C++ port (cpp_backend.py). tools/compare_backends.py compares
-the two back ends on the whole corpus; these check the plumbing."""
+"""Tests of `C6502_CPP_BACKEND=1`, which runs code generation, from the
+TAC to the `-S` text, in the C++ port (cpp_backend.py).
+tools/compare_backends.py compares the two compilers on the whole
+corpus, and these check the plumbing."""
 from __future__ import annotations
 
 import os
@@ -9,7 +10,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from tests.no_inlining import no_inlining
 from tests.test_ir_dump import cpp_cli
 from tools.capture_passes import SWEEP_PASSES
 
@@ -74,6 +77,34 @@ class TestWithTheVariable(unittest.TestCase):
                         _compile(args + mode, cpp=True),
                         _compile(args + mode, cpp=False),
                     )
+
+    def test_the_harness_gets_python_s_program(self):
+        # The simulator harness takes the finished asm program back, and
+        # the symbol table gets what the Python passes enter in it: the
+        # carry-flag return chosen for `small`, and the `.reg` local of
+        # its register parameter.
+        import ir_dump
+        from sim.harness import compile_to_asm
+        from tools.capture_passes import encode
+        source = (
+            "#include <stdint.h>\nuint8_t g;\n"
+            "static bool small(uint8_t x) { return x < 10; }\n"
+            "int main(void) { if (small(g)) g = 1; return g; }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = []
+                for cpp in (True, False):
+                    with mock.patch.dict(os.environ):
+                        os.environ.pop("C6502_CPP_BACKEND", None)
+                        if cpp:
+                            os.environ["C6502_CPP_BACKEND"] = "1"
+                        with no_inlining():
+                            prog, symbols, _, slots = compile_to_asm(
+                                source, optimize=optimize,
+                            )
+                    got.append((ir_dump.dump(prog), slots, encode(symbols)))
+                self.assertEqual(got[0], got[1])
 
     def test_objects_are_python_s(self):
         # Without -O, only the text of `-c` has the link metadata block, whose

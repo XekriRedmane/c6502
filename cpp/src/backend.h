@@ -1,6 +1,6 @@
-// The `c6502cpp backend` command, through which compile.py runs the
-// back end in C++ under `C6502_CPP_BACKEND=1` (cpp_backend.py is the
-// Python side).
+// The `c6502cpp backend` command, through which compile.py and the
+// simulator harness run code generation in C++ under
+// `C6502_CPP_BACKEND=1` (cpp_backend.py is the Python side).
 #pragma once
 
 #include <string>
@@ -12,37 +12,31 @@ namespace c6502::backend {
 //
 //     c6502-backend 1
 //     mode <mode>
-//     context <JSON, one line>
 //     args <tagged JSON, one line>
-//     input
-//     <the input program's dump>
+//     c99 <length>
+//     <the type-checked c99 program's dump>
+//     tac <length>
+//     <the TAC program's dump>
+//     optimized-tac <length>    (under -O)
+//     <the optimized TAC program's dump>
 //
-// The context is the capture harness's (tools/capture_passes.py's
-// `context_json`), and the arguments are an object of keyword
-// arguments in its tagged JSON (`encode`). There are four modes.
+// where each length counts the bytes after its line. The arguments are
+// an object of the capture harness's tagged JSON
+// (tools/capture_passes.py's `encode`): `symbols` and `types`, the
+// compile's tables, `statics`, the names of static storage before the
+// TAC optimizer ran, `footprints`, the runtime helpers' HARGS
+// footprints (`runtime_layout.helper_footprints()`), `check_ir`, and,
+// without -O, `link_metadata`. There are four modes, as
+// src/passes/codegen_stage.h describes.
 //
-// `optimized` runs the region of `optimized_asm` on the program after
-// `synthesize_prologue`, with the arguments `slot_symbols`, `zp_addrs`,
-// `noreturn`, `abi`, `shares`, `ret_eligible`, `zp_names`, and
-// `slot_addrs`, as `passes::RegionArgs` describes. `unoptimized` runs
-// the unoptimized fixed point and long branches, with `zp_addrs`. Their
-// response is
-//
-//     coalesced <JSON [[function, [slot, ...]], ...]>
-//     new_functions <JSON [[name, owner], ...]>
-//     output
-//     <the result's dump>
-//
-// where an unoptimized run leaves out the first two lines. The
-// simulator harness uses these, since it runs the asm program.
-//
-// `optimized-text` and `unoptimized-text` run the same and then the work
-// through emission (`passes::optimized_text`, `unoptimized_text`), with
-// the arguments `zp`, `footprints`, `sections`, `equs`, `meta`,
-// `check_ir`, and under `-O` `preferred_symbols`, as `passes::EmitArgs`
-// describes. Their response is
+// `stage-optimized-text` runs `passes::optimized_stage` on the TAC
+// before the TAC optimizer, which `plan_zero_page` reads, and the
+// optimized TAC, and `stage-unoptimized-text` runs
+// `passes::unoptimized_stage` on the one TAC. Their response is
 //
 //     new_functions <JSON [[name, owner], ...]>
+//     reg_locals <JSON [name, ...]>
+//     carry <JSON [name, ...]>
 //     asm <length>              (with check_ir)
 //     <the finished asm program's dump>
 //     asm2 <length>             (with check_ir)
@@ -50,20 +44,21 @@ namespace c6502::backend {
 //     text <length>
 //     <the -S text>
 //
-// where each length counts the bytes after its line.
+// The first three lines are the changes to the symbol table that
+// cpp_backend.py enters in Python's: the functions the region made, the
+// `<param>.reg` locals of `tac_to_asm`, and the functions given the
+// carry-flag return.
 //
-// The four stage modes, `stage-optimized-text`, `stage-unoptimized-text`,
-// `stage-optimized`, and `stage-unoptimized`, run code generation from
-// the TAC (src/passes/codegen_stage.h). Their request has no context
-// line and no input line. The mode is followed by the `args` line, with
-// `symbols`, `types`, `statics`, `footprints`, `check_ir`, and
-// `link_metadata`, and then by the sections `c99 <length>`,
-// `tac <length>`, and under -O `optimized-tac <length>`, each the dump
-// of a program. A text mode's response is the one above with a
-// `reg_locals` and a `carry` line after `new_functions`, the changes to
-// the symbol table. The other two give those three lines, a `symbols`
-// line, and the finished asm program's `asm` section, for the simulator
-// harness.
+// `stage-optimized` and `stage-unoptimized` stop before emission, for
+// the simulator harness, which assembles the program itself. Their
+// response is the same three lines, then
+//
+//     symbols <JSON [[name, address], ...]>
+//     asm <length>
+//     <the finished asm program's dump>
+//
+// where the symbols are the slot symbols and the unit's EQU bindings
+// that the harness gives its assembler.
 //
 // Throws `std::runtime_error` for a request that can't be read, and
 // passes on the exceptions of the passes.

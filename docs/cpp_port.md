@@ -513,3 +513,37 @@ something a straightforward C++ port could change.
   `compute_address_taken_bytes`. The stage's driver calls
   `optimize_program` from `src/passes/optimization_asm/optimizer.h` and
   the sizing from `src/passes/function_local_sizing.h`.
+- 20 Nov 2026: step 4 is done. compile.py's sequence from `select_abi`
+  to `synthesize_prologue`, with the pool retries, is one C++ function,
+  `passes::optimized_front`, and `passes::optimized_stage` and
+  `unoptimized_stage` run the whole stage from the TAC: `plan_zero_page`,
+  whose HARGS measurement lowers the unoptimized TAC with the C++
+  `tac_to_asm`, code generation, the link metadata, the back end's
+  region, and emission (cpp/README.md, "The stage's driver"). With
+  `C6502_CPP_BACKEND=1`, compile.py hands `c6502cpp backend` the TAC of
+  `translate_for_codegen`, and under `-O` also the TAC after
+  `_optimized_tac`, where step 5's passes end, and takes the `-S` text
+  back, for `-S`, for `-c`, and for links of C inputs. The simulator
+  harness takes back the finished asm program in the dump format.
+  `tools/compare_backends.py` found the same output, exit status, and
+  messages for all 3,576 compiles of the corpus. The suite passes with
+  the variable set (4,870 tests, with `C6502_CHECK_IR=1`) and without
+  it, the four fuzzers pass with it set (300 programs each of `exprs`,
+  `calls`, and `stmts`, and 100 of `yarpgen`, none wrong), and every
+  stage call of the corpus still matches. The first run of the suite
+  found that the c99 program holds a declaration's unnamed parameter as
+  None, which the dump format can't carry and the capture harness
+  therefore never recorded, so `cpp_backend.py` sends it as the empty
+  string, which `select_abi` reads as an unnamed parameter. With the
+  variable unset and set, guards.c took 2.0 and 1.55 seconds, the Lode
+  Runner units 13.5 and 11.8, and 20 `fuzz.stmts` programs 16.0 and
+  7.8. A compile of guards.c spends 0.22 s of its 1.5 s in the C++
+  process, and the 20 fuzz programs 2.3 s of 7.8 s. The rest of
+  guards.c is Python's imports (0.5 s), the TAC optimizer, the
+  inliner's estimates of cost, which run the TAC optimizer on copies of
+  the callees, the parser, and the assembler of `-c`. Under the
+  profiler, which about doubles the Python time, the 20 fuzz programs
+  spent 7.1 s of 17.9 s in the TAC optimizer, 4.0 s of it in the IR
+  checks the fuzzers turn on, 2.2 s in the parser, 1.5 s in the TAC
+  interpreter, 1.4 s in the simulator's assembler, and 2.0 s in writing
+  the requests and reading the programs back.

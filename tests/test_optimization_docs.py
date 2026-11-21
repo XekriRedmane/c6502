@@ -154,7 +154,8 @@ class TestOptimizationDocs(unittest.TestCase):
         )
 
     def test_optimized_asm_order(self):
-        # `optimized_asm` runs `_optimized_front` (through
+        # `optimized_asm` runs `_optimized_front` (the TAC passes of
+        # `_optimized_tac`, then code generation through
         # `synthesize_prologue`) and then the back end's region.
         pattern = (
             r"apply_\w+|synthesize_prologue|lower_data_load_address"
@@ -163,6 +164,9 @@ class TestOptimizationDocs(unittest.TestCase):
         )
         code = _dedupe(
             _called_stems(
+                compile_module._optimized_tac, compile_module, pattern,
+            )
+            + _called_stems(
                 compile_module._optimized_front, compile_module, pattern,
             )
             + _called_stems(

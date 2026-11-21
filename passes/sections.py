@@ -64,9 +64,9 @@ def items(prog: asm_ast.Program, symbols) -> list[ItemMeta]:
 def section_info(prog: asm_ast.Program, symbols) -> dict:
     """What `items` reads of the symbol of each top-level name of
     `prog` that has one: `(section, is_const, mergeable)`, with
-    `section` None when no attribute names one. The C++ back end
-    (cpp_backend.py) takes this in place of the symbol table, and the
-    capture harness records it for `section_items`."""
+    `section` None when no attribute names one. The capture harness
+    records it for `section_items`, and the C++ port's stage driver
+    computes the same from its symbol table."""
     out = {}
     for tl in prog.top_level:
         sym = symbols.get(tl.name)

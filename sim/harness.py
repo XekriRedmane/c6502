@@ -76,12 +76,21 @@ def compile_to_asm(
     Both pipelines run the passes `compile.py -S` runs, so the
     simulator executes the code the CLI emits. `optimize=True` runs
     `compile.optimized_asm`, the `-O` pipeline."""
-    from compile import _resolved, translate_for_codegen
+    from compile import _cpp_backend, _resolved, translate_for_codegen
     ast5, syms, types = type_check_program(
         _resolved(preprocess(source), optimize=optimize),
     )
     from passes.zp_globals import plan_zero_page, zero_page_in_effect
     tac = translate_for_codegen(ast5, syms, types, optimize)
+    if _cpp_backend():
+        # Under `C6502_CPP_BACKEND=1` the rest runs in C++, as it does
+        # for `compile.py -S`, and gives the program the passes below
+        # give.
+        from compile import _cpp_codegen
+        asm, slot_symbols = _cpp_codegen(
+            ast5, syms, types, optimize, tac, emit=False,
+        )
+        return asm, syms, types, slot_symbols
     zp = plan_zero_page(tac, syms, types, promote=optimize)
     with zero_page_in_effect(zp):
         return _compile_tac(ast5, syms, types, optimize, zp, tac)

@@ -8,13 +8,14 @@ the reference until the port is done.
 
 So far the port has the build, the IR classes generated from the four
 `.asdl` files, the dump format that carries an IR value between the
-two compilers, the helpers that the asm passes share, every asm pass
-of the back end after prologue synthesis, and the work from there to
-the `-S` text (`asm_to_asm2`, `asm_emit`, and the steps between them
-that read the asm program), each of which matches the Python code on
-every input of the corpus it was checked on. With
-`C6502_CPP_BACKEND=1`, compile.py's `-S` text comes from C++ ("The back
-end through c6502cpp" and "Emission", below).
+two compilers, the helpers that the asm passes share, and all of code
+generation from the TAC to the `-S` text: the zero-page plan, the ABI,
+the allocators, `tac_to_asm`, the asm optimizer, every asm pass of the
+back end, and emission, each of which matches the Python code on every
+input of the corpus it was checked on. With `C6502_CPP_BACKEND=1`,
+compile.py hands the TAC to C++ and takes the `-S` text back ("The
+stage's driver", "The back end through c6502cpp", and "Emission",
+below).
 
 ## Building
 
@@ -59,7 +60,7 @@ The build makes three targets.
   time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
 - `c6502cpp`, the CLI (`src/main.cpp`), which for now holds the checks
-  below and the back end that compile.py runs through it.
+  below and the code generation that compile.py runs through it.
 
 Warnings are on (`/W4`, `-Wall -Wextra`) and aren't errors yet.
 
@@ -89,6 +90,9 @@ cpp/
       optimized_asm.* the region of compile.py's optimized_asm, and the
                       unoptimized pipeline's fixed point and long branches
       codegen.*       the region through emission, the end of `_codegen`
+      optimized_front.*   `_optimized_front` after the TAC optimizer
+      codegen_stage.* the stage from the TAC to the text, which the
+                      backend command runs
       asm_to_asm2.*   the lowering to the asm2 IR
       emission_args.* the decoders of the arguments of the work after the
                       region, for the backend command and the registry
@@ -921,6 +925,59 @@ a set: two different equalities for one byte can only be known on a
 path that no run takes, and the corpus has no call where the order
 changes the result.
 
+## The stage's driver
+
+`passes::optimized_front` (`src/passes/optimized_front.*`) is compile.py's
+`_optimized_front` after the TAC passes of `_optimized_tac`: `select_abi`,
+the two carry-return choices, `recursive_pool_functions` and
+`pool_eligible`, `find_shares`, `allocate_zp_slots`,
+`pinned_param_copies`, `slot_aliases`, `tac_to_asm`, the asm optimizer's
+preliminary run, the sizing of the pools, the final run with the pools
+grown up to three times (`_POOL_RETRIES`), the address-taken slots,
+`replace_pseudoregisters_bare_exit`, the names and `EQU` table of the
+pools' bytes, `lower_data_load_address`, and `synthesize_prologue`, each
+with the arguments compile.py gives it, in compile.py's order, since
+several change the symbol table that later ones read. It returns what
+`_OptimizedFront` holds besides the TAC.
+
+`passes::optimized_stage` and `unoptimized_stage`
+(`src/passes/codegen_stage.*`) run the whole stage. Each starts with
+`plan_zero_page`, whose HARGS measurement lowers the unoptimized TAC
+with `tac_to_asm` in a default `AsmContext`, since Python measures it
+before `zero_page_in_effect` sets the plan. The plan's layout and
+objects then make the `AsmContext` of the rest of the compile. Under
+`-O` the stage runs `optimized_front` on the optimized TAC, builds the
+link metadata's records of the TAC and the tables, and runs
+`optimized_text` (or `optimized_program` for the simulator harness).
+Without it the stage runs `fixed_address_layouts`, `tac_to_asm` with that
+ABI, `replace_program`, and `unoptimized_text` (or the unoptimized
+region and `place_zp_globals`). Each returns the changes to the symbol
+table that Python enters in its own: the `<param>.reg` locals
+`tac_to_asm` added, the functions the carry-return choices gave the
+carry-flag return, and the functions the region made.
+
+Python plans the zero page before the TAC optimizer, and the driver
+plans it after, with the symbol table the optimizer left. The
+optimizer adds locals, the halves of the tables of row addresses, and
+temporaries, and gives a split table a type of bytes. `allocate_zp_globals`
+places none of those and promotes none (it promotes scalars with
+weight in the unoptimized TAC), and the names it had keep their order,
+so the plan comes out the same, which `tools/compare_backends.py`
+confirmed on the corpus. The names of static storage that
+`replace_pseudoregisters` and the asm optimizer take as `extra_statics`
+are those before the optimizer added the tables, as in `_codegen`, so
+Python sends them.
+
+A declaration may leave a parameter unnamed, which the Python c99
+program holds as None in `function_decl.params`, and the dump format
+has no form for None in an `identifier*`. `cpp_backend.py` sends such a
+program with the empty string there, which no C identifier spells, and
+`select_abi` and `fixed_address_layouts` spell that parameter's slot by
+its position, as Python does. The capture harness couldn't record
+those calls, since it dumps the program too, so the first run of the
+suite with the stage in C++ found them (tests/test_linker.py's unnamed
+parameters), and `tests/test_backend.cpp` holds such a request.
+
 ## The back end through c6502cpp
 
 `passes::peephole_fixedpoint` (`src/passes/peephole_fixedpoint.*`) is
@@ -947,27 +1004,25 @@ addresses of the last two passes. It returns the program, the slots
 function whose symbol it copies. `passes::unoptimized_region` is the
 unoptimized pipeline's fixed point and long branches.
 
-`c6502cpp backend` (`src/backend.*`) reads a request on stdin: the mode
-(`optimized` or `unoptimized`), the compile's context as the capture
-harness's `context` line gives it, the arguments as an object in the
-harness's tagged JSON, and the program's dump. It writes the slots, the
-functions made, and the result's dump. The arguments are decoded with
-the same `capture_args` functions as the captured calls. A bug the
-passes report (`InternalError`) exits with status 3.
+`c6502cpp backend` (`src/backend.*`) reads a request on stdin and runs
+the stage from the TAC ("The stage's driver", below). `src/backend.h`
+describes the request and the response. A bug the passes report
+(`InternalError`) exits with status 3, and a problem with the program
+(`CompileError`) with status 4, its Python type on the first line of
+stderr and its message after it.
 
-With `C6502_CPP_BACKEND=1`, compile.py's `_codegen` hands the region
-and everything after it to `c6502cpp backend` through `cpp_backend.py`,
-one process per compile, and the `-S` text comes back ("Emission",
-below). The simulator harness calls `optimized_asm` and
-`compile.unoptimized_tail`, which hand only the region to C++ and go
-on with the result in Python, since the harness assembles the asm
-program. `cpp_backend.py` gives each function made a copy of its
-owner's symbol with internal linkage, as the Python passes do, and
-raises an exit status of 3 as an `AssertionError` with the C++
-message. Under `C6502_CHECK_IR=1`, compile.py checks the result once,
-since `ir_check` isn't ported and the checks after each sweep happened
-in Python. compile.py reads the variable at each compile and, without
-it, imports none of this.
+With `C6502_CPP_BACKEND=1`, compile.py's `_run_stage` hands the TAC of
+`translate_for_codegen` to `c6502cpp backend` through `cpp_backend.py`
+(after the TAC passes of `_optimized_tac` under `-O`), one process per
+compile, and the `-S` text comes back. The simulator harness hands it
+the same TAC and takes back the finished asm program, which it
+assembles. `cpp_backend.py` enters in the symbol table what the stage
+changed in it, raises an exit status of 3 as an `AssertionError` with
+the C++ message and one of 4 as the Python exception of the type
+named, and under `C6502_CHECK_IR=1` checks the finished asm program
+(and the asm2 program of a text) once, since `ir_check` isn't ported.
+compile.py reads the variable at each compile and, without it, imports
+none of this.
 
 `tools/compare_backends.py` compiles the corpus of the capture harness
 with `-S` and `-S -O`, once with the variable and once without, and
@@ -988,51 +1043,23 @@ emission is in a file per Python module: `place_zp_globals` and
 `format_metadata` in `src/passes/zp_link_metadata.*`.
 `passes::optimized_text` and `unoptimized_text` (`src/passes/codegen.*`)
 run the region and all of these in compile.py's order and return the
-text, which `c6502cpp backend` gives in its `optimized-text` and
-`unoptimized-text` modes (`src/backend.h`).
+text, and `optimized_program` runs the region and the steps of
+`optimized_asm` after it (`link_records`, `place_zp_globals`, and
+`check_shares`) for the simulator harness.
 
-The boundary between the two compilers follows what each function
-reads.
-
-- **In C++**: everything that reads the asm program after the region.
-  `link_records`, `place_zp_globals`, `check_shares`,
-  `prune_unused_locals`, `hargs_need`, and `section_items` read the
-  finished program, and `asm_to_asm2` and `asm_emit` turn it into the
-  text, so running them in Python would mean reading the program back.
-  `format_metadata` is in C++ too, since three of its kinds of records
-  (the items, the zero-page objects, and the HARGS need) and the
-  `changes` of each `def` (`compile._with_coalesced`, which adds the
-  slots `slot_coalescing` made each function write) come from the
-  region and the finished program.
-- **In Python, computed before the call**: `build_metadata` reads the
-  TAC and the ABI layouts, and `changed_param_slots`,
-  `_carry_functions`, and `preferred_symbols` read the TAC, the symbol
-  table, and the bindings of `find_shares`. Their results go in the
-  request, as the `LinkMetadata` without its items, zero-page records,
-  and HARGS need. `section_items` reads only three things of a
-  top-level name's symbol, its section, whether its type is `const`,
-  and whether it is mergeable, which `sections.section_info` gives for
-  each top-level name of the program sent. A function that
-  `shared_tails` or `outline_runs` makes takes its owner's, as its
-  Python symbol is a copy of the owner's. The HARGS footprints of the
-  runtime helpers (`runtime_layout.helper_footprints`) are measured
-  from rtlib/helpers.py, which stays in Python with the simulator, so
-  they go in the request too. The `ZpGlobals` of the unit, which
-  `plan_zero_page` computes from the TAC, go as they are.
-
-Python reads the response's text and nothing else. Under
-`C6502_CHECK_IR=1` the response also holds the finished asm program and
-the asm2 program, which Python checks with `ir_check.check_asm` and
-`check_asm2`, since `ir_check` isn't ported. A problem with the program
-that a function of emission reports (a `FrameSizeError`, a
-`RuntimeLayoutError`, or the `ValueError` of an operand the 6502 can't
-encode) is a `CompileError` with its Python type, which `c6502cpp
-backend` writes on stderr with exit status 4, and `cpp_backend.py`
-raises the Python exception of that type with the message.
-
-The simulator harness assembles the asm program in Python, so it still
-calls `optimized_asm` and `unoptimized_tail`, whose region alone runs
-in C++ with the variable set (the `optimized` and `unoptimized` modes).
+Since the stage's driver runs code generation in C++ too, everything
+these read comes from C++ except the HARGS footprints of the runtime
+helpers (`runtime_layout.helper_footprints`), which are measured from
+rtlib/helpers.py, which stays in Python with the simulator, and go in
+the request. The link metadata's records that read the TAC, the ABI,
+and the symbol table (`build_metadata`, `changed_param_slots`, the
+carry functions, `preferred_symbols`, and the `ext` records of the
+unoptimized pipeline) are computed in the driver after the stage, as
+compile.py computed them after `_optimized_front`, and so is what
+`sections.items` reads of each top-level name's symbol
+(`section_info` in `src/passes/codegen_stage.cpp`). A function that
+`shared_tails` or `outline_runs` makes takes its owner's section, as
+its Python symbol is a copy of the owner's.
 
 The messages of the ported functions quote IR values and strings as
 Python's `repr` does (`src/pyrepr.*`), and the hexadecimal and signed
@@ -1239,3 +1266,10 @@ Python results through `tests/stage_case.h`.
   `apply_coloring`, `fold_const_statics`, the elimination of dead
   statics, and the sizing of the pools, each matching the Python
   function on every distinct call of the corpus, 21,332 calls in all.
+- 20 Nov 2026: the stage's driver (the end of step 4, "The stage's
+  driver"): `optimized_front` and the stage from the TAC to the text,
+  `optimized_stage` and `unoptimized_stage`, which `c6502cpp backend`'s
+  stage modes run, so that `C6502_CPP_BACKEND=1` hands C++ the TAC.
+  `tools/compare_backends.py` found the same output for all 3,576
+  compiles, and the C++ tests pass in the builds of MSVC 19.36 and GCC
+  12.2.

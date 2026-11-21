@@ -192,8 +192,16 @@ bool is_integer_type(const c99::Type_data_type& t) {
              c99::BitInt, c99::Bool>(t);
 }
 
+// Returns the name of parameter `i` of `fn` as Python's messages spell
+// it. A declaration may leave a parameter unnamed, which Python holds as
+// None and the C++ IR, whose `identifier*` has no form for None, as the
+// empty string, which no C identifier spells (cpp_backend.py sends it
+// so). Python's f-strings write None as "None".
 std::string param_name(const c99::Type_function_decl& fn, std::size_t i) {
-  return i < fn.params.size() ? fn.params[i] : "#" + std::to_string(i);
+  if (i >= fn.params.size()) {
+    return "#" + std::to_string(i);
+  }
+  return fn.params[i].empty() ? "None" : fn.params[i];
 }
 
 std::string lower(std::string s) {
@@ -553,7 +561,12 @@ ZpLayout make_layout(const std::string& name, const c99::Type_function_decl& fn_
     layout.addrs.emplace_back(window.start + k);
   }
   const std::vector<asdl::Int> per_param_bytes = per_param_byte_sizes(fn_decl, types);
-  std::vector<std::optional<std::string>> names(fn_decl.params.begin(), fn_decl.params.end());
+  // An unnamed parameter's empty name (`param_name`) is spelled by its
+  // position.
+  std::vector<std::optional<std::string>> names;
+  for (const auto& p : fn_decl.params) {
+    names.push_back(p.empty() ? std::nullopt : std::optional<std::string>(p));
+  }
   layout.slot_symbols = param_slot_symbols(name, names, per_param_bytes);
   // Register parameters: A and X assigned positionally over the marked
   // parameters' bytes, a list parallel to the slot symbols.

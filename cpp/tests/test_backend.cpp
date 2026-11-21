@@ -1,71 +1,16 @@
 // Tests of the `c6502cpp backend` command's requests and responses
-// (src/backend.h).
+// (src/backend.h). The requests are the ones cpp_backend.py sent for
+// compiles of this program with `-S` and with `-S -O`, and the expected
+// responses are the ones c6502cpp gave, whose text is Python's:
+//
+//     unsigned char add1(unsigned char x) { return x + 1; }
+//     int main(void) { return add1(2); }
 #include <stdexcept>
 #include <string>
 
 #include "backend.h"
 #include "doctest.h"
 
-namespace {
-
-const char kContext[] =
-    R"({"layout":[0,2,4,32,36],"user_zp_globals":[],"user_zp_bytes":[]})";
-
-const char kProgram[] = R"(Program([
-  Function("f" true [] [
-    Mov(ZP(144 0) Reg(A) false)
-    ClearCarry
-    Add(Imm(1) Reg(A))
-    Mov(Reg(A) ZP(144 0) false)
-    Return(false false false)
-  ])
-])
-)";
-
-const char kExpected[] = R"(Program([
-  Function("f" true [] [
-    Inc(ZP(144 0))
-    Return(false false false)
-  ])
-])
-)";
-
-// Returns a request of `mode` for `kProgram`, whose arguments `args` are
-// JSON on one line.
-std::string request(const std::string& mode, const std::string& args) {
-  return "c6502-backend 1\nmode " + mode + "\ncontext " + kContext + "\nargs " + args +
-         "\ninput\n" + kProgram;
-}
-
-}  // namespace
-
-TEST_CASE("backend answers an unoptimized request with the program") {
-  const std::string got =
-      c6502::backend::respond(request("unoptimized", R"({"zp_addrs": {"dict": []}})"));
-  CHECK(got == std::string("output\n") + kExpected);
-}
-
-TEST_CASE("backend answers an optimized request with the results' lines") {
-  const std::string got = c6502::backend::respond(request(
-      "optimized",
-      R"({"slot_symbols": {"dict": []}, "zp_addrs": {"dict": []}, )"
-      R"("noreturn": {"set": []}, "abi": {"dict": [["f", null]]}, "shares": [], )"
-      R"("ret_eligible": {"set": []}, "zp_names": {"set": []}, )"
-      R"("slot_addrs": {"set": []}})"));
-  CHECK(got == std::string("coalesced []\nnew_functions []\noutput\n") + kExpected);
-}
-
-TEST_CASE("backend rejects a request without its arguments") {
-  CHECK_THROWS_AS(c6502::backend::respond(request("optimized", "{}")), std::runtime_error);
-  CHECK_THROWS_AS(c6502::backend::respond("c6502-backend 2\n"), std::runtime_error);
-}
-
-// The stage modes. The requests are the ones cpp_backend.py sent for
-// compiles of this program with `-S` and with `-S -O`, and the expected
-// responses are the ones c6502cpp gave, whose text is Python's:
-//
-//     unsigned char add1(unsigned char x) { return x + 1; }
-//     int main(void) { return add1(2); }
 namespace {
 
 const char kUnoptimizedRequest[] = R"req(c6502-backend 1
@@ -317,6 +262,63 @@ main:
    RTS
 )req";
 
+// The request and response of `-S -O` for a program that declares a
+// parameter without a name, which cpp_backend.py sends as the empty
+// string and whose slot is spelled by its position, `__zpabi_put__0`:
+//
+//     [[c6502::zp_abi]] unsigned char put(unsigned char);
+//     unsigned char f(void) { return put(3); }
+const char kUnnamedRequest[] = R"req(c6502-backend 1
+mode stage-optimized-text
+args {"symbols": {"object": "passes.type_checking.SymbolTable", "fields": {"_table": {"dict": [["put", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "FunType([UChar] UChar)\n"}, "attrs": {"object": "passes.type_checking.FunAttr", "fields": {"defined": false, "is_global": true, "carry_return": false, "address": null, "preserves": {"set": []}, "section": null, "param_zeropage": {"tuple": []}, "returns_bool": false, "noreturn": false}}}}], ["f", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "FunType([] UChar)\n"}, "attrs": {"object": "passes.type_checking.FunAttr", "fields": {"defined": true, "is_global": true, "carry_return": false, "address": null, "preserves": {"set": []}, "section": null, "param_zeropage": {"tuple": []}, "returns_bool": false, "noreturn": false}}}}], ["%0", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "UChar\n"}, "attrs": {"object": "passes.type_checking.LocalAttr", "fields": {"register": false, "was_bool": false}}}}], ["%1", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "UChar\n"}, "attrs": {"object": "passes.type_checking.LocalAttr", "fields": {"register": false, "was_bool": false}}}}], ["%0.1", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "UChar\n"}, "attrs": {"object": "passes.type_checking.LocalAttr", "fields": {"register": false, "was_bool": false}}}}], ["%1.1", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "UChar\n"}, "attrs": {"object": "passes.type_checking.LocalAttr", "fields": {"register": false, "was_bool": false}}}}]]}}}, "types": {"object": "passes.type_checking.TypeTable", "fields": {"_table": {"dict": []}}}, "statics": {"set": []}, "footprints": {"dict": [["mul8", 5], ["mul16", 10], ["mul32", 20], ["udivmod8", 4], ["sdivmod8", 6], ["udivmod16", 9], ["sdivmod16", 11], ["udivmod32", 20], ["sdivmod32", 22], ["asl8", 3], ["asr8", 3], ["lsr8", 3], ["asl16", 5], ["asr16", 5], ["lsr16", 5], ["asl32", 9], ["asr32", 9], ["lsr32", 9], ["bin16_to_bcd", 7]]}, "check_ir": false}
+c99 327
+Program([
+  FunctionDecl(function_decl("put" [""] None FunType([UChar] UChar) None "zp_abi" [""] false None [] None false))
+  FunctionDecl(function_decl("f" [] Block([
+    S(Return(FunctionCall("put" [Cast(UChar Constant(ConstInt(3) Int) UChar)] UChar false)))
+  ]) FunType([] UChar) None None [] false None [] None false))
+])
+tac 166
+Program([
+  Function("f" true [] [
+    Truncate(Constant(ConstInt(3)) Var("%0"))
+    FunctionCall("put" [Var("%0")] Var("%1") false false)
+    Ret(Var("%1"))
+  ])
+])
+optimized-tac 138
+Program([
+  Function("f" true [] [
+    FunctionCall("put" [Constant(ConstUChar(3))] Var("%1.1") false false)
+    Ret(Var("%1.1"))
+  ])
+])
+)req";
+
+const char kUnnamedResponse[] = R"req(new_functions []
+reg_locals []
+carry []
+text 349
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+
+; @zp-link-meta-begin
+; def f params= locals=__local_f__0 indirect=false in_cycle=false
+; ext put params=__zpabi_put__0 param_regs=A
+; call f -> put
+; item f section=.text local=false zero=false
+; runtime hargs_size=32 hargs_need=0
+; @zp-link-meta-end
+
+f:
+   SUBROUTINE
+
+   LDA   #$03
+   JMP   put
+)req";
+
 // Returns `request` with its mode line `mode <from>` made `mode <to>`.
 std::string with_mode(std::string request, const std::string& from, const std::string& to) {
   const std::string line = "\nmode " + from + "\n";
@@ -335,10 +337,25 @@ TEST_CASE("backend answers an optimized request with the text") {
   CHECK(c6502::backend::respond(kOptimizedRequest) == kOptimizedResponse);
 }
 
+TEST_CASE("backend spells an unnamed parameter's slot by its position") {
+  const std::string got = c6502::backend::respond(kUnnamedRequest);
+  CHECK(got == kUnnamedResponse);
+  CHECK(got.find("__zpabi_put__0") != std::string::npos);
+}
+
 TEST_CASE("backend answers a request for the harness with the program") {
   const std::string got = c6502::backend::respond(
       with_mode(kOptimizedRequest, "stage-optimized-text", "stage-optimized"));
   CHECK(got.starts_with("new_functions []\nreg_locals [\"@0.x.reg\"]\ncarry []\nsymbols ["));
   CHECK(got.find("\nasm ") != std::string::npos);
   CHECK(got.find("Function(\"main\"") != std::string::npos);
+}
+
+TEST_CASE("backend rejects a request it can't read") {
+  CHECK_THROWS_AS(c6502::backend::respond(with_mode(kOptimizedRequest, "stage-optimized-text",
+                                                    "optimized")),
+                  std::runtime_error);
+  CHECK_THROWS_AS(c6502::backend::respond("c6502-backend 2\n"), std::runtime_error);
+  CHECK_THROWS_AS(c6502::backend::respond("c6502-backend 1\nmode stage-optimized\nargs {}\n"),
+                  std::runtime_error);
 }

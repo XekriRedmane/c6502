@@ -31,6 +31,7 @@
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
+#include "passes/optimization/short_circuit_jump_fold.h"
 #include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/sink_increment.h"
 #include "passes/optimization/ssa_construction.h"
@@ -240,7 +241,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_fold_copies_post_destruction", &run_tac_pass<&fold_copies_post_destruction>),
       tac_pass("tac_move_steps_onto_edges"),
       tac_pass("tac_split_three_way_compares", &run_tac_pass<&split_three_way_compares>),
-      tac_pass("tac_fold_short_circuit_jump"),
+      tac_pass("tac_fold_short_circuit_jump", &run_tac_pass<&fold_short_circuit_jumps>),
       tac_pass("tac_thread_known_compares"),
       // The program-level calls. `c99_to_tac` changes the c99 program
       // it is given, which its `mutated` line holds under `input`. The

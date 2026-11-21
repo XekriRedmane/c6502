@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "parser_token_checks.h"
 #include "passes/front_stage.h"
 #include "passes/optimization/tac_stage.h"
 #include "passes/optimization_asm/optimizer_stage.h"
@@ -361,6 +362,9 @@ const std::vector<StageSignature>& stage_signatures() {
       all.push_back(std::move(s));
     }
     for (auto& s : front_stage::signatures()) {
+      all.push_back(std::move(s));
+    }
+    for (auto& s : parser_token_checks::signatures()) {
       all.push_back(std::move(s));
     }
     return all;

@@ -40,6 +40,7 @@
 #include "passes/optimization/short_circuit_jump_fold.h"
 #include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/sink_increment.h"
+#include "passes/optimization/split_tables.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
 #include "passes/optimization/static_const_fold.h"
@@ -227,6 +228,14 @@ StageOutput run_dispatch(const capture::Call& call, const AsmContext&, const jso
                         symbols);
 }
 
+StageOutput run_split_tables(const capture::Call& call, const AsmContext&,
+                             const json::Value& args, const json::Value&) {
+  auto prog = asdl::load<ir::Program>(call.input);
+  SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const std::string before = encode<Sym>(symbols);
+  return program_output(apply_split_tables(std::move(prog), &symbols), before, symbols);
+}
+
 // Returns `run` when every pass of the driver's table is ported, and
 // null otherwise, for the calls that run the whole driver.
 StageRun when_driver_complete(StageRun run) {
@@ -338,7 +347,8 @@ std::vector<StageSignature> signatures() {
       {.name = "split_tables",
        .input = "tac_ast",
        .args = {rt<Sym>},
-       .output_module = "tac_ast"},
+       .output_module = "tac_ast",
+       .run = &run_split_tables},
   };
 }
 

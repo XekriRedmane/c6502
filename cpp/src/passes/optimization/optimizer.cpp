@@ -91,6 +91,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include <utility>
 
 #include "passes/optimization/constant_folding.h"
+#include "passes/optimization/copy_folding.h"
 #include "passes/optimization/copy_propagation.h"
 #include "passes/optimization/cse.h"
 #include "passes/optimization/dead_loop_elimination.h"
@@ -103,6 +104,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
 #include "passes/optimization/phi_offset.h"
+#include "passes/optimization/read_stored_global.h"
 #include "passes/optimization/reassoc_const.h"
 #include "passes/optimization/reassoc_offset.h"
 #include "passes/optimization/recognize_indexed_load.h"
@@ -183,8 +185,8 @@ PhaseDriver make_driver() {
       {"eliminate_dead_stores", &eliminate_dead_stores},
       // `*++P` on a global P reads P after the copy into it, so the copy
       // folding next makes the add write P directly.
-      {"read_stored_globals", nullptr},
-      {"fold_copies_in_fixedpoint", nullptr},
+      {"read_stored_globals", &read_stored_globals},
+      {"fold_copies_in_fixedpoint", &fold_copies_in_fixedpoint},
       {"reassoc_constants", &reassoc_constants},
       {"reassoc_offset_constant", &reassoc_offset_constant},
       // `g.m` and `r.m` as direct byte accesses in place of a store
@@ -255,7 +257,7 @@ PhaseDriver make_driver() {
       // `Binary(Add, i.vK, 1, i.vJ)`. Once after destruction is enough,
       // without running the whole fixed point again, because nothing
       // later in the TAC pipeline makes new pairs to fuse.
-      {"fold_copies_post_destruction", nullptr},
+      {"fold_copies_post_destruction", &fold_copies_post_destruction},
       // `do ...; while (i-- != first);` computes `i - 1` before the test
       // and copies it into `i` on the back edge alone. The step goes in
       // place of that copy, where it's `DEC i`.

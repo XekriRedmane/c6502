@@ -6,6 +6,7 @@
 
 #include "c99_to_tac_stage.h"
 #include "passes/optimization/constant_folding.h"
+#include "passes/optimization/copy_folding.h"
 #include "passes/optimization/copy_propagation.h"
 #include "passes/optimization/cse.h"
 #include "passes/optimization/dead_loop_elimination.h"
@@ -20,6 +21,7 @@
 #include "passes/optimization/optimizer.h"
 #include "passes/optimization/phi_constant_fold.h"
 #include "passes/optimization/phi_offset.h"
+#include "passes/optimization/read_stored_global.h"
 #include "passes/optimization/reassoc_const.h"
 #include "passes/optimization/reassoc_offset.h"
 #include "passes/optimization/recognize_indexed_load.h"
@@ -210,8 +212,8 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_hoist_loop_invariants", &run_tac_pass<&hoist_loop_invariants>),
       tac_pass("tac_copy_propagate", &run_tac_pass<&copy_propagate>),
       tac_pass("tac_eliminate_dead_stores", &run_tac_pass<&eliminate_dead_stores>),
-      tac_pass("tac_read_stored_globals"),
-      tac_pass("tac_fold_copies_in_fixedpoint"),
+      tac_pass("tac_read_stored_globals", &run_tac_pass<&read_stored_globals>),
+      tac_pass("tac_fold_copies_in_fixedpoint", &run_tac_pass<&fold_copies_in_fixedpoint>),
       tac_pass("tac_reassoc_constants", &run_tac_pass<&reassoc_constants>),
       tac_pass("tac_reassoc_offset_constant", &run_tac_pass<&reassoc_offset_constant>),
       tac_pass("tac_direct_member_access", &run_tac_pass<&direct_member_access>),
@@ -230,7 +232,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_hoist_subtract_to_compare"),
       tac_pass("tac_hoist_divmod_pairs"),
       tac_pass("tac_count_loops_down"),
-      tac_pass("tac_fold_copies_post_destruction"),
+      tac_pass("tac_fold_copies_post_destruction", &run_tac_pass<&fold_copies_post_destruction>),
       tac_pass("tac_move_steps_onto_edges"),
       tac_pass("tac_split_three_way_compares"),
       tac_pass("tac_fold_short_circuit_jump"),

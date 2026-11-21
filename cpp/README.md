@@ -17,15 +17,10 @@ end, and emission, each of which matches the Python code on every input
 of the corpus it was checked on. With `C6502_CPP_BACKEND=1`, compile.py
 hands the type-checked c99 program to C++ and takes the `-S` text back
 ("The stage's driver", "The back end through c6502cpp", and
-"Emission", below). Of the front end, the pieces its passes share,
-`loop_labeling`, and the type checker are ported ("The front end's
-calls").
 "Emission", below). Of the front end, the pieces its passes share, the
-unroller, `identifier_resolution`, `label_resolution`, and
-`loop_labeling` are ported ("The front end's calls").
-`loop_labeling`, and the parser's lexer and recognizer are ported ("The
-front end's calls").
-`loop_labeling`, and the preprocessor are ported ("The front end's calls").
+preprocessor, the parser, the unroller, `identifier_resolution`,
+`label_resolution`, `loop_labeling`, and the type checker are ported
+("The front end's calls"), and string lifting is not yet.
 
 ## Building
 
@@ -216,6 +211,16 @@ cpp/
     parser_context.*  the scopes, the typedef-aware TokenStream, and the
                       rewording of syntax errors, of parser.py (step 6, R1)
     parser_token_checks.*   the checks of recorded token streams
+    parser.h          `parse`, parser.py's entry point (step 6, R2 and R3)
+    parser_descent.*  the recursive descent's class, its start rule, its
+                      tokens, and the guard of its actions
+    parser_folds.cpp, parser_walk.h   the parser's folds through the type
+                      checker, and its walks over the AST
+    parser_declarations.*, parser_declarators.cpp, parser_specifiers.cpp
+                      the declarations, declarators, specifiers, and
+                      attributes (part R2)
+    parser_statements.cpp, parser_expressions.cpp   the statements,
+                      expressions, constants, and initializers (part R3)
     diagnostics.*     diagnostics.py, the warnings (step 6)
     front_helper_checks.cpp   the c99 type queries' records (step 6)
     preprocessor.*    preprocessor.py, c6502's configuration of pcpp and
@@ -1336,6 +1341,71 @@ distinct LexErrors among them. `tests/test_parser_syntax_errors.cpp`
 holds, for each distinct message, the shortest source that gives it.
 A parse whose error came from an action of the parser, which 316
 records hold, is checked up to the tokens shifted before it.
+
+### The parser's descent (groups R2 and R3)
+
+`parser::parse` (`parser.h`) is the port of parser.py's `parse`. It
+builds the c99 program with a recursive descent written by hand, the
+class `Descent` of `parser_descent.h`, which has one function per
+construct of c99.lark and runs the construct's action, the code of the
+`_ASTBuilder` method of the same name, when it has taken the
+construct's last token and before it takes the next one. The tokens
+come from R1's `TokenStream`, which feeds each one to the recognizer
+before the descent sees it and lexes the token after it at once, and
+that gives three things in Python's order.
+
+- A syntax error is reported at Lark's token with Lark's message, since
+  the recognizer runs Lark's table on every token. The descent reports
+  none of its own: where it meets a token it has no use for, it takes
+  it (`unexpected`), and the recognizer throws. A descent that strays
+  from the grammar on a program Lark accepts throws InternalError.
+- An action runs after the token that follows its construct is lexed
+  and before that token is shifted, which is when Lark reduces the
+  rule. So the scopes the lexer opens and closes, the names that
+  `init_declarator` and the other actions declare, and the typedef
+  names the lexer retypes follow each other as they do in Python.
+- An action that throws runs inside `action(rule, ...)`, which makes
+  the lookahead's reductions on a copy of the recognizer. Lark makes
+  them when it is fed the lookahead, and where the lookahead turns out
+  to be a syntax error before the reduction of `rule`, Lark never calls
+  the action, and the syntax error is thrown in place of the action's.
+
+The grammar's ambiguities that LALR settles by its lookahead are
+settled by the lookahead here too. A block item is a declaration when
+it starts with a declaration specifier, or with attributes and then a
+specifier or a `;`. A statement that starts with an identifier takes
+it and looks for a `:`, and hands the identifier to the expression
+parser as its first operand (`pending_primary`) when there is none.
+After `(`, a type name begins a cast or a compound literal, and a `{`
+after `( type )` makes it a literal, after `sizeof` too. `(void)` is a
+parameter list with no parameters, `else` goes with the nearest `if`,
+and `enum e : T;` is an `enum_tag_decl` only at the start of a
+declaration. The end of a `for` statement calls `end_for_scope`
+where parser.py's `for_stmt` pops the loop's scope.
+
+The parser's folds (`fold_integer_constant`, `expression_type`, and
+`fold_named_constant`, in `parser_folds.cpp`) make a `TypeChecker` of
+their own for each array size, enumeration value, `_BitInt` width,
+designator index, `constexpr` initializer, and operand of `typeof` and
+`auto`, with the named constants and struct bodies seen so far, as
+parser.py does. `parser_walk.h` has the walks over the AST that Python
+makes with `dataclasses.fields`, for `_names_in`, `_named_literals`,
+`_has_literal`, and `_mark_hw_stack_save`. The declarations' internal
+types, the specifier lists, the declarator trees, and the parameter
+lists, are in `parser_declarations.h`, and the stack of declaration
+specifiers is in `ParseContext`.
+
+On 21 Nov 2026 `parse` matched parser.py on all 1,788 distinct calls
+of the corpus, 221 of which raise, and on all 5,163 distinct calls that
+the Python suite makes, recorded by a pytest plugin that wraps `parse`
+with `capture_passes._wrap_front`, 693 of which raise, those that fail
+in an action included. That is 6,253 distinct sources, 751 of which
+raise, each compared by the program's dump or the error's class and
+message, in the builds of MSVC 19.36 and GCC 12.2.
+`tests/test_parser_errors.cpp` holds the shortest source for each of
+the 506 distinct messages, and `tests/test_parser_declarations.cpp` and
+`tests/test_parser_statements.cpp` hold cases of each part recorded
+from Python.
 ### The preprocessor
 
 `preprocessor::preprocess(source, argv, filename, host, include_dir)`

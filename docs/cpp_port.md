@@ -1593,3 +1593,24 @@ separator, a binary prefix, or a `wb` suffix.
   `--debug` writes no log, `--passthru-includes` matches with
   std::regex, and a `\N{name}` escape in an `#if` character constant
   throws `InternalError`.
+- 21 Nov 2026: groups R2 and R3 of step 6, the parser's descent
+  (cpp/README.md, "The parser's descent"). `parser::parse` is a
+  recursive descent over R1's `TokenStream`, which runs each action
+  after taking its construct's last token and before taking the next,
+  so the lexer's scopes, the declarations, and the retyped typedef
+  names follow Python's order, and every syntax error comes from the
+  recognizer at Lark's token. An action that throws is checked against
+  a copy of the recognizer, and when Lark would find the lookahead to
+  be a syntax error before reducing the action's rule, the syntax error
+  is thrown in its place. The skeleton, with the folds through the type
+  checker, came first, and two agents ported the declarations (R2) and
+  the statements and expressions (R3) on it. `parse` matches Python on
+  all 1,788 distinct calls of the corpus, 221 of which raise, and on
+  all 5,163 distinct calls that the Python suite makes, 693 of which
+  raise, the records that R1 could check only up to an action's error
+  included, in the builds of MSVC 19.36 and GCC 12.2.
+  `tests/test_parser_errors.cpp` holds the shortest source of each of
+  the 506 distinct messages. Two bugs found on the way were fixed in
+  Python and C++: in `int * const * p` the `const` qualified the outer
+  pointer instead of the inner one, and `int a[const]` raised
+  TypeError, which compile.py printed as a traceback.

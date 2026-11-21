@@ -7,12 +7,14 @@
 #include "c99_to_tac_stage.h"
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/cse.h"
 #include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/framework.h"
 #include "passes/optimization/jump_thread.h"
+#include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/optimizer.h"
@@ -203,8 +205,9 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_eliminate_dead_loops", &run_tac_pass<&eliminate_dead_loops>),
       tac_pass("tac_thread_constant_jumps", &run_tac_pass<&thread_constant_jumps>),
       tac_pass("tac_eliminate_unreachable_code", &run_tac_pass<&eliminate_unreachable_code>),
-      tac_pass("tac_eliminate_common_subexpressions"),
-      tac_pass("tac_hoist_loop_invariants"),
+      tac_pass("tac_eliminate_common_subexpressions",
+               &run_tac_pass<&eliminate_common_subexpressions>),
+      tac_pass("tac_hoist_loop_invariants", &run_tac_pass<&hoist_loop_invariants>),
       tac_pass("tac_copy_propagate", &run_tac_pass<&copy_propagate>),
       tac_pass("tac_eliminate_dead_stores", &run_tac_pass<&eliminate_dead_stores>),
       tac_pass("tac_read_stored_globals"),

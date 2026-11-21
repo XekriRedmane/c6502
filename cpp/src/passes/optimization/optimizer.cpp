@@ -92,11 +92,13 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/cse.h"
 #include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/jump_thread.h"
+#include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
@@ -175,8 +177,8 @@ PhaseDriver make_driver() {
       {"eliminate_unreachable_code", &eliminate_unreachable_code},
       // Replaces a repeated computation or load with a Copy from the
       // first one, which copy_propagate then forwards.
-      {"eliminate_common_subexpressions", nullptr},
-      {"hoist_loop_invariants", nullptr},
+      {"eliminate_common_subexpressions", &eliminate_common_subexpressions},
+      {"hoist_loop_invariants", &hoist_loop_invariants},
       {"copy_propagate", &copy_propagate},
       {"eliminate_dead_stores", &eliminate_dead_stores},
       // `*++P` on a global P reads P after the copy into it, so the copy

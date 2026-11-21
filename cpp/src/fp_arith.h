@@ -86,7 +86,10 @@ asdl::Int double_negate(asdl::Int bits);
 // Return the sum, difference, product, and quotient of two singles or
 // two doubles at their own precision, rounded to nearest even, with
 // IEEE 754's infinities and NaNs. A division by zero gives an infinity,
-// or a NaN for 0/0. The operations are the SSE unit's, as numpy's are,
+// or a NaN for 0/0. An operation with a NaN operand gives the first
+// NaN operand, made quiet, as numpy does on x86-64, whichever order the
+// compiler puts the operands of `+` and `*` in. The other operations
+// are the SSE unit's, as numpy's are,
 // so the build must not contract them into fused multiply-adds or use
 // `-ffast-math`.
 asdl::Int single_add(asdl::Int a, asdl::Int b);

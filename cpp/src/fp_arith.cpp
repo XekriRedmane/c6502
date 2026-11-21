@@ -199,14 +199,60 @@ asdl::Int single_negate(asdl::Int bits) {
 
 asdl::Int double_negate(asdl::Int bits) { return asdl::Int(double_pattern(bits) ^ kDoubleSign); }
 
-asdl::Int single_add(asdl::Int a, asdl::Int b) { return single_bits(as_single(a) + as_single(b)); }
-asdl::Int single_sub(asdl::Int a, asdl::Int b) { return single_bits(as_single(a) - as_single(b)); }
-asdl::Int single_mul(asdl::Int a, asdl::Int b) { return single_bits(as_single(a) * as_single(b)); }
-asdl::Int single_div(asdl::Int a, asdl::Int b) { return single_bits(as_single(a) / as_single(b)); }
-asdl::Int double_add(asdl::Int a, asdl::Int b) { return double_bits(as_double(a) + as_double(b)); }
-asdl::Int double_sub(asdl::Int a, asdl::Int b) { return double_bits(as_double(a) - as_double(b)); }
-asdl::Int double_mul(asdl::Int a, asdl::Int b) { return double_bits(as_double(a) * as_double(b)); }
-asdl::Int double_div(asdl::Int a, asdl::Int b) { return double_bits(as_double(a) / as_double(b)); }
+namespace {
+
+// Returns the NaN that numpy's arithmetic gives when an operand is a
+// NaN, or none when neither is: the first operand's when it is a NaN,
+// and otherwise the second's, made quiet by setting the top bit of its
+// fraction. That is the SSE unit's rule for `a op b` with `a` in the
+// destination register. The port picks the NaN itself because a
+// compiler may swap the operands of `+` and `*`, which commute for
+// every other value, and GCC 12 did, which gave the second operand's
+// NaN for a sum of two NaNs.
+std::optional<asdl::Int> single_nan(asdl::Int a, asdl::Int b) {
+  for (const asdl::Int x : {a, b}) {
+    if (std::isnan(as_single(x))) {
+      return asdl::Int(static_cast<std::uint64_t>(single_pattern(x) | 0x400000u));
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<asdl::Int> double_nan(asdl::Int a, asdl::Int b) {
+  for (const asdl::Int x : {a, b}) {
+    if (std::isnan(as_double(x))) {
+      return asdl::Int(double_pattern(x) | 0x8000000000000ull);
+    }
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
+asdl::Int single_add(asdl::Int a, asdl::Int b) {
+  return single_nan(a, b).value_or(single_bits(as_single(a) + as_single(b)));
+}
+asdl::Int single_sub(asdl::Int a, asdl::Int b) {
+  return single_nan(a, b).value_or(single_bits(as_single(a) - as_single(b)));
+}
+asdl::Int single_mul(asdl::Int a, asdl::Int b) {
+  return single_nan(a, b).value_or(single_bits(as_single(a) * as_single(b)));
+}
+asdl::Int single_div(asdl::Int a, asdl::Int b) {
+  return single_nan(a, b).value_or(single_bits(as_single(a) / as_single(b)));
+}
+asdl::Int double_add(asdl::Int a, asdl::Int b) {
+  return double_nan(a, b).value_or(double_bits(as_double(a) + as_double(b)));
+}
+asdl::Int double_sub(asdl::Int a, asdl::Int b) {
+  return double_nan(a, b).value_or(double_bits(as_double(a) - as_double(b)));
+}
+asdl::Int double_mul(asdl::Int a, asdl::Int b) {
+  return double_nan(a, b).value_or(double_bits(as_double(a) * as_double(b)));
+}
+asdl::Int double_div(asdl::Int a, asdl::Int b) {
+  return double_nan(a, b).value_or(double_bits(as_double(a) / as_double(b)));
+}
 
 namespace {
 

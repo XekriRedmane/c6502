@@ -1225,7 +1225,10 @@ def _source_errors() -> tuple[type[Exception], ...]:
     """The exception types that report a problem with the program being
     compiled, such as a misused attribute or a frame that's too large.
     `main` prints these as one-line errors. Anything else is a bug in
-    the compiler and keeps its traceback."""
+    the compiler and keeps its traceback. The parser raises
+    NotImplementedError for a construct c6502 doesn't take, such as a
+    variable-length array or a K&R parameter list, and no other module
+    of the compiler raises it."""
     from lark.exceptions import LarkError
     from lexer import LexError
     from parser import ParserError
@@ -1248,7 +1251,7 @@ def _source_errors() -> tuple[type[Exception], ...]:
         LoopLabelingError, UnrollError, ConstantExpressionError,
         TypeCheckError, AbiSelectionError, RegallocError,
         ZpSlotAllocationError, ZpLocalAllocationError, FrameSizeError,
-        RecursionSaveError,
+        RecursionSaveError, NotImplementedError,
     )
 
 

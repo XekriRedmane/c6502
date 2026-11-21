@@ -39,6 +39,27 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("ConstInt(", out)
         self.assertIn("value=42", out)
 
+    def test_unsupported_construct_is_a_one_line_error(self):
+        # The parser raises NotImplementedError for a construct c6502
+        # doesn't take, such as a variable-length array or a K&R
+        # parameter list. That's a problem with the program, which
+        # `main` reports on one line, where it used to print a
+        # traceback.
+        for src, message in (
+            ("int n; int a[n];",
+             "array size must be an integer constant expression"),
+            ("int f(a, b);",
+             "K&R-style identifier-list functions aren't supported"),
+            ("int g(int x[static 3]);",
+             "only plain array sizes are supported"),
+        ):
+            with self.subTest(src=src):
+                rc, _, err = self._run(["compile.py", "-", "-S"], stdin=src)
+                self.assertEqual(rc, 1)
+                self.assertTrue(err.startswith("<stdin>: error: "), err)
+                self.assertIn(message, err)
+                self.assertNotIn("Traceback", err)
+
     def test_tac_stdin_prints_tac_ast(self):
         rc, out, _ = self._run(
             ["compile.py", "-", "--tac"],

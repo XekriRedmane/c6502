@@ -20,6 +20,9 @@ hands the type-checked c99 program to C++ and takes the `-S` text back
 "Emission", below). Of the front end, the pieces its passes share,
 `loop_labeling`, and the type checker are ported ("The front end's
 calls").
+"Emission", below). Of the front end, the pieces its passes share, the
+unroller, `identifier_resolution`, `label_resolution`, and
+`loop_labeling` are ported ("The front end's calls").
 
 ## Building
 
@@ -178,6 +181,10 @@ cpp/
                       T-A to T-D (step 6, group T)
       constant_expression.*, designators.*, stdbit_functions.*   the
                       modules the type checker reads (group T)
+      identifier_resolution.*, label_resolution.*   the name passes
+                      (step 6, group N)
+      optimization_ast/unroll.*   the unroller of `[[c6502::unroll]]`
+                      (step 6, group U)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -1093,6 +1100,34 @@ These pieces of the front end are ported.
   Python unit tests label, recorded with Python's results, a call of
   `label_function` on the legacy `Function` as the call of
   `label_program` on the program of the `function_decl` it builds.
+- `identifier_resolution` (`src/passes/identifier_resolution.*`),
+  `resolve_identifiers`, which resolves the program it takes by value
+  and clears the `data_type` of each expression, which the nodes that
+  Python builds anew leave None. Its `@N.` names come from one counter
+  in the order of Python's walk, and that order includes the order in
+  which Python evaluates the keyword arguments of each node it builds:
+  a compound literal is named before its type's tags are resolved, a
+  declaration before its type and its initializer, and a call's
+  arguments are resolved before its name, so an undeclared name among
+  the arguments is the one reported. The scopes are hash maps, since
+  Python only looks names up in its dicts, and the tag scopes are a
+  stack whose bottom is the file scope, where Python compares the
+  innermost tag scope with the file scope's dict by identity. It throws
+  `CompileError` of type "IdentifierResolutionError", and a message
+  about an operand that isn't an lvalue shows the operand's repr.
+- `label_resolution` (`src/passes/label_resolution.*`),
+  `resolve_labels`, which throws "LabelResolutionError".
+- The unroller (`src/passes/optimization_ast/unroll.*`),
+  `unroll_program`, which throws "UnrollError". Python keeps the values
+  of the file-scope constant arrays and their element types in two
+  module globals, which it sets for the length of a call and restores
+  after, and here they are members of an `Unroller` made for each call.
+  A tree of an array's values shares its padding, as Python's `[t] * n`
+  shares the element. Python's `_walk` and `_substitute` visit every
+  field of every dataclass, and the C++ `Walker` visits the statements,
+  declarations, for inits, and expressions in the same order, which
+  decides the error reported for a body with several faults, and skips
+  the types, which hold no expression.
 
 The type queries and the repr are checked on what the type checker
 returns. `tools/capture_helpers.py --front-only` writes a `c99types`
@@ -1177,6 +1212,21 @@ error messages the corpus never gives, 223 calls in all.
 `tests/test_designators.cpp` holds the unit tests' 314 distinct calls
 of `normalize_initializer`, and `tests/test_constant_expression.cpp`
 their 40 calls of the evaluator and the validator.
+The same day `unroll_program` matched on all 1,562 distinct calls of
+the corpus, `identifier_resolution` on all 1,566, 79 of which raise,
+and `label_resolution` on all 1,487, 10 of which raise, in the builds of
+MSVC 19.36 and GCC 12.2. The corpus rejects few programs, and none in
+the unroller, so the calls that the Python suite makes were recorded
+too, by a run of the whole suite with each pass wrapped by the
+harness's `_wrap_front`, and every one of them matched: 2,157 distinct
+calls of the unroller (30 raise), 4,236 of identifier resolution (128
+raise), and 3,483 of label resolution (19 raise).
+`tests/test_unroll.cpp`, `tests/test_identifier_resolution.cpp`, and
+`tests/test_label_resolution.cpp` hold the distinct calls of each
+pass's own Python test module whose records are under 6,000
+characters, with Python's results, and from the rest of the suite one
+call for each other message the pass raised, which is every message
+the suite reaches: 55, 144, and 31 cases.
 
 ## The TAC optimizer's driver
 
@@ -2016,3 +2066,7 @@ Python results through `tests/stage_case.h`.
   `loop_labeling`, which matches on all 1,477 distinct calls of the
   corpus and on the Python unit tests' programs, in the builds of MSVC
   19.36 and GCC 12.2.
+- 21 Nov 2026: groups N and U of step 6, `identifier_resolution`,
+  `label_resolution`, and the unroller, each matching the Python pass
+  on every distinct call of the corpus and of the Python suite, errors
+  included ("The front end's calls").

@@ -1523,3 +1523,23 @@ separator, a binary prefix, or a `wb` suffix.
   call `check_exp`, `check_struct_decl`, `check_block_var`,
   `named_constant`, `size_from_initializer`, and
   `designators::normalize_initializer` through the same headers.
+- 21 Nov 2026: groups N and U of step 6. `identifier_resolution`,
+  `label_resolution`, and the unroller are ported
+  (`src/passes/identifier_resolution.*`, `label_resolution.*`, and
+  `optimization_ast/unroll.*`, cpp/README.md, "The front end's calls"),
+  and each matches the Python pass on every distinct call of the corpus
+  in the builds of MSVC 19.36 and GCC 12.2: 1,566 calls of
+  `identifier_resolution`, 79 of which raise, 1,487 of
+  `label_resolution`, 10 of which raise, and 1,562 of `unroll_program`.
+  A run of the Python suite with the three passes wrapped recorded
+  4,236, 3,483, and 2,157 distinct calls, 128, 19, and 30 of which
+  raise, and every one matched, messages included. The names of
+  identifier resolution follow Python's walk, the order of the keyword
+  arguments of each node it builds included, and the unroller's two
+  module globals are members of an object made for each call. String
+  lifting is left for after group T-B's designators. A bug found on the
+  way was fixed in Python: a marked loop over a `short` or an `unsigned
+  short` that comes back to a value within the cap of 256 passes, such
+  as `for (short i = 0; i <= 32767; i += 256)`, raised a KeyError,
+  since the unroller's table of type names for the message had neither
+  type, and compile.py printed a traceback.

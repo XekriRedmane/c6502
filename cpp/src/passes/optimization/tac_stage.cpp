@@ -47,6 +47,7 @@
 #include "passes/optimization/three_way_compare.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "passes/optimization/unreachable_code_elimination.h"
+#include "passes/return_in_zero_page.h"
 #include "tagged_json.h"
 
 namespace c6502::passes::tac_stage {
@@ -177,6 +178,27 @@ StageOutput run_optimize_program(const capture::Call& call, const AsmContext&,
   return result;
 }
 
+// Gives the dump of the program `out` that a program-level pass
+// returned, with the `mutated` line for the symbol table, its first
+// positional argument, when the pass changed it.
+StageOutput program_output(const ir::Program& out, const std::string& symbols_before,
+                           const SymbolTable& symbols) {
+  StageOutput result{asdl::dump(out), ""};
+  const std::string symbols_after = encode<Sym>(symbols);
+  if (symbols_after != symbols_before) {
+    result.mutated = "{\"args\": {\"0\": " + symbols_after + "}, \"kwargs\": {}}";
+  }
+  return result;
+}
+
+StageOutput run_return_in_zero_page(const capture::Call& call, const AsmContext&,
+                                    const json::Value& args, const json::Value&) {
+  auto prog = asdl::load<ir::Program>(call.input);
+  SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const std::string before = encode<Sym>(symbols);
+  return program_output(return_pointers_in_zero_page(std::move(prog), symbols), before, symbols);
+}
+
 // Returns `run` when every pass of the driver's table is ported, and
 // null otherwise, for the calls that run the whole driver.
 StageRun when_driver_complete(StageRun run) {
@@ -263,7 +285,8 @@ std::vector<StageSignature> signatures() {
       {.name = "return_pointers_in_zero_page",
        .input = "tac_ast",
        .args = {rt<Sym>},
-       .output_module = "tac_ast"},
+       .output_module = "tac_ast",
+       .run = &run_return_in_zero_page},
       {.name = "row_address_tables",
        .input = "tac_ast",
        .args = {rt<Sym>, rt<Types>},
@@ -282,7 +305,10 @@ std::vector<StageSignature> signatures() {
        .input = "tac_ast",
        .args = {rt<Sym>},
        .output_module = "tac_ast"},
-      {.name = "split_tables", .input = "tac_ast", .args = {rt<Sym>}, .output_module = "tac_ast"},
+      {.name = "split_tables",
+       .input = "tac_ast",
+       .args = {rt<Sym>},
+       .output_module = "tac_ast"},
   };
 }
 

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "c99_to_tac_stage.h"
+#include "passes/optimization/compare_subtract.h"
 #include "passes/optimization/constant_folding.h"
 #include "passes/optimization/copy_folding.h"
 #include "passes/optimization/copy_propagation.h"
@@ -236,7 +237,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_phi_offset", &run_tac_pass<&phi_offset>),
       tac_pass("tac_static_indexed_access", &run_tac_pass<&static_indexed_access>),
       tac_pass("tac_recognize_indirect_indexed", &run_tac_pass<&recognize_indirect_indexed>),
-      tac_pass("tac_hoist_subtract_to_compare"),
+      tac_pass("tac_hoist_subtract_to_compare", &run_tac_pass<&hoist_subtract_to_compare>),
       tac_pass("tac_hoist_divmod_pairs"),
       tac_pass("tac_count_loops_down"),
       tac_pass("tac_fold_copies_post_destruction", &run_tac_pass<&fold_copies_post_destruction>),

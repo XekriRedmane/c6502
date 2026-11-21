@@ -219,8 +219,19 @@ operand, keeping a change when the program still fails the same way
 (same wrong paths, each path still compiling or erroring as before).
 `--tac-opt` reduces against "optimized TAC simulates differently from
 unoptimized TAC" instead, which is faster and isolates TAC-optimizer
-bugs. Reduced programs often have functions with no `return`, which
-c6502 defines as returning 0.
+bugs.
+
+A candidate whose run on the TAC interpreter reaches the end of a
+function that returns a value, other than `main`, is never kept
+(`falls_off_end`, which appends a call of an undefined function to
+each such body and runs the program). Using such a function's value
+is undefined (C99 6.9.1p12), so every result is allowed, and before
+this check the reduction of `calls` seed 335 emptied three functions
+whose results `f0` still used, which left a disagreement that meant
+nothing. The reducer doesn't rule out the other kinds of undefined
+behavior an operand replacement can bring in, such as a shift by too
+many places or signed overflow, so a reduced program has to be
+checked for them by hand.
 
 ## `tac_passes.py`
 

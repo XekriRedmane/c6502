@@ -41,5 +41,46 @@ class TestFuzzGenerators(unittest.TestCase):
         self.assertEqual(calls.make_program(7), calls.make_program(7))
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestReducerRejectsFallingOff(unittest.TestCase):
+    """The reducer never keeps a candidate that reaches the end of a
+    function returning a value, whose value C99 6.9.1p12 leaves
+    undefined. Reducing `fuzz.calls` seed 335 emptied three functions
+    whose results were still used, which made the reduced program's
+    disagreement meaningless."""
+
+    def test_falls_off_end(self):
+        from fuzz.reduce import falls_off_end
+        cases = {
+            "int f(int x) { return x + 1; }\n"
+            "int main(void) { return f(2); }\n": False,
+            "int f(int x) { x = x + 1; }\n"
+            "int main(void) { return f(2); }\n": True,
+            # Only the path the run takes counts.
+            "int f(int x) { if (x) return 1; }\n"
+            "int main(void) { return f(2); }\n": False,
+            "int f(int x) { if (x) return 1; }\n"
+            "int main(void) { return f(0); }\n": True,
+            "int g; void f(void) { g = 1; }\n"
+            "int main(void) { f(); return g; }\n": False,
+            # C99 5.1.2.2.3 defines `main` falling off as returning 0.
+            "int main(void) { }\n": False,
+        }
+        for src, expected in cases.items():
+            with self.subTest(src=src):
+                self.assertEqual(falls_off_end(src), expected)
+
+    def test_predicate_rejects_falling_off(self):
+        from fuzz.reduce import make_predicate
+        # A program that fails on every path, so that any candidate
+        # failing the same way would be kept.
+        src = "int f(int x) { return x; }\nint main(void) { return f(3); }\n// expect: 4\n"
+        still_fails = make_predicate(src, tac_opt=False)
+        self.assertTrue(still_fails(src))
+        self.assertFalse(still_fails(
+            "int f(int x) { x = 3; }\nint main(void) { return f(3); }\n// expect: 4\n",
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

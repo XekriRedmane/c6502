@@ -14,9 +14,14 @@ instead that the optimized TAC simulates to a different main() result
 than the unoptimized TAC, which narrows a TAC-optimizer bug without
 compiling to asm at every step.
 
-Deleting a `return` makes a function fall off its end, which c6502
-defines as returning 0 (an implicit `Ret(0)`), so reduced programs
-often look like they're missing returns.
+Deleting a `return` can make a function fall off its end. c6502 gives
+such a function an implicit `Ret(0)`, but C99 6.9.1p12 makes the use
+of its value undefined, and the -O pipeline may return something
+else there. A candidate whose run on the TAC interpreter
+reaches the end of a function that returns a value, other than
+`main`, is therefore never kept (`falls_off_end`). That is stricter
+than C, which allows the fall-off when the caller ignores the value,
+and the generators always end such a function with a `return`.
 
     uv run python -m fuzz.reduce fuzz_out/calls/calls534.c
     uv run python -m fuzz.reduce --tac-opt fuzz_out/calls/calls23.c
@@ -35,6 +40,50 @@ from fuzz.runner import (
 
 _BINARY = re.compile(r"\(\(([^()]*)\) ([^()\s]+) \(([^()]*)\)\)")
 
+# A function that no program defines. `falls_off_end` declares it and
+# calls it at the end of every function that returns a value, so the
+# TAC interpreter raises when a run reaches one of those ends.
+_FELL_OFF = "__reduce_fell_off"
+
+
+def falls_off_end(src: str) -> bool:
+    """Tells whether running `src` on the TAC interpreter reaches the
+    end of a function, other than `main`, whose return type isn't
+    `void`. Returns False for a program that the front end rejects or
+    that the interpreter can't run, which the predicate rejects on its
+    own."""
+    import c99_ast
+    import sim.harness as H
+    from tac_sim import Simulator, TacSimError
+    try:
+        ast = H.parse(H.preprocess(f"void {_FELL_OFF}(void);\n{src}"))
+    except Exception:  # noqa: BLE001 — invalid candidate
+        return False
+    for decl in ast.declaration:
+        if not isinstance(decl, c99_ast.FunctionDecl):
+            continue
+        fd = decl.function_decl
+        if (
+            fd.body is None or fd.name == "main"
+            or isinstance(fd.data_type.ret, c99_ast.Void)
+        ):
+            continue
+        fd.body.block_item.append(c99_ast.S(statement=c99_ast.Expression(
+            exp=c99_ast.FunctionCall(name=_FELL_OFF, args=[]),
+        )))
+    try:
+        ast = H.label_loops(H.resolve_labels(H.lift_strings(
+            H.resolve_identifiers(ast),
+        )))
+        ast, syms, types = H.type_check_program(ast)
+        tac = H.translate_to_tac(ast, syms, types)
+        Simulator(tac, syms, types).call("main", [])
+    except TacSimError as e:
+        return _FELL_OFF in str(e)
+    except Exception:  # noqa: BLE001 — invalid candidate
+        return False
+    return False
+
 
 def _tac_results(src: str) -> tuple[int, int]:
     """main()'s result on unoptimized and optimized TAC."""
@@ -52,9 +101,12 @@ def _tac_results(src: str) -> tuple[int, int]:
 
 def make_predicate(src: str, tac_opt: bool):
     """A function telling whether a candidate program still shows the
-    failure that `src` shows."""
+    failure that `src` shows. A candidate that falls off the end of a
+    function returning a value (`falls_off_end`) never does."""
     if tac_opt:
         def still_fails(cand: str) -> bool:
+            if falls_off_end(cand):
+                return False
             try:
                 plain, opt = _tac_results(cand)
             except Exception:  # noqa: BLE001 — invalid candidate
@@ -69,6 +121,8 @@ def make_predicate(src: str, tac_opt: bool):
     )
 
     def still_fails(cand: str) -> bool:
+        if falls_off_end(cand):
+            return False
         res = run_all(cand)
         # Same wrong paths, and each path still compiles (or still
         # errors) as before, so deleting `main` doesn't count.

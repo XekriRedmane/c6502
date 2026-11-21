@@ -98,6 +98,7 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
+#include "passes/optimization/fold_producer_jumps.h"
 #include "passes/optimization/jump_thread.h"
 #include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
@@ -170,7 +171,7 @@ PhaseDriver make_driver() {
       // tests is `^ 1`. A signed ordering compare of two values that
       // can't be negative is done unsigned, last, once nothing narrows
       // it.
-      {"fold_producer_jumps", nullptr},
+      {"fold_producer_jumps", &fold_producer_jumps},
       {"eliminate_dead_loops", &eliminate_dead_loops},
       // An edge that brings a join a constant its test decides goes
       // where the test sends it, so an inlined `return false;` doesn't

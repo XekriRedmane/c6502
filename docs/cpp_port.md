@@ -920,3 +920,26 @@ unreachable-code elimination changed the Phis of its input in place
   which reach the 253 lines of c99_to_tac.py and its helper modules
   that the corpus doesn't reach, are C++ tests. Its public header gives
   the other groups `tac_const_for`, `sizeof_c99`, and `byte_width_of`.
+- 21 Nov 2026: group E of step 5, dataflow over the CFG.
+  `copy_propagate`, `eliminate_dead_stores`,
+  `eliminate_unreachable_code` and `eliminate_dead_loops` (the versions
+  step 5a fixed, which build new Phis in Python), `thread_constant_jumps`,
+  `eliminate_common_subexpressions`, `hoist_loop_invariants`,
+  `fold_copies_in_fixedpoint`, `fold_copies_post_destruction`, and
+  `read_stored_globals` are ported, each in
+  `src/passes/optimization/<module>.*` with a runner in tac_stage.cpp,
+  and each matches the Python pass on every distinct call of the corpus
+  in the builds of MSVC 19.36 and GCC 12.2: 11,828 calls of
+  `tac_copy_propagate`, 11,825 of `tac_eliminate_dead_stores`, 12,829
+  each of `tac_eliminate_unreachable_code`, `tac_eliminate_dead_loops`,
+  and `tac_thread_constant_jumps`, 11,830 of
+  `tac_eliminate_common_subexpressions`, 11,825 of
+  `tac_hoist_loop_invariants`, 9,573 of `tac_fold_copies_in_fixedpoint`,
+  3,948 of `tac_fold_copies_post_destruction`, and 9,564 of
+  `tac_read_stored_globals`. The C++ tests hold 199 calls that the
+  Python unit tests make, recorded with Python's results, and the eight
+  smallest corpus calls that change the function for each of the three
+  passes whose corpus calls change it least often (cpp/README.md,
+  "Dataflow over the CFG (group E)"). Dead-loop elimination reads group
+  A's `c99_to_tac::kKeepLoopMark`. The entries of group E's passes in
+  the driver's table are filled.

@@ -141,6 +141,11 @@ cpp/
                       static_const_fold.*, distribute_constant.*,
                       strength_reduction.*, reassoc_const.*, reassoc_offset.*
                       the folding passes of step 5 (group C)
+      optimization/copy_propagation.*, dead_store_elimination.*,
+                      unreachable_code_elimination.*, dead_loop_elimination.*,
+                      jump_thread.*, cse.*, licm.*, copy_folding.*,
+                      read_stored_global.*   the dataflow passes of step 5
+                      (group E)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -785,6 +790,67 @@ operand, `int_width`, `type_max`, and `is_unsigned_type` of each
 symbol's type, and `rewrite_uses_in` of each instruction with two
 mappers (`tac_opt_values`). `check-helpers` computes them in
 `src/tac_helper_checks.cpp`.
+
+### Dataflow over the CFG (group E)
+
+The passes of group E of step 5 each have a header named for their
+Python module under `src/passes/optimization/` and take the function
+and the `PassContext`, as the driver calls them: `copy_propagate`
+(`copy_propagation.h`), `eliminate_dead_stores`
+(`dead_store_elimination.h`), `eliminate_unreachable_code`,
+`eliminate_dead_loops`, `thread_constant_jumps` (`jump_thread.h`),
+`eliminate_common_subexpressions` (`cse.h`), `hoist_loop_invariants`
+(`licm.h`), `fold_copies_in_fixedpoint` and
+`fold_copies_post_destruction` (`copy_folding.h`), and
+`read_stored_globals` (`read_stored_global.h`). Dead-loop elimination
+finds a loop marked `[[c6502::keep]]` by `c99_to_tac::kKeepLoopMark`
+in one of its labels.
+
+Unreachable-code elimination, dead-loop elimination, and jump threading
+build new Phis and instructions in Python, since a Python block holds
+the instructions of the function the pass was given, and a change in
+place changed the function the driver compares the result with. The
+blocks of the C++ CFG own copies of their instructions, so the C++
+passes change them in place.
+
+Copy propagation rewrites the operands of the instructions Python's
+`_rewrite` has a case for, which leaves a `GetAddress`, an
+`IndexedConstLoad`, and the two indirect-indexed accesses alone, so it
+has a switch of its own where `rewrite_uses_in` would rewrite those
+too. Common-subexpression elimination keys its tables by strings made
+of the dump of each operand and of the destination's type, where
+Python keys them by tuples of reprs. Two dumps are equal exactly when
+the values are, and the two operands of a commutative operator go in
+the order of their strings, which pairs the same instructions as
+Python's order of the reprs. Python's `copy_folding.fold_copies`, which
+the driver doesn't call, is the window pass without a symbol table, so
+the calls its unit tests make are recorded as calls of
+`tac_fold_copies_in_fixedpoint` with none. Jump threading would give a
+Phi an argument from a block without a label only where Python would
+make a `PhiArg` with a `pred_label` of None, which the pass's test that
+the target's Phis name the join rules out, and it throws
+`InternalError` there.
+
+On 21 Nov 2026 each pass matched the Python pass on every distinct call
+of the corpus: 11,828 calls of `tac_copy_propagate`, 11,825 of
+`tac_eliminate_dead_stores`, 12,829 each of
+`tac_eliminate_unreachable_code`, `tac_eliminate_dead_loops`, and
+`tac_thread_constant_jumps`, 11,830 of
+`tac_eliminate_common_subexpressions`, 11,825 of
+`tac_hoist_loop_invariants`, 9,573 of `tac_fold_copies_in_fixedpoint`,
+3,948 of `tac_fold_copies_post_destruction`, and 9,564 of
+`tac_read_stored_globals`. Few of those calls change the function for
+some of the passes: 32 of dead-loop elimination's, 100 of the hoist's,
+136 of `read_stored_globals`', and 362 of jump threading's.
+`tests/test_<module>.cpp` holds 199 recorded calls of the Python unit
+tests of the nine modules: every call of an entry point on a test's
+synthetic TAC, and every call through the driver that changed the
+function. The tests of dead-loop elimination, the hoist, and
+`read_stored_globals` also hold the eight smallest corpus calls of each
+that change the function. Every distinct call the unit tests make
+matched, 534 in all, except three of `read_stored_globals` that give a
+symbol a `StaticAttr` with no initial value, which the codec can't
+read, and which match with a `NoInitializer` in its place.
 
 ## The TAC optimizer's driver
 
@@ -1562,3 +1628,12 @@ Python results through `tests/stage_case.h`.
   on all 1,154 distinct calls of the corpus, the in-place changes to
   the program and the tables included, and on the 2,825 distinct calls
   of the unit tests that return, with MSVC 19.36 and GCC 12.2.
+- 21 Nov 2026: group E of step 5, dataflow over the CFG ("Dataflow over
+  the CFG (group E)"): `copy_propagate`, `eliminate_dead_stores`,
+  `eliminate_unreachable_code`, `eliminate_dead_loops`,
+  `thread_constant_jumps`, `eliminate_common_subexpressions`,
+  `hoist_loop_invariants`, both phases of copy folding, and
+  `read_stored_globals`. Each matches the Python pass on every distinct
+  call of the corpus, 108,880 calls in all, and on the calls of the
+  Python unit tests, in the builds of MSVC 19.36 and GCC 12.2. Their
+  entries in the driver's table are filled.

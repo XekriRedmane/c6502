@@ -909,3 +909,14 @@ unreachable-code elimination changed the Phis of its input in place
   is the piece of c99_to_tac.py these passes read, which group A's port
   of the module replaces. The entries of group C's passes and of group
   F's in the driver's table (`passes::tac_driver()`) are filled.
+- 21 Nov 2026: group A of step 5, `c99_to_tac`, is ported
+  (cpp/README.md, "c99_to_tac"), as `c99_to_tac::translate_program` in
+  `src/c99_to_tac.*` and the three files of the lowering, on group C's
+  `fp_arith` and `builtin_functions`, and its `tac_const_for` replaces
+  the one group C ported for its passes. It matches the Python function on all
+  1,154 distinct calls of the corpus, the 199 calls among them that
+  change the c99 program in place included, and on the 2,825 distinct
+  calls of the unit tests that return. 50 of the unit tests' calls,
+  which reach the 253 lines of c99_to_tac.py and its helper modules
+  that the corpus doesn't reach, are C++ tests. Its public header gives
+  the other groups `tac_const_for`, `sizeof_c99`, and `byte_width_of`.

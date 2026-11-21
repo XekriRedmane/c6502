@@ -148,12 +148,15 @@ cpp/
     tac_to_asm_translator.h, tac_to_asm_calls.cpp, tac_to_asm_arith.cpp,
       tac_to_asm_compare.cpp   the Translator and the parts of the lowering
     tac_to_asm_stage.*  the runner of the stage call `tac_to_asm`
-    bit_precise.*     the parts of bit_precise.py code generation reads
+    c99_to_tac.*      c99_to_tac.py's translate_program (step 5, group A)
+    c99_to_tac_translator.h, c99_to_tac_exp.cpp, c99_to_tac_lvalues.cpp,
+      c99_to_tac_conversions.cpp   the Translator and the parts of the lowering
+    c99_to_tac_stage.*  the runner of the step 5 call `c99_to_tac`
     fp_arith.*        fp_arith.py, the IEEE 754 patterns and their arithmetic
     builtin_functions.*   builtin_functions.py: the builtins' names, the
                       packed BCD arithmetic, and the <stdbit.h> operations
-    c99_to_tac.*      c99_to_tac.py's `_tac_const_for`, which group A's port
-                      of the module replaces
+    bit_precise.*     the parts of bit_precise.py code generation and
+                      c99_to_tac read
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
@@ -811,6 +814,57 @@ which tests/test_capture_passes.py checks against Python's lists, and
 runs a driver of the passes ported so far on three functions, with the
 results of Python's `PhaseDriver` of the same lists.
 
+## c99_to_tac
+
+Group A of step 5 ported `c99_to_tac.translate_program` as
+`c99_to_tac::translate_program` (`src/c99_to_tac.h`), which takes the
+c99 program, the symbol table, and the type table (null where Python's
+is None) and changes all three in place, as Python's does. The Python
+class `Translator` is a struct in `src/c99_to_tac_translator.h`, with
+the lowering split over four files in the parts of docs/cpp_port.md:
+`src/c99_to_tac.cpp` (the free functions of the module, the queries
+every part reads, the driver, the builtins, and the declarations, part
+A1), `c99_to_tac_exp.cpp` (statements, calls, expressions, and pointer
+arithmetic), `c99_to_tac_lvalues.cpp` (initializers, lvalues, and
+subscripts), and `c99_to_tac_conversions.cpp` (increments, compound
+assignments, casts, the bit-precise padding, and the short-circuit
+operators). The public header gives other groups `tac_const_for`
+(Python's `_tac_const_for`, which `static_const_fold` and constant
+folding call), `sizeof_c99` (`_sizeof`, for `row_address_tables`),
+`byte_width_of` (`_byte_width_of`, for the inliner), and
+`kKeepLoopMark`.
+
+Python walks every field of every c99 node to erase `short` and
+`nullptr_t`, and `ProgramWalk` in `c99_to_tac.cpp` visits the same
+fields. Python changes shared type objects in place, where C++ has
+values, but every copy of a type gets the same replacement, so the
+result is the same. A temporary is added to the symbol table, an
+`OrderedMap` whose entries move when it grows, so the lowering never
+holds a reference to a symbol across the creation of a temporary.
+Python's `_fp_to_integer` converts a double to the whole integer it
+holds, which can have 1,024 bits, and reduces it modulo 2^N, and the C++
+port reduces fp_arith's `TruncatedInt` with `wrapped`.
+
+It reads group C's ports of `fp_arith` (`src/fp_arith.*`) and
+`builtin_functions` (`src/builtin_functions.*`), and `bit_precise`
+gained `value_range`, `has_padding`, and `storage_type` for it.
+
+The runner (`src/c99_to_tac_stage.*`) gives the `mutated` line with the
+program after the call under `input` when the program changed and with
+each table that changed by its position. On 21 Nov 2026 the capture of
+the whole corpus in both modes gave 1,154 distinct calls, 199 of which
+changed the program, and every one matched with MSVC and with GCC. A
+line trace of c99_to_tac.py, builtin_functions.py, fp_arith.py, and
+bit_precise.py over the corpus and over the 2,829 distinct calls that
+the unit tests make found 253 lines that only the unit tests reach, most
+of them the <stdbit.h> loops and the folding of the builtins, which no
+program of the corpus uses. `tests/test_c99_to_tac_calls.cpp` holds 50
+of those calls, recorded with their results through
+`tests/stage_case.h`, which reach all 253, and all 2,825 of the unit
+tests' calls that return matched too. `tests/test_c99_to_tac_helpers.cpp`
+checks the additions to `bit_precise` and the fold of a cast of a
+floating constant on values the Python functions give.
+
 ## The shared helpers
 
 These Python modules, which the asm passes from `apply_licm` on
@@ -868,7 +922,7 @@ reduces it modulo 2^N with `wrapped`, or takes it whole with `exact`
 when it fits in an `asdl::Int`, as c99_to_tac does for a conversion
 to `bool`. `c99_to_tac::tac_const_for` is the piece of c99_to_tac.py
 that the folding passes read, which group A's port of the module
-replaces. `distribute_constant` reads group F's `is_1_byte_val`.
+("c99_to_tac") keeps with the same signature. `distribute_constant` reads group F's `is_1_byte_val`.
 
 `rewrite_uses_in` takes a mapper that returns none to leave an operand,
 where Python's returns the same object, and returns none when nothing
@@ -1503,3 +1557,8 @@ Python results through `tests/stage_case.h`.
   corpus, and on the 273 calls the Python unit tests make that the
   tests `test_<module>_calls.cpp` hold. Their entries in the driver's
   table, and group F's, are filled.
+- 21 Nov 2026: group A of step 5, `c99_to_tac` ("c99_to_tac"), with
+  the parts of `bit_precise` it reads. It matches the Python function
+  on all 1,154 distinct calls of the corpus, the in-place changes to
+  the program and the tables included, and on the 2,825 distinct calls
+  of the unit tests that return, with MSVC 19.36 and GCC 12.2.

@@ -95,7 +95,10 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
 #include "passes/optimization/phi_constant_fold.h"
+#include "passes/optimization/reassoc_const.h"
+#include "passes/optimization/reassoc_offset.h"
 #include "passes/optimization/static_const_fold.h"
+#include "passes/optimization/strength_reduction.h"
 #include "passes/optimization/truncate_extend_fold.h"
 
 namespace c6502::passes {
@@ -135,7 +138,7 @@ PhaseDriver make_driver() {
       {"fold_into_constant_phi", &fold_into_constant_phis},
       // Strength reduction, as one RuleSet of rules for each operation
       // (a Multiply, Divide, or Modulo by a power of two).
-      {"reduce_strength", nullptr},
+      {"reduce_strength", &reduce_strength},
       // Three folds of a jump on the result of a comparison, a
       // BitwiseAnd, or a LogicalNot read once by a JumpIf, as one
       // RuleSet. They share the window of the producer and the JumpIf
@@ -167,8 +170,8 @@ PhaseDriver make_driver() {
       // folding next makes the add write P directly.
       {"read_stored_globals", nullptr},
       {"fold_copies_in_fixedpoint", nullptr},
-      {"reassoc_constants", nullptr},
-      {"reassoc_offset_constant", nullptr},
+      {"reassoc_constants", &reassoc_constants},
+      {"reassoc_offset_constant", &reassoc_offset_constant},
       // `g.m` and `r.m` as direct byte accesses in place of a store
       // through `&g + k`. After the reassociations, so the offset is one
       // Constant.

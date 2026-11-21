@@ -13,6 +13,8 @@
 #include "passes/optimization/optimizer.h"
 #include "passes/optimization/phi_constant_fold.h"
 #include "passes/optimization/phi_offset.h"
+#include "passes/optimization/reassoc_const.h"
+#include "passes/optimization/reassoc_offset.h"
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
@@ -22,6 +24,7 @@
 #include "passes/optimization/ssa_destruction.h"
 #include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/static_indexed_access.h"
+#include "passes/optimization/strength_reduction.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
 
@@ -189,7 +192,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_constant_fold", &run_tac_pass<&constant_fold>),
       tac_pass("tac_distribute_constant", &run_tac_pass<&distribute_constant>),
       tac_pass("tac_fold_into_constant_phi", &run_tac_pass<&fold_into_constant_phis>),
-      tac_pass("tac_reduce_strength"),
+      tac_pass("tac_reduce_strength", &run_tac_pass<&reduce_strength>),
       tac_pass("tac_fold_producer_jumps"),
       tac_pass("tac_eliminate_dead_loops"),
       tac_pass("tac_thread_constant_jumps"),
@@ -200,8 +203,8 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_eliminate_dead_stores"),
       tac_pass("tac_read_stored_globals"),
       tac_pass("tac_fold_copies_in_fixedpoint"),
-      tac_pass("tac_reassoc_constants"),
-      tac_pass("tac_reassoc_offset_constant"),
+      tac_pass("tac_reassoc_constants", &run_tac_pass<&reassoc_constants>),
+      tac_pass("tac_reassoc_offset_constant", &run_tac_pass<&reassoc_offset_constant>),
       tac_pass("tac_direct_member_access", &run_tac_pass<&direct_member_access>),
       tac_pass("tac_recognize_indexed_store", &run_tac_pass<&recognize_indexed_store>),
       tac_pass("tac_recognize_indexed_load", &run_tac_pass<&recognize_indexed_load>),

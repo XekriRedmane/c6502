@@ -1564,3 +1564,32 @@ separator, a binary prefix, or a `wb` suffix.
   found by the rule's alias, and Lark's `accepts` includes `$END` where
   the input could end, since its interactive parser feeds `$END` as the
   end of the input.
+- 21 Nov 2026: group P of step 6, the preprocessor. preprocessor.py and
+  the parts of pcpp 1.30 and PLY it uses are ported in the plan's seven
+  parts (cpp/README.md, "The preprocessor"): PLY's lexer with pcpp's
+  rules in PLY's order, the lines, the macros with pcpp's lists of
+  `expanded_from` shared as Python shares them, the directives and
+  `#include` with pcpp's search and rewriting of paths, `#if` on PLY's
+  LALR loop with the tables of the live parser and Python's arithmetic,
+  `write`, and preprocessor.py's hooks and argparse's reading of the
+  flags. The C++ matches Python on all 2,088 distinct `preprocess` calls
+  of the corpus, on all 4,981 distinct calls the Python unit tests make,
+  recorded by a pytest plugin with every file each call opened and
+  checked by `c6502cpp check-preprocess`, and on 2,205 calls on
+  generated inputs (macros with `#`, `##`, and `__VA_ARGS__`, every
+  operator of `#if` at its limits and 600 random expressions, bad
+  definitions and directives, comments, carriage returns, form feeds,
+  includes and their guards, encodings, and every flag), errors,
+  warnings, and stderr included, in the builds of MSVC 19.36 and GCC
+  12.2. The evaluator matches on 7,349 expressions of its own. pcpp
+  reports its errors on stderr without raising, so the capture of
+  `preprocess` now records what a call writes there on a `stderr` line,
+  which `check-captures` compares. The generated inputs found that pcpp
+  expands a macro's argument with no memory of the macros around it, so
+  `#define G F(G)` with `#define F(x) x` expands without end until
+  Python raises RecursionError. The C++ raises it at 300 nested
+  expansions, since the depth Python reaches depends on its caller's
+  stack.
+  `--debug` writes no log, `--passthru-includes` matches with
+  std::regex, and a `\N{name}` escape in an `#if` character constant
+  throws `InternalError`.

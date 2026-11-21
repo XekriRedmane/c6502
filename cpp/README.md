@@ -25,6 +25,7 @@ unroller, `identifier_resolution`, `label_resolution`, and
 `loop_labeling` are ported ("The front end's calls").
 `loop_labeling`, and the parser's lexer and recognizer are ported ("The
 front end's calls").
+`loop_labeling`, and the preprocessor are ported ("The front end's calls").
 
 ## Building
 
@@ -187,6 +188,7 @@ cpp/
                       (step 6, group N)
       optimization_ast/unroll.*   the unroller of `[[c6502::unroll]]`
                       (step 6, group U)
+      preprocess_stage.*  the runner of the step 6 call `preprocess`
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -216,6 +218,20 @@ cpp/
     parser_token_checks.*   the checks of recorded token streams
     diagnostics.*     diagnostics.py, the warnings (step 6)
     front_helper_checks.cpp   the c99 type queries' records (step 6)
+    preprocessor.*    preprocessor.py, c6502's configuration of pcpp and
+                      its C23 hooks (step 6, group P)
+    pcpp_preprocessor.*   pcpp 1.30's Preprocessor: lines, macros,
+                      directives, includes, and `write`
+    pcpp_lexer.*      pcpp's PLY lexer, its rules tested in PLY's order
+    pcpp_evaluator.*, pcpp_evaluator_tables.h   pcpp's `#if` evaluator
+                      and PLY's LALR loop, with the tables of the live
+                      parser (tools/pcpp_evaluator_tables.py)
+    pcpp_token.h      pcpp's token, with Python's reference semantics
+    pcpp_text.*, pcpp_unicode.h   Python's `str`, `os.path`, and text
+                      files as pcpp uses them, with the Unicode classes of
+                      `\w`, `\d`, and the spaces and line breaks
+                      (tools/pcpp_unicode_tables.py)
+    preprocessor_cases.*  the check of a recorded call of `preprocess`
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
@@ -1140,6 +1156,8 @@ These pieces of the front end are ported.
   declarations, for inits, and expressions in the same order, which
   decides the error reported for a body with several faults, and skips
   the types, which hold no expression.
+- The preprocessor (`src/preprocessor.*` with `src/pcpp_*`, namespaces
+  `preprocessor` and `pcpp`), described below under "The preprocessor".
 
 The type queries and the repr are checked on what the type checker
 returns. `tools/capture_helpers.py --front-only` writes a `c99types`
@@ -1318,6 +1336,84 @@ distinct LexErrors among them. `tests/test_parser_syntax_errors.cpp`
 holds, for each distinct message, the shortest source that gives it.
 A parse whose error came from an action of the parser, which 316
 records hold, is checked up to the tokens shifted before it.
+### The preprocessor
+
+`preprocessor::preprocess(source, argv, filename, host, include_dir)`
+is preprocessor.py's `preprocess`: pcpp 1.30 with preprocessor.py's
+hooks, its flags read as argparse reads them, and `_strip_pragmas` after
+it. It returns the text and what Python writes to stderr (pcpp's
+`<file>:<line> error:` lines, `#error` and `#warning`, the NOTEs about
+unknown flags, and the `--time` report), issues the `_Bool` warnings
+through `diagnostics::warn`, and throws a `CompileError` of the Python
+type for a `PreprocessorError` or any exception that escapes pcpp, such
+as the IndexError of `#define` alone or the RecursionError of a macro
+that expands inside its own argument. A `pcpp::Host` gives it what
+Python reads from the machine: the rules of `os.path` (ntpath or
+posixpath) and the current directory, the encoding Python opens a
+header with, and the files. `pcpp::native_host()` is this machine's,
+and the tests' host holds only the files a record lists.
+
+The port follows the plan in docs/cpp_port.md, part by part.
+
+- **The lexer** (`pcpp_lexer.*`) tests pcpp's rules in the order of
+  PLY's master regular expression, which decides the token where
+  several rules match, and reproduces the consequences: `^=` is two
+  tokens, a lone `=` at the start of an input is a CPP_XOREQUAL, an
+  unclosed quote or comment is punctuation, and a character no rule
+  takes is a `Char` token whose type is the character.
+- **The tokens** (`pcpp_token.h`) are shared pointers, since pcpp
+  copies a token with `copy.copy`, which shares its `expanded_from`
+  list, and changes tokens in place where several lists hold them.
+- **The text** (`pcpp_text.*`): `str.splitlines`, `rstrip`, `strip`,
+  `split`, and `repr` with Python's Unicode classes, the functions of
+  ntpath and posixpath, and the decoding of a header with cp1252,
+  UTF-8, Latin-1, or ASCII and universal newlines, with Python's
+  `UnicodeDecodeError` messages.
+- **pcpp** (`pcpp_preprocessor.*`): `group_lines`, the macros (define,
+  undef, the prescan, the collection of arguments, `macro_expand_args`,
+  `expand_macros`), `evalexpr`, `parsegen` with every directive and the
+  include-guard heuristic, `include` with its search and pcpp's
+  rewriting of paths, and `write`. pcpp's `parsegen` is a generator that
+  `write` drains, and the C++ hands each token to `write`'s consumer
+  where Python yields it, so a `_Bool` before an error is warned about
+  only when Python warns about it.
+- **The evaluator** (`pcpp_evaluator.*`) runs PLY's parse loop on the
+  tables of the live parser, with Python's arithmetic on `Value`.
+- **preprocessor.py** (`preprocessor.*`): `CompilePreprocessor`'s hooks,
+  `_NumberEvaluator`, `_check_pragma`, `_strip_pragmas`, and
+  `parse_args`.
+
+Three things are left out, each where it can't matter to a compile.
+`--debug` creates pcpp's log and writes nothing to it, `--passthru-includes`
+reads its pattern with std::regex's ECMAScript grammar where Python uses
+`re`, and a `\N{name}` escape in a character constant in `#if` throws
+`InternalError`, since the database of Unicode names isn't ported. pcpp
+stops a macro that expands inside its own argument when Python's stack
+runs out, which depends on how deep the caller's stack is, so the C++
+stops it at 300 nested expansions (`kMaxExpansionDepth`).
+
+`preprocess` is checked three ways. Its captures (`--passes preprocess`)
+hold the source, the arguments, the file name, the text or the error,
+the warnings, and a `stderr` line with what the call wrote to stderr,
+and the runner reads the included files from their paths, so
+`check-captures` runs from the repository's root. The Python unit
+tests' calls were recorded by a pytest plugin with every file each call
+opened, and `c6502cpp check-preprocess <dir>` checks such records, one
+JSON object per `.json` file (src/preprocessor_cases.h). A selection of
+them, with calls on generated inputs that reach what the corpus and the
+tests leave out, is in `tests/test_preprocessor_calls.cpp`, and
+`tests/test_pcpp_lexer.cpp` and `tests/test_pcpp_text.cpp` compare the
+lexer and the text functions with Python's.
+
+```sh
+uv run python tools/capture_passes.py --passes preprocess -j 16
+cpp/build/bin/c6502cpp check-captures captures/preprocess
+cpp/build/bin/c6502cpp check-preprocess <directory of records>
+```
+
+On 21 Nov 2026 the C++ matched on all 2,088 distinct `preprocess` calls
+of the corpus, all 4,981 distinct calls of the Python unit tests, and
+2,205 calls on generated inputs, errors, warnings, and stderr included.
 
 ## The TAC optimizer's driver
 

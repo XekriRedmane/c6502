@@ -49,6 +49,12 @@ namespace c6502::passes {
 // unless it is declared to preserve them, which has nothing to do with
 // the zero-page bytes.
 //
+// `frame_names` are the names of the pseudos that
+// `replace_pseudoregisters` may put in the soft-stack frame, such as a
+// soft-stack function's parameters. Each access to one is emitted with
+// an `LDY #off` setup, so it counts as a write of Y in a pinned value's
+// live range.
+//
 // Throws `CompileError("RegallocError", ...)` when a `register` local
 // can't be pinned to the register it requires.
 Coloring color_graph(const asm_ast::Function& fn, const InterferenceGraph& graph,
@@ -57,6 +63,7 @@ Coloring color_graph(const asm_ast::Function& fn, const InterferenceGraph& graph
                      const HwRegEligibility* hwreg_eligibility = nullptr,
                      const std::optional<Range>& allowed_range = std::nullopt,
                      const Liveness* liveness = nullptr,
-                     const OrderedMap<std::string, std::string>* rep_map = nullptr);
+                     const OrderedMap<std::string, std::string>* rep_map = nullptr,
+                     const NameSet* frame_names = nullptr);
 
 }  // namespace c6502::passes

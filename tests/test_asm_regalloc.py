@@ -135,5 +135,42 @@ class TestAsmRegallocEndToEnd(unittest.TestCase):
         self.assertRegex(out, r"__local_\w+__\w+\s+EQU\s+\$[89AB][0-9A-F]")
 
 
+class TestFrameAccessWritesY(unittest.TestCase):
+    """A `Pseudo` that `replace_pseudoregisters` puts in the frame is
+    read with `LDY #off; LDA (FP),Y`, so no value may stay in Y across
+    it (`fuzz.calls` seed 335)."""
+
+    def test_frame_name_counts_as_y_write(self) -> None:
+        from passes.optimization_asm.regalloc import _instr_writes_hwregs
+        read = _mov(_ps("@1.p0"), _A())
+        self.assertEqual(_instr_writes_hwregs(read), ())
+        self.assertEqual(
+            _instr_writes_hwregs(read, frozenset({"@1.p0"})), ("Y",),
+        )
+
+    def test_shift_count_survives_parameter_read(self) -> None:
+        # `f0` calls through a pointer, so it's a soft-stack function
+        # and reads `p0` from its frame. The count `l1 & 7` of the
+        # second shift was kept in Y across the read of `p0` for the
+        # first shift's count, whose `LDY #4` replaced it, so the
+        # result was shifted by 4 more places and came out 0.
+        src = (
+            "unsigned _BitInt(58) f3(long p0) { return 1; }\n"
+            "signed char f0(unsigned _BitInt(58) p0) {\n"
+            "    signed char l1 = p0;\n"
+            "    l1 ^= 5;\n"
+            "    unsigned _BitInt(58) (*fp)(long) = f3;\n"
+            "    fp(~p0);\n"
+            "    return ((100 << (p0 & 7)) << (l1 & 7));\n"
+            "}\n"
+            "int main(void) { return f0(236); }\n"
+        )
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(src, optimize=optimize).run()
+                self.assertEqual(got.return_int_signed(), -128)
+
+
 if __name__ == "__main__":
     unittest.main()

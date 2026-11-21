@@ -161,6 +161,37 @@ OrderedMap<std::string, asdl::Int> allocate_in_pool(const ir::Function& fn,
   return out;
 }
 
+// Throws when an address-taken local of `fn` got no pool bytes while the
+// coloring keeps a value in Y. The allocation counted the local as a
+// zero-page byte (`frame_names` in optimizer.cpp), so it may have kept a
+// value in Y across an access to it, and an access to the local's frame
+// slot loads Y with the slot's offset.
+void check_no_frame_under_y(const ir::Function& fn, const OrderedMap<std::string, asdl::Int>& placed,
+                            const Coloring* coloring, const NameSet& statics) {
+  if (coloring == nullptr) {
+    return;
+  }
+  bool y_used = false;
+  for (const auto& [name, letter] : coloring->hwreg_assignments) {
+    y_used = y_used || letter == "Y";
+  }
+  if (!y_used) {
+    return;
+  }
+  // Python's repr of the list of names.
+  std::string missing;
+  for (const auto& name : address_taken_names(fn, statics)) {
+    if (placed.find(name) == nullptr) {
+      missing += (missing.empty() ? "'" : ", '") + name + "'";
+    }
+  }
+  if (!missing.empty()) {
+    throw InternalError("function '" + fn.name + "': the address-taken locals [" + missing +
+                        "] didn't fit in the function's pool, and the coloring keeps a value "
+                        "in Y, which an access to their frame slots would overwrite");
+  }
+}
+
 }  // namespace
 
 AddressTakenAssignments compute_address_taken_assignments(const ir::Program& prog,
@@ -180,8 +211,11 @@ AddressTakenAssignments compute_address_taken_assignments(const ir::Program& pro
       out.insert_or_assign(fn->name, {});
       continue;
     }
-    const auto used = coloring_used_bytes(colorings.find(fn->name), symbols, types);
-    out.insert_or_assign(fn->name, allocate_in_pool(*fn, *pool, used, statics, symbols, types));
+    const Coloring* coloring = colorings.find(fn->name);
+    const auto used = coloring_used_bytes(coloring, symbols, types);
+    auto placed = allocate_in_pool(*fn, *pool, used, statics, symbols, types);
+    check_no_frame_under_y(*fn, placed, coloring, statics);
+    out.insert_or_assign(fn->name, std::move(placed));
   }
   return out;
 }

@@ -88,6 +88,14 @@ struct AsmFunctionOptions {
   // The members of the function's cycle when it saves around recursive
   // calls.
   const NameSet* recursive_callees = nullptr;
+  // False for a zp_abi function, whose parameters are read from their
+  // slots, and true for a soft-stack one, whose parameters are in its
+  // frame.
+  bool params_in_frame = true;
+  // False when the function's address-taken locals get bytes of its
+  // private pool (passes/address_taken_zp.py), and true when they get
+  // frame slots.
+  bool address_taken_in_frame = true;
 };
 
 // One function the asm optimizer returns, with its coloring.

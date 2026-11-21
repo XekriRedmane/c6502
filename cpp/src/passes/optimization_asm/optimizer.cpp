@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "errors.h"
 #include "passes/asm_liveness.h"
@@ -264,6 +265,50 @@ NameSet all_pseudo_names(const ir::Function& fn) {
       if (const auto* p = as<ir::Pseudo>(*op)) {
         out.insert(p->name);
       }
+    }
+  }
+  return out;
+}
+
+// Returns the names of `fn`'s pseudos outside `graph` that
+// `replace_pseudoregisters` puts in the soft-stack frame, where each
+// access loads Y with the slot's offset. A static is never there, a
+// parameter is there when `params_in_frame` is set, and a local whose
+// address is taken (the source of a `LoadAddress`) when
+// `address_taken_in_frame` is set. Any other name the graph leaves out is
+// there too.
+//
+// An address-taken local of a function with a private pool gets a frame
+// slot only when the pool has no room for it, which isn't known until
+// after the coloring. `compute_address_taken_assignments` throws in that
+// case when the coloring keeps a value in Y.
+NameSet frame_names(const ir::Function& fn, const InterferenceGraph& graph,
+                    const StaticNames& statics, bool params_in_frame,
+                    bool address_taken_in_frame) {
+  const NameSet params(fn.params.begin(), fn.params.end());
+  NameSet taken;
+  for (const auto& instr : fn.instructions) {
+    if (const auto* la = as<ir::LoadAddress>(instr)) {
+      if (const auto* p = as<ir::Pseudo>(la->src)) {
+        taken.insert(p->name);
+      }
+    }
+  }
+  NameSet out;
+  for (const auto& n : all_pseudo_names(fn)) {
+    if (graph.nodes.contains(n) || statics.contains(n)) {
+      continue;
+    }
+    if (params.contains(n)) {
+      if (params_in_frame) {
+        out.insert(n);
+      }
+    } else if (taken.contains(n)) {
+      if (address_taken_in_frame) {
+        out.insert(n);
+      }
+    } else {
+      out.insert(n);
     }
   }
   return out;
@@ -510,6 +555,9 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   if (options.recursive_callees != nullptr && !options.recursive_callees->empty()) {
     check_nothing_live_across(fn, liveness, graph, *options.recursive_callees);
   }
+  // Before coalescing removes the names it merges from the graph.
+  const NameSet in_frame = frame_names(fn, graph, statics, options.params_in_frame,
+                                       options.address_taken_in_frame);
   // Move coalescing merges the pairs of pseudos that a `Mov` or a `Phi`
   // argument connects and that don't interfere into one node, so they
   // get one color. After `Phi` destruction the matching moves are moves
@@ -551,7 +599,8 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   const HwRegEligibility rep_eligibility =
       project_eligibility(raw, coalesced, all_pseudo_names(fn));
   Coloring coloring = color_graph(fn, graph, std::nullopt, &blocked_addrs, &rep_eligibility,
-                                  allowed_range, &liveness, &coalesced.representative);
+                                  allowed_range, &liveness, &coalesced.representative,
+                                  &in_frame);
   // Every name merged into a representative takes the representative's
   // color, since `apply_coloring` looks names up, so the merged names go
   // back into the assignments.
@@ -622,13 +671,20 @@ OptimizedAsmProgram optimize_program(ir::Program prog, const AsmOptimizerOptions
     const ParamLayout* layout = layout_of(options.param_layouts, fn->name);
     const Hints param_hints = param_register_hints(*fn, layout, options.symbols);
     const EntryLimits limits = optimizer::entry_register_limits(*fn, layout, options.symbols);
+    const NameSet* recursive_callees =
+        options.recursion_saves == nullptr ? nullptr : options.recursion_saves->find(fn->name);
     AsmFunctionOptions fn_options{
         .local_pins = local_pins.empty() ? nullptr : &local_pins,
         .param_hints = param_hints.empty() ? nullptr : &param_hints,
         .entry_limits = &limits,
-        .recursive_callees = options.recursion_saves == nullptr
-                                 ? nullptr
-                                 : options.recursion_saves->find(fn->name)};
+        .recursive_callees = recursive_callees,
+        .params_in_frame = layout == nullptr || !std::holds_alternative<ZpLayout>(*layout),
+        // The preliminary run, without pools, only sizes them, so it
+        // counts an address-taken local as a pool byte, as the final run
+        // does for a function with a pool.
+        .address_taken_in_frame = options.local_pools != nullptr &&
+                                  (pool == nullptr || pool->empty() ||
+                                   recursive_callees != nullptr)};
     OptimizedAsmFunction r =
         optimize_function(std::move(*fn), statics, blocked, allowed, pool, fn_options);
     out.colorings.insert_or_assign(r.fn.name, std::move(r.coloring));

@@ -154,6 +154,38 @@ class TestAddressTakenZp(unittest.TestCase):
         )
 
 
+class TestNoFrameSlotUnderY(unittest.TestCase):
+    """The regalloc counts an address-taken local of a function with a
+    pool as a zero-page byte when it decides what may stay in Y
+    (`optimizer._frame_names`). A local that then doesn't fit gets a
+    frame slot, whose accesses load Y, so that case is an error."""
+
+    def _run(self, hwreg):
+        from passes.optimization.pool import Pool
+        from passes.optimization.register_allocation import Coloring
+        fn = _fn("f", [], [
+            asm_ast.LoadAddress(
+                src=_wrap_pseudo("@1.x"), dst=_wrap_pseudo("%p"),
+            ),
+            asm_ast.Return(save_a=False),
+        ])
+        # The pool's one byte holds `%p`, so `@1.x` doesn't fit.
+        coloring = Coloring(
+            assignments={"%p": 0x80}, spilled=set(), pool=Pool(),
+            hwreg_assignments=hwreg,
+        )
+        return compute_address_taken_assignments(
+            _prog(fn), {"f": [0x80]}, {"f": coloring}, None, None,
+        )
+
+    def test_falls_back_to_frame_without_y(self):
+        self.assertEqual(self._run({"%i": "X"}), {"f": {}})
+
+    def test_raises_with_a_value_in_y(self):
+        with self.assertRaisesRegex(AssertionError, "@1.x"):
+            self._run({"%i": "Y"})
+
+
 class TestSlotSymbols(unittest.TestCase):
     """`slot_symbols` mints `__local_<fn>__<source>` names for each
     address-taken Pseudo. Source name is recovered by stripping the

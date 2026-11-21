@@ -102,7 +102,30 @@ def compute_address_taken_assignments(
         out[fn_name] = _allocate_in_pool(
             tl, pool, used, statics, symbols, types,
         )
+        _check_no_frame_under_y(tl, out[fn_name], coloring, statics)
     return out
+
+
+def _check_no_frame_under_y(
+    fn: asm_ast.Function, placed: dict[str, int], coloring, statics,
+) -> None:
+    """Raises when an address-taken local of `fn` got no pool bytes
+    while the coloring keeps a value in Y. The regalloc counted the
+    local as a zero-page byte (`optimizer._frame_names`), so it may
+    have kept a value in Y across an access to it, and an access to
+    the local's frame slot loads Y with the slot's offset."""
+    if coloring is None or "Y" not in coloring.hwreg_assignments.values():
+        return
+    missing = [
+        n for n in _address_taken_names(fn, statics) if n not in placed
+    ]
+    if missing:
+        raise AssertionError(
+            f"function '{fn.name}': the address-taken locals {missing} "
+            "didn't fit in the function's pool, and the coloring keeps a "
+            "value in Y, which an access to their frame slots would "
+            "overwrite",
+        )
 
 
 def _coloring_used_bytes(coloring, symbols, types) -> set[int]:

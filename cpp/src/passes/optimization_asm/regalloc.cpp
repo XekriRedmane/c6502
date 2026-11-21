@@ -104,7 +104,12 @@ void add_if_xy(std::vector<char>& out, const ir::Type_operand& dst) {
 // store through a pointer, such as `arr[i]` of an element of 8 bytes, is
 // already made of `Indirect` operands here, and pinning a loop counter
 // in Y across one let the `LDY` overwrite the counter (YARPGen seed 66).
-std::vector<char> instr_writes_hwregs(const ir::Type_instruction& instr) {
+// So does a `Pseudo` named in `frame_names`, which becomes a `Frame`
+// operand after the allocation. A count of a shift in Y across a read of
+// a soft-stack function's parameter got the parameter's frame offset
+// instead (`fuzz.calls` seed 335).
+std::vector<char> instr_writes_hwregs(const ir::Type_instruction& instr,
+                                      const NameSet* frame_names) {
   std::vector<char> out;
   if (asdl::isa<ir::DecimalArith>(instr)) {
     // An operand of a BCD chain may still become a soft-stack slot,
@@ -113,6 +118,11 @@ std::vector<char> instr_writes_hwregs(const ir::Type_instruction& instr) {
   }
   for (const auto* op : optimizer::all_operands_in(instr)) {
     if (asdl::isa<ir::Indirect, ir::IndirectZp, ir::Frame, ir::Stack>(*op)) {
+      out.push_back('Y');
+      break;
+    }
+    const auto* p = asdl::as<ir::Pseudo>(*op);
+    if (p != nullptr && frame_names != nullptr && frame_names->contains(p->name)) {
       out.push_back('Y');
       break;
     }
@@ -165,7 +175,8 @@ std::vector<char> instr_writes_hwregs(const ir::Type_instruction& instr) {
 void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& eligibility,
                       OrderedMap<std::string, std::string>& hwreg_assignments,
                       const Liveness* liveness,
-                      const OrderedMap<std::string, std::string>* rep_map_arg) {
+                      const OrderedMap<std::string, std::string>* rep_map_arg,
+                      const NameSet* frame_names) {
   // The positions of the writes of each register and of the definitions
   // of each pseudo. The interference graph has edges only between
   // pseudos and none with the registers, so a pseudo whose live range
@@ -201,7 +212,7 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
       const int bid = static_cast<int>(b);
       const auto instrs = liveness->cfg.instructions(bid);
       for (std::size_t idx = 0; idx < instrs.size(); ++idx) {
-        for (const char letter : instr_writes_hwregs(instrs[idx])) {
+        for (const char letter : instr_writes_hwregs(instrs[idx], frame_names)) {
           clobber_positions[letter].emplace_back(bid, idx);
         }
         for (const auto* d : liveness::defs_in(instrs[idx])) {
@@ -509,13 +520,15 @@ Coloring color_graph(const ir::Function& fn, const InterferenceGraph& graph,
                      const std::optional<Pool>& pool_arg, const std::set<asdl::Int>* blocked_addrs,
                      const HwRegEligibility* hwreg_eligibility,
                      const std::optional<Range>& allowed_range, const Liveness* liveness,
-                     const OrderedMap<std::string, std::string>* rep_map) {
+                     const OrderedMap<std::string, std::string>* rep_map,
+                     const NameSet* frame_names) {
   const Pool pool = pool_arg.value_or(Pool{});
   const auto peo = perfect_elimination_order(fn, graph);
   Coloring out{.pool = pool};
 
   if (hwreg_eligibility != nullptr) {
-    try_hwreg_assign(graph, *hwreg_eligibility, out.hwreg_assignments, liveness, rep_map);
+    try_hwreg_assign(graph, *hwreg_eligibility, out.hwreg_assignments, liveness, rep_map,
+                     frame_names);
   }
 
   for (const auto& name : peo) {

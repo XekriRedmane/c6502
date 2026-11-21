@@ -33,7 +33,10 @@ using AddressTakenSymbols = OrderedMap<std::string, OrderedMap<std::string, std:
 // fit is left out, and `replace_pseudoregisters` gives it a frame slot.
 // A function without a pool gets an empty map, so its address-taken
 // locals stay on the soft stack. `symbols` and `types` size each local
-// and may be null.
+// and may be null. Throws `InternalError` when a local of a function
+// whose coloring keeps a value in Y doesn't fit, since the coloring
+// counted the local as a zero-page byte, and an access to its frame slot
+// loads Y.
 AddressTakenAssignments compute_address_taken_assignments(const asm_ast::Program& prog,
                                                           const LocalPools& local_pools,
                                                           const ColoringsByFunction& colorings,

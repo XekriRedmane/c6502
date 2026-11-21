@@ -168,6 +168,15 @@ def optimize_program(
                 param_hints=param_hints or None,
                 entry_limits=_entry_register_limits(tl, layout, symbols),
                 recursive_callees=(recursion_saves or {}).get(tl.name),
+                params_in_frame=not isinstance(layout, ZpLayout),
+                # The preliminary run, without pools, only sizes them,
+                # so it counts an address-taken local as a pool byte,
+                # as the final run does for a function with a pool.
+                address_taken_in_frame=(
+                    local_pools is not None
+                    and (not pool_for_fn
+                         or tl.name in (recursion_saves or {}))
+                ),
             )
             new_top.append(new_fn)
             colorings[new_fn.name] = coloring
@@ -356,7 +365,15 @@ def _optimize_function(
     param_hints: dict[str, str] | None = None,
     entry_limits: dict[str, set[str]] | None = None,
     recursive_callees: frozenset[str] | None = None,
+    params_in_frame: bool = True,
+    address_taken_in_frame: bool = True,
 ) -> tuple[asm_ast.Function, Coloring]:
+    # `params_in_frame` is False for a zp_abi function, whose
+    # parameters are read from their slots, and True for a soft-stack
+    # one, whose parameters are in its frame. `address_taken_in_frame`
+    # is False when the function's address-taken locals get bytes of
+    # its private pool (`passes/address_taken_zp.py`), and True when
+    # they get frame slots. `_frame_names` reads both.
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
     # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
     # BEFORE SSA construction so the resulting IR (no Compare-
@@ -402,6 +419,10 @@ def _optimize_function(
     graph = build_interference(fn, liveness, statics=statics)
     if recursive_callees:
         _check_nothing_live_across(fn, liveness, graph, recursive_callees)
+    # Before coalescing removes the names it merges from the graph.
+    frame_names = _frame_names(
+        fn, graph, statics, params_in_frame, address_taken_in_frame,
+    )
     # Step 7a: move coalescing. Merge non-interfering Pseudo pairs
     # connected by a Mov or Phi-arg into one node so they get the
     # same color. After Phi destruction the corresponding Movs
@@ -450,6 +471,7 @@ def _optimize_function(
         allowed_range=allowed_range,
         liveness=liveness,
         rep_map=coalesce_result.representative,
+        frame_names=frame_names,
     )
     # Project coloring through the coalescing result: every name
     # that was merged into a representative inherits the rep's
@@ -539,6 +561,43 @@ def _check_nothing_live_across(
             for u in _uses_in(instr):
                 if u.name in graph.nodes:
                     live.add(u.name)
+
+
+def _frame_names(
+    fn: asm_ast.Function, graph, statics: frozenset[str],
+    params_in_frame: bool, address_taken_in_frame: bool,
+) -> frozenset[str]:
+    """Returns the names of `fn`'s `Pseudo`s outside `graph` that
+    `replace_pseudoregisters` puts in the soft-stack frame, where each
+    access loads Y with the slot's offset. A static is never there, a
+    parameter is there when `params_in_frame` is set, and a local whose
+    address is taken (the source of a `LoadAddress`) when
+    `address_taken_in_frame` is set. Any other name the graph leaves
+    out is there too.
+
+    An address-taken local of a function with a private pool gets a
+    frame slot only when the pool has no room for it, which isn't known
+    until after the coloring. `compute_address_taken_assignments`
+    raises in that case when the coloring keeps a value in Y."""
+    params = frozenset(fn.params)
+    taken = frozenset(
+        instr.src.name for instr in fn.instructions
+        if isinstance(instr, asm_ast.LoadAddress)
+        and isinstance(instr.src, asm_ast.Pseudo)
+    )
+    out: set[str] = set()
+    for n in _all_pseudo_names(fn):
+        if n in graph.nodes or n in statics:
+            continue
+        if n in params:
+            if params_in_frame:
+                out.add(n)
+        elif n in taken:
+            if address_taken_in_frame:
+                out.add(n)
+        else:
+            out.add(n)
+    return frozenset(out)
 
 
 def _all_pseudo_names(fn: asm_ast.Function) -> set[str]:

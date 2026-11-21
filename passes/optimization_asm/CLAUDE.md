@@ -57,7 +57,17 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
 - `regalloc.py` — byte-granular register allocation. Colors 1-byte
   SSA names to ZP from `Pool(start=0x80)` (default split: caller-
   saved `[0x80, 0xC0)`, callee-saved `[0xC0, 0x100)`); multi-byte
-  names get contiguous width-N blocks.
+  names get contiguous width-N blocks. A value is pinned to X or Y
+  only when nothing in its live range writes the register, and an
+  operand reached with `LDY #off` writes Y. So does a `Pseudo` that
+  `replace_pseudoregisters` puts in the frame later, which
+  `optimizer._frame_names` lists for `color_graph` (`frame_names`): a
+  soft-stack function's parameters, and its address-taken locals
+  unless they get bytes of a private pool. A count of a shift had
+  stayed in Y across the read of a soft-stack parameter (`fuzz.calls`
+  seed 335). `compute_address_taken_assignments` raises if a pooled
+  function's address-taken local doesn't fit in its pool while Y holds
+  a value.
 - `apply_coloring.py` — applies the coloring map produced by
   `regalloc` to every operand in the function.
 - `cfg.py` — asm-level control-flow graph (basic blocks, dominators,

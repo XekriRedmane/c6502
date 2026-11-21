@@ -85,6 +85,7 @@ def color_graph(
     allowed_range: range | None = None,
     liveness: Liveness | None = None,
     rep_map: dict[str, str] | None = None,
+    frame_names: frozenset[str] = frozenset(),
 ) -> Coloring:
     """Color `graph`'s nodes onto ZP byte addresses, optionally
     pinning HwReg-eligible nodes into X / Y first. Returns a
@@ -122,7 +123,13 @@ def color_graph(
     semantics are identical. HwReg-pinning (X / Y) is still
     gated by the calls in the live range, since a callee writes X
     and Y unless it's declared to preserve them — orthogonal to
-    the ZP-byte question."""
+    the ZP-byte question.
+
+    `frame_names` are the names of the `Pseudo`s that
+    `replace_pseudoregisters` may put in the soft-stack frame, such
+    as a soft-stack function's parameters. Each access to one is
+    emitted with an `LDY #off` setup, so it counts as a write of Y
+    in a pinned value's live range (`_instr_writes_hwregs`)."""
     if pool is None:
         pool = Pool()
     blocked_addrs = blocked_addrs or set()
@@ -135,6 +142,7 @@ def color_graph(
         _try_hwreg_assign(
             graph, hwreg_eligibility, hwreg_assignments,
             fn=fn, liveness=liveness, rep_map=rep_map,
+            frame_names=frame_names,
         )
 
     for name in peo:
@@ -170,6 +178,7 @@ def _try_hwreg_assign(
     fn: asm_ast.Function | None = None,
     liveness: Liveness | None = None,
     rep_map: dict[str, str] | None = None,
+    frame_names: frozenset[str] = frozenset(),
 ) -> None:
     """Greedy pre-coloring: walk hinted candidates, assigning each
     to its preferred HwReg (X for hints_x, Y for hints_y). When the
@@ -229,7 +238,7 @@ def _try_hwreg_assign(
     if fn is not None and liveness is not None:
         for bid, blk in liveness.cfg.blocks.items():
             for idx, instr in enumerate(blk.instructions):
-                for letter in _instr_writes_hwregs(instr):
+                for letter in _instr_writes_hwregs(instr, frame_names):
                     clobber_positions[letter].append((bid, idx))
                 for d in _defs_in(instr):
                     rep_name = _resolve_rep(d.name)
@@ -441,6 +450,7 @@ _LDY_OPERANDS = (
 
 def _instr_writes_hwregs(
     instr: asm_ast.Type_instruction,
+    frame_names: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
     """Return the X / Y registers (if any) written by `instr` as a
     tuple of letters. Used by the HwReg clobber-in-live-range check
@@ -469,7 +479,10 @@ def _instr_writes_hwregs(
     or store through a pointer, such as `arr[i]` of an 8-byte element,
     is already `Indirect` operands here, and pinning a loop counter in
     Y across one let the `LDY` overwrite the counter (YARPGen seed
-    66)."""
+    66). So is a `Pseudo` named in `frame_names`, which becomes a
+    `Frame` operand after the regalloc. A count of a shift in Y
+    across a read of a soft-stack function's parameter got the
+    parameter's frame offset instead (`fuzz.calls` seed 335)."""
     from passes.optimization_asm.optimizer import _all_operands_in
     out: list[str] = []
     if isinstance(instr, asm_ast.DecimalArith):
@@ -477,7 +490,9 @@ def _instr_writes_hwregs(
         # whose access loads Y, so it counts as writing Y.
         return ("Y",)
     if any(
-        isinstance(op, _LDY_OPERANDS) for op in _all_operands_in(instr)
+        isinstance(op, _LDY_OPERANDS)
+        or (isinstance(op, asm_ast.Pseudo) and op.name in frame_names)
+        for op in _all_operands_in(instr)
     ):
         out.append("Y")
 

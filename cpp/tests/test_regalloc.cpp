@@ -597,4 +597,27 @@ TEST_CASE("regalloc: a value stays in Y across a call that preserves Y") {
         R"({"object": "passes.optimization.register_allocation.Coloring", "fields": {"assignments": {"dict": [["i", 192]]}, "spilled": {"set": []}, "pool": {"object": "passes.optimization.pool.Pool", "fields": {"start": 128}}, "hwreg_assignments": {"dict": []}}})");
 }
 
+TEST_CASE("regalloc: a read of a frame slot loads Y") {
+  // `p` is a soft-stack parameter, read with `LDY #off; LDA (FP),Y`, so
+  // `i` can't stay in Y across the read (`fuzz.calls` seed 335), and
+  // goes in X instead. Python's `color_graph` gives the same.
+  const auto fn = function(R"(Mov(Imm(0) Pseudo("i" 0) false) Mov(Pseudo("i" 0) Reg(A) false)
+    Mov(Reg(A) Reg(Y) false) Mov(IndexedData("t" 0 Y) Reg(A) false)
+    Mov(Pseudo("p" 0) Reg(A) false) Mov(Reg(A) Pseudo("u" 0) false)
+    Mov(Pseudo("i" 0) Reg(A) false) Mov(Reg(A) Reg(Y) false)
+    Mov(IndexedData("t" 0 Y) Reg(A) false) Return(true false false))");
+  const auto live = passes::compute_liveness(fn);
+  const auto g = passes::build_interference(fn, live);
+  const auto elig = passes::scan_function(fn);
+  const auto pinned = [&](const NameSet* frame) {
+    const auto c = passes::color_graph(fn, g, std::nullopt, nullptr, &elig, std::nullopt, &live,
+                                       nullptr, frame);
+    const std::string* letter = c.hwreg_assignments.find("i");
+    return letter == nullptr ? std::string() : *letter;
+  };
+  CHECK(pinned(nullptr) == "Y");
+  const NameSet frame{"p"};
+  CHECK(pinned(&frame) == "X");
+}
+
 }  // namespace

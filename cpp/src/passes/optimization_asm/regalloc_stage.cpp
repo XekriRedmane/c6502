@@ -339,10 +339,14 @@ StageOutput run_color_graph(const capture::Call& call, const AsmContext&, const 
   if (const Value* m = kwarg(kwargs, "rep_map")) {
     rep_map = Optional<DictOf<Str, Str>>::decode(*m);
   }
+  std::optional<NameSet> frame_names;
+  if (const Value* f = kwarg(kwargs, "frame_names")) {
+    frame_names = NameSetC::decode(*f);
+  }
   const auto coloring =
       color_graph(fn, graph, pool, blocked ? &blocked_plain : nullptr,
                   eligibility ? &*eligibility : nullptr, allowed, live ? &*live : nullptr,
-                  rep_map ? &*rep_map : nullptr);
+                  rep_map ? &*rep_map : nullptr, frame_names ? &*frame_names : nullptr);
   return {encode<ColoringC>(coloring), ""};
 }
 

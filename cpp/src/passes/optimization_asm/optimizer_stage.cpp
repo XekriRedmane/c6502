@@ -136,10 +136,15 @@ StageOutput run_optimize_function(const capture::Call& call, const AsmContext&, 
   const auto hints = maybe<Hints>(kwargs.get("param_hints"));
   const auto limits = maybe<Cycles>(kwargs.get("entry_limits"));
   const auto callees = maybe<NameSetC>(kwargs.get("recursive_callees"));
-  const AsmFunctionOptions options{.local_pins = ptr(pins),
-                                   .param_hints = ptr(hints),
-                                   .entry_limits = ptr(limits),
-                                   .recursive_callees = ptr(callees)};
+  const Value* params_arg = kwargs.get("params_in_frame");
+  const Value* taken_arg = kwargs.get("address_taken_in_frame");
+  const AsmFunctionOptions options{
+      .local_pins = ptr(pins),
+      .param_hints = ptr(hints),
+      .entry_limits = ptr(limits),
+      .recursive_callees = ptr(callees),
+      .params_in_frame = params_arg == nullptr || BoolC::decode(*params_arg),
+      .address_taken_in_frame = taken_arg == nullptr || BoolC::decode(*taken_arg)};
   OptimizedAsmFunction r = optimize_function(std::move(fn), statics, blocked, allowed, ptr(pool), options);
   return {encode<Pair<FunctionC, ColoringC>>({ir::Type_top_level{std::move(r.fn)}, std::move(r.coloring)}),
           ""};

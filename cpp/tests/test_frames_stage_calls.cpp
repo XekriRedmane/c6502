@@ -16,9 +16,10 @@
 // one pool. The calls whose arguments the harness can't encode (the fake
 // symbols and colorings of test_address_taken_zp.py, and the stub
 // program of a test of the TypeError) are left out, and so is each
-// distinct call after its first. The last three cases are written by
-// hand, for the two errors of `replace_pseudoregisters` and for the
-// fallbacks of `local_slot_names`, whose result came from Python.
+// distinct call after its first. The last four cases are written by
+// hand, for the two errors of `replace_pseudoregisters`, for the
+// fallbacks of `local_slot_names`, and for an address-taken local
+// without room while Y holds a value, whose results came from Python.
 #include <exception>
 #include <string>
 #include <string_view>
@@ -1412,4 +1413,39 @@ TEST_CASE("local_slot_names: a source name taken twice, a wide value, and an add
       "{\"args\": [{\"dict\": [[\"f\", {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": [[\"@1.x.0\", 128], [\"@1.x.1\", 129], [\"%3\", 130], [\"@2.w.b0.v1\", 131], [\"@2.w.b1.v0\", 132], [\"%9.b0.v0\", 128]]}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": []}}}]]}], \"kwargs\": {\"address_taken_assignments\": {\"dict\": [[\"f\", {\"dict\": [[\"@4.buf\", 133]]}]]}, \"address_taken_symbols\": {\"dict\": [[\"f\", {\"dict\": [[\"@4.buf\", \"__local_f__buf\"]]}]]}}}",
       "{\"dict\": [[\"f\", [132, 128, 129, 130, 131, 133]]]}",
       "{\"dict\": [[\"f\", [\"__local_f__w_1\", \"__local_f__x\", \"__local_f__0\", \"__local_f__1\", \"__local_f__w_0\", \"__local_f__buf\"]]]}");
+}
+
+namespace {
+
+// `f`'s one pool byte holds `%p`, so the address-taken `@1.x` doesn't
+// fit and gets a frame slot. The coloring counted `@1.x` as a zero-page
+// byte when it kept values in Y, so the case is an error when one is
+// there (tests/test_address_taken_zp.py's `TestNoFrameSlotUnderY`).
+constexpr const char* kNoRoomForTaken =
+    "Program([\n"
+    "  Function(\"f\" true [] [\n"
+    "    LoadAddress(Pseudo(\"@1.x\" 0) Pseudo(\"%p\" 0))\n"
+    "    Return(false false false)\n"
+    "  ])\n"
+    "])\n";
+
+std::string no_room_args(const char* letter) {
+  return std::string(
+             "{\"args\": [{\"dict\": [[\"f\", [128]]]}, {\"dict\": [[\"f\", {\"object\": "
+             "\"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": "
+             "{\"dict\": [[\"%p\", 128]]}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": "
+             "\"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, "
+             "\"hwreg_assignments\": {\"dict\": [[\"%i\", \"") +
+         letter + "\"]]}}}]]}, null, null], \"kwargs\": {}}";
+}
+
+}  // namespace
+
+TEST_CASE("address_taken_assignments: a local that doesn't fit while Y holds a value") {
+  check_frames_case("address_taken_assignments", no_room_args("X"), kNoRoomForTaken,
+                    "{\"dict\": [[\"f\", {\"dict\": []}]]}");
+  check_frames_case("address_taken_assignments", no_room_args("Y"), kNoRoomForTaken,
+                    "exception: AssertionError: function 'f': the address-taken locals ['@1.x'] "
+                    "didn't fit in the function's pool, and the coloring keeps a value in Y, "
+                    "which an access to their frame slots would overwrite");
 }

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "c99_ast.h"
+#include "parser.h"
 #include "passes/identifier_resolution.h"
 #include "passes/label_resolution.h"
 #include "passes/loop_labeling.h"
@@ -38,6 +39,12 @@ const json::Value& arg(const json::Value& args, std::size_t i) {
     throw std::runtime_error("the call has too few positional arguments");
   }
   return args.items[i];
+}
+
+// Runs the parser on the record's source text.
+StageOutput run_parse(const capture::Call& call, const AsmContext&, const json::Value&,
+                      const json::Value&) {
+  return {asdl::dump(parser::parse(input_string(call))), "", ""};
 }
 
 StageOutput run_unroll_program(const capture::Call& call, const AsmContext&, const json::Value&,
@@ -129,7 +136,7 @@ std::vector<StageSignature> signatures() {
        .args = {rt<ListOf<Str>>, rt<Optional<Str>>},
        .output = rt<Str>,
        .run = &preprocess_stage::run},
-      {.name = "parse", .input_json = rt<Str>, .output_module = "c99_ast"},
+      {.name = "parse", .input_json = rt<Str>, .output_module = "c99_ast", .run = &run_parse},
       {.name = "unroll_program",
        .input = "c99_ast",
        .output_module = "c99_ast",

@@ -273,6 +273,7 @@ class TokenStream {
   // The lookahead, the token the parser sees next, with the type it was
   // lexed as or retyped to. At the end of the text it is `$END`.
   lark::Token& peek() { return lookahead_; }
+  const lark::Token& peek() const { return lookahead_; }
   bool at_end() const { return at_end_; }
 
   // Feeds the lookahead to the recognizer and returns it, and lexes the

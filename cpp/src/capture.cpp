@@ -50,6 +50,9 @@ Call parse(const std::string& text) {
   if (text.compare(pos, 9, "warnings ") == 0) {
     call.warnings_json = take_line(text, pos, "warnings ");
   }
+  if (text.compare(pos, 7, "stderr ") == 0) {
+    call.stderr_json = take_line(text, pos, "stderr ");
+  }
   // `input-json` holds the tagged JSON of a first argument that isn't an
   // IR value, on one line.
   const std::string input_kind = take_line(text, pos, "input");

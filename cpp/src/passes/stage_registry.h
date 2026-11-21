@@ -32,6 +32,9 @@ struct StageOutput {
   // The `warnings` line's JSON for a call of the front end that issued
   // warnings, or empty.
   std::string warnings;
+  // The `stderr` line's JSON string for a call of `preprocess` that
+  // wrote to stderr, or empty.
+  std::string stderr_json;
 };
 
 // Runs a ported call on its recorded first argument (`call.input`, a

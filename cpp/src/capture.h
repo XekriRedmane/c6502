@@ -48,6 +48,9 @@ struct Call {
   // the warnings a call of the front end issued, or empty when it
   // issued none.
   std::string warnings_json;
+  // The JSON string on the `stderr` line, what a call of `preprocess`
+  // wrote to stderr, or empty when it wrote nothing.
+  std::string stderr_json;
 };
 
 // Returns the call recorded in the text of a capture file. Raises

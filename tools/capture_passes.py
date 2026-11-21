@@ -102,7 +102,13 @@ call that issued warnings (diagnostics.py) has a line
 
     warnings [[<where>, <message>], ...]
 
-after the `mutated` line. And any call may change its input in place,
+after the `mutated` line. A call of `preprocess` that wrote to stderr
+(pcpp's errors, `#error` and `#warning` lines, and the NOTEs about
+unknown flags) has a line
+
+    stderr <the text, as a JSON string>
+
+after the `warnings` line. And any call may change its input in place,
 which the `mutated` line holds under `input`, as for `c99_to_tac`. A c99
 program is dumped with "" for each unnamed parameter (`dump`).
 
@@ -588,11 +594,13 @@ def context_json() -> str:
 def _record(name: str, input_section: str, args_json: str, result,
             mutated: str | None = None, context: str | None = None,
             error: Exception | None = None,
-            warnings: str | None = None) -> None:
+            warnings: str | None = None,
+            stderr: str | None = None) -> None:
     """Writes the record of a call, unless an identical call was
     recorded before. A call that raised `error` is recorded with the
-    exception's class and message in place of its result, and one that
-    issued warnings with the `warnings` line's JSON."""
+    exception's class and message in place of its result, one that
+    issued warnings with the `warnings` line's JSON, and one that wrote
+    to stderr with the `stderr` line's."""
     if context is None:
         context = context_json()
     key = hashlib.sha1(
@@ -612,6 +620,8 @@ def _record(name: str, input_section: str, args_json: str, result,
     extra = "" if mutated is None else f"mutated {mutated}\n"
     if warnings is not None:
         extra += f"warnings {warnings}\n"
+    if stderr is not None:
+        extra += f"stderr {json.dumps(stderr)}\n"
     text = (
         f"c6502-capture 2\npass {name}\nsource {_SOURCE}\n"
         f"args {args_json}\ncontext {context}\n{extra}{input_section}{output}"
@@ -818,7 +828,8 @@ def _wrap_front(name: str, fn):
     stamps each expression's type) is recorded under `input` on the
     `mutated` line, and so is a change to an argument after it, as for
     `_wrap_stage`. A call that raises has no `mutated` line, since its
-    caller reads nothing it changed."""
+    caller reads nothing it changed. What a call of `preprocess` writes to
+    stderr is recorded on the `stderr` line and written on to stderr."""
     def wrapper(*args, **kwargs):
         import diagnostics
         import ir_dump
@@ -841,11 +852,16 @@ def _wrap_front(name: str, fn):
             return fn(*args, **kwargs)
         error = None
         result = None
-        with diagnostics.collecting() as found:
+        err = io.StringIO()
+        with diagnostics.collecting() as found, (
+            contextlib.redirect_stderr(err) if name == "preprocess"
+            else contextlib.nullcontext()
+        ):
             try:
                 result = fn(*args, **kwargs)
             except Exception as e:  # noqa: BLE001 - recorded and raised again
                 error = e
+        sys.stderr.write(err.getvalue())
         for w in found:
             diagnostics.warn(w.where, w.message)
         try:
@@ -871,7 +887,7 @@ def _wrap_front(name: str, fn):
                 warnings = json.dumps([[w.where, w.message] for w in found])
             _record(name, input_text, _call_json(*before), result,
                     mutated=mutated, context=context, error=error,
-                    warnings=warnings)
+                    warnings=warnings, stderr=err.getvalue() or None)
         except (ir_dump.DumpError, TypeError) as e:
             _FAILURES.setdefault(name, f"{_SOURCE}: {e}")
         if error is not None:

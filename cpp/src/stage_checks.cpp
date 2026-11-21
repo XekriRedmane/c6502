@@ -168,6 +168,10 @@ void check_tables(const capture::Call& call, const passes::StageSignature& sig) 
           json::parse(call.warnings_json)) != call.warnings_json) {
     throw std::runtime_error("the warnings' JSON differs from the recorded one");
   }
+  if (!call.stderr_json.empty() &&
+      tagged::round_trip<tagged::Str>(json::parse(call.stderr_json)) != call.stderr_json) {
+    throw std::runtime_error("the stderr line's JSON differs from the recorded one");
+  }
   if (call.output_is_error) {
     // The harness ends the error's JSON with a newline.
     if (error_json(json::parse(call.output)) + "\n" != call.output) {
@@ -232,6 +236,8 @@ Result check(const capture::Call& call, const passes::StageSignature& sig) {
     r.mismatch = "the arguments it changed differ";
   } else if (got.warnings != call.warnings_json) {
     r.mismatch = "the warnings differ";
+  } else if (got.stderr_json != call.stderr_json) {
+    r.mismatch = "what it wrote to stderr differs";
   } else {
     r.matched = true;
   }

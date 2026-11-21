@@ -106,6 +106,7 @@ cpp/
       registry.*      the ported passes, by name, for check-captures
       stage_registry.*  the stage calls' signatures and runners (step 4)
       stage_registry_abi.*  the runners of group A's stage calls
+      stage_registry_sharing.*  the runners of group B's stage calls
       optimization/   pool, register_allocation, the interference graph, var_visit
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
@@ -479,6 +480,60 @@ through `tests/tac_to_asm_case.h`. A line trace of the lowering over
 the corpus and over the 1,291 unit tests of the 40 test modules that
 compile through it found 27 lines that only the unit tests reach, and
 those four calls reach all of them.
+### Sharing and the zero-page allocators
+
+Group B of step 4 ported the rest of `slot_sharing` that reads the TAC
+(`find_shares`, `pinned_param_copies`, `slot_aliases`,
+`changed_param_slots`, `preferred_symbols`), `allocate_zp_slots`
+(`src/passes/zp_slot_allocation.*`), `allocate_function_locals` and
+`build_local_slot_symbols` (beside the pool eligibility in
+`src/passes/zp_local_allocation.*`), `zp_globals`' plan
+(`allocate_zp_globals`, `plan_zero_page`, and `access_weights`, in
+`src/passes/zp_globals_plan.cpp`), `runtime_layout.choose_layout`
+(`src/passes/runtime_layout.*`), and `zp_link_metadata.build_metadata`.
+The runners are in `src/passes/stage_registry_sharing.*`, with the codec
+of a `LinkMetadata`. `STAGE_PASSES` records `access_weights` where
+`plan_zero_page` calls it, and the three calls of the link metadata
+and emission that compile.py makes after code generation,
+`changed_param_slots`, `preferred_symbols`, and `build_metadata`.
+
+`find_shares` keys its bindings by `id()` and `allocate_zp_slots` its
+shares, and the C++ functions key them by their index in the list
+Python keeps them in. `allocate_zp_slots` and `allocate_function_locals`
+take their keyword arguments as one `ZpAllocationOptions`, with
+Python's defaults. `promotion_order` sorts by Python's float key
+`-w / size`, which both languages compute as the same double, since
+the weights and sizes are far below 2**53.
+
+`plan_zero_page` sizes HARGS, when the runtime's block has to move, by
+translating the TAC with `tac_to_asm` and measuring the result. The C++
+function takes that measurement as a `HargsNeed`, a function its caller
+gives, which group F connects to group C's port of `tac_to_asm`. The
+registry's runner gives the HARGS size of the recorded result, which is
+the measurement or 1 when the program uses none, and `choose_layout`
+makes the same layout of either. `build_local_slot_symbols` takes the
+slot names (`slot_names_by_fn`), since naming them from the colorings
+is `compute_local_slot_names`, which group F ports. `choose_layout` and
+`allocate_zp_globals` take a function as an argument, which the
+harness can't record, so they are checked through `plan_zero_page`,
+their only caller in a compile, and through the unit tests' calls.
+
+On 20 Nov 2026 the capture of the eleven calls over the whole corpus
+took 123 seconds with 10 processes and wrote 271 MB, and every distinct
+call matched: 2,292 of `plan_zero_page`, 1,145 of `access_weights`,
+1,110 each of `find_shares` and `pinned_param_copies`, 952 of
+`allocate_zp_slots`, 964 of `allocate_function_locals`, 778 of
+`local_slot_symbols`, 215 of `slot_aliases`, 1,107 of
+`changed_param_slots`, 216 of `preferred_symbols`, and 949 of
+`build_metadata`. Of those, 74 calls of `plan_zero_page` move the
+runtime's block and 252 promote a global, 20 calls of `find_shares`
+find a share, and no call of `pinned_param_copies` finds a parameter to
+copy, and none raises. So `tests/test_sharing_stage_calls.cpp` holds
+546 calls that the Python unit tests make, recorded with their results
+and exceptions (`tests/sharing_case.h`), among them 12 of
+`choose_layout` and 74 of `allocate_zp_globals`, and
+`tests/test_zp_allocator_errors.cpp` the allocators' errors that no
+test reaches.
 
 ## The shared helpers
 
@@ -1055,3 +1110,11 @@ Python results through `tests/stage_case.h`.
   `split_tables`, and `compare_subtract` it reads. It matches the Python
   function on all 2,256 distinct calls of the corpus in both modes,
   with MSVC 19.36 and GCC 12.2.
+- 20 Nov 2026: group B of step 4, sharing and the zero-page allocators
+  ("Sharing and the zero-page allocators"): `find_shares` and the rest
+  of `slot_sharing` that reads the TAC, `allocate_zp_slots`,
+  `allocate_function_locals`, `build_local_slot_symbols`,
+  `zp_globals`' plan, `choose_layout`, and `build_metadata`, each
+  matching the Python function on every distinct call of the corpus,
+  10,838 calls in all, and on 551 calls that the unit tests make or
+  that reach the allocators' errors.

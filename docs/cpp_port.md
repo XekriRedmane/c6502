@@ -466,3 +466,21 @@ something a straightforward C++ port could change.
   calls of the unit tests reach them in the C++ tests. The unoptimized
   pipeline calls it with `fixed_address_layouts`' ABI, and
   `plan_zero_page` without one, which group F connects.
+- 20 Nov 2026: group B of step 4, sharing and the zero-page allocators.
+  `find_shares`, `pinned_param_copies`, `slot_aliases`,
+  `changed_param_slots`, `preferred_symbols`, `allocate_zp_slots`,
+  `allocate_function_locals`, `build_local_slot_symbols`,
+  `allocate_zp_globals`, `plan_zero_page`, `access_weights`,
+  `choose_layout`, and `build_metadata` are ported, and each stage call
+  matches the Python function on every distinct call of the corpus:
+  2,292 calls of `plan_zero_page`, 1,145 of `access_weights`, 1,110 each
+  of `find_shares` and `pinned_param_copies`, 952 of
+  `allocate_zp_slots`, 964 of `allocate_function_locals`, 778 of
+  `local_slot_symbols`, 215 of `slot_aliases`, 1,107 of
+  `changed_param_slots`, 216 of `preferred_symbols`, and 949 of
+  `build_metadata`. `choose_layout` and `allocate_zp_globals` take a
+  function, so they are checked through `plan_zero_page` and the 551
+  calls recorded from the unit tests (cpp/README.md, "Sharing and the
+  zero-page allocators"). `plan_zero_page` takes the HARGS measurement
+  of `tac_to_asm`'s translation as a function argument, which group F
+  connects to group C's port.

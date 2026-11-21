@@ -254,6 +254,13 @@ STAGE_PASSES = {
     "allocate_zp_slots": "allocate_zp_slots",
     "pinned_param_copies": "pinned_param_copies",
     "slot_aliases": "slot_aliases",
+    # Group B's calls that compile.py makes after code generation, for
+    # the link metadata and emission, and `access_weights`, recorded
+    # where `plan_zero_page` calls it.
+    "access_weights": "passes.zp_globals:access_weights",
+    "changed_param_slots": "changed_param_slots",
+    "preferred_symbols": "preferred_symbols",
+    "build_metadata": "build_metadata",
     "tac_to_asm": "translate_to_asm",
     "asm_optimizer": "passes.optimization_asm.optimizer:optimize_program",
     "compute_local_bytes": "compute_local_bytes",

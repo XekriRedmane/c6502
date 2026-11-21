@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "passes/optimization_asm/regalloc_stage.h"
 #include "passes/optimization_asm/ssa_stage.h"
 #include "passes/prologue_synthesis.h"
 #include "tagged_json.h"
@@ -191,6 +192,40 @@ std::vector<StageSignature> make_signatures() {
        .kwargs = {{"fn_name", rt<Str>}, {"cycle_counter", rt<ListOf<IntC>>}},
        .output = &ssa_stage::round_trip_instructions,
        .run = &ssa_stage::run_order_parallel_copies},
+      // The register allocation of `_optimize_function`, whose runners
+      // are in src/passes/optimization_asm/regalloc_stage.cpp.
+      {.name = "compute_liveness",
+       .input = "asm_ast",
+       .output = rt<LivenessC>,
+       .run = &regalloc_stage::run_compute_liveness},
+      {.name = "build_interference",
+       .input = "asm_ast",
+       .args = {rt<LivenessC>},
+       .kwargs = {{"statics", rt<NameSetC>}},
+       .output = rt<InterferenceGraphC>,
+       .run = &regalloc_stage::run_build_interference},
+      {.name = "coalesce_moves",
+       .input = "asm_ast",
+       .args = {rt<InterferenceGraphC>},
+       .output = rt<CoalesceResultC>,
+       .run = &regalloc_stage::run_coalesce_moves},
+      {.name = "hwreg_eligibility",
+       .input = "asm_ast",
+       .kwargs = {{"register_pins", rt<Optional<DictOf<Str, Str>>>},
+                  {"register_hints", rt<Optional<DictOf<Str, Str>>>}},
+       .output = rt<HwRegEligibilityC>,
+       .run = &regalloc_stage::run_hwreg_eligibility},
+      {.name = "color_graph",
+       .input = "asm_ast",
+       .args = {rt<InterferenceGraphC>},
+       .kwargs = {{"pool", rt<Optional<PoolC>>},
+                  {"blocked_addrs", rt<Optional<IntSet>>},
+                  {"hwreg_eligibility", rt<Optional<HwRegEligibilityC>>},
+                  {"allowed_range", rt<OptRange>},
+                  {"liveness", rt<Optional<LivenessC>>},
+                  {"rep_map", rt<Optional<DictOf<Str, Str>>>}},
+       .output = rt<ColoringC>,
+       .run = &regalloc_stage::run_color_graph},
   };
 }
 

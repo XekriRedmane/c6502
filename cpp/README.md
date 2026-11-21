@@ -98,9 +98,13 @@ cpp/
                       their instructions
       optimization_asm/ssa_*, parallel_copies.*, copy_propagation.*, ...
                       the asm SSA round trip (step 4, group D)
+      optimization_asm/liveness.*, interference.*, coalescing.*,
+                      hwreg_eligibility.*, regalloc.*, all_operands.*,
+                      regalloc_stage.*   the register allocation (step 4,
+                      group E), and its codecs and runners
       registry.*      the ported passes, by name, for check-captures
       stage_registry.*  the stage calls' signatures and runners (step 4)
-      optimization/   pool and register_allocation's types, var_visit
+      optimization/   pool, register_allocation, the interference graph, var_visit
       capture_args.*  the decoders of a captured call's keyword arguments
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
@@ -333,6 +337,57 @@ per call. Every value of the 30,273 distinct calls of the 24 entries
 made the trip, from 215 calls of `slot_aliases` to 3,798 of
 `address_taken_slot_symbols`, and `synthesize_prologue` matched on all
 937 of its distinct calls.
+
+### The register allocation
+
+The register allocation of the asm optimizer's `_optimize_function` is
+ported, each Python module in a file of its own under
+`src/passes/optimization_asm/`: `liveness` (`compute_liveness`, the
+`Liveness` snapshot with `live_after` and `live_before`, and
+`liveness::defs_in` and `uses_in`), `interference`
+(`build_interference`), `coalescing` (`coalesce_moves` and
+`CoalesceResult`), `hwreg_eligibility` (`scan_function`,
+`HwRegEligibility`, and `hwreg_eligibility::ssa_base`), and `regalloc`
+(`color_graph`). The `InterferenceGraph` is in
+`src/passes/optimization/interference.*`, and `register_allocation`'s
+`_blocked_bytes` and `_find_fit` are
+`register_allocation::blocked_bytes` and `find_fit` beside `Coloring`.
+`optimizer._all_operands_in`, which regalloc reads, is
+`optimizer::all_operands_in` in `all_operands.h`.
+
+A `Liveness` keeps the CFG of step 2, whose blocks are index ranges
+into the function, so the function has to outlive it. The graph holds
+its nodes and its adjacency in maps sorted by name, and a
+`CoalesceResult` its `byte_offset`, where Python's dicts follow the
+order in which a walk over Python sets added to them. Nothing reads
+that order. The packed BCD reads, writes, and early writes come from
+private copies of `decimal_arith`'s `pseudo_reads`, `pseudo_writes`,
+and `early_write_pairs`, until the port of those lands.
+
+The harness records the five entry points under `compute_liveness`,
+`build_interference`, `coalesce_moves`, `hwreg_eligibility`, and
+`color_graph`, each a call that `_optimize_function` makes on one
+function in SSA form, whose dump the record holds as its input
+(`stage_checks.cpp` reads a `Function(` dump as a top-level item).
+`_CAPTURE_FORMS` in `tools/capture_passes.py` gives three classes
+fields of their own: a `Liveness` is recorded as the shape of its CFG
+(each block's id, number of instructions, and edges) and its sets by
+block, without the blocks' copies of the instructions or the cache of
+per-instruction sets, and a graph and a `CoalesceResult` with their
+dicts sorted. A runner that takes a `Liveness` checks that the
+recorded shape is the CFG `build_cfg` gives the function and takes
+the sets from the record. `src/passes/optimization_asm/regalloc_stage.*`
+holds the codecs and the runners.
+
+On 20 Nov 2026 the capture of the whole corpus took 113 seconds with 16
+processes and wrote 241 MB, and every distinct call matched:
+3,591 of `compute_liveness`, 3,668 of `build_interference`, 3,591 of
+`coalesce_moves`, 3,601 of `hwreg_eligibility`, and 6,446 of
+`color_graph`. The corpus reaches some paths rarely (2 colorings hold a
+packed BCD chain, 8 a `register` local, and 13 a spill, and none raises
+`RegallocError`), so `tests/test_regalloc.cpp` ports the direct calls of
+the Python tests of coalescing and of the eligibility and checks the
+coloring of those paths against what the Python functions gave.
 
 ## The shared helpers
 
@@ -874,3 +929,9 @@ Python results through `tests/stage_case.h`.
   `Phi`s, `from_ssa` gave both of each `Phi`'s arguments from it to the
   split of the taken edge, so the path that fell through skipped the
   moves. No program of the corpus has that shape.
+- 20 Nov 2026: the register allocation of the asm optimizer (group E of
+  step 4, "The register allocation"): liveness, interference,
+  coalescing, the eligibility for X and Y, and the coloring, with
+  `InterferenceGraph`, `blocked_bytes`, `find_fit`, and
+  `all_operands_in`. Each entry point matches the Python function on
+  every distinct call of the corpus, 20,897 calls in all.

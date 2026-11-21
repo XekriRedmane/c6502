@@ -416,3 +416,17 @@ something a straightforward C++ port could change.
   `Phi`s, `from_ssa` gave both of each `Phi`'s arguments from it to the
   split of the taken edge, so the path that fell through skipped the
   moves. No program of the corpus has that shape.
+- 20 Nov 2026: group E, the register allocation of the asm optimizer.
+  `compute_liveness`, `build_interference`, `coalesce_moves`,
+  `scan_function` (recorded as `hwreg_eligibility`), and `color_graph`
+  are ported with the `InterferenceGraph`, `_blocked_bytes`,
+  `_find_fit`, and `optimizer._all_operands_in`
+  (`src/passes/optimization_asm/all_operands.h`), and each matches the
+  Python function on every distinct call of the corpus: 3,591, 3,668,
+  3,591, 3,601, and 6,446 calls. The harness records a `Liveness` as
+  the shape of its CFG and its sets, and the graph and the coalescing's
+  byte offsets sorted, since Python fills those dicts in the order of
+  set iteration, which nothing reads (cpp/README.md, "The register
+  allocation"). The liveness uses the CFG of step 2, so no CFG with
+  blocks of their own was needed, and the packed BCD helpers of
+  `decimal_arith` that group D ports are private copies for now.

@@ -71,7 +71,12 @@ and lists, and an object with one tag for the rest, `{"tuple": [...]}`,
 the IEEE 754 double, `{"asdl": module, "dump": text}` for an IR value,
 `{"enum": "module.Class", "name": name}`, and
 `{"object": "module.Class", "fields": {...}}` for any other object,
-from its dataclass fields or its `__dict__`.
+from its dataclass fields or its `__dict__`. Three classes of register
+allocation are recorded with other fields (`_CAPTURE_FORMS`): a
+`Liveness` with the shape of its CFG in place of the blocks'
+instructions and without its cache, and an `InterferenceGraph` and a
+`CoalesceResult` with their dicts sorted, since the order of their
+entries follows Python's set iteration.
 
 The calls of `STAGE_PASSES`, the stages of code generation before
 `apply_licm` (`--passes stage` records them all), are recorded the same
@@ -265,6 +270,15 @@ STAGE_PASSES = {
     "from_ssa": "passes.optimization_asm.optimizer:from_ssa",
     "order_parallel_copies":
         "passes.optimization_asm.ssa_destruction:_order_parallel_copies",
+    # The register allocation of `_optimize_function`, each call made on
+    # one function in asm SSA form.
+    "compute_liveness": "passes.optimization_asm.optimizer:compute_liveness",
+    "build_interference":
+        "passes.optimization_asm.optimizer:build_interference",
+    "coalesce_moves": "passes.optimization_asm.optimizer:coalesce_moves",
+    "hwreg_eligibility":
+        "passes.optimization_asm.optimizer:scan_hwreg_eligibility",
+    "color_graph": "passes.optimization_asm.optimizer:color_graph",
 }
 
 # The stage calls that change their first argument in place where the
@@ -299,6 +313,53 @@ _FUZZERS = ("stmts", "calls", "exprs")
 _IR_MODULES = frozenset({"asm_ast", "asm2_ast", "tac_ast", "c99_ast"})
 
 
+def _liveness_fields(v) -> dict:
+    """The fields of a `Liveness` as the harness records them. The CFG
+    is `build_cfg` of the function the call is given, so each block is
+    recorded as its id, its number of instructions, and its edges, and
+    the per-instruction sets, a cache filled as they are asked for, are
+    left out."""
+    return {
+        "blocks": [
+            (b.id, len(b.instructions), b.predecessors, b.successors)
+            for b in v.cfg.blocks.values()
+        ],
+        "block_order": v.cfg.block_order,
+        "live_in": v.live_in,
+        "live_out": v.live_out,
+    }
+
+
+def _graph_fields(v) -> dict:
+    """The fields of an `InterferenceGraph`, with its nodes and its
+    adjacency sorted by name. The order the builder adds them in follows
+    the iteration of Python sets, which changes from one process to the
+    next, and nothing reads it."""
+    return {
+        "nodes": dict(sorted(v.nodes.items())),
+        "adj": dict(sorted(v.adj.items())),
+    }
+
+
+def _coalesce_fields(v) -> dict:
+    """The fields of a `CoalesceResult`, with `byte_offset` sorted by
+    name, since the order of its entries follows the order of the
+    graph's nodes and nothing reads it."""
+    return {
+        "representative": v.representative,
+        "byte_offset": dict(sorted(v.byte_offset.items())),
+    }
+
+
+# The classes whose recorded fields differ from their dataclass fields,
+# each with the function that gives them.
+_CAPTURE_FORMS = {
+    "passes.optimization_asm.liveness.Liveness": _liveness_fields,
+    "passes.optimization.interference.InterferenceGraph": _graph_fields,
+    "passes.optimization_asm.coalescing.CoalesceResult": _coalesce_fields,
+}
+
+
 def encode(v):
     """Returns the tagged JSON form of a Python value (the module
     docstring lists the forms)."""
@@ -323,6 +384,11 @@ def encode(v):
         return {"asdl": type(v).__module__, "dump": ir_dump.dump(v)}
     if isinstance(v, enum.Enum):
         return {"enum": _qualname(type(v)), "name": v.name}
+    form = _CAPTURE_FORMS.get(_qualname(type(v)))
+    if form is not None:
+        return {"object": _qualname(type(v)), "fields": {
+            k: encode(x) for k, x in form(v).items()
+        }}
     if dataclasses.is_dataclass(v) and not isinstance(v, type):
         return {"object": _qualname(type(v)), "fields": {
             f.name: encode(getattr(v, f.name)) for f in dataclasses.fields(v)

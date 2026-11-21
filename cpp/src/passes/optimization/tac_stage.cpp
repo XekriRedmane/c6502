@@ -14,6 +14,7 @@
 #include "passes/optimization/dead_loop_elimination.h"
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
+#include "passes/optimization/dispatch_pointer_array.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/divmod_hoist.h"
 #include "passes/optimization/fold_producer_jumps.h"
@@ -217,6 +218,15 @@ StageOutput run_row_address_tables(const capture::Call& call, const AsmContext&,
       symbols);
 }
 
+StageOutput run_dispatch(const capture::Call& call, const AsmContext&, const json::Value& args,
+                         const json::Value&) {
+  auto prog = asdl::load<ir::Program>(call.input);
+  const SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const std::string before = encode<Sym>(symbols);
+  return program_output(dispatch_const_pointer_arrays(std::move(prog), &symbols), before,
+                        symbols);
+}
+
 // Returns `run` when every pass of the driver's table is ported, and
 // null otherwise, for the calls that run the whole driver.
 StageRun when_driver_complete(StageRun run) {
@@ -323,7 +333,8 @@ std::vector<StageSignature> signatures() {
       {.name = "dispatch_const_pointer_arrays",
        .input = "tac_ast",
        .args = {rt<Sym>},
-       .output_module = "tac_ast"},
+       .output_module = "tac_ast",
+       .run = &run_dispatch},
       {.name = "split_tables",
        .input = "tac_ast",
        .args = {rt<Sym>},

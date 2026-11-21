@@ -5,6 +5,10 @@
 #include <utility>
 
 #include "passes/optimization/framework.h"
+#include "passes/optimization/loop_rotate.h"
+#include "passes/optimization/noreturn_call.h"
+#include "passes/optimization/ssa_construction.h"
+#include "passes/optimization/ssa_destruction.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
 
@@ -73,6 +77,35 @@ StageOutput run_tac_pass(const capture::Call& call, const AsmContext&, const jso
   return result;
 }
 
+// Runs SSA construction on a recorded call, which the driver makes with
+// the symbol table, and gives the function and its SSA names as the
+// tagged JSON of Python's tuple, and the `mutated` line for the symbols
+// it added.
+StageOutput run_to_ssa(const capture::Call& call, const AsmContext&, const json::Value&,
+                       const json::Value& kwargs) {
+  auto fn = std::get<ir::Function>(asdl::load<ir::Type_top_level>(call.input));
+  std::optional<SymbolTable> symbols = Optional<Sym>::decode(kwarg(kwargs, "symbols"));
+  if (!symbols) {
+    throw std::runtime_error("to_ssa is called without a symbol table");
+  }
+  const std::string symbols_before = encode<Sym>(*symbols);
+  auto [out, ssa] = to_ssa(std::move(fn), *symbols);
+  StageOutput result{
+      encode<Pair<TacFunctionC, NameSetC>>({ir::Type_top_level{std::move(out)}, std::move(ssa)}),
+      ""};
+  const std::string symbols_after = encode<Sym>(*symbols);
+  if (symbols_after != symbols_before) {
+    result.mutated = "{\"args\": {}, \"kwargs\": {\"symbols\": " + symbols_after + "}}";
+  }
+  return result;
+}
+
+// SSA destruction as a pass of the driver, which calls it with the
+// symbol table.
+ir::Function from_ssa_pass(ir::Function fn, const PassContext& ctx) {
+  return from_ssa(std::move(fn), ctx.symbols);
+}
+
 // The signature of one of the TAC optimizer's calls on a function.
 // `run` is null until the pass is ported.
 StageSignature tac_pass(std::string_view name, StageRun run = nullptr) {
@@ -92,11 +125,13 @@ std::vector<StageSignature> signatures() {
       {.name = "tac_to_ssa",
        .input = "tac_ast",
        .kwargs = {{"symbols", rt<Optional<Sym>>}, {"ssa_dsts", rt<Optional<NameSetC>>}},
-       .output = rt<Pair<TacFunctionC, NameSetC>>},
-      tac_pass("tac_from_ssa"),
+       .output = rt<Pair<TacFunctionC, NameSetC>>,
+       .run = &run_to_ssa},
+      tac_pass("tac_from_ssa", &run_tac_pass<&from_ssa_pass>),
       // The passes of the driver's six lists, in its order.
-      tac_pass("tac_rotate_signed_countdown_loops"),
-      tac_pass("tac_noreturn_calls"),
+      tac_pass("tac_rotate_signed_countdown_loops",
+               &run_tac_pass<&rotate_signed_countdown_loops>),
+      tac_pass("tac_noreturn_calls", &run_tac_pass<&noreturn_calls>),
       tac_pass("tac_fold_static_const_reads"),
       tac_pass("tac_constant_fold"),
       tac_pass("tac_distribute_constant"),

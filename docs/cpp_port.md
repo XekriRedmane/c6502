@@ -843,3 +843,20 @@ unreachable-code elimination changed the Phis of its input in place
   the fixed point whose only change was that looked like no change.
   351 calls of the corpus changed their input, though no output of the
   corpus changed with the fix.
+- 21 Nov 2026: group B of step 5, the driver and SSA. `PhaseDriver.apply`
+  with its two fixed points and their cap of 256 sweeps,
+  `optimize_function`, `optimize_program`, `to_ssa`, `from_ssa`,
+  `rotate_signed_countdown_loops`, and `noreturn_calls` are ported
+  (cpp/README.md, "The TAC optimizer's driver"). The driver's table in
+  `src/passes/optimization/optimizer.cpp` lists every pass of Python's
+  `_DRIVER` in its order, with a null pointer for each pass that another
+  group ports, which that group sets when it merges. Each ported call
+  matches the Python function on every distinct call of the corpus:
+  3,992 of `tac_to_ssa`, 3,746 of `tac_from_ssa`, 3,986 of
+  `tac_rotate_signed_countdown_loops`, and 3,987 of
+  `tac_noreturn_calls`. Only 6 of the rotation's calls and 29 of
+  `noreturn_calls`' change their function, and no call of the corpus
+  breaks a cycle of copies in `from_ssa`, so the 31 distinct calls of
+  the Python unit tests are C++ cases too. The runners of
+  `tac_optimize_function` and `optimize_tac` are set once the table is
+  full.

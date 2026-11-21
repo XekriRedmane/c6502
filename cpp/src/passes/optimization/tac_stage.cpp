@@ -7,6 +7,7 @@
 #include "passes/optimization/framework.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
+#include "passes/optimization/optimizer.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
 #include "passes/optimization/truncate_extend_fold.h"
@@ -106,6 +107,46 @@ ir::Function from_ssa_pass(ir::Function fn, const PassContext& ctx) {
   return from_ssa(std::move(fn), ctx.symbols);
 }
 
+// Runs the whole driver on a recorded call of `optimize_function`, whose
+// keyword argument `symbols` is the compile's table, and gives the
+// result's dump and the `mutated` line for the table.
+StageOutput run_optimize_function(const capture::Call& call, const AsmContext&,
+                                  const json::Value&, const json::Value& kwargs) {
+  auto fn = std::get<ir::Function>(asdl::load<ir::Type_top_level>(call.input));
+  std::optional<SymbolTable> symbols = Optional<Sym>::decode(kwarg(kwargs, "symbols"));
+  const std::string symbols_before = encode<Optional<Sym>>(symbols);
+  ir::Function out = optimize_function(std::move(fn), symbols ? &*symbols : nullptr);
+  StageOutput result{asdl::dump(ir::Type_top_level{std::move(out)}), ""};
+  const std::string symbols_after = encode<Optional<Sym>>(symbols);
+  if (symbols_after != symbols_before) {
+    result.mutated = "{\"args\": {}, \"kwargs\": {\"symbols\": " + symbols_after + "}}";
+  }
+  return result;
+}
+
+// Runs the driver on each function of a recorded call of
+// `optimize_program`, whose argument after the program is the
+// compile's symbol table.
+StageOutput run_optimize_program(const capture::Call& call, const AsmContext&,
+                                 const json::Value& args, const json::Value&) {
+  auto prog = asdl::load<ir::Program>(call.input);
+  SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const std::string symbols_before = encode<Sym>(symbols);
+  ir::Program out = optimize_program(std::move(prog), &symbols);
+  StageOutput result{asdl::dump(out), ""};
+  const std::string symbols_after = encode<Sym>(symbols);
+  if (symbols_after != symbols_before) {
+    result.mutated = "{\"args\": {\"0\": " + symbols_after + "}, \"kwargs\": {}}";
+  }
+  return result;
+}
+
+// Returns `run` when every pass of the driver's table is ported, and
+// null otherwise, for the calls that run the whole driver.
+StageRun when_driver_complete(StageRun run) {
+  return tac_driver().complete() ? run : nullptr;
+}
+
 // The signature of one of the TAC optimizer's calls on a function.
 // `run` is null until the pass is ported.
 StageSignature tac_pass(std::string_view name, StageRun run = nullptr) {
@@ -188,11 +229,16 @@ std::vector<StageSignature> signatures() {
        .input = "tac_ast",
        .args = {rt<Sym>, rt<Types>},
        .output_module = "tac_ast"},
-      {.name = "optimize_tac", .input = "tac_ast", .args = {rt<Sym>}, .output_module = "tac_ast"},
+      {.name = "optimize_tac",
+       .input = "tac_ast",
+       .args = {rt<Sym>},
+       .output_module = "tac_ast",
+       .run = when_driver_complete(&run_optimize_program)},
       {.name = "tac_optimize_function",
        .input = "tac_ast",
        .kwargs = {{"symbols", rt<Optional<Sym>>}},
-       .output_module = "tac_ast"},
+       .output_module = "tac_ast",
+       .run = when_driver_complete(&run_optimize_function)},
       {.name = "dispatch_const_pointer_arrays",
        .input = "tac_ast",
        .args = {rt<Sym>},

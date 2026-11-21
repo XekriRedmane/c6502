@@ -126,6 +126,10 @@ cpp/
       optimization/framework.*, value_range.*, truncate_extend_fold.*,
                       tac_stage.*   the TAC optimizer's run loops, helpers,
                       passes, and the signatures of step 5's calls
+      optimization/driver.*, optimizer.*, ssa_construction.*,
+                      ssa_destruction.*, loop_rotate.*, noreturn_call.*
+                      the TAC optimizer's driver, its table of passes,
+                      SSA, and the passes before SSA (step 5, group B)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -703,6 +707,34 @@ operand, `int_width`, `type_max`, and `is_unsigned_type` of each
 symbol's type, and `rewrite_uses_in` of each instruction with two
 mappers (`tac_opt_values`). `check-helpers` computes them in
 `src/tac_helper_checks.cpp`.
+
+## The TAC optimizer's driver
+
+`passes::framework::PhaseDriver` (`src/passes/optimization/driver.h`)
+is the port of `PhaseDriver.apply`. Its six lists hold `NamedPass`
+entries, each a pass's `name` and a pointer to its port, and it runs
+them as Python does, with `to_ssa` and `from_ssa` between them and the
+two fixed points swept until a sweep leaves the function equal to what
+it started with, or 256 times. `ctx.ssa_dsts` stays set after SSA
+destruction, as Python's does, so the passes after it see the SSA
+names. The C++ driver doesn't check the TAC after each pass under
+`C6502_CHECK_IR=1` and has no `observer`, which only fuzz/tac_passes.py
+sets.
+
+`passes::tac_driver()` (`src/passes/optimization/optimizer.cpp`) is
+Python's `_DRIVER`, with every pass in its list and its order. A pass
+whose group hasn't landed has a null pointer there, and the group that
+ports it sets the pointer, which is one line of the table and an
+`#include`. The driver throws `InternalError` at a null entry, and
+`tac_driver().complete()` reports whether the table is full. Until it
+is, the runners of `tac_optimize_function` and `optimize_tac` in
+tac_stage.cpp are null, so `check-captures` reads those records
+without running them, and once it is, the runners call
+`optimize_function` and `optimize_program`. `tests/test_tac_driver.cpp`
+checks the table's names against the signatures of tac_stage.cpp,
+which tests/test_capture_passes.py checks against Python's lists, and
+runs a driver of the passes ported so far on three functions, with the
+results of Python's `PhaseDriver` of the same lists.
 
 ## The shared helpers
 
@@ -1350,3 +1382,14 @@ Python results through `tests/stage_case.h`.
   helper records; and `fold_truncate_extend` and `fold_extend_extend`,
   which match on every distinct call of the corpus. The build is clean
   with MSVC 19.36 and GCC 12.2.
+- 21 Nov 2026: group B of step 5, the TAC optimizer's driver ("The TAC
+  optimizer's driver"): `PhaseDriver` with its two fixed points and
+  their cap, the table of `_DRIVER`'s passes, `optimize_function`,
+  `optimize_program`, `to_ssa`, `from_ssa`, and the two passes before
+  SSA, `rotate_signed_countdown_loops` and `noreturn_calls`. Each pass
+  matches the Python function on every distinct call of the corpus,
+  3,992 of `tac_to_ssa`, 3,746 of `tac_from_ssa`, 3,986 of
+  `tac_rotate_signed_countdown_loops`, and 3,987 of
+  `tac_noreturn_calls`, and on the 31 distinct calls of the Python unit
+  tests (`tests/test_tac_ssa_calls.cpp`). The build is clean with MSVC
+  19.36 and GCC 12.2.

@@ -835,12 +835,15 @@ Suffix Declarations::array_suffix() {
         a.alias = "array_size_unspec";
       } else {
         a.alias = "array_size_plain";
-        // The descent has no way to parse the rest of an expression
-        // after its first operator, so `*e` is taken as the dereference
-        // of the assignment expression `e`, which gives `*p + 1` the
-        // wrong shape. Such a size is a variable-length array, which the
-        // fold rejects, and only its message shows the shape.
-        a.size = ir::Dereference{.exp = p_.parse_assignment_exp()};
+        // The `*` taken is the unary operator that begins the size, as
+        // in `[*p + 1]`, so the dereference of the cast expression after
+        // it is handed to the expression parser as its first operand,
+        // which continues from there as `assignment_exp` would. The
+        // cast expression has taken any postfix operators, so the
+        // lookahead can't apply one to the dereference.
+        Exp operand = p_.parse_cast_exp();
+        p_.pending_primary = ir::Dereference{.exp = std::move(operand)};
+        a.size = p_.parse_assignment_exp();
       }
     } else {
       a.alias = "array_size_plain";

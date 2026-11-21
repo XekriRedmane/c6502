@@ -53,7 +53,9 @@ namespace c6502::passes {
 // `replace_pseudoregisters` may put in the soft-stack frame, such as a
 // soft-stack function's parameters. Each access to one is emitted with
 // an `LDY #off` setup, so it counts as a write of Y in a pinned value's
-// live range.
+// live range. A spilled node gets a frame slot too, so when a coloring
+// spills while it keeps a value in Y, the pinning and the coloring run
+// again with the spilled names added, until a run spills nothing new.
 //
 // Throws `CompileError("RegallocError", ...)` when a `register` local
 // can't be pinned to the register it requires.

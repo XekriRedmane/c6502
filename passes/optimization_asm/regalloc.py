@@ -129,22 +129,62 @@ def color_graph(
     `replace_pseudoregisters` may put in the soft-stack frame, such
     as a soft-stack function's parameters. Each access to one is
     emitted with an `LDY #off` setup, so it counts as a write of Y
-    in a pinned value's live range (`_instr_writes_hwregs`)."""
+    in a pinned value's live range (`_instr_writes_hwregs`).
+
+    A spilled node gets a frame slot too, which isn't known until the
+    bytes are colored, after the pinning. When a coloring spills while
+    it keeps a value in Y, the pinning and the coloring run again with
+    the names of the spilled nodes, and of every name coalesced into
+    one, added to `frame_names`, until a run spills nothing new. The
+    pinning is the same on each run except where an access to a
+    spilled value lies in a pinned value's live range."""
     if pool is None:
         pool = Pool()
     blocked_addrs = blocked_addrs or set()
     peo = _perfect_elimination_order(fn, graph)
-    assignments: dict[str, int] = {}
-    hwreg_assignments: dict[str, str] = {}
-    spilled: set[str] = set()
-
-    if hwreg_eligibility is not None:
-        _try_hwreg_assign(
-            graph, hwreg_eligibility, hwreg_assignments,
-            fn=fn, liveness=liveness, rep_map=rep_map,
-            frame_names=frame_names,
+    in_frame = frozenset(frame_names)
+    while True:
+        hwreg_assignments: dict[str, str] = {}
+        if hwreg_eligibility is not None:
+            _try_hwreg_assign(
+                graph, hwreg_eligibility, hwreg_assignments,
+                fn=fn, liveness=liveness, rep_map=rep_map,
+                frame_names=in_frame,
+            )
+        assignments, spilled = _color_bytes(
+            graph, peo, hwreg_assignments, pool, blocked_addrs,
+            allowed_range,
         )
+        if (
+            not spilled or liveness is None
+            or "Y" not in hwreg_assignments.values()
+        ):
+            break
+        more = _names_resolving_to(fn, spilled, rep_map) - in_frame
+        if not more:
+            break
+        in_frame |= more
+    return Coloring(
+        assignments=assignments,
+        spilled=spilled,
+        pool=pool,
+        hwreg_assignments=hwreg_assignments,
+    )
 
+
+def _color_bytes(
+    graph: InterferenceGraph,
+    peo: list[str],
+    hwreg_assignments: dict[str, str],
+    pool: Pool,
+    blocked_addrs: set[int],
+    allowed_range: range | None,
+) -> tuple[dict[str, int], set[str]]:
+    """Colors the nodes of `graph` not in `hwreg_assignments` onto
+    zero-page bytes in the order `peo`, and returns the assignments
+    and the spilled nodes."""
+    assignments: dict[str, int] = {}
+    spilled: set[str] = set()
     for name in peo:
         if name in hwreg_assignments:
             continue
@@ -162,12 +202,24 @@ def color_graph(
             spilled.add(name)
         else:
             assignments[name] = base
-    return Coloring(
-        assignments=assignments,
-        spilled=spilled,
-        pool=pool,
-        hwreg_assignments=hwreg_assignments,
-    )
+    return assignments, spilled
+
+
+def _names_resolving_to(
+    fn: asm_ast.Function, reps: set[str], rep_map: dict[str, str] | None,
+) -> frozenset[str]:
+    """Returns the names of `fn`'s `Pseudo`s that are in `reps` or
+    that `rep_map` maps into `reps` through any number of steps."""
+    from passes.optimization_asm.optimizer import _all_pseudo_names
+    rep_map = rep_map or {}
+    out: set[str] = set()
+    for name in _all_pseudo_names(fn):
+        cur = name
+        while cur in rep_map:
+            cur = rep_map[cur]
+        if cur in reps:
+            out.add(name)
+    return frozenset(out)
 
 
 def _try_hwreg_assign(

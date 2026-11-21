@@ -171,6 +171,80 @@ class TestFrameAccessWritesY(unittest.TestCase):
                 got = build_sim(src, optimize=optimize).run()
                 self.assertEqual(got.return_int_signed(), -128)
 
+    def test_spilled_value_counts_as_frame_access(self) -> None:
+        # Only two bytes are free, so one of `a`, `b`, and `c` is
+        # spilled to a frame slot, and its compare loads Y while `i`
+        # is live. With room for all three, `i` stays in Y.
+        from passes.optimization_asm.hwreg_eligibility import scan_function
+        Y = asm_ast.Reg(reg=asm_ast.Y())
+        t = asm_ast.IndexedData(name="t", offset=0, index=asm_ast.Y())
+        fn = _fn(
+            _mov(_imm(0), _ps("i")), _mov(_ps("i"), _A()), _mov(_A(), Y),
+            _mov(t, _A()),
+            _mov(_imm(1), _ps("a")), _mov(_imm(2), _ps("b")),
+            _mov(_imm(3), _ps("c")),
+            asm_ast.Compare(left=_ps("a"), right=_ps("b")),
+            asm_ast.Compare(left=_ps("c"), right=_imm(0)),
+            _mov(_ps("i"), _A()), _mov(_A(), Y), _mov(t, _A()),
+            _ret_bare(),
+        )
+        liveness = compute_liveness(fn)
+        graph = build_interference(fn, liveness)
+        eligibility = scan_function(fn)
+
+        def color(stop: int):
+            return color_graph(
+                fn, graph, hwreg_eligibility=eligibility,
+                liveness=liveness, allowed_range=range(0x80, stop),
+            )
+        roomy = color(0x83)
+        self.assertEqual(roomy.spilled, set())
+        self.assertEqual(roomy.hwreg_assignments, {"i": "Y"})
+        tight = color(0x82)
+        self.assertEqual(len(tight.spilled), 1)
+        self.assertEqual(tight.hwreg_assignments, {"i": "X"})
+
+    def test_index_survives_spilled_reads(self) -> None:
+        # Eighteen 8-byte values live at once are more than the 128
+        # bytes of the default pool, so some are spilled to `f`'s
+        # frame. The index `c2` was kept in Y across the reads of the
+        # spilled values for `gout`, whose `LDY #off` replaced it, and
+        # `f` returned 4.
+        loads = "".join(
+            f"    unsigned long long v{k} = g[{k}];\n" for k in range(18)
+        )
+        mix = " ^ ".join(f"v{k}" for k in range(18))
+        src = (
+            "volatile unsigned long long g[18];\n"
+            "volatile unsigned char gc[2];\n"
+            "unsigned long long gout;\n"
+            "unsigned char t[8] = {1, 2, 3, 4, 5, 6, 7, 8};\n"
+            "unsigned char h(unsigned char x) { return x; }\n"
+            "int f(void) {\n"
+            "    unsigned char (*fp)(unsigned char) = h;\n"
+            "    fp(0);\n"
+            f"{loads}"
+            "    unsigned char c1 = gc[0] & 7;\n"
+            "    unsigned char c2 = (gc[1] ^ 5) & 7;\n"
+            f"    gout = {mix};\n"
+            "    return t[c1] + t[c2] * 3;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    for (int k = 0; k < 18; k++)\n"
+            "        g[k] = 0x0101010101010101ULL * (k + 1);\n"
+            "    gc[0] = 3;\n"
+            "    gc[1] = 7;\n"
+            "    return f();\n"
+            "}\n"
+        )
+        # Without -O the frame is over the 253-byte limit, so the TAC
+        # interpreter gives the reference.
+        from sim.harness import build_sim
+        from tests.test_sim_chapters import _run_program
+        self.assertEqual(_run_program(src), 13)
+        got = build_sim(src, optimize=True).run()
+        self.assertEqual(got.return_int_signed(), 13)
+
 
 if __name__ == "__main__":
     unittest.main()

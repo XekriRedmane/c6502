@@ -514,23 +514,12 @@ std::vector<std::string> perfect_elimination_order(const ir::Function& fn,
   return build;
 }
 
-}  // namespace
-
-Coloring color_graph(const ir::Function& fn, const InterferenceGraph& graph,
-                     const std::optional<Pool>& pool_arg, const std::set<asdl::Int>* blocked_addrs,
-                     const HwRegEligibility* hwreg_eligibility,
-                     const std::optional<Range>& allowed_range, const Liveness* liveness,
-                     const OrderedMap<std::string, std::string>* rep_map,
-                     const NameSet* frame_names) {
-  const Pool pool = pool_arg.value_or(Pool{});
-  const auto peo = perfect_elimination_order(fn, graph);
-  Coloring out{.pool = pool};
-
-  if (hwreg_eligibility != nullptr) {
-    try_hwreg_assign(graph, *hwreg_eligibility, out.hwreg_assignments, liveness, rep_map,
-                     frame_names);
-  }
-
+// Colors the nodes of `graph` that `out.hwreg_assignments` doesn't hold
+// onto zero-page bytes in the order `peo`, adding them to
+// `out.assignments`, or to `out.spilled` when none fits.
+void color_bytes(const InterferenceGraph& graph, const std::vector<std::string>& peo,
+                 const Pool& pool, const std::set<asdl::Int>* blocked_addrs,
+                 const std::optional<Range>& allowed_range, Coloring& out) {
   for (const auto& name : peo) {
     if (out.hwreg_assignments.contains(name)) {
       continue;
@@ -557,7 +546,76 @@ Coloring color_graph(const ir::Function& fn, const InterferenceGraph& graph,
       out.assignments.insert_or_assign(name, *base);
     }
   }
+}
+
+// Returns the names of `fn`'s pseudos that are in `reps` or that
+// `rep_map` maps into `reps` through any number of steps.
+NameSet names_resolving_to(const ir::Function& fn, const NameSet& reps,
+                           const OrderedMap<std::string, std::string>* rep_map) {
+  NameSet out;
+  for (const auto& instr : fn.instructions) {
+    for (const auto* op : optimizer::all_operands_in(instr)) {
+      const auto* p = asdl::as<ir::Pseudo>(*op);
+      if (p == nullptr) {
+        continue;
+      }
+      std::string cur = p->name;
+      while (rep_map != nullptr) {
+        const std::string* next = rep_map->find(cur);
+        if (next == nullptr) {
+          break;
+        }
+        cur = *next;
+      }
+      if (reps.contains(cur)) {
+        out.insert(p->name);
+      }
+    }
+  }
   return out;
+}
+
+}  // namespace
+
+Coloring color_graph(const ir::Function& fn, const InterferenceGraph& graph,
+                     const std::optional<Pool>& pool_arg, const std::set<asdl::Int>* blocked_addrs,
+                     const HwRegEligibility* hwreg_eligibility,
+                     const std::optional<Range>& allowed_range, const Liveness* liveness,
+                     const OrderedMap<std::string, std::string>* rep_map,
+                     const NameSet* frame_names) {
+  const Pool pool = pool_arg.value_or(Pool{});
+  const auto peo = perfect_elimination_order(fn, graph);
+  // A spilled node gets a frame slot too, which isn't known until the
+  // bytes are colored, after the pinning. When a coloring spills while it
+  // keeps a value in Y, the pinning and the coloring run again with the
+  // names of the spilled nodes, and of every name coalesced into one,
+  // added to the frame names, until a run spills nothing new.
+  NameSet in_frame;
+  if (frame_names != nullptr) {
+    in_frame = *frame_names;
+  }
+  while (true) {
+    Coloring out{.pool = pool};
+    if (hwreg_eligibility != nullptr) {
+      try_hwreg_assign(graph, *hwreg_eligibility, out.hwreg_assignments, liveness, rep_map,
+                       &in_frame);
+    }
+    color_bytes(graph, peo, pool, blocked_addrs, allowed_range, out);
+    bool y_used = false;
+    for (const auto& [name, letter] : out.hwreg_assignments) {
+      y_used = y_used || letter == "Y";
+    }
+    if (out.spilled.empty() || liveness == nullptr || !y_used) {
+      return out;
+    }
+    bool grew = false;
+    for (const auto& name : names_resolving_to(fn, out.spilled, rep_map)) {
+      grew = in_frame.insert(name).second || grew;
+    }
+    if (!grew) {
+      return out;
+    }
+  }
 }
 
 }  // namespace c6502::passes

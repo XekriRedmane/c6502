@@ -67,7 +67,13 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
   stayed in Y across the read of a soft-stack parameter (`fuzz.calls`
   seed 335). `compute_address_taken_assignments` raises if a pooled
   function's address-taken local doesn't fit in its pool while Y holds
-  a value.
+  a value. A spilled node gets a frame slot as well, so a coloring
+  that spills while it keeps a value in Y runs again, pinning
+  included, with the spilled names (and the names coalesced into
+  them) added to `frame_names`, until a run spills nothing new.
+  Eighteen 8-byte values live at once in a soft-stack function had
+  spilled while an array index stayed in Y across their reads
+  (`TestFrameAccessWritesY` in `tests/test_asm_regalloc.py`).
 - `apply_coloring.py` — applies the coloring map produced by
   `regalloc` to every operand in the function.
 - `cfg.py` — asm-level control-flow graph (basic blocks, dominators,

@@ -620,4 +620,30 @@ TEST_CASE("regalloc: a read of a frame slot loads Y") {
   CHECK(pinned(&frame) == "X");
 }
 
+TEST_CASE("regalloc: a spilled value's access loads Y") {
+  // With two free bytes, one of `a`, `b`, and `c` is spilled to a frame
+  // slot, whose compare loads Y while `i` is live, so `i` goes in X.
+  // With room for all three, `i` stays in Y. Python's `color_graph`
+  // gives the same (tests/test_asm_regalloc.py).
+  const auto fn = function(R"(Mov(Imm(0) Pseudo("i" 0) false) Mov(Pseudo("i" 0) Reg(A) false)
+    Mov(Reg(A) Reg(Y) false) Mov(IndexedData("t" 0 Y) Reg(A) false)
+    Mov(Imm(1) Pseudo("a" 0) false) Mov(Imm(2) Pseudo("b" 0) false)
+    Mov(Imm(3) Pseudo("c" 0) false) Compare(Pseudo("a" 0) Pseudo("b" 0))
+    Compare(Pseudo("c" 0) Imm(0)) Mov(Pseudo("i" 0) Reg(A) false) Mov(Reg(A) Reg(Y) false)
+    Mov(IndexedData("t" 0 Y) Reg(A) false) Return(true false false))");
+  const auto live = passes::compute_liveness(fn);
+  const auto g = passes::build_interference(fn, live);
+  const auto elig = passes::scan_function(fn);
+  const auto color = [&](asdl::Int stop) {
+    return passes::color_graph(fn, g, std::nullopt, nullptr, &elig,
+                               passes::Range{.start = 0x80, .stop = stop}, &live);
+  };
+  const auto roomy = color(0x83);
+  CHECK(roomy.spilled.empty());
+  CHECK(roomy.hwreg_assignments == OrderedMap<std::string, std::string>{{"i", "Y"}});
+  const auto tight = color(0x82);
+  CHECK(tight.spilled.size() == 1);
+  CHECK(tight.hwreg_assignments == OrderedMap<std::string, std::string>{{"i", "X"}});
+}
+
 }  // namespace

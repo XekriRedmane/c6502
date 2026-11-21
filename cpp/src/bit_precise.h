@@ -1,13 +1,16 @@
-// The parts of bit_precise.py that code generation reads: the byte
-// count and signedness of each TAC integer constant class, among them
-// the classes of the 3-, 5-, 6-, and 7-byte integers that are left of
-// C23's bit-precise types after `c99_to_tac`, and the width of the
-// runtime helper an operand of such a size goes to.
+// The parts of bit_precise.py that code generation and `c99_to_tac`
+// read: the byte count and signedness of each TAC integer constant
+// class, among them the classes of the 3-, 5-, 6-, and 7-byte integers
+// that are left of C23's bit-precise types after `c99_to_tac`, the
+// width of the runtime helper an operand of such a size goes to, and
+// the range, padding, and storage type of a bit-precise type.
 #pragma once
 
 #include <optional>
+#include <utility>
 
 #include "asdl/runtime.h"
+#include "c99_ast.h"
 #include "tac_ast.h"
 
 namespace c6502::bit_precise {
@@ -59,5 +62,17 @@ asdl::Int const_value(const tac_ast::Type_const& c);
 // holding `value` modulo 2^(8n) as its bit pattern, which isn't
 // negative, as the type checker gives its constants.
 tac_ast::Type_const make_const(int n, bool is_signed, asdl::Int value);
+
+// Returns the least and greatest values of the integer type of `width`
+// bits and that signedness.
+std::pair<asdl::Int, asdl::Int> value_range(int width, bool is_signed);
+
+// Returns whether the top byte of `t` holds padding bits.
+bool has_padding(const c99_ast::BitInt& t);
+
+// Returns the integer type of `t`'s storage, which the back end
+// handles: the standard type of the same size and signedness for 1, 2,
+// 4, and 8 bytes, and `BitInt(8 * bytes)` for the other sizes.
+c99_ast::Type_data_type storage_type(const c99_ast::BitInt& t);
 
 }  // namespace c6502::bit_precise

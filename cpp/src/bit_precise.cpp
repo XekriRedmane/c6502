@@ -7,6 +7,7 @@
 namespace c6502::bit_precise {
 
 namespace tac = ::c6502::tac_ast;
+namespace c99 = ::c6502::c99_ast;
 
 std::optional<ConstLayout> odd_const_layout(const tac::Type_const& c) {
   using K = tac::Kind_const;
@@ -192,6 +193,33 @@ tac::Type_const make_const(int n, bool is_signed, asdl::Int value) {
     default:
       throw InternalError("no integer constant class of " + std::to_string(n) + " bytes");
   }
+}
+
+std::pair<asdl::Int, asdl::Int> value_range(int width, bool is_signed) {
+  if (is_signed) {
+    return {-(asdl::Int(1) << (width - 1)), (asdl::Int(1) << (width - 1)) - 1};
+  }
+  return {0, (asdl::Int(1) << width) - 1};
+}
+
+bool has_padding(const c99::BitInt& t) { return asdl::floor_mod(t.width, 8) != 0; }
+
+c99::Type_data_type storage_type(const c99::BitInt& t) {
+  const asdl::Int n = storage_bytes(t.width);
+  const bool s = t.is_signed;
+  if (n == 1) {
+    return s ? c99::Type_data_type{c99::SChar{}} : c99::Type_data_type{c99::UChar{}};
+  }
+  if (n == 2) {
+    return s ? c99::Type_data_type{c99::Int{}} : c99::Type_data_type{c99::UInt{}};
+  }
+  if (n == 4) {
+    return s ? c99::Type_data_type{c99::Long{}} : c99::Type_data_type{c99::ULong{}};
+  }
+  if (n == 8) {
+    return s ? c99::Type_data_type{c99::LongLong{}} : c99::Type_data_type{c99::ULongLong{}};
+  }
+  return c99::BitInt{.width = 8 * n, .is_signed = s};
 }
 
 }  // namespace c6502::bit_precise

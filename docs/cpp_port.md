@@ -499,3 +499,17 @@ something a straightforward C++ port could change.
   them in one call, and `local_slot_names` is in a file of its own,
   which part F1's `apply_coloring` shares. The Python unit tests' 66
   distinct calls are recorded as C++ cases.
+- 20 Nov 2026: part F1 of group F of step 4, the asm optimizer's
+  program level. `optimize_program` and `_optimize_function` (as
+  `optimize_function`, with `_entry_register_limits`,
+  `_explicit_index_tests`, `_project_eligibility`, and
+  `_check_nothing_live_across`), `apply_coloring`, `fold_const_statics`,
+  `apply_dead_static_elimination`, `compute_local_bytes`, and
+  `compute_address_taken_bytes` are ported, and each matches the Python
+  function on every distinct call of the corpus: 2,231 calls of
+  `asm_optimizer`, 7,157 of `optimize_function`, 7,016 of
+  `apply_coloring`, 1,110 of `fold_const_statics`, 1,771 of
+  `dead_static_elimination`, 937 of `compute_local_bytes`, and 1,110 of
+  `compute_address_taken_bytes`. The stage's driver calls
+  `optimize_program` from `src/passes/optimization_asm/optimizer.h` and
+  the sizing from `src/passes/function_local_sizing.h`.

@@ -5,17 +5,65 @@
 // Python function returned, which the C++ function must return too. A
 // line trace of the five modules over the corpus and over the unit tests
 // of the modules that compile through them chose them. The direct calls
-// of tests/test_dead_static.py and tests/test_function_local_sizing.py
-// are here, with the calls of four tests of tests/test_const_static_fold.py,
-// test_byte_arith_sim.py, and test_hwreg_pinning.py. The calls named "f1
+// of tests/test_dead_static.py, test_function_local_sizing.py, and
+// test_hwreg_pinning.py are here, with the calls that four tests of
+// tests/test_const_static_fold.py and test_byte_arith_sim.py make
+// through compiles. The calls named "f1
 // synthetic" were made on inputs written to reach the lines that neither
 // the corpus nor a unit test reaches, and recorded from the Python
-// functions the same way. The one that raises gives Python's message.
+// functions the same way. Two of those raise, and their messages are
+// Python's.
 #include "doctest.h"
 #include "stage_case.h"
 
 using c6502::testing::check_stage_call;
 using c6502::testing::check_stage_case;
+
+TEST_CASE("optimize_function: tests.test_byte_arith_sim.TestBranchOnTransferFlags.test_zero_count (1)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"main\", \"sh\"]}, {\"set\": []}, null], \"kwargs\": {\"local_pool\": null, \"local_pins\": null, \"param_hints\": null, \"entry_limits\": {\"dict\": [[\"@0.v.reg.b0\", {\"set\": [\"X\"]}]]}, \"recursive_callees\": null}}",
+      "Function(\"sh\" true [\"@0.v\" \"@1.n\"] [\n"
+      "  Mov(Reg(A) Pseudo(\"@0.v.reg\" 0) false)\n"
+      "  Mov(Reg(X) Pseudo(\"@1.n.reg\" 0) false)\n"
+      "  Mov(Pseudo(\"@0.v.reg\" 0) Pseudo(\"%3.1\" 0) false)\n"
+      "  Mov(Pseudo(\"@1.n.reg\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Reg(X) false)\n"
+      "  Branch(EQ \".shift_done@1\")\n"
+      "  Label(\".shift_loop@0\")\n"
+      "  ArithmeticShiftLeft(Pseudo(\"%3.1\" 0))\n"
+      "  Dec(Reg(X))\n"
+      "  Branch(NE \".shift_loop@0\")\n"
+      "  Label(\".shift_done@1\")\n"
+      "  Mov(Pseudo(\"%3.1\" 0) Reg(A) false)\n"
+      "  Return(true false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"sh\\\" true [\\\"@0.v\\\" \\\"@1.n\\\"] [\\n  Label(\\\".sh@asm_ssa_block@0\\\")\\n  Mov(Reg(A) ZP(128 0) false)\\n  Mov(Reg(X) Reg(X) false)\\n  Mov(ZP(128 0) ZP(128 0) false)\\n  Compare(Reg(X) Imm(0))\\n  Branch(EQ \\\".shift_done@1\\\")\\n  Label(\\\".shift_loop@0\\\")\\n  ArithmeticShiftLeft(ZP(128 0))\\n  Dec(Reg(X))\\n  Branch(NE \\\".shift_loop@0\\\")\\n  Label(\\\".shift_done@1\\\")\\n  Mov(ZP(128 0) Reg(A) false)\\n  Return(true false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": [[\"@0.v.reg.b0.v1\", 128], [\"%3.1\", 128]]}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": [[\"@1.n.reg.b0.v1\", \"X\"]]}}}]}",
+      "");
+}
+
+TEST_CASE("optimize_function: tests.test_byte_arith_sim.TestBranchOnTransferFlags.test_zero_count (2)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"main\", \"sh\"]}, {\"set\": []}, {\"range\": [132, 133, 1]}], \"kwargs\": {\"local_pool\": [132], \"local_pins\": null, \"param_hints\": null, \"entry_limits\": {\"dict\": [[\"@0.v.reg.b0\", {\"set\": [\"X\"]}]]}, \"recursive_callees\": null}}",
+      "Function(\"sh\" true [\"@0.v\" \"@1.n\"] [\n"
+      "  Mov(Reg(A) Pseudo(\"@0.v.reg\" 0) false)\n"
+      "  Mov(Reg(X) Pseudo(\"@1.n.reg\" 0) false)\n"
+      "  Mov(Pseudo(\"@0.v.reg\" 0) Pseudo(\"%3.1\" 0) false)\n"
+      "  Mov(Pseudo(\"@1.n.reg\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Reg(X) false)\n"
+      "  Branch(EQ \".shift_done@1\")\n"
+      "  Label(\".shift_loop@0\")\n"
+      "  ArithmeticShiftLeft(Pseudo(\"%3.1\" 0))\n"
+      "  Dec(Reg(X))\n"
+      "  Branch(NE \".shift_loop@0\")\n"
+      "  Label(\".shift_done@1\")\n"
+      "  Mov(Pseudo(\"%3.1\" 0) Reg(A) false)\n"
+      "  Return(true false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"sh\\\" true [\\\"@0.v\\\" \\\"@1.n\\\"] [\\n  Label(\\\".sh@asm_ssa_block@0\\\")\\n  Mov(Reg(A) Data(\\\"__local_sh__v\\\" 0) false)\\n  Mov(Reg(X) Reg(X) false)\\n  Mov(Data(\\\"__local_sh__v\\\" 0) Data(\\\"__local_sh__v\\\" 0) false)\\n  Compare(Reg(X) Imm(0))\\n  Branch(EQ \\\".shift_done@1\\\")\\n  Label(\\\".shift_loop@0\\\")\\n  ArithmeticShiftLeft(Data(\\\"__local_sh__v\\\" 0))\\n  Dec(Reg(X))\\n  Branch(NE \\\".shift_loop@0\\\")\\n  Label(\\\".shift_done@1\\\")\\n  Mov(Data(\\\"__local_sh__v\\\" 0) Reg(A) false)\\n  Return(true false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": [[\"@0.v.reg.b0.v1\", 132], [\"%3.1\", 132]]}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": [[\"@1.n.reg.b0.v1\", \"X\"]]}}}]}",
+      "");
+}
 
 TEST_CASE("fold_const_statics: tests.test_const_static_fold.TestConstPointer.test_reads_the_address (1)") {
   check_stage_case(
@@ -825,6 +873,23 @@ TEST_CASE("apply_coloring: f1 synthetic cases (7)") {
       "");
 }
 
+TEST_CASE("asm_optimizer: f1 synthetic cases (1)") {
+  check_stage_case(
+      "asm_optimizer",
+      "{\"args\": [], \"kwargs\": {\"extra_statics\": {\"set\": [\"in\", \"out\"]}}}",
+      "Program([\n"
+      "  Function(\"f\" true [] [\n"
+      "    Mov(Data(\"in\" 0) Reg(A) false)\n"
+      "    Mov(Reg(A) Pseudo(\"%a\" 0) false)\n"
+      "    Mov(Pseudo(\"%a\" 0) Reg(A) false)\n"
+      "    Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Program([\\n  Function(\\\"f\\\" true [] [\\n    Label(\\\".f@asm_ssa_block@0\\\")\\n    Mov(Data(\\\"in\\\" 0) Reg(A) false)\\n    Mov(Reg(A) Data(\\\"out\\\" 0) false)\\n    Return(false false false)\\n  ])\\n])\\n\"}, {\"dict\": [[\"f\", {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": []}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": []}}}]]}]}",
+      "");
+}
+
 TEST_CASE("compute_address_taken_bytes: f1 synthetic cases (1)") {
   check_stage_case(
       "compute_address_taken_bytes",
@@ -1083,6 +1148,134 @@ TEST_CASE("fold_const_statics: f1 synthetic cases (3)") {
       "    Return(true false false)\n"
       "  ])\n"
       "])\n",
+      "");
+}
+
+TEST_CASE("optimize_function: f1 synthetic cases (1)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"in\", \"out\"]}, {\"set\": []}, {\"range\": [128, 129, 1]}], \"kwargs\": {}}",
+      "Function(\"f\" true [] [\n"
+      "  Mov(Data(\"in\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%y\" 0) false)\n"
+      "  Mov(Data(\"in\" 1) Reg(A) false)\n"
+      "  Branch(EQ \"L1\")\n"
+      "  Mov(Data(\"in\" 2) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%x\" 0) false)\n"
+      "  Jump(\"L2\" [])\n"
+      "  Label(\"L1\")\n"
+      "  Mov(Data(\"in\" 3) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%x\" 0) false)\n"
+      "  Label(\"L2\")\n"
+      "  Mov(Pseudo(\"%x\" 0) Reg(A) false)\n"
+      "  Add(Pseudo(\"%y\" 0) Reg(A))\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Mov(Pseudo(\"%x\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 1) false)\n"
+      "  Mov(Pseudo(\"%y\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 2) false)\n"
+      "  Return(false false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"f\\\" true [] [\\n  Label(\\\".f@asm_ssa_block@0\\\")\\n  Mov(Data(\\\"in\\\" 0) Reg(A) false)\\n  Mov(Reg(A) Pseudo(\\\"%y.b0.v1\\\" 0) false)\\n  Mov(Data(\\\"in\\\" 1) Reg(A) false)\\n  Branch(EQ \\\"L1\\\")\\n  Label(\\\".f@asm_ssa_block@1\\\")\\n  Mov(Data(\\\"in\\\" 2) Reg(A) false)\\n  Mov(Reg(A) ZP(128 0) false)\\n  Mov(ZP(128 0) ZP(128 0) false)\\n  Jump(\\\"L2\\\" [])\\n  Label(\\\"L1\\\")\\n  Mov(Data(\\\"in\\\" 3) Reg(A) false)\\n  Mov(Reg(A) ZP(128 0) false)\\n  Mov(ZP(128 0) ZP(128 0) false)\\n  Label(\\\"L2\\\")\\n  Mov(ZP(128 0) Reg(A) false)\\n  Add(Pseudo(\\\"%y.b0.v1\\\" 0) Reg(A))\\n  Mov(Reg(A) Data(\\\"out\\\" 0) false)\\n  Mov(ZP(128 0) Reg(A) false)\\n  Mov(Reg(A) Data(\\\"out\\\" 1) false)\\n  Mov(Pseudo(\\\"%y.b0.v1\\\" 0) Reg(A) false)\\n  Mov(Reg(A) Data(\\\"out\\\" 2) false)\\n  Return(false false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": [[\"%x.b0.v3\", 128], [\"%x.b0.v1\", 128], [\"%x.b0.v2\", 128]]}, \"spilled\": {\"set\": [\"%y.b0"
+      ".v1\"]}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": []}}}]}",
+      "");
+}
+
+TEST_CASE("optimize_function: f1 synthetic cases (2)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"out\"]}, {\"set\": []}, null], \"kwargs\": {}}",
+      "Function(\"f\" true [] [\n"
+      "  Mov(Pseudo(\"%n\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Reg(X) false)\n"
+      "  Branch(EQ \"L1\")\n"
+      "  Mov(Imm(1) Reg(A) false)\n"
+      "  Label(\"L1\")\n"
+      "  Add(Imm(1) Reg(A))\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Return(false false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"f\\\" true [] [\\n  Label(\\\".f@asm_ssa_block@0\\\")\\n  Inc(Reg(X))\\n  Dec(Reg(X))\\n  Branch(EQ \\\"L1\\\")\\n  Label(\\\".f@asm_ssa_block@1\\\")\\n  Mov(Imm(1) Reg(A) false)\\n  Label(\\\"L1\\\")\\n  Add(Imm(1) Reg(A))\\n  Mov(Reg(A) Data(\\\"out\\\" 0) false)\\n  Return(false false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": []}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": [[\"%n\", \"X\"]]}}}]}",
+      "");
+}
+
+TEST_CASE("optimize_function: f1 synthetic cases (3)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"out\"]}, {\"set\": []}, null], \"kwargs\": {\"local_pins\": {\"dict\": [[\"@1.r\", \"X\"]]}}}",
+      "Function(\"f\" true [] [\n"
+      "  Mov(Imm(5) Pseudo(\"@1.r\" 0) false)\n"
+      "  Label(\"L1\")\n"
+      "  Dec(Pseudo(\"@1.r\" 0))\n"
+      "  Mov(Pseudo(\"@1.r\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Branch(NE \"L1\")\n"
+      "  Return(false false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"f\\\" true [] [\\n  Label(\\\".f@asm_ssa_block@0\\\")\\n  Mov(Imm(5) Reg(X) false)\\n  Label(\\\"L1\\\")\\n  Dec(Reg(X))\\n  Mov(Reg(X) Reg(A) false)\\n  Mov(Reg(A) Data(\\\"out\\\" 0) false)\\n  Branch(NE \\\"L1\\\")\\n  Label(\\\".f@asm_ssa_block@1\\\")\\n  Return(false false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": []}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": [[\"@1.r\", \"X\"]]}}}]}",
+      "");
+}
+
+TEST_CASE("optimize_function: f1 synthetic cases (4)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"f\", \"in\", \"out\"]}, {\"set\": []}, null], \"kwargs\": {\"local_pool\": null, \"local_pins\": null, \"param_hints\": null, \"entry_limits\": {\"dict\": []}, \"recursive_callees\": null}}",
+      "Function(\"f\" true [] [\n"
+      "  Mov(Data(\"in\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%a\" 0) false)\n"
+      "  Mov(Pseudo(\"%a\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Return(false false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"f\\\" true [] [\\n  Label(\\\".f@asm_ssa_block@0\\\")\\n  Mov(Data(\\\"in\\\" 0) Reg(A) false)\\n  Mov(Reg(A) Data(\\\"out\\\" 0) false)\\n  Return(false false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assignments\": {\"dict\": []}, \"spilled\": {\"set\": []}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": []}}}]}",
+      "");
+}
+
+TEST_CASE("optimize_function: f1 synthetic cases (5)") {
+  check_stage_case(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"in\", \"out\"]}, {\"set\": []}, {\"range\": [128, 128, 1]}], \"kwargs\": {}}",
+      "Function(\"f\" true [] [\n"
+      "  Mov(Data(\"in\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%y\" 0) false)\n"
+      "  Mov(Data(\"in\" 1) Reg(A) false)\n"
+      "  Branch(EQ \"L1\")\n"
+      "  Mov(Data(\"in\" 2) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%x\" 0) false)\n"
+      "  Jump(\"L2\" [])\n"
+      "  Label(\"L1\")\n"
+      "  Mov(Data(\"in\" 3) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%x\" 0) false)\n"
+      "  Label(\"L2\")\n"
+      "  Mov(Pseudo(\"%x\" 0) Reg(A) false)\n"
+      "  Add(Pseudo(\"%y\" 0) Reg(A))\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Mov(Pseudo(\"%x\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 1) false)\n"
+      "  Mov(Pseudo(\"%y\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 2) false)\n"
+      "  Return(false false false)\n"
+      "])\n",
+      "{\"tuple\": [{\"asdl\": \"asm_ast\", \"dump\": \"Function(\\\"f\\\" true [] [\\n  Label(\\\".f@asm_ssa_block@0\\\")\\n  Mov(Data(\\\"in\\\" 0) Reg(A) false)\\n  Mov(Reg(A) Pseudo(\\\"%y.b0.v1\\\" 0) false)\\n  Mov(Data(\\\"in\\\" 1) Reg(A) false)\\n  Branch(EQ \\\"L1\\\")\\n  Label(\\\".f@asm_ssa_block@1\\\")\\n  Mov(Data(\\\"in\\\" 2) Reg(A) false)\\n  Mov(Reg(A) Pseudo(\\\"%x.b0.v1\\\" 0) false)\\n  Mov(Pseudo(\\\"%x.b0.v1\\\" 0) Pseudo(\\\"%x.b0.v3\\\" 0) false)\\n  Jump(\\\"L2\\\" [])\\n  Label(\\\"L1\\\")\\n  Mov(Data(\\\"in\\\" 3) Reg(A) false)\\n  Mov(Reg(A) Pseudo(\\\"%x.b0.v2\\\" 0) false)\\n  Mov(Pseudo(\\\"%x.b0.v2\\\" 0) Pseudo(\\\"%x.b0.v3\\\" 0) false)\\n  Label(\\\"L2\\\")\\n  Mov(Pseudo(\\\"%x.b0.v3\\\" 0) Reg(A) false)\\n  Add(Pseudo(\\\"%y.b0.v1\\\" 0) Reg(A))\\n  Mov(Reg(A) Data(\\\"out\\\" 0) false)\\n  Mov(Pseudo(\\\"%x.b0.v3\\\" 0) Reg(A) false)\\n  Mov(Reg(A) Data(\\\"out\\\" 1) false)\\n  Mov(Pseudo(\\\"%y.b0.v1\\\" 0) Reg(A) false)\\n  Mov(Reg(A) Data(\\\"out\\\" 2) false)\\n  Return(false false false)\\n])\\n\"}, {\"object\": \"passes.optimization.register_allocation.Coloring\", \"fields\": {\"assig"
+      "nments\": {\"dict\": []}, \"spilled\": {\"set\": [\"%x.b0.v1\", \"%x.b0.v2\", \"%x.b0.v3\", \"%y.b0.v1\"]}, \"pool\": {\"object\": \"passes.optimization.pool.Pool\", \"fields\": {\"start\": 128}}, \"hwreg_assignments\": {\"dict\": []}}}]}",
+      "");
+}
+
+TEST_CASE("optimize_function: f1 synthetic, a value live across a call that can recurse") {
+  check_stage_call(
+      "optimize_function",
+      "{\"args\": [{\"set\": [\"f\", \"in\", \"out\"]}, {\"set\": []}, null], \"kwargs\": {\"recursive_callees\": {\"set\": [\"f\"]}}}",
+      "{\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}",
+      false,
+      "Function(\"f\" true [] [\n"
+      "  Mov(Data(\"in\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Pseudo(\"%a\" 0) false)\n"
+      "  Call(\"f\" [] [])\n"
+      "  Mov(Pseudo(\"%a\" 0) Reg(A) false)\n"
+      "  Mov(Reg(A) Data(\"out\" 0) false)\n"
+      "  Return(false false false)\n"
+      "])\n",
+      "exception: AssertionError: function 'f': ['%a.b0.v1'] live across the call to 'f', which can recurse\n",
       "");
 }
 

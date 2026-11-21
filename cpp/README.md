@@ -103,6 +103,12 @@ cpp/
                       hwreg_eligibility.*, regalloc.*, all_operands.*,
                       regalloc_stage.*   the register allocation (step 4,
                       group E), and its codecs and runners
+      optimization_asm/optimizer.*, apply_coloring.*, const_static_fold.*,
+                      dead_static.*, optimizer_stage.*   the asm
+                      optimizer's driver (step 4, group F1) and its runners
+      function_local_sizing.*   the sizes of the pools the driver fills
+      local_slot_names.*  the names of a pool's bytes, which
+                      apply_coloring and compute_local_slot_names share
       registry.*      the ported passes, by name, for check-captures
       stage_registry.*  the stage calls' signatures and runners (step 4)
       stage_registry_abi.*  the runners of group A's stage calls
@@ -405,6 +411,61 @@ packed BCD chain, 8 a `register` local, and 13 a spill, and none raises
 `RegallocError`), so `tests/test_regalloc.cpp` ports the direct calls of
 the Python tests of coalescing and of the eligibility and checks the
 coloring of those paths against what the Python functions gave.
+
+### The asm optimizer's driver
+
+Group F1 of step 4 ported the program level of the asm optimizer,
+`optimization_asm/optimizer.py`, as `optimize_program` and
+`optimize_function` (`_optimize_function`) in
+`src/passes/optimization_asm/optimizer.*`, with the passes it calls
+around the round trip: `apply_coloring`, `fold_const_statics`
+(`const_static_fold.*`), and `apply_dead_static_elimination`
+(`dead_static.*`). `compute_local_bytes` and
+`compute_address_taken_bytes`, which compile.py calls on the
+optimizer's first result to size the pools, are in
+`src/passes/function_local_sizing.*`. `optimize_function` runs group D's
+round trip and group E's allocation in Python's order. The stage's
+driver calls `optimize_program` with an `AsmOptimizerOptions`, which
+holds Python's keyword arguments, and gets the program and the
+colorings back in an `OptimizedAsmProgram`.
+
+`apply_coloring` names the bytes of a private pool with
+`local_slot_names` (`src/passes/local_slot_names.*`), which
+`zp_slot_naming.compute_local_slot_names` reads too. Part F2 wrote it,
+and both parts carry the same file.
+
+Python keys a few dicts in an order that comes from iterating a set of
+names: the `register` locals pinned to Y, and the use counts of the
+eligibility projected onto the representatives of the coalescing.
+Nothing reads their order, since the eligibility scan and the
+allocator only look names up, so the C++ driver builds the first in the
+symbol table's order and the second sorted by name. The order of `Coloring.assignments` is read (the first name
+from the source at an address names its slot), and the driver adds
+the coalesced names to it in the order of the coalescing's
+`representative`, as Python does.
+
+`tools/capture_passes.py` records `optimize_program` as `asm_optimizer`,
+and four calls inside the driver as `optimize_function`,
+`apply_coloring`, `fold_const_statics`, and `dead_static_elimination`,
+where `optimize_program` reaches each through its module.
+`src/passes/optimization_asm/optimizer_stage.*` holds the runners. On
+20 Nov 2026 the capture of the whole corpus took 117 seconds with 10
+processes, and every distinct call matched: 2,231 of `asm_optimizer`,
+7,157 of `optimize_function`, 7,016 of `apply_coloring`, 1,110 of
+`fold_const_statics`, 1,771 of `dead_static_elimination`, 937 of
+`compute_local_bytes`, and 1,110 of `compute_address_taken_bytes`.
+A line trace of the five Python modules found the lines that no call
+of the corpus reaches, among them the explicit test of X before a
+branch, most of the rules of `fold_const_statics`, and the store that
+`apply_coloring` can't encode. `tests/test_asm_optimizer_calls.cpp`
+holds 47 calls that reach them, recorded with their results through
+`tests/stage_case.h`. They are calls that four tests of
+tests/test_const_static_fold.py and tests/test_byte_arith_sim.py make
+through compiles, the direct calls of tests/test_dead_static.py,
+test_function_local_sizing.py, and test_hwreg_pinning.py, and calls on
+inputs written for the lines no test reaches, two of which raise. The lines left are a few branches
+of dispatch and the paths for a symbol table without `_table`, which
+C++ has no form for.
 
 ### The ABI and the call graph
 
@@ -1173,3 +1234,8 @@ Python results through `tests/stage_case.h`.
   matching the Python function on every distinct call of the corpus,
   9,735 calls in all, on the 66 distinct calls of the unit tests, and on
   three cases written by hand.
+- 20 Nov 2026: the asm optimizer's driver (group F1 of step 4, "The asm
+  optimizer's driver"): `optimize_program`, `optimize_function`,
+  `apply_coloring`, `fold_const_statics`, the elimination of dead
+  statics, and the sizing of the pools, each matching the Python
+  function on every distinct call of the corpus, 21,332 calls in all.

@@ -297,9 +297,11 @@ STAGE_PASSES = {
     "hwreg_eligibility":
         "passes.optimization_asm.optimizer:scan_hwreg_eligibility",
     "color_graph": "passes.optimization_asm.optimizer:color_graph",
-    # The driver's other calls in optimizer.py: the coloring's rewrite,
-    # and the two passes over the program before and after the
-    # functions.
+    # The driver's other calls in optimizer.py: the round trip of one
+    # function, the coloring's rewrite, and the two passes over the
+    # program before and after the functions.
+    "optimize_function":
+        "passes.optimization_asm.optimizer:_optimize_function",
     "apply_coloring": "passes.optimization_asm.optimizer:apply_coloring",
     "fold_const_statics":
         "passes.optimization_asm.optimizer:fold_const_statics",

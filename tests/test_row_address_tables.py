@@ -3,6 +3,7 @@ the address of a row of a 2-D array in a table of row addresses."""
 
 from __future__ import annotations
 
+import os
 import shutil
 import unittest
 from unittest import mock
@@ -239,7 +240,10 @@ class TestRowAddressTablesSim(unittest.TestCase):
     access is rewritten."""
 
     def _check(self, src: str, expected: int, table: str) -> None:
-        with _ALWAYS:
+        # The replacement of `_saving` reaches only the Python pass, which
+        # doesn't run under C6502_CPP_BACKEND=1.
+        with _ALWAYS, mock.patch.dict(os.environ):
+            os.environ.pop("C6502_CPP_BACKEND", None)
             self.assertIn(f"\n{table}@lo:\n", _codegen(src))
             for optimize in (False, True):
                 with self.subTest(optimize=optimize):

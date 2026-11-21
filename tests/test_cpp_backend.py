@@ -1,9 +1,11 @@
-"""Tests of `C6502_CPP_BACKEND=1`, which runs code generation, from the
-TAC to the `-S` text, in the C++ port (cpp_backend.py).
+"""Tests of `C6502_CPP_BACKEND=1`, which runs everything after the type
+checker, from `c99_to_tac` to the `-S` text, in the C++ port
+(cpp_backend.py).
 tools/compare_backends.py compares the two compilers on the whole
 corpus, and these check the plumbing."""
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -79,32 +81,37 @@ class TestWithTheVariable(unittest.TestCase):
                     )
 
     def test_the_harness_gets_python_s_program(self):
-        # The simulator harness takes the finished asm program back, and
-        # the symbol table gets what the Python passes enter in it: the
-        # carry-flag return chosen for `small`, and the `.reg` local of
-        # its register parameter.
+        # The simulator harness takes the finished asm program and its
+        # slot symbols back. Without inlining, `small` gets the
+        # carry-flag return and a `.reg` local for its register
+        # parameter, and with it, `small` is copied into `main`, so the
+        # harness's patch of the inliner reaches the C++ side.
         import ir_dump
         from sim.harness import compile_to_asm
-        from tools.capture_passes import encode
         source = (
             "#include <stdint.h>\nuint8_t g;\n"
             "static bool small(uint8_t x) { return x < 10; }\n"
             "int main(void) { if (small(g)) g = 1; return g; }\n"
         )
         for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                got = []
-                for cpp in (True, False):
-                    with mock.patch.dict(os.environ):
-                        os.environ.pop("C6502_CPP_BACKEND", None)
-                        if cpp:
-                            os.environ["C6502_CPP_BACKEND"] = "1"
-                        with no_inlining():
-                            prog, symbols, _, slots = compile_to_asm(
+            for inlining in (False, True):
+                with self.subTest(optimize=optimize, inlining=inlining):
+                    got = []
+                    for cpp in (True, False):
+                        with contextlib.ExitStack() as stack:
+                            stack.enter_context(mock.patch.dict(os.environ))
+                            os.environ.pop("C6502_CPP_BACKEND", None)
+                            if cpp:
+                                os.environ["C6502_CPP_BACKEND"] = "1"
+                            if not inlining:
+                                stack.enter_context(no_inlining())
+                            prog, _, _, slots = compile_to_asm(
                                 source, optimize=optimize,
                             )
-                    got.append((ir_dump.dump(prog), slots, encode(symbols)))
-                self.assertEqual(got[0], got[1])
+                        got.append((ir_dump.dump(prog), slots))
+                    self.assertEqual(got[0], got[1])
+                    inlined = "Function(\"small\"" not in got[0][0]
+                    self.assertEqual(inlined, optimize and inlining)
 
     def test_objects_are_python_s(self):
         # Without -O, only the text of `-c` has the link metadata block, whose
@@ -142,10 +149,35 @@ class TestWithTheVariable(unittest.TestCase):
         self.assertEqual(results[0][0], 1)
         self.assertIn("frame offset 261 out of range", results[0][1])
 
+    def test_a_translation_error_keeps_its_message(self):
+        # `c99_to_tac` runs in C++ too, and the RecursionSaveError of a
+        # call marked `[[c6502::save_hardware_stack]]` that can't
+        # recurse comes back with its Python type and message.
+        source = (
+            "void g(void) {}\n"
+            "void f(void) { [[c6502::save_hardware_stack]] g(); }\n"
+        )
+        results = []
+        for cpp in (True, False):
+            env = dict(os.environ)
+            env.pop("C6502_CPP_BACKEND", None)
+            if cpp:
+                env["C6502_CPP_BACKEND"] = "1"
+            done = subprocess.run(
+                [sys.executable, "compile.py", "-", "-S", "-O", "-o", "-"],
+                cwd=_ROOT, env=env, input=source, capture_output=True,
+                text=True,
+            )
+            results.append((done.returncode, done.stderr))
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[0][0], 1)
+        self.assertIn("can't recurse", results[0][1])
+
     def test_python_reads_no_program_back(self):
         # Without the IR checks, the text comes from c6502cpp and Python
-        # loads no dump. With them, it loads the finished asm and asm2
-        # programs to check them.
+        # loads no dump. With them, it loads the TAC that code
+        # generation lowered and the finished asm and asm2 programs to
+        # check them.
         code = (
             "import sys, compile, ir_dump\n"
             "from passes import ir_check\n"
@@ -171,7 +203,7 @@ class TestWithTheVariable(unittest.TestCase):
                     text=True,
                 )
             counts.append(int(done.stdout))
-        self.assertEqual(counts, [0, 4])
+        self.assertEqual(counts, [0, 6])
 
 
 if __name__ == "__main__":

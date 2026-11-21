@@ -1,30 +1,31 @@
 """Runs code generation through the C++ port, for compile.py and the
 simulator harness under `C6502_CPP_BACKEND=1`.
 
-`optimized_stage` and `unoptimized_stage` run everything after the TAC:
-`plan_zero_page`, code generation (under `-O` the part of
-`compile._optimized_front` after the TAC passes, without it
-`fixed_address_layouts`, `tac_to_asm`, and `replace_pseudoregisters`),
-the asm back end's region (or the unoptimized peephole fixed point and
-long branches), the work after it that reads the asm program,
-`asm_to_asm2`, and `asm_emit`, and return the `-S` text. Python doesn't
-read the program back, except under `C6502_CHECK_IR=1`, where the
-response holds the finished asm and asm2 programs for `ir_check`, which
-isn't ported. Without `emit`, the C++ side stops where
-`compile.optimized_asm` (or the harness's unoptimized path) does, and
-returns the finished asm program with its slot symbols, which the
+`codegen` runs everything after the type checker: `c99_to_tac`, under
+`-O` the inliner, `return_in_zero_page`, and the TAC passes of
+`compile._optimized_tac`, then `plan_zero_page`, code generation (under
+`-O` the part of `compile._optimized_front` after the TAC passes,
+without it `fixed_address_layouts`, `tac_to_asm`, and
+`replace_pseudoregisters`), the asm back end's region (or the
+unoptimized peephole fixed point and long branches), the work after it
+that reads the asm program, `asm_to_asm2`, and `asm_emit`, and returns
+the `-S` text. Python doesn't read a program back, except under
+`C6502_CHECK_IR=1`, where the response holds the TAC that code
+generation lowered and the finished asm and asm2 programs for
+`ir_check`, which isn't ported. Without `emit`, the C++ side stops
+where `compile.optimized_asm` (or the harness's unoptimized path) does,
+and returns the finished asm program with its slot symbols, which the
 simulator harness assembles.
 
 Each call starts `c6502cpp backend` (cpp/src/backend.h describes the
 request and the response), found as tools/check_captures.py finds it: at
-the path in `C6502_CPP`, or in cpp/build/bin. The programs go in the
-dump format (ir_dump.py), and the tables in the capture harness's tagged
-JSON (`tools.capture_passes.encode`), so the C++ side reads them with
-the decoders it checks the captured calls with. The response gives the
-changes the stage made to the symbol table, which are entered in
-Python's: the `<param>.reg` locals of `tac_to_asm`, the carry-flag
-returns that `carry_return_choice` chose, and the functions that
-`shared_tails` and `outline_runs` made.
+the path in `C6502_CPP`, or in cpp/build/bin. The c99 program goes in
+the dump format (ir_dump.py), and the tables in the capture harness's
+tagged JSON (`tools.capture_passes.encode`), so the C++ side reads them
+with the decoders it checks the captured calls with. The changes the
+stage makes to the tables stay in C++, since Python reads nothing of
+them after the stage, so Python's tables are left as the type checker
+built them.
 
 compile.py imports this module only when the variable is set, so a
 compile without it imports nothing new.
@@ -33,7 +34,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import replace
 
 import asm_ast
 import ir_dump
@@ -110,38 +110,13 @@ def _sections(data: bytes) -> tuple[dict[str, str], dict[str, str]]:
         end = data.index(b"\n", pos)
         key, _, value = data[pos:end].decode("utf-8").partition(" ")
         pos = end + 1
-        if key in ("asm", "asm2", "text"):
+        if key in ("tac", "asm", "asm2", "text"):
             n = int(value)
             sections[key] = data[pos:pos + n].decode("utf-8")
             pos += n
         else:
             lines[key] = value
     return lines, sections
-
-
-def _enter_changes(symbols, lines: dict[str, str]) -> None:
-    """Enters in `symbols` the changes the response's lines give, as the
-    Python passes make them: each `<param>.reg` local as a local of its
-    parameter's type, each carry-flag return chosen, and each function
-    `[name, owner]` the region made as a copy of its owner's symbol with
-    internal linkage."""
-    from passes.type_checking import LocalAttr, Symbol
-    for local in json.loads(lines["reg_locals"]):
-        param = symbols[local.removesuffix(".reg")]
-        symbols[local] = Symbol(
-            type=param.type, attrs=LocalAttr(register=False),
-        )
-    for name in json.loads(lines["carry"]):
-        # The attributes may be shared with another symbol, so they are
-        # replaced, as `carry_return_choice` replaces them.
-        sym = symbols[name]
-        sym.attrs = replace(sym.attrs, carry_return=True)
-    for name, owner in json.loads(lines["new_functions"]):
-        sym = symbols.get(owner)
-        if sym is not None:
-            symbols[name] = replace(
-                sym, attrs=replace(sym.attrs, is_global=False),
-            )
 
 
 def _dump_c99(prog) -> str:
@@ -179,35 +154,49 @@ def _with_unnamed_params(v):
     return dataclasses.replace(v, **changes) if changes else v
 
 
-def dump_tac(tac) -> str:
-    """The dump of the TAC program `tac`, taken before the TAC passes of
-    `-O` change it, for `plan_zero_page`."""
-    return ir_dump.dump(tac)
+def _check_tac(text: str) -> None:
+    """Checks each function of the TAC that code generation lowered, as
+    the Python TAC optimizer's driver checks each function after its
+    last pass. The symbol table isn't given, since Python's doesn't
+    hold the temporaries the C++ passes added."""
+    import tac_ast
+    from passes import ir_check
+    for tl in ir_dump.load(text, tac_ast).top_level:
+        if isinstance(tl, tac_ast.Function):
+            ir_check.check_tac(tl, after="the C++ TAC passes")
 
 
-def _stage(
-    mode: str, prog, symbols, types, statics, tac_sections: str, *,
-    emit: bool, **flags,
+def codegen(
+    prog, symbols, types, *, optimize: bool, inline: bool = True,
+    link_metadata: bool = False, emit: bool = True,
 ):
-    """Runs the stage mode `mode` and returns the text, or without
-    `emit` the finished asm program and its slot symbols, after entering
-    the stage's changes in `symbols`. Under `C6502_CHECK_IR=1` it
-    checks the finished asm program, and the asm2 program of a text,
-    as compile.py checks them after the pipeline and `asm_to_asm2`."""
+    """Returns the `-S` text of the unit whose type-checked program is
+    `prog`, with the tables `symbols` and `types` the type checker
+    built, which aren't changed. `optimize` is `-O`, `inline` is false
+    when `-O` doesn't inline the calls of small `static` functions
+    (tests/no_inlining.py), and `link_metadata` gives the unoptimized
+    text the link metadata block `-c` assembles. Without `emit`, returns
+    the finished asm program and its slot symbols, `{**slot_symbols,
+    **zp.equs()}` under `-O` and `{**pinned_slot_symbols(fixed_abi),
+    **zp.equs()}` without it, as the simulator harness computes them.
+    Under `C6502_CHECK_IR=1` it checks the TAC that code generation
+    lowered, the finished asm program, and the asm2 program of a text,
+    as compile.py checks them."""
     from passes import ir_check
     from passes.runtime_layout import helper_footprints
     check = ir_check.enabled()
     args = json.dumps({
         "symbols": encode(symbols), "types": encode(types),
-        "statics": encode(statics), "footprints": encode(helper_footprints()),
-        "check_ir": check, **flags,
+        "footprints": encode(helper_footprints()), "optimize": optimize,
+        "inline": inline, "check_ir": check, "link_metadata": link_metadata,
     })
     request = (
-        f"c6502-backend 1\nmode {mode}{'-text' if emit else ''}\n"
-        f"args {args}\n{_section('c99', _dump_c99(prog))}{tac_sections}"
+        f"c6502-backend 2\nmode codegen{'-text' if emit else ''}\n"
+        f"args {args}\n{_section('c99', _dump_c99(prog))}"
     )
     lines, sections = _sections(_send(request))
-    _enter_changes(symbols, lines)
+    if check:
+        _check_tac(sections["tac"])
     if not emit:
         out = ir_dump.load(sections["asm"], asm_ast)
         ir_check.check_asm(out, after="the C++ back end")
@@ -221,42 +210,3 @@ def _stage(
             ir_dump.load(sections["asm2"], asm2_ast), after="asm_to_asm2",
         )
     return sections["text"]
-
-
-def optimized_stage(
-    prog, symbols, types, statics, unoptimized: str, tac, *,
-    emit: bool = True,
-):
-    """Returns the `-S -O` text of the unit whose type-checked program
-    is `prog`, from `tac`, the TAC after `compile._optimized_tac`.
-    `unoptimized` is `dump_tac` of the TAC before those passes, which
-    `plan_zero_page` reads, and `statics` the static-storage names of
-    `symbols` before them, as `_codegen` computes them. Without `emit`,
-    returns the finished asm program and `{**slot_symbols,
-    **zp.equs()}`, as the simulator harness takes them from
-    `optimized_asm`."""
-    tac_sections = (
-        _section("tac", unoptimized)
-        + _section("optimized-tac", ir_dump.dump(tac))
-    )
-    return _stage(
-        "stage-optimized", prog, symbols, types, statics, tac_sections,
-        emit=emit,
-    )
-
-
-def unoptimized_stage(
-    prog, symbols, types, statics, tac, *, link_metadata: bool,
-    emit: bool = True,
-):
-    """Returns the `-S` text of the unit whose type-checked program is
-    `prog`, from `tac`, the TAC of `translate_for_codegen`, with the
-    link metadata block `-c` assembles when `link_metadata` is set.
-    Without `emit`, returns the finished asm program and
-    `{**pinned_slot_symbols(fixed_abi), **zp.equs()}`, as the simulator
-    harness computes them."""
-    return _stage(
-        "stage-unoptimized", prog, symbols, types, statics,
-        _section("tac", ir_dump.dump(tac)), emit=emit,
-        link_metadata=link_metadata,
-    )

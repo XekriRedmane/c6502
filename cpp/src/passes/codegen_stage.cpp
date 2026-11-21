@@ -1,5 +1,6 @@
-// compile.py's code generation stage from the TAC, as `_run_stage`,
-// `_codegen`, `optimized_asm`, and the simulator harness run it.
+// compile.py's code generation stage from the type-checked c99 program,
+// as `_run_stage`, `_codegen`, `optimized_asm`, and the simulator harness
+// run it.
 //
 // `plan_zero_page` comes first. It places the zero-page objects and the
 // runtime's block, and when the block has to move, it sizes HARGS by
@@ -33,6 +34,7 @@
 #include "passes/optimized_front.h"
 #include "passes/replace_pseudoregisters.h"
 #include "passes/slot_sharing.h"
+#include "passes/translate_for_codegen.h"
 #include "passes/zp_link_metadata.h"
 #include "tac_to_asm.h"
 
@@ -152,6 +154,21 @@ NameSet carry_functions(const SymbolTable& symbols) {
   for (const auto& [name, sym] : symbols) {
     const auto* fun = std::get_if<FunAttr>(&sym.attrs);
     if (fun != nullptr && fun->carry_return) {
+      out.insert(name);
+    }
+  }
+  return out;
+}
+
+// Returns every name of static storage in `symbols`, which
+// `replace_pseudoregisters` and the asm optimizer take as
+// `extra_statics`, so that the pseudos of the externs the asm program
+// doesn't otherwise know about aren't mistaken for locals
+// (`compile._static_names`).
+NameSet static_names(const SymbolTable& symbols) {
+  NameSet out;
+  for (const auto& [name, sym] : symbols) {
+    if (std::holds_alternative<StaticAttr>(sym.attrs)) {
       out.insert(name);
     }
   }
@@ -306,6 +323,26 @@ StageResult unoptimized_stage(const tac_ast::Program& tac, StageTables& tables,
     out.harness_symbols = equs;
   }
   out.changes = symbol_changes(tables.symbols, symbols_before, carry_before);
+  return out;
+}
+
+StageResult codegen(StageTables& tables, const CodegenOptions& options) {
+  tac_ast::Program tac = translate_for_codegen(tables.c99, tables.symbols, tables.types,
+                                               options.optimize, options.inline_calls);
+  // `_codegen` names the statics before the TAC passes add the halves
+  // of the tables of row addresses.
+  tables.statics = static_names(tables.symbols);
+  StageResult out;
+  if (!options.optimize) {
+    out = unoptimized_stage(tac, tables, options.link_metadata, options.emit);
+    out.tac = std::move(tac);
+    return out;
+  }
+  // `plan_zero_page` reads the TAC from before the TAC passes.
+  const tac_ast::Program unoptimized = tac;
+  tac = optimized_tac(std::move(tac), tables.symbols, tables.types);
+  out = optimized_stage(unoptimized, tac, tables, options.emit);
+  out.tac = std::move(tac);
   return out;
 }
 

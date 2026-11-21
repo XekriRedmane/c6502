@@ -201,6 +201,9 @@ from passes.type_checking import (
 from c99_to_tac import translate_program as translate_to_tac
 from passes.return_in_zero_page import return_pointers_in_zero_page
 from passes.optimization.inline_functions import inline_functions
+# The inliner itself, which `_inlining` tells apart from the stand-in
+# that tests/no_inlining.py patches in as `inline_functions`.
+_INLINER = inline_functions
 from passes.constant_store_order import apply_constant_store_order
 from passes.shared_tails import apply_shared_tails
 from passes.outline_runs import apply_outline_runs
@@ -562,12 +565,11 @@ def _run_stage(
         prog, symbols, types = type_check_program(
             _resolved(source, optimize=optimize),
         )
-        tac = translate_for_codegen(prog, symbols, types, optimize)
         if _cpp_backend():
             return _cpp_codegen(
-                prog, symbols, types, optimize, tac,
-                link_metadata=link_metadata,
+                prog, symbols, types, optimize, link_metadata=link_metadata,
             )
+        tac = translate_for_codegen(prog, symbols, types, optimize)
         zp = plan_zero_page(tac, symbols, types, promote=optimize)
         with zero_page_in_effect(zp):
             return _codegen(
@@ -877,8 +879,8 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     so the simulator runs the code the CLI emits. `statics` names
     every static-storage object, and `zp` is the translation unit's
     zero-page plan (passes/zp_globals.py), which must be in effect.
-    Under `C6502_CPP_BACKEND=1`, neither calls it, and the steps after
-    `_optimized_tac` run in C++ (`_cpp_codegen`)."""
+    Under `C6502_CPP_BACKEND=1`, neither calls it, and everything after
+    the type checker runs in C++ (`_cpp_codegen`)."""
     front = _optimized_front(prog, symbols, types, zp, tac, statics)
     asm2, all_slot_symbols = front.asm, front.slot_symbols
     abi, shares, noreturn = front.abi, front.shares, front.noreturn
@@ -1019,10 +1021,20 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
 
 
 def _cpp_backend() -> bool:
-    """Whether `C6502_CPP_BACKEND=1` hands code generation, from the
-    TAC to the `-S` text, to the C++ port (cpp_backend.py). The variable
-    is read at each call, so a process can set it before compiling."""
+    """Whether `C6502_CPP_BACKEND=1` hands everything after the type
+    checker, from `c99_to_tac` to the `-S` text, to the C++ port
+    (cpp_backend.py). The variable is read at each call, so a process
+    can set it before compiling."""
     return os.environ.get("C6502_CPP_BACKEND") == "1"
+
+
+def _inlining() -> bool:
+    """Whether `-O` inlines the calls of small `static` functions. A
+    test that checks a function's own code turns that off by patching
+    `compile.inline_functions`, which `translate_for_codegen` calls
+    (tests/no_inlining.py), and the request to the C++ port carries the
+    choice, since the C++ side runs its own inliner."""
+    return inline_functions is _INLINER
 
 
 def _static_names(symbols) -> frozenset[str]:
@@ -1037,31 +1049,22 @@ def _static_names(symbols) -> frozenset[str]:
 
 
 def _cpp_codegen(
-    prog, symbols, types, optimize: bool, tac, link_metadata: bool = False,
+    prog, symbols, types, optimize: bool, link_metadata: bool = False,
     *, emit: bool = True,
 ):
     """The `-S` text of `_codegen` under `C6502_CPP_BACKEND=1`, from the
-    TAC of `translate_for_codegen`. Under `-O` the TAC passes of
-    `_optimized_tac` run here, and everything after them, from
-    `plan_zero_page` to the text, runs in one call of `c6502cpp backend`
-    (cpp_backend.py). `plan_zero_page` reads the TAC from before those
-    passes, which goes in the request too. Without `emit`, the call stops
-    where `optimized_asm` (or the simulator harness's unoptimized path)
-    does and returns the finished asm program and its slot symbols,
-    which the simulator harness assembles."""
+    type-checked program `prog` and the tables `symbols` and `types`.
+    Everything after the type checker, `translate_for_codegen`, under
+    `-O` `_optimized_tac`, and code generation through the text, runs in
+    one call of `c6502cpp backend` (cpp_backend.py), which leaves the
+    tables as the type checker built them. Without `emit`, the call
+    stops where `optimized_asm` (or the simulator harness's unoptimized
+    path) does and returns the finished asm program and its slot
+    symbols, which the simulator harness assembles."""
     import cpp_backend
-    # `_codegen` names the statics before the TAC passes add the halves
-    # of the tables of row addresses.
-    statics = _static_names(symbols)
-    if not optimize:
-        return cpp_backend.unoptimized_stage(
-            prog, symbols, types, statics, tac,
-            link_metadata=link_metadata, emit=emit,
-        )
-    unoptimized = cpp_backend.dump_tac(tac)
-    tac = _optimized_tac(tac, symbols, types)
-    return cpp_backend.optimized_stage(
-        prog, symbols, types, statics, unoptimized, tac, emit=emit,
+    return cpp_backend.codegen(
+        prog, symbols, types, optimize=optimize, inline=_inlining(),
+        link_metadata=link_metadata, emit=emit,
     )
 
 

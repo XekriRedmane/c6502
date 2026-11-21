@@ -1,8 +1,9 @@
-// The code generation stage of compile.py from the TAC to the `-S` text
-// in one call: `plan_zero_page`, the `-O` pipeline of `_optimized_front`
-// after the TAC optimizer (or the unoptimized pipeline's code
-// generation), the back end's region, and emission, which
-// `c6502cpp backend`'s stage modes run for compile.py.
+// The code generation stage of compile.py from the type-checked c99
+// program to the `-S` text in one call: `translate_for_codegen`, under
+// `-O` the TAC passes of `_optimized_tac`, `plan_zero_page`, the `-O`
+// pipeline of `_optimized_front` after the TAC optimizer (or the
+// unoptimized pipeline's code generation), the back end's region, and
+// emission, which `c6502cpp backend` runs for compile.py.
 #pragma once
 
 #include <string>
@@ -17,12 +18,12 @@
 namespace c6502::passes {
 
 // The tables and values of a compile that the stage reads besides the
-// TAC: the type-checked c99 program, which `select_abi` and
-// `fixed_address_layouts` read, the symbol table, which the stage
-// changes as Python's passes do, the type table, every name of static
-// storage before the TAC optimizer ran (`_codegen`'s `statics`), and the
-// HARGS footprints of the runtime helpers, which Python measures from
-// rtlib/helpers.py.
+// TAC: the type-checked c99 program, which `c99_to_tac` changes and
+// `select_abi` and `fixed_address_layouts` read, the symbol table, which
+// the stage changes as Python's passes do, the type table, every name of
+// static storage before the TAC optimizer ran (`_codegen`'s `statics`,
+// which `codegen` sets), and the HARGS footprints of the runtime
+// helpers, which Python measures from rtlib/helpers.py.
 struct StageTables {
   c99_ast::Program c99;
   SymbolTable symbols;
@@ -53,6 +54,21 @@ struct StageResult {
   EmitResult emitted;
   OrderedSymbolAddrs harness_symbols;
   SymbolChanges changes;
+  // The TAC that code generation lowered, which `codegen` sets.
+  tac_ast::Program tac;
+};
+
+// What a compile asks of `codegen` besides its tables: whether `-O` is
+// on, whether `-O` inlines the calls of small `static` functions
+// (tests/no_inlining.py turns that off), whether the unoptimized text
+// carries the link metadata `-c` assembles, and whether the stage goes
+// on to the text or stops where the simulator harness takes the
+// program.
+struct CodegenOptions {
+  bool optimize = false;
+  bool inline_calls = true;
+  bool link_metadata = false;
+  bool emit = true;
 };
 
 // Runs compile.py's code generation under `-O`: `plan_zero_page` on
@@ -69,5 +85,13 @@ StageResult optimized_stage(const tac_ast::Program& unoptimized_tac, const tac_a
 // the link metadata `-c` assembles when `link_metadata` is set.
 StageResult unoptimized_stage(const tac_ast::Program& tac, StageTables& tables,
                               bool link_metadata, bool emit);
+
+// Runs compile.py's code generation from the type-checked c99 program
+// `tables.c99`: `translate_for_codegen`, then under `-O` the TAC passes
+// of `_optimized_tac` and `optimized_stage`, which plans the zero page
+// on the TAC from before those passes, and without it
+// `unoptimized_stage`. `tables.statics` is set to the names of static
+// storage after `translate_for_codegen`, as `_codegen` computes them.
+StageResult codegen(StageTables& tables, const CodegenOptions& options);
 
 }  // namespace c6502::passes

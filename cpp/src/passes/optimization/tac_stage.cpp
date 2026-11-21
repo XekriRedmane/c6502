@@ -16,6 +16,7 @@
 #include "passes/optimization/fold_producer_jumps.h"
 #include "passes/optimization/framework.h"
 #include "passes/optimization/jump_thread.h"
+#include "passes/optimization/known_compare_thread.h"
 #include "passes/optimization/licm.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/narrow_byte_bitwise.h"
@@ -242,7 +243,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_move_steps_onto_edges"),
       tac_pass("tac_split_three_way_compares", &run_tac_pass<&split_three_way_compares>),
       tac_pass("tac_fold_short_circuit_jump", &run_tac_pass<&fold_short_circuit_jumps>),
-      tac_pass("tac_thread_known_compares"),
+      tac_pass("tac_thread_known_compares", &run_tac_pass<&thread_known_compares>),
       // The program-level calls. `c99_to_tac` changes the c99 program
       // it is given, which its `mutated` line holds under `input`. The
       // unit tests pass no type table.

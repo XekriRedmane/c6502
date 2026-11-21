@@ -57,4 +57,33 @@ std::vector<tac::Type_static_init> plane_init(const std::vector<std::vector<Valu
   return init;
 }
 
+std::optional<int> width(const c99_ast::Type_data_type& t) {
+  using DK = c99_ast::Kind_data_type;
+  switch (c99_ast::kind(t)) {
+    case DK::Char:
+    case DK::SChar:
+    case DK::UChar:
+    case DK::Bool:
+      return 1;
+    case DK::Int:
+    case DK::UInt:
+    case DK::Short:
+    case DK::UShort:
+    case DK::Pointer:
+      return 2;
+    case DK::Long:
+    case DK::ULong:
+    case DK::Float:
+      return 4;
+    case DK::LongLong:
+    case DK::ULongLong:
+    case DK::Double:
+      return 8;
+    case DK::BitInt:
+      return static_cast<int>((std::get<c99_ast::BitInt>(t).width + 7) / 8);
+    default:
+      return std::nullopt;
+  }
+}
+
 }  // namespace c6502::passes::split_tables

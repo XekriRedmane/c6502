@@ -9,13 +9,15 @@ the reference until the port is done.
 So far the port has the build, the IR classes generated from the four
 `.asdl` files, the dump format that carries an IR value between the
 two compilers, the helpers that the asm passes share, and all of code
-generation from the TAC to the `-S` text: the zero-page plan, the ABI,
-the allocators, `tac_to_asm`, the asm optimizer, every asm pass of the
-back end, and emission, each of which matches the Python code on every
-input of the corpus it was checked on. With `C6502_CPP_BACKEND=1`,
-compile.py hands the TAC to C++ and takes the `-S` text back ("The
-stage's driver", "The back end through c6502cpp", and "Emission",
-below).
+generation from the type-checked c99 program to the `-S` text:
+`c99_to_tac`, the inliner and the other passes over the whole TAC
+program, the TAC optimizer, the zero-page plan, the ABI, the
+allocators, `tac_to_asm`, the asm optimizer, every asm pass of the back
+end, and emission, each of which matches the Python code on every input
+of the corpus it was checked on. With `C6502_CPP_BACKEND=1`, compile.py
+hands the type-checked c99 program to C++ and takes the `-S` text back
+("The stage's driver", "The back end through c6502cpp", and
+"Emission", below).
 
 ## Building
 
@@ -92,8 +94,12 @@ cpp/
                       unoptimized pipeline's fixed point and long branches
       codegen.*       the region through emission, the end of `_codegen`
       optimized_front.*   `_optimized_front` after the TAC optimizer
-      codegen_stage.* the stage from the TAC to the text, which the
-                      backend command runs
+      codegen_stage.* the stage from the c99 program to the text, which
+                      the backend command runs
+      translate_for_codegen.*   compile.py's `translate_for_codegen`
+                      and `_optimized_tac`
+      return_in_zero_page.*   the `F@ret` objects of `static` pointer
+                      results (step 5, group H)
       asm_to_asm2.*   the lowering to the asm2 IR
       emission_args.* the decoders of the arguments of the work after the
                       region, for the backend command and the registry
@@ -154,6 +160,10 @@ cpp/
                       short_circuit_jump_fold.*, known_compare_thread.*
                       the passes after the fixed point and after SSA
                       (step 5, group G)
+      optimization/inline_functions.*, row_address_tables.*,
+                      dispatch_pointer_array.*, split_tables.*
+                      the passes over the whole TAC program (step 5,
+                      group H)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -957,6 +967,51 @@ tests matched: 49, 54, 56, 54, 17, 65, and 63 of them. Three tests of
 which the codec can't read, and those calls match with a
 `NoInitializer` in its place, which the pass doesn't read.
 
+### The program level (group H)
+
+The passes of group H of step 5 run once over the whole program, and
+each has a header named for its Python module and takes the program by
+value with the tables it reads: `inline_functions`
+(`src/passes/optimization/inline_functions.h`), `return_pointers_in_zero_page`
+(`src/passes/return_in_zero_page.h`), `apply_row_address_tables`
+(`row_address_tables.h`), `dispatch_const_pointer_arrays`
+(`dispatch_pointer_array.h`), and `apply_split_tables`, which joins
+`plane_init` and `width` in `split_tables.h`. The inliner reads three
+helpers of `abi_selection` that its header now gives,
+`function_decls_by_name`, `has_register_local`, and
+`has_register_request`.
+
+The inliner's estimate of cost runs `optimize_function` on a copy of
+the callee with a copy of the symbol table. Python's copy of the table
+is shallow, so its `Symbol` objects are the compile's, and a pass that
+changed a symbol in place during an estimate would change the
+compile's table. No pass of the TAC optimizer does, which is why a copy
+of the symbols as values gives Python's results. The inliner takes its
+next `@N` and `%N` from the largest in the whole table, and it numbers
+its copies' labels `.ik_` in the order it copies them, so the order in
+which it takes the functions (leaves first, by name within a round) is
+part of its output.
+
+`passes::translate_for_codegen` and `optimized_tac`
+(`src/passes/translate_for_codegen.*`) are compile.py's functions of
+those names, and `passes::codegen` (`src/passes/codegen_stage.*`) runs
+them before the stage ("The stage's driver").
+
+On 21 Nov 2026 each pass matched the Python function on every distinct
+call of the corpus: 1,150 calls of `inline_functions`, 1,146 each of
+`return_pointers_in_zero_page` and `row_address_tables`, and 1,110 each
+of `dispatch_const_pointer_arrays` and `split_tables`, in the builds of
+MSVC 19.36 and GCC 12.2. Few of those calls change the program (26, 7,
+7, 1, and 3), and most of those are the games' units, of 220 KB to 1
+MB each, so `tests/test_<module>.cpp` holds the calls that the Python
+unit tests of the five modules make, recorded with the capture
+harness's wrapper on each function while those tests ran, and the
+corpus calls under 50 KB that change the program. Every distinct call
+of the unit tests matched, 159 in all, except two of
+`row_address_tables` made by tests that replace its estimate
+(`_saving`) with one that makes every table pay, which the C++ pass
+doesn't have. The tests hold 142 calls.
+
 ## The TAC optimizer's driver
 
 `passes::framework::PhaseDriver` (`src/passes/optimization/driver.h`)
@@ -976,10 +1031,13 @@ whose group hasn't landed has a null pointer there, and the group that
 ports it sets the pointer, which is one line of the table and an
 `#include`. The driver throws `InternalError` at a null entry, and
 `tac_driver().complete()` reports whether the table is full. Until it
-is, the runners of `tac_optimize_function` and `optimize_tac` in
-tac_stage.cpp are null, so `check-captures` reads those records
-without running them, and once it is, the runners call
-`optimize_function` and `optimize_program`. `tests/test_tac_driver.cpp`
+was, the runners of `tac_optimize_function` and `optimize_tac` in
+tac_stage.cpp were null, so `check-captures` read those records
+without running them, and with every entry filled the runners call
+`optimize_function` and `optimize_program`. On 21 Nov 2026 the whole
+driver matched Python's on all 4,054 distinct calls of
+`tac_optimize_function` of the corpus, the inliner's estimates of cost
+among them, and on all 1,146 of `optimize_tac`. `tests/test_tac_driver.cpp`
 checks the table's names against the signatures of tac_stage.cpp,
 which tests/test_capture_passes.py checks against Python's lists, and
 runs a driver of the passes ported so far on three functions, with the
@@ -1359,8 +1417,15 @@ with the arguments compile.py gives it, in compile.py's order, since
 several change the symbol table that later ones read. It returns what
 `_OptimizedFront` holds besides the TAC.
 
-`passes::optimized_stage` and `unoptimized_stage`
-(`src/passes/codegen_stage.*`) run the whole stage. Each starts with
+`passes::codegen` (`src/passes/codegen_stage.*`) runs the whole of
+code generation from the type-checked c99 program:
+`translate_for_codegen`, the names of static storage that `_codegen`
+takes at that point, and under `-O` a copy of the TAC for
+`plan_zero_page`, `optimized_tac`, and `optimized_stage`, and without
+it `unoptimized_stage`. It keeps the TAC it lowered for the IR checks.
+
+`passes::optimized_stage` and `unoptimized_stage` run the stage from
+the TAC. Each starts with
 `plan_zero_page`, whose HARGS measurement lowers the unoptimized TAC
 with `tac_to_asm` in a default `AsmContext`, since Python measures it
 before `zero_page_in_effect` sets the plan. The plan's layout and
@@ -1424,22 +1489,27 @@ function whose symbol it copies. `passes::unoptimized_region` is the
 unoptimized pipeline's fixed point and long branches.
 
 `c6502cpp backend` (`src/backend.*`) reads a request on stdin and runs
-the stage from the TAC ("The stage's driver", below). `src/backend.h`
-describes the request and the response. A bug the passes report
+`passes::codegen` from the type-checked c99 program ("The stage's
+driver", above). `src/backend.h` describes the request and the
+response. A bug the passes report
 (`InternalError`) exits with status 3, and a problem with the program
 (`CompileError`) with status 4, its Python type on the first line of
 stderr and its message after it.
 
-With `C6502_CPP_BACKEND=1`, compile.py's `_run_stage` hands the TAC of
-`translate_for_codegen` to `c6502cpp backend` through `cpp_backend.py`
-(after the TAC passes of `_optimized_tac` under `-O`), one process per
-compile, and the `-S` text comes back. The simulator harness hands it
-the same TAC and takes back the finished asm program, which it
-assembles. `cpp_backend.py` enters in the symbol table what the stage
-changed in it, raises an exit status of 3 as an `AssertionError` with
-the C++ message and one of 4 as the Python exception of the type
-named, and under `C6502_CHECK_IR=1` checks the finished asm program
-(and the asm2 program of a text) once, since `ir_check` isn't ported.
+With `C6502_CPP_BACKEND=1`, compile.py's `_run_stage` hands the
+type-checked c99 program and its tables to `c6502cpp backend` through
+`cpp_backend.py`, one process per compile, and the `-S` text comes
+back, for `-S`, for `-c`, and for links of C inputs. `--tac` stays in
+Python. The request says whether `-O` inlines, which is false when a
+test has patched `compile.inline_functions` (tests/no_inlining.py,
+`compile._inlining`). The simulator harness hands C++ the same program
+and takes back the finished asm program, which it assembles. The tables
+the stage changes stay in C++, since Python reads nothing of them
+afterward. `cpp_backend.py` raises an exit status of 3 as an
+`AssertionError` with the C++ message and one of 4 as the Python
+exception of the type named, and under `C6502_CHECK_IR=1` checks the
+TAC that code generation lowered, the finished asm program, and the
+asm2 program of a text once each, since `ir_check` isn't ported.
 compile.py reads the variable at each compile and, without it, imports
 none of this.
 
@@ -1761,3 +1831,14 @@ Python results through `tests/stage_case.h`.
   all, and on the 358 distinct calls of the Python unit tests, in the
   builds of MSVC 19.36 and GCC 12.2. Their entries in the driver's
   table are filled.
+- 21 Nov 2026: group H of step 5, the program level ("The program
+  level (group H)"): `inline_functions`, `return_pointers_in_zero_page`,
+  `apply_row_address_tables`, `dispatch_const_pointer_arrays`, and
+  `apply_split_tables`, each matching the Python function on every
+  distinct call of the corpus, 5,662 calls in all, and on the calls of
+  the Python unit tests, in the builds of MSVC 19.36 and GCC 12.2. The
+  whole TAC optimizer's driver matches on every call of the corpus.
+  `passes::codegen` runs everything after the type checker, and with
+  `C6502_CPP_BACKEND=1` compile.py hands C++ the type-checked c99
+  program. `tools/compare_backends.py` found the same output for all
+  3,576 compiles.

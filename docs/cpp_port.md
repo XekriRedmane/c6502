@@ -981,3 +981,54 @@ unreachable-code elimination changed the Phis of its input in place
   matched. The passes needed no helper from another group. Their
   entries in the driver's table are filled, which leaves those of
   group D.
+- 21 Nov 2026: group H of step 5, and step 5 is done. With every entry
+  of the driver's table filled, the C++ TAC optimizer matches Python's
+  on all 4,054 distinct calls of `tac_optimize_function` of the corpus,
+  the inliner's estimates of cost among them, and on all 1,146 of
+  `optimize_tac`, with no difference to fix. `inline_functions`,
+  `return_pointers_in_zero_page`, `apply_row_address_tables`,
+  `dispatch_const_pointer_arrays`, and `apply_split_tables` are ported
+  (cpp/README.md, "The program level (group H)"), and each matches the
+  Python function on every distinct call of the corpus in the builds of
+  MSVC 19.36 and GCC 12.2: 1,150 calls of the inliner, 1,146 each of the
+  next two, and 1,110 each of the last two. Few of those calls change
+  the program, so the C++ tests hold 142 of the 159 distinct calls that
+  the Python unit tests of the five modules make, every one of which
+  matched except two made with the estimate of `row_address_tables`
+  replaced. compile.py's `translate_for_codegen` and `_optimized_tac` are
+  `passes::translate_for_codegen` and `optimized_tac`, and
+  `passes::codegen` runs them and the stage of step 4 in one call. With
+  `C6502_CPP_BACKEND=1`, compile.py hands `c6502cpp backend` the
+  type-checked c99 program and its tables, after `unroll_program`, and
+  takes back the `-S` text, for `-S`, `-c`, and links of C inputs, and
+  the simulator harness takes back the finished asm program. The request
+  says whether `-O` inlines, which a test's patch of
+  `compile.inline_functions` turns off (`compile._inlining`). `--tac`
+  stays in Python. The tables the stage changes stay in C++, so the
+  response no longer lists the changes to the symbol table, and under
+  `C6502_CHECK_IR=1` it holds the TAC that code generation lowered,
+  which `ir_check.check_tac` checks once per function.
+  `tools/compare_backends.py` found the same output, exit status, and
+  messages for all 3,576 compiles of the corpus, and a new capture of
+  step 5 (`--passes tac` and `--passes tac-stage`) matched on all
+  355,422 of its distinct records. The suite passes with the variable
+  set (4,891 tests, with `C6502_CHECK_IR=1`) and without
+  it, and so do the four fuzzers with it set (300 programs each of
+  `exprs`, `calls`, and `stmts`, and 100 of `yarpgen`, none wrong). The
+  first run of the suite found that a test of the tables of row
+  addresses replaced the Python estimate `_saving` and compiled through
+  compile.py, which the C++ pass doesn't see, so that test now keeps the
+  variable unset. With the variable unset and set, guards.c took 2.01
+  and 1.13 seconds, the Lode Runner units 13.6 and 10.4, and 20
+  `fuzz.stmts` programs 16.1 and 5.5, against Robert's target of 5. A
+  compile of guards.c spends 0.34 s in the C++ process, and the rest is
+  Python's imports (about 0.55 s) and its parser. Run in one process
+  after the imports, the 20 fuzz programs took 4.98 s, 2.62 s of it in
+  the 40 calls of `c6502cpp backend`. Under the profiler, which about
+  doubles the Python time, the Python side of those 20 programs spent
+  2.2 s in the Lark parser, which parses each program three times (once
+  for the TAC interpreter and once for each of the two compiles of the
+  harness), 1.7 s in reading back the asm programs and the TAC for the
+  IR checks the fuzzers turn on, 1.5 s in the simulator's assembler,
+  0.6 s in the preprocessor, and 0.5 s in building the simulator's
+  runtime. The TAC interpreter's own run took 0.06 s.

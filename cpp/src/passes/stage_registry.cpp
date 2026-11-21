@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "passes/optimization_asm/optimizer_stage.h"
 #include "passes/optimization_asm/regalloc_stage.h"
 #include "passes/optimization_asm/ssa_stage.h"
 #include "passes/prologue_synthesis.h"
@@ -186,11 +187,15 @@ std::vector<StageSignature> make_signatures() {
                   {"reserved_zp", rt<IntSet>},
                   {"recursion_saves", rt<Cycles>}},
        .output = rt<Pair<AsmProgramC, Colorings>>},
-      {.name = "compute_local_bytes", .input = "asm_ast", .output = rt<Addrs>},
+      {.name = "compute_local_bytes",
+       .input = "asm_ast",
+       .output = rt<Addrs>,
+       .run = &optimizer_stage::run_compute_local_bytes},
       {.name = "compute_address_taken_bytes",
        .input = "asm_ast",
-       .args = {rt<Sym>, rt<Types>},
-       .output = rt<Addrs>},
+       .args = {rt<Optional<Sym>>, rt<Optional<Types>>},
+       .output = rt<Addrs>,
+       .run = &optimizer_stage::run_compute_address_taken_bytes},
       {.name = "allocate_function_locals",
        .input = "tac_ast",
        .args = {rt<AbiC>, rt<Addrs>},
@@ -313,6 +318,20 @@ std::vector<StageSignature> make_signatures() {
                   {"rep_map", rt<Optional<DictOf<Str, Str>>>}},
        .output = rt<ColoringC>,
        .run = &regalloc_stage::run_color_graph},
+      // The calls the asm optimizer's driver makes, whose runners are in
+      // src/passes/optimization_asm/optimizer_stage.cpp.
+      {.name = "apply_coloring",
+       .input = "asm_ast",
+       .args = {rt<ColoringC>},
+       .kwargs = {{"local_pool", rt<Optional<ListOf<IntC>>>}},
+       .run = &optimizer_stage::run_apply_coloring},
+      {.name = "fold_const_statics",
+       .input = "asm_ast",
+       .kwargs = {{"symbols", rt<Optional<Sym>>}},
+       .run = &optimizer_stage::run_fold_const_statics},
+      {.name = "dead_static_elimination",
+       .input = "asm_ast",
+       .run = &optimizer_stage::run_dead_static_elimination},
   };
 }
 

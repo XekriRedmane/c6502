@@ -297,6 +297,14 @@ STAGE_PASSES = {
     "hwreg_eligibility":
         "passes.optimization_asm.optimizer:scan_hwreg_eligibility",
     "color_graph": "passes.optimization_asm.optimizer:color_graph",
+    # The driver's other calls in optimizer.py: the coloring's rewrite,
+    # and the two passes over the program before and after the
+    # functions.
+    "apply_coloring": "passes.optimization_asm.optimizer:apply_coloring",
+    "fold_const_statics":
+        "passes.optimization_asm.optimizer:fold_const_statics",
+    "dead_static_elimination":
+        "passes.optimization_asm.optimizer:apply_dead_static_elimination",
 }
 
 # The stage calls that change their first argument in place where the

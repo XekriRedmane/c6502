@@ -419,9 +419,7 @@ class TestFrontCapture(unittest.TestCase):
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        n = len(self._texts("parse"))
-        self.assertIn(f"parse: {n} calls, {n} round-trip\n", result.stdout)
-        for name in ("pp_number_at", "loop_labeling"):
+        for name in ("parse", "pp_number_at", "loop_labeling"):
             n = len(self._texts(name))
             self.assertIn(f"{name}: {n} calls, {n} round-trip, "
                           f"{n} match, 0 differ", result.stdout)

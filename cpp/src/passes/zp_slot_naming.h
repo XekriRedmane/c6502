@@ -10,7 +10,9 @@
 // allocator gives a function, where `<source>` is the source spelling
 // of the C variable that the slot holds when it traces through SSA
 // renaming and move coalescing, and a number when it doesn't.
-// `local_slot_names` and `compute_local_slot_names` aren't ported yet.
+// `local_slot_names`, which names one function's pool, is in
+// src/passes/local_slot_names.h, since the asm optimizer's
+// `apply_coloring` reads it too.
 #pragma once
 
 #include <optional>
@@ -20,6 +22,9 @@
 #include <vector>
 
 #include "asdl/runtime.h"
+#include "ordered_map.h"
+#include "passes/address_taken_zp.h"
+#include "passes/zp_local_allocation.h"
 
 namespace c6502::passes {
 
@@ -60,5 +65,44 @@ std::pair<std::optional<std::string>, asdl::Int> parse_pseudo_name(std::string_v
 std::vector<std::string> param_slot_symbols(std::string_view fn_name,
                                             const std::vector<std::optional<std::string>>& param_names,
                                             const std::vector<asdl::Int>& param_sizes);
+
+// The slot symbols of every pool byte, by function, each list parallel
+// to the function's pool.
+using SlotNamesByFunction = OrderedMap<std::string, std::vector<std::string>>;
+
+// Returns the slot symbol of each byte of each function's pool, in the
+// pool's order, which compile.py computes once after the last run of the
+// asm optimizer and gives to `build_local_slot_symbols` (the `EQU`
+// bindings) and `build_metadata` (the linker's records). A function with
+// no coloring has numbered names (`__local_<fn>__<k>`), and one with a
+// coloring has `local_slot_names`' names. When `assignments` and
+// `symbols` (the address-taken locals in zero page and their slot
+// symbols) are both given, each pool byte that holds an address-taken
+// local takes that local's symbol in place of the name the coloring or
+// the numbering gives it. The address-taken pseudo isn't in
+// `coloring.assignments`, and the bytes the coloring holds keep their
+// names from the source.
+SlotNamesByFunction compute_local_slot_names(const LocalPools& local_pools,
+                                             const ColoringsByFunction& colorings,
+                                             const AddressTakenAssignments* assignments = nullptr,
+                                             const AddressTakenSymbols* symbols = nullptr);
+
+// The slot symbols of the pools, as compile.py computes them after the
+// asm optimizer's last run: the names of each pool's bytes, and the
+// address of each name, which is the `EQU` table of the bodies' locals.
+struct LocalSlots {
+  SlotNamesByFunction slot_names_by_fn;
+  OrderedMap<std::string, asdl::Int> slot_symbols;
+};
+
+// Returns the names `compute_local_slot_names` gives the pools' bytes
+// and the `EQU` table `build_local_slot_symbols` makes of them, the two
+// calls compile.py makes in that order. `assignments` and `symbols` may
+// be null, as in `compute_local_slot_names`, which gives what Python's
+// `build_local_slot_symbols(local_pools, colorings)` computes when it
+// isn't given the names.
+LocalSlots local_slots(const LocalPools& local_pools, const ColoringsByFunction& colorings,
+                       const AddressTakenAssignments* assignments = nullptr,
+                       const AddressTakenSymbols* symbols = nullptr);
 
 }  // namespace c6502::passes

@@ -50,8 +50,9 @@ LocalPools allocate_function_locals(const tac_ast::Program& prog, const Abi& abi
 // in pool order (`compute_local_slot_names`), or `__local_<fn>__<k>` for
 // a function it has no entry for, or when it is null. Python can compute
 // the names from the colorings when it isn't given them, which is
-// `compute_local_slot_names` of group F, so a caller with colorings
-// computes the names first.
+// `compute_local_slot_names`, so a caller with colorings calls
+// `local_slots` (src/passes/zp_slot_naming.h), which computes the names
+// and then calls this.
 OrderedMap<std::string, asdl::Int> build_local_slot_symbols(
     const LocalPools& local_pools,
     const OrderedMap<std::string, std::vector<std::string>>* slot_names_by_fn);

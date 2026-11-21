@@ -10,6 +10,7 @@
 #include "passes/zp_globals.h"
 #include "passes/zp_link_metadata.h"
 #include "passes/zp_local_allocation.h"
+#include "passes/zp_slot_naming.h"
 #include "passes/zp_slot_allocation.h"
 #include "tagged_json.h"
 
@@ -261,12 +262,16 @@ StageOutput run_local_slot_symbols(const capture::Call& call, const AsmContext&,
                                    const json::Value& args, const json::Value& kwargs) {
   const auto pools = Pools::decode(json::parse(call.input));
   const json::Value* names = kwarg(kwargs, "slot_names_by_fn");
-  const bool colorings = (!args.items.empty() && args.items[0].kind != json::Value::Kind::kNull) ||
-                         kwarg(kwargs, "colorings") != nullptr;
-  if (names == nullptr && colorings) {
-    throw std::runtime_error(
-        "build_local_slot_symbols names the slots from the colorings only through "
-        "compute_local_slot_names, which group F ports");
+  if (names == nullptr) {
+    // Without the names, Python names the slots from the colorings
+    // (`colorings or {}`) with `compute_local_slot_names`.
+    const json::Value* colorings =
+        !args.items.empty() ? &args.items[0] : kwargs.get(std::string("colorings"));
+    ColoringsByFunction by_fn;
+    if (colorings != nullptr && colorings->kind != json::Value::Kind::kNull) {
+      by_fn = DictOf<Str, ColoringC>::decode(*colorings);
+    }
+    return {encode<Addrs>(local_slots(pools, by_fn).slot_symbols), ""};
   }
   std::optional<SlotNames::type> by_fn;
   if (names != nullptr) {

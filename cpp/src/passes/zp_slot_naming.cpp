@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "errors.h"
+#include "passes/local_slot_names.h"
 
 namespace c6502::passes {
 
@@ -102,6 +103,60 @@ std::vector<std::string> param_slot_symbols(std::string_view fn_name,
       out.push_back(prefix + spelling + "_" + asdl::int_to_string(k));
     }
   }
+  return out;
+}
+
+SlotNamesByFunction compute_local_slot_names(const LocalPools& local_pools,
+                                             const ColoringsByFunction& colorings,
+                                             const AddressTakenAssignments* assignments,
+                                             const AddressTakenSymbols* symbols) {
+  SlotNamesByFunction out;
+  for (const auto& [fn_name, pool] : local_pools) {
+    const Coloring* coloring = colorings.find(fn_name);
+    // The slot symbol of each address an address-taken local landed at.
+    OrderedMap<asdl::Int, std::string> overrides;
+    if (assignments != nullptr && symbols != nullptr) {
+      const auto* fn_assignments = assignments->find(fn_name);
+      const auto* fn_symbols = symbols->find(fn_name);
+      if (fn_assignments != nullptr) {
+        for (const auto& [pname, addr] : *fn_assignments) {
+          const std::string* sym = fn_symbols != nullptr ? fn_symbols->find(pname) : nullptr;
+          if (sym != nullptr) {
+            overrides.insert_or_assign(addr, *sym);
+          }
+        }
+      }
+    }
+    std::vector<std::string> names;
+    names.reserve(pool.size());
+    if (coloring == nullptr) {
+      for (std::size_t k = 0; k < pool.size(); ++k) {
+        const std::string* sym = overrides.find(pool[k]);
+        names.push_back(sym != nullptr ? *sym
+                                       : "__local_" + fn_name + "__" + std::to_string(k));
+      }
+      out.insert_or_assign(fn_name, std::move(names));
+      continue;
+    }
+    auto name_map = local_slot_names(fn_name, *coloring, pool);
+    // The address-taken locals' symbols go over the coloring's names.
+    for (const auto& [addr, sym] : overrides) {
+      name_map.insert_or_assign(addr, sym);
+    }
+    for (const asdl::Int& addr : pool) {
+      names.push_back(name_map.at(addr));
+    }
+    out.insert_or_assign(fn_name, std::move(names));
+  }
+  return out;
+}
+
+LocalSlots local_slots(const LocalPools& local_pools, const ColoringsByFunction& colorings,
+                       const AddressTakenAssignments* assignments,
+                       const AddressTakenSymbols* symbols) {
+  LocalSlots out;
+  out.slot_names_by_fn = compute_local_slot_names(local_pools, colorings, assignments, symbols);
+  out.slot_symbols = build_local_slot_symbols(local_pools, &out.slot_names_by_fn);
   return out;
 }
 

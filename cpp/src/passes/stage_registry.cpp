@@ -6,6 +6,7 @@
 #include "passes/optimization_asm/ssa_stage.h"
 #include "passes/prologue_synthesis.h"
 #include "passes/stage_registry_abi.h"
+#include "passes/stage_registry_frames.h"
 #include "tac_to_asm_stage.h"
 #include "passes/stage_registry_sharing.h"
 #include "tagged_json.h"
@@ -202,11 +203,13 @@ std::vector<StageSignature> make_signatures() {
       {.name = "address_taken_assignments",
        .input = "asm_ast",
        .args = {rt<Pools>, rt<Colorings>, rt<Sym>, rt<Types>},
-       .output = rt<Assignments>},
+       .output = rt<Assignments>,
+       .run = &stage_frames::run_address_taken_assignments},
       {.name = "address_taken_slot_symbols",
        .input_json = rt<Str>,
        .args = {rt<Addrs>, rt<Sym>, rt<Types>},
-       .output = rt<DictOf<Str, Str>>},
+       .output = rt<DictOf<Str, Str>>,
+       .run = &stage_frames::run_address_taken_slot_symbols},
       {.name = "replace_pseudoregisters_bare_exit",
        .input = "asm_ast",
        .kwargs = {{"extra_statics", rt<NameSetC>},
@@ -223,7 +226,8 @@ std::vector<StageSignature> make_signatures() {
        .args = {rt<Colorings>},
        .kwargs = {{"address_taken_assignments", rt<Assignments>},
                   {"address_taken_symbols", rt<AssignmentSymbols>}},
-       .output = rt<SlotNames>},
+       .output = rt<SlotNames>,
+       .run = &stage_frames::run_local_slot_names},
       {.name = "local_slot_symbols",
        .input_json = rt<Pools>,
        .kwargs = {{"slot_names_by_fn", rt<SlotNames>}},

@@ -6,6 +6,7 @@
 
 #include "c99_ast.h"
 #include "passes/loop_labeling.h"
+#include "passes/type_checker.h"
 #include "pp_numbers.h"
 #include "tagged_json.h"
 
@@ -39,6 +40,25 @@ StageOutput run_loop_labeling(const capture::Call& call, const AsmContext&, cons
                               const json::Value&) {
   auto prog = asdl::load<c99_ast::Program>(call.input);
   return {asdl::dump(label_program(std::move(prog))), "", ""};
+}
+
+// Runs the type checker, which stamps the program it is given and
+// returns that program with the two tables. The `mutated` line holds the
+// program after the call under `input` when the call changed it, as
+// tools/capture_passes.py's `_mutated_json` writes it.
+StageOutput run_type_checking(const capture::Call& call, const AsmContext&, const json::Value&,
+                              const json::Value&) {
+  auto prog = asdl::load<c99_ast::Program>(call.input);
+  const std::string before = asdl::dump(prog);
+  type_checking::CheckedProgram tables = type_checking::check_program(prog);
+  std::string mutated;
+  if (asdl::dump(prog) != before) {
+    mutated = "{\"input\": " + encode<C99ProgramC>(prog) + ", \"args\": {}, \"kwargs\": {}}";
+  }
+  using Out = Triple<C99ProgramC, Sym, Types>;
+  const std::string output =
+      encode<Out>(Out::type{std::move(prog), std::move(tables.symbols), std::move(tables.types)});
+  return {output, mutated, ""};
 }
 
 StageOutput run_pp_number_at(const capture::Call& call, const AsmContext&,
@@ -100,7 +120,8 @@ std::vector<StageSignature> signatures() {
       // program after the call under `input`.
       {.name = "type_checking",
        .input = "c99_ast",
-       .output = rt<Triple<C99ProgramC, Sym, Types>>},
+       .output = rt<Triple<C99ProgramC, Sym, Types>>,
+       .run = &run_type_checking},
       {.name = "pp_number_at",
        .input_json = rt<Str>,
        .args = {rt<IntC>},

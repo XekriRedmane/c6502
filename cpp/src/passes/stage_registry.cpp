@@ -6,6 +6,7 @@
 #include "passes/optimization_asm/ssa_stage.h"
 #include "passes/prologue_synthesis.h"
 #include "passes/stage_registry_abi.h"
+#include "tac_to_asm_stage.h"
 #include "tagged_json.h"
 
 namespace c6502::passes {
@@ -142,7 +143,8 @@ std::vector<StageSignature> make_signatures() {
                   {"recursion_saves", rt<Cycles>},
                   {"bindings", rt<BindingsC>},
                   {"pinned_copies", rt<NamesByFn>},
-                  {"slot_aliases", rt<SlotAliases>}}},
+                  {"slot_aliases", rt<SlotAliases>}},
+       .run = &tac_to_asm::run_tac_to_asm},
       {.name = "asm_optimizer",
        .input = "asm_ast",
        .kwargs = {{"extra_statics", rt<NameSetC>},

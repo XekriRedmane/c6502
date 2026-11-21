@@ -22,6 +22,10 @@ struct Result {
   bool ported = false;
   bool matched = false;
   std::string mismatch;
+  // The output of a ported call that didn't match, which
+  // `check-captures --got <dir>` writes out for comparing with the
+  // record.
+  std::string got;
 };
 
 // Checks `call` against the signature `sig`, and runs it when it is

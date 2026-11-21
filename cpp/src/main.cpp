@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -40,7 +41,7 @@ using namespace c6502;
 
 const char kUsage[] =
     "usage: c6502cpp roundtrip <module> [<file>]\n"
-    "       c6502cpp check-captures [--pass <name>] [--verbose] <path>...\n"
+    "       c6502cpp check-captures [--pass <name>] [--verbose] [--got <dir>] <path>...\n"
     "       c6502cpp check-helpers [--verbose] <path>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
@@ -157,10 +158,15 @@ struct StageCount {
 int cmd_check_captures(const std::vector<std::string>& args) {
   std::string only;
   bool verbose = false;
+  // Where to write the output of each stage call that doesn't match, as
+  // a file named for its record, or empty.
+  fs::path got_dir;
   std::vector<fs::path> files;
   for (std::size_t i = 0; i < args.size(); ++i) {
     if (args[i] == "--pass" && i + 1 < args.size()) {
       only = args[++i];
+    } else if (args[i] == "--got" && i + 1 < args.size()) {
+      got_dir = args[++i];
     } else if (args[i] == "--verbose") {
       verbose = true;
     } else if (fs::is_directory(args[i])) {
@@ -209,6 +215,10 @@ int cmd_check_captures(const std::vector<std::string>& args) {
         ++mismatches;
         std::printf("MISMATCH %s: %s, %s\n", where.c_str(), call.pass.c_str(),
                     r.mismatch.c_str());
+        if (!got_dir.empty() && !r.got.empty()) {
+          fs::create_directories(got_dir);
+          std::ofstream(got_dir / path.filename(), std::ios::binary) << r.got;
+        }
       }
       continue;
     }

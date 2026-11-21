@@ -177,6 +177,7 @@ Result check(const capture::Call& call, const passes::StageSignature& sig) {
     got.output = std::string("exception: ") + e.what() + "\n";
   }
   if (got.output != call.output) {
+    r.got = got.output;
     r.mismatch = "the result differs, first on line " +
                  std::to_string(first_line(got.output, call.output));
   } else if (got.mutated != call.mutated_json) {

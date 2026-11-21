@@ -149,6 +149,11 @@ cpp/
                       jump_thread.*, cse.*, licm.*, copy_folding.*,
                       read_stored_global.*   the dataflow passes of step 5
                       (group E)
+      optimization/compare_subtract.*, divmod_hoist.*, count_down.*,
+                      step_on_edge.*, three_way_compare.*,
+                      short_circuit_jump_fold.*, known_compare_thread.*
+                      the passes after the fixed point and after SSA
+                      (step 5, group G)
       significant_bytes.*, in_place_member_update.*, pointer_restage.*,
                       shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
@@ -899,6 +904,58 @@ all, and `tests/test_jump_fold_rules_calls.cpp` the 56 calls of rule
 sets of one rule, checked with `tests/tac_rules_case.h`. A static that a
 synthetic test gives no initial value, which the codec can't read, has
 a `NoInitializer` in its place.
+### After the fixed point and after SSA (group G)
+
+The passes of group G of step 5 run once each after the fixed point
+(`hoist_subtract_to_compare`, `hoist_divmod_pairs`,
+`count_loops_down`), once each after SSA destruction
+(`move_steps_onto_edges`, `split_three_way_compares`), or in the fixed
+point after destruction (`fold_short_circuit_jumps`,
+`thread_known_compares`). Each has a header named for its Python
+module under `src/passes/optimization/` and takes the function and the
+`PassContext`, as the driver calls it. `compare_subtract.h` holds the
+pass beside `compare_subtract::compared_difference`, which
+`tac_to_asm` reads. `step_on_edge.h` also has the form of Python's
+`move_steps_onto_edges` that takes the SSA names alone, and
+`short_circuit_jump_fold.h` has `fold_short_circuit_jump` and
+`merge_equality_jumps`, which the driver's entry for
+`fold_short_circuit_jump` runs one after the other, as Python's
+`FoldShortCircuitJump.run` does.
+
+Several of the passes take a count or an index once and then change the
+function, and the ports keep that. `move_steps_onto_edges` counts the
+uses, the definitions, and the jumps to each label, and finds each
+label's position, before its walk, and reads those after it has
+removed a step. `hoist_subtract_to_compare` moves every subtract it can
+and only then gives the loops' exits their `<a>.exit` values, from a
+copy of each subtract as it was moved. `split_three_way_compares`
+leaves in the symbol table the temporaries it made for the first
+operand when the second operand has no bytes to compare and the pair
+is left alone. None of the seven passes finds an instruction by
+identity. The label counters follow Python: `@scfold@N` starts at 0 in
+each call and skips the labels the function has, and `@cthread@N`
+starts one past the largest one in the function.
+`thread_known_compares` keeps each Var's facts as one value it equals
+and a set of values it doesn't, where Python keeps a set of `("eq",
+k)` and `("ne", k)` pairs, since a Var never has two facts of
+equality.
+
+On 21 Nov 2026 each pass matched the Python pass on every distinct call
+of the corpus: 3,942 calls each of `tac_hoist_subtract_to_compare`,
+`tac_hoist_divmod_pairs`, `tac_count_loops_down`,
+`tac_move_steps_onto_edges`, and `tac_split_three_way_compares`, 4,031
+of `tac_fold_short_circuit_jump`, and 4,017 of
+`tac_thread_known_compares`, in the builds of MSVC 19.36 and GCC 12.2.
+Few of those calls change the function (5, 2, 32, 6, 1, 14, and 75), so
+`tests/test_<module>.cpp` holds the calls of the pass that the Python
+unit tests make, recorded with the capture harness's wrappers on the
+driver and on the entry points the tests call, and the corpus calls
+that change the function (for the two passes of the last fixed point,
+those with an input of under 3,000 characters). Every distinct call of the unit
+tests matched: 49, 54, 56, 54, 17, 65, and 63 of them. Three tests of
+`divmod_hoist` give a symbol a `StaticAttr` with no initial value,
+which the codec can't read, and those calls match with a
+`NoInitializer` in its place, which the pass doesn't read.
 
 ## The TAC optimizer's driver
 
@@ -1695,3 +1752,12 @@ Python results through `tests/stage_case.h`.
   calls in all, and on the 235 calls of the Python unit tests that the
   tests hold, in the builds of MSVC 19.36 and GCC 12.2. Their entries in
   the driver's table are filled.
+- 21 Nov 2026: group G of step 5 ("After the fixed point and after
+  SSA"): `hoist_subtract_to_compare`, `hoist_divmod_pairs`,
+  `count_loops_down`, `move_steps_onto_edges`,
+  `split_three_way_compares`, `fold_short_circuit_jump` with
+  `merge_equality_jumps`, and `thread_known_compares`, each matching the
+  Python pass on every distinct call of the corpus, 27,758 calls in
+  all, and on the 358 distinct calls of the Python unit tests, in the
+  builds of MSVC 19.36 and GCC 12.2. Their entries in the driver's
+  table are filled.

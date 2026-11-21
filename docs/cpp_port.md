@@ -962,3 +962,22 @@ unreachable-code elimination changed the Phis of its input in place
   and the C++ passes take the position at which the scan reaches the
   instruction. The entries of group D's passes in the driver's table are
   filled.
+- 21 Nov 2026: group G of step 5, the passes after the fixed point and
+  after SSA. `hoist_subtract_to_compare` (which extends the port of
+  `compare_subtract.compared_difference` that `tac_to_asm` reads),
+  `hoist_divmod_pairs`, `count_loops_down`, `move_steps_onto_edges`,
+  `split_three_way_compares`, `fold_short_circuit_jump` with
+  `merge_equality_jumps`, and `thread_known_compares` are ported, each
+  in `src/passes/optimization/<module>.*` with a runner in
+  tac_stage.cpp, and each matches the Python pass on every distinct
+  call of the corpus in the builds of MSVC 19.36 and GCC 12.2: 3,942
+  calls each of the first five, 4,031 of `tac_fold_short_circuit_jump`,
+  and 4,017 of `tac_thread_known_compares`. Few of the corpus calls
+  change the function (from 1 of `split_three_way_compares` to 75 of
+  `thread_known_compares`), so the C++ tests hold 197 calls, those of
+  the Python unit tests that change the function or the symbols or run
+  a pass on synthetic TAC and the corpus calls that change the
+  function, and each of the 358 distinct calls of the unit tests
+  matched. The passes needed no helper from another group. Their
+  entries in the driver's table are filled, which leaves those of
+  group D.

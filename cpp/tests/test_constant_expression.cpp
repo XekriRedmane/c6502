@@ -87,3 +87,15 @@ TEST_CASE("constant_expression gives Python's results on the unit tests' calls")
     CHECK(got == c.expected);
   }
 }
+
+TEST_CASE("sizeof of a string literal counts its code points and the null") {
+  // Python's type checker gives a string literal it checks a
+  // `data_type` of `char[N+1]`, an attribute the C++ `String` can't
+  // hold, so the evaluator computes the size. The string's text holds
+  // the code point U+00E9 in two bytes of UTF-8, which count as one.
+  using namespace c6502;
+  const auto exp = asdl::load<c99_ast::Type_exp>(R"(SizeOfExp(String("ab\xe9") UInt))");
+  const auto [value, type] = ce::evaluate_integer_constant_expression(exp);
+  CHECK(value == 4);
+  CHECK(asdl::py_repr(type) == "UInt()");
+}

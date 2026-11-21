@@ -544,6 +544,13 @@ std::pair<Int, Type> evaluate_integer_constant_expression(const Exp& exp) {
       return {sizeof_type(std::get<ir::SizeOfType>(exp).target_type), ir::UInt{}};
     case E::SizeOfExp: {
       const auto& inner = *std::get<ir::SizeOfExp>(exp).exp;
+      if (const auto* s = std::get_if<ir::String>(&inner)) {
+        // The type checker gives a string literal it checks a
+        // `data_type` attribute of `char[N+1]`, which the Python
+        // dataclass takes though it has no such field, and which the
+        // C++ `String` can't hold, so its size is computed here.
+        return {Int(static_cast<long long>(pyrepr::code_points(s->str).size())) + 1, ir::UInt{}};
+      }
       const std::optional<Type>& t = type_checking::data_type_of(inner);
       if (!t) {
         throw ConstantExpressionError(

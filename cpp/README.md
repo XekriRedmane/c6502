@@ -361,8 +361,10 @@ its nodes and its adjacency in maps sorted by name, and a
 `CoalesceResult` its `byte_offset`, where Python's dicts follow the
 order in which a walk over Python sets added to them. Nothing reads
 that order. The packed BCD reads, writes, and early writes come from
-private copies of `decimal_arith`'s `pseudo_reads`, `pseudo_writes`,
-and `early_write_pairs`, until the port of those lands.
+`decimal_arith`'s `early_write_pairs`, `pseudo_read_ptrs`, and
+`pseudo_write_ptrs`, the last two `pseudo_reads` and `pseudo_writes` as
+pointers into the instruction, which the liveness reads at every
+instruction.
 
 The harness records the five entry points under `compute_liveness`,
 `build_interference`, `coalesce_moves`, `hwreg_eligibility`, and

@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "passes/decimal_arith.h"
 #include "passes/optimization_asm/all_operands.h"
 
 namespace c6502::passes {
@@ -37,33 +38,6 @@ namespace c6502::passes {
 namespace ir = ::c6502::asm_ast;
 
 namespace {
-
-// Returns the pairs (dst, source) of pseudo names that mustn't share a
-// byte, because a packed BCD chain writes `dst[k]` before it reads the
-// source bytes `left[j]` and `right[j]` for j > k. The liveness after
-// the instruction doesn't show these. This is
-// `decimal_arith.early_write_pairs`, kept here until the port of that
-// module has it.
-std::vector<std::pair<std::string, std::string>> early_write_pairs(const ir::DecimalArith& d) {
-  std::vector<std::pair<std::string, std::string>> out;
-  for (std::size_t k = 0; k < d.dst.size(); ++k) {
-    const auto* dst = asdl::as<ir::Pseudo>(d.dst[k]);
-    if (dst == nullptr) {
-      continue;
-    }
-    const auto later = [&](const std::vector<ir::Type_operand>& side) {
-      for (std::size_t j = k + 1; j < side.size(); ++j) {
-        const auto* s = asdl::as<ir::Pseudo>(side[j]);
-        if (s != nullptr && s->name != dst->name) {
-          out.emplace_back(dst->name, s->name);
-        }
-      }
-    };
-    later(d.left);
-    later(d.right);
-  }
-  return out;
-}
 
 // Sorts every pseudo name of `fn` into one of three kinds.
 //
@@ -191,7 +165,7 @@ InterferenceGraph build_interference(const ir::Function& fn, const Liveness& liv
       if (const auto* dec = asdl::as<ir::DecimalArith>(instr)) {
         // A BCD chain writes dst[k] before it reads the source bytes
         // of higher index.
-        for (const auto& [a, c] : early_write_pairs(*dec)) {
+        for (const auto& [a, c] : decimal_arith::early_write_pairs(*dec)) {
           if (colorable(a) && colorable(c)) {
             ensure_node(a);
             ensure_node(c);

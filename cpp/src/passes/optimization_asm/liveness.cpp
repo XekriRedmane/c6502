@@ -27,6 +27,8 @@
 #include <string>
 #include <utility>
 
+#include "passes/decimal_arith.h"
+
 namespace c6502::passes {
 
 namespace ir = ::c6502::asm_ast;
@@ -48,10 +50,7 @@ std::vector<const ir::Pseudo*> defs_in(const ir::Type_instruction& instr) {
   std::vector<const ir::Pseudo*> out;
   switch (ir::kind(instr)) {
     case K::DecimalArith:
-      // decimal_arith.pseudo_writes, the pseudo bytes of `dst`.
-      for (const auto& op : std::get<ir::DecimalArith>(instr).dst) {
-        add_pseudo(out, op);
-      }
+      out = decimal_arith::pseudo_write_ptrs(std::get<ir::DecimalArith>(instr));
       break;
     case K::Mov:
       add_pseudo(out, std::get<ir::Mov>(instr).dst);
@@ -108,18 +107,9 @@ std::vector<const ir::Pseudo*> uses_in(const ir::Type_instruction& instr) {
   using K = ir::Kind_instruction;
   std::vector<const ir::Pseudo*> out;
   switch (ir::kind(instr)) {
-    case K::DecimalArith: {
-      // decimal_arith.pseudo_reads, the pseudo bytes of `left` and then
-      // `right`.
-      const auto& d = std::get<ir::DecimalArith>(instr);
-      for (const auto& op : d.left) {
-        add_pseudo(out, op);
-      }
-      for (const auto& op : d.right) {
-        add_pseudo(out, op);
-      }
+    case K::DecimalArith:
+      out = decimal_arith::pseudo_read_ptrs(std::get<ir::DecimalArith>(instr));
       break;
-    }
     case K::Mov:
       add_pseudo(out, std::get<ir::Mov>(instr).src);
       break;

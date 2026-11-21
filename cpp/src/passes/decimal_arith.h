@@ -45,6 +45,12 @@ std::vector<asm_ast::Pseudo> pseudo_reads(const asm_ast::DecimalArith& instr);
 // Returns the `Pseudo` operands among those `instr` writes, in order.
 std::vector<asm_ast::Pseudo> pseudo_writes(const asm_ast::DecimalArith& instr);
 
+// Return the operands `pseudo_reads` and `pseudo_writes` return, as
+// pointers into `instr`, for the liveness of the register allocation,
+// which asks for them at every instruction it walks.
+std::vector<const asm_ast::Pseudo*> pseudo_read_ptrs(const asm_ast::DecimalArith& instr);
+std::vector<const asm_ast::Pseudo*> pseudo_write_ptrs(const asm_ast::DecimalArith& instr);
+
 // Returns `instr` with every operand it reads replaced by `fn(operand)`
 // and its `dst` left as it is.
 template <class Fn>

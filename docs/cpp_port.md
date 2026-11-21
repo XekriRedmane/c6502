@@ -428,5 +428,7 @@ something a straightforward C++ port could change.
   byte offsets sorted, since Python fills those dicts in the order of
   set iteration, which nothing reads (cpp/README.md, "The register
   allocation"). The liveness uses the CFG of step 2, so no CFG with
-  blocks of their own was needed, and the packed BCD helpers of
-  `decimal_arith` that group D ports are private copies for now.
+  blocks of their own was needed, and it reads group D's
+  `decimal_arith` helpers, with `pseudo_reads` and `pseudo_writes` as
+  pointers into the instruction (`pseudo_read_ptrs`,
+  `pseudo_write_ptrs`).

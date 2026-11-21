@@ -22,9 +22,10 @@
 //     operands.
 //
 // The asm SSA round trip reads `pseudo_reads`, `pseudo_writes`,
-// `map_reads`, and `map_writes`, and the interference graphs
-// `early_write_pairs`. The form check serves the IR check, which isn't
-// ported.
+// `map_reads`, and `map_writes`, the interference graphs
+// `early_write_pairs`, and the liveness of the register allocation
+// `pseudo_read_ptrs` and `pseudo_write_ptrs`. The form check serves the
+// IR check, which isn't ported.
 #include "passes/decimal_arith.h"
 
 namespace c6502::passes::decimal_arith {
@@ -76,6 +77,28 @@ std::vector<ir::Pseudo> pseudo_writes(const ir::DecimalArith& instr) {
   for (const auto& op : instr.dst) {
     if (const auto* p = asdl::as<ir::Pseudo>(op)) {
       out.push_back(*p);
+    }
+  }
+  return out;
+}
+
+std::vector<const ir::Pseudo*> pseudo_read_ptrs(const ir::DecimalArith& instr) {
+  std::vector<const ir::Pseudo*> out;
+  for (const auto* list : {&instr.left, &instr.right}) {
+    for (const auto& op : *list) {
+      if (const auto* p = asdl::as<ir::Pseudo>(op)) {
+        out.push_back(p);
+      }
+    }
+  }
+  return out;
+}
+
+std::vector<const ir::Pseudo*> pseudo_write_ptrs(const ir::DecimalArith& instr) {
+  std::vector<const ir::Pseudo*> out;
+  for (const auto& op : instr.dst) {
+    if (const auto* p = asdl::as<ir::Pseudo>(op)) {
+      out.push_back(p);
     }
   }
   return out;

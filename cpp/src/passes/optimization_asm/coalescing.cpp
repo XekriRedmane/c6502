@@ -122,6 +122,7 @@
 #include <utility>
 #include <vector>
 
+#include "passes/decimal_arith.h"
 #include "passes/operand_rewrite.h"
 #include "passes/optimization_asm/liveness.h"
 
@@ -303,23 +304,10 @@ EdgeSet byte_edges(const ir::Function& fn, const NameSet& multi) {
         live.erase(d->name);
       }
       if (const auto* dec = asdl::as<ir::DecimalArith>(instr)) {
-        // decimal_arith.early_write_pairs: dst[k] is written before the
-        // source bytes of higher index are read.
-        for (std::size_t i = 0; i < dec->dst.size(); ++i) {
-          const auto* d = asdl::as<ir::Pseudo>(dec->dst[i]);
-          if (d == nullptr) {
-            continue;
-          }
-          const auto later = [&](const std::vector<ir::Type_operand>& side) {
-            for (std::size_t j = i + 1; j < side.size(); ++j) {
-              const auto* s = asdl::as<ir::Pseudo>(side[j]);
-              if (s != nullptr && s->name != d->name) {
-                edges.insert(edge(d->name, s->name));
-              }
-            }
-          };
-          later(dec->left);
-          later(dec->right);
+        // A BCD chain writes dst[k] before it reads the source bytes of
+        // higher index.
+        for (const auto& [d, s] : decimal_arith::early_write_pairs(*dec)) {
+          edges.insert(edge(d, s));
         }
       }
       for (const auto* u : liveness::uses_in(instr)) {

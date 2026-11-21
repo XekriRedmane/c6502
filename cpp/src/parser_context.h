@@ -53,6 +53,7 @@ class ParserError : public CompileError {
 };
 
 struct Scope;
+struct DeclSpecs;
 // A scope is compared by identity (`remove_scope`, a binding's
 // `tag_scopes`), so it is held by a shared pointer, and a scope that
 // is still named somewhere keeps its address.
@@ -208,6 +209,11 @@ class ParseContext {
   // Each struct/union body parsed so far, so the constant expressions
   // the parser folds can use a member of a `constexpr` structure.
   std::vector<c99_ast::Type_struct_decl> struct_bodies;
+  // The specifiers of each declaration whose `decl_specs` has ended and
+  // whose own action hasn't run yet, so `init_declarator` can tell, as
+  // soon as a declarator ends, whether it declared a typedef name and
+  // what type it names (parser_declarations.h).
+  std::vector<std::shared_ptr<DeclSpecs>> decl_specs;
 
   ScopePtr push_scope();
   // Removes `scope` from the stack, searching from the innermost scope

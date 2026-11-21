@@ -451,3 +451,18 @@ something a straightforward C++ port could change.
   the capture helpers' 1,110 `tables` records. Groups B and C read
   `src/passes/recursion_saves.h` (`plan_saves`, `recursion_saves::live_out`
   and `defs_in`) and `src/passes/optimization/cfg.h`.
+- 20 Nov 2026: group C of step 4, `tac_to_asm`. `translate_program` is
+  ported as `tac_to_asm::translate_program` (`src/tac_to_asm.h`, which
+  group F includes), with the Translator's queries shared by three
+  parts in files of their own (calls and memory, arithmetic, and casts
+  and comparisons), and with `significant_bytes`,
+  `in_place_member_update`, `pointer_restage`, `shift_cost`,
+  `split_tables.plane_init`, `compare_subtract.compared_difference`, and
+  the parts of `bit_precise` it reads. It matches the Python function on
+  all 2,256 distinct calls of the corpus, with `-S` and with `-S -O`,
+  including the symbol table's `<param>.reg` locals, in the builds of
+  MSVC and GCC. A line trace found 27 lines of the lowering that the
+  Python unit tests reach and the corpus doesn't, and four recorded
+  calls of the unit tests reach them in the C++ tests. The unoptimized
+  pipeline calls it with `fixed_address_layouts`' ABI, and
+  `plan_zero_page` without one, which group F connects.

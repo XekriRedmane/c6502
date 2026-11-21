@@ -107,13 +107,21 @@ cpp/
       stage_registry.*  the stage calls' signatures and runners (step 4)
       stage_registry_abi.*  the runners of group A's stage calls
       optimization/   pool, register_allocation, the interference graph, var_visit
+      significant_bytes.*, in_place_member_update.*, pointer_restage.*,
+                      shift_cost.*   the modules tac_to_asm reads
       capture_args.*  the decoders of a captured call's keyword arguments
+    tac_to_asm.*      tac_to_asm.py's translate_program (step 4, group C)
+    tac_to_asm_translator.h, tac_to_asm_calls.cpp, tac_to_asm_arith.cpp,
+      tac_to_asm_compare.cpp   the Translator and the parts of the lowering
+    tac_to_asm_stage.*  the runner of the stage call `tac_to_asm`
+    bit_precise.*     the parts of bit_precise.py code generation reads
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
     asm_text.h        a test's program and expected instructions as dump text
     call_case.h       a recorded call of a function of emission, for the
                       tests recorded from the Python unit tests
+    tac_to_asm_case.h a recorded call of tac_to_asm from the Python unit tests
   third_party/doctest doctest.h 2.4.12 and its MIT license
 ```
 
@@ -428,6 +436,49 @@ exceptions, and `tests/test_tac_cfg_cases.cpp` the CFG's values on each
 function that tests/test_cfg.py builds a CFG of. The capture helpers'
 `tables` records give the CFG's analyses on every function that
 `find_shares` sees (`_cfg_values`).
+
+### Code generation: tac_to_asm
+
+Group C of step 4 ported `tac_to_asm.translate_program`, which lowers a
+TAC program to the asm IR, as `tac_to_asm::translate_program`
+(`src/tac_to_asm.h`), the header that the stage's driver includes. It
+takes the symbol table as a pointer that may be null and adds the
+`<param>.reg` locals to it, and the type table, the `AsmContext`, and
+an `Options` with Python's keyword arguments. The Python class
+`Translator` is a struct in `src/tac_to_asm_translator.h`, with the
+lowering split over four files in the parts of docs/cpp_port.md:
+`src/tac_to_asm.cpp` (the driver, the queries every part reads, the
+returns and copies, and the free helpers), `tac_to_asm_calls.cpp`
+(calls, the ABI, and memory), `tac_to_asm_arith.cpp` (arithmetic and
+the inline shifts, divisions, and products), and
+`tac_to_asm_compare.cpp` (casts, unary operators, conditional jumps,
+and comparisons). The struct declares the lowerings one part calls in
+another, and each part keeps its other helpers as free functions. The
+modules it reads are ported beside it: `passes/significant_bytes.*`,
+`passes/in_place_member_update.*`, `passes/pointer_restage.*`,
+`passes/shift_cost.*`, `split_tables::plane_init`,
+`compare_subtract::compared_difference`, and the parts of
+`bit_precise.py` it uses (`src/bit_precise.*`).
+
+The labels and the cycle-break temporaries are numbered by two counters
+over the whole program, so the order of the lowering is part of its
+output. A lowering that makes two labels makes each in a statement of
+its own, since C++ leaves the order of a call's arguments open, and the
+`tac_defs` of a function hold pointers into its instructions where
+Python keys them by the identity of each instruction. The runner
+(`src/tac_to_asm_stage.*`) gives the `mutated` line with the symbol
+table after the call when the lowering added a local.
+
+`c6502cpp check-captures --got <dir>` writes the C++ output of each
+stage call that differs from its record to a file named for the record,
+for comparing the two. The capture of the whole corpus on 20 Nov 2026
+gave 2,256 distinct calls of `tac_to_asm` in both modes, and every one
+matched with MSVC and with GCC. `tests/test_tac_to_asm_calls.cpp` holds
+four calls that the Python unit tests make, recorded with their results
+through `tests/tac_to_asm_case.h`. A line trace of the lowering over
+the corpus and over the 1,291 unit tests of the 40 test modules that
+compile through it found 27 lines that only the unit tests reach, and
+those four calls reach all of them.
 
 ## The shared helpers
 
@@ -998,3 +1049,9 @@ Python results through `tests/stage_case.h`.
   `recursion_saves`, and the TAC CFG, each matching the Python function
   on every distinct call of the corpus, with `PyIntSet` for the sets of
   block ids whose order the TAC passes read.
+- 20 Nov 2026: group C of step 4, `tac_to_asm` ("Code generation:
+  tac_to_asm"), with `significant_bytes`, `in_place_member_update`,
+  `pointer_restage`, `shift_cost`, and the pieces of `bit_precise`,
+  `split_tables`, and `compare_subtract` it reads. It matches the Python
+  function on all 2,256 distinct calls of the corpus in both modes,
+  with MSVC 19.36 and GCC 12.2.

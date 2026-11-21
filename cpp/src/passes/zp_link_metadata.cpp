@@ -8,8 +8,12 @@
 // so dasm assembles the text as if it weren't there.
 #include "passes/zp_link_metadata.h"
 
+#include <algorithm>
+#include <map>
 #include <set>
 
+#include "passes/call_edges.h"
+#include "passes/recursion_saves.h"
 #include "pyrepr.h"
 
 namespace c6502::passes {
@@ -150,6 +154,114 @@ std::vector<std::string> format_metadata(const LinkMetadata& meta) {
   }
   lines.emplace_back("; @zp-link-meta-end");
   return lines;
+}
+
+
+LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
+                            const OrderedMap<std::string, std::vector<asdl::Int>>& local_pools,
+                            const OrderedMap<std::string, std::vector<std::string>>* slot_names_by_fn,
+                            const OrderedMap<std::string, std::vector<std::string>>* changes,
+                            const NameSet* carry) {
+  namespace tac = ::c6502::tac_ast;
+  // The direct call graph of the functions defined here, with the calls
+  // to externs. The linker finds the cycles of the whole program again,
+  // but a cycle within the unit is enough to disqualify a function.
+  CallGraph callgraph;
+  NameSet indirect;
+  // Whether every call along each edge is marked to save on the hardware
+  // stack.
+  std::map<std::pair<std::string, std::string>, bool> saved;
+  for (const auto& tl : prog.top_level) {
+    if (const auto* fn = std::get_if<tac::Function>(&tl)) {
+      callgraph[fn->name];
+    }
+  }
+  for (const auto& tl : prog.top_level) {
+    const auto* fn = std::get_if<tac::Function>(&tl);
+    if (fn == nullptr) {
+      continue;
+    }
+    for (const auto& instr : fn->instructions) {
+      if (asdl::isa<tac::IndirectCall>(instr)) {
+        indirect.insert(fn->name);
+      } else if (const auto* call = asdl::as<tac::FunctionCall>(instr)) {
+        if (abandons_caller(instr)) {
+          continue;
+        }
+        callgraph[fn->name].insert(call->name);
+        const auto [it, fresh] = saved.try_emplace({fn->name, call->name}, true);
+        it->second = it->second && call->hw_stack_save;
+      }
+    }
+  }
+  // `cycles` leaves out the callees that aren't keys, the externs, as
+  // Python's Tarjan walk does, and gives every function on a cycle,
+  // a function that calls itself included.
+  const Cycles in_cycle = cycles(callgraph);
+
+  LinkMetadata out;
+  const auto regs_of = [](const ZpLayout& layout) {
+    std::vector<std::string> regs;
+    for (const auto& r : layout.param_registers) {
+      regs.push_back(r.value_or(""));
+    }
+    return regs;
+  };
+  for (const auto& [name, callees] : callgraph) {
+    FunctionMeta meta;
+    meta.name = name;
+    const std::vector<std::string>* names =
+        slot_names_by_fn == nullptr ? nullptr : slot_names_by_fn->find(name);
+    if (names != nullptr) {
+      meta.locals = *names;
+    } else if (const auto* pool = local_pools.find(name)) {
+      for (std::size_t k = 0; k < pool->size(); ++k) {
+        meta.locals.push_back("__local_" + name + "__" + std::to_string(k));
+      }
+    }
+    const ParamLayout* layout = abi.find(name);
+    if (const ZpLayout* zp = layout == nullptr ? nullptr : std::get_if<ZpLayout>(layout)) {
+      meta.params = zp->slot_symbols;
+      meta.param_regs = regs_of(*zp);
+      meta.pinned = zp->pinned;
+    }
+    meta.indirect = indirect.contains(name);
+    meta.in_cycle = in_cycle.contains(name);
+    if (changes != nullptr) {
+      if (const auto* c = changes->find(name)) {
+        meta.changes = *c;
+      }
+    }
+    meta.carry = carry != nullptr && carry->contains(name);
+    out.defs.push_back(std::move(meta));
+  }
+  // The zp_abi functions this unit declares and doesn't define, by name.
+  std::vector<std::string> declared;
+  for (const auto& [name, layout] : abi) {
+    if (!callgraph.contains(name) && std::holds_alternative<ZpLayout>(layout)) {
+      declared.push_back(name);
+    }
+  }
+  std::sort(declared.begin(), declared.end());
+  for (const auto& name : declared) {
+    const auto& zp = std::get<ZpLayout>(abi.at(name));
+    out.externs.push_back(ExternMeta{.name = name,
+                                     .params = zp.slot_symbols,
+                                     .param_regs = regs_of(zp),
+                                     .pinned = zp.pinned,
+                                     .carry = carry != nullptr && carry->contains(name)});
+  }
+  // The call edges, sorted, since the graph is.
+  for (const auto& [caller, callees] : callgraph) {
+    for (const auto& callee : callees) {
+      out.calls.emplace_back(caller, callee);
+      const auto it = saved.find({caller, callee});
+      if (it != saved.end() && it->second) {
+        out.saved_calls.emplace_back(caller, callee);
+      }
+    }
+  }
+  return out;
 }
 
 }  // namespace c6502::passes

@@ -1,7 +1,9 @@
 // The link metadata block of passes/zp_link_metadata.py: its records,
-// and `format_metadata`, which writes them as the `; @zp-link-meta`
-// comment lines. The records that read the TAC (`build_metadata`) are
-// computed in Python and passed in (cpp/README.md, "Emission").
+// `build_metadata`, which collects the records that read the TAC
+// program, the ABI, and the pools, and `format_metadata`, which writes
+// them as the `; @zp-link-meta` comment lines. The records that read the
+// finished asm program are filled in by emission (cpp/README.md,
+// "Emission").
 #pragma once
 
 #include <optional>
@@ -10,7 +12,10 @@
 #include <vector>
 
 #include "asdl/runtime.h"
+#include "ordered_map.h"
+#include "passes/abi_selection.h"
 #include "passes/slot_sharing.h"
+#include "tac_ast.h"
 
 namespace c6502::passes {
 
@@ -91,5 +96,22 @@ struct LinkMetadata {
 // entry isn't empty, which keeps the block readable by the units from
 // before the register parameters.
 std::vector<std::string> format_metadata(const LinkMetadata& meta);
+
+// Returns the records of `prog`'s functions, its zp_abi externs, and
+// its call edges, from the TAC program and the allocators' results, run
+// after `select_abi`, `allocate_zp_slots`, and
+// `allocate_function_locals`. A defined function's `locals` are the
+// slot symbols `slot_names_by_fn` gives its pool's bytes, which the
+// linker reuses when it writes the program's `EQU` lines, or numeric
+// names `__local_<fn>__<k>` for each byte of its pool when it has none.
+// `changes` gives the parameter slots each function assigns, and `carry`
+// names the functions that return a `bool` in the carry flag. Any of the
+// three may be null, as Python's None. The defs and externs are by name,
+// and the calls sorted.
+LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
+                            const OrderedMap<std::string, std::vector<asdl::Int>>& local_pools,
+                            const OrderedMap<std::string, std::vector<std::string>>* slot_names_by_fn,
+                            const OrderedMap<std::string, std::vector<std::string>>* changes,
+                            const NameSet* carry);
 
 }  // namespace c6502::passes

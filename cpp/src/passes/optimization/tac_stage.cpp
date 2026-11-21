@@ -6,6 +6,8 @@
 
 #include "c99_to_tac_stage.h"
 #include "passes/optimization/constant_folding.h"
+#include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/framework.h"
@@ -200,8 +202,8 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_eliminate_unreachable_code"),
       tac_pass("tac_eliminate_common_subexpressions"),
       tac_pass("tac_hoist_loop_invariants"),
-      tac_pass("tac_copy_propagate"),
-      tac_pass("tac_eliminate_dead_stores"),
+      tac_pass("tac_copy_propagate", &run_tac_pass<&copy_propagate>),
+      tac_pass("tac_eliminate_dead_stores", &run_tac_pass<&eliminate_dead_stores>),
       tac_pass("tac_read_stored_globals"),
       tac_pass("tac_fold_copies_in_fixedpoint"),
       tac_pass("tac_reassoc_constants", &run_tac_pass<&reassoc_constants>),

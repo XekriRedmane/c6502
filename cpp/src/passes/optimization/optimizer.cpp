@@ -91,6 +91,8 @@ runs through C++ only once the table is full (`PhaseDriver::complete`).
 #include <utility>
 
 #include "passes/optimization/constant_folding.h"
+#include "passes/optimization/copy_propagation.h"
+#include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
 #include "passes/optimization/loop_rotate.h"
@@ -172,8 +174,8 @@ PhaseDriver make_driver() {
       // first one, which copy_propagate then forwards.
       {"eliminate_common_subexpressions", nullptr},
       {"hoist_loop_invariants", nullptr},
-      {"copy_propagate", nullptr},
-      {"eliminate_dead_stores", nullptr},
+      {"copy_propagate", &copy_propagate},
+      {"eliminate_dead_stores", &eliminate_dead_stores},
       // `*++P` on a global P reads P after the copy into it, so the copy
       // folding next makes the add write P directly.
       {"read_stored_globals", nullptr},

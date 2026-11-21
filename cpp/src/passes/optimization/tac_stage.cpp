@@ -14,6 +14,7 @@
 #include "passes/optimization/dead_store_elimination.h"
 #include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/distribute_constant.h"
+#include "passes/optimization/divmod_hoist.h"
 #include "passes/optimization/fold_producer_jumps.h"
 #include "passes/optimization/framework.h"
 #include "passes/optimization/jump_thread.h"
@@ -238,7 +239,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_static_indexed_access", &run_tac_pass<&static_indexed_access>),
       tac_pass("tac_recognize_indirect_indexed", &run_tac_pass<&recognize_indirect_indexed>),
       tac_pass("tac_hoist_subtract_to_compare", &run_tac_pass<&hoist_subtract_to_compare>),
-      tac_pass("tac_hoist_divmod_pairs"),
+      tac_pass("tac_hoist_divmod_pairs", &run_tac_pass<&hoist_divmod_pairs>),
       tac_pass("tac_count_loops_down"),
       tac_pass("tac_fold_copies_post_destruction", &run_tac_pass<&fold_copies_post_destruction>),
       tac_pass("tac_move_steps_onto_edges"),

@@ -1543,3 +1543,24 @@ separator, a binary prefix, or a `wb` suffix.
   as `for (short i = 0; i <= 32767; i += 256)`, raised a KeyError,
   since the unroller's table of type names for the message had neither
   type, and compile.py printed a traceback.
+- 21 Nov 2026: group R1 of step 6, the lexer, the table of Lark's LALR
+  automaton with the recognizer that runs it, and the syntax errors
+  (cpp/README.md, "The parser's lexer and recognizer").
+  `tools/lalr_table.py` writes the table, with its states numbered
+  canonically so that the file doesn't depend on the hash seed, and
+  `tests/test_lalr_table.py` fails when c99.lark and the file differ.
+  The C++ lexer reads the terminals' patterns from the table and
+  matches them with Python's semantics. `TokenStream`
+  (src/parser_context.h) gives R2 and R3 the tokens as Lark's parser
+  receives them, with typedef names retyped, and feeds each one taken
+  to the recognizer, which reports a syntax error at Lark's token with
+  Lark's message, reworded as `parse` rewords it. The check is on token
+  streams that `tools/capture_parser_tokens.py` records from the corpus
+  and from the Python tests. All 6,314 distinct ones matched, with
+  every token's type, text, position, and scope depth and every syntax
+  error's message, 277 distinct ones, and so did the 452 distinct calls
+  of `tokenize`. Two things the plan left out came up. Lark makes one
+  rule of each form of a `for` loop, so the end of the loop's scope is
+  found by the rule's alias, and Lark's `accepts` includes `$END` where
+  the input could end, since its interactive parser feeds `$END` as the
+  end of the input.

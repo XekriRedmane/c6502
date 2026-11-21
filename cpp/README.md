@@ -23,6 +23,8 @@ calls").
 "Emission", below). Of the front end, the pieces its passes share, the
 unroller, `identifier_resolution`, `label_resolution`, and
 `loop_labeling` are ported ("The front end's calls").
+`loop_labeling`, and the parser's lexer and recognizer are ported ("The
+front end's calls").
 
 ## Building
 
@@ -202,6 +204,16 @@ cpp/
     bit_precise.*     the parts of bit_precise.py code generation,
                       c99_to_tac, and pp_numbers read
     pp_numbers.*      pp_numbers.py, the spelling of numbers (step 6)
+    lark_table.h      the tables of c99.lark, which cpp/generated/c99_lalr.cpp
+                      holds (tools/lalr_table.py writes it)
+    py_regex.*        Python's `re` for the patterns of c99.lark's terminals
+    lark_lexer.*      Lark's basic lexer and its UnexpectedCharacters
+    lark_parser.*     Lark's LALR ParserState as a recognizer, and its
+                      UnexpectedToken
+    lexer.*           lexer.py: `check_number` and `tokenize`
+    parser_context.*  the scopes, the typedef-aware TokenStream, and the
+                      rewording of syntax errors, of parser.py (step 6, R1)
+    parser_token_checks.*   the checks of recorded token streams
     diagnostics.*     diagnostics.py, the warnings (step 6)
     front_helper_checks.cpp   the c99 type queries' records (step 6)
     sim/assembler.*   instruction_size, from sim/assembler.py
@@ -1227,6 +1239,85 @@ pass's own Python test module whose records are under 6,000
 characters, with Python's results, and from the rest of the suite one
 call for each other message the pass raised, which is every message
 the suite reaches: 55, 144, and 31 cases.
+### The parser's lexer and recognizer (group R1)
+
+The C++ parser is a recursive descent (docs/cpp_port.md, "The plan for
+the parser"), and group R1 ported what it stands on: Lark's lexer and
+LALR table, parser.py's `_TypedefLexer` and scopes, and the syntax
+errors. Parts R2 and R3 write the descent on top of these headers.
+
+- `lark_table.h` declares the tables, which `cpp/generated/c99_lalr.cpp`
+  holds. `tools/lalr_table.py` writes that file from the parser Lark
+  builds of c99.lark with parser.py's four start rules: 976 states,
+  55,242 actions and gotos over 112 terminals and 100 nonterminals, the
+  715 rules with their origins, expansions, and aliases, and the 64
+  terminals of the lexer in the order Lark tries them, with their
+  patterns and the keywords. Lark numbers states by iterating sets of
+  strings, so the script numbers them canonically, by a breadth-first
+  walk from the start states, and two processes with different hash
+  seeds write the same file. `tests/test_lalr_table.py` regenerates it
+  and fails when it differs, so after editing c99.lark, run `uv run
+  python tools/lalr_table.py`.
+- `py_regex.h` matches the terminals' patterns with the semantics of
+  Python's `re`: an alternation takes the first alternative that
+  matches, so a match needn't be the longest. It parses the patterns
+  the table holds, so a change to a pattern in c99.lark reaches the C++
+  lexer by regenerating the table, and a pattern that needs syntax the
+  module lacks throws when it is compiled. `tests/test_py_regex.cpp`
+  holds Python's match on each of the 15 patterns for 700 spellings.
+- `lark_lexer.h` is Lark's `BasicLexer`, `Token`, and
+  `UnexpectedCharacters`, over the source as code points, since Lark's
+  lines, columns, and context count code points. `lexer.h` is lexer.py:
+  `check_number`, which the parser's lexer runs on each number, and
+  `tokenize`, which `--lex` prints.
+- `lark_parser.h` is the `Recognizer`, Lark's `ParserState.feed_token`
+  without the value stack, which makes Lark's reductions, merged
+  lookaheads included, and throws `UnexpectedToken` with Lark's
+  `expected` and `accepts`, sorted as `_sort_expected` sorts them.
+  `accepts` holds `$END` when the input could end there, since Lark's
+  interactive parser feeds `$END` as the end of the input.
+  `can_shift` is parser.py's `_can_shift`, and `reduce_through` makes
+  a lookahead's reductions up to a given rule.
+- `parser_context.h` has `Binding`, `Scope`, `TagHead`, and
+  `ParseContext` with its lookups and `declare`, and `TokenStream`,
+  which lexes, retypes an identifier to `TYPEDEF_NAME` where the
+  recognizer can shift one, opens and closes the scopes of braces and
+  `for`, and feeds each token it takes to the recognizer. `take` feeds
+  the lookahead and lexes the next token at once, which keeps Lark's
+  order between lexing and the actions of constructs that end at the
+  token taken. The descent calls `end_for_scope` where parser.py's
+  `for_stmt` runs. A scope is a `shared_ptr`, compared by identity.
+  `raise_syntax_error` throws what `parse` raises for an
+  `UnexpectedToken` or `UnexpectedCharacters`: `_c23_keyword_as_name`'s
+  and `_enum_type_without_list`'s ParserErrors, the error itself, or
+  the note about `__attribute__`.
+
+The descent has no trees yet, so the pieces are checked on token
+streams. `tools/capture_parser_tokens.py` records, for each source the
+parser is given, the tokens Lark's parser was fed, the number of scopes
+open after each, and how the parse ended, with the positions of the
+identifiers the parser's scopes named as typedefs, which the record
+gives the C++ side in place of the declarations that R2's actions will
+make. As a pytest plugin it records the Python tests' calls of `parse`
+and `tokenize` too.
+
+```sh
+uv run python tools/capture_passes.py --passes parse -j 12
+uv run python tools/capture_parser_tokens.py captures
+C6502_TOKEN_CAPTURES=captures PYTHONPATH=tools uv run pytest -p capture_parser_tokens -n 12 -q
+cpp/build/bin/c6502cpp check-captures captures/parse_tokens captures/tokenize
+```
+
+On 21 Nov 2026 the 1,788 distinct sources of the corpus and the 4,526
+more of the Python tests gave 6,314 `parse_tokens` records, of which
+every one matched: each token's type, text, line, column, and scope
+depth, and the class and message of each error, of which 429 records
+end in a syntax error and 8 in a LexError of a number, with 277
+distinct messages. The 452 distinct calls of `tokenize` matched too, 47
+distinct LexErrors among them. `tests/test_parser_syntax_errors.cpp`
+holds, for each distinct message, the shortest source that gives it.
+A parse whose error came from an action of the parser, which 316
+records hold, is checked up to the tokens shifted before it.
 
 ## The TAC optimizer's driver
 
@@ -2070,3 +2161,11 @@ Python results through `tests/stage_case.h`.
   `label_resolution`, and the unroller, each matching the Python pass
   on every distinct call of the corpus and of the Python suite, errors
   included ("The front end's calls").
+- 21 Nov 2026: group R1 of step 6, the parser's lexer and recognizer
+  ("The parser's lexer and recognizer"): the LALR table and the lexer's
+  terminals generated from c99.lark by Lark itself, with a test that
+  regenerates them; Lark's basic lexer, with Python's `re` for the
+  terminals' patterns; lexer.py; the recognizer with Lark's syntax
+  errors; and parser.py's scopes, typedef-aware lexer, and rewordings.
+  Every one of the 6,314 distinct token streams of the corpus and the
+  Python tests matched, and so did all 452 calls of `tokenize`.

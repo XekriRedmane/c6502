@@ -5,6 +5,8 @@
 #include <utility>
 
 #include "c99_ast.h"
+#include "passes/identifier_resolution.h"
+#include "passes/label_resolution.h"
 #include "passes/loop_labeling.h"
 #include "passes/type_checker.h"
 #include "pp_numbers.h"
@@ -34,6 +36,18 @@ const json::Value& arg(const json::Value& args, std::size_t i) {
     throw std::runtime_error("the call has too few positional arguments");
   }
   return args.items[i];
+}
+
+StageOutput run_identifier_resolution(const capture::Call& call, const AsmContext&,
+                                      const json::Value&, const json::Value&) {
+  auto prog = asdl::load<c99_ast::Program>(call.input);
+  return {asdl::dump(resolve_identifiers(std::move(prog))), "", ""};
+}
+
+StageOutput run_label_resolution(const capture::Call& call, const AsmContext&,
+                                 const json::Value&, const json::Value&) {
+  auto prog = asdl::load<c99_ast::Program>(call.input);
+  return {asdl::dump(resolve_labels(std::move(prog))), "", ""};
 }
 
 StageOutput run_loop_labeling(const capture::Call& call, const AsmContext&, const json::Value&,
@@ -108,9 +122,15 @@ std::vector<StageSignature> signatures() {
        .output = rt<Str>},
       {.name = "parse", .input_json = rt<Str>, .output_module = "c99_ast"},
       {.name = "unroll_program", .input = "c99_ast", .output_module = "c99_ast"},
-      {.name = "identifier_resolution", .input = "c99_ast", .output_module = "c99_ast"},
+      {.name = "identifier_resolution",
+       .input = "c99_ast",
+       .output_module = "c99_ast",
+       .run = &run_identifier_resolution},
       {.name = "string_lifting", .input = "c99_ast", .output_module = "c99_ast"},
-      {.name = "label_resolution", .input = "c99_ast", .output_module = "c99_ast"},
+      {.name = "label_resolution",
+       .input = "c99_ast",
+       .output_module = "c99_ast",
+       .run = &run_label_resolution},
       {.name = "loop_labeling",
        .input = "c99_ast",
        .output_module = "c99_ast",

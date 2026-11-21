@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 
+#include "passes/optimization/direct_member_access.h"
 #include "passes/optimization/framework.h"
 #include "passes/optimization/loop_rotate.h"
 #include "passes/optimization/noreturn_call.h"
@@ -13,6 +14,7 @@
 #include "passes/optimization/recognize_indexed_load.h"
 #include "passes/optimization/recognize_indexed_store.h"
 #include "passes/optimization/recognize_indirect_indexed.h"
+#include "passes/optimization/static_indexed_access.h"
 #include "passes/optimization/truncate_extend_fold.h"
 #include "tagged_json.h"
 
@@ -193,7 +195,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_fold_copies_in_fixedpoint"),
       tac_pass("tac_reassoc_constants"),
       tac_pass("tac_reassoc_offset_constant"),
-      tac_pass("tac_direct_member_access"),
+      tac_pass("tac_direct_member_access", &run_tac_pass<&direct_member_access>),
       tac_pass("tac_recognize_indexed_store", &run_tac_pass<&recognize_indexed_store>),
       tac_pass("tac_recognize_indexed_load", &run_tac_pass<&recognize_indexed_load>),
       tac_pass("tac_fold_truncate_extend", &run_tac_pass<&fold_truncate_extend>),
@@ -204,7 +206,7 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_narrow_byte_range"),
       tac_pass("tac_narrow_byte_bitwise"),
       tac_pass("tac_phi_offset"),
-      tac_pass("tac_static_indexed_access"),
+      tac_pass("tac_static_indexed_access", &run_tac_pass<&static_indexed_access>),
       tac_pass("tac_recognize_indirect_indexed", &run_tac_pass<&recognize_indirect_indexed>),
       tac_pass("tac_hoist_subtract_to_compare"),
       tac_pass("tac_hoist_divmod_pairs"),

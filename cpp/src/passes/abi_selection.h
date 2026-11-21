@@ -95,6 +95,22 @@ namespace abi_selection {
 // which is where the address was taken.
 NameSet address_taken(const tac_ast::Program& prog, const NameSet& declared = {});
 
+// Returns one declaration per function name, preferring the one with a
+// body, since the types and the parameters agree across them (Python's
+// `_function_decls_by_name`). The pointers are into `c99_prog`.
+OrderedMap<std::string, const c99_ast::Type_function_decl*> function_decls_by_name(
+    const c99_ast::Program& c99_prog);
+
+// Returns whether a `register` local is declared anywhere in the body of
+// `fn_decl` (Python's `_has_register_local` of the body), which is
+// false for a declaration without a body.
+bool has_register_local(const c99_ast::Type_function_decl& fn_decl);
+
+// Returns whether `fn_decl` gives a 6502 register to any parameter or
+// body local (the `register` keyword), or a zero-page address for a
+// parameter (`zeropage(addr)`), Python's `_has_register_request`.
+bool has_register_request(const c99_ast::Type_function_decl& fn_decl);
+
 }  // namespace abi_selection
 
 }  // namespace c6502::passes

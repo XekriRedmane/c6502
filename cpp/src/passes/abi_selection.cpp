@@ -883,6 +883,19 @@ NameSet address_taken(const tac::Program& prog, const NameSet& declared) {
   return taken;
 }
 
+OrderedMap<std::string, const c99::Type_function_decl*> function_decls_by_name(
+    const c99::Program& c99_prog) {
+  return passes::function_decls_by_name(c99_prog);
+}
+
+bool has_register_local(const c99::Type_function_decl& fn_decl) {
+  return has_register_local_in_function_decl(fn_decl);
+}
+
+bool has_register_request(const c99::Type_function_decl& fn_decl) {
+  return passes::has_register_request(fn_decl);
+}
+
 }  // namespace abi_selection
 
 std::vector<std::optional<asdl::Int>> pinned_param_addrs(

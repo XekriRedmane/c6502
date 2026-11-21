@@ -19,6 +19,7 @@
 #include "passes/optimization/divmod_hoist.h"
 #include "passes/optimization/fold_producer_jumps.h"
 #include "passes/optimization/framework.h"
+#include "passes/optimization/inline_functions.h"
 #include "passes/optimization/jump_thread.h"
 #include "passes/optimization/known_compare_thread.h"
 #include "passes/optimization/licm.h"
@@ -194,6 +195,17 @@ StageOutput program_output(const ir::Program& out, const std::string& symbols_be
   return result;
 }
 
+// Runs the inliner on a recorded call, whose arguments after the
+// program are the symbol table and the c99 program.
+StageOutput run_inline_functions(const capture::Call& call, const AsmContext&,
+                                 const json::Value& args, const json::Value&) {
+  auto prog = asdl::load<ir::Program>(call.input);
+  SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const c99_ast::Program c99 = C99ProgramC::decode(array_items(args).at(1));
+  const std::string before = encode<Sym>(symbols);
+  return program_output(inline_functions(std::move(prog), symbols, c99), before, symbols);
+}
+
 StageOutput run_return_in_zero_page(const capture::Call& call, const AsmContext&,
                                     const json::Value& args, const json::Value&) {
   auto prog = asdl::load<ir::Program>(call.input);
@@ -318,7 +330,8 @@ std::vector<StageSignature> signatures() {
       {.name = "inline_functions",
        .input = "tac_ast",
        .args = {rt<Sym>, rt<C99ProgramC>},
-       .output_module = "tac_ast"},
+       .output_module = "tac_ast",
+       .run = &run_inline_functions},
       {.name = "return_pointers_in_zero_page",
        .input = "tac_ast",
        .args = {rt<Sym>},

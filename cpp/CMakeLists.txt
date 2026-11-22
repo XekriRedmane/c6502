@@ -50,6 +50,10 @@ target_include_directories(c6502 PUBLIC
 
 add_executable(c6502cpp src/main.cpp)
 target_link_libraries(c6502cpp PRIVATE c6502)
+if(WIN32)
+  # CommandLineToArgvW, for the command line as UTF-8.
+  target_link_libraries(c6502cpp PRIVATE shell32)
+endif()
 
 file(GLOB C6502_TEST_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")

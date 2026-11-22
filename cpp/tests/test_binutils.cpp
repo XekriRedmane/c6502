@@ -1,11 +1,15 @@
-// Tests of the ELF reader and writer and the opcode table
-// (src/binutils/). `c6502cpp check-binutils` checks them on every file
-// tools/capture_binutils.py records.
+// Tests of the ELF reader and writer, the opcode table, argparse, and
+// nm (src/binutils/, src/argparse.h). `c6502cpp check-binutils` checks
+// them on every file and command line tools/capture_binutils.py records,
+// and tests/test_cpp_binutils.py compares nm.py with and without the C++
+// port at several terminal widths.
 #include <ostream>
 #include <string>
 #include <vector>
 
+#include "argparse.h"
 #include "binutils/elf.h"
+#include "binutils/nm.h"
 #include "binutils/opcodes.h"
 #include "doctest.h"
 #include "errors.h"
@@ -123,4 +127,49 @@ TEST_CASE("opcodes: the table and its decoding") {
   CHECK(opcodes::size(opcodes::Mode::kInd) == 3);
   CHECK(opcodes::is_mnemonic("BIT"));
   CHECK(!opcodes::is_mnemonic("BRA"));
+}
+
+TEST_CASE("argparse: nm's usage, errors, and combined flags") {
+  c6502::argparse::Parser ap("nm.py", "List things.");
+  ap.add_positional("files", "object or executable files");
+  for (const char* name : {"-a", "-g", "-u", "-n", "-p", "-r", "-S", "-A"}) {
+    ap.add_store_true({name}, "");
+  }
+  ap.add_store_true({"--defined-only"}, "only defined symbols");
+  const auto exit_of = [&](const std::vector<std::string>& args) {
+    try {
+      ap.parse_args(args, 80);
+    } catch (const c6502::argparse::Exit& e) {
+      return e;
+    }
+    return c6502::argparse::Exit{-1, "", ""};
+  };
+  const std::string usage =
+      "usage: nm.py [-h] [-a] [-g] [-u] [-n] [-p] [-r] [-S] [-A] [--defined-only]\n"
+      "             files [files ...]\n";
+  CHECK(ap.format_usage(80) == usage);
+  CHECK(exit_of({}).err == usage + "nm.py: error: the following arguments are required: files\n");
+  CHECK(exit_of({"-ax", "f"}).err ==
+        usage + "nm.py: error: argument -a: ignored explicit argument 'x'\n");
+  CHECK(exit_of({"f", "-a", "g"}).err == usage + "nm.py: error: unrecognized arguments: g\n");
+  CHECK(exit_of({"-h"}).status == 0);
+  const c6502::argparse::Namespace ns = ap.parse_args({"-agu", "--", "-h"}, 80);
+  CHECK(ns.flag("a"));
+  CHECK(ns.flag("g"));
+  CHECK(ns.flag("u"));
+  CHECK(!ns.flag("n"));
+  CHECK(*ns.list("files") == std::vector<std::string>{"-h"});
+}
+
+TEST_CASE("nm: the listing of an object") {
+  const elf::ElfFile f = sample();
+  CHECK(nm::symbol_lines(f, {}) ==
+        std::vector<std::string>{"0000 b buf", "0000 T f", "     U g"});
+  nm::Options all;
+  all.debug = true;
+  all.sort = nm::Sort::kNumeric;
+  all.size = true;
+  CHECK(nm::symbol_lines(f, all) ==
+        std::vector<std::string>{std::string(9, ' ') + " Uz g", "0000 0003 b buf",
+                                 "0000 0004 T f", "0000 0000 a t.c", "0003 0000 t .l@1"});
 }

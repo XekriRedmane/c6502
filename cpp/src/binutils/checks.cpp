@@ -9,10 +9,13 @@
 #include <string>
 #include <string_view>
 
+#include "argparse.h"
 #include "binutils/elf.h"
+#include "binutils/nm.h"
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
+#include "pyrepr.h"
 
 namespace c6502::binutils {
 
@@ -126,6 +129,38 @@ class Checker {
       }
       if (call.output_is_error) return "C++ read a file Python rejected";
       if (got != blob(output.get("rewritten")->string)) return "the rewrite differs";
+      ++count.matched;
+      return "";
+    }
+    if (kind == "nm") {
+      ++count.ran;
+      std::map<std::string, std::string> files;
+      for (const auto& pair : input.get("files")->items) {
+        files.emplace(pair.items.at(0).string, pair.items.at(1).string);
+      }
+      std::vector<std::string> argv{"nm.py"};
+      for (const auto& a : args.get("argv")->items) argv.push_back(a.string);
+      const nm::ReadFile read_file = [&](const std::string& path) {
+        const auto it = files.find(path);
+        if (it == files.end()) {
+          throw nm::FileError{"[Errno 2] No such file or directory: " +
+                              pyrepr::string(argparse::path_str(path))};
+        }
+        return blob(it->second);
+      };
+      std::string out;
+      std::string err;
+      const int status = nm::main(argv, read_file,
+                                  static_cast<int>(args.get("columns")->integer), out, err);
+      if (out != output.get("stdout")->string) {
+        return "stdout differs\nC++:\n" + out + "Python:\n" + output.get("stdout")->string;
+      }
+      if (err != output.get("stderr")->string) {
+        return "stderr differs\nC++:\n" + err + "Python:\n" + output.get("stderr")->string;
+      }
+      if (status != output.get("status")->integer) {
+        return "the exit status differs: C++ " + std::to_string(status);
+      }
       ++count.matched;
       return "";
     }

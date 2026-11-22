@@ -17,13 +17,19 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
 #endif
 
 #include "asdl/runtime.h"
 #include "asm2_ast.h"
 #include "asm_ast.h"
 #include "backend.h"
+#include "argparse.h"
 #include "binutils/checks.h"
+#include "binutils/nm.h"
 #include "binutils/opcodes.h"
 #include "c99_ast.h"
 #include "capture.h"
@@ -51,6 +57,7 @@ const char kUsage[] =
     "       c6502cpp check-regex [--verbose] <path>...\n"
     "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
     "       c6502cpp opcodes\n"
+    "       c6502cpp nm [<option>...] <file>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
     "\n"
@@ -90,6 +97,9 @@ const char kUsage[] =
     "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
     "per row, in the order of binutils/opcodes.py.\n"
     "\n"
+    "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
+    "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"
+    "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
 
@@ -99,6 +109,28 @@ std::string read_stdin() {
 #endif
   return std::string(std::istreambuf_iterator<char>(std::cin),
                      std::istreambuf_iterator<char>());
+}
+
+// Returns the command line as UTF-8, as Python reads it. On Windows the
+// `argv` of `main` is in the ANSI code page, so the arguments are read
+// again from the wide command line.
+std::vector<std::string> utf8_args(int argc, char** argv) {
+#ifdef _WIN32
+  int n = 0;
+  wchar_t** wide = CommandLineToArgvW(GetCommandLineW(), &n);
+  if (wide != nullptr) {
+    std::vector<std::string> out;
+    for (int i = 0; i < n; ++i) {
+      const int size = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, nullptr, 0, nullptr, nullptr);
+      std::string s(size > 0 ? size - 1 : 0, '\0');
+      if (size > 1) WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, s.data(), size, nullptr, nullptr);
+      out.push_back(std::move(s));
+    }
+    LocalFree(wide);
+    return out;
+  }
+#endif
+  return std::vector<std::string>(argv, argv + argc);
 }
 
 void write_stdout(const std::string& text) {
@@ -603,6 +635,32 @@ int main(int argc, char** argv) {
     }
     if (command == "check-binutils") {
       return binutils::check_binutils(args);
+    }
+    if (command == "nm") {
+      // nm.py's command line, as its `main` takes it with the program's
+      // name first.
+      std::vector<std::string> argv_nm{"nm.py"};
+      const std::vector<std::string> utf8 = utf8_args(argc, argv);
+      argv_nm.insert(argv_nm.end(), utf8.begin() + 2, utf8.end());
+      std::string out;
+      std::string err;
+      bool help = false;
+      const int status = binutils::nm::main(argv_nm, binutils::nm::read_path,
+                                            argparse::terminal_columns(), out, err, &help);
+      // Python writes the listing's bytes and the help as text, which on
+      // Windows ends each line with CR LF, and its stderr as text too,
+      // which cpp_backend.run_tool writes through Python's stream.
+      if (help) {
+        std::fwrite(out.data(), 1, out.size(), stdout);
+      } else {
+        write_stdout(out);
+      }
+      std::fflush(stdout);
+#ifdef _WIN32
+      _setmode(_fileno(stderr), _O_BINARY);
+#endif
+      std::fwrite(err.data(), 1, err.size(), stderr);
+      return status;
     }
     if (command == "opcodes" && args.empty()) {
       std::string lines;

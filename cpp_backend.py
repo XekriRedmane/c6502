@@ -273,3 +273,44 @@ def _ir_check_enabled() -> bool:
     if module is not None:
         return module.enabled()
     return os.environ.get("C6502_CHECK_IR") == "1"
+
+
+def run_tool(name: str, argv: list[str]) -> int:
+    """Runs the C++ port of a tool, `c6502cpp <name>`, on the command
+    line `argv` (the program's name first), as nm.py's `main` does under
+    `C6502_CPP_BACKEND=1`, and returns its exit status. What it writes to
+    stdout and stderr goes to `sys.stdout` and `sys.stderr`, so a caller
+    that redirects them, as a test does, gets it. The C++ side wraps the
+    usage and help as argparse does, to the width `shutil` gives here,
+    since its own stdout isn't the terminal. A bad command line ends with
+    SystemExit(2), as argparse's does, and the help with a return of 0,
+    where Python's raises SystemExit(0). A bug the C++ side reports (exit
+    status 3) is raised as an `AssertionError`."""
+    import shutil
+    from tools.check_captures import cpp_cli
+    cli = cpp_cli()
+    if cli is None:
+        raise RuntimeError(
+            "C6502_CPP_BACKEND=1 is set, but c6502cpp isn't built "
+            "(cpp/README.md has the build)",
+        )
+    env = {**os.environ, "COLUMNS": str(shutil.get_terminal_size().columns)}
+    done = subprocess.run(
+        [str(cli), name, *argv[1:]], capture_output=True, env=env,
+    )
+    if done.returncode == 3:
+        message = done.stderr.decode("utf-8", "replace").strip()
+        raise AssertionError(message.removeprefix("internal error: "))
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        # The help comes in text mode, with CR LF on Windows, which a
+        # text stream such as a test's StringIO takes as LF.
+        sys.stdout.write(done.stdout.decode("utf-8").replace("\r\n", "\n"))
+    else:
+        sys.stdout.flush()
+        buffer.write(done.stdout)
+        buffer.flush()
+    sys.stderr.write(done.stderr.decode("utf-8"))
+    if done.returncode == 2:
+        raise SystemExit(2)
+    return done.returncode

@@ -109,6 +109,15 @@ from objdump import write_lf
 
 
 def main(argv: list[str]) -> int:
+    """Lists the symbols of the files the command line `argv` names (the
+    program's name first) and returns the exit status. Under
+    `C6502_CPP_BACKEND=1` the C++ port does it (`c6502cpp nm`, through
+    `cpp_backend.run_tool`), with the same output, messages, and exit
+    status."""
+    import os
+    if os.environ.get("C6502_CPP_BACKEND") == "1":
+        import cpp_backend
+        return cpp_backend.run_tool("nm", argv)
     ap = argparse.ArgumentParser(
         prog="nm.py",
         description="List the symbols of c6502 objects and executables.",

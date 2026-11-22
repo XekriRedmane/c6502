@@ -1614,3 +1614,13 @@ separator, a binary prefix, or a `wb` suffix.
   Python and C++: in `int * const * p` the `const` qualified the outer
   pointer instead of the inner one, and `int a[const]` raised
   TypeError, which compile.py printed as a traceback.
+- 21 Nov 2026: string lifting, the last pass of group N of step 6
+  (`src/passes/string_lifting.*`, cpp/README.md, "The front end's
+  calls"), on T-B's `designators::normalize_initializer`. It matches
+  the Python pass on all 1,487 distinct calls of the corpus in both
+  modes and on all 3,495 distinct calls that the Python suite makes, 25
+  of which raise TypeCheckError, messages included, in the builds of
+  MSVC 19.36 and GCC 12.2. `tests/test_string_lifting.cpp` holds 32 of
+  the suite's calls: those of the pass's own test module, the two that
+  reach the lines no call of the corpus reaches, and one for each
+  message.

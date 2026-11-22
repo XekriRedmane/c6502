@@ -11,6 +11,7 @@
 #include "passes/loop_labeling.h"
 #include "passes/optimization_ast/unroll.h"
 #include "passes/preprocess_stage.h"
+#include "passes/string_lifting.h"
 #include "passes/type_checker.h"
 #include "pp_numbers.h"
 #include "tagged_json.h"
@@ -57,6 +58,12 @@ StageOutput run_identifier_resolution(const capture::Call& call, const AsmContex
                                       const json::Value&, const json::Value&) {
   auto prog = asdl::load<c99_ast::Program>(call.input);
   return {asdl::dump(resolve_identifiers(std::move(prog))), "", ""};
+}
+
+StageOutput run_string_lifting(const capture::Call& call, const AsmContext&, const json::Value&,
+                               const json::Value&) {
+  auto prog = asdl::load<c99_ast::Program>(call.input);
+  return {asdl::dump(lift_strings(std::move(prog))), "", ""};
 }
 
 StageOutput run_label_resolution(const capture::Call& call, const AsmContext&,
@@ -145,7 +152,10 @@ std::vector<StageSignature> signatures() {
        .input = "c99_ast",
        .output_module = "c99_ast",
        .run = &run_identifier_resolution},
-      {.name = "string_lifting", .input = "c99_ast", .output_module = "c99_ast"},
+      {.name = "string_lifting",
+       .input = "c99_ast",
+       .output_module = "c99_ast",
+       .run = &run_string_lifting},
       {.name = "label_resolution",
        .input = "c99_ast",
        .output_module = "c99_ast",

@@ -19,8 +19,8 @@ hands the type-checked c99 program to C++ and takes the `-S` text back
 ("The stage's driver", "The back end through c6502cpp", and
 "Emission", below). Of the front end, the pieces its passes share, the
 preprocessor, the parser, the unroller, `identifier_resolution`,
-`label_resolution`, `loop_labeling`, and the type checker are ported
-("The front end's calls"), and string lifting is not yet.
+string lifting, `label_resolution`, `loop_labeling`, and the type
+checker are ported ("The front end's calls").
 
 ## Building
 
@@ -1150,6 +1150,16 @@ These pieces of the front end are ported.
   about an operand that isn't an lvalue shows the operand's repr.
 - `label_resolution` (`src/passes/label_resolution.*`),
   `resolve_labels`, which throws "LabelResolutionError".
+- `string_lifting` (`src/passes/string_lifting.*`), `lift_strings`,
+  which lifts the strings of the program it takes by value. It numbers
+  the `str@N` statics in the order of Python's walk, which visits each
+  node's fields in the order of its constructor's keyword arguments, so
+  a do-while's body comes before its condition. It rewrites a braced
+  list with designators through `designators::normalize_initializer`,
+  with the member lists of the struct and union bodies it has passed,
+  which throws "TypeCheckError", and counts a string's length in code
+  points, as `pyrepr::code_points` gives them from the UTF-8 the C++
+  string holds.
 - The unroller (`src/passes/optimization_ast/unroll.*`),
   `unroll_program`, which throws "UnrollError". Python keeps the values
   of the file-scope constant arrays and their element types in two
@@ -1217,8 +1227,8 @@ does.
 `constant_expression.h` has the evaluator and the validator, and
 `NamedConstants`, the RAII form of Python's `with
 named_constants(resolver):`, whose stack is kept per thread.
-`designators.h` has `normalize_initializer`, which string_lifting will
-call, and `stdbit_functions.h` has `add_definitions`. The parser's
+`designators.h` has `normalize_initializer`, which string_lifting
+calls, and `stdbit_functions.h` has `add_definitions`. The parser's
 folds (parser.py:2422-2663) make a checker of their own, fill its
 public `symbols`, `types` (through `check_struct_decl`), and
 `constexpr_values`, install its `named_constant` with
@@ -1262,6 +1272,19 @@ pass's own Python test module whose records are under 6,000
 characters, with Python's results, and from the rest of the suite one
 call for each other message the pass raised, which is every message
 the suite reaches: 55, 144, and 31 cases.
+
+On 21 Nov 2026 string lifting matched Python on all 1,487 distinct calls
+of the corpus in both modes, none of which raise, and on all 3,495
+distinct calls the Python suite makes, recorded by a run of the suite
+with `StringLifter.lift_program` wrapped by `_wrap_front`, 25 of which
+raise TypeCheckError from `normalize_initializer`. A line trace of the
+Python pass found two lines that only the suite's calls reach, the
+`{"abc"}` of a character array and a call through an expression.
+`tests/test_string_lifting.cpp` holds the 9 distinct calls of
+tests/test_string_lifting.py, the smallest call that reaches each of
+those lines, and one call for each of the 21 messages the suite's calls
+raise, 32 cases.
+
 ### The parser's lexer and recognizer (group R1)
 
 The C++ parser is a recursive descent (docs/cpp_port.md, "The plan for

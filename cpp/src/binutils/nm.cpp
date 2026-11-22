@@ -87,7 +87,12 @@ std::vector<std::string> symbol_lines(const elf::ElfFile& elf, const Options& o)
     std::string value;
     if (s->defined()) {
       value = hex4(s->value & 0xFFFF);
-      if (o.size) value += " " + hex4(s->size);
+      if (o.size) {
+        // Two appends, where `" " + hex4(...)` gave GCC 12.2 a false
+        // -Wrestrict warning.
+        value += ' ';
+        value += hex4(s->size);
+      }
     } else {
       value = std::string(o.size ? 9 : 4, ' ');
     }

@@ -9,7 +9,9 @@
 #include <string>
 #include <string_view>
 
+#include "binutils/elf.h"
 #include "capture.h"
+#include "errors.h"
 #include "json.h"
 
 namespace c6502::binutils {
@@ -59,6 +61,9 @@ class Checker {
     }
   }
 
+  std::size_t files_checked() const { return round_trips_.size(); }
+  std::size_t files_differ() const { return bad_files_; }
+
  private:
   // Returns what differs when the record's JSON is read and written
   // again, or the empty string.
@@ -75,12 +80,76 @@ class Checker {
     return "";
   }
 
-  // Returns what differs when a ported function runs on the record. No
-  // function is ported yet.
-  std::string run(const capture::Call&, std::string_view, Count&) { return ""; }
+  std::string blob(const std::string& hash) {
+    return capture::read_file(root_ / "blobs" / hash);
+  }
+
+  // Returns what differs when the object or executable `hash` is read
+  // and written again in C++, or the empty string. Each file is checked
+  // once.
+  std::string round_trip(const std::string& hash) {
+    if (auto it = round_trips_.find(hash); it != round_trips_.end()) return it->second;
+    const std::string data = blob(hash);
+    std::string problem;
+    try {
+      if (elf::write(elf::read(data, hash)) != data) {
+        problem = "file " + hash + " read and written again differs";
+      }
+    } catch (const CompileError& e) {
+      problem = "file " + hash + ": " + e.what();
+    }
+    if (!problem.empty()) ++bad_files_;
+    round_trips_.emplace(hash, problem);
+    return problem;
+  }
+
+  std::string run(const capture::Call& call, std::string_view kind, Count& count) {
+    const json::Value args = json::parse(call.args_json);
+    const json::Value input = json::parse(call.input);
+    const json::Value output = json::parse(call.output);
+    if (kind == "elf_read") {
+      ++count.ran;
+      const std::string data = blob(input.get("data")->string);
+      std::string got;
+      try {
+        got = elf::write(elf::read(data, args.get("name")->string));
+      } catch (const CompileError& e) {
+        if (!call.output_is_error) return std::string("C++ raised ") + e.what();
+        if (e.python_type() != output.get("type")->string ||
+            e.what() != output.get("message")->string) {
+          return std::string("C++ raised ") + e.python_type() + ": " + e.what() +
+                 "\nPython raised " + output.get("type")->string + ": " +
+                 output.get("message")->string;
+        }
+        ++count.matched;
+        return "";
+      }
+      if (call.output_is_error) return "C++ read a file Python rejected";
+      if (got != blob(output.get("rewritten")->string)) return "the rewrite differs";
+      ++count.matched;
+      return "";
+    }
+    // The files each kind holds that c6502 wrote, which must make the
+    // trip through the C++ reader and writer.
+    std::vector<std::string> files;
+    if (kind == "assemble" && !call.output_is_error) {
+      files.push_back(output.get("object")->string);
+    } else if (kind == "link") {
+      for (const auto& pair : input.get("objects")->items) files.push_back(pair.items.at(1).string);
+      if (!call.output_is_error) files.push_back(output.get("executable")->string);
+    } else if (kind == "disassemble") {
+      files.push_back(input.get("elf")->string);
+    }
+    for (const auto& hash : files) {
+      if (std::string problem = round_trip(hash); !problem.empty()) return problem;
+    }
+    return "";
+  }
 
   fs::path root_;
   bool verbose_;
+  std::map<std::string, std::string> round_trips_;
+  std::size_t bad_files_ = 0;
 };
 
 }  // namespace
@@ -96,6 +165,8 @@ int check_binutils(const std::vector<std::string>& args) {
     }
   }
   std::map<std::string, Count, std::less<>> counts;
+  std::size_t files = 0;
+  std::size_t bad_files = 0;
   for (const auto& root : roots) {
     Checker checker(root, verbose);
     for (std::string_view kind : kKinds) {
@@ -109,6 +180,8 @@ int check_binutils(const std::vector<std::string>& args) {
       Count& count = counts[std::string(kind)];
       for (const auto& path : paths) checker.check(path, kind, count);
     }
+    files += checker.files_checked();
+    bad_files += checker.files_differ();
   }
   std::size_t differ = 0;
   for (std::string_view kind : kKinds) {
@@ -119,6 +192,8 @@ int check_binutils(const std::vector<std::string>& args) {
                 std::string(kind).c_str(), c.records, c.trips, c.ran, c.matched, c.differ);
     differ += c.differ;
   }
+  std::printf("objects and executables read and written again: %zu, %zu differ\n", files,
+              bad_files);
   return differ == 0 ? 0 : 1;
 }
 

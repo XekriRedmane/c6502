@@ -24,6 +24,7 @@
 #include "asm_ast.h"
 #include "backend.h"
 #include "binutils/checks.h"
+#include "binutils/opcodes.h"
 #include "c99_ast.h"
 #include "capture.h"
 #include "errors.h"
@@ -49,6 +50,7 @@ const char kUsage[] =
     "       c6502cpp check-preprocess [--verbose] <path>...\n"
     "       c6502cpp check-regex [--verbose] <path>...\n"
     "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
+    "       c6502cpp opcodes\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
     "\n"
@@ -84,6 +86,9 @@ const char kUsage[] =
     "\n"
     "check-binutils checks the records of tools/capture_binutils.py under\n"
     "each capture directory (src/binutils/checks.h).\n"
+    "\n"
+    "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
+    "per row, in the order of binutils/opcodes.py.\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -598,6 +603,17 @@ int main(int argc, char** argv) {
     }
     if (command == "check-binutils") {
       return binutils::check_binutils(args);
+    }
+    if (command == "opcodes" && args.empty()) {
+      std::string lines;
+      for (const auto& e : binutils::opcodes::table()) {
+        char op[8];
+        std::snprintf(op, sizeof op, "0x%02X", e.opcode);
+        lines += std::string(e.mnemonic) + " " + std::string(binutils::opcodes::mode_name(e.mode)) +
+                 " " + op + "\n";
+      }
+      write_stdout(lines);
+      return 0;
     }
     if (command == "backend" && args.empty()) {
       // A problem with the program goes back in the response with its

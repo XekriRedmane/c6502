@@ -141,7 +141,10 @@ TokenPtr Lexer::token() {
   if (pos_ >= s.size()) return nullptr;
   auto tok = std::make_shared<Token>();
   tok->lineno = lineno;
-  tok->lexpos = pos_;
+  for (; counted_ < pos_; ++counted_) {
+    if ((static_cast<unsigned char>(s[counted_]) & 0xC0) != 0x80) ++code_points_;
+  }
+  tok->lexpos = code_points_;
   const std::size_t pos = pos_;
   auto take = [&](Type type, std::size_t len) {
     tok->type = type;

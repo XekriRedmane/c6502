@@ -46,6 +46,8 @@ class Lexer {
   void input(std::string text) {
     data_ = std::move(text);
     pos_ = 0;
+    counted_ = 0;
+    code_points_ = 0;
   }
 
   // Returns the next token, or null at the end of the input.
@@ -56,6 +58,10 @@ class Lexer {
  private:
   std::string data_;
   std::size_t pos_ = 0;
+  // The code points of `data_` before byte `counted_`, which give a
+  // token's `lexpos` as Python counts it in a `str`.
+  std::size_t counted_ = 0;
+  std::size_t code_points_ = 0;
 };
 
 // Returns every token of `text`, from a new lexer whose line number

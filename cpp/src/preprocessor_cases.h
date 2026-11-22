@@ -7,7 +7,10 @@
 // headers), `files` (each file pcpp opened, by its path, with its bytes
 // as the code points 0 to 255), and Python's `output` (the text, or
 // null), `error` (`[type, message]`, or null), `warnings`
-// (`[[where, message], ...]`), and `stderr`. The C++ preprocessor runs
+// (`[[where, message], ...]`), and `stderr`. A record of a call with
+// `--debug` may hold `debug_log`, the bytes Python left in
+// `pcpp_debug.log` as the code points 0 to 255, or null when the call
+// didn't create the file. The C++ preprocessor runs
 // on a host that holds only those files, with the paths of the system
 // the call was recorded on, so a record made on Windows is checked the
 // same way on Linux.

@@ -27,9 +27,11 @@
 // directives are C23 statement attributes now. Every other `#pragma`
 // line becomes a blank line.
 //
-// pcpp's `--debug` log isn't written: the flag is read and creates
-// nothing. `--time` and `--filetimes` give the report with the times the
-// C++ measures. `--passthru-includes` compiles and matches its pattern
+// pcpp's `--debug` log goes to the host's `write_debug_log`, which the
+// native host writes to `pcpp_debug.log` in the current directory, at
+// the end of the call, whether or not it throws, as
+// `CompilePreprocessor.run` closes it. `--time` and `--filetimes` give
+// the report with the times the C++ measures. `--passthru-includes` compiles and matches its pattern
 // with py_regex, which follows Python's `re`, and a pattern py_regex
 // doesn't take throws CompileError("NotImplementedError", ...).
 #pragma once

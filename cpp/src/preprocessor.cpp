@@ -415,8 +415,9 @@ class CompilePreprocessor : public pcpp::Preprocessor {
     define("__PCPP_ALWAYS_FALSE__ 0");
     define("__PCPP_ALWAYS_TRUE__ 1");
     if (args.debug) {
-      // pcpp opens its log here. The C++ writes nothing to it.
-      std::ofstream("pcpp_debug.log");
+      // pcpp opens its log here, which creates the file or empties it.
+      debug = true;
+      if (host.write_debug_log) host.write_debug_log("");
     }
     auto_pragma_once_enabled = !args.auto_pragma_once_disabled;
     line_directive = args.line_directive;
@@ -466,14 +467,27 @@ class CompilePreprocessor : public pcpp::Preprocessor {
     if (host.isdir && host.isdir(include_dir)) add_path(include_dir);
   }
 
+  // Preprocesses `src` and returns the text. The `--debug` log is written
+  // at the end, whether or not this throws, as `CompilePreprocessor.run`
+  // closes it.
   std::string run(const std::string& src, const std::optional<std::string>& filename) {
-    input_file = filename;
     std::string out;
-    if (args.write_bom) out += "\xEF\xBB\xBF";
-    out += parse_and_write(src, filename);
-    if (args.time) print_time_report();
-    if (args.filetimes) write_filetimes_csv(*args.filetimes);
+    try {
+      input_file = filename;
+      if (args.write_bom) out += "\xEF\xBB\xBF";
+      out += parse_and_write(src, filename);
+      if (args.time) print_time_report();
+      if (args.filetimes) write_filetimes_csv(*args.filetimes);
+    } catch (...) {
+      close_debug_log();
+      throw;
+    }
+    close_debug_log();
     return out;
+  }
+
+  void close_debug_log() {
+    if (debug && host.write_debug_log) host.write_debug_log(debug_bytes);
   }
 
   void on_error(const std::optional<std::string>& file, int line,

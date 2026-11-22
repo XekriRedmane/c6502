@@ -1688,3 +1688,14 @@ separator, a binary prefix, or a `wb` suffix.
   records of `tools/py_regex_records.py` (1,039,520 matches and 4,013
   errors, with 320 patterns unsupported), and the C++ matches Python on
   52 recorded calls of `preprocess` with the flag.
+  The C++ writes `--debug`'s log, `pcpp_debug.log`, with pcpp's lines,
+  the `repr` of each macro (which holds no memory address), Python's
+  encoding and newlines, and the UnicodeEncodeError and KeyError that
+  Python's log can raise. pcpp never closes the log, and preprocessor.py
+  holds the preprocessor in a reference cycle, so what reached the disk
+  depended on the garbage collector. The file held the whole log after
+  `-S` of one C file and nothing after a link. That was fixed as a bug in Python
+  (`CompilePreprocessor.run` closes the log), so each call leaves its
+  whole log. The C++ matches Python's log on all 1,488 sources of the
+  corpus and on 294 generated calls that reach each of pcpp's lines,
+  and compile.py leaves the same bytes with and without the variable.

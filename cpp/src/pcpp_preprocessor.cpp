@@ -91,6 +91,37 @@ bool starts_with(const std::string& s, const std::string& prefix) {
 
 std::string str_or_none(const std::optional<std::string>& s) { return s ? *s : "None"; }
 
+// Returns Python's `%d` of a bool.
+std::string bit(bool b) { return b ? "1" : "0"; }
+
+// Returns `repr()` of a token, which PLY's LexToken gives as
+// `LexToken(type,'value',lineno,lexpos)`.
+std::string lextoken_repr(const Token& t) {
+  return "LexToken(" + type_name(t) + "," + py_repr(t.value) + "," + std::to_string(t.lineno) +
+         "," + std::to_string(t.lexpos) + ")";
+}
+
+// Returns `repr()` of a macro, which pcpp's `Macro.__repr__` gives as
+// `name(arglist)=value`, with Python's repr of the list of argument
+// names (or None) and of the list of tokens.
+std::string macro_repr(const Macro& m) {
+  std::string args = "None";
+  if (m.arglist) {
+    args = "[";
+    for (std::size_t i = 0; i < m.arglist->size(); ++i) {
+      if (i > 0) args += ", ";
+      args += py_repr((*m.arglist)[i]);
+    }
+    args += "]";
+  }
+  std::string value = "[";
+  for (std::size_t i = 0; i < m.value.size(); ++i) {
+    if (i > 0) value += ", ";
+    value += lextoken_repr(*m.value[i]);
+  }
+  return m.name + "(" + args + ")=" + value + "]";
+}
+
 // Replaces the trigraph sequences, as pcpp's `trigraph` does with the
 // pattern `\?\?[=/\'\(\)\!<>\-]`.
 std::string trigraph(const std::string& input) {
@@ -276,6 +307,9 @@ Host native_host() {
 #endif
     return tm;
   };
+  host.write_debug_log = [](const std::string& bytes) {
+    std::ofstream("pcpp_debug.log", std::ios::binary | std::ios::trunc) << bytes;
+  };
   return host;
 }
 
@@ -401,6 +435,12 @@ void Preprocessor::add_path(const std::string& p) {
     if (host.paths.flavor == PathFlavor::Posix) replacement = host.paths.join(*rel, "");
     rewrite_paths.push_back({host.paths.abspath(p) + host.paths.sep(), replacement});
   }
+}
+
+void Preprocessor::debug_print(const std::string& line) {
+  const bool crlf = host.paths.flavor == PathFlavor::Nt;
+  debug_bytes += encode_text_file(line, host.encoding, crlf);
+  debug_bytes += crlf ? "\r\n" : "\n";
 }
 
 bool Preprocessor::include_once_has(const std::optional<std::string>& key) const {
@@ -1000,6 +1040,10 @@ void Preprocessor::parsegen(const std::string& input, std::optional<std::string>
     for (const auto& tok : expand_macros(chunk)) emit(tok);
     chunk.clear();
   };
+  // The start of each line of the `--debug` log, `enable:iftrigger:ifpassthru`
+  // and a space.
+  auto state = [&]() { return bit(enable) + ":" + bit(iftrigger) + ":" + bit(ifpassthru) + " "; };
+  auto where = [](const TokenPtr& t) { return str_or_none(t->source) + ":" + std::to_string(t->lineno); };
 
   for (auto xp : lines) {
     bool all_whitespace = true;
@@ -1048,6 +1092,10 @@ void Preprocessor::parsegen(const std::string& input, std::optional<std::string>
           name = dirtokens[0]->value;
           args = slice(dirtokens, 1);
           tokenstrip(args);
+          if (debug) {
+            debug_print(state() + where(dirtokens[0]) + " #" + dirtokens[0]->value + " " +
+                        join_values(args));
+          }
           handling = on_directive_handle(dirtokens[0], args, ifpassthru, precedingtoks);
         } else {
           throw OutputDirective{Action::IgnoreAndRemove};
@@ -1066,6 +1114,13 @@ void Preprocessor::parsegen(const std::string& input, std::optional<std::string>
               }
             }
             define(args);
+            if (debug) {
+              // Python reads the macro back with `self.macros[...]`, which
+              // raises KeyError when the definition was rejected.
+              const auto it = macros.find(at(args, 0)->value);
+              if (it == macros.end()) throw CompileError("KeyError", py_repr(args[0]->value));
+              debug_print(state() + where(dirtokens[0]) + "      " + macro_repr(*it->second));
+            }
             if (!handling) {
               for (const auto& t : *xp) emit(t);
             }
@@ -1255,6 +1310,11 @@ void Preprocessor::parsegen(const std::string& input, std::optional<std::string>
             enable = old.enable;
             iftrigger = old.iftrigger;
             ifpassthru = old.ifpassthru;
+            if (debug) {
+              const TokenPtr& first = at(*old.startlinetoks, 0);
+              debug_print(state() + where(dirtokens[0]) + "      (" + where(first) + " " +
+                          join_values(*old.startlinetoks) + ")");
+            }
             skip_auto_pragma_once_possible_check = true;
             if (old.rewritten) throw OutputDirective{Action::IgnoreAndPassThrough};
           } else {
@@ -1277,6 +1337,12 @@ void Preprocessor::parsegen(const std::string& input, std::optional<std::string>
     if (!skip_auto_pragma_once_possible_check && auto_pragma_once_possible && ifstack.empty() &&
         !all_whitespace) {
       auto_pragma_once_possible = false;
+      if (debug) {
+        debug_print(state() + where(at(*xp, 0)) + " Determined that #include \"" +
+                    str_or_none(source) +
+                    "\" is not entirely wrapped in an include guard macro, disabling "
+                    "auto-applying #pragma once");
+      }
     }
 
     if (output_and_expand_line || output_unexpanded_line) {
@@ -1306,7 +1372,21 @@ void Preprocessor::parsegen(const std::string& input, std::optional<std::string>
     on_error(first->source, first->lineno, "Unterminated " + join_values(*entry.startlinetoks));
   }
   if (auto_pragma_once_possible && include_guard && include_guard->second == 1) {
+    if (debug) {
+      debug_print(state() + str_or_none(source) + ":0 Determined that #include \"" +
+                  str_or_none(source) +
+                  "\" is entirely wrapped in an include guard macro called " +
+                  include_guard->first + ", auto-applying #pragma once");
+    }
     include_once_set(source, include_guard->first);
+  } else if (auto_pragma_once_enabled && !include_once_has(source) && debug) {
+    const std::string guard = include_guard ? "(" + py_repr(include_guard->first) + ", " +
+                                                  std::to_string(include_guard->second) + ")"
+                                            : "None";
+    debug_print(state() + str_or_none(source) +
+                ":0 Did not auto apply #pragma once to this file due to "
+                "auto_pragma_once_possible=" +
+                bit(auto_pragma_once_possible) + ", include_guard=" + guard);
   }
   include_times[my_include_times_idx].elapsed = process_clock() - my_include_time_begin;
   --include_depth;
@@ -1356,6 +1436,7 @@ void Preprocessor::include(Tokens tokens, const Tokens& original_line, const Emi
       const std::string iname = host.paths.join(p, filename);
       const std::string fulliname = host.paths.abspath(iname);
       if (include_once_has(fulliname)) {
+        if (debug) debug_print("x:x:x x:x #include \"" + fulliname + "\" skipped as already seen");
         if (passthru()) {
           for (const auto& t : original_line) emit(t);
         }

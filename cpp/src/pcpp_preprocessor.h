@@ -98,6 +98,9 @@ struct Host {
   std::function<bool(const std::string& path)> isdir;
   // The local time that `__DATE__` and `__TIME__` give.
   std::function<std::tm()> localtime;
+  // Replaces what `pcpp_debug.log` in the current directory holds with
+  // `bytes`, for `--debug`.
+  std::function<void(const std::string& bytes)> write_debug_log;
 };
 
 // The host of this machine: its current directory, its files, and its
@@ -206,11 +209,21 @@ class Preprocessor {
   TokenPtr lastdirective;
   // The lines pcpp has printed to stderr.
   std::string stderr_text;
+  // Whether pcpp's `debugout` is open, for `--debug`, and the bytes
+  // written to it, as Python's text file encodes them.
+  bool debug = false;
+  std::string debug_bytes;
 
  protected:
   using Emit = std::function<void(const TokenPtr&)>;
 
   bool include_once_has(const std::optional<std::string>& key) const;
+  // `print(line, file=self.debugout)`, which encodes `line` with the
+  // host's encoding, writing each "\n" as "\r\n" on Windows. Python's
+  // text file encodes what it's given at once, so a character the
+  // encoding lacks raises UnicodeEncodeError in the middle of the
+  // preprocessing, and the line isn't written.
+  void debug_print(const std::string& line);
   void include_once_set(const std::optional<std::string>& key,
                         const std::optional<std::string>& value);
 

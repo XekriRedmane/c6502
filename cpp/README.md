@@ -1480,11 +1480,42 @@ The port follows the plan in docs/cpp_port.md, part by part.
   `_NumberEvaluator`, `_check_pragma`, `_strip_pragmas`, and
   `parse_args`.
 
-`--debug` creates pcpp's log and writes nothing to it, which can't
-matter to a compile. pcpp stops a macro that expands inside its own
-argument when Python's stack runs out, which depends on how deep the
-caller's stack is, so the C++ stops it at 300 nested expansions
-(`kMaxExpansionDepth`).
+pcpp stops a macro that expands inside its own argument when Python's
+stack runs out, which depends on how deep the caller's stack is, so the
+C++ stops it at 300 nested expansions (`kMaxExpansionDepth`).
+
+With `--debug`, pcpp opens `pcpp_debug.log` in the current directory
+with `open("pcpp_debug.log", "wt")` and prints a line to it for each
+directive, each definition (with `repr` of the macro), the end of each
+conditional, each decision about an include guard, and each include it
+skips as already seen. The C++ writes the same lines at the same
+points (`Preprocessor::debug_print`), encoded as Python's text file
+encodes them, with the locale's encoding (cp1252 on Windows and UTF-8
+on Linux) and "\n" written as "\r\n" on Windows. A character the
+encoding lacks raises UnicodeEncodeError where Python's `print` raises
+it, with the position in the translated line. pcpp's `Macro.__repr__`
+gives `name(arglist)=value`, and each token of the value is PLY's
+`LexToken(type,'value',lineno,lexpos)`, so the lines hold no memory
+address and are compared whole. Python counts `lexpos` in code points,
+and the C++ lexer counts it that way too. A definition that pcpp
+rejects leaves no macro to read back, and Python's log raises KeyError,
+which the C++ raises too.
+
+pcpp never closes the log, and before the fix of 21 Nov 2026
+preprocessor.py's reference cycle left what reached the disk to the
+garbage collector. The whole log was written for `-S` of one C file and
+none of it for a link. `CompilePreprocessor.run` now closes the log at
+its end, also when it raises, so each call leaves its whole log, and a
+compile of several C files leaves the last one's. The C++ writes the
+file through `Host::write_debug_log` when `run` ends, whether or not
+it throws, after emptying it where pcpp opens it, and the records'
+`debug_log` holds the bytes Python left. On 21 Nov 2026 the C++ matched
+Python's log on all 1,488 sources of the corpus (the examples, the
+games' units, and the chapter programs) and on 294 generated calls
+that reach every line pcpp writes, with seven sets of flags, and
+compile.py left the same bytes with and without `C6502_CPP_BACKEND=1`
+for `-S`, `-c`, and a link of one and two C files.
+`tests/test_preprocessor_debug_log.cpp` holds 159 of those calls.
 
 pcpp compiles the pattern of `--passthru-includes` with
 `re.compile(pattern)` and matches it with `.match` against the text of

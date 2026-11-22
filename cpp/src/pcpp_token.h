@@ -103,8 +103,9 @@ struct Token {
   // characters are the code points of this text.
   std::string value;
   int lineno = 0;
-  // The byte offset of the token in the text its lexer was given. PLY
-  // counts characters, and nothing pcpp writes shows the offset.
+  // The offset of the token in the text its lexer was given, in code
+  // points, as PLY counts it in a `str`. The `--debug` log shows it in
+  // the `repr` of a macro's tokens.
   std::size_t lexpos = 0;
   // The file the token came from, with pcpp's rewriting of its path,
   // "" for a token of `Preprocessor.tokenize`, and None for a token of a

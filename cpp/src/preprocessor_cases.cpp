@@ -82,6 +82,8 @@ std::string check_recorded_call(std::string_view record,
     tm.tm_mday = 21;
     return tm;
   };
+  auto debug_log = std::make_shared<std::optional<std::string>>();
+  host.write_debug_log = [debug_log](const std::string& bytes) { *debug_log = bytes; };
   std::vector<diagnostics::CompileWarning> found;
   std::string got_text;
   std::optional<std::pair<std::string, std::string>> got_error;
@@ -116,6 +118,15 @@ std::string check_recorded_call(std::string_view record,
   if (found != want) return "the warnings differ";
   if (got_stderr != *string_or_null(c, "stderr")) {
     return "stderr differs:\n" + got_stderr + "--- Python's:\n" + *string_or_null(c, "stderr");
+  }
+  if (c.get("debug_log") != nullptr) {
+    const auto want_log = string_or_null(c, "debug_log");
+    const std::optional<std::string> want_bytes =
+        want_log ? std::optional<std::string>(latin1_bytes(*want_log)) : std::nullopt;
+    if (*debug_log != want_bytes) {
+      return "pcpp_debug.log differs:\n" + debug_log->value_or("(not written)") +
+             "--- Python's:\n" + want_bytes.value_or("(not written)");
+    }
   }
   return "";
 }

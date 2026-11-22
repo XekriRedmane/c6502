@@ -607,4 +607,68 @@ std::string decode_text_file(std::string_view bytes, std::string_view encoding) 
   return out;
 }
 
+std::string encode_text_file(std::string_view text, std::string_view encoding, bool crlf) {
+  const std::string codec = codec_name(encoding);
+  if (codec != "utf-8" && codec != "latin-1" && codec != "cp1252" && codec != "ascii") {
+    throw CompileError("LookupError", "unknown encoding: " + std::string(encoding));
+  }
+  std::vector<std::uint32_t> cps;
+  for (std::size_t i = 0; i < text.size();) {
+    std::size_t len = 0;
+    const std::uint32_t cp = decode_at(text, i, len);
+    if (cp == '\n' && crlf) cps.push_back('\r');
+    cps.push_back(cp);
+    i += len;
+  }
+  // The byte of `cp` in a codec of one byte per character, or -1.
+  auto byte_of = [&](std::uint32_t cp) -> int {
+    if (codec == "ascii") return cp < 0x80 ? static_cast<int>(cp) : -1;
+    if (codec == "latin-1") return cp < 0x100 ? static_cast<int>(cp) : -1;
+    if (cp < 0x80 || (cp >= 0xA0 && cp < 0x100)) return static_cast<int>(cp);
+    for (int b = 0; b < 32; ++b) {
+      if (kCp1252High[b] != 0 && kCp1252High[b] == cp) return 0x80 + b;
+    }
+    return -1;
+  };
+  auto encodable = [&](std::uint32_t cp) {
+    return codec == "utf-8" ? !(cp >= 0xD800 && cp < 0xE000) : byte_of(cp) >= 0;
+  };
+  std::string out;
+  for (std::size_t i = 0; i < cps.size(); ++i) {
+    const std::uint32_t cp = cps[i];
+    if (encodable(cp)) {
+      if (codec == "utf-8") {
+        append_utf8(out, cp);
+      } else {
+        out += static_cast<char>(byte_of(cp));
+      }
+      continue;
+    }
+    // Python's encoders report the run of characters they can't encode.
+    std::size_t end = i + 1;
+    while (end < cps.size() && !encodable(cps[end])) ++end;
+    const char* name = codec == "cp1252" ? "charmap" : codec.c_str();
+    const char* reason = codec == "utf-8"     ? "surrogates not allowed"
+                         : codec == "cp1252"  ? "character maps to <undefined>"
+                         : codec == "latin-1" ? "ordinal not in range(256)"
+                                              : "ordinal not in range(128)";
+    std::string msg = std::string("'") + name + "' codec can't encode ";
+    if (end == i + 1) {
+      char buf[16];
+      if (cp <= 0xFF) {
+        std::snprintf(buf, sizeof buf, "\\x%02x", static_cast<unsigned>(cp));
+      } else if (cp <= 0xFFFF) {
+        std::snprintf(buf, sizeof buf, "\\u%04x", static_cast<unsigned>(cp));
+      } else {
+        std::snprintf(buf, sizeof buf, "\\U%08x", static_cast<unsigned>(cp));
+      }
+      msg += std::string("character '") + buf + "' in position " + std::to_string(i);
+    } else {
+      msg += "characters in position " + std::to_string(i) + "-" + std::to_string(end - 1);
+    }
+    throw CompileError("UnicodeEncodeError", msg + ": " + reason);
+  }
+  return out;
+}
+
 }  // namespace c6502::pcpp

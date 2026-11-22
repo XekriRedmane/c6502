@@ -98,4 +98,13 @@ struct Paths {
 // Python's message where Python raises one.
 std::string decode_text_file(std::string_view bytes, std::string_view encoding);
 
+// Encodes the text `text` (UTF-8) with the codec `encoding`, as a file
+// that Python opens with `open(path, 'wt', encoding=...)` encodes what
+// is written to it. With `crlf`, each "\n" is written as "\r\n" first,
+// as Python's newline translation on Windows does. Throws CompileError of
+// type "UnicodeEncodeError" with Python's message, which gives the
+// position in the translated text, for a character the codec can't
+// encode, or "LookupError" for a codec the port doesn't know.
+std::string encode_text_file(std::string_view text, std::string_view encoding, bool crlf);
+
 }  // namespace c6502::pcpp

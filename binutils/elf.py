@@ -355,7 +355,20 @@ def write(elf: ElfFile) -> bytes:
 def read(data: bytes, name: str = "file") -> ElfFile:
     """The `ElfFile` in `data`. `name` is for error messages. Raises
     `ElfError` when `data` isn't a little-endian ELF32 file for the
-    6502."""
+    6502, or when it's truncated or damaged: a header, a table, a
+    section's or segment's bytes, or a name that runs past the end of
+    the file, a section index or a
+    symbol index past the end of its table, or a name or a text section
+    that isn't UTF-8. nm.py, objdump.py, and compile.py report an
+    `ElfError` as a one-line error, where Python's own `struct.error`,
+    `IndexError`, and `ValueError` gave a traceback."""
+    try:
+        return _read(data, name)
+    except (struct.error, IndexError, ValueError) as e:
+        raise ElfError(f"{name}: the ELF file is truncated or damaged") from e
+
+
+def _read(data: bytes, name: str) -> ElfFile:
     if len(data) < _EHDR.size or data[:4] != b"\x7fELF":
         raise ElfError(f"{name}: not an ELF file")
     (ident, e_type, machine, _, entry, phoff, shoff, flags, _, phentsize,
@@ -372,7 +385,7 @@ def read(data: bytes, name: str = "file") -> ElfFile:
     ]
 
     def blob(h) -> bytes:
-        return data[h[4]:h[4] + h[5]]
+        return _part(data, h[4], h[5])
 
     def cstr(table: bytes, off: int) -> str:
         end = table.index(b"\0", off)
@@ -391,6 +404,9 @@ def read(data: bytes, name: str = "file") -> ElfFile:
                 s.nobits_size = h[5]
             else:
                 s.data = bytearray(blob(h))
+                if s.name in (LINK_SECTION, SOURCE_SECTION):
+                    # `link_text` and `source_text` decode these.
+                    s.data.decode("utf-8")
             by_index[i] = s
             elf.sections.append(s)
     symbols: list[Symbol | None] = [None]
@@ -440,10 +456,18 @@ def read(data: bytes, name: str = "file") -> ElfFile:
         if p_type == PT_LOAD:
             elf.segments.append(Segment(
                 vaddr=vaddr, paddr=paddr,
-                data=data[p_offset:p_offset + filesz], memsz=memsz,
+                data=_part(data, p_offset, filesz), memsz=memsz,
                 flags=pflags,
             ))
     return elf
+
+
+def _part(data: bytes, offset: int, size: int) -> bytes:
+    """The `size` bytes of `data` at `offset`. Raises `ValueError` when
+    they run past the end."""
+    if offset + size > len(data):
+        raise ValueError("past the end of the file")
+    return data[offset:offset + size]
 
 
 def read_file(path) -> ElfFile:

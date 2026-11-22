@@ -95,6 +95,48 @@ class TestElf(unittest.TestCase):
         with self.assertRaises(E.ElfError):
             E.read(b"not an elf file at all, no")
 
+    def test_damaged_files(self) -> None:
+        # Each of these raised struct.error, IndexError, or ValueError,
+        # which nm.py, objdump.py, and compile.py printed as a
+        # traceback.
+        text = (_ROOT / "examples" / "apply_bobble.asm").read_text()
+        data = E.write(assemble(text, "apply_bobble.asm"))
+        shoff = int.from_bytes(data[32:36], "little")
+        shstrndx = 50
+
+        def with_bytes(at: int, new: bytes) -> bytes:
+            return data[:at] + new + data[at + len(new):]
+
+        damaged = {
+            "truncated": data[:len(data) // 2],
+            "the section headers cut short": data[:-1],
+            "the names' table index past the end": with_bytes(
+                shstrndx, (0x7FFF).to_bytes(2, "little")),
+            "a section's bytes past the end": with_bytes(
+                shoff + 40 + 20, (0xFFFFFF).to_bytes(4, "little")),
+        }
+        link = E.LINK_SECTION.encode()
+        at = data.index(b"; @zp-link-meta-begin")
+        damaged["link metadata that isn't UTF-8"] = with_bytes(at, b"\xff")
+        self.assertIn(link, data)
+        for what, bad in damaged.items():
+            with self.subTest(what), self.assertRaises(E.ElfError) as cm:
+                E.read(bad, "x.o")
+            self.assertEqual(
+                str(cm.exception), "x.o: the ELF file is truncated or damaged",
+            )
+        import nm
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.o"
+            path.write_bytes(damaged["truncated"])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(nm.main(["nm.py", str(path)]), 1)
+            self.assertEqual(
+                err.getvalue(),
+                f"nm.py: {path}: the ELF file is truncated or damaged\n",
+            )
+
 
 class TestAssembler(unittest.TestCase):
 

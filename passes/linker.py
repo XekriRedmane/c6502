@@ -401,16 +401,25 @@ def link_files(
             inputs.append((str(path), E.read_file(path)))
         except E.ElfError as e:
             raise LinkError(str(e)) from e
+        except OSError as e:
+            raise LinkError(f"{path}: {e.strerror or e}") from e
     script = read_script(script_path) if script_path is not None else None
     exe = link_objects(inputs, script, origin=origin, defsyms=defsyms)
     Path(output_path).write_bytes(E.write(exe))
 
 
 def read_script(path: Path | str):
-    """The parsed linker script at `path`."""
+    """The parsed linker script at `path`. Raises `LinkError` for a
+    script that can't be read or parsed."""
     from passes.link_script import ScriptError, parse_script
     try:
-        return parse_script(Path(path).read_text())
+        text = Path(path).read_text()
+    except OSError as e:
+        raise LinkError(f"{path}: {e.strerror or e}") from e
+    except UnicodeDecodeError as e:
+        raise LinkError(f"{path}: {e}") from e
+    try:
+        return parse_script(text)
     except ScriptError as e:
         raise LinkError(f"{path}: {e}") from e
 

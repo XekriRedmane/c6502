@@ -242,16 +242,29 @@ def _object(path: str, pcpp_args, optimize: bool):
 
 def _input_errors() -> tuple[type[Exception], ...]:
     """The exceptions that report a problem with an input: a source
-    error (`_source_errors`), an assembly error, or an unreadable
-    object."""
+    error (`_source_errors`), an assembly error, an unreadable object,
+    or an input that can't be read (`_read_errors`)."""
     from binutils.assembler import AssemblerError
     from binutils.elf import ElfError
-    return (*_source_errors(), AssemblerError, ElfError)
+    return (*_source_errors(), AssemblerError, ElfError, *_read_errors())
+
+
+def _read_errors() -> tuple[type[Exception], ...]:
+    """The exceptions reading an input raises: an OSError for a file
+    that isn't there or can't be opened, and a UnicodeDecodeError for a
+    C source or an assembly file that isn't UTF-8. `main` reports them
+    as one-line errors, where they gave a traceback."""
+    return (OSError, UnicodeDecodeError)
 
 
 def _report(path: str, e: Exception) -> None:
+    """Prints the error `e` about the input at `path` as
+    `<file>: error: <message>`. An OSError's message is its reason
+    alone, as in `missing.c: error: No such file or directory`, since
+    the line names the file."""
     where = "<stdin>" if path == "-" else path
-    print(f"{where}: error: {e}", file=sys.stderr)
+    message = e.strerror if isinstance(e, OSError) and e.strerror else e
+    print(f"{where}: error: {message}", file=sys.stderr)
 
 
 def _parse_args(argv: list[str]):
@@ -350,7 +363,7 @@ def main(argv: list[str]) -> int:
         for path in inputs:
             try:
                 text = _compile_c(path, pcpp_args, stage, args.optimize)
-            except _source_errors() as e:
+            except (*_source_errors(), *_read_errors()) as e:
                 _report(path, e)
                 return 1
             output = args.output

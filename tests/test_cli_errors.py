@@ -133,5 +133,56 @@ class TestCliErrors(unittest.TestCase):
         self.assertNotIn("@", err)
 
 
+class TestUnreadableInputs(unittest.TestCase):
+    """An input or a linker script that isn't there, or a source that
+    isn't UTF-8, is a one-line error. Each gave a traceback, of the
+    FileNotFoundError or the UnicodeDecodeError."""
+
+    def _run(self, *argv: str) -> tuple[int, str]:
+        err = io.StringIO()
+        with patch("sys.stderr", err), patch("sys.stdout", io.StringIO()):
+            rc = compile_main(["compile.py", *argv])
+        return rc, err.getvalue()
+
+    def test_missing_files(self) -> None:
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            out = str(Path(tmp) / "out")
+            obj = Path(tmp) / "a.o"
+            self.assertEqual(self._run(
+                "examples/sfx_tone.c", "-c", "-o", str(obj))[0], 0)
+            cases = {
+                ("missing.c", "-S", "-o", out + ".s"):
+                    "missing.c: error: No such file or directory\n",
+                ("missing.c", "-c", "-o", out):
+                    "missing.c: error: No such file or directory\n",
+                ("missing.asm", "-c", "-o", out):
+                    "missing.asm: error: No such file or directory\n",
+                ("missing.o", "-o", out):
+                    "missing.o: error: No such file or directory\n",
+                ("-T", "missing.ld", str(obj), "-o", out):
+                    "compile.py: link error: missing.ld: No such file or "
+                    "directory\n",
+            }
+            for argv, expected in cases.items():
+                with self.subTest(argv=argv):
+                    self.assertEqual(self._run(*argv), (1, expected))
+
+    def test_source_that_isnt_utf8(self) -> None:
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "latin1.c"
+            src.write_bytes(b"int main(void) { return 0; } /* \xe9 */\n")
+            rc, err = self._run(str(src), "-S", "-o", str(Path(tmp) / "x.s"))
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            err,
+            f"{src}: error: 'utf-8' codec can't decode byte 0xe9 in "
+            f"position 32: invalid continuation byte\n",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

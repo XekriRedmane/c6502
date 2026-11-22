@@ -1137,8 +1137,9 @@ on a capture of the corpus and of the suite (`c6502cpp check-binutils`,
   link_layout.py (488), with `asm_emit`'s `instr_line`, which C makes
   public for `startup_lines` and the linker's own code. `parse_script`
   is checked on its records, whose result is the tagged JSON of the
-  `Script`, and `lay_out` through whole links, since its inputs are the
-  linker's `Unit`s.
+  `Script`. The layout's inputs are the linker's `Unit`s, so the
+  capture records each call of its five functions with what it reads,
+  and they are checked on those records.
 - **D. The linker**, on A and C, in two parts that share
   `link_objects`'s state (the objects, the metadata, and the names the
   linker placed), which D1 declares first.
@@ -2056,3 +2057,21 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   sets of helpers, in the builds of MSVC 19.36 and GCC 12.2. The
   modules have no raise site. The call of the
   assembler on the text is left to the linker's port, group D.
+- 22 Nov 2026: group C of step 7, the linker scripts and the layout
+  (cpp/README.md, "Linker scripts and the layout (group C)").
+  `parse_script`, `read_script`, the five functions of the layout, and
+  `fnmatch.fnmatchcase` are ported, on the interface group D builds on
+  (937d078). The layout takes the linker's units, so
+  tools/capture_binutils.py records its functions with what they read,
+  and `c6502cpp check-binutils` matched all 15,141 records of the
+  corpus and the 1,005 of the suite, errors included, in the builds of
+  MSVC 19.36 and GCC 12.2. Tests give Python's message for each of the
+  36 raise sites, the records reaching 16. `read_script` reads the
+  locale's encoding as Python does, cp1252 here and UTF-8 on Linux. Five
+  bugs were fixed in Python on the way, four of which ended compile.py
+  with a traceback: a region's value computed every operator, so
+  `0x800 + -1` raised the `<<`'s ValueError; a decimal number with a
+  leading 0 raised ValueError; a region giving ORIGIN twice raised
+  KeyError; a shift by a negative count in the layout raised
+  ValueError; and an output section's `ALIGN(3)` gave an address no
+  alignment gives.

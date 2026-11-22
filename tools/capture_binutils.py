@@ -13,8 +13,9 @@ for checking the C++ port of step 7 (docs/cpp_port.md).
 
 The harness wraps `binutils.assembler.assemble`, `binutils.elf.read`,
 `passes.link_script.parse_script`, `passes.linker.link_objects`,
-`passes.runtime_library.needed`, `binutils.disasm.disassemble`, and
-the `main` functions of nm.py and
+`passes.runtime_library.needed`, the layout's `lay_out`, `default_script`, `fall_through`, `tail_jump`, and
+`startup_lines`, `binutils.disasm.disassemble`, and the `main`
+functions of nm.py and
 objdump.py, so each call is recorded with its arguments and its result
 (or the exception it raised) and the program goes on as without the
 harness. A compile under `C6502_CPP_BACKEND=1` gives the same `-S`
@@ -64,6 +65,28 @@ records name it by that hash. The kinds:
   [...], "text": ...}`, the helpers it returned and the text
   `library_text` gives for them (null for none), which the library's
   object is assembled from.
+- `lay_out`, `default_script`, `fall_through`, `tail_jump`, and
+  `startup_lines` (passes/link_layout.py), whose inputs only a link
+  builds, so the records hold what each reads. A unit is `{"path",
+  "index", "items": [[name, section, local, zero, merge], ...],
+  "sections": [[size, flags], ...], "item_sections": [the index in
+  "sections" of each item's input section], "tails": [[name, target],
+  ...]}`, with each input section listed once per unit. `lay_out`'s
+  input is `{"script": <tagged JSON>, "units": [...], "lookups":
+  [[name, value or null], ...]}`, the names the layout asked the
+  linker's lookup for and its answers, and its result is `{"outputs":
+  [{"name", "addr", "load_addr", "size", "noload", "executable",
+  "parts": [[unit, [position of the unit in the units, index of the
+  section], addr, size], ...]}, ...], "symbols": [[name, value],
+  ...]}`. `default_script` takes the argument `origin` and the units,
+  and gives the tagged JSON of its `Script`. `fall_through` takes the
+  argument `reorder` and `{"entries": [[name, function, tail], ...]}`,
+  and gives `[[index of the entry, dropped], ...]`. `tail_jump` takes
+  the section's `type`, `size`, `data` (hex), and `relocs` (`[[offset,
+  type, addend, symbol name], ...]`), and the `symbols` that the
+  section defines (`[[name, value, type], ...]`), and gives the name or
+  null. `startup_lines` takes the tagged JSON of the script and gives
+  the lines.
 - `nm` and `objdump`: the command line after the program's name as the
   arguments, with `columns`, the terminal width argparse wraps its
   usage and help to (`shutil.get_terminal_size`), and the files the
@@ -103,7 +126,8 @@ if str(_ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(_ROOT / "tools"))
 
 KINDS = ("assemble", "elf_read", "parse_script", "link", "disassemble",
-         "nm", "objdump", "runtime_library")
+         "nm", "objdump", "runtime_library", "lay_out", "default_script", "fall_through",
+         "tail_jump", "startup_lines")
 
 _OUT = _ROOT / "captures" / "binutils"
 _SOURCE = ""
@@ -382,6 +406,142 @@ def _wrap_needed(real):
                 {"names": names, "text": text})
         return names
     return needed
+# --- The layout's functions (passes/link_layout.py) ------------------------
+#
+# Their inputs are the linker's `Unit`s and sections, which only a link
+# builds, so their records hold the values those functions read in a
+# JSON form of the harness's own, which the module docstring gives.
+
+
+def _units_json(units) -> tuple[list, dict]:
+    """The JSON of `units`, and a map from each input section's `id()`
+    to `[position of its unit in units, its index in the unit's
+    sections]`."""
+    out = []
+    where: dict[int, list[int]] = {}
+    for pos, u in enumerate(units):
+        sections: list = []
+        refs = []
+        local: dict[int, int] = {}
+        for it in u.items:
+            sec = u.sections[it.name]
+            if id(sec) not in local:
+                local[id(sec)] = len(sections)
+                where.setdefault(id(sec), [pos, len(sections)])
+                sections.append([sec.size, sec.flags])
+            refs.append(local[id(sec)])
+        out.append({
+            "path": u.path, "index": u.index,
+            "items": [[it.name, it.section, it.local, it.zero, it.merge]
+                      for it in u.items],
+            "sections": sections, "item_sections": refs,
+            "tails": [[k, v] for k, v in u.tails.items()],
+        })
+    return out, where
+
+
+def _layout_json(layout, where: dict[int, list[int]]) -> dict:
+    return {
+        "outputs": [{
+            "name": o.name, "addr": o.addr, "load_addr": o.load_addr,
+            "size": o.size, "noload": o.noload, "executable": o.executable,
+            "parts": [[p.unit, where[id(p.section)], p.addr, p.size]
+                      for p in o.parts],
+        } for o in layout.outputs],
+        "symbols": [[k, v] for k, v in layout.symbols.items()],
+    }
+
+
+def _wrap_lay_out(real):
+    def lay_out(script, units, lookup=lambda name: None):
+        if _QUIET:
+            return real(script, units, lookup)
+        from capture_passes import encode
+        asked: dict[str, int | None] = {}
+
+        def recording(name):
+            value = lookup(name)
+            asked.setdefault(name, value)
+            return value
+        units_json, where = _units_json(units)
+        start = time.perf_counter()
+        try:
+            layout = real(script, units, recording)
+        except Exception as e:
+            _count("lay_out", time.perf_counter() - start)
+            _record("lay_out", {}, {
+                "script": encode(script), "units": units_json,
+                "lookups": [[k, v] for k, v in asked.items()]}, error=e)
+            raise
+        _count("lay_out", time.perf_counter() - start)
+        _record("lay_out", {}, {
+            "script": encode(script), "units": units_json,
+            "lookups": [[k, v] for k, v in asked.items()]},
+            _layout_json(layout, where))
+        return layout
+    return lay_out
+
+
+def _wrap_default_script(real):
+    def default_script(units, origin):
+        if _QUIET:
+            return real(units, origin)
+        from capture_passes import encode
+        start = time.perf_counter()
+        script = real(units, origin)
+        _count("default_script", time.perf_counter() - start)
+        _record("default_script", {"origin": origin},
+                {"units": _units_json(units)[0]}, encode(script))
+        return script
+    return default_script
+
+
+def _wrap_fall_through(real):
+    def fall_through(entries, reorder=True):
+        if _QUIET:
+            return real(entries, reorder)
+        start = time.perf_counter()
+        out = real(entries, reorder)
+        _count("fall_through", time.perf_counter() - start)
+        index = {id(e): i for i, e in enumerate(entries)}
+        _record("fall_through", {"reorder": reorder},
+                {"entries": [[e.name, e.function, e.tail] for e in entries]},
+                [[index[id(e)], dropped] for e, dropped in out])
+        return out
+    return fall_through
+
+
+def _wrap_tail_jump(real):
+    def tail_jump(sec, symbols):
+        if _QUIET:
+            return real(sec, symbols)
+        start = time.perf_counter()
+        out = real(sec, symbols)
+        _count("tail_jump", time.perf_counter() - start)
+        # Only the symbols in `sec` change the result, and the others
+        # would make each object's records distinct.
+        _record("tail_jump", {}, {
+            "type": sec.type, "size": sec.size, "data": bytes(sec.data).hex(),
+            "relocs": [[r.offset, r.type, r.addend, r.symbol.name]
+                       for r in sec.relocs],
+            "symbols": [[s.name, s.value, s.type] for s in symbols
+                        if s.section is sec],
+        }, out)
+        return out
+    return tail_jump
+
+
+def _wrap_startup_lines(real):
+    def startup_lines(script, instr_line):
+        if _QUIET:
+            return real(script, instr_line)
+        from capture_passes import encode
+        start = time.perf_counter()
+        out = real(script, instr_line)
+        _count("startup_lines", time.perf_counter() - start)
+        _record("startup_lines", {}, encode(script), out)
+        return out
+    return startup_lines
 
 
 def _wrap_disassemble(real):
@@ -455,11 +615,20 @@ def install(out: Path) -> None:
     import nm
     import objdump
     from passes import link_script, linker, runtime_library
+    from passes import link_layout, link_script, linker
     assembler.assemble = _wrap_assemble(assembler.assemble)
     # The linker imports `needed` when it adds the library.
     runtime_library.needed = _wrap_needed(runtime_library.needed)
     elf.read = _wrap_read(elf.read)
     link_script.parse_script = _wrap_parse_script(link_script.parse_script)
+    # The linker imports these from the module at each link, and
+    # `lay_out` calls `fall_through` through the module's globals.
+    link_layout.lay_out = _wrap_lay_out(link_layout.lay_out)
+    link_layout.default_script = _wrap_default_script(
+        link_layout.default_script)
+    link_layout.fall_through = _wrap_fall_through(link_layout.fall_through)
+    link_layout.tail_jump = _wrap_tail_jump(link_layout.tail_jump)
+    link_layout.startup_lines = _wrap_startup_lines(link_layout.startup_lines)
     linker.link_objects = _wrap_link(linker.link_objects)
     disasm.disassemble = _wrap_disassemble(disasm.disassemble)
     # objdump.py imported `disassemble` by name.

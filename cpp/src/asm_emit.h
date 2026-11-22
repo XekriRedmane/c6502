@@ -4,6 +4,7 @@
 
 #include <map>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -39,6 +40,13 @@ struct EmitOptions {
 // raises.
 std::string emit_program(const asm2_ast::Program& prog, const passes::RuntimeLayout& layout,
                          const EmitOptions& options);
+
+// Returns the line of one instruction as `_instr_line` writes it: the
+// opcode in capitals at column 3 and the operand, when there is one, at
+// column 9, or one space after an opcode that reaches it. The linker
+// writes its own code (`__zp_init`, the startup code, and `__spill`)
+// with it.
+std::string instr_line(std::string_view opcode, std::string_view operand = {});
 
 // Return the lines of one instruction, one function, and one static
 // object, as Python's `emit_instruction`, `emit_function`, and

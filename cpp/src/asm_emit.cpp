@@ -206,7 +206,9 @@ std::string upper(std::string_view s) {
   return out;
 }
 
-std::string instr_line(std::string_view opcode, std::string_view operand = {}) {
+}  // namespace
+
+std::string instr_line(std::string_view opcode, std::string_view operand) {
   std::string line(kOpcodeCol, ' ');
   line += upper(opcode);
   if (!operand.empty()) {
@@ -216,6 +218,8 @@ std::string instr_line(std::string_view opcode, std::string_view operand = {}) {
   }
   return line;
 }
+
+namespace {
 
 // Returns a comment line at the opcode column, with which the prologue
 // and epilogue mark their boilerplate.

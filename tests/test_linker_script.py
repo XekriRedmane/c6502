@@ -141,6 +141,16 @@ class TestScriptParser(unittest.TestCase):
         self.assertTrue(secs[".b"].reorder)
         self.assertEqual(secs[".c"].address.value, 0x100)
 
+    def test_constant_computes_its_operator_alone(self) -> None:
+        # Each operator of a region's value used to be computed for
+        # every `Binary`, so a negative right operand made a `+` raise
+        # the `<<`'s ValueError, and a large one took all of memory.
+        script = parse_script(
+            "MEMORY { r : ORIGIN = 0x800 + -1, LENGTH = 1 + 0x10000000000 }"
+        )
+        self.assertEqual(script.regions["r"].origin, 0x7FF)
+        self.assertEqual(script.regions["r"].length, 0x10000000001)
+
     def test_errors(self) -> None:
         for src, message in [
             ("ENTRY(main)", "isn't supported"),
@@ -151,6 +161,18 @@ class TestScriptParser(unittest.TestCase):
             ("SECTIONS { .text : { (.text) } }", "file it takes"),
             ("SECTIONS { .t : { *(.a) } .t : { *(.b) } }", "listed twice"),
             ("SECTIONS { .t 0x100 (KEEP) : { *(.a) } }", "has type 'KEEP'"),
+            ("MEMORY { r : ORIGIN = 1 << -1, LENGTH = 1 }",
+             "ORIGIN of 'r' shifts by a negative count"),
+            ("MEMORY { r : ORIGIN = 0, LENGTH = 8 / (2 - 2) }",
+             "LENGTH of 'r' divides by zero"),
+            # These raised ValueError out of compile.py.
+            ("MEMORY { r : ORIGIN = 0800, LENGTH = 1 }",
+             "can't read the number '0800'"),
+            ("SECTIONS { .t 007 : { *(.a) } }",
+             "can't read the number '007'"),
+            # This raised KeyError for the missing LENGTH.
+            ("MEMORY { r : ORIGIN = 1, o = 2 }",
+             "region 'r' gives ORIGIN twice"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaisesRegex(ScriptError, message):
@@ -385,6 +407,34 @@ class TestTailJump(unittest.TestCase):
     def test_jump_table_at_end(self) -> None:
         # Bytes that look like `JMP` in a jump table aren't one.
         self.assertIsNone(self._tail("RTS", ".t:", "DC.W  g"))
+
+
+class TestLayoutErrors(unittest.TestCase):
+    """`link_layout.lay_out` on scripts with no units."""
+
+    def test_negative_shift(self) -> None:
+        # Python's `<<` and `>>` raise ValueError for a negative count,
+        # which ended compile.py with a traceback.
+        from passes.link_layout import LayoutError, lay_out
+        for op in ("<<", ">>"):
+            with self.subTest(op=op):
+                script = parse_script(f"SECTIONS {{ .t 1 {op} -1 : {{ }} }}")
+                with self.assertRaisesRegex(
+                    LayoutError, "a shift by a negative count",
+                ):
+                    lay_out(script, [])
+
+    def test_section_alignment_not_a_power_of_two(self) -> None:
+        # `_align` masks with `~(n - 1)`, which for 3 left 0x1001 at
+        # 0x1001, which isn't a multiple of 3.
+        from passes.link_layout import LayoutError, lay_out
+        script = parse_script("SECTIONS { .t 0x1001 : ALIGN(3) { } }")
+        with self.assertRaisesRegex(
+            LayoutError, r"ALIGN on \.t takes a power of two",
+        ):
+            lay_out(script, [])
+        script = parse_script("SECTIONS { .t 0x1001 : ALIGN(4) { } }")
+        self.assertEqual(lay_out(script, []).outputs[0].addr, 0x1004)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

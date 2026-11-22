@@ -16,6 +16,7 @@
 #include "errors.h"
 #include "json.h"
 #include "passes/runtime_library.h"
+#include "passes/link_checks.h"
 #include "pyrepr.h"
 
 namespace c6502::binutils {
@@ -25,9 +26,10 @@ namespace {
 namespace fs = std::filesystem;
 
 // The kinds of record, in the order the summary lists them.
-constexpr std::string_view kKinds[] = {"assemble", "elf_read",    "parse_script", "link",
-                                       "disassemble", "nm",       "objdump",
-                                       "runtime_library"};
+constexpr std::string_view kKinds[] = {
+    "assemble",     "elf_read",  "parse_script",  "link",           "disassemble",
+    "nm",           "objdump",   "runtime_library", "lay_out",      "default_script",
+    "fall_through", "tail_jump", "startup_lines"};
 
 // The counts of one kind's records.
 struct Count {
@@ -112,6 +114,13 @@ class Checker {
     const json::Value args = json::parse(call.args_json);
     const json::Value input = json::parse(call.input);
     const json::Value output = json::parse(call.output);
+    if (passes::link_checks::handles(kind)) {
+      ++count.ran;
+      std::string problem =
+          passes::link_checks::check(kind, args, input, output, call.output_is_error);
+      if (problem.empty()) ++count.matched;
+      return problem;
+    }
     if (kind == "elf_read") {
       ++count.ran;
       const std::string data = blob(input.get("data")->string);

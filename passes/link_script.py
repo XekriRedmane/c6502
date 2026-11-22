@@ -240,6 +240,8 @@ class _Parser:
                         f"region {name!r}: expected ORIGIN or LENGTH, "
                         f"found {key!r}"
                     )
+                if key in values:
+                    raise ScriptError(f"region {name!r} gives {key} twice")
                 self.take("=")
                 values[key] = _constant(self.expr(), f"{key} of {name!r}")
                 if self.peek() == ",":
@@ -398,7 +400,15 @@ class _Parser:
         if re.fullmatch(r"(?:0[xX][0-9A-Fa-f]+|\d+)[KM]?", tok):
             scale = {"K": 1024, "M": 1024 * 1024}.get(tok[-1], 1)
             digits = tok[:-1] if scale != 1 else tok
-            return Num(int(digits, 0) * scale)
+            try:
+                return Num(int(digits, 0) * scale)
+            except ValueError:
+                # `int(s, 0)` rejects a decimal number with a leading 0
+                # other than 0 itself, such as `0800`.
+                raise ScriptError(
+                    f"can't read the number {tok!r}: a decimal number "
+                    f"other than 0 can't begin with 0"
+                ) from None
         if tok in _FUNCTIONS and self.peek() == "(":
             self.take("(")
             args = [self.expr()]
@@ -413,7 +423,9 @@ class _Parser:
 
 
 def _constant(e, what: str) -> int:
-    """The value of `e`, which has to be made of numbers."""
+    """The value of `e`, which has to be made of numbers. Raises
+    `ScriptError` for a division by zero and a shift by a negative
+    count."""
     match e:
         case Num(value=v):
             return v
@@ -423,12 +435,27 @@ def _constant(e, what: str) -> int:
             return ~_constant(o, what) & 0xFFFF
         case Binary(op=op, left=l, right=r):
             a, b = _constant(l, what), _constant(r, what)
-            return {
-                "+": a + b, "-": a - b, "*": a * b, "/": a // b if b else 0,
-                "&": a & b, "|": a | b, "^": a ^ b, "<<": a << b,
-                ">>": a >> b,
-            }[op]
+            # Only the operator given is computed. A table of every
+            # operator's result made a `+` with a negative right operand
+            # raise the `<<`'s ValueError, and a large one take all of
+            # memory.
+            if op == "/":
+                if b == 0:
+                    raise ScriptError(f"{what} divides by zero")
+                return a // b
+            if op in ("<<", ">>") and b < 0:
+                raise ScriptError(f"{what} shifts by a negative count")
+            return _OPERATORS[op](a, b)
     raise ScriptError(f"{what} has to be a number")
+
+
+# The operators of `_constant` other than `/`.
+_OPERATORS = {
+    "+": lambda a, b: a + b, "-": lambda a, b: a - b,
+    "*": lambda a, b: a * b, "&": lambda a, b: a & b,
+    "|": lambda a, b: a | b, "^": lambda a, b: a ^ b,
+    "<<": lambda a, b: a << b, ">>": lambda a, b: a >> b,
+}
 
 
 def parse_script(text: str) -> Script:

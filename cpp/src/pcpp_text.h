@@ -49,6 +49,11 @@ std::string rstrip(std::string_view s);
 std::string strip(std::string_view s);
 std::vector<std::string> split_whitespace(std::string_view s);
 
+// Returns `s.upper()`, which maps each code point on its own, to its
+// uppercase or, for one such as "ß" or "ﬆ", to the two or three code
+// points of its full mapping ("SS", "ST").
+std::string upper(std::string_view s);
+
 // Returns Python's `repr` of the string `s`, with every code point that
 // `str.isprintable()` rejects escaped as `\xhh`, `\uhhhh`, or
 // `\Uhhhhhhhh`.

@@ -320,4 +320,6 @@ StageOutput run_build_metadata(const capture::Call& call, const AsmContext&,
 
 std::string round_trip_link_metadata(const json::Value& v) { return round_trip<LinkMetadataC>(v); }
 
+std::string link_metadata_json(const LinkMetadata& meta) { return encode<LinkMetadataC>(meta); }
+
 }  // namespace c6502::passes::stage_sharing

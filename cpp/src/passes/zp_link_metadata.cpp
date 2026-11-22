@@ -12,8 +12,11 @@
 #include <map>
 #include <set>
 
+#include "errors.h"
 #include "passes/call_edges.h"
 #include "passes/recursion_saves.h"
+#include "pcpp_text.h"
+#include "py_int.h"
 #include "pyrepr.h"
 
 namespace c6502::passes {
@@ -261,6 +264,220 @@ LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
       }
     }
   }
+  return out;
+}
+
+namespace {
+
+constexpr std::string_view kBegin = "; @zp-link-meta-begin";
+constexpr std::string_view kEnd = "; @zp-link-meta-end";
+
+// The place the integer errors of the block name.
+constexpr std::string_view kWhere = "the link metadata";
+
+[[noreturn]] void value_error(const std::string& message) {
+  throw CompileError("ValueError", message);
+}
+
+// A record's `key=value` tokens, which Python reads into a dict, where
+// a later token of a key replaces an earlier one.
+class Fields {
+ public:
+  Fields(const std::vector<std::string>& parts, std::size_t first) {
+    for (std::size_t i = first; i < parts.size(); ++i) {
+      auto [k, v] = split_kv(parts[i]);
+      values_[k] = v;
+    }
+  }
+
+  // Returns `token` split at its first `=`, `_split_kv`.
+  static std::pair<std::string, std::string> split_kv(const std::string& token) {
+    const std::size_t eq = token.find('=');
+    if (eq == std::string::npos) {
+      value_error("expected key=value, got " + pcpp::py_repr(token));
+    }
+    return {token.substr(0, eq), token.substr(eq + 1)};
+  }
+
+  // Returns `kvs[key]`, or throws Python's KeyError.
+  const std::string& at(const std::string& key) const {
+    const auto it = values_.find(key);
+    if (it == values_.end()) throw CompileError("KeyError", pcpp::py_repr(key));
+    return it->second;
+  }
+
+  // Returns `kvs.get(key, "")`, and whether the key is there.
+  std::string get(const std::string& key) const {
+    const auto it = values_.find(key);
+    return it == values_.end() ? std::string() : it->second;
+  }
+  bool has(const std::string& key) const { return values_.contains(key); }
+  bool is_true(const std::string& key) const { return has(key) && get(key) == "true"; }
+
+ private:
+  std::map<std::string, std::string> values_;
+};
+
+// `_split_csv`: the comma-separated items of `value`, none for "".
+std::vector<std::string> split_csv(const std::string& value) {
+  std::vector<std::string> out;
+  if (value.empty()) return out;
+  std::size_t start = 0;
+  while (true) {
+    const std::size_t comma = value.find(',', start);
+    if (comma == std::string::npos) {
+      out.push_back(value.substr(start));
+      return out;
+    }
+    out.push_back(value.substr(start, comma - start));
+    start = comma + 1;
+  }
+}
+
+// `value.lstrip("$")`.
+std::string lstrip_dollars(const std::string& value) {
+  return value.substr(std::min(value.find_first_not_of('$'), value.size()));
+}
+
+// `_parse_pinned`: an address for each nonempty item, in hexadecimal.
+std::vector<std::optional<asdl::Int>> parse_pinned(const std::string& value) {
+  std::vector<std::optional<asdl::Int>> out;
+  if (value.empty()) return out;
+  for (const auto& v : split_csv(value)) {
+    if (v.empty()) {
+      out.emplace_back(std::nullopt);
+    } else {
+      out.emplace_back(py_int::parse(lstrip_dollars(v), 16, kWhere));
+    }
+  }
+  return out;
+}
+
+// `str.partition(sep)`: the text before the first `sep` and after it,
+// or all of `value` and "" when it holds none.
+std::pair<std::string, std::string> partition(const std::string& value, char sep) {
+  const std::size_t at = value.find(sep);
+  if (at == std::string::npos) return {value, ""};
+  return {value.substr(0, at), value.substr(at + 1)};
+}
+
+void parse_record(const std::string& record, LinkMetadata& out) {
+  const std::vector<std::string> parts = pcpp::split_whitespace(record);
+  if (parts.empty()) return;
+  const std::string& kind = parts[0];
+  const std::string shown = pcpp::py_repr(record);
+  if (kind == "def") {
+    if (parts.size() < 6) value_error("malformed def record: " + shown);
+    const Fields kvs(parts, 2);
+    // Python evaluates the fields in the order of the dataclass's
+    // keywords, so the first missing or malformed one is reported.
+    FunctionMeta d;
+    d.name = parts[1];
+    d.params = split_csv(kvs.at("params"));
+    d.locals = split_csv(kvs.at("locals"));
+    d.indirect = kvs.at("indirect") == "true";
+    d.in_cycle = kvs.at("in_cycle") == "true";
+    d.param_regs = split_csv(kvs.get("param_regs"));
+    d.pinned = parse_pinned(kvs.get("pinned"));
+    d.changes = split_csv(kvs.get("changes"));
+    d.carry = kvs.is_true("carry");
+    out.defs.push_back(std::move(d));
+  } else if (kind == "ext") {
+    if (parts.size() < 3) value_error("malformed ext record: " + shown);
+    const Fields kvs(parts, 2);
+    ExternMeta e;
+    e.name = parts[1];
+    e.params = split_csv(kvs.at("params"));
+    e.param_regs = split_csv(kvs.get("param_regs"));
+    e.pinned = parse_pinned(kvs.get("pinned"));
+    e.carry = kvs.is_true("carry");
+    out.externs.push_back(std::move(e));
+  } else if (kind == "share") {
+    SlotShare share;
+    for (std::size_t i = 1; i < parts.size(); ++i) {
+      const auto [key, value] = Fields::split_kv(parts[i]);
+      if (key == "member") {
+        auto [fn, syms] = partition(value, ':');
+        share.members.emplace_back(fn, split_csv(syms));
+      } else if (key == "holder") {
+        share.holders.push_back(value);
+      } else if (key == "live") {
+        auto [fn, callees] = partition(value, ':');
+        share.live.emplace_back(fn, split_csv(callees));
+      } else if (key == "forward") {
+        share.forwards.push_back(partition(value, '>'));
+      } else if (key == "writer") {
+        share.writers.push_back(value);
+      } else {
+        value_error("malformed share record: " + shown);
+      }
+    }
+    if (share.members.empty()) value_error("malformed share record: " + shown);
+    out.shares.push_back(std::move(share));
+  } else if (kind == "zp") {
+    if (parts.size() < 3) value_error("malformed zp record: " + shown);
+    const Fields kvs(parts, 2);
+    const std::string& at = kvs.at("at");
+    ZpObjectMeta z;
+    z.name = parts[1];
+    z.size = py_int::parse(kvs.at("size"), 10, kWhere);
+    if (at != "auto") z.at = py_int::parse(lstrip_dollars(at), 16, kWhere);
+    z.defined = kvs.at("def") == "true";
+    z.init = split_csv(kvs.get("init"));
+    if (kvs.has("weight")) z.weight = py_int::parse(kvs.get("weight"), 10, kWhere);
+    z.local = kvs.is_true("local");
+    out.zp_objects.push_back(std::move(z));
+  } else if (kind == "item") {
+    if (parts.size() < 3) value_error("malformed item record: " + shown);
+    const Fields kvs(parts, 2);
+    out.items.push_back(ItemMeta{.name = parts[1],
+                                 .section = kvs.at("section"),
+                                 .local = kvs.is_true("local"),
+                                 .zero = kvs.is_true("zero"),
+                                 .merge = kvs.is_true("merge")});
+  } else if (kind == "runtime") {
+    const Fields kvs(parts, 1);
+    out.hargs_size = py_int::parse(kvs.at("hargs_size"), 10, kWhere);
+    if (kvs.has("hargs_need")) out.hargs_need = py_int::parse(kvs.get("hargs_need"), 10, kWhere);
+  } else if (kind == "call") {
+    // `call <caller> -> <callee> [saved]`.
+    if ((parts.size() != 4 && parts.size() != 5) || parts[2] != "->" ||
+        (parts.size() == 5 && parts[4] != "saved")) {
+      value_error("malformed call record: " + shown);
+    }
+    out.calls.emplace_back(parts[1], parts[3]);
+    if (parts.size() == 5) out.saved_calls.emplace_back(parts[1], parts[3]);
+  } else {
+    value_error("unknown record kind " + pcpp::py_repr(kind) + ": " + shown);
+  }
+}
+
+}  // namespace
+
+LinkMetadata parse_metadata(std::string_view asm_text) {
+  LinkMetadata out;
+  bool in_block = false;
+  for (const auto& raw : pcpp::splitlines(asm_text)) {
+    const std::string line = pcpp::strip(raw);
+    if (line == kBegin) {
+      if (in_block) {
+        value_error("nested @zp-link-meta-begin without preceding @zp-link-meta-end");
+      }
+      in_block = true;
+      continue;
+    }
+    if (line == kEnd) {
+      if (!in_block) value_error("@zp-link-meta-end without preceding @zp-link-meta-begin");
+      in_block = false;
+      continue;
+    }
+    if (!in_block) continue;
+    if (line.rfind("; ", 0) != 0) {
+      value_error("unexpected line inside zp-link-meta block: " + pcpp::py_repr(line));
+    }
+    parse_record(pcpp::strip(std::string_view(line).substr(2)), out);
+  }
+  if (in_block) value_error("@zp-link-meta-begin without matching @zp-link-meta-end");
   return out;
 }
 

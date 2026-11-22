@@ -11,6 +11,7 @@
 #include <string>
 
 #include "passes/stage_registry.h"
+#include "passes/zp_link_metadata.h"
 
 namespace c6502::passes::stage_sharing {
 
@@ -39,5 +40,9 @@ StageOutput run_build_metadata(const capture::Call& call, const AsmContext& ctx,
 
 // The round trip of a `zp_link_metadata.LinkMetadata`.
 std::string round_trip_link_metadata(const json::Value& v);
+
+// Returns the tagged JSON of `meta`, as tools/capture_passes.py's
+// `encode` writes a `LinkMetadata`.
+std::string link_metadata_json(const LinkMetadata& meta);
 
 }  // namespace c6502::passes::stage_sharing

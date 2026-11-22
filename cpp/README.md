@@ -92,9 +92,13 @@ cpp/
     binutils/elf.*    binutils/elf.py, the ELF reader and writer (step 7)
     binutils/opcodes.*   binutils/opcodes.py, the 6502 opcode table
     binutils/nm.*     nm.py
+    binutils/assembler.*   binutils/assembler.py
+    binutils/assemble_command.*   the `c6502cpp assemble` command
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
     rtlib/helpers.h   the runtime helpers' table (step 7, group E)
+    py_int.*          Python's `int()` of a string and its integer
+                      operators, in 128 bits with an error past them
     capture.*         the reader of capture files and their contexts
     helper_checks.*   the C++ side of tools/capture_helpers.py
     backend.*         the `c6502cpp backend` command's request and response
@@ -2309,6 +2313,51 @@ in src/binutils/ and src/argparse.*.
   and `cpp_backend.run_tool` returns that status where it raises
   SystemExit(2) for argparse's errors, which it tells apart by the
   usage argparse writes before each of them.
+
+Group A of step 7 ported the parser of the link metadata and the
+assembler.
+
+- `passes::parse_metadata` (src/passes/zp_link_metadata.h) is
+  `zp_link_metadata.parse_metadata`, which the assembler and the linker
+  run on an object's `.c6502.link` text. It splits lines as
+  `str.splitlines` does and records at Unicode's spaces, reads each
+  number with `py_int::parse`, which is Python's `int(text, base)` with
+  its digits of any script, its underscores, its `0x` prefix, its
+  messages, and its limit of 4,300 decimal digits, and gives Python's
+  ValueError, or the KeyError of a field read without a default, for a
+  malformed block.
+- `binutils::assembler` (`assembler.h`) is binutils/assembler.py. It
+  holds each line as a `std::u32string`, so that positions and lengths
+  count code points, uppercases a mnemonic with `pcpp::upper`
+  (`str.upper`, with the full mappings `tools/pcpp_unicode_tables.py`
+  now writes as `kToUpperFull`, which make "ß" "SS"), and matches
+  `_TOKEN`, `_EQU`, `_LABEL`, and the operand patterns of
+  `_split_operand` by hand, since each has one way to match. It
+  computes with `py_int`'s checked operators, in the 128 bits of
+  `asdl::Int`, with floor division and an arithmetic `>>`. A value
+  wider than that throws an OverflowError that names the limit, and an
+  expression nested past 400 of Python's calls a RecursionError
+  (`kMaxDepth`), short of where Python's recursion limit stops it, so
+  the port never takes a text Python doesn't. The values c6502 writes
+  take at most 32 bits.
+- `c6502cpp assemble` reads a request with the text, the file name,
+  `keep_source`, and the link symbols, and writes the object's bytes or
+  the error (src/binutils/assemble_command.h), for group F to call. It
+  gives the `struct.error` Python's `elf.write` raises for an addend or
+  a size outside its field, where the C++ writer would keep the low 32
+  bits. tests/test_cpp_binutils.py's `TestAssemble` compares it with
+  Python.
+
+`check-binutils` runs both on the records: every `assemble` record
+gives the recorded object's bytes or its error, and every
+`parse_metadata` record, which tools/capture_binutils.py now writes
+for each call, gives the recorded `LinkMetadata` in tagged JSON and the
+lines `format_metadata` writes of it. tests/test_link_metadata.cpp
+has a case for each of `parse_metadata`'s 13 ValueError messages, and
+tests/test_assembler.cpp for each of the assembler's 35 AssemblerError
+messages except the two no text reaches (an operator the parser
+doesn't make, and a statement whose bytes differ from its count), with
+Python's results for its Unicode text and its integers.
 
 `json::dump` (src/json.h) writes a `json::Value` as Python's
 `json.dumps` does, with `json::quote` for its strings, which

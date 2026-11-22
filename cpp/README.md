@@ -1476,14 +1476,28 @@ The port follows the plan in docs/cpp_port.md, part by part.
   `_NumberEvaluator`, `_check_pragma`, `_strip_pragmas`, and
   `parse_args`.
 
-Three things are left out, each where it can't matter to a compile.
-`--debug` creates pcpp's log and writes nothing to it, `--passthru-includes`
-reads its pattern with std::regex's ECMAScript grammar where Python uses
-`re`, and a `\N{name}` escape in a character constant in `#if` throws
-`InternalError`, since the database of Unicode names isn't ported. pcpp
-stops a macro that expands inside its own argument when Python's stack
-runs out, which depends on how deep the caller's stack is, so the C++
-stops it at 300 nested expansions (`kMaxExpansionDepth`).
+Two things are left out, each where it can't matter to a compile.
+`--debug` creates pcpp's log and writes nothing to it, and
+`--passthru-includes` reads its pattern with std::regex's ECMAScript
+grammar where Python uses `re`. pcpp stops a macro that expands inside
+its own argument when Python's stack runs out, which depends on how deep
+the caller's stack is, so the C++ stops it at 300 nested expansions
+(`kMaxExpansionDepth`).
+
+pcpp's evaluator expands the escapes of a character constant with
+Python's `unicode-escape` codec, which reads Python's `\N{name}` too, so
+pcpp gave `'\N{LATIN SMALL LETTER A}'` the value 97 in an `#if`. C has no
+such escape (C23 §6.4.4.4), and c6502's lexer rejects that constant
+outside an `#if` as it rejects `'\q'`, so preprocessor.py rewrites each
+character constant before pcpp's evaluator reads it
+(`_without_named_escapes`). The rewritten constant holds the expansion of
+the other escapes with each backslash doubled, so pcpp reads `\N` as two
+characters and reports the TypeError of `ord()` for the constant, as it
+does for `'\q'`. The C++ rewrites the constant the same way in
+`call_evaluator`, with `pcpp::expand_escapes_without_names`, and the
+evaluator's own `\N{name}` branch, which no compile reaches, still throws
+`InternalError`. `tests/test_preprocessor_named_escapes.cpp` holds 34
+recorded calls with such constants.
 
 `preprocess` is checked three ways. Its captures (`--passes preprocess`)
 hold the source, the arguments, the file name, the text or the error,

@@ -12,6 +12,7 @@
 
 #include "diagnostics.h"
 #include "errors.h"
+#include "pcpp_evaluator.h"
 #include "pp_numbers.h"
 #include "pyrepr.h"
 
@@ -335,6 +336,32 @@ std::string if_integer(const std::string& spelling) {
   return pyrepr::integer(constant.value) + (is_unsigned ? "U" : "");
 }
 
+// Returns a spelling of the character constant `spelling` that pcpp's
+// evaluator reads as it would read `spelling` if its pattern had no
+// `\N{name}` alternative, which C doesn't have (C23 §6.4.4.4), so that
+// `'\N{LATIN SMALL LETTER A}'` holds 24 characters and pcpp reports the
+// TypeError of `ord()` for it, as it does for `'\q'`.
+//
+// The escapes are expanded here as pcpp's codec expands them, and each
+// backslash of the result is written as `\\`, which pcpp's pattern takes
+// as one escape for a backslash. Doubling only the backslash of each
+// `\N` wouldn't do, since `\u0\N` would then give `\u` the four
+// characters its alternative takes. When an escape fails to decode, the
+// result is the expansion before it followed by the original text from
+// that escape on, so pcpp's pattern finds the same escape there and
+// raises the same UnicodeDecodeError.
+std::string without_named_escapes(const std::string& spelling) {
+  const std::size_t start = spelling.rfind("L'", 0) == 0 ? 2 : 1;
+  const auto expansion =
+      pcpp::expand_escapes_without_names(spelling.substr(start, spelling.size() - start - 1));
+  std::string out = spelling.substr(0, start);
+  for (const char c : expansion.expanded) {
+    out += c;
+    if (c == '\\') out += '\\';
+  }
+  return out + expansion.rest + spelling.back();
+}
+
 // Returns whether `line` is a `#pragma` line, as `_PRAGMA_LINE_RE`,
 // `^[ \t]*#[ \t]*pragma\b(?P<body>.*)$`, matches it.
 bool is_pragma_line(const std::string& line) {
@@ -528,6 +555,8 @@ class CompilePreprocessor : public pcpp::Preprocessor {
   // `if_integer` gives before pcpp's evaluator reads it. pcpp catches
   // whatever its evaluator raises, so the message for an invalid number
   // goes in `number_error`, which `evalexpr` raises after pcpp returns.
+  // A character constant is rewritten by `without_named_escapes`, so
+  // that pcpp doesn't expand Python's `\N{name}` escape in it.
   pcpp::EvalResult call_evaluator(const Tokens& tokens, const pcpp::FunctionHook& functions,
                                   const pcpp::IdentifierHook& identifiers) override {
     Tokens rewritten;
@@ -542,6 +571,10 @@ class CompilePreprocessor : public pcpp::Preprocessor {
         }
         auto copy = pcpp::copy_token(tok);
         copy->value = value;
+        rewritten.push_back(copy);
+      } else if (tok->type == Type::CPP_CHAR && tok->value.find("\\N") != std::string::npos) {
+        auto copy = pcpp::copy_token(tok);
+        copy->value = without_named_escapes(tok->value);
         rewritten.push_back(copy);
       } else {
         rewritten.push_back(tok);

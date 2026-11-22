@@ -1593,9 +1593,10 @@ separator, a binary prefix, or a `wb` suffix.
   Python raises RecursionError. The C++ raises it at 300 nested
   expansions, since the depth Python reaches depends on its caller's
   stack.
-  `--debug` writes no log, `--passthru-includes` matches with
-  std::regex, and a `\N{name}` escape in an `#if` character constant
-  throws `InternalError`.
+  Three things were left unfinished, `--debug`'s log, the matching of
+  `--passthru-includes` with Python's `re`, and a `\N{name}` escape in
+  an `#if` character constant, and the entry for the preprocessor's
+  loose ends below records how each was finished.
 - 21 Nov 2026: groups R2 and R3 of step 6, the parser's descent
   (cpp/README.md, "The parser's descent"). `parser::parse` is a
   recursive descent over R1's `TokenStream`, which runs each action
@@ -1661,3 +1662,17 @@ separator, a binary prefix, or a `wb` suffix.
   programs' 4.7 seconds after the imports, the TAC interpreter's path,
   which keeps a Python front end and `c99_to_tac` until step 9, took
   0.55, 0.05 of it in the interpreter itself.
+- 21 Nov 2026: the preprocessor's loose ends, which group P left
+  (cpp/README.md, "The preprocessor"). pcpp's evaluator read Python's
+  `\N{name}` escape in a character constant in `#if`, so that
+  `'\N{LATIN SMALL LETTER A}'` was 97, where c6502's lexer rejects the
+  constant outside an `#if` as it rejects `'\q'`. That was fixed as a bug
+  in Python (preprocessor.py's `_without_named_escapes`,
+  tests/test_if_character_constants.py) and in C++, so the constant gets
+  pcpp's report of the TypeError of `ord()`, as `'\q'` does. The
+  rewriting matched pcpp's expansion without the `\N{name}` alternative
+  on 200,000 random spellings, and the C++ matches Python on 34 recorded
+  calls. pcpp follows Python's escapes in two other places, which were
+  left alone. `\x` takes exactly two characters, and `\u` and `\U`
+  take any four and eight, with the codec's error when they aren't
+  hexadecimal digits.

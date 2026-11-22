@@ -71,8 +71,25 @@ using FunctionHook = std::function<std::optional<std::string>(const std::string&
 //
 // A `\N{name}` escape in a character constant throws InternalError,
 // since the Unicode database of character names isn't ported.
+// preprocessor.cpp rewrites each character constant with
+// `expand_escapes_without_names` before it calls the evaluator, as
+// preprocessor.py does, so no compile reaches that error.
 EvalResult evaluate(const Tokens& tokens, const FunctionHook& functions,
                     const IdentifierHook& identifiers);
+
+// The expansion of the escapes in the text between a character
+// constant's quotes that pcpp's evaluator would make if its
+// `_expand_escape_sequences_pat` had no `\N{name}` alternative.
+// `expanded` holds the expansion (UTF-8) up to the first escape the
+// codec fails to decode, and `rest` holds the text from that escape on,
+// which is empty when every escape decodes.
+struct EscapeExpansion {
+  std::string expanded;
+  std::string rest;
+};
+
+// Returns that expansion of `inner` (UTF-8).
+EscapeExpansion expand_escapes_without_names(std::string_view inner);
 
 // Returns Python's `repr` of the string `s` (UTF-8), escaping every code
 // point that `str.isprintable` rejects as Python does.

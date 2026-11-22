@@ -219,106 +219,129 @@ std::uint64_t py_int(const CodePoints& s, int base) {
   return negative ? ~v + 1 : v;
 }
 
+// Returns the length of the escape that `_expand_escape_sequences_pat`
+// matches at `i` in `s`, or 0 when it matches none there. The pattern's
+// alternatives are tried in its order. With `names` false, the pattern
+// is read without its `\N{name}` alternative, and `is_name` is set when
+// that alternative matches.
+std::size_t escape_length(const CodePoints& s, std::size_t i, bool names, bool& is_name) {
+  is_name = false;
+  const std::size_t n = s.size();
+  if (s[i] != '\\' || i + 1 >= n) return 0;
+  const std::uint32_t c = s[i + 1];
+  // Whether `chars` characters follow the escape's letter, none of them
+  // a newline, which the pattern's `.` doesn't match.
+  auto fixed = [&](std::size_t chars) {
+    if (i + 2 + chars > n) return false;
+    for (std::size_t k = 0; k < chars; ++k) {
+      if (s[i + 2 + k] == '\n') return false;
+    }
+    return true;
+  };
+  if (c == 'U' && fixed(8)) return 10;
+  if (c == 'u' && fixed(4)) return 6;
+  if (c == 'x' && fixed(2)) return 4;
+  if (c >= '0' && c <= '7') {
+    std::size_t len = 2;
+    while (len < 4 && i + len < n && s[i + len] >= '0' && s[i + len] <= '7') ++len;
+    return len;
+  }
+  if (names && c == 'N' && i + 2 < n && s[i + 2] == '{') {
+    std::size_t j = i + 3;
+    while (j < n && s[j] != '}') ++j;
+    if (j < n && j > i + 3) {
+      is_name = true;
+      return j + 1 - i;
+    }
+  }
+  if (c == '\\' || c == '\'' || c == '"' || c == 'a' || c == 'b' || c == 'f' || c == 'n' ||
+      c == 'r' || c == 't' || c == 'v') {
+    return 2;
+  }
+  return 0;
+}
+
+// Returns the code point that `codecs.decode(m, 'unicode-escape')` gives
+// for the escape `m`, the `len` characters of `s` at `i`, which isn't a
+// `\N{name}`, or nullopt with `error` set to the UnicodeDecodeError the
+// codec raises.
+std::optional<std::uint32_t> decode_escape(const CodePoints& s, std::size_t i, std::size_t len,
+                                           PyException& error) {
+  const std::uint32_t c = s[i + 1];
+  const int hex_count = c == 'U' ? 8 : c == 'u' ? 4 : c == 'x' ? 2 : 0;
+  if (hex_count > 0) {
+    // The codec reads the UTF-8 bytes of the match, and reports the byte
+    // where a digit fails.
+    const std::string bytes = utf8(CodePoints(s.begin() + static_cast<std::ptrdiff_t>(i),
+                                              s.begin() + static_cast<std::ptrdiff_t>(i + len)));
+    const char* reason = hex_count == 8   ? "truncated \\UXXXXXXXX escape"
+                         : hex_count == 4 ? "truncated \\uXXXX escape"
+                                          : "truncated \\xXX escape";
+    std::uint64_t cp = 0;
+    std::size_t pos = 2;
+    std::size_t end = 0;
+    for (int k = 0; k < hex_count; ++k, ++pos) {
+      const int d = pos < bytes.size() ? digit_value(static_cast<unsigned char>(bytes[pos])) : 99;
+      if (pos >= bytes.size() || d >= 16) {
+        end = pos;
+        break;
+      }
+      cp = cp * 16 + static_cast<std::uint64_t>(d);
+    }
+    if (end == 0 && cp > 0x10FFFF) {
+      reason = "illegal Unicode character";
+      end = pos;
+    }
+    if (end != 0) {
+      error.type = "UnicodeDecodeError";
+      error.message = std::string("'unicodeescape' codec can't decode bytes in position 0-") +
+                      std::to_string(end - 1) + ": " + reason;
+      error.repr = "UnicodeDecodeError('unicodeescape', " + repr_bytes(bytes) + ", 0, " +
+                   std::to_string(end) + ", " + repr_str(reason) + ")";
+      return std::nullopt;
+    }
+    return static_cast<std::uint32_t>(cp);
+  }
+  if (c >= '0' && c <= '7') {
+    std::uint32_t v = 0;
+    for (std::size_t k = i + 1; k < i + len; ++k) v = v * 8 + (s[k] - '0');
+    return v;
+  }
+  static const char kFrom[] = "\\'\"abfnrtv";
+  static const std::uint32_t kTo[] = {'\\', '\'', '"', 7, 8, 12, 10, 13, 9, 11};
+  for (int k = 0; k < 10; ++k) {
+    if (c == static_cast<std::uint32_t>(kFrom[k])) return kTo[k];
+  }
+  return c;
+}
+
 // The value of a Python character constant's text between its quotes,
 // after `_expand_escape_sequences_pat.sub` and `ord()`.
 std::uint64_t char_value(const CodePoints& inner) {
   std::size_t length = 0;
   std::uint32_t last = 0;
-  auto emit = [&](std::uint32_t cp) {
-    ++length;
-    last = cp;
-  };
-  const std::size_t n = inner.size();
   std::size_t i = 0;
-  while (i < n) {
-    if (inner[i] != '\\' || i + 1 >= n) {
-      emit(inner[i]);
-      ++i;
-      continue;
-    }
-    const std::uint32_t c = inner[i + 1];
-    // The length of the escape the pattern matches at `i`, or 0.
-    std::size_t len = 0;
-    int hex_count = 0;
-    auto fixed = [&](std::size_t chars) {
-      if (i + 2 + chars > n) return false;
-      for (std::size_t k = 0; k < chars; ++k) {
-        if (inner[i + 2 + k] == '\n') return false;
-      }
-      return true;
-    };
-    if (c == 'U' && fixed(8)) {
-      len = 10;
-      hex_count = 8;
-    } else if (c == 'u' && fixed(4)) {
-      len = 6;
-      hex_count = 4;
-    } else if (c == 'x' && fixed(2)) {
-      len = 4;
-      hex_count = 2;
-    } else if (c >= '0' && c <= '7') {
-      len = 2;
-      while (len < 4 && i + len < n && inner[i + len] >= '0' && inner[i + len] <= '7') ++len;
-    } else if (c == 'N' && i + 2 < n && inner[i + 2] == '{') {
-      std::size_t j = i + 3;
-      while (j < n && inner[j] != '}') ++j;
-      if (j < n && j > i + 3) {
-        throw InternalError(
-            "pcpp's evaluator: a \\N{name} escape in a character constant isn't ported");
-      }
-    } else if (c == '\\' || c == '\'' || c == '"' || c == 'a' || c == 'b' || c == 'f' ||
-               c == 'n' || c == 'r' || c == 't' || c == 'v') {
-      len = 2;
-    }
+  while (i < inner.size()) {
+    bool is_name = false;
+    const std::size_t len = escape_length(inner, i, true, is_name);
     if (len == 0) {
-      emit(inner[i]);
+      ++length;
+      last = inner[i];
       ++i;
       continue;
     }
-    if (hex_count > 0) {
-      // codecs' unicode-escape decoder reads the UTF-8 bytes of the
-      // match, and reports the byte where a digit fails.
-      const std::string bytes = utf8(CodePoints(inner.begin() + static_cast<std::ptrdiff_t>(i),
-                                                inner.begin() + static_cast<std::ptrdiff_t>(i + len)));
-      const char* reason = hex_count == 8   ? "truncated \\UXXXXXXXX escape"
-                           : hex_count == 4 ? "truncated \\uXXXX escape"
-                                            : "truncated \\xXX escape";
-      std::uint64_t cp = 0;
-      std::size_t pos = 2;
-      std::size_t end = 0;
-      for (int k = 0; k < hex_count; ++k, ++pos) {
-        const int d = pos < bytes.size() ? digit_value(static_cast<unsigned char>(bytes[pos])) : 99;
-        if (pos >= bytes.size() || d >= 16) {
-          end = pos;
-          break;
-        }
-        cp = cp * 16 + static_cast<std::uint64_t>(d);
-      }
-      if (end == 0 && cp > 0x10FFFF) {
-        reason = "illegal Unicode character";
-        end = pos;
-      }
-      if (end != 0) {
-        PyException e;
-        e.type = "UnicodeDecodeError";
-        e.message = std::string("'unicodeescape' codec can't decode bytes in position 0-") +
-                    std::to_string(end - 1) + ": " + reason;
-        e.repr = "UnicodeDecodeError('unicodeescape', " + repr_bytes(bytes) + ", 0, " +
-                 std::to_string(end) + ", " + repr_str(reason) + ")";
-        throw e;
-      }
-      emit(static_cast<std::uint32_t>(cp));
-    } else if (c >= '0' && c <= '7') {
-      std::uint32_t v = 0;
-      for (std::size_t k = i + 1; k < i + len; ++k) v = v * 8 + (inner[k] - '0');
-      emit(v);
-    } else {
-      static const char kFrom[] = "\\'\"abfnrtv";
-      static const std::uint32_t kTo[] = {'\\', '\'', '"', 7, 8, 12, 10, 13, 9, 11};
-      for (int k = 0; k < 10; ++k) {
-        if (c == static_cast<std::uint32_t>(kFrom[k])) emit(kTo[k]);
-      }
+    if (is_name) {
+      // preprocessor.cpp's `without_named_escapes` rewrites a character
+      // constant before the evaluator reads it, so that no `\N{name}`
+      // reaches here from a compile.
+      throw InternalError(
+          "pcpp's evaluator: a \\N{name} escape in a character constant isn't ported");
     }
+    PyException error;
+    const auto cp = decode_escape(inner, i, len, error);
+    if (!cp) throw error;
+    ++length;
+    last = *cp;
     i += len;
   }
   if (length != 1) {
@@ -847,6 +870,30 @@ PValue parse(const std::vector<Sym>& tokens, const FunctionHook& functions,
 }
 
 }  // namespace
+
+EscapeExpansion expand_escapes_without_names(std::string_view inner) {
+  const CodePoints s = pyrepr::code_points(inner);
+  EscapeExpansion out;
+  std::size_t i = 0;
+  while (i < s.size()) {
+    bool is_name = false;
+    const std::size_t len = escape_length(s, i, false, is_name);
+    if (len == 0) {
+      append_utf8(out.expanded, s[i]);
+      ++i;
+      continue;
+    }
+    PyException error;
+    const auto cp = decode_escape(s, i, len, error);
+    if (!cp) {
+      out.rest = utf8(CodePoints(s.begin() + static_cast<std::ptrdiff_t>(i), s.end()));
+      break;
+    }
+    append_utf8(out.expanded, *cp);
+    i += len;
+  }
+  return out;
+}
 
 PyException py_exception(std::string type, std::string message) {
   PyException e;

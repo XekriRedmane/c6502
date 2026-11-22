@@ -45,6 +45,7 @@ pp-number there that isn't a valid integer constant raises
 from __future__ import annotations
 
 import argparse
+import codecs
 import copy
 import io
 import os
@@ -153,13 +154,65 @@ def _if_integer(spelling: str) -> str:
     return f"{constant.value}{'U' if unsigned else ''}"
 
 
+# pcpp's evaluator expands the escapes of a character constant with
+# Python's `unicode-escape` codec, at each match of its
+# `_expand_escape_sequences_pat`, and one of that pattern's
+# alternatives is Python's `\N{name}`. C has no such escape (C23
+# §6.4.4.4), and c6502's lexer rejects `'\N{LATIN SMALL LETTER A}'`
+# outside an `#if` as it rejects `'\q'`. This is pcpp's pattern without
+# that alternative, with the others in the same order.
+_PCPP_ESCAPES_BUT_NAMES_RE = re.compile(r"""
+    ( \\U........      # 8-digit hex escapes
+    | \\u....          # 4-digit hex escapes
+    | \\x..            # 2-digit hex escapes
+    | \\[0-7]{1,3}     # Octal escapes
+    | \\[\\'"abfnrtv]  # Single-character escapes
+)""", re.UNICODE | re.VERBOSE)
+
+
+def _without_named_escapes(spelling: str) -> str:
+    """Returns a spelling of the character constant `spelling` that
+    pcpp's evaluator reads as it would read `spelling` if its pattern
+    had no `\\N{name}` alternative, so that `'\\N{LATIN SMALL LETTER
+    A}'` holds 24 characters and pcpp reports the TypeError of `ord()`
+    for it, as it does for `'\\q'`.
+
+    The escapes are expanded here with pcpp's own codec, and each
+    backslash of the result is written as `\\\\`, which pcpp's pattern
+    takes as one escape for a backslash. Doubling only the backslash
+    of each `\\N` wouldn't do, since `\\u0\\N` would then give `\\u`
+    the four characters its alternative takes. When an escape fails to
+    decode, the result is the expansion before it followed by the
+    original text from that escape on, so pcpp's pattern finds the
+    same escape there and raises the same UnicodeDecodeError."""
+    start = 2 if spelling.startswith("L'") else 1
+    inner = spelling[start:-1]
+    out = []
+    pos = 0
+    for m in _PCPP_ESCAPES_BUT_NAMES_RE.finditer(inner):
+        out.append(inner[pos:m.start()])
+        try:
+            out.append(codecs.decode(m.group(0), "unicode-escape"))
+        except UnicodeDecodeError:
+            rest = inner[m.start():]
+            break
+        pos = m.end()
+    else:
+        out.append(inner[pos:])
+        rest = ""
+    expanded = "".join(out).replace("\\", "\\\\")
+    return spelling[:start] + expanded + rest + spelling[-1]
+
+
 class _NumberEvaluator:
     """Wraps pcpp's `#if` evaluator, and rewrites each number token
     into the spelling `_if_integer` gives before pcpp's evaluator
     reads it. pcpp catches and prints whatever its evaluator raises,
     so the message for an invalid number goes in the preprocessor's
     `number_error`, which `CompilePreprocessor.evalexpr` raises after
-    pcpp returns."""
+    pcpp returns. A character constant is rewritten by
+    `_without_named_escapes`, so that pcpp doesn't expand Python's
+    `\\N{name}` escape in it."""
 
     def __init__(self, evaluator, preprocessor) -> None:
         self.evaluator = evaluator
@@ -179,6 +232,10 @@ class _NumberEvaluator:
                     raise
                 tok = copy.copy(tok)
                 tok.value = value
+            elif (tok.type == self.preprocessor.t_CHAR
+                    and "\\N" in tok.value):
+                tok = copy.copy(tok)
+                tok.value = _without_named_escapes(tok.value)
             rewritten.append(tok)
         return self.evaluator(
             rewritten, functions=functions, identifiers=identifiers,

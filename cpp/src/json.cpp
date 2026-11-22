@@ -1,6 +1,7 @@
 #include "json.h"
 
 #include <cstdint>
+#include <cstdio>
 
 namespace c6502::json {
 
@@ -254,6 +255,116 @@ Value parse(std::string_view text) {
   Value v = p.value();
   p.finish();
   return v;
+}
+
+std::string quote(std::string_view s) {
+  std::string out = "\"";
+  const auto escape = [&](unsigned cp) {
+    char buf[8];
+    std::snprintf(buf, sizeof buf, "\\u%04x", cp);
+    out += buf;
+  };
+  for (std::size_t i = 0; i < s.size();) {
+    const auto c = static_cast<unsigned char>(s[i]);
+    unsigned cp = c;
+    std::size_t len = 1;
+    if (c >= 0xF0 && i + 3 < s.size()) {
+      cp = ((c & 0x07u) << 18) | ((static_cast<unsigned char>(s[i + 1]) & 0x3Fu) << 12) |
+           ((static_cast<unsigned char>(s[i + 2]) & 0x3Fu) << 6) |
+           (static_cast<unsigned char>(s[i + 3]) & 0x3Fu);
+      len = 4;
+    } else if (c >= 0xE0 && i + 2 < s.size()) {
+      cp = ((c & 0x0Fu) << 12) | ((static_cast<unsigned char>(s[i + 1]) & 0x3Fu) << 6) |
+           (static_cast<unsigned char>(s[i + 2]) & 0x3Fu);
+      len = 3;
+    } else if (c >= 0xC0 && i + 1 < s.size()) {
+      cp = ((c & 0x1Fu) << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3Fu);
+      len = 2;
+    }
+    i += len;
+    switch (cp) {
+      case '"':
+        out += "\\\"";
+        continue;
+      case '\\':
+        out += "\\\\";
+        continue;
+      case '\n':
+        out += "\\n";
+        continue;
+      case '\r':
+        out += "\\r";
+        continue;
+      case '\t':
+        out += "\\t";
+        continue;
+      case '\b':
+        out += "\\b";
+        continue;
+      case '\f':
+        out += "\\f";
+        continue;
+      default:
+        break;
+    }
+    if (cp >= 0x20 && cp < 0x7F) {
+      out += static_cast<char>(cp);
+    } else if (cp > 0xFFFF) {
+      // Python writes a character outside the BMP as a surrogate pair.
+      const unsigned v = cp - 0x10000;
+      escape(0xD800 | (v >> 10));
+      escape(0xDC00 | (v & 0x3FF));
+    } else {
+      escape(cp);
+    }
+  }
+  out += '"';
+  return out;
+}
+
+namespace {
+
+void dump_to(const Value& v, std::string& out) {
+  switch (v.kind) {
+    case Value::Kind::kNull:
+      out += "null";
+      return;
+    case Value::Kind::kBool:
+      out += v.boolean ? "true" : "false";
+      return;
+    case Value::Kind::kInt:
+      out += asdl::int_to_string(v.integer);
+      return;
+    case Value::Kind::kString:
+      out += quote(v.string);
+      return;
+    case Value::Kind::kArray:
+      out += '[';
+      for (std::size_t i = 0; i < v.items.size(); ++i) {
+        if (i != 0) out += ", ";
+        dump_to(v.items[i], out);
+      }
+      out += ']';
+      return;
+    case Value::Kind::kObject:
+      out += '{';
+      for (std::size_t i = 0; i < v.items.size(); ++i) {
+        if (i != 0) out += ", ";
+        out += quote(v.keys[i]);
+        out += ": ";
+        dump_to(v.items[i], out);
+      }
+      out += '}';
+      return;
+  }
+}
+
+}  // namespace
+
+std::string dump(const Value& v) {
+  std::string out;
+  dump_to(v, out);
+  return out;
 }
 
 }  // namespace c6502::json

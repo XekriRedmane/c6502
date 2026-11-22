@@ -63,70 +63,7 @@ std::string program_json(const asm_ast::Program& prog) {
 
 }  // namespace
 
-std::string json_quote(std::string_view s) {
-  std::string out = "\"";
-  const auto escape = [&](unsigned cp) {
-    char buf[8];
-    std::snprintf(buf, sizeof buf, "\\u%04x", cp);
-    out += buf;
-  };
-  for (std::size_t i = 0; i < s.size();) {
-    const auto c = static_cast<unsigned char>(s[i]);
-    unsigned cp = c;
-    std::size_t len = 1;
-    if (c >= 0xF0 && i + 3 < s.size()) {
-      cp = ((c & 0x07u) << 18) | ((static_cast<unsigned char>(s[i + 1]) & 0x3Fu) << 12) |
-           ((static_cast<unsigned char>(s[i + 2]) & 0x3Fu) << 6) |
-           (static_cast<unsigned char>(s[i + 3]) & 0x3Fu);
-      len = 4;
-    } else if (c >= 0xE0 && i + 2 < s.size()) {
-      cp = ((c & 0x0Fu) << 12) | ((static_cast<unsigned char>(s[i + 1]) & 0x3Fu) << 6) |
-           (static_cast<unsigned char>(s[i + 2]) & 0x3Fu);
-      len = 3;
-    } else if (c >= 0xC0 && i + 1 < s.size()) {
-      cp = ((c & 0x1Fu) << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3Fu);
-      len = 2;
-    }
-    i += len;
-    switch (cp) {
-      case '"':
-        out += "\\\"";
-        continue;
-      case '\\':
-        out += "\\\\";
-        continue;
-      case '\n':
-        out += "\\n";
-        continue;
-      case '\r':
-        out += "\\r";
-        continue;
-      case '\t':
-        out += "\\t";
-        continue;
-      case '\b':
-        out += "\\b";
-        continue;
-      case '\f':
-        out += "\\f";
-        continue;
-      default:
-        break;
-    }
-    if (cp >= 0x20 && cp < 0x7F) {
-      out += static_cast<char>(cp);
-    } else if (cp > 0xFFFF) {
-      // Python writes a character outside the BMP as a surrogate pair.
-      const unsigned v = cp - 0x10000;
-      escape(0xD800 | (v >> 10));
-      escape(0xDC00 | (v & 0x3FF));
-    } else {
-      escape(cp);
-    }
-  }
-  out += '"';
-  return out;
-}
+std::string json_quote(std::string_view s) { return json::quote(s); }
 
 std::string run_dead_label_drop(asm_ast::Program input, const AsmContext&,
                                 const json::Value&, const json::Value&) {

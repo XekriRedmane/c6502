@@ -34,4 +34,15 @@ struct Value {
 // that isn't JSON or that holds a fraction or an exponent.
 Value parse(std::string_view text);
 
+// Returns the text of the UTF-8 string `s` as Python's `json.dumps`
+// writes a `str`, in double quotes, with `"`, `\`, and every character
+// outside printable ASCII escaped.
+std::string quote(std::string_view s);
+
+// Returns the text Python's `json.dumps` writes for `v`, with its
+// default separators (", " and ": ") and every string escaped as
+// `quote` escapes it, so that a value read from the capture harness's
+// JSON and written again gives the same text.
+std::string dump(const Value& v);
+
 }  // namespace c6502::json

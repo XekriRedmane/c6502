@@ -23,6 +23,7 @@
 #include "asm2_ast.h"
 #include "asm_ast.h"
 #include "backend.h"
+#include "binutils/checks.h"
 #include "c99_ast.h"
 #include "capture.h"
 #include "errors.h"
@@ -47,6 +48,7 @@ const char kUsage[] =
     "       c6502cpp check-helpers [--verbose] <path>...\n"
     "       c6502cpp check-preprocess [--verbose] <path>...\n"
     "       c6502cpp check-regex [--verbose] <path>...\n"
+    "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
     "\n"
@@ -79,6 +81,9 @@ const char kUsage[] =
     "Python type of the error. A problem with the request exits with\n"
     "status 1 and a bug in the compiler with status 3, each with its\n"
     "message on stderr.\n"
+    "\n"
+    "check-binutils checks the records of tools/capture_binutils.py under\n"
+    "each capture directory (src/binutils/checks.h).\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -590,6 +595,9 @@ int main(int argc, char** argv) {
     }
     if (command == "check-regex") {
       return cmd_check_regex(args);
+    }
+    if (command == "check-binutils") {
+      return binutils::check_binutils(args);
     }
     if (command == "backend" && args.empty()) {
       // A problem with the program goes back in the response with its

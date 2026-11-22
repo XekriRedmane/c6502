@@ -52,7 +52,7 @@ parsed by any tool.
   as the byte-identical reference, the scope, which since 21 Nov 2026
   takes in the simulator, the tests, and the fuzzers, the hand-written
   parser, the build), how each stage is checked, the order of the
-  stages, the surveys and groups of steps 4 to 6, and their status.
+  stages, the surveys and groups of steps 4 to 7, and their status.
 - `calling_conventions.md` — user guide to c6502's two calling
   conventions. The soft stack: SSP and FP, a call traced through the
   caller's argument push, the prologue, the frame layout, and the

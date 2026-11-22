@@ -20,7 +20,11 @@ code generation, and takes the `-S` text back ("The stage's driver",
 "The back end through c6502cpp", and "Emission", below). Of the front end, the pieces its passes share, the
 preprocessor, the parser, the unroller, `identifier_resolution`,
 string lifting, `label_resolution`, `loop_labeling`, and the type
-checker are ported ("The front end's calls").
+checker are ported ("The front end's calls"). Of the object-file
+tools of step 7, the ELF reader and writer, the opcode table, the
+part of argparse that nm.py and objdump.py use, and nm are ported, and
+`C6502_CPP_BACKEND=1` runs the C++ nm for nm.py ("The object-file
+tools").
 
 ## Building
 
@@ -80,7 +84,14 @@ cpp/
     asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer,
                       py_repr
     errors.h          CompileError, InternalError
-    json.*            the reader of the capture harness's JSON
+    json.*            the reader of the capture harness's JSON, and a
+                      writer of Python's `json.dumps` text
+    argparse.*        Python's argparse, as nm.py and objdump.py use it
+    binutils/elf.*    binutils/elf.py, the ELF reader and writer (step 7)
+    binutils/opcodes.*   binutils/opcodes.py, the 6502 opcode table
+    binutils/nm.*     nm.py
+    binutils/checks.*    `c6502cpp check-binutils`, the checks of
+                      tools/capture_binutils.py's records
     capture.*         the reader of capture files and their contexts
     helper_checks.*   the C++ side of tools/capture_helpers.py
     backend.*         the `c6502cpp backend` command's request and response
@@ -2237,6 +2248,68 @@ the calls on a function with a `DecimalArith` that
 `tests/test_bcd_builtins.py`'s compiles make, recorded with the
 Python results through `tests/stage_case.h`.
 
+## The object-file tools
+
+Step 7 (docs/cpp_port.md) ports what compile.py does with objects and
+executables, and nm.py and objdump.py. The pieces its groups share are
+in src/binutils/ and src/argparse.*.
+
+- `binutils::elf` (`elf.h`) is binutils/elf.py: the `ElfFile`, its
+  sections, symbols, relocations, and segments, and `read` and `write`,
+  which give Python's bytes and Python's `ElfError` messages
+  (`CompileError("ElfError", ...)`), with a damaged file reported at
+  the point of the read where Python's `struct.error`, `IndexError`, or
+  `ValueError` would end it. The Python linker links its objects by
+  identity, renaming and redefining a symbol in place so that every
+  relocation of it follows, so the sections and symbols are
+  `shared_ptr`s, a symbol names its section by pointer (or `shndx` for
+  an undefined or absolute one), and a relocation names its symbol by
+  pointer.
+- `binutils::opcodes` (`opcodes.h`) is binutils/opcodes.py, the 151
+  documented opcodes in the Python table's order, with `decode`,
+  `opcode`, `size`, and `zp_form`. `c6502cpp opcodes` lists it, and
+  tests/test_cpp_binutils.py compares the list with Python's.
+- `argparse` (`argparse.h`) is the part of Python 3.11's argparse that
+  nm.py and objdump.py use: options that store true or append, one
+  positional of one or more values, the help action, abbreviations and
+  combined short flags, every error message, and the usage and help
+  wrapped by HelpFormatter's rules to the width `terminal_columns` reads
+  as `shutil.get_terminal_size` does. A help text with a hyphen inside a
+  word, where textwrap would break a line differently, throws
+  `InternalError`. `path_str` is `str(pathlib.Path(path))`, which
+  Python's messages show.
+- `binutils::nm` (`nm.h`) is nm.py, the first tool ported end to end.
+  `c6502cpp nm` takes nm.py's command line, reading it as UTF-8 on
+  Windows from the wide command line, and writes the listing's bytes,
+  the help in text mode, and stderr with LF. Under `C6502_CPP_BACKEND=1`,
+  nm.py's `main` runs it through `cpp_backend.run_tool`, which passes
+  the terminal's width as `COLUMNS` and writes the output to Python's
+  streams, so a test that redirects them gets it.
+
+`json::dump` (src/json.h) writes a `json::Value` as Python's
+`json.dumps` does, with `json::quote` for its strings, which
+`registry::json_quote` now calls.
+
+`tools/capture_binutils.py` records the Python tools over the corpus
+and, as a pytest plugin, during the Python tests (its docstring gives
+the records, and docs/cpp_port.md, "The captures" under step 7, the
+numbers), and `c6502cpp check-binutils <capture dir>...` checks them
+(src/binutils/checks.h): every record's JSON makes the trip to C++ and
+back, every object and executable a record holds is read and written
+again byte for byte, every `elf_read` record's file is read with the
+recorded rewrite or error, and every `nm` record is run, comparing
+stdout, stderr, and the exit status. Each group of step 7 adds its
+tool's run to the checker. `tools/binutils_errors.py` lists the errors
+a capture holds, grouped by the shape of their message.
+
+```sh
+C6502_CPP_BACKEND=1 uv run python tools/capture_binutils.py -j 12
+C6502_BINUTILS_CAPTURES=captures/binutils_suite PYTHONPATH=tools \
+    uv run pytest -p capture_binutils -n 12 -q
+cpp/build/bin/c6502cpp check-binutils captures/binutils captures/binutils_suite
+uv run python tools/binutils_errors.py captures/binutils
+```
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -2480,3 +2553,8 @@ Python results through `tests/stage_case.h`.
   errors; and parser.py's scopes, typedef-aware lexer, and rewordings.
   Every one of the 6,314 distinct token streams of the corpus and the
   Python tests matched, and so did all 452 calls of `tokenize`.
+- 22 Nov 2026: the groundwork of step 7 ("The object-file tools"):
+  `binutils::elf`, `binutils::opcodes`, `argparse`, and `binutils::nm`,
+  with `c6502cpp check-binutils` on the records of
+  tools/capture_binutils.py, which all match, and nm.py run through
+  `c6502cpp nm` under `C6502_CPP_BACKEND=1`.

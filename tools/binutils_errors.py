@@ -18,10 +18,11 @@ from pathlib import Path
 def _shape(message: str) -> str:
     """`message` with its names, numbers, and paths replaced by
     placeholders, so that the errors of one raise site group together."""
-    text = re.sub(r"`[^`]*`", "`N`", message)
-    text = re.sub(r"'[^']*'", "'N'", text)
+    text = re.sub(r"\[[^\]]*\]", "[...]", message)
+    text = re.sub(r"`[^`]*`", "`N`", text)
+    # A quoted name, but not the apostrophe of "can't".
+    text = re.sub(r"(?<![A-Za-z])'[^']*'", "'N'", text)
     text = re.sub(r"\$[0-9A-Fa-f]+|\b\d+\b", "#", text)
-    text = re.sub(r"\[[^\]]*\]", "[...]", text)
     return re.sub(r"^[^:\s]+\.(o|c|asm|ld|s): ", "<file>: ", text)
 
 
@@ -47,4 +48,8 @@ def summarize(root: Path) -> None:
 
 
 if __name__ == "__main__":
-    summarize(Path(sys.argv[1]))
+    # A message of the linker's holds an arrow, which the console's
+    # code page may not have.
+    sys.stdout.reconfigure(encoding="utf-8")
+    for arg in sys.argv[1:]:
+        summarize(Path(arg))

@@ -993,6 +993,327 @@ record. The corpus never calls `pp_check`, `pp_check_floating`, or
 `pp_bit_precise_width`, since the lexer checks only a number with a
 separator, a binary prefix, or a `wb` suffix.
 
+## Step 7: the assembler and the linker
+
+Step 7 is everything compile.py, nm.py, and objdump.py do with objects
+and executables, which is the assembly of `-c`, the link, and the two
+listing tools, about 7,000 lines of Python in binutils/, passes/linker.py,
+link_layout.py, link_script.py, runtime_library.py, the parser of the
+link metadata in zp_link_metadata.py, and the helpers' 6502 code in
+rtlib/helpers.py. This section lists the stages in order with what
+each reads and returns, the errors each can give and how many of them
+the corpus and the tests reach, where the time of a link goes, the
+groups in which several agents can port the step at once, the places
+where the Python output depends on something a straightforward port
+could change, and the plan for the switch. The survey was made on 22
+Nov 2026 from compile.py at 0551fff.
+
+### The stages
+
+compile.py's `main` runs these. "Raise sites" counts the `raise`
+statements of each module's own error class.
+
+| Stage | Python | Lines | Reads | Returns | Raise sites |
+|---|---|---|---|---|---|
+| a C input of `-c` or a link | `compile._object`, `_compile_c` | | the source, the preprocessor's arguments | the `-S` text with the link metadata block (C++ under the switch) | |
+| assembly | `binutils.assembler.assemble` | 841 | the text, the file name, the linker's addresses of the names it places (`link_symbols`), `keep_source` | an `ElfFile` of `ET_REL` | 35 `AssemblerError` |
+| the metadata block | `zp_link_metadata.parse_metadata` | 165 | the block's text | a `LinkMetadata` | 13 `ValueError` |
+| reading and writing files | `binutils.elf.read`, `write` | 480 | bytes, a name for messages | an `ElfFile`, bytes | 8 `ElfError` |
+| a linker script | `linker.read_script`, `link_script.parse_script` | 455 | the script's text, read in the locale's encoding | a `Script` | 14 `ScriptError` |
+| the link | `linker.link_objects` | 1,333 | the objects with their names, the script, the origin, the `--defsym`s | an `ElfFile` of `ET_EXEC` | 34 `LinkError` |
+| the runtime library | `runtime_library.needed`, `library_object` | 130, and 1,011 in rtlib/helpers.py | the objects' undefined names, the helpers' `asm_ast` functions, `asm_to_asm2`, `asm_emit`, the assembler | `runtime.o` and its metadata | |
+| the shares across units | `slot_sharing.merge_shares`, `check_linked_shares` | 110 | every unit's `SlotShare`s, the call edges | the program's shares | 4 `ValueError` |
+| the layout | `link_layout.lay_out`, `default_script`, `fall_through`, `tail_jump`, `startup_lines` | 488 | the script, each unit's items and sections, a lookup of the names the linker placed | each output section's parts and addresses, the section symbols | 16 `LayoutError` |
+| resolving and relocating | `binutils.ld` (`global_definitions`, `Resolver`, `relax`, `relocate`, `executable`) | 343 | the objects, the placed sections, the linker's names | the executable | 10 `LinkError` |
+| nm | `nm.main`, `symbol_lines` | 173 | argparse's command line, the files | the listing, the messages, the exit status | |
+| objdump | `objdump.main`, `binutils.disasm.disassemble` | 226, 412 | the same | the same | |
+
+`link_objects` itself runs these steps in order, and `elf.write` then
+makes the file.
+
+1. For each object, `parse_metadata`, `_object_items`, and
+   `_without_init`, which leaves out the unit's `__zp_init`.
+2. `_runtime_library`, and `global_definitions` for the absolute names.
+3. `_rename_locals` and `_rename_meta`.
+4. `_merge`, and `_validate_eligibility`, which runs
+   `recursion_saves.hw_stack_cycles` on `_synthesize`'s program of call
+   edges.
+5. `_drop_unused_locals`, `_merge_zp_objects`, `startup_lines` under a
+   script, `_choose_layout` (`runtime_layout.choose_layout`), and
+   `_place_zp_objects`.
+6. `_link_shares`.
+7. `_synthesize`, `allocate_zp_slots`, `allocate_function_locals`, and
+   `build_local_slot_symbols`, which are ported (step 4), and
+   `_bind_extern_params`.
+8. `_reassemble`, which assembles a unit again from its `.c6502.asm`
+   when a name it reached in zero page lands above $FF.
+9. `relax` on every section, and `_merge_identical`.
+10. The assembly of the linker's own code (`_init_lines`, `__spill`, and
+    `_data_lines` for a promoted object put back in the data segment).
+11. `lay_out`, the `Resolver`, and `_output_symbols`.
+12. `format_metadata`, which is ported (step 3), and `executable`, which
+    relocates each placed section.
+
+The captures reach these errors, which tools/binutils_errors.py groups
+by the shape of their message.
+
+- Assembly: none in the corpus, since the compiler's text always
+  assembles.
+- `elf_read`: the four messages of `elf.read`, from the damaged files of
+  the corpus's `links` job.
+- Links: 756 of the corpus's 4,537 distinct links fail, with 12 shapes
+  of message from 7 raise sites: an undefined name (553, 280 of them a
+  runtime helper with no 6502 code), an `IndirectCall` (72), a cycle
+  (42), an `extern` zero-page object no unit defines (40), a section
+  past the end of its region (32), a call of a function no unit
+  defines with zp_abi (12), and an item no output section takes (5).
+  21 of the suite's 104 distinct links fail, each with a message of
+  its own, and 12 of those come from raise sites the corpus doesn't
+  reach, so the two reach 19 of the 60 raise sites of linker.py,
+  link_layout.py, and ld.py.
+- Scripts and the assembler: the suite's 24 distinct scripts reach 7 of
+  the 14 raise sites of `parse_script`, and its 269 distinct assemblies
+  8 of the assembler's 35.
+- nm and objdump: 16 and 13 shapes, each of argparse's errors the
+  corpus's bad command lines give, a missing file, and each of
+  `elf.read`'s messages.
+
+No call of the corpus or the suite raises `ZpSlotAllocationError` or
+`ZpLocalAllocationError` in a link, or reaches `_reassemble`'s,
+`relocate`'s, or `parse_metadata`'s errors. Those, and the other raise
+sites neither reaches, need cases of their own, as the earlier steps
+wrote for the messages the corpus never gives.
+
+### Where the time goes
+
+The corpus capture timed every call: an assembly takes 8.1 ms on
+average (5,491 calls in 44 s), a link 6.3 ms (4,547 in 28.6 s), a
+disassembly 7.4 ms, nm 3.2 ms, and objdump 10.0 ms. The three games
+link in 59 ms (Zork), 88 ms (Lode Runner), and 175 ms (Ali Baba), best
+of five without a profiler, of which reading the objects takes 7 to 19
+ms and writing the executable 1 to 3. In the link of Ali Baba,
+`allocate_function_locals` takes 40 ms, `_merge` 21, `parse_metadata`
+17, `relax` 11, `executable` 7, `global_definitions` and
+`allocate_zp_slots` 7 each, `_link_shares` 6, and the layout 4, and
+Zork and Lode Runner spend most of theirs in the same functions. As a process,
+`compile.py -T script objects -o exe` takes 0.51 to 0.59 seconds with
+`C6502_CPP_BACKEND=1` and 0.85 to 1.02 without, and with the variable
+set about 0.26 seconds of it is importing passes.linker, which imports
+the type checker through `passes.zp_globals` and numpy through
+`fp_arith`. The suite's 106 calls of `link_objects` took 1.7 seconds
+in all, and its 470 assemblies 2.9 seconds. From the speedups of the
+earlier steps, a link in C++ is likely to take a few milliseconds (an
+estimate, since no part of the link is ported yet), so the process's
+start and the compiles of its C inputs would be most of a link's time.
+
+### The groups
+
+Each group ports its modules with the conventions of cpp/README.md
+("Porting a pass"), into src/binutils/ for binutils/ and nm.py and
+objdump.py, and src/passes/ for the linker's modules, and checks them
+on a capture of the corpus and of the suite (`c6502cpp check-binutils`,
+"The captures" below), errors included.
+
+- **S. The shared pieces**, done with this survey: the ELF reader and
+  writer (src/binutils/elf.h), the opcode table (opcodes.h), Python's
+  argparse as nm.py and objdump.py use it (src/argparse.h, with
+  `path_str` for the paths Python's messages show), the JSON writer the
+  checks use, and nm (src/binutils/nm.h), which `C6502_CPP_BACKEND=1`
+  runs for nm.py.
+- **A. The assembler and the metadata block**: binutils/assembler.py
+  (841 lines) and `parse_metadata` with its helpers
+  (zp_link_metadata.py:460-625). The linker reads the metadata too, so
+  A ports `parse_metadata` first and says so. It needs Python's string
+  methods (`splitlines`, `strip`, `split`, `upper`, `isdigit`) and the
+  regular expressions of `_TOKEN`, `_EQU`, and `_LABEL` with Python's
+  Unicode classes, which src/pcpp_text.h and src/py_regex.h have, and
+  unbounded integers in its expressions. It is checked on the
+  `assemble` records, each object compared byte for byte, and on the
+  calls the linker makes of it.
+- **B. objdump and the disassembler**: objdump.py (226) and
+  binutils/disasm.py (412), on S's pieces, checked on the `objdump`
+  and `disassemble` records, and switched on in objdump.py as nm is.
+- **C. Linker scripts and the layout**: passes/link_script.py (455) and
+  link_layout.py (488), with `asm_emit`'s `instr_line`, which C makes
+  public for `startup_lines` and the linker's own code. `parse_script`
+  is checked on its records, whose result is the tagged JSON of the
+  `Script`, and `lay_out` through whole links, since its inputs are the
+  linker's `Unit`s.
+- **D. The linker**, on A and C, in two parts that share
+  `link_objects`'s state (the objects, the metadata, and the names the
+  linker placed), which D1 declares first.
+  - D1: the metadata's side: `_merge`, `_validate_eligibility`,
+    `_synthesize`, `_rename_locals` and `_rename_meta`, `_merge_zp_objects`,
+    `_place_zp_objects`, `_choose_layout`, `_runtime_bytes`,
+    `_link_shares` with `merge_shares` and `check_linked_shares`,
+    `_bind_extern_params`, `_drop_unused_locals`, `_init_lines`, and
+    `_data_lines` (linker.py:161-384 and 736-1333), about 900 lines.
+    The allocators, `hw_stack_cycles`, `choose_layout`, and
+    `format_metadata` are ported, so D1 reuses them.
+  - D2: the objects' side and the driver: binutils/ld.py (343),
+    `link_objects`, `_object_items`, `_without_init`, `_unit`,
+    `_pointer_names`, `_reassemble`, `_output_symbols`, `_merge_identical`,
+    and `_contents` (linker.py:385-735), about 750 lines. It is checked
+    on the `link` records, each executable compared byte for byte.
+- **E. The runtime library**: passes/runtime_library.py (130) and
+  `runtime_layout.helper_footprints`. The helpers' code stays in
+  rtlib/helpers.py with the simulator until step 9, so E generates a
+  table of the 19 helpers' `asm_ast` functions in the dump format,
+  about 20 KB, checked in under cpp/generated/ with a test that writes
+  it again and compares it, as tests/test_lalr_table.py does for the
+  parser's table. The C++ side then computes the footprints, and the
+  backend's request stops carrying them. E needs A's assembler for
+  `library_object`, and can write the table and the footprints first.
+- **F. The driver and the switch**: compile.py's `-c` and link paths in
+  C++, as the plan for the switch below describes, once A to E are
+  done.
+
+A, B, C, and E's table can start at once, D once A's `parse_metadata`
+and C's `lay_out` have an agreed interface, and F last.
+
+### What the port has to keep
+
+The survey found these places where the Python output depends on
+something a straightforward C++ port could change.
+
+- **The ELF files' order.** `elf.write` writes the local symbols first
+  and then the globals, each in the list's order, keeps each string
+  once in its table in the order of first use (with no sharing of
+  suffixes), puts the `.rela` sections after the content sections in
+  their order, writes the segments' bytes first and points a section
+  at a segment's bytes when its address and bytes are the same, and
+  pads to 4 bytes before the section headers. `read` keeps the file's
+  order. Every object and executable of the captures makes the trip
+  through the C++ code (`c6502cpp check-binutils`).
+- **Identity.** The linker renames and redefines symbols in place, so
+  that every relocation naming one follows it (`_rename_locals`,
+  `_merge_identical`), and keys the placed sections by `id()`. The C++
+  `ElfFile` holds sections and symbols by shared pointers for this.
+- **Python's text.** The assembler splits lines with `str.splitlines`,
+  which also splits at `\x0b`, `\x0c`, `\x1c` to `\x1e`, U+0085,
+  U+2028, and U+2029, strips and splits at Unicode whitespace, upper-
+  cases a mnemonic with `str.upper`, and its regular expressions' `\s`
+  and `\d` are Unicode's, so a number may be written in any script's
+  digits. It keeps the text as `"\n".join(lines) + "\n"`, which turns
+  CR LF into LF. A `DC.B` string is encoded as Latin-1.
+- **Unbounded integers.** An `EQU` or an operand computes with Python's
+  integers, with floor division, an arithmetic `>>` of a negative
+  value, and a `<<` with no limit, and the messages print the value
+  (`$-1F isn't in zero page`, Python's `X` format of a negative
+  number).
+- **Insertion order and sorting.** Every dict the linker walks follows
+  insertion order: the zero-page objects in the order the units list
+  them, the renames, the placed names, and the absolute symbols.
+  `_merge` sorts the definitions, externs, and call edges by name,
+  which is code-point order, the order of their UTF-8 bytes.
+  `_place_zp_objects` sorts the promoted objects by the float key
+  `-weight / size`, then the name. `_output_symbols` sorts each table of
+  the linker's names by value, stably. No set's order reaches the
+  output: each set is sorted or tested for membership.
+- **Messages.** Several messages print a sorted list with Python's
+  repr (`function(s) defined in multiple TUs: ['f', 'g']`), one holds
+  the character U+2192 (`main → ['f']`), and `elf.read`'s name Python's
+  `str(Path(path))`, with backslashes on Windows.
+- **Paths and encodings.** `read_script` reads the script in the
+  locale's encoding (cp1252 here, UTF-8 on Linux) with universal
+  newlines. The layout matches a script's file pattern with
+  `fnmatch.fnmatchcase` against the input's name after its last `/` or
+  `\`. An executable's `STT_FILE` symbols are `Path(path).name`.
+- **argparse.** nm.py and objdump.py wrap the usage and help to the
+  terminal's width (`shutil.get_terminal_size`), which the C++ argparse
+  reads the same way and `cpp_backend.run_tool` passes on as `COLUMNS`.
+  The help goes out through Python's text stream, which on Windows ends
+  its lines with CR LF, and the listings through `write_lf` with LF.
+- **objdump's formatting.** `{sec.name:<20}` pads by code points, the
+  section contents are lowercase hex in groups of four bytes, and the
+  alignment is `2**(align.bit_length() - 1)`.
+
+### The plan for the switch
+
+nm.py shows the pattern. Under `C6502_CPP_BACKEND=1`, its `main` runs
+`c6502cpp nm` with the command line (`cpp_backend.run_tool`), writes
+what the C++ side writes to `sys.stdout` and `sys.stderr`, and returns
+its exit status, raising SystemExit(2) for argparse's. The C++ side
+writes the listing's bytes and the help in text mode, as Python does,
+and its stderr with LF, which Python's stream turns into CR LF on
+Windows. A test that calls `nm.main` with its streams redirected sees
+the C++ output, so the suite with the variable set runs the C++ nm.
+objdump.py takes over the same way once group B lands.
+
+For compile.py, group F extends the backend's request rather than
+adding a process per step.
+
+- `-c` of a C input: the request says `assemble`, and the C++ side
+  assembles the `-S` text and returns the object's bytes as a section of
+  the response, which compile.py writes to `<stem>.o`. An `.asm` input
+  goes to `c6502cpp assemble`, with the text and the file name.
+- A link: a `c6502cpp link` request lists the inputs in order, each a
+  C source (with its text and the preprocessor's arguments, compiled in
+  the same process), an assembly file, or an object's path, with the
+  script's path, the origin, and the `--defsym`s, and the C++ side
+  writes the executable. The response holds, for each C input, what
+  the preprocessor wrote to stderr and its warnings, and the first
+  error with its Python class, its message, and which input or the link
+  it came from, so compile.py prints `<file>: error: <message>` or
+  `compile.py: link error: <message>` with exit status 1 as it does
+  now. A bug the C++ side reports exits with status 3 and is raised as
+  an AssertionError, as for the backend.
+- The errors keep their Python classes: `AssemblerError`, `ElfError`,
+  `LinkError`, `ZpSlotAllocationError`, and `ZpLocalAllocationError`
+  are added to `cpp_backend._ERROR_MODULES`, and an unreadable input
+  gives compile.py's message for an OSError (`missing.o: error: No such
+  file or directory`).
+
+These stay in Python until step 8.
+
+- `--lex`, `--parse`, `--resolve`, and `--tac`.
+- compile.py's own reading of its command line, which a port of the
+  rest of argparse (`parse_known_args`, the mutually exclusive stage
+  flags, `store_const`, and `type=`) moves to C++ in step 8.
+- `ir_check` under `C6502_CHECK_IR=1`.
+- tests/link_helpers.py's `linked_text`, which calls the disassembler
+  directly.
+- The helpers' code in rtlib/helpers.py, which group E's table copies.
+
+The simulator (sim/linked.py, sim/lode_runner.py, and sim/ali_baba.py) reads
+executables with binutils.elf and decodes with `opcodes.DECODE`, and
+stays in Python until step 9. sim/assembler.py, the simulator's own
+assembler of `asm_ast` programs, has opcode tables of its own for the
+subset it assembles and shares no code with binutils/.
+
+### The captures
+
+tools/capture_binutils.py wraps `assemble`, `elf.read`, `parse_script`,
+`link_objects`, `disassemble`, and the `main` functions of nm.py and
+objdump.py, and records each call with its arguments and its result or
+error, as tools/capture_passes.py's records are written. Each file a
+call reads or writes is stored once under `blobs/`, named by its
+SHA-1, which keeps a capture of the whole corpus to 80 MB of files. The
+corpus is capture_passes.py's, compiled with `-c` and `-c -O`, each
+object listed with eight sets of nm options and seven of objdump's,
+linked alone without a script and with a script of ROM and RAM regions,
+`AT>`, and `NOLOAD`, and each executable listed again. Its `links` job
+links the three games with their scripts as their tests do and without
+them, and reads, lists, and links damaged files with bad command
+lines. As a pytest plugin it records the suite's calls. For each link
+the harness links again from the objects' bytes read back, which gave
+the same executable for every link of the corpus and the suite, so the
+C++ linker can take its objects as bytes.
+
+On 22 Nov 2026 the capture of the corpus took 131 seconds with 12
+processes, with the compiles in C++ (`C6502_CPP_BACKEND=1`), and wrote
+3,003 distinct records of `assemble`, 5,603 of `elf_read`, 4 of
+`parse_script`, 4,537 of `link`, 22,225 of `disassemble`, 44,785 of
+`nm`, and 39,175 of `objdump`, with 6,292 files. The suite gave
+269 distinct records of `assemble`, 380 of `elf_read`, 24 of
+`parse_script`, 104 of `link`, 33 of `disassemble`, 5 of `nm`, and 5 of
+`objdump`, with 336 files, in a run of 408 seconds with 12 processes. `c6502cpp check-binutils` read every record of both and
+wrote its JSON again with no difference, read and wrote again all
+6,283 and 330 objects and executables with no difference, matched every
+`elf_read` record, errors included, and matched all 44,785 `nm` records
+of the corpus and the suite's 5, errors and argparse's messages
+included, in the builds of MSVC 19.36 and GCC 12.2.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -1699,3 +2020,21 @@ separator, a binary prefix, or a `wb` suffix.
   whole log. The C++ matches Python's log on all 1,488 sources of the
   corpus and on 294 generated calls that reach each of pcpp's lines,
   and compile.py leaves the same bytes with and without the variable.
+- 22 Nov 2026: the survey of step 7 and its groundwork ("Step 7").
+  `tools/capture_binutils.py` records the Python assembler, ELF reader,
+  script parser, linker, disassembler, nm.py, and objdump.py over the
+  corpus and the suite, and `c6502cpp check-binutils` takes every
+  record's JSON to C++ and back. The ELF reader and writer, the opcode
+  table, the part of argparse nm.py and objdump.py use, and nm are
+  ported (cpp/README.md, "The object-file tools"). The 6,283 objects
+  and executables of the corpus's capture and the 330 of the suite's
+  read and write again byte for byte, every `elf_read` record matches,
+  errors included, and nm matches
+  all 44,790 records, errors and argparse's messages included, in the
+  builds of MSVC 19.36 and GCC 12.2. Under `C6502_CPP_BACKEND=1`,
+  nm.py runs the C++ nm. The survey found four bugs, fixed in Python: a
+  damaged ELF file, an input or a linker script that isn't there, a
+  source that isn't UTF-8, and a `DC.B` string outside Latin-1 each gave
+  a traceback, and each is now a one-line error. The C++ reader gives the
+  first one's ElfError, and the others are in code that groups A and F
+  port.

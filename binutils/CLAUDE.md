@@ -32,6 +32,12 @@ script are in `passes/`.
 - `disasm.py` — `disassemble(elf)`, the listing `objdump.py -d` and
   `-D` print.
 
+The C++ port has `elf.py`, `opcodes.py`, and nm.py in cpp/src/binutils/
+(cpp/README.md, "The object-file tools"), and docs/cpp_port.md ("Step
+7") has the plan for the rest. A change to any of these modules has to
+be made in the C++ port too, and `c6502cpp check-binutils` on a capture
+of `tools/capture_binutils.py` shows what differs.
+
 ## The object format
 
 | Section | What it holds |

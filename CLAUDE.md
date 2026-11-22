@@ -362,7 +362,11 @@ checker through the Python linker (`passes.linker` reads
 it compile.py imports nothing new. `tools/compare_backends.py` compiles
 the whole corpus both ways and requires the same output, errors, and
 warnings (cpp/README.md, "The back end through c6502cpp" and
-"Emission").
+"Emission"). With the variable set, nm.py's `main` runs the C++ nm,
+`c6502cpp nm`, with its command line (`cpp_backend.run_tool`), and
+writes its output to Python's streams. objdump.py, `-c`'s assembly,
+and the link stay in Python until their groups of step 7 land
+(docs/cpp_port.md, "Step 7").
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
 module is library-only. Flags `compile.py` doesn't recognize are
@@ -558,7 +562,7 @@ directory:
 Other root-level files:
 
 - `nm.py` — lists the symbols of objects and executables, as GNU nm
-  does.
+  does, through the C++ port under `C6502_CPP_BACKEND=1`.
 - `objdump.py` — shows the headers, symbols, relocations, link
   metadata, and disassembly (in dasm's syntax) of objects and
   executables, as GNU objdump does.
@@ -582,6 +586,11 @@ Other root-level files:
 - `tools/capture_passes.py` — records the calls of chosen asm passes
   over the corpus, for checking their C++ ports, and
   `tools/check_captures.py` runs the check.
+- `tools/capture_binutils.py` — records the calls of the assembler,
+  the ELF reader, the linker, the disassembler, nm.py, and objdump.py
+  over the corpus and the Python tests, for `c6502cpp check-binutils`
+  (cpp/README.md, "The object-file tools"), and
+  `tools/binutils_errors.py` lists the errors a capture holds.
 - `cpp_backend.py` — the Python side of `C6502_CPP_BACKEND=1`, which
   runs the whole compile of a C source, from the preprocessor through
   emission, in `c6502cpp backend` (`compile_source`), or through the

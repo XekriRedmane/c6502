@@ -424,6 +424,18 @@ class TestLayoutErrors(unittest.TestCase):
                 ):
                     lay_out(script, [])
 
+    def test_section_alignment_not_a_power_of_two(self) -> None:
+        # `_align` masks with `~(n - 1)`, which for 3 left 0x1001 at
+        # 0x1001, which isn't a multiple of 3.
+        from passes.link_layout import LayoutError, lay_out
+        script = parse_script("SECTIONS { .t 0x1001 : ALIGN(3) { } }")
+        with self.assertRaisesRegex(
+            LayoutError, r"ALIGN on \.t takes a power of two",
+        ):
+            lay_out(script, [])
+        script = parse_script("SECTIONS { .t 0x1001 : ALIGN(4) { } }")
+        self.assertEqual(lay_out(script, []).outputs[0].addr, 0x1004)
+
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestFallThroughLink(unittest.TestCase):

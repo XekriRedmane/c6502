@@ -324,7 +324,10 @@ def lay_out(
         if sec.align is not None:
             if not isinstance(sec.align, Num):
                 raise LayoutError(f"ALIGN on {sec.name} has to be a number")
-            vma = _align(vma, sec.align.value)
+            n = sec.align.value
+            if n & (n - 1):
+                raise LayoutError(f"ALIGN on {sec.name} takes a power of two")
+            vma = _align(vma, n)
         relocated = sec.at is not None or sec.load_region is not None
         if sec.at is not None:
             lma = ev(sec.at, prev_end)

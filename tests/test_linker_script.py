@@ -170,6 +170,9 @@ class TestScriptParser(unittest.TestCase):
              "can't read the number '0800'"),
             ("SECTIONS { .t 007 : { *(.a) } }",
              "can't read the number '007'"),
+            # This raised KeyError for the missing LENGTH.
+            ("MEMORY { r : ORIGIN = 1, o = 2 }",
+             "region 'r' gives ORIGIN twice"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaisesRegex(ScriptError, message):

@@ -240,6 +240,8 @@ class _Parser:
                         f"region {name!r}: expected ORIGIN or LENGTH, "
                         f"found {key!r}"
                     )
+                if key in values:
+                    raise ScriptError(f"region {name!r} gives {key} twice")
                 self.take("=")
                 values[key] = _constant(self.expr(), f"{key} of {name!r}")
                 if self.peek() == ",":

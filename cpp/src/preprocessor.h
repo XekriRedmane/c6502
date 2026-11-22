@@ -29,8 +29,9 @@
 //
 // pcpp's `--debug` log isn't written: the flag is read and creates
 // nothing. `--time` and `--filetimes` give the report with the times the
-// C++ measures, and `--passthru-includes` matches its pattern with
-// std::regex's ECMAScript grammar where Python uses `re`.
+// C++ measures. `--passthru-includes` compiles and matches its pattern
+// with py_regex, which follows Python's `re`, and a pattern py_regex
+// doesn't take throws CompileError("NotImplementedError", ...).
 #pragma once
 
 #include <optional>

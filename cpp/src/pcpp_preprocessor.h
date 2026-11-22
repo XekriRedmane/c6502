@@ -39,7 +39,6 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <regex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,6 +47,7 @@
 #include "pcpp_lexer.h"
 #include "pcpp_text.h"
 #include "pcpp_token.h"
+#include "py_regex.h"
 
 namespace c6502::pcpp {
 
@@ -180,7 +180,9 @@ class Preprocessor {
     std::string replacement;
   };
   std::vector<Rewrite> rewrite_paths;
-  std::optional<std::regex> passthru_includes;
+  // The pattern of `--passthru-includes`, compiled with Python's `re`
+  // semantics (py_regex.h).
+  std::shared_ptr<py_regex::Regex> passthru_includes;
   // `include_once`, keyed by a file's absolute path, in the order the
   // keys were added.
   std::vector<std::pair<std::optional<std::string>, std::optional<std::string>>> include_once;

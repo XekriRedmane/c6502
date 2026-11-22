@@ -11,6 +11,14 @@ Python's `repr` escapes the characters `str.isprintable()` rejects.
 Each class here is the list of ranges of code points that Python
 gives it, so the C++ answers as the Python that wrote the table does.
 
+py_regex, which matches the pattern of `--passthru-includes` as `re`
+does, also reads the simple case mappings that `re` applies under
+IGNORECASE. They are `_sre.unicode_tolower`, the simple uppercase
+mapping that `_sre`'s matcher applies to a range of a class
+(`_PyUnicode_ToUppercase`, which only the C API exposes), and
+`re._casefix._EXTRA_CASES`, the lowercase letters that share an
+uppercase letter.
+
     uv run python tools/pcpp_unicode_tables.py
 
 tests/test_pcpp_unicode_tables.py checks that the checked-in header is
@@ -19,10 +27,14 @@ what this writes.
 
 from __future__ import annotations
 
+import ctypes
 import os
 import re
 import sys
 import unicodedata
+
+import _sre
+from re import _casefix
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _OUT = os.path.join(_ROOT, "cpp", "src", "pcpp_unicode.h")
@@ -63,6 +75,29 @@ def _table(name: str, ranges: list[tuple[int, int]]) -> str:
     )
 
 
+def _pairs(name: str, pairs: list[tuple[int, int]]) -> str:
+    rows = []
+    line = "   "
+    for a, b in pairs:
+        item = f" {{0x{a:X}, 0x{b:X}}},"
+        if len(line) + len(item) > 78:
+            rows.append(line)
+            line = "   "
+        line += item
+    rows.append(line)
+    body = "\n".join(rows)
+    return f"inline constexpr CaseMapping {name}[] = {{\n{body}\n}};\n"
+
+
+def _to_upper(c: int) -> int:
+    """The simple uppercase mapping of the code point `c`, which
+    `_sre`'s matcher reads with `_PyUnicode_ToUppercase`."""
+    f = ctypes.pythonapi._PyUnicode_ToUppercase
+    f.restype = ctypes.c_uint32
+    f.argtypes = [ctypes.c_uint32]
+    return f(c)
+
+
 def generate() -> str:
     word = re.compile(r"\w")
     digit = re.compile(r"\d")
@@ -81,6 +116,10 @@ def generate() -> str:
         "struct Range {\n"
         "  std::uint32_t first;\n"
         "  std::uint32_t last;\n"
+        "};\n\n"
+        "struct CaseMapping {\n"
+        "  std::uint32_t from;\n"
+        "  std::uint32_t to;\n"
         "};\n\n",
         "// The characters `\\w` matches in a Python regular expression "
         "on a str.\n",
@@ -95,6 +134,24 @@ def generate() -> str:
         "\n// The characters `str.isprintable()` accepts, which `repr` "
         "copies.\n",
         _table("kPrintable", _ranges(str.isprintable)),
+        "\n// The simple lowercase mapping, `_sre.unicode_tolower`, of each "
+        "code\n// point it changes.\n",
+        _pairs("kToLower", [
+            (c, _sre.unicode_tolower(c)) for c in range(sys.maxunicode + 1)
+            if _sre.unicode_tolower(c) != c
+        ]),
+        "\n// The simple uppercase mapping, `_PyUnicode_ToUppercase`, of "
+        "each code\n// point it changes.\n",
+        _pairs("kToUpper", [
+            (c, _to_upper(c)) for c in range(sys.maxunicode + 1)
+            if _to_upper(c) != c
+        ]),
+        "\n// `re._casefix._EXTRA_CASES`, a pair for each lowercase letter "
+        "and each\n// other lowercase letter with the same uppercase.\n",
+        _pairs("kExtraCases", [
+            (k, v) for k in sorted(_casefix._EXTRA_CASES)
+            for v in _casefix._EXTRA_CASES[k]
+        ]),
         "\n}  // namespace c6502::pcpp::unicode\n",
     ]
     return "".join(parts)

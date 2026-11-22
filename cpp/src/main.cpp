@@ -32,6 +32,7 @@
 #include "passes/registry.h"
 #include "passes/stage_registry.h"
 #include "preprocessor_cases.h"
+#include "py_regex_cases.h"
 #include "stage_checks.h"
 #include "tac_ast.h"
 
@@ -45,6 +46,7 @@ const char kUsage[] =
     "       c6502cpp check-captures [--pass <name>] [--verbose] [--got <dir>] <path>...\n"
     "       c6502cpp check-helpers [--verbose] <path>...\n"
     "       c6502cpp check-preprocess [--verbose] <path>...\n"
+    "       c6502cpp check-regex [--verbose] <path>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
     "\n"
@@ -64,6 +66,11 @@ const char kUsage[] =
     "preprocessor.preprocess in the .json files under each <path>, with the\n"
     "files the record holds, and compares the text, the error, the\n"
     "warnings, and stderr with Python's (src/preprocessor_cases.h).\n"
+    "\n"
+    "check-regex reads records of Python's re, one JSON object per line of\n"
+    "each file under each <path> (src/py_regex_cases.h), and compares\n"
+    "py_regex's compile error or matches with Python's, counting apart the\n"
+    "patterns it reports as unsupported.\n"
     "\n"
     "backend reads a request of compile.py's (cpp_backend.py) from stdin,\n"
     "compiles its source text from the preprocessor to the finished asm\n"
@@ -511,6 +518,54 @@ int cmd_check_preprocess(const std::vector<std::string>& args) {
   return mismatches == 0 ? 0 : 1;
 }
 
+// `check-regex`: checks each record of Python's `re` in the files under
+// `args` (src/py_regex_cases.h), one JSON object per line.
+int cmd_check_regex(const std::vector<std::string>& args) {
+  bool verbose = false;
+  std::vector<fs::path> files;
+  for (const auto& a : args) {
+    if (a == "--verbose") {
+      verbose = true;
+    } else if (fs::is_directory(a)) {
+      for (const auto& entry : fs::recursive_directory_iterator(a)) {
+        if (entry.is_regular_file()) files.push_back(entry.path());
+      }
+    } else {
+      files.push_back(a);
+    }
+  }
+  std::sort(files.begin(), files.end());
+  std::size_t records = 0;
+  std::size_t unsupported = 0;
+  std::size_t mismatches = 0;
+  for (const auto& path : files) {
+    std::ifstream in(path, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line)) {
+      if (line.empty()) continue;
+      ++records;
+      py_regex::RecordCheck r;
+      try {
+        r = py_regex::check_record(line);
+      } catch (const std::exception& e) {
+        r = {py_regex::RecordCheck::Outcome::kDiffer, std::string("exception: ") + e.what()};
+      }
+      if (r.outcome == py_regex::RecordCheck::Outcome::kUnsupported) {
+        ++unsupported;
+        if (verbose) {
+          std::printf("UNSUPPORTED %s: %s\n", line.substr(0, 200).c_str(), r.detail.c_str());
+        }
+      } else if (r.outcome == py_regex::RecordCheck::Outcome::kDiffer) {
+        ++mismatches;
+        std::printf("MISMATCH %s: %s\n", line.substr(0, 300).c_str(), r.detail.c_str());
+      }
+    }
+  }
+  std::printf("regex: %zu records, %zu match, %zu unsupported, %zu differ\n", records,
+              records - unsupported - mismatches, unsupported, mismatches);
+  return mismatches == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -532,6 +587,9 @@ int main(int argc, char** argv) {
     }
     if (command == "check-preprocess") {
       return cmd_check_preprocess(args);
+    }
+    if (command == "check-regex") {
+      return cmd_check_regex(args);
     }
     if (command == "backend" && args.empty()) {
       // A problem with the program goes back in the response with its

@@ -68,6 +68,9 @@ _ERROR_MODULES = {
     "UnexpectedInput": "lark.exceptions",
     "UnexpectedToken": "lark.exceptions",
     "UnrollError": "passes.optimization_ast.unroll",
+    # `re.error`, which `re.compile` raises for an invalid pattern of
+    # `--passthru-includes`.
+    "error": "re",
     "ZpGlobalError": "passes.zp_globals",
     "ZpLocalAllocationError": "passes.zp_local_allocation",
     "ZpSlotAllocationError": "passes.zp_slot_allocation",

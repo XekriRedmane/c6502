@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include "errors.h"
+#include "pyrepr.h"
 
 namespace c6502::pcpp {
 
@@ -1346,11 +1347,10 @@ void Preprocessor::include(Tokens tokens, const Tokens& original_line, const Emi
     return;
   }
   if (search.empty()) search = {""};
-  const std::string joined = join_values(tokens);
-  auto passthru = [&] {
-    return passthru_includes && std::regex_search(joined, *passthru_includes,
-                                                  std::regex_constants::match_continuous);
-  };
+  // pcpp matches the pattern with `.match` on the text of the tokens.
+  std::u32string joined;
+  for (const auto c : pyrepr::code_points(join_values(tokens))) joined += static_cast<char32_t>(c);
+  auto passthru = [&] { return passthru_includes && passthru_includes->match(joined, 0).has_value(); };
   while (true) {
     for (const auto& p : search) {
       const std::string iname = host.paths.join(p, filename);

@@ -1676,3 +1676,15 @@ separator, a binary prefix, or a `wb` suffix.
   left alone. `\x` takes exactly two characters, and `\u` and `\U`
   take any four and eight, with the codec's error when they aren't
   hexadecimal digits.
+  `--passthru-includes` compiles and matches its pattern with py_regex,
+  now a port of Python 3.11's `re` parser and compiler with a matcher in
+  `_sre`'s order, so an invalid pattern gets Python's exception word for
+  word and a valid one Python's matches, case folding included. A
+  pattern that uses what py_regex doesn't take (backreferences,
+  conditionals, `\N{name}`, a class Python warns about, and a possessive
+  repeat of a group, which Python 3.11.3 resumes from the wrong
+  position after a failed iteration) gets a NotImplementedError that
+  names it. `c6502cpp check-regex` found no difference on 27,177
+  records of `tools/py_regex_records.py` (1,039,520 matches and 4,013
+  errors, with 320 patterns unsupported), and the C++ matches Python on
+  52 recorded calls of `preprocess` with the flag.

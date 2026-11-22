@@ -203,7 +203,9 @@ cpp/
     pp_numbers.*      pp_numbers.py, the spelling of numbers (step 6)
     lark_table.h      the tables of c99.lark, which cpp/generated/c99_lalr.cpp
                       holds (tools/lalr_table.py writes it)
-    py_regex.*        Python's `re` for the patterns of c99.lark's terminals
+    py_regex.*        Python 3.11's `re`, its parser, compiler, and matcher,
+                      for c99.lark's terminals and `--passthru-includes`
+    py_regex_cases.*  the check of a record of `re` (tools/py_regex_records.py)
     lark_lexer.*      Lark's basic lexer and its UnexpectedCharacters
     lark_parser.*     Lark's LALR ParserState as a recognizer, and its
                       UnexpectedToken
@@ -234,7 +236,8 @@ cpp/
     pcpp_token.h      pcpp's token, with Python's reference semantics
     pcpp_text.*, pcpp_unicode.h   Python's `str`, `os.path`, and text
                       files as pcpp uses them, with the Unicode classes of
-                      `\w`, `\d`, and the spaces and line breaks
+                      `\w`, `\d`, and the spaces and line breaks, and
+                      `re`'s simple case mappings
                       (tools/pcpp_unicode_tables.py)
     preprocessor_cases.*  the check of a recorded call of `preprocess`
     sim/assembler.*   instruction_size, from sim/assembler.py
@@ -1305,12 +1308,13 @@ errors. Parts R2 and R3 write the descent on top of these headers.
   and fails when it differs, so after editing c99.lark, run `uv run
   python tools/lalr_table.py`.
 - `py_regex.h` matches the terminals' patterns with the semantics of
-  Python's `re`: an alternation takes the first alternative that
-  matches, so a match needn't be the longest. It parses the patterns
-  the table holds, so a change to a pattern in c99.lark reaches the C++
-  lexer by regenerating the table, and a pattern that needs syntax the
-  module lacks throws when it is compiled. `tests/test_py_regex.cpp`
+  Python's `re`, in which an alternation takes the first alternative
+  that matches, so a match needn't be the longest. It parses the
+  patterns the table holds, so a change to a pattern in c99.lark reaches
+  the C++ lexer by regenerating the table. `tests/test_py_regex.cpp`
   holds Python's match on each of the 15 patterns for 700 spellings.
+  The preprocessor's `--passthru-includes` uses the same module, which
+  "The preprocessor" describes.
 - `lark_lexer.h` is Lark's `BasicLexer`, `Token`, and
   `UnexpectedCharacters`, over the source as code points, since Lark's
   lines, columns, and context count code points. `lexer.h` is lexer.py:
@@ -1476,13 +1480,56 @@ The port follows the plan in docs/cpp_port.md, part by part.
   `_NumberEvaluator`, `_check_pragma`, `_strip_pragmas`, and
   `parse_args`.
 
-Two things are left out, each where it can't matter to a compile.
-`--debug` creates pcpp's log and writes nothing to it, and
-`--passthru-includes` reads its pattern with std::regex's ECMAScript
-grammar where Python uses `re`. pcpp stops a macro that expands inside
-its own argument when Python's stack runs out, which depends on how deep
-the caller's stack is, so the C++ stops it at 300 nested expansions
+`--debug` creates pcpp's log and writes nothing to it, which can't
+matter to a compile. pcpp stops a macro that expands inside its own
+argument when Python's stack runs out, which depends on how deep the
+caller's stack is, so the C++ stops it at 300 nested expansions
 (`kMaxExpansionDepth`).
+
+pcpp compiles the pattern of `--passthru-includes` with
+`re.compile(pattern)` and matches it with `.match` against the text of
+an `#include` line's tokens, and py_regex does both with Python 3.11's
+syntax and semantics. Its parser is a port of `re/_parser.py`, so an
+invalid pattern gets Python's exception, with its class and message,
+such as `re.error` with "missing ), unterminated subpattern at position
+0", "nothing to repeat", "bad escape \q", "unterminated character
+set", or "bad character range b-a". The compiler follows
+`re/_compiler.py`, which picks the ASCII or Unicode forms of `\w`, `\b`,
+and the rest, the multiline forms of `^` and `$`, and the folding of
+case under `(?i)`, which reads Python's simple case mappings and
+`re._casefix._EXTRA_CASES` from pcpp_unicode.h and keeps `_sre`'s
+quirks for characters outside the Basic Multilingual Plane. The matcher
+follows `_sre`'s order of backtracking, including the rule that ends a
+repeat when an iteration matches the empty string. compile.py doesn't
+catch `re.error`, so the class reaches `cpp_backend.py` as "error",
+which it raises as `re.error`.
+
+py_regex throws `Unsupported` for what it doesn't take, and the
+preprocessor turns that into a NotImplementedError, which compile.py
+reports as an error that names the construct. Those are
+backreferences, conditionals, `\N{name}`, group names with non-ASCII
+characters, a class for which Python prints a FutureWarning on stderr
+(`[[`, or `--`, `&&`, `~~`, or `||` inside a class), and a possessive
+repeat of anything but one character or class. Python 3.11.3's
+POSSESSIVE_REPEAT doesn't restore its position after an iteration past
+the minimum fails, so the rest of the pattern goes on from wherever the
+failed iteration's last step left it, and `(x|(?<=a))++` matches the
+empty string at the start of "x".
+
+`tools/py_regex_records.py` writes records of Python's `re` on
+generated patterns and subjects, and `c6502cpp check-regex` compares
+py_regex with them, counting apart the patterns it reports as
+unsupported. On 21 Nov 2026 the 27,177 records of seeds 1 and 2 gave no
+difference, 4,013 of them Python's errors and 320 of them unsupported,
+over 1,039,520 matches. `tests/test_py_regex_records.cpp` holds 589
+of those records and 52 recorded calls of `preprocess` with
+`--passthru-includes`, for headers that an `#include` opens and ones it
+skips as already seen.
+
+```sh
+uv run python tools/py_regex_records.py regex.jsonl --count 5000
+cpp/build/bin/c6502cpp check-regex regex.jsonl
+```
 
 pcpp's evaluator expands the escapes of a character constant with
 Python's `unicode-escape` codec, which reads Python's `\N{name}` too, so

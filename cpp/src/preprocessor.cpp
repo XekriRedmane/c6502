@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <regex>
 #include <tuple>
 #include <map>
 #include <utility>
@@ -426,7 +425,20 @@ class CompilePreprocessor : public pcpp::Preprocessor {
       for (auto& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
       if (lower == "nothing" || lower == "none" || lower.empty()) line_directive.reset();
     }
-    if (args.passthru_includes) passthru_includes = std::regex(*args.passthru_includes);
+    if (args.passthru_includes) {
+      // `re.compile` raises its error here, which reaches compile.py as
+      // the exception of its class (`re.error` is named "error").
+      try {
+        passthru_includes = std::make_shared<py_regex::Regex>(*args.passthru_includes);
+      } catch (const py_regex::Error& e) {
+        throw CompileError(e.type, e.message);
+      } catch (const py_regex::Unsupported& e) {
+        throw CompileError("NotImplementedError",
+                           "the pattern of --passthru-includes, " +
+                               pcpp::py_repr(*args.passthru_includes) +
+                               ", compiles in Python, but " + e.message);
+      }
+    }
     compress = args.compress ? 2 : 0;
     if (args.passthru_magic_macros) {
       undef("__DATE__");

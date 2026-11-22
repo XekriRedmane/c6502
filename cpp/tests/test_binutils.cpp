@@ -173,3 +173,14 @@ TEST_CASE("nm: the listing of an object") {
         std::vector<std::string>{std::string(9, ' ') + " Uz g", "0000 0003 b buf",
                                  "0000 0004 T f", "0000 0000 a t.c", "0003 0000 t .l@1"});
 }
+
+TEST_CASE("nm: a damaged file is named as the command line gives it") {
+  // `E.read_file` passes `str(path)` to `read`, which is the argument
+  // itself, so `./x.o` keeps its `./` and its `/` on Windows.
+  const std::string data = elf::write(sample());
+  const nm::ReadFile half = [&](const std::string&) { return data.substr(0, data.size() / 2); };
+  std::string out;
+  std::string err;
+  CHECK(nm::main({"nm.py", "./x.o"}, half, 80, out, err) == 1);
+  CHECK(err == "nm.py: ./x.o: the ELF file is truncated or damaged\n");
+}

@@ -31,4 +31,9 @@ that bare name and fail to import the package.
   rule for compiled code. `tests/test_bin_to_bcd.py` runs it on py65
   against its hook for all 65536 inputs.
 
+The C++ port reads a copy of the helpers, `tools/rtlib_table.py`'s
+dump of them in cpp/generated/rtlib_helpers.cpp, and
+`tests/test_rtlib_table.py` fails until the copy is written again
+after a change here (`uv run python tools/rtlib_table.py`).
+
 `docs/linker_scripts.md` says where a linker script puts the helpers.

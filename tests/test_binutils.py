@@ -255,6 +255,11 @@ class TestAssembler(unittest.TestCase):
             ("   LDA   #$00\n", "before any label"),
             (_fn("LDA   #$1FF"), "doesn't fit"),
             (_fn("STA   #$01"), "no imm addressing mode"),
+            # This raised UnicodeEncodeError, a traceback from
+            # compile.py.
+            ("x:\n   DC.B  \"\u20ac\"\n",
+             r'^<input>:2: "\u20ac" holds a character outside Latin-1, '
+             r"which DC.B can't store in a byte$"),
         ]:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(AssemblerError, message):

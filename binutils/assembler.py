@@ -716,7 +716,13 @@ class _Assembler:
                     if s.startswith('"'):
                         if not s.endswith('"') or len(s) < 2:
                             raise AssemblerError(f"{where}: bad string {s}")
-                        data += s[1:-1].encode("latin-1")
+                        try:
+                            data += s[1:-1].encode("latin-1")
+                        except UnicodeEncodeError:
+                            raise AssemblerError(
+                                f"{where}: {s} holds a character outside "
+                                f"Latin-1, which DC.B can't store in a byte"
+                            ) from None
                         continue
                     v = self.value_of(parse_expr(s, where), where)
                     self.field(sec, data, v, 1, local, where, data_byte=True)

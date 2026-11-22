@@ -483,6 +483,21 @@ _CASES: list[tuple[str, str, int]] = [
         int check(int v3) { return (signed char)(((signed char)44) | v3); }
         int main(void) { return check(0); }
     """, 44),
+    # narrow_widened_arith registered the low halves of `l16` as
+    # `unsigned int` temporaries while it refused to narrow `(unsigned
+    # int)(l16 | l16)`, which two Truncates read, and reused the names
+    # in the byte OR into `g4` after the other Truncate was gone. The
+    # OR's high byte went into `g1`, the byte after `g4`. Found by
+    # fuzz.stmts seed 4009.
+    ("narrowed_temporary_of_refused_rewrite", """
+        unsigned char g4 [[c6502::zeropage]] = 2;
+        unsigned char g1 [[c6502::zeropage]] = 7;
+        unsigned long long l16 = 0x1236;
+        int main(void) {
+            g4 = (unsigned int)(l16 | l16);
+            return g1 + g4;
+        }
+    """, 61),
     # loop_counter_to_x took `z4`'s byte 1 for a loop counter: `--z4`
     # in the loop stored it once (the "init") and `z4++` after the loop
     # incremented it (the "step"). A global has a value at entry, so

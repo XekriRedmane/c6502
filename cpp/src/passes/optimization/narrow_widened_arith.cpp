@@ -638,6 +638,25 @@ std::optional<DefUseRewrite> rewrite(const ir::Type_instruction& instr, const De
   if (!narrow_s2) {
     return std::nullopt;
   }
+  // The wide Binary stays when anything besides this Truncate reads its
+  // result (`l0 ^= f(); l0 += (int)l0;` reads the wide XOR in the Add as
+  // well as through the Truncate), and its Extend operands then stay
+  // too.
+  const bool wide_stays = count_of(run.counts, bin_dst->name) != 1;
+  if (wide_stays && !pre.empty()) {
+    // A wide operand isn't an extend that goes away, so the narrow
+    // Binary would only repeat the wide one's work (`(uint8_t)(w + 3)`
+    // next to `(w + 3) >> 8`).
+    return std::nullopt;
+  }
+  // The temporaries are registered here, after the last test that can
+  // refuse the rewrite, because `register_temp` keeps a name already in
+  // the table. A refused rewrite of `Truncate(t, %1)`, with `%1` an
+  // `unsigned int`, had registered `t.lo1` as 2 bytes, and the rewrite
+  // of a second `Truncate(t, g)` into a byte `g` reused the name once
+  // `%1` was gone. The narrow Binary then read 2-byte operands into the
+  // byte `g`, and `tac_to_asm` stored the high byte into the byte after
+  // `g` (`fuzz.stmts` seed 4009).
   for (const auto& t : pre) {
     narrow_widened_arith::register_temp(ctx, dst->name,
                                         std::get<ir::Var>(std::get<ir::Truncate>(t).dst).name);
@@ -648,17 +667,7 @@ std::optional<DefUseRewrite> rewrite(const ir::Type_instruction& instr, const De
   r.replacement = pre;
   r.replacement.push_back(
       ir::Binary{.op = bin->op, .src1 = *narrow_s1, .src2 = *narrow_s2, .dst = *dst});
-  // The wide Binary stays when anything besides this Truncate reads its
-  // result (`l0 ^= f(); l0 += (int)l0;` reads the wide XOR in the Add as
-  // well as through the Truncate), and its Extend operands then stay
-  // too.
-  if (count_of(run.counts, bin_dst->name) != 1) {
-    if (!pre.empty()) {
-      // A wide operand isn't an extend that goes away, so the narrow
-      // Binary would only repeat the wide one's work (`(uint8_t)(w + 3)`
-      // next to `(w + 3) >> 8`).
-      return std::nullopt;
-    }
+  if (wide_stays) {
     count_new_uses(run.counts, r.replacement);
     return r;
   }

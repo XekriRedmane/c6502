@@ -564,6 +564,43 @@ class TestNarrowWidenedArith(unittest.TestCase):
         dsts = [i.dst.name for i in out if isinstance(i, tac_ast.Truncate)]
         self.assertEqual(dsts, ["r1.lo1", "r2.lo1"])
 
+    def test_refused_rewrite_registers_no_temporary(self):
+        # Two Truncates read the wide OR of the wide `w`, so neither
+        # narrows, and the first, into an `unsigned int`, must leave no
+        # `r.lo1` in the table. Once the other Truncate is gone, a
+        # later run narrows the one into the byte `g`, and that
+        # `r.lo1` must be a byte too (`fuzz.stmts` seed 4009).
+        instrs = [
+            tac_ast.Binary(
+                op=tac_ast.BitwiseOr(), src1=_var("w"), src2=_var("w"),
+                dst=_var("r"),
+            ),
+            tac_ast.Truncate(src=_var("r"), dst=_var("u")),
+            tac_ast.Truncate(src=_var("r"), dst=_var("g")),
+        ]
+        symbols = {
+            "w": _static(c99_ast.ULongLong()),
+            "r": _local(c99_ast.ULongLong()),
+            "u": _local(c99_ast.UInt()),
+            "g": _static(c99_ast.UChar()),
+        }
+        ssa_dsts = {"r", "u"}
+        out = narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
+        ).instructions
+        self.assertEqual(out, instrs)
+        self.assertNotIn("r.lo1", symbols)
+        out = narrow_widened_arith(
+            _fn([instrs[0], instrs[2]]), symbols=symbols,
+            ssa_dsts=ssa_dsts,
+        ).instructions
+        self.assertEqual(out[-1], tac_ast.Binary(
+            op=tac_ast.BitwiseOr(), src1=_var("r.lo1"),
+            src2=_var("r.lo2"), dst=_var("g"),
+        ))
+        self.assertEqual(symbols["r.lo1"].type, c99_ast.UChar())
+        self.assertEqual(symbols["r.lo2"].type, c99_ast.UChar())
+
     def test_wide_global_changed_before_the_truncate(self):
         # A call, a store, or a write to `w` between the shift and the
         # Truncate may change `w`, so the shift stays wide.

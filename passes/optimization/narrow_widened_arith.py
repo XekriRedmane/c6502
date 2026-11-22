@@ -272,6 +272,26 @@ class NarrowWidenedArith(DefUsePass):
         )
         if narrow_s2 is None:
             return None
+        use_counts = env.extra
+        # The wide Binary stays when anything besides this Truncate
+        # reads its result (`l0 ^= f(); l0 += (int)l0;` reads the
+        # wide XOR in the Add as well as through the Truncate). Its
+        # Extend operands then stay alive too.
+        wide_stays = use_counts.get(bin_instr.dst.name, 0) != 1
+        if wide_stays and pre:
+            # A wide operand isn't an extend that goes away, so the
+            # narrow Binary would only repeat the wide one's work
+            # (`(uint8_t)(w + 3)` next to `(w + 3) >> 8`).
+            return None
+        # The temporaries are registered here, after the last test that
+        # can refuse the rewrite, because `_register_temp` keeps a name
+        # already in the table. A refused rewrite of `Truncate(t, %1)`,
+        # with `%1` an `unsigned int`, had registered `t.lo1` as 2
+        # bytes, and the rewrite of a second `Truncate(t, g)` into a
+        # byte `g` reused the name once `%1` was gone. The narrow
+        # Binary then read 2-byte operands into the byte `g`, and
+        # `tac_to_asm` stored the high byte into the byte after `g`
+        # (`fuzz.stmts` seed 4009).
         for t in pre:
             _register_temp(ctx, like=dst_var.name, name=t.dst.name)
 
@@ -285,18 +305,8 @@ class NarrowWidenedArith(DefUsePass):
         # dst that fed the Binary: use_counts[operand.name] == 1 means
         # only the Binary reads it, so after the Binary is gone it's dead.
         # (The Truncate is the current USE site; it's replaced, not dropped.)
-        use_counts = env.extra
         replacement = [*pre, narrow_binary] if pre else narrow_binary
-        # The wide Binary stays when anything besides this Truncate
-        # reads its result (`l0 ^= f(); l0 += (int)l0;` reads the
-        # wide XOR in the Add as well as through the Truncate). Its
-        # Extend operands then stay alive too.
-        if use_counts.get(bin_instr.dst.name, 0) != 1:
-            if pre:
-                # A wide operand isn't an extend that goes away, so the
-                # narrow Binary would only repeat the wide one's work
-                # (`(uint8_t)(w + 3)` next to `(w + 3) >> 8`).
-                return None
+        if wide_stays:
             _count_new_uses(use_counts, replacement)
             return Rewrite(replacement=replacement)
         drop_vars: list[tac_ast.Var] = [bin_instr.dst]

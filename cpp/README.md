@@ -2285,6 +2285,24 @@ in src/binutils/ and src/argparse.*.
   nm.py's `main` runs it through `cpp_backend.run_tool`, which passes
   the terminal's width as `COLUMNS` and writes the output to Python's
   streams, so a test that redirects them gets it.
+- `binutils::disasm` (`disasm.h`) is binutils/disasm.py, the listing in
+  dasm's syntax that `objdump.py -d` and `-D` print. Python keys the
+  labels, mapping symbols, relocations, and an executable's symbols by
+  address in dicts it only looks up, so they are `std::map`s, and the
+  lists in them keep the symbol table's order for the stable sorts.
+  `format_hex` is Python's `X` and `x` formats, which write a negative
+  value as `-` and the digits inside the width (a branch to before an
+  object's section is `$-07E`), and `ljust` pads by code points, as
+  `str.ljust` and `{name:<20}` do. A `SEG`'s name replaces each code
+  point outside `[A-Za-z0-9_]` with one `_`.
+- `binutils::objdump` (`objdump.h`) is objdump.py, with `c6502cpp
+  objdump`, on the same argparse, `read_path`, and output conventions
+  as nm. The section contents are lowercase hex in groups of four
+  bytes, and the alignment is `2**(align.bit_length() - 1)`. A command
+  line that asks for nothing returns 2 with objdump.py's own message,
+  and `cpp_backend.run_tool` returns that status where it raises
+  SystemExit(2) for argparse's errors, which it tells apart by the
+  usage argparse writes before each of them.
 
 `json::dump` (src/json.h) writes a `json::Value` as Python's
 `json.dumps` does, with `json::quote` for its strings, which
@@ -2297,8 +2315,10 @@ numbers), and `c6502cpp check-binutils <capture dir>...` checks them
 (src/binutils/checks.h): every record's JSON makes the trip to C++ and
 back, every object and executable a record holds is read and written
 again byte for byte, every `elf_read` record's file is read with the
-recorded rewrite or error, and every `nm` record is run, comparing
-stdout, stderr, and the exit status. Each group of step 7 adds its
+recorded rewrite or error, every `disassemble` record's file is
+disassembled with the recorded options and compared line for line, and
+every `nm` and `objdump` record is run, comparing stdout, stderr, and
+the exit status. Each group of step 7 adds its
 tool's run to the checker. `tools/binutils_errors.py` lists the errors
 a capture holds, grouped by the shape of their message.
 
@@ -2558,3 +2578,7 @@ uv run python tools/binutils_errors.py captures/binutils
   with `c6502cpp check-binutils` on the records of
   tools/capture_binutils.py, which all match, and nm.py run through
   `c6502cpp nm` under `C6502_CPP_BACKEND=1`.
+- 22 Nov 2026: group B of step 7, `binutils::disasm` and
+  `binutils::objdump`, which match every `disassemble` and `objdump`
+  record of the corpus and the suite, with objdump.py run through
+  `c6502cpp objdump` under `C6502_CPP_BACKEND=1`.

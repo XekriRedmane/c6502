@@ -284,8 +284,11 @@ def run_tool(name: str, argv: list[str]) -> int:
     usage and help as argparse does, to the width `shutil` gives here,
     since its own stdout isn't the terminal. A bad command line ends with
     SystemExit(2), as argparse's does, and the help with a return of 0,
-    where Python's raises SystemExit(0). A bug the C++ side reports (exit
-    status 3) is raised as an `AssertionError`."""
+    where Python's raises SystemExit(0). argparse writes its usage before
+    every error, so an exit status of 2 whose stderr doesn't start with
+    `usage: ` comes from the tool itself, as objdump.py's when nothing is
+    asked for, and is returned. A bug the C++ side reports (exit status
+    3) is raised as an `AssertionError`."""
     import shutil
     from tools.check_captures import cpp_cli
     cli = cpp_cli()
@@ -311,6 +314,6 @@ def run_tool(name: str, argv: list[str]) -> int:
         buffer.write(done.stdout)
         buffer.flush()
     sys.stderr.write(done.stderr.decode("utf-8"))
-    if done.returncode == 2:
+    if done.returncode == 2 and done.stderr.startswith(b"usage: "):
         raise SystemExit(2)
     return done.returncode

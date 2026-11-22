@@ -159,6 +159,15 @@ def full_contents(elf: E.ElfFile, only: set[str] | None) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
+    """Shows what's in the files the command line `argv` names (the
+    program's name first) and returns the exit status. Under
+    `C6502_CPP_BACKEND=1` the C++ port does it (`c6502cpp objdump`,
+    through `cpp_backend.run_tool`), with the same output, messages, and
+    exit status."""
+    import os
+    if os.environ.get("C6502_CPP_BACKEND") == "1":
+        import cpp_backend
+        return cpp_backend.run_tool("objdump", argv)
     ap = argparse.ArgumentParser(
         prog="objdump.py",
         description="Show what's in c6502 objects and executables.",

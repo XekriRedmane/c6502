@@ -1,5 +1,5 @@
-// Tests of the ELF reader and writer, the opcode table, argparse, and
-// nm (src/binutils/, src/argparse.h). `c6502cpp check-binutils` checks
+// Tests of the ELF reader and writer, the opcode table, argparse, nm,
+// and the disassembler (src/binutils/, src/argparse.h). `c6502cpp check-binutils` checks
 // them on every file and command line tools/capture_binutils.py records,
 // and tests/test_cpp_binutils.py compares nm.py with and without the C++
 // port at several terminal widths.
@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "argparse.h"
+#include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
 #include "binutils/opcodes.h"
@@ -183,4 +184,106 @@ TEST_CASE("nm: a damaged file is named as the command line gives it") {
   std::string err;
   CHECK(nm::main({"nm.py", "./x.o"}, half, 80, out, err) == 1);
   CHECK(err == "nm.py: ./x.o: the ELF file is truncated or damaged\n");
+}
+
+namespace {
+
+// An executable whose code section has a non-ASCII name and is loaded
+// at $C000 to run at $0800, with a `$d` mapping symbol, a `.bss`
+// object, and absolute symbols, one of them twice.
+elf::ElfFile sample_exe() {
+  const std::string code("\xD0\xFE\xAD\x80\x00\xAD\x01\x03\x6C\x10\x00\x02\xA9\x07", 14);
+  elf::ElfFile f;
+  f.type = elf::ET_EXEC;
+  f.entry = 0x0800;
+  auto text = std::make_shared<elf::Section>();
+  text->name = ".t\xC3\xA9xt";
+  text->flags = elf::SHF_ALLOC | elf::SHF_EXECINSTR;
+  text->data = code;
+  text->addr = 0x0800;
+  text->align = 4;
+  auto bss = std::make_shared<elf::Section>();
+  bss->name = ".bss";
+  bss->type = elf::SHT_NOBITS;
+  bss->flags = elf::SHF_ALLOC | elf::SHF_WRITE;
+  bss->nobits_size = 4;
+  bss->addr = 0x0300;
+  f.sections = {text, bss};
+  const auto sym = [](elf::Symbol s) { return std::make_shared<elf::Symbol>(std::move(s)); };
+  f.symbols = {
+      sym({.name = "main", .value = 0x0800, .size = 14, .bind = elf::STB_GLOBAL,
+           .type = elf::STT_FUNC, .section = text}),
+      sym({.name = "$d", .value = 0x080C, .section = text}),
+      sym({.name = "buf", .value = 0x0300, .size = 4, .type = elf::STT_OBJECT, .section = bss}),
+      sym({.name = "ROM", .value = 0xE000, .shndx = elf::SHN_ABS}),
+      sym({.name = "IO", .value = 0xC0, .shndx = elf::SHN_ABS}),
+      sym({.name = "IO", .value = 0xC0, .bind = elf::STB_GLOBAL, .shndx = elf::SHN_ABS}),
+      sym({.name = "__text_size", .value = 14, .shndx = elf::SHN_ABS}),
+  };
+  f.segments.push_back(elf::Segment{.vaddr = 0x0800, .paddr = 0xC000, .data = code, .memsz = 14});
+  return f;
+}
+
+}  // namespace
+
+// The expected listings below are Python's for the same files.
+
+TEST_CASE("disasm: Python's formatting of numbers and padding") {
+  CHECK(disasm::format_hex(0x80, 4) == "0080");
+  CHECK(disasm::format_hex(-126, 4) == "-07E");
+  CHECK(disasm::format_hex(0x12345, 4) == "12345");
+  CHECK(disasm::format_hex(0xAB, 2, true) == "ab");
+  // `ljust` counts code points, so the two bytes of an e with an acute
+  // accent are one column.
+  CHECK(disasm::ljust("\xC3\xA9", 3) == "\xC3\xA9  ");
+  CHECK(disasm::ljust("abcd", 2) == "abcd");
+}
+
+TEST_CASE("disasm: an object, with a relocation's symbol in its operand") {
+  CHECK(disasm::disassemble(sample()) ==
+        std::vector<std::string>{
+            "; elf32-mos object", "   PROCESSOR 6502", "", "; @zp-link-meta-begin",
+            "; @zp-link-meta-end", "", "; Disassembly of section .text", "f:", "   SUBROUTINE",
+            "   JSR   g-2                            ; 0000  20 00 00", ".l@1:",
+            "   RTS                                  ; 0003  60"});
+  // A branch to before the section's start is written as Python formats
+  // a negative number.
+  elf::ElfFile back;
+  auto text = std::make_shared<elf::Section>();
+  text->name = ".text";
+  text->flags = elf::SHF_ALLOC | elf::SHF_EXECINSTR;
+  text->data = std::string("\xD0\x80", 2);
+  back.sections = {text};
+  CHECK(disasm::disassemble(back).back() ==
+        "   BNE   $-07E                          ; 0000  D0 80");
+}
+
+TEST_CASE("disasm: an executable, with its EQUs, SEG, ORG, and RORG") {
+  const std::vector<std::string> head{
+      "; elf32-mos executable", "   PROCESSOR 6502", "", "__text_size\tEQU\t$0E", "IO\tEQU\t$C0",
+      "ROM\tEQU\t$E000", "",
+      // The non-ASCII letter is one `_` in the SEG's name.
+      "; Disassembly of section .t\xC3\xA9xt at $0800", "   SEG   t_xt", "   ORG   $C000",
+      "   RORG  $0800", "main:", "   SUBROUTINE"};
+  std::vector<std::string> all = head;
+  for (const char* l : {"   BNE   main                           ; 0800  D0 FE",
+                        "   LDA.w $0080                          ; 0802  AD 80 00",
+                        "   LDA   buf+1                          ; 0805  AD 01 03",
+                        "   JMP   ($0010)                        ; 0808  6C 10 00",
+                        "   DC.B  $02                            ; 080B  02",
+                        "   DC.B  $A9, $07                       ; 080C  A9 07", "   REND", "",
+                        "; Disassembly of section .bss at $0300", "   SEG.U bss", "   ORG   $0300",
+                        "buf:",
+                        // Python joins the address and the empty bytes
+                        // with two spaces.
+                        "   DS.B  4                              ; 0300  "}) {
+    all.push_back(l);
+  }
+  CHECK(disasm::disassemble(sample_exe(), true) == all);
+  std::vector<std::string> bare = head;
+  for (const char* l : {"   BNE   main", "   LDA.w $0080", "   LDA   buf+1", "   JMP   ($0010)",
+                        "   DC.B  $02", "   DC.B  $A9, $07", "   REND"}) {
+    bare.push_back(l);
+  }
+  CHECK(disasm::disassemble(sample_exe(), false, nullptr, {false, false}) == bare);
 }

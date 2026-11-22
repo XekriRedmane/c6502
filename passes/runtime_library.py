@@ -94,11 +94,17 @@ def needed(objects: list[tuple[str, E.ElfFile]],
 
 def library_object(names: list[str]) -> E.ElfFile:
     """The object that holds the helpers `names`, which `needed`
-    returned, one section each. Its link metadata lists each helper as
-    an item in `.text`, and gives the number of HARGS bytes the
-    helpers touch as the object's HARGS need."""
-    from asm_emit import emit_program
+    returned, one section each, assembled from `library_text`."""
     from binutils.assembler import assemble
+    return assemble(library_text(names), LIBRARY_NAME)
+
+
+def library_text(names: list[str]) -> str:
+    """The text `library_object` assembles: the helpers `names` as
+    `asm_emit` writes them, after a link metadata block that lists each
+    helper as an item in `.text` and gives the number of HARGS bytes
+    the helpers touch as the object's HARGS need."""
+    from asm_emit import emit_program
     from passes.asm_to_asm2 import translate_program
     from passes.runtime_layout import helper_footprints
     from passes.zp_link_metadata import (
@@ -112,10 +118,9 @@ def library_object(names: list[str]) -> E.ElfFile:
         hargs_size=need, hargs_need=need,
     )
     prog = asm_ast.Program(top_level=[fns[n] for n in names])
-    text = emit_program(
+    return emit_program(
         translate_program(prog), link_metadata_lines=format_metadata(meta),
     )
-    return assemble(text, LIBRARY_NAME)
 
 
 @lru_cache(maxsize=1)

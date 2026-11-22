@@ -15,6 +15,7 @@
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
+#include "passes/runtime_library.h"
 #include "pyrepr.h"
 
 namespace c6502::binutils {
@@ -25,7 +26,8 @@ namespace fs = std::filesystem;
 
 // The kinds of record, in the order the summary lists them.
 constexpr std::string_view kKinds[] = {"assemble", "elf_read",    "parse_script", "link",
-                                       "disassemble", "nm",       "objdump"};
+                                       "disassemble", "nm",       "objdump",
+                                       "runtime_library"};
 
 // The counts of one kind's records.
 struct Count {
@@ -160,6 +162,35 @@ class Checker {
       }
       if (status != output.get("status")->integer) {
         return "the exit status differs: C++ " + std::to_string(status);
+      }
+      ++count.matched;
+      return "";
+    }
+    if (kind == "runtime_library") {
+      ++count.ran;
+      std::vector<std::pair<std::string, elf::ElfFile>> objects;
+      for (const auto& pair : input.get("objects")->items) {
+        const std::string& hash = pair.items.at(1).string;
+        if (std::string problem = round_trip(hash); !problem.empty()) return problem;
+        objects.emplace_back(pair.items.at(0).string,
+                             elf::read(blob(hash), pair.items.at(0).string));
+      }
+      passes::NameSet defined;
+      for (const auto& name : args.get("defined")->items) defined.insert(name.string);
+      const std::vector<std::string> names = passes::needed(objects, defined);
+      std::vector<std::string> expected;
+      for (const auto& name : output.get("names")->items) expected.push_back(name.string);
+      if (names != expected) {
+        std::string got;
+        for (const auto& n : names) got += " " + n;
+        return "the helpers differ: C++ has" + got;
+      }
+      const json::Value* text = output.get("text");
+      if (text->kind == json::Value::Kind::kString) {
+        const std::string got = passes::library_text(names);
+        if (got != text->string) {
+          return "the text differs\nC++:\n" + got + "Python:\n" + text->string;
+        }
       }
       ++count.matched;
       return "";

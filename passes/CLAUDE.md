@@ -927,8 +927,9 @@ this directory:
   `rtlib/helpers.py`, which the linker adds to a program that
   calls them. `needed` gives the helpers the objects name and neither
   define nor get from `--defsym`, with the helpers those call
-  (`closure`), and `library_object` writes them with `asm_emit` and
-  assembles them into one object, `runtime.o` (`LIBRARY_NAME`), a
+  (`closure`), and `library_object` assembles the text `library_text`
+  writes of them with `asm_emit` into one object, `runtime.o`
+  (`LIBRARY_NAME`), a
   `.text` section per helper, with metadata whose `runtime` line gives
   their HARGS footprint. `linker._runtime_library` adds it after the
   units. `helper_sizes` gives each helper's bytes.

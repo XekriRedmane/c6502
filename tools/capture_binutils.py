@@ -13,7 +13,8 @@ for checking the C++ port of step 7 (docs/cpp_port.md).
 
 The harness wraps `binutils.assembler.assemble`, `binutils.elf.read`,
 `passes.link_script.parse_script`, `passes.linker.link_objects`,
-`binutils.disasm.disassemble`, and the `main` functions of nm.py and
+`passes.runtime_library.needed`, `binutils.disasm.disassemble`, and
+the `main` functions of nm.py and
 objdump.py, so each call is recorded with its arguments and its result
 (or the exception it raised) and the program goes on as without the
 harness. A compile under `C6502_CPP_BACKEND=1` gives the same `-S`
@@ -57,6 +58,12 @@ records name it by that hash. The kinds:
 - `disassemble`: the arguments `all_sections`, `only` (sorted, or
   null), `raw`, and `addresses`, the file as `{"elf": <hash>}`, and the
   listing's lines as the result.
+- `runtime_library`: a call of `passes.runtime_library.needed` that a
+  link makes, with the argument `defined` (sorted), the objects as
+  `{"objects": [[name, hash], ...]}`, and as the result `{"names":
+  [...], "text": ...}`, the helpers it returned and the text
+  `library_text` gives for them (null for none), which the library's
+  object is assembled from.
 - `nm` and `objdump`: the command line after the program's name as the
   arguments, with `columns`, the terminal width argparse wraps its
   usage and help to (`shutil.get_terminal_size`), and the files the
@@ -96,7 +103,7 @@ if str(_ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(_ROOT / "tools"))
 
 KINDS = ("assemble", "elf_read", "parse_script", "link", "disassemble",
-         "nm", "objdump")
+         "nm", "objdump", "runtime_library")
 
 _OUT = _ROOT / "captures" / "binutils"
 _SOURCE = ""
@@ -351,6 +358,32 @@ def _link_input(datas, script_text) -> dict:
             "script": script_text}
 
 
+def _wrap_needed(real):
+    def needed(objects, defined):
+        if _QUIET:
+            return real(objects, defined)
+        from binutils import elf as E
+        from passes.runtime_library import library_text
+        with _quiet():
+            try:
+                datas = [(name, E.write(obj)) for name, obj in objects]
+            except Exception:  # noqa: BLE001 - an object E can't write
+                datas = None
+        start = time.perf_counter()
+        names = real(objects, defined)
+        _count("runtime_library", time.perf_counter() - start)
+        if datas is None:
+            _anomaly("runtime_library-unrecorded", _SOURCE)
+            return names
+        with _quiet():
+            text = library_text(names) if names else None
+        _record("runtime_library", {"defined": sorted(defined)},
+                {"objects": [[name, _blob(data)] for name, data in datas]},
+                {"names": names, "text": text})
+        return names
+    return needed
+
+
 def _wrap_disassemble(real):
     def disassemble(elf, *, all_sections=False, only=None, options=None):
         if _QUIET:
@@ -421,8 +454,10 @@ def install(out: Path) -> None:
     from binutils import assembler, disasm, elf
     import nm
     import objdump
-    from passes import link_script, linker
+    from passes import link_script, linker, runtime_library
     assembler.assemble = _wrap_assemble(assembler.assemble)
+    # The linker imports `needed` when it adds the library.
+    runtime_library.needed = _wrap_needed(runtime_library.needed)
     elf.read = _wrap_read(elf.read)
     link_script.parse_script = _wrap_parse_script(link_script.parse_script)
     linker.link_objects = _wrap_link(linker.link_objects)

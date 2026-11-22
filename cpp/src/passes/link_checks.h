@@ -1,7 +1,8 @@
 // The checks of the records that tools/capture_binutils.py writes of
-// passes/link_script.py's `parse_script`, which `c6502cpp
-// check-binutils` runs, and the tagged JSON of a `Script` that those
-// records hold.
+// passes/link_script.py and passes/link_layout.py (`parse_script`,
+// `lay_out`, `default_script`, `fall_through`, `tail_jump`, and
+// `startup_lines`), which `c6502cpp check-binutils` runs, and the tagged
+// JSON of a `Script` that those records hold.
 #pragma once
 
 #include <string>

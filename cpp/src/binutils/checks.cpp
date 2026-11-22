@@ -25,8 +25,10 @@ namespace {
 namespace fs = std::filesystem;
 
 // The kinds of record, in the order the summary lists them.
-constexpr std::string_view kKinds[] = {"assemble", "elf_read",    "parse_script", "link",
-                                       "disassemble", "nm",       "objdump"};
+constexpr std::string_view kKinds[] = {"assemble",    "elf_read",       "parse_script",
+                                       "link",        "disassemble",    "nm",
+                                       "objdump",     "lay_out",        "default_script",
+                                       "fall_through", "tail_jump",     "startup_lines"};
 
 // The counts of one kind's records.
 struct Count {

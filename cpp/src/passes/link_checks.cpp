@@ -1,16 +1,20 @@
 #include "passes/link_checks.h"
 
+#include <map>
 #include <optional>
 #include <utility>
 #include <vector>
 
 #include "errors.h"
+#include "passes/link_layout.h"
 
 namespace c6502::passes::link_checks {
 
 namespace {
 
 namespace ls = ::c6502::passes::link_script;
+namespace ll = ::c6502::passes::link_layout;
+namespace elf = ::c6502::binutils::elf;
 using json::Value;
 using ls::Expr;
 
@@ -197,6 +201,56 @@ std::vector<std::string> strings_from(const Value& v) {
   return out;
 }
 
+std::vector<ll::Unit> units_from(const Value& v,
+                                 std::map<const elf::Section*, std::pair<int, int>>* where) {
+  std::vector<ll::Unit> units;
+  int pos = 0;
+  for (const Value& u : v.items) {
+    ll::Unit unit;
+    unit.path = field(u, "path").string;
+    unit.index = static_cast<int>(field(u, "index").integer);
+    std::vector<elf::SectionPtr> sections;
+    int k = 0;
+    for (const Value& s : field(u, "sections").items) {
+      auto sec = std::make_shared<elf::Section>();
+      sec->type = elf::SHT_NOBITS;
+      sec->nobits_size = static_cast<std::int64_t>(s.items.at(0).integer);
+      sec->flags = static_cast<std::uint32_t>(s.items.at(1).integer);
+      if (where != nullptr) where->emplace(sec.get(), std::make_pair(pos, k));
+      sections.push_back(std::move(sec));
+      ++k;
+    }
+    const auto& refs = field(u, "item_sections").items;
+    const auto& items = field(u, "items").items;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+      const Value& it = items[i];
+      ItemMeta meta{.name = it.items.at(0).string,
+                    .section = it.items.at(1).string,
+                    .local = it.items.at(2).boolean,
+                    .zero = it.items.at(3).boolean,
+                    .merge = it.items.at(4).boolean};
+      unit.sections.insert_or_assign(meta.name,
+                                     sections.at(static_cast<std::size_t>(refs.at(i).integer)));
+      unit.items.push_back(std::move(meta));
+    }
+    for (const Value& t : field(u, "tails").items) {
+      unit.tails.insert_or_assign(t.items.at(0).string, t.items.at(1).string);
+    }
+    units.push_back(std::move(unit));
+    ++pos;
+  }
+  return units;
+}
+
+std::string from_hex(std::string_view hex) {
+  std::string out;
+  const auto nibble = [](char c) { return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10; };
+  for (std::size_t i = 0; i + 1 < hex.size(); i += 2) {
+    out += static_cast<char>(nibble(hex[i]) << 4 | nibble(hex[i + 1]));
+  }
+  return out;
+}
+
 // Compares the JSON C++ gives with the recorded JSON.
 std::string compare(const Value& got, const Value& want) {
   const std::string a = json::dump(got);
@@ -264,7 +318,10 @@ ls::Script script_from_json(const json::Value& v) {
   return script;
 }
 
-bool handles(std::string_view kind) { return kind == "parse_script"; }
+bool handles(std::string_view kind) {
+  return kind == "parse_script" || kind == "lay_out" || kind == "default_script" ||
+         kind == "fall_through" || kind == "tail_jump" || kind == "startup_lines";
+}
 
 std::string check(std::string_view kind, const json::Value& args, const json::Value& input,
                   const json::Value& output, bool is_error) {
@@ -273,6 +330,100 @@ std::string check(std::string_view kind, const json::Value& args, const json::Va
   try {
     if (kind == "parse_script") {
       got = script_json(ls::parse_script(input.string));
+    } else if (kind == "startup_lines") {
+      std::vector<std::string> lines = ll::startup_lines(script_from_json(input));
+      got = strings(lines);
+    } else if (kind == "default_script") {
+      const auto units = units_from(field(input, "units"), nullptr);
+      got = script_json(
+          ll::default_script(units, static_cast<std::int64_t>(field(args, "origin").integer)));
+    } else if (kind == "fall_through") {
+      std::vector<ll::Entry> entries;
+      for (const Value& e : field(input, "entries").items) {
+        ll::Entry entry;
+        entry.name = e.items.at(0).string;
+        entry.function = e.items.at(1).boolean;
+        if (e.items.at(2).kind != Value::Kind::kNull) entry.tail = e.items.at(2).string;
+        entry.payload = entries.size();
+        entries.push_back(std::move(entry));
+      }
+      std::vector<Value> out;
+      for (const auto& [e, dropped] : ll::fall_through(entries, field(args, "reorder").boolean)) {
+        out.push_back(array({integer(static_cast<asdl::Int>(e.payload)), boolean(dropped)}));
+      }
+      got = array(std::move(out));
+    } else if (kind == "tail_jump") {
+      auto sec = std::make_shared<elf::Section>();
+      sec->type = static_cast<std::uint32_t>(field(input, "type").integer);
+      if (sec->type == elf::SHT_NOBITS) {
+        sec->nobits_size = static_cast<std::int64_t>(field(input, "size").integer);
+      } else {
+        sec->data = from_hex(field(input, "data").string);
+      }
+      for (const Value& r : field(input, "relocs").items) {
+        auto sym = std::make_shared<elf::Symbol>();
+        sym->name = r.items.at(3).string;
+        sec->relocs.push_back(elf::Reloc{static_cast<std::int64_t>(r.items.at(0).integer),
+                                         static_cast<std::uint8_t>(r.items.at(1).integer), sym,
+                                         static_cast<std::int64_t>(r.items.at(2).integer)});
+      }
+      std::vector<elf::SymbolPtr> symbols;
+      // A symbol of another section, after the end of this one, which
+      // `tail_jump` skips.
+      auto other = std::make_shared<elf::Symbol>();
+      other->name = "$d";
+      other->value = 1 << 20;
+      other->section = std::make_shared<elf::Section>();
+      symbols.push_back(other);
+      for (const Value& s : field(input, "symbols").items) {
+        auto sym = std::make_shared<elf::Symbol>();
+        sym->name = s.items.at(0).string;
+        sym->value = static_cast<std::int64_t>(s.items.at(1).integer);
+        sym->type = static_cast<std::uint8_t>(s.items.at(2).integer);
+        sym->section = sec;
+        symbols.push_back(std::move(sym));
+      }
+      const auto name = ll::tail_jump(sec, symbols);
+      got = name ? string(*name) : null();
+    } else if (kind == "lay_out") {
+      std::map<const elf::Section*, std::pair<int, int>> where;
+      const auto units = units_from(field(input, "units"), &where);
+      std::map<std::string, std::optional<std::int64_t>, std::less<>> answers;
+      for (const Value& pair : field(input, "lookups").items) {
+        const Value& value = pair.items.at(1);
+        answers.emplace(pair.items.at(0).string,
+                        value.kind == Value::Kind::kNull
+                            ? std::nullopt
+                            : std::optional<std::int64_t>(static_cast<std::int64_t>(value.integer)));
+      }
+      const ll::Lookup lookup = [&](const std::string& name) -> std::optional<std::int64_t> {
+        const auto it = answers.find(name);
+        if (it == answers.end()) {
+          extra = "C++ looked up `" + name + "`, which Python didn't";
+          return std::nullopt;
+        }
+        return it->second;
+      };
+      const ll::Layout layout = ll::lay_out(script_from_json(field(input, "script")), units, lookup);
+      std::vector<Value> outputs;
+      for (const auto& o : layout.outputs) {
+        std::vector<Value> parts;
+        for (const auto& p : o.parts) {
+          const auto [pos, k] = where.at(p.section.get());
+          parts.push_back(array({integer(p.unit), array({integer(pos), integer(k)}), integer(p.addr),
+                                 integer(p.size)}));
+        }
+        outputs.push_back(object({{"name", string(o.name)},
+                                  {"addr", integer(o.addr)},
+                                  {"load_addr", integer(o.load_addr)},
+                                  {"size", integer(o.size)},
+                                  {"noload", boolean(o.noload)},
+                                  {"executable", boolean(o.executable)},
+                                  {"parts", array(std::move(parts))}}));
+      }
+      std::vector<Value> symbols;
+      for (const auto& [name, v] : layout.symbols) symbols.push_back(array({string(name), integer(v)}));
+      got = object({{"outputs", array(std::move(outputs))}, {"symbols", array(std::move(symbols))}});
     }
   } catch (const CompileError& e) {
     if (!is_error) return std::string("C++ raised ") + e.python_type() + ": " + e.what();

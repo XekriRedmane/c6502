@@ -413,7 +413,9 @@ class _Parser:
 
 
 def _constant(e, what: str) -> int:
-    """The value of `e`, which has to be made of numbers."""
+    """The value of `e`, which has to be made of numbers. Raises
+    `ScriptError` for a division by zero and a shift by a negative
+    count."""
     match e:
         case Num(value=v):
             return v
@@ -423,12 +425,27 @@ def _constant(e, what: str) -> int:
             return ~_constant(o, what) & 0xFFFF
         case Binary(op=op, left=l, right=r):
             a, b = _constant(l, what), _constant(r, what)
-            return {
-                "+": a + b, "-": a - b, "*": a * b, "/": a // b if b else 0,
-                "&": a & b, "|": a | b, "^": a ^ b, "<<": a << b,
-                ">>": a >> b,
-            }[op]
+            # Only the operator given is computed. A table of every
+            # operator's result made a `+` with a negative right operand
+            # raise the `<<`'s ValueError, and a large one take all of
+            # memory.
+            if op == "/":
+                if b == 0:
+                    raise ScriptError(f"{what} divides by zero")
+                return a // b
+            if op in ("<<", ">>") and b < 0:
+                raise ScriptError(f"{what} shifts by a negative count")
+            return _OPERATORS[op](a, b)
     raise ScriptError(f"{what} has to be a number")
+
+
+# The operators of `_constant` other than `/`.
+_OPERATORS = {
+    "+": lambda a, b: a + b, "-": lambda a, b: a - b,
+    "*": lambda a, b: a * b, "&": lambda a, b: a & b,
+    "|": lambda a, b: a | b, "^": lambda a, b: a ^ b,
+    "<<": lambda a, b: a << b, ">>": lambda a, b: a >> b,
+}
 
 
 def parse_script(text: str) -> Script:

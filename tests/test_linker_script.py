@@ -141,6 +141,16 @@ class TestScriptParser(unittest.TestCase):
         self.assertTrue(secs[".b"].reorder)
         self.assertEqual(secs[".c"].address.value, 0x100)
 
+    def test_constant_computes_its_operator_alone(self) -> None:
+        # Each operator of a region's value used to be computed for
+        # every `Binary`, so a negative right operand made a `+` raise
+        # the `<<`'s ValueError, and a large one took all of memory.
+        script = parse_script(
+            "MEMORY { r : ORIGIN = 0x800 + -1, LENGTH = 1 + 0x10000000000 }"
+        )
+        self.assertEqual(script.regions["r"].origin, 0x7FF)
+        self.assertEqual(script.regions["r"].length, 0x10000000001)
+
     def test_errors(self) -> None:
         for src, message in [
             ("ENTRY(main)", "isn't supported"),
@@ -151,6 +161,10 @@ class TestScriptParser(unittest.TestCase):
             ("SECTIONS { .text : { (.text) } }", "file it takes"),
             ("SECTIONS { .t : { *(.a) } .t : { *(.b) } }", "listed twice"),
             ("SECTIONS { .t 0x100 (KEEP) : { *(.a) } }", "has type 'KEEP'"),
+            ("MEMORY { r : ORIGIN = 1 << -1, LENGTH = 1 }",
+             "ORIGIN of 'r' shifts by a negative count"),
+            ("MEMORY { r : ORIGIN = 0, LENGTH = 8 / (2 - 2) }",
+             "LENGTH of 'r' divides by zero"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaisesRegex(ScriptError, message):

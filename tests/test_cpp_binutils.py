@@ -133,5 +133,52 @@ class TestNm(unittest.TestCase):
                 os.environ["C6502_CPP_BACKEND"] = old
 
 
+def _assemble_request(text: str, filename: str, link_symbols, keep_source: bool) -> bytes:
+    """The request `c6502cpp assemble` reads (src/binutils/assemble_command.h)."""
+    import json
+    args = json.dumps({
+        "filename": filename, "keep_source": keep_source,
+        "link_symbols": None if link_symbols is None
+        else [[k, v] for k, v in link_symbols.items()],
+    })
+    body = text.encode("utf-8")
+    return (f"c6502-assemble 1\nargs {args}\ntext {len(body)}\n".encode("utf-8")
+            + body)
+
+
+@unittest.skipUnless(cpp_cli() is not None, "c6502cpp isn't built")
+class TestAssemble(unittest.TestCase):
+    """`c6502cpp assemble`, which group F connects to compile.py, gives
+    the bytes of Python's object, or Python's error."""
+
+    def _cpp(self, text: str, filename: str, link_symbols=None,
+             keep_source: bool = True) -> bytes:
+        done = subprocess.run(
+            [str(cpp_cli()), "assemble"], check=True, capture_output=True,
+            input=_assemble_request(text, filename, link_symbols, keep_source))
+        return done.stdout
+
+    def test_objects(self) -> None:
+        from binutils import elf as E
+        from binutils.assembler import assemble
+        text = (_ROOT / "examples" / "apply_bobble.asm").read_text(encoding="utf-8")
+        for links, keep in ((None, True), ({"DPTR": None, "HARGS": 0x40}, False)):
+            with self.subTest(links=links, keep=keep):
+                data = E.write(assemble(text, "apply_bobble.asm", links, keep))
+                self.assertEqual(self._cpp(text, "apply_bobble.asm", links, keep),
+                                 f"object {len(data)}\n".encode() + data)
+
+    def test_error(self) -> None:
+        import json
+        from binutils.assembler import AssemblerError, assemble
+        text = "f:\n BNE 5\n"
+        with self.assertRaises(AssemblerError) as raised:
+            assemble(text, "t.s")
+        expected = {"type": "AssemblerError", "message": str(raised.exception)}
+        out = self._cpp(text, "t.s").decode("utf-8")
+        self.assertTrue(out.startswith("error "))
+        self.assertEqual(json.loads(out[len("error "):]), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

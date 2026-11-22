@@ -28,6 +28,7 @@
 #include "asm_ast.h"
 #include "backend.h"
 #include "argparse.h"
+#include "binutils/assemble_command.h"
 #include "binutils/checks.h"
 #include "binutils/nm.h"
 #include "binutils/opcodes.h"
@@ -59,6 +60,7 @@ const char kUsage[] =
     "       c6502cpp opcodes\n"
     "       c6502cpp nm [<option>...] <file>...\n"
     "       c6502cpp backend\n"
+    "       c6502cpp assemble\n"
     "       c6502cpp sweep-passes\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
@@ -99,6 +101,11 @@ const char kUsage[] =
     "\n"
     "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
     "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"
+    "\n"
+    "assemble reads a request from stdin, the assembly text with its file\n"
+    "name and the assembler's arguments, assembles it as binutils/assembler.py\n"
+    "does, and writes the object's bytes or the error to stdout\n"
+    "(src/binutils/assemble_command.h).\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -678,6 +685,10 @@ int main(int argc, char** argv) {
       // Python type, so that cpp_backend.py raises the exception
       // compile.py would.
       write_stdout(backend::respond(read_stdin()));
+      return 0;
+    }
+    if (command == "assemble" && args.empty()) {
+      write_stdout(binutils::assemble_response(read_stdin()));
       return 0;
     }
     if (command == "sweep-passes" && args.empty()) {

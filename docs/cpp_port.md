@@ -2038,3 +2038,18 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   a traceback, and each is now a one-line error. The C++ reader gives the
   first one's ElfError, and the others are in code that groups A and F
   port.
+- 22 Nov 2026: group A of step 7, the parser of the link metadata and
+  the assembler (cpp/README.md, "The object-file tools").
+  `parse_metadata`, which the linker's groups build on, reads numbers as
+  `int()` does (src/py_int.h), and tools/capture_binutils.py now records
+  its calls. The assembler holds the text as code points and computes
+  with checked 128-bit integers, where the widest value of the corpus
+  takes 32 bits, and gives an error that names the limit past them.
+  `c6502cpp assemble` assembles a request's text for group F. All 3,003
+  `assemble` and 1,625 `parse_metadata` records of the corpus and the
+  271 and 191 of the suite match, errors included, and each metadata
+  block the assembler and the linker parse is written again by
+  `format_metadata` as it was. The records reach 9 of the assembler's
+  35 AssemblerError messages and 3 of `parse_metadata`'s 13 ValueError
+  messages, and the C++ tests have a case for each of the others but
+  the two no text reaches.

@@ -91,6 +91,7 @@ cpp/
     binutils/opcodes.*   binutils/opcodes.py, the 6502 opcode table
     binutils/nm.*     nm.py
     binutils/assembler.*   binutils/assembler.py
+    binutils/assemble_command.*   the `c6502cpp assemble` command
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
     py_int.*          Python's `int()` of a string and its integer
@@ -2315,6 +2316,13 @@ assembler.
   (`kMaxDepth`), short of where Python's recursion limit stops it, so
   the port never takes a text Python doesn't. The values c6502 writes
   take at most 32 bits.
+- `c6502cpp assemble` reads a request with the text, the file name,
+  `keep_source`, and the link symbols, and writes the object's bytes or
+  the error (src/binutils/assemble_command.h), for group F to call. It
+  gives the `struct.error` Python's `elf.write` raises for an addend or
+  a size outside its field, where the C++ writer would keep the low 32
+  bits. tests/test_cpp_binutils.py's `TestAssemble` compares it with
+  Python.
 
 `check-binutils` runs both on the records: every `assemble` record
 gives the recorded object's bytes or its error, and every

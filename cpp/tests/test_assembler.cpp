@@ -1,7 +1,7 @@
 // Tests of the assembler (binutils/assembler.py), with the result
 // Python gives for each text: its error, or the bytes of the object's
 // first section. `c6502cpp check-binutils` checks it on every assembly
-// of the corpus and the suite, which reach 8 of its 35 AssemblerError
+// of the corpus and the suite, which reach 9 of its 35 AssemblerError
 // messages, so each message has a case here, except the two no text can
 // reach: an operator the parser doesn't make, and a statement whose
 // bytes differ from the count its sizing gave. The rest are cases of

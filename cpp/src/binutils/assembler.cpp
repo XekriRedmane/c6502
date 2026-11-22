@@ -106,8 +106,6 @@ std::size_t symbol_end(U32View s, std::size_t pos) {
   return end;
 }
 
-bool is_symbol(U32View s) { return !s.empty() && symbol_end(s, 0) == s.size(); }
-
 // `_EQU`, `^(SYMBOL)\s+(?:EQU|equ|=)\s+(.+?)\s*$`, on a line with no
 // space at its end: the name and the expression's text.
 std::optional<std::pair<std::string, U32>> match_equ(U32View line) {

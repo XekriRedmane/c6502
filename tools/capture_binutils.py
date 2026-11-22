@@ -413,9 +413,11 @@ def _wrap_main(kind: str, real):
 
 
 def install(out: Path) -> None:
-    """Wraps the functions the harness records, writing under `out`."""
+    """Wraps the functions the harness records, writing under `out`,
+    which is made absolute, since tests and the corpus's jobs change the
+    current directory."""
     global _OUT
-    _OUT = out
+    _OUT = Path(out).resolve()
     from binutils import assembler, disasm, elf
     import nm
     import objdump

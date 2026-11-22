@@ -22,9 +22,9 @@ preprocessor, the parser, the unroller, `identifier_resolution`,
 string lifting, `label_resolution`, `loop_labeling`, and the type
 checker are ported ("The front end's calls"). Of the object-file
 tools of step 7, the ELF reader and writer, the opcode table, the
-part of argparse that nm.py and objdump.py use, and nm are ported, and
-`C6502_CPP_BACKEND=1` runs the C++ nm for nm.py ("The object-file
-tools").
+part of argparse that nm.py and objdump.py use, nm, the linker scripts,
+and the layout are ported, and `C6502_CPP_BACKEND=1` runs the C++ nm
+for nm.py ("The object-file tools").
 
 ## Building
 
@@ -2310,6 +2310,65 @@ cpp/build/bin/c6502cpp check-binutils captures/binutils captures/binutils_suite
 uv run python tools/binutils_errors.py captures/binutils
 ```
 
+### Linker scripts and the layout (group C)
+
+`passes::link_script` (src/passes/link_script.*) is
+passes/link_script.py and `linker.read_script`, and
+`passes::link_layout` (src/passes/link_layout.*) is
+passes/link_layout.py. Group D's linker builds on the declarations of
+their headers and of binutils/ld.h, whose `Placed` and
+`OutputSection` the layout returns: it builds a `Unit` for each object
+as `_unit` does, with `tail_jump` filling `tails`, gives `lay_out` a
+`Lookup` over the names it placed, the absolute symbols, and the
+`--defsym`s, and keys the placed sections by `Placed::section`'s
+pointer, as Python keys them by `id()`. A `ScriptError` and a
+`LayoutError` are `CompileError`s of those types, and `read_script`
+throws Python's `LinkError` messages itself.
+
+These are the places where the port follows Python's text and
+integers.
+
+- The lexer is `_TOKEN` run by py_regex, so `\s` and `\d` are
+  Unicode's, and a number may be written in another script's digits,
+  which `int(s, 0)` reads by their decimal values (`digit_value`).
+  Positions and the 20 characters `can't read` shows count code
+  points, and the repr is `pcpp::py_repr`.
+- `read_script` reads the file in Python's locale encoding,
+  `locale_encoding`: "utf-8" under `PYTHONUTF8=1`, the ANSI code page
+  on Windows (cp1252 here), and on Linux the locale's codeset, or UTF-8
+  for the C and POSIX locales, which Python coerces. It decodes with
+  `pcpp::decode_text_file`, with universal newlines and Python's
+  UnicodeDecodeError messages. The bytes C3 A9 are one character on
+  Linux and two on Windows, which the tests show in a message's repr.
+- The script's numbers and the evaluator's values are held in 128
+  bits, and a value of more than 125 bits throws `InternalError`, so no
+  sum of two values overflows. The layout's addresses and symbols are
+  64-bit, and one past that throws `InternalError` too. Python's `//`
+  is `asdl::floor_div`, and `$-080` is Python's `04X` of -0x80
+  (`pyrepr::hex`).
+- The file and section patterns match with `fnmatch::fnmatchcase`
+  (src/fnmatch.*), a port of Python 3.11's `fnmatch.translate`, whose
+  regular expression py_regex matches, on the input's name after its
+  last `/` or `\`. `section_symbol` makes one `_` of each code point.
+- `can't use ...` prints Python's dataclass repr of the expression.
+
+`lay_out` and the other four functions take the linker's units and
+sections, which only a link builds, so tools/capture_binutils.py records
+each call of `lay_out`, `default_script`, `fall_through`, `tail_jump`,
+and `startup_lines` with what it reads, in a JSON form of its own (its
+docstring), and `lay_out`'s record holds the names it asked the lookup
+for. `c6502cpp check-binutils` runs each of those records and each
+`parse_script` record (src/passes/link_checks.*, which also has the
+tagged JSON of a `Script`). On 22 Nov 2026 all of them matched, errors
+included: 4 `parse_script`, 3,465 `lay_out`, 1,743 `default_script`,
+2,031 `fall_through`, 7,894 `tail_jump`, and 4 `startup_lines` records of
+the corpus, and 34, 93, 66, 109, 690, and 13 of the suite. The records
+reach 11 of the 18 raise sites of link_script.py and 5 of the 18 of
+link_layout.py, and tests/test_link_script.cpp and
+tests/test_link_layout.cpp give Python's message for every one of the
+36, with `fnmatchcase` and `translate` on each of their special
+characters.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -2558,3 +2617,10 @@ uv run python tools/binutils_errors.py captures/binutils
   with `c6502cpp check-binutils` on the records of
   tools/capture_binutils.py, which all match, and nm.py run through
   `c6502cpp nm` under `C6502_CPP_BACKEND=1`.
+- 22 Nov 2026: group C of step 7, the linker scripts and the layout
+  ("Linker scripts and the layout"): `link_script::parse_script` and
+  `read_script`, `link_layout::lay_out` with `default_script`,
+  `fall_through`, `tail_jump`, and `startup_lines`, and
+  `fnmatch::fnmatchcase`, each matching the Python function on every
+  record of the corpus and the suite, errors included, in the builds of
+  MSVC 19.36 and GCC 12.2.

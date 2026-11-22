@@ -1,15 +1,18 @@
-// Tests of the ELF reader and writer, the opcode table, argparse, and
-// nm (src/binutils/, src/argparse.h). `c6502cpp check-binutils` checks
-// them on every file and command line tools/capture_binutils.py records,
-// and tests/test_cpp_binutils.py compares nm.py with and without the C++
-// port at several terminal widths.
+// Tests of the ELF reader and writer, the opcode table, argparse, nm,
+// the disassembler, and objdump (src/binutils/, src/argparse.h).
+// `c6502cpp check-binutils` checks them on every file and command line
+// tools/capture_binutils.py records, and tests/test_cpp_binutils.py
+// compares nm.py and objdump.py with and without the C++ port at
+// several terminal widths.
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include "argparse.h"
+#include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
+#include "binutils/objdump.h"
 #include "binutils/opcodes.h"
 #include "doctest.h"
 #include "errors.h"
@@ -172,4 +175,174 @@ TEST_CASE("nm: the listing of an object") {
   CHECK(nm::symbol_lines(f, all) ==
         std::vector<std::string>{std::string(9, ' ') + " Uz g", "0000 0003 b buf",
                                  "0000 0004 T f", "0000 0000 a t.c", "0003 0000 t .l@1"});
+}
+
+TEST_CASE("nm: a damaged file is named as the command line gives it") {
+  // `E.read_file` passes `str(path)` to `read`, which is the argument
+  // itself, so `./x.o` keeps its `./` and its `/` on Windows.
+  const std::string data = elf::write(sample());
+  const nm::ReadFile half = [&](const std::string&) { return data.substr(0, data.size() / 2); };
+  std::string out;
+  std::string err;
+  CHECK(nm::main({"nm.py", "./x.o"}, half, 80, out, err) == 1);
+  CHECK(err == "nm.py: ./x.o: the ELF file is truncated or damaged\n");
+}
+
+namespace {
+
+// An executable whose code section has a non-ASCII name and is loaded
+// at $C000 to run at $0800, with a `$d` mapping symbol, a `.bss`
+// object, and absolute symbols, one of them twice.
+elf::ElfFile sample_exe() {
+  const std::string code("\xD0\xFE\xAD\x80\x00\xAD\x01\x03\x6C\x10\x00\x02\xA9\x07", 14);
+  elf::ElfFile f;
+  f.type = elf::ET_EXEC;
+  f.entry = 0x0800;
+  auto text = std::make_shared<elf::Section>();
+  text->name = ".t\xC3\xA9xt";
+  text->flags = elf::SHF_ALLOC | elf::SHF_EXECINSTR;
+  text->data = code;
+  text->addr = 0x0800;
+  text->align = 4;
+  auto bss = std::make_shared<elf::Section>();
+  bss->name = ".bss";
+  bss->type = elf::SHT_NOBITS;
+  bss->flags = elf::SHF_ALLOC | elf::SHF_WRITE;
+  bss->nobits_size = 4;
+  bss->addr = 0x0300;
+  f.sections = {text, bss};
+  const auto sym = [](elf::Symbol s) { return std::make_shared<elf::Symbol>(std::move(s)); };
+  f.symbols = {
+      sym({.name = "main", .value = 0x0800, .size = 14, .bind = elf::STB_GLOBAL,
+           .type = elf::STT_FUNC, .section = text}),
+      sym({.name = "$d", .value = 0x080C, .section = text}),
+      sym({.name = "buf", .value = 0x0300, .size = 4, .type = elf::STT_OBJECT, .section = bss}),
+      sym({.name = "ROM", .value = 0xE000, .shndx = elf::SHN_ABS}),
+      sym({.name = "IO", .value = 0xC0, .shndx = elf::SHN_ABS}),
+      sym({.name = "IO", .value = 0xC0, .bind = elf::STB_GLOBAL, .shndx = elf::SHN_ABS}),
+      sym({.name = "__text_size", .value = 14, .shndx = elf::SHN_ABS}),
+  };
+  f.segments.push_back(elf::Segment{.vaddr = 0x0800, .paddr = 0xC000, .data = code, .memsz = 14});
+  return f;
+}
+
+}  // namespace
+
+// The expected listings below are Python's for the same files.
+
+TEST_CASE("disasm: Python's formatting of numbers and padding") {
+  CHECK(disasm::format_hex(0x80, 4) == "0080");
+  CHECK(disasm::format_hex(-126, 4) == "-07E");
+  CHECK(disasm::format_hex(0x12345, 4) == "12345");
+  CHECK(disasm::format_hex(0xAB, 2, true) == "ab");
+  // `ljust` counts code points, so the two bytes of an e with an acute
+  // accent are one column.
+  CHECK(disasm::ljust("\xC3\xA9", 3) == "\xC3\xA9  ");
+  CHECK(disasm::ljust("abcd", 2) == "abcd");
+}
+
+TEST_CASE("disasm: an object, with a relocation's symbol in its operand") {
+  CHECK(disasm::disassemble(sample()) ==
+        std::vector<std::string>{
+            "; elf32-mos object", "   PROCESSOR 6502", "", "; @zp-link-meta-begin",
+            "; @zp-link-meta-end", "", "; Disassembly of section .text", "f:", "   SUBROUTINE",
+            "   JSR   g-2                            ; 0000  20 00 00", ".l@1:",
+            "   RTS                                  ; 0003  60"});
+  // A branch to before the section's start is written as Python formats
+  // a negative number.
+  elf::ElfFile back;
+  auto text = std::make_shared<elf::Section>();
+  text->name = ".text";
+  text->flags = elf::SHF_ALLOC | elf::SHF_EXECINSTR;
+  text->data = std::string("\xD0\x80", 2);
+  back.sections = {text};
+  CHECK(disasm::disassemble(back).back() ==
+        "   BNE   $-07E                          ; 0000  D0 80");
+}
+
+TEST_CASE("disasm: an executable, with its EQUs, SEG, ORG, and RORG") {
+  const std::vector<std::string> head{
+      "; elf32-mos executable", "   PROCESSOR 6502", "", "__text_size\tEQU\t$0E", "IO\tEQU\t$C0",
+      "ROM\tEQU\t$E000", "",
+      // The non-ASCII letter is one `_` in the SEG's name.
+      "; Disassembly of section .t\xC3\xA9xt at $0800", "   SEG   t_xt", "   ORG   $C000",
+      "   RORG  $0800", "main:", "   SUBROUTINE"};
+  std::vector<std::string> all = head;
+  for (const char* l : {"   BNE   main                           ; 0800  D0 FE",
+                        "   LDA.w $0080                          ; 0802  AD 80 00",
+                        "   LDA   buf+1                          ; 0805  AD 01 03",
+                        "   JMP   ($0010)                        ; 0808  6C 10 00",
+                        "   DC.B  $02                            ; 080B  02",
+                        "   DC.B  $A9, $07                       ; 080C  A9 07", "   REND", "",
+                        "; Disassembly of section .bss at $0300", "   SEG.U bss", "   ORG   $0300",
+                        "buf:",
+                        // Python joins the address and the empty bytes
+                        // with two spaces.
+                        "   DS.B  4                              ; 0300  "}) {
+    all.push_back(l);
+  }
+  CHECK(disasm::disassemble(sample_exe(), true) == all);
+  std::vector<std::string> bare = head;
+  for (const char* l : {"   BNE   main", "   LDA.w $0080", "   LDA   buf+1", "   JMP   ($0010)",
+                        "   DC.B  $02", "   DC.B  $A9, $07", "   REND"}) {
+    bare.push_back(l);
+  }
+  CHECK(disasm::disassemble(sample_exe(), false, nullptr, {false, false}) == bare);
+}
+
+TEST_CASE("objdump: the headers, symbols, relocations, and contents") {
+  CHECK(objdump::section_headers(sample()) ==
+        std::vector<std::string>{
+            "Sections:", "Idx Name                 Size  VMA   LMA   Algn",
+            "  0 .text                0004  0000  0000  2**0",
+            "                         CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE",
+            "  1 .bss                 0003  0000  0000  2**0", "                         ALLOC, DATA",
+            "  2 .c6502.link          002A  0000  0000  2**0", "                         CONTENTS"});
+  CHECK(objdump::symbol_table(sample()) ==
+        std::vector<std::string>{"SYMBOL TABLE:", "0000 l f  *ABS*        0000 t.c",
+                                 "0000 g F  .text        0004 f", "0003 l    .text        0000 .l@1",
+                                 "0000 l O  .bss         0003 buf", "0000 g    *UND*        0000 g"});
+  CHECK(objdump::relocations(sample(), nullptr) ==
+        std::vector<std::string>{"RELOCATION RECORDS FOR [.text] (f):",
+                                 "OFFSET TYPE              VALUE", "0001   R_MOS_ADDR16      g-2", ""});
+  CHECK(objdump::full_contents(sample(), nullptr) ==
+        std::vector<std::string>{
+            "Contents of section .text:", " 0000 20000060                              ..`",
+            "Contents of section .c6502.link:",
+            " 0000 3b20407a 702d6c69 6e6b2d6d 6574612d  ; @zp-link-meta-",
+            " 0010 62656769 6e0a3b20 407a702d 6c696e6b  begin.; @zp-link",
+            " 0020 2d6d6574 612d656e 640a               -meta-end."});
+  // The name is padded by code points, and an alignment of 4 is 2**2.
+  CHECK(objdump::section_headers(sample_exe()) ==
+        std::vector<std::string>{"Sections:", "Idx Name                 Size  VMA   LMA   Algn",
+                                 "  0 .t\xC3\xA9xt                000E  0800  C000  2**2",
+                                 "                         CONTENTS, ALLOC, LOAD, READONLY, CODE",
+                                 "  1 .bss                 0004  0300  0300  2**0",
+                                 "                         ALLOC, DATA"});
+  CHECK(objdump::file_header(sample_exe(), "x/e") ==
+        std::vector<std::string>{"x/e:     file format elf32-mos",
+                                 "architecture: mos6502, flags 0x00000001:", "executable",
+                                 "start address 0x0800"});
+  CHECK(objdump::full_contents(sample_exe(), nullptr) ==
+        std::vector<std::string>{"Contents of section .t\xC3\xA9xt:",
+                                 " 0800 d0fead80 00ad0103 6c100002 a907      ........l....."});
+}
+
+TEST_CASE("objdump: a command line that asks for nothing returns 2") {
+  std::string out;
+  std::string err;
+  const nm::ReadFile none = [](const std::string&) -> std::string { throw nm::FileError{"x"}; };
+  CHECK(objdump::main({"objdump.py", "f.o"}, none, 80, out, err) == 2);
+  CHECK(out.empty());
+  CHECK(err == "objdump.py: give at least one of -d -D -f -h -t -r -s -x --link-metadata\n");
+  err.clear();
+  CHECK(objdump::main({"objdump.py", "-d", "f.o"}, none, 80, out, err) == 1);
+  CHECK(err == "objdump.py: x\n");
+  // A damaged file is named as the command line gives it, as nm names
+  // one.
+  const std::string data = elf::write(sample());
+  const nm::ReadFile half = [&](const std::string&) { return data.substr(0, data.size() / 2); };
+  err.clear();
+  CHECK(objdump::main({"objdump.py", "-d", "./x.o"}, half, 80, out, err) == 1);
+  CHECK(err == "objdump.py: ./x.o: the ELF file is truncated or damaged\n");
 }

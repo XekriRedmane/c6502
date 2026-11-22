@@ -161,7 +161,9 @@ int main(const std::vector<std::string>& argv, const ReadFile& read_file, int co
   for (const std::string& path : files) {
     elf::ElfFile elf;
     try {
-      elf = elf::read(read_file(path), argparse::path_str(path));
+      // `E.read_file` names the file `str(path)`, which is the command
+      // line's string itself, where the OSError names `str(Path(path))`.
+      elf = elf::read(read_file(path), path);
     } catch (const FileError& e) {
       err += "nm.py: " + e.message + "\n";
       status = 1;

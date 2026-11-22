@@ -10,8 +10,10 @@
 #include <string_view>
 
 #include "argparse.h"
+#include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
+#include "binutils/objdump.h"
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
@@ -143,13 +145,40 @@ class Checker {
       ++count.matched;
       return "";
     }
-    if (kind == "nm") {
+    if (kind == "disassemble") {
+      if (std::string problem = round_trip(input.get("elf")->string); !problem.empty()) {
+        return problem;
+      }
+      ++count.ran;
+      const elf::ElfFile file = elf::read(blob(input.get("elf")->string), "file");
+      std::set<std::string> only;
+      const json::Value* listed = args.get("only");
+      if (listed->kind == json::Value::Kind::kArray) {
+        for (const auto& name : listed->items) only.insert(name.string);
+      }
+      const disasm::Options options{args.get("raw")->boolean, args.get("addresses")->boolean};
+      const std::vector<std::string> got =
+          disasm::disassemble(file, args.get("all_sections")->boolean,
+                              listed->kind == json::Value::Kind::kArray ? &only : nullptr, options);
+      std::vector<std::string> want;
+      for (const auto& l : output.items) want.push_back(l.string);
+      if (got != want) {
+        std::size_t k = 0;
+        while (k < got.size() && k < want.size() && got[k] == want[k]) ++k;
+        return "the listing differs at line " + std::to_string(k + 1) + "\nC++:    " +
+               (k < got.size() ? got[k] : "(end)") + "\nPython: " +
+               (k < want.size() ? want[k] : "(end)");
+      }
+      ++count.matched;
+      return "";
+    }
+    if (kind == "nm" || kind == "objdump") {
       ++count.ran;
       std::map<std::string, std::string> files;
       for (const auto& pair : input.get("files")->items) {
         files.emplace(pair.items.at(0).string, pair.items.at(1).string);
       }
-      std::vector<std::string> argv{"nm.py"};
+      std::vector<std::string> argv{std::string(kind) + ".py"};
       for (const auto& a : args.get("argv")->items) argv.push_back(a.string);
       const nm::ReadFile read_file = [&](const std::string& path) {
         const auto it = files.find(path);
@@ -161,8 +190,9 @@ class Checker {
       };
       std::string out;
       std::string err;
-      const int status = nm::main(argv, read_file,
-                                  static_cast<int>(args.get("columns")->integer), out, err);
+      const auto tool = kind == "nm" ? nm::main : objdump::main;
+      const int status =
+          tool(argv, read_file, static_cast<int>(args.get("columns")->integer), out, err, nullptr);
       if (out != output.get("stdout")->string) {
         return "stdout differs\nC++:\n" + out + "Python:\n" + output.get("stdout")->string;
       }
@@ -212,8 +242,6 @@ class Checker {
     } else if (kind == "link") {
       for (const auto& pair : input.get("objects")->items) files.push_back(pair.items.at(1).string);
       if (!call.output_is_error) files.push_back(output.get("executable")->string);
-    } else if (kind == "disassemble") {
-      files.push_back(input.get("elf")->string);
     }
     for (const auto& hash : files) {
       if (std::string problem = round_trip(hash); !problem.empty()) return problem;

@@ -30,6 +30,7 @@
 #include "argparse.h"
 #include "binutils/checks.h"
 #include "binutils/nm.h"
+#include "binutils/objdump.h"
 #include "binutils/opcodes.h"
 #include "c99_ast.h"
 #include "capture.h"
@@ -61,6 +62,7 @@ const char kUsage[] =
     "       c6502cpp opcodes\n"
     "       c6502cpp helper-footprints\n"
     "       c6502cpp nm [<option>...] <file>...\n"
+    "       c6502cpp objdump [<option>...] <file>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
     "\n"
@@ -106,6 +108,10 @@ const char kUsage[] =
     "\n"
     "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
     "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"
+    "\n"
+    "objdump shows what's in c6502 objects and executables, as objdump.py\n"
+    "does, with its options, messages, and exit status\n"
+    "(src/binutils/objdump.h).\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -643,17 +649,18 @@ int main(int argc, char** argv) {
     if (command == "check-binutils") {
       return binutils::check_binutils(args);
     }
-    if (command == "nm") {
-      // nm.py's command line, as its `main` takes it with the program's
-      // name first.
-      std::vector<std::string> argv_nm{"nm.py"};
+    if (command == "nm" || command == "objdump") {
+      // The tool's command line, as its `main` takes it with the
+      // program's name first.
+      std::vector<std::string> argv_tool{command + ".py"};
       const std::vector<std::string> utf8 = utf8_args(argc, argv);
-      argv_nm.insert(argv_nm.end(), utf8.begin() + 2, utf8.end());
+      argv_tool.insert(argv_tool.end(), utf8.begin() + 2, utf8.end());
       std::string out;
       std::string err;
       bool help = false;
-      const int status = binutils::nm::main(argv_nm, binutils::nm::read_path,
-                                            argparse::terminal_columns(), out, err, &help);
+      const auto tool = command == "nm" ? binutils::nm::main : binutils::objdump::main;
+      const int status =
+          tool(argv_tool, binutils::nm::read_path, argparse::terminal_columns(), out, err, &help);
       // Python writes the listing's bytes and the help as text, which on
       // Windows ends each line with CR LF, and its stderr as text too,
       // which cpp_backend.run_tool writes through Python's stream.

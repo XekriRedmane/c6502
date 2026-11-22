@@ -1213,8 +1213,10 @@ something a straightforward C++ port could change.
   output: each set is sorted or tested for membership.
 - **Messages.** Several messages print a sorted list with Python's
   repr (`function(s) defined in multiple TUs: ['f', 'g']`), one holds
-  the character U+2192 (`main → ['f']`), and `elf.read`'s name Python's
-  `str(Path(path))`, with backslashes on Windows.
+  the character U+2192 (`main → ['f']`), and the OSError of a file
+  that can't be read names Python's `str(Path(path))`, with
+  backslashes on Windows. `E.read_file` passes `elf.read` the path as
+  the command line gives it, so an ElfError keeps a `./` and a `/`.
 - **Paths and encodings.** `read_script` reads the script in the
   locale's encoding (cp1252 here, UTF-8 on Linux) with universal
   newlines. The layout matches a script's file pattern with
@@ -2075,3 +2077,15 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   KeyError; a shift by a negative count in the layout raised
   ValueError; and an output section's `ALIGN(3)` gave an address no
   alignment gives.
+- 22 Nov 2026: group B of step 7, the disassembler and objdump.py
+  (cpp/README.md, "The object-file tools"). `c6502cpp check-binutils`
+  matched all 22,225 `disassemble` records and 39,175 `objdump` records
+  of the corpus, and the suite's 34 and 7, errors and argparse's
+  messages included, in the builds of MSVC 19.36 and GCC 12.2. Under
+  `C6502_CPP_BACKEND=1`, objdump.py runs `c6502cpp objdump`, and
+  tests/test_cpp_binutils.py compares the two at four terminal widths.
+  The suite passes with the variable set (4,914 tests, with
+  `C6502_CHECK_IR=1`) and without it. The C++ nm named a damaged file
+  by `str(Path(path))`, where Python's `E.read_file` passes the command
+  line's string, so `./d.o` lost its `./`. That was fixed in nm, and
+  objdump names the file the same way.

@@ -92,7 +92,7 @@ class TestAddressTakenZp(unittest.TestCase):
         }
         int main(void) { caller(); return 0; }
         """
-        asm, _, _, slot_syms = self._compile(src)
+        asm, slot_syms = self._compile(src)
         # The address-taken local should resolve to a ZP slot whose
         # symbol is named `__local_caller__x`.
         sym_name = "__local_caller__x"
@@ -127,7 +127,7 @@ class TestAddressTakenZp(unittest.TestCase):
         }
         int main(void) { caller(); return 0; }
         """
-        asm, _, _, slot_syms = self._compile(src)
+        asm, slot_syms = self._compile(src)
         sym = "__local_caller__row"
         self.assertIn(sym, slot_syms)
         # If the assignment worked, the address-taken local resolves

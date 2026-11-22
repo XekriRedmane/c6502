@@ -15,9 +15,9 @@ program, the TAC optimizer, the zero-page plan, the ABI, the
 allocators, `tac_to_asm`, the asm optimizer, every asm pass of the back
 end, and emission, each of which matches the Python code on every input
 of the corpus it was checked on. With `C6502_CPP_BACKEND=1`, compile.py
-hands the type-checked c99 program to C++ and takes the `-S` text back
-("The stage's driver", "The back end through c6502cpp", and
-"Emission", below). Of the front end, the pieces its passes share, the
+hands the source text of a C input to C++, which runs the front end and
+code generation, and takes the `-S` text back ("The stage's driver",
+"The back end through c6502cpp", and "Emission", below). Of the front end, the pieces its passes share, the
 preprocessor, the parser, the unroller, `identifier_resolution`,
 string lifting, `label_resolution`, `loop_labeling`, and the type
 checker are ported ("The front end's calls").
@@ -1984,34 +1984,64 @@ addresses of the last two passes. It returns the program, the slots
 function whose symbol it copies. `passes::unoptimized_region` is the
 unoptimized pipeline's fixed point and long branches.
 
-`c6502cpp backend` (`src/backend.*`) reads a request on stdin and runs
-`passes::codegen` from the type-checked c99 program ("The stage's
-driver", above). `src/backend.h` describes the request and the
-response. A bug the passes report
-(`InternalError`) exits with status 3, and a problem with the program
-(`CompileError`) with status 4, its Python type on the first line of
-stderr and its message after it.
+`passes::front_end` (`src/passes/front_end.*`) is compile.py's front
+end, `_compile_c` from the source text through `type_check_program`, as
+one function: `preprocessor::preprocess` with the arguments, the file
+name, and the directory of c6502's headers, `parser::parse`, under `-O`
+`unroll_program`, `resolve_identifiers`, `lift_strings`,
+`resolve_labels`, `label_program`, and `check_program`, which returns
+the program and its two tables. The preprocessor's warnings go to the
+caller's `diagnostics::Collecting` block, and what it writes to stderr
+is kept when a later pass throws.
 
-With `C6502_CPP_BACKEND=1`, compile.py's `_run_stage` hands the
-type-checked c99 program and its tables to `c6502cpp backend` through
-`cpp_backend.py`, one process per compile, and the `-S` text comes
-back, for `-S`, for `-c`, and for links of C inputs. `--tac` stays in
-Python. The request says whether `-O` inlines, which is false when a
-test has patched `compile.inline_functions` (tests/no_inlining.py,
-`compile._inlining`). The simulator harness hands C++ the same program
-and takes back the finished asm program, which it assembles. The tables
-the stage changes stay in C++, since Python reads nothing of them
-afterward. `cpp_backend.py` raises an exit status of 3 as an
-`AssertionError` with the C++ message and one of 4 as the Python
-exception of the type named, and under `C6502_CHECK_IR=1` checks the
-TAC that code generation lowered, the finished asm program, and the
-asm2 program of a text once each, since `ir_check` isn't ported.
-compile.py reads the variable at each compile and, without it, imports
-none of this.
+`c6502cpp backend` (`src/backend.*`) reads a request on stdin, runs
+`passes::front_end` on its source text and `passes::codegen` on the
+result ("The stage's driver", above), and writes the response.
+`src/backend.h` describes the request and the response. Every response
+begins with what the preprocessor wrote to stderr and the warnings, and
+a problem with the program (`CompileError`) ends the response with an
+`error` line, the Python class and the message, so that the warnings and
+stderr of a rejected program come back too. A bug the passes report
+(`InternalError`) exits with status 3.
+
+With `C6502_CPP_BACKEND=1`, compile.py's `_compile_c` hands the source
+text of each C input of `-S`, `-c`, and a link to `c6502cpp backend`
+through `cpp_backend.compile_source`, one process per compile, with the
+preprocessor's arguments and the file name (None for stdin), and the
+`-S` text comes back. The process inherits Python's current directory,
+so the paths in the preprocessor's messages are the same. `--lex`,
+`--parse`, `--resolve`, and `--tac` stay in Python.
+`_run_stage("codegen", text)`, which the tests call with the
+preprocessor's output, sends the text with `preprocess` off. The
+request says whether `-O`
+inlines, which is false when a test has patched
+`compile.inline_functions` (tests/no_inlining.py, `compile._inlining`).
+The simulator harness sends the source text too and takes back the
+finished asm program, which it assembles. The program and its tables
+stay in C++, since Python reads nothing of them afterward.
+`cpp_backend.py` writes the preprocessor's stderr to `sys.stderr`,
+issues the warnings again through `diagnostics.warn`, and raises an
+`error` line as the Python exception of that class with that message
+(`_exception`, which makes a subclass of the same name for a class such
+as Lark's `UnexpectedToken` whose constructor takes other arguments, and
+which turns argparse's exit into `SystemExit(2)`). An exit status of 3
+is raised as an `AssertionError` with the C++ message. Under
+`C6502_CHECK_IR=1` it checks the TAC that code generation lowered, the
+finished asm program, and the asm2 program of a text once each, since
+`ir_check` isn't ported. compile.py reads the variable at each compile
+and, without it, imports none of this. Run as a script with the
+variable set and `-S`, `-c`, or a link, compile.py stops before it
+imports its pipeline (`_cpp_runs_everything`), and the runtime helpers'
+footprints come from `passes.runtime_layout`, which reads
+`TypeCheckError` from `passes/type_check_error.py`, so neither `-S` nor
+`-c` imports the parser, Lark, pcpp, or a pass of the front end, unless
+`C6502_CHECK_IR=1` loads `ir_check`, whose helpers import the type
+checker.
 
 `tools/compare_backends.py` compiles the corpus of the capture harness
 with `-S` and `-S -O`, once with the variable and once without, and
-requires the same `-S` text, exit status, messages, and exceptions.
+requires the same `-S` text, exit status, messages, warnings, and
+exceptions.
 
 ## Emission
 

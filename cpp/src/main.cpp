@@ -66,12 +66,12 @@ const char kUsage[] =
     "warnings, and stderr with Python's (src/preprocessor_cases.h).\n"
     "\n"
     "backend reads a request of compile.py's (cpp_backend.py) from stdin,\n"
-    "runs the back end's region on its program, or the region and the work\n"
-    "through emission, and writes the result to stdout. A problem with the\n"
-    "request exits with status 1, a bug in the compiler with status 3, and\n"
-    "a problem with the program being compiled with status 4, each with\n"
-    "its message on stderr, which for status 4 follows the line with the\n"
-    "Python type of the error.\n"
+    "compiles its source text from the preprocessor to the finished asm\n"
+    "program or the -S text, and writes the result to stdout. A problem\n"
+    "with the program being compiled is part of the response, with the\n"
+    "Python type of the error. A problem with the request exits with\n"
+    "status 1 and a bug in the compiler with status 3, each with its\n"
+    "message on stderr.\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -534,14 +534,10 @@ int main(int argc, char** argv) {
       return cmd_check_preprocess(args);
     }
     if (command == "backend" && args.empty()) {
-      // A problem with the program goes back with its Python type, so
-      // that cpp_backend.py raises the exception compile.py would.
-      try {
-        write_stdout(backend::respond(read_stdin()));
-      } catch (const c6502::CompileError& e) {
-        std::fprintf(stderr, "%s\n%s", e.python_type().c_str(), e.what());
-        return 4;
-      }
+      // A problem with the program goes back in the response with its
+      // Python type, so that cpp_backend.py raises the exception
+      // compile.py would.
+      write_stdout(backend::respond(read_stdin()));
       return 0;
     }
     if (command == "sweep-passes" && args.empty()) {

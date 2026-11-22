@@ -309,45 +309,60 @@ cmake --build cpp/build --config Release --parallel
 ctest --test-dir cpp/build -C Release --output-on-failure
 uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
 uv run python tools/check_captures.py split_mem_to_mem   # C++ vs the calls
-C6502_CPP_BACKEND=1 uv run python compile.py <source.c> -S -O   # c99_to_tac on in C++
+C6502_CPP_BACKEND=1 uv run python compile.py <source.c> -S -O   # all in C++
 uv run python tools/compare_backends.py -j 12   # both back ends on the corpus
 ```
 
-With `C6502_CPP_BACKEND=1`, everything after the type checker runs in
-the C++ port, from `c99_to_tac` to the `-S` text. compile.py runs the
-front end in Python, through `type_check_program` (and, under `-O`,
-`unroll_program`, which belongs to step 6 of the port). Then one call of
-`c6502cpp backend` runs the rest (`passes::codegen`,
-cpp/src/passes/codegen_stage.h): `translate_for_codegen` (`c99_to_tac`,
-and under `-O` the inliner and `return_in_zero_page`), under `-O` the
-TAC passes of `_optimized_tac` (the tables of row addresses, the TAC
-optimizer, the dispatch of const-pointer arrays, and the split tables),
-`plan_zero_page` on the TAC from before those passes, the rest of
-`_optimized_front` (`select_abi` through `synthesize_prologue`, with the
-pool retries) or, without `-O`, `fixed_address_layouts`, `tac_to_asm`,
-and `replace_pseudoregisters`, then the back end's region, the work
-after it, the link metadata, and `asm_emit`. The request holds the
-type-checked c99 program as a dump, the symbol and type tables in the
-capture harness's encoding, the runtime helpers' HARGS footprints,
-measured from rtlib/helpers.py in Python, and a flag that is false when
-`compile.inline_functions` has been patched (tests/no_inlining.py), so
-that such a test's `static` functions stay functions in C++ too
-(`compile._inlining`). `cpp_backend.py` starts the process once per
-compile (from `C6502_CPP` or cpp/build/bin). The tables the stage
-changes stay in C++, so Python's are left as the type checker built
-them, and Python reads no program back, except under `C6502_CHECK_IR=1`,
-where the response holds the TAC that code generation lowered and the
-finished asm and asm2 programs, which `ir_check` checks, since it isn't
-ported. The checks between the passes don't run. A problem with the
-program comes back as the Python exception of its type
-(`cpp_backend._error_type`). The simulator harness
-(`sim.harness.compile_to_asm`) hands C++ the same c99 program and takes
-back the finished asm program in the dump format, with its slot
-symbols, since it assembles the program itself. `--tac` stays in
-Python. The variable is read at each compile, and without it compile.py
-imports nothing new. `tools/compare_backends.py` compiles the whole
-corpus both ways and requires the same output and errors (cpp/README.md,
-"The back end through c6502cpp" and "Emission").
+With `C6502_CPP_BACKEND=1`, the C++ port compiles each C input of
+`-S`, `-c`, and a link from its source text to the `-S` text, and Python
+runs no part of the front end. `compile._compile_c` hands one call of
+`c6502cpp backend` the text as compile.py read it, the preprocessor's
+arguments, the file name (None for stdin), and the directory of
+include/, and the C++ side runs `passes::front_end`
+(cpp/src/passes/front_end.h: `preprocess`, `parse`, under `-O`
+`unroll_program`, `identifier_resolution`, `string_lifting`,
+`label_resolution`, `loop_labeling`, and `type_checking`) and then
+`passes::codegen` (cpp/src/passes/codegen_stage.h):
+`translate_for_codegen` (`c99_to_tac`, and under `-O` the inliner and
+`return_in_zero_page`), under `-O` the TAC passes of `_optimized_tac`
+(the tables of row addresses, the TAC optimizer, the dispatch of
+const-pointer arrays, and the split tables), `plan_zero_page` on the TAC
+from before those passes, the rest of `_optimized_front` (`select_abi`
+through `synthesize_prologue`, with the pool retries) or, without `-O`,
+`fixed_address_layouts`, `tac_to_asm`, and `replace_pseudoregisters`,
+then the back end's region, the work after it, the link metadata, and
+`asm_emit`. The request also holds the runtime helpers' HARGS
+footprints, measured from rtlib/helpers.py in Python, and a flag that is
+false when `compile.inline_functions` has been patched
+(tests/no_inlining.py), so that such a test's `static` functions stay
+functions in C++ too (`compile._inlining`). The response holds what the
+preprocessor wrote to stderr, which `cpp_backend.py` writes to
+`sys.stderr`, and its `_Bool` warnings, which it issues again through
+`diagnostics.warn`, so `_print_warnings` prints them as before, and a
+problem with the program comes back as the Python exception of its
+class and message (`cpp_backend._exception`, a subclass of the same name
+for Lark's syntax errors), so `main` reports it as Python's front end
+does. `_run_stage("codegen", text)`, which tests call with the
+preprocessor's output, sends the text with `preprocess` off. Python
+reads no program back, except under `C6502_CHECK_IR=1`, where the
+response holds the TAC that code generation lowered and the finished asm
+and asm2 programs, which `ir_check` checks, since it isn't ported. The
+checks between the passes don't run. The simulator harness
+(`sim.harness.compile_to_asm`) sends the source text with no
+preprocessor arguments and takes back the finished asm program in the
+dump format, with its slot symbols, since it assembles the program
+itself, and it returns those two alone. `--lex`, `--parse`, `--resolve`,
+and `--tac` stay in Python. Run as a script with the variable set and
+one of the C++ stages, compile.py stops before its pipeline's imports
+(`_cpp_runs_everything`), so `-S` and `-c` import none of the parser,
+Lark, pcpp, or the front end's passes, unless `C6502_CHECK_IR=1` loads
+`ir_check`, whose helpers import the type checker. A link still imports the type
+checker through the Python linker (`passes.linker` reads
+`passes.zp_globals`). The variable is read at each compile, and without
+it compile.py imports nothing new. `tools/compare_backends.py` compiles
+the whole corpus both ways and requires the same output, errors, and
+warnings (cpp/README.md, "The back end through c6502cpp" and
+"Emission").
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
 module is library-only. Flags `compile.py` doesn't recognize are
@@ -568,9 +583,9 @@ Other root-level files:
   over the corpus, for checking their C++ ports, and
   `tools/check_captures.py` runs the check.
 - `cpp_backend.py` — the Python side of `C6502_CPP_BACKEND=1`, which
-  runs everything after the type checker, from `c99_to_tac` through
-  emission, in `c6502cpp backend` (`codegen`), or through the finished
-  asm program for the simulator harness.
+  runs the whole compile of a C source, from the preprocessor through
+  emission, in `c6502cpp backend` (`compile_source`), or through the
+  finished asm program for the simulator harness.
   `tools/compare_backends.py` compiles the corpus with and without it
   and compares the outputs.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL

@@ -58,8 +58,398 @@ import argparse
 import os
 import sys
 
-import asm_ast
 import diagnostics
+
+
+def _cpp_backend() -> bool:
+    """Whether `C6502_CPP_BACKEND=1` hands the compile of a C source to
+    the C++ port (cpp_backend.py), from the preprocessor to the `-S`
+    text. The variable is read at each call, so a process can set it
+    before compiling."""
+    return os.environ.get("C6502_CPP_BACKEND") == "1"
+
+
+def _inlining() -> bool:
+    """Whether `-O` inlines the calls of small `static` functions. A
+    test that checks a function's own code turns that off by patching
+    `compile.inline_functions`, which `translate_for_codegen` calls
+    (tests/no_inlining.py), and the request to the C++ port carries the
+    choice, since the C++ side runs its own inliner. On the command
+    line's early path (`_cpp_runs_everything`) the module stops before
+    it imports the inliner, and both names are missing, so nothing has
+    patched it."""
+    module = globals()
+    return module.get("inline_functions") is module.get("_INLINER")
+
+
+def _cpp_compile(
+    source: str, pcpp_args, filename: str | None, optimize: bool,
+    link_metadata: bool = False, *, preprocess: bool = True,
+    emit: bool = True,
+):
+    """The `-S` text of the C source `source` under
+    `C6502_CPP_BACKEND=1`, compiled from the text to the end in one
+    call of `c6502cpp backend` (cpp_backend.py): `preprocess` with
+    `pcpp_args` and `filename`, the passes of `_resolved`, the type
+    checker, and code generation. Without `preprocess`, `source` is the
+    preprocessor's output already, as `_run_stage` is given it. The
+    preprocessor's warnings are issued to the caller's
+    `diagnostics.collecting()` block, and what it writes to stderr is
+    written to `sys.stderr`. Without `emit`, the call stops where
+    `optimized_asm` (or the simulator harness's unoptimized path) does
+    and returns the finished asm program and its slot symbols, which
+    the simulator harness assembles."""
+    import cpp_backend
+    return cpp_backend.compile_source(
+        source, pcpp_args, filename, optimize=optimize,
+        preprocess=preprocess, inline=_inlining(),
+        link_metadata=link_metadata, emit=emit,
+    )
+
+
+def _source_errors() -> tuple[type[Exception], ...]:
+    """The exception types that report a problem with the program being
+    compiled, such as a misused attribute or a frame that's too large.
+    `main` prints these as one-line errors. Anything else is a bug in
+    the compiler and keeps its traceback. The parser raises
+    NotImplementedError for a construct c6502 doesn't take, such as a
+    variable-length array or a K&R parameter list, and no other module
+    of the compiler raises it."""
+    from lark.exceptions import LarkError
+    from lexer import LexError
+    from parser import ParserError
+    from preprocessor import PreprocessorError
+    from passes.abi_selection import AbiSelectionError
+    from passes.asm_to_asm2 import FrameSizeError
+    from passes.constant_expression import ConstantExpressionError
+    from passes.identifier_resolution import IdentifierResolutionError
+    from passes.label_resolution import LabelResolutionError
+    from passes.loop_labeling import LoopLabelingError
+    from passes.optimization_asm.regalloc import RegallocError
+    from passes.optimization_ast.unroll import UnrollError
+    from passes.recursion_saves import RecursionSaveError
+    from passes.type_checking import TypeCheckError
+    from passes.zp_local_allocation import ZpLocalAllocationError
+    from passes.zp_slot_allocation import ZpSlotAllocationError
+    return (
+        LexError, ParserError, PreprocessorError, LarkError,
+        IdentifierResolutionError, LabelResolutionError,
+        LoopLabelingError, UnrollError, ConstantExpressionError,
+        TypeCheckError, AbiSelectionError, RegallocError,
+        ZpSlotAllocationError, ZpLocalAllocationError, FrameSizeError,
+        RecursionSaveError, NotImplementedError,
+    )
+
+
+def _rewrite_ttext(argv: list[str]) -> list[str]:
+    """`argv` with GNU ld's `-Ttext=ADDR` and `-Ttext ADDR` spelled
+    `--origin ADDR`, since argparse would read them as `-T` with the
+    value `text=ADDR`."""
+    out: list[str] = []
+    it = iter(argv)
+    for a in it:
+        if a.startswith("-Ttext="):
+            out += ["--origin", a[len("-Ttext="):]]
+        elif a == "-Ttext":
+            out += ["--origin", next(it, "")]
+        else:
+            out.append(a)
+    return out
+
+
+def _number(text: str) -> int:
+    """`text` as a number: decimal, `0x` hex, or `$` hex."""
+    t = text.strip()
+    if t.startswith("$"):
+        return int(t[1:], 16)
+    return int(t, 0)
+
+
+def _kind(path: str) -> str:
+    """The kind of an input from its suffix: "object" for `.o`, "asm"
+    for `.asm` or `.s`, and "c" for anything else."""
+    lower = path.lower()
+    if lower.endswith(".o"):
+        return "object"
+    if lower.endswith((".asm", ".s")):
+        return "asm"
+    return "c"
+
+
+def _stem(path: str) -> str:
+    """The input's file name without its directory or suffix, as gcc
+    names its outputs (`src/zstring.c` gives `zstring`)."""
+    from pathlib import Path
+    return "stdin" if path == "-" else Path(path).stem
+
+
+def _read_source(path: str) -> tuple[str, str | None]:
+    if path == "-":
+        return sys.stdin.read(), None
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read(), path
+
+
+def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
+               link_metadata: bool = False) -> str:
+    """The output of `stage` for the C source at `path`. Prints the
+    warnings the compile issued to stderr, before any error it raises,
+    as gcc does. Under `C6502_CPP_BACKEND=1` the C++ port compiles the
+    source for `-S`, `-c`, and a link, and Python runs no part of the
+    front end."""
+    source, filename = _read_source(path)
+    with diagnostics.collecting() as found:
+        try:
+            if stage == "codegen" and _cpp_backend():
+                return _cpp_compile(
+                    source, pcpp_args, filename, optimize,
+                    link_metadata=link_metadata,
+                )
+            return _run_stage(
+                stage, preprocess(source, pcpp_args, filename),
+                optimize=optimize, link_metadata=link_metadata,
+            )
+        finally:
+            _print_warnings(path, found)
+
+
+def _print_warnings(path: str, found) -> None:
+    """Prints each warning in `found` (diagnostics.CompileWarning) to
+    stderr as `<file>: warning: line N: <message>`, the form `_report`
+    gives an error."""
+    where = "<stdin>" if path == "-" else path
+    for w in found:
+        print(f"{where}: warning: {w}", file=sys.stderr)
+
+
+def _object(path: str, pcpp_args, optimize: bool):
+    """The relocatable object for the input at `path`: a C source
+    compiled and assembled, an assembly file assembled, or an object
+    read. Its file symbol names the input."""
+    from pathlib import Path
+    from binutils import elf as E
+    from binutils.assembler import assemble
+    kind = _kind(path)
+    if kind == "object":
+        return E.read_file(path)
+    if kind == "asm":
+        return assemble(Path(path).read_text(encoding="utf-8"),
+                        Path(path).name)
+    text = _compile_c(path, pcpp_args, "codegen", optimize,
+                      link_metadata=True)
+    return assemble(text, f"{_stem(path)}.c")
+
+
+def _input_errors() -> tuple[type[Exception], ...]:
+    """The exceptions that report a problem with an input: a source
+    error (`_source_errors`), an assembly error, or an unreadable
+    object."""
+    from binutils.assembler import AssemblerError
+    from binutils.elf import ElfError
+    return (*_source_errors(), AssemblerError, ElfError)
+
+
+def _report(path: str, e: Exception) -> None:
+    where = "<stdin>" if path == "-" else path
+    print(f"{where}: error: {e}", file=sys.stderr)
+
+
+def _parse_args(argv: list[str]):
+    """Reads compile.py's command line `argv`, with the program's name
+    first, and returns its arguments and the ones left for the
+    preprocessor."""
+    ap = argparse.ArgumentParser(
+        prog="compile.py",
+        description="Compile C for the 6502, assemble, and link.",
+    )
+    ap.add_argument(
+        "inputs", nargs="+",
+        help="C sources (- for stdin), .asm files, and .o objects",
+    )
+    ap.add_argument("-o", dest="output",
+                    help="output file, or - for stdout")
+    stages = ap.add_mutually_exclusive_group()
+    stages.add_argument("--lex", dest="stage", action="store_const",
+                        const="lex", help="stop after tokenization")
+    stages.add_argument("--parse", dest="stage", action="store_const",
+                        const="parse", help="stop after parsing")
+    stages.add_argument("--resolve", dest="stage", action="store_const",
+                        const="resolve",
+                        help="stop after variable + label resolution + "
+                             "loop labeling")
+    stages.add_argument("--tac", dest="stage", action="store_const",
+                        const="tac", help="stop after TAC translation")
+    stages.add_argument("-S", dest="stage", action="store_const",
+                        const="codegen", help="emit 6502 assembly")
+    stages.add_argument("-c", dest="stage", action="store_const",
+                        const="object",
+                        help="compile or assemble to an object; don't link")
+    ap.add_argument(
+        "-O", dest="optimize", action="store_true",
+        help="run the optimizer pipeline: TAC-level fixed-point opts "
+             "(constant folding, strength reduction, comparison-"
+             "against-zero / jump fold, UCE, copy propagation, dead-"
+             "store elimination), then asm-level SSA round-trip "
+             "(byte-granular forward + backward copy-prop, byte-DCE, "
+             "byte-granular regalloc), then late prologue / epilogue "
+             "synthesis. Also enables AST-level loop unrolling for "
+             "`[[c6502::unroll]]` loops and the "
+             "`[[c6502::zp_abi]]` calling-convention "
+             "optimization. Applies to --resolve, --tac, -S, and -c, "
+             "and to C sources given to a link.",
+    )
+    ap.add_argument(
+        "-T", dest="script", default=None,
+        help="linker script (a GNU ld subset; passes/link_script.py) "
+             "that places each section at an address",
+    )
+    ap.add_argument(
+        "--origin", type=_number, default=None, metavar="ADDR",
+        help="where .text starts in a link without a script "
+             "(default $0800; -Ttext=ADDR also sets it)",
+    )
+    ap.add_argument(
+        "--defsym", action="append", default=[], metavar="NAME=VALUE",
+        help="define NAME as the address VALUE when linking",
+    )
+    return ap.parse_known_args(_rewrite_ttext(argv)[1:])
+
+
+def main(argv: list[str]) -> int:
+    """Compiles, assembles, and links, as gcc does.
+
+    With `-c`, each input (C or assembly) becomes an object, by default
+    `<stem>.o` in the current directory. With `-S`, each C input
+    becomes assembly, by default `<stem>.s` in the current directory,
+    or stdout for stdin; `-o` names a `.s` or `.asm` file, or `-` for
+    stdout. With `--lex`, `--parse`, `--resolve`, or `--tac`, each C
+    input stops at that stage, written to stdout unless `-o` names a
+    file. With none of these, every input (C, assembly, or
+    object) becomes an object, and the objects are linked into an
+    executable, by default `a.out`."""
+    args, pcpp_args = _parse_args(argv)
+    stage = args.stage
+    inputs = args.inputs
+
+    if stage in ("lex", "parse", "resolve", "tac", "codegen"):
+        not_c = [p for p in inputs if _kind(p) != "c"]
+        if not_c:
+            print(f"compile.py: {not_c[0]} isn't a C source", file=sys.stderr)
+            return 2
+        if args.output is not None and len(inputs) > 1:
+            print("compile.py: -o with more than one input", file=sys.stderr)
+            return 2
+        if (stage == "codegen" and args.output not in (None, "-")
+                and not args.output.endswith((".s", ".asm"))):
+            print(
+                f"compile.py: -S output must have a .s or .asm suffix: "
+                f"{args.output}",
+                file=sys.stderr,
+            )
+            return 2
+        for path in inputs:
+            try:
+                text = _compile_c(path, pcpp_args, stage, args.optimize)
+            except _source_errors() as e:
+                _report(path, e)
+                return 1
+            output = args.output
+            if output is None and stage == "codegen" and path != "-":
+                # As gcc does: `src/x.c` gives `x.s`.
+                output = f"{_stem(path)}.s"
+            if output is not None and output != "-":
+                # LF on every platform, so `-o` regenerates the checked-in
+                # examples/*.asm byte-for-byte on Windows too.
+                with open(output, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(text)
+            else:
+                sys.stdout.write(text)
+        return 0
+
+    from binutils import elf as E
+    if stage == "object":
+        if args.output is not None and len(inputs) > 1:
+            print("compile.py: -o with -c and more than one input",
+                  file=sys.stderr)
+            return 2
+        if "-" in inputs and args.output is None:
+            print("compile.py: -c on stdin needs -o", file=sys.stderr)
+            return 2
+        for path in inputs:
+            if _kind(path) == "object":
+                print(f"compile.py: {path} is already an object",
+                      file=sys.stderr)
+                return 2
+            try:
+                obj = _object(path, pcpp_args, args.optimize)
+            except _input_errors() as e:
+                _report(path, e)
+                return 1
+            output = args.output or f"{_stem(path)}.o"
+            with open(output, "wb") as f:
+                f.write(E.write(obj))
+        return 0
+
+    # Link.
+    from passes.linker import (
+        DEFAULT_ORIGIN, LinkError, ZpLocalAllocationError,
+        ZpSlotAllocationError, link_objects, read_script,
+    )
+    defsyms: dict[str, int] = {}
+    for d in args.defsym:
+        name, sep, value = d.partition("=")
+        try:
+            defsyms[name] = _number(value)
+        except ValueError:
+            sep = ""
+        if not sep or not name:
+            print(f"compile.py: --defsym takes NAME=VALUE: {d}",
+                  file=sys.stderr)
+            return 2
+    objects = []
+    for path in inputs:
+        try:
+            obj = _object(path, pcpp_args, args.optimize)
+        except _input_errors() as e:
+            _report(path, e)
+            return 1
+        name = path if _kind(path) == "object" else f"{_stem(path)}.o"
+        objects.append((name, obj))
+    try:
+        script = read_script(args.script) if args.script else None
+        exe = link_objects(
+            objects, script,
+            origin=DEFAULT_ORIGIN if args.origin is None else args.origin,
+            defsyms=defsyms,
+        )
+    except (LinkError, ZpSlotAllocationError, ZpLocalAllocationError) as e:
+        print(f"compile.py: link error: {e}", file=sys.stderr)
+        return 1
+    with open(args.output or "a.out", "wb") as f:
+        f.write(E.write(exe))
+    return 0
+
+
+def _cpp_runs_everything(argv: list[str]) -> bool:
+    """Whether a run of the command line `argv` calls no part of the
+    Python pipeline: under `C6502_CPP_BACKEND=1`, `-S`, `-c`, and a
+    link, whose C inputs the C++ port compiles from the source text.
+    `--lex`, `--parse`, `--resolve`, and `--tac` stay in Python."""
+    if not _cpp_backend():
+        return False
+    args, _ = _parse_args(argv)
+    return args.stage in (None, "codegen", "object")
+
+
+# Run as a script with a stage the C++ port takes from the source text,
+# compile.py stops here, before it imports the Python pipeline, which
+# would take about half a second and which nothing on that path calls.
+# Every other use of the module goes on to define the pipeline below.
+if __name__ == "__main__" and _cpp_runs_everything(sys.argv):
+    raise SystemExit(main(sys.argv))
+
+
+import asm_ast
 from asm_emit import emit_program
 from tac_to_asm import translate_program as translate_to_asm
 from lexer import tokenize
@@ -562,13 +952,15 @@ def _run_stage(
             tac = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":
+        if _cpp_backend():
+            # `source` is the preprocessor's output already.
+            return _cpp_compile(
+                source, [], None, optimize, link_metadata=link_metadata,
+                preprocess=False,
+            )
         prog, symbols, types = type_check_program(
             _resolved(source, optimize=optimize),
         )
-        if _cpp_backend():
-            return _cpp_codegen(
-                prog, symbols, types, optimize, link_metadata=link_metadata,
-            )
         tac = translate_for_codegen(prog, symbols, types, optimize)
         zp = plan_zero_page(tac, symbols, types, promote=optimize)
         with zero_page_in_effect(zp):
@@ -879,8 +1271,8 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     so the simulator runs the code the CLI emits. `statics` names
     every static-storage object, and `zp` is the translation unit's
     zero-page plan (passes/zp_globals.py), which must be in effect.
-    Under `C6502_CPP_BACKEND=1`, neither calls it, and everything after
-    the type checker runs in C++ (`_cpp_codegen`)."""
+    Under `C6502_CPP_BACKEND=1`, neither calls it, and the whole compile
+    runs in C++ (`_cpp_compile`)."""
     front = _optimized_front(prog, symbols, types, zp, tac, statics)
     asm2, all_slot_symbols = front.asm, front.slot_symbols
     abi, shares, noreturn = front.abi, front.shares, front.noreturn
@@ -1020,23 +1412,6 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     )
 
 
-def _cpp_backend() -> bool:
-    """Whether `C6502_CPP_BACKEND=1` hands everything after the type
-    checker, from `c99_to_tac` to the `-S` text, to the C++ port
-    (cpp_backend.py). The variable is read at each call, so a process
-    can set it before compiling."""
-    return os.environ.get("C6502_CPP_BACKEND") == "1"
-
-
-def _inlining() -> bool:
-    """Whether `-O` inlines the calls of small `static` functions. A
-    test that checks a function's own code turns that off by patching
-    `compile.inline_functions`, which `translate_for_codegen` calls
-    (tests/no_inlining.py), and the request to the C++ port carries the
-    choice, since the C++ side runs its own inliner."""
-    return inline_functions is _INLINER
-
-
 def _static_names(symbols) -> frozenset[str]:
     """Every static-storage object in `symbols`, which
     `replace_pseudoregisters` and the asm optimizer take as
@@ -1045,26 +1420,6 @@ def _static_names(symbols) -> frozenset[str]:
     return frozenset(
         name for name, sym in symbols.items()
         if isinstance(sym.attrs, StaticAttr)
-    )
-
-
-def _cpp_codegen(
-    prog, symbols, types, optimize: bool, link_metadata: bool = False,
-    *, emit: bool = True,
-):
-    """The `-S` text of `_codegen` under `C6502_CPP_BACKEND=1`, from the
-    type-checked program `prog` and the tables `symbols` and `types`.
-    Everything after the type checker, `translate_for_codegen`, under
-    `-O` `_optimized_tac`, and code generation through the text, runs in
-    one call of `c6502cpp backend` (cpp_backend.py), which leaves the
-    tables as the type checker built them. Without `emit`, the call
-    stops where `optimized_asm` (or the simulator harness's unoptimized
-    path) does and returns the finished asm program and its slot
-    symbols, which the simulator harness assembles."""
-    import cpp_backend
-    return cpp_backend.codegen(
-        prog, symbols, types, optimize=optimize, inline=_inlining(),
-        link_metadata=link_metadata, emit=emit,
     )
 
 
@@ -1219,315 +1574,6 @@ def _extern_records(fixed_abi) -> list:
         )
         for name, layout in sorted(fixed_abi.items())
     ]
-
-
-def _source_errors() -> tuple[type[Exception], ...]:
-    """The exception types that report a problem with the program being
-    compiled, such as a misused attribute or a frame that's too large.
-    `main` prints these as one-line errors. Anything else is a bug in
-    the compiler and keeps its traceback. The parser raises
-    NotImplementedError for a construct c6502 doesn't take, such as a
-    variable-length array or a K&R parameter list, and no other module
-    of the compiler raises it."""
-    from lark.exceptions import LarkError
-    from lexer import LexError
-    from parser import ParserError
-    from preprocessor import PreprocessorError
-    from passes.abi_selection import AbiSelectionError
-    from passes.asm_to_asm2 import FrameSizeError
-    from passes.constant_expression import ConstantExpressionError
-    from passes.identifier_resolution import IdentifierResolutionError
-    from passes.label_resolution import LabelResolutionError
-    from passes.loop_labeling import LoopLabelingError
-    from passes.optimization_asm.regalloc import RegallocError
-    from passes.optimization_ast.unroll import UnrollError
-    from passes.recursion_saves import RecursionSaveError
-    from passes.type_checking import TypeCheckError
-    from passes.zp_local_allocation import ZpLocalAllocationError
-    from passes.zp_slot_allocation import ZpSlotAllocationError
-    return (
-        LexError, ParserError, PreprocessorError, LarkError,
-        IdentifierResolutionError, LabelResolutionError,
-        LoopLabelingError, UnrollError, ConstantExpressionError,
-        TypeCheckError, AbiSelectionError, RegallocError,
-        ZpSlotAllocationError, ZpLocalAllocationError, FrameSizeError,
-        RecursionSaveError, NotImplementedError,
-    )
-
-
-def _rewrite_ttext(argv: list[str]) -> list[str]:
-    """`argv` with GNU ld's `-Ttext=ADDR` and `-Ttext ADDR` spelled
-    `--origin ADDR`, since argparse would read them as `-T` with the
-    value `text=ADDR`."""
-    out: list[str] = []
-    it = iter(argv)
-    for a in it:
-        if a.startswith("-Ttext="):
-            out += ["--origin", a[len("-Ttext="):]]
-        elif a == "-Ttext":
-            out += ["--origin", next(it, "")]
-        else:
-            out.append(a)
-    return out
-
-
-def _number(text: str) -> int:
-    """`text` as a number: decimal, `0x` hex, or `$` hex."""
-    t = text.strip()
-    if t.startswith("$"):
-        return int(t[1:], 16)
-    return int(t, 0)
-
-
-def _kind(path: str) -> str:
-    """The kind of an input from its suffix: "object" for `.o`, "asm"
-    for `.asm` or `.s`, and "c" for anything else."""
-    lower = path.lower()
-    if lower.endswith(".o"):
-        return "object"
-    if lower.endswith((".asm", ".s")):
-        return "asm"
-    return "c"
-
-
-def _stem(path: str) -> str:
-    """The input's file name without its directory or suffix, as gcc
-    names its outputs (`src/zstring.c` gives `zstring`)."""
-    from pathlib import Path
-    return "stdin" if path == "-" else Path(path).stem
-
-
-def _read_source(path: str) -> tuple[str, str | None]:
-    if path == "-":
-        return sys.stdin.read(), None
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read(), path
-
-
-def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
-               link_metadata: bool = False) -> str:
-    """The output of `stage` for the C source at `path`. Prints the
-    warnings the compile issued to stderr, before any error it raises,
-    as gcc does."""
-    source, filename = _read_source(path)
-    with diagnostics.collecting() as found:
-        try:
-            return _run_stage(
-                stage, preprocess(source, pcpp_args, filename),
-                optimize=optimize, link_metadata=link_metadata,
-            )
-        finally:
-            _print_warnings(path, found)
-
-
-def _print_warnings(path: str, found) -> None:
-    """Prints each warning in `found` (diagnostics.CompileWarning) to
-    stderr as `<file>: warning: line N: <message>`, the form `_report`
-    gives an error."""
-    where = "<stdin>" if path == "-" else path
-    for w in found:
-        print(f"{where}: warning: {w}", file=sys.stderr)
-
-
-def _object(path: str, pcpp_args, optimize: bool):
-    """The relocatable object for the input at `path`: a C source
-    compiled and assembled, an assembly file assembled, or an object
-    read. Its file symbol names the input."""
-    from pathlib import Path
-    from binutils import elf as E
-    from binutils.assembler import assemble
-    kind = _kind(path)
-    if kind == "object":
-        return E.read_file(path)
-    if kind == "asm":
-        return assemble(Path(path).read_text(encoding="utf-8"),
-                        Path(path).name)
-    text = _compile_c(path, pcpp_args, "codegen", optimize,
-                      link_metadata=True)
-    return assemble(text, f"{_stem(path)}.c")
-
-
-def _input_errors() -> tuple[type[Exception], ...]:
-    """The exceptions that report a problem with an input: a source
-    error (`_source_errors`), an assembly error, or an unreadable
-    object."""
-    from binutils.assembler import AssemblerError
-    from binutils.elf import ElfError
-    return (*_source_errors(), AssemblerError, ElfError)
-
-
-def _report(path: str, e: Exception) -> None:
-    where = "<stdin>" if path == "-" else path
-    print(f"{where}: error: {e}", file=sys.stderr)
-
-
-def main(argv: list[str]) -> int:
-    """Compiles, assembles, and links, as gcc does.
-
-    With `-c`, each input (C or assembly) becomes an object, by default
-    `<stem>.o` in the current directory. With `-S`, each C input
-    becomes assembly, by default `<stem>.s` in the current directory,
-    or stdout for stdin; `-o` names a `.s` or `.asm` file, or `-` for
-    stdout. With `--lex`, `--parse`, `--resolve`, or `--tac`, each C
-    input stops at that stage, written to stdout unless `-o` names a
-    file. With none of these, every input (C, assembly, or
-    object) becomes an object, and the objects are linked into an
-    executable, by default `a.out`."""
-    ap = argparse.ArgumentParser(
-        prog="compile.py",
-        description="Compile C for the 6502, assemble, and link.",
-    )
-    ap.add_argument(
-        "inputs", nargs="+",
-        help="C sources (- for stdin), .asm files, and .o objects",
-    )
-    ap.add_argument("-o", dest="output",
-                    help="output file, or - for stdout")
-    stages = ap.add_mutually_exclusive_group()
-    stages.add_argument("--lex", dest="stage", action="store_const",
-                        const="lex", help="stop after tokenization")
-    stages.add_argument("--parse", dest="stage", action="store_const",
-                        const="parse", help="stop after parsing")
-    stages.add_argument("--resolve", dest="stage", action="store_const",
-                        const="resolve",
-                        help="stop after variable + label resolution + "
-                             "loop labeling")
-    stages.add_argument("--tac", dest="stage", action="store_const",
-                        const="tac", help="stop after TAC translation")
-    stages.add_argument("-S", dest="stage", action="store_const",
-                        const="codegen", help="emit 6502 assembly")
-    stages.add_argument("-c", dest="stage", action="store_const",
-                        const="object",
-                        help="compile or assemble to an object; don't link")
-    ap.add_argument(
-        "-O", dest="optimize", action="store_true",
-        help="run the optimizer pipeline: TAC-level fixed-point opts "
-             "(constant folding, strength reduction, comparison-"
-             "against-zero / jump fold, UCE, copy propagation, dead-"
-             "store elimination), then asm-level SSA round-trip "
-             "(byte-granular forward + backward copy-prop, byte-DCE, "
-             "byte-granular regalloc), then late prologue / epilogue "
-             "synthesis. Also enables AST-level loop unrolling for "
-             "`[[c6502::unroll]]` loops and the "
-             "`[[c6502::zp_abi]]` calling-convention "
-             "optimization. Applies to --resolve, --tac, -S, and -c, "
-             "and to C sources given to a link.",
-    )
-    ap.add_argument(
-        "-T", dest="script", default=None,
-        help="linker script (a GNU ld subset; passes/link_script.py) "
-             "that places each section at an address",
-    )
-    ap.add_argument(
-        "--origin", type=_number, default=None, metavar="ADDR",
-        help="where .text starts in a link without a script "
-             "(default $0800; -Ttext=ADDR also sets it)",
-    )
-    ap.add_argument(
-        "--defsym", action="append", default=[], metavar="NAME=VALUE",
-        help="define NAME as the address VALUE when linking",
-    )
-    args, pcpp_args = ap.parse_known_args(_rewrite_ttext(argv)[1:])
-    stage = args.stage
-    inputs = args.inputs
-
-    if stage in ("lex", "parse", "resolve", "tac", "codegen"):
-        not_c = [p for p in inputs if _kind(p) != "c"]
-        if not_c:
-            print(f"compile.py: {not_c[0]} isn't a C source", file=sys.stderr)
-            return 2
-        if args.output is not None and len(inputs) > 1:
-            print("compile.py: -o with more than one input", file=sys.stderr)
-            return 2
-        if (stage == "codegen" and args.output not in (None, "-")
-                and not args.output.endswith((".s", ".asm"))):
-            print(
-                f"compile.py: -S output must have a .s or .asm suffix: "
-                f"{args.output}",
-                file=sys.stderr,
-            )
-            return 2
-        for path in inputs:
-            try:
-                text = _compile_c(path, pcpp_args, stage, args.optimize)
-            except _source_errors() as e:
-                _report(path, e)
-                return 1
-            output = args.output
-            if output is None and stage == "codegen" and path != "-":
-                # As gcc does: `src/x.c` gives `x.s`.
-                output = f"{_stem(path)}.s"
-            if output is not None and output != "-":
-                # LF on every platform, so `-o` regenerates the checked-in
-                # examples/*.asm byte-for-byte on Windows too.
-                with open(output, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(text)
-            else:
-                sys.stdout.write(text)
-        return 0
-
-    from binutils import elf as E
-    if stage == "object":
-        if args.output is not None and len(inputs) > 1:
-            print("compile.py: -o with -c and more than one input",
-                  file=sys.stderr)
-            return 2
-        if "-" in inputs and args.output is None:
-            print("compile.py: -c on stdin needs -o", file=sys.stderr)
-            return 2
-        for path in inputs:
-            if _kind(path) == "object":
-                print(f"compile.py: {path} is already an object",
-                      file=sys.stderr)
-                return 2
-            try:
-                obj = _object(path, pcpp_args, args.optimize)
-            except _input_errors() as e:
-                _report(path, e)
-                return 1
-            output = args.output or f"{_stem(path)}.o"
-            with open(output, "wb") as f:
-                f.write(E.write(obj))
-        return 0
-
-    # Link.
-    from passes.linker import (
-        DEFAULT_ORIGIN, LinkError, ZpLocalAllocationError,
-        ZpSlotAllocationError, link_objects, read_script,
-    )
-    defsyms: dict[str, int] = {}
-    for d in args.defsym:
-        name, sep, value = d.partition("=")
-        try:
-            defsyms[name] = _number(value)
-        except ValueError:
-            sep = ""
-        if not sep or not name:
-            print(f"compile.py: --defsym takes NAME=VALUE: {d}",
-                  file=sys.stderr)
-            return 2
-    objects = []
-    for path in inputs:
-        try:
-            obj = _object(path, pcpp_args, args.optimize)
-        except _input_errors() as e:
-            _report(path, e)
-            return 1
-        name = path if _kind(path) == "object" else f"{_stem(path)}.o"
-        objects.append((name, obj))
-    try:
-        script = read_script(args.script) if args.script else None
-        exe = link_objects(
-            objects, script,
-            origin=DEFAULT_ORIGIN if args.origin is None else args.origin,
-            defsyms=defsyms,
-        )
-    except (LinkError, ZpSlotAllocationError, ZpLocalAllocationError) as e:
-        print(f"compile.py: link error: {e}", file=sys.stderr)
-        return 1
-    with open(args.output or "a.out", "wb") as f:
-        f.write(E.write(exe))
-    return 0
 
 
 if __name__ == "__main__":

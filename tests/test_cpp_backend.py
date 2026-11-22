@@ -1,8 +1,9 @@
-"""Tests of `C6502_CPP_BACKEND=1`, which runs everything after the type
-checker, from `c99_to_tac` to the `-S` text, in the C++ port
-(cpp_backend.py).
+"""Tests of `C6502_CPP_BACKEND=1`, which compiles a C source in the C++
+port (cpp_backend.py), from the preprocessor to the `-S` text.
 tools/compare_backends.py compares the two compilers on the whole
-corpus, and these check the plumbing."""
+corpus, and these check the plumbing: the warnings, what the
+preprocessor writes to stderr, the errors of each class, stdin, the
+preprocessor's flags, and the modules Python imports."""
 from __future__ import annotations
 
 import contextlib
@@ -105,7 +106,7 @@ class TestWithTheVariable(unittest.TestCase):
                                 os.environ["C6502_CPP_BACKEND"] = "1"
                             if not inlining:
                                 stack.enter_context(no_inlining())
-                            prog, _, _, slots = compile_to_asm(
+                            prog, slots = compile_to_asm(
                                 source, optimize=optimize,
                             )
                         got.append((ir_dump.dump(prog), slots))
@@ -204,6 +205,211 @@ class TestWithTheVariable(unittest.TestCase):
                 )
             counts.append(int(done.stdout))
         self.assertEqual(counts, [0, 6])
+
+
+def _run(args: list[str], cpp: bool, *, stdin: str | None = None,
+         files: dict[str, str] | None = None) -> tuple:
+    """Runs `compile.py <args>` in a new directory holding `files`, with
+    the C++ port on or off, and returns its exit status, stdout, stderr,
+    and the bytes of `out.s` there (None when it wasn't written)."""
+    env = dict(os.environ)
+    env.pop("C6502_CPP_BACKEND", None)
+    if cpp:
+        env["C6502_CPP_BACKEND"] = "1"
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, text in (files or {}).items():
+            path = Path(tmp) / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8", newline="\n")
+        done = subprocess.run(
+            [sys.executable, str(_ROOT / "compile.py"), *args],
+            cwd=tmp, env=env, input=stdin, capture_output=True, text=True,
+        )
+        out = Path(tmp) / "out.s"
+        text = out.read_bytes() if out.exists() else None
+    return done.returncode, done.stdout, done.stderr, text
+
+
+# A program for each class of error that `compile._source_errors` lists
+# and a compile can raise, with the flags that reach it. ConstantExpressionError
+# isn't among them, since every caller of the evaluator catches it and
+# raises an error of its own, and the zero-page allocators' errors are
+# checks of what `select_abi` already ensures.
+_ERRORS = {
+    "LexError": ("int x = 1'';\n", []),
+    "ParserError": ("long double x;\n", []),
+    "PreprocessorError": ("#pragma c6502 zp_abi\nint x;\n", []),
+    "UnexpectedToken": ("int f( {\n", []),
+    "UnexpectedCharacters": ("int x = 1 ` 2;\n", []),
+    "IdentifierResolutionError": ("int main(void) { return y; }\n", []),
+    "LabelResolutionError": ("int main(void) { goto l; }\n", []),
+    "LoopLabelingError": ("int main(void) { break; }\n", []),
+    "UnrollError": (
+        "int main(void) { int s = 0; int n = 3;\n"
+        "[[c6502::unroll]] for (int i = 0; i < n; i++) s++; return s; }\n",
+        ["-O"],
+    ),
+    "TypeCheckError": ("int main(void) { int x; return x(); }\n", []),
+    "AbiSelectionError": (
+        "[[c6502::zp_abi]] int f(int n) { return n ? f(n - 1) : 0; }\n"
+        "int main(void) { return f(3); }\n",
+        ["-O"],
+    ),
+    "RegallocError": (
+        "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
+        "void put(register unsigned char c);\n"
+        "unsigned char buf[8] = {1, 2, 3, 4, 5, 6, 7, 8};\n"
+        "unsigned char n = 8;\n"
+        "void send(void) {\n"
+        "    register unsigned char i;\n"
+        "    for (i = 0; i < n; i++) put(buf[i]);\n"
+        "}\n"
+        "int main(void) { send(); return 0; }\n",
+        ["-O"],
+    ),
+    "RecursionSaveError": (
+        "int g(void) { return 1; }\n"
+        "int main(void) { [[c6502::save_hardware_stack]] return g(); }\n",
+        [],
+    ),
+    "NotImplementedError": ("void f(int n) { int a[n]; }\n", []),
+}
+
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestTheFrontEnd(unittest.TestCase):
+    """compile.py hands C++ the source text, and gives what Python's
+    front end gives: the text, the messages, and the exit status."""
+
+    def _same(self, args, **kw) -> tuple:
+        cpp = _run(args, True, **kw)
+        self.assertEqual(cpp, _run(args, False, **kw))
+        return cpp
+
+    def test_a_warning(self):
+        status, _, err, text = self._same(
+            ["a.c", "-S", "-o", "out.s"],
+            files={"a.c": "_Bool b;\nint main(void) { return b; }\n"},
+        )
+        self.assertEqual(status, 0)
+        self.assertIn("a.c: warning: line 1: ", err)
+        self.assertIsNotNone(text)
+
+    def test_a_warning_comes_before_the_error(self):
+        status, _, err, _ = self._same(
+            ["a.c", "-S", "-o", "out.s"],
+            files={"a.c": "_Bool b;\nint main(void) { return c; }\n"},
+        )
+        self.assertEqual(status, 1)
+        self.assertRegex(err, r"(?s)a\.c: warning: .*a\.c: error: ")
+
+    def test_what_pcpp_writes_to_stderr(self):
+        # pcpp reports an `#if` it can't evaluate on stderr and goes on,
+        # and it leaves an include it can't find in its output, where the
+        # parser rejects it after pcpp's message.
+        status, _, err, text = self._same(
+            ["a.c", "-S", "-o", "out.s"],
+            files={"a.c": "#if 1 +\n#endif\nint main(void) { return 0; }\n"},
+        )
+        self.assertIn("error: Could not evaluate expression", err)
+        self.assertEqual(status, 0)
+        self.assertIsNotNone(text)
+        status, _, err, _ = self._same(
+            ["a.c", "-S", "-o", "out.s"],
+            files={"a.c": '#include "missing.h"\nint main(void) { return 0; }\n'},
+        )
+        self.assertEqual(status, 1)
+        self.assertRegex(err, r"(?s)'missing\.h' not found.*a\.c: error: ")
+
+    def test_an_error_of_each_class(self):
+        for name, (source, flags) in _ERRORS.items():
+            with self.subTest(error=name):
+                status, out, err, text = self._same(
+                    ["a.c", "-S", "-o", "out.s", *flags],
+                    files={"a.c": source},
+                )
+                self.assertEqual(status, 1)
+                self.assertTrue(err.startswith("a.c: error: "), err)
+                self.assertIsNone(text)
+
+    def test_each_error_is_python_s_class(self):
+        # A test that calls `_run_stage` checks the class of what the
+        # front end raises, as the chapter harnesses do.
+        import compile
+        from preprocessor import preprocess
+        for name, (source, flags) in _ERRORS.items():
+            with self.subTest(error=name):
+                raised = []
+                for cpp in (False, True):
+                    with mock.patch.dict(os.environ):
+                        os.environ.pop("C6502_CPP_BACKEND", None)
+                        if cpp:
+                            os.environ["C6502_CPP_BACKEND"] = "1"
+                        with self.assertRaises(Exception) as cm:
+                            compile._run_stage(
+                                "codegen", preprocess(source, []),
+                                optimize="-O" in flags,
+                            )
+                    raised.append(cm.exception)
+                python, cpp = raised
+                self.assertEqual(type(python).__name__, name)
+                self.assertIsInstance(cpp, type(python))
+                self.assertEqual(str(cpp), str(python))
+
+    def test_stdin(self):
+        status, out, err, _ = self._same(
+            ["-", "-S", "-O", "-o", "-"],
+            stdin="_Bool b;\nint main(void) { return b + 1; }\n",
+        )
+        self.assertEqual(status, 0)
+        self.assertIn("<stdin>: warning: ", err)
+        self.assertIn("RTS", out)
+
+    def test_include_path_and_define(self):
+        files = {
+            "src/a.c": '#include "h.h"\nint main(void) { return V + W; }\n',
+            "inc/h.h": "#define V 7\n",
+        }
+        status, _, _, text = self._same(
+            ["src/a.c", "-S", "-O", "-o", "out.s", "-I", "inc", "-DW=2"],
+            files=files,
+        )
+        self.assertEqual(status, 0)
+        self.assertIn(b"#$09", text)
+
+    def test_compile_imports_no_front_end(self):
+        # Run as a script with the variable set, compile.py stops before
+        # it imports the Python pipeline, which the front end's modules
+        # are part of. The IR checks are off, since passes/ir_check.py
+        # reads helpers of the asm optimizer, which import the type
+        # checker.
+        code = (
+            "import runpy, sys\n"
+            "sys.argv = ['compile.py', 'examples/sfx_tone.c', '-S', '-O',"
+            " '-o', sys.argv[1]]\n"
+            "try:\n"
+            "    runpy.run_path('compile.py', run_name='__main__')\n"
+            "except SystemExit as e:\n"
+            "    assert not e.code, e.code\n"
+            "front = ('parser', 'lexer', 'lark', 'pcpp', 'preprocessor',\n"
+            "         'passes.type_checking', 'passes.identifier_resolution',\n"
+            "         'passes.string_lifting', 'passes.label_resolution',\n"
+            "         'passes.loop_labeling', 'passes.optimization_ast',\n"
+            "         'tac_to_asm', 'c99_to_tac')\n"
+            "print(sorted(m for m in sys.modules\n"
+            "             if m.split('.')[0] in front or m in front\n"
+            "             or m.startswith(front)))\n"
+        )
+        env = dict(os.environ)
+        env["C6502_CPP_BACKEND"] = "1"
+        env.pop("C6502_CHECK_IR", None)
+        with tempfile.TemporaryDirectory() as tmp:
+            done = subprocess.run(
+                [sys.executable, "-c", code, os.path.join(tmp, "out.s")],
+                cwd=_ROOT, env=env, check=True, capture_output=True,
+                text=True,
+            )
+        self.assertEqual(done.stdout.strip(), "[]")
 
 
 if __name__ == "__main__":

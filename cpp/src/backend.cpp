@@ -8,12 +8,15 @@
 #include "asdl/runtime.h"
 #include "asm_ast.h"
 #include "c99_ast.h"
+#include "diagnostics.h"
+#include "errors.h"
 #include "json.h"
 #include "passes/capture_args.h"
 #include "passes/codegen_stage.h"
 #include "passes/emission_args.h"
+#include "passes/front_end.h"
 #include "passes/registry_control_flow.h"
-#include "tagged_json.h"
+#include "stage_checks.h"
 
 namespace c6502::backend {
 
@@ -88,31 +91,89 @@ std::string section(std::string_view name, const std::string& body) {
   return std::string(name) + " " + std::to_string(body.size()) + "\n" + body;
 }
 
+// Returns the strings of the JSON array `v`.
+std::vector<std::string> strings_of(const json::Value& v) {
+  if (v.kind != json::Value::Kind::kArray) {
+    throw std::runtime_error("the backend request's pcpp_args isn't a list");
+  }
+  std::vector<std::string> out;
+  for (const auto& item : v.items) {
+    out.push_back(item.string);
+  }
+  return out;
+}
+
+// Returns the lines of the response that carry what the front end
+// issued besides its result: what the preprocessor wrote to stderr and
+// the warnings, as `[where, message]` pairs.
+std::string diagnostics_lines(const std::string& err,
+                              const std::vector<diagnostics::CompileWarning>& found) {
+  std::string out = section("stderr", err);
+  out += "warnings [";
+  for (std::size_t i = 0; i < found.size(); ++i) {
+    if (i != 0) {
+      out += ", ";
+    }
+    out += '[' + passes::registry::json_quote(found[i].where) + ", " +
+           passes::registry::json_quote(found[i].message) + ']';
+  }
+  out += "]\n";
+  return out;
+}
+
 }  // namespace
 
 std::string respond(const std::string& text) {
   Lines lines(text);
-  if (lines.next() != "c6502-backend 2") {
+  if (lines.next() != "c6502-backend 3") {
     throw std::runtime_error("not a backend request");
   }
   const std::string mode(lines.value("mode"));
-  if (mode != "codegen" && mode != "codegen-text") {
+  if (mode != "source" && mode != "source-text") {
     throw std::runtime_error("unknown backend mode " + mode);
   }
   const json::Value kwargs = json::parse(lines.value("args"));
-  passes::StageTables tables;
-  tables.symbols = tagged::SymbolTableC::decode(required(kwargs, "symbols"));
-  tables.types = tagged::TypeTableC::decode(required(kwargs, "types"));
-  tables.footprints = passes::emission_args::footprints(required(kwargs, "footprints"));
+  passes::FrontEndOptions front;
+  front.pcpp_args = strings_of(required(kwargs, "pcpp_args"));
+  const json::Value& filename = required(kwargs, "filename");
+  if (filename.kind == json::Value::Kind::kString) {
+    front.filename = filename.string;
+  }
+  front.include_dir = required(kwargs, "include_dir").string;
+  front.preprocess = ca::boolean(&required(kwargs, "preprocess"), true);
   passes::CodegenOptions options;
   options.optimize = ca::boolean(&required(kwargs, "optimize"), false);
+  front.optimize = options.optimize;
   options.inline_calls = ca::boolean(kwargs.get("inline"), true);
   options.link_metadata = ca::boolean(kwargs.get("link_metadata"), false);
-  options.emit = mode == "codegen-text";
+  options.emit = mode == "source-text";
   const bool check_ir = ca::boolean(kwargs.get("check_ir"), false);
-  tables.c99 = asdl::load<c99_ast::Program>(lines.section("c99"));
-  const passes::StageResult result = passes::codegen(tables, options);
-  std::string out;
+  const passes::HelperFootprints footprints =
+      passes::emission_args::footprints(required(kwargs, "footprints"));
+  const std::string source(lines.section("source"));
+
+  // The warnings and what the preprocessor wrote to stderr go back even
+  // when a pass rejects the program, since compile.py prints them
+  // before the error.
+  std::string err;
+  std::vector<diagnostics::CompileWarning> found;
+  passes::StageResult result;
+  try {
+    passes::StageTables tables;
+    {
+      diagnostics::Collecting block(found);
+      passes::FrontEndResult checked = passes::front_end(source, front, err);
+      tables.c99 = std::move(checked.prog);
+      tables.symbols = std::move(checked.symbols);
+      tables.types = std::move(checked.types);
+    }
+    tables.footprints = footprints;
+    result = passes::codegen(tables, options);
+  } catch (const CompileError& e) {
+    return diagnostics_lines(err, found) + "error " +
+           stage_checks::error_text(e.python_type(), e.what()) + "\n";
+  }
+  std::string out = diagnostics_lines(err, found);
   if (!options.emit) {
     out += "symbols [";
     for (std::size_t i = 0; i < result.harness_symbols.size(); ++i) {

@@ -509,13 +509,38 @@ def dump(v) -> str:
     """Returns the dump of the IR value `v` (ir_dump.py). A c99 program
     may leave a parameter of a declaration unnamed, which
     `function_decl.params` holds as None, and the dump format has no
-    form for None in an `identifier*`, so a c99 value is dumped as
-    `cpp_backend` sends it to C++, with "" for each unnamed parameter."""
-    if type(v).__module__ == "c99_ast":
-        from cpp_backend import _dump_c99
-        return _dump_c99(v)
+    form for None in an `identifier*`. Such a value is dumped as a copy
+    with each None there made the empty string, which no C identifier
+    spells and which the C++ passes read as an unnamed parameter, as
+    the C++ parser makes it."""
     import ir_dump
-    return ir_dump.dump(v)
+    if type(v).__module__ != "c99_ast":
+        return ir_dump.dump(v)
+    try:
+        return ir_dump.dump(v)
+    except ir_dump.DumpError:
+        return ir_dump.dump(_with_unnamed_params(v))
+
+
+def _with_unnamed_params(v):
+    """A copy of the c99 value `v` whose `function_decl`s have "" for
+    each unnamed parameter."""
+    import c99_ast
+    from passes.dataclass_fields import fields_of
+    if isinstance(v, list):
+        return [_with_unnamed_params(x) for x in v]
+    if not dataclasses.is_dataclass(v) or isinstance(v, type):
+        return v
+    changes = {}
+    for f in fields_of(v):
+        x = getattr(v, f.name)
+        if isinstance(v, c99_ast.Type_function_decl) and f.name == "params":
+            y = ["" if p is None else p for p in x]
+        else:
+            y = _with_unnamed_params(x)
+        if y is not x:
+            changes[f.name] = y
+    return dataclasses.replace(v, **changes) if changes else v
 
 
 def encode(v):

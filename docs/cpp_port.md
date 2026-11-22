@@ -276,7 +276,8 @@ something a straightforward C++ port could change.
 ## Step 5: the TAC optimizer, c99_to_tac, and the inliner
 
 Step 5 is the part of a compile between the type checker and the TAC
-that `C6502_CPP_BACKEND=1` hands to C++: `c99_to_tac`, the passes of
+that `C6502_CPP_BACKEND=1` handed to C++ when step 4 was done:
+`c99_to_tac`, the passes of
 `translate_for_codegen`, those of `_optimized_tac`, and the TAC
 optimizer they call. `unroll_program` works on the c99 AST and belongs
 to step 6. This section lists the calls, what each reads, the helpers
@@ -551,10 +552,12 @@ unreachable-code elimination changed the Phis of its input in place
 ## Step 6: the front end
 
 Step 6 is the part of a compile before the type-checked c99 program
-that `C6502_CPP_BACKEND=1` hands to C++: the preprocessor (pcpp with
-the hooks of preprocessor.py), the parser, the unroller under `-O`,
-the three passes that resolve names, string lifting, and the type
-checker. Once it is done, compile.py can hand C++ the source text. This
+that `C6502_CPP_BACKEND=1` handed to C++ when step 5 was done: the
+preprocessor (pcpp with the hooks of preprocessor.py), the parser, the
+unroller under `-O`, the three passes that resolve names, string
+lifting, and the type checker. Since group D landed, the switch hands
+C++ the source text, and the C++ side runs everything from the
+preprocessor to the `-S` text (the Status entry of group D). This
 section lists the calls, what each reads, the pieces the groups share,
 the groups, and separate plans for the parser and the preprocessor,
 since each of them has to reproduce a library (Lark and pcpp) along
@@ -1624,3 +1627,37 @@ separator, a binary prefix, or a `wb` suffix.
   the suite's calls: those of the pass's own test module, the two that
   reach the lines no call of the corpus reaches, and one for each
   message.
+- 21 Nov 2026: group D of step 6, the driver, and step 6 is done.
+  `passes::front_end` (`src/passes/front_end.*`) is `_compile_c` from
+  the source text through `type_check_program`, and `c6502cpp backend`
+  runs it before `passes::codegen`, so with `C6502_CPP_BACKEND=1`
+  compile.py hands C++ the source text of each C input of `-S`, `-c`,
+  and a link, with the preprocessor's arguments and the file name, and
+  the simulator harness does the same with no arguments. The request
+  no longer carries a c99 program or its tables, and no caller is left
+  that sends that form. The response carries what the preprocessor wrote to
+  stderr, its warnings, and the class and message of an error, which
+  `cpp_backend.py` writes, issues again, and raises as the Python
+  exception, a subclass of the same name for Lark's syntax errors.
+  `--lex`, `--parse`, `--resolve`, and `--tac` stay in Python. Run as a
+  script with the variable set and a stage C++ runs, compile.py stops
+  before it imports its pipeline, and the runtime helpers' footprints
+  and the assembler's reading of the link metadata no longer import the
+  type checker (`passes/type_check_error.py` holds `TypeCheckError`, and
+  `passes.optimization` imports its optimizer on first use), so `-S` and
+  `-c` import no part of the Python front end. A link still imports the
+  type checker through the Python linker, which is step 7's.
+  `sim.harness.compile_to_asm` returns the asm program and its slot
+  symbols alone, since no caller read the tables. `tools/compare_backends.py`
+  found the same output, exit status, messages, warnings, and exceptions
+  for all 3,576 compiles of the corpus. The suite passes with the
+  variable set (4,915 tests, with `C6502_CHECK_IR=1`) and without it,
+  and the fuzzers with it set found nothing wrong in 150 programs each
+  of `exprs`, `calls`, and `stmts` from seed 2000. With the variable set
+  and unset, the best of three runs gave 0.61 and 2.14 seconds for
+  guards.c `-c -O`, 4.6 and 14.7 for the Lode Runner units, and 4.9 and
+  17.3 for 20 `fuzz.stmts` programs, against step 5's 1.13 and 10.4
+  and 5.5 with the variable set and Robert's target of 5. Of the 20
+  programs' 4.7 seconds after the imports, the TAC interpreter's path,
+  which keeps a Python front end and `c99_to_tac` until step 9, took
+  0.55, 0.05 of it in the interpreter itself.

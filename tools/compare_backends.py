@@ -1,5 +1,6 @@
-"""Compiles the corpus with the Python back end and with the C++ one
-(`C6502_CPP_BACKEND=1`) and checks that the two give the same output.
+"""Compiles the corpus with the Python compiler and with the C++ port
+(`C6502_CPP_BACKEND=1`, which runs the whole compile of a C source from
+the preprocessor on) and checks that the two give the same output.
 
     uv run python tools/compare_backends.py -j 12
     uv run python tools/compare_backends.py --corpus examples,games --modes O
@@ -12,7 +13,8 @@ and seeds `--fuzz-seeds` of `fuzz.stmts`, `fuzz.calls`, and
 the same worker process, since compile.py reads the variable at each
 compile. The two compiles of a program must agree on everything they
 give: the `-S` text, byte for byte, the exit status, what compile.py
-writes to stdout and stderr (the errors and warnings), and, for a
+writes to stdout and stderr (the errors, the warnings, and what the
+preprocessor reports there), and, for a
 compile that raises, the exception's type and message. The exit status
 is 0 when every pair agrees. c6502cpp comes from `C6502_CPP` or
 cpp/build/bin, as for tools/check_captures.py.

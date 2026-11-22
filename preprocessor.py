@@ -388,20 +388,35 @@ class CompilePreprocessor(Preprocessor):
             self.add_path(_BUNDLED_INCLUDE_DIR)
 
     def run(self, source: str, filename: str | None = None) -> str:
-        self.input_file = filename
-        self.parse(source, filename)
-        out = io.StringIO()
-        if self.args.write_bom:
-            out.write("\ufeff")
-        self.write(out)
+        """Preprocesses `source` and returns the text. The `--debug` log
+        is closed at the end, whether or not this raises.
 
-        if self.args.time:
-            self._print_time_report(sys.stderr)
-        if self.args.filetimes:
-            self._write_filetimes_csv(self.args.filetimes)
-            self.args.filetimes.close()
+        pcpp never closes its log, and `_NumberEvaluator` holds the
+        preprocessor in a reference cycle, so before the log was closed
+        here, what reached the disk depended on the garbage collector.
+        When the collector freed the preprocessor during the compile, as
+        it did in a link, the text in the log's buffer was lost and the
+        file was left empty. When the preprocessor lasted until the
+        interpreter exited, as it did in `-S` of one C file, the log was
+        written in full."""
+        try:
+            self.input_file = filename
+            self.parse(source, filename)
+            out = io.StringIO()
+            if self.args.write_bom:
+                out.write("\ufeff")
+            self.write(out)
 
-        return out.getvalue()
+            if self.args.time:
+                self._print_time_report(sys.stderr)
+            if self.args.filetimes:
+                self._write_filetimes_csv(self.args.filetimes)
+                self.args.filetimes.close()
+
+            return out.getvalue()
+        finally:
+            if self.debugout is not None:
+                self.debugout.close()
 
     def on_include_not_found(self, is_malformed, is_system_include,
                              curdir, includepath):

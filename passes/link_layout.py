@@ -250,6 +250,8 @@ def _binary(op: str, a: int, b: int) -> int:
         return a | b
     if op == "^":
         return a ^ b
+    if op in ("<<", ">>") and b < 0:
+        raise LayoutError("a shift by a negative count in the linker script")
     if op == "<<":
         return a << b
     if op == ">>":

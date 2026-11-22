@@ -409,6 +409,22 @@ class TestTailJump(unittest.TestCase):
         self.assertIsNone(self._tail("RTS", ".t:", "DC.W  g"))
 
 
+class TestLayoutErrors(unittest.TestCase):
+    """`link_layout.lay_out` on scripts with no units."""
+
+    def test_negative_shift(self) -> None:
+        # Python's `<<` and `>>` raise ValueError for a negative count,
+        # which ended compile.py with a traceback.
+        from passes.link_layout import LayoutError, lay_out
+        for op in ("<<", ">>"):
+            with self.subTest(op=op):
+                script = parse_script(f"SECTIONS {{ .t 1 {op} -1 : {{ }} }}")
+                with self.assertRaisesRegex(
+                    LayoutError, "a shift by a negative count",
+                ):
+                    lay_out(script, [])
+
+
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestFallThroughLink(unittest.TestCase):
     """A function of one unit that ends by calling one of another's

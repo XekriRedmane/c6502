@@ -8,6 +8,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -96,6 +97,20 @@ struct LinkMetadata {
 // entry isn't empty, which keeps the block readable by the units from
 // before the register parameters.
 std::vector<std::string> format_metadata(const LinkMetadata& meta);
+
+// Returns the metadata of the block in the UTF-8 text `asm_text` (a
+// `.asm` file's text or an object's `.c6502.link` section), or an empty
+// `LinkMetadata` when it holds no block. The lines are split as
+// `str.splitlines` splits them, each record is split at Unicode spaces,
+// and its numbers are read as `int()` reads them, so a block Python
+// reads gives the same records. A malformed block throws
+// `CompileError("ValueError", ...)` with Python's message, from one of
+// the thirteen messages of `parse_metadata` or from `int()`, and a
+// record without a field Python reads without a default throws
+// `CompileError("KeyError", "'<field>'")`, the `str()` of Python's
+// KeyError. A number of more than 128 bits throws the OverflowError of
+// src/py_int.h.
+LinkMetadata parse_metadata(std::string_view asm_text);
 
 // Returns the records of `prog`'s functions, its zp_abi externs, and
 // its call edges, from the TAC program and the allocators' results, run

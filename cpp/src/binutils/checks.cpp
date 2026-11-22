@@ -15,6 +15,8 @@
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
+#include "passes/stage_registry_sharing.h"
+#include "passes/zp_link_metadata.h"
 #include "pyrepr.h"
 
 namespace c6502::binutils {
@@ -24,8 +26,20 @@ namespace {
 namespace fs = std::filesystem;
 
 // The kinds of record, in the order the summary lists them.
-constexpr std::string_view kKinds[] = {"assemble", "elf_read",    "parse_script", "link",
-                                       "disassemble", "nm",       "objdump"};
+constexpr std::string_view kKinds[] = {"assemble",    "parse_metadata", "elf_read", "parse_script",
+                                       "link",        "disassemble",    "nm",       "objdump"};
+
+// Returns the error `e` compared with the recorded one, or "" when the
+// two have the same Python type and message.
+std::string compare_error(const CompileError& e, const capture::Call& call,
+                          const json::Value& output) {
+  if (!call.output_is_error) return std::string("C++ raised ") + e.python_type() + ": " + e.what();
+  if (e.python_type() != output.get("type")->string || e.what() != output.get("message")->string) {
+    return std::string("C++ raised ") + e.python_type() + ": " + e.what() + "\nPython raised " +
+           output.get("type")->string + ": " + output.get("message")->string;
+  }
+  return "";
+}
 
 // The counts of one kind's records.
 struct Count {
@@ -66,6 +80,9 @@ class Checker {
 
   std::size_t files_checked() const { return round_trips_.size(); }
   std::size_t files_differ() const { return bad_files_; }
+  // The `parse_metadata` records whose text `format_metadata` writes
+  // again from what C++ parsed.
+  std::size_t metadata_rewritten() const { return metadata_rewritten_; }
 
  private:
   // Returns what differs when the record's JSON is read and written
@@ -117,18 +134,40 @@ class Checker {
       try {
         got = elf::write(elf::read(data, args.get("name")->string));
       } catch (const CompileError& e) {
-        if (!call.output_is_error) return std::string("C++ raised ") + e.what();
-        if (e.python_type() != output.get("type")->string ||
-            e.what() != output.get("message")->string) {
-          return std::string("C++ raised ") + e.python_type() + ": " + e.what() +
-                 "\nPython raised " + output.get("type")->string + ": " +
-                 output.get("message")->string;
-        }
+        if (std::string problem = compare_error(e, call, output); !problem.empty()) return problem;
         ++count.matched;
         return "";
       }
       if (call.output_is_error) return "C++ read a file Python rejected";
       if (got != blob(output.get("rewritten")->string)) return "the rewrite differs";
+      ++count.matched;
+      return "";
+    }
+    if (kind == "parse_metadata") {
+      ++count.ran;
+      passes::LinkMetadata meta;
+      try {
+        meta = passes::parse_metadata(input.string);
+      } catch (const CompileError& e) {
+        if (std::string problem = compare_error(e, call, output); !problem.empty()) return problem;
+        ++count.matched;
+        return "";
+      }
+      if (call.output_is_error) return "C++ read a block Python rejected";
+      const std::string got = passes::stage_sharing::link_metadata_json(meta);
+      if (got != json::dump(*output.get("meta"))) {
+        return "the metadata differs\nC++:    " + got + "\nPython: " + json::dump(*output.get("meta"));
+      }
+      const std::vector<std::string> lines = passes::format_metadata(meta);
+      const json::Value& formatted = *output.get("formatted");
+      bool same = lines.size() == formatted.items.size();
+      for (std::size_t i = 0; same && i < lines.size(); ++i) same = lines[i] == formatted.items[i].string;
+      if (!same) return "format_metadata's lines differ";
+      // The assembler and the linker parse the block alone, which
+      // `format_metadata` wrote, so it writes the same text again.
+      std::string text;
+      for (const auto& line : lines) text += line + "\n";
+      if (text == input.string) ++metadata_rewritten_;
       ++count.matched;
       return "";
     }
@@ -185,6 +224,7 @@ class Checker {
   bool verbose_;
   std::map<std::string, std::string> round_trips_;
   std::size_t bad_files_ = 0;
+  std::size_t metadata_rewritten_ = 0;
 };
 
 }  // namespace
@@ -202,6 +242,7 @@ int check_binutils(const std::vector<std::string>& args) {
   std::map<std::string, Count, std::less<>> counts;
   std::size_t files = 0;
   std::size_t bad_files = 0;
+  std::size_t metadata_rewritten = 0;
   for (const auto& root : roots) {
     Checker checker(root, verbose);
     for (std::string_view kind : kKinds) {
@@ -217,6 +258,7 @@ int check_binutils(const std::vector<std::string>& args) {
     }
     files += checker.files_checked();
     bad_files += checker.files_differ();
+    metadata_rewritten += checker.metadata_rewritten();
   }
   std::size_t differ = 0;
   for (std::string_view kind : kKinds) {
@@ -226,6 +268,10 @@ int check_binutils(const std::vector<std::string>& args) {
     std::printf("%s: %zu records, %zu made the trip, %zu run in C++, %zu match, %zu differ\n",
                 std::string(kind).c_str(), c.records, c.trips, c.ran, c.matched, c.differ);
     differ += c.differ;
+    if (kind == "parse_metadata") {
+      std::printf("parse_metadata: %zu texts written again by format_metadata as they were\n",
+                  metadata_rewritten);
+    }
   }
   std::printf("objects and executables read and written again: %zu, %zu differ\n", files,
               bad_files);

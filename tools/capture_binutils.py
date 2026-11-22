@@ -11,7 +11,8 @@ for checking the C++ port of step 7 (docs/cpp_port.md).
 
     cpp/build/bin/c6502cpp check-binutils captures/binutils
 
-The harness wraps `binutils.assembler.assemble`, `binutils.elf.read`,
+The harness wraps `binutils.assembler.assemble`,
+`passes.zp_link_metadata.parse_metadata`, `binutils.elf.read`,
 `passes.link_script.parse_script`, `passes.linker.link_objects`,
 `binutils.disasm.disassemble`, and the `main` functions of nm.py and
 objdump.py, so each call is recorded with its arguments and its result
@@ -44,6 +45,12 @@ records name it by that hash. The kinds:
   `[name, address]` pairs in the dict's order, `null` for an address
   outside zero page, or `null` for no dict), and `keep_source`; the
   text as the input; the object as the result, `{"object": <hash>}`.
+- `parse_metadata`: no arguments, the text as the input, and as the
+  result the tagged JSON of the `LinkMetadata`
+  (tools/capture_passes.py's `encode`) with the lines `format_metadata`
+  writes of it, `{"meta": ..., "formatted": [...]}`. The assembler and
+  the linker call it on the metadata block alone, and the tests on
+  whole texts too.
 - `elf_read`: the argument `name`, the bytes as the input
   (`{"data": <hash>}`), and as the result the bytes `elf.write` gives
   for what `read` returned, `{"rewritten": <hash>}`, which are the
@@ -95,8 +102,8 @@ if str(_ROOT) not in sys.path:
 if str(_ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(_ROOT / "tools"))
 
-KINDS = ("assemble", "elf_read", "parse_script", "link", "disassemble",
-         "nm", "objdump")
+KINDS = ("assemble", "parse_metadata", "elf_read", "parse_script", "link",
+         "disassemble", "nm", "objdump")
 
 _OUT = _ROOT / "captures" / "binutils"
 _SOURCE = ""
@@ -252,6 +259,26 @@ def _wrap_assemble(real):
         _record("assemble", args, text, {"object": _blob(data)})
         return obj
     return assemble
+
+
+def _wrap_parse_metadata(real):
+    def parse_metadata(asm_text):
+        if _QUIET:
+            return real(asm_text)
+        from capture_passes import encode
+        from passes.zp_link_metadata import format_metadata
+        start = time.perf_counter()
+        try:
+            meta = real(asm_text)
+        except Exception as e:
+            _count("parse_metadata", time.perf_counter() - start)
+            _record("parse_metadata", {}, asm_text, error=e)
+            raise
+        _count("parse_metadata", time.perf_counter() - start)
+        _record("parse_metadata", {}, asm_text,
+                {"meta": encode(meta), "formatted": format_metadata(meta)})
+        return meta
+    return parse_metadata
 
 
 def _wrap_read(real):
@@ -421,8 +448,13 @@ def install(out: Path) -> None:
     from binutils import assembler, disasm, elf
     import nm
     import objdump
-    from passes import link_script, linker
+    from passes import link_script, linker, zp_link_metadata
     assembler.assemble = _wrap_assemble(assembler.assemble)
+    # The assembler imports `parse_metadata` when it runs, and the linker
+    # imported it by name.
+    zp_link_metadata.parse_metadata = _wrap_parse_metadata(
+        zp_link_metadata.parse_metadata)
+    linker.parse_metadata = zp_link_metadata.parse_metadata
     elf.read = _wrap_read(elf.read)
     link_script.parse_script = _wrap_parse_script(link_script.parse_script)
     linker.link_objects = _wrap_link(linker.link_objects)

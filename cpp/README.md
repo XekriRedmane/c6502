@@ -92,6 +92,8 @@ cpp/
     binutils/nm.*     nm.py
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
+    py_int.*          Python's `int()` of a string and its integer
+                      operators, in 128 bits with an error past them
     capture.*         the reader of capture files and their contexts
     helper_checks.*   the C++ side of tools/capture_helpers.py
     backend.*         the `c6502cpp backend` command's request and response
@@ -2285,6 +2287,24 @@ in src/binutils/ and src/argparse.*.
   nm.py's `main` runs it through `cpp_backend.run_tool`, which passes
   the terminal's width as `COLUMNS` and writes the output to Python's
   streams, so a test that redirects them gets it.
+
+Group A of step 7 ported the parser of the link metadata.
+
+- `passes::parse_metadata` (src/passes/zp_link_metadata.h) is
+  `zp_link_metadata.parse_metadata`, which the assembler and the linker
+  run on an object's `.c6502.link` text. It splits lines as
+  `str.splitlines` does and records at Unicode's spaces, reads each
+  number with `py_int::parse`, which is Python's `int(text, base)` with
+  its digits of any script, its underscores, its `0x` prefix, its
+  messages, and its limit of 4,300 decimal digits, and gives Python's
+  ValueError, or the KeyError of a field read without a default, for a
+  malformed block.
+
+`check-binutils` runs it on every `parse_metadata` record, which
+tools/capture_binutils.py now writes for each call, and requires the
+recorded `LinkMetadata` in tagged JSON and the lines `format_metadata`
+writes of it. tests/test_link_metadata.cpp has a case for each of
+`parse_metadata`'s 13 ValueError messages.
 
 `json::dump` (src/json.h) writes a `json::Value` as Python's
 `json.dumps` does, with `json::quote` for its strings, which

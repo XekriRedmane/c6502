@@ -27,11 +27,16 @@
 #include "passes/zp_globals.h"
 
 #include <algorithm>
+#include <functional>
+#include <map>
+#include <set>
+#include <string>
 #include <utility>
 
 #include "errors.h"
 #include "passes/asm_operands.h"
 #include "pyrepr.h"
+#include "rtlib/helpers.h"
 
 namespace c6502::passes {
 
@@ -135,6 +140,54 @@ asdl::Int hargs_extent(const std::vector<ir::Type_instruction>& instrs) {
 }
 
 }  // namespace
+
+const HelperFootprints& helper_footprints() {
+  static const HelperFootprints footprints = [] {
+    const std::vector<ir::Function>& fns = rtlib::all_helper_functions();
+    std::map<std::string, asdl::Int, std::less<>> own;
+    for (const ir::Function& fn : fns) {
+      own[fn.name] = hargs_extent(fn.instructions);
+    }
+    std::map<std::string, std::set<std::string>, std::less<>> calls;
+    for (const ir::Function& fn : fns) {
+      std::set<std::string>& callees = calls[fn.name];
+      for (const auto& instr : fn.instructions) {
+        if (const auto* call = asdl::as<ir::Call>(instr);
+            call != nullptr && own.contains(call->name)) {
+          callees.insert(call->name);
+        }
+      }
+    }
+    // The walk is Python's, which keeps the first size it computes for
+    // each helper and follows each helper's calls in the order of a set.
+    // That order could change a size only if the helpers called each
+    // other in a cycle, which tools/rtlib_table.py refuses, so the
+    // callees here go in code-point order.
+    HelperFootprints out;
+    const std::function<asdl::Int(const std::string&, const std::set<std::string>&)> size =
+        [&](const std::string& name, const std::set<std::string>& seen) -> asdl::Int {
+      if (const auto it = out.find(name); it != out.end()) {
+        return it->second;
+      }
+      asdl::Int n = own.at(name);
+      for (const std::string& callee : calls.at(name)) {
+        if (seen.contains(callee)) {
+          continue;
+        }
+        std::set<std::string> inner = seen;
+        inner.insert(name);
+        n = std::max(n, size(callee, inner));
+      }
+      out[name] = n;
+      return n;
+    };
+    for (const ir::Function& fn : fns) {
+      size(fn.name, {});
+    }
+    return out;
+  }();
+  return footprints;
+}
 
 asdl::Int hargs_need(const asm_ast::Program& prog, const HelperFootprints& footprints) {
   asdl::Int need = 0;

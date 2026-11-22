@@ -331,8 +331,9 @@ from before those passes, the rest of `_optimized_front` (`select_abi`
 through `synthesize_prologue`, with the pool retries) or, without `-O`,
 `fixed_address_layouts`, `tac_to_asm`, and `replace_pseudoregisters`,
 then the back end's region, the work after it, the link metadata, and
-`asm_emit`. The request also holds the runtime helpers' HARGS
-footprints, measured from rtlib/helpers.py in Python, and a flag that is
+`asm_emit`. The runtime helpers' HARGS footprints come from the copy
+of rtlib/helpers.py compiled into c6502cpp (cpp/generated/rtlib_helpers.cpp,
+written by tools/rtlib_table.py). The request also holds a flag that is
 false when `compile.inline_functions` has been patched
 (tests/no_inlining.py), so that such a test's `static` functions stay
 functions in C++ too (`compile._inlining`). The response holds what the

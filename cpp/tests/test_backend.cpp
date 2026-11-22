@@ -18,14 +18,6 @@ const char kSource[] =
     "static unsigned char add1(unsigned char x) { return x + 1; }\n"
     "int main(void) { return add1(2); }\n";
 
-// The runtime helpers' HARGS footprints, as cpp_backend.py sends them.
-const char kFootprints[] =
-    R"({"dict": [["mul8", 5], ["mul16", 10], ["mul32", 20], ["udivmod8", 4], )"
-    R"(["sdivmod8", 6], ["udivmod16", 9], ["sdivmod16", 11], ["udivmod32", 20], )"
-    R"(["sdivmod32", 22], ["asl8", 3], ["asr8", 3], ["lsr8", 3], ["asl16", 5], )"
-    R"(["asr16", 5], ["lsr16", 5], ["asl32", 9], ["asr32", 9], ["lsr32", 9], )"
-    R"(["bin16_to_bcd", 7]]})";
-
 // Returns the request cpp_backend.py sends for `source`, read from
 // stdin, in `mode` with the JSON values `optimize`, `inline`, `check_ir`,
 // and `preprocess`.
@@ -33,8 +25,8 @@ std::string request(const std::string& source, bool optimize, const std::string&
                     bool inline_calls = true, bool check_ir = false, bool preprocess = true) {
   const auto b = [](bool v) { return std::string(v ? "true" : "false"); };
   const std::string args = R"({"pcpp_args": [], "filename": null, "include_dir": "include", )"
-                           R"("preprocess": )" + b(preprocess) + R"(, "footprints": )" +
-                           kFootprints + R"(, "optimize": )" + b(optimize) +
+                           R"("preprocess": )" + b(preprocess) +
+                           R"(, "optimize": )" + b(optimize) +
                            R"(, "inline": )" + b(inline_calls) + R"(, "check_ir": )" +
                            b(check_ir) + R"(, "link_metadata": false})";
   return "c6502-backend 3\nmode " + mode + "\nargs " + args + "\nsource " +

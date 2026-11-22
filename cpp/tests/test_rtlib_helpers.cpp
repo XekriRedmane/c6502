@@ -1,11 +1,14 @@
 // Tests of the runtime helpers' table (src/rtlib/helpers.h), which
-// tools/rtlib_table.py copies from rtlib/helpers.py.
+// tools/rtlib_table.py copies from rtlib/helpers.py, and of the HARGS
+// footprints measured on it. tests/test_rtlib_table.py compares every
+// helper's footprint with Python's through `c6502cpp helper-footprints`.
 #include <string>
 #include <vector>
 
 #include "asdl/runtime.h"
 #include "asm_ast.h"
 #include "doctest.h"
+#include "passes/zp_globals.h"
 #include "rtlib/helpers.h"
 
 namespace {
@@ -30,6 +33,18 @@ TEST_CASE("the functions dump as the table's text") {
 
 TEST_CASE("bin16_to_bcd is the one decimal-mode helper") {
   CHECK(rtlib::decimal_mode_helpers() == std::vector<std::string>{"bin16_to_bcd"});
+}
+
+TEST_CASE("a footprint counts the helpers a helper calls") {
+  const passes::HelperFootprints& fp = passes::helper_footprints();
+  CHECK(fp.size() == rtlib::all_helper_functions().size());
+  // `mul32` works in HARGS+12..19.
+  CHECK(fp.at("mul32") == 20);
+  // `udivmod16` touches 9 bytes, and `sdivmod16`, which calls it, 11.
+  CHECK(fp.at("udivmod16") == 9);
+  CHECK(fp.at("sdivmod16") == 11);
+  CHECK(fp.at("sdivmod32") == 22);
+  CHECK(fp.at("bin16_to_bcd") == 7);
 }
 
 }  // namespace

@@ -21,12 +21,12 @@ namespace c6502::backend {
 // strings, `filename`, the file the source came from or null for stdin,
 // `include_dir`, the directory of c6502's own headers, `preprocess`,
 // false when the text is the preprocessor's output already (as
-// `compile._run_stage` is given it), `footprints`, the runtime helpers'
-// HARGS footprints in the capture harness's tagged JSON
-// (`runtime_layout.helper_footprints()`), `optimize` for `-O`, `inline`,
+// `compile._run_stage` is given it), `optimize` for `-O`, `inline`,
 // false when `-O` doesn't inline the calls of small `static` functions
 // (tests/no_inlining.py), `check_ir`, and `link_metadata`, for the
-// unoptimized text of `-c`.
+// unoptimized text of `-c`. The runtime helpers' HARGS footprints come
+// from the copy of rtlib/helpers.py compiled into the program
+// (src/rtlib/helpers.h).
 //
 // Both modes run the front end (`passes::front_end`, compile.py's
 // `_compile_c` through `type_check_program`) and then `passes::codegen`

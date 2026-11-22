@@ -39,8 +39,10 @@
 #include "passes/peephole_fixedpoint.h"
 #include "passes/registry.h"
 #include "passes/stage_registry.h"
+#include "passes/zp_globals.h"
 #include "preprocessor_cases.h"
 #include "py_regex_cases.h"
+#include "rtlib/helpers.h"
 #include "stage_checks.h"
 #include "tac_ast.h"
 
@@ -57,6 +59,7 @@ const char kUsage[] =
     "       c6502cpp check-regex [--verbose] <path>...\n"
     "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
     "       c6502cpp opcodes\n"
+    "       c6502cpp helper-footprints\n"
     "       c6502cpp nm [<option>...] <file>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp sweep-passes\n"
@@ -96,6 +99,10 @@ const char kUsage[] =
     "\n"
     "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
     "per row, in the order of binutils/opcodes.py.\n"
+    "\n"
+    "helper-footprints lists each runtime helper's HARGS footprint, one\n"
+    "`name bytes` line per helper, in the order of rtlib/helpers.py's\n"
+    "all_helper_functions (src/rtlib/helpers.h).\n"
     "\n"
     "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
     "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"
@@ -669,6 +676,15 @@ int main(int argc, char** argv) {
         std::snprintf(op, sizeof op, "0x%02X", e.opcode);
         lines += std::string(e.mnemonic) + " " + std::string(binutils::opcodes::mode_name(e.mode)) +
                  " " + op + "\n";
+      }
+      write_stdout(lines);
+      return 0;
+    }
+    if (command == "helper-footprints" && args.empty()) {
+      std::string lines;
+      const passes::HelperFootprints& footprints = passes::helper_footprints();
+      for (const auto& fn : rtlib::all_helper_functions()) {
+        lines += fn.name + " " + asdl::int_to_string(footprints.at(fn.name)) + "\n";
       }
       write_stdout(lines);
       return 0;

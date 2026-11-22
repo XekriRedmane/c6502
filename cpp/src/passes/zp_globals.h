@@ -28,7 +28,8 @@ inline constexpr const char* kZpInitFunction = "__zp_init";
 
 // Each 6502 helper's HARGS footprint in bytes, counting the helpers it
 // calls (`runtime_layout.helper_footprints`, which Python measures from
-// rtlib/helpers.py).
+// rtlib/helpers.py, and `helper_footprints` below from the copy of it in
+// cpp/generated/rtlib_helpers.cpp).
 using HelperFootprints = std::map<std::string, asdl::Int, std::less<>>;
 
 // The zero-page objects of a unit (Python's `ZpGlobals`, whose
@@ -125,6 +126,12 @@ std::vector<ZpObjectMeta> link_records(const asm_ast::Program& prog, const ZpGlo
 // offset into HARGS, and the footprint of each helper it calls
 // (`runtime_layout.hargs_need`).
 asdl::Int hargs_need(const asm_ast::Program& prog, const HelperFootprints& footprints);
+
+// Returns, for each 6502 helper of rtlib/helpers.py, the number of
+// HARGS bytes it touches, counting the helpers it calls
+// (`runtime_layout.helper_footprints`), measured on the helpers' table
+// (src/rtlib/helpers.h) on the first call.
+const HelperFootprints& helper_footprints();
 
 // Throws `CompileError("RuntimeLayoutError", ...)` when the finished
 // `prog` uses more of HARGS than `layout` gave it

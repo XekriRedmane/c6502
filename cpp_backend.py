@@ -176,13 +176,6 @@ def _sections(data: bytes) -> tuple[dict[str, str], dict[str, str]]:
     return lines, sections
 
 
-def _footprints() -> str:
-    """The runtime helpers' HARGS footprints in the capture harness's
-    tagged JSON, a dict."""
-    from passes.runtime_layout import helper_footprints
-    return {"dict": [[k, v] for k, v in helper_footprints().items()]}
-
-
 def _check_tac(text: str) -> None:
     """Checks each function of the TAC that code generation lowered, as
     the Python TAC optimizer's driver checks each function after its
@@ -223,7 +216,7 @@ def compile_source(
     args = json.dumps({
         "pcpp_args": list(pcpp_args or []), "filename": filename,
         "include_dir": _INCLUDE_DIR, "preprocess": preprocess,
-        "footprints": _footprints(), "optimize": optimize,
+        "optimize": optimize,
         "inline": inline, "check_ir": check, "link_metadata": link_metadata,
     })
     mode = "source-text" if emit else "source"

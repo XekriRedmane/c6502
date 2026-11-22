@@ -13,9 +13,9 @@
 #include "json.h"
 #include "passes/capture_args.h"
 #include "passes/codegen_stage.h"
-#include "passes/emission_args.h"
 #include "passes/front_end.h"
 #include "passes/registry_control_flow.h"
+#include "passes/zp_globals.h"
 #include "stage_checks.h"
 
 namespace c6502::backend {
@@ -148,8 +148,6 @@ std::string respond(const std::string& text) {
   options.link_metadata = ca::boolean(kwargs.get("link_metadata"), false);
   options.emit = mode == "source-text";
   const bool check_ir = ca::boolean(kwargs.get("check_ir"), false);
-  const passes::HelperFootprints footprints =
-      passes::emission_args::footprints(required(kwargs, "footprints"));
   const std::string source(lines.section("source"));
 
   // The warnings and what the preprocessor wrote to stderr go back even
@@ -167,7 +165,9 @@ std::string respond(const std::string& text) {
       tables.symbols = std::move(checked.symbols);
       tables.types = std::move(checked.types);
     }
-    tables.footprints = footprints;
+    // The footprints come from the helpers' table compiled into the
+    // program (src/rtlib/helpers.h), so the request doesn't carry them.
+    tables.footprints = passes::helper_footprints();
     result = passes::codegen(tables, options);
   } catch (const CompileError& e) {
     return diagnostics_lines(err, found) + "error " +

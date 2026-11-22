@@ -2038,3 +2038,21 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   a traceback, and each is now a one-line error. The C++ reader gives the
   first one's ElfError, and the others are in code that groups A and F
   port.
+- 22 Nov 2026: group E of step 7, the runtime library (cpp/README.md,
+  "The runtime library"). `tools/rtlib_table.py` writes the helpers'
+  `asm_ast` functions and `DECIMAL_MODE_HELPERS` into
+  cpp/generated/rtlib_helpers.cpp, which is compiled in, and
+  tests/test_rtlib_table.py fails when the file differs from what the
+  script writes. `passes::helper_footprints` gives Python's footprint
+  for each of the 19 helpers, and the backend's request no longer
+  carries the footprints, which took about 35 ms off a small switched
+  `-S` (0.201 s to 0.167 s, best of 20) and about 32 ms off a process
+  of 20 fuzz.stmts programs, which the 8 to 14 s such a run took on the
+  loaded machine doesn't show. `tools/compare_backends.py` found no
+  difference in 3,576 compiles. `needed`, `closure`, and
+  `library_text`, the text `library_object` assembles, match Python
+  on every `runtime_library` record of tools/capture_binutils.py,
+  4,534 of the corpus and 101 of the suite, which take 182 distinct
+  sets of helpers, in the builds of MSVC 19.36 and GCC 12.2. The
+  modules have no raise site. The call of the
+  assembler on the text is left to the linker's port, group D.

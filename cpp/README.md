@@ -80,6 +80,8 @@ cpp/
   CMakeLists.txt
   generated/          asdl.py --cpp output, checked in, never edited
     asm_ast.h/.cpp    one header and one source per .asdl module
+    rtlib_helpers.cpp the runtime helpers of rtlib/helpers.py, which
+                      tools/rtlib_table.py writes
   src/
     asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer,
                       py_repr
@@ -92,6 +94,7 @@ cpp/
     binutils/nm.*     nm.py
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
+    rtlib/helpers.h   the runtime helpers' table (step 7, group E)
     capture.*         the reader of capture files and their contexts
     helper_checks.*   the C++ side of tools/capture_helpers.py
     backend.*         the `c6502cpp backend` command's request and response
@@ -116,6 +119,8 @@ cpp/
       return_in_zero_page.*   the `F@ret` objects of `static` pointer
                       results (step 5, group H)
       asm_to_asm2.*   the lowering to the asm2 IR
+      runtime_library.*   passes/runtime_library.py, the helpers a link
+                      takes and the text of runtime.o (step 7, group E)
       emission_args.* the decoders of the arguments of the work after the
                       region, for the backend command and the registry
       asm_context.*   AsmContext, the compile's state the asm passes read
@@ -2135,9 +2140,9 @@ finished asm program, and the asm2 program of a text once each, since
 and, without it, imports none of this. Run as a script with the
 variable set and `-S`, `-c`, or a link, compile.py stops before it
 imports its pipeline (`_cpp_runs_everything`), and the runtime helpers'
-footprints come from `passes.runtime_layout`, which reads
-`TypeCheckError` from `passes/type_check_error.py`, so neither `-S` nor
-`-c` imports the parser, Lark, pcpp, or a pass of the front end, unless
+footprints come from the table compiled into c6502cpp, so neither `-S`
+nor `-c` imports the parser, Lark, pcpp, rtlib.helpers, or a pass of
+the front end, unless
 `C6502_CHECK_IR=1` loads `ir_check`, whose helpers import the type
 checker.
 
@@ -2166,10 +2171,11 @@ text, and `optimized_program` runs the region and the steps of
 `check_shares`) for the simulator harness.
 
 Since the stage's driver runs code generation in C++ too, everything
-these read comes from C++ except the HARGS footprints of the runtime
-helpers (`runtime_layout.helper_footprints`), which are measured from
-rtlib/helpers.py, which stays in Python with the simulator, and go in
-the request. The link metadata's records that read the TAC, the ABI,
+these read comes from C++. The HARGS footprints of the runtime helpers
+(`runtime_layout.helper_footprints`) are measured on the copy of
+rtlib/helpers.py compiled into the program ("The runtime library"
+below), since the helpers' code stays in Python with the simulator.
+The link metadata's records that read the TAC, the ABI,
 and the symbol table (`build_metadata`, `changed_param_slots`, the
 carry functions, `preferred_symbols`, and the `ext` records of the
 unoptimized pipeline) are computed in the driver after the stage, as
@@ -2309,6 +2315,48 @@ C6502_BINUTILS_CAPTURES=captures/binutils_suite PYTHONPATH=tools \
 cpp/build/bin/c6502cpp check-binutils captures/binutils captures/binutils_suite
 uv run python tools/binutils_errors.py captures/binutils
 ```
+
+### The runtime library
+
+The helpers' 6502 code stays in rtlib/helpers.py, where the simulator
+reads it, until step 9. `tools/rtlib_table.py` writes
+cpp/generated/rtlib_helpers.cpp, which holds the dump of the program of
+every helper's `asm_ast` function, one line of the dump to a string
+literal, and the names of `DECIMAL_MODE_HELPERS`, sorted, with LF line
+endings. `tests/test_rtlib_table.py` writes it again and fails when it
+differs, as `tests/test_lalr_table.py` does for the parser's table, so
+after an edit of rtlib/helpers.py the table is regenerated with `uv run
+python tools/rtlib_table.py`. The table is compiled in, which keeps the
+build and the executable free of a data file to find, and
+`rtlib::all_helper_functions` (src/rtlib/helpers.h) reads the dump on
+the first call, in about a millisecond. The call edges between the
+helpers aren't in the table, since the C++ code finds them in the
+functions' `Call` and `Jump` instructions as the Python code does.
+Python's `helper_footprints` follows the calls in a set's order, which
+could change a footprint only through a cycle, so the generator refuses
+helpers that call each other in one.
+
+`passes::helper_footprints` (src/passes/zp_globals.h, beside
+`hargs_need`) is `runtime_layout.helper_footprints` on the table.
+`c6502cpp helper-footprints` lists it, and tests/test_rtlib_table.py
+compares the list with Python's for every helper. The backend's request
+doesn't carry the footprints any more, so a compile through c6502cpp
+imports no part of rtlib or passes.runtime_layout for them.
+
+`passes::needed`, `closure`, `helper_names`, and `library_text`
+(src/passes/runtime_library.h) are passes/runtime_library.py on the
+table. `library_text` is the text Python's `library_object` assembles,
+which Python now computes in a function of that name. It lowers the
+helpers with `lower_to_asm2` and writes them with `asm_emit` after the
+metadata block of `format_metadata`, and the linker of group D
+assembles it with group A's assembler as `runtime.o`, at the place the
+comment at the end of runtime_library.cpp marks. `helper_sizes`, which
+only the Python tests read, assembles each helper and is left to the
+assembler's port. tools/capture_binutils.py records each call of
+`needed` that a link makes as a `runtime_library` record, with the
+objects, the defined names, the helpers it returned, and Python's text
+for them, and `c6502cpp check-binutils` runs `needed` and
+`library_text` on each.
 
 ## Status
 
@@ -2558,3 +2606,10 @@ uv run python tools/binutils_errors.py captures/binutils
   with `c6502cpp check-binutils` on the records of
   tools/capture_binutils.py, which all match, and nm.py run through
   `c6502cpp nm` under `C6502_CPP_BACKEND=1`.
+- 22 Nov 2026: group E of step 7, the runtime library ("The runtime
+  library"): the helpers' table generated from rtlib/helpers.py, the
+  HARGS footprints measured on it, which the backend's request no
+  longer carries, and `needed` and `library_text`, which match Python
+  on all 4,534 `runtime_library` records of the corpus and the 101 of
+  the suite, 182 distinct sets of helpers in all, in the builds of MSVC
+  19.36 and GCC 12.2.

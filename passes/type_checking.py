@@ -122,10 +122,9 @@ from passes.constant_expression import (
 from passes.designators import normalize_initializer
 from passes.identifier_resolution import Linkage
 from passes import stdbit_functions
-
-
-class TypeCheckError(Exception):
-    """Raised on any type-level inconsistency in the program."""
+# Defined in a module of its own, which passes/runtime_layout.py imports
+# without importing the type checker.
+from passes.type_check_error import TypeCheckError  # noqa: F401
 
 
 # ---------------------------------------------------------------------------

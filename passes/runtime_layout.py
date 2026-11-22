@@ -56,7 +56,7 @@ from functools import lru_cache
 
 import asm_ast
 from passes.dataclass_fields import fields_of
-from passes.type_checking import TypeCheckError
+from passes.type_check_error import TypeCheckError
 
 
 @dataclass(frozen=True)

@@ -14,9 +14,17 @@ modules in this package own one pass each and are otherwise independent
 of the driver.
 """
 
-from passes.optimization.optimizer import (
-    optimize_function,
-    optimize_program,
-)
-
 __all__ = ["optimize_function", "optimize_program"]
+
+
+def __getattr__(name: str):
+    """Returns `optimize_function` or `optimize_program` from the
+    optimizer, which is imported on first use. A module that imports
+    only one of this package's own modules, as passes/abi_selection.py
+    imports `pool`, then loads neither the optimizer nor the type
+    checker it reads, which the assembler's reading of the link
+    metadata would otherwise import for every `-c`."""
+    if name in __all__:
+        from passes.optimization import optimizer
+        return getattr(optimizer, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

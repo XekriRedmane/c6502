@@ -89,6 +89,32 @@ def _pairs(name: str, pairs: list[tuple[int, int]]) -> str:
     return f"inline constexpr CaseMapping {name}[] = {{\n{body}\n}};\n"
 
 
+def _full_upper(name: str) -> str:
+    """The table of the code points whose `str.upper()` is more than one
+    code point (SpecialCasing's unconditional mappings, such as "ß" to
+    "SS"). Every other code point's `str.upper()` is its simple
+    uppercase mapping, which the assertion checks, so `kToUpper` and
+    this table give `str.upper()` of any string, which maps each code
+    point on its own."""
+    rows = []
+    line = "   "
+    for c in range(sys.maxunicode + 1):
+        up = chr(c).upper()
+        if len(up) == 1:
+            assert ord(up) == _to_upper(c), hex(c)
+            continue
+        assert len(up) <= 3, hex(c)
+        to = ", ".join(f"0x{ord(u):X}" for u in up)
+        item = f" {{0x{c:X}, {{{to}}}}},"
+        if len(line) + len(item) > 78:
+            rows.append(line)
+            line = "   "
+        line += item
+    rows.append(line)
+    body = "\n".join(rows)
+    return f"inline constexpr FullCaseMapping {name}[] = {{\n{body}\n}};\n"
+
+
 def _to_upper(c: int) -> int:
     """The simple uppercase mapping of the code point `c`, which
     `_sre`'s matcher reads with `_PyUnicode_ToUppercase`."""
@@ -120,6 +146,11 @@ def generate() -> str:
         "struct CaseMapping {\n"
         "  std::uint32_t from;\n"
         "  std::uint32_t to;\n"
+        "};\n\n"
+        "// A mapping to two or three code points, with 0 after the last.\n"
+        "struct FullCaseMapping {\n"
+        "  std::uint32_t from;\n"
+        "  std::uint32_t to[3];\n"
         "};\n\n",
         "// The characters `\\w` matches in a Python regular expression "
         "on a str.\n",
@@ -146,6 +177,10 @@ def generate() -> str:
             (c, _to_upper(c)) for c in range(sys.maxunicode + 1)
             if _to_upper(c) != c
         ]),
+        "\n// The code points whose `str.upper()` is more than one code "
+        "point, which\n// `str.upper()` maps to those. It maps every "
+        "other code point as\n// `kToUpper` does.\n",
+        _full_upper("kToUpperFull"),
         "\n// `re._casefix._EXTRA_CASES`, a pair for each lowercase letter "
         "and each\n// other lowercase letter with the same uppercase.\n",
         _pairs("kExtraCases", [

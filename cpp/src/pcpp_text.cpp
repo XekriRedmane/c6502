@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <iterator>
 
 #include "errors.h"
 #include "pcpp_unicode.h"
@@ -274,6 +275,31 @@ std::vector<std::string> split_whitespace(std::string_view s) {
   }
   if (in_word) words.push_back(word);
   return words;
+}
+
+std::string upper(std::string_view s) {
+  std::string out;
+  for (std::size_t i = 0; i < s.size();) {
+    std::size_t len = 0;
+    const std::uint32_t cp = decode_at(s, i, len);
+    i += len;
+    const auto* full_end = std::end(unicode::kToUpperFull);
+    const auto* full = std::lower_bound(
+        std::begin(unicode::kToUpperFull), full_end, cp,
+        [](const unicode::FullCaseMapping& m, std::uint32_t v) { return m.from < v; });
+    if (full != full_end && full->from == cp) {
+      for (const std::uint32_t to : full->to) {
+        if (to != 0) append_utf8(out, to);
+      }
+      continue;
+    }
+    const auto* simple_end = std::end(unicode::kToUpper);
+    const auto* simple = std::lower_bound(
+        std::begin(unicode::kToUpper), simple_end, cp,
+        [](const unicode::CaseMapping& m, std::uint32_t v) { return m.from < v; });
+    append_utf8(out, simple != simple_end && simple->from == cp ? simple->to : cp);
+  }
+  return out;
 }
 
 std::string py_repr(std::string_view s) {

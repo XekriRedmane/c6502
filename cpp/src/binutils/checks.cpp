@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "argparse.h"
+#include "binutils/assembler.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
 #include "capture.h"
@@ -143,6 +144,40 @@ class Checker {
       ++count.matched;
       return "";
     }
+    if (kind == "assemble") {
+      ++count.ran;
+      if (!call.output_is_error) {
+        if (std::string problem = round_trip(output.get("object")->string); !problem.empty()) {
+          return problem;
+        }
+      }
+      const json::Value* links = args.get("link_symbols");
+      assembler::LinkSymbols symbols;
+      if (links->kind == json::Value::Kind::kArray) {
+        for (const auto& pair : links->items) {
+          const json::Value& address = pair.items.at(1);
+          symbols.emplace_back(pair.items.at(0).string,
+                               address.kind == json::Value::Kind::kNull
+                                   ? std::nullopt
+                                   : std::optional<asdl::Int>(address.integer));
+        }
+      }
+      std::string got;
+      try {
+        got = elf::write(assembler::assemble(
+            input.string, args.get("filename")->string,
+            links->kind == json::Value::Kind::kArray ? &symbols : nullptr,
+            args.get("keep_source")->boolean));
+      } catch (const CompileError& e) {
+        if (std::string problem = compare_error(e, call, output); !problem.empty()) return problem;
+        ++count.matched;
+        return "";
+      }
+      if (call.output_is_error) return "C++ assembled a text Python rejected";
+      if (got != blob(output.get("object")->string)) return "the object differs";
+      ++count.matched;
+      return "";
+    }
     if (kind == "parse_metadata") {
       ++count.ran;
       passes::LinkMetadata meta;
@@ -206,9 +241,7 @@ class Checker {
     // The files each kind holds that c6502 wrote, which must make the
     // trip through the C++ reader and writer.
     std::vector<std::string> files;
-    if (kind == "assemble" && !call.output_is_error) {
-      files.push_back(output.get("object")->string);
-    } else if (kind == "link") {
+    if (kind == "link") {
       for (const auto& pair : input.get("objects")->items) files.push_back(pair.items.at(1).string);
       if (!call.output_is_error) files.push_back(output.get("executable")->string);
     } else if (kind == "disassemble") {

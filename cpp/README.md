@@ -90,6 +90,7 @@ cpp/
     binutils/elf.*    binutils/elf.py, the ELF reader and writer (step 7)
     binutils/opcodes.*   binutils/opcodes.py, the 6502 opcode table
     binutils/nm.*     nm.py
+    binutils/assembler.*   binutils/assembler.py
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
     py_int.*          Python's `int()` of a string and its integer
@@ -2288,7 +2289,8 @@ in src/binutils/ and src/argparse.*.
   the terminal's width as `COLUMNS` and writes the output to Python's
   streams, so a test that redirects them gets it.
 
-Group A of step 7 ported the parser of the link metadata.
+Group A of step 7 ported the parser of the link metadata and the
+assembler.
 
 - `passes::parse_metadata` (src/passes/zp_link_metadata.h) is
   `zp_link_metadata.parse_metadata`, which the assembler and the linker
@@ -2299,12 +2301,31 @@ Group A of step 7 ported the parser of the link metadata.
   messages, and its limit of 4,300 decimal digits, and gives Python's
   ValueError, or the KeyError of a field read without a default, for a
   malformed block.
+- `binutils::assembler` (`assembler.h`) is binutils/assembler.py. It
+  holds each line as a `std::u32string`, so that positions and lengths
+  count code points, uppercases a mnemonic with `pcpp::upper`
+  (`str.upper`, with the full mappings `tools/pcpp_unicode_tables.py`
+  now writes as `kToUpperFull`, which make "ß" "SS"), and matches
+  `_TOKEN`, `_EQU`, `_LABEL`, and the operand patterns of
+  `_split_operand` by hand, since each has one way to match. It
+  computes with `py_int`'s checked operators, in the 128 bits of
+  `asdl::Int`, with floor division and an arithmetic `>>`. A value
+  wider than that throws an OverflowError that names the limit, and an
+  expression nested past 400 of Python's calls a RecursionError
+  (`kMaxDepth`), short of where Python's recursion limit stops it, so
+  the port never takes a text Python doesn't. The values c6502 writes
+  take at most 32 bits.
 
-`check-binutils` runs it on every `parse_metadata` record, which
-tools/capture_binutils.py now writes for each call, and requires the
-recorded `LinkMetadata` in tagged JSON and the lines `format_metadata`
-writes of it. tests/test_link_metadata.cpp has a case for each of
-`parse_metadata`'s 13 ValueError messages.
+`check-binutils` runs both on the records: every `assemble` record
+gives the recorded object's bytes or its error, and every
+`parse_metadata` record, which tools/capture_binutils.py now writes
+for each call, gives the recorded `LinkMetadata` in tagged JSON and the
+lines `format_metadata` writes of it. tests/test_link_metadata.cpp
+has a case for each of `parse_metadata`'s 13 ValueError messages, and
+tests/test_assembler.cpp for each of the assembler's 35 AssemblerError
+messages except the two no text reaches (an operator the parser
+doesn't make, and a statement whose bytes differ from its count), with
+Python's results for its Unicode text and its integers.
 
 `json::dump` (src/json.h) writes a `json::Value` as Python's
 `json.dumps` does, with `json::quote` for its strings, which

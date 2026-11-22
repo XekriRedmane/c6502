@@ -15,6 +15,7 @@
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
+#include "passes/link_checks.h"
 #include "pyrepr.h"
 
 namespace c6502::binutils {
@@ -110,6 +111,13 @@ class Checker {
     const json::Value args = json::parse(call.args_json);
     const json::Value input = json::parse(call.input);
     const json::Value output = json::parse(call.output);
+    if (passes::link_checks::handles(kind)) {
+      ++count.ran;
+      std::string problem =
+          passes::link_checks::check(kind, args, input, output, call.output_is_error);
+      if (problem.empty()) ++count.matched;
+      return problem;
+    }
     if (kind == "elf_read") {
       ++count.ran;
       const std::string data = blob(input.get("data")->string);

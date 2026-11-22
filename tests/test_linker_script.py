@@ -165,6 +165,11 @@ class TestScriptParser(unittest.TestCase):
              "ORIGIN of 'r' shifts by a negative count"),
             ("MEMORY { r : ORIGIN = 0, LENGTH = 8 / (2 - 2) }",
              "LENGTH of 'r' divides by zero"),
+            # These raised ValueError out of compile.py.
+            ("MEMORY { r : ORIGIN = 0800, LENGTH = 1 }",
+             "can't read the number '0800'"),
+            ("SECTIONS { .t 007 : { *(.a) } }",
+             "can't read the number '007'"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaisesRegex(ScriptError, message):

@@ -398,7 +398,15 @@ class _Parser:
         if re.fullmatch(r"(?:0[xX][0-9A-Fa-f]+|\d+)[KM]?", tok):
             scale = {"K": 1024, "M": 1024 * 1024}.get(tok[-1], 1)
             digits = tok[:-1] if scale != 1 else tok
-            return Num(int(digits, 0) * scale)
+            try:
+                return Num(int(digits, 0) * scale)
+            except ValueError:
+                # `int(s, 0)` rejects a decimal number with a leading 0
+                # other than 0 itself, such as `0800`.
+                raise ScriptError(
+                    f"can't read the number {tok!r}: a decimal number "
+                    f"other than 0 can't begin with 0"
+                ) from None
         if tok in _FUNCTIONS and self.peek() == "(":
             self.take("(")
             args = [self.expr()]

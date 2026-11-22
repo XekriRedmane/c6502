@@ -1,8 +1,9 @@
 // Tests of the ELF reader and writer, the opcode table, argparse, nm,
-// and the disassembler (src/binutils/, src/argparse.h). `c6502cpp check-binutils` checks
-// them on every file and command line tools/capture_binutils.py records,
-// and tests/test_cpp_binutils.py compares nm.py with and without the C++
-// port at several terminal widths.
+// the disassembler, and objdump (src/binutils/, src/argparse.h).
+// `c6502cpp check-binutils` checks them on every file and command line
+// tools/capture_binutils.py records, and tests/test_cpp_binutils.py
+// compares nm.py and objdump.py with and without the C++ port at
+// several terminal widths.
 #include <ostream>
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
+#include "binutils/objdump.h"
 #include "binutils/opcodes.h"
 #include "doctest.h"
 #include "errors.h"
@@ -286,4 +288,61 @@ TEST_CASE("disasm: an executable, with its EQUs, SEG, ORG, and RORG") {
     bare.push_back(l);
   }
   CHECK(disasm::disassemble(sample_exe(), false, nullptr, {false, false}) == bare);
+}
+
+TEST_CASE("objdump: the headers, symbols, relocations, and contents") {
+  CHECK(objdump::section_headers(sample()) ==
+        std::vector<std::string>{
+            "Sections:", "Idx Name                 Size  VMA   LMA   Algn",
+            "  0 .text                0004  0000  0000  2**0",
+            "                         CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE",
+            "  1 .bss                 0003  0000  0000  2**0", "                         ALLOC, DATA",
+            "  2 .c6502.link          002A  0000  0000  2**0", "                         CONTENTS"});
+  CHECK(objdump::symbol_table(sample()) ==
+        std::vector<std::string>{"SYMBOL TABLE:", "0000 l f  *ABS*        0000 t.c",
+                                 "0000 g F  .text        0004 f", "0003 l    .text        0000 .l@1",
+                                 "0000 l O  .bss         0003 buf", "0000 g    *UND*        0000 g"});
+  CHECK(objdump::relocations(sample(), nullptr) ==
+        std::vector<std::string>{"RELOCATION RECORDS FOR [.text] (f):",
+                                 "OFFSET TYPE              VALUE", "0001   R_MOS_ADDR16      g-2", ""});
+  CHECK(objdump::full_contents(sample(), nullptr) ==
+        std::vector<std::string>{
+            "Contents of section .text:", " 0000 20000060                              ..`",
+            "Contents of section .c6502.link:",
+            " 0000 3b20407a 702d6c69 6e6b2d6d 6574612d  ; @zp-link-meta-",
+            " 0010 62656769 6e0a3b20 407a702d 6c696e6b  begin.; @zp-link",
+            " 0020 2d6d6574 612d656e 640a               -meta-end."});
+  // The name is padded by code points, and an alignment of 4 is 2**2.
+  CHECK(objdump::section_headers(sample_exe()) ==
+        std::vector<std::string>{"Sections:", "Idx Name                 Size  VMA   LMA   Algn",
+                                 "  0 .t\xC3\xA9xt                000E  0800  C000  2**2",
+                                 "                         CONTENTS, ALLOC, LOAD, READONLY, CODE",
+                                 "  1 .bss                 0004  0300  0300  2**0",
+                                 "                         ALLOC, DATA"});
+  CHECK(objdump::file_header(sample_exe(), "x/e") ==
+        std::vector<std::string>{"x/e:     file format elf32-mos",
+                                 "architecture: mos6502, flags 0x00000001:", "executable",
+                                 "start address 0x0800"});
+  CHECK(objdump::full_contents(sample_exe(), nullptr) ==
+        std::vector<std::string>{"Contents of section .t\xC3\xA9xt:",
+                                 " 0800 d0fead80 00ad0103 6c100002 a907      ........l....."});
+}
+
+TEST_CASE("objdump: a command line that asks for nothing returns 2") {
+  std::string out;
+  std::string err;
+  const nm::ReadFile none = [](const std::string&) -> std::string { throw nm::FileError{"x"}; };
+  CHECK(objdump::main({"objdump.py", "f.o"}, none, 80, out, err) == 2);
+  CHECK(out.empty());
+  CHECK(err == "objdump.py: give at least one of -d -D -f -h -t -r -s -x --link-metadata\n");
+  err.clear();
+  CHECK(objdump::main({"objdump.py", "-d", "f.o"}, none, 80, out, err) == 1);
+  CHECK(err == "objdump.py: x\n");
+  // A damaged file is named as the command line gives it, as nm names
+  // one.
+  const std::string data = elf::write(sample());
+  const nm::ReadFile half = [&](const std::string&) { return data.substr(0, data.size() / 2); };
+  err.clear();
+  CHECK(objdump::main({"objdump.py", "-d", "./x.o"}, half, 80, out, err) == 1);
+  CHECK(err == "objdump.py: ./x.o: the ELF file is truncated or damaged\n");
 }

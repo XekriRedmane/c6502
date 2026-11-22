@@ -13,6 +13,7 @@
 #include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
+#include "binutils/objdump.h"
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
@@ -160,13 +161,13 @@ class Checker {
       ++count.matched;
       return "";
     }
-    if (kind == "nm") {
+    if (kind == "nm" || kind == "objdump") {
       ++count.ran;
       std::map<std::string, std::string> files;
       for (const auto& pair : input.get("files")->items) {
         files.emplace(pair.items.at(0).string, pair.items.at(1).string);
       }
-      std::vector<std::string> argv{"nm.py"};
+      std::vector<std::string> argv{std::string(kind) + ".py"};
       for (const auto& a : args.get("argv")->items) argv.push_back(a.string);
       const nm::ReadFile read_file = [&](const std::string& path) {
         const auto it = files.find(path);
@@ -178,8 +179,9 @@ class Checker {
       };
       std::string out;
       std::string err;
-      const int status = nm::main(argv, read_file,
-                                  static_cast<int>(args.get("columns")->integer), out, err);
+      const auto tool = kind == "nm" ? nm::main : objdump::main;
+      const int status =
+          tool(argv, read_file, static_cast<int>(args.get("columns")->integer), out, err, nullptr);
       if (out != output.get("stdout")->string) {
         return "stdout differs\nC++:\n" + out + "Python:\n" + output.get("stdout")->string;
       }

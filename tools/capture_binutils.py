@@ -704,10 +704,6 @@ def _linker_record(kind: str, real, take, give):
     return wrapper
 
 
-def _pairs(d) -> list:
-    return [[k, v] for k, v in d.items()]
-
-
 def _zp_objects_json(objects) -> list:
     from capture_passes import encode
     return [[name, encode(records)] for name, records in objects.items()]
@@ -903,7 +899,7 @@ def _ref(obj) -> str:
     return _blob(json.dumps(_elf_json(obj)).encode("utf-8"))
 
 
-def _objects_json(objects) -> list:
+def _object_refs(objects) -> list:
     return [[path, _ref(obj)] for path, obj in objects]
 
 
@@ -990,7 +986,7 @@ def _wrap_call(kind: str, real, describe, result):
 
 def _wrap_global_definitions(real):
     def describe(objects):
-        return {}, {"objects": _objects_json(objects)}
+        return {}, {"objects": _object_refs(objects)}
 
     def result(out, objects):
         defs, absolute = out
@@ -1047,7 +1043,7 @@ def _wrap_executable(real):
         where = _where(objects)
         by_id = {i: w for i, w in where.items()}
         return {"entry": entry, "link_text": link_text}, {
-            "objects": _objects_json(objects),
+            "objects": _object_refs(objects),
             "outputs": _outputs_json(outputs, where),
             "placed": [[by_id[i], addr] for i, addr in resolver.addr.items()],
             "extra": _pairs(resolver.extra),
@@ -1062,7 +1058,7 @@ def _wrap_executable(real):
 
 def _wrap_runtime_object(real):
     def describe(objects, defsyms):
-        return {"defsyms": _pairs(defsyms)}, {"objects": _objects_json(objects)}
+        return {"defsyms": _pairs(defsyms)}, {"objects": _object_refs(objects)}
 
     def result(out, objects, defsyms):
         from binutils import elf as E
@@ -1128,7 +1124,7 @@ def _wrap_apply_renames(real):
 
 def _wrap_pointer_names(real):
     def describe(objects):
-        return {}, {"objects": _objects_json(objects)}
+        return {}, {"objects": _object_refs(objects)}
 
     def result(out, objects):
         return sorted(out)
@@ -1139,10 +1135,10 @@ def _wrap_reassemble(real):
     def describe(objects, renames, placed, outside):
         return {"renames": [_pairs(r) for r in renames],
                 "placed": _pairs(placed), "outside": sorted(outside)}, {
-            "objects": _objects_json(objects)}
+            "objects": _object_refs(objects)}
 
     def result(out, objects, renames, placed, outside):
-        return {"objects": _objects_json(objects)}
+        return {"objects": _object_refs(objects)}
     return _wrap_call("reassemble", real, describe, result)
 
 
@@ -1151,7 +1147,7 @@ def _wrap_output_symbols(real):
                  layout_symbols, defsyms):
         where = _where(objects)
         return {}, {
-            "objects": _objects_json(objects),
+            "objects": _object_refs(objects),
             "outputs": _outputs_json(outputs, where),
             "addr_of": [[where[i], p.unit, p.addr, p.size]
                         for i, p in addr_of.items()],
@@ -1169,11 +1165,11 @@ def _wrap_output_symbols(real):
 
 def _wrap_merge_identical(real):
     def describe(objects, metas):
-        return {}, {"objects": _objects_json(objects),
+        return {}, {"objects": _object_refs(objects),
                     "metas": [_items_json(m.items) for m in metas]}
 
     def result(out, objects, metas):
-        return {"objects": _objects_json(objects),
+        return {"objects": _object_refs(objects),
                 "metas": [_items_json(m.items) for m in metas]}
     return _wrap_call("merge_identical", real, describe, result)
 

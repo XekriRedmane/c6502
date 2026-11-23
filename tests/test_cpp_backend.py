@@ -412,5 +412,271 @@ class TestTheFrontEnd(unittest.TestCase):
         self.assertEqual(done.stdout.strip(), "[]")
 
 
+def _run_files(args: list[str], cpp: bool, files: dict[str, str | bytes],
+               *, stdin: str | None = None) -> tuple:
+    """Runs `compile.py <args>` as a script in a new directory holding
+    `files` (text or bytes), with the C++ port on or off, and returns
+    its exit status, stdout, stderr, and every file the directory holds
+    afterward, by name. A traceback's lines name compile.py's source
+    lines, so of a traceback only its last line is kept."""
+    env = dict(os.environ)
+    env.pop("C6502_CPP_BACKEND", None)
+    if cpp:
+        env["C6502_CPP_BACKEND"] = "1"
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, data in files.items():
+            path = Path(tmp) / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(data, bytes):
+                path.write_bytes(data)
+            else:
+                path.write_text(data, encoding="utf-8", newline="\n")
+        done = subprocess.run(
+            [sys.executable, str(_ROOT / "compile.py"), *args],
+            cwd=tmp, env=env, input=stdin, capture_output=True, text=True,
+        )
+        left = {
+            p.relative_to(tmp).as_posix(): p.read_bytes()
+            for p in sorted(Path(tmp).rglob("*")) if p.is_file()
+        }
+    err = done.stderr
+    if "Traceback (most recent call last)" in err:
+        err = err.rstrip("\n").rsplit("\n", 1)[-1]
+    return done.returncode, done.stdout, err, left
+
+
+# A program in three units, one of each kind of input to a link: `main`
+# in C, `twice` in an assembly file written by `-S -O`, and `add` in an
+# object written by `-c -O`. `port` is a name no unit defines, which
+# `--defsym` gives.
+_MAIN = (
+    "extern volatile unsigned char port;\n"
+    "unsigned char twice(unsigned char x);\n"
+    "unsigned char add(unsigned char a, unsigned char b);\n"
+    "_Bool flag;\n"
+    "int main(void) { port = add(twice(3), 4); return flag; }\n"
+)
+_TWICE = "unsigned char twice(unsigned char x) { return x + x; }\n"
+_ADD = "unsigned char add(unsigned char a, unsigned char b) { return a * b; }\n"
+# The inputs of a link of the three units.
+_LINKED = ["main.c", "twice.asm", "add.o", "--defsym", "port=0xC000"]
+_ROM_SCRIPT = (
+    "MEMORY { ROM : ORIGIN = 0x8000, LENGTH = 0x1000\n"
+    "         RAM : ORIGIN = 0x0300, LENGTH = 0x0400 }\n"
+    "SECTIONS { .text : { *(.text) } > ROM\n"
+    "           .rodata : { *(.rodata) } > ROM\n"
+    "           .data : { *(.data) } > RAM AT> ROM\n"
+    "           .bss (NOLOAD) : { *(.bss) } > RAM }\n"
+)
+
+
+def _slot_metadata_asm(kind: str) -> str:
+    """An assembly file whose link metadata gives one function 66,000
+    parameter bytes (`kind` "slot") or local bytes ("local"), more than
+    the spill region from $0200 holds, so that the link's allocator
+    fails. No compile writes such a block, so it is written by hand."""
+    n = 66000
+    if kind == "slot":
+        names = ",".join(f"__zpabi_f__p{k}" for k in range(n))
+        defs = f"; def f params={names} locals= indirect=false in_cycle=false\n"
+        body = " RTS\n"
+    else:
+        names = ",".join(f"__local_f__{k}" for k in range(n))
+        defs = f"; def f params= locals={names} indirect=false in_cycle=false\n"
+        # A function that takes a local's address keeps its whole pool.
+        body = " LDA #<__local_f__0\n RTS\n"
+    return (
+        "; @zp-link-meta-begin\n" + defs
+        + "; def main params= locals= indirect=false in_cycle=false\n"
+        "; item main section=.text local=false zero=false\n"
+        "; item f section=.text local=false zero=false\n"
+        "; call main -> f\n"
+        "; runtime hargs_size=32 hargs_need=0\n"
+        "; @zp-link-meta-end\n"
+        "main:\n JSR f\n RTS\nf:\n" + body
+    )
+
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestObjectsAndLinks(unittest.TestCase):
+    """`-c` and a link hand every input to C++ in one request
+    (`cpp_backend.build`), and give what the Python path gives: the
+    messages, the exit status, and the files written and not written."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.files: dict[str, str | bytes] = {
+            "main.c": _MAIN, "twice.c": _TWICE, "add.c": _ADD,
+            "rom.ld": _ROM_SCRIPT,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("twice.c", "add.c"):
+                Path(tmp, name).write_text(cls.files[name], encoding="utf-8")
+            env = dict(os.environ)
+            env.pop("C6502_CPP_BACKEND", None)
+            for args in (["twice.c", "-S", "-O", "-o", "twice.asm"],
+                         ["add.c", "-c", "-O", "-o", "add.o"]):
+                subprocess.run(
+                    [sys.executable, str(_ROOT / "compile.py"), *args],
+                    cwd=tmp, env=env, check=True, capture_output=True,
+                )
+            cls.files["twice.asm"] = Path(tmp, "twice.asm").read_text(encoding="utf-8")
+            cls.files["add.o"] = Path(tmp, "add.o").read_bytes()
+
+    def _same(self, args: list[str], extra: dict | None = None, **kw) -> tuple:
+        files = {**self.files, **(extra or {})}
+        cpp = _run_files(args, True, files, **kw)
+        self.assertEqual(cpp, _run_files(args, False, files, **kw))
+        return cpp
+
+    def test_objects_of_c_and_assembly(self):
+        for opt in ([], ["-O"]):
+            with self.subTest(opt=opt):
+                status, _, err, left = self._same(
+                    ["-c", *opt, "main.c", "twice.asm"])
+                self.assertEqual(status, 0)
+                self.assertIn("main.c: warning: line 4: ", err)
+                self.assertIn("main.o", left)
+                self.assertIn("twice.o", left)
+
+    def test_object_of_stdin(self):
+        status, _, err, left = self._same(
+            ["-c", "-", "-O", "-o", "s.o"], stdin=_MAIN)
+        self.assertEqual(status, 0)
+        self.assertIn("<stdin>: warning: ", err)
+        self.assertIn("s.o", left)
+
+    def test_link_of_each_kind_of_input(self):
+        for extra in (["-T", "rom.ld"], ["-Ttext=0x1000"], ["--origin", "$2000"]):
+            with self.subTest(extra=extra):
+                status, _, _, left = self._same(
+                    ["-O", "main.c", "twice.asm", "add.o", *extra,
+                     "--defsym", "port=0xC000", "-o", "prog"])
+                self.assertEqual(status, 0)
+                self.assertIn("prog", left)
+        # Without -o the executable is a.out, and without -O the C
+        # input is compiled without the optimizer.
+        status, _, _, left = self._same(
+            ["main.c", "twice.asm", "add.o", "--defsym=port=49152"])
+        self.assertEqual(status, 0)
+        self.assertIn("a.out", left)
+
+    def test_error_in_the_second_of_several_c_inputs(self):
+        bad = {"bad.c": "int f(void) { return y; }\n"}
+        status, _, err, left = self._same(
+            ["-c", "main.c", "bad.c", "twice.c"], bad)
+        self.assertEqual(status, 1)
+        self.assertRegex(err, r"(?s)main\.c: warning: .*bad\.c: error: ")
+        self.assertIn("main.o", left)
+        self.assertNotIn("bad.o", left)
+        self.assertNotIn("twice.o", left)
+        status, _, err, left = self._same(
+            ["main.c", "bad.c", "twice.c", "-o", "prog"], bad)
+        self.assertEqual(status, 1)
+        self.assertRegex(err, r"(?s)main\.c: warning: .*bad\.c: error: ")
+        self.assertNotIn("prog", left)
+
+    def test_an_error_of_each_class(self):
+        cases = {
+            "AssemblerError": (["-c", "bad.asm"], {"bad.asm": "f:\n BNE 5\n"}),
+            "AssemblerError in a link": (
+                ["main.c", "bad.asm"], {"bad.asm": "f:\n BNE 5\n"}),
+            "ElfError": (["main.c", "bad.o"], {"bad.o": b"not an ELF file"}),
+            "LinkError": (["main.c", "twice.asm", "add.o"], {}),
+            "ScriptError": ([*_LINKED, "-T", "bad.ld"], {"bad.ld": "SECTIONS {\n"}),
+            "LayoutError": (
+                [*_LINKED, "-T", "nodata.ld"],
+                {"nodata.ld": "SECTIONS { .data : { *(.data) } }\n"}),
+            "ZpSlotAllocationError": (
+                ["slot.asm", "-o", "prog"], {"slot.asm": _slot_metadata_asm("slot")}),
+            "ZpLocalAllocationError": (
+                ["local.asm", "-o", "prog"],
+                {"local.asm": _slot_metadata_asm("local")}),
+            "a missing input": (["main.c", "missing.o"], {}),
+            "a missing C input after a good one": (["-c", "main.c", "missing.c"], {}),
+            "an input that isn't UTF-8": (["-c", "x.asm"], {"x.asm": b"; \xff\n"}),
+            "an object given to -c": (["-c", "main.c", "add.o"], {}),
+            "a missing script": ([*_LINKED, "-T", "missing.ld"], {}),
+        }
+        for name, (args, extra) in cases.items():
+            with self.subTest(error=name):
+                status, _, err, _ = self._same(args, extra)
+                self.assertNotEqual(status, 0, err)
+                self.assertTrue(
+                    err.startswith(("compile.py: ", "main.c: warning")) or ": error: " in err,
+                    err)
+
+    def test_struct_error_leaves_an_empty_file(self):
+        # `elf.write` packs an addend in 32 bits, and raises struct.error
+        # after compile.py has opened the object's file.
+        big = {"big.asm": "f:\n LDA g+$100000000\n RTS\n"}
+        status, _, err, left = self._same(["-c", "big.asm"], big)
+        self.assertEqual(status, 1)
+        self.assertEqual(err, "struct.error: argument out of range")
+        self.assertEqual(left["big.o"], b"")
+
+    def test_an_executable_that_cant_be_written(self):
+        status, _, err, _ = self._same([*_LINKED, "-o", "nodir/prog"])
+        self.assertEqual(status, 1)
+        self.assertEqual(
+            err, "FileNotFoundError: [Errno 2] No such file or directory: 'nodir/prog'")
+
+    def test_compile_imports_no_binutils_or_linker(self):
+        # Run as a script with the variable set, `-c` and a link import
+        # none of the modules a Python link would. The modules are
+        # found by importing them in another process and keeping the
+        # ones from this repository, and numpy.
+        code = (
+            "import sys\n"
+            "base = set(sys.modules)\n"
+            "import passes.linker, binutils.assembler, binutils.elf\n"
+            "import passes.runtime_library, rtlib.helpers\n"
+            "print('\\n'.join(sorted(set(sys.modules) - base)))\n"
+        )
+        env = dict(os.environ)
+        env.pop("C6502_CHECK_IR", None)
+        env.pop("C6502_CPP_BACKEND", None)
+        done = subprocess.run(
+            [sys.executable, "-c", code], cwd=_ROOT, env=env, check=True,
+            capture_output=True, text=True,
+        )
+        linker = set()
+        for name in done.stdout.split():
+            top = name.split(".")[0]
+            if top == "numpy" or (_ROOT / top).exists() or (_ROOT / f"{top}.py").exists():
+                linker.add(name)
+        self.assertIn("passes.type_checking", linker)
+        self.assertIn("numpy", linker)
+        run = (
+            "import runpy, sys\n"
+            "sys.argv = sys.argv[1:]\n"
+            "try:\n"
+            "    runpy.run_path(sys.argv[0], run_name='__main__')\n"
+            "except SystemExit as e:\n"
+            "    assert not e.code, e.code\n"
+            "print('\\n'.join(sorted(sys.modules)))\n"
+        )
+        env["C6502_CPP_BACKEND"] = "1"
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("main.c", "twice.asm", "add.o", "rom.ld"):
+                data = self.files[name]
+                path = Path(tmp) / name
+                if isinstance(data, bytes):
+                    path.write_bytes(data)
+                else:
+                    path.write_text(data, encoding="utf-8", newline="\n")
+            for args in (["-c", "-O", "main.c", "twice.asm"],
+                         ["-O", "main.c", "twice.asm", "add.o", "-T", "rom.ld",
+                          "--defsym", "port=0xC000", "-o", "prog"]):
+                with self.subTest(args=args):
+                    done = subprocess.run(
+                        [sys.executable, "-c", run,
+                         str(_ROOT / "compile.py"), *args],
+                        cwd=tmp, env={**env, "PYTHONPATH": str(_ROOT)},
+                        check=True, capture_output=True, text=True,
+                    )
+                    self.assertEqual(sorted(linker & set(done.stdout.split())), [])
+
+
 if __name__ == "__main__":
     unittest.main()

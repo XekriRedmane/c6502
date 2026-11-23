@@ -18,6 +18,15 @@ code generation lowered and the finished asm and asm2 programs for
 returns the finished asm program with its slot symbols, which the
 simulator harness assembles.
 
+`build` sends the inputs of `compile.py -c` or of a link in one request:
+each C source's text, each assembly file's text, and each object's
+bytes, with a link's script, origin, `--defsym`s, and output. The C++
+side compiles and assembles them in the same process, returns each
+object of `-c`, and links and writes the executable of a link, so no
+Python assembles or links. `Built` holds the response, which compile.py
+replays input by input, so that what it writes and the files it leaves
+are those of the Python path.
+
 The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
 issues again through `diagnostics.warn`, as the Python preprocessor
@@ -50,11 +59,15 @@ _INCLUDE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "include
 # reports by name, for the classes the builtins don't have.
 _ERROR_MODULES = {
     "AbiSelectionError": "passes.abi_selection",
+    "AssemblerError": "binutils.assembler",
     "ConstantExpressionError": "passes.constant_expression",
+    "ElfError": "binutils.elf",
     "FrameSizeError": "passes.asm_to_asm2",
     "IdentifierResolutionError": "passes.identifier_resolution",
     "LabelResolutionError": "passes.label_resolution",
+    "LayoutError": "passes.link_layout",
     "LexError": "lexer",
+    "LinkError": "binutils.ld",
     "LoopLabelingError": "passes.loop_labeling",
     "NumberError": "pp_numbers",
     "ParserError": "parser",
@@ -62,6 +75,7 @@ _ERROR_MODULES = {
     "RecursionSaveError": "passes.recursion_saves",
     "RegallocError": "passes.optimization_asm.regalloc",
     "RuntimeLayoutError": "passes.runtime_layout",
+    "ScriptError": "passes.link_script",
     "TypeCheckError": "passes.type_checking",
     "UnexpectedCharacters": "lark.exceptions",
     "UnexpectedEOF": "lark.exceptions",
@@ -83,9 +97,14 @@ _WITH_MESSAGE: dict[type, type] = {}
 def _error_type(name: str) -> type[BaseException]:
     """The Python exception class that the C++ `CompileError` of Python
     type `name` stands for, or RuntimeError for a name neither the
-    compiler nor the builtins have."""
+    compiler nor the builtins have. A name with a module in front, such
+    as `struct.error`, which `elf.write` raises, is that module's class,
+    since `re.error` has the same name."""
     import builtins
     import importlib
+    if "." in name:
+        module, _, attr = name.rpartition(".")
+        return getattr(importlib.import_module(module), attr)
     if name in _ERROR_MODULES:
         return getattr(importlib.import_module(_ERROR_MODULES[name]), name)
     found = getattr(builtins, name, None)
@@ -127,7 +146,7 @@ def _exception(name: str, message: str) -> BaseException:
     return sub(message)
 
 
-def _send(request: str) -> bytes:
+def _send(request: str | bytes) -> bytes:
     """Sends `request` to `c6502cpp backend` and returns the response's
     bytes. A bug the C++ compiler reports (exit status 3) is raised as
     an `AssertionError` with its message, since that is what the C++
@@ -140,7 +159,8 @@ def _send(request: str) -> bytes:
             "(cpp/README.md has the build)",
         )
     done = subprocess.run(
-        [str(cli), "backend"], input=request.encode("utf-8"),
+        [str(cli), "backend"],
+        input=request.encode("utf-8") if isinstance(request, str) else request,
         capture_output=True,
     )
     if done.returncode != 0:
@@ -242,17 +262,160 @@ def compile_source(
         ir_check.check_asm(out, after="the C++ back end")
         return out, dict(json.loads(lines["symbols"]))
     if check:
-        import asm2_ast
-        import asm_ast
-        import ir_dump
-        from passes import ir_check
-        ir_check.check_asm(
-            ir_dump.load(sections["asm"], asm_ast), after="the C++ back end",
-        )
-        ir_check.check_asm2(
-            ir_dump.load(sections["asm2"], asm2_ast), after="asm_to_asm2",
-        )
+        _check_programs(sections)
     return sections["text"]
+
+
+def _check_programs(sections: dict[str, str]) -> None:
+    """Checks the finished asm program and the asm2 program of a text
+    in the response's `asm` and `asm2` sections."""
+    import asm2_ast
+    import asm_ast
+    import ir_dump
+    from passes import ir_check
+    ir_check.check_asm(
+        ir_dump.load(sections["asm"], asm_ast), after="the C++ back end",
+    )
+    ir_check.check_asm2(
+        ir_dump.load(sections["asm2"], asm2_ast), after="asm_to_asm2",
+    )
+
+
+# The keys of the response's lines that a section of that many bytes
+# follows.
+_SECTION_KEYS = ("stderr", "tac", "asm", "asm2", "text", "object")
+
+
+def _records(data: bytes) -> list[tuple[str, str, bytes | None]]:
+    """Splits a response into its lines in order, each as its key, the
+    rest of the line, and the bytes of the section that follows it
+    (None for a line without one)."""
+    out = []
+    pos = 0
+    while pos < len(data):
+        end = data.index(b"\n", pos)
+        key, _, value = data[pos:end].decode("utf-8").partition(" ")
+        pos = end + 1
+        body = None
+        if key in _SECTION_KEYS:
+            n = int(value)
+            body = data[pos:pos + n]
+            pos += n
+        out.append((key, value, body))
+    return out
+
+
+class InputResult:
+    """What the C++ side gave for one input of `build`: for a C input
+    what the preprocessor wrote to stderr, the warnings, and the IR for
+    `ir_check`, then the error that ended the response, the `struct.error`
+    of writing the object, or the object's bytes."""
+
+    def __init__(self) -> None:
+        self.stderr = ""
+        self.warnings: list = []
+        self.sections: dict[str, str] = {}
+        self.error: dict | None = None
+        self.write_error: dict | None = None
+        self.object: bytes | None = None
+
+    def replay(self) -> None:
+        """Writes what the preprocessor wrote to stderr, issues the
+        warnings to the caller's `diagnostics.collecting()` block, runs
+        `ir_check` on the IR under `C6502_CHECK_IR=1`, and raises the
+        input's error as its Python exception, in the order the Python
+        compile and assembly give them."""
+        import diagnostics
+        if self.stderr:
+            sys.stderr.write(self.stderr)
+        for where, message in self.warnings:
+            diagnostics.warn(where, message)
+        if self.error is not None:
+            raise _exception(self.error["type"], self.error["message"])
+        if "tac" in self.sections:
+            _check_tac(self.sections["tac"])
+            _check_programs(self.sections)
+
+    def write(self, f) -> None:
+        """Writes the object to the open file `f`, or raises the
+        `struct.error` that Python's `elf.write` raises for it, after
+        compile.py has opened the file."""
+        if self.write_error is not None:
+            raise _exception(self.write_error["type"], self.write_error["message"])
+        f.write(self.object)
+
+
+class Built:
+    """The response to `build`: an `InputResult` for each input the C++
+    side reached, in order, and for a link its result, one of
+    `("link-error", error)`, `("write-error", error)`, `("output-error",
+    {"errno", "strerror"})`, and `("executable", size)`, or None when no
+    link ran."""
+
+    def __init__(self, data: bytes, link: bool) -> None:
+        self.inputs: list[InputResult] = []
+        self.link: tuple[str, object] | None = None
+        for key, value, body in _records(data):
+            if key == "input":
+                self.inputs.append(InputResult())
+                continue
+            # An input of a link has no `write-error`, since compile.py
+            # writes no object, so one comes after the inputs.
+            if key in ("link-error", "output-error") or (
+                    key == "write-error" and link):
+                self.link = (key, json.loads(value))
+                continue
+            if key == "executable":
+                self.link = (key, int(value))
+                continue
+            current = self.inputs[-1]
+            if key == "stderr":
+                current.stderr = body.decode("utf-8")
+            elif key == "warnings":
+                current.warnings = json.loads(value)
+            elif key in ("tac", "asm", "asm2"):
+                current.sections[key] = body.decode("utf-8")
+            elif key == "error":
+                current.error = json.loads(value)
+            elif key == "write-error":
+                current.write_error = json.loads(value)
+            elif key == "object":
+                current.object = body
+            elif key != "ok":
+                raise RuntimeError(f"c6502cpp backend gave a line {key!r}")
+
+
+def build(inputs: list[dict], pcpp_args, *, optimize: bool, inline: bool,
+          link: dict | None = None) -> Built:
+    """Compiles, assembles, and reads `inputs` in the C++ port, as
+    `compile._object` does for `-c` (`link` None) or for a link, and
+    links them. Each input is a dict with `kind` ("c", "asm", or
+    "object"), `name` (the assembler's file name for the object, or an
+    object's path), `filename` (a C input's file name for the
+    preprocessor, None for stdin), `link_name` (the name the linker
+    knows the object by), and `data` (the text, or an object's bytes).
+    `link` holds `run_link`, `script`, `origin`, `defsyms` (pairs), and
+    `output`. `optimize` and `inline` are as for `compile_source`. The
+    C++ side writes the executable itself."""
+    check = _ir_check_enabled()
+    args = {
+        "pcpp_args": list(pcpp_args or []), "include_dir": _INCLUDE_DIR,
+        "optimize": optimize, "inline": inline, "check_ir": check,
+        "inputs": [
+            {k: i[k] for k in ("kind", "name", "filename", "link_name")}
+            for i in inputs
+        ],
+        **(link or {}),
+    }
+    mode = "objects" if link is None else "link"
+    parts = [f"c6502-backend 3\nmode {mode}\nargs {json.dumps(args)}\n".encode("utf-8")]
+    for i in inputs:
+        data = i["data"]
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        parts.append(f"input {len(data)}\n".encode("utf-8") + data)
+    return Built(_send(b"".join(parts)), link is not None)
+
 
 
 def _ir_check_enabled() -> bool:

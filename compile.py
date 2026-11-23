@@ -379,7 +379,6 @@ def main(argv: list[str]) -> int:
                 sys.stdout.write(text)
         return 0
 
-    from binutils import elf as E
     if stage == "object":
         if args.output is not None and len(inputs) > 1:
             print("compile.py: -o with -c and more than one input",
@@ -388,6 +387,9 @@ def main(argv: list[str]) -> int:
         if "-" in inputs and args.output is None:
             print("compile.py: -c on stdin needs -o", file=sys.stderr)
             return 2
+        if _cpp_backend():
+            return _cpp_build(args, pcpp_args)
+        from binutils import elf as E
         for path in inputs:
             if _kind(path) == "object":
                 print(f"compile.py: {path} is already an object",
@@ -404,10 +406,6 @@ def main(argv: list[str]) -> int:
         return 0
 
     # Link.
-    from passes.linker import (
-        DEFAULT_ORIGIN, LinkError, ZpLocalAllocationError,
-        ZpSlotAllocationError, link_objects, read_script,
-    )
     defsyms: dict[str, int] = {}
     for d in args.defsym:
         name, sep, value = d.partition("=")
@@ -419,6 +417,13 @@ def main(argv: list[str]) -> int:
             print(f"compile.py: --defsym takes NAME=VALUE: {d}",
                   file=sys.stderr)
             return 2
+    if _cpp_backend():
+        return _cpp_build(args, pcpp_args, defsyms)
+    from binutils import elf as E
+    from passes.linker import (
+        DEFAULT_ORIGIN, LinkError, ZpLocalAllocationError,
+        ZpSlotAllocationError, link_objects, read_script,
+    )
     objects = []
     for path in inputs:
         try:
@@ -440,6 +445,116 @@ def main(argv: list[str]) -> int:
         return 1
     with open(args.output or "a.out", "wb") as f:
         f.write(E.write(exe))
+    return 0
+
+
+# The classes of the errors a link reports as `compile.py: link error:
+# <message>`, which the Python path catches as `passes.linker`'s classes.
+_LINK_ERRORS = ("LinkError", "ZpSlotAllocationError", "ZpLocalAllocationError")
+
+
+def _input_data(path: str, kind: str):
+    """The contents of the input at `path` as `_object` reads them, with
+    the file name the preprocessor gives a C source (None for stdin and
+    for the other kinds): a C source's text, an assembly file's text, or
+    an object's bytes."""
+    from pathlib import Path
+    if kind == "c":
+        return _read_source(path)
+    if kind == "asm":
+        return Path(path).read_text(encoding="utf-8"), None
+    return Path(path).read_bytes(), None
+
+
+def _cpp_build(args, pcpp_args, defsyms: dict[str, int] | None = None) -> int:
+    """Runs `-c` (`defsyms` None) or a link under `C6502_CPP_BACKEND=1`,
+    with every input compiled, assembled, or read, and the objects
+    linked, in one call of `c6502cpp backend` (`cpp_backend.build`).
+
+    Python reads the inputs first, up to the first one it can't read
+    or, for `-c`, the first object. It then goes through the C++ side's
+    results input by input as the Python path does: it writes what each
+    C input's preprocessor wrote to stderr and prints its warnings,
+    raises the input's error as its Python exception and reports it with
+    `_report`, or writes the object of `-c`. Only then does it report the
+    input it stopped at, so the messages and the files written are the
+    Python path's. A link's error keeps its Python class, and the C++
+    side writes the executable."""
+    from pathlib import Path
+    import cpp_backend
+    link = defsyms is not None
+    inputs = []
+    stop: str | Exception | None = None
+    for path in args.inputs:
+        kind = _kind(path)
+        if not link and kind == "object":
+            stop = path
+            break
+        try:
+            data, filename = _input_data(path, kind)
+        except _read_errors() as e:
+            stop = e
+            break
+        if kind == "object":
+            name = path
+        elif kind == "c":
+            name = f"{_stem(path)}.c"
+        else:
+            name = Path(path).name
+        inputs.append({
+            "path": path, "kind": kind, "data": data, "filename": filename,
+            "name": name,
+            "link_name": path if kind == "object" else f"{_stem(path)}.o",
+        })
+    output = args.output or "a.out"
+    built = cpp_backend.build(
+        inputs, pcpp_args, optimize=args.optimize, inline=_inlining(),
+        link=None if not link else {
+            "run_link": stop is None,
+            # An empty `-T` links without a script, as `if args.script`
+            # does on the Python path.
+            "script": args.script or None, "origin": args.origin,
+            "defsyms": list(defsyms.items()), "output": output,
+        },
+    )
+    for given, result in zip(inputs, built.inputs):
+        path = given["path"]
+        try:
+            if given["kind"] == "c":
+                with diagnostics.collecting() as found:
+                    try:
+                        result.replay()
+                    finally:
+                        _print_warnings(path, found)
+            else:
+                result.replay()
+        except _input_errors() as e:
+            _report(path, e)
+            return 1
+        if not link:
+            with open(args.output or f"{_stem(path)}.o", "wb") as f:
+                result.write(f)
+    if isinstance(stop, str):
+        print(f"compile.py: {stop} is already an object", file=sys.stderr)
+        return 2
+    if stop is not None:
+        _report(args.inputs[len(inputs)], stop)
+        return 1
+    if not link:
+        return 0
+    key, value = built.link
+    if key == "link-error":
+        e = cpp_backend._exception(value["type"], value["message"])
+        if value["type"] not in _LINK_ERRORS:
+            raise e
+        print(f"compile.py: link error: {e}", file=sys.stderr)
+        return 1
+    if key == "write-error":
+        # Python opens the executable's file before `elf.write` raises.
+        with open(output, "wb"):
+            raise cpp_backend._exception(value["type"], value["message"])
+    if key == "output-error":
+        raise OSError(value["errno"], value["strerror"], output)
     return 0
 
 

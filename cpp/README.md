@@ -23,7 +23,8 @@ string lifting, `label_resolution`, `loop_labeling`, and the type
 checker are ported ("The front end's calls"). Of the object-file
 tools of step 7, the ELF reader and writer, the opcode table, the
 part of argparse that nm.py and objdump.py use, nm, the linker scripts,
-and the layout are ported, and `C6502_CPP_BACKEND=1` runs the C++ nm
+the layout, binutils/ld.py, and the linker's functions on the objects
+are ported, and `C6502_CPP_BACKEND=1` runs the C++ nm
 for nm.py ("The object-file tools").
 
 ## Building
@@ -2565,6 +2566,84 @@ local bytes, with the options `link_objects` gives them under a script,
 and gets Python's `ZpSlotAllocationError` and `ZpLocalAllocationError`.
 The allocators' cycle error no longer comes from a link, since
 `validate_eligibility` rejects a cycle across units first.
+### ld.py and the linker's objects (group D2)
+
+`binutils::ld` (src/binutils/ld.*) is binutils/ld.py:
+`global_definitions`, the `Resolver`, `relax`, `relocate`, and
+`executable`, beside the `Placed` and `OutputSection` that group C
+declared. `passes::linker` (src/passes/linker_objects.*) holds the
+functions of passes/linker.py that work on the objects:
+`runtime_library` (Python's `_runtime_library`, which assembles E's
+`library_text` with A's assembler as `runtime.o`), `object_items`,
+`item_symbol`, `without_init`, `unit`, `apply_renames`,
+`pointer_names`, `reassemble`, `output_symbols`, `merge_identical`, and
+`contents`. Each takes the Python function's inputs and gives its
+result, so that `link_objects`, a later part of the port, can call them
+in Python's order. `unit` calls `link_layout::tail_jump` itself, where
+Python passes it in.
+
+These are the places where the port follows Python's identities, text,
+and integers.
+
+- The objects of a link are `ld::Objects`, a vector of names and
+  `ElfFile`s. The linker renames and redefines symbols in place, and
+  `merge_identical` turns a later copy's symbol into an undefined
+  reference to the kept one, so every relocation that names the symbol
+  follows it, as it does in Python. The placed sections are keyed by
+  the address of their `Section` (`PlacedBySection`), as Python keys
+  them by `id()`.
+- Python's `Symbol.section` may be an `OutputSection` between
+  `_output_symbols` and `executable`, so `output_symbols` returns
+  `OutputSymbol`s, which hold the index of the output section, and
+  `executable` gives each symbol that output section's ELF section.
+- `output_symbols` sorts each table of the linker's names by value
+  with `std::stable_sort`, and names each file by
+  `argparse::path_name`, which is `Path(path).name` on the platform
+  (a drive and `\` count on Windows only).
+- `relocate` computes S + A in the 128 bits of `asdl::Int`, and prints
+  a value as Python's `X` format does, so an address of -1 is `$-1`.
+  `executable` and `relocate` assign to slices of the bytes as Python
+  assigns to a slice of a bytearray. A one-byte write outside the
+  bytes, which is Python's IndexError, throws `InternalError`, and since
+  22 Nov 2026 `elf.read` rejects an object with a relocation past the
+  end of its section's bytes in both compilers, so no object a link
+  reads has one.
+- The undefined-name hint lists the 101 names Python's `_HELPER`
+  pattern matches, since the pattern matches a finite set.
+- `contents` sorts the relocations as Python sorts its tuples, and
+  Python's TypeError, for a local and a global target at one offset,
+  throws `InternalError`.
+- `reassemble` rethrows the assembler's `AssemblerError` as Python's
+  `LinkError` and passes every other error through unchanged.
+
+The captures of the corpus call these functions only from inside
+`link_objects`, which changes the objects between the calls, so
+tools/capture_binutils.py records each call with the objects as they
+are at the call. A record names an object by the hash of a JSON form of
+its sections, symbols, relocations, and segments, stored as a blob,
+which keeps the order of its symbols and the symbols and sections a
+relocation or a symbol names that the object's lists no longer hold.
+An ELF file would keep neither, since `elf.write` puts the local
+symbols first. `c6502cpp check-binutils` reads those forms into C++
+objects, runs the C++ function, and compares its result, the objects
+it changed in their JSON form, and `executable`'s bytes
+(src/passes/linker_objects_checks.*). On 22 Nov 2026 all 69,428 such records
+of the corpus and the 2,200 of the suite matched, errors included, in
+the build of MSVC 19.36, from 8 `apply_renames` and 36 `contents`
+records of the corpus to 20,346 of `relax`. In the build of GCC 12.2
+all of them matched but 68 `output_symbols` records of the suite, whose
+objects have Windows paths such as `C:\...\u0.o`. Python on Windows
+names those files `u0.o`. On Linux `Path(path).name` is the whole
+path, which is what the C++ code gives there, and the file names are
+the only difference in each of the 68. The records reach 3 of ld.py's
+10 raise sites (an undefined name, with and without the hint, a name
+defined twice, and an absolute name with two values) and neither of
+the 2 in the functions of linker.py. tests/test_ld.cpp and
+tests/test_linker_objects.cpp have a case with Python's message for
+each of the 12, and Python's results for `relax`, `output_symbols`,
+`merge_identical`, and `contents` on small objects.
+The records make a capture of the corpus take 365 seconds with 12
+processes, where it took 131, and its blobs 198 MB in 9,976 files.
 
 ## Status
 
@@ -2837,3 +2916,8 @@ The allocators' cycle error no longer comes from a link, since
   link metadata and `merge_shares` and `check_linked_shares`, which
   match Python on all 15,491 records of the corpus and the 743 of the
   suite, errors included, in the builds of MSVC 19.36 and GCC 12.2.
+- 22 Nov 2026: group D2 of step 7, `binutils::ld` and the linker's
+  functions on the objects ("ld.py and the linker's objects"), which
+  match Python on all 69,428 of their records of the corpus and the
+  2,200 of the suite, in the builds of MSVC 19.36 and GCC 12.2 (where
+  68 records with Windows paths give Linux's `Path(path).name`).

@@ -20,6 +20,7 @@
 #include "json.h"
 #include "passes/link_checks.h"
 #include "passes/linker_checks.h"
+#include "passes/linker_objects_checks.h"
 #include "passes/runtime_library.h"
 #include "passes/stage_registry_sharing.h"
 #include "passes/zp_link_metadata.h"
@@ -41,7 +42,11 @@ constexpr std::string_view kKinds[] = {
     "link_synthesize", "link_rename_locals", "link_rename_meta", "link_merge_zp_objects",
     "link_place_zp_objects", "link_choose_layout", "link_runtime_bytes", "link_shares",
     "merge_shares", "check_linked_shares", "link_bind_extern_params", "link_drop_unused_locals",
-    "link_init_lines", "link_data_lines", "link_regs"};
+    "link_init_lines", "link_data_lines", "link_regs",
+    // binutils/ld.py, and passes/linker.py's functions on the objects.
+    "global_definitions", "relax", "executable", "linker_runtime_library", "object_items",
+    "item_symbol", "without_init", "unit", "apply_renames", "pointer_names", "reassemble",
+    "output_symbols", "merge_identical", "contents"};
 
 // Returns the error `e` compared with the recorded one, or "" when the
 // two have the same Python type and message.
@@ -151,6 +156,14 @@ class Checker {
     if (passes::linker_checks::handles(kind)) {
       ++count.ran;
       std::string problem = passes::linker_checks::check(
+          kind, args, input, output, call.output_is_error,
+          [this](const std::string& hash) { return blob(hash); });
+      if (problem.empty()) ++count.matched;
+      return problem;
+    }
+    if (passes::linker_objects_checks::handles(kind)) {
+      ++count.ran;
+      std::string problem = passes::linker_objects_checks::check(
           kind, args, input, output, call.output_is_error,
           [this](const std::string& hash) { return blob(hash); });
       if (problem.empty()) ++count.matched;

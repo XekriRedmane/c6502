@@ -449,6 +449,13 @@ def _read(data: bytes, name: str) -> ElfFile:
                     f"{name}: a relocation in {target.name} names a "
                     f"symbol c6502 doesn't read"
                 )
+            # The linker writes the field into the section's bytes, so
+            # one past them would end the link with an IndexError.
+            if r_offset + RELOC_SIZES.get(info & 0xFF, 1) > len(target.data):
+                raise ElfError(
+                    f"{name}: a relocation in {target.name} is past the "
+                    f"end of its bytes"
+                )
             target.relocs.append(Reloc(r_offset, info & 0xFF, sym, addend))
     for i in range(phnum):
         (p_type, p_offset, vaddr, paddr, filesz, memsz, pflags,

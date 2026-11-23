@@ -109,4 +109,11 @@ int terminal_columns();
 // for each separator, as Python's tools name a file in their messages.
 std::string path_str(const std::string& path);
 
+// Returns `pathlib.Path(path).name` on this platform: the last part of
+// the path once `.` parts and empty ones are dropped, or the empty
+// string when none is left. On Windows a drive (`C:`) is dropped first,
+// and `\` separates parts as `/` does. A UNC path's server and share
+// count as parts here, where Python takes them as the drive.
+std::string path_name(const std::string& path);
+
 }  // namespace c6502::argparse

@@ -2125,3 +2125,28 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   promoted zero-page object of no bytes, which only a metadata block
   written by hand lists, ended the link with a ZeroDivisionError, and
   `_merge_zp_objects` now rejects an object without bytes.
+- 22 Nov 2026: group D2 of step 7, binutils/ld.py and the functions of
+  passes/linker.py on the objects (cpp/README.md, "ld.py and the
+  linker's objects"). `global_definitions`, the `Resolver`, `relax`,
+  `relocate`, and `executable` are `binutils::ld`, and
+  `_runtime_library`, which assembles group E's text with group A's
+  assembler, `_object_items`, `_item_symbol`, `_without_init`, `_unit`,
+  `_apply_renames`, `_pointer_names`, `_reassemble`, `_output_symbols`,
+  `_merge_identical`, and `_contents` are in `passes::linker`, each with
+  the Python function's inputs and result, for group D3's
+  `link_objects`. The captures reach them only from inside a link,
+  which changes its objects between the calls, so
+  tools/capture_binutils.py records each call with its objects in a
+  JSON form that keeps their symbols' order and identities, and the
+  objects each call changes. `c6502cpp check-binutils` matched all
+  69,428 such records of the corpus and the 2,200 of the suite, errors
+  and `executable`'s bytes included, in the builds of MSVC 19.36 and
+  GCC 12.2, except that GCC names the files of 68 `output_symbols`
+  records of the suite, whose paths are Windows', as Python on Linux
+  would. The records reach 3 of the 12 raise sites, and
+  tests/test_ld.cpp and tests/test_linker_objects.cpp give Python's
+  message for each of the 12. A bug was fixed in both compilers. An
+  object with a relocation past the end
+  of its section's bytes ended a link with an IndexError in
+  `_pointer_names`, or gave the executable a section one byte longer
+  than its size, and `elf.read` now rejects it with an ElfError.

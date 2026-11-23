@@ -669,4 +669,28 @@ std::string path_str(const std::string& path) {
   return out.empty() ? "." : out;
 }
 
+std::string path_name(const std::string& path) {
+#ifdef _WIN32
+  std::string rest = path;
+  if (rest.size() >= 2 && rest[1] == ':' &&
+      ((rest[0] >= 'A' && rest[0] <= 'Z') || (rest[0] >= 'a' && rest[0] <= 'z'))) {
+    rest = rest.substr(2);
+  }
+  const auto is_sep = [](char c) { return c == '/' || c == '\\'; };
+#else
+  const std::string& rest = path;
+  const auto is_sep = [](char c) { return c == '/'; };
+#endif
+  std::string last;
+  std::size_t i = 0;
+  while (i <= rest.size()) {
+    std::size_t end = i;
+    while (end < rest.size() && !is_sep(rest[end])) ++end;
+    const std::string part = rest.substr(i, end - i);
+    if (!part.empty() && part != ".") last = part;
+    i = end + 1;
+  }
+  return last;
+}
+
 }  // namespace c6502::argparse

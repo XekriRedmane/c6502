@@ -137,6 +137,30 @@ class TestElf(unittest.TestCase):
                 f"nm.py: {path}: the ELF file is truncated or damaged\n",
             )
 
+    def test_relocation_past_its_section(self) -> None:
+        # The linker writes a relocation's field into its section's
+        # bytes, and `_pointer_names` read the byte before an
+        # R_MOS_ADDR8 field past them with an IndexError, so the reader
+        # rejects such a file.
+        for type_, offset in ((E.R_MOS_ADDR8, 9), (E.R_MOS_ADDR16, 3),
+                              (E.R_MOS_ADDR8, 4)):
+            obj = assemble(_fn("RTS"))
+            sec = next(s for s in obj.sections if s.name == ".text")
+            sec.data = bytearray(4)
+            ext = E.Symbol(name="ptr", bind=E.STB_GLOBAL)
+            obj.symbols.append(ext)
+            sec.relocs.append(E.Reloc(offset, type_, ext))
+            with self.subTest(offset=offset), \
+                    self.assertRaises(E.ElfError) as cm:
+                E.read(E.write(obj), "x.o")
+            self.assertEqual(
+                str(cm.exception),
+                "x.o: a relocation in .text is past the end of its bytes",
+            )
+        # A field that ends at the section's end is read.
+        sec.relocs[-1] = E.Reloc(2, E.R_MOS_ADDR16, ext)
+        self.assertEqual(len(E.read(E.write(obj)).sections[0].relocs), 1)
+
 
 class TestAssembler(unittest.TestCase):
 

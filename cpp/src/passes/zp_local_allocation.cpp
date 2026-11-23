@@ -235,11 +235,13 @@ bool is_zp(const Abi& abi, std::string_view name) {
 // are written when `fn` or anything it calls calls them; and the zp_abi
 // externs that `fn` or any of its callees here calls, which have no body
 // here but are on the call stack with `fn` whenever the chain calls
-// them. `fn` itself is left out, and the caller adds it.
+// them. `fn` itself is left out, and the caller adds it. `callers_of`
+// is `invert(full_callgraph)`, which Python computes at each call and
+// the caller computes once, since it is the same for every `fn`.
 NameSet coexisting_zp_functions(const std::string& fn, const CallGraph& full_callgraph,
-                                const CallGraph& extern_callees, const Abi& abi) {
+                                const CallGraph& callers_of, const CallGraph& extern_callees,
+                                const Abi& abi) {
   NameSet out;
-  const CallGraph callers_of = zp_local_allocation::invert(full_callgraph);
   NameSet seen_anc;
   std::vector<std::string> stack;
   if (const auto it = callers_of.find(fn); it != callers_of.end()) {
@@ -436,6 +438,7 @@ LocalPools allocate_function_locals(const tac::Program& prog, const Abi& abi,
     }
   }
   const ReachSets reach = reach_sets(prog);
+  const CallGraph callers_of = zp_local_allocation::invert(callgraph);
 
   LocalPools local_pools;
   for (const auto& fn : order) {
@@ -456,7 +459,8 @@ LocalPools allocate_function_locals(const tac::Program& prog, const Abi& abi,
     }
     // The slots of every zp_abi function whose parameters are written
     // while `fn` is on the call stack, and `fn`'s own.
-    for (const auto& other : coexisting_zp_functions(fn, callgraph, extern_callees, abi)) {
+    for (const auto& other :
+         coexisting_zp_functions(fn, callgraph, callers_of, extern_callees, abi)) {
       if (const auto it = zp_param_addrs.find(other); it != zp_param_addrs.end()) {
         forbidden.insert(it->second.begin(), it->second.end());
       }

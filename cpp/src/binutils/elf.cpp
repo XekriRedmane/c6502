@@ -273,6 +273,13 @@ ElfFile read_file(std::string_view data, std::string_view name) {
         elf_error(who + ": a relocation in " + target.name +
                   " names a symbol c6502 doesn't read");
       }
+      // The linker writes the field into the section's bytes, so one
+      // past them would end Python's link with an IndexError.
+      const std::optional<int> field = reloc_size(static_cast<std::uint8_t>(info & 0xFF));
+      if (static_cast<std::uint64_t>(r_offset) + static_cast<std::uint64_t>(field.value_or(1)) >
+          target.data.size()) {
+        elf_error(who + ": a relocation in " + target.name + " is past the end of its bytes");
+      }
       target.relocs.push_back(Reloc{.offset = r_offset,
                                     .type = static_cast<std::uint8_t>(info & 0xFF),
                                     .symbol = symbols[index],

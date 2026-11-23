@@ -106,6 +106,28 @@ TEST_CASE("elf: a damaged file is an ElfError") {
   CHECK(message(meta) == damaged);
 }
 
+TEST_CASE("elf: a relocation past the end of its section's bytes is an ElfError") {
+  // Python's message, from tests/test_binutils.py's
+  // `test_relocation_past_its_section`.
+  for (const auto& [type, offset] : std::vector<std::pair<std::uint8_t, std::int64_t>>{
+           {elf::R_MOS_ADDR8, 9}, {elf::R_MOS_ADDR16, 3}, {elf::R_MOS_ADDR8, 4}}) {
+    elf::ElfFile f = sample();
+    f.sections[0]->relocs[0].type = type;
+    f.sections[0]->relocs[0].offset = offset;
+    const std::string data = elf::write(f);
+    std::string message;
+    try {
+      elf::read(data, "x.o");
+    } catch (const CompileError& e) {
+      message = e.python_type() + ": " + e.what();
+    }
+    CHECK(message == "ElfError: x.o: a relocation in .text is past the end of its bytes");
+  }
+  elf::ElfFile f = sample();
+  f.sections[0]->relocs[0].offset = 2;
+  CHECK(elf::read(elf::write(f), "x.o").sections[0]->relocs.size() == 1);
+}
+
 TEST_CASE("elf: a relocation of a symbol outside the table can't be written") {
   elf::ElfFile f = sample();
   f.sections[0]->relocs[0].symbol = std::make_shared<elf::Symbol>(elf::Symbol{.name = "lost"});

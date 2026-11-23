@@ -29,8 +29,9 @@ namespace c6502::backend {
 // from the copy of rtlib/helpers.py compiled into the program
 // (src/rtlib/helpers.h).
 //
-// Both modes run the front end (`passes::front_end`, compile.py's
-// `_compile_c` through `type_check_program`) and then `passes::codegen`
+// The modes `source` and `source-text` run the front end
+// (`passes::front_end`, compile.py's `_compile_c` through
+// `type_check_program`) and then `passes::codegen`
 // (src/passes/codegen_stage.h). Every response begins
 //
 //     stderr <length>
@@ -66,6 +67,15 @@ namespace c6502::backend {
 // where the symbols are the slot symbols and the unit's EQU bindings
 // that the harness gives its assembler. The program and its tables stay
 // in C++, since Python reads nothing of them after the stage.
+//
+// `lex` is `compile.py --lex`, which runs only the preprocessor (with
+// `preprocess`) and the lexer, and ignores `optimize`, `inline`,
+// `check_ir`, and `link_metadata`. Its response has the `stderr` and
+// `warnings` lines, and then the `error` line of a `PreprocessorError`
+// or a `LexError`, or
+//
+//     text <length>
+//     <one `<line>:<col>`, tab, kind, tab, value line for each token>
 //
 // The modes `objects` (compile.py's `-c`) and `link` take several inputs,
 // so that one process serves one run of compile.py. Their request is

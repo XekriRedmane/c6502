@@ -224,4 +224,14 @@ std::vector<Token> tokenize(std::string_view source) {
   return out;
 }
 
+std::string format_tokens(std::string_view source) {
+  std::string out;
+  for (const Token& tok : tokenize(source)) {
+    out += std::to_string(tok.line) + ':' + std::to_string(tok.col) + '\t';
+    out += kind_value(tok.kind);
+    out += '\t' + tok.value + '\n';
+  }
+  return out;
+}
+
 }  // namespace c6502::lexer

@@ -354,10 +354,13 @@ checks between the passes don't run. The simulator harness
 (`sim.harness.compile_to_asm`) sends the source text with no
 preprocessor arguments and takes back the finished asm program in the
 dump format, with its slot symbols, since it assembles the program
-itself, and it returns those two alone. `--lex`, `--parse`, `--resolve`,
-and `--tac` stay in Python. Run as a script with the variable set and
+itself, and it returns those two alone. `--lex` goes to C++ too, in the
+backend's mode `lex` (`cpp_backend.lex_source`), which preprocesses the
+source and prints its tokens, and `_run_stage("lex", text)` sends the
+text with `preprocess` off. `--parse`, `--resolve`, and `--tac` stay in
+Python. Run as a script with the variable set and
 one of the C++ stages, compile.py stops before its pipeline's imports
-(`_cpp_runs_everything`), so `-S` and `-c` import none of the parser,
+(`_cpp_runs_everything`), so `--lex`, `-S`, and `-c` import none of the parser,
 Lark, pcpp, or the front end's passes, unless `C6502_CHECK_IR=1` loads
 `ir_check`, whose helpers import the type checker.
 

@@ -35,6 +35,14 @@ struct FrontEndResult {
   TypeTable types;
 };
 
+// Returns the text the stages after the preprocessor read: `source`
+// preprocessed with the options' arguments and file name, or `source`
+// itself when `options.preprocess` is false. What the preprocessor
+// writes to stderr is appended to `err`, also when it throws its
+// `CompileError`, and its `_Bool` warnings go to `diagnostics::warn`.
+std::string preprocess_source(const std::string& source, const FrontEndOptions& options,
+                              std::string& err);
+
 // Runs `preprocess`, `parse`, under `-O` `unroll_program`,
 // `identifier_resolution`, `string_lifting`, `label_resolution`,
 // `loop_labeling`, and `type_checking` on `source`, in compile.py's

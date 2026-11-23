@@ -14,24 +14,27 @@
 
 namespace c6502::passes {
 
+std::string preprocess_source(const std::string& source, const FrontEndOptions& options,
+                              std::string& err) {
+  if (!options.preprocess) return source;
+  const pcpp::Host host = pcpp::native_host();
+  std::string pp_err;
+  std::string text;
+  try {
+    text = preprocessor::preprocess(source, options.pcpp_args, options.filename, host,
+                                    options.include_dir, &pp_err)
+               .text;
+  } catch (...) {
+    err += pp_err;
+    throw;
+  }
+  err += pp_err;
+  return text;
+}
+
 FrontEndResult front_end(const std::string& source, const FrontEndOptions& options,
                          std::string& err) {
-  std::string text;
-  if (options.preprocess) {
-    const pcpp::Host host = pcpp::native_host();
-    std::string pp_err;
-    try {
-      text = preprocessor::preprocess(source, options.pcpp_args, options.filename, host,
-                                      options.include_dir, &pp_err)
-                 .text;
-    } catch (...) {
-      err += pp_err;
-      throw;
-    }
-    err += pp_err;
-  } else {
-    text = source;
-  }
+  const std::string text = preprocess_source(source, options, err);
   // compile._resolved: the unroller runs before identifier resolution,
   // so each copy of a body gets names of its own, and string lifting
   // after it, so the names it makes aren't renamed.

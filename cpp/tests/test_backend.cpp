@@ -301,3 +301,40 @@ TEST_CASE("backend rejects a request it can't read") {
   CHECK_THROWS_AS(c6502::backend::respond("c6502-backend 3\nmode source\nargs {}\n"),
                   std::runtime_error);
 }
+
+TEST_CASE("backend answers a request for --lex with the tokens") {
+  // Python's `compile.py --lex` prints these lines for the program.
+  const std::string got = c6502::backend::respond(
+      request("int x = 0x1F; /* c */\nchar *s = \"a b\";\n", false, "lex"));
+  const std::string tokens =
+      "1:1\tkeyword\tint\n1:5\tidentifier\tx\n1:7\tsymbol\t=\n1:9\tconstant\t0x1F\n"
+      "1:13\tsymbol\t;\n2:1\tkeyword\tchar\n2:6\tsymbol\t*\n2:7\tidentifier\ts\n"
+      "2:9\tsymbol\t=\n2:11\tstring-literal\t\"a b\"\n2:16\tsymbol\t;\n";
+  CHECK(got == "stderr 0\nwarnings []\ntext " + std::to_string(tokens.size()) + "\n" + tokens);
+}
+
+TEST_CASE("backend lexes text the preprocessor has already read") {
+  // Without the preprocessor, a `#define` line reaches the lexer, which
+  // takes the `#` as a symbol, and Python's lexer gives these lines.
+  const std::string got = c6502::backend::respond(
+      request("#define N 1\nint\n", false, "lex", true, false, false));
+  const std::string tokens =
+      "1:1\tsymbol\t#\n1:2\tidentifier\tdefine\n1:9\tidentifier\tN\n1:11\tconstant\t1\n"
+      "2:1\tkeyword\tint\n";
+  CHECK(got == "stderr 0\nwarnings []\ntext " + std::to_string(tokens.size()) + "\n" + tokens);
+}
+
+TEST_CASE("backend gives the error of a character the lexer has no token for") {
+  const std::string got = c6502::backend::respond(request("int a = 1;\n  @\n", false, "lex"));
+  CHECK(got == "stderr 0\nwarnings []\nerror {\"type\": \"LexError\", \"message\": "
+               "\"2:3: unexpected character '@'\"}\n");
+}
+
+TEST_CASE("backend gives the warnings and the error of --lex") {
+  const std::string got =
+      c6502::backend::respond(request("_Bool b;\nint x = 1';\n", false, "lex"));
+  CHECK(got.starts_with("stderr 0\nwarnings [[\"line 1\", \"`_Bool` is deprecated: "));
+  CHECK(got.ends_with("]]\nerror {\"type\": \"LexError\", \"message\": \"2:9: a digit "
+                      "separator has to be between two digits, and the one after '1' in "
+                      "\\\"1'\\\" isn't followed by a digit\"}\n"));
+}

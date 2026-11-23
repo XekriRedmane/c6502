@@ -196,7 +196,8 @@ def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
     warnings the compile issued to stderr, before any error it raises,
     as gcc does. Under `C6502_CPP_BACKEND=1` the C++ port compiles the
     source for `-S`, `-c`, and a link, and Python runs no part of the
-    front end."""
+    front end. It runs `--lex` in C++ too, which preprocesses the source
+    and prints its tokens."""
     source, filename = _read_source(path)
     with diagnostics.collecting() as found:
         try:
@@ -205,6 +206,9 @@ def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
                     source, pcpp_args, filename, optimize,
                     link_metadata=link_metadata,
                 )
+            if stage == "lex" and _cpp_backend():
+                import cpp_backend
+                return cpp_backend.lex_source(source, pcpp_args, filename)
             return _run_stage(
                 stage, preprocess(source, pcpp_args, filename),
                 optimize=optimize, link_metadata=link_metadata,
@@ -560,13 +564,13 @@ def _cpp_build(args, pcpp_args, defsyms: dict[str, int] | None = None) -> int:
 
 def _cpp_runs_everything(argv: list[str]) -> bool:
     """Whether a run of the command line `argv` calls no part of the
-    Python pipeline: under `C6502_CPP_BACKEND=1`, `-S`, `-c`, and a
-    link, whose C inputs the C++ port compiles from the source text.
-    `--lex`, `--parse`, `--resolve`, and `--tac` stay in Python."""
+    Python pipeline: under `C6502_CPP_BACKEND=1`, `--lex`, `-S`, `-c`,
+    and a link, whose C inputs the C++ port reads from the source text.
+    `--parse`, `--resolve`, and `--tac` stay in Python."""
     if not _cpp_backend():
         return False
     args, _ = _parse_args(argv)
-    return args.stage in (None, "codegen", "object")
+    return args.stage in (None, "lex", "codegen", "object")
 
 
 # Run as a script with a stage the C++ port takes from the source text,
@@ -1061,6 +1065,10 @@ def _run_stage(
     link_metadata: bool = False,
 ) -> str:
     if stage == "lex":
+        if _cpp_backend():
+            # `source` is the preprocessor's output already.
+            import cpp_backend
+            return cpp_backend.lex_source(source, [], None, preprocess=False)
         return _format_tokens(source)
     if stage == "parse":
         return pretty(parse(source)) + "\n"

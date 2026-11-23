@@ -70,4 +70,10 @@ void check_number(std::u32string_view source, const lark::Token& lt,
 // pp-number).
 std::vector<Token> tokenize(std::string_view source);
 
+// Returns what `compile.py --lex` prints for the preprocessed `source`,
+// compile.py's `_format_tokens`: one `<line>:<col>`, tab, kind, tab,
+// value line for each token, each line ending in LF. Throws the first
+// LexError of `tokenize`, and then nothing is printed.
+std::string format_tokens(std::string_view source);
+
 }  // namespace c6502::lexer

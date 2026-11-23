@@ -18,6 +18,10 @@ code generation lowered and the finished asm and asm2 programs for
 returns the finished asm program with its slot symbols, which the
 simulator harness assembles.
 
+`lex_source` sends the same request in the mode `lex`, which runs only
+the preprocessor and the lexer and returns the text `compile.py --lex`
+prints.
+
 `build` sends the inputs of `compile.py -c` or of a link in one request:
 each C source's text, each assembly file's text, and each object's
 bytes, with a link's script, origin, `--defsym`s, and output. The C++
@@ -209,6 +213,45 @@ def _check_tac(text: str) -> None:
             ir_check.check_tac(tl, after="the C++ TAC passes")
 
 
+def _replay_front(lines: dict[str, str], sections: dict[str, str]) -> None:
+    """Writes what the preprocessor wrote to stderr to `sys.stderr`,
+    issues the warnings to the caller's `diagnostics.collecting()` block,
+    and raises the error of a rejected program as its Python exception,
+    from the response of a compile of one source."""
+    import diagnostics
+    if sections["stderr"]:
+        sys.stderr.write(sections["stderr"])
+    for where, message in json.loads(lines["warnings"]):
+        diagnostics.warn(where, message)
+    if "error" in lines:
+        error = json.loads(lines["error"])
+        raise _exception(error["type"], error["message"])
+
+
+def lex_source(
+    source: str, pcpp_args, filename: str | None, *, preprocess: bool = True,
+) -> str:
+    """Returns what `compile.py --lex` prints for the C source `source`,
+    which came from the file `filename` (None for stdin): the tokens of
+    the text that `preprocess` with the arguments `pcpp_args` gives, or
+    of `source` itself without `preprocess`, one `<line>:<col>`, tab,
+    kind, tab, value line each. The preprocessor's stderr and warnings
+    and the error of a rejected program come back as `compile_source`
+    gives them."""
+    args = json.dumps({
+        "pcpp_args": list(pcpp_args or []), "filename": filename,
+        "include_dir": _INCLUDE_DIR, "preprocess": preprocess,
+        "optimize": False,
+    })
+    request = (
+        f"c6502-backend 3\nmode lex\nargs {args}\n"
+        f"{_section('source', source)}"
+    )
+    lines, sections = _sections(_send(request))
+    _replay_front(lines, sections)
+    return sections["text"]
+
+
 def compile_source(
     source: str, pcpp_args, filename: str | None, *, optimize: bool,
     preprocess: bool = True, inline: bool = True,
@@ -231,7 +274,6 @@ def compile_source(
     it checks the TAC that code generation lowered, the finished asm
     program, and the asm2 program of a text, as compile.py checks
     them."""
-    import diagnostics
     check = _ir_check_enabled()
     args = json.dumps({
         "pcpp_args": list(pcpp_args or []), "filename": filename,
@@ -245,13 +287,7 @@ def compile_source(
         f"{_section('source', source)}"
     )
     lines, sections = _sections(_send(request))
-    if sections["stderr"]:
-        sys.stderr.write(sections["stderr"])
-    for where, message in json.loads(lines["warnings"]):
-        diagnostics.warn(where, message)
-    if "error" in lines:
-        error = json.loads(lines["error"])
-        raise _exception(error["type"], error["message"])
+    _replay_front(lines, sections)
     if check:
         _check_tac(sections["tac"])
     if not emit:

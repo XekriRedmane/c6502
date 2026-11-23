@@ -15,7 +15,8 @@ and seeds `--fuzz-seeds` of `fuzz.stmts`, `fuzz.calls`, and
 compiled with `-c` and with `-c -O` and the object linked alone, without
 a script and with tools/capture_binutils.py's script of ROM and RAM
 regions and the `--defsym`s that harness gives, as that harness's
-corpus does. The corpus `links` holds the jobs of that harness's
+corpus does. The mode `lex`, which isn't among the defaults, runs
+`--lex` on each program. The corpus `links` holds the jobs of that harness's
 `links` job: the three games, each unit compiled with `-c -O` and the
 objects linked with the game's script and without one (and Ali Baba
 with the simulator's helpers too), and besides those every unit
@@ -136,6 +137,9 @@ def _program_commands(run, args: list[str], mode: str) -> None:
     if mode in ("O", "unopt"):
         run(["compile.py", *args, "-S", "-o", "out.s",
              *(["-O"] if mode == "O" else [])])
+        return
+    if mode == "lex":
+        run(["compile.py", *args, "--lex", "-o", "out.txt"])
         return
     import capture_binutils
     from sim.linked import defsym_args
@@ -269,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fuzz-seeds", default="0-99")
     ap.add_argument("--modes", default="O,unopt,cO,c",
                     help="O for -S -O, unopt for -S, cO for -c -O and the "
-                         "links, c for -c and the links")
+                         "links, c for -c and the links, lex for --lex")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ns = ap.parse_args(argv)
     if cpp_cli() is None:

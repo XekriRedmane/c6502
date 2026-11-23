@@ -21,6 +21,7 @@
 #include "diagnostics.h"
 #include "errors.h"
 #include "json.h"
+#include "lexer.h"
 #include "passes/capture_args.h"
 #include "passes/codegen_stage.h"
 #include "passes/front_end.h"
@@ -169,6 +170,25 @@ Compiled compile_one(const std::string& source, const passes::FrontEndOptions& f
   }
   out.diagnostics = diagnostics_lines(err, found);
   return out;
+}
+
+// Returns the response to a request of mode `lex`: the diagnostics lines
+// and then the error line, or the text `compile.py --lex` prints for
+// `source` (compile.py's `_format_tokens` of the preprocessor's output).
+std::string respond_lex(const std::string& source, const passes::FrontEndOptions& front) {
+  std::string err;
+  std::vector<diagnostics::CompileWarning> found;
+  std::optional<std::string> error;
+  std::string text;
+  try {
+    diagnostics::Collecting block(found);
+    text = lexer::format_tokens(passes::preprocess_source(source, front, err));
+  } catch (const CompileError& e) {
+    error = stage_checks::error_text(e.python_type(), e.what());
+  }
+  std::string out = diagnostics_lines(err, found);
+  if (error) return out + "error " + *error + "\n";
+  return out + section("text", text);
 }
 
 // Returns the front end's options for the request's arguments `kwargs`,
@@ -351,7 +371,8 @@ std::string respond(const std::string& text) {
     throw std::runtime_error("not a backend request");
   }
   const std::string mode(lines.value("mode"));
-  if (mode != "source" && mode != "source-text" && mode != "objects" && mode != "link") {
+  if (mode != "source" && mode != "source-text" && mode != "lex" && mode != "objects" &&
+      mode != "link") {
     throw std::runtime_error("unknown backend mode " + mode);
   }
   const json::Value kwargs = json::parse(lines.value("args"));
@@ -362,6 +383,7 @@ std::string respond(const std::string& text) {
     front.filename = filename.string;
   }
   front.preprocess = ca::boolean(&required(kwargs, "preprocess"), true);
+  if (mode == "lex") return respond_lex(std::string(lines.section("source")), front);
   passes::CodegenOptions options;
   options.optimize = front.optimize;
   options.inline_calls = ca::boolean(kwargs.get("inline"), true);

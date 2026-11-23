@@ -2150,8 +2150,12 @@ text of each C input of `-S` to `c6502cpp backend` through
 preprocessor's arguments and the file name (None for stdin), and the
 `-S` text comes back. `-c` and a link go through `cpp_backend.build`,
 one process for the run, and no Python assembles or links. The process inherits Python's current directory,
-so the paths in the preprocessor's messages are the same. `--lex`,
-`--parse`, `--resolve`, and `--tac` stay in Python.
+so the paths in the preprocessor's messages are the same. `--lex` goes
+through `cpp_backend.lex_source` and the backend's mode `lex`, which
+runs the preprocessor and `lexer::format_tokens` (compile.py's
+`_format_tokens`) and returns the text `--lex` prints, with the same
+`stderr`, `warnings`, and `error` lines. `--parse`, `--resolve`, and
+`--tac` stay in Python.
 `_run_stage("codegen", text)`, which the tests call with the
 preprocessor's output, sends the text with `preprocess` off. The
 request says whether `-O`

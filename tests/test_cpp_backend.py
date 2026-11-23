@@ -412,6 +412,90 @@ class TestTheFrontEnd(unittest.TestCase):
         self.assertEqual(done.stdout.strip(), "[]")
 
 
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestLex(unittest.TestCase):
+    """`compile.py --lex` preprocesses and lexes in C++, and prints what
+    Python prints, with the same messages and exit status."""
+
+    def _same(self, args, **kw) -> tuple:
+        cpp = _run(args, True, **kw)
+        self.assertEqual(cpp, _run(args, False, **kw))
+        return cpp
+
+    def test_the_tokens(self):
+        files = {
+            "src/a.c": '#include "h.h"\nint main(void) {\n'
+                       '    return V + W + "a\\tb"[1] + 0b1\'0 + 3uwb;\n}\n',
+            "inc/h.h": "#define V 7\n",
+        }
+        status, out, err, _ = self._same(
+            ["src/a.c", "--lex", "-I", "inc", "-DW=2"], files=files,
+        )
+        self.assertEqual((status, err), (0, ""))
+        self.assertIn("\tconstant\t7\n", out)
+        self.assertIn("\tstring-literal\t\"a\\tb\"\n", out)
+
+    def test_to_a_file_and_from_stdin(self):
+        source = "int x = 1;\n"
+        self._same(["a.c", "--lex", "-o", "out.s"], files={"a.c": source})
+        status, out, _, _ = self._same(["-", "--lex"], stdin=source)
+        self.assertEqual(status, 0)
+        self.assertTrue(out.startswith("1:1\tkeyword\tint\n"), out)
+
+    def test_a_warning_and_an_error(self):
+        status, out, err, _ = self._same(
+            ["a.c", "--lex"], files={"a.c": "_Bool b;\nint x = 1'';\n"},
+        )
+        self.assertEqual((status, out), (1, ""))
+        self.assertRegex(err, r"(?s)a\.c: warning: line 1: .*a\.c: error: 2:9: ")
+
+    def test_errors_of_the_preprocessor_and_the_lexer(self):
+        for source in ("#pragma c6502 zp_abi\nint x;\n", "int x = 1 ` 2;\n",
+                       "#if 1 +\n#endif\nint x;\n", "int x = 08;\n"):
+            with self.subTest(source=source):
+                self._same(["a.c", "--lex"], files={"a.c": source})
+
+    def test_run_stage_takes_the_preprocessor_s_output(self):
+        import compile
+        from preprocessor import preprocess
+        for source in ("#define N 1\nint x = N;\n", "int x = 1'';\n"):
+            got = []
+            for cpp in (False, True):
+                with mock.patch.dict(os.environ):
+                    os.environ.pop("C6502_CPP_BACKEND", None)
+                    if cpp:
+                        os.environ["C6502_CPP_BACKEND"] = "1"
+                    try:
+                        got.append(compile._run_stage("lex", preprocess(source, [])))
+                    except Exception as e:  # noqa: BLE001 - compared below
+                        got.append((type(e).__name__, str(e)))
+            self.assertEqual(got[0], got[1])
+
+    def test_compile_imports_no_lexer(self):
+        # Run as a script with the variable set, `--lex` stops before
+        # compile.py imports the Python pipeline, the lexer among it.
+        code = (
+            "import runpy, sys\n"
+            "sys.argv = ['compile.py', 'examples/sfx_tone.c', '--lex',"
+            " '-o', sys.argv[1]]\n"
+            "try:\n"
+            "    runpy.run_path('compile.py', run_name='__main__')\n"
+            "except SystemExit as e:\n"
+            "    assert not e.code, e.code\n"
+            "front = ('lexer', 'parser', 'lark', 'pcpp', 'preprocessor')\n"
+            "print(sorted(m for m in sys.modules if m.split('.')[0] in front))\n"
+        )
+        env = dict(os.environ)
+        env["C6502_CPP_BACKEND"] = "1"
+        with tempfile.TemporaryDirectory() as tmp:
+            done = subprocess.run(
+                [sys.executable, "-c", code, os.path.join(tmp, "out.txt")],
+                cwd=_ROOT, env=env, check=True, capture_output=True,
+                text=True,
+            )
+        self.assertEqual(done.stdout.strip(), "[]")
+
+
 def _run_files(args: list[str], cpp: bool, files: dict[str, str | bytes],
                *, stdin: str | None = None) -> tuple:
     """Runs `compile.py <args>` as a script in a new directory holding

@@ -301,5 +301,87 @@ class TestAssemble(unittest.TestCase):
         self.assertEqual(json.loads(out[len("error "):]), expected)
 
 
+def _link_request(objects: list[tuple[str, bytes]], script: str | None,
+                  origin: int, defsyms: dict[str, int]) -> bytes:
+    """The request `c6502cpp link` reads (src/binutils/link_command.h)."""
+    import json
+    args = json.dumps({
+        "objects": [name for name, _ in objects], "script": script,
+        "origin": origin, "defsyms": [[k, v] for k, v in defsyms.items()],
+    })
+    out = f"c6502-link 1\nargs {args}\n".encode("utf-8")
+    for _, data in objects:
+        out += f"object {len(data)}\n".encode("utf-8") + data
+    return out
+
+
+@unittest.skipUnless(cpp_cli() is not None, "c6502cpp isn't built")
+class TestLink(unittest.TestCase):
+    """`c6502cpp link`, which group F connects to compile.py, gives the
+    bytes of Python's executable, or Python's error."""
+
+    def _cpp(self, objects, script=None, origin=0x0800, defsyms=None) -> bytes:
+        done = subprocess.run(
+            [str(cpp_cli()), "link"], check=True, capture_output=True,
+            input=_link_request(objects, script, origin, defsyms or {}))
+        return done.stdout
+
+    def _python(self, objects, script=None, origin=0x0800, defsyms=None):
+        """Python's executable, or its error as the response's JSON."""
+        from binutils import elf as E
+        from passes.linker import LinkError, link_objects, read_script
+        try:
+            exe = link_objects(
+                [(name, E.read(data, name)) for name, data in objects],
+                read_script(script) if script else None,
+                origin=origin, defsyms=dict(defsyms or {}))
+        except LinkError as e:
+            return {"type": "LinkError", "message": str(e), "input": None}
+        return E.write(exe)
+
+    def _check(self, *args, **kwargs) -> None:
+        import json
+        expected = self._python(*args, **kwargs)
+        out = self._cpp(*args, **kwargs)
+        if isinstance(expected, bytes):
+            self.assertEqual(out, f"executable {len(expected)}\n".encode() + expected)
+        else:
+            self.assertTrue(out.startswith(b"error "))
+            self.assertEqual(json.loads(out[len(b"error "):]), expected)
+
+    def test_links(self) -> None:
+        from binutils import elf as E
+        from compile import _compile_c
+        from binutils.assembler import assemble
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "prog.c"
+            src.write_text(_PROGRAM, encoding="utf-8")
+            text = _compile_c(str(src), [], "codegen", True, link_metadata=True)
+            obj = E.write(assemble(text, "prog.c"))
+            script = Path(tmp) / "rom.ld"
+            script.write_text(
+                "MEMORY { ROM : ORIGIN = 0x8000, LENGTH = 0x1000\n"
+                "         RAM : ORIGIN = 0x0300, LENGTH = 0x0400 }\n"
+                "SECTIONS { .text : { *(.text) } > ROM\n"
+                "           .rodata : { *(.rodata) } > ROM\n"
+                "           .data : { *(.data) } > RAM AT> ROM\n"
+                "           .bss (NOLOAD) : { *(.bss) } > RAM }\n",
+                encoding="utf-8")
+            for kwargs in ({}, {"origin": 0x1000, "defsyms": {"X": 5}},
+                           {"script": str(script)},
+                           {"script": str(Path(tmp) / "missing.ld")}):
+                with self.subTest(kwargs=kwargs):
+                    self._check([("prog.o", obj)], **kwargs)
+            exe = self._python([("prog.o", obj)])
+            self._check([("prog", exe)])
+
+    def test_unreadable_object(self) -> None:
+        import json
+        out = self._cpp([("a.o", b"hello")])
+        self.assertEqual(json.loads(out[len(b"error "):]),
+                         {"type": "ElfError", "message": "a.o: not an ELF file",
+                          "input": 0})
+
+
 if __name__ == "__main__":
     unittest.main()

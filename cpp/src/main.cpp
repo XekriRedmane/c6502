@@ -29,6 +29,7 @@
 #include "backend.h"
 #include "argparse.h"
 #include "binutils/assemble_command.h"
+#include "binutils/link_command.h"
 #include "binutils/checks.h"
 #include "binutils/nm.h"
 #include "binutils/objdump.h"
@@ -66,6 +67,7 @@ const char kUsage[] =
     "       c6502cpp objdump [<option>...] <file>...\n"
     "       c6502cpp backend\n"
     "       c6502cpp assemble\n"
+    "       c6502cpp link [--repeat <n>]\n"
     "       c6502cpp sweep-passes\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
@@ -119,6 +121,12 @@ const char kUsage[] =
     "name and the assembler's arguments, assembles it as binutils/assembler.py\n"
     "does, and writes the object's bytes or the error to stdout\n"
     "(src/binutils/assemble_command.h).\n"
+    "\n"
+    "link reads a request from stdin, the objects' bytes with their names,\n"
+    "the script's path, the origin, and the --defsyms, links them as\n"
+    "passes/linker.py does, and writes the executable's bytes or the error\n"
+    "to stdout (src/binutils/link_command.h). With --repeat it links n\n"
+    "times and writes the shortest time to stderr.\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
     "order, one per line.\n";
@@ -712,6 +720,13 @@ int main(int argc, char** argv) {
     }
     if (command == "assemble" && args.empty()) {
       write_stdout(binutils::assemble_response(read_stdin()));
+      return 0;
+    }
+    if (command == "link" && (args.empty() || (args.size() == 2 && args[0] == "--repeat"))) {
+      const int repeat = args.empty() ? 1 : std::stoi(args[1]);
+      double best = 0;
+      write_stdout(binutils::link_response(read_stdin(), repeat, &best));
+      if (repeat > 1) std::fprintf(stderr, "best of %d: %.2f ms\n", repeat, best);
       return 0;
     }
     if (command == "sweep-passes" && args.empty()) {

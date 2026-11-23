@@ -18,7 +18,10 @@
 #include "capture.h"
 #include "errors.h"
 #include "json.h"
+#include "binutils/ld.h"
 #include "passes/link_checks.h"
+#include "passes/link_script.h"
+#include "passes/linker.h"
 #include "passes/linker_checks.h"
 #include "passes/linker_objects_checks.h"
 #include "passes/runtime_library.h"
@@ -346,6 +349,46 @@ class Checker {
     for (const auto& hash : files) {
       if (std::string problem = round_trip(hash); !problem.empty()) return problem;
     }
+    if (kind == "link") return run_link(call, args, input, output, count);
+    return "";
+  }
+
+  // Links a `link` record's objects in C++, read from their bytes, with
+  // its script, origin, and `--defsym`s, and compares the executable
+  // byte for byte, or the error word for word.
+  std::string run_link(const capture::Call& call, const json::Value& args,
+                       const json::Value& input, const json::Value& output, Count& count) {
+    ++count.ran;
+    ld::Objects objects;
+    for (const auto& pair : input.get("objects")->items) {
+      const std::string& name = pair.items.at(0).string;
+      objects.emplace_back(name, elf::read(blob(pair.items.at(1).string), name));
+    }
+    std::optional<passes::link_script::Script> script;
+    if (const json::Value* text = input.get("script"); text->kind == json::Value::Kind::kString) {
+      script = passes::link_script::parse_script(text->string);
+    }
+    ld::Names defsyms;
+    for (const auto& pair : args.get("defsyms")->items) {
+      defsyms.insert_or_assign(pair.items.at(0).string,
+                               static_cast<std::int64_t>(pair.items.at(1).integer));
+    }
+    std::string got;
+    try {
+      got = elf::write(passes::linker::link_objects(
+          std::move(objects), script, static_cast<std::int64_t>(args.get("origin")->integer),
+          defsyms));
+    } catch (const CompileError& e) {
+      std::string problem = compare_error(e, call, output);
+      if (problem.empty()) ++count.matched;
+      return problem;
+    }
+    if (call.output_is_error) {
+      return "C++ linked, and Python raised " + output.get("type")->string + ": " +
+             output.get("message")->string;
+    }
+    if (got != blob(output.get("executable")->string)) return "the executable differs";
+    ++count.matched;
     return "";
   }
 

@@ -164,8 +164,7 @@ std::string library_text(const std::vector<std::string>& names) {
 }
 
 // Python's `library_object` is `assemble(library_text(names),
-// LIBRARY_NAME)`. The C++ linker (group D of step 7) assembles the text
-// here with the assembler of group A, as `binutils::assemble(
-// library_text(names), kLibraryName)`, once both are in.
+// LIBRARY_NAME)`, which the linker's `runtime_library`
+// (src/passes/linker_objects.cpp) does with the C++ assembler.
 
 }  // namespace c6502::passes

@@ -243,8 +243,9 @@ def _arrivals(meta) -> tuple:
 def _validate_eligibility(merged: LinkMetadata) -> None:
     """Every defined function must be eligible for the
     private-pool model under the merged view: no `IndirectCall`,
-    not on any cycle (cross-TU detection happens in the
-    allocator), and every direct callee either defined or
+    not on any cycle within a unit or across units, except one whose
+    every call saves on the hardware stack, and every direct callee
+    either defined or
     declared zp_abi extern. Externs declared but not defined
     AND not zp_abi are not exposed by the metadata format —
     those would have appeared as `call` edges to a name not in
@@ -263,11 +264,10 @@ def _validate_eligibility(merged: LinkMetadata) -> None:
     # Cycle members from any TU's local view, except a cycle whose
     # every call saves its caller's values on the hardware stack
     # (`[[c6502::save_hardware_stack]]`), which the TU's
-    # compile gave pools as the allocators here do. Cross-TU cycles
-    # are detected as a side effect of `allocate_zp_slots` /
-    # `allocate_function_locals` (they raise their own errors).
-    from passes.recursion_saves import hw_stack_cycles
-    saved_cycles = hw_stack_cycles(_synthesize(merged)[0])
+    # compile gave pools as the allocators here do.
+    from passes.recursion_saves import call_graph, cycles, hw_stack_cycles
+    prog = _synthesize(merged)[0]
+    saved_cycles = hw_stack_cycles(prog)
     locally_cyclic = [
         d.name for d in merged.defs
         if d.in_cycle and d.name not in saved_cycles
@@ -278,6 +278,19 @@ def _validate_eligibility(merged: LinkMetadata) -> None:
             f"graph (recursion is supported only when every call "
             f"in the cycle is marked "
             f"`[[c6502::save_hardware_stack]]`): {sorted(locally_cyclic)}",
+        )
+    # A cycle through more than one unit, which no unit's compile saw.
+    # Its calls can't all be marked, since a unit rejects a marked call
+    # that can't recurse within it. Before this check the allocators
+    # met it, and the link failed with a message that called it an
+    # internal error, or with an undefined slot symbol.
+    across = [n for n in cycles(call_graph(prog)) if n not in saved_cycles]
+    if across:
+        raise LinkError(
+            f"function(s) on a cycle of calls between units, which "
+            f"can't have private pools (recursion is supported only "
+            f"within one unit, when every call in the cycle is marked "
+            f"`[[c6502::save_hardware_stack]]`): {sorted(across)}",
         )
     # Call edges to names that are neither defined nor declared
     # zp_abi extern — these are non-zp_abi externs (e.g. a regular
@@ -1019,7 +1032,8 @@ def _merge_zp_objects(
 ) -> dict[str, list[ZpObjectMeta]]:
     """Every unit's records of each zero-page object, by name, in the
     order the units list them. Raises `LinkError` when the units
-    disagree on an object's size or address, two define it, or none
+    disagree on an object's size or address, an object has no bytes,
+    two define it, or none
     defines one that has no address (an `extern` without an address
     names an object some unit has to define and place)."""
     objects: dict[str, list[ZpObjectMeta]] = {}
@@ -1031,6 +1045,14 @@ def _merge_zp_objects(
             raise LinkError(
                 f"zero-page object `{name}` has different sizes in "
                 f"different units"
+            )
+        # The compiler never lists an object without bytes, and one in
+        # a metadata block written by hand made `_place_zp_objects`
+        # divide by its size.
+        if records[0].size < 1:
+            raise LinkError(
+                f"zero-page object `{name}` has {records[0].size} bytes, "
+                f"where an object has at least one"
             )
         if len({r.at for r in records if r.at is not None}) > 1:
             raise LinkError(

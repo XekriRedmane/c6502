@@ -209,6 +209,44 @@ class TestLinkerErrors(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"Expected link to succeed, stderr: {err!r}")
 
+    def test_recursion_across_units_rejected(self) -> None:
+        # Neither unit sees the cycle between `f` and `g`. The link used
+        # to fail in the slot allocator, with a message that called the
+        # cycle an internal error, when the functions take parameters in
+        # slots, and on the undefined `__local_f__t` when they don't.
+        cases = {
+            "slots": (
+                "void g(unsigned char a, unsigned char b, unsigned char c);\n"
+                "void f(unsigned char a, unsigned char b, unsigned char c)"
+                " { g(a, b, c); }\n",
+                "void f(unsigned char a, unsigned char b, unsigned char c);\n"
+                "void g(unsigned char a, unsigned char b, unsigned char c)"
+                " { if (a) f(a - 1, b, c); }\n"
+                "int main(void) { g(3, 4, 5); return 0; }\n",
+            ),
+            "locals": (
+                "extern unsigned char n;\nvoid g(void);\n"
+                "void f(void) { volatile unsigned char t = n; if (t) g(); }\n",
+                "unsigned char n = 3;\nvoid f(void);\n"
+                "void g(void) { n--; f(); }\n"
+                "int main(void) { g(); return 0; }\n",
+            ),
+        }
+        for label, (tu_a, tu_b) in cases.items():
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                self.assertEqual(_compile_to_obj(tu_a, tmp / "a.o"), 0)
+                self.assertEqual(_compile_to_obj(tu_b, tmp / "b.o"), 0)
+                rc, err = _link_capture_stderr(
+                    [tmp / "a.o", tmp / "b.o"], tmp / "linked")
+                self.assertEqual(rc, 1)
+                self.assertIn(
+                    "link error: function(s) on a cycle of calls between "
+                    "units, which can't have private pools (recursion is "
+                    "supported only within one unit, when every call in the "
+                    "cycle is marked `[[c6502::save_hardware_stack]]`): "
+                    "['f', 'g']", err)
+
     def test_no_inputs_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "linked"
@@ -739,3 +777,22 @@ class TestMergedRowTables(unittest.TestCase):
         # m(2, 3) = 35, t1(9, 27) = (144 + 27) & 0xFF, s0 = 1 + 0 + 7,
         # s1 = 2 + 0 + 7.
         self.assertEqual(self._run(text), 35 + 171 * 2 + 8 * 3 + 9 * 5)
+
+
+class TestZeroPageObjectSizes(unittest.TestCase):
+    """A zero-page object without bytes, which only a metadata block
+    written by hand lists, is a link error. A promoted one used to end
+    the link with a ZeroDivisionError in `_place_zp_objects`."""
+
+    def test_no_bytes_rejected(self) -> None:
+        from passes.linker import LinkError, _merge_zp_objects
+        from passes.zp_link_metadata import LinkMetadata, ZpObjectMeta
+        for size in (0, -1):
+            meta = LinkMetadata(zp_objects=[
+                ZpObjectMeta("v", size, defined=True, weight=1)])
+            with self.subTest(size=size), self.assertRaises(LinkError) as cm:
+                _merge_zp_objects([meta])
+            self.assertEqual(
+                str(cm.exception),
+                f"zero-page object `v` has {size} bytes, where an object "
+                f"has at least one")

@@ -23,8 +23,9 @@ string lifting, `label_resolution`, `loop_labeling`, and the type
 checker are ported ("The front end's calls"). Of the object-file
 tools of step 7, the ELF reader and writer, the opcode table, the
 part of argparse that nm.py and objdump.py use, nm, the linker scripts,
-the layout, binutils/ld.py, and the linker's functions on the objects
-are ported, and `C6502_CPP_BACKEND=1` runs the C++ nm
+the layout, binutils/ld.py, the linker's functions, and the link itself
+(`link_objects`, with `c6502cpp link`) are ported, and
+`C6502_CPP_BACKEND=1` runs the C++ nm
 for nm.py ("The object-file tools").
 
 ## Building
@@ -95,6 +96,7 @@ cpp/
     binutils/nm.*     nm.py
     binutils/assembler.*   binutils/assembler.py
     binutils/assemble_command.*   the `c6502cpp assemble` command
+    binutils/link_command.*   the `c6502cpp link` command
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
     rtlib/helpers.h   the runtime helpers' table (step 7, group E)
@@ -124,6 +126,8 @@ cpp/
       return_in_zero_page.*   the `F@ret` objects of `static` pointer
                       results (step 5, group H)
       asm_to_asm2.*   the lowering to the asm2 IR
+      linker.*        passes/linker.py's `link_objects` and `link_files`,
+                      on linker_metadata.* and linker_objects.* (step 7)
       runtime_library.*   passes/runtime_library.py, the helpers a link
                       takes and the text of runtime.o (step 7, group E)
       emission_args.* the decoders of the arguments of the work after the
@@ -2644,6 +2648,86 @@ each of the 12, and Python's results for `relax`, `output_symbols`,
 `merge_identical`, and `contents` on small objects.
 The records make a capture of the corpus take 365 seconds with 12
 processes, where it took 131, and its blobs 198 MB in 9,976 files.
+
+### The link (group D3)
+
+`passes::linker::link_objects` (src/passes/linker.*) is
+`linker.link_objects`, and `link_files` is `linker.link_files`. The
+link runs the functions of groups A, C, D1, D2, and E in Python's
+order, which the comment at the top of linker.cpp lists, so it has no
+logic of its own beyond the order, the tables it builds between the
+calls, and the errors of its five raise sites. It takes the objects as
+`ElfFile`s with their names, which the caller reads from their bytes.
+The capture harness links every recorded link a second time from the
+objects' bytes read back, and every link of the corpus and the suite
+gave the same executable that way, so the port never needs an object
+that `elf.write` and `elf.read` would change.
+
+These are the places where the port follows Python.
+
+- Every table of names the link builds between the calls (the runtime's
+  names, the placed slots, the zero-page objects, the spilled slots,
+  and the lookups of the layout and the `Resolver`) is an `OrderedMap`,
+  which keeps a dict's insertion order, and a key assigned again keeps
+  its place, as `{**a, **b}` and `d[k] = v` keep it. A spilled slot is
+  taken out of the placed names and put back at the end with its
+  address in `__spill`, as Python deletes and adds it.
+- `merged.zp_objects` lists the objects in the order of a stable sort by
+  address. MSVC's `std::stable_sort` can't take an element with a
+  128-bit member, so it sorts the positions.
+- D1's functions take addresses as `asdl::Int` and binutils/ld.h as
+  64-bit values. Every address the link computes fits in 64 bits, and
+  one that doesn't throws `InternalError`.
+- A metadata block that `parse_metadata` rejects with a ValueError is a
+  `LinkError` that names the object, and any other error of it passes
+  through. So does an `AssemblerError` of the linker's own code and a
+  `LayoutError` of the layout, as Python's `except` clauses do.
+- `link_files` gives the strerror of Python's OSError (`missing.o: No
+  such file or directory`), which it takes from `nm::read_path`'s
+  message. When the executable can't be written, where Python raises
+  the OSError of `Path.write_bytes`, it throws `InternalError` with a
+  message that says so.
+
+`c6502cpp link` (src/binutils/link_command.h) reads a request with the
+objects' bytes and names, the script's path, the origin, and the
+`--defsym`s, reads the objects and then the script as compile.py does,
+links them, and writes the executable's bytes or the error with its
+Python class, its message, and the position of the object `elf.read`
+rejected, for group F to connect to compile.py. An origin or a
+`--defsym` past 64 bits, which compile.py reads with Python's integers,
+throws `InternalError`. tests/test_cpp_binutils.py's `TestLink` compares
+it with Python's link of a compiled program without a script, with
+`--defsym` and another origin, with a script of ROM and RAM regions,
+and with a script that isn't there, and `--repeat <n>` links n times and
+writes the shortest time to stderr.
+
+`c6502cpp check-binutils` links each `link` record in C++, from the
+objects' bytes, the script's text through `parse_script`, the origin,
+and the `--defsym`s, and compares the executable byte for byte, or the
+error's class and message. On 22 Nov 2026 all 4,537 `link` records of
+the corpus (756 of them errors) and the 107 of the suite (24 errors)
+matched in the build of MSVC 19.36, and in the build of GCC 12.2 all of
+them matched but 72 records of the suite whose objects are named by
+Windows paths such as `C:\...\u0.o`. Python on Windows names those
+files `u0.o`, and `Path(path).name` on Linux is the whole path, as
+D2's `output_symbols` records show. The same 72 records with each
+object named by its file name alone matched in the GCC build too. The
+records reach 2 of the 5 raise sites of `link_objects` (an executable
+given as an object, and the layout's `LayoutError`) and neither of the
+2 of `link_files`, and tests/test_linker.cpp gives Python's message for
+each of the 7.
+
+The C++ link of the three games, from the objects' bytes to the
+executable's, takes 26 ms (Zork), 34 ms (Lode Runner), and 75 ms (Ali
+Baba), best of five, where Python's `link_objects` and `elf.write` took
+42, 63, and 130 ms on the same records on the same day. Of Ali Baba's
+75 ms, about 22 go to `allocate_function_locals`, most of them to the
+call-graph closures it builds on sets of names before it places a pool,
+16 to parsing the objects' metadata and listing their items, 10 to
+`allocate_zp_slots`, 6 to `merge`, 5 to `link_shares`, and 2.5 to
+`elf::read` and `elf::write`. `allocate_function_locals` took 50 ms
+before it computed the callers of each function once, where Python
+inverts the call graph again for each function it places.
 
 ## Status
 

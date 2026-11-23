@@ -2150,3 +2150,23 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   of its section's bytes ended a link with an IndexError in
   `_pointer_names`, or gave the executable a section one byte longer
   than its size, and `elf.read` now rejects it with an ElfError.
+- 22 Nov 2026: group D3 of step 7, the link (cpp/README.md, "The link
+  (group D3)"). `link_objects` and `link_files` are
+  `passes::linker::link_objects` and `link_files`, which run the
+  functions of groups A, C, D1, D2, and E in Python's order on the
+  objects read from their bytes, and `c6502cpp link` takes the objects'
+  bytes and names, the script's path, the origin, and the `--defsym`s
+  and gives the executable or the error with its Python class, for group
+  F. `c6502cpp check-binutils` links every `link` record in C++, and all
+  4,537 of the corpus and the 107 of the suite matched, executables byte
+  for byte and errors word for word, in the build of MSVC 19.36, and in
+  the build of GCC 12.2 all but 72 of the suite's, whose objects have
+  Windows paths for names, which GCC names as Python on Linux would, as
+  for D2's `output_symbols`. The records reach 2 of the 7 raise sites of
+  `link_objects` and `link_files`, and tests/test_linker.cpp gives
+  Python's message for each of the 7. The C++ link of Zork, Lode Runner,
+  and Ali Baba takes 26, 34, and 75 ms, best of five, against Python's
+  42, 63, and 130 ms on the same day (59, 88, and 175 ms in the survey).
+  `allocate_function_locals` inverted the call graph for each function
+  it placed, as Python does, which took 50 ms of Ali Baba's link in C++,
+  and it now inverts it once.

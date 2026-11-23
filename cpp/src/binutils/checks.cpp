@@ -19,6 +19,7 @@
 #include "errors.h"
 #include "json.h"
 #include "passes/link_checks.h"
+#include "passes/linker_checks.h"
 #include "passes/runtime_library.h"
 #include "passes/stage_registry_sharing.h"
 #include "passes/zp_link_metadata.h"
@@ -34,7 +35,11 @@ namespace fs = std::filesystem;
 constexpr std::string_view kKinds[] = {
     "assemble",       "parse_metadata", "elf_read",  "parse_script",    "link",
     "disassemble",    "nm",             "objdump",   "runtime_library", "lay_out",
-    "default_script", "fall_through",   "tail_jump", "startup_lines"};
+    "default_script", "fall_through",   "tail_jump", "startup_lines",
+    // binutils/ld.py, and passes/linker.py's functions on the objects.
+    "global_definitions", "relax", "executable", "linker_runtime_library", "object_items",
+    "item_symbol", "without_init", "unit", "apply_renames", "pointer_names", "reassemble",
+    "output_symbols", "merge_identical", "contents"};
 
 // Returns the error `e` compared with the recorded one, or "" when the
 // two have the same Python type and message.
@@ -138,6 +143,14 @@ class Checker {
       ++count.ran;
       std::string problem =
           passes::link_checks::check(kind, args, input, output, call.output_is_error);
+      if (problem.empty()) ++count.matched;
+      return problem;
+    }
+    if (passes::linker_checks::handles(kind)) {
+      ++count.ran;
+      std::string problem = passes::linker_checks::check(
+          kind, args, input, output, call.output_is_error,
+          [this](const std::string& hash) { return blob(hash); });
       if (problem.empty()) ++count.matched;
       return problem;
     }

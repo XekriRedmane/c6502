@@ -94,6 +94,51 @@ records name it by that hash. The kinds:
   section defines (`[[name, value, type], ...]`), and gives the name or
   null. `startup_lines` takes the tagged JSON of the script and gives
   the lines.
+- `global_definitions`, `relax`, and `executable` (binutils/ld.py), and
+  `linker_runtime_library`, `object_items`, `item_symbol`,
+  `without_init`, `unit`, `apply_renames`, `pointer_names`,
+  `reassemble`, `output_symbols`, `merge_identical`, and `contents`
+  (passes/linker.py's `_runtime_library` and the others of those
+  names). A link changes its objects in place between these calls, so
+  a record names an object by the hash of the blob of its JSON form,
+  `{"type", "entry", "flags", "nsections", "sections", "nsymbols",
+  "symbols", "segments"}`. A section is `[name, type, flags, data (hex),
+  nobits_size, addr, align, [[offset, type, symbol, addend], ...]]`, a
+  symbol `[name, value, size, bind, type, section, other]`, and a
+  segment `[vaddr, paddr, data (hex), memsz, flags]`. A symbol's
+  section is its index in "sections", or `-1 - n` for the section number
+  n (`SHN_UNDEF` or `SHN_ABS`), and a relocation's symbol its index in
+  "symbols". The first "nsections" sections and "nsymbols" symbols are
+  the object's lists, and the rest are those a symbol or a relocation
+  names that the lists don't hold. A list of objects is `[[name,
+  hash], ...]`, a section of one `[object, section]`, and a list of
+  items `[[name, section, local, zero, merge], ...]`.
+  `global_definitions` takes the objects and gives `{"defs": [[name,
+  object, symbol], ...], "absolute": [[name, value], ...]}`. `relax`
+  takes the section in the form above, with its relocations' symbols
+  as indices into "symbols", which are `[name, value, size, bind, type,
+  in the section, other]` for the object's symbols ("nsymbols" of them)
+  and then the others the relocations name, and "values", what
+  `value_of` gives each relocation's symbol. It gives `{"saved", "data",
+  "relocs", "own"}`, the section's bytes and relocations after the call
+  and `[value, size]` of each of its own symbols. `executable` takes the
+  arguments `entry` and `link_text` and the objects, the output
+  sections in `lay_out`'s form, the resolver's "placed" sections
+  (`[[section, addr], ...]`) and "extra" names, and the symbols, whose
+  section is `["output", i]`, `["section", k, j]`, or `["shndx", n]`,
+  and gives `{"executable": <hash of its bytes>}`.
+  `linker_runtime_library` takes the argument `defsyms` and the objects,
+  and gives null or `{"name", "object" (the hash of its bytes), "meta"
+  (tagged JSON)}`. `object_items` takes the argument `path`, the
+  metadata's items, and the object, and gives the items.
+  `item_symbol` gives the symbol's index, `without_init` `{"same",
+  "elf"}`, `unit` `{"path", "index", "items", "sections": [[name,
+  section index], ...], "tails"}`, `apply_renames` the symbols' names
+  after it, `pointer_names` the names sorted, `reassemble` and
+  `merge_identical` the objects after them (and the metadatas' items),
+  `output_symbols` the symbols in `executable`'s form, and `contents`
+  null or `[name, type, flags, align, size, data, [[offset, type,
+  target, addend], ...]]`, with a local target as `[unit, name]`.
 - `nm` and `objdump`: the command line after the program's name as the
   arguments, with `columns`, the terminal width argparse wraps its
   usage and help to (`shutil.get_terminal_size`), and the files the
@@ -134,7 +179,11 @@ if str(_ROOT / "tools") not in sys.path:
 
 KINDS = ("assemble", "parse_metadata", "elf_read", "parse_script", "link",
          "disassemble", "nm", "objdump", "runtime_library", "lay_out",
-         "default_script", "fall_through", "tail_jump", "startup_lines")
+         "default_script", "fall_through", "tail_jump", "startup_lines",
+         "global_definitions", "relax", "executable", "linker_runtime_library",
+         "object_items", "item_symbol", "without_init", "unit",
+         "apply_renames", "pointer_names", "reassemble", "output_symbols",
+         "merge_identical", "contents")
 
 _OUT = _ROOT / "captures" / "binutils"
 _SOURCE = ""
@@ -571,6 +620,361 @@ def _wrap_startup_lines(real):
     return startup_lines
 
 
+# --- binutils/ld.py, and the linker's functions on the objects -------------
+#
+# A link changes its objects in place between these calls (renames,
+# `relax`, `_merge_identical`), so each record names an object by the
+# hash of its JSON form, `_elf_json`, stored as a blob, which keeps what
+# an ELF file can't: the symbols' order, and symbols and sections that
+# the object's lists no longer hold but a relocation or a symbol names.
+
+
+def _elf_json(obj) -> dict:
+    """The JSON form of `obj`, which the module docstring gives."""
+    from binutils import elf as E
+    secs = list(obj.sections)
+    sec_ix: dict[int, int] = {}
+    for i, s in enumerate(secs):
+        sec_ix[id(s)] = i
+    syms = list(obj.symbols)
+    sym_ix: dict[int, int] = {}
+    for i, s in enumerate(syms):
+        sym_ix.setdefault(id(s), i)
+
+    def sec_ref(sec) -> int:
+        if not isinstance(sec, E.Section):
+            return -1 - sec
+        if id(sec) not in sec_ix:
+            sec_ix[id(sec)] = len(secs)
+            secs.append(sec)
+        return sec_ix[id(sec)]
+
+    def sym_ref(s) -> int:
+        if id(s) not in sym_ix:
+            sym_ix[id(s)] = len(syms)
+            syms.append(s)
+        return sym_ix[id(s)]
+    out_syms: list = []
+    out_secs: list = []
+    i = j = 0
+    while i < len(syms) or j < len(secs):
+        while i < len(syms):
+            s = syms[i]
+            i += 1
+            out_syms.append([s.name, s.value, s.size, s.bind, s.type,
+                             sec_ref(s.section), s.other])
+        while j < len(secs):
+            c = secs[j]
+            j += 1
+            out_secs.append([
+                c.name, c.type, c.flags, bytes(c.data).hex(), c.nobits_size,
+                c.addr, c.align,
+                [[r.offset, r.type, sym_ref(r.symbol), r.addend]
+                 for r in c.relocs],
+            ])
+    return {
+        "type": obj.type, "entry": obj.entry, "flags": obj.flags,
+        "nsections": len(obj.sections), "sections": out_secs,
+        "nsymbols": len(obj.symbols), "symbols": out_syms,
+        "segments": [[g.vaddr, g.paddr, bytes(g.data).hex(), g.memsz, g.flags]
+                     for g in obj.segments],
+    }
+
+
+def _ref(obj) -> str:
+    """The hash of the blob holding `obj`'s JSON form."""
+    return _blob(json.dumps(_elf_json(obj)).encode("utf-8"))
+
+
+def _objects_json(objects) -> list:
+    return [[path, _ref(obj)] for path, obj in objects]
+
+
+def _where(objects) -> dict[int, list[int]]:
+    """Each section of `objects` by `id()`, as `[object, section]`."""
+    out: dict[int, list[int]] = {}
+    for k, (_, obj) in enumerate(objects):
+        for j, sec in enumerate(obj.sections):
+            out.setdefault(id(sec), [k, j])
+    return out
+
+
+def _items_json(items) -> list:
+    return [[it.name, it.section, it.local, it.zero, it.merge] for it in items]
+
+
+def _index(symbols, sym) -> int:
+    return next(i for i, s in enumerate(symbols) if s is sym)
+
+
+def _pairs(table) -> list:
+    return [[k, v] for k, v in (table or {}).items()]
+
+
+def _outputs_json(outputs, where) -> list:
+    return [{
+        "name": o.name, "addr": o.addr, "load_addr": o.load_addr,
+        "size": o.size, "noload": o.noload, "executable": o.executable,
+        "parts": [[p.unit, where[id(p.section)], p.addr, p.size]
+                  for p in o.parts],
+    } for o in outputs]
+
+
+def _symbols_json(symbols, outputs, where) -> list:
+    """The symbols of an executable's table before `executable` writes
+    it, each section as `["output", i]`, `["section", k, j]`, or
+    `["shndx", n]`."""
+    from binutils import elf as E
+    out_ix = {id(o): i for i, o in enumerate(outputs)}
+    out = []
+    for s in symbols:
+        if id(s.section) in out_ix:
+            sec = ["output", out_ix[id(s.section)]]
+        elif isinstance(s.section, E.Section):
+            sec = ["section", *where[id(s.section)]]
+        else:
+            sec = ["shndx", s.section]
+        out.append([s.name, s.value, s.size, s.bind, s.type, sec, s.other])
+    return out
+
+
+def _wrap_call(kind: str, real, describe, result):
+    """A wrapper of `real` that records each call as `kind`: `describe`
+    gives the arguments and the input from the call's arguments before
+    the call, and `result` the output from them and the returned value
+    after it."""
+    def wrapper(*a, **kw):
+        if _QUIET:
+            return real(*a, **kw)
+        with _quiet():
+            try:
+                args, value = describe(*a, **kw)
+            except Exception:  # noqa: BLE001 - a value the form can't hold
+                _anomaly(f"{kind}-unrecorded", _SOURCE)
+                return real(*a, **kw)
+        start = time.perf_counter()
+        try:
+            out = real(*a, **kw)
+        except Exception as e:
+            _count(kind, time.perf_counter() - start)
+            _record(kind, args, value, error=e)
+            raise
+        _count(kind, time.perf_counter() - start)
+        with _quiet():
+            try:
+                output = result(out, *a, **kw)
+            except Exception:  # noqa: BLE001 - a value the form can't hold
+                _anomaly(f"{kind}-unrecorded", _SOURCE)
+                return out
+            _record(kind, args, value, output)
+        return out
+    return wrapper
+
+
+def _wrap_global_definitions(real):
+    def describe(objects):
+        return {}, {"objects": _objects_json(objects)}
+
+    def result(out, objects):
+        defs, absolute = out
+        return {"defs": [[n, k, _index(objects[k][1].symbols, s)]
+                         for n, (k, s) in defs.items()],
+                "absolute": _pairs(absolute)}
+    return _wrap_call("global_definitions", real, describe, result)
+
+
+def _relax_symbols(sec, symbols):
+    """The symbols `relax` reads, which are `symbols` and then each
+    other one a relocation of `sec` names, and each one's index."""
+    syms = list(symbols)
+    ix: dict[int, int] = {}
+    for i, s in enumerate(syms):
+        ix.setdefault(id(s), i)
+    for r in sec.relocs:
+        if id(r.symbol) not in ix:
+            ix[id(r.symbol)] = len(syms)
+            syms.append(r.symbol)
+    return syms, ix
+
+
+def _wrap_relax(real):
+    def describe(sec, symbols, value_of):
+        syms, ix = _relax_symbols(sec, symbols)
+        return {}, {
+            "section": [
+                sec.name, sec.type, sec.flags, bytes(sec.data).hex(),
+                sec.nobits_size, sec.addr, sec.align,
+                [[r.offset, r.type, ix[id(r.symbol)], r.addend]
+                 for r in sec.relocs],
+            ],
+            "symbols": [[s.name, s.value, s.size, s.bind, s.type,
+                         s.section is sec, s.other] for s in syms],
+            "nsymbols": len(symbols),
+            "values": [value_of(r.symbol) for r in sec.relocs],
+        }
+
+    def result(saved, sec, symbols, value_of):
+        _, ix = _relax_symbols(sec, symbols)
+        return {"saved": saved, "data": bytes(sec.data).hex(),
+                "relocs": [[r.offset, r.type, ix[id(r.symbol)], r.addend]
+                           for r in sec.relocs],
+                "own": [[s.value, s.size] for s in symbols
+                        if s.section is sec]}
+    return _wrap_call("relax", real, describe, result)
+
+
+def _wrap_executable(real):
+    def describe(objects, outputs, resolver, symbols, entry, link_text=None):
+        if resolver.objects is not objects:
+            raise ValueError("the resolver has other objects")
+        where = _where(objects)
+        by_id = {i: w for i, w in where.items()}
+        return {"entry": entry, "link_text": link_text}, {
+            "objects": _objects_json(objects),
+            "outputs": _outputs_json(outputs, where),
+            "placed": [[by_id[i], addr] for i, addr in resolver.addr.items()],
+            "extra": _pairs(resolver.extra),
+            "symbols": _symbols_json(symbols, outputs, where),
+        }
+
+    def result(exe, *a, **kw):
+        from binutils import elf as E
+        return {"executable": _blob(E.write(exe))}
+    return _wrap_call("executable", real, describe, result)
+
+
+def _wrap_runtime_object(real):
+    def describe(objects, defsyms):
+        return {"defsyms": _pairs(defsyms)}, {"objects": _objects_json(objects)}
+
+    def result(out, objects, defsyms):
+        from binutils import elf as E
+        from capture_passes import encode
+        if out is None:
+            return None
+        (name, obj), meta = out
+        return {"name": name, "object": _blob(E.write(obj)),
+                "meta": encode(meta)}
+    return _wrap_call("linker_runtime_library", real, describe, result)
+
+
+def _wrap_object_items(real):
+    def describe(meta, obj, path):
+        return {"path": path}, {"items": _items_json(meta.items),
+                                "elf": _ref(obj)}
+
+    def result(items, meta, obj, path):
+        return _items_json(items)
+    return _wrap_call("object_items", real, describe, result)
+
+
+def _wrap_item_symbol(real):
+    def describe(obj, name):
+        return {"name": name}, {"elf": _ref(obj)}
+
+    def result(sym, obj, name):
+        return _index(obj.symbols, sym)
+    return _wrap_call("item_symbol", real, describe, result)
+
+
+def _wrap_without_init(real):
+    def describe(obj):
+        return {}, {"elf": _ref(obj)}
+
+    def result(out, obj):
+        return {"same": out is obj, "elf": _ref(out)}
+    return _wrap_call("without_init", real, describe, result)
+
+
+def _wrap_unit(real):
+    def describe(k, path, obj, items, tail_jump):
+        return {"k": k, "path": path}, {"elf": _ref(obj),
+                                        "items": _items_json(items)}
+
+    def result(u, k, path, obj, items, tail_jump):
+        return {"path": u.path, "index": u.index,
+                "items": _items_json(u.items),
+                "sections": [[name, _index(obj.sections, sec)]
+                             for name, sec in u.sections.items()],
+                "tails": _pairs(u.tails)}
+    return _wrap_call("unit", real, describe, result)
+
+
+def _wrap_apply_renames(real):
+    def describe(obj, renames):
+        return {"renames": _pairs(renames)}, {"elf": _ref(obj)}
+
+    def result(out, obj, renames):
+        return [s.name for s in obj.symbols]
+    return _wrap_call("apply_renames", real, describe, result)
+
+
+def _wrap_pointer_names(real):
+    def describe(objects):
+        return {}, {"objects": _objects_json(objects)}
+
+    def result(out, objects):
+        return sorted(out)
+    return _wrap_call("pointer_names", real, describe, result)
+
+
+def _wrap_reassemble(real):
+    def describe(objects, renames, placed, outside):
+        return {"renames": [_pairs(r) for r in renames],
+                "placed": _pairs(placed), "outside": sorted(outside)}, {
+            "objects": _objects_json(objects)}
+
+    def result(out, objects, renames, placed, outside):
+        return {"objects": _objects_json(objects)}
+    return _wrap_call("reassemble", real, describe, result)
+
+
+def _wrap_output_symbols(real):
+    def describe(objects, outputs, addr_of, placed_names, zp_objects,
+                 layout_symbols, defsyms):
+        where = _where(objects)
+        return {}, {
+            "objects": _objects_json(objects),
+            "outputs": _outputs_json(outputs, where),
+            "addr_of": [[where[i], p.unit, p.addr, p.size]
+                        for i, p in addr_of.items()],
+            "placed_names": _pairs(placed_names),
+            "zp_sizes": [[name, records[0].size]
+                         for name, records in zp_objects.items()],
+            "layout_symbols": _pairs(layout_symbols),
+            "defsyms": _pairs(defsyms),
+        }
+
+    def result(symbols, objects, outputs, *rest):
+        return _symbols_json(symbols, outputs, _where(objects))
+    return _wrap_call("output_symbols", real, describe, result)
+
+
+def _wrap_merge_identical(real):
+    def describe(objects, metas):
+        return {}, {"objects": _objects_json(objects),
+                    "metas": [_items_json(m.items) for m in metas]}
+
+    def result(out, objects, metas):
+        return {"objects": _objects_json(objects),
+                "metas": [_items_json(m.items) for m in metas]}
+    return _wrap_call("merge_identical", real, describe, result)
+
+
+def _wrap_contents(real):
+    def describe(k, obj, sym):
+        return {"k": k}, {"elf": _ref(obj), "symbol": _index(obj.symbols, sym)}
+
+    def result(out, k, obj, sym):
+        if out is None:
+            return None
+        name, type_, flags, align, size, data, relocs = out
+        return [name, type_, flags, align, size, data.hex(),
+                [[o, t, list(target) if isinstance(target, tuple) else target, a]
+                 for o, t, target, a in relocs]]
+    return _wrap_call("contents", real, describe, result)
+
+
 def _wrap_disassemble(real):
     def disassemble(elf, *, all_sections=False, only=None, options=None):
         if _QUIET:
@@ -662,6 +1066,27 @@ def install(out: Path) -> None:
     link_layout.tail_jump = _wrap_tail_jump(link_layout.tail_jump)
     link_layout.startup_lines = _wrap_startup_lines(link_layout.startup_lines)
     linker.link_objects = _wrap_link(linker.link_objects)
+    # The linker imported ld's functions by name, and the Resolver calls
+    # `global_definitions` through ld's globals.
+    from binutils import ld
+    for name, wrap in (("global_definitions", _wrap_global_definitions),
+                       ("relax", _wrap_relax),
+                       ("executable", _wrap_executable)):
+        setattr(ld, name, wrap(getattr(ld, name)))
+        setattr(linker, name, getattr(ld, name))
+    # The linker's functions call each other through its globals.
+    for name, wrap in (("_runtime_library", _wrap_runtime_object),
+                       ("_object_items", _wrap_object_items),
+                       ("_item_symbol", _wrap_item_symbol),
+                       ("_without_init", _wrap_without_init),
+                       ("_unit", _wrap_unit),
+                       ("_apply_renames", _wrap_apply_renames),
+                       ("_pointer_names", _wrap_pointer_names),
+                       ("_reassemble", _wrap_reassemble),
+                       ("_output_symbols", _wrap_output_symbols),
+                       ("_merge_identical", _wrap_merge_identical),
+                       ("_contents", _wrap_contents)):
+        setattr(linker, name, wrap(getattr(linker, name)))
     disasm.disassemble = _wrap_disassemble(disasm.disassemble)
     # objdump.py imported `disassemble` by name.
     objdump.disassemble = disasm.disassemble

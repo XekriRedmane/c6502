@@ -2104,3 +2104,24 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   35 AssemblerError messages and 3 of `parse_metadata`'s 13 ValueError
   messages, and the C++ tests have a case for each of the others but
   the two no text reaches.
+- 22 Nov 2026: group D1 of step 7, the linker's metadata side
+  (cpp/README.md, "The linker's metadata side (group D1)"). The 17
+  functions of passes/linker.py on the link metadata and
+  `slot_sharing.merge_shares` and `check_linked_shares` are ported in
+  src/passes/linker_metadata.* and slot_sharing.*, on the records,
+  allocators, cycles, and layout that steps 3 and 4 ported.
+  tools/capture_binutils.py records each call of each of them with what
+  it reads, returns, and changes, and `c6502cpp check-binutils` matched
+  all 15,491 records of the corpus and the 743 of the suite, errors
+  included, in the builds of MSVC 19.36 and GCC 12.2. The records reach
+  19 of the functions' 28 raise sites, and tests/test_linker_metadata.cpp
+  gives Python's message for each of the 28, and the allocators'
+  `ZpSlotAllocationError` and `ZpLocalAllocationError` for the
+  synthetic program of a link. Two bugs were fixed in Python. A cycle
+  of calls through two units, which neither unit's compile saw, failed
+  the link in the slot allocator with a message that called it an
+  internal error, or on an undefined `__local_*` slot, and
+  `_validate_eligibility` now rejects it with a message of its own. A
+  promoted zero-page object of no bytes, which only a metadata block
+  written by hand lists, ended the link with a ZeroDivisionError, and
+  `_merge_zp_objects` now rejects an object without bytes.

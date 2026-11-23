@@ -2485,6 +2485,87 @@ tests/test_link_layout.cpp give Python's message for every one of the
 36, with `fnmatchcase` and `translate` on each of their special
 characters.
 
+### The linker's metadata side (group D1)
+
+`passes::linker` (src/passes/linker_metadata.*) holds the functions of
+passes/linker.py that work on the link metadata: `merge`,
+`carry_conflict`, `arrivals`, `validate_eligibility`, `synthesize`,
+`rename_locals`, `rename_meta`, `merge_zp_objects`, `place_zp_objects`,
+`choose_layout`, `runtime_bytes`, `link_shares`, `bind_extern_params`,
+`drop_unused_locals`, `init_lines`, `data_lines`, and `regs`, each
+taking and returning what the Python function does (the leading
+underscore dropped). `merge_shares` and `check_linked_shares` are in
+src/passes/slot_sharing.*, beside the rest of that module. The comment at
+the top of linker_metadata.cpp gives the order in which `link_objects`
+calls them, which group D3 ports.
+
+They reuse what steps 3 and 4 ported: the `LinkMetadata` records of
+src/passes/zp_link_metadata.h, `ZpLayout` and `SoftStackLayout` of the
+ABI, `hw_stack_cycles`, `cycles`, and `call_graph` of
+src/passes/recursion_saves.h, `choose_layout` and `RuntimeLayout` for
+the runtime's block, `asm_emit::instr_line` for the linker's own lines,
+and group S's `ElfFile`. The allocators (`allocate_zp_slots`,
+`allocate_function_locals`, `build_local_slot_symbols`) run on
+`synthesize`'s program unchanged.
+
+These are the places where the port follows Python.
+
+- `rename_locals` takes the objects by reference and renames their
+  symbols in place, so that every relocation, which names its symbol by
+  pointer, follows the rename, as Python's do by identity.
+  `drop_unused_locals` and `bind_extern_params` change their merged
+  metadata and their names in place too.
+- `merge` returns copies of the units' records, where Python's merged
+  `def` is the unit's own object. After the merge, `link_objects`
+  changes only the merged records (`drop_unused_locals`) and reads
+  nothing of the units' `def` records but their `pinned` addresses, so
+  the copies give the same link.
+- The names `merge` and `merge_shares` sort compare as `std::string`
+  does, which for UTF-8 is Python's code-point order, so `B` comes
+  before `a` and `é` after `z`. Every dict the linker walks is an
+  `OrderedMap` in insertion order. A message with a sorted list prints
+  it with Python's repr (`['B', "it's", 'é']`), and the message for
+  calls of externs no unit defines has U+2192 (`main → ['puts']`).
+- `place_zp_objects` sorts the promoted objects by the double
+  `-weight / size` and then by name. Python's `/` of two ints rounds the
+  exact quotient once, as the division of two doubles does when both
+  are exact, so a weight or size of 2**53 or more throws
+  `InternalError`, and a size of 0 throws Python's ZeroDivisionError.
+  -0.0 and 0.0 compare equal in both.
+- `merge_shares` follows Python's union of the shares with a slot in
+  common. Python walks each share's slots in a set's order, which
+  decides only which share is a group's root, and nothing reads the
+  roots.
+
+tools/capture_binutils.py records each call of each of those functions,
+with what it reads and what it returns, and the changes it makes to its
+arguments, as records of the kinds `link_merge`, `link_carry_conflict`,
+`link_arrivals`, `link_validate_eligibility`, `link_synthesize`,
+`link_rename_locals`, `link_rename_meta`, `link_merge_zp_objects`,
+`link_place_zp_objects`, `link_choose_layout`, `link_runtime_bytes`,
+`link_shares`, `merge_shares`, `check_linked_shares`,
+`link_bind_extern_params`, `link_drop_unused_locals`, `link_init_lines`,
+`link_data_lines`, and `link_regs` (its docstring gives their JSON), and
+`c6502cpp check-binutils` runs each of them in C++
+(src/passes/linker_checks.*). An object that `rename_locals` renames is
+written again and compared with Python's byte for byte. On 22 Nov 2026
+all of them matched, errors included, in the builds of MSVC 19.36 and
+GCC 12.2: 15,491 records of the corpus and 743 of the suite. Of the
+corpus's, 2,089 are `link_merge`, 2,974 `link_rename_locals`, 2,859
+`link_drop_unused_locals`, 1,973 `link_shares`, and 1,627
+`link_synthesize` records. The corpus links one unit at a time, apart
+from the three games, so the suite's links of several units give most
+of the renames, the shares, and the errors.
+
+The records reach 19 of the 28 raise sites of these
+functions, and tests/test_linker_metadata.cpp gives Python's message for
+every one of the 28. It also runs the allocators on `synthesize`'s
+program of a function with 4,097 parameter bytes and one with 4,097
+local bytes, with the options `link_objects` gives them under a script,
+and gets Python's `ZpSlotAllocationError` and `ZpLocalAllocationError`.
+The allocators' cycle error no longer comes from a link, since
+`validate_eligibility` rejects a cycle across units first.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -2751,3 +2832,8 @@ characters.
   `binutils::objdump`, which match every `disassemble` and `objdump`
   record of the corpus and the suite, with objdump.py run through
   `c6502cpp objdump` under `C6502_CPP_BACKEND=1`.
+- 22 Nov 2026: group D1 of step 7, the linker's metadata side ("The
+  linker's metadata side"): the functions of passes/linker.py on the
+  link metadata and `merge_shares` and `check_linked_shares`, which
+  match Python on all 15,491 records of the corpus and the 743 of the
+  suite, errors included, in the builds of MSVC 19.36 and GCC 12.2.

@@ -315,7 +315,9 @@ uv run python tools/compare_backends.py -j 12   # both back ends on the corpus
 
 With `C6502_CPP_BACKEND=1`, the C++ port compiles each C input of
 `-S`, `-c`, and a link from its source text to the `-S` text, and Python
-runs no part of the front end. `compile._compile_c` hands one call of
+runs no part of the front end, and the C++ port assembles `-c`'s
+objects and links, so no Python assembles or links either. For `-S`,
+`compile._compile_c` hands one call of
 `c6502cpp backend` the text as compile.py read it, the preprocessor's
 arguments, the file name (None for stdin), and the directory of
 include/, and the C++ side runs `passes::front_end`
@@ -357,17 +359,48 @@ and `--tac` stay in Python. Run as a script with the variable set and
 one of the C++ stages, compile.py stops before its pipeline's imports
 (`_cpp_runs_everything`), so `-S` and `-c` import none of the parser,
 Lark, pcpp, or the front end's passes, unless `C6502_CHECK_IR=1` loads
-`ir_check`, whose helpers import the type checker. A link still imports the type
-checker through the Python linker (`passes.linker` reads
-`passes.zp_globals`). The variable is read at each compile, and without
+`ir_check`, whose helpers import the type checker.
+
+`-c` and a link go to C++ in one request for the whole run
+(`compile._cpp_build`, `cpp_backend.build`, and the modes `objects` and
+`link` of cpp/src/backend.h). Python reads the inputs as `_object`
+does, each C source's text, each `.asm` file's text, and each object's
+bytes, up to the first it can't read (or, for `-c`, the first object),
+and sends them in order with the preprocessor's arguments, and for a
+link with the script's path, the origin, the `--defsym`s, and the
+output's path. The C++ side compiles and assembles each C input,
+assembles each `.asm` file, and reads each object, in order and in the
+same process, stopping at the first error, then returns each object of
+`-c`, or links the objects and writes the executable itself. Python goes
+through the response input by input as its own path does: it writes
+what each C input's preprocessor wrote to stderr and prints its
+warnings, raises the input's error as its Python exception
+(`AssemblerError`, `ElfError`, and the front end's classes) for `main`
+to report with `_report`, writes each object, and only then reports the
+input it stopped at. A link's error keeps its class (`LinkError`,
+`ZpSlotAllocationError`, `ZpLocalAllocationError`; a `ScriptError` and
+a `LayoutError` reach compile.py as `LinkError`s, as in Python), and
+compile.py reports it as `compile.py: link error: <message>`. The
+`struct.error` that `elf.write` raises for an addend or a size outside
+its field comes back as `struct.error` (which `cpp_backend._error_type`
+tells apart from `re.error`), and compile.py opens the output file
+before raising it, as Python does. An executable that can't be written
+gives the OSError of its errno. On these paths compile.py, run as a
+script, imports none of binutils/, `passes.linker` and its imports, the
+type checker, numpy, or rtlib (tests/test_cpp_backend.py,
+`TestObjectsAndLinks`).
+
+The variable is read at each compile, and without
 it compile.py imports nothing new. `tools/compare_backends.py` compiles
-the whole corpus both ways and requires the same output, errors, and
-warnings (cpp/README.md, "The back end through c6502cpp" and
-"Emission"). With the variable set, nm.py's `main` runs the C++ nm,
-`c6502cpp nm`, with its command line (`cpp_backend.run_tool`), and
-writes its output to Python's streams. objdump.py, `-c`'s assembly,
-and the link stay in Python until their groups of step 7 land
-(docs/cpp_port.md, "Step 7").
+the whole corpus both ways with `-S`, `-S -O`, `-c`, and `-c -O`, links
+each object alone with and without a script, links the three games as
+tools/capture_binutils.py does and from their sources, and links
+damaged objects and bad command lines, and requires the same output,
+errors, warnings, and files (cpp/README.md, "The back end through
+c6502cpp" and "Emission"). With the variable set, nm.py's and
+objdump.py's `main` run the C++ tools, `c6502cpp nm` and `c6502cpp
+objdump`, with their command lines (`cpp_backend.run_tool`), and write
+their output to Python's streams.
 
 `compile.py`, `nm.py`, and `objdump.py` are the CLIs; every other
 module is library-only. Flags `compile.py` doesn't recognize are

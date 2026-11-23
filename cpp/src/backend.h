@@ -84,8 +84,8 @@ namespace c6502::backend {
 // name the assembler gives the object, `<stem>.c` or the `.asm` file's
 // name, or the object's path, which `elf.read`'s messages name),
 // `filename` (the preprocessor's file name of a C input, null for
-// stdin), and for a link `link_name`, the name the linker knows the
-// object by. A link also takes `run_link`, false when compile.py stops
+// stdin), and for a link `link_name`, the name the object goes by in
+// the link, which a script's file patterns match. A link also takes `run_link`, false when compile.py stops
 // after these inputs because the next one can't be read, `script` (a
 // path or null), `origin` (null for $0800), `defsyms` (`[name, value]` pairs in the
 // command line's order), and `output`, the executable's path.

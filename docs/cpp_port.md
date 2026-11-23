@@ -2170,3 +2170,59 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   `allocate_function_locals` inverted the call graph for each function
   it placed, as Python does, which took 50 ms of Ali Baba's link in C++,
   and it now inverts it once.
+- 22 Nov 2026: group F of step 7, the driver and the switch
+  (cpp/README.md, "The back end through c6502cpp"). With
+  `C6502_CPP_BACKEND=1`, `-c` and a link hand every input of the run to
+  `c6502cpp backend` in one request (its modes `objects` and `link`,
+  `cpp_backend.build`), as the plan for the switch describes, except
+  that `-c` sends its inputs in one request too and a link goes through
+  the backend rather than `c6502cpp link`, so that a link's C inputs
+  compile in the process that links them. The C++ side compiles and
+  assembles each C input, assembles each `.asm` input, reads each
+  object, and returns the objects of `-c` or links them and writes the
+  executable, and `compile._cpp_build` replays each input's stderr,
+  warnings, and error in the Python path's order, so the messages, the
+  exit status, and the files written are the same. The errors keep
+  their classes (`AssemblerError`, `ElfError`, `LinkError`, and the
+  allocators' errors, with `ScriptError` and `LayoutError` reaching
+  compile.py as `LinkError`s as in Python), the `struct.error` of
+  `elf.write`, which `c6502cpp assemble` typed "error" as `re.error`
+  is, now has the type `struct.error` and leaves the file compile.py
+  opened empty, and an input that can't be read gives compile.py's
+  one-line message after the inputs before it. On these paths
+  compile.py imports none of binutils/, `passes.linker` and its
+  imports, the type checker, numpy, or rtlib, which
+  tests/test_cpp_backend.py checks. `tools/compare_backends.py` now
+  compiles the corpus with `-c` and `-c -O` too, links each object
+  alone with and without a script, links the three games as
+  tools/capture_binutils.py does and from their sources in one
+  command, and links damaged objects and 21 bad command lines. It
+  compared 7,156 jobs of 11,782 commands each way and found no
+  difference in any status, message, exception, or file. The suite
+  passes with the variable set (4,959 tests, with `C6502_CHECK_IR=1`)
+  and without it, and the fuzzers with it set found nothing wrong in
+  150 programs each of `exprs`, `calls`, and `stmts` from seed 3000.
+  The builds of MSVC 19.36 and GCC 12.2 linked Zork from its 11 sources
+  to the same bytes. With the variable unset and set, the best of three
+  runs gave 0.61 and 0.13 seconds for the link of Zork from its objects,
+  0.63 and 0.14 for Lode Runner, and 0.68 and 0.17 for Ali Baba (0.85 to
+  1.02 and 0.51 to 0.59 in the survey); 21.0 and 4.9 seconds for `-c
+  -O` of the three games' 37 units, one command per game; 0.62 and 0.11
+  for the link of a one-function C program from its source with `-O`;
+  and 4.25 and 0.90 for Zork's link from its sources. Of Ali Baba's
+  0.17 seconds with the variable set, the c6502cpp process takes 0.07,
+  Python's start takes 0.03, and the imports of argparse, json,
+  subprocess, and tools/check_captures.py most of the rest; of its
+  2.4 seconds of `-c -O`, Python takes about 0.1.
+- 22 Nov 2026: step 7 is done. With `C6502_CPP_BACKEND=1`, no Python
+  runs in `-S`, `-c`, a link, nm.py, or objdump.py but the reading of
+  compile.py's command line and of its inputs, the replay of the
+  response, and, under `C6502_CHECK_IR=1`, `ir_check`. These stay in
+  Python until step 8: `--lex`, `--parse`, `--resolve`, and `--tac`;
+  compile.py's argparse; `ir_check`; and tests/link_helpers.py's
+  `linked_text`, which calls the disassembler. These stay until step
+  9: the simulator, which reads executables with binutils.elf and
+  decodes with `opcodes.DECODE` (sim/linked.py, sim/lode_runner.py,
+  and sim/ali_baba.py), its own assembler (sim/assembler.py), the
+  helpers' code in rtlib/helpers.py, which group E's table copies, and
+  the TAC interpreter's path of the tests and the fuzzers.

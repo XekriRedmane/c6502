@@ -392,8 +392,8 @@ def build(inputs: list[dict], pcpp_args, *, optimize: bool, inline: bool,
     links them. Each input is a dict with `kind` ("c", "asm", or
     "object"), `name` (the assembler's file name for the object, or an
     object's path), `filename` (a C input's file name for the
-    preprocessor, None for stdin), `link_name` (the name the linker
-    knows the object by), and `data` (the text, or an object's bytes).
+    preprocessor, None for stdin), `link_name` (the name the object
+    goes by in the link), and `data` (the text, or an object's bytes).
     `link` holds `run_link`, `script`, `origin`, `defsyms` (pairs), and
     `output`. `optimize` and `inline` are as for `compile_source`. The
     C++ side writes the executable itself."""

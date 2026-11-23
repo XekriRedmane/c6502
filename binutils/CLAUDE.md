@@ -34,10 +34,17 @@ script are in `passes/`.
 
 The C++ port has `elf.py`, `opcodes.py`, `assembler.py`, `ld.py`,
 `disasm.py`, nm.py, and objdump.py in cpp/src/binutils/
-(cpp/README.md, "The object-file tools"), and docs/cpp_port.md ("Step
-7") has the plan for the rest. A change to any of these modules has to
-be made in the C++ port too, and `c6502cpp check-binutils` on a capture
-of `tools/capture_binutils.py` shows what differs.
+(cpp/README.md, "The object-file tools"), and the linker of
+passes/ beside them (docs/cpp_port.md, "Step 7"). With
+`C6502_CPP_BACKEND=1`, compile.py's `-c` and its links run in C++
+(`compile._cpp_build`, the root CLAUDE.md), and nm.py and objdump.py run
+`c6502cpp nm` and `c6502cpp objdump`, so these modules then run only
+for the tests that call them, tests/link_helpers.py's `linked_text`,
+which calls the disassembler, and the simulator, which reads
+executables with `elf.py` and decodes with `opcodes.py` until step 9.
+A change to any of these modules has to be made in the C++ port too,
+and `c6502cpp check-binutils` on a capture of
+`tools/capture_binutils.py` shows what differs.
 
 ## The object format
 

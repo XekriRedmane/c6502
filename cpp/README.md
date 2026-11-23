@@ -2121,11 +2121,35 @@ a problem with the program (`CompileError`) ends the response with an
 stderr of a rejected program come back too. A bug the passes report
 (`InternalError`) exits with status 3.
 
+The backend's modes `objects` and `link` take every input of one run of
+`compile.py -c` or of a link, so that one process serves the run. The
+request lists each input's kind and names, with its text or bytes in a
+section of its own, and for a link the script's path, the origin, the
+`--defsym`s, and the output's path. `respond_inputs` compiles each C
+input with the metadata block (as `compile._object` does) and assembles
+its text, assembles each `.asm` input, and reads each object, in the
+command line's order, stopping at the first error, and for `-c` returns
+each object's bytes. A link gives the assembled objects to
+`passes::linker::link_objects` as they are, as compile.py gives the
+Python linker, reads the script after the inputs, and writes the
+executable itself. Each part of the response names its input, so
+`compile._cpp_build` can write what each C input's preprocessor wrote
+and its warnings, raise its error, and write its object in the order
+the Python path does. `check_write_fields`
+(src/binutils/assemble_command.h) gives the `struct.error` that
+`elf.write` raises for an addend or a size outside its field, now typed
+`struct.error`, which cpp_backend.py imports from `struct` and keeps
+apart from `re.error`, and compile.py opens the output before raising
+it, as Python's `open` comes before its `elf.write`. An executable that
+can't be opened or written gives the errno and the C library's message,
+which compile.py raises as the OSError Python's `open` raises.
+
 With `C6502_CPP_BACKEND=1`, compile.py's `_compile_c` hands the source
-text of each C input of `-S`, `-c`, and a link to `c6502cpp backend`
-through `cpp_backend.compile_source`, one process per compile, with the
+text of each C input of `-S` to `c6502cpp backend` through
+`cpp_backend.compile_source`, one process per compile, with the
 preprocessor's arguments and the file name (None for stdin), and the
-`-S` text comes back. The process inherits Python's current directory,
+`-S` text comes back. `-c` and a link go through `cpp_backend.build`,
+one process for the run, and no Python assembles or links. The process inherits Python's current directory,
 so the paths in the preprocessor's messages are the same. `--lex`,
 `--parse`, `--resolve`, and `--tac` stay in Python.
 `_run_stage("codegen", text)`, which the tests call with the
@@ -2150,15 +2174,23 @@ and, without it, imports none of this. Run as a script with the
 variable set and `-S`, `-c`, or a link, compile.py stops before it
 imports its pipeline (`_cpp_runs_everything`), and the runtime helpers'
 footprints come from the table compiled into c6502cpp, so neither `-S`
-nor `-c` imports the parser, Lark, pcpp, rtlib.helpers, or a pass of
+nor `-c` nor a link imports the parser, Lark, pcpp, rtlib, binutils/,
+`passes.linker` and its imports, the type checker, numpy, or a pass of
 the front end, unless
 `C6502_CHECK_IR=1` loads `ir_check`, whose helpers import the type
-checker.
+checker. tests/test_cpp_backend.py's `TestObjectsAndLinks` checks the
+imports, and compares `-c` and links of C, `.asm`, and `.o` inputs,
+with `-T`, `-Ttext`, and `--defsym`, and an error of each class, with
+the Python path's.
 
 `tools/compare_backends.py` compiles the corpus of the capture harness
-with `-S` and `-S -O`, once with the variable and once without, and
-requires the same `-S` text, exit status, messages, warnings, and
-exceptions.
+with `-S`, `-S -O`, `-c`, and `-c -O`, once with the variable and once
+without, links each object alone with and without a script, links the
+three games as tools/capture_binutils.py does and from their sources in
+one command, and links damaged objects and bad command lines. It
+requires the same exit status, messages, warnings, and exceptions for
+each command, and the same files left in the directory, byte for
+byte.
 
 ## Emission
 
@@ -2347,11 +2379,13 @@ assembler.
   take at most 32 bits.
 - `c6502cpp assemble` reads a request with the text, the file name,
   `keep_source`, and the link symbols, and writes the object's bytes or
-  the error (src/binutils/assemble_command.h), for group F to call. It
+  the error (src/binutils/assemble_command.h). It
   gives the `struct.error` Python's `elf.write` raises for an addend or
   a size outside its field, where the C++ writer would keep the low 32
-  bits. tests/test_cpp_binutils.py's `TestAssemble` compares it with
-  Python.
+  bits, with the type `struct.error`. tests/test_cpp_binutils.py's
+  `TestAssemble` compares it with Python. compile.py doesn't call it,
+  since the backend assembles `-c`'s text in the process that compiles
+  it ("The back end through c6502cpp").
 
 `check-binutils` runs both on the records: every `assemble` record
 gives the recorded object's bytes or its error, and every
@@ -2693,7 +2727,9 @@ objects' bytes and names, the script's path, the origin, and the
 `--defsym`s, reads the objects and then the script as compile.py does,
 links them, and writes the executable's bytes or the error with its
 Python class, its message, and the position of the object `elf.read`
-rejected, for group F to connect to compile.py. An origin or a
+rejected. compile.py links through the backend's `link` mode, which
+compiles a link's C inputs in the same process, and `c6502cpp link`
+stays for the tests and for timing a link alone. An origin or a
 `--defsym` past 64 bits, which compile.py reads with Python's integers,
 throws `InternalError`. tests/test_cpp_binutils.py's `TestLink` compares
 it with Python's link of a compiled program without a script, with
@@ -3005,3 +3041,9 @@ inverts the call graph again for each function it places.
   match Python on all 69,428 of their records of the corpus and the
   2,200 of the suite, in the builds of MSVC 19.36 and GCC 12.2 (where
   68 records with Windows paths give Linux's `Path(path).name`).
+- 22 Nov 2026: group F of step 7, the driver and the switch ("The back
+  end through c6502cpp"): the backend's modes `objects` and `link`,
+  through which compile.py's `-c` and its links run in C++ under
+  `C6502_CPP_BACKEND=1`, with the same messages, exit status, and files
+  as the Python path on all 11,782 commands of
+  `tools/compare_backends.py`, and step 7 is done.

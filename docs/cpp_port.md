@@ -1317,6 +1317,598 @@ wrote its JSON again with no difference, read and wrote again all
 of the corpus and the suite's 5, errors and argparse's messages
 included, in the builds of MSVC 19.36 and GCC 12.2.
 
+## Step 8: retiring the Python compiler
+
+Step 8 removes the Python compiler, which is everything compile.py,
+nm.py, and objdump.py run, and leaves the C++ port with checks of its
+own. Until now every check of the port compared C++ with Python,
+through the captures, tools/compare_backends.py, and the suite with the
+switch on and off. None of those can run once the Python compiler is gone. Step
+9 then moves the simulator, the suite, `tac_sim`, and the fuzzers to
+C++, so until it lands those stay in Python and drive the C++
+executables. This section lists what still runs in Python and who
+imports it, classifies the suite's tests, proposes the checks that
+replace the comparisons with Python, proposes the C++ command line,
+and splits the step into groups. The survey was made on 23 Nov 2026
+from compile.py at 0294536, and it ported `--lex` to C++ as the first
+piece (the Status entry of the survey).
+
+### What still runs in Python
+
+The compiler's Python is 226 files of 102,029 lines, counted with
+their `__init__.py` files.
+
+| Directory | Files | Lines |
+|---|---|---|
+| the root's modules | 18 | 22,238 |
+| passes/ | 115 | 49,366 |
+| passes/optimization/ | 56 | 18,358 |
+| passes/optimization/framework/ | 10 | 1,393 |
+| passes/optimization_asm/ | 17 | 6,672 |
+| passes/optimization_ast/ | 2 | 788 |
+| binutils/ | 6 | 2,198 |
+| rtlib/ | 2 | 1,016 |
+
+The command-line programs add compile.py (1,708 lines), cpp_backend.py
+(475), nm.py (173), and objdump.py (226). tools/ holds 5,885 lines,
+most of them the capture harnesses and their checkers, and asdl.py
+(947) generates both compilers' IR classes. The root's modules are the
+four IRs' generated classes, `asm_emit`, `bit_precise`,
+`builtin_functions`, `c99_to_tac`, `diagnostics`, `fp_arith`,
+`ir_dump`, `lark_cache`, `lexer`, `parser`, `pp_numbers`,
+`preprocessor`, `pretty`, and `tac_to_asm`.
+
+With `C6502_CPP_BACKEND=1`, these parts of a run of compile.py still
+run Python code of the compiler.
+
+- compile.py's argparse, the reading of the inputs, and the replay of
+  the response.
+- `--parse`, `--resolve`, and `--tac`, which run the whole Python front
+  end and print the tree with `pretty`. `--tac -O` runs
+  `inline_functions` and `optimize_tac` only, without the row-address
+  tables, `return_pointers_in_zero_page`, the dispatch of const-pointer
+  arrays, or the split tables that `-S -O` runs.
+- `ir_check` under `C6502_CHECK_IR=1`, which checks the TAC, the
+  finished asm program, and the asm2 program that the response carries.
+  It is 499 lines, but it imports 47 modules of 26,404 lines, because
+  it reads the asm optimizer's CFG, liveness, and register allocation
+  helpers and the type checker's tables.
+- The exception classes. `cpp_backend._exception` imports the class
+  of a rejected program's error from its Python module, so a
+  `TypeCheckError` loads passes/type_checking.py and its imports
+  (10,857 lines), and a syntax error loads Lark.
+
+The table lists the modules that something other than compile.py and
+the tests imports, directly or inside a function. "compile.py" is
+"yes" when compile.py imports the module on any of its paths, and the
+test column counts the test modules that import it.
+
+| Module | Lines | compile.py | Test modules | Other importers |
+|---|---|---|---|---|
+| `asm2_ast` | 408 |  | 4 | cpp_backend |
+| `asm_ast` | 447 | yes | 110 | cpp_backend; sim (assembler, harness, runtime); tools (capture_helpers, rtlib_table) |
+| `binutils.assembler` | 847 | yes | 3 | tools (capture_binutils) |
+| `binutils.disasm` | 412 |  | 2 | objdump; tools (capture_binutils) |
+| `binutils.elf` | 487 | yes | 10 | nm; objdump; sim (ali_baba, linked, lode_runner); tools (capture_binutils) |
+| `binutils.ld` | 343 |  | 1 | tools (capture_binutils) |
+| `binutils.opcodes` | 106 |  | 1 | sim (ali_baba, lode_runner) |
+| `bit_precise` | 187 |  | 1 | tac_sim |
+| `builtin_functions` | 225 |  | 4 | tac_sim; sim (runtime) |
+| `c99_ast` | 791 |  | 71 | tac_sim; fuzz (reduce); tools (capture_helpers, capture_passes) |
+| `diagnostics` | 68 | yes | 2 | cpp_backend; tools (capture_passes) |
+| `fp_arith` | 248 |  | 6 | tac_sim |
+| `ir_dump` | 442 |  | 6 | cpp_backend; tools (capture_helpers, capture_passes, rtlib_table) |
+| `lexer` | 283 | yes | 20 | tools (capture_parser_tokens, lalr_table) |
+| `parser` | 4,888 | yes | 64 | tools (capture_parser_tokens, lalr_table) |
+| `passes.abi_selection` | 1,165 | yes | 13 | sim (harness) |
+| `passes.asm_aliasing` | 615 |  | 4 | tools (capture_helpers, capture_passes) |
+| `passes.asm_dead_store` | 773 | yes | 1 | tools (capture_helpers) |
+| `passes.asm_liveness` | 829 |  | 4 | tools (capture_helpers) |
+| `passes.call_edges` | 68 |  | 1 | tools (capture_helpers) |
+| `passes.dataclass_fields` | 45 |  |  | tools (capture_helpers, capture_passes) |
+| `passes.dead_a_arith` | 374 | yes | 1 | tools (capture_helpers) |
+| `passes.decimal_arith` | 164 |  |  | tools (capture_helpers) |
+| `passes.inc_peephole` | 395 | yes | 3 | tools (capture_helpers) |
+| `passes.ir_check` | 499 | yes | 5 | cpp_backend; fuzz (runner) |
+| `passes.link_layout` | 493 |  | 1 | tools (capture_binutils) |
+| `passes.link_script` | 482 |  | 1 | tools (capture_binutils) |
+| `passes.linker` | 1,364 | yes | 3 | tools (capture_binutils) |
+| `passes.optimization` | 30 | yes | 5 | fuzz (tac_passes) |
+| `passes.optimization.cfg` | 337 |  | 1 | tools (capture_helpers) |
+| `passes.optimization.framework.defuse` | 189 |  |  | tools (capture_helpers) |
+| `passes.optimization.framework.driver` | 116 |  |  | fuzz (tac_passes); tools (capture_passes) |
+| `passes.optimization.optimizer` | 333 |  | 1 | tools (capture_helpers, capture_passes) |
+| `passes.optimization.ssa_construction` | 652 |  | 2 | tools (capture_passes) |
+| `passes.optimization.ssa_destruction` | 330 |  | 1 | tools (capture_passes) |
+| `passes.optimization.value_range` | 244 |  | 1 | tools (capture_helpers) |
+| `passes.optimization.var_visit` | 435 |  |  | tools (capture_helpers) |
+| `passes.optimization_asm.cfg` | 259 |  | 2 | tools (capture_helpers) |
+| `passes.recursion_saves` | 369 | yes | 3 | tools (capture_helpers) |
+| `passes.redundant_load` | 2,093 | yes | 3 | tools (capture_helpers) |
+| `passes.replace_pseudoregisters` | 899 | yes | 4 | sim (harness); tools (capture_helpers) |
+| `passes.runtime_layout` | 239 | yes | 5 | sim (ali_baba, harness, linked, runtime); tools (capture_helpers, capture_passes) |
+| `passes.runtime_library` | 135 |  | 3 | tools (capture_binutils) |
+| `passes.sections` | 94 | yes |  | tools (capture_passes) |
+| `passes.slot_sharing` | 965 | yes | 2 | tools (capture_binutils, capture_helpers) |
+| `passes.type_checking` | 6,205 | yes | 78 | tac_sim; sim (harness); tools (capture_helpers, capture_passes) |
+| `passes.zp_globals` | 566 | yes | 3 | sim (harness) |
+| `passes.zp_link_metadata` | 625 | yes | 4 | tools (capture_binutils) |
+| `passes.zp_slot_naming` | 286 | yes |  | tools (capture_helpers) |
+| `pp_numbers` | 324 |  | 1 | tools (capture_passes) |
+| `preprocessor` | 663 | yes | 119 | sim (harness); tools (pcpp_evaluator_tables) |
+| `rtlib.helpers` | 1,011 |  | 2 | sim (runtime); tools (rtlib_table) |
+| `tac_ast` | 632 | yes | 59 | cpp_backend; tac_sim; fuzz (tac_passes); tools (capture_helpers) |
+| `tac_to_asm` | 5,601 | yes | 7 | sim (harness) |
+
+The other modules are imported only by compile.py and the tests. Each
+is listed with its line count, the number of test modules that import
+it in parentheses, and a star when compile.py reaches it only through
+another module of the compiler.
+
+- (root): asm_emit 1,501 (2), c99_to_tac 5,351 (14), lark_cache 139 (1)*, pretty 40 (1).
+- passes: adc_commute 628 (1), address_taken_zp 251 (1), and_sign_bit_branch 319 (1), asm_licm 499 (1), asm_remat 912 (1), asm_to_asm2 594 (3), branch_invert 108 (1), branch_thread 135 (1), branch_through_jump 255 (1), branch_to_next_drop 185 (1), branch_value_thread 404 (1), carry_halve 163 (1), carry_in_add 173 (1), carry_inc 242 (1), carry_known 248 (1), carry_recompute 185 (1), carry_return 408 (1), carry_return_choice 239, cmp_sbc_fusion 220 (1), cmp_through_tmp_fold 462 (1), const_arith_fold 390 (1), constant_expression 663 (1), constant_store_order 287 (1), counter_to_index_reg 337 (1), cpx_cpy_peephole 186 (1), cross_jump 177 (1), dead_label_drop 91 (1), dead_pha_pla 212 (1), dec_branch_indirect_y_fold 124, dec_inc_branch_fold 163 (1), dec_peephole 422 (3), dec_register_peephole 457 (1), designators 401*, direct_index_load 162 (3), dual_index_promotion 556 (1), element_in_place 436 (1), function_local_sizing 237 (1), identifier_resolution 1,322 (34), in_place_member_update 216 (1)*, inc_low_byte_test 162 (1), index_inc_cmp_y 320 (1), join_store 244 (1), jump_table 243 (1), label_offset_fold 151 (1), label_resolution 344 (21), long_branches 169 (1), loop_constant_a 227 (1), loop_counter_to_x 955 (1), loop_invariant_a 456 (1), loop_labeling 422 (21), lower_data_load_address 167 (1), mem_const_prop 350 (1), memory_value_propagation 1,603 (1), outline_runs 244 (1), peephole_memo 186 (1), pointer_restage 184 (1)*, pointer_self_store 336 (2), prologue_synthesis 194 (1), promote_loop_carried_to_a 533, prune_unused_slots 119 (1), redundant_compare 509 (2), redundant_load_after_rmw 329 (2), redundant_store 353 (1), ret_slot_coalescing 418 (1), return_in_zero_page 123 (1), rotate_loop_test 372 (1), round_trip_load 244 (1), self_store_drop 135 (1), shared_tails 332 (1), shift_cost 56*, shift_in_a 480 (2), short_jumps 198 (1), significant_bytes 161*, slot_coalescing 629 (1), split_mem_to_mem 195 (2), stdbit_functions 123*, string_lifting 564 (10), sub1_test_zero_peephole 236 (1), tail_call 140 (1), tail_merge 267 (1), transfer_past_branch 156 (1), transfer_pm1_store 482 (1), type_check_error 15*, unreachable_drop 65 (1), via_a_store_fold 318 (1), volatile_void_read_cmp 114 (2), x_save_slot_load 374 (2), y_peephole 176 (1)*, zp_local_allocation 581 (3), zp_slot_allocation 401 (2).
+- passes.optimization: and_zero_jump_fold 309 (1)*, cmp_zero_jump_fold 646 (1)*, compare_subtract 373*, constant_folding 1,203 (4)*, copy_folding 299 (1)*, copy_propagation 333 (2)*, count_down 231 (1)*, cse 182 (1)*, dead_loop_elimination 228 (1)*, dead_store_elimination 197 (2)*, direct_member_access 193*, dispatch_pointer_array 372 (1), distribute_constant 155*, divmod_hoist 326 (1)*, extend_add_chain 195*, framework 84 (17)*, inline_functions 637 (1), interference 46 (2)*, jump_thread 367 (1)*, known_compare_thread 563 (1)*, licm 119 (1)*, lnot_jump_fold 238 (1)*, loop_rotate 701 (1)*, narrow_byte_bitwise 191 (1)*, narrow_byte_range 283 (1)*, narrow_widened_arith 642 (2)*, nonnegative_compare 156*, noreturn_call 82 (1)*, phi_constant_fold 143*, phi_offset 264*, pool 60 (7), read_stored_global 167 (1)*, reassoc_const 260 (1)*, reassoc_offset 145 (1)*, recognize_indexed_load 107*, recognize_indexed_store 132 (1)*, recognize_indirect_indexed 606 (1)*, register_allocation 86 (4)*, row_address_tables 436 (1), short_circuit_jump_fold 552 (1)*, sink_and_past_branch 646 (1)*, sink_increment 405 (1)*, split_tables 538 (1), static_const_fold 149 (1)*, static_indexed_access 221*, step_on_edge 189 (1)*, strength_reduction 533 (2)*, three_way_compare 614 (1)*, truncate_extend_fold 231 (2)*, unreachable_code_elimination 246 (2)*.
+- passes.optimization.framework: base 29*, operand_rewrite 66*, patterns 390*, phases 42*, rules 278*, sink 72*, window 127*.
+- passes.optimization_asm: apply_coloring 518 (1)*, backward_copy_propagation 492 (1)*, byte_dce 242 (1)*, coalescing 597 (2)*, const_static_fold 440 (1)*, copy_propagation 249 (1)*, dead_static 106 (1)*, hwreg_eligibility 546 (2)*, interference 266 (2)*, liveness 275 (2)*, optimizer 729 (2), or_zero_absorb 78 (1)*, regalloc 618 (3), ssa_construction 782 (4)*, ssa_destruction 459 (1)*.
+- passes.optimization_ast: unroll 774 (1).
+
+The tools in the table are the capture harnesses
+(capture_passes.py, capture_helpers.py, capture_binutils.py, and
+capture_parser_tokens.py) and the generators of the C++ tables
+(lalr_table.py, pcpp_evaluator_tables.py, and rtlib_table.py), which go
+with the Python compiler, except rtlib_table.py, whose input stays
+until step 9. sim/harness.py imports `abi_selection`,
+`replace_pseudoregisters`, `zp_globals`, `type_checking`,
+`preprocessor`, `tac_to_asm`, and compile.py only on its path without
+the variable, and it hands the front end's passes to fuzz/reduce.py and
+fuzz/tac_passes.py by name (`_PIPELINE`).
+
+#### What step 9's Python keeps
+
+The simulator, the suite, `tac_sim`, and the fuzzers read these modules
+as data models and readers, so step 8 can't remove them. Together they
+are about 5,500 lines.
+
+- `asm_ast` and `ir_dump`. sim/assembler.py assembles an `asm_ast`
+  program, and the harness already gets the finished program from
+  `c6502cpp backend` as a dump. `asm2_ast` stays only while `ir_check`
+  is in Python.
+- `rtlib/helpers.py`, the helpers' `asm_ast` functions, which
+  sim/runtime.py assembles at $E000, and passes/runtime_layout.py
+  (`CLASSIC`, `RuntimeLayout`), which sim/runtime.py, linked.py, and
+  ali_baba.py read, with what it imports, passes/dataclass_fields.py and
+  passes/type_check_error.py. tools/rtlib_table.py keeps the C++ copy
+  of the helpers equal to these.
+- `binutils/elf.py`, which sim/linked.py, lode_runner.py, and
+  ali_baba.py read executables with, and `binutils/opcodes.py`, whose
+  `DECODE` the last two decode with.
+- `builtin_functions`, whose `bin_to_bcd` sim/runtime.py calls and
+  whose BCD model `tac_sim` and seven tests use, and `bit_precise`,
+  `fp_arith` (the one user of numpy), `c99_ast`, and `tac_ast`, which
+  `tac_sim` reads.
+- From passes/type_checking.py, the classes of the tables: `Symbol`,
+  `SymbolTable`, `LocalAttr`, `StaticAttr`, `FunAttr`, the initial
+  values, `TypeTable`, `StructLayout`, and `MemberInfo`, which are its
+  first 500 lines of 6,205. `tac_sim` reads each symbol's type and
+  attributes and each structure's layout.
+- `diagnostics`, through which cpp_backend.py issues the warnings, and
+  the exception classes of `cpp_backend._ERROR_MODULES`, with Lark's
+  hierarchy (`UnexpectedToken` and `UnexpectedCharacters` under
+  `UnexpectedInput` under `LarkError`). About 65 test modules import
+  one of those classes, and 24 import `lark.exceptions`.
+- asdl.py, which writes the Python IR modules above and the C++ ones,
+  and cpp_backend.py, compile.py, nm.py, and objdump.py as shims.
+
+Step 8 has to give each of these what it now takes from the Python
+compiler.
+
+- The TAC interpreter (`tac_sim.Simulator`) takes a TAC program, its
+  symbol table, and its type table, and today gets them from the Python
+  front end and `c99_to_tac`, in `tests.test_sim_chapters._run_program`,
+  which fuzz/runner.py's `tac` path and 125 tests run, and in
+  fuzz/reduce.py and fuzz/tac_passes.py through the harness's
+  `_PIPELINE`. The C++ side has to return the TAC's dump and the tables
+  in the tagged JSON that src/tagged_json.h writes for the captures,
+  and Python has to read that JSON into the classes above with the
+  inverse of `tools/capture_passes.encode`, which isn't written yet.
+- fuzz/tac_passes.py runs `tac_sim` on each function after each TAC
+  pass, through `PhaseDriver.observer`, and fuzz/reduce.py's
+  `--tac-opt` on the result of `optimize_tac`. For them the request
+  takes a mode that writes each function's dump after each pass with the
+  pass's name, and one that stops after `optimize_tac`.
+- fuzz/reduce.py's `falls_off_end` appends a call to the body of each
+  function in the parsed c99 program before the names are resolved.
+  That takes the c99 program's dump and a request that accepts a c99
+  program in place of the source, or else an edit of the source text
+  that appends the same call.
+- tests/link_helpers.py's `linked_text` calls `binutils.disasm`, which
+  `c6502cpp objdump` can replace.
+- cpp_backend.py finds c6502cpp with `tools.check_captures.cpp_cli`,
+  which would move into cpp_backend.py when the capture tools go.
+
+### The tests
+
+The suite had 4,959 tests in 279 modules on 23 Nov 2026, as pytest
+collects them. A script read each test module's imports and the names
+that each test class uses, directly or through the module-level
+functions and values it calls, including the helpers it imports from
+other test modules, and sorted each name into a kind. The counts below
+come from it and from a reading of the classes it couldn't sort.
+
+| Kind | Tests | Classes | Modules |
+|---|---|---|---|
+| (a) end to end | 1,002 | 288 | 156 |
+| (b) a Python pass or helper called directly | 3,804 | 743 | 220 |
+| (c) the Python implementation itself | 118 | 31 | 11 |
+| models step 9 keeps | 35 | 12 | 7 |
+
+A module can hold classes of several kinds, and 116 of them do. A
+class is (b) whenever it calls a pass directly, which 437 of the (b)
+tests do alongside an end-to-end check.
+
+**(a) End to end.** These run `compile.main`, compile.py in a
+subprocess, `_run_stage("codegen")`, the simulator harness,
+tests/link_helpers.py, or nm.py's and objdump.py's `main`, and they
+keep running against C++ through the shims. Three edits reach them.
+342 of them call Python's `preprocess` and give its output to
+`_run_stage`, and they would call a helper that sends the source
+text with the preprocessor on, as `cpp_backend.compile_source` does. 156
+test modules skip their classes unless the pcpp command is on the
+PATH, which they should test for c6502cpp instead. And 67 tests in 17
+classes turn inlining off with tests/no_inlining.py, which patches
+`compile.inline_functions`. `compile._inlining` already sends that
+choice to C++, so the shim only has to keep a flag for it.
+
+**(b) Direct calls.**
+
+| What the tests call | Tests |
+|---|---|
+| asm passes and code generation, on asm or TAC they build | 1,402 |
+| TAC passes and `c99_to_tac`, on TAC they build | 316 |
+| the assembler, the linker, and their helpers | 90 |
+| the front end on a source, inspecting the c99 program or the tables, 16 of them the preprocessor alone | 1,265 |
+| the front end and then `c99_to_tac`, the TAC optimizer, or `tac_sim` | 466 |
+| compile.py's own functions (`_resolved`, `translate_for_codegen`, `optimized_asm`, `_peephole_fixedpoint`) | 232 |
+| the TAC interpreter through `tests.test_sim_chapters._run_program`, beside the simulator | 33 |
+
+The C++ tests already cover part of them. 3,326 doctest cases existed
+before this survey,
+many of them the recorded calls of a Python test module (cpp/tests'
+`call_case.h` and `stage_case.h`, as tests/test_inline_functions.py's
+calls are in cpp/tests/test_inline_functions.cpp). Counted by module,
+91 modules with 1,395 (b) tests have a C++ test file of their name, or
+C++ cases that name them, with at least as many cases as the module
+has (b) tests, 60 modules with 1,727 tests have fewer, and 69 modules
+with 682 tests have none. A count of cases doesn't show that every
+assertion is ported, so each group checks its modules one test at a
+time.
+
+Each test of (b) goes one of three ways.
+
+- **Ported as recorded calls.** The capture wrapper records every call
+  a test makes of a ported function, with its arguments and Python's
+  result or error, and the distinct calls are checked in as doctest
+  cases that run the C++ function, as for test_inline_functions.py.
+  This is mechanical and keeps every input the test gives. An assertion
+  of a property, such as "no `LDA` follows", becomes the equality of
+  the whole result with Python's, which is stricter and has to be
+  updated whenever the output changes on purpose. It suits the 1,808
+  tests on hand-built IR and the object-file tools.
+- **Ported by hand to doctest.** A test whose point is a property, or
+  whose recorded calls would be very large (the front end's tests hand
+  whole symbol tables to each call, as the cases of
+  test_inline_functions.cpp show), is written again on the C++
+  function. It suits the 1,963 front-end and compile.py tests where the
+  recorded calls don't.
+- **Replaced by a corpus check.** A test that only compiles a program
+  and checks that it's accepted or rejected at a stage, as the
+  chapters' `invalid_lex` and `invalid_parse` buckets do with
+  `tokenize` and `parse`, becomes an end-to-end test of
+  `compile.py --lex` or `--parse` on the same file, or a golden file
+  of the corpus check below. The 16 tests of the preprocessor alone
+  become tests of the `-S` output or of the preprocessor's records
+  (cpp/tests/preprocessor_case.h).
+
+No test can be dropped because a capture covers it, since the captures
+aren't kept. The captures of the suite recorded every call these tests
+make, though, so the recorded calls lose nothing that the comparisons
+with Python checked.
+
+These tests can't be ported as they're written.
+
+- tests/no_inlining.py (above), which patches a function of compile.py.
+- test_row_address_tables.py patches `_saving`, the estimate of the
+  bytes a table saves, to force or forbid the table. The C++ pass would
+  take the estimate as a parameter that its doctest cases set.
+- test_byte_arith_sim.py's `test_zero_count` patches
+  `tac_to_asm._shift_loop` to leave out a compare, and checks that the
+  asm optimizer keeps the shift loop's test of a zero count. It would
+  become a doctest of the asm optimizer on the program the patched
+  lowering gives, recorded once.
+- test_tac_sim_optimized.py runs fuzz/tac_passes.py's observer, which
+  waits for the observing mode of the TAC request above.
+- test_optimization_docs.py (6 tests) reads compile.py's and the two
+  optimizer drivers' Python source with `inspect` to check the order of
+  docs/optimizations/README.md. It would read the order from c6502cpp
+  instead, from a command that lists the passes of each driver in the
+  order they run.
+- test_ir_check.py (20 tests) tests the Python `ir_check`, and goes to
+  doctest with its port.
+- The 125 tests that run the TAC interpreter take the TAC and the
+  tables from C++ once the request above gives them.
+
+**(c) The Python implementation.** test_asdl.py (32 tests of the
+Python half of asdl.py), test_capture_passes.py (23),
+test_cpp_backend.py (30, with the 6 of `--lex`), test_cpp_binutils.py
+(11), test_pretty.py (7), test_peephole_memo.py (7), test_lark_cache.py
+(6), test_lalr_table.py (3), test_capture_helpers.py (3), and
+test_pcpp_evaluator_tables.py and test_pcpp_unicode_tables.py (1 each).
+test_cpp_backend.py and test_cpp_binutils.py compare the switch with
+Python, so they go with it, and the golden files below take over what
+they check. The models that step 9 keeps are tested by
+test_ir_dump.py (12), test_asdl_cpp.py (6), test_rtlib_table.py (5),
+test_fuzz_tools.py (5), and seven tests of the BCD and `<stdbit.h>`
+models in builtin_functions.py, which stay.
+
+### The checks after Python
+
+Three kinds of check could replace the comparisons with Python. Each
+was measured on 23 Nov 2026 with the C++ port, on the jobs of
+tools/compare_backends.py, which are the corpus of the examples, the games' units,
+the chapters' programs, and fuzz seeds 0 to 99 of `stmts`, `calls`, and
+`exprs`, in the modes `-S`, `-S -O`, `-c` and `-c -O` with their links,
+and `--lex`, and the three games and the damaged files linked.
+
+**Golden files.** The frozen Python compiler writes each command's
+output once (its exit status, what it writes to stdout and stderr, and
+the files it leaves), and from then on the C++ compiler's output is
+compared with them, as examples/*.asm are now.
+
+| Mode | Commands | Files | Raw | xz |
+|---|---|---|---|---|
+| `-S -O` | 1,788 | 1,152 | 8.3 MB | 0.50 MB |
+| `-S` | 1,788 | 1,118 | 18.0 MB | 0.71 MB |
+| `-c -O` and its links | 4,092 | 4,219 | 42.1 MB | 1.88 MB |
+| `-c` and its links | 4,024 | 4,105 | 58.1 MB | 2.95 MB |
+| `--lex` | 1,788 | 1,763 | 9.8 MB | 0.73 MB |
+| the games and the damaged files | 90 | 102 | 4.9 MB | 0.22 MB |
+
+All of them are 141 MB, 16.8 MB with zlib and 5.9 MB with xz. The C++
+side ran the 8,944 jobs, 13,570 commands, in 68 seconds with 12
+processes, through compile.py's `main` as compare_backends.py runs it,
+so a check of every golden file takes about a minute. The objects and
+executables are most of the size, and an object holds its `-S` text in
+`.c6502.asm`, so a smaller form keeps the texts of `-S` and `-S -O`
+(25.4 MB raw, and 1.2 MB with xz together with those modes' messages),
+every command's messages (5.5 MB raw), and a SHA-256 of each of the
+8,400 objects and executables (about 1 MB). git's packs use zlib, which
+left the whole set 2.9 times the size xz did. The repository's pack is 7.9 MB now,
+and examples/*.asm, 57 files of 1.2 MB, are the model. A golden file
+catches any change to any output of the corpus, the messages of every
+rejected program included, but it doesn't name the pass that made the
+change, and a change that the passes after it undo leaves no trace in
+it.
+
+**Frozen captures.** The records of the captures turned into the C++
+checkers' regression inputs. The capture of `split_mem_to_mem` on disk
+shows the sizes. Its 7,049 distinct calls are 208 MB raw and 3.9 MB
+with xz, the 1,564 calls that change the program are 69 MB and 2.0 MB,
+the 200 smallest of those are 478 KB and 18 KB, and the 50 smallest
+are 60 KB and 3 KB. A whole capture of every pass is far too big, about
+1 GB for the examples and the games alone (cpp/README.md, "The captured
+calls"). Checked in, a capture would be the 50 smallest calls that
+change each function's result, and every call that raises, for each
+of about 200 functions the checkers run (73 asm passes, the stage
+calls of steps 4 and 5, the TAC passes, the front end's calls, and the
+records of step 7). At the rate of `split_mem_to_mem` that is about 12
+MB raw and under 1 MB with xz, though the stage calls carry whole
+symbol tables, which could make it several times that (an estimate
+from the size of the cases in cpp/tests/test_inline_functions.cpp). A
+frozen capture names the pass whose result changed, and it checks each
+pass on inputs the corpus gives it, also where the passes after it
+would hide a change. It can't follow a change of a pass's input that a
+change to an earlier pass makes, since its inputs are frozen.
+
+**The doctest cases alone.** 3,326 cases, in 17 MB of cpp/tests, run
+in a few seconds. They are the only check of the messages that neither
+the corpus nor the suite reaches (every raise site has a case), and
+they check one function on one input each, but they cover only the
+inputs someone wrote down, which is why the corpus found the bugs it
+did in steps 2 to 7.
+
+The proposal is the golden files of the smaller form as the main
+check, with a C++ command that checks them without Python
+(`c6502cpp check-golden`), the frozen captures of the 50 smallest
+changing calls of each function, compressed, for the passes that the
+corpus changes least often, and the doctest cases as now, with a case
+for each new bug. A fix that changes the output on purpose rewrites
+the golden files with the C++ compiler, and the diff of the `-S` texts
+is the review of the change. The fuzz seeds' programs come from
+generators that stay in Python until step 9, so their golden files
+hold the generated source too.
+
+### The C++ command line
+
+`--lex` runs in C++ since this survey. The other stages and
+compile.py's own reading of its command line move as follows.
+
+- **`--parse` and `--resolve`** print `pretty(program)`, the c99
+  program as nested `Class(field=value, ...)` lines with two spaces of
+  indentation per level, lists broken one item to a line, and Python's
+  `repr` of every leaf, which quotes a string as Python does and
+  writes `True`, `False`, `None`, and a float in its shortest
+  round-trip form.
+  `--resolve` runs the unroller under `-O`, the name passes, string
+  lifting, and the two label passes, but no type checker. The C++ IR
+  has the field names, so `asdl.py --cpp` can generate a `pretty` for
+  each module, as it generates the dump's writer.
+- **`--tac`** prints `pretty` of the TAC after the type checker and
+  `c99_to_tac`, and under `-O` after `inline_functions` and
+  `optimize_tac` only (above). Nothing reads its text but the tests
+  that call `_run_stage("tac")` (9 calls) and compare it, and the 87
+  tests whose classes run `--parse`, `--resolve`, or `--tac`. `tac_sim`
+  and the fuzzers take Python's TAC objects, which the TAC request
+  above replaces.
+- **argparse.** compile.py's parser has a positional argument of one
+  or more inputs, `-o`, a mutually exclusive group of six
+  `store_const` stage flags (`--lex` to `-c`), `-O`, `-T`, `--origin`
+  with `type=_number` (whose error names the function, `invalid
+  _number value`), and `--defsym` with `append`, read with
+  `parse_known_args` so that the rest goes to the preprocessor, after
+  `_rewrite_ttext` has turned `-Ttext=ADDR` into `--origin`. The C++
+  argparse (src/argparse.h) has `store_true`, `append`, help, and one
+  positional argument of one or more values. compile.py's parser adds
+  options that take a value, `store_const`, mutually exclusive groups
+  with their message (`argument -S: not allowed with argument --lex`),
+  `type=` with its message, and `parse_known_args`. compile.py's help
+  has hyphens inside words ("comparison-against-zero",
+  "byte-granular"), where textwrap breaks a line, and the C++
+  HelpFormatter raises InternalError for those now, so textwrap's
+  breaking at hyphens has to be ported too. pcpp's own
+  argparse is in C++ already (src/preprocessor.*).
+- **`ir_check`.** passes/ir_check.py checks the TAC after every TAC
+  pass, the asm at the stage boundaries and after every peephole sweep,
+  and the asm2 program's decimal mode. Under the switch only the checks
+  after the stages run, on the dumps in the response, and the checks
+  between the passes don't. Ported to C++ on the helpers the asm passes
+  already share, it would run at all of Python's places when the
+  request's `check_ir` is set, raise `IRCheckError` as an
+  `InternalError`, and let the response stop carrying the dumps.
+
+compile.py, nm.py, and objdump.py should stay as shims until step 9,
+since the suite, the simulator, and the fuzzers call `compile.main`,
+`_run_stage`, `_compile_c`, `nm.main`, and `objdump.main` in-process and
+redirect their streams. compile.py would read its command line in C++
+too, through a command that takes compile.py's whole argv as nm.py's
+switch does (`cpp_backend.run_tool`), and keep `_run_stage` and
+`_compile_c` as functions that send one request each, so that no Python
+of the compiler is left behind them.
+
+These choices are Robert's.
+
+1. **The executable's name and its messages.** The messages and the
+   usage say `compile.py:`, and the tests and the golden files hold
+   them. The recommendation is to keep `c6502cpp` with a `compile`
+   command that prints `compile.py` until step 9, when the tests move
+   and the names can change once, to `c6502` (or `c6502cc`), `c6502-nm`,
+   and `c6502-objdump`, say.
+2. **The shims.** The recommendation is to keep compile.py, nm.py, and
+   objdump.py as shims until step 9, as above.
+3. **The format of `--parse`, `--resolve`, and `--tac`.** Python's
+   `pretty` keeps the 87 tests that compare it. The dump format is
+   shorter, and C++ already writes it. The recommendation is `pretty`
+   in step 8, since it costs one generated function per IR, and to
+   leave a change of format to step 9.
+4. **How the (b) tests are ported.** The recommendation is the recorded
+   calls for the tests on hand-built IR and the object-file tools, and
+   a port by hand, or a corpus check, for the front-end tests whose
+   recorded calls would be very large.
+5. **The checks after Python.** The recommendation is the golden files
+   of `-S` and `-S -O` texts, messages, and hashes, checked in raw,
+   with frozen captures of the 50 smallest changing calls of each
+   function, compressed with xz.
+6. **`ir_check`.** The recommendation is to port it, since the fuzzers
+   rely on it to catch a pass that leaves the IR inconsistent before the
+   result shows it.
+7. **The TAC interpreter's input.** A reader of the C++ tables in
+   Python lets `tac_sim` and the fuzzers stay in Python until step 9.
+   Porting `tac_sim` to C++ now would take that part of step 9 early.
+   The recommendation is the reader.
+8. **The variable.** Once the Python compiler is gone,
+   `C6502_CPP_BACKEND=1` has nothing to switch. The recommendation is
+   that compile.py ignore it from the removal on, and that the
+   documents stop mentioning it.
+
+### The groups
+
+Each group works in its own worktree, adds C++ tests for what it ports,
+and checks its piece against Python while Python is still there, as
+the earlier steps did. The groups share the request format of
+`c6502cpp backend` (src/backend.h), to which each adds a mode, and
+cpp_backend.py, to which each adds a function. G1 declares the order of
+the modes in backend.h first.
+
+- **G1. The stages.** `pretty` for the four IRs, generated by
+  `asdl.py --cpp` into cpp/generated/, with a test that compares it
+  with pretty.py on each IR of a compiled example, and the backend's
+  modes for `--parse`, `--resolve`, and `--tac`, checked by
+  tools/compare_backends.py's modes for them on the corpus. Files:
+  asdl.py, cpp/generated/, src/backend.*, cpp_backend.py, compile.py,
+  tools/compare_backends.py, tests/test_cpp_backend.py.
+- **G2. compile.py's command line.** The rest of argparse in
+  src/argparse.*, a `c6502cpp compile` command with compile.py's
+  argparse and the dispatch of `main`, and compile.py as a shim over
+  it. Its check is compare_backends.py's bad command lines, help, and
+  usage at several terminal widths, as tests/test_cpp_binutils.py does
+  for nm and objdump. It calls G1's modes, so it lands after G1. Files:
+  src/argparse.*, src/main.cpp, a new src/compile_command.*,
+  compile.py.
+- **G3. `ir_check` in C++.** src/passes/ir_check.*, called from the
+  peephole fixed point, the TAC optimizer's driver, and the stage
+  drivers when `check_ir` is set, with test_ir_check.py's 20 tests as
+  doctest cases, and checked on the fuzzers with a pass broken on
+  purpose. Then cpp_backend.py stops loading the dumps. Files:
+  src/passes/ir_check.*, src/passes/peephole_fixedpoint.cpp,
+  src/passes/optimization/driver.cpp, src/passes/codegen_stage.cpp,
+  src/backend.*, cpp_backend.py.
+- **G4. What step 9 reads.** The table classes of type_checking.py in a
+  module of their own, the exception classes with Lark's hierarchy in
+  another, and a Python reader of the C++ tables' tagged JSON. The
+  backend's modes for the TAC with its tables, after each pass with
+  the observer, and after `optimize_tac`, and the edit of
+  `falls_off_end`. Then `tests.test_sim_chapters._run_program`, the
+  harness's `_PIPELINE`, fuzz/reduce.py, fuzz/tac_passes.py, and
+  `linked_text` move onto them. Files: passes/type_checking.py, new
+  modules beside it, cpp_backend.py, sim/harness.py,
+  tests/test_sim_chapters.py, tests/link_helpers.py, fuzz/, src/backend.*.
+- **G5. The checks after Python.** A tool that writes the golden files
+  from the frozen Python compiler, `c6502cpp check-golden`, the frozen
+  captures, and their place in the suite and in cpp/README.md. It can
+  start at once, since it only reads the outputs. Files: tools/, a new
+  directory of golden files, src/main.cpp, a new src/golden.*.
+- **G6, G7, and G8. The (b) tests.** G6 takes the 1,402 tests on
+  hand-built asm and the 90 of the object-file tools, G7 the 815 tests
+  of the TAC passes and the TAC interpreter (the 316 on TAC they build,
+  the 466 of the front end followed by TAC, and the 33 of
+  `_run_program`), and G8 the 1,265 front-end tests and the 232 of
+  compile.py's functions. Each checks its modules against the C++ cases one test
+  at a time, records or ports what isn't covered, and removes the
+  Python test once its C++ case passes. A class that mixes a direct
+  call with an end-to-end check keeps the end-to-end part in Python.
+  They touch disjoint test modules and add to cpp/tests/, so they run
+  in parallel. G7's tests of `tac_sim` wait for G4.
+- **G9. The end-to-end tests' edits.** The helper that sends the
+  source text in place of `preprocess` for the 342 tests, the skip
+  conditions of 156 modules, and tests/no_inlining.py's flag. It
+  touches many test modules, so it lands after G6 to G8 have removed
+  theirs.
+- **R. The removal**, last. The root's `asm_emit`, `c99_to_tac`,
+  `lark_cache`, `lexer`, `parser`, `pp_numbers`, `preprocessor`,
+  `pretty`, and `tac_to_asm` go, with c99.lark, whose table
+  cpp/generated/c99_lalr.cpp then becomes source. Every module of
+  passes/ goes but `runtime_layout`, `dataclass_fields`,
+  `type_check_error`, and the new modules of G4, and `ir_check` too
+  unless G3 is done. binutils' `assembler`, `disasm`, and `ld` go, and
+  so do the capture tools, tools/check_captures.py, compare_backends.py,
+  binutils_errors.py, lalr_table.py, pcpp_evaluator_tables.py,
+  pcpp_unicode_tables.py, and py_regex_records.py, once their outputs in
+  cpp/generated/ are marked as source, and the tests of (c).
+  pyproject.toml and requirements.txt
+  drop `lark` and `pcpp`, and `uv lock` writes uv.lock again. numpy
+  (for fp_arith.py) and py65 (for the simulator) stay until step 9. The
+  Dockerfile drops `uv tool install` of pcpp and installs CMake and
+  builds cpp/, since the image has no CMake today. The CLAUDE.md files
+  of the root, passes/ and its three subdirectories, binutils/, tests/,
+  sim/, and fuzz/ describe Python modules that are gone, and the
+  passes' descriptions move to the C++ files that cpp/README.md lists,
+  as do README.md's build section, docs/architecture.md's table of
+  stages and modules, and the module paths of docs/optimizations/*.md.
+  The Python left is about 5,500 lines of the compiler's models plus
+  the shims, sim/, fuzz/, tac_sim.py, asdl.py, and the tests of (a).
+
+G1, G3, G5, and G6 to G8 can start at once, G4 too except for the
+tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -2226,3 +2818,21 @@ included, in the builds of MSVC 19.36 and GCC 12.2.
   and sim/ali_baba.py), its own assembler (sim/assembler.py), the
   helpers' code in rtlib/helpers.py, which group E's table copies, and
   the TAC interpreter's path of the tests and the fuzzers.
+- 23 Nov 2026: the survey of step 8 ("Step 8" above). The compiler's
+  Python is 226 files of 102,029 lines, of which about 5,500 lines of
+  data models and readers stay for step 9's simulator, `tac_sim`, and
+  fuzzers, and the 4,959 tests of the suite are 1,002 end-to-end tests,
+  3,804 that call a Python pass or helper directly, 118 of the Python
+  implementation, and 35 of the models that stay. The proposed check
+  after Python is a set of golden files of the corpus's outputs, which
+  the C++ port gave in 68 seconds with 12 processes, 141 MB in all and
+  5.9 MB with xz, kept as the `-S` and `-S -O` texts, the messages,
+  and hashes of the objects and executables. `--lex` runs in C++ under
+  `C6502_CPP_BACKEND=1` (3b58e2d): the backend's mode `lex` runs the
+  preprocessor and `lexer::format_tokens`, and compile.py sends both
+  `--lex` and `_run_stage("lex")` there. tools/compare_backends.py's
+  new mode `lex` compared the 1,788 programs of the corpus, 24 of them
+  rejected by the lexer, with no difference in any output, message, or
+  file. The suite passes with the variable set (4,965 tests, with
+  `C6502_CHECK_IR=1`) and without it (4,965 tests), and the build
+  and the C++ tests pass with MSVC 19.36 and GCC 12.2.

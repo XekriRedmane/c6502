@@ -94,6 +94,38 @@ records name it by that hash. The kinds:
   section defines (`[[name, value, type], ...]`), and gives the name or
   null. `startup_lines` takes the tagged JSON of the script and gives
   the lines.
+- The linker's functions on the link metadata (passes/linker.py), each
+  recorded as `link_<name>` without its underscore, except
+  `_link_shares`, which is `link_shares`, and `merge_shares` and
+  `check_linked_shares` of passes/slot_sharing.py. Their inputs are
+  what `link_objects` builds, so each record holds what the function
+  reads and, as its result, what it returns and what it changed in its
+  arguments, with each `LinkMetadata`, record, and share in
+  tools/capture_passes.py's tagged JSON (`encode`), each dict as
+  `[[key, value], ...]`, each set sorted, and each object as `[name,
+  hash]`. `link_merge` takes the units' metadata and gives the merged
+  one. `link_carry_conflict` takes the argument `name`.
+  `link_arrivals` takes `{"param_bytes", "param_regs", "pinned"}` and
+  gives the pairs. `link_validate_eligibility` takes the merged
+  metadata and gives null. `link_synthesize` gives `{"prog", "abi",
+  "local_bytes"}`. `link_rename_locals` takes the argument `taken` and
+  `{"objects", "metas"}`, and gives `{"renames", "metas", "objects"}`,
+  the objects after the renames. `link_rename_meta` takes `{"meta",
+  "renames"}` and gives the metadata after them.
+  `link_merge_zp_objects` takes each unit's zero-page records and gives
+  `[[name, records], ...]`. `link_place_zp_objects` takes `{"objects",
+  "layout", "param_bytes", "pointers"}` and gives `[addresses,
+  demoted]`. `link_choose_layout` takes the argument `startup_need` and
+  `{"hargs_needs", "objects", "param_bytes"}`. `link_runtime_bytes`
+  takes the layout. `link_shares` takes `{"merged", "metas"}`.
+  `merge_shares` takes `{"shares", "canonical"}`, and
+  `check_linked_shares` `{"shares", "calls", "defined", "changed"}`.
+  `link_bind_extern_params` takes `{"merged", "externs", "symbols"}`
+  and gives the symbols after the call. `link_drop_unused_locals` takes
+  `{"merged", "objects"}` and gives the merged metadata after the call.
+  `link_init_lines` takes `{"objects", "startup"}`, `link_data_lines` a
+  record, and `link_regs` the argument `count` and the registers, and
+  each gives its lines or list.
 - `nm` and `objdump`: the command line after the program's name as the
   arguments, with `columns`, the terminal width argparse wraps its
   usage and help to (`shutil.get_terminal_size`), and the files the
@@ -134,7 +166,14 @@ if str(_ROOT / "tools") not in sys.path:
 
 KINDS = ("assemble", "parse_metadata", "elf_read", "parse_script", "link",
          "disassemble", "nm", "objdump", "runtime_library", "lay_out",
-         "default_script", "fall_through", "tail_jump", "startup_lines")
+         "default_script", "fall_through", "tail_jump", "startup_lines",
+         "link_merge", "link_carry_conflict", "link_arrivals",
+         "link_validate_eligibility", "link_synthesize",
+         "link_rename_locals", "link_rename_meta", "link_merge_zp_objects",
+         "link_place_zp_objects", "link_choose_layout", "link_runtime_bytes",
+         "link_shares", "merge_shares", "check_linked_shares",
+         "link_bind_extern_params", "link_drop_unused_locals",
+         "link_init_lines", "link_data_lines", "link_regs")
 
 _OUT = _ROOT / "captures" / "binutils"
 _SOURCE = ""
@@ -571,6 +610,186 @@ def _wrap_startup_lines(real):
     return startup_lines
 
 
+# --- The linker's functions on the link metadata (passes/linker.py) ---------
+#
+# `link_objects` calls them with what it builds, so each record holds
+# what the function reads, in the JSON form the module docstring gives,
+# and what it returns with the changes it makes to its arguments.
+
+
+def _objects_json(objects) -> list | None:
+    """`[[name, hash], ...]` of the objects, or None when one can't be
+    written."""
+    from binutils import elf as E
+    with _quiet():
+        try:
+            return [[name, _blob(E.write(obj))] for name, obj in objects]
+        except Exception:  # noqa: BLE001 - an object E can't write
+            return None
+
+
+def _linker_record(kind: str, real, take, give):
+    """Wraps the linker's function `real`: `take(*args)` gives the
+    record's arguments and input before the call (None to leave the
+    call unrecorded), and `give(result, *args)` the result after it."""
+    def wrapper(*args, **kwargs):
+        if _QUIET:
+            return real(*args, **kwargs)
+        taken = take(*args, **kwargs)
+        start = time.perf_counter()
+        try:
+            result = real(*args, **kwargs)
+        except Exception as e:
+            _count(kind, time.perf_counter() - start)
+            if taken is not None:
+                _record(kind, taken[0], taken[1], error=e)
+            raise
+        _count(kind, time.perf_counter() - start)
+        if taken is None:
+            _anomaly(f"{kind}-unrecorded", _SOURCE)
+            return result
+        with _quiet():
+            out = give(result, *args, **kwargs)
+        _record(kind, taken[0], taken[1], out)
+        return result
+    return wrapper
+
+
+def _pairs(d) -> list:
+    return [[k, v] for k, v in d.items()]
+
+
+def _zp_objects_json(objects) -> list:
+    from capture_passes import encode
+    return [[name, encode(records)] for name, records in objects.items()]
+
+
+def _linker_wrappers() -> dict:
+    """Each recorded function of passes/linker.py by kind, with the
+    functions that give its record."""
+    from capture_passes import encode
+
+    def metas(ms):
+        return [encode(m) for m in ms]
+
+    def arrivals_in(meta):
+        return {"param_bytes": meta.param_bytes,
+                "param_regs": list(meta.param_regs),
+                "pinned": list(meta.pinned)}
+
+    def rename_locals_out(renames, objects, ms, taken):
+        objs = _objects_json(objects)
+        return {"renames": [_pairs(r) for r in renames],
+                "metas": metas(ms), "objects": objs}
+
+    def place_in(objects, layout, param_bytes=frozenset(),
+                 pointers=frozenset()):
+        return {}, {"objects": _zp_objects_json(objects),
+                    "layout": _pairs(layout),
+                    "param_bytes": sorted(param_bytes),
+                    "pointers": sorted(pointers)}
+
+    def choose_in(ms, objects, startup_need, param_bytes=frozenset()):
+        return {"startup_need": startup_need}, {
+            "hargs_needs": [m.hargs_need for m in ms],
+            "objects": _zp_objects_json(objects),
+            "param_bytes": sorted(param_bytes)}
+
+    def drop_in(merged, objects):
+        objs = _objects_json(objects)
+        return None if objs is None else ({}, {
+            "merged": encode(merged), "objects": objs})
+
+    def bind_in(merged, externs, symbols):
+        return {}, {"merged": encode(merged), "externs": encode(externs),
+                    "symbols": _pairs(symbols)}
+
+    def rename_locals_in(objects, ms, taken):
+        objs = _objects_json(objects)
+        return None if objs is None else ({"taken": sorted(taken)}, {
+            "objects": objs, "metas": metas(ms)})
+
+    return {
+        "_merge": ("link_merge",
+                   lambda ms: ({}, metas(ms)),
+                   lambda out, ms: encode(out)),
+        "_carry_conflict": ("link_carry_conflict",
+                            lambda name: ({"name": name}, None),
+                            lambda out, name: out),
+        "_arrivals": ("link_arrivals",
+                      lambda meta: ({}, arrivals_in(meta)),
+                      lambda out, meta: [list(a) for a in out]),
+        "_validate_eligibility": ("link_validate_eligibility",
+                                  lambda merged: ({}, encode(merged)),
+                                  lambda out, merged: None),
+        "_synthesize": ("link_synthesize",
+                        lambda merged: ({}, encode(merged)),
+                        lambda out, merged: {
+                            "prog": encode(out[0]), "abi": encode(out[1]),
+                            "local_bytes": encode(out[2])}),
+        "_rename_locals": ("link_rename_locals", rename_locals_in,
+                           rename_locals_out),
+        "_rename_meta": ("link_rename_meta",
+                         lambda meta, renames: ({}, {
+                             "meta": encode(meta),
+                             "renames": _pairs(renames)}),
+                         lambda out, meta, renames: encode(meta)),
+        "_merge_zp_objects": ("link_merge_zp_objects",
+                              lambda ms: ({}, [encode(m.zp_objects)
+                                               for m in ms]),
+                              lambda out, ms: _zp_objects_json(out)),
+        "_place_zp_objects": ("link_place_zp_objects", place_in,
+                              lambda out, *a: [_pairs(out[0]), out[1]]),
+        "_choose_layout": ("link_choose_layout", choose_in,
+                           lambda out, *a: _pairs(out)),
+        "_runtime_bytes": ("link_runtime_bytes",
+                           lambda layout: ({}, _pairs(layout)),
+                           lambda out, layout: sorted(out)),
+        "_link_shares": ("link_shares",
+                         lambda merged, ms: ({}, {
+                             "merged": encode(merged), "metas": metas(ms)}),
+                         lambda out, merged, ms: encode(out)),
+        "_bind_extern_params": ("link_bind_extern_params", bind_in,
+                                lambda out, merged, externs, symbols:
+                                _pairs(symbols)),
+        "_drop_unused_locals": ("link_drop_unused_locals", drop_in,
+                                lambda out, merged, objects: encode(merged)),
+        "_init_lines": ("link_init_lines",
+                        lambda objects, startup=(): ({}, {
+                            "objects": encode(list(objects)),
+                            "startup": list(startup)}),
+                        lambda out, *a: out),
+        "_data_lines": ("link_data_lines",
+                        lambda record: ({}, encode(record)),
+                        lambda out, record: out),
+        "_regs": ("link_regs",
+                  lambda param_regs, count: ({"count": count},
+                                             list(param_regs)),
+                  lambda out, *a: out),
+    }
+
+
+def _share_wrappers() -> dict:
+    """The linker's half of passes/slot_sharing.py, with the functions
+    that give each record."""
+    from capture_passes import encode
+    return {
+        "merge_shares": ("merge_shares",
+                         lambda shares, canonical: ({}, {
+                             "shares": encode(list(shares)),
+                             "canonical": _pairs(canonical)}),
+                         lambda out, *a: encode(out)),
+        "check_linked_shares": ("check_linked_shares",
+                                lambda shares, calls, defined, changed: (
+                                    {}, {"shares": encode(list(shares)),
+                                         "calls": [list(c) for c in calls],
+                                         "defined": sorted(defined),
+                                         "changed": [[k, sorted(v)] for k, v
+                                                     in changed.items()]}),
+                                lambda out, *a: None),
+    }
+
+
 def _wrap_disassemble(real):
     def disassemble(elf, *, all_sections=False, only=None, options=None):
         if _QUIET:
@@ -662,6 +881,14 @@ def install(out: Path) -> None:
     link_layout.tail_jump = _wrap_tail_jump(link_layout.tail_jump)
     link_layout.startup_lines = _wrap_startup_lines(link_layout.startup_lines)
     linker.link_objects = _wrap_link(linker.link_objects)
+    # `link_objects` and its helpers call these through the module's
+    # globals, and `_link_shares` imports the sharing ones at each call.
+    from passes import slot_sharing
+    for module, table in ((linker, _linker_wrappers()),
+                          (slot_sharing, _share_wrappers())):
+        for name, (kind, take, give) in table.items():
+            setattr(module, name,
+                    _linker_record(kind, getattr(module, name), take, give))
     disasm.disassemble = _wrap_disassemble(disasm.disassemble)
     # objdump.py imported `disassemble` by name.
     objdump.disassemble = disasm.disassemble

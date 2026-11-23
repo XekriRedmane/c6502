@@ -1328,4 +1328,176 @@ OrderedMap<std::string, NameSet> preferred_symbols(const Bindings& bindings) {
   return out;
 }
 
+// --- Linking ---
+
+std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
+                                    const OrderedMap<std::string, std::string>& canonical) {
+  std::vector<std::size_t> parent(shares.size());
+  for (std::size_t k = 0; k < parent.size(); ++k) {
+    parent[k] = k;
+  }
+  const auto find = [&](std::size_t k) {
+    while (parent[k] != k) {
+      k = parent[k];
+    }
+    return k;
+  };
+  std::vector<SlotShare> renamed = shares;
+  for (SlotShare& s : renamed) {
+    for (auto& member : s.members) {
+      for (std::string& x : member.second) {
+        if (const std::string* to = canonical.find(x)) {
+          x = *to;
+        }
+      }
+    }
+  }
+  // Python walks each share's slots in a set's order. That order decides
+  // which share becomes the root of a group, and nothing after reads the
+  // roots, only which shares each group holds and the order in which the
+  // groups first appear.
+  std::map<std::string, std::size_t, std::less<>> first;
+  for (std::size_t k = 0; k < renamed.size(); ++k) {
+    for (const std::string& sym : renamed[k].slots()) {
+      if (const auto it = first.find(sym); it != first.end()) {
+        parent[find(k)] = find(it->second);
+      } else {
+        first.emplace(sym, k);
+      }
+    }
+  }
+  OrderedMap<std::size_t, std::vector<const SlotShare*>> groups;
+  for (std::size_t k = 0; k < renamed.size(); ++k) {
+    groups[find(k)].push_back(&renamed[k]);
+  }
+  std::vector<SlotShare> out;
+  for (const auto& [root, group] : groups) {
+    // Python sorts sets of strings and of tuples, which compare their
+    // strings by code point, the order in which `std::string` compares
+    // UTF-8 bytes.
+    std::set<std::pair<std::string, std::vector<std::string>>> member_set;
+    std::set<std::string> holder_set;
+    std::set<std::pair<std::string, std::string>> forward_set;
+    std::set<std::string> writer_set;
+    OrderedMap<std::string, std::set<std::string>> live;
+    for (const SlotShare* s : group) {
+      member_set.insert(s->members.begin(), s->members.end());
+      holder_set.insert(s->holders.begin(), s->holders.end());
+      forward_set.insert(s->forwards.begin(), s->forwards.end());
+      writer_set.insert(s->writers.begin(), s->writers.end());
+      for (const auto& [f, cs] : s->live) {
+        live[f].insert(cs.begin(), cs.end());
+      }
+    }
+    SlotShare merged;
+    merged.members.assign(member_set.begin(), member_set.end());
+    merged.holders.assign(holder_set.begin(), holder_set.end());
+    std::map<std::string, std::size_t> uses;
+    for (const auto& member : merged.members) {
+      ++uses[member.first];
+    }
+    for (const std::string& h : merged.holders) {
+      ++uses[h];
+    }
+    for (const auto& [f, n] : uses) {
+      if (n > 1) {
+        // `uses` is sorted, so `f` is the first of Python's sorted list
+        // of the functions that appear twice.
+        throw CompileError("ValueError", "`" + f +
+                                             "` would keep two values in the parameter bytes `" +
+                                             merged.members.at(0).second.at(0) + "` share");
+      }
+    }
+    std::set<std::pair<std::string, std::vector<std::string>>> live_set;
+    for (const auto& [f, cs] : live) {
+      live_set.emplace(f, std::vector<std::string>(cs.begin(), cs.end()));
+    }
+    merged.live.assign(live_set.begin(), live_set.end());
+    merged.forwards.assign(forward_set.begin(), forward_set.end());
+    merged.writers.assign(writer_set.begin(), writer_set.end());
+    out.push_back(std::move(merged));
+  }
+  return out;
+}
+
+void check_linked_shares(const std::vector<SlotShare>& shares,
+                         const std::vector<std::pair<std::string, std::string>>& calls,
+                         const NameSet& defined, const OrderedMap<std::string, NameSet>& changed) {
+  std::map<std::string, NameSet, std::less<>> direct;
+  for (const std::string& f : defined) {
+    direct[f];
+  }
+  for (const auto& [a, b] : calls) {
+    direct[a].insert(b);
+  }
+  // The closure, by a walk from each function, as Python's `_closure`.
+  // The order of the walk doesn't reach the result, which is a set.
+  std::map<std::string, NameSet, std::less<>> reach;
+  for (const auto& [name, callees] : direct) {
+    NameSet seen;
+    std::vector<std::string> stack(callees.begin(), callees.end());
+    while (!stack.empty()) {
+      std::string c = std::move(stack.back());
+      stack.pop_back();
+      if (!seen.insert(c).second) {
+        continue;
+      }
+      if (const auto it = direct.find(c); it != direct.end()) {
+        stack.insert(stack.end(), it->second.begin(), it->second.end());
+      }
+    }
+    reach.emplace(name, std::move(seen));
+  }
+  for (const SlotShare& share : shares) {
+    const std::string what = "the parameter bytes `" + share.members.at(0).second.at(0) + "`";
+    for (const auto& [f, syms] : share.members) {
+      if (!defined.contains(f)) {
+        throw CompileError("ValueError", what + " hold a value across calls to `" + f +
+                                             "`, which no unit defines, so nothing checks that "
+                                             "it leaves its `const` parameter alone");
+      }
+      const NameSet* assigned = changed.find(f);
+      if (assigned != nullptr &&
+          std::any_of(syms.begin(), syms.end(),
+                      [&](const std::string& s) { return assigned->contains(s); })) {
+        throw CompileError("ValueError", "a unit keeps a value in " + what +
+                                             " across a call to `" + f +
+                                             "` because its declaration makes the parameter "
+                                             "`const`, but `" +
+                                             f + "` changes it");
+      }
+    }
+    const NameSet owners = share.owners();
+    const std::set<std::pair<std::string, std::string>> forwards(share.forwards.begin(),
+                                                                 share.forwards.end());
+    NameSet writers(share.writers.begin(), share.writers.end());
+    for (const auto& edge : calls) {
+      if (owners.contains(edge.second) && !forwards.contains(edge)) {
+        writers.insert(edge.first);
+      }
+    }
+    for (const auto& [f, callees] : share.live) {
+      for (const std::string& c : callees) {
+        NameSet reached{c};
+        if (const auto it = reach.find(c); it != reach.end()) {
+          reached.insert(it->second.begin(), it->second.end());
+        }
+        // The first of Python's sorted `({c} | reach[c]) & (writers - {f})`.
+        const auto hit = std::find_if(reached.begin(), reached.end(), [&](const std::string& n) {
+          return n != f && writers.contains(n);
+        });
+        if (hit != reached.end()) {
+          throw CompileError("ValueError", "`" + f + "` keeps a value in " + what +
+                                               " across its call to `" + c +
+                                               "`, because a declaration makes the parameter "
+                                               "`const`, but `" +
+                                               *hit + "`, which `" + c +
+                                               "` reaches, writes those bytes; declare the "
+                                               "parameter without `const`");
+        }
+      }
+    }
+  }
+}
+
 }  // namespace c6502::passes

@@ -19,6 +19,7 @@
 #include "errors.h"
 #include "json.h"
 #include "passes/link_checks.h"
+#include "passes/linker_checks.h"
 #include "passes/runtime_library.h"
 #include "passes/stage_registry_sharing.h"
 #include "passes/zp_link_metadata.h"
@@ -34,7 +35,13 @@ namespace fs = std::filesystem;
 constexpr std::string_view kKinds[] = {
     "assemble",       "parse_metadata", "elf_read",  "parse_script",    "link",
     "disassemble",    "nm",             "objdump",   "runtime_library", "lay_out",
-    "default_script", "fall_through",   "tail_jump", "startup_lines"};
+    "default_script", "fall_through",   "tail_jump", "startup_lines",
+    // The linker's functions on the link metadata (group D1).
+    "link_merge", "link_carry_conflict", "link_arrivals", "link_validate_eligibility",
+    "link_synthesize", "link_rename_locals", "link_rename_meta", "link_merge_zp_objects",
+    "link_place_zp_objects", "link_choose_layout", "link_runtime_bytes", "link_shares",
+    "merge_shares", "check_linked_shares", "link_bind_extern_params", "link_drop_unused_locals",
+    "link_init_lines", "link_data_lines", "link_regs"};
 
 // Returns the error `e` compared with the recorded one, or "" when the
 // two have the same Python type and message.
@@ -138,6 +145,14 @@ class Checker {
       ++count.ran;
       std::string problem =
           passes::link_checks::check(kind, args, input, output, call.output_is_error);
+      if (problem.empty()) ++count.matched;
+      return problem;
+    }
+    if (passes::linker_checks::handles(kind)) {
+      ++count.ran;
+      std::string problem = passes::linker_checks::check(
+          kind, args, input, output, call.output_is_error,
+          [this](const std::string& hash) { return blob(hash); });
       if (problem.empty()) ++count.matched;
       return problem;
     }

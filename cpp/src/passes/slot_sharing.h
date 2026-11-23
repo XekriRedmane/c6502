@@ -2,8 +2,8 @@
 // between functions and the bindings of variables to them
 // (`find_shares`), what the allocators, `tac_to_asm`, the link metadata,
 // and emission read of them, and `check_shares`, which reads the
-// finished asm program. The linker's half (`merge_shares`,
-// `check_linked_shares`) isn't ported.
+// finished asm program, and the linker's half, `merge_shares` and
+// `check_linked_shares`.
 #pragma once
 
 #include <cstddef>
@@ -129,5 +129,24 @@ OrderedMap<std::string, NameSet> pinned_param_copies(const tac_ast::Program& pro
 // so the linker, which binds each symbol again, keeps the pointer where
 // the function keeps the value.
 OrderedMap<std::string, NameSet> preferred_symbols(const Bindings& bindings);
+
+// Returns the shares of every unit as one program's (the linker's
+// `merge_shares`): each slot symbol renamed by `canonical` (a
+// declaration's spelling of a parameter's slot to the definition's), and
+// shares with a slot in common joined, each with its members, holders,
+// live callees, forwards, and writers sorted. Throws
+// `CompileError("ValueError", ...)` with Python's message when a
+// function would be in a share twice.
+std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
+                                    const OrderedMap<std::string, std::string>& canonical);
+
+// Throws `CompileError("ValueError", ...)` with Python's message unless
+// rule 2 of slot_sharing.cpp's comment is met for the whole program and
+// every member's owner leaves its parameter alone. `calls` are the
+// program's call edges, `defined` the functions some unit defines, and
+// `changed` each one's assigned parameter slots.
+void check_linked_shares(const std::vector<SlotShare>& shares,
+                         const std::vector<std::pair<std::string, std::string>>& calls,
+                         const NameSet& defined, const OrderedMap<std::string, NameSet>& changed);
 
 }  // namespace c6502::passes

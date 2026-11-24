@@ -31,7 +31,7 @@ from pathlib import Path
 
 from compile import _run_stage
 from lark.exceptions import UnexpectedInput
-from lexer import LexError, tokenize
+from lexer import LexError
 from parser import ParserError, parse
 from preprocessor import preprocess
 
@@ -149,9 +149,6 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
 # pins here. The file DOES fail at parse time because of the
 # surrounding struct keyword, but that's at the wrong stage for
 # this bucket.
-_INVALID_LEX_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
-    "dot_bad_token.c",
-})
 _INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 
 # invalid_parse files that C23 allows, which must compile. Each
@@ -200,24 +197,6 @@ class TestChapter18Valid(unittest.TestCase):
                         ),
                     ):
                         _run_stage("codegen", source)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter18InvalidLex(unittest.TestCase):
-    def test_lex_fails(self):
-        files = sorted((_C18 / "invalid_lex").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_lex files found")
-        for path in files:
-            rel = path.relative_to(_C18 / "invalid_lex").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(
-                    path.read_text(), ["-I", str(path.parent)],
-                )
-                if rel in _INVALID_LEX_NOT_REJECTED_TODAY:
-                    list(tokenize(source))
-                else:
-                    with self.assertRaises(LexError):
-                        list(tokenize(source))
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

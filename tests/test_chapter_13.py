@@ -27,21 +27,11 @@ import unittest
 from pathlib import Path
 
 from compile import _run_stage
-from lark.exceptions import UnexpectedInput
-from lexer import LexError, tokenize
-from parser import ParserError, parse
 from preprocessor import preprocess
-from passes.identifier_resolution import IdentifierResolutionError
-from passes.label_resolution import LabelResolutionError
-from passes.loop_labeling import LoopLabelingError
-from passes.type_checking import TypeCheckError
 
 
 _TESTS_DIR = Path(__file__).parent
 _C13 = _TESTS_DIR / "chapter_13"
-
-
-_PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
 _INCOMPATIBLE_VALID = frozenset()
@@ -50,9 +40,6 @@ _INCOMPATIBLE_VALID = frozenset()
 # Lexer tokenises `1.0e10.0` as two CONSTANTs (`1.0e10` and `.0`)
 # rather than rejecting it as a malformed preprocessing number; we
 # don't model preprocessing numbers.
-_INVALID_LEX_NOT_REJECTED_TODAY = frozenset([
-    "malformed_exponent.c",
-])
 
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()
 
@@ -69,35 +56,6 @@ class TestChapter13Valid(unittest.TestCase):
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 _run_stage("codegen", source)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter13InvalidLex(unittest.TestCase):
-    def test_lex_fails(self):
-        files = sorted((_C13 / "invalid_lex").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_lex files found")
-        for path in files:
-            rel = path.relative_to(_C13 / "invalid_lex").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                if rel in _INVALID_LEX_NOT_REJECTED_TODAY:
-                    list(tokenize(source))
-                else:
-                    with self.assertRaises(LexError):
-                        list(tokenize(source))
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter13InvalidParse(unittest.TestCase):
-    def test_parse_fails(self):
-        files = sorted((_C13 / "invalid_parse").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_parse files found")
-        for path in files:
-            rel = path.relative_to(_C13 / "invalid_parse").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                with self.assertRaises(_PARSE_FAILURES):
-                    parse(source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

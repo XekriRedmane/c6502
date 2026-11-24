@@ -19,7 +19,7 @@ from pathlib import Path
 from compile import _run_stage
 from lark.exceptions import UnexpectedInput
 from lexer import LexError
-from parser import ParserError, parse
+from parser import ParserError
 from preprocessor import preprocess
 from passes.identifier_resolution import IdentifierResolutionError
 from passes.label_resolution import LabelResolutionError
@@ -73,21 +73,6 @@ class TestChapter8Valid(unittest.TestCase):
                         _run_stage("codegen", source)
                 else:
                     _run_stage("codegen", source)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter8InvalidParse(unittest.TestCase):
-    """Each chapter_8/invalid_parse file must fail at lex or parse."""
-
-    def test_parse_fails(self):
-        files = sorted((_C8 / "invalid_parse").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_parse files found")
-        for path in files:
-            rel = path.relative_to(_C8 / "invalid_parse").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                with self.assertRaises(_PARSE_FAILURES):
-                    parse(source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

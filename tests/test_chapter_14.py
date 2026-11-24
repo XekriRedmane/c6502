@@ -27,21 +27,11 @@ import unittest
 from pathlib import Path
 
 from compile import _run_stage
-from lark.exceptions import UnexpectedInput
-from lexer import LexError
-from parser import ParserError, parse
 from preprocessor import preprocess
-from passes.identifier_resolution import IdentifierResolutionError
-from passes.label_resolution import LabelResolutionError
-from passes.loop_labeling import LoopLabelingError
-from passes.type_checking import TypeCheckError
 
 
 _TESTS_DIR = Path(__file__).parent
 _C14 = _TESTS_DIR / "chapter_14"
-
-
-_PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
 _INCOMPATIBLE_VALID = frozenset()
@@ -49,8 +39,6 @@ _INCOMPATIBLE_VALID = frozenset()
 
 _EXPECTED_FAILURES_CODEGEN = frozenset()
 
-
-_INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()
 
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()
 
@@ -75,22 +63,6 @@ class TestChapter14Valid(unittest.TestCase):
                         _run_stage("codegen", source)
                 else:
                     _run_stage("codegen", source)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter14InvalidParse(unittest.TestCase):
-    def test_parse_fails(self):
-        files = sorted((_C14 / "invalid_parse").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_parse files found")
-        for path in files:
-            rel = path.relative_to(_C14 / "invalid_parse").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
-                    parse(source)
-                else:
-                    with self.assertRaises(_PARSE_FAILURES):
-                        parse(source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

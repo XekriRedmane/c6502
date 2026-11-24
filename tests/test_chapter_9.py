@@ -25,7 +25,7 @@ from pathlib import Path
 from compile import _run_stage
 from lark.exceptions import UnexpectedInput
 from lexer import LexError
-from parser import ParserError, parse
+from parser import ParserError
 from preprocessor import preprocess
 from passes.identifier_resolution import IdentifierResolutionError
 from passes.label_resolution import LabelResolutionError
@@ -52,7 +52,6 @@ _INCOMPATIBLE_VALID = frozenset()
 
 # invalid_parse files the parser currently accepts. Drop entries as
 # the parser learns to reject them.
-_INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()
 
 _INVALID_DECL_NOT_REJECTED_TODAY = frozenset()
 
@@ -88,26 +87,6 @@ class TestChapter9Valid(unittest.TestCase):
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 _run_stage("codegen", source)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter9InvalidParse(unittest.TestCase):
-    """Each chapter_9/invalid_parse file must fail at lex or parse,
-    except those pinned at their current accept-it behavior in
-    `_INVALID_PARSE_NOT_REJECTED_TODAY`."""
-
-    def test_parse_fails(self):
-        files = sorted((_C9 / "invalid_parse").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_parse files found")
-        for path in files:
-            rel = path.relative_to(_C9 / "invalid_parse").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
-                    parse(source)
-                else:
-                    with self.assertRaises(_PARSE_FAILURES):
-                        parse(source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

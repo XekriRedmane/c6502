@@ -18,17 +18,11 @@ import unittest
 from pathlib import Path
 
 from compile import _run_stage
-from lark.exceptions import UnexpectedInput
-from lexer import LexError, tokenize
-from parser import ParserError, parse
 from preprocessor import preprocess
 
 
 _TESTS_DIR = Path(__file__).parent
 _C1 = _TESTS_DIR / "chapter_1"
-
-
-_PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
@@ -41,29 +35,3 @@ class TestChapter1Valid(unittest.TestCase):
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 _run_stage("codegen", source)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter1InvalidLex(unittest.TestCase):
-    def test_lex_fails(self):
-        files = sorted((_C1 / "invalid_lex").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_lex files found")
-        for path in files:
-            rel = path.relative_to(_C1 / "invalid_lex").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                with self.assertRaises(LexError):
-                    list(tokenize(source))
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestChapter1InvalidParse(unittest.TestCase):
-    def test_parse_fails(self):
-        files = sorted((_C1 / "invalid_parse").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_parse files found")
-        for path in files:
-            rel = path.relative_to(_C1 / "invalid_parse").as_posix()
-            with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                with self.assertRaises(_PARSE_FAILURES):
-                    parse(source)

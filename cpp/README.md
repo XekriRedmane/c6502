@@ -123,6 +123,8 @@ cpp/
                       the backend command runs
       translate_for_codegen.*   compile.py's `translate_for_codegen`
                       and `_optimized_tac`
+      text_stages.*   `--parse`, `--resolve`, and `--tac`, which print
+                      the tree with `asdl::py_pretty` (step 8, G1)
       return_in_zero_page.*   the `F@ret` objects of `static` pointer
                       results (step 5, group H)
       asm_to_asm2.*   the lowering to the asm2 IR
@@ -2155,7 +2157,27 @@ through `cpp_backend.lex_source` and the backend's mode `lex`, which
 runs the preprocessor and `lexer::format_tokens` (compile.py's
 `_format_tokens`) and returns the text `--lex` prints, with the same
 `stderr`, `warnings`, and `error` lines. `--parse`, `--resolve`, and
-`--tac` stay in Python.
+`--tac` go through `cpp_backend.stage_source` and the modes `parse`,
+`resolve`, and `tac` (`passes::run_text_stage`, src/passes/text_stages.h),
+which run the parser, `passes::resolved` (compile.py's `_resolved`, with
+the unroller under `-O`), or `_resolved`, the type checker, and
+`c99_to_tac` followed under `-O` by the inliner and the TAC optimizer
+only, as `_run_stage` does, and return `asdl::py_pretty` of the tree.
+`asdl.py --cpp` generates a `pretty` for each struct and sum type of
+the four IRs, which writes pretty.py's text: the class name, a
+`name=value,` line for each field with two spaces of indentation per
+level, in the order of `dataclasses.fields` (a sum type's attributes
+first, though no module has any), lists one item to a line, and
+Python's `repr` of each leaf, with a string through `pcpp::py_repr`,
+which escapes every code point that `str.isprintable()` rejects. The
+IRs hold no Python floats, since a floating constant is its bit
+pattern in an `int`. `c6502cpp roundtrip --pretty <module>` reads a
+dump and writes its pretty text, which tests/test_cpp_backend.py's
+`TestPretty` compares with pretty.py on each IR of three programs. Under
+`C6502_CHECK_IR=1` the response of `tac` holds the TAC's dump, which
+`ir_check.check_tac` checks. `_run_stage` sends the text of these
+stages with `preprocess` off, and the request says whether `-O`
+inlines.
 `_run_stage("codegen", text)`, which the tests call with the
 preprocessor's output, sends the text with `preprocess` off. The
 request says whether `-O`
@@ -2194,7 +2216,9 @@ three games as tools/capture_binutils.py does and from their sources in
 one command, and links damaged objects and bad command lines. It
 requires the same exit status, messages, warnings, and exceptions for
 each command, and the same files left in the directory, byte for
-byte.
+byte. Its modes `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
+`tacO`, which aren't among the defaults, run `--lex`, `--parse`,
+`--resolve` and `--tac` without and with `-O` on each program.
 
 ## Emission
 

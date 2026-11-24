@@ -519,6 +519,13 @@ _TREES = (
     "}\n"
 )
 
+# The command line flags of each stage that prints a tree.
+_TREE_STAGES = (
+    ["--parse"], ["--resolve"], ["--resolve", "-O"], ["--tac"],
+    ["--tac", "-O"],
+)
+
+
 @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
 class TestPretty(unittest.TestCase):
     """The `pretty` that `asdl.py --cpp` generates for each IR writes the
@@ -546,6 +553,145 @@ class TestPretty(unittest.TestCase):
                     )
                     self.assertEqual(done.stdout.decode("utf-8"),
                                      pretty(prog) + "\n")
+
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestTrees(unittest.TestCase):
+    """`compile.py --parse`, `--resolve`, and `--tac` run in C++, and
+    print what Python prints, with the same messages and exit status."""
+
+    def _same(self, args, **kw) -> tuple:
+        cpp = _run(args, True, **kw)
+        self.assertEqual(cpp, _run(args, False, **kw))
+        return cpp
+
+    def test_each_stage(self):
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                status, out, err, _ = self._same(
+                    ["a.c", *flags], files={"a.c": _TREES},
+                )
+                self.assertEqual((status, err), (0, ""))
+                self.assertTrue(out.startswith("Program(\n"), out[:40])
+
+    def test_to_a_file_and_from_stdin(self):
+        source = "int x = 1;\n"
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                self._same(["a.c", *flags, "-o", "out.s"],
+                           files={"a.c": source})
+                status, out, _, _ = self._same(["-", *flags], stdin=source)
+                self.assertEqual(status, 0)
+
+    def test_an_error_at_each_stage(self):
+        # Each stage stops before the passes after it, so `--parse`
+        # takes the name that `--resolve` rejects, and `--resolve` the
+        # call that the type checker rejects.
+        for name in ("PreprocessorError", "LexError", "UnexpectedToken",
+                     "NotImplementedError", "IdentifierResolutionError",
+                     "LoopLabelingError", "UnrollError", "TypeCheckError"):
+            source, _ = _ERRORS[name]
+            for flags in _TREE_STAGES:
+                with self.subTest(error=name, flags=flags):
+                    self._same(["a.c", *flags], files={"a.c": source})
+
+    def test_a_warning_and_what_pcpp_writes_to_stderr(self):
+        source = "#if 1 +\n#endif\n_Bool b;\nint main(void) { return b; }\n"
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                status, _, err, _ = self._same(
+                    ["a.c", *flags], files={"a.c": source},
+                )
+                self.assertEqual(status, 0)
+                self.assertRegex(
+                    err, r"(?s)Could not evaluate expression.*"
+                         r"a\.c: warning: line 3: ",
+                )
+
+    def test_run_stage_takes_the_preprocessor_s_output(self):
+        import compile
+        from preprocessor import preprocess
+        cases = [(stage, optimize, source)
+                 for stage in ("parse", "resolve", "tac")
+                 for optimize in (False, True)
+                 for source in (_TREES, _ERRORS["TypeCheckError"][0],
+                                _ERRORS["UnexpectedToken"][0])]
+        for stage, optimize, source in cases:
+            with self.subTest(stage=stage, optimize=optimize,
+                              source=source[:20]):
+                got = []
+                for cpp in (False, True):
+                    with mock.patch.dict(os.environ):
+                        os.environ.pop("C6502_CPP_BACKEND", None)
+                        if cpp:
+                            os.environ["C6502_CPP_BACKEND"] = "1"
+                        try:
+                            got.append(compile._run_stage(
+                                stage, preprocess(source, []),
+                                optimize=optimize,
+                            ))
+                        except Exception as e:  # noqa: BLE001 - compared below
+                            got.append((type(e).__name__, str(e)))
+                self.assertEqual(got[0], got[1])
+
+    def test_tac_without_inlining(self):
+        # tests/no_inlining.py's patch of `compile.inline_functions`
+        # reaches the C++ side's `--tac -O`.
+        import compile
+        source = (
+            "static int small(int x) { return x + 1; }\n"
+            "int main(void) { return small(2); }\n"
+        )
+        for inlining in (False, True):
+            with self.subTest(inlining=inlining):
+                got = []
+                for cpp in (False, True):
+                    with contextlib.ExitStack() as stack:
+                        stack.enter_context(mock.patch.dict(os.environ))
+                        os.environ.pop("C6502_CPP_BACKEND", None)
+                        if cpp:
+                            os.environ["C6502_CPP_BACKEND"] = "1"
+                        if not inlining:
+                            stack.enter_context(no_inlining())
+                        got.append(compile._run_stage(
+                            "tac", source, optimize=True,
+                        ))
+                self.assertEqual(got[0], got[1])
+                self.assertEqual("name='small'" in got[0], not inlining)
+
+    def test_compile_imports_no_front_end(self):
+        # Run as a script with the variable set, the three stages stop
+        # before compile.py imports the Python pipeline. The IR checks
+        # are off, since passes/ir_check.py imports the type checker.
+        front = ("lexer", "parser", "lark", "pcpp", "preprocessor",
+                 "pretty", "c99_to_tac", "passes.type_checking",
+                 "passes.identifier_resolution", "passes.optimization")
+        env = dict(os.environ)
+        env["C6502_CPP_BACKEND"] = "1"
+        env.pop("C6502_CHECK_IR", None)
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                code = (
+                    "import runpy, sys\n"
+                    "sys.argv = ['compile.py', 'examples/sfx_tone.c',"
+                    f" {', '.join(repr(f) for f in flags)},"
+                    " '-o', sys.argv[1]]\n"
+                    "try:\n"
+                    "    runpy.run_path('compile.py', run_name='__main__')\n"
+                    "except SystemExit as e:\n"
+                    "    assert not e.code, e.code\n"
+                    f"front = {front!r}\n"
+                    "print(sorted(m for m in sys.modules\n"
+                    "             if m in front or m.startswith(front)))\n"
+                )
+                with tempfile.TemporaryDirectory() as tmp:
+                    done = subprocess.run(
+                        [sys.executable, "-c", code,
+                         os.path.join(tmp, "out.txt")],
+                        cwd=_ROOT, env=env, check=True, capture_output=True,
+                        text=True,
+                    )
+                self.assertEqual(done.stdout.strip(), "[]")
 
 
 def _run_files(args: list[str], cpp: bool, files: dict[str, str | bytes],

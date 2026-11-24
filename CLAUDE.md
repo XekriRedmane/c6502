@@ -357,10 +357,13 @@ dump format, with its slot symbols, since it assembles the program
 itself, and it returns those two alone. `--lex` goes to C++ too, in the
 backend's mode `lex` (`cpp_backend.lex_source`), which preprocesses the
 source and prints its tokens, and `_run_stage("lex", text)` sends the
-text with `preprocess` off. `--parse`, `--resolve`, and `--tac` stay in
-Python. Run as a script with the variable set and
-one of the C++ stages, compile.py stops before its pipeline's imports
-(`_cpp_runs_everything`), so `--lex`, `-S`, and `-c` import none of the parser,
+text with `preprocess` off. `--parse`, `--resolve`, and `--tac` go to
+C++ in the modes `parse`, `resolve`, and `tac` (`cpp_backend.stage_source`,
+src/passes/text_stages.h), which run the front end to where
+`_run_stage` stops and print the tree with the `pretty` that `asdl.py
+--cpp` generates for each IR, the text of pretty.py. Run as a script with the variable set,
+compile.py stops before its pipeline's imports for every stage
+(`_cpp_runs_everything`), so no stage imports the parser,
 Lark, pcpp, or the front end's passes, unless `C6502_CHECK_IR=1` loads
 `ir_check`, whose helpers import the type checker.
 

@@ -1537,3 +1537,13 @@ simulation-based tests still pass.
   top is the live list of optimizer bugs.
 - `tests/test_sim_asm_optimized.py` — chapter_1..12 corpus run
   through `-O` with end-to-end return-value assertions.
+
+## Brain
+
+The `brain/` directory is an Obsidian vault, persistent memory across
+sessions (from brainmaxxing, https://github.com/poteto/brainmaxxing).
+
+- **Read first.** Read brain files relevant to your task before acting.
+- **Write** after mistakes, corrections, or notable codebase learnings.
+- **Structure:** One topic per file. Directories with `[[wikilink]]` indexes, no inlined content.
+- **Maintain:** Delete outdated notes and stale artifacts.

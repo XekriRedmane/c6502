@@ -37,6 +37,7 @@
 #include "c99_ast.h"
 #include "capture.h"
 #include "errors.h"
+#include "golden.h"
 #include "helper_checks.h"
 #include "json.h"
 #include "passes/peephole_fixedpoint.h"
@@ -61,6 +62,8 @@ const char kUsage[] =
     "       c6502cpp check-preprocess [--verbose] <path>...\n"
     "       c6502cpp check-regex [--verbose] <path>...\n"
     "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
+    "       c6502cpp check-golden [--root <dir>] [-j <n>] [--manifest <name>,...]\n"
+    "                             [--label <label>] [--update] [--verbose]\n"
     "       c6502cpp opcodes\n"
     "       c6502cpp helper-footprints\n"
     "       c6502cpp nm [<option>...] <file>...\n"
@@ -104,6 +107,11 @@ const char kUsage[] =
     "\n"
     "check-binutils checks the records of tools/capture_binutils.py under\n"
     "each capture directory (src/binutils/checks.h).\n"
+    "\n"
+    "check-golden runs the jobs of the golden files under <dir>/golden with\n"
+    "the C++ compiler in -j worker processes, as compile.py would run them,\n"
+    "and compares what each command gives and the files each job leaves with\n"
+    "the golden files, which --update writes again (src/golden.h).\n"
     "\n"
     "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
     "per row, in the order of binutils/opcodes.py.\n"
@@ -665,6 +673,9 @@ int main(int argc, char** argv) {
     }
     if (command == "check-binutils") {
       return binutils::check_binutils(args);
+    }
+    if (command == "check-golden") {
+      return golden::check_golden(args, argv[0]);
     }
     if (command == "nm" || command == "objdump") {
       // The tool's command line, as its `main` takes it with the

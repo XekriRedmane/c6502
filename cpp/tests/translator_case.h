@@ -7,6 +7,7 @@
 #pragma once
 
 #include <exception>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,10 +15,12 @@
 #include "asdl/runtime.h"
 #include "asm_ast.h"
 #include "doctest.h"
+#include "json.h"
 #include "passes/asm_context.h"
 #include "tac_ast.h"
 #include "tac_to_asm.h"
 #include "tac_to_asm_translator.h"
+#include "tagged_json.h"
 
 namespace c6502::testing {
 
@@ -70,6 +73,65 @@ inline void check_translator(std::string_view name, const std::vector<std::strin
     return;
   }
   CHECK(got == expected);
+}
+
+// One call of a recorded session of tac_to_asm.py's `Translator`: the
+// method, the dumps of its arguments, and the dumps of the instructions
+// it returned, or one `exception: <Python type>: <message>`.
+struct TranslatorStep {
+  std::string_view name;
+  std::vector<std::string> inputs;
+  std::vector<std::string> expected;
+};
+
+// Runs the steps of a session, the calls that a Python unit test made
+// of one `Translator` it built with the symbol table `symbols` (its
+// tagged JSON, or empty for none) and otherwise the defaults, on one C++
+// `Translator` made the same way (step 8, group G7). The steps share
+// the translator, so its labels are numbered on from one step to the
+// next, as in Python.
+inline void check_translator_session(std::string_view symbols,
+                                     const std::vector<TranslatorStep>& steps) {
+  namespace tac = c6502::tac_ast;
+  std::optional<passes::SymbolTable> table;
+  if (!symbols.empty()) {
+    table = tagged::SymbolTableC::decode(json::parse(std::string(symbols)));
+  }
+  const passes::AsmContext ctx;
+  const tac_to_asm::Options options;
+  tac_to_asm::Translator t(table ? &*table : nullptr, nullptr, ctx, options);
+  for (const TranslatorStep& step : steps) {
+    INFO("step ", step.name, " on ", step.inputs.empty() ? "" : step.inputs[0]);
+    std::vector<std::string> got;
+    try {
+      if (step.name == "translate_instruction") {
+        REQUIRE(step.inputs.size() == 1);
+        for (const auto& i :
+             t.translate_instruction(asdl::load<tac::Type_instruction>(step.inputs[0]))) {
+          got.push_back(asdl::dump(i));
+        }
+      } else if (step.name == "translate_binary") {
+        REQUIRE(step.inputs.size() == 4);
+        for (const auto& i : t.translate_binary(asdl::load<tac::Type_binary_operator>(step.inputs[0]),
+                                                asdl::load<tac::Type_val>(step.inputs[1]),
+                                                asdl::load<tac::Type_val>(step.inputs[2]),
+                                                asdl::load<tac::Type_val>(step.inputs[3]))) {
+          got.push_back(asdl::dump(i));
+        }
+      } else {
+        FAIL("no Translator method ", step.name);
+      }
+    } catch (const std::exception& e) {
+      REQUIRE(step.expected.size() == 1);
+      const std::string_view want = step.expected[0];
+      constexpr std::string_view kException = "exception: ";
+      REQUIRE_MESSAGE(want.substr(0, kException.size()) == kException, e.what());
+      const std::string_view rest = want.substr(kException.size());
+      CHECK(std::string(e.what()) + "\n" == rest.substr(rest.find(": ") + 2));
+      return;
+    }
+    CHECK(got == step.expected);
+  }
 }
 
 }  // namespace c6502::testing

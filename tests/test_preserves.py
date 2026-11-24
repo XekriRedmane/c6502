@@ -11,9 +11,7 @@ from __future__ import annotations
 import re
 import unittest
 
-import asm_ast
 from parser import ParserError, parse
-from passes.asm_liveness import call_preserves, kills_x, kills_y
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
@@ -109,39 +107,6 @@ class TestTypeCheck(unittest.TestCase):
         }.items():
             with self.subTest(label):
                 _codegen(src + "void g(void) { f(); }\n")
-
-
-class TestCalls(unittest.TestCase):
-
-    def _call(self, src: str) -> asm_ast.Call:
-        from compile import _resolved
-        from c99_to_tac import translate_program as to_tac
-        from passes.type_checking import check_program
-        from tac_to_asm import translate_program as to_asm
-        prog, symbols, types = check_program(_resolved(src, optimize=False))
-        asm = to_asm(to_tac(prog, symbols, types), symbols, types)
-        return next(
-            i for tl in asm.top_level if getattr(tl, "name", "") == "g"
-            for i in tl.instructions if isinstance(i, asm_ast.Call)
-        )
-
-    def test_call_carries_the_set(self) -> None:
-        call = self._call(
-            "[[c6502::preserves_y, c6502::preserves_x, c6502::address(0x1000)]]\n"
-            "void f(void);\nvoid g(void) { f(); }\n"
-        )
-        self.assertEqual(call.preserves, ["X", "Y"])
-        self.assertFalse(kills_x(call))
-        self.assertFalse(kills_y(call))
-
-    def test_plain_call_clobbers(self) -> None:
-        call = self._call(
-            "[[c6502::address(0x1000)]] void f(void);\n"
-            "void g(void) { f(); }\n"
-        )
-        self.assertEqual(call.preserves, [])
-        self.assertTrue(kills_x(call))
-        self.assertFalse(call_preserves(call, "Y"))
 
 
 class TestCountUpLoop(unittest.TestCase):

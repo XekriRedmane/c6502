@@ -495,7 +495,8 @@ std::vector<std::string> best_set(const std::vector<std::string>& names, const H
 // `kExhaustive` and adding them one at a time, the most accessed first,
 // otherwise.
 Layout choose(const std::map<std::string, std::vector<Access>, std::less<>>& accesses,
-              const SymbolTable& symbols, const TypeTable* types) {
+              const SymbolTable& symbols, const TypeTable* types,
+              std::optional<asdl::Int> fixed_saving) {
   Layout layout;
   std::map<asdl::Int, std::vector<std::string>> groups;
   Halves halves;
@@ -505,7 +506,8 @@ Layout choose(const std::map<std::string, std::vector<Access>, std::less<>>& acc
   for (const auto& [name, list] : accesses) {
     const Shape shape = *array_shape(name, symbols, types);
     halves[name] = row_bytes(name, shape.rows, shape.row, symbols);
-    gain[name] = static_cast<asdl::Int>(list.size()) * saving(shape.row);
+    gain[name] = static_cast<asdl::Int>(list.size()) *
+                 (fixed_saving ? *fixed_saving : asdl::Int(saving(shape.row)));
     groups[shape.rows + 1].push_back(name);
   }
   for (const auto& [length, names] : groups) {
@@ -564,7 +566,8 @@ ir::Function rewrite(ir::Function fn, const std::vector<const Access*>& accesses
 }  // namespace
 
 ir::Program apply_row_address_tables(ir::Program prog, SymbolTable* symbols,
-                                     const TypeTable* types) {
+                                     const TypeTable* types,
+                                     std::optional<asdl::Int> fixed_saving) {
   if (symbols == nullptr) {
     return prog;
   }
@@ -579,7 +582,7 @@ ir::Program apply_row_address_tables(ir::Program prog, SymbolTable* symbols,
   if (accesses.empty()) {
     return prog;
   }
-  const Layout layout = choose(accesses, *symbols, types);
+  const Layout layout = choose(accesses, *symbols, types, fixed_saving);
   for (auto& tl : prog.top_level) {
     auto* fn = std::get_if<ir::Function>(&tl);
     if (fn == nullptr) {

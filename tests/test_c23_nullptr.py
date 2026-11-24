@@ -32,8 +32,6 @@ from unittest.mock import patch
 
 import c99_ast
 import diagnostics
-import tac_ast
-from c99_to_tac import translate_program
 from compile import main as compile_main
 from parser import ParserError, parse
 from passes.identifier_resolution import resolve_program
@@ -373,46 +371,6 @@ class TestOperators(unittest.TestCase):
             f"initializer for static-storage object 'x' is not a "
             f"constant expression: {message}",
         )
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-class TestValues(unittest.TestCase):
-    def test_sizes(self) -> None:
-        # C23 §7.21.2p3: "The size and alignment of nullptr_t is the
-        # same as for a pointer to character type."
-        for exp in ("sizeof(nullptr)", "sizeof nullptr",
-                    "sizeof(nullptr_t)", "sizeof(nullptr_t[1])"):
-            with self.subTest(exp=exp):
-                self.assertEqual(
-                    _static_value(
-                        _NULLPTR_T + f"unsigned long n = {exp};", "n",
-                    ),
-                    2,
-                )
-
-    def test_static_initializers(self) -> None:
-        # `nullptr` is a predefined constant, so it's a named constant
-        # (§6.6p7), which an initializer may be (§6.6p9).
-        for decl in ("int *b = nullptr;", "bool b = nullptr;",
-                     "nullptr_t b = nullptr;", "nullptr_t b = 0;",
-                     "void (*b)(void) = nullptr;"):
-            with self.subTest(decl=decl):
-                self.assertEqual(_static_value(_NULLPTR_T + decl, "b"), 0)
-
-    def test_tac_has_the_constant(self) -> None:
-        # c99_to_tac makes `nullptr` the constant 0, so the optimizer
-        # folds what follows from it.
-        prog, symbols, types = _check(
-            "int *f(void) { return nullptr; }"
-            "bool g(void) { return nullptr; }",
-        )
-        tac = translate_program(prog, symbols, types)
-        for fn in tac.top_level:
-            with self.subTest(fn=fn.name):
-                ret = fn.instructions[-1]
-                self.assertIsInstance(ret, tac_ast.Ret)
-                self.assertIsInstance(ret.val, tac_ast.Constant)
-                self.assertEqual(ret.val.const.value, 0)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

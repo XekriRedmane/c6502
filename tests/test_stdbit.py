@@ -365,33 +365,6 @@ class TestFolding(unittest.TestCase):
                         ))
                         self.assertIn(want, copies)
 
-    def test_constant_expressions(self) -> None:
-        src = """
-#include <stdbit.h>
-static unsigned int width = stdc_bit_width(1000u);
-static unsigned char floor = stdc_bit_floor((unsigned char)200);
-static bool single = stdc_has_single_bit_ul(0x8000'0000);
-static unsigned long long ceil = stdc_bit_ceil_ull(0x8000'0000'0000'0001);
-static char table[stdc_count_ones(0xFFu)];
-static unsigned size = sizeof table;
-int f(unsigned x) {
-    switch (x) {
-    case stdc_leading_zeros_ui(1): return 1;
-    case stdc_trailing_zeros(0x80u): return 2;
-    }
-    return 0;
-}
-"""
-        _, symbols, _ = _check(src)
-        values = {
-            name: symbols[name].attrs.initial_value.value
-            for name in ("width", "floor", "single", "ceil", "size")
-        }
-        self.assertEqual(values, {
-            "width": 10, "floor": 128, "single": 1, "ceil": 0,
-            "size": 8,
-        })
-
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestHeader(unittest.TestCase):

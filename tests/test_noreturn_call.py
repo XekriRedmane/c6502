@@ -8,12 +8,8 @@ from __future__ import annotations
 import shutil
 import unittest
 
-import c99_ast
-import tac_ast
 from compile import _resolved, _run_stage, type_check_program
 from parser import parse
-from passes.optimization.noreturn_call import noreturn_calls
-from passes.type_checking import FunAttr, Symbol, SymbolTable
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
@@ -46,55 +42,6 @@ class TestDeclarations(unittest.TestCase):
         )
         self.assertTrue(symbols["die"].attrs.noreturn)
         self.assertFalse(symbols["stop"].attrs.noreturn)
-
-
-def _var(name: str) -> tac_ast.Var:
-    return tac_ast.Var(name=name)
-
-
-class TestPass(unittest.TestCase):
-
-    def _symbols(self) -> SymbolTable:
-        symbols = SymbolTable()
-        void = c99_ast.FunType(params=[], ret=c99_ast.Void())
-        symbols["die"] = Symbol(
-            type=void, attrs=FunAttr(defined=False, is_global=True,
-                                     noreturn=True),
-        )
-        symbols["g"] = Symbol(
-            type=void, attrs=FunAttr(defined=False, is_global=True),
-        )
-        symbols["f"] = Symbol(
-            type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
-            attrs=FunAttr(defined=True, is_global=True),
-        )
-        return symbols
-
-    def test_code_after_the_call_goes(self) -> None:
-        one = tac_ast.Constant(const=tac_ast.ConstInt(value=1))
-        fn = tac_ast.Function(name="f", is_global=True, params=[], instructions=[
-            tac_ast.JumpIfTrue(condition=_var("x"), target=".ok"),
-            tac_ast.FunctionCall(name="die", args=[], dst=None),
-            tac_ast.FunctionCall(name="g", args=[], dst=None),
-            tac_ast.Copy(src=one, dst=_var("y")),
-            tac_ast.Label(name=".ok"),
-            tac_ast.Ret(val=one),
-        ])
-        out = noreturn_calls(fn, self._symbols()).instructions
-        # The `Ret` of an `int` function has no value, since it never
-        # runs, and `tail_call` then makes the call `JMP die`.
-        self.assertEqual(out, [
-            fn.instructions[0], fn.instructions[1],
-            tac_ast.Ret(val=None),
-            *fn.instructions[4:],
-        ])
-
-    def test_other_calls_left_alone(self) -> None:
-        fn = tac_ast.Function(name="f", is_global=True, params=[], instructions=[
-            tac_ast.FunctionCall(name="g", args=[], dst=None),
-            tac_ast.Ret(val=None),
-        ])
-        self.assertIs(noreturn_calls(fn, self._symbols()), fn)
 
 
 # `out` is volatile, since the optimizer drops a store that no path to
@@ -142,21 +89,6 @@ class TestRuns(unittest.TestCase):
 
 # The call graph and a call that abandons its caller
 # (passes/call_edges.py).
-
-
-def _tac(src: str):
-    """The unoptimized TAC of `src`, with its c99 AST and types."""
-    from c99_to_tac import translate_program
-    prog, symbols, types = type_check_program(_resolved(preprocess(src)))
-    return translate_program(prog, symbols, types), prog, types
-
-
-def _calls_in(tac, fn: str) -> list[tac_ast.FunctionCall]:
-    for tl in tac.top_level:
-        if isinstance(tl, tac_ast.Function) and tl.name == fn:
-            return [i for i in tl.instructions
-                    if isinstance(i, tac_ast.FunctionCall)]
-    raise KeyError(fn)
 
 
 def _codegen(src: str) -> str:
@@ -209,32 +141,6 @@ void command_loop(void) {
 @no_inlining()
 class TestCallGraph(unittest.TestCase):
 
-    def test_call_marked_noreturn(self) -> None:
-        tac, _, _ = _tac(_LOOP)
-        calls = {c.name: c.noreturn for c in _calls_in(tac, "get_key")}
-        self.assertEqual(calls, {"escape": False, "command_loop": True})
-
-    def test_abandons_only_without_arguments(self) -> None:
-        from passes.call_edges import abandons_caller
-        x = tac_ast.Var(name="x")
-        self.assertTrue(abandons_caller(tac_ast.FunctionCall(
-            name="r", args=[], noreturn=True)))
-        self.assertFalse(abandons_caller(tac_ast.FunctionCall(
-            name="r", args=[x], noreturn=True)))
-        self.assertFalse(abandons_caller(tac_ast.FunctionCall(
-            name="r", args=[], noreturn=False)))
-
-    def test_cycle_through_the_call_is_zp_abi(self) -> None:
-        from passes.abi_selection import ZpLayout, select_abi
-        from passes.zp_local_allocation import pool_eligible
-        tac, prog, types = _tac(_LOOP)
-        abi = select_abi(tac, prog, types)
-        for name in ("escape", "get_key", "command_loop"):
-            with self.subTest(name):
-                self.assertIsInstance(abi[name], ZpLayout)
-        self.assertEqual(
-            pool_eligible(tac, abi), {"escape", "get_key", "command_loop"},
-        )
 
     def test_code(self) -> None:
         # Before, the `register` parameter was an error, since
@@ -247,35 +153,6 @@ class TestCallGraph(unittest.TestCase):
         self.assertIn("BCC", get_key)
         self.assertNotIn("ROL", get_key)
 
-    def test_call_with_arguments_stays_an_edge(self) -> None:
-        # `r`'s argument is written while `f`'s frame is live, so the
-        # call is an ordinary call, and `f` and `r` are on a cycle.
-        from passes.abi_selection import SoftStackLayout, select_abi
-        tac, prog, types = _tac(
-            "unsigned char out;\n"
-            "void f(unsigned char x);\n"
-            "[[noreturn]] void r(unsigned char a) { for (;;) f(a); }\n"
-            "void f(unsigned char x) { if (x == 3) r(x); out = x; }\n"
-        )
-        abi = select_abi(tac, prog, types)
-        self.assertIsInstance(abi["f"], SoftStackLayout)
-        self.assertIsInstance(abi["r"], SoftStackLayout)
-
-    def test_recursion_through_ordinary_calls_stays_a_cycle(self) -> None:
-        # `g` can still return into `f`, which called it, so the
-        # noreturn call next to that doesn't take them off the cycle.
-        from passes.abi_selection import SoftStackLayout, select_abi
-        tac, prog, types = _tac(
-            "unsigned char n;\n"
-            "[[noreturn]] void reset(void);\n"
-            "void g(void);\n"
-            "void f(void) { if (n) g(); }\n"
-            "void g(void) { n--; if (n == 7) reset(); f(); }\n"
-            "void reset(void) { for (;;) f(); }\n"
-        )
-        abi = select_abi(tac, prog, types)
-        self.assertIsInstance(abi["f"], SoftStackLayout)
-        self.assertIsInstance(abi["g"], SoftStackLayout)
 
     def test_save_hardware_stack_on_the_call(self) -> None:
         from passes.recursion_saves import RecursionSaveError

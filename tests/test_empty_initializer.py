@@ -33,7 +33,7 @@ import c99_ast
 import tac_ast
 from c99_to_tac import translate_program
 from compile import main as compile_main
-from parser import ParserError, parse
+from parser import parse
 from passes.identifier_resolution import resolve_program
 from passes.type_checking import TypeCheckError, check_program
 from preprocessor import preprocess
@@ -317,20 +317,6 @@ class TestCode(unittest.TestCase):
                 self.assertIn(f"item {name} section=.bss", asm)
         self.assertRegex(asm, r"\n@\d+\.a:\n   DS\.B  20\n")
 
-    def test_small_automatic_struct_is_stores(self) -> None:
-        # 7 bytes: a 4-byte store, a 2-byte store, and a 1-byte store.
-        fn = _tac_function(
-            "struct t { int a; char b; long c; };"
-            "void use(struct t *p);"
-            "void f(void) { struct t v = {}; use(&v); }", "f",
-        )
-        stores = [i for i in fn.instructions if isinstance(i, tac_ast.Store)]
-        self.assertEqual(
-            [type(s.src.const).__name__ for s in stores],
-            ["ConstULong", "ConstUInt", "ConstUChar"],
-        )
-        self.assertFalse(any(isinstance(i, tac_ast.Label)
-                             for i in fn.instructions))
 
     def test_large_automatic_struct_is_a_loop(self) -> None:
         src = (
@@ -355,33 +341,6 @@ class TestCode(unittest.TestCase):
             "   STA   __local_f__v,Y\n   BNE   .clear@0\n",
             asm,
         )
-
-    def test_zero_constants_join_the_run(self) -> None:
-        # `{0}` clears the object the way `{}` does: the explicit 0
-        # and the members after it are one run.
-        src = (
-            "struct t { int a[10]; };"
-            "void use(struct t *p);"
-            "void f(void) { struct t v = {{0}}; use(&v); }"
-            "void g(void) { struct t v = {}; use(&v); }"
-        )
-        f = _tac_function(src, "f")
-        g = _tac_function(src, "g")
-        self.assertEqual(
-            [type(i).__name__ for i in f.instructions],
-            [type(i).__name__ for i in g.instructions],
-        )
-
-    def test_partial_initializer_with_long_tail(self) -> None:
-        # The stores for the explicit items, then one loop for the
-        # 36 bytes after them.
-        fn = _tac_function(
-            "void use(int *p);"
-            "void f(int x) { int a[20] = {x, 2}; use(a); }", "f",
-        )
-        kinds = [type(i).__name__ for i in fn.instructions]
-        self.assertEqual(kinds.count("Label"), 1)
-        self.assertEqual(kinds.count("Store"), 3)
 
 
 # Bytes of `struct s`: a (2), b (3), c (4).

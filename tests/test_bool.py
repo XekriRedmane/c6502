@@ -29,8 +29,6 @@ import shutil
 import unittest
 
 import c99_ast
-import tac_ast
-from c99_to_tac import translate_program
 from parser import ParserError, parse
 from passes.identifier_resolution import resolve_program
 from passes.type_checking import TypeCheckError, check_program
@@ -119,67 +117,9 @@ class TestTypeCheck(unittest.TestCase):
         )
 
 
-class TestErasure(unittest.TestCase):
-    def test_no_bool_reaches_the_back_end(self) -> None:
-        src = (
-            "struct s { bool flag; bool *p; };"
-            "bool g[3]; struct s gs;"
-            "bool f(bool (*fp)(bool), bool b) { bool t = !b;"
-            " return fp(t); }"
-        )
-        prog, symbols, types = _check(src)
-        translate_program(prog, symbols, types)
-
-        def has_bool(t) -> bool:
-            return "Bool()" in repr(t)
-
-        for name, sym in symbols.items():
-            self.assertFalse(has_bool(sym.type), name)
-        for tag, layout in types.items():
-            for m in layout.members:
-                self.assertFalse(has_bool(m.type), (tag, m.name))
-        for d in prog.declaration:
-            decl = getattr(d, "function_decl", None) or getattr(
-                d, "var_decl", None,
-            )
-            if decl is not None:
-                self.assertFalse(has_bool(decl.data_type), decl.name)
-
-
-def _tac_instrs(src: str, fn: str) -> list:
-    prog, symbols, types = _check(src)
-    tac = translate_program(prog, symbols, types)
-    for tl in tac.top_level:
-        if isinstance(tl, tac_ast.Function) and tl.name == fn:
-            return tl.instructions
-    raise AssertionError(fn)
-
-
 @no_inlining()
 class TestLowering(unittest.TestCase):
-    def test_zero_or_one_values_skip_the_comparison(self) -> None:
-        for body in (
-            "return a < b;", "return !a;", "return a && b;",
-            "return c;", "return (a < b) & a;", "return a < b ? 1 : 0;",
-            "return (int)c;",
-        ):
-            with self.subTest(body=body):
-                instrs = _tac_instrs(
-                    f"bool f(int a, int b, bool c) {{ {body} }}", "f",
-                )
-                self.assertFalse(any(
-                    isinstance(i, tac_ast.Binary)
-                    and isinstance(i.op, tac_ast.NotEqual)
-                    for i in instrs
-                ), instrs)
 
-    def test_other_values_compare_with_zero(self) -> None:
-        instrs = _tac_instrs("bool f(int a) { return a & 2; }", "f")
-        self.assertTrue(any(
-            isinstance(i, tac_ast.Binary)
-            and isinstance(i.op, tac_ast.NotEqual)
-            for i in instrs
-        ))
 
     @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
     def test_conversion_is_a_zero_test(self) -> None:

@@ -12,3 +12,5 @@
 - Windows Python reads `/c/w/...` as a path on the current drive's root and fails. Give Python scripts `C:/w/...`.
 - `uv run python - <<'EOF'` (Python on stdin, quoted delimiter) passes the guard, and a single `\n` in its string literals reaches Python intact, but `\\` arrives as `\`, so `"\\n"` became a newline in a file. Keep edit scripts with doubled backslashes in files written by the Write tool.
 - `bc` isn't installed in Git Bash. Time a command with `date +%s%3N` and `$(( ))`.
+- `git commit` takes everything staged, including a `git rm` made long before for a later commit. G7's first commit silently carried a test module's deletion. Run `git diff --cached --name-status` before every commit, and stage a removal only when its commit is next.
+- A cleanup glob like `rm -rf /c/w/g7/rec_*` also matches a script named `rec_all.sh` beside the directories it's meant for. Give scripts names outside the glob.

@@ -37,9 +37,11 @@ Every harness class is `@unittest.skipUnless(shutil.which("pcpp"),
 categories:
 
 - **Per-pass / per-module unit tests** (e.g. `test_parser.py`,
-  `test_type_checking.py`, `test_redundant_load.py`,
-  `test_replace_pseudoregisters.py`) — focused tests against the
-  module of the same name.
+  `test_type_checking.py`, `test_redundant_load.py`) — focused tests
+  against the module of the same name. Step 8 of the C++ port moves
+  the tests that call a pass on IR they build to doctest cases in
+  cpp/tests (docs/cpp_port.md, "The tests"), so many of these modules
+  hold only their end-to-end tests, and some are gone.
 - **Chapter end-to-end tests** (`test_chapter_<N>.py` with the
   matching `chapter_<N>/` directory of C sources) — drive each
   chapter end-to-end through `-S`.

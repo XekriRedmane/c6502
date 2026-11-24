@@ -3288,6 +3288,59 @@ declare for it: `match_transfer_chain` and `rewrite_redundant_transfers`
 (passes/optimization_asm/regalloc.h), and `unop_atoms` and `shift_loop`
 (tac_to_asm_translator.h).
 
+Group G7 moved the tests of the TAC passes, `c99_to_tac`, and the TAC
+interpreter (docs/cpp_port.md, "G7's modules"), for which the recorder
+gained these kinds of record.
+
+- A call of a pass of the TAC optimizer's driver is a `tac_<name>`
+  record, as tools/capture_passes.py records the driver's calls, with
+  the function, the symbols the call read, and the SSA names. The
+  recorder wraps the `run` of each pass class, and takes a call as the
+  test's when only frames of passes/optimization/ come between the test
+  and the `run`, so that an entry function such as `constant_fold` is
+  recorded as the run it makes. A module-level function that does the
+  pass's work itself (`_tac_functions`) is recorded as the run of its
+  module's driver pass that gives the same function, symbols, and SSA
+  names on copies of the function's inputs, and a call that no pass
+  reproduces is noted as unrecordable. A plain dict of symbols, which
+  some tests give, is recorded as a `SymbolTable` over it.
+- A `RuleSet` of jump-fold rules that the driver doesn't run is a
+  `rules` record, which `check_rules_case` (`tests/tac_rules_case.h`)
+  runs with the rules by their `JumpFoldRule`.
+- The stage calls of step 5, `to_ssa` and `from_ssa`, and the front
+  end's passes from `parse` to `type_checking` are recorded as their
+  captures are, and `check_record` runs them. The preprocessor isn't
+  recorded, since a test calls it on a source alone, without the
+  arguments its stage call takes. `translate_program` of c99_to_tac.py
+  called without tables type-checks the program itself, and is recorded
+  as that `type_checking` call and the `c99_to_tac` call with its tables
+  (`_with_defaults`).
+- The calls that a test makes of one of c99_to_tac.py's `Translator`s
+  are one `c99_session` record: for each call, the dump of its argument,
+  of the instructions in its list before and after, and of its result.
+  `check_c99_session` (`tests/c99_session_case.h`) replays them on one
+  C++ `Translator` made with the recorded symbol table, so that the
+  temporaries and labels are numbered on from one call to the next, and
+  checks the symbol table after the last. Where Python's message for a
+  node that an earlier pass should have rejected ends with the node's
+  repr, the case compares the message before it. The calls of one of
+  tac_to_asm.py's `Translator`s made with a symbol table are an
+  `asm_session` record, which `check_translator_session`
+  (`tests/translator_case.h`) replays on one C++ `Translator`.
+
+`apply_row_address_tables` takes an optional `fixed_saving`, the bytes
+each lookup saves in place of the estimate, and its stage call the
+keyword `saving`, which the recorder writes when a test has replaced
+row_address_tables.py's `_saving`. The stage calls `optimize_tac` and
+`dispatch_const_pointer_arrays` run without a symbol table when the
+record has none, as a unit test's call without one does in Python.
+
+The tests of functions that no record covers are ported by hand, one
+case per Python test: tests/test_pool.cpp, test_value_range.cpp,
+test_tac_unit_helpers.cpp (the inliner's `inline_cost` and the register
+effects of a call to a routine declared `preserves_x`), and two cases
+of `cfg_to_function` in test_tac_cfg.cpp.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -3588,3 +3641,10 @@ declare for it: `match_transfer_chain` and `rewrite_redundant_transfers`
   `Translator` (`tests/translator_case.h`) and 114 cases written by hand
   ("The unit tests' recorded calls"), and G6 is done. The C++ tests
   (4,334 cases) pass with MSVC 19.36 and GCC 12.2.
+- 24 Nov 2026: group G7 of step 8: 914 of the Python tests of the TAC
+  passes, `c99_to_tac`, and the TAC interpreter are removed, and the
+  calls they made are doctest cases, 773 of them new ones recorded with
+  tools/record_test_calls.py's kinds for the TAC side, and 22 written
+  by hand ("The unit tests' recorded calls"). `apply_row_address_tables`
+  takes a fixed saving. The C++ tests (5,129 cases) pass with MSVC 19.36
+  and GCC 12.2.

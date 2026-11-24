@@ -40,20 +40,10 @@ import unittest
 
 import c99_ast
 import tac_ast
-from passes.optimization.recognize_indirect_indexed import (
-    recognize_indirect_indexed,
-)
 from passes.type_checking import (
     LocalAttr, Symbol, SymbolTable,
 )
 from sim.harness import build_sim
-
-
-def _fn(instrs: list[tac_ast.Type_instruction]) -> tac_ast.Function:
-    return tac_ast.Function(
-        name="f", is_global=True, params=[],
-        instructions=list(instrs),
-    )
 
 
 def _var(name: str) -> tac_ast.Var:
@@ -75,44 +65,11 @@ def _uint_local() -> Symbol:
     return Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
 
 
-def _int_local() -> Symbol:
-    return Symbol(type=c99_ast.Int(), attrs=LocalAttr())
-
-
 def _ptr_local() -> Symbol:
     return Symbol(
         type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
         attrs=LocalAttr(),
     )
-
-
-def _canonical_load() -> list[tac_ast.Type_instruction]:
-    """The three-instruction template for an indirect-indexed
-    LOAD: `ZeroExtend; Binary(Add, ptr_var, %ext); Load`."""
-    return [
-        tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-        tac_ast.Binary(
-            op=tac_ast.Add(),
-            src1=_var("p"),
-            src2=_var("%ext"),
-            dst=_var("%addr"),
-        ),
-        tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-    ]
-
-
-def _canonical_store() -> list[tac_ast.Type_instruction]:
-    """Mirror of `_canonical_load` for STORE."""
-    return [
-        tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-        tac_ast.Binary(
-            op=tac_ast.Add(),
-            src1=_var("p"),
-            src2=_var("%ext"),
-            dst=_var("%addr"),
-        ),
-        tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr")),
-    ]
 
 
 def _canonical_symbols() -> SymbolTable:
@@ -124,147 +81,6 @@ def _canonical_symbols() -> SymbolTable:
         "%ext": _uint_local(),
         "%addr": _ptr_local(),
     })
-
-
-class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
-    """Unit tests for the load shape."""
-
-    def test_canonical_load_folds(self) -> None:
-        instrs = _canonical_load()
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(len(out.instructions), 1)
-        ins = out.instructions[0]
-        self.assertIsInstance(ins, tac_ast.IndirectIndexedLoad)
-        self.assertEqual(ins.ptr, _var("p"))
-        self.assertEqual(ins.index, _var("y"))
-        self.assertEqual(ins.dst, _var("b"))
-
-    def test_commutative_arrangement_folds(self) -> None:
-        # `ptr` on the RHS of the Binary, %ext on the LHS.
-        instrs = [
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("%ext"),
-                src2=_var("p"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(len(out.instructions), 1)
-        self.assertIsInstance(
-            out.instructions[0], tac_ast.IndirectIndexedLoad,
-        )
-
-    def test_no_symbols_is_noop(self) -> None:
-        instrs = _canonical_load()
-        out = recognize_indirect_indexed(_fn(instrs), symbols=None)
-        self.assertEqual(out.instructions, instrs)
-
-    def test_multi_use_addr_does_not_fold(self) -> None:
-        instrs = _canonical_load() + [
-            tac_ast.Copy(src=_var("%addr"), dst=_var("%other")),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(out.instructions, instrs)
-
-    def test_multi_use_ext_folds_and_keeps_ext(self) -> None:
-        # The load folds, and the extend stays for its other use.
-        instrs = _canonical_load() + [
-            tac_ast.Copy(src=_var("%ext"), dst=_var("%other")),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(out.instructions[0], instrs[0])
-        self.assertTrue(any(
-            isinstance(i, tac_ast.IndirectIndexedLoad)
-            for i in out.instructions
-        ))
-        self.assertEqual(out.instructions[-1], instrs[-1])
-
-    def test_ext_through_sign_changing_copy_folds(self) -> None:
-        # An `int` to `unsigned` cast is a Copy that copy propagation
-        # keeps, here between the extend and the subscript's Add.
-        instrs = [
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%e0")),
-            tac_ast.Copy(src=_var("%e0"), dst=_var("%ext")),
-        ] + _canonical_load()[1:]
-        symbols = _canonical_symbols()
-        symbols["%e0"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        self.assertTrue(any(
-            isinstance(i, tac_ast.IndirectIndexedLoad)
-            for i in out.instructions
-        ))
-
-    def test_constant_addend_does_not_fold(self) -> None:
-        # The "ptr" side is a Constant — that's the
-        # IndexedConstLoad recognizer's territory, not ours.
-        instrs = [
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=tac_ast.Constant(
-                    const=tac_ast.ConstUInt(value=0x2000),
-                ),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        # Doesn't match: the indirect-indexed pass requires a Var
-        # ptr.
-        self.assertEqual(out.instructions, instrs)
-
-    def test_sign_extend_def_does_not_fold(self) -> None:
-        # Y is unsigned, so `LDA (p),Y` with y = -1 reads p + 255,
-        # where `p[y]` reads p - 1. The fold used to accept a
-        # SignExtend on the grounds that a negative index is
-        # undefined, which it isn't for a pointer into the middle of
-        # an object.
-        instrs = [
-            tac_ast.SignExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("p"),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(out.instructions, instrs)
-
-    def test_non_uchar_index_does_not_fold(self) -> None:
-        # `y` is `int`, not uchar. The ZeroExtend's high-byte-
-        # zero invariant doesn't apply to a wider source.
-        instrs = _canonical_load()
-        symbols = _canonical_symbols()
-        symbols["y"] = _int_local()
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        self.assertEqual(out.instructions, instrs)
-
-    def test_uint_dst_does_not_fold(self) -> None:
-        # Multi-byte dst: would need multiple (DPTR),Y reads with
-        # carry-safe Y advancement. Deferred.
-        instrs = _canonical_load()
-        symbols = _canonical_symbols()
-        symbols["b"] = _uint_local()
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        self.assertEqual(out.instructions, instrs)
 
 
 class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
@@ -284,54 +100,6 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
             ),
         ]
 
-    def test_offset_load_folds(self) -> None:
-        for k in (0, 10, 255):
-            with self.subTest(k=k):
-                out = recognize_indirect_indexed(
-                    _fn(self._load(k)), symbols=_canonical_symbols(),
-                )
-                self.assertEqual(out.instructions, [
-                    tac_ast.IndirectIndexedLoad(
-                        ptr=_var("p"),
-                        index=tac_ast.Constant(
-                            const=tac_ast.ConstUChar(value=k),
-                        ),
-                        dst=_var("b"), is_volatile=False,
-                    ),
-                ])
-
-    def test_offset_outside_a_byte_does_not_fold(self) -> None:
-        # Y holds 0..255, so 256 and negative offsets keep the Add.
-        for k in (256, -1):
-            with self.subTest(k=k):
-                instrs = self._load(k)
-                out = recognize_indirect_indexed(
-                    _fn(instrs), symbols=_canonical_symbols(),
-                )
-                self.assertEqual(out.instructions, instrs)
-
-    def test_offset_store_folds(self) -> None:
-        instrs = [
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=tac_ast.Constant(const=tac_ast.ConstInt(value=11)),
-                src2=_var("p"), dst=_var("%addr"),
-            ),
-            tac_ast.Store(
-                src=_var("value"), dst_ptr=_var("%addr"),
-                is_volatile=False,
-            ),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(out.instructions, [
-            tac_ast.IndirectIndexedStore(
-                ptr=_var("p"),
-                index=tac_ast.Constant(const=tac_ast.ConstUChar(value=11)),
-                src=_var("value"), is_volatile=False,
-            ),
-        ])
 
     def _increment(self, ptr: str, between=()) -> list[tac_ast.Type_instruction]:
         """`ptr[1]++`: one address read by a Load and a Store, with
@@ -355,11 +123,11 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
         ]
 
     def _symbols_with_global(self) -> SymbolTable:
-        from passes.type_checking import StaticAttr
+        from passes.type_checking import NoInitializer, StaticAttr
         table = _canonical_symbols()
         table["gp"] = Symbol(
             type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
-            attrs=StaticAttr(initial_value=None, is_global=True),
+            attrs=StaticAttr(initial_value=NoInitializer(), is_global=True),
         )
         return table
 
@@ -369,46 +137,6 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
                 tac_ast.IndirectIndexedStore),
         )]
 
-    def test_read_and_write_of_one_offset_fold(self) -> None:
-        # Both accesses fold. The Add is left for the asm byte DCE,
-        # since nothing reads it once they have.
-        for ptr in ("p", "gp"):
-            with self.subTest(ptr=ptr):
-                out = recognize_indirect_indexed(
-                    _fn(self._increment(ptr)),
-                    symbols=self._symbols_with_global(),
-                )
-                one = tac_ast.Constant(const=tac_ast.ConstUChar(value=1))
-                self.assertEqual(self._accesses(out.instructions), [
-                    tac_ast.IndirectIndexedLoad(
-                        ptr=_var(ptr), index=one, dst=_var("b"),
-                        is_volatile=False,
-                    ),
-                    tac_ast.IndirectIndexedStore(
-                        ptr=_var(ptr), index=one, src=_var("value"),
-                        is_volatile=False,
-                    ),
-                ])
-
-    def test_other_reader_of_offset_does_not_fold(self) -> None:
-        instrs = self._increment("p", between=[
-            tac_ast.Copy(src=_var("%addr"), dst=_var("q")),
-        ])
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=self._symbols_with_global(),
-        )
-        self.assertEqual(out.instructions, instrs)
-
-    def test_global_pointer_changed_does_not_fold(self) -> None:
-        # A call between the accesses may change `gp`, so the Store's
-        # address isn't `gp + 1` read again, and neither access folds.
-        instrs = self._increment("gp", between=[
-            tac_ast.FunctionCall(name="h", args=[], dst=None),
-        ])
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=self._symbols_with_global(),
-        )
-        self.assertEqual(out.instructions, instrs)
 
     def test_offset_read_and_write_end_to_end(self) -> None:
         src = (
@@ -461,27 +189,6 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
                     out.memory[sim.symbols["data"] + 7], 0x100 - 122,
                 )
 
-    def test_wide_offset_load_folds(self) -> None:
-        # A 2-byte value at offset k folds when Y reaches its last byte,
-        # k + 1 <= 255. Its bytes lower as `LDY #k` and `LDY #k+1`.
-        for k, folds in ((0, True), (13, True), (254, True), (255, False)):
-            with self.subTest(k=k):
-                symbols = _canonical_symbols()
-                symbols["b"] = _uint_local()
-                instrs = self._load(k)
-                out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-                if not folds:
-                    self.assertEqual(out.instructions, instrs)
-                    continue
-                self.assertEqual(out.instructions, [
-                    tac_ast.IndirectIndexedLoad(
-                        ptr=_var("p"),
-                        index=tac_ast.Constant(
-                            const=tac_ast.ConstUChar(value=k),
-                        ),
-                        dst=_var("b"), is_volatile=False,
-                    ),
-                ])
 
     def test_wide_member_end_to_end(self) -> None:
         # A 2-byte member read, written, and updated in place through a
@@ -604,57 +311,6 @@ class TestSharedByteIndex(unittest.TestCase):
         table["%far"] = _ptr_local()
         return table
 
-    def test_read_and_write_fold(self) -> None:
-        out = recognize_indirect_indexed(
-            _fn(self._instrs()), symbols=self._symbols(),
-        )
-        self.assertIn(
-            tac_ast.IndirectIndexedLoad(
-                ptr=_var("p"), index=_var("y"), dst=_var("b"),
-                is_volatile=False,
-            ),
-            out.instructions,
-        )
-        self.assertIn(
-            tac_ast.IndirectIndexedStore(
-                ptr=_var("p"), index=_var("y"), src=_var("value"),
-                is_volatile=False,
-            ),
-            out.instructions,
-        )
-
-    def test_far_offset_reads_through_its_own_pointer(self) -> None:
-        out = recognize_indirect_indexed(
-            _fn(self._instrs(offset=0x2000)), symbols=self._symbols(),
-        )
-        loads = [i for i in out.instructions
-                 if isinstance(i, tac_ast.IndirectIndexedLoad)]
-        self.assertEqual(len(loads), 2)
-        far = loads[1]
-        self.assertEqual(far.index, _var("y"))
-        add = next(i for i in out.instructions
-                   if isinstance(i, tac_ast.Binary) and i.dst == far.ptr)
-        self.assertEqual(add.src1, _var("p"))
-        self.assertEqual(add.src2.const.value, 0x2000)
-
-    def test_small_offset_keeps_the_sum(self) -> None:
-        # `(q),Y` with Y = 1 reads `q + 1` without a second pointer,
-        # so `q` stays and nothing reads `(p),Y` with Y = `i`.
-        out = recognize_indirect_indexed(
-            _fn(self._instrs(offset=1)), symbols=self._symbols(),
-        )
-        loads = [i for i in out.instructions
-                 if isinstance(i, tac_ast.IndirectIndexedLoad)]
-        self.assertEqual(loads[-1].ptr, _var("%addr"))
-
-    def test_other_reader_does_not_fold(self) -> None:
-        instrs = self._instrs() + [
-            tac_ast.Copy(src=_var("%addr"), dst=_var("%other")),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=self._symbols(),
-        )
-        self.assertEqual(out.instructions, instrs)
 
     _SRC = (
         "#include <stdint.h>\n"
@@ -708,188 +364,6 @@ class TestSharedByteIndex(unittest.TestCase):
                 )
                 self.assertFalse(out.timed_out)
                 self.assertEqual(out.return_int(), 0x1F00 + 0xA1)
-
-
-class TestRecognizeIndirectIndexedDefersToIndexedStore(unittest.TestCase):
-    """The recognizer must defer to `recognize_indexed_store` /
-    `recognize_indexed_load` when the pointer-side Var transitively
-    holds a Constant — those passes lower the access to a cheaper
-    absolute,X form (`STA $XXXX,X`) once constant propagation
-    finishes. Firing prematurely on the Var locks in the indirect-
-    (zp),Y form, which is strictly worse for compile-time-known
-    addresses.
-
-    Regression test: prior to the fix in 9137831, the recognizer
-    fired inside the TAC fixed-point loop, preempting
-    `recognize_indexed_store` on chains that would have folded to
-    a Constant on the next iteration. The result on
-    paint_hud_strip_p1 was a 4-5x output blowup."""
-
-    def test_copy_constant_ptr_defers_load(self) -> None:
-        # `Copy(Const, %ptr); ZeroExtend(uchar, %ext); Binary(Add,
-        # %ptr, %ext, %addr); Load(%addr, dst)` — %ptr transitively
-        # IS a constant; defer.
-        instrs = [
-            tac_ast.Copy(
-                src=tac_ast.Constant(
-                    const=tac_ast.ConstUInt(value=0x4000),
-                ),
-                dst=_var("%ptr"),
-            ),
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("%ptr"),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        symbols = _table({
-            "y": _uchar_local(),
-            "b": _uchar_local(),
-            "%ptr": _ptr_local(),
-            "%ext": _uint_local(),
-            "%addr": _ptr_local(),
-        })
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        # No IndirectIndexedLoad produced — instructions unchanged.
-        self.assertEqual(out.instructions, instrs)
-
-    def test_copy_constant_ptr_defers_store(self) -> None:
-        instrs = [
-            tac_ast.Copy(
-                src=tac_ast.Constant(
-                    const=tac_ast.ConstUInt(value=0x4000),
-                ),
-                dst=_var("%ptr"),
-            ),
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("%ptr"),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr")),
-        ]
-        symbols = _table({
-            "y": _uchar_local(),
-            "value": _uchar_local(),
-            "%ptr": _ptr_local(),
-            "%ext": _uint_local(),
-            "%addr": _ptr_local(),
-        })
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        self.assertEqual(out.instructions, instrs)
-
-    def test_copy_chain_to_constant_defers(self) -> None:
-        # %p1 = Copy(Const); %p2 = Copy(%p1); Binary(%p2, ...);
-        # the chain through Copy → Copy → Constant should defer.
-        instrs = [
-            tac_ast.Copy(
-                src=tac_ast.Constant(
-                    const=tac_ast.ConstUInt(value=0x4000),
-                ),
-                dst=_var("%p1"),
-            ),
-            tac_ast.Copy(src=_var("%p1"), dst=_var("%p2")),
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("%p2"),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        symbols = _table({
-            "y": _uchar_local(),
-            "b": _uchar_local(),
-            "%p1": _ptr_local(),
-            "%p2": _ptr_local(),
-            "%ext": _uint_local(),
-            "%addr": _ptr_local(),
-        })
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        self.assertEqual(out.instructions, instrs)
-
-    def test_var_with_no_copy_def_still_fires(self) -> None:
-        # A genuine runtime pointer (e.g., a zp_abi param) has no
-        # Copy(Constant) def — the recognizer should still fire.
-        # Here we model it by simply NOT providing a def for `p`.
-        instrs = [
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("p"),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        symbols = _table({
-            "y": _uchar_local(),
-            "b": _uchar_local(),
-            "p": _ptr_local(),
-            "%ext": _uint_local(),
-            "%addr": _ptr_local(),
-        })
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        # Fires — IndirectIndexedLoad replaces the 3-instruction chain.
-        self.assertEqual(len(out.instructions), 1)
-        self.assertIsInstance(
-            out.instructions[0], tac_ast.IndirectIndexedLoad,
-        )
-
-
-class TestRecognizeIndirectIndexedStoreUnit(unittest.TestCase):
-    """Unit tests for the store shape."""
-
-    def test_canonical_store_folds(self) -> None:
-        instrs = _canonical_store()
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(len(out.instructions), 1)
-        ins = out.instructions[0]
-        self.assertIsInstance(ins, tac_ast.IndirectIndexedStore)
-        self.assertEqual(ins.ptr, _var("p"))
-        self.assertEqual(ins.index, _var("y"))
-        self.assertEqual(ins.src, _var("value"))
-
-    def test_constant_byte_source_folds(self) -> None:
-        # `*p_indexed = const_byte` — store of a 1-byte typed
-        # Constant.
-        instrs = [
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=_var("p"),
-                src2=_var("%ext"),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Store(
-                src=tac_ast.Constant(
-                    const=tac_ast.ConstUChar(value=0x42),
-                ),
-                dst_ptr=_var("%addr"),
-            ),
-        ]
-        out = recognize_indirect_indexed(
-            _fn(instrs), symbols=_canonical_symbols(),
-        )
-        self.assertEqual(len(out.instructions), 1)
-        self.assertIsInstance(
-            out.instructions[0], tac_ast.IndirectIndexedStore,
-        )
-
-    def test_uint_src_does_not_fold(self) -> None:
-        instrs = _canonical_store()
-        symbols = _canonical_symbols()
-        symbols["value"] = _uint_local()
-        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
-        self.assertEqual(out.instructions, instrs)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

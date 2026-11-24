@@ -38,8 +38,6 @@ import shutil
 import unittest
 
 import c99_ast
-import tac_ast
-from c99_to_tac import translate_program
 from parser import ParserError, parse
 from compile import _resolved
 from passes.type_checking import TypeCheckError, check_program
@@ -356,72 +354,6 @@ class TestConstantExpressions(unittest.TestCase):
         self.assertIn("int yes;", out)
         prog = parse(out)
         self.assertEqual(prog.declaration[-1].var_decl.data_type, _bi(64))
-
-
-def _tac(src: str):
-    prog, symbols, types = _check(src)
-    return translate_program(prog, symbols, types), symbols
-
-
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
-class TestTranslation(unittest.TestCase):
-    def _ops(self, src: str) -> list[str]:
-        tac, _ = _tac(src)
-        fn = next(t for t in tac.top_level if isinstance(t, tac_ast.Function))
-        return [type(i.op).__name__ for i in fn.instructions
-                if isinstance(i, tac_ast.Binary)]
-
-    def test_padding_restored_after_add(self) -> None:
-        self.assertEqual(
-            self._ops("unsigned _BitInt(12) f(unsigned _BitInt(12) a, "
-                      "unsigned _BitInt(12) b) { return a + b; }"),
-            ["Add", "BitwiseAnd"],
-        )
-        self.assertEqual(
-            self._ops("_BitInt(12) f(_BitInt(12) a, _BitInt(12) b) "
-                      "{ return a + b; }"),
-            ["Add", "BitwiseAnd", "BitwiseXor", "Subtract"],
-        )
-
-    def test_no_padding_no_restore(self) -> None:
-        for t in ["unsigned _BitInt(24)", "_BitInt(16)", "_BitInt(8)"]:
-            with self.subTest(t=t):
-                self.assertEqual(
-                    self._ops(f"{t} f({t} a, {t} b) {{ return a + b; }}"),
-                    ["Add"],
-                )
-
-    def test_operations_that_keep_padding(self) -> None:
-        for op in ["&", "|", "^", "%", ">>"]:
-            with self.subTest(op=op):
-                self.assertEqual(
-                    len(self._ops(
-                        f"_BitInt(12) f(_BitInt(12) a, _BitInt(12) b) "
-                        f"{{ return a {op} b; }}")),
-                    1,
-                )
-
-    def test_back_end_sees_whole_bytes(self) -> None:
-        tac, symbols = _tac(
-            "_BitInt(5) a; unsigned _BitInt(12) b; _BitInt(20) c;\n"
-            "unsigned _BitInt(33) d; _BitInt(64) e;\n"
-            "struct s { _BitInt(9) m; } t;\n"
-        )
-        self.assertEqual(symbols["a"].type, c99_ast.SChar())
-        self.assertEqual(symbols["b"].type, c99_ast.UInt())
-        self.assertEqual(symbols["c"].type, _bi(24))
-        self.assertEqual(symbols["d"].type, _bi(40, False))
-        self.assertEqual(symbols["e"].type, c99_ast.LongLong())
-
-    def test_static_init_bytes(self) -> None:
-        tac, _ = _tac("unsigned _BitInt(20) x = 0x12345; _BitInt(5) y = -1;")
-        inits = {t.name: t.init for t in tac.top_level
-                 if isinstance(t, tac_ast.StaticVariable)}
-        self.assertEqual(inits["x"], [
-            tac_ast.UCharInit(value=0x45), tac_ast.UCharInit(value=0x23),
-            tac_ast.UCharInit(value=0x01),
-        ])
-        self.assertEqual(inits["y"], [tac_ast.CharInit(value=0xFF)])
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

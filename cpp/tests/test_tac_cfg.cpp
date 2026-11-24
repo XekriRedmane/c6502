@@ -58,3 +58,45 @@ TEST_CASE("build_cfg rejects a jump to a label no block starts with") {
       "])\n");
   CHECK_THROWS_AS(cfg::build_cfg(fn), c6502::InternalError);
 }
+
+// tests/test_cfg.py's two tests of `cfg_to_function`, ported by hand in
+// step 8 (group G7), since the recorded cases of tac_cfg_case.h check
+// only the graph that `build_cfg` gives for their functions.
+TEST_CASE("cfg_to_function: TestCFGToFunction::test_round_trip") {
+  // Building a CFG and flattening it at once gives the same function,
+  // with its name, parameters, and linkage.
+  const char* text =
+      "Function(\"foo\" true [\"p\"] [\n"
+      "  Copy(Constant(ConstInt(1)) Var(\"x\"))\n"
+      "  JumpIfTrue(Var(\"c\") \"end\")\n"
+      "  Copy(Constant(ConstInt(2)) Var(\"y\"))\n"
+      "  Label(\"end\")\n"
+      "  Ret(Constant(ConstInt(0)))\n"
+      "])\n";
+  const auto fn = c6502::asdl::load<tac::Function>(text);
+  CHECK(c6502::asdl::dump(cfg::cfg_to_function(fn, cfg::build_cfg(fn))) == text);
+}
+
+TEST_CASE("cfg_to_function: TestCFGToFunction::test_dropping_block_removes_its_instructions") {
+  const auto fn = c6502::asdl::load<tac::Function>(
+      "Function(\"main\" true [] [\n"
+      "  Copy(Constant(ConstInt(1)) Var(\"x\"))\n"
+      "  Jump(\"L1\")\n"
+      "  Copy(Constant(ConstInt(2)) Var(\"y\"))\n"
+      "  Label(\"L1\")\n"
+      "  Ret(Constant(ConstInt(0)))\n"
+      "])\n");
+  cfg::Cfg graph = cfg::build_cfg(fn);
+  // The second block is the dead one, the lone Copy between the Jump
+  // and the labeled block.
+  const int dead = graph.block_order.at(1);
+  graph.block_order.erase(graph.block_order.begin() + 1);
+  graph.blocks.erase(dead);
+  CHECK(c6502::asdl::dump(cfg::cfg_to_function(fn, graph)) ==
+        "Function(\"main\" true [] [\n"
+        "  Copy(Constant(ConstInt(1)) Var(\"x\"))\n"
+        "  Jump(\"L1\")\n"
+        "  Label(\"L1\")\n"
+        "  Ret(Constant(ConstInt(0)))\n"
+        "])\n");
+}

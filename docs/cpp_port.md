@@ -2117,6 +2117,190 @@ test_tac_to_asm.py's other 61 tests of the `Translator`,
 and test_replace_pseudoregisters.py's 9 of `TestColoringIntegration`,
 whose calls the cases of test_frames_stage_calls.cpp already check.
 
+#### G7's modules
+
+The survey's classification, run again on 24 Nov 2026 on the suite as
+it stood after G6 (3,583 tests), gave G7 885 tests in 70 modules: the
+(b) tests whose direct calls reach a TAC pass, `c99_to_tac`, the
+inliner, or the TAC optimizer, on TAC they build or after the front
+end, and the tests of the classes that run the TAC interpreter through
+`tests.test_sim_chapters._run_program`. With test_tac_sim.py's 57
+tests of the interpreter and the 61 tests of tac_to_asm.py's
+`Translator` with a symbol table that G6 left, which G7 took, the group
+had 1,003 tests. G6's method was applied to each: every test ran under
+tools/record_test_calls.py, and a test was removed when its recorded
+calls were all its direct calls into the compiler and each of them had
+a C++ case that passed in the MSVC and GCC builds.
+
+The recorder gained these kinds of record (cpp/README.md, "The unit
+tests' recorded calls").
+
+- A call of a pass of the TAC optimizer's driver is recorded as
+  tools/capture_passes.py records the driver's call of it, `tac_<name>`
+  with the function, the symbols the call read, and the SSA names, and
+  `check_record` runs it as `check-captures` does. The wrapper is on the
+  `run` of each pass class, and a call counts as the test's when the
+  frames between the test and the `run` are those of
+  passes/optimization/, so an entry function such as `constant_fold`
+  is recorded as the run it makes. A module-level function that does
+  the pass's work itself, as `eliminate_dead_stores(fn, ssa_dsts=...)`
+  does, is recorded as the run of its module's driver pass that gives
+  the same function, symbols, and SSA names on copies of its inputs.
+  A test that gives a pass a plain dict of symbols is recorded with a
+  `SymbolTable` over the same dict.
+- A `RuleSet` of jump-fold rules that the driver doesn't run, as
+  `fold_cmp_zero_jump` makes, is recorded with its rules, and
+  tests/tac_rules_case.h's `check_rules_case` runs it.
+- The stage calls of step 5 (`TAC_STAGE_PASSES`: `c99_to_tac`,
+  `inline_functions`, `optimize_tac`, `tac_optimize_function`, the row
+  and split tables, and the dispatch of pointer arrays), `to_ssa` and
+  `from_ssa`, and the front end's passes from the parser to the type
+  checker are recorded as their captures are. The preprocessor isn't
+  recorded, since the tests call it on a source alone, and the parse
+  record that follows holds its output. A call of c99_to_tac.py's
+  `translate_program` without tables, which type-checks the program
+  itself, is recorded as that type check and the call with its tables.
+- The calls that a test makes of one of c99_to_tac.py's `Translator`s
+  (`translate_exp`, `translate_statement`, and the rest) are recorded
+  as one session, the dumps of each call's argument, of the
+  instructions in its list before and after, and of its result, which
+  tests/c99_session_case.h replays on one C++ `Translator`. The calls of
+  one of tac_to_asm.py's `Translator`s made with a symbol table are a
+  session of the same kind, which translator_case.h's
+  `check_translator_session` replays.
+
+A few tests were changed so that their calls could be recorded.
+test_loop_rotate.py's symbols had a Python subclass of `IdAttr` in place
+of `LocalAttr`, and four modules gave a static `initial_value=None`,
+which the tagged JSON can't hold, in place of `NoInitializer()`.
+test_copy_folding.py's last unit test ran the private window of copy
+folding, which `FoldCopiesInFixedpoint` runs, and now runs the pass. Two
+stage runners of src/passes/optimization/tac_stage.cpp take a call
+without the symbol table, as `optimize_program` and
+`dispatch_const_pointer_arrays` take None in Python.
+
+test_row_address_tables.py replaced `_saving`, the estimate of the
+bytes a lookup saves, to force or forbid a table. The C++ pass takes
+the estimate as an optional `fixed_saving`, and the stage call takes it
+as the keyword `saving`, which the recorder writes when a test has
+replaced `_saving` (with a function that gives one number for every
+row). The five unit tests are recorded calls with it. The five
+simulator tests had forced the tables in the Python pipeline alone.
+They now run in both pipelines without the replacement, on programs
+that read their arrays often enough for the estimate to choose the
+tables, which took more accessors and a smaller array in
+`test_array_of_structs`.
+
+| Module | G7 tests | Removed | The C++ cases of their calls | Left | Why each left is still in Python |
+|---|---|---|---|---|---|
+| test_abi_selection.py | 14 | 14 | test_abi_selection_calls.cpp (119), test_abi_stage_calls.cpp (9) | 0 |  |
+| test_and_zero_jump_fold.py | 9 | 8 | test_jump_fold_rules_calls.cpp (11) | 1 | 1 a guard of Python's entry function, which has no C++ counterpart |
+| test_asm_regalloc.py | 2 | 0 |  | 2 | 1 end to end through `_run_program`; 1 end to end |
+| test_auto.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_bcd_builtins.py | 7 | 0 |  | 7 | 4 G8's, `compile.translate_for_codegen`; 2 end to end through `_run_program`; 1 end to end |
+| test_bin_to_bcd.py | 5 | 0 |  | 5 | 4 end to end; 1 end to end through `_run_program` |
+| test_bitint.py | 5 | 5 | test_bitint_calls.cpp (24) | 0 |  |
+| test_bool.py | 6 | 3 | test_bool_calls.cpp (36) | 3 | 2 end to end; 1 end to end through `_run_program` |
+| test_c23_bool.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_c23_nullptr.py | 5 | 3 | test_c23_nullptr_calls.cpp (29) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_c99_to_tac.py | 157 | 157 | test_c99_to_tac_recorded.cpp (312) | 0 |  |
+| test_carry_return.py | 7 | 0 |  | 7 | 7 end to end |
+| test_cfg.py | 19 | 19 | test_tac_cfg.cpp (2), by hand, test_tac_cfg_cases.cpp (19), by hand | 0 |  |
+| test_chapter_19.py | 1 | 0 |  | 1 | 1 end to end through `_run_program` |
+| test_cmp_zero_jump_fold.py | 37 | 33 | test_jump_fold_rules_calls.cpp (38) | 4 | 4 end to end |
+| test_compound_literal.py | 3 | 0 |  | 3 | 2 end to end; 1 end to end through `_run_program` |
+| test_constant_folding.py | 140 | 140 | test_constant_folding_calls.cpp (145) | 0 |  |
+| test_constexpr.py | 7 | 0 |  | 7 | 5 end to end; 2 end to end through `_run_program` |
+| test_copy_folding.py | 13 | 13 | test_copy_folding.cpp (12), test_copy_folding_calls.cpp (1) | 0 |  |
+| test_copy_propagation.py | 9 | 9 | test_copy_propagation.cpp (9) | 0 |  |
+| test_count_down.py | 7 | 7 | test_count_down.cpp (7) | 0 |  |
+| test_cse.py | 11 | 11 | test_cse.cpp (11) | 0 |  |
+| test_dead_loop_elimination.py | 2 | 2 | test_dead_loop_elimination.cpp (2) | 0 |  |
+| test_dead_store_elimination.py | 10 | 10 | test_dead_store_elimination.cpp (10) | 0 |  |
+| test_designated_init.py | 3 | 0 |  | 3 | 2 end to end; 1 end to end through `_run_program` |
+| test_direct_member_access.py | 6 | 0 |  | 6 | 6 end to end |
+| test_dispatch_pointer_array.py | 8 | 8 | test_dispatch_pointer_array.cpp (7), test_dispatch_pointer_array_calls.cpp (1) | 0 |  |
+| test_divmod_hoist.py | 6 | 6 | test_divmod_hoist.cpp (6) | 0 |  |
+| test_empty_initializer.py | 9 | 3 | test_empty_initializer_calls.cpp (12) | 6 | 5 end to end; 1 end to end through `_run_program` |
+| test_enum.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_function_local_sizing.py | 1 | 1 | test_function_local_sizing_calls.cpp (13) | 0 |  |
+| test_inline_functions.py | 12 | 12 | test_inline_functions.cpp (23), test_inline_functions_calls.cpp (48), test_tac_unit_helpers.cpp (1), by hand | 0 |  |
+| test_jump_thread.py | 8 | 8 | test_jump_thread.cpp (8) | 0 |  |
+| test_known_compare_thread.py | 16 | 16 | test_known_compare_thread.cpp (17) | 0 |  |
+| test_lnot_jump_fold.py | 7 | 7 | test_jump_fold_rules_calls.cpp (8) | 0 |  |
+| test_loop_rotate.py | 17 | 17 | test_loop_rotate_calls.cpp (15), test_tac_ssa_calls.cpp (3) | 0 |  |
+| test_narrow_byte_bitwise.py | 6 | 6 | test_narrow_byte_bitwise_calls.cpp (15) | 0 |  |
+| test_narrow_byte_range.py | 20 | 20 | test_narrow_byte_range_calls.cpp (14), test_narrow_byte_range_recorded.cpp (3), test_value_range.cpp (6), by hand | 0 |  |
+| test_narrow_widened_arith.py | 35 | 35 | test_narrow_widened_arith_calls.cpp (41) | 0 |  |
+| test_noreturn_call.py | 10 | 7 | test_abi_stage_calls.cpp (3), test_asm_helpers.cpp (1), by hand, test_noreturn_call_calls.cpp (11) | 3 | 3 end to end |
+| test_optimization.py | 9 | 9 | test_optimization_calls.cpp (8), test_unreachable_code_elimination.cpp (1) | 0 |  |
+| test_pool.py | 11 | 11 | test_pool.cpp (11), by hand | 0 |  |
+| test_preserves.py | 2 | 2 | test_preserves_calls.cpp (6), test_tac_unit_helpers.cpp (2), by hand | 0 |  |
+| test_read_stored_global.py | 5 | 5 | test_read_stored_global.cpp (5) | 0 |  |
+| test_reassoc_offset_licm.py | 6 | 6 | test_reassoc_offset_calls.cpp (3), test_reassoc_offset_licm_calls.cpp (3) | 0 |  |
+| test_recognize_indexed_store.py | 12 | 12 | test_recognize_indexed_store.cpp (11), test_recognize_indexed_store_calls.cpp (1) | 0 |  |
+| test_recognize_indirect_indexed.py | 33 | 28 | test_recognize_indirect_indexed.cpp (19), test_recognize_indirect_indexed_calls.cpp (16) | 5 | 5 end to end |
+| test_recursion_saves.py | 1 | 0 |  | 1 | 1 end to end through `_run_program` |
+| test_replace_pseudoregisters.py | 9 | 9 | test_frames_stage_calls.cpp (9) | 0 |  |
+| test_row_address_tables.py | 10 | 5 | test_row_address_tables.cpp (2), test_row_address_tables_calls.cpp (9) | 5 | 5 end to end |
+| test_short_and_unary_plus.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_short_circuit_jump_fold.py | 17 | 16 | test_short_circuit_jump_fold.cpp (16) | 1 | 1 end to end |
+| test_sim_chapters.py | 1 | 0 |  | 1 | 1 end to end through `_run_program` |
+| test_sim_miscompile_regressions.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_sink_and_past_branch.py | 9 | 8 | test_sink_and_past_branch.cpp (8) | 1 | 1 end to end |
+| test_sink_increment.py | 3 | 3 | test_sink_increment.cpp (3) | 0 |  |
+| test_split_tables.py | 7 | 7 | test_split_tables.cpp (11) | 0 |  |
+| test_ssa.py | 10 | 10 | test_ssa_calls.cpp (3), test_tac_ssa_calls.cpp (8) | 0 |  |
+| test_static_const_fold.py | 26 | 26 | test_constant_folding_calls.cpp (4), test_reassoc_const_calls.cpp (4), test_static_const_fold_calls.cpp (8), test_static_const_fold_recorded.cpp (22) | 0 |  |
+| test_stdbit.py | 2 | 1 | test_stdbit_calls.cpp (3) | 1 | 1 G8's, `compile.translate_for_codegen` |
+| test_step_on_edge.py | 6 | 6 | test_step_on_edge.cpp (6) | 0 |  |
+| test_strength_reduction.py | 16 | 16 | test_strength_reduction_calls.cpp (16) | 0 |  |
+| test_tac_sim.py | 57 | 57 | test_tac_sim.cpp (5), by hand | 0 |  |
+| test_tac_to_asm.py | 61 | 61 | test_tac_to_asm_g7_calls.cpp (60) | 0 |  |
+| test_three_way_compare.py | 5 | 5 | test_three_way_compare.cpp (5) | 0 |  |
+| test_truncate_extend_fold.py | 14 | 14 | test_truncate_extend_fold_calls.cpp (14) | 0 |  |
+| test_typed_enum.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_typeof.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_unreachable_code_elimination.py | 17 | 17 | test_unreachable_code_elimination.cpp (18), test_unreachable_code_elimination_calls.cpp (4) | 0 |  |
+
+The cases are 773 new recorded ones in 26 files, the cases that step 5
+had recorded from the same tests, and 22 written by hand. "By hand"
+marks the last: test_pool.cpp ports test_pool.py, test_value_range.cpp
+the six tests of `value_range::max_value`, test_tac_unit_helpers.cpp
+the inliner's size measure and the register effects of a call to a
+routine declared `preserves_x` or `preserves_y`, and test_tac_cfg.cpp
+gained the two tests of `cfg_to_function` with their inputs.
+test_tac_cfg_cases.cpp, written in step 5 by wrapping `build_cfg` while
+test_cfg.py ran, holds every analysis that its 19 tests check, and
+test_asm_helpers.cpp the three cases of `abandons_caller`. G4 had ported
+test_tac_sim.py's tests by hand to test_tac_sim.cpp, whose five cases
+hold each of the module's 57 programs with the value Python expected,
+and the module is removed. Of the new recorded cases, 312 are
+test_c99_to_tac.py's, 88 of them sessions of the `Translator`, and 351
+of all of them are front-end calls that build the input of a recorded
+`c99_to_tac` call.
+
+Of the 89 tests left, 83 are end to end, 21 of which run the TAC
+interpreter through `_run_program`. Under `C6502_CPP_BACKEND=1`
+`_run_program` runs the C++ front end and interpreter, and each of
+these tests compares its result with a constant or with the 6502
+simulator's, so each keeps its meaning once the Python compiler is
+gone, when `_run_program` keeps only its C++ branch. Five call
+`compile.translate_for_codegen`, which G8 takes with compile.py's other
+functions: test_bcd_builtins.py's four tests of `TestTac` and
+test_stdbit.py's `test_constant_arguments_fold_in_both_pipelines`. One,
+test_and_zero_jump_fold.py's `test_no_symbols_is_noop`, tests a guard
+of `fold_narrow_and_jump`, the Python entry function, which has no C++
+counterpart. G7 took all of test_tac_to_asm.py's 61 tests of the
+`Translator` with a symbol table and test_replace_pseudoregisters.py's
+9 of `TestColoringIntegration`, so no test of either is left for G8.
+test_tac_sim_backend.py compares the C++ interpreter with tac_sim.py,
+so it goes with the Python implementation (kind (c)), and
+test_tac_sim_optimized.py runs fuzz/tac_passes.py's observer through
+the backend's `tac-observe` mode under the switch, so its tests are end
+to end, as is test_optimization_docs.py, whose order of the passes is
+G8's command for the list of the drivers' passes.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -3225,3 +3409,24 @@ whose calls the cases of test_frames_stage_calls.cpp already check.
   3,772 and 3,773 before. The C++ tests (4,334 cases) pass in fresh
   builds with MSVC 19.36 and GCC 12.2, and `check-golden` and
   `check-frozen` match every job and record.
+- 24 Nov 2026: group G7 of step 8 ("G7's modules"). The classification
+  gave G7 885 tests of the TAC passes, `c99_to_tac`, and the TAC
+  interpreter, and with test_tac_sim.py's 57 and the 61 tests of
+  tac_to_asm.py's `Translator` that G6 left, it took 1,003. 914 are
+  removed, 13 modules entirely. tools/record_test_calls.py records the
+  runs of the TAC optimizer's passes, the jump-fold rule sets, the stage
+  calls of step 5 and of the front end, and sessions of the two
+  `Translator`s, and the calls are 773 new recorded doctest cases in 26
+  files, cases that step 5 had recorded from the same tests, and 22
+  cases written by hand. The C++ row-table pass takes a fixed saving in
+  place of its estimate, which the recorded calls of
+  test_row_address_tables.py's unit tests give it, and that module's
+  simulator tests run in both pipelines on programs whose tables the
+  estimate chooses. Of the 89 tests left, 83 are end to end (21 of them
+  through `_run_program`), 5 call `compile.translate_for_codegen`, which
+  is G8's, and 1 tests a guard of a Python entry function. The suite
+  passes with `C6502_CHECK_IR=1` without the switch (2,650 passed, 41
+  skipped) and with it (2,649 passed, 42 skipped), counting skipped
+  subtests, where 3,583 tests ran before. The C++ tests (5,129 cases)
+  pass in fresh builds with MSVC 19.36 and GCC 12.2, and `check-golden`
+  and `check-frozen` match every job and record.

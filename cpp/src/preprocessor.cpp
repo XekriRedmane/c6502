@@ -335,6 +335,8 @@ std::string if_integer(const std::string& spelling) {
   return pyrepr::integer(constant.value) + (is_unsigned ? "U" : "");
 }
 
+}  // namespace
+
 // Returns a spelling of the character constant `spelling` that pcpp's
 // evaluator reads as it would read `spelling` if its pattern had no
 // `\N{name}` alternative, which C doesn't have (C23 §6.4.4.4), so that
@@ -360,6 +362,8 @@ std::string without_named_escapes(const std::string& spelling) {
   }
   return out + expansion.rest + spelling.back();
 }
+
+namespace {
 
 // Returns whether `line` is a `#pragma` line, as `_PRAGMA_LINE_RE`,
 // `^[ \t]*#[ \t]*pragma\b(?P<body>.*)$`, matches it.

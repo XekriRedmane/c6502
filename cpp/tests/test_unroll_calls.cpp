@@ -7,6 +7,7 @@
 // isn't repeated here.
 #include "doctest.h"
 #include "record_case.h"
+#include "preprocessor_case.h"
 
 TEST_CASE("parse: test_unroll.py::TestUnrollAttributeParse::test_attaches_only_to_its_own_loop (call 1)") {
   c6502::testing::check_record(
@@ -56,6 +57,16 @@ TEST_CASE("parse: test_unroll.py::TestUnrollAttributeParse::test_no_attribute_le
       "    S(Return(Constant(ConstInt(0) None)))\n"
       "  ]) FunType([] Int) None None [] false None [] None false))\n"
       "])\n");
+}
+
+TEST_CASE("preprocess: test_unroll.py::TestUnrollAttributeParse::test_old_pragma_names_the_attribute (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 3: c6502 no longer takes `#pragma c6502 loop unroll(enable)`; write the statement attribute `[[c6502::unroll]]` before the loop instead, as in `[[c6502::unroll]] for (...)`\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"\\nint main(void) {\\n    #pragma c6502 loop unroll(enable)\\nfor (int i = 0; i < 4; i++) { }\\n    return 0;\\n}\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_unroll.py::TestUnrollAttributeParse::test_old_pragma_names_the_attribute (call 2)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 3: c6502 no longer takes `#pragma c6502 loop unroll(disable)`; it never did anything, so delete the line\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"\\nint main(void) {\\n    #pragma c6502 loop unroll(disable)\\nfor (int i = 0; i < 4; i++) { }\\n    return 0;\\n}\\n\", \"stderr\": \"\", \"warnings\": []}", {});
 }
 
 TEST_CASE("parse: test_unroll.py::TestUnrollAttributeParse::test_sets_loop_attribute (call 1)") {

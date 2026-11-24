@@ -7,6 +7,7 @@
 // isn't repeated here.
 #include "doctest.h"
 #include "record_case.h"
+#include "preprocessor_case.h"
 
 TEST_CASE("parse: test_recursion_saves.py::TestSyntax::test_marks_the_calls_after_it (call 1)") {
   c6502::testing::check_record(
@@ -69,6 +70,11 @@ TEST_CASE("parse: test_recursion_saves.py::TestSyntax::test_marks_the_calls_afte
       "    S(Return(FunctionCall(\"f\" [Constant(ConstInt(2) None)] None false)))\n"
       "  ]) FunType([] Int) None None [] false None [] None false))\n"
       "])\n");
+}
+
+TEST_CASE("preprocess: test_recursion_saves.py::TestSyntax::test_old_pragma_names_the_attribute (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: c6502 no longer takes `#pragma c6502 call save(hardware_stack)`; write the statement attribute `[[c6502::save_hardware_stack]]` before the statement or declaration instead, as in `[[c6502::save_hardware_stack]] f(x);`\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"void f(void) {\\n#pragma c6502 call save(hardware_stack)\\nf();\\n}\\n\", \"stderr\": \"\", \"warnings\": []}", {});
 }
 
 TEST_CASE("parse: test_recursion_saves.py::TestSyntax::test_rejected_positions (call 1)") {

@@ -7,6 +7,7 @@
 // isn't repeated here.
 #include "doctest.h"
 #include "record_case.h"
+#include "preprocessor_case.h"
 
 TEST_CASE("parse: test_c23_bool.py::TestKeywords::test_names_are_errors (call 1)") {
   c6502::testing::check_record(
@@ -905,4 +906,74 @@ TEST_CASE("type_checking: test_c23_bool.py::TestValues::test_static_initializers
       "])\n"
       "output-json\n"
       "{\"tuple\": [{\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  VarDecl(var_decl(\\\"b\\\" Cast(Double Constant(ConstBool(1) Bool) Double) Double None None None None false))\\n])\\n\"}, {\"object\": \"passes.type_checking.SymbolTable\", \"fields\": {\"_table\": {\"dict\": [[\"b\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Double\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Initial\", \"fields\": {\"value\": 4607182418800017408}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}]]}}}, {\"object\": \"passes.type_checking.TypeTable\", \"fields\": {\"_table\": {\"dict\": []}}}]}\n");
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestAltBoolWarning::test_no_warnings_outside_a_collecting_block (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"_Bool a;\\n\", \"source\": \"_Bool a;\\n\", \"stderr\": \"\", \"warnings\": [[\"line 1\", \"`_Bool` is deprecated: C23 makes it an obsolescent spelling of the keyword `bool` (C23 \\u00a76.4.1). Use `bool` instead.\"]]}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestAltBoolWarning::test_one_warning_per_use (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\n_Bool a; _Bool b;\\n_Bool c;\\nbool d;\\nchar *s = \\\"_Bool\\\";\\n\", \"source\": \"#define B _Bool\\n_Bool a; _Bool b;\\nB c;\\nbool d;\\nchar *s = \\\"_Bool\\\";\\n\", \"stderr\": \"\", \"warnings\": [[\"line 2\", \"`_Bool` is deprecated: C23 makes it an obsolescent spelling of the keyword `bool` (C23 \\u00a76.4.1). Use `bool` instead.\"], [\"line 2\", \"`_Bool` is deprecated: C23 makes it an obsolescent spelling of the keyword `bool` (C23 \\u00a76.4.1). Use `bool` instead.\"], [\"line 3\", \"`_Bool` is deprecated: C23 makes it an obsolescent spelling of the keyword `bool` (C23 \\u00a76.4.1). Use `bool` instead.\"]]}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_a_macro_takes_precedence (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [\"-Dtrue=0\"], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\", \"source\": \"#if true\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if true\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 2)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\", \"source\": \"#if false\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 3)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if true == 1\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 4)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if true + true == 2\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 5)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if -true < 0\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 6)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if !false\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 7)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if false == 0\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 8)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\", \"source\": \"#if defined(true)\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_true_is_one_and_false_is_zero (call 9)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\", \"source\": \"#if bool\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_with_passthru_unknown_exprs (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [\"--passthru-unknown-exprs\"], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint kept;\\n\", \"source\": \"#if true\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_bool.py::TestIf::test_with_passthru_unknown_exprs (call 2)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": [\"--passthru-unknown-exprs\"], \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\", \"source\": \"#if false\\nint kept;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
 }

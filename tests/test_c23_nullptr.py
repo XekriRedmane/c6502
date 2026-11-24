@@ -47,17 +47,6 @@ def _compile(src: str, *flags: str) -> tuple[int, str]:
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-class TestKeywords(unittest.TestCase):
-
-    def test_if_treats_nullptr_as_an_identifier(self) -> None:
-        # C23 §6.10.2p13 replaces every identifier left in an `#if`
-        # expression, keywords included, with 0, except `true`.
-        text = preprocess("#if nullptr\nint a;\n#else\nint b;\n#endif\n")
-        self.assertNotIn("int a;", text)
-        self.assertIn("int b;", text)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestOperators(unittest.TestCase):
 
     def test_not_an_integer_constant(self) -> None:

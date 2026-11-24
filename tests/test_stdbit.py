@@ -240,18 +240,6 @@ class TestFolding(unittest.TestCase):
 class TestHeader(unittest.TestCase):
     _HEADER = Path(__file__).parent.parent / "include" / "stdbit.h"
 
-    def test_macros(self) -> None:
-        out = preprocess(
-            "#include <stdbit.h>\n"
-            "#if __STDC_VERSION_STDBIT_H__ == 202311L\nint version;\n#endif\n"
-            "#if __STDC_ENDIAN_NATIVE__ == __STDC_ENDIAN_LITTLE__\n"
-            "int little;\n#endif\n"
-            "#if __STDC_ENDIAN_LITTLE__ != __STDC_ENDIAN_BIG__\n"
-            "int distinct;\n#endif\n"
-        )
-        for name in ("version", "little", "distinct"):
-            self.assertIn(f"int {name};", out)
-
     def test_names_are_in_the_headers_namespace(self) -> None:
         # Every name the header declares or defines is one C23 §7.18
         # lists, `size_t` or an integer type from §7.18.1p1, a name in
@@ -267,7 +255,6 @@ class TestHeader(unittest.TestCase):
         )
         bad = sorted(n for n in names if not allowed.fullmatch(n))
         self.assertEqual(bad, [])
-
 
     def test_every_function_is_declared_and_defined_as_a_macro(self) -> None:
         text = self._HEADER.read_text(encoding="utf-8")
@@ -318,7 +305,6 @@ int main(void) {
                 result = sim.run(max_cycles=2_000_000)
                 self.assertFalse(result.timed_out)
                 self.assertEqual(result.return_int(), 13349)
-
 
     def test_two_units_each_have_a_copy(self) -> None:
         import tempfile

@@ -37,27 +37,9 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from preprocessor import preprocess
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
-class TestConstants(unittest.TestCase):
-
-    def test_preprocessor_if(self) -> None:
-        src = (
-            "#if 1wb && -1wb < 0 && -1uwb > 0 && 0xFFuwb == 255\n"
-            "int yes;\n#else\nint no;\n#endif\n"
-        )
-        self.assertIn("int yes;", preprocess(src))
-
-    def test_preprocessor_if_too_wide(self) -> None:
-        from preprocessor import PreprocessorError
-        with self.assertRaises(PreprocessorError) as cm:
-            preprocess("#if 18446744073709551616uwb\n#endif\n")
-        self.assertIn("needs a unsigned _BitInt(65)", str(cm.exception))
 
 
 _PROGRAM = r"""

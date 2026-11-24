@@ -10,14 +10,13 @@ what `unroll` and `save_hardware_stack` do."""
 from __future__ import annotations
 
 import logging
-import tempfile
 import unittest
 from pathlib import Path
 
 from lark import Lark, logger as lark_logger
 
 from compile import _run_stage
-from preprocessor import PreprocessorError, preprocess
+from preprocessor import preprocess
 
 
 class TestGrammar(unittest.TestCase):
@@ -95,80 +94,6 @@ class TestLoopAttributes(unittest.TestCase):
                 # x runs 6 down to 1, so n counts 6 passes, and even
                 # counts the 3 with x even.
                 self.assertEqual(out.return_int(), 6 * 16 + 3)
-
-
-class TestOldPragmas(unittest.TestCase):
-
-    def test_each_names_its_replacement(self) -> None:
-        for pragma, needle in (
-            ("#pragma c6502 loop unroll(enable)",
-             "write the statement attribute `[[c6502::unroll]]`"),
-            ("#pragma c6502 loop unroll(disable)",
-             "it never did anything, so delete the line"),
-            ("#pragma c6502 loop keep",
-             "write the statement attribute `[[c6502::keep]]`"),
-            ("#pragma c6502 call save(hardware_stack)",
-             "write the statement attribute "
-             "`[[c6502::save_hardware_stack]]`"),
-            ("#  pragma   c6502   loop  unroll ( enable )",
-             "`[[c6502::unroll]]`"),
-        ):
-            with self.subTest(pragma):
-                with self.assertRaises(PreprocessorError) as cm:
-                    preprocess("int x;\n" + pragma + "\nint y;\n")
-                message = str(cm.exception)
-                self.assertIn("line 2: c6502 no longer takes", message)
-                self.assertIn(needle, message)
-
-    def test_line_is_the_source_line(self) -> None:
-        # pcpp's output has the header's lines before the pragma, so
-        # the line counted in the output would be far past 3.
-        with self.assertRaises(PreprocessorError) as cm:
-            preprocess(
-                "#include <stdint.h>\n\n#pragma c6502 loop keep\nint x;\n",
-            )
-        self.assertTrue(
-            str(cm.exception).startswith("line 3: "), str(cm.exception),
-        )
-
-    def test_line_in_a_header_names_the_header(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            header = Path(tmp) / "loops.h"
-            header.write_text("int y;\n#pragma c6502 loop keep\n")
-            main = Path(tmp) / "main.c"
-            main.write_text(
-                "#include <stdint.h>\n#include \"loops.h\"\nint x;\n",
-            )
-            with self.assertRaises(PreprocessorError) as cm:
-                preprocess(main.read_text(), filename=str(main))
-        message = str(cm.exception)
-        self.assertTrue(message.startswith("line 2 of "), message)
-        self.assertIn("loops.h: c6502 no longer takes", message)
-
-    def test_pragma_in_a_skipped_group(self) -> None:
-        out = preprocess(
-            "#if 0\n#pragma c6502 loop keep\n#endif\nint x;\n",
-        )
-        self.assertNotIn("pragma", out)
-
-    def test_unknown_c6502_pragma(self) -> None:
-        with self.assertRaises(PreprocessorError) as cm:
-            preprocess("#pragma c6502 wat\nint x;\n")
-        message = str(cm.exception)
-        self.assertIn("line 1", message)
-        self.assertIn("`#pragma c6502 wat` is an error", message)
-        self.assertIn("[[c6502::save_hardware_stack]]", message)
-
-    def test_other_pragmas_are_dropped(self) -> None:
-        # C99 §6.10.6 lets an implementation ignore a pragma it doesn't
-        # recognize. The line stays, blank, so later line numbers hold.
-        for src in ("#pragma GCC diagnostic ignored \"-Wfoo\"\nint x;\n",
-                    "#pragma c6502x\nint x;\n",
-                    "#pragma once\nint x;\n"):
-            with self.subTest(src):
-                out = preprocess(src)
-                self.assertNotIn("pragma", out)
-                self.assertEqual(out.count("\n"), src.count("\n"))
 
 
 if __name__ == "__main__":

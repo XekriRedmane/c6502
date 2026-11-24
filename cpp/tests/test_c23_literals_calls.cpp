@@ -8,6 +8,7 @@
 #include "doctest.h"
 #include "record_case.h"
 #include "lexer_case.h"
+#include "preprocessor_case.h"
 
 TEST_CASE("pp_number_at: test_c23_literals.py::TestPpNumber::test_extent (call 1)") {
   c6502::testing::check_record(
@@ -1025,6 +1026,106 @@ TEST_CASE("parse: test_c23_literals.py::TestOctal::test_octal_values (call 4)") 
       "    S(Return(Constant(ConstLong(15) None)))\n"
       "  ]) FunType([] Int) None None [] false None [] None false))\n"
       "])\n");
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_number_from_a_macro (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\n\\nint yes;\\n\", \"source\": \"#define MASK 0b1111'0000\\n#if MASK == 240\\nint yes;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 0b1010 == 10\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 2)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 0B1111'0000 == 0xF0\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 3)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 1'000'000 == 1000000\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 4)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 0xF'F == 255\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 5)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 1ULL == 1 && 2ll == 2 && 3LLU == 3\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 6)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 0'17 == 15\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 7)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 0xFFFF'FFFF'FFFF'FFFF > 0\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 8)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if -1 == 0xFFFFFFFFFFFFFFFF\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_reads_c23_numbers (call 9)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 18446744073709551615u == 0xFFFFFFFFFFFFFFFF\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: a digit separator has to be between two digits, and the one in \\\"0x'FF\\\" comes right after the prefix 0x\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 0x'FF\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 2)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: invalid digit '2' in binary constant '0b2'\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 0b2\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 3)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: a digit separator has to be between two digits, and the one in \\\"1'u\\\" comes right before the suffix\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 1'u\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 4)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: an #if expression can't contain the floating constant '1.5', since it's an integer constant expression (C23 \\u00a76.10.2p3)\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 1.5\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 5)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: integer constant '9223372036854775808wb' needs a _BitInt(65), and BITINT_MAXWIDTH is 64 (C23 \\u00a76.4.4.2p6)\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 9223372036854775808wb\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 6)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: decimal constant '18446744073709551615' doesn't fit in intmax_t (a `u` suffix makes it unsigned)\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 18446744073709551615\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_rejects_invalid_numbers (call 7)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 2: integer constant \\\"0x1'0000'0000'0000'0000\\\" doesn't fit in uintmax_t\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"int x;\\n#if 0x1'0000'0000'0000'0000\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_if_skipped_group_isnt_evaluated (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 1\\nint yes;\\n#elif 0b2\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_number_with_separators_is_one_token (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\n\\nconst char *s = \\\"1'000'000\\\";\\nlong n = 1'000'000;\\n\", \"source\": \"#define S(x) #x\\n#define CAT(a, b) a ## b\\nconst char *s = S(1'000'000);\\nlong n = CAT(1'000, '000);\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_c23_literals.py::TestPreprocessor::test_separator_doesnt_start_a_character_constant (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint a = 1'000 + 3 + 'a';\\n\", \"source\": \"#define FOO 3\\nint a = 1'000 + FOO + 'a';\\n\", \"stderr\": \"\", \"warnings\": []}", {});
 }
 
 TEST_CASE("parse: test_c23_literals.py::TestPreprocessor::test_static_initializers (call 1)") {

@@ -7,6 +7,7 @@
 // isn't repeated here.
 #include "doctest.h"
 #include "record_case.h"
+#include "preprocessor_case.h"
 
 TEST_CASE("parse: test_bitint.py::TestSpecifier::test_bitint_is_a_keyword (call 1)") {
   c6502::testing::check_record(
@@ -2728,6 +2729,16 @@ TEST_CASE("type_checking: test_bitint.py::TestConstants::test_negated_constant (
       "])\n"
       "output-json\n"
       "{\"tuple\": [{\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  VarDecl(var_decl(\\\"x\\\" Cast(Int Unary(Negate Constant(ConstBitInt(3 2 false) BitInt(2 false)) BitInt(2 false)) Int) Int None None None None false))\\n])\\n\"}, {\"object\": \"passes.type_checking.SymbolTable\", \"fields\": {\"_table\": {\"dict\": [[\"x\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Int\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Initial\", \"fields\": {\"value\": 1}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}]]}}}, {\"object\": \"passes.type_checking.TypeTable\", \"fields\": {\"_table\": {\"dict\": []}}}]}\n");
+}
+
+TEST_CASE("preprocess: test_bitint.py::TestConstants::test_preprocessor_if (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\nint yes;\\n\", \"source\": \"#if 1wb && -1wb < 0 && -1uwb > 0 && 0xFFuwb == 255\\nint yes;\\n#else\\nint no;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
+
+TEST_CASE("preprocess: test_bitint.py::TestConstants::test_preprocessor_if_too_wide (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": [\"PreprocessorError\", \"line 1: integer constant '18446744073709551616uwb' needs a unsigned _BitInt(65), and BITINT_MAXWIDTH is 64 (C23 \\u00a76.4.4.2p6)\"], \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": null, \"source\": \"#if 18446744073709551616uwb\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
 }
 
 TEST_CASE("parse: test_bitint.py::TestTypeRules::test_conversions_are_casts (call 1)") {

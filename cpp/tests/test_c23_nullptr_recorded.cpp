@@ -7,6 +7,12 @@
 // isn't repeated here.
 #include "doctest.h"
 #include "record_case.h"
+#include "preprocessor_case.h"
+
+TEST_CASE("preprocess: test_c23_nullptr.py::TestKeywords::test_if_treats_nullptr_as_an_identifier (call 1)") {
+  c6502::testing::check_preprocess_case(
+      "{\"argv\": null, \"cwd\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\", \"error\": null, \"filename\": null, \"files\": {}, \"include_dir\": \"C:\\\\Users\\\\rober\\\\c6502\\\\.claude\\\\worktrees\\\\agent-a491cc35feb6adb51\\\\include\", \"nt\": true, \"output\": \"\\n\\n\\nint b;\\n\", \"source\": \"#if nullptr\\nint a;\\n#else\\nint b;\\n#endif\\n\", \"stderr\": \"\", \"warnings\": []}", {});
+}
 
 TEST_CASE("parse: test_c23_nullptr.py::TestKeywords::test_names_are_errors (call 1)") {
   c6502::testing::check_record(

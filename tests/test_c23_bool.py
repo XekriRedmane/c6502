@@ -65,22 +65,6 @@ class TestAltBoolWarning(unittest.TestCase):
             "of the keyword `bool` (C23 §6.4.1). Use `bool` instead.",
         )
 
-    def test_one_warning_per_use(self) -> None:
-        # A `_Bool` a macro expands to has the line of the macro's use.
-        with diagnostics.collecting() as found:
-            preprocess(
-                "#define B _Bool\n"
-                "_Bool a; _Bool b;\n"
-                "B c;\n"
-                "bool d;\n"
-                "char *s = \"_Bool\";\n"
-            )
-        self.assertEqual(
-            [str(w) for w in found],
-            [f"line 2: {ALT_BOOL_WARNING}", f"line 2: {ALT_BOOL_WARNING}",
-             f"line 3: {ALT_BOOL_WARNING}"],
-        )
-
     def test_warning_comes_before_an_error(self) -> None:
         rc, err = _compile("_Bool a;\nint true;\n")
         self.assertEqual(rc, 1)
@@ -88,16 +72,6 @@ class TestAltBoolWarning(unittest.TestCase):
         self.assertEqual(lines[0],
                          f"<stdin>: warning: line 1: {ALT_BOOL_WARNING}")
         self.assertTrue(lines[1].startswith("<stdin>: error: "), err)
-
-    def test_no_warnings_outside_a_collecting_block(self) -> None:
-        # The test helpers and the simulator harness don't collect, so
-        # a warning reaches none of them.
-        with diagnostics.collecting() as outer:
-            with diagnostics.collecting() as inner:
-                preprocess("_Bool a;\n")
-        self.assertEqual(len(inner), 1)
-        self.assertEqual(outer, [])
-        preprocess("_Bool a;\n")
 
 
 class TestStdbool(unittest.TestCase):
@@ -123,32 +97,6 @@ class TestStdbool(unittest.TestCase):
             "int main(void) { return odd(3) == true; }\n",
         )
         self.assertEqual((rc, err), (0, ""))
-
-
-class TestIf(unittest.TestCase):
-    def _kept(self, condition: str, *argv: str) -> bool:
-        text = preprocess(f"#if {condition}\nint kept;\n#endif\n",
-                          list(argv))
-        return "int kept;" in text
-
-    def test_true_is_one_and_false_is_zero(self) -> None:
-        for condition, expected in (
-            ("true", True), ("false", False), ("true == 1", True),
-            ("true + true == 2", True), ("-true < 0", True),
-            ("!false", True), ("false == 0", True),
-            ("defined(true)", False), ("bool", False),
-        ):
-            with self.subTest(condition=condition):
-                self.assertEqual(self._kept(condition), expected)
-
-    def test_with_passthru_unknown_exprs(self) -> None:
-        # pcpp leaves an `#if` on an unknown name in the output under
-        # this flag, but `true` and `false` have values.
-        self.assertTrue(self._kept("true", "--passthru-unknown-exprs"))
-        self.assertFalse(self._kept("false", "--passthru-unknown-exprs"))
-
-    def test_a_macro_takes_precedence(self) -> None:
-        self.assertFalse(self._kept("true", "-Dtrue=0"))
 
 
 _PROGRAM = """\

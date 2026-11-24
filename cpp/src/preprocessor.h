@@ -101,4 +101,11 @@ Output preprocess(const std::string& source, const std::vector<std::string>& arg
                   const std::optional<std::string>& filename, const pcpp::Host& host,
                   const std::string& include_dir, std::string* out_stderr = nullptr);
 
+// Returns the spelling of the character constant `spelling` that
+// `preprocess` gives pcpp's evaluator in an `#if`, so that it reads
+// `\N` as no escape (preprocessor.py's `_without_named_escapes`). The
+// .cpp's comment gives the rule. tests/test_if_character_constants.cpp
+// calls it.
+std::string without_named_escapes(const std::string& spelling);
+
 }  // namespace c6502::preprocessor

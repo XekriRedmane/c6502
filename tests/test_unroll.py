@@ -26,30 +26,7 @@ import unittest
 import c99_ast
 from parser import parse
 from passes.optimization_ast.unroll import UnrollError, unroll_program
-from preprocessor import PreprocessorError, preprocess
-
-
-_PROG = """
-int main(void) {{
-    {attribute}for (int i = 0; i < 4; i++) {{ }}
-    return 0;
-}}
-"""
-
-
-class TestUnrollAttributeParse(unittest.TestCase):
-
-    def test_old_pragma_names_the_attribute(self) -> None:
-        for state, needle in (
-            ("enable", "[[c6502::unroll]]"),
-            ("disable", "delete the line"),
-        ):
-            with self.subTest(state):
-                with self.assertRaises(PreprocessorError) as cm:
-                    preprocess(_PROG.format(
-                        attribute=f"#pragma c6502 loop unroll({state})\n",
-                    ))
-                self.assertIn(needle, str(cm.exception))
+from preprocessor import preprocess
 
 
 def _unrolled(body: str) -> c99_ast.Type_program:

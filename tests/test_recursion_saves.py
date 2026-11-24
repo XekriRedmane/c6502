@@ -12,7 +12,7 @@ import unittest
 
 from compile import _run_stage
 from passes.recursion_saves import RecursionSaveError
-from preprocessor import PreprocessorError, preprocess
+from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
@@ -63,15 +63,6 @@ int main(void) {
 
 
 class TestSyntax(unittest.TestCase):
-
-    def test_old_pragma_names_the_attribute(self) -> None:
-        with self.assertRaises(PreprocessorError) as cm:
-            preprocess(
-                "void f(void) {\n#pragma c6502 call save(hardware_stack)\n"
-                "f();\n}\n"
-            )
-        self.assertIn("[[c6502::save_hardware_stack]]", str(cm.exception))
-
 
     def test_call_that_cant_recurse(self) -> None:
         src = ("int g(int x) { return x; }\nint f(int x) {\n"

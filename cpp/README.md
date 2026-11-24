@@ -90,7 +90,9 @@ cpp/
     errors.h          CompileError, InternalError
     json.*            the reader of the capture harness's JSON, and a
                       writer of Python's `json.dumps` text
-    argparse.*        Python's argparse, as nm.py and objdump.py use it
+    argparse.*        Python's argparse, as compile.py, nm.py, and
+                      objdump.py use it
+    compile_command.*   `c6502cpp compile`, compile.py's command line
     binutils/elf.*    binutils/elf.py, the ELF reader and writer (step 7)
     binutils/opcodes.*   binutils/opcodes.py, the 6502 opcode table
     binutils/nm.*     nm.py
@@ -2165,9 +2167,12 @@ With `C6502_CPP_BACKEND=1`, compile.py's `_compile_c` hands the source
 text of each C input of `-S` to `c6502cpp backend` through
 `cpp_backend.compile_source`, one process per compile, with the
 preprocessor's arguments and the file name (None for stdin), and the
-`-S` text comes back. `-c` and a link go through `cpp_backend.build`,
-one process for the run, and no Python assembles or links. The process inherits Python's current directory,
-so the paths in the preprocessor's messages are the same. `--lex` goes
+`-S` text comes back. `-c` and a link went through `cpp_backend.build`,
+one process for the run, until group G2 of step 8 moved the whole
+command line to `c6502cpp compile` ("compile.py's command line",
+below), whose code sends the same requests. The process inherits
+Python's current directory, so the paths in the preprocessor's messages
+are the same. `--lex` goes
 through `cpp_backend.lex_source` and the backend's mode `lex`, which
 runs the preprocessor and `lexer::format_tokens` (compile.py's
 `_format_tokens`) and returns the text `--lex` prints, with the same
@@ -2212,10 +2217,9 @@ is raised as an `AssertionError` with the C++ message. Under
 `check_ir` turns on the C++ IR checks for the request ("The IR
 checks"), and the response carries no dump for them. compile.py reads the variable at each compile
 and, without it, imports none of this. Run as a script with the
-variable set and `-S`, `-c`, or a link, compile.py stops before it
-imports its pipeline (`_cpp_runs_everything`), and the runtime helpers'
-footprints come from the table compiled into c6502cpp, so neither `-S`
-nor `-c` nor a link imports the parser, Lark, pcpp, rtlib, binutils/,
+variable set, compile.py stops before it imports its pipeline, and the
+runtime helpers' footprints come from the table compiled into
+c6502cpp, so no stage imports the parser, Lark, pcpp, rtlib, binutils/,
 `passes.linker` and its imports, the type checker, numpy, or any other
 module of passes/, with `C6502_CHECK_IR=1` or without it.
 tests/test_cpp_backend.py's `TestObjectsAndLinks` checks the
@@ -2233,6 +2237,102 @@ each command, and the same files left in the directory, byte for
 byte. Its modes `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
 `tacO`, which aren't among the defaults, run `--lex`, `--parse`,
 `--resolve` and `--tac` without and with `-O` on each program.
+
+## compile.py's command line
+
+`c6502cpp compile` (src/compile_command.h) takes compile.py's command
+line after the program's name and does what compile.py's `main` does
+under `C6502_CPP_BACKEND=1`, in one process. It reads the command line
+with compile.py's parser, built on src/argparse.h after
+`_rewrite_ttext`, with `parse_known_args`, whose leftovers go to the
+preprocessor. Then it makes compile.py's own checks of the stage and
+the inputs, sends each C input of `--lex`, `--parse`, `--resolve`,
+`--tac`, and `-S` to `backend::respond` in the request
+`cpp_backend.compile_source` or `stage_source` sent, and sends the
+inputs of `-c` or a link in the one request `cpp_backend.build` sent,
+replaying each response as compile.py replayed it. Every message says
+`compile.py:`, as Robert chose, until step 9. `compile_command::run`
+returns an `Outcome`: each write to stdout and stderr in its order,
+and the exit status, the code of a SystemExit (argparse's help and
+usage errors, and the C++ preprocessor's argparse), or the exception
+compile.py would let out of `main`, with an OSError's strerror for
+`_report`.
+
+Under the variable, compile.py's `main` runs the command through
+`cpp_backend.run_tool("compile", argv, inline=_inlining())`, and the
+two sides talk in frames (`C6502CPP_FRAMES=1`), which
+compile_command.cpp's `framed` describes. Python sends a header line
+with the include directory, the terminal's width that `shutil` gives,
+whether `-O` inlines (tests/no_inlining.py's patch reaches C++ this
+way), and whether the IR checks are on. The C++ side sends each write
+as a frame, which Python writes to `sys.stdout` or `sys.stderr`, so the
+two streams keep their order in a test that sends both to one
+`StringIO`, and Python's own text streams do the newline translation
+and the encoding. A C input `-` makes the C++ side ask for stdin, which
+Python reads with `sys.stdin.read()` as `_read_source` does, so a test
+that patches `sys.stdin` gives the C++ side its text, and the exception
+of the read comes back to be reported where Python reported it. The
+last frame is the status, which `main` returns, the code of a
+SystemExit, which it raises, or the exception, which it raises as its
+Python class (`cpp_backend._exception`). `_run_stage` and `_compile_c`
+still send one request each, since the tests call them in-process.
+Run as a script with the variable set, compile.py stops before its
+pipeline's imports and imports no module of the repository but
+cpp_backend.py, and neither argparse nor shutil
+(tests/test_cpp_backend.py, `TestCommandLine`). diagnostics.py, which
+imports dataclasses, comes after the early exit, cpp_backend.py finds
+c6502cpp itself (`_cpp_cli`) rather than through
+tools/check_captures.py, which imports argparse, and it reads the
+terminal's width as `shutil.get_terminal_size` does
+(`_terminal_columns`). Each of those imports took a tenth to a third of
+the start.
+
+Run by hand, `c6502cpp compile` writes to its own stdout and stderr in
+text mode, which on Windows ends each line with CR LF, as Python's
+streams do, reads stdin as UTF-8 with Python's newlines, and finds
+c6502's include/ above the executable or else in the source tree it
+was built from (`C6502_SOURCE_ROOT`, set in CMakeLists.txt for
+compile_command.cpp alone). For ASCII text it writes compile.py's
+bytes. Python on Windows reads and writes a pipe in the ANSI code page,
+which the command doesn't, so other text can differ. An exception
+compile.py would let out of `main` ends the command with its last
+traceback line, `<type>: <message>`, and status 1.
+
+src/argparse.h is now the part of Python 3.11's argparse that the three
+tools use. compile.py's parser takes options that store a value
+(`-o`, `-T`), `store_const` options in a mutually exclusive group (the
+six stage flags, whose conflict is `argument -S: not allowed with
+argument --lex`), `type=_number` on `--origin` (`invalid _number value:
+'x'`), `append` with a `metavar` (`--defsym NAME=VALUE`), and
+`parse_known_args`. The usage brackets the group as
+`_format_actions_usage` does, with `|` between its options and the
+separators' spaces taken out. `wrap_text` is `textwrap.wrap` with
+textwrap's `wordsep_re`, which ends a word after a hyphen that has two
+letters (or a letter, a hyphen, and a letter) before it and a letter
+after it, or before an em-dash, and with `_handle_long_word`, which
+breaks a word too long for a line after its last hyphen that fits. The
+widths count bytes, which is Python's count for the tools' ASCII help.
+`compile_command::number` is `_number`, with Python's `int` rules for a
+sign, a prefix, underscores, leading zeros, and the whitespace around
+it, in 128 bits. A wider number is an InternalError, and the digits
+and spaces of other scripts, which Python takes, are no number here.
+
+tools/compare_backends.py's corpus `cli` has a job for each terminal
+width of `_CLI_COLUMNS` (1, 20, 41, 80, 132, and 200, which cover each
+way argparse wraps the usage and help), and each job runs the 83
+command lines of `_cli_command_lines` with `COLUMNS` set to its width:
+the help, each pair of stage flags apart and run together, a bad
+`--origin` in each way `_number` rejects one, each option without its
+value, an explicit argument a flag ignores, compile.py's own checks,
+options abbreviated and run together, arguments that go to the
+preprocessor, and links with each spelling of `-Ttext` and `--origin`.
+It compared the 498 commands with no difference. Before a fix, `-Ttext=-1` gave
+Python's `struct.error` and an executable in C++, since
+`check_write_fields` didn't check the section addresses, the entry,
+and the segments' addresses and sizes, which a link places from its
+origin. The jobs are in golden/cli.txt, and `check-golden` runs every
+job's command lines through `compile_command::run`, in place of the
+reader of the command line that it had before.
 
 ## The IR checks
 
@@ -2403,14 +2503,14 @@ in src/binutils/ and src/argparse.*.
   `opcode`, `size`, and `zp_form`. `c6502cpp opcodes` lists it, and
   tests/test_cpp_binutils.py compares the list with Python's.
 - `argparse` (`argparse.h`) is the part of Python 3.11's argparse that
-  nm.py and objdump.py use: options that store true or append, one
+  nm.py and objdump.py use, and since step 8 compile.py too ("compile.py's
+  command line", above): options that store true or append, one
   positional of one or more values, the help action, abbreviations and
   combined short flags, every error message, and the usage and help
-  wrapped by HelpFormatter's rules to the width `terminal_columns` reads
-  as `shutil.get_terminal_size` does. A help text with a hyphen inside a
-  word, where textwrap would break a line differently, throws
-  `InternalError`. `path_str` is `str(pathlib.Path(path))`, which
-  Python's messages show.
+  wrapped by HelpFormatter's rules, with textwrap's breaking of words at
+  their hyphens, to the width `terminal_columns` reads as
+  `shutil.get_terminal_size` does. `path_str` is
+  `str(pathlib.Path(path))`, which Python's messages show.
 - `binutils::nm` (`nm.h`) is nm.py, the first tool ported end to end.
   `c6502cpp nm` takes nm.py's command line, reading it as UTF-8 on
   Windows from the wide command line, and writes the listing's bytes,
@@ -2936,8 +3036,11 @@ the Python compiler. They are each program of the corpus (the examples,
 the games' units, the chapters' programs, and seeds 0 to 99 of
 `fuzz.stmts`, `fuzz.calls`, and `fuzz.exprs`) in each of the modes `O`,
 `unopt`, `cO`, `c`, `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
-`tacO`, and the `links` jobs, which compile and link the three games
-and link the damaged files and the bad command lines. It writes them
+`tacO`, the `links` jobs, which compile and link the three games and
+link the damaged files and the bad command lines, and the `cli` jobs,
+which run compile.py's help, usage errors, and spellings of `-Ttext` at
+six terminal widths. A job's `columns` step sets the width for the
+commands after it, which is 80 before one. It writes them
 under `golden/`, which is checked in raw, as examples/*.asm are. Each
 mode has a manifest, `golden/<mode>.txt`, with a block for each job
 that lists its steps, each command line with its exit status, its
@@ -2980,17 +3083,13 @@ cpp/build/bin/c6502cpp check-golden -j 12 --update
 the jobs among `-j` worker processes, which are c6502cpp started again
 with `--worker`, since a job changes the current directory. Each worker
 takes every job's steps in an empty directory. It runs each command
-line as compile.py's `main` runs it under `C6502_CPP_BACKEND=1`, with
-the request of `cpp_backend.compile_source`, `stage_source`, or `build`
-answered by `backend::respond` in the same process and the response
-replayed as compile.py replays it. It writes the manifest's lines for
+line through `compile_command::run`, the code of `c6502cpp compile`,
+which reads it with compile.py's argparse and runs it as compile.py's
+`main` does under `C6502_CPP_BACKEND=1`, with each request answered by
+`backend::respond` in the same process. It writes the manifest's lines for
 what the job gave and compares them with the manifest's own, and each
 `-S` text with its file, and prints a `DIFFER` line for each job that
-differs, with the command and the first line that differs. Until group
-G2 ports compile.py's command line, the checker reads the forms of it
-that the jobs use, and a command line it can't read as compile.py
-would is reported as a difference of its job. When G2's `compile`
-command lands, the checker can call that instead.
+differs, with the command and the first line that differs.
 
 A change made on purpose that changes an output shows as `DIFFER` lines.
 To accept it, run `check-golden --update`, which writes the manifests

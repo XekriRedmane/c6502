@@ -2955,3 +2955,42 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   `split_mem_to_mem` and then label_resolution broken on purpose in
   C++, check-golden reported 415 and 36 jobs and check-frozen 3 and 1
   calls, each under the pass's name. tests/test_golden.py runs both.
+- 24 Nov 2026: group G2 of step 8, compile.py's command line
+  (cpp/README.md, "compile.py's command line"). src/argparse.* has the
+  rest of what compile.py's parser uses: options that store a value
+  with a `metavar` and `type=`, `store_const` options in a mutually
+  exclusive group with its usage and its error, `append`, and
+  `parse_known_args`, with textwrap's splitting of words at their
+  hyphens in the help. `c6502cpp compile` (src/compile_command.*) reads
+  compile.py's whole command line with it, after `_rewrite_ttext`, and
+  does what `main` does under the switch in one process, with every
+  message saying `compile.py:`. Under `C6502_CPP_BACKEND=1` compile.py's
+  `main` runs it through `cpp_backend.run_tool`, in frames that give
+  each write to stdout and stderr in order, ask Python for stdin, and
+  end with the status, a SystemExit, or the exception `main` would
+  raise. `_run_stage` and `_compile_c` still send one request each.
+  `check-golden` runs every job's command lines through the command's
+  code in place of G5's reader. tools/compare_backends.py's new corpus
+  `cli` runs 83 command lines at six terminal widths (the help, each
+  pair of stage flags, each way `--origin` is rejected, each option
+  without its value, flags run together, compile.py's own checks, and
+  links with each spelling of `-Ttext`), and golden/cli.txt holds them.
+  The `cli` jobs found one difference, which is fixed (cd49dd2): a link
+  from `-Ttext=-1` gave Python's `struct.error` and a C++ executable,
+  since `check_write_fields` didn't check the addresses a link places
+  from its origin. compare_backends.py compared 7,162 jobs of 12,280
+  commands, and 10,728 commands of the modes `lex` to `tacO`, with no
+  difference, and `check-golden` matched 19,678 jobs of 24,796 commands
+  and `check-frozen` every call. The suite passes with
+  `C6502_CHECK_IR=1` with the variable set (4,991 tests, 23 skipped)
+  and without it (4,992, 22 skipped), and the build and the C++ tests
+  (3,359 cases) pass with MSVC 19.36 and GCC 12.2. `compile.py a.c -S`
+  of a one-line program under the switch took 120 ms before and 92 ms
+  after (the median of 30 runs, with a build running beside them), once
+  compile.py stopped importing diagnostics.py
+  (and so dataclasses) and cpp_backend.py stopped importing shutil and
+  tools/check_captures.py with its argparse before the early exit. Of
+  the rest, Python's own start takes about 32 ms, compiling compile.py's
+  source (a script has no .pyc) about 12 ms, importing subprocess (with
+  locale and re) about 30 ms, and `c6502cpp compile` itself about 13
+  ms.

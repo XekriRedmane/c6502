@@ -316,10 +316,21 @@ cpp/build/bin/c6502cpp check-frozen            # C++ against cpp/tests/frozen
 uv run python tools/write_golden.py -j 12      # golden/ from the Python compiler
 ```
 
-With `C6502_CPP_BACKEND=1`, the C++ port compiles each C input of
-`-S`, `-c`, and a link from its source text to the `-S` text, and Python
-runs no part of the front end, and the C++ port assembles `-c`'s
-objects and links, so no Python assembles or links either. For `-S`,
+With `C6502_CPP_BACKEND=1`, compile.py's `main` hands its whole
+command line to `c6502cpp compile` (cpp/src/compile_command.h, through
+`cpp_backend.run_tool`), which reads it with compile.py's argparse in
+C++ and does all that `main` does, in one process: each C input of
+`--lex`, `--parse`, `--resolve`, `--tac`, `-S`, `-c`, and a link is
+compiled from its source text, `-c`'s objects are assembled, and the
+link is made, so no Python of the compiler runs. The two sides talk in
+frames, so Python writes what the command writes, in its order, to its
+own streams, reads stdin for a C input `-` with `sys.stdin.read()`,
+returns the exit status, and raises the SystemExit or the exception
+`main` would raise. Run as a script with the variable set, compile.py
+imports no module of the repository but cpp_backend.py, and neither
+argparse nor shutil. The requests that command sends
+inside the process are the ones `_compile_c` and `_run_stage` still
+send, one each, for the tests that call them. For `-S`,
 `compile._compile_c` hands one call of
 `c6502cpp backend` the text as compile.py read it, the preprocessor's
 arguments, the file name (None for stdin), and the directory of
@@ -365,48 +376,42 @@ text with `preprocess` off. `--parse`, `--resolve`, and `--tac` go to
 C++ in the modes `parse`, `resolve`, and `tac` (`cpp_backend.stage_source`,
 src/passes/text_stages.h), which run the front end to where
 `_run_stage` stops and print the tree with the `pretty` that `asdl.py
---cpp` generates for each IR, the text of pretty.py. Run as a script with the variable set,
-compile.py stops before its pipeline's imports for every stage
-(`_cpp_runs_everything`), so no stage imports the parser,
-Lark, pcpp, or the modules of passes/, with `C6502_CHECK_IR=1` too.
+--cpp` generates for each IR, the text of pretty.py.
 
-`-c` and a link go to C++ in one request for the whole run
-(`compile._cpp_build`, `cpp_backend.build`, and the modes `objects` and
-`link` of cpp/src/backend.h). Python reads the inputs as `_object`
-does, each C source's text, each `.asm` file's text, and each object's
-bytes, up to the first it can't read (or, for `-c`, the first object),
-and sends them in order with the preprocessor's arguments, and for a
-link with the script's path, the origin, the `--defsym`s, and the
-output's path. The C++ side compiles and assembles each C input,
-assembles each `.asm` file, and reads each object, in order and in the
-same process, stopping at the first error, then returns each object of
-`-c`, or links the objects and writes the executable itself. Python goes
-through the response input by input as its own path does: it writes
-what each C input's preprocessor wrote to stderr and prints its
-warnings, raises the input's error as its Python exception
-(`AssemblerError`, `ElfError`, and the front end's classes) for `main`
-to report with `_report`, writes each object, and only then reports the
-input it stopped at. A link's error keeps its class (`LinkError`,
-`ZpSlotAllocationError`, `ZpLocalAllocationError`; a `ScriptError` and
-a `LayoutError` reach compile.py as `LinkError`s, as in Python), and
-compile.py reports it as `compile.py: link error: <message>`. The
-`struct.error` that `elf.write` raises for an addend or a size outside
-its field comes back as `struct.error` (which `cpp_backend._error_type`
-tells apart from `re.error`), and compile.py opens the output file
-before raising it, as Python does. An executable that can't be written
-gives the OSError of its errno. On these paths compile.py, run as a
-script, imports none of binutils/, `passes.linker` and its imports, the
-type checker, numpy, or rtlib (tests/test_cpp_backend.py,
-`TestObjectsAndLinks`).
+`-c` and a link go to the backend in one request for the whole run
+(the modes `objects` and `link` of cpp/src/backend.h), which `c6502cpp
+compile` sends with each C source's text, each `.asm` file's text, and
+each object's bytes, up to the first it can't read (or, for `-c`, the
+first object), and for a link the script's path, the origin, the
+`--defsym`s, and the output's path. The backend compiles and assembles
+each C input, assembles each `.asm` file, and reads each object, in
+order, stopping at the first error, then returns each object of `-c`,
+or links the objects and writes the executable itself. The command
+goes through the response input by input as compile.py's Python path
+does: it writes what each C input's preprocessor wrote to stderr and
+its warnings, reports the input's error (`AssemblerError`, `ElfError`,
+and the front end's classes) as `_report` does, writes each object, and
+only then reports the input it stopped at. A link's error keeps its
+class (`LinkError`, `ZpSlotAllocationError`, `ZpLocalAllocationError`;
+a `ScriptError` and a `LayoutError` reach compile.py as `LinkError`s,
+as in Python), and is reported as `compile.py: link error: <message>`.
+The `struct.error` that `elf.write` raises for a field outside its
+range (an addend, a size, or an address a link places from an origin
+such as -1) comes back as `struct.error` (which `cpp_backend._error_type`
+tells apart from `re.error`), after the output file is opened, as
+Python does. An executable that can't be written gives the OSError of
+its errno.
 
 The variable is read at each compile, and without
 it compile.py imports nothing new. `tools/compare_backends.py` compiles
 the whole corpus both ways with `-S`, `-S -O`, `-c`, and `-c -O`, links
 each object alone with and without a script, links the three games as
 tools/capture_binutils.py does and from their sources, and links
-damaged objects and bad command lines, and requires the same output,
-errors, warnings, and files (cpp/README.md, "The back end through
-c6502cpp" and "Emission"). With the variable set, nm.py's and
+damaged objects and bad command lines, and runs compile.py's help,
+usage errors, and spellings of `-Ttext` at six terminal widths (its
+corpus `cli`), and requires the same output, errors, warnings, and
+files (cpp/README.md, "The back end through c6502cpp", "compile.py's
+command line", and "Emission"). With the variable set, nm.py's and
 objdump.py's `main` run the C++ tools, `c6502cpp nm` and `c6502cpp
 objdump`, with their command lines (`cpp_backend.run_tool`), and write
 their output to Python's streams.

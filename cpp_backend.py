@@ -22,7 +22,9 @@ simulator harness assembles.
 
 `lex_source` sends the same request in the mode `lex`, which runs only
 the preprocessor and the lexer and returns the text `compile.py --lex`
-prints.
+prints, and `stage_source` sends it in the modes `parse`, `resolve`, and
+`tac`, which return the tree `compile.py --parse`, `--resolve`, and
+`--tac` print with pretty.py.
 
 `build` sends the inputs of `compile.py -c` or of a link in one request:
 each C source's text, each assembly file's text, and each object's
@@ -227,13 +229,33 @@ def lex_source(
     kind, tab, value line each. The preprocessor's stderr and warnings
     and the error of a rejected program come back as `compile_source`
     gives them."""
+    return stage_source(
+        "lex", source, pcpp_args, filename, optimize=False,
+        preprocess=preprocess,
+    )
+
+
+def stage_source(
+    stage: str, source: str, pcpp_args, filename: str | None, *,
+    optimize: bool, preprocess: bool = True, inline: bool = True,
+) -> str:
+    """Returns what `compile.py` prints for the C source `source` at
+    `stage`, one of "lex", "parse", "resolve", and "tac", as
+    `lex_source` does for "lex". For the other three it is pretty.py's
+    text of the c99 program after the parser, of the program after
+    `compile._resolved`, or of the TAC after `c99_to_tac` (and under
+    `-O`, `optimize`, after `inline_functions`, unless `inline` is
+    false, and the TAC optimizer). With the IR checks on, the C++ TAC
+    optimizer's driver checks the TAC after each pass, as Python's
+    does."""
     args = json.dumps({
         "pcpp_args": list(pcpp_args or []), "filename": filename,
         "include_dir": _INCLUDE_DIR, "preprocess": preprocess,
-        "optimize": False,
+        "optimize": optimize, "inline": inline,
+        "check_ir": stage == "tac" and _ir_check_enabled(),
     })
     request = (
-        f"c6502-backend 3\nmode lex\nargs {args}\n"
+        f"c6502-backend 3\nmode {stage}\nargs {args}\n"
         f"{_section('source', source)}"
     )
     lines, sections = _sections(_send(request))

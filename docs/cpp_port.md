@@ -2836,3 +2836,20 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   file. The suite passes with the variable set (4,965 tests, with
   `C6502_CHECK_IR=1`) and without it (4,965 tests), and the build
   and the C++ tests pass with MSVC 19.36 and GCC 12.2.
+- 23 Nov 2026: group G1 of step 8, the stages that print a tree.
+  `asdl.py --cpp` generates a `pretty` for each of the four IRs, which
+  writes pretty.py's text (`asdl::py_pretty`, and `c6502cpp roundtrip
+  --pretty` for a dump), and it matches pretty.py on the four IRs of
+  three programs, one of them with strings that need escapes
+  (tests/test_cpp_backend.py, `TestPretty`). The backend's modes
+  `parse`, `resolve`, and `tac` (src/passes/text_stages.h) run the
+  front end to where `_run_stage` stops, and compile.py sends
+  `--parse`, `--resolve`, and `--tac` and `_run_stage` for them through
+  `cpp_backend.stage_source` under `C6502_CPP_BACKEND=1`, so that run
+  as a script it imports none of the Python pipeline for any stage.
+  tools/compare_backends.py's modes `parse`, `resolve`, `resolveO`,
+  `tac`, and `tacO` ran the 1,788 programs of the corpus in each, 8,940
+  commands, with no difference in any output, message, exit status, or
+  file. The suite passes with the variable set (4,974 tests, with
+  `C6502_CHECK_IR=1`) and without it (4,974 tests), and the build and
+  the C++ tests pass with MSVC 19.36 and GCC 12.2.

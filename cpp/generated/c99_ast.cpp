@@ -3,9 +3,17 @@
 
 #include <utility>
 
+#include "pcpp_text.h"
 #include "pyrepr.h"
 
 namespace c6502::c99_ast {
+
+// Starts a line of pretty.py's text at the indentation level
+// `depth`, two spaces to a level.
+[[maybe_unused]] static void newline(std::string& out, int depth) {
+  out += '\n';
+  out.append(static_cast<std::size_t>(2 * depth), ' ');
+}
 
 void write(::c6502::asdl::Writer& w, const ConstInt& v) {
   w.write_name("ConstInt");
@@ -26,6 +34,16 @@ void repr(std::string& out, const ConstInt& v) {
   out += "value=";
   out += ::c6502::asdl::int_to_string(v.value);
   out += ")";
+}
+
+void pretty(std::string& out, const ConstInt& v, int depth) {
+  out += "ConstInt(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ConstInt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstInt>) {
@@ -54,6 +72,16 @@ void repr(std::string& out, const ConstLong& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ConstLong& v, int depth) {
+  out += "ConstLong(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ConstLong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstLong>) {
   r.expect_name("ConstLong");
   return read_body_ConstLong(r);
@@ -78,6 +106,16 @@ void repr(std::string& out, const ConstLongLong& v) {
   out += "value=";
   out += ::c6502::asdl::int_to_string(v.value);
   out += ")";
+}
+
+void pretty(std::string& out, const ConstLongLong& v, int depth) {
+  out += "ConstLongLong(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ConstLongLong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstLongLong>) {
@@ -106,6 +144,16 @@ void repr(std::string& out, const ConstUInt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ConstUInt& v, int depth) {
+  out += "ConstUInt(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ConstUInt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstUInt>) {
   r.expect_name("ConstUInt");
   return read_body_ConstUInt(r);
@@ -130,6 +178,16 @@ void repr(std::string& out, const ConstULong& v) {
   out += "value=";
   out += ::c6502::asdl::int_to_string(v.value);
   out += ")";
+}
+
+void pretty(std::string& out, const ConstULong& v, int depth) {
+  out += "ConstULong(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ConstULong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstULong>) {
@@ -158,6 +216,16 @@ void repr(std::string& out, const ConstULongLong& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ConstULongLong& v, int depth) {
+  out += "ConstULongLong(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ConstULongLong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstULongLong>) {
   r.expect_name("ConstULongLong");
   return read_body_ConstULongLong(r);
@@ -182,6 +250,16 @@ void repr(std::string& out, const ConstFloat& v) {
   out += "bits=";
   out += ::c6502::asdl::int_to_string(v.bits);
   out += ")";
+}
+
+void pretty(std::string& out, const ConstFloat& v, int depth) {
+  out += "ConstFloat(";
+  newline(out, depth + 1);
+  out += "bits=";
+  out += ::c6502::asdl::int_to_string(v.bits);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ConstFloat read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstFloat>) {
@@ -210,6 +288,16 @@ void repr(std::string& out, const ConstDouble& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ConstDouble& v, int depth) {
+  out += "ConstDouble(";
+  newline(out, depth + 1);
+  out += "bits=";
+  out += ::c6502::asdl::int_to_string(v.bits);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ConstDouble read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstDouble>) {
   r.expect_name("ConstDouble");
   return read_body_ConstDouble(r);
@@ -234,6 +322,16 @@ void repr(std::string& out, const ConstChar& v) {
   out += "value=";
   out += ::c6502::asdl::int_to_string(v.value);
   out += ")";
+}
+
+void pretty(std::string& out, const ConstChar& v, int depth) {
+  out += "ConstChar(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ConstChar read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstChar>) {
@@ -262,6 +360,16 @@ void repr(std::string& out, const ConstUChar& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ConstUChar& v, int depth) {
+  out += "ConstUChar(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ConstUChar read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstUChar>) {
   r.expect_name("ConstUChar");
   return read_body_ConstUChar(r);
@@ -288,6 +396,16 @@ void repr(std::string& out, const ConstBool& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ConstBool& v, int depth) {
+  out += "ConstBool(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ConstBool read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstBool>) {
   r.expect_name("ConstBool");
   return read_body_ConstBool(r);
@@ -305,6 +423,10 @@ static ConstNullptr read_body_ConstNullptr(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const ConstNullptr&) {
   out += "ConstNullptr(";
   out += ")";
+}
+
+void pretty(std::string& out, const ConstNullptr&, int) {
+  out += "ConstNullptr()";
 }
 
 ConstNullptr read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstNullptr>) {
@@ -341,6 +463,24 @@ void repr(std::string& out, const ConstBitInt& v) {
   out += ", is_signed=";
   out += v.is_signed ? "True" : "False";
   out += ")";
+}
+
+void pretty(std::string& out, const ConstBitInt& v, int depth) {
+  out += "ConstBitInt(";
+  newline(out, depth + 1);
+  out += "value=";
+  out += ::c6502::asdl::int_to_string(v.value);
+  out += ',';
+  newline(out, depth + 1);
+  out += "width=";
+  out += ::c6502::asdl::int_to_string(v.width);
+  out += ',';
+  newline(out, depth + 1);
+  out += "is_signed=";
+  out += v.is_signed ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ConstBitInt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ConstBitInt>) {
@@ -436,6 +576,50 @@ void repr(std::string& out, const Type_const& v) {
   }
 }
 
+void pretty(std::string& out, const Type_const& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
+      return;
+    case 3:
+      pretty(out, *std::get_if<3>(&v), depth);
+      return;
+    case 4:
+      pretty(out, *std::get_if<4>(&v), depth);
+      return;
+    case 5:
+      pretty(out, *std::get_if<5>(&v), depth);
+      return;
+    case 6:
+      pretty(out, *std::get_if<6>(&v), depth);
+      return;
+    case 7:
+      pretty(out, *std::get_if<7>(&v), depth);
+      return;
+    case 8:
+      pretty(out, *std::get_if<8>(&v), depth);
+      return;
+    case 9:
+      pretty(out, *std::get_if<9>(&v), depth);
+      return;
+    case 10:
+      pretty(out, *std::get_if<10>(&v), depth);
+      return;
+    case 11:
+      pretty(out, *std::get_if<11>(&v), depth);
+      return;
+    case 12:
+      pretty(out, *std::get_if<12>(&v), depth);
+      return;
+  }
+}
+
 Type_const read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_const>) {
   const std::string_view name = r.read_name();
   switch (name.size()) {
@@ -510,6 +694,10 @@ void repr(std::string& out, const Int&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Int&, int) {
+  out += "Int()";
+}
+
 Int read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Int>) {
   r.expect_name("Int");
   return read_body_Int(r);
@@ -527,6 +715,10 @@ static Long read_body_Long(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Long&) {
   out += "Long(";
   out += ")";
+}
+
+void pretty(std::string& out, const Long&, int) {
+  out += "Long()";
 }
 
 Long read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Long>) {
@@ -548,6 +740,10 @@ void repr(std::string& out, const LongLong&) {
   out += ")";
 }
 
+void pretty(std::string& out, const LongLong&, int) {
+  out += "LongLong()";
+}
+
 LongLong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LongLong>) {
   r.expect_name("LongLong");
   return read_body_LongLong(r);
@@ -565,6 +761,10 @@ static UInt read_body_UInt(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const UInt&) {
   out += "UInt(";
   out += ")";
+}
+
+void pretty(std::string& out, const UInt&, int) {
+  out += "UInt()";
 }
 
 UInt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<UInt>) {
@@ -586,6 +786,10 @@ void repr(std::string& out, const ULong&) {
   out += ")";
 }
 
+void pretty(std::string& out, const ULong&, int) {
+  out += "ULong()";
+}
+
 ULong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ULong>) {
   r.expect_name("ULong");
   return read_body_ULong(r);
@@ -603,6 +807,10 @@ static ULongLong read_body_ULongLong(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const ULongLong&) {
   out += "ULongLong(";
   out += ")";
+}
+
+void pretty(std::string& out, const ULongLong&, int) {
+  out += "ULongLong()";
 }
 
 ULongLong read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ULongLong>) {
@@ -624,6 +832,10 @@ void repr(std::string& out, const Float&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Float&, int) {
+  out += "Float()";
+}
+
 Float read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Float>) {
   r.expect_name("Float");
   return read_body_Float(r);
@@ -641,6 +853,10 @@ static Double read_body_Double(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Double&) {
   out += "Double(";
   out += ")";
+}
+
+void pretty(std::string& out, const Double&, int) {
+  out += "Double()";
 }
 
 Double read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Double>) {
@@ -662,6 +878,10 @@ void repr(std::string& out, const Char&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Char&, int) {
+  out += "Char()";
+}
+
 Char read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Char>) {
   r.expect_name("Char");
   return read_body_Char(r);
@@ -679,6 +899,10 @@ static SChar read_body_SChar(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const SChar&) {
   out += "SChar(";
   out += ")";
+}
+
+void pretty(std::string& out, const SChar&, int) {
+  out += "SChar()";
 }
 
 SChar read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<SChar>) {
@@ -700,6 +924,10 @@ void repr(std::string& out, const UChar&) {
   out += ")";
 }
 
+void pretty(std::string& out, const UChar&, int) {
+  out += "UChar()";
+}
+
 UChar read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<UChar>) {
   r.expect_name("UChar");
   return read_body_UChar(r);
@@ -717,6 +945,10 @@ static Short read_body_Short(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Short&) {
   out += "Short(";
   out += ")";
+}
+
+void pretty(std::string& out, const Short&, int) {
+  out += "Short()";
 }
 
 Short read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Short>) {
@@ -738,6 +970,10 @@ void repr(std::string& out, const UShort&) {
   out += ")";
 }
 
+void pretty(std::string& out, const UShort&, int) {
+  out += "UShort()";
+}
+
 UShort read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<UShort>) {
   r.expect_name("UShort");
   return read_body_UShort(r);
@@ -757,6 +993,10 @@ void repr(std::string& out, const Bool&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Bool&, int) {
+  out += "Bool()";
+}
+
 Bool read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Bool>) {
   r.expect_name("Bool");
   return read_body_Bool(r);
@@ -774,6 +1014,10 @@ static NullptrT read_body_NullptrT(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const NullptrT&) {
   out += "NullptrT(";
   out += ")";
+}
+
+void pretty(std::string& out, const NullptrT&, int) {
+  out += "NullptrT()";
 }
 
 NullptrT read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<NullptrT>) {
@@ -807,6 +1051,20 @@ void repr(std::string& out, const BitInt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const BitInt& v, int depth) {
+  out += "BitInt(";
+  newline(out, depth + 1);
+  out += "width=";
+  out += ::c6502::asdl::int_to_string(v.width);
+  out += ',';
+  newline(out, depth + 1);
+  out += "is_signed=";
+  out += v.is_signed ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 BitInt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<BitInt>) {
   r.expect_name("BitInt");
   return read_body_BitInt(r);
@@ -824,6 +1082,10 @@ static Void read_body_Void(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Void&) {
   out += "Void(";
   out += ")";
+}
+
+void pretty(std::string& out, const Void&, int) {
+  out += "Void()";
 }
 
 Void read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Void>) {
@@ -875,6 +1137,31 @@ void repr(std::string& out, const FunType& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const FunType& v, int depth) {
+  out += "FunType(";
+  newline(out, depth + 1);
+  out += "params=";
+  if (v.params.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.params) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "ret=";
+  pretty(out, *v.ret, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 FunType read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<FunType>) {
   r.expect_name("FunType");
   return read_body_FunType(r);
@@ -899,6 +1186,16 @@ void repr(std::string& out, const Pointer& v) {
   out += "referenced_type=";
   repr(out, *v.referenced_type);
   out += ")";
+}
+
+void pretty(std::string& out, const Pointer& v, int depth) {
+  out += "Pointer(";
+  newline(out, depth + 1);
+  out += "referenced_type=";
+  pretty(out, *v.referenced_type, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Pointer read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Pointer>) {
@@ -932,6 +1229,20 @@ void repr(std::string& out, const Array& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Array& v, int depth) {
+  out += "Array(";
+  newline(out, depth + 1);
+  out += "element_type=";
+  pretty(out, *v.element_type, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "size=";
+  out += ::c6502::asdl::int_to_string(v.size);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Array read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Array>) {
   r.expect_name("Array");
   return read_body_Array(r);
@@ -956,6 +1267,16 @@ void repr(std::string& out, const Structure& v) {
   out += "tag=";
   out += ::c6502::pyrepr::string(v.tag);
   out += ")";
+}
+
+void pretty(std::string& out, const Structure& v, int depth) {
+  out += "Structure(";
+  newline(out, depth + 1);
+  out += "tag=";
+  out += ::c6502::pcpp::py_repr(v.tag);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Structure read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Structure>) {
@@ -984,6 +1305,16 @@ void repr(std::string& out, const Union& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Union& v, int depth) {
+  out += "Union(";
+  newline(out, depth + 1);
+  out += "tag=";
+  out += ::c6502::pcpp::py_repr(v.tag);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Union read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Union>) {
   r.expect_name("Union");
   return read_body_Union(r);
@@ -1010,6 +1341,16 @@ void repr(std::string& out, const Const& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Const& v, int depth) {
+  out += "Const(";
+  newline(out, depth + 1);
+  out += "referenced_type=";
+  pretty(out, *v.referenced_type, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Const read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Const>) {
   r.expect_name("Const");
   return read_body_Const(r);
@@ -1034,6 +1375,16 @@ void repr(std::string& out, const Volatile& v) {
   out += "referenced_type=";
   repr(out, *v.referenced_type);
   out += ")";
+}
+
+void pretty(std::string& out, const Volatile& v, int depth) {
+  out += "Volatile(";
+  newline(out, depth + 1);
+  out += "referenced_type=";
+  pretty(out, *v.referenced_type, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Volatile read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Volatile>) {
@@ -1195,6 +1546,83 @@ void repr(std::string& out, const Type_data_type& v) {
   }
 }
 
+void pretty(std::string& out, const Type_data_type& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
+      return;
+    case 3:
+      pretty(out, *std::get_if<3>(&v), depth);
+      return;
+    case 4:
+      pretty(out, *std::get_if<4>(&v), depth);
+      return;
+    case 5:
+      pretty(out, *std::get_if<5>(&v), depth);
+      return;
+    case 6:
+      pretty(out, *std::get_if<6>(&v), depth);
+      return;
+    case 7:
+      pretty(out, *std::get_if<7>(&v), depth);
+      return;
+    case 8:
+      pretty(out, *std::get_if<8>(&v), depth);
+      return;
+    case 9:
+      pretty(out, *std::get_if<9>(&v), depth);
+      return;
+    case 10:
+      pretty(out, *std::get_if<10>(&v), depth);
+      return;
+    case 11:
+      pretty(out, *std::get_if<11>(&v), depth);
+      return;
+    case 12:
+      pretty(out, *std::get_if<12>(&v), depth);
+      return;
+    case 13:
+      pretty(out, *std::get_if<13>(&v), depth);
+      return;
+    case 14:
+      pretty(out, *std::get_if<14>(&v), depth);
+      return;
+    case 15:
+      pretty(out, *std::get_if<15>(&v), depth);
+      return;
+    case 16:
+      pretty(out, *std::get_if<16>(&v), depth);
+      return;
+    case 17:
+      pretty(out, *std::get_if<17>(&v), depth);
+      return;
+    case 18:
+      pretty(out, *std::get_if<18>(&v), depth);
+      return;
+    case 19:
+      pretty(out, *std::get_if<19>(&v), depth);
+      return;
+    case 20:
+      pretty(out, *std::get_if<20>(&v), depth);
+      return;
+    case 21:
+      pretty(out, *std::get_if<21>(&v), depth);
+      return;
+    case 22:
+      pretty(out, *std::get_if<22>(&v), depth);
+      return;
+    case 23:
+      pretty(out, *std::get_if<23>(&v), depth);
+      return;
+  }
+}
+
 Type_data_type read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_data_type>) {
   const std::string_view name = r.read_name();
   switch (name.size()) {
@@ -1302,6 +1730,10 @@ void repr(std::string& out, const Complement&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Complement&, int) {
+  out += "Complement()";
+}
+
 Complement read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Complement>) {
   r.expect_name("Complement");
   return read_body_Complement(r);
@@ -1319,6 +1751,10 @@ static Negate read_body_Negate(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Negate&) {
   out += "Negate(";
   out += ")";
+}
+
+void pretty(std::string& out, const Negate&, int) {
+  out += "Negate()";
 }
 
 Negate read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Negate>) {
@@ -1340,6 +1776,10 @@ void repr(std::string& out, const LogicalNot&) {
   out += ")";
 }
 
+void pretty(std::string& out, const LogicalNot&, int) {
+  out += "LogicalNot()";
+}
+
 LogicalNot read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LogicalNot>) {
   r.expect_name("LogicalNot");
   return read_body_LogicalNot(r);
@@ -1357,6 +1797,10 @@ static Plus read_body_Plus(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Plus&) {
   out += "Plus(";
   out += ")";
+}
+
+void pretty(std::string& out, const Plus&, int) {
+  out += "Plus()";
 }
 
 Plus read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Plus>) {
@@ -1394,6 +1838,23 @@ void repr(std::string& out, const Type_unary_operator& v) {
       return;
     case 3:
       repr(out, *std::get_if<3>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_unary_operator& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
+      return;
+    case 3:
+      pretty(out, *std::get_if<3>(&v), depth);
       return;
   }
 }
@@ -1437,6 +1898,10 @@ void repr(std::string& out, const Add&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Add&, int) {
+  out += "Add()";
+}
+
 Add read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Add>) {
   r.expect_name("Add");
   return read_body_Add(r);
@@ -1454,6 +1919,10 @@ static Subtract read_body_Subtract(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Subtract&) {
   out += "Subtract(";
   out += ")";
+}
+
+void pretty(std::string& out, const Subtract&, int) {
+  out += "Subtract()";
 }
 
 Subtract read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Subtract>) {
@@ -1475,6 +1944,10 @@ void repr(std::string& out, const Multiply&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Multiply&, int) {
+  out += "Multiply()";
+}
+
 Multiply read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Multiply>) {
   r.expect_name("Multiply");
   return read_body_Multiply(r);
@@ -1492,6 +1965,10 @@ static Divide read_body_Divide(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Divide&) {
   out += "Divide(";
   out += ")";
+}
+
+void pretty(std::string& out, const Divide&, int) {
+  out += "Divide()";
 }
 
 Divide read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Divide>) {
@@ -1513,6 +1990,10 @@ void repr(std::string& out, const Modulo&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Modulo&, int) {
+  out += "Modulo()";
+}
+
 Modulo read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Modulo>) {
   r.expect_name("Modulo");
   return read_body_Modulo(r);
@@ -1530,6 +2011,10 @@ static BitwiseAnd read_body_BitwiseAnd(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const BitwiseAnd&) {
   out += "BitwiseAnd(";
   out += ")";
+}
+
+void pretty(std::string& out, const BitwiseAnd&, int) {
+  out += "BitwiseAnd()";
 }
 
 BitwiseAnd read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<BitwiseAnd>) {
@@ -1551,6 +2036,10 @@ void repr(std::string& out, const BitwiseOr&) {
   out += ")";
 }
 
+void pretty(std::string& out, const BitwiseOr&, int) {
+  out += "BitwiseOr()";
+}
+
 BitwiseOr read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<BitwiseOr>) {
   r.expect_name("BitwiseOr");
   return read_body_BitwiseOr(r);
@@ -1568,6 +2057,10 @@ static BitwiseXor read_body_BitwiseXor(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const BitwiseXor&) {
   out += "BitwiseXor(";
   out += ")";
+}
+
+void pretty(std::string& out, const BitwiseXor&, int) {
+  out += "BitwiseXor()";
 }
 
 BitwiseXor read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<BitwiseXor>) {
@@ -1589,6 +2082,10 @@ void repr(std::string& out, const LeftShift&) {
   out += ")";
 }
 
+void pretty(std::string& out, const LeftShift&, int) {
+  out += "LeftShift()";
+}
+
 LeftShift read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LeftShift>) {
   r.expect_name("LeftShift");
   return read_body_LeftShift(r);
@@ -1606,6 +2103,10 @@ static RightShift read_body_RightShift(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const RightShift&) {
   out += "RightShift(";
   out += ")";
+}
+
+void pretty(std::string& out, const RightShift&, int) {
+  out += "RightShift()";
 }
 
 RightShift read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<RightShift>) {
@@ -1627,6 +2128,10 @@ void repr(std::string& out, const Equal&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Equal&, int) {
+  out += "Equal()";
+}
+
 Equal read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Equal>) {
   r.expect_name("Equal");
   return read_body_Equal(r);
@@ -1644,6 +2149,10 @@ static NotEqual read_body_NotEqual(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const NotEqual&) {
   out += "NotEqual(";
   out += ")";
+}
+
+void pretty(std::string& out, const NotEqual&, int) {
+  out += "NotEqual()";
 }
 
 NotEqual read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<NotEqual>) {
@@ -1665,6 +2174,10 @@ void repr(std::string& out, const LessThan&) {
   out += ")";
 }
 
+void pretty(std::string& out, const LessThan&, int) {
+  out += "LessThan()";
+}
+
 LessThan read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LessThan>) {
   r.expect_name("LessThan");
   return read_body_LessThan(r);
@@ -1682,6 +2195,10 @@ static GreaterThan read_body_GreaterThan(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const GreaterThan&) {
   out += "GreaterThan(";
   out += ")";
+}
+
+void pretty(std::string& out, const GreaterThan&, int) {
+  out += "GreaterThan()";
 }
 
 GreaterThan read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<GreaterThan>) {
@@ -1703,6 +2220,10 @@ void repr(std::string& out, const LessOrEqual&) {
   out += ")";
 }
 
+void pretty(std::string& out, const LessOrEqual&, int) {
+  out += "LessOrEqual()";
+}
+
 LessOrEqual read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LessOrEqual>) {
   r.expect_name("LessOrEqual");
   return read_body_LessOrEqual(r);
@@ -1720,6 +2241,10 @@ static GreaterOrEqual read_body_GreaterOrEqual(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const GreaterOrEqual&) {
   out += "GreaterOrEqual(";
   out += ")";
+}
+
+void pretty(std::string& out, const GreaterOrEqual&, int) {
+  out += "GreaterOrEqual()";
 }
 
 GreaterOrEqual read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<GreaterOrEqual>) {
@@ -1741,6 +2266,10 @@ void repr(std::string& out, const LogicalAnd&) {
   out += ")";
 }
 
+void pretty(std::string& out, const LogicalAnd&, int) {
+  out += "LogicalAnd()";
+}
+
 LogicalAnd read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LogicalAnd>) {
   r.expect_name("LogicalAnd");
   return read_body_LogicalAnd(r);
@@ -1758,6 +2287,10 @@ static LogicalOr read_body_LogicalOr(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const LogicalOr&) {
   out += "LogicalOr(";
   out += ")";
+}
+
+void pretty(std::string& out, const LogicalOr&, int) {
+  out += "LogicalOr()";
 }
 
 LogicalOr read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LogicalOr>) {
@@ -1883,6 +2416,65 @@ void repr(std::string& out, const Type_binary_operator& v) {
   }
 }
 
+void pretty(std::string& out, const Type_binary_operator& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
+      return;
+    case 3:
+      pretty(out, *std::get_if<3>(&v), depth);
+      return;
+    case 4:
+      pretty(out, *std::get_if<4>(&v), depth);
+      return;
+    case 5:
+      pretty(out, *std::get_if<5>(&v), depth);
+      return;
+    case 6:
+      pretty(out, *std::get_if<6>(&v), depth);
+      return;
+    case 7:
+      pretty(out, *std::get_if<7>(&v), depth);
+      return;
+    case 8:
+      pretty(out, *std::get_if<8>(&v), depth);
+      return;
+    case 9:
+      pretty(out, *std::get_if<9>(&v), depth);
+      return;
+    case 10:
+      pretty(out, *std::get_if<10>(&v), depth);
+      return;
+    case 11:
+      pretty(out, *std::get_if<11>(&v), depth);
+      return;
+    case 12:
+      pretty(out, *std::get_if<12>(&v), depth);
+      return;
+    case 13:
+      pretty(out, *std::get_if<13>(&v), depth);
+      return;
+    case 14:
+      pretty(out, *std::get_if<14>(&v), depth);
+      return;
+    case 15:
+      pretty(out, *std::get_if<15>(&v), depth);
+      return;
+    case 16:
+      pretty(out, *std::get_if<16>(&v), depth);
+      return;
+    case 17:
+      pretty(out, *std::get_if<17>(&v), depth);
+      return;
+  }
+}
+
 Type_binary_operator read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_binary_operator>) {
   const std::string_view name = r.read_name();
   switch (name.size()) {
@@ -1974,6 +2566,10 @@ void repr(std::string& out, const Increment&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Increment&, int) {
+  out += "Increment()";
+}
+
 Increment read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Increment>) {
   r.expect_name("Increment");
   return read_body_Increment(r);
@@ -1991,6 +2587,10 @@ static Decrement read_body_Decrement(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Decrement&) {
   out += "Decrement(";
   out += ")";
+}
+
+void pretty(std::string& out, const Decrement&, int) {
+  out += "Decrement()";
 }
 
 Decrement read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Decrement>) {
@@ -2016,6 +2616,17 @@ void repr(std::string& out, const Type_incdec_op& v) {
       return;
     case 1:
       repr(out, *std::get_if<1>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_incdec_op& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
       return;
   }
 }
@@ -2056,6 +2667,16 @@ void repr(std::string& out, const IndexDesignator& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const IndexDesignator& v, int depth) {
+  out += "IndexDesignator(";
+  newline(out, depth + 1);
+  out += "index=";
+  out += ::c6502::asdl::int_to_string(v.index);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 IndexDesignator read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<IndexDesignator>) {
   r.expect_name("IndexDesignator");
   return read_body_IndexDesignator(r);
@@ -2082,6 +2703,16 @@ void repr(std::string& out, const MemberDesignator& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const MemberDesignator& v, int depth) {
+  out += "MemberDesignator(";
+  newline(out, depth + 1);
+  out += "member=";
+  out += ::c6502::pcpp::py_repr(v.member);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 MemberDesignator read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<MemberDesignator>) {
   r.expect_name("MemberDesignator");
   return read_body_MemberDesignator(r);
@@ -2105,6 +2736,17 @@ void repr(std::string& out, const Type_designator& v) {
       return;
     case 1:
       repr(out, *std::get_if<1>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_designator& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
       return;
   }
 }
@@ -2140,6 +2782,10 @@ void repr(std::string& out, const Static&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Static&, int) {
+  out += "Static()";
+}
+
 Static read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Static>) {
   r.expect_name("Static");
   return read_body_Static(r);
@@ -2159,6 +2805,10 @@ void repr(std::string& out, const Extern&) {
   out += ")";
 }
 
+void pretty(std::string& out, const Extern&, int) {
+  out += "Extern()";
+}
+
 Extern read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Extern>) {
   r.expect_name("Extern");
   return read_body_Extern(r);
@@ -2176,6 +2826,10 @@ static Register read_body_Register(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Register&) {
   out += "Register(";
   out += ")";
+}
+
+void pretty(std::string& out, const Register&, int) {
+  out += "Register()";
 }
 
 Register read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Register>) {
@@ -2207,6 +2861,20 @@ void repr(std::string& out, const Type_storage_class& v) {
       return;
     case 2:
       repr(out, *std::get_if<2>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_storage_class& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
       return;
   }
 }
@@ -2268,6 +2936,24 @@ void repr(std::string& out, const Constant& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Constant& v, int depth) {
+  out += "Constant(";
+  newline(out, depth + 1);
+  out += "const=";
+  pretty(out, v.const_, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Constant read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Constant>) {
   r.expect_name("Constant");
   return read_body_Constant(r);
@@ -2292,6 +2978,16 @@ void repr(std::string& out, const String& v) {
   out += "str=";
   out += ::c6502::pyrepr::string(v.str);
   out += ")";
+}
+
+void pretty(std::string& out, const String& v, int depth) {
+  out += "String(";
+  newline(out, depth + 1);
+  out += "str=";
+  out += ::c6502::pcpp::py_repr(v.str);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 String read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<String>) {
@@ -2334,6 +3030,24 @@ void repr(std::string& out, const Var& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Var& v, int depth) {
+  out += "Var(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Var read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Var>) {
@@ -2383,6 +3097,28 @@ void repr(std::string& out, const Cast& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Cast& v, int depth) {
+  out += "Cast(";
+  newline(out, depth + 1);
+  out += "target_type=";
+  pretty(out, v.target_type, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "exp=";
+  pretty(out, *v.exp, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Cast read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Cast>) {
   r.expect_name("Cast");
   return read_body_Cast(r);
@@ -2428,6 +3164,28 @@ void repr(std::string& out, const Unary& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Unary& v, int depth) {
+  out += "Unary(";
+  newline(out, depth + 1);
+  out += "op=";
+  pretty(out, v.op, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "exp=";
+  pretty(out, *v.exp, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Unary read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Unary>) {
@@ -2482,6 +3240,32 @@ void repr(std::string& out, const Binary& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Binary& v, int depth) {
+  out += "Binary(";
+  newline(out, depth + 1);
+  out += "op=";
+  pretty(out, v.op, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "left=";
+  pretty(out, *v.left, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "right=";
+  pretty(out, *v.right, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Binary read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Binary>) {
   r.expect_name("Binary");
   return read_body_Binary(r);
@@ -2527,6 +3311,28 @@ void repr(std::string& out, const Assignment& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Assignment& v, int depth) {
+  out += "Assignment(";
+  newline(out, depth + 1);
+  out += "lval=";
+  pretty(out, *v.lval, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "rval=";
+  pretty(out, *v.rval, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Assignment read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Assignment>) {
@@ -2597,6 +3403,40 @@ void repr(std::string& out, const CompoundAssignment& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const CompoundAssignment& v, int depth) {
+  out += "CompoundAssignment(";
+  newline(out, depth + 1);
+  out += "op=";
+  pretty(out, v.op, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "lval=";
+  pretty(out, *v.lval, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "rval=";
+  pretty(out, *v.rval, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "intermediate_type=";
+  if (v.intermediate_type) {
+    pretty(out, (*v.intermediate_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 CompoundAssignment read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<CompoundAssignment>) {
   r.expect_name("CompoundAssignment");
   return read_body_CompoundAssignment(r);
@@ -2644,6 +3484,28 @@ void repr(std::string& out, const Postfix& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Postfix& v, int depth) {
+  out += "Postfix(";
+  newline(out, depth + 1);
+  out += "op=";
+  pretty(out, v.op, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "operand=";
+  pretty(out, *v.operand, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Postfix read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Postfix>) {
   r.expect_name("Postfix");
   return read_body_Postfix(r);
@@ -2689,6 +3551,28 @@ void repr(std::string& out, const Prefix& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Prefix& v, int depth) {
+  out += "Prefix(";
+  newline(out, depth + 1);
+  out += "op=";
+  pretty(out, v.op, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "operand=";
+  pretty(out, *v.operand, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Prefix read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Prefix>) {
@@ -2741,6 +3625,32 @@ void repr(std::string& out, const Conditional& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Conditional& v, int depth) {
+  out += "Conditional(";
+  newline(out, depth + 1);
+  out += "condition=";
+  pretty(out, *v.condition, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "true_clause=";
+  pretty(out, *v.true_clause, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "false_clause=";
+  pretty(out, *v.false_clause, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Conditional read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Conditional>) {
@@ -2813,6 +3723,43 @@ void repr(std::string& out, const FunctionCall& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const FunctionCall& v, int depth) {
+  out += "FunctionCall(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "args=";
+  if (v.args.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.args) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "hw_stack_save=";
+  out += v.hw_stack_save ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 FunctionCall read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<FunctionCall>) {
   r.expect_name("FunctionCall");
   return read_body_FunctionCall(r);
@@ -2883,6 +3830,43 @@ void repr(std::string& out, const IndirectCall& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const IndirectCall& v, int depth) {
+  out += "IndirectCall(";
+  newline(out, depth + 1);
+  out += "callee=";
+  pretty(out, *v.callee, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "args=";
+  if (v.args.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.args) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "hw_stack_save=";
+  out += v.hw_stack_save ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 IndirectCall read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<IndirectCall>) {
   r.expect_name("IndirectCall");
   return read_body_IndirectCall(r);
@@ -2925,6 +3909,24 @@ void repr(std::string& out, const Dereference& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Dereference& v, int depth) {
+  out += "Dereference(";
+  newline(out, depth + 1);
+  out += "exp=";
+  pretty(out, *v.exp, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Dereference read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Dereference>) {
   r.expect_name("Dereference");
   return read_body_Dereference(r);
@@ -2965,6 +3967,24 @@ void repr(std::string& out, const AddressOf& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const AddressOf& v, int depth) {
+  out += "AddressOf(";
+  newline(out, depth + 1);
+  out += "exp=";
+  pretty(out, *v.exp, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 AddressOf read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<AddressOf>) {
@@ -3012,6 +4032,28 @@ void repr(std::string& out, const Subscript& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Subscript& v, int depth) {
+  out += "Subscript(";
+  newline(out, depth + 1);
+  out += "array=";
+  pretty(out, *v.array, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "index=";
+  pretty(out, *v.index, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Subscript read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Subscript>) {
@@ -3090,6 +4132,43 @@ void repr(std::string& out, const InitList& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const InitList& v, int depth) {
+  out += "InitList(";
+  newline(out, depth + 1);
+  out += "items=";
+  if (v.items.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.items) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "union_member=";
+  if (v.union_member) {
+    out += ::c6502::pcpp::py_repr((*v.union_member));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 InitList read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<InitList>) {
   r.expect_name("InitList");
   return read_body_InitList(r);
@@ -3139,6 +4218,31 @@ void repr(std::string& out, const Designation& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Designation& v, int depth) {
+  out += "Designation(";
+  newline(out, depth + 1);
+  out += "designators=";
+  if (v.designators.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.designators) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "init=";
+  pretty(out, *v.init, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Designation read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Designation>) {
   r.expect_name("Designation");
   return read_body_Designation(r);
@@ -3181,6 +4285,24 @@ void repr(std::string& out, const SizeOfExp& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const SizeOfExp& v, int depth) {
+  out += "SizeOfExp(";
+  newline(out, depth + 1);
+  out += "exp=";
+  pretty(out, *v.exp, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 SizeOfExp read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<SizeOfExp>) {
   r.expect_name("SizeOfExp");
   return read_body_SizeOfExp(r);
@@ -3221,6 +4343,24 @@ void repr(std::string& out, const SizeOfType& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const SizeOfType& v, int depth) {
+  out += "SizeOfType(";
+  newline(out, depth + 1);
+  out += "target_type=";
+  pretty(out, v.target_type, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 SizeOfType read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<SizeOfType>) {
@@ -3270,6 +4410,28 @@ void repr(std::string& out, const Dot& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Dot& v, int depth) {
+  out += "Dot(";
+  newline(out, depth + 1);
+  out += "operand=";
+  pretty(out, *v.operand, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "member=";
+  out += ::c6502::pcpp::py_repr(v.member);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Dot read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Dot>) {
   r.expect_name("Dot");
   return read_body_Dot(r);
@@ -3317,6 +4479,28 @@ void repr(std::string& out, const Arrow& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Arrow& v, int depth) {
+  out += "Arrow(";
+  newline(out, depth + 1);
+  out += "operand=";
+  pretty(out, *v.operand, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "member=";
+  out += ::c6502::pcpp::py_repr(v.member);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Arrow read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Arrow>) {
   r.expect_name("Arrow");
   return read_body_Arrow(r);
@@ -3362,6 +4546,28 @@ void repr(std::string& out, const Comma& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const Comma& v, int depth) {
+  out += "Comma(";
+  newline(out, depth + 1);
+  out += "left=";
+  pretty(out, *v.left, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "right=";
+  pretty(out, *v.right, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Comma read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Comma>) {
@@ -3435,6 +4641,44 @@ void repr(std::string& out, const CompoundLiteral& v) {
   out += ", is_constexpr=";
   out += v.is_constexpr ? "True" : "False";
   out += ")";
+}
+
+void pretty(std::string& out, const CompoundLiteral& v, int depth) {
+  out += "CompoundLiteral(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "target_type=";
+  pretty(out, v.target_type, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "init=";
+  pretty(out, *v.init, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  if (v.data_type) {
+    pretty(out, (*v.data_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "storage_class=";
+  if (v.storage_class) {
+    pretty(out, (*v.storage_class), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "is_constexpr=";
+  out += v.is_constexpr ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 CompoundLiteral read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<CompoundLiteral>) {
@@ -3596,6 +4840,83 @@ void repr(std::string& out, const Type_exp& v) {
   }
 }
 
+void pretty(std::string& out, const Type_exp& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
+      return;
+    case 3:
+      pretty(out, *std::get_if<3>(&v), depth);
+      return;
+    case 4:
+      pretty(out, *std::get_if<4>(&v), depth);
+      return;
+    case 5:
+      pretty(out, *std::get_if<5>(&v), depth);
+      return;
+    case 6:
+      pretty(out, *std::get_if<6>(&v), depth);
+      return;
+    case 7:
+      pretty(out, *std::get_if<7>(&v), depth);
+      return;
+    case 8:
+      pretty(out, *std::get_if<8>(&v), depth);
+      return;
+    case 9:
+      pretty(out, *std::get_if<9>(&v), depth);
+      return;
+    case 10:
+      pretty(out, *std::get_if<10>(&v), depth);
+      return;
+    case 11:
+      pretty(out, *std::get_if<11>(&v), depth);
+      return;
+    case 12:
+      pretty(out, *std::get_if<12>(&v), depth);
+      return;
+    case 13:
+      pretty(out, *std::get_if<13>(&v), depth);
+      return;
+    case 14:
+      pretty(out, *std::get_if<14>(&v), depth);
+      return;
+    case 15:
+      pretty(out, *std::get_if<15>(&v), depth);
+      return;
+    case 16:
+      pretty(out, *std::get_if<16>(&v), depth);
+      return;
+    case 17:
+      pretty(out, *std::get_if<17>(&v), depth);
+      return;
+    case 18:
+      pretty(out, *std::get_if<18>(&v), depth);
+      return;
+    case 19:
+      pretty(out, *std::get_if<19>(&v), depth);
+      return;
+    case 20:
+      pretty(out, *std::get_if<20>(&v), depth);
+      return;
+    case 21:
+      pretty(out, *std::get_if<21>(&v), depth);
+      return;
+    case 22:
+      pretty(out, *std::get_if<22>(&v), depth);
+      return;
+    case 23:
+      pretty(out, *std::get_if<23>(&v), depth);
+      return;
+  }
+}
+
 Type_exp read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_exp>) {
   const std::string_view name = r.read_name();
   switch (name.size()) {
@@ -3731,6 +5052,20 @@ void repr(std::string& out, const ZeroPage& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const ZeroPage& v, int depth) {
+  out += "ZeroPage(";
+  newline(out, depth + 1);
+  out += "address=";
+  if (v.address) {
+    out += ::c6502::asdl::int_to_string((*v.address));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 ZeroPage read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ZeroPage>) {
   r.expect_name("ZeroPage");
   return read_body_ZeroPage(r);
@@ -3757,6 +5092,16 @@ void repr(std::string& out, const Absolute& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Absolute& v, int depth) {
+  out += "Absolute(";
+  newline(out, depth + 1);
+  out += "address=";
+  out += ::c6502::asdl::int_to_string(v.address);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Absolute read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Absolute>) {
   r.expect_name("Absolute");
   return read_body_Absolute(r);
@@ -3780,6 +5125,17 @@ void repr(std::string& out, const Type_placement& v) {
       return;
     case 1:
       repr(out, *std::get_if<1>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_placement& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
       return;
   }
 }
@@ -3910,6 +5266,64 @@ void repr(std::string& out, const Type_var_decl& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Type_var_decl& v, int depth) {
+  out += "Type_var_decl(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "init=";
+  if (v.init) {
+    pretty(out, (*v.init), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  pretty(out, v.data_type, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "storage_class=";
+  if (v.storage_class) {
+    pretty(out, (*v.storage_class), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "abi_annotation=";
+  if (v.abi_annotation) {
+    out += ::c6502::pcpp::py_repr((*v.abi_annotation));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "placement=";
+  if (v.placement) {
+    pretty(out, (*v.placement), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "section=";
+  if (v.section) {
+    out += ::c6502::pcpp::py_repr((*v.section));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "is_constexpr=";
+  out += v.is_constexpr ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Type_var_decl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_var_decl>) {
   r.expect_name("var_decl");
   return read_body_Type_var_decl(r);
@@ -3954,6 +5368,27 @@ void repr(std::string& out, const InitDecl& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const InitDecl& v, int depth) {
+  out += "InitDecl(";
+  newline(out, depth + 1);
+  out += "var_decls=";
+  if (v.var_decls.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.var_decls) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 InitDecl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<InitDecl>) {
   r.expect_name("InitDecl");
   return read_body_InitDecl(r);
@@ -3991,6 +5426,20 @@ void repr(std::string& out, const InitExp& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const InitExp& v, int depth) {
+  out += "InitExp(";
+  newline(out, depth + 1);
+  out += "exp=";
+  if (v.exp) {
+    pretty(out, (*v.exp), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 InitExp read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<InitExp>) {
   r.expect_name("InitExp");
   return read_body_InitExp(r);
@@ -4014,6 +5463,17 @@ void repr(std::string& out, const Type_for_init& v) {
       return;
     case 1:
       repr(out, *std::get_if<1>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_for_init& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
       return;
   }
 }
@@ -4061,6 +5521,20 @@ void repr(std::string& out, const Type_switch_case& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Type_switch_case& v, int depth) {
+  out += "Type_switch_case(";
+  newline(out, depth + 1);
+  out += "value=";
+  pretty(out, v.value, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Type_switch_case read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_switch_case>) {
   r.expect_name("switch_case");
   return read_body_Type_switch_case(r);
@@ -4090,6 +5564,20 @@ void repr(std::string& out, const Type_member_decl& v) {
   out += ", data_type=";
   repr(out, v.data_type);
   out += ")";
+}
+
+void pretty(std::string& out, const Type_member_decl& v, int depth) {
+  out += "Type_member_decl(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  pretty(out, v.data_type, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Type_member_decl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_member_decl>) {
@@ -4146,6 +5634,35 @@ void repr(std::string& out, const Type_struct_decl& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Type_struct_decl& v, int depth) {
+  out += "Type_struct_decl(";
+  newline(out, depth + 1);
+  out += "tag=";
+  out += ::c6502::pcpp::py_repr(v.tag);
+  out += ',';
+  newline(out, depth + 1);
+  out += "is_union=";
+  out += v.is_union ? "True" : "False";
+  out += ',';
+  newline(out, depth + 1);
+  out += "members=";
+  if (v.members.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.members) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Type_struct_decl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_struct_decl>) {
   r.expect_name("struct_decl");
   return read_body_Type_struct_decl(r);
@@ -4190,6 +5707,27 @@ void repr(std::string& out, const Block& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Block& v, int depth) {
+  out += "Block(";
+  newline(out, depth + 1);
+  out += "block_item=";
+  if (v.block_item.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.block_item) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Block read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Block>) {
   r.expect_name("Block");
   return read_body_Block(r);
@@ -4207,6 +5745,14 @@ void repr(std::string& out, const Type_block& v) {
   switch (v.index()) {
     case 0:
       repr(out, *std::get_if<0>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_block& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
       return;
   }
 }
@@ -4244,6 +5790,16 @@ void repr(std::string& out, const S& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const S& v, int depth) {
+  out += "S(";
+  newline(out, depth + 1);
+  out += "statement=";
+  pretty(out, *v.statement, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 S read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<S>) {
   r.expect_name("S");
   return read_body_S(r);
@@ -4270,6 +5826,16 @@ void repr(std::string& out, const D& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const D& v, int depth) {
+  out += "D(";
+  newline(out, depth + 1);
+  out += "declaration=";
+  pretty(out, *v.declaration, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 D read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<D>) {
   r.expect_name("D");
   return read_body_D(r);
@@ -4293,6 +5859,17 @@ void repr(std::string& out, const Type_block_item& v) {
       return;
     case 1:
       repr(out, *std::get_if<1>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_block_item& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
       return;
   }
 }
@@ -4344,6 +5921,20 @@ void repr(std::string& out, const Return& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Return& v, int depth) {
+  out += "Return(";
+  newline(out, depth + 1);
+  out += "exp=";
+  if (v.exp) {
+    pretty(out, (*v.exp), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Return read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Return>) {
   r.expect_name("Return");
   return read_body_Return(r);
@@ -4368,6 +5959,16 @@ void repr(std::string& out, const Expression& v) {
   out += "exp=";
   repr(out, v.exp);
   out += ")";
+}
+
+void pretty(std::string& out, const Expression& v, int depth) {
+  out += "Expression(";
+  newline(out, depth + 1);
+  out += "exp=";
+  pretty(out, v.exp, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Expression read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Expression>) {
@@ -4417,6 +6018,28 @@ void repr(std::string& out, const IfStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const IfStmt& v, int depth) {
+  out += "IfStmt(";
+  newline(out, depth + 1);
+  out += "condition=";
+  pretty(out, v.condition, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "then_clause=";
+  pretty(out, *v.then_clause, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "else_clause=";
+  if (v.else_clause) {
+    pretty(out, *(*v.else_clause), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 IfStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<IfStmt>) {
   r.expect_name("IfStmt");
   return read_body_IfStmt(r);
@@ -4441,6 +6064,16 @@ void repr(std::string& out, const Compound& v) {
   out += "block=";
   repr(out, *v.block);
   out += ")";
+}
+
+void pretty(std::string& out, const Compound& v, int depth) {
+  out += "Compound(";
+  newline(out, depth + 1);
+  out += "block=";
+  pretty(out, *v.block, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Compound read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Compound>) {
@@ -4469,6 +6102,16 @@ void repr(std::string& out, const BreakStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const BreakStmt& v, int depth) {
+  out += "BreakStmt(";
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 BreakStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<BreakStmt>) {
   r.expect_name("BreakStmt");
   return read_body_BreakStmt(r);
@@ -4493,6 +6136,16 @@ void repr(std::string& out, const ContinueStmt& v) {
   out += "label=";
   out += ::c6502::pyrepr::string(v.label);
   out += ")";
+}
+
+void pretty(std::string& out, const ContinueStmt& v, int depth) {
+  out += "ContinueStmt(";
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ContinueStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ContinueStmt>) {
@@ -4531,6 +6184,24 @@ void repr(std::string& out, const WhileStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const WhileStmt& v, int depth) {
+  out += "WhileStmt(";
+  newline(out, depth + 1);
+  out += "condition=";
+  pretty(out, v.condition, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, *v.body, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 WhileStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<WhileStmt>) {
   r.expect_name("WhileStmt");
   return read_body_WhileStmt(r);
@@ -4565,6 +6236,24 @@ void repr(std::string& out, const DoWhileStmt& v) {
   out += ", label=";
   out += ::c6502::pyrepr::string(v.label);
   out += ")";
+}
+
+void pretty(std::string& out, const DoWhileStmt& v, int depth) {
+  out += "DoWhileStmt(";
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, *v.body, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "condition=";
+  pretty(out, v.condition, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 DoWhileStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<DoWhileStmt>) {
@@ -4649,6 +6338,48 @@ void repr(std::string& out, const ForStmt& v) {
     out += "None";
   }
   out += ")";
+}
+
+void pretty(std::string& out, const ForStmt& v, int depth) {
+  out += "ForStmt(";
+  newline(out, depth + 1);
+  out += "init=";
+  pretty(out, v.init, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "condition=";
+  if (v.condition) {
+    pretty(out, (*v.condition), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "post_clause=";
+  if (v.post_clause) {
+    pretty(out, (*v.post_clause), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, *v.body, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth + 1);
+  out += "loop_attribute=";
+  if (v.loop_attribute) {
+    out += ::c6502::pcpp::py_repr((*v.loop_attribute));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 ForStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<ForStmt>) {
@@ -4742,6 +6473,55 @@ void repr(std::string& out, const SwitchStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const SwitchStmt& v, int depth) {
+  out += "SwitchStmt(";
+  newline(out, depth + 1);
+  out += "control=";
+  pretty(out, v.control, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, *v.body, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth + 1);
+  out += "cases=";
+  if (v.cases.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.cases) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "default_label=";
+  if (v.default_label) {
+    out += ::c6502::pcpp::py_repr((*v.default_label));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "promoted_type=";
+  if (v.promoted_type) {
+    pretty(out, (*v.promoted_type), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 SwitchStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<SwitchStmt>) {
   r.expect_name("SwitchStmt");
   return read_body_SwitchStmt(r);
@@ -4778,6 +6558,24 @@ void repr(std::string& out, const CaseStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const CaseStmt& v, int depth) {
+  out += "CaseStmt(";
+  newline(out, depth + 1);
+  out += "value=";
+  pretty(out, v.value, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, *v.body, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 CaseStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<CaseStmt>) {
   r.expect_name("CaseStmt");
   return read_body_CaseStmt(r);
@@ -4809,6 +6607,20 @@ void repr(std::string& out, const DefaultStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const DefaultStmt& v, int depth) {
+  out += "DefaultStmt(";
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, *v.body, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 DefaultStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<DefaultStmt>) {
   r.expect_name("DefaultStmt");
   return read_body_DefaultStmt(r);
@@ -4833,6 +6645,16 @@ void repr(std::string& out, const Goto& v) {
   out += "label=";
   out += ::c6502::pyrepr::string(v.label);
   out += ")";
+}
+
+void pretty(std::string& out, const Goto& v, int depth) {
+  out += "Goto(";
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 Goto read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Goto>) {
@@ -4866,6 +6688,20 @@ void repr(std::string& out, const LabeledStmt& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const LabeledStmt& v, int depth) {
+  out += "LabeledStmt(";
+  newline(out, depth + 1);
+  out += "label=";
+  out += ::c6502::pcpp::py_repr(v.label);
+  out += ',';
+  newline(out, depth + 1);
+  out += "statement=";
+  pretty(out, *v.statement, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 LabeledStmt read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<LabeledStmt>) {
   r.expect_name("LabeledStmt");
   return read_body_LabeledStmt(r);
@@ -4883,6 +6719,10 @@ static Null read_body_Null(::c6502::asdl::Reader& r) {
 void repr(std::string& out, const Null&) {
   out += "Null(";
   out += ")";
+}
+
+void pretty(std::string& out, const Null&, int) {
+  out += "Null()";
 }
 
 Null read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Null>) {
@@ -4990,6 +6830,56 @@ void repr(std::string& out, const Type_statement& v) {
   }
 }
 
+void pretty(std::string& out, const Type_statement& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
+      return;
+    case 3:
+      pretty(out, *std::get_if<3>(&v), depth);
+      return;
+    case 4:
+      pretty(out, *std::get_if<4>(&v), depth);
+      return;
+    case 5:
+      pretty(out, *std::get_if<5>(&v), depth);
+      return;
+    case 6:
+      pretty(out, *std::get_if<6>(&v), depth);
+      return;
+    case 7:
+      pretty(out, *std::get_if<7>(&v), depth);
+      return;
+    case 8:
+      pretty(out, *std::get_if<8>(&v), depth);
+      return;
+    case 9:
+      pretty(out, *std::get_if<9>(&v), depth);
+      return;
+    case 10:
+      pretty(out, *std::get_if<10>(&v), depth);
+      return;
+    case 11:
+      pretty(out, *std::get_if<11>(&v), depth);
+      return;
+    case 12:
+      pretty(out, *std::get_if<12>(&v), depth);
+      return;
+    case 13:
+      pretty(out, *std::get_if<13>(&v), depth);
+      return;
+    case 14:
+      pretty(out, *std::get_if<14>(&v), depth);
+      return;
+  }
+}
+
 Type_statement read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_statement>) {
   const std::string_view name = r.read_name();
   switch (name.size()) {
@@ -5079,6 +6969,16 @@ void repr(std::string& out, const FunctionDecl& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const FunctionDecl& v, int depth) {
+  out += "FunctionDecl(";
+  newline(out, depth + 1);
+  out += "function_decl=";
+  pretty(out, *v.function_decl, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 FunctionDecl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<FunctionDecl>) {
   r.expect_name("FunctionDecl");
   return read_body_FunctionDecl(r);
@@ -5105,6 +7005,16 @@ void repr(std::string& out, const VarDecl& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const VarDecl& v, int depth) {
+  out += "VarDecl(";
+  newline(out, depth + 1);
+  out += "var_decl=";
+  pretty(out, v.var_decl, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 VarDecl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<VarDecl>) {
   r.expect_name("VarDecl");
   return read_body_VarDecl(r);
@@ -5129,6 +7039,16 @@ void repr(std::string& out, const StructDecl& v) {
   out += "struct_decl=";
   repr(out, v.struct_decl);
   out += ")";
+}
+
+void pretty(std::string& out, const StructDecl& v, int depth) {
+  out += "StructDecl(";
+  newline(out, depth + 1);
+  out += "struct_decl=";
+  pretty(out, v.struct_decl, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
 }
 
 StructDecl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<StructDecl>) {
@@ -5160,6 +7080,20 @@ void repr(std::string& out, const Type_declaration& v) {
       return;
     case 2:
       repr(out, *std::get_if<2>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_declaration& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
+      return;
+    case 1:
+      pretty(out, *std::get_if<1>(&v), depth);
+      return;
+    case 2:
+      pretty(out, *std::get_if<2>(&v), depth);
       return;
   }
 }
@@ -5371,6 +7305,113 @@ void repr(std::string& out, const Type_function_decl& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Type_function_decl& v, int depth) {
+  out += "Type_function_decl(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "params=";
+  if (v.params.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.params) {
+      newline(out, depth + 2);
+      out += ::c6502::pcpp::py_repr(e);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "body=";
+  if (v.body) {
+    pretty(out, *(*v.body), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "data_type=";
+  pretty(out, v.data_type, depth + 1);
+  out += ',';
+  newline(out, depth + 1);
+  out += "storage_class=";
+  if (v.storage_class) {
+    pretty(out, (*v.storage_class), depth + 1);
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "abi_annotation=";
+  if (v.abi_annotation) {
+    out += ::c6502::pcpp::py_repr((*v.abi_annotation));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "param_registers=";
+  if (v.param_registers.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.param_registers) {
+      newline(out, depth + 2);
+      out += ::c6502::pcpp::py_repr(e);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "carry_return=";
+  out += v.carry_return ? "True" : "False";
+  out += ',';
+  newline(out, depth + 1);
+  out += "address=";
+  if (v.address) {
+    out += ::c6502::asdl::int_to_string((*v.address));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "preserves=";
+  if (v.preserves.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.preserves) {
+      newline(out, depth + 2);
+      out += ::c6502::pcpp::py_repr(e);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "section=";
+  if (v.section) {
+    out += ::c6502::pcpp::py_repr((*v.section));
+  } else {
+    out += "None";
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "noreturn=";
+  out += v.noreturn ? "True" : "False";
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Type_function_decl read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_function_decl>) {
   r.expect_name("function_decl");
   return read_body_Type_function_decl(r);
@@ -5415,6 +7456,27 @@ void repr(std::string& out, const Program& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Program& v, int depth) {
+  out += "Program(";
+  newline(out, depth + 1);
+  out += "declaration=";
+  if (v.declaration.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.declaration) {
+      newline(out, depth + 2);
+      pretty(out, e, depth + 2);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Program read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Program>) {
   r.expect_name("Program");
   return read_body_Program(r);
@@ -5432,6 +7494,14 @@ void repr(std::string& out, const Type_program& v) {
   switch (v.index()) {
     case 0:
       repr(out, *std::get_if<0>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_program& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
       return;
   }
 }
@@ -5497,6 +7567,35 @@ void repr(std::string& out, const Function& v) {
   out += ")";
 }
 
+void pretty(std::string& out, const Function& v, int depth) {
+  out += "Function(";
+  newline(out, depth + 1);
+  out += "name=";
+  out += ::c6502::pcpp::py_repr(v.name);
+  out += ',';
+  newline(out, depth + 1);
+  out += "params=";
+  if (v.params.empty()) {
+    out += "[]";
+  } else {
+    out += "[";
+    for (const auto& e : v.params) {
+      newline(out, depth + 2);
+      out += ::c6502::pcpp::py_repr(e);
+      out += ',';
+    }
+    newline(out, depth + 1);
+    out += ']';
+  }
+  out += ',';
+  newline(out, depth + 1);
+  out += "body=";
+  pretty(out, v.body, depth + 1);
+  out += ',';
+  newline(out, depth);
+  out += ')';
+}
+
 Function read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Function>) {
   r.expect_name("Function");
   return read_body_Function(r);
@@ -5514,6 +7613,14 @@ void repr(std::string& out, const Type_function_definition& v) {
   switch (v.index()) {
     case 0:
       repr(out, *std::get_if<0>(&v));
+      return;
+  }
+}
+
+void pretty(std::string& out, const Type_function_definition& v, int depth) {
+  switch (v.index()) {
+    case 0:
+      pretty(out, *std::get_if<0>(&v), depth);
       return;
   }
 }

@@ -72,6 +72,21 @@ namespace c6502::backend {
 //     text <length>
 //     <one `<line>:<col>`, tab, kind, tab, value line for each token>
 //
+// `parse`, `resolve`, and `tac` are `compile.py --parse`, `--resolve`,
+// and `--tac` (src/passes/text_stages.h), which run the preprocessor
+// (with `preprocess`) and the front end to the point where compile.py's
+// `_run_stage` stops, with `-O` for `resolve` and `tac`, and `inline`
+// for `tac -O`. `link_metadata` doesn't apply. Their response has the
+// `stderr` and `warnings` lines, and then the `error` line of the pass
+// that rejected the program, or
+//
+//     text <length>
+//     <pretty.py's text of the tree, and a newline>
+//
+// The modes, in the order of compile.py's stages, are `lex`, `parse`,
+// `resolve`, `tac`, `source-text` (`-S`), `source` (the simulator
+// harness), `objects` (`-c`), and `link`.
+//
 // The modes `objects` (compile.py's `-c`) and `link` take several inputs,
 // so that one process serves one run of compile.py. Their request is
 //

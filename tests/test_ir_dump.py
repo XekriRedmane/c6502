@@ -76,16 +76,18 @@ _SAMPLE_TEXT = (
 )
 
 
-def _compiled_irs():
-    """Returns the c99, TAC, asm, and asm2 programs of an example,
-    compiled with -O."""
+def _compiled_irs(text: str | None = None):
+    """Returns the c99, TAC, asm, and asm2 programs of the C source
+    `text`, or of an example when it is None, compiled with -O."""
     import compile as compile_module
     from preprocessor import preprocess
     from passes.type_checking import check_program
     from passes.zp_globals import plan_zero_page, zero_page_in_effect
 
-    with open(_EXAMPLE) as f:
-        source = preprocess(f.read())
+    if text is None:
+        with open(_EXAMPLE) as f:
+            text = f.read()
+    source = preprocess(text)
     resolved = compile_module._resolved(source, optimize=True)
     prog, symbols, types = check_program(resolved)
     tac = compile_module.translate_for_codegen(prog, symbols, types, True)

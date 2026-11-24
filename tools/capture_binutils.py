@@ -3,7 +3,7 @@ given and what they return, over a corpus and during the Python tests,
 for checking the C++ port of step 7 (docs/cpp_port.md).
 
     # The corpus: objects, links, and listings.
-    C6502_CPP_BACKEND=1 uv run python tools/capture_binutils.py -j 12
+    uv run python tools/capture_binutils.py -j 12
 
     # The Python tests' calls, as a pytest plugin.
     C6502_BINUTILS_CAPTURES=captures/binutils PYTHONPATH=tools \\
@@ -19,10 +19,10 @@ The harness wraps `binutils.assembler.assemble`,
 functions of nm.py and
 objdump.py, so each call is recorded with its arguments and its result
 (or the exception it raised) and the program goes on as without the
-harness. A compile under `C6502_CPP_BACKEND=1` gives the same `-S`
-text (tools/compare_backends.py), and the assembler and the linker stay
-in Python, so the corpus can be compiled by the C++ port, which is
-faster.
+harness. Run it without `C6502_CPP_BACKEND`. Since step 7 the switch
+sends the assembler and the linker to C++, and a run with it records
+only the ELF reader, `parse_metadata`, nm, objdump, and the
+disassembler.
 
 The records have the form of tools/capture_passes.py's, one call to a
 file, `<out>/<kind>/<sha1>.txt`:

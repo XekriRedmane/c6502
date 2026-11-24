@@ -289,7 +289,7 @@ uv sync                                         # create/update the project venv
 uv run python -m unittest                       # run all tests
 C6502_CHECK_IR=1 uv run python -m unittest      # with IR checks after every pass
 C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
-uv run python -m unittest tests.test_asm_emit   # run one module
+uv run python -m unittest tests.test_cpp_backend   # run one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one test
 
 uv run python compile.py <source.c> -S          # C → 6502 asm in <source>.s
@@ -920,10 +920,10 @@ pp-number at the token (C23 §6.4.8) and raises `LexError` for a
 separator anywhere else (last, doubled, after `0x` / `0b`, touching
 the period or the exponent, before the suffix), for a binary
 constant with a digit other than 0 and 1 or no digits, and for a
-`wb` / `uwb` suffix, whose `_BitInt` c6502 doesn't have. A number
-with none of those is left to the terminals as before, so `08` still
-lexes as `0` and `8`. `pp_numbers.IntegerConstant.length` is "wb"
-for the bit-precise suffix, which a `_BitInt` would type.
+`wb` or `uwb` constant too wide for any `_BitInt`. A number with none
+of those is left to the terminals as before, so `08` still lexes as
+`0` and `8`. `pp_numbers.IntegerConstant.length` is "wb" for the
+bit-precise suffix.
 `_parse_integer_token` reads each base itself, which also fixed
 octal constants with a nonzero digit (`017`), which used to raise
 Python's ValueError.
@@ -1053,10 +1053,6 @@ notes that aren't visible from the grammar alone:
 - Case-label expressions go through a `constant_exp` wrapper around
   `conditional_exp` — the wrapper is a hook for the §6.6 validator
   in `passes.constant_expression`.
-- Array declarators (`int a[10];`) and function-pointer declarators
-  (`int (*fp)(int);`) parse but `_apply_direct_declarator` raises
-  NotImplementedError on the array suffix — c99_ast has no Array
-  variant yet.
 - The assignment LHS is loosened from C99's `unary-expression` to
   `conditional_exp`, so `1+2=3+4` parses — identifier resolution
   rejects non-lvalue forms.

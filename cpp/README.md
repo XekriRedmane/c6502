@@ -2605,7 +2605,7 @@ tool's run to the checker. `tools/binutils_errors.py` lists the errors
 a capture holds, grouped by the shape of their message.
 
 ```sh
-C6502_CPP_BACKEND=1 uv run python tools/capture_binutils.py -j 12
+uv run python tools/capture_binutils.py -j 12
 C6502_BINUTILS_CAPTURES=captures/binutils_suite PYTHONPATH=tools \
     uv run pytest -p capture_binutils -n 12 -q
 cpp/build/bin/c6502cpp check-binutils captures/binutils captures/binutils_suite

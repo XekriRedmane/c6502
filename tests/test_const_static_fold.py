@@ -20,6 +20,10 @@ Coverage:
     the same result as unfolded code.
   * Without `-O`, the fold is a no-op (storage and
     references both remain).
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -198,31 +202,6 @@ class TestConstStaticFoldCorrectness(unittest.TestCase):
         self.assertFalse(result.timed_out)
         # 16-bit return lands in HARGS+0..1 (Int).
         self.assertEqual(result.return_int() & 0xFFFF, 0x1234)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-class TestConstStaticFoldUnit(unittest.TestCase):
-    """Direct calls to the pass on synthetic programs — exercise
-    the candidate-collection / disqualification / rewrite logic
-    without going through the full pipeline."""
-
-    def test_no_symbols_is_noop(self) -> None:
-        # The pass is gated on `symbols` being supplied; without
-        # it (legacy / synthetic test paths) it must return the
-        # program unchanged.
-        from passes.optimization_asm.const_static_fold import (
-            fold_const_statics,
-        )
-        import asm_ast
-        prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(
-                name="x", is_global=False,
-                init=[asm_ast.IntInit(value=0x1234)],
-            ),
-        ])
-        result = fold_const_statics(prog, symbols=None)
-        self.assertIs(result, prog)
-
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

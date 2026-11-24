@@ -8,17 +8,18 @@ through the builtin in both pipelines too. The front end is checked
 for the type it gives and the errors it reports, the optimizer for
 the constants it folds, and the IR check for the decimal-mode rule
 that the helper follows in place of the one for compiled code.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
 import shutil
 import unittest
 
-import asm2_ast
-import asm_ast
 import builtin_functions as bf
 import tac_ast
-from passes import ir_check
 from passes.identifier_resolution import IdentifierResolutionError
 from passes.type_checking import TypeCheckError
 from preprocessor import preprocess
@@ -258,50 +259,6 @@ class TestTac(unittest.TestCase):
 
     def test_tac_sim(self) -> None:
         self.assertEqual(_run_tac(preprocess(_SUM)) & 0xFFFF, _sum_expected())
-
-
-class TestIrCheck(unittest.TestCase):
-    def setUp(self) -> None:
-        self._was = ir_check.enabled()
-        ir_check.enable()
-
-    def tearDown(self) -> None:
-        ir_check.enable(self._was)
-
-    def test_helpers_pass(self) -> None:
-        from passes.asm_to_asm2 import translate_program
-        from rtlib.helpers import all_helper_functions
-        translate_program(asm_ast.Program(top_level=all_helper_functions()))
-
-    def test_helper_without_cld_fails(self) -> None:
-        from passes.asm_to_asm2 import translate_program
-        from rtlib.helpers import bin16_to_bcd_function
-        fn = bin16_to_bcd_function()
-        fn.instructions = [
-            i for i in fn.instructions
-            if not isinstance(i, asm_ast.ClearDecimal)
-        ]
-        with self.assertRaises(ir_check.IRCheckError) as cm:
-            translate_program(asm_ast.Program(top_level=[fn]))
-        self.assertIn("without a CLD", str(cm.exception))
-
-    def test_other_functions_keep_the_chain_rule(self) -> None:
-        fn = asm2_ast.Function(
-            name="f", is_global=True, params=[],
-            instructions=[asm2_ast.SetDecimal(), asm2_ast.ClearDecimal(),
-                          asm2_ast.Return()],
-        )
-        with self.assertRaises(ir_check.IRCheckError):
-            ir_check.check_asm2(asm2_ast.Program(top_level=[fn]), after="t")
-
-    def test_compiled_code_may_not_set_the_flag(self) -> None:
-        fn = asm_ast.Function(
-            name="f", is_global=True, params=[],
-            instructions=[asm_ast.SetDecimal(), asm_ast.ClearDecimal()],
-        )
-        with self.assertRaises(ir_check.IRCheckError) as cm:
-            ir_check.check_asm(asm_ast.Program(top_level=[fn]), after="t")
-        self.assertIn("outside a runtime helper", str(cm.exception))
 
 
 _BATCH = 8192

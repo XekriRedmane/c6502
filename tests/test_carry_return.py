@@ -4,6 +4,10 @@ A function with the attribute returns `e != 0` in the carry flag.
 The callee ends in `CMP #1` (or `SEC` / `CLC` once the value is
 known), and the caller reads C with `BCC` / `BCS`, or captures it
 with `LDA #0; ROL A`. The peepholes are in `passes/carry_return.py`.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 
 from __future__ import annotations
@@ -14,36 +18,11 @@ import unittest
 import asm_ast
 from parser import ParserError, parse
 from passes.asm_liveness import all_flags_dead_at, c_dead_at
-from passes.carry_return import (
-    apply_carry_branch_fold, apply_carry_const_fold,
-    apply_carry_return_tails,
-)
 from passes.type_checking import TypeCheckError
-from passes.unreachable_drop import apply_unreachable_drop
-from passes.volatile_void_read_cmp import apply_volatile_void_read_cmp
 from sim.harness import build_sim
 
-_A = asm_ast.Reg(reg=asm_ast.A())
 _CARRY = "[[c6502::return_bool_in_carry]] "
 _BOOL = "#include <stdbool.h>\n"
-
-
-def _prog(instrs):
-    return asm_ast.Program(top_level=[asm_ast.Function(
-        name="f", is_global=True, params=[], instructions=instrs,
-    )])
-
-
-def _body(prog):
-    return prog.top_level[0].instructions
-
-
-def _lda(k):
-    return asm_ast.Mov(src=asm_ast.Imm(value=k), dst=_A, is_volatile=False)
-
-
-def _cmp(k):
-    return asm_ast.Compare(left=_A, right=asm_ast.Imm(value=k))
 
 
 def _ret_c():
@@ -237,133 +216,6 @@ class TestCodeShape(unittest.TestCase):
         self.assertIn("PLP", f)
 
 
-class TestPeepholes(unittest.TestCase):
-
-    def test_const_fold(self):
-        out = _body(apply_carry_const_fold(_prog([_lda(1), _cmp(1), _ret_c()])))
-        self.assertEqual(out, [asm_ast.SetCarry(), _ret_c()])
-        out = _body(apply_carry_const_fold(_prog([_lda(0), _cmp(1), _ret_c()])))
-        self.assertEqual(out, [asm_ast.ClearCarry(), _ret_c()])
-
-    def test_const_fold_keeps_live_a(self):
-        # A is returned too, so the load stays and only the compare
-        # folds, from the 1 the register holds.
-        ret = asm_ast.Return(save_a=True, save_x=False, save_c=True)
-        instrs = [_lda(1), _cmp(1), ret]
-        self.assertEqual(_body(apply_carry_const_fold(_prog(instrs))),
-                         [_lda(1), asm_ast.SetCarry(), ret])
-
-    def test_const_fold_from_register(self):
-        # `return false;` after `LDY #0`, as `CPY #1` once the 0 is
-        # loaded with TYA and `TYA; CMP #1` is folded.
-        y = asm_ast.Reg(reg=asm_ast.Y())
-        ldy = asm_ast.Mov(src=asm_ast.Imm(value=0), dst=y, is_volatile=False)
-        cpy = asm_ast.Compare(left=y, right=asm_ast.Imm(value=1))
-        out = _body(apply_carry_const_fold(_prog([ldy, cpy, _ret_c()])))
-        self.assertEqual(out, [ldy, asm_ast.ClearCarry(), _ret_c()])
-
-    def test_const_fold_not_across_a_label(self):
-        # Another path into the label may bring a different Y.
-        y = asm_ast.Reg(reg=asm_ast.Y())
-        instrs = [
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=y, is_volatile=False),
-            asm_ast.Label(name=".l"),
-            asm_ast.Compare(left=y, right=asm_ast.Imm(value=1)),
-            _ret_c(),
-        ]
-        self.assertEqual(_body(apply_carry_const_fold(_prog(instrs))), instrs)
-
-    def test_const_fold_not_after_a_register_change(self):
-        y = asm_ast.Reg(reg=asm_ast.Y())
-        instrs = [
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=y, is_volatile=False),
-            asm_ast.Inc(dst=y),
-            asm_ast.Compare(left=y, right=asm_ast.Imm(value=1)),
-            _ret_c(),
-        ]
-        self.assertEqual(_body(apply_carry_const_fold(_prog(instrs))), instrs)
-
-    def test_tail_copy_through_jump_and_fall_through(self):
-        instrs = [
-            asm_ast.Branch(cond=asm_ast.EQ(), target="T"),
-            _lda(0), asm_ast.Jump(target="E", reg_args=[]),
-            asm_ast.Label(name="T"), _lda(1),
-            asm_ast.Label(name="E"), _cmp(1), _ret_c(),
-        ]
-        out = _body(apply_carry_return_tails(_prog(instrs)))
-        self.assertEqual(out, [
-            asm_ast.Branch(cond=asm_ast.EQ(), target="T"),
-            _lda(0), _cmp(1), _ret_c(),
-            asm_ast.Label(name="T"), _lda(1), _cmp(1), _ret_c(),
-            asm_ast.Label(name="E"), _cmp(1), _ret_c(),
-        ])
-
-    def _capture(self, cond, tail):
-        return [
-            asm_ast.Call(name="g", reg_args=[]), _lda(0),
-            asm_ast.RotateLeft(dst=_A),
-            asm_ast.Branch(cond=cond, target="L"),
-        ] + tail
-
-    def test_branch_fold(self):
-        tail = [
-            asm_ast.ClearCarry(), asm_ast.Label(name="L"),
-            asm_ast.Return(save_a=False, save_x=False),
-        ]
-        out = _body(apply_carry_branch_fold(
-            _prog(self._capture(asm_ast.NE(), tail))))
-        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.CS(), target="L"))
-        out = _body(apply_carry_branch_fold(
-            _prog(self._capture(asm_ast.EQ(), tail))))
-        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.CC(), target="L"))
-
-    def test_branch_fold_keeps_live_carry(self):
-        # After `ROL A` C is 0, and the ADC on the fall-through reads
-        # it; without the ROL, C would be the callee's.
-        d = asm_ast.Data(name="d", offset=0)
-        tail = [
-            asm_ast.Mov(src=d, dst=_A, is_volatile=False),
-            asm_ast.Add(src=asm_ast.Imm(value=1), dst=_A),
-            asm_ast.Mov(src=_A, dst=d, is_volatile=False),
-            asm_ast.Label(name="L"),
-            asm_ast.Return(save_a=False, save_x=False),
-        ]
-        instrs = self._capture(asm_ast.NE(), tail)
-        self.assertEqual(_body(apply_carry_branch_fold(_prog(instrs))), instrs)
-
-    def test_capture_then_compare_dropped(self):
-        instrs = [
-            asm_ast.Call(name="g", reg_args=[]), _lda(0),
-            asm_ast.RotateLeft(dst=_A), _cmp(1), _ret_c(),
-        ]
-        out = _body(apply_carry_branch_fold(_prog(instrs)))
-        self.assertEqual(out, [asm_ast.Call(name="g", reg_args=[]), _ret_c()])
-
-    def test_unreachable_drop(self):
-        instrs = [
-            asm_ast.Branch(cond=asm_ast.EQ(), target="L"), _ret_c(),
-            _cmp(1), _ret_c(),
-            asm_ast.Label(name="L"), _ret_c(),
-        ]
-        out = _body(apply_unreachable_drop(_prog(instrs)))
-        self.assertEqual(out, [
-            asm_ast.Branch(cond=asm_ast.EQ(), target="L"), _ret_c(),
-            asm_ast.Label(name="L"), _ret_c(),
-        ])
-
-    def test_unreachable_chain_in_one_call(self):
-        # Each dead block holds the only jump to the next label. One
-        # call removes the whole chain; one block per peephole round
-        # ran past the fixed point's 16-round cap (fuzz.stmts 4793).
-        instrs = [_ret_c()]
-        for k in range(20):
-            instrs += [asm_ast.Label(name=f"L{k}"),
-                       asm_ast.Jump(target=f"L{k + 1}", reg_args=[])]
-        instrs += [asm_ast.Label(name="L20"), _ret_c()]
-        out = _body(apply_unreachable_drop(_prog(instrs)))
-        self.assertEqual(out, [_ret_c()])
-
-
 class TestCarryLiveAtReturn(unittest.TestCase):
 
     def test_liveness(self):
@@ -372,16 +224,6 @@ class TestCarryLiveAtReturn(unittest.TestCase):
         self.assertFalse(all_flags_dead_at(instrs, 1))
         plain = [asm_ast.SetCarry(), asm_ast.Return(save_a=False, save_x=False)]
         self.assertTrue(c_dead_at(plain, 1))
-
-    def test_volatile_read_not_turned_into_compare(self):
-        # `CMP (DPTR),Y` would overwrite the C that `SEC` set for the
-        # return.
-        vol = asm_ast.Mov(src=asm_ast.Indirect(offset=0), dst=_A,
-                          is_volatile=True)
-        instrs = [asm_ast.SetCarry(), vol, _lda(0), _ret_c()]
-        out = _body(apply_volatile_void_read_cmp(_prog(instrs)))
-        self.assertEqual(out, instrs)
-
 
 
 # A struct of a value and a `bool`, which a `return_bool_in_carry`
@@ -599,67 +441,6 @@ class TestStructSim(unittest.TestCase):
                 sim = build_sim(src, optimize=optimize)
                 sim.mpu.memory[0xD000:0xD004] = lda_sec_rts
                 self.assertEqual(sim.run().return_int(), 85)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-def _mov(src, dst):
-    return asm_ast.Mov(src=src, dst=dst, is_volatile=False)
-
-
-class TestStoredCapture(unittest.TestCase):
-    """`apply_carry_branch_fold` on a capture that's stored, with
-    other work before the test that loads it back."""
-
-    _V = asm_ast.Data(name="__local_f__v", offset=0)
-    _FLAG = asm_ast.Data(name="__local_f__flag", offset=0)
-    _OUT = asm_ast.Data(name="out", offset=0)
-    _SLOTS = {"__local_f__v": 0x80, "__local_f__flag": 0x81}
-
-    def _shape(self, between=(), after_branch=()):
-        return [
-            asm_ast.Call(name="g", reg_args=[], preserves=[]),
-            _mov(_A, self._V),
-            _lda(0), asm_ast.RotateLeft(dst=_A), _mov(_A, self._FLAG),
-            _mov(self._V, _A), _mov(_A, self._OUT),
-            *between,
-            _mov(self._FLAG, _A),
-            asm_ast.Branch(cond=asm_ast.NE(), target="T"),
-            *after_branch,
-            _lda(1), asm_ast.Return(save_a=True, save_x=False, save_c=False),
-            asm_ast.Label(name="T"),
-            _lda(2), asm_ast.Return(save_a=True, save_x=False, save_c=False),
-        ]
-
-    def _fold(self, instrs):
-        return _body(apply_carry_branch_fold(
-            _prog(instrs), zp_slot_symbols=self._SLOTS,
-        ))
-
-    def test_branches_on_c_after_other_work(self):
-        out = self._fold(self._shape())
-        self.assertEqual(out[:6], [
-            asm_ast.Call(name="g", reg_args=[], preserves=[]),
-            _mov(_A, self._V), _mov(self._V, _A), _mov(_A, self._OUT),
-            asm_ast.Branch(cond=asm_ast.CS(), target="T"), _lda(1),
-        ])
-
-    def test_kept_when_c_changes_in_between(self):
-        instrs = self._shape(between=[asm_ast.ClearCarry()])
-        self.assertEqual(self._fold(instrs), instrs)
-
-    def test_kept_when_flag_written_in_between(self):
-        instrs = self._shape(between=[_mov(_A, self._FLAG)])
-        self.assertEqual(self._fold(instrs), instrs)
-
-    def test_kept_when_flag_read_again(self):
-        instrs = self._shape(after_branch=[_mov(self._FLAG, _A)])
-        self.assertEqual(self._fold(instrs), instrs)
-
-    def test_kept_across_a_call(self):
-        instrs = self._shape(
-            between=[asm_ast.Call(name="h", reg_args=[], preserves=[])],
-        )
-        self.assertEqual(self._fold(instrs), instrs)
 
 
 class TestStructCodeShape(unittest.TestCase):

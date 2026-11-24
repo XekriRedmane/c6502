@@ -1,79 +1,17 @@
 """Tests for `passes/carry_halve.py`: a halved 9-bit sum takes bit 8
-from the carry of its low byte's add."""
+from the carry of its low byte's add.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 
 from __future__ import annotations
 
 import shutil
 import unittest
 
-import asm_ast
-from passes.carry_halve import apply_carry_halve
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
-
-_A = asm_ast.Reg(reg=asm_ast.A())
-_Y = asm_ast.Reg(reg=asm_ast.Y())
-_T = asm_ast.Data(name="__local_f__t", offset=0)
-_S = asm_ast.Data(name="s", offset=0)
-_ZERO = asm_ast.Imm(value=0)
-
-
-def _mov(src, dst):
-    return asm_ast.Mov(src=src, dst=dst, is_volatile=False)
-
-
-def _halve(zero_load=None):
-    """`CLC; ADC s; STA t; LDA #0; ADC #0; LSR; LDA t; ROR`."""
-    return [
-        asm_ast.ClearCarry(),
-        asm_ast.Add(src=_S, dst=_A),
-        _mov(_A, _T),
-        zero_load or _mov(_ZERO, _A),
-        asm_ast.Add(src=_ZERO, dst=_A),
-        asm_ast.LogicalShiftRight(dst=_A),
-        _mov(_T, _A),
-        asm_ast.RotateRight(dst=_A),
-    ]
-
-
-def _run(instrs):
-    fn = asm_ast.Function(name="f", is_global=True, params=[],
-                          instructions=instrs)
-    out = apply_carry_halve(asm_ast.Program(top_level=[fn]))
-    return out.top_level[0].instructions
-
-
-class TestCarryHalve(unittest.TestCase):
-
-    def test_folds(self):
-        out = _run(_halve() + [asm_ast.Return(save_a=True)])
-        self.assertEqual(out, [
-            asm_ast.ClearCarry(),
-            asm_ast.Add(src=_S, dst=_A),
-            asm_ast.RotateRight(dst=_A),
-            asm_ast.Return(save_a=True),
-        ])
-
-    def test_tya_of_a_zero_y(self):
-        out = _run([_mov(_ZERO, _Y)] + _halve(_mov(_Y, _A))
-                   + [asm_ast.Return(save_a=True)])
-        self.assertEqual(len(out), 5)
-
-    def test_tya_of_an_unknown_y_kept(self):
-        instrs = _halve(_mov(_Y, _A)) + [asm_ast.Return(save_a=True)]
-        self.assertEqual(_run(list(instrs)), instrs)
-
-    def test_kept_when_the_slot_is_read_later(self):
-        instrs = _halve() + [_mov(_T, asm_ast.Data(name="g", offset=0)),
-                             asm_ast.Return(save_a=True)]
-        self.assertEqual(_run(list(instrs)), instrs)
-
-    def test_kept_when_v_is_read(self):
-        instrs = _halve() + [
-            asm_ast.Branch(cond=asm_ast.VS(), target=".l"),
-            asm_ast.Label(name=".l"), asm_ast.Return(save_a=True),
-        ]
-        self.assertEqual(_run(list(instrs)), instrs)
 
 
 _SRC = """

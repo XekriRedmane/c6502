@@ -1,79 +1,17 @@
 """Tests for `passes/carry_in_add.py`: `p + b + 1` as one add with the
-carry set."""
+carry set.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 
 from __future__ import annotations
 
 import shutil
 import unittest
 
-import asm_ast
-from passes.carry_in_add import apply_carry_in_add
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
-
-_A = asm_ast.Reg(reg=asm_ast.A())
-_M = asm_ast.Data(name="m", offset=0)
-_H = asm_ast.Data(name="__local_f__h", offset=0)
-_T0 = asm_ast.Data(name="__local_f__t0", offset=0)
-_T1 = asm_ast.Data(name="__local_f__t1", offset=0)
-_R0 = asm_ast.Data(name="r", offset=0)
-_R1 = asm_ast.Data(name="r", offset=1)
-_ZERO = asm_ast.Imm(value=0)
-_ONE = asm_ast.Imm(value=1)
-
-
-def _mov(src, dst):
-    return asm_ast.Mov(src=src, dst=dst, is_volatile=False)
-
-
-def _two_adds(h=_H, t1=_T1, r0=_R0):
-    return [
-        asm_ast.ClearCarry(), asm_ast.Add(src=_M, dst=_A), _mov(_A, _T0),
-        _mov(h, _A), asm_ast.Add(src=_ZERO, dst=_A), _mov(_A, t1),
-        _mov(_T0, _A), asm_ast.ClearCarry(), asm_ast.Add(src=_ONE, dst=_A),
-        _mov(_A, r0), _mov(t1, _A), asm_ast.Add(src=_ZERO, dst=_A),
-        _mov(_A, _R1),
-    ]
-
-
-def _run(instrs):
-    fn = asm_ast.Function(name="f", is_global=True, params=[],
-                          instructions=instrs)
-    out = apply_carry_in_add(asm_ast.Program(top_level=[fn]))
-    return out.top_level[0].instructions
-
-
-class TestCarryInAdd(unittest.TestCase):
-
-    def test_folds(self):
-        out = _run(_two_adds() + [asm_ast.Return(save_a=False)])
-        self.assertEqual(out, [
-            asm_ast.SetCarry(), asm_ast.Add(src=_M, dst=_A), _mov(_A, _R0),
-            _mov(_H, _A), asm_ast.Add(src=_ZERO, dst=_A), _mov(_A, _R1),
-            asm_ast.Return(save_a=False),
-        ])
-
-    def test_high_byte_added_in_place(self):
-        out = _run(_two_adds(t1=_H) + [asm_ast.Return(save_a=False)])
-        self.assertEqual(len(out), 7)
-
-    def test_kept_when_c_is_read(self):
-        instrs = _two_adds() + [
-            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-            asm_ast.Label(name=".l"), asm_ast.Return(save_a=False),
-        ]
-        self.assertEqual(_run(list(instrs)), instrs)
-
-    def test_kept_when_the_high_byte_is_a_global(self):
-        # `h` is read after the store to `r0`, which might be it.
-        instrs = _two_adds(h=asm_ast.Data(name="g", offset=0)) + [
-            asm_ast.Return(save_a=False)]
-        self.assertEqual(_run(list(instrs)), instrs)
-
-    def test_kept_when_a_temporary_is_read_later(self):
-        instrs = _two_adds() + [_mov(_T1, asm_ast.Data(name="g", offset=0)),
-                                asm_ast.Return(save_a=False)]
-        self.assertEqual(_run(list(instrs)), instrs)
 
 
 _SRC = """

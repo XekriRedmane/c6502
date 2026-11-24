@@ -55,7 +55,7 @@ namespace fs = std::filesystem;
 using namespace c6502;
 
 const char kUsage[] =
-    "usage: c6502cpp roundtrip <module> [<file>]\n"
+    "usage: c6502cpp roundtrip [--pretty] <module> [<file>]\n"
     "       c6502cpp check-captures [--pass <name>] [--verbose] [--got <dir>] <path>...\n"
     "       c6502cpp check-helpers [--verbose] <path>...\n"
     "       c6502cpp check-preprocess [--verbose] <path>...\n"
@@ -71,7 +71,8 @@ const char kUsage[] =
     "       c6502cpp sweep-passes\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
-    "tac_ast, or c99_ast) from <file> or stdin and writes its dump again.\n"
+    "tac_ast, or c99_ast) from <file> or stdin and writes its dump again,\n"
+    "or with --pretty the text pretty.py gives it, and a newline.\n"
     "\n"
     "check-captures reads the capture files under each <path> (a file or a\n"
     "directory), checks that each one's input and output dumps read and\n"
@@ -170,34 +171,43 @@ void write_stdout(const std::string& text) {
   std::fwrite(text.data(), 1, text.size(), stdout);
 }
 
+// Returns the dump of the program `v`, or with `pretty` pretty.py's text
+// of it and a newline, as `compile.py --tac` prints a TAC program.
+template <class T>
+std::string written(const T& v, bool pretty) {
+  return pretty ? asdl::py_pretty(v) + "\n" : asdl::dump(v);
+}
+
 // Returns the dump of the value of module `module` that `text` holds,
-// read and written again.
-std::string roundtrip(std::string_view module, const std::string& text) {
+// read and written again, or with `pretty` its pretty.py text.
+std::string roundtrip(std::string_view module, const std::string& text, bool pretty) {
   // Each module's dumps start with the name of a constructor of
   // `program`, `Program`, for every value the tests round-trip.
   if (module == "asm_ast") {
-    return asdl::dump(asdl::load<asm_ast::Program>(text));
+    return written(asdl::load<asm_ast::Program>(text), pretty);
   }
   if (module == "asm2_ast") {
-    return asdl::dump(asdl::load<asm2_ast::Program>(text));
+    return written(asdl::load<asm2_ast::Program>(text), pretty);
   }
   if (module == "tac_ast") {
-    return asdl::dump(asdl::load<tac_ast::Program>(text));
+    return written(asdl::load<tac_ast::Program>(text), pretty);
   }
   if (module == "c99_ast") {
-    return asdl::dump(asdl::load<c99_ast::Program>(text));
+    return written(asdl::load<c99_ast::Program>(text), pretty);
   }
   throw std::runtime_error("unknown module " + std::string(module));
 }
 
-int cmd_roundtrip(const std::vector<std::string>& args) {
+int cmd_roundtrip(std::vector<std::string> args) {
+  const bool pretty = !args.empty() && args[0] == "--pretty";
+  if (pretty) args.erase(args.begin());
   if (args.empty() || args.size() > 2) {
     std::fputs(kUsage, stderr);
     return 2;
   }
   const std::string text =
       args.size() == 2 ? capture::read_file(args[1]) : read_stdin();
-  write_stdout(roundtrip(args[0], text));
+  write_stdout(roundtrip(args[0], text, pretty));
   return 0;
 }
 

@@ -76,6 +76,28 @@ class TestGenerator(unittest.TestCase):
         self.assertIn("std::optional<::c6502::asdl::Int> size;", files["t_ast.h"])
         self.assertIn('r.expect_name("member");', files["t_ast.cpp"])
 
+    def test_pretty_follows_the_python_classes(self):
+        # Each struct gets a `pretty`, and a constructor's fields come in
+        # the order of `dataclasses.fields`, which puts the sum type's
+        # attributes, on the base class, first.
+        files = _generate("""
+            module T {
+                e = A(int x, e* items) | B attributes (string line)
+            }
+        """)
+        header, source = files["t_ast.h"], files["t_ast.cpp"]
+        for name in ("Type_e", "A", "B"):
+            self.assertIn(
+                f"void pretty(std::string& out, const {name}& v, int depth);",
+                header,
+            )
+        body = source[source.index("void pretty(std::string& out, const A&"):]
+        body = body[:body.index("\n}\n")]
+        self.assertLess(body.index('"line="'), body.index('"x="'))
+        self.assertLess(body.index('"x="'), body.index('"items="'))
+        self.assertIn('out += "[]";', body)
+        self.assertIn("::c6502::pcpp::py_repr(v.line)", body)
+
     def test_rejects_types_with_no_cpp_form(self):
         with self.assertRaises(asdl.ASDLError):
             _generate("module T { x = X(float f) }")

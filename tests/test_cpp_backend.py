@@ -496,6 +496,58 @@ class TestLex(unittest.TestCase):
         self.assertEqual(done.stdout.strip(), "[]")
 
 
+# A program whose trees hold strings with quotes, backslashes, control
+# characters, and characters outside ASCII (the lexer takes those only
+# as escapes, and `\xad`, `\xa0`, and `\x85` aren't printable, so
+# Python's `repr` escapes them too), floating constants, a
+# switch, a struct, and a loop the unroller copies under -O.
+_TREES = (
+    '#include <stdint.h>\n'
+    'static const char *s = "it\'s \\"q\\" \\\\ \\x01\\x7f\\t\\n '
+    '\\xe9\\xad\\xff\\xa0\\x85";\n'
+    "static const char *t = \"'\";\n"
+    'static const char u[] = "\\\\\'";\n'
+    "double d = 1e16; double z = -0.0; double big = 1e309;\n"
+    "float f = 0.1f;\n"
+    "struct p { uint8_t x; int y; };\n"
+    "struct p q = { 1, -2 };\n"
+    "int main(void) {\n"
+    "    int n = 0;\n"
+    "    [[c6502::unroll]] for (int i = 0; i < 3; i++) n += s[i];\n"
+    "    switch (n) { case 1: n = 2; break; default: n = t[0]; }\n"
+    "    return n + (int)(d * f) + q.y + u[1];\n"
+    "}\n"
+)
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestPretty(unittest.TestCase):
+    """The `pretty` that `asdl.py --cpp` generates for each IR writes the
+    text pretty.py writes, on every IR of compiled programs, read into
+    C++ from their dumps (`c6502cpp roundtrip --pretty`)."""
+
+    def test_each_ir_of_compiled_programs(self):
+        from ir_dump import dump
+        from pretty import pretty
+        from tests.test_ir_dump import _compiled_irs
+        game = _ROOT / "examples" / "lode_runner"
+        sources = {
+            "example": None,
+            "trees": _TREES,
+            "guards": f'#include "{(game / "guards.c").as_posix()}"\n',
+        }
+        for label, source in sources.items():
+            irs = _compiled_irs(source)
+            for module, prog in irs.items():
+                with self.subTest(program=label, module=module):
+                    done = subprocess.run(
+                        [cpp_cli(), "roundtrip", "--pretty", module],
+                        input=dump(prog).encode("utf-8"), capture_output=True,
+                        check=True,
+                    )
+                    self.assertEqual(done.stdout.decode("utf-8"),
+                                     pretty(prog) + "\n")
+
+
 def _run_files(args: list[str], cpp: bool, files: dict[str, str | bytes],
                *, stdin: str | None = None) -> tuple:
     """Runs `compile.py <args>` as a script in a new directory holding

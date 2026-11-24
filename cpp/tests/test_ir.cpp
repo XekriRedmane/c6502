@@ -131,3 +131,35 @@ TEST_CASE("optional fields and product types round-trip") {
   CHECK(asdl::dump(m) == "member_decl(\"m\" UChar)\n");
   CHECK(asdl::load<c99::Type_member_decl>(asdl::dump(m)) == m);
 }
+
+TEST_CASE("pretty writes what pretty.py writes") {
+  // Python's pretty.py gives these texts for the same values. A string
+  // holds the code points 0 to 255 of a C string's bytes as UTF-8, and
+  // Python's `repr` escapes those that `str.isprintable()` rejects, here
+  // U+00AD, U+00A0, and U+0085, and copies U+00E9 and U+00FF.
+  namespace tac = c6502::tac_ast;
+  const tac::Type_instruction ret = tac::Ret{.val = tac::Var{.name = "it's \"q\" \\"}};
+  CHECK(asdl::py_pretty(ret) ==
+        "Ret(\n"
+        "  val=Var(\n"
+        "    name='it\\'s \"q\" \\\\',\n"
+        "  ),\n"
+        ")");
+  CHECK(asdl::py_pretty(tac::Type_instruction(tac::Ret{})) == "Ret(\n  val=None,\n)");
+  // The UTF-8 of U+00E9, U+00AD, U+00FF, U+00A0, and U+0085.
+  const tac::Type_val bytes =
+      tac::Var{.name = "\x01\t\x7f\xc3\xa9\xc2\xad\xc3\xbf\xc2\xa0\xc2\x85'"};
+  CHECK(asdl::py_pretty(bytes) ==
+        "Var(\n  name=\"\\x01\\t\\x7f\xc3\xa9\\xad\xc3\xbf\\xa0\\x85'\",\n)");
+  const ir::Type_instruction call = ir::Call{.name = "f", .reg_args = {"A", "X"}};
+  CHECK(asdl::py_pretty(call) ==
+        "Call(\n"
+        "  name='f',\n"
+        "  reg_args=[\n"
+        "    'A',\n"
+        "    'X',\n"
+        "  ],\n"
+        "  preserves=[],\n"
+        ")");
+  CHECK(asdl::py_pretty(ir::Type_operand(ir::IndirectY{})) == "IndirectY()");
+}

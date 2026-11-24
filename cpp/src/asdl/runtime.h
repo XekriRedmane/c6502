@@ -215,6 +215,17 @@ std::string py_repr(const T& v) {
   return out;
 }
 
+// Returns pretty.py's `pretty(v)` of the IR value `v`, which
+// `compile.py --parse`, `--resolve`, and `--tac` print: the class name,
+// a `name=value,` line for each field with two spaces of indentation
+// per level, lists one item to a line, and Python's `repr` of each leaf.
+template <class T>
+std::string py_pretty(const T& v) {
+  std::string out;
+  pretty(out, v, 0);
+  return out;
+}
+
 // Returns the value of type `T` that `text` holds in the dump format.
 template <class T>
 T load(std::string_view text) {

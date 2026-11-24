@@ -54,11 +54,8 @@ own `-o` is not forwarded; this driver's `-o` is for the final output.
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
-
-import diagnostics
 
 
 def _cpp_backend() -> bool:
@@ -75,7 +72,7 @@ def _inlining() -> bool:
     `compile.inline_functions`, which `translate_for_codegen` calls
     (tests/no_inlining.py), and the request to the C++ port carries the
     choice, since the C++ side runs its own inliner. On the command
-    line's early path (`_cpp_runs_everything`) the module stops before
+    line's early path under `C6502_CPP_BACKEND=1` the module stops before
     it imports the inliner, and both names are missing, so nothing has
     patched it."""
     module = globals()
@@ -283,6 +280,7 @@ def _parse_args(argv: list[str]):
     """Reads compile.py's command line `argv`, with the program's name
     first, and returns its arguments and the ones left for the
     preprocessor."""
+    import argparse
     ap = argparse.ArgumentParser(
         prog="compile.py",
         description="Compile C for the 6502, assemble, and link.",
@@ -351,7 +349,17 @@ def main(argv: list[str]) -> int:
     input stops at that stage, written to stdout unless `-o` names a
     file. With none of these, every input (C, assembly, or
     object) becomes an object, and the objects are linked into an
-    executable, by default `a.out`."""
+    executable, by default `a.out`.
+
+    Under `C6502_CPP_BACKEND=1` the C++ port does all of it, from the
+    reading of the command line on (`c6502cpp compile`, through
+    `cpp_backend.run_tool`), and writes what this function writes, in
+    its order, with its exit status, and raises the exception it would
+    raise. The C++ side asks for stdin when a C input is `-`, which
+    Python reads as `_read_source` does."""
+    if _cpp_backend():
+        import cpp_backend
+        return cpp_backend.run_tool("compile", argv, inline=_inlining())
     args, pcpp_args = _parse_args(argv)
     stage = args.stage
     inputs = args.inputs
@@ -399,8 +407,6 @@ def main(argv: list[str]) -> int:
         if "-" in inputs and args.output is None:
             print("compile.py: -c on stdin needs -o", file=sys.stderr)
             return 2
-        if _cpp_backend():
-            return _cpp_build(args, pcpp_args)
         from binutils import elf as E
         for path in inputs:
             if _kind(path) == "object":
@@ -429,8 +435,6 @@ def main(argv: list[str]) -> int:
             print(f"compile.py: --defsym takes NAME=VALUE: {d}",
                   file=sys.stderr)
             return 2
-    if _cpp_backend():
-        return _cpp_build(args, pcpp_args, defsyms)
     from binutils import elf as E
     from passes.linker import (
         DEFAULT_ORIGIN, LinkError, ZpLocalAllocationError,
@@ -460,134 +464,18 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-# The classes of the errors a link reports as `compile.py: link error:
-# <message>`, which the Python path catches as `passes.linker`'s classes.
-_LINK_ERRORS = ("LinkError", "ZpSlotAllocationError", "ZpLocalAllocationError")
-
-
-def _input_data(path: str, kind: str):
-    """The contents of the input at `path` as `_object` reads them, with
-    the file name the preprocessor gives a C source (None for stdin and
-    for the other kinds): a C source's text, an assembly file's text, or
-    an object's bytes."""
-    from pathlib import Path
-    if kind == "c":
-        return _read_source(path)
-    if kind == "asm":
-        return Path(path).read_text(encoding="utf-8"), None
-    return Path(path).read_bytes(), None
-
-
-def _cpp_build(args, pcpp_args, defsyms: dict[str, int] | None = None) -> int:
-    """Runs `-c` (`defsyms` None) or a link under `C6502_CPP_BACKEND=1`,
-    with every input compiled, assembled, or read, and the objects
-    linked, in one call of `c6502cpp backend` (`cpp_backend.build`).
-
-    Python reads the inputs first, up to the first one it can't read
-    or, for `-c`, the first object. It then goes through the C++ side's
-    results input by input as the Python path does: it writes what each
-    C input's preprocessor wrote to stderr and prints its warnings,
-    raises the input's error as its Python exception and reports it with
-    `_report`, or writes the object of `-c`. Only then does it report the
-    input it stopped at, so the messages and the files written are the
-    Python path's. A link's error keeps its Python class, and the C++
-    side writes the executable."""
-    from pathlib import Path
-    import cpp_backend
-    link = defsyms is not None
-    inputs = []
-    stop: str | Exception | None = None
-    for path in args.inputs:
-        kind = _kind(path)
-        if not link and kind == "object":
-            stop = path
-            break
-        try:
-            data, filename = _input_data(path, kind)
-        except _read_errors() as e:
-            stop = e
-            break
-        if kind == "object":
-            name = path
-        elif kind == "c":
-            name = f"{_stem(path)}.c"
-        else:
-            name = Path(path).name
-        inputs.append({
-            "path": path, "kind": kind, "data": data, "filename": filename,
-            "name": name,
-            "link_name": path if kind == "object" else f"{_stem(path)}.o",
-        })
-    output = args.output or "a.out"
-    built = cpp_backend.build(
-        inputs, pcpp_args, optimize=args.optimize, inline=_inlining(),
-        link=None if not link else {
-            "run_link": stop is None,
-            # An empty `-T` links without a script, as `if args.script`
-            # does on the Python path.
-            "script": args.script or None, "origin": args.origin,
-            "defsyms": list(defsyms.items()), "output": output,
-        },
-    )
-    for given, result in zip(inputs, built.inputs):
-        path = given["path"]
-        try:
-            if given["kind"] == "c":
-                with diagnostics.collecting() as found:
-                    try:
-                        result.replay()
-                    finally:
-                        _print_warnings(path, found)
-            else:
-                result.replay()
-        except _input_errors() as e:
-            _report(path, e)
-            return 1
-        if not link:
-            with open(args.output or f"{_stem(path)}.o", "wb") as f:
-                result.write(f)
-    if isinstance(stop, str):
-        print(f"compile.py: {stop} is already an object", file=sys.stderr)
-        return 2
-    if stop is not None:
-        _report(args.inputs[len(inputs)], stop)
-        return 1
-    if not link:
-        return 0
-    key, value = built.link
-    if key == "link-error":
-        e = cpp_backend._exception(value["type"], value["message"])
-        if value["type"] not in _LINK_ERRORS:
-            raise e
-        print(f"compile.py: link error: {e}", file=sys.stderr)
-        return 1
-    if key == "write-error":
-        # Python opens the executable's file before `elf.write` raises.
-        with open(output, "wb"):
-            raise cpp_backend._exception(value["type"], value["message"])
-    if key == "output-error":
-        raise OSError(value["errno"], value["strerror"], output)
-    return 0
-
-
-def _cpp_runs_everything(argv: list[str]) -> bool:
-    """Whether a run of the command line `argv` calls no part of the
-    Python pipeline: under `C6502_CPP_BACKEND=1`, every stage, since the
-    C++ port reads the C inputs of each from the source text."""
-    if not _cpp_backend():
-        return False
-    args, _ = _parse_args(argv)
-    return args.stage in (None, *_CPP_TEXT_STAGES, "codegen", "object")
-
-
-# Run as a script with a stage the C++ port takes from the source text,
-# compile.py stops here, before it imports the Python pipeline, which
-# would take about half a second and which nothing on that path calls.
-# Every other use of the module goes on to define the pipeline below.
-if __name__ == "__main__" and _cpp_runs_everything(sys.argv):
+# Run as a script under `C6502_CPP_BACKEND=1`, compile.py stops here,
+# before it imports the Python pipeline, which would take about half a
+# second and which nothing calls, since `c6502cpp compile` reads the
+# command line and runs every stage. Every other use of the module goes
+# on to define the pipeline below.
+if __name__ == "__main__" and _cpp_backend():
     raise SystemExit(main(sys.argv))
 
 
+# diagnostics.py imports dataclasses, which takes a third of the early
+# path's start, so it comes after it with the pipeline.
+import diagnostics
 import asm_ast
 from asm_emit import emit_program
 from tac_to_asm import translate_program as translate_to_asm

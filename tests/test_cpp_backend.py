@@ -7,6 +7,7 @@ preprocessor's flags, and the modules Python imports."""
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import os
 import subprocess
@@ -779,8 +780,9 @@ def _slot_metadata_asm(kind: str) -> str:
 
 @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
 class TestObjectsAndLinks(unittest.TestCase):
-    """`-c` and a link hand every input to C++ in one request
-    (`cpp_backend.build`), and give what the Python path gives: the
+    """`-c` and a link hand every input to C++ in one request of the
+    backend's modes `objects` and `link`, which `c6502cpp compile`
+    sends, and give what the Python path gives: the
     messages, the exit status, and the files written and not written."""
 
     @classmethod
@@ -960,6 +962,200 @@ class TestObjectsAndLinks(unittest.TestCase):
                         check=True, capture_output=True, text=True,
                     )
                     self.assertEqual(sorted(linker & set(done.stdout.split())), [])
+
+
+# Command lines of compile.py that argparse or compile.py's own checks
+# reject, or that print the help, in a directory holding `a.c`.
+_COMMAND_LINES = (
+    ["-h"], ["--he"], ["a.c", "-S", "-h"], [], ["a.c", "--lex", "-S"],
+    ["a.c", "-Sc"], ["a.c", "-O2"], ["a.c", "--origin", "x"],
+    ["a.c", "-Ttext=$"], ["a.c", "-o"], ["a.c", "--defsym", "-S"],
+    ["-S", "a.c", "-o", "x.txt"], ["--tac", "a.o"],
+    ["a.c", "-S", "-o", "-"], ["a.c", "-SOo", "-"],
+    ["a.c", "-Ttext=0x1000", "-o", "p"],
+)
+
+_A_C = "int main(void) { return 1; }\n"
+
+
+def _run_script(argv: list[str], cwd: str, *, cpp: bool, columns: int,
+                command: bool = False, stdin: bytes | None = None,
+                ) -> subprocess.CompletedProcess:
+    """Runs compile.py as a script with the C++ port on or off, or with
+    `command` the `c6502cpp compile` command itself, with the terminal
+    `columns` wide, and returns the process's bytes and status."""
+    env = dict(os.environ)
+    env.pop("C6502_CPP_BACKEND", None)
+    env["COLUMNS"] = str(columns)
+    if cpp:
+        env["C6502_CPP_BACKEND"] = "1"
+    if command:
+        cmd = [str(cpp_cli()), "compile", *argv]
+    else:
+        cmd = [sys.executable, str(_ROOT / "compile.py"), *argv]
+    return subprocess.run(cmd, cwd=cwd, env=env, input=stdin,
+                          capture_output=True)
+
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestCommandLine(unittest.TestCase):
+    """Under the variable, compile.py's `main` hands its whole command
+    line to `c6502cpp compile` (`cpp_backend.run_tool`), which reads it
+    with compile.py's argparse. tools/compare_backends.py's `cli` jobs
+    compare many more command lines in-process, and these check the bytes
+    compile.py writes as a process, the command run by itself, and what
+    a caller of `main` in the same process gets."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        Path(self.tmp.name, "a.c").write_text(_A_C, encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_compile_py_with_the_cpp_port(self):
+        # The same bytes, messages, exit status, and files, at widths
+        # that wrap the usage and help differently.
+        for columns in (20, 41, 80, 132):
+            for argv in _COMMAND_LINES:
+                with self.subTest(columns=columns, argv=argv):
+                    got = []
+                    for cpp in (False, True):
+                        for name in ("p", "x.txt"):
+                            Path(self.tmp.name, name).unlink(missing_ok=True)
+                        done = _run_script(argv, self.tmp.name, cpp=cpp,
+                                           columns=columns)
+                        p = Path(self.tmp.name, "p")
+                        got.append((done.returncode, done.stdout, done.stderr,
+                                    p.read_bytes() if p.exists() else None))
+                    self.assertEqual(got[1], got[0])
+
+    def test_stdin(self):
+        # The C++ side asks for stdin, which compile.py reads for it.
+        source = b"_Bool b;\r\nint main(void) { return b; }\r\n"
+        for argv in (["-", "--lex"], ["-", "-S", "-O", "-o", "-"],
+                     ["a.c", "-", "--tac"]):
+            with self.subTest(argv=argv):
+                py = _run_script(argv, self.tmp.name, cpp=False, columns=80,
+                                 stdin=source)
+                cpp = _run_script(argv, self.tmp.name, cpp=True, columns=80,
+                                  stdin=source)
+                self.assertEqual(cpp.stdout, py.stdout)
+                self.assertEqual(cpp.stderr, py.stderr)
+                self.assertEqual(cpp.returncode, py.returncode)
+                self.assertEqual(py.returncode, 0)
+
+    def test_the_command_itself(self):
+        # `c6502cpp compile` run by itself writes compile.py's bytes for
+        # ASCII text, in text mode as Python writes them.
+        for argv in _COMMAND_LINES:
+            with self.subTest(argv=argv):
+                py = _run_script(argv, self.tmp.name, cpp=False, columns=80)
+                cpp = _run_script(argv, self.tmp.name, cpp=False, columns=80,
+                                  command=True)
+                self.assertEqual(cpp.stdout, py.stdout)
+                self.assertEqual(cpp.stderr, py.stderr)
+                self.assertEqual(cpp.returncode, py.returncode)
+
+    def _main(self, argv: list[str], *, stdin: str = "") -> tuple:
+        """Runs `compile.main(argv)` in this process with the C++ port off
+        and on, with stdout and stderr in one stream, and returns for
+        each the status (a SystemExit's code), the stream's text, and
+        the type and message of another exception it raised."""
+        import compile
+        here = os.getcwd()
+        got = []
+        os.chdir(self.tmp.name)
+        try:
+            for cpp in (False, True):
+                sink = io.StringIO()
+                status = raised = None
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(mock.patch.dict(os.environ))
+                    os.environ.pop("C6502_CPP_BACKEND", None)
+                    os.environ["COLUMNS"] = "80"
+                    if cpp:
+                        os.environ["C6502_CPP_BACKEND"] = "1"
+                    stack.enter_context(mock.patch("sys.stdin", io.StringIO(stdin)))
+                    stack.enter_context(contextlib.redirect_stdout(sink))
+                    stack.enter_context(contextlib.redirect_stderr(sink))
+                    try:
+                        status = compile.main(argv)
+                    except SystemExit as e:
+                        status = e.code
+                    except Exception as e:  # noqa: BLE001 - compared below
+                        raised = (type(e).__name__, str(e))
+                got.append((status, sink.getvalue(), raised))
+        finally:
+            os.chdir(here)
+        self.assertEqual(got[1], got[0])
+        return got[0]
+
+    def test_main_in_process_keeps_the_order_of_the_streams(self):
+        # Each input's warning goes to stderr before its text goes to
+        # stdout.
+        Path(self.tmp.name, "w.c").write_text("_Bool b;\n", encoding="utf-8")
+        status, text, _ = self._main(["compile.py", "w.c", "w.c", "--lex"])
+        self.assertEqual(status, 0)
+        self.assertEqual(text.count("w.c: warning: "), 2)
+        self.assertLess(text.index("w.c: warning: "), text.index("_Bool"))
+        status, text, _ = self._main(
+            ["compile.py", "-", "-S", "-O", "-o", "-"],
+            stdin="_Bool b;\nint main(void) { return b; }\n")
+        self.assertEqual(status, 0)
+        self.assertIn("<stdin>: warning: ", text)
+        self.assertIn("RTS", text)
+
+    def test_main_in_process_raises_python_s_exceptions(self):
+        self.assertEqual(self._main(["compile.py", "-h"])[0], 0)
+        status, text, _ = self._main(["compile.py", "a.c", "-c", "-S"])
+        self.assertEqual(status, 2)
+        self.assertIn("argument -S: not allowed with argument -c", text)
+        _, _, raised = self._main(["compile.py", "a.c", "-S", "-o", "nodir/x.s"])
+        self.assertEqual(raised[0], "FileNotFoundError")
+
+    def test_main_in_process_without_inlining(self):
+        # tests/no_inlining.py's patch of `compile.inline_functions`
+        # reaches `c6502cpp compile`.
+        Path(self.tmp.name, "s.c").write_text(
+            "static int small(int x) { return x + 1; }\n"
+            "int main(void) { return small(2); }\n", encoding="utf-8")
+        for inlining in (False, True):
+            with self.subTest(inlining=inlining), contextlib.ExitStack() as stack:
+                if not inlining:
+                    stack.enter_context(no_inlining())
+                _, text, _ = self._main(["compile.py", "s.c", "-S", "-O", "-o", "-"])
+                self.assertEqual("small:" in text, not inlining)
+
+    def test_compile_imports_only_the_shim(self):
+        # Run as a script with the variable set, compile.py imports no
+        # module of this repository but cpp_backend, and not argparse,
+        # since `c6502cpp compile` reads the command line.
+        code = (
+            "import runpy, sys\n"
+            "base = set(sys.modules)\n"
+            "sys.argv = ['compile.py', 'a.c', '-S', '-O', '-o', 'a.s']\n"
+            "try:\n"
+            "    runpy.run_path(sys.argv_path, run_name='__main__')\n"
+            "except SystemExit as e:\n"
+            "    assert not e.code, e.code\n"
+            "print('\\n'.join(sorted(set(sys.modules) - base)))\n"
+        ).replace("sys.argv_path", repr(str(_ROOT / "compile.py")))
+        env = dict(os.environ)
+        env["C6502_CPP_BACKEND"] = "1"
+        env["PYTHONPATH"] = str(_ROOT)
+        done = subprocess.run(
+            [sys.executable, "-c", code], cwd=self.tmp.name, env=env,
+            check=True, capture_output=True, text=True,
+        )
+        loaded = set(done.stdout.split())
+        ours = sorted(
+            m for m in loaded
+            if (_ROOT / m.split(".")[0]).exists()
+            or (_ROOT / f"{m.split('.')[0]}.py").exists())
+        self.assertEqual(ours, ["cpp_backend"])
+        self.assertNotIn("argparse", loaded)
+        self.assertNotIn("shutil", loaded)
 
 
 if __name__ == "__main__":

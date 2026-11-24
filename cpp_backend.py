@@ -32,14 +32,10 @@ for `tests.test_sim_chapters._run_program`, fuzz/reduce.py, and
 fuzz/tac_passes.py under the variable, so that those import none of the
 Python front end, `c99_to_tac`, the TAC optimizer, or tac_sim.py.
 
-`build` sends the inputs of `compile.py -c` or of a link in one request:
-each C source's text, each assembly file's text, and each object's
-bytes, with a link's script, origin, `--defsym`s, and output. The C++
-side compiles and assembles them in the same process, returns each
-object of `-c`, and links and writes the executable of a link, so no
-Python assembles or links. `Built` holds the response, which compile.py
-replays input by input, so that what it writes and the files it leaves
-are those of the Python path.
+`run_tool` runs compile.py's whole command line in `c6502cpp compile`
+(cpp/src/compile_command.h), which reads it with compile.py's argparse
+and runs the stage it names in one process, and nm.py's and
+objdump.py's in `c6502cpp nm` and `c6502cpp objdump`.
 
 The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
@@ -48,8 +44,8 @@ does, and an error that a pass of the compile raised, which it raises as
 the Python exception of the same class and message.
 
 Each call starts `c6502cpp backend` (cpp/src/backend.h describes the
-request and the response), found as tools/check_captures.py finds it: at
-the path in `C6502_CPP`, or in cpp/build/bin. The C++ process inherits
+request and the response), found as tools/check_captures.py finds it
+(`_cpp_cli`): at the path in `C6502_CPP`, or in cpp/build/bin. The C++ process inherits
 the current directory, so the paths in the preprocessor's messages come
 out as Python's do.
 
@@ -68,6 +64,22 @@ import sys
 # The directory of c6502's own headers, as preprocessor.py's
 # `_BUNDLED_INCLUDE_DIR` spells it, since this module is beside it.
 _INCLUDE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "include")
+
+
+def _cpp_cli() -> str | None:
+    """The path of c6502cpp, found as tools/check_captures.py's
+    `cpp_cli` finds it: the path in `C6502_CPP`, or cpp/build/bin. It is
+    found here so that compile.py's start doesn't import that module and
+    its argparse."""
+    env = os.environ.get("C6502_CPP")
+    if env:
+        return env
+    root = os.path.dirname(os.path.abspath(__file__))
+    for name in ("c6502cpp.exe", "c6502cpp"):
+        path = os.path.join(root, "cpp", "build", "bin", name)
+        if os.path.exists(path):
+            return path
+    return None
 
 # The module of each exception class of the compiler that the C++ side
 # reports by name, for the classes the builtins don't have.
@@ -165,8 +177,7 @@ def _send(request: str | bytes) -> bytes:
     bytes. A bug the C++ compiler reports (exit status 3) is raised as
     an `AssertionError` with its message, since that is what the C++
     `InternalError` stands for."""
-    from tools.check_captures import cpp_cli
-    cli = cpp_cli()
+    cli = _cpp_cli()
     if cli is None:
         raise RuntimeError(
             "C6502_CPP_BACKEND=1 is set, but c6502cpp isn't built "
@@ -311,136 +322,6 @@ def compile_source(
     return sections["text"]
 
 
-# The keys of the response's lines that a section of that many bytes
-# follows.
-_SECTION_KEYS = ("stderr", "text", "object")
-
-
-def _records(data: bytes) -> list[tuple[str, str, bytes | None]]:
-    """Splits a response into its lines in order, each as its key, the
-    rest of the line, and the bytes of the section that follows it
-    (None for a line without one)."""
-    out = []
-    pos = 0
-    while pos < len(data):
-        end = data.index(b"\n", pos)
-        key, _, value = data[pos:end].decode("utf-8").partition(" ")
-        pos = end + 1
-        body = None
-        if key in _SECTION_KEYS:
-            n = int(value)
-            body = data[pos:pos + n]
-            pos += n
-        out.append((key, value, body))
-    return out
-
-
-class InputResult:
-    """What the C++ side gave for one input of `build`: for a C input
-    what the preprocessor wrote to stderr and the warnings, then the
-    error that ended the response, the `struct.error` of writing the
-    object, or the object's bytes."""
-
-    def __init__(self) -> None:
-        self.stderr = ""
-        self.warnings: list = []
-        self.error: dict | None = None
-        self.write_error: dict | None = None
-        self.object: bytes | None = None
-
-    def replay(self) -> None:
-        """Writes what the preprocessor wrote to stderr, issues the
-        warnings to the caller's `diagnostics.collecting()` block, and
-        raises the input's error as its Python exception, in the order
-        the Python compile and assembly give them."""
-        import diagnostics
-        if self.stderr:
-            sys.stderr.write(self.stderr)
-        for where, message in self.warnings:
-            diagnostics.warn(where, message)
-        if self.error is not None:
-            raise _exception(self.error["type"], self.error["message"])
-
-    def write(self, f) -> None:
-        """Writes the object to the open file `f`, or raises the
-        `struct.error` that Python's `elf.write` raises for it, after
-        compile.py has opened the file."""
-        if self.write_error is not None:
-            raise _exception(self.write_error["type"], self.write_error["message"])
-        f.write(self.object)
-
-
-class Built:
-    """The response to `build`: an `InputResult` for each input the C++
-    side reached, in order, and for a link its result, one of
-    `("link-error", error)`, `("write-error", error)`, `("output-error",
-    {"errno", "strerror"})`, and `("executable", size)`, or None when no
-    link ran."""
-
-    def __init__(self, data: bytes, link: bool) -> None:
-        self.inputs: list[InputResult] = []
-        self.link: tuple[str, object] | None = None
-        for key, value, body in _records(data):
-            if key == "input":
-                self.inputs.append(InputResult())
-                continue
-            # An input of a link has no `write-error`, since compile.py
-            # writes no object, so one comes after the inputs.
-            if key in ("link-error", "output-error") or (
-                    key == "write-error" and link):
-                self.link = (key, json.loads(value))
-                continue
-            if key == "executable":
-                self.link = (key, int(value))
-                continue
-            current = self.inputs[-1]
-            if key == "stderr":
-                current.stderr = body.decode("utf-8")
-            elif key == "warnings":
-                current.warnings = json.loads(value)
-            elif key == "error":
-                current.error = json.loads(value)
-            elif key == "write-error":
-                current.write_error = json.loads(value)
-            elif key == "object":
-                current.object = body
-            elif key != "ok":
-                raise RuntimeError(f"c6502cpp backend gave a line {key!r}")
-
-
-def build(inputs: list[dict], pcpp_args, *, optimize: bool, inline: bool,
-          link: dict | None = None) -> Built:
-    """Compiles, assembles, and reads `inputs` in the C++ port, as
-    `compile._object` does for `-c` (`link` None) or for a link, and
-    links them. Each input is a dict with `kind` ("c", "asm", or
-    "object"), `name` (the assembler's file name for the object, or an
-    object's path), `filename` (a C input's file name for the
-    preprocessor, None for stdin), `link_name` (the name the object
-    goes by in the link), and `data` (the text, or an object's bytes).
-    `link` holds `run_link`, `script`, `origin`, `defsyms` (pairs), and
-    `output`. `optimize` and `inline` are as for `compile_source`. The
-    C++ side writes the executable itself."""
-    check = _ir_check_enabled()
-    args = {
-        "pcpp_args": list(pcpp_args or []), "include_dir": _INCLUDE_DIR,
-        "optimize": optimize, "inline": inline, "check_ir": check,
-        "inputs": [
-            {k: i[k] for k in ("kind", "name", "filename", "link_name")}
-            for i in inputs
-        ],
-        **(link or {}),
-    }
-    mode = "objects" if link is None else "link"
-    parts = [f"c6502-backend 3\nmode {mode}\nargs {json.dumps(args)}\n".encode("utf-8")]
-    for i in inputs:
-        data = i["data"]
-        if isinstance(data, str):
-            data = data.encode("utf-8")
-        parts.append(f"input {len(data)}\n".encode("utf-8") + data)
-    return Built(_send(b"".join(parts)), link is not None)
-
-
-
 class TacSimError(Exception):
     """The error of the C++ TAC interpreter (cpp/src/tac_sim.h) that
     tac_sim.py raises as its own `TacSimError`. The class stands in for
@@ -537,29 +418,34 @@ def _ir_check_enabled() -> bool:
     return os.environ.get("C6502_CHECK_IR") == "1"
 
 
-def run_tool(name: str, argv: list[str]) -> int:
+def run_tool(name: str, argv: list[str], *, inline: bool = True) -> int:
     """Runs the C++ port of a tool, `c6502cpp <name>`, on the command
-    line `argv` (the program's name first), as nm.py's `main` does under
-    `C6502_CPP_BACKEND=1`, and returns its exit status. What it writes to
-    stdout and stderr goes to `sys.stdout` and `sys.stderr`, so a caller
-    that redirects them, as a test does, gets it. The C++ side wraps the
-    usage and help as argparse does, to the width `shutil` gives here,
-    since its own stdout isn't the terminal. A bad command line ends with
-    SystemExit(2), as argparse's does, and the help with a return of 0,
-    where Python's raises SystemExit(0). argparse writes its usage before
-    every error, so an exit status of 2 whose stderr doesn't start with
-    `usage: ` comes from the tool itself, as objdump.py's when nothing is
-    asked for, and is returned. A bug the C++ side reports (exit status
-    3) is raised as an `AssertionError`."""
-    import shutil
-    from tools.check_captures import cpp_cli
-    cli = cpp_cli()
+    line `argv` (the program's name first), as compile.py's, nm.py's,
+    and objdump.py's `main` do under `C6502_CPP_BACKEND=1`, and returns
+    its exit status. What it writes to stdout and stderr goes to
+    `sys.stdout` and `sys.stderr`, so a caller that redirects them, as a
+    test does, gets it. The C++ side wraps the usage and help as
+    argparse does, to the width `shutil.get_terminal_size` gives here
+    (`_terminal_columns`), since its own stdout isn't the terminal. A bug the C++ side reports (exit status
+    3) is raised as an `AssertionError`.
+
+    For "compile", `_run_compile` runs it, with `inline` for
+    `compile._inlining()`. For nm and objdump, a bad command line ends
+    with SystemExit(2), as argparse's does, and the help with a return
+    of 0, where Python's raises SystemExit(0). argparse writes its usage
+    before every error, so an exit status of 2 whose stderr doesn't
+    start with `usage: ` comes from the tool itself, as objdump.py's
+    when nothing is asked for, and is returned."""
+    cli = _cpp_cli()
     if cli is None:
         raise RuntimeError(
             "C6502_CPP_BACKEND=1 is set, but c6502cpp isn't built "
             "(cpp/README.md has the build)",
         )
-    env = {**os.environ, "COLUMNS": str(shutil.get_terminal_size().columns)}
+    columns = _terminal_columns()
+    if name == "compile":
+        return _run_compile(cli, argv, columns, inline)
+    env = {**os.environ, "COLUMNS": str(columns)}
     done = subprocess.run(
         [str(cli), name, *argv[1:]], capture_output=True, env=env,
     )
@@ -579,3 +465,98 @@ def run_tool(name: str, argv: list[str]) -> int:
     if done.returncode == 2 and done.stderr.startswith(b"usage: "):
         raise SystemExit(2)
     return done.returncode
+
+
+def _terminal_columns() -> int:
+    """Returns `shutil.get_terminal_size().columns`, as that function
+    computes it, without importing shutil, which takes a tenth of
+    compile.py's start: `COLUMNS` when it's a positive number, else the
+    width of the terminal `sys.__stdout__` writes to, else 80."""
+    try:
+        columns = int(os.environ["COLUMNS"])
+    except (KeyError, ValueError):
+        columns = 0
+    if columns <= 0:
+        try:
+            columns = os.get_terminal_size(sys.__stdout__.fileno()).columns
+        except (AttributeError, ValueError, OSError):
+            columns = 0
+        columns = columns or 80
+    return columns
+
+
+def _run_compile(cli, argv: list[str], columns: int, inline: bool) -> int:
+    """Runs `c6502cpp compile` on compile.py's command line `argv` in
+    frames (cpp/src/compile_command.cpp, `framed`), and returns the exit
+    status that compile.py's `main` returns. The C++ side does all that
+    `main` does, and its frames give each write to stdout and stderr in
+    order, which this writes to `sys.stdout` and `sys.stderr` as Python
+    writes them, and at the end the status, the code of a SystemExit
+    (argparse's help and usage errors), which this raises, or the
+    exception `main` would raise, which this raises as its Python class.
+    A C input `-` makes the C++ side ask for stdin, which this reads with
+    `sys.stdin.read()`, as compile.py's `_read_source` does, so a test
+    that patches `sys.stdin` gives the C++ side its text."""
+    header = json.dumps({
+        "include_dir": _INCLUDE_DIR, "columns": columns, "inline": inline,
+        "check_ir": _ir_check_enabled(),
+    })
+    proc = subprocess.Popen(
+        [str(cli), "compile", *argv[1:]], stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "C6502CPP_FRAMES": "1"},
+    )
+    end = None
+    try:
+        proc.stdin.write(header.encode("utf-8") + b"\n")
+        proc.stdin.flush()
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            key, _, value = line.decode("utf-8").rstrip("\n").partition(" ")
+            if key == "stdin":
+                _answer_stdin(proc.stdin)
+            elif key in ("write-out", "write-err"):
+                text = proc.stdout.read(int(value)).decode("utf-8")
+                (sys.stdout if key == "write-out" else sys.stderr).write(text)
+            else:
+                end = (key, value)
+                break
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        err = proc.stderr.read()
+        proc.stdout.close()
+        proc.stderr.close()
+        proc.wait()
+    message = err.decode("utf-8", "replace").strip()
+    if proc.returncode == 3:
+        raise AssertionError(message.removeprefix("internal error: "))
+    if end is None or proc.returncode != 0:
+        raise RuntimeError(f"c6502cpp compile failed: {message}")
+    key, value = end
+    if key == "status":
+        return int(value)
+    if key == "exit":
+        raise SystemExit(int(value))
+    error = json.loads(value)
+    raise _exception(error["type"], error["message"])
+
+
+def _answer_stdin(pipe) -> None:
+    """Sends the C++ side what `sys.stdin.read()` returns, or the
+    exception it raises, with an OSError's strerror, which compile.py's
+    `_report` prints."""
+    try:
+        text = sys.stdin.read()
+    except (OSError, UnicodeDecodeError) as e:
+        error = {"type": type(e).__name__, "message": str(e),
+                 "strerror": getattr(e, "strerror", None)}
+        pipe.write(f"stdin-error {json.dumps(error)}\n".encode("utf-8"))
+    else:
+        data = text.encode("utf-8", "surrogatepass")
+        pipe.write(f"stdin {len(data)}\n".encode("utf-8") + data)
+    pipe.flush()

@@ -1819,6 +1819,16 @@ These choices are Robert's.
    that compile.py ignore it from the removal on, and that the
    documents stop mentioning it.
 
+Robert decided on 23 Nov 2026. He took the recommendations of choices
+1 to 6 and 8, so the names and the `compile.py:` messages stay until
+step 9, the shims stay, `--parse`, `--resolve`, and `--tac` print
+`pretty`, the checks after Python are the golden files with the frozen
+captures, and `ir_check` is ported. For choice 7 he chose to port
+`tac_sim` to C++ in step 8, so no Python reader of the C++ tables is
+written, and G4 below ports the interpreter instead. He also asked that
+the groups of step 8 run one at a time, each merged, checked, and
+pushed before the next one starts, and the same for the steps after it.
+
 ### The groups
 
 Each group works in its own worktree, adds C++ tests for what it ports,

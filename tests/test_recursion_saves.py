@@ -1,18 +1,19 @@
 """Tests for `[[c6502::save_hardware_stack]]`: a recursive
 function whose recursive calls are marked gets a private zero-page
 pool, and saves what's live across each marked call on the hardware
-stack (`passes/recursion_saves.py`)."""
+stack (`passes/recursion_saves.py`).
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 from __future__ import annotations
 
 import unittest
 
 import c99_ast
-import tac_ast
 from compile import _run_stage
 from parser import ParserError, parse
-from passes.abi_selection import SoftStackLayout
-from passes.recursion_saves import RecursionSaveError, hw_stack_cycles
-from passes.zp_local_allocation import allocate_function_locals
+from passes.recursion_saves import RecursionSaveError
 from preprocessor import PreprocessorError, preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
@@ -142,60 +143,6 @@ class TestSyntax(unittest.TestCase):
         with self.assertRaises(RecursionSaveError) as cm:
             _codegen(src)
         self.assertIn("function pointer", str(cm.exception))
-
-
-def _fn(name: str, *calls: tuple[str, bool]) -> tac_ast.Function:
-    return tac_ast.Function(
-        name=name, is_global=True, params=[],
-        instructions=[
-            tac_ast.FunctionCall(name=c, args=[], dst=None, hw_stack_save=m)
-            for c, m in calls
-        ],
-    )
-
-
-class TestCycles(unittest.TestCase):
-
-    def test_every_call_on_the_cycle_must_be_marked(self) -> None:
-        prog = tac_ast.Program(top_level=[
-            _fn("main", ("f", False), ("p", False)),
-            _fn("f", ("g", True), ("leaf", False)),
-            _fn("g", ("f", True)),
-            _fn("p", ("q", True)),
-            _fn("q", ("p", False)),
-            _fn("leaf"),
-        ])
-        self.assertEqual(
-            hw_stack_cycles(prog),
-            {"f": frozenset({"f", "g"}), "g": frozenset({"f", "g"})},
-        )
-
-    def test_pools(self) -> None:
-        prog = tac_ast.Program(top_level=[
-            _fn("main", ("f", False)),
-            _fn("f", ("g", True), ("leaf", False)),
-            _fn("g", ("f", True)),
-            _fn("leaf"),
-        ])
-        abi = {n: SoftStackLayout() for n in ("main", "f", "g", "leaf")}
-        pools = allocate_function_locals(
-            prog, abi, {"main": 2, "f": 2, "g": 2, "leaf": 2},
-        )
-        self.assertEqual(set(pools), {"main", "f", "g", "leaf"})
-        # f and g may share: every call between them saves first.
-        self.assertEqual(pools["f"], pools["g"])
-        for name in ("f", "g", "leaf"):
-            self.assertFalse(set(pools["main"]) & set(pools[name]))
-        self.assertFalse(set(pools["f"]) & set(pools["leaf"]))
-
-    def test_unmarked_cycle_gets_no_pool(self) -> None:
-        prog = tac_ast.Program(top_level=[
-            _fn("main", ("f", False)),
-            _fn("f", ("f", False)),
-        ])
-        abi = {n: SoftStackLayout() for n in ("main", "f")}
-        pools = allocate_function_locals(prog, abi, {"main": 1, "f": 1})
-        self.assertEqual(pools, {})
 
 
 class TestCodegen(unittest.TestCase):

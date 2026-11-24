@@ -2,6 +2,10 @@
 where SSP, FP, HARGS, and DPTR go, how HARGS is sized, the EQU lines
 that bind them, linking, and simulator runs of programs that reserve
 the bytes the classic layout uses.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -12,11 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import asm_ast
-from passes.runtime_layout import (
-    CLASSIC, RuntimeLayout, RuntimeLayoutError, choose_layout,
-    helper_footprints, hargs_need,
-)
+from passes.runtime_layout import CLASSIC, RuntimeLayout, RuntimeLayoutError, choose_layout, helper_footprints
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
@@ -94,19 +94,6 @@ class TestHargsSize(unittest.TestCase):
         self.assertEqual(fp["sdivmod8"], 6)
         self.assertGreaterEqual(fp["sdivmod8"], fp["udivmod8"])
 
-    def test_need_counts_offsets_and_calls(self) -> None:
-        def prog(*instrs):
-            return asm_ast.Program(top_level=[asm_ast.Function(
-                name="f", is_global=True, params=[],
-                instructions=list(instrs),
-            )])
-        h = lambda k: asm_ast.Data(name="HARGS", offset=k)
-        a = asm_ast.Reg(reg=asm_ast.A())
-        self.assertEqual(hargs_need(prog()), 0)
-        self.assertEqual(hargs_need(prog(asm_ast.Mov(src=a, dst=h(9)))), 10)
-        self.assertEqual(
-            hargs_need(prog(asm_ast.Call(name="mul32", reg_args=[]))), 20,
-        )
 
     def test_relocated_hargs_fits_the_program(self) -> None:
         cases = {

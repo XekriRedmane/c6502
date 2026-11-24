@@ -24,111 +24,21 @@ Coverage:
     LoadAddress.dst now collapses to bare body + RTS — no
     prologue, no SSP/FP arithmetic, no callee-saved bytes.
   * Existing single-byte coloring isn't disturbed.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
 import unittest
 
-import asm_ast
-from passes.optimization_asm.interference import build_interference
-from passes.optimization_asm.liveness import compute_liveness
-from passes.optimization_asm.ssa_construction import to_ssa
-from passes.optimization_asm.regalloc import color_graph
 from sim.harness import build_sim, run_c_program
 
 
 # ---------------------------------------------------------------------------
 # Direct interference / coloring checks (asm-IR level)
 # ---------------------------------------------------------------------------
-
-
-def _ps(name: str, off: int = 0) -> asm_ast.Pseudo:
-    return asm_ast.Pseudo(name=name, offset=off)
-
-
-def _A() -> asm_ast.Reg:
-    return asm_ast.Reg(reg=asm_ast.A())
-
-
-def _ret_bare() -> asm_ast.Return:
-    return asm_ast.Return(save_a=False)
-
-
-def _fn(*instrs, name: str = "main", params=()) -> asm_ast.Function:
-    return asm_ast.Function(
-        name=name,
-        is_global=True,
-        params=list(params),
-        instructions=list(instrs),
-    )
-
-
-class TestInterferenceMultiByteNode(unittest.TestCase):
-    def test_loadaddress_dst_is_width_2(self) -> None:
-        # `int x; int *p = &x;` — at the asm IR level, this has a
-        # LoadAddress(src=%x, dst=%p). %p must be a width=2 node.
-        fn = _fn(
-            asm_ast.LoadAddress(src=_ps("%x"), dst=_ps("%p")),
-            asm_ast.Mov(src=_ps("%p", 0), dst=_A()),
-            asm_ast.Mov(src=_ps("%p", 1), dst=_A()),
-            _ret_bare(),
-        )
-        ssa = to_ssa(fn)
-        liveness = compute_liveness(ssa)
-        graph = build_interference(ssa, liveness)
-        self.assertIn("%p", graph.nodes)
-        self.assertEqual(graph.nodes["%p"].width, 2)
-        # %x stays excluded (address-taken).
-        self.assertNotIn("%x", graph.nodes)
-
-    def test_two_loadaddresses_get_distinct_2byte_blocks(self) -> None:
-        # Both pointers live at the same time → no overlap.
-        fn = _fn(
-            asm_ast.LoadAddress(src=_ps("%x"), dst=_ps("%p")),
-            asm_ast.LoadAddress(src=_ps("%y"), dst=_ps("%q")),
-            asm_ast.Mov(src=_ps("%p", 0), dst=_A()),
-            asm_ast.Mov(src=_ps("%q", 0), dst=_A()),
-            asm_ast.Mov(src=_ps("%p", 1), dst=_A()),
-            asm_ast.Mov(src=_ps("%q", 1), dst=_A()),
-            _ret_bare(),
-        )
-        ssa = to_ssa(fn)
-        liveness = compute_liveness(ssa)
-        graph = build_interference(ssa, liveness)
-        coloring = color_graph(ssa, graph)
-        p_base = coloring.assignments.get("%p")
-        q_base = coloring.assignments.get("%q")
-        self.assertIsNotNone(p_base)
-        self.assertIsNotNone(q_base)
-        # Each gets a 2-byte block; the blocks don't overlap.
-        p_bytes = {p_base, p_base + 1}
-        q_bytes = {q_base, q_base + 1}
-        self.assertEqual(p_bytes & q_bytes, set())
-
-    def test_pointer_coexists_with_singlebyte_neighbor(self) -> None:
-        # %v is a single-byte SSA value live across the LoadAddress.
-        # %p is a 2-byte value defined by LoadAddress. They interfere;
-        # %v must avoid both bytes of %p's color.
-        fn = _fn(
-            asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_ps("%v")),
-            asm_ast.LoadAddress(src=_ps("%x"), dst=_ps("%p")),
-            asm_ast.Mov(src=_ps("%v"), dst=_A()),
-            asm_ast.Mov(src=_ps("%p", 0), dst=_A()),
-            asm_ast.Mov(src=_ps("%p", 1), dst=_A()),
-            _ret_bare(),
-        )
-        ssa = to_ssa(fn)
-        liveness = compute_liveness(ssa)
-        graph = build_interference(ssa, liveness)
-        coloring = color_graph(ssa, graph)
-        # The byte-versioned name for %v after SSA renaming.
-        v_name = next(
-            n for n in coloring.assignments
-            if n.startswith("%v.b0.v")
-        )
-        v_addr = coloring.assignments[v_name]
-        p_base = coloring.assignments["%p"]
-        self.assertNotIn(v_addr, {p_base, p_base + 1})
 
 
 # ---------------------------------------------------------------------------

@@ -10,17 +10,18 @@ Coverage:
   - Multi-byte param under ZpLayout: each byte resolves to its
     own slot symbol.
   - Non-param locals still get Frame slots in a ZpLayout function.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
 import unittest
 
 import asm_ast
-from passes.abi_selection import SoftStackLayout, ZpLayout
-from passes.replace_pseudoregisters import (
-    replace_function_bare_exit,
-    replace_program_bare_exit,
-)
+from passes.abi_selection import ZpLayout
+from passes.replace_pseudoregisters import replace_function_bare_exit
 
 
 def _ps(name: str, off: int = 0) -> asm_ast.Pseudo:
@@ -29,10 +30,6 @@ def _ps(name: str, off: int = 0) -> asm_ast.Pseudo:
 
 def _A() -> asm_ast.Reg:
     return asm_ast.Reg(reg=asm_ast.A())
-
-
-def _imm(v: int) -> asm_ast.Imm:
-    return asm_ast.Imm(value=v)
 
 
 def _mov(src, dst) -> asm_ast.Mov:
@@ -151,58 +148,6 @@ class TestZpAbiParamResolution(unittest.TestCase):
             i for i in out.instructions if isinstance(i, asm_ast.Mov)
         )
         self.assertIsInstance(first_mov.dst, asm_ast.Frame)
-
-
-class TestReplaceProgramBareExitWithLayouts(unittest.TestCase):
-    def test_program_layouts_threaded_per_function(self) -> None:
-        # Two functions, one ZP-ABI, one default. Verify each
-        # gets its own resolution.
-        prog = asm_ast.Program(top_level=[
-            _fn(
-                "zp_fn",
-                _mov(_ps("x"), _A()),
-                _ret_bare(),
-                params=["x"],
-            ),
-            _fn(
-                "ss_fn",
-                _mov(_ps("y"), _A()),
-                _ret_bare(),
-                params=["y"],
-            ),
-        ])
-        layouts = {
-            "zp_fn": ZpLayout(
-                slot_symbols=["__zpabi_zp_fn_p0"], addrs=[0x80],
-            ),
-            "ss_fn": SoftStackLayout(),
-        }
-        out, dims = replace_program_bare_exit(
-            prog, param_layouts=layouts,
-        )
-        # Each function got the right resolution.
-        zp_fn = next(
-            tl for tl in out.top_level
-            if isinstance(tl, asm_ast.Function) and tl.name == "zp_fn"
-        )
-        zp_movs = [
-            i for i in zp_fn.instructions if isinstance(i, asm_ast.Mov)
-        ]
-        self.assertIsInstance(zp_movs[0].src, asm_ast.Data)
-        self.assertEqual(zp_movs[0].src.name, "__zpabi_zp_fn_p0")
-
-        ss_fn = next(
-            tl for tl in out.top_level
-            if isinstance(tl, asm_ast.Function) and tl.name == "ss_fn"
-        )
-        ss_movs = [
-            i for i in ss_fn.instructions if isinstance(i, asm_ast.Mov)
-        ]
-        self.assertIsInstance(ss_movs[0].src, asm_ast.Frame)
-
-        # arg_bytes per function: 0 for ZP-ABI, > 0 for soft-stack.
-        self.assertEqual(dims["zp_fn"].arg_bytes, 0)
-        self.assertGreater(dims["ss_fn"].arg_bytes, 0)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,9 @@
 """Tests for `passes/ret_slot_coalescing.py`: a local pair holding a
-copy of `F@ret` becomes `F@ret`."""
+copy of `F@ret` becomes `F@ret`.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 
 from __future__ import annotations
 
@@ -82,19 +86,6 @@ class TestRetSlotCoalescing(unittest.TestCase):
         self.assertIn(_mov(_A, _R0), out)
         self.assertIn(_mov(asm_ast.IndirectZpY(address=0x40), _A), out)
 
-    def test_live_across_a_call_of_f_kept(self):
-        # The pair is still read after a second call of f.
-        instrs = _walk([_call("f"), _mov(_L0, asm_ast.Data(name="g0",
-                                                           offset=0))])
-        self.assertEqual(_run(list(instrs)), instrs)
-
-    def test_live_across_a_call_out_of_the_unit(self):
-        # `h` is global and calls f, and doesn't lead to g, so `ext`
-        # might call it while g's pair is in f@ret.
-        instrs = _walk([_call("ext")])
-        h = _fn("h", [_call("f"), asm_ast.Return(save_a=False)],
-                is_global=True)
-        self.assertEqual(_run(list(instrs), others=[h]), instrs)
 
     def test_call_out_of_the_unit_with_every_entry_leading_to_g(self):
         # `h` calls f too, but it calls g, so `ext` calling h from g
@@ -104,11 +95,6 @@ class TestRetSlotCoalescing(unittest.TestCase):
                       asm_ast.Return(save_a=False)], is_global=True)
         self.assertNotIn("__local_g__p_0",
                          _names(_run(list(instrs), others=[h])))
-
-    def test_function_that_does_not_call_f_left_alone(self):
-        instrs = [_mov(_R0, _A), _mov(_A, _L0), _mov(_R1, _A),
-                  _mov(_A, _L1), asm_ast.Return(save_a=False)]
-        self.assertEqual(_run(list(instrs)), instrs)
 
 
 _SRC = """

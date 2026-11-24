@@ -19,6 +19,10 @@ Coverage:
     1]` multiplies the byte `n`.
   * Each program runs in the simulator in both pipelines, with edge
     cases, including a node that holds its own address.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -27,16 +31,11 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-import asm_ast
 import c99_ast
 from compile import main as compile_main
 from passes.pointer_restage import restage_store, scalar_at
-from passes.pointer_self_store import apply_pointer_self_store_drop
 from passes.type_checking import MemberInfo, StructLayout, TypeTable
 from sim.harness import build_sim
-
-
-_A = asm_ast.Reg(reg=asm_ast.A())
 
 
 def _asm(src: str) -> str:
@@ -190,93 +189,6 @@ class TestShapes(unittest.TestCase):
             uint8_t c(void) { return W <= E->gold; }"""), "c")
         self.assertNotIn("STA", text)
         self.assertEqual(text.count("LDA   (E),Y"), 2)
-
-
-def _wrap(instrs):
-    return asm_ast.Program(top_level=[asm_ast.Function(
-        name="f", is_global=False, params=[], instructions=instrs,
-    )])
-
-
-def _through(k: int) -> asm_ast.IndirectZp:
-    return asm_ast.IndirectZp(address=0xF4, offset=k)
-
-
-_T = asm_ast.Data(name="__local_f__t", offset=0)
-_ZP = {"__local_f__t": 0x80, "__local_f__u": 0x81, "P": 0xF4}
-
-
-class TestPointerSelfStore(unittest.TestCase):
-    def _run(self, instrs):
-        return apply_pointer_self_store_drop(
-            _wrap(instrs), zp_symbol_addrs=_ZP).top_level[0].instructions
-
-    def test_store_of_the_byte_read_goes(self) -> None:
-        instrs = [
-            asm_ast.Mov(src=_through(8), dst=_A),
-            asm_ast.Mov(src=_A, dst=_T),
-            asm_ast.Inc(dst=asm_ast.Data(name="__local_f__u", offset=0)),
-            asm_ast.Mov(src=_T, dst=_A),
-            asm_ast.Mov(src=_A, dst=_through(8)),
-            asm_ast.Return(save_a=False, save_x=False, save_c=False),
-        ]
-        out = self._run(instrs)
-        self.assertNotIn(asm_ast.Mov(src=_A, dst=_through(8)), out)
-
-    def test_store_through_another_offset_keeps_the_fact(self) -> None:
-        instrs = [
-            asm_ast.Mov(src=_through(8), dst=_A),
-            asm_ast.Mov(src=_A, dst=_T),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A),
-            asm_ast.Mov(src=_A, dst=_through(9)),
-            asm_ast.Mov(src=_T, dst=_A),
-            asm_ast.Mov(src=_A, dst=_through(8)),
-        ]
-        self.assertNotIn(asm_ast.Mov(src=_A, dst=_through(8)),
-                         self._run(instrs))
-
-    def test_store_that_may_reach_the_byte_ends_the_fact(self) -> None:
-        for dst in (
-            asm_ast.IndirectZp(address=0x90, offset=0),   # another pointer
-            asm_ast.Data(name="G", offset=0),             # a static
-            asm_ast.Data(name="P", offset=1),             # the pointer
-        ):
-            with self.subTest(dst=dst):
-                instrs = [
-                    asm_ast.Mov(src=_through(8), dst=_A),
-                    asm_ast.Mov(src=_A, dst=_T),
-                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A),
-                    asm_ast.Mov(src=_A, dst=dst),
-                    asm_ast.Mov(src=_T, dst=_A),
-                    asm_ast.Mov(src=_A, dst=_through(8)),
-                ]
-                self.assertEqual(self._run(instrs), instrs)
-
-    def test_volatile_and_labels_keep_the_store(self) -> None:
-        volatile = [
-            asm_ast.Mov(src=_through(8), dst=_A, is_volatile=True),
-            asm_ast.Mov(src=_A, dst=_through(8)),
-        ]
-        self.assertEqual(self._run(volatile), volatile)
-        label = [
-            asm_ast.Mov(src=_through(8), dst=_A),
-            asm_ast.Label(name=".l"),
-            asm_ast.Mov(src=_A, dst=_through(8)),
-        ]
-        self.assertEqual(self._run(label), label)
-
-    def test_slot_read_goes_through_the_pointer(self) -> None:
-        instrs = [
-            asm_ast.Mov(src=_through(13), dst=_A),
-            asm_ast.Mov(src=_A, dst=_T),
-            asm_ast.Mov(src=asm_ast.Data(name="W", offset=0), dst=_A),
-            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="__local_f__u",
-                                                 offset=0)),
-            asm_ast.Mov(src=_T, dst=_A),
-            asm_ast.Return(save_a=True, save_x=False, save_c=False),
-        ]
-        out = self._run(instrs)
-        self.assertEqual(out[4], asm_ast.Mov(src=_through(13), dst=_A))
 
 
 _RUN = """

@@ -4,7 +4,11 @@ in a function of its own, which each place calls.
 `TestPass` runs the pass on hand-written asm. `TestPrograms` compiles a
 program whose functions set up the same call, checks that the run was
 outlined, and runs it in the simulator, compiled on its own and
-linked."""
+linked.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 
 from __future__ import annotations
 
@@ -13,123 +17,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import asm_ast
-from passes.outline_runs import apply_outline_runs
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 
-_A = asm_ast.Reg(reg=asm_ast.A())
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-def _setup():
-    """`LDA OPS; STA p_0; LDA OPS+1; STA p_1; JSR g`, 11 bytes in zero
-    page."""
-    return [
-        asm_ast.Mov(src=asm_ast.Data(name="OPS", offset=0), dst=_A),
-        asm_ast.Mov(src=_A, dst=asm_ast.Data(name="__zpabi_g__p_0", offset=0)),
-        asm_ast.Mov(src=asm_ast.Data(name="OPS", offset=1), dst=_A),
-        asm_ast.Mov(src=_A, dst=asm_ast.Data(name="__zpabi_g__p_1", offset=0)),
-        asm_ast.Call(name="g"),
-    ]
-
-
-_ZP = frozenset({"OPS", "__zpabi_g__p_0", "__zpabi_g__p_1"})
-
-
-def _fn(name, instrs):
-    return asm_ast.Function(name=name, is_global=True, params=[],
-                            instructions=instrs)
-
-
-class TestPass(unittest.TestCase):
-
-    def test_run_in_two_functions_is_called(self):
-        tail_f = [asm_ast.Inc(dst=asm_ast.Data(name="x", offset=0)),
-                  asm_ast.Return()]
-        tail_h = [asm_ast.Dec(dst=asm_ast.Data(name="x", offset=0)),
-                  asm_ast.Return()]
-        prog = asm_ast.Program(top_level=[
-            _fn("f", [*_setup(), *tail_f]), _fn("h", [*_setup(), *tail_h]),
-        ])
-        out = apply_outline_runs(prog, {}, zp_names=_ZP).top_level
-        self.assertEqual([tl.name for tl in out], ["f", "f@run0", "h"])
-        # The run ends with `JSR g`, which becomes `JMP g`.
-        self.assertEqual(out[1].instructions,
-                         [*_setup()[:-1], asm_ast.Jump(target="g")])
-        self.assertEqual(out[0].instructions,
-                         [asm_ast.Call(name="f@run0"), *tail_f])
-        self.assertEqual(out[2].instructions,
-                         [asm_ast.Call(name="f@run0"), *tail_h])
-
-    def test_short_run_left_alone(self):
-        # 6 bytes at two places would take 6 + 1 + 6.
-        run = _setup()[:2] + [asm_ast.Call(name="g")]
-        prog = asm_ast.Program(top_level=[
-            _fn("f", [*run[1:], asm_ast.Return()]),
-            _fn("h", [*run[1:], asm_ast.Return()]),
-        ])
-        self.assertEqual(apply_outline_runs(prog, {}, zp_names=_ZP), prog)
-
-    def test_branch_ends_a_run(self):
-        # A label splits the run into pieces too short to share.
-        def with_label(name):
-            s = _setup()
-            return _fn(name, [*s[:3], asm_ast.Label(name=".l"), *s[3:],
-                              asm_ast.Return()])
-        prog = asm_ast.Program(top_level=[with_label("f"), with_label("h")])
-        self.assertEqual(apply_outline_runs(prog, {}, zp_names=_ZP), prog)
-
-    def test_own_slot_left_alone(self):
-        def own(name):
-            return _fn(name, [
-                *_setup(),
-                asm_ast.Mov(src=_A, dst=asm_ast.Data(
-                    name=f"__local_{name}__t", offset=0)),
-                asm_ast.Return(),
-            ])
-        out = apply_outline_runs(
-            asm_ast.Program(top_level=[own("f"), own("h")]), {}, zp_names=_ZP,
-        ).top_level
-        for fn in out:
-            for ins in fn.instructions:
-                if fn.name.endswith("@run0"):
-                    self.assertNotIn("__local_", repr(ins))
-
-    def test_pointer_in_slot_bytes_left_alone(self):
-        # `f` and `h` each read through the pointer at $80, which is
-        # `__zpabi_f__p` in `f` and `__zpabi_h__p` in `h`. The linker
-        # may place the two apart, so the reads stay where they are,
-        # and only the run after them is outlined.
-        def reads(name):
-            return _fn(name, [
-                asm_ast.Mov(src=asm_ast.IndirectZp(address=0x80, offset=k),
-                            dst=_A)
-                for k in range(4)
-            ] + [*_setup(), asm_ast.Return()])
-        prog = asm_ast.Program(top_level=[reads("f"), reads("h")])
-        out = apply_outline_runs(
-            prog, {}, zp_names=_ZP, slot_addrs=frozenset({0x80, 0x81}),
-        ).top_level
-        self.assertEqual([tl.name for tl in out], ["f", "f@run0", "h"])
-        self.assertEqual(out[1].instructions,
-                         [*_setup()[:-1], asm_ast.Jump(target="g")])
-        # With the pointer at a byte that isn't a slot, such as a
-        # zero-page object's, the reads go in the run too.
-        out = apply_outline_runs(
-            prog, {}, zp_names=_ZP, slot_addrs=frozenset({0x90}),
-        ).top_level
-        self.assertIsInstance(out[1].instructions[0].src, asm_ast.IndirectZp)
-
-    def test_short_loop_left_alone(self):
-        def looped(name):
-            return _fn(name, [
-                asm_ast.Label(name=".top"), *_setup(),
-                asm_ast.Branch(cond=asm_ast.NE(), target=".top"),
-                asm_ast.Return(),
-            ])
-        prog = asm_ast.Program(top_level=[looped("f"), looped("h")])
-        self.assertEqual(apply_outline_runs(prog, {}, zp_names=_ZP), prog)
 
 
 _SRC = """

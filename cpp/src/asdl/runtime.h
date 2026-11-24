@@ -215,6 +215,15 @@ std::string py_repr(const T& v) {
   return out;
 }
 
+// Returns the name of the constructor `v` holds, as Python's
+// `type(v).__name__` gives it, which is what its `repr` starts with.
+template <class T>
+std::string constructor_name(const T& v) {
+  std::string out = py_repr(v);
+  out.resize(out.find('('));
+  return out;
+}
+
 // Returns the value of type `T` that `text` holds in the dump format.
 template <class T>
 T load(std::string_view text) {

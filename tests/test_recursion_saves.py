@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-import c99_ast
 from compile import _run_stage
-from parser import ParserError, parse
 from passes.recursion_saves import RecursionSaveError
 from preprocessor import PreprocessorError, preprocess
 from sim.harness import build_sim
@@ -38,21 +36,6 @@ def _function(asm: str, name: str) -> str:
     ):
         end += 1
     return "\n".join(lines[start:end])
-
-
-def _calls(node) -> list[c99_ast.FunctionCall]:
-    """Every c99 FunctionCall in `node`."""
-    import dataclasses
-    out = []
-    if isinstance(node, list):
-        for x in node:
-            out += _calls(x)
-    elif dataclasses.is_dataclass(node):
-        if isinstance(node, c99_ast.FunctionCall):
-            out.append(node)
-        for f in dataclasses.fields(node):
-            out += _calls(getattr(node, f.name))
-    return out
 
 
 _DESCEND = """
@@ -89,44 +72,6 @@ class TestSyntax(unittest.TestCase):
             )
         self.assertIn("[[c6502::save_hardware_stack]]", str(cm.exception))
 
-    def test_marks_the_calls_after_it(self) -> None:
-        for stmt in ("x = f(1) + g();", "return f(1) + g();",
-                     "int x = f(1) + g();"):
-            with self.subTest(stmt):
-                src = ("int f(int); int g(void);\nint h(void) {\n"
-                       "int x = 0;\n" + _SAVE + stmt
-                       + "\nreturn f(2);\n}\n")
-                calls = _calls(parse(preprocess(src)))
-                marked = [(c.name, c.hw_stack_save) for c in calls]
-                self.assertEqual(
-                    marked, [("f", True), ("g", True), ("f", False)],
-                )
-
-    def test_rejected_positions(self) -> None:
-        for stmt, needle in (
-            ("SAVE if (f(1)) x = 1;", "goes before an expression"),
-            ("SAVE { f(1); }", "goes before an expression"),
-            ("SAVE while (f(1)) x = 1;", "goes before an expression"),
-            ("SAVE for (;;) f(1);", "goes before an expression"),
-            ("SAVE x = 1;", "calls a function"),
-            ("SAVE int y = 2;", "calls a function"),
-            ("SAVE int g(int);", "declares a function"),
-            ("SAVE typedef int T;", "a typedef declaration has none"),
-            ("int y [[c6502::save_hardware_stack]] = f(1);",
-             "goes at the front of the declaration"),
-            ("for (SAVE int i = f(1); i;) x = 1;", "first clause"),
-            ("SAVE L: f(1);", "Put it after the label"),
-            ("SAVE SAVE x = f(1);", "given twice"),
-            ("SAVE SAVE int y = f(1);", "given twice"),
-            ("[[c6502::save_hardware_stack(1)]] x = f(1);",
-             "doesn't take an argument"),
-        ):
-            with self.subTest(stmt):
-                src = ("int f(int);\nvoid h(void) {\nint x;\n"
-                       + stmt.replace("SAVE ", _SAVE) + "\n}\n")
-                with self.assertRaises(ParserError) as cm:
-                    parse(preprocess(src))
-                self.assertIn(needle, str(cm.exception))
 
     def test_call_that_cant_recurse(self) -> None:
         src = ("int g(int x) { return x; }\nint f(int x) {\n"

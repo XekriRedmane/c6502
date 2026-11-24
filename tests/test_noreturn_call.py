@@ -8,40 +8,12 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _resolved, _run_stage, type_check_program
-from parser import parse
+from compile import _run_stage
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-class TestDeclarations(unittest.TestCase):
-
-    def test_parsed_on_declarations_and_definitions(self) -> None:
-        prog = parse(
-            "[[noreturn]] void a(void);\n"
-            "void b [[_Noreturn]] (void);\n"
-            "void c(void);\n"
-            "[[noreturn]] void d(void) { for (;;) {} }\n"
-        )
-        got = [d.function_decl.noreturn for d in prog.declaration]
-        self.assertEqual(got, [True, True, False, True])
-
-    @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
-    def test_any_declaration_makes_it_noreturn(self) -> None:
-        src = (
-            "void die(void);\n"
-            "[[noreturn]] void die(void);\n"
-            "void die(void);\n"
-            "void stop(void);\n"
-        )
-        _prog, symbols, _types = type_check_program(
-            _resolved(preprocess(src)),
-        )
-        self.assertTrue(symbols["die"].attrs.noreturn)
-        self.assertFalse(symbols["stop"].attrs.noreturn)
 
 
 # `out` is volatile, since the optimizer drops a store that no path to

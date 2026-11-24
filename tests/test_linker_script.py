@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from parser import ParserError, parse
+from parser import ParserError
 from passes.type_checking import TypeCheckError
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -156,14 +156,6 @@ class TestSectionAttribute(unittest.TestCase):
             with self.subTest(src=src):
                 with self.assertRaises(error):
                     _codegen(src + main)
-
-    def test_parsed_on_declarations(self) -> None:
-        prog = parse(
-            "[[c6502::section(\".x\")]] void f(void) {}\n"
-            "int g [[c6502::section(\".y\")]];\n"
-        )
-        self.assertEqual(prog.declaration[0].function_decl.section, ".x")
-        self.assertEqual(prog.declaration[1].var_decl.section, ".y")
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

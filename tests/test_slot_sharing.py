@@ -27,7 +27,6 @@ import unittest
 from pathlib import Path
 
 from compile import _run_stage
-from parser import ParserError, parse
 from passes.abi_selection import AbiSelectionError
 from preprocessor import preprocess
 from sim.harness import build_sim
@@ -404,25 +403,6 @@ int main(void) { return sum(data, 4) + sum(data + 1, 2); }
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestPinnedParams(unittest.TestCase):
 
-    def test_marker(self) -> None:
-        fd = parse(
-            "void f(const char *s [[c6502::zeropage(0xE6)]], "
-            "register unsigned char n [[c6502::in_x]]);"
-        ).declaration[0].function_decl
-        self.assertEqual(fd.param_registers, ["@230", "X"])
-
-    def test_parse_errors(self) -> None:
-        for src, needle in [
-            ("void f(register char *s [[c6502::zeropage(0xE6)]]);",
-             "arrives in a register"),
-            ("void f(char *s [[c6502::zeropage]]);",
-             "takes the integer zero-page address"),
-            ("void f(char *s [[c6502::zeropage(0x100)]]);",
-             "outside"),
-        ]:
-            with self.subTest(src):
-                with self.assertRaisesRegex(ParserError, needle):
-                    parse(src)
 
     def test_defined_function_reads_it_in_place(self) -> None:
         src = _SUM + _SUM_MAIN

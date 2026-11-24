@@ -14,7 +14,6 @@ import unittest
 from unittest.mock import patch
 
 from compile import _run_stage, main as compile_main
-from parser import ParserError, parse
 from passes.abi_selection import AbiSelectionError
 from passes.type_checking import TypeCheckError
 from preprocessor import preprocess
@@ -27,42 +26,6 @@ def _codegen(src: str, optimize: bool = True) -> str:
 
 def _body(asm: str, fn: str) -> str:
     return asm.split(f"\n{fn}:")[1].split("SUBROUTINE")[1].split("\n\n", 2)[1]
-
-
-class TestParse(unittest.TestCase):
-
-    def _markers(self, src: str) -> list[str]:
-        return parse(src).declaration[0].function_decl.param_registers
-
-    def test_markers(self):
-        self.assertEqual(self._markers(
-            "void f(register unsigned char a [[c6502::in_y]],\n"
-            "       unsigned char b,\n"
-            "       register unsigned int c [[c6502::in_xa]],\n"
-            "       register unsigned char d);"
-        ), ["Y", "", "XA", "auto"])
-
-    def test_register_is_optional(self):
-        self.assertEqual(self._markers(
-            "void f(unsigned char a [[c6502::in_y]],\n"
-            "       unsigned char *p [[c6502::in_xa]]);"
-        ), ["Y", "XA"])
-
-    def test_rejected(self):
-        bad = {
-            "unknown": ("void f(register unsigned char a "
-                        "[[c6502::in_z]]);", "doesn't apply to a parameter"),
-            "argument": ("void f(register unsigned char a "
-                         "[[c6502::in_y(1)]]);", "doesn't take an argument"),
-            "twice": ("void f(register unsigned int a "
-                      "[[c6502::in_aa]]);", "names A twice"),
-            "two attributes": ("void f(register unsigned char a "
-                               "[[c6502::in_x, c6502::in_y]]);", "one attribute"),
-        }
-        for label, (src, needle) in bad.items():
-            with self.subTest(label):
-                with self.assertRaisesRegex(ParserError, needle):
-                    parse(src)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

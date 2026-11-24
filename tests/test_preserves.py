@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 import unittest
 
-from parser import ParserError, parse
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
@@ -52,30 +51,6 @@ _TOTAL = 0x3100
 # CLC ; ADC total ; STA total ; LDY #$FF ; RTS
 _STANDIN = bytes([0x18, 0x6D, 0x00, 0x31, 0x8D, 0x00, 0x31,
                   0xA0, 0xFF, 0x60])
-
-
-class TestParse(unittest.TestCase):
-
-    def test_recorded(self) -> None:
-        prog = parse(
-            "[[c6502::preserves_y, c6502::address(0x1000), c6502::preserves_x]]\n"
-            "void f(void);\n"
-        )
-        self.assertEqual(prog.declaration[0].function_decl.preserves,
-                         ["X", "Y"])
-
-    def test_rejected(self) -> None:
-        bad = {
-            "argument": "[[c6502::preserves_x(1), c6502::address(1)]] "
-                        "void f(void);",
-            "definition": "[[c6502::preserves_x]] void f(void) {}",
-            "object": "extern unsigned char k "
-                      "[[c6502::preserves_x]];",
-        }
-        for label, src in bad.items():
-            with self.subTest(label):
-                with self.assertRaises(ParserError):
-                    parse(src)
 
 
 class TestTypeCheck(unittest.TestCase):

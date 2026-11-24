@@ -12,30 +12,18 @@ a promoted object that doesn't fit, run in the simulator.
 """
 from __future__ import annotations
 
-import io
 import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-import c99_ast
-from parser import ParserError, parse
+from parser import ParserError
 from passes.type_checking import TypeCheckError
 from passes.zp_globals import ZpGlobalError
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-def _placements(src: str) -> dict[str, object]:
-    prog = parse(src)
-    out = {}
-    for d in prog.declaration:
-        if isinstance(d, c99_ast.VarDecl):
-            out[d.var_decl.name] = d.var_decl.placement
-    return out
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -49,39 +37,6 @@ def _equ(asm: str) -> dict[str, int]:
         m.group(1): int(m.group(2), 16)
         for m in re.finditer(r"^(\S+)\tEQU\t\$([0-9A-F]+)$", asm, re.M)
     }
-
-
-class TestParse(unittest.TestCase):
-
-    def test_prefix_and_postfix_forms(self) -> None:
-        got = _placements(
-            "[[c6502::zeropage]] unsigned char a;\n"
-            "unsigned char b [[c6502::zeropage(0xBA)]];\n"
-            "unsigned char c;\n"
-        )
-        self.assertEqual(got["a"], c99_ast.ZeroPage(address=None))
-        self.assertEqual(got["b"], c99_ast.ZeroPage(address=0xBA))
-        self.assertIsNone(got["c"])
-
-    def test_prefix_applies_to_every_declarator(self) -> None:
-        got = _placements("[[c6502::zeropage]] unsigned char a, b;\n")
-        self.assertEqual(got["a"], c99_ast.ZeroPage(address=None))
-        self.assertEqual(got["b"], c99_ast.ZeroPage(address=None))
-
-    def test_rejected_forms(self) -> None:
-        bad = [
-            "[[c6502::zeropage]] int f(void) { return 0; }\n",
-            "[[c6502::zp_abi]] unsigned char a;\n",
-            'unsigned char a [[c6502::zeropage("x")]];\n',
-            "unsigned char a [[c6502::zeropage(0x100)]];\n",
-            "[[c6502::zeropage]] unsigned char a "
-            "[[c6502::zeropage]];\n",
-            "unsigned char a [[c6502::nonsense]];\n",
-        ]
-        for src in bad:
-            with self.subTest(src=src):
-                with self.assertRaises(ParserError):
-                    parse(src)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

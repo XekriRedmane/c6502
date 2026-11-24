@@ -5,7 +5,7 @@ All agents are spawned as `subagent_type: "general-purpose"`. All agents are **r
 ## Common prompt inclusions
 
 Every agent prompt should include:
-- Brain snapshot path: `/tmp/brain-snapshot.md` — Read this one file for all brain content
+- Brain snapshot path: `<scratchpad>/brain-snapshot.md`, in the session's scratchpad directory — Read this one file for all brain content
 - Brain vault path: `brain/`
 - Use Glob/Grep only for **codebase verification**, not for reading brain/skill files
 - Return a structured markdown report
@@ -16,13 +16,13 @@ Every agent prompt should include:
 
 Prompt spec:
 
-- Read `/tmp/brain-snapshot.md` and parse it to build a wikilink map — no individual brain file reads needed
+- Read `<scratchpad>/brain-snapshot.md` and parse it to build a wikilink map — no individual brain file reads needed
 - Use the file headers (`=== path ===`) as the on-disk file list for orphan detection
 - Cross-reference each note against the current codebase state (check if referenced files, patterns, tools, or decisions still exist) — the only part that requires Read/Grep/Glob calls
 - Flag notes as:
   - **Outdated**: References code, tools, patterns, or decisions that no longer exist or have changed
   - **Redundant**: Says the same thing as another note
-  - **Low-value**: Fails the test: "Would Claude reliably get this wrong without this note, AND does it come up often or cause real damage?" If not both, flag it.
+  - **Low-value**: Fails the test: "Would Claude reliably get this wrong without this note, AND does it come up often or cause costly damage?" If not both, flag it.
   - **Verbose**: Could convey the same information in fewer words
   - **Orphaned**: Exists on disk but is not linked from any index or other brain file
 - **Audit CLAUDE.md**: Flag sections that are outdated, redundant with brain notes or skill instructions, or could be condensed. Check that instructions match actual project structure.
@@ -33,7 +33,7 @@ Prompt spec:
 
 ## Reviewer
 
-**Inputs:** brain snapshot, skills snapshot (`/tmp/skills-snapshot.md`), auditor report, `brain/principles.md`.
+**Inputs:** brain snapshot, skills snapshot (`<scratchpad>/skills-snapshot.md`), auditor report, `brain/principles.md`.
 
 Single agent that combines synthesis, distillation, and skill review in one pass. Produces three report sections.
 
@@ -50,7 +50,7 @@ Prompt spec:
 **Section 2 — Distillation:**
 - Focus on codebase notes, preferences, and gotchas
 - Look for recurring patterns that reveal unstated engineering principles
-- A valid new principle must be: (1) genuinely independent — not derivable from existing principles, (2) evidenced by 2+ separate notes, (3) actionable — changes how you'd approach future work
+- A valid new principle must be: (1) independent — not derivable from existing principles, (2) evidenced by 2+ separate notes, (3) actionable — changes how you'd approach future work
 - Do NOT propose restatements of existing principles applied to a new domain
 - Each proposed principle: insight, evidence (which notes), why independent, suggested path under `brain/principles/`
 

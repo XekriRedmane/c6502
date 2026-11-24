@@ -1,8 +1,8 @@
 ---
 name: review
 description: >-
-  Principle-grounded review of code changes, PRs, or plans. Use when asked to review, critique,
-  or assess quality of work — "review", "review this", "code review", "check this".
+  Reviews a diff or plan against brain/principles/ and reports numbered issues with options.
+  Triggers: "review this", "critique".
 ---
 
 # Review
@@ -29,7 +29,7 @@ Auto-detect review mode from change size:
 
 For **SMALL CHANGE** reviews, read files directly in the main context — delegation overhead exceeds the cost of reading a few files.
 
-For **BIG CHANGE** reviews, delegate exploration to subagents via the `Task` tool.
+For **BIG CHANGE** reviews, delegate exploration to subagents with the `Agent` tool.
 
 Spawn exploration agents (subagent_type: `Explore`) to:
 - Read the code or plan under review
@@ -40,7 +40,7 @@ Run multiple agents in parallel when investigating independent areas.
 
 ## Step 4 — Gather Domain Skills
 
-Check installed skills (`.agents/skills/`, `.claude/skills/`) for any that match the review's domain.
+Check `.claude/skills/` and the user-level skills for any that match the review's domain, and invoke those that do. If no installed skill covers a domain the review touches, say so and name a skill that would help. Robert decides what gets installed.
 
 **Invoke matched skills now** — read their output and use domain guidance to inform your review.
 
@@ -67,7 +67,7 @@ If no plan phase applies, skip this subsection.
 
 ### 3. Code Quality
 - Code organization and module structure
-- DRY violations — be aggressive
+- Duplication in types and data models
 - Error handling patterns and missing edge cases (call out explicitly)
 - Over-engineering or under-engineering relative to principles; consider redesign-from-first-principles
 - Technical debt hotspots
@@ -80,10 +80,10 @@ If no plan phase applies, skip this subsection.
 - New behavior must have new tests. Tests must assert outcomes, not implementation details.
 
 ### 5. Performance
-- N+1 queries and database access patterns
-- Memory-usage concerns
-- Caching opportunities
+- Compile time on the corpus
+- Size and cycles of the emitted 6502 code
 - Slow or high-complexity code paths
+- For port work, `tools/compare_backends.py` and `c6502cpp check-golden` pass
 
 ### Principle Compliance
 

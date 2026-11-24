@@ -23,7 +23,6 @@ Review the conversation and persist learnings — to `brain/`, to skill files, o
    - Repeated manual steps that could be automated or encoded
 3. **Skip** anything trivial or already captured in existing brain files
 4. **Route each learning** to the right destination (see Routing below)
-5. **Update `brain/index.md`** if any brain files were added or removed
 
 ## Routing
 
@@ -47,7 +46,11 @@ If a learning is about how a specific skill works — its process, prompts, or e
 
 ### Backlog items
 
-Follow-up work that can't be done during reflection — bugs, non-trivial rewrites, tooling gaps. File as a todo or backlog item.
+A bug found along the way gets fixed now, with a test. Other follow-up work that can't be done during reflection, such as a rewrite or a missing tool, goes in the final report.
+
+### In a subagent
+
+A subagent runs this skill before its SubagentHandback. The SubagentStop hook can't make a subagent reflect once it has handed back its report. Before committing the notes, compare `git diff --numstat` with `git diff --numstat --ignore-cr-at-eol`, and restore the line endings of any file whose counts differ.
 
 ## Summary
 

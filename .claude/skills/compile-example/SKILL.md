@@ -27,7 +27,7 @@ for output. If the input `.c` doesn't exist, report it and stop.
 
 ## Command
 
-From the project root (`/project/c6502`):
+From the repository root:
 
 ```sh
 uv run python compile.py examples/<base>.c -S -O -o examples/<base>.asm

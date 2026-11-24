@@ -16,6 +16,7 @@
 
 ## Verification
 - [[principles/prove-it-works]]
+- [[principles/make-checks-show-their-coverage]]
 - [[principles/fix-root-causes]]
 
 ## Delegation

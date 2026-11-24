@@ -14,3 +14,4 @@ Optimize for the intended, verifiable end state rather than preserving smooth in
 - Declare where temporary breakage is acceptable
 - Keep high-signal checks for actively touched areas while migrating
 - Require full static and runtime verification at plan completion
+- In this repository every commit on main passes the checks, so breakage is allowed only inside a worktree, before its merge

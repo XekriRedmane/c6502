@@ -1,9 +1,8 @@
 ---
 name: plan
 description: >-
-  Break down medium-to-large tasks into phased plans in brain/plans/. Planning only — does not
-  implement. Use for new features, multi-file refactors, or architectural changes — not small
-  fixes. Triggers: "plan this", "break this down".
+  Writes a phased plan for a multi-file change to brain/plans/ without implementing it.
+  Triggers: "plan this", "break this down".
 ---
 
 # Plan
@@ -43,7 +42,7 @@ Frame questions with concrete options. If the request is already clear, confirm 
 
 ## Step 3 — Explore Context with Subagents
 
-**Always** delegate exploration to subagents via the `Task` tool. Never do large-scale codebase exploration in the main context.
+**Always** delegate exploration to subagents with the `Agent` tool. Never do large-scale codebase exploration in the main context.
 
 Spawn exploration agents (subagent_type: `Explore`) to:
 - Read existing code in affected areas
@@ -55,9 +54,7 @@ Run multiple agents in parallel when investigating independent areas.
 
 ## Step 4 — Gather Domain Skills
 
-Check installed skills (`.agents/skills/`, `.claude/skills/`) for any that match the plan's domain. **Invoke matched skills** — read their output and incorporate domain guidance into the plan.
-
-If the plan touches a domain **not covered** by installed skills, use `find-skills` to search for a relevant skill. If one is found, install it (project-local) and incorporate its guidance. Note what was installed so the user can see it. After the plan is written, delete any one-off skills that won't be needed again.
+Check `.claude/skills/` and the user-level skills for any that match the plan's domain, and invoke those that do. If no installed skill covers a domain the plan touches, say so and name a skill that would help. Robert decides what gets installed. A plan for the C++ port extends docs/cpp_port.md instead of brain/plans/.
 
 ## Step 5 — Write the Plan
 
@@ -130,16 +127,14 @@ For architectural decisions, briefly sketch 2-3 approaches in the overview's Con
 Every phase **must** have a verification section with both:
 
 ### Static
-- Type checking passes
-- Linting passes
+- The checks in CLAUDE.md's "Common commands" pass: the suite (with `C6502_CHECK_IR=1`), the C++ build and ctest, and `c6502cpp check-golden` and `check-frozen`
 - Code follows project conventions
 - Tests written and passing
 
 ### Runtime
-- What to test manually (launch the app, exercise the feature path)
-- What automated tests to write (unit, integration, e2e)
+- What to compile and run in the simulator to see the change work
+- What automated tests to write (doctest cases, Python tests, corpus checks)
 - Edge cases to cover
-- For UI: visual verification via screenshot
 
 Per prove-it-works: "it compiles" is not verification. Every phase must describe how to **prove** the change works.
 

@@ -1,15 +1,15 @@
 ---
 name: brain
 description: >-
-  Read/write brain files (Obsidian vault at brain/). Use for any task that persists knowledge —
-  reflection, planning, or direct edits. Triggers: brain/ modifications, "add to brain".
+  Conventions for adding, editing, or deleting notes in brain/. Triggers: "add to brain",
+  edits under brain/.
 ---
 
 # Brain
 
 Persistent memory across sessions. Obsidian vault at `brain/`.
 
-The brain is the foundation of the entire workflow — every agent, skill, and session reads it. Low-quality or speculative content degrades everything downstream. Before adding anything, ask: "Does this genuinely improve how the system operates?" If the answer isn't a clear yes, don't write it.
+Every agent and session reads the brain, so a wrong or speculative note misleads all of them. Write a note only when it changes how a later task would be done.
 
 ## Before Writing
 
@@ -50,7 +50,7 @@ Format: `[[section/file-name]]`. Resolution order: same directory, then relative
 
 ## After Writing
 
-Update `brain/index.md` for any files you added or removed. Also update the relevant entrypoint when applicable. Keep indexes link-only and scannable.
+The PostToolUse hook (`.claude/hooks/auto-index-brain.sh`) rebuilds `brain/index.md` when a note is added or removed. Update `brain/codebase.md` and `brain/principles.md` by hand, and keep them to links.
 
 ## Durability Test
 
@@ -59,7 +59,7 @@ Ask: "Would I include this in a prompt for a *different* task?"
 - **Yes** -> write to `brain/`. It's durable knowledge.
 - **No, it's plan-specific** -> update the plan's docs instead.
 - **No, it's a skill issue** -> update the skill file directly.
-- **No, it needs follow-up work** -> file a todo.
+- **No, it needs follow-up work** -> fix a bug now, with a test. Put any other follow-up in your final report.
 
 ## Maintenance
 

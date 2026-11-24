@@ -20,7 +20,7 @@ Build a brain snapshot: `sh .claude/skills/meditate/scripts/snapshot.sh brain/ /
 Find the project conversation directory:
 
 ```
-~/.claude/projects/-<cwd-with-dashes-replacing-slashes>/
+~/.claude/projects/<cwd with the colon, slashes, and backslashes replaced by dashes>/ (C--Users-rober-c6502 for this repository)
 ```
 
 ### 3. Extract conversations
@@ -28,14 +28,14 @@ Find the project conversation directory:
 Run the extraction script to parse JSONL conversation files into readable text and split into batches:
 
 ```bash
-python3 .claude/skills/ruminate/scripts/extract-conversations.py "$CONV_DIR" "$OUT_DIR" --batches N
+uv run python .claude/skills/ruminate/scripts/extract-conversations.py "$CONV_DIR" "$OUT_DIR" --batches N
 ```
 
 Choose N based on the number of conversations found: ~1 batch per 20 conversations, minimum 2, maximum 10.
 
 ### 4. Spawn analysis team
 
-Create an agent team (TeamCreate) with N agents (one per batch), each with `subagent_type: general-purpose` and `model: opus`. Run all N in parallel.
+Start N agents (one per batch) with parallel `Agent` calls, each with `subagent_type: general-purpose`.
 
 Each agent's prompt should include:
 

@@ -14,8 +14,8 @@ description: >-
 ### 1. Build snapshots
 
 ```bash
-sh .claude/skills/meditate/scripts/snapshot.sh brain/ /tmp/brain-snapshot.md
-sh .claude/skills/meditate/scripts/snapshot.sh .claude/skills/ /tmp/skills-snapshot.md
+sh .claude/skills/meditate/scripts/snapshot.sh brain/ <scratchpad>/brain-snapshot.md
+sh .claude/skills/meditate/scripts/snapshot.sh .claude/skills/ <scratchpad>/skills-snapshot.md
 ```
 
 Files are delimited with `=== path/to/file.md ===` headers. Also locate the auto-memory directory (`~/.claude/projects/<project>/memory/`).
@@ -56,13 +56,12 @@ Apply all changes directly. The user reviews the diff.
 - **New connections**: Add `[[wikilinks]]`
 - **Tensions**: Reword to clarify boundaries
 - **New principles**: Only from the distillation section, only if genuinely independent. Write brain files and update `brain/principles.md`
-- **Merge principles**: Look for principles that are subsets or specific applications of each other — merge the narrower into the broader
 - **CLAUDE.md issues**: Rewrite or delete
 - **Stale memories**: Delete or rewrite
 
 ### 7. Housekeep
 
-Update `brain/index.md` for any files added or removed.
+The PostToolUse hook rebuilds `brain/index.md` when a note is added or removed. Update `brain/codebase.md` and `brain/principles.md` by hand.
 
 ## Summary
 

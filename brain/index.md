@@ -18,6 +18,7 @@
 - [[principles/fix-root-causes]]
 - [[principles/foundational-thinking]]
 - [[principles/guard-the-context-window]]
+- [[principles/make-checks-show-their-coverage]]
 - [[principles/make-operations-idempotent]]
 - [[principles/migrate-callers-then-delete-legacy-apis]]
 - [[principles/never-block-on-the-human]]

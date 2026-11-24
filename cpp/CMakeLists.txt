@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(c6502 LANGUAGES CXX)
+# C for XZ Embedded's decoder in third_party/xz-embedded.
+project(c6502 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +48,22 @@ add_library(c6502 STATIC ${C6502_SOURCES})
 target_include_directories(c6502 PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+
+# XZ Embedded (0BSD), the .xz decoder that reads the frozen captures
+# (src/unxz.h), vendored as its README describes.
+add_library(xz_embedded STATIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/xz-embedded/xz_crc32.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/xz-embedded/xz_dec_lzma2.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/xz-embedded/xz_dec_stream.c")
+target_include_directories(xz_embedded PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/xz-embedded")
+# Its warnings are its authors' to fix, so they are off.
+if(MSVC)
+  target_compile_options(xz_embedded PRIVATE /w)
+else()
+  target_compile_options(xz_embedded PRIVATE -w)
+endif()
+target_link_libraries(c6502 PRIVATE xz_embedded)
 
 add_executable(c6502cpp src/main.cpp)
 target_link_libraries(c6502cpp PRIVATE c6502)

@@ -21,6 +21,8 @@
 #define NOMINMAX
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include <unistd.h>
 #endif
 
 #include "asdl/runtime.h"
@@ -37,6 +39,7 @@
 #include "c99_ast.h"
 #include "capture.h"
 #include "errors.h"
+#include "frozen.h"
 #include "golden.h"
 #include "helper_checks.h"
 #include "json.h"
@@ -64,6 +67,7 @@ const char kUsage[] =
     "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
     "       c6502cpp check-golden [--root <dir>] [-j <n>] [--manifest <name>,...]\n"
     "                             [--label <label>] [--update] [--verbose]\n"
+    "       c6502cpp check-frozen [--verbose] [<frozen dir>]\n"
     "       c6502cpp opcodes\n"
     "       c6502cpp helper-footprints\n"
     "       c6502cpp nm [<option>...] <file>...\n"
@@ -112,6 +116,11 @@ const char kUsage[] =
     "the C++ compiler in -j worker processes, as compile.py would run them,\n"
     "and compares what each command gives and the files each job leaves with\n"
     "the golden files, which --update writes again (src/golden.h).\n"
+    "\n"
+    "check-frozen unpacks the frozen captures, the .xz archives under\n"
+    "<frozen dir>/passes and <frozen dir>/binutils (cpp/tests/frozen by\n"
+    "default), and checks them as check-captures and check-binutils do\n"
+    "(src/frozen.h).\n"
     "\n"
     "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
     "per row, in the order of binutils/opcodes.py.\n"
@@ -646,6 +655,63 @@ int cmd_check_regex(const std::vector<std::string>& args) {
   return mismatches == 0 ? 0 : 1;
 }
 
+// `check-frozen`: unpacks the archives of frozen captures under
+// <dir>/passes and <dir>/binutils (src/frozen.h) into a capture
+// directory of each kind, and checks the first with `check-captures`
+// and the second with `check-binutils`. The directory is by default
+// cpp/tests/frozen, found from the current directory upward.
+int cmd_check_frozen(const std::vector<std::string>& args) {
+  bool verbose = false;
+  fs::path dir;
+  for (const auto& a : args) {
+    if (a == "--verbose") {
+      verbose = true;
+    } else {
+      dir = a;
+    }
+  }
+  if (dir.empty()) {
+    for (fs::path p = fs::current_path();; p = p.parent_path()) {
+      if (fs::is_directory(p / "cpp" / "tests" / "frozen")) {
+        dir = p / "cpp" / "tests" / "frozen";
+        break;
+      }
+      if (p == p.parent_path()) {
+        std::fprintf(stderr, "c6502cpp: no cpp/tests/frozen here or above\n");
+        return 2;
+      }
+    }
+  }
+#ifdef _WIN32
+  const auto pid = GetCurrentProcessId();
+#else
+  const auto pid = getpid();
+#endif
+  const fs::path tmp = fs::temp_directory_path() / ("c6502-frozen-" + std::to_string(pid));
+  std::error_code ec;
+  fs::remove_all(tmp, ec);
+  int status = 0;
+  for (const std::string kind : {"passes", "binutils"}) {
+    if (!fs::is_directory(dir / kind)) continue;
+    std::vector<fs::path> archives;
+    for (const auto& entry : fs::directory_iterator(dir / kind)) {
+      if (entry.path().extension() == ".xz") archives.push_back(entry.path());
+    }
+    std::sort(archives.begin(), archives.end());
+    std::size_t files = 0;
+    for (const fs::path& a : archives) files += frozen::unpack(capture::read_file(a), tmp / kind);
+    std::printf("%s: %zu archives of %zu files\n", kind.c_str(), archives.size(), files);
+    std::fflush(stdout);
+    std::vector<std::string> check_args = {(tmp / kind).string()};
+    if (verbose) check_args.push_back("--verbose");
+    status = std::max(status, kind == "passes" ? cmd_check_captures(check_args)
+                                               : binutils::check_binutils(check_args));
+    std::fflush(stdout);
+  }
+  fs::remove_all(tmp, ec);
+  return status;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -673,6 +739,9 @@ int main(int argc, char** argv) {
     }
     if (command == "check-binutils") {
       return binutils::check_binutils(args);
+    }
+    if (command == "check-frozen") {
+      return cmd_check_frozen(args);
     }
     if (command == "check-golden") {
       return golden::check_golden(args, argv[0]);

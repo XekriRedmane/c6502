@@ -1,5 +1,10 @@
 # Brain
 
+## Codebase
+- [[codebase]]
+- [[codebase/claude-code-setup]]
+- [[codebase/t3-restarts]]
+
 ## Principles
 - [[principles]]
 - [[principles/boundary-discipline]]
@@ -20,5 +25,6 @@
 - [[principles/subtract-before-you-add]]
 
 ## Other
+- [[codebase]]
 - [[principles]]
 

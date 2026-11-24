@@ -44,7 +44,7 @@ Format: `[[section/file-name]]`. Resolution order: same directory, then relative
 
 ## Writing Style
 
-- Bullets over prose. No preamble.
+- Bullets over prose. No preamble. Each bullet is a full sentence or more, following the writing rules in `~/.claude/CLAUDE.md`: no verbless fragments, no verbs of volition on things, and the reason beside the fact.
 - Plain markdown with `# Title`. No Obsidian frontmatter.
 - Keep notes under ~50 lines. Split if longer.
 

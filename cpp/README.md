@@ -3123,3 +3123,9 @@ inverts the call graph again for each function it places.
   `C6502_CPP_BACKEND=1`, with the same messages, exit status, and files
   as the Python path on all 11,782 commands of
   `tools/compare_backends.py`, and step 7 is done.
+- 23 Nov 2026: group G3 of step 8, the IR checks in C++ ("The IR
+  checks"), which run at each of Python's places when a request sets
+  `check_ir`. With `C6502_CHECK_IR=1`, compare_backends.py found no
+  difference on 15,448 commands, and a TAC pass, a pass of the peephole
+  fixed point, and the decimal-mode expansion, each broken on purpose,
+  failed with Python's message.

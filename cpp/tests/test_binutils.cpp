@@ -213,6 +213,27 @@ TEST_CASE("argparse: nm's usage, errors, and combined flags") {
   CHECK(*ns.list("files") == std::vector<std::string>{"-h"});
 }
 
+TEST_CASE("argparse: textwrap breaks words after their hyphens") {
+  using Lines = std::vector<std::string>;
+  const auto wrap = c6502::argparse::wrap_text;
+  CHECK(wrap("comparison-against-zero / jump fold, dead-store", 12) ==
+        Lines{"comparison-", "against-zero", "/ jump fold,", "dead-store"});
+  // A hyphen between single letters doesn't end a word, and an em-dash
+  // (two hyphens) between words is a chunk of its own.
+  CHECK(wrap("a-b-c x--y foo--bar --resolve, byte-DCE,", 7) ==
+        Lines{"a-b-c x", "--y foo", "--bar -", "-resolv", "e,", "byte-", "DCE,"});
+  CHECK(wrap("passes/link_script.py) that", 10) ==
+        Lines{"passes/lin", "k_script.p", "y) that"});
+  // A digit isn't a letter, so `6502-ish` stays whole.
+  CHECK(wrap("well-known re-entrant co-op 6502-ish", 9) ==
+        Lines{"well-", "known re-", "entrant", "co-op", "6502-ish"});
+  // A word too long for a line breaks after its last hyphen that fits,
+  // when something other than hyphens comes before it.
+  CHECK(wrap("aaaa-bbbbbbbbbbbb", 8) == Lines{"aaaa-bbb", "bbbbbbbb", "b"});
+  CHECK(wrap("----abc", 3) == Lines{"---", "-ab", "c"});
+  CHECK(wrap("x---yy--zz", 4) == Lines{"x---", "yy--", "zz"});
+}
+
 TEST_CASE("nm: the listing of an object") {
   const elf::ElfFile f = sample();
   CHECK(nm::symbol_lines(f, {}) ==

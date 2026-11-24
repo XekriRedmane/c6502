@@ -14,7 +14,6 @@
 #include <unistd.h>
 #endif
 
-#include "errors.h"
 #include "pyrepr.h"
 
 namespace c6502::argparse {
@@ -25,53 +24,99 @@ bool starts_with(std::string_view s, std::string_view prefix) {
   return s.substr(0, prefix.size()) == prefix;
 }
 
-// `textwrap.wrap(text, width)` with `initial_indent` and
-// `subsequent_indent` both `indent`, for text whose whitespace is one
-// space between words, as argparse leaves it. Each space is a chunk of
-// its own, as textwrap's `wordsep_re` gives it, and a word longer than a
-// line is broken, as `break_long_words` does.
-std::vector<std::string> wrap(const std::string& text, int width, const std::string& indent = "") {
+// textwrap's `_whitespace`, the characters its `wordsep_re` splits at.
+bool is_wrap_space(char c) {
+  return c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ';
+}
+
+// The classes of textwrap's `wordsep_re` on a byte: `\w`, `letter`
+// (`[^\d\W]`, a word character that isn't a digit), and `word_punct`
+// (`[\w!"'&.,?]`). A byte of a multibyte UTF-8 character counts as a
+// letter, which Python's Unicode classes give the letters of other
+// alphabets.
+bool is_word(char c) {
+  const auto u = static_cast<unsigned char>(c);
+  return u >= 0x80 || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+         (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+bool is_letter(char c) { return is_word(c) && !(c >= '0' && c <= '9'); }
+
+bool is_word_punct(char c) {
+  return is_word(c) || c == '!' || c == '"' || c == '\'' || c == '&' || c == '.' || c == ',' ||
+         c == '?';
+}
+
+// Returns the chunks `TextWrapper._split` gives: `wordsep_re.split(text)`
+// with the empty pieces dropped. The pattern is, in order of its
+// alternatives,
+//
+//     ( [ws]+                                    a run of whitespace
+//     | (?<=wp) -{2,} (?=\w)                     an em-dash between words
+//     | [^ws]+? (?: -(?: (?<=lt{2}-) | (?<=lt-lt-) ) (?= lt -? lt)
+//                 | (?=[ws]|\Z)
+//                 | (?<=wp) (?=-{2,}\w) ) )
+//
+// so a word ends after a hyphen that has two letters (or a letter, a
+// hyphen, and a letter) before it and a letter after it, at whitespace
+// or the end, or before an em-dash. The pattern matches at every
+// position, so the chunks cover the text, and each is found here as
+// the regex engine finds it, with the shortest word tried first.
+std::vector<std::string> split_chunks(const std::string& t) {
+  const std::size_t n = t.size();
+  const auto at = [&](std::size_t k) { return k < n ? t[k] : '\0'; };
+  // Whether `-{2,}\w` matches at `k`.
+  const auto em_dash_at = [&](std::size_t k) {
+    if (at(k) != '-' || at(k + 1) != '-') return false;
+    std::size_t m = k;
+    while (at(m) == '-') ++m;
+    return m < n && is_word(t[m]);
+  };
   std::vector<std::string> chunks;
   std::size_t i = 0;
-  while (i < text.size()) {
-    const std::size_t end = text[i] == ' ' ? i + 1 : std::min(text.find(' ', i), text.size());
-    chunks.push_back(text.substr(i, end - i));
+  while (i < n) {
+    std::size_t end = i;
+    if (is_wrap_space(t[i])) {
+      while (end < n && is_wrap_space(t[end])) ++end;
+    } else if (i > 0 && is_word_punct(t[i - 1]) && em_dash_at(i)) {
+      while (at(end) == '-') ++end;
+    } else {
+      for (std::size_t j = i + 1;; ++j) {
+        // A hyphen that ends the word, with the letters around it.
+        if (at(j) == '-') {
+          const bool before = (j >= 2 && is_letter(t[j - 2]) && is_letter(t[j - 1])) ||
+                              (j >= 3 && is_letter(t[j - 3]) && t[j - 2] == '-' &&
+                               is_letter(t[j - 1]));
+          const bool after =
+              is_letter(at(j + 1)) &&
+              (is_letter(at(j + 2)) || (at(j + 2) == '-' && is_letter(at(j + 3))));
+          if (before && after) {
+            end = j + 1;
+            break;
+          }
+        }
+        if (j >= n || is_wrap_space(t[j])) {
+          end = j;
+          break;
+        }
+        if (is_word_punct(t[j - 1]) && em_dash_at(j)) {
+          end = j;
+          break;
+        }
+      }
+    }
+    chunks.push_back(t.substr(i, end - i));
     i = end;
   }
-  std::reverse(chunks.begin(), chunks.end());
-  std::vector<std::string> lines;
-  while (!chunks.empty()) {
-    std::vector<std::string> line;
-    int cur_len = 0;
-    const int width_left = width - static_cast<int>(indent.size());
-    if (chunks.back() == " " && !lines.empty()) chunks.pop_back();
-    while (!chunks.empty()) {
-      const int l = static_cast<int>(chunks.back().size());
-      if (cur_len + l > width_left) break;
-      line.push_back(chunks.back());
-      chunks.pop_back();
-      cur_len += l;
-    }
-    if (!chunks.empty() && static_cast<int>(chunks.back().size()) > width_left) {
-      const int space_left = width_left < 1 ? 1 : width_left - cur_len;
-      std::string& chunk = chunks.back();
-      line.push_back(chunk.substr(0, space_left));
-      chunk = chunk.substr(space_left);
-    }
-    if (!line.empty() && line.back() == " ") line.pop_back();
-    if (!line.empty()) {
-      std::string joined = indent;
-      for (const auto& c : line) joined += c;
-      lines.push_back(joined);
-    }
-  }
-  return lines;
+  return chunks;
+}
+
+bool all_space(const std::string& s) {
+  return std::all_of(s.begin(), s.end(), is_wrap_space);
 }
 
 // Returns `text` with each run of whitespace one space and the ends
-// stripped, as `_whitespace_matcher.sub(' ', text).strip()` gives it,
-// and checks that no word has a hyphen inside it, where textwrap would
-// break a line that `wrap` doesn't.
+// stripped, as `_whitespace_matcher.sub(' ', text).strip()` gives it.
 std::string normalize(const std::string& text) {
   std::string out;
   bool space = false;
@@ -83,12 +128,6 @@ std::string normalize(const std::string& text) {
     if (space && !out.empty()) out += ' ';
     space = false;
     out += c;
-  }
-  for (std::size_t k = 1; k + 1 < out.size(); ++k) {
-    if (out[k] == '-' && out[k - 1] != ' ' && out[k + 1] != ' ') {
-      throw InternalError("argparse: textwrap would break the hyphenated word in " +
-                          pyrepr::string(text));
-    }
   }
   return out;
 }
@@ -150,17 +189,21 @@ std::string upper(std::string s) {
 // The argument a positional takes, or an option's metavar
 // (`_format_args`).
 std::string format_args(const Action& a) {
-  if (a.kind == ActionKind::kOneOrMore) return a.dest + " [" + a.dest + " ...]";
-  return upper(a.dest);
+  if (a.kind == ActionKind::kOneOrMore) {
+    const std::string& m = a.metavar.empty() ? a.dest : a.metavar;
+    return m + " [" + m + " ...]";
+  }
+  return a.metavar.empty() ? upper(a.dest) : a.metavar;
 }
 
 bool takes_no_argument(const Action& a) {
-  return a.kind == ActionKind::kStoreTrue || a.kind == ActionKind::kHelp;
+  return a.kind == ActionKind::kStoreTrue || a.kind == ActionKind::kStoreConst ||
+         a.kind == ActionKind::kHelp;
 }
 
 // `_format_action_invocation`.
 std::string invocation(const Action& a) {
-  if (a.option_strings.empty()) return a.dest;
+  if (a.option_strings.empty()) return a.metavar.empty() ? a.dest : a.metavar;
   if (takes_no_argument(a)) return join(a.option_strings, ", ");
   std::vector<std::string> parts;
   for (const auto& s : a.option_strings) parts.push_back(s + " " + format_args(a));
@@ -168,15 +211,92 @@ std::string invocation(const Action& a) {
 }
 
 // `_get_action_name`: an option's strings joined with `/`, or a
-// positional's name.
+// positional's metavar or name.
 std::string action_name(const Action& a) {
   if (!a.option_strings.empty()) return join(a.option_strings, "/");
-  return a.dest;
+  return a.metavar.empty() ? a.dest : a.metavar;
 }
 
 std::string spaces(int n) { return std::string(n > 0 ? n : 0, ' '); }
 
+bool is_open(char c) { return c == '[' || c == '('; }
+bool is_close(char c) { return c == ']' || c == ')'; }
+
+// The cleanup at the end of `_format_actions_usage`, which joins the
+// separators of a mutually exclusive group to their options:
+// `re.sub(r'([\[(]) ', r'\1', text)`, then `re.sub(r' ([\])])', r'\1',
+// text)`, then `re.sub(r'[\[(] *[\])]', '', text)`, then `strip()`.
+std::string clean_group_separators(const std::string& text) {
+  std::string a;
+  for (std::size_t i = 0; i < text.size();) {
+    a += text[i];
+    i += is_open(text[i]) && i + 1 < text.size() && text[i + 1] == ' ' ? 2 : 1;
+  }
+  std::string b;
+  for (std::size_t i = 0; i < a.size();) {
+    if (a[i] == ' ' && i + 1 < a.size() && is_close(a[i + 1])) {
+      b += a[i + 1];
+      i += 2;
+    } else {
+      b += a[i++];
+    }
+  }
+  std::string c;
+  for (std::size_t i = 0; i < b.size();) {
+    if (is_open(b[i])) {
+      std::size_t j = i + 1;
+      while (j < b.size() && b[j] == ' ') ++j;
+      if (j < b.size() && is_close(b[j])) {
+        i = j + 1;
+        continue;
+      }
+    }
+    c += b[i++];
+  }
+  const std::size_t first = c.find_first_not_of(" \t\n\r\f\v");
+  if (first == std::string::npos) return "";
+  const std::size_t last = c.find_last_not_of(" \t\n\r\f\v");
+  return c.substr(first, last - first + 1);
+}
+
 }  // namespace
+
+std::vector<std::string> wrap_text(const std::string& text, int width) {
+  std::vector<std::string> chunks = split_chunks(text);
+  std::reverse(chunks.begin(), chunks.end());
+  std::vector<std::string> lines;
+  while (!chunks.empty()) {
+    std::vector<std::string> line;
+    int cur_len = 0;
+    if (all_space(chunks.back()) && !lines.empty()) chunks.pop_back();
+    while (!chunks.empty()) {
+      const int l = static_cast<int>(chunks.back().size());
+      if (cur_len + l > width) break;
+      line.push_back(chunks.back());
+      chunks.pop_back();
+      cur_len += l;
+    }
+    if (!chunks.empty() && static_cast<int>(chunks.back().size()) > width) {
+      // `_handle_long_word`, which breaks the word after its last hyphen
+      // that fits, when something other than hyphens comes before it.
+      const int space_left = width < 1 ? 1 : width - cur_len;
+      std::string& chunk = chunks.back();
+      std::size_t end = static_cast<std::size_t>(space_left);
+      if (chunk.size() > end) {
+        const std::size_t hyphen = chunk.rfind('-', end == 0 ? 0 : end - 1);
+        if (hyphen != std::string::npos && hyphen > 0 && hyphen < end &&
+            chunk.find_first_not_of('-') < hyphen) {
+          end = hyphen + 1;
+        }
+      }
+      line.push_back(chunk.substr(0, end));
+      chunk = chunk.substr(std::min(end, chunk.size()));
+    }
+    if (!line.empty() && all_space(line.back())) line.pop_back();
+    if (!line.empty()) lines.push_back(join(line, ""));
+  }
+  return lines;
+}
 
 bool Namespace::flag(const std::string& dest) const {
   const auto it = flags.find(dest);
@@ -188,34 +308,59 @@ const std::vector<std::string>* Namespace::list(const std::string& dest) const {
   return it == lists.end() ? nullptr : &it->second;
 }
 
+const std::string* Namespace::value(const std::string& dest) const {
+  const auto it = values.find(dest);
+  return it == values.end() ? nullptr : &it->second;
+}
+
 Parser::Parser(std::string prog, std::string description, bool add_help_option)
     : prog_(std::move(prog)), description_(std::move(description)) {
   if (add_help_option) add_help({"-h", "--help"}, "show this help message and exit");
 }
 
 void Parser::add(Action a) {
-  if (!a.help.empty()) normalize(a.help);
+  if (a.group >= 0) groups_.at(static_cast<std::size_t>(a.group)).push_back(actions_.size());
   actions_.push_back(std::move(a));
 }
 
-void Parser::add_store_true(std::vector<std::string> option_strings, std::string help) {
-  // The dest is the first long option's name, else the first short
-  // one's, with `-` as `_`.
-  std::string dest;
-  for (const auto& s : option_strings) {
-    if (starts_with(s, "--")) {
-      dest = s.substr(2);
-      break;
+void Parser::add_store_true(std::vector<std::string> option_strings, std::string help,
+                            std::string dest) {
+  if (dest.empty()) {
+    for (const auto& s : option_strings) {
+      if (starts_with(s, "--")) {
+        dest = s.substr(2);
+        break;
+      }
     }
+    if (dest.empty()) dest = option_strings.front().substr(1);
+    std::replace(dest.begin(), dest.end(), '-', '_');
   }
-  if (dest.empty()) dest = option_strings.front().substr(1);
-  std::replace(dest.begin(), dest.end(), '-', '_');
   add(Action{ActionKind::kStoreTrue, std::move(option_strings), dest, std::move(help)});
 }
 
+void Parser::add_store_const(std::vector<std::string> option_strings, std::string dest,
+                             std::string constant, std::string help, int group) {
+  Action a{ActionKind::kStoreConst, std::move(option_strings), std::move(dest), std::move(help)};
+  a.constant = std::move(constant);
+  a.group = group;
+  add(std::move(a));
+}
+
+void Parser::add_store(std::vector<std::string> option_strings, std::string dest,
+                       std::string help, std::string metavar, std::string type_name,
+                       TypeCheck type) {
+  Action a{ActionKind::kStore, std::move(option_strings), std::move(dest), std::move(help)};
+  a.metavar = std::move(metavar);
+  a.type_name = std::move(type_name);
+  a.type = std::move(type);
+  add(std::move(a));
+}
+
 void Parser::add_append(std::vector<std::string> option_strings, std::string dest,
-                        std::string help) {
-  add(Action{ActionKind::kAppend, std::move(option_strings), std::move(dest), std::move(help)});
+                        std::string help, std::string metavar) {
+  Action a{ActionKind::kAppend, std::move(option_strings), std::move(dest), std::move(help)};
+  a.metavar = std::move(metavar);
+  add(std::move(a));
 }
 
 void Parser::add_help(std::vector<std::string> option_strings, std::string help) {
@@ -224,6 +369,11 @@ void Parser::add_help(std::vector<std::string> option_strings, std::string help)
 
 void Parser::add_positional(std::string dest, std::string help) {
   add(Action{ActionKind::kOneOrMore, {}, std::move(dest), std::move(help)});
+}
+
+int Parser::add_mutually_exclusive_group() {
+  groups_.emplace_back();
+  return static_cast<int>(groups_.size()) - 1;
 }
 
 const Action* Parser::find(const std::string& option_string) const {
@@ -298,6 +448,14 @@ std::optional<Parser::Tuple> Parser::parse_optional(const std::string& arg, int 
 }
 
 Namespace Parser::parse_args(const std::vector<std::string>& args, int columns) const {
+  std::vector<std::string> extras;
+  Namespace ns = parse_known_args(args, columns, extras);
+  if (!extras.empty()) error("unrecognized arguments: " + join(extras, " "), columns);
+  return ns;
+}
+
+Namespace Parser::parse_known_args(const std::vector<std::string>& args, int columns,
+                                   std::vector<std::string>& extras) const {
   // The pattern of `O` for an option, `A` for an argument, and `-` for
   // the `--` after which everything is an argument.
   std::string pattern;
@@ -320,28 +478,50 @@ Namespace Parser::parse_args(const std::vector<std::string>& args, int columns) 
     if (a.kind == ActionKind::kStoreTrue) ns.flags[a.dest] = false;
   }
   std::vector<const Action*> seen;
-  std::vector<std::string> extras;
+  // Every action that takes an argument here stores something other
+  // than its default object, so `seen_non_default_actions` holds each
+  // action taken, which the conflicts of a mutually exclusive group are
+  // found in.
   const auto argument_error = [&](const Action& a, const std::string& message) {
     error("argument " + action_name(a) + ": " + message, columns);
   };
   const auto take_action = [&](const Action& a, std::vector<std::string> values) {
+    // `_get_values`: `--` is dropped, and a value goes through the
+    // `type=` function before the conflicts are looked for.
+    if (a.kind == ActionKind::kOneOrMore) {
+      const auto dashes = std::find(values.begin(), values.end(), "--");
+      if (dashes != values.end()) values.erase(dashes);
+    }
+    if (a.type && !values.empty() && !a.type(values.front())) {
+      argument_error(a, "invalid " + a.type_name + " value: " + pyrepr::string(values.front()));
+    }
     seen.push_back(&a);
+    if (a.group >= 0) {
+      for (const std::size_t k : groups_.at(static_cast<std::size_t>(a.group))) {
+        const Action* other = &actions_[k];
+        if (other != &a && std::find(seen.begin(), seen.end(), other) != seen.end()) {
+          argument_error(a, "not allowed with argument " + action_name(*other));
+        }
+      }
+    }
     switch (a.kind) {
       case ActionKind::kStoreTrue:
         ns.flags[a.dest] = true;
+        break;
+      case ActionKind::kStoreConst:
+        ns.values[a.dest] = a.constant;
+        break;
+      case ActionKind::kStore:
+        ns.values[a.dest] = values.front();
         break;
       case ActionKind::kAppend:
         ns.lists[a.dest].push_back(values.front());
         break;
       case ActionKind::kHelp:
         throw Exit{0, format_help(columns), ""};
-      case ActionKind::kOneOrMore: {
-        // `_get_values` drops the first `--`.
-        const auto dashes = std::find(values.begin(), values.end(), "--");
-        if (dashes != values.end()) values.erase(dashes);
+      case ActionKind::kOneOrMore:
         ns.lists[a.dest] = std::move(values);
         break;
-      }
     }
   };
   const auto consume_optional = [&](std::size_t start) -> std::size_t {
@@ -439,33 +619,62 @@ Namespace Parser::parse_args(const std::vector<std::string>& args, int columns) 
   if (!required.empty()) {
     error("the following arguments are required: " + join(required, ", "), columns);
   }
-  if (!extras.empty()) error("unrecognized arguments: " + join(extras, " "), columns);
   return ns;
 }
 
 std::string Parser::actions_usage(bool optionals, bool positionals) const {
-  std::vector<std::string> parts;
-  const auto add_part = [&](const Action& a) {
-    if (a.option_strings.empty()) {
-      parts.push_back(format_args(a));
-    } else if (takes_no_argument(a)) {
-      parts.push_back("[" + a.option_strings.front() + "]");
-    } else {
-      parts.push_back("[" + a.option_strings.front() + " " + format_args(a) + "]");
-    }
-  };
-  // The optionals come before the positionals, whatever their order.
+  // `_format_actions_usage` of the optionals, the positionals, or both
+  // (the optionals first, whatever their order).
+  std::vector<const Action*> actions;
   if (optionals) {
     for (const auto& a : actions_) {
-      if (!a.option_strings.empty()) add_part(a);
+      if (!a.option_strings.empty()) actions.push_back(&a);
     }
   }
   if (positionals) {
     for (const auto& a : actions_) {
-      if (a.option_strings.empty()) add_part(a);
+      if (a.option_strings.empty()) actions.push_back(&a);
     }
   }
-  return join(parts, " ");
+  // A group whose actions come together is bracketed, with `|` between
+  // its actions, which then lose their own brackets.
+  std::map<std::size_t, std::string> inserts;
+  std::vector<bool> in_group(actions.size(), false);
+  for (const auto& group : groups_) {
+    if (group.empty()) continue;
+    const auto first = std::find(actions.begin(), actions.end(), &actions_[group.front()]);
+    if (first == actions.end()) continue;
+    const std::size_t begin = static_cast<std::size_t>(first - actions.begin());
+    const std::size_t end = begin + group.size();
+    bool together = end <= actions.size();
+    for (std::size_t k = 0; together && k < group.size(); ++k) {
+      together = actions[begin + k] == &actions_[group[k]];
+    }
+    if (!together) continue;
+    for (std::size_t k = begin; k < end; ++k) in_group[k] = true;
+    const bool taken = inserts.count(begin) != 0;
+    inserts[begin] += taken ? " [" : "[";
+    inserts[end] += "]";
+    for (std::size_t k = begin + 1; k < end; ++k) inserts[k] = "|";
+  }
+  std::vector<std::string> parts;
+  for (std::size_t k = 0; k < actions.size(); ++k) {
+    const Action& a = *actions[k];
+    std::string part;
+    if (a.option_strings.empty()) {
+      part = format_args(a);
+    } else if (takes_no_argument(a)) {
+      part = a.option_strings.front();
+    } else {
+      part = a.option_strings.front() + " " + format_args(a);
+    }
+    if (!a.option_strings.empty() && !in_group[k]) part = "[" + part + "]";
+    parts.push_back(part);
+  }
+  for (auto it = inserts.rbegin(); it != inserts.rend(); ++it) {
+    parts.insert(parts.begin() + static_cast<std::ptrdiff_t>(it->first), it->second);
+  }
+  return clean_group_separators(join(parts, " "));
 }
 
 std::string Parser::format_usage(int columns) const {
@@ -548,7 +757,7 @@ std::string Parser::format_action(const Action& a, int width, int max_help_posit
     indent_first = help_position;
   }
   if (!a.help.empty()) {
-    const std::vector<std::string> lines = wrap(normalize(a.help), help_width);
+    const std::vector<std::string> lines = wrap_text(normalize(a.help), help_width);
     out += spaces(indent_first) + lines.front() + "\n";
     for (std::size_t k = 1; k < lines.size(); ++k) out += spaces(help_position) + lines[k] + "\n";
   }
@@ -564,7 +773,7 @@ std::string Parser::format_help(int columns) const {
   }
   std::string help = format_usage(columns) + "\n";
   if (!description_.empty()) {
-    help += join(wrap(normalize(description_), std::max(width, 11)), "\n") + "\n\n";
+    help += join(wrap_text(normalize(description_), std::max(width, 11)), "\n") + "\n\n";
   }
   // The groups: the positionals, then the options.
   for (const bool positional : {true, false}) {

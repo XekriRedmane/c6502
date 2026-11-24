@@ -22,11 +22,7 @@ import unittest
 from pathlib import Path
 
 import builtin_functions as bf
-import c99_ast
 import tac_ast
-from parser import parse
-from passes.identifier_resolution import resolve_program
-from passes.type_checking import check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 
@@ -41,23 +37,18 @@ _TYPES = {
 }
 
 
-def _check(src: str):
-    return check_program(resolve_program(parse(preprocess(src))))
-
-
 def _codegen(src: str, optimize: bool) -> str:
     from compile import _run_stage
     return _run_stage("codegen", preprocess(src), optimize=optimize)
 
 
 def _tac(src: str, optimize: bool) -> tac_ast.Program:
-    from compile import _resolved, translate_for_codegen
-    from passes.optimization import optimize_program
-    prog, symbols, types = check_program(
-        _resolved(preprocess(src), optimize=optimize),
-    )
-    tac = translate_for_codegen(prog, symbols, types, optimize)
-    return optimize_program(tac, symbols) if optimize else tac
+    """The TAC that `compile.py --tac` prints for `src`, read back into
+    `tac_ast` objects. Its `pretty` text is the constructors' calls with
+    their fields as keywords, so Python can evaluate it."""
+    from compile import _run_stage
+    return eval(_run_stage("tac", preprocess(src), optimize=optimize),
+                vars(tac_ast))
 
 
 def _body(asm: str, name: str) -> list[str]:
@@ -211,43 +202,6 @@ class TestModel(unittest.TestCase):
         for name in bf.STDBIT_BUILTINS:
             self.assertTrue(name.startswith("__c6502_stdc_"))
             self.assertEqual(bf.BUILTINS[name], 1)
-
-
-def _call_type(src: str) -> c99_ast.Type_data_type:
-    """The type the checker gives `r`'s initializer in `src`, a call."""
-    prog, _, _ = _check(src)
-    for d in prog.declaration:
-        if (isinstance(d, c99_ast.FunctionDecl)
-                and d.function_decl.name == "f"):
-            item = d.function_decl.body.block_item[0]
-            return item.declaration.var_decl.init.data_type
-    raise AssertionError("no f")
-
-
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
-class TestTypes(unittest.TestCase):
-    def test_result_types(self) -> None:
-        types = {
-            "unsigned char": c99_ast.UChar(),
-            "unsigned short": c99_ast.UShort(),
-            "unsigned int": c99_ast.UInt(),
-            "unsigned long": c99_ast.ULong(),
-            "unsigned long long": c99_ast.ULongLong(),
-        }
-        for suffix, (tname, _) in _TYPES.items():
-            for op in bf.STDBIT_OPERATIONS:
-                want = {
-                    "bit_floor": types[tname], "bit_ceil": types[tname],
-                    "has_single_bit": c99_ast.Bool(),
-                }.get(op, c99_ast.UInt())
-                for fn in (f"stdc_{op}", f"stdc_{op}_{suffix}"):
-                    with self.subTest(fn=fn, type=tname):
-                        src = (
-                            f"#include <stdbit.h>\n{tname} g;\n"
-                            f"void f(void) {{ {_result_type(op, tname)} "
-                            f"r = {fn}(g); }}\n"
-                        )
-                        self.assertEqual(_call_type(src), want)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

@@ -481,6 +481,10 @@ class Simulator:
                         dst_addr, src_addr,
                         _sizeof(self.symbols[d.name].type, self.types),
                     )
+                elif self._is_unset(frame, s):
+                    # SSA destruction's copy of a Phi argument that has
+                    # no value (`_run_phis`).
+                    self._unset(frame, d)
                 else:
                     v, _ = self._read(frame, s)
                     self._write(frame, d, v)
@@ -696,9 +700,40 @@ class Simulator:
                     f"Phi for {phi.dst.name} has no argument from "
                     f"{frame.prev_label!r}"
                 )
+            if self._is_unset(frame, arg.source):
+                # SSA construction gives a Phi the variable's own name
+                # for a path on which the variable has no value yet, as
+                # for `int c;` before a loop that assigns it. The Phi's
+                # destination then has no value either, and only a read
+                # of it raises.
+                values.append(None)
+                continue
             values.append(self._read(frame, arg.source)[0])
         for phi, value in zip(phis, values):
-            self._write(frame, phi.dst, value)
+            if value is None:
+                self._unset(frame, phi.dst)
+            else:
+                self._write(frame, phi.dst, value)
+
+    def _is_unset(self, frame: _Frame, val) -> bool:
+        """True iff `val` is an automatic scalar with no value yet, which
+        `_read` would raise "uninitialized var" for."""
+        if not isinstance(val, tac_ast.Var) or val.name not in self.symbols:
+            return False
+        n = val.name
+        return (
+            not isinstance(self.symbols[n].attrs, StaticAttr)
+            and n not in frame.local_addr
+            and n not in frame.env
+        )
+
+    @staticmethod
+    def _unset(frame: _Frame, val) -> None:
+        """Takes the value of the automatic scalar `val` away, so that a
+        read of it raises "uninitialized var". An object in memory keeps
+        its bytes."""
+        if isinstance(val, tac_ast.Var):
+            frame.env.pop(val.name, None)
 
     def _is_aggregate_var(self, val) -> bool:
         return (

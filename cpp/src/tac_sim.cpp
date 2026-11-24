@@ -1052,7 +1052,7 @@ void Simulator::run_phis(Frame& frame) {
     phis.push_back(&std::get<ir::Phi>(ins[frame.pc]));
     frame.pc += 1;
   }
-  std::vector<std::uint64_t> values;
+  std::vector<std::optional<std::uint64_t>> values;
   values.reserve(phis.size());
   for (const ir::Phi* phi : phis) {
     const ir::Type_val* source = nullptr;
@@ -1071,11 +1071,39 @@ void Simulator::run_phis(Frame& frame) {
       fail("Phi for " + dst->name + " has no argument from " +
            (frame.prev_label == nullptr ? std::string("None") : pyrepr::string(*frame.prev_label)));
     }
-    values.push_back(read(frame, *source).value);
+    if (is_unset(frame, *source)) {
+      // SSA construction gives a Phi the variable's own name for a path
+      // on which the variable has no value yet, as for `int c;` before a
+      // loop that assigns it. The Phi's destination then has no value
+      // either, and only a read of it raises.
+      values.emplace_back();
+      continue;
+    }
+    values.emplace_back(read(frame, *source).value);
   }
   for (std::size_t i = 0; i < phis.size(); ++i) {
-    write(frame, phis[i]->dst, values[i]);
+    if (values[i]) {
+      write(frame, phis[i]->dst, *values[i]);
+    } else {
+      unset(frame, phis[i]->dst);
+    }
   }
+}
+
+bool Simulator::is_unset(const Frame& frame, const ir::Type_val& v) const {
+  // An automatic scalar with no value yet, which `read` raises
+  // "uninitialized var" for.
+  const auto* var = asdl::as<ir::Var>(v);
+  if (var == nullptr) return false;
+  const SymInfo& info = sym_info(var->name);
+  return info.sym != nullptr && !info.is_static && frame.local_addr.count(var->name) == 0 &&
+         frame.env.count(var->name) == 0;
+}
+
+void Simulator::unset(Frame& frame, const ir::Type_val& v) {
+  // Takes an automatic scalar's value away, so that a read of it raises
+  // "uninitialized var". An object in memory keeps its bytes.
+  if (const auto* var = asdl::as<ir::Var>(v)) frame.env.erase(var->name);
 }
 
 std::optional<Simulator::Return> Simulator::step(Frame& frame, const ir::Type_instruction& ins) {
@@ -1124,6 +1152,10 @@ std::optional<Simulator::Return> Simulator::step(Frame& frame, const ir::Type_in
         const std::int64_t src = address_of(frame, c.src);
         const std::int64_t dst = address_of(frame, c.dst);
         memcpy(dst, src, size_of(symbol(std::get<ir::Var>(c.dst).name).type));
+      } else if (is_unset(frame, c.src)) {
+        // SSA destruction's copy of a Phi argument that has no value
+        // (`run_phis`).
+        unset(frame, c.dst);
       } else {
         write(frame, c.dst, read(frame, c.src).value);
       }

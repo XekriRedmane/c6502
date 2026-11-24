@@ -457,3 +457,18 @@ TEST_CASE("tac_sim: the backend's modes") {
   CHECK(c6502::backend::respond(tac_request("tac-falls-off", "int main(void) { return x; }")) ==
         prefix + "fell false\n");
 }
+
+TEST_CASE("tac_sim: a variable without a value before a loop") {
+  // SSA gives `c` a Phi at the loop's header whose argument from the
+  // entry is `c` itself, which has no value there, and SSA destruction
+  // copies it. Neither may raise, since nothing reads the value
+  // (tests/chapter_8/valid/continue.c).
+  const std::string src =
+      "int main(void) {\n"
+      "  int c;\n"
+      "  for (int i = 0; i < 4; i++) c = i;\n"
+      "  return c;\n"
+      "}\n";
+  CHECK(c6502::backend::respond(tac_request("tac-observe", src)) ==
+        "stderr 0\nwarnings []\nfound null\n");
+}

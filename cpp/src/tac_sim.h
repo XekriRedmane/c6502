@@ -200,6 +200,8 @@ class Simulator {
   std::int64_t address_of_var(Frame& frame, const std::string& name);
   std::optional<std::int64_t> static_address(const std::string& name);
   std::int64_t static_slot(const std::string& name);
+  bool is_unset(const Frame& frame, const tac_ast::Type_val& v) const;
+  static void unset(Frame& frame, const tac_ast::Type_val& v);
   Read read(Frame& frame, const tac_ast::Type_val& v);
   void write(Frame& frame, const tac_ast::Type_val& v, std::uint64_t raw);
   void write_var(Frame& frame, const std::string& name, std::uint64_t raw);

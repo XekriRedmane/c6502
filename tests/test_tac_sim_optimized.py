@@ -127,6 +127,20 @@ class TestTacPasses(unittest.TestCase):
     def test_no_pass_changes_a_correct_program(self) -> None:
         self.assertIsNone(first_changing_pass(self._SRC))
 
+    def test_variable_without_a_value_before_a_loop(self) -> None:
+        # SSA gives `c` a Phi at the loop's header whose argument from
+        # the entry is `c` itself, which has no value there, and SSA
+        # destruction copies it. Neither may raise, since nothing reads
+        # the value (tests/chapter_8/valid/continue.c).
+        src = """
+            int main(void) {
+                int c;
+                for (int i = 0; i < 4; i++) c = i;
+                return c;
+            }
+        """
+        self.assertIsNone(first_changing_pass(src))
+
     @unittest.skipIf(
         os.environ.get("C6502_CPP_BACKEND") == "1",
         "breaks a Python pass, which the C++ port doesn't run "

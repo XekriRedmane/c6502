@@ -1,0 +1,14 @@
+MEMORY
+{
+    ram (rwx) : ORIGIN = 0x0800, LENGTH = 0x7800
+    rom (rx)  : ORIGIN = 0xC000, LENGTH = 0x2000
+}
+
+SECTIONS
+{
+    .text : { *(.text .text.*) } > rom
+    .rodata : { *(.rodata .rodata.*) } > rom
+    .data : { *(.data .data.*) } > ram AT> rom
+    .bss (NOLOAD) : { *(.bss .bss.*) } > ram
+    __end = .;
+}

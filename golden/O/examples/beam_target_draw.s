@@ -1,0 +1,102 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+__zpabi_draw_sprite__sprite_x	EQU	$80
+__zpabi_draw_sprite__sprite_y	EQU	$81
+__zpabi_draw_sprite__tile_src_0	EQU	$82
+__zpabi_draw_sprite__tile_src_1	EQU	$83
+__zpabi_draw_sprite__page_flag	EQU	$84
+__local_beam_target_draw__page_flag	EQU	$86
+
+; @zp-link-meta-begin
+; def beam_target_draw params=__zpabi_beam_target_draw__page_flag locals=__local_beam_target_draw__state,__local_beam_target_draw__page_flag indirect=false in_cycle=false param_regs=A
+; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag param_regs=A,X,,,,,
+; ext score_add params=
+; call beam_target_draw -> draw_sprite
+; call beam_target_draw -> score_add
+; item beam_target_draw section=.text local=false zero=false
+; item floor_y_table section=.rodata local=true zero=false
+; item proj_screen_col section=.rodata local=true zero=false
+; runtime hargs_size=32 hargs_need=0
+; @zp-link-meta-end
+
+beam_target_draw:
+   SUBROUTINE
+
+   STA   __local_beam_target_draw__page_flag
+   LDA   beam_state
+   BNE   .if_end@0
+   RTS
+.if_end@0:
+   AND   #$0F
+   TAX
+   LDA   floor_y_table,X
+   SEC
+   SBC   beam_y
+   TAX
+   BNE   .if_end@1
+   RTS
+.if_end@1:
+   CPX   #$05
+   BCC   .cond_end@3
+   LDX   #$04
+.cond_end@3:
+   LDA   #$24
+   STA   __zpabi_draw_sprite__sprite_x
+   LDA   beam_y
+   STA   __zpabi_draw_sprite__sprite_y
+   LDA   #<beam_spr
+   STA   __zpabi_draw_sprite__tile_src_0
+   LDA   #>beam_spr
+   STA   __zpabi_draw_sprite__tile_src_1
+   LDA   __local_beam_target_draw__page_flag
+   STA   __zpabi_draw_sprite__page_flag
+   LDA   #$02
+   JSR   draw_sprite
+   LDY   #$03
+.loop@0_start:
+   LDA   enemy_flag,Y
+   BEQ   .loop@0_continue
+   LDX   enemy_col,Y
+   LDA   proj_screen_col,X
+   CMP   #$26
+   BCS   .loop@0_continue
+   CMP   #$24
+   BCC   .loop@0_continue
+   LDA   enemy_y,Y
+   STA   __local_beam_target_draw__page_flag
+   LDA   beam_y
+   CMP   __local_beam_target_draw__page_flag
+   BCS   .loop@0_continue
+   ADC   #$03
+   CMP   __local_beam_target_draw__page_flag
+   BCC   .loop@0_continue
+   LDA   #$00
+   STA   enemy_flag,Y
+   STA   beam_state
+   LDA   #$0A
+   STA   beam_snd_ctr
+   LDA   #$00
+   STA   score_add_lo
+   LDA   #$01
+   STA   score_add_hi
+   JMP   score_add
+.loop@0_continue:
+   DEY
+   BPL   .loop@0_start
+   RTS
+
+floor_y_table:
+   DC.B  $00, $43, $6B, $93, $BB
+
+proj_screen_col:
+   DC.B  $00, $00, $00, $00, $01, $01, $01, $02, $02, $02, $02, $03, $03, $03, $04, $04
+   DC.B  $04, $04, $05, $05, $05, $06, $06, $06, $06, $07, $07, $07, $08, $08, $08, $08
+   DC.B  $09, $09, $09, $0A, $0A, $0A, $0A, $0B, $0B, $0B, $0C, $0C, $0C, $0C, $0D, $0D
+   DC.B  $0D, $0E, $0E, $0E, $0E, $0F, $0F, $0F, $10, $10, $10, $10, $11, $11, $11, $12
+   DC.B  $12, $12, $12, $13, $13, $13, $14, $14, $14, $14, $15, $15, $15, $16, $16, $16
+   DC.B  $16, $17, $17, $17, $18, $18, $18, $18, $19, $19, $19, $1A, $1A, $1A, $1A, $1B
+   DC.B  $1B, $1B, $1C, $1C, $1C, $1C, $1D, $1D, $1D, $1E, $1E, $1E, $1E, $1F, $1F, $1F
+   DC.B  $20, $20, $20, $20, $21, $21, $21, $22, $22, $22, $22, $23, $23, $23, $24, $24
+   DC.B  $24, $24, $25, $25

@@ -1,0 +1,11 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+
+main:
+   SUBROUTINE
+
+   LDX   #$00
+   LDA   #$64
+   RTS

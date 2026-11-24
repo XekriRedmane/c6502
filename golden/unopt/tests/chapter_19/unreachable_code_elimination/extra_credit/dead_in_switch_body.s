@@ -1,0 +1,319 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+
+callee:
+   SUBROUTINE
+
+   ; prologue: 0 arg bytes, 2 local bytes
+   SEC
+   LDA   SSP
+   SBC   #$04
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDA   FP
+   LDY   #$03
+   STA   (SSP),Y
+   LDA   FP+1
+   INY
+   STA   (SSP),Y
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+
+   SEC
+   LDA   #$00
+   SBC   #$01
+   LDY   #$01
+   STA   (FP),Y
+   LDA   #$00
+   SBC   #$00
+   INY
+   STA   (FP),Y
+   TAX
+   DEY
+   LDA   (FP),Y
+
+   ; epilogue
+   PHA
+   TXA
+   PHA
+   CLC
+   LDA   FP
+   ADC   #$04
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$03
+   LDA   (FP),Y
+   TAX
+   INY
+   LDA   (FP),Y
+   STA   FP+1
+   TXA
+   STA   FP
+   PLA
+   TAX
+   PLA
+   RTS
+
+target:
+   SUBROUTINE
+
+   ; prologue: 2 arg bytes, 14 local bytes
+   SEC
+   LDA   SSP
+   SBC   #$10
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDA   FP
+   LDY   #$0F
+   STA   (SSP),Y
+   LDA   FP+1
+   INY
+   STA   (SSP),Y
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+
+   LDA   #$00
+   LDY   #$01
+   STA   (FP),Y
+   INY
+   STA   (FP),Y
+   LDY   #$12
+   LDA   (FP),Y
+   BNE   .thread@0
+   DEY
+   LDA   (FP),Y
+   CMP   #$01
+   BEQ   .cmp_true@0
+.thread@0:
+   LDA   #$00
+   JMP   .cmp_end@1
+.cmp_true@0:
+   LDA   #$01
+.cmp_end@1:
+   LDY   #$03
+   STA   (FP),Y
+   LDA   #$00
+   INY
+   STA   (FP),Y
+   DEY
+   LDA   (FP),Y
+   INY
+   ORA   (FP),Y
+   BNE   .case@1
+   LDY   #$12
+   LDA   (FP),Y
+   BNE   .thread@1
+   DEY
+   LDA   (FP),Y
+   CMP   #$02
+   BEQ   .cmp_true@3
+.thread@1:
+   LDA   #$00
+   JMP   .cmp_end@4
+.cmp_true@3:
+   LDA   #$01
+.cmp_end@4:
+   LDY   #$05
+   STA   (FP),Y
+   LDA   #$00
+   INY
+   STA   (FP),Y
+   DEY
+   LDA   (FP),Y
+   INY
+   ORA   (FP),Y
+   BNE   .case@2
+   LDY   #$12
+   LDA   (FP),Y
+   BNE   .thread@2
+   DEY
+   LDA   (FP),Y
+   CMP   #$03
+   BEQ   .cmp_true@6
+.thread@2:
+   LDA   #$00
+   JMP   .cmp_end@7
+.cmp_true@6:
+   LDA   #$01
+.cmp_end@7:
+   LDY   #$07
+   STA   (FP),Y
+   LDA   #$00
+   INY
+   STA   (FP),Y
+   DEY
+   LDA   (FP),Y
+   INY
+   ORA   (FP),Y
+   BNE   .case@3
+   JMP   .default@4
+.case@1:
+   LDA   #$01
+   LDY   #$01
+   STA   (FP),Y
+   LDA   #$00
+   INY
+   STA   (FP),Y
+   JMP   .switch@0_break
+.case@2:
+   LDA   #$02
+   LDY   #$01
+   STA   (FP),Y
+   LDA   #$00
+   INY
+   STA   (FP),Y
+   JMP   .switch@0_break
+.case@3:
+   LDA   #$0A
+   LDY   #$01
+   STA   (FP),Y
+   LDA   #$00
+   INY
+   STA   (FP),Y
+   JMP   .switch@0_break
+.default@4:
+   SEC
+   LDA   #$00
+   SBC   #$01
+   LDY   #$0B
+   STA   (FP),Y
+   LDA   #$00
+   SBC   #$00
+   INY
+   STA   (FP),Y
+   TAX
+   DEY
+   LDA   (FP),Y
+
+   ; epilogue
+   PHA
+   TXA
+   PHA
+   CLC
+   LDA   FP
+   ADC   #$12
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$0F
+   LDA   (FP),Y
+   TAX
+   INY
+   LDA   (FP),Y
+   STA   FP+1
+   TXA
+   STA   FP
+   PLA
+   TAX
+   PLA
+   RTS
+.switch@0_break:
+   TAX
+   LDY   #$01
+   LDA   (FP),Y
+
+   ; epilogue
+   PHA
+   TXA
+   PHA
+   CLC
+   LDA   FP
+   ADC   #$12
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$0F
+   LDA   (FP),Y
+   TAX
+   INY
+   LDA   (FP),Y
+   STA   FP+1
+   TXA
+   STA   FP
+   PLA
+   TAX
+   PLA
+   RTS
+
+main:
+   SUBROUTINE
+
+   ; prologue: 0 arg bytes, 2 local bytes
+   SEC
+   LDA   SSP
+   SBC   #$04
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDA   FP
+   LDY   #$03
+   STA   (SSP),Y
+   LDA   FP+1
+   INY
+   STA   (SSP),Y
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+
+   SEC
+   LDA   SSP
+   SBC   #$02
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDA   #$03
+   LDY   #$01
+   STA   (SSP),Y
+   LDA   #$00
+   INY
+   STA   (SSP),Y
+   JSR   target
+   LDY   #$01
+   STA   (FP),Y
+   TXA
+   INY
+   STA   (FP),Y
+   TAX
+   DEY
+   LDA   (FP),Y
+
+   ; epilogue
+   PHA
+   TXA
+   PHA
+   CLC
+   LDA   FP
+   ADC   #$04
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$03
+   LDA   (FP),Y
+   TAX
+   INY
+   LDA   (FP),Y
+   STA   FP+1
+   TXA
+   STA   FP
+   PLA
+   TAX
+   PLA
+   RTS

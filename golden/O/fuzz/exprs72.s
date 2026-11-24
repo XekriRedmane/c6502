@@ -1,0 +1,341 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+__zpabi_check__v1_0	EQU	$80
+__zpabi_check__v1_1	EQU	$81
+__zpabi_check__v2_0	EQU	$82
+__zpabi_check__v2_1	EQU	$83
+__zpabi_check__v2_2	EQU	$84
+__zpabi_check__v2_3	EQU	$85
+__zpabi_check__v3_0	EQU	$86
+__zpabi_check__v3_1	EQU	$87
+__zpabi_check__v4_0	EQU	$88
+__zpabi_check__v4_1	EQU	$89
+__zpabi_check__v4_2	EQU	$8A
+__zpabi_check__v4_3	EQU	$8B
+__zpabi_check__v5	EQU	$8C
+__local_check__fail_1	EQU	$8E
+__local_check__fail_0	EQU	$8F
+__local_check__0	EQU	$90
+__local_check__1	EQU	$91
+__local_check__2	EQU	$92
+__local_check__3	EQU	$93
+__local_check__4	EQU	$94
+__local_check__5	EQU	$95
+__local_check__6	EQU	$96
+__local_check__7	EQU	$97
+__local_check__8	EQU	$98
+__local_check__9	EQU	$99
+__local_check__10	EQU	$9A
+__local_check__11	EQU	$9B
+__local_check__12	EQU	$9C
+__local_check__13	EQU	$9D
+__local_check__15	EQU	$9F
+__local_check__16	EQU	$A0
+__local_check__v0	EQU	$A1
+
+; @zp-link-meta-begin
+; def check params=__zpabi_check__v0,__zpabi_check__v1_0,__zpabi_check__v1_1,__zpabi_check__v2_0,__zpabi_check__v2_1,__zpabi_check__v2_2,__zpabi_check__v2_3,__zpabi_check__v3_0,__zpabi_check__v3_1,__zpabi_check__v4_0,__zpabi_check__v4_1,__zpabi_check__v4_2,__zpabi_check__v4_3,__zpabi_check__v5 locals=__local_check__fail_1,__local_check__fail_0,__local_check__0,__local_check__1,__local_check__2,__local_check__3,__local_check__4,__local_check__5,__local_check__6,__local_check__7,__local_check__8,__local_check__9,__local_check__10,__local_check__11,__local_check__12,__local_check__13,__local_check__14,__local_check__15,__local_check__16,__local_check__v0 indirect=false in_cycle=false param_regs=A,,,,,,,,,,,,,
+; def main params= locals=__local_main__0 indirect=false in_cycle=false
+; call main -> check
+; item check section=.text local=false zero=false
+; item main section=.text local=false zero=false
+; runtime hargs_size=32 hargs_need=10
+; @zp-link-meta-end
+
+check:
+   SUBROUTINE
+
+   STA   __local_check__v0
+   LDA   __zpabi_check__v4_3
+   BNE   .jcmp_skip@0
+   LDA   __zpabi_check__v4_2
+   BNE   .jcmp_skip@0
+   LDA   __zpabi_check__v4_1
+   BNE   .jcmp_skip@0
+   LDA   __zpabi_check__v4_0
+   CMP   #$06
+   BNE   .lb_skip@0
+   JMP   .check@asm_ssa_split@0
+.lb_skip@0:
+.jcmp_skip@0:
+   LDA   #$01
+   STA   __local_check__fail_0
+   LDA   #$00
+   STA   __local_check__fail_1
+.if_end@0:
+   LDA   __zpabi_check__v1_1
+   AND   __zpabi_check__v3_1
+   ASL
+   LDA   #$00
+   ROL
+   EOR   #$01
+   STA   __local_check__0
+   LDA   #$00
+   STA   __local_check__1
+   LDX   __zpabi_check__v1_0
+   BEQ   .shift_done@2
+.shift_loop@1:
+   LDA   __local_check__1
+   ASL
+   ROR   __local_check__1
+   ROR   __local_check__0
+   DEX
+   BNE   .shift_loop@1
+.shift_done@2:
+   LDA   __local_check__0
+   ORA   __local_check__1
+   BEQ   .if_end@1
+   LDA   __local_check__fail_0
+   ORA   #$02
+   STA   __local_check__fail_0
+   LDA   #$00
+   STA   __local_check__fail_1
+.if_end@1:
+   LDA   __local_check__v0
+   BEQ   .if_end@2
+   LDA   __local_check__fail_0
+   ORA   #$04
+   STA   __local_check__fail_0
+.if_end@2:
+   LDA   __zpabi_check__v5
+   BMI   .sx_neg@3
+   LDA   #$00
+   BEQ   .sx_done@4
+.sx_neg@3:
+   LDA   #$FF
+.sx_done@4:
+   STA   __local_check__16
+   LDA   __zpabi_check__v5
+   BMI   .sx_neg@5
+   LDA   #$00
+   BEQ   .sx_done@6
+.sx_neg@5:
+   LDA   #$FF
+.sx_done@6:
+   STA   __local_check__2
+   STA   __local_check__1
+   STA   __local_check__0
+   LDA   __zpabi_check__v2_0
+   CLC
+   SBC   __zpabi_check__v5
+   LDA   __zpabi_check__v2_1
+   SBC   __local_check__2
+   LDA   __zpabi_check__v2_2
+   SBC   __local_check__1
+   LDA   __zpabi_check__v2_3
+   SBC   __local_check__0
+   LDA   #$00
+   ROL
+   STA   __local_check__6
+   LDA   #$00
+   BPL   .sx_done@8
+   LDA   #$FF
+.sx_done@8:
+   STA   __local_check__5
+   STA   __local_check__4
+   STA   __local_check__3
+   STA   __local_check__2
+   STA   __local_check__1
+   LDA   __local_check__6
+   STA   __local_check__7
+   LDA   __local_check__5
+   AND   #$3F
+   STA   __local_check__0
+   LDA   #$FE
+   EOR   __local_check__7
+   STA   __local_check__15
+   LDA   #$FF
+   EOR   __local_check__5
+   STA   __local_check__13
+   LDA   #$FF
+   EOR   __local_check__4
+   STA   __local_check__12
+   LDA   #$FF
+   EOR   __local_check__3
+   STA   __local_check__11
+   LDA   #$FF
+   EOR   __local_check__2
+   STA   __local_check__10
+   LDA   #$FF
+   EOR   __local_check__1
+   STA   __local_check__9
+   LDA   #$3F
+   EOR   __local_check__0
+   STA   __local_check__8
+   LDA   #$01
+   CLC
+   ADC   __zpabi_check__v5
+   STA   __local_check__1
+   LDA   #$00
+   ADC   __local_check__16
+   STA   __local_check__0
+   SEC
+   LDA   #$00
+   SBC   __local_check__1
+   STA   __local_check__7
+   LDA   #$00
+   SBC   __local_check__0
+   STA   __local_check__6
+   BMI   .sx_neg@9
+   LDA   #$00
+   BEQ   .sx_done@10
+.sx_neg@9:
+   LDA   #$FF
+.sx_done@10:
+   STA   __local_check__5
+   STA   __local_check__4
+   STA   __local_check__3
+   STA   __local_check__2
+   STA   __local_check__1
+   AND   #$3F
+   STA   __local_check__0
+   LDA   __local_check__8
+   CMP   __local_check__0
+   BNE   .cmp_true@11
+   LDA   __local_check__9
+   CMP   __local_check__1
+   BNE   .cmp_true@11
+   LDA   __local_check__10
+   CMP   __local_check__2
+   BNE   .cmp_true@11
+   LDA   __local_check__11
+   CMP   __local_check__3
+   BNE   .cmp_true@11
+   LDA   __local_check__12
+   CMP   __local_check__4
+   BNE   .cmp_true@11
+   LDA   __local_check__13
+   CMP   __local_check__5
+   BNE   .cmp_true@11
+   LDA   #$FF
+   CMP   __local_check__6
+   BNE   .cmp_true@11
+   LDA   __local_check__15
+   CMP   __local_check__7
+   BNE   .cmp_true@11
+   LDA   #$00
+   BEQ   .cmp_end@12
+.cmp_true@11:
+   LDA   #$01
+.cmp_end@12:
+   STA   __local_check__0
+   LDA   #$00
+   BNE   .jcmp_skip@14
+   LDA   __local_check__0
+   CMP   #$01
+   BEQ   .if_end@3
+.jcmp_skip@14:
+   LDA   __local_check__fail_0
+   ORA   #$08
+   STA   __local_check__fail_0
+.if_end@3:
+   LDA   __zpabi_check__v2_0
+   ORA   __zpabi_check__v2_1
+   ORA   __zpabi_check__v2_2
+   ORA   __zpabi_check__v2_3
+   BEQ   .if_end@4
+   LDA   __local_check__fail_0
+   ORA   #$10
+   STA   __local_check__fail_0
+.if_end@4:
+   LDA   __zpabi_check__v1_0
+   SEC
+   SBC   __local_check__v0
+   LDA   __zpabi_check__v1_1
+   SBC   #$00
+   BVC   .cmp_novf@15
+   EOR   #$80
+.cmp_novf@15:
+   ASL
+   LDA   #$00
+   ROL
+   STA   __local_check__1
+   LDA   __zpabi_check__v1_1
+   BNE   .cmp_true@16
+   LDA   __zpabi_check__v1_0
+   BNE   .cmp_true@16
+   LDA   #$00
+   BEQ   .cmp_end@17
+.cmp_true@16:
+   LDA   #$01
+.cmp_end@17:
+   AND   __local_check__1
+   STA   __local_check__4
+   LDA   __local_check__v0
+   CMP   #$80
+   BEQ   .cmp_true@19
+   LDA   #$00
+   BEQ   .cmp_end@20
+.cmp_true@19:
+   LDA   #$01
+.cmp_end@20:
+   STA   __local_check__2
+   LDA   #$00
+   BPL   .sx_done@22
+   LDA   #$FF
+.sx_done@22:
+   STA   __local_check__1
+   STA   __local_check__0
+   LDA   __local_check__2
+   CLC
+   SBC   #$00
+   LDA   #$00
+   SBC   #$00
+   LDA   __local_check__1
+   SBC   #$00
+   LDA   __local_check__0
+   SBC   #$00
+   LDA   #$00
+   ROL
+   STA   HARGS+2
+   LDA   __local_check__4
+   STA   HARGS
+   LDA   #$00
+   STA   HARGS+1
+   STA   HARGS+3
+   JSR   mul16
+   LDA   HARGS+4
+   ORA   HARGS+5
+   BEQ   .if_end@6
+   LDA   __local_check__fail_0
+   ORA   #$40
+   STA   __local_check__fail_0
+.if_end@6:
+   LDA   __local_check__v0
+   BEQ   .if_end@7
+   LDA   __local_check__fail_0
+   ORA   #$80
+   STA   __local_check__fail_0
+.if_end@7:
+   LDX   __local_check__fail_1
+   LDA   __local_check__fail_0
+   RTS
+.check@asm_ssa_split@0:
+   LDA   #$00
+   STA   __local_check__fail_0
+   STA   __local_check__fail_1
+   JMP   .if_end@0
+
+main:
+   SUBROUTINE
+
+   LDA   #$01
+   STA   __zpabi_check__v1_0
+   LDA   #$06
+   STA   __zpabi_check__v4_0
+   LDA   #$00
+   STA   __zpabi_check__v1_1
+   STA   __zpabi_check__v2_0
+   STA   __zpabi_check__v2_1
+   STA   __zpabi_check__v2_2
+   STA   __zpabi_check__v2_3
+   STA   __zpabi_check__v3_0
+   STA   __zpabi_check__v3_1
+   STA   __zpabi_check__v4_1
+   STA   __zpabi_check__v4_2
+   STA   __zpabi_check__v4_3
+   LDY   #$0C
+   STY   __zpabi_check__v5
+   JMP   check

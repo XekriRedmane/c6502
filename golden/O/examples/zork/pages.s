@@ -1,0 +1,501 @@
+HARGS	EQU	$00
+SSP	EQU	$01
+FP	EQU	$03
+DPTR	EQU	$05
+__monitor_zp_1f	EQU	$1F
+WNDLFT	EQU	$20
+WNDWDTH	EQU	$21
+WNDTOP	EQU	$22
+WNDBTM	EQU	$23
+CH	EQU	$24
+CV	EQU	$25
+GBAS	EQU	$26
+BAS	EQU	$28
+__monitor_bas2	EQU	$2A
+__monitor_zp_2c	EQU	$2C
+__dos_zp_2f	EQU	$2F
+COLOR	EQU	$30
+__dos_zp_31	EQU	$31
+INVFLG	EQU	$32
+PROMPT	EQU	$33
+__dos_zp_34	EQU	$34
+__monitor_ysav1	EQU	$35
+CSW	EQU	$36
+KSW	EQU	$38
+__dos_zp_3a	EQU	$3A
+__monitor_acc	EQU	$45
+__dos_zp_46	EQU	$46
+__monitor_status	EQU	$48
+__dos_zp_49	EQU	$49
+RND	EQU	$4E
+SECTORS_PER_TRACK	EQU	$7F
+CURR_OPCODE	EQU	$80
+OPERAND_COUNT	EQU	$81
+OPERANDS	EQU	$82
+Z_PC	EQU	$8A
+ZCODE_PAGE_ADDR	EQU	$8D
+ZCODE_PAGE_VALID	EQU	$8F
+PAGE_TABLE_INDEX	EQU	$90
+Z_PC2	EQU	$91
+ZCODE_PAGE_ADDR2	EQU	$94
+ZCODE_PAGE_VALID2	EQU	$96
+PAGE_TABLE_INDEX2	EQU	$97
+GLOBAL_ZVARS_ADDR	EQU	$98
+LOCAL_ZVARS	EQU	$9A
+HIGH_MEM_ADDR	EQU	$B8
+Z_HEADER_ADDR	EQU	$BA
+NUM_IMAGE_PAGES	EQU	$BC
+NUM_PAGE_TABLE_ENTRIES	EQU	$BD
+FIRST_Z_PAGE	EQU	$BE
+LAST_Z_PAGE	EQU	$BF
+PAGE_L_TABLE	EQU	$C0
+PAGE_H_TABLE	EQU	$C2
+NEXT_PAGE_TABLE	EQU	$C4
+PREV_PAGE_TABLE	EQU	$C6
+STACK_COUNT	EQU	$C8
+Z_SP	EQU	$C9
+FRAME_Z_SP	EQU	$CB
+FRAME_STACK_COUNT	EQU	$CD
+SHIFT_ALPHABET	EQU	$CE
+LOCKED_ALPHABET	EQU	$CF
+ZDECOMPRESS_STATE	EQU	$D0
+ZCHARS	EQU	$D1
+ZCHAR_SCRATCH1	EQU	$D3
+ZCHAR_SCRATCH2	EQU	$DA
+__zpabi_cout_string__s_0	EQU	$E0
+__zpabi_print_ascii_string__s_0	EQU	$E0
+__local_get_next_code_word__1	EQU	$E1
+__zpabi_cout_string__s_1	EQU	$E1
+__zpabi_print_ascii_string__s_1	EQU	$E1
+Z_ABBREV_TABLE	EQU	$E2
+__local_get_next_code_byte2__page	EQU	$E5
+__local_get_next_code_byte__page	EQU	$E5
+__local_set_page_first__0	EQU	$E8
+__local_set_page_first__prev_first	EQU	$E9
+BUFF_END	EQU	$EB
+BUFF_LINE_LEN	EQU	$EC
+CURR_LINE	EQU	$ED
+PRINTER_CSW	EQU	$EE
+__local_find_index_of_page_table__page_1	EQU	$F2
+__local_find_index_of_page_table__page_0	EQU	$F3
+BUFF_AREA	EQU	$0200
+SLOT1_SCRATCH	EQU	$0779
+restart	EQU	$0800
+RWTS	EQU	$2900
+VTAB	EQU	$FC22
+HOME	EQU	$FC58
+CLREOL	EQU	$FC9C
+WAIT	EQU	$FCA8
+RDKEY	EQU	$FD0C
+GETLN1	EQU	$FD6F
+COUT	EQU	$FDED
+COUT1	EQU	$FDF0
+
+; @zp-link-meta-begin
+; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__page_1,__local_find_index_of_page_table__page_0 indirect=false in_cycle=false param_regs=A,X carry=true
+; def get_next_code_byte params= locals=__local_get_next_code_byte__found_1,__local_get_next_code_byte__page,__local_get_next_code_byte__found_0,__local_get_next_code_byte__0 indirect=false in_cycle=false
+; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page,__local_get_next_code_byte2__found_0,__local_get_next_code_byte2__0 indirect=false in_cycle=false
+; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
+; def load_address params=__zpabi_load_address__addr_0,__zpabi_load_address__addr_1 locals=__local_load_address__addr_1 indirect=false in_cycle=false param_regs=A,X
+; def load_packed_address params=__zpabi_load_packed_address__addr_0,__zpabi_load_packed_address__addr_1 locals=__local_load_packed_address__addr_1 indirect=false in_cycle=false param_regs=A,X
+; def set_page_first params=__zpabi_set_page_first__slot locals=__local_set_page_first__0,__local_set_page_first__prev_first indirect=false in_cycle=false param_regs=A
+; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
+; ext CLREOL params=
+; ext COUT params=__zpabi_COUT__c param_regs=A
+; ext COUT1 params=__zpabi_COUT1__c param_regs=A
+; ext GETLN1 params=
+; ext HOME params=
+; ext RDKEY params=
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A carry=true
+; ext VTAB params=
+; ext WAIT params=__zpabi_WAIT__a param_regs=A
+; ext branch params=__zpabi_branch__condition param_regs=A
+; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
+; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
+; ext do_instruction params=
+; ext dump_buffer_line params=
+; ext dump_buffer_to_printer params=
+; ext dump_buffer_to_screen params=
+; ext dump_buffer_with_more params=
+; ext get_alphabet params=
+; ext get_next_zchar params= carry=true
+; ext home params=
+; ext inc_sector_and_read params= carry=true
+; ext inc_sector_and_write params= carry=true
+; ext instr_clear_attr params=
+; ext instr_div params=
+; ext instr_get_child params=
+; ext instr_get_next_prop params=
+; ext instr_get_parent params=
+; ext instr_get_prop params=
+; ext instr_get_prop_addr params=
+; ext instr_get_prop_len params=
+; ext instr_get_sibling params=
+; ext instr_insert_obj params=
+; ext instr_jin params=
+; ext instr_mod params=
+; ext instr_mul params=
+; ext instr_put_prop params=
+; ext instr_quit params=
+; ext instr_random params=
+; ext instr_remove_obj params=
+; ext instr_restart params=
+; ext instr_restore params=
+; ext instr_save params=
+; ext instr_set_attr params=
+; ext instr_sread params=
+; ext instr_test_attr params=
+; ext internal_error params=
+; ext new_line params=
+; ext please_insert_save_diskette params=
+; ext please_reinsert_game_diskette params=
+; ext print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count param_regs=,,X
+; ext print_number params=__zpabi_print_number__n_0,__zpabi_print_number__n_1 param_regs=A,X
+; ext print_obj params=__zpabi_print_obj__obj param_regs=A
+; ext print_status_line params=
+; ext print_string_literal params=
+; ext print_zstring params=
+; ext read_from_sector params= carry=true
+; ext read_next_sector params= carry=true
+; ext reset_window params=
+; ext restart params=
+; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1 param_regs=A,X
+; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1 param_regs=A,X
+; ext var_get params=__zpabi_var_get__var param_regs=A
+; ext write_next_sector params= carry=true
+; ext write_to_sector params= carry=true
+; call get_next_code_byte -> find_index_of_page_table
+; call get_next_code_byte -> read_from_sector
+; call get_next_code_byte -> set_page_first
+; call get_next_code_byte2 -> find_index_of_page_table
+; call get_next_code_byte2 -> read_from_sector
+; call get_next_code_byte2 -> set_page_first
+; call get_next_code_word -> get_next_code_byte2
+; item set_page_first section=.text local=true zero=false
+; item find_index_of_page_table section=.text local=true zero=false
+; item get_next_code_byte section=.text local=false zero=false
+; item get_next_code_byte@run0 section=.text local=true zero=false
+; item load_address section=.text local=false zero=false
+; item load_packed_address section=.text local=false zero=false
+; item get_next_code_word section=.text local=false zero=false
+; item get_next_code_byte2 section=.text local=false zero=false
+; zp __monitor_zp_1f size=1 at=$1F def=false init=
+; zp WNDLFT size=1 at=$20 def=false init=
+; zp WNDWDTH size=1 at=$21 def=false init=
+; zp WNDTOP size=1 at=$22 def=false init=
+; zp WNDBTM size=1 at=$23 def=false init=
+; zp CH size=1 at=$24 def=false init=
+; zp CV size=1 at=$25 def=false init=
+; zp GBAS size=2 at=$26 def=false init=
+; zp BAS size=2 at=$28 def=false init=
+; zp __monitor_bas2 size=2 at=$2A def=false init=
+; zp __monitor_zp_2c size=3 at=$2C def=false init=
+; zp __dos_zp_2f size=1 at=$2F def=false init=
+; zp COLOR size=1 at=$30 def=false init=
+; zp __dos_zp_31 size=1 at=$31 def=false init=
+; zp INVFLG size=1 at=$32 def=false init=
+; zp PROMPT size=1 at=$33 def=false init=
+; zp __dos_zp_34 size=1 at=$34 def=false init=
+; zp __monitor_ysav1 size=1 at=$35 def=false init=
+; zp CSW size=2 at=$36 def=false init=
+; zp KSW size=2 at=$38 def=false init=
+; zp __dos_zp_3a size=11 at=$3A def=false init=
+; zp __monitor_acc size=1 at=$45 def=false init=
+; zp __dos_zp_46 size=2 at=$46 def=false init=
+; zp __monitor_status size=1 at=$48 def=false init=
+; zp __dos_zp_49 size=5 at=$49 def=false init=
+; zp RND size=2 at=$4E def=false init=
+; zp SECTORS_PER_TRACK size=1 at=$7F def=false init=
+; zp CURR_OPCODE size=1 at=$80 def=false init=
+; zp OPERAND_COUNT size=1 at=$81 def=false init=
+; zp OPERANDS size=8 at=$82 def=false init=
+; zp Z_PC size=3 at=$8A def=false init=
+; zp ZCODE_PAGE_ADDR size=2 at=$8D def=false init=
+; zp ZCODE_PAGE_VALID size=1 at=$8F def=false init=
+; zp PAGE_TABLE_INDEX size=1 at=$90 def=false init=
+; zp Z_PC2 size=3 at=$91 def=false init=
+; zp ZCODE_PAGE_ADDR2 size=2 at=$94 def=false init=
+; zp ZCODE_PAGE_VALID2 size=1 at=$96 def=false init=
+; zp PAGE_TABLE_INDEX2 size=1 at=$97 def=false init=
+; zp GLOBAL_ZVARS_ADDR size=2 at=$98 def=false init=
+; zp LOCAL_ZVARS size=30 at=$9A def=false init=
+; zp HIGH_MEM_ADDR size=2 at=$B8 def=false init=
+; zp Z_HEADER_ADDR size=2 at=$BA def=false init=
+; zp NUM_IMAGE_PAGES size=1 at=$BC def=false init=
+; zp NUM_PAGE_TABLE_ENTRIES size=1 at=$BD def=false init=
+; zp FIRST_Z_PAGE size=1 at=$BE def=false init=
+; zp LAST_Z_PAGE size=1 at=$BF def=false init=
+; zp PAGE_L_TABLE size=2 at=$C0 def=false init=
+; zp PAGE_H_TABLE size=2 at=$C2 def=false init=
+; zp NEXT_PAGE_TABLE size=2 at=$C4 def=false init=
+; zp PREV_PAGE_TABLE size=2 at=$C6 def=false init=
+; zp STACK_COUNT size=1 at=$C8 def=false init=
+; zp Z_SP size=2 at=$C9 def=false init=
+; zp FRAME_Z_SP size=2 at=$CB def=false init=
+; zp FRAME_STACK_COUNT size=1 at=$CD def=false init=
+; zp SHIFT_ALPHABET size=1 at=$CE def=false init=
+; zp LOCKED_ALPHABET size=1 at=$CF def=false init=
+; zp ZDECOMPRESS_STATE size=1 at=$D0 def=false init=
+; zp ZCHARS size=2 at=$D1 def=false init=
+; zp ZCHAR_SCRATCH1 size=7 at=$D3 def=false init=
+; zp ZCHAR_SCRATCH2 size=6 at=$DA def=false init=
+; zp Z_ABBREV_TABLE size=2 at=$E2 def=false init=
+; zp BUFF_END size=1 at=$EB def=false init=
+; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
+; zp CURR_LINE size=1 at=$ED def=false init=
+; zp PRINTER_CSW size=2 at=$EE def=false init=
+; zp disk_buffer size=2 at=auto def=false init=
+; zp disk_sector size=2 at=auto def=false init=
+; runtime hargs_size=1 hargs_need=0
+; @zp-link-meta-end
+
+set_page_first:
+   SUBROUTINE
+
+   TAY
+   CPY   FIRST_Z_PAGE
+   BNE   .if_end@0
+   RTS
+.if_end@0:
+   LDA   FIRST_Z_PAGE
+   STA   __local_set_page_first__prev_first
+   STY   FIRST_Z_PAGE
+   LDA   (NEXT_PAGE_TABLE),Y
+   STA   __local_set_page_first__0
+   LDA   __local_set_page_first__prev_first
+   STA   (NEXT_PAGE_TABLE),Y
+   LDA   (PREV_PAGE_TABLE),Y
+   TAX
+   LDA   #$FF
+   STA   (PREV_PAGE_TABLE),Y
+   TXA
+   TAY
+   LDA   __local_set_page_first__0
+   STA   (NEXT_PAGE_TABLE),Y
+   LDA   FIRST_Z_PAGE
+   LDY   __local_set_page_first__prev_first
+   STA   (PREV_PAGE_TABLE),Y
+   LDA   __local_set_page_first__0
+   CMP   #$FF
+   BNE   .if_else@2
+   STX   LAST_Z_PAGE
+   RTS
+.if_else@2:
+   TXA
+   LDY   __local_set_page_first__0
+   STA   (PREV_PAGE_TABLE),Y
+   RTS
+
+find_index_of_page_table:
+   SUBROUTINE
+
+   STA   __local_find_index_of_page_table__page_0
+   STX   __local_find_index_of_page_table__page_1
+   LDX   NUM_PAGE_TABLE_ENTRIES
+   LDY   #$00
+.loop@0_start:
+   CMP   (PAGE_L_TABLE),Y
+   BNE   .if_end@5
+   LDA   (PAGE_H_TABLE),Y
+   CMP   __local_find_index_of_page_table__page_1
+   BNE   .find_index_of_page_table@lia@1
+   CLC
+   TYA
+   RTS
+.find_index_of_page_table@lia@1:
+   LDA   __local_find_index_of_page_table__page_0
+.if_end@5:
+   INY
+   DEX
+   BNE   .loop@0_start
+   SEC
+   LDA   LAST_Z_PAGE
+   RTS
+
+get_next_code_byte:
+   SUBROUTINE
+
+.loop@1_start:
+   LDA   ZCODE_PAGE_VALID
+   BEQ   .if_end@6
+   LDY   Z_PC
+   INC   Z_PC
+   BNE   .if_end@7
+   INC   Z_PC+1
+   LDA   Z_PC
+   LDX   #$00
+   STX   ZCODE_PAGE_VALID
+   ORA   Z_PC+1
+   BNE   .if_end@8
+   INC   Z_PC+2
+.if_end@8:
+.if_end@7:
+   LDA   (ZCODE_PAGE_ADDR),Y
+   RTS
+.if_end@6:
+   LDA   Z_PC+1
+   STA   __local_get_next_code_byte__page
+   LDA   Z_PC+2
+   BNE   .if_else@12
+   LDA   __local_get_next_code_byte__page
+   CMP   NUM_IMAGE_PAGES
+   BCC   .vthread@0
+.if_else@12:
+   LDX   Z_PC+2
+   LDA   __local_get_next_code_byte__page
+   JSR   find_index_of_page_table
+   STA   PAGE_TABLE_INDEX
+   BCC   .if_end@13
+   CMP   PAGE_TABLE_INDEX2
+   BNE   .if_end@14
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+.if_end@14:
+   LDA   __local_get_next_code_byte__page
+   STA   disk_sector
+   LDA   Z_PC+2
+   JSR   get_next_code_byte@run0
+   ADC   PAGE_TABLE_INDEX
+   STA   disk_buffer+1
+   JSR   read_from_sector
+   BCC   .if_end@15
+   JMP   restart
+.if_end@15:
+   LDA   __local_get_next_code_byte__page
+   LDY   PAGE_TABLE_INDEX
+   STA   (PAGE_L_TABLE),Y
+   LDA   Z_PC+2
+   LDY   PAGE_TABLE_INDEX
+   STA   (PAGE_H_TABLE),Y
+.if_end@13:
+   LDA   PAGE_TABLE_INDEX
+   JSR   set_page_first
+   LDA   PAGE_TABLE_INDEX
+   CLC
+   ADC   NUM_IMAGE_PAGES
+   CLC
+.vthread@0:
+   ADC   Z_HEADER_ADDR+1
+   STA   ZCODE_PAGE_ADDR+1
+   LDA   #$00
+   STA   ZCODE_PAGE_ADDR
+   LDA   #$FF
+   STA   ZCODE_PAGE_VALID
+   JMP   .loop@1_start
+
+get_next_code_byte@run0:
+   SUBROUTINE
+
+   STA   disk_sector+1
+   LDA   HIGH_MEM_ADDR
+   CLC
+   STA   disk_buffer
+   LDA   HIGH_MEM_ADDR+1
+   RTS
+
+load_address:
+   SUBROUTINE
+
+   STA   Z_PC2
+   STX   Z_PC2+1
+   LDA   #$00
+   STA   Z_PC2+2
+   STA   ZCODE_PAGE_VALID2
+   RTS
+
+load_packed_address:
+   SUBROUTINE
+
+   ASL
+   STA   Z_PC2
+   TXA
+   ROL
+   STA   Z_PC2+1
+   TXA
+   ASL
+   LDA   #$00
+   ROL
+   STA   Z_PC2+2
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   RTS
+
+get_next_code_word:
+   SUBROUTINE
+
+   JSR   get_next_code_byte2
+   STA   __local_get_next_code_word__1
+   JSR   get_next_code_byte2
+   LDX   __local_get_next_code_word__1
+   RTS
+
+get_next_code_byte2:
+   SUBROUTINE
+
+.loop@2_start:
+   LDA   ZCODE_PAGE_VALID2
+   BEQ   .if_end@16
+   LDY   Z_PC2
+   INC   Z_PC2
+   BNE   .if_end@17
+   INC   Z_PC2+1
+   LDA   Z_PC2
+   LDX   #$00
+   STX   ZCODE_PAGE_VALID2
+   ORA   Z_PC2+1
+   BNE   .if_end@18
+   INC   Z_PC2+2
+.if_end@18:
+.if_end@17:
+   LDA   (ZCODE_PAGE_ADDR2),Y
+   RTS
+.if_end@16:
+   LDA   Z_PC2+1
+   STA   __local_get_next_code_byte2__page
+   LDA   Z_PC2+2
+   BNE   .if_else@22
+   LDA   __local_get_next_code_byte2__page
+   CMP   NUM_IMAGE_PAGES
+   BCC   .vthread@1
+.if_else@22:
+   LDX   Z_PC2+2
+   LDA   __local_get_next_code_byte2__page
+   JSR   find_index_of_page_table
+   STA   PAGE_TABLE_INDEX2
+   BCC   .if_end@23
+   CMP   PAGE_TABLE_INDEX
+   BNE   .if_end@24
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID
+.if_end@24:
+   LDA   __local_get_next_code_byte2__page
+   STA   disk_sector
+   LDA   Z_PC2+2
+   JSR   get_next_code_byte@run0
+   ADC   PAGE_TABLE_INDEX2
+   STA   disk_buffer+1
+   JSR   read_from_sector
+   BCC   .if_end@25
+   JMP   restart
+.if_end@25:
+   LDA   __local_get_next_code_byte2__page
+   LDY   PAGE_TABLE_INDEX2
+   STA   (PAGE_L_TABLE),Y
+   LDA   Z_PC2+2
+   LDY   PAGE_TABLE_INDEX2
+   STA   (PAGE_H_TABLE),Y
+.if_end@23:
+   LDA   PAGE_TABLE_INDEX2
+   JSR   set_page_first
+   LDA   PAGE_TABLE_INDEX2
+   CLC
+   ADC   NUM_IMAGE_PAGES
+   CLC
+.vthread@1:
+   ADC   Z_HEADER_ADDR+1
+   STA   ZCODE_PAGE_ADDR2+1
+   LDA   #$00
+   STA   ZCODE_PAGE_ADDR2
+   LDA   #$FF
+   STA   ZCODE_PAGE_VALID2
+   JMP   .loop@2_start

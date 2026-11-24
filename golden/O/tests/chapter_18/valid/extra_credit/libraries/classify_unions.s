@@ -1,0 +1,3334 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
+__zpabi_malloc__size_0	EQU	$80
+__zpabi_pass_borderline_union__i2_0	EQU	$80
+__zpabi_pass_gp_union_in_memory__two_xmm_0	EQU	$80
+__zpabi_pass_in_mem_first__mem_0	EQU	$80
+__zpabi_pass_mixed_reg_in_memory__d1_0	EQU	$80
+__zpabi_pass_uneven_union_in_memory__i2_0	EQU	$80
+__zpabi_pass_unions_and_structs__i2_0	EQU	$80
+__zpabi_test_char_arr__u_0	EQU	$80
+__zpabi_test_char_int_mixed__u_0	EQU	$80
+__zpabi_test_contains_large_struct__u_0	EQU	$80
+__zpabi_test_contains_union_array__u_0	EQU	$80
+__zpabi_test_dbl_struct__s_0	EQU	$80
+__zpabi_test_gp_and_xmm__u_0	EQU	$80
+__zpabi_test_has_dbl_struct__u_0	EQU	$80
+__zpabi_test_has_nine_byte_struct__u_0	EQU	$80
+__zpabi_test_has_other_unions__u_0	EQU	$80
+__zpabi_test_has_small_struct_array__u_0	EQU	$80
+__zpabi_test_has_struct_with_double__u_0	EQU	$80
+__zpabi_test_has_struct_with_ints__u_0	EQU	$80
+__zpabi_test_has_two_unions__s_0	EQU	$80
+__zpabi_test_has_uneven_union__s_0	EQU	$80
+__zpabi_test_has_union__s_0	EQU	$80
+__zpabi_test_has_union_with_double__s_0	EQU	$80
+__zpabi_test_has_xmm_union__u_0	EQU	$80
+__zpabi_test_lotsa_chars__u_0	EQU	$80
+__zpabi_test_lotsa_doubles__u_0	EQU	$80
+__zpabi_test_one_double__u_0	EQU	$80
+__zpabi_test_one_int__u_0	EQU	$80
+__zpabi_test_one_int_nested__u_0	EQU	$80
+__zpabi_test_scalar_and_struct__u_0	EQU	$80
+__zpabi_test_small_struct_arr_and_dbl__u_0	EQU	$80
+__zpabi_test_two_arrs__u_0	EQU	$80
+__zpabi_test_two_doubles__u_0	EQU	$80
+__zpabi_test_two_eightbyte_has_struct__u_0	EQU	$80
+__zpabi_test_two_structs__u_0	EQU	$80
+__zpabi_test_uneven_union_array__u_0	EQU	$80
+__zpabi_test_union_array__u_0	EQU	$80
+__zpabi_test_xmm_and_gp__u_0	EQU	$80
+__zpabi_test_xmm_and_gp_nested__u_0	EQU	$80
+__zpabi_malloc__size_1	EQU	$81
+__zpabi_pass_borderline_union__i2_1	EQU	$81
+__zpabi_pass_gp_union_in_memory__two_xmm_1	EQU	$81
+__zpabi_pass_in_mem_first__mem_1	EQU	$81
+__zpabi_pass_mixed_reg_in_memory__d1_1	EQU	$81
+__zpabi_pass_uneven_union_in_memory__i2_1	EQU	$81
+__zpabi_pass_unions_and_structs__i2_1	EQU	$81
+__zpabi_test_char_arr__u_1	EQU	$81
+__zpabi_test_char_int_mixed__u_1	EQU	$81
+__zpabi_test_contains_large_struct__u_1	EQU	$81
+__zpabi_test_contains_union_array__u_1	EQU	$81
+__zpabi_test_dbl_struct__s_1	EQU	$81
+__zpabi_test_gp_and_xmm__u_1	EQU	$81
+__zpabi_test_has_dbl_struct__u_1	EQU	$81
+__zpabi_test_has_nine_byte_struct__u_1	EQU	$81
+__zpabi_test_has_other_unions__u_1	EQU	$81
+__zpabi_test_has_small_struct_array__u_1	EQU	$81
+__zpabi_test_has_struct_with_double__u_1	EQU	$81
+__zpabi_test_has_struct_with_ints__u_1	EQU	$81
+__zpabi_test_has_two_unions__s_1	EQU	$81
+__zpabi_test_has_uneven_union__s_1	EQU	$81
+__zpabi_test_has_union__s_1	EQU	$81
+__zpabi_test_has_union_with_double__s_1	EQU	$81
+__zpabi_test_has_xmm_union__u_1	EQU	$81
+__zpabi_test_lotsa_chars__u_1	EQU	$81
+__zpabi_test_lotsa_doubles__u_1	EQU	$81
+__zpabi_test_one_double__u_1	EQU	$81
+__zpabi_test_one_int__u_1	EQU	$81
+__zpabi_test_one_int_nested__u_1	EQU	$81
+__zpabi_test_scalar_and_struct__u_1	EQU	$81
+__zpabi_test_small_struct_arr_and_dbl__u_1	EQU	$81
+__zpabi_test_two_arrs__u_1	EQU	$81
+__zpabi_test_two_doubles__u_1	EQU	$81
+__zpabi_test_two_eightbyte_has_struct__u_1	EQU	$81
+__zpabi_test_two_structs__u_1	EQU	$81
+__zpabi_test_uneven_union_array__u_1	EQU	$81
+__zpabi_test_union_array__u_1	EQU	$81
+__zpabi_test_xmm_and_gp__u_1	EQU	$81
+__zpabi_test_xmm_and_gp_nested__u_1	EQU	$81
+__zpabi_malloc__size_2	EQU	$82
+__zpabi_pass_borderline_union__i3_0	EQU	$82
+__zpabi_pass_gp_union_in_memory__two_xmm_2	EQU	$82
+__zpabi_pass_in_mem_first__mem_2	EQU	$82
+__zpabi_pass_mixed_reg_in_memory__d1_2	EQU	$82
+__zpabi_pass_uneven_union_in_memory__i3_0	EQU	$82
+__zpabi_pass_unions_and_structs__one_gp_struct_0	EQU	$82
+__zpabi_test_char_arr__u_2	EQU	$82
+__zpabi_test_char_int_mixed__u_2	EQU	$82
+__zpabi_test_contains_large_struct__u_2	EQU	$82
+__zpabi_test_contains_union_array__u_2	EQU	$82
+__zpabi_test_dbl_struct__s_2	EQU	$82
+__zpabi_test_gp_and_xmm__u_2	EQU	$82
+__zpabi_test_has_dbl_struct__u_2	EQU	$82
+__zpabi_test_has_nine_byte_struct__u_2	EQU	$82
+__zpabi_test_has_other_unions__u_2	EQU	$82
+__zpabi_test_has_small_struct_array__u_2	EQU	$82
+__zpabi_test_has_struct_with_double__u_2	EQU	$82
+__zpabi_test_has_struct_with_ints__u_2	EQU	$82
+__zpabi_test_has_two_unions__s_2	EQU	$82
+__zpabi_test_has_uneven_union__s_2	EQU	$82
+__zpabi_test_has_union__s_2	EQU	$82
+__zpabi_test_has_union_with_double__s_2	EQU	$82
+__zpabi_test_has_xmm_union__u_2	EQU	$82
+__zpabi_test_lotsa_chars__u_2	EQU	$82
+__zpabi_test_lotsa_doubles__u_2	EQU	$82
+__zpabi_test_one_double__u_2	EQU	$82
+__zpabi_test_one_int__u_2	EQU	$82
+__zpabi_test_one_int_nested__u_2	EQU	$82
+__zpabi_test_scalar_and_struct__u_2	EQU	$82
+__zpabi_test_small_struct_arr_and_dbl__u_2	EQU	$82
+__zpabi_test_two_arrs__u_2	EQU	$82
+__zpabi_test_two_doubles__u_2	EQU	$82
+__zpabi_test_two_eightbyte_has_struct__u_2	EQU	$82
+__zpabi_test_two_structs__u_2	EQU	$82
+__zpabi_test_uneven_union_array__u_2	EQU	$82
+__zpabi_test_union_array__u_2	EQU	$82
+__zpabi_test_xmm_and_gp__u_2	EQU	$82
+__zpabi_test_xmm_and_gp_nested__u_2	EQU	$82
+__zpabi_malloc__size_3	EQU	$83
+__zpabi_pass_borderline_union__i3_1	EQU	$83
+__zpabi_pass_gp_union_in_memory__two_xmm_3	EQU	$83
+__zpabi_pass_in_mem_first__mem_3	EQU	$83
+__zpabi_pass_mixed_reg_in_memory__d1_3	EQU	$83
+__zpabi_pass_uneven_union_in_memory__i3_1	EQU	$83
+__zpabi_pass_unions_and_structs__one_gp_struct_1	EQU	$83
+__zpabi_test_char_arr__u_3	EQU	$83
+__zpabi_test_char_int_mixed__u_3	EQU	$83
+__zpabi_test_contains_large_struct__u_3	EQU	$83
+__zpabi_test_contains_union_array__u_3	EQU	$83
+__zpabi_test_dbl_struct__s_3	EQU	$83
+__zpabi_test_gp_and_xmm__u_3	EQU	$83
+__zpabi_test_has_dbl_struct__u_3	EQU	$83
+__zpabi_test_has_nine_byte_struct__u_3	EQU	$83
+__zpabi_test_has_other_unions__u_3	EQU	$83
+__zpabi_test_has_small_struct_array__u_3	EQU	$83
+__zpabi_test_has_struct_with_double__u_3	EQU	$83
+__zpabi_test_has_struct_with_ints__u_3	EQU	$83
+__zpabi_test_has_two_unions__s_3	EQU	$83
+__zpabi_test_has_uneven_union__s_3	EQU	$83
+__zpabi_test_has_union__s_3	EQU	$83
+__zpabi_test_has_union_with_double__s_3	EQU	$83
+__zpabi_test_has_xmm_union__u_3	EQU	$83
+__zpabi_test_lotsa_chars__u_3	EQU	$83
+__zpabi_test_lotsa_doubles__u_3	EQU	$83
+__zpabi_test_one_double__u_3	EQU	$83
+__zpabi_test_one_int__u_3	EQU	$83
+__zpabi_test_one_int_nested__u_3	EQU	$83
+__zpabi_test_scalar_and_struct__u_3	EQU	$83
+__zpabi_test_small_struct_arr_and_dbl__u_3	EQU	$83
+__zpabi_test_two_arrs__u_3	EQU	$83
+__zpabi_test_two_doubles__u_3	EQU	$83
+__zpabi_test_two_eightbyte_has_struct__u_3	EQU	$83
+__zpabi_test_two_structs__u_3	EQU	$83
+__zpabi_test_uneven_union_array__u_3	EQU	$83
+__zpabi_test_union_array__u_3	EQU	$83
+__zpabi_test_xmm_and_gp__u_3	EQU	$83
+__zpabi_test_xmm_and_gp_nested__u_3	EQU	$83
+__local_test_has_union__0	EQU	$84
+__zpabi_pass_borderline_union__i4_0	EQU	$84
+__zpabi_pass_gp_union_in_memory__two_xmm_4	EQU	$84
+__zpabi_pass_in_mem_first__mem_4	EQU	$84
+__zpabi_pass_mixed_reg_in_memory__d1_4	EQU	$84
+__zpabi_pass_uneven_union_in_memory__i4_0	EQU	$84
+__zpabi_pass_unions_and_structs__one_gp_struct_2	EQU	$84
+__zpabi_test_char_arr__u_4	EQU	$84
+__zpabi_test_char_int_mixed__u_4	EQU	$84
+__zpabi_test_contains_large_struct__u_4	EQU	$84
+__zpabi_test_contains_union_array__u_4	EQU	$84
+__zpabi_test_dbl_struct__s_4	EQU	$84
+__zpabi_test_gp_and_xmm__u_4	EQU	$84
+__zpabi_test_has_dbl_struct__u_4	EQU	$84
+__zpabi_test_has_nine_byte_struct__u_4	EQU	$84
+__zpabi_test_has_other_unions__u_4	EQU	$84
+__zpabi_test_has_small_struct_array__u_4	EQU	$84
+__zpabi_test_has_struct_with_double__u_4	EQU	$84
+__zpabi_test_has_struct_with_ints__u_4	EQU	$84
+__zpabi_test_has_two_unions__s_4	EQU	$84
+__zpabi_test_has_uneven_union__s_4	EQU	$84
+__zpabi_test_has_union_with_double__s_4	EQU	$84
+__zpabi_test_has_xmm_union__u_4	EQU	$84
+__zpabi_test_lotsa_chars__u_4	EQU	$84
+__zpabi_test_lotsa_doubles__u_4	EQU	$84
+__zpabi_test_one_double__u_4	EQU	$84
+__zpabi_test_one_int__u_4	EQU	$84
+__zpabi_test_one_int_nested__u_4	EQU	$84
+__zpabi_test_scalar_and_struct__u_4	EQU	$84
+__zpabi_test_small_struct_arr_and_dbl__u_4	EQU	$84
+__zpabi_test_two_arrs__u_4	EQU	$84
+__zpabi_test_two_doubles__u_4	EQU	$84
+__zpabi_test_two_eightbyte_has_struct__u_4	EQU	$84
+__zpabi_test_two_structs__u_4	EQU	$84
+__zpabi_test_uneven_union_array__u_4	EQU	$84
+__zpabi_test_union_array__u_4	EQU	$84
+__zpabi_test_xmm_and_gp__u_4	EQU	$84
+__zpabi_test_xmm_and_gp_nested__u_4	EQU	$84
+__local_test_has_union__1	EQU	$85
+__zpabi_pass_borderline_union__i4_1	EQU	$85
+__zpabi_pass_gp_union_in_memory__two_xmm_5	EQU	$85
+__zpabi_pass_in_mem_first__mem_5	EQU	$85
+__zpabi_pass_mixed_reg_in_memory__d1_5	EQU	$85
+__zpabi_pass_uneven_union_in_memory__i4_1	EQU	$85
+__zpabi_pass_unions_and_structs__one_gp_struct_3	EQU	$85
+__zpabi_test_char_arr__u_5	EQU	$85
+__zpabi_test_char_int_mixed__u_5	EQU	$85
+__zpabi_test_contains_large_struct__u_5	EQU	$85
+__zpabi_test_contains_union_array__u_5	EQU	$85
+__zpabi_test_dbl_struct__s_5	EQU	$85
+__zpabi_test_gp_and_xmm__u_5	EQU	$85
+__zpabi_test_has_dbl_struct__u_5	EQU	$85
+__zpabi_test_has_nine_byte_struct__u_5	EQU	$85
+__zpabi_test_has_other_unions__u_5	EQU	$85
+__zpabi_test_has_small_struct_array__u_5	EQU	$85
+__zpabi_test_has_struct_with_double__u_5	EQU	$85
+__zpabi_test_has_struct_with_ints__u_5	EQU	$85
+__zpabi_test_has_two_unions__s_5	EQU	$85
+__zpabi_test_has_uneven_union__s_5	EQU	$85
+__zpabi_test_has_union_with_double__s_5	EQU	$85
+__zpabi_test_has_xmm_union__u_5	EQU	$85
+__zpabi_test_lotsa_chars__u_5	EQU	$85
+__zpabi_test_lotsa_doubles__u_5	EQU	$85
+__zpabi_test_one_double__u_5	EQU	$85
+__zpabi_test_one_int__u_5	EQU	$85
+__zpabi_test_one_int_nested__u_5	EQU	$85
+__zpabi_test_scalar_and_struct__u_5	EQU	$85
+__zpabi_test_small_struct_arr_and_dbl__u_5	EQU	$85
+__zpabi_test_two_arrs__u_5	EQU	$85
+__zpabi_test_two_doubles__u_5	EQU	$85
+__zpabi_test_two_eightbyte_has_struct__u_5	EQU	$85
+__zpabi_test_two_structs__u_5	EQU	$85
+__zpabi_test_uneven_union_array__u_5	EQU	$85
+__zpabi_test_union_array__u_5	EQU	$85
+__zpabi_test_xmm_and_gp__u_5	EQU	$85
+__zpabi_test_xmm_and_gp_nested__u_5	EQU	$85
+__zpabi_pass_borderline_union__i5_0	EQU	$86
+__zpabi_pass_gp_union_in_memory__two_xmm_6	EQU	$86
+__zpabi_pass_in_mem_first__mem_6	EQU	$86
+__zpabi_pass_mixed_reg_in_memory__d1_6	EQU	$86
+__zpabi_pass_uneven_union_in_memory__i5_0	EQU	$86
+__zpabi_pass_unions_and_structs__d1_0	EQU	$86
+__zpabi_test_char_arr__u_6	EQU	$86
+__zpabi_test_char_int_mixed__u_6	EQU	$86
+__zpabi_test_contains_large_struct__u_6	EQU	$86
+__zpabi_test_contains_union_array__u_6	EQU	$86
+__zpabi_test_dbl_struct__s_6	EQU	$86
+__zpabi_test_gp_and_xmm__u_6	EQU	$86
+__zpabi_test_has_dbl_struct__u_6	EQU	$86
+__zpabi_test_has_nine_byte_struct__u_6	EQU	$86
+__zpabi_test_has_other_unions__u_6	EQU	$86
+__zpabi_test_has_small_struct_array__u_6	EQU	$86
+__zpabi_test_has_struct_with_double__u_6	EQU	$86
+__zpabi_test_has_struct_with_ints__u_6	EQU	$86
+__zpabi_test_has_two_unions__s_6	EQU	$86
+__zpabi_test_has_uneven_union__s_6	EQU	$86
+__zpabi_test_has_union_with_double__s_6	EQU	$86
+__zpabi_test_has_xmm_union__u_6	EQU	$86
+__zpabi_test_lotsa_chars__u_6	EQU	$86
+__zpabi_test_lotsa_doubles__u_6	EQU	$86
+__zpabi_test_one_double__u_6	EQU	$86
+__zpabi_test_one_int__u_6	EQU	$86
+__zpabi_test_one_int_nested__u_6	EQU	$86
+__zpabi_test_scalar_and_struct__u_6	EQU	$86
+__zpabi_test_small_struct_arr_and_dbl__u_6	EQU	$86
+__zpabi_test_two_arrs__u_6	EQU	$86
+__zpabi_test_two_doubles__u_6	EQU	$86
+__zpabi_test_two_eightbyte_has_struct__u_6	EQU	$86
+__zpabi_test_two_structs__u_6	EQU	$86
+__zpabi_test_uneven_union_array__u_6	EQU	$86
+__zpabi_test_union_array__u_6	EQU	$86
+__zpabi_test_xmm_and_gp__u_6	EQU	$86
+__zpabi_test_xmm_and_gp_nested__u_6	EQU	$86
+__local_test_char_int_mixed__0	EQU	$87
+__local_test_has_nine_byte_struct__0	EQU	$87
+__zpabi_pass_borderline_union__i5_1	EQU	$87
+__zpabi_pass_gp_union_in_memory__two_xmm_7	EQU	$87
+__zpabi_pass_in_mem_first__mem_7	EQU	$87
+__zpabi_pass_mixed_reg_in_memory__d1_7	EQU	$87
+__zpabi_pass_uneven_union_in_memory__i5_1	EQU	$87
+__zpabi_pass_unions_and_structs__d1_1	EQU	$87
+__zpabi_test_char_arr__u_7	EQU	$87
+__zpabi_test_contains_large_struct__u_7	EQU	$87
+__zpabi_test_contains_union_array__u_7	EQU	$87
+__zpabi_test_dbl_struct__s_7	EQU	$87
+__zpabi_test_gp_and_xmm__u_7	EQU	$87
+__zpabi_test_has_dbl_struct__u_7	EQU	$87
+__zpabi_test_has_other_unions__u_7	EQU	$87
+__zpabi_test_has_small_struct_array__u_7	EQU	$87
+__zpabi_test_has_struct_with_double__u_7	EQU	$87
+__zpabi_test_has_struct_with_ints__u_7	EQU	$87
+__zpabi_test_has_two_unions__s_7	EQU	$87
+__zpabi_test_has_union_with_double__s_7	EQU	$87
+__zpabi_test_has_xmm_union__u_7	EQU	$87
+__zpabi_test_lotsa_chars__u_7	EQU	$87
+__zpabi_test_lotsa_doubles__u_7	EQU	$87
+__zpabi_test_one_double__u_7	EQU	$87
+__zpabi_test_one_int__u_7	EQU	$87
+__zpabi_test_one_int_nested__u_7	EQU	$87
+__zpabi_test_scalar_and_struct__u_7	EQU	$87
+__zpabi_test_small_struct_arr_and_dbl__u_7	EQU	$87
+__zpabi_test_two_arrs__u_7	EQU	$87
+__zpabi_test_two_doubles__u_7	EQU	$87
+__zpabi_test_two_eightbyte_has_struct__u_7	EQU	$87
+__zpabi_test_two_structs__u_7	EQU	$87
+__zpabi_test_uneven_union_array__u_7	EQU	$87
+__zpabi_test_union_array__u_7	EQU	$87
+__zpabi_test_xmm_and_gp__u_7	EQU	$87
+__zpabi_test_xmm_and_gp_nested__u_7	EQU	$87
+__local_test_char_int_mixed__1	EQU	$88
+__local_test_has_nine_byte_struct__1	EQU	$88
+__local_test_has_struct_with_ints__0	EQU	$88
+__zpabi_pass_borderline_union__two_gp_0	EQU	$88
+__zpabi_pass_gp_union_in_memory__two_xmm_8	EQU	$88
+__zpabi_pass_in_mem_first__mem_8	EQU	$88
+__zpabi_pass_mixed_reg_in_memory__d2_0	EQU	$88
+__zpabi_pass_uneven_union_in_memory__mixed_regs_0	EQU	$88
+__zpabi_pass_unions_and_structs__d1_2	EQU	$88
+__zpabi_test_char_arr__u_8	EQU	$88
+__zpabi_test_contains_large_struct__u_8	EQU	$88
+__zpabi_test_contains_union_array__u_8	EQU	$88
+__zpabi_test_dbl_struct__s_8	EQU	$88
+__zpabi_test_gp_and_xmm__u_8	EQU	$88
+__zpabi_test_has_dbl_struct__u_8	EQU	$88
+__zpabi_test_has_other_unions__u_8	EQU	$88
+__zpabi_test_has_small_struct_array__u_8	EQU	$88
+__zpabi_test_has_two_unions__s_8	EQU	$88
+__zpabi_test_has_xmm_union__u_8	EQU	$88
+__zpabi_test_lotsa_chars__u_8	EQU	$88
+__zpabi_test_lotsa_doubles__u_8	EQU	$88
+__zpabi_test_scalar_and_struct__u_8	EQU	$88
+__zpabi_test_small_struct_arr_and_dbl__u_8	EQU	$88
+__zpabi_test_two_arrs__u_8	EQU	$88
+__zpabi_test_two_doubles__u_8	EQU	$88
+__zpabi_test_two_eightbyte_has_struct__u_8	EQU	$88
+__zpabi_test_two_structs__u_8	EQU	$88
+__zpabi_test_uneven_union_array__u_8	EQU	$88
+__zpabi_test_union_array__u_8	EQU	$88
+__zpabi_test_xmm_and_gp__u_8	EQU	$88
+__zpabi_test_xmm_and_gp_nested__u_8	EQU	$88
+__local_test_has_struct_with_double__1	EQU	$89
+__local_test_has_struct_with_ints__1	EQU	$89
+__local_test_has_union_with_double__1	EQU	$89
+__local_test_one_double__1	EQU	$89
+__local_test_one_int__1	EQU	$89
+__local_test_one_int_nested__1	EQU	$89
+__local_test_scalar_and_struct__0	EQU	$89
+__zpabi_pass_borderline_union__two_gp_1	EQU	$89
+__zpabi_pass_gp_union_in_memory__two_xmm_9	EQU	$89
+__zpabi_pass_in_mem_first__mem_9	EQU	$89
+__zpabi_pass_mixed_reg_in_memory__d2_1	EQU	$89
+__zpabi_pass_uneven_union_in_memory__mixed_regs_1	EQU	$89
+__zpabi_pass_unions_and_structs__d1_3	EQU	$89
+__zpabi_test_char_arr__u_9	EQU	$89
+__zpabi_test_contains_large_struct__u_9	EQU	$89
+__zpabi_test_contains_union_array__u_9	EQU	$89
+__zpabi_test_dbl_struct__s_9	EQU	$89
+__zpabi_test_gp_and_xmm__u_9	EQU	$89
+__zpabi_test_has_dbl_struct__u_9	EQU	$89
+__zpabi_test_has_other_unions__u_9	EQU	$89
+__zpabi_test_has_small_struct_array__u_9	EQU	$89
+__zpabi_test_has_two_unions__s_9	EQU	$89
+__zpabi_test_has_xmm_union__u_9	EQU	$89
+__zpabi_test_lotsa_chars__u_9	EQU	$89
+__zpabi_test_lotsa_doubles__u_9	EQU	$89
+__zpabi_test_small_struct_arr_and_dbl__u_9	EQU	$89
+__zpabi_test_two_arrs__u_9	EQU	$89
+__zpabi_test_two_doubles__u_9	EQU	$89
+__zpabi_test_two_eightbyte_has_struct__u_9	EQU	$89
+__zpabi_test_two_structs__u_9	EQU	$89
+__zpabi_test_uneven_union_array__u_9	EQU	$89
+__zpabi_test_union_array__u_9	EQU	$89
+__zpabi_test_xmm_and_gp__u_9	EQU	$89
+__zpabi_test_xmm_and_gp_nested__u_9	EQU	$89
+__local_test_has_struct_with_double__2	EQU	$8A
+__local_test_has_union_with_double__2	EQU	$8A
+__local_test_one_double__2	EQU	$8A
+__local_test_one_int__2	EQU	$8A
+__local_test_one_int_nested__2	EQU	$8A
+__local_test_scalar_and_struct__1	EQU	$8A
+__local_test_uneven_union_array__0	EQU	$8A
+__zpabi_pass_borderline_union__two_gp_2	EQU	$8A
+__zpabi_pass_gp_union_in_memory__two_xmm_10	EQU	$8A
+__zpabi_pass_in_mem_first__mem_10	EQU	$8A
+__zpabi_pass_mixed_reg_in_memory__d2_2	EQU	$8A
+__zpabi_pass_uneven_union_in_memory__mixed_regs_2	EQU	$8A
+__zpabi_pass_unions_and_structs__d1_4	EQU	$8A
+__zpabi_test_char_arr__u_10	EQU	$8A
+__zpabi_test_contains_large_struct__u_10	EQU	$8A
+__zpabi_test_contains_union_array__u_10	EQU	$8A
+__zpabi_test_dbl_struct__s_10	EQU	$8A
+__zpabi_test_gp_and_xmm__u_10	EQU	$8A
+__zpabi_test_has_dbl_struct__u_10	EQU	$8A
+__zpabi_test_has_other_unions__u_10	EQU	$8A
+__zpabi_test_has_small_struct_array__u_10	EQU	$8A
+__zpabi_test_has_two_unions__s_10	EQU	$8A
+__zpabi_test_has_xmm_union__u_10	EQU	$8A
+__zpabi_test_lotsa_chars__u_10	EQU	$8A
+__zpabi_test_lotsa_doubles__u_10	EQU	$8A
+__zpabi_test_small_struct_arr_and_dbl__u_10	EQU	$8A
+__zpabi_test_two_arrs__u_10	EQU	$8A
+__zpabi_test_two_doubles__u_10	EQU	$8A
+__zpabi_test_two_eightbyte_has_struct__u_10	EQU	$8A
+__zpabi_test_union_array__u_10	EQU	$8A
+__zpabi_test_xmm_and_gp_nested__u_10	EQU	$8A
+__local_test_char_arr__0	EQU	$8B
+__local_test_has_nine_byte_struct__4	EQU	$8B
+__local_test_has_struct_with_double__3	EQU	$8B
+__local_test_has_union_with_double__3	EQU	$8B
+__local_test_one_double__3	EQU	$8B
+__local_test_one_int__3	EQU	$8B
+__local_test_one_int_nested__3	EQU	$8B
+__local_test_scalar_and_struct__2	EQU	$8B
+__local_test_two_structs__1	EQU	$8B
+__local_test_xmm_and_gp__1	EQU	$8B
+__zpabi_pass_borderline_union__two_gp_3	EQU	$8B
+__zpabi_pass_gp_union_in_memory__two_xmm_11	EQU	$8B
+__zpabi_pass_in_mem_first__mem_11	EQU	$8B
+__zpabi_pass_mixed_reg_in_memory__d2_3	EQU	$8B
+__zpabi_pass_uneven_union_in_memory__mixed_regs_3	EQU	$8B
+__zpabi_pass_unions_and_structs__d1_5	EQU	$8B
+__zpabi_test_contains_large_struct__u_11	EQU	$8B
+__zpabi_test_contains_union_array__u_11	EQU	$8B
+__zpabi_test_dbl_struct__s_11	EQU	$8B
+__zpabi_test_gp_and_xmm__u_11	EQU	$8B
+__zpabi_test_has_dbl_struct__u_11	EQU	$8B
+__zpabi_test_has_other_unions__u_11	EQU	$8B
+__zpabi_test_has_small_struct_array__u_11	EQU	$8B
+__zpabi_test_has_two_unions__s_11	EQU	$8B
+__zpabi_test_has_xmm_union__u_11	EQU	$8B
+__zpabi_test_lotsa_chars__u_11	EQU	$8B
+__zpabi_test_lotsa_doubles__u_11	EQU	$8B
+__zpabi_test_small_struct_arr_and_dbl__u_11	EQU	$8B
+__zpabi_test_two_arrs__u_11	EQU	$8B
+__zpabi_test_two_doubles__u_11	EQU	$8B
+__zpabi_test_two_eightbyte_has_struct__u_11	EQU	$8B
+__zpabi_test_union_array__u_11	EQU	$8B
+__zpabi_test_xmm_and_gp_nested__u_11	EQU	$8B
+__local_test_has_nine_byte_struct__5	EQU	$8C
+__local_test_has_small_struct_array__0	EQU	$8C
+__local_test_has_struct_with_double__4	EQU	$8C
+__local_test_has_union_with_double__4	EQU	$8C
+__local_test_one_double__4	EQU	$8C
+__local_test_one_int__4	EQU	$8C
+__local_test_one_int_nested__4	EQU	$8C
+__local_test_scalar_and_struct__3	EQU	$8C
+__local_test_two_structs__2	EQU	$8C
+__local_test_uneven_union_array__2	EQU	$8C
+__local_test_xmm_and_gp__2	EQU	$8C
+__zpabi_pass_borderline_union__two_gp_4	EQU	$8C
+__zpabi_pass_gp_union_in_memory__two_xmm_12	EQU	$8C
+__zpabi_pass_in_mem_first__mem_12	EQU	$8C
+__zpabi_pass_mixed_reg_in_memory__d2_4	EQU	$8C
+__zpabi_pass_uneven_union_in_memory__mixed_regs_4	EQU	$8C
+__zpabi_pass_unions_and_structs__d1_6	EQU	$8C
+__zpabi_test_contains_large_struct__u_12	EQU	$8C
+__zpabi_test_contains_union_array__u_12	EQU	$8C
+__zpabi_test_dbl_struct__s_12	EQU	$8C
+__zpabi_test_gp_and_xmm__u_12	EQU	$8C
+__zpabi_test_has_dbl_struct__u_12	EQU	$8C
+__zpabi_test_has_other_unions__u_12	EQU	$8C
+__zpabi_test_has_two_unions__s_12	EQU	$8C
+__zpabi_test_has_xmm_union__u_12	EQU	$8C
+__zpabi_test_lotsa_chars__u_12	EQU	$8C
+__zpabi_test_lotsa_doubles__u_12	EQU	$8C
+__zpabi_test_small_struct_arr_and_dbl__u_12	EQU	$8C
+__zpabi_test_two_arrs__u_12	EQU	$8C
+__zpabi_test_two_doubles__u_12	EQU	$8C
+__zpabi_test_two_eightbyte_has_struct__u_12	EQU	$8C
+__zpabi_test_union_array__u_12	EQU	$8C
+__zpabi_test_xmm_and_gp_nested__u_12	EQU	$8C
+__local_test_has_nine_byte_struct__i_1	EQU	$8D
+__local_test_has_struct_with_double__5	EQU	$8D
+__local_test_has_union_with_double__5	EQU	$8D
+__local_test_one_double__5	EQU	$8D
+__local_test_one_int__5	EQU	$8D
+__local_test_one_int_nested__5	EQU	$8D
+__local_test_scalar_and_struct__4	EQU	$8D
+__local_test_two_structs__3	EQU	$8D
+__local_test_xmm_and_gp__3	EQU	$8D
+__zpabi_pass_borderline_union__two_gp_5	EQU	$8D
+__zpabi_pass_gp_union_in_memory__two_xmm_13	EQU	$8D
+__zpabi_pass_in_mem_first__mem_13	EQU	$8D
+__zpabi_pass_mixed_reg_in_memory__d2_5	EQU	$8D
+__zpabi_pass_uneven_union_in_memory__mixed_regs_5	EQU	$8D
+__zpabi_pass_unions_and_structs__d1_7	EQU	$8D
+__zpabi_test_contains_large_struct__u_13	EQU	$8D
+__zpabi_test_contains_union_array__u_13	EQU	$8D
+__zpabi_test_dbl_struct__s_13	EQU	$8D
+__zpabi_test_gp_and_xmm__u_13	EQU	$8D
+__zpabi_test_has_dbl_struct__u_13	EQU	$8D
+__zpabi_test_has_other_unions__u_13	EQU	$8D
+__zpabi_test_has_two_unions__s_13	EQU	$8D
+__zpabi_test_has_xmm_union__u_13	EQU	$8D
+__zpabi_test_lotsa_chars__u_13	EQU	$8D
+__zpabi_test_lotsa_doubles__u_13	EQU	$8D
+__zpabi_test_small_struct_arr_and_dbl__u_13	EQU	$8D
+__zpabi_test_two_arrs__u_13	EQU	$8D
+__zpabi_test_two_doubles__u_13	EQU	$8D
+__zpabi_test_two_eightbyte_has_struct__u_13	EQU	$8D
+__zpabi_test_union_array__u_13	EQU	$8D
+__zpabi_test_xmm_and_gp_nested__u_13	EQU	$8D
+__local_test_has_nine_byte_struct__i_0	EQU	$8E
+__local_test_has_small_struct_array__2	EQU	$8E
+__local_test_has_struct_with_double__6	EQU	$8E
+__local_test_has_union_with_double__6	EQU	$8E
+__local_test_one_double__6	EQU	$8E
+__local_test_one_int__6	EQU	$8E
+__local_test_one_int_nested__6	EQU	$8E
+__local_test_scalar_and_struct__5	EQU	$8E
+__local_test_two_structs__4	EQU	$8E
+__local_test_xmm_and_gp__4	EQU	$8E
+__zpabi_pass_borderline_union__two_gp_6	EQU	$8E
+__zpabi_pass_gp_union_in_memory__two_xmm_14	EQU	$8E
+__zpabi_pass_in_mem_first__mem_14	EQU	$8E
+__zpabi_pass_mixed_reg_in_memory__d2_6	EQU	$8E
+__zpabi_pass_uneven_union_in_memory__mixed_regs_6	EQU	$8E
+__zpabi_pass_unions_and_structs__two_xmm_0	EQU	$8E
+__zpabi_test_contains_large_struct__u_14	EQU	$8E
+__zpabi_test_contains_union_array__u_14	EQU	$8E
+__zpabi_test_dbl_struct__s_14	EQU	$8E
+__zpabi_test_gp_and_xmm__u_14	EQU	$8E
+__zpabi_test_has_dbl_struct__u_14	EQU	$8E
+__zpabi_test_has_other_unions__u_14	EQU	$8E
+__zpabi_test_has_two_unions__s_14	EQU	$8E
+__zpabi_test_has_xmm_union__u_14	EQU	$8E
+__zpabi_test_lotsa_chars__u_14	EQU	$8E
+__zpabi_test_lotsa_doubles__u_14	EQU	$8E
+__zpabi_test_small_struct_arr_and_dbl__u_14	EQU	$8E
+__zpabi_test_two_arrs__u_14	EQU	$8E
+__zpabi_test_two_doubles__u_14	EQU	$8E
+__zpabi_test_two_eightbyte_has_struct__u_14	EQU	$8E
+__zpabi_test_union_array__u_14	EQU	$8E
+__zpabi_test_xmm_and_gp_nested__u_14	EQU	$8E
+__local_test_has_struct_with_double__7	EQU	$8F
+__local_test_has_union_with_double__7	EQU	$8F
+__local_test_one_double__7	EQU	$8F
+__local_test_one_int__7	EQU	$8F
+__local_test_one_int_nested__7	EQU	$8F
+__local_test_scalar_and_struct__6	EQU	$8F
+__local_test_two_structs__5	EQU	$8F
+__local_test_xmm_and_gp__5	EQU	$8F
+__zpabi_pass_borderline_union__two_gp_7	EQU	$8F
+__zpabi_pass_gp_union_in_memory__two_xmm_15	EQU	$8F
+__zpabi_pass_in_mem_first__mem_15	EQU	$8F
+__zpabi_pass_mixed_reg_in_memory__d2_7	EQU	$8F
+__zpabi_pass_uneven_union_in_memory__mixed_regs_7	EQU	$8F
+__zpabi_pass_unions_and_structs__two_xmm_1	EQU	$8F
+__zpabi_test_contains_large_struct__u_15	EQU	$8F
+__zpabi_test_contains_union_array__u_15	EQU	$8F
+__zpabi_test_dbl_struct__s_15	EQU	$8F
+__zpabi_test_gp_and_xmm__u_15	EQU	$8F
+__zpabi_test_has_dbl_struct__u_15	EQU	$8F
+__zpabi_test_has_other_unions__u_15	EQU	$8F
+__zpabi_test_has_xmm_union__u_15	EQU	$8F
+__zpabi_test_lotsa_chars__u_15	EQU	$8F
+__zpabi_test_lotsa_doubles__u_15	EQU	$8F
+__zpabi_test_small_struct_arr_and_dbl__u_15	EQU	$8F
+__zpabi_test_two_arrs__u_15	EQU	$8F
+__zpabi_test_two_doubles__u_15	EQU	$8F
+__zpabi_test_two_eightbyte_has_struct__u_15	EQU	$8F
+__zpabi_test_union_array__u_15	EQU	$8F
+__zpabi_test_xmm_and_gp_nested__u_15	EQU	$8F
+__local_test_has_other_unions__0	EQU	$90
+__local_test_scalar_and_struct__7	EQU	$90
+__local_test_two_structs__6	EQU	$90
+__local_test_xmm_and_gp__6	EQU	$90
+__zpabi_pass_borderline_union__two_gp_8	EQU	$90
+__zpabi_pass_gp_union_in_memory__one_gp_struct_0	EQU	$90
+__zpabi_pass_in_mem_first__mem_16	EQU	$90
+__zpabi_pass_mixed_reg_in_memory__d3_0	EQU	$90
+__zpabi_pass_uneven_union_in_memory__mixed_regs_8	EQU	$90
+__zpabi_pass_unions_and_structs__two_xmm_2	EQU	$90
+__zpabi_test_contains_large_struct__u_16	EQU	$90
+__zpabi_test_contains_union_array__u_16	EQU	$90
+__zpabi_test_lotsa_chars__u_16	EQU	$90
+__zpabi_test_lotsa_doubles__u_16	EQU	$90
+__local_test_dbl_struct__1	EQU	$91
+__local_test_gp_and_xmm__1	EQU	$91
+__local_test_has_dbl_struct__1	EQU	$91
+__local_test_has_other_unions__1	EQU	$91
+__local_test_has_xmm_union__1	EQU	$91
+__local_test_small_struct_arr_and_dbl__1	EQU	$91
+__local_test_two_arrs__1	EQU	$91
+__local_test_two_doubles__1	EQU	$91
+__local_test_two_eightbyte_has_struct__1	EQU	$91
+__local_test_two_structs__7	EQU	$91
+__local_test_union_array__1	EQU	$91
+__local_test_xmm_and_gp__7	EQU	$91
+__local_test_xmm_and_gp_nested__1	EQU	$91
+__zpabi_pass_borderline_union__two_gp_9	EQU	$91
+__zpabi_pass_gp_union_in_memory__one_gp_struct_1	EQU	$91
+__zpabi_pass_in_mem_first__mem_17	EQU	$91
+__zpabi_pass_mixed_reg_in_memory__d3_1	EQU	$91
+__zpabi_pass_uneven_union_in_memory__mixed_regs_9	EQU	$91
+__zpabi_pass_unions_and_structs__two_xmm_3	EQU	$91
+__zpabi_test_contains_large_struct__u_17	EQU	$91
+__zpabi_test_contains_union_array__u_17	EQU	$91
+__zpabi_test_lotsa_chars__u_17	EQU	$91
+__zpabi_test_lotsa_doubles__u_17	EQU	$91
+__local_test_dbl_struct__2	EQU	$92
+__local_test_gp_and_xmm__2	EQU	$92
+__local_test_has_dbl_struct__2	EQU	$92
+__local_test_has_xmm_union__2	EQU	$92
+__local_test_lotsa_chars__0	EQU	$92
+__local_test_small_struct_arr_and_dbl__2	EQU	$92
+__local_test_two_arrs__2	EQU	$92
+__local_test_two_doubles__2	EQU	$92
+__local_test_two_eightbyte_has_struct__2	EQU	$92
+__local_test_union_array__2	EQU	$92
+__local_test_xmm_and_gp_nested__2	EQU	$92
+__zpabi_pass_borderline_union__two_gp_10	EQU	$92
+__zpabi_pass_gp_union_in_memory__one_gp_struct_2	EQU	$92
+__zpabi_pass_in_mem_first__mem_18	EQU	$92
+__zpabi_pass_mixed_reg_in_memory__d3_2	EQU	$92
+__zpabi_pass_uneven_union_in_memory__mixed_regs_10	EQU	$92
+__zpabi_pass_unions_and_structs__two_xmm_4	EQU	$92
+__zpabi_test_contains_large_struct__u_18	EQU	$92
+__zpabi_test_contains_union_array__u_18	EQU	$92
+__zpabi_test_lotsa_doubles__u_18	EQU	$92
+__local_test_dbl_struct__3	EQU	$93
+__local_test_gp_and_xmm__3	EQU	$93
+__local_test_has_dbl_struct__3	EQU	$93
+__local_test_has_xmm_union__3	EQU	$93
+__local_test_small_struct_arr_and_dbl__3	EQU	$93
+__local_test_two_arrs__3	EQU	$93
+__local_test_two_doubles__3	EQU	$93
+__local_test_two_eightbyte_has_struct__3	EQU	$93
+__local_test_union_array__3	EQU	$93
+__local_test_xmm_and_gp_nested__3	EQU	$93
+__zpabi_pass_gp_union_in_memory__one_gp_struct_3	EQU	$93
+__zpabi_pass_in_mem_first__mem_19	EQU	$93
+__zpabi_pass_mixed_reg_in_memory__d3_3	EQU	$93
+__zpabi_pass_uneven_union_in_memory__mixed_regs_11	EQU	$93
+__zpabi_pass_unions_and_structs__two_xmm_5	EQU	$93
+__zpabi_test_contains_large_struct__u_19	EQU	$93
+__zpabi_test_contains_union_array__u_19	EQU	$93
+__zpabi_test_lotsa_doubles__u_19	EQU	$93
+__local_test_dbl_struct__4	EQU	$94
+__local_test_gp_and_xmm__4	EQU	$94
+__local_test_has_dbl_struct__4	EQU	$94
+__local_test_has_other_unions__4	EQU	$94
+__local_test_has_xmm_union__4	EQU	$94
+__local_test_small_struct_arr_and_dbl__4	EQU	$94
+__local_test_two_arrs__4	EQU	$94
+__local_test_two_doubles__4	EQU	$94
+__local_test_two_eightbyte_has_struct__4	EQU	$94
+__local_test_union_array__4	EQU	$94
+__local_test_xmm_and_gp_nested__4	EQU	$94
+__zpabi_pass_gp_union_in_memory__i1_0	EQU	$94
+__zpabi_pass_in_mem_first__mem_20	EQU	$94
+__zpabi_pass_mixed_reg_in_memory__d3_4	EQU	$94
+__zpabi_pass_uneven_union_in_memory__mixed_regs_12	EQU	$94
+__zpabi_pass_unions_and_structs__two_xmm_6	EQU	$94
+__zpabi_strcmp__s2_0	EQU	$94
+__zpabi_test_contains_union_array__u_20	EQU	$94
+__zpabi_test_lotsa_doubles__u_20	EQU	$94
+__local_test_dbl_struct__5	EQU	$95
+__local_test_gp_and_xmm__5	EQU	$95
+__local_test_has_dbl_struct__5	EQU	$95
+__local_test_has_other_unions__5	EQU	$95
+__local_test_has_xmm_union__5	EQU	$95
+__local_test_small_struct_arr_and_dbl__5	EQU	$95
+__local_test_two_arrs__5	EQU	$95
+__local_test_two_doubles__5	EQU	$95
+__local_test_two_eightbyte_has_struct__5	EQU	$95
+__local_test_union_array__5	EQU	$95
+__local_test_xmm_and_gp_nested__5	EQU	$95
+__zpabi_pass_gp_union_in_memory__i1_1	EQU	$95
+__zpabi_pass_in_mem_first__mem_21	EQU	$95
+__zpabi_pass_mixed_reg_in_memory__d3_5	EQU	$95
+__zpabi_pass_uneven_union_in_memory__mixed_regs_13	EQU	$95
+__zpabi_pass_unions_and_structs__two_xmm_7	EQU	$95
+__zpabi_strcmp__s2_1	EQU	$95
+__zpabi_test_contains_union_array__u_21	EQU	$95
+__zpabi_test_lotsa_doubles__u_21	EQU	$95
+__local_test_contains_large_struct__0	EQU	$96
+__local_test_dbl_struct__6	EQU	$96
+__local_test_gp_and_xmm__6	EQU	$96
+__local_test_has_dbl_struct__6	EQU	$96
+__local_test_has_other_unions__i_1	EQU	$96
+__local_test_has_two_unions__0	EQU	$96
+__local_test_has_xmm_union__6	EQU	$96
+__local_test_small_struct_arr_and_dbl__6	EQU	$96
+__local_test_two_arrs__6	EQU	$96
+__local_test_two_doubles__6	EQU	$96
+__local_test_two_eightbyte_has_struct__6	EQU	$96
+__local_test_union_array__6	EQU	$96
+__local_test_xmm_and_gp_nested__6	EQU	$96
+__zpabi_pass_gp_union_in_memory__i2_0	EQU	$96
+__zpabi_pass_in_mem_first__mem_22	EQU	$96
+__zpabi_pass_mixed_reg_in_memory__d3_6	EQU	$96
+__zpabi_pass_uneven_union_in_memory__mixed_regs_14	EQU	$96
+__zpabi_pass_unions_and_structs__two_xmm_8	EQU	$96
+__zpabi_test_contains_union_array__u_22	EQU	$96
+__zpabi_test_lotsa_doubles__u_22	EQU	$96
+__local_test_contains_large_struct__1	EQU	$97
+__local_test_dbl_struct__7	EQU	$97
+__local_test_gp_and_xmm__7	EQU	$97
+__local_test_has_dbl_struct__7	EQU	$97
+__local_test_has_other_unions__i_0	EQU	$97
+__local_test_has_two_unions__1	EQU	$97
+__local_test_has_xmm_union__7	EQU	$97
+__local_test_small_struct_arr_and_dbl__7	EQU	$97
+__local_test_two_arrs__7	EQU	$97
+__local_test_two_doubles__7	EQU	$97
+__local_test_two_eightbyte_has_struct__7	EQU	$97
+__local_test_union_array__7	EQU	$97
+__local_test_xmm_and_gp_nested__7	EQU	$97
+__zpabi_pass_gp_union_in_memory__i2_1	EQU	$97
+__zpabi_pass_in_mem_first__mem_23	EQU	$97
+__zpabi_pass_mixed_reg_in_memory__d3_7	EQU	$97
+__zpabi_pass_uneven_union_in_memory__mixed_regs_15	EQU	$97
+__zpabi_pass_unions_and_structs__two_xmm_9	EQU	$97
+__zpabi_test_contains_union_array__u_23	EQU	$97
+__zpabi_test_lotsa_doubles__u_23	EQU	$97
+__local_test_contains_large_struct__2	EQU	$98
+__local_test_has_two_unions__2	EQU	$98
+__zpabi_pass_gp_union_in_memory__i3_0	EQU	$98
+__zpabi_pass_in_mem_first__mixed_regs_0	EQU	$98
+__zpabi_pass_mixed_reg_in_memory__d4_0	EQU	$98
+__zpabi_pass_uneven_union_in_memory__one_gp_0	EQU	$98
+__zpabi_pass_unions_and_structs__two_xmm_10	EQU	$98
+__zpabi_test_contains_union_array__u_24	EQU	$98
+__local_test_contains_large_struct__3	EQU	$99
+__local_test_has_two_unions__3	EQU	$99
+__local_test_lotsa_doubles__1	EQU	$99
+__zpabi_pass_gp_union_in_memory__i3_1	EQU	$99
+__zpabi_pass_in_mem_first__mixed_regs_1	EQU	$99
+__zpabi_pass_mixed_reg_in_memory__d4_1	EQU	$99
+__zpabi_pass_uneven_union_in_memory__one_gp_1	EQU	$99
+__zpabi_pass_unions_and_structs__two_xmm_11	EQU	$99
+__zpabi_test_contains_union_array__u_25	EQU	$99
+__local_test_contains_large_struct__4	EQU	$9A
+__local_test_has_two_unions__4	EQU	$9A
+__local_test_lotsa_doubles__2	EQU	$9A
+__zpabi_pass_gp_union_in_memory__i4_0	EQU	$9A
+__zpabi_pass_in_mem_first__mixed_regs_2	EQU	$9A
+__zpabi_pass_mixed_reg_in_memory__d4_2	EQU	$9A
+__zpabi_pass_uneven_union_in_memory__one_gp_2	EQU	$9A
+__zpabi_pass_unions_and_structs__two_xmm_12	EQU	$9A
+__zpabi_test_contains_union_array__u_26	EQU	$9A
+__local_test_contains_large_struct__5	EQU	$9B
+__local_test_has_two_unions__5	EQU	$9B
+__local_test_lotsa_doubles__3	EQU	$9B
+__zpabi_pass_gp_union_in_memory__i4_1	EQU	$9B
+__zpabi_pass_in_mem_first__mixed_regs_3	EQU	$9B
+__zpabi_pass_mixed_reg_in_memory__d4_3	EQU	$9B
+__zpabi_pass_uneven_union_in_memory__one_gp_3	EQU	$9B
+__zpabi_pass_unions_and_structs__two_xmm_13	EQU	$9B
+__zpabi_test_contains_union_array__u_27	EQU	$9B
+__local_test_contains_large_struct__6	EQU	$9C
+__local_test_has_two_unions__6	EQU	$9C
+__local_test_lotsa_doubles__4	EQU	$9C
+__zpabi_pass_gp_union_in_memory__i5_0	EQU	$9C
+__zpabi_pass_in_mem_first__mixed_regs_4	EQU	$9C
+__zpabi_pass_mixed_reg_in_memory__d4_4	EQU	$9C
+__zpabi_pass_uneven_union_in_memory__one_gp_4	EQU	$9C
+__zpabi_pass_unions_and_structs__two_xmm_14	EQU	$9C
+__zpabi_test_contains_union_array__u_28	EQU	$9C
+__local_test_contains_large_struct__7	EQU	$9D
+__local_test_has_two_unions__7	EQU	$9D
+__local_test_lotsa_doubles__5	EQU	$9D
+__zpabi_pass_gp_union_in_memory__i5_1	EQU	$9D
+__zpabi_pass_in_mem_first__mixed_regs_5	EQU	$9D
+__zpabi_pass_mixed_reg_in_memory__d4_5	EQU	$9D
+__zpabi_pass_uneven_union_in_memory__one_gp_5	EQU	$9D
+__zpabi_pass_unions_and_structs__two_xmm_15	EQU	$9D
+__zpabi_test_contains_union_array__u_29	EQU	$9D
+__local_test_lotsa_doubles__6	EQU	$9E
+__zpabi_pass_gp_union_in_memory__i6_0	EQU	$9E
+__zpabi_pass_in_mem_first__mixed_regs_6	EQU	$9E
+__zpabi_pass_mixed_reg_in_memory__d4_6	EQU	$9E
+__zpabi_pass_uneven_union_in_memory__one_gp_6	EQU	$9E
+__zpabi_pass_unions_and_structs__one_gp_0	EQU	$9E
+__zpabi_test_contains_union_array__u_30	EQU	$9E
+__local_test_lotsa_doubles__7	EQU	$9F
+__zpabi_pass_gp_union_in_memory__i6_1	EQU	$9F
+__zpabi_pass_in_mem_first__mixed_regs_7	EQU	$9F
+__zpabi_pass_mixed_reg_in_memory__d4_7	EQU	$9F
+__zpabi_pass_uneven_union_in_memory__one_gp_7	EQU	$9F
+__zpabi_pass_unions_and_structs__one_gp_1	EQU	$9F
+__zpabi_test_contains_union_array__u_31	EQU	$9F
+__local_test_contains_union_array__b_15	EQU	$A0
+__zpabi_pass_gp_union_in_memory__one_gp_0	EQU	$A0
+__zpabi_pass_in_mem_first__mixed_regs_8	EQU	$A0
+__zpabi_pass_mixed_reg_in_memory__i1_0	EQU	$A0
+__zpabi_pass_uneven_union_in_memory__uneven_0	EQU	$A0
+__zpabi_pass_unions_and_structs__one_gp_2	EQU	$A0
+__local_test_contains_union_array__b_14	EQU	$A1
+__zpabi_pass_gp_union_in_memory__one_gp_1	EQU	$A1
+__zpabi_pass_in_mem_first__mixed_regs_9	EQU	$A1
+__zpabi_pass_mixed_reg_in_memory__i1_1	EQU	$A1
+__zpabi_pass_uneven_union_in_memory__uneven_1	EQU	$A1
+__zpabi_pass_unions_and_structs__one_gp_3	EQU	$A1
+__local_test_contains_union_array__b_13	EQU	$A2
+__zpabi_pass_gp_union_in_memory__one_gp_2	EQU	$A2
+__zpabi_pass_in_mem_first__mixed_regs_10	EQU	$A2
+__zpabi_pass_mixed_reg_in_memory__i2_0	EQU	$A2
+__zpabi_pass_uneven_union_in_memory__uneven_2	EQU	$A2
+__zpabi_pass_unions_and_structs__one_gp_4	EQU	$A2
+__local_test_contains_union_array__b_12	EQU	$A3
+__zpabi_pass_gp_union_in_memory__one_gp_3	EQU	$A3
+__zpabi_pass_in_mem_first__mixed_regs_11	EQU	$A3
+__zpabi_pass_mixed_reg_in_memory__i2_1	EQU	$A3
+__zpabi_pass_uneven_union_in_memory__uneven_3	EQU	$A3
+__zpabi_pass_unions_and_structs__one_gp_5	EQU	$A3
+__local_test_contains_union_array__b_11	EQU	$A4
+__zpabi_pass_gp_union_in_memory__one_gp_4	EQU	$A4
+__zpabi_pass_in_mem_first__mixed_regs_12	EQU	$A4
+__zpabi_pass_mixed_reg_in_memory__i3_0	EQU	$A4
+__zpabi_pass_uneven_union_in_memory__uneven_4	EQU	$A4
+__zpabi_pass_unions_and_structs__one_gp_6	EQU	$A4
+__local_test_contains_union_array__b_10	EQU	$A5
+__zpabi_pass_gp_union_in_memory__one_gp_5	EQU	$A5
+__zpabi_pass_in_mem_first__mixed_regs_13	EQU	$A5
+__zpabi_pass_mixed_reg_in_memory__i3_1	EQU	$A5
+__zpabi_pass_unions_and_structs__one_gp_7	EQU	$A5
+__local_test_contains_union_array__b_9	EQU	$A6
+__zpabi_pass_gp_union_in_memory__one_gp_6	EQU	$A6
+__zpabi_pass_in_mem_first__mixed_regs_14	EQU	$A6
+__zpabi_pass_mixed_reg_in_memory__i4_0	EQU	$A6
+__zpabi_pass_unions_and_structs__i3_0	EQU	$A6
+__local_test_contains_union_array__b_8	EQU	$A7
+__zpabi_pass_gp_union_in_memory__one_gp_7	EQU	$A7
+__zpabi_pass_in_mem_first__mixed_regs_15	EQU	$A7
+__zpabi_pass_mixed_reg_in_memory__i4_1	EQU	$A7
+__zpabi_pass_unions_and_structs__i3_1	EQU	$A7
+__local_test_contains_union_array__b_0	EQU	$A8
+__zpabi_pass_in_mem_first__two_gp_0	EQU	$A8
+__zpabi_pass_mixed_reg_in_memory__i5_0	EQU	$A8
+__zpabi_pass_unions_and_structs__i4_0	EQU	$A8
+__local_test_contains_union_array__0	EQU	$A9
+__zpabi_pass_in_mem_first__two_gp_1	EQU	$A9
+__zpabi_pass_mixed_reg_in_memory__i5_1	EQU	$A9
+__zpabi_pass_unions_and_structs__i4_1	EQU	$A9
+__local_test_contains_union_array__1	EQU	$AA
+__zpabi_pass_in_mem_first__two_gp_2	EQU	$AA
+__zpabi_pass_mixed_reg_in_memory__i6_0	EQU	$AA
+__zpabi_pass_unions_and_structs__i5_0	EQU	$AA
+__local_test_contains_union_array__a_15	EQU	$AB
+__zpabi_pass_in_mem_first__two_gp_3	EQU	$AB
+__zpabi_pass_mixed_reg_in_memory__i6_1	EQU	$AB
+__zpabi_pass_unions_and_structs__i5_1	EQU	$AB
+__local_test_contains_union_array__a_14	EQU	$AC
+__zpabi_pass_in_mem_first__two_gp_4	EQU	$AC
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_0	EQU	$AC
+__local_test_contains_union_array__a_13	EQU	$AD
+__zpabi_pass_in_mem_first__two_gp_5	EQU	$AD
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_1	EQU	$AD
+__local_test_contains_union_array__a_12	EQU	$AE
+__zpabi_pass_in_mem_first__two_gp_6	EQU	$AE
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_2	EQU	$AE
+__local_test_contains_union_array__a_11	EQU	$AF
+__zpabi_pass_in_mem_first__two_gp_7	EQU	$AF
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_3	EQU	$AF
+__local_test_contains_union_array__a_10	EQU	$B0
+__zpabi_pass_in_mem_first__two_gp_8	EQU	$B0
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_4	EQU	$B0
+__local_test_contains_union_array__a_9	EQU	$B1
+__zpabi_pass_in_mem_first__two_gp_9	EQU	$B1
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_5	EQU	$B1
+__local_test_contains_union_array__a_8	EQU	$B2
+__zpabi_pass_in_mem_first__two_gp_10	EQU	$B2
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_6	EQU	$B2
+__local_test_contains_union_array__a_7	EQU	$B3
+__zpabi_pass_in_mem_first__one_gp_struct_0	EQU	$B3
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_7	EQU	$B3
+__local_test_contains_union_array__a_6	EQU	$B4
+__zpabi_pass_in_mem_first__one_gp_struct_1	EQU	$B4
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_8	EQU	$B4
+__local_test_contains_union_array__a_5	EQU	$B5
+__zpabi_pass_in_mem_first__one_gp_struct_2	EQU	$B5
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_9	EQU	$B5
+__local_test_contains_union_array__a_4	EQU	$B6
+__zpabi_pass_in_mem_first__one_gp_struct_3	EQU	$B6
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_10	EQU	$B6
+__local_test_contains_union_array__a_3	EQU	$B7
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_11	EQU	$B7
+__local_test_contains_union_array__a_2	EQU	$B8
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_12	EQU	$B8
+__local_test_contains_union_array__a_1	EQU	$B9
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_13	EQU	$B9
+__local_test_contains_union_array__a_0	EQU	$BA
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_14	EQU	$BA
+__zpabi_pass_mixed_reg_in_memory__mixed_regs_15	EQU	$BB
+
+; @zp-link-meta-begin
+; def test_char_arr params=__zpabi_test_char_arr__u_0,__zpabi_test_char_arr__u_1,__zpabi_test_char_arr__u_2,__zpabi_test_char_arr__u_3,__zpabi_test_char_arr__u_4,__zpabi_test_char_arr__u_5,__zpabi_test_char_arr__u_6,__zpabi_test_char_arr__u_7,__zpabi_test_char_arr__u_8,__zpabi_test_char_arr__u_9,__zpabi_test_char_arr__u_10 locals=__local_test_char_arr__0,__local_test_char_arr__1,__local_test_char_arr__2,__local_test_char_arr__3 indirect=false in_cycle=false changes=__zpabi_test_char_arr__u_0,__zpabi_test_char_arr__u_1,__zpabi_test_char_arr__u_2,__zpabi_test_char_arr__u_3,__zpabi_test_char_arr__u_4,__zpabi_test_char_arr__u_5,__zpabi_test_char_arr__u_6,__zpabi_test_char_arr__u_7,__zpabi_test_char_arr__u_8,__zpabi_test_char_arr__u_9,__zpabi_test_char_arr__u_10
+; def test_char_int_mixed params=__zpabi_test_char_int_mixed__u_0,__zpabi_test_char_int_mixed__u_1,__zpabi_test_char_int_mixed__u_2,__zpabi_test_char_int_mixed__u_3,__zpabi_test_char_int_mixed__u_4,__zpabi_test_char_int_mixed__u_5,__zpabi_test_char_int_mixed__u_6 locals=__local_test_char_int_mixed__0,__local_test_char_int_mixed__1,__local_test_char_int_mixed__2,__local_test_char_int_mixed__3 indirect=false in_cycle=false changes=__zpabi_test_char_int_mixed__u_0,__zpabi_test_char_int_mixed__u_1,__zpabi_test_char_int_mixed__u_2,__zpabi_test_char_int_mixed__u_3,__zpabi_test_char_int_mixed__u_4,__zpabi_test_char_int_mixed__u_5,__zpabi_test_char_int_mixed__u_6
+; def test_contains_large_struct params=__zpabi_test_contains_large_struct__u_0,__zpabi_test_contains_large_struct__u_1,__zpabi_test_contains_large_struct__u_2,__zpabi_test_contains_large_struct__u_3,__zpabi_test_contains_large_struct__u_4,__zpabi_test_contains_large_struct__u_5,__zpabi_test_contains_large_struct__u_6,__zpabi_test_contains_large_struct__u_7,__zpabi_test_contains_large_struct__u_8,__zpabi_test_contains_large_struct__u_9,__zpabi_test_contains_large_struct__u_10,__zpabi_test_contains_large_struct__u_11,__zpabi_test_contains_large_struct__u_12,__zpabi_test_contains_large_struct__u_13,__zpabi_test_contains_large_struct__u_14,__zpabi_test_contains_large_struct__u_15,__zpabi_test_contains_large_struct__u_16,__zpabi_test_contains_large_struct__u_17,__zpabi_test_contains_large_struct__u_18,__zpabi_test_contains_large_struct__u_19 locals=__local_test_contains_large_struct__0,__local_test_contains_large_struct__1,__local_test_contains_large_struct__2,__local_test_contains_large_struct__3,__local_test_contains_large_struct__4,__local_test_contains_large_struct__5,__local_test_contains_large_struct__6,__local_test_contains_large_struct__7,__local_test_contains_large_struct__8,__local_test_contains_large_struct__9 indirect=false in_cycle=false changes=__zpabi_test_contains_large_struct__u_0,__zpabi_test_contains_large_struct__u_1,__zpabi_test_contains_large_struct__u_2,__zpabi_test_contains_large_struct__u_3,__zpabi_test_contains_large_struct__u_4,__zpabi_test_contains_large_struct__u_5,__zpabi_test_contains_large_struct__u_6,__zpabi_test_contains_large_struct__u_7,__zpabi_test_contains_large_struct__u_8,__zpabi_test_contains_large_struct__u_9,__zpabi_test_contains_large_struct__u_10,__zpabi_test_contains_large_struct__u_11,__zpabi_test_contains_large_struct__u_12,__zpabi_test_contains_large_struct__u_13,__zpabi_test_contains_large_struct__u_14,__zpabi_test_contains_large_struct__u_15,__zpabi_test_contains_large_struct__u_16,__zpabi_test_contains_large_struct__u_17,__zpabi_test_contains_large_struct__u_18,__zpabi_test_contains_large_struct__u_19
+; def test_contains_union_array params=__zpabi_test_contains_union_array__u_0,__zpabi_test_contains_union_array__u_1,__zpabi_test_contains_union_array__u_2,__zpabi_test_contains_union_array__u_3,__zpabi_test_contains_union_array__u_4,__zpabi_test_contains_union_array__u_5,__zpabi_test_contains_union_array__u_6,__zpabi_test_contains_union_array__u_7,__zpabi_test_contains_union_array__u_8,__zpabi_test_contains_union_array__u_9,__zpabi_test_contains_union_array__u_10,__zpabi_test_contains_union_array__u_11,__zpabi_test_contains_union_array__u_12,__zpabi_test_contains_union_array__u_13,__zpabi_test_contains_union_array__u_14,__zpabi_test_contains_union_array__u_15,__zpabi_test_contains_union_array__u_16,__zpabi_test_contains_union_array__u_17,__zpabi_test_contains_union_array__u_18,__zpabi_test_contains_union_array__u_19,__zpabi_test_contains_union_array__u_20,__zpabi_test_contains_union_array__u_21,__zpabi_test_contains_union_array__u_22,__zpabi_test_contains_union_array__u_23,__zpabi_test_contains_union_array__u_24,__zpabi_test_contains_union_array__u_25,__zpabi_test_contains_union_array__u_26,__zpabi_test_contains_union_array__u_27,__zpabi_test_contains_union_array__u_28,__zpabi_test_contains_union_array__u_29,__zpabi_test_contains_union_array__u_30,__zpabi_test_contains_union_array__u_31 locals=__local_test_contains_union_array__b_15,__local_test_contains_union_array__b_14,__local_test_contains_union_array__b_13,__local_test_contains_union_array__b_12,__local_test_contains_union_array__b_11,__local_test_contains_union_array__b_10,__local_test_contains_union_array__b_9,__local_test_contains_union_array__b_8,__local_test_contains_union_array__b_0,__local_test_contains_union_array__0,__local_test_contains_union_array__1,__local_test_contains_union_array__a_15,__local_test_contains_union_array__a_14,__local_test_contains_union_array__a_13,__local_test_contains_union_array__a_12,__local_test_contains_union_array__a_11,__local_test_contains_union_array__a_10,__local_test_contains_union_array__a_9,__local_test_contains_union_array__a_8,__local_test_contains_union_array__a_7,__local_test_contains_union_array__a_6,__local_test_contains_union_array__a_5,__local_test_contains_union_array__a_4,__local_test_contains_union_array__a_3,__local_test_contains_union_array__a_2,__local_test_contains_union_array__a_1,__local_test_contains_union_array__a_0 indirect=false in_cycle=false changes=__zpabi_test_contains_union_array__u_0,__zpabi_test_contains_union_array__u_1,__zpabi_test_contains_union_array__u_2,__zpabi_test_contains_union_array__u_3,__zpabi_test_contains_union_array__u_4,__zpabi_test_contains_union_array__u_5,__zpabi_test_contains_union_array__u_6,__zpabi_test_contains_union_array__u_7,__zpabi_test_contains_union_array__u_8,__zpabi_test_contains_union_array__u_9,__zpabi_test_contains_union_array__u_10,__zpabi_test_contains_union_array__u_11,__zpabi_test_contains_union_array__u_12,__zpabi_test_contains_union_array__u_13,__zpabi_test_contains_union_array__u_14,__zpabi_test_contains_union_array__u_15,__zpabi_test_contains_union_array__u_16,__zpabi_test_contains_union_array__u_17,__zpabi_test_contains_union_array__u_18,__zpabi_test_contains_union_array__u_19,__zpabi_test_contains_union_array__u_20,__zpabi_test_contains_union_array__u_21,__zpabi_test_contains_union_array__u_22,__zpabi_test_contains_union_array__u_23,__zpabi_test_contains_union_array__u_24,__zpabi_test_contains_union_array__u_25,__zpabi_test_contains_union_array__u_26,__zpabi_test_contains_union_array__u_27,__zpabi_test_contains_union_array__u_28,__zpabi_test_contains_union_array__u_29,__zpabi_test_contains_union_array__u_30,__zpabi_test_contains_union_array__u_31
+; def test_dbl_struct params=__zpabi_test_dbl_struct__s_0,__zpabi_test_dbl_struct__s_1,__zpabi_test_dbl_struct__s_2,__zpabi_test_dbl_struct__s_3,__zpabi_test_dbl_struct__s_4,__zpabi_test_dbl_struct__s_5,__zpabi_test_dbl_struct__s_6,__zpabi_test_dbl_struct__s_7,__zpabi_test_dbl_struct__s_8,__zpabi_test_dbl_struct__s_9,__zpabi_test_dbl_struct__s_10,__zpabi_test_dbl_struct__s_11,__zpabi_test_dbl_struct__s_12,__zpabi_test_dbl_struct__s_13,__zpabi_test_dbl_struct__s_14,__zpabi_test_dbl_struct__s_15 locals=__local_test_dbl_struct__0,__local_test_dbl_struct__1,__local_test_dbl_struct__2,__local_test_dbl_struct__3,__local_test_dbl_struct__4,__local_test_dbl_struct__5,__local_test_dbl_struct__6,__local_test_dbl_struct__7,__local_test_dbl_struct__8,__local_test_dbl_struct__9 indirect=false in_cycle=false changes=__zpabi_test_dbl_struct__s_0,__zpabi_test_dbl_struct__s_1,__zpabi_test_dbl_struct__s_2,__zpabi_test_dbl_struct__s_3,__zpabi_test_dbl_struct__s_4,__zpabi_test_dbl_struct__s_5,__zpabi_test_dbl_struct__s_6,__zpabi_test_dbl_struct__s_7,__zpabi_test_dbl_struct__s_8,__zpabi_test_dbl_struct__s_9,__zpabi_test_dbl_struct__s_10,__zpabi_test_dbl_struct__s_11,__zpabi_test_dbl_struct__s_12,__zpabi_test_dbl_struct__s_13,__zpabi_test_dbl_struct__s_14,__zpabi_test_dbl_struct__s_15
+; def test_gp_and_xmm params=__zpabi_test_gp_and_xmm__u_0,__zpabi_test_gp_and_xmm__u_1,__zpabi_test_gp_and_xmm__u_2,__zpabi_test_gp_and_xmm__u_3,__zpabi_test_gp_and_xmm__u_4,__zpabi_test_gp_and_xmm__u_5,__zpabi_test_gp_and_xmm__u_6,__zpabi_test_gp_and_xmm__u_7,__zpabi_test_gp_and_xmm__u_8,__zpabi_test_gp_and_xmm__u_9,__zpabi_test_gp_and_xmm__u_10,__zpabi_test_gp_and_xmm__u_11,__zpabi_test_gp_and_xmm__u_12,__zpabi_test_gp_and_xmm__u_13,__zpabi_test_gp_and_xmm__u_14,__zpabi_test_gp_and_xmm__u_15 locals=__local_test_gp_and_xmm__0,__local_test_gp_and_xmm__1,__local_test_gp_and_xmm__2,__local_test_gp_and_xmm__3,__local_test_gp_and_xmm__4,__local_test_gp_and_xmm__5,__local_test_gp_and_xmm__6,__local_test_gp_and_xmm__7,__local_test_gp_and_xmm__8,__local_test_gp_and_xmm__9 indirect=false in_cycle=false changes=__zpabi_test_gp_and_xmm__u_0,__zpabi_test_gp_and_xmm__u_1,__zpabi_test_gp_and_xmm__u_2,__zpabi_test_gp_and_xmm__u_3,__zpabi_test_gp_and_xmm__u_4,__zpabi_test_gp_and_xmm__u_5,__zpabi_test_gp_and_xmm__u_6,__zpabi_test_gp_and_xmm__u_7,__zpabi_test_gp_and_xmm__u_8,__zpabi_test_gp_and_xmm__u_9,__zpabi_test_gp_and_xmm__u_10,__zpabi_test_gp_and_xmm__u_11,__zpabi_test_gp_and_xmm__u_12,__zpabi_test_gp_and_xmm__u_13,__zpabi_test_gp_and_xmm__u_14,__zpabi_test_gp_and_xmm__u_15
+; def test_has_dbl_struct params=__zpabi_test_has_dbl_struct__u_0,__zpabi_test_has_dbl_struct__u_1,__zpabi_test_has_dbl_struct__u_2,__zpabi_test_has_dbl_struct__u_3,__zpabi_test_has_dbl_struct__u_4,__zpabi_test_has_dbl_struct__u_5,__zpabi_test_has_dbl_struct__u_6,__zpabi_test_has_dbl_struct__u_7,__zpabi_test_has_dbl_struct__u_8,__zpabi_test_has_dbl_struct__u_9,__zpabi_test_has_dbl_struct__u_10,__zpabi_test_has_dbl_struct__u_11,__zpabi_test_has_dbl_struct__u_12,__zpabi_test_has_dbl_struct__u_13,__zpabi_test_has_dbl_struct__u_14,__zpabi_test_has_dbl_struct__u_15 locals=__local_test_has_dbl_struct__0,__local_test_has_dbl_struct__1,__local_test_has_dbl_struct__2,__local_test_has_dbl_struct__3,__local_test_has_dbl_struct__4,__local_test_has_dbl_struct__5,__local_test_has_dbl_struct__6,__local_test_has_dbl_struct__7,__local_test_has_dbl_struct__8,__local_test_has_dbl_struct__9 indirect=false in_cycle=false changes=__zpabi_test_has_dbl_struct__u_0,__zpabi_test_has_dbl_struct__u_1,__zpabi_test_has_dbl_struct__u_2,__zpabi_test_has_dbl_struct__u_3,__zpabi_test_has_dbl_struct__u_4,__zpabi_test_has_dbl_struct__u_5,__zpabi_test_has_dbl_struct__u_6,__zpabi_test_has_dbl_struct__u_7,__zpabi_test_has_dbl_struct__u_8,__zpabi_test_has_dbl_struct__u_9,__zpabi_test_has_dbl_struct__u_10,__zpabi_test_has_dbl_struct__u_11,__zpabi_test_has_dbl_struct__u_12,__zpabi_test_has_dbl_struct__u_13,__zpabi_test_has_dbl_struct__u_14,__zpabi_test_has_dbl_struct__u_15
+; def test_has_nine_byte_struct params=__zpabi_test_has_nine_byte_struct__u_0,__zpabi_test_has_nine_byte_struct__u_1,__zpabi_test_has_nine_byte_struct__u_2,__zpabi_test_has_nine_byte_struct__u_3,__zpabi_test_has_nine_byte_struct__u_4,__zpabi_test_has_nine_byte_struct__u_5,__zpabi_test_has_nine_byte_struct__u_6 locals=__local_test_has_nine_byte_struct__0,__local_test_has_nine_byte_struct__1,__local_test_has_nine_byte_struct__2,__local_test_has_nine_byte_struct__3,__local_test_has_nine_byte_struct__4,__local_test_has_nine_byte_struct__5,__local_test_has_nine_byte_struct__i_1,__local_test_has_nine_byte_struct__i_0,__local_test_has_nine_byte_struct__6,__local_test_has_nine_byte_struct__7 indirect=false in_cycle=false changes=__zpabi_test_has_nine_byte_struct__u_0,__zpabi_test_has_nine_byte_struct__u_1,__zpabi_test_has_nine_byte_struct__u_2,__zpabi_test_has_nine_byte_struct__u_3,__zpabi_test_has_nine_byte_struct__u_4,__zpabi_test_has_nine_byte_struct__u_5,__zpabi_test_has_nine_byte_struct__u_6
+; def test_has_other_unions params=__zpabi_test_has_other_unions__u_0,__zpabi_test_has_other_unions__u_1,__zpabi_test_has_other_unions__u_2,__zpabi_test_has_other_unions__u_3,__zpabi_test_has_other_unions__u_4,__zpabi_test_has_other_unions__u_5,__zpabi_test_has_other_unions__u_6,__zpabi_test_has_other_unions__u_7,__zpabi_test_has_other_unions__u_8,__zpabi_test_has_other_unions__u_9,__zpabi_test_has_other_unions__u_10,__zpabi_test_has_other_unions__u_11,__zpabi_test_has_other_unions__u_12,__zpabi_test_has_other_unions__u_13,__zpabi_test_has_other_unions__u_14,__zpabi_test_has_other_unions__u_15 locals=__local_test_has_other_unions__0,__local_test_has_other_unions__1,__local_test_has_other_unions__2,__local_test_has_other_unions__3,__local_test_has_other_unions__4,__local_test_has_other_unions__5,__local_test_has_other_unions__i_1,__local_test_has_other_unions__i_0,__local_test_has_other_unions__6,__local_test_has_other_unions__7 indirect=false in_cycle=false changes=__zpabi_test_has_other_unions__u_0,__zpabi_test_has_other_unions__u_1,__zpabi_test_has_other_unions__u_2,__zpabi_test_has_other_unions__u_3,__zpabi_test_has_other_unions__u_4,__zpabi_test_has_other_unions__u_5,__zpabi_test_has_other_unions__u_6,__zpabi_test_has_other_unions__u_7,__zpabi_test_has_other_unions__u_8,__zpabi_test_has_other_unions__u_9,__zpabi_test_has_other_unions__u_10,__zpabi_test_has_other_unions__u_11,__zpabi_test_has_other_unions__u_12,__zpabi_test_has_other_unions__u_13,__zpabi_test_has_other_unions__u_14,__zpabi_test_has_other_unions__u_15
+; def test_has_small_struct_array params=__zpabi_test_has_small_struct_array__u_0,__zpabi_test_has_small_struct_array__u_1,__zpabi_test_has_small_struct_array__u_2,__zpabi_test_has_small_struct_array__u_3,__zpabi_test_has_small_struct_array__u_4,__zpabi_test_has_small_struct_array__u_5,__zpabi_test_has_small_struct_array__u_6,__zpabi_test_has_small_struct_array__u_7,__zpabi_test_has_small_struct_array__u_8,__zpabi_test_has_small_struct_array__u_9,__zpabi_test_has_small_struct_array__u_10,__zpabi_test_has_small_struct_array__u_11 locals=__local_test_has_small_struct_array__0,__local_test_has_small_struct_array__1,__local_test_has_small_struct_array__2 indirect=false in_cycle=false changes=__zpabi_test_has_small_struct_array__u_0,__zpabi_test_has_small_struct_array__u_1,__zpabi_test_has_small_struct_array__u_2,__zpabi_test_has_small_struct_array__u_3,__zpabi_test_has_small_struct_array__u_4,__zpabi_test_has_small_struct_array__u_5,__zpabi_test_has_small_struct_array__u_6,__zpabi_test_has_small_struct_array__u_7,__zpabi_test_has_small_struct_array__u_8,__zpabi_test_has_small_struct_array__u_9,__zpabi_test_has_small_struct_array__u_10,__zpabi_test_has_small_struct_array__u_11
+; def test_has_struct_with_double params=__zpabi_test_has_struct_with_double__u_0,__zpabi_test_has_struct_with_double__u_1,__zpabi_test_has_struct_with_double__u_2,__zpabi_test_has_struct_with_double__u_3,__zpabi_test_has_struct_with_double__u_4,__zpabi_test_has_struct_with_double__u_5,__zpabi_test_has_struct_with_double__u_6,__zpabi_test_has_struct_with_double__u_7 locals=__local_test_has_struct_with_double__0,__local_test_has_struct_with_double__1,__local_test_has_struct_with_double__2,__local_test_has_struct_with_double__3,__local_test_has_struct_with_double__4,__local_test_has_struct_with_double__5,__local_test_has_struct_with_double__6,__local_test_has_struct_with_double__7,__local_test_has_struct_with_double__8,__local_test_has_struct_with_double__9 indirect=false in_cycle=false changes=__zpabi_test_has_struct_with_double__u_0,__zpabi_test_has_struct_with_double__u_1,__zpabi_test_has_struct_with_double__u_2,__zpabi_test_has_struct_with_double__u_3,__zpabi_test_has_struct_with_double__u_4,__zpabi_test_has_struct_with_double__u_5,__zpabi_test_has_struct_with_double__u_6,__zpabi_test_has_struct_with_double__u_7
+; def test_has_struct_with_ints params=__zpabi_test_has_struct_with_ints__u_0,__zpabi_test_has_struct_with_ints__u_1,__zpabi_test_has_struct_with_ints__u_2,__zpabi_test_has_struct_with_ints__u_3,__zpabi_test_has_struct_with_ints__u_4,__zpabi_test_has_struct_with_ints__u_5,__zpabi_test_has_struct_with_ints__u_6,__zpabi_test_has_struct_with_ints__u_7 locals=__local_test_has_struct_with_ints__0,__local_test_has_struct_with_ints__1,__local_test_has_struct_with_ints__2,__local_test_has_struct_with_ints__3 indirect=false in_cycle=false changes=__zpabi_test_has_struct_with_ints__u_0,__zpabi_test_has_struct_with_ints__u_1,__zpabi_test_has_struct_with_ints__u_2,__zpabi_test_has_struct_with_ints__u_3,__zpabi_test_has_struct_with_ints__u_4,__zpabi_test_has_struct_with_ints__u_5,__zpabi_test_has_struct_with_ints__u_6,__zpabi_test_has_struct_with_ints__u_7
+; def test_has_two_unions params=__zpabi_test_has_two_unions__s_0,__zpabi_test_has_two_unions__s_1,__zpabi_test_has_two_unions__s_2,__zpabi_test_has_two_unions__s_3,__zpabi_test_has_two_unions__s_4,__zpabi_test_has_two_unions__s_5,__zpabi_test_has_two_unions__s_6,__zpabi_test_has_two_unions__s_7,__zpabi_test_has_two_unions__s_8,__zpabi_test_has_two_unions__s_9,__zpabi_test_has_two_unions__s_10,__zpabi_test_has_two_unions__s_11,__zpabi_test_has_two_unions__s_12,__zpabi_test_has_two_unions__s_13,__zpabi_test_has_two_unions__s_14 locals=__local_test_has_two_unions__0,__local_test_has_two_unions__1,__local_test_has_two_unions__2,__local_test_has_two_unions__3,__local_test_has_two_unions__4,__local_test_has_two_unions__5,__local_test_has_two_unions__6,__local_test_has_two_unions__7,__local_test_has_two_unions__8,__local_test_has_two_unions__9 indirect=false in_cycle=false changes=__zpabi_test_has_two_unions__s_0,__zpabi_test_has_two_unions__s_1,__zpabi_test_has_two_unions__s_2,__zpabi_test_has_two_unions__s_3,__zpabi_test_has_two_unions__s_4,__zpabi_test_has_two_unions__s_5,__zpabi_test_has_two_unions__s_6,__zpabi_test_has_two_unions__s_7,__zpabi_test_has_two_unions__s_8,__zpabi_test_has_two_unions__s_9,__zpabi_test_has_two_unions__s_10,__zpabi_test_has_two_unions__s_11,__zpabi_test_has_two_unions__s_12,__zpabi_test_has_two_unions__s_13,__zpabi_test_has_two_unions__s_14
+; def test_has_uneven_union params=__zpabi_test_has_uneven_union__s_0,__zpabi_test_has_uneven_union__s_1,__zpabi_test_has_uneven_union__s_2,__zpabi_test_has_uneven_union__s_3,__zpabi_test_has_uneven_union__s_4,__zpabi_test_has_uneven_union__s_5,__zpabi_test_has_uneven_union__s_6 locals=__local_test_has_uneven_union__0,__local_test_has_uneven_union__1,__local_test_has_uneven_union__2,__local_test_has_uneven_union__3 indirect=false in_cycle=false changes=__zpabi_test_has_uneven_union__s_0,__zpabi_test_has_uneven_union__s_1,__zpabi_test_has_uneven_union__s_2,__zpabi_test_has_uneven_union__s_3,__zpabi_test_has_uneven_union__s_4,__zpabi_test_has_uneven_union__s_5,__zpabi_test_has_uneven_union__s_6
+; def test_has_union params=__zpabi_test_has_union__s_0,__zpabi_test_has_union__s_1,__zpabi_test_has_union__s_2,__zpabi_test_has_union__s_3 locals=__local_test_has_union__0,__local_test_has_union__1,__local_test_has_union__2,__local_test_has_union__3 indirect=false in_cycle=false changes=__zpabi_test_has_union__s_0,__zpabi_test_has_union__s_1,__zpabi_test_has_union__s_2,__zpabi_test_has_union__s_3
+; def test_has_union_with_double params=__zpabi_test_has_union_with_double__s_0,__zpabi_test_has_union_with_double__s_1,__zpabi_test_has_union_with_double__s_2,__zpabi_test_has_union_with_double__s_3,__zpabi_test_has_union_with_double__s_4,__zpabi_test_has_union_with_double__s_5,__zpabi_test_has_union_with_double__s_6,__zpabi_test_has_union_with_double__s_7 locals=__local_test_has_union_with_double__0,__local_test_has_union_with_double__1,__local_test_has_union_with_double__2,__local_test_has_union_with_double__3,__local_test_has_union_with_double__4,__local_test_has_union_with_double__5,__local_test_has_union_with_double__6,__local_test_has_union_with_double__7,__local_test_has_union_with_double__8,__local_test_has_union_with_double__9 indirect=false in_cycle=false changes=__zpabi_test_has_union_with_double__s_0,__zpabi_test_has_union_with_double__s_1,__zpabi_test_has_union_with_double__s_2,__zpabi_test_has_union_with_double__s_3,__zpabi_test_has_union_with_double__s_4,__zpabi_test_has_union_with_double__s_5,__zpabi_test_has_union_with_double__s_6,__zpabi_test_has_union_with_double__s_7
+; def test_has_xmm_union params=__zpabi_test_has_xmm_union__u_0,__zpabi_test_has_xmm_union__u_1,__zpabi_test_has_xmm_union__u_2,__zpabi_test_has_xmm_union__u_3,__zpabi_test_has_xmm_union__u_4,__zpabi_test_has_xmm_union__u_5,__zpabi_test_has_xmm_union__u_6,__zpabi_test_has_xmm_union__u_7,__zpabi_test_has_xmm_union__u_8,__zpabi_test_has_xmm_union__u_9,__zpabi_test_has_xmm_union__u_10,__zpabi_test_has_xmm_union__u_11,__zpabi_test_has_xmm_union__u_12,__zpabi_test_has_xmm_union__u_13,__zpabi_test_has_xmm_union__u_14,__zpabi_test_has_xmm_union__u_15 locals=__local_test_has_xmm_union__0,__local_test_has_xmm_union__1,__local_test_has_xmm_union__2,__local_test_has_xmm_union__3,__local_test_has_xmm_union__4,__local_test_has_xmm_union__5,__local_test_has_xmm_union__6,__local_test_has_xmm_union__7,__local_test_has_xmm_union__8,__local_test_has_xmm_union__9 indirect=false in_cycle=false changes=__zpabi_test_has_xmm_union__u_0,__zpabi_test_has_xmm_union__u_1,__zpabi_test_has_xmm_union__u_2,__zpabi_test_has_xmm_union__u_3,__zpabi_test_has_xmm_union__u_4,__zpabi_test_has_xmm_union__u_5,__zpabi_test_has_xmm_union__u_6,__zpabi_test_has_xmm_union__u_7,__zpabi_test_has_xmm_union__u_8,__zpabi_test_has_xmm_union__u_9,__zpabi_test_has_xmm_union__u_10,__zpabi_test_has_xmm_union__u_11,__zpabi_test_has_xmm_union__u_12,__zpabi_test_has_xmm_union__u_13,__zpabi_test_has_xmm_union__u_14,__zpabi_test_has_xmm_union__u_15
+; def test_lotsa_chars params=__zpabi_test_lotsa_chars__u_0,__zpabi_test_lotsa_chars__u_1,__zpabi_test_lotsa_chars__u_2,__zpabi_test_lotsa_chars__u_3,__zpabi_test_lotsa_chars__u_4,__zpabi_test_lotsa_chars__u_5,__zpabi_test_lotsa_chars__u_6,__zpabi_test_lotsa_chars__u_7,__zpabi_test_lotsa_chars__u_8,__zpabi_test_lotsa_chars__u_9,__zpabi_test_lotsa_chars__u_10,__zpabi_test_lotsa_chars__u_11,__zpabi_test_lotsa_chars__u_12,__zpabi_test_lotsa_chars__u_13,__zpabi_test_lotsa_chars__u_14,__zpabi_test_lotsa_chars__u_15,__zpabi_test_lotsa_chars__u_16,__zpabi_test_lotsa_chars__u_17 locals=__local_test_lotsa_chars__0,__local_test_lotsa_chars__1 indirect=false in_cycle=false changes=__zpabi_test_lotsa_chars__u_0,__zpabi_test_lotsa_chars__u_1,__zpabi_test_lotsa_chars__u_2,__zpabi_test_lotsa_chars__u_3,__zpabi_test_lotsa_chars__u_4,__zpabi_test_lotsa_chars__u_5,__zpabi_test_lotsa_chars__u_6,__zpabi_test_lotsa_chars__u_7,__zpabi_test_lotsa_chars__u_8,__zpabi_test_lotsa_chars__u_9,__zpabi_test_lotsa_chars__u_10,__zpabi_test_lotsa_chars__u_11,__zpabi_test_lotsa_chars__u_12,__zpabi_test_lotsa_chars__u_13,__zpabi_test_lotsa_chars__u_14,__zpabi_test_lotsa_chars__u_15,__zpabi_test_lotsa_chars__u_16,__zpabi_test_lotsa_chars__u_17
+; def test_lotsa_doubles params=__zpabi_test_lotsa_doubles__u_0,__zpabi_test_lotsa_doubles__u_1,__zpabi_test_lotsa_doubles__u_2,__zpabi_test_lotsa_doubles__u_3,__zpabi_test_lotsa_doubles__u_4,__zpabi_test_lotsa_doubles__u_5,__zpabi_test_lotsa_doubles__u_6,__zpabi_test_lotsa_doubles__u_7,__zpabi_test_lotsa_doubles__u_8,__zpabi_test_lotsa_doubles__u_9,__zpabi_test_lotsa_doubles__u_10,__zpabi_test_lotsa_doubles__u_11,__zpabi_test_lotsa_doubles__u_12,__zpabi_test_lotsa_doubles__u_13,__zpabi_test_lotsa_doubles__u_14,__zpabi_test_lotsa_doubles__u_15,__zpabi_test_lotsa_doubles__u_16,__zpabi_test_lotsa_doubles__u_17,__zpabi_test_lotsa_doubles__u_18,__zpabi_test_lotsa_doubles__u_19,__zpabi_test_lotsa_doubles__u_20,__zpabi_test_lotsa_doubles__u_21,__zpabi_test_lotsa_doubles__u_22,__zpabi_test_lotsa_doubles__u_23 locals=__local_test_lotsa_doubles__0,__local_test_lotsa_doubles__1,__local_test_lotsa_doubles__2,__local_test_lotsa_doubles__3,__local_test_lotsa_doubles__4,__local_test_lotsa_doubles__5,__local_test_lotsa_doubles__6,__local_test_lotsa_doubles__7,__local_test_lotsa_doubles__8,__local_test_lotsa_doubles__9 indirect=false in_cycle=false changes=__zpabi_test_lotsa_doubles__u_0,__zpabi_test_lotsa_doubles__u_1,__zpabi_test_lotsa_doubles__u_2,__zpabi_test_lotsa_doubles__u_3,__zpabi_test_lotsa_doubles__u_4,__zpabi_test_lotsa_doubles__u_5,__zpabi_test_lotsa_doubles__u_6,__zpabi_test_lotsa_doubles__u_7,__zpabi_test_lotsa_doubles__u_8,__zpabi_test_lotsa_doubles__u_9,__zpabi_test_lotsa_doubles__u_10,__zpabi_test_lotsa_doubles__u_11,__zpabi_test_lotsa_doubles__u_12,__zpabi_test_lotsa_doubles__u_13,__zpabi_test_lotsa_doubles__u_14,__zpabi_test_lotsa_doubles__u_15,__zpabi_test_lotsa_doubles__u_16,__zpabi_test_lotsa_doubles__u_17,__zpabi_test_lotsa_doubles__u_18,__zpabi_test_lotsa_doubles__u_19,__zpabi_test_lotsa_doubles__u_20,__zpabi_test_lotsa_doubles__u_21,__zpabi_test_lotsa_doubles__u_22,__zpabi_test_lotsa_doubles__u_23
+; def test_one_double params=__zpabi_test_one_double__u_0,__zpabi_test_one_double__u_1,__zpabi_test_one_double__u_2,__zpabi_test_one_double__u_3,__zpabi_test_one_double__u_4,__zpabi_test_one_double__u_5,__zpabi_test_one_double__u_6,__zpabi_test_one_double__u_7 locals=__local_test_one_double__0,__local_test_one_double__1,__local_test_one_double__2,__local_test_one_double__3,__local_test_one_double__4,__local_test_one_double__5,__local_test_one_double__6,__local_test_one_double__7,__local_test_one_double__8,__local_test_one_double__9 indirect=false in_cycle=false changes=__zpabi_test_one_double__u_0,__zpabi_test_one_double__u_1,__zpabi_test_one_double__u_2,__zpabi_test_one_double__u_3,__zpabi_test_one_double__u_4,__zpabi_test_one_double__u_5,__zpabi_test_one_double__u_6,__zpabi_test_one_double__u_7
+; def test_one_int params=__zpabi_test_one_int__u_0,__zpabi_test_one_int__u_1,__zpabi_test_one_int__u_2,__zpabi_test_one_int__u_3,__zpabi_test_one_int__u_4,__zpabi_test_one_int__u_5,__zpabi_test_one_int__u_6,__zpabi_test_one_int__u_7 locals=__local_test_one_int__0,__local_test_one_int__1,__local_test_one_int__2,__local_test_one_int__3,__local_test_one_int__4,__local_test_one_int__5,__local_test_one_int__6,__local_test_one_int__7,__local_test_one_int__8,__local_test_one_int__9 indirect=false in_cycle=false changes=__zpabi_test_one_int__u_0,__zpabi_test_one_int__u_1,__zpabi_test_one_int__u_2,__zpabi_test_one_int__u_3,__zpabi_test_one_int__u_4,__zpabi_test_one_int__u_5,__zpabi_test_one_int__u_6,__zpabi_test_one_int__u_7
+; def test_one_int_nested params=__zpabi_test_one_int_nested__u_0,__zpabi_test_one_int_nested__u_1,__zpabi_test_one_int_nested__u_2,__zpabi_test_one_int_nested__u_3,__zpabi_test_one_int_nested__u_4,__zpabi_test_one_int_nested__u_5,__zpabi_test_one_int_nested__u_6,__zpabi_test_one_int_nested__u_7 locals=__local_test_one_int_nested__0,__local_test_one_int_nested__1,__local_test_one_int_nested__2,__local_test_one_int_nested__3,__local_test_one_int_nested__4,__local_test_one_int_nested__5,__local_test_one_int_nested__6,__local_test_one_int_nested__7,__local_test_one_int_nested__8,__local_test_one_int_nested__9 indirect=false in_cycle=false changes=__zpabi_test_one_int_nested__u_0,__zpabi_test_one_int_nested__u_1,__zpabi_test_one_int_nested__u_2,__zpabi_test_one_int_nested__u_3,__zpabi_test_one_int_nested__u_4,__zpabi_test_one_int_nested__u_5,__zpabi_test_one_int_nested__u_6,__zpabi_test_one_int_nested__u_7
+; def test_scalar_and_struct params=__zpabi_test_scalar_and_struct__u_0,__zpabi_test_scalar_and_struct__u_1,__zpabi_test_scalar_and_struct__u_2,__zpabi_test_scalar_and_struct__u_3,__zpabi_test_scalar_and_struct__u_4,__zpabi_test_scalar_and_struct__u_5,__zpabi_test_scalar_and_struct__u_6,__zpabi_test_scalar_and_struct__u_7,__zpabi_test_scalar_and_struct__u_8 locals=__local_test_scalar_and_struct__0,__local_test_scalar_and_struct__1,__local_test_scalar_and_struct__2,__local_test_scalar_and_struct__3,__local_test_scalar_and_struct__4,__local_test_scalar_and_struct__5,__local_test_scalar_and_struct__6,__local_test_scalar_and_struct__7,__local_test_scalar_and_struct__8,__local_test_scalar_and_struct__9 indirect=false in_cycle=false changes=__zpabi_test_scalar_and_struct__u_0,__zpabi_test_scalar_and_struct__u_1,__zpabi_test_scalar_and_struct__u_2,__zpabi_test_scalar_and_struct__u_3,__zpabi_test_scalar_and_struct__u_4,__zpabi_test_scalar_and_struct__u_5,__zpabi_test_scalar_and_struct__u_6,__zpabi_test_scalar_and_struct__u_7,__zpabi_test_scalar_and_struct__u_8
+; def test_small_struct_arr_and_dbl params=__zpabi_test_small_struct_arr_and_dbl__u_0,__zpabi_test_small_struct_arr_and_dbl__u_1,__zpabi_test_small_struct_arr_and_dbl__u_2,__zpabi_test_small_struct_arr_and_dbl__u_3,__zpabi_test_small_struct_arr_and_dbl__u_4,__zpabi_test_small_struct_arr_and_dbl__u_5,__zpabi_test_small_struct_arr_and_dbl__u_6,__zpabi_test_small_struct_arr_and_dbl__u_7,__zpabi_test_small_struct_arr_and_dbl__u_8,__zpabi_test_small_struct_arr_and_dbl__u_9,__zpabi_test_small_struct_arr_and_dbl__u_10,__zpabi_test_small_struct_arr_and_dbl__u_11,__zpabi_test_small_struct_arr_and_dbl__u_12,__zpabi_test_small_struct_arr_and_dbl__u_13,__zpabi_test_small_struct_arr_and_dbl__u_14,__zpabi_test_small_struct_arr_and_dbl__u_15 locals=__local_test_small_struct_arr_and_dbl__0,__local_test_small_struct_arr_and_dbl__1,__local_test_small_struct_arr_and_dbl__2,__local_test_small_struct_arr_and_dbl__3,__local_test_small_struct_arr_and_dbl__4,__local_test_small_struct_arr_and_dbl__5,__local_test_small_struct_arr_and_dbl__6,__local_test_small_struct_arr_and_dbl__7,__local_test_small_struct_arr_and_dbl__8,__local_test_small_struct_arr_and_dbl__9 indirect=false in_cycle=false changes=__zpabi_test_small_struct_arr_and_dbl__u_0,__zpabi_test_small_struct_arr_and_dbl__u_1,__zpabi_test_small_struct_arr_and_dbl__u_2,__zpabi_test_small_struct_arr_and_dbl__u_3,__zpabi_test_small_struct_arr_and_dbl__u_4,__zpabi_test_small_struct_arr_and_dbl__u_5,__zpabi_test_small_struct_arr_and_dbl__u_6,__zpabi_test_small_struct_arr_and_dbl__u_7,__zpabi_test_small_struct_arr_and_dbl__u_8,__zpabi_test_small_struct_arr_and_dbl__u_9,__zpabi_test_small_struct_arr_and_dbl__u_10,__zpabi_test_small_struct_arr_and_dbl__u_11,__zpabi_test_small_struct_arr_and_dbl__u_12,__zpabi_test_small_struct_arr_and_dbl__u_13,__zpabi_test_small_struct_arr_and_dbl__u_14,__zpabi_test_small_struct_arr_and_dbl__u_15
+; def test_two_arrs params=__zpabi_test_two_arrs__u_0,__zpabi_test_two_arrs__u_1,__zpabi_test_two_arrs__u_2,__zpabi_test_two_arrs__u_3,__zpabi_test_two_arrs__u_4,__zpabi_test_two_arrs__u_5,__zpabi_test_two_arrs__u_6,__zpabi_test_two_arrs__u_7,__zpabi_test_two_arrs__u_8,__zpabi_test_two_arrs__u_9,__zpabi_test_two_arrs__u_10,__zpabi_test_two_arrs__u_11,__zpabi_test_two_arrs__u_12,__zpabi_test_two_arrs__u_13,__zpabi_test_two_arrs__u_14,__zpabi_test_two_arrs__u_15 locals=__local_test_two_arrs__0,__local_test_two_arrs__1,__local_test_two_arrs__2,__local_test_two_arrs__3,__local_test_two_arrs__4,__local_test_two_arrs__5,__local_test_two_arrs__6,__local_test_two_arrs__7,__local_test_two_arrs__8,__local_test_two_arrs__9 indirect=false in_cycle=false changes=__zpabi_test_two_arrs__u_0,__zpabi_test_two_arrs__u_1,__zpabi_test_two_arrs__u_2,__zpabi_test_two_arrs__u_3,__zpabi_test_two_arrs__u_4,__zpabi_test_two_arrs__u_5,__zpabi_test_two_arrs__u_6,__zpabi_test_two_arrs__u_7,__zpabi_test_two_arrs__u_8,__zpabi_test_two_arrs__u_9,__zpabi_test_two_arrs__u_10,__zpabi_test_two_arrs__u_11,__zpabi_test_two_arrs__u_12,__zpabi_test_two_arrs__u_13,__zpabi_test_two_arrs__u_14,__zpabi_test_two_arrs__u_15
+; def test_two_doubles params=__zpabi_test_two_doubles__u_0,__zpabi_test_two_doubles__u_1,__zpabi_test_two_doubles__u_2,__zpabi_test_two_doubles__u_3,__zpabi_test_two_doubles__u_4,__zpabi_test_two_doubles__u_5,__zpabi_test_two_doubles__u_6,__zpabi_test_two_doubles__u_7,__zpabi_test_two_doubles__u_8,__zpabi_test_two_doubles__u_9,__zpabi_test_two_doubles__u_10,__zpabi_test_two_doubles__u_11,__zpabi_test_two_doubles__u_12,__zpabi_test_two_doubles__u_13,__zpabi_test_two_doubles__u_14,__zpabi_test_two_doubles__u_15 locals=__local_test_two_doubles__0,__local_test_two_doubles__1,__local_test_two_doubles__2,__local_test_two_doubles__3,__local_test_two_doubles__4,__local_test_two_doubles__5,__local_test_two_doubles__6,__local_test_two_doubles__7,__local_test_two_doubles__8,__local_test_two_doubles__9 indirect=false in_cycle=false changes=__zpabi_test_two_doubles__u_0,__zpabi_test_two_doubles__u_1,__zpabi_test_two_doubles__u_2,__zpabi_test_two_doubles__u_3,__zpabi_test_two_doubles__u_4,__zpabi_test_two_doubles__u_5,__zpabi_test_two_doubles__u_6,__zpabi_test_two_doubles__u_7,__zpabi_test_two_doubles__u_8,__zpabi_test_two_doubles__u_9,__zpabi_test_two_doubles__u_10,__zpabi_test_two_doubles__u_11,__zpabi_test_two_doubles__u_12,__zpabi_test_two_doubles__u_13,__zpabi_test_two_doubles__u_14,__zpabi_test_two_doubles__u_15
+; def test_two_eightbyte_has_struct params=__zpabi_test_two_eightbyte_has_struct__u_0,__zpabi_test_two_eightbyte_has_struct__u_1,__zpabi_test_two_eightbyte_has_struct__u_2,__zpabi_test_two_eightbyte_has_struct__u_3,__zpabi_test_two_eightbyte_has_struct__u_4,__zpabi_test_two_eightbyte_has_struct__u_5,__zpabi_test_two_eightbyte_has_struct__u_6,__zpabi_test_two_eightbyte_has_struct__u_7,__zpabi_test_two_eightbyte_has_struct__u_8,__zpabi_test_two_eightbyte_has_struct__u_9,__zpabi_test_two_eightbyte_has_struct__u_10,__zpabi_test_two_eightbyte_has_struct__u_11,__zpabi_test_two_eightbyte_has_struct__u_12,__zpabi_test_two_eightbyte_has_struct__u_13,__zpabi_test_two_eightbyte_has_struct__u_14,__zpabi_test_two_eightbyte_has_struct__u_15 locals=__local_test_two_eightbyte_has_struct__0,__local_test_two_eightbyte_has_struct__1,__local_test_two_eightbyte_has_struct__2,__local_test_two_eightbyte_has_struct__3,__local_test_two_eightbyte_has_struct__4,__local_test_two_eightbyte_has_struct__5,__local_test_two_eightbyte_has_struct__6,__local_test_two_eightbyte_has_struct__7,__local_test_two_eightbyte_has_struct__8,__local_test_two_eightbyte_has_struct__9 indirect=false in_cycle=false changes=__zpabi_test_two_eightbyte_has_struct__u_0,__zpabi_test_two_eightbyte_has_struct__u_1,__zpabi_test_two_eightbyte_has_struct__u_2,__zpabi_test_two_eightbyte_has_struct__u_3,__zpabi_test_two_eightbyte_has_struct__u_4,__zpabi_test_two_eightbyte_has_struct__u_5,__zpabi_test_two_eightbyte_has_struct__u_6,__zpabi_test_two_eightbyte_has_struct__u_7,__zpabi_test_two_eightbyte_has_struct__u_8,__zpabi_test_two_eightbyte_has_struct__u_9,__zpabi_test_two_eightbyte_has_struct__u_10,__zpabi_test_two_eightbyte_has_struct__u_11,__zpabi_test_two_eightbyte_has_struct__u_12,__zpabi_test_two_eightbyte_has_struct__u_13,__zpabi_test_two_eightbyte_has_struct__u_14,__zpabi_test_two_eightbyte_has_struct__u_15
+; def test_two_structs params=__zpabi_test_two_structs__u_0,__zpabi_test_two_structs__u_1,__zpabi_test_two_structs__u_2,__zpabi_test_two_structs__u_3,__zpabi_test_two_structs__u_4,__zpabi_test_two_structs__u_5,__zpabi_test_two_structs__u_6,__zpabi_test_two_structs__u_7,__zpabi_test_two_structs__u_8,__zpabi_test_two_structs__u_9 locals=__local_test_two_structs__0,__local_test_two_structs__1,__local_test_two_structs__2,__local_test_two_structs__3,__local_test_two_structs__4,__local_test_two_structs__5,__local_test_two_structs__6,__local_test_two_structs__7,__local_test_two_structs__8,__local_test_two_structs__9 indirect=false in_cycle=false changes=__zpabi_test_two_structs__u_0,__zpabi_test_two_structs__u_1,__zpabi_test_two_structs__u_2,__zpabi_test_two_structs__u_3,__zpabi_test_two_structs__u_4,__zpabi_test_two_structs__u_5,__zpabi_test_two_structs__u_6,__zpabi_test_two_structs__u_7,__zpabi_test_two_structs__u_8,__zpabi_test_two_structs__u_9
+; def test_uneven_union_array params=__zpabi_test_uneven_union_array__u_0,__zpabi_test_uneven_union_array__u_1,__zpabi_test_uneven_union_array__u_2,__zpabi_test_uneven_union_array__u_3,__zpabi_test_uneven_union_array__u_4,__zpabi_test_uneven_union_array__u_5,__zpabi_test_uneven_union_array__u_6,__zpabi_test_uneven_union_array__u_7,__zpabi_test_uneven_union_array__u_8,__zpabi_test_uneven_union_array__u_9 locals=__local_test_uneven_union_array__0,__local_test_uneven_union_array__1,__local_test_uneven_union_array__2 indirect=false in_cycle=false changes=__zpabi_test_uneven_union_array__u_0,__zpabi_test_uneven_union_array__u_1,__zpabi_test_uneven_union_array__u_2,__zpabi_test_uneven_union_array__u_3,__zpabi_test_uneven_union_array__u_4,__zpabi_test_uneven_union_array__u_5,__zpabi_test_uneven_union_array__u_6,__zpabi_test_uneven_union_array__u_7,__zpabi_test_uneven_union_array__u_8,__zpabi_test_uneven_union_array__u_9
+; def test_union_array params=__zpabi_test_union_array__u_0,__zpabi_test_union_array__u_1,__zpabi_test_union_array__u_2,__zpabi_test_union_array__u_3,__zpabi_test_union_array__u_4,__zpabi_test_union_array__u_5,__zpabi_test_union_array__u_6,__zpabi_test_union_array__u_7,__zpabi_test_union_array__u_8,__zpabi_test_union_array__u_9,__zpabi_test_union_array__u_10,__zpabi_test_union_array__u_11,__zpabi_test_union_array__u_12,__zpabi_test_union_array__u_13,__zpabi_test_union_array__u_14,__zpabi_test_union_array__u_15 locals=__local_test_union_array__0,__local_test_union_array__1,__local_test_union_array__2,__local_test_union_array__3,__local_test_union_array__4,__local_test_union_array__5,__local_test_union_array__6,__local_test_union_array__7,__local_test_union_array__8,__local_test_union_array__9 indirect=false in_cycle=false changes=__zpabi_test_union_array__u_0,__zpabi_test_union_array__u_1,__zpabi_test_union_array__u_2,__zpabi_test_union_array__u_3,__zpabi_test_union_array__u_4,__zpabi_test_union_array__u_5,__zpabi_test_union_array__u_6,__zpabi_test_union_array__u_7,__zpabi_test_union_array__u_8,__zpabi_test_union_array__u_9,__zpabi_test_union_array__u_10,__zpabi_test_union_array__u_11,__zpabi_test_union_array__u_12,__zpabi_test_union_array__u_13,__zpabi_test_union_array__u_14,__zpabi_test_union_array__u_15
+; def test_xmm_and_gp params=__zpabi_test_xmm_and_gp__u_0,__zpabi_test_xmm_and_gp__u_1,__zpabi_test_xmm_and_gp__u_2,__zpabi_test_xmm_and_gp__u_3,__zpabi_test_xmm_and_gp__u_4,__zpabi_test_xmm_and_gp__u_5,__zpabi_test_xmm_and_gp__u_6,__zpabi_test_xmm_and_gp__u_7,__zpabi_test_xmm_and_gp__u_8,__zpabi_test_xmm_and_gp__u_9 locals=__local_test_xmm_and_gp__0,__local_test_xmm_and_gp__1,__local_test_xmm_and_gp__2,__local_test_xmm_and_gp__3,__local_test_xmm_and_gp__4,__local_test_xmm_and_gp__5,__local_test_xmm_and_gp__6,__local_test_xmm_and_gp__7,__local_test_xmm_and_gp__8,__local_test_xmm_and_gp__9 indirect=false in_cycle=false changes=__zpabi_test_xmm_and_gp__u_0,__zpabi_test_xmm_and_gp__u_1,__zpabi_test_xmm_and_gp__u_2,__zpabi_test_xmm_and_gp__u_3,__zpabi_test_xmm_and_gp__u_4,__zpabi_test_xmm_and_gp__u_5,__zpabi_test_xmm_and_gp__u_6,__zpabi_test_xmm_and_gp__u_7,__zpabi_test_xmm_and_gp__u_8,__zpabi_test_xmm_and_gp__u_9
+; def test_xmm_and_gp_nested params=__zpabi_test_xmm_and_gp_nested__u_0,__zpabi_test_xmm_and_gp_nested__u_1,__zpabi_test_xmm_and_gp_nested__u_2,__zpabi_test_xmm_and_gp_nested__u_3,__zpabi_test_xmm_and_gp_nested__u_4,__zpabi_test_xmm_and_gp_nested__u_5,__zpabi_test_xmm_and_gp_nested__u_6,__zpabi_test_xmm_and_gp_nested__u_7,__zpabi_test_xmm_and_gp_nested__u_8,__zpabi_test_xmm_and_gp_nested__u_9,__zpabi_test_xmm_and_gp_nested__u_10,__zpabi_test_xmm_and_gp_nested__u_11,__zpabi_test_xmm_and_gp_nested__u_12,__zpabi_test_xmm_and_gp_nested__u_13,__zpabi_test_xmm_and_gp_nested__u_14,__zpabi_test_xmm_and_gp_nested__u_15 locals=__local_test_xmm_and_gp_nested__0,__local_test_xmm_and_gp_nested__1,__local_test_xmm_and_gp_nested__2,__local_test_xmm_and_gp_nested__3,__local_test_xmm_and_gp_nested__4,__local_test_xmm_and_gp_nested__5,__local_test_xmm_and_gp_nested__6,__local_test_xmm_and_gp_nested__7,__local_test_xmm_and_gp_nested__8,__local_test_xmm_and_gp_nested__9 indirect=false in_cycle=false changes=__zpabi_test_xmm_and_gp_nested__u_0,__zpabi_test_xmm_and_gp_nested__u_1,__zpabi_test_xmm_and_gp_nested__u_2,__zpabi_test_xmm_and_gp_nested__u_3,__zpabi_test_xmm_and_gp_nested__u_4,__zpabi_test_xmm_and_gp_nested__u_5,__zpabi_test_xmm_and_gp_nested__u_6,__zpabi_test_xmm_and_gp_nested__u_7,__zpabi_test_xmm_and_gp_nested__u_8,__zpabi_test_xmm_and_gp_nested__u_9,__zpabi_test_xmm_and_gp_nested__u_10,__zpabi_test_xmm_and_gp_nested__u_11,__zpabi_test_xmm_and_gp_nested__u_12,__zpabi_test_xmm_and_gp_nested__u_13,__zpabi_test_xmm_and_gp_nested__u_14,__zpabi_test_xmm_and_gp_nested__u_15
+; ext exit params=__zpabi_exit__status_0,__zpabi_exit__status_1 param_regs=A,X
+; ext malloc params=__zpabi_malloc__size_0,__zpabi_malloc__size_1,__zpabi_malloc__size_2,__zpabi_malloc__size_3
+; ext pass_borderline_union params=__zpabi_pass_borderline_union__i1_0,__zpabi_pass_borderline_union__i1_1,__zpabi_pass_borderline_union__i2_0,__zpabi_pass_borderline_union__i2_1,__zpabi_pass_borderline_union__i3_0,__zpabi_pass_borderline_union__i3_1,__zpabi_pass_borderline_union__i4_0,__zpabi_pass_borderline_union__i4_1,__zpabi_pass_borderline_union__i5_0,__zpabi_pass_borderline_union__i5_1,__zpabi_pass_borderline_union__two_gp_0,__zpabi_pass_borderline_union__two_gp_1,__zpabi_pass_borderline_union__two_gp_2,__zpabi_pass_borderline_union__two_gp_3,__zpabi_pass_borderline_union__two_gp_4,__zpabi_pass_borderline_union__two_gp_5,__zpabi_pass_borderline_union__two_gp_6,__zpabi_pass_borderline_union__two_gp_7,__zpabi_pass_borderline_union__two_gp_8,__zpabi_pass_borderline_union__two_gp_9,__zpabi_pass_borderline_union__two_gp_10 param_regs=A,X,,,,,,,,,,,,,,,,,,,
+; ext pass_gp_union_in_memory params=__zpabi_pass_gp_union_in_memory__two_xmm_0,__zpabi_pass_gp_union_in_memory__two_xmm_1,__zpabi_pass_gp_union_in_memory__two_xmm_2,__zpabi_pass_gp_union_in_memory__two_xmm_3,__zpabi_pass_gp_union_in_memory__two_xmm_4,__zpabi_pass_gp_union_in_memory__two_xmm_5,__zpabi_pass_gp_union_in_memory__two_xmm_6,__zpabi_pass_gp_union_in_memory__two_xmm_7,__zpabi_pass_gp_union_in_memory__two_xmm_8,__zpabi_pass_gp_union_in_memory__two_xmm_9,__zpabi_pass_gp_union_in_memory__two_xmm_10,__zpabi_pass_gp_union_in_memory__two_xmm_11,__zpabi_pass_gp_union_in_memory__two_xmm_12,__zpabi_pass_gp_union_in_memory__two_xmm_13,__zpabi_pass_gp_union_in_memory__two_xmm_14,__zpabi_pass_gp_union_in_memory__two_xmm_15,__zpabi_pass_gp_union_in_memory__one_gp_struct_0,__zpabi_pass_gp_union_in_memory__one_gp_struct_1,__zpabi_pass_gp_union_in_memory__one_gp_struct_2,__zpabi_pass_gp_union_in_memory__one_gp_struct_3,__zpabi_pass_gp_union_in_memory__i1_0,__zpabi_pass_gp_union_in_memory__i1_1,__zpabi_pass_gp_union_in_memory__i2_0,__zpabi_pass_gp_union_in_memory__i2_1,__zpabi_pass_gp_union_in_memory__i3_0,__zpabi_pass_gp_union_in_memory__i3_1,__zpabi_pass_gp_union_in_memory__i4_0,__zpabi_pass_gp_union_in_memory__i4_1,__zpabi_pass_gp_union_in_memory__i5_0,__zpabi_pass_gp_union_in_memory__i5_1,__zpabi_pass_gp_union_in_memory__i6_0,__zpabi_pass_gp_union_in_memory__i6_1,__zpabi_pass_gp_union_in_memory__one_gp_0,__zpabi_pass_gp_union_in_memory__one_gp_1,__zpabi_pass_gp_union_in_memory__one_gp_2,__zpabi_pass_gp_union_in_memory__one_gp_3,__zpabi_pass_gp_union_in_memory__one_gp_4,__zpabi_pass_gp_union_in_memory__one_gp_5,__zpabi_pass_gp_union_in_memory__one_gp_6,__zpabi_pass_gp_union_in_memory__one_gp_7
+; ext pass_in_mem_first params=__zpabi_pass_in_mem_first__mem_0,__zpabi_pass_in_mem_first__mem_1,__zpabi_pass_in_mem_first__mem_2,__zpabi_pass_in_mem_first__mem_3,__zpabi_pass_in_mem_first__mem_4,__zpabi_pass_in_mem_first__mem_5,__zpabi_pass_in_mem_first__mem_6,__zpabi_pass_in_mem_first__mem_7,__zpabi_pass_in_mem_first__mem_8,__zpabi_pass_in_mem_first__mem_9,__zpabi_pass_in_mem_first__mem_10,__zpabi_pass_in_mem_first__mem_11,__zpabi_pass_in_mem_first__mem_12,__zpabi_pass_in_mem_first__mem_13,__zpabi_pass_in_mem_first__mem_14,__zpabi_pass_in_mem_first__mem_15,__zpabi_pass_in_mem_first__mem_16,__zpabi_pass_in_mem_first__mem_17,__zpabi_pass_in_mem_first__mem_18,__zpabi_pass_in_mem_first__mem_19,__zpabi_pass_in_mem_first__mem_20,__zpabi_pass_in_mem_first__mem_21,__zpabi_pass_in_mem_first__mem_22,__zpabi_pass_in_mem_first__mem_23,__zpabi_pass_in_mem_first__mixed_regs_0,__zpabi_pass_in_mem_first__mixed_regs_1,__zpabi_pass_in_mem_first__mixed_regs_2,__zpabi_pass_in_mem_first__mixed_regs_3,__zpabi_pass_in_mem_first__mixed_regs_4,__zpabi_pass_in_mem_first__mixed_regs_5,__zpabi_pass_in_mem_first__mixed_regs_6,__zpabi_pass_in_mem_first__mixed_regs_7,__zpabi_pass_in_mem_first__mixed_regs_8,__zpabi_pass_in_mem_first__mixed_regs_9,__zpabi_pass_in_mem_first__mixed_regs_10,__zpabi_pass_in_mem_first__mixed_regs_11,__zpabi_pass_in_mem_first__mixed_regs_12,__zpabi_pass_in_mem_first__mixed_regs_13,__zpabi_pass_in_mem_first__mixed_regs_14,__zpabi_pass_in_mem_first__mixed_regs_15,__zpabi_pass_in_mem_first__two_gp_0,__zpabi_pass_in_mem_first__two_gp_1,__zpabi_pass_in_mem_first__two_gp_2,__zpabi_pass_in_mem_first__two_gp_3,__zpabi_pass_in_mem_first__two_gp_4,__zpabi_pass_in_mem_first__two_gp_5,__zpabi_pass_in_mem_first__two_gp_6,__zpabi_pass_in_mem_first__two_gp_7,__zpabi_pass_in_mem_first__two_gp_8,__zpabi_pass_in_mem_first__two_gp_9,__zpabi_pass_in_mem_first__two_gp_10,__zpabi_pass_in_mem_first__one_gp_struct_0,__zpabi_pass_in_mem_first__one_gp_struct_1,__zpabi_pass_in_mem_first__one_gp_struct_2,__zpabi_pass_in_mem_first__one_gp_struct_3
+; ext pass_mixed_reg_in_memory params=__zpabi_pass_mixed_reg_in_memory__d1_0,__zpabi_pass_mixed_reg_in_memory__d1_1,__zpabi_pass_mixed_reg_in_memory__d1_2,__zpabi_pass_mixed_reg_in_memory__d1_3,__zpabi_pass_mixed_reg_in_memory__d1_4,__zpabi_pass_mixed_reg_in_memory__d1_5,__zpabi_pass_mixed_reg_in_memory__d1_6,__zpabi_pass_mixed_reg_in_memory__d1_7,__zpabi_pass_mixed_reg_in_memory__d2_0,__zpabi_pass_mixed_reg_in_memory__d2_1,__zpabi_pass_mixed_reg_in_memory__d2_2,__zpabi_pass_mixed_reg_in_memory__d2_3,__zpabi_pass_mixed_reg_in_memory__d2_4,__zpabi_pass_mixed_reg_in_memory__d2_5,__zpabi_pass_mixed_reg_in_memory__d2_6,__zpabi_pass_mixed_reg_in_memory__d2_7,__zpabi_pass_mixed_reg_in_memory__d3_0,__zpabi_pass_mixed_reg_in_memory__d3_1,__zpabi_pass_mixed_reg_in_memory__d3_2,__zpabi_pass_mixed_reg_in_memory__d3_3,__zpabi_pass_mixed_reg_in_memory__d3_4,__zpabi_pass_mixed_reg_in_memory__d3_5,__zpabi_pass_mixed_reg_in_memory__d3_6,__zpabi_pass_mixed_reg_in_memory__d3_7,__zpabi_pass_mixed_reg_in_memory__d4_0,__zpabi_pass_mixed_reg_in_memory__d4_1,__zpabi_pass_mixed_reg_in_memory__d4_2,__zpabi_pass_mixed_reg_in_memory__d4_3,__zpabi_pass_mixed_reg_in_memory__d4_4,__zpabi_pass_mixed_reg_in_memory__d4_5,__zpabi_pass_mixed_reg_in_memory__d4_6,__zpabi_pass_mixed_reg_in_memory__d4_7,__zpabi_pass_mixed_reg_in_memory__i1_0,__zpabi_pass_mixed_reg_in_memory__i1_1,__zpabi_pass_mixed_reg_in_memory__i2_0,__zpabi_pass_mixed_reg_in_memory__i2_1,__zpabi_pass_mixed_reg_in_memory__i3_0,__zpabi_pass_mixed_reg_in_memory__i3_1,__zpabi_pass_mixed_reg_in_memory__i4_0,__zpabi_pass_mixed_reg_in_memory__i4_1,__zpabi_pass_mixed_reg_in_memory__i5_0,__zpabi_pass_mixed_reg_in_memory__i5_1,__zpabi_pass_mixed_reg_in_memory__i6_0,__zpabi_pass_mixed_reg_in_memory__i6_1,__zpabi_pass_mixed_reg_in_memory__mixed_regs_0,__zpabi_pass_mixed_reg_in_memory__mixed_regs_1,__zpabi_pass_mixed_reg_in_memory__mixed_regs_2,__zpabi_pass_mixed_reg_in_memory__mixed_regs_3,__zpabi_pass_mixed_reg_in_memory__mixed_regs_4,__zpabi_pass_mixed_reg_in_memory__mixed_regs_5,__zpabi_pass_mixed_reg_in_memory__mixed_regs_6,__zpabi_pass_mixed_reg_in_memory__mixed_regs_7,__zpabi_pass_mixed_reg_in_memory__mixed_regs_8,__zpabi_pass_mixed_reg_in_memory__mixed_regs_9,__zpabi_pass_mixed_reg_in_memory__mixed_regs_10,__zpabi_pass_mixed_reg_in_memory__mixed_regs_11,__zpabi_pass_mixed_reg_in_memory__mixed_regs_12,__zpabi_pass_mixed_reg_in_memory__mixed_regs_13,__zpabi_pass_mixed_reg_in_memory__mixed_regs_14,__zpabi_pass_mixed_reg_in_memory__mixed_regs_15
+; ext pass_uneven_union_in_memory params=__zpabi_pass_uneven_union_in_memory__i1_0,__zpabi_pass_uneven_union_in_memory__i1_1,__zpabi_pass_uneven_union_in_memory__i2_0,__zpabi_pass_uneven_union_in_memory__i2_1,__zpabi_pass_uneven_union_in_memory__i3_0,__zpabi_pass_uneven_union_in_memory__i3_1,__zpabi_pass_uneven_union_in_memory__i4_0,__zpabi_pass_uneven_union_in_memory__i4_1,__zpabi_pass_uneven_union_in_memory__i5_0,__zpabi_pass_uneven_union_in_memory__i5_1,__zpabi_pass_uneven_union_in_memory__mixed_regs_0,__zpabi_pass_uneven_union_in_memory__mixed_regs_1,__zpabi_pass_uneven_union_in_memory__mixed_regs_2,__zpabi_pass_uneven_union_in_memory__mixed_regs_3,__zpabi_pass_uneven_union_in_memory__mixed_regs_4,__zpabi_pass_uneven_union_in_memory__mixed_regs_5,__zpabi_pass_uneven_union_in_memory__mixed_regs_6,__zpabi_pass_uneven_union_in_memory__mixed_regs_7,__zpabi_pass_uneven_union_in_memory__mixed_regs_8,__zpabi_pass_uneven_union_in_memory__mixed_regs_9,__zpabi_pass_uneven_union_in_memory__mixed_regs_10,__zpabi_pass_uneven_union_in_memory__mixed_regs_11,__zpabi_pass_uneven_union_in_memory__mixed_regs_12,__zpabi_pass_uneven_union_in_memory__mixed_regs_13,__zpabi_pass_uneven_union_in_memory__mixed_regs_14,__zpabi_pass_uneven_union_in_memory__mixed_regs_15,__zpabi_pass_uneven_union_in_memory__one_gp_0,__zpabi_pass_uneven_union_in_memory__one_gp_1,__zpabi_pass_uneven_union_in_memory__one_gp_2,__zpabi_pass_uneven_union_in_memory__one_gp_3,__zpabi_pass_uneven_union_in_memory__one_gp_4,__zpabi_pass_uneven_union_in_memory__one_gp_5,__zpabi_pass_uneven_union_in_memory__one_gp_6,__zpabi_pass_uneven_union_in_memory__one_gp_7,__zpabi_pass_uneven_union_in_memory__uneven_0,__zpabi_pass_uneven_union_in_memory__uneven_1,__zpabi_pass_uneven_union_in_memory__uneven_2,__zpabi_pass_uneven_union_in_memory__uneven_3,__zpabi_pass_uneven_union_in_memory__uneven_4 param_regs=A,X,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+; ext pass_unions_and_structs params=__zpabi_pass_unions_and_structs__i1_0,__zpabi_pass_unions_and_structs__i1_1,__zpabi_pass_unions_and_structs__i2_0,__zpabi_pass_unions_and_structs__i2_1,__zpabi_pass_unions_and_structs__one_gp_struct_0,__zpabi_pass_unions_and_structs__one_gp_struct_1,__zpabi_pass_unions_and_structs__one_gp_struct_2,__zpabi_pass_unions_and_structs__one_gp_struct_3,__zpabi_pass_unions_and_structs__d1_0,__zpabi_pass_unions_and_structs__d1_1,__zpabi_pass_unions_and_structs__d1_2,__zpabi_pass_unions_and_structs__d1_3,__zpabi_pass_unions_and_structs__d1_4,__zpabi_pass_unions_and_structs__d1_5,__zpabi_pass_unions_and_structs__d1_6,__zpabi_pass_unions_and_structs__d1_7,__zpabi_pass_unions_and_structs__two_xmm_0,__zpabi_pass_unions_and_structs__two_xmm_1,__zpabi_pass_unions_and_structs__two_xmm_2,__zpabi_pass_unions_and_structs__two_xmm_3,__zpabi_pass_unions_and_structs__two_xmm_4,__zpabi_pass_unions_and_structs__two_xmm_5,__zpabi_pass_unions_and_structs__two_xmm_6,__zpabi_pass_unions_and_structs__two_xmm_7,__zpabi_pass_unions_and_structs__two_xmm_8,__zpabi_pass_unions_and_structs__two_xmm_9,__zpabi_pass_unions_and_structs__two_xmm_10,__zpabi_pass_unions_and_structs__two_xmm_11,__zpabi_pass_unions_and_structs__two_xmm_12,__zpabi_pass_unions_and_structs__two_xmm_13,__zpabi_pass_unions_and_structs__two_xmm_14,__zpabi_pass_unions_and_structs__two_xmm_15,__zpabi_pass_unions_and_structs__one_gp_0,__zpabi_pass_unions_and_structs__one_gp_1,__zpabi_pass_unions_and_structs__one_gp_2,__zpabi_pass_unions_and_structs__one_gp_3,__zpabi_pass_unions_and_structs__one_gp_4,__zpabi_pass_unions_and_structs__one_gp_5,__zpabi_pass_unions_and_structs__one_gp_6,__zpabi_pass_unions_and_structs__one_gp_7,__zpabi_pass_unions_and_structs__i3_0,__zpabi_pass_unions_and_structs__i3_1,__zpabi_pass_unions_and_structs__i4_0,__zpabi_pass_unions_and_structs__i4_1,__zpabi_pass_unions_and_structs__i5_0,__zpabi_pass_unions_and_structs__i5_1 param_regs=A,X,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+; ext strcmp params=__zpabi_strcmp__s1_0,__zpabi_strcmp__s1_1,__zpabi_strcmp__s2_0,__zpabi_strcmp__s2_1 param_regs=A,X,,
+; call test_char_arr -> strcmp
+; call test_char_int_mixed -> strcmp
+; call test_contains_large_struct -> strcmp
+; call test_has_small_struct_array -> strcmp
+; call test_has_two_unions -> strcmp
+; call test_has_uneven_union -> strcmp
+; call test_lotsa_chars -> strcmp
+; call test_uneven_union_array -> strcmp
+; item test_one_double section=.text local=false zero=false
+; item test_one_double@tail1 section=.text local=true zero=false
+; item test_one_double@tail0 section=.text local=true zero=false
+; item test_has_union_with_double section=.text local=false zero=false
+; item test_has_struct_with_double section=.text local=false zero=false
+; item test_one_int section=.text local=false zero=false
+; item test_one_int_nested section=.text local=false zero=false
+; item test_char_int_mixed section=.text local=false zero=false
+; item test_has_union section=.text local=false zero=false
+; item test_has_struct_with_ints section=.text local=false zero=false
+; item test_two_doubles section=.text local=false zero=false
+; item test_has_xmm_union section=.text local=false zero=false
+; item test_dbl_struct section=.text local=false zero=false
+; item test_has_dbl_struct section=.text local=false zero=false
+; item test_char_arr section=.text local=false zero=false
+; item test_two_arrs section=.text local=false zero=false
+; item test_two_eightbyte_has_struct section=.text local=false zero=false
+; item test_two_structs section=.text local=false zero=false
+; item test_has_nine_byte_struct section=.text local=false zero=false
+; item test_has_nine_byte_struct@run0 section=.text local=true zero=false
+; item test_has_nine_byte_struct@tail2 section=.text local=true zero=false
+; item test_has_uneven_union section=.text local=false zero=false
+; item test_has_other_unions section=.text local=false zero=false
+; item test_union_array section=.text local=false zero=false
+; item test_uneven_union_array section=.text local=false zero=false
+; item test_has_small_struct_array section=.text local=false zero=false
+; item test_gp_and_xmm section=.text local=false zero=false
+; item test_scalar_and_struct section=.text local=false zero=false
+; item test_has_two_unions section=.text local=false zero=false
+; item test_small_struct_arr_and_dbl section=.text local=false zero=false
+; item test_xmm_and_gp section=.text local=false zero=false
+; item test_xmm_and_gp_nested section=.text local=false zero=false
+; item test_lotsa_doubles section=.text local=false zero=false
+; item test_lotsa_chars section=.text local=false zero=false
+; item test_contains_large_struct section=.text local=false zero=false
+; item test_contains_union_array section=.text local=false zero=false
+; item str@0 section=.rodata local=true zero=false
+; item str@1 section=.rodata local=true zero=false
+; item str@2 section=.rodata local=true zero=false
+; item str@3 section=.rodata local=true zero=false
+; item str@4 section=.rodata local=true zero=false
+; item str@5 section=.rodata local=true zero=false
+; item str@6 section=.rodata local=true zero=false
+; item str@7 section=.rodata local=true zero=false
+; item str@8 section=.rodata local=true zero=false
+; item str@9 section=.rodata local=true zero=false
+; item str@10 section=.rodata local=true zero=false
+; runtime hargs_size=32 hargs_need=11
+; @zp-link-meta-end
+
+test_one_double:
+   SUBROUTINE
+
+   LDA   __zpabi_test_one_double__u_0
+   STA   __local_test_one_double__7
+   LDA   __zpabi_test_one_double__u_0+1
+   STA   __local_test_one_double__6
+   LDA   __zpabi_test_one_double__u_0+2
+   STA   __local_test_one_double__5
+   LDA   __zpabi_test_one_double__u_0+3
+   STA   __local_test_one_double__4
+   LDA   __zpabi_test_one_double__u_0+4
+   STA   __local_test_one_double__3
+   LDA   __zpabi_test_one_double__u_0+5
+   STA   __local_test_one_double__2
+   LDA   __zpabi_test_one_double__u_0+6
+   STA   __local_test_one_double__1
+   LDA   __zpabi_test_one_double__u_0+7
+   CMP   #$C1
+   BNE   .and_false@0
+   LDA   __local_test_one_double__1
+   CMP   #$41
+   BNE   .and_false@0
+   LDA   __local_test_one_double__2
+   CMP   #$E4
+   BNE   .and_false@0
+   LDA   __local_test_one_double__3
+   CMP   #$14
+   BNE   .and_false@0
+   LDA   __local_test_one_double__4
+   BNE   .and_false@0
+   LDA   __local_test_one_double__5
+   BNE   .and_false@0
+   LDA   __local_test_one_double__6
+   BNE   .and_false@0
+   LDA   __local_test_one_double__7
+   BNE   .and_false@0
+   LDA   __zpabi_test_one_double__u_0+7
+   CMP   #$C1
+   BNE   .and_false@0
+   LDA   __local_test_one_double__1
+   CMP   #$41
+   BNE   .and_false@0
+   LDA   __local_test_one_double__2
+   CMP   #$E4
+   BNE   .and_false@0
+   LDA   __local_test_one_double__3
+   CMP   #$14
+   BNE   .and_false@0
+   LDA   __local_test_one_double__4
+   BNE   .and_false@0
+   LDA   __local_test_one_double__5
+   BNE   .and_false@0
+   LDA   __local_test_one_double__6
+   BNE   .and_false@0
+   LDA   __local_test_one_double__7
+   BNE   .and_false@0
+   JMP   test_one_double@tail0
+.and_false@0:
+   JMP   test_one_double@tail1
+
+test_one_double@tail1:
+   SUBROUTINE
+
+   LDA   #$00
+   LDX   #$00
+   RTS
+
+test_one_double@tail0:
+   SUBROUTINE
+
+   LDA   #$01
+   LDX   #$00
+   RTS
+
+test_has_union_with_double:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_union_with_double__s_0
+   STA   __local_test_has_union_with_double__7
+   LDA   __zpabi_test_has_union_with_double__s_0+1
+   STA   __local_test_has_union_with_double__6
+   LDA   __zpabi_test_has_union_with_double__s_0+2
+   STA   __local_test_has_union_with_double__5
+   LDA   __zpabi_test_has_union_with_double__s_0+3
+   STA   __local_test_has_union_with_double__4
+   LDA   __zpabi_test_has_union_with_double__s_0+4
+   STA   __local_test_has_union_with_double__3
+   LDA   __zpabi_test_has_union_with_double__s_0+5
+   STA   __local_test_has_union_with_double__2
+   LDA   __zpabi_test_has_union_with_double__s_0+6
+   STA   __local_test_has_union_with_double__1
+   LDA   __zpabi_test_has_union_with_double__s_0+7
+   CMP   #$49
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__1
+   CMP   #$E5
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__2
+   CMP   #$A6
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__3
+   CMP   #$28
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__4
+   CMP   #$DE
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__5
+   CMP   #$96
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__6
+   CMP   #$EE
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__7
+   CMP   #$1D
+   BNE   .and_false@2
+   LDA   __zpabi_test_has_union_with_double__s_0+7
+   CMP   #$49
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__1
+   CMP   #$E5
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__2
+   CMP   #$A6
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__3
+   CMP   #$28
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__4
+   CMP   #$DE
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__5
+   CMP   #$96
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__6
+   CMP   #$EE
+   BNE   .and_false@2
+   LDA   __local_test_has_union_with_double__7
+   CMP   #$1D
+   BNE   .and_false@2
+   JMP   test_one_double@tail0
+.and_false@2:
+   JMP   test_one_double@tail1
+
+test_has_struct_with_double:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_struct_with_double__u_0
+   STA   __local_test_has_struct_with_double__7
+   LDA   __zpabi_test_has_struct_with_double__u_0+1
+   STA   __local_test_has_struct_with_double__6
+   LDA   __zpabi_test_has_struct_with_double__u_0+2
+   STA   __local_test_has_struct_with_double__5
+   LDA   __zpabi_test_has_struct_with_double__u_0+3
+   STA   __local_test_has_struct_with_double__4
+   LDA   __zpabi_test_has_struct_with_double__u_0+4
+   STA   __local_test_has_struct_with_double__3
+   LDA   __zpabi_test_has_struct_with_double__u_0+5
+   STA   __local_test_has_struct_with_double__2
+   LDA   __zpabi_test_has_struct_with_double__u_0+6
+   STA   __local_test_has_struct_with_double__1
+   LDA   __zpabi_test_has_struct_with_double__u_0+7
+   CMP   #$49
+   BEQ   .lb_skip@5
+   JMP   .and_false@4
+.lb_skip@5:
+   LDA   __local_test_has_struct_with_double__1
+   CMP   #$E5
+   BEQ   .lb_skip@4
+   JMP   .and_false@4
+.lb_skip@4:
+   LDA   __local_test_has_struct_with_double__2
+   CMP   #$A6
+   BEQ   .lb_skip@3
+   JMP   .and_false@4
+.lb_skip@3:
+   LDA   __local_test_has_struct_with_double__3
+   CMP   #$28
+   BEQ   .lb_skip@2
+   JMP   .and_false@4
+.lb_skip@2:
+   LDA   __local_test_has_struct_with_double__4
+   CMP   #$DE
+   BEQ   .lb_skip@1
+   JMP   .and_false@4
+.lb_skip@1:
+   LDA   __local_test_has_struct_with_double__5
+   CMP   #$96
+   BEQ   .lb_skip@0
+   JMP   .and_false@4
+.lb_skip@0:
+   LDA   __local_test_has_struct_with_double__6
+   CMP   #$EE
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__7
+   CMP   #$1D
+   BNE   .and_false@4
+   LDA   __zpabi_test_has_struct_with_double__u_0+7
+   CMP   #$49
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__1
+   CMP   #$E5
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__2
+   CMP   #$A6
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__3
+   CMP   #$28
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__4
+   CMP   #$DE
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__5
+   CMP   #$96
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__6
+   CMP   #$EE
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__7
+   CMP   #$1D
+   BNE   .and_false@4
+   LDA   __zpabi_test_has_struct_with_double__u_0+7
+   CMP   #$49
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__1
+   CMP   #$E5
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__2
+   CMP   #$A6
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__3
+   CMP   #$28
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__4
+   CMP   #$DE
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__5
+   CMP   #$96
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__6
+   CMP   #$EE
+   BNE   .and_false@4
+   LDA   __local_test_has_struct_with_double__7
+   CMP   #$1D
+   BNE   .and_false@4
+   JMP   test_one_double@tail0
+.and_false@4:
+   JMP   test_one_double@tail1
+
+test_one_int:
+   SUBROUTINE
+
+   LDA   __zpabi_test_one_int__u_0
+   STA   __local_test_one_int__7
+   LDA   __zpabi_test_one_int__u_0+1
+   STA   __local_test_one_int__6
+   LDA   __zpabi_test_one_int__u_0+2
+   STA   __local_test_one_int__5
+   LDA   __zpabi_test_one_int__u_0+3
+   STA   __local_test_one_int__4
+   LDA   __zpabi_test_one_int__u_0+4
+   STA   __local_test_one_int__3
+   LDA   __zpabi_test_one_int__u_0+5
+   STA   __local_test_one_int__2
+   LDA   __zpabi_test_one_int__u_0+6
+   STA   __local_test_one_int__1
+   LDA   __zpabi_test_one_int__u_0+7
+   CMP   #$C0
+   BNE   .and_false@8
+   LDA   __local_test_one_int__1
+   CMP   #$54
+   BNE   .and_false@8
+   LDA   __local_test_one_int__2
+   BNE   .and_false@8
+   LDA   __local_test_one_int__3
+   BNE   .and_false@8
+   LDA   __local_test_one_int__4
+   BNE   .and_false@8
+   LDA   __local_test_one_int__5
+   BNE   .and_false@8
+   LDA   __local_test_one_int__6
+   BNE   .and_false@8
+   LDA   __local_test_one_int__7
+   BNE   .and_false@8
+   JMP   test_one_double@tail0
+.and_false@8:
+   JMP   test_one_double@tail1
+
+test_one_int_nested:
+   SUBROUTINE
+
+   LDA   __zpabi_test_one_int_nested__u_0
+   STA   __local_test_one_int_nested__7
+   LDA   __zpabi_test_one_int_nested__u_0+1
+   STA   __local_test_one_int_nested__6
+   LDA   __zpabi_test_one_int_nested__u_0+2
+   STA   __local_test_one_int_nested__5
+   LDA   __zpabi_test_one_int_nested__u_0+3
+   STA   __local_test_one_int_nested__4
+   LDA   __zpabi_test_one_int_nested__u_0+4
+   STA   __local_test_one_int_nested__3
+   LDA   __zpabi_test_one_int_nested__u_0+5
+   STA   __local_test_one_int_nested__2
+   LDA   __zpabi_test_one_int_nested__u_0+6
+   STA   __local_test_one_int_nested__1
+   LDA   __zpabi_test_one_int_nested__u_0+7
+   CMP   #$4B
+   BEQ   .lb_skip@11
+   JMP   .and_false@10
+.lb_skip@11:
+   LDA   __local_test_one_int_nested__1
+   CMP   #$B1
+   BEQ   .lb_skip@10
+   JMP   .and_false@10
+.lb_skip@10:
+   LDA   __local_test_one_int_nested__2
+   CMP   #$F1
+   BEQ   .lb_skip@9
+   JMP   .and_false@10
+.lb_skip@9:
+   LDA   __local_test_one_int_nested__3
+   CMP   #$D0
+   BEQ   .lb_skip@8
+   JMP   .and_false@10
+.lb_skip@8:
+   LDA   __local_test_one_int_nested__4
+   CMP   #$78
+   BEQ   .lb_skip@7
+   JMP   .and_false@10
+.lb_skip@7:
+   LDA   __local_test_one_int_nested__5
+   CMP   #$F1
+   BEQ   .lb_skip@6
+   JMP   .and_false@10
+.lb_skip@6:
+   LDA   __local_test_one_int_nested__6
+   CMP   #$DD
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__7
+   CMP   #$6D
+   BNE   .and_false@10
+   LDA   __zpabi_test_one_int_nested__u_0+7
+   CMP   #$4B
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__1
+   CMP   #$B1
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__2
+   CMP   #$F1
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__3
+   CMP   #$D0
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__4
+   CMP   #$78
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__5
+   CMP   #$F1
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__6
+   CMP   #$DD
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__7
+   CMP   #$6D
+   BNE   .and_false@10
+   LDA   __zpabi_test_one_int_nested__u_0+7
+   CMP   #$4B
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__1
+   CMP   #$B1
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__2
+   CMP   #$F1
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__3
+   CMP   #$D0
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__4
+   CMP   #$78
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__5
+   CMP   #$F1
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__6
+   CMP   #$DD
+   BNE   .and_false@10
+   LDA   __local_test_one_int_nested__7
+   CMP   #$6D
+   BNE   .and_false@10
+   JMP   test_one_double@tail0
+.and_false@10:
+   JMP   test_one_double@tail1
+
+test_char_int_mixed:
+   SUBROUTINE
+
+   LDA   #<str@0
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@0
+   STA   __zpabi_strcmp__s2_1
+   LDX   #>__zpabi_test_char_int_mixed__u_0
+   LDA   #<__zpabi_test_char_int_mixed__u_0
+   JSR   strcmp
+   STX   __local_test_char_int_mixed__0
+   ORA   __local_test_char_int_mixed__0
+   BNE   .and_false@16
+   LDA   __zpabi_test_char_int_mixed__u_0
+   STA   __local_test_char_int_mixed__1
+   LDA   __zpabi_test_char_int_mixed__u_0+1
+   STA   __local_test_char_int_mixed__0
+   LDA   #$00
+   CMP   #$5A
+   BNE   .vthread@0
+   CMP   #$59
+   BNE   .vthread@0
+   LDA   __local_test_char_int_mixed__0
+   CMP   #$58
+   BNE   .and_false@16
+   LDA   __local_test_char_int_mixed__1
+   CMP   #$57
+   BNE   .and_false@16
+   JMP   test_one_double@tail0
+.and_false@16:
+   LDA   #$00
+.vthread@0:
+   LDX   #$00
+   RTS
+
+test_has_union:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_union__s_0
+   STA   __local_test_has_union__1
+   LDA   __zpabi_test_has_union__s_0+1
+   STA   __local_test_has_union__0
+   LDA   #$00
+   CMP   #$FF
+   BNE   .vthread@1
+   LDA   __local_test_has_union__0
+   CMP   #$CF
+   BNE   .and_false@18
+   LDA   __local_test_has_union__1
+   CMP   #$C7
+   BNE   .and_false@18
+   LDY   #$02
+   LDA   #$00
+   CMP   #$FF
+   BNE   .vthread@1
+   LDA   __zpabi_test_has_union__s_0,Y
+   CMP   #$C4
+   BNE   .and_false@18
+   JMP   test_one_double@tail0
+.and_false@18:
+   LDA   #$00
+.vthread@1:
+   LDX   #$00
+   RTS
+
+test_has_struct_with_ints:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_struct_with_ints__u_0
+   STA   __local_test_has_struct_with_ints__1
+   LDA   __zpabi_test_has_struct_with_ints__u_0+1
+   STA   __local_test_has_struct_with_ints__0
+   LDA   #$00
+   CMP   #$FF
+   BNE   .vthread@2
+   LDA   __local_test_has_struct_with_ints__0
+   CMP   #$CF
+   BNE   .and_false@20
+   LDA   __local_test_has_struct_with_ints__1
+   CMP   #$C7
+   BNE   .and_false@20
+   LDY   #$02
+   LDA   #$00
+   CMP   #$FF
+   BNE   .vthread@2
+   LDA   __zpabi_test_has_struct_with_ints__u_0,Y
+   CMP   #$C4
+   BNE   .and_false@20
+   JMP   test_one_double@tail0
+.and_false@20:
+   LDA   #$00
+.vthread@2:
+   LDX   #$00
+   RTS
+
+test_two_doubles:
+   SUBROUTINE
+
+   LDA   __zpabi_test_two_doubles__u_0
+   STA   __local_test_two_doubles__7
+   LDA   __zpabi_test_two_doubles__u_0+1
+   STA   __local_test_two_doubles__6
+   LDA   __zpabi_test_two_doubles__u_0+2
+   STA   __local_test_two_doubles__5
+   LDA   __zpabi_test_two_doubles__u_0+3
+   STA   __local_test_two_doubles__4
+   LDA   __zpabi_test_two_doubles__u_0+4
+   STA   __local_test_two_doubles__3
+   LDA   __zpabi_test_two_doubles__u_0+5
+   STA   __local_test_two_doubles__2
+   LDA   __zpabi_test_two_doubles__u_0+6
+   STA   __local_test_two_doubles__1
+   LDA   __zpabi_test_two_doubles__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@20
+   JMP   .and_false@22
+.lb_skip@20:
+   LDA   __local_test_two_doubles__1
+   CMP   #$24
+   BEQ   .lb_skip@19
+   JMP   .and_false@22
+.lb_skip@19:
+   LDA   __local_test_two_doubles__2
+   BEQ   .lb_skip@18
+   JMP   .and_false@22
+.lb_skip@18:
+   LDA   __local_test_two_doubles__3
+   BEQ   .lb_skip@17
+   JMP   .and_false@22
+.lb_skip@17:
+   LDA   __local_test_two_doubles__4
+   BEQ   .lb_skip@16
+   JMP   .and_false@22
+.lb_skip@16:
+   LDA   __local_test_two_doubles__5
+   BEQ   .lb_skip@15
+   JMP   .and_false@22
+.lb_skip@15:
+   LDA   __local_test_two_doubles__6
+   BEQ   .lb_skip@14
+   JMP   .and_false@22
+.lb_skip@14:
+   LDA   __local_test_two_doubles__7
+   BEQ   .lb_skip@13
+   JMP   .and_false@22
+.lb_skip@13:
+   LDA   __zpabi_test_two_doubles__u_0+8
+   STA   __local_test_two_doubles__7
+   LDA   __zpabi_test_two_doubles__u_0+9
+   STA   __local_test_two_doubles__6
+   LDA   __zpabi_test_two_doubles__u_0+10
+   STA   __local_test_two_doubles__5
+   LDA   __zpabi_test_two_doubles__u_0+11
+   STA   __local_test_two_doubles__4
+   LDA   __zpabi_test_two_doubles__u_0+12
+   STA   __local_test_two_doubles__3
+   LDA   __zpabi_test_two_doubles__u_0+13
+   STA   __local_test_two_doubles__2
+   LDA   __zpabi_test_two_doubles__u_0+14
+   STA   __local_test_two_doubles__1
+   LDA   __zpabi_test_two_doubles__u_0+15
+   CMP   #$40
+   BEQ   .lb_skip@12
+   JMP   .and_false@22
+.lb_skip@12:
+   LDA   __local_test_two_doubles__1
+   CMP   #$26
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__2
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__3
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__4
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__5
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__6
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__7
+   BNE   .and_false@22
+   LDA   __zpabi_test_two_doubles__u_0
+   STA   __local_test_two_doubles__7
+   LDA   __zpabi_test_two_doubles__u_0+1
+   STA   __local_test_two_doubles__6
+   LDA   __zpabi_test_two_doubles__u_0+2
+   STA   __local_test_two_doubles__5
+   LDA   __zpabi_test_two_doubles__u_0+3
+   STA   __local_test_two_doubles__4
+   LDA   __zpabi_test_two_doubles__u_0+4
+   STA   __local_test_two_doubles__3
+   LDA   __zpabi_test_two_doubles__u_0+5
+   STA   __local_test_two_doubles__2
+   LDA   __zpabi_test_two_doubles__u_0+6
+   STA   __local_test_two_doubles__1
+   LDA   __zpabi_test_two_doubles__u_0+7
+   CMP   #$40
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__1
+   CMP   #$24
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__2
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__3
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__4
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__5
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__6
+   BNE   .and_false@22
+   LDA   __local_test_two_doubles__7
+   BNE   .and_false@22
+   JMP   test_one_double@tail0
+.and_false@22:
+   JMP   test_one_double@tail1
+
+test_has_xmm_union:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_xmm_union__u_0
+   STA   __local_test_has_xmm_union__7
+   LDA   __zpabi_test_has_xmm_union__u_0+1
+   STA   __local_test_has_xmm_union__6
+   LDA   __zpabi_test_has_xmm_union__u_0+2
+   STA   __local_test_has_xmm_union__5
+   LDA   __zpabi_test_has_xmm_union__u_0+3
+   STA   __local_test_has_xmm_union__4
+   LDA   __zpabi_test_has_xmm_union__u_0+4
+   STA   __local_test_has_xmm_union__3
+   LDA   __zpabi_test_has_xmm_union__u_0+5
+   STA   __local_test_has_xmm_union__2
+   LDA   __zpabi_test_has_xmm_union__u_0+6
+   STA   __local_test_has_xmm_union__1
+   LDA   __zpabi_test_has_xmm_union__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@45
+   JMP   .and_false@26
+.lb_skip@45:
+   LDA   __local_test_has_xmm_union__1
+   CMP   #$24
+   BEQ   .lb_skip@44
+   JMP   .and_false@26
+.lb_skip@44:
+   LDA   __local_test_has_xmm_union__2
+   BEQ   .lb_skip@43
+   JMP   .and_false@26
+.lb_skip@43:
+   LDA   __local_test_has_xmm_union__3
+   BEQ   .lb_skip@42
+   JMP   .and_false@26
+.lb_skip@42:
+   LDA   __local_test_has_xmm_union__4
+   BEQ   .lb_skip@41
+   JMP   .and_false@26
+.lb_skip@41:
+   LDA   __local_test_has_xmm_union__5
+   BEQ   .lb_skip@40
+   JMP   .and_false@26
+.lb_skip@40:
+   LDA   __local_test_has_xmm_union__6
+   BEQ   .lb_skip@39
+   JMP   .and_false@26
+.lb_skip@39:
+   LDA   __local_test_has_xmm_union__7
+   BEQ   .lb_skip@38
+   JMP   .and_false@26
+.lb_skip@38:
+   LDA   __zpabi_test_has_xmm_union__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@37
+   JMP   .and_false@26
+.lb_skip@37:
+   LDA   __local_test_has_xmm_union__1
+   CMP   #$24
+   BEQ   .lb_skip@36
+   JMP   .and_false@26
+.lb_skip@36:
+   LDA   __local_test_has_xmm_union__2
+   BEQ   .lb_skip@35
+   JMP   .and_false@26
+.lb_skip@35:
+   LDA   __local_test_has_xmm_union__3
+   BEQ   .lb_skip@34
+   JMP   .and_false@26
+.lb_skip@34:
+   LDA   __local_test_has_xmm_union__4
+   BEQ   .lb_skip@33
+   JMP   .and_false@26
+.lb_skip@33:
+   LDA   __local_test_has_xmm_union__5
+   BEQ   .lb_skip@32
+   JMP   .and_false@26
+.lb_skip@32:
+   LDA   __local_test_has_xmm_union__6
+   BEQ   .lb_skip@31
+   JMP   .and_false@26
+.lb_skip@31:
+   LDA   __local_test_has_xmm_union__7
+   BEQ   .lb_skip@30
+   JMP   .and_false@26
+.lb_skip@30:
+   LDA   __zpabi_test_has_xmm_union__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@29
+   JMP   .and_false@26
+.lb_skip@29:
+   LDA   __local_test_has_xmm_union__1
+   CMP   #$24
+   BEQ   .lb_skip@28
+   JMP   .and_false@26
+.lb_skip@28:
+   LDA   __local_test_has_xmm_union__2
+   BEQ   .lb_skip@27
+   JMP   .and_false@26
+.lb_skip@27:
+   LDA   __local_test_has_xmm_union__3
+   BEQ   .lb_skip@26
+   JMP   .and_false@26
+.lb_skip@26:
+   LDA   __local_test_has_xmm_union__4
+   BEQ   .lb_skip@25
+   JMP   .and_false@26
+.lb_skip@25:
+   LDA   __local_test_has_xmm_union__5
+   BEQ   .lb_skip@24
+   JMP   .and_false@26
+.lb_skip@24:
+   LDA   __local_test_has_xmm_union__6
+   BEQ   .lb_skip@23
+   JMP   .and_false@26
+.lb_skip@23:
+   LDA   __local_test_has_xmm_union__7
+   BEQ   .lb_skip@22
+   JMP   .and_false@26
+.lb_skip@22:
+   LDA   __zpabi_test_has_xmm_union__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@21
+   JMP   .and_false@26
+.lb_skip@21:
+   LDA   __local_test_has_xmm_union__1
+   CMP   #$24
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__2
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__3
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__4
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__5
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__6
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__7
+   BNE   .and_false@26
+   LDA   __zpabi_test_has_xmm_union__u_0+8
+   STA   __local_test_has_xmm_union__7
+   LDA   __zpabi_test_has_xmm_union__u_0+9
+   STA   __local_test_has_xmm_union__6
+   LDA   __zpabi_test_has_xmm_union__u_0+10
+   STA   __local_test_has_xmm_union__5
+   LDA   __zpabi_test_has_xmm_union__u_0+11
+   STA   __local_test_has_xmm_union__4
+   LDA   __zpabi_test_has_xmm_union__u_0+12
+   STA   __local_test_has_xmm_union__3
+   LDA   __zpabi_test_has_xmm_union__u_0+13
+   STA   __local_test_has_xmm_union__2
+   LDA   __zpabi_test_has_xmm_union__u_0+14
+   STA   __local_test_has_xmm_union__1
+   LDA   __zpabi_test_has_xmm_union__u_0+15
+   CMP   #$40
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__1
+   CMP   #$26
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__2
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__3
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__4
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__5
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__6
+   BNE   .and_false@26
+   LDA   __local_test_has_xmm_union__7
+   BNE   .and_false@26
+   JMP   test_one_double@tail0
+.and_false@26:
+   JMP   test_one_double@tail1
+
+test_dbl_struct:
+   SUBROUTINE
+
+   LDA   __zpabi_test_dbl_struct__s_0
+   STA   __local_test_dbl_struct__7
+   LDA   __zpabi_test_dbl_struct__s_0+1
+   STA   __local_test_dbl_struct__6
+   LDA   __zpabi_test_dbl_struct__s_0+2
+   STA   __local_test_dbl_struct__5
+   LDA   __zpabi_test_dbl_struct__s_0+3
+   STA   __local_test_dbl_struct__4
+   LDA   __zpabi_test_dbl_struct__s_0+4
+   STA   __local_test_dbl_struct__3
+   LDA   __zpabi_test_dbl_struct__s_0+5
+   STA   __local_test_dbl_struct__2
+   LDA   __zpabi_test_dbl_struct__s_0+6
+   STA   __local_test_dbl_struct__1
+   LDA   __zpabi_test_dbl_struct__s_0+7
+   CMP   #$C1
+   BEQ   .lb_skip@56
+   JMP   .and_false@34
+.lb_skip@56:
+   LDA   __local_test_dbl_struct__1
+   CMP   #$41
+   BEQ   .lb_skip@55
+   JMP   .and_false@34
+.lb_skip@55:
+   LDA   __local_test_dbl_struct__2
+   CMP   #$E4
+   BEQ   .lb_skip@54
+   JMP   .and_false@34
+.lb_skip@54:
+   LDA   __local_test_dbl_struct__3
+   CMP   #$14
+   BEQ   .lb_skip@53
+   JMP   .and_false@34
+.lb_skip@53:
+   LDA   __local_test_dbl_struct__4
+   BEQ   .lb_skip@52
+   JMP   .and_false@34
+.lb_skip@52:
+   LDA   __local_test_dbl_struct__5
+   BEQ   .lb_skip@51
+   JMP   .and_false@34
+.lb_skip@51:
+   LDA   __local_test_dbl_struct__6
+   BEQ   .lb_skip@50
+   JMP   .and_false@34
+.lb_skip@50:
+   LDA   __local_test_dbl_struct__7
+   BEQ   .lb_skip@49
+   JMP   .and_false@34
+.lb_skip@49:
+   LDA   __zpabi_test_dbl_struct__s_0+7
+   CMP   #$C1
+   BEQ   .lb_skip@48
+   JMP   .and_false@34
+.lb_skip@48:
+   LDA   __local_test_dbl_struct__1
+   CMP   #$41
+   BEQ   .lb_skip@47
+   JMP   .and_false@34
+.lb_skip@47:
+   LDA   __local_test_dbl_struct__2
+   CMP   #$E4
+   BEQ   .lb_skip@46
+   JMP   .and_false@34
+.lb_skip@46:
+   LDA   __local_test_dbl_struct__3
+   CMP   #$14
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__4
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__5
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__6
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__7
+   BNE   .and_false@34
+   LDA   __zpabi_test_dbl_struct__s_0+8
+   STA   __local_test_dbl_struct__7
+   LDA   __zpabi_test_dbl_struct__s_0+9
+   STA   __local_test_dbl_struct__6
+   LDA   __zpabi_test_dbl_struct__s_0+10
+   STA   __local_test_dbl_struct__5
+   LDA   __zpabi_test_dbl_struct__s_0+11
+   STA   __local_test_dbl_struct__4
+   LDA   __zpabi_test_dbl_struct__s_0+12
+   STA   __local_test_dbl_struct__3
+   LDA   __zpabi_test_dbl_struct__s_0+13
+   STA   __local_test_dbl_struct__2
+   LDA   __zpabi_test_dbl_struct__s_0+14
+   STA   __local_test_dbl_struct__1
+   LDA   __zpabi_test_dbl_struct__s_0+15
+   CMP   #$40
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__1
+   CMP   #$5E
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__2
+   CMP   #$DC
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__3
+   CMP   #$CC
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__4
+   CMP   #$CC
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__5
+   CMP   #$CC
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__6
+   CMP   #$CC
+   BNE   .and_false@34
+   LDA   __local_test_dbl_struct__7
+   CMP   #$CD
+   BNE   .and_false@34
+   JMP   test_one_double@tail0
+.and_false@34:
+   JMP   test_one_double@tail1
+
+test_has_dbl_struct:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_dbl_struct__u_0
+   STA   __local_test_has_dbl_struct__7
+   LDA   __zpabi_test_has_dbl_struct__u_0+1
+   STA   __local_test_has_dbl_struct__6
+   LDA   __zpabi_test_has_dbl_struct__u_0+2
+   STA   __local_test_has_dbl_struct__5
+   LDA   __zpabi_test_has_dbl_struct__u_0+3
+   STA   __local_test_has_dbl_struct__4
+   LDA   __zpabi_test_has_dbl_struct__u_0+4
+   STA   __local_test_has_dbl_struct__3
+   LDA   __zpabi_test_has_dbl_struct__u_0+5
+   STA   __local_test_has_dbl_struct__2
+   LDA   __zpabi_test_has_dbl_struct__u_0+6
+   STA   __local_test_has_dbl_struct__1
+   LDA   __zpabi_test_has_dbl_struct__u_0+7
+   CMP   #$C1
+   BEQ   .lb_skip@67
+   JMP   .and_false@38
+.lb_skip@67:
+   LDA   __local_test_has_dbl_struct__1
+   CMP   #$41
+   BEQ   .lb_skip@66
+   JMP   .and_false@38
+.lb_skip@66:
+   LDA   __local_test_has_dbl_struct__2
+   CMP   #$E4
+   BEQ   .lb_skip@65
+   JMP   .and_false@38
+.lb_skip@65:
+   LDA   __local_test_has_dbl_struct__3
+   CMP   #$14
+   BEQ   .lb_skip@64
+   JMP   .and_false@38
+.lb_skip@64:
+   LDA   __local_test_has_dbl_struct__4
+   BEQ   .lb_skip@63
+   JMP   .and_false@38
+.lb_skip@63:
+   LDA   __local_test_has_dbl_struct__5
+   BEQ   .lb_skip@62
+   JMP   .and_false@38
+.lb_skip@62:
+   LDA   __local_test_has_dbl_struct__6
+   BEQ   .lb_skip@61
+   JMP   .and_false@38
+.lb_skip@61:
+   LDA   __local_test_has_dbl_struct__7
+   BEQ   .lb_skip@60
+   JMP   .and_false@38
+.lb_skip@60:
+   LDA   __zpabi_test_has_dbl_struct__u_0+7
+   CMP   #$C1
+   BEQ   .lb_skip@59
+   JMP   .and_false@38
+.lb_skip@59:
+   LDA   __local_test_has_dbl_struct__1
+   CMP   #$41
+   BEQ   .lb_skip@58
+   JMP   .and_false@38
+.lb_skip@58:
+   LDA   __local_test_has_dbl_struct__2
+   CMP   #$E4
+   BEQ   .lb_skip@57
+   JMP   .and_false@38
+.lb_skip@57:
+   LDA   __local_test_has_dbl_struct__3
+   CMP   #$14
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__4
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__5
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__6
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__7
+   BNE   .and_false@38
+   LDA   __zpabi_test_has_dbl_struct__u_0+8
+   STA   __local_test_has_dbl_struct__7
+   LDA   __zpabi_test_has_dbl_struct__u_0+9
+   STA   __local_test_has_dbl_struct__6
+   LDA   __zpabi_test_has_dbl_struct__u_0+10
+   STA   __local_test_has_dbl_struct__5
+   LDA   __zpabi_test_has_dbl_struct__u_0+11
+   STA   __local_test_has_dbl_struct__4
+   LDA   __zpabi_test_has_dbl_struct__u_0+12
+   STA   __local_test_has_dbl_struct__3
+   LDA   __zpabi_test_has_dbl_struct__u_0+13
+   STA   __local_test_has_dbl_struct__2
+   LDA   __zpabi_test_has_dbl_struct__u_0+14
+   STA   __local_test_has_dbl_struct__1
+   LDA   __zpabi_test_has_dbl_struct__u_0+15
+   CMP   #$40
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__1
+   CMP   #$5E
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__2
+   CMP   #$DC
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__3
+   CMP   #$CC
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__4
+   CMP   #$CC
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__5
+   CMP   #$CC
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__6
+   CMP   #$CC
+   BNE   .and_false@38
+   LDA   __local_test_has_dbl_struct__7
+   CMP   #$CD
+   BNE   .and_false@38
+   JMP   test_one_double@tail0
+.and_false@38:
+   JMP   test_one_double@tail1
+
+test_char_arr:
+   SUBROUTINE
+
+   LDA   #<str@1
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@1
+   STA   __zpabi_strcmp__s2_1
+   LDX   #>__zpabi_test_char_arr__u_0
+   LDA   #<__zpabi_test_char_arr__u_0
+   JSR   strcmp
+   STX   __local_test_char_arr__0
+   ORA   __local_test_char_arr__0
+   BNE   .and_false@42
+   LDA   __zpabi_test_char_arr__u_0+1
+   BMI   .and_false@42
+   LDA   #$00
+   BEQ   .vthread@3
+.and_false@42:
+   LDA   #$00
+.vthread@3:
+   LDX   #$00
+   RTS
+
+test_two_arrs:
+   SUBROUTINE
+
+   LDA   __zpabi_test_two_arrs__u_0
+   STA   __local_test_two_arrs__7
+   LDA   __zpabi_test_two_arrs__u_0+1
+   STA   __local_test_two_arrs__6
+   LDA   __zpabi_test_two_arrs__u_0+2
+   STA   __local_test_two_arrs__5
+   LDA   __zpabi_test_two_arrs__u_0+3
+   STA   __local_test_two_arrs__4
+   LDA   __zpabi_test_two_arrs__u_0+4
+   STA   __local_test_two_arrs__3
+   LDA   __zpabi_test_two_arrs__u_0+5
+   STA   __local_test_two_arrs__2
+   LDA   __zpabi_test_two_arrs__u_0+6
+   STA   __local_test_two_arrs__1
+   LDA   __zpabi_test_two_arrs__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@69
+   JMP   .and_false@44
+.lb_skip@69:
+   LDA   __local_test_two_arrs__1
+   CMP   #$FF
+   BEQ   .lb_skip@68
+   JMP   .and_false@44
+.lb_skip@68:
+   LDA   __local_test_two_arrs__2
+   CMP   #$BD
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__3
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__4
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__5
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__6
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__7
+   BNE   .and_false@44
+   LDA   __zpabi_test_two_arrs__u_0+8
+   STA   __local_test_two_arrs__7
+   LDA   __zpabi_test_two_arrs__u_0+9
+   STA   __local_test_two_arrs__6
+   LDA   __zpabi_test_two_arrs__u_0+10
+   STA   __local_test_two_arrs__5
+   LDA   __zpabi_test_two_arrs__u_0+11
+   STA   __local_test_two_arrs__4
+   LDA   __zpabi_test_two_arrs__u_0+12
+   STA   __local_test_two_arrs__3
+   LDA   __zpabi_test_two_arrs__u_0+13
+   STA   __local_test_two_arrs__2
+   LDA   __zpabi_test_two_arrs__u_0+14
+   STA   __local_test_two_arrs__1
+   LDA   __zpabi_test_two_arrs__u_0+15
+   CMP   #$40
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__1
+   CMP   #$2D
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__2
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__3
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__4
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__5
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__6
+   BNE   .and_false@44
+   LDA   __local_test_two_arrs__7
+   BNE   .and_false@44
+   LDA   __zpabi_test_two_arrs__u_0+3
+   BMI   .and_false@44
+   LDA   #$00
+   BEQ   .vthread@4
+.and_false@44:
+   LDA   #$00
+.vthread@4:
+   LDX   #$00
+   RTS
+
+test_two_eightbyte_has_struct:
+   SUBROUTINE
+
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0
+   STA   __local_test_two_eightbyte_has_struct__1
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+1
+   BEQ   .lb_skip@71
+   JMP   .and_false@50
+.lb_skip@71:
+   LDA   __local_test_two_eightbyte_has_struct__1
+   CMP   #$64
+   BEQ   .lb_skip@70
+   JMP   .and_false@50
+.lb_skip@70:
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+2
+   STA   __local_test_two_eightbyte_has_struct__1
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+3
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__1
+   CMP   #$C8
+   BNE   .and_false@50
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+4
+   STA   __local_test_two_eightbyte_has_struct__1
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+5
+   CMP   #$01
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__1
+   CMP   #$2C
+   BNE   .and_false@50
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0
+   STA   __local_test_two_eightbyte_has_struct__7
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+1
+   STA   __local_test_two_eightbyte_has_struct__6
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+2
+   STA   __local_test_two_eightbyte_has_struct__5
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+3
+   STA   __local_test_two_eightbyte_has_struct__4
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+4
+   STA   __local_test_two_eightbyte_has_struct__3
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+5
+   STA   __local_test_two_eightbyte_has_struct__2
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+6
+   STA   __local_test_two_eightbyte_has_struct__1
+   LDA   __zpabi_test_two_eightbyte_has_struct__u_0+7
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__1
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__2
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__3
+   CMP   #$C8
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__4
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__5
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__6
+   BNE   .and_false@50
+   LDA   __local_test_two_eightbyte_has_struct__7
+   CMP   #$64
+   BNE   .and_false@50
+   JMP   test_one_double@tail0
+.and_false@50:
+   JMP   test_one_double@tail1
+
+test_two_structs:
+   SUBROUTINE
+
+   LDA   __zpabi_test_two_structs__u_0
+   CMP   #$78
+   BNE   .and_false@56
+   LDA   __zpabi_test_two_structs__u_0+1
+   STA   __local_test_two_structs__7
+   LDA   __zpabi_test_two_structs__u_0+2
+   STA   __local_test_two_structs__6
+   LDA   __zpabi_test_two_structs__u_0+3
+   STA   __local_test_two_structs__5
+   LDA   __zpabi_test_two_structs__u_0+4
+   STA   __local_test_two_structs__4
+   LDA   __zpabi_test_two_structs__u_0+5
+   STA   __local_test_two_structs__3
+   LDA   __zpabi_test_two_structs__u_0+6
+   STA   __local_test_two_structs__2
+   LDA   __zpabi_test_two_structs__u_0+7
+   STA   __local_test_two_structs__1
+   LDA   __zpabi_test_two_structs__u_0+8
+   CMP   #$41
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__1
+   CMP   #$55
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__2
+   CMP   #$2B
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__3
+   CMP   #$EC
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__4
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__5
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__6
+   BNE   .and_false@56
+   LDA   __local_test_two_structs__7
+   BNE   .and_false@56
+   LDA   __zpabi_test_two_structs__u_0+8
+   ORA   __zpabi_test_two_structs__u_0+9
+   BNE   .and_false@56
+   JMP   test_one_double@tail0
+.and_false@56:
+   JMP   test_one_double@tail1
+
+test_has_nine_byte_struct:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_nine_byte_struct__u_0+3
+   BMI   .test_has_nine_byte_struct@jthread@0
+   LDA   #$00
+   BEQ   .jcmp_skip@12
+.test_has_nine_byte_struct@jthread@0:
+   LDX   #$00
+   TXA
+   RTS
+.loop@0_start:
+   LDA   __local_test_has_nine_byte_struct__i_0
+   SEC
+   SBC   #$05
+   LDA   __local_test_has_nine_byte_struct__i_1
+   SBC   #$00
+   BVC   .jcmp_novf@11
+   EOR   #$80
+.jcmp_novf@11:
+   BPL   .loop@0_break
+   LDA   __local_test_has_nine_byte_struct__i_0
+   STA   HARGS
+   LDA   __local_test_has_nine_byte_struct__i_1
+   JSR   test_has_nine_byte_struct@run0
+   BEQ   .cond_else@64
+   LDA   #$FF
+   STA   __local_test_has_nine_byte_struct__5
+   STA   __local_test_has_nine_byte_struct__4
+   JMP   .cond_end@65
+.cond_else@64:
+   LDA   #$00
+   STA   __local_test_has_nine_byte_struct__5
+   STA   __local_test_has_nine_byte_struct__4
+.cond_end@65:
+   LDA   __local_test_has_nine_byte_struct__i_0
+   CLC
+   ADC   #<__zpabi_test_has_nine_byte_struct__u_0
+   STA   __local_test_has_nine_byte_struct__0
+   LDA   #$00
+   ADC   #>__zpabi_test_has_nine_byte_struct__u_0
+   STA   __local_test_has_nine_byte_struct__1
+   LDY   #$02
+   LDA   (__local_test_has_nine_byte_struct__0),Y
+   STA   __local_test_has_nine_byte_struct__0
+   LDA   #$00
+   CMP   __local_test_has_nine_byte_struct__4
+   BNE   .jcmp_skip@12
+   LDA   __local_test_has_nine_byte_struct__0
+   CMP   __local_test_has_nine_byte_struct__5
+   BEQ   .if_end@66
+.jcmp_skip@12:
+   LDX   #$00
+   RTS
+.if_end@66:
+   INC   __local_test_has_nine_byte_struct__i_0
+   BNE   .loop@0_start
+   INC   __local_test_has_nine_byte_struct__i_1
+   JMP   .loop@0_start
+.loop@0_break:
+   JMP   test_has_nine_byte_struct@tail2
+
+test_has_nine_byte_struct@run0:
+   SUBROUTINE
+
+   STA   HARGS+1
+   LDA   #$02
+   STA   HARGS+2
+   LDA   #$00
+   STA   HARGS+3
+   JSR   sdivmod16
+   LDA   HARGS+6
+   ORA   HARGS+7
+   RTS
+
+test_has_nine_byte_struct@tail2:
+   SUBROUTINE
+
+   LDX   #$00
+   LDA   #$01
+   RTS
+
+test_has_uneven_union:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_uneven_union__s_0+1
+   BMI   .and_false@67
+   LDA   #$00
+   BEQ   .vthread@6
+.and_false@67:
+   LDA   #$00
+.vthread@6:
+   LDX   #$00
+   RTS
+
+test_has_other_unions:
+   SUBROUTINE
+
+   LDA   __zpabi_test_has_other_unions__u_0+3
+   BMI   .jcmp_skip@17
+   LDA   #$00
+   BEQ   .jcmp_skip@19
+.jcmp_skip@17:
+   LDX   #$00
+   TXA
+   RTS
+.loop@1_start:
+   LDA   __local_test_has_other_unions__i_0
+   SEC
+   SBC   #$05
+   LDA   __local_test_has_other_unions__i_1
+   SBC   #$00
+   BVC   .jcmp_novf@18
+   EOR   #$80
+.jcmp_novf@18:
+   BPL   .loop@1_break
+   LDA   __local_test_has_other_unions__i_0
+   STA   HARGS
+   LDA   __local_test_has_other_unions__i_1
+   JSR   test_has_nine_byte_struct@run0
+   BEQ   .cond_else@72
+   LDA   #$FF
+   STA   __local_test_has_other_unions__5
+   STA   __local_test_has_other_unions__4
+   JMP   .cond_end@73
+.cond_else@72:
+   LDA   #$00
+   STA   __local_test_has_other_unions__5
+   STA   __local_test_has_other_unions__4
+.cond_end@73:
+   LDA   __local_test_has_other_unions__i_0
+   CLC
+   ADC   #<__zpabi_test_has_other_unions__u_0
+   STA   __local_test_has_other_unions__0
+   LDA   #$00
+   ADC   #>__zpabi_test_has_other_unions__u_0
+   STA   __local_test_has_other_unions__1
+   LDY   #$02
+   LDA   (__local_test_has_other_unions__0),Y
+   STA   __local_test_has_other_unions__0
+   LDA   #$00
+   CMP   __local_test_has_other_unions__4
+   BNE   .jcmp_skip@19
+   LDA   __local_test_has_other_unions__0
+   CMP   __local_test_has_other_unions__5
+   BEQ   .if_end@74
+.jcmp_skip@19:
+   LDX   #$00
+   RTS
+.if_end@74:
+   INC   __local_test_has_other_unions__i_0
+   BNE   .loop@1_start
+   INC   __local_test_has_other_unions__i_1
+   JMP   .loop@1_start
+.loop@1_break:
+   JMP   test_has_nine_byte_struct@tail2
+
+test_union_array:
+   SUBROUTINE
+
+   LDA   __zpabi_test_union_array__u_0
+   STA   __local_test_union_array__7
+   LDA   __zpabi_test_union_array__u_0+1
+   STA   __local_test_union_array__6
+   LDA   __zpabi_test_union_array__u_0+2
+   STA   __local_test_union_array__5
+   LDA   __zpabi_test_union_array__u_0+3
+   STA   __local_test_union_array__4
+   LDA   __zpabi_test_union_array__u_0+4
+   STA   __local_test_union_array__3
+   LDA   __zpabi_test_union_array__u_0+5
+   STA   __local_test_union_array__2
+   LDA   __zpabi_test_union_array__u_0+6
+   STA   __local_test_union_array__1
+   LDA   __zpabi_test_union_array__u_0+7
+   CMP   #$C0
+   BEQ   .lb_skip@72
+   JMP   .and_false@75
+.lb_skip@72:
+   LDA   __local_test_union_array__1
+   CMP   #$34
+   BNE   .and_false@75
+   LDA   __local_test_union_array__2
+   BNE   .and_false@75
+   LDA   __local_test_union_array__3
+   BNE   .and_false@75
+   LDA   __local_test_union_array__4
+   BNE   .and_false@75
+   LDA   __local_test_union_array__5
+   BNE   .and_false@75
+   LDA   __local_test_union_array__6
+   BNE   .and_false@75
+   LDA   __local_test_union_array__7
+   BNE   .and_false@75
+   LDA   __zpabi_test_union_array__u_0+8
+   STA   __local_test_union_array__7
+   LDA   __zpabi_test_union_array__u_0+9
+   STA   __local_test_union_array__6
+   LDA   __zpabi_test_union_array__u_0+10
+   STA   __local_test_union_array__5
+   LDA   __zpabi_test_union_array__u_0+11
+   STA   __local_test_union_array__4
+   LDA   __zpabi_test_union_array__u_0+12
+   STA   __local_test_union_array__3
+   LDA   __zpabi_test_union_array__u_0+13
+   STA   __local_test_union_array__2
+   LDA   __zpabi_test_union_array__u_0+14
+   STA   __local_test_union_array__1
+   LDA   __zpabi_test_union_array__u_0+15
+   CMP   #$C0
+   BNE   .and_false@75
+   LDA   __local_test_union_array__1
+   CMP   #$3E
+   BNE   .and_false@75
+   LDA   __local_test_union_array__2
+   BNE   .and_false@75
+   LDA   __local_test_union_array__3
+   BNE   .and_false@75
+   LDA   __local_test_union_array__4
+   BNE   .and_false@75
+   LDA   __local_test_union_array__5
+   BNE   .and_false@75
+   LDA   __local_test_union_array__6
+   BNE   .and_false@75
+   LDA   __local_test_union_array__7
+   BNE   .and_false@75
+   JMP   test_one_double@tail0
+.and_false@75:
+   JMP   test_one_double@tail1
+
+test_uneven_union_array:
+   SUBROUTINE
+
+   LDA   #>__zpabi_test_uneven_union_array__u_0
+   STA   __local_test_uneven_union_array__2
+   CLC
+   BCC   .carry_inc@1
+   INC   __local_test_uneven_union_array__2
+.carry_inc@1:
+   LDA   #<str@3
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@3
+   STA   __zpabi_strcmp__s2_1
+   LDX   __local_test_uneven_union_array__2
+   LDA   #<__zpabi_test_uneven_union_array__u_0
+   JSR   strcmp
+   STX   __local_test_uneven_union_array__0
+   ORA   __local_test_uneven_union_array__0
+   BNE   .and_false@77
+   LDA   #>__zpabi_test_uneven_union_array__u_0
+   STA   __local_test_uneven_union_array__2
+   LDA   #<__zpabi_test_uneven_union_array__u_0
+   CLC
+   ADC   #$05
+   STA   __local_test_uneven_union_array__0
+   BCC   .carry_inc@2
+   INC   __local_test_uneven_union_array__2
+.carry_inc@2:
+   LDA   #<str@4
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@4
+   STA   __zpabi_strcmp__s2_1
+   LDX   __local_test_uneven_union_array__2
+   LDA   __local_test_uneven_union_array__0
+   JSR   strcmp
+   STX   __local_test_uneven_union_array__0
+   ORA   __local_test_uneven_union_array__0
+   BNE   .and_false@77
+   JMP   test_one_double@tail0
+.and_false@77:
+   JMP   test_one_double@tail1
+
+test_has_small_struct_array:
+   SUBROUTINE
+
+   LDA   #>__zpabi_test_has_small_struct_array__u_0
+   STA   __local_test_has_small_struct_array__2
+   CLC
+   BCC   .carry_inc@3
+   INC   __local_test_has_small_struct_array__2
+.carry_inc@3:
+   LDA   #<str@5
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@5
+   STA   __zpabi_strcmp__s2_1
+   LDX   __local_test_has_small_struct_array__2
+   LDA   #<__zpabi_test_has_small_struct_array__u_0
+   JSR   strcmp
+   STX   __local_test_has_small_struct_array__0
+   ORA   __local_test_has_small_struct_array__0
+   BNE   .and_false@79
+   LDY   #$03
+   LDA   __zpabi_test_has_small_struct_array__u_0,Y
+   CMP   #$0A
+   BNE   .and_false@79
+   LDA   #>__zpabi_test_has_small_struct_array__u_0
+   STA   __local_test_has_small_struct_array__2
+   LDA   #<__zpabi_test_has_small_struct_array__u_0
+   CLC
+   ADC   #$04
+   STA   __local_test_has_small_struct_array__0
+   BCC   .carry_inc@4
+   INC   __local_test_has_small_struct_array__2
+.carry_inc@4:
+   LDA   #<str@6
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@6
+   STA   __zpabi_strcmp__s2_1
+   LDX   __local_test_has_small_struct_array__2
+   LDA   __local_test_has_small_struct_array__0
+   JSR   strcmp
+   STX   __local_test_has_small_struct_array__0
+   ORA   __local_test_has_small_struct_array__0
+   BNE   .and_false@79
+   LDY   #$07
+   LDA   __zpabi_test_has_small_struct_array__u_0,Y
+   CMP   #$0B
+   BNE   .and_false@79
+   LDA   #>__zpabi_test_has_small_struct_array__u_0
+   STA   __local_test_has_small_struct_array__2
+   LDA   #<__zpabi_test_has_small_struct_array__u_0
+   CLC
+   ADC   #$08
+   STA   __local_test_has_small_struct_array__0
+   BCC   .carry_inc@5
+   INC   __local_test_has_small_struct_array__2
+.carry_inc@5:
+   LDA   #<str@7
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@7
+   STA   __zpabi_strcmp__s2_1
+   LDX   __local_test_has_small_struct_array__2
+   LDA   __local_test_has_small_struct_array__0
+   JSR   strcmp
+   STX   __local_test_has_small_struct_array__0
+   ORA   __local_test_has_small_struct_array__0
+   BNE   .and_false@79
+   LDY   #$0B
+   LDA   __zpabi_test_has_small_struct_array__u_0,Y
+   CMP   #$0C
+   BNE   .and_false@79
+   JMP   test_one_double@tail0
+.and_false@79:
+   JMP   test_one_double@tail1
+
+test_gp_and_xmm:
+   SUBROUTINE
+
+   LDA   __zpabi_test_gp_and_xmm__u_0
+   STA   __local_test_gp_and_xmm__7
+   LDA   __zpabi_test_gp_and_xmm__u_0+1
+   STA   __local_test_gp_and_xmm__6
+   LDA   __zpabi_test_gp_and_xmm__u_0+2
+   STA   __local_test_gp_and_xmm__5
+   LDA   __zpabi_test_gp_and_xmm__u_0+3
+   STA   __local_test_gp_and_xmm__4
+   LDA   __zpabi_test_gp_and_xmm__u_0+4
+   STA   __local_test_gp_and_xmm__3
+   LDA   __zpabi_test_gp_and_xmm__u_0+5
+   STA   __local_test_gp_and_xmm__2
+   LDA   __zpabi_test_gp_and_xmm__u_0+6
+   STA   __local_test_gp_and_xmm__1
+   LDA   __zpabi_test_gp_and_xmm__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@73
+   JMP   .and_false@89
+.lb_skip@73:
+   LDA   __local_test_gp_and_xmm__1
+   CMP   #$26
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__2
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__3
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__4
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__5
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__6
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__7
+   BNE   .and_false@89
+   LDA   __zpabi_test_gp_and_xmm__u_0+8
+   STA   __local_test_gp_and_xmm__7
+   LDA   __zpabi_test_gp_and_xmm__u_0+9
+   STA   __local_test_gp_and_xmm__6
+   LDA   __zpabi_test_gp_and_xmm__u_0+10
+   STA   __local_test_gp_and_xmm__5
+   LDA   __zpabi_test_gp_and_xmm__u_0+11
+   STA   __local_test_gp_and_xmm__4
+   LDA   __zpabi_test_gp_and_xmm__u_0+12
+   STA   __local_test_gp_and_xmm__3
+   LDA   __zpabi_test_gp_and_xmm__u_0+13
+   STA   __local_test_gp_and_xmm__2
+   LDA   __zpabi_test_gp_and_xmm__u_0+14
+   STA   __local_test_gp_and_xmm__1
+   LDA   __zpabi_test_gp_and_xmm__u_0+15
+   CMP   #$40
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__1
+   CMP   #$28
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__2
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__3
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__4
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__5
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__6
+   BNE   .and_false@89
+   LDA   __local_test_gp_and_xmm__7
+   BNE   .and_false@89
+   JMP   test_one_double@tail0
+.and_false@89:
+   JMP   test_one_double@tail1
+
+test_scalar_and_struct:
+   SUBROUTINE
+
+   LDA   __zpabi_test_scalar_and_struct__u_0
+   STA   __local_test_scalar_and_struct__0
+   LDA   #$00
+   CMP   #$FF
+   BNE   .vthread@7
+   LDA   __local_test_scalar_and_struct__0
+   CMP   #$FB
+   BNE   .and_false@91
+   LDA   __zpabi_test_scalar_and_struct__u_0+1
+   STA   __local_test_scalar_and_struct__7
+   LDA   __zpabi_test_scalar_and_struct__u_0+2
+   STA   __local_test_scalar_and_struct__6
+   LDA   __zpabi_test_scalar_and_struct__u_0+3
+   STA   __local_test_scalar_and_struct__5
+   LDA   __zpabi_test_scalar_and_struct__u_0+4
+   STA   __local_test_scalar_and_struct__4
+   LDA   __zpabi_test_scalar_and_struct__u_0+5
+   STA   __local_test_scalar_and_struct__3
+   LDA   __zpabi_test_scalar_and_struct__u_0+6
+   STA   __local_test_scalar_and_struct__2
+   LDA   __zpabi_test_scalar_and_struct__u_0+7
+   STA   __local_test_scalar_and_struct__1
+   LDA   __zpabi_test_scalar_and_struct__u_0+8
+   CMP   #$C0
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__1
+   CMP   #$56
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__2
+   CMP   #$33
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__3
+   CMP   #$33
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__4
+   CMP   #$33
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__5
+   CMP   #$33
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__6
+   CMP   #$33
+   BNE   .and_false@91
+   LDA   __local_test_scalar_and_struct__7
+   CMP   #$33
+   BNE   .and_false@91
+   JMP   test_one_double@tail0
+.and_false@91:
+   LDA   #$00
+.vthread@7:
+   LDX   #$00
+   RTS
+
+test_has_two_unions:
+   SUBROUTINE
+
+   LDA   #<str@8
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@8
+   STA   __zpabi_strcmp__s2_1
+   LDX   #>__zpabi_test_has_two_unions__s_0
+   LDA   #<__zpabi_test_has_two_unions__s_0
+   JSR   strcmp
+   STX   __local_test_has_two_unions__0
+   ORA   __local_test_has_two_unions__0
+   BNE   .jcmp_skip@20
+   LDA   __zpabi_test_has_two_unions__s_0+7
+   STA   __local_test_has_two_unions__7
+   LDA   __zpabi_test_has_two_unions__s_0+8
+   STA   __local_test_has_two_unions__6
+   LDA   __zpabi_test_has_two_unions__s_0+9
+   STA   __local_test_has_two_unions__5
+   LDA   __zpabi_test_has_two_unions__s_0+10
+   STA   __local_test_has_two_unions__4
+   LDA   __zpabi_test_has_two_unions__s_0+11
+   STA   __local_test_has_two_unions__3
+   LDA   __zpabi_test_has_two_unions__s_0+12
+   STA   __local_test_has_two_unions__2
+   LDA   __zpabi_test_has_two_unions__s_0+13
+   STA   __local_test_has_two_unions__1
+   LDA   __zpabi_test_has_two_unions__s_0+14
+   CMP   #$C1
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__1
+   CMP   #$41
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__2
+   CMP   #$E4
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__3
+   CMP   #$14
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__4
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__5
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__6
+   BNE   .jcmp_skip@20
+   LDA   __local_test_has_two_unions__7
+   BEQ   .if_end@94
+.jcmp_skip@20:
+   LDX   #$00
+   TXA
+   RTS
+.if_end@94:
+   JMP   test_has_nine_byte_struct@tail2
+
+test_small_struct_arr_and_dbl:
+   SUBROUTINE
+
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0
+   STA   __local_test_small_struct_arr_and_dbl__7
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+1
+   STA   __local_test_small_struct_arr_and_dbl__6
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+2
+   STA   __local_test_small_struct_arr_and_dbl__5
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+3
+   STA   __local_test_small_struct_arr_and_dbl__4
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+4
+   STA   __local_test_small_struct_arr_and_dbl__3
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+5
+   STA   __local_test_small_struct_arr_and_dbl__2
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+6
+   STA   __local_test_small_struct_arr_and_dbl__1
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+7
+   CMP   #$C0
+   BEQ   .lb_skip@74
+   JMP   .and_false@95
+.lb_skip@74:
+   LDA   __local_test_small_struct_arr_and_dbl__1
+   CMP   #$36
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__2
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__3
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__4
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__5
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__6
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__7
+   BNE   .and_false@95
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+8
+   STA   __local_test_small_struct_arr_and_dbl__7
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+9
+   STA   __local_test_small_struct_arr_and_dbl__6
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+10
+   STA   __local_test_small_struct_arr_and_dbl__5
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+11
+   STA   __local_test_small_struct_arr_and_dbl__4
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+12
+   STA   __local_test_small_struct_arr_and_dbl__3
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+13
+   STA   __local_test_small_struct_arr_and_dbl__2
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+14
+   STA   __local_test_small_struct_arr_and_dbl__1
+   LDA   __zpabi_test_small_struct_arr_and_dbl__u_0+15
+   CMP   #$C0
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__1
+   CMP   #$40
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__2
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__3
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__4
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__5
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__6
+   BNE   .and_false@95
+   LDA   __local_test_small_struct_arr_and_dbl__7
+   BNE   .and_false@95
+   JMP   test_one_double@tail0
+.and_false@95:
+   JMP   test_one_double@tail1
+
+test_xmm_and_gp:
+   SUBROUTINE
+
+   LDA   __zpabi_test_xmm_and_gp__u_0
+   STA   __local_test_xmm_and_gp__7
+   LDA   __zpabi_test_xmm_and_gp__u_0+1
+   STA   __local_test_xmm_and_gp__6
+   LDA   __zpabi_test_xmm_and_gp__u_0+2
+   STA   __local_test_xmm_and_gp__5
+   LDA   __zpabi_test_xmm_and_gp__u_0+3
+   STA   __local_test_xmm_and_gp__4
+   LDA   __zpabi_test_xmm_and_gp__u_0+4
+   STA   __local_test_xmm_and_gp__3
+   LDA   __zpabi_test_xmm_and_gp__u_0+5
+   STA   __local_test_xmm_and_gp__2
+   LDA   __zpabi_test_xmm_and_gp__u_0+6
+   STA   __local_test_xmm_and_gp__1
+   LDA   __zpabi_test_xmm_and_gp__u_0+7
+   CMP   #$C0
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__1
+   CMP   #$20
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__2
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__3
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__4
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__5
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__6
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__7
+   BNE   .and_false@97
+   LDA   __zpabi_test_xmm_and_gp__u_0+8
+   STA   __local_test_xmm_and_gp__1
+   LDA   __zpabi_test_xmm_and_gp__u_0+9
+   CMP   #$FF
+   BNE   .and_false@97
+   LDA   __local_test_xmm_and_gp__1
+   CMP   #$F8
+   BNE   .and_false@97
+   JMP   test_one_double@tail0
+.and_false@97:
+   JMP   test_one_double@tail1
+
+test_xmm_and_gp_nested:
+   SUBROUTINE
+
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0
+   STA   __local_test_xmm_and_gp_nested__7
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+1
+   STA   __local_test_xmm_and_gp_nested__6
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+2
+   STA   __local_test_xmm_and_gp_nested__5
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+3
+   STA   __local_test_xmm_and_gp_nested__4
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+4
+   STA   __local_test_xmm_and_gp_nested__3
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+5
+   STA   __local_test_xmm_and_gp_nested__2
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+6
+   STA   __local_test_xmm_and_gp_nested__1
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+7
+   CMP   #$C0
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__1
+   CMP   #$20
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__2
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__3
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__4
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__5
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__6
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__7
+   BNE   .and_false@99
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+8
+   STA   __local_test_xmm_and_gp_nested__1
+   LDA   __zpabi_test_xmm_and_gp_nested__u_0+9
+   CMP   #$FF
+   BNE   .and_false@99
+   LDA   __local_test_xmm_and_gp_nested__1
+   CMP   #$F8
+   BNE   .and_false@99
+   JMP   test_one_double@tail0
+.and_false@99:
+   JMP   test_one_double@tail1
+
+test_lotsa_doubles:
+   SUBROUTINE
+
+   LDA   __zpabi_test_lotsa_doubles__u_0
+   STA   __local_test_lotsa_doubles__7
+   LDA   __zpabi_test_lotsa_doubles__u_0+1
+   STA   __local_test_lotsa_doubles__6
+   LDA   __zpabi_test_lotsa_doubles__u_0+2
+   STA   __local_test_lotsa_doubles__5
+   LDA   __zpabi_test_lotsa_doubles__u_0+3
+   STA   __local_test_lotsa_doubles__4
+   LDA   __zpabi_test_lotsa_doubles__u_0+4
+   STA   __local_test_lotsa_doubles__3
+   LDA   __zpabi_test_lotsa_doubles__u_0+5
+   STA   __local_test_lotsa_doubles__2
+   LDA   __zpabi_test_lotsa_doubles__u_0+6
+   STA   __local_test_lotsa_doubles__1
+   LDA   __zpabi_test_lotsa_doubles__u_0+7
+   CMP   #$40
+   BEQ   .lb_skip@83
+   JMP   .and_false@101
+.lb_skip@83:
+   LDA   __local_test_lotsa_doubles__1
+   CMP   #$58
+   BEQ   .lb_skip@82
+   JMP   .and_false@101
+.lb_skip@82:
+   LDA   __local_test_lotsa_doubles__2
+   CMP   #$C0
+   BEQ   .lb_skip@81
+   JMP   .and_false@101
+.lb_skip@81:
+   LDA   __local_test_lotsa_doubles__3
+   BEQ   .lb_skip@80
+   JMP   .and_false@101
+.lb_skip@80:
+   LDA   __local_test_lotsa_doubles__4
+   BEQ   .lb_skip@79
+   JMP   .and_false@101
+.lb_skip@79:
+   LDA   __local_test_lotsa_doubles__5
+   BEQ   .lb_skip@78
+   JMP   .and_false@101
+.lb_skip@78:
+   LDA   __local_test_lotsa_doubles__6
+   BEQ   .lb_skip@77
+   JMP   .and_false@101
+.lb_skip@77:
+   LDA   __local_test_lotsa_doubles__7
+   BEQ   .lb_skip@76
+   JMP   .and_false@101
+.lb_skip@76:
+   LDA   __zpabi_test_lotsa_doubles__u_0+8
+   STA   __local_test_lotsa_doubles__7
+   LDA   __zpabi_test_lotsa_doubles__u_0+9
+   STA   __local_test_lotsa_doubles__6
+   LDA   __zpabi_test_lotsa_doubles__u_0+10
+   STA   __local_test_lotsa_doubles__5
+   LDA   __zpabi_test_lotsa_doubles__u_0+11
+   STA   __local_test_lotsa_doubles__4
+   LDA   __zpabi_test_lotsa_doubles__u_0+12
+   STA   __local_test_lotsa_doubles__3
+   LDA   __zpabi_test_lotsa_doubles__u_0+13
+   STA   __local_test_lotsa_doubles__2
+   LDA   __zpabi_test_lotsa_doubles__u_0+14
+   STA   __local_test_lotsa_doubles__1
+   LDA   __zpabi_test_lotsa_doubles__u_0+15
+   CMP   #$40
+   BEQ   .lb_skip@75
+   JMP   .and_false@101
+.lb_skip@75:
+   LDA   __local_test_lotsa_doubles__1
+   CMP   #$58
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__2
+   CMP   #$80
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__3
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__4
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__5
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__6
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__7
+   BNE   .and_false@101
+   LDA   __zpabi_test_lotsa_doubles__u_0+16
+   STA   __local_test_lotsa_doubles__7
+   LDA   __zpabi_test_lotsa_doubles__u_0+17
+   STA   __local_test_lotsa_doubles__6
+   LDA   __zpabi_test_lotsa_doubles__u_0+18
+   STA   __local_test_lotsa_doubles__5
+   LDA   __zpabi_test_lotsa_doubles__u_0+19
+   STA   __local_test_lotsa_doubles__4
+   LDA   __zpabi_test_lotsa_doubles__u_0+20
+   STA   __local_test_lotsa_doubles__3
+   LDA   __zpabi_test_lotsa_doubles__u_0+21
+   STA   __local_test_lotsa_doubles__2
+   LDA   __zpabi_test_lotsa_doubles__u_0+22
+   STA   __local_test_lotsa_doubles__1
+   LDA   __zpabi_test_lotsa_doubles__u_0+23
+   CMP   #$40
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__1
+   CMP   #$58
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__2
+   CMP   #$40
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__3
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__4
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__5
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__6
+   BNE   .and_false@101
+   LDA   __local_test_lotsa_doubles__7
+   BNE   .and_false@101
+   JMP   test_one_double@tail0
+.and_false@101:
+   JMP   test_one_double@tail1
+
+test_lotsa_chars:
+   SUBROUTINE
+
+   LDA   #<str@9
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@9
+   STA   __zpabi_strcmp__s2_1
+   LDX   #>__zpabi_test_lotsa_chars__u_0
+   LDA   #<__zpabi_test_lotsa_chars__u_0
+   JSR   strcmp
+   STX   __local_test_lotsa_chars__0
+   ORA   __local_test_lotsa_chars__0
+   BEQ   .lnot_true@21
+   LDA   #$00
+   BEQ   .lnot_end@22
+.lnot_true@21:
+   LDA   #$01
+.lnot_end@22:
+   LDX   #$00
+   RTS
+
+test_contains_large_struct:
+   SUBROUTINE
+
+   LDA   __zpabi_test_contains_large_struct__u_0
+   STA   __local_test_contains_large_struct__1
+   LDA   __zpabi_test_contains_large_struct__u_0+1
+   BEQ   .lb_skip@85
+   JMP   .and_false@105
+.lb_skip@85:
+   LDA   __local_test_contains_large_struct__1
+   CMP   #$64
+   BEQ   .lb_skip@84
+   JMP   .and_false@105
+.lb_skip@84:
+   LDA   __zpabi_test_contains_large_struct__u_0+2
+   STA   __local_test_contains_large_struct__7
+   LDA   __zpabi_test_contains_large_struct__u_0+3
+   STA   __local_test_contains_large_struct__6
+   LDA   __zpabi_test_contains_large_struct__u_0+4
+   STA   __local_test_contains_large_struct__5
+   LDA   __zpabi_test_contains_large_struct__u_0+5
+   STA   __local_test_contains_large_struct__4
+   LDA   __zpabi_test_contains_large_struct__u_0+6
+   STA   __local_test_contains_large_struct__3
+   LDA   __zpabi_test_contains_large_struct__u_0+7
+   STA   __local_test_contains_large_struct__2
+   LDA   __zpabi_test_contains_large_struct__u_0+8
+   STA   __local_test_contains_large_struct__1
+   LDA   __zpabi_test_contains_large_struct__u_0+9
+   CMP   #$40
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__1
+   CMP   #$59
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__2
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__3
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__4
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__5
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__6
+   BNE   .and_false@105
+   LDA   __local_test_contains_large_struct__7
+   BNE   .and_false@105
+   LDA   #>__zpabi_test_contains_large_struct__u_0
+   STA   __local_test_contains_large_struct__2
+   LDA   #<__zpabi_test_contains_large_struct__u_0
+   CLC
+   ADC   #$0A
+   STA   __local_test_contains_large_struct__0
+   BCC   .carry_inc@6
+   INC   __local_test_contains_large_struct__2
+.carry_inc@6:
+   LDA   #<str@10
+   STA   __zpabi_strcmp__s2_0
+   LDA   #>str@10
+   STA   __zpabi_strcmp__s2_1
+   LDX   __local_test_contains_large_struct__2
+   LDA   __local_test_contains_large_struct__0
+   JSR   strcmp
+   STX   __local_test_contains_large_struct__0
+   ORA   __local_test_contains_large_struct__0
+   BNE   .and_false@105
+   JMP   test_one_double@tail0
+.and_false@105:
+   JMP   test_one_double@tail1
+
+test_contains_union_array:
+   SUBROUTINE
+
+   LDA   #>__zpabi_test_contains_union_array__u_0
+   STA   __local_test_contains_union_array__b_14
+   LDA   #<__zpabi_test_contains_union_array__u_0
+   CLC
+   STA   __local_test_contains_union_array__b_15
+   BCC   .carry_inc@7
+   INC   __local_test_contains_union_array__b_14
+.carry_inc@7:
+   LDY   #$00
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_0
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_1
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_2
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_3
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_4
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_5
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_6
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_7
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_8
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_9
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_10
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_11
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_12
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_13
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_14
+   INY
+   LDA   (__local_test_contains_union_array__b_15),Y
+   STA   __local_test_contains_union_array__a_15
+   LDA   #>__zpabi_test_contains_union_array__u_0
+   STA   __local_test_contains_union_array__1
+   LDA   #<__zpabi_test_contains_union_array__u_0
+   CLC
+   ADC   #$10
+   STA   __local_test_contains_union_array__0
+   BCC   .carry_inc@8
+   INC   __local_test_contains_union_array__1
+.carry_inc@8:
+   LDY   #$00
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_0
+   LDY   #$08
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_8
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_9
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_10
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_11
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_12
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_13
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_14
+   INY
+   LDA   (__local_test_contains_union_array__0),Y
+   STA   __local_test_contains_union_array__b_15
+   LDA   __local_test_contains_union_array__a_7
+   CMP   #$40
+   BNE   .test_contains_union_array@jthread@0
+   LDA   __local_test_contains_union_array__a_6
+   CMP   #$26
+   BNE   .test_contains_union_array@jthread@0
+   LDA   __local_test_contains_union_array__a_5
+   BNE   .test_contains_union_array@jthread@0
+   LDA   __local_test_contains_union_array__a_4
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_3
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_2
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_1
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_0
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_15
+   CMP   #$40
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_14
+   CMP   #$28
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_13
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_12
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_11
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_10
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_9
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__a_8
+   BEQ   .if_end@111
+.test_contains_union_array@jthread@0:
+   LDX   #$00
+   TXA
+   RTS
+.if_end@111:
+   LDA   __local_test_contains_union_array__b_15
+   CMP   #$BF
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_14
+   CMP   #$F0
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_13
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_12
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_11
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_10
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_9
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_8
+   BNE   .test_contains_union_array@jthread@1
+   LDA   __local_test_contains_union_array__b_0
+   BEQ   .if_end@114
+.test_contains_union_array@jthread@1:
+   LDX   #$00
+   TXA
+   RTS
+.if_end@114:
+   JMP   test_has_nine_byte_struct@tail2
+
+str@0:
+   DC.B  $57, $58, $59, $5A, $00
+
+str@1:
+   DC.B  $43, $68, $61, $72, $73, $21, $00
+
+str@2:
+   DC.B  $21, $40, $23, $24, $00
+
+str@3:
+   DC.B  $51, $57, $45, $52, $00
+
+str@4:
+   DC.B  $54, $59, $55, $49, $00
+
+str@5:
+   DC.B  $41, $53, $00
+
+str@6:
+   DC.B  $44, $46, $00
+
+str@7:
+   DC.B  $47, $48, $00
+
+str@8:
+   DC.B  $57, $58, $59, $5A, $00
+
+str@9:
+   DC.B  $61, $73, $66, $6C, $61, $6B, $6A, $73, $64, $66, $6C, $6B, $6A, $73, $00
+
+str@10:
+   DC.B  $41, $20, $73, $74, $72, $75, $63, $74, $21, $00

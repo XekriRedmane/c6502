@@ -24,8 +24,8 @@
 // The asm SSA round trip reads `pseudo_reads`, `pseudo_writes`,
 // `map_reads`, and `map_writes`, the interference graphs
 // `early_write_pairs`, and the liveness of the register allocation
-// `pseudo_read_ptrs` and `pseudo_write_ptrs`. The form check serves the
-// IR check, which isn't ported.
+// `pseudo_read_ptrs` and `pseudo_write_ptrs`, and the IR check
+// `form_problems`.
 #include "passes/decimal_arith.h"
 
 namespace c6502::passes::decimal_arith {
@@ -131,6 +131,28 @@ std::vector<std::pair<std::string, std::string>> early_write_pairs(
     }
   }
   return out;
+}
+
+std::vector<std::string> form_problems(const ir::DecimalArith& instr) {
+  std::vector<std::string> problems;
+  const std::size_t n = instr.dst.size();
+  if (n == 0 || instr.left.size() != n || instr.right.size() != n) {
+    problems.push_back("DecimalArith has " + std::to_string(instr.left.size()) + " left, " +
+                       std::to_string(instr.right.size()) + " right, and " + std::to_string(n) +
+                       " dst bytes");
+  }
+  for (const auto& op : reads(instr)) {
+    if (!isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh, ir::Pseudo, ir::Data, ir::ZP, ir::Frame,
+             ir::Stack>(op)) {
+      problems.push_back("DecimalArith reads " + asdl::constructor_name(op));
+    }
+  }
+  for (const auto& op : writes(instr)) {
+    if (!isa<ir::Pseudo, ir::Data, ir::ZP, ir::Frame, ir::Stack>(op)) {
+      problems.push_back("DecimalArith writes " + asdl::constructor_name(op));
+    }
+  }
+  return problems;
 }
 
 }  // namespace c6502::passes::decimal_arith

@@ -196,8 +196,8 @@ def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
     warnings the compile issued to stderr, before any error it raises,
     as gcc does. Under `C6502_CPP_BACKEND=1` the C++ port compiles the
     source for `-S`, `-c`, and a link, and Python runs no part of the
-    front end. It runs `--lex` in C++ too, which preprocesses the source
-    and prints its tokens."""
+    front end. It runs `--lex`, `--parse`, `--resolve`, and `--tac` in
+    C++ too, which print the tokens or pretty.py's tree."""
     source, filename = _read_source(path)
     with diagnostics.collecting() as found:
         try:
@@ -206,15 +206,23 @@ def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
                     source, pcpp_args, filename, optimize,
                     link_metadata=link_metadata,
                 )
-            if stage == "lex" and _cpp_backend():
+            if stage in _CPP_TEXT_STAGES and _cpp_backend():
                 import cpp_backend
-                return cpp_backend.lex_source(source, pcpp_args, filename)
+                return cpp_backend.stage_source(
+                    stage, source, pcpp_args, filename, optimize=optimize,
+                    inline=_inlining(),
+                )
             return _run_stage(
                 stage, preprocess(source, pcpp_args, filename),
                 optimize=optimize, link_metadata=link_metadata,
             )
         finally:
             _print_warnings(path, found)
+
+
+# The stages that print text before code generation, which the C++ port
+# runs under `C6502_CPP_BACKEND=1` (`cpp_backend.stage_source`).
+_CPP_TEXT_STAGES = ("lex", "parse", "resolve", "tac")
 
 
 def _print_warnings(path: str, found) -> None:
@@ -564,13 +572,12 @@ def _cpp_build(args, pcpp_args, defsyms: dict[str, int] | None = None) -> int:
 
 def _cpp_runs_everything(argv: list[str]) -> bool:
     """Whether a run of the command line `argv` calls no part of the
-    Python pipeline: under `C6502_CPP_BACKEND=1`, `--lex`, `-S`, `-c`,
-    and a link, whose C inputs the C++ port reads from the source text.
-    `--parse`, `--resolve`, and `--tac` stay in Python."""
+    Python pipeline: under `C6502_CPP_BACKEND=1`, every stage, since the
+    C++ port reads the C inputs of each from the source text."""
     if not _cpp_backend():
         return False
     args, _ = _parse_args(argv)
-    return args.stage in (None, "lex", "codegen", "object")
+    return args.stage in (None, *_CPP_TEXT_STAGES, "codegen", "object")
 
 
 # Run as a script with a stage the C++ port takes from the source text,
@@ -1064,11 +1071,14 @@ def _run_stage(
     stage: str, source: str, optimize: bool = False,
     link_metadata: bool = False,
 ) -> str:
+    if stage in _CPP_TEXT_STAGES and _cpp_backend():
+        # `source` is the preprocessor's output already.
+        import cpp_backend
+        return cpp_backend.stage_source(
+            stage, source, [], None, optimize=optimize, preprocess=False,
+            inline=_inlining(),
+        )
     if stage == "lex":
-        if _cpp_backend():
-            # `source` is the preprocessor's output already.
-            import cpp_backend
-            return cpp_backend.lex_source(source, [], None, preprocess=False)
         return _format_tokens(source)
     if stage == "parse":
         return pretty(parse(source)) + "\n"

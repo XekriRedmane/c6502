@@ -18,15 +18,18 @@ namespace c6502::passes::framework {
 using TacPass = tac_ast::Function (*)(tac_ast::Function fn, const PassContext& ctx);
 
 // One entry of a driver's list: the pass's `name`, as Python's class
-// gives it and tools/capture_passes.py records it (`tac_<name>`), and
-// its port, which is null until the pass is ported.
+// gives it and tools/capture_passes.py records it (`tac_<name>`), its
+// port, which is null until the pass is ported, and the name of its
+// Python class, which the IR check's message names (`RuleSet` for both
+// of the driver's rule sets, as Python's `type(p).__name__` gives it).
 struct NamedPass {
   std::string_view name;
   TacPass run = nullptr;
+  std::string_view class_name;
 };
 
 // Called as `observer(fn, after)` with the function after every pass,
-// with the pass's `name`, and after SSA construction and destruction,
+// with the pass's `class_name`, and after SSA construction and destruction,
 // with "to_ssa" and "from_ssa". It stands for Python's class variable
 // `PhaseDriver.observer`, which fuzz/tac_passes.py sets to run the
 // program after each step (src/tac_sim_modes.h).
@@ -70,10 +73,15 @@ struct PhaseDriver {
   // SSA form, and destruction are skipped, which only the unit tests of
   // synthetic functions do.
   //
-  // Python checks the TAC after every pass under `C6502_CHECK_IR=1`,
-  // which the C++ driver doesn't. Both call the observer that
-  // `set_observer` gives. Throws `InternalError` for a pass that has no
-  // port.
+  // With the IR checks on (src/passes/ir_check.h), the function is
+  // checked as it comes in, under the name "c99_to_tac", after every
+  // pass, under the pass's `class_name`, and after SSA construction and
+  // destruction, as Python checks it under `C6502_CHECK_IR=1`. A pass
+  // that runs in SSA form is checked with the SSA names. The observer
+  // that `set_observer` gives is called after each pass's check, and
+  // after SSA construction and destruction before their checks, in
+  // Python's order. Throws `InternalError` for a pass that has no port
+  // and for a failed check.
   tac_ast::Function apply(tac_ast::Function fn, PassContext& ctx, NameSet& ssa_storage) const;
 };
 

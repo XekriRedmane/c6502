@@ -15,8 +15,10 @@ and seeds `--fuzz-seeds` of `fuzz.stmts`, `fuzz.calls`, and
 compiled with `-c` and with `-c -O` and the object linked alone, without
 a script and with tools/capture_binutils.py's script of ROM and RAM
 regions and the `--defsym`s that harness gives, as that harness's
-corpus does. The mode `lex`, which isn't among the defaults, runs
-`--lex` on each program. The corpus `links` holds the jobs of that harness's
+corpus does. The modes `lex`, `parse`, `resolve`, `resolveO`, `tac`,
+and `tacO`, which aren't among the defaults, run `--lex`, `--parse`,
+`--resolve`, `--resolve -O`, `--tac`, and `--tac -O` on each program.
+The corpus `links` holds the jobs of that harness's
 `links` job: the three games, each unit compiled with `-c -O` and the
 objects linked with the game's script and without one (and Ali Baba
 with the simulator's helpers too), and besides those every unit
@@ -131,6 +133,18 @@ def _source_args(args: list[str], tmp: str) -> list[str]:
     return args
 
 
+# The modes that stop at a stage before code generation, with the flags
+# of each.
+_TEXT_MODES = {
+    "lex": ("--lex", []),
+    "parse": ("--parse", []),
+    "resolve": ("--resolve", []),
+    "resolveO": ("--resolve", ["-O"]),
+    "tac": ("--tac", []),
+    "tacO": ("--tac", ["-O"]),
+}
+
+
 def _program_commands(run, args: list[str], mode: str) -> None:
     """Runs the commands of a corpus program in `mode` through `run`,
     which takes a command line and returns whether it succeeded."""
@@ -138,8 +152,9 @@ def _program_commands(run, args: list[str], mode: str) -> None:
         run(["compile.py", *args, "-S", "-o", "out.s",
              *(["-O"] if mode == "O" else [])])
         return
-    if mode == "lex":
-        run(["compile.py", *args, "--lex", "-o", "out.txt"])
+    if mode in _TEXT_MODES:
+        stage, flag = _TEXT_MODES[mode]
+        run(["compile.py", *args, stage, *flag, "-o", "out.txt"])
         return
     import capture_binutils
     from sim.linked import defsym_args
@@ -273,7 +288,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fuzz-seeds", default="0-99")
     ap.add_argument("--modes", default="O,unopt,cO,c",
                     help="O for -S -O, unopt for -S, cO for -c -O and the "
-                         "links, c for -c and the links, lex for --lex")
+                         "links, c for -c and the links, lex for --lex, "
+                         "parse for --parse, resolve and resolveO for "
+                         "--resolve without and with -O, and tac and tacO "
+                         "for --tac without and with -O")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 1)
     ns = ap.parse_args(argv)
     if cpp_cli() is None:

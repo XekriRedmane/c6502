@@ -43,6 +43,13 @@ struct FrontEndResult {
 std::string preprocess_source(const std::string& source, const FrontEndOptions& options,
                               std::string& err);
 
+// Returns compile.py's `_resolved` of `text`, the preprocessor's output:
+// `parse`, under `-O` (`optimize`) `unroll_program`,
+// `identifier_resolution`, `string_lifting`, `label_resolution`, and
+// `loop_labeling`, in that order. Throws the `CompileError` of the pass
+// that rejects the program.
+c99_ast::Program resolved(const std::string& text, bool optimize);
+
 // Runs `preprocess`, `parse`, under `-O` `unroll_program`,
 // `identifier_resolution`, `string_lifting`, `label_resolution`,
 // `loop_labeling`, and `type_checking` on `source`, in compile.py's

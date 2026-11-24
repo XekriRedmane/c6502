@@ -7,6 +7,7 @@ preprocessor's flags, and the modules Python imports."""
 from __future__ import annotations
 
 import contextlib
+import itertools
 import os
 import subprocess
 import sys
@@ -175,10 +176,8 @@ class TestWithTheVariable(unittest.TestCase):
         self.assertIn("can't recurse", results[0][1])
 
     def test_python_reads_no_program_back(self):
-        # Without the IR checks, the text comes from c6502cpp and Python
-        # loads no dump. With them, it loads the TAC that code
-        # generation lowered and the finished asm and asm2 programs to
-        # check them.
+        # The text comes from c6502cpp and Python loads no dump, with the
+        # IR checks or without them, since C++ runs the checks.
         code = (
             "import sys, compile, ir_dump\n"
             "from passes import ir_check\n"
@@ -204,7 +203,7 @@ class TestWithTheVariable(unittest.TestCase):
                     text=True,
                 )
             counts.append(int(done.stdout))
-        self.assertEqual(counts, [0, 6])
+        self.assertEqual(counts, [0, 0])
 
 
 def _run(args: list[str], cpp: bool, *, stdin: str | None = None,
@@ -380,9 +379,8 @@ class TestTheFrontEnd(unittest.TestCase):
     def test_compile_imports_no_front_end(self):
         # Run as a script with the variable set, compile.py stops before
         # it imports the Python pipeline, which the front end's modules
-        # are part of. The IR checks are off, since passes/ir_check.py
-        # reads helpers of the asm optimizer, which import the type
-        # checker.
+        # are part of, and with `C6502_CHECK_IR=1` too, since C++ runs
+        # the IR checks, it imports none of the compiler's passes.
         code = (
             "import runpy, sys\n"
             "sys.argv = ['compile.py', 'examples/sfx_tone.c', '-S', '-O',"
@@ -392,24 +390,25 @@ class TestTheFrontEnd(unittest.TestCase):
             "except SystemExit as e:\n"
             "    assert not e.code, e.code\n"
             "front = ('parser', 'lexer', 'lark', 'pcpp', 'preprocessor',\n"
-            "         'passes.type_checking', 'passes.identifier_resolution',\n"
-            "         'passes.string_lifting', 'passes.label_resolution',\n"
-            "         'passes.loop_labeling', 'passes.optimization_ast',\n"
-            "         'tac_to_asm', 'c99_to_tac')\n"
+            "         'passes', 'tac_to_asm', 'c99_to_tac', 'asm_emit',\n"
+            "         'tac_ast', 'asm_ast', 'asm2_ast', 'ir_dump')\n"
             "print(sorted(m for m in sys.modules\n"
-            "             if m.split('.')[0] in front or m in front\n"
-            "             or m.startswith(front)))\n"
+            "             if m.split('.')[0] in front))\n"
         )
         env = dict(os.environ)
         env["C6502_CPP_BACKEND"] = "1"
-        env.pop("C6502_CHECK_IR", None)
-        with tempfile.TemporaryDirectory() as tmp:
-            done = subprocess.run(
-                [sys.executable, "-c", code, os.path.join(tmp, "out.s")],
-                cwd=_ROOT, env=env, check=True, capture_output=True,
-                text=True,
-            )
-        self.assertEqual(done.stdout.strip(), "[]")
+        for check in (None, "1"):
+            env.pop("C6502_CHECK_IR", None)
+            if check:
+                env["C6502_CHECK_IR"] = check
+            with self.subTest(check_ir=check), \
+                    tempfile.TemporaryDirectory() as tmp:
+                done = subprocess.run(
+                    [sys.executable, "-c", code, os.path.join(tmp, "out.s")],
+                    cwd=_ROOT, env=env, check=True, capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(done.stdout.strip(), "[]")
 
 
 @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
@@ -494,6 +493,203 @@ class TestLex(unittest.TestCase):
                 text=True,
             )
         self.assertEqual(done.stdout.strip(), "[]")
+
+
+# A program whose trees hold strings with quotes, backslashes, control
+# characters, and characters outside ASCII (the lexer takes those only
+# as escapes, and `\xad`, `\xa0`, and `\x85` aren't printable, so
+# Python's `repr` escapes them too), floating constants, a
+# switch, a struct, and a loop the unroller copies under -O.
+_TREES = (
+    '#include <stdint.h>\n'
+    'static const char *s = "it\'s \\"q\\" \\\\ \\x01\\x7f\\t\\n '
+    '\\xe9\\xad\\xff\\xa0\\x85";\n'
+    "static const char *t = \"'\";\n"
+    'static const char u[] = "\\\\\'";\n'
+    "double d = 1e16; double z = -0.0; double big = 1e309;\n"
+    "float f = 0.1f;\n"
+    "struct p { uint8_t x; int y; };\n"
+    "struct p q = { 1, -2 };\n"
+    "int main(void) {\n"
+    "    int n = 0;\n"
+    "    [[c6502::unroll]] for (int i = 0; i < 3; i++) n += s[i];\n"
+    "    switch (n) { case 1: n = 2; break; default: n = t[0]; }\n"
+    "    return n + (int)(d * f) + q.y + u[1];\n"
+    "}\n"
+)
+
+# The command line flags of each stage that prints a tree.
+_TREE_STAGES = (
+    ["--parse"], ["--resolve"], ["--resolve", "-O"], ["--tac"],
+    ["--tac", "-O"],
+)
+
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestPretty(unittest.TestCase):
+    """The `pretty` that `asdl.py --cpp` generates for each IR writes the
+    text pretty.py writes, on every IR of compiled programs, read into
+    C++ from their dumps (`c6502cpp roundtrip --pretty`)."""
+
+    def test_each_ir_of_compiled_programs(self):
+        from ir_dump import dump
+        from pretty import pretty
+        from tests.test_ir_dump import _compiled_irs
+        game = _ROOT / "examples" / "lode_runner"
+        sources = {
+            "example": None,
+            "trees": _TREES,
+            "guards": f'#include "{(game / "guards.c").as_posix()}"\n',
+        }
+        for label, source in sources.items():
+            irs = _compiled_irs(source)
+            for module, prog in irs.items():
+                with self.subTest(program=label, module=module):
+                    done = subprocess.run(
+                        [cpp_cli(), "roundtrip", "--pretty", module],
+                        input=dump(prog).encode("utf-8"), capture_output=True,
+                        check=True,
+                    )
+                    self.assertEqual(done.stdout.decode("utf-8"),
+                                     pretty(prog) + "\n")
+
+
+@unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
+class TestTrees(unittest.TestCase):
+    """`compile.py --parse`, `--resolve`, and `--tac` run in C++, and
+    print what Python prints, with the same messages and exit status."""
+
+    def _same(self, args, **kw) -> tuple:
+        cpp = _run(args, True, **kw)
+        self.assertEqual(cpp, _run(args, False, **kw))
+        return cpp
+
+    def test_each_stage(self):
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                status, out, err, _ = self._same(
+                    ["a.c", *flags], files={"a.c": _TREES},
+                )
+                self.assertEqual((status, err), (0, ""))
+                self.assertTrue(out.startswith("Program(\n"), out[:40])
+
+    def test_to_a_file_and_from_stdin(self):
+        source = "int x = 1;\n"
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                self._same(["a.c", *flags, "-o", "out.s"],
+                           files={"a.c": source})
+                status, out, _, _ = self._same(["-", *flags], stdin=source)
+                self.assertEqual(status, 0)
+
+    def test_an_error_at_each_stage(self):
+        # Each stage stops before the passes after it, so `--parse`
+        # takes the name that `--resolve` rejects, and `--resolve` the
+        # call that the type checker rejects.
+        for name in ("PreprocessorError", "LexError", "UnexpectedToken",
+                     "NotImplementedError", "IdentifierResolutionError",
+                     "LoopLabelingError", "UnrollError", "TypeCheckError"):
+            source, _ = _ERRORS[name]
+            for flags in _TREE_STAGES:
+                with self.subTest(error=name, flags=flags):
+                    self._same(["a.c", *flags], files={"a.c": source})
+
+    def test_a_warning_and_what_pcpp_writes_to_stderr(self):
+        source = "#if 1 +\n#endif\n_Bool b;\nint main(void) { return b; }\n"
+        for flags in _TREE_STAGES:
+            with self.subTest(flags=flags):
+                status, _, err, _ = self._same(
+                    ["a.c", *flags], files={"a.c": source},
+                )
+                self.assertEqual(status, 0)
+                self.assertRegex(
+                    err, r"(?s)Could not evaluate expression.*"
+                         r"a\.c: warning: line 3: ",
+                )
+
+    def test_run_stage_takes_the_preprocessor_s_output(self):
+        import compile
+        from preprocessor import preprocess
+        cases = [(stage, optimize, source)
+                 for stage in ("parse", "resolve", "tac")
+                 for optimize in (False, True)
+                 for source in (_TREES, _ERRORS["TypeCheckError"][0],
+                                _ERRORS["UnexpectedToken"][0])]
+        for stage, optimize, source in cases:
+            with self.subTest(stage=stage, optimize=optimize,
+                              source=source[:20]):
+                got = []
+                for cpp in (False, True):
+                    with mock.patch.dict(os.environ):
+                        os.environ.pop("C6502_CPP_BACKEND", None)
+                        if cpp:
+                            os.environ["C6502_CPP_BACKEND"] = "1"
+                        try:
+                            got.append(compile._run_stage(
+                                stage, preprocess(source, []),
+                                optimize=optimize,
+                            ))
+                        except Exception as e:  # noqa: BLE001 - compared below
+                            got.append((type(e).__name__, str(e)))
+                self.assertEqual(got[0], got[1])
+
+    def test_tac_without_inlining(self):
+        # tests/no_inlining.py's patch of `compile.inline_functions`
+        # reaches the C++ side's `--tac -O`.
+        import compile
+        source = (
+            "static int small(int x) { return x + 1; }\n"
+            "int main(void) { return small(2); }\n"
+        )
+        for inlining in (False, True):
+            with self.subTest(inlining=inlining):
+                got = []
+                for cpp in (False, True):
+                    with contextlib.ExitStack() as stack:
+                        stack.enter_context(mock.patch.dict(os.environ))
+                        os.environ.pop("C6502_CPP_BACKEND", None)
+                        if cpp:
+                            os.environ["C6502_CPP_BACKEND"] = "1"
+                        if not inlining:
+                            stack.enter_context(no_inlining())
+                        got.append(compile._run_stage(
+                            "tac", source, optimize=True,
+                        ))
+                self.assertEqual(got[0], got[1])
+                self.assertEqual("name='small'" in got[0], not inlining)
+
+    def test_compile_imports_no_front_end(self):
+        # Run as a script with the variable set, the three stages stop
+        # before compile.py imports the Python pipeline, and with
+        # `C6502_CHECK_IR=1` too, since C++ runs the IR checks.
+        front = ("lexer", "parser", "lark", "pcpp", "preprocessor",
+                 "pretty", "c99_to_tac", "passes", "tac_ast", "ir_dump")
+        env = dict(os.environ)
+        env["C6502_CPP_BACKEND"] = "1"
+        for flags, check in itertools.product(_TREE_STAGES, ("0", "1")):
+            env["C6502_CHECK_IR"] = check
+            with self.subTest(flags=flags, check_ir=check):
+                code = (
+                    "import runpy, sys\n"
+                    "sys.argv = ['compile.py', 'examples/sfx_tone.c',"
+                    f" {', '.join(repr(f) for f in flags)},"
+                    " '-o', sys.argv[1]]\n"
+                    "try:\n"
+                    "    runpy.run_path('compile.py', run_name='__main__')\n"
+                    "except SystemExit as e:\n"
+                    "    assert not e.code, e.code\n"
+                    f"front = {front!r}\n"
+                    "print(sorted(m for m in sys.modules\n"
+                    "             if m in front or m.startswith(front)))\n"
+                )
+                with tempfile.TemporaryDirectory() as tmp:
+                    done = subprocess.run(
+                        [sys.executable, "-c", code,
+                         os.path.join(tmp, "out.txt")],
+                        cwd=_ROOT, env=env, check=True, capture_output=True,
+                        text=True,
+                    )
+                self.assertEqual(done.stdout.strip(), "[]")
 
 
 def _run_files(args: list[str], cpp: bool, files: dict[str, str | bytes],
@@ -749,14 +945,18 @@ class TestObjectsAndLinks(unittest.TestCase):
                     path.write_bytes(data)
                 else:
                     path.write_text(data, encoding="utf-8", newline="\n")
-            for args in (["-c", "-O", "main.c", "twice.asm"],
-                         ["-O", "main.c", "twice.asm", "add.o", "-T", "rom.ld",
-                          "--defsym", "port=0xC000", "-o", "prog"]):
-                with self.subTest(args=args):
+            # With `C6502_CHECK_IR=1` too, since C++ runs the IR checks.
+            for args, check in itertools.product(
+                    (["-c", "-O", "main.c", "twice.asm"],
+                     ["-O", "main.c", "twice.asm", "add.o", "-T", "rom.ld",
+                      "--defsym", "port=0xC000", "-o", "prog"]),
+                    ("0", "1")):
+                with self.subTest(args=args, check_ir=check):
                     done = subprocess.run(
                         [sys.executable, "-c", run,
                          str(_ROOT / "compile.py"), *args],
-                        cwd=tmp, env={**env, "PYTHONPATH": str(_ROOT)},
+                        cwd=tmp, env={**env, "PYTHONPATH": str(_ROOT),
+                                      "C6502_CHECK_IR": check},
                         check=True, capture_output=True, text=True,
                     )
                     self.assertEqual(sorted(linker & set(done.stdout.split())), [])

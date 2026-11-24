@@ -32,20 +32,23 @@ std::string preprocess_source(const std::string& source, const FrontEndOptions& 
   return text;
 }
 
-FrontEndResult front_end(const std::string& source, const FrontEndOptions& options,
-                         std::string& err) {
-  const std::string text = preprocess_source(source, options, err);
-  // compile._resolved: the unroller runs before identifier resolution,
-  // so each copy of a body gets names of its own, and string lifting
-  // after it, so the names it makes aren't renamed.
+c99_ast::Program resolved(const std::string& text, bool optimize) {
+  // The unroller runs before identifier resolution, so each copy of a
+  // body gets names of its own, and string lifting after it, so the
+  // names it makes aren't renamed.
   c99_ast::Program prog = parser::parse(text);
-  if (options.optimize) {
+  if (optimize) {
     prog = unroll_program(std::move(prog));
   }
   prog = resolve_identifiers(std::move(prog));
   prog = lift_strings(std::move(prog));
   prog = resolve_labels(std::move(prog));
-  prog = label_program(std::move(prog));
+  return label_program(std::move(prog));
+}
+
+FrontEndResult front_end(const std::string& source, const FrontEndOptions& options,
+                         std::string& err) {
+  c99_ast::Program prog = resolved(preprocess_source(source, options, err), options.optimize);
   type_checking::CheckedProgram tables = type_checking::check_program(prog);
   return {std::move(prog), std::move(tables.symbols), std::move(tables.types)};
 }

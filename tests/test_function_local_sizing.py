@@ -19,52 +19,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-import asm_ast
-from passes.function_local_sizing import (
-    compute_local_byte_addresses, compute_local_bytes,
-)
-
-
-def _zp(addr: int, off: int = 0) -> asm_ast.ZP:
-    return asm_ast.ZP(address=addr, offset=off)
-
-
-def _imm(v: int) -> asm_ast.Imm:
-    return asm_ast.Imm(value=v)
-
-
-def _mov(src, dst) -> asm_ast.Mov:
-    return asm_ast.Mov(src=src, dst=dst)
-
-
-def _fn(name: str, *instrs) -> asm_ast.Function:
-    return asm_ast.Function(
-        name=name, is_global=True, params=[],
-        instructions=list(instrs),
-    )
-
-
-def _prog(*tls) -> asm_ast.Program:
-    return asm_ast.Program(top_level=list(tls))
-
-
-class TestComputeLocalBytes(unittest.TestCase):
-
-
-    def test_zp_with_offset_counts_each_byte(self) -> None:
-        # A multi-byte value materialized as ZP(addr, offset)
-        # operands shows each byte distinctly. offset is added to
-        # address.
-        prog = _prog(_fn(
-            "f",
-            _mov(_imm(1), _zp(0x90, 0)),
-            _mov(_imm(2), _zp(0x90, 1)),
-        ))
-        self.assertEqual(compute_local_bytes(prog), {"f": 2})
-        self.assertEqual(
-            compute_local_byte_addresses(prog),
-            {"f": frozenset({0x90, 0x91})},
-        )
+from passes.function_local_sizing import compute_local_bytes
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

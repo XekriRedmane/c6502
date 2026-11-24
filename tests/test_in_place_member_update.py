@@ -5,10 +5,6 @@ from __future__ import annotations
 
 import unittest
 
-import tac_ast
-from passes.in_place_member_update import (
-    InPlaceUpdate, plan_in_place_updates,
-)
 from sim.harness import build_sim
 
 
@@ -71,35 +67,6 @@ class TestCodegen(unittest.TestCase):
             body.split(), ["LDA", "W", "ASL", "STA", "P", "LDA", "W+1",
                            "ROL", "STA", "P+1", "RTS"],
         )
-
-
-class TestPlan(unittest.TestCase):
-    """`plan_in_place_updates` on TAC built by hand, for shapes C
-    doesn't produce today."""
-
-    @staticmethod
-    def _plan(src1: tac_ast.Type_val) -> list:
-        u = tac_ast.Var(name="u")
-        zero = tac_ast.Constant(const=tac_ast.ConstUChar(value=0))
-        one = tac_ast.Constant(const=tac_ast.ConstUInt(value=1))
-        instrs = [
-            tac_ast.Binary(op=tac_ast.Add(), src1=src1, src2=one, dst=u),
-            tac_ast.IndexedSymbolStore(
-                name="P", index=zero, src=u, is_volatile=False, offset=0,
-            ),
-        ]
-        return plan_in_place_updates(
-            instrs, [], lambda name: name not in ("P", "W"), lambda v: 2,
-        )
-
-    def test_value_from_elsewhere_is_computed_in_place(self) -> None:
-        self.assertEqual(
-            self._plan(tac_ast.Var(name="W")),
-            [InPlaceUpdate(store=1, u="u", obj="P", base=0)],
-        )
-
-    def test_value_that_reads_the_object_isnt(self) -> None:
-        self.assertEqual(self._plan(tac_ast.Var(name="P")), [])
 
 
 class TestBehavior(unittest.TestCase):

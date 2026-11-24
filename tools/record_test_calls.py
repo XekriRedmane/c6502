@@ -24,6 +24,17 @@ recorded with an `output-error` section, `{"type": ..., "message":
 its input's dump and the lines it returned, or the text of what it
 raised.
 
+Two more kinds of call are recorded. A call of `replace_function` or
+`replace_function_bare_exit`, the per-function forms of two stage
+calls (`_FUNCTION_FORMS`), is recorded as the program-level stage call
+on a program of that one function, with the function's own arguments
+under its name, once Python's program-level function has given the same
+result. A call of tac_to_asm.py's `translate_instruction`,
+`translate_function`, `translate_binary`, or `translate_val`
+(`_TRANSLATOR`), each of which runs a new `Translator` with no symbol
+table, is recorded as the dumps of its arguments and of its result,
+which cpp/tests/translator_case.h checks on the C++ `Translator`.
+
 While each test runs, a profile function also lists each other call
 that the test's own code makes into a module of the compiler (passes/,
 binutils/, rtlib/, and the root's modules other than the IR classes),
@@ -39,7 +50,8 @@ unrecordable.
 `<out>/index.json` holds, for each test, its outcome, the keys of its
 distinct recorded calls in the order it made them, its other direct
 calls, and its end-to-end calls. `<out>/records/<key>.json` holds each
-call, its kind (`capture` or `lines`), and its text or lines. A second
+call, its kind (`capture`, `lines`, or `translator`), and its text,
+lines, or dumps. A second
 `record` run into the same directory adds to the index.
 
 `cpp` writes the doctest cases of one module's tests (`write_cpp`),
@@ -281,10 +293,165 @@ def _wrap_lines(kind: str, fn):
     return wrapper
 
 
+# The per-function forms of two stage calls, which `check-captures` runs
+# only on a whole program: each name with its module, the stage call,
+# and the program-level function. The tests call them on one function.
+_FUNCTION_FORMS = {
+    "replace_function": (
+        "passes.replace_pseudoregisters", "replace_pseudoregisters",
+        "replace_program"),
+    "replace_function_bare_exit": (
+        "passes.replace_pseudoregisters", "replace_pseudoregisters_bare_exit",
+        "replace_program_bare_exit"),
+}
+
+# The arguments of the per-function forms, each with the keyword of the
+# program-level function that takes it and whether that keyword holds a
+# dict by function name. They are in the order of the program-level
+# function's parameters, which is the order of the record's `kwargs`.
+_PROGRAM_ARGUMENTS = (
+    ("statics", "extra_statics", False),
+    ("symbols", "symbols", False),
+    ("types", "types", False),
+    ("coloring", "colorings", True),
+    ("param_layout", "param_layouts", True),
+    ("private_pool_addrs", "local_pools", True),
+    ("address_taken_zp", "address_taken_assignments", True),
+    ("address_taken_symbols", "address_taken_symbols", True),
+)
+
+
+def _program_kwargs(fn_name: str, given: dict) -> dict:
+    """The keyword arguments of the program-level call that gives the
+    function `fn_name` the arguments `given` of its per-function form.
+    An argument a test left at its default is left out, as step 4's part
+    F2 recorded these calls (cpp/tests/test_frames_stage_calls.cpp)."""
+    out = {}
+    for name, keyword, by_function in _PROGRAM_ARGUMENTS:
+        if name not in given:
+            continue
+        value = given[name]
+        if name == "private_pool_addrs":
+            if not value:
+                continue
+            value = sorted(value)
+        elif value is None or (name == "statics" and not value):
+            continue
+        out[keyword] = {fn_name: value} if by_function else value
+    return out
+
+
+def _wrap_function_form(name: str, fn):
+    """Wraps a per-function form of `_FUNCTION_FORMS`. A call is recorded
+    as the program-level stage call on a program of that one function,
+    with the result Python's program-level function gives, which is
+    checked to be the per-function result first. A call whose two
+    results differ is noted as unrecordable."""
+    import importlib
+    import inspect
+    import asm_ast
+    module, stage, program_name = _FUNCTION_FORMS[name]
+    signature = inspect.signature(fn)
+
+    def wrapper(*args, **kwargs):
+        if not _called_from_test():
+            return fn(*args, **kwargs)
+        try:
+            bound = signature.bind(*args, **kwargs)
+            func = bound.arguments["fn"]
+            given = {k: v for k, v in bound.arguments.items() if k != "fn"}
+            prog = asm_ast.Program(top_level=[func])
+            prog_kwargs = _program_kwargs(func.name, given)
+            context = cp.context_json()
+            input_section = _input_section(prog)
+            args_json = cp._call_json(*cp._encode_call([], prog_kwargs))
+            program_fn = getattr(importlib.import_module(module), program_name)
+        except Exception as e:  # noqa: BLE001 - noted, and the call made
+            _unrecordable(name, e)
+            return fn(*args, **kwargs)
+        result, error = _call(fn, args, kwargs)
+        prog_result, prog_error = _call(
+            program_fn, (copy.deepcopy(prog),), copy.deepcopy(prog_kwargs))
+        try:
+            if error is None:
+                if prog_error is not None:
+                    raise ValueError(f"the program-level call raised {prog_error!r}")
+                if stage == "replace_pseudoregisters":
+                    same = prog_result.top_level == [result]
+                else:
+                    out_prog, dims = prog_result
+                    same = (out_prog.top_level == [result[0]]
+                            and dims == {func.name: result[1]})
+                if not same:
+                    raise ValueError("the program-level call gives another result")
+            elif prog_error is None or (type(prog_error), str(prog_error)) != (
+                    type(error), str(error)):
+                raise ValueError("the program-level call doesn't raise the same error")
+            _save("capture", {"text": _record_text(
+                stage, args_json, context, input_section,
+                _output_section(prog_result, prog_error), None)})
+        except Exception as e:  # noqa: BLE001 - noted
+            _unrecordable(name, e)
+        if error is not None:
+            raise error
+        return result
+    wrapper.__wrapped_pass__ = fn
+    return wrapper
+
+
+# tac_to_asm.py's module-level functions that run one method of a new
+# `Translator` with no symbol table, which cpp/tests/translator_case.h
+# runs on the C++ `Translator`.
+_TRANSLATOR = (
+    "translate_instruction", "translate_function", "translate_binary",
+    "translate_val",
+)
+
+
+def _wrap_translator(name: str, fn):
+    """Wraps a function of `_TRANSLATOR`, recorded as the dumps of its
+    arguments and of its result's instructions (or its one operand or
+    function), or the text of what it raised."""
+    def wrapper(*args, **kwargs):
+        if not _called_from_test():
+            return fn(*args, **kwargs)
+        try:
+            if kwargs:
+                raise TypeError("keyword arguments")
+            inputs = [cp.dump(a) for a in args]
+        except Exception as e:  # noqa: BLE001 - noted, and the call made
+            _unrecordable(name, e)
+            return fn(*args, **kwargs)
+        result, error = _call(fn, args, kwargs)
+        try:
+            if error is not None:
+                expected = [f"exception: {type(error).__name__}: {error}\n"]
+            elif isinstance(result, list):
+                expected = [cp.dump(i) for i in result]
+            else:
+                expected = [cp.dump(result)]
+            _save("translator", {"name": name, "inputs": inputs,
+                                 "expected": expected})
+        except Exception as e:  # noqa: BLE001 - noted
+            _unrecordable(name, e)
+        if error is not None:
+            raise error
+        return result
+    wrapper.__wrapped_pass__ = fn
+    return wrapper
+
+
 def _targets() -> dict[int, tuple[object, object]]:
     """The functions to wrap, by id, each with its wrapper."""
     import importlib
     out: dict[int, tuple[object, object]] = {}
+    tac_to_asm = importlib.import_module("tac_to_asm")
+    for name in _TRANSLATOR:
+        fn = getattr(tac_to_asm, name)
+        out.setdefault(id(fn), (fn, _wrap_translator(name, fn)))
+    for name, (module, _stage, _program) in _FUNCTION_FORMS.items():
+        fn = getattr(importlib.import_module(module), name)
+        out.setdefault(id(fn), (fn, _wrap_function_form(name, fn)))
     for name in cp.PASSES:
         module, attr = cp.resolve(cp.PASSES[name])
         fn = getattr(module, attr)
@@ -495,6 +662,8 @@ def _record_parts(record: dict) -> list[str]:
         if given is None:
             given = "".join(record["lines"])
         return [record["name"], given, *record["expected"]]
+    if record["kind"] == "translator":
+        return [record["name"], *record["inputs"], *record["expected"]]
     text = record["text"]
     lines = text.split("\n")
     name = lines[1][len("pass "):]
@@ -520,6 +689,18 @@ def _record_parts(record: dict) -> list[str]:
 def _case(test: str, n: int, record: dict) -> str:
     cls_test = test.split("::", 1)[1]
     module = Path(test.split("::")[0]).name
+    if record["kind"] == "translator":
+        name = record["name"]
+        title = f"{name}: {module}::{cls_test} (call {n})"
+        inputs = ",\n".join(
+            "        " + _text_expr(x, "        ") for x in record["inputs"])
+        expected = ",\n".join(
+            "        " + _text_expr(x, "        ") for x in record["expected"])
+        return (f'TEST_CASE("{title}") {{\n'
+                f"  c6502::testing::check_translator(\n"
+                f'      "{name}",\n'
+                f"      {{\n{inputs}\n      }},\n"
+                f"      {{\n{expected}\n      }});\n}}\n")
     if record["kind"] == "lines":
         name = record["name"]
         title = f"{name}: {module}::{cls_test} (call {n})"
@@ -591,6 +772,8 @@ def write_cpp(out: Path, module: str, target: Path, cpp_dir: Path,
         '#include "doctest.h"\n'
         '#include "record_case.h"\n'
     )
+    if any("check_translator(" in c for c in cases):
+        header += '#include "translator_case.h"\n'
     if cases:
         target.write_bytes((header + "\n" + "\n".join(cases)).encode("utf-8"))
     return report

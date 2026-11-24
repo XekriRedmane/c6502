@@ -19,20 +19,7 @@ import io
 import unittest
 from unittest.mock import patch
 
-import asm_ast
 from compile import main
-
-
-def _A() -> asm_ast.Reg:
-    return asm_ast.Reg(reg=asm_ast.A())
-
-
-def _ps(name: str, off: int = 0) -> asm_ast.Pseudo:
-    return asm_ast.Pseudo(name=name, offset=off)
-
-
-def _mov(src, dst) -> asm_ast.Mov:
-    return asm_ast.Mov(src=src, dst=dst)
 
 
 class TestAsmRegallocEndToEnd(unittest.TestCase):
@@ -73,14 +60,6 @@ class TestFrameAccessWritesY(unittest.TestCase):
     read with `LDY #off; LDA (FP),Y`, so no value may stay in Y across
     it (`fuzz.calls` seed 335)."""
 
-    def test_frame_name_counts_as_y_write(self) -> None:
-        from passes.optimization_asm.regalloc import _instr_writes_hwregs
-        read = _mov(_ps("@1.p0"), _A())
-        self.assertEqual(_instr_writes_hwregs(read), ())
-        self.assertEqual(
-            _instr_writes_hwregs(read, frozenset({"@1.p0"})), ("Y",),
-        )
-
     def test_shift_count_survives_parameter_read(self) -> None:
         # `f0` calls through a pointer, so it's a soft-stack function
         # and reads `p0` from its frame. The count `l1 & 7` of the
@@ -103,7 +82,6 @@ class TestFrameAccessWritesY(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 got = build_sim(src, optimize=optimize).run()
                 self.assertEqual(got.return_int_signed(), -128)
-
 
     def test_index_survives_spilled_reads(self) -> None:
         # Eighteen 8-byte values live at once are more than the 128

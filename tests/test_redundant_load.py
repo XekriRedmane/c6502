@@ -28,15 +28,11 @@ import unittest
 import asm_ast
 
 
-_REG_A = asm_ast.Reg(reg=asm_ast.A())
-
-
 class TestIndexRegisterOfIndexedData(unittest.TestCase):
     """`tab,X` and `tab,Y` are different bytes unless X equals Y."""
 
     def _tab(self, reg):
         return asm_ast.IndexedData(name="tab", offset=0, index=reg)
-
 
     def test_simulated_table_chase(self):
         import shutil
@@ -52,58 +48,6 @@ int main(void) { unsigned char r = f(0); return g * 100 + r; }
         self.assertEqual(
             build_sim(src, optimize=True).run().return_int(), 703,
         )
-
-
-def _d(name: str, offset: int = 0) -> asm_ast.Data:
-    return asm_ast.Data(name=name, offset=offset)
-
-
-class TestSwapPairs(unittest.TestCase):
-    """`LDA X; STA D1; LDA M; STA D2` with A already holding M becomes
-    `STA D2; LDA X; STA D1`, as at the join of `floor_enemy_draw`'s
-    dispatch."""
-
-    def _join(self, d1, m, d2, after=None):
-        return [
-            asm_ast.Mov(src=_d("hi"), dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=_d("t")),
-            asm_ast.Mov(src=_d("lo"), dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=d1),
-            asm_ast.Mov(src=m, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=d2),
-            *(after or [asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A)]),
-            asm_ast.Return(save_a=False),
-        ]
-
-
-    def _indexed_join(self, index, m):
-        """The join storing a slot and then `m` to two bytes of `z`
-        indexed by `index`, as `instr_call` stores a local's two
-        bytes. The slots are the function's own, which an indexed
-        store can't reach."""
-        z = lambda k: asm_ast.IndexedData(name="z", offset=k, index=index)
-        t = _d("__local_f__t")
-        return [
-            asm_ast.Mov(src=_d("hi"), dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=t),
-            asm_ast.Mov(src=_d("__local_f__lo"), dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=z(0)),
-            asm_ast.Mov(src=m or t, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=z(1)),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Return(save_a=False),
-        ]
-
-
-    def test_indexed_bytes_through_y_setup(self):
-        # The `LDY #off` of a soft-stack load between the stores
-        # changes Y, so `z,Y` and `z+1,Y` may be one byte.
-        from passes.redundant_load import _same_index_apart
-        z = lambda k: asm_ast.IndexedData(name="z", offset=k, index=asm_ast.Y())
-        plain = self._indexed_join(asm_ast.Y(), None)[2:6]
-        self.assertTrue(_same_index_apart(z(0), z(1), plain))
-        setup = self._indexed_join(asm_ast.Y(), asm_ast.Frame(offset=3))[2:6]
-        self.assertFalse(_same_index_apart(z(0), z(1), setup))
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

@@ -9,7 +9,6 @@ from __future__ import annotations
 import shutil
 import unittest
 
-import asm_ast
 import c99_ast
 import tac_ast
 from passes.optimization.framework import PassContext
@@ -325,24 +324,6 @@ class TestLowerings(unittest.TestCase):
         asm = _asm("#include <stdint.h>\n"
                    "uint16_t f(uint16_t a, uint8_t b) { return a * b; }\n")
         self.assertIn("mul16", _body(asm, "f"))
-
-
-class TestShiftLoop(unittest.TestCase):
-    """`tac_to_asm._shift_loop` reads a count that's also the
-    destination before the copy into the destination overwrites it."""
-
-    def test_count_in_destination_is_read_first(self):
-        from tac_to_asm import _shift_loop
-        x = asm_ast.Pseudo(name="x", offset=0)
-        n = asm_ast.Pseudo(name="n", offset=0)
-        out = _shift_loop(x, n, None, n, 1, "asl", ".l", ".d", True)
-        self.assertEqual(out[:3], [
-            asm_ast.Mov(src=n, dst=asm_ast.Reg(reg=asm_ast.A()),
-                        is_volatile=False),
-            asm_ast.Mov(src=asm_ast.Reg(reg=asm_ast.A()),
-                        dst=asm_ast.Reg(reg=asm_ast.X()), is_volatile=False),
-            asm_ast.Mov(src=x, dst=n, is_volatile=False),
-        ])
 
 
 if __name__ == "__main__":

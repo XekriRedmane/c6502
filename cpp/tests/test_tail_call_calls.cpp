@@ -207,3 +207,27 @@ TEST_CASE("tail_call: test_tail_call.py::TestJumpToReturn::test_frame_teardown_n
       "  ])\n"
       "])\n");
 }
+
+TEST_CASE("tail_call: test_tail_call.py::TestTailCall::test_other_top_level_passes_through (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass tail_call\n"
+      "source tests/test_tail_call.py::TestTailCall::test_other_top_level_passes_through\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  StaticVariable(\"g\" true [IntInit(0)])\n"
+      "  Function(\"f\" true [] [\n"
+      "    Call(\"h\" [] [])\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  StaticVariable(\"g\" true [IntInit(0)])\n"
+      "  Function(\"f\" true [] [\n"
+      "    Jump(\"h\" [])\n"
+      "  ])\n"
+      "])\n");
+}

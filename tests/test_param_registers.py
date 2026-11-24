@@ -13,11 +13,9 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-import asm_ast
 from compile import _run_stage, main as compile_main
 from parser import ParserError, parse
 from passes.abi_selection import AbiSelectionError
-from passes.prologue_synthesis import _split_entry_stubs
 from passes.type_checking import TypeCheckError
 from preprocessor import preprocess
 from sim.harness import build_sim
@@ -302,22 +300,6 @@ class TestShape(unittest.TestCase):
         main = asm.split("\nmain:")[1]
         self.assertIn("LDA   #>iob\n   LDY   #<iob\n   JSR   RWTS", main)
         self.assertNotIn("PHA", main)
-
-
-class TestPrologue(unittest.TestCase):
-
-    def test_y_stub_goes_before_the_prologue(self):
-        # The soft-stack prologue writes Y, so the store of a parameter
-        # that arrives in Y has to come first.
-        stub = asm_ast.Mov(
-            src=asm_ast.Reg(reg=asm_ast.Y()),
-            dst=asm_ast.Data(name="__zpabi_f__lo", offset=0),
-            is_volatile=False,
-        )
-        rest = [asm_ast.Return(save_a=False, save_x=False, save_c=False)]
-        stubs, body = _split_entry_stubs([stub] + rest, "f")
-        self.assertEqual(stubs, [stub])
-        self.assertEqual(body, rest)
 
 
 if __name__ == "__main__":

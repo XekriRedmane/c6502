@@ -283,6 +283,8 @@ cpp/
     call_case.h       a recorded call of a function of emission, for the
                       tests recorded from the Python unit tests
     tac_to_asm_case.h a recorded call of tac_to_asm from the Python unit tests
+    record_case.h     a recorded call in the capture format, which
+                      tools/record_test_calls.py writes (step 8, G6)
   third_party/doctest doctest.h 2.4.12 and its MIT license
   third_party/xz-embedded   XZ Embedded's decoder (release 2024-12-30),
                       the eight files its README lists for embedding,
@@ -3175,6 +3177,79 @@ build and in 4 seconds in the GCC build. With the two passes broken as
 above, it reported 3 of the 50 calls of `split_mem_to_mem` and 1 of
 the 52 of `label_resolution`, each by its name.
 
+## The unit tests' recorded calls
+
+Group G6 of step 8 moved the Python tests that call an asm pass, a
+stage call of code generation, or emission directly onto doctest cases
+of the C++ port, as docs/cpp_port.md's "The tests" proposes for tests on
+hand-built IR. `tools/record_test_calls.py record` runs test modules
+under pytest with a wrapper on each function that `check-captures` can
+run. These are the passes of `capture_passes.PASSES`, the stage calls of
+`STAGE_PASSES`, and asm_emit.py's `emit_instruction`, `emit_function`,
+and `emit_static_variable` with `apply_y_peephole`. A wrapper records a
+call only when its caller is a function of a test module, so each record
+is a call that a test made itself, with Python's result, the arguments
+the call changed, or the exception it raised. While a test runs, a
+profile function lists every other call that the test's code makes into
+a module of the compiler, and a test with such a call isn't ported by its
+records alone.
+
+```sh
+uv run python tools/record_test_calls.py record --out C:/w/rec tests/test_carry_halve.py
+uv run python tools/record_test_calls.py cpp --out C:/w/rec \
+    --to cpp/tests/test_carry_halve_calls.cpp tests/test_carry_halve.py
+```
+
+`record_test_calls.py cpp` writes a case for each distinct call of a
+module's tests that no other case in cpp/tests checks already. A case
+holds the record in the capture format, and `check_record`
+(`tests/record_case.h`) runs it as `check-captures` does. A call counts
+as checked already when the string literals of one case hold its
+function's name, its arguments, its input, its result, and the arguments
+it changed, which finds the calls that steps 3 to 5 recorded from the
+same tests. A hand-written case isn't matched, so a test that one covers
+got recorded cases as well. Each case is named for its Python test, as
+in `carry_halve: test_carry_halve.py::TestCarryHalve::test_folds (call
+1)`, and the file is `test_<module>_calls.cpp`, or
+`test_<module>_recorded.cpp` beside a hand-written `_calls.cpp`.
+
+An assertion of a property, such as the length of a pass's result,
+becomes the equality of the whole result with Python's, which is
+stricter and has to be recorded again when the output changes on
+purpose. A few tests needed more than their records.
+
+- Four tests of test_address_taken_zp.py passed `None` for the symbol
+  and type tables, which the C++ functions take by value, so they were
+  recorded with empty tables, on which Python returns the same result.
+- test_long_branches.py's branch out of its function raises ValueError
+  in Python and InternalError in C++, which its case holds as the
+  AssertionError of a compiler bug.
+- test_bin_to_bcd.py's `TestIrCheck` checks the asm2 checks that
+  asm_to_asm2's `translate_program` runs in Python and the stage driver
+  runs in C++, so `tests/test_bin_to_bcd_ir_check.cpp` ports its four
+  tests by hand.
+- Four tests that pass a Python subclass of an IR base class to a pass
+  or to emission, which C++'s closed variants can't hold, were removed
+  without a case.
+- test_byte_arith_sim.py's `test_zero_count` patched
+  `tac_to_asm._shift_loop` to leave out a compare and checked that the
+  asm optimizer keeps the shift loop's test of a zero count. The call of
+  `optimize_function` on the program that the patched lowering gives was
+  recorded in step 4, as the first case of
+  `tests/test_asm_optimizer_calls.cpp`, so the Python test went without
+  a new case.
+
+tests/link_helpers.py's `linked_text`, which 36 tests search, reads the
+executable with `c6502cpp objdump -D --no-show-raw-insn --no-addresses`
+and `--link-metadata` in place of binutils/disasm.py, and its text was
+the same as before for two programs linked with and without the
+simulator's helpers.
+
+`stage_checks::check` gives an `InternalError` as the record's
+`AssertionError`, so that a stage call that raises one in Python
+matches. Before, it gave the text of the exception, which matched no
+record.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -3463,3 +3538,9 @@ the 52 of `label_resolution`, each by its name.
   difference on 15,448 commands, and a TAC pass, a pass of the peephole
   fixed point, and the decimal-mode expansion, each broken on purpose,
   failed with Python's message.
+- 24 Nov 2026: group G6 of step 8, its first part ("The unit tests'
+  recorded calls"): 1,219 of the 1,492 Python tests that call the asm
+  passes, code generation, and emission directly are removed, and the
+  calls they made are doctest cases, 827 of them new ones recorded with
+  tools/record_test_calls.py. The C++ tests (4,190 cases) pass with
+  MSVC 19.36 and GCC 12.2.

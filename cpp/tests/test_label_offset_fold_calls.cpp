@@ -1,0 +1,136 @@
+// The calls that the tests of tests/test_label_offset_fold.py made of the asm passes,
+// code generation's stage calls, and emission, each with what the
+// Python function returned or raised, which the C++ port must
+// return or raise too. tools/record_test_calls.py recorded them
+// while the Python tests ran, before they were removed. A call
+// that another C++ case already checks isn't repeated here.
+#include "doctest.h"
+#include "record_case.h"
+
+TEST_CASE("label_offset_fold: test_label_offset_fold.py::TestLabelOffsetFold::test_both_bytes (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass label_offset_fold\n"
+      "source tests/test_label_offset_fold.py::TestLabelOffsetFold::test_both_bytes\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(Imm(47) Reg(A) false)\n"
+      "    ClearCarry\n"
+      "    Add(ImmLabelLow(\"LOCS\" 0) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Mov(Imm(1) Reg(A) false)\n"
+      "    Add(ImmLabelHigh(\"LOCS\" 0) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 1) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 303) Reg(A) false)\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Mov(ImmLabelHigh(\"LOCS\" 303) Reg(A) false)\n"
+      "    Mov(Reg(A) Data(\"t\" 1) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n");
+}
+
+TEST_CASE("label_offset_fold: test_label_offset_fold.py::TestLabelOffsetFold::test_high_byte_into_x (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass label_offset_fold\n"
+      "source tests/test_label_offset_fold.py::TestLabelOffsetFold::test_high_byte_into_x\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 0) Reg(A) false)\n"
+      "    ClearCarry\n"
+      "    Add(Imm(7) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Mov(ImmLabelHigh(\"LOCS\" 0) Reg(A) false)\n"
+      "    Add(Imm(0) Reg(A))\n"
+      "    Mov(Reg(A) Reg(X) false)\n"
+      "    Mov(Data(\"t\" 0) Reg(A) false)\n"
+      "    Return(true false false)\n"
+      "  ])\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 7) Reg(A) false)\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Mov(ImmLabelHigh(\"LOCS\" 7) Reg(A) false)\n"
+      "    Mov(Reg(A) Reg(X) false)\n"
+      "    Mov(Data(\"t\" 0) Reg(A) false)\n"
+      "    Return(true false false)\n"
+      "  ])\n"
+      "])\n");
+}
+
+TEST_CASE("label_offset_fold: test_label_offset_fold.py::TestLabelOffsetFold::test_low_byte_alone (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass label_offset_fold\n"
+      "source tests/test_label_offset_fold.py::TestLabelOffsetFold::test_low_byte_alone\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 0) Reg(A) false)\n"
+      "    ClearCarry\n"
+      "    Add(Imm(9) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 9) Reg(A) false)\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n");
+}
+
+TEST_CASE("label_offset_fold: test_label_offset_fold.py::TestLabelOffsetFold::test_low_byte_stays_when_its_carry_is_read (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass label_offset_fold\n"
+      "source tests/test_label_offset_fold.py::TestLabelOffsetFold::test_low_byte_stays_when_its_carry_is_read\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 0) Reg(A) false)\n"
+      "    ClearCarry\n"
+      "    Add(Imm(9) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Mov(Data(\"u\" 0) Reg(A) false)\n"
+      "    Add(Imm(0) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 1) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  Function(\"f\" false [] [\n"
+      "    Mov(ImmLabelLow(\"LOCS\" 0) Reg(A) false)\n"
+      "    ClearCarry\n"
+      "    Add(Imm(9) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 0) false)\n"
+      "    Mov(Data(\"u\" 0) Reg(A) false)\n"
+      "    Add(Imm(0) Reg(A))\n"
+      "    Mov(Reg(A) Data(\"t\" 1) false)\n"
+      "    Return(false false false)\n"
+      "  ])\n"
+      "])\n");
+}

@@ -135,6 +135,20 @@ the rest is `Z_PC2.lo++; if ((uint8_t)Z_PC2.lo == 0) { ...; if
 (see docs/optimizations/in_place_member_update.md and
 inc_low_byte_test.md).
 
+## The game ports' READMEs
+
+A port of a game (Zork, Lode Runner, Ali Baba) has a README that
+compares the C with the original. Robert set two conventions for it:
+
+- It doesn't list the compiler changes the port needed. The commits
+  and docs/ record those.
+- Its size table has the original's code, the original's data, the C
+  program's code, the C program's data, and the difference of the
+  totals (code plus data) from the original's, in percent. To split
+  the original into code and data, assemble it with dasm and read the
+  listing. HEX, DC, DS, and BYTE lines count as data, and a macro's
+  bytes count with the line that invokes it.
+
 ## Adding a new example
 
 The `compile-example` skill (project-local) wraps the canonical

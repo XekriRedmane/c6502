@@ -4,7 +4,7 @@
 
 ```sh
 uv run python -m unittest                                          # all
-uv run python -m unittest tests.test_asm_emit                      # one module
+uv run python -m unittest tests.test_cpp_backend                    # one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid   # one class
 C6502_CHECK_IR=1 uv run python -m unittest                         # with IR checks
 ```
@@ -73,7 +73,17 @@ the assembler with dasm and runs only where dasm is installed.
 linked from several units with a linker script. Each compiles every unit with `-O` and compares the
 output with its checked-in `.asm` file, which runs everywhere. The
 runs of the programs need files from the reverse-engineering projects,
-which aren't in this repository, and are skipped without them.
+which aren't in this repository, and are skipped without them. On
+Robert's machine those projects are cloned in F:/Projects, and the
+full suite runs with these set, and with dasm (`F:/dasm-2.20.14.1-win-x64`)
+on the PATH:
+
+```sh
+ZORK_DSK="F:/Projects/zorki-r15-reveng/Zork I r15 (4am crack).dsk"
+ZORK_MAIN_BIN=F:/Projects/zorki-r15-reveng/main.bin
+LODE_RUNNER_DIR=F:/Projects/lode_runner_reveng
+ALI_BABA_DIR=F:/Projects/ali_baba_reveng
+```
 
 - `test_zork_interpreter.py` also compares the linked program's
   `objdump.py -D` listing with its checked-in copy. With `ZORK_DSK`

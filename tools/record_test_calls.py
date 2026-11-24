@@ -719,6 +719,90 @@ def _wrap_front_function_form(name: str, fn):
     return wrapper
 
 
+def _wrap_preprocess(fn):
+    """Wraps preprocessor.py's `preprocess`, recorded as a `preprocess`
+    record in the format that cpp/src/preprocessor_cases.h reads: the
+    source, the arguments, the file name, the current directory, the
+    kind of paths, c6502's include directory, the bytes of each file
+    pcpp opened, as the code points 0 to 255, and Python's text or error,
+    warnings, and stderr. cpp/tests/preprocessor_case.h checks it with
+    the C++ preprocessor on a host that holds only those files. The
+    files are those that pcpp/parser.py's `on_file_open` opens, seen
+    through an `open` put in that module for the call."""
+    import builtins
+    import io
+    import os
+    import contextlib
+    import diagnostics
+    import preprocessor
+    import pcpp.parser as pcpp_parser
+
+    def wrapper(*args, **kwargs):
+        if not _called_from_test():
+            return fn(*args, **kwargs)
+        try:
+            import inspect
+            bound = inspect.signature(fn).bind(*args, **kwargs)
+            source = bound.arguments["source"]
+            argv = bound.arguments.get("argv")
+            filename = bound.arguments.get("filename")
+        except TypeError:
+            return fn(*args, **kwargs)
+        files: dict[str, str] = {}
+
+        def recording_open(path, *a, **k):
+            with builtins.open(path, "rb") as f:
+                files[os.fspath(path)] = f.read().decode("latin-1")
+            return builtins.open(path, *a, **k)
+
+        err = io.StringIO()
+        had = "open" in vars(pcpp_parser)
+        saved = vars(pcpp_parser).get("open")
+        pcpp_parser.open = recording_open
+        try:
+            with diagnostics.collecting() as found, contextlib.redirect_stderr(err):
+                result, error = _call(fn, args, kwargs)
+        finally:
+            if had:
+                pcpp_parser.open = saved
+            else:
+                del pcpp_parser.open
+        sys.stderr.write(err.getvalue())
+        for w in found:
+            diagnostics.warn(w.where, w.message)
+        extra = {}
+        if argv and "--debug" in argv:
+            # The bytes the call left in `pcpp_debug.log`, after a
+            # collection, since pcpp writes the log through a buffer that
+            # the preprocessor's reference cycle holds.
+            import gc
+            gc.collect()
+            log = os.path.join(os.getcwd(), "pcpp_debug.log")
+            extra["debug_log"] = None
+            if os.path.exists(log):
+                with builtins.open(log, "rb") as f:
+                    extra["debug_log"] = f.read().decode("latin-1")
+        _save("preprocess", {"call": json.dumps({
+            **extra,
+            "argv": None if argv is None else list(argv),
+            "cwd": os.getcwd(),
+            "error": None if error is None else [type(error).__name__, str(error)],
+            "filename": filename,
+            "files": files,
+            "include_dir": preprocessor._BUNDLED_INCLUDE_DIR,
+            "nt": os.name == "nt",
+            "output": None if error is not None else result,
+            "source": source,
+            "stderr": err.getvalue(),
+            "warnings": [[w.where, w.message] for w in found],
+        }, sort_keys=True)})
+        if error is not None:
+            raise error
+        return result
+    wrapper.__wrapped_pass__ = fn
+    return wrapper
+
+
 def _wrap_constant_expression(name: str, fn):
     """Wraps constant_expression.py's `evaluate_integer_constant_expression`
     or `validate_constant_expression`, recorded as a `const_expr` record:
@@ -1208,9 +1292,9 @@ def _targets() -> dict[int, tuple[object, object]]:
                          ("tac_from_ssa", "passes.optimization.ssa_destruction")):
         fn = getattr(importlib.import_module(module), name[len("tac_"):])
         out.setdefault(id(fn), (fn, _wrap_tac_ssa(name, fn)))
-    # The preprocessor is left out: a test calls it on a source alone,
-    # without the arguments and file name that its stage call takes,
-    # and the parse record that follows holds its output.
+    # The preprocessor's stage call is left out: a test calls it on a
+    # source alone, without the arguments and file name that its stage
+    # call takes. Its calls are `preprocess` records (`_wrap_preprocess`).
     for name in cp.FRONT:
         if name == "preprocess":
             continue
@@ -1220,6 +1304,8 @@ def _targets() -> dict[int, tuple[object, object]]:
     for name, (module, _stage) in _FRONT_FUNCTION_FORMS.items():
         fn = getattr(importlib.import_module(module), name.rpartition(".")[2])
         out.setdefault(id(fn), (fn, _wrap_front_function_form(name, fn)))
+    fn = importlib.import_module("preprocessor").preprocess
+    out.setdefault(id(fn), (fn, _wrap_preprocess(fn)))
     constant_expression = importlib.import_module("passes.constant_expression")
     for name in ("evaluate_integer_constant_expression",
                  "validate_constant_expression"):
@@ -1476,6 +1562,8 @@ def _record_parts(record: dict) -> list[str]:
     if record["kind"] == "const_expr":
         return ["check_constant_expression", record["name"], record["input"],
                 _const_expr_expected(record)]
+    if record["kind"] == "preprocess":
+        return ["check_preprocess_case", record["call"]]
     if record["kind"] == "rules":
         return _record_parts({"kind": "capture", "text": record["text"]})[1:]
     if record["kind"] == "asm_session":
@@ -1527,6 +1615,11 @@ def _const_expr_expected(record: dict) -> str:
 def _case(test: str, n: int, record: dict) -> str:
     cls_test = test.split("::", 1)[1]
     module = Path(test.split("::")[0]).name
+    if record["kind"] == "preprocess":
+        title = f"preprocess: {module}::{cls_test} (call {n})"
+        return (f'TEST_CASE("{title}") {{\n'
+                f"  c6502::testing::check_preprocess_case(\n"
+                f"      {_text_expr(record['call'], '      ')}, {{}});\n}}\n")
     if record["kind"] == "const_expr":
         title = f"const_expr: {module}::{cls_test} (call {n})"
         error = not isinstance(record["expected"], str)
@@ -1703,6 +1796,8 @@ def write_cpp(out: Path, module: str, target: Path, cpp_dir: Path,
         header += '#include "lexer_case.h"\n'
     if any("check_constant_expression(" in c for c in cases):
         header += '#include "constant_expression_case.h"\n'
+    if any("check_preprocess_case(" in c for c in cases):
+        header += '#include "preprocessor_case.h"\n'
     if cases:
         target.write_bytes((header + "\n" + "\n".join(cases)).encode("utf-8"))
     return report

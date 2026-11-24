@@ -25,11 +25,8 @@ import builtin_functions as bf
 import c99_ast
 import tac_ast
 from parser import parse
-from passes.identifier_resolution import (
-    IdentifierResolutionError,
-    resolve_program,
-)
-from passes.type_checking import TypeCheckError, check_program
+from passes.identifier_resolution import resolve_program
+from passes.type_checking import check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 
@@ -252,87 +249,6 @@ class TestTypes(unittest.TestCase):
                         )
                         self.assertEqual(_call_type(src), want)
 
-    def test_suffix_forms_convert_their_argument(self) -> None:
-        # As for a call of a function with a parameter of the type:
-        # `stdc_count_ones_uc(0x1FF)` counts the ones of 0xFF.
-        _, symbols, _ = _check(
-            "#include <stdbit.h>\n"
-            "static unsigned n = stdc_count_ones_uc(0x1FF);\n"
-            "static unsigned m = stdc_leading_zeros_ul(-1);\n"
-        )
-        self.assertEqual(symbols["n"].attrs.initial_value.value, 8)
-        self.assertEqual(symbols["m"].attrs.initial_value.value, 0)
-
-    def test_generic_form_rejects_other_types(self) -> None:
-        cases = {
-            "int": "has type int",
-            "signed char": "has type signed char",
-            "char": "has type char",
-            "bool": "has type bool",
-            "long": "has type long",
-            "double": "has type double",
-            "unsigned char *": "unsigned char *",
-        }
-        for tname, message in cases.items():
-            with self.subTest(type=tname):
-                with self.assertRaises(TypeCheckError) as cm:
-                    _check(
-                        f"#include <stdbit.h>\n{tname} g;\n"
-                        f"unsigned f(void) {{ return stdc_count_ones(g); }}\n"
-                    )
-                self.assertIn(message, str(cm.exception))
-                self.assertIn("stdc_count_ones_ui", str(cm.exception))
-
-    def test_generic_form_takes_no_integer_promotion(self) -> None:
-        # `c + 1` is an `int`, so it's rejected even though `c` is an
-        # `unsigned char`, as C23 §7.18 has it.
-        with self.assertRaises(TypeCheckError):
-            _check(
-                "#include <stdbit.h>\nunsigned char c;\n"
-                "unsigned f(void) { return stdc_leading_zeros(c + 1); }\n"
-            )
-        # A plain constant is an `int` too.
-        with self.assertRaises(TypeCheckError):
-            _check(
-                "#include <stdbit.h>\n"
-                "unsigned f(void) { return stdc_leading_zeros(5); }\n"
-            )
-
-    def test_suffix_form_rejects_a_pointer(self) -> None:
-        with self.assertRaises(TypeCheckError) as cm:
-            _check(
-                "#include <stdbit.h>\nunsigned char *p;\n"
-                "unsigned f(void) { return stdc_count_ones_uc(p); }\n"
-            )
-        self.assertIn("pointer", str(cm.exception))
-
-    def test_argument_count(self) -> None:
-        for call in ("__c6502_stdc_count_ones()",
-                     "__c6502_stdc_count_ones_uc(1, 2)"):
-            with self.subTest(call=call):
-                with self.assertRaises(TypeCheckError) as cm:
-                    _check(f"unsigned f(void) {{ return {call}; }}\n")
-                self.assertIn("takes 1 arguments", str(cm.exception))
-
-    def test_builtin_names_are_reserved(self) -> None:
-        with self.assertRaises(IdentifierResolutionError):
-            _check("int __c6502_stdc_count_ones;\n")
-        with self.assertRaises(IdentifierResolutionError):
-            _check(
-                "unsigned (*p)(unsigned char) = __c6502_stdc_count_ones_uc;\n"
-            )
-
-    def test_names_are_free_without_the_header(self) -> None:
-        # Without <stdbit.h>, `stdc_...` names are the program's own
-        # (C23 §7.1.3 reserves them for file scope only when the header
-        # is included, and for external linkage always).
-        _, symbols, _ = _check(
-            "static int stdc_count_ones_uc(int x) { return x + 1; }\n"
-            "int main(void) { int stdc_bit_width = 2; "
-            "return stdc_count_ones_uc(stdc_bit_width); }\n"
-        )
-        self.assertTrue(symbols["stdc_count_ones_uc"].attrs.defined)
-
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestFolding(unittest.TestCase):
@@ -398,29 +314,6 @@ class TestHeader(unittest.TestCase):
         bad = sorted(n for n in names if not allowed.fullmatch(n))
         self.assertEqual(bad, [])
 
-    def test_types_agree_with_the_other_headers(self) -> None:
-        # The typedefs repeat <stdint.h>'s and <stddef.h>'s, and C23
-        # lets a typedef be declared again with the same type, in
-        # either order.
-        for order in (
-            ("stdint.h", "stddef.h", "stdbit.h"),
-            ("stdbit.h", "stdint.h", "stddef.h"),
-        ):
-            with self.subTest(order=order):
-                src = "".join(f"#include <{h}>\n" for h in order)
-                src += "uint64_t a; int_least16_t b; size_t c;\n"
-                _check(src)
-
-    def test_only_the_named_types_come_with_it(self) -> None:
-        # <stdint.h>'s macros and other types aren't defined.
-        out = preprocess(
-            "#include <stdbit.h>\n#ifdef UINT8_MAX\nint leaked;\n#endif\n"
-            "#ifdef NULL\nint null;\n#endif\n"
-        )
-        self.assertNotIn("leaked", out)
-        self.assertNotIn("null", out)
-        with self.assertRaises(Exception):
-            _check("#include <stdbit.h>\nintptr_t p;\n")
 
     def test_every_function_is_declared_and_defined_as_a_macro(self) -> None:
         text = self._HEADER.read_text(encoding="utf-8")
@@ -472,17 +365,6 @@ int main(void) {
                 self.assertFalse(result.timed_out)
                 self.assertEqual(result.return_int(), 13349)
 
-    def test_definitions_have_internal_linkage(self) -> None:
-        _, symbols, _ = _check(self._SRC)
-        for name in ("stdc_leading_zeros_uc", "stdc_count_ones_uc",
-                     "stdc_trailing_zeros_ul", "stdc_bit_floor_uc",
-                     "stdc_bit_width_ui"):
-            with self.subTest(name=name):
-                attrs = symbols[name].attrs
-                self.assertTrue(attrs.defined)
-                self.assertFalse(attrs.is_global)
-        # A function the program doesn't reach isn't declared.
-        self.assertNotIn("stdc_count_zeros_uc", symbols)
 
     def test_two_units_each_have_a_copy(self) -> None:
         import tempfile

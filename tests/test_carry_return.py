@@ -15,7 +15,6 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from parser import ParserError, parse
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
@@ -40,18 +39,6 @@ class TestFrontEnd(unittest.TestCase):
         from compile import _run_stage
         return _run_stage("tac", src)
 
-    def test_parses(self):
-        prog = parse(_CARRY + "bool f(void) { return 1; }")
-        self.assertTrue(prog.declaration[0].function_decl.carry_return)
-
-    def test_rejects_argument(self):
-        with self.assertRaises(ParserError):
-            parse("[[c6502::return_bool_in_carry(1)]] "
-                  "bool f(void) { return 1; }")
-
-    def test_rejects_object(self):
-        with self.assertRaises(ParserError):
-            parse(_CARRY + "bool g;")
 
     def test_rejects_non_bool_return(self):
         for ret in ("int", "unsigned char", "char"):

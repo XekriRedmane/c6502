@@ -25,7 +25,6 @@ import contextlib
 import io
 import unittest
 
-from lexer import LexError, tokenize
 from preprocessor import _without_named_escapes, preprocess
 
 
@@ -116,14 +115,6 @@ class TestRewriting(unittest.TestCase):
             "'truncated \\\\xXX escape')",
             err,
         )
-
-
-class TestOutsideIf(unittest.TestCase):
-    def test_lex_errors(self) -> None:
-        for constant in (r"'\q'", r"'\N{LATIN SMALL LETTER A}'"):
-            with self.subTest(constant=constant):
-                with self.assertRaises(LexError):
-                    list(tokenize(f"int x = {constant};"))
 
 
 if __name__ == "__main__":

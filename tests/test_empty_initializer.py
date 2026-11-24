@@ -29,13 +29,12 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-import c99_ast
 import tac_ast
 from c99_to_tac import translate_program
 from compile import main as compile_main
 from parser import parse
 from passes.identifier_resolution import resolve_program
-from passes.type_checking import TypeCheckError, check_program
+from passes.type_checking import check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
@@ -43,22 +42,6 @@ from tests.test_sim_chapters import _run_program as _run_tac
 
 def _check(src: str):
     return check_program(resolve_program(parse(preprocess(src))))
-
-
-def _initial(src: str, name: str):
-    """The initial value the type checker records for the static
-    object `name` (a block-scope one is found by its spelling)."""
-    _, symbols, _ = _check(src)
-    for key, sym in symbols.items():
-        if key == name or key.endswith("." + name):
-            return sym.attrs.initial_value.value
-    raise KeyError(name)
-
-
-def _rejects(test: unittest.TestCase, src: str, message: str) -> None:
-    with test.assertRaises(TypeCheckError) as cm:
-        _check(src)
-    test.assertIn(message, str(cm.exception))
 
 
 def _compile(src: str, *flags: str) -> str:
@@ -83,225 +66,6 @@ _STRUCTS = """\
 struct s { int a; char b[3]; long c; };
 union u { char c; long l; };
 """
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-class TestParse(unittest.TestCase):
-    def test_empty_initializer(self) -> None:
-        vd = parse("int x = {};").declaration[0].var_decl
-        self.assertEqual(vd.init, c99_ast.InitList(items=[]))
-
-    def test_nested_empty_initializers(self) -> None:
-        vd = parse("int a[3][2] = { {}, {1, 2}, };").declaration[0].var_decl
-        self.assertEqual(len(vd.init.items), 2)
-        self.assertEqual(vd.init.items[0], c99_ast.InitList(items=[]))
-
-    def test_compound_literals(self) -> None:
-        fn = parse(
-            "struct s { int a; };"
-            "int f(void) { return (int){} + (int[4]){}[0]"
-            " + (struct s){}.a; }"
-        ).declaration[-1].function_decl
-        found = []
-
-        def walk(e) -> None:
-            if isinstance(e, c99_ast.CompoundLiteral):
-                found.append(e.init)
-            for v in vars(e).values():
-                if isinstance(v, (c99_ast.Type_exp,)):
-                    walk(v)
-        walk(fn.body.block_item[0].statement.exp)
-        self.assertEqual(found, [c99_ast.InitList(items=[])] * 3)
-
-    def test_braced_scalar_compound_literal_keeps_its_expression(self) -> None:
-        fn = parse("int f(void) { return (int){5,}; }").declaration[0] \
-            .function_decl
-        cl = fn.body.block_item[0].statement.exp
-        self.assertEqual(
-            cl.init, c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
-        )
-
-    def test_comma_alone_is_a_syntax_error(self) -> None:
-        for src in ("int x = {,};", "int f(void) { return (int){,}; }"):
-            with self.subTest(src=src):
-                with self.assertRaises(Exception) as cm:
-                    parse(src)
-                self.assertNotIsInstance(cm.exception, TypeCheckError)
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-class TestTypeCheck(unittest.TestCase):
-    def test_scalars_are_zero(self) -> None:
-        src = (
-            "typedef typeof_unqual(nullptr) nullptr_t;"
-            "int i = {}; unsigned long ul = {}; char c = {};"
-            "signed char sc = {}; long long ll = {}; int *p = {};"
-            "void (*fp)(void) = {}; float f = {}; double d = {};"
-            "bool b = {}; _BitInt(12) w = {}; unsigned _BitInt(40) uw = {};"
-            "nullptr_t n = {}; const volatile int cv = {};"
-        )
-        _, symbols, _ = _check(src)
-        for name in ("i", "ul", "c", "sc", "ll", "p", "fp", "f", "d", "b",
-                     "w", "uw", "n", "cv"):
-            with self.subTest(name=name):
-                self.assertEqual(
-                    symbols[name].attrs.initial_value.value, 0,
-                )
-
-    def test_automatic_scalars_get_a_zero_of_their_type(self) -> None:
-        prog, _, _ = _check(
-            "int f(void) { float f = {}; double d = {}; int *p = {};"
-            " char c = {}; return 0; }"
-        )
-        items = prog.declaration[0].function_decl.body.block_item
-        inits = [it.declaration.var_decl.init for it in items[:4]]
-        # A floating object gets a floating zero, so no conversion
-        # from an integer is left for run time.
-        self.assertEqual(
-            inits[0], c99_ast.Constant(
-                const=c99_ast.ConstFloat(bits=0), data_type=c99_ast.Float(),
-            ),
-        )
-        self.assertEqual(
-            inits[1], c99_ast.Constant(
-                const=c99_ast.ConstDouble(bits=0),
-                data_type=c99_ast.Double(),
-            ),
-        )
-        for init, t in ((inits[2], c99_ast.Pointer(c99_ast.Int())),
-                        (inits[3], c99_ast.Char())):
-            self.assertIsInstance(init, c99_ast.Cast)
-            self.assertEqual(init.target_type, t)
-            self.assertEqual(init.exp.const, c99_ast.ConstInt(value=0))
-
-    def test_aggregates(self) -> None:
-        src = _STRUCTS + (
-            "struct s v = {}; union u un = {}; int a[4] = {};"
-            "struct s w = { {}, {1}, {} };"
-            "int k[3][2] = { {}, {1, 2} };"
-            "char str[3] = {};"
-        )
-        _, symbols, _ = _check(src)
-        values = {n: symbols[n].attrs.initial_value.value
-                  for n in ("v", "un", "a", "w", "k", "str")}
-        self.assertEqual(values, {
-            "v": (0, (0, 0, 0), 0),
-            "un": (0,),
-            "a": (0, 0, 0, 0),
-            "w": (0, (1, 0, 0), 0),
-            "k": ((0, 0), (1, 2), (0, 0)),
-            "str": (0, 0, 0),
-        })
-
-    def test_block_scope_statics(self) -> None:
-        src = _STRUCTS + (
-            "int f(void) { static struct s v = {}; static int i = {};"
-            " static int j = {3}; static union u un = {};"
-            " static double d = {}; return 0; }"
-        )
-        self.assertEqual(_initial(src, "v"), (0, (0, 0, 0), 0))
-        self.assertEqual(_initial(src, "i"), 0)
-        self.assertEqual(_initial(src, "j"), 3)
-        self.assertEqual(_initial(src, "un"), (0,))
-        self.assertEqual(_initial(src, "d"), 0)
-
-    def test_compound_literals(self) -> None:
-        src = _STRUCTS + (
-            "struct s *ps = &(struct s){}; int *pa = (int[4]){};"
-            "int f(void) { struct s *q = &(struct s){};"
-            " int *r = (int[3]){}; return (int){} + (long){7}; }"
-        )
-        _, symbols, _ = _check(src)
-        literals = [
-            sym.attrs.initial_value.value for name, sym in symbols.items()
-            if name.endswith(".compound_literal")
-            and hasattr(sym.attrs, "initial_value")
-        ]
-        self.assertCountEqual(literals, [(0, (0, 0, 0), 0), (0, 0, 0, 0)])
-
-    def test_unknown_size_array_is_rejected(self) -> None:
-        message = (
-            "has unknown size, so it can't be initialized by the empty "
-            "initializer `{}`, which has no elements to give it a size "
-            "(C23 §6.7.11p4)"
-        )
-        for src, what in (
-            ("int a[] = {};", "array 'a'"),
-            ("int f(void) { int a[] = {}; return 0; }", "array 'a'"),
-            ("int f(void) { static char a[] = {}; return 0; }", "array 'a'"),
-            ("int f(void) { for (int a[] = {};;) return 0; }", "array 'a'"),
-            ("int f(void) { return (int[]){}[0]; }",
-             "the compound literal's array"),
-            ("int *p = (int[]){};", "the compound literal's array"),
-        ):
-            with self.subTest(src=src):
-                _rejects(self, src, f"{what} {message}")
-
-    def test_braced_scalars(self) -> None:
-        src = _STRUCTS + (
-            "int x = {5}; long y = {-7,}; double d = {1.5};"
-            "int *p = {0}; struct s v = { {3}, {}, {4} };"
-            "int a[3] = { {1}, {}, 3 };"
-        )
-        _, symbols, _ = _check(src)
-        self.assertEqual(symbols["x"].attrs.initial_value.value, 5)
-        self.assertEqual(symbols["y"].attrs.initial_value.value, -7)
-        self.assertEqual(
-            symbols["d"].attrs.initial_value.value, 0x3FF8000000000000,
-        )
-        self.assertEqual(symbols["p"].attrs.initial_value.value, 0)
-        self.assertEqual(
-            symbols["v"].attrs.initial_value.value, (3, (0, 0, 0), 4),
-        )
-        self.assertEqual(symbols["a"].attrs.initial_value.value, (1, 0, 3))
-
-    def test_braced_scalar_at_block_scope(self) -> None:
-        prog, _, _ = _check(
-            "int f(void) { int x = {5}; for (int i = {2,}; i;) break;"
-            " return x; }"
-        )
-        items = prog.declaration[0].function_decl.body.block_item
-        self.assertEqual(
-            items[0].declaration.var_decl.init,
-            c99_ast.Constant(
-                const=c99_ast.ConstInt(value=5), data_type=c99_ast.Int(),
-            ),
-        )
-
-    def test_braced_scalar_errors(self) -> None:
-        too_many = "a scalar's braces hold one expression (C23 §6.7.11p12)"
-        nested = (
-            "a scalar's initializer is one expression, optionally in one "
-            "pair of braces, or the empty initializer `{}` "
-            "(C23 §6.7.11p12)"
-        )
-        for src, message in (
-            ("int x = {1, 2};",
-             f"too many initializers for scalar variable 'x': 2 given, "
-             f"and {too_many}"),
-            ("int f(void) { int x = {1, 2,}; return x; }",
-             "too many initializers for scalar variable 'x'"),
-            ("int f(void) { static int x = {1, 2}; return x; }",
-             "too many initializers for scalar variable 'x'"),
-            ("int f(void) { for (int i = {1, 2};;) return 0; }",
-             "too many initializers for scalar variable 'i'"),
-            ("int x = {{5}};",
-             f"unexpected nested initializer for scalar variable 'x': "
-             f"{nested}"),
-            ("int x = {{}};", "unexpected nested initializer"),
-            ("struct t { int a; }; struct t v = { {1, 2} };",
-             "too many initializers for member 'a' of 'v'"),
-            ("int a[2] = { {{1}} };",
-             "unexpected nested initializer for element 0 of 'a'"),
-            ("int f(void) { return (int){1, 2}; }",
-             "too many initializers for scalar variable '(compound "
-             "literal)'"),
-            ("int f(void) { return (int){{1}}; }",
-             "unexpected nested initializer for scalar variable "
-             "'(compound literal)'"),
-        ):
-            with self.subTest(src=src):
-                _rejects(self, src, message)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

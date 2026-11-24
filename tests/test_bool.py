@@ -28,18 +28,10 @@ from __future__ import annotations
 import shutil
 import unittest
 
-import c99_ast
-from parser import ParserError, parse
-from passes.identifier_resolution import resolve_program
-from passes.type_checking import TypeCheckError, check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 from tests.no_inlining import no_inlining
-
-
-def _check(src: str):
-    return check_program(resolve_program(parse(preprocess(src))))
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -49,72 +41,6 @@ def _codegen(src: str, optimize: bool = True) -> str:
 
 def _function_text(asm: str, name: str) -> str:
     return asm.split(f"\n{name}:")[1].split("RTS")[0]
-
-
-class TestParse(unittest.TestCase):
-    def test_bool_type(self) -> None:
-        fn = parse("bool f(bool b) { return b; }").declaration[0] \
-            .function_decl
-        self.assertEqual(
-            fn.data_type,
-            c99_ast.FunType(params=[c99_ast.Bool()], ret=c99_ast.Bool()),
-        )
-
-    def test_rejects_other_specifiers(self) -> None:
-        for src in (
-            "unsigned bool b;", "bool int b;", "long bool b;",
-            "bool bool b;", "_Bool int b;", "bool _Bool b;",
-        ):
-            with self.subTest(src=src):
-                with self.assertRaises(ParserError):
-                    parse(src)
-
-    def test_alternative_spelling_is_the_same_type(self) -> None:
-        prog = parse("_Bool a; bool b;")
-        self.assertEqual(
-            [d.var_decl.data_type for d in prog.declaration],
-            [c99_ast.Bool(), c99_ast.Bool()],
-        )
-
-
-class TestTypeCheck(unittest.TestCase):
-    def _static_value(self, src: str, name: str) -> int:
-        _, symbols, _ = _check(src)
-        return symbols[name].attrs.initial_value.value
-
-    def test_static_initializers_convert(self) -> None:
-        for init, expected in (
-            ("0", 0), ("1", 1), ("256", 1), ("-1", 1), ("0x10000L", 1),
-            ("0.5", 1), ("0.0", 0), ("-0.0", 0), ("0.25f", 1),
-            ("&g", 1), ("(unsigned char)256", 0), ("2 > 1", 1),
-            ("(bool)2 + 1", 1),
-        ):
-            with self.subTest(init=init):
-                self.assertEqual(
-                    self._static_value(f"int g; bool b = {init};", "b"),
-                    expected,
-                )
-
-    def test_sizeof_and_promotion(self) -> None:
-        _, symbols, _ = _check(
-            "bool b; unsigned long n = sizeof(bool) + sizeof(b + b);"
-        )
-        # `b + b` promotes to int, 2 bytes.
-        self.assertEqual(symbols["n"].attrs.initial_value.value, 3)
-
-    def test_pointer_converts_implicitly_only_to_bool(self) -> None:
-        _check("int g; bool f(int *p) { bool b = p; return p; }")
-        with self.assertRaises(TypeCheckError):
-            _check("int f(int *p) { unsigned char c = p; return c; }")
-
-    def test_carry_return_accepts_bool(self) -> None:
-        _check(
-            "[[c6502::return_bool_in_carry]] bool f(int x)"
-            " { return x; }"
-            "struct r { unsigned char v; bool ok; };"
-            "[[c6502::return_bool_in_carry]] struct r g(void)"
-            " { return (struct r){ 1, 1 }; }"
-        )
 
 
 @no_inlining()

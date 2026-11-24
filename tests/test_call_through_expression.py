@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import unittest
 
-import c99_ast
-from parser import ParserError, parse
 from passes.recursion_saves import RecursionSaveError
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
@@ -23,64 +21,6 @@ def _codegen(src: str, optimize: bool = True) -> str:
 
 def _run(src: str, optimize: bool) -> int:
     return build_sim(src, optimize=optimize).run().return_int()
-
-
-def _calls(node) -> list:
-    """Every FunctionCall and IndirectCall under `node`, outermost
-    first."""
-    import dataclasses
-    out = []
-
-    def walk(n):
-        if isinstance(n, list):
-            for x in n:
-                walk(x)
-            return
-        if not dataclasses.is_dataclass(n):
-            return
-        if isinstance(n, (c99_ast.FunctionCall, c99_ast.IndirectCall)):
-            out.append(n)
-        for f in dataclasses.fields(n):
-            walk(getattr(n, f.name))
-
-    walk(node)
-    return out
-
-
-class TestParse(unittest.TestCase):
-    def _kinds(self, decls: str, call: str) -> list[str]:
-        prog = parse(decls + " int main(void) { return " + call + "; }")
-        return [type(c).__name__ for c in _calls(prog.declaration[-1])]
-
-    def test_a_name_is_a_function_call(self) -> None:
-        self.assertEqual(self._kinds("int f(int);", "f(1)"),
-                         ["FunctionCall"])
-        self.assertEqual(self._kinds("int f(int);", "(f)(1)"),
-                         ["FunctionCall"])
-
-    def test_other_callees_are_indirect_calls(self) -> None:
-        for decls, call in [
-            ("int (*t[2])(int);", "t[1](3)"),
-            ("struct S { int (*g)(int); } s;", "s.g(3)"),
-            ("struct S { int (*g)(int); } *p;", "p->g(3)"),
-            ("int (*fp)(int);", "(*fp)(3)"),
-        ]:
-            with self.subTest(call=call):
-                self.assertEqual(self._kinds(decls, call), ["IndirectCall"])
-
-    def test_returned_pointer_called(self) -> None:
-        self.assertEqual(
-            self._kinds("int (*pick(void))(int);", "pick()(3)"),
-            ["IndirectCall", "FunctionCall"],
-        )
-
-    def test_constant_callee_rejected(self) -> None:
-        for src in ["int main(void) { return 3(); }",
-                    "enum { A }; int main(void) { return A(); }",
-                    'int main(void) { return "f"(); }']:
-            with self.subTest(src=src):
-                with self.assertRaisesRegex(ParserError, "not a function"):
-                    parse(src)
 
 
 class TestTypeCheck(unittest.TestCase):

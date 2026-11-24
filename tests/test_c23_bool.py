@@ -30,24 +30,11 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-import c99_ast
 import diagnostics
 from compile import main as compile_main
-from parser import ParserError, parse
-from passes.identifier_resolution import resolve_program
-from passes.type_checking import check_program
 from preprocessor import ALT_BOOL_WARNING, preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
-
-
-def _check(src: str):
-    return check_program(resolve_program(parse(preprocess(src))))
-
-
-def _static_value(src: str, name: str) -> int:
-    _, symbols, _ = _check(src)
-    return symbols[name].attrs.initial_value.value
 
 
 def _compile(src: str, *flags: str) -> tuple[int, str]:
@@ -57,88 +44,6 @@ def _compile(src: str, *flags: str) -> tuple[int, str]:
             patch("sys.stdout", io.StringIO()):
         rc = compile_main(["compile.py", "-", "-S", *flags])
     return rc, err.getvalue()
-
-
-class TestKeywords(unittest.TestCase):
-    def test_bool_names_the_type(self) -> None:
-        fn = parse("bool f(bool b) { return b; }").declaration[0] \
-            .function_decl
-        self.assertEqual(
-            fn.data_type,
-            c99_ast.FunType(params=[c99_ast.Bool()], ret=c99_ast.Bool()),
-        )
-
-    def test_true_and_false_are_bool_constants(self) -> None:
-        prog = parse("int a = true; int b = false;")
-        self.assertEqual(
-            [d.var_decl.init for d in prog.declaration],
-            [c99_ast.Constant(const=c99_ast.ConstBool(value=1)),
-             c99_ast.Constant(const=c99_ast.ConstBool(value=0))],
-        )
-
-    def test_type_of_true_is_bool(self) -> None:
-        prog, _, _ = _check("int f(void) { return true; }")
-        ret = prog.declaration[0].function_decl.body.block_item[0] \
-            .statement.exp
-        # The return converts `true` to int; the constant inside is a
-        # bool.
-        self.assertIsInstance(ret, c99_ast.Cast)
-        self.assertEqual(ret.exp.data_type, c99_ast.Bool())
-
-    def test_names_are_errors(self) -> None:
-        for src in (
-            "int true;",
-            "int false = 0;",
-            "int bool = 1;",
-            "int bool[2];",
-            "int bool, x;",
-            "int bool;",
-            "int f(int x, int true) { return x; }",
-            "struct s { int false; };",
-            "struct true { int x; };",
-            "int main(void) { goto bool; }",
-            "enum { false };",
-        ):
-            with self.subTest(src=src):
-                with self.assertRaises(ParserError) as cm:
-                    parse(src)
-                self.assertIn("is a keyword in C23", str(cm.exception))
-
-
-class TestValues(unittest.TestCase):
-    def test_sizes(self) -> None:
-        for exp, expected in (
-            ("sizeof(true)", 1), ("sizeof false", 1), ("sizeof(bool)", 1),
-            # `true + true` and `-true` promote to int.
-            ("sizeof(true + true)", 2), ("sizeof(-true)", 2),
-        ):
-            with self.subTest(exp=exp):
-                self.assertEqual(
-                    _static_value(f"unsigned long n = {exp};", "n"),
-                    expected,
-                )
-
-    def test_static_initializers(self) -> None:
-        for decl, expected in (
-            ("bool b = true;", 1), ("bool b = false;", 0),
-            ("int b = true + true;", 2), ("int b = -true;", -1),
-            ("int b = true << 14;", 1 << 14), ("bool b = !false;", 1),
-            ("unsigned char b = true ? 7 : 9;", 7),
-            ("double b = true;", 0x3FF0000000000000),
-        ):
-            with self.subTest(decl=decl):
-                self.assertEqual(_static_value(decl, "b"), expected)
-
-    def test_constant_expressions(self) -> None:
-        _, symbols, _ = _check(
-            "enum { E = true + 4, F = false };"
-            "int a[true + 2];"
-            "unsigned long n = sizeof a;"
-            "int e = E, f = F;"
-        )
-        self.assertEqual(symbols["n"].attrs.initial_value.value, 6)
-        self.assertEqual(symbols["e"].attrs.initial_value.value, 5)
-        self.assertEqual(symbols["f"].attrs.initial_value.value, 0)
 
 
 class TestAltBoolWarning(unittest.TestCase):

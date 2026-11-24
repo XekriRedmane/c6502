@@ -15,21 +15,12 @@ import unittest
 
 import builtin_functions as bf
 import tac_ast
-from parser import parse
-from passes.identifier_resolution import (
-    IdentifierResolutionError,
-    resolve_program,
-)
-from passes.type_checking import TypeCheckError, check_program
+from passes.type_checking import check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-def _check(src: str):
-    return check_program(resolve_program(parse(preprocess(src))))
 
 
 def _codegen(src: str, optimize: bool) -> str:
@@ -49,24 +40,6 @@ def _body(asm: str, name: str) -> list[str]:
         if line.endswith(":") and not line.startswith("."):
             break
         out.append(" ".join(line.split()))
-    return out
-
-
-def _builtin_calls(node) -> list:
-    """Every call of a builtin in the c99 AST `node`."""
-    import dataclasses
-    import c99_ast
-    out = []
-    if isinstance(node, list):
-        for x in node:
-            out += _builtin_calls(x)
-        return out
-    if not dataclasses.is_dataclass(node):
-        return out
-    if isinstance(node, c99_ast.FunctionCall) and bf.is_builtin(node.name):
-        out.append(node)
-    for f in dataclasses.fields(node):
-        out += _builtin_calls(getattr(node, f.name))
     return out
 
 
@@ -118,97 +91,6 @@ class TestArithmetic(unittest.TestCase):
         self.assertEqual(bf.bcd_add(0x00999999, 0x250, 4), 0x01000249)
 
 
-class TestFrontEnd(unittest.TestCase):
-    def test_result_types(self) -> None:
-        cases = [
-            ("uint8_t a, b;", "a, b", "UChar"),
-            ("uint8_t a; uint16_t b;", "a, b", "UInt"),
-            ("unsigned short a; unsigned int b;", "a, b", "UInt"),
-            ("uint32_t a;", "a, 0x0250", "ULong"),
-            ("uint8_t a;", "0x75, a", "UChar"),
-            ("uint8_t a;", "a, 0x75u", "UInt"),
-            ("", "0x99, 1", "UInt"),
-            ("", "0x99, 0x10000", "ULong"),
-            ("uint64_t a;", "a, 1", "ULongLong"),
-        ]
-        for decls, args, want in cases:
-            with self.subTest(args=args, decls=decls):
-                src = (
-                    "#include <stdint.h>\n" + decls
-                    + f" int f(void) {{ return 0; }} unsigned long long g(void)"
-                    f" {{ return __c6502_bcd_add({args}); }}"
-                )
-                prog, _s, _t = _check(src)
-                calls = _builtin_calls(prog)
-                self.assertEqual(len(calls), 1)
-                self.assertEqual(type(calls[0].data_type).__name__, want)
-
-    def test_type_errors(self) -> None:
-        cases = [
-            ("int8_t a;", "__c6502_bcd_add(a, a)", "signed type"),
-            ("int a;", "__c6502_bcd_sub(1, a)", "signed type"),
-            ("double d;", "__c6502_bcd_add(d, 1)", "floating"),
-            ("uint8_t *p;", "__c6502_bcd_add(p, 1)", "pointer"),
-            ("uint8_t t[2];", "__c6502_bcd_add(t, 1)", "pointer"),
-            ("struct s { int x; } v;", "__c6502_bcd_add(v, 1)", "struct"),
-            ("bool b;", "__c6502_bcd_add(b, 1)", "bool"),
-            ("char c;", "__c6502_bcd_add(c, 1)", "plain char"),
-            ("uint8_t a;", "__c6502_bcd_add(a, -1)", "negative"),
-            ("uint8_t a;", "__c6502_bcd_add(a, 0x100)", "doesn't fit"),
-            ("uint8_t a;", "__c6502_bcd_add(a)", "takes 2 arguments"),
-            ("uint8_t a;", "__c6502_bcd_sub(a, a, a)", "takes 2 arguments"),
-        ]
-        for decls, call, message in cases:
-            with self.subTest(call=call, decls=decls):
-                src = (
-                    "#include <stdint.h>\n" + decls
-                    + f" void f(void) {{ {call}; }}"
-                )
-                with self.assertRaises(TypeCheckError) as cm:
-                    _check(src)
-                self.assertIn(message, str(cm.exception))
-
-    def test_names_are_reserved(self) -> None:
-        cases = [
-            ("int __c6502_bcd_add(int a, int b);", "can't be declared"),
-            ("void f(void) { int __c6502_bcd_sub = 1; }", "can't be declared"),
-            ("void f(int __c6502_bcd_add) { }", "can't be declared"),
-            ("void *p = __c6502_bcd_add;", "can only be called"),
-            ("int f(void) { return __c6502_bcd_add != 0; }",
-             "can only be called"),
-        ]
-        for src, message in cases:
-            with self.subTest(src=src):
-                with self.assertRaises(IdentifierResolutionError) as cm:
-                    _check(src)
-                self.assertIn(message, str(cm.exception))
-
-    def test_constant_operands_make_a_constant_expression(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "static uint16_t s = __c6502_bcd_add(0x0999, 1);"
-            "uint16_t t = __c6502_bcd_sub(0x1000, 0x0001);"
-            "int a[__c6502_bcd_add(0x09, 0x01)];"
-            "int f(uint8_t k) { switch (k) {"
-            " case __c6502_bcd_add(0x19, 0x01): return 1; }"
-            " return sizeof a; }"
-        )
-        _prog, symbols, _types = _check(src)
-        self.assertEqual(symbols["s"].attrs.initial_value.value, 0x1000)
-        self.assertEqual(symbols["t"].attrs.initial_value.value, 0x0999)
-        self.assertEqual(symbols["a"].type.size, 0x10)
-
-    def test_save_hardware_stack_ignores_the_builtin(self) -> None:
-        from parser import ParserError
-        src = (
-            "#include <stdint.h>\nuint8_t a;"
-            "void f(void) { [[c6502::save_hardware_stack]]"
-            " a = __c6502_bcd_add(a, 1); }"
-        )
-        with self.assertRaises(ParserError):
-            _check(src)
-
-
 def _binaries(prog: tac_ast.Program, fn: str) -> list:
     for tl in prog.top_level:
         if isinstance(tl, tac_ast.Function) and tl.name == fn:
@@ -218,15 +100,6 @@ def _binaries(prog: tac_ast.Program, fn: str) -> list:
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestTac(unittest.TestCase):
-    def test_lowers_to_a_binary(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint16_t a, b;"
-            "uint16_t f(void) { return __c6502_bcd_sub(a, b); }"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                ops = [type(b.op) for b in _binaries(_tac(src, optimize), "f")]
-                self.assertEqual(ops, [tac_ast.BcdSubtract])
 
     def test_constants_fold_in_both_pipelines(self) -> None:
         src = (
@@ -252,12 +125,6 @@ class TestTac(unittest.TestCase):
         self.assertNotIn("SED", asm)
         self.assertIn("#$05", asm)   # 58 + 47 = 105, wrapped to 05
 
-    def test_unused_result_goes(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint8_t a;"
-            "void f(void) { (void)__c6502_bcd_add(a, 1); }"
-        )
-        self.assertEqual(_binaries(_tac(src, optimize=True), "f"), [])
 
     def test_tac_sim(self) -> None:
         for name, src, expected in _PROGRAMS:

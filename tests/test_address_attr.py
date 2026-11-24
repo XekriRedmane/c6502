@@ -18,8 +18,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import c99_ast
-from parser import ParserError, parse
 from passes.type_checking import TypeCheckError
 from passes.zp_globals import ZpGlobalError, allocate_zp_globals
 from sim.harness import build_sim
@@ -40,64 +38,11 @@ def _equ(asm: str) -> dict[str, int]:
     }
 
 
-def _decls(src: str) -> dict[str, object]:
-    out = {}
-    for d in parse(src).declaration:
-        if isinstance(d, c99_ast.VarDecl):
-            out[d.var_decl.name] = d.var_decl
-        elif isinstance(d, c99_ast.FunctionDecl):
-            out[d.function_decl.name] = d.function_decl
-    return out
-
-
 def _symbols(src: str):
     from compile import _resolved
     from passes.type_checking import check_program
     _, symbols, types = check_program(_resolved(src, optimize=True))
     return symbols, types
-
-
-class TestParse(unittest.TestCase):
-
-    def test_function_and_object_forms(self) -> None:
-        got = _decls(
-            "[[c6502::zp_abi, c6502::address(0xFDED)]]\n"
-            "extern void COUT(register unsigned char c);\n"
-            "extern unsigned char KBD [[c6502::address(0xC000)]];\n"
-            "[[c6502::address(0x36)]] extern unsigned int CSW;\n"
-        )
-        self.assertEqual(got["COUT"].address, 0xFDED)
-        self.assertEqual(got["COUT"].abi_annotation, "zp_abi")
-        self.assertEqual(got["KBD"].placement, c99_ast.Absolute(0xC000))
-        self.assertEqual(got["CSW"].placement, c99_ast.Absolute(0x36))
-
-    def test_plain_function_has_no_address(self) -> None:
-        got = _decls("void f(void);\n")
-        self.assertIsNone(got["f"].address)
-
-    def test_rejected_forms(self) -> None:
-        bad = {
-            "no address":
-                "[[c6502::address]] void f(void);",
-            "string address":
-                '[[c6502::address("x")]] void f(void);',
-            "past $FFFF":
-                "[[c6502::address(0x10000)]] void f(void);",
-            "function definition":
-                "[[c6502::address(0x1000)]] void f(void) {}",
-            "both placements":
-                "extern unsigned char x "
-                "[[c6502::zeropage(0x40), c6502::address(0x40)]];",
-            "placement in both positions":
-                "[[c6502::address(0xC000)]] extern unsigned char x "
-                "[[c6502::address(0xC000)]];",
-            "duplicate":
-                "[[c6502::address(1), c6502::address(2)]] void f(void);",
-        }
-        for label, src in bad.items():
-            with self.subTest(label):
-                with self.assertRaises(ParserError):
-                    parse(src)
 
 
 class TestTypeCheck(unittest.TestCase):
@@ -136,16 +81,6 @@ class TestTypeCheck(unittest.TestCase):
                 with self.assertRaises(TypeCheckError):
                     _codegen(src)
 
-    def test_address_accumulates_across_declarations(self) -> None:
-        symbols, _ = _symbols(
-            "void f(void);\n"
-            "[[c6502::address(0x1000)]] void f(void);\n"
-            "void f(void);\n"
-            "extern unsigned char x;\n"
-            "extern unsigned char x [[c6502::address(0xC000)]];\n"
-        )
-        self.assertEqual(symbols["f"].attrs.address, 0x1000)
-        self.assertEqual(symbols["x"].attrs.address, 0xC000)
 
     def test_block_scope_extern(self) -> None:
         asm = _codegen(

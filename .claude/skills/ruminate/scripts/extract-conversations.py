@@ -30,7 +30,7 @@ from datetime import date, datetime
 def extract_messages(fpath: str) -> list[str]:
     """Extract user and assistant text messages from a JSONL conversation file."""
     messages = []
-    with open(fpath) as f:
+    with open(fpath, encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line)
@@ -121,7 +121,7 @@ def main():
         out_path = f"{args.output_dir}/{idx:03d}_{fname}.txt"
         messages = extract_messages(fpath)
         if messages:
-            with open(out_path, "w") as out:
+            with open(out_path, "w", encoding="utf-8", newline="\n") as out:
                 out.write("\n\n".join(messages))
             extracted.append(out_path)
 
@@ -137,7 +137,7 @@ def main():
         if not batch_files:
             continue
         manifest = f"{batch_dir}/batch_{b}.txt"
-        with open(manifest, "w") as mf:
+        with open(manifest, "w", encoding="utf-8", newline="\n") as mf:
             mf.write("\n".join(batch_files) + "\n")
         print(f"Batch {b}: {len(batch_files)} conversations", file=sys.stderr)
 

@@ -13,7 +13,7 @@ Mine conversation history for brain-worthy knowledge that was never captured. Co
 
 ### 1. Read the brain
 
-Build a brain snapshot: `sh .claude/skills/meditate/scripts/snapshot.sh brain/ /tmp/brain-snapshot-ruminate.md`. Pass the snapshot path to each analysis agent. This avoids loading the full brain into the ruminate orchestrator's context.
+Build a brain snapshot: `sh .claude/skills/meditate/scripts/snapshot.sh brain/ <scratchpad>/brain-snapshot-ruminate.md`, in the session's scratchpad directory. Pass the snapshot path to each analysis agent. This avoids loading the full brain into the ruminate orchestrator's context.
 
 ### 2. Locate conversations
 
@@ -40,7 +40,6 @@ Start N agents (one per batch) with parallel `Agent` calls, each with `subagent_
 Each agent's prompt should include:
 
 - The batch manifest path (`$OUT_DIR/batches/batch_N.txt`)
-- The output path (`$OUT_DIR/findings_N.md`)
 - The list of topics **already captured** in the brain (compiled from step 1) — so agents skip known knowledge
 - Instructions to extract from each conversation:
   - **User corrections**: times the user corrected the assistant's approach, code, or understanding
@@ -50,11 +49,11 @@ Each agent's prompt should include:
   - **Frustrations**: friction points, wasted effort, things that went wrong
   - **Skills wished for**: capabilities the user expressed wanting
 
-Agents write structured findings to their output files.
+Agents return their structured findings in their final message. The harness refuses a subagent's write of a report file, so don't give them an output path.
 
 ### 5. Synthesize
 
-After all agents complete, read all findings files. Cross-reference with existing brain content. Deduplicate across batches.
+After all agents complete, read every agent's findings. Cross-reference with existing brain content. Deduplicate across batches.
 
 **Filter by frequency and impact.** Most findings won't be worth adding. Apply these filters before presenting:
 

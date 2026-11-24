@@ -6,65 +6,16 @@ allocates them in the unused portion of `local_pools[fn]`, and
 yields a stable `{pseudo_name: first_byte_address}` map per
 function. Names that don't fit (no contiguous run of the required
 size) are omitted so the caller's Frame fallback path runs.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 
 import shutil
 import unittest
-from dataclasses import dataclass
 
 import asm_ast
-from passes.address_taken_zp import (
-    compute_address_taken_assignments,
-    slot_symbols,
-)
-
-
-@dataclass
-class _FakeColoring:
-    assignments: dict[str, int]
-
-
-@dataclass
-class _FakeSym:
-    type: object
-    attrs: object
-
-
-class _Local:
-    pass
-
-
-class _UCharType:
-    pass
-
-
-class _IntType:
-    pass
-
-
-def _sym_table(*entries):
-    out = {}
-    for name, t in entries:
-        out[name] = _FakeSym(type=t, attrs=_Local())
-    return out
-
-
-def _wrap_pseudo(name, offset=0):
-    return asm_ast.Pseudo(name=name, offset=offset)
-
-
-def _wrap_data(name, offset=0):
-    return asm_ast.Data(name=name, offset=offset)
-
-
-def _fn(name, params, instrs):
-    return asm_ast.Function(
-        name=name, is_global=True, params=params, instructions=instrs,
-    )
-
-
-def _prog(*tls):
-    return asm_ast.Program(top_level=list(tls))
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
@@ -152,73 +103,6 @@ class TestAddressTakenZp(unittest.TestCase):
             "the address-taken local didn't get routed to the "
             "immediate-address path",
         )
-
-
-class TestNoFrameSlotUnderY(unittest.TestCase):
-    """The regalloc counts an address-taken local of a function with a
-    pool as a zero-page byte when it decides what may stay in Y
-    (`optimizer._frame_names`). A local that then doesn't fit gets a
-    frame slot, whose accesses load Y, so that case is an error."""
-
-    def _run(self, hwreg):
-        from passes.optimization.pool import Pool
-        from passes.optimization.register_allocation import Coloring
-        fn = _fn("f", [], [
-            asm_ast.LoadAddress(
-                src=_wrap_pseudo("@1.x"), dst=_wrap_pseudo("%p"),
-            ),
-            asm_ast.Return(save_a=False),
-        ])
-        # The pool's one byte holds `%p`, so `@1.x` doesn't fit.
-        coloring = Coloring(
-            assignments={"%p": 0x80}, spilled=set(), pool=Pool(),
-            hwreg_assignments=hwreg,
-        )
-        return compute_address_taken_assignments(
-            _prog(fn), {"f": [0x80]}, {"f": coloring}, None, None,
-        )
-
-    def test_falls_back_to_frame_without_y(self):
-        self.assertEqual(self._run({"%i": "X"}), {"f": {}})
-
-    def test_raises_with_a_value_in_y(self):
-        with self.assertRaisesRegex(AssertionError, "@1.x"):
-            self._run({"%i": "Y"})
-
-
-class TestSlotSymbols(unittest.TestCase):
-    """`slot_symbols` mints `__local_<fn>__<source>` names for each
-    address-taken Pseudo. Source name is recovered by stripping the
-    `@N.` prefix."""
-
-    def test_renames_source_var(self):
-        out = slot_symbols(
-            "caller", {"@9.entity_row": 0x8F}, None, None,
-        )
-        self.assertEqual(out, {"@9.entity_row": "__local_caller__entity_row"})
-
-    def test_falls_back_for_temp(self):
-        # A compiler-temp Pseudo (e.g. `%5`) without an `@N.` prefix
-        # gets a synthesized `__local_<fn>__addr_<orig>` name.
-        out = slot_symbols(
-            "caller", {"%5": 0x90}, None, None,
-        )
-        self.assertEqual(out, {"%5": "__local_caller__addr_%5"})
-
-    def test_same_source_name_gets_a_suffix(self):
-        # Two compound literals in one function have the source name
-        # `compound_literal`. Before the suffix, both got one symbol,
-        # so the second literal's stores went to the first's bytes.
-        out = slot_symbols(
-            "f", {"@3.compound_literal": 0x88, "@5.compound_literal": 0x8C,
-                  "@7.compound_literal": 0x90},
-            None, None,
-        )
-        self.assertEqual(out, {
-            "@3.compound_literal": "__local_f__compound_literal",
-            "@5.compound_literal": "__local_f__compound_literal@2",
-            "@7.compound_literal": "__local_f__compound_literal@3",
-        })
 
 
 if __name__ == "__main__":

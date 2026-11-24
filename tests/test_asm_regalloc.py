@@ -8,6 +8,10 @@ Coverage:
   - End-to-end: --optimize-asm produces ZP loads/stores ($XX
     addresses) for a small program with 2+ live locals, matching
     the kind of placement -O achieves.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -17,16 +21,6 @@ from unittest.mock import patch
 
 import asm_ast
 from compile import main
-from passes.optimization.pool import Pool
-from passes.optimization_asm.cfg import build_cfg
-from passes.optimization_asm.interference import build_interference
-from passes.optimization_asm.liveness import compute_liveness
-from passes.optimization_asm.regalloc import color_graph
-from passes.optimization_asm.ssa_construction import to_ssa
-
-
-def _imm(v: int) -> asm_ast.Imm:
-    return asm_ast.Imm(value=v)
 
 
 def _A() -> asm_ast.Reg:
@@ -39,67 +33,6 @@ def _ps(name: str, off: int = 0) -> asm_ast.Pseudo:
 
 def _mov(src, dst) -> asm_ast.Mov:
     return asm_ast.Mov(src=src, dst=dst)
-
-
-def _ret_bare(save_a: bool = True) -> asm_ast.Return:
-    return asm_ast.Return(save_a=save_a)
-
-
-def _fn(*instrs, name: str = "main", params=()) -> asm_ast.Function:
-    return asm_ast.Function(
-        name=name,
-        is_global=True,
-        params=list(params),
-        instructions=list(instrs),
-    )
-
-
-class TestAsmRegalloc(unittest.TestCase):
-    def test_disjoint_lifetimes_share_color(self) -> None:
-        # Two locals %a, %b with non-overlapping lifetimes can land
-        # at the same ZP byte.
-        # %a := 1 ; A := %a ; %b := 2 ; A := %b ; Return.
-        # %a is dead before %b is defined.
-        fn = _fn(
-            _mov(_imm(1), _ps("%a")),
-            _mov(_ps("%a"), _A()),
-            _mov(_imm(2), _ps("%b")),
-            _mov(_ps("%b"), _A()),
-            _ret_bare(),
-        )
-        ssa = to_ssa(fn)
-        liveness = compute_liveness(ssa)
-        graph = build_interference(ssa, liveness)
-        coloring = color_graph(ssa, graph)
-        # Both versioned names get colored. Disjoint lifetimes →
-        # they may share a color.
-        names = list(coloring.assignments.keys())
-        self.assertEqual(len(names), 2)
-        # Each name gets a real ZP byte (in the configured pool
-        # range).
-        for n in names:
-            addr = coloring.assignments[n]
-            self.assertGreaterEqual(addr, 0x80)
-            self.assertLess(addr, 0x100)
-
-    def test_overlapping_lifetimes_get_different_colors(self) -> None:
-        # %a and %b are both live across the same instruction
-        # (Compare reads %a, but %b is also alive). They must get
-        # different colors.
-        fn = _fn(
-            _mov(_imm(1), _ps("%a")),
-            _mov(_imm(2), _ps("%b")),
-            asm_ast.Compare(left=_ps("%a"), right=_ps("%b")),
-            _ret_bare(),
-        )
-        ssa = to_ssa(fn)
-        liveness = compute_liveness(ssa)
-        graph = build_interference(ssa, liveness)
-        coloring = color_graph(ssa, graph)
-        # Two names; their colors must differ.
-        addrs = list(coloring.assignments.values())
-        self.assertEqual(len(addrs), 2)
-        self.assertNotEqual(addrs[0], addrs[1])
 
 
 class TestAsmRegallocEndToEnd(unittest.TestCase):
@@ -171,38 +104,6 @@ class TestFrameAccessWritesY(unittest.TestCase):
                 got = build_sim(src, optimize=optimize).run()
                 self.assertEqual(got.return_int_signed(), -128)
 
-    def test_spilled_value_counts_as_frame_access(self) -> None:
-        # Only two bytes are free, so one of `a`, `b`, and `c` is
-        # spilled to a frame slot, and its compare loads Y while `i`
-        # is live. With room for all three, `i` stays in Y.
-        from passes.optimization_asm.hwreg_eligibility import scan_function
-        Y = asm_ast.Reg(reg=asm_ast.Y())
-        t = asm_ast.IndexedData(name="t", offset=0, index=asm_ast.Y())
-        fn = _fn(
-            _mov(_imm(0), _ps("i")), _mov(_ps("i"), _A()), _mov(_A(), Y),
-            _mov(t, _A()),
-            _mov(_imm(1), _ps("a")), _mov(_imm(2), _ps("b")),
-            _mov(_imm(3), _ps("c")),
-            asm_ast.Compare(left=_ps("a"), right=_ps("b")),
-            asm_ast.Compare(left=_ps("c"), right=_imm(0)),
-            _mov(_ps("i"), _A()), _mov(_A(), Y), _mov(t, _A()),
-            _ret_bare(),
-        )
-        liveness = compute_liveness(fn)
-        graph = build_interference(fn, liveness)
-        eligibility = scan_function(fn)
-
-        def color(stop: int):
-            return color_graph(
-                fn, graph, hwreg_eligibility=eligibility,
-                liveness=liveness, allowed_range=range(0x80, stop),
-            )
-        roomy = color(0x83)
-        self.assertEqual(roomy.spilled, set())
-        self.assertEqual(roomy.hwreg_assignments, {"i": "Y"})
-        tight = color(0x82)
-        self.assertEqual(len(tight.spilled), 1)
-        self.assertEqual(tight.hwreg_assignments, {"i": "X"})
 
     def test_index_survives_spilled_reads(self) -> None:
         # Eighteen 8-byte values live at once are more than the 128

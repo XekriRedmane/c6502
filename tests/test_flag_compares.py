@@ -17,119 +17,18 @@ or that fold into fewer tests.
 
 Each compiled shape is checked, and each program runs in the
 simulator in both pipelines against values computed in Python.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
 import shutil
 import unittest
 
-import asm_ast
-from passes.redundant_compare import apply_redundant_compare
-from tests.test_register_arguments import _body, _codegen, _instrs, _prog
+from tests.test_register_arguments import _body, _codegen
 from sim.harness import build_sim
-
-_A = asm_ast.Reg(reg=asm_ast.A())
-_RET = asm_ast.Return(save_a=False, save_x=False, save_c=False)
-
-
-def _load(name: str) -> asm_ast.Mov:
-    return asm_ast.Mov(src=asm_ast.Data(name=name, offset=0), dst=_A)
-
-
-class TestCompareAsFlags(unittest.TestCase):
-    def _run(self, *middle, after=(_RET,)):
-        return _instrs(apply_redundant_compare(_prog([
-            _load("m"), *middle,
-            *after,
-            asm_ast.Label(name=".l"),
-            _RET,
-        ])))
-
-    def test_cmp_80_is_bmi(self) -> None:
-        out = self._run(
-            asm_ast.Compare(left=_A, right=asm_ast.Imm(value=0x80)),
-            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-        )
-        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.MI(), target=".l"))
-
-    def test_cmp_1_is_beq(self) -> None:
-        out = self._run(
-            asm_ast.Compare(left=_A, right=asm_ast.Imm(value=1)),
-            asm_ast.Branch(cond=asm_ast.CC(), target=".l"),
-        )
-        self.assertEqual(out[1], asm_ast.Branch(cond=asm_ast.EQ(), target=".l"))
-
-    def test_sbc_1_is_bne(self) -> None:
-        out = _instrs(apply_redundant_compare(_prog([
-            asm_ast.SetCarry(), _load("m"),
-            asm_ast.Sub(src=asm_ast.Imm(value=1), dst=_A),
-            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-            _RET, asm_ast.Label(name=".l"), _RET,
-        ])))
-        self.assertEqual(out[:2], [
-            _load("m"), asm_ast.Branch(cond=asm_ast.NE(), target=".l"),
-        ])
-
-    def test_sbc_with_a_read_after_stays(self) -> None:
-        keep = asm_ast.Return(save_a=True, save_x=False, save_c=False)
-        instrs = [
-            asm_ast.SetCarry(), _load("m"),
-            asm_ast.Sub(src=asm_ast.Imm(value=1), dst=_A),
-            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-            keep, asm_ast.Label(name=".l"), keep,
-        ]
-        self.assertEqual(_instrs(apply_redundant_compare(_prog(instrs))),
-                         instrs)
-
-    def test_carry_read_after_stays(self) -> None:
-        cmp = asm_ast.Compare(left=_A, right=asm_ast.Imm(value=0x80))
-        out = self._run(
-            cmp, asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-            after=(asm_ast.Branch(cond=asm_ast.CC(), target=".l"), _RET),
-        )
-        self.assertIn(cmp, out)
-
-    def test_flags_not_from_a_stay(self) -> None:
-        cmp = asm_ast.Compare(left=_A, right=asm_ast.Imm(value=0x80))
-        instrs = [
-            _load("m"), asm_ast.Mov(src=asm_ast.Imm(value=0), dst=asm_ast.Reg(
-                reg=asm_ast.X())),
-            cmp, asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-            _RET, asm_ast.Label(name=".l"), _RET,
-        ]
-        self.assertEqual(_instrs(apply_redundant_compare(_prog(instrs))),
-                         instrs)
-
-
-class TestNonnegativeSignedCompare(unittest.TestCase):
-    def _instrs(self, pred_cond):
-        return [
-            asm_ast.Or(src=asm_ast.Imm(value=0), dst=_A),
-            asm_ast.Branch(cond=pred_cond, target=".pos"),
-            _RET,
-            asm_ast.Label(name=".pos"),
-            asm_ast.SetCarry(),
-            asm_ast.Sub(src=asm_ast.Imm(value=0x1D), dst=_A),
-            asm_ast.Branch(cond=asm_ast.VC(), target=".novf"),
-            asm_ast.Xor(src1=_A, src2=asm_ast.Imm(value=0x80), dst=_A),
-            asm_ast.Label(name=".novf"),
-            asm_ast.Branch(cond=asm_ast.MI(), target=".lt"),
-            _RET,
-            asm_ast.Label(name=".lt"),
-            _RET,
-        ]
-
-    def test_becomes_cmp_bcc(self) -> None:
-        out = _instrs(apply_redundant_compare(_prog(self._instrs(asm_ast.PL()))))
-        self.assertEqual(out[4:6], [
-            asm_ast.Compare(left=_A, right=asm_ast.Imm(value=0x1D)),
-            asm_ast.Branch(cond=asm_ast.CC(), target=".lt"),
-        ])
-
-    def test_negative_path_stays(self) -> None:
-        instrs = self._instrs(asm_ast.MI())
-        self.assertEqual(_instrs(apply_redundant_compare(_prog(instrs))),
-                         instrs)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")

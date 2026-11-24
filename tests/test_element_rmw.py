@@ -4,207 +4,23 @@
 `redundant_load_after_rmw`, `element_in_place`), the IR check, the
 passes that had to learn that such an instruction writes an element,
 and programs run in both pipelines. The object-file side (encodings,
-relaxation to zp,X, and dasm) is in `test_binutils.py`."""
+relaxation to zp,X, and dasm) is in `test_binutils.py`.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 from __future__ import annotations
 
-import re
 import shutil
 import unittest
 
 import asm_ast
-from passes.dec_peephole import apply_dec_peephole
-from passes.element_in_place import apply_element_in_place
-from passes.inc_peephole import apply_inc_peephole
-from passes.redundant_load_after_rmw import apply_redundant_load_after_rmw
-from passes.shift_in_a import apply_shift_in_a
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
 
-_A = asm_ast.Reg(reg=asm_ast.A())
-_X = asm_ast.Reg(reg=asm_ast.X())
 _E = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())
 _EY = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.Y())
-_T = asm_ast.Data(name="__local_f__t", offset=0)
-_SLOTS = {"__local_f__t": 0x90}
 _RTS = asm_ast.Return(save_a=False, save_x=False, save_c=False)
-_RTS_A = asm_ast.Return(save_a=True, save_x=False, save_c=False)
-
-
-def _mov(src, dst, volatile=False):
-    return asm_ast.Mov(src=src, dst=dst, is_volatile=volatile)
-
-
-def _run(pass_, instrs, **kw):
-    prog = asm_ast.Program(top_level=[asm_ast.Function(
-        name="f", is_global=True, params=[], instructions=instrs,
-    )])
-    return pass_(prog, **kw).top_level[0].instructions
-
-
-def _step(op, m):
-    """`LDA m; SEC; SBC #1; STA m` (op "sub") or the CLC; ADC form."""
-    carry, arith = ((asm_ast.SetCarry(), asm_ast.Sub) if op == "sub"
-                    else (asm_ast.ClearCarry(), asm_ast.Add))
-    return [_mov(m, _A), carry, arith(src=asm_ast.Imm(value=1), dst=_A),
-            _mov(_A, m)]
-
-
-class TestDecPeephole(unittest.TestCase):
-
-    def test_element_decremented_in_place(self) -> None:
-        out = _run(apply_dec_peephole, _step("sub", _E) + [_RTS])
-        self.assertEqual(out, [asm_ast.Dec(dst=_E), _RTS])
-
-    def test_element_reloaded_when_a_is_read(self) -> None:
-        out = _run(apply_dec_peephole, _step("sub", _E) + [_RTS_A])
-        self.assertEqual(out, [asm_ast.Dec(dst=_E), _mov(_E, _A), _RTS_A])
-
-    def test_element_indexed_by_y_left_alone(self) -> None:
-        # There's no `DEC abs,Y`.
-        instrs = _step("sub", _EY) + [_RTS]
-        self.assertEqual(_run(apply_dec_peephole, instrs), instrs)
-
-    def test_volatile_element_left_alone(self) -> None:
-        instrs = _step("sub", _E)
-        instrs[0] = _mov(_E, _A, volatile=True)
-        instrs.append(_RTS)
-        self.assertEqual(_run(apply_dec_peephole, instrs), instrs)
-
-    def test_borrow_read_after_blocks_it(self) -> None:
-        # `SBC` sets C, which the `BCC` reads, and `DEC` leaves it.
-        instrs = _step("sub", _E) + [
-            asm_ast.Branch(cond=asm_ast.CC(), target=".l"),
-            asm_ast.Label(name=".l"), _RTS,
-        ]
-        self.assertEqual(_run(apply_dec_peephole, instrs), instrs)
-
-
-class TestIncPeephole(unittest.TestCase):
-
-    def test_element_incremented_in_place(self) -> None:
-        out = _run(apply_inc_peephole, _step("add", _E) + [_RTS])
-        self.assertEqual(out, [asm_ast.Inc(dst=_E), _RTS])
-
-    def test_carry_read_after_blocks_it(self) -> None:
-        instrs = _step("add", _E) + [
-            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
-            asm_ast.Label(name=".l"), _RTS,
-        ]
-        self.assertEqual(_run(apply_inc_peephole, instrs), instrs)
-
-    def test_element_indexed_by_y_left_alone(self) -> None:
-        instrs = _step("add", _EY) + [_RTS]
-        self.assertEqual(_run(apply_inc_peephole, instrs), instrs)
-
-
-class TestShiftInPlace(unittest.TestCase):
-
-    def test_element_shifted_in_place(self) -> None:
-        out = _run(apply_shift_in_a, [
-            _mov(_E, _A), asm_ast.LogicalShiftRight(dst=_A),
-            asm_ast.LogicalShiftRight(dst=_A), _mov(_A, _E), _RTS,
-        ])
-        self.assertEqual(out, [asm_ast.LogicalShiftRight(dst=_E),
-                               asm_ast.LogicalShiftRight(dst=_E), _RTS])
-
-    def test_element_indexed_by_y_left_alone(self) -> None:
-        instrs = [_mov(_EY, _A), asm_ast.ArithmeticShiftLeft(dst=_A),
-                  _mov(_A, _EY), _RTS]
-        self.assertEqual(_run(apply_shift_in_a, instrs), instrs)
-
-
-class TestRedundantLoadAfterRmw(unittest.TestCase):
-
-    def test_reload_of_the_element_dropped(self) -> None:
-        out = _run(apply_redundant_load_after_rmw, [
-            asm_ast.Dec(dst=_E), _mov(_E, _A),
-            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
-            asm_ast.Label(name=".l"), _RTS,
-        ])
-        self.assertEqual(out, [
-            asm_ast.Dec(dst=_E),
-            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
-            asm_ast.Label(name=".l"), _RTS,
-        ])
-
-
-def _timer(between):
-    """`handle_timers`'s shape, with `between` the instructions between
-    the site and the compare's load of the slot."""
-    return [
-        _mov(_E, _A), _mov(_A, _T),
-        asm_ast.Branch(cond=asm_ast.NE(), target=".skip"),
-        _RTS,
-        asm_ast.Label(name=".skip"),
-        asm_ast.Dec(dst=_T), _mov(_T, _A), _mov(_A, _E),
-        asm_ast.Branch(cond=asm_ast.EQ(), target=".done"),
-        *between,
-        _mov(_T, _A),
-        asm_ast.Compare(left=_A, right=asm_ast.Imm(value=20)),
-        asm_ast.Branch(cond=asm_ast.NE(), target=".done"),
-        _mov(asm_ast.Imm(value=1), asm_ast.Data(name="hit", offset=0)),
-        asm_ast.Label(name=".done"),
-        _RTS,
-    ]
-
-
-class TestElementInPlace(unittest.TestCase):
-
-    def _run(self, instrs):
-        return _run(apply_element_in_place, instrs, zp_slot_symbols=_SLOTS)
-
-    def test_slot_copy_stepped_in_the_element(self) -> None:
-        out = self._run(_timer([]))
-        self.assertEqual(out[5:8], [
-            asm_ast.Dec(dst=_E), _mov(_E, _A),
-            asm_ast.Branch(cond=asm_ast.EQ(), target=".done"),
-        ])
-        self.assertEqual(out[8], _mov(_E, _A))
-        self.assertNotIn(_T, [getattr(i, "src", None) for i in out])
-
-    def test_store_to_a_zero_page_object_between(self) -> None:
-        from passes import asm_aliasing
-        asm_aliasing.set_user_zp_globals({"col": 0x85}, frozenset({0x85}))
-        try:
-            store = _mov(asm_ast.Imm(value=3),
-                         asm_ast.Data(name="col", offset=0))
-            out = self._run(_timer([store]))
-        finally:
-            asm_aliasing.set_user_zp_globals({})
-        self.assertIn(asm_ast.Dec(dst=_E), out)
-
-    def test_store_to_another_absolute_object_between(self) -> None:
-        # `other` might overlap `tab` at a fixed address.
-        instrs = _timer([_mov(asm_ast.Imm(value=3),
-                              asm_ast.Data(name="other", offset=0))])
-        self.assertEqual(self._run(instrs), instrs)
-
-    def test_index_changed_between(self) -> None:
-        instrs = _timer([_mov(asm_ast.Imm(value=3), _X)])
-        self.assertEqual(self._run(instrs), instrs)
-
-    def test_call_between(self) -> None:
-        instrs = _timer([asm_ast.Call(name="g", reg_args=[], preserves=[])])
-        self.assertEqual(self._run(instrs), instrs)
-
-    def test_read_into_x_left_alone(self) -> None:
-        # There's no `LDX abs,X`.
-        instrs = _timer([_mov(_T, _X)])
-        self.assertEqual(self._run(instrs), instrs)
-
-    def test_slot_not_a_copy_of_the_element(self) -> None:
-        instrs = _timer([])
-        instrs[1] = _mov(asm_ast.Imm(value=4), _T)
-        self.assertEqual(self._run(instrs), instrs)
-
-    def test_volatile_element_left_alone(self) -> None:
-        instrs = _timer([])
-        instrs[0] = _mov(_E, _A, volatile=True)
-        self.assertEqual(self._run(instrs), instrs)
-
-    def test_without_the_slot_map(self) -> None:
-        instrs = _timer([])
-        self.assertEqual(_run(apply_element_in_place, instrs), instrs)
 
 
 class TestCheckIr(unittest.TestCase):
@@ -222,23 +38,6 @@ class TestCheckIr(unittest.TestCase):
                 ir_check.check_asm(prog, after="a test")
         finally:
             ir_check.enable(was)
-
-
-class TestPointerSelfStore(unittest.TestCase):
-
-    def test_element_store_ends_the_fact_about_a_byte_of_it(self) -> None:
-        # `buf+1` holds the byte read through P; `STA buf,X` may change
-        # it, so the store of `buf+1` back through P stays.
-        from passes.pointer_self_store import apply_pointer_self_store_drop
-        through = asm_ast.IndirectZp(address=0x40, offset=0)
-        buf1 = asm_ast.Data(name="buf", offset=1)
-        buf_x = asm_ast.IndexedData(name="buf", offset=0, index=asm_ast.X())
-        instrs = [
-            _mov(through, _A), _mov(_A, buf1),
-            _mov(asm_ast.Imm(value=9), _A), _mov(_A, buf_x),
-            _mov(buf1, _A), _mov(_A, through), _RTS,
-        ]
-        self.assertEqual(_run(apply_pointer_self_store_drop, instrs), instrs)
 
 
 class TestEmit(unittest.TestCase):

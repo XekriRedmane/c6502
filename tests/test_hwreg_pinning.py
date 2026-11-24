@@ -4,6 +4,10 @@ Phase 2 of asm-level register allocation: extend coloring to pin
 single-byte SSA Pseudos into the 6502's X / Y index registers
 when their use shape is compatible (LDX/LDY/STX/STY/INX/DEX/CPX
 operations only, no live range crossing a `Call`).
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -11,13 +15,7 @@ import shutil
 import unittest
 
 import asm_ast
-from passes.optimization.register_allocation import Coloring
-from passes.optimization_asm.apply_coloring import (
-    apply_coloring,
-    _match_transfer_chain,
-    _rewrite_redundant_transfers,
-)
-from passes.optimization_asm.hwreg_eligibility import scan_function
+from passes.optimization_asm.apply_coloring import _match_transfer_chain, _rewrite_redundant_transfers
 
 
 def _mov(src, dst):
@@ -34,213 +32,10 @@ def _reg(letter: str) -> asm_ast.Reg:
     raise ValueError(letter)
 
 
-class TestHwRegEligibility(unittest.TestCase):
-    """Unit tests for the per-instruction eligibility scan."""
-
-    def _scan(self, instrs):
-        fn = asm_ast.Function(
-            name="test", is_global=True, params=[], instructions=instrs,
-        )
-        return scan_function(fn)
-
-    def test_pseudo_with_indexed_data_setup_chain_gets_x_hint(self):
-        # Mov(P, A); Mov(A, X); ... = X-setup chain. P picks up
-        # hints_x for the index-load.
-        instrs = [
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-            _mov(_reg("A"), _reg("X")),
-            _mov(asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()), _reg("A")),
-        ]
-        elig = self._scan(instrs)
-        self.assertIn("P", elig.hints_x)
-        self.assertNotIn("P", elig.hints_y)
-
-    def test_pseudo_with_y_setup_chain_gets_y_hint(self):
-        instrs = [
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-            _mov(_reg("A"), _reg("Y")),
-            _mov(asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.Y()), _reg("A")),
-        ]
-        elig = self._scan(instrs)
-        self.assertIn("P", elig.hints_y)
-        self.assertNotIn("P", elig.hints_x)
-
-    def test_pseudo_in_unsupported_op_disqualified(self):
-        # Pseudo as Add operand: not HwReg-representable (ADC needs
-        # A as dst, the source operand can be Imm/Stack/Frame/Data
-        # but the op-style RMW on a HwReg would need TYA/TAY scratching
-        # which the eligibility check rejects defensively).
-        instrs = [
-            asm_ast.Add(
-                src=asm_ast.Pseudo(name="P", offset=0),
-                dst=_reg("A"),
-            ),
-        ]
-        elig = self._scan(instrs)
-        self.assertNotIn("P", elig.eligible)
-
-    def test_load_from_indirect_memory_disqualified(self):
-        # LDX / LDY have no indirect-Y mode, so no Mov loads X or Y
-        # from a Stack / Frame / Indirect byte.
-        for src in (
-            asm_ast.Frame(offset=1),
-            asm_ast.Stack(offset=1),
-            asm_ast.Indirect(offset=0),
-        ):
-            with self.subTest(src=src):
-                elig = self._scan([
-                    _mov(src, asm_ast.Pseudo(name="P", offset=0)),
-                ])
-                self.assertNotIn("P", elig.eligible)
-
-    def test_store_to_indirect_memory_disqualified(self):
-        # STX / STY have no indirect-Y mode either; the store would
-        # need A, which the IR wouldn't show as overwritten.
-        elig = self._scan([
-            _mov(asm_ast.Imm(value=3), asm_ast.Pseudo(name="P", offset=0)),
-            _mov(asm_ast.Pseudo(name="P", offset=0), asm_ast.Frame(offset=1)),
-        ])
-        self.assertNotIn("P", elig.eligible)
-
-    def test_address_taken_peer_disqualified(self):
-        # An address-taken Pseudo is never colored and may end up in
-        # a Frame slot, so it counts as indirect memory.
-        elig = self._scan([
-            asm_ast.LoadAddress(
-                src=asm_ast.Pseudo(name="E", offset=0),
-                dst=asm_ast.Pseudo(name="PTR", offset=0),
-            ),
-            _mov(
-                asm_ast.Pseudo(name="E", offset=1),
-                asm_ast.Pseudo(name="P", offset=0),
-            ),
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-            _mov(_reg("A"), _reg("X")),
-        ])
-        self.assertNotIn("P", elig.eligible)
-
-    def test_colorable_pseudo_peer_stays_eligible(self):
-        elig = self._scan([
-            _mov(
-                asm_ast.Pseudo(name="Q", offset=0),
-                asm_ast.Pseudo(name="P", offset=0),
-            ),
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-        ])
-        self.assertIn("P", elig.eligible_x)
-
-    def test_use_count_tracks_references(self):
-        instrs = [
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-            _mov(_reg("A"), _reg("X")),
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-            _mov(_reg("A"), _reg("Y")),
-        ]
-        elig = self._scan(instrs)
-        self.assertEqual(elig.use_count.get("P", 0), 2)
-
-    def test_pseudo_loaded_from_indexed_data_x_indexed_is_y_only(self):
-        # Pseudo P is the dst of Mov(IndexedData(...,X), P). Pinning
-        # P to X would yield `LDX abs,X` which doesn't exist; pinning
-        # to Y yields `LDY abs,X` which DOES exist. So P is
-        # Y-eligible but not X-eligible.
-        instrs = [
-            _mov(
-                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
-                asm_ast.Pseudo(name="P", offset=0),
-            ),
-            # Downstream X-setup chain that hints P → X. The fallback
-            # in regalloc tries Y when X is ineligible.
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-            _mov(_reg("A"), _reg("X")),
-            _mov(
-                asm_ast.IndexedData(name="arr2", offset=0, index=asm_ast.X()),
-                _reg("A"),
-            ),
-        ]
-        elig = self._scan(instrs)
-        self.assertNotIn("P", elig.eligible_x)
-        self.assertIn("P", elig.eligible_y)
-        # The X-setup chain still hints X — the fallback path will
-        # handle the actual coloring decision.
-        self.assertIn("P", elig.hints_x)
-
-    def test_pseudo_loaded_from_indexed_data_y_indexed_is_x_only(self):
-        # Mirror: peer `IndexedData(...,Y)` makes P X-eligible
-        # (`LDX abs,Y` exists) but not Y-eligible (`LDY abs,Y`
-        # doesn't). IndexedData(index=Y) arises after
-        # loop_counter_to_x rewrites an X-pivoting access chain.
-        instrs = [
-            _mov(
-                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.Y()),
-                asm_ast.Pseudo(name="P", offset=0),
-            ),
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-        ]
-        elig = self._scan(instrs)
-        self.assertIn("P", elig.eligible_x)
-        self.assertNotIn("P", elig.eligible_y)
-
-    def test_eligible_property_is_union_of_x_and_y(self):
-        # The legacy `.eligible` property is the union of the per-
-        # HwReg sets; consumers that only need "any HwReg works"
-        # can use it. Names in one but not the other still appear
-        # in the union.
-        instrs = [
-            _mov(
-                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
-                asm_ast.Pseudo(name="P", offset=0),
-            ),
-            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
-        ]
-        elig = self._scan(instrs)
-        self.assertNotIn("P", elig.eligible_x)
-        self.assertIn("P", elig.eligible_y)
-        self.assertIn("P", elig.eligible)
-
-    def test_pseudo_stored_to_indexed_data_is_disqualified(self):
-        # Pseudo P is the src of Mov(P, IndexedData(...,X)). If P
-        # is HwReg-pinned to X or Y, the result is Mov(Reg(X|Y),
-        # IndexedData(...,X)) — `STX abs,X` / `STY abs,X` don't
-        # exist on the 6502; only `STA abs,X` does. The scan must
-        # drop P from both eligibility sets.
-        instrs = [
-            _mov(asm_ast.Imm(value=5), asm_ast.Pseudo(name="P", offset=0)),
-            _mov(
-                asm_ast.Pseudo(name="P", offset=0),
-                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
-            ),
-        ]
-        elig = self._scan(instrs)
-        self.assertNotIn("P", elig.eligible_x)
-        self.assertNotIn("P", elig.eligible_y)
-
-
 class TestApplyColoringHwReg(unittest.TestCase):
     """Unit tests for HwReg substitution + redundant-transfer
     chain elimination."""
 
-    def test_pseudo_substituted_with_reg_y(self):
-        coloring = Coloring(
-            assignments={}, spilled=set(),
-            hwreg_assignments={"P": "Y"},
-        )
-        fn = asm_ast.Function(
-            name="test", is_global=True, params=[],
-            instructions=[
-                _mov(asm_ast.Imm(value=5), asm_ast.Pseudo(name="P", offset=0)),
-                asm_ast.Inc(dst=asm_ast.Pseudo(name="P", offset=0)),
-            ],
-        )
-        result = apply_coloring(fn, coloring)
-        self.assertEqual(
-            result.instructions[0],
-            _mov(asm_ast.Imm(value=5), _reg("Y")),
-        )
-        self.assertEqual(
-            result.instructions[1],
-            asm_ast.Inc(dst=_reg("Y")),
-        )
 
     def test_self_transfer_chain_dropped(self):
         # Mov(Reg(X), Reg(A)); Mov(Reg(A), Reg(X)) is a no-op for X.

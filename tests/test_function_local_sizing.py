@@ -9,6 +9,10 @@ Coverage:
   - Non-function top-levels skipped.
   - End-to-end: compile a small C program and verify the body's
     byte count matches the asm regalloc's coloring.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -23,10 +27,6 @@ from passes.function_local_sizing import (
 
 def _zp(addr: int, off: int = 0) -> asm_ast.ZP:
     return asm_ast.ZP(address=addr, offset=off)
-
-
-def _A() -> asm_ast.Reg:
-    return asm_ast.Reg(reg=asm_ast.A())
 
 
 def _imm(v: int) -> asm_ast.Imm:
@@ -49,45 +49,7 @@ def _prog(*tls) -> asm_ast.Program:
 
 
 class TestComputeLocalBytes(unittest.TestCase):
-    def test_empty_function_is_zero(self) -> None:
-        prog = _prog(_fn("f"))
-        self.assertEqual(compute_local_bytes(prog), {"f": 0})
 
-    def test_no_zp_operands_is_zero(self) -> None:
-        # Pseudo / Imm / Frame / Reg shouldn't contribute.
-        prog = _prog(_fn(
-            "f",
-            _mov(_imm(0x55), _A()),
-            _mov(_A(), asm_ast.Frame(offset=1)),
-            _mov(asm_ast.Pseudo(name="p", offset=0), _A()),
-        ))
-        self.assertEqual(compute_local_bytes(prog), {"f": 0})
-
-    def test_single_zp_byte(self) -> None:
-        prog = _prog(_fn(
-            "f",
-            _mov(_imm(0x42), _zp(0x80)),
-        ))
-        self.assertEqual(compute_local_bytes(prog), {"f": 1})
-
-    def test_multiple_distinct_zp_bytes(self) -> None:
-        prog = _prog(_fn(
-            "f",
-            _mov(_imm(1), _zp(0x80)),
-            _mov(_imm(2), _zp(0x81)),
-            _mov(_imm(3), _zp(0x82)),
-        ))
-        self.assertEqual(compute_local_bytes(prog), {"f": 3})
-
-    def test_duplicate_zp_writes_collapse(self) -> None:
-        # Same byte written and re-read; counts once.
-        prog = _prog(_fn(
-            "f",
-            _mov(_imm(1), _zp(0x80)),
-            _mov(_zp(0x80), _A()),
-            _mov(_A(), _zp(0x80)),
-        ))
-        self.assertEqual(compute_local_bytes(prog), {"f": 1})
 
     def test_zp_with_offset_counts_each_byte(self) -> None:
         # A multi-byte value materialized as ZP(addr, offset)
@@ -103,35 +65,6 @@ class TestComputeLocalBytes(unittest.TestCase):
             compute_local_byte_addresses(prog),
             {"f": frozenset({0x90, 0x91})},
         )
-
-    def test_per_function_independent(self) -> None:
-        # Two functions; each gets its own count.
-        prog = _prog(
-            _fn("f1", _mov(_imm(0), _zp(0x80)), _mov(_imm(0), _zp(0x81))),
-            _fn("f2", _mov(_imm(0), _zp(0xC0))),
-        )
-        self.assertEqual(compute_local_bytes(prog), {"f1": 2, "f2": 1})
-
-    def test_static_variable_top_level_skipped(self) -> None:
-        prog = _prog(
-            _fn("f", _mov(_imm(0), _zp(0x80))),
-            asm_ast.StaticVariable(
-                name="x", is_global=False,
-                init=[asm_ast.IntInit(value=0)],
-            ),
-        )
-        # StaticVariable not in the output.
-        self.assertEqual(compute_local_bytes(prog), {"f": 1})
-
-    def test_data_operands_ignored(self) -> None:
-        # Data refs (statics, HARGS, __zpabi_* slot symbols) aren't
-        # body-local ZP usage and shouldn't be counted.
-        prog = _prog(_fn(
-            "f",
-            _mov(_imm(0x55), asm_ast.Data(name="HARGS", offset=0)),
-            _mov(asm_ast.Data(name="__zpabi_f_p0", offset=0), _A()),
-        ))
-        self.assertEqual(compute_local_bytes(prog), {"f": 0})
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

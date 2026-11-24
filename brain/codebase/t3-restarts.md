@@ -4,4 +4,5 @@
 - Before resuming an agent, look at its worktree: `git log main..worktree-agent-<id>` for its commits and `git -C .claude/worktrees/agent-<id> status --short` for edits it hadn't committed. Its check worktrees under `C:/w/` survive too.
 - Resume an agent with `SendMessage` to its id. Tell it what it had committed, that its background commands were stopped and must be rerun, and what has landed on `origin/main` since its brief, so that it merges before its final checks.
 - A check of main that was running in the background has to be started again. Its output file shows how far it got.
-- Port groups run one at a time since Robert's request on 23 Nov 2026, so after a restart resume one group, then the next.
+
+Related: [[codebase/worktree-guard]], [[principles/make-operations-idempotent]]

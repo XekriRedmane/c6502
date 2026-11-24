@@ -17,5 +17,8 @@ Code / Features:
 3. Check the full chain: does data flow from input to output?
 4. For integrations, test the full communication path end-to-end
 
+Prose (comments, documents, READMEs, reports):
+Check every claim against the code or a fresh measurement before writing it. Comments that described the design as intended ("these routines are here", when they weren't), numbers recalled from an earlier run, and function names from memory were each wrong more than ten times.
+
 Delegation: trust artifacts, not self-reports:
 When verifying delegated work, inspect the actual output artifact (git diff, file contents, runtime behavior) — never the delegate's summary. Agents report what they intended, not always what happened.

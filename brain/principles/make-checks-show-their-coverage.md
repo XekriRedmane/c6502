@@ -9,5 +9,6 @@ A passing check is evidence only for what it examined. Each check fails, or prin
 - Count the cases a run executed, and compare the count with the number expected.
 - Give a run over a corpus a time limit for each program, so that a program that never returns ends as a failure.
 - Record again before trusting a record made before the code changed.
+- To show that a new test fails without its fix, reset only the fixed source files to HEAD. A plain `git stash` hides the new test too, and the check passes without proving anything.
 
-**Evidence:** [[codebase/worktree-agent-commands]], [[codebase/recording-test-calls]], [[codebase/checks-after-python]], and [[codebase/tac-interpreter]].
+**Evidence:** [[codebase/msbuild-stale-builds]], [[codebase/git-bash-on-windows]], [[codebase/recording-test-calls]], [[codebase/checks-after-python]], and [[codebase/tac-interpreter]].

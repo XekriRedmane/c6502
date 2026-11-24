@@ -2915,10 +2915,18 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   `direct_member_access` makes. Both are fixed in Python and C++. With
   narrow_widened_arith's check of a global broken in C++, `tac-observe`
   named the pass and the function, and fuzz/reduce.py `--tac-opt`
-  reduced a program under the switch. The fuzzers (seeds 3000 to 3149
-  of each) took 14, 15, and 16 s with the switch and Python's TAC path,
-  and 12, 12, and 11 s with the C++ path, none wrong. A program's TAC
-  path took 25, 40, and 54 ms in Python (exprs, calls, stmts) and 31,
-  34, and 35 ms in C++, of which about 12 ms is starting c6502cpp. The
-  C++ interpreter runs a recursion of up to 100,000 calls, where
-  Python's raises RecursionError at about 330.
+  reduced a program under the switch. After the merge of G1 and G3,
+  the TAC modes check the IR in the C++ driver with the request's
+  `check_ir`, and tools/compare_tac_sim.py with `C6502_CHECK_IR=1`
+  compared the corpus again in 303 s with 14 processes, with no
+  difference and no change by a pass. On an idle machine, with
+  `-j 10`, the fuzzers (seeds 3000 to 3149 of each) took 6, 6, and 7 s
+  with the switch and Python's TAC path (at ae37758) and 4, 5, and 6 s
+  with the C++ path, none wrong. A program's TAC path took 10.7, 16.9,
+  and 23.0 ms in Python (exprs, calls, stmts) and 11.8, 12.5, and
+  14.0 ms in C++, of which about 7 ms is starting c6502cpp. The suite
+  passes with `C6502_CHECK_IR=1` with the variable set (4,982 tests, 23
+  skipped) and without it (4,983, 22 skipped), and the build and the
+  C++ tests (3,352 cases) pass with MSVC 19.36 and GCC 12.2. The C++
+  interpreter runs a recursion of up to 100,000 calls, where Python's
+  raises RecursionError at about 330.

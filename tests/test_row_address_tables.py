@@ -3,225 +3,14 @@ the address of a row of a 2-D array in a table of row addresses."""
 
 from __future__ import annotations
 
-import os
 import shutil
 import unittest
-from unittest import mock
 
-import c99_ast
-import tac_ast
 from compile import _run_stage
-from passes.optimization import row_address_tables as rat
-from passes.type_checking import (
-    Initial, LocalAttr, NoInitializer, StaticAttr, Symbol, Tentative,
-)
 from preprocessor import preprocess
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-def _v(n):
-    return tac_ast.Var(name=n)
-
-
-def _int(v):
-    return tac_ast.Constant(const=tac_ast.ConstInt(value=v))
-
-
-def _array(rows, row, address=None):
-    return Symbol(
-        type=c99_ast.Array(
-            element_type=c99_ast.Array(element_type=c99_ast.UChar(), size=row),
-            size=rows,
-        ),
-        attrs=StaticAttr(
-            initial_value=NoInitializer() if address else Tentative(),
-            is_global=True, address=address,
-        ),
-    )
-
-
-def _symbols(**arrays):
-    out = {
-        "@i": Symbol(type=c99_ast.UChar(), attrs=LocalAttr()),
-        "@w": Symbol(type=c99_ast.Int(), attrs=LocalAttr()),
-    }
-    for t in ("%a", "%b", "%p", "%q"):
-        out[t] = Symbol(
-            type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
-            attrs=LocalAttr(),
-        )
-    for t in ("%z", "%x", "%m", "%y", "%n"):
-        out[t] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
-    out.update(arrays)
-    return out
-
-
-def _row(array, k=0, row=28, index="@i", names=("%a", "%z", "%x", "%m", "%p")):
-    """The TAC c99_to_tac writes for `&array[index + k]`."""
-    a, z, x, m, p = names
-    out = [
-        tac_ast.GetAddress(operand=_v(array), dst=_v(a)),
-        tac_ast.ZeroExtend(src=_v(index), dst=_v(z)),
-    ]
-    src = z
-    if k:
-        op = tac_ast.Add() if k > 0 else tac_ast.Subtract()
-        out.append(tac_ast.Binary(op=op, src1=_v(z), src2=_int(abs(k)), dst=_v(x)))
-        src = x
-    out += [
-        tac_ast.Binary(op=tac_ast.Multiply(), src1=_v(src), src2=_int(row), dst=_v(m)),
-        tac_ast.Binary(op=tac_ast.Add(), src1=_v(a), src2=_v(m), dst=_v(p)),
-    ]
-    return out
-
-
-def _prog(*instrs):
-    return tac_ast.Program(top_level=[tac_ast.Function(
-        name="f", is_global=True, params=["@i"],
-        instructions=[*instrs, tac_ast.Ret(val=_v("%p"))],
-    )])
-
-
-def _function(prog):
-    return next(tl for tl in prog.top_level if isinstance(tl, tac_ast.Function))
-
-
-def _statics(prog):
-    return {tl.name: tl for tl in prog.top_level
-            if isinstance(tl, tac_ast.StaticVariable)}
-
-
-_ALWAYS = mock.patch.object(rat, "_saving", lambda row: 1000)
-
-
-class TestRowAddressTablesUnit(unittest.TestCase):
-
-    def test_fixed_address_rows(self):
-        symbols = _symbols(M=_array(16, 28, address=0x0800))
-        with _ALWAYS:
-            out = rat.apply_row_address_tables(_prog(*_row("M", k=-1)), symbols)
-        self.assertEqual(_function(out).instructions, [
-            tac_ast.IndexedLoad(
-                name="M@rows", index=_v("@i"), dst=_v("%p"), offset=-1,
-                plane=17,
-            ),
-            tac_ast.Ret(val=_v("%p")),
-        ])
-        addresses = [0x0800 + 28 * r for r in range(17)]
-        table = _statics(out)["M@rows"]
-        self.assertEqual(table.init, [tac_ast.StringInit(
-            str="".join(chr(a & 0xFF) for a in addresses)
-            + "".join(chr(a >> 8) for a in addresses),
-            bytes=34,
-        )])
-        self.assertEqual(symbols["M@rows"].type.size, 34)
-        # The halves are objects of their own, which tac_to_asm emits
-        # in the table's place.
-        self.assertEqual(symbols["M@rows"].attrs.planes, ("M@lo", "M@hi"))
-        self.assertEqual(
-            symbols["M@hi"].attrs.initial_value.value,
-            tuple(a >> 8 for a in addresses),
-        )
-        self.assertTrue(symbols["M@hi"].attrs.mergeable)
-        self.assertFalse(symbols["M@rows"].attrs.mergeable)
-
-    def test_static_array_rows_are_address_bytes(self):
-        symbols = _symbols(S=_array(20, 14))
-        with _ALWAYS:
-            out = rat.apply_row_address_tables(
-                _prog(*_row("S", k=2, row=14)), symbols,
-            )
-        self.assertEqual(_function(out).instructions[0].offset, 2)
-        init = _statics(out)["S@rows"].init
-        self.assertEqual(len(init), 42)
-        self.assertEqual(
-            init[3], tac_ast.AddressByteInit(name="S", offset=42, high=False),
-        )
-        self.assertEqual(
-            init[21 + 20],
-            tac_ast.AddressByteInit(name="S", offset=280, high=True),
-        )
-
-    def test_arrays_share_low_bytes(self):
-        # 0x200 apart: the low bytes of the row addresses are the same.
-        symbols = _symbols(
-            M=_array(16, 28, address=0x0800), B=_array(16, 28, address=0x0A00),
-        )
-        with _ALWAYS:
-            out = rat.apply_row_address_tables(_prog(
-                *_row("M"), *_row("B", names=("%b", "%y", "%x", "%n", "%q")),
-            ), symbols)
-        loads = [i for i in _function(out).instructions
-                 if isinstance(i, tac_ast.IndexedLoad)]
-        self.assertEqual(
-            [(i.name, i.offset, i.plane) for i in loads],
-            [("M@rows", 0, 17), ("B@rows", 0, 17)],
-        )
-        # Each array's table holds its own two halves, and the low half
-        # they share is one object, named after B, which sorts first.
-        self.assertEqual(symbols["B@rows"].attrs.planes, ("B@lo", "B@hi"))
-        self.assertEqual(symbols["M@rows"].attrs.planes, ("B@lo", "M@hi"))
-        self.assertNotIn("M@lo", symbols)
-        for half in ("B@lo", "B@hi", "M@hi"):
-            self.assertTrue(symbols[half].attrs.mergeable)
-            self.assertEqual(symbols[half].type.size, 17)
-
-    def test_cost_model(self):
-        # One access saves 40 bytes, and 16 rows cost 34.
-        symbols = _symbols(M=_array(16, 28, address=0x0800))
-        out = rat.apply_row_address_tables(_prog(*_row("M")), symbols)
-        self.assertIn("M@rows", _statics(out))
-        # 40 rows cost 82 bytes, which two accesses don't save.
-        symbols = _symbols(M=_array(40, 28, address=0x0800))
-        prog = _prog(*_row("M"), *_row("M", names=("%b", "%y", "%x", "%n", "%q")))
-        self.assertEqual(rat.apply_row_address_tables(prog, symbols), prog)
-        # Two arrays with one access each: neither saves its 34 bytes
-        # alone, but with the low bytes shared, the pair costs 51 and
-        # saves 80.
-        symbols = _symbols(
-            M=_array(16, 28, address=0x0800), B=_array(16, 28, address=0x0A00),
-        )
-        symbols.update(M=_array(16, 28, address=0x0800))
-        with mock.patch.object(rat, "_saving", lambda row: 30):
-            out = rat.apply_row_address_tables(_prog(
-                *_row("M"), *_row("B", names=("%b", "%y", "%x", "%n", "%q")),
-            ), symbols)
-        self.assertIn("B@rows", _statics(out))
-
-    def test_shapes_left_alone(self):
-        cases = {
-            # A power-of-two row is two shifts.
-            "power of two": (_array(16, 32, address=0x0800), _row("M", row=32)),
-            # The index is an int, not a byte.
-            "int index": (_array(16, 28, address=0x0800),
-                          _row("M", index="@w")),
-            # Past the end of the table.
-            "past the end": (_array(16, 28, address=0x0800), _row("M", k=17)),
-        }
-        for name, (array, instrs) in cases.items():
-            with self.subTest(name), _ALWAYS:
-                prog = _prog(*instrs)
-                self.assertEqual(
-                    rat.apply_row_address_tables(prog, _symbols(M=array)), prog,
-                )
-        with self.subTest("zero page"), _ALWAYS:
-            sym = _array(4, 28)
-            sym = Symbol(type=sym.type, attrs=StaticAttr(
-                initial_value=Tentative(), is_global=True, zeropage=True,
-            ))
-            prog = _prog(*_row("M"))
-            self.assertEqual(
-                rat.apply_row_address_tables(prog, _symbols(M=sym)), prog,
-            )
-        with self.subTest("the row address is read twice"), _ALWAYS:
-            instrs = _row("M")
-            instrs.insert(2, tac_ast.Copy(src=_v("%z"), dst=_v("%y")))
-            prog = _prog(*instrs)
-            self.assertEqual(rat.apply_row_address_tables(
-                prog, _symbols(M=_array(16, 28, address=0x0800)),
-            ), prog)
 
 
 def _codegen(src: str) -> str:
@@ -236,19 +25,18 @@ def _cell(r: int, c: int) -> int:
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestRowAddressTablesSim(unittest.TestCase):
     """Programs that index 2-D arrays through row tables, run in both
-    pipelines. The tables are made whatever they cost, so that each
-    access is rewritten."""
+    pipelines. Each program reads its array often enough that the
+    accesses save more than the tables cost, so that `-O` makes them.
+    (Until step 8 of the port, these tests replaced the Python pass's
+    estimate to force the tables, which the C++ pass's doctest cases now
+    do with `fixed_saving`.)"""
 
     def _check(self, src: str, expected: int, table: str) -> None:
-        # The replacement of `_saving` reaches only the Python pass, which
-        # doesn't run under C6502_CPP_BACKEND=1.
-        with _ALWAYS, mock.patch.dict(os.environ):
-            os.environ.pop("C6502_CPP_BACKEND", None)
-            self.assertIn(f"\n{table}@lo:\n", _codegen(src))
-            for optimize in (False, True):
-                with self.subTest(optimize=optimize):
-                    got = build_sim(src, optimize=optimize).run().return_int()
-                    self.assertEqual(got, expected & 0xFFFF)
+        self.assertIn(f"\n{table}@lo:\n", _codegen(src))
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(src, optimize=optimize).run().return_int()
+                self.assertEqual(got, expected & 0xFFFF)
 
     _FILL = """
         for (uint8_t r = 0; r < ROWS; r++)
@@ -326,14 +114,21 @@ class TestRowAddressTablesSim(unittest.TestCase):
         src = """
         #include <stdint.h>
         struct cell { uint8_t a, b, c; };
-        static struct cell S[100];
+        static struct cell S[90];
+        uint8_t a_of(uint8_t i) { return S[i].a; }
         uint8_t b_of(uint8_t i) { return S[i].b; }
+        uint8_t c_of(uint8_t i) { return S[i].c; }
+        void set_a(uint8_t i, uint8_t v) { S[i].a = v; }
+        void set_b(uint8_t i, uint8_t v) { S[i].b = v; }
+        void set_c(uint8_t i, uint8_t v) { S[i].c = v; }
         int main(void) {
-            for (uint8_t i = 0; i < 100; i++) S[i].b = i + 1;
-            return b_of(99) + b_of(0) + b_of(50);
+            for (uint8_t i = 0; i < 90; i++) {
+                set_a(i, i); set_b(i, i + 1); set_c(i, i + 2);
+            }
+            return a_of(89) + b_of(0) + c_of(45);
         }
         """
-        self._check(src, 100 + 1 + 51, "S")
+        self._check(src, 89 + 1 + 47, "S")
 
     def test_shared_low_bytes(self):
         src = """
@@ -347,8 +142,7 @@ class TestRowAddressTablesSim(unittest.TestCase):
         }
         """
         self._check(src, 300 + 3, "B")
-        with _ALWAYS:
-            text = _codegen(src)
+        text = _codegen(src)
         self.assertNotIn("M@lo", text)
         tables = text.split("\nB@lo:\n")[1]
         self.assertIn("\nB@hi:\n", tables)

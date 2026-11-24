@@ -4,4 +4,6 @@
 - `taskkill //IM python.exe` is refused, since other agents' processes share the machine. Stop a background command with TaskStop, which also ends its process pool.
 - A file edited while MSVC is building can keep the object compiled from the old text, and the link then fails with an unresolved symbol. Touch the edited files and build again.
 - To split one working tree into a commit per piece, keep a copy of the final files, write the earlier versions with a script whose every replacement asserts that it matches once, and copy each version in before its `git add`. Each fix then gets its own commit after the code it fixes.
+- The guard also refuses a command that runs git after `export PATH=...` (it can't tell which git runs), and one that names a word starting with `.git` beside other commands. Run cmake with the exported PATH in one call and git in another.
+- A Bash heredoc halves the backslashes in what it writes, so a Python edit whose old text holds `\n` in a string literal silently matches nothing. Write such scripts with the Write tool, and make every replacement assert that it matched once.
 - `bc` isn't installed in Git Bash. Time a command with `date +%s%3N` and `$(( ))`.

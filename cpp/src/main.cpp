@@ -38,6 +38,7 @@
 #include "binutils/opcodes.h"
 #include "c99_ast.h"
 #include "capture.h"
+#include "compile_command.h"
 #include "errors.h"
 #include "frozen.h"
 #include "golden.h"
@@ -68,6 +69,7 @@ const char kUsage[] =
     "       c6502cpp check-golden [--root <dir>] [-j <n>] [--manifest <name>,...]\n"
     "                             [--label <label>] [--update] [--verbose]\n"
     "       c6502cpp check-frozen [--verbose] [<frozen dir>]\n"
+    "       c6502cpp compile [<compile.py's argument>...]\n"
     "       c6502cpp opcodes\n"
     "       c6502cpp helper-footprints\n"
     "       c6502cpp nm [<option>...] <file>...\n"
@@ -129,6 +131,11 @@ const char kUsage[] =
     "helper-footprints lists each runtime helper's HARGS footprint, one\n"
     "`name bytes` line per helper, in the order of rtlib/helpers.py's\n"
     "all_helper_functions (src/rtlib/helpers.h).\n"
+    "\n"
+    "compile takes compile.py's command line and does what compile.py does\n"
+    "under C6502_CPP_BACKEND=1, with its options, messages, files, and exit\n"
+    "status, in this process (src/compile_command.h). compile.py runs it\n"
+    "under the variable.\n"
     "\n"
     "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
     "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"
@@ -755,6 +762,11 @@ int main(int argc, char** argv) {
     }
     if (command == "check-golden") {
       return golden::check_golden(args, argv[0]);
+    }
+    if (command == "compile") {
+      const std::vector<std::string> utf8 = utf8_args(argc, argv);
+      return compile_command::command(std::vector<std::string>(utf8.begin() + 2, utf8.end()),
+                                      argv[0]);
     }
     if (command == "nm" || command == "objdump") {
       // The tool's command line, as its `main` takes it with the

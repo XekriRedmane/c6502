@@ -45,6 +45,10 @@ file(GLOB C6502_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/generated/*.cpp")
 list(REMOVE_ITEM C6502_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 add_library(c6502 STATIC ${C6502_SOURCES})
+# `c6502cpp compile` run by itself finds c6502's include/ in the source
+# tree it was built from when the executable isn't inside a checkout.
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/compile_command.cpp"
+  PROPERTIES COMPILE_DEFINITIONS "C6502_SOURCE_ROOT=\"${CMAKE_CURRENT_SOURCE_DIR}/..\"")
 target_include_directories(c6502 PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${CMAKE_CURRENT_SOURCE_DIR}/generated")

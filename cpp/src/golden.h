@@ -9,8 +9,10 @@
 // blobs the jobs write. tools/write_golden.py's docstring gives the
 // format. For each job of each manifest, the check makes an empty
 // directory, takes the job's steps in it (its directories, its files,
-// changes of the current directory, and its command lines), and runs
-// each command line as compile.py's `main` would under
+// changes of the current directory, the terminal's width, and its
+// command lines), and runs each command line through `c6502cpp
+// compile`'s code (src/compile_command.h), which reads it with
+// compile.py's argparse and does what compile.py's `main` does under
 // `C6502_CPP_BACKEND=1`, with the C++ compiler, assembler, and linker
 // in the same process and no Python. It writes the manifest's lines
 // for what each command gave and for the files the job left, and

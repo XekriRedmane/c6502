@@ -130,6 +130,10 @@ namespace c6502::backend {
 // executable, an output file that couldn't be opened or written, and
 // the length of the executable the command wrote to `output`.
 //
+// The modes `tac-run`, `tac-observe`, and `tac-falls-off` run the TAC
+// interpreter on a source, with the request of the mode `source`
+// (src/tac_sim_modes.h describes their responses).
+//
 // Throws `std::runtime_error` for a request that can't be read, and
 // passes on the `InternalError`s of the passes.
 std::string respond(const std::string& text);

@@ -19,11 +19,19 @@ namespace {
 
 namespace ir = ::c6502::tac_ast;
 
+const Observer* current_observer = nullptr;
+
+void observe(const ir::Function& fn, std::string_view after) {
+  if (current_observer != nullptr) (*current_observer)(fn, after);
+}
+
 ir::Function run(const NamedPass& p, ir::Function fn, const PassContext& ctx) {
   if (p.run == nullptr) {
     throw InternalError("the TAC pass " + std::string(p.name) + " isn't ported to C++");
   }
-  return p.run(std::move(fn), ctx);
+  fn = p.run(std::move(fn), ctx);
+  observe(fn, p.name);
+  return fn;
 }
 
 // Sweeps `passes` over `fn` until a sweep leaves it equal to what the
@@ -54,6 +62,12 @@ bool all_ported(const std::vector<NamedPass>& passes) {
 
 }  // namespace
 
+const Observer* set_observer(const Observer* observer) {
+  const Observer* previous = current_observer;
+  current_observer = observer;
+  return previous;
+}
+
 bool PhaseDriver::complete() const {
   return all_ported(pre_ssa) && all_ported(pre_fixedpoint) && all_ported(fixedpoint) &&
          all_ported(post_fixedpoint) && all_ported(post_destruction) &&
@@ -70,6 +84,7 @@ ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_
     fn = std::move(ssa_fn);
     ssa_storage = std::move(ssa_dsts);
     ctx.ssa_dsts = &ssa_storage;
+    observe(fn, "to_ssa");
     for (const auto& p : pre_fixedpoint) {
       fn = run(p, std::move(fn), ctx);
     }
@@ -81,6 +96,7 @@ ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_
       fn = run(p, std::move(fn), ctx);
     }
     fn = from_ssa(std::move(fn), ctx.symbols);
+    observe(fn, "from_ssa");
   }
   // The passes after destruction, once each.
   for (const auto& p : post_destruction) {

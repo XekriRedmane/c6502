@@ -4,6 +4,7 @@
 // fixed points.
 #pragma once
 
+#include <functional>
 #include <string_view>
 #include <vector>
 
@@ -23,6 +24,17 @@ struct NamedPass {
   std::string_view name;
   TacPass run = nullptr;
 };
+
+// Called as `observer(fn, after)` with the function after every pass,
+// with the pass's `name`, and after SSA construction and destruction,
+// with "to_ssa" and "from_ssa". It stands for Python's class variable
+// `PhaseDriver.observer`, which fuzz/tac_passes.py sets to run the
+// program after each step (src/tac_sim_modes.h).
+using Observer = std::function<void(const tac_ast::Function& fn, std::string_view after)>;
+
+// Makes every driver call `observer`, or none when it is null, and
+// returns the observer it replaces.
+const Observer* set_observer(const Observer* observer);
 
 // The driver's lists, which Python types by their phase classes
 // (`PreSsaPass`, `FixedpointPass`, ...). C++ checks the phases only by
@@ -58,10 +70,10 @@ struct PhaseDriver {
   // SSA form, and destruction are skipped, which only the unit tests of
   // synthetic functions do.
   //
-  // Python checks the TAC after every pass under `C6502_CHECK_IR=1` and
-  // calls an `observer` after each, which only fuzz/tac_passes.py sets.
-  // The C++ driver does neither. Throws `InternalError` for a pass that
-  // has no port.
+  // Python checks the TAC after every pass under `C6502_CHECK_IR=1`,
+  // which the C++ driver doesn't. Both call the observer that
+  // `set_observer` gives. Throws `InternalError` for a pass that has no
+  // port.
   tac_ast::Function apply(tac_ast::Function fn, PassContext& ctx, NameSet& ssa_storage) const;
 };
 

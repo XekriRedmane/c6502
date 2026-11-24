@@ -30,6 +30,7 @@
 #include "passes/registry_control_flow.h"
 #include "passes/zp_globals.h"
 #include "stage_checks.h"
+#include "tac_sim_modes.h"
 
 namespace c6502::backend {
 
@@ -372,11 +373,14 @@ std::string respond(const std::string& text) {
   }
   const std::string mode(lines.value("mode"));
   if (mode != "source" && mode != "source-text" && mode != "lex" && mode != "objects" &&
-      mode != "link") {
+      mode != "link" && !tac_sim_modes::is_tac_mode(mode)) {
     throw std::runtime_error("unknown backend mode " + mode);
   }
   const json::Value kwargs = json::parse(lines.value("args"));
   if (mode == "objects" || mode == "link") return respond_inputs(lines, kwargs, mode == "link");
+  if (tac_sim_modes::is_tac_mode(mode)) {
+    return tac_sim_modes::respond(mode, kwargs, std::string(lines.section("source")));
+  }
   passes::FrontEndOptions front = front_options(kwargs);
   const json::Value& filename = required(kwargs, "filename");
   if (filename.kind == json::Value::Kind::kString) {

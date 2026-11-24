@@ -2,6 +2,10 @@
 
 `apply_tail_call` rewrites `Call(name); Return(_)` to `Jump(name)`.
 The pass refuses to match `Ret(...)` (frame teardown still required).
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -11,107 +15,14 @@ import asm_ast
 from passes.tail_call import apply_tail_call
 
 
-_REG_A = asm_ast.Reg(reg=asm_ast.A())
-
-
 def _fn(instrs: list[asm_ast.Type_instruction]) -> asm_ast.Function:
     return asm_ast.Function(
         name="f", is_global=True, params=[], instructions=instrs,
     )
 
 
-def _prog(instrs: list[asm_ast.Type_instruction]) -> asm_ast.Program:
-    return asm_ast.Program(top_level=[_fn(instrs)])
-
-
-def _rewrite(instrs):
-    return apply_tail_call(_prog(instrs)).top_level[0].instructions
-
-
 class TestTailCall(unittest.TestCase):
-    def test_call_then_return_becomes_jump(self) -> None:
-        instrs = [
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Call(name="apply_bobble"),
-            asm_ast.Return(save_a=False),
-        ]
-        out = _rewrite(instrs)
-        self.assertEqual(
-            out,
-            [
-                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Jump(target="apply_bobble"),
-            ],
-        )
 
-    def test_call_then_return_save_a_true_also_folds(self) -> None:
-        # `save_a` is a tag from earlier passes that's discarded at
-        # the bare-RTS lowering anyway; tail-call is sound either way.
-        instrs = [
-            asm_ast.Call(name="helper"),
-            asm_ast.Return(save_a=True),
-        ]
-        out = _rewrite(instrs)
-        self.assertEqual(out, [asm_ast.Jump(target="helper")])
-
-    def test_call_then_ret_does_not_fold(self) -> None:
-        # `Ret` carries a non-trivial frame teardown sequence that
-        # must run before control leaves the function.
-        instrs = [
-            asm_ast.Call(name="helper"),
-            asm_ast.Ret(
-                arg_bytes=2, local_bytes=4, save_a=False,
-                callee_saved_addrs=[],
-            ),
-        ]
-        out = _rewrite(instrs)
-        self.assertEqual(out, instrs)
-
-    def test_call_followed_by_other_instr_does_not_fold(self) -> None:
-        # Only the immediate Call->Return pattern matches. Anything
-        # else between the Call and the Return blocks the fold.
-        instrs = [
-            asm_ast.Call(name="helper"),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Return(save_a=False),
-        ]
-        out = _rewrite(instrs)
-        self.assertEqual(out, instrs)
-
-    def test_return_alone_does_not_fold(self) -> None:
-        instrs = [
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Return(save_a=False),
-        ]
-        out = _rewrite(instrs)
-        self.assertEqual(out, instrs)
-
-    def test_multiple_call_return_pairs_all_fold(self) -> None:
-        # If a function has multiple Call+Return pairs (e.g. after
-        # branch_invert collapses an if/else into early exits), each
-        # one folds independently.
-        instrs = [
-            asm_ast.Branch(
-                cond=asm_ast.EQ(), target=".else_path",
-            ),
-            asm_ast.Call(name="path_a"),
-            asm_ast.Return(save_a=False),
-            asm_ast.Label(name=".else_path"),
-            asm_ast.Call(name="path_b"),
-            asm_ast.Return(save_a=False),
-        ]
-        out = _rewrite(instrs)
-        self.assertEqual(
-            out,
-            [
-                asm_ast.Branch(
-                    cond=asm_ast.EQ(), target=".else_path",
-                ),
-                asm_ast.Jump(target="path_a"),
-                asm_ast.Label(name=".else_path"),
-                asm_ast.Jump(target="path_b"),
-            ],
-        )
 
     def test_other_top_level_passes_through(self) -> None:
         # StaticVariable / etc. (anything that's not a Function) is
@@ -131,33 +42,6 @@ class TestTailCall(unittest.TestCase):
             out.top_level[1].instructions,
             [asm_ast.Jump(target="h")],
         )
-
-
-class TestJumpToReturn(unittest.TestCase):
-    """A jump to a label whose first instruction is a bare return
-    becomes the return."""
-
-    def test_case_then_break(self) -> None:
-        # A switch case ending in a call and `break`: the jump to the
-        # RTS becomes the RTS, and the call and RTS a tail call.
-        out = _rewrite([
-            asm_ast.Call(name="g"),
-            asm_ast.Jump(target=".break"),
-            asm_ast.Label(name=".other"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=".break"),
-            asm_ast.Return(save_a=False),
-        ])
-        self.assertEqual(out[0], asm_ast.Jump(target="g"))
-        self.assertEqual(out[1], asm_ast.Label(name=".other"))
-
-    def test_frame_teardown_not_copied(self) -> None:
-        instrs = [
-            asm_ast.Jump(target=".end"),
-            asm_ast.Label(name=".end"),
-            asm_ast.Ret(arg_bytes=2, local_bytes=0, save_a=False),
-        ]
-        self.assertEqual(_rewrite(instrs), instrs)
 
 
 if __name__ == "__main__":

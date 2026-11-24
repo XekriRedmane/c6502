@@ -1,122 +1,13 @@
-"""Tests for the return-tail merge (`passes/tail_merge.py`)."""
+"""Tests for the return-tail merge (`passes/tail_merge.py`).
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 
 import shutil
 import unittest
 
-import asm_ast
-from passes.tail_merge import apply_tail_merge
 from sim.harness import build_sim
-
-_A = asm_ast.Reg(reg=asm_ast.A())
-_X = asm_ast.Reg(reg=asm_ast.X())
-
-
-def _run(instrs):
-    prog = asm_ast.Program(top_level=[asm_ast.Function(
-        name="f", is_global=False, params=[], instructions=instrs,
-    )])
-    return apply_tail_merge(prog).top_level[0].instructions
-
-
-def _ret0():
-    """`LDX #0; TXA; RTS`, the tail of `return 0` in A and X."""
-    return [
-        asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_X, is_volatile=False),
-        asm_ast.Mov(src=_X, dst=_A, is_volatile=False),
-        asm_ast.Return(save_a=True, save_x=True),
-    ]
-
-
-def _cmp():
-    return asm_ast.Compare(left=_A, right=asm_ast.Imm(value=3))
-
-
-class TestTailMerge(unittest.TestCase):
-
-    def test_branch_over_tail_becomes_branch_to_tail(self):
-        instrs = (
-            [_cmp(), asm_ast.Branch(cond=asm_ast.CS(), target="L")]
-            + _ret0()
-            + [asm_ast.Label(name="L"),
-               asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
-                           is_volatile=False)]
-            + _ret0()
-        )
-        out = _run(instrs)
-        self.assertEqual(out[1], asm_ast.Branch(
-            cond=asm_ast.CC(), target=".tail@0",
-        ))
-        self.assertEqual(out[2], asm_ast.Label(name="L"))
-        self.assertEqual(out[4], asm_ast.Label(name=".tail@0"))
-        self.assertEqual(out[5:], _ret0())
-
-    def test_branch_to_labeled_copy_goes_to_kept_copy(self):
-        # BCC M where M starts a copy of the tail: the branch goes to
-        # the last copy, and M is left with no reference.
-        instrs = (
-            [_cmp(), asm_ast.Branch(cond=asm_ast.CC(), target="M"),
-             asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
-                         is_volatile=False),
-             asm_ast.Return(save_a=True, save_x=True),
-             asm_ast.Label(name="M")]
-            + _ret0()
-            + [asm_ast.Label(name="N")]
-            + _ret0()
-        )
-        out = _run(instrs)
-        self.assertEqual(out[1], asm_ast.Branch(
-            cond=asm_ast.CC(), target="N",
-        ))
-        self.assertEqual(out[4:], instrs[4:])
-
-    def test_branch_to_kept_copy_left_alone(self):
-        instrs = (
-            [_cmp(), asm_ast.Branch(cond=asm_ast.CC(), target="M"),
-             asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
-                         is_volatile=False),
-             asm_ast.Return(save_a=True, save_x=True),
-             asm_ast.Label(name="M")]
-            + _ret0()
-        )
-        self.assertEqual(_run(instrs), instrs)
-
-    def test_existing_label_reused(self):
-        instrs = (
-            [asm_ast.Branch(cond=asm_ast.EQ(), target="L")]
-            + _ret0()
-            + [asm_ast.Label(name="L"),
-               asm_ast.Jump(target="T", reg_args=[]),
-               asm_ast.Label(name="T")]
-            + _ret0()
-        )
-        out = _run(instrs)
-        self.assertEqual(out[0], asm_ast.Branch(
-            cond=asm_ast.NE(), target="T",
-        ))
-
-    def test_lone_return_not_merged(self):
-        ret = asm_ast.Return(save_a=False, save_x=False)
-        instrs = [
-            asm_ast.Branch(cond=asm_ast.EQ(), target="L"), ret,
-            asm_ast.Label(name="L"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A, is_volatile=False),
-            ret,
-        ]
-        self.assertEqual(_run(instrs), instrs)
-
-    def test_out_of_reach_not_merged(self):
-        filler = [
-            asm_ast.Mov(src=asm_ast.Imm(value=1),
-                        dst=asm_ast.Data(name="g", offset=0),
-                        is_volatile=False)
-            for _ in range(40)
-        ]
-        instrs = (
-            [asm_ast.Branch(cond=asm_ast.EQ(), target="L")]
-            + _ret0()
-            + [asm_ast.Label(name="L")] + filler + _ret0()
-        )
-        self.assertEqual(_run(instrs), instrs)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
@@ -138,33 +29,6 @@ class TestTailMergeSim(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 got = build_sim(src, optimize=optimize).run().return_int()
                 self.assertEqual(got, 100)
-
-
-
-class TestTailMergeLabels(unittest.TestCase):
-
-    def test_new_label_unique_across_functions(self):
-        # `.tail@0` already exists in another function; the sim's
-        # assembler keeps one label table for the program.
-        other = asm_ast.Function(
-            name="g", is_global=False, params=[],
-            instructions=[asm_ast.Label(name=".tail@0")] + _ret0(),
-        )
-        f = asm_ast.Function(
-            name="f", is_global=False, params=[],
-            instructions=(
-                [asm_ast.Branch(cond=asm_ast.EQ(), target="L")] + _ret0()
-                + [asm_ast.Label(name="L"),
-                   asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
-                               is_volatile=False)]
-                + _ret0()
-            ),
-        )
-        out = apply_tail_merge(asm_ast.Program(top_level=[other, f]))
-        labels = [i.name for tl in out.top_level for i in tl.instructions
-                  if isinstance(i, asm_ast.Label)]
-        self.assertEqual(len(labels), len(set(labels)))
-        self.assertIn(".tail@1", labels)
 
 
 if __name__ == "__main__":

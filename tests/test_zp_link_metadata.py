@@ -8,6 +8,10 @@ Coverage:
   - `parse_metadata` returns an empty LinkMetadata when the
     asm has no metadata block.
   - Malformed blocks raise ValueError with a useful message.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -35,10 +39,6 @@ def _fn(name: str, *instrs) -> tac_ast.Function:
 
 def _call(name: str) -> tac_ast.FunctionCall:
     return tac_ast.FunctionCall(name=name, args=[], dst=None)
-
-
-def _icall(ptr: tac_ast.Type_val) -> tac_ast.IndirectCall:
-    return tac_ast.IndirectCall(ptr=ptr, args=[], dst=None)
 
 
 def _prog(*tls) -> tac_ast.Program:
@@ -92,29 +92,6 @@ class TestBuildMetadata(unittest.TestCase):
             [e.name for e in meta.externs], ["helper"],
         )
         self.assertEqual(meta.externs[0].param_bytes, 2)
-
-    def test_indirect_flag(self) -> None:
-        ptr = tac_ast.Var(name="fp")
-        prog = _prog(_fn("f", _icall(ptr)))
-        meta = build_metadata(prog, {}, {})
-        f = next(d for d in meta.defs if d.name == "f")
-        self.assertTrue(f.indirect)
-
-    def test_cycle_flag_self_recursion(self) -> None:
-        prog = _prog(_fn("rec", _call("rec")))
-        meta = build_metadata(prog, {}, {})
-        rec = next(d for d in meta.defs if d.name == "rec")
-        self.assertTrue(rec.in_cycle)
-
-    def test_cycle_flag_mutual(self) -> None:
-        prog = _prog(
-            _fn("a", _call("b")),
-            _fn("b", _call("a")),
-        )
-        meta = build_metadata(prog, {}, {})
-        for name in ("a", "b"):
-            d = next(d for d in meta.defs if d.name == name)
-            self.assertTrue(d.in_cycle, f"{name} should be in cycle")
 
 
 class TestRoundTrip(unittest.TestCase):

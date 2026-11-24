@@ -11,6 +11,10 @@ once and didn't wait.
 Each test runs in both pipelines. The simulator can't change memory
 behind the program's back, so a wait loop is checked by whether the
 run reaches the cycle cap.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -206,14 +210,6 @@ class TestVolatileSelfMov(unittest.TestCase):
         )
         return asm_ast.Program(top_level=[fn])
 
-    def test_emitted(self) -> None:
-        from asm_emit import emit_program
-        from passes.asm_to_asm2 import translate_program
-        for is_volatile, want in ((True, 1), (False, 0)):
-            with self.subTest(is_volatile=is_volatile):
-                asm = emit_program(translate_program(self._prog(is_volatile)))
-                self.assertEqual(_reads(asm, "g"), want)
-                self.assertEqual(len(re.findall(r"STA\s+g", asm)), want)
 
     def test_assembled(self) -> None:
         from sim import assembler

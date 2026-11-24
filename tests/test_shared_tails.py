@@ -5,7 +5,11 @@ alike goes in a function of its own, which each jumps to.
 programs whose functions end alike, checks that a tail was shared, and
 runs them in the simulator, compiled on their own and linked, where
 the linker puts one function right before the tail and drops its
-jump."""
+jump.
+
+The tests that called the Python functions directly are doctest cases of
+the C++ port now, each named for the test it came from
+(docs/cpp_port.md, step 8, group G6)."""
 
 from __future__ import annotations
 
@@ -14,114 +18,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import asm_ast
-from passes.shared_tails import apply_shared_tails
 from sim.harness import build_sim
 
-_A = asm_ast.Reg(reg=asm_ast.A())
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-def _store_tail():
-    """`STA v_0; LDA #0; STA v_1; JMP store`, 9 bytes in zero page."""
-    return [
-        asm_ast.Mov(src=_A, dst=asm_ast.Data(name="__zpabi_store__v_0", offset=0)),
-        asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
-        asm_ast.Mov(src=_A, dst=asm_ast.Data(name="__zpabi_store__v_1", offset=0)),
-        asm_ast.Jump(target="store"),
-    ]
-
-
-def _fn(name, instrs):
-    return asm_ast.Function(name=name, is_global=True, params=[],
-                            instructions=instrs)
-
-
-def _load(name):
-    return asm_ast.Mov(src=asm_ast.Data(name=name, offset=0), dst=_A)
-
-
-class TestPass(unittest.TestCase):
-
-    def test_two_functions_share_their_tail(self):
-        prog = asm_ast.Program(top_level=[
-            _fn("f", [_load("a"), *_store_tail()]),
-            _fn("g", [_load("b"), *_store_tail()]),
-        ])
-        out = apply_shared_tails(prog, {}).top_level
-        self.assertEqual([tl.name for tl in out], ["f", "f@tail0", "g"])
-        self.assertEqual(out[1].instructions, _store_tail())
-        for fn in (out[0], out[2]):
-            self.assertEqual(fn.instructions[-1].target, "f@tail0")
-            self.assertEqual(len(fn.instructions), 2)
-
-    def test_short_tail_of_two_left_alone(self):
-        # `STA v; JMP store`, 5 bytes, would take 5 + 3 + 3.
-        tail = [asm_ast.Mov(src=_A, dst=asm_ast.Data(name="v", offset=0)),
-                asm_ast.Jump(target="store")]
-        prog = asm_ast.Program(top_level=[
-            _fn("f", [_load("a"), *tail]), _fn("g", [_load("b"), *tail]),
-        ])
-        self.assertEqual(apply_shared_tails(prog, {}), prog)
-
-    def test_labels_inside_are_matched_by_position(self):
-        # Each ends in a loop on a label of its own name.
-        def ends_in_loop(fn, label):
-            return _fn(fn, [
-                _load("a"),
-                asm_ast.Call(name="h"), asm_ast.Call(name="k"),
-                asm_ast.Label(name=label), asm_ast.Jump(target=label),
-            ])
-        prog = asm_ast.Program(top_level=[
-            ends_in_loop("f", ".loop@1"), ends_in_loop("g", ".loop@2"),
-        ])
-        out = apply_shared_tails(prog, {}).top_level
-        self.assertEqual(out[1].instructions[-2:], [
-            asm_ast.Label(name=".loop@1"), asm_ast.Jump(target=".loop@1"),
-        ])
-
-    def test_segment_starts_after_a_label_reached_from_outside(self):
-        # `g` branches into the middle of its tail, so the segment
-        # starts after `.mid`, which stays in `g` and names the jump.
-        tail = _store_tail()
-        g = [
-            _load("b"), asm_ast.Branch(cond=asm_ast.EQ(), target=".mid"),
-            tail[0], asm_ast.Label(name=".mid"), *tail[1:],
-        ]
-        f = [_load("a"), tail[0], asm_ast.Label(name=".x"), *tail[1:]]
-        prog = asm_ast.Program(top_level=[_fn("f", f), _fn("g", g)])
-        out = apply_shared_tails(prog, {}).top_level
-        self.assertEqual(out[1].instructions, tail[1:])
-        self.assertEqual(out[2].instructions[2:], [
-            tail[0], asm_ast.Label(name=".mid"),
-            asm_ast.Jump(target="f@tail0", reg_args=["A", "X", "Y"]),
-        ])
-
-    def test_pointer_in_slot_bytes_stays_in_its_function(self):
-        # The read through the pointer at $80 is `f`'s slot in `f` and
-        # `g`'s in `g`, which the linker may place apart, so the shared
-        # segment starts after it.
-        read = asm_ast.Mov(src=asm_ast.IndirectZp(address=0x80, offset=1),
-                           dst=_A)
-        prog = asm_ast.Program(top_level=[
-            _fn("f", [_load("a"), read, *_store_tail()]),
-            _fn("g", [_load("b"), read, *_store_tail()]),
-        ])
-        out = apply_shared_tails(
-            prog, {}, slot_addrs=frozenset({0x80, 0x81}),
-        ).top_level
-        self.assertEqual(out[1].instructions, _store_tail())
-        for fn in (out[0], out[2]):
-            self.assertEqual(fn.instructions[1], read)
-
-    def test_function_with_a_frame_left_alone(self):
-        frame = asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=2,
-                                         callee_saved_addrs=[])
-        prog = asm_ast.Program(top_level=[
-            _fn("f", [frame, _load("a"), *_store_tail()]),
-            _fn("g", [_load("b"), *_store_tail()]),
-        ])
-        self.assertEqual(apply_shared_tails(prog, {}), prog)
 
 
 # `store` takes its multiplier in X, so that `v` arrives in its slot

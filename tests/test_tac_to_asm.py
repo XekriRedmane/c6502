@@ -2,14 +2,7 @@ import unittest
 
 import asm_ast
 import tac_ast
-from tac_to_asm import (
-    translate_binary,
-    translate_function,
-    translate_instruction,
-    translate_program,
-    translate_unop_atoms,
-    translate_val,
-)
+from tac_to_asm import translate_function, translate_instruction, translate_unop_atoms, translate_val
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
@@ -1537,31 +1530,6 @@ class TestTranslateFunctionCall(unittest.TestCase):
         ])
 
 
-class TestTranslateProgram(unittest.TestCase):
-    def test_full_tree(self):
-        # Both sides plural: a one-function TAC program lowers to a
-        # one-function asm program. Param lists ride through.
-        prog = tac_ast.Program(
-            top_level=[tac_ast.Function(
-                name="main",
-                is_global=True,
-                params=[],
-                instructions=[tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstChar(value=42)))],
-            )],
-        )
-        expected = asm_ast.Program(
-            top_level=[asm_ast.Function(
-                name="main",
-                is_global=True, params=[],
-                instructions=[
-                    asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_REG_A),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
-                ],
-            )],
-        )
-        self.assertEqual(translate_program(prog), expected)
-
-
 class TestErrors(unittest.TestCase):
     def test_unknown_val_raises_type_error(self):
         stub = type("Stub", (tac_ast.Type_val,), {})
@@ -1705,126 +1673,6 @@ class TestSignExtendAndTruncate(unittest.TestCase):
             asm_ast.Mov(
                 src=asm_ast.Pseudo(name="@0.x", offset=1),
                 dst=asm_ast.Pseudo(name="%0", offset=1),
-            ),
-        ])
-
-
-class TestStaticVariableTranslation(unittest.TestCase):
-    """TAC `StaticVariable` and asm `StaticVariable` both carry a
-    typed `IntInit` / `LongInit` wrapper; the translation is a pure
-    rewrap, with the variant preserved end-to-end so asm_emit can
-    pick the right cell width (`DC.B` vs `DC.W`) at the final
-    emit."""
-
-    def test_int_init_passes_through(self):
-        prog = tac_ast.Program(top_level=[
-            tac_ast.StaticVariable(
-                name="g", is_global=True,
-                data_type=tac_ast.Int(),
-                init=[tac_ast.IntInit(value=42)],
-            ),
-        ])
-        out = translate_program(prog)
-        self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(
-                name="g", is_global=True,
-                init=[asm_ast.IntInit(value=42)],
-            ),
-        ])
-
-    def test_long_init_passes_through_as_long_init(self):
-        prog = tac_ast.Program(top_level=[
-            tac_ast.StaticVariable(
-                name="g", is_global=False,
-                data_type=tac_ast.Long(),
-                init=[tac_ast.LongInit(value=200)],
-            ),
-        ])
-        out = translate_program(prog)
-        self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(
-                name="g", is_global=False,
-                init=[asm_ast.LongInit(value=200)],
-            ),
-        ])
-
-    def test_long_long_init_passes_through(self):
-        # LongLongInit (signed 4B) rewraps 1-to-1.
-        prog = tac_ast.Program(top_level=[
-            tac_ast.StaticVariable(
-                name="g", is_global=True,
-                data_type=tac_ast.LongLong(),
-                init=[tac_ast.LongLongInit(value=1234567890)],
-            ),
-        ])
-        out = translate_program(prog)
-        self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(
-                name="g", is_global=True,
-                init=[asm_ast.LongLongInit(value=1234567890)],
-            ),
-        ])
-
-    def test_ulong_long_init_collapses_to_long_long_init(self):
-        # ULongLongInit collapses to LongLongInit on the asm side,
-        # mirroring UIntInit → IntInit and ULongInit → LongInit.
-        prog = tac_ast.Program(top_level=[
-            tac_ast.StaticVariable(
-                name="g", is_global=False,
-                data_type=tac_ast.ULongLong(),
-                init=[tac_ast.ULongLongInit(value=4000000000)],
-            ),
-        ])
-        out = translate_program(prog)
-        self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(
-                name="g", is_global=False,
-                init=[asm_ast.LongLongInit(value=4000000000)],
-            ),
-        ])
-
-    def test_zero_init_translates_one_to_one(self):
-        # `ZeroInit(N)` rewraps to its asm counterpart unchanged.
-        prog = tac_ast.Program(top_level=[
-            tac_ast.StaticVariable(
-                name="a", is_global=False,
-                data_type=tac_ast.Long(),
-                init=[tac_ast.ZeroInit(bytes=12)],
-            ),
-        ])
-        out = translate_program(prog)
-        self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(
-                name="a", is_global=False,
-                init=[asm_ast.ZeroInit(bytes=12)],
-            ),
-        ])
-
-    def test_array_init_list_translates_per_element(self):
-        # Array statics arrive at tac_to_asm with a flat list of
-        # typed inits in source-byte order. The translation is
-        # element-by-element (UIntInit → IntInit, ULongInit →
-        # LongInit, others 1-to-1).
-        prog = tac_ast.Program(top_level=[
-            tac_ast.StaticVariable(
-                name="a", is_global=False,
-                data_type=tac_ast.Long(),  # arrays collapse to Long
-                init=[
-                    tac_ast.IntInit(value=1),
-                    tac_ast.IntInit(value=2),
-                    tac_ast.IntInit(value=3),
-                ],
-            ),
-        ])
-        out = translate_program(prog)
-        self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(
-                name="a", is_global=False,
-                init=[
-                    asm_ast.IntInit(value=1),
-                    asm_ast.IntInit(value=2),
-                    asm_ast.IntInit(value=3),
-                ],
             ),
         ])
 
@@ -2023,7 +1871,6 @@ class TestTranslateJumpIfCmp(unittest.TestCase):
         # (%b), since we computed b < a.
         first_mov_src = out[0].src
         self.assertEqual(first_mov_src.name, "%b")
-
 
 
 class TestConstantIndexAndByteShift(unittest.TestCase):

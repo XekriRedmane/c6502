@@ -25,11 +25,14 @@
 #include "passes/capture_args.h"
 #include "passes/codegen_stage.h"
 #include "passes/front_end.h"
+#include "passes/ir_check.h"
 #include "passes/link_script.h"
 #include "passes/linker.h"
 #include "passes/registry_control_flow.h"
+#include "passes/text_stages.h"
 #include "passes/zp_globals.h"
 #include "stage_checks.h"
+#include "tac_sim_modes.h"
 
 namespace c6502::backend {
 
@@ -172,23 +175,35 @@ Compiled compile_one(const std::string& source, const passes::FrontEndOptions& f
   return out;
 }
 
-// Returns the response to a request of mode `lex`: the diagnostics lines
-// and then the error line, or the text `compile.py --lex` prints for
-// `source` (compile.py's `_format_tokens` of the preprocessor's output).
-std::string respond_lex(const std::string& source, const passes::FrontEndOptions& front) {
+// Returns the response to a request of mode `lex`, `parse`, `resolve`,
+// or `tac`: the diagnostics lines and then the error line, or the text
+// compile.py prints for `source` at that stage (compile.py's
+// `_format_tokens` of the preprocessor's output for `lex`, and pretty.py's
+// tree for the others). The IR checks run in the TAC optimizer's driver
+// for `tac` under `check_ir`, which `respond` turns on.
+std::string respond_text(const std::string& mode, const std::string& source,
+                         const passes::FrontEndOptions& front, bool inline_calls) {
   std::string err;
   std::vector<diagnostics::CompileWarning> found;
   std::optional<std::string> error;
-  std::string text;
+  passes::TextStageResult result;
   try {
     diagnostics::Collecting block(found);
-    text = lexer::format_tokens(passes::preprocess_source(source, front, err));
+    const std::string text = passes::preprocess_source(source, front, err);
+    if (mode == "lex") {
+      result.text = lexer::format_tokens(text);
+    } else {
+      const passes::TextStage stage = mode == "parse"     ? passes::TextStage::kParse
+                                      : mode == "resolve" ? passes::TextStage::kResolve
+                                                          : passes::TextStage::kTac;
+      result = passes::run_text_stage(stage, text, front.optimize, inline_calls);
+    }
   } catch (const CompileError& e) {
     error = stage_checks::error_text(e.python_type(), e.what());
   }
   std::string out = diagnostics_lines(err, found);
   if (error) return out + "error " + *error + "\n";
-  return out + section("text", text);
+  return out + section("text", result.text);
 }
 
 // Returns the front end's options for the request's arguments `kwargs`,
@@ -264,7 +279,6 @@ std::string respond_inputs(Lines& lines, const json::Value& kwargs, bool link) {
   // and for a link.
   options.link_metadata = true;
   options.emit = true;
-  const bool check_ir = ca::boolean(kwargs.get("check_ir"), false);
   const json::Value& inputs = required(kwargs, "inputs");
   if (inputs.kind != json::Value::Kind::kArray) {
     throw std::runtime_error("the backend request's inputs isn't a list");
@@ -290,12 +304,7 @@ std::string respond_inputs(Lines& lines, const json::Value& kwargs, bool link) {
         Compiled compiled = compile_one(std::string(bodies[k]), with_name, options);
         out += compiled.diagnostics;
         if (compiled.error) return out + "error " + *compiled.error + "\n";
-        if (check_ir) {
-          out += section("tac", asdl::dump(compiled.result.tac));
-          out += section("asm", asdl::dump(compiled.result.emitted.asm_prog));
-          out += section("asm2", asdl::dump(compiled.result.emitted.asm2_prog));
-        }
-        obj = binutils::assembler::assemble(compiled.result.emitted.text, name);
+        obj =binutils::assembler::assemble(compiled.result.emitted.text, name);
       } else if (kind == "asm") {
         obj = binutils::assembler::assemble(bodies[k], name);
       } else if (kind == "object" && link) {
@@ -371,25 +380,34 @@ std::string respond(const std::string& text) {
     throw std::runtime_error("not a backend request");
   }
   const std::string mode(lines.value("mode"));
-  if (mode != "source" && mode != "source-text" && mode != "lex" && mode != "objects" &&
-      mode != "link") {
+  const bool text_stage = mode == "lex" || mode == "parse" || mode == "resolve" || mode == "tac";
+  if (mode != "source" && mode != "source-text" && !text_stage && mode != "objects" &&
+      mode != "link" && !tac_sim_modes::is_tac_mode(mode)) {
     throw std::runtime_error("unknown backend mode " + mode);
   }
   const json::Value kwargs = json::parse(lines.value("args"));
+  // `check_ir` turns the IR checks on for the request, as
+  // `C6502_CHECK_IR=1` or `ir_check.enable()` does in Python.
+  const passes::ir_check::Enabled checks(ca::boolean(kwargs.get("check_ir"), false));
   if (mode == "objects" || mode == "link") return respond_inputs(lines, kwargs, mode == "link");
+  if (tac_sim_modes::is_tac_mode(mode)) {
+    return tac_sim_modes::respond(mode, kwargs, std::string(lines.section("source")));
+  }
   passes::FrontEndOptions front = front_options(kwargs);
   const json::Value& filename = required(kwargs, "filename");
   if (filename.kind == json::Value::Kind::kString) {
     front.filename = filename.string;
   }
   front.preprocess = ca::boolean(&required(kwargs, "preprocess"), true);
-  if (mode == "lex") return respond_lex(std::string(lines.section("source")), front);
+  if (text_stage) {
+    return respond_text(mode, std::string(lines.section("source")), front,
+                        ca::boolean(kwargs.get("inline"), true));
+  }
   passes::CodegenOptions options;
   options.optimize = front.optimize;
   options.inline_calls = ca::boolean(kwargs.get("inline"), true);
   options.link_metadata = ca::boolean(kwargs.get("link_metadata"), false);
   options.emit = mode == "source-text";
-  const bool check_ir = ca::boolean(kwargs.get("check_ir"), false);
   const std::string source(lines.section("source"));
 
   const Compiled compiled = compile_one(source, front, options);
@@ -407,16 +425,9 @@ std::string respond(const std::string& text) {
     }
     out += "]\n";
   }
-  if (check_ir) {
-    out += section("tac", asdl::dump(result.tac));
-  }
   if (!options.emit) {
     out += section("asm", asdl::dump(result.emitted.asm_prog));
     return out;
-  }
-  if (check_ir) {
-    out += section("asm", asdl::dump(result.emitted.asm_prog));
-    out += section("asm2", asdl::dump(result.emitted.asm2_prog));
   }
   out += section("text", result.emitted.text);
   return out;

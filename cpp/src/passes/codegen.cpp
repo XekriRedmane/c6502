@@ -18,6 +18,7 @@
 
 #include "asm_emit.h"
 #include "passes/asm_to_asm2.h"
+#include "passes/ir_check.h"
 #include "passes/slot_sharing.h"
 
 namespace c6502::passes {
@@ -56,6 +57,7 @@ OptimizedProgram optimized_program(asm_ast::Program prog, const AsmContext& ctx,
   // storage dropped and `__zp_init` added (passes/zp_globals.py).
   out.zp_records = link_records(r.prog, zp);
   out.prog = place_zp_globals(std::move(r.prog), zp, footprints);
+  ir_check::check_asm(out.prog, "the -O pipeline");
   check_shares(out.prog, region.shares);
   return out;
 }
@@ -120,6 +122,7 @@ EmitResult unoptimized_text(asm_ast::Program prog, const AsmContext& ctx,
   asm_ast::Program unplaced = unoptimized_region(std::move(prog), ctx, zp_addrs);
   EmitResult out;
   out.asm_prog = place_zp_globals(unplaced, args.zp, args.footprints);
+  ir_check::check_asm(out.asm_prog, "the pipeline");
   out.asm2_prog = lower_to_asm2(out.asm_prog);
   asm_emit::EmitOptions options;
   options.zp_slot_symbols = args.equs;

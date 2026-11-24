@@ -218,11 +218,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Claude Code local state (per-clone settings, transcripts, etc.).
-# Exclude everything directly in .claude/ (settings.json,
-# settings.local.json, etc.) but allow the shared skills tree.
-.claude/*
-!.claude/skills/
+# The agents' git worktrees. Everything else in .claude/ (skills,
+# hooks, and settings) is shared.
+.claude/worktrees/
 
 # Failing programs written by the fuzzers in fuzz/.
 fuzz_out/
@@ -237,3 +235,7 @@ examples/zork/interpreter
 # tools/capture_passes.py records.
 cpp/build/
 /captures/
+
+# Obsidian's per-machine state in the brain/ vault.
+brain/.obsidian/workspace.json
+brain/.obsidian/workspace-mobile.json

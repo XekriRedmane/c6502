@@ -11,6 +11,7 @@
 
 #include "backend.h"
 #include "doctest.h"
+#include "passes/ir_check.h"
 
 namespace {
 
@@ -266,13 +267,14 @@ TEST_CASE("backend answers a request for the harness with the program") {
   CHECK(got.find("\ntext ") == std::string::npos);
 }
 
-TEST_CASE("backend gives the TAC and the programs with the IR checks on") {
+TEST_CASE("backend checks the IR itself with the IR checks on") {
+  // The checks run in C++, so the response is the one without them, and
+  // they are off again once the request is answered.
   const std::string got =
       c6502::backend::respond(request(kSource, true, "source-text", true, true));
-  CHECK(got.starts_with("stderr 0\nwarnings []\ntac "));
-  CHECK(got.find("\nasm ") != std::string::npos);
-  CHECK(got.find("\nasm2 ") != std::string::npos);
-  CHECK(got.find("\ntext ") != std::string::npos);
+  CHECK(got == c6502::backend::respond(request(kSource, true, "source-text", true, false)));
+  CHECK(got.starts_with("stderr 0\nwarnings []\ntext "));
+  CHECK_FALSE(c6502::passes::ir_check::enabled());
 }
 
 TEST_CASE("backend gives the warnings and the error of a rejected program") {
@@ -337,4 +339,70 @@ TEST_CASE("backend gives the warnings and the error of --lex") {
   CHECK(got.ends_with("]]\nerror {\"type\": \"LexError\", \"message\": \"2:9: a digit "
                       "separator has to be between two digits, and the one after '1' in "
                       "\\\"1'\\\" isn't followed by a digit\"}\n"));
+}
+
+TEST_CASE("backend answers a request for --parse with pretty.py's tree") {
+  // Python's `compile.py --parse` prints this text for the program.
+  const std::string got = c6502::backend::respond(request("int x = 1;\n", false, "parse"));
+  const std::string tree =
+      "Program(\n"
+      "  declaration=[\n"
+      "    VarDecl(\n"
+      "      var_decl=Type_var_decl(\n"
+      "        name='x',\n"
+      "        init=Constant(\n"
+      "          const=ConstInt(\n"
+      "            value=1,\n"
+      "          ),\n"
+      "          data_type=None,\n"
+      "        ),\n"
+      "        data_type=Int(),\n"
+      "        storage_class=None,\n"
+      "        abi_annotation=None,\n"
+      "        placement=None,\n"
+      "        section=None,\n"
+      "        is_constexpr=False,\n"
+      "      ),\n"
+      "    ),\n"
+      "  ],\n"
+      ")\n";
+  CHECK(got == "stderr 0\nwarnings []\ntext " + std::to_string(tree.size()) + "\n" + tree);
+}
+
+TEST_CASE("backend gives the error of the pass --resolve stops after") {
+  const std::string source = "int main(void) { return y; }\n";
+  CHECK(c6502::backend::respond(request(source, false, "resolve")) ==
+        "stderr 0\nwarnings []\nerror {\"type\": \"IdentifierResolutionError\", "
+        "\"message\": \"undeclared identifier 'y'\"}\n");
+  // `--parse` stops before the name is looked up.
+  CHECK(c6502::backend::respond(request(source, false, "parse")).find("\ntext ") !=
+        std::string::npos);
+}
+
+TEST_CASE("backend answers --tac -O with the optimized TAC") {
+  // Python's `compile.py --tac -O` folds the sum to the constant 3. With
+  // the IR checks on, the driver checks the TAC itself, so the response
+  // holds the text alone.
+  const std::string got = c6502::backend::respond(
+      request("int main(void) { return 1 + 2; }\n", true, "tac", true, true));
+  const std::string tree =
+      "Program(\n"
+      "  top_level=[\n"
+      "    Function(\n"
+      "      name='main',\n"
+      "      is_global=True,\n"
+      "      params=[],\n"
+      "      instructions=[\n"
+      "        Ret(\n"
+      "          val=Constant(\n"
+      "            const=ConstInt(\n"
+      "              value=3,\n"
+      "            ),\n"
+      "          ),\n"
+      "        ),\n"
+      "      ],\n"
+      "    ),\n"
+      "  ],\n"
+      ")\n";
+  CHECK(got == "stderr 0\nwarnings []\ntext " + std::to_string(tree.size()) + "\n" + tree);
 }

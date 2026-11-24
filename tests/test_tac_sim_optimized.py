@@ -3,6 +3,7 @@ optimizer passes, and `fuzz.tac_passes`, which uses it to name the pass
 that changes a program's result."""
 from __future__ import annotations
 
+import os
 import shutil
 import unittest
 
@@ -126,6 +127,36 @@ class TestTacPasses(unittest.TestCase):
     def test_no_pass_changes_a_correct_program(self) -> None:
         self.assertIsNone(first_changing_pass(self._SRC))
 
+    def test_variable_without_a_value_before_a_loop(self) -> None:
+        # SSA gives `c` a Phi at the loop's header whose argument from
+        # the entry is `c` itself, which has no value there, and SSA
+        # destruction copies it. Neither may raise, since nothing reads
+        # the value (tests/chapter_8/valid/continue.c).
+        src = """
+            int main(void) {
+                int c;
+                for (int i = 0; i < 4; i++) c = i;
+                return c;
+            }
+        """
+        self.assertIsNone(first_changing_pass(src))
+
+    def test_object_another_unit_defines(self) -> None:
+        # DirectMemberAccess stores to `ext.a[1]` by name, and `ext`
+        # has no StaticVariable here, since another unit defines it
+        # (tests/chapter_18/valid/parameters/pass_args_on_page_boundary.c).
+        src = """
+            struct s { char a[3]; };
+            extern struct s ext;
+            int main(void) { ext.a[1] = 5; return ext.a[1]; }
+        """
+        self.assertIsNone(first_changing_pass(src))
+
+    @unittest.skipIf(
+        os.environ.get("C6502_CPP_BACKEND") == "1",
+        "breaks a Python pass, which the C++ port doesn't run "
+        "(cpp/README.md, \"The TAC interpreter\")",
+    )
     def test_names_the_pass(self) -> None:
         # With narrow_widened_arith's check that a global is unchanged
         # since the extend read it turned off, it reads g after h()

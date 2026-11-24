@@ -1819,6 +1819,16 @@ These choices are Robert's.
    that compile.py ignore it from the removal on, and that the
    documents stop mentioning it.
 
+Robert decided on 23 Nov 2026. He took the recommendations of choices
+1 to 6 and 8, so the names and the `compile.py:` messages stay until
+step 9, the shims stay, `--parse`, `--resolve`, and `--tac` print
+`pretty`, the checks after Python are the golden files with the frozen
+captures, and `ir_check` is ported. For choice 7 he chose to port
+`tac_sim` to C++ in step 8, so no Python reader of the C++ tables is
+written, and G4 below ports the interpreter instead. He also asked that
+the groups of step 8 run one at a time, each merged, checked, and
+pushed before the next one starts, and the same for the steps after it.
+
 ### The groups
 
 Each group works in its own worktree, adds C++ tests for what it ports,
@@ -2836,3 +2846,87 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   file. The suite passes with the variable set (4,965 tests, with
   `C6502_CHECK_IR=1`) and without it (4,965 tests), and the build
   and the C++ tests pass with MSVC 19.36 and GCC 12.2.
+- 23 Nov 2026: group G1 of step 8, the stages that print a tree.
+  `asdl.py --cpp` generates a `pretty` for each of the four IRs, which
+  writes pretty.py's text (`asdl::py_pretty`, and `c6502cpp roundtrip
+  --pretty` for a dump), and it matches pretty.py on the four IRs of
+  three programs, one of them with strings that need escapes
+  (tests/test_cpp_backend.py, `TestPretty`). The backend's modes
+  `parse`, `resolve`, and `tac` (src/passes/text_stages.h) run the
+  front end to where `_run_stage` stops, and compile.py sends
+  `--parse`, `--resolve`, and `--tac` and `_run_stage` for them through
+  `cpp_backend.stage_source` under `C6502_CPP_BACKEND=1`, so that run
+  as a script it imports none of the Python pipeline for any stage.
+  tools/compare_backends.py's modes `parse`, `resolve`, `resolveO`,
+  `tac`, and `tacO` ran the 1,788 programs of the corpus in each, 8,940
+  commands, with no difference in any output, message, exit status, or
+  file. The suite passes with the variable set (4,974 tests, with
+  `C6502_CHECK_IR=1`) and without it (4,974 tests), and the build and
+  the C++ tests pass with MSVC 19.36 and GCC 12.2.
+- 23 Nov 2026: group G3 of step 8, `ir_check` in C++ (cpp/README.md,
+  "The IR checks"). src/passes/ir_check.* has every check and message
+  of passes/ir_check.py, and with the request's `check_ir` set, which
+  cpp_backend.py sets from `C6502_CHECK_IR=1` or `ir_check.enable()`,
+  the C++ pipeline runs each check where the Python pipeline runs it.
+  A failed check throws `InternalError` with `IRCheckError`'s message,
+  which reaches Python as an AssertionError. The response carries no
+  dump for the checks any more, so under the switch compile.py run as
+  a script imports no module of passes/ for any stage with
+  `C6502_CHECK_IR=1` either. test_ir_check.py's 20 tests, the decimal
+  region checks of test_bcd_builtins.py, and a case for each raise site
+  are doctest cases with Python's messages (tests/ir_check_cases.h).
+  With `C6502_CHECK_IR=1`, tools/compare_backends.py compared 7,156
+  jobs of 11,782 commands and the 3,666 commands of its modes `tac` and
+  `tacO` with no difference and no check raised. Three passes broken
+  the same way in both compilers, one at a time, failed with the same
+  message in both: ConstantFold dropping `x + 1` gave "after
+  ConstantFold, function 'f': Ret reads %0.1, which nothing defines",
+  dead_label_drop dropping the labels of `g` gave "after a peephole
+  sweep, function 'g': branch to missing label .loop@0_break; jump to
+  missing label .loop@0_continue" with and without `-O`, and
+  `expand_decimal_arith` without its `CLD` gave "after asm_to_asm2,
+  function 'add': Return at 10 runs with the decimal flag set (SED at
+  2)" under `-O`. The suite passes with `C6502_CHECK_IR=1` with the
+  variable set and without it (4,955 tests each, 41 skipped), the
+  fuzzers with both set found nothing wrong in 150 programs each of
+  `exprs`, `calls`, and `stmts` from seed 3000, and the build and the
+  C++ tests pass with MSVC 19.36 and GCC 12.2. `-c -O` of Zork's 11
+  units in one command, best of three, took 7.16 s in Python and 8.75
+  s with the checks, and 1.33 s and 1.69 s through the C++ port.
+- 23 Nov 2026: group G4 of step 8 ported tac_sim.py to C++
+  (`tac_sim::Simulator`, cpp/README.md, "The TAC interpreter"), as
+  Robert chose in place of a Python reader of the C++ tables. The
+  backend's modes `tac-run`, `tac-observe`, and `tac-falls-off` serve
+  `tests.test_sim_chapters._run_program` (with fuzz/runner.py's `tac`
+  path), fuzz/reduce.py's `_tac_results` and `falls_off_end`, and
+  fuzz/tac_passes.py's `first_changing_pass`, which under
+  `C6502_CPP_BACKEND=1` import none of the Python front end,
+  `c99_to_tac`, the TAC optimizer, or tac_sim.py. The TAC optimizer's
+  C++ driver calls an observer after each step, as Python's
+  `PhaseDriver.observer` is called. tools/compare_tac_sim.py ran the
+  1,788 programs of the corpus through both interpreters, on the
+  unoptimized TAC, on the optimized TAC, and with the observer, with
+  no difference, and the observer found no pass that changes a result.
+  Before two fixes it found five, all from limits of the interpreter,
+  which both interpreters shared: a Phi or SSA destruction's copy of a
+  variable without a value (`int c;` before a loop that assigns it)
+  raised "uninitialized var", and an object that another unit defines
+  (`extern struct s x;`) had no address for the stores by name that
+  `direct_member_access` makes. Both are fixed in Python and C++. With
+  narrow_widened_arith's check of a global broken in C++, `tac-observe`
+  named the pass and the function, and fuzz/reduce.py `--tac-opt`
+  reduced a program under the switch. After the merge of G1 and G3,
+  the TAC modes check the IR in the C++ driver with the request's
+  `check_ir`, and tools/compare_tac_sim.py with `C6502_CHECK_IR=1`
+  compared the corpus again in 303 s with 14 processes, with no
+  difference and no change by a pass. On an idle machine, with
+  `-j 10`, the fuzzers (seeds 3000 to 3149 of each) took 6, 6, and 7 s
+  with the switch and Python's TAC path (at ae37758) and 4, 5, and 6 s
+  with the C++ path, none wrong. A program's TAC path took 10.7, 16.9,
+  and 23.0 ms in Python (exprs, calls, stmts) and 11.8, 12.5, and
+  14.0 ms in C++, of which about 7 ms is starting c6502cpp. The suite
+  passes with `C6502_CHECK_IR=1` with the variable set (4,982 tests, 23
+  skipped) and without it (4,983, 22 skipped), and the build and the
+  C++ tests (3,352 cases) pass with MSVC 19.36 and GCC 12.2. The C++
+  interpreter runs a recursion of up to 100,000 calls, where Python's
+  raises RecursionError at about 330.

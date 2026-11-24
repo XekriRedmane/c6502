@@ -24,8 +24,11 @@ namespace c6502::backend {
 // false when the text is the preprocessor's output already (as
 // `compile._run_stage` is given it), `optimize` for `-O`, `inline`,
 // false when `-O` doesn't inline the calls of small `static` functions
-// (tests/no_inlining.py), `check_ir`, and `link_metadata`, for the
-// unoptimized text of `-c`. The runtime helpers' HARGS footprints come
+// (tests/no_inlining.py), `check_ir`, which turns on the IR checks of
+// src/passes/ir_check.h for the request, and `link_metadata`, for the
+// unoptimized text of `-c`. A failed IR check throws `InternalError`,
+// which ends the process with status 3, as any other internal error
+// does. The runtime helpers' HARGS footprints come
 // from the copy of rtlib/helpers.py compiled into the program
 // (src/rtlib/helpers.h).
 //
@@ -46,12 +49,6 @@ namespace c6502::backend {
 // the Python class of the exception and its message. `source-text` goes
 // on to the `-S` text, and the rest of its response is
 //
-//     tac <length>              (with check_ir)
-//     <the dump of the TAC that code generation lowered>
-//     asm <length>              (with check_ir)
-//     <the finished asm program's dump>
-//     asm2 <length>             (with check_ir)
-//     <the asm2 program's dump>
 //     text <length>
 //     <the -S text>
 //
@@ -59,8 +56,6 @@ namespace c6502::backend {
 // assembles the program itself. The rest of its response is
 //
 //     symbols <JSON [[name, address], ...]>
-//     tac <length>              (with check_ir)
-//     <the dump of the TAC that code generation lowered>
 //     asm <length>
 //     <the finished asm program's dump>
 //
@@ -76,6 +71,21 @@ namespace c6502::backend {
 //
 //     text <length>
 //     <one `<line>:<col>`, tab, kind, tab, value line for each token>
+//
+// `parse`, `resolve`, and `tac` are `compile.py --parse`, `--resolve`,
+// and `--tac` (src/passes/text_stages.h), which run the preprocessor
+// (with `preprocess`) and the front end to the point where compile.py's
+// `_run_stage` stops, with `-O` for `resolve` and `tac`, and `inline`
+// for `tac -O`. `link_metadata` doesn't apply. Their response has the
+// `stderr` and `warnings` lines, and then the `error` line of the pass
+// that rejected the program, or
+//
+//     text <length>
+//     <pretty.py's text of the tree, and a newline>
+//
+// The modes, in the order of compile.py's stages, are `lex`, `parse`,
+// `resolve`, `tac`, `source-text` (`-S`), `source` (the simulator
+// harness), `objects` (`-c`), and `link`.
 //
 // The modes `objects` (compile.py's `-c`) and `link` take several inputs,
 // so that one process serves one run of compile.py. Their request is
@@ -105,9 +115,8 @@ namespace c6502::backend {
 //
 //     input <k>
 //
-// followed, for a C input, by the `stderr` and `warnings` lines above,
-// and under `check_ir` by the `tac`, `asm`, and `asm2` sections. Then
-// it has one of
+// followed, for a C input, by the `stderr` and `warnings` lines above.
+// Then it has one of
 //
 //     error <JSON {"type": ..., "message": ...}>
 //     write-error <JSON {"type": ..., "message": ...}>
@@ -129,6 +138,10 @@ namespace c6502::backend {
 // for an error of the script or the link, a `struct.error` of the
 // executable, an output file that couldn't be opened or written, and
 // the length of the executable the command wrote to `output`.
+//
+// The modes `tac-run`, `tac-observe`, and `tac-falls-off` run the TAC
+// interpreter on a source, with the request of the mode `source`
+// (src/tac_sim_modes.h describes their responses).
 //
 // Throws `std::runtime_error` for a request that can't be read, and
 // passes on the `InternalError`s of the passes.

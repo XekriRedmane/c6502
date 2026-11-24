@@ -303,6 +303,37 @@ class Simulator:
             if isinstance(top, tac_ast.StaticVariable):
                 self._lay_down_static(top)
 
+    def _static_address(self, name: str) -> int | None:
+        """The address of the object with static storage `name`, or None
+        for a name that isn't one. An object that another unit defines,
+        such as `extern struct s x;`, has no StaticVariable, and gets
+        zeroed memory of its own the first time the program uses it,
+        which every frame then shares. An object at a fixed address
+        (`[[c6502::address(addr)]]`) is an I/O register or the memory of
+        a program the interpreter doesn't run, so it gets none, and a
+        use of it raises as before, where a loop that polls a zeroed
+        register would never end."""
+        addr = self._static_addr.get(name)
+        if addr is not None:
+            return addr
+        sym = self.symbols.get(name)
+        if (
+            sym is None or not isinstance(sym.attrs, StaticAttr)
+            or sym.attrs.address is not None
+        ):
+            return None
+        addr = self.memory.allocate(_sizeof(sym.type, self.types))
+        self._static_addr[name] = addr
+        return addr
+
+    def _static_slot(self, name: str) -> int:
+        """The address of the object with static storage `name`, which
+        raises KeyError when it has none (`_static_address`)."""
+        addr = self._static_address(name)
+        if addr is None:
+            raise KeyError(name)
+        return addr
+
     def _lay_down_static(self, sv: tac_ast.StaticVariable) -> None:
         addr = self._static_addr[sv.name]
         for item in sv.init:
@@ -320,14 +351,14 @@ class Simulator:
                 case tac_ast.DoubleInit(bits=b):
                     self.memory.store(addr, b, 8); addr += 8
                 case tac_ast.AddressInit(name=n, offset=off):
-                    target = self._static_addr.get(n)
+                    target = self._static_address(n)
                     if target is None:
                         target = self._function_addr.get(n)
                     if target is None:
                         raise TacSimError(f"AddressInit references unknown {n!r}")
                     self.memory.store(addr, target + off, 2); addr += 2
                 case tac_ast.AddressByteInit(name=n, offset=off, high=hi):
-                    target = self._static_addr.get(n)
+                    target = self._static_address(n)
                     if target is None:
                         target = self._function_addr.get(n)
                     if target is None:
@@ -420,7 +451,7 @@ class Simulator:
         sym = self.symbols.get(name)
         if sym is None or not isinstance(sym.attrs, StaticAttr):
             raise TacSimError(f"not a static variable: {name!r}")
-        addr = self._static_addr[name]
+        addr = self._static_slot(name)
         signed, w, is_fp = _type_info(sym.type)
         raw = self.memory.load(addr, w)
         if is_fp:
@@ -481,6 +512,10 @@ class Simulator:
                         dst_addr, src_addr,
                         _sizeof(self.symbols[d.name].type, self.types),
                     )
+                elif self._is_unset(frame, s):
+                    # SSA destruction's copy of a Phi argument that has
+                    # no value (`_run_phis`).
+                    self._unset(frame, d)
                 else:
                     v, _ = self._read(frame, s)
                     self._write(frame, d, v)
@@ -563,7 +598,7 @@ class Simulator:
             case tac_ast.IndexedLoad(name=name, index=i, dst=d):
                 # Static-array indexed load: take name's static
                 # address, add the byte index, read N bytes.
-                base = self._static_addr.get(name)
+                base = self._static_address(name)
                 if base is None and self._is_local_aggregate(name):
                     # A member of an automatic struct, union, or
                     # array, read in place (direct_member_access).
@@ -596,7 +631,7 @@ class Simulator:
                 # Mirror of IndexedLoad for stores: take name's
                 # static address, add the byte index, write N
                 # bytes from src.
-                base = self._static_addr.get(name)
+                base = self._static_address(name)
                 if base is None and self._is_local_aggregate(name):
                     base = self._address_of(frame, tac_ast.Var(name=name))
                 if base is None and self._is_local_access(name, i):
@@ -696,9 +731,40 @@ class Simulator:
                     f"Phi for {phi.dst.name} has no argument from "
                     f"{frame.prev_label!r}"
                 )
+            if self._is_unset(frame, arg.source):
+                # SSA construction gives a Phi the variable's own name
+                # for a path on which the variable has no value yet, as
+                # for `int c;` before a loop that assigns it. The Phi's
+                # destination then has no value either, and only a read
+                # of it raises.
+                values.append(None)
+                continue
             values.append(self._read(frame, arg.source)[0])
         for phi, value in zip(phis, values):
-            self._write(frame, phi.dst, value)
+            if value is None:
+                self._unset(frame, phi.dst)
+            else:
+                self._write(frame, phi.dst, value)
+
+    def _is_unset(self, frame: _Frame, val) -> bool:
+        """True iff `val` is an automatic scalar with no value yet, which
+        `_read` would raise "uninitialized var" for."""
+        if not isinstance(val, tac_ast.Var) or val.name not in self.symbols:
+            return False
+        n = val.name
+        return (
+            not isinstance(self.symbols[n].attrs, StaticAttr)
+            and n not in frame.local_addr
+            and n not in frame.env
+        )
+
+    @staticmethod
+    def _unset(frame: _Frame, val) -> None:
+        """Takes the value of the automatic scalar `val` away, so that a
+        read of it raises "uninitialized var". An object in memory keeps
+        its bytes."""
+        if isinstance(val, tac_ast.Var):
+            frame.env.pop(val.name, None)
 
     def _is_aggregate_var(self, val) -> bool:
         return (
@@ -747,8 +813,9 @@ class Simulator:
         # the runtime pointer value.
         if name in self._function_addr:
             return self._function_addr[name]
-        if name in self._static_addr:
-            return self._static_addr[name]
+        addr = self._static_address(name)
+        if addr is not None:
+            return addr
         if name in frame.local_addr:
             return frame.local_addr[name]
         # Lazy allocation for address-taken locals: the pre-pass
@@ -777,7 +844,7 @@ class Simulator:
                 ti = _type_info(sym.type)
                 _, w, _ = ti
                 if isinstance(sym.attrs, StaticAttr):
-                    return self.memory.load(self._static_addr[n], w), ti
+                    return self.memory.load(self._static_slot(n), w), ti
                 if n in frame.local_addr:
                     return self.memory.load(frame.local_addr[n], w), ti
                 if n not in frame.env:
@@ -792,7 +859,7 @@ class Simulator:
         _, w, _ = _type_info(sym.type)
         masked = raw & _mask(w)
         if isinstance(sym.attrs, StaticAttr):
-            self.memory.store(self._static_addr[val.name], masked, w)
+            self.memory.store(self._static_slot(val.name), masked, w)
         elif val.name in frame.local_addr:
             self.memory.store(frame.local_addr[val.name], masked, w)
         else:

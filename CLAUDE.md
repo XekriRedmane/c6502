@@ -347,22 +347,25 @@ class and message (`cpp_backend._exception`, a subclass of the same name
 for Lark's syntax errors), so `main` reports it as Python's front end
 does. `_run_stage("codegen", text)`, which tests call with the
 preprocessor's output, sends the text with `preprocess` off. Python
-reads no program back, except under `C6502_CHECK_IR=1`, where the
-response holds the TAC that code generation lowered and the finished asm
-and asm2 programs, which `ir_check` checks, since it isn't ported. The
-checks between the passes don't run. The simulator harness
+reads no program back. Under `C6502_CHECK_IR=1` (or after
+`ir_check.enable()`), the request's `check_ir` turns on the C++ port of
+`ir_check` (cpp/src/passes/ir_check.h), which checks the IR at every
+place the Python pipeline checks it, and a failed check comes back as
+an AssertionError with `IRCheckError`'s message. The simulator harness
 (`sim.harness.compile_to_asm`) sends the source text with no
 preprocessor arguments and takes back the finished asm program in the
 dump format, with its slot symbols, since it assembles the program
 itself, and it returns those two alone. `--lex` goes to C++ too, in the
 backend's mode `lex` (`cpp_backend.lex_source`), which preprocesses the
 source and prints its tokens, and `_run_stage("lex", text)` sends the
-text with `preprocess` off. `--parse`, `--resolve`, and `--tac` stay in
-Python. Run as a script with the variable set and
-one of the C++ stages, compile.py stops before its pipeline's imports
-(`_cpp_runs_everything`), so `--lex`, `-S`, and `-c` import none of the parser,
-Lark, pcpp, or the front end's passes, unless `C6502_CHECK_IR=1` loads
-`ir_check`, whose helpers import the type checker.
+text with `preprocess` off. `--parse`, `--resolve`, and `--tac` go to
+C++ in the modes `parse`, `resolve`, and `tac` (`cpp_backend.stage_source`,
+src/passes/text_stages.h), which run the front end to where
+`_run_stage` stops and print the tree with the `pretty` that `asdl.py
+--cpp` generates for each IR, the text of pretty.py. Run as a script with the variable set,
+compile.py stops before its pipeline's imports for every stage
+(`_cpp_runs_everything`), so no stage imports the parser,
+Lark, pcpp, or the modules of passes/, with `C6502_CHECK_IR=1` too.
 
 `-c` and a link go to C++ in one request for the whole run
 (`compile._cpp_build`, `cpp_backend.build`, and the modes `objects` and
@@ -1534,3 +1537,13 @@ simulation-based tests still pass.
   top is the live list of optimizer bugs.
 - `tests/test_sim_asm_optimized.py` — chapter_1..12 corpus run
   through `-O` with end-to-end return-value assertions.
+
+## Brain
+
+The `brain/` directory is an Obsidian vault, persistent memory across
+sessions (from brainmaxxing, https://github.com/poteto/brainmaxxing).
+
+- **Read first.** Read brain files relevant to your task before acting.
+- **Write** after mistakes, corrections, or notable codebase learnings.
+- **Structure:** One topic per file. Directories with `[[wikilink]]` indexes, no inlined content.
+- **Maintain:** Delete outdated notes and stale artifacts.

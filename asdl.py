@@ -645,6 +645,21 @@ def _cpp_header(mod: Module, source: str, name: str) -> str:
             for c in t.constructors:
                 out.append(f"void repr(std::string& out, const {c.name}& v);")
     out.append("")
+    out.append("// pretty.py's text of each value at the indentation level `depth`:")
+    out.append("// the class name, a `name=value,` line for each field one level")
+    out.append("// deeper, lists one item to a line, and Python's `repr` of each leaf.")
+    out.append("// `asdl::py_pretty` returns it.")
+    for t in mod.types:
+        out.append(
+            f"void pretty(std::string& out, const Type_{t.name}& v, int depth);"
+        )
+        if not t.is_product:
+            for c in t.constructors:
+                out.append(
+                    f"void pretty(std::string& out, const {c.name}& v, "
+                    "int depth);"
+                )
+    out.append("")
     out.append(f"}}  // namespace c6502::{name}")
     return "\n".join(out) + "\n"
 
@@ -798,6 +813,89 @@ def _cpp_repr_function(struct: str, fields: list[Field],
     return out
 
 
+def _py_fields(t: Type, c: Constructor) -> list[Field]:
+    """Returns a constructor's fields in the order `dataclasses.fields`
+    gives them for its Python class: the sum type's attributes, which
+    live on the base class, and then the constructor's own fields."""
+    return list(t.fields) + list(c.fields)
+
+
+def _cpp_pretty_value(f: Field, expr: str, group: set[str],
+                      indent: str, depth: str) -> list[str]:
+    """Returns the statements that append pretty.py's text of one
+    element `expr` of field `f`, at the indentation level `depth`, to
+    `out`. A leaf is Python's `repr` of its value, and a string's is
+    `pcpp::py_repr`, which escapes every code point that
+    `str.isprintable()` rejects."""
+    if f.type in ("identifier", "string"):
+        return [f"{indent}out += ::c6502::pcpp::py_repr({expr});"]
+    if f.type == "int":
+        return [f"{indent}out += {_RT}::int_to_string({expr});"]
+    if f.type == "bool":
+        return [f'{indent}out += {expr} ? "True" : "False";']
+    if f.type in group and not f.sequence:
+        return [f"{indent}pretty(out, *{expr}, {depth});"]
+    return [f"{indent}pretty(out, {expr}, {depth});"]
+
+
+def _cpp_pretty_field(f: Field, expr: str, group: set[str]) -> list[str]:
+    """Returns the statements that append pretty.py's text of field `f`,
+    whose `name=` is at the level `depth + 1`. A list that isn't empty
+    has one item to a line, each followed by a comma, at the level
+    `depth + 2`, and its `]` on a line of its own at the field's
+    level."""
+    if f.sequence:
+        out = [f"  if ({expr}.empty()) {{", '    out += "[]";', "  } else {"]
+        out.append('    out += "[";')
+        out.append(f"    for (const auto& e : {expr}) {{")
+        out.append("      newline(out, depth + 2);")
+        out.extend(_cpp_pretty_value(f, "e", group, "      ", "depth + 2"))
+        out.append("      out += ',';")
+        out.append("    }")
+        out.append("    newline(out, depth + 1);")
+        out.append("    out += ']';")
+        out.append("  }")
+        return out
+    if f.optional:
+        out = [f"  if ({expr}) {{"]
+        out.extend(_cpp_pretty_value(
+            f, f"(*{expr})", group, "    ", "depth + 1",
+        ))
+        out.append("  } else {")
+        out.append('    out += "None";')
+        out.append("  }")
+        return out
+    return _cpp_pretty_value(f, expr, group, "  ", "depth + 1")
+
+
+def _cpp_pretty_function(struct: str, fields: list[Field],
+                         group: set[str]) -> list[str]:
+    """Returns the function that appends pretty.py's text of a
+    constructor's (or product's) struct at the indentation level
+    `depth` to `out`: `Name()` for one without fields, and otherwise
+    `Name(`, a `name=value,` line for each field one level deeper, and
+    `)` on a line of its own at `depth`."""
+    if not fields:
+        return [
+            f"void pretty(std::string& out, const {struct}&, int) {{",
+            f'  out += "{struct}()";',
+            "}",
+            "",
+        ]
+    out = [f"void pretty(std::string& out, const {struct}& v, int depth) {{"]
+    out.append(f'  out += "{struct}(";')
+    for f in fields:
+        out.append("  newline(out, depth + 1);")
+        out.append(f'  out += "{_field_name(f)}=";')
+        out.extend(_cpp_pretty_field(f, f"v.{_cpp_member(f)}", group))
+        out.append("  out += ',';")
+    out.append("  newline(out, depth);")
+    out.append("  out += ')';")
+    out.append("}")
+    out.append("")
+    return out
+
+
 def _cpp_source(mod: Module, source: str, name: str) -> str:
     out: list[str] = [
         f"// Generated from {source} by `asdl.py --cpp`. Do not edit.",
@@ -805,9 +903,17 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
         "",
         "#include <utility>",
         "",
+        '#include "pcpp_text.h"',
         '#include "pyrepr.h"',
         "",
         f"namespace c6502::{name} {{",
+        "",
+        "// Starts a line of pretty.py's text at the indentation level",
+        "// `depth`, two spaces to a level.",
+        "[[maybe_unused]] static void newline(std::string& out, int depth) {",
+        "  out += '\\n';",
+        "  out.append(static_cast<std::size_t>(2 * depth), ' ');",
+        "}",
         "",
     ]
     for group_types in _type_sccs(mod):
@@ -817,6 +923,7 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
                 struct = f"Type_{t.name}"
                 out.extend(_cpp_body_functions(struct, t.name, t.fields, group))
                 out.extend(_cpp_repr_function(struct, t.fields, group))
+                out.extend(_cpp_pretty_function(struct, t.fields, group))
                 out.append(
                     f"{struct} read({_RT}::Reader& r, {_RT}::Tag<{struct}>) {{"
                 )
@@ -831,6 +938,9 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
                 ))
                 out.extend(_cpp_repr_function(
                     c.name, _ctor_fields(t, c), group,
+                ))
+                out.extend(_cpp_pretty_function(
+                    c.name, _py_fields(t, c), group,
                 ))
                 out.append(
                     f"{c.name} read({_RT}::Reader& r, {_RT}::Tag<{c.name}>) {{"
@@ -854,6 +964,17 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
             for i, c in enumerate(t.constructors):
                 out.append(f"    case {i}:")
                 out.append(f"      repr(out, *std::get_if<{i}>(&v));")
+                out.append("      return;")
+            out.append("  }")
+            out.append("}")
+            out.append("")
+            out.append(
+                f"void pretty(std::string& out, const {sum_t}& v, int depth) {{"
+            )
+            out.append("  switch (v.index()) {")
+            for i, c in enumerate(t.constructors):
+                out.append(f"    case {i}:")
+                out.append(f"      pretty(out, *std::get_if<{i}>(&v), depth);")
                 out.append("      return;")
             out.append("  }")
             out.append("}")
@@ -882,9 +1003,9 @@ def _cpp_source(mod: Module, source: str, name: str) -> str:
 def generate_cpp(mod: Module, source: str, name: str) -> dict[str, str]:
     """Returns the C++ files for module `mod` as a map from file name
     to text: `<name>.h` with the types, their equality, and the
-    declarations of the dump format's functions and of Python's `repr`,
-    and `<name>.cpp` with the dump format's readers and writers and the
-    `repr` of each value. `source` is the .asdl file's name, for the
+    declarations of the dump format's functions, of Python's `repr`, and
+    of pretty.py's text, and `<name>.cpp` with the dump format's readers
+    and writers and the `repr` and the pretty text of each value. `source` is the .asdl file's name, for the
     header comment."""
     return {
         f"{name}.h": _cpp_header(mod, source, name),

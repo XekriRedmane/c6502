@@ -33,6 +33,7 @@
 #include <utility>
 
 #include "errors.h"
+#include "passes/ir_check.h"
 #include "pyrepr.h"
 
 namespace c6502::passes {
@@ -602,6 +603,9 @@ asm2_ast::Program lower_to_asm2(const asm_ast::Program& prog) {
       result.top_level.emplace_back(std::move(s));
     }
   }
+  // With the IR checks on, the decimal flag must be set only across a
+  // packed BCD chain (src/passes/ir_check.h).
+  ir_check::check_asm2(result, "asm_to_asm2");
   return result;
 }
 

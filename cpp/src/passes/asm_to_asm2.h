@@ -13,9 +13,10 @@ namespace c6502::passes {
 // `FunctionPrologue`, and `Ret` expanded into its atoms, each packed
 // BCD `DecimalArith` into its decimal-mode chain, and every other node
 // copied at the asm2 type. Throws `CompileError("FrameSizeError", ...)`
-// for a frame that `LDY #offset` can't reach. The IR check that Python
-// runs after it under `C6502_CHECK_IR=1` (`ir_check.check_asm2`) isn't
-// ported, so the caller runs it in Python on the result's dump.
+// for a frame that `LDY #offset` can't reach. With the IR checks on,
+// `ir_check::check_asm2` then checks the result, as Python checks it
+// under `C6502_CHECK_IR=1`, and throws `InternalError` for a decimal
+// flag set outside a packed BCD chain.
 asm2_ast::Program lower_to_asm2(const asm_ast::Program& prog);
 
 // Returns the decimal-mode chain of a packed BCD add or subtract:

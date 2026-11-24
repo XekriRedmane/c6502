@@ -455,10 +455,12 @@ def _tac_request(mode: str, source: str, **args) -> tuple[dict, dict]:
     it, and returns the response's lines and sections. What the
     preprocessor wrote to stderr goes to `sys.stderr` and its warnings
     to `diagnostics.warn`, and the error of a rejected program is raised
-    as its Python exception."""
+    as its Python exception. With the IR checks on (`_ir_check_enabled`),
+    the TAC optimizer's driver checks the TAC after each pass, as
+    Python's does, and a failed check comes back as an AssertionError."""
     kwargs = json.dumps({
         "pcpp_args": [], "filename": None, "include_dir": _INCLUDE_DIR,
-        "preprocess": True, **args,
+        "preprocess": True, "check_ir": _ir_check_enabled(), **args,
     })
     request = (
         f"c6502-backend 3\nmode {mode}\nargs {kwargs}\n"

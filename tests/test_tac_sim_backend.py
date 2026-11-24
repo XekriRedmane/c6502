@@ -42,13 +42,12 @@ def _outcome(run):
 
 class TestPassClasses(unittest.TestCase):
     def test_table_matches_the_driver(self):
-        # tac-observe names a step by its pass's Python class, from a
-        # table in the C++ source.
+        # tac-observe names a step by its pass's Python class, the
+        # `class_name` of the C++ driver's table.
         from passes.optimization.optimizer import _DRIVER
-        text = (_ROOT / "cpp" / "src" / "tac_sim_modes.cpp").read_text(encoding="utf-8")
-        table = text[text.index("kPassClasses[]"):]
-        table = table[:table.index("};")]
-        cpp = re.findall(r'\{"(\w+)", "(\w+)"\}', table)
+        text = (_ROOT / "cpp" / "src" / "passes" / "optimization"
+                / "optimizer.cpp").read_text(encoding="utf-8")
+        cpp = re.findall(r'\{"(\w+)",\s*&\w+,\s*"(\w+)"\}', text)
         python = [
             (p.name, type(p).__name__)
             for slot in ("pre_ssa", "pre_fixedpoint", "fixedpoint", "post_fixedpoint",

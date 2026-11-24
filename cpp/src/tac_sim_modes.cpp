@@ -33,60 +33,6 @@ namespace c99 = ::c6502::c99_ast;
 // appends to each function that returns a value.
 constexpr std::string_view kFellOff = "__reduce_fell_off";
 
-// The Python class of each pass of the TAC optimizer's driver, by the
-// pass's `name`, which fuzz/tac_passes.py reports as `type(p).__name__`.
-// tests/test_tac_sim_backend.py checks the table against Python's
-// `_DRIVER`.
-constexpr std::pair<std::string_view, std::string_view> kPassClasses[] = {
-    {"rotate_signed_countdown_loops", "RotateSignedCountdownLoops"},
-    {"noreturn_calls", "NoreturnCalls"},
-    {"fold_static_const_reads", "FoldStaticConstReads"},
-    {"constant_fold", "ConstantFold"},
-    {"distribute_constant", "DistributeConstant"},
-    {"fold_into_constant_phi", "FoldIntoConstantPhi"},
-    {"reduce_strength", "RuleSet"},
-    {"fold_producer_jumps", "RuleSet"},
-    {"eliminate_dead_loops", "EliminateDeadLoops"},
-    {"thread_constant_jumps", "ThreadConstantJumps"},
-    {"eliminate_unreachable_code", "EliminateUnreachableCode"},
-    {"eliminate_common_subexpressions", "EliminateCommonSubexpressions"},
-    {"hoist_loop_invariants", "HoistLoopInvariants"},
-    {"copy_propagate", "CopyPropagate"},
-    {"eliminate_dead_stores", "EliminateDeadStores"},
-    {"read_stored_globals", "ReadStoredGlobals"},
-    {"fold_copies_in_fixedpoint", "FoldCopiesInFixedpoint"},
-    {"reassoc_constants", "ReassocConstants"},
-    {"reassoc_offset_constant", "ReassocOffsetConstant"},
-    {"direct_member_access", "DirectMemberAccess"},
-    {"recognize_indexed_store", "RecognizeIndexedStore"},
-    {"recognize_indexed_load", "RecognizeIndexedLoad"},
-    {"fold_truncate_extend", "FoldTruncateExtend"},
-    {"fold_extend_extend", "FoldExtendExtend"},
-    {"sink_increments", "SinkIncrements"},
-    {"sink_and_past_branch", "SinkAndPastBranch"},
-    {"narrow_widened_arith", "NarrowWidenedArith"},
-    {"narrow_byte_range", "NarrowByteRange"},
-    {"narrow_byte_bitwise", "NarrowByteBitwise"},
-    {"phi_offset", "PhiOffset"},
-    {"static_indexed_access", "StaticIndexedAccess"},
-    {"recognize_indirect_indexed", "RecognizeIndirectIndexed"},
-    {"hoist_subtract_to_compare", "HoistSubtractToCompare"},
-    {"hoist_divmod_pairs", "HoistDivmodPairs"},
-    {"count_loops_down", "CountLoopsDown"},
-    {"fold_copies_post_destruction", "FoldCopiesPostDestruction"},
-    {"move_steps_onto_edges", "MoveStepsOntoEdges"},
-    {"split_three_way_compares", "SplitThreeWayCompares"},
-    {"fold_short_circuit_jump", "FoldShortCircuitJump"},
-    {"thread_known_compares", "ThreadKnownCompares"},
-};
-
-std::string_view pass_class(std::string_view name) {
-  for (const auto& [pass, cls] : kPassClasses) {
-    if (pass == name) return cls;
-  }
-  return name;
-}
-
 // The TAC of a program and the tables it was translated with.
 struct Translated {
   ir::Program tac;
@@ -182,7 +128,7 @@ std::string observe(Translated& t) {
     }
     const tac_sim::Outcome got = tac_sim::run_main(current, t.symbols, &t.types);
     if (got != expected) {
-      found = "[" + json::quote(fn.name) + ", " + json::quote(std::string(pass_class(after))) +
+      found = "[" + json::quote(fn.name) + ", " + json::quote(std::string(after)) +
               ", " + observed_json(expected) + ", " + observed_json(got) + "]";
     }
   };

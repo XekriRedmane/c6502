@@ -1642,8 +1642,9 @@ the passes after it see the SSA names. With the IR checks on, the
 driver checks the TAC as it comes in and after every pass and both SSA
 conversions ("The IR checks"), and the message names the pass by its
 class, as Python's `type(p).__name__` does, so both rule sets are
-`RuleSet`. The C++ driver has no `observer`, which only
-fuzz/tac_passes.py sets.
+`RuleSet`. After each check the driver calls the observer that
+`framework::set_observer` gives, Python's `PhaseDriver.observer`, which
+only the backend's mode `tac-observe` sets ("The TAC interpreter").
 
 `passes::tac_driver()` (`src/passes/optimization/optimizer.cpp`) is
 Python's `_DRIVER`, with every pass in its list and its order. A pass
@@ -2880,8 +2881,10 @@ after every pass and after SSA construction and destruction
 (`framework::set_observer`, Python's `PhaseDriver.observer`), which runs
 `main` on the program with the function at that step and names the
 first step after which the result changes, by the Python class of its
-pass (`kPassClasses`, which tests/test_tac_sim_backend.py checks against
-Python's `_DRIVER`). `tac-falls-off` is fuzz/reduce.py's
+pass (`NamedPass::class_name`, which tests/test_tac_sim_backend.py
+checks against Python's `_DRIVER`). With the request's `check_ir`, the
+driver also checks the TAC after each pass, as Python's does when
+fuzz/runner.py has turned the checks on. `tac-falls-off` is fuzz/reduce.py's
 `falls_off_end`: it appends a call of `__reduce_fell_off` to each
 function that returns a value, other than `main`, after the parser and
 before identifier resolution, and reports whether the run reached one.

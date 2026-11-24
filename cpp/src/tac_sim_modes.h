@@ -46,8 +46,8 @@ bool is_tac_mode(const std::string& mode);
 //
 // with `null` when no step changes `main`'s result, or `[function,
 // step, expected, got]` for the first that does. A step is named by
-// the Python class of its pass, as fuzz/tac_passes.py names it, or
-// `to_ssa` or `from_ssa`. A result is an integer, `null` for no value,
+// the Python class of its pass (`NamedPass::class_name`), as
+// fuzz/tac_passes.py names it, or `to_ssa` or `from_ssa`. A result is an integer, `null` for no value,
 // or `"ERR <type>: <message>"`.
 //
 // `tac-falls-off` is fuzz/reduce.py's `falls_off_end`. It declares

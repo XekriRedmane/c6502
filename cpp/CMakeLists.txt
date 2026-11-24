@@ -20,9 +20,12 @@ if(MSVC)
   # Warnings on, not yet errors. /utf-8 reads the sources as UTF-8, and
   # /bigobj takes the generated readers' many functions. C4324 reports
   # each struct padded to the 16-byte alignment of `std::_Signed128`,
-  # the IR's integer (src/asdl/runtime.h), which is intended.
+  # the IR's integer (src/asdl/runtime.h), which is intended. /MP compiles
+  # a target's files in parallel. MSBuild's /m (`cmake --build --parallel`)
+  # only builds separate targets at once, and c6502_tests waits for the
+  # c6502 library, so without /MP every file compiled one at a time.
   add_compile_options(/W4 /permissive- /utf-8 /EHsc /bigobj /Zc:__cplusplus
-                      /wd4324)
+                      /wd4324 /MP)
 else()
   # A designated initializer that leaves fields out, as in
   # `Function{.name = "f"}`, gives them their defaults, as the Python

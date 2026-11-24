@@ -52,13 +52,29 @@ translator_case.h replay on one C++ `Translator`. A test's replacement
 of row_address_tables.py's `_saving` is recorded as the keyword `saving`
 of the `row_address_tables` call.
 
+Group G8 added the calls of the front end. The calls that compile.py's
+`_resolved` and `translate_for_codegen` make when a test calls them are
+recorded as the test's own (`_COMPILE_STAGES`). The helpers of
+pp_numbers.py in `capture_passes.FRONT` are recorded as their captures
+are. A call of the legacy per-function forms of identifier resolution,
+label resolution, and loop labeling (`_FRONT_FUNCTION_FORMS`) is
+recorded as the program-level pass on a program of the one function,
+once that call has given the same function. A call of lexer.py's
+`tokenize` is a `tokens` record, the source and the lines that
+`compile.py --lex` prints for it or the LexError, which
+cpp/tests/lexer_case.h checks, and a call of constant_expression.py's
+evaluator or validator is a `const_expr` record, which
+cpp/tests/constant_expression_case.h checks.
+
 While each test runs, a profile function also lists each other call
 that the test's own code makes into a module of the compiler (passes/,
 binutils/, rtlib/, and the root's modules other than the IR classes),
 leaving out dunder methods and the end-to-end entry points
 (`compile.main`, `_run_stage`, `_compile_c`, `nm.main`, and
 `objdump.main`, with `preprocess`, whose output those take), which
-`END_TO_END` lists separately. A test whose calls are all recorded is
+`END_TO_END` lists separately with every call into sim/ and of the
+helpers of `_RUNS_A_PROGRAM`, which run a program on the simulator or
+the TAC interpreter. A test whose calls are all recorded is
 checked by its recorded calls alone, and one with other direct calls
 has to be ported by hand. A call whose input or arguments have no dump
 or encoding, such as IR a test builds wrongly on purpose, is listed as
@@ -68,7 +84,8 @@ unrecordable.
 distinct recorded calls in the order it made them, its other direct
 calls, and its end-to-end calls. `<out>/records/<key>.json` holds each
 call, its kind (`capture`, `lines`, `translator`, `rules`,
-`c99_session`, or `asm_session`), and its text, lines, or dumps. A second
+`c99_session`, `asm_session`, `tokens`, or `const_expr`), and its text,
+lines, or dumps. A second
 `record` run into the same directory adds to the index.
 
 `cpp` writes the doctest cases of one module's tests (`write_cpp`),
@@ -110,6 +127,10 @@ END_TO_END = frozenset({
     "nm.main", "objdump.main", "preprocessor.preprocess",
 })
 
+# The test helpers that compile and run a program on the TAC
+# interpreter, listed as end to end with every call into sim/.
+_RUNS_A_PROGRAM = frozenset({"tests.test_sim_chapters._run_program"})
+
 # The emission functions that cpp/tests/call_case.h checks by the lines
 # they return, by the kind its `check_lines` takes.
 _LINES = {
@@ -139,9 +160,23 @@ def _test_entry() -> dict | None:
     })
 
 
+# The functions of compile.py that tests call to run several stages on a
+# source, `_resolved` (the front end from the parser through loop
+# labeling) and `translate_for_codegen` (c99_to_tac and, under `-O`, the
+# inliner and `return_in_zero_page`). The calls they make when a test
+# calls them are recorded as the test's own, so that what the test reads
+# of their result is in the records (group G8).
+_COMPILE_STAGES = frozenset({"_resolved", "translate_for_codegen"})
+
+
 def _called_from_test() -> bool:
-    caller = sys._getframe(2).f_globals.get("__name__", "")
-    return caller.startswith("tests.") and _CURRENT is not None
+    if _CURRENT is None:
+        return False
+    frame = sys._getframe(2)
+    if (frame.f_globals.get("__name__") == "compile"
+            and frame.f_code.co_name in _COMPILE_STAGES):
+        frame = frame.f_back
+    return frame.f_globals.get("__name__", "").startswith("tests.")
 
 
 def _save(kind: str, body: dict) -> None:
@@ -368,6 +403,31 @@ def _wrap_lines(kind: str, fn):
     return wrapper
 
 
+def _wrap_tokens(fn):
+    """Wraps lexer.py's `tokenize`, recorded as a `tokens` record: the
+    source and what `compile.py --lex` prints for it, one line of each
+    token's line, column, kind, and value (`compile._format_tokens`), or
+    the error it raised. cpp/tests/lexer_case.h checks it with the C++
+    `format_tokens`. Python's `tokenize` is a generator, and the wrapper
+    takes all its tokens at once, so a test sees a LexError when it
+    calls `tokenize` and not at the token after the last good one, which
+    no test that reads every token can tell apart."""
+    def wrapper(*args, **kwargs):
+        if not _called_from_test() or len(args) != 1 or kwargs:
+            return fn(*args, **kwargs)
+        source = args[0]
+        tokens, error = _call(lambda: list(fn(source)), (), {})
+        if error is not None:
+            _save("tokens", {"source": source, "error": {
+                "type": type(error).__name__, "message": str(error)}})
+            raise error
+        _save("tokens", {"source": source, "output": "".join(
+            f"{t.line}:{t.col}\t{t.kind.value}\t{t.value}\n" for t in tokens)})
+        return iter(tokens)
+    wrapper.__wrapped_pass__ = fn
+    return wrapper
+
+
 # The per-function forms of two stage calls, which `check-captures` runs
 # only on a whole program: each name with its module, the stage call,
 # and the program-level function. The tests call them on one function.
@@ -579,6 +639,109 @@ def _wrap_front(name: str, fn):
         result, error, texts, failure = _capture_texts(
             lambda: cp_wrapper(*args, **kwargs))
         _save_texts(name, texts, failure)
+        if error is not None:
+            raise error
+        return result
+    wrapper.__wrapped_pass__ = fn
+    return wrapper
+
+
+# The legacy per-function forms of three front-end passes, which take
+# and return the `Function` node that the parser no longer gives, each
+# by its name (with its module's last name in front where two share a
+# name) with its module and the program-level pass of
+# `capture_passes.FRONT_PASSES` that does its work on a program of the
+# one function.
+_FRONT_FUNCTION_FORMS = {
+    "resolve_function": ("passes.identifier_resolution", "identifier_resolution"),
+    "label_function": ("passes.loop_labeling", "loop_labeling"),
+    "label_resolution.resolve_function": ("passes.label_resolution", "label_resolution"),
+}
+
+
+def _legacy_program(fn):
+    """The one-function program that identifier_resolution.py's
+    `resolve_function` builds from the legacy `Function` `fn`: a
+    definition of type `int` with an `int` for each parameter."""
+    import c99_ast
+    return c99_ast.Program(declaration=[c99_ast.FunctionDecl(
+        function_decl=c99_ast.Type_function_decl(
+            name=fn.name, params=list(fn.params), body=fn.body,
+            data_type=c99_ast.FunType(
+                params=[c99_ast.Int() for _ in fn.params],
+                ret=c99_ast.Int()),
+            storage_class=None))])
+
+
+def _wrap_front_function_form(name: str, fn):
+    """Wraps a form of `_FRONT_FUNCTION_FORMS`. A call is recorded as the
+    program-level pass on `_legacy_program` of its function, which is
+    checked first to give the same function, or to raise the same error,
+    and noted as unrecordable when it doesn't."""
+    import c99_ast
+    _module, stage = _FRONT_FUNCTION_FORMS[name]
+    module, attr = cp.resolve(cp.FRONT_PASSES[stage])
+    program_fn = getattr(module, attr)
+    program_fn = getattr(program_fn, "__wrapped_pass__", program_fn)
+    cp_wrapper = cp._wrap_front(stage, program_fn)
+
+    def wrapper(*args, **kwargs):
+        if not _called_from_test() or len(args) != 1 or kwargs:
+            return fn(*args, **kwargs)
+        try:
+            prog = copy.deepcopy(_legacy_program(args[0]))
+        except Exception as e:  # noqa: BLE001 - noted, and the call made
+            _unrecordable(name, e)
+            return fn(*args, **kwargs)
+        result, error = _call(fn, args, {})
+        prog_result, prog_error, texts, failure = _capture_texts(
+            lambda: cp_wrapper(prog))
+        try:
+            if error is None:
+                if prog_error is not None:
+                    raise ValueError(
+                        f"the program-level call raised {prog_error!r}")
+                fd = prog_result.declaration[0].function_decl
+                if c99_ast.Function(name=fd.name, params=list(fd.params),
+                                    body=fd.body) != result:
+                    raise ValueError("the program-level call gives another result")
+            elif prog_error is None or (type(prog_error), str(prog_error)) != (
+                    type(error), str(error)):
+                raise ValueError(
+                    "the program-level call doesn't raise the same error")
+            _save_texts(stage, texts, failure)
+        except Exception as e:  # noqa: BLE001 - noted
+            _unrecordable(name, e)
+        if error is not None:
+            raise error
+        return result
+    wrapper.__wrapped_pass__ = fn
+    return wrapper
+
+
+def _wrap_constant_expression(name: str, fn):
+    """Wraps constant_expression.py's `evaluate_integer_constant_expression`
+    or `validate_constant_expression`, recorded as a `const_expr` record:
+    the expression's dump and Python's result, `<value> <repr of the
+    type>` or `None`, or the message of the error it raised, which
+    cpp/tests/constant_expression_case.h checks on the C++ function."""
+    def wrapper(*args, **kwargs):
+        if not _called_from_test() or len(args) != 1 or kwargs:
+            return fn(*args, **kwargs)
+        try:
+            given = cp.dump(args[0])
+        except Exception as e:  # noqa: BLE001 - noted, and the call made
+            _unrecordable(name, e)
+            return fn(*args, **kwargs)
+        result, error = _call(fn, args, {})
+        if error is not None:
+            expected = {"type": type(error).__name__, "message": str(error)}
+        elif name == "validate_constant_expression":
+            expected = "None"
+        else:
+            expected = f"{result[0]} {result[1]!r}"
+        _save("const_expr", {"name": name, "input": given,
+                             "expected": expected})
         if error is not None:
             raise error
         return result
@@ -1048,12 +1211,20 @@ def _targets() -> dict[int, tuple[object, object]]:
     # The preprocessor is left out: a test calls it on a source alone,
     # without the arguments and file name that its stage call takes,
     # and the parse record that follows holds its output.
-    for name in cp.FRONT_PASSES:
+    for name in cp.FRONT:
         if name == "preprocess":
             continue
-        module, attr = cp.resolve(cp.FRONT_PASSES[name])
+        module, attr = cp.resolve(cp.FRONT[name])
         fn = getattr(module, attr)
         out.setdefault(id(fn), (fn, _wrap_front(name, fn)))
+    for name, (module, _stage) in _FRONT_FUNCTION_FORMS.items():
+        fn = getattr(importlib.import_module(module), name.rpartition(".")[2])
+        out.setdefault(id(fn), (fn, _wrap_front_function_form(name, fn)))
+    constant_expression = importlib.import_module("passes.constant_expression")
+    for name in ("evaluate_integer_constant_expression",
+                 "validate_constant_expression"):
+        fn = getattr(constant_expression, name)
+        out.setdefault(id(fn), (fn, _wrap_constant_expression(name, fn)))
     tac_to_asm = importlib.import_module("tac_to_asm")
     for name in _TRANSLATOR:
         fn = getattr(tac_to_asm, name)
@@ -1072,6 +1243,8 @@ def _targets() -> dict[int, tuple[object, object]]:
     for kind, (module, attr) in _LINES.items():
         fn = getattr(importlib.import_module(module), attr)
         out.setdefault(id(fn), (fn, _wrap_lines(kind, fn)))
+    fn = importlib.import_module("lexer").tokenize
+    out.setdefault(id(fn), (fn, _wrap_tokens(fn)))
     return out
 
 
@@ -1103,9 +1276,18 @@ def _profile(frame, event, arg):
     if not caller.f_globals.get("__name__", "").startswith("tests."):
         return
     module = frame.f_globals.get("__name__", "")
+    code = frame.f_code
+    if module.startswith("sim.") or (
+            f"{module}.{code.co_qualname}" in _RUNS_A_PROGRAM):
+        # A run on the simulator, or on the TAC interpreter through
+        # `_run_program`, which compiles the program itself.
+        full = f"{module}.{code.co_qualname}"
+        entry = _test_entry()
+        if full not in entry["end_to_end"]:
+            entry["end_to_end"].append(full)
+        return
     if not _is_compiler(module):
         return
-    code = frame.f_code
     name = code.co_qualname
     if code.co_name.startswith("__") or code.co_name == "<lambda>":
         return
@@ -1164,8 +1346,15 @@ def _c_literals(text: str) -> list[str]:
             out.append('"' + line.decode("ascii") + '"')
             line.clear()
 
+    octal = False
     for b in data:
         c = chr(b)
+        if octal and c in "0123456789":
+            # A digit after an octal escape can't extend it, but MSVC
+            # warns of it (C4125), so the literal ends and the next
+            # begins with the digit.
+            line += b'" "'
+        octal = False
         if c == "\\":
             line += b"\\\\"
         elif c == '"':
@@ -1181,6 +1370,7 @@ def _c_literals(text: str) -> list[str]:
             # character after it can't extend it (and `?` can't start a
             # trigraph).
             line += f"\\{b:03o}".encode("ascii")
+            octal = True
         if len(line) >= _LITERAL_LINE:
             flush()
     flush()
@@ -1278,6 +1468,11 @@ def _record_parts(record: dict) -> list[str]:
         return [record["name"], given, *record["expected"]]
     if record["kind"] == "translator":
         return [record["name"], *record["inputs"], *record["expected"]]
+    if record["kind"] == "tokens":
+        return ["check_tokens", record["source"], _tokens_expected(record)]
+    if record["kind"] == "const_expr":
+        return ["check_constant_expression", record["name"], record["input"],
+                _const_expr_expected(record)]
     if record["kind"] == "rules":
         return _record_parts({"kind": "capture", "text": record["text"]})[1:]
     if record["kind"] == "asm_session":
@@ -1311,9 +1506,41 @@ def _record_parts(record: dict) -> list[str]:
     return parts
 
 
+def _tokens_expected(record: dict) -> str:
+    """What a `tokens` record's case compares: the `--lex` lines, or the
+    error's JSON as `error_record` writes it."""
+    if "error" in record:
+        return json.dumps(record["error"])
+    return record["output"]
+
+
+def _const_expr_expected(record: dict) -> str:
+    """What a `const_expr` record's case compares: the result's text, or
+    the error's JSON."""
+    expected = record["expected"]
+    return expected if isinstance(expected, str) else json.dumps(expected)
+
+
 def _case(test: str, n: int, record: dict) -> str:
     cls_test = test.split("::", 1)[1]
     module = Path(test.split("::")[0]).name
+    if record["kind"] == "const_expr":
+        title = f"const_expr: {module}::{cls_test} (call {n})"
+        error = not isinstance(record["expected"], str)
+        return (f'TEST_CASE("{title}") {{\n'
+                f"  c6502::testing::check_constant_expression(\n"
+                f'      "{record["name"]}",\n'
+                f"      {_text_expr(record['input'], '      ')},\n"
+                f"      {_text_expr(_const_expr_expected(record), '      ')},\n"
+                f"      {'true' if error else 'false'});\n}}\n")
+    if record["kind"] == "tokens":
+        title = f"tokens: {module}::{cls_test} (call {n})"
+        expected = _tokens_expected(record)
+        return (f'TEST_CASE("{title}") {{\n'
+                f"  c6502::testing::check_tokens(\n"
+                f"      {_text_expr(record['source'], '      ') or chr(34) * 2},\n"
+                f"      {_text_expr(expected, '      ') or chr(34) * 2},\n"
+                f"      {'true' if 'error' in record else 'false'});\n}}\n")
     if record["kind"] == "translator":
         name = record["name"]
         title = f"{name}: {module}::{cls_test} (call {n})"
@@ -1457,7 +1684,7 @@ def write_cpp(out: Path, module: str, target: Path, cpp_dir: Path,
         "// returned, changed, or raised, which the C++ port must return,\n"
         "// change, or raise too. tools/record_test_calls.py recorded them\n"
         "// while the Python tests ran, before they were removed (step 8,\n"
-        "// groups G6 and G7). A call that another C++ case already checks\n"
+        "// groups G6 to G8). A call that another C++ case already checks\n"
         "// isn't repeated here.\n"
         '#include "doctest.h"\n'
         '#include "record_case.h"\n'
@@ -1469,6 +1696,10 @@ def write_cpp(out: Path, module: str, target: Path, cpp_dir: Path,
         header += '#include "tac_rules_case.h"\n'
     if any("check_c99_session(" in c for c in cases):
         header += '#include "c99_session_case.h"\n'
+    if any("check_tokens(" in c for c in cases):
+        header += '#include "lexer_case.h"\n'
+    if any("check_constant_expression(" in c for c in cases):
+        header += '#include "constant_expression_case.h"\n'
     if cases:
         target.write_bytes((header + "\n" + "\n".join(cases)).encode("utf-8"))
     return report

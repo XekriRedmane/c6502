@@ -225,6 +225,10 @@ Result check(const capture::Call& call, const passes::StageSignature& sig) {
     // A problem with the program, which the record of a call of the
     // front end holds as the exception's class and message.
     got.output = error_text(e.python_type(), e.what()) + "\n";
+  } catch (const InternalError& e) {
+    // A bug in the compiler, which the Python function raises as an
+    // AssertionError and the record holds as one.
+    got.output = error_text("AssertionError", e.what()) + "\n";
   } catch (const std::exception& e) {
     got.output = std::string("exception: ") + e.what() + "\n";
   }

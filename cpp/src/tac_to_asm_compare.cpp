@@ -250,9 +250,8 @@ Instrs translate_logical_not(Translator& t, const ir::Type_operand& src_op,
   return out;
 }
 
-// Returns the 8-bit sequence of Complement or Negate on A, which leaves
-// the result in A. LogicalNot has labels and another shape, so it is
-// lowered apart.
+}  // namespace
+
 Instrs unop_atoms(const tac::Type_unary_operator& op) {
   switch (tac::kind(op)) {
     case tac::Kind_unary_operator::Complement:
@@ -266,6 +265,8 @@ Instrs unop_atoms(const tac::Type_unary_operator& op) {
       throw InternalError("unexpected unary operator: " + asdl::dump(op));
   }
 }
+
+namespace {
 
 // `src != 0` (`cond` NE) or `src == 0` (EQ) into the 1-byte `dst`. The
 // bytes ORed together leave Z set exactly when `src` is 0. For `!=`, A

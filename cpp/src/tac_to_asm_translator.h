@@ -302,6 +302,26 @@ struct Translator {
                                const ir::Type_operand& dst_op, int size, int dst_size, bool lt);
 };
 
+// Returns the 8-bit sequence of Complement or Negate on A, which leaves
+// the result in A (Python's `Translator._unop_atoms`). LogicalNot has
+// labels and another shape, so it is lowered apart. The unit tests call
+// it, as tests/test_tac_to_asm.py called the Python one.
+Instrs unop_atoms(const tac::Type_unary_operator& op);
+
+// Returns the loop of one-bit shifts `kind` of `dst_op`, `size` bytes,
+// by the count in X, which is a constant `count` from 1 to 255 or the
+// low byte of the variable `count_op`, after the copy of `src_op` into
+// `dst_op`. `loop` and `done` are its labels. When the count is the
+// destination (`count_in_dst`), it's read before the copy. The comment
+// at its definition in tac_to_asm_arith.cpp draws the loop. The unit
+// tests call it, as tests/test_narrow_byte_range.py called Python's
+// `_shift_loop`.
+enum class ShiftKind { kAsl, kLsr, kAsr };
+Instrs shift_loop(const ir::Type_operand& src_op, const std::optional<ir::Type_operand>& count_op,
+                  std::optional<asdl::Int> count, const ir::Type_operand& dst_op, int size,
+                  ShiftKind kind, const std::string& loop, const std::string& done,
+                  bool count_in_dst);
+
 // Throws the error a part that isn't ported yet gives for `what`.
 [[noreturn]] void not_ported(std::string_view what);
 

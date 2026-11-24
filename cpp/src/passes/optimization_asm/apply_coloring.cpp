@@ -235,17 +235,8 @@ std::optional<Instrs> split_unencodable_indexed_load(const ir::Type_instruction&
                 ir::Mov{.src = reg_a, .dst = m->dst}};
 }
 
-// The match of a chain of two transfers, the letters of its source and
-// destination registers.
-struct TransferChain {
-  char src;
-  char dst;
-};
+}  // namespace
 
-// Matches the chain `Mov(Reg(R'), A); Mov(A, Reg(R))` at
-// `instrs[start]`, where R and R' are X or Y. R == R' is a transfer
-// through A and back, which does nothing but is still matched, and the
-// caller handles it.
 std::optional<TransferChain> match_transfer_chain(const Instrs& instrs, std::size_t start) {
   if (start + 2 > instrs.size()) {
     return std::nullopt;
@@ -267,6 +258,8 @@ std::optional<TransferChain> match_transfer_chain(const Instrs& instrs, std::siz
   }
   return TransferChain{.src = s0, .dst = d1};
 }
+
+namespace {
 
 // Returns `op` indexed by `to` when it is an `IndexedData` indexed by
 // `from`, or nothing when it is left as it is.
@@ -375,6 +368,8 @@ bool instr_breaks_transfer_chain(const ir::Type_instruction& instr, char dst_reg
   return false;
 }
 
+}  // namespace
+
 // Removes the chains `Mov(Reg(R'), Reg(A)); Mov(Reg(A), Reg(R))` that
 // the pinning of a pseudo to R' leaves in the setup of an
 // `IndexedData`'s index.
@@ -459,8 +454,6 @@ Instrs rewrite_redundant_transfers(const Instrs& instrs) {
   }
   return out;
 }
-
-}  // namespace
 
 asm_ast::Function apply_coloring(asm_ast::Function fn, const Coloring& coloring,
                                  const std::vector<asdl::Int>* local_pool) {

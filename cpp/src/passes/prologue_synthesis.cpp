@@ -45,6 +45,8 @@ bool is_reg(const ir::Type_operand& op, ir::Kind_reg r) {
   return reg != nullptr && ir::kind(reg->reg) == r;
 }
 
+}  // namespace
+
 // Splits the register parameters' entry stubs off the start of
 // `instrs`, skipping labels: the leading moves from A, X, or Y into
 // memory (a `Data`, the local each parameter is copied into), into X,
@@ -80,6 +82,8 @@ split_entry_stubs(std::vector<ir::Type_instruction> instrs) {
   }
   return {std::move(stubs), std::move(rest)};
 }
+
+namespace {
 
 ir::Type_operand reg(ir::Type_reg r) { return ir::Reg{.reg = std::move(r)}; }
 

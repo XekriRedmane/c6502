@@ -5,6 +5,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "asdl/runtime.h"
 #include "asm_ast.h"
@@ -67,5 +68,14 @@ Coloring color_graph(const asm_ast::Function& fn, const InterferenceGraph& graph
                      const Liveness* liveness = nullptr,
                      const OrderedMap<std::string, std::string>* rep_map = nullptr,
                      const NameSet* frame_names = nullptr);
+
+// Returns the registers X and Y that `instr` writes, as the letters 'X'
+// and 'Y', for the check of clobbers in a pinned value's live range. An
+// access to a pseudo in `frame_names`, which may be null, counts as a
+// write of Y. The comment at its definition lists what writes X or Y.
+// The unit tests call it, as tests/test_asm_regalloc.py called Python's
+// `_instr_writes_hwregs`.
+std::vector<char> instr_writes_hwregs(const asm_ast::Type_instruction& instr,
+                                      const NameSet* frame_names);
 
 }  // namespace c6502::passes

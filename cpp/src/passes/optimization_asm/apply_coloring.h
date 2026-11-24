@@ -3,6 +3,8 @@
 // colored to their zero-page bytes or to X and Y.
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <vector>
 
 #include "asdl/runtime.h"
@@ -32,5 +34,27 @@ namespace c6502::passes {
 // "Redundant transfers" in apply_coloring.cpp).
 asm_ast::Function apply_coloring(asm_ast::Function fn, const Coloring& coloring,
                                  const std::vector<asdl::Int>* local_pool = nullptr);
+
+// The match of a chain of two transfers, the letters of its source and
+// destination registers.
+struct TransferChain {
+  char src;
+  char dst;
+};
+
+// Matches the chain `Mov(Reg(R'), A); Mov(A, Reg(R))` at
+// `instrs[start]`, where R and R' are X or Y. R == R' is a transfer
+// through A and back, which does nothing but is still matched, and the
+// caller handles it. The unit tests call it, as tests/test_hwreg_pinning.py
+// called Python's `_match_transfer_chain`.
+std::optional<TransferChain> match_transfer_chain(
+    const std::vector<asm_ast::Type_instruction>& instrs, std::size_t start);
+
+// Returns `instrs` without the chains of transfers that the pinning of a
+// pseudo to X or Y leaves in the setup of an `IndexedData`'s index
+// (Python's `_rewrite_redundant_transfers`, which the unit tests call).
+// The comment at its definition gives the rules.
+std::vector<asm_ast::Type_instruction> rewrite_redundant_transfers(
+    const std::vector<asm_ast::Type_instruction>& instrs);
 
 }  // namespace c6502::passes

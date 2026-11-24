@@ -493,7 +493,7 @@ Instrs inline_right_shift_const(const ir::Type_operand& src_op, const ir::Type_o
   return out;
 }
 
-enum class ShiftKind { kAsl, kLsr, kAsr };
+}  // namespace
 
 // Returns a shift of a 1- or 2-byte value by a count in X, one bit per
 // pass of a loop, where it called a shift helper. The value is copied
@@ -575,6 +575,8 @@ Instrs shift_loop(const ir::Type_operand& src_op, const std::optional<ir::Type_o
   }
   return out;
 }
+
+namespace {
 
 // Returns an unsigned byte divided by a constant from 1 to 255, by
 // repeated subtraction, where it called `udivmod8`:

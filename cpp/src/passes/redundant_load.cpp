@@ -564,13 +564,8 @@ std::size_t stores_of_a_after(Instrs instrs, std::size_t k) {
   return n;
 }
 
-// Returns whether `a` and `b` are `name+k1,R` and `name+k2,R` with `k1`
-// and `k2` different and less than 256 apart, and nothing in `window`
-// writes R, so the two stores in it reach different bytes. The loads
-// and stores `swap_pairs_ok` looks at write no register but A, except
-// the `LDY #off` of an operand lowered through Y. `hi, lo` stored to
-// `LOCAL_ZVARS[x]` and `LOCAL_ZVARS[x + 1]` in Zork's `instr_call` are
-// this.
+}  // namespace
+
 bool same_index_apart(const ir::Type_operand& a, const ir::Type_operand& b, Instrs window) {
   const auto* x = as<ir::IndexedData>(a);
   const auto* y = as<ir::IndexedData>(b);
@@ -591,6 +586,8 @@ bool same_index_apart(const ir::Type_operand& a, const ir::Type_operand& b, Inst
   }
   return isa<ir::X>(x->index);
 }
+
+namespace {
 
 // Returns whether `instrs[i]` moves a register back into the register it
 // was just moved from (`TAX; TXA`, `TYA; TAY`, ...).

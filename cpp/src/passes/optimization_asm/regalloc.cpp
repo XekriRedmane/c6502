@@ -81,6 +81,8 @@ void add_if_xy(std::vector<char>& out, const ir::Type_operand& dst) {
   }
 }
 
+}  // namespace
+
 // Returns the registers X and Y that `instr` writes, as letters, for
 // the check of clobbers in a live range in `try_hwreg_assign`.
 //
@@ -154,6 +156,8 @@ std::vector<char> instr_writes_hwregs(const ir::Type_instruction& instr,
   }
   return out;
 }
+
+namespace {
 
 // Pins candidates to X or Y greedily before the coloring, adding to
 // `hwreg_assignments`. Each hinted candidate gets its preferred register

@@ -2,6 +2,8 @@
 #pragma once
 
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "asm_ast.h"
 #include "ordered_map.h"
@@ -21,5 +23,12 @@ namespace c6502::passes {
 // `InternalError` for a function `dims_by_fn` has no entry for, or one
 // that already has a `Ret` or a `FunctionPrologue`.
 asm_ast::Program synthesize_program(asm_ast::Program prog, const FrameDimsByFunction& dims_by_fn);
+
+// Splits the register parameters' entry stubs off the start of
+// `instrs`, and returns the stubs and the rest, as the comment at its
+// definition describes. The unit tests call it, as
+// tests/test_param_registers.py called Python's `_split_entry_stubs`.
+std::pair<std::vector<asm_ast::Type_instruction>, std::vector<asm_ast::Type_instruction>>
+split_entry_stubs(std::vector<asm_ast::Type_instruction> instrs);
 
 }  // namespace c6502::passes

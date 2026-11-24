@@ -55,17 +55,26 @@ class LinkedText(str):
 def linked_text(exe_path: Path | str) -> LinkedText:
     """The executable at `exe_path` as searchable text: its full
     disassembly (with `EQU`s for its absolute symbols) and then its
-    link metadata."""
-    from binutils import elf as E
-    from binutils.disasm import Options, disassemble
-    data = Path(exe_path).read_bytes()
-    exe = E.read(data, str(exe_path))
-    lines = disassemble(exe, all_sections=True,
-                        options=Options(raw=False, addresses=False))
-    meta = exe.link_text() or ""
-    text = LinkedText("\n".join(lines) + "\n\n" + meta)
-    text.exe = data
+    link metadata. Both come from `c6502cpp objdump`, the C++ port of
+    objdump.py, which needs the C++ build (cpp/README.md)."""
+    disassembly = _cpp_objdump("-D", "--no-show-raw-insn", "--no-addresses",
+                               str(exe_path))
+    meta = _cpp_objdump("--link-metadata", str(exe_path))
+    if meta == "(no link metadata)\n":
+        meta = ""
+    text = LinkedText(disassembly + "\n" + meta)
+    text.exe = Path(exe_path).read_bytes()
     return text
+
+
+def _cpp_objdump(*args: str) -> str:
+    """What `c6502cpp objdump` prints for the command line `args`."""
+    import contextlib
+    import cpp_backend
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert cpp_backend.run_tool("objdump", ["objdump.py", *args]) == 0
+    return out.getvalue()
 
 
 def listing(exe_path: Path | str) -> str:

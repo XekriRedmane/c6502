@@ -225,10 +225,11 @@ status 0
 run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
 status 0
 run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
-status none
-raised ["error", "argument out of range"]
+status 1
+stderr "compile.py: link error: the origin -$0001 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "-Ttext=0x10000"]
-status 0
+status 1
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
 status 0
 run ["compile.py", "a.c", "-Ttextual"]
@@ -237,12 +238,10 @@ stderr "compile.py: link error: textual: No such file or directory\n"
 run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
 status 0
 file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
-file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
 file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
 file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
 file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
 file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
-file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
 file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
 file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
 file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
@@ -483,10 +482,11 @@ status 0
 run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
 status 0
 run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
-status none
-raised ["error", "argument out of range"]
+status 1
+stderr "compile.py: link error: the origin -$0001 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "-Ttext=0x10000"]
-status 0
+status 1
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
 status 0
 run ["compile.py", "a.c", "-Ttextual"]
@@ -495,12 +495,10 @@ stderr "compile.py: link error: textual: No such file or directory\n"
 run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
 status 0
 file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
-file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
 file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
 file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
 file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
 file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
-file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
 file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
 file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
 file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
@@ -741,10 +739,11 @@ status 0
 run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
 status 0
 run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
-status none
-raised ["error", "argument out of range"]
+status 1
+stderr "compile.py: link error: the origin -$0001 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "-Ttext=0x10000"]
-status 0
+status 1
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
 status 0
 run ["compile.py", "a.c", "-Ttextual"]
@@ -753,12 +752,10 @@ stderr "compile.py: link error: textual: No such file or directory\n"
 run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
 status 0
 file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
-file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
 file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
 file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
 file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
 file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
-file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
 file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
 file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
 file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
@@ -998,10 +995,11 @@ status 0
 run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
 status 0
 run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
-status none
-raised ["error", "argument out of range"]
+status 1
+stderr "compile.py: link error: the origin -$0001 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "-Ttext=0x10000"]
-status 0
+status 1
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
 status 0
 run ["compile.py", "a.c", "-Ttextual"]
@@ -1010,12 +1008,10 @@ stderr "compile.py: link error: textual: No such file or directory\n"
 run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
 status 0
 file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
-file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
 file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
 file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
 file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
 file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
-file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
 file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
 file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
 file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
@@ -1256,10 +1252,11 @@ status 0
 run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
 status 0
 run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
-status none
-raised ["error", "argument out of range"]
+status 1
+stderr "compile.py: link error: the origin -$0001 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "-Ttext=0x10000"]
-status 0
+status 1
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
 status 0
 run ["compile.py", "a.c", "-Ttextual"]
@@ -1268,12 +1265,10 @@ stderr "compile.py: link error: textual: No such file or directory\n"
 run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
 status 0
 file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
-file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
 file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
 file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
 file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
 file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
-file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
 file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
 file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
 file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
@@ -1514,10 +1509,11 @@ status 0
 run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
 status 0
 run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
-status none
-raised ["error", "argument out of range"]
+status 1
+stderr "compile.py: link error: the origin -$0001 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "-Ttext=0x10000"]
-status 0
+status 1
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
 status 0
 run ["compile.py", "a.c", "-Ttextual"]
@@ -1526,12 +1522,10 @@ stderr "compile.py: link error: textual: No such file or directory\n"
 run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
 status 0
 file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
-file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
 file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
 file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
 file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
 file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
-file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
 file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
 file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
 file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316

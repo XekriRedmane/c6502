@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "asdl/runtime.h"
 #include "binutils/elf.h"
 #include "binutils/ld.h"
 #include "passes/link_script.h"
@@ -24,13 +25,18 @@ inline constexpr std::int64_t kDefaultOrigin = 0x0800;
 // Returns the executable that links `inputs`, each an object and the
 // name it goes by, which the script's file patterns match without its
 // directory. `script` is a parsed linker script, or none for the
-// default layout from `origin`. `defsyms` gives addresses for names no
-// object defines, and a runtime helper it names isn't taken from the
+// default layout from `origin`, which must be in $0000-$FFFF
+// (`origin_message` gives the LinkError's message for one outside).
+// `defsyms` gives addresses for names no object defines, and a runtime helper it names isn't taken from the
 // runtime library. The objects are the caller's, and the link renames
 // and redefines their symbols in place, as Python's does. Throws
 // `CompileError` with Python's class and message: "LinkError" for a
 // problem with the program, and "ZpSlotAllocationError" or
 // "ZpLocalAllocationError" when the merged program's slots don't fit.
+// Returns the message of the LinkError for a link without a script
+// whose origin is outside $0000-$FFFF.
+std::string origin_message(asdl::Int origin);
+
 binutils::elf::ElfFile link_objects(binutils::ld::Objects inputs,
                                     const std::optional<link_script::Script>& script,
                                     std::int64_t origin = kDefaultOrigin,

@@ -93,9 +93,17 @@ ld::Names to_names(const SymbolAddrs& table) {
 
 }  // namespace
 
+std::string origin_message(asdl::Int origin) {
+  return "the origin " + link_layout::address_text(origin) +
+         " is outside the 6502's address space ($0000-$FFFF)";
+}
+
 elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::Script>& script,
                           std::int64_t origin, const ld::Names& defsyms) {
   if (inputs.empty()) throw link_error("linking needs at least one object");
+  if (!script && !(0 <= origin && origin < link_layout::kAddressSpace)) {
+    throw link_error(origin_message(origin));
+  }
   std::vector<LinkMetadata> metas;
   ld::Objects objects;
   for (auto& [path, obj] : inputs) {

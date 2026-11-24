@@ -101,6 +101,14 @@ TEST_CASE("lay_out gives Python's message at every raise site") {
        "section .t runs past the end of region r by 1 bytes"},
       {"MEMORY { r : ORIGIN = 0x10, LENGTH = 4 } SECTIONS { .t 0 : { *(.text) } AT> r }",
        "section .t runs past the end of region r by 1 bytes"},
+      {"SECTIONS { .t 0xFFFC : { *(.text) *(.data) } }",
+       "section .t runs at $FFFC with 8 bytes, outside the 6502's address space ($0000-$FFFF)"},
+      {"SECTIONS { .t -1 : { *(.text) *(.data) } }",
+       "section .t runs at -$0001 with 8 bytes, outside the 6502's address space ($0000-$FFFF)"},
+      {"SECTIONS { .t 0x100 : AT(0xFFFC) { *(.text) *(.data) } }",
+       "section .t loads at $FFFC with 8 bytes, outside the 6502's address space ($0000-$FFFF)"},
+      // An empty section may start at $10000, the end of memory.
+      {"SECTIONS { .t 0xFFF8 : { *(.text) *(.data) } .u : { } .v 0x10000 : { } }", "no error"},
       {"SECTIONS { .t 0 : { *(.text) } }",
        "no output section in the script takes `d` (section .data, a/b\\u.o)"},
       // The file pattern matches the name after the last `\`.

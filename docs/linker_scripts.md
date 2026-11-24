@@ -158,6 +158,14 @@ its `JMP`:
 `ENTRY`, `INCLUDE`, `/DISCARD/`, `FILL`, `BYTE`, `SORT`, and `. =`
 between output sections are errors.
 
+Every output section's bytes, at its run address and at its load
+address, must lie in the 6502's 64K, $0000-$FFFF. A section that
+starts below $0000 or runs past $FFFF is an error, such as `section
+.bss runs at $1AF1 with 480000 bytes, outside the 6502's address space
+($0000-$FFFF)`. An empty section may start at $10000, so the sections
+after one that fills memory to the top are no error. Without a script,
+an origin (`-Ttext=ADDR`) outside $0000-$FFFF is an error too.
+
 ## The runtime library
 
 A multiplication, a division or remainder, and a shift by a variable

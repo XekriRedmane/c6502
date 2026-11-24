@@ -447,15 +447,20 @@ def link_objects(
     """The executable that links `inputs`, each an object and the name
     it goes by (which the script's file patterns match without its
     directory). `script` is a parsed linker script, or None for the
-    default layout from `origin`. `defsyms` gives addresses for names
-    no object defines, and a runtime helper it names isn't taken from
-    the runtime library."""
+    default layout from `origin`, which must be in $0000-$FFFF.
+    `defsyms` gives addresses for names no object defines, and a
+    runtime helper it names isn't taken from the runtime library."""
     from passes.link_layout import (
-        LayoutError, Unit, default_script, lay_out, startup_lines,
-        tail_jump,
+        ADDRESS_SPACE, LayoutError, Unit, address_text, default_script,
+        lay_out, startup_lines, tail_jump,
     )
     if not inputs:
         raise LinkError("linking needs at least one object")
+    if script is None and not 0 <= origin < ADDRESS_SPACE:
+        raise LinkError(
+            f"the origin {address_text(origin)} is outside the 6502's "
+            f"address space ($0000-$FFFF)"
+        )
     defsyms = dict(defsyms or {})
     metas: list[LinkMetadata] = []
     objects: list[tuple[str, E.ElfFile]] = []

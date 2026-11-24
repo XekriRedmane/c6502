@@ -7,7 +7,8 @@ parser and type checker, each item's default section
 linked programs laid out by a script (passes/link_layout.py): run
 in the simulator, with `.data` copied from ROM, a NOLOAD `.bss`
 cleared, a section at a fixed address, page alignment, and a link
-that fails on a region that overflows. It also covers functions
+that fails on a region that overflows or a section outside the
+6502's address space. It also covers functions
 that end by jumping to another falling into it instead
 (`link_layout.fall_through`), and `(NOREORDER)`.
 """
@@ -30,10 +31,12 @@ def _codegen(src: str) -> str:
     return _run_stage("codegen", preprocess(src), optimize=True)
 
 
-def _link(sources: list[str], script: str | None = None):
+def _link(sources: list[str], script: str | None = None,
+          extra: list[str] = ()):
     """Compiles each source with `-O` to an object and links them, with
-    `script` as the linker script. Returns the exit code, the linked
-    program as text (`link_helpers.linked_text`), and stderr."""
+    `script` as the linker script and `extra` on the link's command
+    line. Returns the exit code, the linked program as text
+    (`link_helpers.linked_text`), and stderr."""
     from tests.link_helpers import (
         compile_object, link_capture_stderr, linked_text,
     )
@@ -48,7 +51,8 @@ def _link(sources: list[str], script: str | None = None):
             ld = Path(tmp) / "prog.ld"
             ld.write_text(script)
         out = Path(tmp) / "out"
-        rc, err = link_capture_stderr(paths, out, script=ld)
+        rc, err = link_capture_stderr(paths, out, script=ld,
+                                      extra=list(extra))
         text = linked_text(out) if rc == 0 else ""
     return rc, text, err
 
@@ -212,6 +216,37 @@ class TestScriptedLink(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertRegex(
             err, r"section \.\w+ runs past the end of region rom by \d+ bytes",
+        )
+
+    def test_origin_outside_address_space_rejected(self) -> None:
+        # The last is too wide for the C++ linker's 64-bit addresses.
+        for origin, shown in (("0x10000", "$10000"), ("-1", "-$0001"),
+                              ("0x10000000000000000", "$10000000000000000")):
+            with self.subTest(origin=origin):
+                rc, _, err = _link([_UNIT_A, _UNIT_B],
+                                   extra=[f"-Ttext={origin}"])
+                self.assertEqual(rc, 1)
+                self.assertIn(
+                    f"link error: the origin {shown} is outside the "
+                    f"6502's address space ($0000-$FFFF)", err,
+                )
+
+    def test_section_past_the_top_of_memory_rejected(self) -> None:
+        rc, _, err = _link([_UNIT_A, _UNIT_B], extra=["-Ttext=0xFFF0"])
+        self.assertEqual(rc, 1)
+        self.assertRegex(
+            err, r"section \.text runs at \$FFF0 with \d+ bytes, outside "
+                 r"the 6502's address space \(\$0000-\$FFFF\)",
+        )
+
+    def test_load_address_outside_address_space_rejected(self) -> None:
+        script = _ROM_SCRIPT.replace("ORIGIN = 0x8000", "ORIGIN = 0xFFF0")
+        script = script.replace("LENGTH = 16K", "LENGTH = 1K")
+        rc, _, err = _link([_UNIT_A, _UNIT_B], script)
+        self.assertEqual(rc, 1)
+        self.assertRegex(
+            err, r"section \.\w+ (runs|loads) at \$[0-9A-F]+ with \d+ "
+                 r"bytes, outside the 6502's address space",
         )
 
     def test_unplaced_section_rejected(self) -> None:

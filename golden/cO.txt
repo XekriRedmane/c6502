@@ -3683,11 +3683,11 @@ run ["compile.py", "tests/chapter_15/valid/initialization/static_nested.c", "-c"
 status 0
 write script.ld blob 90d860b7f133e5d815b47be1c854be3cb4e63c3178d767541771b9598798ee81
 run ["compile.py", "unit.o", "-o", "prog"]
-status 0
+status 1
+stderr "compile.py: link error: section .bss runs at $0E21 with 480000 bytes, outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "unit.o", "-T", "script.ld", "@sim_defsyms", "-o", "prog_t"]
 status 1
 stderr "compile.py: link error: section .bss runs past the end of region ram by 449728 bytes\n"
-file prog sha256 5bbe3338cdd6d189c28a23ff44f9d50e2000f6316f88eb1b4e0028d454729f9a 488924
 file script.ld sha256 90d860b7f133e5d815b47be1c854be3cb4e63c3178d767541771b9598798ee81 328
 file unit.o sha256 e20daf89e83e8c2effb2257c0aed855e6c3609c9f3955ee9372ab68aa8b97f62 33276
 end
@@ -5155,11 +5155,11 @@ run ["compile.py", "tests/chapter_17/valid/libraries/sizeof_extern.c", "-c", "-O
 status 0
 write script.ld blob 90d860b7f133e5d815b47be1c854be3cb4e63c3178d767541771b9598798ee81
 run ["compile.py", "unit.o", "-o", "prog"]
-status 0
+status 1
+stderr "compile.py: link error: section .bss runs at $0800 with 16000000 bytes, outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "unit.o", "-T", "script.ld", "@sim_defsyms", "-o", "prog_t"]
 status 1
 stderr "compile.py: link error: section .bss runs past the end of region ram by 15969280 bytes\n"
-file prog sha256 3c244ac9d6be5401d028e0d27520f1c639d109289e0a98796e56fe82e1b6ecf0 16001320
 file script.ld sha256 90d860b7f133e5d815b47be1c854be3cb4e63c3178d767541771b9598798ee81 328
 file unit.o sha256 98963a8df9ee76a825669f7537d51a60a777d7afba505955f6b2086fc54416a3 816
 end

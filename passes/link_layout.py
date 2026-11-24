@@ -30,7 +30,11 @@ Nothing moves across an assignment in the section, since one marks
 an address.
 
 A section that runs past the end of its region, or whose load bytes
-run past the end of its load region, is an error.
+run past the end of its load region, is an error, and so is one whose
+run or load bytes lie outside the 6502's 64K of address space
+($0000-$FFFF, `ADDRESS_SPACE`). An empty section may start at $10000,
+the end of the address space, as the sections after one that fills
+memory to the top do.
 
 `startup_lines` is code for `__zp_init`, which the boot code calls
 before `main`: it copies each `AT>` section from its load address to
@@ -53,6 +57,16 @@ from passes.zp_link_metadata import ItemMeta
 
 class LayoutError(Exception):
     """A program the script can't lay out."""
+
+
+# The number of addresses the 6502 has, $0000-$FFFF.
+ADDRESS_SPACE = 0x10000
+
+
+def address_text(n: int) -> str:
+    """`n` as an address for a message: `$0800`, or `-$0001` for a
+    negative one."""
+    return f"${n:04X}" if n >= 0 else f"-${-n:04X}"
 
 
 @dataclass
@@ -295,8 +309,9 @@ def lay_out(
     the value of a symbol the script names that the layout doesn't
     define (such as an absolute symbol from a unit), or None. Raises
     `LayoutError` for an item no output section takes, an item that a
-    NOLOAD section can't hold, a section with nowhere to go, or one
-    that runs past the end of its region."""
+    NOLOAD section can't hold, a section with nowhere to go, one that
+    runs past the end of its region, or one outside the address
+    space."""
     layout = Layout()
     sym = layout.symbols
     ev = _Evaluator(script, sym, lookup)
@@ -416,6 +431,13 @@ def lay_out(
                     f"{region} by {last - r.end} bytes"
                 )
             cursor[region] = last
+        for what, start in (("runs at", vma), ("loads at", lma)):
+            if start < 0 or start + out.size > ADDRESS_SPACE:
+                raise LayoutError(
+                    f"section {sec.name} {what} {address_text(start)} "
+                    f"with {out.size} bytes, outside the 6502's address "
+                    f"space ($0000-$FFFF)"
+                )
         layout.outputs.append(out)
         prev_end = end
     unplaced = [

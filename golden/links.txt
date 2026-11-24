@@ -302,7 +302,7 @@ status 2
 stderr "compile.py: --defsym takes NAME=VALUE: x=y\n"
 run ["compile.py", "good.o", "-Ttext=0x10000"]
 status 1
-stderr "compile.py: link error: good.o: undefined symbol `rescue_bobble`\n"
+stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
 run ["compile.py", "good.o", "-o", "nodir/prog"]
 status 1
 stderr "compile.py: link error: good.o: undefined symbol `rescue_bobble`\n"

@@ -24,6 +24,14 @@ namespace c6502::passes::link_layout {
 
 namespace elf = ::c6502::binutils::elf;
 
+// The number of addresses the 6502 has, $0000-$FFFF (Python's
+// `ADDRESS_SPACE`).
+inline constexpr std::int64_t kAddressSpace = 0x10000;
+
+// Returns `n` as an address for a message: `$0800`, or `-$0001` for a
+// negative one (Python's `address_text`).
+std::string address_text(asdl::Int n);
+
 // One input file of the link (Python's `Unit`, which linker.py's
 // `_unit` builds). `path` is its name, for messages and for the
 // script's file patterns, which match it after its last `/` or `\`.
@@ -101,7 +109,8 @@ link_script::Script default_script(const std::vector<Unit>& units, std::int64_t 
 // `CompileError("LayoutError", ...)` with Python's message for an item
 // no output section takes, an item that a NOLOAD section can't hold, a
 // section with nowhere to go, one that runs past the end of its region,
-// and an expression the layout can't evaluate. A value past the 128
+// one whose run or load bytes lie outside $0000-$FFFF, and an
+// expression the layout can't evaluate. A value past the 128
 // bits the evaluator computes in, or an address past 64 bits, throws
 // `InternalError`.
 Layout lay_out(const link_script::Script& script, const std::vector<Unit>& units,

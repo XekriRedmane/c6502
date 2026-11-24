@@ -346,14 +346,24 @@ std::string respond_inputs(Lines& lines, const json::Value& kwargs, bool link) {
   // A null origin is `DEFAULT_ORIGIN`, as compile.py gives the linker
   // when the command line has none.
   const json::Value& given = required(kwargs, "origin");
-  const std::int64_t origin = given.kind == json::Value::Kind::kNull
-                                  ? passes::linker::kDefaultOrigin
-                                  : address(given, "origin");
+  const bool wide_origin = given.kind == json::Value::Kind::kInt &&
+                           (given.integer < asdl::Int(INT64_MIN) ||
+                            given.integer > asdl::Int(INT64_MAX));
+  const std::int64_t origin = given.kind == json::Value::Kind::kNull ? passes::linker::kDefaultOrigin
+                              : wide_origin                          ? 0
+                                                                     : address(given, "origin");
   binutils::elf::ElfFile exe;
   try {
     std::optional<passes::link_script::Script> script;
     if (script_path.kind == json::Value::Kind::kString) {
       script = passes::link_script::read_script(script_path.string);
+    }
+    // An origin too wide for the linker's 64 bits is outside the
+    // address space too, and link_objects reports that after its check
+    // for no objects. A link with a script doesn't read the origin.
+    if (wide_origin && !script) {
+      if (objects.empty()) throw CompileError("LinkError", "linking needs at least one object");
+      throw CompileError("LinkError", passes::linker::origin_message(given.integer));
     }
     exe = passes::linker::link_objects(std::move(objects), script, origin, names);
   } catch (const CompileError& e) {

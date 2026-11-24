@@ -395,11 +395,14 @@ only then reports the input it stopped at. A link's error keeps its
 class (`LinkError`, `ZpSlotAllocationError`, `ZpLocalAllocationError`;
 a `ScriptError` and a `LayoutError` reach compile.py as `LinkError`s,
 as in Python), and is reported as `compile.py: link error: <message>`.
-The `struct.error` that `elf.write` raises for a field outside its
-range (an addend, a size, or an address a link places from an origin
-such as -1) comes back as `struct.error` (which `cpp_backend._error_type`
-tells apart from `re.error`), after the output file is opened, as
-Python does. An executable that can't be written gives the OSError of
+Both linkers reject an origin outside $0000-$FFFF (`link_objects`) and
+an output section whose run or load bytes lie outside it (`lay_out`),
+since 24 Nov 2026. Before that, `-Ttext=-1` reached `elf.write`'s
+`struct.error`, and a program with more than 64K of `.bss` linked. The
+`struct.error` that `elf.write` raises for a field outside its range
+(an addend or a size) comes back as `struct.error` (which
+`cpp_backend._error_type` tells apart from `re.error`), after the
+output file is opened, as Python does. An executable that can't be written gives the OSError of
 its errno.
 
 The variable is read at each compile, and without

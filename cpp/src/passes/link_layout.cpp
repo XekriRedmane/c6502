@@ -32,7 +32,11 @@ Nothing moves across an assignment in the section, since one marks an
 address.
 
 A section that runs past the end of its region, or whose load bytes
-run past the end of its load region, is an error.
+run past the end of its load region, is an error, and so is one whose
+run or load bytes lie outside the 6502's 64K of address space
+($0000-$FFFF, `kAddressSpace`). An empty section may start at $10000,
+the end of the address space, as the sections after one that fills
+memory to the top do.
 
 `startup_lines` is code for `__zp_init`, which the boot code calls
 before `main`. It copies each `AT>` section from its load address to
@@ -242,6 +246,10 @@ std::string file_name(const std::string& path) {
 }
 
 }  // namespace
+
+std::string address_text(asdl::Int n) {
+  return n >= 0 ? "$" + pyrepr::hex(n, 4) : "-$" + pyrepr::hex(-n, 4);
+}
 
 std::optional<std::string> tail_jump(const elf::SectionPtr& sec,
                                      const std::vector<elf::SymbolPtr>& symbols) {
@@ -510,6 +518,14 @@ Layout lay_out(const link_script::Script& script, const std::vector<Unit>& units
                      " by " + pyrepr::integer(last - r.end()) + " bytes");
       }
       cursor.insert_or_assign(**region, last);
+    }
+    const std::pair<const char*, asdl::Int> starts[] = {{"runs at", vma}, {"loads at", lma}};
+    for (const auto& [what, start] : starts) {
+      if (start < 0 || start + size > kAddressSpace) {
+        layout_error("section " + sec.name + " " + what + " " + address_text(start) + " with " +
+                     pyrepr::integer(size) + " bytes, outside the 6502's address space " +
+                     "($0000-$FFFF)");
+      }
     }
     layout.outputs.push_back(std::move(out));
     prev_end = end;

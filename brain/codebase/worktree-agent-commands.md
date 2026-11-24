@@ -10,4 +10,5 @@
 - `cmake --build ... --target c6502_tests` under MSBuild doesn't run ZERO_CHECK, so a new file under cpp/tests isn't compiled and its cases are silently missing. Run `cmake -S cpp -B cpp/build` first, and count the cases (`c6502_tests -tc="<pattern>"`) to see them run.
 - A wait loop that greps a build log for `error` matches `test_parser_errors.cpp` and ends early. Grep for `error C`, `error LNK`, or the last target's `->` line.
 - Windows Python reads `/c/w/...` as a path on the current drive's root and fails. Give Python scripts `C:/w/...`.
+- `uv run python - <<'EOF'` (Python on stdin, quoted delimiter) passes the guard, and a single `\n` in its string literals reaches Python intact, but `\\` arrives as `\`, so `"\\n"` became a newline in a file. Keep edit scripts with doubled backslashes in files written by the Write tool.
 - `bc` isn't installed in Git Bash. Time a command with `date +%s%3N` and `$(( ))`.

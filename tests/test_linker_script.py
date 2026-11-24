@@ -13,15 +13,12 @@ that end by jumping to another falling into it instead
 """
 from __future__ import annotations
 
-import io
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from parser import ParserError, parse
-from passes.link_script import ScriptError, parse_script
 from passes.type_checking import TypeCheckError
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -98,85 +95,6 @@ unsigned char pick(unsigned char i) { hits++; return table[i] + hits; }
 """
 # 30 + 101 + 7 + 9, with buf cleared.
 _EXPECTED = 147
-
-
-class TestScriptParser(unittest.TestCase):
-
-    def test_regions_and_sections(self) -> None:
-        script = parse_script(_ROM_SCRIPT)
-        self.assertEqual(script.regions["rom"].origin, 0x8000)
-        self.assertEqual(script.regions["rom"].length, 0x4000)
-        secs = {s.name: s for s in script.output_sections()}
-        self.assertEqual(secs[".data"].region, "ram")
-        self.assertEqual(secs[".data"].load_region, "rom")
-        self.assertTrue(secs[".bss"].noload)
-        self.assertEqual(secs[".text"].contents[0].patterns, [".text.boot"])
-
-    def test_gnu_spellings(self) -> None:
-        script = parse_script(
-            "MEMORY { r : org = 0x1000, len = 2K }\n"
-            "SECTIONS { .text : { *(.text) } >r }\n"
-        )
-        self.assertEqual(script.regions["r"].length, 2048)
-
-    def test_file_patterns(self) -> None:
-        script = parse_script(
-            "SECTIONS { .a : { zstring.asm(.text) } "
-            ".b : { *disk.asm(.text .data) } .c : { *(.text) } }\n"
-        )
-        secs = {s.name: s for s in script.output_sections()}
-        self.assertEqual(secs[".a"].contents[0].file, "zstring.asm")
-        self.assertEqual(secs[".b"].contents[0].file, "*disk.asm")
-        self.assertEqual(secs[".b"].contents[0].patterns, [".text", ".data"])
-        self.assertEqual(secs[".c"].contents[0].file, "*")
-
-    def test_noreorder(self) -> None:
-        script = parse_script(
-            "SECTIONS { .a (NOREORDER) : { *(.text) } .b : { *(.data) } "
-            ".c (0x100) : { *(.rodata) } }\n"
-        )
-        secs = {s.name: s for s in script.output_sections()}
-        self.assertFalse(secs[".a"].reorder)
-        self.assertFalse(secs[".a"].noload)
-        self.assertTrue(secs[".b"].reorder)
-        self.assertEqual(secs[".c"].address.value, 0x100)
-
-    def test_constant_computes_its_operator_alone(self) -> None:
-        # Each operator of a region's value used to be computed for
-        # every `Binary`, so a negative right operand made a `+` raise
-        # the `<<`'s ValueError, and a large one took all of memory.
-        script = parse_script(
-            "MEMORY { r : ORIGIN = 0x800 + -1, LENGTH = 1 + 0x10000000000 }"
-        )
-        self.assertEqual(script.regions["r"].origin, 0x7FF)
-        self.assertEqual(script.regions["r"].length, 0x10000000001)
-
-    def test_errors(self) -> None:
-        for src, message in [
-            ("ENTRY(main)", "isn't supported"),
-            ("SECTIONS { .text : { *(.text) } > nowhere }", "doesn't define"),
-            ("MEMORY { r : ORIGIN = 0, LENGTH = 1 }\n"
-             "SECTIONS { .b (NOLOAD) : { *(.bss) } AT> r }", "NOLOAD"),
-            ("SECTIONS { . = 0x1000; }", "outside an output section"),
-            ("SECTIONS { .text : { (.text) } }", "file it takes"),
-            ("SECTIONS { .t : { *(.a) } .t : { *(.b) } }", "listed twice"),
-            ("SECTIONS { .t 0x100 (KEEP) : { *(.a) } }", "has type 'KEEP'"),
-            ("MEMORY { r : ORIGIN = 1 << -1, LENGTH = 1 }",
-             "ORIGIN of 'r' shifts by a negative count"),
-            ("MEMORY { r : ORIGIN = 0, LENGTH = 8 / (2 - 2) }",
-             "LENGTH of 'r' divides by zero"),
-            # These raised ValueError out of compile.py.
-            ("MEMORY { r : ORIGIN = 0800, LENGTH = 1 }",
-             "can't read the number '0800'"),
-            ("SECTIONS { .t 007 : { *(.a) } }",
-             "can't read the number '007'"),
-            # This raised KeyError for the missing LENGTH.
-            ("MEMORY { r : ORIGIN = 1, o = 2 }",
-             "region 'r' gives ORIGIN twice"),
-        ]:
-            with self.subTest(src=src):
-                with self.assertRaisesRegex(ScriptError, message):
-                    parse_script(src)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
@@ -314,127 +232,6 @@ class TestScriptedLink(unittest.TestCase):
         rc, _, err = _link([_UNIT_B], "SECTIONS { .text : { *(.text) } > r }")
         self.assertEqual(rc, 1)
         self.assertIn("doesn't define", err)
-
-
-def _entry(name: str, tail: str | None = None, function: bool = True):
-    from passes.link_layout import Entry
-    return Entry(name=name, function=function, tail=tail)
-
-
-class TestFallThrough(unittest.TestCase):
-    """`link_layout.fall_through` on items written out by hand. Each
-    result is the order of the items, with `-` after the name of each
-    one whose final `JMP` is dropped."""
-
-    _G = _entry("g")
-    _DATA = _entry("d", function=False)
-
-    def _run(self, entries, reorder=True) -> list[str]:
-        from passes.link_layout import fall_through
-        return [e.name + ("-" if dropped else "")
-                for e, dropped in fall_through(entries, reorder=reorder)]
-
-    def test_moves_target_after_jump(self) -> None:
-        f = _entry("f", "g")
-        self.assertEqual(self._run([f, self._DATA, self._G]),
-                         ["f-", "g", "d"])
-
-    def test_first_jumper_wins(self) -> None:
-        h = _entry("h", "g")
-        f = _entry("f", "g")
-        self.assertEqual(self._run([h, f, self._G]), ["h-", "g", "f"])
-
-    def test_chain(self) -> None:
-        # e falls into f, which falls into g, all at e's place.
-        g, f, e = _entry("g"), _entry("f", "g"), _entry("e", "f")
-        self.assertEqual(self._run([g, f, self._DATA, e]),
-                         ["d", "e-", "f-", "g"])
-
-    def test_cycle_keeps_one_jump(self) -> None:
-        a, b = _entry("a", "b"), _entry("b", "a")
-        self.assertEqual(self._run([a, b]), ["a-", "b"])
-
-    def test_left_alone(self) -> None:
-        # A jump to an object, to a name outside the items, or to
-        # itself.
-        items = [
-            _entry("p", "d"), _entry("q", "elsewhere"), _entry("s", "s"),
-            self._DATA, self._G,
-        ]
-        self.assertEqual(self._run(items), ["p", "q", "s", "d", "g"])
-
-    def test_noreorder(self) -> None:
-        f = _entry("f", "g")
-        self.assertEqual(self._run([f, self._DATA, self._G], reorder=False),
-                         ["f", "d", "g"])
-        self.assertEqual(self._run([f, self._G], reorder=False),
-                         ["f-", "g"])
-
-
-class TestTailJump(unittest.TestCase):
-    """`link_layout.tail_jump` finds a function's final `JMP name` in
-    its assembled bytes."""
-
-    def _tail(self, *body: str) -> str | None:
-        from binutils.assembler import assemble
-        from passes.link_layout import tail_jump
-        text = "\n".join(["f:", "   SUBROUTINE", *(
-            b if b.startswith(".") else f"   {b}" for b in body
-        )]) + "\n"
-        obj = assemble(text, "t.asm")
-        return tail_jump(obj.sections[0], obj.symbols)
-
-    def test_final_jump(self) -> None:
-        self.assertEqual(self._tail("LDA   #$01", "JMP   g"), "g")
-
-    def test_label_on_jump_kept(self) -> None:
-        # A label in front of the jump then names the target's first
-        # instruction, which is where the jump went.
-        self.assertEqual(self._tail("BEQ   .x", "RTS", ".x:", "JMP   g"),
-                         "g")
-
-    def test_not_a_final_jump(self) -> None:
-        for body in [
-            ("JMP   (vector)",),
-            ("JMP   g", "RTS"),
-            ("JMP   g", ".after:"),
-            ("JMP   g+1",),
-            ("BEQ   .x", "JMP   .x", ".x:", "RTS"),
-        ]:
-            with self.subTest(body=body):
-                self.assertIsNone(self._tail(*body))
-
-    def test_jump_table_at_end(self) -> None:
-        # Bytes that look like `JMP` in a jump table aren't one.
-        self.assertIsNone(self._tail("RTS", ".t:", "DC.W  g"))
-
-
-class TestLayoutErrors(unittest.TestCase):
-    """`link_layout.lay_out` on scripts with no units."""
-
-    def test_negative_shift(self) -> None:
-        # Python's `<<` and `>>` raise ValueError for a negative count,
-        # which ended compile.py with a traceback.
-        from passes.link_layout import LayoutError, lay_out
-        for op in ("<<", ">>"):
-            with self.subTest(op=op):
-                script = parse_script(f"SECTIONS {{ .t 1 {op} -1 : {{ }} }}")
-                with self.assertRaisesRegex(
-                    LayoutError, "a shift by a negative count",
-                ):
-                    lay_out(script, [])
-
-    def test_section_alignment_not_a_power_of_two(self) -> None:
-        # `_align` masks with `~(n - 1)`, which for 3 left 0x1001 at
-        # 0x1001, which isn't a multiple of 3.
-        from passes.link_layout import LayoutError, lay_out
-        script = parse_script("SECTIONS { .t 0x1001 : ALIGN(3) { } }")
-        with self.assertRaisesRegex(
-            LayoutError, r"ALIGN on \.t takes a power of two",
-        ):
-            lay_out(script, [])
-        script = parse_script("SECTIONS { .t 0x1001 : ALIGN(4) { } }")
-        self.assertEqual(lay_out(script, []).outputs[0].addr, 0x1004)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

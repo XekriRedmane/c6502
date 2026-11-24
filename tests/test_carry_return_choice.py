@@ -284,26 +284,6 @@ class TestLinked(unittest.TestCase):
         # Three of the five are digits.
         self.assertEqual(build_linked_sim(text.exe).run().return_int(), 33)
 
-    def test_units_disagree(self):
-        # A unit that calls the function expecting its result in A,
-        # against one that defines it returning in C.
-        from passes.linker import LinkError, _merge
-        from passes.zp_link_metadata import (
-            ExternMeta, FunctionMeta, LinkMetadata,
-        )
-        lib = LinkMetadata(defs=[FunctionMeta(
-            name="is_digit", params=["__zpabi_is_digit__c"], locals=[],
-            indirect=False, in_cycle=False, carry=True,
-        )])
-        main = LinkMetadata(externs=[ExternMeta(
-            name="is_digit", params=["__zpabi_is_digit__c"],
-        )])
-        with self.assertRaisesRegex(LinkError, "carry flag"):
-            _merge([lib, main])
-        # The other order too.
-        with self.assertRaisesRegex(LinkError, "carry flag"):
-            _merge([main, lib])
-
 
 if __name__ == "__main__":
     unittest.main()

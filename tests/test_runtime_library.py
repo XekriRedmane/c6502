@@ -10,7 +10,9 @@ tests check that a program gets only the helpers it calls, that
 `--defsym` takes precedence over the library, that a linker script
 places the helpers, that the helpers use a HARGS block the program
 moved, and that a helper with no 6502 code still names itself in the
-link error.
+link error. The tests of `closure` and of the helpers' sizes are
+doctest cases of the C++ port, in cpp/tests/test_runtime_layout.cpp
+(docs/cpp_port.md, step 8, group G6).
 """
 from __future__ import annotations
 
@@ -24,9 +26,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from binutils import elf as E
-from passes.runtime_library import (
-    LIBRARY_NAME, closure, helper_names, helper_sizes,
-)
+from rtlib.helpers import all_helper_functions
+
+# The name the runtime library's object goes by in a link.
+LIBRARY_NAME = "runtime.o"
+
+
+def helper_names() -> frozenset[str]:
+    """The names of the helpers the runtime library has, the functions
+    of rtlib/helpers.py, which the simulator keeps."""
+    return frozenset(fn.name for fn in all_helper_functions())
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
 
@@ -375,15 +384,6 @@ class TestSelection(unittest.TestCase):
         exe = _build(_DIVIDE)
         self.assertEqual(set(_own_helpers(exe)), {"sdivmod16", "udivmod16"})
         self.assertEqual(_run(exe)[1], -176)
-
-    def test_closure(self) -> None:
-        self.assertEqual(closure(["sdivmod32"]), ["udivmod32", "sdivmod32"])
-        self.assertEqual(closure(["mul8", "fadd"]), ["mul8"])
-
-    def test_sizes(self) -> None:
-        sizes = helper_sizes()
-        self.assertEqual(set(sizes), helper_names())
-        self.assertTrue(all(n > 0 for n in sizes.values()))
 
     def test_defsym_takes_precedence(self) -> None:
         from sim.linked import build_linked_sim, defsym_args

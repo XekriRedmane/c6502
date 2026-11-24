@@ -552,10 +552,11 @@ class TestReadmeLink(unittest.TestCase):
 
     def test_helpers_are_its_own(self) -> None:
         from binutils import elf as E
-        from passes.runtime_library import helper_names
+        from rtlib.helpers import all_helper_functions
+        helpers = {fn.name for fn in all_helper_functions()}
         absolute = [
             s.name for s in self.exe.symbols
-            if s.name in helper_names() and s.section == E.SHN_ABS
+            if s.name in helpers and s.section == E.SHN_ABS
         ]
         self.assertEqual(absolute, [])
 

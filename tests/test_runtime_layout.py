@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from passes.runtime_layout import CLASSIC, RuntimeLayout, RuntimeLayoutError, choose_layout, helper_footprints
+from passes.runtime_layout import CLASSIC, RuntimeLayout
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
@@ -49,51 +49,7 @@ _MONITOR = (
 )
 
 
-class TestChooseLayout(unittest.TestCase):
-
-    def test_classic_when_nothing_collides(self) -> None:
-        calls = []
-        layout = choose_layout(
-            {0x26, 0x40, 0x90}, lambda: calls.append(1) or 5,
-        )
-        self.assertEqual(layout, CLASSIC)
-        # HARGS isn't measured when the block stays put.
-        self.assertEqual(calls, [])
-
-    def test_moves_around_reserved_bytes(self) -> None:
-        reserved = set(range(0x20, 0x26))
-        layout = choose_layout(reserved, lambda: 6)
-        self.assertEqual(layout.hargs_size, 6)
-        self.assertFalse(layout.bytes() & reserved)
-        # HARGS first, then SSP, FP, DPTR, each in the lowest free run.
-        self.assertEqual(
-            (layout.hargs, layout.ssp, layout.fp, layout.dptr),
-            (0x00, 0x06, 0x08, 0x0A),
-        )
-
-    def test_unused_hargs_still_gets_a_byte(self) -> None:
-        layout = choose_layout({0x24}, lambda: 0)
-        self.assertEqual(layout.hargs_size, 1)
-        self.assertEqual(len(layout.bytes()), 7)
-
-    def test_no_room(self) -> None:
-        reserved = set(range(0x02, 0x80))
-        with self.assertRaises(RuntimeLayoutError) as cm:
-            choose_layout(reserved, lambda: 4)
-        self.assertIn("$02-$7F", str(cm.exception))
-
-
 class TestHargsSize(unittest.TestCase):
-
-    def test_helper_footprints(self) -> None:
-        fp = helper_footprints()
-        # mul32 works in HARGS+12..19, sdivmod32 stashes signs at
-        # +20 / +21, and sdivmod8 calls udivmod8.
-        self.assertEqual(fp["mul32"], 20)
-        self.assertEqual(fp["sdivmod32"], 22)
-        self.assertEqual(fp["sdivmod8"], 6)
-        self.assertGreaterEqual(fp["sdivmod8"], fp["udivmod8"])
-
 
     def test_relocated_hargs_fits_the_program(self) -> None:
         cases = {

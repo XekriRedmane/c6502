@@ -20,15 +20,13 @@ for the rest of its parameters.
 """
 from __future__ import annotations
 
-import io
 import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from compile import _run_stage, main as compile_main
+from compile import _run_stage
 from parser import ParserError, parse
 from passes.abi_selection import AbiSelectionError
 from preprocessor import preprocess
@@ -350,32 +348,6 @@ class TestAcrossUnits(unittest.TestCase):
         self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          _PAGES_SUM)
 
-    def test_checks(self) -> None:
-        from passes.slot_sharing import SlotShare, check_linked_shares
-        share = SlotShare(
-            members=(("add_page", ("__zpabi_add_page__p_0",
-                                   "__zpabi_add_page__p_1")),),
-            holders=("main",), live=(("main", ("add_page",)),),
-            forwards=(("main", "add_page"),), writers=("main",),
-        )
-        calls = [("main", "add_page"), ("add_page", "helper"),
-                 ("helper", "add_page2")]
-        check_linked_shares([share], calls, {"main", "add_page"}, {})
-        with self.assertRaisesRegex(ValueError, "`add_page` changes it"):
-            check_linked_shares([share], calls, {"main", "add_page"}, {
-                "add_page": {"__zpabi_add_page__p_1"},
-            })
-        with self.assertRaisesRegex(ValueError, "which no unit defines"):
-            check_linked_shares([share], calls, {"main"}, {})
-        # `other` calls the owner with something else, and `main` holds
-        # its value across a call that reaches `other`.
-        with self.assertRaisesRegex(ValueError, "`other`, which `add_page`"):
-            check_linked_shares(
-                [share], calls + [("helper", "other"),
-                                  ("other", "add_page")],
-                {"main", "add_page", "helper", "other"}, {},
-            )
-
     def test_something_it_calls_writes_the_bytes(self) -> None:
         # `add_page` passes its parameter on to `scan`, so the two
         # share bytes, and then `reset` passes `scan` another pointer
@@ -396,26 +368,6 @@ class TestAcrossUnits(unittest.TestCase):
         rc, _, err = _link([src, _UNIT_USE])
         self.assertNotEqual(rc, 0)
         self.assertIn("`reset`", err)
-
-
-class TestMetadata(unittest.TestCase):
-
-    def test_share_record_round_trips(self) -> None:
-        from passes.slot_sharing import SlotShare
-        from passes.zp_link_metadata import (
-            LinkMetadata, format_metadata, parse_metadata,
-        )
-        share = SlotShare(
-            members=(("f", ("__zpabi_f__p_0", "__zpabi_f__p_1")),
-                     ("g", ("__zpabi_g__q_0", "__zpabi_g__q_1"))),
-            holders=("main",),
-            live=(("main", ("f", "h")),),
-            forwards=(("f", "g"), ("main", "f")),
-            writers=("main",),
-        )
-        meta = LinkMetadata(shares=[share])
-        back = parse_metadata("\n".join(format_metadata(meta)))
-        self.assertEqual(back.shares, [share])
 
 
 # A routine at $D000 that returns the sum of the X bytes at ($E6),Y:

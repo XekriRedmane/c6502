@@ -4,14 +4,15 @@ docs/builtins.md) and the runtime helper behind it, `bin16_to_bcd`
 
 The helper's 6502 code is run on py65 for every 16-bit input and
 compared with its Python hook in the simulator, and every input is run
-through the builtin in both pipelines too. The front end is checked
-for the type it gives and the errors it reports, the optimizer for
-the constants it folds, and the IR check for the decimal-mode rule
-that the helper follows in place of the one for compiled code.
+through the builtin in both pipelines too. The optimizer is checked
+for the constants it folds, on the TAC that `compile.py --tac` prints.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6).
+(docs/cpp_port.md, step 8, group G6): the front end's type and errors
+in cpp/tests/test_bin_to_bcd_front_end.cpp, the helper's size and HARGS
+footprint in test_runtime_layout.cpp, and the IR check's decimal-mode
+rule in test_bin_to_bcd_ir_check.cpp.
 """
 from __future__ import annotations
 
@@ -20,11 +21,9 @@ import unittest
 
 import builtin_functions as bf
 import tac_ast
-from passes.identifier_resolution import IdentifierResolutionError
-from passes.type_checking import TypeCheckError
 from preprocessor import preprocess
 from sim.harness import build_sim
-from tests.test_bcd_builtins import _builtin_calls, _check, _codegen, _tac
+from tests.test_bcd_builtins import _codegen
 from tests.test_sim_chapters import _run_program as _run_tac
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -101,14 +100,13 @@ class TestHelper(unittest.TestCase):
     def test_inputs_C000_FFFF(self) -> None:
         self._shard(3)
 
-    def test_size_and_cycles(self) -> None:
-        # docs/builtins.md gives these. The loop takes the same time
-        # for every input: 712 cycles with the JSR and the RTS, and 15
-        # more when the loop's BNE crosses a page, as it does where
-        # the simulator puts the helper.
-        from passes.runtime_library import helper_sizes
+    def test_cycles(self) -> None:
+        # docs/builtins.md gives the cycles, and the helper's size, which
+        # is a doctest case of the C++ port. The loop takes the same
+        # time for every input: 712 cycles with the JSR and the RTS,
+        # and 15 more when the loop's BNE crosses a page, as it does
+        # where the simulator puts the helper.
         from sim import runtime as rt
-        self.assertEqual(helper_sizes()["bin16_to_bcd"], 46)
         run = _helper_runner()
         addr = rt.build_runtime().symbols["bin16_to_bcd"]
         # The loop starts 19 bytes in, and its BNE ends 44 bytes in.
@@ -116,78 +114,14 @@ class TestHelper(unittest.TestCase):
         self.assertEqual({run(v)[2] for v in (0, 1, 9999, 65535)},
                          {712 + 15 * crosses})
 
-    def test_footprint(self) -> None:
-        from passes.runtime_layout import helper_footprints
-        self.assertEqual(helper_footprints()["bin16_to_bcd"], 7)
 
-
-class TestFrontEnd(unittest.TestCase):
-    def test_result_type(self) -> None:
-        for decl in ("uint8_t a;", "int16_t a;", "uint32_t a;", "bool a;",
-                     "char a;", "_BitInt(12) a;", "enum { A } a;"):
-            with self.subTest(decl=decl):
-                src = (
-                    "#include <stdint.h>\n" + decl
-                    + " unsigned long g(void)"
-                    " { return __c6502_bin_to_bcd(a); }"
-                )
-                prog, _s, _t = _check(src)
-                [call] = _builtin_calls(prog)
-                self.assertEqual(type(call.data_type).__name__, "ULong")
-                self.assertEqual(
-                    type(call.args[0].data_type).__name__, "UInt",
-                )
-
-    def test_type_errors(self) -> None:
-        cases = [
-            ("double d;", "__c6502_bin_to_bcd(d)", "integer type"),
-            ("uint8_t *p;", "__c6502_bin_to_bcd(p)", "integer type"),
-            ("uint8_t t[2];", "__c6502_bin_to_bcd(t)", "integer type"),
-            ("struct s { int x; } v;", "__c6502_bin_to_bcd(v)",
-             "integer type"),
-            ("", "__c6502_bin_to_bcd()", "takes 1 arguments"),
-            ("", "__c6502_bin_to_bcd(1, 2)", "takes 1 arguments"),
-        ]
-        for decls, call, message in cases:
-            with self.subTest(call=call):
-                src = (
-                    "#include <stdint.h>\n" + decls
-                    + f" void f(void) {{ {call}; }}"
-                )
-                with self.assertRaises(TypeCheckError) as cm:
-                    _check(src)
-                self.assertIn(message, str(cm.exception))
-
-    def test_names_are_reserved(self) -> None:
-        cases = [
-            ("unsigned long __c6502_bin_to_bcd(unsigned x);",
-             "can't be declared"),
-            ("void f(void) { int __c6502_bin_to_bcd = 1; }",
-             "can't be declared"),
-            ("void *p = __c6502_bin_to_bcd;", "can only be called"),
-        ]
-        for src, message in cases:
-            with self.subTest(src=src):
-                with self.assertRaises(IdentifierResolutionError) as cm:
-                    _check(src)
-                self.assertIn(message, str(cm.exception))
-
-    def test_constant_argument_makes_a_constant_expression(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "static uint32_t s = __c6502_bin_to_bcd(12345);"
-            "uint32_t t = __c6502_bin_to_bcd(-1);"
-            "uint32_t u = __c6502_bin_to_bcd(70000L);"
-            "int a[__c6502_bin_to_bcd(10)];"
-            "int f(uint8_t k) { switch (k) {"
-            " case __c6502_bin_to_bcd(42): return 1; }"
-            " return sizeof a; }"
-        )
-        _prog, symbols, _types = _check(src)
-        self.assertEqual(symbols["s"].attrs.initial_value.value, 0x12345)
-        self.assertEqual(symbols["t"].attrs.initial_value.value, 0x65535)
-        self.assertEqual(symbols["u"].attrs.initial_value.value, 0x04464)
-        self.assertEqual(symbols["a"].type.size, 0x10)
+def _tac(src: str, optimize: bool) -> tac_ast.Program:
+    """The TAC that `compile.py --tac` prints for `src`, read back into
+    `tac_ast` objects. Its `pretty` text is the constructors' calls with
+    their fields as keywords, so Python can evaluate it."""
+    from compile import _run_stage
+    return eval(_run_stage("tac", preprocess(src), optimize=optimize),
+                vars(tac_ast))
 
 
 def _unaries(prog: tac_ast.Program, fn: str) -> list:

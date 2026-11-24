@@ -777,22 +777,3 @@ class TestMergedRowTables(unittest.TestCase):
         # m(2, 3) = 35, t1(9, 27) = (144 + 27) & 0xFF, s0 = 1 + 0 + 7,
         # s1 = 2 + 0 + 7.
         self.assertEqual(self._run(text), 35 + 171 * 2 + 8 * 3 + 9 * 5)
-
-
-class TestZeroPageObjectSizes(unittest.TestCase):
-    """A zero-page object without bytes, which only a metadata block
-    written by hand lists, is a link error. A promoted one used to end
-    the link with a ZeroDivisionError in `_place_zp_objects`."""
-
-    def test_no_bytes_rejected(self) -> None:
-        from passes.linker import LinkError, _merge_zp_objects
-        from passes.zp_link_metadata import LinkMetadata, ZpObjectMeta
-        for size in (0, -1):
-            meta = LinkMetadata(zp_objects=[
-                ZpObjectMeta("v", size, defined=True, weight=1)])
-            with self.subTest(size=size), self.assertRaises(LinkError) as cm:
-                _merge_zp_objects([meta])
-            self.assertEqual(
-                str(cm.exception),
-                f"zero-page object `v` has {size} bytes, where an object "
-                f"has at least one")

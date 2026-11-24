@@ -605,3 +605,65 @@ TEST_CASE("init_lines and data_lines") {
 TEST_CASE("carry_conflict") {
   CHECK(linker::carry_conflict("g").rfind("the units disagree on whether `g` returns", 0) == 0);
 }
+
+// The cases below are Python unit tests of the linker's helpers, ported
+// by hand, one case per test with each of its assertions.
+
+TEST_CASE("linker: test_linker.py::TestZeroPageObjectSizes::test_no_bytes_rejected") {
+  for (const Int size : {Int{0}, Int{-1}}) {
+    CAPTURE(static_cast<long long>(size));
+    CHECK(error_of([&] { linker::merge_zp_objects({with_zp({zp("v", size, {}, true, 1)})}); }) ==
+          "LinkError: zero-page object `v` has " + c6502::pyrepr::integer(size) +
+              " bytes, where an object has at least one");
+  }
+}
+
+TEST_CASE("linker: test_carry_return_choice.py::TestLinked::test_units_disagree") {
+  // A unit that calls the function expecting its result in A, against
+  // one that defines it returning in C, in either order.
+  FunctionMeta d = def("is_digit", {"__zpabi_is_digit__c"});
+  d.carry = true;
+  const LinkMetadata lib = with_defs({d});
+  const LinkMetadata main = with_externs({ext("is_digit", {"__zpabi_is_digit__c"})});
+  const std::string want = "LinkError: " + linker::carry_conflict("is_digit");
+  CHECK(error_of([&] { linker::merge({lib, main}); }) == want);
+  CHECK(error_of([&] { linker::merge({main, lib}); }) == want);
+}
+
+TEST_CASE("slot_sharing: test_slot_sharing.py::TestAcrossUnits::test_checks") {
+  SlotShare s = share({{"add_page", {"__zpabi_add_page__p_0", "__zpabi_add_page__p_1"}}},
+                      {"main"});
+  s.live = {{"main", {"add_page"}}};
+  s.forwards = {{"main", "add_page"}};
+  s.writers = {"main"};
+  using Calls = std::vector<std::pair<std::string, std::string>>;
+  const Calls calls = {{"main", "add_page"}, {"add_page", "helper"}, {"helper", "add_page2"}};
+  using Changed = c6502::OrderedMap<std::string, NameSet>;
+  CHECK(error_of([&] {
+          c6502::passes::check_linked_shares({s}, calls, {"main", "add_page"}, Changed{});
+        }) == "no error");
+  Changed changed;
+  changed.insert_or_assign("add_page", NameSet{"__zpabi_add_page__p_1"});
+  CHECK(error_of([&] {
+          c6502::passes::check_linked_shares({s}, calls, {"main", "add_page"}, changed);
+        }) ==
+        "ValueError: a unit keeps a value in the parameter bytes `__zpabi_add_page__p_0` across a "
+        "call to `add_page` because its declaration makes the parameter `const`, but `add_page` "
+        "changes it");
+  CHECK(error_of([&] { c6502::passes::check_linked_shares({s}, calls, {"main"}, Changed{}); }) ==
+        "ValueError: the parameter bytes `__zpabi_add_page__p_0` hold a value across calls to "
+        "`add_page`, which no unit defines, so nothing checks that it leaves its `const` "
+        "parameter alone");
+  // `other` calls the owner with something else, and `main` holds its
+  // value across a call that reaches `other`.
+  Calls more = calls;
+  more.emplace_back("helper", "other");
+  more.emplace_back("other", "add_page");
+  CHECK(error_of([&] {
+          c6502::passes::check_linked_shares({s}, more, {"main", "add_page", "helper", "other"},
+                                             Changed{});
+        }) ==
+        "ValueError: `main` keeps a value in the parameter bytes `__zpabi_add_page__p_0` across "
+        "its call to `add_page`, because a declaration makes the parameter `const`, but `other`, "
+        "which `add_page` reaches, writes those bytes; declare the parameter without `const`");
+}

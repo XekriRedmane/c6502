@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "argparse.h"
+#include "binutils/assemble_command.h"
 #include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"
@@ -152,6 +153,32 @@ TEST_CASE("opcodes: the table and its decoding") {
   CHECK(opcodes::size(opcodes::Mode::kInd) == 3);
   CHECK(opcodes::is_mnemonic("BIT"));
   CHECK(!opcodes::is_mnemonic("BRA"));
+}
+
+TEST_CASE("elf: the fields elf.write packs in 32 unsigned bits") {
+  // A link from the origin -1 (`compile.py -Ttext=-1`) puts `.text` at
+  // -1 and enters there, which Python's `_SHDR.pack` and `_EHDR.pack`
+  // reject with struct.error. The C++ writer would keep the low bits.
+  const auto raises = [](const elf::ElfFile& f) {
+    try {
+      check_write_fields(f);
+    } catch (const CompileError& e) {
+      return e.python_type() == "struct.error" && std::string(e.what()) == "argument out of range";
+    }
+    return false;
+  };
+  elf::ElfFile f = sample();
+  CHECK(!raises(f));
+  f.sections[0]->addr = -1;
+  CHECK(raises(f));
+  f.sections[0]->addr = 0x800;
+  f.entry = 0x100000000;
+  CHECK(raises(f));
+  f.entry = 0x800;
+  f.segments.push_back(elf::Segment{.vaddr = -1, .paddr = -1, .data = "x", .memsz = 1});
+  CHECK(raises(f));
+  f.segments.back().vaddr = f.segments.back().paddr = 0xFFFF;
+  CHECK(!raises(f));
 }
 
 TEST_CASE("argparse: nm's usage, errors, and combined flags") {

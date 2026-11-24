@@ -45,8 +45,11 @@ std::string assemble_response(const std::string& text);
 // Throws the `struct.error` that Python's `elf.write` raises for `obj`,
 // as `CompileError("struct.error", "argument out of range")`, for a
 // relocation's offset outside 32 unsigned bits or its addend outside 32
-// signed bits, or a symbol's or a section's size outside 32 unsigned
-// bits, where the C++ writer would keep the low 32 bits. The class's
+// signed bits, a symbol's or a section's size outside 32 unsigned bits,
+// or a section's address or alignment, the entry, or a segment's
+// addresses or size outside 32 unsigned bits (an executable linked from
+// an origin such as -1), where the C++ writer would keep the low 32
+// bits. The class's
 // name is "error", which `re.error` has too, so the type gives its module
 // for cpp_backend.py to tell the two apart.
 void check_write_fields(const elf::ElfFile& obj);

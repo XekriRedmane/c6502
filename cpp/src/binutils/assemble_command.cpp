@@ -116,8 +116,24 @@ void check_write_fields(const elf::ElfFile& obj) {
       if (sym->size < 0 || sym->size > UINT32_MAX) out_of_range();
     }
   }
+  // The section headers' addresses, alignments, and sizes, then the
+  // ELF header's entry and the program headers' addresses and sizes,
+  // which a link places from its origin: `-Ttext=-1` puts `.text` at
+  // -1, which `_SHDR.pack` rejects. Each of these is an unsigned 32-bit
+  // field ("<I"), whose error is the same message.
+  const auto check_u32 = [&](std::int64_t v) {
+    if (v < 0 || v > UINT32_MAX) out_of_range();
+  };
   for (const auto& s : obj.sections) {
-    if (s->size() > UINT32_MAX) out_of_range();
+    check_u32(s->addr);
+    check_u32(s->size());
+    check_u32(s->align);
+  }
+  check_u32(obj.entry);
+  for (const auto& seg : obj.segments) {
+    check_u32(seg.vaddr);
+    check_u32(seg.paddr);
+    check_u32(seg.memsz);
   }
 }
 

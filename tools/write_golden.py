@@ -116,7 +116,7 @@ from capture_passes import corpus  # noqa: E402
 # Each mode of compare_backends.py's programs, with the names of the
 # files its jobs leave that are kept as text, which a diff shows line by
 # line. Every other file is kept as its hash. A mode added to
-# compare_backends.py's `_program_commands` needs an entry here, and
+# compare_backends.py's `_program_commands` gets an entry here, and
 # `c6502cpp check-golden` runs its commands as compile.py would.
 MODES = {
     "O": ("out.s",),

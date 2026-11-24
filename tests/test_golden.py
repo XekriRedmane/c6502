@@ -15,7 +15,7 @@ from tests.test_ir_dump import cpp_cli
 
 _ROOT = Path(__file__).resolve().parent.parent
 
-# The worker processes of check-golden. Its 8,944 jobs take about a
+# The worker processes of check-golden. Its 19,672 jobs take about a
 # minute with 12.
 _WORKERS = max(1, min(12, os.cpu_count() or 1))
 

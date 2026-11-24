@@ -99,6 +99,11 @@ cpp/
     binutils/link_command.*   the `c6502cpp link` command
     binutils/checks.*    `c6502cpp check-binutils`, the checks of
                       tools/capture_binutils.py's records
+    golden.*          `c6502cpp check-golden`, the check of the golden
+                      files without Python ("The checks after Python")
+    frozen.*, unxz.*  the frozen captures' archives, and their .xz
+                      decompression with XZ Embedded
+    sha256.*          SHA-256, for the golden files' digests
     rtlib/helpers.h   the runtime helpers' table (step 7, group E)
     py_int.*          Python's `int()` of a string and its integer
                       operators, in 128 bits with an error past them
@@ -277,6 +282,10 @@ cpp/
                       tests recorded from the Python unit tests
     tac_to_asm_case.h a recorded call of tac_to_asm from the Python unit tests
   third_party/doctest doctest.h 2.4.12 and its MIT license
+  third_party/xz-embedded   XZ Embedded's decoder (release 2024-12-30),
+                      the eight files its README lists for embedding,
+                      and its 0BSD license
+  tests/frozen/       the frozen captures, an .xz archive per function
 ```
 
 doctest is the test framework because it is one header of about 320 KB
@@ -2908,6 +2917,164 @@ tools/compare_backends.py's corpus through both interpreters, with its
 file name and `-I` arguments, and compares the front end's error, or
 `main`'s result on the unoptimized TAC and on the optimized TAC, and the
 observer's result, which must be None for every program.
+
+## The checks after Python
+
+Until the Python compiler is removed at the end of step 8, every check
+of the port compares C++ with Python. Two checks of step 8's group G5
+take over from those comparisons and run with no Python at all. The
+golden files hold what each command of the corpus gave, and the frozen
+captures hold a few recorded calls of each function that the C++
+checkers check. docs/cpp_port.md ("The checks after Python") gives the
+reasons for the choice. tests/test_golden.py runs both in the suite,
+and skips them when c6502cpp isn't built.
+
+### The golden files
+
+tools/write_golden.py runs the jobs of tools/compare_backends.py with
+the Python compiler. They are each program of the corpus (the examples,
+the games' units, the chapters' programs, and seeds 0 to 99 of
+`fuzz.stmts`, `fuzz.calls`, and `fuzz.exprs`) in each of the modes `O`,
+`unopt`, `cO`, `c`, `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
+`tacO`, and the `links` jobs, which compile and link the three games
+and link the damaged files and the bad command lines. It writes them
+under `golden/`, which is checked in raw, as examples/*.asm are. Each
+mode has a manifest, `golden/<mode>.txt`, with a block for each job
+that lists its steps, each command line with its exit status, its
+stdout, its stderr, and the exception it raised, and the SHA-256 of
+each file the job left. The `-S` texts of `O` and `unopt` are files of
+their own, `golden/O/examples/sfx_tone.s` for `examples/sfx_tone.c`,
+so that a change to one program's text shows in a diff as a diff of
+that text. The other modes' texts are kept as their hashes. The fuzz
+programs' sources are in `golden/fuzz/`, since the generators that
+make them stay in Python until step 9, and the commands compile them
+from there. tools/write_golden.py's docstring gives the format.
+
+The mode `tacsim` holds the TAC interpreter's results, which are its
+only check on the corpus once tac_sim.py has no Python front end to
+take its TAC from. For each program it runs `main` on the TAC, on the
+TAC after the TAC optimizer, and under fuzz/tac_passes.py's observer,
+with tac_sim.py, as tools/compare_tac_sim.py does, and `check-golden`
+sends the backend's modes `tac-run` and `tac-observe` as that tool's
+C++ side does. The writer runs tac_sim.py in a thread with a 128 MB
+stack and a high recursion limit, so a program that recurses past
+Python's default limit has its value in the golden file, which the C++
+interpreter gives too.
+
+A command names each file of the repository by its path relative to the
+root, as in `examples/zork/main.c`, and both the writer and the checker
+run it with `<root>/` in front and take `<root>/` out of what it
+writes. The messages then name the files the way the command line does,
+and the files are the same on every machine. The writer stops with an
+error when a message names the root in a form that the replacement
+misses.
+
+```sh
+uv run python tools/write_golden.py -j 12        # with the Python compiler
+cpp/build/bin/c6502cpp check-golden -j 12        # with the C++ compiler
+cpp/build/bin/c6502cpp check-golden --manifest O --label examples/sfx_tone.c
+cpp/build/bin/c6502cpp check-golden -j 12 --update
+```
+
+`c6502cpp check-golden` (src/golden.h) reads the manifests and splits
+the jobs among `-j` worker processes, which are c6502cpp started again
+with `--worker`, since a job changes the current directory. Each worker
+takes every job's steps in an empty directory. It runs each command
+line as compile.py's `main` runs it under `C6502_CPP_BACKEND=1`, with
+the request of `cpp_backend.compile_source`, `stage_source`, or `build`
+answered by `backend::respond` in the same process and the response
+replayed as compile.py replays it. It writes the manifest's lines for
+what the job gave and compares them with the manifest's own, and each
+`-S` text with its file, and prints a `DIFFER` line for each job that
+differs, with the command and the first line that differs. Until group
+G2 ports compile.py's command line, the checker reads the forms of it
+that the jobs use, and a command line it can't read as compile.py
+would is reported as a difference of its job. When G2's `compile`
+command lands, the checker can call that instead.
+
+A change made on purpose that changes an output shows as `DIFFER` lines.
+To accept it, run `check-golden --update`, which writes the manifests
+and the `-S` texts again from what the C++ compiler gave and removes the
+texts that no job names any longer, and review the change with `git
+diff golden/` before committing it, as a change to examples/*.asm is
+reviewed. A change to a job's commands, or a new mode, is made with
+the writer while Python is there, and by an edit of the manifest by
+hand after that.
+
+A mode of compare_backends.py is added in two places. Its
+`_program_commands` gives the mode's commands, and tools/write_golden.py's
+`MODES` gets an entry with the names of the files of its jobs that are
+kept as text (none, to keep each file as its hash). A mode that isn't
+compare_backends.py's, as `tacsim` isn't, gets a method of
+`_Recorder` named in `_OWN_MODES`, which adds a step of its own and
+its result lines, and src/golden.cpp's `run_job` gets the step.
+
+On 24 Nov 2026 the golden files held 19,672 jobs of 24,298 commands in
+38 MB, 31 MB of them the `-S` texts. The Python compiler wrote them in
+9 minutes with 12 processes. `check-golden` checked them with no
+difference in 60 seconds with 12 processes in the build of MSVC 19.36,
+and in 40 seconds with 12 processes in GCC 12.2's build in WSL. With
+`split_mem_to_mem` made to split a move of a byte to itself where it
+drops it, 415 jobs differed. With label_resolution made to take a
+duplicate label, 36 jobs differed, those of the chapters' four programs
+with duplicate labels in every mode that runs label resolution.
+
+### The frozen captures
+
+tools/freeze_captures.py keeps a few recorded calls of each function
+that the C++ checkers check. They come from the captures of
+tools/capture_passes.py (`--passes all`, `stage`, `tac-stage`, `tac`,
+and `front`, over the corpus) and of tools/capture_binutils.py (the
+corpus, run without `C6502_CPP_BACKEND` so that the Python assembler
+and linker are recorded, and the suite through its pytest plugin). For
+each function it keeps the 50 smallest calls that changed the result,
+and of the calls that raised, the smallest for each form of the
+error's message, which is its class and its text with the numbers and
+the quoted names and lists taken out. A function with fewer than 50
+calls that change the result has its smallest other calls added, so
+that every function is checked on something. The records of one
+function go in one archive, `cpp/tests/frozen/<kind>/<function>.xz`,
+an xz stream with a CRC32 check of the record files with their paths
+and lengths, and of the blobs that a binutils record names. A binutils
+record that names an object by a Windows path is left out, since Linux
+reads such a path as one file name. tools/freeze_captures.py's
+docstring gives the format and the rule for a change of the result.
+
+```sh
+uv run python tools/capture_passes.py --passes all -j 12
+uv run python tools/freeze_captures.py passes captures
+cpp/build/bin/c6502cpp check-frozen
+```
+
+`c6502cpp check-frozen` decompresses each archive with XZ Embedded
+(cpp/third_party/xz-embedded, src/unxz.h), unpacks the records into a
+temporary capture directory of each kind (src/frozen.h), and runs
+`check-captures` on the passes' records and `check-binutils` on the
+binutils records, so each mismatch and each count names its function.
+A change made on purpose that changes a function's result on a frozen
+call is taken in by freezing the call again from the Python capture
+while it is there. After that, the record's output has to be written
+by hand or the call dropped, since `check-frozen` has no `--update`.
+
+On 24 Nov 2026 the frozen captures held 10,043 calls of 194 functions
+(the asm passes and the work after them through emission, the stage
+calls of steps 4 and 5, the TAC optimizer's passes, and the front end's
+calls) and 2,113
+binutils records of 47 kinds with the 1,046 objects and executables
+they name, 108 MB raw and 3.2 MB with xz. The survey estimated 12 MB
+raw and under 1 MB with xz. Most of the difference is in the calls that
+carry whole symbol tables: `inline_functions` (14.5 MB raw),
+`tac_fold_static_const_reads` (12.8 MB), `fold_const_statics` (6.7 MB),
+and `row_address_tables` and `return_pointers_in_zero_page` (4.0 and
+3.8 MB), which xz takes to about 1/30 of their size, so they keep their
+50 calls. Every raising call would have added about 70 MB raw and 3.5
+MB with xz to the binutils archives, most of them the 552 links of the
+corpus's programs that leave a helper or a name of their game
+undefined, so the freezer keeps one call of each form of message.
+`check-frozen` matched every call and record in 28 seconds in the MSVC
+build and in 4 seconds in the GCC build. With the two passes broken as
+above, it reported 3 of the 50 calls of `split_mem_to_mem` and 1 of
+the 52 of `label_resolution`, each by its name.
 
 ## Status
 

@@ -2930,3 +2930,28 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   C++ tests (3,352 cases) pass with MSVC 19.36 and GCC 12.2. The C++
   interpreter runs a recursion of up to 100,000 calls, where Python's
   raises RecursionError at about 330.
+- 24 Nov 2026: group G5 of step 8, the checks after Python
+  (cpp/README.md, "The checks after Python"). tools/write_golden.py
+  writes the golden files of compare_backends.py's jobs with the
+  Python compiler, in the modes `O`, `unopt`, `cO`, `c`, `lex`,
+  `parse`, `resolve`, `resolveO`, `tac`, and `tacO`, the `links` jobs,
+  and a mode `tacsim` of the TAC interpreter's results, which Robert
+  left to G5 to decide on and which is the only check of the C++
+  interpreter on the corpus once tac_sim.py has no TAC to run. They
+  are 19,672 jobs of 24,298 commands in 38 MB under golden/, with the
+  `-S` texts as files of their own. `c6502cpp check-golden` runs every
+  command line as compile.py would under `C6502_CPP_BACKEND=1`, with
+  no Python, and matched every job, in 60 s with 12 processes with
+  MSVC 19.36 and in 40 s with GCC 12.2 in WSL. tools/freeze_captures.py
+  froze 10,043 calls of 194 functions of tools/capture_passes.py's
+  captures and 2,113 binutils records of 47 kinds, 108 MB raw and 3.2
+  MB with xz, which `c6502cpp check-frozen` reads with XZ Embedded
+  (vendored in cpp/third_party/xz-embedded) and checks with
+  check-captures and check-binutils, matching every one in 28 s with
+  MSVC and 4 s with GCC. That is more than the survey's 12 MB and 1
+  MB, mostly from the calls that carry whole symbol tables, and of the
+  raising calls the freezer keeps one for each form of message, which
+  took the binutils archives from 3.9 MB to 0.4 MB with xz. With
+  `split_mem_to_mem` and then label_resolution broken on purpose in
+  C++, check-golden reported 415 and 36 jobs and check-frozen 3 and 1
+  calls, each under the pass's name. tests/test_golden.py runs both.

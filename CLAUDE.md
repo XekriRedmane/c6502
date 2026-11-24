@@ -311,6 +311,9 @@ uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
 uv run python tools/check_captures.py split_mem_to_mem   # C++ vs the calls
 C6502_CPP_BACKEND=1 uv run python compile.py <source.c> -S -O   # all in C++
 uv run python tools/compare_backends.py -j 12   # both back ends on the corpus
+cpp/build/bin/c6502cpp check-golden -j 12      # C++ against golden/, no Python
+cpp/build/bin/c6502cpp check-frozen            # C++ against cpp/tests/frozen
+uv run python tools/write_golden.py -j 12      # golden/ from the Python compiler
 ```
 
 With `C6502_CPP_BACKEND=1`, the C++ port compiles each C input of

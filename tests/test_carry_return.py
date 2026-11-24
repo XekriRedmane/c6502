@@ -204,17 +204,12 @@ _WV = "struct wv { int v; bool end; };\n"
 
 
 def _tac_main(src):
-    """main()'s result on unoptimized TAC. `tac_sim` doesn't run the
-    instructions the TAC optimizer introduces, such as
+    """main()'s result on unoptimized TAC, from the C++ front end and
+    TAC interpreter under `C6502_CPP_BACKEND=1`. `tac_sim` doesn't run
+    the instructions the TAC optimizer introduces, such as
     `IndirectIndexedStore`."""
-    import sim.harness as H
-    from compile import _resolved
-    from tac_sim import Simulator
-    ast, syms, types = H.type_check_program(
-        _resolved(H.preprocess(src)),
-    )
-    tac = H.translate_to_tac(ast, syms, types)
-    return Simulator(tac, syms, types).call("main", [])
+    from tests.test_sim_chapters import _run_program
+    return _run_program(src)
 
 
 class TestStructFrontEnd(unittest.TestCase):

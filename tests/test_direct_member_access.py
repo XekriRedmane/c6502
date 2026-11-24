@@ -14,19 +14,16 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _resolved, _run_stage
+from compile import _run_stage
 from preprocessor import preprocess
-from sim.harness import build_sim, translate_to_tac, type_check_program
-from tac_sim import Simulator
+from sim.harness import build_sim
+from tests.test_sim_chapters import _run_program
 
 _S = "struct s { unsigned char a; int b; unsigned char c; };\n"
 
 
 def _tac_main(src: str) -> int:
-    ast, syms, types = type_check_program(_resolved(preprocess(src)))
-    return Simulator(translate_to_tac(ast, syms, types), syms, types).call(
-        "main", [],
-    )
+    return _run_program(src)
 
 
 def _codegen(src: str) -> str:

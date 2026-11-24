@@ -63,15 +63,8 @@ import shutil
 import unittest
 from pathlib import Path
 
-from c99_to_tac import translate_program as translate_to_tac
-from parser import ParserError, parse
-from passes.identifier_resolution import resolve_program as resolve_identifiers
-from passes.label_resolution import resolve_program as resolve_labels
-from passes.loop_labeling import label_program as label_loops
-from passes.string_lifting import lift_program as lift_strings
-from passes.type_checking import check_program as type_check_program
-from preprocessor import preprocess
-from tac_sim import Simulator
+from parser import ParserError
+from tests.test_sim_chapters import _run_program
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -174,17 +167,6 @@ _NEEDS_LIBC: dict[str, str] = {
 _NOT_A_TEST: frozenset[str] = frozenset({
     "helper_libs/exit.c",
 })
-
-
-def _run_program(source: str) -> int | None:
-    preprocessed = preprocess(source)
-    resolved = label_loops(resolve_labels(lift_strings(
-        resolve_identifiers(parse(preprocessed)),
-    )))
-    prog, symbols, types = type_check_program(resolved)
-    tac = translate_to_tac(prog, symbols, types)
-    sim = Simulator(tac, symbols, types)
-    return sim.call("main", [])
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

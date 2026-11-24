@@ -1277,6 +1277,10 @@ def _profile(frame, event, arg):
         return
     module = frame.f_globals.get("__name__", "")
     code = frame.f_code
+    if code.co_name.startswith("__"):
+        # A dunder, such as the `__getattr__` through which sim/harness.py
+        # gives the front end's functions.
+        return
     if module.startswith("sim.") or (
             f"{module}.{code.co_qualname}" in _RUNS_A_PROGRAM):
         # A run on the simulator, or on the TAC interpreter through
@@ -1288,10 +1292,9 @@ def _profile(frame, event, arg):
         return
     if not _is_compiler(module):
         return
-    name = code.co_qualname
-    if code.co_name.startswith("__") or code.co_name == "<lambda>":
+    if code.co_name == "<lambda>":
         return
-    full = f"{module}.{name}"
+    full = f"{module}.{code.co_qualname}"
     entry = _test_entry()
     bucket = "end_to_end" if full in END_TO_END else "direct"
     if full not in entry[bucket]:

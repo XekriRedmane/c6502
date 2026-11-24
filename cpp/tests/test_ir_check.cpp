@@ -144,3 +144,14 @@ TEST_CASE("form_problems names each operand the chain can't take") {
         std::vector<std::string>{"DecimalArith reads Reg", "DecimalArith reads IndirectY",
                                  "DecimalArith writes ImmLabelLow"});
 }
+
+TEST_CASE("ir_check: test_element_rmw.py::TestCheckIr::test_element_indexed_by_y_rejected") {
+  // `INC tab,Y` has no 6502 addressing mode.
+  const auto prog = asdl::load<c6502::asm_ast::Program>(
+      "Program([Function(\"f\" true [] [Inc(IndexedData(\"tab\" 0 Y)) "
+      "Return(false false false)])])");
+  const ir_check::Enabled on(true);
+  CHECK(message_of([&] { ir_check::check_asm(prog, "a test"); }) ==
+        "after a test, function 'f': Inc of IndexedData(name='tab', offset=0, index=Y()), "
+        "which has no 6502 addressing mode (only abs,X)");
+}

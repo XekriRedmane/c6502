@@ -17,10 +17,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-import asm_ast
 from compile import _run_stage
-from passes.asm_aliasing import may_alias
-from passes.asm_liveness import sets_flags
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
@@ -133,32 +130,6 @@ class TestLocalArrayIndexed(unittest.TestCase):
         body = _function(_DIGITS, "digits")
         self.assertNotIn("#<__local_digits__d", body)
         self.assertIn("__local_digits__d,Y", body)
-
-
-class TestStoresAndIndexedAccesses(unittest.TestCase):
-
-    def test_stx_sty_leave_the_flags(self):
-        m = asm_ast.Data(name="m", offset=0)
-        for reg in (asm_ast.X(), asm_ast.Y()):
-            with self.subTest(reg=type(reg).__name__):
-                self.assertFalse(sets_flags(asm_ast.Mov(
-                    src=asm_ast.Reg(reg=reg), dst=m, is_volatile=False,
-                )))
-        # Through A, to the soft stack: TXA sets them.
-        self.assertTrue(sets_flags(asm_ast.Mov(
-            src=asm_ast.Reg(reg=asm_ast.X()), dst=asm_ast.Frame(offset=1),
-            is_volatile=False,
-        )))
-
-    def test_indexed_local_aliases_its_bytes(self):
-        local = asm_ast.Data(name="__local_f__d", offset=2)
-        indexed = asm_ast.IndexedData(name="__local_f__d", offset=0,
-                                      index=asm_ast.Y())
-        self.assertTrue(may_alias(local, indexed))
-        self.assertTrue(may_alias(indexed, local))
-        self.assertTrue(may_alias(asm_ast.ZP(address=0x84, offset=0), indexed))
-        other = asm_ast.Data(name="__local_f__e", offset=0)
-        self.assertFalse(may_alias(other, indexed))
 
 
 if __name__ == "__main__":

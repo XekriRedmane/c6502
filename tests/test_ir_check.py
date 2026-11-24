@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import unittest
 
-import asm_ast
 import c99_ast
 import tac_ast
 from passes import ir_check
@@ -230,38 +229,6 @@ class TestTacChecks(unittest.TestCase):
     def test_off_by_default(self) -> None:
         ir_check.enable(False)
         self._check(_fn(tac_ast.Jump(target="L")), _symbols())
-
-
-class TestAsmChecks(unittest.TestCase):
-
-    def setUp(self) -> None:
-        ir_check.enable()
-
-    def tearDown(self) -> None:
-        ir_check.enable(False)
-
-    def _prog(self, *instrs):
-        return asm_ast.Program(top_level=[asm_ast.Function(
-            name="f", is_global=True, params=[], instructions=list(instrs),
-        )])
-
-    def test_pseudo_left(self) -> None:
-        prog = self._prog(asm_ast.Mov(
-            src=asm_ast.Pseudo(name="x", offset=0),
-            dst=asm_ast.Reg(reg=asm_ast.A()), is_volatile=False,
-        ))
-        ir_check.check_asm(prog, after="tac_to_asm", pseudos=True)
-        with self.assertRaisesRegex(ir_check.IRCheckError, "Pseudo"):
-            ir_check.check_asm(prog, after="test")
-
-    def test_branch_to_missing_label(self) -> None:
-        prog = self._prog(asm_ast.Branch(cond=asm_ast.EQ(), target=".x"))
-        with self.assertRaisesRegex(ir_check.IRCheckError, "missing label"):
-            ir_check.check_asm(prog, after="test")
-
-    def test_tail_call_jump_is_fine(self) -> None:
-        prog = self._prog(asm_ast.Jump(target="g", reg_args=[]))
-        ir_check.check_asm(prog, after="test")
 
 
 if __name__ == "__main__":

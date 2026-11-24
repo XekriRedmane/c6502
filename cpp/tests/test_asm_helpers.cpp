@@ -1,7 +1,11 @@
-// The tests of the shared asm helpers: tests/test_asm_liveness.py,
-// tests/test_asm_aliasing.py, and tests/test_asm_cfg.py ported, and
-// cases from the docstrings of decimal_arith, asm_dead_store,
-// inc_peephole, dead_a_arith, call_edges, and sim/assembler.py.
+// The tests of the shared asm helpers: tests/test_asm_liveness.py
+// ported, with every assertion of its tests in a case below, the
+// liveness tests of test_carry_return.py and test_divide_shapes.py, a
+// first port of tests/test_asm_aliasing.py and tests/test_asm_cfg.py,
+// whose tests have a case each in test_asm_aliasing.cpp and
+// test_asm_cfg.cpp, and cases from the docstrings of decimal_arith,
+// asm_dead_store, inc_peephole, dead_a_arith, call_edges, and
+// sim/assembler.py.
 #include <set>
 #include <string>
 #include <vector>
@@ -138,6 +142,14 @@ TEST_CASE("c_dead_at and v_dead_at follow one flag") {
   CHECK_FALSE(c_dead_at(prologue, 0));
 }
 
+TEST_CASE("c_dead_at: test_carry_return.py::TestCarryLiveAtReturn::test_liveness") {
+  const List carry = {ir::SetCarry{}, ir::Return{.save_c = true}};
+  CHECK_FALSE(c_dead_at(carry, 1));
+  CHECK_FALSE(all_flags_dead_at(carry, 1));
+  const List plain = {ir::SetCarry{}, ret()};
+  CHECK(c_dead_at(plain, 1));
+}
+
 TEST_CASE("kills_a counts the moves asm_emit writes through A") {
   SUBCASE("a constant or a byte into memory") {
     CHECK(kills_a(mov(imm(0), data("m"))));
@@ -173,6 +185,13 @@ TEST_CASE("sets_flags") {
     CHECK(sets_flags(mov(kA, dst)));
     CHECK(sets_up_y(mov(kA, dst)));
   }
+}
+
+TEST_CASE("sets_flags: test_divide_shapes.py::TestStoresAndIndexedAccesses::test_stx_sty_leave_the_flags") {
+  CHECK_FALSE(sets_flags(mov(kX, data("m"))));
+  CHECK_FALSE(sets_flags(mov(kY, data("m"))));
+  // Through A, to the soft stack: TXA sets them.
+  CHECK(sets_flags(mov(kX, frame(1))));
 }
 
 TEST_CASE("BitTest reads its index register") {

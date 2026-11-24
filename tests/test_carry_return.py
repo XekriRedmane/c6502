@@ -15,18 +15,12 @@ from __future__ import annotations
 import shutil
 import unittest
 
-import asm_ast
 from parser import ParserError, parse
-from passes.asm_liveness import all_flags_dead_at, c_dead_at
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
 _CARRY = "[[c6502::return_bool_in_carry]] "
 _BOOL = "#include <stdbool.h>\n"
-
-
-def _ret_c():
-    return asm_ast.Return(save_a=False, save_x=False, save_c=True)
 
 
 def _codegen(src, optimize=True):
@@ -214,16 +208,6 @@ class TestCodeShape(unittest.TestCase):
         f = asm.split("\nf:")[1].split("\nmain:")[0]
         self.assertIn("PHP", f)
         self.assertIn("PLP", f)
-
-
-class TestCarryLiveAtReturn(unittest.TestCase):
-
-    def test_liveness(self):
-        instrs = [asm_ast.SetCarry(), _ret_c()]
-        self.assertFalse(c_dead_at(instrs, 1))
-        self.assertFalse(all_flags_dead_at(instrs, 1))
-        plain = [asm_ast.SetCarry(), asm_ast.Return(save_a=False, save_x=False)]
-        self.assertTrue(c_dead_at(plain, 1))
 
 
 # A struct of a value and a `bool`, which a `return_bool_in_carry`

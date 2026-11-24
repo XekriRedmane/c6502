@@ -19,25 +19,7 @@ import asm_ast
 _HAVE_PCPP = shutil.which("pcpp") is not None
 
 _E = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())
-_EY = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.Y())
 _RTS = asm_ast.Return(save_a=False, save_x=False, save_c=False)
-
-
-class TestCheckIr(unittest.TestCase):
-
-    def test_element_indexed_by_y_rejected(self) -> None:
-        from passes import ir_check
-        prog = asm_ast.Program(top_level=[asm_ast.Function(
-            name="f", is_global=True, params=[],
-            instructions=[asm_ast.Inc(dst=_EY), _RTS],
-        )])
-        was = ir_check.enabled()
-        ir_check.enable()
-        try:
-            with self.assertRaisesRegex(ir_check.IRCheckError, "abs,X"):
-                ir_check.check_asm(prog, after="a test")
-        finally:
-            ir_check.enable(was)
 
 
 class TestEmit(unittest.TestCase):

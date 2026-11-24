@@ -13,11 +13,9 @@ import random
 import shutil
 import unittest
 
-import asm2_ast
 import builtin_functions as bf
 import tac_ast
 from parser import parse
-from passes import ir_check
 from passes.identifier_resolution import (
     IdentifierResolutionError,
     resolve_program,
@@ -392,48 +390,6 @@ class TestCodegen(unittest.TestCase):
                                            "SBC", "STA", "LDY", "INY",
                                            "DEY"))
                 self.assertFalse(inside)
-
-
-class TestIrCheck(unittest.TestCase):
-    A = asm2_ast.Reg(reg=asm2_ast.A())
-
-    def _chain(self) -> list:
-        return [
-            asm2_ast.SetDecimal(), asm2_ast.ClearCarry(),
-            asm2_ast.Mov(src=asm2_ast.Data(name="x", offset=0), dst=self.A),
-            asm2_ast.Add(src=asm2_ast.Imm(value=1), dst=self.A),
-            asm2_ast.Mov(src=self.A, dst=asm2_ast.Data(name="x", offset=0)),
-            asm2_ast.ClearDecimal(),
-        ]
-
-    def test_accepts_a_chain(self) -> None:
-        self.assertEqual(ir_check.decimal_region_problems(self._chain()), [])
-
-    def test_rejects_code_inside_the_region(self) -> None:
-        chain = self._chain()
-        chain.insert(5, asm2_ast.Call(name="f"))
-        self.assertTrue(ir_check.decimal_region_problems(chain))
-        chain = self._chain()
-        chain.insert(5, asm2_ast.Add(src=asm2_ast.Imm(value=1), dst=self.A))
-        self.assertTrue(ir_check.decimal_region_problems(chain))
-        chain = self._chain()
-        chain[3] = asm2_ast.Sub(src=asm2_ast.Imm(value=1), dst=self.A)
-        self.assertTrue(ir_check.decimal_region_problems(chain))
-
-    def test_rejects_an_unclosed_or_stray_flag(self) -> None:
-        self.assertTrue(ir_check.decimal_region_problems(self._chain()[:-1]))
-        self.assertTrue(
-            ir_check.decimal_region_problems([asm2_ast.ClearDecimal()])
-        )
-        self.assertTrue(ir_check.decimal_region_problems(
-            [asm2_ast.SetDecimal(), asm2_ast.ClearCarry(),
-             asm2_ast.ClearDecimal()]
-        ))
-
-    def test_rejects_a_register_operand(self) -> None:
-        chain = self._chain()
-        chain[3] = asm2_ast.Add(src=asm2_ast.Reg(reg=asm2_ast.X()), dst=self.A)
-        self.assertTrue(ir_check.decimal_region_problems(chain))
 
 
 # Programs whose `main` returns a 16-bit value. Each runs through

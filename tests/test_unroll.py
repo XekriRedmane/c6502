@@ -39,7 +39,6 @@ int main(void) {{
 
 class TestUnrollAttributeParse(unittest.TestCase):
 
-
     def test_old_pragma_names_the_attribute(self) -> None:
         for state, needle in (
             ("enable", "[[c6502::unroll]]"),
@@ -65,7 +64,6 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         with self.assertRaises(UnrollError) as cm:
             _unrolled(body)
         self.assertIn(msg_substr, str(cm.exception))
-
 
     def test_cli_reports_one_line_error(self) -> None:
         import io

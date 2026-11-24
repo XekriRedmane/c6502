@@ -46,7 +46,6 @@ def _function_text(asm: str, name: str) -> str:
 @no_inlining()
 class TestLowering(unittest.TestCase):
 
-
     @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
     def test_conversion_is_a_zero_test(self) -> None:
         # Static, so that they return in A: main keeps their results

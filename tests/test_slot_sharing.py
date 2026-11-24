@@ -403,7 +403,6 @@ int main(void) { return sum(data, 4) + sum(data + 1, 2); }
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestPinnedParams(unittest.TestCase):
 
-
     def test_defined_function_reads_it_in_place(self) -> None:
         src = _SUM + _SUM_MAIN
         asm = _codegen(src)

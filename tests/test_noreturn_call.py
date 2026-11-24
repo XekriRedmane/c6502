@@ -113,7 +113,6 @@ void command_loop(void) {
 @no_inlining()
 class TestCallGraph(unittest.TestCase):
 
-
     def test_code(self) -> None:
         # Before, the `register` parameter was an error, since
         # `command_loop` was on a cycle and used the soft stack, and
@@ -124,7 +123,6 @@ class TestCallGraph(unittest.TestCase):
         self.assertIn("JMP   command_loop", get_key)
         self.assertIn("BCC", get_key)
         self.assertNotIn("ROL", get_key)
-
 
     def test_save_hardware_stack_on_the_call(self) -> None:
         from passes.recursion_saves import RecursionSaveError

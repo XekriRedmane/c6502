@@ -1500,3 +1500,79 @@ TEST_CASE("type_checking: test_empty_initializer.py::TestTypeCheck::test_unknown
       "output-error\n"
       "{\"type\": \"TypeCheckError\", \"message\": \"the compound literal's array has unknown size, so it can't be initialized by the empty initializer `{}`, which has no elements to give it a size (C23 \\u00a76.7.11p4)\"}\n");
 }
+
+TEST_CASE("parse: test_empty_initializer.py::TestCode::test_large_automatic_struct_is_a_loop (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_empty_initializer.py::TestCode::test_large_automatic_struct_is_a_loop\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"struct s { int a; char b[3]; long c; };\\nunion u { char c; long l; };\\nstruct big { struct s s[4]; union u u; };void use(struct big *p);void f(void) { struct big v = {}; use(&v); }\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Int) member_decl(\"b\" Array(Char 3)) member_decl(\"c\" Long)]))\n"
+      "  StructDecl(struct_decl(\"u\" true [member_decl(\"c\" Char) member_decl(\"l\" Long)]))\n"
+      "  StructDecl(struct_decl(\"big\" false [member_decl(\"s\" Array(Structure(\"s\") 4)) member_decl(\"u\" Union(\"u\"))]))\n"
+      "  FunctionDecl(function_decl(\"use\" [\"p\"] None FunType([Pointer(Structure(\"big\"))] Void) None None [\"\"] false None [] None false))\n"
+      "  FunctionDecl(function_decl(\"f\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"v\" InitList([] None None) Structure(\"big\") None None None None false)))\n"
+      "    S(Expression(FunctionCall(\"use\" [AddressOf(Var(\"v\" None) None)] None false)))\n"
+      "  ]) FunType([] Void) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("identifier_resolution: test_empty_initializer.py::TestCode::test_large_automatic_struct_is_a_loop (call 2)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass identifier_resolution\n"
+      "source tests/test_empty_initializer.py::TestCode::test_large_automatic_struct_is_a_loop\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Int) member_decl(\"b\" Array(Char 3)) member_decl(\"c\" Long)]))\n"
+      "  StructDecl(struct_decl(\"u\" true [member_decl(\"c\" Char) member_decl(\"l\" Long)]))\n"
+      "  StructDecl(struct_decl(\"big\" false [member_decl(\"s\" Array(Structure(\"s\") 4)) member_decl(\"u\" Union(\"u\"))]))\n"
+      "  FunctionDecl(function_decl(\"use\" [\"p\"] None FunType([Pointer(Structure(\"big\"))] Void) None None [\"\"] false None [] None false))\n"
+      "  FunctionDecl(function_decl(\"f\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"v\" InitList([] None None) Structure(\"big\") None None None None false)))\n"
+      "    S(Expression(FunctionCall(\"use\" [AddressOf(Var(\"v\" None) None)] None false)))\n"
+      "  ]) FunType([] Void) None None [] false None [] None false))\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Int) member_decl(\"b\" Array(Char 3)) member_decl(\"c\" Long)]))\n"
+      "  StructDecl(struct_decl(\"u\" true [member_decl(\"c\" Char) member_decl(\"l\" Long)]))\n"
+      "  StructDecl(struct_decl(\"big\" false [member_decl(\"s\" Array(Structure(\"s\") 4)) member_decl(\"u\" Union(\"u\"))]))\n"
+      "  FunctionDecl(function_decl(\"use\" [\"@0.p\"] None FunType([Pointer(Structure(\"big\"))] Void) None None [\"\"] false None [] None false))\n"
+      "  FunctionDecl(function_decl(\"f\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"@1.v\" InitList([] None None) Structure(\"big\") None None None None false)))\n"
+      "    S(Expression(FunctionCall(\"use\" [AddressOf(Var(\"@1.v\" None) None)] None false)))\n"
+      "  ]) FunType([] Void) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("type_checking: test_empty_initializer.py::TestCode::test_large_automatic_struct_is_a_loop (call 3)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass type_checking\n"
+      "source tests/test_empty_initializer.py::TestCode::test_large_automatic_struct_is_a_loop\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "mutated {\"input\": {\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  StructDecl(struct_decl(\\\"s\\\" false [member_decl(\\\"a\\\" Int) member_decl(\\\"b\\\" Array(Char 3)) member_decl(\\\"c\\\" Long)]))\\n  StructDecl(struct_decl(\\\"u\\\" true [member_decl(\\\"c\\\" Char) member_decl(\\\"l\\\" Long)]))\\n  StructDecl(struct_decl(\\\"big\\\" false [member_decl(\\\"s\\\" Array(Structure(\\\"s\\\") 4)) member_decl(\\\"u\\\" Union(\\\"u\\\"))]))\\n  FunctionDecl(function_decl(\\\"use\\\" [\\\"@0.p\\\"] None FunType([Pointer(Structure(\\\"big\\\"))] Void) None None [\\\"\\\"] false None [] None false))\\n  FunctionDecl(function_decl(\\\"f\\\" [] Block([\\n    D(VarDecl(var_decl(\\\"@1.v\\\" InitList([] Structure(\\\"big\\\") None) Structure(\\\"big\\\") None None None None false)))\\n    S(Expression(FunctionCall(\\\"use\\\" [AddressOf(Var(\\\"@1.v\\\" Structure(\\\"big\\\")) Pointer(Structure(\\\"big\\\")))] Void false)))\\n  ]) FunType([] Void) None None [] false None [] None false))\\n])\\n\"}, \"args\": {}, \"kwargs\": {}}\n"
+      "input\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Int) member_decl(\"b\" Array(Char 3)) member_decl(\"c\" Long)]))\n"
+      "  StructDecl(struct_decl(\"u\" true [member_decl(\"c\" Char) member_decl(\"l\" Long)]))\n"
+      "  StructDecl(struct_decl(\"big\" false [member_decl(\"s\" Array(Structure(\"s\") 4)) member_decl(\"u\" Union(\"u\"))]))\n"
+      "  FunctionDecl(function_decl(\"use\" [\"@0.p\"] None FunType([Pointer(Structure(\"big\"))] Void) None None [\"\"] false None [] None false))\n"
+      "  FunctionDecl(function_decl(\"f\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"@1.v\" InitList([] None None) Structure(\"big\") None None None None false)))\n"
+      "    S(Expression(FunctionCall(\"use\" [AddressOf(Var(\"@1.v\" None) None)] None false)))\n"
+      "  ]) FunType([] Void) None None [] false None [] None false))\n"
+      "])\n"
+      "output-json\n"
+      "{\"tuple\": [{\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  StructDecl(struct_decl(\\\"s\\\" false [member_decl(\\\"a\\\" Int) member_decl(\\\"b\\\" Array(Char 3)) member_decl(\\\"c\\\" Long)]))\\n  StructDecl(struct_decl(\\\"u\\\" true [member_decl(\\\"c\\\" Char) member_decl(\\\"l\\\" Long)]))\\n  StructDecl(struct_decl(\\\"big\\\" false [member_decl(\\\"s\\\" Array(Structure(\\\"s\\\") 4)) member_decl(\\\"u\\\" Union(\\\"u\\\"))]))\\n  FunctionDecl(function_decl(\\\"use\\\" [\\\"@0.p\\\"] None FunType([Pointer(Structure(\\\"big\\\"))] Void) None None [\\\"\\\"] false None [] None false))\\n  FunctionDecl(function_decl(\\\"f\\\" [] Block([\\n    D(VarDecl(var_decl(\\\"@1.v\\\" InitList([] Structure(\\\"big\\\") None) Structure(\\\"big\\\") None None None None false)))\\n    S(Expression(FunctionCall(\\\"use\\\" [AddressOf(Var(\\\"@1.v\\\" Structure(\\\"big\\\")) Pointer(Structure(\\\"big\\\")))] Void false)))\\n  ]) FunType([] Void) None None [] false None [] None false))\\n])\\n\"}, {\"object\": \"passes.type_checking.SymbolTable\", \"fields\": {\"_table\": {\"dict\": [[\"use\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"FunType([Pointer(Structure(\\\"big\\\"))] Void)\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.FunAttr\", \"fields\": {\"defined\": false, \"is_global\": true, \"carry_return\": false, \"address\": null, \"preserves\": {\"set\": []}, \"section\": null, \"param_zeropage\": {\"tuple\": []}, \"returns_bool\": false, \"noreturn\": false}}}}], [\"f\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"FunType([] Void)\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.FunAttr\", \"fields\": {\"defined\": true, \"is_global\": true, \"carry_return\": false, \"address\": null, \"preserves\": {\"set\": []}, \"section\": null, \"param_zeropage\": {\"tuple\": []}, \"returns_bool\": false, \"noreturn\": false}}}}], [\"@1.v\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Structure(\\\"big\\\")\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.LocalAttr\", \"fields\": {\"register\": false, \"was_bool\": false}}}}]]}}}, {\"object\": \"passes.type_checking.TypeTable\", \"fields\": {\"_table\": {\"dict\": [[\"s\", {\"object\": \"passes.type_checking.StructLayout\", \"fields\": {\"tag\": \"s\", \"is_union\": false, \"members\": [{\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"a\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Int\\n\"}, \"byte_offset\": 0}}, {\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"b\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Array(Char 3)\\n\"}, \"byte_offset\": 2}}, {\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"c\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Long\\n\"}, \"byte_offset\": 5}}], \"size\": 9, \"complete\": true}}], [\"u\", {\"object\": \"passes.type_checking.StructLayout\", \"fields\": {\"tag\": \"u\", \"is_union\": true, \"members\": [{\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"c\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Char\\n\"}, \"byte_offset\": 0}}, {\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"l\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Long\\n\"}, \"byte_offset\": 0}}], \"size\": 4, \"complete\": true}}], [\"big\", {\"object\": \"passes.type_checking.StructLayout\", \"fields\": {\"tag\": \"big\", \"is_union\": false, \"members\": [{\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"s\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Array(Structure(\\\"s\\\") 4)\\n\"}, \"byte_offset\": 0}}, {\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"u\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Union(\\\"u\\\")\\n\"}, \"byte_offset\": 36}}], \"size\": 40, \"complete\": true}}]]}}}]}\n");
+}

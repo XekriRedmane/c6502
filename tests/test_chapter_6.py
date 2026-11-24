@@ -17,7 +17,6 @@ import unittest
 from pathlib import Path
 
 from compile import _run_stage
-from parser import parse
 from preprocessor import preprocess
 from passes.identifier_resolution import IdentifierResolutionError
 from passes.label_resolution import LabelResolutionError
@@ -63,6 +62,5 @@ class TestChapter6InvalidSemantics(unittest.TestCase):
             rel = path.relative_to(_C6 / "invalid_semantics").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
-                parse(source)
                 with self.assertRaises(_SEMANTIC_FAILURES):
                     _run_stage("codegen", source)

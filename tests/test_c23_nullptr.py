@@ -32,20 +32,9 @@ from unittest.mock import patch
 
 import diagnostics
 from compile import main as compile_main
-from parser import ParserError, parse
-from passes.identifier_resolution import resolve_program
-from passes.type_checking import TypeCheckError, check_program
 from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
-
-# What <stddef.h> declares `nullptr_t` as, for the tests that don't
-# include it.
-_NULLPTR_T = "typedef typeof_unqual(nullptr) nullptr_t;\n"
-
-
-def _check(src: str):
-    return check_program(resolve_program(parse(preprocess(src))))
 
 
 def _compile(src: str, *flags: str) -> tuple[int, str]:
@@ -60,7 +49,6 @@ def _compile(src: str, *flags: str) -> tuple[int, str]:
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestKeywords(unittest.TestCase):
 
-
     def test_if_treats_nullptr_as_an_identifier(self) -> None:
         # C23 §6.10.2p13 replaces every identifier left in an `#if`
         # expression, keywords included, with 0, except `true`.
@@ -69,16 +57,8 @@ class TestKeywords(unittest.TestCase):
         self.assertIn("int b;", text)
 
 
-def _rejects(test: unittest.TestCase, src: str, message: str) -> None:
-    with test.subTest(src=src):
-        with test.assertRaises(TypeCheckError) as cm:
-            _check(_NULLPTR_T + src)
-        test.assertEqual(str(cm.exception), message)
-
-
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestOperators(unittest.TestCase):
-
 
     def test_not_an_integer_constant(self) -> None:
         # §6.6p8 admits only operands of integer type to an integer
@@ -96,18 +76,6 @@ class TestOperators(unittest.TestCase):
         self.assertIn(
             f"case label is not an integer constant expression: {message}",
             err,
-        )
-        with self.assertRaises(ParserError) as cm:
-            parse("int a[nullptr];")
-        self.assertEqual(
-            str(cm.exception),
-            "array size must have integer type, and `nullptr` has type "
-            "nullptr_t (C23 §6.7.7.3)",
-        )
-        _rejects(
-            self, "int x = !nullptr;",
-            f"initializer for static-storage object 'x' is not a "
-            f"constant expression: {message}",
         )
 
 
@@ -132,9 +100,6 @@ class TestStddef(unittest.TestCase):
         with diagnostics.collecting() as found:
             rc, err = _compile(src)
         self.assertEqual((rc, err, found), (0, "", []))
-        _, symbols, _ = _check(src)
-        self.assertEqual(symbols["o"].attrs.initial_value.value, 7)
-        self.assertEqual(symbols["z"].attrs.initial_value.value, 2)
 
 
 _PROGRAM = """\

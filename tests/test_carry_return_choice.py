@@ -2,37 +2,11 @@
 function's `bool` in the carry flag, without the annotation, when
 every call to it suits the carry."""
 
-import os
 import shutil
 import unittest
-from unittest import mock
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
-
-
-def _chosen(src: str) -> set[str]:
-    """The functions `choose_carry_returns` picks in `src`."""
-    import compile as C
-    from preprocessor import preprocess
-    picked: set[str] = set()
-    orig = C.choose_carry_returns
-
-    def spy(tac, symbols):
-        out = orig(tac, symbols)
-        picked.update(out)
-        return out
-
-    C.choose_carry_returns = spy
-    try:
-        # The spy is on the Python pass, which doesn't run under
-        # C6502_CPP_BACKEND=1.
-        with mock.patch.dict(os.environ):
-            os.environ.pop("C6502_CPP_BACKEND", None)
-            C._run_stage("codegen", preprocess(src), optimize=True)
-    finally:
-        C.choose_carry_returns = orig
-    return picked
 
 
 _HEAD = "#include <stdint.h>\n#include <stdbool.h>\nuint8_t g;\n"
@@ -41,63 +15,6 @@ _HEAD = "#include <stdint.h>\n#include <stdbool.h>\nuint8_t g;\n"
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 @no_inlining()
 class TestChoice(unittest.TestCase):
-
-    def test_branched_on(self):
-        src = _HEAD + (
-            "static bool small(uint8_t x) { return x < 10; }\n"
-            "int main(void) { if (small(g)) g = 1; return g; }\n"
-        )
-        self.assertEqual(_chosen(src), {"small"})
-
-    def test_result_kept_as_a_value(self):
-        # `g = small(g)` would need `LDA #0; ROL A` after the call.
-        src = _HEAD + (
-            "static bool small(uint8_t x) { return x < 10; }\n"
-            "int main(void) { if (small(g)) g++; g = small(g); return g; }\n"
-        )
-        self.assertEqual(_chosen(src), set())
-
-    def test_external_linkage(self):
-        # Another unit may call it, so this choice, made from the
-        # calls, leaves it to `choose_global_carry_returns`.
-        src = _HEAD + (
-            "bool small(uint8_t x) { return x < 10; }\n"
-            "int main(void) { if (small(g)) g = 1; return g; }\n"
-        )
-        self.assertEqual(_chosen(src), set())
-
-    def test_address_taken(self):
-        src = _HEAD + (
-            "static bool small(uint8_t x) { return x < 10; }\n"
-            "bool (*fp)(uint8_t) = small;\n"
-            "int main(void) { if (small(g)) g = 1; return fp(g); }\n"
-        )
-        self.assertEqual(_chosen(src), set())
-
-    def test_returned_by_a_chosen_function(self):
-        # `either` returns `is_b`'s result, and is branched on, so both
-        # pass the carry on.
-        src = _HEAD + (
-            "static bool is_a(uint8_t c) { return c == 'a'; }\n"
-            "static bool is_b(uint8_t c) { return c == 'b'; }\n"
-            "static bool either(uint8_t c) {\n"
-            "    if (is_a(c)) return true;\n"
-            "    return is_b(c);\n"
-            "}\n"
-            "int main(void) { if (either(g)) g = 7; return g; }\n"
-        )
-        self.assertEqual(_chosen(src), {"is_a", "is_b", "either"})
-
-    def test_returned_by_a_function_with_external_linkage(self):
-        # `is_digit` returns in C by the rule for external linkage, so
-        # `in_range`, whose result it returns, passes the carry on
-        # through it.
-        src = _HEAD + (
-            "static bool in_range(uint8_t c) { return c - '0' < 10; }\n"
-            "bool is_digit(uint8_t c) { return in_range(c); }\n"
-            "int main(void) { if (is_digit(g)) g = 7; return g; }\n"
-        )
-        self.assertEqual(_chosen(src), {"in_range"})
 
     def test_values(self):
         src = _HEAD + (
@@ -127,77 +44,11 @@ class TestChoice(unittest.TestCase):
                 self.assertEqual(out.return_int(), 40 + 4)
 
 
-def _global_chosen(src: str) -> set[str]:
-    """The functions `choose_global_carry_returns` picks in `src`."""
-    import compile as C
-    from preprocessor import preprocess
-    picked: set[str] = set()
-    orig = C.choose_global_carry_returns
-
-    def spy(tac, symbols, abi):
-        out = orig(tac, symbols, abi)
-        picked.update(out)
-        return out
-
-    C.choose_global_carry_returns = spy
-    try:
-        # The spy is on the Python pass, which doesn't run under
-        # C6502_CPP_BACKEND=1.
-        with mock.patch.dict(os.environ):
-            os.environ.pop("C6502_CPP_BACKEND", None)
-            C._run_stage("codegen", preprocess(src), optimize=True)
-    finally:
-        C.choose_global_carry_returns = orig
-    return picked
-
-
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestGlobalChoice(unittest.TestCase):
     """A `bool` function with external linkage returns in C whenever
     it's zp_abi, whatever its callers do with the result, since the
     other units decide from the declaration too."""
-
-    def test_defined_and_declared(self):
-        # `small` is defined here and `other` only declared; both are
-        # chosen, even though `main` keeps one result as a value.
-        src = _HEAD + (
-            "bool other(uint8_t x);\n"
-            "bool small(uint8_t x) { return x < 10; }\n"
-            "int main(void) { g = small(g); if (other(g)) g++; return g; }\n"
-        )
-        self.assertEqual(_global_chosen(src), {"small", "other"})
-
-    def test_static_left_to_the_calls(self):
-        src = _HEAD + (
-            "static bool small(uint8_t x) { return x < 10; }\n"
-            "int main(void) { g = small(g); return g; }\n"
-        )
-        self.assertEqual(_global_chosen(src), set())
-
-    def test_address_taken(self):
-        # Not zp_abi, and a call through the pointer reads A.
-        src = _HEAD + (
-            "bool small(uint8_t x) { return x < 10; }\n"
-            "bool (*fp)(uint8_t) = small;\n"
-            "int main(void) { if (small(g)) g = 1; return fp(g); }\n"
-        )
-        self.assertEqual(_global_chosen(src), set())
-
-    def test_fixed_address(self):
-        # A routine at a fixed address has the convention its
-        # declaration gives.
-        src = _HEAD + (
-            "[[c6502::address(0x2000)]] bool rom(void);\n"
-            "int main(void) { if (rom()) g = 1; return g; }\n"
-        )
-        self.assertEqual(_global_chosen(src), set())
-
-    def test_not_bool(self):
-        src = _HEAD + (
-            "uint8_t small(uint8_t x) { return x < 10; }\n"
-            "int main(void) { if (small(g)) g = 1; return g; }\n"
-        )
-        self.assertEqual(_global_chosen(src), set())
 
     def test_values(self):
         # Each way a caller can use the result: branched on, kept as a

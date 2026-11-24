@@ -3,27 +3,20 @@
 block scope, static or automatic. The size is the number of items in
 the braces, or the string's length plus its null.
 
-Covers the type each declaration gets, `sizeof`, an `extern` declaration
-completed by a later definition, the errors that remain (no
-initializer, an empty list, a scalar initializer), and runs in both
-pipelines.
+Covers `sizeof` and an `extern` declaration completed by a later
+definition, in programs that run in both pipelines. The type each
+declaration gets and the errors that remain (no initializer, an empty
+list, a scalar initializer) are doctest cases of the C++ front end
+(cpp/tests/test_unsized_arrays_calls.cpp).
 """
 from __future__ import annotations
 
 import shutil
 import unittest
 
-from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
-
-
-def _types(src: str) -> dict:
-    import sim.harness as H
-    from compile import _resolved
-    _, symbols, _ = H.type_check_program(_resolved(H.preprocess(src)))
-    return {name: sym.type for name, sym in symbols.items()}
 
 
 def _run(src: str, optimize: bool) -> int:
@@ -47,15 +40,6 @@ class TestSizes(unittest.TestCase):
                     + sizeof m + sizeof u + sizeof v;
             }
         """
-        types = _types(src)
-        self.assertEqual(types["t"].size, 3)
-        self.assertEqual(types["s"].size, 4)
-        self.assertEqual(types["k"].size, 2)
-        self.assertEqual(types["b"].size, 3)
-        self.assertEqual(types["m"].size, 3)
-        sizes = {n: t.size for n, t in types.items() if n.endswith(".u")
-                 or n.endswith(".v")}
-        self.assertEqual(sorted(sizes.values()), [2, 4])
         # 6 + 4 + 2 + 3 + 12 + 8 + 8
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
@@ -88,17 +72,6 @@ class TestSizes(unittest.TestCase):
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 self.assertEqual(_run(src, optimize), 100 + 6 + ord("o"))
-
-    def test_errors(self) -> None:
-        for src in [
-            "int t[];\nint main(void) { return 0; }\n",
-            "int main(void) { int t[]; return 0; }\n",
-            "int t[] = 5;\nint main(void) { return 0; }\n",
-            "int main(void) { static int t[] = {}; return 0; }\n",
-        ]:
-            with self.subTest(src=src):
-                with self.assertRaises(Exception):
-                    _types(src)
 
 
 if __name__ == "__main__":

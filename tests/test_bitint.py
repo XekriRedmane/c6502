@@ -46,7 +46,6 @@ _HAVE_PCPP = shutil.which("pcpp") is not None
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
 class TestConstants(unittest.TestCase):
 
-
     def test_preprocessor_if(self) -> None:
         src = (
             "#if 1wb && -1wb < 0 && -1uwb > 0 && 0xFFuwb == 255\n"

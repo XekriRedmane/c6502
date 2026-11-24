@@ -18,8 +18,9 @@ are still literal-out-of-range (chapter_13 mixes in 8-byte longs),
 not FP gaps.
 
 The lexer accepts `1.0e10.0` as two tokens (it has no preprocessing-
-number concept); that file is pinned in
-`_INVALID_LEX_NOT_REJECTED_TODAY`.
+number concept). The tokens of each invalid_lex file, that one
+included, are doctest cases of the C++ port
+(cpp/tests/test_chapter_13_calls.cpp).
 """
 
 import shutil

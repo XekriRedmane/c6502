@@ -59,7 +59,6 @@ class TestGrammar(unittest.TestCase):
 
 class TestLoopAttributes(unittest.TestCase):
 
-
     def test_keep_keeps_a_delay_loop(self) -> None:
         for attribute, kept in (("", False), ("[[c6502::keep]] ", True)):
             with self.subTest(attribute=attribute):

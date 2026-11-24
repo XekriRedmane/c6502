@@ -4580,6 +4580,66 @@ TEST_CASE("type_checking: test_c23_nullptr.py::TestOperators::test_equality_reje
       "{\"type\": \"TypeCheckError\", \"message\": \"binary '==' between nullptr_t and int: a nullptr_t compares only with another nullptr_t, a null pointer constant, or a pointer (C23 \\u00a76.5.10p2)\"}\n");
 }
 
+TEST_CASE("parse: test_c23_nullptr.py::TestOperators::test_not_an_integer_constant (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_c23_nullptr.py::TestOperators::test_not_an_integer_constant\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int a[nullptr];\"\n"
+      "output-error\n"
+      "{\"type\": \"ParserError\", \"message\": \"array size must have integer type, and `nullptr` has type nullptr_t (C23 \\u00a76.7.7.3)\"}\n");
+}
+
+TEST_CASE("parse: test_c23_nullptr.py::TestOperators::test_not_an_integer_constant (call 2)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_c23_nullptr.py::TestOperators::test_not_an_integer_constant\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"typedef typeof_unqual(nullptr) nullptr_t;\\nint x = !nullptr;\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  VarDecl(var_decl(\"x\" Unary(LogicalNot Constant(ConstNullptr None) None) Int None None None None false))\n"
+      "])\n");
+}
+
+TEST_CASE("identifier_resolution: test_c23_nullptr.py::TestOperators::test_not_an_integer_constant (call 3)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass identifier_resolution\n"
+      "source tests/test_c23_nullptr.py::TestOperators::test_not_an_integer_constant\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  VarDecl(var_decl(\"x\" Unary(LogicalNot Constant(ConstNullptr None) None) Int None None None None false))\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  VarDecl(var_decl(\"x\" Unary(LogicalNot Constant(ConstNullptr None) None) Int None None None None false))\n"
+      "])\n");
+}
+
+TEST_CASE("type_checking: test_c23_nullptr.py::TestOperators::test_not_an_integer_constant (call 4)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass type_checking\n"
+      "source tests/test_c23_nullptr.py::TestOperators::test_not_an_integer_constant\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  VarDecl(var_decl(\"x\" Unary(LogicalNot Constant(ConstNullptr None) None) Int None None None None false))\n"
+      "])\n"
+      "output-error\n"
+      "{\"type\": \"TypeCheckError\", \"message\": \"initializer for static-storage object 'x' is not a constant expression: `nullptr` has type nullptr_t, which isn't an integer type, so it can't be an operand of an integer constant expression (C23 \\u00a76.6p8)\"}\n");
+}
+
 TEST_CASE("parse: test_c23_nullptr.py::TestOperators::test_relational_rejected (call 1)") {
   c6502::testing::check_record(
       "c6502-capture 2\n"
@@ -4902,6 +4962,99 @@ TEST_CASE("type_checking: test_c23_nullptr.py::TestOperators::test_scalar_contex
       "])\n"
       "output-json\n"
       "{\"tuple\": [{\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  FunctionDecl(function_decl(\\\"f\\\" [\\\"@0.n\\\"] Block([\\n    S(IfStmt(Constant(ConstNullptr NullptrT) Return(Constant(ConstInt(1) Int)) None))\\n    S(WhileStmt(Var(\\\"@0.n\\\" NullptrT) Compound(Block([])) \\\"\\\"))\\n    S(ForStmt(InitExp(None) Constant(ConstNullptr NullptrT) None Compound(Block([])) \\\"\\\" None))\\n    S(DoWhileStmt(Compound(Block([])) Constant(ConstNullptr NullptrT) \\\"\\\"))\\n    S(Return(Binary(Add Binary(Add Binary(Add Unary(LogicalNot Constant(ConstNullptr NullptrT) Int) Binary(LogicalAnd Constant(ConstNullptr NullptrT) Constant(ConstInt(1) Int) Int) Int) Binary(LogicalOr Constant(ConstInt(0) Int) Var(\\\"@0.n\\\" NullptrT) Int) Int) Conditional(Constant(ConstNullptr NullptrT) Constant(ConstInt(1) Int) Constant(ConstInt(2) Int) Int) Int)))\\n  ]) FunType([NullptrT] Int) None None [\\\"\\\"] false None [] None false))\\n])\\n\"}, {\"object\": \"passes.type_checking.SymbolTable\", \"fields\": {\"_table\": {\"dict\": [[\"f\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"FunType([NullptrT] Int)\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.FunAttr\", \"fields\": {\"defined\": true, \"is_global\": true, \"carry_return\": false, \"address\": null, \"preserves\": {\"set\": []}, \"section\": null, \"param_zeropage\": {\"tuple\": []}, \"returns_bool\": false, \"noreturn\": false}}}}], [\"@0.n\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"NullptrT\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.LocalAttr\", \"fields\": {\"register\": false, \"was_bool\": false}}}}]]}}}, {\"object\": \"passes.type_checking.TypeTable\", \"fields\": {\"_table\": {\"dict\": []}}}]}\n");
+}
+
+TEST_CASE("parse: test_c23_nullptr.py::TestStddef::test_includes_cleanly (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_c23_nullptr.py::TestStddef::test_includes_cleanly\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"typedef int ptrdiff_t;\\ntypedef unsigned int size_t;\\ntypedef char max_align_t;\\ntypedef int wchar_t;\\ntypedef typeof_unqual(nullptr) nullptr_t;\\nstruct s { char a; int b; long c[3]; };\\nnullptr_t n = nullptr;\\nsize_t z = sizeof(int);\\nptrdiff_t d;\\nmax_align_t m;\\nwchar_t w;\\nint *p = ((void *)0);\\nsize_t o = ((size_t)&((struct s *)0)->c[1]);\\nint main(void) { ((void)0); return ((void *)0) == 0; }\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Char) member_decl(\"b\" Int) member_decl(\"c\" Array(Long 3))]))\n"
+      "  VarDecl(var_decl(\"n\" Constant(ConstNullptr None) NullptrT None None None None false))\n"
+      "  VarDecl(var_decl(\"z\" SizeOfType(Int None) UInt None None None None false))\n"
+      "  VarDecl(var_decl(\"d\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"m\" None Char None None None None false))\n"
+      "  VarDecl(var_decl(\"w\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"p\" Cast(Pointer(Void) Constant(ConstInt(0) None) None) Pointer(Int) None None None None false))\n"
+      "  VarDecl(var_decl(\"o\" Cast(UInt AddressOf(Subscript(Arrow(Cast(Pointer(Structure(\"s\")) Constant(ConstInt(0) None) None) \"c\" None) Constant(ConstInt(1) None) None) None) None) UInt None None None None false))\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(Expression(Cast(Void Constant(ConstInt(0) None) None)))\n"
+      "    S(Return(Binary(Equal Cast(Pointer(Void) Constant(ConstInt(0) None) None) Constant(ConstInt(0) None) None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("identifier_resolution: test_c23_nullptr.py::TestStddef::test_includes_cleanly (call 2)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass identifier_resolution\n"
+      "source tests/test_c23_nullptr.py::TestStddef::test_includes_cleanly\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Char) member_decl(\"b\" Int) member_decl(\"c\" Array(Long 3))]))\n"
+      "  VarDecl(var_decl(\"n\" Constant(ConstNullptr None) NullptrT None None None None false))\n"
+      "  VarDecl(var_decl(\"z\" SizeOfType(Int None) UInt None None None None false))\n"
+      "  VarDecl(var_decl(\"d\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"m\" None Char None None None None false))\n"
+      "  VarDecl(var_decl(\"w\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"p\" Cast(Pointer(Void) Constant(ConstInt(0) None) None) Pointer(Int) None None None None false))\n"
+      "  VarDecl(var_decl(\"o\" Cast(UInt AddressOf(Subscript(Arrow(Cast(Pointer(Structure(\"s\")) Constant(ConstInt(0) None) None) \"c\" None) Constant(ConstInt(1) None) None) None) None) UInt None None None None false))\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(Expression(Cast(Void Constant(ConstInt(0) None) None)))\n"
+      "    S(Return(Binary(Equal Cast(Pointer(Void) Constant(ConstInt(0) None) None) Constant(ConstInt(0) None) None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n"
+      "output\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Char) member_decl(\"b\" Int) member_decl(\"c\" Array(Long 3))]))\n"
+      "  VarDecl(var_decl(\"n\" Constant(ConstNullptr None) NullptrT None None None None false))\n"
+      "  VarDecl(var_decl(\"z\" SizeOfType(Int None) UInt None None None None false))\n"
+      "  VarDecl(var_decl(\"d\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"m\" None Char None None None None false))\n"
+      "  VarDecl(var_decl(\"w\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"p\" Cast(Pointer(Void) Constant(ConstInt(0) None) None) Pointer(Int) None None None None false))\n"
+      "  VarDecl(var_decl(\"o\" Cast(UInt AddressOf(Subscript(Arrow(Cast(Pointer(Structure(\"s\")) Constant(ConstInt(0) None) None) \"c\" None) Constant(ConstInt(1) None) None) None) None) UInt None None None None false))\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(Expression(Cast(Void Constant(ConstInt(0) None) None)))\n"
+      "    S(Return(Binary(Equal Cast(Pointer(Void) Constant(ConstInt(0) None) None) Constant(ConstInt(0) None) None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("type_checking: test_c23_nullptr.py::TestStddef::test_includes_cleanly (call 3)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass type_checking\n"
+      "source tests/test_c23_nullptr.py::TestStddef::test_includes_cleanly\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "mutated {\"input\": {\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  StructDecl(struct_decl(\\\"s\\\" false [member_decl(\\\"a\\\" Char) member_decl(\\\"b\\\" Int) member_decl(\\\"c\\\" Array(Long 3))]))\\n  VarDecl(var_decl(\\\"n\\\" Constant(ConstNullptr NullptrT) NullptrT None None None None false))\\n  VarDecl(var_decl(\\\"z\\\" SizeOfType(Int UInt) UInt None None None None false))\\n  VarDecl(var_decl(\\\"d\\\" None Int None None None None false))\\n  VarDecl(var_decl(\\\"m\\\" None Char None None None None false))\\n  VarDecl(var_decl(\\\"w\\\" None Int None None None None false))\\n  VarDecl(var_decl(\\\"p\\\" Cast(Pointer(Int) Cast(Pointer(Void) Constant(ConstInt(0) Int) Pointer(Void)) Pointer(Int)) Pointer(Int) None None None None false))\\n  VarDecl(var_decl(\\\"o\\\" Cast(UInt Constant(ConstUInt(7) UInt) UInt) UInt None None None None false))\\n  FunctionDecl(function_decl(\\\"main\\\" [] Block([\\n    S(Expression(Cast(Void Constant(ConstInt(0) Int) Void)))\\n    S(Return(Binary(Equal Cast(Pointer(Void) Constant(ConstInt(0) Int) Pointer(Void)) Cast(Pointer(Void) Constant(ConstInt(0) Int) Pointer(Void)) Int)))\\n  ]) FunType([] Int) None None [] false None [] None false))\\n])\\n\"}, \"args\": {}, \"kwargs\": {}}\n"
+      "input\n"
+      "Program([\n"
+      "  StructDecl(struct_decl(\"s\" false [member_decl(\"a\" Char) member_decl(\"b\" Int) member_decl(\"c\" Array(Long 3))]))\n"
+      "  VarDecl(var_decl(\"n\" Constant(ConstNullptr None) NullptrT None None None None false))\n"
+      "  VarDecl(var_decl(\"z\" SizeOfType(Int None) UInt None None None None false))\n"
+      "  VarDecl(var_decl(\"d\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"m\" None Char None None None None false))\n"
+      "  VarDecl(var_decl(\"w\" None Int None None None None false))\n"
+      "  VarDecl(var_decl(\"p\" Cast(Pointer(Void) Constant(ConstInt(0) None) None) Pointer(Int) None None None None false))\n"
+      "  VarDecl(var_decl(\"o\" Cast(UInt AddressOf(Subscript(Arrow(Cast(Pointer(Structure(\"s\")) Constant(ConstInt(0) None) None) \"c\" None) Constant(ConstInt(1) None) None) None) None) UInt None None None None false))\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(Expression(Cast(Void Constant(ConstInt(0) None) None)))\n"
+      "    S(Return(Binary(Equal Cast(Pointer(Void) Constant(ConstInt(0) None) None) Constant(ConstInt(0) None) None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n"
+      "output-json\n"
+      "{\"tuple\": [{\"asdl\": \"c99_ast\", \"dump\": \"Program([\\n  StructDecl(struct_decl(\\\"s\\\" false [member_decl(\\\"a\\\" Char) member_decl(\\\"b\\\" Int) member_decl(\\\"c\\\" Array(Long 3))]))\\n  VarDecl(var_decl(\\\"n\\\" Constant(ConstNullptr NullptrT) NullptrT None None None None false))\\n  VarDecl(var_decl(\\\"z\\\" SizeOfType(Int UInt) UInt None None None None false))\\n  VarDecl(var_decl(\\\"d\\\" None Int None None None None false))\\n  VarDecl(var_decl(\\\"m\\\" None Char None None None None false))\\n  VarDecl(var_decl(\\\"w\\\" None Int None None None None false))\\n  VarDecl(var_decl(\\\"p\\\" Cast(Pointer(Int) Cast(Pointer(Void) Constant(ConstInt(0) Int) Pointer(Void)) Pointer(Int)) Pointer(Int) None None None None false))\\n  VarDecl(var_decl(\\\"o\\\" Cast(UInt Constant(ConstUInt(7) UInt) UInt) UInt None None None None false))\\n  FunctionDecl(function_decl(\\\"main\\\" [] Block([\\n    S(Expression(Cast(Void Constant(ConstInt(0) Int) Void)))\\n    S(Return(Binary(Equal Cast(Pointer(Void) Constant(ConstInt(0) Int) Pointer(Void)) Cast(Pointer(Void) Constant(ConstInt(0) Int) Pointer(Void)) Int)))\\n  ]) FunType([] Int) None None [] false None [] None false))\\n])\\n\"}, {\"object\": \"passes.type_checking.SymbolTable\", \"fields\": {\"_table\": {\"dict\": [[\"n\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"NullptrT\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Initial\", \"fields\": {\"value\": 0}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}], [\"z\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"UInt\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Initial\", \"fields\": {\"value\": 2}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}], [\"d\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Int\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Tentative\", \"fields\": {}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}], [\"m\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Char\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Tentative\", \"fields\": {}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}], [\"w\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Int\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Tentative\", \"fields\": {}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}], [\"p\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Pointer(Int)\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Initial\", \"fields\": {\"value\": 0}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, "
+      "\"mergeable\": false, \"was_bool\": false}}}}], [\"o\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"UInt\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.StaticAttr\", \"fields\": {\"initial_value\": {\"object\": \"passes.type_checking.Initial\", \"fields\": {\"value\": 7}}, \"is_global\": true, \"zeropage\": false, \"zp_address\": null, \"address\": null, \"section\": null, \"planes\": null, \"mergeable\": false, \"was_bool\": false}}}}], [\"main\", {\"object\": \"passes.type_checking.Symbol\", \"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"FunType([] Int)\\n\"}, \"attrs\": {\"object\": \"passes.type_checking.FunAttr\", \"fields\": {\"defined\": true, \"is_global\": true, \"carry_return\": false, \"address\": null, \"preserves\": {\"set\": []}, \"section\": null, \"param_zeropage\": {\"tuple\": []}, \"returns_bool\": false, \"noreturn\": false}}}}]]}}}, {\"object\": \"passes.type_checking.TypeTable\", \"fields\": {\"_table\": {\"dict\": [[\"s\", {\"object\": \"passes.type_checking.StructLayout\", \"fields\": {\"tag\": \"s\", \"is_union\": false, \"members\": [{\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"a\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Char\\n\"}, \"byte_offset\": 0}}, {\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"b\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Int\\n\"}, \"byte_offset\": 1}}, {\"object\": \"passes.type_checking.MemberInfo\", \"fields\": {\"name\": \"c\", \"type\": {\"asdl\": \"c99_ast\", \"dump\": \"Array(Long 3)\\n\"}, \"byte_offset\": 3}}], \"size\": 15, \"complete\": true}}]]}}}]}\n");
 }
 
 TEST_CASE("parse: test_c23_nullptr.py::TestStddef::test_null_compares_equal_to_zero_and_nullptr (call 1)") {

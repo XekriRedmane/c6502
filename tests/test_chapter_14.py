@@ -16,8 +16,9 @@ substitute c6502's `long long` (4B) and `unsigned long long`
 (4B), with constants scaled accordingly.
 
 Two invalid_parse files (abstract function declarators) are
-currently accepted by the parser; they're pinned in
-`_INVALID_PARSE_NOT_REJECTED_TODAY`. The invalid_types pin set is
+currently accepted by the parser. The parse of each invalid_parse
+file, those two included, is a doctest case of the C++ port
+(cpp/tests/test_chapter_14_calls.cpp). The invalid_types pin set is
 empty — all cross-type pointer assignment shapes are now rejected
 at the type-check boundary.
 """

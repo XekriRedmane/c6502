@@ -59,3 +59,157 @@ TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidParse::test_parse_fails 
       "output-error\n"
       "{\"type\": \"UnexpectedToken\", \"message\": \"Unexpected token Token('LBRACE', '{') at line 3, column 16.\\nExpected one of: \\n\\t* AMP\\n\\t* BANG\\n\\t* BITINT_INTEGER\\n\\t* CHAR_CONSTANT\\n\\t* DOUBLE_CONSTANT\\n\\t* FALSE\\n\\t* FLOAT_CONSTANT\\n\\t* IDENTIFIER\\n\\t* INTEGER_CONSTANT\\n\\t* LONG_DOUBLE_CONSTANT\\n\\t* LONG_INTEGER\\n\\t* LPAREN\\n\\t* MINUS\\n\\t* MINUSMINUS\\n\\t* NULLPTR\\n\\t* PLUS\\n\\t* PLUSPLUS\\n\\t* SIZEOF\\n\\t* STAR\\n\\t* STRING_LITERAL\\n\\t* TILDE\\n\\t* TRUE\\n\\t* UBITINT_INTEGER\\n\\t* UINT_INTEGER\\n\\t* ULONG_INTEGER\\n\"}\n");
 }
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 1)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int main(void) {\\n    {\\n        int a;\\n        int a;\\n    }\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(Compound(Block([\n"
+      "      D(VarDecl(var_decl(\"a\" None Int None None None None false)))\n"
+      "      D(VarDecl(var_decl(\"a\" None Int None None None None false)))\n"
+      "    ])))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 2)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int main(void) {\\n    int a = 3;\\n    {\\n        a = 5;\\n    }\\n    int a = 2;\\n    return a;\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"a\" Constant(ConstInt(3) None) Int None None None None false)))\n"
+      "    S(Compound(Block([\n"
+      "      S(Expression(Assignment(Var(\"a\" None) Constant(ConstInt(5) None) None)))\n"
+      "    ])))\n"
+      "    D(VarDecl(var_decl(\"a\" Constant(ConstInt(2) None) Int None None None None false)))\n"
+      "    S(Return(Var(\"a\" None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 3)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int main(void) {\\n\\nlabel1:;\\n    int a = 10;\\nlabel2:;\\n    int a = 11;\\n    return 1;\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(LabeledStmt(\"label1\" Null))\n"
+      "    D(VarDecl(var_decl(\"a\" Constant(ConstInt(10) None) Int None None None None false)))\n"
+      "    S(LabeledStmt(\"label2\" Null))\n"
+      "    D(VarDecl(var_decl(\"a\" Constant(ConstInt(11) None) Int None None None None false)))\n"
+      "    S(Return(Constant(ConstInt(1) None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 4)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"\\n\\nint main(void) {\\n    int x = 0;\\n    if (x) {\\n        x = 5;\\n        goto l;\\n        return 0;\\n        l:\\n            return x;\\n    } else {\\n        goto l;\\n        return 0;\\n        l:\\n            return x;\\n    }\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"x\" Constant(ConstInt(0) None) Int None None None None false)))\n"
+      "    S(IfStmt(Var(\"x\" None) Compound(Block([\n"
+      "      S(Expression(Assignment(Var(\"x\" None) Constant(ConstInt(5) None) None)))\n"
+      "      S(Goto(\"l\"))\n"
+      "      S(Return(Constant(ConstInt(0) None)))\n"
+      "      S(LabeledStmt(\"l\" Return(Var(\"x\" None))))\n"
+      "    ])) Compound(Block([\n"
+      "      S(Goto(\"l\"))\n"
+      "      S(Return(Constant(ConstInt(0) None)))\n"
+      "      S(LabeledStmt(\"l\" Return(Var(\"x\" None))))\n"
+      "    ]))))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 5)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int main(void) {\\n    int x = 0;\\n    if (x != 0) {\\n        return_y:\\n        return y;\\n    }\\n    int y = 4;\\n    goto return_y;\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"x\" Constant(ConstInt(0) None) Int None None None None false)))\n"
+      "    S(IfStmt(Binary(NotEqual Var(\"x\" None) Constant(ConstInt(0) None) None) Compound(Block([\n"
+      "      S(LabeledStmt(\"return_y\" Return(Var(\"y\" None))))\n"
+      "    ])) None))\n"
+      "    D(VarDecl(var_decl(\"y\" Constant(ConstInt(4) None) Int None None None None false)))\n"
+      "    S(Goto(\"return_y\"))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 6)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int main(void) {\\n    {\\n        int a = 2;\\n    }\\n    return a;\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    S(Compound(Block([\n"
+      "      D(VarDecl(var_decl(\"a\" Constant(ConstInt(2) None) Int None None None None false)))\n"
+      "    ])))\n"
+      "    S(Return(Var(\"a\" None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}
+
+TEST_CASE("parse: test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails (call 7)") {
+  c6502::testing::check_record(
+      "c6502-capture 2\n"
+      "pass parse\n"
+      "source tests/test_chapter_7.py::TestChapter7InvalidSemantics::test_resolve_fails\n"
+      "args {\"args\": [], \"kwargs\": {}}\n"
+      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
+      "input-json\n"
+      "\"int main(void) {\\n    int a;\\n    {\\n        b = 10;\\n    }\\n    int b;\\n    return b;\\n}\\n\"\n"
+      "output\n"
+      "Program([\n"
+      "  FunctionDecl(function_decl(\"main\" [] Block([\n"
+      "    D(VarDecl(var_decl(\"a\" None Int None None None None false)))\n"
+      "    S(Compound(Block([\n"
+      "      S(Expression(Assignment(Var(\"b\" None) Constant(ConstInt(10) None) None)))\n"
+      "    ])))\n"
+      "    D(VarDecl(var_decl(\"b\" None Int None None None None false)))\n"
+      "    S(Return(Var(\"b\" None)))\n"
+      "  ]) FunType([] Int) None None [] false None [] None false))\n"
+      "])\n");
+}

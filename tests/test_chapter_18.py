@@ -19,8 +19,9 @@ invalid_lex contains two pp-number tests (`.1l`, `.0foo`) — c6502's
 lexer doesn't have the C preprocessing-number concept, so these
 DON'T fail at lex time the way they do for upstream's compiler.
 They DO fail at parse (because of struct), but that's at the wrong
-stage for the invalid_lex bucket. They're pinned via
-`_INVALID_LEX_NOT_REJECTED_TODAY`.
+stage for the invalid_lex bucket. The tokens each invalid_lex file
+gives, and the parse of each invalid_parse file, are doctest cases of
+the C++ port (cpp/tests/test_chapter_18_calls.cpp).
 """
 
 from __future__ import annotations
@@ -30,16 +31,11 @@ import unittest
 from pathlib import Path
 
 from compile import _run_stage
-from lark.exceptions import UnexpectedInput
-from lexer import LexError
-from parser import ParserError, parse
 from preprocessor import preprocess
 
 
 _TESTS_DIR = Path(__file__).parent
 _C18 = _TESTS_DIR / "chapter_18"
-
-_PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
 # Permanently incompatible: features c6502 fundamentally can't
@@ -140,16 +136,12 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
 
 
 # Per-bucket pinning for invalid tests c6502 doesn't reject today.
-# c6502's lexer has no preprocessing-number concept, so `.1l` (a
-# DOT followed by a valid LONG_INTEGER) lexes cleanly even though
+# The invalid_lex and invalid_parse buckets' pins are doctest cases
+# now (cpp/tests/test_chapter_18_calls.cpp), which hold the tokens or
+# the program each file gives. c6502's lexer lexes dot_bad_token.c's
+# `.1l` (a DOT followed by a valid LONG_INTEGER) cleanly, even though
 # the standard would reject the whole sequence as one ill-formed
-# pp-number. The companion case `.0foo` (DOT followed by `0foo`)
-# is caught — c6502's INVALID_NUMBER regex flags numeric / digit
-# / non-letter abutting an identifier — so only one of the pair
-# pins here. The file DOES fail at parse time because of the
-# surrounding struct keyword, but that's at the wrong stage for
-# this bucket.
-_INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
+# pp-number, while its companion `.0foo` is caught.
 
 # invalid_parse files that C23 allows, which must compile. Each
 # initializes an object with the empty initializer `{}`, which C23
@@ -201,22 +193,17 @@ class TestChapter18Valid(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter18InvalidParse(unittest.TestCase):
-    def test_parse_fails(self):
-        files = sorted((_C18 / "invalid_parse").rglob("*.c"))
-        self.assertGreater(len(files), 0, "no invalid_parse files found")
-        for path in files:
-            rel = path.relative_to(_C18 / "invalid_parse").as_posix()
+    """The parse of each other invalid_parse file, and the error it
+    gives, are doctest cases (cpp/tests/test_chapter_18_calls.cpp)."""
+
+    def test_valid_in_c23_compiles(self):
+        for rel in sorted(_INVALID_PARSE_VALID_IN_C23):
+            path = _C18 / "invalid_parse" / rel
             with self.subTest(file=rel):
                 source = preprocess(
                     path.read_text(), ["-I", str(path.parent)],
                 )
-                if rel in _INVALID_PARSE_VALID_IN_C23:
-                    _run_stage("codegen", source)
-                elif rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
-                    parse(source)
-                else:
-                    with self.assertRaises(_PARSE_FAILURES):
-                        parse(source)
+                _run_stage("codegen", source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

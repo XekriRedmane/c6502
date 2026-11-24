@@ -22,6 +22,12 @@ simulator harness assembles.
 the preprocessor and the lexer and returns the text `compile.py --lex`
 prints.
 
+`tac_main`, `tac_results`, `tac_first_changing_pass`, and
+`tac_falls_off_end` run the TAC interpreter of the C++ port on a source,
+for `tests.test_sim_chapters._run_program`, fuzz/reduce.py, and
+fuzz/tac_passes.py under the variable, so that those import none of the
+Python front end, `c99_to_tac`, the TAC optimizer, or tac_sim.py.
+
 `build` sends the inputs of `compile.py -c` or of a link in one request:
 each C source's text, each assembly file's text, and each object's
 bytes, with a link's script, origin, `--defsym`s, and output. The C++
@@ -452,6 +458,87 @@ def build(inputs: list[dict], pcpp_args, *, optimize: bool, inline: bool,
         parts.append(f"input {len(data)}\n".encode("utf-8") + data)
     return Built(_send(b"".join(parts)), link is not None)
 
+
+
+class TacSimError(Exception):
+    """The error of the C++ TAC interpreter (cpp/src/tac_sim.h) that
+    tac_sim.py raises as its own `TacSimError`. The class stands in for
+    that one, so that a caller of the functions below under
+    `C6502_CPP_BACKEND=1` loads neither tac_sim.py nor the type checker
+    it imports. Its name and message are Python's."""
+
+
+def _tac_request(mode: str, source: str, **args) -> tuple[dict, dict]:
+    """Sends the TAC interpreter's `mode` (cpp/src/tac_sim_modes.h) the
+    source `source`, preprocessed as `preprocess(source)` preprocesses
+    it, and returns the response's lines and sections. What the
+    preprocessor wrote to stderr goes to `sys.stderr` and its warnings
+    to `diagnostics.warn`, and the error of a rejected program is raised
+    as its Python exception."""
+    kwargs = json.dumps({
+        "pcpp_args": [], "filename": None, "include_dir": _INCLUDE_DIR,
+        "preprocess": True, **args,
+    })
+    request = (
+        f"c6502-backend 3\nmode {mode}\nargs {kwargs}\n"
+        f"{_section('source', source)}"
+    )
+    lines, sections = _sections(_send(request))
+    _replay_front(lines, sections)
+    return lines, sections
+
+
+def _tac_value(text: str):
+    """The value of a `result` or `optimized` line, or the raise of the
+    exception that the interpreter raised, as its Python class."""
+    outcome = json.loads(text)
+    if "error" in outcome:
+        error = outcome["error"]
+        if error["type"] == "TacSimError":
+            raise TacSimError(error["message"])
+        raise _exception(error["type"], error["message"])
+    return outcome["value"]
+
+
+def tac_main(source: str) -> int | None:
+    """Returns what `main` of the C source `source` returns on its
+    unoptimized TAC, as `tests.test_sim_chapters._run_program` computes
+    it with the Python front end, `c99_to_tac`, and tac_sim.py: an int,
+    signed when `main`'s type is, or None. The front end's error and the
+    interpreter's are raised with their Python classes, the latter's
+    `TacSimError` being this module's."""
+    lines, _ = _tac_request("tac-run", source)
+    return _tac_value(lines["result"])
+
+
+def tac_results(source: str) -> tuple:
+    """Returns `main`'s result on the unoptimized TAC of `source` and on
+    the TAC after the TAC optimizer (`optimize_program`), as
+    fuzz/reduce.py's `_tac_results` computes them, raising as
+    `tac_main` does."""
+    lines, _ = _tac_request("tac-run", source, optimized=True)
+    plain = _tac_value(lines["result"])
+    return plain, _tac_value(lines["optimized"])
+
+
+def tac_first_changing_pass(source: str):
+    """Returns fuzz/tac_passes.py's `first_changing_pass` of `source`:
+    `(function, pass, expected, got)` for the first step of the TAC
+    optimizer after which `main` returns something other than on the
+    unoptimized TAC, or None. A result is an int, None, or the text
+    `ERR <type>: <message>` of what the interpreter raised."""
+    lines, _ = _tac_request("tac-observe", source)
+    found = json.loads(lines["found"])
+    return None if found is None else tuple(found)
+
+
+def tac_falls_off_end(source: str) -> bool:
+    """Returns fuzz/reduce.py's `falls_off_end` of `source`: whether a
+    run of `main` on the TAC reaches the end of a function, other than
+    `main`, that returns a value. A program that the front end rejects
+    gives False."""
+    lines, _ = _tac_request("tac-falls-off", source)
+    return lines["fell"] == "true"
 
 
 def _ir_check_enabled() -> bool:

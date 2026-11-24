@@ -3,6 +3,7 @@ optimizer passes, and `fuzz.tac_passes`, which uses it to name the pass
 that changes a program's result."""
 from __future__ import annotations
 
+import os
 import shutil
 import unittest
 
@@ -126,6 +127,11 @@ class TestTacPasses(unittest.TestCase):
     def test_no_pass_changes_a_correct_program(self) -> None:
         self.assertIsNone(first_changing_pass(self._SRC))
 
+    @unittest.skipIf(
+        os.environ.get("C6502_CPP_BACKEND") == "1",
+        "breaks a Python pass, which the C++ port doesn't run "
+        "(cpp/README.md, \"The TAC interpreter\")",
+    )
     def test_names_the_pass(self) -> None:
         # With narrow_widened_arith's check that a global is unchanged
         # since the extend read it turned off, it reads g after h()

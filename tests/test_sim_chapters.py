@@ -25,19 +25,10 @@ explicit so we don't silently lose coverage.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import unittest
 from pathlib import Path
-
-from c99_to_tac import translate_program as translate_to_tac
-from parser import parse
-from passes.identifier_resolution import resolve_program as resolve_identifiers
-from passes.label_resolution import resolve_program as resolve_labels
-from passes.loop_labeling import label_program as label_loops
-from passes.string_lifting import lift_program as lift_strings
-from passes.type_checking import check_program as type_check_program
-from preprocessor import preprocess
-from tac_sim import Simulator
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -757,6 +748,23 @@ SKIPPED: dict[str, str] = {
 
 
 def _run_program(source: str) -> int | None:
+    """Returns what `main` of the C source `source` returns on its
+    unoptimized TAC. Under `C6502_CPP_BACKEND=1` the C++ port's front
+    end and TAC interpreter run it (`cpp_backend.tac_main`), and none of
+    the Python front end, `c99_to_tac`, or tac_sim.py is imported, so the
+    imports are here."""
+    if os.environ.get("C6502_CPP_BACKEND") == "1":
+        import cpp_backend
+        return cpp_backend.tac_main(source)
+    from c99_to_tac import translate_program as translate_to_tac
+    from parser import parse
+    from passes.identifier_resolution import resolve_program as resolve_identifiers
+    from passes.label_resolution import resolve_program as resolve_labels
+    from passes.loop_labeling import label_program as label_loops
+    from passes.string_lifting import lift_program as lift_strings
+    from passes.type_checking import check_program as type_check_program
+    from preprocessor import preprocess
+    from tac_sim import Simulator
     preprocessed = preprocess(source)
     resolved = label_loops(resolve_labels(lift_strings(
         resolve_identifiers(parse(preprocessed)),

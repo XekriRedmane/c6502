@@ -30,6 +30,7 @@ and the generators always end such a function with a `return`.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -51,7 +52,11 @@ def falls_off_end(src: str) -> bool:
     end of a function, other than `main`, whose return type isn't
     `void`. Returns False for a program that the front end rejects or
     that the interpreter can't run, which the predicate rejects on its
-    own."""
+    own. Under `C6502_CPP_BACKEND=1` the C++ port does the same
+    (`cpp_backend.tac_falls_off_end`)."""
+    if os.environ.get("C6502_CPP_BACKEND") == "1":
+        import cpp_backend
+        return cpp_backend.tac_falls_off_end(src)
     import c99_ast
     import sim.harness as H
     from tac_sim import Simulator, TacSimError
@@ -86,7 +91,11 @@ def falls_off_end(src: str) -> bool:
 
 
 def _tac_results(src: str) -> tuple[int, int]:
-    """main()'s result on unoptimized and optimized TAC."""
+    """main()'s result on unoptimized and optimized TAC, from the C++
+    port under `C6502_CPP_BACKEND=1` (`cpp_backend.tac_results`)."""
+    if os.environ.get("C6502_CPP_BACKEND") == "1":
+        import cpp_backend
+        return cpp_backend.tac_results(src)
     import sim.harness as H
     from tac_sim import Simulator
     ast = H.label_loops(H.resolve_labels(H.lift_strings(

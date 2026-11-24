@@ -15,13 +15,9 @@ asm result is still wrong, the bug is in `tac_to_asm` or an asm pass.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
-
-import tac_ast
-from passes.optimization import optimize_program
-from passes.optimization.framework.driver import PhaseDriver
-from tac_sim import Simulator
 
 
 def _front_end(src: str):
@@ -36,7 +32,18 @@ def _front_end(src: str):
 def first_changing_pass(src: str) -> tuple[str, str, object, object] | None:
     """`(function, pass, expected, got)` for the first pass after which
     `main` returns something other than on unoptimized TAC (or raises),
-    or None when no pass changes it."""
+    or None when no pass changes it. Under `C6502_CPP_BACKEND=1` the C++
+    port's TAC optimizer and interpreter do the same
+    (`cpp_backend.tac_first_changing_pass`), and none of the Python
+    front end, the optimizer, or tac_sim.py is imported, so the imports
+    are here."""
+    if os.environ.get("C6502_CPP_BACKEND") == "1":
+        import cpp_backend
+        return cpp_backend.tac_first_changing_pass(src)
+    import tac_ast
+    from passes.optimization import optimize_program
+    from passes.optimization.framework.driver import PhaseDriver
+    from tac_sim import Simulator
     tac, syms, types = _front_end(src)
 
     def run(top_level) -> object:

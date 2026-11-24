@@ -38,8 +38,10 @@ std::vector<SweepPass> peephole_sweep(const AsmContext& ctx,
 
 // Runs the passes of `sweep` in order on `prog`, repeating until a full
 // sweep leaves the program equal to what it started with, and returns
-// that program. Throws `InternalError` with Python's message when
-// `kPeepholeFixedpointCap` sweeps all change it.
+// that program. With the IR checks on, the program is checked after
+// each sweep (`ir_check::check_asm`, "after a peephole sweep"). Throws
+// `InternalError` with Python's message when `kPeepholeFixedpointCap`
+// sweeps all change it, and for a failed check.
 asm_ast::Program run_to_fixed_point(asm_ast::Program prog,
                                     const std::vector<SweepPass>& sweep);
 

@@ -11,6 +11,7 @@
 
 #include "backend.h"
 #include "doctest.h"
+#include "passes/ir_check.h"
 
 namespace {
 
@@ -266,13 +267,14 @@ TEST_CASE("backend answers a request for the harness with the program") {
   CHECK(got.find("\ntext ") == std::string::npos);
 }
 
-TEST_CASE("backend gives the TAC and the programs with the IR checks on") {
+TEST_CASE("backend checks the IR itself with the IR checks on") {
+  // The checks run in C++, so the response is the one without them, and
+  // they are off again once the request is answered.
   const std::string got =
       c6502::backend::respond(request(kSource, true, "source-text", true, true));
-  CHECK(got.starts_with("stderr 0\nwarnings []\ntac "));
-  CHECK(got.find("\nasm ") != std::string::npos);
-  CHECK(got.find("\nasm2 ") != std::string::npos);
-  CHECK(got.find("\ntext ") != std::string::npos);
+  CHECK(got == c6502::backend::respond(request(kSource, true, "source-text", true, false)));
+  CHECK(got.starts_with("stderr 0\nwarnings []\ntext "));
+  CHECK_FALSE(c6502::passes::ir_check::enabled());
 }
 
 TEST_CASE("backend gives the warnings and the error of a rejected program") {

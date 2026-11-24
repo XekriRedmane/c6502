@@ -28,6 +28,7 @@
 #include "passes/address_taken_zp.h"
 #include "passes/carry_return_choice.h"
 #include "passes/function_local_sizing.h"
+#include "passes/ir_check.h"
 #include "passes/lower_data_load_address.h"
 #include "passes/optimization/pool.h"
 #include "passes/optimization_asm/optimizer.h"
@@ -185,6 +186,7 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
                                      .pinned_copies = &pinned_copies,
                                      .slot_aliases = &aliases};
   asm_ast::Program asm0 = tac_to_asm::translate_program(tac, &symbols, &types, ctx, lowering);
+  ir_check::check_asm(asm0, "tac_to_asm", /*pseudos=*/true);
   // The preliminary run of the optimizer, with the default caller/callee
   // partition, only sizes each function's demand for local bytes, and
   // its program is dropped.
@@ -259,6 +261,7 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
                               .local_pools = &local_pools,
                               .address_taken_assignments = &assignments,
                               .address_taken_symbols = &assignment_symbols};
+  ir_check::check_asm(final_.prog, "the asm optimizer", /*pseudos=*/true);
   auto [asm1, dims_by_fn] = replace_program_bare_exit(std::move(final_.prog), statics, &symbols,
                                                       &types, &final_.colorings, tables);
   // The names of the pools' bytes, which the EQU table and the link

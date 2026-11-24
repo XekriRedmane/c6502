@@ -7,6 +7,7 @@ preprocessor's flags, and the modules Python imports."""
 from __future__ import annotations
 
 import contextlib
+import itertools
 import os
 import subprocess
 import sys
@@ -175,10 +176,8 @@ class TestWithTheVariable(unittest.TestCase):
         self.assertIn("can't recurse", results[0][1])
 
     def test_python_reads_no_program_back(self):
-        # Without the IR checks, the text comes from c6502cpp and Python
-        # loads no dump. With them, it loads the TAC that code
-        # generation lowered and the finished asm and asm2 programs to
-        # check them.
+        # The text comes from c6502cpp and Python loads no dump, with the
+        # IR checks or without them, since C++ runs the checks.
         code = (
             "import sys, compile, ir_dump\n"
             "from passes import ir_check\n"
@@ -204,7 +203,7 @@ class TestWithTheVariable(unittest.TestCase):
                     text=True,
                 )
             counts.append(int(done.stdout))
-        self.assertEqual(counts, [0, 6])
+        self.assertEqual(counts, [0, 0])
 
 
 def _run(args: list[str], cpp: bool, *, stdin: str | None = None,
@@ -380,9 +379,8 @@ class TestTheFrontEnd(unittest.TestCase):
     def test_compile_imports_no_front_end(self):
         # Run as a script with the variable set, compile.py stops before
         # it imports the Python pipeline, which the front end's modules
-        # are part of. The IR checks are off, since passes/ir_check.py
-        # reads helpers of the asm optimizer, which import the type
-        # checker.
+        # are part of, and with `C6502_CHECK_IR=1` too, since C++ runs
+        # the IR checks, it imports none of the compiler's passes.
         code = (
             "import runpy, sys\n"
             "sys.argv = ['compile.py', 'examples/sfx_tone.c', '-S', '-O',"
@@ -392,24 +390,25 @@ class TestTheFrontEnd(unittest.TestCase):
             "except SystemExit as e:\n"
             "    assert not e.code, e.code\n"
             "front = ('parser', 'lexer', 'lark', 'pcpp', 'preprocessor',\n"
-            "         'passes.type_checking', 'passes.identifier_resolution',\n"
-            "         'passes.string_lifting', 'passes.label_resolution',\n"
-            "         'passes.loop_labeling', 'passes.optimization_ast',\n"
-            "         'tac_to_asm', 'c99_to_tac')\n"
+            "         'passes', 'tac_to_asm', 'c99_to_tac', 'asm_emit',\n"
+            "         'tac_ast', 'asm_ast', 'asm2_ast', 'ir_dump')\n"
             "print(sorted(m for m in sys.modules\n"
-            "             if m.split('.')[0] in front or m in front\n"
-            "             or m.startswith(front)))\n"
+            "             if m.split('.')[0] in front))\n"
         )
         env = dict(os.environ)
         env["C6502_CPP_BACKEND"] = "1"
-        env.pop("C6502_CHECK_IR", None)
-        with tempfile.TemporaryDirectory() as tmp:
-            done = subprocess.run(
-                [sys.executable, "-c", code, os.path.join(tmp, "out.s")],
-                cwd=_ROOT, env=env, check=True, capture_output=True,
-                text=True,
-            )
-        self.assertEqual(done.stdout.strip(), "[]")
+        for check in (None, "1"):
+            env.pop("C6502_CHECK_IR", None)
+            if check:
+                env["C6502_CHECK_IR"] = check
+            with self.subTest(check_ir=check), \
+                    tempfile.TemporaryDirectory() as tmp:
+                done = subprocess.run(
+                    [sys.executable, "-c", code, os.path.join(tmp, "out.s")],
+                    cwd=_ROOT, env=env, check=True, capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(done.stdout.strip(), "[]")
 
 
 @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
@@ -749,14 +748,18 @@ class TestObjectsAndLinks(unittest.TestCase):
                     path.write_bytes(data)
                 else:
                     path.write_text(data, encoding="utf-8", newline="\n")
-            for args in (["-c", "-O", "main.c", "twice.asm"],
-                         ["-O", "main.c", "twice.asm", "add.o", "-T", "rom.ld",
-                          "--defsym", "port=0xC000", "-o", "prog"]):
-                with self.subTest(args=args):
+            # With `C6502_CHECK_IR=1` too, since C++ runs the IR checks.
+            for args, check in itertools.product(
+                    (["-c", "-O", "main.c", "twice.asm"],
+                     ["-O", "main.c", "twice.asm", "add.o", "-T", "rom.ld",
+                      "--defsym", "port=0xC000", "-o", "prog"]),
+                    ("0", "1")):
+                with self.subTest(args=args, check_ir=check):
                     done = subprocess.run(
                         [sys.executable, "-c", run,
                          str(_ROOT / "compile.py"), *args],
-                        cwd=tmp, env={**env, "PYTHONPATH": str(_ROOT)},
+                        cwd=tmp, env={**env, "PYTHONPATH": str(_ROOT),
+                                      "C6502_CHECK_IR": check},
                         check=True, capture_output=True, text=True,
                     )
                     self.assertEqual(sorted(linker & set(done.stdout.split())), [])

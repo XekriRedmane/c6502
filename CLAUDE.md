@@ -347,10 +347,11 @@ class and message (`cpp_backend._exception`, a subclass of the same name
 for Lark's syntax errors), so `main` reports it as Python's front end
 does. `_run_stage("codegen", text)`, which tests call with the
 preprocessor's output, sends the text with `preprocess` off. Python
-reads no program back, except under `C6502_CHECK_IR=1`, where the
-response holds the TAC that code generation lowered and the finished asm
-and asm2 programs, which `ir_check` checks, since it isn't ported. The
-checks between the passes don't run. The simulator harness
+reads no program back. Under `C6502_CHECK_IR=1` (or after
+`ir_check.enable()`), the request's `check_ir` turns on the C++ port of
+`ir_check` (cpp/src/passes/ir_check.h), which checks the IR at every
+place the Python pipeline checks it, and a failed check comes back as
+an AssertionError with `IRCheckError`'s message. The simulator harness
 (`sim.harness.compile_to_asm`) sends the source text with no
 preprocessor arguments and takes back the finished asm program in the
 dump format, with its slot symbols, since it assembles the program
@@ -361,8 +362,7 @@ text with `preprocess` off. `--parse`, `--resolve`, and `--tac` stay in
 Python. Run as a script with the variable set and
 one of the C++ stages, compile.py stops before its pipeline's imports
 (`_cpp_runs_everything`), so `--lex`, `-S`, and `-c` import none of the parser,
-Lark, pcpp, or the front end's passes, unless `C6502_CHECK_IR=1` loads
-`ir_check`, whose helpers import the type checker.
+Lark, pcpp, or the modules of passes/, with `C6502_CHECK_IR=1` too.
 
 `-c` and a link go to C++ in one request for the whole run
 (`compile._cpp_build`, `cpp_backend.build`, and the modes `objects` and

@@ -10,10 +10,12 @@ names, string lifting, and the type checker), then `c99_to_tac`, under
 `compile._optimized_tac`, `plan_zero_page`, code generation, the asm
 back end's region (or the unoptimized peephole fixed point and long
 branches), the work after it that reads the asm program, `asm_to_asm2`,
-and `asm_emit`, and returns the `-S` text. Python reads no program back,
-except under `C6502_CHECK_IR=1`, where the response holds the TAC that
-code generation lowered and the finished asm and asm2 programs for
-`ir_check`, which isn't ported. Without `emit`, the C++ side stops where
+and `asm_emit`, and returns the `-S` text. Python reads no program back.
+Under `C6502_CHECK_IR=1`, or after `ir_check.enable()`, the request's
+`check_ir` turns on the C++ port of `ir_check` (cpp/src/passes/ir_check.h),
+which checks the IR at each place the Python pipeline checks it, and a
+failed check comes back as the AssertionError of an internal error, with
+the message Python's `IRCheckError` would have. Without `emit`, the C++ side stops where
 `compile.optimized_asm` (or the harness's unoptimized path) does, and
 returns the finished asm program with its slot symbols, which the
 simulator harness assembles.
@@ -191,26 +193,13 @@ def _sections(data: bytes) -> tuple[dict[str, str], dict[str, str]]:
         end = data.index(b"\n", pos)
         key, _, value = data[pos:end].decode("utf-8").partition(" ")
         pos = end + 1
-        if key in ("stderr", "tac", "asm", "asm2", "text"):
+        if key in ("stderr", "asm", "text"):
             n = int(value)
             sections[key] = data[pos:pos + n].decode("utf-8")
             pos += n
         else:
             lines[key] = value
     return lines, sections
-
-
-def _check_tac(text: str) -> None:
-    """Checks each function of the TAC that code generation lowered, as
-    the Python TAC optimizer's driver checks each function after its
-    last pass. The symbol table isn't given, since the C++ side keeps
-    its own."""
-    import ir_dump
-    import tac_ast
-    from passes import ir_check
-    for tl in ir_dump.load(text, tac_ast).top_level:
-        if isinstance(tl, tac_ast.Function):
-            ir_check.check_tac(tl, after="the C++ TAC passes")
 
 
 def _replay_front(lines: dict[str, str], sections: dict[str, str]) -> None:
@@ -270,16 +259,14 @@ def compile_source(
 
     What the preprocessor wrote to stderr goes to `sys.stderr`, and its
     warnings to the caller's `diagnostics.collecting()` block, before
-    the error of a rejected program is raised. Under `C6502_CHECK_IR=1`
-    it checks the TAC that code generation lowered, the finished asm
-    program, and the asm2 program of a text, as compile.py checks
-    them."""
-    check = _ir_check_enabled()
+    the error of a rejected program is raised. With the IR checks on
+    (`_ir_check_enabled`), the C++ side checks the IR at each place the
+    Python pipeline does, and a failed check raises AssertionError."""
     args = json.dumps({
         "pcpp_args": list(pcpp_args or []), "filename": filename,
         "include_dir": _INCLUDE_DIR, "preprocess": preprocess,
-        "optimize": optimize,
-        "inline": inline, "check_ir": check, "link_metadata": link_metadata,
+        "optimize": optimize, "inline": inline,
+        "check_ir": _ir_check_enabled(), "link_metadata": link_metadata,
     })
     mode = "source-text" if emit else "source"
     request = (
@@ -288,38 +275,17 @@ def compile_source(
     )
     lines, sections = _sections(_send(request))
     _replay_front(lines, sections)
-    if check:
-        _check_tac(sections["tac"])
     if not emit:
         import asm_ast
         import ir_dump
-        from passes import ir_check
         out = ir_dump.load(sections["asm"], asm_ast)
-        ir_check.check_asm(out, after="the C++ back end")
         return out, dict(json.loads(lines["symbols"]))
-    if check:
-        _check_programs(sections)
     return sections["text"]
-
-
-def _check_programs(sections: dict[str, str]) -> None:
-    """Checks the finished asm program and the asm2 program of a text
-    in the response's `asm` and `asm2` sections."""
-    import asm2_ast
-    import asm_ast
-    import ir_dump
-    from passes import ir_check
-    ir_check.check_asm(
-        ir_dump.load(sections["asm"], asm_ast), after="the C++ back end",
-    )
-    ir_check.check_asm2(
-        ir_dump.load(sections["asm2"], asm2_ast), after="asm_to_asm2",
-    )
 
 
 # The keys of the response's lines that a section of that many bytes
 # follows.
-_SECTION_KEYS = ("stderr", "tac", "asm", "asm2", "text", "object")
+_SECTION_KEYS = ("stderr", "text", "object")
 
 
 def _records(data: bytes) -> list[tuple[str, str, bytes | None]]:
@@ -343,24 +309,22 @@ def _records(data: bytes) -> list[tuple[str, str, bytes | None]]:
 
 class InputResult:
     """What the C++ side gave for one input of `build`: for a C input
-    what the preprocessor wrote to stderr, the warnings, and the IR for
-    `ir_check`, then the error that ended the response, the `struct.error`
-    of writing the object, or the object's bytes."""
+    what the preprocessor wrote to stderr and the warnings, then the
+    error that ended the response, the `struct.error` of writing the
+    object, or the object's bytes."""
 
     def __init__(self) -> None:
         self.stderr = ""
         self.warnings: list = []
-        self.sections: dict[str, str] = {}
         self.error: dict | None = None
         self.write_error: dict | None = None
         self.object: bytes | None = None
 
     def replay(self) -> None:
         """Writes what the preprocessor wrote to stderr, issues the
-        warnings to the caller's `diagnostics.collecting()` block, runs
-        `ir_check` on the IR under `C6502_CHECK_IR=1`, and raises the
-        input's error as its Python exception, in the order the Python
-        compile and assembly give them."""
+        warnings to the caller's `diagnostics.collecting()` block, and
+        raises the input's error as its Python exception, in the order
+        the Python compile and assembly give them."""
         import diagnostics
         if self.stderr:
             sys.stderr.write(self.stderr)
@@ -368,9 +332,6 @@ class InputResult:
             diagnostics.warn(where, message)
         if self.error is not None:
             raise _exception(self.error["type"], self.error["message"])
-        if "tac" in self.sections:
-            _check_tac(self.sections["tac"])
-            _check_programs(self.sections)
 
     def write(self, f) -> None:
         """Writes the object to the open file `f`, or raises the
@@ -409,8 +370,6 @@ class Built:
                 current.stderr = body.decode("utf-8")
             elif key == "warnings":
                 current.warnings = json.loads(value)
-            elif key in ("tac", "asm", "asm2"):
-                current.sections[key] = body.decode("utf-8")
             elif key == "error":
                 current.error = json.loads(value)
             elif key == "write-error":

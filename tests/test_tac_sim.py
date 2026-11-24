@@ -296,6 +296,22 @@ class TestTacSimMemory(unittest.TestCase):
         """
         self.assertEqual(_run(src), ord("e"))
 
+    def test_extern_object(self):
+        # An object that another unit defines has no StaticVariable, and
+        # gets zeroed memory the first time the program uses it.
+        self.assertEqual(
+            _run("extern int g;\nint main(void) { g = 3; return g; }"), 3,
+        )
+        self.assertEqual(_run("extern long g;\nlong main(void) { return g; }"), 0)
+        # An object at a fixed address, such as an I/O register, gets
+        # no memory, so a loop that polls it raises in place of running
+        # forever.
+        with self.assertRaises(KeyError):
+            _run(
+                "extern unsigned char KBD [[c6502::address(0xC000)]];\n"
+                "int main(void) { while (!(KBD & 0x80)) ; return KBD; }"
+            )
+
     def test_address_taken_param(self):
         # A param whose address is taken inside the body needs to
         # be allocated in memory at frame entry (not env), with

@@ -472,3 +472,22 @@ TEST_CASE("tac_sim: a variable without a value before a loop") {
   CHECK(c6502::backend::respond(tac_request("tac-observe", src)) ==
         "stderr 0\nwarnings []\nfound null\n");
 }
+
+TEST_CASE("tac_sim: an object that another unit defines") {
+  // It has no StaticVariable here, and gets zeroed memory the first
+  // time the program uses it, which DirectMemberAccess's store by name
+  // finds too (tests/chapter_18/valid/parameters/pass_args_on_page_boundary.c).
+  CHECK(run("extern int g;\nint main(void) { g = 3; return g; }") == Int(3));
+  CHECK(run("extern long g;\nlong main(void) { return g; }") == Int(0));
+  // An object at a fixed address, such as an I/O register, gets no
+  // memory, so a loop that polls it raises in place of running forever.
+  CHECK_THROWS_WITH_AS(run("extern unsigned char KBD [[c6502::address(0xC000)]];\n"
+                           "int main(void) { while (!(KBD & 0x80)) ; return KBD; }"),
+                       "'KBD'", SimError);
+  const std::string src =
+      "struct s { char a[3]; };\n"
+      "extern struct s ext;\n"
+      "int main(void) { ext.a[1] = 5; return ext.a[1]; }\n";
+  CHECK(c6502::backend::respond(tac_request("tac-observe", src)) ==
+        "stderr 0\nwarnings []\nfound null\n");
+}

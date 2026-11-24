@@ -898,9 +898,22 @@ std::int64_t Simulator::static_slot(const std::string& name) {
 }
 
 std::optional<std::int64_t> Simulator::static_address(const std::string& name) {
-  // The address of a `StaticVariable`, or none.
   if (auto it = static_addr_.find(name); it != static_addr_.end()) return it->second;
-  return std::nullopt;
+  // An object that another unit defines, such as `extern struct s x;`,
+  // has no StaticVariable, and gets zeroed memory of its own the first
+  // time the program uses it, which every frame then shares. An object
+  // at a fixed address (`[[c6502::address(addr)]]`) is an I/O register
+  // or the memory of a program the interpreter doesn't run, so it gets
+  // none, and a use of it raises as before, where a loop that polls a
+  // zeroed register would never end.
+  const SymInfo& info = sym_info(name);
+  if (info.sym == nullptr || !info.is_static ||
+      std::get<passes::StaticAttr>(info.sym->attrs).address) {
+    return std::nullopt;
+  }
+  const std::int64_t addr = memory_.allocate(size_of(info.sym->type));
+  static_addr_[name] = addr;
+  return addr;
 }
 
 void Simulator::jump(Frame& frame, const std::string& target) {

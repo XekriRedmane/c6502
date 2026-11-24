@@ -141,6 +141,17 @@ class TestTacPasses(unittest.TestCase):
         """
         self.assertIsNone(first_changing_pass(src))
 
+    def test_object_another_unit_defines(self) -> None:
+        # DirectMemberAccess stores to `ext.a[1]` by name, and `ext`
+        # has no StaticVariable here, since another unit defines it
+        # (tests/chapter_18/valid/parameters/pass_args_on_page_boundary.c).
+        src = """
+            struct s { char a[3]; };
+            extern struct s ext;
+            int main(void) { ext.a[1] = 5; return ext.a[1]; }
+        """
+        self.assertIsNone(first_changing_pass(src))
+
     @unittest.skipIf(
         os.environ.get("C6502_CPP_BACKEND") == "1",
         "breaks a Python pass, which the C++ port doesn't run "

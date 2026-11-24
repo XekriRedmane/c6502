@@ -7,4 +7,7 @@
 - The guard also refuses a command that runs git after `export PATH=...` (it can't tell which git runs), and one that names a word starting with `.git` beside other commands. Run cmake with the exported PATH in one call and git in another.
 - A Bash heredoc halves the backslashes in what it writes, so a Python edit whose old text holds `\n` in a string literal silently matches nothing. Write such scripts with the Write tool, and make every replacement assert that it matched once.
 - A new .cpp under cpp/src made while a build is running isn't in that build, and the link fails with an unresolved symbol. The glob's CONFIGURE_DEPENDS picks it up at the start of the next build.
+- `cmake --build ... --target c6502_tests` under MSBuild doesn't run ZERO_CHECK, so a new file under cpp/tests isn't compiled and its cases are silently missing. Run `cmake -S cpp -B cpp/build` first, and count the cases (`c6502_tests -tc="<pattern>"`) to see them run.
+- A wait loop that greps a build log for `error` matches `test_parser_errors.cpp` and ends early. Grep for `error C`, `error LNK`, or the last target's `->` line.
+- Windows Python reads `/c/w/...` as a path on the current drive's root and fails. Give Python scripts `C:/w/...`.
 - `bc` isn't installed in Git Bash. Time a command with `date +%s%3N` and `$(( ))`.

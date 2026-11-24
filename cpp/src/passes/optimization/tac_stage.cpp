@@ -167,11 +167,17 @@ StageOutput run_optimize_function(const capture::Call& call, const AsmContext&,
 
 // Runs the driver on each function of a recorded call of
 // `optimize_program`, whose argument after the program is the
-// compile's symbol table.
+// compile's symbol table. A record of a unit test's call made without
+// the symbol table, which Python's `optimize_program` and
+// `dispatch_const_pointer_arrays` take as None, runs the pass with none.
 StageOutput run_optimize_program(const capture::Call& call, const AsmContext&,
                                  const json::Value& args, const json::Value&) {
   auto prog = asdl::load<ir::Program>(call.input);
-  SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const auto& items = array_items(args);
+  if (items.empty()) {
+    return StageOutput{asdl::dump(optimize_program(std::move(prog), nullptr)), ""};
+  }
+  SymbolTable symbols = Sym::decode(items.at(0));
   const std::string symbols_before = encode<Sym>(symbols);
   ir::Program out = optimize_program(std::move(prog), &symbols);
   StageOutput result{asdl::dump(out), ""};
@@ -218,23 +224,34 @@ StageOutput run_return_in_zero_page(const capture::Call& call, const AsmContext&
 // after the program are the symbol table and the type table. compile.py
 // passes both, and a unit test may leave the type table out, which is
 // None in Python.
+// A record's keyword `saving`, which only tools/record_test_calls.py
+// writes, is the bytes each lookup saves in place of the estimate, for
+// a test that replaced Python's `_saving` to force or forbid a table.
 StageOutput run_row_address_tables(const capture::Call& call, const AsmContext&,
-                                   const json::Value& args, const json::Value&) {
+                                   const json::Value& args, const json::Value& kwargs) {
   auto prog = asdl::load<ir::Program>(call.input);
   const auto& items = array_items(args);
   SymbolTable symbols = Sym::decode(items.at(0));
   const std::optional<TypeTable> types =
       items.size() > 1 ? Optional<Types>::decode(items[1]) : std::nullopt;
+  std::optional<asdl::Int> fixed_saving;
+  if (const json::Value* s = kwargs.get("saving")) {
+    fixed_saving = IntC::decode(*s);
+  }
   const std::string before = encode<Sym>(symbols);
-  return program_output(
-      apply_row_address_tables(std::move(prog), &symbols, types ? &*types : nullptr), before,
-      symbols);
+  return program_output(apply_row_address_tables(std::move(prog), &symbols,
+                                                 types ? &*types : nullptr, fixed_saving),
+                        before, symbols);
 }
 
 StageOutput run_dispatch(const capture::Call& call, const AsmContext&, const json::Value& args,
                          const json::Value&) {
   auto prog = asdl::load<ir::Program>(call.input);
-  const SymbolTable symbols = Sym::decode(array_items(args).at(0));
+  const auto& items = array_items(args);
+  if (items.empty()) {
+    return StageOutput{asdl::dump(dispatch_const_pointer_arrays(std::move(prog), nullptr)), ""};
+  }
+  const SymbolTable symbols = Sym::decode(items.at(0));
   const std::string before = encode<Sym>(symbols);
   return program_output(dispatch_const_pointer_arrays(std::move(prog), &symbols), before,
                         symbols);
@@ -340,6 +357,7 @@ std::vector<StageSignature> signatures() {
       {.name = "row_address_tables",
        .input = "tac_ast",
        .args = {rt<Sym>, rt<Types>},
+       .kwargs = {{"saving", rt<IntC>}},
        .output_module = "tac_ast",
        .run = &run_row_address_tables},
       {.name = "optimize_tac",

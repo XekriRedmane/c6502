@@ -3250,6 +3250,44 @@ simulator's helpers.
 matches. Before, it gave the text of the exception, which matched no
 record.
 
+The second part of G6 recorded two more kinds of call. A test's call
+of `replace_function` or `replace_function_bare_exit`, the per-function
+forms of `replace_pseudoregisters` and
+`replace_pseudoregisters_bare_exit`, is recorded as the stage call on a
+program of that one function, with the function's coloring, layout,
+pool, and address-taken locals under its name, once Python's
+program-level function has given the same result, and `check_record`
+runs it as any stage call. A call of tac_to_asm.py's module-level
+`translate_instruction`, `translate_function`, `translate_binary`, or
+`translate_val`, each of which runs a new `Translator` with no symbol
+table, is recorded as the dumps of its arguments and of its result, one
+dump per instruction, and `check_translator` (`tests/translator_case.h`)
+runs the same method of a C++ `Translator` made with no tables and the
+default options. test_tac_to_asm.py's records of this kind are in
+tests/test_tac_to_asm_translator_calls.cpp, beside the stage calls of
+test_tac_to_asm_recorded.cpp.
+
+The tests of functions that no kind of record covers are ported by
+hand, one case per Python test with each of its assertions, and each
+case is named for its test, as in `linker_script:
+TestFallThrough::test_chain`: tests/test_asm_aliasing.cpp,
+test_asm_cfg.cpp, test_linker_script.cpp, test_binutils_assembler.cpp,
+test_zp_link_metadata.cpp, test_runtime_layout.cpp,
+test_bin_to_bcd_front_end.cpp, and test_unit_helpers.cpp, with cases
+added to test_asm_helpers.cpp, test_ir_check.cpp, and
+test_linker_metadata.cpp. Where a Python test matched a message with a
+regular expression, its case checks the whole message Python gives.
+test_bin_to_bcd_front_end.cpp runs `passes::front_end` without the
+preprocessor, on sources that declare the `<stdint.h>` types they use
+with the header's typedefs. test_unit_helpers.cpp calls seven helpers
+that the passes kept in an unnamed namespace and that their headers
+declare for it: `match_transfer_chain` and `rewrite_redundant_transfers`
+(passes/optimization_asm/apply_coloring.h), `same_index_apart`
+(passes/redundant_load.h), `split_entry_stubs`
+(passes/prologue_synthesis.h), `instr_writes_hwregs`
+(passes/optimization_asm/regalloc.h), and `unop_atoms` and `shift_loop`
+(tac_to_asm_translator.h).
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -3544,3 +3582,9 @@ record.
   calls they made are doctest cases, 827 of them new ones recorded with
   tools/record_test_calls.py. The C++ tests (4,190 cases) pass with
   MSVC 19.36 and GCC 12.2.
+- 24 Nov 2026: group G6 of step 8, its second part: 190 more of
+  G6's Python tests are removed, with 30 new recorded cases of the
+  per-function forms of `replace_pseudoregisters` and of the
+  `Translator` (`tests/translator_case.h`) and 114 cases written by hand
+  ("The unit tests' recorded calls"), and G6 is done. The C++ tests
+  (4,334 cases) pass with MSVC 19.36 and GCC 12.2.

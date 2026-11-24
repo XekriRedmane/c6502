@@ -1939,32 +1939,32 @@ builds. The C++ cases are 827 new ones in 78 files, 539 that steps 3 to
 counts the cases each module's removed tests rely on, by file, and
 gives the reason each remaining test is still in Python. "End to end"
 marks a test that compiles or runs a program and stays as kind (a).
-"Call" names the direct calls that have no C++ runner yet, which a test
-ported by hand has to replace.
+"By hand" marks the cases written by hand, which the paragraphs after
+the table describe.
 
 | Module | (b) tests | Removed | The C++ cases of their calls | Left | Why each left is still in Python |
 |---|---|---|---|---|---|
 | test_adc_commute.py | 23 | 23 | test_adc_commute_calls.cpp (23) | 0 |  |
 | test_address_taken_zp.py | 5 | 5 | test_address_taken_zp_calls.cpp (5) | 0 |  |
-| test_ali_baba.py | 2 | 0 |  | 2 | 1 call `defined`, `read_file`; 1 call `helper_names` |
+| test_ali_baba.py | 2 | 0 |  | 2 | 2 end to end |
 | test_and_sign_bit_branch.py | 21 | 21 | test_and_sign_bit_branch_calls.cpp (21) | 0 |  |
-| test_asm_aliasing.py | 36 | 0 |  | 36 | 31 call `may_alias`; 4 call `may_alias`, `set_user_zp_globals`; 1 end to end |
+| test_asm_aliasing.py | 36 | 35 | test_asm_aliasing.cpp (35), by hand | 1 | 1 end to end |
 | test_asm_backward_copy_propagation.py | 18 | 18 | test_asm_ssa_round_trip.cpp (18) | 0 |  |
 | test_asm_byte_dce.py | 8 | 8 | test_asm_ssa_round_trip.cpp (8) | 0 |  |
-| test_asm_cfg.py | 11 | 0 |  | 11 | 9 call `build_cfg`; 1 call `build_cfg`, `cfg_to_function`; 1 call `build_cfg`, `dominance_frontiers`, `immediate_dominators` |
+| test_asm_cfg.py | 11 | 11 | test_asm_cfg.cpp (11), by hand | 0 |  |
 | test_asm_copy_propagation.py | 19 | 19 | test_asm_ssa_round_trip.cpp (19) | 0 |  |
 | test_asm_dead_store.py | 17 | 15 | test_asm_dead_store.cpp (15) | 2 | 2 end to end |
 | test_asm_emit.py | 145 | 145 | test_asm_emit.cpp (209), test_asm_emit_calls.cpp (4); none, a Python subclass of an IR base | 0 |  |
 | test_asm_licm.py | 10 | 10 | test_asm_licm_calls.cpp (10) | 0 |  |
-| test_asm_liveness.py | 15 | 0 |  | 15 | 1 call `a_dead_at`; 1 call `a_dead_at`, `y_dead_at`; 3 call `all_flags_dead_at`, `flags_dead_at`; 3 call `flags_dead_at`; 3 call `kills_a`; 1 call `reads_x`, `reads_y`, `x_dead_at` and others; 2 call `sets_flags`; 1 call `x_dead_at` |
-| test_asm_regalloc.py | 6 | 3 | test_asm_regalloc_calls.cpp (13) | 3 | 1 call `_instr_writes_hwregs`; 1 call `check_program`, `label_program`, `lift_program` and others; 1 end to end |
+| test_asm_liveness.py | 15 | 15 | test_asm_helpers.cpp (5), by hand in step 3 | 0 |  |
+| test_asm_regalloc.py | 6 | 4 | test_asm_regalloc_calls.cpp (13); test_unit_helpers.cpp (1), by hand | 2 | 2 end to end, 1 of them with the TAC interpreter through `_run_program` |
 | test_asm_remat.py | 19 | 18 | test_asm_remat.cpp (22) | 1 | 1 end to end |
 | test_asm_ssa_construction.py | 7 | 7 | test_asm_ssa_round_trip.cpp (7) | 0 |  |
 | test_asm_ssa_destruction.py | 5 | 5 | test_asm_ssa_destruction_calls.cpp (2), test_asm_ssa_round_trip.cpp (6) | 0 |  |
 | test_asm_to_asm2.py | 17 | 17 | test_asm_to_asm2.cpp (19), test_asm_to_asm2_calls.cpp (1) | 0 |  |
-| test_bcd_builtins.py | 4 | 0 |  | 4 | 4 call `decimal_region_problems` |
-| test_bin_to_bcd.py | 19 | 4 | test_bin_to_bcd_ir_check.cpp, by hand | 15 | 4 call `_resolved`, `check_program`, `optimize_program` and others; 1 call `bin_to_bcd`, `check_program`, `label_program` and others; 1 call `check_program`, `is_builtin`, `parse` and others; 2 call `check_program`, `parse`, `resolve_program`; 1 call `helper_footprints`; 1 call `helper_sizes`; 1 call `parse`, `resolve_program`; 4 end to end |
-| test_binutils.py | 17 | 0 |  | 17 | 2 call `assemble`; 1 call `assemble`, `defined`, `relocate` and others; 1 call `assemble`, `defined`, `symbol`; 1 call `assemble`, `disassemble`, `relocate` and others; 1 call `assemble`, `link_text`, `read` and others; 3 call `assemble`, `read`, `write`; 1 call `assemble`, `relax`; 2 call `assemble`, `relax`, `relocate` and others; 2 call `assemble`, `relocate`, `size`; 1 call `assemble`, `relocate`, `size` and others; 1 call `assemble`, `size`; 1 call `read_file` |
+| test_bcd_builtins.py | 4 | 4 | ir_check_cases.h (4), from group G3 | 0 |  |
+| test_bin_to_bcd.py | 19 | 9 | test_bin_to_bcd_ir_check.cpp, test_bin_to_bcd_front_end.cpp (4), test_runtime_layout.cpp (2), by hand | 10 | 9 end to end, 4 of them on the TAC `compile.py --tac` prints and 1 with the TAC interpreter through `_run_program`; 1 of the simulator's helpers on py65, whose size assertion is a C++ case |
+| test_binutils.py | 17 | 10 | test_binutils_assembler.cpp (10), by hand | 7 | 7 end to end, 4 of them reading the objects `compile.py -c` assembles with binutils/elf.py, which step 9 keeps |
 | test_branch_invert.py | 7 | 7 | test_branch_invert_calls.cpp (15) | 0 |  |
 | test_branch_thread.py | 5 | 5 | test_branch_thread_calls.cpp (5) | 0 |  |
 | test_branch_through_jump.py | 6 | 6 | test_branch_through_jump_calls.cpp (6) | 0 |  |
@@ -1976,8 +1976,8 @@ ported by hand has to replace.
 | test_carry_inc.py | 16 | 16 | test_carry_inc_calls.cpp (17) | 0 |  |
 | test_carry_known.py | 9 | 9 | test_carry_known_calls.cpp (10) | 0 |  |
 | test_carry_recompute.py | 6 | 6 | test_carry_recompute_calls.cpp (6) | 0 |  |
-| test_carry_return.py | 18 | 17 | test_carry_return_calls.cpp (19) | 1 | 1 call `all_flags_dead_at`, `c_dead_at` |
-| test_carry_return_choice.py | 2 | 0 |  | 2 | 1 call `_merge`; 1 call `disassemble`, `link_text`, `read` |
+| test_carry_return.py | 18 | 18 | test_carry_return_calls.cpp (19), test_asm_helpers.cpp (1), by hand | 0 |  |
+| test_carry_return_choice.py | 2 | 1 | test_linker_metadata.cpp (1), by hand | 1 | 1 end to end |
 | test_cmp_sbc_fusion.py | 11 | 11 | test_cmp_sbc_fusion_calls.cpp (11) | 0 |  |
 | test_cmp_through_tmp_fold.py | 27 | 27 | test_cmp_through_tmp_fold_calls.cpp (30) | 0 |  |
 | test_coalescing.py | 16 | 16 | test_coalescing_calls.cpp (16) | 0 |  |
@@ -1994,22 +1994,22 @@ ported by hand has to replace.
 | test_dec_inc_branch_fold.py | 7 | 7 | test_dec_inc_branch_fold_calls.cpp (7) | 0 |  |
 | test_dec_peephole.py | 7 | 7 | test_dec_peephole_calls.cpp (7) | 0 |  |
 | test_direct_index_load.py | 12 | 12 | test_direct_index_load_calls.cpp (12) | 0 |  |
-| test_divide_shapes.py | 2 | 0 |  | 2 | 1 call `may_alias`; 1 call `sets_flags` |
+| test_divide_shapes.py | 2 | 2 | test_asm_aliasing.cpp (1), test_asm_helpers.cpp (1), by hand | 0 |  |
 | test_dual_index_promotion.py | 16 | 16 | test_dual_index_promotion_calls.cpp (16) | 0 |  |
-| test_element_rmw.py | 22 | 21 | test_element_rmw_calls.cpp (21) | 1 | 1 call `check_asm`, `enable`, `enabled` |
+| test_element_rmw.py | 22 | 22 | test_element_rmw_calls.cpp (21), test_ir_check.cpp (1), by hand | 0 |  |
 | test_flag_compares.py | 8 | 8 | test_flag_compares_calls.cpp (8) | 0 |  |
-| test_function_local_sizing.py | 9 | 8 | test_asm_optimizer_calls.cpp (8) | 1 | 1 call `compute_local_byte_addresses` |
-| test_hwreg_pinning.py | 17 | 13 | test_asm_optimizer_calls.cpp (1), test_hwreg_pinning_calls.cpp (14) | 4 | 2 call `_match_transfer_chain`; 2 call `_rewrite_redundant_transfers` |
-| test_in_place_member_update.py | 2 | 0 |  | 2 | 2 call `plan_in_place_updates` |
+| test_function_local_sizing.py | 9 | 9 | test_asm_optimizer_calls.cpp (9) | 0 |  |
+| test_hwreg_pinning.py | 17 | 17 | test_asm_optimizer_calls.cpp (1), test_hwreg_pinning_calls.cpp (14); test_unit_helpers.cpp (4), by hand | 0 |  |
+| test_in_place_member_update.py | 2 | 2 | test_unit_helpers.cpp (2), by hand | 0 |  |
 | test_inc_low_byte_test.py | 8 | 8 | test_inc_low_byte_test_calls.cpp (8) | 0 |  |
 | test_inc_peephole.py | 11 | 10 | test_inc_peephole_calls.cpp (10) | 1 | 1 end to end |
 | test_index_inc_cmp_y.py | 13 | 12 | test_index_inc_cmp_y_calls.cpp (13) | 1 | 1 end to end |
-| test_ir_check.py | 3 | 0 |  | 3 | 3 call `check_asm`, `enable` |
+| test_ir_check.py | 3 | 3 | ir_check_cases.h (3), from group G3 | 0 |  |
 | test_join_store.py | 6 | 6 | test_join_store_calls.cpp (6) | 0 |  |
 | test_jump_table.py | 5 | 5 | test_jump_table_calls.cpp (5) | 0 |  |
 | test_label_offset_fold.py | 4 | 4 | test_label_offset_fold_calls.cpp (4) | 0 |  |
-| test_linker.py | 2 | 0 |  | 2 | 1 call `_merge_zp_objects`; 1 call `bytes`, `disassemble`, `link_text` and others |
-| test_linker_script.py | 18 | 0 |  | 18 | 4 call `assemble`, `tail_jump`; 6 call `fall_through`; 2 call `lay_out`, `parse_script`; 3 call `output_sections`, `parse_script`; 3 call `parse_script` |
+| test_linker.py | 2 | 1 | test_linker_metadata.cpp (1), by hand | 1 | 1 end to end |
+| test_linker_script.py | 18 | 18 | test_linker_script.cpp (18), by hand | 0 |  |
 | test_long_branches.py | 6 | 6 | test_long_branches_calls.cpp (6) | 0 |  |
 | test_loop_constant_a.py | 11 | 11 | test_loop_constant_a_calls.cpp (12) | 0 |  |
 | test_loop_counter_to_x.py | 19 | 19 | test_loop_counter_to_x_calls.cpp (19) | 0 |  |
@@ -2017,70 +2017,105 @@ ported by hand has to replace.
 | test_lower_data_load_address.py | 8 | 8 | test_frames_stage_calls.cpp (8) | 0 |  |
 | test_mem_const_prop.py | 10 | 10 | test_mem_const_prop.cpp (10) | 0 |  |
 | test_memory_value_propagation.py | 31 | 31 | test_memory_value_propagation.cpp (31) | 0 |  |
-| test_narrow_byte_range.py | 1 | 0 |  | 1 | 1 call `_shift_loop` |
+| test_narrow_byte_range.py | 1 | 1 | test_unit_helpers.cpp (1), by hand | 0 |  |
 | test_or_zero_absorb.py | 6 | 6 | test_asm_ssa_round_trip.cpp (6) | 0 |  |
 | test_outline_runs.py | 6 | 6 | test_outline_runs_calls.cpp (7) | 0 |  |
-| test_param_registers.py | 1 | 0 |  | 1 | 1 call `_split_entry_stubs` |
+| test_param_registers.py | 1 | 1 | test_unit_helpers.cpp (1), by hand | 0 |  |
 | test_pointer_aware_regalloc.py | 3 | 3 | test_pointer_aware_regalloc_calls.cpp (11) | 0 |  |
 | test_pointer_member_access.py | 5 | 5 | test_pointer_member_access_calls.cpp (8) | 0 |  |
-| test_private_pool_callee_save.py | 4 | 0 |  | 4 | 4 call `replace_function_bare_exit` |
+| test_private_pool_callee_save.py | 4 | 4 | test_private_pool_callee_save_calls.cpp (4) | 0 |  |
 | test_prune_unused_slots.py | 2 | 2 | test_emission_work.cpp (2) | 0 |  |
 | test_recursion_saves.py | 3 | 3 | test_abi_stage_calls.cpp (1), test_recursion_saves_calls.cpp (1), test_sharing_stage_calls.cpp (1) | 0 |  |
 | test_redundant_compare.py | 18 | 18 | test_redundant_compare_calls.cpp (18) | 0 |  |
-| test_redundant_load.py | 83 | 81 | test_redundant_load.cpp (82) | 2 | 1 call `_same_index_apart`; 1 end to end |
+| test_redundant_load.py | 83 | 82 | test_redundant_load.cpp (82); test_unit_helpers.cpp (1), by hand | 1 | 1 end to end |
 | test_redundant_load_after_rmw.py | 12 | 12 | test_redundant_load_after_rmw_calls.cpp (12) | 0 |  |
 | test_redundant_store.py | 16 | 16 | test_redundant_store.cpp (16) | 0 |  |
 | test_register_arguments.py | 14 | 14 | test_register_arguments_calls.cpp (14) | 0 |  |
-| test_replace_pseudoregisters.py | 21 | 4 | test_frames_stage_calls.cpp (2); none, a Python subclass of an IR base | 17 | 14 call `replace_function`; 1 call `replace`; 2 end to end |
-| test_replace_pseudoregisters_zp_abi.py | 6 | 1 | test_frames_stage_calls.cpp (1) | 5 | 5 call `replace_function_bare_exit` |
-| test_ret_slot_coalescing.py | 5 | 3 | test_ret_slot_coalescing_calls.cpp (3) | 2 | 2 call `_instruction_operands` |
+| test_replace_pseudoregisters.py | 21 | 21 | test_frames_stage_calls.cpp (17), test_replace_pseudoregisters_calls.cpp (2); none, a Python subclass of an IR base | 0 |  |
+| test_replace_pseudoregisters_zp_abi.py | 6 | 6 | test_frames_stage_calls.cpp (6) | 0 |  |
+| test_ret_slot_coalescing.py | 5 | 5 | test_ret_slot_coalescing_calls.cpp (5) | 0 |  |
 | test_rotate_loop_test.py | 11 | 11 | test_rotate_loop_test_calls.cpp (11) | 0 |  |
 | test_round_trip_load.py | 8 | 8 | test_round_trip_load_calls.cpp (8) | 0 |  |
-| test_runtime_layout.py | 12 | 1 | test_emission_work.cpp (3) | 11 | 1 call `bytes`; 2 call `bytes`, `choose_layout`; 2 call `choose_layout`; 1 call `defined`, `disassemble`, `is_global` and others; 1 call `defined`, `is_global`, `read_file`; 1 call `disassemble`, `link_text`, `read`; 3 end to end |
-| test_runtime_library.py | 32 | 0 |  | 32 | 1 call `bin_to_bcd`, `defined`, `helper_names` and others; 1 call `closure`; 16 call `defined`, `helper_names`, `read_file`; 2 call `defined`, `helper_names`, `read_file` and others; 1 call `helper_names`; 1 call `helper_names`, `helper_sizes`; 7 call `helper_names`, `read_file`; 1 call `link_text`, `read_file`, `symbol`; 2 end to end |
+| test_runtime_layout.py | 12 | 6 | test_emission_work.cpp (3); test_runtime_layout.cpp (5), by hand | 6 | 6 end to end |
+| test_runtime_library.py | 32 | 2 | test_runtime_layout.cpp (2), by hand | 30 | 29 end to end; 1 of the module's own tests against rtlib/helpers.py, which step 9 keeps |
 | test_self_store_drop.py | 4 | 4 | test_self_store_drop_calls.cpp (4) | 0 |  |
 | test_shared_tails.py | 6 | 6 | test_shared_tails_calls.cpp (6) | 0 |  |
 | test_shift_in_a.py | 20 | 20 | test_shift_in_a_calls.cpp (24) | 0 |  |
 | test_short_jumps.py | 9 | 9 | test_short_jumps_calls.cpp (11) | 0 |  |
 | test_slot_coalescing.py | 11 | 11 | test_slot_coalescing_calls.cpp (11) | 0 |  |
-| test_slot_sharing.py | 6 | 0 |  | 6 | 1 call `check_linked_shares`; 1 call `parse_metadata`; 4 end to end |
+| test_slot_sharing.py | 6 | 2 | test_linker_metadata.cpp (1), test_zp_link_metadata.cpp (1), by hand | 4 | 4 end to end |
 | test_split_mem_to_mem.py | 14 | 14 | test_split_mem_to_mem_calls.cpp (14) | 0 |  |
-| test_strength_reduction.py | 7 | 0 |  | 7 | 1 call `enable`, `enabled`; 6 end to end |
+| test_strength_reduction.py | 7 | 0 |  | 7 | 7 end to end, 1 of them with the IR checks on |
 | test_sub1_test_zero_peephole.py | 5 | 5 | test_sub1_test_zero_peephole_calls.cpp (5) | 0 |  |
-| test_tac_to_asm.py | 38 | 7 | test_tac_to_asm_recorded.cpp (7) | 31 | 1 call `translate_binary`; 3 call `translate_function`; 19 call `translate_instruction`; 5 call `translate_unop_atoms`; 3 call `translate_val` |
+| test_tac_to_asm.py | 38 | 33 | test_tac_to_asm_recorded.cpp (7), test_tac_to_asm_translator_calls.cpp (23); test_unit_helpers.cpp (3), by hand | 5 | 3 a Python subclass of an IR base; 2 a form of `translate_unop_atoms` that only the tests reach, which has no C++ counterpart |
 | test_tac_to_asm_zp_abi.py | 3 | 3 | test_tac_to_asm_zp_abi_calls.cpp (3) | 0 |  |
-| test_tail_call.py | 9 | 8 | test_tail_call_calls.cpp (8) | 1 | 1 end to end |
+| test_tail_call.py | 9 | 9 | test_tail_call_calls.cpp (9) | 0 |  |
 | test_tail_merge.py | 7 | 7 | test_tail_merge_calls.cpp (7) | 0 |  |
 | test_transfer_past_branch.py | 6 | 6 | test_transfer_past_branch_calls.cpp (6) | 0 |  |
 | test_transfer_pm1_store.py | 27 | 27 | test_transfer_pm1_store_calls.cpp (27) | 0 |  |
 | test_via_a_store_fold.py | 15 | 15 | test_via_a_store_fold_calls.cpp (15) | 0 |  |
-| test_volatile_named.py | 2 | 1 | test_volatile_named_calls.cpp (4) | 1 | 1 end to end |
+| test_volatile_named.py | 2 | 1 | test_volatile_named_calls.cpp (4) | 1 | 1 of sim/assembler.py, which step 9 keeps |
 | test_volatile_void_read_cmp.py | 4 | 4 | test_volatile_void_read_cmp_calls.cpp (6) | 0 |  |
 | test_x_save_slot_load.py | 13 | 13 | test_x_save_slot_load_calls.cpp (13) | 0 |  |
 | test_y_peephole.py | 10 | 10 | test_y_peephole.cpp (10) | 0 |  |
-| test_zp_link_metadata.py | 11 | 3 | test_sharing_stage_calls.cpp (3) | 8 | 1 call `local_bytes`, `param_bytes`; 1 call `param_bytes`; 6 call `parse_metadata` |
+| test_zp_link_metadata.py | 11 | 11 | test_sharing_stage_calls.cpp (5); test_zp_link_metadata.cpp (6), by hand | 0 |  |
 | test_zp_local_allocation.py | 16 | 16 | test_sharing_stage_calls.cpp (10), test_zp_local_allocation_calls.cpp (6) | 0 |  |
 | test_zp_slot_allocation.py | 8 | 8 | test_sharing_stage_calls.cpp (7), test_zp_slot_allocation_calls.cpp (1) | 0 |  |
 
-Of the 273 tests left, 28 are end to end and stay. The other 245 are
-left for a second agent, by module: test_asm_aliasing.py (35 calls of
-`may_alias`), test_tac_to_asm.py (31 of `translate_instruction` and the
-Translator's methods), test_runtime_library.py (30 links that read the
-helpers' names from `runtime_library.helper_names`), test_linker_script.py
-(18 of `parse_script`, `lay_out`, `fall_through`, and `tail_jump`),
-test_binutils.py (17 of the assembler and `ld`), test_replace_pseudoregisters.py
-and test_replace_pseudoregisters_zp_abi.py and test_private_pool_callee_save.py
-(26 of `replace_function` and `replace_function_bare_exit`),
-test_asm_liveness.py (15 of its predicates), test_bin_to_bcd.py (11 of
-the front end and `optimize_program`), test_asm_cfg.py (11 of
-`build_cfg` and the dominators), test_runtime_layout.py (8 of
-`choose_layout`), test_zp_link_metadata.py (8 of `parse_metadata`), and
-35 more in 19 modules with one to four each. The asm helpers'
-predicates, `may_alias`, and the CFG are ported and checked by
-`check-helpers` on the corpus, and cpp/tests/test_asm_helpers.cpp holds
-a hand port of part of their tests, but no case was matched against each
-Python test, so those tests stay until a recorder for the helpers'
-calls, or a check of each test by hand, shows that one covers them.
+A second agent (G6b) took the 245 tests that the first part left with
+direct calls that had no C++ runner. tools/record_test_calls.py gained
+two kinds of record. A call of `replace_function` or
+`replace_function_bare_exit` is recorded as the program-level stage
+call on a program of that one function, which matched the cases step
+4's part F2 had recorded for 19 of the 23 tests that make one, and a
+call of tac_to_asm.py's module-level `translate_instruction`,
+`translate_function`, `translate_binary`, or `translate_val` is
+recorded as the dumps of its arguments and its result, which
+cpp/tests/translator_case.h checks on the C++ `Translator`. Three tests
+built a `StaticVariable` with one `IntInit` in place of a list, which
+the dump can't hold, and now build the list, so that their calls are
+recorded too. The other tests are ported by hand, one case per Python
+test with each of its assertions, named for the test, and where a
+Python test matched a message with a regular expression, the case
+checks the whole message Python gives. test_asm_helpers.cpp, the hand
+port of step 3, was checked test by test: it covers every assertion of
+test_asm_liveness.py, and test_asm_aliasing.py and test_asm_cfg.py
+have files of their own, since it held only part of theirs. Seven
+helpers that the C++ passes kept in an unnamed namespace are declared
+in their headers for test_unit_helpers.cpp (cpp/README.md, "The unit
+tests' recorded calls"). The C++ cases are 30 new recorded ones and
+114 written by hand, and the rest of the removed tests' calls were
+checked by cases of step 4 and of group G3's `ir_check_cases.h`.
+
+Some tests stay in Python as end-to-end tests after a rewrite. The
+four tests of `TestTac` in test_bin_to_bcd.py read the TAC that
+`compile.py --tac` prints, whose `pretty` text Python evaluates into
+`tac_ast` objects, in place of calling `translate_for_codegen` and
+`optimize_program`. The ELF tests of test_binutils.py read, with
+binutils/elf.py, the objects `compile.py -c` assembles, and its tests
+against dasm apply the relocations themselves. test_runtime_library.py
+and test_ali_baba.py read the helpers' names from rtlib/helpers.py. The
+end-to-end tests of test_linker.py, test_carry_return_choice.py, and
+test_runtime_layout.py that the first part's records showed calling the
+disassembler had stopped calling it when `linked_text` moved to
+`c6502cpp objdump`. test_function_local_sizing.py's last test also
+called `compute_local_byte_addresses`, a Python helper that no pass
+calls and the C++ port doesn't have, and it went with its call of
+`compute_local_bytes`, which a C++ case checks.
+
+Of the 83 tests left, 71 are end to end, 7 test the simulator's models
+that step 9 keeps (`bin16_to_bcd` on py65, sim/assembler.py, and the
+list of helpers that test_runtime_library.py has to test), and 5 are of
+test_tac_to_asm.py, 3 of which give the `Translator` a Python subclass
+of an IR base, while 2 run a form of `translate_unop_atoms` that no
+compile reaches and the C++ port doesn't have. Two of the end-to-end
+tests also run the TAC interpreter through
+`tests.test_sim_chapters._run_program`, whose move to C++ belongs to
+G7. Two modules hold tests of the same functions that the
+classification gave to other groups and that this part left alone,
+test_tac_to_asm.py's other 61 tests of the `Translator`,
+and test_replace_pseudoregisters.py's 9 of `TestColoringIntegration`,
+whose calls the cases of test_frames_stage_calls.cpp already check.
 
 ## Status
 
@@ -3174,3 +3209,19 @@ calls, or a check of each test by hand, shows that one covers them.
   skipped), where it ran 4,991 and 4,992 before. The C++ tests (4,190
   cases) pass in fresh builds with MSVC 19.36 and GCC 12.2, and
   `check-golden` and `check-frozen` match every job and record.
+- 24 Nov 2026: group G6 of step 8, its second part (G6b, "G6's
+  modules"), and G6 is done. Of the 245 tests the first part left with
+  calls that had no C++ runner, 190 are removed: their calls are 30
+  new recorded doctest cases, of the per-function forms of
+  `replace_pseudoregisters` and of tac_to_asm.py's `Translator`, 114
+  cases written by hand, one per Python test, and cases of steps 3 to 5
+  and group G3. Seven helpers of the asm passes are declared in their
+  headers for the hand-written cases. Of G6's 1,492 tests, 1,409 are
+  removed and 83 stay: 71 end to end, 7 of the simulator's models that
+  step 9 keeps, and 5 of test_tac_to_asm.py with a Python-only input
+  or a form of `translate_unop_atoms` that only the tests reach. The
+  suite passes with `C6502_CHECK_IR=1` with the variable set (3,582
+  tests, 23 skipped) and without it (3,583, 22 skipped), where it ran
+  3,772 and 3,773 before. The C++ tests (4,334 cases) pass in fresh
+  builds with MSVC 19.36 and GCC 12.2, and `check-golden` and
+  `check-frozen` match every job and record.

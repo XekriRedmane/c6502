@@ -1,0 +1,1549 @@
+c6502-golden 1
+define @sim_defsyms ["--defsym=asl16=0xE338", "--defsym=asl32=0xE377", "--defsym=asl64=0xE440", "--defsym=asl8=0xE30F", "--defsym=asr16=0xE34C", "--defsym=asr32=0xE397", "--defsym=asr64=0xE450", "--defsym=asr8=0xE31C", "--defsym=bin16_to_bcd=0xE3DA", "--defsym=d2f=0xE600", "--defsym=d2i=0xE590", "--defsym=d2l=0xE5B0", "--defsym=d2ll=0xE5D0", "--defsym=d2u=0xE5A0", "--defsym=d2ul=0xE5C0", "--defsym=d2ull=0xE5E0", "--defsym=dadd=0xE650", "--defsym=ddiv=0xE680", "--defsym=dle=0xE6C0", "--defsym=dlt=0xE6B0", "--defsym=dmul=0xE670", "--defsym=dsub=0xE660", "--defsym=f2d=0xE5F0", "--defsym=f2i=0xE530", "--defsym=f2l=0xE550", "--defsym=f2ll=0xE570", "--defsym=f2u=0xE540", "--defsym=f2ul=0xE560", "--defsym=f2ull=0xE580", "--defsym=fadd=0xE610", "--defsym=fdiv=0xE640", "--defsym=fle=0xE6A0", "--defsym=flt=0xE690", "--defsym=fmul=0xE630", "--defsym=fsub=0xE620", "--defsym=i2d=0xE4D0", "--defsym=i2f=0xE470", "--defsym=icall=0xE408", "--defsym=l2d=0xE4F0", "--defsym=l2f=0xE490", "--defsym=ll2d=0xE510", "--defsym=ll2f=0xE4B0", "--defsym=lsr16=0xE363", "--defsym=lsr32=0xE3BA", "--defsym=lsr64=0xE460", "--defsym=lsr8=0xE32B", "--defsym=mul16=0xE01F", "--defsym=mul32=0xE052", "--defsym=mul64=0xE410", "--defsym=mul8=0xE000", "--defsym=sdivmod16=0xE142", "--defsym=sdivmod32=0xE227", "--defsym=sdivmod64=0xE430", "--defsym=sdivmod8=0xE0CB", "--defsym=u2d=0xE4E0", "--defsym=u2f=0xE480", "--defsym=udivmod16=0xE111", "--defsym=udivmod32=0xE1CA", "--defsym=udivmod64=0xE420", "--defsym=udivmod8=0xE0AD", "--defsym=ul2d=0xE500", "--defsym=ul2f=0xE4A0", "--defsym=ull2d=0xE520", "--defsym=ull2f=0xE4C0"]
+job cli columns 1
+write a.c text "int main(void) { return 1; }\n"
+write b.asm text "f:\n RTS\n"
+columns 1
+run ["compile.py", "-h"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C\nfor the\n6502,\nassemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources\n    (- for\n    stdin),\n    .asm files,\n    and .o\n    objects\n\noptions:\n  -h, --help\n    show this\n    help\n    message and\n    exit\n  -o OUTPUT\n    output\n    file, or -\n    for stdout\n  --lex\n    stop after \n    tokenizatio\n    n\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution\n    + loop\n    labeling\n  --tac\n    stop after\n    TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to\n    an object;\n    don't link\n  -O\n    run the\n    optimizer\n    pipeline:\n    TAC-level\n    fixed-point\n    opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-\n    zero / jump\n    fold, UCE,\n    copy propag\n    ation,\n    dead-store \n    elimination\n    ), then\n    asm-level\n    SSA round-\n    trip (byte-\n    granular\n    forward +\n    backward\n    copy-prop,\n    byte-DCE,\n    byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also\n    enables\n    AST-level\n    loop\n    unrolling\n    for `[[c650\n    2::unroll]]\n    ` loops and\n    the `[[c650\n    2::zp_abi]]\n    ` calling-\n    convention \n    optimizatio\n    n. Applies\n    to\n    --resolve,\n    --tac, -S,\n    and -c, and\n    to C\n    sources\n    given to a\n    link.\n  -T SCRIPT\n    linker\n    script (a\n    GNU ld\n    subset; pas\n    ses/link_sc\n    ript.py)\n    that places\n    each\n    section at\n    an address\n  --origin ADDR\n    where .text\n    starts in a\n    link\n    without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets\n    it)\n  --defsym NAME=VALUE\n    define NAME\n    as the\n    address\n    VALUE when\n    linking\n"
+run ["compile.py", "--help"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C\nfor the\n6502,\nassemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources\n    (- for\n    stdin),\n    .asm files,\n    and .o\n    objects\n\noptions:\n  -h, --help\n    show this\n    help\n    message and\n    exit\n  -o OUTPUT\n    output\n    file, or -\n    for stdout\n  --lex\n    stop after \n    tokenizatio\n    n\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution\n    + loop\n    labeling\n  --tac\n    stop after\n    TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to\n    an object;\n    don't link\n  -O\n    run the\n    optimizer\n    pipeline:\n    TAC-level\n    fixed-point\n    opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-\n    zero / jump\n    fold, UCE,\n    copy propag\n    ation,\n    dead-store \n    elimination\n    ), then\n    asm-level\n    SSA round-\n    trip (byte-\n    granular\n    forward +\n    backward\n    copy-prop,\n    byte-DCE,\n    byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also\n    enables\n    AST-level\n    loop\n    unrolling\n    for `[[c650\n    2::unroll]]\n    ` loops and\n    the `[[c650\n    2::zp_abi]]\n    ` calling-\n    convention \n    optimizatio\n    n. Applies\n    to\n    --resolve,\n    --tac, -S,\n    and -c, and\n    to C\n    sources\n    given to a\n    link.\n  -T SCRIPT\n    linker\n    script (a\n    GNU ld\n    subset; pas\n    ses/link_sc\n    ript.py)\n    that places\n    each\n    section at\n    an address\n  --origin ADDR\n    where .text\n    starts in a\n    link\n    without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets\n    it)\n  --defsym NAME=VALUE\n    define NAME\n    as the\n    address\n    VALUE when\n    linking\n"
+run ["compile.py", "--he"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C\nfor the\n6502,\nassemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources\n    (- for\n    stdin),\n    .asm files,\n    and .o\n    objects\n\noptions:\n  -h, --help\n    show this\n    help\n    message and\n    exit\n  -o OUTPUT\n    output\n    file, or -\n    for stdout\n  --lex\n    stop after \n    tokenizatio\n    n\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution\n    + loop\n    labeling\n  --tac\n    stop after\n    TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to\n    an object;\n    don't link\n  -O\n    run the\n    optimizer\n    pipeline:\n    TAC-level\n    fixed-point\n    opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-\n    zero / jump\n    fold, UCE,\n    copy propag\n    ation,\n    dead-store \n    elimination\n    ), then\n    asm-level\n    SSA round-\n    trip (byte-\n    granular\n    forward +\n    backward\n    copy-prop,\n    byte-DCE,\n    byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also\n    enables\n    AST-level\n    loop\n    unrolling\n    for `[[c650\n    2::unroll]]\n    ` loops and\n    the `[[c650\n    2::zp_abi]]\n    ` calling-\n    convention \n    optimizatio\n    n. Applies\n    to\n    --resolve,\n    --tac, -S,\n    and -c, and\n    to C\n    sources\n    given to a\n    link.\n  -T SCRIPT\n    linker\n    script (a\n    GNU ld\n    subset; pas\n    ses/link_sc\n    ript.py)\n    that places\n    each\n    section at\n    an address\n  --origin ADDR\n    where .text\n    starts in a\n    link\n    without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets\n    it)\n  --defsym NAME=VALUE\n    define NAME\n    as the\n    address\n    VALUE when\n    linking\n"
+run ["compile.py", "a.c", "-S", "-h"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C\nfor the\n6502,\nassemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources\n    (- for\n    stdin),\n    .asm files,\n    and .o\n    objects\n\noptions:\n  -h, --help\n    show this\n    help\n    message and\n    exit\n  -o OUTPUT\n    output\n    file, or -\n    for stdout\n  --lex\n    stop after \n    tokenizatio\n    n\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution\n    + loop\n    labeling\n  --tac\n    stop after\n    TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to\n    an object;\n    don't link\n  -O\n    run the\n    optimizer\n    pipeline:\n    TAC-level\n    fixed-point\n    opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-\n    zero / jump\n    fold, UCE,\n    copy propag\n    ation,\n    dead-store \n    elimination\n    ), then\n    asm-level\n    SSA round-\n    trip (byte-\n    granular\n    forward +\n    backward\n    copy-prop,\n    byte-DCE,\n    byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also\n    enables\n    AST-level\n    loop\n    unrolling\n    for `[[c650\n    2::unroll]]\n    ` loops and\n    the `[[c650\n    2::zp_abi]]\n    ` calling-\n    convention \n    optimizatio\n    n. Applies\n    to\n    --resolve,\n    --tac, -S,\n    and -c, and\n    to C\n    sources\n    given to a\n    link.\n  -T SCRIPT\n    linker\n    script (a\n    GNU ld\n    subset; pas\n    ses/link_sc\n    ript.py)\n    that places\n    each\n    section at\n    an address\n  --origin ADDR\n    where .text\n    starts in a\n    link\n    without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets\n    it)\n  --defsym NAME=VALUE\n    define NAME\n    as the\n    address\n    VALUE when\n    linking\n"
+run ["compile.py", "-h", "--lex", "-S"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C\nfor the\n6502,\nassemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources\n    (- for\n    stdin),\n    .asm files,\n    and .o\n    objects\n\noptions:\n  -h, --help\n    show this\n    help\n    message and\n    exit\n  -o OUTPUT\n    output\n    file, or -\n    for stdout\n  --lex\n    stop after \n    tokenizatio\n    n\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution\n    + loop\n    labeling\n  --tac\n    stop after\n    TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to\n    an object;\n    don't link\n  -O\n    run the\n    optimizer\n    pipeline:\n    TAC-level\n    fixed-point\n    opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-\n    zero / jump\n    fold, UCE,\n    copy propag\n    ation,\n    dead-store \n    elimination\n    ), then\n    asm-level\n    SSA round-\n    trip (byte-\n    granular\n    forward +\n    backward\n    copy-prop,\n    byte-DCE,\n    byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also\n    enables\n    AST-level\n    loop\n    unrolling\n    for `[[c650\n    2::unroll]]\n    ` loops and\n    the `[[c650\n    2::zp_abi]]\n    ` calling-\n    convention \n    optimizatio\n    n. Applies\n    to\n    --resolve,\n    --tac, -S,\n    and -c, and\n    to C\n    sources\n    given to a\n    link.\n  -T SCRIPT\n    linker\n    script (a\n    GNU ld\n    subset; pas\n    ses/link_sc\n    ript.py)\n    that places\n    each\n    section at\n    an address\n  --origin ADDR\n    where .text\n    starts in a\n    link\n    without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets\n    it)\n  --defsym NAME=VALUE\n    define NAME\n    as the\n    address\n    VALUE when\n    linking\n"
+run ["compile.py", "--lex", "-S", "-h"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "-O"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "--", "-S"]
+status 1
+stderr "-S: error: No such file or directory\n"
+run ["compile.py", "a.c", "--lex", "--parse"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --parse: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--resolve"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--tac"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--parse", "--resolve"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "--tac"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--resolve", "--tac"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--tac", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "--tac", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "-S", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-Sc"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-cS"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument -c\n"
+run ["compile.py", "a.c", "--tac", "--tac", "-o", "t.txt"]
+status 0
+run ["compile.py", "a.c", "-O2"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -O: ignored explicit argument '2'\n"
+run ["compile.py", "a.c", "--lex=yes"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --lex: ignored explicit argument 'yes'\n"
+run ["compile.py", "a.c", "-S="]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument ''\n"
+run ["compile.py", "a.c", "-Sx"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument 'x'\n"
+run ["compile.py", "a.c", "--origin", "xyz"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: 'xyz'\n"
+run ["compile.py", "a.c", "--origin="]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "$"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$'\n"
+run ["compile.py", "a.c", "--origin", "0b2"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0b2'\n"
+run ["compile.py", "a.c", "--origin", "08"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '08'\n"
+run ["compile.py", "a.c", "--origin", "1__0"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '1__0'\n"
+run ["compile.py", "a.c", "--origin", "0x_"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x_'\n"
+run ["compile.py", "a.c", "--ori", "_1"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '_1'\n"
+run ["compile.py", "a.c", "-Ttext=0x"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x'\n"
+run ["compile.py", "a.c", "-Ttext", "12_"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '12_'\n"
+run ["compile.py", "-Ttext"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "'q'"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: \"'q'\"\n"
+run ["compile.py", "a.c", "--origin", "\u00e9"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '\u00e9'\n"
+run ["compile.py", "a.c", "--origin", "$_10"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$_10'\n"
+run ["compile.py", "a.c", "-o"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "-T"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "a.c", "--origin"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: expected one argument\n"
+run ["compile.py", "a.c", "--defsym"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-o", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "--defsym", "--lex"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-T", "-O"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "-S", "b.asm"]
+status 2
+stderr "compile.py: b.asm isn't a C source\n"
+run ["compile.py", "--lex", "x.o"]
+status 2
+stderr "compile.py: x.o isn't a C source\n"
+run ["compile.py", "-S", "a.c", "a.c", "-o", "x.s"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "-S", "a.c", "-o", "x.txt"]
+status 2
+stderr "compile.py: -S output must have a .s or .asm suffix: x.txt\n"
+run ["compile.py", "-c", "a.c", "a.c", "-o", "x.o"]
+status 2
+stderr "compile.py: -o with -c and more than one input\n"
+run ["compile.py", "-c", "-"]
+status 2
+stderr "compile.py: -c on stdin needs -o\n"
+run ["compile.py", "-c", "x.o"]
+status 2
+stderr "compile.py: x.o is already an object\n"
+run ["compile.py", "a.c", "--defsym", "x"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x\n"
+run ["compile.py", "a.c", "--defsym", "x=$"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x=$\n"
+run ["compile.py", "a.c", "--le", "-o", "l.txt"]
+status 0
+run ["compile.py", "a.c", "--pa", "-o", "-"]
+status 0
+stdout "Program(\n  declaration=[\n    FunctionDecl(\n      function_decl=Type_function_decl(\n        name='main',\n        params=[],\n        body=Block(\n          block_item=[\n            S(\n              statement=Return(\n                exp=Constant(\n                  const=ConstInt(\n                    value=1,\n                  ),\n                  data_type=None,\n                ),\n              ),\n            ),\n          ],\n        ),\n        data_type=FunType(\n          params=[],\n          ret=Int(),\n        ),\n        storage_class=None,\n        abi_annotation=None,\n        param_registers=[],\n        carry_return=False,\n        address=None,\n        preserves=[],\n        section=None,\n        noreturn=False,\n      ),\n    ),\n  ],\n)\n"
+run ["compile.py", "a.c", "-S", "-ox1.s"]
+status 0
+run ["compile.py", "a.c", "-S", "-o=x2.s"]
+status 0
+run ["compile.py", "a.c", "-SOo", "x3.s"]
+status 0
+run ["compile.py", "-S", "--", "a.c", "-o", "-"]
+status 1
+stderr "-o: error: No such file or directory\n"
+run ["compile.py", "-D", "X", "a.c", "-S", "-o", "-"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "a.c", "-S", "-o", "-", "-DX=1"]
+status 0
+stdout "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\nDPTR\tEQU\t$24\n\nmain:\n   SUBROUTINE\n\n   LDX   #$00\n   LDA   #$01\n   RTS\n"
+run ["compile.py", "a.c", "-Ttext=0x1000", "-o", "p1"]
+status 0
+run ["compile.py", "a.c", "-Ttext", "$2000", "-o", "p2"]
+status 0
+run ["compile.py", "a.c", "--origin=4096", "-o", "p3"]
+status 0
+run ["compile.py", "a.c", "--orig", "0X9_00", "-o", "p4"]
+status 0
+run ["compile.py", "a.c", "-Ttext= +0x900 ", "-o", "p5"]
+status 0
+run ["compile.py", "a.c", "-Ttext=$ 0x900", "-o", "p6"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0o4000", "-o", "p7"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0b100000000000", "-o", "p8"]
+status 0
+run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
+status 0
+run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
+status none
+raised ["error", "argument out of range"]
+run ["compile.py", "a.c", "-Ttext=0x10000"]
+status 0
+run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
+status 0
+run ["compile.py", "a.c", "-Ttextual"]
+status 1
+stderr "compile.py: link error: textual: No such file or directory\n"
+run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
+status 0
+file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
+file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
+file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
+file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
+file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
+file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
+file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
+file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
+file p3 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p4 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p5 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p6 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p7 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p8 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p9 sha256 2f463c8639056bd22c3c2ce6dcb84534f9fb15df5b763633023cc896c2cb5c62 1316
+file t.txt sha256 869a1db4da45cd61af92bebbf2fda3e5f41365590297808abdeffb13b38e9b5a 266
+file x1.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x2.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x3.s sha256 750205944a1045ad064f6a24a70d81b04e6c7e3bd6965c4653389da23a9d2e64 293
+end
+job cli columns 20
+write a.c text "int main(void) { return 1; }\n"
+write b.asm text "f:\n RTS\n"
+columns 20
+run ["compile.py", "-h"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C for the\n6502, assemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources (-\n    for stdin),\n    .asm files,\n    and .o objects\n\noptions:\n  -h, --help\n    show this help\n    message and\n    exit\n  -o OUTPUT\n    output file,\n    or - for\n    stdout\n  --lex\n    stop after\n    tokenization\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution +\n    loop labeling\n  --tac\n    stop after TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to an\n    object; don't\n    link\n  -O\n    run the\n    optimizer\n    pipeline: TAC-\n    level fixed-\n    point opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-zero /\n    jump fold,\n    UCE, copy\n    propagation,\n    dead-store\n    elimination),\n    then asm-level\n    SSA round-trip\n    (byte-granular\n    forward +\n    backward copy-\n    prop, byte-\n    DCE, byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also enables\n    AST-level loop\n    unrolling for \n    `[[c6502::unro\n    ll]]` loops\n    and the `[[c65\n    02::zp_abi]]`\n    calling-\n    convention\n    optimization.\n    Applies to\n    --resolve,\n    --tac, -S, and\n    -c, and to C\n    sources given\n    to a link.\n  -T SCRIPT\n    linker script\n    (a GNU ld\n    subset; passes\n    /link_script.p\n    y) that places\n    each section\n    at an address\n  --origin ADDR\n    where .text\n    starts in a\n    link without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets it)\n  --defsym NAME=VALUE\n    define NAME as\n    the address\n    VALUE when\n    linking\n"
+run ["compile.py", "--help"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C for the\n6502, assemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources (-\n    for stdin),\n    .asm files,\n    and .o objects\n\noptions:\n  -h, --help\n    show this help\n    message and\n    exit\n  -o OUTPUT\n    output file,\n    or - for\n    stdout\n  --lex\n    stop after\n    tokenization\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution +\n    loop labeling\n  --tac\n    stop after TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to an\n    object; don't\n    link\n  -O\n    run the\n    optimizer\n    pipeline: TAC-\n    level fixed-\n    point opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-zero /\n    jump fold,\n    UCE, copy\n    propagation,\n    dead-store\n    elimination),\n    then asm-level\n    SSA round-trip\n    (byte-granular\n    forward +\n    backward copy-\n    prop, byte-\n    DCE, byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also enables\n    AST-level loop\n    unrolling for \n    `[[c6502::unro\n    ll]]` loops\n    and the `[[c65\n    02::zp_abi]]`\n    calling-\n    convention\n    optimization.\n    Applies to\n    --resolve,\n    --tac, -S, and\n    -c, and to C\n    sources given\n    to a link.\n  -T SCRIPT\n    linker script\n    (a GNU ld\n    subset; passes\n    /link_script.p\n    y) that places\n    each section\n    at an address\n  --origin ADDR\n    where .text\n    starts in a\n    link without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets it)\n  --defsym NAME=VALUE\n    define NAME as\n    the address\n    VALUE when\n    linking\n"
+run ["compile.py", "--he"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C for the\n6502, assemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources (-\n    for stdin),\n    .asm files,\n    and .o objects\n\noptions:\n  -h, --help\n    show this help\n    message and\n    exit\n  -o OUTPUT\n    output file,\n    or - for\n    stdout\n  --lex\n    stop after\n    tokenization\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution +\n    loop labeling\n  --tac\n    stop after TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to an\n    object; don't\n    link\n  -O\n    run the\n    optimizer\n    pipeline: TAC-\n    level fixed-\n    point opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-zero /\n    jump fold,\n    UCE, copy\n    propagation,\n    dead-store\n    elimination),\n    then asm-level\n    SSA round-trip\n    (byte-granular\n    forward +\n    backward copy-\n    prop, byte-\n    DCE, byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also enables\n    AST-level loop\n    unrolling for \n    `[[c6502::unro\n    ll]]` loops\n    and the `[[c65\n    02::zp_abi]]`\n    calling-\n    convention\n    optimization.\n    Applies to\n    --resolve,\n    --tac, -S, and\n    -c, and to C\n    sources given\n    to a link.\n  -T SCRIPT\n    linker script\n    (a GNU ld\n    subset; passes\n    /link_script.p\n    y) that places\n    each section\n    at an address\n  --origin ADDR\n    where .text\n    starts in a\n    link without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets it)\n  --defsym NAME=VALUE\n    define NAME as\n    the address\n    VALUE when\n    linking\n"
+run ["compile.py", "a.c", "-S", "-h"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C for the\n6502, assemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources (-\n    for stdin),\n    .asm files,\n    and .o objects\n\noptions:\n  -h, --help\n    show this help\n    message and\n    exit\n  -o OUTPUT\n    output file,\n    or - for\n    stdout\n  --lex\n    stop after\n    tokenization\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution +\n    loop labeling\n  --tac\n    stop after TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to an\n    object; don't\n    link\n  -O\n    run the\n    optimizer\n    pipeline: TAC-\n    level fixed-\n    point opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-zero /\n    jump fold,\n    UCE, copy\n    propagation,\n    dead-store\n    elimination),\n    then asm-level\n    SSA round-trip\n    (byte-granular\n    forward +\n    backward copy-\n    prop, byte-\n    DCE, byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also enables\n    AST-level loop\n    unrolling for \n    `[[c6502::unro\n    ll]]` loops\n    and the `[[c65\n    02::zp_abi]]`\n    calling-\n    convention\n    optimization.\n    Applies to\n    --resolve,\n    --tac, -S, and\n    -c, and to C\n    sources given\n    to a link.\n  -T SCRIPT\n    linker script\n    (a GNU ld\n    subset; passes\n    /link_script.p\n    y) that places\n    each section\n    at an address\n  --origin ADDR\n    where .text\n    starts in a\n    link without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets it)\n  --defsym NAME=VALUE\n    define NAME as\n    the address\n    VALUE when\n    linking\n"
+run ["compile.py", "-h", "--lex", "-S"]
+status 0
+stdout "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\n\nCompile C for the\n6502, assemble,\nand link.\n\npositional arguments:\n  inputs\n    C sources (-\n    for stdin),\n    .asm files,\n    and .o objects\n\noptions:\n  -h, --help\n    show this help\n    message and\n    exit\n  -o OUTPUT\n    output file,\n    or - for\n    stdout\n  --lex\n    stop after\n    tokenization\n  --parse\n    stop after\n    parsing\n  --resolve\n    stop after\n    variable +\n    label\n    resolution +\n    loop labeling\n  --tac\n    stop after TAC\n    translation\n  -S\n    emit 6502\n    assembly\n  -c\n    compile or\n    assemble to an\n    object; don't\n    link\n  -O\n    run the\n    optimizer\n    pipeline: TAC-\n    level fixed-\n    point opts\n    (constant\n    folding,\n    strength\n    reduction,\n    comparison-\n    against-zero /\n    jump fold,\n    UCE, copy\n    propagation,\n    dead-store\n    elimination),\n    then asm-level\n    SSA round-trip\n    (byte-granular\n    forward +\n    backward copy-\n    prop, byte-\n    DCE, byte-\n    granular\n    regalloc),\n    then late\n    prologue /\n    epilogue\n    synthesis.\n    Also enables\n    AST-level loop\n    unrolling for \n    `[[c6502::unro\n    ll]]` loops\n    and the `[[c65\n    02::zp_abi]]`\n    calling-\n    convention\n    optimization.\n    Applies to\n    --resolve,\n    --tac, -S, and\n    -c, and to C\n    sources given\n    to a link.\n  -T SCRIPT\n    linker script\n    (a GNU ld\n    subset; passes\n    /link_script.p\n    y) that places\n    each section\n    at an address\n  --origin ADDR\n    where .text\n    starts in a\n    link without a\n    script\n    (default\n    $0800;\n    -Ttext=ADDR\n    also sets it)\n  --defsym NAME=VALUE\n    define NAME as\n    the address\n    VALUE when\n    linking\n"
+run ["compile.py", "--lex", "-S", "-h"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "-O"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "--", "-S"]
+status 1
+stderr "-S: error: No such file or directory\n"
+run ["compile.py", "a.c", "--lex", "--parse"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --parse: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--resolve"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--tac"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--parse", "--resolve"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "--tac"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--resolve", "--tac"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--tac", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "--tac", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "-S", "-c"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-Sc"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-cS"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: not allowed with argument -c\n"
+run ["compile.py", "a.c", "--tac", "--tac", "-o", "t.txt"]
+status 0
+run ["compile.py", "a.c", "-O2"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -O: ignored explicit argument '2'\n"
+run ["compile.py", "a.c", "--lex=yes"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --lex: ignored explicit argument 'yes'\n"
+run ["compile.py", "a.c", "-S="]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument ''\n"
+run ["compile.py", "a.c", "-Sx"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument 'x'\n"
+run ["compile.py", "a.c", "--origin", "xyz"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: 'xyz'\n"
+run ["compile.py", "a.c", "--origin="]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "$"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$'\n"
+run ["compile.py", "a.c", "--origin", "0b2"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0b2'\n"
+run ["compile.py", "a.c", "--origin", "08"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '08'\n"
+run ["compile.py", "a.c", "--origin", "1__0"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '1__0'\n"
+run ["compile.py", "a.c", "--origin", "0x_"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x_'\n"
+run ["compile.py", "a.c", "--ori", "_1"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '_1'\n"
+run ["compile.py", "a.c", "-Ttext=0x"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x'\n"
+run ["compile.py", "a.c", "-Ttext", "12_"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '12_'\n"
+run ["compile.py", "-Ttext"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "'q'"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: \"'q'\"\n"
+run ["compile.py", "a.c", "--origin", "\u00e9"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '\u00e9'\n"
+run ["compile.py", "a.c", "--origin", "$_10"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$_10'\n"
+run ["compile.py", "a.c", "-o"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "-T"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "a.c", "--origin"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --origin: expected one argument\n"
+run ["compile.py", "a.c", "--defsym"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-o", "-S"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "--defsym", "--lex"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-T", "-O"]
+status 2
+stderr "usage: compile.py\n       [-h]\n       [-o OUTPUT]\n       [--lex | --parse | --resolve | --tac | -S | -c]\n       [-O]\n       [-T SCRIPT]\n       [--origin ADDR]\n       [--defsym NAME=VALUE]\n       inputs\n       [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "-S", "b.asm"]
+status 2
+stderr "compile.py: b.asm isn't a C source\n"
+run ["compile.py", "--lex", "x.o"]
+status 2
+stderr "compile.py: x.o isn't a C source\n"
+run ["compile.py", "-S", "a.c", "a.c", "-o", "x.s"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "-S", "a.c", "-o", "x.txt"]
+status 2
+stderr "compile.py: -S output must have a .s or .asm suffix: x.txt\n"
+run ["compile.py", "-c", "a.c", "a.c", "-o", "x.o"]
+status 2
+stderr "compile.py: -o with -c and more than one input\n"
+run ["compile.py", "-c", "-"]
+status 2
+stderr "compile.py: -c on stdin needs -o\n"
+run ["compile.py", "-c", "x.o"]
+status 2
+stderr "compile.py: x.o is already an object\n"
+run ["compile.py", "a.c", "--defsym", "x"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x\n"
+run ["compile.py", "a.c", "--defsym", "x=$"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x=$\n"
+run ["compile.py", "a.c", "--le", "-o", "l.txt"]
+status 0
+run ["compile.py", "a.c", "--pa", "-o", "-"]
+status 0
+stdout "Program(\n  declaration=[\n    FunctionDecl(\n      function_decl=Type_function_decl(\n        name='main',\n        params=[],\n        body=Block(\n          block_item=[\n            S(\n              statement=Return(\n                exp=Constant(\n                  const=ConstInt(\n                    value=1,\n                  ),\n                  data_type=None,\n                ),\n              ),\n            ),\n          ],\n        ),\n        data_type=FunType(\n          params=[],\n          ret=Int(),\n        ),\n        storage_class=None,\n        abi_annotation=None,\n        param_registers=[],\n        carry_return=False,\n        address=None,\n        preserves=[],\n        section=None,\n        noreturn=False,\n      ),\n    ),\n  ],\n)\n"
+run ["compile.py", "a.c", "-S", "-ox1.s"]
+status 0
+run ["compile.py", "a.c", "-S", "-o=x2.s"]
+status 0
+run ["compile.py", "a.c", "-SOo", "x3.s"]
+status 0
+run ["compile.py", "-S", "--", "a.c", "-o", "-"]
+status 1
+stderr "-o: error: No such file or directory\n"
+run ["compile.py", "-D", "X", "a.c", "-S", "-o", "-"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "a.c", "-S", "-o", "-", "-DX=1"]
+status 0
+stdout "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\nDPTR\tEQU\t$24\n\nmain:\n   SUBROUTINE\n\n   LDX   #$00\n   LDA   #$01\n   RTS\n"
+run ["compile.py", "a.c", "-Ttext=0x1000", "-o", "p1"]
+status 0
+run ["compile.py", "a.c", "-Ttext", "$2000", "-o", "p2"]
+status 0
+run ["compile.py", "a.c", "--origin=4096", "-o", "p3"]
+status 0
+run ["compile.py", "a.c", "--orig", "0X9_00", "-o", "p4"]
+status 0
+run ["compile.py", "a.c", "-Ttext= +0x900 ", "-o", "p5"]
+status 0
+run ["compile.py", "a.c", "-Ttext=$ 0x900", "-o", "p6"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0o4000", "-o", "p7"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0b100000000000", "-o", "p8"]
+status 0
+run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
+status 0
+run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
+status none
+raised ["error", "argument out of range"]
+run ["compile.py", "a.c", "-Ttext=0x10000"]
+status 0
+run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
+status 0
+run ["compile.py", "a.c", "-Ttextual"]
+status 1
+stderr "compile.py: link error: textual: No such file or directory\n"
+run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
+status 0
+file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
+file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
+file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
+file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
+file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
+file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
+file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
+file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
+file p3 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p4 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p5 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p6 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p7 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p8 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p9 sha256 2f463c8639056bd22c3c2ce6dcb84534f9fb15df5b763633023cc896c2cb5c62 1316
+file t.txt sha256 869a1db4da45cd61af92bebbf2fda3e5f41365590297808abdeffb13b38e9b5a 266
+file x1.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x2.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x3.s sha256 750205944a1045ad064f6a24a70d81b04e6c7e3bd6965c4653389da23a9d2e64 293
+end
+job cli columns 41
+write a.c text "int main(void) { return 1; }\n"
+write b.asm text "f:\n RTS\n"
+columns 41
+run ["compile.py", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and\nlink.\n\npositional arguments:\n  inputs           C sources (- for\n                   stdin), .asm files,\n                   and .o objects\n\noptions:\n  -h, --help       show this help\n                   message and exit\n  -o OUTPUT        output file, or -\n                   for stdout\n  --lex            stop after\n                   tokenization\n  --parse          stop after parsing\n  --resolve        stop after variable\n                   + label resolution +\n                   loop labeling\n  --tac            stop after TAC\n                   translation\n  -S               emit 6502 assembly\n  -c               compile or assemble\n                   to an object; don't\n                   link\n  -O               run the optimizer\n                   pipeline: TAC-level\n                   fixed-point opts\n                   (constant folding,\n                   strength reduction,\n                   comparison-against-\n                   zero / jump fold,\n                   UCE, copy\n                   propagation, dead-\n                   store elimination),\n                   then asm-level SSA\n                   round-trip (byte-\n                   granular forward +\n                   backward copy-prop,\n                   byte-DCE, byte-\n                   granular regalloc),\n                   then late prologue /\n                   epilogue synthesis.\n                   Also enables AST-\n                   level loop unrolling\n                   for\n                   `[[c6502::unroll]]`\n                   loops and the\n                   `[[c6502::zp_abi]]`\n                   calling-convention\n                   optimization.\n                   Applies to\n                   --resolve, --tac,\n                   -S, and -c, and to C\n                   sources given to a\n                   link.\n  -T SCRIPT        linker script (a GNU\n                   ld subset; passes/li\n                   nk_script.py) that\n                   places each section\n                   at an address\n  --origin ADDR    where .text starts\n                   in a link without a\n                   script (default\n                   $0800; -Ttext=ADDR\n                   also sets it)\n  --defsym NAME=VALUE\n                   define NAME as the\n                   address VALUE when\n                   linking\n"
+run ["compile.py", "--help"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and\nlink.\n\npositional arguments:\n  inputs           C sources (- for\n                   stdin), .asm files,\n                   and .o objects\n\noptions:\n  -h, --help       show this help\n                   message and exit\n  -o OUTPUT        output file, or -\n                   for stdout\n  --lex            stop after\n                   tokenization\n  --parse          stop after parsing\n  --resolve        stop after variable\n                   + label resolution +\n                   loop labeling\n  --tac            stop after TAC\n                   translation\n  -S               emit 6502 assembly\n  -c               compile or assemble\n                   to an object; don't\n                   link\n  -O               run the optimizer\n                   pipeline: TAC-level\n                   fixed-point opts\n                   (constant folding,\n                   strength reduction,\n                   comparison-against-\n                   zero / jump fold,\n                   UCE, copy\n                   propagation, dead-\n                   store elimination),\n                   then asm-level SSA\n                   round-trip (byte-\n                   granular forward +\n                   backward copy-prop,\n                   byte-DCE, byte-\n                   granular regalloc),\n                   then late prologue /\n                   epilogue synthesis.\n                   Also enables AST-\n                   level loop unrolling\n                   for\n                   `[[c6502::unroll]]`\n                   loops and the\n                   `[[c6502::zp_abi]]`\n                   calling-convention\n                   optimization.\n                   Applies to\n                   --resolve, --tac,\n                   -S, and -c, and to C\n                   sources given to a\n                   link.\n  -T SCRIPT        linker script (a GNU\n                   ld subset; passes/li\n                   nk_script.py) that\n                   places each section\n                   at an address\n  --origin ADDR    where .text starts\n                   in a link without a\n                   script (default\n                   $0800; -Ttext=ADDR\n                   also sets it)\n  --defsym NAME=VALUE\n                   define NAME as the\n                   address VALUE when\n                   linking\n"
+run ["compile.py", "--he"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and\nlink.\n\npositional arguments:\n  inputs           C sources (- for\n                   stdin), .asm files,\n                   and .o objects\n\noptions:\n  -h, --help       show this help\n                   message and exit\n  -o OUTPUT        output file, or -\n                   for stdout\n  --lex            stop after\n                   tokenization\n  --parse          stop after parsing\n  --resolve        stop after variable\n                   + label resolution +\n                   loop labeling\n  --tac            stop after TAC\n                   translation\n  -S               emit 6502 assembly\n  -c               compile or assemble\n                   to an object; don't\n                   link\n  -O               run the optimizer\n                   pipeline: TAC-level\n                   fixed-point opts\n                   (constant folding,\n                   strength reduction,\n                   comparison-against-\n                   zero / jump fold,\n                   UCE, copy\n                   propagation, dead-\n                   store elimination),\n                   then asm-level SSA\n                   round-trip (byte-\n                   granular forward +\n                   backward copy-prop,\n                   byte-DCE, byte-\n                   granular regalloc),\n                   then late prologue /\n                   epilogue synthesis.\n                   Also enables AST-\n                   level loop unrolling\n                   for\n                   `[[c6502::unroll]]`\n                   loops and the\n                   `[[c6502::zp_abi]]`\n                   calling-convention\n                   optimization.\n                   Applies to\n                   --resolve, --tac,\n                   -S, and -c, and to C\n                   sources given to a\n                   link.\n  -T SCRIPT        linker script (a GNU\n                   ld subset; passes/li\n                   nk_script.py) that\n                   places each section\n                   at an address\n  --origin ADDR    where .text starts\n                   in a link without a\n                   script (default\n                   $0800; -Ttext=ADDR\n                   also sets it)\n  --defsym NAME=VALUE\n                   define NAME as the\n                   address VALUE when\n                   linking\n"
+run ["compile.py", "a.c", "-S", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and\nlink.\n\npositional arguments:\n  inputs           C sources (- for\n                   stdin), .asm files,\n                   and .o objects\n\noptions:\n  -h, --help       show this help\n                   message and exit\n  -o OUTPUT        output file, or -\n                   for stdout\n  --lex            stop after\n                   tokenization\n  --parse          stop after parsing\n  --resolve        stop after variable\n                   + label resolution +\n                   loop labeling\n  --tac            stop after TAC\n                   translation\n  -S               emit 6502 assembly\n  -c               compile or assemble\n                   to an object; don't\n                   link\n  -O               run the optimizer\n                   pipeline: TAC-level\n                   fixed-point opts\n                   (constant folding,\n                   strength reduction,\n                   comparison-against-\n                   zero / jump fold,\n                   UCE, copy\n                   propagation, dead-\n                   store elimination),\n                   then asm-level SSA\n                   round-trip (byte-\n                   granular forward +\n                   backward copy-prop,\n                   byte-DCE, byte-\n                   granular regalloc),\n                   then late prologue /\n                   epilogue synthesis.\n                   Also enables AST-\n                   level loop unrolling\n                   for\n                   `[[c6502::unroll]]`\n                   loops and the\n                   `[[c6502::zp_abi]]`\n                   calling-convention\n                   optimization.\n                   Applies to\n                   --resolve, --tac,\n                   -S, and -c, and to C\n                   sources given to a\n                   link.\n  -T SCRIPT        linker script (a GNU\n                   ld subset; passes/li\n                   nk_script.py) that\n                   places each section\n                   at an address\n  --origin ADDR    where .text starts\n                   in a link without a\n                   script (default\n                   $0800; -Ttext=ADDR\n                   also sets it)\n  --defsym NAME=VALUE\n                   define NAME as the\n                   address VALUE when\n                   linking\n"
+run ["compile.py", "-h", "--lex", "-S"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and\nlink.\n\npositional arguments:\n  inputs           C sources (- for\n                   stdin), .asm files,\n                   and .o objects\n\noptions:\n  -h, --help       show this help\n                   message and exit\n  -o OUTPUT        output file, or -\n                   for stdout\n  --lex            stop after\n                   tokenization\n  --parse          stop after parsing\n  --resolve        stop after variable\n                   + label resolution +\n                   loop labeling\n  --tac            stop after TAC\n                   translation\n  -S               emit 6502 assembly\n  -c               compile or assemble\n                   to an object; don't\n                   link\n  -O               run the optimizer\n                   pipeline: TAC-level\n                   fixed-point opts\n                   (constant folding,\n                   strength reduction,\n                   comparison-against-\n                   zero / jump fold,\n                   UCE, copy\n                   propagation, dead-\n                   store elimination),\n                   then asm-level SSA\n                   round-trip (byte-\n                   granular forward +\n                   backward copy-prop,\n                   byte-DCE, byte-\n                   granular regalloc),\n                   then late prologue /\n                   epilogue synthesis.\n                   Also enables AST-\n                   level loop unrolling\n                   for\n                   `[[c6502::unroll]]`\n                   loops and the\n                   `[[c6502::zp_abi]]`\n                   calling-convention\n                   optimization.\n                   Applies to\n                   --resolve, --tac,\n                   -S, and -c, and to C\n                   sources given to a\n                   link.\n  -T SCRIPT        linker script (a GNU\n                   ld subset; passes/li\n                   nk_script.py) that\n                   places each section\n                   at an address\n  --origin ADDR    where .text starts\n                   in a link without a\n                   script (default\n                   $0800; -Ttext=ADDR\n                   also sets it)\n  --defsym NAME=VALUE\n                   define NAME as the\n                   address VALUE when\n                   linking\n"
+run ["compile.py", "--lex", "-S", "-h"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "--", "-S"]
+status 1
+stderr "-S: error: No such file or directory\n"
+run ["compile.py", "a.c", "--lex", "--parse"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --parse: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--parse", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--resolve", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--tac", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "--tac", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "-S", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-Sc"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-cS"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument -c\n"
+run ["compile.py", "a.c", "--tac", "--tac", "-o", "t.txt"]
+status 0
+run ["compile.py", "a.c", "-O2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -O: ignored explicit argument '2'\n"
+run ["compile.py", "a.c", "--lex=yes"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --lex: ignored explicit argument 'yes'\n"
+run ["compile.py", "a.c", "-S="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument ''\n"
+run ["compile.py", "a.c", "-Sx"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument 'x'\n"
+run ["compile.py", "a.c", "--origin", "xyz"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: 'xyz'\n"
+run ["compile.py", "a.c", "--origin="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "$"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$'\n"
+run ["compile.py", "a.c", "--origin", "0b2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0b2'\n"
+run ["compile.py", "a.c", "--origin", "08"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '08'\n"
+run ["compile.py", "a.c", "--origin", "1__0"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '1__0'\n"
+run ["compile.py", "a.c", "--origin", "0x_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x_'\n"
+run ["compile.py", "a.c", "--ori", "_1"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '_1'\n"
+run ["compile.py", "a.c", "-Ttext=0x"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x'\n"
+run ["compile.py", "a.c", "-Ttext", "12_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '12_'\n"
+run ["compile.py", "-Ttext"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "'q'"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: \"'q'\"\n"
+run ["compile.py", "a.c", "--origin", "\u00e9"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '\u00e9'\n"
+run ["compile.py", "a.c", "--origin", "$_10"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$_10'\n"
+run ["compile.py", "a.c", "-o"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "-T"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "a.c", "--origin"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: expected one argument\n"
+run ["compile.py", "a.c", "--defsym"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-o", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "--defsym", "--lex"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-T", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c]\n                  [-O] [-T SCRIPT]\n                  [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "-S", "b.asm"]
+status 2
+stderr "compile.py: b.asm isn't a C source\n"
+run ["compile.py", "--lex", "x.o"]
+status 2
+stderr "compile.py: x.o isn't a C source\n"
+run ["compile.py", "-S", "a.c", "a.c", "-o", "x.s"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "-S", "a.c", "-o", "x.txt"]
+status 2
+stderr "compile.py: -S output must have a .s or .asm suffix: x.txt\n"
+run ["compile.py", "-c", "a.c", "a.c", "-o", "x.o"]
+status 2
+stderr "compile.py: -o with -c and more than one input\n"
+run ["compile.py", "-c", "-"]
+status 2
+stderr "compile.py: -c on stdin needs -o\n"
+run ["compile.py", "-c", "x.o"]
+status 2
+stderr "compile.py: x.o is already an object\n"
+run ["compile.py", "a.c", "--defsym", "x"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x\n"
+run ["compile.py", "a.c", "--defsym", "x=$"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x=$\n"
+run ["compile.py", "a.c", "--le", "-o", "l.txt"]
+status 0
+run ["compile.py", "a.c", "--pa", "-o", "-"]
+status 0
+stdout "Program(\n  declaration=[\n    FunctionDecl(\n      function_decl=Type_function_decl(\n        name='main',\n        params=[],\n        body=Block(\n          block_item=[\n            S(\n              statement=Return(\n                exp=Constant(\n                  const=ConstInt(\n                    value=1,\n                  ),\n                  data_type=None,\n                ),\n              ),\n            ),\n          ],\n        ),\n        data_type=FunType(\n          params=[],\n          ret=Int(),\n        ),\n        storage_class=None,\n        abi_annotation=None,\n        param_registers=[],\n        carry_return=False,\n        address=None,\n        preserves=[],\n        section=None,\n        noreturn=False,\n      ),\n    ),\n  ],\n)\n"
+run ["compile.py", "a.c", "-S", "-ox1.s"]
+status 0
+run ["compile.py", "a.c", "-S", "-o=x2.s"]
+status 0
+run ["compile.py", "a.c", "-SOo", "x3.s"]
+status 0
+run ["compile.py", "-S", "--", "a.c", "-o", "-"]
+status 1
+stderr "-o: error: No such file or directory\n"
+run ["compile.py", "-D", "X", "a.c", "-S", "-o", "-"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "a.c", "-S", "-o", "-", "-DX=1"]
+status 0
+stdout "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\nDPTR\tEQU\t$24\n\nmain:\n   SUBROUTINE\n\n   LDX   #$00\n   LDA   #$01\n   RTS\n"
+run ["compile.py", "a.c", "-Ttext=0x1000", "-o", "p1"]
+status 0
+run ["compile.py", "a.c", "-Ttext", "$2000", "-o", "p2"]
+status 0
+run ["compile.py", "a.c", "--origin=4096", "-o", "p3"]
+status 0
+run ["compile.py", "a.c", "--orig", "0X9_00", "-o", "p4"]
+status 0
+run ["compile.py", "a.c", "-Ttext= +0x900 ", "-o", "p5"]
+status 0
+run ["compile.py", "a.c", "-Ttext=$ 0x900", "-o", "p6"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0o4000", "-o", "p7"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0b100000000000", "-o", "p8"]
+status 0
+run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
+status 0
+run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
+status none
+raised ["error", "argument out of range"]
+run ["compile.py", "a.c", "-Ttext=0x10000"]
+status 0
+run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
+status 0
+run ["compile.py", "a.c", "-Ttextual"]
+status 1
+stderr "compile.py: link error: textual: No such file or directory\n"
+run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
+status 0
+file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
+file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
+file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
+file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
+file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
+file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
+file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
+file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
+file p3 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p4 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p5 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p6 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p7 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p8 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p9 sha256 2f463c8639056bd22c3c2ce6dcb84534f9fb15df5b763633023cc896c2cb5c62 1316
+file t.txt sha256 869a1db4da45cd61af92bebbf2fda3e5f41365590297808abdeffb13b38e9b5a 266
+file x1.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x2.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x3.s sha256 750205944a1045ad064f6a24a70d81b04e6c7e3bd6965c4653389da23a9d2e64 293
+end
+job cli columns 80
+write a.c text "int main(void) { return 1; }\n"
+write b.asm text "f:\n RTS\n"
+run ["compile.py", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts\n                       (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-\n                       store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE,\n                       byte-granular regalloc), then late prologue / epilogue\n                       synthesis. Also enables AST-level loop unrolling for\n                       `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]`\n                       calling-convention optimization. Applies to --resolve,\n                       --tac, -S, and -c, and to C sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py)\n                       that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default\n                       $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--help"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts\n                       (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-\n                       store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE,\n                       byte-granular regalloc), then late prologue / epilogue\n                       synthesis. Also enables AST-level loop unrolling for\n                       `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]`\n                       calling-convention optimization. Applies to --resolve,\n                       --tac, -S, and -c, and to C sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py)\n                       that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default\n                       $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--he"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts\n                       (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-\n                       store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE,\n                       byte-granular regalloc), then late prologue / epilogue\n                       synthesis. Also enables AST-level loop unrolling for\n                       `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]`\n                       calling-convention optimization. Applies to --resolve,\n                       --tac, -S, and -c, and to C sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py)\n                       that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default\n                       $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "a.c", "-S", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts\n                       (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-\n                       store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE,\n                       byte-granular regalloc), then late prologue / epilogue\n                       synthesis. Also enables AST-level loop unrolling for\n                       `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]`\n                       calling-convention optimization. Applies to --resolve,\n                       --tac, -S, and -c, and to C sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py)\n                       that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default\n                       $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "-h", "--lex", "-S"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts\n                       (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-\n                       store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE,\n                       byte-granular regalloc), then late prologue / epilogue\n                       synthesis. Also enables AST-level loop unrolling for\n                       `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]`\n                       calling-convention optimization. Applies to --resolve,\n                       --tac, -S, and -c, and to C sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py)\n                       that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default\n                       $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--lex", "-S", "-h"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "--", "-S"]
+status 1
+stderr "-S: error: No such file or directory\n"
+run ["compile.py", "a.c", "--lex", "--parse"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --parse: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--parse", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--resolve", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--tac", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "--tac", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "-S", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-Sc"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-cS"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument -c\n"
+run ["compile.py", "a.c", "--tac", "--tac", "-o", "t.txt"]
+status 0
+run ["compile.py", "a.c", "-O2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -O: ignored explicit argument '2'\n"
+run ["compile.py", "a.c", "--lex=yes"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --lex: ignored explicit argument 'yes'\n"
+run ["compile.py", "a.c", "-S="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument ''\n"
+run ["compile.py", "a.c", "-Sx"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument 'x'\n"
+run ["compile.py", "a.c", "--origin", "xyz"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: 'xyz'\n"
+run ["compile.py", "a.c", "--origin="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "$"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$'\n"
+run ["compile.py", "a.c", "--origin", "0b2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0b2'\n"
+run ["compile.py", "a.c", "--origin", "08"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '08'\n"
+run ["compile.py", "a.c", "--origin", "1__0"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '1__0'\n"
+run ["compile.py", "a.c", "--origin", "0x_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x_'\n"
+run ["compile.py", "a.c", "--ori", "_1"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '_1'\n"
+run ["compile.py", "a.c", "-Ttext=0x"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x'\n"
+run ["compile.py", "a.c", "-Ttext", "12_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '12_'\n"
+run ["compile.py", "-Ttext"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "'q'"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: \"'q'\"\n"
+run ["compile.py", "a.c", "--origin", "\u00e9"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '\u00e9'\n"
+run ["compile.py", "a.c", "--origin", "$_10"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$_10'\n"
+run ["compile.py", "a.c", "-o"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "-T"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "a.c", "--origin"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: expected one argument\n"
+run ["compile.py", "a.c", "--defsym"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-o", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "--defsym", "--lex"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-T", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT]\n                  [--lex | --parse | --resolve | --tac | -S | -c] [-O]\n                  [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "-S", "b.asm"]
+status 2
+stderr "compile.py: b.asm isn't a C source\n"
+run ["compile.py", "--lex", "x.o"]
+status 2
+stderr "compile.py: x.o isn't a C source\n"
+run ["compile.py", "-S", "a.c", "a.c", "-o", "x.s"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "-S", "a.c", "-o", "x.txt"]
+status 2
+stderr "compile.py: -S output must have a .s or .asm suffix: x.txt\n"
+run ["compile.py", "-c", "a.c", "a.c", "-o", "x.o"]
+status 2
+stderr "compile.py: -o with -c and more than one input\n"
+run ["compile.py", "-c", "-"]
+status 2
+stderr "compile.py: -c on stdin needs -o\n"
+run ["compile.py", "-c", "x.o"]
+status 2
+stderr "compile.py: x.o is already an object\n"
+run ["compile.py", "a.c", "--defsym", "x"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x\n"
+run ["compile.py", "a.c", "--defsym", "x=$"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x=$\n"
+run ["compile.py", "a.c", "--le", "-o", "l.txt"]
+status 0
+run ["compile.py", "a.c", "--pa", "-o", "-"]
+status 0
+stdout "Program(\n  declaration=[\n    FunctionDecl(\n      function_decl=Type_function_decl(\n        name='main',\n        params=[],\n        body=Block(\n          block_item=[\n            S(\n              statement=Return(\n                exp=Constant(\n                  const=ConstInt(\n                    value=1,\n                  ),\n                  data_type=None,\n                ),\n              ),\n            ),\n          ],\n        ),\n        data_type=FunType(\n          params=[],\n          ret=Int(),\n        ),\n        storage_class=None,\n        abi_annotation=None,\n        param_registers=[],\n        carry_return=False,\n        address=None,\n        preserves=[],\n        section=None,\n        noreturn=False,\n      ),\n    ),\n  ],\n)\n"
+run ["compile.py", "a.c", "-S", "-ox1.s"]
+status 0
+run ["compile.py", "a.c", "-S", "-o=x2.s"]
+status 0
+run ["compile.py", "a.c", "-SOo", "x3.s"]
+status 0
+run ["compile.py", "-S", "--", "a.c", "-o", "-"]
+status 1
+stderr "-o: error: No such file or directory\n"
+run ["compile.py", "-D", "X", "a.c", "-S", "-o", "-"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "a.c", "-S", "-o", "-", "-DX=1"]
+status 0
+stdout "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\nDPTR\tEQU\t$24\n\nmain:\n   SUBROUTINE\n\n   LDX   #$00\n   LDA   #$01\n   RTS\n"
+run ["compile.py", "a.c", "-Ttext=0x1000", "-o", "p1"]
+status 0
+run ["compile.py", "a.c", "-Ttext", "$2000", "-o", "p2"]
+status 0
+run ["compile.py", "a.c", "--origin=4096", "-o", "p3"]
+status 0
+run ["compile.py", "a.c", "--orig", "0X9_00", "-o", "p4"]
+status 0
+run ["compile.py", "a.c", "-Ttext= +0x900 ", "-o", "p5"]
+status 0
+run ["compile.py", "a.c", "-Ttext=$ 0x900", "-o", "p6"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0o4000", "-o", "p7"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0b100000000000", "-o", "p8"]
+status 0
+run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
+status 0
+run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
+status none
+raised ["error", "argument out of range"]
+run ["compile.py", "a.c", "-Ttext=0x10000"]
+status 0
+run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
+status 0
+run ["compile.py", "a.c", "-Ttextual"]
+status 1
+stderr "compile.py: link error: textual: No such file or directory\n"
+run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
+status 0
+file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
+file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
+file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
+file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
+file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
+file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
+file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
+file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
+file p3 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p4 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p5 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p6 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p7 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p8 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p9 sha256 2f463c8639056bd22c3c2ce6dcb84534f9fb15df5b763633023cc896c2cb5c62 1316
+file t.txt sha256 869a1db4da45cd61af92bebbf2fda3e5f41365590297808abdeffb13b38e9b5a 266
+file x1.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x2.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x3.s sha256 750205944a1045ad064f6a24a70d81b04e6c7e3bd6965c4653389da23a9d2e64 293
+end
+job cli columns 132
+write a.c text "int main(void) { return 1; }\n"
+write b.asm text "f:\n RTS\n"
+columns 132
+run ["compile.py", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue /\n                       epilogue synthesis. Also enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the\n                       `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--help"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue /\n                       epilogue synthesis. Also enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the\n                       `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--he"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue /\n                       epilogue synthesis. Also enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the\n                       `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "a.c", "-S", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue /\n                       epilogue synthesis. Also enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the\n                       `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "-h", "--lex", "-S"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-\n                       against-zero / jump fold, UCE, copy propagation, dead-store elimination), then asm-level SSA round-trip\n                       (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue /\n                       epilogue synthesis. Also enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the\n                       `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--lex", "-S", "-h"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "--", "-S"]
+status 1
+stderr "-S: error: No such file or directory\n"
+run ["compile.py", "a.c", "--lex", "--parse"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --parse: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--parse", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--resolve", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--tac", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "--tac", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "-S", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-Sc"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-cS"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument -c\n"
+run ["compile.py", "a.c", "--tac", "--tac", "-o", "t.txt"]
+status 0
+run ["compile.py", "a.c", "-O2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -O: ignored explicit argument '2'\n"
+run ["compile.py", "a.c", "--lex=yes"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --lex: ignored explicit argument 'yes'\n"
+run ["compile.py", "a.c", "-S="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument ''\n"
+run ["compile.py", "a.c", "-Sx"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument 'x'\n"
+run ["compile.py", "a.c", "--origin", "xyz"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: 'xyz'\n"
+run ["compile.py", "a.c", "--origin="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "$"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$'\n"
+run ["compile.py", "a.c", "--origin", "0b2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0b2'\n"
+run ["compile.py", "a.c", "--origin", "08"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '08'\n"
+run ["compile.py", "a.c", "--origin", "1__0"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '1__0'\n"
+run ["compile.py", "a.c", "--origin", "0x_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x_'\n"
+run ["compile.py", "a.c", "--ori", "_1"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '_1'\n"
+run ["compile.py", "a.c", "-Ttext=0x"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x'\n"
+run ["compile.py", "a.c", "-Ttext", "12_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '12_'\n"
+run ["compile.py", "-Ttext"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "'q'"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: \"'q'\"\n"
+run ["compile.py", "a.c", "--origin", "\u00e9"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '\u00e9'\n"
+run ["compile.py", "a.c", "--origin", "$_10"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$_10'\n"
+run ["compile.py", "a.c", "-o"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "-T"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "a.c", "--origin"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --origin: expected one argument\n"
+run ["compile.py", "a.c", "--defsym"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-o", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "--defsym", "--lex"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-T", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR]\n                  [--defsym NAME=VALUE]\n                  inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "-S", "b.asm"]
+status 2
+stderr "compile.py: b.asm isn't a C source\n"
+run ["compile.py", "--lex", "x.o"]
+status 2
+stderr "compile.py: x.o isn't a C source\n"
+run ["compile.py", "-S", "a.c", "a.c", "-o", "x.s"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "-S", "a.c", "-o", "x.txt"]
+status 2
+stderr "compile.py: -S output must have a .s or .asm suffix: x.txt\n"
+run ["compile.py", "-c", "a.c", "a.c", "-o", "x.o"]
+status 2
+stderr "compile.py: -o with -c and more than one input\n"
+run ["compile.py", "-c", "-"]
+status 2
+stderr "compile.py: -c on stdin needs -o\n"
+run ["compile.py", "-c", "x.o"]
+status 2
+stderr "compile.py: x.o is already an object\n"
+run ["compile.py", "a.c", "--defsym", "x"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x\n"
+run ["compile.py", "a.c", "--defsym", "x=$"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x=$\n"
+run ["compile.py", "a.c", "--le", "-o", "l.txt"]
+status 0
+run ["compile.py", "a.c", "--pa", "-o", "-"]
+status 0
+stdout "Program(\n  declaration=[\n    FunctionDecl(\n      function_decl=Type_function_decl(\n        name='main',\n        params=[],\n        body=Block(\n          block_item=[\n            S(\n              statement=Return(\n                exp=Constant(\n                  const=ConstInt(\n                    value=1,\n                  ),\n                  data_type=None,\n                ),\n              ),\n            ),\n          ],\n        ),\n        data_type=FunType(\n          params=[],\n          ret=Int(),\n        ),\n        storage_class=None,\n        abi_annotation=None,\n        param_registers=[],\n        carry_return=False,\n        address=None,\n        preserves=[],\n        section=None,\n        noreturn=False,\n      ),\n    ),\n  ],\n)\n"
+run ["compile.py", "a.c", "-S", "-ox1.s"]
+status 0
+run ["compile.py", "a.c", "-S", "-o=x2.s"]
+status 0
+run ["compile.py", "a.c", "-SOo", "x3.s"]
+status 0
+run ["compile.py", "-S", "--", "a.c", "-o", "-"]
+status 1
+stderr "-o: error: No such file or directory\n"
+run ["compile.py", "-D", "X", "a.c", "-S", "-o", "-"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "a.c", "-S", "-o", "-", "-DX=1"]
+status 0
+stdout "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\nDPTR\tEQU\t$24\n\nmain:\n   SUBROUTINE\n\n   LDX   #$00\n   LDA   #$01\n   RTS\n"
+run ["compile.py", "a.c", "-Ttext=0x1000", "-o", "p1"]
+status 0
+run ["compile.py", "a.c", "-Ttext", "$2000", "-o", "p2"]
+status 0
+run ["compile.py", "a.c", "--origin=4096", "-o", "p3"]
+status 0
+run ["compile.py", "a.c", "--orig", "0X9_00", "-o", "p4"]
+status 0
+run ["compile.py", "a.c", "-Ttext= +0x900 ", "-o", "p5"]
+status 0
+run ["compile.py", "a.c", "-Ttext=$ 0x900", "-o", "p6"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0o4000", "-o", "p7"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0b100000000000", "-o", "p8"]
+status 0
+run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
+status 0
+run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
+status none
+raised ["error", "argument out of range"]
+run ["compile.py", "a.c", "-Ttext=0x10000"]
+status 0
+run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
+status 0
+run ["compile.py", "a.c", "-Ttextual"]
+status 1
+stderr "compile.py: link error: textual: No such file or directory\n"
+run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
+status 0
+file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
+file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
+file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
+file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
+file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
+file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
+file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
+file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
+file p3 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p4 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p5 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p6 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p7 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p8 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p9 sha256 2f463c8639056bd22c3c2ce6dcb84534f9fb15df5b763633023cc896c2cb5c62 1316
+file t.txt sha256 869a1db4da45cd61af92bebbf2fda3e5f41365590297808abdeffb13b38e9b5a 266
+file x1.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x2.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x3.s sha256 750205944a1045ad064f6a24a70d81b04e6c7e3bd6965c4653389da23a9d2e64 293
+end
+job cli columns 200
+write a.c text "int main(void) { return 1; }\n"
+write b.asm text "f:\n RTS\n"
+columns 200
+run ["compile.py", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-against-zero / jump fold, UCE, copy propagation, dead-store\n                       elimination), then asm-level SSA round-trip (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue / epilogue synthesis. Also\n                       enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--help"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-against-zero / jump fold, UCE, copy propagation, dead-store\n                       elimination), then asm-level SSA round-trip (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue / epilogue synthesis. Also\n                       enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--he"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-against-zero / jump fold, UCE, copy propagation, dead-store\n                       elimination), then asm-level SSA round-trip (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue / epilogue synthesis. Also\n                       enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "a.c", "-S", "-h"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-against-zero / jump fold, UCE, copy propagation, dead-store\n                       elimination), then asm-level SSA round-trip (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue / epilogue synthesis. Also\n                       enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "-h", "--lex", "-S"]
+status 0
+stdout "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\n\nCompile C for the 6502, assemble, and link.\n\npositional arguments:\n  inputs               C sources (- for stdin), .asm files, and .o objects\n\noptions:\n  -h, --help           show this help message and exit\n  -o OUTPUT            output file, or - for stdout\n  --lex                stop after tokenization\n  --parse              stop after parsing\n  --resolve            stop after variable + label resolution + loop labeling\n  --tac                stop after TAC translation\n  -S                   emit 6502 assembly\n  -c                   compile or assemble to an object; don't link\n  -O                   run the optimizer pipeline: TAC-level fixed-point opts (constant folding, strength reduction, comparison-against-zero / jump fold, UCE, copy propagation, dead-store\n                       elimination), then asm-level SSA round-trip (byte-granular forward + backward copy-prop, byte-DCE, byte-granular regalloc), then late prologue / epilogue synthesis. Also\n                       enables AST-level loop unrolling for `[[c6502::unroll]]` loops and the `[[c6502::zp_abi]]` calling-convention optimization. Applies to --resolve, --tac, -S, and -c, and to C\n                       sources given to a link.\n  -T SCRIPT            linker script (a GNU ld subset; passes/link_script.py) that places each section at an address\n  --origin ADDR        where .text starts in a link without a script (default $0800; -Ttext=ADDR also sets it)\n  --defsym NAME=VALUE  define NAME as the address VALUE when linking\n"
+run ["compile.py", "--lex", "-S", "-h"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: the following arguments are required: inputs\n"
+run ["compile.py", "--", "-S"]
+status 1
+stderr "-S: error: No such file or directory\n"
+run ["compile.py", "a.c", "--lex", "--parse"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --parse: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--lex", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --lex\n"
+run ["compile.py", "a.c", "--parse", "--resolve"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --resolve: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--parse", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --parse\n"
+run ["compile.py", "a.c", "--resolve", "--tac"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --tac: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--resolve", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --resolve\n"
+run ["compile.py", "a.c", "--tac", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "--tac", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument --tac\n"
+run ["compile.py", "a.c", "-S", "-c"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-Sc"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -c: not allowed with argument -S\n"
+run ["compile.py", "a.c", "-cS"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: not allowed with argument -c\n"
+run ["compile.py", "a.c", "--tac", "--tac", "-o", "t.txt"]
+status 0
+run ["compile.py", "a.c", "-O2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -O: ignored explicit argument '2'\n"
+run ["compile.py", "a.c", "--lex=yes"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --lex: ignored explicit argument 'yes'\n"
+run ["compile.py", "a.c", "-S="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument ''\n"
+run ["compile.py", "a.c", "-Sx"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -S: ignored explicit argument 'x'\n"
+run ["compile.py", "a.c", "--origin", "xyz"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: 'xyz'\n"
+run ["compile.py", "a.c", "--origin="]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "$"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$'\n"
+run ["compile.py", "a.c", "--origin", "0b2"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0b2'\n"
+run ["compile.py", "a.c", "--origin", "08"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '08'\n"
+run ["compile.py", "a.c", "--origin", "1__0"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '1__0'\n"
+run ["compile.py", "a.c", "--origin", "0x_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x_'\n"
+run ["compile.py", "a.c", "--ori", "_1"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '_1'\n"
+run ["compile.py", "a.c", "-Ttext=0x"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '0x'\n"
+run ["compile.py", "a.c", "-Ttext", "12_"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '12_'\n"
+run ["compile.py", "-Ttext"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: ''\n"
+run ["compile.py", "a.c", "--origin", "'q'"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: \"'q'\"\n"
+run ["compile.py", "a.c", "--origin", "\u00e9"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '\u00e9'\n"
+run ["compile.py", "a.c", "--origin", "$_10"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: invalid _number value: '$_10'\n"
+run ["compile.py", "a.c", "-o"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "-T"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "a.c", "--origin"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --origin: expected one argument\n"
+run ["compile.py", "a.c", "--defsym"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-o", "-S"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -o: expected one argument\n"
+run ["compile.py", "a.c", "--defsym", "--lex"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument --defsym: expected one argument\n"
+run ["compile.py", "a.c", "-T", "-O"]
+status 2
+stderr "usage: compile.py [-h] [-o OUTPUT] [--lex | --parse | --resolve | --tac | -S | -c] [-O] [-T SCRIPT] [--origin ADDR] [--defsym NAME=VALUE] inputs [inputs ...]\ncompile.py: error: argument -T: expected one argument\n"
+run ["compile.py", "-S", "b.asm"]
+status 2
+stderr "compile.py: b.asm isn't a C source\n"
+run ["compile.py", "--lex", "x.o"]
+status 2
+stderr "compile.py: x.o isn't a C source\n"
+run ["compile.py", "-S", "a.c", "a.c", "-o", "x.s"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "-S", "a.c", "-o", "x.txt"]
+status 2
+stderr "compile.py: -S output must have a .s or .asm suffix: x.txt\n"
+run ["compile.py", "-c", "a.c", "a.c", "-o", "x.o"]
+status 2
+stderr "compile.py: -o with -c and more than one input\n"
+run ["compile.py", "-c", "-"]
+status 2
+stderr "compile.py: -c on stdin needs -o\n"
+run ["compile.py", "-c", "x.o"]
+status 2
+stderr "compile.py: x.o is already an object\n"
+run ["compile.py", "a.c", "--defsym", "x"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x\n"
+run ["compile.py", "a.c", "--defsym", "x=$"]
+status 2
+stderr "compile.py: --defsym takes NAME=VALUE: x=$\n"
+run ["compile.py", "a.c", "--le", "-o", "l.txt"]
+status 0
+run ["compile.py", "a.c", "--pa", "-o", "-"]
+status 0
+stdout "Program(\n  declaration=[\n    FunctionDecl(\n      function_decl=Type_function_decl(\n        name='main',\n        params=[],\n        body=Block(\n          block_item=[\n            S(\n              statement=Return(\n                exp=Constant(\n                  const=ConstInt(\n                    value=1,\n                  ),\n                  data_type=None,\n                ),\n              ),\n            ),\n          ],\n        ),\n        data_type=FunType(\n          params=[],\n          ret=Int(),\n        ),\n        storage_class=None,\n        abi_annotation=None,\n        param_registers=[],\n        carry_return=False,\n        address=None,\n        preserves=[],\n        section=None,\n        noreturn=False,\n      ),\n    ),\n  ],\n)\n"
+run ["compile.py", "a.c", "-S", "-ox1.s"]
+status 0
+run ["compile.py", "a.c", "-S", "-o=x2.s"]
+status 0
+run ["compile.py", "a.c", "-SOo", "x3.s"]
+status 0
+run ["compile.py", "-S", "--", "a.c", "-o", "-"]
+status 1
+stderr "-o: error: No such file or directory\n"
+run ["compile.py", "-D", "X", "a.c", "-S", "-o", "-"]
+status 2
+stderr "compile.py: -o with more than one input\n"
+run ["compile.py", "a.c", "-S", "-o", "-", "-DX=1"]
+status 0
+stdout "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\nDPTR\tEQU\t$24\n\nmain:\n   SUBROUTINE\n\n   LDX   #$00\n   LDA   #$01\n   RTS\n"
+run ["compile.py", "a.c", "-Ttext=0x1000", "-o", "p1"]
+status 0
+run ["compile.py", "a.c", "-Ttext", "$2000", "-o", "p2"]
+status 0
+run ["compile.py", "a.c", "--origin=4096", "-o", "p3"]
+status 0
+run ["compile.py", "a.c", "--orig", "0X9_00", "-o", "p4"]
+status 0
+run ["compile.py", "a.c", "-Ttext= +0x900 ", "-o", "p5"]
+status 0
+run ["compile.py", "a.c", "-Ttext=$ 0x900", "-o", "p6"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0o4000", "-o", "p7"]
+status 0
+run ["compile.py", "a.c", "-Ttext=0b100000000000", "-o", "p8"]
+status 0
+run ["compile.py", "a.c", "-Ttext=00", "-o", "p9"]
+status 0
+run ["compile.py", "a.c", "-Ttext=-1", "-o", "p10"]
+status none
+raised ["error", "argument out of range"]
+run ["compile.py", "a.c", "-Ttext=0x10000"]
+status 0
+run ["compile.py", "a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"]
+status 0
+run ["compile.py", "a.c", "-Ttextual"]
+status 1
+stderr "compile.py: link error: textual: No such file or directory\n"
+run ["compile.py", "b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"]
+status 0
+file a.c sha256 7b4bb8e34d20c4ec426e4770c2c8e808fea9f4c78893f9190b02c55e9f75e88b 29
+file a.out sha256 dccbff46cd9bdaa5ca87ad811b7e5ed5d5f81c4a4317b5d983e20f2d62794743 1316
+file a.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file b.asm sha256 e26aedcc7a62f7e4aea98bb859febf8e3d1eaf927fc345550713f829a2e3d851 8
+file l.txt sha256 6fd1956536d5a409521d2fea45b6717c05da9a917e50156e7db47d7061f40059 159
+file p1 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p10 sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0
+file p11 sha256 8d1e5bf1ce69c54813534ed9e70874b68fee551dae4bc516e9c160b642fed173 1316
+file p12 sha256 bef5f31c90ee44c2b4c1372c2a12c5cdb7537ba963d4d7732a6e0db49dc5c967 1420
+file p2 sha256 23a485939b9e322e7fc90a753d0387f9f8c33352234e43b9832576b5e0cd662b 1316
+file p3 sha256 f2e72f3aa994028fa28b08ad90ad9973b8941596d502a1d8786a002488f79d76 1316
+file p4 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p5 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p6 sha256 7beb039f810f5c91add9ba1295e957788f172a21e28661af496be23526c1dfa5 1316
+file p7 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p8 sha256 2ead640d47de40467e1f48dab800ed1b7c9e0c7aa16abde116111117c20b3f88 1316
+file p9 sha256 2f463c8639056bd22c3c2ce6dcb84534f9fb15df5b763633023cc896c2cb5c62 1316
+file t.txt sha256 869a1db4da45cd61af92bebbf2fda3e5f41365590297808abdeffb13b38e9b5a 266
+file x1.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x2.s sha256 f6b9f26723efe0943103f2d61a0a2f402af107ca39462c200b2db4b1765978f0 107
+file x3.s sha256 750205944a1045ad064f6a24a70d81b04e6c7e3bd6965c4653389da23a9d2e64 293
+end

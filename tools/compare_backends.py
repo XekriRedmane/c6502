@@ -24,7 +24,13 @@ objects linked with the game's script and without one (and Ali Baba
 with the simulator's helpers too), and besides those every unit
 compiled by one `-c -O` and the program linked from its C sources by
 one command, and then the damaged files of `capture_binutils._damaged`
-linked and the command lines of `_BAD_LINKS`.
+linked and the command lines of `_BAD_LINKS`. The corpus `cli` holds a
+job for each terminal width of `_CLI_COLUMNS`, which runs the command
+lines of `_cli_command_lines` with `COLUMNS` set to that width: the
+help, the usage errors of argparse (each pair of stage flags, a bad
+`--origin`, an option without its value, and flags run together), the
+errors of compile.py's own checks of the stage and the inputs, and
+links with each spelling of `-Ttext` and `--origin`.
 
 Each job runs its commands once with the variable unset and once with
 it set to 1, in the same worker process and the same directory, which
@@ -85,6 +91,90 @@ _BAD_FILES = {
     "a.c": "int main(void) { return 0; }\n",
     "b.c": "int f(void) { return 1; }\n",
 }
+
+
+# The terminal widths of the `cli` jobs, which wrap argparse's usage and
+# help in each of its ways: a width under 4, which `max_help_position`
+# keeps at 4, the program's name on a line of its own (under 23), the
+# usage over several lines, and the usage on one line (200).
+_CLI_COLUMNS = (1, 20, 41, 80, 132, 200)
+
+_STAGE_FLAGS = ("--lex", "--parse", "--resolve", "--tac", "-S", "-c")
+
+# The files the `cli` jobs' command lines name.
+_CLI_FILES = {
+    "a.c": "int main(void) { return 1; }\n",
+    "b.asm": "f:\n RTS\n",
+}
+
+
+def _cli_command_lines() -> list[list[str]]:
+    """The command lines of the `cli` jobs, after the program's name."""
+    lines = [
+        # The help, before and after an error.
+        ["-h"], ["--help"], ["--he"], ["a.c", "-S", "-h"],
+        ["-h", "--lex", "-S"], ["--lex", "-S", "-h"],
+        # No inputs.
+        [], ["-O"], ["--", "-S"],
+    ]
+    # Each pair of stage flags, which the mutually exclusive group
+    # rejects, apart and run together.
+    for i, first in enumerate(_STAGE_FLAGS):
+        for second in _STAGE_FLAGS[i + 1:]:
+            lines.append(["a.c", first, second])
+    lines += [
+        ["a.c", "-Sc"], ["a.c", "-cS"], ["a.c", "--tac", "--tac", "-o", "t.txt"],
+        # An explicit argument that a flag ignores.
+        ["a.c", "-O2"], ["a.c", "--lex=yes"], ["a.c", "-S="], ["a.c", "-Sx"],
+        # A bad `--origin`, which `type=_number` rejects.
+        ["a.c", "--origin", "xyz"], ["a.c", "--origin="], ["a.c", "--origin", "$"],
+        ["a.c", "--origin", "0b2"], ["a.c", "--origin", "08"],
+        ["a.c", "--origin", "1__0"], ["a.c", "--origin", "0x_"],
+        ["a.c", "--ori", "_1"], ["a.c", "-Ttext=0x"], ["a.c", "-Ttext", "12_"],
+        ["-Ttext"], ["a.c", "--origin", "'q'"], ["a.c", "--origin", "\u00e9"],
+        ["a.c", "--origin", "$_10"],
+        # An option without its value.
+        ["a.c", "-o"], ["a.c", "-T"], ["a.c", "--origin"], ["a.c", "--defsym"],
+        ["a.c", "-o", "-S"], ["a.c", "--defsym", "--lex"], ["a.c", "-T", "-O"],
+        # compile.py's own checks of the stage and the inputs.
+        ["-S", "b.asm"], ["--lex", "x.o"], ["-S", "a.c", "a.c", "-o", "x.s"],
+        ["-S", "a.c", "-o", "x.txt"], ["-c", "a.c", "a.c", "-o", "x.o"],
+        ["-c", "-"], ["-c", "x.o"], ["a.c", "--defsym", "x"],
+        ["a.c", "--defsym", "x=$"],
+        # The stages, with options abbreviated and run together, and
+        # arguments that go to the preprocessor.
+        ["a.c", "--le", "-o", "l.txt"], ["a.c", "--pa", "-o", "-"],
+        ["a.c", "-S", "-ox1.s"], ["a.c", "-S", "-o=x2.s"], ["a.c", "-SOo", "x3.s"],
+        ["-S", "--", "a.c", "-o", "-"], ["-D", "X", "a.c", "-S", "-o", "-"],
+        ["a.c", "-S", "-o", "-", "-DX=1"],
+        # Links with each spelling of the origin.
+        ["a.c", "-Ttext=0x1000", "-o", "p1"], ["a.c", "-Ttext", "$2000", "-o", "p2"],
+        ["a.c", "--origin=4096", "-o", "p3"], ["a.c", "--orig", "0X9_00", "-o", "p4"],
+        ["a.c", "-Ttext= +0x900 ", "-o", "p5"], ["a.c", "-Ttext=$ 0x900", "-o", "p6"],
+        ["a.c", "-Ttext=0o4000", "-o", "p7"],
+        ["a.c", "-Ttext=0b100000000000", "-o", "p8"], ["a.c", "-Ttext=00", "-o", "p9"],
+        ["a.c", "-Ttext=-1", "-o", "p10"], ["a.c", "-Ttext=0x10000"],
+        ["a.c", "--origin", "0x900", "-Ttext=0xA00", "-o", "p11"],
+        ["a.c", "-Ttextual"], ["b.asm", "a.c", "--defsym=x=1", "--def", "y=$10", "-o", "p12"],
+    ]
+    return lines
+
+
+def _cli_commands(run, columns: int) -> None:
+    """Runs the command lines of `_cli_command_lines` through `run` with
+    the terminal `columns` wide."""
+    for name, text in _CLI_FILES.items():
+        Path(name).write_text(text, encoding="utf-8", newline="\n")
+    old = os.environ.get("COLUMNS")
+    os.environ["COLUMNS"] = str(columns)
+    try:
+        for cmd in _cli_command_lines():
+            run(["compile.py", *cmd])
+    finally:
+        if old is None:
+            os.environ.pop("COLUMNS", None)
+        else:
+            os.environ["COLUMNS"] = old
 
 
 def _compile(argv: list[str], cpp: bool) -> tuple:
@@ -236,6 +326,8 @@ def _run_commands(job, cpp: bool, work: Path, tmp: str) -> tuple[list, dict]:
             _program_commands(run, _source_args(args, tmp), mode)
         elif kind == "game":
             _game_commands(run, label)
+        elif kind == "cli":
+            _cli_commands(run, int(args[0]))
         else:
             _error_commands(run)
     finally:
@@ -277,6 +369,12 @@ def _run_job(job) -> tuple[str, int, bool, str]:
     return source, len(py_results), False, f"the files {differ}"
 
 
+def cli_jobs() -> list[tuple]:
+    """The jobs of the corpus `cli`, one for each width of
+    `_CLI_COLUMNS`."""
+    return [("cli", f"columns {w}", [str(w)], "") for w in _CLI_COLUMNS]
+
+
 def _parse_seeds(text: str) -> range:
     lo, _, hi = text.partition("-")
     return range(int(lo), int(hi or lo) + 1)
@@ -284,7 +382,7 @@ def _parse_seeds(text: str) -> range:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--corpus", default="examples,games,chapters,fuzz,links")
+    ap.add_argument("--corpus", default="examples,games,chapters,fuzz,links,cli")
     ap.add_argument("--fuzz-seeds", default="0-99")
     ap.add_argument("--modes", default="O,unopt,cO,c",
                     help="O for -S -O, unopt for -S, cO for -c -O and the "
@@ -304,9 +402,11 @@ def main(argv: list[str] | None = None) -> int:
         import capture_binutils
         jobs += [("game", g, [], "") for g in capture_binutils._GAMES]
         jobs.append(("errors", "damaged files and bad links", [], ""))
+    if "cli" in kinds:
+        jobs += cli_jobs()
     jobs += [
         ("program", label, args, mode)
-        for label, args in corpus([k for k in kinds if k != "links"],
+        for label, args in corpus([k for k in kinds if k not in ("links", "cli")],
                                   _parse_seeds(ns.fuzz_seeds))
         for mode in ns.modes.split(",")
     ]

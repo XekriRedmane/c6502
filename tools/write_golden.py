@@ -8,19 +8,23 @@ Python compiler is gone (docs/cpp_port.md, "The checks after Python").
 The jobs are tools/compare_backends.py's: each program of the corpus
 (the examples, the games' units, the chapters' programs, and seeds 0 to
 99 of `fuzz.stmts`, `fuzz.calls`, and `fuzz.exprs`) in each mode of
-`MODES`, and the `links` jobs, which compile and link the three games
-and link the damaged files and the bad command lines. Each job runs its
-commands with compare_backends.py's functions, in an empty directory,
-with the C++ back end off, and the writer records what each command
-gave: its exit status, what it wrote to stdout and to stderr, and the
-type and message of an exception it raised. It records the files the
+`MODES`, the `links` jobs, which compile and link the three games and
+link the damaged files and the bad command lines, and the `cli` jobs,
+which run compile.py's help, its usage errors, and its spellings of
+`-Ttext` at each terminal width of compare_backends.py's
+`_CLI_COLUMNS`. Each job runs its commands with compare_backends.py's
+functions, in an empty directory, with the C++ back end off and
+`COLUMNS` 80 unless the job sets it, and the writer records what each
+command gave: its exit status, what it wrote to stdout and to stderr,
+and the type and message of an exception it raised. It records the files the
 job leaves too, as text beside the manifest for the outputs `MODES`
 names, which are the `-S` texts, and as a SHA-256 for every other file.
 
 The files go under `golden/` (`--out`), with LF line endings:
 
-- `golden/<mode>.txt`, the manifest of each mode's jobs, and
-  `golden/links.txt`, the manifest of the `links` jobs.
+- `golden/<mode>.txt`, the manifest of each mode's jobs,
+  `golden/links.txt`, the manifest of the `links` jobs, and
+  `golden/cli.txt`, the manifest of the `cli` jobs.
 - `golden/<mode>/<source>.s`, the `-S` text of each program that
   compiled, named for its source without `.c`, so that
   `examples/sfx_tone.c` gives `golden/O/examples/sfx_tone.s`. A fuzz
@@ -41,6 +45,7 @@ A manifest is text, one line per item:
     job <label>
     mkdir <path>
     cd <path>
+    columns <n>
     write <path> text <JSON string>
     write <path> blob <sha256>
     run <JSON list, the command line>
@@ -59,7 +64,9 @@ list. The `text` lines name the files of the mode's jobs that are kept
 as text (`MODES`). Each job begins with `job` and ends with `end`. `mkdir`, `cd`, `write`,
 and `run` are its steps, in the order the job took them, and the
 `status` line and the `stdout`, `stderr`, and `raised` lines that
-aren't empty follow each `run`. The paths of `mkdir`, `cd`, `write`, and
+aren't empty follow each `run`. A `columns` step sets the terminal's
+width (`COLUMNS`) that argparse wraps the usage and help to for the
+commands after it, which is 80 until a job's first `columns`. The paths of `mkdir`, `cd`, `write`, and
 `file` are relative to the job's directory, and `cd` names the
 directory relative to that one (`.` for itself). After the last step
 come the files the job left, sorted by path.
@@ -252,6 +259,7 @@ class _Recorder:
         self.lines: list[str] = []
         self.before = _tree(work)
         self.cwd = "."
+        self.columns = "80"
         self.leftover: list[str] = []
 
     def _steps(self) -> None:
@@ -274,6 +282,10 @@ class _Recorder:
         if cwd != self.cwd:
             self.lines.append(f"cd {cwd}")
             self.cwd = cwd
+        columns = os.environ.get("COLUMNS", "80")
+        if columns != self.columns:
+            self.lines.append(f"columns {columns}")
+            self.columns = columns
 
     def tacsim(self, argv: list[str]) -> None:
         """Runs `main` of the C source `argv[0]`, preprocessed with the
@@ -388,6 +400,8 @@ def _run_job(job) -> tuple[str, str, list[str], dict[str, bytes], dict[str, byte
                 compare_backends._program_commands(rec.run, args, mode)
             elif kind == "game":
                 compare_backends._game_commands(rec.run, label)
+            elif kind == "cli":
+                compare_backends._cli_commands(rec.run, int(args[0]))
             else:
                 compare_backends._error_commands(rec.run)
         finally:
@@ -406,7 +420,7 @@ def _run_job(job) -> tuple[str, str, list[str], dict[str, bytes], dict[str, byte
                 lines.append(
                     f"file {path} sha256 {hashlib.sha256(data).hexdigest()} {len(data)}")
         lines.append("end")
-    manifest = mode if kind == "program" else "links"
+    manifest = mode if kind == "program" else ("cli" if kind == "cli" else "links")
     return manifest, label, lines, texts, blobs, rec.leftover
 
 
@@ -428,6 +442,9 @@ def _fuzz_sources(out: Path, seeds: range) -> dict[str, str]:
 def _init_worker() -> None:
     os.environ.pop("C6502_CPP_BACKEND", None)
     os.environ.pop("C6502_CHECK_IR", None)
+    # argparse wraps its usage to the terminal's width, which a job sets
+    # with a `columns` step and is otherwise 80 on every machine.
+    os.environ["COLUMNS"] = "80"
 
 
 def _parse_seeds(text: str) -> range:
@@ -442,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="the modes to write, of " + ", ".join(MODES))
     ap.add_argument("--no-links", action="store_true",
                     help="leave golden/links.txt as it is")
+    ap.add_argument("--no-cli", action="store_true",
+                    help="leave golden/cli.txt as it is")
     ap.add_argument("--corpus", default="examples,games,chapters,fuzz",
                     help="the kinds of program, all of them unless a trial "
                          "run leaves some out")
@@ -453,7 +472,8 @@ def main(argv: list[str] | None = None) -> int:
         # The commands name the fuzz sources under golden/, which must
         # be inside the repository.
         ap.error("--out must be the repository's golden/ directory")
-    modes = ns.modes.split(",")
+    # An empty list writes only the `links` and `cli` manifests.
+    modes = [m for m in ns.modes.split(",") if m]
     unknown = [m for m in modes if m not in MODES]
     if unknown:
         ap.error(f"unknown modes: {', '.join(unknown)}")
@@ -466,6 +486,8 @@ def main(argv: list[str] | None = None) -> int:
         import capture_binutils
         jobs += [("game", g, [], "") for g in capture_binutils._GAMES]
         jobs.append(("errors", "damaged files and bad links", [], ""))
+    if not ns.no_cli:
+        jobs += compare_backends.cli_jobs()
     for label, args in corpus(ns.corpus.split(","), seeds):
         if args[0] in fuzz:
             args = [fuzz[args[0]]] + args[1:]
@@ -476,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
     manifests: dict[str, list[str]] = {m: [] for m in modes}
     if not ns.no_links:
         manifests["links"] = []
+    if not ns.no_cli:
+        manifests["cli"] = []
     blobs: dict[str, bytes] = {}
     leftover: list[str] = []
     with ProcessPoolExecutor(max_workers=ns.j, initializer=_init_worker) as pool:

@@ -10,8 +10,6 @@ When you catch yourself writing the same instruction a second time:
 2. If yes, encode it. Delete the instruction
 3. If no (genuinely requires judgment), make the instruction more prominent and add an example of the failure mode
 
-**Corollary:** Don't paper over symptoms. If the fix is structural, ONLY use the structural fix. The instruction IS the symptom.
-
 **Feedback Loop:**
 - **Capture every correction:** When the human intervenes or tests fail, decide if it's a one-off or a pattern
 - **Route to the right layer:** One-off -> brain note. Recurring fix -> skill or lint rule. Systemic issue -> principle

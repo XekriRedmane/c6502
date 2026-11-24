@@ -1,7 +1,6 @@
 # Brain
 
 ## Codebase
-- [[codebase]]
 - [[codebase/checks-after-python]]
 - [[codebase/claude-code-setup]]
 - [[codebase/compile-command]]
@@ -11,7 +10,6 @@
 - [[codebase/worktree-agent-commands]]
 
 ## Principles
-- [[principles]]
 - [[principles/boundary-discipline]]
 - [[principles/cost-aware-delegation]]
 - [[principles/encode-lessons-in-structure]]

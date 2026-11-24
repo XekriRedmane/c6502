@@ -1,11 +1,10 @@
 # Experience First
 
-The user experience is the product. Every technical decision either serves or hinders it. When a tradeoff exists between implementation convenience and user delight, choose delight.
+The people who use c6502 read the assembly it writes, the errors it reports, and the documents that explain both. Every technical decision serves or hinders that experience, and when a tradeoff sets implementation convenience against it, choose the experience.
 
-- Say no to 1,000 things (every feature, control, and option must earn its place)
-- Ship less, ship better (polished experience with three features beats rough one with ten)
-- Prototype before committing (design decisions are cheaper in throwaway HTML than production code)
-- Sweat the details (transitions, alignment, spacing, feedback, error states)
-- Tighten the core loop (every feature should serve the central workflow or get out of the way)
+- Every feature, flag, and attribute has to earn its place, since each one is one more thing for a user to learn.
+- A program that breaks a rule gets an error that names the rule and says how to fix the program. The compiler doesn't fall back silently or miscompile.
+- The generated assembly stays readable, with labels a reader can follow back to the source.
+- A few features done well serve users better than many done roughly.
 
-Foundations should serve the experience, not the other way around. Foundational thinking governs the *sequence* of work; this principle governs the *target*.
+Foundations serve the experience. Foundational thinking governs the *sequence* of work, and this principle governs the *target*.

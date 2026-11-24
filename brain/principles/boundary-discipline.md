@@ -18,8 +18,6 @@ Validation and Error Handling:
 Code Organization:
 - Business logic in pure functions with no framework dependencies
 - Parse functions: pure transforms from raw bytes to typed state
-- Prompt construction: structured state in, string out
-- Scoring/assessment: pure transforms from state to results
 
 **The Tests:**
 - "Is this data crossing a system boundary right now?" If not, validation is redundant

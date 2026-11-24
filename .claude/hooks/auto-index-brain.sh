@@ -20,7 +20,7 @@ disk=$(find "$BRAIN_DIR" -name "*.md" ! -name "index.md" -type f \
     | sort)
 
 # Wikilinks in current index
-indexed=$(sed -n 's/.*\[\[\([^]]*\)\]\].*/\1/p' "$INDEX" | sort)
+indexed=$(sed -n 's/.*\[\[\([^]]*\)\]\].*/\1/p' "$INDEX" | sort -u)
 
 # Exit fast if nothing changed (no new/removed files)
 [ "$disk" = "$indexed" ] && exit 0
@@ -42,7 +42,10 @@ dirs=$(echo "$disk" | grep '/' | sed 's|/.*||' | sort -u)
 {
     echo "# Brain"
     for section in $dirs; do
-        files=$(echo "$disk" | grep "^${section}\(/\|$\)" || true)
+        # A section lists the notes in its directory. Its own index file
+        # (codebase.md for codebase/) goes under Other with the other
+        # top-level files, so that no note is listed twice.
+        files=$(echo "$disk" | grep "^${section}/" || true)
         [ -z "$files" ] && continue
         # Capitalize first letter for header
         header="$(echo "$section" | sed 's/./\U&/')"

@@ -2836,3 +2836,32 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   file. The suite passes with the variable set (4,965 tests, with
   `C6502_CHECK_IR=1`) and without it (4,965 tests), and the build
   and the C++ tests pass with MSVC 19.36 and GCC 12.2.
+- 23 Nov 2026: group G4 of step 8 ported tac_sim.py to C++
+  (`tac_sim::Simulator`, cpp/README.md, "The TAC interpreter"), as
+  Robert chose in place of a Python reader of the C++ tables. The
+  backend's modes `tac-run`, `tac-observe`, and `tac-falls-off` serve
+  `tests.test_sim_chapters._run_program` (with fuzz/runner.py's `tac`
+  path), fuzz/reduce.py's `_tac_results` and `falls_off_end`, and
+  fuzz/tac_passes.py's `first_changing_pass`, which under
+  `C6502_CPP_BACKEND=1` import none of the Python front end,
+  `c99_to_tac`, the TAC optimizer, or tac_sim.py. The TAC optimizer's
+  C++ driver calls an observer after each step, as Python's
+  `PhaseDriver.observer` is called. tools/compare_tac_sim.py ran the
+  1,788 programs of the corpus through both interpreters, on the
+  unoptimized TAC, on the optimized TAC, and with the observer, with
+  no difference, and the observer found no pass that changes a result.
+  Before two fixes it found five, all from limits of the interpreter,
+  which both interpreters shared: a Phi or SSA destruction's copy of a
+  variable without a value (`int c;` before a loop that assigns it)
+  raised "uninitialized var", and an object that another unit defines
+  (`extern struct s x;`) had no address for the stores by name that
+  `direct_member_access` makes. Both are fixed in Python and C++. With
+  narrow_widened_arith's check of a global broken in C++, `tac-observe`
+  named the pass and the function, and fuzz/reduce.py `--tac-opt`
+  reduced a program under the switch. The fuzzers (seeds 3000 to 3149
+  of each) took 14, 15, and 16 s with the switch and Python's TAC path,
+  and 12, 12, and 11 s with the C++ path, none wrong. A program's TAC
+  path took 25, 40, and 54 ms in Python (exprs, calls, stmts) and 31,
+  34, and 35 ms in C++, of which about 12 ms is starting c6502cpp. The
+  C++ interpreter runs a recursion of up to 100,000 calls, where
+  Python's raises RecursionError at about 330.

@@ -2769,6 +2769,71 @@ call-graph closures it builds on sets of names before it places a pool,
 before it computed the callers of each function once, where Python
 inverts the call graph again for each function it places.
 
+## The TAC interpreter
+
+`tac_sim::Simulator` (`src/tac_sim.*`) is tac_sim.py, which runs a TAC
+program with its symbol table and type table, the unoptimized TAC, the
+optimized TAC, and the SSA form between the optimizer's passes. A
+scalar lives in its frame as an unsigned 64-bit integer of its type's
+width, and the arithmetic reproduces Python's unbounded integers where
+the result could differ: a shift by 64 places or more gives 0 (or the
+sign, for a signed `>>`), and the signed division and remainder work on
+the magnitudes in 128 bits, so `INT64_MIN / -1` wraps as Python's does.
+Memory is a vector of bytes for the addresses below 16 MiB and a map for
+any other, both reading 0 where nothing was written. The frames are a
+list the interpreter keeps, so a call of the program is no call of
+C++, and a recursion of up to `kMaxCallDepth` (100,000) frames runs
+where Python's raises RecursionError at about 330.
+
+What Python raises comes back as a `SimError` with the Python class and
+the message, `TacSimError` for the interpreter's own and the class of
+the others that a program can reach: `KeyError` (a name missing from the
+symbol table, or a label missing from the function), `ValueError` and
+`OverflowError` (a floating NaN or infinity converted to an integer),
+`AttributeError`, and `UnicodeEncodeError`. tests/test_tac_sim.py's
+tests are doctest cases in tests/test_tac_sim.cpp, which also reaches
+every place in tac_sim.py that raises, with Python's message for the
+same hand-built TAC, but for the five that the C++ IR's closed variants
+can't reach (a constant, a static initializer, an instruction, an
+operand, or an integer operator of a class Python doesn't know).
+
+The backend's modes `tac-run`, `tac-observe`, and `tac-falls-off`
+(`src/tac_sim_modes.h`) run the front end of
+`tests.test_sim_chapters._run_program` and `c99_to_tac` on a source and
+then the interpreter. `tac-run` gives `main`'s result on the TAC, and
+on request on the TAC after `optimize_program` too, as fuzz/reduce.py's
+`_tac_results` does. `tac-observe` is fuzz/tac_passes.py's
+`first_changing_pass`: the TAC optimizer's driver calls an observer
+after every pass and after SSA construction and destruction
+(`framework::set_observer`, Python's `PhaseDriver.observer`), which runs
+`main` on the program with the function at that step and names the
+first step after which the result changes, by the Python class of its
+pass (`kPassClasses`, which tests/test_tac_sim_backend.py checks against
+Python's `_DRIVER`). `tac-falls-off` is fuzz/reduce.py's
+`falls_off_end`: it appends a call of `__reduce_fell_off` to each
+function that returns a value, other than `main`, after the parser and
+before identifier resolution, and reports whether the run reached one.
+
+Under `C6502_CPP_BACKEND=1`, `_run_program` (and so fuzz/runner.py's
+`tac` path and the tests that call it), `_tac_results`, `falls_off_end`,
+and `first_changing_pass` call cpp_backend.py's `tac_main`,
+`tac_results`, `tac_falls_off_end`, and `tac_first_changing_pass`, and
+import none of the Python front end, `c99_to_tac`, the TAC optimizer,
+or tac_sim.py. The interpreter's `TacSimError` is then
+`cpp_backend.TacSimError`, a class of the same name.
+`TestTacPasses.test_names_the_pass` in tests/test_tac_sim_optimized.py
+breaks a Python pass, so it is skipped under the variable. The same
+breakage in C++, `var_unchanged` of src/passes/optimization/
+narrow_widened_arith.cpp returning true, made `tac-observe` give that
+test's `("main", "NarrowWidenedArith", 12, 79)` on its program. That
+check was made by hand on 23 Nov 2026 and the breakage removed.
+
+`tools/compare_tac_sim.py` runs each program of
+tools/compare_backends.py's corpus through both interpreters, with its
+file name and `-I` arguments, and compares the front end's error, or
+`main`'s result on the unoptimized TAC and on the optimized TAC, and the
+observer's result, which must be None for every program.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,

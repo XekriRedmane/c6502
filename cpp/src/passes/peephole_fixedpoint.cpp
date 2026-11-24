@@ -90,6 +90,7 @@
 #include "passes/inc_low_byte_test.h"
 #include "passes/inc_peephole.h"
 #include "passes/index_inc_cmp_y.h"
+#include "passes/ir_check.h"
 #include "passes/join_store.h"
 #include "passes/label_offset_fold.h"
 #include "passes/loop_constant_a.h"
@@ -235,6 +236,8 @@ asm_ast::Program run_to_fixed_point(asm_ast::Program prog,
     for (const auto& pass : sweep) {
       new_prog = pass.run(std::move(new_prog));
     }
+    // With the IR checks on (src/passes/ir_check.h).
+    ir_check::check_asm(new_prog, "a peephole sweep");
     if (new_prog == prog) {
       return new_prog;
     }

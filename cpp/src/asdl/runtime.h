@@ -215,6 +215,15 @@ std::string py_repr(const T& v) {
   return out;
 }
 
+// Returns the name of the constructor `v` holds, as Python's
+// `type(v).__name__` gives it, which is what its `repr` starts with.
+template <class T>
+std::string constructor_name(const T& v) {
+  std::string out = py_repr(v);
+  out.resize(out.find('('));
+  return out;
+}
+
 // Returns pretty.py's `pretty(v)` of the IR value `v`, which
 // `compile.py --parse`, `--resolve`, and `--tac` print: the class name,
 // a `name=value,` line for each field with two spaces of indentation

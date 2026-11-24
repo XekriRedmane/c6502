@@ -2853,3 +2853,33 @@ tests of `tac_sim`, G2 after G1, G9 after G6 to G8, and R last.
   file. The suite passes with the variable set (4,974 tests, with
   `C6502_CHECK_IR=1`) and without it (4,974 tests), and the build and
   the C++ tests pass with MSVC 19.36 and GCC 12.2.
+- 23 Nov 2026: group G3 of step 8, `ir_check` in C++ (cpp/README.md,
+  "The IR checks"). src/passes/ir_check.* has every check and message
+  of passes/ir_check.py, and with the request's `check_ir` set, which
+  cpp_backend.py sets from `C6502_CHECK_IR=1` or `ir_check.enable()`,
+  the C++ pipeline runs each check where the Python pipeline runs it.
+  A failed check throws `InternalError` with `IRCheckError`'s message,
+  which reaches Python as an AssertionError. The response carries no
+  dump for the checks any more, so under the switch compile.py run as
+  a script imports no module of passes/ for any stage with
+  `C6502_CHECK_IR=1` either. test_ir_check.py's 20 tests, the decimal
+  region checks of test_bcd_builtins.py, and a case for each raise site
+  are doctest cases with Python's messages (tests/ir_check_cases.h).
+  With `C6502_CHECK_IR=1`, tools/compare_backends.py compared 7,156
+  jobs of 11,782 commands and the 3,666 commands of its modes `tac` and
+  `tacO` with no difference and no check raised. Three passes broken
+  the same way in both compilers, one at a time, failed with the same
+  message in both: ConstantFold dropping `x + 1` gave "after
+  ConstantFold, function 'f': Ret reads %0.1, which nothing defines",
+  dead_label_drop dropping the labels of `g` gave "after a peephole
+  sweep, function 'g': branch to missing label .loop@0_break; jump to
+  missing label .loop@0_continue" with and without `-O`, and
+  `expand_decimal_arith` without its `CLD` gave "after asm_to_asm2,
+  function 'add': Return at 10 runs with the decimal flag set (SED at
+  2)" under `-O`. The suite passes with `C6502_CHECK_IR=1` with the
+  variable set and without it (4,955 tests each, 41 skipped), the
+  fuzzers with both set found nothing wrong in 150 programs each of
+  `exprs`, `calls`, and `stmts` from seed 3000, and the build and the
+  C++ tests pass with MSVC 19.36 and GCC 12.2. `-c -O` of Zork's 11
+  units in one command, best of three, took 7.16 s in Python and 8.75
+  s with the checks, and 1.33 s and 1.69 s through the C++ port.

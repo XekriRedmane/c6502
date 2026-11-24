@@ -31,6 +31,7 @@
 
 #include "errors.h"
 #include "passes/abi_selection.h"
+#include "passes/ir_check.h"
 #include "passes/optimized_front.h"
 #include "passes/replace_pseudoregisters.h"
 #include "passes/slot_sharing.h"
@@ -283,6 +284,12 @@ StageResult unoptimized_stage(const tac_ast::Program& tac, StageTables& tables,
   const tac_to_asm::Options lowering{.abi = &fixed_abi};
   asm_ast::Program asm0 =
       tac_to_asm::translate_program(tac, &tables.symbols, &tables.types, ctx, lowering);
+  // compile.py's `_codegen` checks the lowered program, and the
+  // simulator harness's own unoptimized path, which `emit` false
+  // stands for, doesn't.
+  if (emit) {
+    ir_check::check_asm(asm0, "tac_to_asm", /*pseudos=*/true);
+  }
   asm_ast::Program asm1 =
       replace_program(std::move(asm0), tables.statics, &tables.symbols, &tables.types);
   const OrderedSymbolAddrs equs = merged(pairs_of(pinned_slot_symbols(fixed_abi)), zp_equs(zp));

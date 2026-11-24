@@ -3,7 +3,6 @@
 // `c6502cpp backend` runs under `C6502_CPP_BACKEND=1`.
 #pragma once
 
-#include <optional>
 #include <string>
 
 #include "c99_ast.h"
@@ -27,11 +26,11 @@ enum class TextStage {
 };
 
 // What a stage gives: the text compile.py prints, `pretty` of the tree
-// and a newline, and for `--tac` the TAC itself, which the backend
-// sends back for `ir_check` under `C6502_CHECK_IR=1`.
+// and a newline. Under `--tac -O` with the IR checks on, the TAC
+// optimizer's driver checks the TAC after each pass
+// (src/passes/ir_check.h).
 struct TextStageResult {
   std::string text;
-  std::optional<tac_ast::Program> tac;
 };
 
 // Runs `stage` on `text`, the preprocessor's output, with `-O` when

@@ -89,4 +89,14 @@ std::vector<asm_ast::Type_operand> later_sources(const asm_ast::DecimalArith& in
 std::vector<std::pair<std::string, std::string>> early_write_pairs(
     const asm_ast::DecimalArith& instr);
 
+// Returns what's wrong with `instr`'s shape, for the IR check
+// (src/passes/ir_check.h): lists of different lengths, an empty chain,
+// or an operand of a form the expansion can't take. `left` and `right`
+// may hold an immediate, a label's half, a `Pseudo` (only before
+// `replace_pseudoregisters`), a `Data` or `ZP` byte, or a soft-stack
+// slot, and `dst` any of those but the immediates and the halves. A
+// register is never one, since `ADC` and `SBC` take A as their other
+// operand.
+std::vector<std::string> form_problems(const asm_ast::DecimalArith& instr);
+
 }  // namespace c6502::passes::decimal_arith

@@ -39,7 +39,6 @@ TextStageResult run_text_stage(TextStage stage, const std::string& text, bool op
     tac = optimize_program(std::move(tac), &tables.symbols);
   }
   out.text = asdl::py_pretty(tac) + "\n";
-  out.tac = std::move(tac);
   return out;
 }
 

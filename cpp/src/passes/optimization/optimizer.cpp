@@ -144,9 +144,10 @@ PhaseDriver make_driver() {
       // It works on c99_to_tac's layout of a for loop, where x_var has
       // one name across the init, the body, and the post block, and
       // `to_ssa` builds the Phis for the rotated control flow after it.
-      {"rotate_signed_countdown_loops", &rotate_signed_countdown_loops},
+      {"rotate_signed_countdown_loops", &rotate_signed_countdown_loops,
+       "RotateSignedCountdownLoops"},
       // Nothing runs after a call to a `[[noreturn]]` function.
-      {"noreturn_calls", &noreturn_calls},
+      {"noreturn_calls", &noreturn_calls, "NoreturnCalls"},
   };
   d.pre_fixedpoint = {
       // Once: replaces each read of `Var(static_const_scalar)` with
@@ -154,19 +155,19 @@ PhaseDriver make_driver() {
       // can fold the arithmetic after it. SSA construction is done by
       // then, so the substitution doesn't disturb the chains of
       // definitions and uses (statics aren't promoted anyway).
-      {"fold_static_const_reads", &fold_static_const_reads},
+      {"fold_static_const_reads", &fold_static_const_reads, "FoldStaticConstReads"},
   };
   d.fixedpoint = {
-      {"constant_fold", &constant_fold},
+      {"constant_fold", &constant_fold, "ConstantFold"},
       // `(x - c) * k` on a widened byte `x` as `x * k - c * k`, before
       // strength reduction makes the multiply shifts.
-      {"distribute_constant", &distribute_constant},
+      {"distribute_constant", &distribute_constant, "DistributeConstant"},
       // An operation of a Phi of constants is computed in the Phi's
       // arguments, so `(c ? 3 : 2) + 1` joins 4 and 3.
-      {"fold_into_constant_phi", &fold_into_constant_phis},
+      {"fold_into_constant_phi", &fold_into_constant_phis, "FoldIntoConstantPhi"},
       // Strength reduction, as one RuleSet of rules for each operation
       // (a Multiply, Divide, or Modulo by a power of two).
-      {"reduce_strength", &reduce_strength},
+      {"reduce_strength", &reduce_strength, "RuleSet"},
       // Three folds of a jump on the result of a comparison, a
       // BitwiseAnd, or a LogicalNot read once by a JumpIf, as one
       // RuleSet. They share the window of the producer and the JumpIf
@@ -181,61 +182,62 @@ PhaseDriver make_driver() {
       // tests is `^ 1`. A signed ordering compare of two values that
       // can't be negative is done unsigned, last, once nothing narrows
       // it.
-      {"fold_producer_jumps", &fold_producer_jumps},
-      {"eliminate_dead_loops", &eliminate_dead_loops},
+      {"fold_producer_jumps", &fold_producer_jumps, "RuleSet"},
+      {"eliminate_dead_loops", &eliminate_dead_loops, "EliminateDeadLoops"},
       // An edge that brings a join a constant its test decides goes
       // where the test sends it, so an inlined `return false;` doesn't
       // load 0 and branch on it. Before UCE, which drops the join.
-      {"thread_constant_jumps", &thread_constant_jumps},
-      {"eliminate_unreachable_code", &eliminate_unreachable_code},
+      {"thread_constant_jumps", &thread_constant_jumps, "ThreadConstantJumps"},
+      {"eliminate_unreachable_code", &eliminate_unreachable_code, "EliminateUnreachableCode"},
       // Replaces a repeated computation or load with a Copy from the
       // first one, which copy_propagate then forwards.
-      {"eliminate_common_subexpressions", &eliminate_common_subexpressions},
-      {"hoist_loop_invariants", &hoist_loop_invariants},
-      {"copy_propagate", &copy_propagate},
-      {"eliminate_dead_stores", &eliminate_dead_stores},
+      {"eliminate_common_subexpressions", &eliminate_common_subexpressions,
+       "EliminateCommonSubexpressions"},
+      {"hoist_loop_invariants", &hoist_loop_invariants, "HoistLoopInvariants"},
+      {"copy_propagate", &copy_propagate, "CopyPropagate"},
+      {"eliminate_dead_stores", &eliminate_dead_stores, "EliminateDeadStores"},
       // `*++P` on a global P reads P after the copy into it, so the copy
       // folding next makes the add write P directly.
-      {"read_stored_globals", &read_stored_globals},
-      {"fold_copies_in_fixedpoint", &fold_copies_in_fixedpoint},
-      {"reassoc_constants", &reassoc_constants},
-      {"reassoc_offset_constant", &reassoc_offset_constant},
+      {"read_stored_globals", &read_stored_globals, "ReadStoredGlobals"},
+      {"fold_copies_in_fixedpoint", &fold_copies_in_fixedpoint, "FoldCopiesInFixedpoint"},
+      {"reassoc_constants", &reassoc_constants, "ReassocConstants"},
+      {"reassoc_offset_constant", &reassoc_offset_constant, "ReassocOffsetConstant"},
       // `g.m` and `r.m` as direct byte accesses in place of a store
       // through `&g + k`. After the reassociations, so the offset is one
       // Constant.
-      {"direct_member_access", &direct_member_access},
-      {"recognize_indexed_store", &recognize_indexed_store},
-      {"recognize_indexed_load", &recognize_indexed_load},
-      {"fold_truncate_extend", &fold_truncate_extend},
-      {"fold_extend_extend", &fold_extend_extend},
-      {"sink_increments", &sink_increments},
-      {"sink_and_past_branch", &sink_and_past_branch},
+      {"direct_member_access", &direct_member_access, "DirectMemberAccess"},
+      {"recognize_indexed_store", &recognize_indexed_store, "RecognizeIndexedStore"},
+      {"recognize_indexed_load", &recognize_indexed_load, "RecognizeIndexedLoad"},
+      {"fold_truncate_extend", &fold_truncate_extend, "FoldTruncateExtend"},
+      {"fold_extend_extend", &fold_extend_extend, "FoldExtendExtend"},
+      {"sink_increments", &sink_increments, "SinkIncrements"},
+      {"sink_and_past_branch", &sink_and_past_branch, "SinkAndPastBranch"},
       // After sink_and_past_branch, so that the latter sees the wide
       // `ZeroExtend + BitwiseAnd + Truncate + JumpIfMasked` trio it
       // matches. The narrow form this pass makes (Binary(BitwiseAnd,
       // %x, ConstUChar(C), %t)) wouldn't match the sinking pass's strict
       // shape, which would leave the AND's result live across the
       // branch and spill it to memory.
-      {"narrow_widened_arith", &apply_narrow_widened_arith},
+      {"narrow_widened_arith", &apply_narrow_widened_arith, "NarrowWidenedArith"},
       // `pos / 20`, `(style >> 5)`, and `price * (tier + 1)` on bytes
       // promoted to `int` as byte operations, when value_range bounds
       // the operands by 255.
-      {"narrow_byte_range", &narrow_byte_range},
+      {"narrow_byte_range", &narrow_byte_range, "NarrowByteRange"},
       // `(x & 0x3F) < 3` on a byte x as a byte `&`, zero-extended, so
       // the comparison narrows. After sink_and_past_branch for the same
       // reason as narrow_widened_arith.
-      {"narrow_byte_bitwise", &narrow_byte_bitwise},
+      {"narrow_byte_bitwise", &narrow_byte_bitwise, "NarrowByteBitwise"},
   };
   d.post_fixedpoint = {
       // A join choosing `p + k1` or `p + k2` as a choice of `k1` or `k2`
       // added to `p` after it, which the next two passes make an
       // indexed access.
-      {"phi_offset", &phi_offset},
+      {"phi_offset", &phi_offset, "PhiOffset"},
       // `o[i].m` on a static array as `IndexedLoad(o, i, offset=m)`
       // (abs,X), and `(&o + i) + m` as `(&o + m) + i`. Before the
       // indirect-indexed recognizer, which would otherwise take the
       // access as `(zp),Y` through a pointer.
-      {"static_indexed_access", &static_indexed_access},
+      {"static_indexed_access", &static_indexed_access, "StaticIndexedAccess"},
       // The indirect-indexed recognizer runs after the fixed point has
       // converged on constant folding. Inside the loop it could lock in
       // an IndirectIndexed form for an address chain whose pointer is
@@ -245,19 +247,19 @@ PhaseDriver make_driver() {
       // (through recognize_indexed_store), and only the cases with a
       // pointer at run time (zp_abi parameters, pointer locals whose
       // address is taken) are left for the (zp),Y lowering.
-      {"recognize_indirect_indexed", &recognize_indirect_indexed},
+      {"recognize_indirect_indexed", &recognize_indirect_indexed, "RecognizeIndirectIndexed"},
       // `t = a - b` next to the `a < b` (or `>=`, ...) that decides
       // whether it runs, so tac_to_asm branches on its flags in place
       // of comparing too. After the fixed point, whose sinking passes
       // would move it back.
-      {"hoist_subtract_to_compare", &hoist_subtract_to_compare},
+      {"hoist_subtract_to_compare", &hoist_subtract_to_compare, "HoistSubtractToCompare"},
       // A `/` and a `%` of the same operands with a store, a call, or a
       // branch between them computed next to each other, so that
       // tac_to_asm lowers them with one loop or one helper call.
-      {"hoist_divmod_pairs", &hoist_divmod_pairs},
+      {"hoist_divmod_pairs", &hoist_divmod_pairs, "HoistDivmodPairs"},
       // A loop counter read only by its own test and step counts the
       // passes left down to 0, so its test is `DEC i; BNE`.
-      {"count_loops_down", &count_loops_down},
+      {"count_loops_down", &count_loops_down, "CountLoopsDown"},
   };
   d.post_destruction = {
       // Copy folding after from_ssa. SSA destruction emits a Copy at
@@ -268,15 +270,15 @@ PhaseDriver make_driver() {
       // `Binary(Add, i.vK, 1, i.vJ)`. Once after destruction is enough,
       // without running the whole fixed point again, because nothing
       // later in the TAC pipeline makes new pairs to fuse.
-      {"fold_copies_post_destruction", &fold_copies_post_destruction},
+      {"fold_copies_post_destruction", &fold_copies_post_destruction, "FoldCopiesPostDestruction"},
       // `do ...; while (i-- != first);` computes `i - 1` before the test
       // and copies it into `i` on the back edge alone. The step goes in
       // place of that copy, where it's `DEC i`.
-      {"move_steps_onto_edges", &move_steps_onto_edges},
+      {"move_steps_onto_edges", &move_steps_onto_edges, "MoveStepsOntoEdges"},
       // `a < b` and `a == b` on the same 2-byte values as a compare of
       // the high bytes and then the low ones. After destruction, since
       // the new edges would need Phi arguments.
-      {"split_three_way_compares", &split_three_way_compares},
+      {"split_three_way_compares", &split_three_way_compares, "SplitThreeWayCompares"},
   };
   d.post_destruction_fixedpoint = {
       // The short-circuit fold after destruction: the tail of `&&` or
@@ -287,11 +289,11 @@ PhaseDriver make_driver() {
       // tail of five instructions this pass matches. The fixed point
       // peels nested shapes (`(a && b) || c` and the like) one
       // short-circuit at a time.
-      {"fold_short_circuit_jump", &fold_short_circuit_jumps},
+      {"fold_short_circuit_jump", &fold_short_circuit_jumps, "FoldShortCircuitJump"},
       // A jump whose target tests what the jump's own path decided, as
       // the second test of `x == a || x == b` reaching a test of
       // `x == a` in the `if`, goes past the test.
-      {"thread_known_compares", &thread_known_compares},
+      {"thread_known_compares", &thread_known_compares, "ThreadKnownCompares"},
   };
   return d;
 }

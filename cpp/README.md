@@ -128,6 +128,8 @@ cpp/
       return_in_zero_page.*   the `F@ret` objects of `static` pointer
                       results (step 5, group H)
       asm_to_asm2.*   the lowering to the asm2 IR
+      ir_check.*      passes/ir_check.py, the checks of the IR between
+                      passes (step 8, group G3)
       linker.*        passes/linker.py's `link_objects` and `link_files`,
                       on linker_metadata.* and linker_objects.* (step 7)
       runtime_library.*   passes/runtime_library.py, the helpers a link
@@ -1631,14 +1633,17 @@ of the corpus, all 4,981 distinct calls of the Python unit tests, and
 
 `passes::framework::PhaseDriver` (`src/passes/optimization/driver.h`)
 is the port of `PhaseDriver.apply`. Its six lists hold `NamedPass`
-entries, each a pass's `name` and a pointer to its port, and it runs
-them as Python does, with `to_ssa` and `from_ssa` between them and the
-two fixed points swept until a sweep leaves the function equal to what
-it started with, or 256 times. `ctx.ssa_dsts` stays set after SSA
-destruction, as Python's does, so the passes after it see the SSA
-names. The C++ driver doesn't check the TAC after each pass under
-`C6502_CHECK_IR=1` and has no `observer`, which only fuzz/tac_passes.py
-sets.
+entries, each a pass's `name`, a pointer to its port, and the name of
+its Python class, and it runs them as Python does, with `to_ssa` and
+`from_ssa` between them and the two fixed points swept until a sweep
+leaves the function equal to what it started with, or 256 times.
+`ctx.ssa_dsts` stays set after SSA destruction, as Python's does, so
+the passes after it see the SSA names. With the IR checks on, the
+driver checks the TAC as it comes in and after every pass and both SSA
+conversions ("The IR checks"), and the message names the pass by its
+class, as Python's `type(p).__name__` does, so both rule sets are
+`RuleSet`. The C++ driver has no `observer`, which only
+fuzz/tac_passes.py sets.
 
 `passes::tac_driver()` (`src/passes/optimization/optimizer.cpp`) is
 Python's `_DRIVER`, with every pass in its list and its order. A pass
@@ -2174,8 +2179,8 @@ IRs hold no Python floats, since a floating constant is its bit
 pattern in an `int`. `c6502cpp roundtrip --pretty <module>` reads a
 dump and writes its pretty text, which tests/test_cpp_backend.py's
 `TestPretty` compares with pretty.py on each IR of three programs. Under
-`C6502_CHECK_IR=1` the response of `tac` holds the TAC's dump, which
-`ir_check.check_tac` checks. `_run_stage` sends the text of these
+`C6502_CHECK_IR=1` the TAC optimizer's driver checks the TAC of `tac
+-O` after each pass ("The IR checks"). `_run_stage` sends the text of these
 stages with `preprocess` off, and the request says whether `-O`
 inlines.
 `_run_stage("codegen", text)`, which the tests call with the
@@ -2193,18 +2198,17 @@ issues the warnings again through `diagnostics.warn`, and raises an
 as Lark's `UnexpectedToken` whose constructor takes other arguments, and
 which turns argparse's exit into `SystemExit(2)`). An exit status of 3
 is raised as an `AssertionError` with the C++ message. Under
-`C6502_CHECK_IR=1` it checks the TAC that code generation lowered, the
-finished asm program, and the asm2 program of a text once each, since
-`ir_check` isn't ported. compile.py reads the variable at each compile
+`C6502_CHECK_IR=1`, or after `ir_check.enable()`, the request's
+`check_ir` turns on the C++ IR checks for the request ("The IR
+checks"), and the response carries no dump for them. compile.py reads the variable at each compile
 and, without it, imports none of this. Run as a script with the
 variable set and `-S`, `-c`, or a link, compile.py stops before it
 imports its pipeline (`_cpp_runs_everything`), and the runtime helpers'
 footprints come from the table compiled into c6502cpp, so neither `-S`
 nor `-c` nor a link imports the parser, Lark, pcpp, rtlib, binutils/,
-`passes.linker` and its imports, the type checker, numpy, or a pass of
-the front end, unless
-`C6502_CHECK_IR=1` loads `ir_check`, whose helpers import the type
-checker. tests/test_cpp_backend.py's `TestObjectsAndLinks` checks the
+`passes.linker` and its imports, the type checker, numpy, or any other
+module of passes/, with `C6502_CHECK_IR=1` or without it.
+tests/test_cpp_backend.py's `TestObjectsAndLinks` checks the
 imports, and compares `-c` and links of C, `.asm`, and `.o` inputs,
 with `-T`, `-Ttext`, and `--defsym`, and an error of each class, with
 the Python path's.
@@ -2219,6 +2223,50 @@ each command, and the same files left in the directory, byte for
 byte. Its modes `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
 `tacO`, which aren't among the defaults, run `--lex`, `--parse`,
 `--resolve` and `--tac` without and with `-O` on each program.
+
+## The IR checks
+
+`passes::ir_check` (src/passes/ir_check.h) is the port of
+passes/ir_check.py, with every check and every message of the Python
+module: `check_tac`, `check_asm`, and `check_asm2`, and the lists of
+problems behind them, `tac_problems`, `asm_problems`, and
+`decimal_region_problems`. It reads the helpers the C++ passes share,
+which are `uses_in` (src/passes/optimization/var_visit.h),
+`recursion_saves::defs_in`, the TAC CFG's `build_cfg` and
+`immediate_dominators`, `optimizer::all_operands_in`,
+`decimal_arith::form_problems` (added beside the module's other
+helpers, as in Python), and `rtlib::decimal_mode_helpers`. A message
+names an instruction or an operand by its constructor
+(`asdl::constructor_name`, the start of its `py_repr`) and an
+`IndexedData` by its whole `py_repr`, as Python's `type(x).__name__` and
+`!r` do. The SSA test keeps the blocks and dominators of each control
+skeleton, at most 512 of them, as Python's `_SHAPES` does.
+
+The checks are off unless `ir_check::enable()` or an `ir_check::Enabled`
+turns them on for the process. `backend::respond` turns them on for a
+request whose `check_ir` is set, which cpp_backend.py sets from
+`C6502_CHECK_IR=1` or from `ir_check.enable()` in Python, as
+fuzz/runner.py calls it. A failed check throws `InternalError` with the
+message of Python's `IRCheckError`, which ends `c6502cpp backend` with
+status 3, and cpp_backend.py raises it as an `AssertionError`, of which
+`IRCheckError` is a subclass. Each check runs where the Python pipeline
+runs it.
+
+| After | Python | C++ |
+|---|---|---|
+| `c99_to_tac` (at the driver's start), each TAC pass by its class name, `to_ssa`, and `from_ssa` | `PhaseDriver.apply` | `framework::PhaseDriver::apply` (src/passes/optimization/driver.cpp), which the inliner's estimate of each callee runs too |
+| `tac_to_asm`, with `Pseudo`s, under `-O` | `_optimized_front` | `optimized_front` (src/passes/optimized_front.cpp) |
+| the asm optimizer, with `Pseudo`s | `_optimized_front` | `optimized_front` |
+| each sweep of the peephole fixed point | `_peephole_fixedpoint` | `run_to_fixed_point` (src/passes/peephole_fixedpoint.cpp) |
+| the `-O` pipeline, after `place_zp_globals` | `optimized_asm` | `optimized_program` (src/passes/codegen.cpp) |
+| `tac_to_asm`, with `Pseudo`s, without `-O` | `_codegen` | `unoptimized_stage` (src/passes/codegen_stage.cpp), for the text alone, since the simulator harness's own path doesn't check there |
+| the pipeline without `-O`, after `place_zp_globals` | `_codegen` | `unoptimized_text` (src/passes/codegen.cpp) |
+| `asm_to_asm2`, the decimal flag | `asm_to_asm2.translate_program` | `lower_to_asm2` (src/passes/asm_to_asm2.cpp), which lowers the runtime library's helpers at a link too |
+
+tests/test_ir_check.cpp runs the cases of tests/ir_check_cases.h, which
+hold test_ir_check.py's 20 tests, test_bcd_builtins.py's checks of the
+decimal regions, and a case for each raise site of ir_check.py, each as
+the dump of its input and the message Python gives for it.
 
 ## Emission
 
@@ -3075,3 +3123,9 @@ inverts the call graph again for each function it places.
   `C6502_CPP_BACKEND=1`, with the same messages, exit status, and files
   as the Python path on all 11,782 commands of
   `tools/compare_backends.py`, and step 7 is done.
+- 23 Nov 2026: group G3 of step 8, the IR checks in C++ ("The IR
+  checks"), which run at each of Python's places when a request sets
+  `check_ir`. With `C6502_CHECK_IR=1`, compare_backends.py found no
+  difference on 15,448 commands, and a TAC pass, a pass of the peephole
+  fixed point, and the decimal-mode expansion, each broken on purpose,
+  failed with Python's message.

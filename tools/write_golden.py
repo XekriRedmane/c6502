@@ -44,6 +44,7 @@ A manifest is text, one line per item:
     write <path> text <JSON string>
     write <path> blob <sha256>
     run <JSON list, the command line>
+    tacsim <JSON list, a C source and its preprocessor's arguments>
     status <exit status, or "none" when the command raised>
     stdout <JSON string>
     stderr <JSON string>
@@ -62,6 +63,16 @@ aren't empty follow each `run`. The paths of `mkdir`, `cd`, `write`, and
 `file` are relative to the job's directory, and `cd` names the
 directory relative to that one (`.` for itself). After the last step
 come the files the job left, sorted by path.
+
+A job of the mode `tacsim` has one step, `tacsim`, which runs `main`
+of the program on its TAC with the TAC interpreter, as
+tools/compare_tac_sim.py does, and after it the line `front <JSON
+{"type": ..., "message": ...}>` for the front end's error, or the line
+`result <JSON>` of `main`'s result on the unoptimized TAC, the line
+`optimized <JSON>` of its result on the TAC after the TAC optimizer
+when the first was a value, and the line `found <JSON>` of
+fuzz/tac_passes.py's `first_changing_pass`, each in the form of the C++
+interpreter's response (cpp/src/tac_sim_modes.h).
 
 A command names each file of the repository by its path relative to
 the repository's root, such as `examples/zork/main.c`, and the files
@@ -113,7 +124,19 @@ MODES = {
     "cO": (),
     "c": (),
     "lex": (),
+    "parse": (),
+    "resolve": (),
+    "resolveO": (),
+    "tac": (),
+    "tacO": (),
+    "tacsim": (),
 }
+
+# The modes that aren't compare_backends.py's, each with the method of
+# `_Recorder` that runs a program's job in it. `tacsim` runs `main` of
+# the program on its TAC with the TAC interpreter, as
+# tools/compare_tac_sim.py does.
+_OWN_MODES = {"tacsim": "tacsim"}
 
 # The directories at the root whose files the commands name.
 ROOT_DIRS = ("examples/", "tests/", "golden/")
@@ -252,6 +275,46 @@ class _Recorder:
             self.lines.append(f"cd {cwd}")
             self.cwd = cwd
 
+    def tacsim(self, argv: list[str]) -> None:
+        """Runs `main` of the C source `argv[0]`, preprocessed with the
+        arguments after it, on its TAC with tac_sim.py and on the TAC
+        after the TAC optimizer, with fuzz/tac_passes.py's observer, as
+        tools/compare_tac_sim.py's `_python` does, and adds the lines
+        of what it gave. A deep recursion of `main` takes more of
+        Python's stack than a thread has by default, so the run has a
+        thread of its own with a large stack and a high recursion
+        limit, and gives the value the C++ interpreter gives where
+        compare_tac_sim.py reports a RecursionError."""
+        import threading
+        from compare_tac_sim import _python
+        shown, real = _command_args(argv)
+        source = Path(real[0]).read_text(encoding="utf-8")
+        got: list = []
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(1_000_000)
+        old_size = threading.stack_size(1 << 27)
+        try:
+            t = threading.Thread(target=lambda: got.append(
+                _python(source, real[1:], real[0], True)))
+            t.start()
+            t.join()
+        finally:
+            threading.stack_size(old_size)
+            sys.setrecursionlimit(old_limit)
+        out = got[0]
+        self.lines.append(f"tacsim {_json(shown)}")
+        if out[0] == "front":
+            self.lines.append(
+                f"front {_json({'type': out[1], 'message': _normalize(out[2])})}")
+            return
+        _, plain, optimized, found = out
+        self.lines.append(f"result {_json(_tac_outcome(plain))}")
+        if optimized is not None:
+            self.lines.append(f"optimized {_json(_tac_outcome(optimized))}")
+        if found is not None:
+            found = [_normalize(x) if isinstance(x, str) else x for x in found]
+        self.lines.append(f"found {_json(found)}")
+
     def run(self, argv: list[str]) -> bool:
         self._steps()
         shown, real = _command_args(argv)
@@ -279,6 +342,15 @@ def _mentions_root(text: str) -> bool:
     root = _ROOT.as_posix().lower()
     temp = Path(tempfile.gettempdir()).as_posix().lower()
     return root in lowered or temp in lowered
+
+
+def _tac_outcome(outcome: tuple) -> dict:
+    """The JSON of an outcome of compare_tac_sim.py's `_outcome`, as the
+    C++ interpreter's `result` line gives it (cpp/src/tac_sim_modes.h):
+    `{"value": v}` or `{"error": {"type": ..., "message": ...}}`."""
+    if outcome[0] == "value":
+        return {"value": outcome[1]}
+    return {"error": {"type": outcome[1], "message": _normalize(outcome[2])}}
 
 
 def _is_text(data: bytes) -> bool:
@@ -310,7 +382,9 @@ def _run_job(job) -> tuple[str, str, list[str], dict[str, bytes], dict[str, byte
         rec = _Recorder(work, blobs)
         os.chdir(work)
         try:
-            if kind == "program":
+            if kind == "program" and mode in _OWN_MODES:
+                getattr(rec, _OWN_MODES[mode])(args)
+            elif kind == "program":
                 compare_backends._program_commands(rec.run, args, mode)
             elif kind == "game":
                 compare_backends._game_commands(rec.run, label)

@@ -643,10 +643,11 @@ class Compile {
       kwargs += ", \"optimize\": " + bool_json(args.optimize) +
                 ", \"inline\": true, \"check_ir\": false, \"link_metadata\": false";
     } else {
-      // `--lex`, and the stages that print a program, whose requests
-      // have the same form.
+      // `--lex`, `--parse`, `--resolve`, and `--tac`, the request of
+      // `cpp_backend.stage_source`.
       mode = args.stage;
-      kwargs += ", \"optimize\": " + bool_json(args.stage != "lex" && args.optimize);
+      kwargs += ", \"optimize\": " + bool_json(args.optimize) +
+                ", \"inline\": true, \"check_ir\": false";
     }
     kwargs += "}";
     const std::string request = "c6502-backend 3\nmode " + mode + "\nargs " + kwargs +
@@ -922,6 +923,52 @@ std::string normalize(std::string text, const Root& root) {
   return text;
 }
 
+// The directory of c6502's own headers, as cpp_backend.py's
+// `_INCLUDE_DIR` spells it, with the platform's separators.
+std::string compile_include_dir(const Root& root) {
+  return (root.path / "include").make_preferred().string();
+}
+
+std::string normalized_json(json::Value v, const Root& root) {
+  struct Walk {
+    const Root& root;
+    void operator()(json::Value& x) const {
+      if (x.kind == json::Value::Kind::kString) x.string = normalize(x.string, root);
+      for (json::Value& item : x.items) (*this)(item);
+    }
+  };
+  Walk{root}(v);
+  return json::dump(v);
+}
+
+std::vector<std::string> tacsim_lines(const std::vector<std::string>& argv,
+                                      const std::string& include_dir, const Root& root) {
+  const std::string source = read_text(argv.at(0));
+  std::vector<std::string> pcpp(argv.begin() + 1, argv.end());
+  const auto request = [&](const std::string& mode, const std::string& extra) {
+    const std::string kwargs = "{\"pcpp_args\": " + string_list_json(pcpp) +
+                               ", \"filename\": " + json::quote(argv[0]) +
+                               ", \"include_dir\": " + json::quote(include_dir) +
+                               ", \"preprocess\": true, \"check_ir\": false" + extra + "}";
+    return records(backend::respond("c6502-backend 3\nmode " + mode + "\nargs " + kwargs +
+                                    "\nsource " + std::to_string(source.size()) + "\n" +
+                                    source));
+  };
+  std::vector<std::string> lines;
+  for (const Record& r : request("tac-run", ", \"optimized\": true")) {
+    if (r.key == "error") {
+      return {"front " + normalized_json(json::parse(r.value), root)};
+    }
+    if (r.key == "result" || r.key == "optimized") {
+      lines.push_back(r.key + " " + normalized_json(json::parse(r.value), root));
+    }
+  }
+  for (const Record& r : request("tac-observe", "")) {
+    if (r.key == "found") lines.push_back("found " + normalized_json(json::parse(r.value), root));
+  }
+  return lines;
+}
+
 bool names_root_file(std::string_view arg) {
   for (std::string_view d : kRootDirs) {
     if (arg.substr(0, d.size()) == d) return true;
@@ -972,16 +1019,15 @@ std::size_t first_line_difference(const std::string& a, const std::string& b) {
 JobResult run_job(const Manifest& m, const Job& job, const Root& root, const fs::path& work,
                   bool update) {
   JobResult r;
-  Compile compile(path_text(root.path / "include").empty()
-                      ? std::string()
-                      : (root.path / "include").make_preferred().string());
+  Compile compile(compile_include_dir(root));
   const fs::path golden = root.path / "golden";
   fs::current_path(work);
   std::string last_command;
   for (const std::string& line : job.lines) {
     const auto [word, rest] = split_word(line);
     if (word == "status" || word == "stdout" || word == "stderr" || word == "raised" ||
-        word == "file" || word == "end") {
+        word == "file" || word == "end" || word == "front" || word == "result" ||
+        word == "optimized" || word == "found") {
       continue;
     }
     r.lines.push_back(line);
@@ -997,6 +1043,15 @@ JobResult run_job(const Manifest& m, const Job& job, const Root& root, const fs:
           how == "text" ? json::parse(what).string : capture::read_file(golden / "blobs" / what);
       if (write_bytes(path_text(work / utf8_path(path)), data) != 0) {
         throw std::runtime_error("can't write " + path);
+      }
+    } else if (word == "tacsim") {
+      ++r.commands;
+      std::vector<std::string> argv;
+      for (const json::Value& v : json::parse(rest).items) {
+        argv.push_back(names_root_file(v.string) ? root.posix + "/" + v.string : v.string);
+      }
+      for (std::string& l : tacsim_lines(argv, compile_include_dir(root), root)) {
+        r.lines.push_back(std::move(l));
       }
     } else if (word == "run") {
       ++r.commands;

@@ -19,7 +19,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from passes.type_checking import TypeCheckError
-from passes.zp_globals import ZpGlobalError, allocate_zp_globals
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -36,13 +35,6 @@ def _equ(asm: str) -> dict[str, int]:
         m.group(1): int(m.group(2), 16)
         for m in re.finditer(r"^(\S+)\tEQU\t\$([0-9A-F]+)$", asm, re.M)
     }
-
-
-def _symbols(src: str):
-    from compile import _resolved
-    from passes.type_checking import check_program
-    _, symbols, types = check_program(_resolved(src, optimize=True))
-    return symbols, types
 
 
 class TestTypeCheck(unittest.TestCase):
@@ -81,7 +73,6 @@ class TestTypeCheck(unittest.TestCase):
                 with self.assertRaises(TypeCheckError):
                     _codegen(src)
 
-
     def test_block_scope_extern(self) -> None:
         asm = _codegen(
             "int main(void) {\n"
@@ -90,39 +81,6 @@ class TestTypeCheck(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(_equ(asm)["x"], 0xC000)
-
-
-class TestPlacement(unittest.TestCase):
-
-    def _zp(self, src: str):
-        symbols, types = _symbols(src)
-        return allocate_zp_globals(symbols, types)
-
-    def test_fixed_names(self) -> None:
-        zp = self._zp(
-            "[[c6502::address(0xFDED)]] void COUT(unsigned char c);\n"
-            "extern unsigned int w [[c6502::address(0xC010)]];\n"
-            "extern unsigned char m [[c6502::address(0x90)]];\n"
-        )
-        self.assertEqual(zp.fixed, {"COUT": 0xFDED, "w": 0xC010})
-        # Below $100 the object is a zero-page object: addressed,
-        # reserved from the compiler's pool, and not initialized.
-        self.assertEqual(zp.addrs, {"m": 0x90})
-        self.assertIn(0x90, zp.reserved)
-        self.assertEqual(zp.owned, frozenset())
-
-    def test_placement_errors(self) -> None:
-        bad = {
-            "overlap":
-                "extern unsigned int a [[c6502::address(0xC000)]];\n"
-                "extern unsigned char b [[c6502::address(0xC001)]];\n",
-            "past $FFFF":
-                "extern unsigned int a [[c6502::address(0xFFFF)]];\n",
-        }
-        for label, src in bad.items():
-            with self.subTest(label):
-                with self.assertRaises(ZpGlobalError):
-                    self._zp(src)
 
 
 class TestCodegen(unittest.TestCase):

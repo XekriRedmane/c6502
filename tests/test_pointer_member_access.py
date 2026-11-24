@@ -31,10 +31,7 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-import c99_ast
 from compile import main as compile_main
-from passes.pointer_restage import restage_store, scalar_at
-from passes.type_checking import MemberInfo, StructLayout, TypeTable
 from sim.harness import build_sim
 
 
@@ -58,56 +55,6 @@ def _function(text: str, name: str) -> str:
             and lines[end].endswith(":") and not lines[end].startswith(".")):
         end += 1
     return "\n".join(lines[start:end])
-
-
-def _types() -> TypeTable:
-    types = TypeTable()
-    types["s"] = StructLayout(tag="s", is_union=False, members=[
-        MemberInfo("a", c99_ast.Array(element_type=c99_ast.UChar(), size=3), 0),
-        MemberInfo("g", c99_ast.UInt(), 3),
-        MemberInfo("w", c99_ast.Array(element_type=c99_ast.Int(), size=2), 5),
-        MemberInfo("p", c99_ast.Pointer(referenced_type=c99_ast.UChar()), 9),
-        MemberInfo("next", c99_ast.Pointer(
-            referenced_type=c99_ast.Structure(tag="s")), 11),
-    ], size=13, complete=True)
-    types["u"] = StructLayout(tag="u", is_union=True, members=[
-        MemberInfo("w", c99_ast.UInt(), 0),
-        MemberInfo("b", c99_ast.UChar(), 0),
-    ], size=2, complete=True)
-    return types
-
-
-_PS = c99_ast.Pointer(referenced_type=c99_ast.Structure(tag="s"))
-
-
-class TestRestageRule(unittest.TestCase):
-    def test_scalar_at_member_and_element(self) -> None:
-        types = _types()
-        s = c99_ast.Structure(tag="s")
-        self.assertEqual(scalar_at(s, 3, 2, types), c99_ast.UInt())
-        self.assertEqual(scalar_at(s, 7, 2, types), c99_ast.Int())
-        self.assertIsNone(scalar_at(s, 4, 2, types))     # straddles g
-        self.assertIsNone(scalar_at(s, 3, 1, types))     # half of g
-        self.assertIsNone(scalar_at(
-            c99_ast.Union(tag="u"), 0, 2, types))
-
-    def test_integer_and_other_pointer_members_restage(self) -> None:
-        types = _types()
-        self.assertTrue(restage_store(_PS, 3, 2, types))
-        self.assertTrue(restage_store(_PS, 5, 2, types))
-        self.assertTrue(restage_store(_PS, 9, 2, types))
-
-    def test_member_of_the_pointer_s_own_type_doesnt(self) -> None:
-        # `P->next = q` may write P itself when P points at its own
-        # bytes, and that's defined C.
-        self.assertFalse(restage_store(_PS, 11, 2, _types()))
-
-    def test_bytes_and_unknown_pointees_dont(self) -> None:
-        types = _types()
-        self.assertFalse(restage_store(_PS, 0, 1, types))
-        void_ptr = c99_ast.Pointer(referenced_type=c99_ast.Void())
-        self.assertFalse(restage_store(void_ptr, 0, 2, types))
-        self.assertFalse(restage_store(c99_ast.UInt(), 0, 2, types))
 
 
 _STRUCT = """

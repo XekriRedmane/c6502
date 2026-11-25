@@ -71,8 +71,8 @@ TEST_CASE("stdbit: test_stdbit.py::TestTypes::test_result_types") {
       const bool same = o == "bit_floor" || o == "bit_ceil";
       const std::string result = same ? t.name : o == "has_single_bit" ? "bool" : "unsigned int";
       const std::string want = same ? t.dump : o == "has_single_bit" ? "Bool" : "UInt";
-      for (const std::string fn : {std::string("__c6502_stdc_") + op,
-                                   std::string("__c6502_stdc_") + op + "_" + t.suffix}) {
+      for (const std::string& fn : {std::string("__c6502_stdc_") + op,
+                                    std::string("__c6502_stdc_") + op + "_" + t.suffix}) {
         const std::string src = std::string(t.name) + " g;\nvoid f(void) { " + result +
                                 " r = " + fn + "(g); }\n";
         CAPTURE(src);

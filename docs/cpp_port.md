@@ -2301,6 +2301,207 @@ the backend's `tac-observe` mode under the switch, so its tests are end
 to end, as is test_optimization_docs.py, whose order of the passes is
 G8's command for the list of the drivers' passes.
 
+#### G8's modules
+
+The survey's classification, run again on 24 Nov 2026 on the suite as
+it stood after G7 (2,672 tests), gave 1,458 (b) tests in 269 classes of
+86 modules: the front end's tests and those of compile.py's functions,
+and the tests that G6 and G7 left in modules whose other tests are G8's,
+which the table shows with the reasons those groups gave. G6's method
+was applied to each: every test ran under tools/record_test_calls.py,
+and a test was removed when its recorded calls were all its direct
+calls into the compiler and each of them had a C++ case that passed in
+the MSVC and GCC builds.
+
+The recorder gained these kinds of record (cpp/README.md, "The unit
+tests' recorded calls").
+
+- The calls that compile.py's `_resolved` and `translate_for_codegen`
+  make when a test calls them are the test's own, so a test that reads
+  their result has it in the records of the passes they run.
+- The helpers of pp_numbers.py in `capture_passes.FRONT` are recorded
+  as their captures are, and a call of the legacy per-function form of
+  identifier resolution, label resolution, or loop labeling, which takes
+  the `Function` node the parser no longer gives, as the pass on a
+  program of that one function, once that call has given the same
+  function or error.
+- A call of lexer.py's `tokenize` is a `tokens` record, the source and
+  the lines `compile.py --lex` prints for it or the LexError, which
+  tests/lexer_case.h checks with the C++ `format_tokens`.
+- A call of constant_expression.py's evaluator or validator is a
+  `const_expr` record, which tests/constant_expression_case.h checks.
+- A call of `preprocess` is a `preprocess` record in the format of
+  src/preprocessor_cases.h, with the bytes of each file pcpp opened and,
+  with `--debug`, of `pcpp_debug.log`, which tests/preprocessor_case.h
+  checks on a host that holds only those files.
+- A call into sim/ or of `tests.test_sim_chapters._run_program` is
+  listed as end to end, so a test that also runs its program is never
+  taken for one its records check, and dunders such as sim/harness.py's
+  module `__getattr__` aren't listed at all.
+
+The survey chose a port by hand or a corpus check for the front-end
+tests, since their records hand whole symbol tables to each call. The
+records turned out to be the faithful port for all but one test: they
+hold each call's input and Python's result or error, class and message
+included, and the 4,732 new cases take 6.6 MB of source. The exception
+is test_stdbit.py's `test_result_types`, whose 140 programs include
+<stdbit.h> and would have held about 18 MB of tables, so it is a case
+written by hand. The chapters' InvalidLex and InvalidParse tests are
+recorded calls as well, and the corpus check covers them a second time:
+golden/lex.txt holds a job for each of the 25 programs of the chapters'
+invalid_lex directories that fails with a lexer's message, golden/parse.txt
+one for each of the 187 of invalid_parse that fails, and both hold the
+programs a chapter pins as accepted with their output.
+
+| Module | (b) tests | Removed | The C++ cases of their calls | Left | Why each left is still in Python |
+|---|---|---|---|---|---|
+| test_address_attr.py | 8 | 6 | test_address_attr_calls.cpp (16), test_address_attr_placement.cpp (2), by hand | 2 | 2 end to end |
+| test_ali_baba.py | 2 | 0 |  | 2 | 2 end to end |
+| test_and_zero_jump_fold.py | 1 | 0 |  | 1 | 1 end to end |
+| test_asm_regalloc.py | 2 | 0 |  | 2 | 1 end to end through `_run_program`; 1 end to end |
+| test_asm_remat.py | 1 | 0 |  | 1 | 1 end to end |
+| test_attribute_zp_abi.py | 6 | 6 | test_attribute_zp_abi_calls.cpp (6) | 0 |  |
+| test_auto.py | 9 | 7 | test_auto_calls.cpp (49) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_bcd_builtins.py | 12 | 7 | test_bcd_builtins_calls.cpp (99) | 5 | 3 end to end; 2 end to end through `_run_program` |
+| test_bin_to_bcd.py | 5 | 0 |  | 5 | 4 end to end; 1 end to end through `_run_program` |
+| test_binutils.py | 13 | 0 |  | 13 | 13 end to end |
+| test_bitint.py | 24 | 24 | test_bitint_recorded.cpp (818) | 0 |  |
+| test_bool.py | 9 | 7 | test_bool_recorded.cpp (59) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_c23_attributes.py | 16 | 16 | test_c23_attributes_calls.cpp (52) | 0 |  |
+| test_c23_bool.py | 17 | 12 | test_bool_recorded.cpp (1), test_c23_bool_calls.cpp (71) | 5 | 4 end to end; 1 end to end through `_run_program` |
+| test_c23_literals.py | 21 | 21 | test_c23_literals_calls.cpp (116) | 0 |  |
+| test_c23_nullptr.py | 25 | 21 | test_c23_nullptr_calls.cpp (3), test_c23_nullptr_recorded.cpp (270) | 4 | 2 end to end, rewritten without its direct calls; 1 end to end; 1 end to end through `_run_program` |
+| test_call_through_expression.py | 4 | 4 | test_call_through_expression_calls.cpp (10) | 0 |  |
+| test_carry_return.py | 13 | 3 | test_carry_return_recorded.cpp (3) | 10 | 10 end to end |
+| test_carry_return_choice.py | 13 | 11 | test_abi_stage_calls.cpp (4), test_carry_return_choice_calls.cpp (7) | 2 | 2 end to end |
+| test_chapter_1.py | 2 | 2 | test_chapter_1_calls.cpp (17) | 0 |  |
+| test_chapter_10.py | 1 | 1 | test_chapter_10_calls.cpp (10) | 0 |  |
+| test_chapter_11.py | 2 | 2 | test_chapter_11_calls.cpp (10) | 0 |  |
+| test_chapter_12.py | 2 | 2 | test_chapter_12_calls.cpp (4) | 0 |  |
+| test_chapter_13.py | 2 | 2 | test_chapter_13_calls.cpp (9) | 0 |  |
+| test_chapter_14.py | 1 | 1 | test_chapter_14_calls.cpp (6) | 0 |  |
+| test_chapter_16.py | 2 | 2 | test_chapter_16_calls.cpp (16) | 0 |  |
+| test_chapter_17.py | 1 | 1 | test_chapter_17_calls.cpp (4) | 0 |  |
+| test_chapter_18.py | 2 | 2 | test_chapter_18_calls.cpp (48) | 0 |  |
+| test_chapter_19.py | 1 | 0 |  | 1 | 1 end to end |
+| test_chapter_2.py | 1 | 1 | test_chapter_2_calls.cpp (7) | 0 |  |
+| test_chapter_3.py | 1 | 1 | test_chapter_3_calls.cpp (9) | 0 |  |
+| test_chapter_4.py | 1 | 1 | test_chapter_4_calls.cpp (6) | 0 |  |
+| test_chapter_5.py | 2 | 1 | test_chapter_5_calls.cpp (37) | 1 | 1 end to end, rewritten without its direct calls |
+| test_chapter_6.py | 3 | 2 | test_chapter_6_calls.cpp (25) | 1 | 1 end to end, rewritten without its direct calls |
+| test_chapter_7.py | 2 | 1 | test_chapter_7_calls.cpp (11) | 1 | 1 end to end, rewritten without its direct calls |
+| test_chapter_8.py | 1 | 1 | test_chapter_8_calls.cpp (20) | 0 |  |
+| test_chapter_9.py | 1 | 1 | test_chapter_9_calls.cpp (11) | 0 |  |
+| test_compound_literal.py | 14 | 11 | test_compound_literal_calls.cpp (22) | 3 | 2 end to end; 1 end to end through `_run_program` |
+| test_const_qualifier.py | 24 | 23 | test_const_qualifier_calls.cpp (49) | 1 | 1 end to end |
+| test_constant_expression.py | 38 | 38 | test_constant_expression_calls.cpp (40) | 0 |  |
+| test_constexpr.py | 20 | 14 | test_constexpr_calls.cpp (362) | 6 | 4 end to end; 2 end to end through `_run_program` |
+| test_designated_init.py | 28 | 25 | test_designated_init_calls.cpp (156) | 3 | 2 end to end; 1 end to end through `_run_program` |
+| test_direct_member_access.py | 6 | 0 |  | 6 | 6 end to end |
+| test_empty_initializer.py | 20 | 14 | test_c99_to_tac_calls.cpp (1), test_empty_initializer_recorded.cpp (78) | 6 | 4 end to end; 1 end to end, rewritten without its direct calls; 1 end to end through `_run_program` |
+| test_enum.py | 12 | 10 | test_enum_calls.cpp (32) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_identifier_resolution.py | 108 | 96 | test_identifier_resolution_calls.cpp (158) | 12 | 9 Python internals; 3 Python subclass |
+| test_if_character_constants.py | 7 | 7 | test_if_character_constants_calls.cpp (15), test_if_character_constants_rewriting.cpp (2), by hand | 0 |  |
+| test_invalid_programs.py | 17 | 0 |  | 17 | 17 shim |
+| test_ir_check.py | 17 | 17 | ir_check_cases.h (17), from group G3 | 0 |  |
+| test_label_resolution.py | 27 | 26 | test_label_resolution_calls.cpp (35) | 1 | 1 Python subclass |
+| test_lexer.py | 83 | 82 | test_lexer_calls.cpp (402) | 1 | 1 Python internals |
+| test_linker.py | 1 | 0 |  | 1 | 1 end to end |
+| test_linker_script.py | 4 | 1 | test_linker_script_calls.cpp (1) | 3 | 3 end to end |
+| test_loop_labeling.py | 44 | 39 | test_c99_to_tac_recorded.cpp (4), test_loop_labeling_calls.cpp (52) | 5 | 3 Python subclass; 2 Python internals |
+| test_noreturn_call.py | 2 | 2 | test_noreturn_call_recorded.cpp (7) | 0 |  |
+| test_optimization_docs.py | 6 | 0 |  | 6 | 6 pass order |
+| test_param_registers.py | 3 | 3 | test_param_registers_calls.cpp (6) | 0 |  |
+| test_parser.py | 231 | 188 | test_abi_selection_calls.cpp (3), test_c99_to_tac_recorded.cpp (1), test_identifier_resolution_calls.cpp (1), test_parser_calls.cpp (238) | 43 | 29 Lark grammar; 14 end to end |
+| test_peephole_fixedpoint.py | 5 | 5 | test_peephole_fixedpoint.cpp (2), by hand in step 2c | 0 |  |
+| test_pointer_member_access.py | 4 | 4 | test_pointer_restage.cpp (4), by hand | 0 |  |
+| test_preprocessor_debug_log.py | 3 | 3 | test_preprocessor_debug_log_calls.cpp (4) | 0 |  |
+| test_preserves.py | 2 | 2 | test_preserves_recorded.cpp (4) | 0 |  |
+| test_recognize_indirect_indexed.py | 5 | 0 |  | 5 | 5 end to end |
+| test_recursion_saves.py | 6 | 3 | test_recursion_saves_recorded.cpp (18) | 3 | 2 end to end; 1 end to end through `_run_program` |
+| test_register_keyword.py | 9 | 9 | test_register_keyword_calls.cpp (9) | 0 |  |
+| test_return_in_zero_page.py | 4 | 4 | test_return_in_zero_page.cpp (4) | 0 |  |
+| test_runtime_layout.py | 6 | 0 |  | 6 | 6 end to end |
+| test_runtime_library.py | 30 | 0 |  | 30 | 30 G6's, end to end |
+| test_short_and_unary_plus.py | 10 | 8 | test_short_and_unary_plus_calls.cpp (41) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_sim_chapters.py | 1 | 0 |  | 1 | 1 end to end through `_run_program` |
+| test_sim_miscompile_regressions.py | 2 | 0 |  | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_slot_sharing.py | 11 | 2 | test_slot_sharing_recorded.cpp (4) | 9 | 9 end to end |
+| test_statement_attributes.py | 18 | 15 | test_statement_attributes_calls.cpp (41) | 3 | 3 end to end |
+| test_stdbit.py | 18 | 12 | test_stdbit_recorded.cpp (55), test_stdbit_front_end.cpp (1), by hand | 6 | 6 end to end |
+| test_strength_reduction.py | 7 | 0 |  | 7 | 7 end to end |
+| test_string_lifting.py | 10 | 10 | test_parser_calls.cpp (1), test_string_lifting_calls.cpp (29) | 0 |  |
+| test_tac_sim_backend.py | 6 | 0 |  | 6 | 5 end to end; 1 end to end through `_run_program` |
+| test_tac_sim_optimized.py | 6 | 0 |  | 6 | 4 end to end; 2 G7 TAC interpreter |
+| test_tac_to_asm.py | 5 | 0 |  | 5 | 5 G6's |
+| test_type_checking.py | 208 | 197 | test_abi_selection_calls.cpp (6), test_c99_to_tac_recorded.cpp (17), test_identifier_resolution_calls.cpp (8), test_parser_calls.cpp (11), test_string_lifting_calls.cpp (5), test_type_checking_recorded.cpp (569) | 11 | 7 end to end; 4 Python subclass |
+| test_typed_enum.py | 20 | 18 | test_enum_calls.cpp (1), test_typed_enum_calls.cpp (236) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_typedef.py | 42 | 42 | test_typedef_calls.cpp (44) | 0 |  |
+| test_typeof.py | 9 | 7 | test_abi_selection_calls.cpp (5), test_c23_nullptr_recorded.cpp (2), test_typeof_calls.cpp (34) | 2 | 1 end to end; 1 end to end through `_run_program` |
+| test_unroll.py | 63 | 62 | test_unroll_calls.cpp (127) | 1 | 1 end to end |
+| test_unsized_arrays.py | 4 | 1 | test_unsized_arrays_calls.cpp (30) | 3 | 2 end to end; 1 end to end, rewritten without its direct calls |
+| test_zp_globals.py | 3 | 3 | test_zp_globals_calls.cpp (8) | 0 |  |
+
+The cases are 4,732 new recorded ones in 62 files (4,140 of the stage
+calls and passes, 482 of `tokenize`, 70 of `preprocess`, and 40 of the
+constant-expression evaluator), the cases that steps 3 to 7 and G6 and
+G7 had recorded from the same calls, and 9 written by hand. "By hand"
+marks the last: test_stdbit_front_end.cpp runs the 140 calls of
+`test_result_types` on the C++ front end by the builtins' own names,
+test_address_attr_placement.cpp checks `allocate_zp_globals` and its
+two errors with Python's messages, test_pointer_restage.cpp ports the
+four tests of `scalar_at` and `restage_store`, and
+test_if_character_constants_rewriting.cpp the two of
+`_without_named_escapes`, whose C++ form
+`preprocessor::without_named_escapes` is declared in preprocessor.h for
+it. test_ir_check.py's 17 tests are the cases of the same names in
+ir_check_cases.h, which group G3 wrote from them, and
+test_peephole_fixedpoint.py's five are those of
+test_peephole_fixedpoint.cpp, ported in step 2c, so both modules went
+without new cases.
+
+Some tests stay as end-to-end tests after a rewrite. test_bcd_builtins.py's
+two tests of `TestTac` that compile too, test_stdbit.py's folding test,
+and test_empty_initializer.py's test of the clearing loop read the TAC
+that `compile.py --tac` prints, whose `pretty` text Python evaluates into
+`tac_ast` objects, in place of calling `translate_for_codegen` and the
+TAC optimizer. The other two tests of `TestTac` were recorded through
+`translate_for_codegen` and removed, so G7's five tests of it are done.
+The chapters' InvalidSemantics tests no longer parse before they compile,
+since a parse error still fails them, chapter 18's InvalidParse test
+compiles only the two programs C23 makes valid, and test_c23_nullptr.py's
+two tests and test_unsized_arrays.py's `test_sizes` keep their compiles
+and runs. Their direct calls are recorded cases. test_carry_return_choice.py's
+eleven tests spied on `choose_carry_returns` during a compile, and the
+spy's call of the pass is a recorded case of its own, so they are
+removed. test_carry_return.py, test_direct_member_access.py, and
+test_chapter_19.py ran their programs on Python's front end and
+tac_sim.py with copies of the TAC pipeline of their own, which the
+classification of G7 took for `_run_program`. They call `_run_program`
+now, which runs the C++ front end and interpreter under the switch.
+
+Of the 286 tests left, 174 are end to end (21 of them through
+`_run_program` and 7 rewritten above), and 35 are G6's, the 30 of
+test_runtime_library.py and the 5 of test_tac_to_asm.py, with the
+reasons G6's table gives. 52 test the Python implementation and go with
+it in group R. 29 of them, in test_parser.py, run c99.lark through Lark
+at a start rule of their own, which the C++ parser doesn't have. 12 read
+the internal tables and counters of the Python passes
+(`Resolver._file_scope`, `make_unique`, `make_label`, and the length of
+lexer.py's keyword list), and 11 give a pass a Python subclass of an IR
+base, which C++'s closed variants can't hold. test_invalid_programs.py's
+17 tests compile each invalid chapter program with `_run_stage` and
+require one of the classes that compile.py's `_source_errors` lists,
+which under the switch are the classes that `cpp_backend._exception`
+gives C++'s errors, so they test the shim and stay with it. Two modules
+hold tests of other groups that this group left alone.
+test_tac_sim_optimized.py's `TestOptimizedTac` (2 tests) calls tac_sim.py
+and the TAC optimizer directly, which is G7's kind of test, and
+test_optimization_docs.py's 6 tests read the order of the passes from
+the Python source of compile.py and the two optimizer drivers. The
+second waits for a `c6502cpp` command that lists each driver's passes in
+the order they run ("The tests" above), which this group didn't add.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -3430,3 +3631,27 @@ G8's command for the list of the drivers' passes.
   subtests, where 3,583 tests ran before. The C++ tests (5,129 cases)
   pass in fresh builds with MSVC 19.36 and GCC 12.2, and `check-golden`
   and `check-frozen` match every job and record.
+- 24 Nov 2026: group G8 of step 8 ("G8's modules"). The classification
+  gave 1,458 (b) tests of the front end and of compile.py's functions
+  in 86 modules, the leftovers of G6 and G7 in those modules included,
+  and 1,172 are removed, 12 modules entirely. tools/record_test_calls.py
+  records the calls that `_resolved` and `translate_for_codegen` make
+  for a test, the legacy per-function forms of three front-end passes,
+  the pp_numbers.py helpers, and calls of `tokenize`, the
+  constant-expression evaluator, and `preprocess` with the files pcpp
+  opened, and the calls are 4,732 new recorded doctest cases in 62
+  files, cases that earlier steps had recorded from the same calls, and
+  9 cases written by hand. Seven tests stay end to end after a rewrite
+  that takes out their direct calls, four read their TAC from
+  `compile.py --tac`, and three modules run their TAC programs through
+  `_run_program`. Of the 286 tests left, 174 are end to end, 35 are
+  G6's, 52 test the Python implementation (Lark's grammar, the passes'
+  internal tables, and Python subclasses of IR bases), 17 test
+  compile.py's shim, and 8 are of other groups (test_tac_sim_optimized.py's
+  `TestOptimizedTac` and test_optimization_docs.py, which waits for a
+  command that lists the drivers' passes). The suite passes with
+  `C6502_CHECK_IR=1` without the switch (1,501 passed, 22 skipped) and
+  with it (1,500 passed, 23 skipped), counting skipped subtests, where
+  2,672 tests ran before. The C++ tests (9,870 cases) pass in fresh
+  builds with MSVC 19.36 and GCC 12.2, and `check-golden` and
+  `check-frozen` match every job and record.

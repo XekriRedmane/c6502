@@ -39,9 +39,10 @@ categories:
 - **Per-pass / per-module unit tests** (e.g. `test_parser.py`,
   `test_type_checking.py`, `test_redundant_load.py`) — focused tests
   against the module of the same name. Step 8 of the C++ port moves
-  the tests that call a pass on IR they build to doctest cases in
-  cpp/tests (docs/cpp_port.md, "The tests"), so many of these modules
-  hold only their end-to-end tests, and some are gone.
+  the tests that call a pass, the front end, or the preprocessor
+  directly to doctest cases in cpp/tests (docs/cpp_port.md, "The
+  tests"), so many of these modules hold only their end-to-end tests,
+  and some are gone.
 - **Chapter end-to-end tests** (`test_chapter_<N>.py` with the
   matching `chapter_<N>/` directory of C sources) — drive each
   chapter end-to-end through `-S`.
@@ -122,9 +123,13 @@ ALI_BABA_DIR=F:/Projects/ali_baba_reveng
 `tests/chapter_<N>/` holds sample programs from
 nlsandler/writing-a-c-compiler-tests, checked in verbatim. Each
 chapter has the same harness shape: per-bucket test methods (`valid`
-must compile, `invalid_lex` / `invalid_parse` must reject at the
-named stage, `invalid_*` semantic buckets must be rejected somewhere
-in the pipeline).
+must compile, and the `invalid_*` semantic buckets must be rejected
+somewhere in the pipeline). The `invalid_lex` and `invalid_parse`
+buckets' tests moved to doctest cases in step 8
+(cpp/tests/test_chapter_<N>_calls.cpp), which hold the tokens or the
+parse each file gives, with the error's class and message, and
+golden/lex.txt and golden/parse.txt hold each file's `--lex` and
+`--parse` run too.
 
 Two filter sets thread through:
 

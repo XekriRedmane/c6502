@@ -285,6 +285,9 @@ cpp/
     tac_to_asm_case.h a recorded call of tac_to_asm from the Python unit tests
     record_case.h     a recorded call in the capture format, which
                       tools/record_test_calls.py writes (step 8, G6)
+    lexer_case.h, constant_expression_case.h   recorded calls of
+                      `tokenize` and of the constant-expression evaluator
+                      (step 8, G8)
   third_party/doctest doctest.h 2.4.12 and its MIT license
   third_party/xz-embedded   XZ Embedded's decoder (release 2024-12-30),
                       the eight files its README lists for embedding,
@@ -3341,6 +3344,47 @@ test_tac_unit_helpers.cpp (the inliner's `inline_cost` and the register
 effects of a call to a routine declared `preserves_x`), and two cases
 of `cfg_to_function` in test_tac_cfg.cpp.
 
+Group G8 moved the tests of the front end and of compile.py's functions
+(docs/cpp_port.md, "G8's modules"), for which the recorder gained these
+kinds of record.
+
+- The calls that compile.py's `_resolved` and `translate_for_codegen`
+  make when a test calls them are recorded as the test's own
+  (`_COMPILE_STAGES`), and so are the helpers of pp_numbers.py in
+  `capture_passes.FRONT`.
+- A call of the legacy per-function form of identifier resolution,
+  label resolution, or loop labeling (`_FRONT_FUNCTION_FORMS`), which
+  takes and returns the `Function` node, is recorded as the pass on the
+  one-function program that identifier_resolution.py's `resolve_function`
+  builds, once that call has given the same function or error.
+- A call of lexer.py's `tokenize` is a `tokens` record, the source and
+  the lines `compile.py --lex` prints for its tokens, or the error, and
+  `check_tokens` (`tests/lexer_case.h`) compares them with the C++
+  `format_tokens`, the class and message of an error included.
+- A call of constant_expression.py's evaluator or validator is a
+  `const_expr` record, the expression's dump and `<value> <repr of the
+  type>`, `None`, or the error, which `check_constant_expression`
+  (`tests/constant_expression_case.h`) checks.
+- A call of `preprocess` is a `preprocess` record in the format of
+  src/preprocessor_cases.h, with the bytes of each file that
+  pcpp/parser.py opened, seen through an `open` put in that module for
+  the call, and with `--debug` the bytes of `pcpp_debug.log`.
+  `check_preprocess_case` (`tests/preprocessor_case.h`) runs it on a
+  host that holds only those files.
+- The profile lists a call into sim/ or of
+  `tests.test_sim_chapters._run_program` as end to end, and leaves out
+  dunders, such as the module `__getattr__` through which sim/harness.py
+  gives the front end's functions.
+
+A digit after an octal escape in a case's literal starts a new literal,
+since MSVC warns of it (C4125). The tests of functions that no record
+covers are ported by hand, one case per Python test:
+tests/test_stdbit_front_end.cpp (whose recorded calls would have held
+about 18 MB of tables), test_address_attr_placement.cpp,
+test_pointer_restage.cpp, and test_if_character_constants_rewriting.cpp,
+which calls `preprocessor::without_named_escapes`, declared in
+preprocessor.h for it.
+
 ## Status
 
 - 19 Nov 2026: the groundwork landed. The CMake build with MSVC, GCC,
@@ -3648,3 +3692,10 @@ of `cfg_to_function` in test_tac_cfg.cpp.
   by hand ("The unit tests' recorded calls"). `apply_row_address_tables`
   takes a fixed saving. The C++ tests (5,129 cases) pass with MSVC 19.36
   and GCC 12.2.
+- 24 Nov 2026: group G8 of step 8: 1,172 of the Python tests of the
+  front end and of compile.py's functions are removed, and the calls they
+  made are doctest cases, 4,732 of them new ones recorded with
+  tools/record_test_calls.py's kinds for the front end, the lexer, the
+  constant-expression evaluator, and the preprocessor, and 9 written by
+  hand ("The unit tests' recorded calls"). The C++ tests (9,870 cases)
+  pass with MSVC 19.36 and GCC 12.2.

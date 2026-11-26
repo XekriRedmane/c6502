@@ -4,14 +4,18 @@
 
 ```sh
 uv run python -m unittest                                          # all
-uv run python -m unittest tests.test_cpp_backend                    # one module
+uv run python -m unittest tests.test_golden                         # one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid   # one class
 C6502_CHECK_IR=1 uv run python -m unittest                         # with IR checks
 ```
 
-`C6502_CHECK_IR=1` checks the IR after every optimizer pass and at the
-asm stage boundaries (`passes/ir_check.py`). It adds about 3% to the
-run. The fuzzers always run with it.
+The suite runs the compiler in `c6502cpp`, so it needs the C++ build
+(cpp/README.md), and a test that compiles a program is skipped without
+it. `C6502_CHECK_IR=1` makes c6502cpp check the IR after every
+optimizer pass and at the asm stage boundaries
+(cpp/src/passes/ir_check.h), and a test that needs the checks whatever
+the variable says calls `cpp_backend.enable_ir_check()`. The fuzzers
+always run with them.
 
 In parallel, with pytest and pytest-xdist (dev dependencies; `uv
 sync` installs them):
@@ -30,35 +34,35 @@ each).
 
 A harness class that compiles a program is decorated with
 `tests.cpp_build.needs_c6502cpp`, which skips it when `c6502cpp` isn't
-built (cpp/README.md has the build), since compile.py, nm.py, and
-objdump.py run in it under `C6502_CPP_BACKEND=1` and only there once the
-Python compiler is removed. A test that skips itself or combines the
-condition with another, as `TestAgainstDasm` does with dasm, reads
-`cpp_build.BUILT` and `cpp_build.REASON`.
+built, since compile.py, nm.py, and objdump.py are shims over it. A
+test that skips itself or combines the condition with another, as
+`TestAgainstDasm` does with dasm, reads `cpp_build.BUILT` and
+`cpp_build.REASON`.
 
 A test that compiles a source text calls `compile._run_source(stage,
-source, ...)`, which preprocesses the text in the same request as the
-compile under the switch, and Python's preprocessor and `_run_stage`
-without it.
+source, ...)`, which sends c6502cpp the text and has it preprocessed in
+the same request as the compile, and a test that has the
+preprocessor's output already calls `compile._run_stage`. A test that
+expects a compile error catches its class from errors.py.
 
 ## Layout
 
 `tests/test_<topic>.py` is one harness per topic. The two main
 categories:
 
-- **Per-pass / per-module unit tests** (e.g. `test_parser.py`,
-  `test_type_checking.py`, `test_redundant_load.py`) — focused tests
-  against the module of the same name. Step 8 of the C++ port moves
-  the tests that call a pass, the front end, or the preprocessor
-  directly to doctest cases in cpp/tests (docs/cpp_port.md, "The
-  tests"), so many of these modules hold only their end-to-end tests,
-  and some are gone.
+- **Per-pass / per-module tests** (e.g. `test_parser.py`,
+  `test_type_checking.py`, `test_redundant_load.py`) — end-to-end tests
+  of what the pass of the same name does, through compile.py or the
+  simulator. Step 8 of the C++ port moved the tests that called a
+  Python pass, the front end, or the preprocessor directly to doctest
+  cases in cpp/tests (docs/cpp_port.md, "The tests"), and a test of a
+  single C++ function is written there.
 - **Chapter end-to-end tests** (`test_chapter_<N>.py` with the
   matching `chapter_<N>/` directory of C sources) — drive each
   chapter end-to-end through `-S`.
 
 Under `-O` a small `static` function is inlined into its callers and
-dropped (`passes/optimization/inline_functions.py`). A test that
+dropped (cpp/src/passes/optimization/inline_functions.h). A test that
 checks such a function's own code, its calling convention, or the
 call graph decorates its class or method with
 `tests.no_inlining.no_inlining()`, which turns inlining off for the

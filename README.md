@@ -1,9 +1,17 @@
 # c6502
 
 c6502 is an experimental optimizing C99 compiler for the MOS 6502,
-with some C23 features, written in Python. It writes assembly in
+with some C23 features. It writes assembly in
 [dasm](https://dasm-assembler.github.io/)'s syntax, and it has its own
 assembler and linker, which write ELF objects and executables.
+
+The compiler was written in Python and is now written in C++, in
+`cpp/`, which builds one executable, `c6502cpp`. `compile.py`,
+`nm.py`, and `objdump.py` stay as Python shims that run it, with the
+same command lines and messages as before, and so do the simulator,
+the tests, and the fuzzers, which are still in Python. They move to
+C++ in the next step of the port
+([docs/cpp_port.md](docs/cpp_port.md)).
 
 ## Status
 
@@ -168,7 +176,7 @@ These parts are missing.
   routines (`mul16`, `udivmod16`, `asl16`, and so on), and so does
   `__c6502_bin_to_bcd` (`bin16_to_bcd`). The linker adds the ones a
   program calls from the runtime library
-  (`passes/runtime_library.py`). Every floating-point operation, the
+  (cpp/src/passes/runtime_library.h). Every floating-point operation, the
   64-bit integer operations, and calling through a function pointer
   call helpers (`fadd`, `mul64`, `icall`, and so on) that have no
   6502 code yet. A program that uses them links only when `--defsym`
@@ -196,15 +204,36 @@ These parts are missing.
 
 ## Installation
 
-1. Install Python 3.11 or later.
-2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
-3. Clone the repository with
+1. Install Python 3.11 or later,
+   [uv](https://docs.astral.sh/uv/getting-started/installation/),
+   CMake 3.20 or later, and a C++20 compiler: on Windows, the Visual
+   Studio 2022 Build Tools (whose CMake is in
+   `Common7\IDE\CommonExtensions\Microsoft\CMake`), and on Linux,
+   GCC 12 or Clang 14 or later.
+2. Clone the repository with
    `git clone https://github.com/XekriRedmane/c6502.git`, and `cd`
    into it.
-4. Run `uv sync`. It creates a virtual environment in `.venv` and
-   installs the dependencies, including the preprocessor,
-   [pcpp](https://github.com/ned14/pcpp), and the development
-   dependencies pytest and pytest-xdist.
+3. Run `uv sync`. It creates a virtual environment in `.venv` and
+   installs the dependencies, py65 for the simulator and numpy, and
+   the development dependencies pytest and pytest-xdist.
+4. Build the compiler, from the repository's directory. On Windows:
+
+   ```sh
+   cmake -S cpp -B cpp/build -G "Visual Studio 17 2022" -A x64
+   cmake --build cpp/build --config Release --parallel --target c6502cpp
+   ```
+
+   On Linux:
+
+   ```sh
+   cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+   cmake --build cpp/build --parallel --target c6502cpp
+   ```
+
+   `compile.py`, `nm.py`, and `objdump.py` find `cpp/build/bin/c6502cpp`
+   there, or the executable that the environment variable `C6502_CPP`
+   names. Without `--target c6502cpp`, the build makes the C++ unit
+   tests too, which [cpp/README.md](cpp/README.md) describes.
 5. Check that it works with
    `uv run python -m unittest tests.test_example_outputs`. It
    compiles every example in `examples/` and compares the output
@@ -214,7 +243,7 @@ These parts are missing.
    the tests that compare c6502's assembler with dasm run only where
    dasm is installed.
 
-`requirements.txt` lists the same packages for a plain `pip`
+`requirements.txt` lists the same Python packages for a plain `pip`
 environment. It's kept by hand and may be behind `uv.lock`.
 
 ## Usage
@@ -450,20 +479,29 @@ down in X or Y.
 
 [docs/architecture.md](docs/architecture.md) describes the pipeline,
 the four intermediate representations, and the runtime conventions.
-Each directory's `CLAUDE.md` describes the modules in it.
+[cpp/README.md](cpp/README.md) describes the C++ code, its build, and
+its checks, and each directory's `CLAUDE.md` describes the modules in
+it.
 
 ### Running the tests
 
 ```sh
 uv run python -m unittest                          # every test
-uv run python -m unittest tests.test_asm_emit      # one module
+uv run python -m unittest tests.test_example_outputs   # one module
 C6502_CHECK_IR=1 uv run python -m unittest         # check the IR after every pass
 C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
+ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ unit tests
+cpp/build/bin/c6502cpp check-golden -j 12          # the corpus against golden/
+cpp/build/bin/c6502cpp check-frozen                # the frozen calls of each pass
 ```
 
-The parallel run takes about 70 seconds, against about 4 minutes in
-one process. `C6502_CHECK_IR=1` checks the IR after every optimizer
-pass and at each stage boundary, and adds about 3% to the time.
+`ctest` needs the whole C++ build, step 4 above without `--target`,
+and the others need only `c6502cpp`. `C6502_CHECK_IR=1` checks the IR after
+every optimizer pass and at each stage boundary. `check-golden`
+compares what the compiler gives for every program of the corpus with
+the golden files under `golden/`, and a change to the output made on
+purpose rewrites them with `check-golden --update`, whose diff is the
+review of the change (cpp/README.md, "The checks after Python").
 
 The runs of the two example programs read files from each program's
 reverse-engineering project, which aren't in this repository. Without
@@ -506,12 +544,17 @@ describes each tool.
 
 ### Regenerating the AST modules
 
-Each `*_ast.py` module is generated from the matching `.asdl` file by
-`asdl.py`. After editing an ASDL file, regenerate its module.
+Each `*_ast.py` module, and the C++ IR classes in `cpp/generated/`,
+are generated from the matching `.asdl` file by `asdl.py`. After
+editing an ASDL file, regenerate both.
 
 ```sh
 uv run python asdl.py c99.asdl c99_ast.py
 uv run python asdl.py tac.asdl tac_ast.py
 uv run python asdl.py asm.asdl asm_ast.py
 uv run python asdl.py asm2.asdl asm2_ast.py
+uv run python asdl.py --cpp c99.asdl cpp/generated
+uv run python asdl.py --cpp tac.asdl cpp/generated
+uv run python asdl.py --cpp asm.asdl cpp/generated
+uv run python asdl.py --cpp asm2.asdl cpp/generated
 ```

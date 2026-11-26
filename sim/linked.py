@@ -9,7 +9,7 @@ symbols give.
 
 A program can get the runtime's helpers two ways. Linked without
 `--defsym`, it holds the helpers it calls from the runtime library
-(passes/runtime_library.py), and they run where the linker put them.
+(cpp/src/passes/runtime_library.h), and they run where the linker put them.
 Linked with each helper's address given as a `--defsym`
 (`runtime_defsyms`, `defsym_args`), it calls the simulator's copies:
 the 6502 helpers at $E000 and the Python hooks after them, for the

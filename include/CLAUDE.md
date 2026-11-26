@@ -43,11 +43,11 @@ automatically; no `-I` flag needed.
   `_ui`, `_ul`, and `_ull`, each of which is also a macro for the
   builtin `__c6502_stdc_<op>_<suffix>`, and its type-generic form
   `stdc_<op>` is a macro for `__c6502_stdc_<op>`
-  (builtin_functions.py). The compiler folds a constant argument and
+  (cpp/src/builtin_functions.h). The compiler folds a constant argument and
   writes a loop in place for any other, and a unit that takes a
   function's address, or calls it with the macro suppressed, gets a
   definition of it with internal linkage
-  (passes/stdbit_functions.py), which also drops the declarations a
+  (cpp/src/passes/stdbit_functions.h), which also drops the declarations a
   unit doesn't refer to. The parameter names are `__value`, which a
   program's macros can't touch. `__STDC_VERSION_STDBIT_H__` is
   `202311L`, `__STDC_ENDIAN_LITTLE__` 1234, `__STDC_ENDIAN_BIG__`
@@ -72,7 +72,7 @@ automatically; no `-I` flag needed.
   firmware's KEYIN using (`$1F`-`$2E`, `$30`, `$32`-`$33`,
   `$35`-`$39`, `$45`, `$48`, `$4E`-`$4F`) as `extern` objects with
   `address`, so a program that includes it keeps the runtime's
-  zero-page block off them (`passes/runtime_layout.py`). Zero-page
+  zero-page block off them (cpp/src/passes/runtime_layout.h). Zero-page
   objects can't overlap, so the bytes are split into named objects
   (`CH`, `CV`, `CSW`, `RND`, ...) and `__monitor_*` objects. User guide:
   `docs/attributes.md`.

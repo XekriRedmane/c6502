@@ -7,7 +7,7 @@
 // the 1-byte return value comes back in A. The `register` local
 // `tmp` is pinned to Y (locals may only use Y).
 //
-// Eligibility (enforced by passes/abi_selection.py):
+// Eligibility (enforced by cpp/src/passes/abi_selection.cpp):
 //   - Char / SChar / UChar parameters and return type fit the 2-byte
 //     (A, X) arg budget; a `register` local fits its single byte (Y).
 //   - No pointers in registers.

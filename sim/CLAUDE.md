@@ -1,8 +1,9 @@
 # sim/CLAUDE.md
 
-In-process 6502 simulator. Drives compiled C through the full pipeline,
-assembles the result with a runtime stub, and executes on a py65 6502
-MPU until the boot stub's BRK fires.
+In-process 6502 simulator. Compiles C with the C++ compiler, assembles
+the result with a runtime stub, and executes on a py65 6502 MPU until
+the boot stub's BRK fires. It stays in Python until step 9 of the port
+(docs/cpp_port.md).
 
 ## Module roster
 
@@ -11,24 +12,26 @@ MPU until the boot stub's BRK fires.
   level entry in source order, computing the byte size of each
   instruction; pass 2 emits bytes with all symbols resolved.
   `_prologue_size` / `_ret_size` / `_emit_prologue` / `_emit_ret`
-  mirror the naive lowering in `passes.asm_to_asm2`, so
-  `instruction_size` (used by `passes.long_branches`) and the
-  assembler stay byte-aligned with what `asm_emit` produces. A packed
-  BCD `DecimalArith` assembles as `asm_to_asm2.expand_decimal_arith`
-  writes it, `SED`, `CLC` or `SEC`, an `LDA` / `ADC` (`SBC`) / `STA`
+  mirror the naive lowering in cpp/src/passes/asm_to_asm2.cpp, so the
+  assembler stays byte-aligned with what emission (cpp/src/asm_emit.h)
+  produces. `instruction_size` has a C++ copy in cpp/src/sim/assembler.h,
+  which the long-branch pass (cpp/src/passes/long_branches.h) uses. A
+  packed BCD `DecimalArith` assembles as `expand_decimal_arith`
+  (cpp/src/passes/asm_to_asm2.h) writes it, `SED`, `CLC` or `SEC`, an `LDA` / `ADC` (`SBC`) / `STA`
   per byte, and `CLD`. py65 runs `ADC` and `SBC` in decimal mode as
   `builtin_functions.adc_byte` / `sbc_byte` compute them. The asm
   atoms `SetDecimal` and `ClearDecimal` assemble as `SED` and `CLD`,
   for the runtime helper `bin16_to_bcd`.
-- `harness.py` — top-level test harness: take C source, run the full
-  compiler pipeline, assemble with a runtime stub, and execute on a
-  py65 6502 simulator until BRK.
+- `harness.py` — top-level test harness: take C source, compile it
+  with `c6502cpp` (`cpp_backend.compile_source`, which returns the asm
+  program before `asm_to_asm2`), assemble with a runtime stub, and
+  execute on a py65 6502 simulator until BRK.
 - `linked.py` — `build_linked_sim`: runs an ELF executable that
   linking with `compile.py` wrote. It loads each segment at its load
   address, reads the symbols, and installs the runtime for the
   program's layout (its SSP, FP, HARGS, and DPTR symbols). A program
   linked without `--defsym` holds the helpers it calls from the
-  runtime library (`passes/runtime_library.py`) and runs them. One
+  runtime library (cpp/src/passes/runtime_library.h) and runs them. One
   linked with the simulator's helper addresses (`runtime_defsyms`,
   `defsym_args`), which are the same for every layout, calls the
   simulator's copies, and `build_linked_sim` checks that the
@@ -99,4 +102,4 @@ MPU until the boot stub's BRK fires.
   run in the sim.
 - The boot stub calls `__zp_init` before `main` when the program has
   one, which stores the initial values of its zero-page globals
-  (`passes/zp_globals.py`).
+  (cpp/src/passes/zp_globals.h).

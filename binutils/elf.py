@@ -17,7 +17,7 @@ own. Each section is named after the section its item goes in
 (`.text`, `.rodata`, `.data`, `.bss`, or a name from
 `[[c6502::section]]`), so several sections share a name. GNU as does
 the same with `.section name,"ax",@progbits,unique,N`. The link
-metadata (`passes/zp_link_metadata.py`) is the text of the section
+metadata (cpp/src/passes/zp_link_metadata.h) is the text of the section
 `.c6502.link`, which isn't loaded.
 
 Relocations are `SHT_RELA`, each with its addend in the entry. The

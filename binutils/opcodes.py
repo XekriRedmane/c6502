@@ -1,5 +1,7 @@
-"""The 151 documented opcodes of the NMOS 6502, for the assembler
-(`binutils/assembler.py`) and the disassembler (`binutils/disasm.py`).
+"""The 151 documented opcodes of the NMOS 6502, which the simulator's
+stand-ins of the Apple II decode with (sim/lode_runner.py and
+sim/ali_baba.py). The assembler and the disassembler use the C++ copy,
+cpp/src/binutils/opcodes.h.
 
 `OPCODES` maps a mnemonic and an addressing mode to the opcode byte,
 and `DECODE` maps each opcode byte back. The modes are:

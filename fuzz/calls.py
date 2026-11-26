@@ -17,7 +17,7 @@ only calls fj with j > i), plus extras chosen per seed:
     `[[c6502::return_bool_in_carry]]`, called for their value or as
     an `if` condition. Under `-O`, the unmarked ones return
     in the carry flag too when they're zp_abi
-    (passes/carry_return_choice.py).
+    (cpp/src/passes/carry_return_choice.h).
 Function bodies compute random integer expressions over parameters,
 locals, and call results, and keep earlier locals live across the
 calls. Every bug this fuzzer found involved a value live across a

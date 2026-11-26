@@ -1459,7 +1459,7 @@ and the units follow the workaround given for each.
    The link failed with `undefined symbol 'mul8' (a runtime helper;
    the runtime library isn't in the repository yet, so give its
    address with --defsym)`. The linker now adds the helpers a program
-   calls from the runtime library (`passes/runtime_library.py`), and
+   calls from the runtime library (cpp/src/passes/runtime_library.h), and
    with `ali_baba.ld` they go in `spare` with the other code the
    script doesn't name. c6502 also compiles each line above inline
    now: a multiplication by a constant as shifts and adds, a byte

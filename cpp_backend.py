@@ -52,8 +52,8 @@ import os
 import subprocess
 import sys
 
-# The directory of c6502's own headers, as preprocessor.py's
-# `_BUNDLED_INCLUDE_DIR` spells it, since this module is beside it.
+# The directory of c6502's own headers, which the request gives the C++
+# preprocessor, found beside this module.
 _INCLUDE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "include")
 
 

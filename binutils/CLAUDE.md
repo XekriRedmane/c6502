@@ -1,50 +1,39 @@
 # binutils/CLAUDE.md
 
-c6502's object-file tools. `compile.py -c` assembles the text `-S`
-writes into an ELF object, linking (`passes/linker.py`) turns objects
-into an ELF executable, and `nm.py` and `objdump.py` at the root read
-both. Only the parts of linking that don't depend on c6502's link
-metadata are here; the zero-page allocation and the layout by a
-script are in `passes/`.
+c6502's object-file tools are written in C++, in cpp/src/binutils/
+(cpp/README.md, "The object-file tools"): the ELF reader and writer
+(`elf.*`), the opcode table (`opcodes.*`), the assembler that
+`compile.py -c` runs (`assembler.*`), the generic half of linking
+(`ld.*`), the disassembler behind `objdump.py -d` (`disasm.*`), and nm
+and objdump themselves (`nm.*`, `objdump.*`). The linker's zero-page
+allocation and the layout by a script are in cpp/src/passes/
+(`linker.*`, `link_script.*`, `link_layout.*`). nm.py and objdump.py at
+the root are shims over `c6502cpp nm` and `c6502cpp objdump`.
 
-## Module roster
+This directory keeps the two Python modules that the simulator reads
+until step 9 of the port (docs/cpp_port.md).
 
 - `elf.py` — `ElfFile`, `Section`, `Symbol`, `Reloc`, `Segment`, and
-  `read` / `write` for ELF32, little-endian. The constants are
-  llvm-mos's: `EM_MOS` (6502), `EF_MOS_ARCH_6502`, `STO_MOS_ZEROPAGE`,
-  and the `R_MOS_*` relocation numbers from its `ELFRelocs/MOS.def`.
-  Relocations are `SHT_RELA`. `write` puts local symbols first, as
-  ELF requires, and builds `.symtab`, `.strtab`, `.shstrtab`, and a
-  `.rela<name>` section for each section with relocations; those
-  aren't in `ElfFile.sections`.
+  `read` / `write` for ELF32, little-endian, which sim/linked.py,
+  sim/lode_runner.py, sim/ali_baba.py, and the tests read executables
+  with. The constants are llvm-mos's: `EM_MOS` (6502),
+  `EF_MOS_ARCH_6502`, `STO_MOS_ZEROPAGE`, and the `R_MOS_*` relocation
+  numbers from its `ELFRelocs/MOS.def`. Relocations are `SHT_RELA`.
+  `write` puts local symbols first, as ELF requires, and builds
+  `.symtab`, `.strtab`, `.shstrtab`, and a `.rela<name>` section for
+  each section with relocations; those aren't in `ElfFile.sections`.
+  `ElfError` is the error of a file it can't read, which errors.py
+  re-exports.
 - `opcodes.py` — the 151 documented NMOS opcodes, by mnemonic and
   addressing mode (`OPCODES`) and back (`DECODE`), with each mode's
-  size and the zero-page form of each absolute mode.
-- `assembler.py` — `assemble(text)`: the dasm subset `asm_emit`
-  writes, to an `ET_REL` object. See its docstring for the syntax.
-- `ld.py` — the generic half of linking: `global_definitions`,
-  `Resolver` (a symbol's address, from its own object first),
-  `relax`, `relocate`, and `executable`. The error for an undefined
-  name that is a runtime helper's says that the helper has no 6502
-  code in the runtime library, since the linker adds the ones it has
-  (`passes/runtime_library.py`), and that `--defsym` can give its
-  address.
-- `disasm.py` — `disassemble(elf)`, the listing `objdump.py -d` and
-  `-D` print.
+  size and the zero-page form of each absolute mode. sim/lode_runner.py
+  and sim/ali_baba.py decode with `DECODE`.
 
-The C++ port has `elf.py`, `opcodes.py`, `assembler.py`, `ld.py`,
-`disasm.py`, nm.py, and objdump.py in cpp/src/binutils/
-(cpp/README.md, "The object-file tools"), and the linker of
-passes/ beside them (docs/cpp_port.md, "Step 7"). With
-`C6502_CPP_BACKEND=1`, compile.py's `-c` and its links run in C++
-(`compile._cpp_build`, the root CLAUDE.md), and nm.py and objdump.py run
-`c6502cpp nm` and `c6502cpp objdump`, so these modules then run only
-for the tests that call them, tests/link_helpers.py's `linked_text`,
-which calls the disassembler, and the simulator, which reads
-executables with `elf.py` and decodes with `opcodes.py` until step 9.
-A change to any of these modules has to be made in the C++ port too,
-and `c6502cpp check-binutils` on a capture of
-`tools/capture_binutils.py` shows what differs.
+A change to either module has to be made in cpp/src/binutils/ too,
+since the C++ tools write the files these read.
+
+The rest of this file describes the formats and the rules that the C++
+tools follow.
 
 ## The object format
 
@@ -52,7 +41,7 @@ and `c6502cpp check-binutils` on a capture of
 |---|---|
 | one per item, named for its section (`.text`, `.rodata`, `.data`, `.bss`, or a `[[c6502::section]]` name) | a function's or object's bytes; `.bss` ones are `SHT_NOBITS` |
 | `.rela<name>` | that item's relocations |
-| `.c6502.link` | the link metadata block, as text (`passes/zp_link_metadata.py`) |
+| `.c6502.link` | the link metadata block, as text (cpp/src/passes/zp_link_metadata.h) |
 | `.c6502.asm` | the assembly text the object came from |
 | `.symtab`, `.strtab`, `.shstrtab` | as usual |
 
@@ -78,17 +67,18 @@ Symbols:
   of its metadata). One the unit reaches with zero-page addressing
   has `STO_MOS_ZEROPAGE`.
 - An internal name that another object also uses is renamed `name.k`
-  for the `k`th object of the link (`linker._rename_locals`), in its
+  for the `k`th object of the link (`rename_locals` in
+  cpp/src/passes/linker_metadata.h), in its
   symbols and its metadata. A renamed function's slots, which are
   undefined symbols spelled after the function, are renamed with it,
   and so are the call edges and shares that name it
-  (`linker._rename_meta`), so two objects' `static` functions of one
+  (`rename_meta`), so two objects' `static` functions of one
   name get slots of their own.
 - An item whose metadata line has `merge=true` (a half of a table of
   row addresses, `A@lo` or `A@hi`) is kept once among the items so
   marked whose sections have the same contents
-  (`linker._merge_identical`, after `_rename_locals` and
-  `ld.relax`). The contents are the bytes and the relocations, with
+  (`merge_identical` in cpp/src/passes/linker_objects.h, after `rename_locals` and
+  `ld::relax`). The contents are the bytes and the relocations, with
   each relocation's symbol taken as its name when it's undefined or
   global and as its object and name when it's local. The first
   object's copy stays, and its symbol becomes global. Each later copy's
@@ -117,14 +107,14 @@ knows to be below $100: a number, an `EQU`, or a runtime name. A label
 or an undefined name gets absolute addressing. The linker then fixes
 the mode to the program's addresses, in two directions:
 
-- `ld.relax` shortens an absolute instruction whose operand the linker
+- `ld::relax` shortens an absolute instruction whose operand the linker
   put in zero page, such as a global another unit's `-O` promoted. It
   deletes the operand's high byte, re-aims the branches in the
   section, which only get shorter, and moves the relocations, labels,
   and mapping symbols after it.
 - A unit that reached a name with zero-page addressing that the
   program puts above $FF is assembled again from `.c6502.asm` with the
-  program's addresses (`passes/linker.py`, `_reassemble`).
+  program's addresses (`reassemble` in cpp/src/passes/linker_objects.h).
 
 With both, an executable has the bytes dasm would assemble from the
 units' text with the program's addresses, which is what the linker

@@ -30,12 +30,14 @@ times faster than one process.
 
 ## IR checks
 
-`runner.py` turns on `passes/ir_check.py`, which checks the IR after
-every TAC optimizer pass, at the asm stage boundaries, and after each
-peephole sweep. A pass that leaves the IR inconsistent, such as one
-that drops the definition of a temporary something still reads, then
-fails right there with `IRCheckError: after <pass>, function '<f>':
-...`, even when the program's result would have come out right. The
+`runner.py` turns on the IR checks (`cpp_backend.enable_ir_check`,
+cpp/src/passes/ir_check.h), which check the IR after every TAC
+optimizer pass, at the asm stage boundaries, and after each peephole
+sweep. A pass that leaves the IR inconsistent, such as one that drops
+the definition of a temporary something still reads, then fails right
+there with `AssertionError: after <pass>, function '<f>': ...`, the
+message of an internal error of c6502cpp, even when the program's
+result would have come out right. The
 error is an `ERR` result like any other, so the program is saved.
 
 ## Execution paths (`runner.py`)
@@ -103,14 +105,14 @@ the calls to them are `if` conditions, so the carry-flag return is
 checked both as a value and as a branch. Half of those functions
 carry `[[c6502::return_bool_in_carry]]`, and the rest return in the
 carry flag under `-O` when they're zp_abi, by the compiler's
-choice (passes/carry_return_choice.py). Those choices come from
+choice (cpp/src/passes/carry_return_choice.h). Those choices come from
 random streams of their own (`crng`, and `arng` for the attribute),
 so adding them left the rest of each older seed's program as it was.
 
 In half the seeds that have `rec`, it keeps a 1-byte and a 4-byte
 local live across its recursive call, marked
 `[[c6502::save_hardware_stack]]`, so it gets a private pool and saves them on
-the hardware stack (`passes/recursion_saves.py`). That choice has its
+the hardware stack (cpp/src/passes/recursion_saves.h). That choice has its
 own random stream too.
 
 Half the seeds add two bit-precise types, `_BitInt(N)` or `unsigned
@@ -125,7 +127,7 @@ The generator predicts which functions end up on the soft stack (any
 function that reaches `rec` or the pointer call) and only puts
 `register` on the others, because `register` needs zp_abi and the
 compiler rejects it otherwise. If the ABI eligibility rules in
-`passes/abi_selection.py` change, update `soft` in `make_program` to
+cpp/src/passes/abi_selection.cpp change, update `soft` in `make_program` to
 match, or the fuzzer reports rejections as failures.
 
 ## `stmts.py`
@@ -236,13 +238,17 @@ checked for them by hand.
 ## `tac_passes.py`
 
 Simulates the whole program with the TAC interpreter after every TAC
-optimizer pass (through `PhaseDriver.observer`) and prints the first
-pass, and the function, after which `main` returns something other
-than it did on unoptimized TAC. `tac_sim.py` runs the optimizer's own
+optimizer pass (the observer of the TAC optimizer's driver,
+cpp/src/passes/optimization/driver.h, through the backend's mode
+`tac-observe`) and prints the first pass, and the function, after
+which `main` returns something other than it did on unoptimized TAC.
+The interpreter (cpp/src/tac_sim.h) runs the optimizer's own
 instructions and the SSA form between passes, so this works on any
 program, without reducing it first. If no TAC pass changes the
 result but the `-O` path is still wrong, the bug is in
-`tac_to_asm` or an asm pass. Then turn off the asm passes in
-`compile` one at a time (replace `compile.apply_<name>` with an
-identity) until the result comes out right, which is how
-`loop_counter_to_x` was found for `fuzz.stmts` seed 1549.
+`tac_to_asm` or an asm pass. Then turn off the asm passes one at a
+time, by taking the call of each out of
+cpp/src/passes/peephole_fixedpoint.cpp or
+cpp/src/passes/optimized_asm.cpp in a build of your own, until the
+result comes out right, which is how `loop_counter_to_x` was found
+for `fuzz.stmts` seed 1549.

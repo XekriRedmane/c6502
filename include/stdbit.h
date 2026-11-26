@@ -20,7 +20,7 @@
  * its address, or call it with the macro suppressed, as in
  * `(stdc_leading_zeros_uc)(x)` (§7.1.4). The compiler then defines
  * the function in the unit, with internal linkage, since c6502 has no
- * library (passes/stdbit_functions.py). The type-generic names are
+ * library (cpp/src/passes/stdbit_functions.h). The type-generic names are
  * macros only, which §7.18.1p5 allows.
  *
  * The 6502 is little-endian, so __STDC_ENDIAN_NATIVE__ is

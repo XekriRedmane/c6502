@@ -1339,7 +1339,7 @@ def _emit_jump_table(
     addr: int, table: str, index: str, base: int, targets: list[str],
     syms: dict[str, int],
 ) -> bytes:
-    """The dispatch `asm_emit._emit_jump_table` writes, and its table,
+    """The dispatch `jump_table` in cpp/src/asm_emit.cpp writes, and its table,
     which starts right after it. `table` names that address; the sim's
     pass 1 doesn't see the label inside the instruction, so it's
     computed from `addr` here."""
@@ -1429,7 +1429,7 @@ def _prologue_size(
     size = _ssp_sub_size(local_bytes + 2)
     # Save caller's FP into the slot at SSP+M+1 / SSP+M+2 via two
     # self-contained Mov(Reg(A), Stack(...)) atoms — each one
-    # re-loads Y. (Matches `passes.asm_to_asm2._save_fp_into_slot`,
+    # re-loads Y. (Matches ``save_fp_into_slot` in cpp/src/passes/asm_to_asm2.cpp`,
     # which dropped the INY trick the old in-emit expansion used.)
     # LDA FP; LDY #M+1; STA (SSP),Y; LDA FP+1; LDY #M+2; STA (SSP),Y
     size += 2 + 2 + 2 + 2 + 2 + 2
@@ -1454,7 +1454,7 @@ def _emit_prologue(
     out += _emit_ssp_sub(local_bytes + 2)
     # Save caller's FP into the slot at SSP+M+1 / SSP+M+2 via two
     # self-contained STA-(SSP),Y stores — each one re-loads Y, as
-    # in `passes.asm_to_asm2._save_fp_into_slot`. (No INY trick.)
+    # in ``save_fp_into_slot` in cpp/src/passes/asm_to_asm2.cpp`. (No INY trick.)
     # LDA FP; LDY #M+1; STA (SSP),Y
     out += _emit_zp("LDA", fp)
     out += bytes([_IMM["LDY"], local_bytes + 1])
@@ -1494,7 +1494,7 @@ def _ret_size(
     else:
         size = 1 + 2 + 2 + 2 + 2 + 2 + 2
     # Restore FP from slot at FP+M+1 / FP+M+2 via X scratch — naive
-    # form (matches `passes.asm_to_asm2._restore_fp_from_slot`,
+    # form (matches `restore_fp_from_slot` in cpp/src/passes/asm_to_asm2.cpp,
     # which dropped the INY+STX trick the old in-emit expansion
     # used). The low byte goes through X via TAX/TXA so it
     # survives across the high read / high store; X is free to
@@ -1506,7 +1506,7 @@ def _ret_size(
     # Per callee-saved byte restore: LDY #off (2) + LDA (FP),Y (2) + STA $addr (2)
     size += len(callee_saved_addrs) * 6
     # Return-byte preservation across the teardown (matches
-    # `passes.asm_to_asm2._ret`): save_x parks both A (low) and X
+    # `ret` in cpp/src/passes/asm_to_asm2.cpp): save_x parks both A (low) and X
     # (high) via PHA / TXA / PHA … PLA / TAX / PLA (6 bytes); save_a
     # alone parks A via PHA … PLA (2 bytes).
     if save_x:
@@ -1536,7 +1536,7 @@ def _emit_ret(
     # epilogue (the callee-save restore uses A as scratch, and the
     # SSP/FP teardown clobbers A and X). 2-byte register return: push
     # low (A) then high (X via A); 1-byte: just A. Save BEFORE the
-    # restore. (Matches `passes.asm_to_asm2._ret`.)
+    # restore. (Matches `ret` in cpp/src/passes/asm_to_asm2.cpp.)
     if save_x:
         out += bytes([_IMPLIED["PHA"]])
         out += bytes([_IMPLIED["TXA"]])
@@ -1576,7 +1576,7 @@ def _emit_ret(
     # indirect-Y read is its own LDY+LDA pair; the low byte goes
     # through X via TAX/TXA so it survives the high read and the
     # final store. X is free to clobber — no return convention
-    # uses it. (Matches `passes.asm_to_asm2._restore_fp_from_slot`.)
+    # uses it. (Matches `restore_fp_from_slot` in cpp/src/passes/asm_to_asm2.cpp.)
     out += bytes([_IMM["LDY"], local_bytes + 1])
     out += bytes([_INDY["LDA"], fp])
     out += bytes([_IMPLIED["TAX"]])
@@ -1603,7 +1603,7 @@ def _emit_ret(
 
 def _decimal_arith_size(instr: asm_ast.DecimalArith) -> int:
     """`SED`, `CLC` or `SEC`, an LDA / ADC (SBC) / STA per byte, and
-    `CLD`, as `passes.asm_to_asm2.expand_decimal_arith` writes it."""
+    `CLD`, as `expand_decimal_arith` (cpp/src/passes/asm_to_asm2.h) writes it."""
     a = asm_ast.Reg(reg=asm_ast.A())
     n = 3
     for left, right, dst in zip(instr.left, instr.right, instr.dst):

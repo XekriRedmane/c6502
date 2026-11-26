@@ -601,7 +601,7 @@ def build_boot_stub(
 
     12 bytes, or 15 with the `__zp_init` call, which stores the
     initial values of the program's zero-page globals
-    (passes/zp_globals.py). The harness stops the simulator when PC
+    (cpp/src/passes/zp_globals.h). The harness stops the simulator when PC
     points at a BRK opcode (so the BRK byte itself is what halts
     execution after `main` returns)."""
     calls = ([] if init_addr is None else [init_addr]) + [main_addr]

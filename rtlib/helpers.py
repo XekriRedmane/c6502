@@ -1,19 +1,20 @@
 """6502 assembly implementations of the runtime helpers, expressed as
 `asm_ast.Function` objects. They're the runtime library: the linker
 adds the ones a program calls to the program
-(`passes/runtime_library.py`). The simulator's `build_runtime` also
+(cpp/src/passes/runtime_library.h, from tools/rtlib_table.py's copy in
+cpp/generated/rtlib_helpers.cpp). The simulator's `build_runtime` also
 assembles them at $E000 and binds their symbols, so a `JSR udivmod8`
 in a program the harness runs, or in one linked with
 `sim.linked.defsym_args`, lands on the 6502 routine instead of a
 Python trap.
 
-Each helper follows the documented HARGS layout (see `tac_to_asm.py`'s
-helper-constant section):
+Each helper follows the documented HARGS layout (see
+the module comment of cpp/src/tac_to_asm.cpp and docs/architecture.md):
   - inputs at HARGS+0..N-1 (low offsets) and survive the call
   - outputs at HARGS + (k * width) for k = 2, 3, ... (high offsets)
 
 Helpers below use the IR's `Data(name="HARGS", offset=k)` operands —
-`asm_emit` and `sim.assembler` lower those to `<op> HARGS+k` (zp or
+emission (cpp/src/asm_emit.h) and `sim.assembler` lower those to `<op> HARGS+k` (zp or
 abs as the resolved address dictates). The shift / rotate / inc / dec
 emit on `Data` operands — added alongside this module — is what
 allows these to be expressed cleanly without going through A.

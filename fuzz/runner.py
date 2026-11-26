@@ -2,7 +2,7 @@
 compares main()'s return value.
 
 The three paths:
-  * `tac`   — the TAC interpreter (`tac_sim`) on unoptimized TAC.
+  * `tac`   — the TAC interpreter (cpp/src/tac_sim.h) on unoptimized TAC.
   * `unopt` — the asm simulator on `compile.py -S` output.
   * `opt`   — the asm simulator on `compile.py -S -O`
               output.
@@ -179,7 +179,7 @@ def _expected_of(src: str) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Run C files through tac_sim and both asm pipelines.",
+        description="Run C files through the TAC interpreter and both asm pipelines.",
     )
     ap.add_argument("paths", nargs="+", type=Path)
     args = ap.parse_args(argv)

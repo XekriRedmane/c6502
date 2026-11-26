@@ -15,7 +15,7 @@ that bare name and fail to import the package.
   passes them; the module docstring and docs/architecture.md give each
   layout. The linker emits the ones a program calls with `asm_emit`,
   assembles them into an object named `runtime.o`, and links that in
-  (`passes/runtime_library.py`), so a program links with no
+  (cpp/src/passes/runtime_library.h), so a program links with no
   `--defsym`. `sim.runtime.build_runtime` assembles all of them at
   `$E000` for the simulator's harness, and a helper with no 6502 code
   (the 64-bit and floating-point ones, `icall`) runs as a Python hook
@@ -26,14 +26,16 @@ that bare name and fail to import the package.
   16-bit value to five packed BCD digits by doubling in decimal mode.
   It is the one helper that sets the decimal flag (`SED` and `CLD`,
   the asm atoms `SetDecimal` and `ClearDecimal`, which only helpers
-  write), so it's named in `DECIMAL_MODE_HELPERS`, and `ir_check`
-  checks that it clears the flag before its `RTS` in place of the
+  write), so it's named in `DECIMAL_MODE_HELPERS`, and the IR checks
+  (cpp/src/passes/ir_check.h) check that it clears the flag before its `RTS` in place of the
   rule for compiled code. `tests/test_bin_to_bcd.py` runs it on py65
   against its hook for all 65536 inputs.
 
-The C++ port reads a copy of the helpers, `tools/rtlib_table.py`'s
+The C++ compiler reads a copy of the helpers, `tools/rtlib_table.py`'s
 dump of them in cpp/generated/rtlib_helpers.cpp, and
 `tests/test_rtlib_table.py` fails until the copy is written again
-after a change here (`uv run python tools/rtlib_table.py`).
+after a change here (`uv run python tools/rtlib_table.py`). This module
+stays in Python until step 9 of the port, since the simulator
+assembles it.
 
 `docs/linker_scripts.md` says where a linker script puts the helpers.

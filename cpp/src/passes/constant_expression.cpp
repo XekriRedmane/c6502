@@ -223,14 +223,18 @@ Int const_int_value(const ir::Type_const& c) {
 }
 
 std::string describe(const Exp& exp) {
-  if (const auto* d = std::get_if<ir::Dot>(&exp)) {
-    return describe(*d->operand) + "." + d->member;
+  std::string members;
+  const Exp* root = &exp;
+  while (const auto* d = std::get_if<ir::Dot>(root)) {
+    members = "." + d->member + members;
+    root = &*d->operand;
   }
-  if (asdl::isa<ir::CompoundLiteral>(exp)) {
-    return "(a compound literal)";
+  if (asdl::isa<ir::CompoundLiteral>(*root)) {
+    return "(a compound literal)" + members;
   }
-  const auto* v = std::get_if<ir::Var>(&exp);
-  return "`" + (v != nullptr ? type_checking::display_name(v->name) : std::string()) + "`";
+  const auto* v = std::get_if<ir::Var>(root);
+  return "`" + (v != nullptr ? type_checking::display_name(v->name) : std::string()) + members +
+         "`";
 }
 
 struct FloatingOperand {

@@ -161,7 +161,7 @@ TEST_CASE("elf: the fields elf.write packs in 32 unsigned bits") {
   // reject with struct.error. The C++ writer would keep the low bits.
   const auto raises = [](const elf::ElfFile& f) {
     try {
-      check_write_fields(f);
+      elf::write(f);
     } catch (const CompileError& e) {
       return e.python_type() == "struct.error" && std::string(e.what()) == "argument out of range";
     }

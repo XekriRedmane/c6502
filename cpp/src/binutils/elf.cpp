@@ -38,9 +38,8 @@ void append16(std::string& out, std::uint64_t v) {
   out.push_back(static_cast<char>((v >> 8) & 0xFF));
 }
 
-void append32(std::string& out, std::int64_t v) {
-  const auto u = static_cast<std::uint64_t>(v);
-  for (int k = 0; k < 4; ++k) out.push_back(static_cast<char>((u >> (8 * k)) & 0xFF));
+void append32(std::string& out, std::uint32_t v) {
+  for (int k = 0; k < 4; ++k) out.push_back(static_cast<char>((v >> (8 * k)) & 0xFF));
 }
 
 std::uint32_t get16(std::string_view d, std::size_t at) {
@@ -353,7 +352,42 @@ SymbolPtr ElfFile::symbol(std::string_view name) const {
   return first;
 }
 
+namespace {
+
+void check_fields(const ElfFile& obj) {
+  const auto out_of_range = [] { throw CompileError("struct.error", "argument out of range"); };
+  for (const auto& s : obj.sections) {
+    for (const auto& r : s->relocs) {
+      if (r.offset < 0 || r.offset > UINT32_MAX) out_of_range();
+      if (r.addend < INT32_MIN || r.addend > INT32_MAX) out_of_range();
+    }
+  }
+  for (const bool locals : {true, false}) {
+    for (const auto& sym : obj.symbols) {
+      if (sym->is_global() == locals) continue;
+      if (sym->size < 0 || sym->size > UINT32_MAX) out_of_range();
+    }
+  }
+  const auto check_u32 = [&](std::int64_t v) {
+    if (v < 0 || v > UINT32_MAX) out_of_range();
+  };
+  for (const auto& s : obj.sections) {
+    check_u32(s->addr);
+    check_u32(s->size());
+    check_u32(s->align);
+  }
+  check_u32(obj.entry);
+  for (const auto& seg : obj.segments) {
+    check_u32(seg.vaddr);
+    check_u32(seg.paddr);
+    check_u32(seg.memsz);
+  }
+}
+
+}  // namespace
+
 std::string write(const ElfFile& elf) {
+  check_fields(elf);
   StrTab shstr;
   StrTab strtab;
   std::vector<const Symbol*> symbols;
@@ -436,9 +470,9 @@ std::string write(const ElfFile& elf) {
   for (const Section* s : rela_secs) {
     std::string blob;
     for (const Reloc& r : s->relocs) {
-      append32(blob, r.offset);
-      append32(blob, (static_cast<std::int64_t>(sym_index.at(r.symbol.get())) << 8) | r.type);
-      append32(blob, r.addend);
+      append32(blob, static_cast<std::uint32_t>(r.offset));
+      append32(blob, (sym_index.at(r.symbol.get()) << 8) | r.type);
+      append32(blob, static_cast<std::uint32_t>(r.addend));
     }
     const std::uint32_t name = shstr.add(".rela" + s->name);
     headers.push_back(Shdr{name, SHT_RELA, SHF_INFO_LINK, 0, place(blob),
@@ -451,8 +485,8 @@ std::string write(const ElfFile& elf) {
     std::uint32_t shndx = s->shndx;
     if (s->section != nullptr) shndx = sec_index.at(s->section.get());
     append32(syms, strtab.add(s->name));
-    append32(syms, s->value & 0xFFFFFFFF);
-    append32(syms, s->size);
+    append32(syms, static_cast<std::uint32_t>(s->value & 0xFFFFFFFF));
+    append32(syms, static_cast<std::uint32_t>(s->size));
     syms.push_back(static_cast<char>((s->bind << 4) | s->type));
     syms.push_back(static_cast<char>(s->other));
     append16(syms, shndx);

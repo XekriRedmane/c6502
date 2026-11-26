@@ -319,12 +319,14 @@ std::string respond_inputs(Lines& lines, const json::Value& kwargs, bool link) {
       // compile.py opens the object's file before `elf.write` packs the
       // fields, so a `struct.error` leaves the file empty, which
       // cpp_backend.py reproduces.
+      std::string bytes;
       try {
-        binutils::check_write_fields(*obj);
+        bytes = binutils::elf::write(*obj);
       } catch (const CompileError& e) {
+        if (e.python_type() != "struct.error") throw;
         return out + "write-error " + stage_checks::error_text(e.python_type(), e.what()) + "\n";
       }
-      out += section("object", binutils::elf::write(*obj));
+      out += section("object", bytes);
       continue;
     }
     // The link takes the object the assembler made, as compile.py's
@@ -369,12 +371,13 @@ std::string respond_inputs(Lines& lines, const json::Value& kwargs, bool link) {
   } catch (const CompileError& e) {
     return out + "link-error " + stage_checks::error_text(e.python_type(), e.what()) + "\n";
   }
+  std::string data;
   try {
-    binutils::check_write_fields(exe);
+    data = binutils::elf::write(exe);
   } catch (const CompileError& e) {
+    if (e.python_type() != "struct.error") throw;
     return out + "write-error " + stage_checks::error_text(e.python_type(), e.what()) + "\n";
   }
-  const std::string data = binutils::elf::write(exe);
   if (const int error = write_file(required(kwargs, "output").string, data); error != 0) {
     return out + "output-error {\"errno\": " + std::to_string(error) +
            ", \"strerror\": " + passes::registry::json_quote(error_message(error)) + "}\n";

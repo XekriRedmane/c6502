@@ -2169,9 +2169,8 @@ Python linker, reads the script after the inputs, and writes the
 executable itself. Each part of the response names its input, so
 `compile._cpp_build` can write what each C input's preprocessor wrote
 and its warnings, raise its error, and write its object in the order
-the Python path does. `check_write_fields`
-(src/binutils/assemble_command.h) gives the `struct.error` that
-`elf.write` raises for an addend or a size outside its field, now typed
+the Python path does. `elf::write` (src/binutils/elf.h) gives the
+`struct.error` that Python's `elf.write` raises for an addend or a size outside its field, now typed
 `struct.error`, which cpp_backend.py imports from `struct` and keeps
 apart from `re.error`, and compile.py opens the output before raising
 it, as Python's `open` comes before its `elf.write`. An executable that
@@ -2343,8 +2342,8 @@ value, an explicit argument a flag ignores, compile.py's own checks,
 options abbreviated and run together, arguments that go to the
 preprocessor, and links with each spelling of `-Ttext` and `--origin`.
 It compared the 498 commands with no difference. Before a fix, `-Ttext=-1` gave
-Python's `struct.error` and an executable in C++, since
-`check_write_fields` didn't check the section addresses, the entry,
+Python's `struct.error` and an executable in C++, since the check of
+the fields before `elf::write` didn't check the section addresses, the entry,
 and the segments' addresses and sizes, which a link places from its
 origin. The jobs are in golden/cli.txt, and `check-golden` runs every
 job's command lines through `compile_command::run`, in place of the

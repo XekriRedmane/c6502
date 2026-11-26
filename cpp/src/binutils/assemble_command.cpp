@@ -90,42 +90,11 @@ std::string assemble_response(const std::string& text) {
     const elf::ElfFile obj = assembler::assemble(
         body, filename->string,
         links->kind == json::Value::Kind::kArray ? &symbols : nullptr, keep->boolean);
-    check_write_fields(obj);
     data = elf::write(obj);
   } catch (const CompileError& e) {
     return "error " + stage_checks::error_text(e.python_type(), e.what()) + "\n";
   }
   return "object " + std::to_string(data.size()) + "\n" + data;
-}
-
-void check_write_fields(const elf::ElfFile& obj) {
-  const auto out_of_range = [] { throw CompileError("struct.error", "argument out of range"); };
-  for (const auto& s : obj.sections) {
-    for (const auto& r : s->relocs) {
-      if (r.offset < 0 || r.offset > UINT32_MAX) out_of_range();
-      if (r.addend < INT32_MIN || r.addend > INT32_MAX) out_of_range();
-    }
-  }
-  for (const bool locals : {true, false}) {
-    for (const auto& sym : obj.symbols) {
-      if (sym->is_global() == locals) continue;
-      if (sym->size < 0 || sym->size > UINT32_MAX) out_of_range();
-    }
-  }
-  const auto check_u32 = [&](std::int64_t v) {
-    if (v < 0 || v > UINT32_MAX) out_of_range();
-  };
-  for (const auto& s : obj.sections) {
-    check_u32(s->addr);
-    check_u32(s->size());
-    check_u32(s->align);
-  }
-  check_u32(obj.entry);
-  for (const auto& seg : obj.segments) {
-    check_u32(seg.vaddr);
-    check_u32(seg.paddr);
-    check_u32(seg.memsz);
-  }
 }
 
 }  // namespace c6502::binutils

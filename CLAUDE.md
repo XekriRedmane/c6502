@@ -707,6 +707,10 @@ Root-level files:
 - `tools/rtlib_table.py` — copies the runtime helpers of
   rtlib/helpers.py into cpp/generated/rtlib_helpers.cpp, and with
   `--check` exits 1 when the file differs.
+- `tools/run_exclusive.sh LABEL COMMAND...` — runs a command while
+  holding a machine-wide lock (`/c/w/heavy.lock`), so that agents
+  working in parallel take turns at builds and test runs. A build
+  takes every core of Robert's machine, and eight at once stalled it.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

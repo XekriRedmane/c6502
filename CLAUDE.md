@@ -562,8 +562,8 @@ For the full optimizer walkthrough, see
 its own document in [docs/optimizations/](docs/optimizations/README.md),
 whose README describes how `-O` is organized, with diagrams, and
 lists the optimizations in pipeline order. A pass that's added or
-moved needs that list updated, and `tests/test_optimization_docs.py`
-fails until it is.
+moved needs that list updated, and `tests/test_optimization_docs.py`,
+which reads the order from `c6502cpp pass-order`, fails until it is.
 
 ## Regenerating AST modules
 

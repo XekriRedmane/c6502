@@ -3003,6 +3003,12 @@ every place in tac_sim.py that raises, with Python's message for the
 same hand-built TAC, but for the five that the C++ IR's closed variants
 can't reach (a constant, a static initializer, an instruction, an
 operand, or an integer operator of a class Python doesn't know).
+tests/test_tac_sim_optimized.cpp holds tests/test_tac_sim_optimized.py's
+two tests of the interpreter on the TAC optimizer's output and on a
+function in SSA form, written again by hand in step 8's group G9: each
+of six programs gives the instruction it is named for after
+`optimize_program` and the same result as before, and a loop's SSA form
+from `to_ssa` has a Phi and gives the result of the TAC before it.
 
 The backend's modes `tac-run`, `tac-observe`, and `tac-falls-off`
 (`src/tac_sim_modes.h`) run the front end of

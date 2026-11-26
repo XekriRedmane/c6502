@@ -11,7 +11,8 @@ names, string lifting, and the type checker), then `c99_to_tac`, under
 back end's region (or the unoptimized peephole fixed point and long
 branches), the work after it that reads the asm program, `asm_to_asm2`,
 and `asm_emit`, and returns the `-S` text. Python reads no program back.
-Under `C6502_CHECK_IR=1`, or after `ir_check.enable()`, the request's
+Under `C6502_CHECK_IR=1`, or after `ir_check.enable()` or
+`enable_ir_check()`, the request's
 `check_ir` turns on the C++ port of `ir_check` (cpp/src/passes/ir_check.h),
 which checks the IR at each place the Python pipeline checks it, and a
 failed check comes back as the AssertionError of an internal error, with

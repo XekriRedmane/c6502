@@ -2502,6 +2502,304 @@ the Python source of compile.py and the two optimizer drivers. The
 second waits for a `c6502cpp` command that lists each driver's passes in
 the order they run ("The tests" above), which this group didn't add.
 
+#### G9's edits
+
+G9 made the end-to-end tests that G6 to G8 left independent of the
+Python compiler, so that compile.py, nm.py, and objdump.py can become
+shims over `c6502cpp` without a test changing its meaning. The survey's
+counts were taken again on 25 Nov 2026 with a pytest plugin that ran the
+suite under `C6502_CPP_BACKEND=1` with a profile function, which listed
+each call and each import that code outside the compiler (the tests,
+sim/, fuzz/, tools/, cpp_backend.py, and compile.py's shim functions)
+made of a module that group R removes. 330 tests in 108 modules called
+Python's `preprocess` from a test module and gave its output to
+`_run_stage` or to `_run_program`, where the survey had found 342, and
+155 modules skipped their classes unless the pcpp command was on the
+PATH.
+
+- **The preprocessor.** `compile._run_source(stage, source, optimize,
+  link_metadata, pcpp_args, filename)` gives what `_compile_c` gives
+  for a file. Under the switch it sends the source text with the
+  preprocessor on, in the one request of the stage, and without it it
+  runs Python's `preprocess` and `_run_stage`. `_compile_c` calls it
+  too. A script moved 152 calls in 104 modules onto it: each
+  `_run_stage(stage, preprocess(src, args), ...)`, each `source =
+  preprocess(...)` whose every use is a `_run_stage` call (the chapter
+  harnesses, which give it the `-I` of their directory), and each
+  `_run_tac(preprocess(src))`, which preprocessed the text twice. The
+  two tests that read the preprocessor's output read the tokens that
+  `--lex` prints for it (test_c23_bool.py's check of <stdbool.h> and
+  test_limits_h.py's of a `-I` that shadows <limits.h>).
+  test_cpp_backend.py's calls stay, since its tests compare
+  `_run_stage` under the switch with Python.
+- **The skips.** tests/cpp_build.py's `needs_c6502cpp` skips a test
+  when `c6502cpp` isn't built, found as cpp_backend.py finds it, and its
+  `BUILT` and `REASON` serve the tests that skip themselves. 268
+  decorators, 7 tests that skipped themselves, and test_binutils.py's
+  `TestAgainstDasm`, which needs dasm too, moved onto it, in 155
+  modules. The skips on the reverse-engineering projects' files and on
+  dasm are as they were. test_limits_h.py's class ran with or without
+  pcpp (`shutil.which("pcpp") or True`) and skips without the build now.
+- **tests/no_inlining.py.** compile.py defines `inline_small_functions
+  = True` before it imports any of the compiler, `_inlining` returns
+  it, and `translate_for_codegen` and `_run_stage` skip the Python
+  inliner when it is False. `no_inlining()` sets it to False. A plugin
+  counted the Python inliner's calls (switch off) and recorded each
+  request's `inline` (switch on) in the 36 decorated tests of 16 classes.
+  Each made at least one `-O` compile and none inlined, with the patch
+  before the change and with the flag after it. With the flag forced to
+  True, 23 of them failed in each mode and every class inlined.
+- **What G8 left.** `c6502cpp pass-order` (cpp/README.md, "The back end
+  through c6502cpp") lists each driver's passes in the order a compile
+  runs them, and test_optimization_docs.py maps each to its module and
+  document through a table of its own (`_MODULES`), which a seventh test
+  checks covers every pass with a C++ source of the module's path. The
+  stems matched those the test read from the Python sources for each of
+  the four orders (54 of the peephole sweep, 42 of the TAC driver, 9 of
+  the asm optimizer, and 25 of `optimized_asm`). test_tac_sim_optimized.py's
+  `TestOptimizedTac` is cpp/tests/test_tac_sim_optimized.cpp, written by
+  hand on the C++ interpreter, optimizer, and `to_ssa`.
+- **Other imports.** test_ir_dump.py's `TestRealPrograms` reads
+  tests/ir_dump/, the dumps the Python compiler wrote of the four IRs of
+  examples/paint_hud_strip_p1.c, in place of compiling it, and
+  `_compiled_irs` moved to test_cpp_backend.py, its other user.
+  test_strength_reduction.py turns the IR checks on with
+  `cpp_backend.enable_ir_check`, which the requests of the switch carry
+  and which passes the choice to the Python `ir_check` while that runs.
+  test_type_checking.py takes `Int`, `Long`, and `FunType` from
+  c99_ast.py. Dead helpers that built inputs for the direct calls G6 and
+  G8 moved to doctest went from test_unroll.py and test_asm_remat.py.
+
+A test module that the table leaves out had none of these edits.
+
+| Module | `preprocess` calls moved to `_run_source` | Skips on c6502cpp | Other |
+|---|---|---|---|
+| no_inlining.py |  |  | `compile.inline_small_functions` |
+| test_address_attr.py | 1 | 1 |  |
+| test_address_taken_zp.py |  | 1 |  |
+| test_ali_baba.py |  | 3 |  |
+| test_and_zero_jump_fold.py | 1 | 2 |  |
+| test_apply_bobble_sim.py |  | 1 |  |
+| test_asm_dead_store.py |  | 2 |  |
+| test_asm_remat.py |  | 2 | dead helpers removed |
+| test_auto.py | 1 | 1 |  |
+| test_bcd_builtins.py | 4 | 3 |  |
+| test_beam_target_draw_sim.py |  | 1 |  |
+| test_beam_target_tick_diff.py |  | 1 |  |
+| test_beam_target_tick_sim.py |  | 1 |  |
+| test_bin_to_bcd.py | 2 | 2 |  |
+| test_binutils.py |  | 2 |  |
+| test_bitint.py |  | 1 |  |
+| test_bitint_sim.py |  | 2 |  |
+| test_bool.py | 2 | 2 |  |
+| test_branch_through_jump.py | 1 |  |  |
+| test_branch_value_thread.py |  | 1 |  |
+| test_byte_arith_sim.py |  | 1 |  |
+| test_c23_bool.py | 2 | 1 | `--lex` tokens, the warning's text |
+| test_c23_literals.py |  | 1 |  |
+| test_c23_nullptr.py | 1 | 3 |  |
+| test_call_through_expression.py | 1 |  |  |
+| test_carry_halve.py | 1 | 1 |  |
+| test_carry_in_add.py | 1 | 1 |  |
+| test_carry_inc.py | 1 | 1 |  |
+| test_carry_recompute.py | 1 | 1 |  |
+| test_carry_return.py | 1 | 3 |  |
+| test_carry_return_choice.py |  | 3 |  |
+| test_chapter_1.py | 1 | 1 |  |
+| test_chapter_10.py | 2 | 4 |  |
+| test_chapter_11.py | 3 | 3 |  |
+| test_chapter_12.py | 3 | 3 |  |
+| test_chapter_13.py | 2 | 2 |  |
+| test_chapter_14.py | 3 | 3 |  |
+| test_chapter_15.py | 1 | 1 |  |
+| test_chapter_16.py | 3 | 3 |  |
+| test_chapter_17.py | 2 | 2 |  |
+| test_chapter_18.py | 4 | 4 |  |
+| test_chapter_19.py |  | 1 |  |
+| test_chapter_2.py | 1 | 1 |  |
+| test_chapter_3.py | 1 | 1 |  |
+| test_chapter_4.py | 1 | 1 |  |
+| test_chapter_5.py | 2 | 2 |  |
+| test_chapter_6.py | 2 | 2 |  |
+| test_chapter_7.py | 2 | 2 |  |
+| test_chapter_8.py | 2 | 2 |  |
+| test_chapter_9.py | 2 | 4 |  |
+| test_cmp_zero_jump_fold.py | 6 |  |  |
+| test_coalescing.py | 1 | 2 |  |
+| test_companion_update_sim.py |  | 1 |  |
+| test_compare_subtract.py | 2 | 2 |  |
+| test_compound_literal.py |  | 1 |  |
+| test_const_qualifier.py | 2 |  |  |
+| test_const_shift_mul_sim.py |  | 2 |  |
+| test_const_static_fold.py | 3 | 3 |  |
+| test_constant_store_order.py | 1 | 1 |  |
+| test_constexpr.py | 2 | 3 |  |
+| test_copy_folding.py | 1 | 1 |  |
+| test_count_down.py |  | 1 |  |
+| test_counter_to_index_reg.py | 1 | 1 |  |
+| test_cpp_backend.py |  |  | `_compiled_irs` moved in |
+| test_cross_jump.py |  | 1 |  |
+| test_cse.py |  | 1 |  |
+| test_designated_init.py |  | 1 |  |
+| test_direct_index_load.py | 1 | 2 |  |
+| test_direct_member_access.py | 1 | 2 |  |
+| test_dispatch_pointer_array.py |  | 1 |  |
+| test_divide_shapes.py | 1 | 2 |  |
+| test_divmod_hoist.py |  | 1 |  |
+| test_do_ascend_sim.py |  | 1 |  |
+| test_draw_sprite_opaque_sim.py |  | 1 |  |
+| test_dual_index_promotion.py |  | 1 |  |
+| test_element_rmw.py | 1 | 1 |  |
+| test_empty_initializer.py | 2 | 2 |  |
+| test_enum.py |  | 1 |  |
+| test_example_outputs.py | 1 | 1 |  |
+| test_flag_compares.py |  | 2 |  |
+| test_floor_enemy_advance_sim.py |  | 1 |  |
+| test_floor_enemy_draw_sim.py |  | 1 |  |
+| test_fuzz_tools.py |  | 2 |  |
+| test_hwreg_pin_correctness.py |  | 1 |  |
+| test_hwreg_pinning.py | 1 | 1 |  |
+| test_in_place_member_update.py | 1 |  |  |
+| test_inc_peephole.py | 1 | 3 |  |
+| test_index_inc_cmp_y.py |  | 1 |  |
+| test_indexed_load.py | 1 | 3 |  |
+| test_indexed_symbol_store.py | 1 | 2 |  |
+| test_inline_functions.py |  | 1 |  |
+| test_inline_shift_direct.py | 1 |  |  |
+| test_invalid_programs.py | 1 | 1 |  |
+| test_ir_dump.py |  |  | checked-in dumps of the four IRs |
+| test_jump_table.py | 1 | 1 |  |
+| test_known_compare_thread.py | 1 | 1 |  |
+| test_leaf_zp_abi.py |  | 1 |  |
+| test_limits_h.py | 1 | 1 | `--lex` tokens |
+| test_linker.py | 1 | 7 |  |
+| test_linker_script.py | 1 | 4 |  |
+| test_lnot_jump_fold.py | 1 |  |  |
+| test_lode_runner.py |  | 2 |  |
+| test_loop_counter_to_x.py |  | 2 |  |
+| test_loop_rotate.py |  | 1 |  |
+| test_narrow_byte_bitwise.py | 1 | 1 |  |
+| test_narrow_byte_range.py | 1 | 1 |  |
+| test_narrow_widened_arith.py | 2 | 2 |  |
+| test_negate_lowering.py | 1 | 1 |  |
+| test_noreturn_call.py | 2 | 3 |  |
+| test_object_byte_view.py | 2 | 2 |  |
+| test_op_matrix_sim.py |  | 1 |  |
+| test_optimization_docs.py |  |  | pass order from `c6502cpp pass-order` |
+| test_outline_runs.py | 1 | 1 |  |
+| test_param_registers.py | 1 | 3 |  |
+| test_peephole_memo.py | 1 |  |  |
+| test_pointer_aware_regalloc.py | 1 |  |  |
+| test_pointer_member_access.py |  | 2 |  |
+| test_pointer_return.py | 1 | 1 |  |
+| test_preserves.py | 1 |  |  |
+| test_prune_unused_slots.py |  | 1 |  |
+| test_read_stored_global.py |  | 1 |  |
+| test_reassoc_offset_licm.py |  | 1 |  |
+| test_recognize_indexed_store.py | 1 | 2 |  |
+| test_recognize_indirect_indexed.py | 3 | 3 |  |
+| test_recursion_saves.py | 1 |  |  |
+| test_redundant_load.py |  | 2 |  |
+| test_redundant_load_after_rmw.py | 1 | 1 |  |
+| test_refresh_hit_entities_sim.py |  | 1 |  |
+| test_register_arguments.py | 1 | 2 |  |
+| test_register_keyword_sim.py |  | 1 |  |
+| test_ret_slot_coalescing.py | 1 | 1 |  |
+| test_return_in_zero_page.py | 1 | 2 |  |
+| test_rotate_loop_test.py |  | 1 |  |
+| test_row_address_tables.py | 1 | 1 |  |
+| test_runtime_helpers.py |  | 12 |  |
+| test_runtime_layout.py | 1 |  |  |
+| test_runtime_library.py |  | 3 |  |
+| test_sfx_tone_sim.py |  | 1 |  |
+| test_shared_tails.py | 1 | 1 |  |
+| test_short_and_unary_plus.py |  | 1 |  |
+| test_short_circuit_jump_fold.py | 1 |  |  |
+| test_sign_test_lowering.py | 2 | 2 |  |
+| test_signed_positive_branch.py | 1 | 1 |  |
+| test_significant_bytes.py | 4 | 4 |  |
+| test_sim_asm.py |  | 1 |  |
+| test_sim_asm_optimized.py |  | 1 |  |
+| test_sim_chapters.py |  | 1 |  |
+| test_sim_differential.py |  | 1 |  |
+| test_sim_miscompile_regressions.py | 1 | 2 |  |
+| test_sim_smoke.py |  | 6 |  |
+| test_sink_and_past_branch.py |  | 1 |  |
+| test_sink_increment.py | 1 | 1 |  |
+| test_slot_coalescing.py | 1 | 1 |  |
+| test_slot_sharing.py | 1 | 5 |  |
+| test_special_inactive_draw_sim.py |  | 1 |  |
+| test_split_tables.py | 1 | 1 |  |
+| test_statement_attributes.py | 1 |  |  |
+| test_static_const_fold.py | 1 | 2 |  |
+| test_static_indexed_access.py | 1 | 1 |  |
+| test_stdbit.py | 2 | 5 |  |
+| test_step_on_edge.py |  | 1 |  |
+| test_step_pos_sim.py |  | 1 |  |
+| test_strength_reduction.py | 1 |  | `cpp_backend.enable_ir_check` |
+| test_tac_sim_optimized.py |  | 1 | `TestOptimizedTac` (2 tests) to test_tac_sim_optimized.cpp |
+| test_tail_merge.py |  | 1 |  |
+| test_three_way_compare.py | 1 | 1 |  |
+| test_truncate_extend_fold.py | 1 | 1 |  |
+| test_type_checking.py | 2 |  | type classes from c99_ast |
+| test_typed_enum.py |  | 2 |  |
+| test_typedef.py |  | 1 |  |
+| test_typeof.py | 1 | 1 |  |
+| test_unroll.py |  |  | dead helpers removed |
+| test_unsized_arrays.py |  | 1 |  |
+| test_volatile_named.py | 1 |  |  |
+| test_zork_interpreter.py |  | 2 |  |
+| test_zp_globals.py | 1 | 5 |  |
+| test_zp_local_allocation.py | 2 | 2 |  |
+
+These tests still import a module of the Python compiler, or reach one,
+and go with it in group R, or need R to keep what they read.
+
+- **The Python implementation itself**, which R removes with the code.
+  test_capture_passes.py (23) and test_capture_helpers.py (3) test the
+  capture harnesses. test_cpp_backend.py (45), test_cpp_binutils.py
+  (11), and test_tac_sim_backend.py (6) compare the C++ port with
+  Python, and the golden files and frozen captures take over what they
+  check. test_peephole_memo.py (7), test_pretty.py (7),
+  test_lark_cache.py (6), test_lalr_table.py (3),
+  test_pcpp_evaluator_tables.py (1), and test_pcpp_unicode_tables.py (1)
+  test Python modules and the generators of C++ tables. test_parser.py's
+  `TestDeclaratorGrammar` and `TestAbstractDeclaratorGrammar` (29) run
+  c99.lark through Lark at start rules of their own, and
+  test_statement_attributes.py's `TestGrammar` (1) counts the conflicts
+  Lark logs for c99.lark, which cpp/generated/c99_lalr.cpp holds once
+  c99.lark goes. test_identifier_resolution.py (12),
+  test_label_resolution.py (1), test_loop_labeling.py (5), and
+  test_type_checking.py's `TestErrors` (4) read the passes' internal
+  tables or give them a Python subclass of an IR base, and
+  test_lexer.py's `TestKeywords` (1) counts lexer.py's keywords.
+  test_tac_to_asm.py (5) has an input only Python can hold and a form of
+  `translate_unop_atoms` that only the tests reach.
+  test_and_zero_jump_fold.py's `TestGuards` (1) tests a guard of a
+  Python entry function. test_tac_sim_optimized.py's
+  `test_names_the_pass` (1) breaks a Python pass, and is skipped under
+  the switch.
+- **The shim.** test_invalid_programs.py (17) requires the classes of
+  `compile._source_errors`, which R keeps in the shim, made of the
+  exception classes that step 9 keeps.
+- **The paths without the switch**, which R deletes:
+  `tests.test_sim_chapters._run_program`'s Python front end and
+  tac_sim.py, which the tests through `_run_program` run with the switch
+  off, and sim/harness.py's, fuzz/reduce.py's, and fuzz/tac_passes.py's.
+  test_fuzz_tools.py (5) imports fuzz/runner.py, which calls
+  `ir_check.enable()` at import, and which R moves onto
+  `cpp_backend.enable_ir_check`.
+- **The classes step 9 keeps.** 24 modules import exception classes
+  (`TypeCheckError` in 16, `ParserError` in 7, the three name passes'
+  errors in 6, and `AbiSelectionError`, `RecursionSaveError`,
+  `LexError`, `RegallocError`, `ZpGlobalError`, `AssemblerError`, and
+  Lark's `UnexpectedInput` in 1 to 3 each), and
+  test_recognize_indirect_indexed.py and test_type_checking.py the
+  table classes of passes/type_checking.py (`Symbol`, `SymbolTable`,
+  `LocalAttr`, `StaticAttr`, `NoInitializer`). R keeps them in the
+  modules of "What step 9's Python keeps", and the imports change with
+  their module's name.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -3653,5 +3951,34 @@ the order they run ("The tests" above), which this group didn't add.
   `C6502_CHECK_IR=1` without the switch (1,501 passed, 22 skipped) and
   with it (1,500 passed, 23 skipped), counting skipped subtests, where
   2,672 tests ran before. The C++ tests (9,870 cases) pass in fresh
+  builds with MSVC 19.36 and GCC 12.2, and `check-golden` and
+  `check-frozen` match every job and record.
+- 25 Nov 2026: group G9 of step 8 ("G9's edits"). A probe of the suite
+  under the switch found 330 tests in 108 modules that gave Python's
+  `preprocess` output to `_run_stage` or `_run_program`, and 155
+  modules that skipped on the pcpp command. `compile._run_source` sends
+  the source text with the preprocessor on under the switch, and 152
+  calls in 104 modules moved onto it. tests/cpp_build.py's
+  `needs_c6502cpp` took over 276 skips in 155 modules.
+  tests/no_inlining.py sets `compile.inline_small_functions`, a flag
+  defined before compile.py imports the compiler, and the 36 decorated
+  tests of 16 classes made `-O` compiles with no inlining in either
+  mode. `c6502cpp pass-order` lists the passes of each driver of the
+  optimizer as a compile runs them, and test_optimization_docs.py reads
+  the order from it, which matched the Python order for all four of
+  its checks. `TestOptimizedTac`'s 2 tests are doctest cases written by
+  hand, test_ir_dump.py reads checked-in dumps of the four IRs of an
+  example, and test_strength_reduction.py turns on the IR checks with
+  `cpp_backend.enable_ir_check`. The tests that still import or reach a
+  module that group R removes are listed above with the reason, and 24
+  modules import exception or table classes that step 9 keeps. The
+  suite passed after each kind of edit and at the last commit, with
+  1,500 passed and 22 skipped without the switch and 1,499 passed and
+  23 skipped with it (counting skipped subtests), where 1,501 and 1,500
+  ran before. The difference is the 2 tests of `TestOptimizedTac` and
+  the docs test's new seventh. The probe run again with the switch
+  found no call of `preprocess` from a test other than
+  test_cpp_backend.py's and the Python paths that the tests of kind (c)
+  run with the switch off. The C++ tests (9,874 cases) pass in fresh
   builds with MSVC 19.36 and GCC 12.2, and `check-golden` and
   `check-frozen` match every job and record.

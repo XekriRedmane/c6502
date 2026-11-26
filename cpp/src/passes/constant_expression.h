@@ -66,10 +66,4 @@ std::optional<NamedConstant> named_constant(const c99_ast::Type_exp& exp);
 std::pair<asdl::Int, c99_ast::Type_data_type> evaluate_integer_constant_expression(
     const c99_ast::Type_exp& exp);
 
-// Throws ConstantExpressionError when `exp` contains an operator that
-// C99 §6.6p3 forbids in a constant expression (assignment, increment,
-// decrement, or a call other than of a builtin) outside an operand of
-// `sizeof`.
-void validate_constant_expression(const c99_ast::Type_exp& exp);
-
 }  // namespace c6502::passes::constant_expression

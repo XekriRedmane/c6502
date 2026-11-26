@@ -387,11 +387,13 @@ OrderedMap<std::string, Int> build_local_slot_symbols(
   for (const auto& [fn_name, pool] : local_pools) {
     const std::vector<std::string>* names =
         slot_names_by_fn == nullptr ? nullptr : slot_names_by_fn->find(fn_name);
+    if (names != nullptr && names->size() != pool.size()) {
+      throw InternalError("function `" + fn_name + "` has " + std::to_string(names->size()) +
+                          " slot names for a pool of " + std::to_string(pool.size()) +
+                          " bytes");
+    }
     for (std::size_t k = 0; k < pool.size(); ++k) {
       if (names != nullptr) {
-        if (k >= names->size()) {
-          break;
-        }
         out.insert_or_assign((*names)[k], pool[k]);
       } else {
         out.insert_or_assign("__local_" + fn_name + "__" + std::to_string(k), pool[k]);

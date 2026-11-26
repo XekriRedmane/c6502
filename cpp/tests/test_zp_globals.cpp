@@ -154,3 +154,20 @@ TEST_CASE("zp_globals: access_weights doesn't count a Phi's predecessor label") 
   prog.top_level.emplace_back(std::move(fn));
   CHECK(keys(c6502::passes::access_weights(prog)) == Names{"x", "y"});
 }
+
+TEST_CASE("zp_local_allocation: build_local_slot_symbols takes one name per pool byte") {
+  c6502::passes::LocalPools pools;
+  pools.insert_or_assign("f", std::vector<Int>{0x80, 0x81});
+  c6502::OrderedMap<std::string, std::vector<std::string>> names;
+  names.insert_or_assign("f", Names{"__local_f__a", "__local_f__b"});
+  const auto symbols = c6502::passes::build_local_slot_symbols(pools, &names);
+  CHECK(keys(symbols) == Names{"__local_f__a", "__local_f__b"});
+  CHECK(*symbols.find("__local_f__b") == 0x81);
+
+  names.insert_or_assign("f", Names{"__local_f__a"});
+  CHECK_THROWS_WITH_AS(c6502::passes::build_local_slot_symbols(pools, &names),
+                       "function `f` has 1 slot names for a pool of 2 bytes",
+                       c6502::InternalError);
+  names.insert_or_assign("f", Names{"__local_f__a", "__local_f__b", "__local_f__c"});
+  CHECK_THROWS_AS(c6502::passes::build_local_slot_symbols(pools, &names), c6502::InternalError);
+}

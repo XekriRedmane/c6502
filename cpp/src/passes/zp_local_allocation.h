@@ -42,9 +42,11 @@ LocalPools allocate_function_locals(const tac_ast::Program& prog, const Abi& abi
 // Returns the `EQU` symbol of every byte of every pool, mapped to its
 // address: the name `slot_names_by_fn` gives the byte, one per pool byte
 // in pool order (`compute_local_slot_names`), or `__local_<fn>__<k>` for
-// a function it has no entry for, or when it is null. A caller with
-// colorings calls `local_slots` (src/passes/zp_slot_naming.h), which
-// computes the names and then calls this.
+// a function it has no entry for, or when it is null. Throws
+// `InternalError` when a function's entry doesn't hold one name per
+// byte of its pool. A caller with colorings calls `local_slots`
+// (src/passes/zp_slot_naming.h), which computes the names and then
+// calls this.
 OrderedMap<std::string, asdl::Int> build_local_slot_symbols(
     const LocalPools& local_pools,
     const OrderedMap<std::string, std::vector<std::string>>* slot_names_by_fn);

@@ -107,3 +107,12 @@ TEST_CASE("inc_peephole numbers its labels past those in the program") {
   CHECK(out == expect(R"(Label(".inc_done@0") Inc(ZP(128 0)) Branch(NE ".inc_done@1")
                          Inc(ZP(129 0)) Label(".inc_done@1") Return(false false false))"));
 }
+
+TEST_CASE("inc_peephole counts only the labels that end in a number") {
+  const std::string chain = first_byte("ZP(128 0)") + next_byte("ZP(129 0)");
+  const std::string labels = R"(Label(".inc_done@7") Label(".inc_done@") Label(".inc_done@9x") )"
+                             R"(Label(".inc_done@12a") Label(".other@40") )";
+  const std::string out = run(labels + chain + "Return(false false false)");
+  CHECK(out == expect(labels + R"(Inc(ZP(128 0)) Branch(NE ".inc_done@8")
+                         Inc(ZP(129 0)) Label(".inc_done@8") Return(false false false))"));
+}

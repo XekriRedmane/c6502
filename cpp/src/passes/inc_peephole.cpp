@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "passes/asm_liveness.h"
+#include "passes/label_numbers.h"
 
 namespace c6502::passes {
 
@@ -70,20 +71,6 @@ bool is_reg_a_op(const ir::Type_operand& op) {
 bool is_imm(const ir::Type_operand& op, int value) {
   const auto* imm = as<ir::Imm>(op);
   return imm != nullptr && imm->value == value;
-}
-
-std::optional<long long> parse_digits(std::string_view s) {
-  if (s.empty()) {
-    return std::nullopt;
-  }
-  long long n = 0;
-  for (char c : s) {
-    if (c < '0' || c > '9') {
-      return std::nullopt;
-    }
-    n = n * 10 + (c - '0');
-  }
-  return n;
 }
 
 const ir::Type_operand* match_first_byte(Instrs instrs, std::size_t start) {
@@ -225,22 +212,7 @@ void rewrite_function(ir::Function& fn, long long& counter) {
 
 asm_ast::Program apply_inc_peephole(asm_ast::Program prog) {
   // dasm rejects a local label defined twice in one SUBROUTINE.
-  long long counter = 0;
-  for (const auto& tl : prog.top_level) {
-    const auto* fn = as<ir::Function>(tl);
-    if (fn == nullptr) {
-      continue;
-    }
-    for (const auto& ins : fn->instructions) {
-      const auto* label = as<ir::Label>(ins);
-      if (label == nullptr || !label->name.starts_with(kDonePrefix)) {
-        continue;
-      }
-      if (auto n = parse_digits(std::string_view(label->name).substr(kDonePrefix.size()))) {
-        counter = std::max(counter, *n + 1);
-      }
-    }
-  }
+  auto counter = static_cast<long long>(next_label_number(prog, {kDonePrefix}));
   for (auto& tl : prog.top_level) {
     if (auto* fn = as<ir::Function>(tl)) {
       rewrite_function(*fn, counter);

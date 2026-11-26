@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "passes/designators.h"
+#include "passes/type_checking_types.h"
 #include "pyrepr.h"
 
 namespace c6502::passes {
@@ -19,15 +20,7 @@ using Exp = ir::Type_exp;
 using Type = ir::Type_data_type;
 using designators::Members;
 
-std::string display_name(const std::string& name) {
-  if (!name.empty() && name[0] == '@') {
-    const std::size_t dot = name.find('.');
-    if (dot != std::string::npos) {
-      return name.substr(dot + 1);
-    }
-  }
-  return name;
-}
+using type_checking::display_name;
 
 bool is_char_array(const Type* t) {
   if (t == nullptr) {

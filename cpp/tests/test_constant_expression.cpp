@@ -87,6 +87,26 @@ TEST_CASE("sizeof of a string literal counts its code points and the null") {
   CHECK(asdl::py_repr(type) == "UInt()");
 }
 
+TEST_CASE("a right shift of a negative value is arithmetic") {
+  using namespace c6502;
+  struct Shift {
+    const char* exp;
+    asdl::Int value;
+  };
+  const Shift shifts[] = {
+      {R"(Binary(RightShift Unary(Negate Constant(ConstInt(7) Int) Int) Constant(ConstInt(1) Int) Int))", -4},
+      {R"(Binary(RightShift Unary(Negate Constant(ConstInt(1) Int) Int) Constant(ConstInt(15) Int) Int))", -1},
+      {R"(Binary(RightShift Unary(Negate Constant(ConstInt(8) Int) Int) Constant(ConstInt(0) Int) Int))", -8},
+      {R"(Binary(RightShift Unary(Negate Constant(ConstLong(2147483647) Long) Long) Constant(ConstInt(30) Int) Long))", -2},
+      {R"(Binary(RightShift Constant(ConstUInt(65535) UInt) Constant(ConstInt(4) Int) UInt))", 4095},
+  };
+  for (const Shift& s : shifts) {
+    CAPTURE(s.exp);
+    CHECK(ce::evaluate_integer_constant_expression(asdl::load<c99_ast::Type_exp>(s.exp)).first ==
+          s.value);
+  }
+}
+
 TEST_CASE("an error names a named constant as the program spells it") {
   using namespace c6502;
   const ce::NamedConstants scope(

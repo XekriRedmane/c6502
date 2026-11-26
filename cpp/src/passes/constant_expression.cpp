@@ -352,7 +352,7 @@ Result evaluate_binary(const ir::Binary& exp) {
       }
       const int n = static_cast<int>(b);
       if (op == O::RightShift) {
-        return {coerce_to_integer_type(asdl::floor_div(a, Int(1) << n), t), t};
+        return {coerce_to_integer_type(a >> n, t), t};
       }
       if (!is_unsigned && a < 0) {
         throw ConstantExpressionError("left shift of a negative value in constant expression");

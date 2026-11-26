@@ -56,3 +56,45 @@ TEST_CASE("sub1_test_zero keeps the compare when its outputs are read") {
               R"(Label(".l") )" + kRet);
   }
 }
+
+TEST_CASE("sub1_test_zero compares the loaded and the compared operands whole") {
+  const std::string tail =
+      kReload + R"(Mov(Reg(A) Data("out" 0) false) Label(".l") )" + kRet;
+  auto with = [&](const std::string& load, const std::string& store,
+                  const std::string& compared) {
+    return "Mov(" + load + " Reg(A) false) SetCarry Sub(Imm(1) Reg(A)) Mov(Reg(A) " + store +
+           " false) Mov(Imm(0) Reg(A) false) Compare(Reg(A) " + compared +
+           R"() Branch(CC ".l") )" + tail;
+  };
+  SUBCASE("a pseudoregister, which the asm optimizer runs the pass on, folds") {
+    const std::string head =
+        R"(Mov(Pseudo("n" 1) Reg(A) false) SetCarry Sub(Imm(1) Reg(A)) Mov(Reg(A) Reg(X) false) )";
+    CHECK(run(with(R"(Pseudo("n" 1))", "Reg(X)", R"(Pseudo("n" 1))")) ==
+          expect(head + R"(Branch(CS ".l") )" + tail));
+  }
+  SUBCASE("a zero-page byte folds") {
+    const std::string head =
+        R"(Mov(ZP(128 1) Reg(A) false) SetCarry Sub(Imm(1) Reg(A)) Mov(Reg(A) Reg(X) false) )";
+    CHECK(run(with("ZP(128 1)", "Reg(X)", "ZP(128 1)")) ==
+          expect(head + R"(Branch(CS ".l") )" + tail));
+  }
+  auto unchanged = [](const std::string& text) { CHECK(run(text) == expect(text)); };
+  SUBCASE("another byte of the same object") {
+    unchanged(with(R"(Data("n" 0))", "Reg(X)", R"(Data("n" 1))"));
+    unchanged(with("ZP(128 0)", "Reg(X)", "ZP(128 1)"));
+    unchanged(with(R"(Pseudo("n" 0))", "Reg(X)", R"(Pseudo("n" 1))"));
+  }
+  SUBCASE("the same offset of another object") {
+    unchanged(with(R"(Data("n" 0))", "Reg(X)", R"(Data("m" 0))"));
+    unchanged(with("ZP(128 0)", "Reg(X)", "ZP(129 0)"));
+  }
+  SUBCASE("a store of the decrement back into the compared byte") {
+    unchanged(with(R"(Data("n" 0))", R"(Data("n" 0))", R"(Data("n" 0))"));
+  }
+  SUBCASE("a branch to a label outside the function") {
+    const std::string text =
+        kHead + R"(Mov(Imm(0) Reg(A) false) Compare(Reg(A) Data("n" 0)) Branch(CC ".far") )" +
+        kReload + R"(Mov(Reg(A) Data("out" 0) false) )" + kRet;
+    unchanged(text);
+  }
+}

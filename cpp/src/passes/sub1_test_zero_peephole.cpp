@@ -28,32 +28,6 @@ bool is_compareable_operand(const ir::Type_operand& op) {
   return isa<ir::Data, ir::ZP, ir::Pseudo>(op);
 }
 
-bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
-  if (const auto* da = as<ir::Data>(a)) {
-    const auto* db = as<ir::Data>(b);
-    return db != nullptr && da->name == db->name && da->offset == db->offset;
-  }
-  if (const auto* za = as<ir::ZP>(a)) {
-    const auto* zb = as<ir::ZP>(b);
-    return zb != nullptr && za->address == zb->address && za->offset == zb->offset;
-  }
-  if (const auto* pa = as<ir::Pseudo>(a)) {
-    const auto* pb = as<ir::Pseudo>(b);
-    return pb != nullptr && pa->name == pb->name && pa->offset == pb->offset;
-  }
-  return false;
-}
-
-std::optional<std::size_t> label_index(Instrs instrs, const std::string& name) {
-  for (std::size_t k = 0; k < instrs.size(); ++k) {
-    const auto* label = as<ir::Label>(instrs[k]);
-    if (label != nullptr && label->name == name) {
-      return k;
-    }
-  }
-  return std::nullopt;
-}
-
 bool outputs_dead_at(Instrs instrs, const LabelMap& labels, std::size_t idx) {
   if (idx >= instrs.size()) {
     return true;
@@ -80,7 +54,7 @@ std::optional<ir::Branch> try_match(Instrs instrs, const LabelMap& labels, std::
     return std::nullopt;
   }
   const auto* i3 = as<ir::Mov>(instrs[start + 3]);
-  if (i3 == nullptr || !is_reg_a_op(i3->src) || operands_equal(i3->dst, m)) {
+  if (i3 == nullptr || !is_reg_a_op(i3->src) || i3->dst == m) {
     return std::nullopt;
   }
   const auto* i4 = as<ir::Mov>(instrs[start + 4]);
@@ -88,7 +62,7 @@ std::optional<ir::Branch> try_match(Instrs instrs, const LabelMap& labels, std::
     return std::nullopt;
   }
   const auto* i5 = as<ir::Compare>(instrs[start + 5]);
-  if (i5 == nullptr || !is_reg_a_op(i5->left) || !operands_equal(i5->right, m)) {
+  if (i5 == nullptr || !is_reg_a_op(i5->left) || i5->right != m) {
     return std::nullopt;
   }
   // SBC #1 leaves C clear exactly when M is 0, and CMP M with A = 0
@@ -106,11 +80,12 @@ std::optional<ir::Branch> try_match(Instrs instrs, const LabelMap& labels, std::
   } else {
     return std::nullopt;
   }
-  const std::optional<std::size_t> taken = label_index(instrs, i6->target);
-  if (!taken) {
+  const long taken = labels.find(i6->target);
+  if (taken < 0) {
     return std::nullopt;
   }
-  if (!outputs_dead_at(instrs, labels, start + 7) || !outputs_dead_at(instrs, labels, *taken)) {
+  if (!outputs_dead_at(instrs, labels, start + 7) ||
+      !outputs_dead_at(instrs, labels, static_cast<std::size_t>(taken))) {
     return std::nullopt;
   }
   return ir::Branch{.cond = flipped, .target = i6->target};

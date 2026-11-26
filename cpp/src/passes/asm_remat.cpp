@@ -156,7 +156,9 @@ bool writes_local(const ir::Type_instruction& instr, const std::string& name) {
   return false;
 }
 
-bool writes_a(const ir::Type_instruction& instr) {
+// Returns whether `instr`, which isn't a `Mov`, writes A. The caller
+// decides a `Mov` itself.
+bool non_mov_writes_a(const ir::Type_instruction& instr) {
   using K = ir::Kind_instruction;
   switch (ir::kind(instr)) {
     case K::DecimalArith:
@@ -230,7 +232,7 @@ long find_a_producer(const InstrVec& instrs, std::size_t i) {
       // `src`.
       return k;
     }
-    if (writes_a(instr)) {
+    if (non_mov_writes_a(instr)) {
       return -1;
     }
   }

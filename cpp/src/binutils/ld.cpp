@@ -15,33 +15,22 @@ namespace {
 
 CompileError link_error(const std::string& message) { return CompileError("LinkError", message); }
 
-std::int64_t slice_bound(std::int64_t i, std::int64_t n) {
-  if (i < 0) i += n;
-  return std::clamp<std::int64_t>(i, 0, n);
-}
-
-std::string py_slice(const std::string& data, std::int64_t start, std::int64_t stop) {
-  const auto n = static_cast<std::int64_t>(data.size());
-  const std::int64_t i = slice_bound(start, n);
-  const std::int64_t j = std::max(i, slice_bound(stop, n));
-  return data.substr(static_cast<std::size_t>(i), static_cast<std::size_t>(j - i));
-}
-
-void py_slice_assign(std::string& data, std::int64_t start, std::int64_t stop,
-                     const std::string& value) {
-  const auto n = static_cast<std::int64_t>(data.size());
-  const std::int64_t i = slice_bound(start, n);
-  const std::int64_t j = std::max(i, slice_bound(stop, n));
-  data.replace(static_cast<std::size_t>(i), static_cast<std::size_t>(j - i), value);
-}
-
-void set_byte(std::string& data, std::int64_t index, std::uint8_t byte) {
-  const auto n = static_cast<std::int64_t>(data.size());
-  if (index < -n || index >= n) {
-    throw InternalError(
-        "a relocation's byte is outside its section, where Python raises IndexError");
+void overwrite(std::string& data, std::int64_t offset, std::string_view bytes) {
+  if (offset < 0 || static_cast<std::uint64_t>(offset) + bytes.size() > data.size()) {
+    throw InternalError("ld: bytes written past the end of their section");
   }
-  data[static_cast<std::size_t>(index < 0 ? index + n : index)] = static_cast<char>(byte);
+  data.replace(static_cast<std::size_t>(offset), bytes.size(), bytes);
+}
+
+void set_byte(std::string& data, std::int64_t offset, std::uint8_t byte) {
+  overwrite(data, offset, std::string(1, static_cast<char>(byte)));
+}
+
+std::string prefix(const std::string& data, std::int64_t size) {
+  if (size < 0 || static_cast<std::uint64_t>(size) > data.size()) {
+    throw InternalError("ld: a placed section is longer than its bytes");
+  }
+  return data.substr(0, static_cast<std::size_t>(size));
 }
 
 const std::set<std::string, std::less<>>& helper_names() {
@@ -209,9 +198,7 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
   };
   const auto byte_at = [&](std::int64_t i) {
     if (i < 0 || i >= len) {
-      throw InternalError(
-          "an instruction runs past the end of its section, where Python raises "
-          "IndexError");
+      throw InternalError("ld: an instruction runs past the end of its section");
     }
     return static_cast<std::uint8_t>(data[static_cast<std::size_t>(i)]);
   };
@@ -234,9 +221,7 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
   }
   for (auto it = deleted.rbegin(); it != deleted.rend(); ++it) {
     if (*it >= static_cast<std::int64_t>(out.size())) {
-      throw InternalError(
-          "an instruction runs past the end of its section, where Python raises "
-          "IndexError");
+      throw InternalError("ld: an instruction runs past the end of its section");
     }
     out.erase(static_cast<std::size_t>(*it), 1);
   }
@@ -254,7 +239,7 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
 
 std::string relocate(const Placed& p, const Resolver& resolver, const std::string& path) {
   const elf::Section& sec = *p.section;
-  std::string data = sec.type != elf::SHT_NOBITS ? py_slice(sec.data, 0, p.size) : std::string();
+  std::string data = sec.type != elf::SHT_NOBITS ? prefix(sec.data, p.size) : std::string();
   for (const elf::Reloc& r : sec.relocs) {
     if (r.offset >= p.size) {
       continue;
@@ -269,8 +254,8 @@ std::string relocate(const Placed& p, const Resolver& resolver, const std::strin
                            "` is out of range");
         }
         const auto u = static_cast<unsigned>(v);
-        py_slice_assign(data, r.offset, r.offset + 2,
-                        std::string{static_cast<char>(u & 0xFF), static_cast<char>(u >> 8)});
+        overwrite(data, r.offset,
+                  std::string{static_cast<char>(u & 0xFF), static_cast<char>(u >> 8)});
         break;
       }
       case elf::R_MOS_ADDR8: {
@@ -328,7 +313,7 @@ elf::ElfFile executable(const Objects& objects, std::vector<OutputSection>& outp
           p.section->type != elf::SHT_NOBITS
               ? relocate(p, resolver, objects.at(static_cast<std::size_t>(p.unit)).first)
               : std::string(static_cast<std::size_t>(std::max<std::int64_t>(p.size, 0)), '\0');
-      py_slice_assign(data, off, off + p.size, bytes);
+      overwrite(data, off, bytes);
     }
     const std::uint32_t flags =
         elf::SHF_ALLOC | (out.executable ? elf::SHF_EXECINSTR : elf::SHF_WRITE);

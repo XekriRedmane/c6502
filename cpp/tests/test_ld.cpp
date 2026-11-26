@@ -177,6 +177,13 @@ TEST_CASE("relocate gives Python's bytes and messages") {
   CHECK(relocated(elf::R_MOS_ADDR16, 0x10000, 0, 3, 0x800, "t", 3) == "000000");
 }
 
+TEST_CASE("relocate rejects a field past its section and a placement past the bytes") {
+  CHECK_THROWS_WITH_AS(relocated(elf::R_MOS_ADDR16, 0x1234, 0, 3),
+                       "ld: bytes written past the end of their section", c6502::InternalError);
+  CHECK_THROWS_WITH_AS(relocated(elf::R_MOS_ADDR16, 0x1234, 0, 1, 0x800, "t", 5),
+                       "ld: a placed section is longer than its bytes", c6502::InternalError);
+}
+
 TEST_CASE("relax shortens an absolute operand the linker put in zero page") {
   const elf::ElfFile t = c6502::binutils::assembler::assemble(
       "f:\n    SUBROUTINE\n    LDA g\n    BNE .x\n    STA g,X\n    JMP f\n.x:\n    RTS\n", "r.s");

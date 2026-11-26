@@ -297,9 +297,9 @@ std::vector<ld::OutputSymbol> output_symbols(
       if (pit == addr_of.end()) continue;
       const ld::Placed& p = pit->second;
       const bool item = s->type == elf::STT_FUNC || s->type == elf::STT_OBJECT;
-      if (s->value >= p.size && !item && p.size < s->section->size()) {
-        continue;
-      }
+      const bool on_dropped_jump =
+          !item && p.size < s->section->size() && s->value >= p.size;
+      if (on_dropped_jump) continue;
       const auto oit = output_of.find(s->section.get());
       if (oit == output_of.end()) {
         throw InternalError("a placed section is in no output section");

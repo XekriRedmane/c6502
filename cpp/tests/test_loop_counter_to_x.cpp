@@ -132,6 +132,15 @@ TEST_CASE("loop_counter_to_x promotes a loop counter to X") {
                         label(".loop_start"), mov(ix("arr"), kA), ir::Dec{.dst = kX},
                         bpl(".loop_start"), ir::Return{.save_a = false}});
   }
+  SUBCASE("a Phi that reads the slot keeps it in memory") {
+    // The pass runs after SSA destruction, where no Phi is left, but a
+    // Phi argument is a read of its source like any other.
+    Instrs instrs = canonical(m("b"), false);
+    instrs.insert(instrs.end() - 1,
+                  ir::Phi{.dst = m("c"),
+                          .args = {ir::AsmPhiArg{.pred_label = ".loop_start", .source = m("b")}}});
+    CHECK(run(instrs) == instrs);
+  }
   SUBCASE("a user global isn't promoted") {
     // A global has a value at entry and after the return, and DEX
     // would leave its memory stale.

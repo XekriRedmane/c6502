@@ -294,11 +294,7 @@ Roles operand_roles(const ir::Type_instruction& instr) {
       out.emplace_back(Role::kOther, op);
     }
   };
-  if (isa<ir::Phi>(instr)) {
-    for_each_operand<false>(instr, visit);
-  } else {
-    for_each_operand<true>(instr, visit);
-  }
+  for_each_operand<true>(instr, visit);
   return out;
 }
 

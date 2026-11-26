@@ -85,3 +85,52 @@ TEST_CASE("dec_register_peephole folds the six-instruction pattern") {
   read_after.insert(read_after.end() - 1, mov(tmp, ir::Data{.name = "out", .offset = 0}));
   CHECK(run(read_after) == read_after);
 }
+
+namespace {
+
+const ir::Type_operand kTmp = ir::Data{.name = "__local_f__0", .offset = 0};
+const ir::Type_operand kOut = ir::Data{.name = "out", .offset = 0};
+
+// `.top: <head>; TYA; SEC; SBC #1; STA tmp; LDY tmp; BNE .top; <tail>`.
+Instrs through_tmp(const Instrs& head, const Instrs& tail) {
+  Instrs out = {ir::Label{.name = ".top"}};
+  out.insert(out.end(), head.begin(), head.end());
+  const Instrs body = {
+      mov(kY, kA),
+      ir::SetCarry{},
+      ir::Sub{.src = ir::Imm{.value = 1}, .dst = kA},
+      mov(kA, kTmp),
+      mov(kTmp, kY),
+      ir::Branch{.cond = ir::NE{}, .target = ".top"},
+  };
+  out.insert(out.end(), body.begin(), body.end());
+  out.insert(out.end(), tail.begin(), tail.end());
+  return out;
+}
+
+}  // namespace
+
+TEST_CASE("dec_register_peephole keeps the six-instruction pattern when C is read after") {
+  const Instrs instrs =
+      through_tmp({}, {ir::Branch{.cond = ir::CC{}, .target = ".top"}, ir::Return{}});
+  CHECK(run(instrs) == instrs);
+}
+
+TEST_CASE("dec_register_peephole keeps the six-instruction pattern when V is read after") {
+  const Instrs instrs =
+      through_tmp({}, {ir::Branch{.cond = ir::VS{}, .target = ".top"}, ir::Return{}});
+  CHECK(run(instrs) == instrs);
+}
+
+TEST_CASE("dec_register_peephole keeps the temporary that the loop's top reads") {
+  const Instrs instrs = through_tmp({mov(kTmp, kOut)}, {ir::Return{}});
+  CHECK(run(instrs) == instrs);
+}
+
+TEST_CASE("dec_register_peephole folds when the temporary is written before it is read") {
+  const Instrs instrs =
+      through_tmp({}, {mov(ir::Imm{.value = 5}, kTmp), mov(kTmp, kOut), ir::Return{}});
+  const Instrs out = run(instrs);
+  CHECK(has_dey(out));
+  CHECK(out.size() == instrs.size() - 4);
+}

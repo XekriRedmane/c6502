@@ -2,11 +2,10 @@
 
 #include <cstddef>
 #include <optional>
-#include <set>
-#include <string>
 #include <utility>
 #include <vector>
 
+#include "passes/asm_dead_store.h"
 #include "passes/asm_liveness.h"
 #include "passes/decimal_arith.h"
 
@@ -23,151 +22,8 @@ using Instructions = std::vector<ir::Type_instruction>;
 struct Match {
   ir::Type_reg reg;
   ir::Branch branch;
+  std::size_t length = 0;
 };
-
-bool reads_reg_a(const ir::Type_instruction& instr) {
-  switch (ir::kind(instr)) {
-    case ir::Kind_instruction::Mov:
-      return is_reg_a(std::get<ir::Mov>(instr).src);
-    case ir::Kind_instruction::Add: {
-      const auto& i = std::get<ir::Add>(instr);
-      return is_reg_a(i.src) || is_reg_a(i.dst);
-    }
-    case ir::Kind_instruction::Sub: {
-      const auto& i = std::get<ir::Sub>(instr);
-      return is_reg_a(i.src) || is_reg_a(i.dst);
-    }
-    case ir::Kind_instruction::And: {
-      const auto& i = std::get<ir::And>(instr);
-      return is_reg_a(i.src) || is_reg_a(i.dst);
-    }
-    case ir::Kind_instruction::Or: {
-      const auto& i = std::get<ir::Or>(instr);
-      return is_reg_a(i.src) || is_reg_a(i.dst);
-    }
-    case ir::Kind_instruction::Xor: {
-      const auto& i = std::get<ir::Xor>(instr);
-      return is_reg_a(i.src1) || is_reg_a(i.src2);
-    }
-    case ir::Kind_instruction::Compare: {
-      const auto& i = std::get<ir::Compare>(instr);
-      return is_reg_a(i.left) || is_reg_a(i.right);
-    }
-    case ir::Kind_instruction::Push:
-      return is_reg_a(std::get<ir::Push>(instr).src);
-    case ir::Kind_instruction::ArithmeticShiftLeft:
-      return is_reg_a(std::get<ir::ArithmeticShiftLeft>(instr).dst);
-    case ir::Kind_instruction::LogicalShiftRight:
-      return is_reg_a(std::get<ir::LogicalShiftRight>(instr).dst);
-    case ir::Kind_instruction::RotateLeft:
-      return is_reg_a(std::get<ir::RotateLeft>(instr).dst);
-    case ir::Kind_instruction::RotateRight:
-      return is_reg_a(std::get<ir::RotateRight>(instr).dst);
-    default:
-      return false;
-  }
-}
-
-bool writes_reg_a(const ir::Type_instruction& instr) {
-  switch (ir::kind(instr)) {
-    case ir::Kind_instruction::DecimalArith:
-      return true;
-    case ir::Kind_instruction::Mov:
-      return is_reg_a(std::get<ir::Mov>(instr).dst);
-    case ir::Kind_instruction::Add:
-      return is_reg_a(std::get<ir::Add>(instr).dst);
-    case ir::Kind_instruction::Sub:
-      return is_reg_a(std::get<ir::Sub>(instr).dst);
-    case ir::Kind_instruction::And:
-      return is_reg_a(std::get<ir::And>(instr).dst);
-    case ir::Kind_instruction::Or:
-      return is_reg_a(std::get<ir::Or>(instr).dst);
-    case ir::Kind_instruction::Xor:
-      return is_reg_a(std::get<ir::Xor>(instr).dst);
-    case ir::Kind_instruction::Pop:
-      return is_reg_a(std::get<ir::Pop>(instr).dst);
-    case ir::Kind_instruction::ArithmeticShiftLeft:
-      return is_reg_a(std::get<ir::ArithmeticShiftLeft>(instr).dst);
-    case ir::Kind_instruction::LogicalShiftRight:
-      return is_reg_a(std::get<ir::LogicalShiftRight>(instr).dst);
-    case ir::Kind_instruction::RotateLeft:
-      return is_reg_a(std::get<ir::RotateLeft>(instr).dst);
-    case ir::Kind_instruction::RotateRight:
-      return is_reg_a(std::get<ir::RotateRight>(instr).dst);
-    default:
-      return false;
-  }
-}
-
-bool has_reg_arg_a(const std::vector<std::string>& reg_args) {
-  for (const auto& r : reg_args) {
-    if (r == "A") {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool a_dead_from(const Instructions& instrs, std::size_t start, const LabelMap& labels) {
-  std::size_t i = start;
-  std::set<std::size_t> seen;
-  while (i < instrs.size()) {
-    if (seen.contains(i)) {
-      return false;
-    }
-    seen.insert(i);
-    const auto& instr = instrs[i];
-    if (isa<ir::Label>(instr)) {
-      ++i;
-      continue;
-    }
-    if (const auto* mov = as<ir::Mov>(instr); mov != nullptr && mov->src == mov->dst) {
-      ++i;
-      continue;
-    }
-    if (reads_reg_a(instr)) {
-      return false;
-    }
-    if (writes_reg_a(instr)) {
-      return true;
-    }
-    if (const auto* jump = as<ir::Jump>(instr)) {
-      if (has_reg_arg_a(jump->reg_args)) {
-        return false;
-      }
-      const long tgt = labels.find(jump->target);
-      if (tgt < 0) {
-        return true;
-      }
-      i = static_cast<std::size_t>(tgt) + 1;
-      continue;
-    }
-    if (isa<ir::Branch>(instr)) {
-      return false;
-    }
-    if (const auto* call = as<ir::Call>(instr)) {
-      return !has_reg_arg_a(call->reg_args);
-    }
-    if (isa<ir::Ret, ir::Return>(instr)) {
-      return true;
-    }
-    ++i;
-  }
-  return true;
-}
-
-bool a_dead_at_successors(const Instructions& instrs, std::size_t branch_idx,
-                          const LabelMap& labels) {
-  const auto& branch = std::get<ir::Branch>(instrs[branch_idx]);
-  if (!a_dead_from(instrs, branch_idx + 1, labels)) {
-    return false;
-  }
-  const long tgt = labels.find(branch.target);
-  if (tgt < 0) {
-    return true;
-  }
-  return a_dead_from(instrs, static_cast<std::size_t>(tgt) + 1, labels);
-}
 
 template <class Fn>
 void operand_roles(const ir::Type_instruction& instr, Fn&& fn) {
@@ -263,17 +119,33 @@ void operand_roles(const ir::Type_instruction& instr, Fn&& fn) {
   }
 }
 
-bool operand_read_after(const ir::Type_operand& target, const Instructions& instrs,
-                        std::size_t start) {
-  for (std::size_t k = start; k < instrs.size(); ++k) {
-    bool found = false;
+// Returns whether a path from the successors of `instrs[start]` reads
+// `tmp` before writing it.
+bool tmp_read_after(const ir::Type_operand& tmp, const Instructions& instrs,
+                    std::size_t start, const LabelMap& labels) {
+  std::vector<bool> seen(instrs.size(), false);
+  std::vector<std::size_t> work = asm_dead_store::successors(instrs, start, labels);
+  while (!work.empty()) {
+    const std::size_t k = work.back();
+    work.pop_back();
+    if (seen[k]) {
+      continue;
+    }
+    seen[k] = true;
+    bool read = false;
+    bool written = false;
     operand_roles(instrs[k], [&](const ir::Type_operand& op, bool is_dst) {
-      if (!is_dst && op == target) {
-        found = true;
+      if (op == tmp) {
+        (is_dst ? written : read) = true;
       }
     });
-    if (found) {
+    if (read) {
       return true;
+    }
+    if (!written) {
+      for (const std::size_t next : asm_dead_store::successors(instrs, k, labels)) {
+        work.push_back(next);
+      }
     }
   }
   return false;
@@ -301,53 +173,11 @@ bool is_ne_or_eq_branch(const ir::Type_instruction& instr) {
   return b != nullptr && isa<ir::NE, ir::EQ>(b->cond);
 }
 
-std::optional<Match> match_dec_register_pattern(const Instructions& instrs, std::size_t i,
-                                                const LabelMap& labels) {
-  if (i + 5 >= instrs.size()) {
-    return std::nullopt;
-  }
-  const auto* a = as<ir::Mov>(instrs[i]);
-  if (a == nullptr) {
-    return std::nullopt;
-  }
-  const auto reg = index_register(a->src);
-  if (!reg || !is_reg_a(a->dst)) {
-    return std::nullopt;
-  }
-  if (!isa<ir::SetCarry>(instrs[i + 1])) {
-    return std::nullopt;
-  }
-  if (!is_sub_one_from_a(instrs[i + 2])) {
-    return std::nullopt;
-  }
-  const auto* d = as<ir::Mov>(instrs[i + 3]);
-  if (d == nullptr || !is_reg_a(d->src)) {
-    return std::nullopt;
-  }
-  const ir::Type_operand& tmp = d->dst;
-  const auto* e = as<ir::Mov>(instrs[i + 4]);
-  if (e == nullptr || e->src != tmp) {
-    return std::nullopt;
-  }
-  const auto* e_dst = as<ir::Reg>(e->dst);
-  if (e_dst == nullptr || e_dst->reg.index() != reg->index()) {
-    return std::nullopt;
-  }
-  if (!is_ne_or_eq_branch(instrs[i + 5])) {
-    return std::nullopt;
-  }
-  if (!a_dead_at_successors(instrs, i + 5, labels)) {
-    return std::nullopt;
-  }
-  if (operand_read_after(tmp, instrs, i + 6)) {
-    return std::nullopt;
-  }
-  return Match{.reg = *reg, .branch = std::get<ir::Branch>(instrs[i + 5])};
-}
-
+// Matches `TXA; SEC; SBC #1; TAX; B<NE|EQ>` (or the same with Y), and
+// `TXA; SEC; SBC #1; STA tmp; LDX tmp; B<NE|EQ>`, at `instrs[i]`.
 // DEX and DEY set N and Z from the new value and leave A, C, and V.
-std::optional<Match> match_transfer_back(const Instructions& instrs, std::size_t i,
-                                         const LabelMap& labels) {
+std::optional<Match> match_decrement(const Instructions& instrs, std::size_t i,
+                                     const LabelMap& labels) {
   if (i + 4 >= instrs.size()) {
     return std::nullopt;
   }
@@ -369,18 +199,33 @@ std::optional<Match> match_transfer_back(const Instructions& instrs, std::size_t
   if (d == nullptr || !is_reg_a(d->src)) {
     return std::nullopt;
   }
-  const auto* d_dst = as<ir::Reg>(d->dst);
-  if (d_dst == nullptr || d_dst->reg.index() != reg->index()) {
+  auto is_reg = [&](const ir::Type_operand& op) {
+    const auto* r = as<ir::Reg>(op);
+    return r != nullptr && r->reg.index() == reg->index();
+  };
+  std::optional<ir::Type_operand> tmp;
+  std::size_t branch_idx = i + 4;
+  if (!is_reg(d->dst)) {
+    tmp = d->dst;
+    const auto* e = as<ir::Mov>(instrs[i + 4]);
+    if (e == nullptr || e->src != *tmp || !is_reg(e->dst)) {
+      return std::nullopt;
+    }
+    branch_idx = i + 5;
+  }
+  if (branch_idx >= instrs.size() || !is_ne_or_eq_branch(instrs[branch_idx])) {
     return std::nullopt;
   }
-  if (!is_ne_or_eq_branch(instrs[i + 4])) {
+  if (!(a_dead_at(instrs, labels, branch_idx) && c_dead_at(instrs, labels, branch_idx) &&
+        v_dead_at(instrs, labels, branch_idx))) {
     return std::nullopt;
   }
-  if (!(c_dead_at(instrs, labels, i + 4) && v_dead_at(instrs, labels, i + 4) &&
-        a_dead_at(instrs, labels, i + 4))) {
+  if (tmp && tmp_read_after(*tmp, instrs, branch_idx, labels)) {
     return std::nullopt;
   }
-  return Match{.reg = *reg, .branch = std::get<ir::Branch>(instrs[i + 4])};
+  return Match{.reg = *reg,
+               .branch = std::get<ir::Branch>(instrs[branch_idx]),
+               .length = branch_idx + 1 - i};
 }
 
 void rewrite_function(ir::Function& fn) {
@@ -390,17 +235,10 @@ void rewrite_function(ir::Function& fn) {
   bool changed = false;
   std::size_t i = 0;
   while (i < instrs.size()) {
-    if (auto m = match_transfer_back(instrs, i, labels)) {
+    if (auto m = match_decrement(instrs, i, labels)) {
       out.push_back(ir::Dec{.dst = ir::Reg{.reg = m->reg}});
       out.push_back(m->branch);
-      i += 5;
-      changed = true;
-      continue;
-    }
-    if (auto m = match_dec_register_pattern(instrs, i, labels)) {
-      out.push_back(ir::Dec{.dst = ir::Reg{.reg = m->reg}});
-      out.push_back(m->branch);
-      i += 6;
+      i += m->length;
       changed = true;
       continue;
     }

@@ -4,8 +4,6 @@
 #include <string>
 
 #include "c99_to_tac.h"
-#include "errors.h"
-#include "fp_arith.h"
 
 namespace c6502::passes {
 
@@ -52,18 +50,6 @@ const c99::Type_data_type* scalar_type(const c99::Type_data_type& type) {
   }
 }
 
-asdl::Int python_int(const ValueTree& v) {
-  if (v.kind == ValueTree::Kind::kInt) {
-    return v.integer;
-  }
-  const auto t = fp_arith::double_bits_to_int(asdl::Int(v.float_bits));
-  const auto exact = t ? t->exact() : std::nullopt;
-  if (!exact) {
-    throw InternalError("cannot convert float NaN or infinity to integer");
-  }
-  return *exact;
-}
-
 std::map<std::string, ir::Constant, std::less<>> build_cache(const SymbolTable& symbols) {
   std::map<std::string, ir::Constant, std::less<>> cache;
   for (const auto& [name, sym] : symbols) {
@@ -76,7 +62,7 @@ std::map<std::string, ir::Constant, std::less<>> build_cache(const SymbolTable& 
       continue;
     }
     const ValueTree& v = initial->value;
-    if (v.kind != ValueTree::Kind::kInt && v.kind != ValueTree::Kind::kFloat) {
+    if (v.kind != ValueTree::Kind::kInt) {
       continue;
     }
     const c99::Type_data_type* t = scalar_type(sym.type);
@@ -85,11 +71,11 @@ std::map<std::string, ir::Constant, std::less<>> build_cache(const SymbolTable& 
     }
     ir::Type_const c;
     if (asdl::isa<c99::Float>(*t)) {
-      c = ir::ConstFloat{python_int(v)};
+      c = ir::ConstFloat{v.integer};
     } else if (asdl::isa<c99::Double>(*t)) {
-      c = ir::ConstDouble{python_int(v)};
+      c = ir::ConstDouble{v.integer};
     } else {
-      c = c99_to_tac::tac_const_for(*t, python_int(v));
+      c = c99_to_tac::tac_const_for(*t, v.integer);
     }
     cache.insert_or_assign(name, ir::Constant{.const_ = std::move(c)});
   }

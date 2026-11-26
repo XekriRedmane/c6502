@@ -11,6 +11,7 @@
 #include "errors.h"
 #include "passes/optimization/narrow_widened_arith.h"
 #include "passes/optimization/sink_and_past_branch.h"
+#include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
 #include "stage_case.h"
@@ -353,4 +354,31 @@ TEST_CASE("sink_and_past_branch keeps a value an earlier sink made other blocks 
   }
   CHECK(defines_t2);
   CHECK(truncates.size() == 3);
+}
+
+TEST_CASE("fold_static_const_reads folds a double's bits and leaves a value tree of a float") {
+  namespace c99 = c6502::c99_ast;
+  using c6502::passes::ValueTree;
+  const auto static_double = [](ValueTree value) {
+    return c6502::passes::Symbol{
+        .type = c99::Const{.referenced_type = c99::Double{}},
+        .attrs = c6502::passes::StaticAttr{.initial_value =
+                                               c6502::passes::Initial{.value = std::move(value)}}};
+  };
+  c6502::passes::SymbolTable symbols;
+  symbols.insert_or_assign(
+      "bits", static_double(ValueTree{.kind = ValueTree::Kind::kInt, .integer = 0x4000000000000000}));
+  symbols.insert_or_assign("two", static_double(ValueTree{.kind = ValueTree::Kind::kFloat,
+                                                          .float_bits = 0x4000000000000000}));
+  const c6502::passes::framework::PassContext ctx{.symbols = &symbols};
+  const ir::Function out = c6502::passes::fold_static_const_reads(
+      fn_of("  Copy(Var(\"bits\") Var(\"a\"))\n"
+            "  Copy(Var(\"two\") Var(\"b\"))\n"
+            "  Ret(None)\n"),
+      ctx);
+  const auto copies = instrs_of<ir::Copy>(out);
+  REQUIRE(copies.size() == 2);
+  CHECK(copies[0].src ==
+        ir::Type_val{ir::Constant{.const_ = ir::ConstDouble{.bits = 0x4000000000000000}}});
+  CHECK(copies[1].src == ir::Type_val{ir::Var{.name = "two"}});
 }

@@ -53,21 +53,12 @@ std::string repr_list(const std::vector<std::string>& names) {
   return out + "]";
 }
 
-bool target_less(const Target& a, const Target& b) {
-  if (a.local != b.local) {
-    throw InternalError(
-        "two relocations at one offset name a local and a global symbol, where "
-        "Python's sort raises TypeError");
-  }
-  if (a.local && a.unit != b.unit) return a.unit < b.unit;
-  return a.name < b.name;
+auto reloc_key(const Contents::Reloc& r) {
+  return std::tie(r.offset, r.type, r.target.local, r.target.unit, r.target.name, r.addend);
 }
 
 bool reloc_less(const Contents::Reloc& a, const Contents::Reloc& b) {
-  if (a.offset != b.offset) return a.offset < b.offset;
-  if (a.type != b.type) return a.type < b.type;
-  if (!(a.target == b.target)) return target_less(a.target, b.target);
-  return a.addend < b.addend;
+  return reloc_key(a) < reloc_key(b);
 }
 
 struct ContentsLess {
@@ -76,12 +67,8 @@ struct ContentsLess {
       return std::tie(c.name, c.type, c.flags, c.align, c.size, c.data);
     };
     if (key(a) != key(b)) return key(a) < key(b);
-    const auto rkey = [](const Contents::Reloc& r) {
-      return std::tie(r.offset, r.type, r.target.local, r.target.unit, r.target.name, r.addend);
-    };
-    return std::lexicographical_compare(
-        a.relocs.begin(), a.relocs.end(), b.relocs.begin(), b.relocs.end(),
-        [&](const Contents::Reloc& x, const Contents::Reloc& y) { return rkey(x) < rkey(y); });
+    return std::lexicographical_compare(a.relocs.begin(), a.relocs.end(), b.relocs.begin(),
+                                        b.relocs.end(), reloc_less);
   }
 };
 

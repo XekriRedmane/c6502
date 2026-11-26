@@ -173,6 +173,23 @@ TEST_CASE("path_name is Path(path).name") {
 #endif
 }
 
+TEST_CASE("contents sorts a local and a global target at one offset, the global first") {
+  auto s = std::make_shared<elf::Section>();
+  s->name = ".rodata";
+  s->flags = elf::SHF_ALLOC;
+  s->data = std::string(2, '\0');
+  const elf::SymbolPtr ext = sym("ext");
+  const elf::SymbolPtr me = sym("T@lo", 0, s, 0, elf::STT_OBJECT, elf::STB_LOCAL);
+  const elf::SymbolPtr own = sym("own", 1, text(), 0, elf::STT_FUNC, elf::STB_LOCAL);
+  s->relocs.push_back(elf::Reloc{0, elf::R_MOS_ADDR16_LO, own, 0});
+  s->relocs.push_back(elf::Reloc{0, elf::R_MOS_ADDR16_LO, ext, 0});
+  const std::optional<linker::Contents> c = linker::contents(2, obj_with({me, ext, own}, {s}), me);
+  REQUIRE(c.has_value());
+  REQUIRE(c->relocs.size() == 2);
+  CHECK(c->relocs[0].target == linker::Target{false, 0, "ext"});
+  CHECK(c->relocs[1].target == linker::Target{true, 2, "own"});
+}
+
 TEST_CASE("merge_identical redefines the later copies' symbols in place") {
   const auto table = [](const std::string& name, const std::string& bytes) {
     auto s = std::make_shared<elf::Section>();

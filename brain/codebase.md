@@ -12,5 +12,6 @@
 - [[codebase/surveying-test-dependencies]]
 - [[codebase/t3-restarts]]
 - [[codebase/tac-interpreter]]
+- [[codebase/type-checker-rechecks]]
 - [[codebase/user-docs]]
 - [[codebase/worktree-guard]]

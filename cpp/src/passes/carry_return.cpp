@@ -12,6 +12,7 @@
 #include "passes/asm_aliasing.h"
 #include "passes/asm_dead_store.h"
 #include "passes/asm_liveness.h"
+#include "passes/asm_operands.h"
 
 namespace c6502::passes {
 
@@ -263,36 +264,6 @@ std::optional<InstrList> fold_captures(const InstrList& instrs) {
   return out;
 }
 
-std::vector<ir::Type_operand> operands(const ir::Type_instruction& instr) {
-  std::vector<ir::Type_operand> out;
-  std::visit(
-      [&](const auto& x) {
-        using T = std::remove_cvref_t<decltype(x)>;
-        if constexpr (requires(const T& t) {
-                        { t.src } -> std::same_as<const ir::Type_operand&>;
-                      }) {
-          out.push_back(x.src);
-        }
-        if constexpr (requires(const T& t) {
-                        { t.dst } -> std::same_as<const ir::Type_operand&>;
-                      }) {
-          out.push_back(x.dst);
-        }
-        if constexpr (requires(const T& t) {
-                        { t.src1 } -> std::same_as<const ir::Type_operand&>;
-                      }) {
-          out.push_back(x.src1);
-        }
-        if constexpr (requires(const T& t) {
-                        { t.src2 } -> std::same_as<const ir::Type_operand&>;
-                      }) {
-          out.push_back(x.src2);
-        }
-      },
-      instr);
-  return out;
-}
-
 bool is_flag_reload(const ir::Type_instruction& instr, const ir::Type_operand& flag) {
   const auto* m = as<ir::Mov>(instr);
   return m != nullptr && m->src == flag && m->dst == kA && !m->is_volatile;
@@ -320,14 +291,12 @@ std::optional<InstrList> fold_stored_captures(const InstrList& instrs, const std
     std::size_t k = i + 3;
     while (k < out.size() && leaves_c(out[k]) && !is_flag_reload(out[k], flag)) {
       bool touches = false;
-      for (const auto& op : operands(out[k])) {
-        if (isa<ir::Data, ir::ZP, ir::IndexedData, ir::Indirect, ir::IndirectY,
-                ir::IndirectZp, ir::IndirectZpY>(op) &&
-            may_alias(op, flag, ctx)) {
-          touches = true;
-          break;
-        }
-      }
+      for_each_operand<false>(out[k], [&](const ir::Type_operand& op) {
+        touches = touches ||
+                  (isa<ir::Data, ir::ZP, ir::IndexedData, ir::Indirect, ir::IndirectY,
+                       ir::IndirectZp, ir::IndirectZpY>(op) &&
+                   may_alias(op, flag, ctx));
+      });
       if (touches) {
         break;
       }

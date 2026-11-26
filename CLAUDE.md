@@ -138,8 +138,8 @@ C source
   → expand_long_branches
   → asm_to_asm2                         → asm2_ast (1:1 with 6502 opcodes)
   → asm_emit                            → dasm-syntax 6502 assembly text
-  → (-c: binutils/assembler)            → relocatable ELF object
-  → (link: passes/linker)               → ELF executable
+  → (-c: cpp/src/binutils/assembler.h)  → relocatable ELF object
+  → (link: cpp/src/passes/linker.h)     → ELF executable
 ```
 
 Four ASDL-defined IRs (`c99.asdl`, `tac.asdl`, `asm.asdl`,
@@ -150,7 +150,7 @@ IR atom per 6502 opcode, with `Pseudo` operands that
 three compound nodes (`FunctionPrologue` / `AllocateStack` / `Ret`)
 already expanded into atoms.
 
-Two key runtime conventions:
+Key runtime conventions:
 
 - **Soft data stack** at `SSP`/`FP` (zero-page pointers, both grow
   downward); the 6502 hardware stack at `$0100-$01FF` is reserved for

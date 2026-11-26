@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "bit_precise.h"
-#include "passes/optimization/var_visit.h"
 
 namespace c6502::passes {
 
@@ -70,12 +69,8 @@ const ir::Type_val* cast_source(const ir::Type_instruction& instr, bool truncate
 }
 
 bool writes(const ir::Type_instruction& instr, std::string_view name) {
-  for (const auto d : defs_in(instr)) {
-    if (d == name) {
-      return true;
-    }
-  }
-  return false;
+  const auto d = framework::dst_name(instr);
+  return d && *d == name;
 }
 
 struct Match {

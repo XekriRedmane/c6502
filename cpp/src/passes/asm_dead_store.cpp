@@ -105,6 +105,9 @@ NameSet collect_address_taken_names(Instrs instrs) {
         out.insert(d->name);
       }
     }
+    if (isa<ir::Compare>(instr)) {
+      continue;
+    }
     for_each_operand<true>(instr, [&](const ir::Type_operand& op) {
       if (const auto* lo = as<ir::ImmLabelLow>(op)) {
         out.insert(lo->name);

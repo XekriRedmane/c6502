@@ -252,6 +252,8 @@ TEST_CASE("label_map gives the last index of each label") {
   CHECK(labels.find("c") == -1);
 }
 
+// A compare with a label's half leaves the address nowhere, so
+// `__local_f__c` isn't taken.
 TEST_CASE("collect_address_taken_names reads a label's halves in every operand") {
   const ir::Type_operand lo_c = ir::ImmLabelLow{.name = "__local_f__c"};
   const ir::Type_operand hi_e = ir::ImmLabelHigh{.name = "__local_f__e"};
@@ -265,8 +267,7 @@ TEST_CASE("collect_address_taken_names reads a label's halves in every operand")
       ret(),
   };
   const NameSet got = asm_dead_store::collect_address_taken_names(instrs);
-  CHECK(got == NameSet{"__local_f__a", "__local_f__b", "__local_f__c", "__local_f__d",
-                       "__local_f__e"});
+  CHECK(got == NameSet{"__local_f__a", "__local_f__b", "__local_f__d", "__local_f__e"});
 }
 
 TEST_CASE("asm_dead_store: DPTR dies at a direct call and at a return") {

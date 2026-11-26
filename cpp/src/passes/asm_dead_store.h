@@ -18,7 +18,8 @@ bool is_opaque(const asm_ast::Type_instruction& instr);
 
 // Returns the names that an `ImmLabelLow` / `ImmLabelHigh` operand of
 // `instrs` names, and the `Data` source of each `LoadAddress`: the
-// names whose address the function takes.
+// names whose address the function takes. A `Compare` with a label's
+// half puts no address in a register or in memory, so it doesn't count.
 NameSet collect_address_taken_names(Instrs instrs);
 
 // Returns the indices of the instructions that can run right after

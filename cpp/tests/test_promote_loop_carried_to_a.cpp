@@ -99,4 +99,30 @@ TEST_CASE("promote_loop_carried_to_a leaves the slot alone") {
     instrs.insert(instrs.begin() + 1, mov(ir::Imm{.value = 0}, kY));
     CHECK(run(instrs) == instrs);
   }
+  SUBCASE("a packed BCD add of the slot after the loop") {
+    Instrs instrs = shape({ir::Dec{.dst = kX}});
+    instrs.insert(instrs.end() - 1, ir::DecimalArith{.subtract = false,
+                                                     .left = {kPitch},
+                                                     .right = {ir::Imm{.value = 1}},
+                                                     .dst = {data("g")}});
+    CHECK(run(instrs) == instrs);
+  }
+  SUBCASE("a call in the preamble, which writes Y") {
+    Instrs instrs = shape({ir::Dec{.dst = kX}});
+    instrs.insert(instrs.begin() + 1, ir::Call{.name = "h", .reg_args = {}, .preserves = {}});
+    CHECK(run(instrs) == instrs);
+  }
+  SUBCASE("a soft-stack load in the preamble, which sets up Y") {
+    Instrs instrs = shape({ir::Dec{.dst = kX}});
+    instrs.insert(instrs.begin() + 1, mov(ir::Frame{.offset = 3}, kA));
+    CHECK(run(instrs) == instrs);
+  }
+}
+
+TEST_CASE("promote_loop_carried_to_a keeps the pitch across a call that preserves Y") {
+  Instrs instrs = shape({ir::Dec{.dst = kX}});
+  instrs.insert(instrs.begin() + 1, ir::Call{.name = "h", .reg_args = {}, .preserves = {"Y"}});
+  const Instrs out = run(instrs);
+  CHECK(out != instrs);
+  CHECK(out[0] == mov(kA, kY));
 }

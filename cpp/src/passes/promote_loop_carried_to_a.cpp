@@ -45,18 +45,7 @@ bool starts_with(const std::string& s, const std::string& prefix) {
 template <class Fn>
 bool any_operand(const ir::Type_instruction& instr, Fn&& fn) {
   bool found = false;
-  for_each_operand<false>(instr, [&](const ir::Type_operand& op) {
-    if (fn(op)) {
-      found = true;
-    }
-  });
-  if (const auto* phi = as<ir::Phi>(instr)) {
-    for (const auto& arg : phi->args) {
-      if (fn(std::get<ir::AsmPhiArg>(arg).source)) {
-        found = true;
-      }
-    }
-  }
+  for_each_operand<true>(instr, [&](const ir::Type_operand& op) { found = found || fn(op); });
   return found;
 }
 
@@ -144,8 +133,11 @@ bool touches_slot(const ir::Type_instruction& instr, const std::string& slot) {
   });
 }
 
+// Returns whether `instr` reads or writes Y, by an operand, by the
+// `LDY #off` setup of an operand, or as a call that doesn't preserve Y.
 bool touches_reg_y(const ir::Type_instruction& instr) {
-  return any_operand(instr, [](const ir::Type_operand& op) { return is_reg_y(op); });
+  return any_operand(instr, [](const ir::Type_operand& op) { return is_reg_y(op); }) ||
+         reads_y(instr) || kills_y(instr) || sets_up_y(instr);
 }
 
 std::optional<std::size_t> find_back_edge(

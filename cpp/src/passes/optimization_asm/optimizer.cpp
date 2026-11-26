@@ -37,6 +37,7 @@
 #include <variant>
 
 #include "errors.h"
+#include "pass_order.h"
 #include "passes/asm_liveness.h"
 #include "passes/optimization_asm/all_operands.h"
 #include "passes/optimization_asm/apply_coloring.h"
@@ -510,6 +511,7 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
                                        const std::optional<Range>& allowed_range,
                                        const std::vector<asdl::Int>* local_pool,
                                        const AsmFunctionOptions& options) {
+  const pass_order::Run pass_run("asm_optimizer.function");
   // Fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P; B<cc>` into `LDA
   // P; SEC; SBC #1; STA dst; B<flipped>` before SSA construction, so the
   // eligibility scan sees the IR without the compare against zero.
@@ -518,10 +520,13 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   {
     ir::Program prog;
     prog.top_level.emplace_back(std::move(fn));
+    pass_order::ran("sub1_test_zero_peephole");
     prog = apply_sub1_test_zero_peephole(std::move(prog));
     fn = std::move(std::get<ir::Function>(prog.top_level[0]));
   }
+  pass_order::ran("explicit_index_tests");
   fn = optimizer::explicit_index_tests(std::move(fn));
+  pass_order::ran("to_ssa");
   fn = to_ssa(fn, statics);
   // Forward and backward copy propagation and byte-granular dead code
   // elimination on the SSA form, to a fixed point. The forward pass
@@ -530,6 +535,10 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   // byte DCE drops the moves whose destination nothing reads, and each
   // can expose work for the others. The statics go to all three, so
   // writes that are visible outside stay.
+  pass_order::ran("copy_propagate");
+  pass_order::ran("backward_copy_propagate");
+  pass_order::ran("byte_dce");
+  pass_order::ran("absorb_zero_load");
   while (true) {
     const std::vector<ir::Type_instruction> prev = fn.instructions;
     fn = copy_propagate(std::move(fn), statics);
@@ -550,7 +559,9 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   // width. `blocked_addrs` holds the zero-page bytes of the zp_abi
   // parameters, if any, so the body's locals avoid them and don't
   // overwrite an incoming parameter in mid-computation.
+  pass_order::ran("compute_liveness");
   const Liveness liveness = compute_liveness(fn);
+  pass_order::ran("build_interference");
   InterferenceGraph graph = build_interference(fn, liveness, statics);
   if (options.recursive_callees != nullptr && !options.recursive_callees->empty()) {
     check_nothing_live_across(fn, liveness, graph, *options.recursive_callees);
@@ -563,6 +574,7 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   // get one color. After `Phi` destruction the matching moves are moves
   // to themselves, which `asm_emit` drops, which removes the routing
   // through temporaries that the `Phi`s gave.
+  pass_order::ran("coalesce_moves");
   const CoalesceResult coalesced = coalesce_moves(fn, graph);
   // Eligibility for X and Y. The scan finds the pseudos whose uses meet
   // the shape constraints of each instruction, with hints for the names
@@ -578,6 +590,7 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   // register (`n` used in `LDA #0; CMP n`, where `CMP` takes no X or Y as
   // its right operand). When the hint succeeds, the store at entry
   // becomes dead and is dropped.
+  pass_order::ran("scan_hwreg_eligibility");
   HwRegEligibility raw = scan_function(fn, options.local_pins, options.param_hints);
   if (options.entry_limits != nullptr && !options.entry_limits->empty()) {
     const EntryLimits& limits = *options.entry_limits;
@@ -598,6 +611,7 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   }
   const HwRegEligibility rep_eligibility =
       project_eligibility(raw, coalesced, all_pseudo_names(fn));
+  pass_order::ran("color_graph");
   Coloring coloring = color_graph(fn, graph, std::nullopt, &blocked_addrs, &rep_eligibility,
                                   allowed_range, &liveness, &coalesced.representative,
                                   &in_frame);
@@ -623,7 +637,9 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   // otherwise miss each other in the cycle check, which compared SSA
   // names. After the rewrite they are `Mov(ZP($A), ZP($B))`, which the
   // check on storage handles.
+  pass_order::ran("apply_coloring");
   fn = apply_coloring(std::move(fn), coloring, local_pool);
+  pass_order::ran("from_ssa");
   fn = from_ssa(fn);
   return {std::move(fn), std::move(coloring)};
 }
@@ -634,6 +650,8 @@ OptimizedAsmProgram optimize_program(ir::Program prog, const AsmOptimizerOptions
   // and drops the statics nothing names any more. It runs before the
   // round trip of each function, whose forward copy propagation picks up
   // the `Mov(Imm, Pseudo)` shapes it leaves.
+  const pass_order::Run pass_run("asm_optimizer");
+  pass_order::ran("fold_const_statics");
   prog = fold_const_statics(std::move(prog), options.symbols);
   StaticNames statics = options.extra_statics;
   for (const auto& tl : prog.top_level) {
@@ -695,6 +713,7 @@ OptimizedAsmProgram optimize_program(ir::Program prog, const AsmOptimizerOptions
   // propagation settle before the references are counted, and a static
   // whose last use was a dead load doesn't stay because the load was
   // still in the IR upstream.
+  pass_order::ran("dead_static_elimination");
   out.prog = apply_dead_static_elimination(std::move(prog));
   return out;
 }

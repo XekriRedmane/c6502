@@ -25,6 +25,7 @@
 
 #include <utility>
 
+#include "pass_order.h"
 #include "passes/address_taken_zp.h"
 #include "passes/carry_return_choice.h"
 #include "passes/function_local_sizing.h"
@@ -125,6 +126,8 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
       out.noreturn.insert(name);
     }
   }
+  const pass_order::Run pass_run("optimized_front");
+  pass_order::ran("select_abi");
   Abi abi = select_abi(tac, c99, &types);
   // Every zp_abi `bool` function with external linkage returns it in the
   // carry flag, which every unit decides from the declaration alone, and
@@ -228,6 +231,7 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   LocalPools local_pools;
   OptimizedAsmProgram final_;
   for (int attempt = 0; attempt <= kPoolRetries; ++attempt) {
+    pass_order::ran("allocate_function_locals");
     local_pools = allocate_function_locals(tac, abi, combined, options);
     AsmOptimizerOptions final_options = prelim_options;
     final_options.local_pools = &local_pools;
@@ -281,7 +285,9 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
     }
     byte_names.insert_or_assign(fn, std::move(by_byte));
   }
+  pass_order::ran("lower_data_load_address");
   asm1 = lower_data_load_address(std::move(asm1), &out.slot_symbols, &byte_names);
+  pass_order::ran("synthesize_prologue");
   out.prog = synthesize_program(std::move(asm1), dims_by_fn);
   // The names that are zero-page bytes, for the sizes of the code that
   // `apply_shared_tails` and `apply_outline_runs` move.

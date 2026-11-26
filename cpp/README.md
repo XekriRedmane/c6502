@@ -2112,6 +2112,25 @@ results a run without it gives, so the C++ fixed point has none.
 checks the list against `tools/capture_passes.SWEEP_PASSES`, which
 `tests/test_capture_passes.py` checks against compile.py.
 
+`c6502cpp pass-order` (src/pass_order.*) lists the passes of each of
+the optimizer's drivers in the order a compile runs them, one `<driver>
+<pass>` line each, for tests/test_optimization_docs.py, which checks
+the pipeline order of docs/optimizations/README.md against it. Each
+run of a driver opens a `pass_order::Run` and reports each pass with
+`pass_order::ran`. The peephole fixed point (`peephole`) and the TAC
+optimizer's driver (`tac`) report their tables before each run of them,
+and the straight-line drivers (`asm_optimizer` and, once for each
+function, `asm_optimizer.function`, then `optimized_tac`,
+`optimized_front`, and `optimized_asm`) report each pass beside its
+call, so a pass that a driver calls twice is listed twice. The command
+compiles a small built-in program with `-O` inside a
+`pass_order::Recording`, which keeps the first run of each driver, and
+outside one a report costs a test of a thread-local pointer. On 25 Nov
+2026 the stems of its passes matched those that the test had read from
+the Python sources for each of the four orders it checks (54 stems of
+the peephole sweep, 42 of the TAC driver, 9 of the asm optimizer, and
+25 of `optimized_asm`).
+
 `passes::optimized_region` (`src/passes/optimized_asm.*`) runs the
 passes of `optimized_asm` from `apply_licm` through
 `apply_outline_runs`, with Python's arguments, on the program after

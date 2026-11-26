@@ -44,6 +44,7 @@
 #include "golden.h"
 #include "helper_checks.h"
 #include "json.h"
+#include "pass_order.h"
 #include "passes/peephole_fixedpoint.h"
 #include "passes/registry.h"
 #include "passes/stage_registry.h"
@@ -78,6 +79,7 @@ const char kUsage[] =
     "       c6502cpp assemble\n"
     "       c6502cpp link [--repeat <n>]\n"
     "       c6502cpp sweep-passes\n"
+    "       c6502cpp pass-order\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
     "tac_ast, or c99_ast) from <file> or stdin and writes its dump again,\n"
@@ -156,7 +158,11 @@ const char kUsage[] =
     "times and writes the shortest time to stderr.\n"
     "\n"
     "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
-    "order, one per line.\n";
+    "order, one per line.\n"
+    "\n"
+    "pass-order compiles a small built-in program with -O and lists, for\n"
+    "each of the optimizer's drivers, the passes of its first run in the\n"
+    "order it ran them, one `<driver> <pass>` line each (src/pass_order.h).\n";
 
 std::string read_stdin() {
 #ifdef _WIN32
@@ -831,6 +837,10 @@ int main(int argc, char** argv) {
       double best = 0;
       write_stdout(binutils::link_response(read_stdin(), repeat, &best));
       if (repeat > 1) std::fprintf(stderr, "best of %d: %.2f ms\n", repeat, best);
+      return 0;
+    }
+    if (command == "pass-order" && args.empty()) {
+      write_stdout(pass_order::listing());
       return 0;
     }
     if (command == "sweep-passes" && args.empty()) {

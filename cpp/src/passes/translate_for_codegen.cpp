@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "c99_to_tac.h"
+#include "pass_order.h"
 #include "passes/optimization/dispatch_pointer_array.h"
 #include "passes/optimization/inline_functions.h"
 #include "passes/optimization/optimizer.h"
@@ -28,15 +29,20 @@ tac_ast::Program optimized_tac(tac_ast::Program tac, SymbolTable& symbols, const
   // The address of a row of a 2-D array whose rows aren't a power of two
   // bytes long comes from a table of row addresses, when that's smaller.
   // This runs before strength reduction turns the multiply into shifts.
+  const pass_order::Run pass_run("optimized_tac");
+  pass_order::ran("row_address_tables");
   tac = apply_row_address_tables(std::move(tac), &symbols, &types);
+  pass_order::ran("optimize_tac");
   tac = optimize_program(std::move(tac), &symbols);
   // A read `arr[i][j]` through a small `static const T * const[N]`
   // becomes a compare-and-branch dispatch on `i`. It runs after the
   // optimizer has taken each function out of SSA form, so each case can
   // write the same destination without a Phi.
+  pass_order::ran("dispatch_const_pointer_arrays");
   tac = dispatch_const_pointer_arrays(std::move(tac), &symbols);
   // A table of 2-byte elements read only by a byte index is stored as
   // its low bytes and then its high bytes, so the index needs no shift.
+  pass_order::ran("split_tables");
   return apply_split_tables(std::move(tac), &symbols);
 }
 

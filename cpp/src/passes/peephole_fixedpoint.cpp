@@ -58,6 +58,7 @@
 #include <utility>
 
 #include "errors.h"
+#include "pass_order.h"
 #include "passes/adc_commute.h"
 #include "passes/and_sign_bit_branch.h"
 #include "passes/asm_dead_store.h"
@@ -231,6 +232,10 @@ std::vector<SweepPass> peephole_sweep(const AsmContext& ctx,
 
 asm_ast::Program run_to_fixed_point(asm_ast::Program prog,
                                     const std::vector<SweepPass>& sweep) {
+  const pass_order::Run pass_run("peephole");
+  for (const auto& pass : sweep) {
+    pass_order::ran(pass.name);
+  }
   for (int i = 0; i < kPeepholeFixedpointCap; ++i) {
     ir::Program new_prog = prog;
     for (const auto& pass : sweep) {

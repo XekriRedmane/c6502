@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "errors.h"
+#include "pass_order.h"
 #include "passes/ir_check.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
@@ -56,6 +57,14 @@ ir::Function sweep(const std::vector<NamedPass>& passes, ir::Function fn, const 
   return fn;
 }
 
+// Reports the passes of one of the driver's lists, which run next
+// (src/pass_order.h).
+void report(const std::vector<NamedPass>& passes) {
+  for (const auto& p : passes) {
+    pass_order::ran(p.name);
+  }
+}
+
 bool all_ported(const std::vector<NamedPass>& passes) {
   for (const auto& p : passes) {
     if (p.run == nullptr) {
@@ -80,8 +89,10 @@ bool PhaseDriver::complete() const {
 }
 
 ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_storage) const {
+  const pass_order::Run pass_run("tac");
   ir_check::check_tac(fn, "c99_to_tac", ctx.symbols);
   // The passes before SSA run whether or not SSA construction will.
+  report(pre_ssa);
   for (const auto& p : pre_ssa) {
     fn = run(p, std::move(fn), ctx, false);
   }
@@ -92,13 +103,16 @@ ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_
     ctx.ssa_dsts = &ssa_storage;
     observe(fn, "to_ssa");
     ir_check::check_tac(fn, "to_ssa", ctx.symbols, ctx.ssa_dsts);
+    report(pre_fixedpoint);
     for (const auto& p : pre_fixedpoint) {
       fn = run(p, std::move(fn), ctx, true);
     }
   }
   // The main fixed point.
+  report(fixedpoint);
   fn = sweep(fixedpoint, std::move(fn), ctx, fixedpoint_cap, ctx.symbols != nullptr);
   if (ctx.symbols != nullptr) {
+    report(post_fixedpoint);
     for (const auto& p : post_fixedpoint) {
       fn = run(p, std::move(fn), ctx, true);
     }
@@ -107,10 +121,12 @@ ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_
     ir_check::check_tac(fn, "from_ssa", ctx.symbols);
   }
   // The passes after destruction, once each.
+  report(post_destruction);
   for (const auto& p : post_destruction) {
     fn = run(p, std::move(fn), ctx, false);
   }
   // The fixed point after destruction.
+  report(post_destruction_fixedpoint);
   return sweep(post_destruction_fixedpoint, std::move(fn), ctx, fixedpoint_cap, false);
 }
 

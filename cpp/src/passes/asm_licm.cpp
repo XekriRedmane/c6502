@@ -5,7 +5,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -331,13 +330,21 @@ std::optional<InstrVec> try_hoist_one(const InstrVec& instrs, const LabelMap& la
   return std::nullopt;
 }
 
+// A branch or jump at `jump_idx` back to the label `header_name` at
+// `header_idx`, which is before it.
+struct BackEdge {
+  std::size_t header_idx = 0;
+  std::size_t jump_idx = 0;
+  std::string header_name;
+};
+
 // Finds one hoistable Mov in the innermost loop that has one and
 // performs the hoist. Returns the new instructions, or nothing when no
 // hoist fires.
 std::optional<InstrVec> one_pass(const InstrVec& instrs, const std::string& fn_name,
                                  const SymbolAddrs& zp_cells, const AsmContext& ctx) {
   const LabelMap labels(instrs);
-  std::vector<std::tuple<std::size_t, std::size_t, std::string>> back_edges;
+  std::vector<BackEdge> back_edges;
   for (std::size_t k = 0; k < instrs.size(); ++k) {
     const auto target = asm_licm::branch_or_jump_target(instrs[k]);
     if (!target) {
@@ -348,17 +355,18 @@ std::optional<InstrVec> one_pass(const InstrVec& instrs, const std::string& fn_n
       continue;
     }
     if (static_cast<std::size_t>(header_idx) < k) {
-      back_edges.emplace_back(static_cast<std::size_t>(header_idx), k, *target);
+      back_edges.push_back(BackEdge{.header_idx = static_cast<std::size_t>(header_idx),
+                                    .jump_idx = k,
+                                    .header_name = *target});
     }
   }
   std::stable_sort(back_edges.begin(), back_edges.end(),
                    [](const auto& a, const auto& b) {
-                     return std::get<1>(a) - std::get<0>(a) <
-                            std::get<1>(b) - std::get<0>(b);
+                     return a.jump_idx - a.header_idx < b.jump_idx - b.header_idx;
                    });
-  for (const auto& [header_idx, back_edge_idx, header_name] : back_edges) {
-    if (auto hoisted = try_hoist_one(instrs, labels, header_idx, back_edge_idx,
-                                     header_name, fn_name, zp_cells, ctx)) {
+  for (const BackEdge& edge : back_edges) {
+    if (auto hoisted = try_hoist_one(instrs, labels, edge.header_idx, edge.jump_idx,
+                                     edge.header_name, fn_name, zp_cells, ctx)) {
       return hoisted;
     }
   }

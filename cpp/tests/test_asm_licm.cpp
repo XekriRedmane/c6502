@@ -239,3 +239,23 @@ TEST_CASE("licm leaves a store that an exit before it can skip") {
   };
   CHECK(run(instrs) == instrs);
 }
+
+TEST_CASE("licm hoists a store out of the inner loop and then the outer one") {
+  const Instrs instrs = {
+      ir::Label{.name = ".outer"},
+      ir::Label{.name = ".inner"},
+      imm_mov(1, kA),
+      mov(kA, data("slot")),
+      mov(data("c"), kA),
+      ir::Compare{.left = kA, .right = ir::Imm{.value = 0}},
+      ir::Branch{.cond = ir::NE{}, .target = ".inner"},
+      mov(data("d"), kA),
+      ir::Compare{.left = kA, .right = ir::Imm{.value = 0}},
+      ir::Branch{.cond = ir::NE{}, .target = ".outer"},
+      ir::Return{},
+  };
+  const Instrs out = run(instrs);
+  const std::size_t outer = label_index(out, ".outer");
+  CHECK_FALSE(stores_to(out, outer + 1, out.size(), "slot"));
+  CHECK(stores_to(out, 0, outer, "slot"));
+}

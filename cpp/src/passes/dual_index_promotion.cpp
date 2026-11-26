@@ -129,9 +129,6 @@ bool writes_x(const ir::Type_instruction& instr) {
   if (const auto* dec = as<ir::Dec>(instr)) {
     return is_reg_x(dec->dst);
   }
-  if (const auto* pop = as<ir::Pop>(instr)) {
-    return is_reg_x(pop->dst);
-  }
   return false;
 }
 

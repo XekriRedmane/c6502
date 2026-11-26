@@ -774,8 +774,6 @@ std::optional<Candidate> find_counter_candidate(Instrs instrs, const LabelMap& l
   const std::set<asdl::Int> pointer_addrs = pointer_byte_addresses(instrs);
   std::map<Key, Uses> uses;
   std::vector<Key> init_order;
-  std::vector<Key> dec_order;
-  std::vector<Key> ldx_order;
   for (std::size_t i = 0; i < instrs.size(); ++i) {
     for (const auto& [role, op] : operand_roles(instrs[i])) {
       std::optional<Key> k = operand_key(op);
@@ -795,18 +793,13 @@ std::optional<Candidate> find_counter_candidate(Instrs instrs, const LabelMap& l
           u.init_idx = i;
           break;
         case Role::kLdx:
-          if (u.ldx.empty()) {
-            ldx_order.push_back(*k);
-          }
           u.ldx.push_back(i);
           break;
         case Role::kLda:
           u.lda.push_back(i);
           break;
         case Role::kDec:
-          if (u.dec_count++ == 0) {
-            dec_order.push_back(*k);
-          }
+          ++u.dec_count;
           u.dec_idx = i;
           break;
         case Role::kInc:
@@ -819,10 +812,7 @@ std::optional<Candidate> find_counter_candidate(Instrs instrs, const LabelMap& l
       }
     }
   }
-  std::vector<Key> order = init_order;
-  order.insert(order.end(), dec_order.begin(), dec_order.end());
-  order.insert(order.end(), ldx_order.begin(), ldx_order.end());
-  for (const Key& key : order) {
+  for (const Key& key : init_order) {
     const Uses& u = uses.at(key);
     if (u.disqualified || !is_compiler_slot(key)) {
       continue;

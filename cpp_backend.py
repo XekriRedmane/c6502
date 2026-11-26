@@ -405,13 +405,37 @@ def tac_falls_off_end(source: str) -> bool:
     return lines["fell"] == "true"
 
 
+# What `enable_ir_check` set, or None when nothing has called it.
+_check_ir: bool | None = None
+
+
+def enable_ir_check(on: bool = True) -> bool:
+    """Turns the IR checks on, or off, for the compiles that follow, and
+    returns whether they were on (`_ir_check_enabled`). Under
+    `C6502_CPP_BACKEND=1` the requests carry the choice, and the Python
+    `ir_check.enable` gets it too when passes/ir_check.py is loaded or
+    the switch is off, since the Python pipeline checks the IR then. A
+    test that needs the checks whatever `C6502_CHECK_IR` says calls it
+    in place of `ir_check.enable`, which the shims don't have once the
+    Python compiler is removed."""
+    global _check_ir
+    was = _ir_check_enabled()
+    _check_ir = on
+    if os.environ.get("C6502_CPP_BACKEND") != "1" or "passes.ir_check" in sys.modules:
+        from passes import ir_check
+        ir_check.enable(on)
+    return was
+
+
 def _ir_check_enabled() -> bool:
-    """Whether the IR checks are on, as `ir_check.enabled()` says: the
-    value of `C6502_CHECK_IR` when passes/ir_check.py was imported, or
-    what `ir_check.enable()` set since, as the fuzzers set it. When
-    nothing has imported the module, the result is the variable's
-    value, since importing the module would load the IRs for every
-    compile."""
+    """Whether the IR checks are on: what `enable_ir_check` set last, or
+    else what `ir_check.enabled()` says, the value of `C6502_CHECK_IR`
+    when passes/ir_check.py was imported or what `ir_check.enable()` set
+    since, as the fuzzers set it. When nothing has imported the module,
+    the result is the variable's value, since importing the module would
+    load the IRs for every compile."""
+    if _check_ir is not None:
+        return _check_ir
     module = sys.modules.get("passes.ir_check")
     if module is not None:
         return module.enabled()

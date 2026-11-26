@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import unittest
 
-from passes import ir_check
+import cpp_backend
 from sim.harness import build_sim, run_c_program
 
 
@@ -56,12 +56,11 @@ class TestEndToEndShifts(unittest.TestCase):
             return (int)(z & 0x7FFF);
         }
         """
-        was = ir_check.enabled()
-        ir_check.enable()
+        was = cpp_backend.enable_ir_check()
         try:
             a, b = self._both_paths(src)
         finally:
-            ir_check.enable(was)
+            cpp_backend.enable_ir_check(was)
         want = (128 * 3 * 129 * 129) & 0x7FFF
         self.assertEqual((a, b), (want, want))
 

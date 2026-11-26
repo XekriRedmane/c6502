@@ -1,4 +1,3 @@
-// The port of passes/loop_counter_to_x.py.
 #pragma once
 
 #include "asm_ast.h"

@@ -1,8 +1,6 @@
-// `zp_slot_naming.local_slot_names` from passes/zp_slot_naming.py, the
-// names of the bytes of a function's body-local pool. It has a file of
-// its own because two parts of the port call it: `apply_coloring` in
-// the asm optimizer, and `compute_local_slot_names` in
-// src/passes/zp_slot_naming.h.
+// The names of the bytes of a function's body-local pool, which
+// `apply_coloring` in the asm optimizer and `compute_local_slot_names`
+// (zp_slot_naming.h) both read.
 #pragma once
 
 #include <string>

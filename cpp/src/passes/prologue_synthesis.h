@@ -1,4 +1,3 @@
-// The port of passes/prologue_synthesis.py.
 #pragma once
 
 #include <string>
@@ -11,10 +10,6 @@
 
 namespace c6502::passes {
 
-// `FrameDimsByFunction`, each function's frame by name, is in
-// passes/replace_pseudoregisters.h with `replace_program_bare_exit`,
-// which returns it.
-
 // Returns `prog` with each function's prologue added and each bare
 // `Return` made a full `Ret`, from the function's frame in
 // `dims_by_fn`, as the comment at the top of prologue_synthesis.cpp
@@ -25,9 +20,9 @@ namespace c6502::passes {
 asm_ast::Program synthesize_program(asm_ast::Program prog, const FrameDimsByFunction& dims_by_fn);
 
 // Splits the register parameters' entry stubs off the start of
-// `instrs`, and returns the stubs and the rest, as the comment at its
-// definition describes. The unit tests call it, as
-// tests/test_param_registers.py called Python's `_split_entry_stubs`.
+// `instrs`, skipping labels: the leading moves from A, X, or Y into
+// memory (the local each parameter is copied into), into X, or into A.
+// Returns the stubs and the rest, with the labels left in the rest.
 std::pair<std::vector<asm_ast::Type_instruction>, std::vector<asm_ast::Type_instruction>>
 split_entry_stubs(std::vector<asm_ast::Type_instruction> instrs);
 

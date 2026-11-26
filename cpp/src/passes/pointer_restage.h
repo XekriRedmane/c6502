@@ -1,6 +1,6 @@
-// The port of passes/pointer_restage.py, which decides when
-// `tac_to_asm` copies a pointer into DPTR again before each byte of a
-// wide access through it. The .cpp's comment gives the reasons.
+// Decides when `tac_to_asm` copies a pointer into DPTR again before
+// each byte of a wide access through it. The comment at the top of
+// pointer_restage.cpp gives the reasons.
 #pragma once
 
 #include <optional>
@@ -34,7 +34,7 @@ bool pointer_in_zero_page(const asm_ast::Type_operand& op, const AsmContext& ctx
 
 // Returns whether a store of `n` bytes at `offset` through a pointer of
 // type `ptr_type` may read the pointer again for each byte. `ptr_type`
-// may be null, as Python's None.
+// may be null.
 bool restage_store(const c99_ast::Type_data_type* ptr_type, asdl::Int offset, asdl::Int n,
                    const TypeTable* types);
 

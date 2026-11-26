@@ -86,8 +86,6 @@ const c99::Type_data_type& unqualified(const c99::Type_data_type& t) {
   }
 }
 
-// Returns `t` with every `const` and `volatile` removed, through
-// pointers and arrays.
 c99::Type_data_type deep_unqualified(const c99::Type_data_type& t) {
   const c99::Type_data_type& u = unqualified(t);
   if (const auto* p = as<c99::Pointer>(u)) {
@@ -103,7 +101,6 @@ bool is_character(const c99::Type_data_type& t) {
   return isa<c99::Char, c99::SChar, c99::UChar, c99::Bool>(t);
 }
 
-// Returns the size of `t` in bytes, or none when it isn't known.
 std::optional<asdl::Int> size_of(const c99::Type_data_type& type, const TypeTable* types) {
   const c99::Type_data_type& t = unqualified(type);
   if (is_character(t)) {

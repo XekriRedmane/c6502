@@ -53,8 +53,6 @@ std::set<Int> int_set(const Value& v) {
   return out;
 }
 
-// --- The JSON of the results, as Python's `json.dumps` writes it ---
-
 std::string strings_text(const std::vector<std::string>& names) {
   std::string out = "[";
   for (std::size_t i = 0; i < names.size(); ++i) {
@@ -95,8 +93,6 @@ std::string zp_objects_text(const linker::ZpObjects& objects) {
   }
   return out + "]";
 }
-
-// --- Reading the inputs ---
 
 std::vector<LinkMetadata> metas_of(const Value& v) {
   std::vector<LinkMetadata> out;
@@ -145,8 +141,6 @@ linker::Objects objects_of(const Value& v, const Blob& blob) {
   return out;
 }
 
-// Returns what differs between the objects and those the record names,
-// compared byte for byte, or the empty string.
 std::string compare_objects(const linker::Objects& objects, const Value& recorded,
                             const Blob& blob) {
   if (objects.size() != recorded.items.size()) {
@@ -160,9 +154,6 @@ std::string compare_objects(const linker::Objects& objects, const Value& recorde
   return "";
 }
 
-// Runs the function of a record of `kind` and returns the JSON text of
-// its result, as the harness records it. `extra` is set to what differs
-// in an object the function changed.
 std::string run(std::string_view kind, const Value& args, const Value& input, const Value& output,
                 const Blob& blob, std::string& extra) {
   if (kind == "link_merge") {
@@ -218,8 +209,6 @@ std::string run(std::string_view kind, const Value& args, const Value& input, co
         return pairs + "]";
       }();
     }
-    // The recorded objects are compared above, so the text takes them
-    // from the record.
     return out + "], \"metas\": " + metas_text(metas) +
            ", \"objects\": " + (recorded != nullptr ? json::dump(*recorded) : "null") + "}";
   }

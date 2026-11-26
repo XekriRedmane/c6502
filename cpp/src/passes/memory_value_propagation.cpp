@@ -20,25 +20,6 @@
 // source is a recomputable `Imm`, `Data`, or `IndexedData` reads the
 // source, as `apply_remat` does within a block.
 //
-// Why over the CFG
-//
-// The former `apply_indirect_base_prop` made the same rewrite within a
-// block, and every `Label`, `Jump`, and `Branch` ended its facts. In
-//
-//     .preheader:
-//        LDA  __zpabi_fn_p0
-//        STA  DPTR
-//        LDA  __zpabi_fn_p1
-//        STA  DPTR+1
-//     .loop_start:
-//        ...
-//        STA  (DPTR),Y      ; the rewrite was missed at the label
-//
-// the fact ended at `.loop_start`, and the access inside the loop kept
-// the staging of DPTR, which it no longer needed, in the output. The
-// dataflow carries the fact into the loop's body and around it for as
-// long as no instruction ends it.
-//
 // The lattice
 //
 // The state at a point holds
@@ -115,21 +96,15 @@
 //
 // The identity of X and Y
 //
-// Python keyed the token of each write of X or Y by the instruction
-// object, so an object at two positions, as a `[step] * k` list makes,
-// gave both writes one token, and a fact made between them outlived the
-// second write. Each repeat was then analyzed as a copy of its own
-// (`_with_distinct_instructions`). Here the token of a write is its
-// 1-based position in the function's instructions, which is what each
-// copy got, and the entry state's tokens are 0. A rewritten instruction
-// has no token, as a new Python object had none.
+// The token of a write of X or Y is its 1-based position in the
+// function's instructions, and the entry state's tokens are 0. A
+// rewritten instruction has no token.
 //
 // Where it runs
 //
-// After `replace_pseudoregisters_bare_exit`, so the operands are
-// concrete, and inside the `_peephole_fixedpoint` loop. It replaced
-// `apply_indirect_base_prop`, its successor over the CFG, and overlaps
-// with `apply_remat`'s rewrites of `Imm`, `Data`, and `ImmLabel` sources.
+// After `replace_program_bare_exit`, so the operands are concrete, and
+// inside the peephole fixed point. It overlaps with `apply_remat`'s
+// rewrites of `Imm`, `Data`, and `ImmLabel` sources.
 #include "passes/memory_value_propagation.h"
 
 #include <algorithm>
@@ -158,14 +133,8 @@ using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 using K = ir::Kind_instruction;
 
-// The most reads of one slot's value that may take a form a byte longer
-// than the slot's (`dearer_read`). The store into the slot that they let
-// go is 2 bytes.
 constexpr int kMaxDearerReads = 2;
 
-// The compiler's own zero-page slots. The linker gives them new
-// addresses, so two of them that share a byte in one unit needn't share
-// it in the program.
 bool is_slot_name(std::string_view name) {
   return name.starts_with("__local_") || name.starts_with("__zpabi_");
 }
@@ -175,22 +144,14 @@ bool is_reg_a_op(const ir::Type_operand& op) {
   return r != nullptr && isa<ir::A>(r->reg);
 }
 
-// A tracked source expression.
 struct Expr {
   enum Kind { kZPRef, kImm, kLabelLow, kLabelHigh, kData, kIndexed };
   Kind kind = kZPRef;
-  // kZPRef: the zero-page address.
   long long addr = 0;
-  // kZPRef: the `Data(name, offset)` operand the value was read through,
-  // when `has_name`, which takes no part in comparisons, since the fact
-  // is about the address. kLabelLow, kLabelHigh, kData, kIndexed: the
-  // name and offset.
   bool has_name = false;
   std::string name;
   asdl::Int offset = 0;
-  // kImm: the value.
   asdl::Int value = 0;
-  // kIndexed: the index register and its token when the fact was made.
   bool idx_is_x = false;
   long long idx_token = 0;
 
@@ -217,8 +178,6 @@ struct Expr {
 
 Expr zp_ref(long long addr) { return Expr{.kind = Expr::kZPRef, .addr = addr}; }
 
-// The state at a point. A token of nothing stands for a register whose
-// value is unknown: written by a call, or different on two paths in.
 struct State {
   std::optional<Expr> a_value;
   std::map<long long, Expr> cells;
@@ -228,8 +187,6 @@ struct State {
   bool operator==(const State&) const = default;
 };
 
-// What a call may write: zero-page addresses, and the `(name, offset)`
-// bytes of other statics, with no offset for any byte of the name.
 struct Summary {
   std::set<long long> zp;
   std::set<std::pair<std::string, std::optional<asdl::Int>>> data;
@@ -237,8 +194,6 @@ struct Summary {
 
 using Summaries = std::map<std::string, Summary, std::less<>>;
 
-// Returns the zero-page address of `op`: a `ZP` byte's, or a `Data`
-// byte's through `zp_addrs` when it is $FF or below.
 std::optional<long long> zp_addr(const ir::Type_operand& op, const SymbolAddrs& zp_addrs) {
   if (const auto* z = as<ir::ZP>(op)) {
     return static_cast<long long>(z->address + z->offset);
@@ -257,9 +212,6 @@ std::optional<long long> zp_addr(const ir::Type_operand& op, const SymbolAddrs& 
   return std::nullopt;
 }
 
-// Returns the operand an instruction writes, for the kinds that write
-// one (`Mov`, the ALU operations, the steps and shifts, and `Pop`), or
-// null. Python's `_instr_write_dst`.
 const ir::Type_operand* instr_write_dst(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::Mov:
@@ -293,8 +245,6 @@ const ir::Type_operand* instr_write_dst(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns the bytes `fn`'s own instructions may write, or nothing when
-// one of them may write any byte (see `call_summaries`).
 std::optional<Summary> own_writes(const ir::Function& fn, const SymbolAddrs& zp_addrs) {
   Summary out;
   for (const auto& ins : fn.instructions) {
@@ -311,7 +261,6 @@ std::optional<Summary> own_writes(const ir::Function& fn, const SymbolAddrs& zp_
         out.zp.insert(*addr);
       } else if (const auto* d = as<ir::Data>(*dst)) {
         if (zp_addrs.find(d->name) != zp_addrs.end()) {
-          // A zero-page name whose byte is past $FF.
           return std::nullopt;
         }
         out.data.emplace(d->name, d->offset);
@@ -328,21 +277,8 @@ std::optional<Summary> own_writes(const ir::Function& fn, const SymbolAddrs& zp_
   return out;
 }
 
-// Returns, for each function of `prog` whose effects are known, what it
-// and everything it calls may write. A function is left out (its calls
-// end every fact, as any call did) when it, or something it calls,
-// writes through a pointer, a frame, or an index into a zero-page
-// object, has a soft-stack frame or another compound atom, or calls a
-// function that isn't in `prog` and returns. A call to a function that
-// never returns adds nothing, since the code after the call never runs:
-// Zork's `push` calls `internal_error` when the stack is full. So a call
-// to a `static` leaf such as `get_property_ptr` keeps the fact that a
-// slot holds a copy of `OPERANDS+2`, and `instr_get_prop` reads
-// `OPERANDS+2` where it had copied it before the call.
 Summaries call_summaries(const ir::Program& prog, const SymbolAddrs& zp_addrs,
                          const NameSet& noreturn) {
-  // The functions by name. A name defined twice takes the last
-  // definition, as a Python dict does.
   std::map<std::string, const ir::Function*, std::less<>> fns;
   for (const auto& tl : prog.top_level) {
     if (const auto* fn = as<ir::Function>(tl)) {
@@ -379,7 +315,6 @@ Summaries call_summaries(const ir::Program& prog, const SymbolAddrs& zp_addrs,
       callees.insert(callee);
     }
   }
-  // An unknown callee makes its callers unknown, until nothing changes.
   std::set<std::string> known;
   for (const auto& [name, s] : own) {
     if (s) {
@@ -423,10 +358,6 @@ Summaries call_summaries(const ir::Program& prog, const SymbolAddrs& zp_addrs,
   return out;
 }
 
-// Returns whether `instr` writes the register `y` (Y when set, else X):
-// a move, step, or pull into it, or, for Y, an operand lowered with an
-// `LDY #off` setup. A call writes both, which `transfer` handles by
-// forgetting both tokens.
 bool writes_index_reg(const ir::Type_instruction& instr, bool y) {
   if (y && sets_up_y(instr)) {
     return true;
@@ -448,29 +379,18 @@ bool writes_index_reg(const ir::Type_instruction& instr, bool y) {
   return r != nullptr && (y ? isa<ir::Y>(r->reg) : isa<ir::X>(r->reg));
 }
 
-// A key of a read the slot rewrite may change: the instruction's index
-// in the CFG's instructions and the slot's address.
 using ReadKey = std::pair<std::size_t, long long>;
 
-// What the dataflow and the rewriter of one function share.
 struct Ctx {
   const AsmContext& actx;
   const SymbolAddrs& zp_addrs;
   NameSet writable;
-  // The token of each write of X and of Y, by the instruction's index in
-  // the CFG's instructions, 0 for an instruction that doesn't write the
-  // register. The CFG's synthetic instructions have none.
   std::vector<long long> x_tokens;
   std::vector<long long> y_tokens;
   const Summaries& summaries;
-  // The rewrite of slot reads to fixed sources (`fixed_source`). While
-  // `probing`, each read that could be rewritten is added to `probe`,
-  // and nothing is rewritten. Then only the reads in `allowed` are.
   bool probing = false;
   std::set<ReadKey> probe;
   std::set<ReadKey> allowed;
-  // The probed reads whose new form is a byte longer than the slot's
-  // (`dearer_read`), which `allowed_slot_reads` limits in number.
   std::set<ReadKey> dearer;
   std::size_t index = 0;
 };
@@ -489,8 +409,6 @@ void kill_cell(long long addr, State& state) {
   }
 }
 
-// Ends the facts whose value is the byte `name + offset` of a static
-// outside zero page, or any byte of `name` when `offset` is nothing.
 void kill_data_name(const std::string& name, const std::optional<asdl::Int>& offset,
                     State& state) {
   const auto matches = [&](const Expr& e) {
@@ -508,12 +426,10 @@ void kill_data_name(const std::string& name, const std::optional<asdl::Int>& off
   }
 }
 
-// Ends every fact a write of `dst` makes stale.
 void kill_writes(const ir::Type_operand& dst, State& state, const SymbolAddrs& zp_addrs) {
   if (isa<ir::ZP, ir::Data>(dst)) {
     const auto addr = zp_addr(dst, zp_addrs);
     if (!addr) {
-      // A static's byte outside zero page.
       if (const auto* d = as<ir::Data>(dst)) {
         kill_data_name(d->name, d->offset, state);
       }
@@ -522,16 +438,10 @@ void kill_writes(const ir::Type_operand& dst, State& state, const SymbolAddrs& z
     kill_cell(*addr, state);
     return;
   }
-  // An indexed write may reach any byte from its base to the base plus
-  // 255, which for a zero-page name could reach into zero page, and a
-  // write through `Frame`, `Stack`, or a pointer reaches a byte the
-  // pass doesn't know. Every fact ends.
   state.cells.clear();
   state.a_value.reset();
 }
 
-// Ends the facts that are elements indexed by the register just written
-// whose token is no longer the register's.
 void kill_stale_index_facts(State& state, bool is_x) {
   const std::optional<long long> current = is_x ? state.x_token : state.y_token;
   const auto stale = [&](const Expr& e) {
@@ -550,8 +460,6 @@ void kill_stale_index_facts(State& state, bool is_x) {
   }
 }
 
-// Gives X and Y the tokens of the instruction at `pos`, when it writes
-// them. A rewritten instruction (`pos` nothing) has none.
 void bump_index_tokens(std::optional<std::size_t> pos, State& state, const Ctx& ctx) {
   if (!pos || *pos >= ctx.x_tokens.size()) {
     return;
@@ -566,10 +474,6 @@ void bump_index_tokens(std::optional<std::size_t> pos, State& state, const Ctx& 
   }
 }
 
-// Returns the expression `src` stands for in `state`, or nothing for a
-// source the pass doesn't follow (`Frame`, `Stack`, `Indirect`, a
-// register, a static the function writes, or an element whose index
-// register's token isn't known).
 std::optional<Expr> src_expr(const ir::Type_operand& src, const State& state,
                              const Ctx& ctx) {
   switch (ir::kind(src)) {
@@ -625,47 +529,34 @@ std::optional<Expr> src_expr(const ir::Type_operand& src, const State& state,
 void transfer_mov(const ir::Mov& instr, State& state, const Ctx& ctx) {
   const ir::Type_operand& src = instr.src;
   const ir::Type_operand& dst = instr.dst;
-  // The expression `src` stands for here, if any.
   std::optional<Expr> sexpr = src_expr(src, state, ctx);
   const std::optional<long long> dst_opt = zp_addr(dst, ctx.zp_addrs);
   bool dst_followed = dst_opt.has_value();
   const long long dst_zp = dst_opt.value_or(0);
   if (instr.is_volatile) {
-    // A volatile byte can change between two reads, so the value moved
-    // here can't be recomputed by reading `src` again. The flag doesn't
-    // say which side is volatile, so neither A nor `dst` gets a fact.
     sexpr.reset();
     dst_followed = false;
   }
   const bool src_is_reg = isa<ir::Reg>(src);
-  // The new value of A, when the move writes A.
   bool a_clobbered = false;
   std::optional<Expr> new_a;
   if (const auto* r = as<ir::Reg>(dst)) {
     if (isa<ir::A>(r->reg)) {
-      // `Mov(src, Reg(A))`: LDA src, TXA, or TYA. X and Y's values
-      // aren't followed, so a transfer gives A an unknown value.
       if (!src_is_reg) {
         new_a = sexpr;
       }
       a_clobbered = true;
     }
-    // A move into X or Y leaves A alone.
   } else if (!src_is_reg) {
-    // `Mov(_, memory)` emits as `LDA src; STA dst`, so A gets `src`'s
-    // value. A store of a register (STA, STX, STY) leaves A alone.
     new_a = sexpr;
     a_clobbered = true;
   }
-  // The write ends facts first.
   if (!isa<ir::Reg>(dst)) {
     kill_writes(dst, state, ctx.zp_addrs);
   }
   if (a_clobbered) {
     state.a_value = new_a;
   }
-  // Then the destination gets a fact, when it is a followed zero-page
-  // byte and the source a followed expression.
   if (!dst_followed) {
     return;
   }
@@ -674,13 +565,10 @@ void transfer_mov(const ir::Mov& instr, State& state, const Ctx& ctx) {
     if (is_reg_a_op(src)) {
       fact = state.a_value;
     }
-    // STX / STY: the values of X and Y aren't followed.
   } else {
     fact = sexpr;
   }
   if (fact) {
-    // `cells[M] = ZPRef(M)` would refer to itself, and a rewrite of M to
-    // M does nothing.
     if (fact->kind == Expr::kZPRef && fact->addr == dst_zp) {
       return;
     }
@@ -688,12 +576,8 @@ void transfer_mov(const ir::Mov& instr, State& state, const Ctx& ctx) {
   }
 }
 
-// Applies the effects of `instr`, the instruction at CFG index `pos`
-// (nothing for one the rewriter made), to `state`.
 void transfer(const ir::Type_instruction& instr, std::optional<std::size_t> pos,
               State& state, const Ctx& ctx) {
-  // A call to a function whose writes are known ends the facts about
-  // those bytes, and A, X, and Y, which the callee may change.
   if (const auto* call = as<ir::Call>(instr)) {
     const auto it = ctx.summaries.find(call->name);
     if (it != ctx.summaries.end()) {
@@ -716,8 +600,6 @@ void transfer(const ir::Type_instruction& instr, std::optional<std::size_t> pos,
     case K::LoadAddress:
     case K::Phi:
     case K::DecimalArith:
-      // Opaque: everything ends, the tokens too, since a callee may
-      // write X and Y, so no element fact made before is usable.
       state.a_value.reset();
       state.cells.clear();
       state.x_token.reset();
@@ -725,12 +607,6 @@ void transfer(const ir::Type_instruction& instr, std::optional<std::size_t> pos,
       return;
     case K::Mov:
       transfer_mov(std::get<ir::Mov>(instr), state, ctx);
-      // An operand lowered with an `LDY #off` setup writes Y, after the
-      // source is read. Every instruction below that may have such an
-      // operand gives Y its token after its other effects too. Python
-      // once did so only for a `Mov` and a write of X or Y, and a slot
-      // holding `arr,Y` was read back as `LDA arr,Y` after a
-      // `CMP (zp),Y` or an `ADC (zp),Y` had loaded Y.
       bump_index_tokens(pos, state, ctx);
       return;
     case K::Add:
@@ -772,13 +648,10 @@ void transfer(const ir::Type_instruction& instr, std::optional<std::size_t> pos,
       bump_index_tokens(pos, state, ctx);
       return;
     default:
-      // The terminators, `SetCarry`, `ClearCarry`, and `BitTest` change
-      // nothing followed here.
       return;
   }
 }
 
-// Returns the out-state of the block `id` for the in-state `in`.
 State transfer_block(const Cfg& cfg, int id, const State& in, const Ctx& ctx) {
   State state = in;
   const BasicBlock& block = cfg.blocks[static_cast<std::size_t>(id)];
@@ -814,17 +687,10 @@ std::optional<State> meet(const std::optional<State>& a, const std::optional<Sta
   return out;
 }
 
-// Returns the in-state of each block by a forward worklist: a block's
-// in-state is the meet of its predecessors' out-states, and its
-// out-state the transfer of its instructions applied to it.
 std::vector<std::optional<State>> solve(const Cfg& cfg, const Ctx& ctx) {
   const std::size_t n = cfg.blocks.size();
   std::vector<std::optional<State>> in_state(n);
   std::vector<std::optional<State>> out_state(n);
-  // At the function's entry, X and Y hold what the caller left, an
-  // opaque initial value with token 0. Any write of X or Y in the
-  // function gives a positive token, so a later state with token 0
-  // means the register hasn't been written since the entry.
   in_state[kEntryId] = State{.x_token = 0, .y_token = 0};
   out_state[kEntryId] = State{.x_token = 0, .y_token = 0};
   std::deque<int> worklist(cfg.block_order.begin(), cfg.block_order.end());
@@ -835,9 +701,6 @@ std::vector<std::optional<State>> solve(const Cfg& cfg, const Ctx& ctx) {
   }
   std::vector<bool> seen(n, false);
   std::size_t iterations = 0;
-  // The worklist is bounded by the number of blocks times the height of
-  // the lattice. The cap only guards against a transfer that isn't
-  // monotonic, which would be a bug.
   const std::size_t cap = std::max<std::size_t>(1024, n * 16);
   while (!worklist.empty()) {
     ++iterations;
@@ -858,8 +721,6 @@ std::vector<std::optional<State>> solve(const Cfg& cfg, const Ctx& ctx) {
       new_in = meet(new_in, out_state[static_cast<std::size_t>(p)]);
     }
     if (!new_in) {
-      // No predecessor processed yet. The block comes back when one's
-      // out-state changes.
       continue;
     }
     const bool first_visit = !seen[b];
@@ -882,8 +743,6 @@ std::vector<std::optional<State>> solve(const Cfg& cfg, const Ctx& ctx) {
   return in_state;
 }
 
-// Returns whether `new_op`, a `Data` byte or an indexed element, is in
-// zero page, which a read reaches in 2 bytes.
 bool new_read_in_zero_page(const std::string& name, const asdl::Int& offset, const Ctx& ctx) {
   const auto it = ctx.zp_addrs.find(name);
   if (it != ctx.zp_addrs.end()) {
@@ -897,14 +756,6 @@ bool is_local_slot_data(const ir::Type_operand& op) {
   return d != nullptr && d->name.starts_with("__local_");
 }
 
-// Returns `new_op`, the read of a slot's value from where it came from,
-// in place of `op`, the read of the zero-page slot, when that costs no
-// more. An absolute `Data` byte and an `abs,X` / `abs,Y` element take
-// 3 bytes and a cycle more than the slot's 2, so they replace a read
-// only when the store into the slot goes. That needs `op` to be one of
-// the function's `__local_*` slots, every read its stores reach to be
-// rewritten, and at most `kMaxDearerReads` of them
-// (`allowed_slot_reads`). Otherwise `op` stays, and nothing is returned.
 std::optional<ir::Type_operand> dearer_read(const ir::Type_operand& op,
                                             ir::Type_operand new_op,
                                             const std::string& name,
@@ -928,20 +779,6 @@ std::optional<ir::Type_operand> dearer_read(const ir::Type_operand& op,
   return new_op;
 }
 
-// A read of one of the function's `__local_*` slots that holds a copy of
-// another zero-page byte reads that byte instead, so the store into the
-// slot can go. `LDA OPERANDS; STA t; ...; ADC t` becomes
-// `...; ADC OPERANDS`.
-//
-// Only when the other byte is named by a symbol whose address the
-// linker keeps: a fixed zero-page object, a zero-page global, or one of
-// the runtime's bytes. The fact is about an address, and a slot's
-// address in this unit isn't the one it gets when linked. And only when
-// every read the slot's stores reach is rewritten
-// (`allowed_slot_reads`). A read of one zero-page byte costs what a
-// read of another does, so a rewrite that leaves a store in place gains
-// nothing, and it can cost bytes, since `redundant_load` then no longer
-// sees that A holds the slot where two paths join.
 std::optional<ir::Type_operand> fixed_source(const ir::Type_operand& op, const Expr& fact,
                                              long long addr, Ctx& ctx) {
   if (!is_local_slot_data(op)) {
@@ -961,9 +798,6 @@ std::optional<ir::Type_operand> fixed_source(const ir::Type_operand& op, const E
   return ir::Data{.name = fact.name, .offset = fact.offset};
 }
 
-// Returns the operand form of the expression the byte `op` holds, when
-// it is followed and the rewrite applies, or nothing. `allow_indexed`
-// lets an element take the read's place.
 std::optional<ir::Type_operand> rewrite_src(const ir::Type_operand& op, const State& state,
                                             Ctx& ctx, bool allow_indexed) {
   const auto addr = zp_addr(op, ctx.zp_addrs);
@@ -991,8 +825,6 @@ std::optional<ir::Type_operand> rewrite_src(const ir::Type_operand& op, const St
       if (!allow_indexed) {
         return std::nullopt;
       }
-      // Only while the index register's token here is the fact's: X (or
-      // Y) is then unchanged on every path from where the fact was made.
       const auto current = fact.idx_is_x ? state.x_token : state.y_token;
       if (!current || *current != fact.idx_token) {
         return std::nullopt;
@@ -1006,10 +838,6 @@ std::optional<ir::Type_operand> rewrite_src(const ir::Type_operand& op, const St
   return std::nullopt;
 }
 
-// Replaces the source operand(s) of an ALU instruction (`Add`, `Sub`,
-// `And`, `Or`, `Xor`), of the right side of a `Compare`, and, when
-// `push` is set, of a `Push`, by `fn(op)`, which returns nothing for an
-// operand it leaves alone. Returns whether anything changed.
 template <class Fn>
 bool rewrite_reads(ir::Type_instruction& instr, Fn&& fn, bool push) {
   switch (ir::kind(instr)) {
@@ -1081,10 +909,6 @@ bool rewrite_reads(ir::Type_instruction& instr, Fn&& fn, bool push) {
   }
 }
 
-// Rewrites each memory operand of a load, store, ALU operation, or
-// compare by `fn(op)`. A register load or store whose register has no
-// `abs,Y` mode (`LDY`, `STX`, `STY`) is left alone, and so is a move
-// that would read and write an element.
 template <class Fn>
 void rewrite_operands(ir::Type_instruction& instr, Fn&& fn) {
   if (auto* mov = as<ir::Mov>(instr)) {
@@ -1114,14 +938,6 @@ void rewrite_operands(ir::Type_instruction& instr, Fn&& fn) {
   rewrite_reads(instr, fn, false);
 }
 
-// Returns `name+off,Y` for `(N),Y`, and `name+off+k` for the constant-Y
-// `IndirectZp(N, k)`, when the bytes at `N` and `N + 1` hold the low and
-// high bytes of the address `name + off`. Adding Y carries into the high
-// byte in both addressing modes, so they reach the same byte. Otherwise
-// nothing. An access through DPTR (`Indirect`, `IndirectY`) is one
-// through `N` = DPTR, as for `S_X[i]` with
-// `static const uint8_t *const S_X = MSG + 39`, whose bytes
-// `const_static_fold` makes the halves of `MSG+39`.
 std::optional<ir::Type_operand> label_pointer_operand(const ir::Type_operand& op,
                                                       const State& state,
                                                       const AsmContext& actx) {
@@ -1159,15 +975,6 @@ std::optional<ir::Type_operand> label_pointer_operand(const ir::Type_operand& op
   return ir::Data{.name = lo->second.name, .offset = lo->second.offset + k};
 }
 
-// Returns `(M),Y` for `(N),Y`, and the constant-Y `IndirectZp(M, k)` for
-// `IndirectZp(N, k)`, when the bytes at `N` and `N + 1` hold copies of
-// the bytes at `M` and `M + 1`, and `M` is a named zero-page object, a
-// fixed one or the runtime's, whose address the linker keeps
-// (`fixed_source` has the same rule). A function returning a pointer in
-// a zero-page object (passes/return_in_zero_page.py) leaves
-// `LDA F@ret; STA p; LDA F@ret+1; STA p+1` at each call, and a read
-// through `p` then goes through `F@ret`, so the copy can go. Otherwise
-// nothing.
 std::optional<ir::Type_operand> copied_pointer_operand(const ir::Type_operand& op,
                                                        const State& state) {
   long long base = 0;
@@ -1200,9 +1007,6 @@ std::optional<ir::Type_operand> copied_pointer_operand(const ir::Type_operand& o
   return ir::IndirectZpY{.address = l.addr};
 }
 
-// Returns the ZP base address `N` when DPTR holds the pair `(N, N+1)`:
-// both `cells[DPTR]` and `cells[DPTR+1]` are `ZPRef(N)` and
-// `ZPRef(N+1)`, a contiguous source pair.
 std::optional<long long> dptr_base(const State& state, const AsmContext& actx) {
   const long long dptr = static_cast<long long>(actx.layout.dptr);
   const auto lo = state.cells.find(dptr);
@@ -1229,22 +1033,6 @@ std::optional<ir::Type_operand> op_for_dptr(const ir::Type_operand& op, long lon
   return std::nullopt;
 }
 
-// Applies the rewrites of the operands for `state` to `instr`, in place.
-//
-//   1. An access through DPTR (`Indirect` / `IndirectY`) goes through
-//      the stable zero-page pair DPTR's bytes copy.
-//   2. A `(zp),Y` access through a pointer that holds a label's address
-//      reads or writes the label's bytes directly.
-//   3. A `(zp),Y` access through a slot pair that holds a copy of a
-//      named zero-page pointer goes through that pointer.
-//   4. A read of a followed zero-page byte whose value is a
-//      recomputable expression reads it directly.
-//
-// In the last, a load into A and a memory-to-memory move take an
-// element. A load into X or Y takes one only when it isn't indexed by
-// the register loaded (the 6502 has no `LDX abs,X` or `LDY abs,Y`). The
-// source of an ALU operation, a compare, or a push takes an immediate,
-// a `Data` byte, or a `ZP` byte, and no element.
 void rewrite_instr(ir::Type_instruction& instr, const State& state, Ctx& ctx) {
   if (const auto base = dptr_base(state, ctx.actx)) {
     if (auto* mov = as<ir::Mov>(instr)) {
@@ -1288,8 +1076,6 @@ bool is_through_pointer(const ir::Type_operand& op) {
   return isa<ir::Indirect, ir::IndirectY, ir::IndirectZp, ir::IndirectZpY>(op);
 }
 
-// Returns whether the rewrite made a store through a pointer one to a
-// named byte.
 bool store_made_direct(const ir::Type_instruction& old_instr,
                        const ir::Type_instruction& new_instr) {
   const auto* o = as<ir::Mov>(old_instr);
@@ -1298,9 +1084,6 @@ bool store_made_direct(const ir::Type_instruction& old_instr,
          !is_through_pointer(n->dst);
 }
 
-// Walks every block in CFG order, with each instruction's in-state from
-// the block's in-state, and returns the rewritten instructions, the
-// CFG's synthetic ones last.
 std::vector<ir::Type_instruction> rewrite(const Cfg& cfg,
                                           const std::vector<std::optional<State>>& in_states,
                                           Ctx& ctx) {
@@ -1314,14 +1097,6 @@ std::vector<ir::Type_instruction> rewrite(const Cfg& cfg,
       ctx.index = out.size();
       ir::Type_instruction new_instr = instr;
       rewrite_instr(new_instr, state, ctx);
-      // A store through a pointer made a store to a label ends fewer
-      // facts, so the rewritten store updates the state, and the next
-      // store through the same pointer is rewritten in the same call.
-      // Twenty such stores had taken one call each and run past the
-      // peephole fixed point's cap. Any other instruction updates it as
-      // it was, since a read rewritten to its source would lose the fact
-      // that a byte copies the byte it was read from (`LDA p; STA DPTR`
-      // makes DPTR a copy of `p`, which `(p),Y` needs).
       if (store_made_direct(instr, new_instr)) {
         transfer(new_instr, std::nullopt, state, ctx);
       } else {
@@ -1333,10 +1108,6 @@ std::vector<ir::Type_instruction> rewrite(const Cfg& cfg,
   return out;
 }
 
-// Returns the zero-page bytes `instr` reads and writes, by address, or
-// nothing for the reads when it may read a byte it doesn't name: an
-// indexed read of a `__local_*` array. A pointer's two bytes count as
-// read by an access through it.
 bool slot_accesses(const ir::Type_instruction& instr, const SymbolAddrs& zp_addrs,
                    std::set<long long>& read, std::set<long long>& written) {
   std::vector<ir::Type_operand> ops = asm_dead_store::read_operands(instr);
@@ -1375,7 +1146,6 @@ bool slot_accesses(const ir::Type_instruction& instr, const SymbolAddrs& zp_addr
   return true;
 }
 
-// A union-find over the definitions of slot bytes, `(def index, addr)`.
 class Webs {
  public:
   ReadKey find(ReadKey x) {
@@ -1397,17 +1167,10 @@ class Webs {
   std::map<ReadKey, ReadKey> parent_;
 };
 
-// Returns the probed slot reads (`ctx.probe`) that may be rewritten:
-// those in a web, a slot's stores and the reads they reach, whose every
-// read was probed, so that no read of the slot is left for the web's
-// stores. Reaching definitions over the CFG, for each byte a probed
-// read names. Nothing in a function with a soft-stack frame, whose
-// prologue and epilogue save and restore zero-page bytes.
 std::set<ReadKey> allowed_slot_reads(const Cfg& cfg, const Ctx& ctx) {
   if (ctx.probe.empty()) {
     return {};
   }
-  // The CFG's instructions in block order, which is their order.
   std::vector<const ir::Type_instruction*> instrs;
   std::vector<std::pair<std::size_t, std::size_t>> block_span(cfg.blocks.size());
   for (const int bid : cfg.block_order) {
@@ -1447,8 +1210,6 @@ std::set<ReadKey> allowed_slot_reads(const Cfg& cfg, const Ctx& ctx) {
     }
   }
 
-  // Reaching definitions: for each slot byte, the indexes of the
-  // instructions whose write of it may reach a point.
   using Defs = std::map<long long, std::set<std::size_t>>;
   const auto transfer_defs = [&](int bid, Defs state) {
     const auto [lo, hi] = block_span[static_cast<std::size_t>(bid)];
@@ -1483,8 +1244,6 @@ std::set<ReadKey> allowed_slot_reads(const Cfg& cfg, const Ctx& ctx) {
     }
   }
 
-  // Union the definitions that reach a common read into webs, and mark a
-  // web bad when one of its reads can't be rewritten.
   Webs webs;
   std::vector<std::pair<ReadKey, std::optional<ReadKey>>> read_webs;
   for (const int bid : cfg.block_order) {
@@ -1520,8 +1279,6 @@ std::set<ReadKey> allowed_slot_reads(const Cfg& cfg, const Ctx& ctx) {
       ++dearer[webs.find(*web)];
     }
   }
-  // A web whose reads take a longer form pays for them only with the
-  // store it drops, so it may have only a few of them.
   for (const auto& [root, n] : dearer) {
     if (n > kMaxDearerReads) {
       bad.insert(root);
@@ -1536,10 +1293,6 @@ std::set<ReadKey> allowed_slot_reads(const Cfg& cfg, const Ctx& ctx) {
   return out;
 }
 
-// Returns the `Data` names the function writes anywhere. A `Data` fact
-// about a name it never writes may be recomputed anywhere, with the
-// writes the dataflow already handles. One about a name in this set is
-// left out.
 NameSet writable_data_names(const ir::Function& fn) {
   NameSet out;
   for (const auto& instr : fn.instructions) {
@@ -1566,12 +1319,6 @@ NameSet writable_data_names(const ir::Function& fn) {
 
 void rewrite_function(ir::Function& fn, const AsmContext& actx, const SymbolAddrs& zp_addrs,
                       const Summaries& summaries) {
-  // A tail call is a `JMP` to another function's name, which isn't a
-  // label of this one. The tolerant build gives each such target a block
-  // of its own ending in a return, which ends the facts there as a
-  // return does, and the rewrite keeps only the function's own
-  // instructions. Zork's interpreter has 32 functions that end in a
-  // tail call.
   const Cfg cfg = build_cfg_tolerant(fn);
   Ctx ctx{.actx = actx, .zp_addrs = zp_addrs, .summaries = summaries};
   ctx.writable = writable_data_names(fn);
@@ -1587,14 +1334,11 @@ void rewrite_function(ir::Function& fn, const AsmContext& actx, const SymbolAddr
     }
   }
   const auto in_states = solve(cfg, ctx);
-  // Find which slot reads could read a fixed source instead, then keep
-  // only those whose store goes away (`allowed_slot_reads`).
   ctx.probing = true;
   rewrite(cfg, in_states, ctx);
   ctx.allowed = allowed_slot_reads(cfg, ctx);
   ctx.probing = false;
   std::vector<ir::Type_instruction> out = rewrite(cfg, in_states, ctx);
-  // One instruction out for each one in, the synthetic tail last.
   out.resize(n);
   fn.instructions = std::move(out);
 }

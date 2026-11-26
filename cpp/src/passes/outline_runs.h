@@ -1,4 +1,3 @@
-// The port of passes/outline_runs.py.
 #pragma once
 
 #include <set>

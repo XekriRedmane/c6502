@@ -1,5 +1,4 @@
-// The port of passes/loop_constant_a.py: a loop's one constant loaded
-// into A once, in front of the loop.
+// A loop's one constant loaded into A once, in front of the loop.
 #pragma once
 
 #include "asm_ast.h"

@@ -1,10 +1,10 @@
 // Splits each `LoadAddress` of a `Data` source into two single-byte
-// moves of `ImmLabel` immediates, ported from
-// passes/lower_data_load_address.py.
+// moves of `ImmLabel` immediates.
 //
 // `LoadAddress(src=Data(label, off), dst=<memory>)` writes the 2-byte
 // address `&(label+off)` into `dst`. Emission
-// (`asm_emit._emit_load_address`) expands it to four instructions,
+// (`Emitter::load_address` in asm_emit.cpp) expands it to four
+// instructions,
 // `LDA #<(label+off); STA dst.lo; LDA #>(label+off); STA dst.hi`, but
 // hidden inside one IR instruction, which keeps two peepholes that
 // reason byte by byte from seeing it.
@@ -15,8 +15,8 @@
 //     holds `ImmLabelLow(label)` and `dst.hi` holds `ImmLabelHigh(label)`
 //     that the spelled-out moves give. Reads of those bytes later in the
 //     function survive where they would fold to the immediates.
-//   * `asm_emit._emit_load_address` writes the high byte to
-//     `Data(dst.name, dst.offset + 1)` (`_shift_offset`). When that byte
+//   * `Emitter::load_address` writes the high byte to
+//     `Data(dst.name, dst.offset + 1)` (`shift_offset`). When that byte
 //     has a slot symbol of its own, as each byte of a 2-byte numbered
 //     temporary of the pool does (`__local_fn__0` and `__local_fn__1`),
 //     `dst.name+1` is the second symbol's address under another name,
@@ -26,7 +26,7 @@
 // A `LoadAddress` of a `Frame` source (the address of a local on the
 // soft stack) stays, since its `FP + off` needs the compound
 // `CLC; LDA; ADC` chain. The pass runs after
-// `replace_pseudoregisters_bare_exit`, which resolves the source to a
+// `replace_program_bare_exit`, which resolves the source to a
 // `Data` or a `Frame`, and before the peephole fixed point, so that
 // `apply_memory_value_propagation` sees the split form.
 
@@ -46,15 +46,10 @@ namespace {
 using SlotSymbols = OrderedMap<std::string, asdl::Int>;
 using ByteNames = OrderedMap<asdl::Int, std::string>;
 
-// Returns whether `op` is a memory operand, the test
-// `asm_emit._emit_load_address` makes of `dst`.
 bool is_memory_operand(const ir::Type_operand& op) {
   return asdl::isa<ir::Data, ir::ZP, ir::Frame, ir::Stack>(op);
 }
 
-// Returns `op`, a memory operand, with its byte offset moved up by `k`,
-// as `asm_emit._shift_offset` does. Python keeps a copy here so that
-// passes/ doesn't import asm_emit.
 ir::Type_operand shift_offset(const ir::Type_operand& op, asdl::Int k) {
   using K = ir::Kind_operand;
   switch (ir::kind(op)) {
@@ -75,11 +70,6 @@ ir::Type_operand shift_offset(const ir::Type_operand& op, asdl::Int k) {
   }
 }
 
-// Returns the operand of the byte after `dst`. When that byte is a pool
-// byte whose own slot symbol starts there, the operand names that
-// symbol. A byte inside a wider object, such as the second byte of an
-// address-taken struct, has no symbol of its own and stays an offset
-// from `dst`.
 ir::Type_operand high_byte(const ir::Type_operand& dst, const SlotSymbols& slot_symbols,
                            const ByteNames& byte_names) {
   if (const auto* d = asdl::as<ir::Data>(dst)) {
@@ -117,9 +107,6 @@ void lower_in_function(ir::Function& fn, const SlotSymbols& slot_symbols,
       out.push_back(std::move(instr));
       continue;
     }
-    // The low byte first, then the high byte, the order
-    // `asm_emit._emit_load_address` writes them, so the cycles are the
-    // same.
     const auto& src = std::get<ir::Data>(la->src);
     ir::Type_operand dst_hi = high_byte(la->dst, slot_symbols, byte_names);
     out.push_back(

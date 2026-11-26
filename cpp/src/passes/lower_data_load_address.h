@@ -1,5 +1,5 @@
-// The port of passes/lower_data_load_address.py, which splits each
-// `LoadAddress` of a `Data` source into two moves of immediates.
+// Splits each `LoadAddress` of a `Data` source into two moves of
+// immediates.
 #pragma once
 
 #include <string>
@@ -21,7 +21,7 @@ using ByteNamesByFunction = OrderedMap<std::string, OrderedMap<asdl::Int, std::s
 // the slot symbol its reads use. The high byte goes to the byte's own
 // symbol when the byte after `dst` starts one (`__local_f__1` after
 // `__local_f__0`), and to `dst` plus one otherwise. Either map may be
-// null, as Python's defaults are None.
+// null.
 asm_ast::Program lower_data_load_address(asm_ast::Program prog,
                                          const OrderedMap<std::string, asdl::Int>* slot_symbols,
                                          const ByteNamesByFunction* byte_names);

@@ -1,4 +1,3 @@
-// The port of passes/loop_invariant_a.py.
 #pragma once
 
 #include "asm_ast.h"

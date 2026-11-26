@@ -1,4 +1,3 @@
-// The port of passes/mem_const_prop.py.
 #pragma once
 
 #include "asm_ast.h"

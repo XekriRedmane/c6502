@@ -1,5 +1,4 @@
-// The asm back end's peephole fixed point, ported from compile.py's
-// `_peephole_fixedpoint`.
+// The asm back end's peephole fixed point.
 //
 // The passes below run in sequence, and the sweep repeats until a full
 // sweep produces no further change. Each pass can enable the next.
@@ -27,29 +26,17 @@
 //
 // The cap
 //
-// The cap's comment in compile.py reasons that the peepholes delete or
-// fuse instructions and never grow a program, so the number of sweeps
-// is bounded by the number of instructions that can go. The cap of 16
-// sweeps exists to surface a bug, such as an unsound pass whose
-// rewrite changes nothing and still compares unequal, and is never
-// reached by a sound sweep on the corpus.
-//
-// The memo
-//
-// Python skips a pass on a function it left unchanged when it last saw
-// the same function with an equal context (passes/peephole_memo.py).
-// The memo gives the result the pass would give without it, so every
-// sweep sees the program it would see without the memo and the number
-// of sweeps stays the same. The C++ fixed point runs every pass on the
-// whole program each time and has no memo, so its results are the
-// same as Python's with or without one.
+// The peepholes delete or fuse instructions and never grow a program,
+// so the number of sweeps is bounded by the number of instructions that
+// can go. The cap of 16 sweeps exists to surface a bug, such as an
+// unsound pass whose rewrite changes nothing and still compares
+// unequal, and is never reached by a sound sweep on the corpus.
 //
 // The IR checks
 //
 // With the request's `check_ir` set (`C6502_CHECK_IR=1`), the fixed
 // point checks the program after each sweep (`ir_check::check_asm`,
-// src/passes/ir_check.h), where the Python fixed point called
-// `ir_check.check_asm`.
+// src/passes/ir_check.h).
 #include "passes/peephole_fixedpoint.h"
 
 #include <memory>
@@ -123,9 +110,6 @@ std::vector<SweepPass> peephole_sweep(const AsmContext& ctx,
                                       const SymbolAddrs* zp_slot_symbols,
                                       const SymbolAddrs* zp_global_symbols,
                                       const NameSet& noreturn) {
-  // Python's `zp_cells or None`: the slots and the globals in one map,
-  // a global's address taking the place of a slot's of the same name,
-  // or null when both are empty. The sweep's functions share it.
   auto zp_cells = std::make_shared<SymbolAddrs>();
   if (zp_slot_symbols != nullptr) {
     *zp_cells = *zp_slot_symbols;
@@ -218,13 +202,6 @@ std::vector<SweepPass> peephole_sweep(const AsmContext& ctx,
       {"tail_merge", [](P p) { return apply_tail_merge(std::move(p)); }},
       {"cross_jump", [](P p) { return apply_cross_jump(std::move(p)); }},
       {"via_a_store_fold", [](P p) { return apply_via_a_store_fold(std::move(p)); }},
-      // Runs last, so that the round trip through a temporary
-      // (`STA __local; LDA __local; STA M`) has already been collapsed
-      // by `round_trip_load_drop` and `asm_dead_store` into the
-      // canonical `STA M`. If this pass ran earlier, it would rewrite
-      // the round trip to `STX __local; LDA __local; STA M`, a shape
-      // no later pass collapses, since the `LDA` reads storage that
-      // holds X's value and not A's.
       {"transfer_pm1_store",
        [ctx](P p) { return apply_transfer_pm1_store(std::move(p), ctx); }},
   };
@@ -241,7 +218,6 @@ asm_ast::Program run_to_fixed_point(asm_ast::Program prog,
     for (const auto& pass : sweep) {
       new_prog = pass.run(std::move(new_prog));
     }
-    // With the IR checks on (src/passes/ir_check.h).
     ir_check::check_asm(new_prog, "a peephole sweep");
     if (new_prog == prog) {
       return new_prog;

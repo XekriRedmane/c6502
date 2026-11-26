@@ -1,18 +1,14 @@
-// The checks of the records that tools/capture_binutils.py writes of
-// binutils/ld.py (`global_definitions`, `relax`, and `executable`) and of
-// the functions of passes/linker.py on the objects (`_runtime_library`,
-// `_object_items`, `_item_symbol`, `_without_init`, `_unit`,
-// `_apply_renames`, `_pointer_names`, `_reassemble`, `_output_symbols`,
-// `_merge_identical`, and `_contents`), which `c6502cpp check-binutils`
-// runs.
+// The checks of the frozen records (cpp/tests/frozen) of binutils/ld.h
+// (`global_definitions`, `relax`, and `executable`) and of the linker's
+// functions on the objects, which `c6502cpp check-binutils` and
+// `check-frozen` run.
 //
 // A link changes its objects in place between these calls, so a record
 // names each object by the hash of a JSON form of its sections,
 // symbols, relocations, and segments, which keeps the order and the
 // identities an ELF file can't (a symbol out of the table's order, a
-// relocation of a symbol the table has lost). The harness's docstring
-// gives the form, and `elf_json` and `elf_from_json` here read and
-// write it.
+// relocation of a symbol the table has lost). `elf_json` and
+// `elf_from_json` write and read that form.
 #pragma once
 
 #include <functional>
@@ -24,8 +20,8 @@
 
 namespace c6502::passes::linker_objects_checks {
 
-// Returns the text of the JSON form of `obj`, as the harness's
-// `_elf_json` writes it with `json.dumps`.
+// Returns the text of the JSON form of `obj`, byte for byte as the
+// frozen records hash it.
 std::string elf_json(const binutils::elf::ElfFile& obj);
 
 // Returns the object whose JSON form is `v`. Throws `InternalError` for

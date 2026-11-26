@@ -60,13 +60,9 @@
 // copy of the first user's, with internal linkage, so it goes in the
 // same section.
 //
-// Python groups the runs by the `repr`s of their instructions. Here
-// each instruction's dump stands for its `repr`, since two dumps are
-// equal exactly when the `repr`s are.
-//
 // Where it runs
 //
-// Last in `compile.optimized_asm`, after `apply_shared_tails`, since a
+// Last in `optimized_region`, after `apply_shared_tails`, since a
 // tail is cheaper to share with a `JMP` than a run with a `JSR`. Every
 // change only removes bytes from a function, so no branch falls out of
 // reach.
@@ -97,8 +93,6 @@ using ::c6502::asdl::isa;
 using Instructions = std::vector<ir::Type_instruction>;
 
 constexpr std::size_t kMaxLen = 24;
-// A loop of at most this many bytes keeps its runs in place, since the
-// call costs 12 cycles a pass, which in a short loop is a large share.
 constexpr long kShortLoop = 64;
 
 bool is_run_kind(const ir::Type_instruction& ins) {
@@ -131,8 +125,6 @@ bool runnable(const ir::Type_instruction& ins,
     return false;
   }
   if (const auto* call = as<ir::Call>(ins)) {
-    // A call that takes arguments in registers, or keeps them, is left
-    // where its registers are set.
     if (!call->reg_args.empty() || !call->preserves.empty()) {
       return false;
     }
@@ -140,9 +132,6 @@ bool runnable(const ir::Type_instruction& ins,
   return true;
 }
 
-// Returns `(label index, branch index)` for each branch or jump back to
-// a label earlier in the function, when the instructions between, the
-// loop, take at most `kShortLoop` bytes.
 std::vector<std::pair<std::size_t, std::size_t>> loop_spans(
     const Instructions& instrs) {
   const LabelMap at(instrs);
@@ -174,7 +163,7 @@ std::vector<std::pair<std::size_t, std::size_t>> loop_spans(
   return spans;
 }
 
-using Place = std::pair<std::size_t, std::size_t>;  // (function index, start)
+using Place = std::pair<std::size_t, std::size_t>;
 
 std::vector<Place> non_overlapping(std::vector<Place> starts, std::size_t length) {
   std::sort(starts.begin(), starts.end());
@@ -196,12 +185,9 @@ struct Run {
   std::vector<Place> places;
 };
 
-// Returns the run that saves the most, or nothing.
 std::optional<Run> best_run(const std::vector<ir::Type_top_level>& top,
                             const NameSet* zp_names,
                             const std::set<asdl::Int>& slot_addrs) {
-  // Each instruction that can be in a run, in order, with the id of its
-  // dump. `ids[fi][k]` is the id at that place, or -1.
   std::vector<Place> keys;
   std::vector<std::vector<long>> ids(top.size());
   std::vector<std::vector<long>> sizes(top.size());
@@ -243,8 +229,6 @@ std::optional<Run> best_run(const std::vector<ir::Type_top_level>& top,
   std::optional<Run> best;
   long best_gain = 0;
   for (std::size_t length = 2; length <= kMaxLen; ++length) {
-    // The runs of this length, by their instructions, in the order of
-    // their first places.
     std::map<std::vector<long>, std::size_t> group_of;
     std::vector<std::pair<std::vector<long>, std::vector<Place>>> groups;
     for (const auto& [fi, k] : keys) {
@@ -280,8 +264,6 @@ std::optional<Run> best_run(const std::vector<ir::Type_top_level>& top,
       for (std::size_t j = k; j < k + length; ++j) {
         s += sizes[fi][j];
       }
-      // The function adds an `RTS`, or none when it ends with a call,
-      // which becomes a jump.
       const long ret = id_is_call[static_cast<std::size_t>(seq.back())] ? 0 : 1;
       const long gain = n * s - (s + ret + 3 * n);
       if (gain > best_gain) {
@@ -342,8 +324,6 @@ asm_ast::Program apply_outline_runs(asm_ast::Program prog,
         break;
       }
     }
-    // A run that ends with a call ends with a jump to the callee, which
-    // returns to the run's caller.
     Instructions end;
     if (const auto* call = as<ir::Call>(body.back())) {
       const std::string callee = call->name;

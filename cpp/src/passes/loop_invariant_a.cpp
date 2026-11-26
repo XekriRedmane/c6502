@@ -111,8 +111,6 @@ const std::string* target(const ir::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns the `dst` operand of the instruction kinds whose `dst` is one
-// operand, or null.
 const ir::Type_operand* dst_of(const ir::Type_instruction& instr) {
   return std::visit(
       [](const auto& ins) -> const ir::Type_operand* {
@@ -138,14 +136,11 @@ bool writes_a(const ir::Type_instruction& instr) {
   return isa<ir::Call, ir::FunctionPrologue, ir::AllocateStack, ir::DecimalArith>(instr);
 }
 
-// Returns whether `instr` reads or writes A, counting the A staging
-// that a memory-to-memory Mov or a Push / Compare of A implies.
 bool touches_a(const ir::Type_instruction& instr) {
   if (writes_a(instr)) {
     return true;
   }
   if (const auto* mov = as<ir::Mov>(instr)) {
-    // A memory-to-memory Mov is emitted as LDA src; STA dst.
     return mov->src == kA || !isa<ir::Reg>(mov->dst);
   }
   if (const auto* cmp = as<ir::Compare>(instr)) {
@@ -157,7 +152,6 @@ bool touches_a(const ir::Type_instruction& instr) {
   return isa<ir::LoadAddress>(instr);
 }
 
-// Returns the memory operands `instr` may write.
 std::vector<ir::Type_operand> written_memory(const ir::Type_instruction& instr) {
   if (const auto* da = as<ir::DecimalArith>(instr)) {
     return decimal_arith::writes(*da);
@@ -190,14 +184,6 @@ std::optional<std::size_t> find_label(const LabelIndex& label_at, const std::str
   return it->second;
 }
 
-// Returns whether neither N nor C at `idx` is read before being
-// overwritten, on any path. Swapping a CMP's operands changes those two
-// flags (Z stays the same), so this is what the swap needs. BMI / BPL
-// read N, and BCC / BCS and ADC / SBC / ROL / ROR read C. A return or
-// call ends the path, since no flag carries a value across one, except
-// that a carry-flag return reads C. Any instruction that sets N/Z
-// overwrites N, and CMP / CPX / CPY, SEC / CLC, and ASL / LSR overwrite
-// C.
 bool n_c_dead_at(const InstrList& instrs, std::size_t idx, const LabelIndex& label_at) {
   std::set<std::tuple<std::size_t, bool, bool>> seen;
   std::vector<std::tuple<std::size_t, bool, bool>> stack = {{idx, true, true}};
@@ -233,7 +219,6 @@ bool n_c_dead_at(const InstrList& instrs, std::size_t idx, const LabelIndex& lab
         continue;
       }
       if (c_live) {
-        // A carry-flag return reads C.
         if (const auto* r = as<ir::Return>(ins); r != nullptr && r->save_c) {
           return false;
         }
@@ -242,8 +227,6 @@ bool n_c_dead_at(const InstrList& instrs, std::size_t idx, const LabelIndex& lab
         }
       }
       if (isa<ir::Return, ir::Ret, ir::Call>(ins)) {
-        // Only a carry-flag return carries a flag, and a callee doesn't
-        // read its caller's flags.
         break;
       }
       if (c_live && is_c_reader(ins)) {
@@ -261,8 +244,6 @@ bool n_c_dead_at(const InstrList& instrs, std::size_t idx, const LabelIndex& lab
   return true;
 }
 
-// An edge between two blocks of the loop: from block `p` to block `q`,
-// by falling through or by the jump or branch at index `at`.
 struct Edge {
   std::size_t p;
   std::size_t q;
@@ -293,8 +274,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
   const ir::Type_operand x = lda->src;
   auto in_range = [&](std::size_t i) { return h <= i && i <= b; };
 
-  // Single entry: no jump from outside the range lands inside it,
-  // including on the header itself.
   std::set<std::string, std::less<>> names_in;
   for (std::size_t i = h; i <= b; ++i) {
     if (const auto* l = as<ir::Label>(instrs[i])) {
@@ -310,7 +289,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     }
   }
 
-  // `k` is invariant over the loop.
   const MayAliasOptions alias_options{.zp_slot_symbols = zp_slot_symbols};
   for (std::size_t i = h; i <= b; ++i) {
     const auto& ins = instrs[i];
@@ -324,8 +302,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     }
   }
 
-  // The swap needs A and every flag dead after the branch, on both
-  // successors.
   const auto tgt = find_label(label_at, br->target);
   if (!tgt) {
     return std::nullopt;
@@ -338,7 +314,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     return std::nullopt;
   }
 
-  // The basic blocks of the range, as inclusive (start, end) pairs.
   std::set<std::size_t> leaders = {h};
   for (std::size_t i = h; i <= b; ++i) {
     const auto& ins = instrs[i];
@@ -363,7 +338,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     }
   }
 
-  // The successor edges inside the range.
   std::vector<Edge> edges;
   for (std::size_t bi = 0; bi < nblocks; ++bi) {
     const std::size_t e = blocks[bi].second;
@@ -379,15 +353,11 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
   }
 
   const std::size_t header = 0;
-  // Returns whether A == k at block `bi`'s exit, given whether it holds
-  // at the block's entry, once the header's own LDA is deleted. A block
-  // that writes A ends with A == k only when its last A write is
-  // `LDA k`.
   auto exit_state = [&](std::size_t bi, bool entry) {
     bool state = entry;
     for (std::size_t i = blocks[bi].first; i <= blocks[bi].second; ++i) {
       if (i == h + 1) {
-        continue;  // The LDA k being hoisted.
+        continue;
       }
       const auto& ins = instrs[i];
       if (writes_a(ins)) {
@@ -403,7 +373,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     preds[edge.q].push_back(edge.p);
   }
 
-  // Returns whether block `bi` neither reads nor writes A.
   auto pure = [&](std::size_t bi) {
     for (std::size_t i = blocks[bi].first; i <= blocks[bi].second; ++i) {
       if (!isa<ir::Label>(instrs[i]) && touches_a(instrs[i])) {
@@ -413,8 +382,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     return true;
   };
 
-  // need[bi]: A must equal k at bi's entry, because bi reaches the
-  // header without touching A.
   std::vector<bool> need(nblocks, false);
   need[header] = true;
   for (bool changed = true; changed;) {
@@ -427,10 +394,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     }
   }
 
-  // A == k at each block's entry. A block that needs k gets it on every
-  // incoming edge (from the edge's source, or from a reload placed on
-  // the edge), so its entry has it by construction. Other blocks have it
-  // when all their predecessors end with it.
   std::vector<bool> entry_ok(nblocks, true);
   for (bool changed = true; changed;) {
     changed = false;
@@ -452,8 +415,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     }
   }
 
-  // The edges that must get a reload: into a block that needs k, from a
-  // block whose exit doesn't have it.
   std::vector<Edge> reloads;
   for (const auto& edge : edges) {
     if (!need[edge.q]) {
@@ -467,22 +428,15 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     }
     reloads.push_back(edge);
   }
-  // Every reload's target block must be one the analysis can satisfy, a
-  // pure block or the header. A block that needs k can't be entered
-  // from a block that neither has k nor gets a reload, since every such
-  // edge is in `reloads`.
   for (const auto& edge : reloads) {
     if (edge.q != header && !pure(edge.q)) {
       return std::nullopt;
     }
   }
 
-  // Plan the edits: the instructions to insert before an index, and the
-  // branches to retarget.
   const ir::Type_instruction reload = ir::Mov{.src = k, .dst = kA, .is_volatile = false};
   std::map<std::size_t, InstrList> inserts;
   std::map<std::size_t, std::string> retarget;
-  // The entry load goes before Label(H).
   InstrList entry_stub = {reload};
   std::optional<std::string> header_stub_label;
   for (const auto& edge : reloads) {
@@ -491,13 +445,9 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
       if (edge.q == header) {
         return std::nullopt;
       }
-      // Before the block's label (if any), so only this fall-through
-      // edge runs it.
       inserts[s_q].push_back(reload);
       continue;
     }
-    // A taken edge into the header shares the entry load by giving it a
-    // label of its own.
     if (edge.q == header) {
       if (!header_stub_label) {
         ++counter;
@@ -520,8 +470,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
     at.push_back(reload);
     retarget[edge.at] = stub_label;
   }
-  // The entry load sets N/Z, and the header's first remaining
-  // instruction is the CMP, which overwrites them.
   InstrList out;
   out.reserve(instrs.size() + 4);
   for (std::size_t i = 0; i < instrs.size(); ++i) {
@@ -534,10 +482,10 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
       }
     }
     if (i == h + 1) {
-      continue;  // The header's LDA x is dropped.
+      continue;
     }
     if (i == h + 2) {
-      out.push_back(ir::Compare{.left = kA, .right = x});  // The swapped CMP.
+      out.push_back(ir::Compare{.left = kA, .right = x});
       continue;
     }
     if (const auto it = retarget.find(i); it != retarget.end()) {
@@ -554,8 +502,6 @@ std::optional<InstrList> try_loop(const InstrList& instrs, std::size_t h, std::s
   return out;
 }
 
-// Applies the rewrite to the first eligible loop, returning the new
-// instruction list, or nothing when no loop qualifies.
 std::optional<InstrList> rewrite_one(const InstrList& instrs, const std::string& fn_name,
                                      int& counter, const AsmContext& ctx,
                                      const SymbolAddrs* zp_slot_symbols) {

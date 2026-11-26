@@ -1,6 +1,5 @@
 /*
-The loop and switch labeling pass, c99_ast to c99_ast
-(passes/loop_labeling.py).
+The loop and switch labeling pass, c99_ast to c99_ast.
 
 It mints a unique label for each iteration statement (`while`,
 `do-while`, `for`) and each `switch`, stamps it onto the statement's
@@ -51,8 +50,8 @@ uses only `_break`, since the dispatch chain emits the case and default
 labels directly.
 
 The pass runs after label_resolution, so the user's labels are already
-resolved when it mints its own. The Python pass builds a new AST, and
-this one labels the program it is given, which it takes by value.
+resolved when it mints its own. It labels the program it is given,
+which it takes by value.
 */
 #include "passes/loop_labeling.h"
 
@@ -69,14 +68,11 @@ namespace {
 
 namespace ir = ::c6502::c99_ast;
 
-// The case and default labels collected for one switch's body.
 struct SwitchCollector {
   std::vector<ir::Type_switch_case> cases;
   std::optional<std::string> default_label;
 };
 
-// The state threaded through the walk. A statement that changes one of
-// the fields walks its body with a copy.
 struct LabelState {
   std::optional<std::string> current_loop;
   std::optional<std::string> current_break_target;
@@ -90,15 +86,9 @@ struct LabelState {
 class LoopLabeler {
  public:
   ir::Program label_program(ir::Program prog) {
-    // The counter keeps the labels unique across functions. Variable
-    // declarations, struct declarations, and function declarations
-    // without a body host no iteration statement.
     for (auto& decl : prog.declaration) {
       if (auto* fd = std::get_if<ir::FunctionDecl>(&decl)) {
         if (fd->function_decl->body) {
-          // A function body starts outside any loop or switch, so a
-          // `break`, `continue`, `case`, or `default` at its top level
-          // is an error.
           label_block(**fd->function_decl->body, LabelState{});
         }
       }
@@ -120,16 +110,12 @@ class LoopLabeler {
 
   void label_block(ir::Type_block& block, const LabelState& state) {
     for (auto& item : std::get<ir::Block>(block).block_item) {
-      // Declarations host no `break`, `continue`, or loop.
       if (auto* s = std::get_if<ir::S>(&item)) {
         label_statement(*s->statement, state);
       }
     }
   }
 
-  // Returns the state of the body of an iteration statement labeled
-  // `label`, which keeps the enclosing switch's collector, since case
-  // labels in the body still belong to it (Duff's device).
   static LabelState loop_state(const std::string& label, const LabelState& state) {
     return LabelState{
         .current_loop = label,
@@ -141,8 +127,6 @@ class LoopLabeler {
   void label_statement(ir::Type_statement& stmt, const LabelState& state) {
     switch (ir::kind(stmt)) {
       case ir::Kind_statement::BreakStmt: {
-        // `break` targets the innermost enclosing iteration or switch
-        // statement (C99 §6.8.6.3).
         if (!state.current_break_target) {
           fail("'break' statement not inside a loop or switch");
         }
@@ -150,9 +134,6 @@ class LoopLabeler {
         return;
       }
       case ir::Kind_statement::ContinueStmt: {
-        // `continue` targets only the innermost enclosing iteration
-        // statement (C99 §6.8.6.2), and a switch doesn't set
-        // `current_loop`.
         if (!state.current_loop) {
           fail("'continue' statement not inside a loop");
         }
@@ -174,9 +155,6 @@ class LoopLabeler {
         return;
       }
       case ir::Kind_statement::ForStmt: {
-        // The header holds expressions and a possible declaration, none
-        // of which can hold a `break`, `continue`, `case`, or
-        // `default`, so only the body is walked.
         auto& f = std::get<ir::ForStmt>(stmt);
         const std::string label = make_label("loop");
         label_statement(*f.body, loop_state(label, state));
@@ -184,9 +162,6 @@ class LoopLabeler {
         return;
       }
       case ir::Kind_statement::SwitchStmt: {
-        // A switch sets a new break target, its own label, and a new
-        // collector for its body. `current_loop` is kept, so a
-        // `continue` inside the switch still finds an enclosing loop.
         auto& sw = std::get<ir::SwitchStmt>(stmt);
         const std::string label = make_label("switch");
         SwitchCollector collector;
@@ -202,15 +177,12 @@ class LoopLabeler {
         return;
       }
       case ir::Kind_statement::CaseStmt: {
-        // `case` is legal only inside a switch (§6.8.1.2), whose
-        // collector may be several levels up the walk.
         auto& c = std::get<ir::CaseStmt>(stmt);
         if (state.current_switch == nullptr) {
           fail("'case' label not within a switch statement");
         }
         const std::string label = make_label("case");
         state.current_switch->cases.push_back(ir::Type_switch_case{.value = c.value, .label = label});
-        // A case label opens no scope and changes no target.
         label_statement(*c.body, state);
         c.label = label;
         return;
@@ -230,8 +202,6 @@ class LoopLabeler {
         return;
       }
       case ir::Kind_statement::IfStmt: {
-        // `if` changes no scoping, so both branches see what encloses
-        // it.
         auto& i = std::get<ir::IfStmt>(stmt);
         label_statement(*i.then_clause, state);
         if (i.else_clause) {
@@ -240,20 +210,15 @@ class LoopLabeler {
         return;
       }
       case ir::Kind_statement::Compound:
-        // A compound inside a loop or switch is still inside it.
         label_block(*std::get<ir::Compound>(stmt).block, state);
         return;
       case ir::Kind_statement::LabeledStmt:
-        // A `label:` changes no scoping. label_resolution has already
-        // rewritten its name.
         label_statement(*std::get<ir::LabeledStmt>(stmt).statement, state);
         return;
       case ir::Kind_statement::Return:
       case ir::Kind_statement::Expression:
       case ir::Kind_statement::Goto:
       case ir::Kind_statement::Null:
-        // Nothing nested here can hold a `break`, `continue`, `case`,
-        // or `default`.
         return;
     }
   }

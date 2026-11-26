@@ -169,8 +169,6 @@ const ir::Type_operand kRegA = ir::Reg{.reg = ir::A{}};
 const ir::Type_operand kRegX = ir::Reg{.reg = ir::X{}};
 const ir::Type_operand kRegY = ir::Reg{.reg = ir::Y{}};
 
-// The memory byte an operand names, `("data", name, offset)` or
-// `("zp", address, offset)` in Python's `_operand_key`.
 struct Key {
   bool is_zp = false;
   std::string name;
@@ -224,19 +222,17 @@ bool stable_mem_eq(const ir::Type_operand& a, const ir::Type_operand& b) {
   return false;
 }
 
-// The role a memory operand plays for the candidate scan.
 enum class Role { kInit, kLdx, kLda, kDec, kInc, kOther };
 
 using Roles = std::vector<std::pair<Role, ir::Type_operand>>;
 
-// Classifies each memory operand's role for the candidate scan.
 Roles operand_roles(const ir::Type_instruction& instr) {
   Roles out;
   switch (ir::kind(instr)) {
     case ir::Kind_instruction::Mov: {
       const auto& m = std::get<ir::Mov>(instr);
       if (stable_mem_eq(m.src, m.dst)) {
-        return out;  // a move of a byte to itself
+        return out;
       }
       const bool src_is_reg = isa<ir::Reg>(m.src);
       if (is_reg_x(m.dst) && !src_is_reg) {
@@ -244,9 +240,6 @@ Roles operand_roles(const ir::Type_instruction& instr) {
         return out;
       }
       if (is_reg_a(m.dst) && !src_is_reg) {
-        // `Mov(M, Reg(A))`, LDA M. It doesn't disqualify the counter
-        // slot, and the apply step rewrites it to TXA (since X = M is
-        // the promotion invariant).
         out.emplace_back(Role::kLda, m.src);
         return out;
       }
@@ -296,14 +289,6 @@ Roles operand_roles(const ir::Type_instruction& instr) {
     default:
       break;
   }
-  // Any other instruction that names a memory operand (a shift or
-  // rotate of it, `EOR`, `BIT`, `PHA`, ...) is a use the promotion
-  // doesn't rewrite, so it disqualifies the slot. Missing one would
-  // leave X stale: `STA M; ROL M; INC M; LDX M` once promoted M to X
-  // with the `ROL` still updating memory. A `DecimalArith` keeps its
-  // operands in lists, which are visited. A `Phi`'s arguments are
-  // `AsmPhiArg`s, which Python's walk over the fields doesn't take for
-  // operands.
   auto visit = [&](const ir::Type_operand& op) {
     if (isa<ir::Data, ir::ZP>(op)) {
       out.emplace_back(Role::kOther, op);
@@ -329,19 +314,14 @@ bool uses_key(const ir::Type_instruction& instr, const Key& k, bool skip_init) {
   return false;
 }
 
-// Python's `op_uses_x` inside `_reads_x`.
 bool op_uses_x(const ir::Type_operand& op, bool is_dst = false, bool rmw = false) {
   if (is_reg_x(op)) {
     return !is_dst || rmw;
   }
-  // Indexed addressing through X reads X whatever the operand's role.
   const auto* ix = as<ir::IndexedData>(op);
   return ix != nullptr && isa<ir::X>(ix->index);
 }
 
-// Returns whether `instr` reads Reg(X) in any operand role: a source, a
-// compare operand, an RMW dst, or an `abs,X` index. A pure write to X,
-// such as `LDX`, `TAX`, or `Pop(X)`, doesn't count.
 bool reads_x_any(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case ir::Kind_instruction::Mov: {
@@ -397,8 +377,6 @@ bool reads_x_any(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns the address of the `dst` field of a Mov, Pop, or LoadAddress,
-// whose Reg(Y) is a pure write, or null.
 const ir::Type_operand* pure_write_dst(const ir::Type_instruction& instr) {
   if (const auto* m = as<ir::Mov>(instr)) {
     return &m->dst;
@@ -412,9 +390,6 @@ const ir::Type_operand* pure_write_dst(const ir::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns whether `instr` reads Reg(Y) as a value, as an `abs,Y` index,
-// or as the offset of an `(ind),Y` operand that has no `LDY #off` setup
-// of its own (`IndirectY`, `IndirectZpY`).
 bool reads_y_any(const ir::Type_instruction& instr) {
   const ir::Type_operand* write_dst = pure_write_dst(instr);
   bool found = false;
@@ -423,7 +398,6 @@ bool reads_y_any(const ir::Type_instruction& instr) {
       return;
     }
     if (is_reg_y(op)) {
-      // A pure write to Y (`LDY`, `TAY`, `PLY`) isn't a read.
       if (&op != write_dst) {
         found = true;
       }
@@ -440,9 +414,6 @@ bool reads_y_any(const ir::Type_instruction& instr) {
   return found;
 }
 
-// Returns whether `instr` reads or writes Reg(Y) in any way, including
-// the `LDY #off` that `asm_emit` puts in front of an `Indirect`,
-// `IndirectZp`, `Frame`, or `Stack` access.
 bool touches_y(const ir::Type_instruction& instr) {
   if (reads_y_any(instr) || sets_up_y(instr)) {
     return true;
@@ -460,9 +431,6 @@ bool has_reg_arg(const std::vector<std::string>& reg_args, std::string_view reg)
   return std::find(reg_args.begin(), reg_args.end(), reg) != reg_args.end();
 }
 
-// Returns whether `instr` reads `reg`, counting a call or tail-call jump
-// that takes the register as an argument and a return whose epilogue
-// carries X out (`save_x`).
 bool reg_reads(const ir::Type_instruction& instr, IndexReg reg) {
   const std::string_view name = reg == IndexReg::kX ? "X" : "Y";
   if (const auto* c = as<ir::Call>(instr)) {
@@ -480,9 +448,6 @@ bool reg_reads(const ir::Type_instruction& instr, IndexReg reg) {
   return reg == IndexReg::kX ? reads_x_any(instr) : reads_y_any(instr);
 }
 
-// Returns whether `instr` overwrites `reg` without reading it. It is
-// asked after `reg_reads`, so an instruction that does both counts as a
-// read.
 bool reg_kills(const ir::Type_instruction& instr, IndexReg reg) {
   if (isa<ir::Call>(instr)) {
     return !call_preserves(instr, reg == IndexReg::kX ? "X" : "Y");
@@ -509,11 +474,6 @@ const std::string* jump_or_branch_target(const ir::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns whether `reg` is read on some path from `instrs[start]` before
-// it is overwritten, that is, whether the value the register holds at
-// `start` is still used. The walk follows both arms of a branch and the
-// targets of jumps. A return ends a path, reading X when it has
-// `save_x`.
 bool reg_live_from(Instrs instrs, const LabelMap& labels, std::size_t start,
                    IndexReg reg) {
   std::vector<bool> seen(instrs.size(), false);
@@ -548,12 +508,9 @@ bool reg_live_from(Instrs instrs, const LabelMap& labels, std::size_t start,
   return false;
 }
 
-// Returns whether `instr` writes Reg(X) and the write isn't an LDX from
-// the counter's canonical home M.
 bool is_x_write_other_than(const ir::Type_instruction& instr, const Key& m_key) {
   if (const auto* m = as<ir::Mov>(instr)) {
     if (is_reg_x(m->dst)) {
-      // LDX from M is the canonical reload.
       return !key_is(m->src, m_key);
     }
     return false;
@@ -573,11 +530,6 @@ bool is_x_write_other_than(const ir::Type_instruction& instr, const Key& m_key) 
   return false;
 }
 
-// Returns whether the counter M is read on some path after the
-// instruction at `call_idx` before the init at `init_idx` writes it
-// again. Only then does a call need `STX M` / `LDX M` around it, so
-// that X still holds M afterwards. The walk follows both arms of a
-// branch and jump targets.
 bool counter_live_after(Instrs instrs, const LabelMap& labels, std::size_t call_idx,
                         const Key& m_key, std::size_t init_idx) {
   std::vector<bool> seen(instrs.size(), false);
@@ -628,18 +580,13 @@ ir::Type_operand rewrite_op_for_pivot(const ir::Type_operand& op) {
   return op;
 }
 
-// Rewrites a pivot-range instruction: the leading LDX becomes LDY, and
-// any IndexedData(index=X) consumer is indexed by Y.
 ir::Type_instruction pivot_rewrite(const ir::Type_instruction& instr) {
   if (const auto* m = as<ir::Mov>(instr)) {
     ir::Type_operand new_src = rewrite_op_for_pivot(m->src);
     ir::Type_operand new_dst = rewrite_op_for_pivot(m->dst);
-    // The leading LDX (dst=Reg(X), a source that isn't a register)
-    // becomes LDY.
     if (is_reg_x(new_dst) && !isa<ir::Reg>(new_src)) {
       new_dst = kRegY;
     }
-    // The move keeps its `is_volatile` bit.
     return ir::Mov{.src = new_src, .dst = new_dst, .is_volatile = m->is_volatile};
   }
   if (const auto* i = as<ir::Add>(instr)) {
@@ -654,32 +601,13 @@ ir::Type_instruction pivot_rewrite(const ir::Type_instruction& instr) {
   if (const auto* i = as<ir::Or>(instr)) {
     return ir::Or{.src = rewrite_op_for_pivot(i->src), .dst = rewrite_op_for_pivot(i->dst)};
   }
+  // `CMP abs,X` has the `CMP abs,Y` form.
   if (const auto* c = as<ir::Compare>(instr); c != nullptr && is_reg_a(c->left)) {
-    // `CMP abs,X` has the `CMP abs,Y` form.
     return ir::Compare{.left = c->left, .right = rewrite_op_for_pivot(c->right)};
   }
   return instr;
 }
 
-// Verifies a Y-pivot range starting at the `LDX` at `instrs[start]`.
-// Returns the exclusive end index, or nothing if no valid range exists
-// from here.
-//
-// The range is valid when all of these hold.
-//   * The LDX's source is one LDY can load (Imm, Data, ZP,
-//     ImmLabelLow, ImmLabelHigh), each of which has an `LDY` form that
-//     reads neither X nor Y.
-//   * No instruction in the range reads or writes Y, including the
-//     `LDY #off` setup of a `Frame`, `Stack`, `Indirect`, or
-//     `IndirectZp` operand, since Y holds the loaded value.
-//   * Every X read in the range is an `abs,X` operand that
-//     `pivot_rewrite` turns into `abs,Y`.
-//   * The range ends before another X write, a label, a branch, a
-//     jump, a call, a return, or any use of the counter M. The apply
-//     step rewrites a use of M (its step to `DEX` or `INX`, an `LDA M`
-//     to `TXA`), and it gives the pivot rewrite precedence, so a use of
-//     M inside the range would keep reading or stepping the memory
-//     copy.
 std::optional<std::size_t> try_collect_pivot_range(Instrs instrs, std::size_t start,
                                                    const Key& m_key) {
   const auto& first = std::get<ir::Mov>(instrs[start]);
@@ -689,15 +617,12 @@ std::optional<std::size_t> try_collect_pivot_range(Instrs instrs, std::size_t st
   std::size_t j = start + 1;
   while (j < instrs.size()) {
     const auto& instr = instrs[j];
-    // Control-flow and call boundaries end the range before this
-    // instruction.
     if (isa<ir::Label, ir::Jump, ir::Branch, ir::Call, ir::Ret, ir::Return>(instr)) {
       return j;
     }
     if (uses_key(instr, m_key, /*skip_init=*/false)) {
       return j;
     }
-    // Another X-write ends the range before this instruction.
     if (const auto* m = as<ir::Mov>(instr); m != nullptr && is_reg_x(m->dst)) {
       return j;
     }
@@ -713,9 +638,9 @@ std::optional<std::size_t> try_collect_pivot_range(Instrs instrs, std::size_t st
     if (touches_y(instr)) {
       return std::nullopt;
     }
+    // An X read with no `abs,Y` form here: `TXA`, `STX`, `CPX`,
+    // `INC abs,X`, a shift of `abs,X`, ...
     if (reads_x_any(pivot_rewrite(instr))) {
-      // An X read with no `abs,Y` form here: `TXA`, `STX`, `CPX`,
-      // `INC abs,X`, a shift of `abs,X`, ...
       return std::nullopt;
     }
     ++j;
@@ -723,9 +648,6 @@ std::optional<std::size_t> try_collect_pivot_range(Instrs instrs, std::size_t st
   return j;
 }
 
-// Returns whether a byte is one the compiler owns, which nothing
-// outside the function reads: a regalloc `ZP` byte, a body-local, or a
-// parameter slot.
 bool is_compiler_slot(const Key& k) {
   if (k.is_zp) {
     return true;
@@ -733,8 +655,6 @@ bool is_compiler_slot(const Key& k) {
   return k.name.starts_with("__local_") || k.name.starts_with("__zpabi_");
 }
 
-// Returns whether every path from the function's entry passes
-// `instrs[init_idx]` before reaching any index in `uses`.
 bool init_comes_first(Instrs instrs, const LabelMap& labels, std::size_t init_idx,
                       const std::vector<std::size_t>& uses) {
   const std::set<std::size_t> targets(uses.begin(), uses.end());
@@ -770,8 +690,6 @@ bool init_comes_first(Instrs instrs, const LabelMap& labels, std::size_t init_id
   return true;
 }
 
-// Verifies that the DEC is followed by a Branch on N or Z whose target
-// chain lands at one of `ldx_indices`, and returns that index.
 std::optional<std::size_t> find_loop_top_lda(Instrs instrs, const LabelMap& labels,
                                              std::size_t dec_idx,
                                              const std::vector<std::size_t>& ldx_indices) {
@@ -837,14 +755,12 @@ std::optional<std::size_t> find_loop_top_lda(Instrs instrs, const LabelMap& labe
 struct Candidate {
   Key m_key;
   std::size_t init_idx = 0;
-  // The index of the step, a `Dec(M)` or an `Inc(M)`.
   std::size_t dec_idx = 0;
   bool step_is_inc = false;
   std::optional<std::size_t> loop_top_lda_idx;
   std::vector<std::size_t> lda_m_indices;
 };
 
-// What the candidate scan found for one byte.
 struct Uses {
   int init_count = 0;
   std::size_t init_idx = 0;
@@ -857,23 +773,10 @@ struct Uses {
   bool disqualified = false;
 };
 
-// Identifies a memory slot M with the loop-counter use pattern. A
-// count-down counter needs its `DEC` to branch back to a loop-top
-// `LDX M`. A count-up counter has no loop-top reload to find, since
-// its loop tests the counter with `LDA M; CMP` instead.
-//
-// A byte of a `(zp),Y` pointer is never a candidate. A read through the
-// pointer reads the byte too, and names it by the pointer's address,
-// which the scan below doesn't count as a use, so the reads would see
-// the byte in memory after the step had moved to X. The single `INC`
-// that `carry_in_add` leaves on the high byte of `msg = msg + msg[0] +
-// 1` was taken for a counter that way.
 std::optional<Candidate> find_counter_candidate(Instrs instrs, const LabelMap& labels,
                                                 const SymbolAddrs* zp_symbol_addrs) {
   const std::set<asdl::Int> pointer_addrs = pointer_byte_addresses(instrs);
   std::map<Key, Uses> uses;
-  // The keys in the order Python's `init_count`, `dec_count`, and
-  // `ldx_idx` dicts gain them.
   std::vector<Key> init_order;
   std::vector<Key> dec_order;
   std::vector<Key> ldx_order;
@@ -972,44 +875,23 @@ struct Plan {
   std::vector<std::size_t> call_indices;
 };
 
-// Identifies a candidate counter slot M and verifies that the
-// transformation can be applied.
 std::optional<Plan> plan_promotion(Instrs instrs, const SymbolAddrs* zp_symbol_addrs) {
   const LabelMap labels(instrs);
-  // Step 1: find counter-slot candidates by use-pattern.
   std::optional<Candidate> cand = find_counter_candidate(instrs, labels, zp_symbol_addrs);
   if (!cand) {
     return std::nullopt;
   }
   const Key& m_key = cand->m_key;
-  // The counter is in X from its init on, so X can't hold anything
-  // else there, such as a parameter that arrives in X and is read
-  // after the init.
   if (reg_live_from(instrs, labels, cand->init_idx + 1, IndexReg::kX)) {
     return std::nullopt;
   }
 
-  // Step 2: scan all X-writes and classify each.
   Plan plan{.cand = *cand};
   std::size_t i = 0;
   while (i < instrs.size()) {
     const auto& instr = instrs[i];
     if (is_x_write_other_than(instr, m_key)) {
-      // Some X-write other than the counter's. It must be one the
-      // Y-pivot can move, or a Call.
       if (isa<ir::Call>(instr)) {
-        // The promotion wraps each Call with `STX M` before and `LDX M`
-        // after it to preserve the counter across the JSR. That model
-        // takes the callee to deliver nothing in X. A function
-        // returning a non-pointer value of 2 bytes returns its high
-        // byte in X, and the caller captures it (`STX slot_hi` / `TXA`)
-        // right after the JSR. Inserting `LDX M` there would clobber
-        // the live return high byte before it's captured. If X is read
-        // after this Call before being redefined, the callee returned a
-        // live value in X, and the promotion is refused. In the normal
-        // loop-counter case the counter is reloaded with `LDX M` (a
-        // pure write) before any X use, often at the loop top reached
-        // across the back-edge, so X is redefined first on every path.
         if (reg_live_from(instrs, labels, i + 1, IndexReg::kX)) {
           return std::nullopt;
         }
@@ -1020,10 +902,6 @@ std::optional<Plan> plan_promotion(Instrs instrs, const SymbolAddrs* zp_symbol_a
         continue;
       }
       if (is_ldx_to_x(instr)) {
-        // Where the counter is dead (no read of M before the init
-        // writes it again, as for the `LDX hi` of a 2-byte return after
-        // the loop), the load can stay an LDX. X isn't expected to hold
-        // the counter there.
         if (!counter_live_after(instrs, labels, i, m_key, cand->init_idx)) {
           ++i;
           continue;
@@ -1032,11 +910,6 @@ std::optional<Plan> plan_promotion(Instrs instrs, const SymbolAddrs* zp_symbol_a
         if (!end) {
           return std::nullopt;
         }
-        // The pivot leaves the counter in X and the loaded value in Y
-        // from the LDY onward. An X read after the range that the LDX
-        // reaches would get the counter where it read the loaded value,
-        // and a Y read after it would get the loaded value where it
-        // read whatever Y held before.
         if (reg_live_from(instrs, labels, *end, IndexReg::kX)) {
           return std::nullopt;
         }
@@ -1047,10 +920,8 @@ std::optional<Plan> plan_promotion(Instrs instrs, const SymbolAddrs* zp_symbol_a
         i = *end;
         continue;
       }
-      // Some other X-write (INX, DEX, TAX, PLX) disqualifies the slot.
       return std::nullopt;
     }
-    // An LDX M reload other than the loop-top one is a mid-iter one.
     if (const auto* m = as<ir::Mov>(instr);
         m != nullptr && is_reg_x(m->dst) && key_is(m->src, m_key) &&
         (!cand->loop_top_lda_idx || i != *cand->loop_top_lda_idx)) {
@@ -1061,8 +932,6 @@ std::optional<Plan> plan_promotion(Instrs instrs, const SymbolAddrs* zp_symbol_a
   return plan;
 }
 
-// Walks the function's instructions and applies every rewrite of the
-// plan.
 std::vector<ir::Type_instruction> apply_plan(Instrs instrs, const Plan& plan) {
   const Candidate& c = plan.cand;
   const ir::Type_operand m_op = mem_op_from_key(c.m_key);
@@ -1091,7 +960,6 @@ std::vector<ir::Type_instruction> apply_plan(Instrs instrs, const Plan& plan) {
       continue;
     }
     if (call_set.count(i) != 0) {
-      // Wrap: STX M; <Call>; LDX M.
       out.push_back(ir::Mov{.src = kRegX, .dst = m_op});
       out.push_back(instrs[i]);
       out.push_back(ir::Mov{.src = m_op, .dst = kRegX});
@@ -1099,8 +967,6 @@ std::vector<ir::Type_instruction> apply_plan(Instrs instrs, const Plan& plan) {
       continue;
     }
     if (in_pivot[i]) {
-      // Y-pivot: rewrite the leading LDX to LDY and each
-      // IndexedData(X) consumer in the range.
       out.push_back(pivot_rewrite(instrs[i]));
       ++i;
       continue;
@@ -1110,20 +976,15 @@ std::vector<ir::Type_instruction> apply_plan(Instrs instrs, const Plan& plan) {
           i + 1 < instrs.size() ? as<ir::Compare>(instrs[i + 1]) : nullptr;
       if (nxt != nullptr && is_reg_a(nxt->left) &&
           isa<ir::Imm, ir::Data, ir::ZP>(nxt->right) && a_dead_at(instrs, labels, i + 2)) {
-        // `LDA M; CMP op` becomes `CPX op`, which sets the same flags
-        // and leaves A alone, and A isn't read afterwards.
         out.push_back(ir::Compare{.left = kRegX, .right = nxt->right});
         i += 2;
         continue;
       }
-      // `LDA M` becomes `TXA`. X = M is the promotion invariant, so the
-      // two give the same value.
       out.push_back(ir::Mov{.src = kRegX, .dst = kRegA});
       ++i;
       continue;
     }
     if (i == c.dec_idx) {
-      // The step becomes DEX or INX.
       if (c.step_is_inc) {
         out.push_back(ir::Inc{.dst = kRegX});
       } else {
@@ -1133,11 +994,6 @@ std::vector<ir::Type_instruction> apply_plan(Instrs instrs, const Plan& plan) {
       continue;
     }
     if (i == c.init_idx) {
-      // X has to hold M's initial value after the init. A store from A,
-      // and a memory or immediate source (which `asm_emit` copies
-      // through A), leave the value in A, so a TAX does it. An `STX M`
-      // leaves it in X already, and after an `STY M` the value is in M
-      // and Y but not in A, so X is loaded from M.
       out.push_back(instrs[i]);
       const ir::Type_operand& src = std::get<ir::Mov>(instrs[i]).src;
       if (is_reg_y_op(src)) {

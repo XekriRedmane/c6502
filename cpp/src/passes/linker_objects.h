@@ -1,12 +1,10 @@
-// The functions of passes/linker.py that work on the objects of a link
-// rather than on their link metadata: the runtime library's object, the
-// items and units of each object, the renames in its symbols, the
-// names it uses as pointers, its assembly again with the program's
-// addresses, the executable's symbol table, and the tables several
-// units make with the same bytes. Each keeps the Python function's
-// inputs and result, and `link_objects` (a later part of the port)
-// calls them. The module comment of linker_objects.cpp describes where
-// each runs in a link.
+// The linker's functions that work on the objects of a link rather than
+// on their link metadata: the runtime library's object, the items and
+// units of each object, the renames in its symbols, the names it uses as
+// pointers, its assembly again with the program's addresses, the
+// executable's symbol table, and the tables several units make with the
+// same bytes. The comment at the top of linker_objects.cpp describes
+// where each runs in a link.
 #pragma once
 
 #include <cstdint>
@@ -27,8 +25,6 @@ namespace c6502::passes::linker {
 namespace elf = ::c6502::binutils::elf;
 namespace ld = ::c6502::binutils::ld;
 
-// The renames of one unit's internal names, old name to new, in the
-// order of the Python dict `_rename_locals` returns.
 using Renames = OrderedMap<std::string, std::string>;
 
 // The runtime library's object in a link, with the name it goes by
@@ -40,7 +36,7 @@ struct Library {
 
 // Returns the object of the runtime's helpers that `objects` call and
 // neither define nor get from `defsyms`, with its name and its link
-// metadata, or none when they call none (passes/runtime_library.py).
+// metadata, or none when they call none (passes/runtime_library.h).
 // Throws `global_definitions`'s `LinkError`s.
 std::optional<Library> runtime_library(const ld::Objects& objects, const ld::Names& defsyms);
 
@@ -53,8 +49,7 @@ std::vector<ItemMeta> object_items(const LinkMetadata& meta, const elf::ElfFile&
                                    const std::string& path);
 
 // Returns the first function or object symbol named `name` that `obj`
-// defines in a section. Python's `next` raises StopIteration when there
-// is none, and this throws `InternalError`.
+// defines in a section. Throws `InternalError` when there is none.
 elf::SymbolPtr item_symbol(const elf::ElfFile& obj, const std::string& name);
 
 // Returns `obj` without its `__zp_init` function and the symbols in its
@@ -65,8 +60,7 @@ elf::ElfFile without_init(const elf::ElfFile& obj);
 
 // Returns the layout's unit for object number `k`, named `path`, with
 // `items`: each item's input section, and the function each function
-// that ends in a `JMP` to another jumps to (`link_layout::tail_jump`,
-// which Python passes in as `tail_jump`).
+// that ends in a `JMP` to another jumps to (`link_layout::tail_jump`).
 link_layout::Unit unit(int k, const std::string& path, const elf::ElfFile& obj,
                        const std::vector<ItemMeta>& items);
 
@@ -84,8 +78,8 @@ NameSet pointer_names(const ld::Objects& objects);
 // `outside` (a slot spilled into `__spill`, or a promoted object put
 // back in the data segment), and puts the new object in its place in
 // `objects`. `renames` are each unit's renames. Throws
-// `CompileError("LinkError", ...)` with Python's message when the
-// assembler rejects the text.
+// `CompileError("LinkError", ...)` with the assembler's message when it
+// rejects the text.
 void reassemble(ld::Objects& objects, const std::vector<Renames>& renames, const ld::Names& placed,
                 const NameSet& outside);
 
@@ -109,8 +103,7 @@ void merge_identical(ld::Objects& objects, std::vector<LinkMetadata>& metas);
 
 // The symbol a relocation of unit `unit` names, as `contents` compares
 // it: by its name alone when it's undefined or global, which every unit
-// resolves alike, and by its unit and name when it's local (Python's
-// `(k, s.name)`).
+// resolves alike, and by its unit and name when it's local.
 struct Target {
   bool local = false;
   int unit = 0;
@@ -119,8 +112,7 @@ struct Target {
   bool operator==(const Target&) const = default;
 };
 
-// What the section of an item holds, for `merge_identical` (Python's
-// tuple): its name, type, flags, alignment, size, bytes, and its
+// What the section of an item holds, for `merge_identical`: its name, type, flags, alignment, size, bytes, and its
 // relocations as offset, type, target, and addend, sorted.
 struct Contents {
   std::string name;

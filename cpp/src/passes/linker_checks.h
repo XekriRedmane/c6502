@@ -1,7 +1,7 @@
-// The checks of the records that tools/capture_binutils.py writes of
-// the linker's functions on the link metadata (passes/linker_metadata.h)
-// and of `slot_sharing.merge_shares` and `check_linked_shares`, which
-// `c6502cpp check-binutils` runs.
+// The checks of the frozen records (cpp/tests/frozen) of the linker's
+// functions on the link metadata (passes/linker_metadata.h) and of
+// `slot_sharing.merge_shares` and `check_linked_shares`, which
+// `c6502cpp check-binutils` and `check-frozen` run.
 #pragma once
 
 #include <functional>

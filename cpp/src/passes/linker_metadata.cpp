@@ -1,5 +1,3 @@
-// The port of the functions of passes/linker.py on the link metadata.
-//
 // Linking is where c6502 does its whole-program optimization. Each unit
 // leaves its zero-page slots, its zero-page objects, and the runtime's
 // block to the linker, which places them for the program as a whole.
@@ -60,13 +58,6 @@
 // first. Each unit's `__zp_init` is left out in favor of one the linker
 // writes (`init_lines`), which stores every object's initial bytes and
 // runs the startup code a script needs.
-//
-// What the port keeps of Python: the defs, externs, and edges `merge`
-// sorts compare their names by code point, which is the order in which
-// `std::string` compares UTF-8 bytes; every dict the linker walks is an
-// `OrderedMap` in insertion order; `place_zp_objects` sorts the promoted
-// objects by the float `-weight / size` and then the name; and the
-// messages print a sorted list with Python's repr.
 #include "passes/linker_metadata.h"
 
 #include <algorithm>
@@ -87,19 +78,14 @@ namespace {
 
 using asdl::Int;
 
-// The address below which the linker places the zero-page objects
-// without one (zp_globals.py's `AUTO_HI`).
 constexpr Int kAutoHi = 0x80;
 
-// The HARGS bytes of the classic block, which a unit without a
-// `hargs_need` needs.
 constexpr Int kClassicHargsSize = 32;
 
 [[noreturn]] void link_error(const std::string& message) {
   throw CompileError("LinkError", message);
 }
 
-// Returns Python's repr of a list of strings, `['f', 'g']`.
 std::string repr_list(const std::vector<std::string>& names) {
   std::string out = "[";
   for (std::size_t i = 0; i < names.size(); ++i) {
@@ -111,7 +97,6 @@ std::string repr_list(const std::vector<std::string>& names) {
   return out + "]";
 }
 
-// Returns Python's repr of `sorted(names)`.
 template <class Names>
 std::string repr_sorted(const Names& names) {
   std::vector<std::string> sorted(names.begin(), names.end());
@@ -119,7 +104,6 @@ std::string repr_sorted(const Names& names) {
   return repr_list(sorted);
 }
 
-// Returns `name` renamed by `renames`, or `name` itself.
 const std::string& renamed(const Renames& renames, const std::string& name) {
   const std::string* to = renames.find(name);
   return to != nullptr ? *to : name;
@@ -131,9 +115,6 @@ void rename_all(const Renames& renames, std::vector<std::string>& names) {
   }
 }
 
-// Renames each symbol of `obj` that `renames` names, except a global
-// definition, which keeps the name other units refer to it by (Python's
-// `_apply_renames`).
 void apply_renames(elf::ElfFile& obj, const Renames& renames) {
   for (const elf::SymbolPtr& s : obj.symbols) {
     if (const std::string* to = renames.find(s->name); to != nullptr &&
@@ -143,8 +124,6 @@ void apply_renames(elf::ElfFile& obj, const Renames& renames) {
   }
 }
 
-// Returns the bytes from `at` for `size` bytes, which Python's
-// `range(at, at + size)` gives.
 std::vector<Int> span(Int at, Int size) {
   std::vector<Int> out;
   for (Int b = at; b < at + size; ++b) {
@@ -163,8 +142,6 @@ const Int& layout_value(const LayoutDict& layout, std::string_view name) {
 
 }  // namespace
 
-// --- Metadata merge and validation ---
-
 LinkMetadata merge(const std::vector<LinkMetadata>& metas) {
   OrderedMap<std::string, FunctionMeta> defs_by_name;
   std::vector<std::string> duplicate_defs;
@@ -181,8 +158,6 @@ LinkMetadata merge(const std::vector<LinkMetadata>& metas) {
   std::vector<std::string> extern_param_conflicts;
   for (const LinkMetadata& m : metas) {
     for (const ExternMeta& e : m.externs) {
-      // Python reads `existing` before it adds `e`, so the first
-      // declaration is checked against nothing but the definition.
       const ExternMeta* found = externs_by_name.find(e.name);
       const std::optional<ExternMeta> existing =
           found != nullptr ? std::optional<ExternMeta>(*found) : std::nullopt;
@@ -220,7 +195,6 @@ LinkMetadata merge(const std::vector<LinkMetadata>& metas) {
   for (const auto& [name, d] : defs_by_name) {
     merged.defs.push_back(d);
   }
-  // The names are distinct, so Python's stable sort by name is a sort.
   std::sort(merged.defs.begin(), merged.defs.end(),
             [](const FunctionMeta& a, const FunctionMeta& b) { return a.name < b.name; });
   for (const auto& [name, e] : externs_by_name) {
@@ -256,8 +230,6 @@ std::string carry_conflict(std::string_view name) {
 
 Arrivals arrivals(std::size_t param_bytes, const std::vector<std::string>& param_regs,
                   const std::vector<std::optional<Int>>& pinned) {
-  // Python pads each list to `param_bytes` and zips them, which stops at
-  // the shorter when one of them was longer to begin with.
   const std::size_t n_regs = std::max(param_bytes, param_regs.size());
   const std::size_t n_pinned = std::max(param_bytes, pinned.size());
   Arrivals out;
@@ -284,7 +256,6 @@ void validate_eligibility(const LinkMetadata& merged) {
   for (const ExternMeta& e : merged.externs) {
     known.insert(e.name);
   }
-  // An `IndirectCall` is fatal even at link time.
   std::vector<std::string> indirect_fns;
   for (const FunctionMeta& d : merged.defs) {
     if (d.indirect) {
@@ -296,10 +267,6 @@ void validate_eligibility(const LinkMetadata& merged) {
         "function(s) contain IndirectCall and can't be linked under the private-pool model: " +
         repr_sorted(indirect_fns));
   }
-  // The cycle members from any unit's own view, except a cycle whose
-  // every call saves its caller's values on the hardware stack
-  // (`[[c6502::save_hardware_stack]]`), which the unit's compile gave
-  // pools as the allocators here do.
   const tac_ast::Program prog = synthesize(merged).prog;
   const Cycles saved_cycles = hw_stack_cycles(prog);
   std::vector<std::string> locally_cyclic;
@@ -314,11 +281,6 @@ void validate_eligibility(const LinkMetadata& merged) {
         "when every call in the cycle is marked `[[c6502::save_hardware_stack]]`): " +
         repr_sorted(locally_cyclic));
   }
-  // A cycle through more than one unit, which no unit's compile saw.
-  // Its calls can't all be marked, since a unit rejects a marked call
-  // that can't recurse within it. Before Python checked for it here, the
-  // allocators met it, and the link failed with a message that called it
-  // an internal error, or with an undefined slot symbol.
   std::vector<std::string> across;
   for (const auto& [name, members] : cycles(call_graph(prog))) {
     if (!saved_cycles.contains(name)) {
@@ -332,9 +294,6 @@ void validate_eligibility(const LinkMetadata& merged) {
         "`[[c6502::save_hardware_stack]]`): " +
         repr_sorted(across));
   }
-  // Call edges to names that are neither defined nor declared zp_abi
-  // extern, which are non-zp_abi externs such as a C library function.
-  // The caller can't be linked.
   std::map<std::string, std::set<std::string>> bad_callees;
   for (const auto& [caller, callee] : merged.calls) {
     if (!known.contains(callee)) {
@@ -347,7 +306,6 @@ void validate_eligibility(const LinkMetadata& merged) {
       if (!formatted.empty()) {
         formatted += "; ";
       }
-      // U+2192, the arrow of Python's message.
       formatted += caller + " → " + repr_sorted(callees);
     }
     link_error("function(s) call non-zp_abi externs that aren't defined in any input TU: " +
@@ -355,10 +313,7 @@ void validate_eligibility(const LinkMetadata& merged) {
   }
 }
 
-// --- The synthetic TAC program for the allocators ---
-
 Synthesized synthesize(const LinkMetadata& merged) {
-  // The callees of each caller, in the order of the call edges.
   OrderedMap<std::string, std::vector<std::string>> callees_of;
   for (const FunctionMeta& d : merged.defs) {
     callees_of.insert_or_assign(d.name, {});
@@ -370,8 +325,6 @@ Synthesized synthesize(const LinkMetadata& merged) {
   }
   const std::set<std::pair<std::string, std::string>> saved(merged.saved_calls.begin(),
                                                             merged.saved_calls.end());
-  // One function for each def, whose body is its calls, which is all
-  // the allocators' walks of the call graph read.
   Synthesized out;
   for (const FunctionMeta& d : merged.defs) {
     tac_ast::Function fn;
@@ -385,12 +338,7 @@ Synthesized synthesize(const LinkMetadata& merged) {
     }
     out.prog.top_level.emplace_back(std::move(fn));
   }
-  // The ABI from the slot symbols of the metadata. Each unit's object
-  // names its slots by these symbols, which it leaves undefined, so
-  // only the addresses the linker gives them change.
   const auto registers = [](const std::vector<std::string>& param_regs, std::size_t count) {
-    // An empty entry is a byte without a register, None in the layout,
-    // and a list shorter than the parameters is padded with None.
     std::vector<std::optional<std::string>> regs;
     for (const std::string& r : param_regs) {
       regs.push_back(r.empty() ? std::nullopt : std::optional<std::string>(r));
@@ -414,9 +362,6 @@ Synthesized synthesize(const LinkMetadata& merged) {
     }
   }
   for (const ExternMeta& e : merged.externs) {
-    // A function some unit defines takes its layout from the
-    // definition, and `bind_extern_params` points each declaration's
-    // slot symbols at the definition's.
     if (defined.contains(e.name)) {
       continue;
     }
@@ -432,18 +377,8 @@ Synthesized synthesize(const LinkMetadata& merged) {
   return out;
 }
 
-// --- Names ---
-
 std::vector<Renames> rename_locals(Objects& objects, std::vector<LinkMetadata>& metas,
                                    const NameSet& taken) {
-  // A renamed function is a `static` one, or a shared tail or outlined
-  // run (`F@tail<n>`, `F@run<n>`) named after one. Each unit spells its
-  // slots after the function (`__zpabi_f__x`, `__local_f__t`) and leaves
-  // them undefined, so two units' `f` would otherwise share their slots.
-  // The slots get `.k` too, and so does every record of the metadata
-  // that names the function or its slots (`rename_meta`): its `def`
-  // line, the call edges, and the shares. The allocators then place two
-  // functions, each with its own place in the call graph.
   std::map<std::string, std::size_t, std::less<>> owner;
   std::map<std::string, std::set<std::size_t>, std::less<>> users;
   for (std::size_t k = 0; k < metas.size(); ++k) {
@@ -461,8 +396,6 @@ std::vector<Renames> rename_locals(Objects& objects, std::vector<LinkMetadata>& 
     }
   }
   std::vector<Renames> out;
-  // Python zips the objects with the metadata, which stops at the
-  // shorter list.
   const std::size_t n = std::min(objects.size(), metas.size());
   for (std::size_t k = 0; k < n; ++k) {
     LinkMetadata& meta = metas[k];
@@ -544,8 +477,6 @@ void rename_meta(LinkMetadata& meta, const Renames& renames) {
   }
 }
 
-// --- The zero-page objects and the runtime's block ---
-
 ZpObjects merge_zp_objects(const std::vector<LinkMetadata>& metas) {
   ZpObjects objects;
   for (const LinkMetadata& meta : metas) {
@@ -567,9 +498,6 @@ ZpObjects merge_zp_objects(const std::vector<LinkMetadata>& metas) {
     if (sizes.size() > 1) {
       link_error("zero-page object `" + name + "` has different sizes in different units");
     }
-    // The compiler never lists an object without bytes, and one in a
-    // metadata block written by hand made Python's `_place_zp_objects`
-    // divide by its size.
     if (records.at(0).size < 1) {
       link_error("zero-page object `" + name + "` has " + pyrepr::integer(records.at(0).size) +
                  " bytes, where an object has at least one");
@@ -623,9 +551,6 @@ std::pair<SymbolAddrs, std::vector<std::string>> place_zp_objects(
     }
     addrs.insert_or_assign(name, addr);
   };
-  // Python sorts the promoted objects by `(-weight / size, name, size)`,
-  // a float first. Its `/` of two ints rounds the exact quotient once,
-  // which a division of two doubles does too when both are exact.
   struct Promoted {
     double key;
     std::string name;
@@ -694,7 +619,6 @@ std::pair<SymbolAddrs, std::vector<std::string>> place_zp_objects(
     }
     claim(name, *addr, size);
   }
-  // The names are distinct, so the size never decides the order.
   std::sort(promoted.begin(), promoted.end(), [](const Promoted& a, const Promoted& b) {
     return a.key != b.key ? a.key < b.key : a.name < b.name;
   });
@@ -763,8 +687,6 @@ std::set<Int> runtime_bytes(const LayoutDict& layout) {
   return out;
 }
 
-// --- The shares and the parameter slots ---
-
 std::vector<SlotShare> link_shares(const LinkMetadata& merged,
                                    const std::vector<LinkMetadata>& metas) {
   std::vector<SlotShare> shares;
@@ -778,7 +700,6 @@ std::vector<SlotShare> link_shares(const LinkMetadata& merged,
   for (const FunctionMeta& d : merged.defs) {
     defs.emplace(d.name, &d);
   }
-  // Each declaration's spelling of a slot to the definition's.
   OrderedMap<std::string, std::string> canonical;
   for (const LinkMetadata& m : metas) {
     for (const ExternMeta& e : m.externs) {
@@ -816,11 +737,6 @@ std::vector<std::string> regs(const std::vector<std::string>& param_regs, std::s
   return out;
 }
 
-// Each unit names a parameter's slot after the name its own declaration
-// gives the parameter (`__zpabi_put__x`), or after the parameter's
-// position when the declaration leaves it unnamed (`__zpabi_put__0`),
-// so a unit that calls `put` and the unit that defines it can spell the
-// same byte differently.
 void bind_extern_params(const LinkMetadata& merged, const std::vector<ExternMeta>& externs,
                         SymbolAddrs& symbols) {
   OrderedMap<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>>
@@ -848,11 +764,9 @@ void bind_extern_params(const LinkMetadata& merged, const std::vector<ExternMeta
       link_error("`" + e.name +
                  "` is declared with its parameters in different registers in two units");
     }
-    // Python zips the three lists, which stops at the shortest.
     const std::size_t n = std::min({e.params.size(), params.size(), canon_regs.size()});
     for (std::size_t i = 0; i < n; ++i) {
       if (!canon_regs[i].empty()) {
-        // Passed in a register, with no slot.
         continue;
       }
       const Int* addr = symbols.find(params[i]);
@@ -872,10 +786,6 @@ void bind_extern_params(const LinkMetadata& merged, const std::vector<ExternMeta
   }
 }
 
-// Leaves out the slots that the peepholes emptied after the pool was
-// sized, so they don't take zero-page bytes. A function that takes a
-// local's address (`#<` or `#>` of one of its slots) keeps its whole
-// pool, since a pointer can reach the bytes after the one it names.
 void drop_unused_locals(LinkMetadata& merged, const Objects& objects) {
   NameSet named;
   NameSet addressed;
@@ -897,10 +807,6 @@ void drop_unused_locals(LinkMetadata& merged, const Objects& objects) {
   }
 }
 
-// --- The linker's own code ---
-
-// Stores each value once, as `zp_globals.place_zp_globals` writes
-// `__zp_init` for one unit.
 std::vector<std::string> init_lines(const std::vector<ZpObjectMeta>& objects,
                                     const std::vector<std::string>& startup) {
   OrderedMap<std::string, std::vector<std::string>> stores;
@@ -915,8 +821,6 @@ std::vector<std::string> init_lines(const std::vector<ZpObjectMeta>& objects,
   std::vector<std::string> lines{std::string(kZpInitFunction) + ":",
                                  asm_emit::instr_line("SUBROUTINE"), ""};
   lines.insert(lines.end(), startup.begin(), startup.end());
-  // Zero first, then the others in the order of their first store, as
-  // Python's stable sort by `v != "$00"` gives them.
   for (const bool zero : {true, false}) {
     for (const auto& [value, dests] : stores) {
       if ((value == "$00") != zero) {

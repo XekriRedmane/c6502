@@ -1,6 +1,6 @@
 /*
 Linker scripts for `compile.py -T script.ld`: a subset of GNU ld's
-script language (passes/link_script.py).
+script language.
 
 A script names the memory regions of the machine and says which
 sections go where.
@@ -53,16 +53,9 @@ program out from it (link_layout.cpp). The subset is this.
 Anything else (`ENTRY`, `INCLUDE`, `/DISCARD/`, `FILL`, `BYTE`,
 `SORT`, `.` assigned outside an output section) is a `ScriptError`.
 
-The lexer is Python's regular expression, run with py_regex, which
-matches as Python's `re` does, so `\s` and `\d` take Unicode's spaces
-and digits, and a number may be written in any script's digits, which
-`int()` reads as their decimal values. Python reads a script's file in
-the locale's encoding (`locale_encoding`), so the same bytes can make
-different text on Windows and on Linux.
-
-Python's integers have no bound. The values here are held in 128
-bits, and any value of more than 125 bits throws `InternalError`, so
-that no sum or difference of two values can overflow.
+The values are held in 128 bits, and any value of more than 125 bits
+throws `InternalError`, so that no sum or difference of two values can
+overflow.
 */
 #include "passes/link_script.h"
 
@@ -105,11 +98,8 @@ namespace {
 
 std::string repr(std::string_view s) { return pcpp::py_repr(s); }
 
-// The largest magnitude a value may have, 2**125.
 const asdl::Int kLimit = asdl::Int(1) << 125;
 
-// Returns `v`, or throws `InternalError` when it takes more than 125
-// bits.
 asdl::Int bounded(asdl::Int v) {
   if (v > kLimit || v < -kLimit) {
     throw InternalError(
@@ -118,9 +108,6 @@ asdl::Int bounded(asdl::Int v) {
   return v;
 }
 
-// --- Lexer ---
-
-// `_TOKEN`, with `re.S | re.X` as inline flags.
 const py_regex::Regex& token_regex() {
   static const py_regex::Regex re(
       "(?sx)\n"
@@ -131,8 +118,6 @@ const py_regex::Regex& token_regex() {
   return re;
 }
 
-// The space group alone, which tells a match of it (Python's
-// `m.lastgroup == "space"`) from the others.
 const py_regex::Regex& space_regex() {
   static const py_regex::Regex re("(?s)\\s+|/\\*.*?\\*/|//[^\\n]*");
   return re;
@@ -152,8 +137,6 @@ std::vector<std::string> tokens(std::string_view utf8) {
       script_error("line " + std::to_string(line) + ": can't read " +
                    repr(lark::encode_utf8(shown)));
     }
-    // The alternatives are tried in order, so the match is the space
-    // group's exactly when the space group matches here.
     if (!space_regex().match(text, pos)) {
       out.push_back(lark::encode_utf8(std::u32string_view(text).substr(pos, *end - pos)));
     }
@@ -162,10 +145,6 @@ std::vector<std::string> tokens(std::string_view utf8) {
   return out;
 }
 
-// Returns the decimal value of the Unicode digit `c`, which `\d`
-// matches. Unicode's decimal digits come in runs of ten from 0 to 9, so
-// the value is the distance from the start of the run, modulo 10 where
-// runs follow each other, as the mathematical digits do.
 int digit_value(char32_t c) {
   if (c >= U'0' && c <= U'9') return static_cast<int>(c - U'0');
   char32_t start = c;
@@ -173,10 +152,6 @@ int digit_value(char32_t c) {
   return static_cast<int>((c - start) % 10);
 }
 
-// Returns Python's `int(digits, 0)` for the digits of a number token,
-// `0x` and hex digits or `\d` digits, or none where Python raises
-// ValueError, which is for a decimal number with a leading 0 other
-// than 0 itself.
 std::optional<asdl::Int> int_base0(std::string_view digits) {
   if (digits.size() > 2 && digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X')) {
     asdl::Int v = 0;
@@ -199,7 +174,6 @@ std::optional<asdl::Int> int_base0(std::string_view digits) {
   return v;
 }
 
-// The pattern `unary` takes a number with, `re.fullmatch`'s by `\Z`.
 const py_regex::Regex& number_regex() {
   static const py_regex::Regex re("(?:(?:0[xX][0-9A-Fa-f]+|\\d+)[KM]?)\\Z");
   return re;
@@ -210,7 +184,6 @@ bool is_number(std::string_view tok) {
   return number_regex().match(text, 0).has_value();
 }
 
-// Returns whether `tok` is a symbol's name, `[A-Za-z_.][A-Za-z0-9_.]*`.
 bool is_symbol(std::string_view tok) {
   if (tok.empty()) return false;
   const auto start = [](char c) {
@@ -225,7 +198,6 @@ bool is_symbol(std::string_view tok) {
 
 constexpr std::string_view kFunctions[] = {"ALIGN", "ORIGIN", "LENGTH",
                                            "ADDR",  "LOADADDR", "SIZEOF"};
-// The types an output section may give in parentheses after its name.
 constexpr std::string_view kSectionTypes[] = {"NOLOAD", "NOREORDER"};
 
 template <std::size_t N>
@@ -268,9 +240,6 @@ Expr binary(std::string op, Expr left, Expr right) {
   return e;
 }
 
-// The value of `e`, which has to be made of numbers (Python's
-// `_constant`). Throws `ScriptError` for a division by zero and a
-// shift by a negative count.
 asdl::Int constant(const Expr& e, const std::string& what) {
   switch (e.kind) {
     case Expr::Kind::Num:
@@ -285,9 +254,6 @@ asdl::Int constant(const Expr& e, const std::string& what) {
       const asdl::Int a = constant(e.args[0], what);
       const asdl::Int b = constant(e.args[1], what);
       const std::string& op = e.op;
-      // Only the operator given is computed. Python once built a table
-      // of every operator's result, so a negative right operand made a
-      // `+` raise the `<<`'s ValueError.
       if (op == "/") {
         if (b == 0) script_error(what + " divides by zero");
         return asdl::floor_div(a, b);
@@ -331,8 +297,6 @@ class Parser {
     return j < toks_.size() ? &toks_[j] : nullptr;
   }
 
-  // Python's `take(want)`. `want` is None when absent, which the
-  // message at the end of the script prints as "None".
   std::string take(std::optional<std::string_view> want = std::nullopt) {
     const std::string* tok = peek();
     if (tok == nullptr) {
@@ -412,8 +376,6 @@ class Parser {
     take("}");
   }
 
-  // A `sym = expr;`, `PROVIDE(sym = expr);`, `. = expr;`, or `. += n;`
-  // statement, or none if one doesn't start here.
   std::optional<Assign> assignment() {
     if (is(peek(), "PROVIDE") && is(peek(1), "(")) {
       take();
@@ -503,7 +465,6 @@ class Parser {
       take("(");
     }
     std::string files = take();
-    // `*zstring.asm` comes as `*` and `zstring.asm`.
     if (files == "*" && peek() != nullptr && !is(peek(), "(")) files += take();
     for (const std::string_view bad : {"(", ")", "{", "}", ";", ":", "="}) {
       if (files == bad) {
@@ -526,7 +487,6 @@ class Parser {
     return in;
   }
 
-  // Expressions, by precedence from loosest to tightest.
   Expr expr(std::size_t level = 0) {
     static const std::vector<std::vector<std::string_view>> kLevels = {
         {"|"}, {"^"}, {"&"}, {"<<", ">>"}, {"+", "-"}, {"*", "/"}};
@@ -619,17 +579,12 @@ Script parse_script(std::string_view text) {
 }
 
 std::string locale_encoding() {
-  // Python's UTF-8 mode, which `PYTHONUTF8=1` turns on, reads every
-  // file as UTF-8.
   if (const char* utf8 = std::getenv("PYTHONUTF8"); utf8 != nullptr && std::string(utf8) == "1") {
     return "utf-8";
   }
 #ifdef _WIN32
   return "cp" + std::to_string(GetACP());
 #else
-  // Python sets LC_CTYPE from the environment at startup. In the C or
-  // POSIX locale it turns on UTF-8 mode (PEP 540), unless PYTHONUTF8 is
-  // 0, and coerces the locale to C.UTF-8 (PEP 538) otherwise.
   const char* before = std::setlocale(LC_CTYPE, nullptr);
   const std::string saved = before == nullptr ? "C" : before;
   const char* name = std::setlocale(LC_CTYPE, "");
@@ -646,7 +601,6 @@ Script read_script(const std::string& path) {
   const auto link_error = [&](const std::string& reason) {
     throw CompileError("LinkError", path + ": " + reason);
   };
-  // Python opens `Path(path)`, so `""` is the current directory.
   const std::string normal = argparse::path_str(path);
   const fs::path p(std::u8string(normal.begin(), normal.end()));
   std::error_code ec;

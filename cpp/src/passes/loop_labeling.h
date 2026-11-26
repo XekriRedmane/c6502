@@ -1,5 +1,5 @@
-// passes/loop_labeling.py: the labels of loops, switches, and their
-// cases, and the targets of `break` and `continue`.
+// The labels of loops, switches, and their cases, and the targets of
+// `break` and `continue`.
 #pragma once
 
 #include "c99_ast.h"

@@ -1,9 +1,8 @@
-// The port of passes/link_layout.py, which lays a linked program out:
-// where each input section goes, by a linker script (link_script.h) or
-// by the default script, which puts `.text`, `.rodata`, `.data`, and
-// `.bss` one after another from the origin. The module comment of
-// link_layout.cpp describes the layout, the symbols it defines, and the
-// fall-through chains.
+// The layout of a linked program: where each input section goes, by a
+// linker script (link_script.h) or by the default script, which puts
+// `.text`, `.rodata`, `.data`, and `.bss` one after another from the
+// origin. The comment at the top of link_layout.cpp describes the
+// layout, the symbols it defines, and the fall-through chains.
 #pragma once
 
 #include <cstddef>
@@ -25,17 +24,14 @@ namespace c6502::passes::link_layout {
 
 namespace elf = ::c6502::binutils::elf;
 
-// The number of addresses the 6502 has, $0000-$FFFF (Python's
-// `ADDRESS_SPACE`).
 inline constexpr std::int64_t kAddressSpace = 0x10000;
 
 // Returns `n` as an address for a message: `$0800`, or `-$0001` for a
-// negative one (Python's `address_text`).
+// negative one.
 std::string address_text(asdl::Int n);
 
-// One input file of the link (Python's `Unit`, which linker.py's
-// `_unit` builds). `path` is its name, for messages and for the
-// script's file patterns, which match it after its last `/` or `\`.
+// One input file of the link. `path` is its name, for messages and for
+// the script's file patterns, which match it after its last `/` or `\`.
 // `index` is its number in the link, which `Placed::unit` repeats.
 // `items` are its functions and objects in the order of its link
 // metadata. `sections` gives each item's input section, by the item's
@@ -50,12 +46,9 @@ struct Unit {
   OrderedMap<std::string, std::string> tails;
 };
 
-// An item for `fall_through` (Python's `Entry`): its name, whether it's
-// a function, and the function its final `JMP` goes to, if it ends in
-// one. `payload` is the caller's, which `fall_through` hands back
-// unread. Python's is any object, and `lay_out`'s is the unit and the
-// input section, where the C++ caller keeps an index into a list of
-// its own.
+// An item for `fall_through`: its name, whether it's a function, and the
+// function its final `JMP` goes to, if it ends in one. `payload` is the
+// caller's, which `fall_through` hands back unread.
 struct Entry {
   std::string name;
   bool function = false;
@@ -63,10 +56,9 @@ struct Entry {
   std::size_t payload = 0;
 };
 
-// The output sections, with every input section placed, and the
-// symbols the layout defines, in the order a Python dict gives them:
-// each section's bounds and each of the script's assignments (Python's
-// `Layout`).
+// The output sections, with every input section placed, and the symbols
+// the layout defines, each section's bounds and each of the script's
+// assignments, in order.
 struct Layout {
   std::vector<binutils::ld::OutputSection> outputs;
   OrderedMap<std::string, std::int64_t> symbols;
@@ -74,7 +66,7 @@ struct Layout {
 
 // The value of a symbol that the script names and the layout doesn't
 // define, such as an absolute symbol of a unit or a name the linker
-// placed, or none (Python's `lookup` argument, which returns None).
+// placed, or none.
 using Lookup = std::function<std::optional<std::int64_t>(const std::string&)>;
 
 // Returns the name of the function `sec` jumps to at its end, when the
@@ -115,7 +107,7 @@ link_script::Script default_script(const std::vector<Unit>& units, std::int64_t 
 // Places every item of `units` by `script`. `lookup` gives the value of
 // a symbol the script names that the layout doesn't define, and an
 // empty one gives none for every name. Throws
-// `CompileError("LayoutError", ...)` with Python's message for an item
+// `CompileError("LayoutError", ...)` for an item
 // no output section takes, an item that a NOLOAD section can't hold, a
 // section with nowhere to go, one that runs past the end of its region,
 // one whose run or load bytes lie outside $0000-$FFFF, and an
@@ -127,8 +119,7 @@ Layout lay_out(const link_script::Script& script, const std::vector<Unit>& units
 
 // Returns the lines of `__zp_init` code that copy each relocated output
 // section of `script` to its run address and clear each NOLOAD one, or
-// none when there are none. The lines are written with
-// `asm_emit::instr_line`, which Python passes in as `instr_line`.
+// none when there are none.
 std::vector<std::string> startup_lines(const link_script::Script& script);
 
 }  // namespace c6502::passes::link_layout

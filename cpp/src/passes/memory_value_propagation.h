@@ -1,4 +1,3 @@
-// The port of passes/memory_value_propagation.py.
 #pragma once
 
 #include "asm_ast.h"

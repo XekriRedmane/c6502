@@ -1,4 +1,3 @@
-// The port of passes/pointer_self_store.py.
 #pragma once
 
 #include "asm_ast.h"

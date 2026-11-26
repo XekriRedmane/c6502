@@ -74,7 +74,6 @@ using ::c6502::asdl::isa;
 
 using InstrVec = std::vector<ir::Type_instruction>;
 
-// Returns whether `ins` is `LDA #k`, of a number or a label's half.
 bool is_constant_load(const ir::Type_instruction& ins) {
   const auto* mov = as<ir::Mov>(ins);
   return mov != nullptr && is_reg_a(mov->dst) &&
@@ -86,14 +85,11 @@ bool is_xy(const ir::Type_operand& op) {
   return r != nullptr && isa<ir::X, ir::Y>(r->reg);
 }
 
-// Returns whether `ins` is `TXA` or `TYA`.
 bool is_transfer(const ir::Type_instruction& ins) {
   const auto* mov = as<ir::Mov>(ins);
   return mov != nullptr && is_reg_a(mov->dst) && is_xy(mov->src);
 }
 
-// Operands that `LDX`, `LDY`, `STX`, `STY`, `INC`, `DEC`, and the
-// shifts take directly, with no `LDY #off` and no trip through A.
 bool is_direct(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
 
 bool is_direct_or_imm(const ir::Type_operand& op) {
@@ -109,9 +105,6 @@ bool read_modify_write(const ir::Type_operand& op) {
   return is_direct(op);
 }
 
-// Returns whether `ins` doesn't write A, as `asm_emit` writes it. Kinds
-// not listed here, such as calls, pulls, and the compound nodes, count
-// as writing A.
 bool leaves_a(const ir::Type_instruction& ins) {
   switch (ir::kind(ins)) {
     case ir::Kind_instruction::Label:
@@ -129,15 +122,12 @@ bool leaves_a(const ir::Type_instruction& ins) {
     case ir::Kind_instruction::Mov: {
       const auto& mov = std::get<ir::Mov>(ins);
       if (is_reg_a(mov.src)) {
-        // STA, TAX, TAY.
         return !is_reg_a(mov.dst);
       }
       if (is_xy(mov.dst)) {
-        // LDX, LDY.
         return is_direct_or_imm(mov.src) || isa<ir::IndexedData>(mov.src);
       }
       if (is_xy(mov.src)) {
-        // STX, STY.
         return is_direct(mov.dst);
       }
       return false;
@@ -246,8 +236,6 @@ std::optional<InstrVec> rewrite_loop(const InstrVec& instrs, const LabelMap& lab
   return out;
 }
 
-// Rewrites the innermost loop that qualifies and returns the new
-// instructions, or nothing when no loop does.
 std::optional<InstrVec> one_loop(const InstrVec& instrs) {
   const LabelMap labels(instrs);
   std::vector<std::pair<std::size_t, std::size_t>> loops;

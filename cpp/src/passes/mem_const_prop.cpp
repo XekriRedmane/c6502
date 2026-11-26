@@ -64,7 +64,7 @@
 //
 // Where it runs
 //
-// Inside `_peephole_fixedpoint`, before `const_arith_fold`, so that the
+// Inside the peephole fixed point, before `const_arith_fold`, so that the
 // identity drop sees the substituted operand. It runs after
 // `replace_pseudoregisters`, so no `Pseudo` is left, and before
 // `expand_long_branches`. It doesn't touch branches.
@@ -88,8 +88,6 @@ using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 using K = ir::Kind_instruction;
 
-// A tracked byte: a `Data` operand's name and offset (kind 0), or a
-// `ZP` operand's address and offset (kind 1).
 using MemKey = std::tuple<int, std::string, long long, long long>;
 
 struct BlockState {
@@ -102,8 +100,6 @@ struct BlockState {
   }
 };
 
-// Returns the key of a tracked byte, or nothing when `op` is neither a
-// `Data` nor a `ZP` operand.
 std::optional<MemKey> mem_key(const ir::Type_operand& op) {
   if (const auto* d = as<ir::Data>(op)) {
     return MemKey{0, d->name, 0, static_cast<long long>(d->offset)};
@@ -115,8 +111,6 @@ std::optional<MemKey> mem_key(const ir::Type_operand& op) {
   return std::nullopt;
 }
 
-// Returns the `Imm` that `op` is known to hold, or nothing when `op`
-// isn't a tracked byte with a known value.
 std::optional<ir::Type_operand> substitute_source(const ir::Type_operand& op,
                                                   const BlockState& state) {
   const auto key = mem_key(op);
@@ -143,12 +137,6 @@ bool is_block_boundary(const ir::Type_instruction& instr) {
 
 int low_byte(asdl::Int v) { return static_cast<int>(asdl::floor_mod(v, 256)); }
 
-// Removes the tracked bytes that may alias `dst`. A `Data(name, off)` or
-// `ZP(addr, off)` write removes only that byte. An
-// `IndexedData(name, off, X|Y)` write removes every `Data(name, *)`,
-// since the index ranges over the bytes from `name+off` to
-// `name+off+0xFF`. A `Frame`, `Stack`, or `Indirect` write removes
-// everything.
 void invalidate_alias(BlockState& state, const ir::Type_operand& dst) {
   if (isa<ir::Data, ir::ZP>(dst)) {
     state.mem_value.erase(*mem_key(dst));
@@ -164,17 +152,9 @@ void invalidate_alias(BlockState& state, const ir::Type_operand& dst) {
     }
     return;
   }
-  // Frame, Stack, Indirect, or anything else: the address written
-  // can't be bounded.
   state.mem_value.clear();
 }
 
-// Returns `instr` with a `Data` / `ZP` source replaced by its known
-// `Imm`, in the operands that take one: the source of a `Mov` into A
-// (the only `Mov` that takes an immediate, `LDA #imm`), of an `And`,
-// `Or`, `Add`, or `Sub`, and the right side of a `Compare`. A volatile
-// `Mov` is left alone, since a volatile load has to read the byte each
-// time. Returns nothing when nothing changes.
 std::optional<ir::Type_instruction> substitute(const ir::Type_instruction& instr,
                                                const BlockState& state) {
   if (const auto* mov = as<ir::Mov>(instr)) {
@@ -214,8 +194,6 @@ std::optional<ir::Type_instruction> substitute(const ir::Type_instruction& instr
   return out;
 }
 
-// Returns the operand an ALU operation, step, or shift writes, or null
-// for any other instruction.
 const ir::Type_operand* written_dst(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::Add:
@@ -241,10 +219,6 @@ const ir::Type_operand* written_dst(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns whether `asm_emit` writes the move `mov`, whose destination
-// isn't A, through A: a move of anything but a register into memory
-// (`LDA src; STA dst`), or a move from X or Y into a register or into a
-// byte that `STX` / `STY` can't reach (`TXA; TAY`, `TXA; STA (FP),Y`).
 bool writes_a_through_move(const ir::Mov& mov) {
   if (!isa<ir::Reg>(mov.src)) {
     return !isa<ir::Reg>(mov.dst);
@@ -255,12 +229,8 @@ bool writes_a_through_move(const ir::Mov& mov) {
   return !isa<ir::Data, ir::ZP>(mov.dst);
 }
 
-// Updates the state for the effects of `instr`, after the substitution,
-// so an `Imm` source here may be one the substitution just put in.
 void update_state(const ir::Type_instruction& instr, BlockState& state) {
   if (const auto* pop = as<ir::Pop>(instr)) {
-    // PLA writes A with a value pulled from the hardware stack, which
-    // isn't followed.
     if (is_reg_a(pop->dst)) {
       state.a_value.reset();
     } else if (!isa<ir::Reg>(pop->dst)) {
@@ -269,10 +239,6 @@ void update_state(const ir::Type_instruction& instr, BlockState& state) {
     return;
   }
   if (const auto* mov = as<ir::Mov>(instr)) {
-    // A volatile source can give another value at each read, and a
-    // volatile write doesn't make the byte's value known, since the
-    // program or the hardware may change it at any time. A's value is
-    // dropped and so is anything known about the destination.
     if (mov->is_volatile) {
       state.a_value.reset();
       if (!is_reg_a(mov->dst)) {
@@ -288,11 +254,6 @@ void update_state(const ir::Type_instruction& instr, BlockState& state) {
       }
       return;
     }
-    // `asm_emit` writes a move of a constant or a memory byte into
-    // memory as `LDA src; STA dst`, and a move from X or Y to anything
-    // but a `Data` or `ZP` byte through A as well (`TXA; STA (FP),Y`,
-    // `TXA; TAY`), so A then holds what is moved. Keeping the value A
-    // held before made `LDA #5; Mov(#7, M); STA N` record N as 5.
     if (const auto* imm = as<ir::Imm>(mov->src); imm != nullptr && !isa<ir::Reg>(mov->dst)) {
       state.a_value = low_byte(imm->value);
     } else if (writes_a_through_move(*mov)) {
@@ -300,9 +261,6 @@ void update_state(const ir::Type_instruction& instr, BlockState& state) {
     }
     const auto key = mem_key(mov->dst);
     if (!key) {
-      // A move into X or Y changes neither memory nor A. A move into a
-      // `Frame`, `Stack`, `Indirect`, or `IndexedData` byte removes
-      // what `invalidate_alias` says.
       if (isa<ir::Reg>(mov->dst)) {
         return;
       }
@@ -317,7 +275,6 @@ void update_state(const ir::Type_instruction& instr, BlockState& state) {
       state.mem_value[*key] = *state.a_value;
       return;
     }
-    // A store of X or Y, or of a source whose value isn't known.
     state.mem_value.erase(*key);
     return;
   }
@@ -351,8 +308,6 @@ void update_state(const ir::Type_instruction& instr, BlockState& state) {
     case K::LogicalShiftRight:
     case K::RotateLeft:
     case K::RotateRight: {
-      // An add or subtract reads the carry, so its result isn't known
-      // here. An in-place step or shift writes its destination.
       const ir::Type_operand& dst = *written_dst(instr);
       if (is_reg_a(dst)) {
         state.a_value.reset();
@@ -362,9 +317,6 @@ void update_state(const ir::Type_instruction& instr, BlockState& state) {
       return;
     }
     default:
-      // SetCarry, ClearCarry, Compare, and Push change no value tracked
-      // here. A compare only reads, and a push touches the hardware
-      // stack.
       return;
   }
 }

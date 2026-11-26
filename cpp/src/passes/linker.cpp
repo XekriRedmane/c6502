@@ -1,10 +1,7 @@
-// The port of `link_objects` and `link_files` (passes/linker.py).
-//
-// Linking is where c6502 does its whole-program optimization: each unit
+// Linking is where c6502 does its whole-program optimization. Each unit
 // leaves its zero-page slots, its zero-page objects, and the runtime's
 // block to the linker, which places them for the program as a whole.
-// `link_objects` runs these steps in Python's order, each on the
-// functions the other groups of step 7 ported.
+// `link_objects` runs these steps in this order.
 //
 //  1. For each object, `parse_metadata`, `object_items`, and
 //     `without_init`, which leaves out the unit's `__zp_init`.
@@ -25,13 +22,6 @@
 //     segment).
 // 11. `lay_out`, the `Resolver`, and `output_symbols`.
 // 12. `format_metadata` and `ld::executable`.
-//
-// Every name table the steps build is an `OrderedMap`, which keeps a
-// Python dict's insertion order, and a key assigned again keeps its
-// place, as `{**a, **b}` and `d[k] = v` keep it in Python. The linker's
-// tables hold addresses as `asdl::Int`, as D1's functions take them, and
-// binutils/ld.h takes them as 64-bit values, which every address of a
-// 6502 program fits.
 #include "passes/linker.h"
 
 #include <algorithm>
@@ -63,20 +53,13 @@ using asdl::Int;
 
 CompileError link_error(const std::string& message) { return CompileError("LinkError", message); }
 
-// Spilled slots get addresses from here up while allocating, which
-// `link_objects` then rebases onto `__spill` when a script lays the
-// program out (Python's `_SPILL_BASE` and `_SPILL`).
 constexpr Int kSpillBase = 0xF000;
 constexpr const char* kSpill = "__spill";
 
-// The names of the runtime's block (Python's `RUNTIME_NAMES`, the keys
-// of `CLASSIC.addrs()`), which the layout's dict lists first.
 bool is_runtime_name(const std::string& name) {
   return name == "SSP" || name == "FP" || name == "HARGS" || name == "DPTR";
 }
 
-// Returns `v` as a 64-bit value for binutils/ld.h. Every address the
-// linker computes fits, and a value that doesn't throws `InternalError`.
 std::int64_t to_int64(Int v) {
   if (v < Int(INT64_MIN) || v > Int(INT64_MAX)) {
     throw InternalError("a linker address " + asdl::int_to_string(v) +
@@ -110,8 +93,6 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
     if (obj.type != elf::ET_REL) throw link_error(path + " isn't a relocatable object");
     const std::optional<std::string> text = obj.link_text();
     LinkMetadata meta;
-    // Python's `parse_metadata(text) if text else LinkMetadata()`, where
-    // an empty section is no metadata.
     if (text && !text->empty()) {
       try {
         meta = parse_metadata(*text);
@@ -125,27 +106,19 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
     std::erase_if(meta.items, [](const ItemMeta& it) { return it.name == kZpInitFunction; });
     metas.push_back(std::move(meta));
   }
-  // The runtime's helpers the objects call, from the library.
   if (std::optional<Library> library = runtime_library(objects, defsyms)) {
     objects.push_back(std::move(library->object));
     metas.push_back(std::move(library->meta));
   }
   NameSet fixed;
   for (const auto& [name, _] : ld::global_definitions(objects).absolute) fixed.insert(name);
-  // Give colliding internal names their own spellings.
   const std::vector<Renames> renames = rename_locals(objects, metas, fixed);
-  // Merge and validate.
   LinkMetadata merged = merge(metas);
   validate_eligibility(merged);
   drop_unused_locals(merged, objects);
-  // Place the runtime's block, then the zero-page objects, then the
-  // slots, each keeping off the bytes before it.
   const ZpObjects zp_objects = merge_zp_objects(metas);
   std::vector<std::string> startup;
   if (script) startup = link_layout::startup_lines(*script);
-  // The bytes where routines with a fixed address read a
-  // `zeropage(addr)` parameter: nothing else of the program's may go
-  // there.
   std::set<Int> param_bytes;
   for (const LinkMetadata& m : metas) {
     for (const FunctionMeta& r : m.defs) {
@@ -168,10 +141,8 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
     const Int size = zp_objects.at(name).at(0).size;
     for (Int b = addr; b < addr + size; ++b) zp_bytes.insert(b);
   }
-  // Python's `sorted(zp_addrs.items(), key=lambda kv: kv[1])`, which is
-  // stable. MSVC's `stable_sort` can't take an element with a 128-bit
-  // member, whose alignment is past `max_align_t`'s, so the positions
-  // are sorted.
+  // MSVC's `stable_sort` can't take an element with a 128-bit member,
+  // whose alignment is past `max_align_t`'s, so the positions are sorted.
   const std::vector<std::pair<std::string, Int>> zp_items(zp_addrs.begin(), zp_addrs.end());
   std::vector<std::size_t> by_addr(zp_items.size());
   for (std::size_t i = 0; i < by_addr.size(); ++i) by_addr[i] = i;
@@ -202,20 +173,8 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
       merged.hargs_need = m.hargs_need;
     }
   }
-  // The values kept in parameter bytes across calls, as one program's
-  // (passes/slot_sharing.py).
   merged.shares = link_shares(merged, metas);
-  // Synthesize the program shape the allocators expect.
   const Synthesized synthesized = synthesize(merged);
-  // Every linked function has a private pool (`validate_eligibility`),
-  // so no function keeps a value in the pool's callee-saved half across
-  // a call, and the slots can come from the whole pool. The free bytes
-  // below the pool, around the runtime's block, the zero-page objects,
-  // and the bytes a program's headers reserve for its ROM and DOS, take
-  // what doesn't fit in the pool before anything spills out of zero
-  // page. With a script, a slot that doesn't fit in zero page goes in
-  // `__spill`, laid out with the program's data: it gets a stand-in
-  // address here, rebased below.
   ZpAllocationOptions options;
   const Pool pool;
   options.window = Range{pool.start, 0x100, 1};
@@ -231,8 +190,6 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
       allocate_zp_slots(synthesized.prog, synthesized.abi, options);
   const LocalPools local_pools =
       allocate_function_locals(synthesized.prog, abi, synthesized.local_bytes, options);
-  // Slot names round-trip through the per-unit metadata block, and the
-  // objects name the slots by them.
   OrderedMap<std::string, std::vector<std::string>> slot_names_by_fn;
   for (const FunctionMeta& d : merged.defs) slot_names_by_fn.insert_or_assign(d.name, d.locals);
   const OrderedMap<std::string, Int> local_sym_to_addr =
@@ -257,15 +214,10 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
   }
   for (const auto& [name, _] : spilled) placed_names.erase(name);
 
-  // A unit that reaches a name with zero-page addressing, where the
-  // program puts the name above $FF, is assembled again with the
-  // program's addresses (`reassemble`).
   NameSet outside(demoted.begin(), demoted.end());
   for (const auto& [name, _] : spilled) outside.insert(name);
   reassemble(objects, renames, to_names(placed_names), outside);
 
-  // Instructions that reach a name the linker put in zero page with
-  // absolute addressing get the zero-page form (`ld::relax`).
   {
     const ld::Definitions definitions = ld::global_definitions(objects);
     const ld::Names placed = to_names(placed_names);
@@ -285,12 +237,8 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
     }
   }
 
-  // The compiler's tables that several units make with the same bytes
-  // are one table in the program.
   merge_identical(objects, metas);
 
-  // The linker's own items: `__zp_init`, `__spill`, and the promoted
-  // objects put back in the data segment.
   std::vector<std::string> own_lines = init_lines(merged.zp_objects, startup);
   Int spill_size = 0;
   for (const auto& [_, offset] : spilled) spill_size = std::max(spill_size, offset + 1);
@@ -339,7 +287,6 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
     units.push_back(unit(static_cast<int>(units.size()), "the linker", own, own_items));
   }
 
-  // Lay the program out.
   ld::Names placed = to_names(placed_names);
   link_layout::Layout placement;
   {
@@ -404,9 +351,6 @@ void link_files(const std::vector<std::string>& input_paths, const std::string& 
     try {
       data = binutils::nm::read_path(path);
     } catch (const binutils::nm::FileError& e) {
-      // Python's `f"{path}: {e.strerror or e}"`. `read_path` gives the
-      // whole `str()` of the OSError, `[Errno N] <strerror>: '<path>'`,
-      // and the strerror is the part between.
       const std::string shown = ": " + pyrepr::string(argparse::path_str(path));
       std::string reason = e.message;
       if (const std::size_t at = reason.find("] "); reason.starts_with("[Errno ") &&

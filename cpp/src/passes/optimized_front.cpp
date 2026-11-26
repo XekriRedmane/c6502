@@ -1,5 +1,5 @@
-// compile.py's `_optimized_front` after the TAC optimizer, the `-O`
-// pipeline from `select_abi` through `synthesize_prologue`.
+// The `-O` pipeline after the TAC optimizer, from `select_abi` through
+// `synthesize_prologue`.
 //
 // The ABI comes first, then the carry-flag returns, the functions that
 // get private pools (with the cycles whose recursive calls save on the
@@ -18,9 +18,8 @@
 // pseudos are replaced, the slots are named, each `LoadAddress` of a
 // `Data` source is split, and the prologues are synthesized.
 //
-// Each call takes the arguments compile.py gives it, in compile.py's
-// order, since several of them change the symbol table that later ones
-// read.
+// The order of the calls matters, since several of them change the
+// symbol table that later ones read.
 #include "passes/optimized_front.h"
 
 #include <utility>
@@ -42,19 +41,10 @@ namespace c6502::passes {
 
 namespace {
 
-// How many times the pools of the functions whose final register
-// allocation spilled more than the preliminary one are grown
-// (`compile._POOL_RETRIES`).
 constexpr int kPoolRetries = 3;
 
-// The runtime's symbols that `sim.assembler.DEFAULT_ZP_SYMBOLS` names,
-// which count as zero-page bytes wherever the block goes.
 constexpr const char* kRuntimeSymbols[] = {"SSP", "FP", "HARGS", "DPTR"};
 
-// Returns each function with a private pool mapped to the number of
-// byte values its final coloring spilled that its preliminary coloring
-// didn't, leaving out the functions with none
-// (`compile._pool_shortfalls`).
 OrderedMap<std::string, asdl::Int> pool_shortfalls(const OrderedMap<std::string, Coloring>& prelim,
                                                    const OrderedMap<std::string, Coloring>& final_,
                                                    const LocalPools& local_pools) {
@@ -77,9 +67,6 @@ OrderedMap<std::string, asdl::Int> pool_shortfalls(const OrderedMap<std::string,
   return out;
 }
 
-// Returns the functions `ret_slot_coalescing` may change: those with
-// private pools, off every cycle, that make no `save_hardware_stack`
-// call (`compile._ret_coalescing_eligible`).
 NameSet ret_coalescing_eligible(const tac_ast::Program& tac, const NameSet& pooled,
                                 const Cycles& recursion) {
   NameSet saving;
@@ -105,7 +92,6 @@ NameSet ret_coalescing_eligible(const tac_ast::Program& tac, const NameSet& pool
   return out;
 }
 
-// Returns `{**first, **second}`.
 OrderedMap<std::string, asdl::Int> merged(OrderedMap<std::string, asdl::Int> first,
                                           const OrderedMap<std::string, asdl::Int>& second) {
   for (const auto& [name, addr] : second) {
@@ -129,15 +115,8 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   const pass_order::Run pass_run("optimized_front");
   pass_order::ran("select_abi");
   Abi abi = select_abi(tac, c99, &types);
-  // Every zp_abi `bool` function with external linkage returns it in the
-  // carry flag, which every unit decides from the declaration alone, and
-  // so does a static one whose calls all branch on its result or return
-  // it from a function that does too (passes/carry_return_choice.py).
   choose_global_carry_returns(tac, symbols, abi);
   choose_carry_returns(tac, symbols);
-  // Functions on a cycle whose recursive calls are all under
-  // `[[c6502::save_hardware_stack]]` get private pools too, and save
-  // their live values around those calls (passes/recursion_saves.py).
   const Cycles recursion = recursive_pool_functions(tac, abi);
   const NameSet pooled = pool_eligible(tac, abi);
   NameSet recursion_names;
@@ -148,15 +127,7 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   for (const auto& [name, addr] : zp.fixed) {
     fixed.insert(name);
   }
-  // Values kept in a callee's parameter bytes across calls
-  // (passes/slot_sharing.py).
   auto [shares, bindings] = find_shares(tac, abi, symbols, &types, pooled, fixed, recursion_names);
-  // When every function here has a private pool, none keeps a value in
-  // the pool's callee-saved half across a call, so the slots and pools
-  // can come from the whole pool, as they do when linking. And, as when
-  // linking, the free bytes below the pool, around the runtime's block
-  // and the zero-page objects, take what doesn't fit there before
-  // anything spills out of zero page.
   bool all_pooled = true;
   for (const auto& tl : tac.top_level) {
     const auto* fn = asdl::as<tac_ast::Function>(tl);
@@ -177,8 +148,6 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   options.shares = shares;
   auto [allocated, zp_slot_symbols] = allocate_zp_slots(tac, abi, options);
   abi = std::move(allocated);
-  // A `zeropage(addr)` parameter that something the function calls
-  // might overwrite is copied into a local at entry.
   const tac_to_asm::PinnedCopies pinned_copies =
       pinned_param_copies(tac, abi, symbols, &types, fixed);
   const tac_to_asm::SlotAliases aliases = slot_aliases(shares);
@@ -190,9 +159,6 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
                                      .slot_aliases = &aliases};
   asm_ast::Program asm0 = tac_to_asm::translate_program(tac, &symbols, &types, ctx, lowering);
   ir_check::check_asm(asm0, "tac_to_asm", /*pseudos=*/true);
-  // The preliminary run of the optimizer, with the default caller/callee
-  // partition, only sizes each function's demand for local bytes, and
-  // its program is dropped.
   AsmOptimizerOptions prelim_options;
   prelim_options.extra_statics = statics;
   prelim_options.param_layouts = &abi;
@@ -201,14 +167,8 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   prelim_options.recursion_saves = &recursion;
   const OptimizedAsmProgram prelim = optimize_program(asm0, prelim_options);
   const OrderedMap<std::string, asdl::Int> local_bytes = compute_local_bytes(prelim.prog);
-  // The address-taken locals of a function with a private pool go in
-  // the pool's bytes, where `&local` is a 2-byte constant, so the pool
-  // is sized for them too.
   const OrderedMap<std::string, asdl::Int> addr_taken_bytes =
       compute_address_taken_bytes(prelim.prog, &symbols, &types);
-  // A recursive function's address-taken locals stay in its frame, one
-  // copy per call. Python builds this dict from a set of names, and the
-  // allocator only looks the names up, so the order here is the sizing's.
   OrderedMap<std::string, asdl::Int> combined;
   for (const auto& [fn, n] : local_bytes) {
     combined.insert_or_assign(fn, n);
@@ -225,9 +185,6 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
       }
     }
   }
-  // The final run, with the private pools given to the register
-  // allocation, repeated with larger pools while a function spills more
-  // than the preliminary run did.
   LocalPools local_pools;
   OptimizedAsmProgram final_;
   for (int attempt = 0; attempt <= kPoolRetries; ++attempt) {
@@ -244,10 +201,6 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
       combined[fn] += extra;
     }
   }
-  // Each address-taken local of a function with a private pool, off
-  // every cycle, gets the pool bytes the coloring left free. A local
-  // that doesn't fit stays out and gets a frame slot from
-  // `replace_pseudoregisters`.
   LocalPools acyclic_pools;
   for (const auto& [fn, pool] : local_pools) {
     if (!recursion.contains(fn)) {
@@ -268,14 +221,8 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   ir_check::check_asm(final_.prog, "the asm optimizer", /*pseudos=*/true);
   auto [asm1, dims_by_fn] = replace_program_bare_exit(std::move(final_.prog), statics, &symbols,
                                                       &types, &final_.colorings, tables);
-  // The names of the pools' bytes, which the EQU table and the link
-  // metadata share, and the EQU table of the zp_abi slots and the pools.
   LocalSlots slots = local_slots(local_pools, final_.colorings, &assignments, &assignment_symbols);
   out.slot_symbols = merged(zp_slot_symbols, slots.slot_symbols);
-  // Each `LoadAddress(src=Data, dst=mem)` becomes two moves of the
-  // label's halves, so that memory value propagation can fold the round
-  // trip through `dst`. The high byte is written under the name the pool
-  // gives that byte, which is the name its reads use.
   ByteNamesByFunction byte_names;
   for (const auto& [fn, names] : slots.slot_names_by_fn) {
     OrderedMap<asdl::Int, std::string> by_byte;
@@ -289,8 +236,6 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   asm1 = lower_data_load_address(std::move(asm1), &out.slot_symbols, &byte_names);
   pass_order::ran("synthesize_prologue");
   out.prog = synthesize_program(std::move(asm1), dims_by_fn);
-  // The names that are zero-page bytes, for the sizes of the code that
-  // `apply_shared_tails` and `apply_outline_runs` move.
   for (const auto& [name, addr] : merged(out.slot_symbols, zp.addrs)) {
     if (addr <= 0xFF) {
       out.zp_names.insert(name);
@@ -299,8 +244,6 @@ OptimizedFront optimized_front(const tac_ast::Program& tac, const c99_ast::Progr
   for (const char* name : kRuntimeSymbols) {
     out.zp_names.insert(name);
   }
-  // Neither moves a `(zp),Y` pointer in a slot's bytes into another
-  // function, where `asm_emit` would name it by that function's slot.
   for (const auto& [name, addr] : out.slot_symbols) {
     if (addr <= 0xFF) {
       out.slot_addrs.insert(addr);

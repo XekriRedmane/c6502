@@ -80,13 +80,8 @@ using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 using Int = ::c6502::asdl::Int;
 
-// The value of a byte read through a pointer: (N, k) for the byte at
-// `(N),Y` with `Y = k`.
 using Value = std::pair<Int, Int>;
 
-// A key for a byte with a fixed address: (0, "", address) for a `ZP`
-// byte, with its offset added in, and (1, name, offset) for a `Data`
-// byte. Python's `("zp", address)` and `("data", name, offset)`.
 using Cell = std::tuple<int, std::string, Int>;
 
 std::optional<Cell> cell(const ir::Type_operand& op) {
@@ -99,7 +94,6 @@ std::optional<Cell> cell(const ir::Type_operand& op) {
   return std::nullopt;
 }
 
-// Returns the operand of a `cell` key.
 ir::Type_operand cell_operand(const Cell& key) {
   if (std::get<0>(key) == 0) {
     return ir::ZP{.address = std::get<2>(key), .offset = 0};
@@ -117,8 +111,6 @@ bool keeps_a(const ir::Type_instruction& ins) {
   return isa<ir::Compare, ir::BitTest, ir::SetCarry, ir::ClearCarry, ir::Push>(ins);
 }
 
-// Returns the destination of a read-modify-write, an operation of the
-// ALU, or a `Pop`, or null for any other instruction.
 const ir::Type_operand* rmw_alu_pop_dst(const ir::Type_instruction& ins) {
   return std::visit(
       [](const auto& i) -> const ir::Type_operand* {
@@ -148,11 +140,7 @@ class State {
 
   std::optional<Value> a;
   std::map<Cell, Value> cells;
-  // The index of the load through a pointer that set A, when A holds
-  // what it read.
   std::optional<std::size_t> a_from;
-  // For a byte whose fact a store right after such a load made, the
-  // store's index, until something reads the byte.
   std::map<Cell, std::size_t> origin;
 
   void reset() {
@@ -162,7 +150,6 @@ class State {
     origin.clear();
   }
 
-  // Ends the `origin` of each byte `ins` reads.
   void read(const ir::Type_instruction& ins) {
     for (const auto& op : asm_dead_store::read_operands(ins)) {
       if (const auto key = cell(op)) {
@@ -171,15 +158,12 @@ class State {
     }
   }
 
-  // Ends the facts a write of `dst` may change.
   void write(const ir::Type_operand& dst) {
     const MayAliasOptions options{.zp_slot_symbols = &zp_addrs_};
     if (const auto key = cell(dst)) {
       cells.erase(*key);
       origin.erase(*key);
     } else {
-      // A store or read-modify-write of an element, `STA t,X` or
-      // `DEC t,X`, may write any byte of `t`.
       for (auto it = cells.begin(); it != cells.end();) {
         if (may_alias(cell_operand(it->first), dst, ctx_, options)) {
           origin.erase(it->first);
@@ -236,8 +220,6 @@ class State {
   const AsmContext& ctx_;
 };
 
-// Returns whether `ins` stores A through a pointer where A holds the
-// byte read from there.
 bool drops(const ir::Mov& ins, const State& state) {
   if (ins.is_volatile || !is_reg_a(ins.src)) {
     return false;
@@ -246,12 +228,6 @@ bool drops(const ir::Mov& ins, const State& state) {
   return dst != nullptr && state.a && *state.a == Value{dst->address, dst->offset};
 }
 
-// Returns `LDA (N),Y` with `Y = k` in place of `instrs[i]`, `LDA t`,
-// when `t` holds the byte at `(N)+k`, read just before the store into
-// `t` with A dead after that store, nothing has read `t` since, and
-// `t` is dead after `instrs[i]`, and so is Y. The load and the store
-// into `t` are then dead too, and later sweeps remove them, so that the
-// byte is read once, where it's used. Returns nothing otherwise.
 std::optional<ir::Mov> reload(const ir::Function& fn, std::size_t i,
                               const State& state, const AsmContext& ctx) {
   const auto& instrs = fn.instructions;
@@ -300,9 +276,6 @@ void transfer_mov(const ir::Mov& ins, State& state, std::size_t i) {
     }
     return;
   }
-  // A write of memory. A store of A, X, or Y leaves A, and any other
-  // move into memory goes through A (`LDA src; STA dst`), as does a
-  // move of X or Y through a pointer.
   std::optional<Value> value;
   const bool src_is_a = is_reg_a(src);
   if (isa<ir::Reg>(src)) {
@@ -325,9 +298,6 @@ void transfer_mov(const ir::Mov& ins, State& state, std::size_t i) {
   }
   state.write(dst);
   if (src_is_a) {
-    // The write may have ended A's own fact (a store through another
-    // pointer), and then the stored byte holds A's value only as it
-    // was.
     value = state.a;
   }
   const auto key = cell(dst);
@@ -376,7 +346,6 @@ void rewrite_function(ir::Function& fn, const SymbolAddrs& zp_addrs,
       }
       state.a.reset();
     } else if (keeps_a(ins)) {
-      // These leave A and memory alone.
     } else if (const ir::Type_operand* dst = rmw_alu_pop_dst(ins)) {
       if (is_reg_a(*dst)) {
         state.a.reset();

@@ -2,11 +2,10 @@
 Laying a linked program out: where each input section goes, by a
 linker script (`compile.py -T script.ld`, whose language link_script.cpp
 describes) or by the default script, which puts `.text`, `.rodata`,
-`.data`, and `.bss` one after another from the origin
-(passes/link_layout.py).
+`.data`, and `.bss` one after another from the origin.
 
 Each unit's items (its functions and objects, the `item` lines of its
-link metadata, passes/sections.py) are its input sections, one each in
+link metadata, passes/sections.h) are its input sections, one each in
 the object. `lay_out` walks the script's statements in order, keeping
 each memory region's next free address, and places the items each
 output section takes, unit by unit in the order the units were given,
@@ -44,11 +43,10 @@ its run address and clears each `NOLOAD` section, using `DPTR` and the
 first four bytes of `HARGS`, which hold nothing yet then.
 
 The script's file patterns match an input's name after its last `/` or
-`\` with `fnmatch.fnmatchcase`, and so do its section patterns, which
-src/fnmatch.cpp ports with Python's regular expressions. Python's
-values have no bound, and the evaluator computes in 128 bits, throwing
-`InternalError` for a value of more than 125 bits, and for an address
-or a symbol's value past 64 bits, which the layout keeps them in.
+`\` with `fnmatch::fnmatchcase` (src/fnmatch.h), and so do its section
+patterns. The evaluator computes in 128 bits, throwing `InternalError`
+for a value of more than 125 bits, and for an address or a symbol's
+value past 64 bits, which the layout keeps them in.
 */
 #include "passes/link_layout.h"
 
@@ -87,8 +85,6 @@ asdl::Int bounded(asdl::Int v) {
 
 asdl::Int magnitude(asdl::Int v) { return v < 0 ? -v : v; }
 
-// Returns `v` as the 64-bit integer the layout keeps addresses and
-// symbols in.
 std::int64_t to_i64(asdl::Int v) {
   if (v > asdl::Int(INT64_MAX) || v < asdl::Int(INT64_MIN)) {
     throw InternalError(
@@ -100,8 +96,6 @@ std::int64_t to_i64(asdl::Int v) {
 
 std::string repr(std::string_view s) { return pcpp::py_repr(s); }
 
-// Returns Python's `repr` of the dataclass `e`, as `Call(fn='ORIGIN',
-// args=[Num(value=1)])`.
 std::string expr_repr(const Expr& e) {
   switch (e.kind) {
     case Expr::Kind::Num:
@@ -238,8 +232,6 @@ class Evaluator {
   const Lookup& lookup_;
 };
 
-// Returns the name of the input file of `path`, after its last `/` or
-// `\`, which the script's file patterns match.
 std::string file_name(const std::string& path) {
   const std::size_t at = path.find_last_of("/\\");
   return at == std::string::npos ? path : path.substr(at + 1);
@@ -271,7 +263,6 @@ std::optional<std::string> tail_jump(const elf::SectionPtr& sec,
   for (const elf::SymbolPtr& s : symbols) {
     if (s->section != sec) continue;
     if (s->value > size - 3 && s->type != elf::STT_FUNC) {
-      // A label on the JMP's operand or after it.
       return std::nullopt;
     }
     if ((s->name == "$c" || s->name == "$d") && s->value <= size - 3) {
@@ -441,8 +432,6 @@ Layout lay_out(const link_script::Script& script, const std::vector<Unit>& units
     if (relocated) sym.insert_or_assign("__" + s + "_load", to_i64(lma));
     asdl::Int pc = vma;
     std::vector<Entry> run;
-    // Each entry's payload is its index here: the unit and the input
-    // section.
     std::vector<std::pair<const Unit*, elf::SectionPtr>> payloads;
 
     const auto flush = [&]() {

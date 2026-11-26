@@ -21,8 +21,6 @@ namespace elf = ::c6502::binutils::elf;
 namespace ld = ::c6502::binutils::ld;
 using json::Value;
 
-// --- Building JSON ---
-
 Value null() { return Value{}; }
 
 Value boolean(bool b) {
@@ -99,12 +97,9 @@ std::string unhex(std::string_view text) {
   return out;
 }
 
-// --- The JSON form of an object ---
-
 Value elf_value(const elf::ElfFile& obj) {
   std::vector<elf::SectionPtr> secs = obj.sections;
   std::unordered_map<const elf::Section*, std::size_t> sec_ix;
-  // Python's dict comprehension, where a later position wins.
   for (std::size_t i = 0; i < secs.size(); ++i) sec_ix[secs[i].get()] = i;
   std::vector<elf::SymbolPtr> syms = obj.symbols;
   std::unordered_map<const elf::Symbol*, std::size_t> sym_ix;
@@ -236,7 +231,6 @@ constexpr std::string_view kKinds[] = {"global_definitions",     "relax",       
                                        "pointer_names",          "reassemble",   "output_symbols",
                                        "merge_identical",        "contents"};
 
-// The objects a record names, read from their JSON forms.
 class Objects {
  public:
   Objects(const Value& list, const BlobReader& blob) : blob_(blob) {
@@ -249,14 +243,12 @@ class Objects {
     return elf_from_json(json::parse(blob_(hash)));
   }
 
-  // Returns the section `[k, j]` names, object k's section j.
   elf::SectionPtr section(const Value& where) const {
     const auto k = static_cast<std::size_t>(to_int(where.items.at(0)));
     const auto j = static_cast<std::size_t>(to_int(where.items.at(1)));
     return objects.at(k).second.sections.at(j);
   }
 
-  // Returns what differs between the objects and the recorded ones.
   std::string compare(const Value& want) const {
     if (want.items.size() != objects.size()) return "the number of objects differs";
     for (std::size_t k = 0; k < objects.size(); ++k) {
@@ -330,8 +322,6 @@ std::size_t index_of(const std::vector<elf::SymbolPtr>& symbols, const elf::Symb
   throw InternalError("the symbol isn't in its object's table");
 }
 
-// Returns the output sections `v` gives, with their parts' sections
-// from `objects`.
 std::vector<ld::OutputSection> outputs_from(const Value& v, const Objects& objects) {
   std::vector<ld::OutputSection> out;
   for (const Value& o : v.items) {
@@ -353,10 +343,6 @@ std::vector<ld::OutputSection> outputs_from(const Value& v, const Objects& objec
   return out;
 }
 
-// Returns the JSON of the symbol table `symbols` of `output_symbols`, in
-// the harness's form: each symbol's name, value, size, bind, type,
-// section, and `other`, the section as `["output", i]` or `["shndx",
-// n]`.
 Value output_symbols_json(const std::vector<ld::OutputSymbol>& symbols) {
   std::vector<Value> out;
   for (const ld::OutputSymbol& o : symbols) {
@@ -388,8 +374,6 @@ bool handles(std::string_view kind) {
 std::string check(std::string_view kind, const Value& args, const Value& input, const Value& output,
                   bool is_error, const BlobReader& blob) {
   Value got;
-  // A difference found while the function runs, or one that a record
-  // compares with something other than `got`.
   std::string extra;
   bool compared = false;
   try {
@@ -409,9 +393,6 @@ std::string check(std::string_view kind, const Value& args, const Value& input, 
         absolute.push_back(array({string(name), integer(value)}));
       got = object({{"defs", array(std::move(defs))}, {"absolute", array(std::move(absolute))}});
     } else if (kind == "relax") {
-      // The section, with each symbol the object holds, or a relocation
-      // names, and whether it's defined in the section, and the value
-      // `value_of` gave each relocation's symbol.
       const Value& sec_json = field(input, "section");
       auto sec = std::make_shared<elf::Section>();
       auto elsewhere = std::make_shared<elf::Section>();
@@ -547,8 +528,6 @@ std::string check(std::string_view kind, const Value& args, const Value& input, 
       const Objects objects(array(), blob);
       const elf::ElfFile obj = objects.read(field(input, "elf").string);
       const elf::ElfFile out = linker::without_init(obj);
-      // Python returns the same object when there's no `__zp_init`, and
-      // the C++ copy then holds the same sections and symbols.
       const bool same = out.sections == obj.sections && out.symbols == obj.symbols;
       if (!is_error) {
         compared = true;

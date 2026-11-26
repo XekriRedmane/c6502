@@ -1,7 +1,6 @@
 // Visits every operand of an asm instruction so that it can be changed
 // in place, for the passes that rename operands through the whole
-// instruction, as Python's generic `_rename` walks over a dataclass's
-// fields do.
+// instruction.
 #pragma once
 
 #include <type_traits>

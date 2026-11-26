@@ -1,5 +1,4 @@
-// The names of a function's body-local pool bytes, ported from
-// `local_slot_names` in passes/zp_slot_naming.py.
+// The names of a function's body-local pool bytes.
 //
 // The naming takes three steps. The first inverts
 // `coloring.assignments`, so that each pool address gets the list of
@@ -45,8 +44,6 @@ OrderedMap<asdl::Int, std::string> local_slot_names(std::string_view fn_name,
     }
   }
 
-  // The width pass records, for every pseudo from the source on any
-  // pool address, the largest byte index seen for its source name.
   std::map<std::string, asdl::Int, std::less<>> source_widths;
   for (const auto& [addr, names] : addr_to_pseudos) {
     for (const auto& pname : names) {

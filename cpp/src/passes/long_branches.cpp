@@ -67,9 +67,6 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// Returns the byte offset of each label in the function, where the
-// function starts at 0 and each instruction other than a label
-// advances the offset by its size.
 std::unordered_map<std::string, long> label_addresses(
     const std::vector<ir::Type_instruction>& instrs) {
   std::unordered_map<std::string, long> addr_map;
@@ -84,10 +81,8 @@ std::unordered_map<std::string, long> label_addresses(
   return addr_map;
 }
 
-// Returns the indices of the branches whose displacement to their
-// target is outside the signed 8-bit range. The 6502's PC has passed
-// the 2-byte branch when the displacement is added, so it is `target -
-// (branch_addr + 2)`.
+// The 6502's PC has passed the 2-byte branch when the displacement is
+// added, so the displacement is `target - (branch_addr + 2)`.
 std::vector<std::size_t> find_too_far_branches(
     const std::vector<ir::Type_instruction>& instrs,
     const std::unordered_map<std::string, long>& label_addr) {
@@ -115,9 +110,6 @@ std::vector<std::size_t> find_too_far_branches(
   return out;
 }
 
-// Replaces each branch at the indices `too_far` with the long-branch
-// triple, from the back so that the earlier indices stay valid. Each
-// expansion makes a new `.lb_skip@<N>` label.
 std::vector<ir::Type_instruction> expand_indices(
     const std::vector<ir::Type_instruction>& instrs,
     const std::vector<std::size_t>& too_far, long& counter) {
@@ -143,8 +135,6 @@ std::vector<ir::Type_instruction> expand_indices(
   return out;
 }
 
-// Expands branches until none is too far, and returns the function's
-// new instructions. `counter` numbers the skip labels.
 std::vector<ir::Type_instruction> expand_function(
     std::vector<ir::Type_instruction> instrs, long& counter) {
   while (true) {
@@ -162,8 +152,6 @@ std::vector<ir::Type_instruction> expand_function(
 namespace long_branches {
 
 asm_ast::Type_condition invert(const asm_ast::Type_condition& cond) {
-  // Each pair flips the sense of a `Bxx`, so the new branch falls
-  // through to the `JMP` when the original would have been taken.
   switch (ir::kind(cond)) {
     case ir::Kind_condition::CC:
       return ir::CS{};

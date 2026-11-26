@@ -1,5 +1,5 @@
-// The functions of passes/linker.py that work on the objects of a link.
-// `link_objects` runs them in this order.
+// `link_objects` runs the linker's functions on the objects in this
+// order.
 //
 // 1. For each object, `object_items` lists its items and `without_init`
 //    leaves out its `__zp_init`, which the linker replaces with one for
@@ -7,7 +7,7 @@
 // 2. `runtime_library` adds the object of the runtime's helpers the
 //    objects call, which no object defines and no `--defsym` gives, as
 //    one more unit, `runtime.o`.
-// 3. `_rename_locals` gives the internal names two units share names of
+// 3. `rename_locals` gives the internal names two units share names of
 //    their own, with `apply_renames` on each object's symbols.
 // 4. `pointer_names` tells the placement of the zero-page objects which
 //    of them a unit reaches as a pointer.
@@ -19,12 +19,6 @@
 // 7. `unit` builds the layout's unit of each object, and after the
 //    layout `output_symbols` gives the executable's symbol table, which
 //    `ld::executable` writes.
-//
-// The linker renames and redefines symbols in place, so that every
-// relocation of one follows it. The C++ objects hold their sections and
-// symbols by shared pointers for this, and these functions change the
-// `Section` and `Symbol` a pointer names where Python changes the
-// object.
 #include "passes/linker_objects.h"
 
 #include <algorithm>
@@ -46,13 +40,10 @@ namespace {
 
 CompileError link_error(const std::string& message) { return CompileError("LinkError", message); }
 
-// Returns whether `s` is the label of a function or an object, which a
-// symbol defined in a section of type `STT_FUNC` or `STT_OBJECT` is.
 bool is_item_label(const elf::Symbol& s) {
   return s.section != nullptr && (s.type == elf::STT_FUNC || s.type == elf::STT_OBJECT);
 }
 
-// Returns Python's `repr` of a list of strings, `['a', 'b']`.
 std::string repr_list(const std::vector<std::string>& names) {
   std::string out = "[";
   for (std::size_t i = 0; i < names.size(); ++i) {
@@ -62,11 +53,6 @@ std::string repr_list(const std::vector<std::string>& names) {
   return out + "]";
 }
 
-// Returns whether `a` sorts before `b` as Python compares the targets
-// of two relocations at the same offset with the same type: two names
-// by their code points, two pairs by the unit and then the name. Python
-// raises TypeError when it compares a name with a pair, and this throws
-// `InternalError`.
 bool target_less(const Target& a, const Target& b) {
   if (a.local != b.local) {
     throw InternalError(
@@ -84,9 +70,6 @@ bool reloc_less(const Contents::Reloc& a, const Contents::Reloc& b) {
   return a.addend < b.addend;
 }
 
-// An order on `Contents` for the map `merge_identical` keeps, which
-// Python keys by the tuple's hash. Nothing iterates over the map, so
-// any order that tells two contents apart serves.
 struct ContentsLess {
   bool operator()(const Contents& a, const Contents& b) const {
     const auto key = [](const Contents& c) {
@@ -112,7 +95,6 @@ std::optional<Library> runtime_library(const ld::Objects& objects, const ld::Nam
   for (const auto& [name, _] : defsyms) defined.insert(name);
   const std::vector<std::string> names = needed(objects, defined);
   if (names.empty()) return std::nullopt;
-  // Python's `library_object(names)`.
   elf::ElfFile obj = binutils::assembler::assemble(library_text(names), kLibraryName);
   const std::optional<std::string> text = obj.link_text();
   if (!text) throw InternalError("the runtime library's object has no link metadata");
@@ -123,8 +105,6 @@ std::optional<Library> runtime_library(const ld::Objects& objects, const ld::Nam
 
 std::vector<ItemMeta> object_items(const LinkMetadata& meta, const elf::ElfFile& obj,
                                    const std::string& path) {
-  // Python's `{s.name: s ...}`, where a later symbol of the same name
-  // takes the first one's place.
   OrderedMap<std::string, elf::SymbolPtr> defined;
   for (const elf::SymbolPtr& s : obj.symbols) {
     if (is_item_label(*s)) defined.insert_or_assign(s->name, s);
@@ -230,8 +210,6 @@ NameSet pointer_names(const ld::Objects& objects) {
     for (const elf::SectionPtr& sec : obj.sections) {
       for (const elf::Reloc& r : sec->relocs) {
         if (r.type != elf::R_MOS_ADDR8 || r.offset == 0) continue;
-        // Python's `sec.data[r.offset - 1]`, which elf.read keeps inside
-        // the section.
         const std::int64_t at = r.offset - 1;
         if (at < 0 || at >= static_cast<std::int64_t>(sec->data.size())) {
           throw InternalError(
@@ -249,19 +227,8 @@ NameSet pointer_names(const ld::Objects& objects) {
   return out;
 }
 
-// Assembles again, from the text it keeps (`.c6502.asm`), each unit that
-// reaches one of the names the linker placed with zero-page addressing
-// where the program puts that name above $FF or in `outside` (a slot
-// spilled into `__spill`, or a promoted object put back in the data
-// segment). Its instructions then reach the name with absolute
-// addressing, as dasm assembled the linked text before the toolchain
-// had objects. A unit without its text is left alone, and
-// `ld::relocate` reports the relocation that doesn't fit.
 void reassemble(ld::Objects& objects, const std::vector<Renames>& renames, const ld::Names& placed,
                 const NameSet& outside) {
-  // Python's `{name: None for name in outside}` updated with `placed`.
-  // The assembler only looks names up, so the order of a set doesn't
-  // reach the output.
   OrderedMap<std::string, std::optional<asdl::Int>> values;
   for (const std::string& name : outside) values.insert_or_assign(name, std::nullopt);
   for (const auto& [name, addr] : placed) values.insert_or_assign(name, asdl::Int(addr));
@@ -280,7 +247,6 @@ void reassemble(ld::Objects& objects, const std::vector<Renames>& renames, const
     }
     const std::optional<std::string> text = obj.source_text();
     if (!clash || !text) continue;
-    // The unit's own names, before `_rename_locals`.
     std::map<std::string, std::string> back;
     for (const auto& [old_name, new_name] : renames.at(k)) back[new_name] = old_name;
     OrderedMap<std::string, std::optional<asdl::Int>> unit_values;
@@ -315,8 +281,6 @@ std::vector<ld::OutputSymbol> output_symbols(
     const ld::PlacedBySection& addr_of, const ld::Names& placed_names,
     const OrderedMap<std::string, std::vector<ZpObjectMeta>>& zp_objects,
     const ld::Names& layout_symbols, const ld::Names& defsyms) {
-  // Python's `{id(p.section): out ...}`, where a later output section
-  // holding the same section wins.
   std::unordered_map<const elf::Section*, int> output_of;
   for (std::size_t i = 0; i < outputs.size(); ++i) {
     for (const ld::Placed& p : outputs[i].parts) output_of[p.section.get()] = static_cast<int>(i);
@@ -343,8 +307,6 @@ std::vector<ld::OutputSymbol> output_symbols(
           seen_abs.insert(s->name);
           out.push_back(absolute(s->name, s->value, 0, elf::STB_GLOBAL, elf::STT_NOTYPE));
         }
-        // Python's `addr_of.get(id(s.section))` for a section number
-        // other than SHN_ABS gives None too.
         continue;
       }
       const auto pit = addr_of.find(s->section.get());
@@ -352,9 +314,6 @@ std::vector<ld::OutputSymbol> output_symbols(
       const ld::Placed& p = pit->second;
       const bool item = s->type == elf::STT_FUNC || s->type == elf::STT_OBJECT;
       if (s->value >= p.size && !item && p.size < s->section->size()) {
-        // A label on the `JMP` the layout dropped, which is the next
-        // function's address; that function's label names it in the
-        // executable.
         continue;
       }
       const auto oit = output_of.find(s->section.get());
@@ -392,26 +351,6 @@ std::vector<ld::OutputSymbol> output_symbols(
   return out;
 }
 
-// Keeps one copy of the items marked `merge` (`ItemMeta::merge`) whose
-// sections have the same contents, the first in the order of the units
-// and their items, and points every other copy's references at it.
-//
-// Such an item is a plane of a table of row addresses
-// (passes/optimization/row_address_tables.py), an object of the
-// compiler's own that nothing writes and nothing takes the address of,
-// so a program behaves the same whichever copy its lookups read. Its
-// contents are its bytes and its relocations, and a relocation's symbol
-// counts as the same in two units when it names the same thing: an
-// undefined or global symbol by its name, which every unit resolves
-// alike, and a local one only within its own unit. `_rename_locals` has
-// run, so two units' `static` arrays of one name have different names
-// here, and their tables stay apart.
-//
-// The kept copy's symbol becomes global. No other unit defines its
-// name, since `_rename_locals` gave every internal item a name no other
-// unit uses. Each other copy's section goes, and its symbol becomes an
-// undefined reference to the kept one, so its unit's relocations, with
-// their addends (`A@hi+1,X`), resolve to the kept copy.
 void merge_identical(ld::Objects& objects, std::vector<LinkMetadata>& metas) {
   std::map<Contents, elf::SymbolPtr, ContentsLess> kept;
   const std::size_t n = std::min(objects.size(), metas.size());

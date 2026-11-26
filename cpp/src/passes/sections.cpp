@@ -10,7 +10,7 @@ std::vector<ItemMeta> section_items(const asm_ast::Program& prog, const SectionI
     if (const auto* fn = asdl::as<ir::Function>(tl)) {
       const auto it = symbols.find(fn->name);
       const SectionInfo* sym = it == symbols.end() ? nullptr : &it->second;
-      const bool named = sym != nullptr && sym->section && !sym->section->empty();
+      const bool named = sym != nullptr && sym->section;
       out.push_back(ItemMeta{.name = fn->name,
                              .section = named ? *sym->section : ".text",
                              .local = !fn->is_global,

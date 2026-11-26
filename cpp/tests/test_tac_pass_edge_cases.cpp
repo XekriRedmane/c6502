@@ -67,3 +67,27 @@ TEST_CASE("tac_rotate_signed_countdown_loops keeps a SignExtend of a counter a l
       "])\n",
       "");
 }
+
+TEST_CASE("tac_rotate_signed_countdown_loops leaves a 24-bit counter alone") {
+  const char* loop =
+      "Function(\"f\" true [] [\n"
+      "  Copy(Constant(ConstInt24(15)) Var(\"x\"))\n"
+      "  Label(\"L_start\")\n"
+      "  Binary(GreaterOrEqual Var(\"x\") Constant(ConstInt24(0)) Var(\"%0\"))\n"
+      "  JumpIfFalse(Var(\"%0\") \"L_break\")\n"
+      "  Binary(Add Var(\"sum\") Var(\"x\") Var(\"sum\"))\n"
+      "  Label(\"L_continue\")\n"
+      "  Binary(Subtract Var(\"x\") Constant(ConstInt24(1)) Var(\"%1\"))\n"
+      "  Copy(Var(\"%1\") Var(\"x\"))\n"
+      "  Jump(\"L_start\")\n"
+      "  Label(\"L_break\")\n"
+      "])\n";
+  c6502::testing::check_stage_case(
+      "tac_rotate_signed_countdown_loops",
+      "{\"args\": [], \"kwargs\": {\"symbols\": {\"object\": \"passes.type_checking.SymbolTable\", "
+      "\"fields\": {\"_table\": {\"dict\": [[\"x\", {\"object\": \"passes.type_checking.Symbol\", "
+      "\"fields\": {\"type\": {\"asdl\": \"c99_ast\", \"dump\": \"BitInt(24 true)\\n\"}, "
+      "\"attrs\": {\"object\": \"passes.type_checking.LocalAttr\", \"fields\": {\"register\": "
+      "false, \"was_bool\": false}}}}]]}}}, \"ssa_dsts\": null}}",
+      loop, loop, "");
+}

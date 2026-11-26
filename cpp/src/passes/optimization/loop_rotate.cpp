@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "bit_precise.h"
 #include "passes/optimization/var_visit.h"
 
 namespace c6502::passes {
@@ -28,29 +29,6 @@ std::optional<asdl::Int> max_positive(const c99::Type_data_type& t) {
       return asdl::Int{0x7FFFFFFF};
     case c99::Kind_data_type::LongLong:
       return asdl::Int{0x7FFFFFFFFFFFFFFF};
-    default:
-      return std::nullopt;
-  }
-}
-
-std::optional<asdl::Int> const_int_value(const ir::Type_const& c) {
-  switch (ir::kind(c)) {
-    case ir::Kind_const::ConstChar:
-      return std::get<ir::ConstChar>(c).value;
-    case ir::Kind_const::ConstUChar:
-      return std::get<ir::ConstUChar>(c).value;
-    case ir::Kind_const::ConstInt:
-      return std::get<ir::ConstInt>(c).value;
-    case ir::Kind_const::ConstUInt:
-      return std::get<ir::ConstUInt>(c).value;
-    case ir::Kind_const::ConstLong:
-      return std::get<ir::ConstLong>(c).value;
-    case ir::Kind_const::ConstULong:
-      return std::get<ir::ConstULong>(c).value;
-    case ir::Kind_const::ConstLongLong:
-      return std::get<ir::ConstLongLong>(c).value;
-    case ir::Kind_const::ConstULongLong:
-      return std::get<ir::ConstULongLong>(c).value;
     default:
       return std::nullopt;
   }
@@ -133,7 +111,7 @@ const ir::Binary* find_ge_producer(const Instrs& cond_block, const std::string& 
 
 bool val_resolves_to_zero(const ir::Type_val& val, const Instrs& cond_block) {
   if (const auto* c = asdl::as<ir::Constant>(val)) {
-    const auto v = const_int_value(c->const_);
+    const auto v = bit_precise::raw_value(c->const_);
     return v && *v == 0;
   }
   const auto* var = asdl::as<ir::Var>(val);
@@ -206,7 +184,7 @@ bool post_decrements_x_by_one(const Instrs& post, std::size_t begin, std::size_t
   if (s2 == nullptr) {
     return false;
   }
-  const auto one = const_int_value(s2->const_);
+  const auto one = bit_precise::raw_value(s2->const_);
   if (!one || *one != 1) {
     return false;
   }
@@ -269,7 +247,7 @@ bool resolves_to_int_in_range(const Instrs& instrs, std::size_t def_idx, asdl::I
     return false;
   }
   if (const auto* c = asdl::as<ir::Constant>(*src)) {
-    const auto v = const_int_value(c->const_);
+    const auto v = bit_precise::raw_value(c->const_);
     return v && low <= *v && *v <= high;
   }
   const auto* inner = asdl::as<ir::Var>(*src);

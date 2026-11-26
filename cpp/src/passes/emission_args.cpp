@@ -14,7 +14,6 @@ using json::Value;
 using capture_args::items_of;
 using registry::json_quote;
 
-// Returns the `fields` of a tagged object.
 const Value& fields_of(const Value& v) {
   const Value* fields = v.get("fields");
   if (fields == nullptr) {
@@ -31,7 +30,6 @@ const Value& field(const Value& fields, std::string_view name) {
   return *f;
 }
 
-// Returns the `[key, value]` pairs of a tagged dict.
 const std::vector<Value>& dict_pairs(const Value& v) {
   const Value* pairs = v.get("dict");
   if (pairs == nullptr) {

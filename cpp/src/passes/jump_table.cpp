@@ -1,68 +1,3 @@
-// Jump tables: a chain of compares of A with constants, each followed
-// by a branch to its case, becomes a dispatch through a table of the
-// cases' addresses.
-//
-// Pattern
-//
-// A `switch` on a byte becomes a chain like this one, from Zork's
-// `do_2op` (examples/zork/decode.c), with 24 cases:
-//
-//     CMP   #$01
-//     BEQ   .case@35
-//     CMP   #$02
-//     BEQ   .case@36
-//     ...
-//     CMP   #$18
-//     BEQ   .case@58
-//     JMP   .default@59
-//
-// Most of the cases are too far for a branch, so each `BEQ` grows into
-// `BNE; JMP`, 7 bytes a case. The chain becomes
-//
-//     CMP   #$19
-//     BCS   .default@59
-//     ASL
-//     TAY
-//     LDA   .jtab@0+1,Y
-//     PHA
-//     LDA   .jtab@0,Y
-//     PHA
-//     RTS
-// .jtab@0:
-//     DC.W  .default@59-1      ; 0
-//     DC.W  .case@35-1         ; 1
-//     ...
-//
-// `RTS` pulls the address the two `PHA`s pushed and adds one, so it
-// goes to the case. That's 15 bytes and 2 a case, and the same 32
-// cycles or so for every case, where the chain took 5 for each compare
-// it passed. Zork's own code dispatches through tables the same way.
-//
-// Rules
-//
-// - At least four compares of A with constants from 0 to 127, each
-//   right after the one before and followed by a `BEQ` to its case,
-//   with no label in the chain, and no constant twice. The case for 0
-//   may be a `BEQ` right after the load of A, or after an `ORA #$00`
-//   that tests A, with no compare. The `ORA` goes with the chain.
-// - Then a `JMP` to the default, or code that is the default, which
-//   gets a label (`.jtdef@N`).
-// - At every case and the default, A, N, Z, and C are dead, since the
-//   dispatch leaves A and the flags as the table's load set them, and
-//   so is Y, the index, or else X, which takes its place.
-// - The table covers the values from the smallest constant to the
-//   largest, a value no compare names going to the default. When the
-//   smallest is 2 or less, it starts at 0, which costs at most two
-//   entries and saves the `CMP; BCC` of a lower bound.
-// - The table is shorter than the chain, counting each compare and
-//   branch as 2 bytes, as they are when the branch reaches its case.
-//
-// Where it runs
-//
-// Once, at the end of the `-O` asm pipeline, after `carry_known` and
-// before `expand_long_branches`. Every pass that follows control flow
-// has run by then, so none of them has to know the table.
-// `expand_long_branches` sizes it through `instruction_size`.
 #include "passes/jump_table.h"
 
 #include <algorithm>
@@ -87,9 +22,8 @@ using ::c6502::asdl::isa;
 
 using Instructions = std::vector<ir::Type_instruction>;
 
-// The fewest compares in a chain that are worth a table.
 constexpr std::size_t kMinCases = 4;
-// The dispatch, `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS`, in bytes.
+// `RTS` pulls the address the two `PHA`s pushed and adds one.
 constexpr long kDispatch = 11;
 
 bool is_a(const ir::Type_operand& op) {
@@ -97,30 +31,23 @@ bool is_a(const ir::Type_operand& op) {
   return reg != nullptr && isa<ir::A>(reg->reg);
 }
 
-// Returns whether `ins` loads A from memory or a constant, setting Z.
 bool loads_a(const ir::Type_instruction& ins) {
   const auto* mov = as<ir::Mov>(ins);
   return mov != nullptr && is_a(mov->dst) && !isa<ir::Reg>(mov->src);
 }
 
-// Returns whether `ins` is `ORA #$00`, which sets Z from A and leaves A
-// as it was, as before a switch on a register parameter.
+// `ORA #$00` sets Z from A and leaves A as it was.
 bool tests_a(const ir::Type_instruction& ins) {
   const auto* ora = as<ir::Or>(ins);
   return ora != nullptr && is_a(ora->dst) &&
          ora->src == ir::Type_operand{ir::Imm{.value = 0}};
 }
 
-// One case of a chain: the constant and the case's label.
 struct Case {
   asdl::Int key;
   std::string target;
 };
 
-// Returns the cases of the chain starting at `instrs[i]`, and stores in
-// `length` how many instructions the chain takes. A case for 0 may come
-// first as a `BEQ` right after a load into A, which sets Z from the
-// value, with no `CMP #$00`.
 std::vector<Case> chain_at(const Instructions& instrs, std::size_t i,
                            std::size_t& length) {
   const std::size_t start = i;
@@ -149,9 +76,6 @@ std::vector<Case> chain_at(const Instructions& instrs, std::size_t i,
   return pairs;
 }
 
-// Returns `instrs` with the chain of `pairs` from `instrs[i]` to before
-// `instrs[end]` made a jump table, or nothing when the rules don't
-// allow it.
 std::optional<Instructions> table_for(const Instructions& instrs, std::size_t i,
                                       std::size_t end,
                                       const std::vector<Case>& pairs,
@@ -182,7 +106,6 @@ std::optional<Instructions> table_for(const Instructions& instrs, std::size_t i,
   const asdl::Int lo = *distinct.begin();
   const asdl::Int hi = *distinct.rbegin();
   const asdl::Int base = lo <= 2 ? asdl::Int(0) : lo;
-  // Each `CMP #k` and `BEQ` is 2 bytes.
   const asdl::Int chain_bytes =
       2 * static_cast<long>(end - i) + (jump_default ? 3 : 0);
   const asdl::Int table_bytes =
@@ -190,8 +113,6 @@ std::optional<Instructions> table_for(const Instructions& instrs, std::size_t i,
   if (table_bytes >= chain_bytes) {
     return std::nullopt;
   }
-  // Every place the dispatch can go: A, N/Z, C, and the index register
-  // have to be dead there.
   std::vector<std::size_t> places;
   for (const auto& c : pairs) {
     const long at = labels.find(c.target);
@@ -251,8 +172,6 @@ std::optional<Instructions> table_for(const Instructions& instrs, std::size_t i,
   if (new_label) {
     code.push_back(*new_label);
   }
-  // The `ORA #$00` that set Z for the case for 0 has no use left, since
-  // the bounds check's `CMP` sets the flags again.
   bool has_zero = false;
   for (const auto& c : pairs) {
     has_zero = has_zero || c.key == 0;

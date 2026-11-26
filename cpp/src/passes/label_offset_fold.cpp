@@ -1,52 +1,5 @@
-// Folds link-time address arithmetic, a label's address plus a
-// constant, into one immediate.
-//
-// The pattern
-//
-// `&r[2].a` on a static array, or `prompts + 15`, reaches the asm as an
-// add of 2 bytes of a label's halves and a constant:
-//
-//     LDA   #$2F                Mov(Imm(lo), A)
-//     CLC                       ClearCarry          (before or after the LDA)
-//     ADC   #<r                 Add(ImmLabelLow(r, o), A)
-//     STA   d0                  Mov(A, D0)
-//     LDA   #$00                Mov(Imm(hi), A)
-//     ADC   #>r                 Add(ImmLabelHigh(r, o), A)
-//     STA   d1                  Mov(A, D1)
-//
-// Either operand of each `ADC` may be the label. The sum is a constant
-// at link time, so the pass writes
-//
-//     LDA   #<(r+47)
-//     STA   d0
-//     LDA   #>(r+47)
-//     STA   d1
-//
-// dasm computes `r+47` as a full address, so the high half takes the
-// carry out of the low one as the `ADC` did. That's 4 instructions in
-// place of 7.
-//
-// The low byte alone, `LDA #<r; CLC; ADC #9; STA d0` with no high byte
-// after it, becomes `LDA #<(r+9); STA d0`, since the low byte of the
-// sum doesn't depend on the carry out. `(uint8_t)(uint16_t)&LOCS[1]`
-// compiles to it.
-//
-// A byte may go to X or Y in place of memory (`TAX`), as the high byte
-// of a returned pointer does, so `return T + 7;` becomes `LDA
-// #<(T+7); STA t; LDA #>(T+7); TAX; LDA t`, which later passes shorten.
-//
-// Conditions
-//
-// C and V must be dead after the last store (the low byte's store, in
-// the second form), since the `ADC`s set them and the loads don't. A
-// and N/Z end the same, since A holds the high byte of the sum either
-// way and both `ADC` and `LDA` set N/Z from it.
-//
-// Where it runs
-//
-// In the asm peephole fixed point, which both pipelines run. Memory
-// value propagation then forwards the immediates to where `d0` and `d1`
-// are read.
+// dasm computes `#>(r+k)` from the full address `r+k`, so the high half
+// takes the carry out of the low one as the `ADC` did.
 #include "passes/label_offset_fold.h"
 
 #include <cstddef>
@@ -66,8 +19,6 @@ using ::c6502::asdl::isa;
 
 const ir::Type_operand kA = ir::Reg{.reg = ir::A{}};
 
-// An add of one byte that `byte_add` found: the label operand, the
-// constant, the destination, and the index after the store.
 struct ByteAdd {
   ir::Type_operand label;
   asdl::Int constant = 0;
@@ -89,10 +40,6 @@ asdl::Int label_offset(const ir::Type_operand& op) {
   return std::get<ir::ImmLabelHigh>(op).offset;
 }
 
-// Returns the add of a byte that starts at `instrs[i]`: `LDA x; ADC y;
-// STA dst` with one of x and y a label operand of the kind `Label`
-// and the other an immediate, and for the low byte (`first`) a `CLC`
-// before or after the `LDA`.
 template <class Label>
 std::optional<ByteAdd> byte_add(const std::vector<ir::Type_instruction>& instrs,
                                 std::size_t i, bool first) {

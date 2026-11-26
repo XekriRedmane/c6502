@@ -1,54 +1,3 @@
-// Folds `DEC M` (or `INC M`), `LDA M`, `B<cond>` into `DEC M`,
-// `B<cond>`.
-//
-// The pattern
-//
-// Three consecutive instructions:
-//
-//     Dec(M) or Inc(M)        ; sets N and Z from M's new value
-//     Mov(M, Reg(A))          ; LDA M, so A = M, and N and Z from M
-//     Branch(<cond>, target)  ; B<cond> reads N and Z
-//
-// become
-//
-//     Dec(M) or Inc(M)
-//     Branch(<cond>, target)
-//
-// Labels that no jump or branch targets may sit between the `Dec` or
-// `Inc` and the load.
-//
-// Soundness
-//
-// `Dec(M)` and `Inc(M)` read, modify, and write M in place and set N
-// and Z from its new value. `Mov(M, Reg(A))` reads the same value into
-// A and sets N and Z to the same bits. So the flags at the branch are
-// the same with or without the LDA.
-//
-// The LDA's write of A is the only difference that can be seen, so the
-// LDA can go when A is dead at both successors of the branch, which
-// `a_dead_at` checks.
-//
-// The branch must depend only on N and Z, so that C and V can hold
-// anything. That leaves out BCC, BCS, BVC, and BVS, and allows BEQ,
-// BNE, BMI, and BPL.
-//
-// The case that called for it
-//
-// The end of a loop after a counter's decrement:
-//
-//     DEC counter         ; counter--, setting N and Z
-//     LDA counter         ; A = counter, setting N and Z the same way
-//     BPL .loop_start     ; loop while counter >= 0
-//
-// becomes `DEC counter; BPL .loop_start`, which saves a 2-byte,
-// 3-cycle LDA on every iteration. The hand-written `DEX; BPL .loop`
-// would be shorter still (DEX is one byte), but it needs the counter in
-// X, which is the register allocator's decision.
-//
-// Where it runs
-//
-// Inside the asm peephole fixed point, after the arithmetic passes that
-// give the DEC / INC form.
 #include "passes/dec_inc_branch_fold.h"
 
 #include <optional>
@@ -101,10 +50,7 @@ struct Match {
   std::size_t branch_idx = 0;
 };
 
-// Returns the indices of the load and the branch when `instrs[i]` is an
-// `Inc(M)` or `Dec(M)` followed, after any labels that nothing jumps or
-// branches to, by `Mov(M, A)` and a branch on N or Z, with A dead
-// afterward.
+// DEC M and INC M set N and Z from M's new value, as LDA M does.
 std::optional<Match> try_match(Instrs instrs, const LabelMap& labels, std::size_t i,
                                const std::set<std::string, std::less<>>& branch_targets) {
   const ir::Type_operand* mem = nullptr;
@@ -119,7 +65,6 @@ std::optional<Match> try_match(Instrs instrs, const LabelMap& labels, std::size_
     return std::nullopt;
   }
   std::size_t j = i + 1;
-  // Labels that no branch or jump targets are skipped.
   while (j < instrs.size()) {
     const auto* label = as<ir::Label>(instrs[j]);
     if (label == nullptr) {
@@ -147,9 +92,6 @@ std::optional<Match> try_match(Instrs instrs, const LabelMap& labels, std::size_
   if (br == nullptr || !isa<ir::EQ, ir::NE, ir::MI, ir::PL>(br->cond)) {
     return std::nullopt;
   }
-  // A must be dead afterward, on the fall-through and at the branch's
-  // target. Without the check at the target, `t = --timer; if (t == 0)
-  // { ... } return t;` returned A's old value on the taken path.
   if (!a_dead_at(instrs, labels, j + 1)) {
     return std::nullopt;
   }
@@ -176,7 +118,6 @@ void rewrite_function(ir::Function& fn) {
   std::size_t i = 0;
   while (i < instrs.size()) {
     if (const std::optional<Match> match = try_match(instrs, labels, i, branch_targets)) {
-      // Everything but the LDA is kept.
       for (std::size_t j = i; j <= match->branch_idx; ++j) {
         if (j != match->lda_idx) {
           out.push_back(instrs[j]);

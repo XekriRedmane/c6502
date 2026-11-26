@@ -1,8 +1,7 @@
-// The checks of the records that tools/capture_binutils.py writes of
-// passes/link_script.py and passes/link_layout.py (`parse_script`,
-// `lay_out`, `default_script`, `fall_through`, `tail_jump`, and
-// `startup_lines`), which `c6502cpp check-binutils` runs, and the tagged
-// JSON of a `Script` that those records hold.
+// The checks of the frozen records of `parse_script`, `lay_out`,
+// `default_script`, `fall_through`, `tail_jump`, and `startup_lines`,
+// which `c6502cpp check-binutils` runs, and the tagged JSON of a
+// `Script` that those records hold.
 #pragma once
 
 #include <string>
@@ -13,8 +12,7 @@
 
 namespace c6502::passes::link_checks {
 
-// Returns the tagged JSON of `script`, as tools/capture_passes.py's
-// `encode` gives it for the Python `Script`.
+// Returns the tagged JSON of `script`, in the form the records hold.
 json::Value script_json(const link_script::Script& script);
 
 // Returns the `Script` whose tagged JSON is `v`. Throws

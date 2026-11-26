@@ -1,9 +1,6 @@
-// The port of passes/constant_expression.py, the validator and integer
-// folder of C99 §6.6's constant expressions, which the type checker
-// calls for case labels, static initializers, and `constexpr` objects,
-// and the parser for array sizes, enumeration values, and `_BitInt`
-// widths. The evaluator reads the types the type checker stamped, so a
-// caller type-checks an expression first.
+// The validator and integer folder of C99 §6.6's constant expressions.
+// The evaluator reads the types the type checker stamped, so a caller
+// type-checks an expression first.
 #pragma once
 
 #include <functional>
@@ -20,7 +17,7 @@ namespace c6502::passes::constant_expression {
 
 // Raised when an expression that has to be a constant expression (C99
 // §6.6) doesn't meet that section's constraints. Its `python_type()` is
-// "ConstantExpressionError".
+// "ConstantExpressionError", the class errors.py raises it as.
 class ConstantExpressionError : public CompileError {
  public:
   explicit ConstantExpressionError(const std::string& message)
@@ -38,15 +35,13 @@ struct NamedConstant {
 };
 
 // A resolver takes a `Var`, a `Dot`, or a `CompoundLiteral` and returns
-// its type and value, or none when it isn't a named constant. The type
-// checker resolves the names of a program (`TypeChecker::named_constant`),
-// and the parser makes a checker of its own for each fold.
+// its type and value, or none when it isn't a named constant.
 using NamedConstantResolver =
     std::function<std::optional<NamedConstant>(const c99_ast::Type_exp&)>;
 
 // Makes `resolver` give the values of named constants for as long as the
-// object lives, as Python's `with named_constants(resolver):` does. The
-// stack of resolvers is kept per thread, and the innermost one answers.
+// object lives. The stack of resolvers is kept per thread, and the
+// innermost one is used.
 class NamedConstants {
  public:
   explicit NamedConstants(NamedConstantResolver resolver);
@@ -74,7 +69,7 @@ std::pair<asdl::Int, c99_ast::Type_data_type> evaluate_integer_constant_expressi
 // Throws ConstantExpressionError when `exp` contains an operator that
 // C99 §6.6p3 forbids in a constant expression (assignment, increment,
 // decrement, or a call other than of a builtin) outside an operand of
-// `sizeof`. Python has no caller of it, and neither has C++.
+// `sizeof`.
 void validate_constant_expression(const c99_ast::Type_exp& exp);
 
 }  // namespace c6502::passes::constant_expression

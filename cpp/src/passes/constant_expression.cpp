@@ -1,46 +1,3 @@
-// The port of passes/constant_expression.py, the constant-expression
-// validator and integer folder of C99 §6.6.
-//
-// C99 §6.6 defines two flavors of constant expression. A constant
-// expression (§6.6p3) "shall not contain assignment, increment,
-// decrement, function-call, or comma operators, except when they are
-// contained within a subexpression that is not evaluated", which the
-// integer, floating, and address constant expressions all share. An
-// integer constant expression (§6.6p6) is the strictest form, which
-// "shall have integer type and shall only have operands that are
-// integer constants, enumeration constants, character constants, sizeof
-// expressions whose results are integer constants, _Alignof
-// expressions, and floating constants that are the immediate operands
-// of casts". Case labels, enumeration constants, array sizes, and the
-// `#if` directives take one.
-//
-// `evaluate_integer_constant_expression` serves the §6.6p6 sites and
-// returns the value with its integer type. `validate_constant_expression`
-// checks §6.6p3 without folding, and nothing calls it yet.
-//
-// The integer folder accepts integer and character constants, integer
-// casts, `sizeof`, the unary operators `-`, `~`, `!`, and `+`, every
-// binary operator other than assignment, `?:`, and the builtins whose
-// operands are constant. It relies on the type checker's `data_type`
-// stamps and implicit casts, so each operator computes in its own result
-// type, and its operands already have that width and signedness.
-// Floating operands are rejected, except as the operand of a cast to an
-// integer type (C23 §6.6p8). A static initializer handles its floating
-// constants in the type checker and calls this folder for its integer
-// operator expressions.
-//
-// A cast to an integer type reduces the value modulo the target's width
-// and reads it with the target's signedness, the rule of the casts that
-// c99_to_tac lowers. `sizeof` folds to the size of its operand's type as
-// an `unsigned int`, c6502's `size_t`. For `sizeof e` the type is the
-// one the type checker stamped on `e`, which isn't evaluated (C99
-// §6.5.3.4p2), so the check of §6.6p3 doesn't look inside it either.
-//
-// Python's ints have no bound. Every value here is in the range of a
-// type of at most 64 bits, so a sum or a difference fits in `asdl::Int`,
-// and so does a product or a left shift of signed operands. A product
-// or a left shift of unsigned operands can reach 2^128, and only its low
-// bits survive the reduction to the type, so it is computed modulo 2^64.
 #include "passes/constant_expression.h"
 
 #include <cstdint>
@@ -80,9 +37,6 @@ const Type& strip_quals(const Type& t) {
   }
 }
 
-// Returns the width in bytes of the integer types other than the
-// bit-precise ones, or 0 for any other type. Python keeps its own table
-// here so that the module imports nothing from the type checker.
 int int_width(const Type& t) {
   switch (ir::kind(t)) {
     case K::Char:
@@ -111,8 +65,6 @@ bool is_integer_type(const Type& t) {
   return int_width(s) != 0 || asdl::isa<ir::BitInt>(s);
 }
 
-// Returns the width of the integer type `t` in bits: N for `_BitInt(N)`,
-// and 8 bits a byte for the others.
 int width_bits(const Type& t) {
   const Type& s = strip_quals(t);
   if (const auto* b = std::get_if<ir::BitInt>(&s)) {
@@ -135,10 +87,6 @@ bool is_signed_type(const Type& t) {
   return asdl::isa<ir::Int, ir::Long, ir::LongLong, ir::SChar, ir::Short>(s);
 }
 
-// Returns the bytes a value of type `t` occupies. Python keeps a copy of
-// the type checker's `_sizeof` here, for the same reason as the width
-// table, and it throws ConstantExpressionError for an incomplete or
-// function type, which the type checker flags before this runs.
 Int sizeof_type(const Type& t) {
   const Type& s = strip_quals(t);
   switch (ir::kind(s)) {
@@ -176,10 +124,7 @@ Int sizeof_type(const Type& t) {
   }
 }
 
-// Reduces `value` modulo 2^width and reads it with the target's
-// signedness, which is what the byte-level casts tac_to_asm lowers
-// compute for a known value. A `bool` target gets 0 or 1 instead (C99
-// §6.3.1.2).
+// A `bool` target gets 0 or 1 (C99 §6.3.1.2).
 Int coerce_to_integer_type(Int value, const Type& t) {
   const Type& s = strip_quals(t);
   if (asdl::isa<ir::Bool>(s)) {
@@ -194,7 +139,6 @@ Int coerce_to_integer_type(Int value, const Type& t) {
   return raw;
 }
 
-// Returns the integer type of the constant `c`.
 Type const_type(const ir::Type_const& c) {
   switch (ir::kind(c)) {
     case ir::Kind_const::ConstInt:
@@ -225,9 +169,6 @@ Type const_type(const ir::Type_const& c) {
   }
 }
 
-// Returns the value of an integer constant. Each integer variant holds
-// the bit pattern as a nonnegative int, and its variant gives the
-// signedness.
 Int const_int_value(const ir::Type_const& c) {
   switch (ir::kind(c)) {
     case ir::Kind_const::ConstNullptr:
@@ -281,8 +222,6 @@ Int const_int_value(const ir::Type_const& c) {
   return coerce_to_integer_type(value, const_type(c));
 }
 
-// Returns `exp`, a `Var`, a compound literal, or a chain of `Dot`s on
-// one, as source text.
 std::string describe(const Exp& exp) {
   if (const auto* d = std::get_if<ir::Dot>(&exp)) {
     return describe(*d->operand) + "." + d->member;
@@ -294,7 +233,6 @@ std::string describe(const Exp& exp) {
   if (const auto* v = std::get_if<ir::Var>(&exp)) {
     name = v->name;
   }
-  // identifier_resolution names a block-scope object `@N.name`.
   if (!name.empty() && name[0] == '@') {
     const std::size_t dot = name.find('.');
     if (dot != std::string::npos) {
@@ -309,9 +247,8 @@ struct FloatingOperand {
   Int bits = 0;
 };
 
-// Returns the type and bits of `exp` when it is a floating constant or
-// a named constant of floating type, the operands C23 §6.6p8 lets a
-// cast in an integer constant expression convert.
+// C23 §6.6p8 lets a cast in an integer constant expression convert a
+// floating constant or a named constant of floating type.
 std::optional<FloatingOperand> floating_operand(const Exp& exp) {
   if (const auto* c = std::get_if<ir::Constant>(&exp)) {
     if (const auto* f = std::get_if<ir::ConstFloat>(&c->const_)) {
@@ -328,11 +265,9 @@ std::optional<FloatingOperand> floating_operand(const Exp& exp) {
   return std::nullopt;
 }
 
-// Returns the floating value with IEEE 754 `bits` of type `t` converted
-// to the integer type `target`, truncated toward zero. A value whose
-// integer part `target` can't hold makes the conversion undefined (C99
-// §6.3.1.4p1), so it isn't a constant. A `bool` target is 0 for a zero
-// of either sign and 1 for anything else (C99 §6.3.1.2).
+// A value whose integer part `target` can't hold makes the conversion
+// undefined (C99 §6.3.1.4p1). A `bool` target is 0 for a zero of either
+// sign and 1 for anything else (C99 §6.3.1.2).
 Int floating_to_integer(const Type& t, Int bits, const Type& target) {
   const bool single = asdl::isa<ir::Float>(t);
   if (asdl::isa<ir::Bool>(strip_quals(target))) {
@@ -353,8 +288,6 @@ Int floating_to_integer(const Type& t, Int bits, const Type& target) {
   return *value;
 }
 
-// Returns the integer type the type checker stamped on an operator, `t`,
-// or throws when it is missing or isn't an integer type.
 Type result_type(const std::optional<Type>& t) {
   if (!t) {
     throw ConstantExpressionError(
@@ -368,9 +301,8 @@ Type result_type(const std::optional<Type>& t) {
   return strip_quals(*t);
 }
 
-// Returns `value` as a value of type `t`. Unsigned arithmetic wraps
-// (C99 §6.2.5p9). A signed result outside `t`'s range is overflow, which
-// is undefined, so it is rejected.
+// Unsigned arithmetic wraps (C99 §6.2.5p9), and signed overflow is
+// undefined.
 Int checked(Int value, const Type& t) {
   const Int wrapped = coerce_to_integer_type(value, t);
   if (is_signed_type(t) && wrapped != value) {
@@ -381,9 +313,6 @@ Int checked(Int value, const Type& t) {
   return wrapped;
 }
 
-// Returns the low 64 bits of an unsigned operand's product or left
-// shift, which is all of it that its reduction to a type of at most 64
-// bits keeps.
 Int low64(std::uint64_t v) { return Int(v); }
 
 using Result = std::pair<Int, Type>;
@@ -432,9 +361,6 @@ Result evaluate_binary(const ir::Binary& exp) {
       }
       const int n = static_cast<int>(b);
       if (op == O::RightShift) {
-        // A negative left operand shifts arithmetically, which is
-        // c6502's implementation-defined choice (asr*). Python's `>>`
-        // rounds toward negative infinity, as floor division does.
         return {coerce_to_integer_type(asdl::floor_div(a, Int(1) << n), t), t};
       }
       if (!is_unsigned && a < 0) {
@@ -497,8 +423,6 @@ std::optional<NamedConstant> named_constant(const Exp& exp) {
   if (resolvers().empty() || !asdl::isa<ir::Var, ir::Dot, ir::CompoundLiteral>(exp)) {
     return std::nullopt;
   }
-  // The resolver is copied first, so that one which installs another
-  // while it runs can't invalidate it.
   const NamedConstantResolver resolver = resolvers().back();
   return resolver(exp);
 }
@@ -545,10 +469,6 @@ std::pair<Int, Type> evaluate_integer_constant_expression(const Exp& exp) {
     case E::SizeOfExp: {
       const auto& inner = *std::get<ir::SizeOfExp>(exp).exp;
       if (const auto* s = std::get_if<ir::String>(&inner)) {
-        // The type checker gives a string literal it checks a
-        // `data_type` attribute of `char[N+1]`, which the Python
-        // dataclass takes though it has no such field, and which the
-        // C++ `String` can't hold, so its size is computed here.
         return {Int(static_cast<long long>(pyrepr::code_points(s->str).size())) + 1, ir::UInt{}};
       }
       const std::optional<Type>& t = type_checking::data_type_of(inner);
@@ -588,8 +508,6 @@ std::pair<Int, Type> evaluate_integer_constant_expression(const Exp& exp) {
       const auto& call = std::get<ir::FunctionCall>(exp);
       namespace bf = ::c6502::builtin_functions;
       if (call.name == bf::kBcdAdd || call.name == bf::kBcdSub) {
-        // A packed BCD builtin of constant operands. It isn't a
-        // function call, so it is a constant (docs/builtins.md).
         const Type t = result_type(type_checking::data_type_of(exp));
         if (call.args.size() < 2) {
           throw InternalError("IndexError: list index out of range");
@@ -603,15 +521,11 @@ std::pair<Int, Type> evaluate_integer_constant_expression(const Exp& exp) {
         break;
       }
       if (call.name == bf::kBinToBcd) {
-        // `__c6502_bin_to_bcd` of a constant, which the type checker
-        // converted to `unsigned int`.
         const Type t = result_type(type_checking::data_type_of(exp));
         const Int v = evaluate_integer_constant_expression(call.args[0]).first;
         return {bf::bin_to_bcd(v), t};
       }
       if (const auto* builtin = bf::find_stdbit_builtin(call.name)) {
-        // A <stdbit.h> builtin of a constant argument, which the type
-        // checker converted to the value type (docs/stdbit.md).
         const Type t = result_type(type_checking::data_type_of(exp));
         const auto [v, value_t] = evaluate_integer_constant_expression(call.args[0]);
         return {bf::stdbit(builtin->operation, v, 8 * static_cast<int>(sizeof_type(value_t))), t};

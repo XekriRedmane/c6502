@@ -1,31 +1,3 @@
-// Helpers for asm `DecimalArith`, the packed BCD add or subtract.
-//
-// `DecimalArith(subtract, left, right, dst)` is one asm instruction for
-// the whole `SED; CLC; LDA left[0]; ADC right[0]; STA dst[0]; ...; CLD`
-// chain (asm.asdl). Keeping the chain in one instruction until
-// `asm_to_asm2` expands it is what confines the decimal flag. No pass
-// sees the SED or the CLD, so no pass can put an instruction between
-// them, and no pass can move the chain's ADC or SBC out from between
-// them. The asm2 check in `passes/ir_check.py` checks the expansion.
-//
-// Each pass still has to know which operands the instruction reads and
-// writes, and this module gives them in one place.
-//
-//   * `reads` are the bytes of `left` and `right`, and `writes` are the
-//     bytes of `dst`. A and the flags N, Z, C, and V are clobbered, and
-//     nothing in A or a flag is read.
-//   * `writes_y` is true when an operand's access begins with an
-//     `LDY #off` (a soft-stack slot), which clobbers Y. X is never
-//     touched.
-//   * `map_operands` rebuilds the instruction with each operand passed
-//     through a function, for the passes that rename or resolve
-//     operands.
-//
-// The asm SSA round trip reads `pseudo_reads`, `pseudo_writes`,
-// `map_reads`, and `map_writes`, the interference graphs
-// `early_write_pairs`, and the liveness of the register allocation
-// `pseudo_read_ptrs` and `pseudo_write_ptrs`, and the IR check
-// `form_problems`.
 #include "passes/decimal_arith.h"
 
 namespace c6502::passes::decimal_arith {

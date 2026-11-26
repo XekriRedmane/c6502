@@ -1,5 +1,5 @@
-// The port of passes/in_place_member_update.py, which finds the members
-// of static objects that `tac_to_asm` can compute in their own bytes.
+// Finds the members of static objects that `tac_to_asm` can compute in
+// their own bytes.
 #pragma once
 
 #include <functional>

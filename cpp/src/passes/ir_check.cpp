@@ -1,16 +1,3 @@
-// The port of passes/ir_check.py (ir_check.h describes the checks).
-//
-// `check_tac` runs after every TAC pass, so it finds each instruction's
-// reads and writes once per check and gives them to every test. Nothing
-// found about an instruction is kept for the next check, since a pass
-// may change an instruction (unreachable-code elimination rewrites a
-// Phi's arguments). The blocks and dominators of the SSA test are kept,
-// keyed by the function's control skeleton (`control_skeleton`): the
-// number of instructions and the position, name, type, and target of
-// each label and block-ending instruction, which is everything
-// `build_cfg` reads. The skeleton is taken afresh at each check, so an
-// entry is used only for a function whose CFG is the one it was
-// computed from, and a pass that changes a jump gets a new one.
 #include "passes/ir_check.h"
 
 #include <algorithm>
@@ -44,8 +31,6 @@ using ::c6502::asdl::isa;
 
 bool g_enabled = false;
 
-// Returns Python's message for the problems of function `name`, found
-// after `after`: the first five, joined by "; ".
 std::string message(std::string_view after, std::string_view name,
                     const std::vector<std::string>& problems) {
   std::string out = "after " + std::string(after) + ", function '" + std::string(name) + "': ";
@@ -58,12 +43,6 @@ std::string message(std::string_view after, std::string_view name,
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// TAC.
-// ---------------------------------------------------------------------------
-
-// Returns the target of a jump (Python's `_JUMPS`), or null for any
-// other instruction.
 const std::string* jump_target(const tac::Type_instruction& instr) {
   switch (tac::kind(instr)) {
     case tac::Kind_instruction::Jump:
@@ -81,10 +60,6 @@ const std::string* jump_target(const tac::Type_instruction& instr) {
   }
 }
 
-// Returns everything `build_cfg` reads of `instrs` as one string: their
-// count, and the position and name of each label and the position,
-// type, and target of each instruction that ends a block. Two functions
-// with equal skeletons have the same blocks and edges.
 std::string control_skeleton(const std::vector<tac::Type_instruction>& instrs) {
   std::string out = std::to_string(instrs.size());
   for (std::size_t k = 0; k < instrs.size(); ++k) {
@@ -101,10 +76,6 @@ std::string control_skeleton(const std::vector<tac::Type_instruction>& instrs) {
   return out;
 }
 
-// The block structure of a function, as `_cfg_shape` gives it: each
-// block of `build_cfg(fn)` in `block_order` with the slice of
-// `fn.instructions` it holds, the immediate dominators of that CFG, and
-// the block of each label.
 struct Span {
   int id = 0;
   std::size_t start = 0;
@@ -116,9 +87,6 @@ struct Shape {
   std::map<std::string, int, std::less<>> label_block;
 };
 
-// The shapes of the control skeletons checked recently. An entry
-// depends on the skeleton alone, so it can't go stale. The table is
-// cleared when it reaches `kShapesKept` entries, as Python's is.
 std::unordered_map<std::string, Shape>& shapes() {
   static std::unordered_map<std::string, Shape> table;
   return table;
@@ -134,8 +102,6 @@ const Shape& cfg_shape(const tac::Function& fn) {
   const tac_cfg::Cfg cfg = tac_cfg::build_cfg(fn);
   Shape shape;
   shape.idom = tac_cfg::immediate_dominators(cfg);
-  // `build_cfg` puts every instruction in one block, in order, so the
-  // blocks of `block_order` one after another are `fn.instructions`.
   std::size_t at = 0;
   for (const int bid : cfg.block_order) {
     const auto& block = cfg.blocks.find(bid)->instructions;
@@ -158,8 +124,6 @@ const Shape& cfg_shape(const tac::Function& fn) {
 
 using Names = std::vector<std::vector<std::string_view>>;
 
-// Returns the SSA problems of `fn`, whose instructions read the names
-// `uses[i]` and write `defs[i]`.
 std::vector<std::string> ssa_problems(const tac::Function& fn, const NameSet& ssa_dsts,
                                       const Names& uses, const Names& defs) {
   std::vector<std::string> problems;
@@ -169,10 +133,6 @@ std::vector<std::string> ssa_problems(const tac::Function& fn, const NameSet& ss
   for (const Span& s : shape.spans) {
     block_len[s.id] = s.end - s.start;
   }
-  // Where each SSA name is defined: (block, index in block). A
-  // parameter's first SSA value is defined at entry. Unreachable blocks
-  // are skipped: renaming never visits them, so they keep the original
-  // names, and UCE drops them.
   struct Where {
     int block = 0;
     std::ptrdiff_t index = 0;
@@ -236,7 +196,7 @@ std::vector<std::string> ssa_problems(const tac::Function& fn, const NameSet& ss
 
   for (const Span& s : shape.spans) {
     if (!shape.idom.contains(s.id)) {
-      continue;  // unreachable; UCE drops it
+      continue;
     }
     for (std::size_t i = s.start; i < s.end; ++i) {
       const tac::Type_instruction& instr = instrs[i];
@@ -253,7 +213,6 @@ std::vector<std::string> ssa_problems(const tac::Function& fn, const NameSet& ss
             continue;
           }
           if (shape.idom.contains(pred->second)) {
-            // Read at the end of the predecessor.
             check_read(src->name, pred->second,
                        static_cast<std::ptrdiff_t>(block_len[pred->second]), "Phi");
           }
@@ -270,8 +229,6 @@ std::vector<std::string> ssa_problems(const tac::Function& fn, const NameSet& ss
   return problems;
 }
 
-// Returns the undefined temporaries `fn` reads, whose instructions read
-// the names `uses[i]` and write `defs[i]`.
 std::vector<std::string> temp_problems(const tac::Function& fn, const Names& uses,
                                        const Names& defs) {
   std::set<std::string_view, std::less<>> defined(fn.params.begin(), fn.params.end());
@@ -308,15 +265,6 @@ std::vector<std::string> temp_problems(const tac::Function& fn, const Names& use
   return problems;
 }
 
-// ---------------------------------------------------------------------------
-// Asm2.
-// ---------------------------------------------------------------------------
-
-// Returns whether `op` is an operand an LDA, ADC, SBC, or STA of a BCD
-// chain may name: an immediate, an absolute or zero-page byte, or a
-// soft-stack slot (`dest` leaves out the immediates). No register,
-// index, or pointer, whose address would have to be set up inside the
-// chain.
 bool chain_operand(const asm2::Type_operand& op, bool dest) {
   if (dest) {
     return isa<asm2::Data, asm2::ZP, asm2::Frame, asm2::Stack>(op);
@@ -330,9 +278,6 @@ bool is_a(const asm2::Type_operand& op) {
   return reg != nullptr && std::holds_alternative<asm2::A>(reg->reg);
 }
 
-// Returns what's wrong with the decimal flag in a runtime helper that
-// sets it itself: an `RTS` without a `CLD` right before it, or a last
-// instruction that isn't an `RTS`.
 std::vector<std::string> helper_decimal_problems(
     const std::vector<asm2::Type_instruction>& instrs) {
   std::vector<std::string> problems;
@@ -377,8 +322,6 @@ std::vector<std::string> tac_problems(const tac::Function& fn, const SymbolTable
       problems.push_back("jump to missing label " + *target);
     }
   }
-  // The names each instruction reads and writes, found once and read by
-  // every check below.
   Names uses;
   Names defs;
   uses.reserve(instrs.size());
@@ -398,8 +341,6 @@ std::vector<std::string> tac_problems(const tac::Function& fn, const SymbolTable
     for (const auto& p : fn.params) {
       names.erase(p);
     }
-    // In code-point order, as Python's `sorted` gives them, which is the
-    // order of the names' UTF-8 bytes.
     for (const std::string_view n : names) {
       if (!symbols->contains(n)) {
         problems.push_back(std::string(n) + " isn't in the symbol table");
@@ -480,8 +421,6 @@ std::vector<std::string> asm_problems(const asm1::Function& fn, bool pseudos, bo
     if (k == asm1::Kind_instruction::SetDecimal || k == asm1::Kind_instruction::ClearDecimal) {
       problems.push_back(constructor_name(instr) + " outside a runtime helper");
     }
-    // The read-modify-write instructions, whose one indexed form is
-    // abs,X.
     const asm1::Type_operand* rmw = nullptr;
     switch (k) {
       case asm1::Kind_instruction::Inc:

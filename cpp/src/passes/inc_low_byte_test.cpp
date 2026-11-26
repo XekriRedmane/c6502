@@ -1,48 +1,3 @@
-// Tests the low byte of a value that an INC chain has just
-// incremented.
-//
-// The multi-byte INC peephole (`inc_peephole`) turns an add of 1 to a
-// value of 2 or more bytes in memory into
-//
-//     INC M0
-//     BNE done
-//     INC M1
-//     ...
-//   done:
-//
-// and a test of the low byte right after it, `if ((uint8_t)x == 0)` on
-// the value just incremented, follows as
-//
-//   done:
-//     LDA M0
-//     BNE T          // or BEQ T
-//
-// The first `BNE done` is taken exactly when M0 is nonzero, and on the
-// other paths to `done` (the fall-through and the `BNE`s after the
-// higher bytes) M0 is zero. So the test's outcome is known on every
-// path into `done`:
-//
-// - `BNE T`: the first `BNE done` goes to T instead, and the `BNE T`
-//   after the load is dropped, since M0 is zero wherever it's reached.
-// - `BEQ T`: the first `BNE done` goes past the `BEQ`, and the `BEQ`
-//   becomes a `JMP`.
-//
-// Each path then skips a load and a branch it used to run. The flags
-// where the moved branch arrives are the same, since `INC M0` set N and
-// Z from M0's new value, as the load did, and neither touches C or V.
-// Only A differs, since the moved branch skips the load, so A must be
-// dead where it arrives (`a_dead_at`). M0 is a `Data` or `ZP` byte, the
-// load isn't volatile, and `done` is reached only from the chain.
-//
-// `get_next_code_byte2` in examples/zork/pages.c is
-//
-//     Z_PC2.lo++;
-//     if ((uint8_t)Z_PC2.lo == 0) { ... }
-//
-// which becomes `INC Z_PC2; BNE .if_end` for each byte read.
-//
-// The pass runs in the peephole fixed point, right after the INC
-// peephole.
 #include "passes/inc_low_byte_test.h"
 
 #include <optional>
@@ -74,7 +29,6 @@ const ir::Branch* branch_ne(const Instructions& instrs, std::size_t k) {
   return br != nullptr && isa<ir::NE>(br->cond) ? br : nullptr;
 }
 
-// Returns the index of the first `Label` named `name`, or nothing.
 std::optional<std::size_t> label_index(const Instructions& instrs, const std::string& name) {
   for (std::size_t n = 0; n < instrs.size(); ++n) {
     const auto* label = as<ir::Label>(instrs[n]);
@@ -85,8 +39,6 @@ std::optional<std::size_t> label_index(const Instructions& instrs, const std::st
   return std::nullopt;
 }
 
-// Returns a `.inc_test@N` label that `instrs` doesn't hold yet, with
-// the least such N.
 std::string fresh_label(const Instructions& instrs) {
   std::set<long long> used;
   for (const auto& ins : instrs) {
@@ -118,8 +70,8 @@ std::string fresh_label(const Instructions& instrs) {
   return std::string(kTestPrefix) + std::to_string(n);
 }
 
-// Returns the rewritten instructions when an INC chain starts at
-// `instrs[i]` and its low byte is tested after its label, or nothing.
+// `INC M` sets N and Z from M's new value, as `LDA M` does, and neither
+// touches C or V.
 std::optional<Instructions> try_rewrite(const Instructions& instrs, std::size_t i) {
   const auto* first = as<ir::Inc>(instrs[i]);
   if (first == nullptr || !isa<ir::Data, ir::ZP>(first->dst)) {
@@ -131,7 +83,6 @@ std::optional<Instructions> try_rewrite(const Instructions& instrs, std::size_t 
     return std::nullopt;
   }
   const std::string done = br->target;
-  // The rest of the chain is an INC, then a `BNE done` or the label.
   std::set<std::size_t> chain_branches{i + 1};
   std::size_t k = i + 2;
   while (true) {
@@ -201,8 +152,6 @@ std::optional<Instructions> try_rewrite(const Instructions& instrs, std::size_t 
 }
 
 void rewrite_function(ir::Function& fn) {
-  // Each rewrite replaces the whole list, and the scan goes on from the
-  // next index of the new list.
   for (std::size_t i = 0; i < fn.instructions.size(); ++i) {
     if (std::optional<Instructions> rewritten = try_rewrite(fn.instructions, i)) {
       fn.instructions = std::move(*rewritten);

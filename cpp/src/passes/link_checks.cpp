@@ -18,8 +18,6 @@ namespace elf = ::c6502::binutils::elf;
 using json::Value;
 using ls::Expr;
 
-// --- Building JSON ---
-
 Value null() { return Value{}; }
 
 Value boolean(bool b) {
@@ -60,7 +58,6 @@ Value object(std::vector<std::pair<std::string, Value>> members) {
   return v;
 }
 
-// The tagged JSON of a dataclass of passes/link_script.py.
 Value tagged(const std::string& cls, std::vector<std::pair<std::string, Value>> fields) {
   return object({{"object", string("passes.link_script." + cls)}, {"fields", object(std::move(fields))}});
 }
@@ -123,8 +120,6 @@ Value section_json(const ls::OutputSection& sec) {
                                   {"region", opt_string(sec.region)},
                                   {"load_region", opt_string(sec.load_region)}});
 }
-
-// --- Reading JSON ---
 
 [[noreturn]] void bad(const std::string& what) {
   throw InternalError("link_checks: unexpected JSON for " + what);
@@ -251,7 +246,6 @@ std::string from_hex(std::string_view hex) {
   return out;
 }
 
-// Compares the JSON C++ gives with the recorded JSON.
 std::string compare(const Value& got, const Value& want) {
   const std::string a = json::dump(got);
   const std::string b = json::dump(want);
@@ -368,8 +362,6 @@ std::string check(std::string_view kind, const json::Value& args, const json::Va
                                          static_cast<std::int64_t>(r.items.at(2).integer)});
       }
       std::vector<elf::SymbolPtr> symbols;
-      // A symbol of another section, after the end of this one, which
-      // `tail_jump` skips.
       auto other = std::make_shared<elf::Symbol>();
       other->name = "$d";
       other->value = 1 << 20;

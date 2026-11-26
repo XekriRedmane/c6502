@@ -1,53 +1,3 @@
-// Computing a member of a static object in its own bytes.
-//
-// `c99_to_tac` reads a member of a static struct, or an element of a
-// static array at a constant index, with `IndexedLoad` and writes it
-// with `IndexedSymbolStore`, so `P.lo++` on a static `P` is
-//
-//     IndexedLoad(P, 0, t)
-//     Binary(+, t, 1, u)
-//     IndexedSymbolStore(P, 0, u)
-//
-// and `tac_to_asm` lowers it as written: copy the member's bytes into
-// `t`, add into `u`, and copy `u` back. A plain static `w++` is
-// `Binary(+, w, 1, w)`, which lowers to `LDA w; CLC; ADC #1; STA w` per
-// byte, and the INC peephole (passes/inc_peephole.py) makes that
-// `INC w; BNE; INC w+1`. The member's add never gets that shape, so it
-// costs a copy in and a copy out, and the asm optimizer puts the bytes
-// in registers or temporaries around the add. Likewise `P.lo = w << 1`
-// shifts into a temporary and then copies it into the member.
-//
-// `plan_in_place_updates` finds the values that can be computed in the
-// member's own bytes. `tac_to_asm` then names them by the member's bytes
-// (`Data(P, k)`) and skips the store, so the instruction that computes
-// the value writes the member. For `P.lo++` it skips the load too, so
-// the add reads the member in place and the INC and DEC peepholes see
-// their pattern.
-//
-// The rewrite moves the member's write from the store back to the
-// instruction that computes `u`, and for an update it makes every read
-// of `t` a read of the member. That's the same program when, in one
-// function's instructions:
-//
-// - the store is the instruction right after the one that defines `u`
-//   (a `Binary`, `Unary`, `Copy`, extend, or truncate), it isn't
-//   volatile, and `u` is defined only there and read only by the store;
-// - for an update, the definition is `t + c` or `t - c` with `c` a
-//   constant, or a packed BCD add or subtract of `t` and a constant or a
-//   local (`__c6502_bcd_add(t, x)`), `t` is loaded from the bytes the
-//   store writes by a load that isn't volatile, `t` and `u` are the same
-//   size, and `t` is defined only by the load and read only after it and
-//   up to the add. Between the load and the add there's no label, jump,
-//   call, store, or other write to the object (only instructions that
-//   compute into locals and read memory), so the member still holds
-//   `t`'s value wherever `t` is read;
-// - otherwise, the definition reads nothing of the object, so writing
-//   the member while computing `u` can't change what it reads;
-// - `t` and `u` are locals of the function whose address isn't taken,
-//   not parameters or statics.
-//
-// `tac_to_asm` also requires the object to have static storage and not
-// to be renamed already, and `u` to need every byte.
 #include "passes/in_place_member_update.h"
 
 #include <map>
@@ -71,8 +21,6 @@ int count_of(const Counter& c, std::string_view name) {
   return it == c.end() ? 0 : it->second;
 }
 
-// Returns the destination of an instruction whose result can be
-// computed in the member's bytes (Python's `_COMPUTES`), or null.
 const tac::Type_val* computed_dst(const tac::Type_instruction& ins) {
   using K = tac::Kind_instruction;
   switch (tac::kind(ins)) {
@@ -93,9 +41,6 @@ const tac::Type_val* computed_dst(const tac::Type_instruction& ins) {
   }
 }
 
-// Returns whether `ins` may sit between an update's load and its add: it
-// computes into locals and reads memory, but doesn't write memory or
-// change the flow of control (Python's `_PASSIVE`).
 bool is_passive(const tac::Type_instruction& ins) {
   using K = tac::Kind_instruction;
   switch (tac::kind(ins)) {
@@ -116,14 +61,10 @@ bool is_passive(const tac::Type_instruction& ins) {
   }
 }
 
-// Returns the low byte of a constant index, as Python's `value & 0xFF`.
 asdl::Int index_byte(const tac::Constant& c) {
   return asdl::floor_mod(*bit_precise::raw_value(c.const_), 256);
 }
 
-// Returns the index of the `IndexedLoad` of `obj` into `t` before
-// instruction `j`, when only instructions that leave `obj`'s bytes alone
-// come between them, or none.
 std::optional<int> load_of(const std::vector<tac::Type_instruction>& instrs, int j,
                            std::string_view t, std::string_view obj) {
   for (int i = j - 1; i >= 0; --i) {
@@ -146,12 +87,6 @@ std::optional<int> load_of(const std::vector<tac::Type_instruction>& instrs, int
   return std::nullopt;
 }
 
-// When instruction `j` adds a constant to, or subtracts one from, a
-// local `t` loaded from byte `base` of `obj`, and the member can stand
-// for `t`, returns the index of the load and `t`, else none. A packed
-// BCD add or subtract may have `t` as either operand and a local as the
-// other. Its chain writes byte k of the member after it reads byte k of
-// each operand, so the member can stand for `t` in either place.
 std::optional<std::pair<int, std::string>> update_of(
     const std::vector<tac::Type_instruction>& instrs, int j, asdl::Int base,
     const std::string& obj, const std::function<bool(std::string_view)>& renamable,
@@ -202,7 +137,6 @@ std::optional<std::pair<int, std::string>> update_of(
   if (load.is_volatile || index == nullptr || index_byte(*index) + load.offset != base) {
     return std::nullopt;
   }
-  // Every read of t is between the load and the add.
   int reads = 0;
   for (int k = *i + 1; k <= j; ++k) {
     for (const auto v : uses_in(instrs[k])) {

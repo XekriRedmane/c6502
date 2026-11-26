@@ -1,66 +1,3 @@
-// The join store: a value that each arm of a branch leaves in a slot,
-// and that the join copies into memory, is stored into that memory by
-// each arm.
-//
-// The pattern
-//
-// `OPERANDS[0] = (op & 0x40) ? get_var_content() : get_next_code_byte();`
-// in Zork's `do_instruction` (examples/zork/decode.c) keeps the low
-// byte in A across the join and the high byte in a slot:
-//
-//        JSR   get_var_content
-//        STX   __local_do_instruction__v_1
-//        JMP   .cond_end@31
-//     .cond_else@30:
-//        JSR   get_next_code_byte
-//        LDY   #$00
-//        STY   __local_do_instruction__v_1
-//     .cond_end@31:
-//        STA   OPERANDS
-//        LDA   __local_do_instruction__v_1
-//        STA   OPERANDS+1
-//
-// Each arm's store goes to `OPERANDS+1` instead, and the copy at the
-// join goes:
-//
-//        JSR   get_var_content
-//        STX   OPERANDS+1
-//        JMP   .cond_end@31
-//     .cond_else@30:
-//        JSR   get_next_code_byte
-//        LDY   #$00
-//        STY   OPERANDS+1
-//     .cond_end@31:
-//        STA   OPERANDS
-//
-// That saves the `LDA t; STA M` at the join, 4 or 5 bytes, and its 6 or
-// 7 cycles on every path.
-//
-// The rules
-//
-// - At a run of labels, within a few instructions, comes `LDA t; STA
-//   M`, with `t` one of the function's own `__local_*` slots and `M` a
-//   byte of memory with no index (`Data` or `ZP`), neither volatile.
-// - Nothing between the labels and the `LDA` reads or writes `t` or
-//   `M`, and nothing there is a call, a branch, or a label.
-// - `t` is dead after the `LDA`, and A and N/Z are dead after the
-//   `STA`, since they no longer hold `t`'s value.
-// - The labels are reached only by `JMP`s and by falling through, at
-//   most three of them, since a store to `M` may take a byte more than
-//   one to `t` when `M` is an absolute address. Each one's last write
-//   to `t` is a store from A, X, or Y, or of a constant (`LDA #k; STA
-//   t`, one `Mov` until `asm_emit`), after which its path to the labels
-//   has no call, branch, or label, and reads or writes neither `t` nor
-//   `M`. That store becomes a store to `M`.
-//
-// `M` then takes its value earlier than it did, which no instruction
-// can see, since none between the arm's store and the join reads `M`.
-//
-// Where it runs
-//
-// In the peephole fixed point, after `redundant_store`. The store to
-// `t` it leaves goes when the slot is dead, and `asm_dead_store` needs
-// nothing more.
 #include "passes/join_store.h"
 
 #include <optional>
@@ -81,9 +18,7 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// The most instructions between the labels and the `LDA t`.
 constexpr std::size_t kWindow = 8;
-// The most jumps and fall-throughs into the labels.
 constexpr std::size_t kMaxPreds = 3;
 
 bool is_straight(const ir::Type_instruction& ins) {
@@ -97,8 +32,6 @@ bool is_terminator(const ir::Type_instruction& ins) {
   return isa<ir::Jump, ir::Return, ir::Ret, ir::JumpTable>(ins);
 }
 
-// Returns whether `ins` is straight-line code that neither reads nor
-// writes `t` or `m`.
 bool untouched(const ir::Type_instruction& ins, const ir::Type_operand& t,
                const ir::Type_operand& m, const AsmContext& ctx) {
   if (!is_straight(ins)) {
@@ -118,8 +51,6 @@ bool untouched(const ir::Type_instruction& ins, const ir::Type_operand& t,
   return true;
 }
 
-// Returns whether `a; b` is `LDA t; STA M` with `t` one of `fn_name`'s
-// own slots and `M` another byte of memory with no index.
 bool join_pair(const ir::Type_instruction& a, const ir::Type_instruction& b,
                const std::string& fn_name) {
   const auto* lda = as<ir::Mov>(a);
@@ -133,7 +64,6 @@ bool join_pair(const ir::Type_instruction& a, const ir::Type_instruction& b,
          sta->dst != lda->src;
 }
 
-// Returns the name of an operand that has one.
 const std::string* operand_name(const ir::Type_operand& op) {
   if (const auto* d = as<ir::Data>(op)) return &d->name;
   if (const auto* p = as<ir::Pseudo>(op)) return &p->name;
@@ -143,8 +73,6 @@ const std::string* operand_name(const ir::Type_operand& op) {
   return nullptr;
 }
 
-// Returns whether `ins` refers to one of `names` other than as a
-// `JMP`'s target: a branch, a jump table, or an operand.
 bool names_label(const ir::Type_instruction& ins, const std::set<std::string>& names) {
   if (const auto* b = as<ir::Branch>(ins)) {
     return names.count(b->target) > 0;
@@ -169,9 +97,6 @@ bool names_label(const ir::Type_instruction& ins, const std::set<std::string>& n
   return false;
 }
 
-// Returns the index of the store from a register or of a constant into
-// `t` that the path ending before `instrs[end]` makes last, with nothing
-// after it that touches `t` or `m` or leaves the path, or nothing.
 std::optional<std::size_t> last_store(const std::vector<ir::Type_instruction>& instrs,
                                       std::size_t end, const ir::Type_operand& t,
                                       const ir::Type_operand& m, const AsmContext& ctx) {
@@ -189,9 +114,6 @@ std::optional<std::size_t> last_store(const std::vector<ir::Type_instruction>& i
   return std::nullopt;
 }
 
-// Rewrites `instrs` with the join store at the labels starting at
-// `instrs[i]` moved into the stores before it, and returns whether it
-// did.
 bool rewrite_at(std::vector<ir::Type_instruction>& instrs, std::size_t i,
                 const std::string& fn_name, const AsmContext& ctx,
                 const SymbolAddrs* zp_slot_symbols) {
@@ -209,7 +131,6 @@ bool rewrite_at(std::vector<ir::Type_instruction>& instrs, std::size_t i,
   for (std::size_t j = i; j < end; ++j) {
     names.insert(std::get<ir::Label>(instrs[j]).name);
   }
-  // The `LDA t; STA M` within the window.
   std::size_t k = end;
   bool found = false;
   while (k + 1 < instrs.size() && k - end < kWindow) {
@@ -236,7 +157,6 @@ bool rewrite_at(std::vector<ir::Type_instruction>& instrs, std::size_t i,
   if (!asm_dead_store::mem_dead_after(instrs, labels, k, t, ctx, fn_name, zp_slot_symbols)) {
     return false;
   }
-  // The jumps into the labels, and the fall-through.
   std::vector<std::size_t> preds;
   for (std::size_t j = 0; j < instrs.size(); ++j) {
     if (j >= i && j < end) {

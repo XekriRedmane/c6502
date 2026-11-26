@@ -33,9 +33,6 @@ std::string preprocess_source(const std::string& source, const FrontEndOptions& 
 }
 
 c99_ast::Program resolved(const std::string& text, bool optimize) {
-  // The unroller runs before identifier resolution, so each copy of a
-  // body gets names of its own, and string lifting after it, so the
-  // names it makes aren't renamed.
   c99_ast::Program prog = parser::parse(text);
   if (optimize) {
     prog = unroll_program(std::move(prog));

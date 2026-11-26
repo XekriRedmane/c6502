@@ -1,4 +1,3 @@
-// The port of passes/dead_label_drop.py.
 #pragma once
 
 #include <string>
@@ -16,8 +15,7 @@ asm_ast::Program apply_dead_label_drop(asm_ast::Program prog);
 namespace dead_label_drop {
 
 // Returns the label names that a `Jump.target`, a `Branch.target`, or a
-// `Phi` argument's `pred_label` in `instrs` names. Python's
-// `_collect_targets`.
+// `Phi` argument's `pred_label` in `instrs` names.
 std::unordered_set<std::string> collect_targets(Instrs instrs);
 
 }  // namespace dead_label_drop

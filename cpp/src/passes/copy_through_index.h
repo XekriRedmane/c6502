@@ -1,7 +1,3 @@
-// The port of `apply_copy_through_index` from passes/via_a_store_fold.py.
-// The module's other pass, `apply_via_a_store_fold`, belongs to the
-// peephole sweep and is ported on its own, so this one has a file named
-// for itself.
 #pragma once
 
 #include "asm_ast.h"
@@ -10,9 +6,8 @@
 namespace c6502::passes {
 
 // Copies each byte that A is parked for through X or Y instead, in
-// every function of the program, as the comment at the top of
-// copy_through_index.cpp describes. `zp_slot_symbols` gives the
-// slots' addresses for `mem_dead_after`, and may be null.
+// every function of the program. `zp_slot_symbols` gives the slots'
+// addresses for `mem_dead_after`, and may be null.
 asm_ast::Program apply_copy_through_index(asm_ast::Program prog,
                                           const AsmContext& ctx,
                                           const SymbolAddrs* zp_slot_symbols = nullptr);

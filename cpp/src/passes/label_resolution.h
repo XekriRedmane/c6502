@@ -1,5 +1,5 @@
-// passes/label_resolution.py: the labels of labeled statements and the
-// targets of `goto` (C99 §6.8.1, §6.8.6).
+// The labels of labeled statements and the targets of `goto` (C99
+// §6.8.1, §6.8.6).
 #pragma once
 
 #include "c99_ast.h"

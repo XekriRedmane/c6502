@@ -1,54 +1,3 @@
-// Copies a byte through X or Y while A is busy.
-//
-// A byte copied from one place to another while A holds a value it
-// needs again goes through X (or Y) instead of parking A in a slot:
-//
-//     STA   t                     LDX   M
-//     LDA   M            ->       STX   D
-//     STA   D
-//     LDA   t
-//
-// when `t` is one of the function's own `__local_*` slots that nothing
-// reads after the `LDA t`, `M` is a byte or a constant `LDX` can load
-// and `D` one `STX` can store, X is dead from the `STA t` on (else Y,
-// the same way), and N and Z are dead after, since they come from `M`
-// where the `LDA t` set them from A. A ends with the value it had.
-// Zork's `do_var` (examples/zork/decode.c) copies `OPERANDS[0]` into a
-// slot on entry while A holds the opcode it dispatches on. It saves 4
-// bytes with the bytes in zero page.
-//
-// The copies between the `STA t` and the `LDA t` may be several, and
-// each may be a load and any number of stores, or a memory-to-memory
-// `Mov(M, D)`, which `asm_emit` writes as `LDA M; STA D`. A constant
-// already in the register isn't loaded again. Ali Baba's
-// `print_bottom_centered` (examples/ali_baba/text.c) gets its pointer
-// in A and X and stores two constants before passing it on, so X is
-// read by the tail call and Y carries them:
-//
-//     STA   t                     LDY   #$17
-//     LDA   #$17                  STY   TEXT_ROW
-//     STA   TEXT_ROW      ->      LDY   #$00
-//     LDA   #$00                  STY   TEXT_COL
-//     STA   TEXT_COL              JMP   print_centered_plus_col
-//     LDA   t
-//     JMP   print_centered_plus_col
-//
-// The conditions are the ones above, for every copy: nothing in the
-// run reads or writes `t`, every load is a byte or a constant the
-// register can load and every store a `Data` or `ZP` byte, X (or Y) is
-// dead from the `STA t` on, which also means no copy reads it, and N
-// and Z are dead after the `LDA t`, since the last load sets them. C
-// and V are unchanged both ways. A store before the run's first load
-// stores A, which holds the parked value both ways. A volatile load or
-// store stays one access of the same byte in the same order, through
-// the other register.
-//
-// `apply_copy_through_index` runs once, after the last peephole run,
-// `carry_known`, and the jump tables. Before the jump table, `do_var`'s
-// dispatch starts with a `BEQ` that reads the Z from `LDA t`. Inside
-// the fixed point it took the `LDA` of a copy before the folds that
-// remove such copies outright had run, and `branch_to_offset` came out
-// 6 bytes longer.
 #include "passes/copy_through_index.h"
 
 #include <cstddef>
@@ -86,12 +35,6 @@ bool is_constant(const ir::Type_operand& op) {
   return isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh>(op);
 }
 
-// Returns the index of the `LDA t` that ends a run of copies starting
-// at `instrs[start]`, or nothing when the instructions from there
-// aren't such a run. The run holds loads into A of a byte or a constant,
-// stores of A into `Data` or `ZP`, and copies from one to the other
-// (`Mov(M, D)`, which `asm_emit` writes as `LDA M; STA D`), none of
-// them reading or writing `t`, with at least one load or copy.
 std::optional<std::size_t> copies_end(const Instructions& instrs,
                                       std::size_t start,
                                       const ir::Type_operand& t) {
@@ -124,13 +67,9 @@ std::optional<std::size_t> copies_end(const Instructions& instrs,
   return std::nullopt;
 }
 
-// Returns the copies of `body` through `reg`. A store before the first
-// load stores A, which still holds the parked value. A constant already
-// in `reg` isn't loaded again.
 Instructions through_index(const Instructions& body, std::size_t begin,
                            std::size_t end, const ir::Type_operand& reg) {
   Instructions out;
-  // What `reg` holds, nothing before the first load.
   std::optional<ir::Type_operand> held;
   for (std::size_t k = begin; k < end; ++k) {
     const auto& ins = std::get<ir::Mov>(body[k]);
@@ -150,8 +89,6 @@ Instructions through_index(const Instructions& body, std::size_t begin,
   return out;
 }
 
-// Rewrites `STA t; LDA M; STA D; ...; LDA t` as `LDX M; STX D; ...` (or
-// `LDY` / `STY`) in one function.
 void copy_through_index_fn(ir::Function& fn, const AsmContext& ctx,
                            const SymbolAddrs* zp_slot_symbols) {
   Instructions instrs = fn.instructions;
@@ -195,7 +132,6 @@ void copy_through_index_fn(ir::Function& fn, const AsmContext& ctx,
     instrs.insert(instrs.begin() + static_cast<long>(i), copies.begin(),
                   copies.end());
     changed = true;
-    // Python moves on by `back - i - 1`, which lands on `back - 1`.
     i = *back - 1;
   }
   if (changed) {

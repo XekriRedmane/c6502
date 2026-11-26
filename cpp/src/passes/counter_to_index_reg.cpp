@@ -1,67 +1,3 @@
-// Moves a pure count-down loop counter from memory into X (or Y).
-//
-// Motivating shape
-//
-//     do { ... } while (--count != 0);
-//
-// with `count` used for nothing else lowers to a counter in a ZP byte:
-//
-//     LDA   n
-//     STA   count                 ; init
-//     .loop:
-//     ...
-//     DEC   count                 ; 5 cycles (zero page)
-//     BNE   .loop
-//
-// When the loop doesn't use X, the hand-written form keeps the counter
-// in X instead: `LDX n` before the loop and `DEX` (2 cycles) at the
-// bottom. `loop_counter_to_x` does this for counters that are also an
-// index (reloaded with `LDX count`). This pass covers the counter that
-// is never read except by the `DEC` and its branch.
-//
-// Rewrite
-//
-// `Mov(src, M)` (the init) becomes `Mov(src, Reg(X))` and `Dec(M)`
-// becomes `Dec(Reg(X))`. With `src = Reg(A)` that's `STA M` -> `TAX`,
-// and the peepholes later fold `LDA n; TAX` into `LDX n`. DEX sets N/Z
-// from the new value exactly as DEC M did, so the branch after it reads
-// the same flags.
-//
-// Eligibility
-//
-// - `M` is a `Data` / `ZP` operand referenced by exactly two
-//   instructions in the function: one `Mov(src, M)` and one `Dec(M)`,
-//   and the `Dec` is directly followed by a `Branch(NE|EQ)` to a label
-//   at or before it (the loop's back edge). The init comes first.
-// - Between the init and that branch, no instruction from which the
-//   `DEC` can still be reached reads or writes the register (including
-//   through an indexed operand, or the `LDY` setup of a soft-stack or
-//   indirect operand when the register is Y), and there's no `Call`
-//   there, since a callee may clobber it, unless the callee is
-//   declared to preserve the register (`preserves_x` / `preserves_y`)
-//   and doesn't take it as an argument. An exit path (one that
-//   returns or leaves the loop for good) may use the register, since
-//   the counter is dead there.
-// - Nothing outside the loop jumps into it, so every path to the
-//   `DEC` passes through the init. The loop is every instruction the
-//   code after the init reaches and that reaches the `DEC` again, so a
-//   block of it placed out of line counts, as the `ssa_split` block
-//   that `divu16` (examples/zork/numbers.c) leaves after its `RTS` for
-//   the path where the divisor doesn't fit.
-// - The register is dead at the init (`x_dead_at` / `y_dead_at`), so
-//   overwriting it there can't change a later read. An init from the
-//   register itself, `STY M` with the counter going in Y, is dropped
-//   instead, when Y is dead after it. An init from the other index
-//   register is left alone, since the 6502 has no `TXY` or `TYX`, and
-//   `asm_emit` writes `Mov(Reg(Y), Reg(X))` as `TYA; TAX`, which
-//   changes A behind the backs of the passes that run after this one.
-//
-// X is tried first, then Y.
-//
-// Where it runs
-//
-// After `loop_counter_to_x` and before the second peephole fixedpoint,
-// which folds the `LDA n; TAX` the rewrite leaves.
 #include "passes/counter_to_index_reg.h"
 
 #include <algorithm>
@@ -85,8 +21,6 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// Python: `_operands`, the operands of the instruction kinds the pass
-// looks at, in field order.
 std::vector<ir::Type_operand> operands(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case ir::Kind_instruction::DecimalArith:
@@ -146,8 +80,6 @@ std::vector<ir::Type_operand> operands(const ir::Type_instruction& instr) {
   }
 }
 
-// The byte an operand names: a `Data` byte by its name and offset, and
-// a `ZP` byte by its address plus its offset.
 struct Key {
   bool is_zp = false;
   std::string name;
@@ -181,10 +113,6 @@ bool is_index_reg(const ir::Type_reg& reg, IndexReg which) {
   return which == IndexReg::kX ? isa<ir::X>(reg) : isa<ir::Y>(reg);
 }
 
-// Returns whether `instr` reads or writes the register, directly, as an
-// index, or (for Y) through an operand's `LDY` setup. A call touches it
-// unless the callee is declared to preserve it
-// (`asm_liveness.call_preserves`) and doesn't take it as an argument.
 bool touches_reg(const ir::Type_instruction& instr, IndexReg which) {
   if (const auto* call = as<ir::Call>(instr)) {
     const std::string reg = which == IndexReg::kX ? "X" : "Y";
@@ -226,7 +154,6 @@ const std::string* target(const ir::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns the indices that can run right after `instrs[i]`.
 std::vector<std::size_t> successors(Instrs instrs, std::size_t i,
                                     const LabelMap& labels) {
   const auto& ins = instrs[i];
@@ -254,12 +181,6 @@ std::vector<std::size_t> successors(Instrs instrs, std::size_t i,
   return out;
 }
 
-// Returns the instructions the code after the init reaches and that
-// reach the DEC again without passing the init: the loop, with any
-// block of it placed out of line (as `ssa_split` blocks are, after the
-// function's return). Returns nothing when an instruction outside it,
-// other than the init, jumps or falls into it, since the counter would
-// arrive there without its init.
 std::optional<std::vector<bool>> loop_region(Instrs instrs, std::size_t init_i,
                                              std::size_t dec_i,
                                              const LabelMap& labels) {
@@ -293,11 +214,6 @@ std::optional<std::vector<bool>> loop_region(Instrs instrs, std::size_t init_i,
   while (!stack.empty()) {
     const std::size_t i = stack.back();
     stack.pop_back();
-    // The walk back stops at the init, which gives the counter its
-    // value. An enclosing loop that runs the init again on each of its
-    // passes is outside the counter's loop, so the counter may take a
-    // register the enclosing loop uses, such as the outer counter of a
-    // delay `do { for (y = n; --y;) {} } while (--count);`.
     if (loop[i] || !forward[i] || i == init_i) {
       continue;
     }
@@ -317,13 +233,10 @@ std::optional<std::vector<bool>> loop_region(Instrs instrs, std::size_t init_i,
   return loop;
 }
 
-// Rewrites one counter of `instrs`, and returns whether it found one.
 bool rewrite_one(std::vector<ir::Type_instruction>& instrs,
                  const SymbolAddrs* zp_symbol_addrs) {
   const Instrs view(instrs);
   const std::set<asdl::Int> pointer_addrs = pointer_byte_addresses(view);
-  // The references to each byte, in the order the bytes first appear,
-  // as the Python dict iterates them.
   std::vector<std::pair<Key, std::vector<std::size_t>>> refs;
   std::map<Key, std::size_t> ref_index;
   std::set<Key> pointer_keys;
@@ -338,8 +251,6 @@ bool rewrite_one(std::vector<ir::Type_instruction>& instrs,
         refs.emplace_back(*k, std::vector<std::size_t>{});
       }
       refs[it->second].second.push_back(i);
-      // A read through a `(zp),Y` pointer reads its bytes by address,
-      // which `refs` doesn't count.
       if (is_pointer_byte(op, pointer_addrs, zp_symbol_addrs)) {
         pointer_keys.insert(*k);
       }
@@ -376,9 +287,6 @@ bool rewrite_one(std::vector<ir::Type_instruction>& instrs,
       continue;
     }
     for (IndexReg which : {IndexReg::kX, IndexReg::kY}) {
-      // The register may only be touched where the counter is dead: at
-      // points from which the DEC can't be reached again (an exit path
-      // out of the loop).
       bool touched = false;
       for (std::size_t i = 0; i < instrs.size() && !touched; ++i) {
         touched = (*loop)[i] && i != dec_i && touches_reg(instrs[i], which);
@@ -386,14 +294,8 @@ bool rewrite_one(std::vector<ir::Type_instruction>& instrs,
       if (touched) {
         continue;
       }
-      // LDX / LDY must be able to load the init's source: no `abs,X`
-      // into X (`abs,Y` into Y), and not the other index register,
-      // since the 6502 has no TXY or TYX. `asm_emit` would write
-      // `Mov(Y, X)` as `TYA; TAX`, which changes A where the passes
-      // after this one take A to be unchanged. The register itself
-      // already holds the init's value, and its store goes, when
-      // nothing after the store reads the value the register held,
-      // which the DEC now changes.
+      // LDX has no abs,X mode and LDY no abs,Y mode, and the 6502 has no
+      // TXY or TYX.
       const ir::Type_operand reg =
           which == IndexReg::kX ? ir::Reg{.reg = ir::X{}} : ir::Reg{.reg = ir::Y{}};
       auto dead_at = [&](std::size_t idx) {

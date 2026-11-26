@@ -1,50 +1,3 @@
-// The port of passes/designators.py, designated initializers (C99
-// §6.7.8, C23 §6.7.11).
-//
-// The parser leaves an item such as `[2] = v`, `.x = v`, or `.a[2].b =
-// v` in a braced list as a c99 `Designation`, with an array designator's
-// index already folded to an integer. `normalize_initializer` rewrites a
-// list with designations into the positional form the rest of the
-// compiler handles. That form has one item per subobject, in order, with
-// the empty initializer `{}` for each subobject that nothing
-// initializes, which default-initializes it (zero, or a null pointer). A
-// union's list holds one item, and `InitList.union_member` names the
-// member it initializes.
-//
-//     struct p { int x; int y; };
-//     struct s { int n; struct p pt[2]; };
-//     struct s v = {.pt[1].y = 7, .n = 3};
-//
-// becomes
-//
-//     struct s v = {3, { {}, {{}, 7} }};
-//
-// string_lifting calls this first, because it is the first pass that
-// dispatches each item of a list by the type it initializes, so no pass
-// after it sees a `Designation`. The type checker calls it too, for the
-// lists the parser checks while folding a `constexpr` object.
-//
-// The rules come from §6.7.11p17-22.
-//
-// - A designation starts at the list's own object. After it, a
-//   positional item initializes the subobject after the one the first
-//   designator names. When the designation has more than one
-//   designator, the item after it would continue inside a subaggregate,
-//   which takes brace elision. c6502 doesn't elide braces, so that is an
-//   error that says to brace the subaggregate.
-// - A later initializer of a subobject overrides an earlier one. When
-//   the later one is a designation that reaches inside a subaggregate,
-//   it overrides only the part it names, and the rest of the earlier
-//   initializer stays. An overridden initializer is never evaluated. C
-//   leaves it unspecified whether its side effects happen (§6.7.11p19),
-//   and c6502 rejects an overridden initializer that has any, which is
-//   an assignment, an increment or decrement, or a call. A read of a
-//   volatile object in one is dropped without an error, since the types
-//   of names aren't known here.
-// - A designation that initializes one member of a union replaces any
-//   earlier initializer of another member.
-// - An array of unknown size takes its size from the largest index
-//   initialized.
 #include "passes/designators.h"
 
 #include <memory>
@@ -80,7 +33,6 @@ const std::string& tag_of(const Type& t) {
 
 std::string plural(Int n) { return n != Int(1) ? "s" : ""; }
 
-// Returns the designators as the program writes them, such as `.a[2].b`.
 std::string spell(const std::vector<ir::Type_designator>& designators, std::size_t count) {
   std::string out;
   for (std::size_t i = 0; i < count && i < designators.size(); ++i) {
@@ -100,18 +52,12 @@ std::string spell(const std::vector<ir::Type_designator>& designators) {
 
 struct Partial;
 
-// The initializer of one element or member: an expression (a braced
-// list among them) or a `Partial`.
 struct Slot {
   Int key = 0;
   std::optional<Exp> exp;
   std::unique_ptr<Partial> partial;
 };
 
-// An aggregate whose initializer is being put together. `slots` maps the
-// index of an element or member to its initializer, in the order of
-// Python's dict, which keeps a key's place when it is assigned again.
-// For a union, `slots` has at most one entry, the member initialized.
 struct Partial {
   Type t;
   std::string path;
@@ -138,9 +84,7 @@ bool has_side_effects(const Partial& node) {
   return false;
 }
 
-// Returns whether evaluating the initializer `node` assigns, increments,
-// decrements, or calls a function. The operand of `sizeof` isn't
-// evaluated, so it doesn't count.
+// The operand of `sizeof` isn't evaluated (C99 §6.5.3.4p2).
 bool has_side_effects(const Exp& node) {
   using E = ir::Kind_exp;
   switch (ir::kind(node)) {
@@ -205,8 +149,6 @@ class Normalizer {
  public:
   explicit Normalizer(const LayoutOf& layout_of) : layout_of_(layout_of) {}
 
-  // Returns the positional form of the list `init`, which initializes
-  // the object `path` of type `t`.
   Exp list(const ir::InitList& init, const Type& t, const std::string& path) {
     const Type& t_unq = strip_quals(t);
     if (!is_aggregate(t_unq)) {
@@ -218,8 +160,6 @@ class Normalizer {
                 "§6.7.11p6-7)");
         }
       }
-      // A scalar's braces hold one expression. A list nested in them is
-      // left for the type checker to reject.
       return init;
     }
     Partial partial{.t = t_unq, .path = path, .slots = {}};
@@ -228,7 +168,6 @@ class Normalizer {
   }
 
  private:
-  // Applies the items of the list `init` to `partial`, in order.
   void fill(Partial& partial, const ir::InitList& init) {
     Int pos = 0;
     const std::vector<ir::Type_designator>* chain = nullptr;
@@ -258,8 +197,6 @@ class Normalizer {
     }
   }
 
-  // Throws when the positional item at index `k` is past the end of
-  // `partial`.
   void check_in_range(const Partial& partial, Int k) {
     if (const auto* a = std::get_if<ir::Array>(&partial.t)) {
       if (a->size != Int(0) && k >= a->size) {
@@ -278,7 +215,6 @@ class Normalizer {
     }
   }
 
-  // Returns the `(name, type)` pairs of the struct or union `partial`.
   Members members(const Partial& partial) { return members_of(partial.t, partial.path); }
 
   Members members_of(const Type& t, const std::string& path) {
@@ -297,8 +233,6 @@ class Normalizer {
     std::string path;
   };
 
-  // Returns the index, type, and path of the subobject the designator
-  // `d` names in the object `path` of type `t`.
   Step step(const Type& t, const ir::Type_designator& d, const std::string& path) {
     const Type& t_unq = strip_quals(t);
     if (const auto* index = std::get_if<ir::IndexDesignator>(&d)) {
@@ -330,8 +264,6 @@ class Normalizer {
           "`, which has type `" + c_type(t) + "` (C23 §6.7.11p7)");
   }
 
-  // Applies the designation `designators[first:] = init` to `partial`
-  // and returns the index of the subobject its first designator names.
   Int place(Partial& partial, const std::vector<ir::Type_designator>& designators,
             std::size_t first, const Exp& init) {
     Step s = step(partial.t, designators[first], partial.path);
@@ -339,16 +271,12 @@ class Normalizer {
       set(partial, s.index, init);
       return s.index;
     }
-    // The next designator is checked against the subobject first, so a
-    // wrong one is reported before anything is overridden.
     step(s.type, designators[first + 1], s.path);
     if (asdl::isa<ir::Union>(partial.t)) {
       drop_other_members(partial, s.index);
     }
     Slot* old = partial.find(s.index);
     if (old != nullptr && old->partial) {
-      // The subobject's earlier initializer is a `Partial` already, which
-      // the designation changes in place.
       place(*old->partial, designators, first + 1, init);
       return s.index;
     }
@@ -363,8 +291,6 @@ class Normalizer {
     return s.index;
   }
 
-  // Makes `init` the initializer of subobject `k` of `partial`,
-  // overriding whatever initialized it before.
   void set(Partial& partial, Int k, const Exp& init) {
     if (asdl::isa<ir::Union>(partial.t)) {
       drop_other_members(partial, k);
@@ -378,8 +304,6 @@ class Normalizer {
     partial.slots.push_back(Slot{.key = k, .exp = init, .partial = nullptr});
   }
 
-  // Discards the initializer of each member of the union `partial` other
-  // than member `k`, since a union holds one.
   void drop_other_members(Partial& partial, Int k) {
     std::vector<Int> others;
     for (const Slot& s : partial.slots) {
@@ -407,8 +331,6 @@ class Normalizer {
     return partial.path + "." + members.at(static_cast<std::size_t>(k)).first;
   }
 
-  // Returns the subobject's earlier initializer `old` as a `Partial`
-  // that a later designation can override part of.
   std::unique_ptr<Partial> as_partial(const Exp* old, const Type& t, const std::string& path) {
     auto partial = std::make_unique<Partial>(Partial{.t = strip_quals(t), .path = path, .slots = {}});
     if (old == nullptr) {
@@ -426,8 +348,6 @@ class Normalizer {
           path + "` with a braced list instead");
   }
 
-  // Drops the overridden initializer `old` of `path`, which must have no
-  // side effects.
   void discard(const Slot& old, const std::string& path) {
     const bool effects = old.partial ? has_side_effects(*old.partial) : has_side_effects(*old.exp);
     if (effects) {
@@ -438,7 +358,6 @@ class Normalizer {
     }
   }
 
-  // Returns the positional InitList for `partial`.
   Exp emit(Partial& partial) {
     const Type& t = partial.t;
     if (const auto* a = std::get_if<ir::Array>(&t)) {

@@ -1,5 +1,5 @@
-// passes/identifier_resolution.py: the resolution of every identifier
-// to a declaration, with each declaration's linkage (C99 §6.2.2).
+// The resolution of every identifier to a declaration, with each
+// declaration's linkage (C99 §6.2.2).
 #pragma once
 
 #include "c99_ast.h"

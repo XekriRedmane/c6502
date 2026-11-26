@@ -1,5 +1,5 @@
-// The port of passes/decimal_arith.py: the operands that asm
-// `DecimalArith`, the packed BCD add or subtract, reads and writes.
+// The operands that asm `DecimalArith`, the packed BCD add or subtract,
+// reads and writes.
 #pragma once
 
 #include <string>
@@ -46,8 +46,7 @@ std::vector<asm_ast::Pseudo> pseudo_reads(const asm_ast::DecimalArith& instr);
 std::vector<asm_ast::Pseudo> pseudo_writes(const asm_ast::DecimalArith& instr);
 
 // Return the operands `pseudo_reads` and `pseudo_writes` return, as
-// pointers into `instr`, for the liveness of the register allocation,
-// which asks for them at every instruction it walks.
+// pointers into `instr`.
 std::vector<const asm_ast::Pseudo*> pseudo_read_ptrs(const asm_ast::DecimalArith& instr);
 std::vector<const asm_ast::Pseudo*> pseudo_write_ptrs(const asm_ast::DecimalArith& instr);
 
@@ -84,8 +83,7 @@ std::vector<asm_ast::Type_operand> later_sources(const asm_ast::DecimalArith& in
 
 // Returns the `(dst, source)` Pseudo name pairs that must not share a
 // byte, because `dst[k]` is written before the source byte of index
-// j > k is read. Liveness after the instruction doesn't show these, so
-// the interference graphs add them.
+// j > k is read.
 std::vector<std::pair<std::string, std::string>> early_write_pairs(
     const asm_ast::DecimalArith& instr);
 

@@ -28,9 +28,6 @@ using Types = TypeTableC;
 template <class C>
 constexpr RoundTrip rt = &round_trip<C>;
 
-// Returns the string a record holds on its `input-json` line, the
-// source text of `preprocess` and `parse` and the spelling that the
-// functions of pp_numbers.py take.
 std::string input_string(const capture::Call& call) {
   return Str::decode(json::parse(call.input));
 }
@@ -42,7 +39,6 @@ const json::Value& arg(const json::Value& args, std::size_t i) {
   return args.items[i];
 }
 
-// Runs the parser on the record's source text.
 StageOutput run_parse(const capture::Call& call, const AsmContext&, const json::Value&,
                       const json::Value&) {
   return {asdl::dump(parser::parse(input_string(call))), "", ""};
@@ -78,10 +74,6 @@ StageOutput run_loop_labeling(const capture::Call& call, const AsmContext&, cons
   return {asdl::dump(label_program(std::move(prog))), "", ""};
 }
 
-// Runs the type checker, which stamps the program it is given and
-// returns that program with the two tables. The `mutated` line holds the
-// program after the call under `input` when the call changed it, as
-// tools/capture_passes.py's `_mutated_json` writes it.
 StageOutput run_type_checking(const capture::Call& call, const AsmContext&, const json::Value&,
                               const json::Value&) {
   auto prog = asdl::load<c99_ast::Program>(call.input);
@@ -136,8 +128,6 @@ StageOutput run_pp_check(const capture::Call& call, const AsmContext&, const jso
 
 std::vector<StageSignature> signatures() {
   return {
-      // `preprocess(source, pcpp_args, filename)`, which reads the
-      // files the source includes from their paths.
       {.name = "preprocess",
        .input_json = rt<Str>,
        .args = {rt<ListOf<Str>>, rt<Optional<Str>>},
@@ -164,9 +154,6 @@ std::vector<StageSignature> signatures() {
        .input = "c99_ast",
        .output_module = "c99_ast",
        .run = &run_loop_labeling},
-      // The type checker stamps the program it is given and returns it
-      // with the two tables, so its record's `mutated` line holds the
-      // program after the call under `input`.
       {.name = "type_checking",
        .input = "c99_ast",
        .output = rt<Triple<C99ProgramC, Sym, Types>>,

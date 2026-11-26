@@ -1,11 +1,8 @@
-// The port of passes/designators.py, which rewrites a braced
-// initializer with designators (`[2] = v`, `.x = v`, `.a[2].b = v`, C23
-// §6.7.11) into the positional form every later pass handles: one item
-// per subobject in order, `{}` for each subobject nothing initializes,
-// and for a union one item with `InitList.union_member` naming the
-// member. string_lifting calls it for every declaration and compound
-// literal, and the type checker for the lists the parser checks while
-// folding a `constexpr` object.
+// Rewrites a braced initializer with designators (`[2] = v`, `.x = v`,
+// `.a[2].b = v`, C23 §6.7.11) into the positional form, which has one
+// item per subobject in order, `{}` for each subobject nothing
+// initializes, and for a union one item with `InitList.union_member`
+// naming the member.
 #pragma once
 
 #include <functional>
@@ -24,7 +21,7 @@ namespace c6502::passes::designators {
 using Members = std::vector<std::pair<std::string, c99_ast::Type_data_type>>;
 
 // Returns the members of the struct or union `tag`, or none when the tag
-// has no body (Python's `LayoutOf`).
+// has no body.
 using LayoutOf = std::function<std::optional<Members>(std::string_view tag)>;
 
 // Returns whether the braced list `init`, or a list nested in it, has a

@@ -68,3 +68,46 @@ TEST_CASE("zp_globals: hargs_need counts the bytes of a DecimalArith") {
                        asm_ir::Return{}}};
   CHECK(c6502::passes::hargs_need(asm_ir::Program{.top_level = {left_only}}, {}) == 10);
 }
+
+TEST_CASE("zp_globals: __zp_init loads each initial byte once, zero first") {
+  c6502::passes::ZpGlobals zp;
+  zp.addrs.insert_or_assign("a", 0x30);
+  zp.addrs.insert_or_assign("b", 0x33);
+  zp.addrs.insert_or_assign("c", 0x35);
+  zp.owned.insert("a");
+  zp.owned.insert("b");
+  asm_ir::Program prog{
+      .top_level = {asm_ir::StaticVariable{.name = "a",
+                                           .is_global = true,
+                                           .init = {asm_ir::CharInit{.value = 5},
+                                                    asm_ir::CharInit{.value = 0},
+                                                    asm_ir::CharInit{.value = 5}}},
+                    asm_ir::StaticVariable{.name = "b",
+                                           .is_global = false,
+                                           .init = {asm_ir::CharInit{.value = 7},
+                                                    asm_ir::CharInit{.value = 0}}},
+                    // `c` is another unit's, so this one stores none of
+                    // its bytes.
+                    asm_ir::StaticVariable{.name = "c",
+                                           .is_global = true,
+                                           .init = {asm_ir::CharInit{.value = 9}}},
+                    asm_ir::StaticVariable{.name = "d",
+                                           .is_global = true,
+                                           .init = {asm_ir::CharInit{.value = 1}}}}};
+  const asm_ir::Program out = c6502::passes::place_zp_globals(prog, zp, {});
+  REQUIRE(out.top_level.size() == 2);
+  CHECK(std::get<asm_ir::StaticVariable>(out.top_level[0]).name == "d");
+  const auto& init = std::get<asm_ir::Function>(out.top_level[1]);
+  CHECK(init.name == c6502::passes::kZpInitFunction);
+  const asm_ir::Type_operand a = asm_ir::Reg{.reg = asm_ir::A{}};
+  const auto load = [&](Int v) -> asm_ir::Type_instruction {
+    return asm_ir::Mov{.src = asm_ir::Imm{.value = v}, .dst = a, .is_volatile = false};
+  };
+  const auto store = [&](const std::string& name, Int k) -> asm_ir::Type_instruction {
+    return asm_ir::Mov{.src = a, .dst = data(name, k), .is_volatile = false};
+  };
+  const std::vector<asm_ir::Type_instruction> expected = {
+      load(0),     store("a", 1), store("b", 1), load(5), store("a", 0),
+      store("a", 2), load(7),     store("b", 0), asm_ir::Return{}};
+  CHECK(init.instructions == expected);
+}

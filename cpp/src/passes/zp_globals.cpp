@@ -177,8 +177,13 @@ asm_ast::Program place_zp_globals(asm_ast::Program prog, const ZpGlobals& zp,
   if (zp.addrs.empty()) {
     return prog;
   }
-  std::map<std::string, std::vector<ir::Type_operand>> stores;
-  std::vector<std::string> order;
+  // Each initial byte value, in the order of its first use, with the
+  // bytes it goes to, so that `__zp_init` loads each value once.
+  struct ValueStores {
+    ir::Type_operand value;
+    std::vector<ir::Type_operand> dsts;
+  };
+  std::vector<ValueStores> stores;
   std::vector<ir::Type_top_level> top;
   for (auto& tl : prog.top_level) {
     if (const auto* sv = asdl::as<ir::StaticVariable>(tl);
@@ -186,13 +191,12 @@ asm_ast::Program place_zp_globals(asm_ast::Program prog, const ZpGlobals& zp,
       if (zp.owned.contains(sv->name)) {
         const std::vector<ir::Type_operand> srcs = init_operands(sv->init);
         for (std::size_t k = 0; k < srcs.size(); ++k) {
-          std::string key = asdl::dump(srcs[k]);
-          auto [it, fresh] = stores.try_emplace(key);
-          if (fresh) {
-            it->second.push_back(srcs[k]);
-            order.push_back(key);
+          auto it = std::find_if(stores.begin(), stores.end(),
+                                 [&](const ValueStores& s) { return s.value == srcs[k]; });
+          if (it == stores.end()) {
+            it = stores.insert(stores.end(), ValueStores{.value = srcs[k], .dsts = {}});
           }
-          it->second.emplace_back(
+          it->dsts.emplace_back(
               ir::Data{.name = sv->name, .offset = static_cast<long long>(k)});
         }
       }
@@ -200,20 +204,22 @@ asm_ast::Program place_zp_globals(asm_ast::Program prog, const ZpGlobals& zp,
     }
     top.push_back(std::move(tl));
   }
-  if (order.empty()) {
+  if (stores.empty()) {
     return ir::Program{.top_level = std::move(top)};
   }
-  const std::string zero = asdl::dump(ir::Type_operand(ir::Imm{.value = 0}));
-  std::stable_sort(order.begin(), order.end(), [&](const std::string& a, const std::string& b) {
-    return (a == zero) && (b != zero);
-  });
+  // The zero value, which `stores` holds at most once, goes first.
+  const ir::Type_operand zero = ir::Imm{.value = 0};
+  if (const auto it = std::find_if(stores.begin(), stores.end(),
+                                   [&](const ValueStores& s) { return s.value == zero; });
+      it != stores.end()) {
+    std::rotate(stores.begin(), it, it + 1);
+  }
   const ir::Type_operand a = ir::Reg{.reg = ir::A{}};
   std::vector<ir::Type_instruction> body;
-  for (const auto& key : order) {
-    const auto& values = stores.at(key);
-    body.emplace_back(ir::Mov{.src = values.front(), .dst = a, .is_volatile = false});
-    for (std::size_t i = 1; i < values.size(); ++i) {
-      body.emplace_back(ir::Mov{.src = a, .dst = values[i], .is_volatile = false});
+  for (const auto& s : stores) {
+    body.emplace_back(ir::Mov{.src = s.value, .dst = a, .is_volatile = false});
+    for (const auto& dst : s.dsts) {
+      body.emplace_back(ir::Mov{.src = a, .dst = dst, .is_volatile = false});
     }
   }
   body.emplace_back(ir::Return{.save_a = false, .save_x = false});

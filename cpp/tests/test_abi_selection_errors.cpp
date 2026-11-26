@@ -46,6 +46,32 @@ TEST_CASE("select_abi: an unnamed register parameter is named by its position") 
       "");
 }
 
+// A function with a `register` parameter that can't be zp_abi for
+// another reason gets the reason after what it asks for, even when its
+// name has "register" in it.
+TEST_CASE("select_abi: a recursive function with a register parameter") {
+  c6502::testing::check_stage_call(
+      "select_abi",
+      c99_args(
+          R"~(  FunctionDecl(function_decl(\"register_isr\" [\"@0.x\"] Block([]) FunType([UChar] UChar) None None [\"auto\"] false None [] None false))\n)~"),
+      kClassicContext, false,
+      "Program([\n"
+      "  Function(\"register_isr\" true [\"@0.x\"] [\n"
+      "    FunctionCall(\"register_isr\" [Var(\"@0.x\")] Var(\"%0\") false false)\n"
+      "    Ret(Var(\"%0\"))\n"
+      "  ])\n"
+      "  Function(\"main\" true [] [\n"
+      "    Ret(Constant(ConstInt(0)))\n"
+      "  ])\n"
+      "])\n",
+      "exception: AbiSelectionError: function `register_isr` declares a `register` parameter "
+      "or local but isn't eligible for the ZP-passing ABI: function `register_isr` declared "
+      "`[[c6502::zp_abi]]` but is reachable from itself through the static call graph (direct "
+      "or mutual recursion); a recursive call would clobber the parameter ZP slots before the "
+      "outer activation returned\n",
+      "");
+}
+
 TEST_CASE("fixed_address_layouts: a fixed-address declaration without a function type") {
   c6502::testing::check_stage_call(
       "fixed_address_layouts",

@@ -30,6 +30,20 @@ using Decls = OrderedMap<std::string, const c99::Type_function_decl*>;
   throw CompileError("AbiSelectionError", message);
 }
 
+// The error for a `register` or `in_*` parameter that its function
+// can't have, which `select_abi` reports as it is. Any other reason
+// such a function can't be zp_abi, it reports as the reason the
+// request can't be met.
+class RegisterRequestError : public CompileError {
+ public:
+  explicit RegisterRequestError(const std::string& message)
+      : CompileError("AbiSelectionError", message) {}
+};
+
+[[noreturn]] void fail_request(const std::string& message) {
+  throw RegisterRequestError(message);
+}
+
 bool is_abi_error(const CompileError& e) { return e.python_type() == "AbiSelectionError"; }
 
 Range zp_param_window(const Pool& pool) { return pool.caller_saved(); }
@@ -155,21 +169,22 @@ std::vector<std::optional<std::string>> assign_param_registers(
     const c99::Type_data_type* param_t = ft != nullptr ? &strip_quals(ft->params[i]) : nullptr;
     const std::string pname = param_name(fn_decl, i);
     if (marker == "auto" && param_t != nullptr && isa<c99::Pointer>(*param_t)) {
-      fail("function `" + where + "` parameter `" + pname +
-           "` is a pointer and can't be passed in a register");
+      fail_request("function `" + where + "` parameter `" + pname +
+                   "` is a pointer and can't be passed in a register");
     }
     if (marker == "auto" && n_bytes > 2) {
-      fail("function `" + where + "` parameter `" + pname + "` is " + pyrepr::integer(n_bytes) +
-           " bytes \xE2\x80\x94 a `register` parameter must fit in at most 2 bytes (A, X)");
+      fail_request("function `" + where + "` parameter `" + pname + "` is " +
+                   pyrepr::integer(n_bytes) +
+                   " bytes \xE2\x80\x94 a `register` parameter must fit in at most 2 bytes (A, X)");
     }
     if (marker != "auto") {
       if (static_cast<asdl::Int>(marker.size()) != n_bytes) {
         const std::string attr = "in_" + lower(marker);
-        fail("function `" + where + "` parameter `" + pname + "` is " +
-             pyrepr::integer(n_bytes) + " byte" + (n_bytes > 1 ? "s" : "") + ", but `" + attr +
-             "` names " + std::to_string(marker.size()) + " register" +
-             (marker.size() > 1 ? "s" : "") +
-             "; name one register for each byte, low byte first");
+        fail_request("function `" + where + "` parameter `" + pname + "` is " +
+                     pyrepr::integer(n_bytes) + " byte" + (n_bytes > 1 ? "s" : "") + ", but `" +
+                     attr + "` names " + std::to_string(marker.size()) + " register" +
+                     (marker.size() > 1 ? "s" : "") +
+                     "; name one register for each byte, low byte first");
       }
       for (const char r : marker) {
         per_byte.emplace_back(std::string(1, r));
@@ -188,11 +203,11 @@ std::vector<std::optional<std::string>> assign_param_registers(
         if (free.empty()) {
           free = "none";
         }
-        fail("function `" + where +
-             "`: too many `register` argument bytes \xE2\x80\x94 a `register` parameter "
-             "without `in_a`, `in_x`, or `in_y` goes in A, then X, and the free ones here "
-             "are: " +
-             free);
+        fail_request("function `" + where +
+                     "`: too many `register` argument bytes \xE2\x80\x94 a `register` "
+                     "parameter without `in_a`, `in_x`, or `in_y` goes in A, then X, and the "
+                     "free ones here are: " +
+                     free);
       }
       per_byte.emplace_back(std::string(1, positional[next_reg]));
       ++next_reg;
@@ -819,12 +834,11 @@ Abi select_abi(const tac::Program& prog, const c99::Program& c99_prog, const Typ
           throw;
         }
         if (has_register_request(*fn_decl)) {
-          const std::string msg = exc.what();
-          if (msg.find("register") != std::string::npos) {
+          if (dynamic_cast<const RegisterRequestError*>(&exc) != nullptr) {
             throw;
           }
           fail("function `" + fn->name + "` declares " + request_words(*fn_decl) +
-               " but isn't eligible for the ZP-passing ABI: " + msg);
+               " but isn't eligible for the ZP-passing ABI: " + exc.what());
         }
         out.insert_or_assign(fn->name, SoftStackLayout{});
       }

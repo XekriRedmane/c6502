@@ -272,7 +272,7 @@ bool rewrite_step_then_reload(Instructions& instrs) {
 
 struct Match {
   ir::Type_operand reg;
-  bool is_decrement = false;
+  bool increment = false;
   ir::Type_operand dst;
 };
 
@@ -285,29 +285,8 @@ std::optional<Match> match_pattern(const Instructions& instrs, std::size_t i) {
       !is_reg(a->dst, reg_is_a)) {
     return std::nullopt;
   }
-  const ir::Type_instruction& b = instrs[i + 1];
-  const ir::Type_instruction& c = instrs[i + 2];
-  const ir::Type_operand* c_src = nullptr;
-  const ir::Type_operand* c_dst = nullptr;
-  bool is_decrement = false;
-  if (const auto* sub = as<ir::Sub>(c)) {
-    if (!isa<ir::SetCarry>(b)) {
-      return std::nullopt;
-    }
-    c_src = &sub->src;
-    c_dst = &sub->dst;
-    is_decrement = true;
-  } else if (const auto* add = as<ir::Add>(c)) {
-    if (!isa<ir::ClearCarry>(b)) {
-      return std::nullopt;
-    }
-    c_src = &add->src;
-    c_dst = &add->dst;
-  } else {
-    return std::nullopt;
-  }
-  const auto* imm = as<ir::Imm>(*c_src);
-  if (imm == nullptr || imm->value != 1 || !is_reg(*c_dst, reg_is_a)) {
+  const auto step = small_step(instrs[i + 1], instrs[i + 2]);
+  if (!step || step->k != 1) {
     return std::nullopt;
   }
   // STX and STY have no indirect or absolute indexed form.
@@ -327,7 +306,7 @@ std::optional<Match> match_pattern(const Instructions& instrs, std::size_t i) {
   if (!(c_dead_at(instrs, after) && v_dead_at(instrs, after))) {
     return std::nullopt;
   }
-  return Match{a->src, is_decrement, d->dst};
+  return Match{a->src, step->increment, d->dst};
 }
 
 bool rewrite_pm1_stores(Instructions& instrs) {
@@ -338,7 +317,7 @@ bool rewrite_pm1_stores(Instructions& instrs) {
     if (const auto match = match_pattern(instrs, i)) {
       const ir::Type_operand reg =
           ir::Reg{.reg = std::get<ir::Reg>(match->reg).reg};
-      out.push_back(step_of(!match->is_decrement, reg));
+      out.push_back(step_of(match->increment, reg));
       out.push_back(ir::Mov{.src = reg, .dst = match->dst, .is_volatile = false});
       i += 4;
       changed = true;

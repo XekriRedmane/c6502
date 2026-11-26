@@ -105,6 +105,18 @@ TEST_CASE("transfer_pm1_store keeps the store from A where the fold isn't sound"
     const string text = mov(kX, kA) + kClc + sbc(1) + mov(kA, m) + kRts;
     CHECK(run(text) == expect(text));
   }
+  SUBCASE("SEC before ADC #1, which doesn't step by 1") {
+    const string text = mov(kX, kA) + kSec + adc(1) + mov(kA, m) + kRts;
+    CHECK(run(text) == expect(text));
+  }
+  SUBCASE("SBC #3, which no step folds") {
+    const string text = mov(kX, kA) + kSec + sbc(3) + mov(kA, m) + kRts;
+    CHECK(run(text) == expect(text));
+  }
+  SUBCASE("ADC #2, where two INX go before the TXA") {
+    CHECK(run(mov(kX, kA) + kClc + adc(2) + mov(kA, m) + kRts) ==
+          expect(inc(kX) + inc(kX) + mov(kX, kA) + mov(kA, m) + kRts));
+  }
   SUBCASE("SBC #2, which DEX can't do in one, where two DEX go before the TXA") {
     CHECK(run(mov(kX, kA) + kSec + sbc(2) + mov(kA, m) + kRts) ==
           expect(dec(kX) + dec(kX) + mov(kX, kA) + mov(kA, m) + kRts));

@@ -311,15 +311,17 @@ ExprPtr parse_expr(U32View text, const std::string& where) {
   return e;
 }
 
+enum class Byte { kWhole, kLow, kHigh };
+
 struct Value {
   std::optional<std::string> symbol;
   Int addend = 0;
-  char select = 0;
+  Byte select = Byte::kWhole;
 };
 
 Int select_of(const Value& v) {
-  if (v.select == 'l') return v.addend & Int(0xFF);
-  if (v.select == 'h') return py_int::rshift(v.addend, 8) & Int(0xFF);
+  if (v.select == Byte::kLow) return v.addend & Int(0xFF);
+  if (v.select == Byte::kHigh) return py_int::rshift(v.addend, 8) & Int(0xFF);
   return v.addend;
 }
 
@@ -369,8 +371,8 @@ class Evaluator {
       case Expr::Kind::kUn: {
         const Value v = go(*e.left);
         if (e.name == "<" || e.name == ">") {
-          if (v.select != 0) error(where_ + ": `" + e.name + "` of a byte");
-          const char sel = e.name == "<" ? 'l' : 'h';
+          if (v.select != Byte::kWhole) error(where_ + ": `" + e.name + "` of a byte");
+          const Byte sel = e.name == "<" ? Byte::kLow : Byte::kHigh;
           if (!v.symbol) return Value{.addend = select_of(Value{.addend = v.addend, .select = sel})};
           return Value{.symbol = v.symbol, .addend = v.addend, .select = sel};
         }
@@ -383,7 +385,7 @@ class Evaluator {
     const Value a = go(*e.left);
     const Value b = go(*e.right);
     const std::string& op = e.name;
-    if ((op == "+" || op == "-") && a.select == 0 && b.select == 0) {
+    if ((op == "+" || op == "-") && a.select == Byte::kWhole && b.select == Byte::kWhole) {
       if (!b.symbol) return Value{.symbol = a.symbol, .addend = const_op(op, a.addend, b.addend, where_)};
       if (op == "+" && !a.symbol) {
         return Value{.symbol = b.symbol, .addend = py_int::add(a.addend, b.addend, where_)};
@@ -670,7 +672,7 @@ class Assembler {
   }
 
   bool in_zero_page(const Value& v, const std::string& w) const {
-    if (v.select != 0) return true;
+    if (v.select != Byte::kWhole) return true;
     if (const auto value = known_value(v, w)) return *value >= 0 && *value <= 0xFF;
     if (link_symbols_.contains(*v.symbol)) return false;
     return is_runtime_name(*v.symbol) && v.addend < 0x100;
@@ -963,7 +965,7 @@ class Assembler {
     if (st.mode == Mode::kImp || st.mode == Mode::kAcc) return;
     const Value v = value_of(*st.expr, w);
     if (st.mode == Mode::kRel) {
-      if (v.select != 0) error(w + ": a branch takes a label");
+      if (v.select != Byte::kWhole) error(w + ": a branch takes a label");
       if (v.symbol) {
         if (const auto it = labels.find(*v.symbol); it != labels.end()) {
           const Int disp = py_int::sub(py_int::add(it->second, v.addend, w),
@@ -989,7 +991,7 @@ class Assembler {
       return;
     }
     const int width = opcodes::size(st.mode) - 1;
-    if (width == 1 && v.select == 0 && !v.symbol && (v.addend < 0 || v.addend > 0xFF)) {
+    if (width == 1 && v.select == Byte::kWhole && !v.symbol && (v.addend < 0 || v.addend > 0xFF)) {
       error(w + ": $" + pyrepr::hex(v.addend, 0) + " isn't in zero page");
     }
     if (width == 1 && v.symbol && !in_zero_page(v, w)) {
@@ -1015,11 +1017,11 @@ class Assembler {
     }
     const elf::SymbolPtr sym = symbol(*v.symbol, local, w);
     std::uint8_t rtype = elf::R_MOS_NONE;
-    if (v.select != 0) {
+    if (v.select != Byte::kWhole) {
       if (width != 1) {
         error(w + ": `<` or `>` gives one byte, in a " + std::to_string(width) + "-byte field");
       }
-      rtype = v.select == 'l' ? elf::R_MOS_ADDR16_LO : elf::R_MOS_ADDR16_HI;
+      rtype = v.select == Byte::kLow ? elf::R_MOS_ADDR16_LO : elf::R_MOS_ADDR16_HI;
     } else if (width == 1) {
       rtype = zero_page ? elf::R_MOS_ADDR8 : elf::R_MOS_IMM8;
       if (zero_page && !sym->defined()) sym->other |= elf::STO_MOS_ZEROPAGE;

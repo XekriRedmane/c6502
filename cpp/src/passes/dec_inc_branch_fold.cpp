@@ -50,7 +50,8 @@ struct Match {
   std::size_t branch_idx = 0;
 };
 
-// DEC M and INC M set N and Z from M's new value, as LDA M does.
+// DEC M and INC M set N and Z from M's new value, as LDA M does, and
+// none of the three touches C or V.
 std::optional<Match> try_match(Instrs instrs, const LabelMap& labels, std::size_t i,
                                const std::set<std::string, std::less<>>& branch_targets) {
   const ir::Type_operand* mem = nullptr;
@@ -89,21 +90,14 @@ std::optional<Match> try_match(Instrs instrs, const LabelMap& labels, std::size_
     return std::nullopt;
   }
   const auto* br = as<ir::Branch>(instrs[j]);
-  if (br == nullptr || !isa<ir::EQ, ir::NE, ir::MI, ir::PL>(br->cond)) {
+  if (br == nullptr) {
     return std::nullopt;
   }
   if (!a_dead_at(instrs, labels, j + 1)) {
     return std::nullopt;
   }
-  std::optional<std::size_t> target;
-  for (std::size_t k = 0; k < instrs.size(); ++k) {
-    const auto* label = as<ir::Label>(instrs[k]);
-    if (label != nullptr && label->name == br->target) {
-      target = k;
-      break;
-    }
-  }
-  if (!target || !a_dead_at(instrs, labels, *target)) {
+  const long target = labels.find(br->target);
+  if (target < 0 || !a_dead_at(instrs, labels, static_cast<std::size_t>(target))) {
     return std::nullopt;
   }
   return Match{lda_idx, j};

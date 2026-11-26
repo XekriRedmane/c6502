@@ -27,7 +27,15 @@ const std::string kEnd = R"(Label(".end") )" + kRet;
 
 }  // namespace
 
-TEST_CASE("dec_inc_branch_fold drops the load before a branch on N or Z") {
+TEST_CASE("dec_inc_branch_fold drops the load before a branch") {
+  SUBCASE("DEC; LDA; BCC, since none of the three touches C") {
+    CHECK(run(R"(Dec(Data("M" 0)) )" + kLdaM + R"(Branch(CC ".loop") )" + kRet + kLoop) ==
+          expect(R"(Dec(Data("M" 0)) Branch(CC ".loop") )" + kRet + kLoop));
+  }
+  SUBCASE("INC; LDA; BVS") {
+    CHECK(run(R"(Inc(Data("M" 0)) )" + kLdaM + R"(Branch(VS ".end") )" + kRet + kEnd) ==
+          expect(R"(Inc(Data("M" 0)) Branch(VS ".end") )" + kRet + kEnd));
+  }
   SUBCASE("DEC; LDA; BPL") {
     CHECK(run(R"(Dec(Data("M" 0)) )" + kLdaM + R"(Branch(PL ".loop") )" + kRet + kLoop) ==
           expect(R"(Dec(Data("M" 0)) Branch(PL ".loop") )" + kRet + kLoop));
@@ -48,10 +56,6 @@ TEST_CASE("dec_inc_branch_fold keeps the load") {
   SUBCASE("after a label that a jump targets") {
     unchanged(R"(Jump(".tgt" []) Dec(Data("M" 0)) Label(".tgt") )" + kLdaM +
               R"(Branch(PL ".loop") )" + kRet + kLoop);
-  }
-  SUBCASE("before a BCC") {
-    // BCC reads C, which neither DEC nor the load sets.
-    unchanged(R"(Dec(Data("M" 0)) )" + kLdaM + R"(Branch(CC ".loop") )" + kRet + kLoop);
   }
   SUBCASE("when A is read on the fall-through") {
     unchanged(R"(Dec(Data("M" 0)) )" + kLdaM + R"(Branch(PL ".loop")

@@ -75,37 +75,6 @@ TEST_CASE("dec_inc_branch_fold: test_dec_inc_branch_fold.py::TestDecIncBranchFol
       "])\n");
 }
 
-TEST_CASE("dec_inc_branch_fold: test_dec_inc_branch_fold.py::TestDecIncBranchFold::test_bcc_branch_blocks_fold (call 1)") {
-  c6502::testing::check_record(
-      "c6502-capture 2\n"
-      "pass dec_inc_branch_fold\n"
-      "source tests/test_dec_inc_branch_fold.py::TestDecIncBranchFold::test_bcc_branch_blocks_fold\n"
-      "args {\"args\": [], \"kwargs\": {}}\n"
-      "context {\"layout\":[0,2,4,32,36],\"user_zp_globals\":[],\"user_zp_bytes\":[]}\n"
-      "input\n"
-      "Program([\n"
-      "  Function(\"f\" false [] [\n"
-      "    Dec(Data(\"M\" 0))\n"
-      "    Mov(Data(\"M\" 0) Reg(A) false)\n"
-      "    Branch(CC \".loop\")\n"
-      "    Return(false false false)\n"
-      "    Label(\".loop\")\n"
-      "    Return(false false false)\n"
-      "  ])\n"
-      "])\n"
-      "output\n"
-      "Program([\n"
-      "  Function(\"f\" false [] [\n"
-      "    Dec(Data(\"M\" 0))\n"
-      "    Mov(Data(\"M\" 0) Reg(A) false)\n"
-      "    Branch(CC \".loop\")\n"
-      "    Return(false false false)\n"
-      "    Label(\".loop\")\n"
-      "    Return(false false false)\n"
-      "  ])\n"
-      "])\n");
-}
-
 TEST_CASE("dec_inc_branch_fold: test_dec_inc_branch_fold.py::TestDecIncBranchFold::test_dec_lda_bpl_drops_lda (call 1)") {
   c6502::testing::check_record(
       "c6502-capture 2\n"

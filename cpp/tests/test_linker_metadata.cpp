@@ -401,9 +401,15 @@ TEST_CASE("place_zp_objects") {
         }) ==
         "LinkError: no room for `p` (2 bytes) below $80 in the linked program, and its unit "
         "uses it as an `(zp),Y` pointer, which has to be in zero page");
-  CHECK(error_of([] {
-          linker::place_zp_objects(objects({zp("v", 0, {}, true, 1)}), kClassic);
-        }) == "ZeroDivisionError: division by zero");
+  // The promoted objects are ordered by weight per byte, compared
+  // exactly. 2**60 + 1 and 2**60 are one double, so a float key would
+  // tie them and put `a` first by name.
+  {
+    const Int big = Int{1} << 60;
+    const auto [addrs, demoted] = linker::place_zp_objects(
+        objects({zp("a", 1, {}, true, big), zp("b", 1, {}, true, big + 1)}), kClassic);
+    CHECK(names_of(addrs) == Strings{"b=38", "a=39"});
+  }
 
   // A promoted object that doesn't fit goes back in the data segment,
   // and a smaller one after it still fits.
@@ -413,10 +419,10 @@ TEST_CASE("place_zp_objects") {
     CHECK(names_of(addrs) == Strings{"v=38", "q=127"});
     CHECK(demoted == Strings{"p"});
   }
-  // The declared object first, then the promoted ones by the float
-  // `-weight / size` and then the name: `d` (-7/3), then `a` (-6/3)
-  // and `c` (-4/2), which tie at -2.0, then `b` (-2/1), then `e`, whose
-  // key is -0.0. Byte $27 is a parameter's.
+  // The declared object first, then the promoted ones by weight per
+  // byte, highest first, and then the name: `d` (7/3), then `a` (6/3),
+  // `b` (2/1), and `c` (4/2), which tie at 2, then `e` (0/1). Byte $27
+  // is a parameter's.
   {
     const auto [addrs, demoted] = linker::place_zp_objects(
         objects({zp("c", 2, {}, true, 4), zp("b", 1, {}, true, 2), zp("a", 3, {}, true, 6),

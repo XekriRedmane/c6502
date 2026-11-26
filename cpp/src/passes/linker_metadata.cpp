@@ -552,7 +552,7 @@ std::pair<SymbolAddrs, std::vector<std::string>> place_zp_objects(
     addrs.insert_or_assign(name, addr);
   };
   struct Promoted {
-    double key;
+    Int weight;
     std::string name;
     Int size;
   };
@@ -575,18 +575,7 @@ std::pair<SymbolAddrs, std::vector<std::string>> place_zp_objects(
         for (const ZpObjectMeta& r : records) {
           weight = std::max(weight, *r.weight);
         }
-        constexpr Int kExact = Int{1} << 53;
-        if (weight >= kExact || weight <= -kExact || size >= kExact || size <= -kExact) {
-          throw InternalError("a zero-page object's weight or size of 2**53 or more is past "
-                              "what the C++ linker sorts as Python does");
-        }
-        if (size == 0) {
-          throw CompileError("ZeroDivisionError", "division by zero");
-        }
-        promoted.push_back(
-            {-static_cast<double>(static_cast<std::int64_t>(weight)) /
-                 static_cast<double>(static_cast<std::int64_t>(size)),
-             name, size});
+        promoted.push_back({weight, name, size});
       } else {
         automatic.emplace_back(name, size);
       }
@@ -620,7 +609,9 @@ std::pair<SymbolAddrs, std::vector<std::string>> place_zp_objects(
     claim(name, *addr, size);
   }
   std::sort(promoted.begin(), promoted.end(), [](const Promoted& a, const Promoted& b) {
-    return a.key != b.key ? a.key < b.key : a.name < b.name;
+    const Int left = a.weight * b.size;
+    const Int right = b.weight * a.size;
+    return left != right ? left > right : a.name < b.name;
   });
   std::vector<std::string> demoted;
   for (const Promoted& p : promoted) {

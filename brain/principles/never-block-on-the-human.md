@@ -15,4 +15,4 @@ The human supervises asynchronously. Agents must stay unblocked — make reasona
 - **Irreversible actions** (force-push, delete production data, send external messages) still require confirmation
 - **Reversible actions** (write code, edit notes, split tasks) should proceed without blocking
 - **Product direction** comes from the human; *execution* should not block
-- **Shared or external state** needs Robert's request. That covers pushing, installing software or skills, and changing global configuration. His standing approvals, such as pushing main once a port merge passes its checks, are recorded in the main session's memory.
+- **Shared or external state** needs Robert's request. That covers pushing, installing software or skills, and changing global configuration. His standing approvals, such as pushing main once a port merge passes its checks, are recorded in the main session's memory. His standing pauses, such as waiting for his go-ahead before the next group or step of the C++ port, are recorded there too.

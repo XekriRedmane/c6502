@@ -14,8 +14,9 @@ INDEX="${BRAIN_DIR}/index.md"
 [ -d "$BRAIN_DIR" ] || exit 0
 [ -f "$INDEX" ] || exit 0
 
-# All .md files except index.md — relative paths without .md extension
-disk=$(find "$BRAIN_DIR" -name "*.md" ! -name "index.md" -type f \
+# All .md files except brain/index.md itself (plans/index.md is listed) —
+# relative paths without .md extension
+disk=$(find "$BRAIN_DIR" -name "*.md" ! -path "$INDEX" -type f \
     | sed "s|^${BRAIN_DIR}/||; s|\.md$||" \
     | sort)
 

@@ -1,8 +1,8 @@
 # The checks after Python
 
-- `c6502cpp check-golden -j 12` checks the C++ compiler against golden/ (about a minute with MSVC, 40 s with GCC in WSL), and `c6502cpp check-frozen` against cpp/tests/frozen (28 s on Windows, 4 s on Linux, where writing the unpacked records is cheaper). cpp/README.md, "The checks after Python", has the formats, and src/golden.h has the manifest's.
+- `c6502cpp check-golden -j 12` checks the C++ compiler against golden/ (about a minute with MSVC, 40 s with GCC in WSL), and `c6502cpp check-frozen` against cpp/tests/frozen (28 s on Windows, 4 s on Linux, where writing the unpacked records is cheaper). cpp/README.md, "The checks after Python", has the formats, and cpp/src/golden.h has the manifest's.
 - The frozen Python compiler wrote the golden files before group R of step 8 removed it, and a change to the output made on purpose rewrites them with `check-golden --update`. Read each changed job in the diff before committing. The linker's address-space check of 24 Nov 2026 turned up two corpus programs with more than 64K of `.bss` that way.
-- The golden files name the repository's files relative to the root, and the check takes `<root>/` out of every message. A command's argument counts as such a path only when it starts with `examples/`, `tests/`, or `golden/`, so a new job that names another directory of the root needs that list (`kRootDirs` in src/golden.cpp) to grow.
+- The golden files name the repository's files relative to the root, and the check takes `<root>/` out of every message. A command's argument counts as such a path only when it starts with `examples/`, `tests/`, or `golden/`, so a new job that names another directory of the root needs that list (`kRootDirs` in cpp/src/golden.cpp) to grow.
 - The frozen captures can't follow a change of a pass's input that a change to an earlier pass makes, since their inputs are frozen. A fix that changes a frozen call's result needs the record edited by hand, or the call dropped, with the reason in the commit.
 
-Related: [[codebase/compile-command]], [[codebase/tac-interpreter]]
+Related: [[codebase/compile-command]], [[codebase/tac-interpreter]], [[principles/make-checks-show-their-coverage]]

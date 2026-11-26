@@ -5,4 +5,4 @@
 - At least six miscompiles came from missing this: `redundant_load` (fuzz.stmts seed 2391, and again for Frame shifts), `asm_liveness.sets_flags` itself, `asm_remat` and `remat` reusing a load past a Y setup, and `and_sign_bit_branch` twice, where a `BPL` tested the offset in place of A.
 - Check any new asm pass, and any port of one, for these writes before trusting it on the corpus.
 
-Related: [[principles/prove-it-works]]
+Related: [[principles/prove-it-works]], [[principles/fix-root-causes]]

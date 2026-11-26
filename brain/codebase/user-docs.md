@@ -7,4 +7,4 @@
 - After inserting a section, reread the sections around it. A new section once landed in the middle of the zp_abi section.
 - docs/attributes.md and docs/calling_conventions.md cover the same conventions from two sides, so a section of one links to the related section of the other.
 
-Related: [[principles/experience-first]]
+Related: [[principles/experience-first]], [[principles/prove-it-works]]

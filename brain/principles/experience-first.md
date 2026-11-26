@@ -8,3 +8,5 @@ The people who use c6502 read the assembly it writes, the errors it reports, and
 - A few features done well serve users better than many done roughly.
 
 Foundations serve the experience. Foundational thinking governs the *sequence* of work, and this principle governs the *target*.
+
+**Evidence:** [[codebase/user-docs]]

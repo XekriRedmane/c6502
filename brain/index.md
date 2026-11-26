@@ -15,6 +15,9 @@
 - [[codebase/user-docs]]
 - [[codebase/worktree-guard]]
 
+## Plans
+- [[plans/index]]
+
 ## Principles
 - [[principles/boundary-discipline]]
 - [[principles/cost-aware-delegation]]
@@ -29,6 +32,7 @@
 - [[principles/migrate-callers-then-delete-legacy-apis]]
 - [[principles/never-block-on-the-human]]
 - [[principles/outcome-oriented-execution]]
+- [[principles/pass-data-through-files]]
 - [[principles/prove-it-works]]
 - [[principles/redesign-from-first-principles]]
 - [[principles/serialize-shared-state-mutations]]

@@ -11,7 +11,7 @@ from __future__ import annotations
 import unittest
 
 from compile import _run_source
-from passes.recursion_saves import RecursionSaveError
+from errors import RecursionSaveError
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 

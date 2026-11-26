@@ -1,34 +1,15 @@
 import unittest
 
 from c99_ast import FunType, Int, Long
-from passes.type_checking import LocalAttr, Symbol, SymbolTable, TypeCheckError
-
-
-class TestSymbolTableAPI(unittest.TestCase):
-    """Direct exercises of `SymbolTable`. The table is now a thin
-    `dict[str, Symbol]` wrapper — the merging logic moved to
-    `TypeChecker`, so the assertion focus shifts to direct
-    set/get/contains plus the high-level merge behavior tested via
-    full programs above."""
-
-    def test_get_returns_none_for_missing(self):
-        t = SymbolTable()
-        self.assertIsNone(t.get("nope"))
-
-    def test_setitem_and_contains(self):
-        t = SymbolTable()
-        t["x"] = Symbol(type=Int(), attrs=LocalAttr())
-        self.assertIn("x", t)
-        self.assertNotIn("y", t)
-        self.assertEqual(t["x"], Symbol(type=Int(), attrs=LocalAttr()))
+from errors import TypeCheckError
 
 
 class TestTypeEquality(unittest.TestCase):
     """The data-type classes (Int, Long, FunType) live on the c99 AST
     now and are non-frozen `@dataclass`-generated, so they support
-    structural equality but aren't hashable. Equality is what the
-    type checker actually relies on; hashability isn't load-bearing
-    for the symbol table (keyed by string name)."""
+    structural equality but aren't hashable. The type checker compares
+    types for equality, and the symbol table, which is keyed by name,
+    never hashes them."""
 
     def test_int_equals_itself(self):
         self.assertEqual(Int(), Int())

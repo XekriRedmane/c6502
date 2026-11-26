@@ -37,106 +37,14 @@ from __future__ import annotations
 
 import unittest
 
-import c99_ast
-import tac_ast
-from passes.type_checking import (
-    LocalAttr, Symbol, SymbolTable,
-)
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-def _var(name: str) -> tac_ast.Var:
-    return tac_ast.Var(name=name)
-
-
-def _table(entries: dict[str, Symbol]) -> SymbolTable:
-    tbl = SymbolTable()
-    for name, sym in entries.items():
-        tbl[name] = sym
-    return tbl
-
-
-def _uchar_local() -> Symbol:
-    return Symbol(type=c99_ast.UChar(), attrs=LocalAttr())
-
-
-def _uint_local() -> Symbol:
-    return Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
-
-
-def _ptr_local() -> Symbol:
-    return Symbol(
-        type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
-        attrs=LocalAttr(),
-    )
-
-
-def _canonical_symbols() -> SymbolTable:
-    return _table({
-        "y": _uchar_local(),
-        "b": _uchar_local(),
-        "value": _uchar_local(),
-        "p": _ptr_local(),
-        "%ext": _uint_local(),
-        "%addr": _ptr_local(),
-    })
 
 
 class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
     """`Load(ptr + k)` / `Store(v, ptr + k)` with a constant byte
     offset `0 <= k <= 255` folds to an indirect-indexed node whose
     index is `ConstUChar(k)`, lowered as `LDY #k`."""
-
-    def _load(self, k: int) -> list[tac_ast.Type_instruction]:
-        return [
-            tac_ast.Binary(
-                op=tac_ast.Add(), src1=_var("p"),
-                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=k)),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(
-                src_ptr=_var("%addr"), dst=_var("b"), is_volatile=False,
-            ),
-        ]
-
-
-    def _increment(self, ptr: str, between=()) -> list[tac_ast.Type_instruction]:
-        """`ptr[1]++`: one address read by a Load and a Store, with
-        `between` after the Load."""
-        return [
-            tac_ast.Binary(
-                op=tac_ast.Add(), src1=_var(ptr),
-                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
-                dst=_var("%addr"),
-            ),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b"),
-                         is_volatile=False),
-            *between,
-            tac_ast.Binary(
-                op=tac_ast.Add(), src1=_var("b"),
-                src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=1)),
-                dst=_var("value"),
-            ),
-            tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr"),
-                          is_volatile=False),
-        ]
-
-    def _symbols_with_global(self) -> SymbolTable:
-        from passes.type_checking import NoInitializer, StaticAttr
-        table = _canonical_symbols()
-        table["gp"] = Symbol(
-            type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
-            attrs=StaticAttr(initial_value=NoInitializer(), is_global=True),
-        )
-        return table
-
-    def _accesses(self, instrs):
-        return [i for i in instrs if isinstance(
-            i, (tac_ast.Load, tac_ast.Store, tac_ast.IndirectIndexedLoad,
-                tac_ast.IndirectIndexedStore),
-        )]
-
 
     def test_offset_read_and_write_end_to_end(self) -> None:
         src = (
@@ -280,36 +188,6 @@ class TestSharedByteIndex(unittest.TestCase):
     in `p[i] &= m`, is `(p),Y` with Y = `i` in each of them, and a
     reader `(p + i) + k` with `k` outside 0-255 is `(t),Y` with `t =
     p + k`."""
-
-    def _instrs(self, *, offset=None):
-        # `y` has a definition, so that the standalone entry point,
-        # which takes every dst for an SSA name, takes `y` for one.
-        out = [
-            tac_ast.Copy(src=_var("value"), dst=_var("y")),
-            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
-            tac_ast.Binary(op=tac_ast.Add(), src1=_var("p"),
-                           src2=_var("%ext"), dst=_var("%addr")),
-            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
-        ]
-        if offset is not None:
-            out += [
-                tac_ast.Binary(
-                    op=tac_ast.Add(), src1=_var("%addr"),
-                    src2=tac_ast.Constant(
-                        const=tac_ast.ConstInt(value=offset)),
-                    dst=_var("%far"),
-                ),
-                tac_ast.Load(src_ptr=_var("%far"), dst=_var("c")),
-            ]
-        out.append(tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr")))
-        return out
-
-    def _symbols(self):
-        table = _canonical_symbols()
-        table["c"] = _uchar_local()
-        table["%far"] = _ptr_local()
-        return table
-
 
     _SRC = (
         "#include <stdint.h>\n"

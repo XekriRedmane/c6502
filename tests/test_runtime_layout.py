@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from passes.runtime_layout import CLASSIC, RuntimeLayout
-from passes.type_checking import TypeCheckError
+from errors import TypeCheckError
 from sim.harness import build_sim
 
 

@@ -22,13 +22,10 @@ import unittest
 from pathlib import Path
 
 from compile import _run_source
-from lark.exceptions import UnexpectedInput
-from lexer import LexError
-from parser import ParserError
-from passes.identifier_resolution import IdentifierResolutionError
-from passes.label_resolution import LabelResolutionError
-from passes.loop_labeling import LoopLabelingError
-from passes.type_checking import TypeCheckError
+from errors import (
+    IdentifierResolutionError, LabelResolutionError, LexError,
+    LoopLabelingError, ParserError, TypeCheckError, UnexpectedInput,
+)
 from tests.cpp_build import needs_c6502cpp
 
 

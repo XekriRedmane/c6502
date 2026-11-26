@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import unittest
 
-from passes.type_checking import TypeCheckError
+from errors import TypeCheckError
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 

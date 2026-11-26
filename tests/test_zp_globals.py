@@ -17,9 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from parser import ParserError
-from passes.type_checking import TypeCheckError
-from passes.zp_globals import ZpGlobalError
+from errors import ParserError, TypeCheckError, ZpGlobalError
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 

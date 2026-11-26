@@ -1,7 +1,7 @@
 import unittest
 
 
-from parser import ParserError
+from errors import ParserError
 
 
 class TestPointerDeclarations(unittest.TestCase):
@@ -230,8 +230,7 @@ class TestPointerEquality(unittest.TestCase):
     def test_pointer_compare_to_nonzero_int_rejected(self):
         # `p == 5` — 5 isn't a null pointer constant, so the
         # comparison is illegal under our rules.
-        from passes.type_checking import TypeCheckError
-        from lark.exceptions import VisitError
+        from errors import TypeCheckError, VisitError
         with self.assertRaises((TypeCheckError, VisitError)) as cm:
             self._typecheck(
                 "int main(void) { int *p; if (p == 5) return 1; return 0; }\n"
@@ -246,7 +245,7 @@ class TestPointerEquality(unittest.TestCase):
     def test_pointer_compare_distinct_pointer_types_rejected(self):
         # `int *p; long *q; p == q;` — different pointer types,
         # rejected even though both sides are pointers.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) {\n"
@@ -278,7 +277,7 @@ class TestPointerEquality(unittest.TestCase):
         self.assertNotIn(".cmp_novf@", text)
 
     def test_ordering_distinct_pointer_types_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { int *p; long *q; "
@@ -288,7 +287,7 @@ class TestPointerEquality(unittest.TestCase):
     def test_ordering_pointer_vs_int_rejected(self):
         # No null-pointer-constant exception for relational ops, so
         # `p < 0` is rejected even though `p == 0` would be fine.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { int *p; if (p < 0) return 1; "
@@ -429,7 +428,7 @@ class TestPointerIntegerCasts(unittest.TestCase):
         # C99 §6.3.2.3 doesn't define floating ↔ pointer
         # conversions. The type checker rejects them with a
         # focused message.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { float f; int *p; "
@@ -439,7 +438,7 @@ class TestPointerIntegerCasts(unittest.TestCase):
         self.assertIn("floating", str(cm.exception))
 
     def test_double_to_pointer_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { double d; long *lp; "
@@ -447,7 +446,7 @@ class TestPointerIntegerCasts(unittest.TestCase):
             )
 
     def test_pointer_to_float_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { int x; int *p; float f; "
@@ -455,7 +454,7 @@ class TestPointerIntegerCasts(unittest.TestCase):
             )
 
     def test_pointer_to_double_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { int x; int *p; double d; "
@@ -484,7 +483,7 @@ class TestPointerUnaryOps(unittest.TestCase):
         return _run_stage("codegen", src)
 
     def test_negate_pointer_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { int x; int *p; p = &x; return -p; }\n"
@@ -492,7 +491,7 @@ class TestPointerUnaryOps(unittest.TestCase):
         self.assertIn("'-'", str(cm.exception))
 
     def test_complement_pointer_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { int x; int *p; p = &x; return ~p; }\n"
@@ -521,7 +520,7 @@ class TestPointerUnaryOps(unittest.TestCase):
     def test_long_pointer_negate_still_rejected(self):
         # Same rule applies for `long *` — pointer-ness is what
         # matters, not the pointee.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { long y; long *lp; lp = &y; return -lp; }\n"
@@ -583,7 +582,7 @@ class TestPointerUnaryOps(unittest.TestCase):
     def test_multiply_pointer_rejected(self):
         # C99 §6.5.5 — `*` requires arithmetic operands. Pointer
         # is rejected on either side.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { int x; int *p; p = &x; "
@@ -592,7 +591,7 @@ class TestPointerUnaryOps(unittest.TestCase):
         self.assertIn("'*'", str(cm.exception))
 
     def test_divide_two_pointers_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { int *p; int *q; "
@@ -603,7 +602,7 @@ class TestPointerUnaryOps(unittest.TestCase):
     def test_modulo_pointer_rhs_rejected(self):
         # Pointer on the right also gets rejected — the check fires
         # symmetrically.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { int a; int *p; "
@@ -612,7 +611,7 @@ class TestPointerUnaryOps(unittest.TestCase):
         self.assertIn("'%'", str(cm.exception))
 
     def test_divide_pointer_lhs_int_rhs_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { int x; int *p; p = &x; "
@@ -686,7 +685,7 @@ class TestStaticPointerInit(unittest.TestCase):
         # An automatic-storage variable's address isn't a constant
         # expression — its location isn't known at link time. The
         # type checker rejects it with a focused message.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) {\n"
@@ -918,8 +917,7 @@ class TestIndirectCall(unittest.TestCase):
         # rather than a string name. Pin the current behavior:
         # a non-name callee inside the parens raises a parser
         # error.
-        from parser import ParserError
-        from lark.exceptions import VisitError
+        from errors import ParserError, VisitError
         # `(1)(args)` — a non-name callee.
         with self.assertRaises((ParserError, VisitError)):
             self._typecheck(
@@ -930,7 +928,7 @@ class TestIndirectCall(unittest.TestCase):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully
         # produce, so it's a strict type error.
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError) as cm:
             self._typecheck(
                 "int main(void) { float f; f = 1.5f; return ~f; }\n"
@@ -939,7 +937,7 @@ class TestIndirectCall(unittest.TestCase):
         self.assertIn("integer", str(cm.exception))
 
     def test_complement_double_rejected(self):
-        from passes.type_checking import TypeCheckError
+        from errors import TypeCheckError
         with self.assertRaises(TypeCheckError):
             self._typecheck(
                 "int main(void) { double d; d = 1.5; return ~d; }\n"

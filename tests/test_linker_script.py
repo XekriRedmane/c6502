@@ -18,8 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from parser import ParserError
-from passes.type_checking import TypeCheckError
+from errors import ParserError, TypeCheckError
 from tests.cpp_build import needs_c6502cpp
 
 

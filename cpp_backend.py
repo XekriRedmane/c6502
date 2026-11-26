@@ -38,7 +38,7 @@ The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
 issues again through `diagnostics.warn`, and an error that a pass of
 the compile raised, which it raises as the Python exception of the same
-class and message, from the module that `_ERROR_MODULES` names.
+class and message, from errors.py.
 
 Each call starts c6502cpp (cpp/src/backend.h describes the request and
 the response), found at the path in `C6502_CPP`, or in cpp/build/bin
@@ -84,40 +84,26 @@ def _require_cli() -> str:
 
 
 # The module of each exception class of the compiler that the C++ side
-# reports by name, for the classes the builtins don't have.
+# reports by name, for the classes the builtins don't have. errors.py
+# holds all but `RuntimeLayoutError`.
 _ERROR_MODULES = {
-    "AbiSelectionError": "passes.abi_selection",
-    "AssemblerError": "binutils.assembler",
-    "ConstantExpressionError": "passes.constant_expression",
-    "ElfError": "binutils.elf",
-    "FrameSizeError": "passes.asm_to_asm2",
-    "IdentifierResolutionError": "passes.identifier_resolution",
-    "LabelResolutionError": "passes.label_resolution",
-    "LarkError": "lark.exceptions",
-    "LayoutError": "passes.link_layout",
-    "LexError": "lexer",
-    "LinkError": "binutils.ld",
-    "LoopLabelingError": "passes.loop_labeling",
-    "NumberError": "pp_numbers",
-    "ParserError": "parser",
-    "PreprocessorError": "preprocessor",
-    "RecursionSaveError": "passes.recursion_saves",
-    "RegallocError": "passes.optimization_asm.regalloc",
-    "RuntimeLayoutError": "passes.runtime_layout",
-    "ScriptError": "passes.link_script",
-    "TypeCheckError": "passes.type_checking",
-    "UnexpectedCharacters": "lark.exceptions",
-    "UnexpectedEOF": "lark.exceptions",
-    "UnexpectedInput": "lark.exceptions",
-    "UnexpectedToken": "lark.exceptions",
-    "UnrollError": "passes.optimization_ast.unroll",
-    # `re.error`, which `re.compile` raises for an invalid pattern of
-    # `--passthru-includes`.
-    "error": "re",
-    "ZpGlobalError": "passes.zp_globals",
-    "ZpLocalAllocationError": "passes.zp_local_allocation",
-    "ZpSlotAllocationError": "passes.zp_slot_allocation",
+    name: "errors" for name in (
+        "AbiSelectionError", "AssemblerError", "ConstantExpressionError",
+        "ElfError", "FrameSizeError", "IdentifierResolutionError",
+        "LabelResolutionError", "LarkError", "LayoutError", "LexError",
+        "LinkError", "LoopLabelingError", "NumberError", "ParserError",
+        "PreprocessorError", "RecursionSaveError", "RegallocError",
+        "ScriptError", "TypeCheckError", "UnexpectedCharacters",
+        "UnexpectedEOF", "UnexpectedInput", "UnexpectedToken",
+        "UnrollError", "ZpGlobalError", "ZpLocalAllocationError",
+        "ZpSlotAllocationError",
+    )
 }
+_ERROR_MODULES["RuntimeLayoutError"] = "passes.runtime_layout"
+# `re.error`, which `re.compile` raises for an invalid pattern of
+# `--passthru-includes`.
+_ERROR_MODULES["error"] = "re"
+
 
 # The subclasses `_exception` made, by base class.
 _WITH_MESSAGE: dict[type, type] = {}
@@ -144,8 +130,8 @@ def _error_type(name: str) -> type[BaseException]:
 
 def _exception(name: str, message: str) -> BaseException:
     """The exception of the Python class `name` whose `str()` is
-    `message`. Lark's syntax errors, and builtins such as KeyError and
-    UnicodeDecodeError, don't take their message as their one argument,
+    `message`. Builtins such as KeyError and UnicodeDecodeError don't
+    take their message as their one argument,
     so for them it is an instance of a subclass of the same name whose
     `str()` returns the message, which an `except` of the class still
     catches. The C++ preprocessor reports argparse's exit as a

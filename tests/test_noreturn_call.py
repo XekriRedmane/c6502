@@ -123,7 +123,7 @@ class TestCallGraph(unittest.TestCase):
         self.assertNotIn("ROL", get_key)
 
     def test_save_hardware_stack_on_the_call(self) -> None:
-        from passes.recursion_saves import RecursionSaveError
+        from errors import RecursionSaveError
         src = ("[[noreturn]] void r(void);\n"
                "void f(void) {\n"
                "[[c6502::save_hardware_stack]] r();\n}\n"

@@ -62,7 +62,7 @@ import json
 import unittest
 from pathlib import Path
 
-from parser import ParserError
+from errors import ParserError
 from tests.test_sim_chapters import _run_program
 from tests.cpp_build import needs_c6502cpp
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import unittest
 
-from passes.type_checking import TypeCheckError
+from errors import TypeCheckError
 from sim.harness import build_sim
 
 
@@ -194,7 +194,7 @@ class TestRegisterLocalInY(unittest.TestCase):
         self.assertNotRegex(body, r"STY|__local")
 
     def test_rejected_without_the_promise(self) -> None:
-        from passes.optimization_asm.regalloc import RegallocError
+        from errors import RegallocError
         with self.assertRaisesRegex(RegallocError, "can't pin"):
             _codegen(_PLAIN + self._SRC)
 

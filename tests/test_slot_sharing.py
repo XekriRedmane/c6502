@@ -26,7 +26,7 @@ import unittest
 from pathlib import Path
 
 from compile import _run_source
-from passes.abi_selection import AbiSelectionError
+from errors import AbiSelectionError
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 from tests.cpp_build import needs_c6502cpp

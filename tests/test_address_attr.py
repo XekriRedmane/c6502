@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from passes.type_checking import TypeCheckError
+from errors import TypeCheckError
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 
@@ -127,7 +127,7 @@ class TestCodegen(unittest.TestCase):
 class TestConventionErrors(unittest.TestCase):
 
     def test_rejected_declarations(self) -> None:
-        from passes.abi_selection import AbiSelectionError
+        from errors import AbiSelectionError
         bad = {
             "register without zp_abi": (
                 "[[c6502::address(0x1000)]]\n"

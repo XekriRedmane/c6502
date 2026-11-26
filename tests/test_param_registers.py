@@ -13,8 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from compile import _run_source, main as compile_main
-from passes.abi_selection import AbiSelectionError
-from passes.type_checking import TypeCheckError
+from errors import AbiSelectionError, TypeCheckError
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 

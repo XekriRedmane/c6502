@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from passes.recursion_saves import RecursionSaveError
-from passes.type_checking import TypeCheckError
+from errors import RecursionSaveError, TypeCheckError
 from sim.harness import build_sim
 
 

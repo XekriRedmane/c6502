@@ -1,13 +1,8 @@
-"""`TypeCheckError`, the error of the type checker (passes/type_checking.py),
-which re-exports it.
+"""`TypeCheckError`, the error of the type checker
+(cpp/src/passes/type_checking.h), which errors.py re-exports.
 
-It has a module of its own so that a module that only raises it or
-derives an error from it, as passes/runtime_layout.py derives
-`RuntimeLayoutError`, doesn't import the type checker. Under
-`C6502_CPP_BACKEND=1`, compile.py measures the runtime helpers' HARGS
-footprints with runtime_layout and runs the whole front end in C++, and
-this keeps the type checker and the passes it imports out of that
-process.
+It has a module of its own so that passes/runtime_layout.py can derive
+`RuntimeLayoutError` from it without importing errors.py.
 """
 
 

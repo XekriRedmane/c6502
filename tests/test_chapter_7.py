@@ -14,10 +14,10 @@ import unittest
 from pathlib import Path
 
 from compile import _run_source
-from passes.identifier_resolution import IdentifierResolutionError
-from passes.label_resolution import LabelResolutionError
-from passes.loop_labeling import LoopLabelingError
-from passes.type_checking import TypeCheckError
+from errors import (
+    IdentifierResolutionError, LabelResolutionError, LoopLabelingError,
+    TypeCheckError,
+)
 from tests.cpp_build import needs_c6502cpp
 
 

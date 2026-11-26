@@ -14,7 +14,6 @@ namespace c6502::binutils {
 
 namespace {
 
-// Reads the lines and sections of a request in order.
 class Request {
  public:
   explicit Request(const std::string& text) : text_(text) {}
@@ -99,9 +98,6 @@ std::string assemble_response(const std::string& text) {
   return "object " + std::to_string(data.size()) + "\n" + data;
 }
 
-// Python packs each section's relocations first, then the symbols
-// (`write` masks a value to 32 bits, but not a size), then the section
-// headers' sizes, so the checks come in that order.
 void check_write_fields(const elf::ElfFile& obj) {
   const auto out_of_range = [] { throw CompileError("struct.error", "argument out of range"); };
   for (const auto& s : obj.sections) {
@@ -116,11 +112,6 @@ void check_write_fields(const elf::ElfFile& obj) {
       if (sym->size < 0 || sym->size > UINT32_MAX) out_of_range();
     }
   }
-  // The section headers' addresses, alignments, and sizes, then the
-  // ELF header's entry and the program headers' addresses and sizes,
-  // which a link places from its origin: `-Ttext=-1` puts `.text` at
-  // -1, which `_SHDR.pack` rejects. Each of these is an unsigned 32-bit
-  // field ("<I"), whose error is the same message.
   const auto check_u32 = [&](std::int64_t v) {
     if (v < 0 || v > UINT32_MAX) out_of_range();
   };

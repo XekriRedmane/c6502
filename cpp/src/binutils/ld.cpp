@@ -1,25 +1,3 @@
-// The parts of linking that know nothing about c6502's link metadata
-// (binutils/ld.py): resolving symbols across objects, applying
-// relocations, and writing the executable. passes/linker.py decides
-// where each section goes (by the linker script, or one after another)
-// and which addresses the linker-placed names get, then calls
-// `relocate` and `executable`.
-//
-// A `Placed` section is one input section at its run address. Every
-// symbol a relocation names resolves to one of these, tried in order.
-//
-// - A symbol defined in the same object, at its section's address plus
-//   its offset. Local symbols resolve only this way.
-// - A global symbol another object defines, or an absolute one.
-// - A name the linker itself defines (`extra`), such as a slot address
-//   or `__text_start`.
-//
-// An absolute symbol that several objects define has to have one value.
-//
-// Python computes with integers that have no bound. The values here
-// come from 32-bit fields of the objects and from the linker's 64-bit
-// tables, so `relocate` computes S + A in 128 bits and no sum
-// overflows.
 #include "binutils/ld.h"
 
 #include <algorithm>
@@ -37,15 +15,11 @@ namespace {
 
 CompileError link_error(const std::string& message) { return CompileError("LinkError", message); }
 
-// Returns Python's normalization of the slice bound `i` of a sequence of
-// `n` items: a negative bound counts from the end, and the result is
-// clamped to [0, n].
 std::int64_t slice_bound(std::int64_t i, std::int64_t n) {
   if (i < 0) i += n;
   return std::clamp<std::int64_t>(i, 0, n);
 }
 
-// Returns `data[start:stop]`, as Python slices a bytearray.
 std::string py_slice(const std::string& data, std::int64_t start, std::int64_t stop) {
   const auto n = static_cast<std::int64_t>(data.size());
   const std::int64_t i = slice_bound(start, n);
@@ -53,9 +27,6 @@ std::string py_slice(const std::string& data, std::int64_t start, std::int64_t s
   return data.substr(static_cast<std::size_t>(i), static_cast<std::size_t>(j - i));
 }
 
-// Does `data[start:stop] = value`, as Python assigns to a slice of a
-// bytearray: the bytes the slice selects are replaced by `value`, which
-// grows or shrinks `data` when the lengths differ.
 void py_slice_assign(std::string& data, std::int64_t start, std::int64_t stop,
                      const std::string& value) {
   const auto n = static_cast<std::int64_t>(data.size());
@@ -64,9 +35,6 @@ void py_slice_assign(std::string& data, std::int64_t start, std::int64_t stop,
   data.replace(static_cast<std::size_t>(i), static_cast<std::size_t>(j - i), value);
 }
 
-// Does `data[index] = byte`, which raises Python's IndexError for an
-// index outside `data`. No object c6502 reads has a relocation outside
-// its section, since elf.read rejects one.
 void set_byte(std::string& data, std::int64_t index, std::uint8_t byte) {
   const auto n = static_cast<std::int64_t>(data.size());
   if (index < -n || index >= n) {
@@ -76,15 +44,6 @@ void set_byte(std::string& data, std::int64_t index, std::uint8_t byte) {
   data[static_cast<std::size_t>(index < 0 ? index + n : index)] = static_cast<char>(byte);
 }
 
-// The names of the runtime's helpers, which the compiler calls (Python's
-// `_HELPER`, which matches `(mul|udivmod|sdivmod|asl|asr|lsr)
-// (8|16|32|64)|icall|[fd](add|sub|mul|div|lt|le)|(i|u|l|ul|ll|ull|f|d)
-// 2(f|d|i|u|l|ul|ll|ull)` against the whole name). The pattern matches
-// a finite set of names, which is listed here in full. The linker adds
-// the helpers the runtime library has (passes/runtime_library.py) to a
-// program that calls them, so a name here that is still undefined is
-// one of the helpers without 6502 code (CLAUDE.md, "Not yet in the
-// repo").
 const std::set<std::string, std::less<>>& helper_names() {
   static const std::set<std::string, std::less<>> names = [] {
     std::set<std::string, std::less<>> out;
@@ -106,7 +65,6 @@ const std::set<std::string, std::less<>>& helper_names() {
   return names;
 }
 
-// Returns a hint to add to the error for an undefined `name`.
 std::string undefined_hint(const std::string& name) {
   if (helper_names().contains(name)) {
     return " (a runtime helper that has no 6502 code in the runtime library yet, so give its "
@@ -153,8 +111,6 @@ Definitions global_definitions(const Objects& objects) {
 
 Resolver::Resolver(const Objects& objects, const std::vector<Placed>& placed, Names extra)
     : objects_(&objects), extra_(std::move(extra)) {
-  // Python's `{id(p.section): p.addr for p in placed}`, where a later
-  // part of the same section wins.
   for (const Placed& p : placed) addr_[p.section.get()] = p.addr;
   definitions_ = global_definitions(objects);
 }
@@ -181,10 +137,6 @@ std::int64_t Resolver::value(const elf::Symbol& sym, int unit) const {
   throw link_error(path() + ": undefined symbol `" + sym.name + "`" + undefined_hint(sym.name));
 }
 
-// Shortens each absolute instruction in code section `sec` whose
-// operand the linker has put in zero page to its zero-page form, and
-// returns the number of bytes saved.
-//
 // A unit reaches a name another unit defines, such as a global that the
 // defining unit's `-O` moved into zero page, with absolute addressing,
 // since it can't know where the name goes. When `value_of(symbol)`
@@ -209,8 +161,6 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
     if (s->name == "$c" || s->name == "$d") mapping.emplace_back(s->value, s->name);
   }
   std::sort(mapping.begin(), mapping.end());
-  // Python's `{r.offset: r for r in sec.relocs}`, where a later
-  // relocation at the same offset wins.
   std::unordered_map<std::int64_t, elf::Reloc*> relocs;
   for (elf::Reloc& r : sec->relocs) relocs[r.offset] = &r;
   const auto reloc_at = [&](std::int64_t off) -> elf::Reloc* {
@@ -226,7 +176,6 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
     return state == "$d";
   };
 
-  // Decode the instructions and choose the ones to shorten.
   struct Instr {
     std::int64_t off;
     const opcodes::Entry* entry;
@@ -268,7 +217,6 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
   };
 
   std::string out = data;
-  // Aim the branches resolved at assembly again, from the old bytes.
   for (const Instr& in : instrs) {
     if (in.entry->mode == opcodes::Mode::kRel && reloc_at(in.off + 1) == nullptr) {
       const std::uint8_t b = byte_at(in.off + 1);
@@ -309,7 +257,6 @@ std::string relocate(const Placed& p, const Resolver& resolver, const std::strin
   std::string data = sec.type != elf::SHT_NOBITS ? py_slice(sec.data, 0, p.size) : std::string();
   for (const elf::Reloc& r : sec.relocs) {
     if (r.offset >= p.size) {
-      // In the dropped `JMP` at the end of the section.
       continue;
     }
     const asdl::Int s = resolver.value(*r.symbol, p.unit);

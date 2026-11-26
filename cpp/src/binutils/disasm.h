@@ -1,5 +1,5 @@
-// The disassembler of `objdump.py -d` (binutils/disasm.py), which turns
-// an ELF object or executable into dasm text.
+// The disassembler of `objdump.py -d`, which turns an ELF object or
+// executable into dasm text.
 //
 // The listing assembles with dasm. Each instruction and data line
 // carries its address (its offset, in an object) and its bytes in a
@@ -58,13 +58,13 @@ std::vector<std::string> disassemble(const elf::ElfFile& elf, bool all_sections 
                                      const std::set<std::string>* only = nullptr,
                                      const Options& options = {});
 
-// Returns Python's `format(v, "0<width>X")`, or with `lower` its `x`
-// form. A negative value is a `-` and then the digits, which the width
-// counts, so `format(-5, "04X")` is `-005`.
+// Returns `v` in uppercase hex, or lowercase with `lower`, padded with
+// zeros to `width` characters. A negative value is a `-` and then the
+// digits, and the width counts the `-`, so -5 at width 4 is `-005`.
 std::string format_hex(std::int64_t v, int width, bool lower = false);
 
-// Returns Python's `s.ljust(width)`, which pads `s` with spaces to
-// `width` code points (UTF-8 here).
+// Returns the UTF-8 string `s` padded with spaces to `width` code
+// points.
 std::string ljust(std::string_view s, std::size_t width);
 
 }  // namespace c6502::binutils::disasm

@@ -1,9 +1,3 @@
-// The port of binutils/ld.py, the parts of linking that know nothing
-// about c6502's link metadata: resolving symbols across objects,
-// shortening instructions whose operands the linker put in zero page,
-// applying relocations, and writing the executable. The module comment
-// of ld.cpp describes how a symbol resolves. passes/link_layout.h fills
-// the `Placed` and `OutputSection` declared here.
 #pragma once
 
 #include <cstdint>
@@ -20,21 +14,17 @@
 namespace c6502::binutils::ld {
 
 // The objects of a link, each with the name it goes by, in the order of
-// the link (Python's `list[tuple[str, ElfFile]]`). An `ElfFile` holds its
-// sections and symbols by shared pointers, so a copy of one names the
-// same sections and symbols.
+// the link. An `ElfFile` holds its sections and symbols by shared
+// pointers, so a copy of one names the same sections and symbols.
 using Objects = std::vector<std::pair<std::string, elf::ElfFile>>;
 
-// The values of names, in the order of a Python dict, as the linker
-// keeps the names it places, the layout's symbols, and the `--defsym`s.
 using Names = OrderedMap<std::string, std::int64_t>;
 
-// Input section `section` of object number `unit`, running at `addr`
-// (Python's `Placed`). `size` is its size in the output, which is 3
-// bytes smaller than the section's when the linker drops a final `JMP`
-// to the function after it. `section` is the object's own section, by
-// pointer, since the linker keys the placed sections by identity
-// (Python's `id(p.section)`).
+// Input section `section` of object number `unit`, running at `addr`.
+// `size` is its size in the output, which is 3 bytes smaller than the
+// section's when the linker drops a final `JMP` to the function after
+// it. `section` is the object's own section, by pointer, since the
+// linker keys the placed sections by identity.
 struct Placed {
   int unit = 0;
   elf::SectionPtr section;
@@ -42,16 +32,13 @@ struct Placed {
   std::int64_t size = 0;
 };
 
-// The placed sections by the address of their `Section` (Python's dict
-// keyed by `id(p.section)`). Nothing iterates over it, so its order
-// doesn't matter.
 using PlacedBySection = std::unordered_map<const elf::Section*, Placed>;
 
-// An output section of the executable (Python's `OutputSection`): its
-// name, its run address `addr`, its load address `load_addr` (the same
-// unless the script gives `AT>` or `AT(...)`), its size in bytes, the
-// placed input sections in address order, whether it has no bytes in
-// the file (`NOLOAD`), and whether it holds code. `executable()` sets
+// An output section of the executable: its name, its run address
+// `addr`, its load address `load_addr` (the same unless the script
+// gives `AT>` or `AT(...)`), its size in bytes, the placed input
+// sections in address order, whether it has no bytes in the file
+// (`NOLOAD`), and whether it holds code. `executable()` sets
 // `elf_section` to the section it writes for it, and the layout leaves
 // it null.
 struct OutputSection {
@@ -66,10 +53,8 @@ struct OutputSection {
 };
 
 // An entry of the executable's symbol table before `executable()`
-// writes it. Python's `Symbol.section` may be an `OutputSection`, which
-// `executable()` replaces by the section it writes for it, and here
-// `output` is the index of that output section in the list
-// `executable()` takes, or -1 when `symbol->section` and
+// writes it. `output` is the index of the output section the symbol is
+// defined in, in the list `executable()` takes, or -1 when `symbol->section` and
 // `symbol->shndx` stand as they are.
 struct OutputSymbol {
   elf::SymbolPtr symbol;
@@ -77,8 +62,7 @@ struct OutputSymbol {
 };
 
 // The global symbols the objects define in sections, as the number of
-// the object and the symbol, and the absolute ones, as values, each in
-// the order of the Python dicts.
+// the object and the symbol, and the absolute ones, as values.
 struct Definitions {
   OrderedMap<std::string, std::pair<int, elf::SymbolPtr>> defs;
   OrderedMap<std::string, std::int64_t> absolute;
@@ -90,8 +74,8 @@ struct Definitions {
 // is an address in one object and defined in a section in another.
 Definitions global_definitions(const Objects& objects);
 
-// Gives each symbol an address, once every section is placed (Python's
-// `Resolver`). It keeps a pointer to `objects`, which must outlive it.
+// Gives each symbol an address, once every section is placed. It keeps
+// a pointer to `objects`, which must outlive it.
 class Resolver {
  public:
   Resolver(const Objects& objects, const std::vector<Placed>& placed, Names extra);
@@ -108,7 +92,6 @@ class Resolver {
   // left out and for an undefined name.
   std::int64_t value(const elf::Symbol& sym, int unit) const;
 
-  // Python's `defs` and `absolute`, from `global_definitions`.
   const Definitions& definitions() const { return definitions_; }
 
  private:
@@ -119,7 +102,7 @@ class Resolver {
 };
 
 // Returns the address of a name the linker knows before the layout, or
-// none (Python's `value_of` argument of `relax`, which returns None).
+// none.
 using ValueOf = std::function<std::optional<std::int64_t>(const elf::SymbolPtr&)>;
 
 // Shortens each absolute instruction in code section `sec` whose
@@ -132,7 +115,7 @@ std::int64_t relax(const elf::SectionPtr& sec, const std::vector<elf::SymbolPtr>
 
 // Returns the bytes of placed section `p` with its relocations applied.
 // `path` names the object in messages. Throws
-// `CompileError("LinkError", ...)` with Python's message when a value
+// `CompileError("LinkError", ...)` when a value
 // doesn't fit its field, for a branch out of reach, and for a type it
 // doesn't know.
 std::string relocate(const Placed& p, const Resolver& resolver, const std::string& path);

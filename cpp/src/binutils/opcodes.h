@@ -1,5 +1,5 @@
 // The 151 documented opcodes of the NMOS 6502, for the assembler and
-// the disassembler (binutils/opcodes.py).
+// the disassembler.
 //
 // `opcode` maps a mnemonic and an addressing mode to the opcode byte,
 // and `decode` maps each opcode byte back. The modes are:
@@ -20,9 +20,7 @@
 //
 // The table is from the MOS MCS6500 programming manual's instruction
 // summary. The undocumented NMOS opcodes, and the 65C02's, aren't in
-// it. The simulator's assembler (sim/assembler.py, and its
-// `instruction_size` in src/sim/assembler.h) has tables of its own for
-// the subset it assembles.
+// it.
 #pragma once
 
 #include <cstdint>
@@ -48,7 +46,7 @@ enum class Mode : std::uint8_t {
   kRel,
 };
 
-// Returns the mode's name in the Python table (`"absx"`).
+// Returns the mode's name, such as `"absx"`.
 std::string_view mode_name(Mode mode);
 
 // Returns the number of bytes an instruction in `mode` takes, opcode
@@ -62,7 +60,7 @@ struct Entry {
   std::uint8_t opcode;
 };
 
-// Returns every row, in the order of the Python table (`OPCODES`).
+// Returns every row of the table.
 std::span<const Entry> table();
 
 // Returns the mnemonic and mode of opcode byte `op`, or null for a byte

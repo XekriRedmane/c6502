@@ -1,6 +1,3 @@
-// The `c6502cpp assemble` command, through which compile.py can run the
-// assembler of `-c` and of an `.asm` input in C++ (group F of step 7,
-// docs/cpp_port.md, connects it).
 #pragma once
 
 #include <string>
@@ -20,8 +17,7 @@ namespace c6502::binutils {
 // where the length counts the bytes after its line, and the arguments
 // are an object with `filename`, `keep_source`, and `link_symbols`, a
 // list of `[name, address]` pairs with null for an address outside zero
-// page, or null for none, as tools/capture_binutils.py records a call of
-// `assemble`. The response is
+// page, or null for none. The response is
 //
 //     object <length>
 //     <the object's bytes>

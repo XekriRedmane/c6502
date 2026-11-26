@@ -22,8 +22,6 @@ constexpr std::size_t kRelaSize = 12;
   throw CompileError("ElfError", message);
 }
 
-// The exception Python's `read` turns into the ElfError for a damaged
-// file: what `struct.error`, `IndexError`, and `ValueError` stand for.
 struct Damaged {};
 
 void put16(std::string& out, std::size_t at, std::uint64_t v) {
@@ -40,10 +38,6 @@ void append16(std::string& out, std::uint64_t v) {
   out.push_back(static_cast<char>((v >> 8) & 0xFF));
 }
 
-// Appends the low 32 bits of `v`, as `struct.pack("<I")` and `"<i"`
-// write a value in their range. The Python code raises struct.error
-// for a value outside it, which no object or executable c6502 writes
-// holds.
 void append32(std::string& out, std::int64_t v) {
   const auto u = static_cast<std::uint64_t>(v);
   for (int k = 0; k < 4; ++k) out.push_back(static_cast<char>((u >> (8 * k)) & 0xFF));
@@ -73,8 +67,6 @@ void append_shdr(std::string& out, const Shdr& h) {
   }
 }
 
-// A string table that keeps each string once, in the order of first
-// use (`_StrTab`).
 class StrTab {
  public:
   StrTab() : data_(1, '\0') { index_.emplace("", 0); }
@@ -95,8 +87,6 @@ class StrTab {
   std::unordered_map<std::string, std::uint32_t> index_;
 };
 
-// Returns true when `s` is UTF-8 as Python's strict decoder takes it:
-// no overlong form, no surrogate, and nothing above U+10FFFF.
 bool is_utf8(std::string_view s) {
   std::size_t i = 0;
   while (i < s.size()) {
@@ -129,15 +119,11 @@ bool is_utf8(std::string_view s) {
   return true;
 }
 
-// The `size` bytes of `data` at `offset` (`_part`), which must not run
-// past the end.
 std::string_view part(std::string_view data, std::uint64_t offset, std::uint64_t size) {
   if (offset + size > data.size()) throw Damaged{};
   return data.substr(offset, size);
 }
 
-// The NUL-terminated name at `off` in `table` (`cstr`), which must end
-// inside it and be UTF-8.
 std::string cstr(std::string_view table, std::uint64_t off) {
   if (off > table.size()) throw Damaged{};
   const std::size_t end = table.find('\0', off);
@@ -206,15 +192,12 @@ ElfFile read_file(std::string_view data, std::string_view name) {
     } else {
       s->data = std::string(blob(h));
       if ((s->name == LINK_SECTION || s->name == SOURCE_SECTION) && !is_utf8(s->data)) {
-        // `link_text` and `source_text` decode these.
         throw Damaged{};
       }
     }
     by_index[i] = s;
     elf.sections.push_back(s);
   }
-  // The symbols by their index in the table, with null for the null
-  // symbol and for a symbol in a section c6502 doesn't keep.
   std::vector<SymbolPtr> symbols{nullptr};
   const Shdr* symtab = nullptr;
   for (const Shdr& h : shdrs) {
@@ -241,8 +224,6 @@ ElfFile read_file(std::string_view data, std::string_view name) {
       } else if (auto it = by_index.find(shndx); it != by_index.end()) {
         sym->section = it->second;
       } else {
-        // A symbol in a section c6502 doesn't keep, such as a section
-        // symbol for .symtab.
         symbols.push_back(nullptr);
         continue;
       }
@@ -273,8 +254,6 @@ ElfFile read_file(std::string_view data, std::string_view name) {
         elf_error(who + ": a relocation in " + target.name +
                   " names a symbol c6502 doesn't read");
       }
-      // The linker writes the field into the section's bytes, so one
-      // past them would end Python's link with an IndexError.
       const std::optional<int> field = reloc_size(static_cast<std::uint8_t>(info & 0xFF));
       if (static_cast<std::uint64_t>(r_offset) + static_cast<std::uint64_t>(field.value_or(1)) >
           target.data.size()) {
@@ -386,13 +365,8 @@ std::string write(const ElfFile& elf) {
   }
   std::unordered_map<const Symbol*, std::uint32_t> sym_index;
   for (std::size_t i = 0; i < symbols.size(); ++i) {
-    // A symbol listed twice takes its last index, as in Python's dict
-    // comprehension. c6502 lists no symbol twice.
     sym_index[symbols[i]] = static_cast<std::uint32_t>(i + 1);
   }
-  // Section header indices: null, the content sections, then for each
-  // section with relocations its .rela section, then .symtab, .strtab,
-  // .shstrtab.
   std::unordered_map<const Section*, std::uint32_t> sec_index;
   for (std::size_t i = 0; i < elf.sections.size(); ++i) {
     sec_index[elf.sections[i].get()] = static_cast<std::uint32_t>(i + 1);
@@ -425,9 +399,6 @@ std::string write(const ElfFile& elf) {
     return off;
   };
 
-  // Segment contents, then section contents. An executable's sections
-  // are the segments' bytes, so its sections point into them where they
-  // match.
   struct Phdr {
     std::uint32_t offset, vaddr, paddr, filesz, memsz, flags;
   };
@@ -503,8 +474,6 @@ std::string write(const ElfFile& elf) {
   const auto shoff = static_cast<std::uint32_t>(out.size());
   for (const Shdr& h : headers) append_shdr(out, h);
   if (headers.size() != shnum) throw InternalError("elf.write: wrong number of section headers");
-  // e_ident: the magic, the class, the byte order, the version, and
-  // nine bytes of padding.
   out[0] = 0x7f;
   out[1] = 'E';
   out[2] = 'L';

@@ -66,8 +66,6 @@ std::vector<std::string> symbol_lines(const elf::ElfFile& elf, const Options& o)
   if (o.extern_only) keep([](const elf::Symbol& s) { return s.is_global(); });
   if (o.undefined_only) keep([](const elf::Symbol& s) { return !s.defined(); });
   if (o.defined_only) keep([](const elf::Symbol& s) { return s.defined(); });
-  // Python's sort is stable, and its strings compare by code point,
-  // which is the order of their UTF-8 bytes.
   if (o.sort == Sort::kName) {
     std::stable_sort(syms.begin(), syms.end(), [](const elf::Symbol* a, const elf::Symbol* b) {
       return std::tie(a->name, a->value) < std::tie(b->name, b->value);
@@ -102,7 +100,6 @@ std::vector<std::string> symbol_lines(const elf::ElfFile& elf, const Options& o)
 }
 
 std::string read_path(const std::string& path) {
-  // Python opens `str(Path(path))`, so `""` is the current directory.
   const std::string normal = argparse::path_str(path);
   const std::string shown = pyrepr::string(normal);
   std::error_code ec;
@@ -161,8 +158,6 @@ int main(const std::vector<std::string>& argv, const ReadFile& read_file, int co
   for (const std::string& path : files) {
     elf::ElfFile elf;
     try {
-      // `E.read_file` names the file `str(path)`, which is the command
-      // line's string itself, where the OSError names `str(Path(path))`.
       elf = elf::read(read_file(path), path);
     } catch (const FileError& e) {
       err += "nm.py: " + e.message + "\n";

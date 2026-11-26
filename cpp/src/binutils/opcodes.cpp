@@ -8,8 +8,6 @@ namespace {
 
 using M = Mode;
 
-// The table of binutils/opcodes.py, mnemonic by mnemonic in its order,
-// and each mnemonic's modes in their order.
 constexpr Entry kTable[] = {
     {"ADC", M::kImm, 0x69},
     {"ADC", M::kZp, 0x65},
@@ -166,7 +164,6 @@ constexpr Entry kTable[] = {
 
 static_assert(std::size(kTable) == 151);
 
-// Each opcode byte's row in `kTable`, or -1.
 std::array<int, 256> decode_table() {
   std::array<int, 256> out;
   out.fill(-1);

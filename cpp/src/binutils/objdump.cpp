@@ -1,7 +1,3 @@
-// objdump.py. Python formats the columns with `str.format`, so a name
-// is padded by code points (`ljust`), a number with `X` is in uppercase
-// hex and with `x` in lowercase, and the alignment is printed as the
-// power of two `2**(align.bit_length() - 1)`.
 #include "binutils/objdump.h"
 
 #include <algorithm>
@@ -48,14 +44,12 @@ std::string flags(const elf::Section& sec) {
   return text;
 }
 
-// Returns `int.bit_length()` of a positive `v`.
 int bit_length(std::int64_t v) {
   int n = 0;
   for (auto u = static_cast<std::uint64_t>(v); u != 0; u >>= 1) ++n;
   return n;
 }
 
-// Returns `text.rstrip("\n").splitlines()`.
 std::vector<std::string> metadata_lines(const std::string& text) {
   const std::size_t end = text.find_last_not_of('\n');
   return pcpp::splitlines(end == std::string::npos ? "" : text.substr(0, end + 1));
@@ -85,8 +79,6 @@ std::vector<std::string> file_header(const elf::ElfFile& elf, const std::string&
 }
 
 std::vector<std::string> section_headers(const elf::ElfFile& elf) {
-  // A later segment at the same address replaces an earlier one, as the
-  // dict does.
   std::map<std::int64_t, std::int64_t> load;
   for (const auto& seg : elf.segments) load[seg.vaddr] = seg.paddr;
   std::vector<std::string> out{"Sections:", "Idx Name                 Size  VMA   LMA   Algn"};
@@ -241,8 +233,6 @@ int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, in
   for (const std::string& path : *args.list("files")) {
     elf::ElfFile elf;
     try {
-      // `E.read_file` names the file `str(path)`, which is the command
-      // line's string itself, where the OSError names `str(Path(path))`.
       elf = elf::read(read_file(path), path);
     } catch (const nm::FileError& e) {
       err += "objdump.py: " + e.message + "\n";

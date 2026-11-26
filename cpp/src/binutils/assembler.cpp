@@ -1,7 +1,3 @@
-// The port of binutils/assembler.py. Python holds the text as code
-// points, so each line is a `std::u32string` here, and every position,
-// length, and slice counts code points as Python's do. Names and
-// messages are UTF-8.
 #include "binutils/assembler.h"
 
 #include <algorithm>
@@ -24,8 +20,6 @@ using asdl::Int;
 using opcodes::Mode;
 using U32 = std::u32string;
 using U32View = std::u32string_view;
-
-// --- Text ------------------------------------------------------------------
 
 U32 to_u32(std::string_view s) {
   U32 out;
@@ -88,17 +82,11 @@ bool is_directive(std::string_view op) {
 constexpr std::string_view kMetaBegin = "; @zp-link-meta-begin";
 constexpr std::string_view kMetaEnd = "; @zp-link-meta-end";
 
-// `_SYMBOL`, `[A-Za-z_.@][A-Za-z0-9_.@%]*`. A `%` can't start a symbol,
-// where it starts a binary number, but it can be inside one: the compiler
-// names the slot of an address-taken temporary after it
-// (`__local_main__addr_%22`).
 bool symbol_start(char32_t c) {
   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '.' || c == '@';
 }
 bool symbol_char(char32_t c) { return symbol_start(c) || (c >= '0' && c <= '9') || c == '%'; }
 
-// Returns the end of the symbol at `pos`, or `pos` when none starts
-// there.
 std::size_t symbol_end(U32View s, std::size_t pos) {
   if (pos >= s.size() || !symbol_start(s[pos])) return pos;
   std::size_t end = pos + 1;
@@ -106,8 +94,6 @@ std::size_t symbol_end(U32View s, std::size_t pos) {
   return end;
 }
 
-// `_EQU`, `^(SYMBOL)\s+(?:EQU|equ|=)\s+(.+?)\s*$`, on a line with no
-// space at its end: the name and the expression's text.
 std::optional<std::pair<std::string, U32>> match_equ(U32View line) {
   const std::size_t name_end = symbol_end(line, 0);
   if (name_end == 0) return std::nullopt;
@@ -128,7 +114,6 @@ std::optional<std::pair<std::string, U32>> match_equ(U32View line) {
   return std::make_pair(to_utf8(line.substr(0, name_end)), rstrip(line.substr(r)));
 }
 
-// `_LABEL`, `^(SYMBOL):?\s*$`: the label's name.
 std::optional<std::string> match_label(U32View line) {
   const std::size_t end = symbol_end(line, 0);
   if (end == 0) return std::nullopt;
@@ -138,8 +123,6 @@ std::optional<std::string> match_label(U32View line) {
   return std::nullopt;
 }
 
-// `_strip_comment`: the line up to a `;` outside a string. A character
-// constant `'c'` takes one character, so its quote opens nothing.
 U32 strip_comment(U32View line) {
   char32_t quote = 0;
   for (std::size_t i = 0; i < line.size(); ++i) {
@@ -156,15 +139,6 @@ U32 strip_comment(U32View line) {
   return U32(line);
 }
 
-// --- Expressions -----------------------------------------------------------
-
-// Python's recursion limit is 1000 calls, of which the parse of a
-// parenthesis takes 8 (`unary` and `expr` at each of its 7 levels), a
-// unary operator 1, and the evaluation of an operator 1 more for each
-// operator under it. The caller's calls are below them, about 30 from
-// compile.py and about 100 under pytest, so Python stops at something
-// over 800. The port's own count of those calls stops at 400, which
-// keeps it from taking an expression Python can't.
 constexpr int kMaxDepth = 400;
 
 [[noreturn]] void too_deep(const std::string& where) {
@@ -175,7 +149,6 @@ constexpr int kMaxDepth = 400;
                          "limit stops it");
 }
 
-// Counts one call of the depth, and throws past `kMaxDepth`.
 class Depth {
  public:
   Depth(int& depth, const std::string& where) : depth_(depth) {
@@ -200,7 +173,6 @@ bool is_hex(char32_t c) {
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-// `_tokens`, with `_TOKEN`'s alternatives in its order.
 std::vector<Token> tokens(U32View text_in, const std::string& where) {
   const U32 text = rstrip(text_in);
   const std::size_t n = text.size();
@@ -246,19 +218,17 @@ std::vector<Token> tokens(U32View text_in, const std::string& where) {
 struct Expr;
 using ExprPtr = std::shared_ptr<const Expr>;
 
-// `_Num`, `_Sym`, `_Un`, and `_Bin`.
 struct Expr {
   enum class Kind { kNum, kSym, kUn, kBin };
   Kind kind = Kind::kNum;
   Int value = 0;
-  std::string name;  // the symbol, or the operator
-  ExprPtr left;      // the operand of a unary operator
+  std::string name;
+  ExprPtr left;
   ExprPtr right;
 };
 
 ExprPtr make(Expr e) { return std::make_shared<const Expr>(std::move(e)); }
 
-// Binary operators by precedence, lowest first (`_LEVELS`).
 const std::vector<std::vector<std::u32string_view>>& levels() {
   static const std::vector<std::vector<std::u32string_view>> v = {
       {U"|"}, {U"^"}, {U"&"}, {U"<<", U">>"}, {U"+", U"-"}, {U"*", U"/"}};
@@ -332,7 +302,6 @@ class ExprParser {
   int depth_ = 0;
 };
 
-// `parse_expr`.
 ExprPtr parse_expr(U32View text, const std::string& where) {
   ExprParser p(tokens(text, where), where);
   ExprPtr e = p.expr();
@@ -342,8 +311,6 @@ ExprPtr parse_expr(U32View text, const std::string& where) {
   return e;
 }
 
-// A symbol plus a constant, or a constant when `symbol` is none, with
-// `select` 'l' or 'h' for `<` or `>` of it (`Value`).
 struct Value {
   std::optional<std::string> symbol;
   Int addend = 0;
@@ -372,11 +339,6 @@ Int const_op(const std::string& op, Int a, Int b, const std::string& where) {
   error(where + ": unknown operator " + op);
 }
 
-// The values of the symbols an expression may fold, or null for a
-// symbol it can't.
-// The constants are `values`, under `overlay`'s names given an address
-// when there is one, which is the dict `{**values, **overlay}` with the
-// names given None left out.
 struct Constants {
   const std::map<std::string, Int>* values = nullptr;
   const std::map<std::string, std::optional<Int>>* overlay = nullptr;
@@ -392,9 +354,6 @@ struct Constants {
   }
 };
 
-// `evaluate`: `e` as a `Value`. A symbol in `constants` folds to its
-// value where an operator needs a number; any other symbol stays a
-// symbol, which only `+`, `-`, `<`, and `>` may combine with constants.
 class Evaluator {
  public:
   Evaluator(const Constants& constants, const std::string& where)
@@ -458,21 +417,17 @@ Value evaluate(const Expr& e, const Constants& constants, const std::string& whe
   return ev.go(e);
 }
 
-// --- Statements ------------------------------------------------------------
-
-// The addressing syntax of an operand (`_split_operand`), before the
-// mode is chosen.
 enum class Syntax { kImp, kAcc, kImm, kInd, kIndx, kIndy, kX, kY, kPlain };
 
 struct Stmt {
   int line = 0;
-  std::string op;  // mnemonic or directive, uppercase
+  std::string op;
   U32 operand;
   Mode mode = Mode::kImp;
-  ExprPtr expr;                 // an instruction's operand
-  std::vector<U32> strings;     // DC.B's items
-  std::vector<ExprPtr> values;  // DC.W's and DC.L's
-  Int count = 0;                // DS.B's
+  ExprPtr expr;
+  std::vector<U32> strings;
+  std::vector<ExprPtr> values;
+  Int count = 0;
   int fill = 0;
   Int size = 0;
 };
@@ -482,8 +437,6 @@ struct Item {
   int line = 0;
   bool function = false;
   std::vector<Stmt> stmts;
-  // Local label -> index of the statement it precedes, in the order of
-  // definition.
   std::vector<std::pair<std::string, std::size_t>> labels;
 };
 
@@ -502,8 +455,6 @@ bool balanced(U32View s) {
   return depth == 0;
 }
 
-// Returns the index before `k`, going back over spaces from `k`, or
-// npos when it runs off the start.
 std::size_t back_over_space(U32View s, std::size_t k) {
   while (k != U32::npos && space(s[k])) k = k == 0 ? U32::npos : k - 1;
   return k;
@@ -517,8 +468,6 @@ std::pair<Syntax, ExprPtr> split_operand(const std::string& op, U32View operand,
   if (is_shift(op) && pcpp::upper(to_utf8(s)) == "A") return {Syntax::kAcc, nullptr};
   if (s[0] == '#') return {Syntax::kImm, parse_expr(U32View(s).substr(1), where)};
   if (s[0] == '(') {
-    // `\((.*)\)\s*,\s*[Yy]`: from the end, a Y, spaces, a comma, spaces,
-    // and the parenthesis that closes the group.
     if (s[n - 1] == 'Y' || s[n - 1] == 'y') {
       std::size_t k = back_over_space(s, n >= 2 ? n - 2 : U32::npos);
       if (k != U32::npos && s[k] == ',') {
@@ -529,7 +478,6 @@ std::pair<Syntax, ExprPtr> split_operand(const std::string& op, U32View operand,
         }
       }
     }
-    // `\((.*),\s*[Xx]\s*\)`.
     if (s[n - 1] == ')') {
       std::size_t k = back_over_space(s, n >= 2 ? n - 2 : U32::npos);
       if (k != U32::npos && (s[k] == 'X' || s[k] == 'x')) {
@@ -544,8 +492,6 @@ std::pair<Syntax, ExprPtr> split_operand(const std::string& op, U32View operand,
       return {Syntax::kInd, parse_expr(U32View(s).substr(1, n - 2), where)};
     }
   }
-  // `(.*?)\s*,\s*([XxYy])`: the lazy group ends at the spaces before the
-  // comma that comes, after spaces, before the last letter.
   const char32_t last = s[n - 1];
   if (last == 'X' || last == 'x' || last == 'Y' || last == 'y') {
     const std::size_t k = back_over_space(s, n >= 2 ? n - 2 : U32::npos);
@@ -557,8 +503,6 @@ std::pair<Syntax, ExprPtr> split_operand(const std::string& op, U32View operand,
   return {Syntax::kPlain, parse_expr(s, where)};
 }
 
-// `_split_list`: `s` split at its top-level commas, keeping quoted
-// strings.
 std::vector<U32> split_list(U32View s) {
   std::vector<U32> out;
   U32 cur;
@@ -587,9 +531,6 @@ std::vector<U32> split_list(U32View s) {
   return out;
 }
 
-// `Path(filename).name`: the last part of the path, as pathlib splits it
-// on this system, or "" for a path with none. A UNC path's share counts
-// as a part here, where pathlib takes it as the drive.
 std::string path_name(std::string_view filename) {
   const std::string s = argparse::path_str(std::string(filename));
 #ifdef _WIN32
@@ -602,8 +543,6 @@ std::string path_name(std::string_view filename) {
 #endif
   return name == "." ? "" : name;
 }
-
-// --- The assembler ---------------------------------------------------------
 
 class Assembler {
  public:
@@ -657,7 +596,6 @@ class Assembler {
         }
         continue;
       }
-      // `line.strip().split(None, 1)`.
       const U32 body = strip(line);
       std::size_t word_end = 0;
       while (word_end < body.size() && !space(body[word_end])) ++word_end;
@@ -688,11 +626,8 @@ class Assembler {
       for (const auto& it : meta.items) item_meta_[it.name] = it;
     }
 
-    // EQUs: absolute symbols, or the values the linker replaces.
     for (const Equ& equ : equs) {
       const std::string w = where(equ.line);
-      // `{**self.constants, **link_symbols}`, without the names given as
-      // None.
       const Constants known{.values = &constants_, .overlay = &link_symbols_};
       const Value v = evaluate(*parse_expr(equ.text, w), known, w);
       Int value = v.addend;
@@ -705,8 +640,6 @@ class Assembler {
         error(w + ": " + equ.name + " is given two values");
       }
       if (is_link_placed(equ.name, zp_objects_)) {
-        // A value the caller gives (the linker's, when it assembles a
-        // unit again) wins over the unit's own.
         link_symbols_.emplace(equ.name, value);
       } else {
         constants_[equ.name] = value;
@@ -725,10 +658,6 @@ class Assembler {
  private:
   std::string where(int line) const { return filename_ + ":" + std::to_string(line); }
 
-  // Sizing ------------------------------------------------------------------
-
-  // The value of `v` when the assembler can see it, for choosing an
-  // addressing mode.
   std::optional<Int> known_value(const Value& v, const std::string& w) const {
     if (!v.symbol) return v.addend;
     if (const auto it = constants_.find(*v.symbol); it != constants_.end()) {
@@ -743,7 +672,6 @@ class Assembler {
   bool in_zero_page(const Value& v, const std::string& w) const {
     if (v.select != 0) return true;
     if (const auto value = known_value(v, w)) return *value >= 0 && *value <= 0xFF;
-    // Given as None: the linker put it outside zero page.
     if (link_symbols_.contains(*v.symbol)) return false;
     return is_runtime_name(*v.symbol) && v.addend < 0x100;
   }
@@ -831,8 +759,6 @@ class Assembler {
     st.size = opcodes::size(mode);
   }
 
-  // Building ----------------------------------------------------------------
-
   elf::SectionPtr section_for(const Item& it) const {
     const auto meta = item_meta_.find(it.name);
     const bool only_ds = std::all_of(it.stmts.begin(), it.stmts.end(),
@@ -870,8 +796,6 @@ class Assembler {
   struct Placed {
     Item* item;
     elf::SectionPtr section;
-    // The item's local labels and their offsets, in the order of
-    // definition.
     std::vector<std::pair<std::string, Int>> labels;
   };
 
@@ -959,10 +883,8 @@ class Assembler {
                  const std::vector<std::pair<std::string, Int>>& label_list) {
     Locals local;
     std::map<std::string, Int> labels;
-    // The labels by offset, keeping the order of definition among equal
-    // offsets, as Python's `sorted` does. MSVC's `stable_sort` can't
-    // take the 16-byte alignment of `Int` in its buffer, so the indices
-    // are sorted.
+    // MSVC's `stable_sort` can't take the 16-byte alignment of `Int` in
+    // its buffer, so the indices are sorted.
     std::vector<std::size_t> order(label_list.size());
     for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
@@ -1077,8 +999,6 @@ class Assembler {
     field(sec, data, v, width, local, w, width == 1);
   }
 
-  // Appends a `width`-byte field holding `v`, with a relocation when `v`
-  // names a symbol.
   void field(elf::Section& sec, std::string& data, const Value& v, int width, const Locals& local,
              const std::string& w, bool zero_page) {
     if (!v.symbol) {
@@ -1116,9 +1036,6 @@ class Assembler {
     data.append(static_cast<std::size_t>(width), '\0');
   }
 
-  // The most bytes a `DS.B` in a section with contents may fill, which
-  // keeps a hand-written count from asking for more memory than the
-  // process has. An object of c6502's holds at most 64 KB.
   static constexpr std::int64_t kMaxFill = 1 << 24;
 
   std::string filename_;
@@ -1130,7 +1047,6 @@ class Assembler {
   std::set<std::string, std::less<>> zp_objects_;
   std::map<std::string, passes::ItemMeta> item_meta_;
   std::map<std::string, Int> constants_;
-  // The absolute symbols, in the order the `EQU`s first gave them.
   std::vector<std::pair<std::string, Int>> abs_symbols_;
   elf::ElfFile out_;
   std::map<std::string, elf::SymbolPtr> global_syms_;

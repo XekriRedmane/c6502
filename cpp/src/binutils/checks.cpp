@@ -35,24 +35,19 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// The kinds of record, in the order the summary lists them.
 constexpr std::string_view kKinds[] = {
     "assemble",       "parse_metadata", "elf_read",  "parse_script",    "link",
     "disassemble",    "nm",             "objdump",   "runtime_library", "lay_out",
     "default_script", "fall_through",   "tail_jump", "startup_lines",
-    // The linker's functions on the link metadata (group D1).
     "link_merge", "link_carry_conflict", "link_arrivals", "link_validate_eligibility",
     "link_synthesize", "link_rename_locals", "link_rename_meta", "link_merge_zp_objects",
     "link_place_zp_objects", "link_choose_layout", "link_runtime_bytes", "link_shares",
     "merge_shares", "check_linked_shares", "link_bind_extern_params", "link_drop_unused_locals",
     "link_init_lines", "link_data_lines", "link_regs",
-    // binutils/ld.py, and passes/linker.py's functions on the objects.
     "global_definitions", "relax", "executable", "linker_runtime_library", "object_items",
     "item_symbol", "without_init", "unit", "apply_renames", "pointer_names", "reassemble",
     "output_symbols", "merge_identical", "contents"};
 
-// Returns the error `e` compared with the recorded one, or "" when the
-// two have the same Python type and message.
 std::string compare_error(const CompileError& e, const capture::Call& call,
                           const json::Value& output) {
   if (!call.output_is_error) return std::string("C++ raised ") + e.python_type() + ": " + e.what();
@@ -63,13 +58,9 @@ std::string compare_error(const CompileError& e, const capture::Call& call,
   return "";
 }
 
-// The counts of one kind's records.
 struct Count {
   std::size_t records = 0;
-  // Records whose JSON made the trip to C++ and back.
   std::size_t trips = 0;
-  // Records a ported function ran on, and those it gave the recorded
-  // result for.
   std::size_t ran = 0;
   std::size_t matched = 0;
   std::size_t differ = 0;
@@ -102,13 +93,9 @@ class Checker {
 
   std::size_t files_checked() const { return round_trips_.size(); }
   std::size_t files_differ() const { return bad_files_; }
-  // The `parse_metadata` records whose text `format_metadata` writes
-  // again from what C++ parsed.
   std::size_t metadata_rewritten() const { return metadata_rewritten_; }
 
  private:
-  // Returns what differs when the record's JSON is read and written
-  // again, or the empty string.
   static std::string trip(const capture::Call& call) {
     const auto again = [](const std::string& text, bool newline) {
       const std::string body = newline ? text.substr(0, text.size() - 1) : text;
@@ -126,9 +113,6 @@ class Checker {
     return capture::read_file(root_ / "blobs" / hash);
   }
 
-  // Returns what differs when the object or executable `hash` is read
-  // and written again in C++, or the empty string. Each file is checked
-  // once.
   std::string round_trip(const std::string& hash) {
     if (auto it = round_trips_.find(hash); it != round_trips_.end()) return it->second;
     const std::string data = blob(hash);
@@ -242,8 +226,6 @@ class Checker {
       bool same = lines.size() == formatted.items.size();
       for (std::size_t i = 0; same && i < lines.size(); ++i) same = lines[i] == formatted.items[i].string;
       if (!same) return "format_metadata's lines differ";
-      // The assembler and the linker parse the block alone, which
-      // `format_metadata` wrote, so it writes the same text again.
       std::string text;
       for (const auto& line : lines) text += line + "\n";
       if (text == input.string) ++metadata_rewritten_;
@@ -339,8 +321,6 @@ class Checker {
       ++count.matched;
       return "";
     }
-    // The files each kind holds that c6502 wrote, which must make the
-    // trip through the C++ reader and writer.
     std::vector<std::string> files;
     if (kind == "link") {
       for (const auto& pair : input.get("objects")->items) files.push_back(pair.items.at(1).string);
@@ -353,9 +333,6 @@ class Checker {
     return "";
   }
 
-  // Links a `link` record's objects in C++, read from their bytes, with
-  // its script, origin, and `--defsym`s, and compares the executable
-  // byte for byte, or the error word for word.
   std::string run_link(const capture::Call& call, const json::Value& args,
                        const json::Value& input, const json::Value& output, Count& count) {
     ++count.ran;

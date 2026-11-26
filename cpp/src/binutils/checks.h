@@ -1,6 +1,3 @@
-// `c6502cpp check-binutils`: the checks of the records that
-// tools/capture_binutils.py writes of the Python assembler, linker,
-// nm.py, and objdump.py (step 7, docs/cpp_port.md).
 #pragma once
 
 #include <string>

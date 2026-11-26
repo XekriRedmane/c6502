@@ -1,7 +1,6 @@
-// ELF32 object and executable files for the 6502, as c6502 writes them
-// (binutils/elf.py). `compile.py -c` writes a relocatable object
-// (`ET_REL`), and linking writes an executable (`ET_EXEC`). `read` and
-// `write` convert between the bytes and an `ElfFile`, which nm, objdump,
+// ELF32 object and executable files for the 6502, as c6502 writes them.
+// `compile.py -c` writes a relocatable object (`ET_REL`), and linking
+// writes an executable (`ET_EXEC`). `read` and `write` convert between the bytes and an `ElfFile`, which nm, objdump,
 // the linker, and the simulator all work on.
 //
 // The machine number and the relocation numbers are those llvm-mos
@@ -10,28 +9,11 @@
 // carry c6502's link metadata, though, which no other linker reads, so
 // they aren't meant to be linked by llvm-mos's `ld.lld`.
 //
-// An object has one section per function and per object, as gcc's
-// `-ffunction-sections` gives, so the linker can place each item on its
-// own. Each section is named after the section its item goes in
-// (`.text`, `.rodata`, `.data`, `.bss`, or a name from
-// `[[c6502::section]]`), so several sections share a name. GNU as does
-// the same with `.section name,"ax",@progbits,unique,N`. The link
-// metadata (passes/zp_link_metadata.py) is the text of the section
-// `.c6502.link`, which isn't loaded.
-//
 // Relocations are `SHT_RELA`, each with its addend in the entry. The
 // value a relocation computes is S + A, where S is the symbol's address
 // and A the addend. `R_MOS_PCREL_8` computes S + A - P, where P is the
 // address of the byte it writes, and the assembler sets A to -1, so the
 // byte is the branch displacement from the next instruction.
-//
-// Every value is little-endian, as on the 6502.
-//
-// The Python classes are linked by identity: a symbol names the
-// `Section` object it's defined in, a relocation the `Symbol` object it
-// reads, and the linker renames and redefines symbols in place so that
-// every relocation of them follows. The C++ classes keep that with
-// shared pointers, so a port of the linker can do the same.
 #pragma once
 
 #include <cstdint>
@@ -43,7 +25,6 @@
 
 namespace c6502::binutils::elf {
 
-// e_ident and the header.
 constexpr std::uint8_t ELFCLASS32 = 1;
 constexpr std::uint8_t ELFDATA2LSB = 1;
 constexpr std::uint32_t EV_CURRENT = 1;
@@ -52,7 +33,6 @@ constexpr std::uint16_t ET_EXEC = 2;
 constexpr std::uint16_t EM_MOS = 6502;
 constexpr std::uint32_t EF_MOS_ARCH_6502 = 0x00000001;
 
-// Section types.
 constexpr std::uint32_t SHT_NULL = 0;
 constexpr std::uint32_t SHT_PROGBITS = 1;
 constexpr std::uint32_t SHT_SYMTAB = 2;
@@ -60,17 +40,14 @@ constexpr std::uint32_t SHT_STRTAB = 3;
 constexpr std::uint32_t SHT_RELA = 4;
 constexpr std::uint32_t SHT_NOBITS = 8;
 
-// Section flags.
 constexpr std::uint32_t SHF_WRITE = 0x1;
 constexpr std::uint32_t SHF_ALLOC = 0x2;
 constexpr std::uint32_t SHF_EXECINSTR = 0x4;
 constexpr std::uint32_t SHF_INFO_LINK = 0x40;
 
-// Special section indices.
 constexpr std::uint16_t SHN_UNDEF = 0;
 constexpr std::uint16_t SHN_ABS = 0xFFF1;
 
-// Symbol bindings and types.
 constexpr std::uint8_t STB_LOCAL = 0;
 constexpr std::uint8_t STB_GLOBAL = 1;
 constexpr std::uint8_t STT_NOTYPE = 0;
@@ -85,13 +62,11 @@ constexpr std::uint8_t STT_FILE = 4;
 // to put below $100.
 constexpr std::uint8_t STO_MOS_ZEROPAGE = 0x20;
 
-// Program header types and flags.
 constexpr std::uint32_t PT_LOAD = 1;
 constexpr std::uint32_t PF_X = 0x1;
 constexpr std::uint32_t PF_W = 0x2;
 constexpr std::uint32_t PF_R = 0x4;
 
-// Relocation types.
 constexpr std::uint8_t R_MOS_NONE = 0;
 constexpr std::uint8_t R_MOS_IMM8 = 1;
 constexpr std::uint8_t R_MOS_ADDR8 = 2;
@@ -208,9 +183,7 @@ std::string write(const ElfFile& elf);
 
 // Returns the `ElfFile` in `data`. `name` is for error messages. Throws
 // `CompileError("ElfError", ...)` when `data` isn't a little-endian
-// ELF32 file for the 6502, or when it's truncated or damaged, wherever
-// Python's `struct.error`, `IndexError`, or `ValueError` would end the
-// read (see `read` in elf.cpp).
+// ELF32 file for the 6502, or when it's truncated or damaged.
 ElfFile read(std::string_view data, std::string_view name = "file");
 
 }  // namespace c6502::binutils::elf

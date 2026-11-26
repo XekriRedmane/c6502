@@ -20,7 +20,6 @@ namespace c6502::binutils {
 
 namespace {
 
-// Reads the lines and sections of a request in order.
 class Request {
  public:
   explicit Request(const std::string& text) : text_(text) {}
@@ -63,10 +62,6 @@ class Request {
   std::size_t pos_ = 0;
 };
 
-// Returns `v` as a 64-bit value, the width the C++ linker holds an
-// address in. compile.py reads an origin or a `--defsym` with Python's
-// unbounded integers, so a wider one throws `InternalError`, which says
-// the port doesn't take it.
 std::int64_t address(const json::Value& v, std::string_view what) {
   if (v.kind != json::Value::Kind::kInt) {
     throw std::runtime_error("the link request's " + std::string(what) + " isn't an integer");
@@ -79,7 +74,6 @@ std::int64_t address(const json::Value& v, std::string_view what) {
   return static_cast<std::int64_t>(v.integer);
 }
 
-// The request's arguments and objects.
 struct LinkRequest {
   std::vector<std::pair<std::string, std::string_view>> objects;
   std::optional<std::string> script;
@@ -121,8 +115,6 @@ std::string error_response(const CompileError& e, std::optional<std::size_t> inp
   return "error " + out + "\n";
 }
 
-// Runs compile.py's link on `request`: reads each object, then the
-// script, links them, and writes the executable.
 std::string run(const LinkRequest& request) {
   ld::Objects objects;
   for (std::size_t k = 0; k < request.objects.size(); ++k) {

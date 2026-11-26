@@ -1,9 +1,3 @@
-// binutils/disasm.py. The header gives the listing's form. Python keys
-// the labels, the mapping symbols, the relocations, and the symbols of
-// an executable by address in dicts that are only looked up, so these
-// are `std::map`s. The lists in them keep the order of the symbol
-// table, which the sorts below rely on, since Python's sort is stable
-// and its strings compare by code point, the order of their UTF-8 bytes.
 #include "binutils/disasm.h"
 
 #include <algorithm>
@@ -28,8 +22,6 @@ bool starts_with_dot(const std::string& name) { return !name.empty() && name[0] 
 
 bool is_mapping(const std::string& name) { return name == "$d" || name == "$c"; }
 
-// Returns one line of the listing: the opcode (or directive) in its
-// column, the operand in its column, and the comment after ` ; `.
 std::string line(std::string_view op, std::string_view operand = "", std::string_view comment = "") {
   std::string text = std::string(kOpcodeCol, ' ') + std::string(op);
   if (!operand.empty()) text = ljust(text, kOperandCol) + std::string(operand);
@@ -37,16 +29,13 @@ std::string line(std::string_view op, std::string_view operand = "", std::string
   return text;
 }
 
-// Returns `$` and the value in `2 * width` hex digits (`_hex`).
 std::string hex(std::int64_t v, int width) { return "$" + format_hex(v, 2 * width); }
 
-// Returns `name`, `name+k`, or `name-k` for a symbol and an addend.
 std::string sym_expr(const std::string& name, std::int64_t addend) {
   if (addend == 0) return name;
   return addend > 0 ? name + "+" + std::to_string(addend) : name + "-" + std::to_string(-addend);
 }
 
-// One section's labels, relocations, and mapping symbols (`_Section`).
 struct SectionInfo {
   const elf::Section* sec = nullptr;
   bool exe = false;
@@ -70,8 +59,6 @@ struct SectionInfo {
       }
       labels[off].push_back(sym.get());
     }
-    // A function starts code and an object starts data, since a linker
-    // script can put both in one output section.
     for (const auto& [off, syms] : labels) {
       for (const auto* sym : syms) {
         if (sym->type == elf::STT_FUNC) {
@@ -82,15 +69,12 @@ struct SectionInfo {
       }
     }
     for (auto& [off, syms] : labels) {
-      // The item's own symbol first, then local labels.
       std::stable_sort(syms.begin(), syms.end(), [](const elf::Symbol* a, const elf::Symbol* b) {
         const bool na = a->type == elf::STT_NOTYPE;
         const bool nb = b->type == elf::STT_NOTYPE;
         return std::tie(na, a->name) < std::tie(nb, b->name);
       });
     }
-    // A later relocation at the same offset replaces an earlier one, as
-    // the dict comprehension does.
     for (const auto& r : s.relocs) relocs[r.offset] = &r;
   }
 
@@ -100,7 +84,6 @@ struct SectionInfo {
 
 using Synthetic = std::map<std::int64_t, std::string>;
 
-// An instruction's mnemonic, mode, and size.
 struct Decoded {
   std::string_view mnemonic;
   Mode mode;
@@ -115,13 +98,10 @@ class Disassembler {
     for (const auto& s : elf.symbols) {
       if (s->defined() && s->type == elf::STT_OBJECT && s->size > 1) objects_.push_back(s.get());
     }
-    // Addresses of symbols in an executable, for naming operands.
     for (const auto& s : elf.symbols) {
       if (!s->defined() || s->type == elf::STT_FILE || s->type == elf::STT_SECTION) continue;
       if (is_mapping(s->name)) continue;
       if (s->name.starts_with("__") && s->name.ends_with("_size")) {
-        // A section's size (passes/link_layout.py), which isn't an
-        // address.
         continue;
       }
       by_addr_[s->value].push_back(s.get());
@@ -130,7 +110,6 @@ class Disassembler {
 
   bool exe() const { return exe_; }
 
-  // Returns the operand text of relocation `r`.
   static std::string reloc_text(const elf::Reloc& r) {
     const std::string& name = r.symbol->name;
     if (r.type == elf::R_MOS_ADDR16_LO || r.type == elf::R_MOS_ADDR16_HI) {
@@ -142,12 +121,9 @@ class Disassembler {
     return sym_expr(name, r.addend);
   }
 
-  // Returns the symbol to write for address `addr` in an executable, or
-  // none.
   std::optional<std::string> addr_name(std::int64_t addr, const elf::Symbol* function) const {
     const auto it = by_addr_.find(addr);
     if (it == by_addr_.end() || it->second.empty()) {
-      // A byte inside an object: `name+k`.
       std::vector<const elf::Symbol*> inside;
       for (const auto* s : objects_) {
         if (s->value < addr && addr < s->value + s->size) inside.push_back(s);
@@ -186,7 +162,6 @@ class Disassembler {
     return named.front()->name;
   }
 
-  // Returns the trailing comment of a line at `addr` with bytes `data`.
   std::string comment(std::int64_t addr, std::string_view data) const {
     std::vector<std::string> parts;
     if (opt_.addresses) parts.push_back(format_hex(addr, 4));
@@ -211,7 +186,6 @@ class Disassembler {
     std::vector<std::string> out;
     const std::int64_t size = sec.size();
     const bool code = (sec.flags & elf::SHF_EXECINSTR) != 0;
-    // Branch targets with no label get one.
     Synthetic synthetic;
     if (code && sec.type != elf::SHT_NOBITS) scan_targets(info, synthetic);
     const elf::Symbol* function = nullptr;
@@ -265,7 +239,6 @@ class Disassembler {
     return static_cast<unsigned char>(data[static_cast<std::size_t>(k)]);
   }
 
-  // Returns `data[off:off + n]`, cut short at the end as a slice is.
   static std::string_view slice(const std::string& data, std::int64_t off, std::int64_t n) {
     const auto size = static_cast<std::int64_t>(data.size());
     if (off >= size) return {};
@@ -307,7 +280,6 @@ class Disassembler {
     if (e == nullptr) return std::nullopt;
     const int n = opcodes::size(e->mode);
     if (off + n > size) return std::nullopt;
-    // An instruction can't run over a label or a mapping symbol.
     for (std::int64_t k = off + 1; k < off + n; ++k) {
       if (info.has_label(k) || info.has_mapping(k)) return std::nullopt;
     }
@@ -431,10 +403,6 @@ class Disassembler {
   std::vector<const elf::Symbol*> objects_;
 };
 
-// Returns the name of a section's `SEG`: the name without its leading
-// dots, with each code point other than an ASCII letter, digit, or `_`
-// replaced by `_`, as `re.sub(r"[^A-Za-z0-9_]", "_", ...)` does, or
-// `seg` when nothing is left.
 std::string seg_name(const std::string& name) {
   const std::size_t start = name.find_first_not_of('.');
   const std::string_view rest =
@@ -507,8 +475,6 @@ std::vector<std::string> disassemble(const elf::ElfFile& elf, bool all_sections,
       }
     }
   }
-  // A later segment at the same address replaces an earlier one, as the
-  // dict does.
   std::map<std::int64_t, std::int64_t> load;
   for (const auto& seg : elf.segments) load[seg.vaddr] = seg.paddr;
   const auto lma_of = [&](const elf::Section& sec) {

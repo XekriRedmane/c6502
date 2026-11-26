@@ -1,6 +1,5 @@
 // objdump.py, which shows what's in c6502 objects and executables as
-// GNU objdump does, with the disassembly in dasm's syntax (step 7,
-// docs/cpp_port.md).
+// GNU objdump does, with the disassembly in dasm's syntax.
 //
 //     -d, --disassemble      disassemble the code sections
 //     -D, --disassemble-all  disassemble every loaded section, data as DC.B

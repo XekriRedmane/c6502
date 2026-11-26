@@ -1,5 +1,5 @@
 // nm.py, which lists the symbols of c6502 objects and executables as
-// GNU nm does (step 7, docs/cpp_port.md).
+// GNU nm does.
 //
 // Each line is the symbol's value, a letter for its kind, and its name:
 //
@@ -32,7 +32,6 @@ namespace c6502::binutils::nm {
 
 enum class Sort { kName, kNumeric, kNone };
 
-// The options of `symbol_lines`, with Python's defaults.
 struct Options {
   bool debug = false;
   bool extern_only = false;

@@ -1,6 +1,3 @@
-// The `c6502cpp link` command, through which compile.py can run the
-// link of its objects in C++ (group F of step 7, docs/cpp_port.md,
-// connects it).
 #pragma once
 
 #include <string>

@@ -8,6 +8,7 @@
 #include "asdl/runtime.h"
 #include "asm_ast.h"
 #include "doctest.h"
+#include "passes/asm_operands.h"
 #include "passes/zp_globals.h"
 #include "rtlib/helpers.h"
 
@@ -45,6 +46,22 @@ TEST_CASE("a footprint counts the helpers a helper calls") {
   CHECK(fp.at("sdivmod16") == 11);
   CHECK(fp.at("sdivmod32") == 22);
   CHECK(fp.at("bin16_to_bcd") == 7);
+}
+
+// `library_text` writes the helpers with the classic runtime layout,
+// since the link's layout isn't chosen until the helpers' HARGS need is
+// known. The layout changes only how `asm_emit` names a `(zp),Y` base,
+// which it finds by address, so the text is the same for every layout
+// while no helper has one.
+TEST_CASE("no helper reaches memory through a zero-page pointer named by its address") {
+  for (const auto& fn : rtlib::all_helper_functions()) {
+    for (const auto& instr : fn.instructions) {
+      passes::for_each_operand<true>(instr, [&](const asm_ast::Type_operand& op) {
+        CAPTURE(fn.name);
+        CHECK_FALSE(asdl::isa<asm_ast::IndirectZp, asm_ast::IndirectZpY>(op));
+      });
+    }
+  }
 }
 
 }  // namespace

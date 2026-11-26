@@ -1,53 +1,3 @@
-/* TAC pass that turns an access through `&obj + k` into a direct access
-to byte `k` of `obj`.
-
-`c99_to_tac` lowers a struct member, and an array element at a constant
-index, as pointer arithmetic on the object's address:
-
-    GetAddress(g, %p)
-    Binary(Add, %p, Constant(12), %q)
-    Store(c, %q)                      # g.command = c
-
-or, after `recognize_indirect_indexed`, as an `IndirectIndexedStore(%p,
-Constant(12), c)`. `tac_to_asm` then builds the address in a zero-page
-pair and stores through it with `STA (ptr),Y`. This pass rewrites the
-access to `IndexedSymbolStore(g, Constant(12), c)` (or `IndexedLoad` for
-a read), which `tac_to_asm` lowers with a constant index to plain `STA
-g+12` for an object with static storage, or to the local's own byte for
-an automatic one. The `GetAddress` and the `Add` are left for dead-store
-elimination, which drops them when nothing else uses the address.
-
-When every access to a local struct or array goes this way, nothing
-takes its address any more, so the asm register allocator can give its
-bytes zero-page slots in place of a soft-stack frame.
-
-The rewritten forms are these.
-
-    Load(&obj + k, dst)                    -> IndexedLoad(obj, k, dst)
-    Store(src, &obj + k)                   -> IndexedSymbolStore(obj, k, src)
-    IndirectIndexedLoad(&obj + k, j, dst)  -> IndexedLoad(obj, k + j, dst)
-    IndirectIndexedStore(&obj + k, j, src) -> IndexedSymbolStore(obj, k + j, src)
-
-Here `&obj + k` is an SSA pointer defined by `GetAddress(obj)`, possibly
-followed by one `Binary(Add, _, Constant(k))`, and `j` is a Constant.
-The volatile bit carries over.
-
-The conditions are these.
-
-  * `obj` has static storage (any type), or it's an automatic struct,
-    union, or array that isn't a parameter. An automatic scalar is left
-    alone, since once its address isn't taken, SSA construction could
-    rename it, and the rewritten access names the original. Aggregates
-    are never renamed.
-  * `0 <= k + j <= 255`, since the index is one byte. An access outside
-    the object through `&obj + k` is undefined behavior in C, so no
-    other bound is needed.
-  * The value loaded or stored is a scalar. Copying a whole struct
-    member that is itself a struct still goes through the pointer.
-
-The pointers and their offsets are found in one walk over the
-instructions in order, so an Add that comes before the definition of
-the pointer it adds to (as one in a loop can) isn't followed. */
 #include "passes/optimization/direct_member_access.h"
 
 #include <map>
@@ -85,9 +35,6 @@ bool is_aggregate(const c99::Type_data_type& t) {
          std::holds_alternative<c99::Array>(t);
 }
 
-// Returns the value of an integer constant of any width (Python's
-// `_INT_CONSTS`, which takes the odd widths of the bit-precise types
-// too), or none.
 std::optional<Int> const_value(const ir::Type_val& v) {
   const auto* c = std::get_if<ir::Constant>(&v);
   if (c == nullptr) {
@@ -96,7 +43,6 @@ std::optional<Int> const_value(const ir::Type_val& v) {
   return bit_precise::raw_value(c->const_);
 }
 
-// The object an SSA pointer points into, and the byte offset.
 struct Base {
   std::string obj;
   Int offset = 0;
@@ -130,7 +76,6 @@ ir::Function direct_member_access(ir::Function fn, const PassContext& ctx) {
     return sym != nullptr && !is_aggregate(strip(sym->type));
   };
 
-  // Each SSA pointer's object and byte offset.
   std::map<std::string, Base, std::less<>> base;
   std::vector<const ir::Binary*> adds;
   for (const auto& instr : fn.instructions) {
@@ -168,8 +113,6 @@ ir::Function direct_member_access(ir::Function fn, const PassContext& ctx) {
     }
   }
 
-  // Returns the object and the constant index of an access through
-  // `ptr` with `extra` more bytes of offset, or none.
   const auto target = [&](const ir::Type_val& ptr,
                           Int extra) -> std::optional<std::pair<std::string, ir::Type_val>> {
     const auto* p = std::get_if<ir::Var>(&ptr);

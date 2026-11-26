@@ -1,86 +1,3 @@
-// Per-function body-local zero-page pools.
-//
-// `zp_slot_allocation` hands each zp_abi function a private byte range
-// for its parameters, disjoint from every transitive caller's range.
-// `allocate_function_locals` extends the same call-graph analysis to
-// body locals, the bytes the asm register allocator colors for pseudos
-// that aren't parameters, statics, or spilled. Its pools are disjoint
-// from every transitive caller's pool and from the parameter slots of
-// every zp_abi function that can be on the call stack at the same time.
-// Two functions on paths that don't overlap (neither calls the other,
-// directly or not) may share addresses, since their activations are
-// never on the call stack together.
-//
-// Eligibility
-//
-// A function is eligible for the private-pool model when
-//
-//   1. it's defined in this unit, so that its body shows its callees and
-//      its demand for local bytes;
-//   2. its body contains no `IndirectCall`, since an indirect callee's
-//      writes can't be bounded;
-//   3. it isn't on any cycle of the static direct call graph, since a
-//      recursive call would overwrite the outer activation's locals that
-//      are still live. The exception is a cycle whose every call from
-//      one member to another is marked
-//      `[[c6502::save_hardware_stack]]` (`hw_stack_cycles`): the caller
-//      saves what's live across each of those calls on the hardware
-//      stack, so nothing in its pool has to survive them;
-//   4. every direct callee defined in this unit is eligible too, since
-//      an ineligible callee's writes are unbounded and the caller's pool
-//      couldn't be trusted to survive the call;
-//   5. every direct callee declared `extern` here is zp_abi. Such an
-//      extern is taken as a leaf whose writes are its parameter slots,
-//      as its annotation promises, since its body isn't visible. A
-//      callee that is neither disqualifies the caller.
-//
-// A call to a `[[noreturn]]` function that passes no arguments isn't an
-// edge of the call graph in rules 3, 4, and 5 (call_edges.h). Once it's
-// made, nothing reads the caller's pool or the pools of the functions
-// the caller was called from, so the callee may be anything, even a
-// function that calls the caller again.
-//
-// An ineligible function gets no pool, and its register allocation uses
-// the conservative caller-saved and callee-saved partition of `Pool`.
-//
-// Algorithm
-//
-//   1. Build the static direct call graph of the functions `prog`
-//      defines.
-//   2. Determine the eligibility by the rules above.
-//   3. Order the eligible functions topologically, callers before
-//      callees, with each cycle's members together.
-//   4. Walk them in that order. A function's forbidden bytes are every
-//      transitive caller's pool, which the walk has allocated already;
-//      the parameter slots of every zp_abi function that can be on the
-//      call stack with it, its callers and its callees alike; and its own
-//      parameter slots when it is zp_abi. It takes the lowest run of
-//      `local_bytes(fn)` bytes in the window that avoids them, then in
-//      the fallback range, then in the spill region above $FF.
-//
-// The members of one cycle aren't each other's ancestors here, so their
-// pools may overlap: every call between them saves the caller's live
-// values first.
-//
-// A pool also avoids the bytes of every `SlotShare` (slot_sharing.h)
-// with a function that can be on the call stack with the pool's
-// function. A share's holder keeps a value there across calls, so the
-// pools of the functions it calls must stay off it even though the
-// share's members are their siblings.
-//
-// A function's callees aren't in its forbidden bytes, since they haven't
-// been allocated yet when it is. The topological order makes each callee
-// see its callers' pools when its turn comes, so no two functions that
-// can be on the call stack together share a byte. The parameter slots of
-// the zp_abi callees are read from `abi`, where `allocate_zp_slots` has
-// put their addresses already, which saves a second walk.
-//
-// After this, each eligible function's register allocation draws its
-// colors from its pool alone, which by construction no caller, callee,
-// or coexisting function uses. The split into caller-saved and
-// callee-saved bytes no longer matters for these functions, since none
-// of the bytes they write belongs to anyone else's live storage, so the
-// prologue saves nothing.
 #include "passes/zp_local_allocation.h"
 
 #include <algorithm>
@@ -120,9 +37,6 @@ NameSet determine_eligibility(const tac::Program& prog, const Abi& abi, const Ca
         if (callgraph.count(call->name) != 0 || abandons_caller(instr)) {
           continue;
         }
-        // An external callee, which is acceptable when it's declared
-        // zp_abi, since its annotation bounds its writes to its
-        // parameter slots.
         const ParamLayout* layout = abi.find(call->name);
         if (layout == nullptr || !std::holds_alternative<ZpLayout>(*layout)) {
           has_non_zp_abi_extern_callee.insert(fn->name);
@@ -139,8 +53,6 @@ NameSet determine_eligibility(const tac::Program& prog, const Abi& abi, const Ca
       ineligible.insert(n);
     }
   }
-  // A caller of an ineligible function is ineligible, since its private
-  // pool can't survive the callee's unbounded writes.
   const CallGraph callers_of = invert(callgraph);
   std::deque<std::string> queue(ineligible.begin(), ineligible.end());
   while (!queue.empty()) {
@@ -201,9 +113,6 @@ namespace {
 using asdl::Int;
 using Component = NameSet;
 
-// Returns each defined function's direct callees that this unit doesn't
-// define, which resolve to externs at link time. A call that abandons
-// its caller isn't one.
 CallGraph direct_extern_callees(const tac::Program& prog, const CallGraph& callgraph) {
   CallGraph out;
   for (const auto& [n, callees] : callgraph) {
@@ -228,16 +137,6 @@ bool is_zp(const Abi& abi, std::string_view name) {
   return layout != nullptr && std::holds_alternative<ZpLayout>(*layout);
 }
 
-// Returns the zp_abi functions whose parameter slots may be live or be
-// written while `fn` is on the call stack: its transitive callers that
-// are zp_abi, since their parameters sit in their slots while `fn` runs
-// deeper; its transitive callees that are zp_abi, since their parameters
-// are written when `fn` or anything it calls calls them; and the zp_abi
-// externs that `fn` or any of its callees here calls, which have no body
-// here but are on the call stack with `fn` whenever the chain calls
-// them. `fn` itself is left out, and the caller adds it. `callers_of`
-// is `invert(full_callgraph)`, which Python computes at each call and
-// the caller computes once, since it is the same for every `fn`.
 NameSet coexisting_zp_functions(const std::string& fn, const CallGraph& full_callgraph,
                                 const CallGraph& callers_of, const CallGraph& extern_callees,
                                 const Abi& abi) {
@@ -276,8 +175,6 @@ NameSet coexisting_zp_functions(const std::string& fn, const CallGraph& full_cal
         stack.push_back(callee);
       }
     }
-    // The externs `n` calls have no body here, so they add no callees
-    // of their own.
     if (const auto it = extern_callees.find(n); it != extern_callees.end()) {
       for (const auto& ext : it->second) {
         if (is_zp(abi, ext)) {
@@ -296,10 +193,6 @@ Component component_of(const std::string& n, const Cycles& cyc) {
   return Component{n};
 }
 
-// Returns the functions of `callgraph` in caller-before-callee order, by
-// Kahn's algorithm over the graph with each cycle of `cyc` as one node,
-// so that a cycle's members come together. Ready nodes are taken in the
-// order of their least names.
 std::vector<std::string> topological_order(const CallGraph& callgraph, const Cycles& cyc) {
   std::map<Component, std::set<Component>> succs;
   for (const auto& [n, cs] : callgraph) {
@@ -359,8 +252,6 @@ std::vector<std::string> topological_order(const CallGraph& callgraph, const Cyc
   return out;
 }
 
-// Returns each function's transitive callers in `callgraph`, without
-// the members of its own cycle.
 CallGraph ancestors(const CallGraph& callgraph, const Cycles& cyc) {
   const CallGraph callers_of = zp_local_allocation::invert(callgraph);
   CallGraph out;
@@ -402,8 +293,6 @@ LocalPools allocate_function_locals(const tac::Program& prog, const Abi& abi,
   const CallGraph extern_callees = direct_extern_callees(prog, callgraph);
   const NameSet eligible = zp_local_allocation::determine_eligibility(prog, abi, callgraph);
 
-  // The eligible functions only, both for the topological walk and for
-  // the closures of callers and callees.
   CallGraph eligible_cg;
   for (const auto& n : eligible) {
     NameSet& out = eligible_cg[n];
@@ -417,9 +306,6 @@ LocalPools allocate_function_locals(const tac::Program& prog, const Abi& abi,
   const CallGraph ancestors_of = ancestors(eligible_cg, cyc);
   const std::vector<std::string> order = topological_order(eligible_cg, cyc);
 
-  // The parameter slots of every zp_abi function, eligible or not, since
-  // an eligible function's pool has to avoid the slots of any zp_abi
-  // function that can be on the call stack with it.
   std::map<std::string, std::set<Int>, std::less<>> zp_param_addrs;
   std::map<std::string, Int, std::less<>> slot_addr;
   for (const auto& [n, layout] : abi) {
@@ -449,7 +335,6 @@ LocalPools allocate_function_locals(const tac::Program& prog, const Abi& abi,
       continue;
     }
     std::set<Int> forbidden = options.reserved;
-    // The callers' pools, which the walk has allocated already.
     if (const auto it = ancestors_of.find(fn); it != ancestors_of.end()) {
       for (const auto& anc : it->second) {
         if (const auto* pool = local_pools.find(anc)) {
@@ -457,8 +342,6 @@ LocalPools allocate_function_locals(const tac::Program& prog, const Abi& abi,
         }
       }
     }
-    // The slots of every zp_abi function whose parameters are written
-    // while `fn` is on the call stack, and `fn`'s own.
     for (const auto& other :
          coexisting_zp_functions(fn, callgraph, callers_of, extern_callees, abi)) {
       if (const auto it = zp_param_addrs.find(other); it != zp_param_addrs.end()) {
@@ -506,7 +389,6 @@ OrderedMap<std::string, Int> build_local_slot_symbols(
         slot_names_by_fn == nullptr ? nullptr : slot_names_by_fn->find(fn_name);
     for (std::size_t k = 0; k < pool.size(); ++k) {
       if (names != nullptr) {
-        // `zip` stops at the shorter of the two.
         if (k >= names->size()) {
           break;
         }

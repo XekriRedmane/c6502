@@ -1,103 +1,3 @@
-/* Inlines small `static` functions into their callers.
-
-A call of a function costs the caller the stores of its arguments, a
-`JSR`, and the copies of its result, and the function costs an `RTS`
-and often the copies of its parameters out of their slots. For a small
-function, a copy of its body in place of the call is shorter than all
-of that, and the optimizer then works on the copy with the caller's own
-values: an argument that is a constant folds into the body, a `bool`
-result that the caller only branches on becomes the branch, and a
-pointer result that the caller reads through is read where it was
-computed. C programmers write such functions as function-like macros
-for this reason. This pass makes that unnecessary under `-O`.
-
-A function is a candidate when
-
-- it's defined in this unit with internal linkage (`static`), so every
-  call of it is in this unit,
-- its address isn't taken (`abi_selection::address_taken`), so every
-  call is a direct `FunctionCall`,
-- it calls itself through no chain of calls, which a walk of the unit's
-  call graph checks,
-- its declaration has none of the c6502 attributes that set a calling
-  convention or a placement: `[[c6502::zp_abi]]`, `section`, `address`,
-  `return_bool_in_carry`, `[[noreturn]]`, a `register` or `in_*`
-  parameter, a `zeropage(addr)` parameter, or a `register` local
-  (`abi_selection::has_register_request`),
-- its parameters and its result are scalars (an integer, a pointer,
-  `float`, or `double`), so that one `Copy` moves each of them,
-- its body has no `IndirectCall`, no call marked
-  `[[c6502::save_hardware_stack]]`, no `GetAddress` of one of its own
-  locals, and no block-scope `static` object, whose name starts with
-  `@` (`identifier_resolution` renames only block-scope names).
-
-A call of a candidate is inlined when its caller has no `register`
-local, whose pin to Y the inlined body could break, when the call isn't
-marked `[[c6502::save_hardware_stack]]`, and when each argument has the
-width and kind (integer or floating) of its parameter, which the type
-checker's conversions give every call.
-
-Each function's calls are all inlined, or none are. They're inlined
-when an estimate of the bytes that inlining adds is at most the
-estimate of the bytes it removes (`Inliner::pays`). It removes, at each
-of the n calls, the `JSR` and the moves of the arguments and the
-result, `kCallBytes + kArgumentByteCost * a + kResultByteCost * r` for
-`a` bytes of arguments and `r` of result, and once the function's
-`RTS`. It adds n - 1 copies of the body beyond the one the function
-held, `kBytesPerCost` bytes for each unit of `inline_cost` of the
-function after the TAC optimizer, and `kEarlyReturnBytes` for each
-`Ret` before the body's end at each call whose result the caller
-doesn't return at once, since such a `Ret` becomes a store and a jump
-where the function had an `RTS`. So a function with one call is inlined
-unless it has several early returns, and one with several calls only
-when its body is about as small as a call. The constants were fitted to
-the example programs compiled with each candidate inlined alone, which
-docs/optimizations/inline_functions.md describes. When every call of a
-function has been inlined, the function is dropped from the program.
-
-The functions are taken leaves first, so a candidate that calls another
-candidate is costed and copied with that call already inlined.
-
-In TAC, the call `FunctionCall(f, [a1, ..., an], d)` becomes
-
-    Copy(a1, p1') ... Copy(an, pn')
-    <f's body, with each local and label renamed>
-    Label(end)
-
-where `pi'` is the renamed i-th parameter. Each `Ret(v)` in the copy
-becomes `Copy(v, d)` (when the call has a result and `Ret` a value) and
-`Jump(end)`, which is left out after the last instruction. When the
-caller's next instruction is a `Ret` of the call's result, or a `Ret`
-with no value, the copy replaces that `Ret` too, and each `Ret` in the
-copy stays a `Ret`, of its own value or of none. The arguments were
-evaluated into the `ai` before the call in the order `c99_to_tac` gives
-them, and the copies read each of them once, at the place the call
-read them, so the order of side effects and of volatile accesses is
-that of the call. Every instruction keeps its `is_volatile` flag, and
-each renamed local keeps its symbol's type, `volatile` included. Copy
-propagation removes the parameter copies where the argument isn't
-written again before the parameter is read.
-
-A renamed local is `@N.name` with a fresh N, or `%N` with a fresh N for
-a temporary, so the zero-page slot names still carry the C variable's
-name (passes/zp_slot_naming.py). The k-th copy's labels are `.ik_`
-followed by the original label without its leading `.`, which keeps
-the `_start`, `_continue`, and `_break` endings that loop rotation
-reads and the `_keep` mark that dead-loop elimination reads, and its
-end label is `.ik@end`.
-
-The cost estimate runs the TAC optimizer on a copy of the callee with a
-copy of the symbol table, so that the names the optimizer adds don't
-reach the compile's table. Python's copy of the table is shallow and
-shares its `Symbol` objects with the compile's, and no pass of the
-optimizer changes a symbol in place, so a copy of the symbols as values
-gives the same results.
-
-The pass runs once, over the whole program, on the TAC from
-`c99_to_tac`, in `translate_for_codegen` before every other `-O` pass,
-so the TAC optimizer, ABI selection, the call graph, the carry-return
-choice, zero-page promotion, and the link metadata read only the
-functions that are left. It doesn't run in the unoptimized pipeline. */
 #include "passes/optimization/inline_functions.h"
 
 #include <algorithm>
@@ -124,27 +24,12 @@ namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 using Instrs = std::vector<ir::Type_instruction>;
 
-// The estimates of bytes that choose whether a function's calls are
-// inlined (the comment at the top). Each was fitted to the examples,
-// whose units were compiled with each candidate inlined alone
-// (docs/optimizations/inline_functions.md).
-//
-// Code bytes for each unit of `inline_cost` after the TAC optimizer.
 constexpr int kBytesPerCost = 3;
-// A call's `JSR`.
 constexpr int kCallBytes = 3;
-// Each byte of the arguments, which the call stores into the callee's
-// parameter bytes and the callee reads from there.
 constexpr int kArgumentByteCost = 2;
-// Each byte of the result, which the callee stores and the caller reads
-// back.
 constexpr int kResultByteCost = 4;
-// Each return before the end of the body, at a call whose result isn't
-// returned at once: a store of the result and a `JMP` where the function
-// had its own `RTS`.
 constexpr int kEarlyReturnBytes = 4;
 
-// The width in bytes of a scalar and whether it's floating.
 struct Shape {
   int width = 0;
   bool floating = false;
@@ -187,8 +72,6 @@ bool is_scalar(const c99::Type_data_type& type) {
   }
 }
 
-// Returns the width in bytes of the scalar type `t` and whether it's
-// floating, or none for any other type.
 std::optional<Shape> shape_of(const c99::Type_data_type& type) {
   const c99::Type_data_type& t = unqualified(type);
   if (!is_scalar(t)) {
@@ -199,7 +82,6 @@ std::optional<Shape> shape_of(const c99::Type_data_type& type) {
                            std::holds_alternative<c99::Double>(t)};
 }
 
-// Returns the width of the TAC constant `c` and whether it's floating.
 Shape const_shape(const ir::Type_const& c) {
   using K = ir::Kind_const;
   switch (ir::kind(c)) {
@@ -255,8 +137,6 @@ std::vector<std::string> calls_of(const ir::Function& fn) {
 
 bool is_digit(char c) { return c >= '0' && c <= '9'; }
 
-// Splits a name of the form `@N.rest` into N and the rest, as the
-// pattern `^@(\d+)\.(.*)$` does, or gives none.
 std::optional<std::pair<long long, std::string_view>> at_name(std::string_view name) {
   if (name.size() < 3 || name[0] != '@') {
     return std::nullopt;
@@ -271,8 +151,6 @@ std::optional<std::pair<long long, std::string_view>> at_name(std::string_view n
   return std::make_pair(std::stoll(std::string(name.substr(1, k - 1))), name.substr(k + 1));
 }
 
-// Returns N for a name of the form `%N` (the pattern `^%(\d+)$`), or
-// none.
 std::optional<long long> temp_name(std::string_view name) {
   if (name.size() < 2 || name[0] != '%') {
     return std::nullopt;
@@ -285,8 +163,6 @@ std::optional<long long> temp_name(std::string_view name) {
   return std::stoll(std::string(name.substr(1)));
 }
 
-// Returns whether `nxt`, the instruction after `call`, is a `Ret` that
-// returns the call's result, or returns nothing.
 bool returns_result(const ir::FunctionCall& call, const ir::Type_instruction* nxt) {
   const auto* ret = nxt == nullptr ? nullptr : std::get_if<ir::Ret>(nxt);
   if (ret == nullptr) {
@@ -300,8 +176,6 @@ bool returns_result(const ir::FunctionCall& call, const ir::Type_instruction* nx
   return d != nullptr && v != nullptr && d->name == v->name;
 }
 
-// Returns the object that `ins` names by a string field instead of a
-// `Var`, or null.
 const std::string* named_object(const ir::Type_instruction& ins) {
   if (const auto* l = std::get_if<ir::IndexedLoad>(&ins)) {
     return &l->name;
@@ -319,13 +193,9 @@ const std::string& renamed(const Renames& names, const std::string& name) {
   return it == names.end() ? name : it->second;
 }
 
-// Returns a copy of `ins` with each local in `locals` and each label in
-// `labels` renamed.
 ir::Type_instruction rename(const ir::Type_instruction& ins, const Renames& locals,
                             const Renames& labels) {
   ir::Type_instruction out = ins;
-  // `vals_in` gives pointers into `out`, which this function owns, so
-  // writing through them is a write to the copy.
   for (const ir::Type_val* v : vals_in(out)) {
     if (const auto* var = std::get_if<ir::Var>(v)) {
       auto* mutable_var = const_cast<ir::Var*>(var);
@@ -431,9 +301,6 @@ class Inliner {
     }
     NameSet dropped;
     NameSet done;
-    // Leaves first: a candidate is taken once every candidate it calls
-    // has been taken, which the absence of recursion makes possible for
-    // all of them.
     while (true) {
       std::vector<std::string> ready;
       for (const auto& c : candidates) {
@@ -478,7 +345,6 @@ class Inliner {
   }
 
  private:
-  // Returns the functions that can reach themselves through calls.
   NameSet find_recursive() const {
     std::map<std::string, NameSet, std::less<>> graph;
     for (const auto& [name, fn] : functions_) {
@@ -637,9 +503,6 @@ class Inliner {
     return decl == nullptr || !abi_selection::has_register_local(*decl);
   }
 
-  // Inlines every call of `name` when the choice rule (the comment at
-  // the top) allows it, and returns whether no call of it is left, so
-  // that it can be dropped.
   bool inline_all(const std::string& name) {
     const ir::Function callee = functions_.at(name);
     int sites = 0;
@@ -712,9 +575,6 @@ class Inliner {
     return true;
   }
 
-  // Returns whether inlining all `sites` calls of `callee`, `tails` of
-  // them in tail position, is estimated to take no more bytes than the
-  // calls and the function (the comment at the top).
   bool pays(const ir::Function& callee, int sites, int tails) {
     const auto& ftype = std::get<c99::FunType>(symbols_.at(callee.name).type);
     long long arg_bytes = 0;
@@ -738,10 +598,6 @@ class Inliner {
     return added <= sites * call + 1;
   }
 
-  // Returns `inline_cost` of a copy of `callee` after the TAC optimizer,
-  // which drops what the unoptimized TAC carries and an inlined copy
-  // wouldn't keep either. The copy's new names go in a copy of the
-  // symbol table.
   int optimized_cost(const ir::Function& callee) const {
     SymbolTable table = symbols_;
     const ir::Function opt = optimize_function(callee, &table);
@@ -771,10 +627,6 @@ class Inliner {
     return fresh;
   }
 
-  // Returns the instructions that replace `call` (the comment at the
-  // top). `tail` is the caller's `Ret` right after the call when it
-  // returns the call's result or nothing (`returns_result`), and then
-  // the copy replaces both, and each `Ret` in it stays a `Ret`.
   Instrs copy(const ir::Function& callee, const ir::FunctionCall& call, const ir::Ret* tail) {
     const int k = copies_++;
     const std::string prefix = ".i" + std::to_string(k) + "_";
@@ -861,10 +713,8 @@ class Inliner {
   OrderedMap<std::string, ir::Function> functions_;
   std::set<std::string, std::less<>> labels_;
   int copies_ = 0;
-  // The next free N for `@N.name` and `%N`.
   long long next_at_ = 0;
   long long next_temp_ = 0;
-  // Whether a caller was rewritten.
   bool changed_ = false;
 };
 

@@ -1,59 +1,3 @@
-// The control-flow graph of a TAC function.
-//
-// A `Cfg` is a directed graph of `BasicBlock`s plus two sentinel nodes,
-// ENTRY, where control begins, and EXIT, where it leaves the function.
-// Every block is identified by an int id. `kEntryId` (0) and `kExitId`
-// (1) are the two sentinels, and real blocks number from 2 onward.
-//
-// The rules of the partition into basic blocks:
-//   - A new block starts at the function's first instruction, at every
-//     `Label`, and at the instruction right after a terminator (`Ret`,
-//     `Jump`, `JumpIfTrue`, `JumpIfFalse`, `JumpIfCmp`, or
-//     `JumpIfMasked`).
-//   - A block ends after its terminator, if it has one, or at the
-//     instruction before the next block's start, where it falls
-//     through.
-//   - So a `Label` is only ever a block's first instruction, and a
-//     terminator only ever its last.
-//
-// The successor edges of each real block:
-//   - `Ret` goes to EXIT.
-//   - `Jump(L)` goes to the block whose first instruction is `Label(L)`.
-//   - A conditional jump goes to both the labeled block (taken) and the
-//     next block in source order (fall-through).
-//   - Any other last instruction goes to the next block in source order.
-//   - The last block in source order with no terminator goes to EXIT.
-//     `c99_to_tac` always appends an implicit `Ret`, so this arises only
-//     when a later pass strips it.
-//   - ENTRY goes to the first real block, or to EXIT for an empty body.
-//
-// Unreachable blocks, which no path from ENTRY reaches, keep their
-// instructions and their outgoing edges. A pass such as unreachable-code
-// elimination finds them by walking forward from ENTRY and drops the
-// blocks it didn't visit.
-//
-// `block_order` lists the real blocks' ids in source order. Flattening a
-// graph back into a function walks `block_order` and writes each block's
-// instructions in turn (`cfg_to_function`).
-//
-// Dominance
-//
-// The dominators come from Cooper, Harvey, and Kennedy, "A Simple, Fast
-// Dominance Algorithm" (2006), an iterative dataflow algorithm that
-// converges in two passes over a reverse postorder for the usual
-// reducible graphs and never takes more than O(N^2) for pathological
-// ones, which is fast enough for c6502's functions. B dominates A when
-// every path from ENTRY to A passes through B. B is A's immediate
-// dominator when B dominates A and no other dominator of A (other than
-// A itself) is dominated by B. The dominance frontier of B is the set of
-// blocks X such that B dominates a predecessor of X but doesn't strictly
-// dominate X, the exits of B's region. A phi for a variable defined in B
-// goes at the iterated frontier of B's definition blocks (Cytron et al.,
-// 1991). Every analysis leaves out the blocks ENTRY doesn't reach.
-//
-// Python keeps the frontiers and the loop bodies in sets of ints, whose
-// callers walk them, so they are `PyIntSet`s here, which iterate in
-// Python's order.
 #include "passes/optimization/cfg.h"
 
 #include <map>
@@ -71,7 +15,6 @@ using ::c6502::asdl::isa;
 
 namespace {
 
-// Returns the target of a jump that ends a block, or null.
 const std::string* jump_target(const tac::Type_instruction& instr) {
   switch (tac::kind(instr)) {
     case tac::Kind_instruction::Jump:
@@ -180,9 +123,6 @@ tac::Function cfg_to_function(const tac::Function& fn, const Cfg& cfg) {
 }
 
 std::vector<int> reverse_postorder(const Cfg& cfg) {
-  // The order puts every dominator of a block before it, which is what
-  // makes Cooper's algorithm converge in one iteration on a reducible
-  // graph.
   std::set<int> visited{kEntryId};
   std::vector<int> postorder;
   struct Frame {
@@ -269,17 +209,12 @@ OrderedMap<int, std::vector<int>> dominator_tree_children(const OrderedMap<int, 
     if (b == p) {
       continue;
     }
-    // A parent that isn't itself a key would be a new key at the end,
-    // as `children[p]` would raise in Python. Every parent is a key.
     children[p].push_back(b);
   }
   return children;
 }
 
 OrderedMap<int, PyIntSet> dominance_frontiers(const Cfg& cfg) {
-  // The standard walk of Cytron et al.: for each block X with several
-  // predecessors, every predecessor P adds X to the frontier of P,
-  // idom(P), idom(idom(P)), and so on, up to but not including idom(X).
   const OrderedMap<int, int> idom = immediate_dominators(cfg);
   OrderedMap<int, PyIntSet> df;
   for (const auto& [b, p] : idom) {
@@ -310,13 +245,6 @@ OrderedMap<int, PyIntSet> dominance_frontiers(const Cfg& cfg) {
 }
 
 std::vector<std::pair<int, PyIntSet>> natural_loops(const Cfg& cfg) {
-  // A natural loop is found by its back edge, an edge from a tail to a
-  // header that dominates the tail. Its body is the header and every
-  // block that reaches the tail backwards without passing through the
-  // header. Loops that share a header (several back edges, from
-  // `continue` statements say) are merged into one entry whose body is
-  // the union. Unreachable blocks are left out, since unreachable-code
-  // elimination drops them anyway.
   const OrderedMap<int, int> idom = immediate_dominators(cfg);
   PyIntSet reachable;
   for (const auto& [b, p] : idom) {

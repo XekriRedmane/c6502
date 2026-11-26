@@ -1,18 +1,3 @@
-/* The jump-fold rule set of the TAC optimizer's fixed point,
-`fold_producer_jumps` in passes/optimization/optimizer.py.
-
-Three disjoint jump folds, of a comparison, a `BitwiseAnd`, and a
-`LogicalNot` producer each feeding a single-use JumpIf, share the window
-of a producer and the jump after it and the single-use gate, and run as
-one RuleSet, so one sweep applies whichever rule matches each position
-in place of three separate sweeps. The other four rules join them. A
-compare kept as a value narrows its operands, when the comparison fold,
-tried first at the same position, finds no jump on its result. A
-JumpIfCmp made before its operand's extend was exposed (through a cast
-that copy propagation removed later) narrows the same way. A `!` of a
-value that is 0 or 1 and that no jump tests is `^ 1`. A signed ordering
-compare of two values that can't be negative is done unsigned, last,
-once nothing narrows it. */
 #include "passes/optimization/fold_producer_jumps.h"
 
 #include <array>
@@ -36,7 +21,6 @@ using framework::RuleEnv;
 using RuleFn = std::optional<Instrs> (*)(const Instrs&, std::size_t, RuleEnv&,
                                          const PassContext&);
 
-// A rule's function and the size of the window its pattern matches.
 struct RuleEntry {
   RuleFn fn;
   std::size_t window;

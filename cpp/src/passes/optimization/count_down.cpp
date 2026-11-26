@@ -1,52 +1,3 @@
-/* Counts a loop down to 0 when its counter is used only to count.
-
-# What it does
-
-`for (uint8_t i = 0; i < 20; i++) out(0xA0);` counts `i` up and
-compares it with 20 on each pass, `INC i; LDA i; CMP #$14; BCC`. Its
-counter is read only by its own test and its own step, so the loop can
-count the passes left instead, from 20 down to 0, and test that for 0,
-which is `DEC i; BNE`, 3 bytes and 2 cycles a pass fewer.
-
-In SSA form the loop is
-
-    Phi(i.2, [(entry, 0uc), (continue, i.3)])
-    JumpIfCmp(GreaterOrEqual, i.2, 20uc, .break)
-    ...
-    Binary(Add, i.2, 1uc, i.3)
-
-and the pass rewrites it, keeping the names, as
-
-    Phi(i.2, [(entry, 20uc), (continue, i.3)])
-    JumpIfCmp(Equal, i.2, 0uc, .break)
-    ...
-    Binary(Subtract, i.2, 1uc, i.3)
-
-so that `i.2` holds `20 - i` where it held `i`.
-
-# When it applies
-
-- `i.2` is a `Phi` of an unsigned byte with two arguments, a constant
-  `c0` and a variable `i.3`, and `Binary(Add, i.2, 1, i.3)` is the only
-  definition of `i.3`, which only the `Phi` reads.
-- `i.2` is read by that `Add` and by one `JumpIfCmp`, the first
-  instruction after the `Phi`s of their block `H`, and by nothing else.
-- The jump compares `i.2` with a bound `n`, by `>=` or `==` to leave
-  the loop when it's taken or by `<` or `!=` to stay in it. The bound
-  may be on the left with the comparison mirrored.
-- The bound is a constant `c1` with `c0 <= c1`, or `c0` is 0 and the
-  bound is a variable that SSA construction renamed (or a parameter)
-  defined in a block that strictly dominates `H`, so the loop doesn't
-  change it.
-- The block the loop stays in after the test, `S`, has `H` as its only
-  predecessor, and `S` dominates the block of the `Add`.
-
-Each pass through the `Add` then comes from `H` with the test showing
-`i < n`, so `i` goes from `c0` up to at most `n` and never wraps, and
-`i >= n`, `i == n`, and `n - i == 0` all say the same thing. `n - i`
-starts at `c1 - c0` (or the variable's value) and drops by 1 at each
-step, so the test of it for 0 takes the same branch as the test of `i`
-on every pass. */
 #include "passes/optimization/count_down.h"
 
 #include <algorithm>
@@ -84,9 +35,6 @@ std::optional<Int> const_value(const ir::Type_val& v) {
   return std::nullopt;
 }
 
-// Returns whether a taken jump of `op`, with the counter on the left,
-// leaves the loop, or none for a comparison the pass doesn't take
-// (Python's `_LEAVES`).
 std::optional<bool> leaves_of(BK op) {
   switch (op) {
     case BK::GreaterOrEqual:
@@ -100,8 +48,6 @@ std::optional<bool> leaves_of(BK op) {
   }
 }
 
-// Returns the comparison with the counter on the right, written with it
-// on the left, or none (Python's `_MIRROR`).
 std::optional<BK> mirror(BK op) {
   switch (op) {
     case BK::LessOrEqual:
@@ -243,7 +189,6 @@ ir::Function count_loops_down(ir::Function fn, const PassContext& ctx) {
       }
       const std::string& k = bv->name;
       if (std::find(fn.params.begin(), fn.params.end(), k) != fn.params.end()) {
-        // A parameter has one value through the function.
       } else if (ctx.is_ssa(k) && def_at.contains(k)) {
         const int kb = block_of[def_at.find(k)->second];
         if (kb == h || !dominates(kb, h)) {
@@ -258,7 +203,6 @@ ir::Function count_loops_down(ir::Function fn, const PassContext& ctx) {
       start = *bound;
     }
     const bool leaves = *leaves_of(op);
-    // The block the loop stays in after the test.
     const auto& succs = cfg.blocks.find(h)->successors;
     const auto taken = label_block.find(jump->target);
     if (taken == label_block.end() || succs.size() != 2) {

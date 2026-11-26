@@ -1,11 +1,3 @@
-// Writes the `@zp-link-meta` block that the optimized output carries
-// after its EQU lines, and that the unoptimized text `compile.py -c`
-// assembles carries too. The assembler keeps the block, as text, in the
-// object's `.c6502.link` section, and the linker reads it to place the
-// `__zpabi_*` and `__local_*` slots, the zero-page objects, and the
-// items of every unit for the whole program (passes/zp_link_metadata.py
-// describes each record and its format). The block is comment lines,
-// so dasm assembles the text as if it weren't there.
 #include "passes/zp_link_metadata.h"
 
 #include <algorithm>
@@ -166,13 +158,8 @@ LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
                             const OrderedMap<std::string, std::vector<std::string>>* changes,
                             const NameSet* carry) {
   namespace tac = ::c6502::tac_ast;
-  // The direct call graph of the functions defined here, with the calls
-  // to externs. The linker finds the cycles of the whole program again,
-  // but a cycle within the unit is enough to disqualify a function.
   CallGraph callgraph;
   NameSet indirect;
-  // Whether every call along each edge is marked to save on the hardware
-  // stack.
   std::map<std::pair<std::string, std::string>, bool> saved;
   for (const auto& tl : prog.top_level) {
     if (const auto* fn = std::get_if<tac::Function>(&tl)) {
@@ -197,9 +184,6 @@ LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
       }
     }
   }
-  // `cycles` leaves out the callees that aren't keys, the externs, as
-  // Python's Tarjan walk does, and gives every function on a cycle,
-  // a function that calls itself included.
   const Cycles in_cycle = cycles(callgraph);
 
   LinkMetadata out;
@@ -238,7 +222,6 @@ LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
     meta.carry = carry != nullptr && carry->contains(name);
     out.defs.push_back(std::move(meta));
   }
-  // The zp_abi functions this unit declares and doesn't define, by name.
   std::vector<std::string> declared;
   for (const auto& [name, layout] : abi) {
     if (!callgraph.contains(name) && std::holds_alternative<ZpLayout>(layout)) {
@@ -254,7 +237,6 @@ LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
                                      .pinned = zp.pinned,
                                      .carry = carry != nullptr && carry->contains(name)});
   }
-  // The call edges, sorted, since the graph is.
   for (const auto& [caller, callees] : callgraph) {
     for (const auto& callee : callees) {
       out.calls.emplace_back(caller, callee);
@@ -272,15 +254,12 @@ namespace {
 constexpr std::string_view kBegin = "; @zp-link-meta-begin";
 constexpr std::string_view kEnd = "; @zp-link-meta-end";
 
-// The place the integer errors of the block name.
 constexpr std::string_view kWhere = "the link metadata";
 
 [[noreturn]] void value_error(const std::string& message) {
   throw CompileError("ValueError", message);
 }
 
-// A record's `key=value` tokens, which Python reads into a dict, where
-// a later token of a key replaces an earlier one.
 class Fields {
  public:
   Fields(const std::vector<std::string>& parts, std::size_t first) {
@@ -290,7 +269,6 @@ class Fields {
     }
   }
 
-  // Returns `token` split at its first `=`, `_split_kv`.
   static std::pair<std::string, std::string> split_kv(const std::string& token) {
     const std::size_t eq = token.find('=');
     if (eq == std::string::npos) {
@@ -299,14 +277,12 @@ class Fields {
     return {token.substr(0, eq), token.substr(eq + 1)};
   }
 
-  // Returns `kvs[key]`, or throws Python's KeyError.
   const std::string& at(const std::string& key) const {
     const auto it = values_.find(key);
     if (it == values_.end()) throw CompileError("KeyError", pcpp::py_repr(key));
     return it->second;
   }
 
-  // Returns `kvs.get(key, "")`, and whether the key is there.
   std::string get(const std::string& key) const {
     const auto it = values_.find(key);
     return it == values_.end() ? std::string() : it->second;
@@ -318,7 +294,6 @@ class Fields {
   std::map<std::string, std::string> values_;
 };
 
-// `_split_csv`: the comma-separated items of `value`, none for "".
 std::vector<std::string> split_csv(const std::string& value) {
   std::vector<std::string> out;
   if (value.empty()) return out;
@@ -334,12 +309,10 @@ std::vector<std::string> split_csv(const std::string& value) {
   }
 }
 
-// `value.lstrip("$")`.
 std::string lstrip_dollars(const std::string& value) {
   return value.substr(std::min(value.find_first_not_of('$'), value.size()));
 }
 
-// `_parse_pinned`: an address for each nonempty item, in hexadecimal.
 std::vector<std::optional<asdl::Int>> parse_pinned(const std::string& value) {
   std::vector<std::optional<asdl::Int>> out;
   if (value.empty()) return out;
@@ -353,8 +326,6 @@ std::vector<std::optional<asdl::Int>> parse_pinned(const std::string& value) {
   return out;
 }
 
-// `str.partition(sep)`: the text before the first `sep` and after it,
-// or all of `value` and "" when it holds none.
 std::pair<std::string, std::string> partition(const std::string& value, char sep) {
   const std::size_t at = value.find(sep);
   if (at == std::string::npos) return {value, ""};
@@ -369,8 +340,6 @@ void parse_record(const std::string& record, LinkMetadata& out) {
   if (kind == "def") {
     if (parts.size() < 6) value_error("malformed def record: " + shown);
     const Fields kvs(parts, 2);
-    // Python evaluates the fields in the order of the dataclass's
-    // keywords, so the first missing or malformed one is reported.
     FunctionMeta d;
     d.name = parts[1];
     d.params = split_csv(kvs.at("params"));
@@ -440,7 +409,6 @@ void parse_record(const std::string& record, LinkMetadata& out) {
     out.hargs_size = py_int::parse(kvs.at("hargs_size"), 10, kWhere);
     if (kvs.has("hargs_need")) out.hargs_need = py_int::parse(kvs.get("hargs_need"), 10, kWhere);
   } else if (kind == "call") {
-    // `call <caller> -> <callee> [saved]`.
     if ((parts.size() != 4 && parts.size() != 5) || parts[2] != "->" ||
         (parts.size() == 5 && parts[4] != "saved")) {
       value_error("malformed call record: " + shown);

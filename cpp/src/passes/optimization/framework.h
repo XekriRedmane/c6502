@@ -1,18 +1,3 @@
-// The port of the run loops of passes/optimization/framework/, which
-// most of the TAC optimizer's passes are built on: the context every
-// pass takes (`PassContext`), the window scan of `WindowPass` and
-// `RuleSet`, the SSA def-use walk of `DefUsePass`, the move of
-// `SinkPass`, and the operand walk of `OperandRewritePass`.
-//
-// The Python framework matches instructions with the pattern DSL of
-// framework/patterns.py and calls a pass's `rewrite` on a match. The
-// C++ loops take the matching and the rewrite as one function, which
-// tests the instruction's kind and fields directly and returns none
-// where the Python pattern doesn't match or the rewrite declines. A
-// `RuleSet`'s rules become one function that tries them in the Python
-// order. The order in which the loops visit the instructions, and how
-// far they advance after a rewrite, are the Python framework's, since
-// a later rewrite in a sweep reads what an earlier one left.
 #pragma once
 
 #include <cstddef>
@@ -33,12 +18,11 @@ namespace c6502::passes::framework {
 
 using Instrs = std::vector<tac_ast::Type_instruction>;
 
-// What every pass of the TAC optimizer is given (Python's
-// `PassContext`): the symbol table, which a pass may add temporaries
-// to, and the names SSA construction renamed, which some passes add
-// to. Either is null where Python's is None: the symbol table for the
-// unit tests that run a pass without one, and the SSA names outside SSA
-// form.
+// What every pass of the TAC optimizer is given: the symbol table,
+// which a pass may add temporaries to, and the names SSA construction
+// renamed, which some passes add to. The symbol table is null for the
+// unit tests that run a pass without one, and the SSA names are null
+// outside SSA form.
 struct PassContext {
   SymbolTable* symbols = nullptr;
   NameSet* ssa_dsts = nullptr;
@@ -50,20 +34,16 @@ struct PassContext {
   }
 };
 
-// Returns `fn` with its instructions replaced by `instructions`, as the
-// framework's `tac_ast.Function(name=..., ..., instructions=out)` does.
+// Returns `fn` with its instructions replaced by `instructions`.
 tac_ast::Function with_instructions(const tac_ast::Function& fn, Instrs instructions);
 
 // Returns the name of the `Var` in the `dst` field of `instr`, or none
-// when it has no such field or the field isn't a Var. This is the test
-// `DefUsePass` builds its index of definitions with, `hasattr(instr,
-// "dst") and isinstance(instr.dst, Var)`. It differs from
+// when it has no such field or the field isn't a Var. `DefUsePass`
+// builds its index of definitions with it. It differs from
 // `var_visit.defs_in`, which `RuleSet` uses, in one instruction: it
 // takes an `IndirectIndexedLoad`'s destination, which defs_in leaves
 // out.
 std::optional<std::string_view> dst_name(const tac_ast::Type_instruction& instr);
-
-// --- WindowPass ---
 
 // Runs a `WindowPass`: at each position `i` from the start, when
 // `window_size` instructions are left, calls `rewrite(instrs, i)`, which
@@ -71,8 +51,7 @@ std::optional<std::string_view> dst_name(const tac_ast::Type_instruction& instr)
 // or none when the window doesn't match or the rewrite declines. A
 // replacement advances the scan past the window, and anything else
 // advances it by one, so a rewrite's output isn't matched again in the
-// same sweep. Returns `fn` itself when nothing was replaced, as Python
-// returns the same object.
+// same sweep. Returns `fn` itself when nothing was replaced.
 template <class Rewrite>
 tac_ast::Function run_window(tac_ast::Function fn, std::size_t window_size, Rewrite rewrite) {
   const Instrs& instrs = fn.instructions;
@@ -101,18 +80,14 @@ tac_ast::Function run_window(tac_ast::Function fn, std::size_t window_size, Rewr
   return with_instructions(fn, std::move(out));
 }
 
-// --- DefUsePass ---
-
-// The view of the function that a `DefUsePass` rewrite reads (Python's
-// `DefUseEnv`): the index of each name's definition, and the
-// instructions with the rewrites recorded so far in this sweep, so that
-// a rewrite reads what an earlier one made of a definition.
+// The view of the function that a `DefUsePass` rewrite reads: the index
+// of each name's definition, and the instructions with the rewrites
+// recorded so far in this sweep, so that a rewrite reads what an earlier
+// one made of a definition.
 struct DefUseEnv {
   std::map<std::string, std::size_t, std::less<>> def_idx;
   // The instructions as rewritten so far. An entry is none where an
-  // earlier rewrite of this sweep returned a list without a `Rewrite`,
-  // which Python stores as the list itself, so that `def_of` returns a
-  // value no `isinstance` test matches.
+  // earlier rewrite of this sweep returned a list without a `Rewrite`.
   std::vector<std::optional<tac_ast::Type_instruction>> instructions;
 
   // Returns the instruction that defines `name`, or null when there is
@@ -144,7 +119,7 @@ struct DefUseRewrite {
 };
 
 // Runs a `DefUsePass`: calls `rewrite(instr, env)` on each instruction
-// of `fn` in order, which returns none where the Python pattern doesn't
+// of `fn` in order, which returns none where the instruction doesn't
 // match or the rewrite declines (or returns the instruction itself).
 // Outside SSA form (`ctx.ssa_dsts` null) the pass leaves `fn` alone. A
 // `Rewrite` whose definitions to drop include one an earlier `Rewrite`
@@ -195,14 +170,10 @@ tac_ast::Function run_def_use(tac_ast::Function fn, const PassContext& ctx, Rewr
         new_drops.push_back(it->second);
       }
       if (conflict) {
-        // An earlier rewrite already consumed one of the same inner
-        // definitions, so this one is skipped to keep from dropping it
-        // twice.
         continue;
       }
       if (result->is_list) {
         if (result->replacement.empty()) {
-          // Python's `replacement[-1]` of an empty list raises.
           throw std::runtime_error("a Rewrite's replacement is an empty list");
         }
         env.instructions[i] = result->replacement.back();
@@ -226,12 +197,10 @@ tac_ast::Function run_def_use(tac_ast::Function fn, const PassContext& ctx, Rewr
   return with_instructions(fn, rebuild_def_use(instrs, rewrites, dropped));
 }
 
-// --- RuleSet ---
-
-// The analyses every rule of a `RuleSet` sweep shares (Python's
-// `RuleEnv`): the use counts, the index of each name's definition by
-// `var_visit.defs_in`, the instructions, and the names a use count
-// doesn't cover, filled in on first need.
+// The analyses every rule of a `RuleSet` sweep shares: the use counts,
+// the index of each name's definition by `var_visit.defs_in`, the
+// instructions, and the names a use count doesn't cover, filled in on
+// first need.
 struct RuleEnv {
   OrderedMap<std::string, std::size_t> use_count;
   std::map<std::string, std::size_t, std::less<>> def_idx;
@@ -248,16 +217,15 @@ struct RuleEnv {
 RuleEnv make_rule_env(const Instrs& instrs);
 
 // Returns the names in the instructions that can be read without a Var
-// use there (Python's `_observable_names`): every name whose address a
-// `GetAddress` takes, and every static the instructions read or write.
-// Without a symbol table the statics can't be told apart, and only the
-// taken addresses count.
+// use there: every name whose address a `GetAddress` takes, and every
+// static the instructions read or write. Without a symbol table the
+// statics can't be told apart, and only the taken addresses count.
 const NameSet& observable_names(RuleEnv& env, const PassContext& ctx);
 
-// The guard `single_use(capture)`: whether `v` is read exactly once in
-// the function and nothing outside its instructions can read it, which
-// is the case for an SSA name, and otherwise for a name that isn't a
-// static and whose address isn't taken.
+// Returns whether `v` is read exactly once in the function and nothing
+// outside its instructions can read it, which is the case for an SSA
+// name, and otherwise for a name that isn't a static and whose address
+// isn't taken.
 bool single_use(const tac_ast::Type_val& v, RuleEnv& env, const PassContext& ctx);
 
 // Runs a `RuleSet`: at each position `i`, calls `try_rules(instrs, i,
@@ -293,8 +261,6 @@ tac_ast::Function run_rules(tac_ast::Function fn, TryRules try_rules) {
   return with_instructions(fn, std::move(out));
 }
 
-// --- SinkPass ---
-
 // Runs a `SinkPass`: for each instruction `instrs[i]`, calls
 // `find_target(instrs, i)`, which returns the index the instruction
 // moves to (past `instrs[i + 1 .. target]`) or none where the pattern
@@ -326,8 +292,6 @@ tac_ast::Function run_sink(tac_ast::Function fn, FindTarget find_target) {
   }
   return with_instructions(fn, std::move(out));
 }
-
-// --- OperandRewritePass ---
 
 // Runs an `OperandRewritePass`: rewrites every operand each instruction
 // reads with `mapper` (`var_visit.rewrite_uses_in`), which returns the

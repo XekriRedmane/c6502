@@ -1,45 +1,3 @@
-/* Common-subexpression elimination over the dominator tree.
-
-When an instruction computes the same value as an earlier one, it is
-replaced by a `Copy` from the earlier one's destination, which copy
-propagation and dead-store elimination then remove. Two kinds of
-instruction are matched.
-
-  * Pure computations: a `Binary`, `Unary`, `ZeroExtend`, `SignExtend`,
-    or `Truncate` whose operands are SSA values or Constants. In SSA
-    form such an instruction's result depends only on its operands, so
-    an identical instruction in a block that dominates this one has the
-    same result. A walk of the dominator tree carries a table of them
-    from each block to the blocks it dominates.
-  * Loads: a `Load`, `IndexedLoad`, `IndexedConstLoad`, or
-    `IndirectIndexedLoad` that isn't volatile. A load's result depends
-    on memory too, so an earlier identical load is reused only when
-    nothing could have written memory in between. The table of loads is
-    carried into a block only from its one predecessor, so every path to
-    the reuse passes through the earlier load. Any instruction that
-    could write memory empties it: a store, a call, a volatile access,
-    and any write to a name that isn't an SSA value (a static, or an
-    address-taken local).
-
-The usual source is C that repeats a subscript or a test, such as
-
-    if (key[1] < entry[0]) return 0;
-    if (key[1] == entry[0]) { ... }
-
-where the second test loads both bytes again, and `dict[n + 1]`,
-`dict[n + 2]`, `dict[n + 3]`, which each zero-extend `n`.
-
-A destination must be an SSA value too, so that replacing its one
-definition with a Copy changes nothing else. The key includes the
-destination's type, so `ZeroExtend(c)` to `int` and to `long` aren't
-merged. The operands of the commutative operators are put in a fixed
-order, so `a + b` and `b + a` match.
-
-Python's keys are tuples of reprs. The keys here are strings built from
-the dump of each operand and of each type, which are equal exactly when
-the values are, and a commutative operator's two operand keys are put
-in the order of the strings, which matches the same pairs as Python's
-order of their reprs. */
 #include "passes/optimization/cse.h"
 
 #include <map>
@@ -64,7 +22,6 @@ using Table = std::map<std::string, std::string, std::less<>>;
 
 constexpr char kSep = '\x1f';
 
-// Returns the `dst` field of `instr` when it has one, or null.
 const ir::Type_val* dst_field(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::SignExtend:
@@ -116,8 +73,6 @@ const ir::Type_val* dst_field(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns whether `instr` is volatile (Python's `getattr(instr,
-// "is_volatile", False)`).
 bool is_volatile(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::Load:
@@ -160,10 +115,6 @@ class Keys {
  public:
   Keys(const NameSet& ssa, const SymbolTable& symbols) : ssa_(ssa), symbols_(symbols) {}
 
-  // Returns the key of an operand: its dump for a Constant (the whole
-  // node, since the floating classes keep their value in `bits` in place
-  // of `value`) or for a Var that is an SSA value, and none for any other
-  // Var.
   std::optional<std::string> operand(const ir::Type_val& v) const {
     if (const auto* var = std::get_if<ir::Var>(&v); var != nullptr && !ssa_.contains(var->name)) {
       return std::nullopt;
@@ -171,8 +122,6 @@ class Keys {
     return asdl::dump(v);
   }
 
-  // Returns the key of a name's type, its dump, or "-" for a name
-  // without a symbol.
   const std::string& type(const std::string& name) {
     const auto it = types_.find(name);
     if (it != types_.end()) {
@@ -182,9 +131,6 @@ class Keys {
     return types_.emplace(name, sym != nullptr ? asdl::dump(sym->type) : std::string("-")).first->second;
   }
 
-  // Returns the table `instr` goes in, `kPure` or `kLoad`, and its key,
-  // or none when it is neither kind or an operand isn't a value it can
-  // match.
   enum Kind { kPure, kLoad };
   std::optional<std::pair<Kind, std::string>> of(const ir::Type_instruction& instr) {
     const ir::Type_val* dst = dst_field(instr);
@@ -210,9 +156,6 @@ class Keys {
         if (is_commutative(op) && *c < *a) {
           std::swap(a, c);
         }
-        // A shift count's type doesn't change the result, and strength
-        // reduction writes `i * 2` as `i << (uchar)1` where C's `i << 1`
-        // has an int count.
         if (op == BK::LeftShift || op == BK::RightShift) {
           if (const auto* k = std::get_if<ir::Constant>(&b.src2)) {
             if (const auto value = bit_precise::raw_value(k->const_)) {
@@ -284,10 +227,6 @@ class Keys {
     }
   }
 
-  // Returns whether `instr` could write memory: any instruction but the
-  // pure ones, the loads, a `Copy`, a `GetAddress`, a label, a `Phi`, a
-  // jump, and a `Ret`, and any of those that is volatile or writes a
-  // name that isn't an SSA value.
   bool writes_memory(const ir::Type_instruction& instr) const {
     switch (ir::kind(instr)) {
       case K::Binary:
@@ -339,10 +278,6 @@ tac_ast::Function eliminate_common_subexpressions(tac_ast::Function fn, const Pa
   Keys keys(*ctx.ssa_dsts, *ctx.symbols);
   bool changed = false;
 
-  // A walk of the dominator tree. Each entry carries the table of pure
-  // computations of the block's immediate dominator and the table of
-  // loads of its predecessor, which is empty unless that is its only
-  // one.
   struct Entry {
     int bid;
     Table pure;

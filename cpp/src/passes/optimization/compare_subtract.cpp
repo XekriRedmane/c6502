@@ -1,58 +1,3 @@
-/* Moves a subtract of a compare's operands up to the compare.
-
-# What it does
-
-`while (s >= k) s -= k;` compares `s` with `k` and then, on one side
-of the branch, subtracts `k` from `s`:
-
-    .loop:
-        JumpIfCmp(LessThan, s, k, .break)
-        Binary(Subtract, s, k, t)
-        ...
-
-On the 6502 both are the same subtraction. An unsigned `s < k` is the
-borrow out of `s - k`, and a signed one is the sign of the difference
-corrected for overflow. This pass moves the `Binary` to just before the
-`JumpIfCmp`:
-
-    .loop:
-        Binary(Subtract, s, k, t)
-        JumpIfCmp(LessThan, s, k, .break)
-        ...
-
-and `tac_to_asm` (`fused_subtract` in tac_to_asm_compare.cpp) then
-lowers the pair as the subtract followed by a branch on its flags, `LDA
-s; SEC; SBC k; STA t; ...; BCC .break`, with no separate compare.
-That's Zork's `SBC SECTORS_PER_TRACK; BCS` in `do_rwts_on_sector`.
-
-# Pattern
-
-  * A block ends in `JumpIfCmp` with an ordering operator (`<`, `<=`,
-    `>`, `>=`) on integer or pointer operands.
-  * One of its successors has that block as its only predecessor and
-    contains `Binary(Subtract, a, b, t)`, where `a - b` is the
-    difference the compare looks at. That is `src1 - src2` for `<` and
-    `>=`, and `src2 - src1` for `>` and `<=` (the operands `tac_to_asm`
-    swaps).
-  * `a` and `b` are SSA values or constants, so they hold the same
-    values at the compare, and `t` is an SSA value of the operands'
-    type. An operand of the subtract may also be a second read of the
-    same memory as the compare's, such as `ZeroExtend(k)` of a global
-    `k` in each block, when nothing writes memory between the two. The
-    subtract then uses the compare's. (CSE leaves such reads alone,
-    since a second read of a global costs no more than keeping the
-    first in a temporary.)
-
-The move is always sound in SSA form, since the subtract is pure, its
-operands are defined before the compare, and the compare's block
-dominates every use of `t`. On the other side of the branch `t` is
-computed and not used, which costs a subtract's stores where the
-compare used to be.
-
-# Where it runs
-
-Once, after the fixed-point loop, so that `SinkIncrements` and the
-other passes that move instructions don't move it back. */
 #include "passes/optimization/compare_subtract.h"
 
 #include <cstddef>
@@ -91,7 +36,6 @@ using framework::PassContext;
 using IK = ir::Kind_instruction;
 using tac_cfg::Cfg;
 
-// Returns `t` without its `const` and `volatile` qualifiers.
 const c99::Type_data_type& strip(const c99::Type_data_type& t) {
   const c99::Type_data_type* p = &t;
   while (true) {
@@ -105,8 +49,6 @@ const c99::Type_data_type& strip(const c99::Type_data_type& t) {
   }
 }
 
-// Returns true unless `sym` is a known variable whose type isn't
-// `volatile`.
 bool volatile_symbol(const Symbol* sym) {
   if (sym == nullptr) {
     return true;
@@ -137,9 +79,6 @@ bool ordering(const ir::Type_binary_operator& op) {
   return asdl::isa<ir::LessThan, ir::GreaterOrEqual, ir::GreaterThan, ir::LessOrEqual>(op);
 }
 
-// The `src` and `dst` of one of the reads of a variable in memory that
-// match when nothing writes the variable between them (Python's
-// `_READS`): a `ZeroExtend`, `SignExtend`, `Truncate`, or `Copy`.
 struct Read {
   IK kind;
   const ir::Type_val* src;
@@ -169,8 +108,6 @@ std::optional<Read> as_read(const ir::Type_instruction& ins) {
   }
 }
 
-// Returns an instruction of the kind of `kind` (one of `as_read`'s)
-// that reads `src` into `dst`.
 ir::Type_instruction make_read(IK kind, ir::Type_val src, ir::Type_val dst) {
   switch (kind) {
     case IK::ZeroExtend:
@@ -193,10 +130,6 @@ bool is_ssa_var(const ir::Type_val& v, const PassContext& ctx) {
   return var != nullptr && ctx.is_ssa(var->name);
 }
 
-// Returns whether `instr` may write memory. Only the reads, `Binary`,
-// `Unary`, `Label`, `Phi`, `GetAddress`, `JumpIfCmp`, and the loads
-// don't, and they do when they are volatile or their `dst` isn't an
-// SSA value (as in `cse`).
 bool writes_memory(const ir::Type_instruction& instr, const PassContext& ctx) {
   switch (ir::kind(instr)) {
     case IK::ZeroExtend:
@@ -247,8 +180,6 @@ bool any_writes_memory(const Instrs& instrs, std::size_t from, std::size_t to,
   return false;
 }
 
-// Returns the type of `v` without its qualifiers when it is a Var with
-// a symbol, or null.
 const c99::Type_data_type* type_of(const ir::Type_val& v, const PassContext& ctx) {
   const auto* var = std::get_if<ir::Var>(&v);
   if (var == nullptr) {
@@ -258,8 +189,6 @@ const c99::Type_data_type* type_of(const ir::Type_val& v, const PassContext& ctx
   return sym == nullptr ? nullptr : &strip(sym->type);
 }
 
-// Returns whether `v` holds the same value at the compare as at the
-// subtract: an integer constant, or an SSA value.
 bool stable(const ir::Type_val& v, const PassContext& ctx) {
   if (const auto* c = std::get_if<ir::Constant>(&v)) {
     return !asdl::isa<ir::ConstFloat, ir::ConstDouble>(c->const_);
@@ -267,8 +196,6 @@ bool stable(const ir::Type_val& v, const PassContext& ctx) {
   return is_ssa_var(v, ctx);
 }
 
-// What `memory_read` identifies a read by: the kind of the instruction,
-// the variable read, and the type of the value read (null for none).
 struct MemoryRead {
   IK kind;
   std::string variable;
@@ -285,9 +212,6 @@ struct MemoryRead {
   }
 };
 
-// Returns `(kind, variable, type)` when `v` is defined in `instrs[0 ..
-// end)` by a read of a non-volatile variable in memory that nothing
-// after it in that range writes, else none.
 std::optional<MemoryRead> memory_read(const ir::Type_val& v, const Instrs& instrs, std::size_t end,
                                       const PassContext& ctx) {
   if (!is_ssa_var(v, ctx)) {
@@ -308,9 +232,6 @@ std::optional<MemoryRead> memory_read(const ir::Type_val& v, const Instrs& instr
   return std::nullopt;
 }
 
-// Returns `want` (the compare's operand) if `have` (the subtract's) is
-// the same value: identical, or the same memory read, the compare's in
-// `head[0 .. head_end)` and the subtract's in `prefix[0 .. prefix_end)`.
 const ir::Type_val* matching(const ir::Type_val& want, const ir::Type_val& have, const Instrs& head,
                              std::size_t head_end, const Instrs& prefix, std::size_t prefix_end,
                              const PassContext& ctx) {
@@ -324,13 +245,8 @@ const ir::Type_val* matching(const ir::Type_val& want, const ir::Type_val& have,
   return nullptr;
 }
 
-// Moves the first subtract in `body` of `a - b` (as the compare at the
-// end of `instrs` sees them) to just before that compare. Returns
-// whether it found one. `body` and `instrs` may be the same block.
 bool hoist_from(Instrs& body, Instrs& instrs, const ir::Type_val& a, const ir::Type_val& b,
                 const c99::Type_data_type& t, const PassContext& ctx) {
-  // Python's `head` is a copy of the instructions before the compare,
-  // taken before anything moves.
   const Instrs head(instrs.begin(), instrs.end() - 1);
   for (std::size_t k = 0; k < body.size(); ++k) {
     const auto* ins = std::get_if<ir::Binary>(&body[k]);
@@ -355,8 +271,6 @@ bool hoist_from(Instrs& body, Instrs& instrs, const ir::Type_val& a, const ir::T
   return false;
 }
 
-// Returns the first name of `<base>.exit`, `<base>.exit1`, ... that
-// isn't in the symbol table.
 std::string fresh_exit_name(const std::string& base, const PassContext& ctx) {
   std::string name = base + ".exit";
   int n = 0;
@@ -367,9 +281,6 @@ std::string fresh_exit_name(const std::string& base, const PassContext& ctx) {
   return name;
 }
 
-// Returns a copy of the instruction in `head` that defines `b` by
-// reading a non-volatile variable in memory, into a fresh SSA
-// temporary, when nothing after it in `head` writes memory, else none.
 std::optional<ir::Type_instruction> reread(const ir::Type_val& b, const Instrs& head,
                                            const PassContext& ctx) {
   const auto* bv = std::get_if<ir::Var>(&b);
@@ -395,17 +306,6 @@ std::optional<ir::Type_instruction> reread(const ir::Type_val& b, const Instrs& 
   return std::nullopt;
 }
 
-// After the subtract `sub` (`t = a - b`) has moved up to the compare
-// ending block `bid`, gives the compare's other successor `a` as `t +
-// b` when `a` is the value a loop carries round (a Phi in `bid`) and
-// only that successor reads it after the compare. Then `a` dies at the
-// subtract, the loop can update it in place, and the exit adds `b`
-// back, as Zork's `do_rwts_on_sector` does with `ADC
-// SECTORS_PER_TRACK`. When `b` is a read of a variable in memory in
-// `bid` (`ZeroExtend(SECTORS_PER_TRACK)`), the exit reads it again, so
-// that the first read isn't kept live past the compare. That is sound
-// since nothing after the read in `bid` writes memory. Returns whether
-// it did.
 bool recompute_on_exit(Cfg& cfg, int bid, int succ, const ir::Type_val& a, const ir::Binary& sub,
                        const PassContext& ctx) {
   const auto* av = std::get_if<ir::Var>(&a);
@@ -560,9 +460,6 @@ ir::Function hoist_subtract_to_compare(ir::Function fn, const PassContext& ctx) 
   }
   Cfg cfg = tac_cfg::build_cfg(fn);
   bool changed = false;
-  // Each move's compare block, its successor, the compare's `a`, and the
-  // subtract as it was moved, copied since a later rewrite may replace
-  // the instruction.
   std::vector<std::tuple<int, int, ir::Type_val, ir::Binary>> hoisted;
   for (const int bid : cfg.block_order) {
     auto& block = block_of(cfg, bid);

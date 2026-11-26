@@ -1,5 +1,3 @@
-// The port of passes/optimization/inline_functions.py, which inlines
-// small `static` functions into their callers under `-O`.
 #pragma once
 
 #include "c99_ast.h"
@@ -8,11 +6,10 @@
 
 namespace c6502::passes {
 
-// Inlines the calls of small `static` functions (the .cpp's comment) and
-// returns the new program, adding a symbol for each renamed local to
-// `symbols`. `prog` is the type-checked c99 program, which holds the
-// attributes of each declaration. A program with nothing to inline
-// comes back unchanged.
+// Inlines the calls of small `static` functions and returns the new
+// program, adding a symbol for each renamed local to `symbols`. `prog` is
+// the type-checked c99 program, which holds the attributes of each
+// declaration. A program with nothing to inline comes back unchanged.
 tac_ast::Program inline_functions(tac_ast::Program tac, SymbolTable& symbols,
                                   const c99_ast::Program& prog);
 

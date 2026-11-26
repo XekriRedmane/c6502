@@ -1,26 +1,3 @@
-/* The shared core of the recognizers of the `extend -> add -> load or
-store` chain.
-
-The three addressing-mode recognizers, `recognize_indexed_load`,
-`recognize_indexed_store`, and `recognize_indirect_indexed`, all match
-the same shape upstream of a Load's or a Store's address `%addr`:
-
-    %ext  := ZeroExtend(idx_var)                # idx_var is a 1-byte type
-    %addr := Binary(Add, base, %ext)            # base is a Constant or a pointer Var
-    Load(%addr, ...)  /  Store(..., %addr)
-
-and rewrite it to an instruction of their addressing mode. They differ
-in the use they match (a `Load`, a `Store`, or either), in whether
-`base` must be a `Constant` (absolute,X) or a pointer Var ((zp),Y), in
-the instruction they emit, and in whether they drop the intermediate
-definitions with the rewrite.
-
-`recognize_extend_add_chain` holds the walk back and the gates every
-recognizer applies: a symbol table, `%addr` and `%ext` both SSA-renamed
-and `%addr` read once, the Add, the extend a ZeroExtend, and `idx_var`
-a 1-byte Var. Each caller checks the kind of `base` and supplies its
-own instruction and drops. `is_1_byte_var` and `is_1_byte_val` are the
-width predicates the three passes share. */
 #include "passes/optimization/extend_add_chain.h"
 
 namespace c6502::passes {
@@ -32,16 +9,8 @@ namespace c99 = ::c6502::c99_ast;
 using framework::DefUseEnv;
 using framework::PassContext;
 
-// How many Copies `extend_def` follows back to the extend.
 constexpr int kMaxCopyHops = 4;
 
-// Returns the ZeroExtend or SignExtend that defines `v`, looking
-// through a few Copies, or null. A Copy between types of one width and
-// different signedness (the lowering of a cast from `int` to `unsigned`)
-// isn't propagated by copy propagation, so after common-subexpression
-// elimination shares one extend among several subscripts, each
-// subscript's index can be a Copy of it. The addressing modes read only
-// the index's low byte, which the Copy doesn't change.
 const ir::Type_instruction* extend_def(const ir::Var& start, const DefUseEnv& env) {
   const ir::Var* v = &start;
   for (int hop = 0; hop < kMaxCopyHops + 1; ++hop) {
@@ -103,10 +72,6 @@ std::optional<ExtendAddChain> recognize_extend_add_chain(const ir::Var& addr_var
   if (binary == nullptr || !std::holds_alternative<ir::Add>(binary->op)) {
     return std::nullopt;
   }
-  // Of the Add's two operands, the one defined by an extend is the
-  // index, preferring src2, and the other is the base (Python's
-  // `_split_extend_operand`). The caller decides which kind of base it
-  // accepts.
   const ir::Type_val* base = nullptr;
   const ir::Var* ext_var = nullptr;
   if (defined_by_extend(binary->src2, env)) {
@@ -121,16 +86,9 @@ std::optional<ExtendAddChain> recognize_extend_add_chain(const ir::Var& addr_var
   if (!ctx.is_ssa(ext_var->name)) {
     return std::nullopt;
   }
-  // Only a ZeroExtend is accepted. X and Y are unsigned, so `base,X` and
-  // `(base),Y` address `base + idx` with `idx` in 0..255, which is what
-  // `base + ZeroExtend(idx)` computes. A SignExtend of a negative byte
-  // gives `base - 1` for -1 where the addressing mode gives `base +
-  // 255`, and C allows the negative offset when the pointer points into
-  // the middle of an object (`p[-1]`). The loop rotation pass rewrites
-  // the SignExtend of a counter it proves non-negative into a
-  // ZeroExtend, so such a counter still folds. The dead extension of
-  // the high byte is cleaned up by SSA dead-code elimination or the asm
-  // byte DCE once this rewrite removes the chain's only reader.
+  // Only a ZeroExtend is accepted. The 6502's X and Y are unsigned, so
+  // `base,X` and `(base),Y` address `base + 255` for an index of -1,
+  // where a SignExtend gives `base - 1`.
   const auto* ext = std::get_if<ir::ZeroExtend>(extend_def(*ext_var, env));
   if (ext == nullptr) {
     return std::nullopt;

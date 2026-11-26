@@ -1,39 +1,3 @@
-/* TAC dead-store elimination in SSA form.
-
-In SSA form every Var has exactly one definition, so whether a
-definition is live comes down to whether its Var is read anywhere. The
-pass walks the function:
-
-  1. It collects the names read anywhere (Phi sources, operands, return
-     values, call arguments).
-  2. It drops or simplifies each instruction whose destination isn't
-     read. A pure definition (`Copy`, `Binary`, `Unary`, the eight casts
-     and floating conversions, `Load`, `IndexedLoad`, `GetAddress`,
-     `Phi`) goes entirely. A `FunctionCall` or `IndirectCall` stays,
-     since running the function can be seen (globals, I/O), and loses
-     its destination, which marks the result as ignored.
-  3. Dropping a definition leaves its operands with one read fewer, so
-     the pass collects the reads again and repeats until nothing
-     changes.
-
-These stay whatever is read:
-  - A `Store` writes memory through a pointer, and a later `Load` this
-    function can't see may read the bytes (through an alias, or over
-    the lifetime of an address-taken local).
-  - A `Ret` ends control with the return value, and is never dead.
-  - The jumps and labels define no Var, so they aren't candidates.
-  - A call keeps its effects, and only the capture of its result goes.
-
-The pass is sound only in SSA form. Outside it, a definition that looks
-dead by name may be live, since a later instruction can write the name
-again before any read, and the usual liveness analysis would be needed.
-The driver runs this pass only between SSA construction and
-destruction.
-
-A load isn't kept for its effects. c6502's memory is plain RAM, so a
-load through a wild pointer doesn't trap, and dropping a load whose
-destination is dead can't be observed. That goes further than LLVM's
-convention that a load may trap, but it matches what the 6502 does. */
 #include "passes/optimization/dead_store_elimination.h"
 
 #include <optional>
@@ -53,7 +17,6 @@ using framework::PassContext;
 using K = ir::Kind_instruction;
 using Names = std::set<std::string, std::less<>>;
 
-// Returns the names read anywhere in `instrs`.
 Names collect_uses(const Instrs& instrs) {
   Names used;
   for (const auto& instr : instrs) {
@@ -64,9 +27,6 @@ Names collect_uses(const Instrs& instrs) {
   return used;
 }
 
-// Returns the destination of a pure definition, the instructions that
-// go entirely when their destination is dead, or null for any other
-// instruction.
 const ir::Type_val* pure_def_dst(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::Copy:
@@ -93,6 +53,8 @@ const ir::Type_val* pure_def_dst(const ir::Type_instruction& instr) {
       return &std::get<ir::FloatToDouble>(instr).dst;
     case K::DoubleToFloat:
       return &std::get<ir::DoubleToFloat>(instr).dst;
+    // A 6502 load never traps, so a non-volatile load whose destination
+    // is dead goes, even through a wild pointer.
     case K::Load:
       return &std::get<ir::Load>(instr).dst;
     case K::GetAddress:
@@ -106,11 +68,6 @@ const ir::Type_val* pure_def_dst(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns whether `instr` is a volatile load, whose access can be seen
-// (C99 §6.7.3.6) and has to stay even when nothing reads its
-// destination. `(void)*p` of a volatile `*p` is the usual case: the
-// load's destination is a temporary nothing reads, but the read of `*p`
-// is itself an effect.
 bool is_volatile_load(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::Load:
@@ -126,16 +83,11 @@ bool is_volatile_load(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns whether the Var `dst` is an SSA name that nothing reads.
 bool dead(const ir::Type_val& dst, const Names& used, const NameSet& ssa) {
   const auto* v = std::get_if<ir::Var>(&dst);
-  // A write to a name that isn't an SSA name (a static, an
-  // address-taken local, an aggregate) may be read elsewhere.
   return v != nullptr && ssa.contains(v->name) && !used.contains(v->name);
 }
 
-// What happens to one instruction: it is dropped (none), kept, or kept
-// with a change, which `changed` reports.
 struct Filtered {
   bool keep = true;
   bool changed = false;
@@ -164,8 +116,6 @@ Filtered filter(ir::Type_instruction& instr, const Names& used, const NameSet& s
     }
     return {};
   }
-  // A call whose result nothing reads loses its destination and stays,
-  // since running the function may have effects.
   if (auto* call = std::get_if<ir::FunctionCall>(&instr)) {
     if (call->dst && dead(*call->dst, used, ssa)) {
       call->dst.reset();
@@ -185,12 +135,6 @@ Filtered filter(ir::Type_instruction& instr, const Names& used, const NameSet& s
 
 }  // namespace
 
-// Only a definition of an SSA name is dropped, since only those names
-// have one definition in this function. A write to a static, to an
-// address-taken local, or to an aggregate that wasn't renamed can be
-// read back by another function, through a pointer, or later, so it
-// stays whatever this function reads. Outside SSA form there is no safe
-// way to tell which destinations are local, so the pass does nothing.
 tac_ast::Function eliminate_dead_stores(tac_ast::Function fn, const PassContext& ctx) {
   if (ctx.ssa_dsts == nullptr) {
     return fn;

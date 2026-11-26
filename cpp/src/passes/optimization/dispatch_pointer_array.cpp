@@ -1,67 +1,3 @@
-/* Inline-switch dispatch for `static const T * const arr[N]` subscript
-chains.
-
-When `arr` is a small file-scope `static const T * const[N]` whose
-elements are all `AddressInit(some_named_static)`, and the program
-reads `arr[i][j]` for runtime `i` and `j`, the generic c99_to_tac
-lowering builds an indirect read:
-
-    %scaled    = Binary(LeftShift, %i, 1, _)        ; i * 2
-    %ptr       = IndexedLoad(arr, %scaled, _)       ; 2-byte pointer load
-    %val       = IndirectIndexedLoad(%ptr, %j, _)   ; deref *(ptr + j)
-
-That lowers to `LDA arr,X; STA dptr; LDA arr+1,X; STA dptr+1; LDA
-(dptr),Y` (5 instructions) plus the `i*2` scaling, and it ties up X
-(the abs,X index), Y (the (zp),Y offset), and DPTR (the indirect base)
-at once.
-
-This pass recognizes the chain and rewrites it to a CMP/BEQ dispatch on
-`i`:
-
-    JumpIfCmp(Equal, %i, ConstChar(0), case_0)
-    JumpIfCmp(Equal, %i, ConstChar(1), case_1)
-    ... (N-1 checks) ...
-    ; fallthrough is case_{N-1}
-    IndexedLoad(target_{N-1}, %j, %val)
-    Jump(end)
-    Label(case_0):
-    IndexedLoad(target_0, %j, %val)
-    Jump(end)
-    ... (one block per case) ...
-    Label(end):
-
-Each case is a single direct array load, with no DPTR staging and no
-pointer indirection. The dispatch frees X and Y from the dual-index
-conflict, so a loop counter can stay in X across it.
-
-Eligibility. A chain is recognized when
-
-  * `IndirectIndexedLoad(ptr=Var(%P), index=Var(%J), dst=Var(%V))`
-    appears in the function,
-  * the latest in-order definition of `%P` is `IndexedLoad(name=arr,
-    index=Var(%I_scaled), dst=Var(%P))`, and `%P` has exactly that one
-    definition and one use,
-  * the latest in-order definition of `%I_scaled` is `Binary(LeftShift,
-    Var(%I), Constant(1), Var(%I_scaled))` or `Binary(Multiply,
-    Var(%I), Constant(2), Var(%I_scaled))`, and `%I_scaled` has one
-    definition and one use,
-  * `arr` is a `StaticVariable` whose `init` is a list of
-    `AddressInit(target_k, offset=0)` entries,
-  * `arr`'s elements are const-qualified in the symbol table, as in
-    `static T * const arr[N]` or `static const T * const arr[N]`. The
-    dispatch hard-codes the initial targets, so a table whose elements
-    another function can store into is left alone. The pointees may be
-    writable, since each case reads the target array at run time.
-    Without a symbol table no table qualifies.
-  * the list length N is at most `kDispatchThreshold` (8).
-
-Why after SSA destruction. This pass runs once, after `from_ssa`, so
-each case can write to the same dst `%V` without inserting Phis. The
-code after it reads `%V` unchanged.
-
-The single-use requirement. The chain's instructions are deleted from
-the IR, which would be unsound if `%I_scaled` or `%P` had other uses,
-so the eligibility check requires one use of each. */
 #include "passes/optimization/dispatch_pointer_array.h"
 
 #include <cstddef>
@@ -81,16 +17,10 @@ namespace {
 namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 
-// The most cases dispatched inline. 8 covers every small table of the
-// corpus, and the dispatch chain of a larger table (16 or more) would
-// cost more than the access it replaces.
 constexpr std::size_t kDispatchThreshold = 8;
 
 using PointerArrays = OrderedMap<std::string, std::vector<std::string>>;
 
-// Returns whether `name` is an array whose element type is
-// const-qualified at its top level, so that no store can change which
-// address an element holds. A volatile element doesn't qualify.
 bool elements_are_const(const SymbolTable* symbols, const std::string& name) {
   if (symbols == nullptr) {
     return false;
@@ -123,12 +53,6 @@ bool elements_are_const(const SymbolTable* symbols, const std::string& name) {
   return saw_const;
 }
 
-// Maps each eligible `static const T * const[N]` to the ordered list of
-// its `AddressInit` targets. A table is eligible when it has internal
-// linkage, its elements are const (`elements_are_const`), and its
-// `init` is a non-empty list of at most `kDispatchThreshold`
-// `AddressInit(name, offset=0)` entries, pointers to other named
-// statics with no offset.
 PointerArrays collect_pointer_arrays(const ir::Program& prog, const SymbolTable* symbols) {
   PointerArrays out;
   for (const auto& tl : prog.top_level) {
@@ -156,7 +80,6 @@ PointerArrays collect_pointer_arrays(const ir::Program& prog, const SymbolTable*
   return out;
 }
 
-// Returns whether `val` is an integer constant equal to `target`.
 bool is_int_constant(const ir::Type_val& val, asdl::Int target) {
   const auto* c = std::get_if<ir::Constant>(&val);
   if (c == nullptr) {
@@ -166,9 +89,6 @@ bool is_int_constant(const ir::Type_val& val, asdl::Int target) {
   return v && *v == target;
 }
 
-// Returns the Var operand when `instr` scales a Var by 2, as
-// `LeftShift(v, 1)` or `Multiply(v, 2)` in either operand order, and
-// none otherwise.
 std::optional<ir::Type_val> match_scale_by_two(const ir::Type_instruction& instr) {
   const auto* b = std::get_if<ir::Binary>(&instr);
   if (b == nullptr) {
@@ -191,9 +111,6 @@ std::optional<ir::Type_val> match_scale_by_two(const ir::Type_instruction& instr
   return std::nullopt;
 }
 
-// One chain the pass rewrites: the positions of its three
-// instructions, the index operands `i` and `j`, the destination, and
-// the table.
 struct Chain {
   std::size_t scaled_idx = 0;
   std::size_t indexed_load_idx = 0;
@@ -204,7 +121,6 @@ struct Chain {
   std::string arr_name;
 };
 
-// Returns the first eligible chain of `instrs`, or none.
 std::optional<Chain> find_one_chain(const framework::Instrs& instrs,
                                     const PointerArrays& pointer_arrays) {
   const auto use_count = count_uses(instrs);
@@ -226,10 +142,6 @@ std::optional<Chain> find_one_chain(const framework::Instrs& instrs,
     if (ptr == nullptr) {
       continue;
     }
-    // A volatile pointee or pointer table is left alone. The dispatch
-    // would replace one observable access with N (or none, for the
-    // cases not taken), which changes the program's trace of volatile
-    // accesses, a change of meaning by C99 §6.7.3.6.
     if (inst->is_volatile) {
       continue;
     }
@@ -275,10 +187,6 @@ std::optional<Chain> find_one_chain(const framework::Instrs& instrs,
   return std::nullopt;
 }
 
-// Builds the dispatch block for `chain` and splices it into `instrs`,
-// removing the chain's three instructions. The dispatch goes at the
-// position of the `IndirectIndexedLoad`, the last of the three, which
-// may have unrelated instructions between them.
 framework::Instrs apply_dispatch(const framework::Instrs& instrs, const Chain& chain,
                                  const PointerArrays& pointer_arrays, int& label_counter) {
   const std::vector<std::string>& targets = pointer_arrays.at(chain.arr_name);
@@ -295,8 +203,6 @@ framework::Instrs apply_dispatch(const framework::Instrs& instrs, const Chain& c
   };
 
   framework::Instrs dispatch;
-  // The compare-and-branch chain on `i`. The last case falls through,
-  // so only cases 0 to N-2 are tested.
   for (std::size_t k = 0; k + 1 < targets.size(); ++k) {
     dispatch.push_back(ir::JumpIfCmp{
         .op = ir::Equal{},
@@ -329,8 +235,6 @@ framework::Instrs apply_dispatch(const framework::Instrs& instrs, const Chain& c
   return out;
 }
 
-// Finds and rewrites eligible chains until none is left. Each rewrite
-// changes the use counts, so each round counts them again.
 ir::Function rewrite_function(ir::Function fn, const PointerArrays& pointer_arrays,
                               int& label_counter) {
   while (true) {

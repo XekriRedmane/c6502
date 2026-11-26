@@ -1,9 +1,3 @@
-// The port of passes/optimization/framework/driver.py. The driver runs
-// an ordered pipeline of passes in phases over one function. Python's
-// `PhaseDriver` checks at construction that each list holds passes of
-// its phase's class. The C++ lists hold the passes' functions, and the
-// table that builds them (src/passes/optimization/optimizer.cpp) puts
-// each in its Python list.
 #include "passes/optimization/driver.h"
 
 #include <string>
@@ -27,9 +21,6 @@ void observe(const ir::Function& fn, std::string_view after) {
   if (current_observer != nullptr) (*current_observer)(fn, after);
 }
 
-// Runs `p` on `fn` and, with the IR checks on, checks the result, with
-// the SSA names when `in_ssa` is true, and then calls the observer, in
-// Python's order.
 ir::Function run(const NamedPass& p, ir::Function fn, const PassContext& ctx, bool in_ssa) {
   if (p.run == nullptr) {
     throw InternalError("the TAC pass " + std::string(p.name) + " isn't ported to C++");
@@ -40,9 +31,6 @@ ir::Function run(const NamedPass& p, ir::Function fn, const PassContext& ctx, bo
   return fn;
 }
 
-// Sweeps `passes` over `fn` until a sweep leaves it equal to what the
-// sweep started with, or `cap` times. Python compares with `==`, so a
-// pass that rebuilds an equal function ends the fixed point too.
 ir::Function sweep(const std::vector<NamedPass>& passes, ir::Function fn, const PassContext& ctx,
                    int cap, bool in_ssa) {
   for (int i = 0; i < cap; ++i) {
@@ -57,8 +45,6 @@ ir::Function sweep(const std::vector<NamedPass>& passes, ir::Function fn, const 
   return fn;
 }
 
-// Reports the passes of one of the driver's lists, which run next
-// (src/pass_order.h).
 void report(const std::vector<NamedPass>& passes) {
   for (const auto& p : passes) {
     pass_order::ran(p.name);
@@ -91,7 +77,6 @@ bool PhaseDriver::complete() const {
 ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_storage) const {
   const pass_order::Run pass_run("tac");
   ir_check::check_tac(fn, "c99_to_tac", ctx.symbols);
-  // The passes before SSA run whether or not SSA construction will.
   report(pre_ssa);
   for (const auto& p : pre_ssa) {
     fn = run(p, std::move(fn), ctx, false);
@@ -108,7 +93,6 @@ ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_
       fn = run(p, std::move(fn), ctx, true);
     }
   }
-  // The main fixed point.
   report(fixedpoint);
   fn = sweep(fixedpoint, std::move(fn), ctx, fixedpoint_cap, ctx.symbols != nullptr);
   if (ctx.symbols != nullptr) {
@@ -120,12 +104,10 @@ ir::Function PhaseDriver::apply(ir::Function fn, PassContext& ctx, NameSet& ssa_
     observe(fn, "from_ssa");
     ir_check::check_tac(fn, "from_ssa", ctx.symbols);
   }
-  // The passes after destruction, once each.
   report(post_destruction);
   for (const auto& p : post_destruction) {
     fn = run(p, std::move(fn), ctx, false);
   }
-  // The fixed point after destruction.
   report(post_destruction_fixedpoint);
   return sweep(post_destruction_fixedpoint, std::move(fn), ctx, fixedpoint_cap, false);
 }

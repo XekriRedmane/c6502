@@ -1,29 +1,3 @@
-// The zero-page objects (`[[c6502::zeropage]]`) at the end of the back
-// end.
-//
-// Zero page isn't part of the program image that is loaded, so a
-// zero-page object's initial value (its initializer, or zero, as C gives
-// static storage) is stored when the program runs. `place_zp_globals`
-// drops each object's `StaticVariable` and adds a function `__zp_init`
-// that stores the initial bytes of every zero-page object the unit
-// defines, which the boot code calls before `main` (the simulator's boot
-// stub does, in sim/runtime.py). An `extern` declaration with a fixed
-// address and no definition in the unit names a byte that something
-// else owns, another unit or hand-written code, so it is reserved and
-// addressed but not initialized.
-//
-// Under `-O` each unit lists its zero-page objects in the link metadata
-// (`link_records`): the size, the fixed address if it has one, whether
-// the unit defines it, and its initial bytes. The linker keeps the fixed
-// addresses, places the rest for the whole program, and replaces each
-// unit's `__zp_init` with one that stores every object's initial bytes.
-//
-// `hargs_need` and `check_hargs` are the parts of
-// passes/runtime_layout.py that read the finished program. A helper
-// reads its inputs from HARGS, writes its outputs there, and may use
-// more of it as scratch (`mul32` works in HARGS+12..19), so a program
-// needs the larger of its own highest HARGS offset and the footprint of
-// every helper it calls.
 #include "passes/zp_globals.h"
 
 #include <algorithm>
@@ -44,8 +18,6 @@ namespace {
 
 namespace ir = ::c6502::asm_ast;
 
-// Appends the little-endian bytes of the `n`-byte value `value` as
-// immediates.
 void number(asdl::Int value, int n, std::vector<ir::Type_operand>& out) {
   value &= (asdl::Int(1) << (8 * n)) - 1;
   for (int k = 0; k < n; ++k) {
@@ -53,8 +25,6 @@ void number(asdl::Int value, int n, std::vector<ir::Type_operand>& out) {
   }
 }
 
-// Returns the source operand of each initial byte of `init`: an `Imm`,
-// or for an address the `ImmLabelLow` and `ImmLabelHigh` of the label.
 std::vector<ir::Type_operand> init_operands(const std::vector<ir::Type_static_init>& init) {
   std::vector<ir::Type_operand> out;
   for (const auto& item : init) {
@@ -113,8 +83,6 @@ std::vector<ir::Type_operand> init_operands(const std::vector<ir::Type_static_in
   return out;
 }
 
-// Returns the HARGS offsets that `instrs` reads or writes, as the
-// highest one plus one, or 0 for none.
 asdl::Int hargs_extent(const std::vector<ir::Type_instruction>& instrs) {
   asdl::Int extent = 0;
   auto note = [&](const ir::Type_operand& op) {
@@ -127,7 +95,6 @@ asdl::Int hargs_extent(const std::vector<ir::Type_instruction>& instrs) {
   };
   for (const auto& instr : instrs) {
     for_each_operand<false>(instr, note);
-    // `DecimalArith` keeps its operands in lists.
     if (const auto* d = asdl::as<ir::DecimalArith>(instr)) {
       for (const auto* list : {&d->left, &d->right, &d->dst}) {
         for (const auto& op : *list) {
@@ -158,11 +125,6 @@ const HelperFootprints& helper_footprints() {
         }
       }
     }
-    // The walk is Python's, which keeps the first size it computes for
-    // each helper and follows each helper's calls in the order of a set.
-    // That order could change a size only if the helpers called each
-    // other in a cycle, which tools/rtlib_table.py refuses, so the
-    // callees here go in code-point order.
     HelperFootprints out;
     const std::function<asdl::Int(const std::string&, const std::set<std::string>&)> size =
         [&](const std::string& name, const std::set<std::string>& seen) -> asdl::Int {
@@ -225,9 +187,6 @@ asm_ast::Program place_zp_globals(asm_ast::Program prog, const ZpGlobals& zp,
   if (zp.addrs.empty()) {
     return prog;
   }
-  // The bytes each value is stored to, by the dump of the value, in the
-  // order the values first appear. The first entry of each list is the
-  // value itself.
   std::map<std::string, std::vector<ir::Type_operand>> stores;
   std::vector<std::string> order;
   std::vector<ir::Type_top_level> top;
@@ -331,8 +290,6 @@ std::vector<ZpObjectMeta> link_records(const asm_ast::Program& prog, const ZpGlo
     meta.local = internal.contains(name);
     out.push_back(std::move(meta));
   }
-  // Python lists the external objects by name (`sorted(zp.external)`),
-  // and the map keeps the dict's order.
   std::vector<std::pair<std::string, asdl::Int>> external(zp.external.begin(),
                                                           zp.external.end());
   std::sort(external.begin(), external.end());

@@ -9,16 +9,12 @@ namespace c6502::passes {
 
 namespace {
 
-// The suffix of the local a `register` parameter is copied into at the
-// entry.
 constexpr std::string_view kRegisterParamSuffix = ".reg";
 
 bool all_digits(std::string_view s) {
   return !s.empty() && std::all_of(s.begin(), s.end(), [](char c) { return c >= '0' && c <= '9'; });
 }
 
-// Splits `s` at the last `sep`, as Python's `str.rpartition` does, and
-// returns the head and the tail, or nothing when `sep` isn't in `s`.
 std::optional<std::pair<std::string_view, std::string_view>> rpartition(std::string_view s,
                                                                         std::string_view sep) {
   const auto at = s.rfind(sep);
@@ -54,26 +50,21 @@ std::string source_spelling(std::string_view resolved_name) {
 
 std::pair<std::optional<std::string>, asdl::Int> parse_pseudo_name(std::string_view name) {
   std::string_view base = name;
-  // The asm SSA's `.v<N>` version.
   if (const auto p = rpartition(base, ".v"); p && all_digits(p->second)) {
     base = p->first;
   }
-  // The asm SSA's `.b<k>` byte index.
   asdl::Int byte_index = 0;
   if (const auto p = rpartition(base, ".b"); p && all_digits(p->second)) {
     byte_index = parse_digits(p->second);
     base = p->first;
   }
-  // One TAC SSA `.<N>` version.
   if (const auto p = rpartition(base, "."); p && all_digits(p->second)) {
     base = p->first;
   }
-  // A register parameter's local has the parameter's spelling.
   if (base.size() >= kRegisterParamSuffix.size() &&
       base.substr(base.size() - kRegisterParamSuffix.size()) == kRegisterParamSuffix) {
     base = base.substr(0, base.size() - kRegisterParamSuffix.size());
   }
-  // A name from the source has identifier_resolution's `@<N>.<orig>`.
   if (!base.empty() && base.front() == '@') {
     const auto dot = base.find('.');
     if (dot != std::string_view::npos && dot + 1 < base.size()) {
@@ -113,7 +104,6 @@ SlotNamesByFunction compute_local_slot_names(const LocalPools& local_pools,
   SlotNamesByFunction out;
   for (const auto& [fn_name, pool] : local_pools) {
     const Coloring* coloring = colorings.find(fn_name);
-    // The slot symbol of each address an address-taken local landed at.
     OrderedMap<asdl::Int, std::string> overrides;
     if (assignments != nullptr && symbols != nullptr) {
       const auto* fn_assignments = assignments->find(fn_name);
@@ -139,7 +129,6 @@ SlotNamesByFunction compute_local_slot_names(const LocalPools& local_pools,
       continue;
     }
     auto name_map = local_slot_names(fn_name, *coloring, pool);
-    // The address-taken locals' symbols go over the coloring's names.
     for (const auto& [addr, sym] : overrides) {
       name_map.insert_or_assign(addr, sym);
     }

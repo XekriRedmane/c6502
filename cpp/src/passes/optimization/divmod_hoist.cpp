@@ -1,66 +1,3 @@
-/* Puts a divide and a remainder of the same operands next to each other.
-
-# What it does
-
-`tac_to_asm` lowers a `/` and a `%` of the same operands with one loop
-of subtractions, or one call of a `divmod` helper, when the two come
-close together in one straight run with no store or call between them
-(`plan_divmod_pairs`). A store, a call, or a branch between them gives
-two loops. Ali Baba's `load_scene_from_disk` stores `sector % 13`
-through a pointer before it computes `sector / 13`, and
-`render_font_char_direct` divides inside an `if` and takes the
-remainder after it:
-
-    JumpIfCmp(LessThan, V, 24uc, .if_end@0)
-    Binary(Divide, V, 24uc, Q)
-  .if_end@0:
-    Binary(Modulo, V, 24uc, R)
-
-This pass computes both into temporaries at one place and leaves a
-`Copy` of each where its instruction was:
-
-    Binary(Divide, V, 24uc, %q)
-    Binary(Modulo, V, 24uc, %r)
-    JumpIfCmp(LessThan, V, 24uc, .if_end@0)
-    Copy(%q, Q)
-  .if_end@0:
-    Copy(%r, R)
-
-A result whose destination is an SSA-renamed name is computed straight
-into that name, and nothing is left at its old place.
-
-# Where the pair goes
-
-Let `A` and `B` be the blocks of the two instructions and `D` their
-nearest common dominator. When `D` is the block of one of them, the
-pair goes at that one, the first of the two in `D`. Otherwise it goes
-at the end of `D`, before its jump, and then every path from there to
-the function's exit has to pass through `A` or `B`, so the pair never
-runs on a path that computed neither.
-
-# When it applies
-
-- The two are `Binary(Divide)` and `Binary(Modulo)` with the same
-  `src1`, a variable of 1, 2, 4, or 8 bytes that isn't floating, and
-  the same `src2`. A `src2` that is a variable is taken only when both
-  are in one block, and a constant one must not be 0, so that the pair
-  never divides by zero on a path that didn't.
-- Neither destination is an operand, and no operand is volatile, since
-  the pair reads each operand once.
-- From the pair's new place to each instruction, no instruction writes
-  an operand. Every instruction in a block that lies on a path from `D`
-  to `A` or `B` counts, and so does every instruction after the new
-  place in `D`. An operand that isn't SSA-renamed (a static, an object
-  at a fixed address, an address-taken local) can be written through a
-  pointer or by a call, so then no store through a pointer,
-  `IndexedStore`, store into the operand by name, or call may come
-  there either.
-
-The operands then hold the same values at the new place as at each
-instruction, and the division has no side effects, so each result is
-the value the instruction computed. Each destination is still written
-where it was. Pairs whose two instructions are already adjacent are
-left alone. */
 #include "passes/optimization/divmod_hoist.h"
 
 #include <algorithm>
@@ -106,8 +43,6 @@ bool is_volatile(const std::string& name, const SymbolTable& symbols) {
   return std::holds_alternative<c99::Volatile>(*t);
 }
 
-// Returns the width of the integer variable `name` in bytes, or none
-// for a name with no symbol or a type of another kind.
 std::optional<int> width(const std::string& name, const SymbolTable& symbols) {
   const Symbol* sym = symbols.find(name);
   if (sym == nullptr) {
@@ -138,8 +73,6 @@ std::optional<int> width(const std::string& name, const SymbolTable& symbols) {
   return std::nullopt;
 }
 
-// Returns the instruction as a `/` or `%` of a Var by a Var or a
-// constant into a Var, or null.
 const ir::Binary* candidate(const ir::Type_instruction& ins) {
   const auto* b = std::get_if<ir::Binary>(&ins);
   if (b == nullptr || !asdl::isa<ir::Divide, ir::Modulo>(b->op) ||
@@ -166,9 +99,6 @@ std::string new_name(const std::string& base, const SymbolTable& symbols) {
   return base + ".dm" + std::to_string(k);
 }
 
-// Returns the blocks reachable from `start`'s successors without
-// passing through `start` or a block in `stops`, with the `stops`
-// reached.
 BlockSet between(const Cfg& cfg, int start, const BlockSet& stops) {
   BlockSet seen;
   const auto& succ = block_of(cfg, start).successors;
@@ -189,8 +119,6 @@ BlockSet between(const Cfg& cfg, int start, const BlockSet& stops) {
   return seen;
 }
 
-// Returns whether `block` can be reached again from its successors
-// without passing through `avoid`.
 bool on_cycle(const Cfg& cfg, int block, int avoid) {
   BlockSet seen;
   const auto& succ = block_of(cfg, block).successors;
@@ -211,9 +139,6 @@ bool on_cycle(const Cfg& cfg, int block, int avoid) {
   return false;
 }
 
-// Returns the blocks of `blocks` from which a block of `targets` can be
-// reached inside `blocks`. The result is the least set closed under
-// the rule, so the order of the walk doesn't change it.
 BlockSet reaching(const Cfg& cfg, const BlockSet& blocks, const BlockSet& targets) {
   BlockSet out;
   for (const int t : targets) {
@@ -243,7 +168,6 @@ BlockSet reaching(const Cfg& cfg, const BlockSet& blocks, const BlockSet& target
 struct Analysis {
   Cfg cfg;
   OrderedMap<int, int> idom;
-  // The block of each instruction of the function and its index there.
   std::vector<std::pair<int, std::size_t>> where;
 
   std::vector<int> dominators(int b) const {
@@ -278,7 +202,6 @@ std::optional<ir::Function> try_pair(const ir::Function& fn, const Analysis& an,
   if (std::holds_alternative<ir::Var>(a.src2) && ba != bb) {
     return std::nullopt;
   }
-  // The pair's new place, as an index into `instrs`.
   std::size_t at = 0;
   if (common == ba) {
     at = i;
@@ -298,7 +221,6 @@ std::optional<ir::Function> try_pair(const ir::Function& fn, const Analysis& an,
       return std::nullopt;
     }
   }
-  // The instructions on the way from the new place to each of the two.
   std::vector<std::size_t> path;
   if (ba == bb && bb == common) {
     const std::size_t lo = std::min({i, j, at});
@@ -308,9 +230,6 @@ std::optional<ir::Function> try_pair(const ir::Function& fn, const Analysis& an,
     }
   } else {
     const BlockSet region = reaching(an.cfg, between(an.cfg, common, {ba, bb}), {ba, bb});
-    // In the block of `a` or `b`, only the instructions before it are
-    // on the way to it, unless a loop leads back into the block or the
-    // block leads on to the other one.
     std::map<int, std::size_t> ends;
     const std::tuple<int, std::size_t, int> sides[] = {{ba, i, bb}, {bb, j, ba}};
     for (const auto& [w, e, other] : sides) {
@@ -393,8 +312,6 @@ std::optional<ir::Function> try_pair(const ir::Function& fn, const Analysis& an,
   return framework::with_instructions(fn, std::move(out));
 }
 
-// Returns whether `c` is a constant whose value is 0 or that has no
-// `value` field (a floating constant).
 bool zero_or_valueless(const ir::Type_const& c) {
   if (asdl::isa<ir::ConstFloat, ir::ConstDouble>(c)) {
     return true;
@@ -450,7 +367,6 @@ std::optional<ir::Function> hoist_one(const ir::Function& fn, const PassContext&
                   std::holds_alternative<ir::IndexedSymbolStore>(instrs[k]);
         }
         if (!write) {
-          // tac_to_asm's `plan_divmod_pairs` takes these.
           break;
         }
       }

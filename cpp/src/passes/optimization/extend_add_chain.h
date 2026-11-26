@@ -1,9 +1,3 @@
-// The port of passes/optimization/extend_add_chain.py, the walk back
-// from a Load's or a Store's address through `Binary(Add, base, %ext)`
-// and `%ext := ZeroExtend(idx)` that the three addressing-mode
-// recognizers share, and the width predicates `is_1_byte_var` and
-// `is_1_byte_val`, which constant folding's `distribute_constant` reads
-// too.
 #pragma once
 
 #include <cstddef>
@@ -18,8 +12,7 @@
 namespace c6502::passes {
 
 // The use counts of a function's names (`count_uses`), which a
-// recognizer computes once per run, as Python's `prepare_extra` does,
-// and reads as `env.extra`. A name not in it is read nowhere.
+// recognizer computes once per run. A name not in it is read nowhere.
 using UseCounts = OrderedMap<std::string, std::size_t>;
 
 // Returns how many times `uses` counts `name`, 0 when it isn't there.

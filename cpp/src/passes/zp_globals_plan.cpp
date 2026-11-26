@@ -1,73 +1,3 @@
-// The zero-page plan of passes/zp_globals.py: where each
-// `[[c6502::zeropage]]` object goes, before code generation. The work at
-// the end of the back end is in zp_globals.cpp.
-//
-// A static-storage object declared with `[[c6502::zeropage]]` lives in
-// zero page instead of the data segment, so every access is a 2-byte
-// zero-page instruction (`LDA zp`, 3 cycles) where an ordinary global
-// takes a 3-byte absolute one (`LDA abs`, 4 cycles). A pointer in zero
-// page can also serve directly as the base of an `(zp),Y` access, where
-// an ordinary pointer global is first copied to DPTR.
-//
-//     uint8_t num_entries [[c6502::zeropage]];            // $26
-//     [[c6502::zeropage(0xBA)]] uint8_t *z_header_addr;   // $BA-$BB
-//
-// The address form puts the object's first (low) byte at that address,
-// anywhere in $00-$FF, so code ported from hand-written assembly can
-// keep its documented addresses. A fixed address in $80-$FF is taken out
-// of the compiler's pool: `reserved` is passed to the zp_abi slot
-// allocator, the private-pool allocator, and register allocation, so
-// nothing else is placed on those bytes. Two zero-page objects may not
-// overlap, and an object must fit below $100.
-//
-// The runtime's own block (SSP, FP, HARGS, DPTR) is placed after the
-// fixed objects, by `choose_layout` (runtime_layout.h): at $00-$25 when
-// no fixed object is there, and around them otherwise. The bare form
-// then takes the lowest free bytes below $80 (`kAutoHi`), which is $26
-// up in the classic layout. The compiler's own pool is $80-$FF.
-//
-// An `extern` declaration without an address and without a definition
-// names an object another unit defines. This unit doesn't place it
-// (`ZpGlobals.external`), and the linker gives the name its address.
-//
-// Promotion under -O
-//
-// With -O, globals nobody asked for are moved into zero page too, when
-// they're used enough to pay for it (`promotion_order`). A candidate is
-// a scalar (an integer, a floating-point number, or a pointer) with
-// static storage that the unit defines, that isn't `const`, and that
-// isn't already placed. An array or a struct gains little, since `LDA
-// arr,Y` has no zero-page form and taking an address costs the same
-// anywhere. Each candidate's weight is its references in the
-// unoptimized TAC, other than taking its address, with a reference
-// inside a loop counting 8 times per loop around it, up to 3 deep
-// (`access_weights`). A candidate is promoted when its weight is at
-// least 3 per byte, since storing its initial value in `__zp_init` costs
-// about 3 cycles a byte that loading the program image didn't. The
-// densest go first, into whatever bytes below $80 are left after the
-// declared objects. A promoted object is then a zero-page object like a
-// declared one (`ZpGlobals.promoted` keeps the weights), and the link
-// metadata marks it so that the linker can put it back in the data
-// segment if the linked program has no room for it.
-//
-// Fixed addresses outside zero page
-//
-// `[[c6502::address(addr)]]` binds a function or an `extern` object to
-// an address something outside the program owns.
-//
-//     [[c6502::zp_abi, c6502::address(0xFDED)]]
-//     extern void COUT(register uint8_t c);              // ROM routine
-//     extern volatile uint8_t KBD [[c6502::address(0xC000)]];
-//
-// An object at an address below $100 is a zero-page object like any
-// other, reserved and not initialized. Every other name goes in
-// `ZpGlobals.fixed`, which only adds an `EQU` line: a call stays `JSR
-// COUT`, and an access stays `Data(name, k)`, which dasm assembles with
-// absolute addressing. Two fixed objects may not overlap, because the
-// aliasing passes take two different `Data` names to be different
-// bytes. A fixed object isn't checked against the program's own code
-// and data, since their addresses are only known once dasm has
-// assembled the program.
 #include <algorithm>
 #include <cstdint>
 #include <map>
@@ -91,11 +21,8 @@ namespace c99 = ::c6502::c99_ast;
 namespace tac = ::c6502::tac_ast;
 using asdl::Int;
 
-// A bare `zeropage` object is placed below this address, in bytes that
-// neither a fixed object nor the runtime's block uses.
 constexpr Int kAutoHi = 0x80;
 
-// A candidate for promotion needs this much weight per byte.
 constexpr Int kMinWeightPerByte = 3;
 
 CompileError zp_global_error(const std::string& message) {
@@ -105,9 +32,6 @@ CompileError zp_global_error(const std::string& message) {
 std::string hex2(Int v) { return "$" + pyrepr::hex(v, 2); }
 std::string hex4(Int v) { return "$" + pyrepr::hex(v, 4); }
 
-// Returns the objects placed with `address(addr)` at $100 or above,
-// mapped to their addresses, in the symbol table's order. Throws
-// `ZpGlobalError` when one runs past $FFFF or two overlap.
 OrderedMap<std::string, Int> fixed_elsewhere(const SymbolTable& symbols, const TypeTable* types) {
   std::map<Int, std::string> used;
   OrderedMap<std::string, Int> out;
@@ -135,8 +59,6 @@ OrderedMap<std::string, Int> fixed_elsewhere(const SymbolTable& symbols, const T
   return out;
 }
 
-// Returns the lowest address below `kAutoHi` of a run of `size` bytes
-// none of which is in `taken`, or none.
 std::optional<Int> first_free(const std::set<Int>& taken, Int size) {
   for (Int addr = 0; addr < kAutoHi - size + 1; ++addr) {
     bool free = true;
@@ -153,8 +75,6 @@ std::optional<Int> first_free(const std::set<Int>& taken, Int size) {
   return std::nullopt;
 }
 
-// Returns `v` as a double. The weights and sizes are far below 2**53,
-// so the conversion is exact.
 double as_double(Int v) { return static_cast<double>(static_cast<std::int64_t>(v)); }
 
 struct Candidate {
@@ -163,8 +83,6 @@ struct Candidate {
   Int size = 0;
 };
 
-// Returns each global worth promoting with its weight and size, densest
-// first (weight per byte, then name), or none without `weights`.
 std::vector<Candidate> promotion_order(const SymbolTable& symbols, const TypeTable* types,
                                        const OrderedMap<std::string, Int>* weights) {
   std::vector<Candidate> out;
@@ -194,10 +112,6 @@ std::vector<Candidate> promotion_order(const SymbolTable& symbols, const TypeTab
     }
     out.push_back(Candidate{name, weight, size});
   }
-  // Python sorts by `(-w / size, name)`, a float key. Both ints are far
-  // below 2**53, so each quotient is the same correctly rounded double
-  // in both languages. The names are distinct, so the order is total
-  // and a sort that isn't stable gives it.
   std::sort(out.begin(), out.end(), [](const Candidate& a, const Candidate& b) {
     const double ka = -(as_double(a.weight) / as_double(a.size));
     const double kb = -(as_double(b.weight) / as_double(b.size));
@@ -209,9 +123,6 @@ std::vector<Candidate> promotion_order(const SymbolTable& symbols, const TypeTab
   return out;
 }
 
-// Appends the strings of `instr` that `access_weights` counts: every
-// string field of the instruction and of the nodes inside it but a
-// jump's `target`, in the order of the fields.
 void names_in(const tac::Type_instruction& instr, std::vector<std::string_view>& found) {
   const auto add_vals = [&] {
     for (const tac::Type_val* v : vals_in(instr)) {
@@ -253,8 +164,6 @@ void names_in(const tac::Type_instruction& instr, std::vector<std::string_view>&
   }
 }
 
-// Returns the label a jump goes to, or null for an instruction that
-// isn't a jump.
 const std::string* jump_target(const tac::Type_instruction& instr) {
   switch (tac::kind(instr)) {
     case tac::Kind_instruction::Jump:
@@ -288,10 +197,6 @@ ZpGlobals allocate_zp_globals(const SymbolTable& symbols, const TypeTable* types
   OrderedMap<std::string, Int> sizes;
   OrderedMap<std::string, Int> external;
   OrderedMap<std::string, Int> elsewhere = fixed_elsewhere(symbols, types);
-  // A function's `zeropage(addr)` parameters aren't objects: two
-  // functions may take theirs at the same bytes, and a zero-page object
-  // may cover them (Zork's SCRATCH2 is both). They keep the runtime's
-  // block and the compiler's own bytes off them.
   std::set<Int> param_bytes;
   for (const auto& [name, sym] : symbols) {
     if (const auto* f = std::get_if<FunAttr>(&sym.attrs)) {
@@ -422,14 +327,12 @@ OrderedMap<std::string, Int> access_weights(const tac::Program& prog) {
       continue;
     }
     const auto& instrs = fn->instructions;
-    // The last index of each label, as a dict comprehension keeps it.
     std::map<std::string, std::size_t, std::less<>> label_at;
     for (std::size_t k = 0; k < instrs.size(); ++k) {
       if (const auto* label = asdl::as<tac::Label>(instrs[k])) {
         label_at[label->name] = k;
       }
     }
-    // A loop is the span from a label to a jump back to it.
     std::vector<Int> depth(instrs.size() + 1, 0);
     for (std::size_t k = 0; k < instrs.size(); ++k) {
       const std::string* target = jump_target(instrs[k]);

@@ -1,7 +1,3 @@
-/* The run loops of the TAC optimizer's pass framework
-(passes/optimization/framework/), and the analyses they share. The
-header describes each loop and how a pass's matching and rewrite become
-the one function each loop takes. */
 #include "passes/optimization/framework.h"
 
 #include <stdexcept>
@@ -68,8 +64,6 @@ std::optional<std::string_view> dst_name(const ir::Type_instruction& instr) {
   return std::nullopt;
 }
 
-// --- DefUsePass ---
-
 const ir::Type_instruction* DefUseEnv::def_of(std::string_view name) const {
   const auto it = def_idx.find(name);
   if (it == def_idx.end()) {
@@ -109,9 +103,6 @@ Instrs rebuild_def_use(const Instrs& instrs, std::map<std::size_t, DefUseRewrite
   for (std::size_t i = 0; i < instrs.size(); ++i) {
     const auto it = rewrites.find(i);
     if (dropped[i]) {
-      // A list replacement defines the dropped Var in its last
-      // instruction. The ones before it may still be read, and DSE
-      // drops them if they aren't.
       if (it != rewrites.end() && it->second.is_list) {
         auto& rep = it->second.replacement;
         for (std::size_t k = 0; k + 1 < rep.size(); ++k) {
@@ -130,8 +121,6 @@ Instrs rebuild_def_use(const Instrs& instrs, std::map<std::size_t, DefUseRewrite
   }
   return out;
 }
-
-// --- RuleSet ---
 
 const ir::Type_instruction* RuleEnv::def_of(const ir::Type_val& v) const {
   const auto* var = std::get_if<ir::Var>(&v);
@@ -203,8 +192,6 @@ bool single_use(const ir::Type_val& v, RuleEnv& env, const PassContext& ctx) {
   }
   return !observable_names(env, ctx).contains(name);
 }
-
-// --- OperandRewritePass ---
 
 ir::Function run_operand_rewrite(ir::Function fn, const ValMapper& mapper) {
   Instrs out;

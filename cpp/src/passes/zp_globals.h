@@ -1,10 +1,3 @@
-// The port of passes/zp_globals.py. `allocate_zp_globals`,
-// `plan_zero_page`, and `access_weights` (zp_globals_plan.cpp) decide
-// where each zero-page object goes before code generation, and the work
-// that reads the finished asm program (zp_globals.cpp) is
-// `place_zp_globals`, which drops the storage of the zero-page objects
-// and adds `__zp_init`, and `link_records`, which lists them for the
-// link metadata.
 #pragma once
 
 #include <map>
@@ -27,18 +20,10 @@ namespace c6502::passes {
 inline constexpr const char* kZpInitFunction = "__zp_init";
 
 // Each 6502 helper's HARGS footprint in bytes, counting the helpers it
-// calls (`runtime_layout.helper_footprints`, which Python measures from
-// rtlib/helpers.py, and `helper_footprints` below from the copy of it in
-// cpp/generated/rtlib_helpers.cpp).
+// calls.
 using HelperFootprints = std::map<std::string, asdl::Int, std::less<>>;
 
-// The zero-page objects of a unit (Python's `ZpGlobals`, whose
-// docstring gives each field's meaning), with its fields in Python's
-// order. The maps keep the order of Python's dicts, which the tagged
-// JSON of a capture writes, and the functions that list the objects
-// sort them as Python does.
 struct ZpGlobals {
-  // Each zero-page object's address.
   OrderedMap<std::string, asdl::Int> addrs;
   // Every byte the objects occupy, which the allocators avoid.
   std::set<asdl::Int> reserved;
@@ -51,7 +36,6 @@ struct ZpGlobals {
   // The runtime's zero-page layout, whose HARGS size `check_hargs`
   // checks the program against.
   RuntimeLayout layout;
-  // Each object's size in bytes.
   OrderedMap<std::string, asdl::Int> sizes;
   // The objects declared with an address.
   NameSet pinned;
@@ -89,17 +73,14 @@ ZpGlobals allocate_zp_globals(const SymbolTable& symbols, const TypeTable* types
 // `prog`: every mention in an instruction other than `GetAddress`,
 // `Label`, or a jump's target, times 8 for each loop around it, up to 3
 // deep. A loop is the span from a label to a jump back to it. The names
-// are in the order of their first mention, as Python's dict holds them.
+// are in the order of their first mention.
 OrderedMap<std::string, asdl::Int> access_weights(const tac_ast::Program& prog);
 
 // Returns `allocate_zp_globals` for a unit whose unoptimized TAC is
 // `prog`, with the weights of `access_weights` when `promote` (under
-// -O). Python sizes HARGS, when the runtime's block has to move, by
-// translating `prog` to asm with `tac_to_asm` and measuring it with
-// `hargs_need`. `unoptimized_hargs_need` stands for that measurement,
-// since `tac_to_asm` is ported by group C of step 4, and group F
-// connects it to that port when it builds the stage's driver. The
-// registry's runner gives it the HARGS size the record's result holds.
+// -O). `unoptimized_hargs_need` returns the HARGS bytes of `prog`
+// translated by `tac_to_asm`, which size HARGS when the runtime's block
+// has to move.
 ZpGlobals plan_zero_page(const tac_ast::Program& prog, const SymbolTable& symbols,
                          const TypeTable* types, bool promote,
                          const HargsNeed& unoptimized_hargs_need);
@@ -123,21 +104,19 @@ asm_ast::Program place_zp_globals(asm_ast::Program prog, const ZpGlobals& zp,
 std::vector<ZpObjectMeta> link_records(const asm_ast::Program& prog, const ZpGlobals& zp);
 
 // Returns the number of HARGS bytes `prog` needs: its own highest
-// offset into HARGS, and the footprint of each helper it calls
-// (`runtime_layout.hargs_need`).
+// offset into HARGS, and the footprint of each helper it calls.
 asdl::Int hargs_need(const asm_ast::Program& prog, const HelperFootprints& footprints);
 
-// Returns, for each 6502 helper of rtlib/helpers.py, the number of
-// HARGS bytes it touches, counting the helpers it calls
-// (`runtime_layout.helper_footprints`), measured on the helpers' table
+// Returns, for each 6502 helper, the number of HARGS bytes it touches,
+// counting the helpers it calls, measured on the helpers' table
 // (src/rtlib/helpers.h) on the first call.
 const HelperFootprints& helper_footprints();
 
 // Throws `CompileError("RuntimeLayoutError", ...)` when the finished
-// `prog` uses more of HARGS than `layout` gave it
-// (`runtime_layout.check_hargs`). The size is measured on the
-// unoptimized code, so that would mean an optimizer pass called a
-// helper with a larger footprint than any the unoptimized code called.
+// `prog` uses more of HARGS than `layout` gave it. The size is measured
+// on the unoptimized code, so that would mean an optimizer pass called
+// a helper with a larger footprint than any the unoptimized code
+// called.
 void check_hargs(const asm_ast::Program& prog, const RuntimeLayout& layout,
                  const HelperFootprints& footprints);
 

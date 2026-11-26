@@ -1,5 +1,3 @@
-// The port of passes/zp_slot_allocation.py, which gives the parameter
-// slots of the zp_abi functions their addresses.
 #pragma once
 
 #include <optional>
@@ -21,13 +19,13 @@ namespace c6502::passes {
 inline constexpr asdl::Int kDefaultSpillStart = 0x0200;
 inline constexpr asdl::Int kDefaultSpillEnd = 0x10000;
 
-// The options of `allocate_zp_slots` and `allocate_function_locals`,
-// with Python's defaults. `reserved` is the set of bytes no slot or pool
-// may use, the zero-page globals' bytes. `window` is the zero-page range
-// they come from, the pool's caller-saved half when none is given (the
-// linker gives the whole pool). `fallback` is a zero-page range tried
-// when the window has no room, before the spill region. `shares` are the
-// `SlotShare`s whose slots get one address.
+// The options of `allocate_zp_slots` and `allocate_function_locals`.
+// `reserved` is the set of bytes no slot or pool may use, the zero-page
+// globals' bytes. `window` is the zero-page range they come from, the
+// pool's caller-saved half when none is given (the linker gives the
+// whole pool). `fallback` is a zero-page range tried when the window has
+// no room, before the spill region. `shares` are the `SlotShare`s whose
+// slots get one address.
 struct ZpAllocationOptions {
   Pool pool;
   asdl::Int spill_start = kDefaultSpillStart;

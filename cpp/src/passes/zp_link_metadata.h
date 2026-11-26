@@ -1,9 +1,3 @@
-// The link metadata block of passes/zp_link_metadata.py: its records,
-// `build_metadata`, which collects the records that read the TAC
-// program, the ABI, and the pools, and `format_metadata`, which writes
-// them as the `; @zp-link-meta` comment lines. The records that read the
-// finished asm program are filled in by emission (cpp/README.md,
-// "Emission").
 #pragma once
 
 #include <optional>
@@ -20,12 +14,11 @@
 
 namespace c6502::passes {
 
-// A function the unit defines (Python's `FunctionMeta`). `params` are
-// its zp_abi parameter slots, one per byte, `locals` its body-local
-// slots, one per byte of its pool, `param_regs` the register of each
-// parameter byte ("" for a slot), `pinned` the address of each byte of
-// a `zeropage(addr)` parameter, and `changes` the parameter slots it
-// assigns.
+// A function the unit defines. `params` are its zp_abi parameter
+// slots, one per byte, `locals` its body-local slots, one per byte of
+// its pool, `param_regs` the register of each parameter byte ("" for a
+// slot), `pinned` the address of each byte of a `zeropage(addr)`
+// parameter, and `changes` the parameter slots it assigns.
 struct FunctionMeta {
   std::string name;
   std::vector<std::string> params;
@@ -38,8 +31,7 @@ struct FunctionMeta {
   bool carry = false;
 };
 
-// A zp_abi function the unit declares without defining it (Python's
-// `ExternMeta`).
+// A zp_abi function the unit declares without defining it.
 struct ExternMeta {
   std::string name;
   std::vector<std::string> params;
@@ -48,8 +40,7 @@ struct ExternMeta {
   bool carry = false;
 };
 
-// A function or object the unit defines, with its section (Python's
-// `ItemMeta`).
+// A function or object the unit defines, with its section.
 struct ItemMeta {
   std::string name;
   std::string section;
@@ -60,10 +51,10 @@ struct ItemMeta {
   bool operator==(const ItemMeta&) const = default;
 };
 
-// A zero-page object of the unit (Python's `ZpObjectMeta`). `at` is its
-// address when it was declared with one, `init` its initial bytes as
-// `LDA #` operands when the unit defines it, and `weight` set when `-O`
-// promoted it into zero page.
+// A zero-page object of the unit. `at` is its address when it was
+// declared with one, `init` its initial bytes as `LDA #` operands when
+// the unit defines it, and `weight` set when `-O` promoted it into zero
+// page.
 struct ZpObjectMeta {
   std::string name;
   asdl::Int size = 0;
@@ -76,7 +67,6 @@ struct ZpObjectMeta {
   bool operator==(const ZpObjectMeta&) const = default;
 };
 
-// The unit's metadata (Python's `LinkMetadata`).
 struct LinkMetadata {
   std::vector<FunctionMeta> defs;
   std::vector<ExternMeta> externs;
@@ -94,22 +84,15 @@ struct LinkMetadata {
 // Returns the metadata block as lines of the output, each a comment
 // that dasm skips, from `; @zp-link-meta-begin` to
 // `; @zp-link-meta-end`. A `param_regs` list is written only when one
-// entry isn't empty, which keeps the block readable by the units from
-// before the register parameters.
+// entry isn't empty.
 std::vector<std::string> format_metadata(const LinkMetadata& meta);
 
 // Returns the metadata of the block in the UTF-8 text `asm_text` (a
 // `.asm` file's text or an object's `.c6502.link` section), or an empty
-// `LinkMetadata` when it holds no block. The lines are split as
-// `str.splitlines` splits them, each record is split at Unicode spaces,
-// and its numbers are read as `int()` reads them, so a block Python
-// reads gives the same records. A malformed block throws
-// `CompileError("ValueError", ...)` with Python's message, from one of
-// the thirteen messages of `parse_metadata` or from `int()`, and a
-// record without a field Python reads without a default throws
-// `CompileError("KeyError", "'<field>'")`, the `str()` of Python's
-// KeyError. A number of more than 128 bits throws the OverflowError of
-// src/py_int.h.
+// `LinkMetadata` when it holds no block. A malformed block throws
+// `CompileError("ValueError", ...)`, a record without a required field
+// throws `CompileError("KeyError", "'<field>'")`, and a number of more
+// than 128 bits throws the OverflowError of src/py_int.h.
 LinkMetadata parse_metadata(std::string_view asm_text);
 
 // Returns the records of `prog`'s functions, its zp_abi externs, and
@@ -121,8 +104,8 @@ LinkMetadata parse_metadata(std::string_view asm_text);
 // names `__local_<fn>__<k>` for each byte of its pool when it has none.
 // `changes` gives the parameter slots each function assigns, and `carry`
 // names the functions that return a `bool` in the carry flag. Any of the
-// three may be null, as Python's None. The defs and externs are by name,
-// and the calls sorted.
+// three may be null. The defs and externs are by name, and the calls
+// sorted.
 LinkMetadata build_metadata(const tac_ast::Program& prog, const Abi& abi,
                             const OrderedMap<std::string, std::vector<asdl::Int>>& local_pools,
                             const OrderedMap<std::string, std::vector<std::string>>* slot_names_by_fn,

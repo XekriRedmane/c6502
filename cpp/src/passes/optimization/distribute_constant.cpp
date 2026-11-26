@@ -1,30 +1,3 @@
-/* Multiplies a widened byte before adding a constant to it.
-
-    ZeroExtend(n, %x)              # n is one byte
-    Binary(Add | Subtract, %x, c, %t)
-    Binary(Multiply, %t, k, %m)    # or k * %t
-
-becomes
-
-    ZeroExtend(n, %x)
-    Binary(Multiply, %x, k, %m.dc)
-    Binary(Add, %m.dc, c * k, %m)  # Subtract for a Subtract
-
-when `%t` has no other use and `c` and `k` are integer constants of one
-class. Arithmetic at a fixed width wraps, so `(x ± c) * k` and `x * k ±
-c * k` are the same value. The product is then of a value with one
-significant byte, which `strength_reduction` and `tac_to_asm` lower in
-fewer instructions: its shifts are byte shifts in A, and a product they
-can't make from shifts is an 8-by-8 loop where the other is a call of
-`mul16`. The add is one add, as the subtract was.
-
-`&MENU_DESC_PTR->options[n - 1]` with 9-byte options, in
-examples/ali_baba/input.c, was `n - 1` in 16 bits and then three 16-bit
-shifts and an add. After the rewrite `n * 9` is computed from the byte
-`n`, and `reassoc_offset_constant` adds the `-9` after the pointer.
-
-It runs in the fixed point before strength reduction, which would
-otherwise turn the multiply into shifts first. */
 #include "passes/optimization/distribute_constant.h"
 
 #include <cstdint>
@@ -46,8 +19,6 @@ using framework::PassContext;
 using BK = ir::Kind_binary_operator;
 using CK = ir::Kind_const;
 
-// Returns the constant of `v` when it is a Constant of one of the
-// classes of 2, 4, or 8 bytes (Python's `_BITS`), or null.
 const ir::Type_const* wide_constant(const ir::Type_val& v) {
   const auto* c = std::get_if<ir::Constant>(&v);
   if (c == nullptr) {
@@ -66,8 +37,6 @@ const ir::Type_const* wide_constant(const ir::Type_val& v) {
   }
 }
 
-// Returns whether `x` is an SSA name defined by a `ZeroExtend` of a
-// one-byte value.
 bool widened_byte(const ir::Type_val& x, const framework::Instrs& instrs,
                   const std::map<std::string, std::size_t, std::less<>>& defs,
                   const PassContext& ctx) {
@@ -83,8 +52,6 @@ bool widened_byte(const ir::Type_val& x, const framework::Instrs& instrs,
   return ext != nullptr && is_1_byte_val(ext->src, ctx.symbols);
 }
 
-// Registers `<base>.dc<k>`, for the first k no symbol has, with `base`'s
-// type, as an SSA name, and returns the name.
 std::string fresh(const PassContext& ctx, const std::string& base) {
   int k = 0;
   while (ctx.symbols->contains(base + ".dc" + std::to_string(k))) {
@@ -147,17 +114,12 @@ tac_ast::Function distribute_constant(tac_ast::Function fn, const PassContext& c
       if (c == nullptr || c->index() != k->index() || !widened_byte(*x, instrs, defs, ctx)) {
         continue;
       }
-      // `x * k - c * k` keeps the subtract, whose top byte `carry_inc`
-      // makes `BCS skip; DEC`, where an add of the negated constant
-      // would add `#$FF` to it.
       const asdl::Int cv = *bit_precise::raw_value(*c);
       const asdl::Int kv_value = *bit_precise::raw_value(*k);
       bool subtract = ir::kind(inner->op) == BK::Subtract;
       if (cv != 0 && kv_value != 0 && ((cv < 0) != (kv_value < 0))) {
         subtract = !subtract;
       }
-      // The magnitude of the product, which can take 128 bits, is
-      // reduced modulo 2^64 at most, so it is computed modulo 2^64.
       const std::uint64_t product = magnitude(cv) * magnitude(kv_value);
       const auto layout = *bit_precise::integer_const_layout(*k);
       const asdl::Int wrapped = bit_precise::wrap(asdl::Int(product), 8 * layout.bytes,

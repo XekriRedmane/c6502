@@ -1,72 +1,3 @@
-// Zero-page slot allocation for `[[c6502::zp_abi]]` functions.
-//
-// Background
-//
-// `select_abi` decides which functions get the zero-page convention, and
-// `allocate_zp_slots` decides where each function's parameter bytes
-// live. No two functions that can be on the call stack at the same time
-// may share a slot byte. If function `A` calls function `B`, directly or
-// not, then `A`'s parameter slots must be disjoint from `B`'s, since
-// otherwise `B`'s callers' argument writes would overwrite `A`'s
-// parameters while they are still live.
-//
-// It runs after `select_abi` and before `tac_to_asm`. The asm IR refers
-// to every slot by its symbol, `Data(<sym>, 0)`, and the output binds
-// each symbol with an `EQU` line. dasm picks zero-page or absolute
-// addressing from the symbol's value, so when zero page is full and a
-// function's slots spill above $FF, the IR doesn't change. The same `LDA
-// <sym>` and `STA <sym>` assemble as 3-byte absolute instructions.
-//
-// Algorithm
-//
-// 1. Build the call graph: an edge `caller -> callee` between two zp_abi
-//    functions when the caller can reach the callee through calls,
-//    directly or through functions that aren't zp_abi. A zp_abi function
-//    may call a soft-stack function that has a private pool, which may
-//    call zp_abi functions in turn, and their slots must stay apart from
-//    the caller's. `select_abi` rejects recursion, indirect calls, and
-//    taken addresses first, so the graph is a DAG of zp_abi functions.
-// 2. Order the DAG topologically (callers before their callees, by
-//    Kahn's algorithm) and walk it in that order. Each function's
-//    forbidden bytes are the bytes already given to its transitive
-//    callers, since every ancestor's parameters are live while it runs.
-//    It takes the lowest run of its parameter bytes that avoids them,
-//    from the window (the pool's caller-saved half, $80-$BF, unless
-//    given), then from the fallback range, then from the spill region
-//    ($0200-$FFFF, anywhere in RAM the output can address).
-// 3. Sibling functions, neither of which calls the other, may share
-//    addresses, since their activations are never on the call stack
-//    together. The topological order allows that, since each sibling
-//    picks the lowest run free of its own ancestors.
-//
-// Slots that get no range
-//
-// A byte passed in a register has no slot: the caller loads the
-// register, and `tac_to_asm` copies it into a local of the callee. A
-// byte of a `zeropage(addr)` parameter is bound to that address, which
-// `reserved` already keeps every other slot off.
-//
-// Shared slots
-//
-// `shares` (slot_sharing.h) lists sets of slots that hold one value for
-// several functions, so they get one address. A share's bytes are
-// allocated at the turn of the last of its members' functions in the
-// order, as one contiguous run, and avoid every byte already given to a
-// function that can be on the call stack with any function in the share
-// (its members' owners and its holders). The functions allocated after
-// it avoid it in turn, the same way. Its members' other slots are
-// allocated as usual.
-//
-// Externs
-//
-// A zp_abi extern declared in this unit is in `abi`, from `select_abi`,
-// but has no body to walk. It is a leaf of the local call graph, and its
-// slots are allocated like any other zp_abi function's, so that its call
-// sites in this unit bind to the addresses of the same `EQU` lines. The
-// linker allocates them again for the whole program.
-//
-// Python keys the shares by `id()`; here a share is keyed by its index
-// in `shares`.
 #include "passes/zp_slot_allocation.h"
 
 #include <algorithm>
@@ -90,7 +21,6 @@ CompileError allocation_error(const std::string& message) {
   return CompileError("ZpSlotAllocationError", message);
 }
 
-// Returns Python's repr of a sorted list of names, `['a', 'b']`.
 std::string names_repr(const std::vector<std::string>& names) {
   std::string out = "[";
   for (std::size_t i = 0; i < names.size(); ++i) {
@@ -102,12 +32,7 @@ std::string names_repr(const std::vector<std::string>& names) {
   return out + "]";
 }
 
-// Returns the nodes of `callees_of` in caller-before-callee order, by
-// Kahn's algorithm with the ready nodes taken in sorted order. Throws
-// when there is a cycle, which `select_abi` rejects first, so that a bug
-// there doesn't misallocate without a word.
 std::vector<std::string> topological_order(const Graph& callees_of) {
-  // The in-degree of a node is its number of callers. Roots have none.
   std::map<std::string, Int, std::less<>> in_degree;
   for (const auto& [n, cs] : callees_of) {
     in_degree.emplace(n, 0);
@@ -150,12 +75,6 @@ std::vector<std::string> topological_order(const Graph& callees_of) {
   return out;
 }
 
-// Returns the zp_abi functions each zp_abi function calls directly or
-// through a chain of calls whose functions in between aren't zp_abi, and
-// each zp_abi function's transitive callers, itself left out. An extern
-// is a leaf, a target of edges and never a source. A call that abandons
-// its caller isn't an edge, since nothing reads the caller's parameters,
-// or its callers', once it's made.
 std::pair<Graph, Graph> build_callgraph(const tac::Program& prog, const Abi& abi) {
   NameSet zp_names;
   for (const auto& [n, layout] : abi) {
@@ -203,8 +122,6 @@ std::pair<Graph, Graph> build_callgraph(const tac::Program& prog, const Abi& abi
       callers_of[callee].insert(caller);
     }
   }
-  // The transitive closure of the callers, walked in topological order,
-  // so that each node's callers are complete when it's reached.
   Graph ancestors_of;
   for (const auto& n : zp_names) {
     ancestors_of[n];
@@ -229,8 +146,6 @@ std::optional<std::vector<Int>> find_free_range(const std::set<Int>& forbidden, 
                                                 Int lo, Int hi) {
   Int cur = lo;
   while (cur + n_bytes <= hi) {
-    // The highest conflict in [cur, cur + n_bytes): no start up to it
-    // gives a free run.
     std::optional<Int> conflict_at;
     for (Int k = 0; k < n_bytes; ++k) {
       if (forbidden.contains(cur + k)) {
@@ -271,8 +186,6 @@ std::pair<Abi, OrderedMap<std::string, Int>> allocate_zp_slots(const tac::Progra
     const NameSet s = share.slots();
     shared.insert(s.begin(), s.end());
   }
-  // Each share is allocated at the turn of the last of its members'
-  // functions, the first of them when several are last.
   std::map<std::string, Int, std::less<>> position;
   for (std::size_t k = 0; k < order.size(); ++k) {
     position.emplace(order[k], static_cast<Int>(k));
@@ -312,8 +225,6 @@ std::pair<Abi, OrderedMap<std::string, Int>> allocate_zp_slots(const tac::Progra
     return *addrs;
   };
 
-  // Returns the bytes of the allocated shares with a function that can
-  // be on the call stack with `fn_name`.
   const auto share_bytes = [&](const std::string& fn_name) {
     std::set<Int> out;
     for (std::size_t s = 0; s < shares.size(); ++s) {
@@ -330,8 +241,6 @@ std::pair<Abi, OrderedMap<std::string, Int>> allocate_zp_slots(const tac::Progra
     return out;
   };
 
-  // Each function's own bytes, its slots outside any share, in the order
-  // the functions were allocated.
   OrderedMap<std::string, std::vector<Int>> own_addrs;
   OrderedMap<std::string, Int> sym_to_addr;
   std::map<std::string, std::vector<Int>, std::less<>> addrs_by_fn;

@@ -46,8 +46,6 @@ class RegisterRequestError : public CompileError {
 
 bool is_abi_error(const CompileError& e) { return e.python_type() == "AbiSelectionError"; }
 
-Range zp_param_window(const Pool& pool) { return pool.caller_saved(); }
-
 std::string hex2(asdl::Int v) { return pyrepr::hex(v, 2); }
 
 const c99::FunType* fun_type_of(const c99::Type_function_decl& fn_decl) {
@@ -392,7 +390,7 @@ bool returns_aggregate_without_carry(const c99::Type_function_decl& fn_decl) {
 ZpLayout make_layout(const std::string& name, const c99::Type_function_decl& fn_decl,
                      const Pool& pool, const TypeTable* types) {
   const asdl::Int byte_count = param_byte_count(fn_decl, types);
-  const Range window = zp_param_window(pool);
+  const Range window = pool.caller_saved();
   const asdl::Int available = window.stop - window.start;
   if (byte_count > available) {
     fail("function `" + name + "` declared `[[c6502::zp_abi]]` has " +

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <variant>
 
 #include "argparse.h"
 #include "binutils/opcodes.h"
@@ -218,16 +219,33 @@ std::vector<Token> tokens(U32View text_in, const std::string& where) {
 struct Expr;
 using ExprPtr = std::shared_ptr<const Expr>;
 
-struct Expr {
-  enum class Kind { kNum, kSym, kUn, kBin };
-  Kind kind = Kind::kNum;
-  Int value = 0;
+struct Num {
+  Int value;
+};
+
+struct Sym {
   std::string name;
+};
+
+struct Unary {
+  std::string op;
+  ExprPtr operand;
+};
+
+struct Binary {
+  std::string op;
   ExprPtr left;
   ExprPtr right;
 };
 
-ExprPtr make(Expr e) { return std::make_shared<const Expr>(std::move(e)); }
+struct Expr {
+  std::variant<Num, Sym, Unary, Binary> node;
+};
+
+template <typename Node>
+ExprPtr make(Node node) {
+  return std::make_shared<const Expr>(Expr{std::move(node)});
+}
 
 const std::vector<std::vector<std::u32string_view>>& levels() {
   static const std::vector<std::vector<std::u32string_view>> v = {
@@ -260,7 +278,7 @@ class ExprParser {
       if (std::find(ops.begin(), ops.end(), U32View(tok->text)) == ops.end()) break;
       const std::string op = to_utf8(take().text);
       ExprPtr right = expr(level + 1);
-      left = make(Expr{.kind = Expr::Kind::kBin, .name = op, .left = left, .right = right});
+      left = make(Binary{op, left, right});
     }
     return left;
   }
@@ -271,7 +289,7 @@ class ExprParser {
     const U32& s = tok.text;
     if (tok.kind == TokKind::kOp && (s == U"-" || s == U"~" || s == U"<" || s == U">")) {
       ExprPtr operand = unary();
-      return make(Expr{.kind = Expr::Kind::kUn, .name = to_utf8(s), .left = operand});
+      return make(Unary{to_utf8(s), operand});
     }
     if (tok.kind == TokKind::kOp && (s == U"(" || s == U"[")) {
       ExprPtr inner = expr();
@@ -280,15 +298,15 @@ class ExprParser {
     }
     switch (tok.kind) {
       case TokKind::kHex:
-        return make(Expr{.value = py_int::parse(to_utf8(s.substr(1)), 16, where_)});
+        return make(Num{py_int::parse(to_utf8(s.substr(1)), 16, where_)});
       case TokKind::kBin:
-        return make(Expr{.value = py_int::parse(to_utf8(s.substr(1)), 2, where_)});
+        return make(Num{py_int::parse(to_utf8(s.substr(1)), 2, where_)});
       case TokKind::kDec:
-        return make(Expr{.value = py_int::parse(to_utf8(s), 10, where_)});
+        return make(Num{py_int::parse(to_utf8(s), 10, where_)});
       case TokKind::kChar:
-        return make(Expr{.value = static_cast<Int>(s[1])});
+        return make(Num{static_cast<Int>(s[1])});
       case TokKind::kSym:
-        return make(Expr{.kind = Expr::Kind::kSym, .name = to_utf8(s)});
+        return make(Sym{to_utf8(s)});
       case TokKind::kOp:
         break;
     }
@@ -361,28 +379,29 @@ class Evaluator {
 
   Value go(const Expr& e) {
     const Depth d(depth_, where_);
-    switch (e.kind) {
-      case Expr::Kind::kNum:
-        return Value{.addend = e.value};
-      case Expr::Kind::kSym:
-        return Value{.symbol = e.name};
-      case Expr::Kind::kUn: {
-        const Value v = go(*e.left);
-        if (e.name == "<" || e.name == ">") {
-          if (v.select != Byte::kWhole) error(where_ + ": `" + e.name + "` of a byte");
-          const Byte sel = e.name == "<" ? Byte::kLow : Byte::kHigh;
-          if (!v.symbol) return Value{.addend = select_of(Value{.addend = v.addend, .select = sel})};
-          return Value{.symbol = v.symbol, .addend = v.addend, .select = sel};
-        }
-        const Int n = num(v, "unary `" + e.name + "`");
-        return Value{.addend = e.name == "-" ? py_int::neg(n, where_) : ~n};
-      }
-      case Expr::Kind::kBin:
-        break;
+    if (const auto* n = std::get_if<Num>(&e.node)) return Value{.addend = n->value};
+    if (const auto* s = std::get_if<Sym>(&e.node)) return Value{.symbol = s->name};
+    if (const auto* u = std::get_if<Unary>(&e.node)) return unary(*u);
+    return binary(std::get<Binary>(e.node));
+  }
+
+ private:
+  Value unary(const Unary& u) {
+    const Value v = go(*u.operand);
+    if (u.op == "<" || u.op == ">") {
+      if (v.select != Byte::kWhole) error(where_ + ": `" + u.op + "` of a byte");
+      const Byte sel = u.op == "<" ? Byte::kLow : Byte::kHigh;
+      if (!v.symbol) return Value{.addend = select_of(Value{.addend = v.addend, .select = sel})};
+      return Value{.symbol = v.symbol, .addend = v.addend, .select = sel};
     }
-    const Value a = go(*e.left);
-    const Value b = go(*e.right);
-    const std::string& op = e.name;
+    const Int n = num(v, "unary `" + u.op + "`");
+    return Value{.addend = u.op == "-" ? py_int::neg(n, where_) : ~n};
+  }
+
+  Value binary(const Binary& bin) {
+    const Value a = go(*bin.left);
+    const Value b = go(*bin.right);
+    const std::string& op = bin.op;
     if ((op == "+" || op == "-") && a.select == Byte::kWhole && b.select == Byte::kWhole) {
       if (!b.symbol) return Value{.symbol = a.symbol, .addend = const_op(op, a.addend, b.addend, where_)};
       if (op == "+" && !a.symbol) {
@@ -397,7 +416,6 @@ class Evaluator {
     return Value{.addend = const_op(op, x, y, where_)};
   }
 
- private:
   Int num(const Value& v, const std::string& what) {
     if (!v.symbol) return select_of(v);
     if (const Int* c = constants_(*v.symbol)) {

@@ -10,6 +10,7 @@
 #include "doctest.h"
 #include "errors.h"
 #include "passes/optimization/narrow_widened_arith.h"
+#include "passes/optimization/row_address_tables.h"
 #include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/static_const_fold.h"
 #include "passes/optimization/ssa_construction.h"
@@ -381,4 +382,26 @@ TEST_CASE("fold_static_const_reads folds a double's bits and leaves a value tree
   CHECK(copies[0].src ==
         ir::Type_val{ir::Constant{.const_ = ir::ConstDouble{.bits = 0x4000000000000000}}});
   CHECK(copies[1].src == ir::Type_val{ir::Var{.name = "two"}});
+}
+
+TEST_CASE("apply_row_address_tables leaves an array of structs it can't size") {
+  namespace c99 = c6502::c99_ast;
+  c6502::passes::SymbolTable symbols;
+  symbols.insert_or_assign(
+      "t", c6502::passes::Symbol{.type = c99::Array{.element_type = c99::Structure{.tag = "s"},
+                                                    .size = 4},
+                                 .attrs = c6502::passes::StaticAttr{
+                                     .initial_value = c6502::passes::Tentative{}}});
+  const auto prog = c6502::asdl::load<ir::Program>(
+      "Program([\n"
+      "  Function(\"f\" true [] [\n"
+      "    GetAddress(Var(\"t\") Var(\"%a\"))\n"
+      "    Binary(Add Var(\"%a\") Var(\"%m\") Var(\"%p\"))\n"
+      "    Ret(Var(\"%p\"))\n"
+      "  ])\n"
+      "])\n");
+  CHECK(c6502::passes::apply_row_address_tables(prog, &symbols, nullptr) == prog);
+  c6502::passes::TypeTable types;
+  types.insert_or_assign("s", c6502::passes::StructLayout{.tag = "s"});
+  CHECK(c6502::passes::apply_row_address_tables(prog, &symbols, &types) == prog);
 }

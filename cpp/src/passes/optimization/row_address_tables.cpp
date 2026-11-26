@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <exception>
 #include <map>
 #include <optional>
 #include <set>
@@ -58,6 +57,36 @@ struct Shape {
   asdl::Int row = 0;
 };
 
+// Returns whether `sizeof_c99` can size `type`: it can't size a struct
+// or union without a complete layout in `types`.
+bool has_layout(const c99::Type_data_type& type, const TypeTable* types) {
+  const c99::Type_data_type* t = &type;
+  while (true) {
+    if (const auto* c = std::get_if<c99::Const>(t)) {
+      t = &*c->referenced_type;
+    } else if (const auto* v = std::get_if<c99::Volatile>(t)) {
+      t = &*v->referenced_type;
+    } else if (const auto* a = std::get_if<c99::Array>(t)) {
+      t = &*a->element_type;
+    } else {
+      break;
+    }
+  }
+  const std::string* tag = nullptr;
+  if (const auto* s = std::get_if<c99::Structure>(t)) {
+    tag = &s->tag;
+  } else if (const auto* u = std::get_if<c99::Union>(t)) {
+    tag = &u->tag;
+  } else {
+    return true;
+  }
+  if (types == nullptr) {
+    return false;
+  }
+  const StructLayout* layout = types->find(*tag);
+  return layout != nullptr && layout->complete;
+}
+
 std::optional<Shape> array_shape(const std::string& name, const SymbolTable& symbols,
                                  const TypeTable* types) {
   const Symbol* sym = symbols.find(name);
@@ -82,12 +111,10 @@ std::optional<Shape> array_shape(const std::string& name, const SymbolTable& sym
   if (arr == nullptr || arr->size < 1) {
     return std::nullopt;
   }
-  asdl::Int row = 0;
-  try {
-    row = c99_to_tac::sizeof_c99(*arr->element_type, types);
-  } catch (const std::exception&) {
+  if (!has_layout(*arr->element_type, types)) {
     return std::nullopt;
   }
+  const asdl::Int row = c99_to_tac::sizeof_c99(*arr->element_type, types);
   if (row < 3 || (row & (row - 1)) == 0) {
     return std::nullopt;
   }

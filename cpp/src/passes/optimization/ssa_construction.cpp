@@ -77,8 +77,8 @@ void ensure_block_labels(Cfg& cfg, const std::string& fn_name) {
 
 const std::string& block_label(const BasicBlock& blk) {
   if (blk.instructions.empty() || !asdl::isa<ir::Label>(blk.instructions.front())) {
-    throw InternalError("block " + std::to_string(blk.id) +
-                        " has no leading label; call _ensure_block_labels first");
+    throw InternalError("to_ssa: block " + std::to_string(blk.id) +
+                        " has no leading label");
   }
   return std::get<ir::Label>(blk.instructions.front()).name;
 }
@@ -200,12 +200,10 @@ std::map<int, Names> compute_live_in(const Cfg& cfg, const Names& promotable) {
 using PhisAt = std::map<int, std::vector<std::pair<std::string, std::size_t>>>;
 
 std::size_t insert_phi(BasicBlock& blk, ir::Phi phi) {
-  std::size_t pos = 0;
-  if (!blk.instructions.empty() && asdl::isa<ir::Label>(blk.instructions.front())) {
-    pos = 1;
-    while (pos < blk.instructions.size() && asdl::isa<ir::Phi>(blk.instructions[pos])) {
-      ++pos;
-    }
+  block_label(blk);
+  std::size_t pos = 1;
+  while (pos < blk.instructions.size() && asdl::isa<ir::Phi>(blk.instructions[pos])) {
+    ++pos;
   }
   blk.instructions.insert(blk.instructions.begin() + static_cast<std::ptrdiff_t>(pos),
                           std::move(phi));

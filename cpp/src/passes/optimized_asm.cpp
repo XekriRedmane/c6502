@@ -9,10 +9,10 @@
 // is given the arguments Python gives it. The comments on the steps
 // are compile.py's.
 //
-// compile.py hands the region to this code under `C6502_CPP_BACKEND=1`
-// (cpp/README.md, "The back end through c6502cpp"), and enters the
-// functions that `apply_shared_tails` and `apply_outline_runs` make in
-// its symbol table, as the Python passes do.
+// The stage's driver (src/passes/codegen.cpp) runs the region and
+// enters the functions that `apply_shared_tails` and
+// `apply_outline_runs` make in the symbol table, as the Python passes
+// did (cpp/README.md, "The back end through c6502cpp").
 #include "passes/optimized_asm.h"
 
 #include <utility>

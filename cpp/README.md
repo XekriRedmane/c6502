@@ -1,32 +1,26 @@
-# The C++ port of c6502
+# The C++ compiler
 
-This directory holds the port of the compiler from Python to C++.
-`docs/cpp_port.md` records the decisions and the order of the stages.
-Each stage moves to C++ only when it produces the same output as the
-Python code it replaces, byte for byte, and the Python compiler stays
-the reference until the port is done.
+This directory holds c6502's compiler, written in C++: the
+preprocessor, the parser, the front end's passes, `c99_to_tac`, the
+TAC optimizer, code generation, the asm optimizer and every asm pass,
+emission, the assembler, the linker, nm, objdump, the TAC interpreter,
+and the IR checks, all in one executable, `c6502cpp`. It was ported
+from the Python compiler stage by stage (docs/cpp_port.md), each stage
+checked to give the Python code's output byte for byte, and group R of
+step 8 removed the Python compiler on 25 Nov 2026. compile.py, nm.py,
+and objdump.py are shims over `c6502cpp compile`, `nm`, and `objdump`
+through cpp_backend.py ("The back end through c6502cpp" and
+"compile.py's command line"), and the simulator, the suite, and the
+fuzzers stay in Python until step 9 and run c6502cpp the same way.
 
-So far the port has the build, the IR classes generated from the four
-`.asdl` files, the dump format that carries an IR value between the
-two compilers, the helpers that the asm passes share, and all of code
-generation from the type-checked c99 program to the `-S` text:
-`c99_to_tac`, the inliner and the other passes over the whole TAC
-program, the TAC optimizer, the zero-page plan, the ABI, the
-allocators, `tac_to_asm`, the asm optimizer, every asm pass of the back
-end, and emission, each of which matches the Python code on every input
-of the corpus it was checked on. With `C6502_CPP_BACKEND=1`, compile.py
-hands the source text of a C input to C++, which runs the front end and
-code generation, and takes the `-S` text back ("The stage's driver",
-"The back end through c6502cpp", and "Emission", below). Of the front end, the pieces its passes share, the
-preprocessor, the parser, the unroller, `identifier_resolution`,
-string lifting, `label_resolution`, `loop_labeling`, and the type
-checker are ported ("The front end's calls"). Of the object-file
-tools of step 7, the ELF reader and writer, the opcode table, the
-part of argparse that nm.py and objdump.py use, nm, the linker scripts,
-the layout, binutils/ld.py, the linker's functions, and the link itself
-(`link_objects`, with `c6502cpp link`) are ported, and
-`C6502_CPP_BACKEND=1` runs the C++ nm
-for nm.py ("The object-file tools").
+The sections after "Layout" were written as the port went. They
+describe each part of the C++ code, the Python module it was ported
+from, and how it was checked against that module, and the Python
+modules and tools they name are the ones the removal took away. Where
+a section says what happens "under `C6502_CPP_BACKEND=1`", that is
+what every run does now, since the switch is gone. "The checks after
+Python" gives the checks that replaced the comparisons with Python:
+the golden files, the frozen captures, and the doctest cases.
 
 ## Building
 
@@ -59,8 +53,9 @@ path in `C6502_CPP`, and are skipped when it isn't built.
 On 19 Nov 2026 the build was clean with MSVC 19.36 (Build Tools 14.36),
 and with GCC 12.2 and Clang 14.0.6 on Debian 12, the distribution the
 repository's Docker image is based on. The Linux builds ran in WSL,
-since the Docker daemon wasn't running, and the Docker image has no
-CMake, so it would need `apt-get install cmake` first.
+since the Docker daemon wasn't running. Since step 8 the image
+installs CMake and builds `c6502cpp` from its copy of cpp/, and
+`C6502_CPP` points the shims at it (the Dockerfile).
 
 The build makes three targets.
 
@@ -70,8 +65,8 @@ The build makes three targets.
   `src/passes/optimization_asm/`, or `src/sim/` is picked up the next
   time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
-- `c6502cpp`, the CLI (`src/main.cpp`), which for now holds the checks
-  below and the code generation that compile.py runs through it.
+- `c6502cpp`, the CLI (`src/main.cpp`): the compiler's commands that
+  compile.py, nm.py, and objdump.py run, and the checks below.
 
 Warnings are on (`/W4`, `-Wall -Wextra`) and aren't errors yet.
 

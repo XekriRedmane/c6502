@@ -1,7 +1,7 @@
 // `c6502cpp compile`, compile.py's command line in C++: the reading of
 // its arguments with compile.py's argparse (`_parse_args`, after
-// `_rewrite_ttext`), and the work compile.py's `main` does under
-// `C6502_CPP_BACKEND=1` after it, in the same process. `--lex`,
+// `_rewrite_ttext`), and the work compile.py's `main` did after it, in
+// the same process. `--lex`,
 // `--parse`, `--resolve`, `--tac`, and `-S` compile each C input
 // through the back end's request of `cpp_backend.compile_source` (or
 // `stage_source`), and `-c` and a link send their inputs in one request
@@ -9,7 +9,7 @@
 // response input by input. Every message says `compile.py:`, as the
 // tests and the golden files hold it until step 9.
 //
-// Under `C6502_CPP_BACKEND=1`, compile.py's `main` runs this command
+// compile.py's `main`, a shim since step 8, runs this command
 // through `cpp_backend.run_tool` with its command line, and the two
 // sides talk in frames (`C6502CPP_FRAMES=1`), so that Python writes
 // what the command writes, in its order, through its own streams,

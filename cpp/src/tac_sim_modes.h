@@ -1,6 +1,6 @@
 // The modes of `c6502cpp backend` that run the TAC interpreter
-// (src/tac_sim.h), for the Python callers of tac_sim.py under
-// `C6502_CPP_BACKEND=1` (cpp_backend.py's `tac_run`,
+// (src/tac_sim.h), for the Python callers of the interpreter
+// (cpp_backend.py's `tac_main`, `tac_results`,
 // `tac_first_changing_pass`, and `tac_falls_off_end`).
 #pragma once
 

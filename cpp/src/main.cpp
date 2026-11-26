@@ -1,7 +1,7 @@
 // c6502cpp, the CLI of the C++ port. Until the port reaches the
 // compiler's own command line, it holds the checks the port is
-// measured by (cpp/README.md) and the back end that compile.py runs
-// through it under `C6502_CPP_BACKEND=1`.
+// measured by (cpp/README.md) and the back end that compile.py's shim
+// runs through it.
 #include <algorithm>
 #include <cstdio>
 #include <exception>
@@ -134,10 +134,9 @@ const char kUsage[] =
     "`name bytes` line per helper, in the order of rtlib/helpers.py's\n"
     "all_helper_functions (src/rtlib/helpers.h).\n"
     "\n"
-    "compile takes compile.py's command line and does what compile.py does\n"
-    "under C6502_CPP_BACKEND=1, with its options, messages, files, and exit\n"
-    "status, in this process (src/compile_command.h). compile.py runs it\n"
-    "under the variable.\n"
+    "compile takes compile.py's command line and does what compile.py does,\n"
+    "with its options, messages, files, and exit status, in this process\n"
+    "(src/compile_command.h). compile.py's main runs it.\n"
     "\n"
     "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
     "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"

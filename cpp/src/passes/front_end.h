@@ -1,7 +1,6 @@
 // compile.py's front end, from the source text to the type-checked c99
 // program and its tables: `_compile_c` through `type_check_program`,
-// which `c6502cpp backend` runs before code generation under
-// `C6502_CPP_BACKEND=1`.
+// which `c6502cpp backend` runs before code generation.
 #pragma once
 
 #include <optional>

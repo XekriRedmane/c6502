@@ -392,8 +392,8 @@ Raised from_backend(const json::Value& error) {
 
 std::string bool_json(bool b) { return b ? "true" : "false"; }
 
-// Runs compile.py's `main` on one command line, as it runs under
-// `C6502_CPP_BACKEND=1`, keeping what it writes in order.
+// Runs compile.py's `main` on one command line, keeping what it writes
+// in order.
 class Compile {
  public:
   explicit Compile(const Options& options) : options_(options) {}

@@ -1,7 +1,7 @@
-// The `c6502cpp backend` command, through which compile.py and the
-// simulator harness run code generation in C++ under
-// `C6502_CPP_BACKEND=1`, and compile.py its `-c` and its links
-// (cpp_backend.py is the Python side).
+// The `c6502cpp backend` command, through which compile.py's shim, the
+// simulator harness, and the fuzzers compile a source and run the TAC
+// interpreter, and compile.py's `-c` and its links (cpp_backend.py is
+// the Python side).
 #pragma once
 
 #include <string>

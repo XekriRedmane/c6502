@@ -1,6 +1,6 @@
 // The stages of compile.py that print an IR tree with pretty.py,
 // `--parse`, `--resolve`, and `--tac` (compile.py's `_run_stage`), which
-// `c6502cpp backend` runs under `C6502_CPP_BACKEND=1`.
+// `c6502cpp backend` runs.
 #pragma once
 
 #include <string>

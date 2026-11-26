@@ -46,10 +46,10 @@
 //
 // The IR checks
 //
-// With `C6502_CHECK_IR=1`, Python checks the program after each sweep
-// (`ir_check.check_asm`). The checks aren't ported, so compile.py,
-// which runs the fixed point through c6502cpp under
-// `C6502_CPP_BACKEND=1`, checks the result once it comes back.
+// With the request's `check_ir` set (`C6502_CHECK_IR=1`), the fixed
+// point checks the program after each sweep (`ir_check::check_asm`,
+// src/passes/ir_check.h), where the Python fixed point called
+// `ir_check.check_asm`.
 #include "passes/peephole_fixedpoint.h"
 
 #include <memory>

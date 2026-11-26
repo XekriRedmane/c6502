@@ -257,9 +257,8 @@ class TestByteIndexSum(unittest.TestCase):
     )
 
     def test_even_index_reads_with_iny(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         word = asm[asm.index("\nword:\n"):asm.index("\nodd:\n")]
         self.assertIn("INY", word)
         self.assertNotIn("ADC", word)
@@ -343,9 +342,8 @@ class TestSharedByteIndex(unittest.TestCase):
     )
 
     def test_shapes(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         close = asm[asm.index("\nclose:\n"):asm.index("\nopen:\n")]
         self.assertNotIn("ADC", close)
         opened = asm[asm.index("\nopen:\n"):asm.index("\nopen_global:\n")]
@@ -371,9 +369,8 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
     """Source-level checks on the emitted asm."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_indirect_indexed_load_emits_short_sequence(self) -> None:
         # `ptr[idx]` where ptr is a zp_abi parameter and idx is a

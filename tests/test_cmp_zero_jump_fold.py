@@ -114,9 +114,8 @@ class TestAsmShape(unittest.TestCase):
     not a multi-byte CMP / 0/1-select sequence."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_uint8_eq_zero_uses_bne(self):
         src = (
@@ -199,9 +198,8 @@ class TestAsmShape(unittest.TestCase):
 
 class TestNarrowOrderingAsmShape(unittest.TestCase):
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_uchar_lt_const_uses_8bit_cmp_bcs(self):
         # The loop test in `for (uint8_t i = 0; i < 105; i++)` should
@@ -256,9 +254,8 @@ class TestNarrowOrderingAsmShape(unittest.TestCase):
 
 class TestSignedZeroOrderingAsmShape(unittest.TestCase):
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_signed_byte_ge_zero_uses_bare_lda_bpl(self):
         # `int8_t x; for (...; x >= 0; x--)` — the loop tail
@@ -339,9 +336,8 @@ class TestMultiUseSsaExtend(unittest.TestCase):
     )
 
     def test_switch_on_byte_compares_bytes(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SWITCH), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SWITCH, optimize=True)
         body = asm[asm.index("pick:"):asm.index("main:")]
         # No compare of the promoted value's zero high byte.
         self.assertNotIn("CMP   #$00", body)
@@ -403,9 +399,8 @@ class TestValueCompareNarrowing(unittest.TestCase):
                     self.assertEqual(r.return_int(), self._expected(pred))
 
     def test_one_byte_compare(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._src("x < 10")),
+        from compile import _run_source
+        asm = _run_source("codegen", self._src("x < 10"),
                          optimize=True)
         body = asm[asm.index("\ntest:"):asm.index("\nmain:")]
         self.assertNotIn("BVC", body)
@@ -419,15 +414,14 @@ class TestConstexprBound(unittest.TestCase):
     where the global's extend is found in the same straight run."""
 
     def test_byte_compare(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = (
             "#include <stdint.h>\n"
             "constexpr uint8_t M = 0x63;\n"
             "extern uint8_t T [[c6502::address(0x4239)]];\n"
             "void f(void) { if (T < M) T++; }\n"
         )
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         body = asm[asm.index("\nf:"):]
         self.assertIn("CMP   #$63", body)
         self.assertNotIn("BVC", body)

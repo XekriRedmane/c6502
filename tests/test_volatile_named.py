@@ -31,9 +31,8 @@ _KBD = (
 
 
 def _codegen(src: str, optimize: bool) -> str:
-    from compile import _run_stage
-    from preprocessor import preprocess
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _reads(asm: str, name: str) -> int:

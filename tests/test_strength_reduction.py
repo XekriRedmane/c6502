@@ -171,14 +171,13 @@ class TestThreeTermByteMultiply(unittest.TestCase):
     and adds, where it had called `mul8`."""
 
     def test_prng_step(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = (
             "#include <stdint.h>\n"
             "uint8_t st;\n"
             "uint8_t prng(void) { st = 69 * st + 0x53; return st >> 1; }\n"
         )
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         self.assertNotIn("mul8", asm)
 
     def test_every_byte_constant(self):

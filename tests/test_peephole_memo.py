@@ -12,7 +12,6 @@ from compile import _peephole_fixedpoint
 from fuzz import stmts
 from passes import dec_peephole
 from passes.peephole_memo import FunctionMemo, PeepholeMemo, same_function
-from preprocessor import preprocess
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 
@@ -99,9 +98,9 @@ class TestFixedPointMemo(unittest.TestCase):
             for seed in (3, 11):
                 src, _ = stmts.make_program(seed)
                 for optimize in (False, True):
-                    compile_module._run_stage(
-                        "codegen", preprocess(src, [], None),
-                        optimize=optimize,
+                    compile_module._run_source(
+                        "codegen", src,
+                        optimize=optimize, filename=None,
                     )
 
 

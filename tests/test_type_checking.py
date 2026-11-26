@@ -54,23 +54,19 @@ class TestTypeEquality(unittest.TestCase):
 
 class TestIntegrationWithLaterPipeline(unittest.TestCase):
     def test_well_typed_program_passes_through_to_tac(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        out = _run_stage(
+        from compile import _run_source
+        out = _run_source(
             "tac",
-            preprocess("int main(void) { return 42; }", []),
+            "int main(void) { return 42; }",
         )
         self.assertIn("Ret(", out)
 
     def test_ill_typed_program_rejected_at_tac_stage(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         with self.assertRaises(TypeCheckError):
-            _run_stage(
+            _run_source(
                 "tac",
-                preprocess(
-                    "int main(void) { int x; x(); return 0; }", [],
-                ),
+                "int main(void) { int x; x(); return 0; }",
             )
 
 

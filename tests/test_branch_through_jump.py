@@ -23,9 +23,8 @@ class TestGotoBackwards(unittest.TestCase):
     """
 
     def test_optimized_is_straight_line(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         body = asm[asm.index("main:"):]
         self.assertNotIn("JMP", body)
         self.assertRegex(body, r"LDX\s+#\$00\s+LDA\s+#\$05\s+RTS")

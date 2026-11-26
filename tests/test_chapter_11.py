@@ -24,8 +24,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -48,16 +47,16 @@ class TestChapter11Valid(unittest.TestCase):
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = path.read_text()
                 if rel in _EXPECTED_FAILURES_CODEGEN:
                     with self.assertRaises(
                         Exception,
                         msg=(f"{rel} unexpectedly compiled — drop "
                              "from _EXPECTED_FAILURES_CODEGEN"),
                     ):
-                        _run_stage("codegen", source)
+                        _run_source("codegen", source)
                 else:
-                    _run_stage("codegen", source)
+                    _run_source("codegen", source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
@@ -73,9 +72,9 @@ class TestChapter11InvalidLabels(unittest.TestCase):
         for path in files:
             rel = path.relative_to(_C11 / "invalid_labels").as_posix()
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = path.read_text()
                 with self.assertRaises(Exception):
-                    _run_stage("codegen", source)
+                    _run_source("codegen", source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
@@ -86,6 +85,6 @@ class TestChapter11InvalidTypes(unittest.TestCase):
         for path in files:
             rel = path.relative_to(_C11 / "invalid_types").as_posix()
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = path.read_text()
                 with self.assertRaises(Exception):
-                    _run_stage("codegen", source)
+                    _run_source("codegen", source)

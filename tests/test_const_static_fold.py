@@ -38,14 +38,12 @@ class TestConstStaticFoldAsmShape(unittest.TestCase):
     """Source-level checks on the emitted asm."""
 
     def _compile_optimized(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def _compile_plain(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=False)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=False)
 
     def test_const_pointer_static_folded_to_immediates(self) -> None:
         # Canonical case: a `static T * const` initialized to a
@@ -225,9 +223,8 @@ class TestConstPointer(unittest.TestCase):
     )
 
     def test_reads_the_address(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         at = asm[asm.index("\nat:"):asm.index("\nptr:")]
         self.assertIn("buf+3,Y", at)
         self.assertNotIn("DPTR", at)

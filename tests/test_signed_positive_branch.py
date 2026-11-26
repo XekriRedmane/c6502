@@ -72,15 +72,14 @@ class TestSignedPositiveBranch(unittest.TestCase):
                         self.assertEqual(out.return_int() & 0xFFFF, want)
 
     def test_int_le_zero_is_short(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = (
             "#include <stdint.h>\n"
             "extern uint16_t W [[c6502::address(0x5A02)]];\n"
             "void f(void);\n"
             "void d(void) { if ((int16_t)W <= 0) f(); }\n"
         )
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         body = asm[asm.index("\nd:"):]
         self.assertIn("LDA   W+1", body)
         self.assertIn("ORA   W", body)

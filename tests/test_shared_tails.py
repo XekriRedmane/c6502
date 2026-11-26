@@ -47,9 +47,8 @@ _EXPECTED = (((3 * 3 + 7) * 3 + 16) * 3 + 1)
 class TestPrograms(unittest.TestCase):
 
     def test_shared_and_runs(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _SRC, optimize=True)
         self.assertIn("@tail0:", asm)
         for optimize in (False, True):
             with self.subTest(optimize=optimize):

@@ -31,9 +31,8 @@ class TestDelayLoopSim(unittest.TestCase):
     )
 
     def test_dey(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         body = asm[asm.index("\ndelay:"):asm.index("\nmain:")]
         self.assertIn("DEY", body)
         self.assertIn("DEX", body)

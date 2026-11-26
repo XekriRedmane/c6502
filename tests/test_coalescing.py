@@ -35,9 +35,8 @@ class TestCoalescingEndToEnd(unittest.TestCase):
     """Programs going through the full pipeline."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_uchar_loop_increment_collapses_to_inc(self) -> None:
         # A loop counter that asm-SSA Phi destruction would route

@@ -56,11 +56,10 @@ class TestNegate(unittest.TestCase):
                                          msg=f"-({v})")
 
     def test_subtracts_from_zero(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = ("unsigned int g, h;\n"
                "int main(void) { h = -g; return 0; }\n")
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         body = asm[asm.index("\nmain:"):]
         self.assertNotIn("EOR", body)
         self.assertIn("SBC   g", body)

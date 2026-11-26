@@ -21,7 +21,6 @@ import unittest
 
 import builtin_functions as bf
 import tac_ast
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_bcd_builtins import _codegen
 from tests.test_sim_chapters import _run_program as _run_tac
@@ -119,8 +118,8 @@ def _tac(src: str, optimize: bool) -> tac_ast.Program:
     """The TAC that `compile.py --tac` prints for `src`, read back into
     `tac_ast` objects. Its `pretty` text is the constructors' calls with
     their fields as keywords, so Python can evaluate it."""
-    from compile import _run_stage
-    return eval(_run_stage("tac", preprocess(src), optimize=optimize),
+    from compile import _run_source
+    return eval(_run_source("tac", src, optimize=optimize),
                 vars(tac_ast))
 
 
@@ -192,7 +191,7 @@ class TestTac(unittest.TestCase):
         self.assertEqual(_unaries(_tac(src, optimize=True), "f"), [])
 
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_SUM)) & 0xFFFF, _sum_expected())
+        self.assertEqual(_run_tac(_SUM) & 0xFFFF, _sum_expected())
 
 
 _BATCH = 8192

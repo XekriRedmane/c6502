@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import unittest
 
-from compile import _run_stage
+from compile import _run_source
 from passes.recursion_saves import RecursionSaveError
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
@@ -22,7 +21,7 @@ _SAVE = "[[c6502::save_hardware_stack]] "
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _function(asm: str, name: str) -> str:

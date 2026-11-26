@@ -74,9 +74,8 @@ class TestRuns(unittest.TestCase):
                 self.assertEqual(r.return_int(), _expected())
 
     def test_no_copy_of_the_parameters(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_MULU16), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _MULU16, optimize=True)
         body = asm[asm.index("\nmul:"):asm.index("\ndiv:")]
         self.assertNotIn("__local_mul__a", body)
         self.assertIn("ASL   __zpabi_mul__a_0", body)

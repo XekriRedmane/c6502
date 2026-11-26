@@ -182,10 +182,9 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
     the actual `LDA (p),Y` so the hardware side effect happens."""
 
     def _compile_optimized(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage(
-            "codegen", preprocess(src),
+        from compile import _run_source
+        return _run_source(
+            "codegen", src,
             optimize=True,
         )
 
@@ -245,10 +244,9 @@ class TestVolatileLocalSurvives(unittest.TestCase):
     `y` is volatile, but collapses to nothing when `y` is plain."""
 
     def _compile_optimized(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage(
-            "codegen", preprocess(src),
+        from compile import _run_source
+        return _run_source(
+            "codegen", src,
             optimize=True,
         )
 

@@ -11,9 +11,8 @@ import unittest
 
 
 def _asm(src: str, optimize: bool = True) -> str:
-    from compile import _run_stage
-    from preprocessor import preprocess
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _body(asm: str, fn: str) -> str:

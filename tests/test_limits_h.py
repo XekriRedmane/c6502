@@ -108,13 +108,16 @@ class TestLimitsH(unittest.TestCase):
         # it shadows the bundled header. Verifies precedence: user
         # `-I` paths are added BEFORE the bundled directory in pcpp's
         # search list.
-        from preprocessor import preprocess
+        from compile import _run_source
         with tempfile.TemporaryDirectory() as tmp:
             with open(os.path.join(tmp, "limits.h"), "w") as f:
                 f.write("#define INT_MAX 99\n")
             src = "#include <limits.h>\nint x = INT_MAX;\n"
-            out = preprocess(src, ["-I", tmp])
-        self.assertIn("int x = 99", out)
+            # The tokens `compile.py --lex` prints for the
+            # preprocessor's output.
+            out = _run_source("lex", src, pcpp_args=["-I", tmp])
+        values = [line.split("\t")[2] for line in out.splitlines()]
+        self.assertEqual(values, ["int", "x", "=", "99", ";"])
 
 
 if __name__ == "__main__":

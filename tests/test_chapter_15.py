@@ -18,8 +18,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -57,7 +56,7 @@ class TestChapter15Valid(unittest.TestCase):
             if rel in _INCOMPATIBLE:
                 continue
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = path.read_text()
                 if rel in _EXPECTED_FAILURES_CODEGEN:
                     with self.assertRaises(
                         Exception,
@@ -66,6 +65,6 @@ class TestChapter15Valid(unittest.TestCase):
                             "_EXPECTED_FAILURES_CODEGEN"
                         ),
                     ):
-                        _run_stage("codegen", source)
+                        _run_source("codegen", source)
                 else:
-                    _run_stage("codegen", source)
+                    _run_source("codegen", source)

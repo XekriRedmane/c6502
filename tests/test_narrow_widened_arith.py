@@ -39,9 +39,8 @@ class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
     )
 
     def test_one_byte_shifts(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         body = asm[asm.index("\nf:"):asm.index("\nmain:")]
         self.assertEqual(body.count("LSR   alive"), 2, body)
         self.assertNotIn("ROR", body)
@@ -75,9 +74,8 @@ class TestVariableLeftShift(unittest.TestCase):
     )
 
     def test_shifts_one_byte(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         body = asm[asm.index("\ns:"):asm.index("\nmain:")]
         # `v` arrives in A, and the loop shifts it there
         # (`shift_in_a._shift_loop_in_a`).

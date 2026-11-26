@@ -9,8 +9,7 @@ the C++ port now, each named for the test it came from
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 
 
@@ -43,7 +42,7 @@ class TestZeroLowBytes(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 got = build_sim(src, optimize=optimize).run().return_int()
                 self.assertEqual(got, want)
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         self.assertIn("INC   p+1", asm.split("\nup:\n")[1].split("RTS")[0])
         self.assertIn("DEC   p+1", asm.split("\ndown:\n")[1].split("RTS")[0])
 

@@ -90,9 +90,8 @@ class TestCarryIncSim(unittest.TestCase):
             "    for (unsigned int i = 0; i < 256; i++) r[i] = f(i);\n"
             "    return 0;\n}\n"
         )
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", src, optimize=True)
         body = asm.split("\nf:")[1].split("RTS")[0]
         self.assertIn("BCC   .carry_inc@", body)
         sim = build_sim(src, optimize=True)

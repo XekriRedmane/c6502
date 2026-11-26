@@ -13,15 +13,14 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from compile import _run_stage, main as compile_main
+from compile import _run_source, main as compile_main
 from passes.abi_selection import AbiSelectionError
 from passes.type_checking import TypeCheckError
-from preprocessor import preprocess
 from sim.harness import build_sim
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _body(asm: str, fn: str) -> str:

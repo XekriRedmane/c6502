@@ -70,9 +70,8 @@ class TestRuns(unittest.TestCase):
                 self.assertEqual(got, want)
 
     def test_tables_made(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_PROGRAM), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _PROGRAM, optimize=True)
         # 12 entries for pick (0 to 11) and 9 for pick_high.
         self.assertEqual(asm.count("DC.W"), 21)
         self.assertEqual(asm.count("RTS\n.jtab@"), 2)

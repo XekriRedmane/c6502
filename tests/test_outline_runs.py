@@ -56,9 +56,8 @@ def _expected():
 class TestPrograms(unittest.TestCase):
 
     def test_outlined_and_runs(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _SRC, optimize=True)
         self.assertIn("@run0:", asm)
         for optimize in (False, True):
             with self.subTest(optimize=optimize):

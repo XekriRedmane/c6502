@@ -29,9 +29,8 @@ import unittest
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestRedundantLoadAfterRmwE2E(unittest.TestCase):
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_signed_countdown_collapses_to_dec_bpl(self) -> None:
         # `int8_t` (1 byte signed): the post-decrement is a 1-byte

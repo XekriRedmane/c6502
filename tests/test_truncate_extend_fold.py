@@ -44,9 +44,8 @@ class TestByteLoopAgainstSizeof(unittest.TestCase):
     third loop, and the narrowing looks through it."""
 
     def test_one_byte_compare(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_SIZEOF_LOOPS), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _SIZEOF_LOOPS, optimize=True)
         body = asm[asm.index("\nf:"):asm.index("\nmain:")]
         # The third loop keeps its counter in memory, so its compare
         # is `CMP #$28`.

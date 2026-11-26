@@ -7,8 +7,7 @@ closed form of the loop in Zork's `please_insert_save_diskette`, and
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 
 
@@ -100,7 +99,7 @@ class TestWidenedByteShift(unittest.TestCase):
         """
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
-                asm = _run_stage("codegen", preprocess(src), optimize=optimize)
+                asm = _run_source("codegen", src, optimize=optimize)
                 self.assertNotIn("asl16", asm)
 
     def test_sign_extended_byte_shifts_every_byte(self):
@@ -110,7 +109,7 @@ class TestWidenedByteShift(unittest.TestCase):
         unsigned int g;
         void f(signed char c) { g = (unsigned int)c << 5; }
         """
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         self.assertIn("ROL   g+1", asm)
 
 
@@ -216,7 +215,7 @@ class TestTruncatedRightShift(unittest.TestCase):
         unsigned char o;
         void f(void) { o = (unsigned char)(z >> 5) & 0x1F; }
         """
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         self.assertNotIn("lsr16", asm)
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
@@ -272,7 +271,7 @@ class TestEqualityBytes(unittest.TestCase):
         unsigned char get(void);
         bool f(void) { bool on = (get() & 0x80) != 0; return on; }
         """
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         lines = [ln.split() for ln in asm.splitlines() if ln.strip()]
         self.assertNotIn(
             (["LDA", "#$00"], ["CMP", "#$00"]),

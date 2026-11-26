@@ -15,8 +15,7 @@ from pathlib import Path
 
 from lark import Lark, logger as lark_logger
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 
 
 class TestGrammar(unittest.TestCase):
@@ -61,10 +60,8 @@ class TestLoopAttributes(unittest.TestCase):
     def test_keep_keeps_a_delay_loop(self) -> None:
         for attribute, kept in (("", False), ("[[c6502::keep]] ", True)):
             with self.subTest(attribute=attribute):
-                tac = _run_stage("tac", preprocess(
-                    "void f(void) { " + attribute
-                    + "for (unsigned char y = 0xB4; --y;) { } }"
-                ), optimize=True)
+                tac = _run_source("tac", "void f(void) { " + attribute
+                    + "for (unsigned char y = 0xB4; --y;) { } }", optimize=True)
                 self.assertEqual("_keep_start" in tac, kept)
                 self.assertEqual("Jump(" in tac, kept)
 

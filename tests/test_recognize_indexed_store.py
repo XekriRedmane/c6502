@@ -34,9 +34,8 @@ class TestIndexedStoreAsmShape(unittest.TestCase):
     """Source-level checks on the emitted asm."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_canonical_indexed_store_collapses(self) -> None:
         # The textbook case: a `static T * const` with an

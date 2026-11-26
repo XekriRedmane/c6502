@@ -28,15 +28,14 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 from tests.no_inlining import no_inlining
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
-    from compile import _run_stage
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _function_text(asm: str, name: str) -> str:
@@ -144,7 +143,7 @@ class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
         for name, src, expected in _PROGRAMS:
             with self.subTest(case=name):
-                value = _run_tac(preprocess(src)) & 0xFFFF
+                value = _run_tac(src) & 0xFFFF
                 if value & 0x8000:
                     value -= 0x10000
                 self.assertEqual(value, expected)

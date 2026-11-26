@@ -360,14 +360,13 @@ class TestParameterNames(unittest.TestCase):
     def test_unnamed_parameter_in_one_unit(self) -> None:
         # Calling a function declared with an unnamed parameter used
         # to crash `-O`, with or without the annotation.
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         for attr in ("", "[[c6502::zp_abi]] "):
             src = (attr + "unsigned char put(unsigned char);\n"
                    "int main(void) { return put(4); }\n")
             with self.subTest(attr=attr):
-                self.assertIn("__zpabi_put__0", _run_stage(
-                    "codegen", preprocess(src), optimize=True,
+                self.assertIn("__zpabi_put__0", _run_source(
+                    "codegen", src, optimize=True,
                 ))
 
     def test_unnamed_prototype_then_definition_runs(self) -> None:

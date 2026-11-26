@@ -41,9 +41,8 @@ class TestIncPeepholeAsmShape(unittest.TestCase):
     """Source-level checks: the emitted asm uses INC + BNE."""
 
     def _compile_optimized(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_loop_counter_16bit_inc_chain(self) -> None:
         # `for (int i = 0; i < N; i++)` — under -O the

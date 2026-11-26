@@ -31,7 +31,6 @@ from unittest.mock import patch
 
 import tac_ast
 from compile import main as compile_main
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
@@ -50,8 +49,8 @@ def _tac_function(src: str, name: str) -> tac_ast.Function:
     `src`, read back into `tac_ast` objects. Its `pretty` text is the
     constructors' calls with their fields as keywords, so Python can
     evaluate it."""
-    from compile import _run_stage
-    tac = eval(_run_stage("tac", preprocess(src)), vars(tac_ast))
+    from compile import _run_source
+    tac = eval(_run_source("tac", src), vars(tac_ast))
     for tl in tac.top_level:
         if isinstance(tl, tac_ast.Function) and tl.name == name:
             return tl
@@ -277,7 +276,7 @@ int main(void) {
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_PROGRAM)), _EXPECTED)
+        self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

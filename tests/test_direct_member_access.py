@@ -14,8 +14,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program
 
@@ -27,7 +26,7 @@ def _tac_main(src: str) -> int:
 
 
 def _codegen(src: str) -> str:
-    return _run_stage("codegen", preprocess(src), optimize=True)
+    return _run_source("codegen", src, optimize=True)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

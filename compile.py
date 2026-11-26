@@ -198,23 +198,46 @@ def _compile_c(path: str, pcpp_args, stage: str, optimize: bool,
     source, filename = _read_source(path)
     with diagnostics.collecting() as found:
         try:
-            if stage == "codegen" and _cpp_backend():
-                return _cpp_compile(
-                    source, pcpp_args, filename, optimize,
-                    link_metadata=link_metadata,
-                )
-            if stage in _CPP_TEXT_STAGES and _cpp_backend():
-                import cpp_backend
-                return cpp_backend.stage_source(
-                    stage, source, pcpp_args, filename, optimize=optimize,
-                    inline=_inlining(),
-                )
-            return _run_stage(
-                stage, preprocess(source, pcpp_args, filename),
-                optimize=optimize, link_metadata=link_metadata,
+            return _run_source(
+                stage, source, optimize=optimize,
+                link_metadata=link_metadata, pcpp_args=pcpp_args,
+                filename=filename,
             )
         finally:
             _print_warnings(path, found)
+
+
+def _run_source(
+    stage: str, source: str, optimize: bool = False,
+    link_metadata: bool = False, pcpp_args=None,
+    filename: str | None = None,
+) -> str:
+    """The output of `stage` for the C source text `source`, which
+    `_compile_c` gives for a file: `source` preprocessed with the
+    arguments `pcpp_args` as the file `filename` (None for stdin), and
+    then `_run_stage`. Under `C6502_CPP_BACKEND=1` the C++ port
+    preprocesses the text in the one request it sends for the stage,
+    so no Python of the compiler runs, and without it Python's
+    `preprocess` gives `_run_stage` its output. The tests that compile
+    a source text call it in place of `preprocess` and `_run_stage`.
+    The preprocessor's warnings go to the caller's
+    `diagnostics.collecting()` block, and are dropped outside one."""
+    if _cpp_backend():
+        if stage == "codegen":
+            return _cpp_compile(
+                source, pcpp_args, filename, optimize,
+                link_metadata=link_metadata,
+            )
+        if stage in _CPP_TEXT_STAGES:
+            import cpp_backend
+            return cpp_backend.stage_source(
+                stage, source, pcpp_args, filename, optimize=optimize,
+                inline=_inlining(),
+            )
+    return _run_stage(
+        stage, preprocess(source, pcpp_args, filename),
+        optimize=optimize, link_metadata=link_metadata,
+    )
 
 
 # The stages that print text before code generation, which the C++ port

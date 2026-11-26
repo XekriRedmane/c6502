@@ -89,15 +89,14 @@ class TestPrograms(unittest.TestCase):
 class TestCodegen(unittest.TestCase):
 
     def test_read_right_after_the_call_goes_through_the_object(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = (
             "#include <stdint.h>\n"
             "uint8_t *base;\n"
             "static uint8_t *addr(uint8_t n) { return base + n * 9; }\n"
             "uint8_t get(uint8_t n) { return addr(n)[4]; }\n"
         )
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         get = asm[asm.index("\nget:\n"):]
         self.assertIn("LDA   (addr@ret),Y", get)
         self.assertNotIn("STA", get[:get.index("RTS")])

@@ -26,9 +26,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from compile import _run_stage
+from compile import _run_source
 from passes.abi_selection import AbiSelectionError
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 
@@ -36,7 +35,7 @@ _HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _shares(asm: str) -> list[str]:

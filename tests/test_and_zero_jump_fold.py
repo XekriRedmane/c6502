@@ -160,9 +160,8 @@ class TestWideMaskInOneByte(unittest.TestCase):
                 self.assertEqual(got, want)
 
     def test_byte_tested(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         body = asm.split("\nhi:\n")[1].split("RTS")[0]
         self.assertIn("LDA   w+1", body)
         self.assertNotIn("ORA", body)

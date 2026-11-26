@@ -9,8 +9,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -25,5 +24,5 @@ class TestChapter3Valid(unittest.TestCase):
         for path in files:
             rel = path.relative_to(_C3 / "valid").as_posix()
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                _run_stage("codegen", source)
+                source = path.read_text()
+                _run_source("codegen", source)

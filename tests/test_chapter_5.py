@@ -21,8 +21,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from passes.identifier_resolution import IdentifierResolutionError
 from passes.label_resolution import LabelResolutionError
 from passes.loop_labeling import LoopLabelingError
@@ -56,8 +55,8 @@ class TestChapter5Valid(unittest.TestCase):
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
-                _run_stage("codegen", source)
+                source = path.read_text()
+                _run_source("codegen", source)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
@@ -72,8 +71,8 @@ class TestChapter5InvalidSemantics(unittest.TestCase):
         for path in files:
             rel = path.relative_to(_C5 / "invalid_semantics").as_posix()
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = path.read_text()
                 # Parse must succeed.
                 # A semantic pass must reject.
                 with self.assertRaises(_SEMANTIC_FAILURES):
-                    _run_stage("codegen", source)
+                    _run_source("codegen", source)

@@ -65,8 +65,7 @@ class TestSinkIncrementSim(unittest.TestCase):
         self._both(src, (4 + 10) + 0 + 7 * 1000 + 600)
 
     def test_post_decrement_becomes_dex(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = (
             "#include <stdint.h>\n"
             "uint8_t tab[8];\n"
@@ -76,7 +75,7 @@ class TestSinkIncrementSim(unittest.TestCase):
             "    return 0;\n"
             "}\n"
         )
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         self.assertIn("CPX   #$FF", asm)
         self.assertNotIn("SBC", asm)
 

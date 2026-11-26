@@ -15,7 +15,6 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
@@ -102,7 +101,7 @@ int main(void) {
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_PROGRAM)), 0)
+        self.assertEqual(_run_tac(_PROGRAM), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):
@@ -144,7 +143,7 @@ class TestCompoundLiteralStorage(unittest.TestCase):
 
 
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_LITERALS)), 0)
+        self.assertEqual(_run_tac(_LITERALS), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

@@ -31,9 +31,8 @@ class TestIndexedLoadAsmShape(unittest.TestCase):
     """Source-level tests asserting the emitted asm uses absolute,X."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_static_uint16_array_uses_absolute_x(self) -> None:
         src = (

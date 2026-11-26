@@ -57,9 +57,8 @@ class TestRuns(unittest.TestCase):
 
     @no_inlining()
     def test_no_high_byte(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _SRC, optimize=True)
         body = asm[asm.index("\nhalf:"):asm.index("\nmain:")]
         self.assertNotIn("LSR", body)
         self.assertEqual(body.count("ROR"), 3)

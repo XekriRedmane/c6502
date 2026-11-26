@@ -23,9 +23,8 @@ _BOOL = "#include <stdbool.h>\n"
 
 
 def _codegen(src, optimize=True):
-    from compile import _run_stage
-    from preprocessor import preprocess
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _function_text(asm, name):

@@ -41,9 +41,8 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(out.return_int(), expected)
 
     def test_byte_compares(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._SRC, optimize=True)
         body = asm[asm.index("\nbelow:"):asm.index("\nmain:")]
         # A byte compare has no overflow test.
         self.assertNotIn("BVC", body)

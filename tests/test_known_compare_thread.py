@@ -107,10 +107,9 @@ class TestRuns(unittest.TestCase):
     def test_second_compare_goes(self):
         # handle_timers in examples/lode_runner/timers.c: one compare
         # with 20 before the `if` and none in it.
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_program(
-            "if (t == 20 || t == 10) r = t == 20 ? 0x37 : 0x38;")),
+        from compile import _run_source
+        asm = _run_source("codegen", _program(
+            "if (t == 20 || t == 10) r = t == 20 ? 0x37 : 0x38;"),
             optimize=True)
         start = asm.index("\nf:")
         body = asm[start:asm.index("\nmain:", start)]

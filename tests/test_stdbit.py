@@ -23,7 +23,6 @@ from pathlib import Path
 
 import builtin_functions as bf
 import tac_ast
-from preprocessor import preprocess
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -38,16 +37,16 @@ _TYPES = {
 
 
 def _codegen(src: str, optimize: bool) -> str:
-    from compile import _run_stage
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _tac(src: str, optimize: bool) -> tac_ast.Program:
     """The TAC that `compile.py --tac` prints for `src`, read back into
     `tac_ast` objects. Its `pretty` text is the constructors' calls with
     their fields as keywords, so Python can evaluate it."""
-    from compile import _run_stage
-    return eval(_run_stage("tac", preprocess(src), optimize=optimize),
+    from compile import _run_source
+    return eval(_run_source("tac", src, optimize=optimize),
                 vars(tac_ast))
 
 

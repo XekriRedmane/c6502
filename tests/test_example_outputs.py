@@ -34,8 +34,7 @@ import os
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 
 
 _EXAMPLES_DIR = os.path.join(
@@ -75,8 +74,8 @@ class TestExampleOutputs(unittest.TestCase):
                 gold = os.path.join(_EXAMPLES_DIR, name + ".asm")
                 with open(src) as f:
                     source = f.read()
-                actual = _run_stage(
-                    "codegen", preprocess(source),
+                actual = _run_source(
+                    "codegen", source,
                     optimize=True,
                 )
                 with open(gold) as f:

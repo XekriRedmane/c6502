@@ -52,9 +52,8 @@ class TestRuns(unittest.TestCase):
 
     @no_inlining()
     def test_one_add(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_SRC), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _SRC, optimize=True)
         body = asm[asm.index("\nafter:"):asm.index("\nsum:")]
         self.assertIn("SEC", body)
         self.assertNotIn("#$01", body)

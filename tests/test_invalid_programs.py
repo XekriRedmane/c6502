@@ -18,8 +18,7 @@ import traceback
 import unittest
 from pathlib import Path
 
-from compile import _run_stage, _source_errors
-from preprocessor import preprocess
+from compile import _run_source, _source_errors
 
 _TESTS_DIR = Path(__file__).parent
 
@@ -41,7 +40,7 @@ class TestInvalidProgramsReportErrors(unittest.TestCase):
                 continue
             with self.subTest(file=rel):
                 try:
-                    _run_stage("codegen", preprocess(path.read_text(), []))
+                    _run_source("codegen", path.read_text())
                 except errors:
                     pass
                 except Exception:  # noqa: BLE001 - the failure under test

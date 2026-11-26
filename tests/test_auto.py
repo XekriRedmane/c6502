@@ -8,7 +8,6 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
@@ -53,7 +52,7 @@ class TestPrograms(unittest.TestCase):
     so the sum of 0 to 299 fits."""
 
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_PROGRAM)), 0)
+        self.assertEqual(_run_tac(_PROGRAM), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

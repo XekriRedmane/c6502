@@ -110,9 +110,8 @@ class TestAsmShape(unittest.TestCase):
     consumed by an `if`."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_and_collapses_to_chain(self):
         src = (

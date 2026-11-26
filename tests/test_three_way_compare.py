@@ -105,9 +105,8 @@ def _expected(name: str) -> int:
 
 
 def _function_asm(src: str, name: str) -> str:
-    from compile import _run_stage
-    from preprocessor import preprocess
-    asm = _run_stage("codegen", preprocess(src), optimize=True)
+    from compile import _run_source
+    asm = _run_source("codegen", src, optimize=True)
     start = asm.index(f"\n{name}:")
     return asm[start:asm.index("\nmain:", start)]
 

@@ -32,15 +32,13 @@ _PRELUDE = (
 
 
 def _tac(src: str, optimize: bool = False) -> str:
-    from compile import _run_stage
-    from preprocessor import preprocess
-    return _run_stage("tac", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("tac", src, optimize=optimize)
 
 
 def _asm(src: str, optimize: bool) -> str:
-    from compile import _run_stage
-    from preprocessor import preprocess
-    return _run_stage("codegen", preprocess(src), optimize=optimize)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=optimize)
 
 
 def _function(asm: str, name: str) -> str:

@@ -46,9 +46,8 @@ class TestPointerReturn(unittest.TestCase):
                 self.assertEqual(out.return_int(), 30 + 60 + 80 + 21 + 3)
 
     def test_no_hargs(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._PROGRAM), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._PROGRAM, optimize=True)
         self.assertNotIn("HARGS+1", asm.split("@zp-link-meta-end")[1])
 
 

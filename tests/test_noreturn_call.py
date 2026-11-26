@@ -8,8 +8,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 
@@ -53,7 +52,7 @@ class TestRuns(unittest.TestCase):
                 )
 
     def test_call_becomes_a_jump(self) -> None:
-        asm = _run_stage("codegen", preprocess(_PROGRAM), optimize=True)
+        asm = _run_source("codegen", _PROGRAM, optimize=True)
         check = asm.split("\ncheck:\n")[1].split("\nmain:\n")[0]
         self.assertIn("JMP   stop", check)
         self.assertNotIn("JSR   stop", check)
@@ -64,7 +63,7 @@ class TestRuns(unittest.TestCase):
 
 
 def _codegen(src: str) -> str:
-    return _run_stage("codegen", preprocess(src), optimize=True)
+    return _run_source("codegen", src, optimize=True)
 
 
 def _body(asm: str, name: str) -> str:

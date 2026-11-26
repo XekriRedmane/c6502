@@ -17,8 +17,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 
@@ -86,7 +85,7 @@ def _expected_divide() -> int:
 
 
 def _function(src: str, name: str) -> str:
-    asm = _run_stage("codegen", preprocess(src), optimize=True)
+    asm = _run_source("codegen", src, optimize=True)
     start = asm.index(f"\n{name}:")
     end = asm.index("\n   RTS", start)
     return asm[start:end]

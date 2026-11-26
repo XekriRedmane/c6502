@@ -12,8 +12,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -83,8 +82,8 @@ class TestCompareSubtract(unittest.TestCase):
                 # don't match.
                 continue
             with self.subTest(fn=fn.split("{")[0].strip()):
-                asm = _run_stage(
-                    "codegen", preprocess(_program(fn, calls[0][0])),
+                asm = _run_source(
+                    "codegen", _program(fn, calls[0][0]),
                     optimize=True,
                 )
                 body = asm.split("\nf:\n")[1].split("\nmain:\n")[0]
@@ -112,7 +111,7 @@ class TestLoopInRegisters(unittest.TestCase):
         }
         int main(void) { k = 16; return f(2, 1000) + n; }
         """
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         body = asm.split("\nf:\n")[1].split("\nmain:\n")[0]
         loop = body.split(".loop@0_continue:")[1].split(".loop@0_break:")[0]
         lines = [" ".join(line.split()) for line in loop.splitlines()

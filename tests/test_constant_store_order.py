@@ -79,9 +79,8 @@ int main(void) {
                 self.assertEqual(got.return_int(), 820)
 
     def test_fill_loads_each_byte_once(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._FILL), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._FILL, optimize=True)
         lines = asm.split("\nmain:\n")[1].splitlines()
         # The first load of each table byte stores it into the local
         # and then into the global.

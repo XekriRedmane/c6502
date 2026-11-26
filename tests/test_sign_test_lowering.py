@@ -59,8 +59,7 @@ class TestSignTest(unittest.TestCase):
                                          msg=f"{v} >= 0")
 
     def test_no_subtract(self):
-        from compile import _run_stage
-        from preprocessor import preprocess
+        from compile import _run_source
         src = ("#include <stdint.h>\n"
                "#include <stdbool.h>\n"
                "uint16_t a, b;\n"
@@ -70,7 +69,7 @@ class TestSignTest(unittest.TestCase):
                "    p = (int16_t)a >= 0;\n"
                "    return 0;\n"
                "}\n")
-        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        asm = _run_source("codegen", src, optimize=True)
         body = asm[asm.index("\nmain:"):]
         self.assertNotIn("SBC", body)
         self.assertNotIn("BVC", body)
@@ -158,9 +157,8 @@ class TestUnsignedOrdering(unittest.TestCase):
     def test_carry_return_needs_no_rol(self):
         # `return level > l;` from a function that returns its `bool`
         # in C is the subtract alone, `LDA level; CLC; SBC l`.
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(self._CARRY), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", self._CARRY, optimize=True)
         body = asm[asm.index("\nbeats:"):asm.index("\nmain:")]
         self.assertNotIn("ROL", body)
         self.assertNotIn("EOR", body)

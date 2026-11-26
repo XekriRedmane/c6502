@@ -64,10 +64,9 @@ class TestUnitFallback(unittest.TestCase):
     then see its slots."""
 
     def test_slots_below_the_pool(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage(
-            "codegen", preprocess(_FULL_POOL_SLOTS), optimize=True,
+        from compile import _run_source
+        asm = _run_source(
+            "codegen", _FULL_POOL_SLOTS, optimize=True,
         )
         equs = dict(
             (line.split("\t")[0], int(line.split("$")[1], 16))
@@ -150,9 +149,8 @@ class TestPoolGrowth(unittest.TestCase):
     preliminary one didn't gets a larger pool (`compile._pool_shortfalls`)."""
 
     def test_no_frame(self) -> None:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        asm = _run_stage("codegen", preprocess(_TIGHT_POOL), optimize=True)
+        from compile import _run_source
+        asm = _run_source("codegen", _TIGHT_POOL, optimize=True)
         self.assertNotIn("prologue", asm)
 
     def test_runs(self) -> None:

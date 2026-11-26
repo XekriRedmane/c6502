@@ -11,9 +11,8 @@ from sim.harness import build_sim
 def _asm(src: str, fn: str) -> str:
     """The optimized asm of function `fn` in `src`, through its first
     `RTS`."""
-    from compile import _run_stage
-    from preprocessor import preprocess
-    asm = _run_stage("codegen", preprocess(src), optimize=True)
+    from compile import _run_source
+    asm = _run_source("codegen", src, optimize=True)
     body = asm.split(f"\n{fn}:")[1].split("SUBROUTINE")[1]
     return body.split("RTS")[0] + "RTS"
 

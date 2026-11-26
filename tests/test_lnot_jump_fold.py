@@ -80,9 +80,8 @@ class TestAsmShape(unittest.TestCase):
     sequence and use a single inverted branch."""
 
     def _compile(self, src: str) -> str:
-        from compile import _run_stage
-        from preprocessor import preprocess
-        return _run_stage("codegen", preprocess(src), optimize=True)
+        from compile import _run_source
+        return _run_source("codegen", src, optimize=True)
 
     def test_lnot_uchar_collapses_to_single_branch(self):
         # `if (!a) return 1;` for uint8_t `a` — the body should NOT

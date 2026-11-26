@@ -31,10 +31,15 @@ import unittest
 from unittest.mock import patch
 
 import diagnostics
-from compile import main as compile_main
-from preprocessor import ALT_BOOL_WARNING, preprocess
+from compile import _run_source, main as compile_main
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+
+# The warning at each `_Bool` (preprocessor.py's `ALT_BOOL_WARNING`).
+ALT_BOOL_WARNING = (
+    "`_Bool` is deprecated: C23 makes it an obsolescent spelling "
+    "of the keyword `bool` (C23 §6.4.1). Use `bool` instead."
+)
 
 
 def _compile(src: str, *flags: str) -> tuple[int, str]:
@@ -59,10 +64,12 @@ class TestAltBoolWarning(unittest.TestCase):
                 )
 
     def test_warning_text(self) -> None:
+        # The warning names the line of the `_Bool`, and a `_Bool` that a
+        # macro expands to warns at the line of the macro's use.
+        rc, err = _compile("#define B _Bool\n\nB b;\n")
+        self.assertEqual(rc, 0)
         self.assertEqual(
-            ALT_BOOL_WARNING,
-            "`_Bool` is deprecated: C23 makes it an obsolescent spelling "
-            "of the keyword `bool` (C23 §6.4.1). Use `bool` instead.",
+            err, f"<stdin>: warning: line 3: {ALT_BOOL_WARNING}\n",
         )
 
     def test_warning_comes_before_an_error(self) -> None:
@@ -76,8 +83,11 @@ class TestAltBoolWarning(unittest.TestCase):
 
 class TestStdbool(unittest.TestCase):
     def test_includes_without_a_warning(self) -> None:
+        # The tokens `compile.py --lex` prints are those of the
+        # preprocessor's output.
         with diagnostics.collecting() as found:
-            text = preprocess(
+            text = _run_source(
+                "lex",
                 "#include <stdbool.h>\n"
                 "#if __bool_true_false_are_defined != 1\n"
                 "#error\n"
@@ -85,10 +95,13 @@ class TestStdbool(unittest.TestCase):
                 "#if defined(bool) || defined(true) || defined(false)\n"
                 "#error\n"
                 "#endif\n"
-                "bool b = true; int n = __bool_true_false_are_defined;\n"
+                "bool b = true; int n = __bool_true_false_are_defined;\n",
             )
         self.assertEqual(found, [])
-        self.assertIn("bool b = true; int n = 1;", text)
+        values = [line.split("\t")[2] for line in text.splitlines()]
+        self.assertEqual(
+            " ".join(values), "bool b = true ; int n = 1 ;",
+        )
 
     def test_compiles_without_a_warning(self) -> None:
         rc, err = _compile(
@@ -142,7 +155,7 @@ _EXPECTED = 649
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_PROGRAM)), _EXPECTED)
+        self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

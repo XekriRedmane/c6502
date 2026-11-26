@@ -13,8 +13,7 @@ from __future__ import annotations
 import shutil
 import unittest
 
-from compile import _run_stage
-from preprocessor import preprocess
+from compile import _run_source
 from sim.harness import build_sim
 
 _HAVE_PCPP = shutil.which("pcpp") is not None
@@ -31,7 +30,7 @@ struct rec r[4] = {
 
 
 def _codegen(src: str) -> str:
-    return _run_stage("codegen", preprocess(src), optimize=True)
+    return _run_source("codegen", src, optimize=True)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

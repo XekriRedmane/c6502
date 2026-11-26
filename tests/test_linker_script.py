@@ -26,9 +26,8 @@ _HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str) -> str:
-    from compile import _run_stage
-    from preprocessor import preprocess
-    return _run_stage("codegen", preprocess(src), optimize=True)
+    from compile import _run_source
+    return _run_source("codegen", src, optimize=True)
 
 
 def _link(sources: list[str], script: str | None = None,

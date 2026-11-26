@@ -32,7 +32,6 @@ from unittest.mock import patch
 
 import diagnostics
 from compile import main as compile_main
-from preprocessor import preprocess
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
@@ -145,7 +144,7 @@ _EXPECTED = 1023 + 3000 + 20000
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(preprocess(_PROGRAM)), _EXPECTED)
+        self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

@@ -111,14 +111,18 @@ Instrs through_tmp(const Instrs& head, const Instrs& tail) {
 }  // namespace
 
 TEST_CASE("dec_register_peephole keeps the six-instruction pattern when C is read after") {
-  const Instrs instrs =
-      through_tmp({}, {ir::Branch{.cond = ir::CC{}, .target = ".top"}, ir::Return{}});
+  // The load leaves A dead after the branch and C as the SBC left it.
+  const Instrs instrs = through_tmp({}, {mov(ir::Imm{.value = 0}, kA),
+                                         ir::Branch{.cond = ir::CC{}, .target = ".top"},
+                                         ir::Return{}});
   CHECK(run(instrs) == instrs);
 }
 
 TEST_CASE("dec_register_peephole keeps the six-instruction pattern when V is read after") {
-  const Instrs instrs =
-      through_tmp({}, {ir::Branch{.cond = ir::VS{}, .target = ".top"}, ir::Return{}});
+  // The load leaves A dead after the branch and V as the SBC left it.
+  const Instrs instrs = through_tmp({}, {mov(ir::Imm{.value = 0}, kA),
+                                         ir::Branch{.cond = ir::VS{}, .target = ".top"},
+                                         ir::Return{}});
   CHECK(run(instrs) == instrs);
 }
 

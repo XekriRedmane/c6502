@@ -126,25 +126,22 @@ const HelperFootprints& helper_footprints() {
       }
     }
     HelperFootprints out;
-    const std::function<asdl::Int(const std::string&, const std::set<std::string>&)> size =
-        [&](const std::string& name, const std::set<std::string>& seen) -> asdl::Int {
+    // tools/rtlib_table.py refuses helpers that call each other in a
+    // cycle, so the recursion ends.
+    const std::function<asdl::Int(const std::string&)> size =
+        [&](const std::string& name) -> asdl::Int {
       if (const auto it = out.find(name); it != out.end()) {
         return it->second;
       }
       asdl::Int n = own.at(name);
       for (const std::string& callee : calls.at(name)) {
-        if (seen.contains(callee)) {
-          continue;
-        }
-        std::set<std::string> inner = seen;
-        inner.insert(name);
-        n = std::max(n, size(callee, inner));
+        n = std::max(n, size(callee));
       }
       out[name] = n;
       return n;
     };
     for (const ir::Function& fn : fns) {
-      size(fn.name, {});
+      size(fn.name);
     }
     return out;
   }();

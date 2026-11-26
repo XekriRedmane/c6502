@@ -38,135 +38,17 @@ when `-a` is given.
 """
 from __future__ import annotations
 
-import argparse
 import sys
-
-from binutils import elf as E
-
-
-def _letter(s: E.Symbol) -> str:
-    if not s.defined:
-        return "U"
-    if s.section == E.SHN_ABS:
-        c = "a"
-    else:
-        sec = s.section
-        if sec.flags & E.SHF_EXECINSTR:
-            c = "t"
-        elif sec.type == E.SHT_NOBITS:
-            c = "b"
-        elif sec.flags & E.SHF_WRITE:
-            c = "d"
-        else:
-            c = "r"
-    return c.upper() if s.is_global else c
-
-
-def _hidden(s: E.Symbol) -> bool:
-    return (
-        s.type in (E.STT_FILE, E.STT_SECTION)
-        or s.name.startswith(".")
-        or s.name in ("$c", "$d")
-    )
-
-
-def symbol_lines(
-    elf: E.ElfFile, *, debug: bool = False, extern_only: bool = False,
-    undefined_only: bool = False, defined_only: bool = False,
-    sort: str = "name", reverse: bool = False, size: bool = False,
-    prefix: str = "",
-) -> list[str]:
-    """The lines `nm` prints for `elf`."""
-    syms = [s for s in elf.symbols if debug or not _hidden(s)]
-    if extern_only:
-        syms = [s for s in syms if s.is_global]
-    if undefined_only:
-        syms = [s for s in syms if not s.defined]
-    if defined_only:
-        syms = [s for s in syms if s.defined]
-    if sort == "name":
-        syms.sort(key=lambda s: (s.name, s.value))
-    elif sort == "numeric":
-        syms.sort(key=lambda s: (s.defined, s.value, s.name))
-    if reverse:
-        syms.reverse()
-    out = []
-    for s in syms:
-        letter = _letter(s)
-        if debug and not s.defined and s.other & E.STO_MOS_ZEROPAGE:
-            letter += "z"
-        if s.defined:
-            value = f"{s.value & 0xFFFF:04X}"
-            if size:
-                value += f" {s.size:04X}"
-        else:
-            value = " " * (9 if size else 4)
-        out.append(f"{prefix}{value} {letter} {s.name}")
-    return out
-
-
-from objdump import write_lf
 
 
 def main(argv: list[str]) -> int:
     """Lists the symbols of the files the command line `argv` names (the
-    program's name first) and returns the exit status. Under
-    `C6502_CPP_BACKEND=1` the C++ port does it (`c6502cpp nm`, through
-    `cpp_backend.run_tool`), with the same output, messages, and exit
-    status."""
-    import os
-    if os.environ.get("C6502_CPP_BACKEND") == "1":
-        import cpp_backend
-        return cpp_backend.run_tool("nm", argv)
-    ap = argparse.ArgumentParser(
-        prog="nm.py",
-        description="List the symbols of c6502 objects and executables.",
-    )
-    ap.add_argument("files", nargs="+", help="object or executable files")
-    ap.add_argument("-a", "--debug-syms", action="store_true",
-                    help="list local labels, mapping and file symbols too")
-    ap.add_argument("-g", "--extern-only", action="store_true",
-                    help="only global symbols")
-    ap.add_argument("-u", "--undefined-only", action="store_true",
-                    help="only undefined symbols")
-    ap.add_argument("--defined-only", action="store_true",
-                    help="only defined symbols")
-    ap.add_argument("-n", "--numeric-sort", action="store_true",
-                    help="sort by value")
-    ap.add_argument("-p", "--no-sort", action="store_true",
-                    help="keep the file's order")
-    ap.add_argument("-r", "--reverse-sort", action="store_true",
-                    help="reverse the order")
-    ap.add_argument("-S", "--print-size", action="store_true",
-                    help="print the size of each defined symbol")
-    ap.add_argument("-A", "-o", "--print-file-name", action="store_true",
-                    help="start each line with the file's name")
-    args = ap.parse_args(argv[1:])
-    sort = "none" if args.no_sort else (
-        "numeric" if args.numeric_sort else "name")
-    status = 0
-    many = len(args.files) > 1
-    for path in args.files:
-        try:
-            elf = E.read_file(path)
-        except (OSError, E.ElfError) as e:
-            print(f"nm.py: {e}", file=sys.stderr)
-            status = 1
-            continue
-        out: list[str] = []
-        if many and not args.print_file_name:
-            out += ["", f"{path}:"]
-        lines = symbol_lines(
-            elf, debug=args.debug_syms, extern_only=args.extern_only,
-            undefined_only=args.undefined_only,
-            defined_only=args.defined_only, sort=sort,
-            reverse=args.reverse_sort, size=args.print_size,
-            prefix=f"{path}:" if args.print_file_name else "",
-        )
-        out += lines
-        if out:
-            write_lf("\n".join(out) + "\n")
-    return status
+    program's name first) and returns the exit status. The C++ port does
+    it (`c6502cpp nm`, through `cpp_backend.run_tool`). A bad command
+    line ends with SystemExit(2), as argparse's does, and the help
+    returns 0."""
+    import cpp_backend
+    return cpp_backend.run_tool("nm", argv)
 
 
 if __name__ == "__main__":

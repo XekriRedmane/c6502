@@ -34,34 +34,6 @@ from sim import assembler
 from sim import runtime as rt_mod
 
 
-# The front-end passes and the TAC optimizer, which fuzz/reduce.py
-# reaches through this module, by the names it reads, with the module
-# and the name each comes from. They're imported on first use, so that
-# under `C6502_CPP_BACKEND=1`, where the C++ port compiles the program
-# from its source text, a run of the simulator imports none of the
-# Python front end.
-_PIPELINE = {
-    "preprocess": ("preprocessor", "preprocess"),
-    "parse": ("parser", "parse"),
-    "resolve_identifiers": ("passes.identifier_resolution", "resolve_program"),
-    "lift_strings": ("passes.string_lifting", "lift_program"),
-    "resolve_labels": ("passes.label_resolution", "resolve_program"),
-    "label_loops": ("passes.loop_labeling", "label_program"),
-    "type_check_program": ("passes.type_checking", "check_program"),
-    "translate_to_tac": ("c99_to_tac", "translate_program"),
-    "optimize_tac": ("passes.optimization", "optimize_program"),
-}
-
-
-def __getattr__(name: str):
-    """Returns the pass of `_PIPELINE` named `name`, importing it."""
-    if name not in _PIPELINE:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    import importlib
-    module, attr = _PIPELINE[name]
-    return getattr(importlib.import_module(module), attr)
-
-
 DEFAULT_ORIGIN = 0x0800
 DEFAULT_MAX_CYCLES = 10_000_000
 
@@ -75,83 +47,25 @@ def compile_to_asm(
     """Run the full pipeline up through asm_ast (post pseudo
     elimination). Returns `(asm_program, zp_slot_symbols)`, where
     `zp_slot_symbols` carries the zp_abi slot-name → address
-    bindings produced by `passes.zp_slot_allocation` (empty when
+    bindings that the zero-page slot allocator gives (empty when
     optimization is off or no zp_abi function is present), the
     zero-page globals, and the runtime's symbols.
 
-    Both pipelines run the passes `compile.py -S` runs, so the
-    simulator executes the code the CLI emits. `optimize=True` runs
-    `compile.optimized_asm`, the `-O` pipeline. Under
-    `C6502_CPP_BACKEND=1` the C++ port compiles the source text, as it
-    does for `compile.py -S`, and gives the program the passes below
-    give."""
-    import os
+    The C++ port compiles the source text (`cpp_backend.compile_source`)
+    with the passes `compile.py -S` runs, with `-O` when `optimize` is
+    true, so the simulator executes the code the CLI emits. It stops
+    before `asm_to_asm2` and returns the asm program."""
     import sys
-    if os.environ.get("C6502_CPP_BACKEND") == "1":
-        # No preprocessor arguments and no file name, as `preprocess`
-        # is called below. A test may have turned off compile.py's
-        # inlining (tests/no_inlining.py), and when compile.py isn't
-        # loaded, nothing has turned it off, so this doesn't load
-        # compile.py.
-        import cpp_backend
-        loaded = sys.modules.get("compile")
-        return cpp_backend.compile_source(
-            source, [], None, optimize=optimize, emit=False,
-            inline=loaded is None or loaded._inlining(),
-        )
-    import compile as C
-    from preprocessor import preprocess
-    from passes.type_checking import check_program as type_check_program
-    ast5, syms, types = type_check_program(
-        C._resolved(preprocess(source), optimize=optimize),
+    # No preprocessor arguments and no file name. A test may have
+    # turned off compile.py's inlining (tests/no_inlining.py), and when
+    # compile.py isn't loaded, nothing has turned it off, so this
+    # doesn't load compile.py.
+    import cpp_backend
+    loaded = sys.modules.get("compile")
+    return cpp_backend.compile_source(
+        source, [], None, optimize=optimize, emit=False,
+        inline=loaded is None or loaded._inlining(),
     )
-    from passes.zp_globals import plan_zero_page, zero_page_in_effect
-    tac = C.translate_for_codegen(ast5, syms, types, optimize)
-    zp = plan_zero_page(tac, syms, types, promote=optimize)
-    with zero_page_in_effect(zp):
-        return _compile_tac(ast5, syms, types, optimize, zp, tac)
-
-
-def _compile_tac(ast5, syms, types, optimize: bool, zp, tac):
-    """The rest of `compile_to_asm`, after translation to TAC (`tac`),
-    with the translation unit's zero-page globals and runtime layout
-    `zp`. Returns the same pair; the slot-symbol map includes the
-    zero-page globals and the runtime's symbols, so the assembler
-    binds them."""
-    from passes.abi_selection import fixed_address_layouts
-    from passes.replace_pseudoregisters import (
-        replace_program as replace_pseudoregs,
-    )
-    from passes.type_checking import StaticAttr
-    from passes.zp_globals import place_zp_globals
-    from tac_to_asm import translate_program as translate_to_asm
-    statics = frozenset(
-        n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
-    )
-    if optimize:
-        # The same pipeline `compile.py -S -O` runs.
-        from compile import optimized_asm
-        opt = optimized_asm(ast5, syms, types, zp, tac, statics)
-        return opt.asm, {**opt.slot_symbols, **zp.equs()}
-    # Unoptimized path: the same passes `compile.py -S` runs
-    # without `-O`, including the full peephole fixedpoint,
-    # so the sim executes the code the CLI emits.
-    from compile import unoptimized_tail
-    # Calls to a zp_abi routine with a fixed address pass their
-    # arguments in registers here too, since the routine's
-    # convention can't depend on the pipeline.
-    fixed_abi = fixed_address_layouts(tac, ast5, types)
-    asm0 = translate_to_asm(tac, syms, types, abi=fixed_abi)
-    asm = unoptimized_tail(
-        replace_pseudoregs(
-            asm0, extra_statics=statics, symbols=syms, types=types,
-        ),
-        zp,
-    )
-    from passes.abi_selection import pinned_slot_symbols
-    return place_zp_globals(asm, zp), {
-        **pinned_slot_symbols(fixed_abi), **zp.equs(),
-    }
 
 
 # -------- Simulation state --------

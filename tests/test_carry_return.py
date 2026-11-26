@@ -204,9 +204,7 @@ _WV = "struct wv { int v; bool end; };\n"
 
 def _tac_main(src):
     """main()'s result on unoptimized TAC, from the C++ front end and
-    TAC interpreter under `C6502_CPP_BACKEND=1`. `tac_sim` doesn't run
-    the instructions the TAC optimizer introduces, such as
-    `IndirectIndexedStore`."""
+    TAC interpreter."""
     from tests.test_sim_chapters import _run_program
     return _run_program(src)
 

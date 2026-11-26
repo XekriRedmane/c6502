@@ -30,7 +30,6 @@ and the generators always end such a function with a `return`.
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -41,71 +40,25 @@ from fuzz.runner import (
 
 _BINARY = re.compile(r"\(\(([^()]*)\) ([^()\s]+) \(([^()]*)\)\)")
 
-# A function that no program defines. `falls_off_end` declares it and
-# calls it at the end of every function that returns a value, so the
-# TAC interpreter raises when a run reaches one of those ends.
-_FELL_OFF = "__reduce_fell_off"
-
 
 def falls_off_end(src: str) -> bool:
     """Tells whether running `src` on the TAC interpreter reaches the
     end of a function, other than `main`, whose return type isn't
     `void`. Returns False for a program that the front end rejects or
     that the interpreter can't run, which the predicate rejects on its
-    own. Under `C6502_CPP_BACKEND=1` the C++ port does the same
-    (`cpp_backend.tac_falls_off_end`)."""
-    if os.environ.get("C6502_CPP_BACKEND") == "1":
-        import cpp_backend
-        return cpp_backend.tac_falls_off_end(src)
-    import c99_ast
-    import sim.harness as H
-    from tac_sim import Simulator, TacSimError
-    try:
-        ast = H.parse(H.preprocess(f"void {_FELL_OFF}(void);\n{src}"))
-    except Exception:  # noqa: BLE001 — invalid candidate
-        return False
-    for decl in ast.declaration:
-        if not isinstance(decl, c99_ast.FunctionDecl):
-            continue
-        fd = decl.function_decl
-        if (
-            fd.body is None or fd.name == "main"
-            or isinstance(fd.data_type.ret, c99_ast.Void)
-        ):
-            continue
-        fd.body.block_item.append(c99_ast.S(statement=c99_ast.Expression(
-            exp=c99_ast.FunctionCall(name=_FELL_OFF, args=[]),
-        )))
-    try:
-        ast = H.label_loops(H.resolve_labels(H.lift_strings(
-            H.resolve_identifiers(ast),
-        )))
-        ast, syms, types = H.type_check_program(ast)
-        tac = H.translate_to_tac(ast, syms, types)
-        Simulator(tac, syms, types).call("main", [])
-    except TacSimError as e:
-        return _FELL_OFF in str(e)
-    except Exception:  # noqa: BLE001 — invalid candidate
-        return False
-    return False
+    own. The C++ port (`cpp_backend.tac_falls_off_end`) declares a
+    function that no program defines, `__reduce_fell_off`, and calls it
+    at the end of each such function, so the interpreter raises when a
+    run reaches one of those ends."""
+    import cpp_backend
+    return cpp_backend.tac_falls_off_end(src)
 
 
 def _tac_results(src: str) -> tuple[int, int]:
     """main()'s result on unoptimized and optimized TAC, from the C++
-    port under `C6502_CPP_BACKEND=1` (`cpp_backend.tac_results`)."""
-    if os.environ.get("C6502_CPP_BACKEND") == "1":
-        import cpp_backend
-        return cpp_backend.tac_results(src)
-    import sim.harness as H
-    from tac_sim import Simulator
-    ast = H.label_loops(H.resolve_labels(H.lift_strings(
-        H.resolve_identifiers(H.parse(H.preprocess(src))),
-    )))
-    ast, syms, types = H.type_check_program(ast)
-    tac = H.translate_to_tac(ast, syms, types)
-    plain = Simulator(tac, syms, types).call("main", [])
-    opt = Simulator(H.optimize_tac(tac, syms), syms, types).call("main", [])
-    return plain, opt
+    port's TAC interpreter (`cpp_backend.tac_results`)."""
+    import cpp_backend
+    return cpp_backend.tac_results(src)
 
 
 def make_predicate(src: str, tac_opt: bool):

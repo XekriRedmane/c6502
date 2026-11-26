@@ -1,37 +1,33 @@
-"""Compiles a C source through the C++ port, for compile.py and the
-simulator harness under `C6502_CPP_BACKEND=1`.
+"""Runs the C++ port of the compiler, `c6502cpp`, for compile.py, nm.py,
+objdump.py, the simulator harness, the fuzzers, and the tests.
 
 `compile_source` sends `c6502cpp backend` the source text, the
 preprocessor's arguments, and the file name, and the C++ side runs the
-whole compile: the front end of `compile._compile_c` (`preprocess`,
-`parse`, under `-O` `unroll_program`, the three passes that resolve
-names, string lifting, and the type checker), then `c99_to_tac`, under
-`-O` the inliner, `return_in_zero_page`, and the TAC passes of
-`compile._optimized_tac`, `plan_zero_page`, code generation, the asm
-back end's region (or the unoptimized peephole fixed point and long
-branches), the work after it that reads the asm program, `asm_to_asm2`,
-and `asm_emit`, and returns the `-S` text. Python reads no program back.
-Under `C6502_CHECK_IR=1`, or after `ir_check.enable()` or
-`enable_ir_check()`, the request's
-`check_ir` turns on the C++ port of `ir_check` (cpp/src/passes/ir_check.h),
-which checks the IR at each place the Python pipeline checks it, and a
-failed check comes back as the AssertionError of an internal error, with
-the message Python's `IRCheckError` would have. Without `emit`, the C++ side stops where
-`compile.optimized_asm` (or the harness's unoptimized path) does, and
-returns the finished asm program with its slot symbols, which the
+whole compile: the preprocessor, the parser, under `-O` the unroller,
+the three passes that resolve names, string lifting, and the type
+checker, then `c99_to_tac`, under `-O` the inliner,
+`return_in_zero_page`, and the TAC optimizer's passes, the plan of zero
+page, code generation, the asm back end's region (or the unoptimized
+peephole fixed point and long branches), the work after it that reads
+the asm program, `asm_to_asm2`, and emission, and returns the `-S` text.
+Under `C6502_CHECK_IR=1`, or after `enable_ir_check()`, the request's
+`check_ir` turns on the IR checks (cpp/src/passes/ir_check.h), which
+check the IR after each pass, and a failed check comes back as the
+AssertionError of an internal error, with the message of
+`IRCheckError`. Without `emit`, the C++ side stops before `asm_to_asm2`
+and returns the finished asm program with its slot symbols, which the
 simulator harness assembles.
 
 `lex_source` sends the same request in the mode `lex`, which runs only
 the preprocessor and the lexer and returns the text `compile.py --lex`
 prints, and `stage_source` sends it in the modes `parse`, `resolve`, and
 `tac`, which return the tree `compile.py --parse`, `--resolve`, and
-`--tac` print with pretty.py.
+`--tac` print.
 
 `tac_main`, `tac_results`, `tac_first_changing_pass`, and
 `tac_falls_off_end` run the TAC interpreter of the C++ port on a source,
 for `tests.test_sim_chapters._run_program`, fuzz/reduce.py, and
-fuzz/tac_passes.py under the variable, so that those import none of the
-Python front end, `c99_to_tac`, the TAC optimizer, or tac_sim.py.
+fuzz/tac_passes.py.
 
 `run_tool` runs compile.py's whole command line in `c6502cpp compile`
 (cpp/src/compile_command.h), which reads it with compile.py's argparse
@@ -40,20 +36,14 @@ objdump.py's in `c6502cpp nm` and `c6502cpp objdump`.
 
 The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
-issues again through `diagnostics.warn`, as the Python preprocessor
-does, and an error that a pass of the compile raised, which it raises as
-the Python exception of the same class and message.
+issues again through `diagnostics.warn`, and an error that a pass of
+the compile raised, which it raises as the Python exception of the same
+class and message, from the module that `_ERROR_MODULES` names.
 
-Each call starts `c6502cpp backend` (cpp/src/backend.h describes the
-request and the response), found as tools/check_captures.py finds it
-(`_cpp_cli`): at the path in `C6502_CPP`, or in cpp/build/bin. The C++ process inherits
-the current directory, so the paths in the preprocessor's messages come
-out as Python's do.
-
-compile.py imports this module only when the variable is set, so a
-compile without it imports nothing new. A compile with it imports none
-of the parser, Lark, pcpp, or the front end's passes, except for the
-class of the exception a rejected program raises.
+Each call starts c6502cpp (cpp/src/backend.h describes the request and
+the response), found at the path in `C6502_CPP`, or in cpp/build/bin
+(`_cpp_cli`). The C++ process inherits the current directory, so the
+paths in the preprocessor's messages are relative to the caller's.
 """
 from __future__ import annotations
 
@@ -68,10 +58,9 @@ _INCLUDE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "include
 
 
 def _cpp_cli() -> str | None:
-    """The path of c6502cpp, found as tools/check_captures.py's
-    `cpp_cli` finds it: the path in `C6502_CPP`, or cpp/build/bin. It is
-    found here so that compile.py's start doesn't import that module and
-    its argparse."""
+    """The path of c6502cpp: the path in `C6502_CPP`, or else the
+    executable in cpp/build/bin, where cpp/README.md's build puts it, or
+    None when neither is there."""
     env = os.environ.get("C6502_CPP")
     if env:
         return env
@@ -81,6 +70,18 @@ def _cpp_cli() -> str | None:
         if os.path.exists(path):
             return path
     return None
+
+def _require_cli() -> str:
+    """The path of c6502cpp (`_cpp_cli`), or a RuntimeError that says
+    to build it when it isn't built."""
+    cli = _cpp_cli()
+    if cli is None:
+        raise RuntimeError(
+            "c6502cpp isn't built (cpp/README.md has the build), and "
+            "the compiler runs in it",
+        )
+    return cli
+
 
 # The module of each exception class of the compiler that the C++ side
 # reports by name, for the classes the builtins don't have.
@@ -92,6 +93,7 @@ _ERROR_MODULES = {
     "FrameSizeError": "passes.asm_to_asm2",
     "IdentifierResolutionError": "passes.identifier_resolution",
     "LabelResolutionError": "passes.label_resolution",
+    "LarkError": "lark.exceptions",
     "LayoutError": "passes.link_layout",
     "LexError": "lexer",
     "LinkError": "binutils.ld",
@@ -178,12 +180,7 @@ def _send(request: str | bytes) -> bytes:
     bytes. A bug the C++ compiler reports (exit status 3) is raised as
     an `AssertionError` with its message, since that is what the C++
     `InternalError` stands for."""
-    cli = _cpp_cli()
-    if cli is None:
-        raise RuntimeError(
-            "C6502_CPP_BACKEND=1 is set, but c6502cpp isn't built "
-            "(cpp/README.md has the build)",
-        )
+    cli = _require_cli()
     done = subprocess.run(
         [str(cli), "backend"],
         input=request.encode("utf-8") if isinstance(request, str) else request,
@@ -259,13 +256,13 @@ def stage_source(
 ) -> str:
     """Returns what `compile.py` prints for the C source `source` at
     `stage`, one of "lex", "parse", "resolve", and "tac", as
-    `lex_source` does for "lex". For the other three it is pretty.py's
-    text of the c99 program after the parser, of the program after
-    `compile._resolved`, or of the TAC after `c99_to_tac` (and under
-    `-O`, `optimize`, after `inline_functions`, unless `inline` is
-    false, and the TAC optimizer). With the IR checks on, the C++ TAC
-    optimizer's driver checks the TAC after each pass, as Python's
-    does."""
+    `lex_source` does for "lex". For the other three it is the `pretty`
+    text (cpp/generated/, `asdl.py --cpp`) of the c99 program after the
+    parser, of the program after the passes that resolve names, or of
+    the TAC after `c99_to_tac` (and under `-O`, `optimize`, after the
+    inliner, unless `inline` is false, and the TAC optimizer). With the
+    IR checks on, the TAC optimizer's driver checks the TAC after each
+    pass."""
     args = json.dumps({
         "pcpp_args": list(pcpp_args or []), "filename": filename,
         "include_dir": _INCLUDE_DIR, "preprocess": preprocess,
@@ -293,15 +290,16 @@ def compile_source(
     `-O` doesn't inline the calls of small `static` functions
     (tests/no_inlining.py), and `link_metadata` gives the unoptimized
     text the link metadata block `-c` assembles. Without `emit`, returns
-    the finished asm program and its slot symbols, `{**slot_symbols,
-    **zp.equs()}` under `-O` and `{**pinned_slot_symbols(fixed_abi),
-    **zp.equs()}` without it, as the simulator harness computes them.
+    the finished asm program and its slot symbols: those of the zp_abi
+    slots under `-O`, or of the pinned slots of the routines with fixed
+    addresses without it, with the zero-page globals and the runtime's
+    names.
 
     What the preprocessor wrote to stderr goes to `sys.stderr`, and its
     warnings to the caller's `diagnostics.collecting()` block, before
     the error of a rejected program is raised. With the IR checks on
-    (`_ir_check_enabled`), the C++ side checks the IR at each place the
-    Python pipeline does, and a failed check raises AssertionError."""
+    (`_ir_check_enabled`), the C++ side checks the IR after each pass,
+    and a failed check raises AssertionError."""
     args = json.dumps({
         "pcpp_args": list(pcpp_args or []), "filename": filename,
         "include_dir": _INCLUDE_DIR, "preprocess": preprocess,
@@ -324,22 +322,20 @@ def compile_source(
 
 
 class TacSimError(Exception):
-    """The error of the C++ TAC interpreter (cpp/src/tac_sim.h) that
-    tac_sim.py raises as its own `TacSimError`. The class stands in for
-    that one, so that a caller of the functions below under
-    `C6502_CPP_BACKEND=1` loads neither tac_sim.py nor the type checker
-    it imports. Its name and message are Python's."""
+    """The error of the C++ TAC interpreter (cpp/src/tac_sim.h), such as
+    a read of a variable without a value. Its name and message are those
+    of the Python interpreter it was ported from."""
 
 
 def _tac_request(mode: str, source: str, **args) -> tuple[dict, dict]:
     """Sends the TAC interpreter's `mode` (cpp/src/tac_sim_modes.h) the
-    source `source`, preprocessed as `preprocess(source)` preprocesses
-    it, and returns the response's lines and sections. What the
+    source `source`, preprocessed with no arguments and no file name,
+    and returns the response's lines and sections. What the
     preprocessor wrote to stderr goes to `sys.stderr` and its warnings
     to `diagnostics.warn`, and the error of a rejected program is raised
     as its Python exception. With the IR checks on (`_ir_check_enabled`),
-    the TAC optimizer's driver checks the TAC after each pass, as
-    Python's does, and a failed check comes back as an AssertionError."""
+    the TAC optimizer's driver checks the TAC after each pass, and a
+    failed check comes back as an AssertionError."""
     kwargs = json.dumps({
         "pcpp_args": [], "filename": None, "include_dir": _INCLUDE_DIR,
         "preprocess": True, "check_ir": _ir_check_enabled(), **args,
@@ -367,8 +363,7 @@ def _tac_value(text: str):
 
 def tac_main(source: str) -> int | None:
     """Returns what `main` of the C source `source` returns on its
-    unoptimized TAC, as `tests.test_sim_chapters._run_program` computes
-    it with the Python front end, `c99_to_tac`, and tac_sim.py: an int,
+    unoptimized TAC, for `tests.test_sim_chapters._run_program`: an int,
     signed when `main`'s type is, or None. The front end's error and the
     interpreter's are raised with their Python classes, the latter's
     `TacSimError` being this module's."""
@@ -378,9 +373,8 @@ def tac_main(source: str) -> int | None:
 
 def tac_results(source: str) -> tuple:
     """Returns `main`'s result on the unoptimized TAC of `source` and on
-    the TAC after the TAC optimizer (`optimize_program`), as
-    fuzz/reduce.py's `_tac_results` computes them, raising as
-    `tac_main` does."""
+    the TAC after the TAC optimizer, for fuzz/reduce.py's
+    `_tac_results`, raising as `tac_main` does."""
     lines, _ = _tac_request("tac-run", source, optimized=True)
     plain = _tac_value(lines["result"])
     return plain, _tac_value(lines["optimized"])
@@ -412,41 +406,27 @@ _check_ir: bool | None = None
 
 def enable_ir_check(on: bool = True) -> bool:
     """Turns the IR checks on, or off, for the compiles that follow, and
-    returns whether they were on (`_ir_check_enabled`). Under
-    `C6502_CPP_BACKEND=1` the requests carry the choice, and the Python
-    `ir_check.enable` gets it too when passes/ir_check.py is loaded or
-    the switch is off, since the Python pipeline checks the IR then. A
-    test that needs the checks whatever `C6502_CHECK_IR` says calls it
-    in place of `ir_check.enable`, which the shims don't have once the
-    Python compiler is removed."""
+    returns whether they were on (`_ir_check_enabled`). The requests
+    carry the choice. The fuzzers call it, and so does a test that needs
+    the checks whatever `C6502_CHECK_IR` says."""
     global _check_ir
     was = _ir_check_enabled()
     _check_ir = on
-    if os.environ.get("C6502_CPP_BACKEND") != "1" or "passes.ir_check" in sys.modules:
-        from passes import ir_check
-        ir_check.enable(on)
     return was
 
 
 def _ir_check_enabled() -> bool:
     """Whether the IR checks are on: what `enable_ir_check` set last, or
-    else what `ir_check.enabled()` says, the value of `C6502_CHECK_IR`
-    when passes/ir_check.py was imported or what `ir_check.enable()` set
-    since, as the fuzzers set it. When nothing has imported the module,
-    the result is the variable's value, since importing the module would
-    load the IRs for every compile."""
+    else whether `C6502_CHECK_IR` is 1."""
     if _check_ir is not None:
         return _check_ir
-    module = sys.modules.get("passes.ir_check")
-    if module is not None:
-        return module.enabled()
     return os.environ.get("C6502_CHECK_IR") == "1"
 
 
 def run_tool(name: str, argv: list[str], *, inline: bool = True) -> int:
     """Runs the C++ port of a tool, `c6502cpp <name>`, on the command
     line `argv` (the program's name first), as compile.py's, nm.py's,
-    and objdump.py's `main` do under `C6502_CPP_BACKEND=1`, and returns
+    and objdump.py's `main` do, and returns
     its exit status. What it writes to stdout and stderr goes to
     `sys.stdout` and `sys.stderr`, so a caller that redirects them, as a
     test does, gets it. The C++ side wraps the usage and help as
@@ -457,16 +437,11 @@ def run_tool(name: str, argv: list[str], *, inline: bool = True) -> int:
     For "compile", `_run_compile` runs it, with `inline` for
     `compile._inlining()`. For nm and objdump, a bad command line ends
     with SystemExit(2), as argparse's does, and the help with a return
-    of 0, where Python's raises SystemExit(0). argparse writes its usage
+    of 0, where Python's argparse raises SystemExit(0). argparse writes its usage
     before every error, so an exit status of 2 whose stderr doesn't
     start with `usage: ` comes from the tool itself, as objdump.py's
     when nothing is asked for, and is returned."""
-    cli = _cpp_cli()
-    if cli is None:
-        raise RuntimeError(
-            "C6502_CPP_BACKEND=1 is set, but c6502cpp isn't built "
-            "(cpp/README.md has the build)",
-        )
+    cli = _require_cli()
     columns = _terminal_columns()
     if name == "compile":
         return _run_compile(cli, argv, columns, inline)
@@ -520,8 +495,8 @@ def _run_compile(cli, argv: list[str], columns: int, inline: bool) -> int:
     (argparse's help and usage errors), which this raises, or the
     exception `main` would raise, which this raises as its Python class.
     A C input `-` makes the C++ side ask for stdin, which this reads with
-    `sys.stdin.read()`, as compile.py's `_read_source` does, so a test
-    that patches `sys.stdin` gives the C++ side its text."""
+    `sys.stdin.read()`, so a test that patches `sys.stdin` gives the
+    C++ side its text."""
     header = json.dumps({
         "include_dir": _INCLUDE_DIR, "columns": columns, "inline": inline,
         "check_ir": _ir_check_enabled(),

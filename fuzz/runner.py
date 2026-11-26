@@ -27,14 +27,14 @@ import re
 import sys
 from pathlib import Path
 
-from passes import ir_check
+import cpp_backend
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _tac_run
 
-# Check the IR after every pass (passes/ir_check.py), so a pass that
-# breaks it fails there even when the program's result comes out
+# Check the IR after every pass (cpp/src/passes/ir_check.h), so a pass
+# that breaks it fails there even when the program's result comes out
 # right. A failed check is an `ERR` result like any other.
-ir_check.enable()
+cpp_backend.enable_ir_check()
 
 MODES = ("tac", "unopt", "opt")
 MAX_CYCLES = 20_000_000

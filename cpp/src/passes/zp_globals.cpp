@@ -94,14 +94,7 @@ asdl::Int hargs_extent(const std::vector<ir::Type_instruction>& instrs) {
     }
   };
   for (const auto& instr : instrs) {
-    for_each_operand<false>(instr, note);
-    if (const auto* d = asdl::as<ir::DecimalArith>(instr)) {
-      for (const auto* list : {&d->left, &d->right, &d->dst}) {
-        for (const auto& op : *list) {
-          note(op);
-        }
-      }
-    }
+    for_each_operand<true>(instr, note);
   }
   return extent;
 }

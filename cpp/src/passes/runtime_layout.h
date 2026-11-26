@@ -1,8 +1,7 @@
-// The part of passes/runtime_layout.py that places the runtime's
-// zero-page block, `choose_layout`. The layout itself is
-// `RuntimeLayout` in passes/asm_context.h, and `hargs_need` and
-// `check_hargs`, which read the finished asm program, are in
-// passes/zp_globals.h.
+// `choose_layout`, which places the runtime's zero-page block. The
+// layout itself is `RuntimeLayout` in passes/asm_context.h, and
+// `hargs_need` and `check_hargs`, which read the finished asm program,
+// are in passes/zp_globals.h.
 #pragma once
 
 #include <functional>

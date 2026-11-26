@@ -1,4 +1,3 @@
-// The port of passes/redundant_load_after_rmw.py.
 #pragma once
 
 #include "asm_ast.h"

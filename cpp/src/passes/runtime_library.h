@@ -1,8 +1,7 @@
-// The port of passes/runtime_library.py, the runtime library: the 6502
-// helpers that compiled code calls to multiply, divide, and shift by a
-// variable count, which the linker adds to a program as a C toolchain
-// links routines from libgcc. The helpers are the functions of the
-// table src/rtlib/helpers.h reads.
+// The runtime library: the 6502 helpers that compiled code calls to
+// multiply, divide, and shift by a variable count, which the linker
+// adds to a program as a C toolchain links routines from libgcc. The
+// helpers are the functions of the table src/rtlib/helpers.h reads.
 #pragma once
 
 #include <string>
@@ -36,12 +35,10 @@ std::vector<std::string> needed(
     const NameSet& defined);
 
 // Returns the text that the library's object for the helpers `names`,
-// which `needed` returned, is assembled from (Python's `library_text`):
-// a link metadata block that lists each helper as an item in `.text`
-// and gives the number of HARGS bytes the helpers touch as the object's
-// HARGS size and need, and then the helpers as `asm_emit` writes them.
-// Python's `library_object` assembles it as `runtime.o`, which the C++
-// linker does with the C++ assembler (group A of step 7).
+// which `needed` returned, is assembled from: a link metadata block
+// that lists each helper as an item in `.text` and gives the number of
+// HARGS bytes the helpers touch as the object's HARGS size and need,
+// and then the helpers as `asm_emit` writes them.
 std::string library_text(const std::vector<std::string>& names);
 
 }  // namespace c6502::passes

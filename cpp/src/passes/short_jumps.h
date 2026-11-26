@@ -1,4 +1,3 @@
-// The port of passes/short_jumps.py.
 #pragma once
 
 #include "asm_ast.h"

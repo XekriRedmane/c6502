@@ -1,39 +1,27 @@
 // Moves a loop's test from its top to its bottom.
 //
-// Motivating shape
-//
-// A `for` or `while` loop tests at the top and ends with a `JMP` back
-// to the test:
+// A `for` or `while` loop that tests at the top and ends with a `JMP`
+// back to the test,
 //
 //     L:      <test>          ; ends in Bcc EXIT
 //     B:      <body>
 //             JMP L
 //     EXIT:
 //
-// Each pass runs the `JMP` (3 cycles) and the test's branch not taken
-// (2 cycles). With the test at the bottom, the loop is entered with a
-// `JMP` to it, and the test's branch, inverted, goes back to the body:
+// gets the test at the bottom, inverted to go back to the body, and is
+// entered with a `JMP` to it:
 //
 //             JMP L           ; only when L is reached by falling in
 //     B:      <body>
 //     L:      <test>          ; ends in B!cc B
 //     EXIT:
 //
-// The code is the same size, and each pass runs the branch taken (3
-// cycles) and no `JMP`, 2 cycles fewer. Entering costs the `JMP`, 3
-// cycles, and leaving saves 1, since the test's branch falls through to
-// EXIT where it used to be taken. A loop that runs `n` times saves
-// `2n - 2` cycles.
-//
 // When the test is known to pass the first time, the entry `JMP` goes
-// too, 3 bytes and 3 cycles, and the loop is entered at the body. That
-// is the case of `for (uint8_t i = 0; i != 6; i++)`, whose test is
-// `CPX #$06; BEQ` right after `LDX #$00`. `entry_passes` evaluates the
-// test on the constants that the straight-line code in front of the
+// too, and the loop is entered at the body. `entry_passes` evaluates
+// the test on the constants that the straight-line code in front of the
 // loop leaves in the registers and in memory, and `test_effects_dead`
 // checks that the body doesn't read a register or flag the test sets,
-// and that the test writes no memory and reads no volatile byte, since
-// the first pass then doesn't run the test.
+// and that the test writes no memory and reads no volatile byte.
 //
 // Eligibility
 //
@@ -48,12 +36,6 @@
 //
 // Other jumps and branches to `L`, such as a `continue`, still go to
 // `L`, which moves with the test.
-//
-// Where to run
-//
-// After the peephole fixed points and `loop_invariant_a`, which expects
-// the loop's test at its top, and before `expand_long_branches`. Only
-// under `-O`.
 #include "passes/rotate_loop_test.h"
 
 #include <cstddef>
@@ -88,7 +70,6 @@ using Span = std::span<const ir::Type_instruction>;
 // inside the body.
 constexpr int kMaxReach = 112;
 
-// Returns the names of the labels in the run of labels at `instrs[k:]`.
 std::set<std::string, std::less<>> labels_from(const InstrVec& instrs, std::size_t k) {
   std::set<std::string, std::less<>> out;
   while (k < instrs.size()) {
@@ -102,9 +83,6 @@ std::set<std::string, std::less<>> labels_from(const InstrVec& instrs, std::size
   return out;
 }
 
-// Returns the index of the conditional branch that ends the test
-// starting after the label at `l`, when the test has no label, jump, or
-// return before it and ends before `j`.
 std::optional<std::size_t> test_end(const InstrVec& instrs, std::size_t l,
                                     std::size_t j) {
   for (std::size_t k = l + 1; k < j; ++k) {
@@ -124,8 +102,6 @@ int size_of(const ir::Type_instruction& ins) {
   return isa<ir::Label>(ins) ? 0 : sim::instruction_size(ins);
 }
 
-// Whether the instruction struct `T` has a `dst` field that holds one
-// operand.
 template <class T>
 constexpr bool kHasOperandDst = requires(const T& t) {
   requires std::is_same_v<std::remove_cvref_t<decltype(t.dst)>, ir::Type_operand>;
@@ -143,8 +119,6 @@ const ir::Type_operand* dst_operand(const ir::Type_instruction& ins) {
       ins);
 }
 
-// Returns the register `ins` names as its single `dst` operand, as
-// Python's `getattr(ins, "dst", None)` finds it, or null.
 const ir::Type_reg* dst_reg(const ir::Type_instruction& ins) {
   const ir::Type_operand* dst = dst_operand(ins);
   if (dst == nullptr) {
@@ -154,10 +128,6 @@ const ir::Type_reg* dst_reg(const ir::Type_instruction& ins) {
   return r != nullptr ? &r->reg : nullptr;
 }
 
-// Returns whether `ins` does more than set registers and flags. That's
-// a write to memory (a store, or an `INC`, `DEC`, shift, or rotate of a
-// byte), a volatile access, or anything other than a move, compare,
-// `BIT`, arithmetic, shift, step, carry setting, or branch.
 bool has_side_effect(const ir::Type_instruction& ins) {
   if (const auto* mov = as<ir::Mov>(ins)) {
     return mov->is_volatile || !isa<ir::Reg>(mov->dst);
@@ -170,19 +140,6 @@ bool has_side_effect(const ir::Type_instruction& ins) {
   return !isa<ir::Compare, ir::BitTest, ir::SetCarry, ir::ClearCarry, ir::Branch>(ins);
 }
 
-// Returns whether nothing from `body` on reads a register or a flag
-// that `test` writes before writing it again, so the first pass may
-// skip the test. The body otherwise runs after the test, and a pass
-// before this one may have relied on what the test left: after `LDA i;
-// CMP #1; BCS exit`, C is clear in the body, and `carry_known` dropped
-// the `CLC` of the body's `gs5.m0++`. Entered at the body, the add then
-// added whatever C held.
-//
-// A test that writes memory or reads a volatile byte gives false, since
-// the first pass would then skip that write or read too. The test of
-// `for (uint8_t i = 0x1F; i-- != 0;)` is `DEC i; LDA i; CMP #$FF; BEQ
-// exit`, and entered at the body, the loop indexed with 0x1F on its
-// first pass and ran 32 times.
 bool test_effects_dead(const InstrVec& instrs, const LabelMap& labels, Span test,
                        std::size_t body) {
   for (const auto& ins : test) {
@@ -208,15 +165,10 @@ bool test_effects_dead(const InstrVec& instrs, const LabelMap& labels, Span test
       (y && !y_dead_at(instrs, labels, body))) {
     return false;
   }
-  // Each flag on its own: `all_flags_dead_at` takes any branch to read
-  // them all, and the `BNE` at the bottom of `clear_page1`'s loop reads
-  // only Z, which the body's `DEX` writes first.
   return flags_dead_at(instrs, labels, body) && c_dead_at(instrs, labels, body) &&
          v_dead_at(instrs, labels, body);
 }
 
-// The index of a register in `State::regs`, or -1 for an operand that
-// isn't a register.
 int reg_index(const ir::Type_operand& op) {
   const auto* r = as<ir::Reg>(op);
   if (r == nullptr) {
@@ -227,8 +179,6 @@ int reg_index(const ir::Type_operand& op) {
 
 bool is_memory(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
 
-// The known byte values of A, X, Y, and memory cells, and the N, Z, and
-// C flags, through straight-line code. Nothing is unknown.
 class State {
  public:
   explicit State(const AsmContext& ctx) : ctx_(ctx) {}
@@ -248,11 +198,9 @@ class State {
         const int src_reg = reg_index(mov.src);
         const int dst_reg = reg_index(mov.dst);
         if (src_reg < 0 && dst_reg < 0) {
-          // Memory to memory is LDA src; STA dst.
           regs_[static_cast<int>(ir::Kind_reg::A)] = v;
         }
         write(mov.dst, v);
-        // A load or a transfer sets N and Z. A store doesn't.
         if (!(src_reg >= 0 && dst_reg < 0)) {
           set_nz(v);
         }
@@ -294,7 +242,6 @@ class State {
       case ir::Kind_instruction::Label:
         return;
       default:
-        // Anything else: forget what it may have changed.
         forget();
         return;
     }
@@ -382,7 +329,6 @@ class State {
       }
       return;
     }
-    // A write through a pointer or an index may change any cell.
     mem_.clear();
   }
 
@@ -397,7 +343,6 @@ class State {
   }
 
   const AsmContext& ctx_;
-  // Indexed by `Kind_reg`: A, X, Y.
   std::optional<int> regs_[3];
   std::vector<std::pair<ir::Type_operand, int>> mem_;
   std::optional<bool> n_;
@@ -405,10 +350,6 @@ class State {
   std::optional<bool> c_;
 };
 
-// Returns whether the straight-line code that falls into the label at
-// `l` leaves values for which `test`'s branch isn't taken, so the first
-// pass of the loop needs no test. Unknown values, and any instruction
-// the evaluation doesn't model, give false.
 bool entry_passes(const InstrVec& instrs, std::size_t l, Span test,
                   const AsmContext& ctx) {
   std::size_t start = l;
@@ -427,8 +368,6 @@ bool entry_passes(const InstrVec& instrs, std::size_t l, Span test,
   return taken.has_value() && !*taken;
 }
 
-// Returns `instrs` with the first eligible loop rotated, or nothing
-// when no loop is eligible.
 std::optional<InstrVec> rotate_one(const InstrVec& instrs, const std::string& fn_name,
                                    int& counter, const AsmContext& ctx) {
   const LabelMap labels(instrs);
@@ -463,7 +402,6 @@ std::optional<InstrVec> rotate_one(const InstrVec& instrs, const std::string& fn
     if (size > kMaxReach) {
       continue;
     }
-    // The body's first label, or a new one.
     std::string body_label;
     InstrVec head;
     if (!body.empty() && isa<ir::Label>(body.front())) {
@@ -473,7 +411,6 @@ std::optional<InstrVec> rotate_one(const InstrVec& instrs, const std::string& fn
       ++counter;
       head.push_back(ir::Label{.name = body_label});
     }
-    // A label at the function's start is where it's entered.
     const bool falls_in =
         l == 0 || !isa<ir::Jump, ir::Return, ir::Ret>(instrs[l - 1]);
     InstrVec entry;
@@ -492,8 +429,6 @@ std::optional<InstrVec> rotate_one(const InstrVec& instrs, const std::string& fn
     out.push_back(ir::Branch{.cond = long_branches::invert(branch.cond), .target = body_label});
     out.insert(out.end(), instrs.begin() + static_cast<std::ptrdiff_t>(j + 1),
                instrs.end());
-    // The loop's label stays where the test went, for the other jumps
-    // to it, and goes when nothing jumps to it.
     const std::string target = jump->target;
     bool referenced = false;
     for (const auto& i : out) {

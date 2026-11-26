@@ -1,28 +1,11 @@
 // Shares the code two functions of a unit end the same way with.
 //
-// Pattern
-//
-// Two functions often end with the same instructions: the same call
-// with the same constant argument, or the same store of a byte into a
-// callee's parameter and a tail call. In Zork's `objects.c`,
-// `instr_get_parent`, `instr_get_next_prop`, and `instr_get_prop_len`
-// each end
-//
-//     STA   __zpabi_store_result__value_0
-//     LDA   #$00
-//     STA   __zpabi_store_result__value_1
-//     JMP   store_result
-//
-// Cross jumping (docs/optimizations/cross_jump.md) shares such code
-// inside one function. Across functions, a `JMP` can't reach a label
-// inside another function, since dasm and `binutils.assembler` scope a
-// `.` label to its function, and a label of any other kind starts an
-// item the linker may move. So the shared instructions become a
-// function of their own, `F@tail<n>`, internal to the unit, and each
-// function that ended with them ends with `JMP F@tail<n>` instead. The
-// linker places one of them right before it and drops that `JMP`
-// (`link_layout.fall_through`), as it does for any function ending in a
-// jump to another.
+// A `JMP` can't reach a label inside another function, since dasm and
+// binutils/assembler.h scope a `.` label to its function, and a label
+// of any other kind starts an item the linker may move. So the shared
+// instructions become a function of their own, `F@tail<n>`, internal
+// to the unit, and each function that ended with them ends with `JMP
+// F@tail<n>` instead.
 //
 // Conditions
 //
@@ -53,33 +36,6 @@
 // shares a segment when that's smaller before the link too, when `s +
 // 3n < n * s`. It looks for the most bytes saved first, adds every
 // other function that ends with the same segment, and repeats.
-//
-// Cost of the search
-//
-// The search compares every two ends of every two functions, and for
-// each match counts the other functions that end with the same
-// segment. Computing each segment's normal form again at every
-// comparison, and scanning the whole function for jumps into a segment
-// each time, once took a quarter of Guards.c's compile in Python. So
-// the search keeps a `FnInfo` for each function, with its instructions'
-// shapes, the positions that name each label, and each segment's form
-// and size once computed, and keeps it across the rounds of one call
-// until the function changes. Two ends are compared only when their
-// last instructions have the same shape, since segments that end
-// differently can't match, and the other functions that end with a
-// form are looked up in a table of each length's forms. The pairs are
-// taken in a fixed order, and the first segment with the most bytes
-// saved wins.
-//
-// Python's shape of an instruction with no label is its `repr`. Here it
-// is its dump, which is equal for two instructions exactly when the
-// `repr`s are.
-//
-// Where it runs
-//
-// Last in `compile.optimized_asm`, after `apply_short_jumps`, which
-// drops a label nothing in its own function names. Every change only
-// removes bytes from a function, so no branch falls out of reach.
 #include "passes/shared_tails.h"
 
 #include <cstddef>
@@ -103,14 +59,7 @@ using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
 using Instructions = std::vector<ir::Type_instruction>;
-// An instruction with its local labels blanked, to find how far back
-// two segments can match: "L" for a label, "B" and the condition for a
-// branch, "J" for a jump to a `.` label, and "I" and the dump for any
-// other instruction, which is also its entry in a normal form.
 using Shape = std::string;
-// A segment's normal form: each instruction's shape, with a label's
-// and a branch's or jump's target numbered by the labels' order in the
-// segment.
 using Form = std::vector<std::string>;
 
 bool is_end(const ir::Type_instruction& ins) {
@@ -136,15 +85,10 @@ Shape shape(const ir::Type_instruction& ins) {
     return "J";
   }
   std::string out = tagged('I', asdl::dump(ins));
-  out.pop_back();  // the newline that ends a dump
+  out.pop_back();
   return out;
 }
 
-// What the search reads of one function, computed once for each version
-// of the function: each instruction's shape, which of them may not be
-// in a segment, the positions that name each label, the positions of
-// its ends, and the normal form and size of each segment as it's asked
-// for.
 class FnInfo {
  public:
   FnInfo(const ir::Function& fn, const NameSet* zp_names,
@@ -180,11 +124,9 @@ class FnInfo {
     }
   }
 
-  // Points the info at the function again, after `top` has moved it.
   void rebind(const ir::Function& fn) { fn_ = &fn; }
   const ir::Function& fn() const { return *fn_; }
 
-  // Returns the normal form of `instrs[s..t]`, computed once.
   const std::optional<Form>& form(long s, long t) {
     const auto key = std::make_pair(s, t);
     auto it = forms_.find(key);
@@ -194,7 +136,6 @@ class FnInfo {
     return it->second;
   }
 
-  // Returns the bytes of `instrs[s..t]`.
   long size(long s, long t) {
     const auto key = std::make_pair(s, t);
     auto it = sizes_.find(key);
@@ -212,7 +153,6 @@ class FnInfo {
   std::vector<Shape> shapes;
   std::vector<bool> blocked;
   std::vector<std::size_t> ends;
-  // The ends of each shape, in order.
   std::map<Shape, std::vector<std::size_t>> ends_by_shape;
 
  private:
@@ -224,8 +164,6 @@ class FnInfo {
     if (isa<ir::Label>(instrs[s]) || !is_end(instrs[t])) {
       return std::nullopt;
     }
-    // Each label inside the segment, numbered in order. A name that
-    // appears twice keeps the later number, as a Python dict does.
     std::unordered_map<std::string, long> inside;
     std::vector<std::string> inside_order;
     long n = 0;
@@ -264,7 +202,6 @@ class FnInfo {
         out.push_back(shapes[k]);
       }
     }
-    // Nothing outside the segment may go to a label inside it.
     for (const auto& name : inside_order) {
       const auto it = refs_.find(name);
       if (it == refs_.end()) {
@@ -286,14 +223,11 @@ class FnInfo {
   std::map<std::pair<long, long>, long> sizes_;
 };
 
-// The segment of one function: its start and end.
 struct Span {
   long start = 0;
   long end = 0;
 };
 
-// The best segment to share: the function whose name the new one
-// takes, and each sharer's segment, by function index.
 struct Share {
   std::string owner;
   std::map<std::size_t, Span> segments;
@@ -305,8 +239,6 @@ struct Common {
   Form form;
 };
 
-// Returns the starts in `a` and `b` and the normal form of the longest
-// matching segments that end at `a[ta]` and `b[tb]`, or nothing.
 std::optional<Common> common(FnInfo& a, long ta, FnInfo& b, long tb) {
   long k = 0;
   while (ta - k >= 0 && tb - k >= 0 && a.shapes[ta - k] == b.shapes[tb - k]) {
@@ -323,12 +255,8 @@ std::optional<Common> common(FnInfo& a, long ta, FnInfo& b, long tb) {
   return std::nullopt;
 }
 
-// The functions that end with one normal form, each with the first end
-// it has the form at, in the order of the eligible functions.
 using Enders = std::vector<std::pair<std::size_t, long>>;
 
-// Returns the segment that saves the most bytes, or nothing. `infos`
-// holds each function's info between calls, by its index in `top`.
 std::optional<Share> best_share(const std::vector<ir::Type_top_level>& top,
                                 const NameSet* zp_names,
                                 const std::set<asdl::Int>& slot_addrs,
@@ -348,8 +276,6 @@ std::optional<Share> best_share(const std::vector<ir::Type_top_level>& top,
       fns.emplace_back(i, infos[i].get());
     }
   }
-  // For each segment length, the functions that end with each normal
-  // form.
   std::map<long, std::map<Form, Enders>> by_length;
   const auto ends_with = [&](long length, const Form& form) -> const Enders& {
     auto found = by_length.find(length);
@@ -385,7 +311,6 @@ std::optional<Share> best_share(const std::vector<ir::Type_top_level>& top,
     for (std::size_t bi = ai + 1; bi < fns.size(); ++bi) {
       const auto [fb, b] = fns[bi];
       for (const std::size_t ta_u : a->ends) {
-        // Segments that end in different shapes don't match.
         const auto shaped = b->ends_by_shape.find(a->shapes[ta_u]);
         if (shaped == b->ends_by_shape.end()) {
           continue;
@@ -443,8 +368,6 @@ asm_ast::Program apply_shared_tails(asm_ast::Program prog,
     const std::string name = best->owner + "@tail" + std::to_string(count);
     count += 1;
     std::optional<Instructions> body;
-    // The segments in the order of their functions, the first of which
-    // gives the new function's instructions.
     for (const auto& [fi, span] : best->segments) {
       auto& fn = std::get<ir::Function>(top[fi]);
       auto& instrs = fn.instructions;

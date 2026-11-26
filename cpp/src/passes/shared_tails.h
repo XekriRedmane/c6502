@@ -1,4 +1,3 @@
-// The port of passes/shared_tails.py.
 #pragma once
 
 #include <set>
@@ -12,9 +11,8 @@
 namespace c6502::passes {
 
 // A function that `apply_shared_tails` or `apply_outline_runs` made,
-// and the function whose symbol it copies. The Python passes add the
-// copy, with internal linkage, to the symbol table they are given, and
-// the C++ passes report the pairs for the caller to do that.
+// and the function whose symbol it copies, for the caller to add the
+// copy to its symbol table with internal linkage.
 struct NewFunction {
   std::string name;
   std::string owner;

@@ -26,11 +26,6 @@
 // hidden LDA. That saves the bytes and cycles of one load and keeps A's
 // value.
 //
-// Pattern B is the only way to catch this redundancy in the IR.
-// `redundant_load_elimination`'s tracker of A drops explicit `LDA M`
-// atoms once it knows A holds M, but a move from memory to memory is
-// one atom whose `LDA M` no peephole on instructions can see. The gate
-// on the flags that makes Pattern A sound makes Pattern B sound too.
 // The rewritten `Mov(Reg(A), dst)` is emitted as an `STA dst`, which
 // leaves the flags alone, while the original `LDA M; STA dst` set N/Z
 // from M, which equals A after [i], so the flags come out the same.
@@ -50,11 +45,8 @@
 //     Mov(Reg(A), <mem M>)    // STA M
 //     Or(Imm(0), Reg(A))      // ORA #$00
 //
-// `print_zstring` (examples/zork/zstring.c) tests the alphabet that
-// `get_alphabet` returns this way, `JSR get_alphabet; ORA #$00; BNE`,
-// as Zork's code does. The store is then dead, and `asm_dead_store`
-// drops it. When nothing reads the flags, the load goes with no `ORA`.
-// A volatile M is left alone.
+// When nothing reads the flags, the load goes with no `ORA`. A
+// volatile M is left alone.
 //
 // Soundness
 //
@@ -64,12 +56,6 @@
 // changes nothing a reader could see: A is unchanged, and the flags
 // already held what [i+1] would set. Dropping it is sound whether or
 // not a later instruction reads A or the flags.
-//
-// `redundant_load_elimination` recognizes the same state of A but
-// gives up when the flags are live afterward, because in general the
-// load's flags could differ from those the previous instruction set.
-// This pass requires that the instruction before the store set the
-// flags from A's value, which closes that gap.
 //
 // The instruction before the store ([i-1])
 //
@@ -89,12 +75,6 @@
 // the flags from memory, nor a `Branch`, `Jump`, `Label`, or `Call`,
 // which end a block, nor `ClearCarry` or `SetCarry`, which leave N/Z
 // alone.
-//
-// Where it runs
-//
-// Inside the peephole fixed point, before the `asm_dead_store` step of
-// the next sweep, so that the `STA M` left alone can be removed if
-// nothing else reads M.
 #include "passes/round_trip_load.h"
 
 #include <utility>
@@ -110,12 +90,9 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// Returns whether `instr` writes Reg(A) and its effect on N/Z follows
-// A's new value.
 bool writes_a_with_flag_effect(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case ir::Kind_instruction::Mov:
-      // LDA, TXA, or TYA, which set the flags from the value loaded.
       return is_reg_a(std::get<ir::Mov>(instr).dst);
     case ir::Kind_instruction::And:
       return is_reg_a(std::get<ir::And>(instr).dst);
@@ -154,9 +131,6 @@ bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
   return false;
 }
 
-// Returns the store when `instr` is `Mov(Reg(A), <ZP | Data>)` and isn't
-// volatile, or null. Only a byte with a fixed address is matched,
-// since those are the operands a later LDA can be recognized to read.
 const ir::Mov* as_sta(const ir::Type_instruction& instr) {
   const auto* m = as<ir::Mov>(instr);
   if (m != nullptr && !m->is_volatile && is_reg_a(m->src) &&
@@ -166,19 +140,12 @@ const ir::Mov* as_sta(const ir::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns whether `instr` is `Mov(<mem>, Reg(A))` with the same source
-// as `sta`'s destination, and isn't a volatile load, which reads the
-// byte again each time.
 bool is_lda_same_addr(const ir::Type_instruction& instr, const ir::Mov& sta) {
   const auto* m = as<ir::Mov>(instr);
   return m != nullptr && !m->is_volatile && is_reg_a(m->dst) &&
          operands_equal(m->src, sta.dst);
 }
 
-// Returns whether `instr` is a move from memory to memory, `Mov(M,
-// dst_mem)`, whose source is `sta`'s destination, whose destination
-// isn't a register, and which isn't volatile, since a volatile read
-// has to happen.
 bool is_mem_to_mem_from(const ir::Type_instruction& instr, const ir::Mov& sta) {
   const auto* m = as<ir::Mov>(instr);
   return m != nullptr && !m->is_volatile && !isa<ir::Reg>(m->dst) &&
@@ -192,12 +159,10 @@ void rewrite_function(ir::Function& fn) {
   bool changed = false;
   std::size_t i = 0;
   while (i < instrs.size()) {
-    // Looks at the window of three instructions [i, i+1, i+2].
     if (i + 2 < instrs.size() && writes_a_with_flag_effect(instrs[i])) {
       if (const ir::Mov* sta = as_sta(instrs[i + 1])) {
         const ir::Type_instruction& third = instrs[i + 2];
         if (is_lda_same_addr(third, *sta)) {
-          // Pattern A drops the explicit `LDA M`.
           out.push_back(instrs[i]);
           out.push_back(instrs[i + 1]);
           i += 3;
@@ -205,8 +170,6 @@ void rewrite_function(ir::Function& fn) {
           continue;
         }
         if (is_mem_to_mem_from(third, *sta)) {
-          // Pattern B rewrites `Mov(M, dst_mem)` to `Mov(Reg(A),
-          // dst_mem)`, which drops the hidden `LDA M`.
           const auto& mov = std::get<ir::Mov>(third);
           out.push_back(instrs[i]);
           out.push_back(instrs[i + 1]);
@@ -222,7 +185,6 @@ void rewrite_function(ir::Function& fn) {
     if (i + 1 < instrs.size()) {
       if (const ir::Mov* sta = as_sta(instrs[i]);
           sta != nullptr && is_lda_same_addr(instrs[i + 1], *sta)) {
-        // Pattern C keeps the load's flags, if anything reads them.
         out.push_back(instrs[i]);
         if (!flags_dead_at(instrs, i + 2)) {
           out.push_back(ir::Or{.src = ir::Imm{.value = 0},

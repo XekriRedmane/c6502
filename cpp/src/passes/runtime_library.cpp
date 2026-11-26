@@ -1,30 +1,3 @@
-// The runtime library: the 6502 helpers the compiled code calls to
-// multiply, divide, and shift by a variable count (`mul16`, `sdivmod16`,
-// `asl8`, and the rest), which the linker adds to a program as a C
-// toolchain links routines from libgcc.
-//
-// The helpers are the `asm_ast` functions of rtlib/helpers.py
-// (`all_helper_functions`), the same code the simulator runs, which the
-// C++ side reads from the copy tools/rtlib_table.py makes
-// (src/rtlib/helpers.h). When a program's objects name a helper that
-// none of them defines and no `--defsym` gives, the linker writes that
-// helper and every helper it calls (`sdivmod16` calls `udivmod16`) as
-// text with `asm_emit` and assembles it into one object, at link time.
-// Each helper is a function in a section of its own, `.text`, and the
-// object goes by the name `runtime.o` (`kLibraryName`), so a linker
-// script places the helpers with an input description such as
-// `runtime.o(.text)`, or with a `*(.text)` that catches every unit's
-// code. Without a script they go in `.text` after the program's code.
-//
-// The helpers read and write only HARGS, which the object leaves
-// undefined, so they get the program's HARGS address with the rest of
-// the program's units. The object's link metadata has the HARGS bytes
-// the helpers touch (`helper_footprints`), which the linker counts in
-// the size of the program's block.
-//
-// The helpers without 6502 code (the floating-point ones, the 64-bit
-// ones, and `icall`) aren't in the library. A program that calls one
-// links only with `--defsym` giving its address.
 #include "passes/runtime_library.h"
 
 #include <algorithm>
@@ -45,7 +18,6 @@ namespace {
 
 namespace ir = ::c6502::asm_ast;
 
-// Returns each helper's function by name.
 const std::map<std::string, const ir::Function*, std::less<>>& functions() {
   static const std::map<std::string, const ir::Function*, std::less<>> by_name = [] {
     std::map<std::string, const ir::Function*, std::less<>> out;
@@ -57,7 +29,6 @@ const std::map<std::string, const ir::Function*, std::less<>>& functions() {
   return by_name;
 }
 
-// Returns the helpers `fn` calls or jumps to.
 std::set<std::string> callees(const ir::Function& fn) {
   const auto& names = functions();
   std::set<std::string> out;
@@ -116,8 +87,6 @@ std::vector<std::string> needed(
     const std::vector<std::pair<std::string, binutils::elf::ElfFile>>& objects,
     const NameSet& defined) {
   const auto& fns = functions();
-  // Python collects these in a set, which `closure` puts in the
-  // library's order, so the order here doesn't reach the result.
   std::vector<std::string> wanted;
   std::set<std::string> seen;
   for (const auto& [path, obj] : objects) {
@@ -154,17 +123,9 @@ std::string library_text(const std::vector<std::string>& names) {
   for (const std::string& n : names) {
     prog.top_level.emplace_back(*fns.at(n));
   }
-  // The helpers name no `(zp),Y` pointer, so the runtime's layout, which
-  // names one by its address, doesn't change the text, and the classic
-  // one stands for the link's, as `runtime_layout.current()` is outside
-  // a compile.
   asm_emit::EmitOptions options;
   options.link_metadata_lines = format_metadata(meta);
   return asm_emit::emit_program(lower_to_asm2(prog), RuntimeLayout{}, options);
 }
-
-// Python's `library_object` is `assemble(library_text(names),
-// LIBRARY_NAME)`, which the linker's `runtime_library`
-// (src/passes/linker_objects.cpp) does with the C++ assembler.
 
 }  // namespace c6502::passes

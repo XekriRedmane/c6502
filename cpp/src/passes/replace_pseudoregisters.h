@@ -1,9 +1,8 @@
-// The port of passes/replace_pseudoregisters.py, which replaces each
-// `Pseudo` operand with a concrete operand and lays out each function's
-// frame: `replace_program` for the unoptimized pipeline,
-// `replace_program_bare_exit` for `-O` with the frames it returns, and
-// `sizeof` and `size_of_name`, which most of the code generation passes
-// read.
+// Replaces each `Pseudo` operand with a concrete operand and lays out
+// each function's frame: `replace_program` for the unoptimized
+// pipeline, `replace_program_bare_exit` for `-O` with the frames it
+// returns, and `sizeof_type` and `size_of_name`, which most of the code
+// generation passes read.
 #pragma once
 
 #include <string>
@@ -29,21 +28,18 @@ namespace c6502::passes {
 // `double`, ceil(N/8) for `_BitInt(N)`, the element's size times the
 // count for an array, and the layout's size for a struct or union.
 // `Const` and `Volatile` are transparent. A struct or union with no
-// type table (`types` null, Python's None), or one whose layout is
-// missing or incomplete, counts as 1 byte, and so does any other type.
-// Python names it `sizeof`, which is a C++ keyword.
+// type table (`types` null), or one whose layout is missing or
+// incomplete, counts as 1 byte, and so does any other type.
 asdl::Int sizeof_type(const c99_ast::Type_data_type& t, const TypeTable* types);
 
 // Returns the bytes the pseudo `name` occupies, `sizeof_type` of its
-// symbol's type, or 1 when `symbols` is null or has no entry for it,
-// which is the default the unit tests of synthetic programs rely on.
+// symbol's type, or 1 when `symbols` is null or has no entry for it.
 asdl::Int size_of_name(std::string_view name, const SymbolTable* symbols, const TypeTable* types);
 
 // A function's frame, as `replace_program_bare_exit` computes it for
-// `prologue_synthesis` (Python's `FrameDims`): the bytes of its
-// arguments and of its locals in the frame, and the callee-saved
-// zero-page bytes it saves, which are the payload of
-// `FunctionPrologue` and `Ret`.
+// `prologue_synthesis`: the bytes of its arguments and of its locals
+// in the frame, and the callee-saved zero-page bytes it saves, which
+// are the payload of `FunctionPrologue` and `Ret`.
 struct FrameDims {
   asdl::Int arg_bytes = 0;
   asdl::Int local_bytes = 0;
@@ -64,15 +60,14 @@ using FrameDimsByFunction = OrderedMap<std::string, FrameDims>;
 // other name a `Frame` slot of the locals, in the order the walk first
 // sees it. Each function starts with a `FunctionPrologue`, and each
 // `Ret` carries the frame's dimensions. `symbols`, `types`, and
-// `colorings` may be null, as Python's defaults are None. A pseudo that
-// is none of those throws `InternalError` with Python's `ValueError`
-// message, and so does a `Phi`.
+// `colorings` may be null. A pseudo that is none of those throws
+// `InternalError`, and so does a `Phi`.
 asm_ast::Program replace_program(asm_ast::Program prog, const NameSet& extra_statics,
                                  const SymbolTable* symbols, const TypeTable* types,
                                  const ColoringsByFunction* colorings = nullptr);
 
 // The arguments of `replace_program_bare_exit` that the unoptimized
-// form doesn't take, each null for Python's None. `param_layouts` gives
+// form doesn't take, each of which may be null. `param_layouts` gives
 // each function's calling convention, whose `ZpLayout` puts the
 // parameters in their slot symbols. `local_pools` gives each function's
 // private pool, whose bytes are never saved around the function, and

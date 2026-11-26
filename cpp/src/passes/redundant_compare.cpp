@@ -7,71 +7,44 @@
 //     Label(L)             L:
 //     Compare(A, M)          CMP M       <- dropped
 //
-// When L is reached only by that branch, A and M are the values the
-// first compare saw, and a branch changes no flags, so the second
-// compare sets every flag the same way. This is the shape of two tests
-// of the same operands in a row, such as
-//
-//     if (key < entry) return 0;
-//     if (key == entry) ...
-//
-// which `tac_to_asm` lowers as two `LDA key; CMP entry` pairs, and
-// whose second `LDA key` is already dropped as redundant.
-//
-// The same is true of a compare reached by falling through one or more
-// branches right after an identical compare,
-//
-//     Compare(A, M)          CMP M
-//     Branch(CC, L1)         BCC L1
-//     Branch(NE, L2)         BNE L2
-//     Compare(A, M)          CMP M       <- dropped
-//
-// which `three_way_compare` leaves when it splits `key < e` and
-// `key == e` into a compare of each byte, and the first compare may
-// likewise be followed by a run of branches before the one that
-// reaches L.
-//
-// L must have no other way in. The instruction before the run of
-// labels that ends at the compare has to be a `Jump`, `Return`, or
-// `Ret`, so nothing falls through, and exactly one `Branch` or `Jump`
-// in the function may target a label in the run. A label whose address
-// is taken (`ImmLabelLow` / `ImmLabelHigh`) disqualifies the run.
+// A branch changes no flags, so the second compare sets every flag as
+// the first did. A compare reached by falling through one or more
+// branches right after an identical compare goes the same way. L must
+// have no other way in. The instruction before the run of labels that
+// ends at the compare has to be a `Jump`, `Return`, or `Ret`, exactly
+// one `Branch` or `Jump` in the function may target a label in the run,
+// and a label whose address is taken (`ImmLabelLow` / `ImmLabelHigh`)
+// disqualifies the run.
 //
 // A compare of a register with 0 sets N and Z from the register's value
 // and sets C. When the instruction that wrote the register set N and Z
 // from the same value, as a load, a transfer, or an ALU operation on A
-// does, and C is dead after the compare, the compare goes too:
+// does, and C is dead after the compare, the compare goes too. Stores
+// may come between the two, since they leave the flags and the register
+// alone, except one lowered with an `LDY #off` setup.
 //
-//     LDA   b+1                 LDA   b+1
-//     CMP   #$00         ->     BNE   .if_else
-//     BNE   .if_else
-//
-// That's the high byte of `b == 2` in Zork's `instr_mul`
-// (examples/zork/numbers.c). Stores may come between the two, since
-// they leave the flags and the register alone, except one lowered with
-// an `LDY #off` setup.
-//
-// A compare with the byte an add started from is the add's carry:
-//
-//     LDA   Z_PC                LDA   Z_PC
-//     CLC                       CLC
-//     ADC   offset       ->     ADC   offset
-//     STA   new_lo              STA   new_lo
-//     CMP   Z_PC                BCC   .if_end
-//     BCS   .if_end
-//
-// The sum `m + x` wraps below `m` exactly when the add carries out, so
-// `CMP m` sets C to the opposite of the add's carry, and the branch on
-// C takes the opposite condition with the compare gone (`carry_of_add`).
+// A compare with the byte an add started from is the add's carry. The
+// sum `m + x` wraps below `m` exactly when the add carries out, so `CMP
+// m` sets C to the opposite of the add's carry, and the branch on C
+// takes the opposite condition with the compare gone (`carry_of_add`).
 // Only stores from A may come between the add and the compare, none to
 // `m`, and N and Z must be dead after the branch on both paths, since
-// the add sets them from the sum. That's `if (new_lo < lo)` after
-// `new_lo = lo + offset`, the C for the carry of a byte add, in Zork's
-// `branch_to_offset` (examples/zork/decode.c).
+// the add sets them from the sum.
 //
-// A compare of a volatile read is never followed by a branch
-// (`volatile_void_read_cmp` makes that rewrite only when the flags are
-// dead), so dropping one of a pair never drops a volatile access.
+// `CMP #$80` sets C to bit 7, which N holds, and `CMP #1` sets C when
+// the register isn't 0, which Z tells. So `CMP #$80; BCS L` (`CPX`,
+// `CPY`) becomes `BMI L`, and `BCC` `BPL`, when the instruction that set
+// the register set N and Z from it. `CMP #1; BCC L` becomes `BEQ L`, and
+// `BCS` `BNE`. N, Z, and C must be dead after the branch on both paths.
+// `SEC; SBC #1; BCC L` on A becomes `BEQ L` the same way (`BCS`: `BNE`),
+// with A and V dead after the branch as well.
+//
+// In `SEC; SBC #k; BVC L; EOR #$80; L: BMI T`, an A from 0 to 127 less
+// k from 0 to 128 is from -128 to 127, so the subtract never overflows.
+// V is clear, the `BVC` is always taken, and the `EOR` never runs. N
+// after the subtract is then set exactly when A is below k, which is
+// when C is clear, so with A and V dead after the branch on both paths
+// the sequence becomes `CMP #k; BCC T` (for `BPL`, `BCS`).
 #include "passes/redundant_compare.h"
 
 #include <map>
@@ -116,9 +89,6 @@ LabelRefs label_refs(Instrs instrs) {
         out.refs[hi->name].push_back(-1);
       }
     };
-    // The fields of one operand, and `DecimalArith`'s lists, as
-    // Python's walk over `vars(ins)` gives them. A `Phi`'s arguments
-    // aren't operands there.
     for_each_operand<false>(ins, visit);
     if (const auto* d = as<ir::DecimalArith>(ins)) {
       for (const auto& op : d->left) visit(op);
@@ -141,9 +111,6 @@ LabelRefs refs_with_tables(Instrs instrs) {
 
 namespace {
 
-// Returns the register an instruction sets N and Z from, the `dst` of
-// a `Mov`, `Add`, `Sub`, `And`, `Or`, `Xor`, shift, rotate, `Inc`,
-// `Dec`, or `Pop`, or null for any other instruction.
 const ir::Type_operand* nz_dst(const ir::Type_instruction& ins) {
   return std::visit(
       [](const auto& i) -> const ir::Type_operand* {
@@ -168,8 +135,6 @@ bool no_fall_through(const ir::Type_instruction& ins) {
   return isa<ir::Jump, ir::Return, ir::Ret>(ins);
 }
 
-// The walk of `flags_from`, with the labels it has met so far in
-// `seen`, which one top-level call shares with every call it makes.
 bool flags_from_walk(Instrs instrs, std::size_t c, const ir::Type_operand& reg,
                      const LabelRefs* refs, std::set<std::string>& seen) {
   const auto& r = std::get<ir::Reg>(reg);
@@ -244,8 +209,6 @@ using redundant_compare::kA;
 using redundant_compare::LabelRefs;
 using redundant_compare::no_fall_through;
 
-// A set of rewrites: each instruction's index to its replacement, or
-// to nothing for an instruction that goes.
 using Rewrites = std::map<std::size_t, std::optional<ir::Type_instruction>>;
 
 bool is_a(const ir::Type_operand& op) {
@@ -255,8 +218,6 @@ bool is_a(const ir::Type_operand& op) {
 
 bool is_carry_cond(const ir::Type_condition& c) { return isa<ir::CC, ir::CS>(c); }
 
-// Returns the instruction before the run of branches that ends with the
-// branch at `b`, or null at the start of the function.
 const ir::Type_instruction* compare_before(Instrs instrs, long b) {
   while (b >= 0 && isa<ir::Branch>(instrs[static_cast<std::size_t>(b)])) {
     --b;
@@ -264,11 +225,6 @@ const ir::Type_instruction* compare_before(Instrs instrs, long b) {
   return b >= 0 ? &instrs[static_cast<std::size_t>(b)] : nullptr;
 }
 
-// Returns the indexes of the `CMP #$00` (or `CPX` / `CPY`) with C dead
-// after, and of the `ORA #$00`, `AND #$FF`, and `EOR #$00`, whose N and
-// Z the instruction that set the register already set. The `EOR #$00`
-// comes from the low bytes of the mask that restores a signed
-// bit-precise type's padding (bit_precise.py).
 std::set<std::size_t> drop_compares_with_zero(Instrs instrs, const LabelMap& labels,
                                               const LabelRefs& refs) {
   std::set<std::size_t> drop;
@@ -304,9 +260,6 @@ std::set<std::size_t> drop_compares_with_zero(Instrs instrs, const LabelMap& lab
   return drop;
 }
 
-// Returns the rewrites of `LDA m; CLC; ADC x; [STA r ...]; CMP m;
-// BCC/BCS L`: the compare goes and the branch takes the opposite
-// condition. The comment at the top of the file gives the reasons.
 Rewrites carry_of_add(Instrs instrs, const LabelMap& labels, const AsmContext& ctx) {
   Rewrites out;
   const std::size_t n = instrs.size();
@@ -354,10 +307,6 @@ Rewrites carry_of_add(Instrs instrs, const LabelMap& labels, const AsmContext& c
   return out;
 }
 
-// Returns the branch on N or Z that replaces a branch on C after
-// `CMP #k`, when N and Z were set from the register, or nothing. `CMP
-// #$80` sets C to bit 7, which N holds, and `CMP #1` sets C when the
-// register isn't 0, which Z tells.
 std::optional<ir::Type_condition> branch_for_compare(asdl::Int k, const ir::Type_condition& c) {
   const bool cs = isa<ir::CS>(c);
   if (k == 0x80) {
@@ -369,22 +318,6 @@ std::optional<ir::Type_condition> branch_for_compare(asdl::Int k, const ir::Type
   return std::nullopt;
 }
 
-// Returns the rewrites of a compare with $80 or 1 whose branch on C can
-// branch on N or Z instead: each dropped instruction goes and the
-// branch is replaced.
-//
-// `CMP #$80; BCS L` (`CPX`, `CPY`) becomes `BMI L`, and `BCC` `BPL`,
-// when the instruction that set the register set N and Z from it
-// (`flags_from`). `CMP #1; BCC L` becomes `BEQ L`, and `BCS` `BNE`. The
-// compare writes N, Z, and C and nothing else, so N, Z, and C must be
-// dead after the branch on both paths, since they now hold what the
-// load set and C what it held before.
-//
-// `SEC; SBC #1; BCC L` on A becomes `BEQ L` the same way (`BCS`: `BNE`),
-// with the `SEC` before the `SBC` or before the load whose flags reach
-// it gone too. The subtract also writes A and V, so those must be dead
-// after the branch as well. `LDA MOB_PTR+1; SBC #1; BCS loop` ends
-// three loops over a group in Ali Baba.
 Rewrites compares_as_flags(Instrs instrs, const LabelMap& labels, const LabelRefs& refs) {
   Rewrites out;
   if (instrs.empty()) {
@@ -432,7 +365,6 @@ Rewrites compares_as_flags(Instrs instrs, const LabelMap& labels, const LabelRef
         at = c - 1;
       } else if (c >= 2 && isa<ir::SetCarry>(instrs[c - 2]) && isa<ir::Mov>(instrs[c - 1]) &&
                  is_a(std::get<ir::Mov>(instrs[c - 1]).dst)) {
-        // `SEC; LDA m; SBC #1`: the load sets N and Z.
         drop.push_back(c - 2);
         at = c;
       } else {
@@ -460,11 +392,6 @@ Rewrites compares_as_flags(Instrs instrs, const LabelMap& labels, const LabelRef
   return out;
 }
 
-// Returns whether A holds a value from 0 to 127 at `instrs[s]` on every
-// way in: `s` follows a run of labels, each way into which is a `BPL`
-// to one of them, or a fall-through from a `BMI` before them, on N set
-// from A (`flags_from`), with nothing but labels and branches between
-// the branch and `s`.
 bool a_nonnegative_at(Instrs instrs, std::size_t s, const LabelRefs& refs) {
   std::size_t k = s;
   std::vector<std::string> names;
@@ -498,20 +425,6 @@ bool a_nonnegative_at(Instrs instrs, std::size_t s, const LabelRefs& refs) {
   return br != nullptr && isa<ir::MI>(br->cond) && flags_from(instrs, k - 1, kA, &refs);
 }
 
-// Returns the rewrites of the signed byte compare `SEC; SBC #k; BVC L;
-// EOR #$80; L: BMI T` (or `BPL`) of a value A holds that can't be
-// negative (`a_nonnegative_at`), with k from 0 to 128.
-//
-// A from 0 to 127 less k from 0 to 128 is from -128 to 127, so the
-// subtract never overflows. V is clear, the `BVC` is always taken, and
-// the `EOR` never runs, so both go. With no overflow, N after the
-// subtract is set exactly when A is below k, which is when C is clear,
-// and when A and V are dead after the branch on both paths, `CMP #k;
-// BCC T` (for `BPL`, `BCS`) does it in a byte less: the compare sets N,
-// Z, and C as the subtract does, and leaves A and V alone. `if (c < 0)
-// return; if (c > 0x1C) f();` on an `int8_t c` is the shape, in Ali
-// Baba's `handle_mob_encounter`. Only the first match is rewritten in a
-// sweep.
 Rewrites signed_compare_of_nonnegative(Instrs instrs, const LabelMap& labels,
                                        const LabelRefs& refs) {
   Rewrites out;
@@ -583,8 +496,6 @@ void drop_indexes(std::vector<ir::Type_instruction>& instrs, const std::set<std:
 void rewrite_function(ir::Function& fn, const AsmContext& ctx) {
   const Instrs instrs = fn.instructions;
   const LabelMap labels(instrs);
-  // Each set of rewrites goes in a sweep of its own, and the peephole
-  // fixed point runs this again.
   const LabelRefs refs = redundant_compare::refs_with_tables(instrs);
   Rewrites carry = carry_of_add(instrs, labels, ctx);
   if (carry.empty()) {
@@ -597,9 +508,6 @@ void rewrite_function(ir::Function& fn, const AsmContext& ctx) {
     apply_rewrites(fn.instructions, carry);
     return;
   }
-  // The compares with 0 go in a sweep of their own, since one of them
-  // may be the compare that a later identical one relies on for C. The
-  // peephole fixed point runs this again.
   std::set<std::size_t> drop = drop_compares_with_zero(instrs, labels, refs);
   if (!drop.empty()) {
     drop_indexes(fn.instructions, drop);

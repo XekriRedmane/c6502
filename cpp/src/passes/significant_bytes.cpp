@@ -1,13 +1,4 @@
 // How many low bytes of each local can be nonzero.
-//
-// `tac_to_asm` lowers a shift of a byte widened to 16 bits as a shift of
-// all 16 bits, and calls `asl16` for one of more than 4 places, though
-// the high byte is zero. `64 * (c & 7)` in Zork's
-// `please_insert_save_diskette` is `ZeroExtend(c) & 7`, then `<< 6`.
-// `significant_bytes` works out, for each local of a function, how many
-// of its low bytes can be nonzero, so the lowering can shift just those
-// (`tac_to_asm`'s `inline_left_shift_byte`).
-//
 // A local's count is the largest over its definitions:
 //
 // - `ZeroExtend(x)`, `Copy(x)`: x's count.
@@ -20,17 +11,8 @@
 // - Anything else: every byte.
 //
 // A constant counts the bytes its value needs, a negative one every byte
-// of its type.
-//
-// `low_byte_only` works out the converse, which bytes of a value are
-// read: the locals defined once whose every read is a `Truncate` to one
-// byte. `(uint8_t)(zchars >> 5)` in Zork's `get_next_zchar` is
-// `t = zchars >> 5; Truncate(t)`, so `tac_to_asm` computes only `t`'s
-// low byte (`inline_right_shift_to_byte`) where it called `lsr16`. A
-// parameter, a static, a local whose address is taken (a store through a
-// pointer could write it), and anything not defined in the function
-// counts every byte. The counts start at 0 and only grow, so the loop
-// that recomputes them ends.
+// of its type. A parameter, a static, a local whose address is taken,
+// and anything not defined in the function counts every byte.
 #include "passes/significant_bytes.h"
 
 #include <algorithm>
@@ -48,8 +30,6 @@ namespace tac = ::c6502::tac_ast;
 
 namespace {
 
-// Returns the number of bits of the non-negative `v`, Python's
-// `int.bit_length`.
 int bit_length(asdl::Int v) {
   int n = 0;
   while (v != 0) {
@@ -59,7 +39,6 @@ int bit_length(asdl::Int v) {
   return n;
 }
 
-// Returns the names whose address `fn` takes with `GetAddress`.
 NameSet addressed_names(const tac::Function& fn) {
   NameSet out;
   for (const auto& ins : fn.instructions) {
@@ -88,8 +67,6 @@ std::map<std::string, int, std::less<>> significant_bytes(const tac::Function& f
                                                           const ValTest& is_unsigned) {
   const NameSet addressed = addressed_names(fn);
   const NameSet params(fn.params.begin(), fn.params.end());
-  // Each defined name's defining instructions, in the order of the
-  // first definitions.
   OrderedMap<std::string, std::vector<const tac::Type_instruction*>> defs;
   for (const auto& ins : fn.instructions) {
     for (const auto d : defs_in(ins)) {

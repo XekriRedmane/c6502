@@ -1,10 +1,7 @@
-// The port of passes/recursion_saves.py, `[[c6502::save_hardware_stack]]`:
-// the cycles of the call graph whose recursive calls are all marked,
-// the check of the marked calls, and the plan of the values `tac_to_asm`
-// saves on the hardware stack around each recursive call. `live_out`
-// and `defs_in`, which `find_shares` reads too, are in namespace
-// `recursion_saves`, since Python's `defs_in` differs from
-// var_visit.h's.
+// `[[c6502::save_hardware_stack]]`: the cycles of the call graph whose
+// recursive calls are all marked, the check of the marked calls, and
+// the plan of the values `tac_to_asm` saves on the hardware stack
+// around each recursive call.
 #pragma once
 
 #include <map>
@@ -22,13 +19,11 @@
 namespace c6502::passes {
 
 // The direct call edges among the functions a program defines, each
-// function mapped to its callees. Python builds this dict from a set of
-// names, so its order follows the hashes of strings, which change from
-// run to run, and nothing reads the order. The C++ map is sorted.
+// function mapped to its callees.
 using CallGraph = std::map<std::string, NameSet, std::less<>>;
 
 // Each function on a cycle mapped to its cycle's members, in the order
-// `cycles` finds them, as Python's dict holds them.
+// `cycles` finds them.
 using Cycles = OrderedMap<std::string, NameSet>;
 
 // Returns the direct call edges among the functions defined in `prog`.
@@ -61,8 +56,7 @@ using SavedValue = std::pair<std::string, tac_ast::Type_val>;
 // `i`, `push_after[i]` just after instruction `i` (their last definition
 // before the call), and `pop_after[i]` are pulled after marked call `i`,
 // in that order. The instructions in `skip` aren't translated, since a
-// pull already stored their value. The maps are in the order Python's
-// dicts hold them.
+// pull already stored their value.
 struct SavePlan {
   OrderedMap<int, std::vector<SavedValue>> push_before;
   OrderedMap<int, std::vector<SavedValue>> push_after;
@@ -81,10 +75,8 @@ SavePlan plan_saves(const tac_ast::Function& fn, const NameSet& members,
 
 namespace recursion_saves {
 
-// Returns the names `instr` writes, as var_visit.h's `defs_in` does,
-// with an `IndirectIndexedLoad`'s destination too, which that one
-// leaves out. Without it that value would look live everywhere. The
-// views are into `instr`.
+// Returns the names `instr` writes, an `IndirectIndexedLoad`'s
+// destination among them. The views are into `instr`.
 std::vector<std::string_view> defs_in(const tac_ast::Type_instruction& instr);
 
 // Returns the names live just after each instruction of `fn`.

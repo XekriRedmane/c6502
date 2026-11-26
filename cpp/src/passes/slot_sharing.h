@@ -1,9 +1,8 @@
-// The port of passes/slot_sharing.py: the shares of parameter slots
-// between functions and the bindings of variables to them
-// (`find_shares`), what the allocators, `tac_to_asm`, the link metadata,
-// and emission read of them, and `check_shares`, which reads the
-// finished asm program, and the linker's half, `merge_shares` and
-// `check_linked_shares`.
+// The shares of parameter slots between functions and the bindings of
+// variables to them (`find_shares`), what the allocators, `tac_to_asm`,
+// the link metadata, and emission read of them, `check_shares`, which
+// reads the finished asm program, and the linker's half,
+// `merge_shares` and `check_linked_shares`.
 #pragma once
 
 #include <cstddef>
@@ -21,14 +20,14 @@
 
 namespace c6502::passes {
 
-// Bytes several functions use as one value's home (Python's
-// `SlotShare`). `members` pairs each function whose parameter slots are
-// in it with those slots, low byte first, all of one width. `holders`
-// are the functions that keep a local there. `live`, `forwards`, and
-// `writers` are for the linker: each function with a value there paired
-// with the callees it is live across, the (caller, owner) pairs whose
-// every call passes the caller's own value, and the holders that assign
-// theirs. Each is a tuple in Python, in the order `find_shares` made it.
+// Bytes several functions use as one value's home. `members` pairs
+// each function whose parameter slots are in it with those slots, low
+// byte first, all of one width. `holders` are the functions that keep
+// a local there. `live`, `forwards`, and `writers` are for the linker:
+// each function with a value there paired with the callees it is live
+// across, the (caller, owner) pairs whose every call passes the
+// caller's own value, and the holders that assign theirs, each in the
+// order `find_shares` made it.
 struct SlotShare {
   std::vector<std::pair<std::string, std::vector<std::string>>> members;
   std::vector<std::string> holders;
@@ -53,11 +52,11 @@ struct SlotShare {
 // second result of `find_shares`).
 using Bindings = OrderedMap<std::string, OrderedMap<std::string, std::vector<std::string>>>;
 
-// Throws `InternalError` with Python's message when the finished `prog`
-// breaks what the shares rest on: a function writes one of its own
-// parameter slots that is in a share. `find_shares` admits only owners
-// that never assign the parameter, so such a write would be one that a
-// pass after it made up.
+// Throws `InternalError` when the finished `prog` breaks what the
+// shares rest on: a function writes one of its own parameter slots
+// that is in a share. `find_shares` admits only owners that never
+// assign the parameter, so such a write would be one that a pass after
+// it made up.
 void check_shares(const asm_ast::Program& prog, const std::vector<SlotShare>& shares);
 
 // Each function a program defines, in the program's order, with every
@@ -77,7 +76,7 @@ bool coexist(std::string_view a, std::string_view b, const ReachSets& reach);
 
 // Returns the indices in `shares` of the shares whose bytes `fn`'s own
 // bytes must avoid, those with a function that can be on the call stack
-// with `fn`, in order. Python returns the shares themselves.
+// with `fn`, in order.
 std::vector<std::size_t> share_conflicts(std::string_view fn, const std::vector<SlotShare>& shares,
                                          const ReachSets& reach);
 
@@ -86,7 +85,7 @@ std::vector<std::size_t> share_conflicts(std::string_view fn, const std::vector<
 // the slot symbols, low byte first, that its operands become.
 // `eligible` is the functions with private pools, `fixed` the routines
 // with fixed addresses, and `recursion` the functions on a cycle.
-// `types` may be null, as Python's default None.
+// `types` may be null.
 std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac_ast::Program& prog,
                                                         const Abi& abi,
                                                         const SymbolTable& symbols,
@@ -112,7 +111,7 @@ OrderedMap<std::string, std::vector<std::string>> changed_param_slots(const tac_
 
 // Returns the `zeropage(addr)` parameters of the zp_abi functions
 // defined in `prog` that their function copies into a local of its own
-// as it starts (`tac_to_asm._pinned_param_locals`), by function. A
+// as it starts (`pinned_param_locals` in tac_to_asm.cpp), by function. A
 // function keeps such a parameter in its bytes unless something it
 // calls might write them while it runs: a function with a
 // `zeropage(addr)` parameter on any of the same bytes, since its callers
@@ -135,16 +134,16 @@ OrderedMap<std::string, NameSet> preferred_symbols(const Bindings& bindings);
 // declaration's spelling of a parameter's slot to the definition's), and
 // shares with a slot in common joined, each with its members, holders,
 // live callees, forwards, and writers sorted. Throws
-// `CompileError("ValueError", ...)` with Python's message when a
-// function would be in a share twice.
+// `CompileError("ValueError", ...)` when a function would be in a share
+// twice.
 std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
                                     const OrderedMap<std::string, std::string>& canonical);
 
-// Throws `CompileError("ValueError", ...)` with Python's message unless
-// rule 2 of slot_sharing.cpp's comment is met for the whole program and
-// every member's owner leaves its parameter alone. `calls` are the
-// program's call edges, `defined` the functions some unit defines, and
-// `changed` each one's assigned parameter slots.
+// Throws `CompileError("ValueError", ...)` unless rule 2 of
+// slot_sharing.cpp's comment is met for the whole program and every
+// member's owner leaves its parameter alone. `calls` are the program's
+// call edges, `defined` the functions some unit defines, and `changed`
+// each one's assigned parameter slots.
 void check_linked_shares(const std::vector<SlotShare>& shares,
                          const std::vector<std::pair<std::string, std::string>>& calls,
                          const NameSet& defined, const OrderedMap<std::string, NameSet>& changed);

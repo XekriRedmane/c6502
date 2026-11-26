@@ -1,27 +1,4 @@
-// The port of passes/slot_sharing.py: keeping a value in a callee's
-// parameter bytes across calls.
-//
-// Background
-//
-// `zp_slot_allocation` gives each zp_abi function's parameters bytes no
-// function on a common call path uses, and `zp_local_allocation` does
-// the same for body locals. So a caller that passes a value it still
-// needs afterwards keeps it in its own pool and copies it into the
-// callee's slot before every call.
-//
-//     void instr_save(void) {
-//         uint8_t *page = Z_HEADER_ADDR;
-//         do {
-//             if (inc_sector_and_write(page)) goto fail;
-//             page += 0x100;
-//         } while (--pages != 0);
-//         ...
-//
-// That copies `page` into `inc_sector_and_write`'s slot each time round.
-// Zork's own code keeps the pointer in SCRATCH2, which the routines it
-// calls leave alone, and copies nothing. `find_shares` finds the values
-// that can live in the callee's bytes the same way, and the allocators
-// then keep those bytes apart from everything that could change them.
+// Keeping a value in a callee's parameter bytes across calls.
 //
 // Two kinds of value qualify.
 //
@@ -103,15 +80,6 @@
 // The allocators (`allocate_zp_slots`, `allocate_function_locals`) keep
 // a share's bytes off every other byte of every function that can be on
 // the call stack with any function in it, which rule 2 relies on.
-//
-// `check_shares` reads the finished asm. A pass after `find_shares` that
-// made an owner write its shared bytes would make the caller read a
-// value that changed, so the finished program is checked once for such a
-// write.
-//
-// Python keys the bindings by `id()`. Here they are held in a vector and
-// keyed by their index in it, which is the order Python's lists keep
-// them in.
 #include "passes/slot_sharing.h"
 
 #include <algorithm>
@@ -134,7 +102,6 @@ namespace {
 
 namespace ir = ::c6502::asm_ast;
 
-// Calls `fn` on each operand that `instr` writes in memory.
 template <class Fn>
 void memory_writes(const ir::Type_instruction& instr, Fn&& fn) {
   switch (ir::kind(instr)) {
@@ -188,8 +155,6 @@ ReachSets reach_sets(const tac_ast::Program& prog) {
       direct.insert_or_assign(fn->name, std::move(callees));
     }
   }
-  // The closure, by a walk from each function. A set's order doesn't
-  // reach the result, which is a set too.
   ReachSets out;
   for (const auto& [name, callees] : direct) {
     NameSet seen;
@@ -288,38 +253,24 @@ void check_shares(const asm_ast::Program& prog, const std::vector<SlotShare>& sh
   }
 }
 
-
-// --- Finding the shares ---
-
 namespace {
 
 namespace tac = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 
-// A function's slot symbols, one entry per parameter, low byte first,
-// or none for a parameter that can't be in a share.
 using ParamSlots = std::vector<std::optional<std::vector<std::string>>>;
 using SlotsByFn = std::map<std::string, ParamSlots, std::less<>>;
 using FnPair = std::pair<std::string, std::string>;
 
-// One variable kept in a callee's parameter slots (Python's `_Binding`).
 struct Binding {
-  // The function the variable belongs to.
   std::string fn;
-  // The variable.
   std::string var;
-  // The callee whose parameter slots it lives in.
   std::string owner;
-  // The callee's parameter's position.
   std::size_t index = 0;
-  // Whether `var` is a parameter of `fn`, else a local.
   bool alias = false;
-  // For a local copied to or from a bound local, and never live at the
-  // same time, the bound local whose home it shares.
   std::optional<std::string> primary;
 };
 
-// Returns `xs[lo:hi]`, as Python slices a list, clamped to its length.
 template <class T>
 std::vector<T> slice(const std::vector<T>& xs, asdl::Int lo, asdl::Int hi) {
   const auto n = static_cast<asdl::Int>(xs.size());
@@ -362,8 +313,6 @@ bool is_scalar_type(const c99::Type_data_type& type) {
                    c99::ULong>(*t);
 }
 
-// Returns the names whose address `fn` takes or that it indexes by name,
-// which live in memory rather than in a value's home.
 NameSet in_memory(const tac::Function& fn) {
   NameSet out;
   for (const auto& instr : fn.instructions) {
@@ -386,8 +335,6 @@ NameSet in_memory(const tac::Function& fn) {
   return out;
 }
 
-// Returns the names `fn` assigns, takes the address of, or indexes by
-// name.
 NameSet changed_names(const tac::Function& fn) {
   NameSet out = in_memory(fn);
   for (const auto& instr : fn.instructions) {
@@ -413,11 +360,6 @@ bool plain_local(std::string_view v, const SymbolTable& symbols, const NameSet& 
   return is_scalar_type(sym->type);
 }
 
-// Returns `name`'s slot symbols, one entry per parameter, or none for a
-// parameter that can't be in a share: one passed in a register or at a
-// fixed address, one that isn't an integer or a pointer, one the
-// function assigns or takes the address of, or, for a function defined
-// in another unit, one its declaration doesn't make `const`.
 ParamSlots param_slots(const std::string& name, const Abi& abi, const SymbolTable& symbols,
                        const TypeTable* types,
                        const OrderedMap<std::string, const tac::Function*>& fns,
@@ -467,9 +409,6 @@ ParamSlots param_slots(const std::string& name, const Abi& abi, const SymbolTabl
   return out;
 }
 
-// Returns the variable `instr` adds a constant to or subtracts one from,
-// when it's `t = s + k`, `t = k + s`, or `t = s - k` with an integer
-// constant `k`.
 const std::string* step_source(const tac::Type_instruction& instr) {
   const auto* bin = asdl::as<tac::Binary>(instr);
   if (bin == nullptr) {
@@ -491,7 +430,6 @@ const std::string* step_source(const tac::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns the name of the `Var` `v`, or null for a constant.
 const std::string* var_name(const tac::Type_val& v) {
   const auto* var = std::get_if<tac::Var>(&v);
   return var == nullptr ? nullptr : &var->name;
@@ -508,13 +446,6 @@ bool intersects(const NameSet& a, const NameSet& b) {
                      [&](const std::string& x) { return large.contains(x); });
 }
 
-// Returns `var` and the locals of `fn` linked to it by copies (`a = b`)
-// and by steps (`a = b + k`, `a = b - k`) that can share its home: of
-// its size, plain (see `plain_local`), not bound elsewhere, and never
-// live where another of them is defined, other than by a copy between
-// them or by a step after which the stepped variable is dead. A sector
-// number stepped before each call that takes it, `write(++sector)`, is a
-// chain of such steps, and in one home each step is an add in place.
 NameSet copy_group(const tac::Function& fn, const std::string& var,
                    const std::vector<NameSet>& live, const SymbolTable& symbols,
                    const TypeTable* types, const std::set<FnPair>& bound) {
@@ -532,7 +463,6 @@ NameSet copy_group(const tac::Function& fn, const std::string& var,
   }
   for (const auto& instr : fn.instructions) {
     if (const std::string* src = step_source(instr)) {
-      // A step is a `Binary`, whose destination is a variable.
       copies.emplace_back(*src, *var_name(std::get<tac::Binary>(instr).dst));
     }
   }
@@ -590,7 +520,6 @@ NameSet copy_group(const tac::Function& fn, const std::string& var,
   return group;
 }
 
-// Returns the position of `syms` among `slots`, as `list.index` does.
 std::size_t slot_index(const ParamSlots& slots, const std::vector<std::string>& syms) {
   for (std::size_t i = 0; i < slots.size(); ++i) {
     if (slots[i] && *slots[i] == syms) {
@@ -608,8 +537,6 @@ std::size_t param_index(const std::vector<std::string>& params, const std::strin
   return static_cast<std::size_t>(it - params.begin());
 }
 
-// Returns each member's owner mapped to the positions of its parameters
-// in `share`.
 std::map<std::string, std::vector<std::size_t>, std::less<>> member_indexes(
     const SlotShare& share, const SlotsByFn& slots) {
   std::map<std::string, std::vector<std::size_t>, std::less<>> out;
@@ -621,9 +548,6 @@ std::map<std::string, std::vector<std::size_t>, std::less<>> member_indexes(
 
 using SlotKey = std::pair<std::string, std::size_t>;
 
-// Groups the bindings' slots into shares. Returns the shares and each
-// binding's share index, or none for a binding that would put a
-// function in its share twice and is left out.
 std::pair<std::vector<SlotShare>, std::vector<std::optional<std::size_t>>> classes(
     const std::vector<Binding>& cands, const SlotsByFn& slots,
     const std::map<std::string, std::vector<std::string>, std::less<>>& params) {
@@ -658,9 +582,6 @@ std::pair<std::vector<SlotShare>, std::vector<std::optional<std::size_t>>> class
     return std::adjacent_find(xs.begin(), xs.end()) != xs.end();
   };
 
-  // Members first, so that a holder of one member's bytes doesn't keep
-  // two members from joining: a function's parameter passed on
-  // unchanged joins its callee's bytes whatever its callers keep there.
   std::vector<std::size_t> order;
   for (std::size_t i = 0; i < cands.size(); ++i) {
     if (cands[i].alias) {
@@ -763,8 +684,6 @@ std::pair<std::vector<SlotShare>, std::vector<std::optional<std::size_t>>> class
   return {std::move(shares), std::move(by_binding)};
 }
 
-// Returns, for each share, the functions here that write its bytes (see
-// the comment at the top of the file).
 std::vector<NameSet> writers_of(const OrderedMap<std::string, const tac::Function*>& fns,
                                 const std::vector<Binding>& cands,
                                 const std::vector<std::size_t>& by_binding,
@@ -821,16 +740,11 @@ std::vector<NameSet> writers_of(const OrderedMap<std::string, const tac::Functio
   return out;
 }
 
-// Returns whether call `call` of a function stores its result into
-// `var`, which then isn't live across the call: the callee has returned
-// before the value is stored.
 bool defines(const tac::FunctionCall& call, const std::string& var) {
   const std::string* dst = var_name(call.dst);
   return dst != nullptr && *dst == var;
 }
 
-// Returns `share` with the records the linker checks it by (see "Across
-// units"). `mine` are the indices of its bindings in `cands`.
 SlotShare with_link_records(SlotShare share, const std::vector<Binding>& cands,
                             const std::vector<std::size_t>& mine,
                             const OrderedMap<std::string, const tac::Function*>& fns,
@@ -951,9 +865,6 @@ std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac::Program& prog
 
   std::vector<Binding> cands;
   std::set<FnPair> bound;
-  // A parameter passed on to several callees joins each one's bytes, so
-  // `is_separator(c)`, which passes `c` to two functions, copies it for
-  // neither. A local has one home, the first callee's.
   std::set<std::tuple<std::string, std::string, std::string, std::size_t>> passed_on;
   for (const auto& fname : ok) {
     const tac::Function& fn = *fns.at(fname);
@@ -1017,9 +928,6 @@ std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac::Program& prog
       }
     }
   }
-  // Each local candidate's copy group shares its home. A later candidate
-  // of the same function in that group joins it rather than taking a
-  // home of its own, as each value of `write(++sector)` does.
   std::vector<Binding> locals;
   for (const auto& b : cands) {
     if (!b.alias) {
@@ -1110,8 +1018,6 @@ std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac::Program& prog
         if (call == nullptr) {
           continue;
         }
-        // A value the call returns isn't live across it: the callee has
-        // returned before the value is stored.
         const bool v_live = lv[i].contains(b.var) && !defines(*call, b.var);
         const bool passed = std::any_of(call->args.begin(), call->args.end(),
                                         [&](const tac::Type_val& a) {
@@ -1153,13 +1059,6 @@ std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac::Program& prog
     if (bad.empty()) {
       break;
     }
-    // A failing parameter of a function with external linkage is what
-    // makes its share's owners global (rule 3), and so may be what fails
-    // the share's other bindings. Those go first, and the rest are
-    // checked again without them. `store_result(v)` passing `v` on to
-    // `push` fails rule 3, and while it's in the share `var_get`, holding
-    // the value it pops in `push`'s bytes across `push(value)`, failed
-    // with it.
     std::set<std::size_t> global_aliases;
     for (const std::size_t bi : bad) {
       if (cands[bi].alias && fns.at(cands[bi].fn)->is_global) {
@@ -1169,7 +1068,6 @@ std::pair<std::vector<SlotShare>, Bindings> find_shares(const tac::Program& prog
     if (!global_aliases.empty() && global_aliases != bad) {
       bad = std::move(global_aliases);
     }
-    // A binding that goes takes the locals sharing its home with it.
     std::set<FnPair> gone;
     for (const std::size_t bi : bad) {
       gone.emplace(cands[bi].fn, cands[bi].var);
@@ -1328,8 +1226,6 @@ OrderedMap<std::string, NameSet> preferred_symbols(const Bindings& bindings) {
   return out;
 }
 
-// --- Linking ---
-
 std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
                                     const OrderedMap<std::string, std::string>& canonical) {
   std::vector<std::size_t> parent(shares.size());
@@ -1352,10 +1248,6 @@ std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
       }
     }
   }
-  // Python walks each share's slots in a set's order. That order decides
-  // which share becomes the root of a group, and nothing after reads the
-  // roots, only which shares each group holds and the order in which the
-  // groups first appear.
   std::map<std::string, std::size_t, std::less<>> first;
   for (std::size_t k = 0; k < renamed.size(); ++k) {
     for (const std::string& sym : renamed[k].slots()) {
@@ -1372,9 +1264,6 @@ std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
   }
   std::vector<SlotShare> out;
   for (const auto& [root, group] : groups) {
-    // Python sorts sets of strings and of tuples, which compare their
-    // strings by code point, the order in which `std::string` compares
-    // UTF-8 bytes.
     std::set<std::pair<std::string, std::vector<std::string>>> member_set;
     std::set<std::string> holder_set;
     std::set<std::pair<std::string, std::string>> forward_set;
@@ -1401,8 +1290,6 @@ std::vector<SlotShare> merge_shares(const std::vector<SlotShare>& shares,
     }
     for (const auto& [f, n] : uses) {
       if (n > 1) {
-        // `uses` is sorted, so `f` is the first of Python's sorted list
-        // of the functions that appear twice.
         throw CompileError("ValueError", "`" + f +
                                              "` would keep two values in the parameter bytes `" +
                                              merged.members.at(0).second.at(0) + "` share");
@@ -1430,8 +1317,6 @@ void check_linked_shares(const std::vector<SlotShare>& shares,
   for (const auto& [a, b] : calls) {
     direct[a].insert(b);
   }
-  // The closure, by a walk from each function, as Python's `_closure`.
-  // The order of the walk doesn't reach the result, which is a set.
   std::map<std::string, NameSet, std::less<>> reach;
   for (const auto& [name, callees] : direct) {
     NameSet seen;
@@ -1482,7 +1367,6 @@ void check_linked_shares(const std::vector<SlotShare>& shares,
         if (const auto it = reach.find(c); it != reach.end()) {
           reached.insert(it->second.begin(), it->second.end());
         }
-        // The first of Python's sorted `({c} | reach[c]) & (writers - {f})`.
         const auto hit = std::find_if(reached.begin(), reached.end(), [&](const std::string& n) {
           return n != f && writers.contains(n);
         });

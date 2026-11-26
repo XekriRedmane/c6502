@@ -1,5 +1,5 @@
-// The ported asm passes, by the names the capture harness records,
-// for the CLI's `check-captures` command.
+// The asm passes, by the names the captures record them by, for the
+// CLI's `check-captures` command.
 #pragma once
 
 #include <string>
@@ -13,8 +13,8 @@
 namespace c6502::passes {
 
 struct RegisteredPass {
-  // The pass's name in tools/capture_passes.py's table, which for a
-  // pass of `_peephole_fixedpoint` is its name in the sweep.
+  // The pass's name in the captures, which for a pass of the peephole
+  // fixed point is its name in the sweep.
   std::string_view name;
   // Runs the pass on a captured call's program, in the compile's
   // context `ctx`, with the call's positional arguments after the program (`args`, a JSON array) and
@@ -41,10 +41,10 @@ struct RegisteredPass {
   std::string_view output_module = "asm_ast";
 };
 
-// Returns the ported pass named `name`, or null.
+// Returns the registered pass named `name`, or null.
 const RegisteredPass* find_pass(std::string_view name);
 
-// Returns every ported pass, in the order of compile.py's pipeline.
+// Returns every registered pass, in pipeline order.
 const std::vector<RegisteredPass>& registered_passes();
 
 }  // namespace c6502::passes

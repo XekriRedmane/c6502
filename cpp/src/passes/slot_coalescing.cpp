@@ -1,30 +1,6 @@
 // Gives a zero-page local that holds a copy of a parameter the
 // parameter's own slot.
 //
-// What it does
-//
-// A function that changes a parameter works on a copy of it. The asm
-// SSA gives each assignment of the parameter a new version, and the
-// register allocator puts a version that doesn't go in a register in a
-// byte of the function's pool, so the function starts by copying the
-// parameter there:
-//
-//     LDA   __zpabi_mulu16__a_0          ; the parameter's slot
-//     STA   __local_mulu16__a_0          ; a byte of mulu16's pool
-//     ...
-//     ASL   __local_mulu16__a_0
-//     ROL   __local_mulu16__a_1
-//
-// When the parameter's slot and the local are never live at once with
-// different values, the local can be the slot itself. This pass renames
-// the local to the slot, and the copy becomes `LDA P; STA P`. The pass
-// drops such a store, a store from a register that already holds the
-// byte's value, here or on every path into a label, and the peepholes
-// then drop the load if nothing else reads it. Zork's `mulu16`
-// (examples/zork/numbers.c) copied both its parameters, 16 bytes, and
-// `divu16` copied its dividend into `quotient`, a local the C starts as
-// a copy of it. A version the allocator put in a register stays there.
-//
 // When it applies
 //
 //   * The function is zp_abi, and the slot is one of its own parameter
@@ -67,19 +43,8 @@
 //
 // A callee's parameter slot
 //
-// The same goes for the bytes a function writes its callee's argument
-// into. A local whose value is copied into a callee's parameter slot
-// for the call can be that slot from where it's computed, as
-// `instr_mul` (examples/zork/numbers.c) passes the product to
-// `store_with_sign`:
-//
-//     JSR   mulu16                        JSR   mulu16
-//     STA   __local_instr_mul__product    STA   __zpabi_store_with_sign__n_0
-//     ...                           ->    ...
-//     LDA   __local_instr_mul__product    JMP   store_with_sign
-//     STA   __zpabi_store_with_sign__n_0
-//     ...
-//     JMP   store_with_sign
+// A local whose value is copied into a callee's parameter slot for the
+// call can be that slot from where it's computed.
 //
 // A call reads its callee's slots, and a tail call's `JMP` does too. A
 // call may also write any callee's slots, since functions that are
@@ -89,29 +54,14 @@
 // again for the whole program, so two that are apart in this unit can
 // share a byte there. Only the same function's slots are certainly
 // apart. So the local can't be live across a store into another
-// function's slot either. `div`'s argument in
-// `tests/test_slot_coalescing.py` had overwritten a local kept in
-// `mul`'s slot, which in that unit was the same byte.
+// function's slot either.
 //
 // The slot is a parameter byte of a function this one calls, other
 // than a register or `zeropage(addr)` byte, outside every share, and
-// out of reach of any pointer. The callee may change its own slot (a
-// parameter the callee updates in place, above), since the local is
-// dead once the callee has it. The link metadata gets no record of
-// these: the function writes the callee's slot as it writes any
-// argument.
-//
-// Where it runs
-//
-// Once, in `compile.optimized_asm`, after `synthesize_prologue`, when
-// the operands are the slots' `Data` names, and before the first
-// peephole fixed point, which drops the copies that become self-copies.
-//
-// The sets of names that Python keeps for the liveness are bit sets
-// here, over the names the function's analysis follows, in sorted order.
-// The interference of two names reads the reads and writes of every
-// name, restricted to the two, which is what Python computes for the
-// two alone.
+// out of reach of any pointer. The callee may change its own slot,
+// since the local is dead once the callee has it. The link metadata
+// gets no record of these, since the function writes the callee's slot
+// as it writes any argument.
 #include "passes/slot_coalescing.h"
 
 #include <algorithm>
@@ -154,14 +104,11 @@ bool has_no_operands(const ir::Type_instruction& ins) {
              ir::AllocateStack>(ins);
 }
 
-// Instructions that change no register and no memory, which a
-// register's known contents survive.
 bool keeps_registers(const ir::Type_instruction& ins) {
   return isa<ir::Compare, ir::BitTest, ir::Push, ir::Branch, ir::SetCarry,
              ir::ClearCarry>(ins);
 }
 
-// Returns the `dst` field of `ins` when it holds one operand, or null.
 const ir::Type_operand* dst_of(const ir::Type_instruction& ins) {
   return std::visit(
       [](const auto& x) -> const ir::Type_operand* {
@@ -176,8 +123,6 @@ const ir::Type_operand* dst_of(const ir::Type_instruction& ins) {
       ins);
 }
 
-// A set of the names the analysis of one function follows, by their
-// indices.
 class Bits {
  public:
   Bits() = default;
@@ -190,7 +135,6 @@ class Bits {
     }
     return *this;
   }
-  // Returns the names in this set and not in `o`.
   Bits minus(const Bits& o) const {
     Bits out = *this;
     for (std::size_t k = 0; k < w_.size(); ++k) {
@@ -204,7 +148,6 @@ class Bits {
   std::vector<std::uint64_t> w_;
 };
 
-// The names one function's analysis follows, numbered in sorted order.
 class NameIndex {
  public:
   explicit NameIndex(const NameSet& names) : names_(names.begin(), names.end()) {
@@ -212,12 +155,10 @@ class NameIndex {
       index_.emplace(names_[i], static_cast<int>(i));
     }
   }
-  // Returns the index of `name`, or -1 when it isn't followed.
   int find(const std::string& name) const {
     const auto it = index_.find(name);
     return it == index_.end() ? -1 : it->second;
   }
-  // Returns the index of the name a `Data` operand names, or -1.
   int data(const ir::Type_operand& op) const {
     const auto* d = as<ir::Data>(op);
     return d == nullptr ? -1 : find(d->name);
@@ -235,7 +176,6 @@ struct ReadsWrites {
   Bits writes;
 };
 
-// Returns the names `ins` reads and writes by name.
 ReadsWrites direct_reads_writes(const ir::Type_instruction& ins,
                                 const NameIndex& names) {
   ReadsWrites rw{Bits(names.size()), Bits(names.size())};
@@ -245,8 +185,6 @@ ReadsWrites direct_reads_writes(const ir::Type_instruction& ins,
     }
   };
   if (const auto* dec = as<ir::DecimalArith>(ins)) {
-    // Its names are all excluded (`excluded`), so this only has to be
-    // right for liveness, where its reads come first.
     for (const auto& op : decimal_arith::reads(*dec)) {
       add(rw.reads, op);
     }
@@ -275,11 +213,6 @@ ReadsWrites direct_reads_writes(const ir::Type_instruction& ins,
   return rw;
 }
 
-// What a call does to the callee slots among the names: `owners` maps
-// each to its function, and `labels` are the function's own labels,
-// which tell a tail call's `JMP` from a jump within it. `all_owners`
-// gives every parameter slot's function, to tell a write to one of the
-// same function's slots from another's.
 struct Ctx {
   std::unordered_map<std::string, std::string> owners;
   std::unordered_set<std::string> labels;
@@ -293,10 +226,6 @@ struct Ctx {
   }
 };
 
-// Returns the names `ins` reads and the names it writes. A call reads
-// its callee's slots and may write any callee's, since functions that
-// are never active together can share bytes. A tail call reads its
-// callee's slots.
 ReadsWrites reads_writes(const ir::Type_instruction& ins, const NameIndex& names,
                          const Ctx& ctx) {
   const auto owner_of = [&](std::size_t i) -> const std::string* {
@@ -326,10 +255,6 @@ ReadsWrites reads_writes(const ir::Type_instruction& ins, const NameIndex& names
     return rw;
   }
   ReadsWrites rw = direct_reads_writes(ins, names);
-  // A write to a parameter slot of one function may write the byte of
-  // another function's slot: functions that are never active together
-  // can share bytes, and the linker allocates them again for the whole
-  // program. Only a function's own slots are certainly apart.
   std::vector<ir::Type_operand> written;
   if (const auto* dec = as<ir::DecimalArith>(ins)) {
     written = decimal_arith::writes(*dec);
@@ -352,9 +277,6 @@ ReadsWrites reads_writes(const ir::Type_instruction& ins, const NameIndex& names
   return rw;
 }
 
-// Returns the names live just after each instruction, from the reads
-// and writes of each. Nothing is live at a return or a jump out of the
-// function, except the slots a tail call reads.
 std::vector<Bits> live_out(Instrs instrs, const std::vector<ReadsWrites>& rw,
                            std::size_t n_names) {
   const LabelMap label_at(instrs);
@@ -384,15 +306,12 @@ std::vector<Bits> live_out(Instrs instrs, const std::vector<ReadsWrites>& rw,
   return live_out;
 }
 
-// Which name's value each of A, X, and Y holds, by name index, or -1.
 using Holds = std::array<int, 3>;
 constexpr Holds kNothing = {-1, -1, -1};
 constexpr std::size_t kY = 2;
 
 std::size_t reg_index(const ir::Type_reg& reg) { return reg.index(); }
 
-// Returns what is the same in every known state in `states`. At the
-// function's entry, no register's contents are known.
 Holds meet(const std::vector<std::size_t>& preds,
            const std::vector<std::optional<Holds>>& state_out, bool entry) {
   if (entry) {
@@ -416,9 +335,6 @@ Holds meet(const std::vector<std::size_t>& preds,
   return out ? *out : kNothing;
 }
 
-// Returns the register contents after `ins`, given `holds` before it,
-// and the index of the name whose value `ins` writes into another of
-// the names, or -1.
 std::pair<Holds, int> step(const Holds& holds, const ir::Type_instruction& ins,
                            const NameIndex& names) {
   if (isa<ir::Label>(ins)) {
@@ -443,7 +359,6 @@ std::pair<Holds, int> step(const Holds& holds, const ir::Type_instruction& ins,
       reg = reg_index(src_reg->reg);
       value = holds[reg];
     } else {
-      // A memory-to-memory or immediate move goes through A.
       reg = 0;
       value = names.data(mov->src);
     }
@@ -476,8 +391,6 @@ std::pair<Holds, int> step(const Holds& holds, const ir::Type_instruction& ins,
   return {kNothing, -1};
 }
 
-// Runs the forward analysis of what each register holds and returns
-// the state after each instruction, with the predecessors of each.
 std::vector<std::optional<Holds>> register_states(
     Instrs instrs, const NameIndex& names,
     std::vector<std::vector<std::size_t>>& preds) {
@@ -504,8 +417,6 @@ std::vector<std::optional<Holds>> register_states(
   return state_out;
 }
 
-// Returns the indices of the stores from a register into one of `names`
-// that the register already holds the value of.
 std::set<std::size_t> self_stores(Instrs instrs, const NameSet& names_set) {
   const NameIndex names(names_set);
   std::vector<std::vector<std::size_t>> preds;
@@ -529,10 +440,6 @@ std::set<std::size_t> self_stores(Instrs instrs, const NameSet& names_set) {
   return drop;
 }
 
-// Returns the names whose bytes an operand reaches by address: a `ZP`
-// operand, or either byte of an `IndirectZp` / `IndirectZpY` pointer
-// base. A local used as a `(zp),Y` base is spelled that way, and a
-// rename of its `Data` name wouldn't reach those.
 NameSet by_address(Instrs instrs, const NameSet& names,
                    const SymbolAddrs& slot_symbols) {
   std::set<asdl::Int> reached;
@@ -571,7 +478,6 @@ std::size_t first_use(Instrs instrs, const std::string& name) {
   return instrs.size();
 }
 
-// The slots of the functions `fn` calls, each with its function.
 using CalleeSlots = std::vector<std::pair<std::string, std::string>>;
 
 const ZpLayout* find_layout(const AbiLayouts& abi, const std::string& name) {
@@ -583,9 +489,6 @@ const ZpLayout* find_layout(const AbiLayouts& abi, const std::string& name) {
   return nullptr;
 }
 
-// Returns whether parameter byte `k` of `layout` arrives in memory at a
-// slot the pass may use: not in a register and not pinned to an
-// address.
 bool plain_slot(const ZpLayout& layout, std::size_t k) {
   const bool pinned = k < layout.pinned.size() && layout.pinned[k].has_value();
   const bool reg =
@@ -593,10 +496,6 @@ bool plain_slot(const ZpLayout& layout, std::size_t k) {
   return !pinned && !reg;
 }
 
-// Returns the parameter bytes of the functions `fn` calls, or jumps to
-// as a tail call, each mapped to its function. A register or
-// `zeropage(addr)` byte, a byte in a share, and a byte a pointer might
-// reach are left out.
 CalleeSlots callee_slots(const ir::Function& fn, const AbiLayouts& abi,
                          const NameSet& shared, const NameSet& unreachable) {
   std::unordered_set<std::string> labels;
@@ -625,9 +524,6 @@ CalleeSlots callee_slots(const ir::Function& fn, const AbiLayouts& abi,
       const std::string& sym = layout->slot_symbols[k];
       if (plain_slot(*layout, k) && !shared.contains(sym) &&
           unreachable.contains(sym)) {
-        // A later function's slot of the same name would replace this
-        // one in Python's dict. Slot names carry their function's name,
-        // so that doesn't happen.
         out.emplace_back(sym, g);
       }
     }
@@ -648,8 +544,6 @@ void rename(std::vector<ir::Type_instruction>& instrs,
   }
 }
 
-// Renames the locals of `fn` that join a slot, and returns the
-// function's own parameter slots that took a local.
 std::vector<std::string> coalesce(
     ir::Function& fn, const std::vector<std::string>& slots,
     const CalleeSlots& callee, const NameSet& unreachable,
@@ -722,10 +616,9 @@ std::vector<std::string> coalesce(
     rw.push_back(reads_writes(ins, names, ctx));
   }
   const auto live = live_out(instrs, rw, names.size());
-  // The copies, by the names they write directly, as index pairs.
   std::vector<std::optional<int>> copies(instrs.size());
-  std::set<std::pair<int, int>> pairs;  // unordered: (min, max)
-  std::set<std::pair<int, int>> into;   // (src, dst)
+  std::set<std::pair<int, int>> pairs;
+  std::set<std::pair<int, int>> into;
   for (const auto& [k, src_name] : slot_coalescing::copy_sources(instrs, names_set)) {
     const int src = names.find(src_name);
     copies[k] = src;
@@ -738,15 +631,12 @@ std::vector<std::string> coalesce(
       }
     }
   }
-  std::vector<int> locals;  // sorted by name, as the indices are
+  std::vector<int> locals;
   for (std::size_t i = 0; i < names.size(); ++i) {
     if (names.name(i).starts_with(prefix)) {
       locals.push_back(static_cast<int>(i));
     }
   }
-  // Returns whether an instruction writes one of `a` and `b` while the
-  // other is live after it, other than a write of one with the other's
-  // value.
   const auto interferes = [&](int a, int b) {
     for (std::size_t k = 0; k < instrs.size(); ++k) {
       for (const int w : {a, b}) {
@@ -762,8 +652,6 @@ std::vector<std::string> coalesce(
     return false;
   };
   using Renames = std::unordered_map<std::string, std::string>;
-  // Merges into `slot` the locals not in `taken` that join it, and
-  // returns how many did.
   const auto merge = [&](int slot, std::set<int>& taken, Renames& renames) {
     std::vector<int> members{slot};
     const bool callee_slot = ctx.owners.contains(names.name(slot));
@@ -775,8 +663,6 @@ std::vector<std::string> coalesce(
             std::find(members.begin(), members.end(), local) != members.end()) {
           continue;
         }
-        // A callee's slot takes a local copied into it, since that copy
-        // is what goes.
         bool related = false;
         if (callee_slot) {
           related = into.contains({local, slot});
@@ -815,11 +701,6 @@ std::vector<std::string> coalesce(
       merged.push_back(p);
     }
   }
-  // Locals go in the slots of one callee at most. One function's slots
-  // are apart, but two functions' may share a byte, and a local kept in
-  // one's slot would be overwritten by a store that a merge into the
-  // other's makes of a store to a local. The callee whose slots take
-  // the most is chosen.
   std::set<std::string> callees;
   for (const auto& [s, g] : owners) {
     callees.insert(g);
@@ -847,9 +728,6 @@ std::vector<std::string> coalesce(
   }
   std::vector<ir::Type_instruction> renamed = instrs;
   rename(renamed, renames);
-  // A copy between two of the merged names now stores a byte into
-  // itself, here or on another path into a label, which the peepholes
-  // see only within a block.
   NameSet keep;
   for (const auto& n : names_set) {
     if (!renames.contains(n)) {

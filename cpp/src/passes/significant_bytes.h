@@ -1,6 +1,6 @@
-// The port of passes/significant_bytes.py: how many low bytes of each
-// local of a function can be nonzero, and which locals have only their
-// low byte read, for `tac_to_asm`'s shifts and comparisons.
+// How many low bytes of each local of a function can be nonzero, and
+// which locals have only their low byte read, for `tac_to_asm`'s
+// shifts and comparisons.
 #pragma once
 
 #include <functional>

@@ -456,7 +456,6 @@ const std::vector<RegisteredPass>& registered_passes() {
       {"transfer_pm1_store", run_transfer_pm1_store},
       {"carry_known", run_carry_known},
     };
-    // The work after the region, and emission (registry_emission.cpp).
     const std::vector<RegisteredPass>& emission = registry::emission_passes();
     all.insert(all.end(), emission.begin(), emission.end());
     return all;

@@ -1,5 +1,3 @@
-// The port of passes/prune_unused_slots.py, which leaves out of the EQU
-// block the body-local slots that no instruction names.
 #pragma once
 
 #include <string>
@@ -10,7 +8,7 @@
 
 namespace c6502::passes {
 
-// Symbol names with their addresses, in the order of a Python dict.
+// Symbol names with their addresses, in the order they were added.
 using OrderedSymbolAddrs = std::vector<std::pair<std::string, asdl::Int>>;
 
 // Returns `slot_symbols` without the `__local_*` entries that no

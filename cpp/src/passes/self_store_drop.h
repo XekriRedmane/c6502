@@ -1,4 +1,3 @@
-// The port of passes/self_store_drop.py.
 #pragma once
 
 #include "asm_ast.h"

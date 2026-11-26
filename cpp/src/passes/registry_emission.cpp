@@ -30,9 +30,8 @@ const Value& positional(const Value& args, std::size_t i) {
   return args.items[i];
 }
 
-// Returns the footprints that tools/capture_passes.py records beside the
-// arguments of the functions that measure HARGS, since Python reads them
-// from rtlib/helpers.py inside the call.
+// Returns the footprints that the captures record beside the arguments
+// of the functions that measure HARGS.
 HelperFootprints recorded_footprints(const Value& kwargs) {
   const Value* v = capture_args::kwarg(kwargs, "footprints");
   if (v == nullptr) {

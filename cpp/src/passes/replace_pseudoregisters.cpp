@@ -1,71 +1,3 @@
-// Replaces each `Pseudo` operand with a concrete operand, lays out each
-// function's frame, and gives the prologue and epilogue the frame's
-// dimensions, ported from passes/replace_pseudoregisters.py.
-//
-// Each function's frame follows the soft-stack convention:
-//
-//     FP+1 ... FP+M           local-byte slots (M = local_bytes)
-//     FP+M+1, FP+M+2          the caller's saved FP
-//     FP+M+3 ... FP+M+2+N     argument slots (N = arg_bytes), each
-//                             parameter j starting at M+3 plus the
-//                             sizes of the parameters before it
-//
-// A pseudo names one of four things, told apart by the name.
-//
-//   * A static-storage object, a name that is a top-level
-//     `StaticVariable` (or `Function`) of the program or in
-//     `extra_statics`, which holds the `extern` objects with no
-//     definition here. It becomes `Data(name, offset)`, an absolute
-//     address with `offset` selecting the byte.
-//   * A parameter, a name in the function's `params`. Its bytes are in
-//     the caller's frame at `Frame(M + 2 + j_offset + k)` for byte k of
-//     the parameter whose bytes start `j_offset` bytes into the
-//     arguments. A parameter is a `Frame` slot whatever the register
-//     allocation colored it, since the calling convention writes it at
-//     that offset before the call.
-//   * A colored local, a name in `Coloring.assignments`. It becomes
-//     `ZP(address, offset)`, the byte the register allocation gave it,
-//     and takes no frame bytes, so M counts only the locals that were
-//     spilled, never colored, or have their address taken.
-//   * Any other local. Each distinct name gets `size_of_name(name)`
-//     consecutive `Frame` slots from offset 1, in the order the walk
-//     first sees it, sized from its type in the symbol table (4 bytes
-//     for a `long`, 2 for an `int`). A value the register allocation
-//     spilled is absent from the coloring and takes this path.
-//
-// A pseudo's `offset` selects the byte of its slot that the operand
-// names, so `Pseudo(name, 0)` is the low byte and `Pseudo(name, 1)` the
-// next, and the replacement adds it to the slot's base.
-//
-// Each function takes four steps.
-//
-//   1. Walk the instructions and give each local a base offset (the
-//      offset of its low byte) in the order first seen, advancing by
-//      its size. After the walk, M is the bytes of the distinct locals.
-//   2. Give each parameter its base offset the same way, in `params`
-//      order from M+3. N is the bytes of the arguments.
-//   3. Walk the instructions again, replacing each pseudo with its
-//      `Data`, `ZP`, or `Frame` operand.
-//   4. Put `FunctionPrologue(arg_bytes=N, local_bytes=M)` first and
-//      give every `Ret` the same N and M. The emitter writes the
-//      prologue from them (reserve M+2 bytes, save the caller's FP, set
-//      FP) and the epilogue (push the return value, move SSP up by
-//      N+M+2, restore the caller's FP, pull the value, RTS).
-//
-// The names of static storage are collected from the program's top
-// level once, before any function is rewritten. Block-scope statics
-// carry identifier_resolution's `@<N>.<orig>` and file-scope statics
-// their source spelling, and both reach the asm unchanged and are
-// matched here exactly. `StaticVariable`s pass through unchanged, and
-// so do the instructions with no operands (`AllocateStack`, `Call`,
-// `Jump`, ...), except `Ret`, which takes the function's dimensions.
-//
-// When a coloring is given, the bytes it uses from the callee-saved
-// half of the pool are reserved at the bottom of the frame
-// (`FP+1..FP+S`), and the locals start after them. The prologue saves
-// each such byte and the epilogue restores it. A byte of the function's
-// private pool is never saved, since the allocation of the pools keeps
-// every function that can be live at the same time off it.
 
 #include "passes/replace_pseudoregisters.h"
 
@@ -106,8 +38,6 @@ asdl::Int sizeof_type(const c99::Type_data_type& t, const TypeTable* types) {
     case K::Double:
       return 8;
     case K::BitInt:
-      // ceil(N/8). After c99_to_tac only 3, 5, 6, and 7 bytes are left
-      // of these.
       return asdl::floor_div(std::get<c99::BitInt>(t).width + 7, 8);
     case K::Array: {
       const auto& a = std::get<c99::Array>(t);
@@ -146,13 +76,6 @@ namespace {
 
 using NameMap = std::map<std::string, asdl::Int, std::less<>>;
 
-// Calls `fn` on each operand of `instr` that the first walk reads, in
-// the order of its fields. The walk finds the pseudos there. A
-// `LoadAddress` gives only its `src`, the pseudo whose address is
-// taken, so that a local whose address is taken gets a frame slot even
-// when the body never reads or writes its value. Its `dst` is the
-// 2-byte temporary that receives the address. A `Phi` throws, since SSA
-// destruction should have removed every one.
 template <class Fn>
 void operands_in(const ir::Type_instruction& instr, Fn&& fn) {
   using K = ir::Kind_instruction;
@@ -239,8 +162,6 @@ void operands_in(const ir::Type_instruction& instr, Fn&& fn) {
   }
 }
 
-// The offsets of one function's frame, built by the first walk (the
-// locals) and finished once M is known (the parameters).
 class Replacer {
  public:
   Replacer(const std::vector<std::string>& params, const NameSet& statics,
@@ -259,17 +180,11 @@ class Replacer {
         address_taken_zp_(address_taken_zp),
         address_taken_symbols_(address_taken_symbols) {
     callee_saved_addrs_ = compute_callee_saved_addrs();
-    // The first S frame bytes hold the callee-saved bytes, so the
-    // cursor starts at S and the first local lands at S+1.
     local_total_ = static_cast<asdl::Int>(callee_saved_addrs_.size());
   }
 
   const std::vector<asdl::Int>& callee_saved_addrs() const { return callee_saved_addrs_; }
 
-  // Gives a base offset to each pseudo that isn't a static, a
-  // parameter, colored, or an address-taken local placed in the pool,
-  // the first time the walk sees it. A parameter's offset depends on M,
-  // the final count of local bytes, which is known only after the walk.
   void discover(const ir::Type_operand& op) {
     const auto* p = asdl::as<ir::Pseudo>(op);
     if (p == nullptr) {
@@ -280,26 +195,11 @@ class Replacer {
         in_address_taken_zp(name) || local_bases_.contains(name)) {
       return;
     }
-    // FP points at the next free byte, so FP+1 is the first slot, and
-    // the first local lands at offset 1.
     const asdl::Int size = size_of_name(name, symbols_, types_);
     local_bases_.emplace(name, local_total_ + 1);
     local_total_ += size;
   }
 
-  // Gives the parameters their offsets now that the locals' total is
-  // known, and returns `(arg_bytes, local_bytes)`.
-  //
-  // On the soft stack (the default), parameter j starts at M + 3 plus
-  // the sizes of the parameters before it. The 2-byte gap at M+1 and
-  // M+2 holds the caller's saved FP, and `arg_bytes` is the sum of the
-  // parameters' sizes.
-  //
-  // With a `ZpLayout`, the parameters are at fixed zero-page slots, so
-  // no frame slot is reserved for them and `arg_bytes` is 0. Each
-  // parameter's flat byte index into the layout's slots is recorded, so
-  // that `replace` makes `Pseudo(p, k)` the slot symbol of byte
-  // `flat + k`.
   std::pair<asdl::Int, asdl::Int> finalize() {
     const asdl::Int m = local_total_;
     if (zp_layout_ != nullptr) {
@@ -318,13 +218,6 @@ class Replacer {
     return {cursor - (m + 3), m};
   }
 
-  // Returns the `Data`, `ZP`, or `Frame` operand of a pseudo, and any
-  // other operand unchanged. A static comes first, since a static owns
-  // its name across the module. A parameter comes next, a `Frame` slot
-  // even when the register allocation colored its name, since the
-  // calling convention puts it there before the call. Then a colored
-  // local, an address-taken local placed in the pool, and any other
-  // local's `Frame` slot. The pseudo's `offset` is added to the base.
   ir::Type_operand replace(const ir::Type_operand& op) const {
     const auto* p = asdl::as<ir::Pseudo>(op);
     if (p == nullptr) {
@@ -335,11 +228,6 @@ class Replacer {
       return ir::Data{.name = name, .offset = p->offset};
     }
     if (const asdl::Int* flat = param_flat_offsets_.find(name)) {
-      // A zp_abi parameter's bytes are in its slots, which the caller
-      // wrote before the call. The operand names the slot symbol, whose
-      // `EQU` gives the address, so dasm picks zero-page or absolute
-      // addressing from it, and a slot spilled above $FF needs no
-      // change to the IR.
       const asdl::Int index = *flat + p->offset;
       if (index < 0 || index >= static_cast<asdl::Int>(zp_layout_->slot_symbols.size())) {
         throw InternalError("replace_pseudoregisters: list index out of range");
@@ -354,10 +242,6 @@ class Replacer {
       return ir::ZP{.address = *coloring_->assignments.find(name), .offset = p->offset};
     }
     if (in_address_taken_zp(name)) {
-      // An address-taken local in the private pool. Its slot symbol's
-      // `Data` lets emission pick zero-page or absolute addressing from
-      // the `EQU`, and makes `LoadAddress(src=Data(slot))` a 2-byte pair
-      // of immediates in place of the 6-byte `FP + off` addition.
       if (address_taken_symbols_ != nullptr) {
         if (const std::string* slot = address_taken_symbols_->find(name)) {
           return ir::Data{.name = *slot, .offset = p->offset};
@@ -368,16 +252,11 @@ class Replacer {
     if (const auto it = local_bases_.find(name); it != local_bases_.end()) {
       return ir::Frame{.offset = it->second + p->offset};
     }
-    // A name of none of the four kinds is a bug in an earlier pass. The
-    // emitter would reject it later, and this names the cause.
     throw InternalError("Pseudo(" + pyrepr::string(name) +
                         ") is neither a static, a colored local, an ordinary local, nor a "
                         "declared parameter; check tac_to_asm output");
   }
 
-  // Returns `instr` with its operands replaced, and a `Ret` with the
-  // function's dimensions. An instruction with no operand fields, or
-  // only register operands, comes back unchanged.
   ir::Type_instruction replace_instruction(const ir::Type_instruction& instr, asdl::Int arg_bytes,
                                            asdl::Int local_bytes) const {
     using K = ir::Kind_instruction;
@@ -430,11 +309,6 @@ class Replacer {
         return ir::Compare{.left = r(i.left), .right = r(i.right)};
       }
       case K::Ret: {
-        // The dimensions come from the function's totals. `save_a`,
-        // `save_x`, and `save_c` stay as tac_to_asm set them, from
-        // which return bytes come back in A and X (a return of up to 2
-        // bytes) or in HARGS. The callee-saved bytes let the epilogue
-        // restore them before it takes down SSP and FP.
         const auto& i = std::get<ir::Ret>(instr);
         return ir::Ret{.arg_bytes = arg_bytes,
                        .local_bytes = local_bytes,
@@ -444,30 +318,15 @@ class Replacer {
                        .save_c = i.save_c};
       }
       case K::LoadAddress: {
-        // `asm_emit` expands the resolved node by the kind of its `src`
-        // (a `Frame` is a 16-bit addition to FP, a `Data` a pair of
-        // immediates).
         const auto& i = std::get<ir::LoadAddress>(instr);
         return ir::LoadAddress{.src = r(i.src), .dst = r(i.dst)};
       }
       default:
-        // `AllocateStack`, `Call`, `Jump`, `Branch`, `Label`,
-        // `ClearCarry`, `SetCarry`, `FunctionPrologue`, and the rest
-        // have no pseudo operands.
         return instr;
     }
   }
 
  private:
-  // Returns the zero-page bytes this function uses from the
-  // callee-saved half of the pool, which the prologue saves in the
-  // frame and the epilogue restores, so that the caller's values there
-  // survive the call. Every byte of each colored value (`[base, base +
-  // width)`) in `coloring.pool.callee_saved()` counts, except the bytes
-  // of the function's private pool, which `zp_local_allocation` keeps
-  // every function that can be live at the same time off, so saving
-  // them would be wasted. They come back ascending, for a prologue and
-  // an epilogue the same on every run.
   std::vector<asdl::Int> compute_callee_saved_addrs() const {
     if (coloring_ == nullptr || coloring_->assignments.empty()) {
       return {};
@@ -486,8 +345,6 @@ class Replacer {
     return {used.begin(), used.end()};
   }
 
-  // Returns whether a coloring was given and colors `name`. A spilled
-  // name isn't colored, and takes the frame path.
   bool is_colored(std::string_view name) const {
     return coloring_ != nullptr && coloring_->assignments.contains(name);
   }
@@ -502,7 +359,6 @@ class Replacer {
   const SymbolTable* symbols_;
   const TypeTable* types_;
   const Coloring* coloring_;
-  // The function's `ZpLayout`, or null for the soft stack.
   const ZpLayout* zp_layout_;
   std::set<asdl::Int> private_pool_addrs_;
   const OrderedMap<std::string, asdl::Int>* address_taken_zp_;
@@ -519,7 +375,6 @@ bool is_shift(const ir::Type_instruction& instr) {
                    ir::RotateRight>(instr);
 }
 
-// Returns the operand a shift or rotate writes.
 const ir::Type_operand& shift_dst(const ir::Type_instruction& instr) {
   using K = ir::Kind_instruction;
   switch (ir::kind(instr)) {
@@ -534,7 +389,6 @@ const ir::Type_operand& shift_dst(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns the shift or rotate `instr` is, applied to A.
 ir::Type_instruction shift_of_a(const ir::Type_instruction& instr) {
   const ir::Type_operand a = ir::Reg{.reg = ir::A{}};
   using K = ir::Kind_instruction;
@@ -552,16 +406,9 @@ ir::Type_instruction shift_of_a(const ir::Type_instruction& instr) {
 
 bool is_soft_stack(const ir::Type_operand& op) { return asdl::isa<ir::Frame, ir::Stack>(op); }
 
-// Rewrites each shift or rotate in place of a `Frame` or `Stack` byte as
-// `Mov(byte, A); <shift> A; Mov(A, byte)`, and each move from X or Y to
-// such a byte as `Mov(X, A); Mov(A, byte)`.
-//
 // The 6502 has no `(zp),Y` form of ASL, LSR, ROL, or ROR, so `asm_emit`
 // would write this sequence anyway, and spelling it out here lets every
-// later pass see that A is overwritten. The peepholes that follow A
-// treat a shift of memory as leaving A alone, which is so for ZP and
-// Data. For a Frame byte it isn't, and `redundant_load` used to drop a
-// reload of A after one (`return 1L << 31` came back as 0x80000080).
+// later pass see that A is overwritten.
 std::vector<ir::Type_instruction> expand_soft_stack_shifts(std::vector<ir::Type_instruction> instrs) {
   std::vector<ir::Type_instruction> out;
   out.reserve(instrs.size());
@@ -589,7 +436,6 @@ std::vector<ir::Type_instruction> expand_soft_stack_shifts(std::vector<ir::Type_
   return out;
 }
 
-// The per-function arguments of the bare-exit form.
 struct FunctionTables {
   const ParamLayout* param_layout = nullptr;
   std::set<asdl::Int> private_pool_addrs;
@@ -597,35 +443,22 @@ struct FunctionTables {
   const OrderedMap<std::string, std::string>* address_taken_symbols = nullptr;
 };
 
-// Lays out the frame of `fn` and replaces its pseudos in place, and
-// returns its dimensions. With `bare_exit` the body keeps its bare
-// `Return`s and gets no `FunctionPrologue`, which `synthesize_prologue`
-// adds later from the dimensions.
 FrameDims replace_function(ir::Function& fn, const NameSet& statics, const SymbolTable* symbols,
                            const TypeTable* types, const Coloring* coloring, bool bare_exit,
                            FunctionTables tables) {
   Replacer r(fn.params, statics, symbols, types, coloring, tables.param_layout,
              std::move(tables.private_pool_addrs), tables.address_taken_zp,
              tables.address_taken_symbols);
-  // The first walk finds every local pseudo in the order first seen.
   for (const auto& instr : fn.instructions) {
     operands_in(instr, [&](const ir::Type_operand& op) { r.discover(op); });
   }
-  // The dimensions, now that every local is counted, and the
-  // parameters' offsets.
   const auto [arg_bytes, local_bytes] = r.finalize();
   FrameDims dims{.arg_bytes = arg_bytes,
                  .local_bytes = local_bytes,
                  .callee_saved_addrs = r.callee_saved_addrs()};
-  // The second walk replaces the operands. In the bare-exit form the
-  // body ends with `Return`s, which have nothing to fill in, and in the
-  // other each `Ret` takes the function's dimensions.
   std::vector<ir::Type_instruction> replaced;
   replaced.reserve(fn.instructions.size() + 1);
   if (!bare_exit) {
-    // The emitter writes no FP setup when there are no arguments and no
-    // locals. The prologue saves each callee-saved byte in its frame
-    // slot after the FP setup, and the epilogue restores them.
     replaced.push_back(ir::FunctionPrologue{.arg_bytes = arg_bytes,
                                             .local_bytes = local_bytes,
                                             .callee_saved_addrs = r.callee_saved_addrs()});
@@ -642,10 +475,6 @@ FrameDims replace_function(ir::Function& fn, const NameSet& statics, const Symbo
   return dims;
 }
 
-// Returns the names of static storage: every `StaticVariable` and every
-// `Function` of `prog`, since a function's name is an address the link
-// knows too (an `&foo` on a function takes the `Data` path), and the
-// names in `extra_statics`.
 NameSet statics_of(const ir::Program& prog, const NameSet& extra_statics) {
   NameSet statics = extra_statics;
   for (const auto& tl : prog.top_level) {

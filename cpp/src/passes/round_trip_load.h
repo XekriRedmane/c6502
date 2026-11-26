@@ -1,4 +1,3 @@
-// The port of passes/round_trip_load.py.
 #pragma once
 
 #include "asm_ast.h"

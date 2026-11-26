@@ -1,27 +1,3 @@
-// Drops a redundant `LDA M` that follows a read-modify-write of M.
-//
-// After `DEC M`, `INC M`, `ASL M`, `LSR M`, `ROL M`, or `ROR M`, the N
-// and Z flags are set from M's new value, which is what an `LDA M` right
-// after it would set them to. If A's value isn't read before A is next
-// written, the `LDA M` only sets the flags again, and the pass drops it.
-//
-// The case that called for it
-//
-// After `loop_rotate` rewrites a `for (T x = N; x >= 0; x--)` loop to
-// test at the bottom, `dec_peephole` collapses the step's SBC chain to
-// a `DEC m`, and the special case for a comparison with zero in
-// `_jcmp_signed_ordering` lowers the test to `LDA m; B<PL|MI> target`,
-// the code is
-//
-//     DEC m
-//     LDA m
-//     BPL .top
-//
-// and this pass drops the LDA, which leaves `DEC m; BPL .top`, the usual
-// 6502 idiom for a signed countdown loop.
-//
-// The pattern
-//
 // Two consecutive instructions,
 //
 //     Inc(dst=M) | Dec(dst=M) | ASL(dst=M) | LSR(dst=M) |
@@ -57,14 +33,6 @@
 // * A. Dropping the LDA leaves A holding what it held before. The pass
 //   requires A to be dead at the point of the deletion, with no read
 //   before the next write, so nothing later can see the difference.
-//
-// Where it runs
-//
-// After `replace_pseudoregisters`, since M must be a concrete `Data` or
-// `ZP` and the operands are `Pseudo`s before that, and after
-// `dec_peephole` / `inc_peephole`, which make the read-modify-write
-// form. It runs before `expand_long_branches`; it only shrinks code and
-// never adds a branch.
 #include "passes/redundant_load_after_rmw.h"
 
 #include <cstddef>
@@ -94,8 +62,6 @@ bool is_reg_a(const ir::Type_operand& op) {
   return r != nullptr && isa<ir::A>(r->reg);
 }
 
-// Returns the destination of an `Inc`, `Dec`, `ASL`, `LSR`, `ROL`, or
-// `ROR`, or null for any other instruction.
 const ir::Type_operand* rmw_dst(const ir::Type_instruction& instr) {
   return std::visit(
       [](const auto& ins) -> const ir::Type_operand* {
@@ -113,8 +79,6 @@ const ir::Type_operand* rmw_dst(const ir::Type_instruction& instr) {
       instr);
 }
 
-// Returns the index of each `Label` by name, the last one where a name
-// repeats, for finding branch targets quickly.
 LabelIndex index_labels(const Instrs& instrs) {
   LabelIndex out;
   for (std::size_t i = 0; i < instrs.size(); ++i) {
@@ -125,21 +89,8 @@ LabelIndex index_labels(const Instrs& instrs) {
   return out;
 }
 
-// Returns whether `instr` is a read-modify-write in place whose
-// destination is
-//
-//   * `Data` (absolute memory),
-//   * `ZP` (zero-page memory),
-//   * `IndexedData(name, k, X)`, an array element (`DEC t,X; LDA t,X`,
-//     where X can't change between the two adjacent instructions, so
-//     both name one byte), or
-//   * `Reg(X)` or `Reg(Y)` (DEX/DEY/INX/INY only, since X and Y have no
-//     shift or rotate).
-//
 // `Frame`, `Stack`, and `Indirect` use indirect-Y addressing, which the
-// 6502's read-modify-write opcodes don't have, so those stay as SBC/ADC
-// chains. `Reg(A)` is the target of a shift of the accumulator, and a
-// following `LDA M` can't have `M = Reg(A)`, so that pair doesn't arise.
+// 6502's read-modify-write opcodes don't have.
 bool is_eligible_rmw(const ir::Type_instruction& instr) {
   const ir::Type_operand* dst = rmw_dst(instr);
   if (dst == nullptr) {
@@ -152,8 +103,6 @@ bool is_eligible_rmw(const ir::Type_instruction& instr) {
   return r != nullptr && isa<ir::X, ir::Y>(r->reg);
 }
 
-// Returns whether `a` and `b` are the same `Data`, `ZP`, `Reg`, or
-// `IndexedData` operand.
 bool operands_match(const ir::Type_operand& a, const ir::Type_operand& b) {
   if (const auto* da = as<ir::Data>(a)) {
     const auto* db = as<ir::Data>(b);
@@ -173,10 +122,6 @@ bool operands_match(const ir::Type_operand& a, const ir::Type_operand& b) {
   return false;
 }
 
-// Returns whether `nxt` is `Mov(M, Reg(A))` with M the destination of
-// `rmw`, a load of the byte just written that only sets the flags
-// again. A volatile LDA is never redundant, since its read is the
-// effect that dropping it would erase.
 bool is_redundant_lda_after_rmw(const ir::Type_instruction& rmw,
                                 const ir::Type_instruction& nxt) {
   const auto* mov = as<ir::Mov>(nxt);
@@ -195,8 +140,6 @@ bool contains_a(const std::vector<std::string>& reg_args) {
   return false;
 }
 
-// Returns whether `instr` reads A, as a source or as the destination of
-// a read-modify-write.
 bool reads_a_here(const ir::Type_instruction& instr) {
   if (const auto* m = as<ir::Mov>(instr)) {
     return is_reg_a(m->src);
@@ -234,7 +177,6 @@ bool reads_a_here(const ir::Type_instruction& instr) {
   return false;
 }
 
-// Returns whether `instr` writes A without reading it first.
 bool kills_a_here(const ir::Type_instruction& instr) {
   if (const auto* m = as<ir::Mov>(instr)) {
     if (is_reg_a(m->dst) && !is_reg_a(m->src)) {
@@ -244,26 +186,9 @@ bool kills_a_here(const ir::Type_instruction& instr) {
   if (const auto* p = as<ir::Pop>(instr)) {
     return is_reg_a(p->dst);
   }
-  // A callee changes A: a 1-byte return leaves the result there, and a
-  // call that returns in HARGS leaves A undefined. A `LoadAddress` is
-  // `LDA #<x; STA dst; LDA #>x; STA dst+1`, or `LDA FP; ADC #off; ...`
-  // for a local, so A is loaded before it's used either way.
   return isa<ir::Call, ir::LoadAddress>(instr);
 }
 
-// Returns whether A's value at `idx` is dead: every path forward reaches
-// a write of A that doesn't read it before any read of A.
-//
-// The walk goes forward within the block. At a `Branch` it follows both
-// the fall-through and the target (found through `labels`), and A is
-// dead at the branch when it is dead on both. At a `Jump` it goes on at
-// the target. A branch or jump to a label the function doesn't have
-// counts as a read.
-//
-// `visited` holds the branches and jumps on the path being walked.
-// Coming back to one means the walk went around a loop without finding
-// a read, and the walk returns true there. That is sound, since a read
-// of A on the cycle would have been found before the walk came back.
 bool a_dead_after(const Instrs& instrs, std::size_t idx, const LabelIndex& labels,
                   std::set<std::size_t>& visited) {
   while (idx < instrs.size()) {
@@ -299,7 +224,6 @@ bool a_dead_after(const Instrs& instrs, std::size_t idx, const LabelIndex& label
       return dead;
     }
     if (isa<ir::Label>(instr)) {
-      // Falling into a label transfers nothing, so the walk goes on.
       ++idx;
       continue;
     }
@@ -314,8 +238,6 @@ bool a_dead_after(const Instrs& instrs, std::size_t idx, const LabelIndex& label
   return true;
 }
 
-// Copies the function's instructions, leaving out each `LDA M` that
-// follows an eligible read-modify-write of M when A is dead after it.
 void rewrite_function(ir::Function& fn) {
   Instrs& instrs = fn.instructions;
   const LabelIndex labels = index_labels(instrs);

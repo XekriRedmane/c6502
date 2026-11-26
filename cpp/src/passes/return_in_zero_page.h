@@ -1,5 +1,5 @@
-// The port of passes/return_in_zero_page.py, which returns a `static`
-// function's pointer result in a zero-page pointer of its own.
+// Returns a `static` function's pointer result in a zero-page pointer
+// of its own.
 #pragma once
 
 #include <string>

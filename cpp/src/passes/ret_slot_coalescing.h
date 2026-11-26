@@ -1,4 +1,3 @@
-// The port of passes/ret_slot_coalescing.py.
 #pragma once
 
 #include "asm_ast.h"

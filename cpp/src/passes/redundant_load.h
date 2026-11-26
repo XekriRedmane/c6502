@@ -1,6 +1,3 @@
-// The port of passes/redundant_load.py: the pass, and the CFG builder
-// that tolerates jumps out of the function, which
-// `memory_value_propagation` shares.
 #pragma once
 
 #include <span>
@@ -31,12 +28,7 @@ asm_ast::Program apply_redundant_load_elimination(asm_ast::Program prog,
 
 // Returns whether `a` and `b` are `name+k1,R` and `name+k2,R` with `k1`
 // and `k2` different and less than 256 apart, and nothing in `window`
-// writes R, so the two stores in it reach different bytes. The loads
-// and stores `swap_pairs_ok` looks at write no register but A, except
-// the `LDY #off` of an operand lowered through Y. `hi, lo` stored to
-// `LOCAL_ZVARS[x]` and `LOCAL_ZVARS[x + 1]` in Zork's `instr_call` are
-// this. The unit tests call it, as tests/test_redundant_load.py called
-// Python's `_same_index_apart`.
+// writes R, so the two stores in it reach different bytes.
 bool same_index_apart(const asm_ast::Type_operand& a, const asm_ast::Type_operand& b,
                       std::span<const asm_ast::Type_instruction> window);
 

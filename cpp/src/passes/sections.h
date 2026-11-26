@@ -1,6 +1,5 @@
-// The port of passes/sections.py's `items`, the section of each
-// function and static object of the finished asm, for the link
-// metadata's `item` lines.
+// The section of each function and static object of the finished asm,
+// for the link metadata's `item` lines.
 #pragma once
 
 #include <map>
@@ -13,10 +12,9 @@
 
 namespace c6502::passes {
 
-// What `items` reads of a top-level name's symbol
-// (`sections.section_info` computes it in Python): the section that
-// `[[c6502::section("name")]]` names, whether the object is `const`,
-// and whether it is `StaticAttr.mergeable`.
+// What `section_items` reads of a top-level name's symbol: the section
+// that `[[c6502::section("name")]]` names, whether the object is
+// `const`, and whether it is `StaticAttr.mergeable`.
 struct SectionInfo {
   std::optional<std::string> section;
   bool is_const = false;

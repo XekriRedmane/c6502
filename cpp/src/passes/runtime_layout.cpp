@@ -1,34 +1,8 @@
-// Where the runtime's zero-page block goes: SSP, FP, HARGS, and DPTR.
-//
-// The runtime keeps four things in zero page.
-//
-//     SSP    2 bytes   soft stack pointer, an `(SSP),Y` base
-//     FP     2 bytes   frame pointer, an `(FP),Y` base
-//     HARGS  N bytes   the runtime-helper exchange block
-//     DPTR   2 bytes   the pointer scratch, an `(DPTR),Y` base
-//
-// The compiled code names them only symbolically, and the output binds
-// each one with an `EQU` line. Their classic layout is SSP at $00, FP at
-// $02, a 32-byte HARGS at $04, and DPTR at $24, which ends at $25.
-//
-// Code that runs alongside system software can't always use those
-// bytes. On an Apple II, the Monitor keeps its text window in $20-$23
-// and its cursor in $24-$25, right on top of HARGS and DPTR. A program
-// says which bytes something else owns by declaring them, with
+// On an Apple II, the Monitor keeps its text window in $20-$23 and its
+// cursor in $24-$25, on top of the classic layout's HARGS and DPTR. A
+// program declares the bytes that other software owns with
 // `[[c6502::address(...)]]` or `zeropage(addr)`, and `choose_layout`
-// moves the block out of their way.
-//
-//   * If no reserved byte is in the classic layout, the classic layout
-//     is used, so a program that doesn't reserve those bytes compiles
-//     exactly as before.
-//   * Otherwise HARGS is sized to what the program needs (`hargs_need`),
-//     and HARGS, SSP, FP, and DPTR take the lowest free runs of bytes
-//     below $80, in that order. The compiler's own pools are $80-$FF,
-//     so the block stays below them. When it doesn't fit, that's a
-//     compile error.
-//
-// The layout has to be fixed before the asm passes run, since several
-// of them resolve runtime names to addresses to decide aliasing.
+// moves the runtime's block out of their way.
 #include "passes/runtime_layout.h"
 
 #include <algorithm>
@@ -45,7 +19,6 @@ namespace {
 
 using asdl::Int;
 
-// Returns `addrs`, which is sorted, as runs such as "$20-$22, $30".
 std::string ranges(const std::vector<Int>& addrs) {
   std::string out;
   std::size_t i = 0;
@@ -75,9 +48,6 @@ RuntimeLayout choose_layout(const std::set<Int>& reserved, const HargsNeed& harg
                    [&](Int b) { return reserved.contains(b); })) {
     return classic;
   }
-  // HARGS gets at least one byte, even in a program that never touches
-  // it, so that no other object shares its address and the emitter
-  // never names a pointer `(HARGS),Y`.
   const Int size = std::max<Int>(hargs_need(), 1);
   std::set<Int> used = reserved;
 

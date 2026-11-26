@@ -1,5 +1,3 @@
-// The port of passes/shift_cost.py: when a shift by a constant is cheap
-// enough to inline.
 #pragma once
 
 namespace c6502::passes {

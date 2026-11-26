@@ -1,35 +1,3 @@
-// Saving the values live across a recursive call on the hardware stack.
-//
-// A function on a cycle of the call graph normally can't keep its locals
-// in a private zero-page pool, as other functions do
-// (passes/zp_local_allocation.py), because the call that recurses runs
-// the same code and would overwrite them. Such a function uses the
-// shared caller-saved and callee-saved split instead, and saves every
-// callee-saved byte it uses in its prologue and restores it in its
-// epilogue, on every call, recursive or not.
-//
-// `[[c6502::save_hardware_stack]]` before a statement or a declaration
-// marks the calls in it (`tac_ast::FunctionCall::hw_stack_save`), and
-// the caller may then save the values it reads after those calls on the
-// hardware stack. The compiler can't bound how deep the
-// recursion goes, so the user vouches for the stack's 256 bytes.
-//
-// When every call that stays inside a cycle is marked
-// (`hw_stack_cycles`), and the cycle is otherwise eligible, the functions
-// on it get private pools like any other function. A function on the
-// cycle has its pool to itself except for the calls that recurse, so
-// `tac_to_asm` saves around each of those the values live across it
-// (`plan_saves`):
-//
-//     LDA v      ; just after v's last definition in the call's block,
-//     PHA        ; or else just before the call
-//     JSR f
-//     PLA        ; in the reverse order, after the call's result is
-//     STA v      ; stored
-//
-// With nothing live across the call in zero page, nothing has to be
-// saved at entry or exit. A value copied from a global only to be saved
-// becomes `LDA g; PHA` once the copy is folded away.
 #include "passes/recursion_saves.h"
 
 #include <algorithm>
@@ -61,22 +29,16 @@ bool is_volatile_qualified(const c99_ast::Type_data_type& t) {
   return isa<c99_ast::Volatile>(*cur);
 }
 
-// Returns whether `instr` ends a block for the walk of `plan_saves`,
-// which keeps its own list (Python's `_ends_block`).
 bool ends_block(const tac::Type_instruction& instr) {
   return isa<tac::Ret, tac::Jump, tac::JumpIfTrue, tac::JumpIfFalse, tac::JumpIfCmp,
              tac::JumpIfMasked>(instr);
 }
 
-// Returns whether `instr` touches no memory but the variables it names,
-// so that a global it doesn't name can be stored before it (Python's
-// `_REGISTER_ONLY`).
 bool register_only(const tac::Type_instruction& instr) {
   return isa<tac::Copy, tac::Binary, tac::Unary, tac::SignExtend, tac::ZeroExtend,
              tac::Truncate>(instr);
 }
 
-// Returns the names `instr` reads or writes.
 NameSet names_of(const tac::Type_instruction& instr) {
   NameSet out;
   for (const auto n : uses_in(instr)) {
@@ -118,8 +80,6 @@ CallGraph call_graph(const tac::Program& prog) {
 }
 
 Cycles cycles(const CallGraph& graph) {
-  // Tarjan's algorithm, visiting the functions and each one's callees in
-  // sorted order, as Python does.
   std::map<std::string, std::size_t, std::less<>> index;
   std::map<std::string, std::size_t, std::less<>> lowlink;
   std::vector<std::string> stack;
@@ -242,10 +202,6 @@ Cycles hw_stack_cycles(const tac::Program& prog) {
 
 namespace {
 
-// Returns the index of a `Copy(name, g)` to a global `g` that a pull
-// after `call` can do instead: the first instruction after the call to
-// name `name`, in the same block, after which `name` is dead, with only
-// `register_only` instructions that don't name `g` before it.
 template <class Plain>
 std::optional<std::size_t> store_to_global(const tac::Function& fn, std::size_t call,
                                            const std::string& name, const NameSet& statics,
@@ -282,11 +238,6 @@ std::optional<std::size_t> store_to_global(const tac::Function& fn, std::size_t 
 }  // namespace
 
 SavePlan plan_saves(const tac::Function& fn, const NameSet& members, const SymbolTable& symbols) {
-  // A value its last definition copies from somewhere is pushed from
-  // there, so `v = g` then `LDA v; PHA` becomes `LDA g; PHA` once the
-  // copy is found dead. A value whose first use after the call copies it
-  // to a global is pulled straight into the global, when nothing between
-  // the call and the copy can see the global.
   NameSet statics;
   for (const auto& [n, sym] : symbols) {
     if (std::holds_alternative<StaticAttr>(sym.attrs)) {
@@ -307,7 +258,6 @@ SavePlan plan_saves(const tac::Function& fn, const NameSet& members, const Symbo
     }
   }
 
-  // Returns whether `val` can be read twice, or written early.
   const auto plain = [&](const tac::Type_val& val) {
     const std::string* n = var_name(val);
     if (n == nullptr) {
@@ -336,15 +286,12 @@ SavePlan plan_saves(const tac::Function& fn, const NameSet& members, const Symbo
     for (const auto d : recursion_saves::defs_in(instr)) {
       defined.emplace(d);
     }
-    // The set's order is sorted, as Python's `sorted` gives.
     std::vector<std::string> saved;
     for (const auto& n : live_out[i]) {
       if (defined.count(n) == 0 && in_memory.count(n) == 0) {
         saved.push_back(n);
       }
     }
-    // Each value's last definition between the block's start (or the
-    // previous saved call) and this call.
     std::map<std::string, std::size_t, std::less<>> last_def;
     const NameSet saved_set(saved.begin(), saved.end());
     for (std::size_t k = block_start; k < i; ++k) {

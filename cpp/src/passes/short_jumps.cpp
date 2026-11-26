@@ -3,43 +3,6 @@
 // goes, and a `JMP` right after a load of a constant becomes a branch
 // when its label is in reach.
 //
-// Pattern
-//
-// A switch's default is often a call that never returns, which
-// `tail_call` leaves as a stub `.default@N: JMP internal_error`. The
-// bounds check of a jump table branches there, and
-// `expand_long_branches` makes that `BCC skip; JMP .default@N` when the
-// stub is far away, as it is at the end of a long switch:
-//
-//     CMP   #$10                       CMP   #$10
-//     BCC   .lb_skip@0                 BCC   .lb_skip@0
-//     JMP   .default@33       ->       JMP   internal_error
-//     ...                              ...
-//     .jtab@1:                         .jtab@1:
-//     DC.W  .default@33-1              DC.W  internal_error-1
-//     ...                              ...
-//     .default@33:
-//     JMP   internal_error
-//
-// The `JMP`s and the table's entries for the default go to the
-// function the stub jumps to, and the stub, which nothing reaches any
-// more, goes, 3 bytes.
-//
-// `tac_to_asm` lowers a comparison kept as a value as `Bcc t; LDA #0;
-// JMP end; t: LDA #1; end:`. `LDA #0` sets Z, so `JMP end` is `BEQ end`
-// when `end` is within a branch's reach, 1 byte shorter. A load of a
-// constant other than 0 clears Z, so its `JMP` is `BNE`. The same goes
-// for `LDX` and `LDY`.
-//
-// A `JMP` right after a conditional branch, with no label between, runs
-// only when the branch isn't taken. The branch's condition is false
-// there, so the branch on the opposite condition is always taken. A
-// jump threaded past a test on the TAC
-// (`optimization/known_compare_thread.py`) leaves `BEQ .a; JMP .b`
-// where neither place comes next, and the `JMP` becomes `BNE .b`.
-//
-// Rules
-//
 // - A `JMP .L`, with no register arguments, where the first instruction
 //   at `.L` and the labels with it is a `JMP f` to a name outside the
 //   function (a tail call) with none either, becomes `JMP f`. So does
@@ -55,12 +18,6 @@
 //   displacements come from the code as it stands, and every rewrite
 //   here only removes bytes, so a branch that reaches its label still
 //   does after the others.
-//
-// Where it runs
-//
-// Once, at the end of the `-O` asm pipeline, right after
-// `expand_long_branches`, when the code's layout is final apart from
-// what this pass removes.
 #include "passes/short_jumps.h"
 
 #include <cstddef>
@@ -90,8 +47,6 @@ bool is_terminator(const ir::Type_instruction& ins) {
   return isa<ir::Jump, ir::Return, ir::Ret, ir::JumpTable>(ins);
 }
 
-// Returns the function a stub at label `name` jumps to, when the first
-// instruction there is a `JMP` out of the function.
 std::optional<std::string> tail_call_at(const Instructions& instrs,
                                         const LabelMap& labels,
                                         const std::string& name) {
@@ -140,7 +95,6 @@ Instructions thread_to_tail_calls(const Instructions& instrs) {
   return out;
 }
 
-// Returns every label a branch, jump, jump table, or operand names.
 std::unordered_set<std::string> referenced(const Instructions& instrs) {
   std::unordered_set<std::string> out;
   for (const auto& ins : instrs) {
@@ -151,10 +105,6 @@ std::unordered_set<std::string> referenced(const Instructions& instrs) {
     } else if (const auto* table = as<ir::JumpTable>(ins)) {
       out.insert(table->targets.begin(), table->targets.end());
     }
-    // Python reads the `name` of every value in the instruction's
-    // fields, and of every element of a list field, which are the
-    // named operands, a `DecimalArith`'s among them. The arguments of a
-    // `Phi` have no `name`.
     const auto add_name = [&](const ir::Type_operand& op) {
       std::visit(
           [&](const auto& o) {
@@ -224,15 +174,10 @@ Instructions constant_jumps_to_branches(Instructions instrs) {
       cond = (imm->value & 0xFF) == 0 ? ir::Type_condition{ir::EQ{}}
                                       : ir::Type_condition{ir::NE{}};
     } else if (const auto* branch = as<ir::Branch>(load)) {
-      // The jump runs only when the branch before it isn't taken, so
-      // that branch's condition is false here and the opposite one is
-      // true.
       cond = long_branches::invert(branch->cond);
     } else {
       continue;
     }
-    // The displacement as a 2-byte branch here, with a byte to spare
-    // each way for the byte it saves.
     const long disp = labels.at(jump->target) - (addrs[k] + 2);
     if (disp < -127 || disp > 126) {
       continue;

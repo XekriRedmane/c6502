@@ -1,5 +1,3 @@
-// The port of passes/rotate_loop_test.py: a loop's test moved from its
-// top to its bottom.
 #pragma once
 
 #include "asm_ast.h"

@@ -14,13 +14,11 @@
 //     Mov(Reg(A), M)            // STA M
 //
 // A held M's value at the `STA`, so the shifts give the same result in
-// A, and the final `STA` leaves M as it was. Each shift of A is one byte
-// and 2 cycles, against 2 bytes and 5 cycles for a zero-page byte.
-//
-// The flags come out the same. Each `ASL A` sets C, N, and Z as
-// `ASL M` did, and `STA` changes none of them. A `ROL` / `ROR` reads the
-// same C either way. The trailing `LDA M` set N and Z from M's final
-// value, which the last shift already set them to.
+// A, and the final `STA` leaves M as it was. The flags come out the
+// same. Each `ASL A` sets C, N, and Z as `ASL M` did, and `STA` changes
+// none of them. A `ROL` / `ROR` reads the same C either way. The
+// trailing `LDA M` set N and Z from M's final value, which the last
+// shift already set them to.
 //
 // When it applies
 //
@@ -32,55 +30,19 @@
 //   holds M. Without it, A has to be dead after the shifts, since the
 //   rewrite leaves the shifted value in A where the unshifted one was.
 //
-// When M isn't read again, the `STA` that the rewrite leaves is dead,
-// and `asm_dead_store` deletes it, so `LDA w; STA t; ASL t; LDA t` ends
-// as `LDA w; ASL A`.
-//
-// Shifts of other bytes, and a constant store in the way
-//
-// A byte widened and then shifted, `(unsigned int)c << 3`, interleaves
-// its two bytes:
-//
-//     LDA   c
-//     ASL
-//     STA   lo
-//     LDA   #$00              ; the zero high byte
-//     STA   hi
-//     ROL   hi
-//     ASL   lo
-//     ROL   hi
-//     ASL   lo
-//     ROL   hi
-//
 // The run may include shifts of other bytes, which leave A alone and
 // stay where they are. Each still reads the carry that the shift of M
-// before it set, now from A. The `LDA #0; STA hi` in the way, which
-// would lose A, moves up in front of the code that loaded A (a load into
-// A and then operations on A alone that don't touch `hi`), so the whole
-// thing becomes
-//
-//     LDA   #$00
-//     STA   hi
-//     LDA   c
-//     ASL
-//     ROL   hi
-//     ASL
-//     ROL   hi
-//     ASL
-//     ROL   hi
-//     STA   lo
-//
-// which is 17 bytes and 32 cycles in zero page, against 19 and 38.
+// before it set, now from A. A constant store right after the `STA`,
+// which would lose A, moves up in front of the code that loaded A (a
+// load into A and then operations on A alone that don't touch the
+// stored byte).
 //
 // An increment or decrement
 //
 // `STA M; INC M; LDA M` becomes `CLC; ADC #1; STA M`, and `DEC M`
-// becomes `SEC; SBC #1` (`rewrite_steps`), 3 bytes and 7 cycles less in
-// zero page. Both set N and Z from the new value, but `ADC` and `SBC`
-// also set C and V, which `INC` and `DEC` leave alone, so both have to
-// be dead after the load. Zork's `parse[1]++` reads the byte through a
-// pointer into A, and `INC` has no `(zp),Y` mode, so the byte went
-// through a slot to be incremented.
+// becomes `SEC; SBC #1` (`rewrite_steps`). Both set N and Z from the
+// new value, but `ADC` and `SBC` also set C and V, which `INC` and
+// `DEC` leave alone, so both have to be dead after the load.
 //
 // The converse: a shift loaded from and stored back to the same byte
 //
@@ -89,37 +51,17 @@
 //     Mov(Reg(A), M)            // STA M
 //
 // becomes the shifts of M, `ASL M` (`shift_in_place`), when A is dead
-// after the store. That's 2 bytes and 5 cycles against 5 and 8 for one
-// shift of a zero-page byte, and 3 and 6 against 7 and 10 for an
-// absolute one. Two shifts take the same cycles either way and 2 bytes
-// fewer. Three would take more cycles, and as many bytes for an absolute
-// byte, so the rule stops at two. The flags come out the same, from the
-// last shift. `g <<= 1;` on a `uint8_t g` had kept the byte in A. A
-// volatile byte is left alone, since a read-modify-write instruction on
-// the NMOS 6502 writes the old value back before the new one.
-//
-// M may also be an array element indexed by X, as in
-// `LDA t,X; ASL; STA t,X` to `ASL t,X`, since X can't change between the
-// adjacent load and store. That's 3 bytes and 7 cycles against 7 and 11
-// for one shift, and 6 and 14 against 8 and 13 for two.
+// after the store. M may also be an array element indexed by X, since
+// X can't change between the adjacent load and store. A volatile byte
+// is left alone, since a read-modify-write instruction on the NMOS 6502
+// writes the old value back before the new one.
 //
 // A loop of one-bit shifts
 //
 // `STA m`, a count put in X, a loop of `ASL m; DEX; BNE`, and `LDA m`
 // after it become the loop on A and `STA m` after it
-// (`shift_loop_in_a`), when the flags are dead after the load. Each pass
-// of the loop is a byte shorter and 3 cycles faster in zero page.
-//
-// Where it comes from
-//
-// `tac_to_asm` already lowers a 1-byte constant shift in A. A multi-byte
-// one shifts its bytes in place, and when the high bytes turn out to be
-// dead, what's left is a single byte shifted in memory. The first step
-// of a byte widened and then shifted (`(int)c << 3`) has the same shape.
-//
-// Where it runs
-//
-// Inside the peephole fixed point.
+// (`shift_loop_in_a`), when the flags are dead after the load, since N
+// and Z then come from `DEX`.
 #include "passes/shift_in_a.h"
 
 #include <cstddef>
@@ -152,8 +94,6 @@ inline constexpr bool is_shift_v =
     std::is_same_v<T, ir::LogicalShiftRight> || std::is_same_v<T, ir::RotateLeft> ||
     std::is_same_v<T, ir::RotateRight>;
 
-// Returns the operand of an ASL, LSR, ROL, or ROR, or null for any other
-// instruction.
 const ir::Type_operand* shift_dst(const ir::Type_instruction& instr) {
   return std::visit(
       [](const auto& ins) -> const ir::Type_operand* {
@@ -166,7 +106,6 @@ const ir::Type_operand* shift_dst(const ir::Type_instruction& instr) {
       instr);
 }
 
-// Returns the shift `instr`, of the same kind, on `dst`.
 ir::Type_instruction with_dst(const ir::Type_instruction& instr,
                               const ir::Type_operand& dst) {
   ir::Type_instruction out = instr;
@@ -196,16 +135,10 @@ bool is_imm(const ir::Type_operand& op) {
   return isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh>(op);
 }
 
-// Returns whether the zero-page or absolute bytes `a` and `b` are known
-// to be different bytes: the same kind of operand and not equal. (A
-// `Data` slot symbol can name a `ZP` address.)
 bool distinct(const ir::Type_operand& a, const ir::Type_operand& b) {
   return a.index() == b.index() && a != b;
 }
 
-// Returns the constant stores right after `instrs[i]`: `LDA #k; STA H`
-// pairs, or single `Mov(#k, H)`s, which emit the same and use A, each
-// `H` a byte known to differ from `mem`.
 InstrList constant_stores(const InstrList& instrs, std::size_t i,
                           const ir::Type_operand& mem) {
   InstrList out;
@@ -249,9 +182,6 @@ bool safe_read(const ir::Type_operand& src, const std::vector<ir::Type_operand>&
   return false;
 }
 
-// Returns the source of an `Add`, `Sub`, `And`, or `Or` on A, or null
-// when `instr` is a shift (which has none) or any other instruction.
-// `is_a_op` is set when `instr` is one of those six operations on A.
 const ir::Type_operand* a_op_src(const ir::Type_instruction& instr, bool& is_a_op) {
   is_a_op = false;
   if (const ir::Type_operand* dst = shift_dst(instr)) {
@@ -272,10 +202,6 @@ const ir::Type_operand* a_op_src(const ir::Type_instruction& instr, bool& is_a_o
       instr);
 }
 
-// Returns the index of the load into A that starts the code computing A
-// for `instrs[i]`: a `Mov(x, A)` followed only by operations on A.
-// Nothing when there isn't one, or when it reads or writes a byte in
-// `avoid` or might.
 std::optional<std::size_t> a_chain_start(const InstrList& instrs, std::size_t i,
                                          const std::vector<ir::Type_operand>& avoid) {
   for (std::size_t k = i; k-- > 0;) {
@@ -299,9 +225,6 @@ std::optional<std::size_t> a_chain_start(const InstrList& instrs, std::size_t i,
   return std::nullopt;
 }
 
-// Moves a run of shifts of a byte just stored from A onto A, as the
-// first part of the comment at the top describes. Returns whether it
-// changed anything.
 bool rewrite_function(InstrList& instrs) {
   bool changed = false;
   std::size_t i = 0;
@@ -330,7 +253,6 @@ bool rewrite_function(InstrList& instrs) {
       }
       ++j;
     }
-    // Trailing shifts of other bytes stay outside the run.
     while (j > first && *shift_dst(instrs[j - 1]) != mem) {
       --j;
     }
@@ -389,9 +311,6 @@ bool rewrite_function(InstrList& instrs) {
   return changed;
 }
 
-// Rewrites `LDA M; ASL; STA M` as `ASL M`, for one or two shifts, when M
-// is a zero-page or absolute byte that isn't volatile, or an array
-// element indexed by X, and A is dead after the store.
 bool shift_in_place(InstrList& instrs) {
   bool changed = false;
   std::size_t i = 0;
@@ -432,10 +351,6 @@ bool shift_in_place(InstrList& instrs) {
   return changed;
 }
 
-// Rewrites `STA M; INC M; LDA M` as `CLC; ADC #1; STA M`, and the same
-// with `DEC` as `SEC; SBC #1`, when M is a zero-page or absolute byte
-// that isn't volatile and C and V are dead after the load. The `STA`
-// that is left goes when M isn't read again (`asm_dead_store`).
 bool rewrite_steps(InstrList& instrs) {
   bool changed = false;
   std::size_t i = 0;
@@ -473,7 +388,6 @@ bool rewrite_steps(InstrList& instrs) {
   return changed;
 }
 
-// Returns how many branches and jumps name each label.
 std::map<std::string, int> labels_named(const InstrList& instrs) {
   std::map<std::string, int> counts;
   for (const auto& ins : instrs) {
@@ -491,31 +405,6 @@ int named_count(const std::map<std::string, int>& named, const std::string& name
   return it == named.end() ? 0 : it->second;
 }
 
-// Shifts a byte in A through a loop of one-bit shifts counted in X, as
-// `tac_to_asm._shift_loop` writes it:
-//
-//         STA m                         STA m
-//         LDX n                         LDX n
-//         BEQ done                      BEQ done
-//     loop:                         loop:
-//         ASL m             ->          ASL A
-//         DEX                           DEX
-//         BNE loop                      BNE loop
-//     done:                         done:
-//         LDA m                         STA m
-//
-// The `LDX n` may be `LDX #k` with no `BEQ` or `done`, or a `CPX #0`
-// when the count is already in X. A holds m at the `STA`, and nothing
-// before the loop writes A or m, so on both ways to `done` A holds what
-// m would, and the `STA m` there leaves m as the loop did. Nothing in
-// the loop reads m. C comes out the same from the last shift, or
-// untouched when there are none, but N and Z come from `DEX` where the
-// `LDA` set them from the byte, so they must be dead after it. `m` is a
-// `ZP` or `Data` byte and neither access is volatile, the loop's label
-// is named by its own `BNE` alone, and `done` by the `BEQ` alone. The
-// `STA m` in front stays, and `asm_dead_store` deletes it when nothing
-// reads m before the new one. `x >> n` on a byte `x` that arrives in A
-// is `CPX #0; BEQ; LSR A; DEX; BNE`.
 bool shift_loop_in_a(InstrList& instrs) {
   const std::map<std::string, int> named = labels_named(instrs);
   bool changed = false;

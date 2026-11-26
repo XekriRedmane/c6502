@@ -1,4 +1,3 @@
-// The port of passes/promote_loop_carried_to_a.py.
 #pragma once
 
 #include "asm_ast.h"

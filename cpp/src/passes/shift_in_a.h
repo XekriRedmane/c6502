@@ -1,4 +1,3 @@
-// The port of passes/shift_in_a.py.
 #pragma once
 
 #include "asm_ast.h"

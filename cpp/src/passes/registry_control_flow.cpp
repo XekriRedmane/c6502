@@ -33,14 +33,11 @@ namespace {
 
 using json::Value;
 
-// Returns the keyword argument `name`, or null when it is missing or
-// None.
 const Value* kwarg(const Value& kwargs, std::string_view name) {
   const Value* v = kwargs.get(name);
   return v == nullptr || v->kind == Value::Kind::kNull ? nullptr : v;
 }
 
-// Returns the positional argument `i`.
 const Value& arg(const Value& args, std::size_t i) {
   if (i >= args.items.size()) {
     throw std::runtime_error("a positional argument is missing");
@@ -182,10 +179,6 @@ std::string run_short_jumps(asm_ast::Program input, const AsmContext&,
 
 namespace {
 
-// Decodes the keyword arguments that `apply_shared_tails` and
-// `apply_outline_runs` share. The symbol table, their positional
-// argument, isn't read: the C++ passes report the functions they make
-// in place of adding them to it.
 struct SharingArgs {
   std::optional<NameSet> zp_names;
   std::set<asdl::Int> slot_addrs;

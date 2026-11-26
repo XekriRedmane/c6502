@@ -1,31 +1,8 @@
 // Keeps a local copy of a function's zero-page result in the result's
 // own bytes.
 //
-// What it does
-//
-// A `static` function `F` that returns a pointer returns it in its
-// zero-page object `F@ret` (passes/return_in_zero_page.py), and each
-// call copies `F@ret` into the call's result. When the result is a
-// local that lives on past the next call of `F`, or one that the
-// function changes, the copy stays, 8 bytes at each call:
-//
-//     JSR   next_string
-//     LDA   next_string@ret
-//     STA   __local_display_message__msg_0
-//     LDA   next_string@ret+1
-//     STA   __local_display_message__msg_1
-//
-// `display_message` in `examples/ali_baba/text.c` steps through a table
-// of strings that way. This pass renames such a local pair to `F@ret`
-// itself, when the two never hold different values at once, so the
-// copies become `LDA F@ret; STA F@ret`, which the peepholes drop. It's
-// `passes/slot_coalescing.py`'s rule for a parameter's slot, applied to
-// the bytes `F` returns its result in.
-//
-// When it applies
-//
-// In a function `G` of the unit, for `F@ret` and two of `G`'s own
-// locals `L0` and `L1`:
+// The pass renames two of `G`'s own locals `L0` and `L1` to `F@ret`'s
+// bytes when all of these hold.
 //
 //   * `G` calls `F`, directly or through other functions of the unit,
 //     so that `G` is already a function whose call may write `F@ret`.
@@ -33,10 +10,10 @@
 //     about `F@ret` across a call drops it at a call of `G` (`G`'s call
 //     summary includes `F`'s writes), so the writes of `F@ret` that the
 //     rename adds to `G` change nothing that a caller of `G` holds.
-//   * `G` is in the private-pool model (`compile`'s `pool_eligible`),
-//     isn't recursive, and makes no `save_hardware_stack` call, so the
-//     linker rejects any program in which one of `G`'s calls leads back
-//     to `G` (see the external calls below).
+//   * `G` is in the private-pool model, isn't recursive, and makes no
+//     `save_hardware_stack` call, so the linker rejects any program in
+//     which one of `G`'s calls leads back to `G` (see the external
+//     calls below).
 //   * `L0` and `L1` are copied from `F@ret` and `F@ret+1` somewhere in
 //     `G` (`LDA F@ret; STA L0`, through any register, or a
 //     memory-to-memory `Mov`). Neither is reached by a pointer
@@ -61,11 +38,6 @@
 //     which the linker rejects, so a call that leaves the unit can
 //     write `F@ret` only when an entry point calls `F` without leading
 //     to `G`. Calls don't read `F@ret` or `G`'s locals.
-//
-// Where it runs
-//
-// Once, in `compile.optimized_asm`, right after `slot_coalescing`, and
-// before the peephole fixed points that drop the self-copies it leaves.
 #include "passes/ret_slot_coalescing.h"
 
 #include <array>
@@ -104,7 +76,6 @@ bool is_alu(const ir::Type_instruction& ins) {
   return isa<ir::Add, ir::Sub, ir::And, ir::Or, ir::Xor>(ins);
 }
 
-// Returns the `dst` field of `ins` when it holds one operand, or null.
 const ir::Type_operand* dst_of(const ir::Type_instruction& ins) {
   return std::visit(
       [](const auto& x) -> const ir::Type_operand* {
@@ -119,8 +90,6 @@ const ir::Type_operand* dst_of(const ir::Type_instruction& ins) {
       ins);
 }
 
-// The four bytes the analysis follows, by the names it gives them, and
-// each one's partner, the byte it would share storage with.
 constexpr std::array<const char*, 4> kCells = {"$L0", "$L1", "$R0", "$R1"};
 constexpr int kL0 = 0;
 constexpr int kL1 = 1;
@@ -128,7 +97,6 @@ constexpr int kR0 = 2;
 constexpr int kR1 = 3;
 constexpr int partner(int cell) { return cell ^ 2; }
 
-// Returns the cell a canonical `Data` operand names, or -1.
 int cell_of(const ir::Type_operand& op) {
   const auto* d = as<ir::Data>(op);
   if (d == nullptr) {
@@ -142,8 +110,6 @@ int cell_of(const ir::Type_operand& op) {
   return -1;
 }
 
-// The unit's direct calls, what each function leads to, and its entry
-// points.
 class CallGraph {
  public:
   CallGraph(const ir::Program& prog,
@@ -167,8 +133,6 @@ class CallGraph {
         }
       }
     }
-    // Every name each function leads to by calls, the names the unit
-    // doesn't define included.
     for (const auto& [name, fn] : fns) {
       std::set<std::string> seen;
       std::vector<std::string> stack(callees[name].begin(), callees[name].end());
@@ -223,15 +187,11 @@ class CallGraph {
     }
   }
 
-  // Returns the names a call of `name` leads to, or null for a name the
-  // unit doesn't define.
   const std::set<std::string>* reach(const std::string& name) const {
     const auto it = reach_.find(name);
     return it == reach_.end() ? nullptr : &it->second;
   }
 
-  // Returns whether a call of `name` may run a function the unit
-  // doesn't define.
   bool leaves_unit(const std::string& name) const {
     if (!defined_.contains(name)) {
       return true;
@@ -244,7 +204,6 @@ class CallGraph {
     return false;
   }
 
-  // Returns whether a call of `callee` from `g` may write `f@ret`.
   bool may_write_ret(const std::string& callee, const std::string& f,
                      const std::string& g) const {
     const auto* r = reach(callee);
@@ -271,8 +230,6 @@ class CallGraph {
   std::vector<std::string> entries_;
 };
 
-// Returns the locals each byte of `ret` is copied into by `LDA ret+k;
-// STA L` or a memory-to-memory `Mov`, for k = 0 and 1.
 std::array<std::set<std::string>, 2> copies_of(const Instructions& instrs,
                                                const std::string& ret,
                                                const std::string& prefix) {
@@ -300,13 +257,8 @@ std::array<std::set<std::string>, 2> copies_of(const Instructions& instrs,
   return out;
 }
 
-// The bytes a pair renaming follows: each name and offset that is one
-// of them, and the four bytes' addresses.
 struct Cells {
-  // (name, offset) for $L0, $L1, $R0, $R1.
   std::array<std::pair<std::string, asdl::Int>, 4> names;
-  // The cell at each address, the later one where two coincide, as in
-  // Python's dict.
   std::map<asdl::Int, int> at;
 
   int named(const std::string& name, asdl::Int offset) const {
@@ -332,12 +284,6 @@ struct Cells {
   }
 };
 
-// Returns `ins` with each operand that names one of the four bytes by
-// name spelled `Data("$L0", 0)` and so on, or nothing when an operand
-// reaches one of them in a way the pass doesn't follow: a `ZP` operand,
-// an `IndexedData`, a `(zp),Y` base whose pair overlaps the bytes other
-// than at `L0` with `L1` after it or at `F@ret`, or an instruction kind
-// the pass doesn't model.
 std::optional<ir::Type_instruction> canonical(const ir::Type_instruction& ins,
                                               const Cells& cells) {
   bool touched = false;
@@ -371,7 +317,7 @@ std::optional<ir::Type_instruction> canonical(const ir::Type_instruction& ins,
       if (cells.named(d->name, d->offset) >= 0) {
         touched = true;
       } else if (cells.names_name(d->name)) {
-        return std::nullopt;  // another byte of `ret`
+        return std::nullopt;
       }
     }
   }
@@ -397,14 +343,11 @@ std::optional<ir::Type_instruction> canonical(const ir::Type_instruction& ins,
   return out;
 }
 
-// The cells an instruction reads and writes, as bits 0 to 3.
 struct CellRw {
   unsigned reads = 0;
   unsigned writes = 0;
 };
 
-// Returns the bytes of the pair a `(zp),Y` operand reads its pointer
-// from.
 unsigned base_cells(const ir::Type_operand& op, const Cells& cells) {
   std::optional<asdl::Int> base;
   if (const auto* zi = as<ir::IndirectZp>(op)) {
@@ -423,10 +366,6 @@ unsigned base_cells(const ir::Type_operand& op, const Cells& cells) {
   return out;
 }
 
-// Returns the cells the canonical instruction `ins` of `g` reads and
-// writes. The `(zp),Y` operands keep their addresses, which `cells`
-// maps to the cells. A call reads none of them and writes `f@ret`'s
-// when it may.
 CellRw cell_reads_writes(const ir::Type_instruction& ins, const Cells& cells,
                          const std::string& f, const std::string& g,
                          const CallGraph& graph) {
@@ -464,8 +403,6 @@ CellRw cell_reads_writes(const ir::Type_instruction& ins, const Cells& cells,
   return rw;
 }
 
-// Returns the cells live just after each instruction. Nothing is live
-// at a return or at a jump out of the function.
 std::vector<unsigned> live_out(const Instructions& instrs,
                                const std::vector<CellRw>& rw) {
   const LabelMap label_at(instrs);
@@ -494,8 +431,6 @@ std::vector<unsigned> live_out(const Instructions& instrs,
   return live_out;
 }
 
-// Returns `fn`'s instructions with `l0` and `l1` renamed to `ret`'s two
-// bytes, or nothing when that isn't sound.
 std::optional<Instructions> try_pair(const ir::Function& fn, const std::string& l0,
                                      const std::string& l1, const std::string& ret,
                                      const std::string& f, const CallGraph& graph,
@@ -555,8 +490,6 @@ std::optional<Instructions> try_pair(const ir::Function& fn, const std::string& 
       }
     }
   }
-  // The locals' `Data` operands become `ret`'s bytes, and a `(zp),Y`
-  // base at `a0` moves to `ret_addr`.
   Instructions out = instrs;
   for (auto& ins : out) {
     for_each_operand_mut(ins, [&](ir::Type_operand& op) {
@@ -576,7 +509,6 @@ std::optional<Instructions> try_pair(const ir::Function& fn, const std::string& 
   return out;
 }
 
-// Renames one local pair of `fn` to `ret`, and returns whether it did.
 bool coalesce_one(ir::Function& fn, const std::string& ret, const std::string& f,
                   const CallGraph& graph, const NameSet& unreachable,
                   const SymbolAddrs& slot_symbols, asdl::Int ret_addr) {
@@ -610,7 +542,6 @@ asm_ast::Program apply_ret_slot_coalescing(asm_ast::Program prog,
       fns[fn->name] = fn;
     }
   }
-  // Each `F@ret` of the unit, with its function.
   std::map<std::string, std::string> rets;
   for (const auto& tl : prog.top_level) {
     const auto* sv = as<ir::StaticVariable>(tl);
@@ -636,8 +567,6 @@ asm_ast::Program apply_ret_slot_coalescing(asm_ast::Program prog,
     for (const auto& [ret, f] : rets) {
       const auto* reach = graph.reach(fn->name);
       if (fn->name != f && reach != nullptr && reach->contains(f)) {
-        // Every local pair that can be `ret` is renamed to it, one pair
-        // at a time, at most eight.
         for (int round = 0; round < 8; ++round) {
           if (!coalesce_one(*fn, ret, f, graph, unreachable, slot_symbols,
                             zp_addrs.at(ret))) {

@@ -23,6 +23,12 @@ using ::c6502::asdl::isa;
 using Instructions = std::vector<ir::Type_instruction>;
 
 constexpr std::size_t kMinCases = 4;
+// The largest case value, since the dispatch doubles the value with
+// `ASL` into a byte index of the table.
+constexpr long kMaxCaseValue = 127;
+// The bytes of `CMP #base; BCC default`, which a table whose first
+// entry isn't for 0 needs.
+constexpr long kLowerBoundCheck = 4;
 // `RTS` pulls the address the two `PHA`s pushed and adds one.
 constexpr long kDispatch = 11;
 
@@ -65,7 +71,7 @@ std::vector<Case> chain_at(const Instructions& instrs, std::size_t i,
     const auto* br = as<ir::Branch>(instrs[i + 1]);
     const ir::Imm* imm = cmp != nullptr ? as<ir::Imm>(cmp->right) : nullptr;
     if (!(cmp != nullptr && is_a(cmp->left) && imm != nullptr &&
-          0 <= imm->value && imm->value <= 127 && br != nullptr &&
+          0 <= imm->value && imm->value <= kMaxCaseValue && br != nullptr &&
           isa<ir::EQ>(br->cond))) {
       break;
     }
@@ -105,11 +111,11 @@ std::optional<Instructions> table_for(const Instructions& instrs, std::size_t i,
   }
   const asdl::Int lo = *distinct.begin();
   const asdl::Int hi = *distinct.rbegin();
-  const asdl::Int base = lo <= 2 ? asdl::Int(0) : lo;
+  const asdl::Int base = 2 * lo <= kLowerBoundCheck ? asdl::Int(0) : lo;
   const asdl::Int chain_bytes =
       2 * static_cast<long>(end - i) + (jump_default ? 3 : 0);
   const asdl::Int table_bytes =
-      asdl::Int(base != 0 ? 4 : 0) + 4 + kDispatch + 2 * (hi - base + 1);
+      asdl::Int(base != 0 ? kLowerBoundCheck : 0) + 4 + kDispatch + 2 * (hi - base + 1);
   if (table_bytes >= chain_bytes) {
     return std::nullopt;
   }

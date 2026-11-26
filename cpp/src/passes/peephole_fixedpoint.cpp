@@ -119,7 +119,7 @@ std::vector<SweepPass> peephole_sweep(const AsmContext& ctx,
       (*zp_cells)[name] = addr;
     }
   }
-  const SymbolAddrs* zp_addrs = zp_cells->empty() ? nullptr : zp_cells.get();
+  const SymbolAddrs* zp_addrs = zp_cells.get();
   const SymbolAddrs* slots = zp_slot_symbols;
   const NameSet* nr = &noreturn;
   using P = ir::Program;

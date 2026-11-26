@@ -144,10 +144,7 @@ constexpr int kMaxDepth = 400;
 
 [[noreturn]] void too_deep(const std::string& where) {
   throw CompileError("RecursionError",
-                     where + ": the expression is nested deeper than the C++ assembler follows, " +
-                         std::to_string(kMaxDepth) +
-                         " of Python's calls, which is short of where Python's recursion "
-                         "limit stops it");
+                     where + ": the expression is nested too deeply for the assembler");
 }
 
 class Depth {

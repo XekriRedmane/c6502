@@ -271,6 +271,20 @@ TEST_CASE("binutils: TestAssembler::test_errors") {
   }
 }
 
+TEST_CASE("binutils: an expression past the nesting limit is a RecursionError") {
+  const auto nested = [](int depth) {
+    return fn({"LDA   #" + std::string(depth, '(') + "1" + std::string(depth, ')')});
+  };
+  CHECK_NOTHROW(assemble(nested(40)));
+  std::string got = "no error";
+  try {
+    assemble(nested(60));
+  } catch (const c6502::CompileError& e) {
+    got = e.python_type() + ": " + e.what();
+  }
+  CHECK(got == "RecursionError: <input>:3: the expression is nested too deeply for the assembler");
+}
+
 TEST_CASE("binutils: TestAssembler::test_linker_values_override_the_unit") {
   // The linker assembles a unit again with its own addresses: a slot
   // that left zero page gets absolute addressing.

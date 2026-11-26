@@ -755,8 +755,7 @@ void bind_extern_params(const LinkMetadata& merged, const std::vector<ExternMeta
       link_error("`" + e.name +
                  "` is declared with its parameters in different registers in two units");
     }
-    const std::size_t n = std::min({e.params.size(), params.size(), canon_regs.size()});
-    for (std::size_t i = 0; i < n; ++i) {
+    for (std::size_t i = 0; i < e.params.size(); ++i) {
       if (!canon_regs[i].empty()) {
         continue;
       }

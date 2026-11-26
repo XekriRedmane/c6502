@@ -2,6 +2,7 @@
 // footprints of the runtime helpers, and the slot symbols of the
 // private pools, written for the C++ functions.
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "doctest.h"
@@ -136,4 +137,20 @@ TEST_CASE("zp_globals: promotion takes the most accesses per byte first, ties by
       c6502::passes::allocate_zp_globals(r.symbols, &r.types, {}, &weights);
   CHECK(keys(zp.promoted) == Names{"c", "e", "a", "b"});
   CHECK(keys(zp.addrs) == Names{"c", "e", "a", "b"});
+}
+
+TEST_CASE("zp_globals: access_weights doesn't count a Phi's predecessor label") {
+  // Built a step at a time, since MSVC 14.36 stops with an internal
+  // compiler error on the same value as one nested initializer.
+  tac::Phi phi;
+  phi.dst = tac::Var{.name = "x"};
+  phi.args.emplace_back(tac::PhiArg{.pred_label = "g", .source = tac::Var{.name = "y"}});
+  tac::Function fn;
+  fn.name = "f";
+  fn.is_global = true;
+  fn.instructions.emplace_back(std::move(phi));
+  fn.instructions.emplace_back(tac::Ret{.val = tac::Var{.name = "x"}});
+  tac::Program prog;
+  prog.top_level.emplace_back(std::move(fn));
+  CHECK(keys(c6502::passes::access_weights(prog)) == Names{"x", "y"});
 }

@@ -150,7 +150,6 @@ void names_in(const tac::Type_instruction& instr, std::vector<std::string_view>&
       }
       for (const auto& arg : phi.args) {
         const auto& a = std::get<tac::PhiArg>(arg);
-        found.push_back(a.pred_label);
         if (const auto* var = std::get_if<tac::Var>(&a.source)) {
           found.push_back(var->name);
         }

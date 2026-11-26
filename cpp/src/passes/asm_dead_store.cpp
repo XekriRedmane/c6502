@@ -4,6 +4,7 @@
 #include <unordered_set>
 
 #include "passes/asm_aliasing.h"
+#include "passes/asm_operands.h"
 #include "passes/decimal_arith.h"
 
 namespace c6502::passes::asm_dead_store {
@@ -19,33 +20,6 @@ constexpr int kPoolHi = 0x100;
 
 bool starts_with(std::string_view s, std::string_view prefix) {
   return s.substr(0, prefix.size()) == prefix;
-}
-
-// Returns each operand in the `src` and `dst` fields of `instr`, or
-// every operand of a `DecimalArith`, for the scan of `ImmLabel*`
-// operands.
-std::vector<ir::Type_operand> all_operands(const ir::Type_instruction& instr) {
-  if (const auto* d = as<ir::DecimalArith>(instr)) {
-    return decimal_arith::operands(*d);
-  }
-  std::vector<ir::Type_operand> ops;
-  std::visit(
-      [&](const auto& ins) {
-        if constexpr (requires { ins.src; }) {
-          if constexpr (std::is_same_v<std::remove_cvref_t<decltype(ins.src)>,
-                                       ir::Type_operand>) {
-            ops.push_back(ins.src);
-          }
-        }
-        if constexpr (requires { ins.dst; }) {
-          if constexpr (std::is_same_v<std::remove_cvref_t<decltype(ins.dst)>,
-                                       ir::Type_operand>) {
-            ops.push_back(ins.dst);
-          }
-        }
-      },
-      instr);
-  return ops;
 }
 
 bool operands_equal_exact(const ir::Type_operand& a, const ir::Type_operand& b) {
@@ -132,13 +106,13 @@ NameSet collect_address_taken_names(Instrs instrs) {
         out.insert(d->name);
       }
     }
-    for (const auto& op : all_operands(instr)) {
+    for_each_operand<true>(instr, [&](const ir::Type_operand& op) {
       if (const auto* lo = as<ir::ImmLabelLow>(op)) {
         out.insert(lo->name);
       } else if (const auto* hi = as<ir::ImmLabelHigh>(op)) {
         out.insert(hi->name);
       }
-    }
+    });
   }
   return out;
 }

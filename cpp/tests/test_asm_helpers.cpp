@@ -252,6 +252,23 @@ TEST_CASE("label_map gives the last index of each label") {
   CHECK(labels.find("c") == -1);
 }
 
+TEST_CASE("collect_address_taken_names reads a label's halves in every operand") {
+  const ir::Type_operand lo_c = ir::ImmLabelLow{.name = "__local_f__c"};
+  const ir::Type_operand hi_e = ir::ImmLabelHigh{.name = "__local_f__e"};
+  const List instrs = {
+      ir::LoadAddress{.src = data("__local_f__a"), .dst = data("__local_f__p")},
+      mov(ir::ImmLabelLow{.name = "__local_f__b"}, kA),
+      ir::Compare{.left = kA, .right = lo_c},
+      ir::Xor{.src1 = kA, .src2 = ir::ImmLabelHigh{.name = "__local_f__d"}, .dst = kA},
+      ir::DecimalArith{.left = {hi_e}, .right = {imm(1)}, .dst = {data("__local_f__q")}},
+      mov(data("__local_f__x"), kA),
+      ret(),
+  };
+  const NameSet got = asm_dead_store::collect_address_taken_names(instrs);
+  CHECK(got == NameSet{"__local_f__a", "__local_f__b", "__local_f__c", "__local_f__d",
+                       "__local_f__e"});
+}
+
 TEST_CASE("may_alias: immediates never alias") {
   const ir::Type_operand i = imm(5);
   CHECK_FALSE(alias(i, i));

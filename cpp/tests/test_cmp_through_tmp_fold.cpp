@@ -202,6 +202,13 @@ TEST_CASE("cmp_through_tmp_fold compares with a byte read through a pointer") {
     const std::string text = lda(src) + sta(tmp) + lda("Frame(3)") + cmp(tmp) + kRet;
     CHECK(run(text) == expect(text));
   }
+  SUBCASE("an other read through a pointer or by Y") {
+    // These load no Y, but each could read the temporary.
+    for (const char* other : {"IndirectZpY(150)", "IndirectY", R"(IndexedData("t" 0 Y))"}) {
+      const std::string text = lda(src) + sta(tmp) + lda(other) + cmp(tmp) + kRet;
+      CHECK(run(text) == expect(text));
+    }
+  }
   SUBCASE("a BIT of the temporary") {
     // `BIT tmp` after the compare reads the staged byte, so the store
     // stays.

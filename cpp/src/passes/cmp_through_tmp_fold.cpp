@@ -42,11 +42,6 @@ bool src_eligible(const ir::Type_operand& src) {
              ir::IndirectY, ir::IndirectZpY, ir::IndirectZp>(src);
 }
 
-bool y_safe_other(const ir::Type_operand& other) {
-  return isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh, ir::Data, ir::ZP, ir::IndexedData,
-             ir::IndirectY, ir::IndirectZpY>(other);
-}
-
 bool other_alias_safe(const ir::Type_operand& other, const ir::Type_operand& tmp) {
   if (isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh>(other)) {
     return true;
@@ -190,12 +185,6 @@ bool matches_pattern(const ir::Type_instruction& a, const ir::Type_instruction& 
     return false;
   }
   if (!isa<ir::Compare>(d) && !alu_src_eligible(src)) {
-    return false;
-  }
-  const auto* indexed = as<ir::IndexedData>(src);
-  const bool reads_y = (indexed != nullptr && isa<ir::Y>(indexed->index)) ||
-                       isa<ir::IndirectY, ir::IndirectZpY, ir::IndirectZp>(src);
-  if (reads_y && !y_safe_other(other)) {
     return false;
   }
   return other_alias_safe(other, sta->dst);

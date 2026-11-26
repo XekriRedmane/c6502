@@ -20,7 +20,7 @@ namespace c99 = ::c6502::c99_ast;
 namespace tac = ::c6502::tac_ast;
 using asdl::Int;
 
-constexpr Int kAutoHi = 0x80;
+constexpr Int kPlacedBelow = 0x80;
 
 constexpr Int kMinWeightPerByte = 3;
 
@@ -59,7 +59,7 @@ OrderedMap<std::string, Int> fixed_elsewhere(const SymbolTable& symbols, const T
 }
 
 std::optional<Int> first_free(const std::set<Int>& taken, Int size) {
-  for (Int addr = 0; addr < kAutoHi - size + 1; ++addr) {
+  for (Int addr = 0; addr < kPlacedBelow - size + 1; ++addr) {
     bool free = true;
     for (Int b = addr; b < addr + size; ++b) {
       if (taken.contains(b)) {
@@ -276,7 +276,7 @@ ZpGlobals allocate_zp_globals(const SymbolTable& symbols, const TypeTable* types
     const std::optional<Int> addr = first_free(taken, size);
     if (!addr) {
       throw zp_global_error("no room for zero-page object " + pyrepr::string(name) + " (" +
-                            pyrepr::integer(size) + " bytes) below " + hex2(kAutoHi) +
+                            pyrepr::integer(size) + " bytes) below " + hex2(kPlacedBelow) +
                             ", after the runtime's block and the fixed zero-page objects");
     }
     claim(name, *addr, size);

@@ -3705,3 +3705,12 @@ preprocessor.h for it.
   constant-expression evaluator, and the preprocessor, and 9 written by
   hand ("The unit tests' recorded calls"). The C++ tests (9,870 cases)
   pass with MSVC 19.36 and GCC 12.2.
+- 25 Nov 2026: group R of step 8 removed the Python compiler. This
+  directory is the compiler, and compile.py, nm.py, and objdump.py are
+  shims over it ("The C++ compiler" at the top). The files the removed
+  generators wrote (generated/c99_lalr.cpp, src/pcpp_evaluator_tables.h,
+  and src/pcpp_unicode.h) are edited by hand now, the golden files are
+  updated with `check-golden --update`, and src/golden.h gives their
+  format. The C++ tests (9,874 cases) pass in fresh builds with MSVC
+  19.36 and GCC 12.2, and `check-golden` and `check-frozen` match every
+  job and record.

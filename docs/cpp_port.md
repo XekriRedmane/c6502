@@ -3982,3 +3982,54 @@ and go with it in group R, or need R to keep what they read.
   run with the switch off. The C++ tests (9,874 cases) pass in fresh
   builds with MSVC 19.36 and GCC 12.2, and `check-golden` and
   `check-frozen` match every job and record.
+- 25 Nov 2026: group R of step 8, the removal of the Python compiler,
+  and step 8 is done. compile.py, nm.py, and objdump.py are shims over
+  `c6502cpp compile`, `nm`, and `objdump`, and the simulator harness,
+  `tests.test_sim_chapters._run_program`, fuzz/reduce.py, and
+  fuzz/tac_passes.py always run the C++ port, so `C6502_CPP_BACKEND`
+  is read by nothing. compile.py keeps `main`, `_run_source`,
+  `_run_stage`, `inline_small_functions`, and `_source_errors`, and
+  fuzz/runner.py turns on the IR checks with
+  `cpp_backend.enable_ir_check`. The 175 tests of the Python
+  implementation went: the 173 of kind (c) that G8 and G9 listed, and
+  test_type_checking.py's two tests of `SymbolTable`, whose class went
+  with the type checker. The modules of the plan went: the root's
+  `asm_emit`, `c99_to_tac`, `lark_cache`, `lexer`, `parser`,
+  `pp_numbers`, `preprocessor`, `pretty`, and `tac_to_asm` with
+  c99.lark, every module of passes/ but `runtime_layout`,
+  `dataclass_fields`, and `type_check_error`, and binutils'
+  `assembler`, `disasm`, and `ld`. tac_sim.py went too, since no
+  caller was left once G4's C++ interpreter served them all, and so
+  did fp_arith.py, its one user, which leaves numpy with no Python
+  user, though it stays in the dependencies as the plan says. The
+  table classes of the type checker had no reader left either, so no
+  module of them was made. errors.py holds the exception classes that
+  `cpp_backend._exception` raises, with Lark's hierarchy of the syntax
+  errors, and the tests take them from there. Every tool that ran the
+  Python compiler went (the capture harnesses, check_captures.py,
+  compare_backends.py, compare_tac_sim.py, binutils_errors.py,
+  freeze_captures.py, record_test_calls.py, write_golden.py,
+  lalr_table.py, pcpp_evaluator_tables.py, pcpp_unicode_tables.py, and
+  py_regex_records.py), and tools/rtlib_table.py stays with
+  rtlib/helpers.py. cpp/generated/c99_lalr.cpp,
+  src/pcpp_evaluator_tables.h, and src/pcpp_unicode.h are source, and
+  src/golden.h gives the golden files' format. pyproject.toml and
+  requirements.txt drop `lark` and `pcpp`, and uv.lock was written
+  again. The Dockerfile installs CMake and builds `c6502cpp` in place of
+  installing pcpp. The Docker daemon wasn't running on this machine, so
+  the image wasn't built, and the GCC 12.2 build of the same sources in
+  WSL Debian 12, the image's distribution, stands in for it. The
+  passes' descriptions moved from the CLAUDE.md files of passes/ and
+  its subdirectories to those of cpp/src/passes/, and the root
+  CLAUDE.md, README.md, docs/, and the other CLAUDE.md files name the
+  C++ files. The suite passed after each part with `C6502_CHECK_IR=1`:
+  1,500 passed and 22 skipped before (and 1,499 and 23 with the
+  switch, whose one more skip was test_names_the_pass), 1,327 and 22
+  once the tests of kind (c) were gone, and 1,325 and 22 after the
+  modules went and at the last commit, with the variable unset and
+  set. The 175 tests and their 604 subtests account for the whole
+  difference, 12,130 subtests against 11,526. The C++ tests (9,874
+  cases) pass in fresh builds with MSVC 19.36 and GCC 12.2,
+  `check-golden` and `check-frozen` match every job and record, and the
+  fuzzers found nothing wrong in seeds 0 to 299 of `exprs`, `calls`, and
+  `stmts` and 0 to 99 of `yarpgen`.

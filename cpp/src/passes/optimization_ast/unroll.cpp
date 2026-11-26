@@ -72,13 +72,6 @@ using Int = asdl::Int;
   throw CompileError("UnrollError", message);
 }
 
-// Returns the name of the class of an IR value, the start of its repr.
-template <class T>
-std::string class_name(const T& v) {
-  std::string r = asdl::py_repr(v);
-  return r.substr(0, r.find('('));
-}
-
 std::string int_text(Int v) {
   // The values in messages are the cap and small counts, which fit.
   return std::to_string(static_cast<long long>(v));
@@ -891,7 +884,7 @@ class Unroller {
       fail("unroll: induction variable cannot have a storage class");
     }
     if (!is_iv_type(vd.data_type)) {
-      fail("unroll: induction variable type " + class_name(vd.data_type) +
+      fail("unroll: induction variable type " + asdl::constructor_name(vd.data_type) +
            " not supported (use int / unsigned int / long / unsigned long / "
            "long long / unsigned long long)");
     }
@@ -928,7 +921,7 @@ class Unroller {
         op = Compare::kGreaterOrEqual;
         break;
       default:
-        fail("unroll: comparison op " + class_name(b->op) +
+        fail("unroll: comparison op " + asdl::constructor_name(b->op) +
              " not supported (use <, <=, >, or >=)");
     }
     if (!is_var(*b->left, iv_name)) {
@@ -976,7 +969,7 @@ class Unroller {
         if (std::holds_alternative<ir::Subtract>(a.op)) {
           return -typed->first;
         }
-        fail("unroll: post-clause op " + class_name(a.op) +
+        fail("unroll: post-clause op " + asdl::constructor_name(a.op) +
              " not supported (use +=, -=, ++, or --)");
       }
       default:

@@ -1081,3 +1081,37 @@ TEST_CASE("the unroller gives the Python unit tests' results") {
     CHECK(got == c.expected);
   }
 }
+
+TEST_CASE("the unroller names the type or operator it rejects") {
+  // A loop whose shape the unroller rejects, with the induction
+  // variable's type, the condition, and the post clause put in.
+  const auto message = [](const std::string& type, const std::string& cond,
+                          const std::string& post) {
+    const std::string input = R"(Program([
+  FunctionDecl(function_decl("main" [] Block([
+    S(ForStmt(InitDecl([var_decl("i" Constant(ConstInt(0) None) )" +
+                              type + R"( None None None None false)]) )" + cond + " " + post +
+                              R"( Expression(Var("i" None)) "" "unroll"))
+    S(Return(Constant(ConstInt(0) None)))
+  ]) FunType([] Int) None None [] false None [] None false))
+])
+)";
+    try {
+      c6502::passes::unroll_program(c6502::asdl::load<c6502::c99_ast::Program>(input));
+    } catch (const c6502::CompileError& e) {
+      CHECK(e.python_type() == "UnrollError");
+      return std::string(e.what());
+    }
+    return std::string("no error");
+  };
+  const std::string less = R"(Binary(LessThan Var("i" None) Constant(ConstInt(4) None) None))";
+  const std::string inc = R"(Postfix(Increment Var("i" None) None))";
+  const std::string tail =
+      " not supported (use int / unsigned int / long / unsigned long / long long / unsigned "
+      "long long)";
+  CHECK(message("Double", less, inc) == "unroll: induction variable type Double" + tail);
+  CHECK(message("Pointer(Int)", less, inc) == "unroll: induction variable type Pointer" + tail);
+  CHECK(message("Int", less,
+                R"(CompoundAssignment(Multiply Var("i" None) Constant(ConstInt(2) None) None None))") ==
+        "unroll: post-clause op Multiply not supported (use +=, -=, ++, or --)");
+}

@@ -7,5 +7,7 @@
 - Stop a process by its ID or with TaskStop. A kill filter that matches text in command lines matched its own shell's command line and killed it.
 - TaskStop on a background `bash script.sh` ended the Bash tool's shell but left the script's own bash running its loop, and a second copy started after it built the same worktree in the same build directory, so MSBuild failed on locked `.obj` files. After stopping a script that loops, list its processes (`Get-CimInstance Win32_Process` filtered on the script's name) and stop them before starting it again.
 - `compile.py -o` takes only `.asm` or `.s` for `-S`, and with stderr redirected its error was silent. Read stderr when a step produces no file.
+- The session's scratchpad is shared with the agents of earlier groups, and their logs stay there. A suite log named `base_on.log` was G9's from hours before, and its count looked like a run of the current tree. Keep a run's files in a subdirectory of your own and check the file's time before reading a count from it.
+- An edit script that calls `open(path, "wb").write(text)` with a `str` truncates the file and then raises TypeError, which emptied a test module in group R. Encode first and open last, as `edit_util.edit` in the scratchpad does, and restore a file a failed script touched with `git checkout <path>` before running the fixed script.
 
 Related: [[codebase/git-bash-on-windows]], [[principles/make-checks-show-their-coverage]]

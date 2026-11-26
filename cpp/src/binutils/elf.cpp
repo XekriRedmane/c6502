@@ -403,22 +403,28 @@ std::string write(const ElfFile& elf) {
     std::uint32_t offset, vaddr, paddr, filesz, memsz, flags;
   };
   std::vector<Phdr> phdrs;
-  std::map<std::pair<std::int64_t, std::string>, std::uint32_t> seg_offsets;
+  std::multimap<std::int64_t, std::pair<const Segment*, std::uint32_t>> segments_at;
   for (const Segment& seg : elf.segments) {
     const std::uint32_t off = place(seg.data);
-    seg_offsets.emplace(std::make_pair(seg.vaddr, seg.data), off);
+    segments_at.emplace(seg.vaddr, std::make_pair(&seg, off));
     phdrs.push_back(Phdr{off, static_cast<std::uint32_t>(seg.vaddr),
                          static_cast<std::uint32_t>(seg.paddr),
                          static_cast<std::uint32_t>(seg.data.size()),
                          static_cast<std::uint32_t>(seg.memsz), seg.flags});
   }
+  const auto segment_offset = [&](const Section& s) -> std::optional<std::uint32_t> {
+    const auto [first, last] = segments_at.equal_range(s.addr);
+    for (auto it = first; it != last; ++it) {
+      if (it->second.first->data == s.data) return it->second.second;
+    }
+    return std::nullopt;
+  };
   for (const auto& s : elf.sections) {
     std::uint32_t off;
     if (s->type == SHT_NOBITS) {
       off = static_cast<std::uint32_t>(out.size());
-    } else if (auto it = seg_offsets.find(std::make_pair(s->addr, s->data));
-               it != seg_offsets.end()) {
-      off = it->second;
+    } else if (const auto shared = segment_offset(*s)) {
+      off = *shared;
     } else {
       off = place(s->data);
     }

@@ -180,7 +180,7 @@ InstrList drop_known(InstrList instrs) {
 InstrList move_into_loops(InstrList instrs) {
   const CarryStates s = carry_states(instrs);
   std::set<std::size_t> drop;
-  std::map<std::size_t, std::size_t> move;
+  std::map<std::size_t, std::size_t> setter_moved_to;
   for (std::size_t i = 0; i < instrs.size(); ++i) {
     const std::optional<Carry> want = setter_value(instrs[i]);
     if (!want || s.before[i] == Carry::kUnseen) {
@@ -214,7 +214,7 @@ InstrList move_into_loops(InstrList instrs) {
     }
     if (falls == 1 && others > 0 && others_agree) {
       drop.insert(i);
-      move[p] = i;
+      setter_moved_to[p] = i;
     }
   }
   if (drop.empty()) {
@@ -223,7 +223,7 @@ InstrList move_into_loops(InstrList instrs) {
   InstrList out;
   out.reserve(instrs.size());
   for (std::size_t k = 0; k < instrs.size(); ++k) {
-    if (const auto it = move.find(k); it != move.end()) {
+    if (const auto it = setter_moved_to.find(k); it != setter_moved_to.end()) {
       out.push_back(instrs[it->second]);
     }
     if (!drop.contains(k)) {

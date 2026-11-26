@@ -3,6 +3,7 @@
 - [[codebase/asm-operand-side-effects]]
 - [[codebase/checks-after-python]]
 - [[codebase/claude-code-setup]]
+- [[codebase/comment-cleanup]]
 - [[codebase/compile-command]]
 - [[codebase/git-bash-on-windows]]
 - [[codebase/long-runs-and-scratch-scripts]]

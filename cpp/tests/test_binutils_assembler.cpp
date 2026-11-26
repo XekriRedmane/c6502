@@ -254,6 +254,12 @@ TEST_CASE("binutils: TestAssembler::test_errors") {
       {"   LDA   #$00\n", "<input>:1: LDA comes before any label"},
       {fn({"LDA   #$1FF"}), "<input>:3: 511 doesn't fit in 1 byte(s)"},
       {fn({"STA   #$01"}), "<input>:3: STA has no imm addressing mode"},
+      {fn({"DC.W  g+$100000000"}),
+       "<input>:3: the addend 4294967296 doesn't fit in a relocation's 32 bits"},
+      {fn({"BNE   g-$80000000"}),
+       "<input>:3: the addend -2147483649 doesn't fit in a relocation's 32 bits"},
+      {"x:\n   DS.B  $100000000\n",
+       "<input>:1: x takes 4294967296 bytes, more than an ELF32 size holds"},
       // This raised UnicodeEncodeError, a traceback from compile.py.
       {"x:\n   DC.B  \"\xE2\x82\xAC\"\n",
        "<input>:2: \"\xE2\x82\xAC\" holds a character outside Latin-1, which DC.B can't store in "

@@ -845,6 +845,10 @@ class Assembler {
       Placed p{.item = &it};
       for (const auto& [name, index] : it.labels) p.labels.emplace_back(name, offsets[index]);
       p.section = section_for(it);
+      if (pos > Int(UINT32_MAX)) {
+        error(where(it.line) + ": " + it.name + " takes " + str(pos) +
+              " bytes, more than an ELF32 size holds");
+      }
       const auto meta = item_meta_.find(it.name);
       const bool local = meta != item_meta_.end() && meta->second.local;
       auto sym = std::make_shared<elf::Symbol>(elf::Symbol{
@@ -1008,7 +1012,7 @@ class Assembler {
       sec.relocs.push_back(elf::Reloc{.offset = static_cast<std::int64_t>(data.size()),
                                       .type = elf::R_MOS_PCREL_8,
                                       .symbol = sym,
-                                      .addend = py_int::to_int64(py_int::sub(v.addend, 1, w), w)});
+                                      .addend = relocation_addend(py_int::sub(v.addend, 1, w), w)});
       data += '\0';
       return;
     }
@@ -1060,8 +1064,15 @@ class Assembler {
     sec.relocs.push_back(elf::Reloc{.offset = static_cast<std::int64_t>(data.size()),
                                     .type = rtype,
                                     .symbol = sym,
-                                    .addend = py_int::to_int64(v.addend, w)});
+                                    .addend = relocation_addend(v.addend, w)});
     data.append(static_cast<std::size_t>(width), '\0');
+  }
+
+  static std::int64_t relocation_addend(Int addend, const std::string& w) {
+    if (addend < Int(INT32_MIN) || addend > Int(INT32_MAX)) {
+      error(w + ": the addend " + str(addend) + " doesn't fit in a relocation's 32 bits");
+    }
+    return static_cast<std::int64_t>(addend);
   }
 
   static constexpr std::int64_t kMaxFill = 1 << 24;

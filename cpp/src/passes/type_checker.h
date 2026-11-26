@@ -72,10 +72,10 @@ InitialValue merge_initial_value(const std::string& name, const InitialValue& ol
 // without decay: the arithmetic types, pointers, and `nullptr_t` (C99
 // §6.2.5, C23 §6.2.5p26). An array, a function, a struct, and a union
 // aren't, since an array decays before every operand site checks this.
-bool is_object_type(const Type& t);
-// Returns `is_object_type`, or whether `t` is an array, a struct, or a
+bool is_scalar_type(const Type& t);
+// Returns `is_scalar_type`, or whether `t` is an array, a struct, or a
 // union, the types a declaration may give an object.
-bool is_complete_object_type(const Type& t);
+bool is_declarable_object_type(const Type& t);
 bool is_arithmetic_type(const Type& t);
 
 // Returns whether `op` always gives 0 or 1: a comparison, `&&`, or `||`.

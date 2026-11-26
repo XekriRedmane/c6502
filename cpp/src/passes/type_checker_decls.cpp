@@ -306,7 +306,7 @@ void TypeChecker::check_file_scope_var_body(ir::Type_var_decl& vd) {
   }
   vd.data_type = size_from_initializer(vd.data_type, vd.init ? &*vd.init : nullptr,
                                        "array " + pyrepr::string(display_name(vd.name)));
-  if (!is_complete_object_type(vd.data_type)) {
+  if (!is_declarable_object_type(vd.data_type)) {
     fail("file-scope object " + pyrepr::string(vd.name) + " declared with non-object type " +
          asdl::py_repr(vd.data_type));
   }
@@ -1080,7 +1080,7 @@ void TypeChecker::check_for_init(ir::Type_for_init& init) {
       fail("`[[c6502::zeropage]]` and `section` need an object with static storage; for-init " +
            pyrepr::string(vd.name) + " is automatic");
     }
-    if (!is_complete_object_type(vd.data_type)) {
+    if (!is_declarable_object_type(vd.data_type)) {
       fail("for-init " + pyrepr::string(vd.name) + " declared with non-object type " +
            asdl::py_repr(vd.data_type));
     }

@@ -942,7 +942,7 @@ void TypeChecker::check_block_var(ir::Type_var_decl& vd) {
 void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
   vd.data_type = size_from_initializer(vd.data_type, vd.init ? &*vd.init : nullptr,
                                        "array " + pyrepr::string(display_name(vd.name)));
-  if (!is_complete_object_type(vd.data_type)) {
+  if (!is_declarable_object_type(vd.data_type)) {
     fail("object " + pyrepr::string(vd.name) + " declared with non-object type " +
          asdl::py_repr(vd.data_type));
   }

@@ -52,7 +52,7 @@ void convert_in_place(asdl::Box<Exp>& slot, const Type& target) {
   *slot = convert_to(std::move(*slot), target);
 }
 
-bool opt_object(const std::optional<Type>& t) { return t && is_object_type(*t); }
+bool opt_scalar(const std::optional<Type>& t) { return t && is_scalar_type(*t); }
 bool opt_pointer(const std::optional<Type>& t) { return t && is_pointer_type(*t); }
 bool opt_integer(const std::optional<Type>& t) { return t && is_integer_type(*t); }
 bool opt_floating(const std::optional<Type>& t) { return t && is_floating_type(*t); }
@@ -76,7 +76,7 @@ bool is_relational(O op) {
 
 Type check_cast(TypeChecker& tc, ir::Cast& e) {
   const Type target = e.target_type;
-  if (!(is_object_type(target) || is_void(target))) {
+  if (!(is_scalar_type(target) || is_void(target))) {
     fail("cast target type must be an object type (Int / Long / LongLong / UInt / ULong / "
          "ULongLong / Float / Double / Pointer) or void, got " +
          asdl::py_repr(target));
@@ -91,7 +91,7 @@ Type check_cast(TypeChecker& tc, ir::Cast& e) {
     e.data_type = target;
     return target;
   }
-  if (!opt_object(inner_type)) {
+  if (!opt_scalar(inner_type)) {
     fail("cannot cast non-object type " + repr_or_none(inner_type) + " to " +
          asdl::py_repr(target));
   }
@@ -157,7 +157,7 @@ Type check_unary(TypeChecker& tc, ir::Unary& e) {
   tc.check_exp(*e.exp);
   decay_in_place(e.exp);
   std::optional<Type> t = checked_type(*e.exp);
-  if (!opt_object(t)) {
+  if (!opt_scalar(t)) {
     fail("unary operator on non-object type " + repr_or_none(t));
   }
   const bool logical_not = asdl::isa<ir::LogicalNot>(e.op);
@@ -244,7 +244,7 @@ Type check_binary(TypeChecker& tc, ir::Binary& e) {
   decay_in_place(e.right);
   const std::optional<Type> otl = checked_type(*e.left);
   const std::optional<Type> otr = checked_type(*e.right);
-  if (!opt_object(otl) || !opt_object(otr)) {
+  if (!opt_scalar(otl) || !opt_scalar(otr)) {
     fail("binary operator on non-object types: " + repr_or_none(otl) + ", " + repr_or_none(otr));
   }
   Type tl = *otl;
@@ -421,7 +421,7 @@ Type check_incdec(TypeChecker& tc, asdl::Box<Exp>& operand, std::optional<Type>&
     fail("cannot use ++/-- on const-qualified lvalue: " + asdl::py_repr(*operand) + " has type " +
          asdl::py_repr(t));
   }
-  if (!is_object_type(t)) {
+  if (!is_scalar_type(t)) {
     fail("increment/decrement operator on non-object type " + asdl::py_repr(t));
   }
   if (is_nullptr_type(t)) {
@@ -473,7 +473,7 @@ Type check_conditional(TypeChecker& tc, ir::Conditional& e) {
     e.data_type = *tt;
     return *tt;
   }
-  if (!opt_object(tt) || !opt_object(tf)) {
+  if (!opt_scalar(tt) || !opt_scalar(tf)) {
     fail("conditional branches must be object types, got " + repr_or_none(tt) + ", " +
          repr_or_none(tf));
   }

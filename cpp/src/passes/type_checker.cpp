@@ -189,7 +189,7 @@ InitialValue merge_initial_value(const std::string& name, const InitialValue& ol
   return NoInitializer{};
 }
 
-bool is_object_type(const Type& t) {
+bool is_scalar_type(const Type& t) {
   switch (ir::kind(strip_quals(t))) {
     case K::Int:
     case K::Long:
@@ -214,8 +214,8 @@ bool is_object_type(const Type& t) {
   }
 }
 
-bool is_complete_object_type(const Type& t) {
-  return is_object_type(t) || asdl::isa<ir::Array, ir::Structure, ir::Union>(strip_quals(t));
+bool is_declarable_object_type(const Type& t) {
+  return is_scalar_type(t) || asdl::isa<ir::Array, ir::Structure, ir::Union>(strip_quals(t));
 }
 
 bool is_arithmetic_type(const Type& t) { return is_integer_type(t) || is_floating_type(t); }
@@ -897,7 +897,7 @@ void TypeChecker::require_scalar_controlling(const Exp& exp, std::string_view wh
   if (t && asdl::isa<ir::Array>(*t)) {
     return;
   }
-  if (t && is_object_type(*t)) {
+  if (t && is_scalar_type(*t)) {
     return;
   }
   const std::string kind = t ? class_name(*t) : std::string("NoneType");

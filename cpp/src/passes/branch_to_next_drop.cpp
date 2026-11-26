@@ -48,7 +48,8 @@ void rewrite_function(ir::Function& fn) {
       if (next != nullptr && branch->target == next->name) {
         const auto it = ref_counts.find(next->name);
         const int refs = it == ref_counts.end() ? 0 : it->second;
-        i += refs <= 1 ? 2 : 1;
+        const bool only_reference = refs <= 1;
+        i += only_reference ? 2 : 1;
         continue;
       }
     }

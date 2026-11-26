@@ -288,3 +288,23 @@ where the parser knows which statement follows, as `var_decl` does for
 `[[c6502::save_hardware_stack]]` (it returns a marker that `decl_item`
 acts on and `start` rejects). Then report a `[[fallthrough]];` that
 isn't followed by a label in the same switch.
+
+## Step 9 of the C++ port
+
+Step 9 of docs/cpp_port.md ("Order") moves the rest of the
+repository's Python to C++, so that no Python is left. A C++ 6502
+simulator replaces py65 and `sim/`, including the Python hooks that
+stand in for the runtime helpers with no 6502 code yet. It's checked
+against py65 instruction by instruction (registers, flags, memory
+written, and cycles) on the corpus's programs and the games' scripted
+runs. The test suite and the fuzzers with their reducer move to C++
+programs and doctest.
+
+Step 8 finished on 25 Nov 2026, and step 9 has no survey or plan of
+groups yet, so the first piece of work is the survey and the plan, as
+step 8 had. The root CLAUDE.md lists the Python that is left, and
+"What step 9's Python keeps", under step 8, says what reads each
+module, though tac_sim.py and fp_arith.py, which it lists, went in
+group R, since the TAC interpreter is in C++. Once the suite is in
+C++, compile.py, nm.py, and objdump.py stop being shims, and the
+messages that still say `compile.py:` can change.

@@ -18,7 +18,9 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-enum class Kind { kNone, kHi, kLo };
+// The bit of `Fact::byte` that C holds: bit 7 after `ASL` or `ROL A`,
+// and bit 0 after `LSR` or `ROR A`.
+enum class Kind { kNone, kBit7, kBit0 };
 
 struct Fact {
   Kind kind = Kind::kNone;
@@ -69,16 +71,16 @@ Written writes(const ir::Type_instruction& ins) {
 
 Kind shift_kind(const ir::Type_instruction& ins) {
   if (const auto* s = as<ir::ArithmeticShiftLeft>(ins); s && is_reg_a(s->dst)) {
-    return Kind::kHi;
+    return Kind::kBit7;
   }
   if (const auto* s = as<ir::RotateLeft>(ins); s && is_reg_a(s->dst)) {
-    return Kind::kHi;
+    return Kind::kBit7;
   }
   if (const auto* s = as<ir::LogicalShiftRight>(ins); s && is_reg_a(s->dst)) {
-    return Kind::kLo;
+    return Kind::kBit0;
   }
   if (const auto* s = as<ir::RotateRight>(ins); s && is_reg_a(s->dst)) {
-    return Kind::kLo;
+    return Kind::kBit0;
   }
   return Kind::kNone;
 }

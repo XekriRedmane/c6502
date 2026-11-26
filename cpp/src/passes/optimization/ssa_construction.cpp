@@ -378,6 +378,35 @@ struct Renamer {
         use(x.src);
         break;
       }
+      case K::IndexedConstLoad: {
+        auto& x = std::get<ir::IndexedConstLoad>(instr);
+        use(x.index);
+        def(x.dst, pushed);
+        break;
+      }
+      case K::IndirectIndexedLoad: {
+        auto& x = std::get<ir::IndirectIndexedLoad>(instr);
+        use(x.ptr);
+        use(x.index);
+        def(x.dst, pushed);
+        break;
+      }
+      case K::IndirectIndexedStore: {
+        auto& x = std::get<ir::IndirectIndexedStore>(instr);
+        use(x.ptr);
+        use(x.index);
+        use(x.src);
+        break;
+      }
+      case K::JumpIfCmp: {
+        auto& x = std::get<ir::JumpIfCmp>(instr);
+        use(x.src1);
+        use(x.src2);
+        break;
+      }
+      case K::JumpIfMasked:
+        use(std::get<ir::JumpIfMasked>(instr).val);
+        break;
       case K::JumpIfTrue:
         use(std::get<ir::JumpIfTrue>(instr).condition);
         break;
@@ -405,7 +434,9 @@ struct Renamer {
         }
         break;
       }
-      default:
+      case K::Label:
+      case K::Jump:
+      case K::Phi:
         break;
     }
   }

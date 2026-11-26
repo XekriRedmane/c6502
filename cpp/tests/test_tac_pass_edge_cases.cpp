@@ -6,6 +6,7 @@
 #include "asdl/runtime.h"
 #include "doctest.h"
 #include "errors.h"
+#include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
 #include "stage_case.h"
 #include "tac_ast.h"
@@ -146,4 +147,36 @@ TEST_CASE("from_ssa rejects a Phi whose destination is a Constant") {
       "  Ret(None)\n");
   CHECK_THROWS_WITH_AS(c6502::passes::from_ssa(fn), "from_ssa: a Phi's destination is a Constant",
                        c6502::InternalError);
+}
+
+TEST_CASE("to_ssa renames the operands of a JumpIfCmp and an IndirectIndexedLoad") {
+  c6502::passes::SymbolTable symbols;
+  for (const char* name : {"x", "y"}) {
+    symbols.insert_or_assign(
+        name, c6502::passes::Symbol{.type = c6502::c99_ast::Int{},
+                                    .attrs = c6502::passes::LocalAttr{}});
+  }
+  const ir::Function fn = fn_of(
+      "  Copy(Constant(ConstInt(1)) Var(\"x\"))\n"
+      "  IndirectIndexedLoad(Var(\"p\") Constant(ConstUChar(0)) Var(\"y\") false)\n"
+      "  JumpIfCmp(LessThan Var(\"x\") Var(\"y\") \".t\")\n"
+      "  Ret(Constant(ConstInt(0)))\n"
+      "  Label(\".t\")\n"
+      "  Ret(Var(\"y\"))\n");
+  const auto [out, ssa] = c6502::passes::to_ssa(fn, symbols);
+  const ir::JumpIfCmp* jump = nullptr;
+  const ir::IndirectIndexedLoad* load = nullptr;
+  for (const auto& instr : out.instructions) {
+    if (const auto* j = std::get_if<ir::JumpIfCmp>(&instr)) {
+      jump = j;
+    }
+    if (const auto* l = std::get_if<ir::IndirectIndexedLoad>(&instr)) {
+      load = l;
+    }
+  }
+  REQUIRE(jump != nullptr);
+  REQUIRE(load != nullptr);
+  CHECK(jump->src1 == ir::Type_val{ir::Var{.name = "x.1"}});
+  CHECK(jump->src2 == ir::Type_val{ir::Var{.name = "y.1"}});
+  CHECK(load->dst == ir::Type_val{ir::Var{.name = "y.1"}});
 }

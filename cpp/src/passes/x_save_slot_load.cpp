@@ -262,18 +262,6 @@ void rewrite_function(ir::Function& fn) {
 
   // STX has no indirect-Y or absolute,X form.
   const std::vector<bool> holds = x_holds_slot(instrs, key);
-  bool any = false;
-  for (std::size_t k = 0; k < instrs.size(); ++k) {
-    const auto* mov = as<ir::Mov>(instrs[k]);
-    if (mov != nullptr && holds[k] && has_key(mov->src, key) &&
-        (is_reg_a(mov->dst) || isa<ir::Data, ir::ZP>(mov->dst))) {
-      any = true;
-      break;
-    }
-  }
-  if (!any) {
-    return;
-  }
   const ir::Type_operand reg_x = ir::Reg{.reg = ir::X{}};
   for (std::size_t k = 0; k < fn.instructions.size(); ++k) {
     auto* mov = as<ir::Mov>(fn.instructions[k]);

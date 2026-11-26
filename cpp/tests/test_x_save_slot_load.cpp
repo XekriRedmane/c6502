@@ -43,6 +43,12 @@ TEST_CASE("x_save_slot_load rewrites reads of the X-save slot") {
     // peepholes, which recognize the save-restore shape.
     CHECK(run({mov(kX, data()), mov(data(), kX)})[1] == mov(data(), kX));
   }
+  SUBCASE("a move into a soft-stack byte or through a pointer stays") {
+    const Instrs instrs = {mov(kX, data()), mov(data(), ir::Frame{.offset = 1}),
+                           mov(data(), ir::IndirectZpY{.address = 0x80}),
+                           mov(data(), ir::Indirect{.offset = 0})};
+    CHECK(run(instrs) == instrs);
+  }
   SUBCASE("nothing happens without an STX M") {
     const Instrs instrs = {mov(ir::Imm{.value = 1}, data()), mov(data(), kA)};
     CHECK(run(instrs) == instrs);

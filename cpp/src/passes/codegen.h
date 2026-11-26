@@ -47,6 +47,11 @@ struct EmitResult {
   asm2_ast::Program asm2_prog;
 };
 
+// Returns the pairs of `first`, and after them the pairs of `second`
+// whose names `first` doesn't have. A name in both takes its address
+// from `second`, in its place in `first`.
+OrderedSymbolAddrs merged_symbol_addrs(OrderedSymbolAddrs first, const OrderedSymbolAddrs& second);
+
 // What `optimized_program` gives: the finished asm program, what the
 // region returns besides it, and the link metadata's records of the
 // zero-page objects, which `link_records` takes from the program before

@@ -9,9 +9,7 @@
 
 namespace c6502::passes {
 
-namespace {
-
-OrderedSymbolAddrs merged(OrderedSymbolAddrs first, const OrderedSymbolAddrs& second) {
+OrderedSymbolAddrs merged_symbol_addrs(OrderedSymbolAddrs first, const OrderedSymbolAddrs& second) {
   for (const auto& [name, addr] : second) {
     bool found = false;
     for (auto& entry : first) {
@@ -27,8 +25,6 @@ OrderedSymbolAddrs merged(OrderedSymbolAddrs first, const OrderedSymbolAddrs& se
   }
   return first;
 }
-
-}  // namespace
 
 OptimizedProgram optimized_program(asm_ast::Program prog, const AsmContext& ctx,
                                    const RegionArgs& region, const ZpGlobals& zp,
@@ -85,7 +81,7 @@ EmitResult optimized_text(asm_ast::Program prog, const AsmContext& ctx, const Re
   }
   meta.items = section_items(out.asm_prog, sections);
   asm_emit::EmitOptions options;
-  options.zp_slot_symbols = merged(emit_slot_symbols, args.equs);
+  options.zp_slot_symbols = merged_symbol_addrs(emit_slot_symbols, args.equs);
   options.link_metadata_lines = format_metadata(meta);
   options.preferred_symbols = args.preferred_symbols;
   out.text = asm_emit::emit_program(out.asm2_prog, ctx.layout, options);

@@ -22,23 +22,6 @@ namespace {
 
 namespace c99 = ::c6502::c99_ast;
 
-OrderedSymbolAddrs merged(OrderedSymbolAddrs first, const OrderedSymbolAddrs& second) {
-  for (const auto& [name, addr] : second) {
-    bool found = false;
-    for (auto& entry : first) {
-      if (entry.first == name) {
-        entry.second = addr;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      first.emplace_back(name, addr);
-    }
-  }
-  return first;
-}
-
 OrderedSymbolAddrs pairs_of(const OrderedMap<std::string, asdl::Int>& map) {
   return OrderedSymbolAddrs(map.begin(), map.end());
 }
@@ -52,8 +35,8 @@ OrderedSymbolAddrs zp_equs(const ZpGlobals& zp) {
                             {"FP", zp.layout.fp},
                             {"HARGS", zp.layout.hargs},
                             {"DPTR", zp.layout.dptr}};
-  out = merged(std::move(out), pairs_of(zp.addrs));
-  return merged(std::move(out), pairs_of(zp.fixed));
+  out = merged_symbol_addrs(std::move(out), pairs_of(zp.addrs));
+  return merged_symbol_addrs(std::move(out), pairs_of(zp.fixed));
 }
 
 AsmContext context_of(const ZpGlobals& zp) {
@@ -185,7 +168,7 @@ StageResult optimized_stage(const tac_ast::Program& unoptimized_tac, const tac_a
         optimized_program(std::move(front.prog), ctx, region, zp, tables.footprints);
     out.emitted.asm_prog = std::move(finished.prog);
     out.emitted.new_functions = std::move(finished.new_functions);
-    out.harness_symbols = merged(pairs_of(front.slot_symbols), zp_equs(zp));
+    out.harness_symbols = merged_symbol_addrs(pairs_of(front.slot_symbols), zp_equs(zp));
   }
   return out;
 }
@@ -207,7 +190,8 @@ StageResult unoptimized_stage(const tac_ast::Program& tac, StageTables& tables,
   }
   asm_ast::Program asm1 =
       replace_program(std::move(asm0), tables.statics, &tables.symbols, &tables.types);
-  const OrderedSymbolAddrs equs = merged(pairs_of(pinned_slot_symbols(fixed_abi)), zp_equs(zp));
+  const OrderedSymbolAddrs equs =
+      merged_symbol_addrs(pairs_of(pinned_slot_symbols(fixed_abi)), zp_equs(zp));
   StageResult out;
   if (emit) {
     EmitArgs args;

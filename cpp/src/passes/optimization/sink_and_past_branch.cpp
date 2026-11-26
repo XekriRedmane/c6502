@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "bit_precise.h"
 #include "passes/optimization/cfg.h"
 #include "passes/optimization/extend_add_chain.h"
+#include "passes/optimization/var_visit.h"
 
 namespace c6502::passes {
 
@@ -19,7 +21,6 @@ namespace c99 = ::c6502::c99_ast;
 using asdl::Int;
 using framework::Instrs;
 using framework::PassContext;
-using IK = ir::Kind_instruction;
 using tac_cfg::BasicBlock;
 using tac_cfg::Cfg;
 
@@ -183,129 +184,18 @@ void prepend_trio(BasicBlock& block, const std::string& x, Int mask, const std::
   block.instructions.insert(block.instructions.begin() + at, trio.begin(), trio.end());
 }
 
-ir::Type_instruction rewrite_instr_uses(ir::Type_instruction instr, const std::string& old_name,
-                                        const std::string& new_name) {
-  const auto fix = [&](ir::Type_val& v) {
-    if (auto* var = std::get_if<ir::Var>(&v); var != nullptr && var->name == old_name) {
-      var->name = new_name;
-    }
-  };
-  switch (ir::kind(instr)) {
-    case IK::Ret: {
-      auto& i = std::get<ir::Ret>(instr);
-      if (i.val) {
-        fix(*i.val);
-      }
-      break;
-    }
-#define C6502_SRC(Name)               \
-  case IK::Name:                      \
-    fix(std::get<ir::Name>(instr).src); \
-    break;
-      C6502_SRC(SignExtend)
-      C6502_SRC(ZeroExtend)
-      C6502_SRC(Truncate)
-      C6502_SRC(IntToFloat)
-      C6502_SRC(IntToDouble)
-      C6502_SRC(FloatToInt)
-      C6502_SRC(DoubleToInt)
-      C6502_SRC(FloatToDouble)
-      C6502_SRC(DoubleToFloat)
-      C6502_SRC(Unary)
-      C6502_SRC(Copy)
-#undef C6502_SRC
-    case IK::GetAddress:
-      fix(std::get<ir::GetAddress>(instr).operand);
-      break;
-    case IK::Load:
-      fix(std::get<ir::Load>(instr).src_ptr);
-      break;
-    case IK::Store: {
-      auto& i = std::get<ir::Store>(instr);
-      fix(i.src);
-      fix(i.dst_ptr);
-      break;
-    }
-    case IK::IndexedLoad:
-      fix(std::get<ir::IndexedLoad>(instr).index);
-      break;
-    case IK::IndexedStore: {
-      auto& i = std::get<ir::IndexedStore>(instr);
-      fix(i.index);
-      fix(i.src);
-      break;
-    }
-    case IK::IndexedSymbolStore: {
-      auto& i = std::get<ir::IndexedSymbolStore>(instr);
-      fix(i.index);
-      fix(i.src);
-      break;
-    }
-    case IK::IndexedConstLoad:
-      fix(std::get<ir::IndexedConstLoad>(instr).index);
-      break;
-    case IK::IndirectIndexedLoad: {
-      auto& i = std::get<ir::IndirectIndexedLoad>(instr);
-      fix(i.ptr);
-      fix(i.index);
-      break;
-    }
-    case IK::IndirectIndexedStore: {
-      auto& i = std::get<ir::IndirectIndexedStore>(instr);
-      fix(i.ptr);
-      fix(i.index);
-      fix(i.src);
-      break;
-    }
-    case IK::Binary: {
-      auto& i = std::get<ir::Binary>(instr);
-      fix(i.src1);
-      fix(i.src2);
-      break;
-    }
-    case IK::JumpIfTrue:
-      fix(std::get<ir::JumpIfTrue>(instr).condition);
-      break;
-    case IK::JumpIfFalse:
-      fix(std::get<ir::JumpIfFalse>(instr).condition);
-      break;
-    case IK::JumpIfCmp: {
-      auto& i = std::get<ir::JumpIfCmp>(instr);
-      fix(i.src1);
-      fix(i.src2);
-      break;
-    }
-    case IK::JumpIfMasked:
-      fix(std::get<ir::JumpIfMasked>(instr).val);
-      break;
-    case IK::FunctionCall:
-      for (auto& a : std::get<ir::FunctionCall>(instr).args) {
-        fix(a);
-      }
-      break;
-    case IK::IndirectCall: {
-      auto& i = std::get<ir::IndirectCall>(instr);
-      fix(i.ptr);
-      for (auto& a : i.args) {
-        fix(a);
-      }
-      break;
-    }
-    case IK::Phi:
-      for (auto& a : std::get<ir::Phi>(instr).args) {
-        fix(std::get<ir::PhiArg>(a).source);
-      }
-      break;
-    default:
-      break;
-  }
-  return instr;
-}
-
 void rewrite_var_uses(BasicBlock& block, const std::string& old_name,
                       const std::string& new_name, std::size_t skip_count) {
+  const ValMapper rename = [&](const ir::Type_val& v) -> std::optional<ir::Type_val> {
+    if (const auto* var = std::get_if<ir::Var>(&v); var != nullptr && var->name == old_name) {
+      return ir::Var{.name = new_name};
+    }
+    return std::nullopt;
+  };
   for (std::size_t k = skip_count; k < block.instructions.size(); ++k) {
-    block.instructions[k] = rewrite_instr_uses(std::move(block.instructions[k]), old_name, new_name);
+    if (auto out = rewrite_uses_in(block.instructions[k], rename)) {
+      block.instructions[k] = std::move(*out);
+    }
   }
 }
 

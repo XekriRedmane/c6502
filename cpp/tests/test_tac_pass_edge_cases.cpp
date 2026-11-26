@@ -1,5 +1,6 @@
 // Calls of the TAC optimizer's passes on inputs that the corpus doesn't
 // reach, written by hand, each with the result the pass must give.
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <variant>
@@ -9,6 +10,7 @@
 #include "doctest.h"
 #include "errors.h"
 #include "passes/optimization/narrow_widened_arith.h"
+#include "passes/optimization/sink_and_past_branch.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
 #include "stage_case.h"
@@ -21,6 +23,34 @@ namespace ir = c6502::tac_ast;
 ir::Function fn_of(const std::string& body) {
   return std::get<ir::Function>(
       c6502::asdl::load<ir::Type_top_level>("Function(\"f\" true [] [\n" + body + "])\n"));
+}
+
+// Returns a symbol table of locals, the names in `bytes` unsigned chars
+// and those in `ints` ints.
+c6502::passes::SymbolTable locals(std::initializer_list<const char*> bytes,
+                                  std::initializer_list<const char*> ints) {
+  c6502::passes::SymbolTable symbols;
+  for (const char* name : bytes) {
+    symbols.insert_or_assign(name, c6502::passes::Symbol{.type = c6502::c99_ast::UChar{},
+                                                         .attrs = c6502::passes::LocalAttr{}});
+  }
+  for (const char* name : ints) {
+    symbols.insert_or_assign(name, c6502::passes::Symbol{.type = c6502::c99_ast::Int{},
+                                                         .attrs = c6502::passes::LocalAttr{}});
+  }
+  return symbols;
+}
+
+// Returns the instructions of `fn` of kind T.
+template <class T>
+std::vector<T> instrs_of(const ir::Function& fn) {
+  std::vector<T> out;
+  for (const auto& instr : fn.instructions) {
+    if (const auto* i = std::get_if<T>(&instr)) {
+      out.push_back(*i);
+    }
+  }
+  return out;
 }
 
 constexpr const char* kCountdownLoop =
@@ -266,4 +296,28 @@ TEST_CASE("tac_move_steps_onto_edges finds a label after the steps it moved") {
       "  Ret(None)\n"
       "])\n",
       "");
+}
+
+TEST_CASE("sink_and_past_branch renames the sunk value in a JumpIfCmp and a Ret") {
+  auto symbols = locals({"x", "%t"}, {"%x_ext", "%x_and"});
+  const c6502::passes::framework::PassContext ctx{.symbols = &symbols};
+  const ir::Function out = c6502::passes::sink_and_past_branch(
+      fn_of("  ZeroExtend(Var(\"x\") Var(\"%x_ext\"))\n"
+            "  Binary(BitwiseAnd Var(\"%x_ext\") Constant(ConstInt(127)) Var(\"%x_and\"))\n"
+            "  Truncate(Var(\"%x_and\") Var(\"%t\"))\n"
+            "  JumpIfMasked(Var(\"x\") 128 false \".else\")\n"
+            "  Label(\".then\")\n"
+            "  JumpIfCmp(Equal Var(\"%t\") Constant(ConstUChar(3)) \".out\")\n"
+            "  Ret(None)\n"
+            "  Label(\".else\")\n"
+            "  Ret(Var(\"%t\"))\n"
+            "  Label(\".out\")\n"
+            "  Ret(None)\n"),
+      ctx);
+  const auto jumps = instrs_of<ir::JumpIfCmp>(out);
+  REQUIRE(jumps.size() == 1);
+  CHECK(jumps[0].src1 == ir::Type_val{ir::Var{.name = "%t.snk_then@0"}});
+  const auto rets = instrs_of<ir::Ret>(out);
+  REQUIRE(rets.size() == 3);
+  CHECK(rets[1].val == std::optional<ir::Type_val>{ir::Var{.name = "%t.snk_else@0"}});
 }

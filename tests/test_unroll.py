@@ -23,25 +23,8 @@ from __future__ import annotations
 
 import unittest
 
-import c99_ast
-from parser import parse
-from passes.optimization_ast.unroll import UnrollError, unroll_program
-from preprocessor import preprocess
-
-
-def _unrolled(body: str) -> c99_ast.Type_program:
-    """Wrap `body` in `int main(void) { ... }`, run preprocess →
-    parse → unroll, return the resulting program."""
-    src = "int main(void) {\n" + body + "\n    return 0;\n}\n"
-    return unroll_program(parse(preprocess(src)))
-
 
 class TestUnrollRecognizerRejections(unittest.TestCase):
-    def _expect_unroll_error(self, body: str, msg_substr: str) -> None:
-        with self.assertRaises(UnrollError) as cm:
-            _unrolled(body)
-        self.assertIn(msg_substr, str(cm.exception))
-
     def test_cli_reports_one_line_error(self) -> None:
         import io
         from unittest.mock import patch

@@ -13,57 +13,12 @@ the C++ port now, each named for the test it came from
 
 import unittest
 
-import asm_ast
-from passes.asm_remat import apply_remat
-
-
-def _A():
-    return asm_ast.Reg(reg=asm_ast.A())
-
-
-def _data(name="__local_f__0"):
-    return asm_ast.Data(name=name, offset=0)
-
 
 class TestRematPointerStore(unittest.TestCase):
     """A store through a pointer between the load and the read may
     write the static, unless the static is internal and its address
     is never formed. `uint8_t t = g; *p = 7; return t;` called with
     `p == &g` returned 7 instead of the old value of `g`."""
-
-    def _body(self, ptr_dst):
-        g = asm_ast.Data(name="g", offset=0)
-        return [
-            asm_ast.Mov(src=g, dst=_A(), is_volatile=False),
-            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
-            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A(),
-                        is_volatile=False),
-            asm_ast.Mov(src=_A(), dst=ptr_dst, is_volatile=False),
-            asm_ast.Mov(src=_data(), dst=_A(), is_volatile=False),
-            asm_ast.Return(save_a=True),
-        ]
-
-    def _prog(self, instrs, *, g_global, g_address_taken=False):
-        fns = [asm_ast.Function(
-            name="f", is_global=True, params=[], instructions=instrs,
-        )]
-        if g_address_taken:
-            fns.append(asm_ast.Function(
-                name="main", is_global=True, params=[], instructions=[
-                    asm_ast.Mov(src=asm_ast.ImmLabelLow(name="g", offset=0),
-                                dst=_A(), is_volatile=False),
-                    asm_ast.Return(save_a=True),
-                ],
-            ))
-        g = asm_ast.StaticVariable(
-            name="g", is_global=g_global,
-            init=[asm_ast.ZeroInit(bytes=1)],
-        )
-        return apply_remat(
-            asm_ast.Program(top_level=[*fns, g]),
-            zp_slot_symbols={"__local_f__0": 0x80},
-        )
-
 
     def test_simulated_pointer_store_to_global(self):
         import shutil

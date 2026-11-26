@@ -12,6 +12,7 @@
 #include "passes/zp_local_allocation.h"
 #include "passes/zp_slot_naming.h"
 #include "passes/zp_slot_allocation.h"
+#include "tac_to_asm.h"
 #include "tagged_json.h"
 
 namespace c6502::passes::stage_sharing {
@@ -179,13 +180,11 @@ StageOutput run_plan_zero_page(const capture::Call& call, const AsmContext&,
   const SymbolTable symbols = SymbolTableC::decode(arg(args, 0));
   const auto types = types_of(args, 1, kwargs);
   const json::Value* promote = kwarg(kwargs, "promote");
-  const HargsNeed need = [&call]() -> asdl::Int {
-    if (!call.output_is_json || call.output.empty()) {
-      throw std::runtime_error(
-          "plan_zero_page needs the HARGS bytes of tac_to_asm's translation, and the call "
-          "records no result to take them from");
-    }
-    return ZpGlobalsC::decode(json::parse(call.output)).layout.hargs_size;
+  const HargsNeed need = [&]() -> asdl::Int {
+    SymbolTable lowered_symbols = symbols;
+    const asm_ast::Program lowered =
+        tac_to_asm::translate_program(prog, &lowered_symbols, ptr(types), AsmContext{});
+    return hargs_need(lowered, helper_footprints());
   };
   const ZpGlobals zp =
       plan_zero_page(prog, symbols, ptr(types), promote != nullptr && promote->boolean, need);

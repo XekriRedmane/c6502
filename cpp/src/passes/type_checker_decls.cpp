@@ -135,7 +135,7 @@ void TypeChecker::check_file_scope_declaration(ir::Type_declaration& decl) {
       check_file_scope_var(std::get<ir::VarDecl>(decl).var_decl);
       return;
     case ir::Kind_declaration::FunctionDecl:
-      check_function_decl(*std::get<ir::FunctionDecl>(decl).function_decl, true);
+      check_function_decl(*std::get<ir::FunctionDecl>(decl).function_decl);
       return;
     case ir::Kind_declaration::StructDecl:
       check_struct_decl(std::get<ir::StructDecl>(decl).struct_decl);
@@ -371,7 +371,7 @@ void TypeChecker::check_file_scope_var_body(ir::Type_var_decl& vd) {
   add_or_merge_static_object(vd.name, vd.data_type, initial, is_global, vd.placement, vd.section);
 }
 
-void TypeChecker::check_function_decl(ir::Type_function_decl& fd, bool /*file_scope*/) {
+void TypeChecker::check_function_decl(ir::Type_function_decl& fd) {
   if (!asdl::isa<ir::FunType>(fd.data_type)) {
     throw InternalError("function decl " + pyrepr::string(fd.name) +
                         " has non-FunType data_type " + asdl::py_repr(fd.data_type));

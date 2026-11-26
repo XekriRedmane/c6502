@@ -323,7 +323,7 @@ class TypeChecker {
   void check_file_scope_var_well_formed(c99_ast::Type_var_decl& vd);
   void check_file_scope_var(c99_ast::Type_var_decl& vd);
   void check_file_scope_var_body(c99_ast::Type_var_decl& vd);
-  void check_function_decl(c99_ast::Type_function_decl& fd, bool file_scope);
+  void check_function_decl(c99_ast::Type_function_decl& fd);
   void add_or_merge_static_object(const std::string& name, const Type& type,
                                   const InitialValue& initial, bool is_global,
                                   const std::optional<c99_ast::Type_placement>& placement = {},

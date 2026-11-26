@@ -898,7 +898,7 @@ void TypeChecker::check_block_declaration(ir::Type_declaration& decl) {
       check_block_var(std::get<ir::VarDecl>(decl).var_decl);
       return;
     case ir::Kind_declaration::FunctionDecl:
-      check_function_decl(*std::get<ir::FunctionDecl>(decl).function_decl, false);
+      check_function_decl(*std::get<ir::FunctionDecl>(decl).function_decl);
       return;
     case ir::Kind_declaration::StructDecl:
       check_struct_decl(std::get<ir::StructDecl>(decl).struct_decl);

@@ -231,11 +231,7 @@ StageOutput run_split_tables(const capture::Call& call, const AsmContext&,
   return program_output(apply_split_tables(std::move(prog), &symbols), before, symbols);
 }
 
-StageRun when_driver_complete(StageRun run) {
-  return tac_driver().complete() ? run : nullptr;
-}
-
-StageSignature tac_pass(std::string_view name, StageRun run = nullptr) {
+StageSignature tac_pass(std::string_view name, StageRun run) {
   return {.name = name,
           .input = "tac_ast",
           .kwargs = {{"symbols", rt<Optional<Sym>>}, {"ssa_dsts", rt<Optional<NameSetC>>}},
@@ -320,12 +316,12 @@ std::vector<StageSignature> signatures() {
        .input = "tac_ast",
        .args = {rt<Sym>},
        .output_module = "tac_ast",
-       .run = when_driver_complete(&run_optimize_program)},
+       .run = &run_optimize_program},
       {.name = "tac_optimize_function",
        .input = "tac_ast",
        .kwargs = {{"symbols", rt<Optional<Sym>>}},
        .output_module = "tac_ast",
-       .run = when_driver_complete(&run_optimize_function)},
+       .run = &run_optimize_function},
       {.name = "dispatch_const_pointer_arrays",
        .input = "tac_ast",
        .args = {rt<Sym>},

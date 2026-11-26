@@ -32,7 +32,8 @@ generation and the link metadata.
 
 The peephole / control-flow / allocation passes that sit directly in
 this directory. Each entry names the pass's header, and the .cpp beside
-it holds the code and, in the comment at its top, the rationale:
+it holds the code. An optimization's rationale and an example are in
+its document in [docs/optimizations/](../../../docs/optimizations/README.md):
 
 - `abi_selection.h` — `select_abi`. Decides which functions are
   `[[c6502::zp_abi]]` and mints `__zpabi_<fn>_p<k>` slot symbols.
@@ -187,8 +188,7 @@ it holds the code and, in the comment at its top, the rationale:
   since C leaves it unspecified whether its side effects happen
   (§6.7.11p19). A positional item after a chain of designators would
   continue inside a subaggregate, which takes brace elision, and is
-  an error that says to brace the subaggregate. The comment at the top
-  of designators.cpp has an example and the rest of the rules.
+  an error that says to brace the subaggregate.
 - `decimal_arith.h` — the reads, writes, and operand forms of asm
   `DecimalArith`, the one instruction a packed BCD add or subtract
   (`__c6502_bcd_add` / `__c6502_bcd_sub`) stays as until
@@ -389,10 +389,11 @@ it holds the code and, in the comment at its top, the rationale:
 - `dec_register_peephole.h` — `apply_dec_register_peephole`.
   Folds the 6-instruction `Mov(R, A); SEC; Sub(Imm(1), A);
   Mov(A, tmp); Mov(tmp, R); Branch(NE|EQ, _)` chain to
-  `Dec(R); Branch(NE|EQ, _)` when R is X / Y and A is dead at
-  both Branch successors, and the 5-instruction `TYA; SEC; SBC #1;
-  TAY; BNE` that `redundant_load` leaves of it when A, C, and V are
-  dead after (`match_transfer_back`). Volatile-safe because DEC R is a single
+  `Dec(R); Branch(NE|EQ, _)` when R is X / Y, and the
+  5-instruction `TYA; SEC; SBC #1; TAY; BNE` that `redundant_load`
+  leaves of it, when A, C, and V are dead after the branch and no
+  path from the branch reads the temporary before writing it
+  (`match_decrement`). Volatile-safe because DEC R is a single
   R-M-W of the named register, which IS the pinned volatile
   variable's storage. Targets the inner-counter shape of
   `while (--counter != 0) { … }` when the counter is pinned to
@@ -668,8 +669,7 @@ it holds the code and, in the comment at its top, the rationale:
   operands met in the call, so equality is an integer comparison, and
   the call keeps the result of `may_alias` for each pair of atoms. The
   update of a state by an instruction reads nothing else, so a repeat
-  gives the same result (the comment at the top of
-  redundant_load.cpp).
+  gives the same result.
 - `redundant_load_after_rmw.h` — `apply_redundant_load_after_rmw`.
 - `redundant_store.h` — `apply_redundant_store_elimination`.
 - `replace_pseudoregisters.h` — pass 9 (see below).
@@ -1197,9 +1197,9 @@ UChar 0..255):
 Other integer types already have rank ≥ Int and pass through
 unchanged, and so does a bit-precise type, `_BitInt(N)`, whatever its
 width (C23 §6.3.1.1p2). Its rank is by width, below a standard type
-of the same width (`rank`), and `common_type` hands a pair with one
-in it to `common_bit_precise_type` (see "Type vocabulary" in the root
-CLAUDE.md).
+of the same width (`rank`), and `common_type` hands every pair of
+integer types to `common_integer_type` (see "Type vocabulary" in the
+root CLAUDE.md).
 
 **Implicit conversions** apply C99 §6.3.1.8's usual arithmetic
 conversions to the post-promotion operand types. Floating types
@@ -1297,7 +1297,7 @@ return the wrapper. Each call site that consumes an expression —
 Binary / Conditional / Cast inner / Assignment rval / FunctionCall arg
 / Return value / var initializer / Subscript array operand /
 Dereference operand — is responsible for decaying its inputs before
-further type checking; the `is_object_type` predicate excludes Array,
+further type checking; the `is_scalar_type` predicate excludes Array,
 so any missed decay site fails as a non-object-type error rather than
 silently producing nonsense. The wrapper type is narrower than the
 standard's `Pointer(Array(elem, N))` (we use `Pointer(elem)`, the
@@ -1322,9 +1322,9 @@ widened to Long; the result type is the pointee. Pointer-typed array
 operands (`p[i]` where `p` is a pointer) skip the decay step but go
 through the same downstream lowering.
 
-**Variable declarations** distinguish two predicates: `is_object_type`
+**Variable declarations** distinguish two predicates: `is_scalar_type`
 (the operand-allowed set: arithmetic types and Pointer) and
-`is_complete_object_type` (adds Array). Var-decl sites use the
+`is_declarable_object_type` (adds Array). Var-decl sites use the
 broader predicate since `int a[10];` IS a legal declaration;
 arithmetic / operand sites use the narrower one because arrays must
 decay first.
@@ -1350,12 +1350,9 @@ values (per §6.8.4.2.3), so e.g. `case 65536L:` in an Int (2-byte)
 switch wraps to 0 and conflicts with `case 0:`. The case body and any
 nested case / default nodes are type-checked normally.
 
-`constant_expression.h` provides two entry points sharing the
-§6.6 vocabulary: `evaluate_integer_constant_expression` (returns
-`(value, type)` for §6.6.6 sites — case labels, and the array sizes
-and enumeration-constant values the parser folds) and `validate_constant_expression` (the
-§6.6.3 check without folding, for arbitrary constant-expression
-contexts — currently no consumers, kept for upcoming features).
+`constant_expression.h` provides `evaluate_integer_constant_expression`, which returns
+`(value, type)` for §6.6.6 sites: case labels, and the array sizes
+and enumeration-constant values the parser folds.
 The integer evaluator folds integer and char literals, integer
 Casts, `sizeof`, unary `-` / `~` / `!`, every non-assignment binary
 operator, and `?:`, computing each operator in the `data_type` the
@@ -1502,8 +1499,8 @@ Each peephole has its own document, with an example, in
 
 `peephole_fixedpoint` (peephole_fixedpoint.cpp) runs the following
 passes in order until a full sweep produces no change. Each pass is a
-separate file in this directory; see the comment at the top of its
-.cpp for the full rationale and motivating shape. Order matters — each pass can enable the next
+separate file in this directory, and its document in
+docs/optimizations/ gives the rationale and an example. Order matters — each pass can enable the next
 (e.g. INC chains shorten, freeing up direct-LDX/LDY rewrites). The
 loop is capped at `kPeepholeFixedpointCap = 16` iterations as a
 safety net. Every pass runs on the whole program in every sweep.
@@ -1511,16 +1508,16 @@ safety net. Every pass runs on the whole program in every sweep.
 Always-on (runs in both optimized AND unoptimized pipelines):
 
 - `apply_carry_halve` — a halved byte sum's high byte dropped, `ADC
-  s; ROR`. See the comment at the top of `carry_halve.cpp`.
-- `apply_carry_in_add` — `p + b + 1` as one add after `SEC`. See the comment at the top of `carry_in_add.cpp`.
+  s; ROR`. See docs/optimizations/carry_halve.md.
+- `apply_carry_in_add` — `p + b + 1` as one add after `SEC`. See docs/optimizations/carry_in_add.md.
 - `apply_inc_peephole` — multi-byte ADC-#1 chains on stable memory →
   `INC + BNE` chains. See "Multi-byte INC peephole" below.
 - `apply_inc_low_byte_test` — a test of an INC chain's low byte
   right after it, `LDA M0; BNE T`, folded into the chain's first
-  `BNE`. See the comment at the top of `inc_low_byte_test.cpp`.
+  `BNE`. See docs/optimizations/inc_low_byte_test.md.
 - `apply_carry_inc_peephole` — the carry bytes of any add in place,
   `LDA M; ADC #0; STA M`, → `BCC done; INC M; ...` chains, and a
-  subtract's top `SBC #0` byte → `BCS skip; DEC M`. See the comment at the top of `carry_inc.cpp`.
+  subtract's top `SBC #0` byte → `BCS skip; DEC M`. See docs/optimizations/carry_inc.md.
 - `apply_dec_peephole` — single-byte SBC-#1 chains on stable memory
   or an element indexed by X → `DEC`. (No multi-byte form: DEC sets N/Z off the post-decrement
   value, so the underflow check would have to sit BEFORE the DEC, not
@@ -1642,10 +1639,10 @@ document says whether it fires there.
   tracking can't see across an intervening A clobber).
 - `apply_constant_store_order` — a run of stores grouped by the value
   stored, a constant or a byte loaded from memory, so each value is
-  loaded once. See the comment at the top of `constant_store_order.cpp`.
+  loaded once. See docs/optimizations/constant_store_order.md.
 - `apply_join_store` — a join's copy of a slot into memory, `LDA t;
-  STA M`, made by each arm's store instead. See the comment at the top
-  of `join_store.cpp`.
+  STA M`, made by each arm's store instead. See
+  docs/optimizations/join_store.md.
 - `apply_asm_dead_store` — CFG-wide forward dead-store elimination on
   Mov-into-memory atoms. Drops or morphs (to LDA-only) STAs whose
   target byte isn't observed by any reachable instruction. Treats
@@ -1735,8 +1732,9 @@ document says whether it fires there.
   instead be an `Add` / `Sub` / `And` / `Or` / `Xor` of `tmp` into A,
   after an optional `SetCarry` / `ClearCarry`, when `src` is an
   immediate, `Data` / `ZP`, or `IndexedData` (`SBC SECTORS_PER_TRACK`
-  in Zork's `do_rwts_on_sector`). See the comment at the top of
-  `cmp_through_tmp_fold.cpp` for the eligibility / aliasing rules.
+  in Zork's `do_rwts_on_sector`). See
+  docs/optimizations/cmp_through_tmp_fold.md for the eligibility and
+  aliasing rules.
 - `apply_redundant_compare` — drops the second of two identical
   compares when the only way to it is through the branches right
   after the first, and a `CMP #$00` (or `CPX` / `CPY`) after the
@@ -1754,9 +1752,10 @@ document says whether it fires there.
   label in front of it. Runs right after `apply_dead_label_drop`.
 - `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; SEC; SBC` pattern
   where the SBC's effect duplicates the Compare's flag set.
-- `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A);
-  Branch(EQ|NE, _)` → `Dec(M)/Inc(M); Branch(EQ|NE, _)` — drops the
-  redundant LDA since INC/DEC already set N/Z off M's new value.
+- `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A); Branch`
+  → `Dec(M)/Inc(M); Branch` — drops the redundant LDA, since INC/DEC
+  already set N/Z off M's new value and none of the three writes C
+  or V.
 
 Two more asm-only peepholes run OUTSIDE the fixed-point loop:
 

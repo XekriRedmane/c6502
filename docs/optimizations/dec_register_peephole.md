@@ -75,28 +75,20 @@ the whole function is `TAY; .loop@0_continue: DEY; BNE
   store of A to a temporary, a load of the same temporary into the
   same register, and a `BNE` or `BEQ`. The rewrite is `DEX` or `DEY`
   followed by the branch.
-- A is dead at both successors of the branch. The pass's own check
-  looks at the first instruction on each path, skipping labels and
-  no-op moves and following unconditional jumps. A is dead if that
-  instruction writes A, is a call that takes no argument in A, or is
-  a return. A read of A, or another branch, counts as live. A branch
-  to a label outside the function counts as dead.
-- The temporary isn't read by any instruction after the pattern, in
-  program order.
 - Or five instructions, the same with `TAX` or `TAY` in place of the
-  store and the load (`match_transfer_back`). `DEY` leaves A, C, and
-  V alone where the `SBC` wrote them, so this form needs A, C, and V
-  dead after the branch by `asm_liveness`, which counts a return of a
-  value in A as a read of it.
+  store and the load.
+- `DEX` or `DEY` leaves A, C, and V alone where the `SBC` wrote them,
+  so A, C, and V must be dead after the branch on both paths, by
+  `asm_liveness`'s `a_dead_at`, `c_dead_at`, and `v_dead_at`, which
+  count a return of a value in A as a read of it.
+- In the six-instruction form, no path from the branch reads the
+  temporary before it writes it, including a path that goes round a
+  loop to the top. Until 26 Nov 2026 the pass looked only at the
+  instructions after the pattern in program order, and didn't check
+  C or V for this form.
 
-The check on the temporary doesn't look at instructions before the
-pattern, so a read that a loop's back edge reaches isn't seen. No C
-program has been found that puts such a read there.
-
-For the six instructions, the pass doesn't check C or V. `SBC` sets both and `DEY` leaves them
-alone, so the rewrite relies on c6502's rule that no flag is read
-across separate operations and every add and subtract starts with its
-own `CLC` or `SEC`.
+The walk of the temporary's readers doesn't look inside calls, since
+the pass has no `AsmContext` to ask what a callee reads.
 
 ## What it leaves alone
 

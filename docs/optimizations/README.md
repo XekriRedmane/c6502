@@ -219,7 +219,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 - [Asm loop-invariant store hoisting](asm_licm.md). Moves loop-invariant constant and copy stores in front of the loop.
 - [Backward copy propagation](backward_copy_propagation.md). Makes a single-use temporary's definition store straight to the copy's destination.
 - [Branch inversion](branch_invert.md). Turns a branch over a JMP into one branch on the opposite condition.
-- [Branch on INC or DEC flags](dec_inc_branch_fold.md). Deletes `LDA M` between `INC`/`DEC M` and a branch on N or Z.
+- [Branch on INC or DEC flags](dec_inc_branch_fold.md). Deletes `LDA M` between `INC`/`DEC M` and a branch.
 - [Branch threading on a known flag](branch_thread.md). Points a branch at a branch on the same flag straight where that one goes.
 - [Branch threading on known values](branch_value_thread.md). Points a branch past the loads, compares, and branches at its target that its path has already decided.
 - [Branch through jump](branch_through_jump.md). Points a branch straight past a label that holds only a JMP.

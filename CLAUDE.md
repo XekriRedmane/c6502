@@ -856,7 +856,7 @@ it and checks N. These rules come from the type checker:
   type above a bit-precise one of the same width. So `_BitInt(16) +
   int` is an `int`, `unsigned _BitInt(16) + int` an `unsigned int`,
   and `_BitInt(24) + int` a `_BitInt(24)`
-  (`common_bit_precise_type`, the usual arithmetic conversions of
+  (`common_integer_type`, the usual arithmetic conversions of
   §6.3.1.8).
 - `sizeof` is ceil(N/8) (`bit_precise::storage_bytes`), so `unsigned
   _BitInt(24)` is 3 bytes.

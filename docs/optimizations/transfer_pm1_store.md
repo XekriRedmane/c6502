@@ -17,16 +17,14 @@ untouched, so when register allocation had saved A around the
 arithmetic, that save and its reload become dead, and later sweeps
 remove them.
 
-The pass runs after every other pass in the sweep, for a reason
-given in a comment in cpp/src/passes/peephole_fixedpoint.cpp. Register
+The pass runs after every other pass in the sweep. Register
 allocation can route the result through a temporary, as in `TXA;
 SEC; SBC #1; STA __local; LDA __local; STA M`. By the end of the
 sweep, `round_trip_load_drop` and `asm_dead_store` have collapsed
 that to the plain `STA M` form, so the store this pass rewrites is
 the one to `M`. If this pass ran first, it would produce `DEX; STX
-__local; LDA __local; STA M`. The comment states that no later pass
-collapses that shape, because the `LDA` reads a slot that was
-written from X.
+__local; LDA __local; STA M`, and no later pass collapses that
+shape, because the `LDA` reads a slot that was written from X.
 
 ## Example
 

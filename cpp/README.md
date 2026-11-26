@@ -1169,7 +1169,7 @@ These pieces of the front end are ported.
   namespace `passes::type_checking`): `strip_quals`, which returns a
   reference into the type, the predicates, `display_name`, `c_type`,
   `int_width`, `int_bits`, `is_signed`, `rank`, `promote_integer`,
-  `coerce_int_to_type`, `common_type`, and `common_bit_precise_type`. A
+  `coerce_int_to_type`, `common_type`, and `common_integer_type`. A
   query that raises `TypeError` or `KeyError` in Python, for a type it
   doesn't apply to, throws `InternalError`.
 - `loop_labeling` (`src/passes/loop_labeling.*`), `label_program`,
@@ -2889,7 +2889,7 @@ processes, where it took 131, and its blobs 198 MB in 9,976 files.
 `passes::linker::link_objects` (src/passes/linker.*) is
 `linker.link_objects`, and `link_files` is `linker.link_files`. The
 link runs the functions of groups A, C, D1, D2, and E in Python's
-order, which the comment at the top of linker.cpp lists, so it has no
+order, so it has no
 logic of its own beyond the order, the tables it builds between the
 calls, and the errors of its five raise sites. It takes the objects as
 `ElfFile`s with their names, which the caller reads from their bytes.

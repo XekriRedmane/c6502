@@ -159,7 +159,7 @@ often one byte of a multi-byte shift temp that asm-SSA leaves whole,
 since ASL / ROL rewrite it in place. P_b then takes that byte of the
 block, and `CoalesceResult.byte_offset` records its position so the
 coloring projection adds it to the block's address. See "Carry
-bytes" in the comment at the top of coalescing.cpp.
+bytes" in docs/optimizations/coalescing.md.
 
 The same round takes every byte copy, direct or through A, including
 one between a multi-byte name and a 1-byte name, and merges one node

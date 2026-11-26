@@ -40,7 +40,7 @@ TEST_CASE("address_taken_assignments: test_address_taken_zp.py::TestNoFrameSlotU
       "  ])\n"
       "])\n"
       "output-error\n"
-      "{\"type\": \"AssertionError\", \"message\": \"function 'f': the address-taken locals ['@1.x'] didn't fit in the function's pool, and the coloring keeps a value in Y, which an access to their frame slots would overwrite\"}\n");
+      "{\"type\": \"AssertionError\", \"message\": \"function 'f': the address-taken locals '@1.x' didn't fit in the function's pool, and the coloring keeps a value in Y, which an access to their frame slots would overwrite\"}\n");
 }
 
 TEST_CASE("address_taken_slot_symbols: test_address_taken_zp.py::TestSlotSymbols::test_falls_back_for_temp (call 1)") {

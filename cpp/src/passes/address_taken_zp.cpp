@@ -120,8 +120,8 @@ void check_no_frame_under_y(const ir::Function& fn, const OrderedMap<std::string
     }
   }
   if (!missing.empty()) {
-    throw InternalError("function '" + fn.name + "': the address-taken locals [" + missing +
-                        "] didn't fit in the function's pool, and the coloring keeps a value "
+    throw InternalError("function '" + fn.name + "': the address-taken locals " + missing +
+                        " didn't fit in the function's pool, and the coloring keeps a value "
                         "in Y, which an access to their frame slots would overwrite");
   }
 }

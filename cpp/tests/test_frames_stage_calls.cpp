@@ -1445,9 +1445,22 @@ TEST_CASE("address_taken_assignments: a local that doesn't fit while Y holds a v
   check_frames_case("address_taken_assignments", no_room_args("X"), kNoRoomForTaken,
                     "{\"dict\": [[\"f\", {\"dict\": []}]]}");
   check_frames_case("address_taken_assignments", no_room_args("Y"), kNoRoomForTaken,
-                    "exception: AssertionError: function 'f': the address-taken locals ['@1.x'] "
+                    "exception: AssertionError: function 'f': the address-taken locals '@1.x' "
                     "didn't fit in the function's pool, and the coloring keeps a value in Y, "
                     "which an access to their frame slots would overwrite");
+}
+
+TEST_CASE("address_taken_assignments: two locals that don't fit while Y holds a value") {
+  check_frames_case("address_taken_assignments", no_room_args("Y"),
+                    "Program([\n"
+                    "  Function(\"f\" true [] [\n"
+                    "    LoadAddress(Pseudo(\"@1.x\" 0) Pseudo(\"%p\" 0))\n"
+                    "    LoadAddress(Pseudo(\"@2.y\" 0) Pseudo(\"%p\" 0))\n"
+                    "    Return(false false false)\n"
+                    "  ])\n"
+                    "])\n",
+                    "exception: AssertionError: function 'f': the address-taken locals '@1.x', "
+                    "'@2.y' didn't fit in the function's pool");
 }
 
 // No C object has no bytes, so a local of size 0 is a bug in the

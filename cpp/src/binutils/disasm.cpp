@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "binutils/opcodes.h"
+#include "passes/link_layout.h"
 #include "pcpp_text.h"
 
 namespace c6502::binutils::disasm {
@@ -101,9 +102,7 @@ class Disassembler {
     for (const auto& s : elf.symbols) {
       if (!s->defined() || s->type == elf::STT_FILE || s->type == elf::STT_SECTION) continue;
       if (is_mapping(s->name)) continue;
-      if (s->name.starts_with("__") && s->name.ends_with("_size")) {
-        continue;
-      }
+      if (passes::link_layout::is_size_symbol(s->name)) continue;
       by_addr_[s->value].push_back(s.get());
     }
   }

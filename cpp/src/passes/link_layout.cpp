@@ -327,6 +327,12 @@ std::vector<std::pair<Entry, bool>> fall_through(const std::vector<Entry>& entri
   return out;
 }
 
+std::string size_symbol(const std::string& symbol) { return "__" + symbol + "_size"; }
+
+bool is_size_symbol(std::string_view name) {
+  return name.starts_with("__") && name.ends_with("_size");
+}
+
 std::string section_symbol(const std::string& section) {
   std::size_t start = 0;
   while (start < section.size() && section[start] == '.') ++start;
@@ -501,7 +507,7 @@ Layout lay_out(const link_script::Script& script, const std::vector<Unit>& units
     out.size = to_i64(size);
     const asdl::Int end = pc;
     sym.insert_or_assign("__" + s + "_end", to_i64(end));
-    sym.insert_or_assign("__" + s + "_size", to_i64(size));
+    sym.insert_or_assign(size_symbol(s), to_i64(size));
     if (relocated) {
       sym.insert_or_assign("__" + s + "_load_end", to_i64(bounded(lma + size)));
     } else {
@@ -554,7 +560,7 @@ std::vector<std::string> startup_lines(const link_script::Script& script) {
     const bool relocated = sec.at.has_value() || sec.load_region.has_value();
     if (!(relocated || sec.noload)) continue;
     const std::string s = section_symbol(sec.name);
-    const std::string size = "__" + s + "_size";
+    const std::string size = size_symbol(s);
     const std::string n = std::to_string(k);
     if (relocated) {
       add({instr_line("LDA", "#<__" + s + "_load"), instr_line("STA", "DPTR"),

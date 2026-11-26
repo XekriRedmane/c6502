@@ -11,6 +11,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -96,6 +97,14 @@ std::vector<std::pair<Entry, bool>> fall_through(const std::vector<Entry>& entri
 // without its leading dots, with each character other than an ASCII
 // letter, digit, or `_` made `_` (`.text.boot` gives `text_boot`).
 std::string section_symbol(const std::string& section);
+
+// Returns `__<symbol>_size`, the absolute symbol holding the size in
+// bytes of the output section whose `section_symbol` is `symbol`. It
+// isn't an address, so the disassembler names no operand after it.
+std::string size_symbol(const std::string& symbol);
+
+// Returns whether `name` has the form `size_symbol` gives.
+bool is_size_symbol(std::string_view name);
 
 // Returns the script a link without `-T` uses: `.text` from `origin`,
 // then `.rodata`, `.data`, `.bss`, and then each other section name

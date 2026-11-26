@@ -1449,3 +1449,15 @@ TEST_CASE("address_taken_assignments: a local that doesn't fit while Y holds a v
                     "didn't fit in the function's pool, and the coloring keeps a value in Y, "
                     "which an access to their frame slots would overwrite");
 }
+
+// No C object has no bytes, so a local of size 0 is a bug in the
+// compiler, which the allocation reports rather than giving it the
+// first free byte.
+TEST_CASE("address_taken_assignments: a local of no bytes") {
+  check_frames_case(
+      "address_taken_assignments",
+      R"~({"args": [{"dict": [["f", [128]]]}, {"dict": []}, {"object": "passes.type_checking.SymbolTable", "fields": {"_table": {"dict": [["@1.x", {"object": "passes.type_checking.Symbol", "fields": {"type": {"asdl": "c99_ast", "dump": "Array(UChar 0)\n"}, "attrs": {"object": "passes.type_checking.LocalAttr", "fields": {"register": false, "was_bool": false}}}}]]}}}, {"object": "passes.type_checking.TypeTable", "fields": {"_table": {"dict": []}}}], "kwargs": {}})~",
+      kNoRoomForTaken,
+      "exception: AssertionError: address_taken_zp: the address-taken local '@1.x' has no "
+      "bytes");
+}

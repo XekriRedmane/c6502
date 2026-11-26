@@ -86,11 +86,12 @@ OrderedMap<std::string, asdl::Int> allocate_in_pool(const ir::Function& fn,
   }
   for (const auto& name : candidates) {
     const asdl::Int size = size_of_name(name, symbols, types);
+    if (size < 1) {
+      throw InternalError("address_taken_zp: the address-taken local '" + name +
+                          "' has no bytes");
+    }
     for (auto& run : runs) {
       if (static_cast<asdl::Int>(run.size()) >= size) {
-        if (run.empty()) {
-          throw InternalError("address_taken_zp: list index out of range");
-        }
         out.insert_or_assign(name, run.front());
         run.erase(run.begin(), run.begin() + static_cast<std::ptrdiff_t>(size));
         break;

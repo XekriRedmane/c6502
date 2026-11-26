@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include "asm_text.h"
+#include "capture.h"
 #include "doctest.h"
 #include "errors.h"
 #include "passes/optimization/register_allocation.h"
@@ -21,7 +22,7 @@
 #include "passes/optimization_asm/liveness.h"
 #include "passes/optimization_asm/regalloc.h"
 #include "passes/optimization_asm/regalloc_stage.h"
-#include "record_case.h"
+#include "json.h"
 #include "tagged_json.h"
 
 namespace {
@@ -653,7 +654,7 @@ TEST_CASE("regalloc: a spilled value's access loads Y") {
 TEST_CASE("regalloc: a recorded call pins only with the liveness") {
   // The pinning reads the liveness for the writes of X and Y in a live
   // range, so a record that gives the eligibility alone is refused.
-  testing::check_record(R"(c6502-capture 2
+  const capture::Call call = capture::parse(R"(c6502-capture 2
 pass color_graph
 source cpp/tests/test_regalloc.cpp
 args {"args": [{"object": "passes.optimization.interference.InterferenceGraph", "fields": {"nodes": {"dict": []}, "adj": {"dict": []}}}], "kwargs": {"hwreg_eligibility": {"object": "passes.optimization_asm.hwreg_eligibility.HwRegEligibility", "fields": {"eligible_x": {"set": []}, "eligible_y": {"set": []}, "hints_x": {"set": []}, "hints_y": {"set": []}, "use_count": {"dict": []}, "required_x": {"set": []}, "required_y": {"set": []}, "hints_carry": {"set": []}, "carry_pairs": []}}, "liveness": null}}
@@ -662,9 +663,14 @@ input
 Function("f" true [] [
   Return(true false false)
 ])
-output-error
-{"type": "Exception", "message": "the call gives hwreg_eligibility or liveness without the other"}
+output-json
+null
 )");
+  const json::Value args = json::parse(call.args_json);
+  CHECK_THROWS_WITH(passes::regalloc_stage::run_color_graph(call, capture::context(call),
+                                                            *args.get("args"),
+                                                            *args.get("kwargs")),
+                    "the call gives hwreg_eligibility or liveness without the other");
 }
 
 }  // namespace

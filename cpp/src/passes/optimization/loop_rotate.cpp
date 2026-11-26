@@ -7,8 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include "errors.h"
-
 namespace c6502::passes {
 
 namespace {
@@ -299,7 +297,7 @@ bool init_value_is_nonnegative(const Instrs& instrs, std::size_t start_idx,
   return resolves_to_int_in_range(instrs, *def_idx, 0, *max_pos, floor);
 }
 
-std::optional<Match> try_match(const Instrs& instrs, std::size_t i, const SymbolTable* symbols) {
+std::optional<Match> try_match(const Instrs& instrs, std::size_t i, const SymbolTable& symbols) {
   const auto* label = asdl::as<ir::Label>(instrs[i]);
   if (label == nullptr) {
     return std::nullopt;
@@ -350,10 +348,7 @@ std::optional<Match> try_match(const Instrs& instrs, std::size_t i, const Symbol
     return std::nullopt;
   }
 
-  if (symbols == nullptr) {
-    throw InternalError("TypeError: 'NoneType' object is not subscriptable");
-  }
-  const Symbol* sym = symbols->find(*x_name);
+  const Symbol* sym = symbols.find(*x_name);
   if (sym == nullptr || !max_positive(sym->type)) {
     return std::nullopt;
   }
@@ -449,13 +444,16 @@ void emit_rotated(const Instrs& instrs, const Match& m, Instrs& out) {
 }  // namespace
 
 ir::Function rotate_signed_countdown_loops(ir::Function fn, const framework::PassContext& ctx) {
+  if (ctx.symbols == nullptr) {
+    return fn;
+  }
   const Instrs& instrs = fn.instructions;
   Instrs out;
   out.reserve(instrs.size());
   const std::size_t n = instrs.size();
   std::size_t i = 0;
   while (i < n) {
-    const auto m = try_match(instrs, i, ctx.symbols);
+    const auto m = try_match(instrs, i, *ctx.symbols);
     if (!m) {
       out.push_back(instrs[i]);
       ++i;

@@ -28,7 +28,8 @@ stages land.
   error messages that `parser.py` gives today. `c99.lark` stops being
   the source of truth when it lands.
 - **Build.** CMake and C++20. MSVC 2022 Build Tools on Windows, and
-  GCC or Clang in the Docker image.
+  GCC or Clang on Linux. The repository had a Docker image until 26
+  Nov 2026, when Robert removed it as no longer needed.
 
 ## How each stage is checked
 
@@ -4033,3 +4034,7 @@ and go with it in group R, or need R to keep what they read.
   `check-golden` and `check-frozen` match every job and record, and the
   fuzzers found nothing wrong in seeds 0 to 299 of `exprs`, `calls`, and
   `stmts` and 0 to 99 of `yarpgen`.
+- 26 Nov 2026: numpy left the dependencies, since fp_arith.py was its
+  one user, and the Dockerfile,
+  docker-compose.yml, and docker-entrypoint.sh went, since the image
+  was no longer needed.

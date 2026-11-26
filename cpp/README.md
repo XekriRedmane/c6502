@@ -51,11 +51,7 @@ Debug build of the Visual Studio generator puts them in
 path in `C6502_CPP`, and are skipped when it isn't built.
 
 On 19 Nov 2026 the build was clean with MSVC 19.36 (Build Tools 14.36),
-and with GCC 12.2 and Clang 14.0.6 on Debian 12, the distribution the
-repository's Docker image is based on. The Linux builds ran in WSL,
-since the Docker daemon wasn't running. Since step 8 the image
-installs CMake and builds `c6502cpp` from its copy of cpp/, and
-`C6502_CPP` points the shims at it (the Dockerfile).
+and with GCC 12.2 and Clang 14.0.6 on Debian 12 in WSL.
 
 The build makes three targets.
 

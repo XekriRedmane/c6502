@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "passes/optimization/var_visit.h"
+
 namespace c6502::passes {
 
 namespace {
@@ -89,11 +91,13 @@ const ir::Type_val* cast_source(const ir::Type_instruction& instr, bool truncate
   }
 }
 
-std::optional<std::string_view> defs_of(const ir::Type_instruction& instr) {
-  if (asdl::isa<ir::IndirectIndexedLoad>(instr)) {
-    return std::nullopt;
+bool writes(const ir::Type_instruction& instr, std::string_view name) {
+  for (const auto d : defs_in(instr)) {
+    if (d == name) {
+      return true;
+    }
   }
-  return framework::dst_name(instr);
+  return false;
 }
 
 struct Match {
@@ -248,8 +252,7 @@ std::size_t straight_line_start(const Instrs& instrs, std::size_t start_idx) {
 std::optional<std::size_t> last_def_pos(const Instrs& instrs, std::size_t end_excl,
                                         std::string_view name) {
   for (std::size_t k = end_excl; k-- > 0;) {
-    const auto d = defs_of(instrs[k]);
-    if (d && *d == name) {
+    if (writes(instrs[k], name)) {
       return k;
     }
   }
@@ -394,8 +397,7 @@ std::optional<Match> try_match(const Instrs& instrs, std::size_t i, const Symbol
 
   bool body_iv_immutable = true;
   for (std::size_t k = *cond_jif_idx + 1; k < *cont_idx; ++k) {
-    const auto d = defs_of(instrs[k]);
-    if (d && *d == *x_name) {
+    if (writes(instrs[k], *x_name)) {
       body_iv_immutable = false;
       break;
     }

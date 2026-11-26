@@ -256,8 +256,7 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
       }
     }
     if (record == nullptr) {
-      throw InternalError("a demoted object has no definition, where Python's next() raises "
-                          "StopIteration");
+      throw InternalError("the demoted object `" + name + "` has no definition");
     }
     own_lines.push_back("");
     for (std::string& line : data_lines(*record)) own_lines.push_back(std::move(line));
@@ -317,7 +316,7 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
     const elf::SectionPtr* spill_section = units.back().sections.find(kSpill);
     const auto it = spill_section == nullptr ? addr_of.end() : addr_of.find(spill_section->get());
     if (it == addr_of.end()) {
-      throw InternalError("the layout placed no `__spill`, where Python raises KeyError");
+      throw InternalError("the layout placed no `__spill`");
     }
     const std::int64_t base = it->second.addr;
     for (const auto& [name, offset] : spilled) {
@@ -374,8 +373,7 @@ void link_files(const std::vector<std::string>& input_paths, const std::string& 
                     std::ios::binary);
   out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
   if (!out) {
-    throw InternalError("the executable couldn't be written to " + output_path +
-                        ", where Python raises the OSError of `Path.write_bytes`");
+    throw InternalError("the executable couldn't be written to " + output_path);
   }
 }
 

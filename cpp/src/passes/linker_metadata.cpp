@@ -743,7 +743,7 @@ void bind_extern_params(const LinkMetadata& merged, const std::vector<ExternMeta
   for (const ExternMeta& e : externs) {
     const auto* found = canonical.find(e.name);
     if (found == nullptr) {
-      throw InternalError("KeyError: " + pyrepr::string(e.name));
+      throw InternalError("the declared function `" + e.name + "` is in no merged record");
     }
     const auto& [params, canon_regs] = *found;
     if (params.size() != e.params.size()) {
@@ -761,7 +761,7 @@ void bind_extern_params(const LinkMetadata& merged, const std::vector<ExternMeta
       }
       const Int* addr = symbols.find(params[i]);
       if (addr == nullptr) {
-        throw InternalError("KeyError: " + pyrepr::string(params[i]));
+        throw InternalError("the parameter slot `" + params[i] + "` has no address");
       }
       const Int value = *addr;
       const Int* bound = symbols.find(e.params[i]);

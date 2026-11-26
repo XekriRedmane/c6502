@@ -73,8 +73,7 @@ using ls::Expr;
 const asdl::Int kLimit = asdl::Int(1) << 125;
 
 [[noreturn]] void too_wide() {
-  throw InternalError(
-      "a linker script's value takes more than 125 bits, which the C++ port doesn't handle");
+  throw InternalError("a linker script's value takes more than 125 bits");
 }
 
 asdl::Int bounded(asdl::Int v) {
@@ -86,9 +85,7 @@ asdl::Int magnitude(asdl::Int v) { return v < 0 ? -v : v; }
 
 std::int64_t to_i64(asdl::Int v) {
   if (v > asdl::Int(INT64_MAX) || v < asdl::Int(INT64_MIN)) {
-    throw InternalError(
-        "a linker script's address or symbol takes more than 64 bits, which the C++ port "
-        "doesn't handle");
+    throw InternalError("a linker script's address or symbol takes more than 64 bits");
   }
   return static_cast<std::int64_t>(v);
 }

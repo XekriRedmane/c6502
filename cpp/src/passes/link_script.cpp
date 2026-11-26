@@ -103,7 +103,7 @@ const asdl::Int kLimit = asdl::Int(1) << 125;
 asdl::Int bounded(asdl::Int v) {
   if (v > kLimit || v < -kLimit) {
     throw InternalError(
-        "a linker script's value takes more than 125 bits, which the C++ port doesn't handle");
+        "a linker script's value takes more than 125 bits");
   }
   return v;
 }
@@ -621,7 +621,7 @@ Script read_script(const std::string& path) {
     text = pcpp::decode_text_file(bytes, encoding);
   } catch (const CompileError& e) {
     if (e.python_type() == "LookupError") {
-      throw InternalError("the C++ port doesn't decode files in the locale's encoding, " +
+      throw InternalError("linker scripts can't be read in the locale's encoding, " +
                           encoding);
     }
     link_error(e.what());

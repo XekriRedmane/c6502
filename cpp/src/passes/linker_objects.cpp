@@ -113,9 +113,8 @@ std::vector<ItemMeta> object_items(const LinkMetadata& meta, const elf::ElfFile&
   std::vector<elf::SymbolPtr> syms;
   for (const auto& [_, s] : defined) {
     if (!order.contains(s->section.get())) {
-      throw InternalError(
-          "an item's section isn't one of its object's, where Python raises "
-          "KeyError");
+      throw InternalError("the section of the item `" + s->name +
+                          "` isn't one of its object's");
     }
     syms.push_back(s);
   }
@@ -136,8 +135,7 @@ elf::SymbolPtr item_symbol(const elf::ElfFile& obj, const std::string& name) {
   for (const elf::SymbolPtr& s : obj.symbols) {
     if (s->name == name && is_item_label(*s)) return s;
   }
-  throw InternalError("the object defines no item `" + name +
-                      "`, where Python's next() raises StopIteration");
+  throw InternalError("the object defines no item `" + name + "`");
 }
 
 elf::ElfFile without_init(const elf::ElfFile& obj) {
@@ -199,8 +197,7 @@ NameSet pointer_names(const ld::Objects& objects) {
         if (r.type != elf::R_MOS_ADDR8 || r.offset == 0) continue;
         const std::int64_t at = r.offset - 1;
         if (at < 0 || at >= static_cast<std::int64_t>(sec->data.size())) {
-          throw InternalError(
-              "a relocation is outside its section, where Python raises IndexError");
+          throw InternalError("a relocation is outside its section");
         }
         const binutils::opcodes::Entry* op = binutils::opcodes::decode(
             static_cast<std::uint8_t>(sec->data[static_cast<std::size_t>(at)]));
@@ -305,8 +302,7 @@ std::vector<ld::OutputSymbol> output_symbols(
       }
       const auto oit = output_of.find(s->section.get());
       if (oit == output_of.end()) {
-        throw InternalError(
-            "a placed section is in no output section, where Python raises KeyError");
+        throw InternalError("a placed section is in no output section");
       }
       auto sym = std::make_shared<elf::Symbol>();
       sym->name = s->name;
@@ -356,9 +352,8 @@ void merge_identical(ld::Objects& objects, std::vector<LinkMetadata>& metas) {
       const elf::SectionPtr sec = sym->section;
       const auto at = std::find(obj.sections.begin(), obj.sections.end(), sec);
       if (at == obj.sections.end()) {
-        throw InternalError(
-            "a merged item's section isn't one of its object's, where Python's "
-            "list.remove raises ValueError");
+        throw InternalError("the section of the merged item `" + it.name +
+                            "` isn't one of its object's");
       }
       obj.sections.erase(at);
       sym->name = first->name;

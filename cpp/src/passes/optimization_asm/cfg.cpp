@@ -102,7 +102,8 @@ void partition_and_link(Cfg& cfg) {
   const auto block_of = [&](const std::string& target) {
     const auto it = label_to_block.find(target);
     if (it == label_to_block.end()) {
-      throw InternalError("KeyError: '" + target + "'");
+      throw InternalError("build_cfg: a jump or branch to " + target +
+                          ", which no instruction of the function labels");
     }
     return it->second;
   };

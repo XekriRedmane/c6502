@@ -5,12 +5,14 @@
 // `Dominators::idom`.
 #include <algorithm>
 #include <set>
+#include <string>
 #include <variant>
 #include <vector>
 
 #include "asm_ast.h"
 #include "asdl/runtime.h"
 #include "doctest.h"
+#include "errors.h"
 #include "passes/optimization_asm/cfg.h"
 
 namespace ir = c6502::asm_ast;
@@ -190,4 +192,12 @@ TEST_CASE("asm_cfg: TestAsmDominance::test_diamond_dominance_frontiers") {
   for (const int arm : arms) {
     CHECK(df[arm] == std::set<int>{b3});
   }
+}
+
+TEST_CASE("asm_cfg: a jump to a label the function lacks is an internal error") {
+  const std::string message =
+      "build_cfg: a jump or branch to .gone, which no instruction of the function labels";
+  CHECK_THROWS_WITH_AS(build_cfg(fn({jump(".gone")})), message.c_str(), c6502::InternalError);
+  CHECK_THROWS_WITH_AS(build_cfg(fn({branch(".gone"), ret_bare()})), message.c_str(),
+                       c6502::InternalError);
 }

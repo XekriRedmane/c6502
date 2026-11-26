@@ -734,7 +734,6 @@ Root-level files:
   folding, the TAC interpreter, and the type checker's constant
   evaluator share, and the `<stdbit.h>` builtins (`stdbit_builtins`)
   with their model, `stdbit`.
-- `knowledge_base.md` — engineering-knowledge running log.
 
 cpp/src/pp_numbers.h has the spelling of numeric constants: C23's
 pp-number (`pp_number_at`), binary constants, digit separators, and

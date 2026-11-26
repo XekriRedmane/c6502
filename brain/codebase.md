@@ -8,6 +8,7 @@
 - [[codebase/git-bash-on-windows]]
 - [[codebase/long-runs-and-scratch-scripts]]
 - [[codebase/msbuild-stale-builds]]
+- [[codebase/msvc-int128-alignment]]
 - [[codebase/rewriting-tests-with-scripts]]
 - [[codebase/surveying-test-dependencies]]
 - [[codebase/t3-restarts]]

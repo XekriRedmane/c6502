@@ -9,5 +9,6 @@
 - The agent took `check-binutils` (checks.cpp) for dead code because tools/capture_binutils.py, which wrote its records, is gone. `check-frozen` runs it on the records frozen in cpp/tests/frozen/binutils, so trace a check's callers in cpp/src/main.cpp before calling it dead.
 - Trimming a clause out of a wrapped comment leaves ragged lines and dangling references ("that output section"), so reread each trimmed comment.
 - On slice 4 of cpp/src/passes (26 Nov 2026), Comment Sicko's flag on an operand walk in `promote_loop_carried_to_a` led to two miscompiles that new doctests showed: a packed BCD add of the slot after the loop, and a call or soft-stack access in the preamble, which overwrote the value parked in Y. A flag that names a hand-written operand or register walk is worth a test before it is triaged as a style issue.
+- In slice 6 of the cpp/src/passes run on 26 Nov 2026, Comment Sicko stopped at a usage limit, and a SendMessage to its agent ID after the reset let it finish and hand back its report. Its report gave 3,519 lines deleted where `git diff --shortstat` gave 2,781, so take the counts for the report from git.
 
 Related: [[codebase/checks-after-python]], [[principles/subtract-before-you-add]]

@@ -4,5 +4,7 @@
 - Write scripts with the Write tool under C:/w/ or the scratchpad, and run each with `uv run python <path>` as a command of its own. Give each `git` command its own call, and run cmake with an exported PATH in a call without git.
 - `taskkill //IM python.exe` is refused, since other agents' processes share the machine. Stop a background command with TaskStop. It ends a pytest worker pool, but a looping script's own bash survives it ([[codebase/long-runs-and-scratch-scripts]]).
 - `git commit` takes everything staged, including a `git rm` made long before for a later commit, which carried a test module's deletion into an unrelated commit in G7. Run `git diff --cached --name-status` before every commit, and stage a removal only when its commit is next.
+- The guard reads the text of the whole command, so a `sed` whose expressions mention `git show` was refused too. Write such a file with the Write tool.
+- Several fixes made in one working tree can still go in one commit each. A script that takes chosen hunks of `git diff -U3 -- FILE` and stages them with `git apply --cached` splits one file's changes between commits. A fix for an earlier commit goes in with `git commit --fixup=<hash>` and `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`, which runs without an editor.
 
 Related: [[codebase/git-bash-on-windows]], [[codebase/msbuild-stale-builds]], [[codebase/t3-restarts]]
